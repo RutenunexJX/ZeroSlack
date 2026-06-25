@@ -44,10 +44,13 @@
 #include <QDockWidget>
 #include <QDir>
 #include <QFileInfo>
+#include <QTextBlock>
+#include <QTextCursor>
 #include <QKeyEvent>
 #include <QLabel>
 #include <QMenu>
 #include <QMenuBar>
+#include <QProgressBar>
 #include <QSignalBlocker>
 #include <QStatusBar>
 #include <QTabBar>
@@ -64,6 +67,7 @@ MainWindow::MainWindow(QWidget *parent)
     tabManager = std::unique_ptr<TabManager>(new TabManager(ui->tabWidget, this));
     workspaceManager = std::unique_ptr<WorkspaceManager>(new WorkspaceManager(this));
     setupWorkspaceBar();
+    setupWorkspaceProgressIndicator();
     modeManager = std::unique_ptr<ModeManager>(new ModeManager(ui->tabWidget, this));
     navigationManager = std::unique_ptr<NavigationManager>(new NavigationManager(this));  // NEW
     analysisScheduler = std::unique_ptr<AnalysisScheduler>(new AnalysisScheduler(this));
@@ -190,6 +194,61 @@ void MainWindow::refreshWorkspaceTabs()
         workspaceTabBar->setCurrentIndex(activeIndex);
 }
 
+void MainWindow::setupWorkspaceProgressIndicator()
+{
+    if (!statusBar() || !workspaceManager)
+        return;
+
+    workspaceProgressBar = new QProgressBar(this);
+    workspaceProgressBar->setObjectName(QStringLiteral("workspaceProgressBar"));
+    workspaceProgressBar->setRange(0, 0);
+    workspaceProgressBar->setTextVisible(true);
+    workspaceProgressBar->setFixedWidth(180);
+    workspaceProgressBar->hide();
+    statusBar()->addPermanentWidget(workspaceProgressBar);
+
+    connect(workspaceManager.get(),
+            &WorkspaceManager::workspaceScanStarted,
+            this,
+            [this](const QString&) {
+                if (workspaceProgressBar) {
+                    workspaceProgressBar->setRange(0, 0);
+                    workspaceProgressBar->setFormat(QStringLiteral("Scanning workspace"));
+                    workspaceProgressBar->show();
+                }
+                if (statusBar())
+                    statusBar()->showMessage(QStringLiteral("Scanning workspace..."));
+            });
+    connect(workspaceManager.get(),
+            &WorkspaceManager::workspaceScanProgress,
+            this,
+            [this](const QString&, int filesFound) {
+                if (workspaceProgressBar)
+                    workspaceProgressBar->setFormat(
+                        QStringLiteral("Scanning %1 files").arg(filesFound));
+                if (statusBar()) {
+                    statusBar()->showMessage(
+                        QStringLiteral("Scanning workspace: %1 files found")
+                            .arg(filesFound),
+                        1000);
+                }
+            });
+    connect(workspaceManager.get(),
+            &WorkspaceManager::workspaceScanFinished,
+            this,
+            [this](const QString&, int totalFiles, int systemVerilogFiles) {
+                if (workspaceProgressBar)
+                    workspaceProgressBar->hide();
+                if (statusBar()) {
+                    statusBar()->showMessage(
+                        QStringLiteral("Workspace scan complete: %1 files, %2 SystemVerilog")
+                            .arg(totalFiles)
+                            .arg(systemVerilogFiles),
+                        3000);
+                }
+            });
+}
+
 void MainWindow::setupManagerConnections()
 {
     analysisCoordinator = std::make_unique<AnalysisCoordinator>(
@@ -248,6 +307,29 @@ void MainWindow::setupManagerConnections()
                                 && tabManager->getCurrentEditor() == editor
                                 && waveDock
                                 && waveDock->isVisible()) {
+                                refreshActiveEditorWavePreview();
+                            }
+                        });
+                connect(editor,
+                        &MyCodeEditor::cursorPositionChanged,
+                        this,
+                        [this, editor]() {
+                            const bool hasSelection =
+                                editor && editor->textCursor().hasSelection();
+                            const bool hadSelection =
+                                editor
+                                && editor->property("wavePreviewHadSelection")
+                                       .toBool();
+                            if (editor)
+                                editor->setProperty("wavePreviewHadSelection",
+                                                    hasSelection);
+                            QDockWidget* waveDock =
+                                dockForPanelId(QStringLiteral("wavePreview"));
+                            if (tabManager
+                                && tabManager->getCurrentEditor() == editor
+                                && waveDock
+                                && waveDock->isVisible()
+                                && (hasSelection || hadSelection)) {
                                 refreshActiveEditorWavePreview();
                             }
                         });
@@ -331,6 +413,13 @@ void MainWindow::refreshActiveEditorSemanticDecorations(
             return;
     }
 
+    constexpr int kMaxPassiveSemanticDecorationCharacters = 2 * 1024 * 1024;
+    if (editor->document()->characterCount()
+        > kMaxPassiveSemanticDecorationCharacters) {
+        editor->setSemanticDecorations({});
+        return;
+    }
+
     SemanticDecorationQuery query;
     query.fileName = document.fileName;
     query.documentText = editor->toPlainText();
@@ -364,6 +453,13 @@ void MainWindow::refreshActiveEditorGhostAnnotations(
             return;
     }
 
+    constexpr int kMaxPassiveGhostAnnotationCharacters = 2 * 1024 * 1024;
+    if (editor->document()->characterCount()
+        > kMaxPassiveGhostAnnotationCharacters) {
+        editor->setGhostAnnotations({});
+        return;
+    }
+
     GhostAnnotationQuery query;
     query.fileName = document.fileName;
     query.documentText = editor->toPlainText();
@@ -387,10 +483,31 @@ void MainWindow::refreshActiveEditorWavePreview()
     }
 
     const DocumentSnapshot document = tabManager->getCurrentDocument();
+    int scopeStartPosition = -1;
+    int scopeEndPosition = -1;
+    QString scopeLabel;
+    const QTextCursor cursor = editor->textCursor();
+    if (cursor.hasSelection()) {
+        scopeStartPosition = cursor.selectionStart();
+        scopeEndPosition = cursor.selectionEnd();
+        const int startLine =
+            editor->document()->findBlock(scopeStartPosition).blockNumber() + 1;
+        const int endLine =
+            editor->document()->findBlock(qMax(scopeStartPosition,
+                                               scopeEndPosition - 1))
+                .blockNumber()
+            + 1;
+        scopeLabel = QStringLiteral("selected lines %1-%2")
+                         .arg(startLine)
+                         .arg(endLine);
+    }
     semanticDocks->wavePreviewPanelCoordinator()->refreshFromDocument(
         document.fileName,
         editor->toPlainText(),
-        document.dirty);
+        document.dirty,
+        scopeStartPosition,
+        scopeEndPosition,
+        scopeLabel);
 }
 
 

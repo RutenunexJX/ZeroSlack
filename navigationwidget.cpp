@@ -12,6 +12,7 @@ NavigationWidget::NavigationWidget(QWidget *parent)
 
 NavigationWidget::~NavigationWidget()
 {
+    cancelFileTreePopulation();
 }
 
 void NavigationWidget::setActiveTab(NavigationTab tab)
@@ -133,8 +134,6 @@ void NavigationWidget::onSearchTextChanged(const QString& text)
 {
     currentSearchFilter = text.trimmed();
     emit searchFilterChanged(currentSearchFilter);
-
-    applySearchFilter();
 }
 
 void NavigationWidget::onFileTreeDoubleClicked(QTreeWidgetItem* item, int column)
@@ -250,8 +249,15 @@ void NavigationWidget::setupFileTab()
     fileTreeWidget->setHeaderLabel("SystemVerilog Files");
     fileTreeWidget->setAlternatingRowColors(true);
     fileTreeWidget->setRootIsDecorated(true);
-    fileTreeWidget->setSortingEnabled(true);
+    fileTreeWidget->setSortingEnabled(false);
     fileTreeWidget->header()->hide();
+
+    fileTreePopulationTimer = new QTimer(this);
+    fileTreePopulationTimer->setSingleShot(false);
+    connect(fileTreePopulationTimer,
+            &QTimer::timeout,
+            this,
+            &NavigationWidget::processFileTreePopulationChunk);
 
     fileTabLayout->addWidget(fileTreeWidget);
     fileTab->setLayout(fileTabLayout);

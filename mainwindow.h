@@ -28,6 +28,7 @@ class SemanticRuntimeCoordinator;
 class QDockWidget;
 class QLabel;
 class QMenu;
+class QProgressBar;
 class QTabBar;
 class QToolButton;
 
@@ -76,6 +77,7 @@ private:
     QMenu* viewMenu = nullptr;
     QToolButton* panelsStatusButton = nullptr;
     QLabel* editorModeChip = nullptr;
+    QProgressBar* workspaceProgressBar = nullptr;
     QTabBar* workspaceTabBar = nullptr;
 
     static const int kFileChangeDebounceMs = 350;
@@ -108,6 +110,7 @@ private:
     void setupManagerConnections();
     void setupSemanticRuntime();
     void setupWorkspaceBar();
+    void setupWorkspaceProgressIndicator();
     void refreshWorkspaceTabs();
     void refreshActiveEditorDiagnosticHighlights(
         const QString& changedFileName = QString());

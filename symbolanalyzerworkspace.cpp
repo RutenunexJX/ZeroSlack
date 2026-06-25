@@ -8,6 +8,7 @@
 #include <utility>
 
 namespace {
+constexpr qint64 kWorkspaceCachedContentLimitBytes = 512 * 1024;
 
 QString normalizedWorkspaceSymbolFileName(const QString& fileName)
 {
@@ -29,8 +30,12 @@ QHash<QString, QList<SemanticSymbolRecord>> groupRecordsByFile(
     return byFile;
 }
 
-QString readTextFile(const QString& filePath)
+QString readTextFileIfSmall(const QString& filePath)
 {
+    const QFileInfo fileInfo(filePath);
+    if (fileInfo.size() > kWorkspaceCachedContentLimitBytes)
+        return QString();
+
     QFile file(filePath);
     if (!file.open(QIODevice::ReadOnly | QFile::Text))
         return QString();
@@ -57,7 +62,7 @@ WorkspaceAnalysisResult SymbolAnalyzerWorkspace::buildWorkspaceAnalysisResult(
         }
         WorkspaceFileAnalysis fileResult;
         fileResult.fileName = filePath;
-        fileResult.content = readTextFile(filePath);
+        fileResult.content = readTextFileIfSmall(filePath);
         fileResult.symbolRecords =
             byFile.value(normalizedWorkspaceSymbolFileName(filePath));
         result.totalSymbols += fileResult.symbolRecords.size();

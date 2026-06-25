@@ -235,6 +235,121 @@ QStringList HierarchyService::modulesDefinedInFile(const QString& fileName) cons
     return uniqueSortedStringList(moduleNames);
 }
 
+QString HierarchyService::inferDesignTopModule() const
+{
+    QHash<QString, SemanticSymbolRecord> modulesByName;
+    QList<SemanticSymbolRecord> modules;
+    const QList<SemanticSymbolRecord> records = semanticIndex()->getSymbolRecords();
+    for (const SemanticSymbolRecord& record : records) {
+        if (!isDesignModuleDeclaration(record) || record.name.isEmpty())
+            continue;
+
+        const auto existing = modulesByName.constFind(record.name);
+        if (existing != modulesByName.constEnd()) {
+            const SemanticSymbolRecord& existingRecord = existing.value();
+            if (existingRecord.location.startLine > 0
+                && (record.location.startLine <= 0
+                    || existingRecord.location.startLine <= record.location.startLine)) {
+                continue;
+            }
+            for (SemanticSymbolRecord& module : modules) {
+                if (module.name == record.name) {
+                    module = record;
+                    break;
+                }
+            }
+            modulesByName.insert(record.name, record);
+            continue;
+        }
+
+        modulesByName.insert(record.name, record);
+        modules.append(record);
+    }
+
+    if (modules.isEmpty())
+        return QString();
+
+    QSet<QString> instantiatedModules;
+    QHash<QString, int> outgoingInstantiationCounts;
+    for (const SemanticSymbolRecord& module : modules) {
+        if (!module.stableKey.isValid())
+            continue;
+
+        RelationshipQuery relationshipQuery;
+        relationshipQuery.symbolStableKey = module.stableKey;
+        relationshipQuery.outgoing = true;
+        relationshipQuery.types = {SymbolRelationshipEngine::INSTANTIATES};
+        const QList<RelationshipResult> relationships =
+            relationshipService.findRelationships(relationshipQuery);
+        for (const RelationshipResult& relationship : relationships) {
+            const SemanticSymbolRecord targetRecord = relationship.toSymbolRecord;
+            if (!targetRecord.isValid())
+                continue;
+
+            const bool targetIsModule = isDesignModuleDeclaration(targetRecord);
+            const QString moduleType = targetIsModule
+                ? targetRecord.name
+                : designModuleTypeForInstance(targetRecord,
+                                              relationship.toStableKey.symbolName);
+            if (moduleType.isEmpty() || !modulesByName.contains(moduleType))
+                continue;
+
+            instantiatedModules.insert(moduleType);
+            outgoingInstantiationCounts[module.name] += 1;
+        }
+    }
+
+    struct Candidate {
+        QString name;
+        QString fileName;
+        int line = 0;
+        int childCount = 0;
+        bool topLike = false;
+    };
+
+    QList<Candidate> candidates;
+    auto appendCandidate = [&](const SemanticSymbolRecord& module) {
+        Candidate candidate;
+        candidate.name = module.name;
+        candidate.fileName = normalizedDesignHierarchyFileName(
+            module.location.fileName);
+        candidate.line = module.location.startLine;
+        candidate.childCount =
+            outgoingInstantiationCounts.value(module.name);
+        candidate.topLike =
+            module.name.contains(QStringLiteral("top"), Qt::CaseInsensitive);
+        candidates.append(candidate);
+    };
+
+    for (const SemanticSymbolRecord& module : modules) {
+        if (!instantiatedModules.contains(module.name))
+            appendCandidate(module);
+    }
+    if (candidates.isEmpty()) {
+        for (const SemanticSymbolRecord& module : modules)
+            appendCandidate(module);
+    }
+
+    std::sort(candidates.begin(), candidates.end(),
+              [](const Candidate& lhs, const Candidate& rhs) {
+        if (lhs.childCount != rhs.childCount)
+            return lhs.childCount > rhs.childCount;
+        if (lhs.topLike != rhs.topLike)
+            return lhs.topLike;
+        const int nameCompare =
+            QString::compare(lhs.name, rhs.name, Qt::CaseInsensitive);
+        if (nameCompare != 0)
+            return nameCompare < 0;
+        const int fileCompare =
+            QString::compare(lhs.fileName, rhs.fileName, Qt::CaseInsensitive);
+        if (fileCompare != 0)
+            return fileCompare < 0;
+        return lhs.line < rhs.line;
+    });
+
+    return candidates.isEmpty() ? QString() : candidates.first().name;
+}
+
 DesignHierarchyReport HierarchyService::getDesignHierarchyReport(const QString& topModule) const
 {
     DesignHierarchyReport report;

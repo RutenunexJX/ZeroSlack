@@ -127,6 +127,7 @@ public:
     QList<HierarchyNode> getParents(const HierarchyQuery& query) const;
     QList<HierarchyNode> getHierarchy(const HierarchyQuery& query) const;
     HierarchyReport getHierarchyReport(const HierarchyQuery& query) const;
+    QString inferDesignTopModule() const;
     DesignHierarchyReport getDesignHierarchyReport(const QString& topModule) const;
     QStringList modulesDefinedInFile(const QString& fileName) const;
     HierarchyQuery queryForPanel(const HierarchyPanelQueryOptions& options) const;

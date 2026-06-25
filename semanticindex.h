@@ -189,6 +189,12 @@ struct SemanticDiagnostic {
     Owner owner = UnknownOwner;
 };
 
+struct SemanticFileSymbolUpdate {
+    QString fileName;
+    QList<SemanticSymbolRecord> symbolRecords;
+    QString content;
+};
+
 struct SemanticSymbolSearchQuery {
     QString text;
     QString fileName;
@@ -266,6 +272,9 @@ public:
         const QString& fileName,
         const QList<SemanticSymbolRecord>& records,
         const QString& content);
+    void updateSymbolRecordsForFiles(
+        const QList<SemanticFileSymbolUpdate>& updates,
+        bool buildRelationships = true);
     void publishCompleteSnapshot(QList<SemanticDiagnostic> diagnostics = {});
     void publishSnapshotReplacingDiagnostics(
         const QStringList& fileNames,
@@ -404,7 +413,8 @@ private:
     void replaceNativeSymbolRecordsForFile(
         const QString& fileName,
         const QList<SemanticSymbolRecord>& records,
-        const QString& content);
+        const QString& content,
+        bool rebuildIndexes = true);
     void rebuildNativeStoreIndexes();
     QList<SemanticSymbolRecord> nativeSymbolRecords(
         const QString& fileName = QString()) const;

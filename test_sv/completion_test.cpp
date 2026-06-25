@@ -31,9 +31,11 @@
 #include <QColor>
 #include <QCoreApplication>
 #include <QDir>
+#include <QDirIterator>
 #include <QElapsedTimer>
 #include <QEventLoop>
 #include <QFile>
+#include <QFileInfo>
 #include <QTextDocument>
 #include <QTextLayout>
 #include <QTextStream>
@@ -241,6 +243,17 @@ static const WavePreviewAssignment* firstWaveAssignment(
     if (!lane || lane->assignments.isEmpty())
         return nullptr;
     return &lane->assignments.first();
+}
+
+static const WavePreviewTraceSignal* waveTraceSignalNamed(
+    const WavePreviewReport& report,
+    const QString& name)
+{
+    for (const WavePreviewTraceSignal& signal : report.trace.traceSignals) {
+        if (signal.signalName == name)
+            return &signal;
+    }
+    return nullptr;
 }
 
 static QStringList waveEdgeLabels(const QList<WavePreviewEdgeSignal>& edges)
@@ -2471,6 +2484,178 @@ int main(int argc, char** argv) {
                        == QStringList{QStringLiteral("if en && ?: sel")},
                true);
 
+    const QString rstGenPath =
+        QFileInfo(path).dir().absoluteFilePath(
+            QStringLiteral("new/elec_phy_import/top/rst_gen.v"));
+    QFile rstGenFile(rstGenPath);
+    const bool rstGenOpened =
+        rstGenFile.open(QIODevice::ReadOnly | QFile::Text);
+    expectBool("WavePreview rst_gen fixture opens",
+               rstGenOpened,
+               true);
+    QString rstGenInput;
+    if (rstGenOpened) {
+        rstGenInput = QTextStream(&rstGenFile).readAll();
+        rstGenFile.close();
+    }
+    const WavePreviewReport rstGenReport =
+        WavePreviewService::getInstance()->previewForDocument(
+            {rstGenPath, rstGenInput});
+    expectBool("WavePreview rst_gen full file shape",
+               rstGenReport.available
+                   && rstGenReport.blocks.size() == 2
+                   && rstGenReport.assignmentCount == 6
+                   && waveLaneNamed(rstGenReport, QStringLiteral("srst_o"))
+                   && waveLaneNamed(rstGenReport, QStringLiteral("srst_n_o"))
+                   && waveLaneNamed(rstGenReport, QStringLiteral("cnt"))
+                   && waveLaneNamed(rstGenReport, QStringLiteral("srst")),
+               true);
+    const WavePreviewTraceSignal* rstCntTrace =
+        waveTraceSignalNamed(rstGenReport, QStringLiteral("cnt"));
+    const WavePreviewTraceSignal* rstSrstTrace =
+        waveTraceSignalNamed(rstGenReport, QStringLiteral("srst"));
+    const WavePreviewTraceSignal* rstSrstOTrace =
+        waveTraceSignalNamed(rstGenReport, QStringLiteral("srst_o"));
+    const WavePreviewTraceSignal* rstSrstNOTrace =
+        waveTraceSignalNamed(rstGenReport, QStringLiteral("srst_n_o"));
+    expectBool("WavePreview rst_gen local waveform trace",
+               rstGenReport.trace.isValid()
+                   && rstCntTrace
+                   && rstCntTrace->values
+                       == QStringList{QStringLiteral("1"),
+                                      QStringLiteral("0"),
+                                      QStringLiteral("0"),
+                                      QStringLiteral("0"),
+                                      QStringLiteral("0"),
+                                      QStringLiteral("0"),
+                                      QStringLiteral("0"),
+                                      QStringLiteral("0"),
+                                      QStringLiteral("0")}
+                   && rstSrstTrace
+                   && rstSrstTrace->values
+                       == QStringList{QStringLiteral("1"),
+                                      QStringLiteral("1"),
+                                      QStringLiteral("0"),
+                                      QStringLiteral("0"),
+                                      QStringLiteral("0"),
+                                      QStringLiteral("0"),
+                                      QStringLiteral("0"),
+                                      QStringLiteral("0"),
+                                      QStringLiteral("0")}
+                   && rstSrstOTrace
+                   && rstSrstOTrace->values == rstSrstTrace->values
+                   && rstSrstNOTrace
+                   && rstSrstNOTrace->values
+                       == QStringList{QStringLiteral("0"),
+                                      QStringLiteral("0"),
+                                      QStringLiteral("1"),
+                                      QStringLiteral("1"),
+                                      QStringLiteral("1"),
+                                      QStringLiteral("1"),
+                                      QStringLiteral("1"),
+                                      QStringLiteral("1"),
+                                      QStringLiteral("1")},
+               true);
+
+    const int firstRstAlways =
+        rstGenInput.indexOf(QStringLiteral("always@"));
+    const int secondRstAlways =
+        firstRstAlways >= 0
+            ? rstGenInput.indexOf(QStringLiteral("always@"), firstRstAlways + 1)
+            : -1;
+    const int rstEndmodule =
+        secondRstAlways >= 0
+            ? rstGenInput.indexOf(QStringLiteral("endmodule"), secondRstAlways)
+            : -1;
+    WavePreviewQuery rstSecondAlwaysQuery;
+    rstSecondAlwaysQuery.fileName = rstGenPath;
+    rstSecondAlwaysQuery.documentText = rstGenInput;
+    rstSecondAlwaysQuery.scopeStartPosition = secondRstAlways;
+    rstSecondAlwaysQuery.scopeEndPosition = rstEndmodule;
+    rstSecondAlwaysQuery.scopeLabel = QStringLiteral("selected rst always");
+    const WavePreviewReport rstSecondAlwaysReport =
+        WavePreviewService::getInstance()->previewForDocument(
+            rstSecondAlwaysQuery);
+    const WavePreviewLane* rstSelectedSrstLane =
+        waveLaneNamed(rstSecondAlwaysReport, QStringLiteral("srst"));
+    expectBool("WavePreview rst_gen selected always scope",
+               rstSecondAlwaysReport.scoped
+                   && rstSecondAlwaysReport.scopeLabel
+                       == QStringLiteral("selected rst always")
+                   && rstSecondAlwaysReport.available
+                   && rstSecondAlwaysReport.blocks.size() == 1
+                   && rstSecondAlwaysReport.assignmentCount == 2
+                   && rstSelectedSrstLane
+                   && rstSelectedSrstLane->assignments.size() == 2
+                   && rstSelectedSrstLane->summary.sequentialEventCount == 2
+                   && !waveLaneNamed(rstSecondAlwaysReport,
+                                     QStringLiteral("cnt"))
+                   && !waveLaneNamed(rstSecondAlwaysReport,
+                                     QStringLiteral("srst_o"))
+                   && !waveLaneNamed(rstSecondAlwaysReport,
+                                     QStringLiteral("srst_n_o")),
+               true);
+    const WavePreviewTraceSignal* rstSelectedTrace =
+        waveTraceSignalNamed(rstSecondAlwaysReport, QStringLiteral("srst"));
+    expectBool("WavePreview rst_gen selected always waveform",
+               rstSecondAlwaysReport.trace.isValid()
+                   && rstSelectedTrace
+                   && rstSelectedTrace->values
+                       == QStringList{QStringLiteral("1"),
+                                      QStringLiteral("1"),
+                                      QStringLiteral("1"),
+                                      QStringLiteral("1"),
+                                      QStringLiteral("1"),
+                                      QStringLiteral("1"),
+                                      QStringLiteral("1"),
+                                      QStringLiteral("1"),
+                                      QStringLiteral("1")},
+               true);
+
+    const QString newProjectRoot =
+        QFileInfo(path).dir().absoluteFilePath(QStringLiteral("new"));
+    QDirIterator waveProjectFiles(
+        newProjectRoot,
+        QStringList{QStringLiteral("*.v"),
+                    QStringLiteral("*.sv"),
+                    QStringLiteral("*.svh")},
+        QDir::Files,
+        QDirIterator::Subdirectories);
+    int waveProjectFileCount = 0;
+    int waveProjectAvailableReports = 0;
+    int waveProjectAssignments = 0;
+    int waveProjectBlocks = 0;
+    int waveProjectLanes = 0;
+    QStringList waveProjectOpenFailures;
+    while (waveProjectFiles.hasNext()) {
+        const QString projectFilePath = waveProjectFiles.next();
+        QFile projectFile(projectFilePath);
+        if (!projectFile.open(QIODevice::ReadOnly | QFile::Text)) {
+            waveProjectOpenFailures.append(projectFilePath);
+            continue;
+        }
+        const QString projectText = QTextStream(&projectFile).readAll();
+        projectFile.close();
+        ++waveProjectFileCount;
+
+        const WavePreviewReport projectReport =
+            WavePreviewService::getInstance()->previewForDocument(
+                {projectFilePath, projectText});
+        if (projectReport.available)
+            ++waveProjectAvailableReports;
+        waveProjectAssignments += projectReport.assignmentCount;
+        waveProjectBlocks += projectReport.blocks.size();
+        waveProjectLanes += projectReport.lanes.size();
+    }
+    expectBool("WavePreview scans full test_sv/new project",
+               waveProjectOpenFailures.isEmpty()
+                   && waveProjectFileCount >= 25
+                   && waveProjectAvailableReports >= 10
+                   && waveProjectAssignments >= 50
+                   && waveProjectBlocks >= 20
+                   && waveProjectLanes >= 20,
+               true);
+
     const QString planRoot =
         QDir::current().absoluteFilePath(QStringLiteral("test_sv/huge_plan"));
     const QString planA = QDir(planRoot).absoluteFilePath(QStringLiteral("a.sv"));
@@ -2841,11 +3026,9 @@ int main(int argc, char** argv) {
     foregroundProject.systemVerilogFiles = {foregroundFile};
     foregroundProject.includeDirs = {foregroundWorkspace.path()};
     foregroundScheduler.requestWorkspaceAnalysis(foregroundProject);
-    expectBool("Workspace foreground refresh starts open docs first",
-               foregroundStartedOrder.size() >= 2
+    expectBool("Workspace foreground analysis avoids duplicate open-doc refresh",
+               foregroundStartedOrder.size() == 1
                    && foregroundStartedOrder.first()
-                       == QStringLiteral("open_tabs")
-                   && foregroundStartedOrder.at(1)
                        == foregroundProject.workspaceRoot,
                true);
     expectBool("Workspace plan signal reports foreground priority",

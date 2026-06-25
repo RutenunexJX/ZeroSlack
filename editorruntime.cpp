@@ -22,6 +22,8 @@
 #include "formatterservice.h"
 
 namespace {
+constexpr int kMaxPassiveGhostAnnotationCharacters = 2 * 1024 * 1024;
+
 bool hasCommandModifier(QKeyEvent* event)
 {
     if (!event)
@@ -1038,6 +1040,11 @@ void MyCodeEditorState::setSemanticDecorations(
 void MyCodeEditorState::refreshGhostAnnotations(MyCodeEditor* editor)
 {
     if (!editor || identity.current().isEmpty()) {
+        setGhostAnnotations(editor, {});
+        return;
+    }
+    if (editor->document()->characterCount()
+        > kMaxPassiveGhostAnnotationCharacters) {
         setGhostAnnotations(editor, {});
         return;
     }

@@ -8,34 +8,59 @@ QIcon NavigationWidget::getFileIcon(const QString& filePath)
 {
     const SymbolTaxonomy::SourceRole role =
         SymbolTaxonomy::sourceRoleForFileName(filePath);
+    const int cacheKey = static_cast<int>(role);
+    const auto cached = fileIconCache.constFind(cacheKey);
+    if (cached != fileIconCache.constEnd())
+        return cached.value();
+
+    QIcon icon;
     if (role == SymbolTaxonomy::SourceRole::DesignSource) {
-        return style()->standardIcon(QStyle::SP_FileIcon);
+        icon = style()->standardIcon(QStyle::SP_FileIcon);
     } else if (SymbolTaxonomy::isHeaderSourceRole(role)) {
-        return style()->standardIcon(QStyle::SP_FileDialogDetailedView);
+        icon = style()->standardIcon(QStyle::SP_FileDialogDetailedView);
+    } else {
+        icon = style()->standardIcon(QStyle::SP_FileIcon);
     }
 
-    return style()->standardIcon(QStyle::SP_FileIcon);
+    fileIconCache.insert(cacheKey, icon);
+    return icon;
 }
 
 QIcon NavigationWidget::getSymbolIcon(SymbolOutlineIconKind iconKind)
 {
+    const int cacheKey = static_cast<int>(iconKind);
+    const auto cached = symbolIconCache.constFind(cacheKey);
+    if (cached != symbolIconCache.constEnd())
+        return cached.value();
+
+    QIcon icon;
     switch (iconKind) {
     case SymbolOutlineIconKind::Module:
-        return style()->standardIcon(QStyle::SP_ComputerIcon);
+        icon = style()->standardIcon(QStyle::SP_ComputerIcon);
+        break;
     case SymbolOutlineIconKind::Signal:
-        return style()->standardIcon(QStyle::SP_DialogApplyButton);
+        icon = style()->standardIcon(QStyle::SP_DialogApplyButton);
+        break;
     case SymbolOutlineIconKind::Subroutine:
-        return style()->standardIcon(QStyle::SP_MediaPlay);
+        icon = style()->standardIcon(QStyle::SP_MediaPlay);
+        break;
     case SymbolOutlineIconKind::Parameter:
-        return style()->standardIcon(QStyle::SP_FileDialogDetailedView);
+        icon = style()->standardIcon(QStyle::SP_FileDialogDetailedView);
+        break;
     case SymbolOutlineIconKind::Port:
-        return style()->standardIcon(QStyle::SP_ArrowRight);
+        icon = style()->standardIcon(QStyle::SP_ArrowRight);
+        break;
     case SymbolOutlineIconKind::Instance:
-        return style()->standardIcon(QStyle::SP_DirIcon);
+        icon = style()->standardIcon(QStyle::SP_DirIcon);
+        break;
     case SymbolOutlineIconKind::Type:
-        return style()->standardIcon(QStyle::SP_FileIcon);
+        icon = style()->standardIcon(QStyle::SP_FileIcon);
+        break;
     case SymbolOutlineIconKind::Symbol:
     default:
-        return style()->standardIcon(QStyle::SP_FileIcon);
+        icon = style()->standardIcon(QStyle::SP_FileIcon);
+        break;
     }
+    symbolIconCache.insert(cacheKey, icon);
+    return icon;
 }

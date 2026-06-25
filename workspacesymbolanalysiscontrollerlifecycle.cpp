@@ -4,7 +4,61 @@
 #include "semanticindex.h"
 #include "symbolanalyzer.h"
 
+#include <QFileInfo>
+
 namespace {
+struct WorkspaceSizeProfile {
+    int totalFiles = 0;
+    qint64 totalBytes = 0;
+    qint64 largestFileBytes = 0;
+};
+
+WorkspaceSizeProfile sizeProfileForProject(const ProjectSnapshot& project)
+{
+    WorkspaceSizeProfile profile;
+    profile.totalFiles = project.systemVerilogFiles.size();
+    for (const QString& fileName : project.systemVerilogFiles) {
+        const qint64 size = QFileInfo(fileName).size();
+        if (size <= 0)
+            continue;
+        profile.totalBytes += size;
+        profile.largestFileBytes = qMax(profile.largestFileBytes, size);
+    }
+    return profile;
+}
+
+struct WorkspaceAutomaticAnalysisBudget {
+    ProjectSnapshot project;
+    WorkspaceSizeProfile profile;
+    int automaticFileCount = 0;
+
+    int deferredFileCount() const
+    {
+        return qMax(0, profile.totalFiles - automaticFileCount);
+    }
+
+    bool hasDeferredFiles() const
+    {
+        return deferredFileCount() > 0;
+    }
+
+    bool hasAutomaticFiles() const
+    {
+        return automaticFileCount > 0;
+    }
+};
+
+WorkspaceAutomaticAnalysisBudget automaticAnalysisBudgetForPlan(
+    const ProjectSnapshot& originalProject,
+    const WorkspaceAnalysisPlan& plan)
+{
+    WorkspaceAutomaticAnalysisBudget budget;
+    budget.profile = sizeProfileForProject(originalProject);
+    budget.project = plan.project;
+    budget.automaticFileCount = budget.project.systemVerilogFiles.size();
+    return budget;
+}
+
 QHash<QString, SemanticAnalysisBandMetadata> semanticBandMetadataForPlan(
     const WorkspaceAnalysisPlan& plan)
 {
@@ -60,19 +114,40 @@ void WorkspaceSymbolAnalysisController::startWorkspaceAnalysis(
         : QList<DocumentSnapshot>();
     const WorkspaceAnalysisPlan plan =
         WorkspaceAnalysisPlanService::getInstance()->planForWorkspace(query);
+    const WorkspaceAutomaticAnalysisBudget budget =
+        automaticAnalysisBudgetForPlan(project, plan);
 
     symbolAnalyzer->setWorkspaceProtectedFiles(plan.protectedFiles);
     symbolAnalyzer->setWorkspacePriorityPublicationCheckpoints(
         plan.priorityPublicationCheckpoints);
     symbolAnalyzer->setWorkspaceFileAnalysisBands(
         semanticBandMetadataForPlan(plan));
-    requestQueue.start(project);
-    activeProject = project;
-    workspaceAnalysisActive = true;
-    emit diagnosticsRefreshRequested(QString());
     emit workspaceAnalysisPlanPrepared(plan);
-    emit workspaceSymbolAnalysisStarted(project, project.systemVerilogFiles.size());
-    symbolAnalyzer->startAnalyzeProjectAsync(plan.isValid() ? plan.project : project,
+
+    if (budget.hasDeferredFiles()) {
+        emit workspaceSymbolAnalysisDeferred(project,
+                                             budget.profile.totalFiles,
+                                             budget.profile.totalBytes,
+                                             budget.profile.largestFileBytes);
+    }
+
+    if (!budget.hasAutomaticFiles()) {
+        requestQueue.clear();
+        activeProject = ProjectSnapshot();
+        workspaceAnalysisActive = false;
+        activeWorkspaceAnalysisComplete = false;
+        emit diagnosticsRefreshRequested(QString());
+        return;
+    }
+
+    requestQueue.start(project);
+    activeProject = budget.project;
+    workspaceAnalysisActive = true;
+    activeWorkspaceAnalysisComplete = !budget.hasDeferredFiles();
+    emit diagnosticsRefreshRequested(QString());
+    emit workspaceSymbolAnalysisStarted(budget.project,
+                                        budget.project.systemVerilogFiles.size());
+    symbolAnalyzer->startAnalyzeProjectAsync(budget.project,
                                              cancelProvider);
 }
 
@@ -87,6 +162,7 @@ void WorkspaceSymbolAnalysisController::cancelWorkspaceAnalysis()
     const WorkspaceAnalysisRequestTelemetry telemetry = requestQueue.cancel();
     workspaceAnalysisActive = false;
     activeProject = ProjectSnapshot();
+    activeWorkspaceAnalysisComplete = true;
     emit workspaceSymbolAnalysisCancelled(telemetry);
     if (symbolAnalyzer)
         symbolAnalyzer->expireWorkspaceAnalysis();
@@ -99,6 +175,7 @@ void WorkspaceSymbolAnalysisController::clearProjectSemanticState()
 
     projectSemanticStateCleared = true;
     workspaceAnalysisActive = false;
+    activeWorkspaceAnalysisComplete = true;
     requestQueue.clear();
     activeProject = ProjectSnapshot();
     if (symbolAnalyzer) {
@@ -144,8 +221,11 @@ void WorkspaceSymbolAnalysisController::onWorkspaceSymbolAnalysisCompleted(
     if (cancelProvider && cancelProvider())
         return;
 
+    const bool completeWorkspaceAnalysis = activeWorkspaceAnalysisComplete;
     emit workspaceSymbolAnalysisFinished(project, filesAnalyzed, totalSymbols);
-    emit workspaceRelationshipAnalysisRequested(project);
+    if (completeWorkspaceAnalysis)
+        emit workspaceRelationshipAnalysisRequested(project);
+    activeWorkspaceAnalysisComplete = true;
 }
 
 void WorkspaceSymbolAnalysisController::onWorkspaceSymbolAnalysisExpired()
@@ -159,6 +239,7 @@ void WorkspaceSymbolAnalysisController::onWorkspaceSymbolAnalysisExpired()
     emit workspaceAnalysisRequestResolved(requestQueue.telemetry());
     workspaceAnalysisActive = false;
     activeProject = ProjectSnapshot();
+    activeWorkspaceAnalysisComplete = true;
     if (hasPending)
         requestWorkspaceAnalysis(pendingProject);
 }

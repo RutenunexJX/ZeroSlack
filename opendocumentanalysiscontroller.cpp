@@ -7,6 +7,10 @@
 
 #include <QTimer>
 
+namespace {
+constexpr int kAsyncOpenDocumentAnalysisCharacters = 2 * 1024 * 1024;
+}
+
 OpenDocumentAnalysisController::OpenDocumentAnalysisController(QObject* parent)
     : QObject(parent)
 {
@@ -57,6 +61,11 @@ void OpenDocumentAnalysisController::handleDocumentEdited(
     if (content.isNull())
         return;
 
+    if (content.size() > kAsyncOpenDocumentAnalysisCharacters) {
+        scheduleOpenFileAnalysis(snapshot.fileName, 1500);
+        return;
+    }
+
     if (isWorkspaceOpen()) {
         const QString cachedContent =
             SemanticIndex::getInstance()->getCachedFileContent(snapshot.fileName);
@@ -97,6 +106,12 @@ void OpenDocumentAnalysisController::analyzeOpenDocumentNow(
 
     if (skipUnchanged
         && !SemanticIndex::getInstance()->contentAffectsSymbols(snapshot.fileName, content)) {
+        emit documentRefreshRequested(snapshot.fileName);
+        return;
+    }
+
+    if (content.size() > kAsyncOpenDocumentAnalysisCharacters) {
+        symbolAnalyzer->analyzeFileContentAsync(snapshot.fileName, content);
         emit documentRefreshRequested(snapshot.fileName);
         return;
     }

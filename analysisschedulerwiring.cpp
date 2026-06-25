@@ -102,7 +102,6 @@ void AnalysisScheduler::setupWorkspaceSymbolAnalysis()
             &WorkspaceSymbolAnalysisController::workspaceSymbolAnalysisStarted,
             this,
             [this](const ProjectSnapshot& project, int totalFiles) {
-                refreshOpenDocumentsForForegroundAnalysis();
                 emit workspaceSymbolAnalysisStarted(project, totalFiles);
             });
     connect(workspaceSymbolAnalysis,
@@ -128,6 +127,10 @@ void AnalysisScheduler::setupWorkspaceSymbolAnalysis()
                 refreshOpenDocumentsForForegroundAnalysis();
                 emit workspaceSymbolAnalysisFinished(project, filesAnalyzed, totalSymbols);
             });
+    connect(workspaceSymbolAnalysis,
+            &WorkspaceSymbolAnalysisController::workspaceSymbolAnalysisDeferred,
+            this,
+            &AnalysisScheduler::workspaceSymbolAnalysisDeferred);
 }
 
 void AnalysisScheduler::setupDiagnosticsRefreshAndWorkspaceRequests()

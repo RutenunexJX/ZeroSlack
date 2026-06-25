@@ -20,6 +20,10 @@ public:
     void syncText(const QString& text);
     void createHighlighter(QTextDocument* textDocument);
     void attachToEditor(MyCodeEditor* editor);
+    void applyDocumentChange(int position,
+                             int charsRemoved,
+                             int charsAdded,
+                             QTextDocument* textDocument);
     void applyEdit(int position,
                    int charsRemoved,
                    int charsAdded,
@@ -30,6 +34,7 @@ public:
 private:
     std::unique_ptr<TSDocument> document;
     MyHighlighter* highlighter = nullptr;
+    bool interactiveSyntaxEnabled = true;
 };
 
 #endif // EDITORSYNTAXSTATE_H

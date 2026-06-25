@@ -148,7 +148,8 @@ QStringList scopeSymbolNamesForRecords(
 void SemanticIndex::replaceNativeSymbolRecordsForFile(
     const QString& fileName,
     const QList<SemanticSymbolRecord>& records,
-    const QString& content)
+    const QString& content,
+    bool rebuildIndexes)
 {
     const QString normalizedTarget = normalizedStoreFileName(fileName);
     if (normalizedTarget.isEmpty())
@@ -172,9 +173,17 @@ void SemanticIndex::replaceNativeSymbolRecordsForFile(
     }
 
     QSet<int> nextHandles;
-    m_nativeFileContents.insert(fileName, content);
-    if (fileName != normalizedTarget)
-        m_nativeFileContents.insert(normalizedTarget, content);
+    const bool hasContent = !content.isNull();
+    if (hasContent) {
+        m_nativeFileContents.insert(fileName, content);
+        if (fileName != normalizedTarget)
+            m_nativeFileContents.insert(normalizedTarget, content);
+    } else {
+        m_nativeFileContents.remove(fileName);
+        m_nativeFileContents.remove(normalizedTarget);
+        m_nativeFileStates.remove(fileName);
+        m_nativeFileStates.remove(normalizedTarget);
+    }
 
     for (SemanticSymbolRecord record : records) {
         if (!record.isValid())
@@ -196,8 +205,10 @@ void SemanticIndex::replaceNativeSymbolRecordsForFile(
     }
     m_nativeRecordHandlesByAnalysisFile.insert(normalizedTarget, nextHandles);
 
-    rebuildNativeStoreIndexes();
-    updateNativeFileState(fileName, content);
+    if (rebuildIndexes)
+        rebuildNativeStoreIndexes();
+    if (hasContent)
+        updateNativeFileState(fileName, content);
 }
 
 void SemanticIndex::rebuildNativeStoreIndexes()
@@ -375,6 +386,28 @@ void SemanticIndex::updateSymbolRecordsForFile(
 
     if (m_relationshipEngine)
         m_relationshipEngine->buildFileRelationships(fileName);
+}
+
+void SemanticIndex::updateSymbolRecordsForFiles(
+    const QList<SemanticFileSymbolUpdate>& updates,
+    bool buildRelationships)
+{
+    if (updates.isEmpty())
+        return;
+
+    for (const SemanticFileSymbolUpdate& update : updates) {
+        replaceNativeSymbolRecordsForFile(update.fileName,
+                                          update.symbolRecords,
+                                          update.content,
+                                          false);
+    }
+
+    rebuildNativeStoreIndexes();
+
+    if (!buildRelationships || !m_relationshipEngine)
+        return;
+    for (const SemanticFileSymbolUpdate& update : updates)
+        m_relationshipEngine->buildFileRelationships(update.fileName);
 }
 
 QList<SemanticSymbolRecord> SemanticIndex::getSymbolRecords(

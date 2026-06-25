@@ -36,8 +36,18 @@ void NavigationManager::connectToTabManager(TabManager* tabManager)
 
         connect(connectedTabManager, &TabManager::tabClosed,
                 this, [this](const QString&) {
-                    // Closed tabs can remove entries from the current view.
-                    refreshCurrentView();
+                    if (connectedWorkspaceManager
+                        && connectedWorkspaceManager->isWorkspaceOpen()) {
+                        if (currentView == SymbolHierarchyView) {
+                            caches.clearSymbolOutline();
+                            refreshSymbolHierarchy();
+                        }
+                        return;
+                    }
+
+                    caches.clearFileList();
+                    if (currentView == FileHierarchyView)
+                        refreshFileHierarchy();
                 });
     }
 }
@@ -65,29 +75,26 @@ void NavigationManager::connectToWorkspaceManager(WorkspaceManager* workspaceMan
                     caches.clearModuleHierarchy();
                     caches.clearDesignHierarchy();
                     caches.designTopModule.clear();
+                    caches.designTopInferred = true;
                     refreshCurrentView();
                 });
 
         connect(connectedWorkspaceManager, &WorkspaceManager::filesScanned,
                 this, [this](const QStringList&) {
-                    // A rescan can affect every navigation view.
                     caches.clearFileList();
-                    caches.clearModuleHierarchy();
-                    refreshCurrentView();
+                    if (currentView == FileHierarchyView)
+                        refreshFileHierarchy();
                 });
 
         connect(connectedWorkspaceManager, &WorkspaceManager::fileChanged,
                 this, [this](const QString& filePath) {
-                    // Module hierarchy depends on global relationship edges, so refresh it as a whole.
-                    if (currentView == ModuleHierarchyView) {
-                        caches.clearModuleHierarchy();
-                        refreshModuleHierarchy();
-                    } else if (currentView == SymbolHierarchyView
-                               && context.currentFileName == filePath) {
+                    if (currentView == SymbolHierarchyView
+                        && context.currentFileName == filePath) {
                         caches.clearSymbolOutline();
                         refreshSymbolHierarchy();
                     } else if (currentView == DesignHierarchyView) {
                         caches.clearDesignHierarchy();
+                        refreshDesignHierarchy();
                     }
                 });
     }

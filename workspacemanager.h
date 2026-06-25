@@ -9,6 +9,9 @@
 #include <QStringList>
 #include <memory>
 
+class QDirIterator;
+class QTimer;
+
 class WorkspaceManager : public QObject
 {
     Q_OBJECT
@@ -53,11 +56,17 @@ signals:
     void fileChanged(const QString& filePath);
     void directoryChanged(const QString& dirPath);
     void filesScanned(const QStringList& svFiles);
+    void workspaceScanStarted(const QString& path);
+    void workspaceScanProgress(const QString& path, int filesFound);
+    void workspaceScanFinished(const QString& path,
+                               int totalFiles,
+                               int systemVerilogFiles);
     void projectChanged(const ProjectSnapshot& snapshot);
 
 private slots:
     void onFileChanged(const QString& path);
     void onDirectoryChanged(const QString& path);
+    void processDirectoryScanChunk();
 
 private:
     struct WorkspaceFiles {
@@ -89,9 +98,15 @@ private:
     WorkspaceFiles files;
     WorkspaceWatcher watcher;
     std::unique_ptr<ProjectModel> projectModel;
+    std::unique_ptr<QDirIterator> scanIterator;
+    QStringList pendingScannedFiles;
+    QString scanningPath;
+    QTimer* scanTimer = nullptr;
 
     // Helper methods
-    void scanDirectory(const QString& path);
+    void startDirectoryScan(const QString& path);
+    void finishDirectoryScan();
+    void cancelDirectoryScan();
     void updateFileWatcher();
     bool activateWorkspacePath(const QString& path,
                                const QString& alias,

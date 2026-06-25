@@ -109,6 +109,27 @@ void AnalysisProgressCoordinator::connectToScheduler(AnalysisScheduler* newSched
             this,
             &AnalysisProgressCoordinator::handleWorkspaceSymbolAnalysisFinished);
     connect(scheduler,
+            &AnalysisScheduler::workspaceSymbolAnalysisDeferred,
+            this,
+            [this](const ProjectSnapshot& project,
+                   int totalFiles,
+                   qint64 totalBytes,
+                   qint64 largestFileBytes) {
+                Q_UNUSED(project)
+                const QString message =
+                    QStringLiteral("Workspace background deferred: %1 files, %2 MB total, largest %3 MB")
+                        .arg(totalFiles)
+                        .arg(totalBytes / (1024.0 * 1024.0), 0, 'f', 1)
+                        .arg(largestFileBytes / (1024.0 * 1024.0), 0, 'f', 1);
+                ActivityLogService::getInstance()->append(
+                    QStringLiteral("Analyzer"),
+                    ActivityLogLevel::Warning,
+                    message);
+                emit statusMessageRequested(
+                    QStringLiteral("Workspace background analysis deferred; open files are analyzed on demand"),
+                    5000);
+            });
+    connect(scheduler,
             &AnalysisScheduler::workspaceAnalysisRequestQueued,
             this,
             &AnalysisProgressCoordinator::handleWorkspaceAnalysisRequestQueued);

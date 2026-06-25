@@ -3,11 +3,16 @@
 #include "semanticindex.h"
 
 #include <QDir>
+#include <QElapsedTimer>
 #include <QFileInfo>
 #include <QSet>
+#include <QTimer>
 #include <algorithm>
+#include <utility>
 
 namespace {
+constexpr int kWorkspacePublicationChunkFiles = 12;
+constexpr qint64 kWorkspacePublicationChunkBudgetMs = 8;
 
 QString normalizedSymbolAnalyzerFileName(const QString& fileName)
 {
@@ -138,4 +143,157 @@ int SymbolAnalyzer::publishWorkspaceAnalysisResult(
     semanticIndex->publishSnapshotReplacingDiagnostics(analyzedFiles,
                                                        diagnostics);
     return filesAnalyzed;
+}
+
+void SymbolAnalyzer::startWorkspacePublication(
+    WorkspaceAnalysisResult result,
+    int totalFiles,
+    const QString& workspacePath)
+{
+    cancelWorkspacePublication();
+
+    pendingWorkspacePublication =
+        std::make_unique<WorkspaceAnalysisResult>(std::move(result));
+    pendingWorkspacePublicationTotalFiles = totalFiles;
+    pendingWorkspacePublicationPath = workspacePath;
+    pendingWorkspacePublicationProtectedFiles =
+        normalizedFileSet(pendingWorkspacePublication->protectedFiles);
+    pendingWorkspacePublicationCheckpoints =
+        publicationCheckpoints(
+            pendingWorkspacePublication->priorityPublicationCheckpoints,
+            pendingWorkspacePublication->files.size());
+    pendingWorkspacePublicationAnalyzedFiles.reserve(
+        pendingWorkspacePublication->files.size());
+    pendingWorkspacePublicationDiagnostics.reserve(
+        pendingWorkspacePublication->diagnostics.size());
+
+    for (const SemanticDiagnostic& diagnostic :
+         std::as_const(pendingWorkspacePublication->diagnostics)) {
+        if (!fileInSet(pendingWorkspacePublicationProtectedFiles,
+                       diagnostic.fileName)) {
+            pendingWorkspacePublicationDiagnostics.append(diagnostic);
+        }
+    }
+
+    SemanticIndex::getInstance()->setWorkspaceFileAnalysisBands(
+        pendingWorkspacePublication->fileAnalysisBands);
+
+    if (workspacePublicationTimer)
+        workspacePublicationTimer->start(0);
+}
+
+void SymbolAnalyzer::cancelWorkspacePublication()
+{
+    if (workspacePublicationTimer)
+        workspacePublicationTimer->stop();
+    pendingWorkspacePublication.reset();
+    pendingWorkspacePublicationPath.clear();
+    pendingWorkspacePublicationTotalFiles = 0;
+    pendingWorkspacePublicationIndex = 0;
+    pendingWorkspacePublicationFilesAnalyzed = 0;
+    pendingWorkspacePublicationPlannedVisited = 0;
+    pendingWorkspacePublicationLastSnapshotFiles = 0;
+    pendingWorkspacePublicationNextCheckpoint = 0;
+    pendingWorkspacePublicationProtectedFiles.clear();
+    pendingWorkspacePublicationCheckpoints.clear();
+    pendingWorkspacePublicationAnalyzedFiles.clear();
+    pendingWorkspacePublicationDiagnostics.clear();
+}
+
+void SymbolAnalyzer::processWorkspacePublicationChunk()
+{
+    if (!pendingWorkspacePublication) {
+        if (workspacePublicationTimer)
+            workspacePublicationTimer->stop();
+        return;
+    }
+
+    SemanticIndex* semanticIndex = SemanticIndex::getInstance();
+    QElapsedTimer chunkTimer;
+    chunkTimer.start();
+    QList<SemanticFileSymbolUpdate> updates;
+    updates.reserve(kWorkspacePublicationChunkFiles);
+    QList<QPair<int, QString>> progressEvents;
+    progressEvents.reserve(kWorkspacePublicationChunkFiles);
+    bool crossedCheckpoint = false;
+    int filesThisChunk = 0;
+
+    auto noteCrossedCheckpoints = [&]() {
+        while (pendingWorkspacePublicationNextCheckpoint
+                   < pendingWorkspacePublicationCheckpoints.size()
+               && pendingWorkspacePublicationPlannedVisited
+                      >= pendingWorkspacePublicationCheckpoints.at(
+                          pendingWorkspacePublicationNextCheckpoint)) {
+            ++pendingWorkspacePublicationNextCheckpoint;
+            crossedCheckpoint = true;
+        }
+    };
+
+    while (pendingWorkspacePublicationIndex
+           < pendingWorkspacePublication->files.size()) {
+        const WorkspaceFileAnalysis& fileResult =
+            pendingWorkspacePublication->files.at(
+                pendingWorkspacePublicationIndex);
+        ++pendingWorkspacePublicationIndex;
+        ++pendingWorkspacePublicationPlannedVisited;
+        ++filesThisChunk;
+
+        const bool protectedFile =
+            fileInSet(pendingWorkspacePublicationProtectedFiles,
+                      fileResult.fileName);
+        if (protectedFile) {
+            noteCrossedCheckpoints();
+        } else {
+            SemanticFileSymbolUpdate update;
+            update.fileName = fileResult.fileName;
+            update.symbolRecords = fileResult.symbolRecords;
+            update.content = fileResult.content;
+            updates.append(std::move(update));
+            pendingWorkspacePublicationAnalyzedFiles.append(
+                fileResult.fileName);
+            ++pendingWorkspacePublicationFilesAnalyzed;
+            progressEvents.append(
+                {pendingWorkspacePublicationFilesAnalyzed,
+                 fileResult.fileName});
+            noteCrossedCheckpoints();
+        }
+
+        if (filesThisChunk >= kWorkspacePublicationChunkFiles
+            || chunkTimer.elapsed() >= kWorkspacePublicationChunkBudgetMs) {
+            break;
+        }
+    }
+
+    semanticIndex->updateSymbolRecordsForFiles(updates, false);
+    for (const auto& progressEvent : std::as_const(progressEvents)) {
+        emit batchProgress(progressEvent.first,
+                           pendingWorkspacePublicationTotalFiles,
+                           progressEvent.second);
+    }
+
+    if (crossedCheckpoint
+        && pendingWorkspacePublicationFilesAnalyzed
+               > pendingWorkspacePublicationLastSnapshotFiles) {
+        semanticIndex->setSnapshot(
+            semanticIndex->captureSnapshotPreservingDiagnostics());
+        pendingWorkspacePublicationLastSnapshotFiles =
+            pendingWorkspacePublicationFilesAnalyzed;
+    }
+
+    if (pendingWorkspacePublicationIndex
+        < pendingWorkspacePublication->files.size()) {
+        return;
+    }
+
+    const int filesAnalyzed = pendingWorkspacePublicationFilesAnalyzed;
+    const int totalSymbols = pendingWorkspacePublication->totalSymbols;
+    const QString workspacePath = pendingWorkspacePublicationPath;
+
+    semanticIndex->publishSnapshotReplacingDiagnostics(
+        pendingWorkspacePublicationAnalyzedFiles,
+        pendingWorkspacePublicationDiagnostics);
+    cancelWorkspacePublication();
+
+    emit batchAnalysisCompleted(filesAnalyzed, totalSymbols);
+    emit analysisCompleted(workspacePath, totalSymbols);
 }

@@ -1671,6 +1671,13 @@ static QComboBox* problemsScopeCombo(MainWindow& window)
         : nullptr;
 }
 
+static QComboBox* problemsBandCombo(MainWindow& window)
+{
+    return window.semanticDocks && window.semanticDocks->problemsPanelCoordinator()
+        ? window.semanticDocks->problemsPanelCoordinator()->bandCombo()
+        : nullptr;
+}
+
 static QTreeWidget* referencesTree(MainWindow& window)
 {
     return window.semanticDocks && window.semanticDocks->referencesPanelCoordinator()
@@ -3454,6 +3461,10 @@ static void runNavigationHierarchyModelRegression()
     HierarchyService designHierarchyService(&designIndex);
     const DesignHierarchyReport designReport =
         designHierarchyService.getDesignHierarchyReport(QStringLiteral("design_top"));
+    expectBool("design hierarchy infers top from instantiation graph",
+               designHierarchyService.inferDesignTopModule()
+                   == QStringLiteral("design_top"),
+               true);
     expectBool("design hierarchy report has top and instance",
                designReport.nodes.size() == 2,
                true);
@@ -3756,6 +3767,7 @@ int main(int argc, char** argv)
 
     MainWindow window;
     bool workspaceSymbolsDone = false;
+    bool workspaceFilesScanned = false;
     QObject::connect(window.analysisScheduler.get(),
                      &AnalysisScheduler::workspaceSymbolAnalysisFinished,
                      &window,
@@ -3763,6 +3775,12 @@ int main(int argc, char** argv)
                          Q_UNUSED(filesAnalyzed)
                          Q_UNUSED(totalSymbols)
                          workspaceSymbolsDone = true;
+                     });
+    QObject::connect(window.workspaceManager.get(),
+                     &WorkspaceManager::filesScanned,
+                     &window,
+                     [&](const QStringList&) {
+                         workspaceFilesScanned = true;
                      });
 
     window.resize(1100, 760);
@@ -3959,6 +3977,7 @@ int main(int argc, char** argv)
     bool sawWaveLaneGuardSummary = false;
     bool sawWaveLaneSummary = false;
     bool sawWaveActivityMix = false;
+    bool sawWaveformTrace = false;
     QTreeWidgetItem* waveQEventItem = nullptr;
     QTreeWidgetItem* waveQLaneItem = nullptr;
     if (waveTree) {
@@ -3977,6 +3996,8 @@ int main(int argc, char** argv)
                     && laneItem->toolTip(0).contains(
                         QStringLiteral("activity: assign 1/comb 1/seq 1"));
             }
+            if (name == QStringLiteral("Waveform Trace"))
+                sawWaveformTrace = true;
             if (name == QStringLiteral("q")) {
                 waveQLaneItem = laneItem;
                 sawWaveLaneSummary = sawWaveLaneSummary
@@ -4041,6 +4062,9 @@ int main(int argc, char** argv)
     expectBool("wave preview renders activity mix summary",
                waveTree && sawWaveActivityMix,
                true);
+    expectBool("wave preview renders local waveform trace",
+               waveTree && sawWaveformTrace,
+               true);
     const QString waveQLaneTooltip =
         waveQLaneItem ? waveQLaneItem->toolTip(0) : QString();
     expectBool("wave preview lane tooltip has summary",
@@ -4075,71 +4099,85 @@ int main(int argc, char** argv)
     if (waveCanvas) {
         const int labelWidth =
             std::min(130, std::max(84, waveCanvas->width() / 4));
-        const int timelineLeft = 10 + labelWidth;
-        const int timelineRight = waveCanvas->width() - 12;
-        const int timelineWidth = std::max(80, timelineRight - timelineLeft);
-        const QPoint qEventPoint(timelineLeft + timelineWidth / 2,
-                                 28 + 32 + 16 - 10 + 9);
-        QTest::mouseMove(waveCanvas, qEventPoint);
+        const QPoint traceLanePoint(10 + qMin(32, labelWidth - 12),
+                                    28 + 16);
+        QTest::mouseMove(waveCanvas, traceLanePoint);
         QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
         QTest::mouseClick(waveCanvas,
                           Qt::LeftButton,
                           Qt::NoModifier,
-                          qEventPoint);
-        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-        if (waveEditor) {
-            QTextCursor startCursor(waveEditor->document());
-            startCursor.movePosition(QTextCursor::Start);
-            waveEditor->setTextCursor(startCursor);
-        }
-        QTest::mouseDClick(waveCanvas,
-                           Qt::LeftButton,
-                           Qt::NoModifier,
-                           qEventPoint);
+                          traceLanePoint);
         QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
     }
-    expectBool("wave preview canvas hover has source target details",
+    expectBool("wave preview canvas hover has waveform details",
                waveCanvas
-                   && waveCanvas->toolTip().contains(QStringLiteral("target: q"))
-                   && waveCanvas->toolTip().contains(QStringLiteral("sources: data")),
+                   && waveCanvas->toolTip().contains(
+                       QStringLiteral("waveform signal:")),
                true);
-    expectBool("wave preview canvas click selects event summary",
+    expectBool("wave preview canvas click selects waveform summary",
                waveSummary
-                   && waveSummary->text().contains(QStringLiteral("Selected q"))
-                   && waveSummary->text().contains(QStringLiteral("t+1 cycle"))
-                   && waveSummary->text().contains(QStringLiteral("guard if data[0]"))
-                   && waveSummary->text().contains(QStringLiteral("sources data"))
-                   && waveSummary->text().contains(QStringLiteral("9:")),
-               true);
-    expectBool("wave preview canvas double click navigates to assignment",
-               waveCanvas
-                   && waveEditor
-                   && waveEditor->textCursor().blockNumber() + 1 == 9,
-               true);
-    if (waveCanvas) {
-        const int labelWidth =
-            std::min(130, std::max(84, waveCanvas->width() / 4));
-        const QPoint qLanePoint(10 + qMin(32, labelWidth - 12),
-                                28 + 32 + 16);
-        QTest::mouseMove(waveCanvas, qLanePoint);
-        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-        QTest::mouseClick(waveCanvas,
-                          Qt::LeftButton,
-                          Qt::NoModifier,
-                          qLanePoint);
-        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-    }
-    expectBool("wave preview canvas lane hover has summary",
-               waveCanvas
-                   && waveCanvas->toolTip().contains(QStringLiteral("signal: q"))
-                   && waveCanvas->toolTip().contains(QStringLiteral("activity: seq 1")),
-               true);
-    expectBool("wave preview canvas lane click selects lane summary",
-               waveSummary
-                   && waveSummary->text().contains(QStringLiteral("Selected lane q"))
-                   && waveSummary->text().contains(QStringLiteral("activity seq 1"))
                    && waveSummary->text().contains(
-                       QStringLiteral("context internal logic [7:0]")),
+                       QStringLiteral("Selected waveform"))
+                   && waveSummary->text().contains(
+                       QStringLiteral("values")),
+               true);
+    if (waveEditor) {
+        const QString waveSelectionText = waveEditor->toPlainText();
+        const int combStart =
+            waveSelectionText.indexOf(QStringLiteral("always_comb"));
+        const int combEnd =
+            combStart >= 0
+                ? waveSelectionText.indexOf(QStringLiteral("endmodule"),
+                                            combStart)
+                : -1;
+        if (combStart >= 0 && combEnd > combStart) {
+            QTextCursor scopeCursor(waveEditor->document());
+            scopeCursor.setPosition(combStart);
+            scopeCursor.setPosition(combEnd, QTextCursor::KeepAnchor);
+            waveEditor->setTextCursor(scopeCursor);
+        }
+    }
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    bool sawScopedLoopQ = false;
+    bool sawScopedQ = false;
+    bool sawScopedOut = false;
+    if (waveTree) {
+        for (int i = 0; i < waveTree->topLevelItemCount(); ++i) {
+            const QString name = waveTree->topLevelItem(i)->text(0);
+            sawScopedLoopQ = sawScopedLoopQ
+                || name == QStringLiteral("loop_q");
+            sawScopedQ = sawScopedQ || name == QStringLiteral("q");
+            sawScopedOut = sawScopedOut || name == QStringLiteral("out");
+        }
+    }
+    expectBool("wave preview selected scope filters lanes",
+               waveTree
+                   && sawScopedLoopQ
+                   && !sawScopedQ
+                   && !sawScopedOut
+                   && waveSummary
+                   && waveSummary->text().contains(
+                       QStringLiteral("selected lines"))
+                   && waveSummary->text().contains(
+                       QStringLiteral("local waveform")),
+               true);
+    if (waveEditor) {
+        QTextCursor clearScopeCursor(waveEditor->document());
+        clearScopeCursor.movePosition(QTextCursor::Start);
+        waveEditor->setTextCursor(clearScopeCursor);
+    }
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    bool sawRestoredQ = false;
+    bool sawRestoredOut = false;
+    if (waveTree) {
+        for (int i = 0; i < waveTree->topLevelItemCount(); ++i) {
+            const QString name = waveTree->topLevelItem(i)->text(0);
+            sawRestoredQ = sawRestoredQ || name == QStringLiteral("q");
+            sawRestoredOut = sawRestoredOut || name == QStringLiteral("out");
+        }
+    }
+    expectBool("wave preview clearing selection restores full file",
+               waveTree && sawRestoredQ && sawRestoredOut,
                true);
     if (waveEditor) {
         waveEditor->setPlainText(
@@ -4373,11 +4411,15 @@ int main(int argc, char** argv)
 
     const bool workspaceOpened = window.workspaceManager->openWorkspace(workspacePath);
     expectBool("open workspace", workspaceOpened, true);
+    expectBool("workspace file scan completes",
+               waitUntil([&]() { return workspaceFilesScanned; }, 10000),
+               true);
     bool sawWorkspaceActivity = false;
     for (const ActivityLogEvent& event : ActivityLogService::getInstance()->events()) {
         sawWorkspaceActivity = sawWorkspaceActivity
             || (event.source == QStringLiteral("Workspace")
-                && event.message.startsWith(QStringLiteral("Opened ")));
+                && (event.message.startsWith(QStringLiteral("Activated "))
+                    || event.message.startsWith(QStringLiteral("Scanned "))));
     }
     expectBool("workspace open logs activity",
                sawWorkspaceActivity,
@@ -4918,8 +4960,15 @@ int main(int argc, char** argv)
                    navigableItemCount(problemsTree(window)) == 1,
                    true);
         workspaceSymbolsDone = false;
+        workspaceFilesScanned = false;
+        if (problemsBandCombo(window))
+            problemsBandCombo(window)->setCurrentIndex(
+                problemsBandCombo(window)->findText(QStringLiteral("All Bands")));
         expectBool("reopen workspace after close",
                    window.workspaceManager->openWorkspace(workspacePath), true);
+        expectBool("reopened workspace file scan completes",
+                   waitUntil([&]() { return workspaceFilesScanned; }, 10000),
+                   true);
         expectBool("problems preserve external diagnostic on workspace analysis start",
                    waitUntil([&]() {
                        return navigableItemCount(problemsTree(window)) == 1;

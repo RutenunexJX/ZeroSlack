@@ -40,6 +40,10 @@ signals:
     void workspaceSymbolAnalysisFinished(const ProjectSnapshot& project,
                                          int filesAnalyzed,
                                          int totalSymbols);
+    void workspaceSymbolAnalysisDeferred(const ProjectSnapshot& project,
+                                         int totalFiles,
+                                         qint64 totalBytes,
+                                         qint64 largestFileBytes);
     void diagnosticsRefreshRequested(const QString& fileName);
     void workspaceRelationshipAnalysisRequested(const ProjectSnapshot& project);
     void workspaceRelationshipAnalysisCancelRequested();
@@ -60,6 +64,7 @@ private:
     WorkspaceAnalysisRequestQueue requestQueue;
     ProjectSnapshot activeProject;
     bool workspaceAnalysisActive = false;
+    bool activeWorkspaceAnalysisComplete = true;
     bool projectSemanticStateCleared = true;
 
     void onProjectChanged(const ProjectSnapshot& project);

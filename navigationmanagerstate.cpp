@@ -42,6 +42,9 @@ void NavigationManager::NavigationCaches::reserveDefaults()
 void NavigationManager::NavigationCaches::clearFileList()
 {
     fileList.clear();
+    fileHierarchyFilter.clear();
+    fileListValid = false;
+    fileHierarchyValid = false;
 }
 
 void NavigationManager::NavigationCaches::clearModuleHierarchy()
@@ -73,4 +76,5 @@ void NavigationManager::NavigationCaches::clearAll()
     clearSymbolOutline();
     clearDesignHierarchy();
     designTopModule.clear();
+    designTopInferred = true;
 }

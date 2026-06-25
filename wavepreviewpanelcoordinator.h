@@ -23,7 +23,10 @@ public:
     void setNavigationHandler(std::function<void(const QString&, int, int)> handler);
     void refreshFromDocument(const QString& fileName,
                              const QString& documentText,
-                             bool dirty);
+                             bool dirty,
+                             int scopeStartPosition = -1,
+                             int scopeEndPosition = -1,
+                             const QString& scopeLabel = QString());
     void renderUnavailable(const QString& message);
 
     QDockWidget* dock() const { return previewDock; }
@@ -40,6 +43,9 @@ private:
     QString currentFileName;
     QString pendingFileName;
     QString pendingDocumentText;
+    QString pendingScopeLabel;
+    int pendingScopeStartPosition = -1;
+    int pendingScopeEndPosition = -1;
     bool pendingDirty = false;
     bool pendingRefresh = false;
     QString currentSummaryText;
@@ -48,12 +54,18 @@ private:
 
     void queueRefresh(const QString& fileName,
                       const QString& documentText,
-                      bool dirty);
+                      bool dirty,
+                      int scopeStartPosition,
+                      int scopeEndPosition,
+                      const QString& scopeLabel);
     void flushQueuedRefresh();
     void clearQueuedRefresh();
     void renderDocumentNow(const QString& fileName,
                            const QString& documentText,
-                           bool dirty);
+                           bool dirty,
+                           int scopeStartPosition,
+                           int scopeEndPosition,
+                           const QString& scopeLabel);
     void renderReport(const WavePreviewReport& report,
                       const QString& fileName,
                       bool dirty);

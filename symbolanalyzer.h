@@ -5,13 +5,16 @@
 #include <QStringList>
 #include <QHash>
 #include <QList>
+#include <QSet>
 #include <QVector>
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include "projectmodel.h"
 #include "semanticindex.h"
 
 class WorkspaceManager;
+class QTimer;
 template <typename T>
 class QFutureWatcher;
 
@@ -86,6 +89,7 @@ signals:
 
 private slots:
     void onWorkspaceAnalysisFinished();
+    void processWorkspacePublicationChunk();
 
 private:
     // Analysis state tracking
@@ -97,6 +101,19 @@ private:
     std::uint64_t workspaceAnalysisGeneration = 0;
 
     QFutureWatcher<WorkspaceAnalysisResult>* workspaceAnalysisWatcher = nullptr;
+    QTimer* workspacePublicationTimer = nullptr;
+    std::unique_ptr<WorkspaceAnalysisResult> pendingWorkspacePublication;
+    QString pendingWorkspacePublicationPath;
+    int pendingWorkspacePublicationTotalFiles = 0;
+    int pendingWorkspacePublicationIndex = 0;
+    int pendingWorkspacePublicationFilesAnalyzed = 0;
+    int pendingWorkspacePublicationPlannedVisited = 0;
+    int pendingWorkspacePublicationLastSnapshotFiles = 0;
+    int pendingWorkspacePublicationNextCheckpoint = 0;
+    QSet<QString> pendingWorkspacePublicationProtectedFiles;
+    QList<int> pendingWorkspacePublicationCheckpoints;
+    QStringList pendingWorkspacePublicationAnalyzedFiles;
+    QList<SemanticDiagnostic> pendingWorkspacePublicationDiagnostics;
 
     void publishOpenDocumentResults(
         const QStringList& fileNames,
@@ -113,6 +130,10 @@ private:
     int publishWorkspaceAnalysisResult(
         const WorkspaceAnalysisResult& result,
         int totalFiles);
+    void startWorkspacePublication(WorkspaceAnalysisResult result,
+                                   int totalFiles,
+                                   const QString& workspacePath);
+    void cancelWorkspacePublication();
     QString contentHash(const QString& content) const;
     void cancelWorkspaceAnalysisAndWait();
     QStringList filterSystemVerilogFiles(const QStringList& files) const;

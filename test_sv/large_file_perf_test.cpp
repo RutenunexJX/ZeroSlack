@@ -6,6 +6,7 @@
 #include <QElapsedTimer>
 #include <QFileInfo>
 #include <QSignalSpy>
+#include <QScrollBar>
 #include <QTextCursor>
 #include <QTimer>
 #include <QtTest/QTest>
@@ -70,6 +71,23 @@ static QString largestFile(const QStringList& files)
     return sorted.isEmpty() ? QString() : sorted.first();
 }
 
+static qint64 totalFileBytes(const QStringList& files)
+{
+    qint64 total = 0;
+    for (const QString& fileName : files) {
+        const qint64 size = QFileInfo(fileName).size();
+        if (size > 0)
+            total += size;
+    }
+    return total;
+}
+
+static bool exceedsAutomaticWorkspaceBudget(const QStringList& files)
+{
+    return files.size() > 160
+        || totalFileBytes(files) > 8 * 1024 * 1024;
+}
+
 static void drainRelationshipWork(MainWindow& window)
 {
     SmartRelationshipBuilder* builder = window.semanticRuntime
@@ -110,6 +128,15 @@ int main(int argc, char** argv)
 
     MainWindow window;
     bool workspaceSymbolsDone = false;
+    bool workspaceSymbolsStarted = false;
+    bool workspaceSymbolsDeferred = false;
+    bool workspaceFilesScanned = false;
+    QObject::connect(window.analysisScheduler.get(),
+                     &AnalysisScheduler::workspaceSymbolAnalysisStarted,
+                     &window,
+                     [&](const ProjectSnapshot&, int) {
+                         workspaceSymbolsStarted = true;
+                     });
     QObject::connect(window.analysisScheduler.get(),
                      &AnalysisScheduler::workspaceSymbolAnalysisFinished,
                      &window,
@@ -118,12 +145,125 @@ int main(int argc, char** argv)
                          Q_UNUSED(totalSymbols)
                          workspaceSymbolsDone = true;
                      });
+    QObject::connect(window.analysisScheduler.get(),
+                     &AnalysisScheduler::workspaceSymbolAnalysisDeferred,
+                     &window,
+                     [&](const ProjectSnapshot&,
+                         int,
+                         qint64 totalBytes,
+                         qint64 largestFileBytes) {
+                         Q_UNUSED(totalBytes)
+                         Q_UNUSED(largestFileBytes)
+                         workspaceSymbolsDeferred = true;
+                     });
+    QObject::connect(window.workspaceManager.get(),
+                     &WorkspaceManager::filesScanned,
+                     &window,
+                     [&](const QStringList&) {
+                         workspaceFilesScanned = true;
+                     });
 
     window.resize(1100, 760);
     window.show();
     expectBool("main window visible", waitUntil([&]() { return window.isVisible(); }, 2000), true);
 
+    QElapsedTimer openTimer;
+    openTimer.start();
     expectBool("open workspace", window.workspaceManager->openWorkspace(workspacePath), true);
+    const qint64 openElapsedMs = openTimer.elapsed();
+    expectBool("workspace open returns before full scan blocks UI",
+               openElapsedMs < 1000,
+               true);
+    expectBool("workspace file scan completes",
+               waitUntil([&]() { return workspaceFilesScanned; }, 10000),
+               true);
+
+    const QStringList workspaceFiles =
+        window.workspaceManager->getSystemVerilogFiles();
+    const bool budgetedWorkspace =
+        exceedsAutomaticWorkspaceBudget(workspaceFiles);
+    if (budgetedWorkspace) {
+        expectBool("workspace exceeds automatic analysis budget",
+                   workspaceFiles.size() > 160
+                       && totalFileBytes(workspaceFiles) > 8 * 1024 * 1024,
+                   true);
+        expectBool("budgeted workspace opens promptly",
+                   openElapsedMs < 5000,
+                   true);
+        expectBool("budgeted workspace analysis deferred",
+                   workspaceSymbolsDeferred,
+                   false);
+        expectBool("budgeted workspace starts background symbol sweep",
+                   waitUntil([&]() { return workspaceSymbolsStarted; }, 3000),
+                   true);
+
+        int eventTicks = 0;
+        QTimer heartbeat;
+        QObject::connect(&heartbeat, &QTimer::timeout, &window, [&]() {
+            ++eventTicks;
+        });
+        heartbeat.start(10);
+        QElapsedTimer responsivenessTimer;
+        responsivenessTimer.start();
+        expectBool("budgeted workspace keeps event loop responsive",
+                   waitUntil([&]() {
+                       return responsivenessTimer.elapsed() >= 400
+                           && eventTicks >= 10;
+                   }, 2000),
+                   true);
+        heartbeat.stop();
+
+        const QString largeFile = largestFile(workspaceFiles);
+        expectBool("budgeted workspace largest file selected",
+                   QFileInfo(largeFile).size() > 1024 * 1024,
+                   true);
+
+        QElapsedTimer openLargeTimer;
+        openLargeTimer.start();
+        expectBool("budgeted workspace opens largest file",
+                   window.tabManager->openFileInTab(largeFile),
+                   true);
+        const qint64 openLargeElapsedMs = openLargeTimer.elapsed();
+        expectBool("largest file open remains bounded",
+                   openLargeElapsedMs < 6000,
+                   true);
+
+        MyCodeEditor* editor = window.tabManager->getCurrentEditor();
+        expectBool("budgeted workspace large editor exists",
+                   editor != nullptr,
+                   true);
+        if (editor) {
+            int scrollTicks = 0;
+            QTimer scrollHeartbeat;
+            QObject::connect(&scrollHeartbeat, &QTimer::timeout, &window, [&]() {
+                ++scrollTicks;
+            });
+            scrollHeartbeat.start(10);
+
+            QElapsedTimer scrollTimer;
+            scrollTimer.start();
+            QScrollBar* scrollBar = editor->verticalScrollBar();
+            for (int i = 0; i < 80 && scrollBar; ++i) {
+                scrollBar->setValue(scrollBar->value() + 25);
+                QCoreApplication::processEvents(QEventLoop::AllEvents, 5);
+            }
+            expectBool("largest file scroll pumps events",
+                       waitUntil([&]() {
+                           return scrollTimer.elapsed() >= 300
+                               && scrollTicks >= 8;
+                       }, 2000),
+                       true);
+            scrollHeartbeat.stop();
+        }
+
+        if (window.analysisScheduler)
+            window.analysisScheduler->cancelWorkspaceAnalysis();
+        drainRelationshipWork(window);
+
+        printf("\n%d checks, %d failed\n", g_checks, g_fails);
+        return g_fails == 0 ? 0 : 1;
+    }
+
     expectBool("workspace symbol analysis completes",
                waitUntil([&]() { return workspaceSymbolsDone; }, 60000), true);
 

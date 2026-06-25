@@ -2,6 +2,7 @@
 
 #include <QBrush>
 #include <QDir>
+#include <QElapsedTimer>
 #include <QFileInfo>
 #include <QPalette>
 
@@ -74,16 +75,70 @@ QString normalizedNavigationFileName(const QString& fileName)
         return QString();
     return QDir::cleanPath(QDir::fromNativeSeparators(QFileInfo(fileName).absoluteFilePath()));
 }
+
+constexpr int kSynchronousFileTreeLimit = 160;
+constexpr int kFileTreeChunkSize = 48;
+constexpr qint64 kFileTreeChunkBudgetMs = 8;
+
+QString navigationFileNameFromPath(const QString& filePath)
+{
+    const QString normalized = QDir::fromNativeSeparators(filePath);
+    const int slash = normalized.lastIndexOf(QLatin1Char('/'));
+    return slash >= 0 ? normalized.mid(slash + 1) : normalized;
+}
+
+QString navigationDirectoryPathFromFile(const QString& filePath)
+{
+    const QString normalized = QDir::fromNativeSeparators(filePath);
+    const int slash = normalized.lastIndexOf(QLatin1Char('/'));
+    return slash > 0 ? normalized.left(slash) : QString();
+}
+
+QString navigationDirectoryDisplayName(const QString& dirPath)
+{
+    if (dirPath.isEmpty())
+        return QStringLiteral(".");
+    const int slash = dirPath.lastIndexOf(QLatin1Char('/'));
+    const QString name = slash >= 0 ? dirPath.mid(slash + 1) : dirPath;
+    return name.isEmpty() ? dirPath : name;
+}
+
+bool navigationFileMatchesFilter(const QString& filePath, const QString& filter)
+{
+    return filter.isEmpty()
+        || navigationFileNameFromPath(filePath).contains(filter, Qt::CaseInsensitive);
+}
 }
 
 void NavigationWidget::populateFileTree()
 {
     if (!fileTreeWidget)
         return;
+    cancelFileTreePopulation();
+
+    QStringList visibleFiles;
+    visibleFiles.reserve(currentFileList.size());
+    for (const QString& filePath : std::as_const(currentFileList)) {
+        if (navigationFileMatchesFilter(filePath, currentSearchFilter))
+            visibleFiles.append(filePath);
+    }
+
+    if (visibleFiles.size() > kSynchronousFileTreeLimit) {
+        startAsyncFileTreePopulation(visibleFiles);
+        return;
+    }
+
+    populateFileTreeSynchronously(visibleFiles);
+}
+
+void NavigationWidget::populateFileTreeSynchronously(const QStringList& files)
+{
+    if (!fileTreeWidget)
+        return;
     TreePopulationGuard guard(fileTreeWidget);
     fileTreeWidget->clear();
 
-    if (currentFileList.isEmpty()) {
+    if (files.isEmpty()) {
         QTreeWidgetItem* emptyItem = new QTreeWidgetItem(fileTreeWidget);
         emptyItem->setText(0, "No SystemVerilog files found");
         emptyItem->setFlags(Qt::ItemIsEnabled);
@@ -91,52 +146,129 @@ void NavigationWidget::populateFileTree()
     }
 
     QHash<QString, QTreeWidgetItem*> dirItems;
+    for (const QString& filePath : files)
+        appendFileTreeItem(filePath, &dirItems);
 
-    for (const QString& filePath : std::as_const(currentFileList)) {
-        QFileInfo fileInfo(filePath);
-        QString dirPath = fileInfo.absolutePath();
-        QString fileName = fileInfo.fileName();
-
-        if (!currentSearchFilter.isEmpty() &&
-            !fileName.contains(currentSearchFilter, Qt::CaseInsensitive)) {
-            continue;
-        }
-
-        QTreeWidgetItem* dirItem = nullptr;
-        if (dirItems.contains(dirPath)) {
-            dirItem = dirItems[dirPath];
-        } else {
-            dirItem = new QTreeWidgetItem(fileTreeWidget);
-            dirItem->setText(0, QDir(dirPath).dirName());
-            dirItem->setIcon(0, style()->standardIcon(QStyle::SP_DirIcon));
-            dirItem->setExpanded(true);
-            dirItems[dirPath] = dirItem;
-        }
-
-        QTreeWidgetItem* fileItem = createFileItem(filePath);
-        dirItem->addChild(fileItem);
-    }
-
-    if (!designParticipatingFiles.isEmpty()) {
-        for (int i = 0; i < fileTreeWidget->topLevelItemCount(); ++i) {
-            QTreeWidgetItem* dirItem = fileTreeWidget->topLevelItem(i);
-            bool hasParticipatingChild = false;
-            for (int j = 0; j < dirItem->childCount(); ++j) {
-                const QString filePath = dirItem->child(j)->data(0, Qt::UserRole).toString();
-                if (fileParticipatesInDesign(filePath)) {
-                    hasParticipatingChild = true;
-                    break;
-                }
-            }
-            applyDesignFileDimming(dirItem, !hasParticipatingChild);
-        }
-    }
+    refreshFileTreeDirectoryDimming();
 
     if (fileTreeWidget->topLevelItemCount() == 1) {
         fileTreeWidget->topLevelItem(0)->setExpanded(true);
     }
 
     expandCurrentFileNodes();
+}
+
+void NavigationWidget::startAsyncFileTreePopulation(const QStringList& files)
+{
+    if (!fileTreeWidget)
+        return;
+
+    pendingFileTreeFiles = files;
+    pendingFileTreeDirItems.clear();
+    pendingFileTreeIndex = 0;
+    pendingFileTreeClearPlaceholder = true;
+
+    TreePopulationGuard guard(fileTreeWidget);
+    fileTreeWidget->clear();
+    QTreeWidgetItem* loadingItem = new QTreeWidgetItem(fileTreeWidget);
+    loadingItem->setText(
+        0,
+        QStringLiteral("Loading %1 SystemVerilog files...").arg(files.size()));
+    loadingItem->setFlags(Qt::ItemIsEnabled);
+
+    if (fileTreePopulationTimer)
+        fileTreePopulationTimer->start(0);
+}
+
+void NavigationWidget::cancelFileTreePopulation()
+{
+    if (fileTreePopulationTimer)
+        fileTreePopulationTimer->stop();
+    pendingFileTreeFiles.clear();
+    pendingFileTreeDirItems.clear();
+    pendingFileTreeIndex = 0;
+    pendingFileTreeClearPlaceholder = false;
+}
+
+void NavigationWidget::processFileTreePopulationChunk()
+{
+    if (!fileTreeWidget)
+        return;
+    if (pendingFileTreeIndex >= pendingFileTreeFiles.size()) {
+        cancelFileTreePopulation();
+        refreshFileTreeDirectoryDimming();
+        expandCurrentFileNodes();
+        return;
+    }
+
+    QElapsedTimer chunkTimer;
+    chunkTimer.start();
+    int filesThisChunk = 0;
+
+    fileTreeWidget->setUpdatesEnabled(false);
+    if (pendingFileTreeClearPlaceholder) {
+        fileTreeWidget->clear();
+        pendingFileTreeClearPlaceholder = false;
+    }
+
+    while (pendingFileTreeIndex < pendingFileTreeFiles.size()) {
+        appendFileTreeItem(pendingFileTreeFiles.at(pendingFileTreeIndex),
+                           &pendingFileTreeDirItems);
+        ++pendingFileTreeIndex;
+        ++filesThisChunk;
+        if (filesThisChunk >= kFileTreeChunkSize
+            || chunkTimer.elapsed() >= kFileTreeChunkBudgetMs) {
+            break;
+        }
+    }
+    fileTreeWidget->setUpdatesEnabled(true);
+
+    if (pendingFileTreeIndex >= pendingFileTreeFiles.size()) {
+        cancelFileTreePopulation();
+        refreshFileTreeDirectoryDimming();
+        if (fileTreeWidget->topLevelItemCount() == 1)
+            fileTreeWidget->topLevelItem(0)->setExpanded(true);
+        expandCurrentFileNodes();
+    }
+}
+
+void NavigationWidget::appendFileTreeItem(
+    const QString& filePath,
+    QHash<QString, QTreeWidgetItem*>* dirItems)
+{
+    if (!fileTreeWidget || !dirItems)
+        return;
+
+    const QString dirPath = navigationDirectoryPathFromFile(filePath);
+    QTreeWidgetItem* dirItem = dirItems->value(dirPath, nullptr);
+    if (!dirItem) {
+        dirItem = new QTreeWidgetItem(fileTreeWidget);
+        dirItem->setText(0, navigationDirectoryDisplayName(dirPath));
+        dirItem->setIcon(0, style()->standardIcon(QStyle::SP_DirIcon));
+        dirItem->setExpanded(true);
+        dirItems->insert(dirPath, dirItem);
+    }
+
+    dirItem->addChild(createFileItem(filePath));
+}
+
+void NavigationWidget::refreshFileTreeDirectoryDimming()
+{
+    if (!fileTreeWidget || designParticipatingFiles.isEmpty())
+        return;
+    for (int i = 0; i < fileTreeWidget->topLevelItemCount(); ++i) {
+        QTreeWidgetItem* dirItem = fileTreeWidget->topLevelItem(i);
+        bool hasParticipatingChild = false;
+        for (int j = 0; j < dirItem->childCount(); ++j) {
+            const QString filePath =
+                dirItem->child(j)->data(0, Qt::UserRole).toString();
+            if (fileParticipatesInDesign(filePath)) {
+                hasParticipatingChild = true;
+                break;
+            }
+        }
+        applyDesignFileDimming(dirItem, !hasParticipatingChild);
+    }
 }
 
 void NavigationWidget::populateModuleTree()
@@ -280,9 +412,8 @@ void NavigationWidget::applySearchFilter()
 QTreeWidgetItem* NavigationWidget::createFileItem(const QString& filePath)
 {
     QTreeWidgetItem* item = new QTreeWidgetItem();
-    QFileInfo fileInfo(filePath);
 
-    item->setText(0, fileInfo.fileName());
+    item->setText(0, navigationFileNameFromPath(filePath));
     item->setIcon(0, getFileIcon(filePath));
     item->setData(0, Qt::UserRole, filePath);
     item->setToolTip(0, filePath);
@@ -357,9 +488,9 @@ void NavigationWidget::refreshDesignHeader()
 
     const bool hasTop = !currentDesignHierarchy.topModule.isEmpty();
     designTopLabel->setText(hasTop
-                                ? QStringLiteral("Design Top: %1")
+                                ? QStringLiteral("Auto Design Top: %1")
                                       .arg(currentDesignHierarchy.topModule)
-                                : QStringLiteral("Top not set. Right-click a module or file and choose Set as Design Top."));
+                                : QStringLiteral("Design top will be inferred after module analysis."));
     designClearButton->setEnabled(hasTop);
     designRefreshButton->setEnabled(hasTop);
 }

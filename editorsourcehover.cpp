@@ -20,6 +20,11 @@ bool EditorSourceHover::isCtrlPressed() const
     return ctrlPressed;
 }
 
+bool EditorSourceHover::hasTarget() const
+{
+    return startPos >= 0 && endPos > startPos;
+}
+
 QCursor EditorSourceHover::cursorForTarget(
     const EditorSourceNavigationTarget& target) const
 {

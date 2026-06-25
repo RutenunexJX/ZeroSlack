@@ -56,21 +56,28 @@ void NavigationManager::refreshFileHierarchy()
 {
     QElapsedTimer timer;
     timer.start();
-    if (!shouldRefreshCache()) {
-        caches.clearFileList();
-    }
+    const bool sourceChanged = updateFileHierarchyData();
+    const bool filterChanged =
+        caches.fileHierarchyFilter != context.searchFilter;
+    const QStringList visibleFiles = context.searchFilter.isEmpty()
+        ? caches.fileList
+        : filterFiles(caches.fileList, context.searchFilter);
+    const bool refreshWidget =
+        !caches.fileHierarchyValid || sourceChanged || filterChanged;
 
-    updateFileHierarchyData();
-
-    if (navigationWidget) {
-        navigationWidget->updateFileHierarchy(caches.fileList);
+    if (navigationWidget && refreshWidget) {
+        navigationWidget->updateFileHierarchy(visibleFiles);
     }
+    caches.fileHierarchyFilter = context.searchFilter;
+    caches.fileHierarchyValid = true;
 
     emit dataRefreshed(FileHierarchyView);
     ActivityLogService::getInstance()->append(
         QStringLiteral("Navigation"),
         ActivityLogLevel::Info,
-        QStringLiteral("Rebuilt %1").arg(navigationViewName(FileHierarchyView)),
+        QStringLiteral("%1 %2")
+            .arg(refreshWidget ? QStringLiteral("Rebuilt") : QStringLiteral("Kept cached"),
+                 navigationViewName(FileHierarchyView)),
         static_cast<int>(timer.elapsed()));
 }
 
@@ -180,6 +187,7 @@ void NavigationManager::setDesignTop(const QString& moduleName)
     if (moduleName.isEmpty())
         return;
     caches.designTopModule = moduleName;
+    caches.designTopInferred = false;
     caches.clearDesignHierarchy();
     refreshDesignHierarchy(true);
     if (navigationWidget)
@@ -193,13 +201,13 @@ void NavigationManager::setDesignTop(const QString& moduleName)
 void NavigationManager::clearDesignTop()
 {
     caches.designTopModule.clear();
+    caches.designTopInferred = true;
     caches.clearDesignHierarchy();
-    if (navigationWidget)
-        navigationWidget->clearDesignHierarchy();
+    refreshDesignHierarchy(true);
     ActivityLogService::getInstance()->append(
         QStringLiteral("Navigation"),
         ActivityLogLevel::Info,
-        QStringLiteral("Cleared Design Top"));
+        QStringLiteral("Cleared Design Top override"));
 }
 
 void NavigationManager::setSearchFilter(const QString& filter)
@@ -285,6 +293,7 @@ void NavigationManager::onSymbolAnalysisCompleted(const QString& fileName, int s
         break;
     case DesignHierarchyView:
         caches.clearDesignHierarchy();
+        refreshDesignHierarchy();
         break;
     }
 }
@@ -307,6 +316,7 @@ void NavigationManager::onBatchSymbolAnalysisCompleted(
         refreshSymbolHierarchy();
     } else if (currentView == DesignHierarchyView) {
         caches.clearDesignHierarchy();
+        refreshDesignHierarchy();
     }
 }
 

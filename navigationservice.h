@@ -9,6 +9,7 @@
 
 #include <QList>
 #include <QString>
+#include <cstdint>
 #include <memory>
 
 struct NavigationModuleQuery {
@@ -39,7 +40,9 @@ public:
         const NavigationModuleQuery& query = {}) const;
     QList<SymbolOutlineGroup> findSymbolOutline(
         const NavigationSymbolOutlineQuery& query) const;
+    QString inferDesignTopModule() const;
     DesignHierarchyReport findDesignHierarchy(const QString& topModule) const;
+    std::uint64_t semanticSnapshotRevision() const;
     QStringList modulesDefinedInFile(const QString& fileName) const;
     NavigationModuleTarget resolveModuleTarget(const QString& moduleName) const;
 

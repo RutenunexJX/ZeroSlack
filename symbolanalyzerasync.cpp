@@ -7,6 +7,7 @@
 #include <QtConcurrent/QtConcurrent>
 #include <QFuture>
 #include <QFutureWatcher>
+#include <QTimer>
 #include <utility>
 
 SymbolAnalyzer::SymbolAnalyzer(QObject *parent)
@@ -17,10 +18,17 @@ SymbolAnalyzer::SymbolAnalyzer(QObject *parent)
             &QFutureWatcher<WorkspaceAnalysisResult>::finished,
             this,
             &SymbolAnalyzer::onWorkspaceAnalysisFinished);
+    workspacePublicationTimer = new QTimer(this);
+    workspacePublicationTimer->setSingleShot(false);
+    connect(workspacePublicationTimer,
+            &QTimer::timeout,
+            this,
+            &SymbolAnalyzer::processWorkspacePublicationChunk);
 }
 
 SymbolAnalyzer::~SymbolAnalyzer()
 {
+    cancelWorkspacePublication();
     cancelWorkspaceAnalysisAndWait();
     if (workspaceAnalysisWatcher) {
         workspaceAnalysisWatcher->deleteLater();
@@ -43,6 +51,7 @@ void SymbolAnalyzer::startAnalyzeProjectAsync(
 {
     if (!project.isOpen())
         return;
+    cancelWorkspacePublication();
     cancelWorkspaceAnalysisAndWait();
 
     const QStringList svFiles = project.systemVerilogFiles;
@@ -139,6 +148,7 @@ void SymbolAnalyzer::cancelWorkspaceAnalysisAndWait()
 void SymbolAnalyzer::expireWorkspaceAnalysis()
 {
     ++workspaceAnalysisGeneration;
+    cancelWorkspacePublication();
     if (!workspaceAnalysisWatcher || !workspaceAnalysisWatcher->isRunning())
         return;
 
@@ -148,6 +158,7 @@ void SymbolAnalyzer::expireWorkspaceAnalysis()
 void SymbolAnalyzer::cancelWorkspaceAnalysisAndInvalidate()
 {
     ++workspaceAnalysisGeneration;
+    cancelWorkspacePublication();
     cancelWorkspaceAnalysisAndWait();
 }
 
@@ -160,7 +171,7 @@ void SymbolAnalyzer::onWorkspaceAnalysisFinished()
         return;
     }
 
-    const WorkspaceAnalysisResult result = workspaceAnalysisWatcher->result();
+    WorkspaceAnalysisResult result = workspaceAnalysisWatcher->result();
     const QString workspacePath = workspaceAnalysisWatcher->property("workspacePath").toString();
     const int totalFiles = workspaceAnalysisWatcher->property("totalFiles").toInt();
     const std::uint64_t generation =
@@ -174,9 +185,7 @@ void SymbolAnalyzer::onWorkspaceAnalysisFinished()
         return;
     }
 
-    const int filesAnalyzed = publishWorkspaceAnalysisResult(result, totalFiles);
-    emit batchAnalysisCompleted(filesAnalyzed, result.totalSymbols);
-    emit analysisCompleted(workspacePath, result.totalSymbols);
+    startWorkspacePublication(std::move(result), totalFiles, workspacePath);
 }
 
 void SymbolAnalyzer::analyzeFileContentAsync(const QString& fileName, const QString& content)

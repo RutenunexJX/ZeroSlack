@@ -7,8 +7,10 @@
 #include <QLineEdit>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
+#include <QIcon>
 #include <QLabel>
 #include <QPushButton>
+#include <QTimer>
 #include <QTreeWidgetItem>
 #include <QSet>
 #include <QStringList>
@@ -66,6 +68,7 @@ signals:
 private slots:
     void onTabChanged(int index);
     void onSearchTextChanged(const QString& text);
+    void processFileTreePopulationChunk();
     void onFileTreeDoubleClicked(QTreeWidgetItem* item, int column);
     void onModuleTreeDoubleClicked(QTreeWidgetItem* item, int column);
     void onSymbolTreeDoubleClicked(QTreeWidgetItem* item, int column);
@@ -110,6 +113,13 @@ private:
 
     QString currentSearchFilter;
     QString currentHighlightedFile;
+    QTimer* fileTreePopulationTimer = nullptr;
+    QStringList pendingFileTreeFiles;
+    QHash<QString, QTreeWidgetItem*> pendingFileTreeDirItems;
+    int pendingFileTreeIndex = 0;
+    bool pendingFileTreeClearPlaceholder = false;
+    QHash<int, QIcon> fileIconCache;
+    QHash<int, QIcon> symbolIconCache;
 
     void setupUI();
     void setupFileTab();
@@ -119,6 +129,12 @@ private:
     void setupConnections();
 
     void populateFileTree();
+    void populateFileTreeSynchronously(const QStringList& files);
+    void startAsyncFileTreePopulation(const QStringList& files);
+    void cancelFileTreePopulation();
+    void appendFileTreeItem(const QString& filePath,
+                            QHash<QString, QTreeWidgetItem*>* dirItems);
+    void refreshFileTreeDirectoryDimming();
     void populateModuleTree();
     void populateSymbolTree();
     void populateDesignTree();

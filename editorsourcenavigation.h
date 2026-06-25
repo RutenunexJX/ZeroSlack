@@ -92,6 +92,7 @@ private:
         EditorSelection& selections);
     void clearHover(MyCodeEditor* editor, EditorSelection& selections);
     void closePopup();
+    bool hasActiveHover() const;
     EditorHoverPopup* ensurePopup(MyCodeEditor* editor);
     bool popupMatches(const EditorSourceNavigationTarget& target,
                       bool previewMode) const;

@@ -1933,6 +1933,977 @@ void fixBlockIndexes(QList<WavePreviewAssignment>* assignments, int blockIndex)
         assignment.blockIndex = blockIndex;
 }
 
+struct TraceValue {
+    qint64 value = 0;
+    int width = 1;
+    bool unknown = true;
+
+    static TraceValue known(qint64 nextValue, int nextWidth = 1)
+    {
+        TraceValue result;
+        result.value = nextValue;
+        result.width = qMax(1, nextWidth);
+        result.unknown = false;
+        return result.masked();
+    }
+
+    static TraceValue x(int nextWidth = 1)
+    {
+        TraceValue result;
+        result.width = qMax(1, nextWidth);
+        result.unknown = true;
+        return result;
+    }
+
+    TraceValue masked() const
+    {
+        TraceValue result = *this;
+        result.width = qMax(1, result.width);
+        if (!result.unknown && result.width > 0 && result.width < 63) {
+            const qint64 mask = (qint64(1) << result.width) - 1;
+            result.value &= mask;
+        }
+        return result;
+    }
+
+    bool truthy(bool* knownTruth = nullptr) const
+    {
+        if (unknown) {
+            if (knownTruth)
+                *knownTruth = false;
+            return false;
+        }
+        if (knownTruth)
+            *knownTruth = true;
+        return value != 0;
+    }
+
+    QString text() const
+    {
+        if (unknown)
+            return QStringLiteral("x");
+        return QString::number(value);
+    }
+};
+
+struct TraceEvalContext {
+    QHash<QString, TraceValue> values;
+    QHash<QString, TraceValue> parameters;
+    QHash<QString, int> widths;
+    QStringList warnings;
+};
+
+int widthFromTypeText(const QString& typeText)
+{
+    const int left = typeText.indexOf(QLatin1Char('['));
+    const int colon = typeText.indexOf(QLatin1Char(':'), left + 1);
+    const int right = typeText.indexOf(QLatin1Char(']'), colon + 1);
+    if (left < 0 || colon < 0 || right < 0)
+        return 1;
+
+    bool okA = false;
+    bool okB = false;
+    const int a = typeText.mid(left + 1, colon - left - 1).trimmed().toInt(&okA);
+    const int b = typeText.mid(colon + 1, right - colon - 1).trimmed().toInt(&okB);
+    if (!okA || !okB)
+        return 1;
+    return qMax(1, qAbs(a - b) + 1);
+}
+
+qint64 parseBasedDigits(QString digits, int base, bool* ok)
+{
+    digits.remove(QLatin1Char('_'));
+    digits = digits.toLower();
+    if (digits.isEmpty()) {
+        if (ok)
+            *ok = false;
+        return 0;
+    }
+    if (digits.contains(QLatin1Char('x')) || digits.contains(QLatin1Char('z'))
+        || digits.contains(QLatin1Char('?'))) {
+        if (ok)
+            *ok = false;
+        return 0;
+    }
+    bool localOk = false;
+    const qint64 value = digits.toLongLong(&localOk, base);
+    if (ok)
+        *ok = localOk;
+    return value;
+}
+
+TraceValue literalValue(const QString& rawText)
+{
+    QString text = rawText.trimmed();
+    text.remove(QLatin1Char('_'));
+    if (text.isEmpty())
+        return TraceValue::x();
+
+    const int apostrophe = text.indexOf(QLatin1Char('\''));
+    if (apostrophe >= 0) {
+        bool widthOk = false;
+        int width = text.left(apostrophe).toInt(&widthOk);
+        if (!widthOk || width <= 0)
+            width = 1;
+
+        QString rest = text.mid(apostrophe + 1);
+        if (!rest.isEmpty()
+            && (rest.front() == QLatin1Char('s')
+                || rest.front() == QLatin1Char('S'))) {
+            rest.remove(0, 1);
+        }
+        if (rest.isEmpty())
+            return TraceValue::x(width);
+
+        const QChar baseChar = rest.front().toLower();
+        rest.remove(0, 1);
+        int base = 10;
+        if (baseChar == QLatin1Char('b'))
+            base = 2;
+        else if (baseChar == QLatin1Char('h'))
+            base = 16;
+        else if (baseChar == QLatin1Char('o'))
+            base = 8;
+        else if (baseChar != QLatin1Char('d')) {
+            rest.prepend(baseChar);
+            base = 10;
+        }
+
+        bool ok = false;
+        const qint64 value = parseBasedDigits(rest, base, &ok);
+        return ok ? TraceValue::known(value, width) : TraceValue::x(width);
+    }
+
+    bool ok = false;
+    const qint64 value = text.toLongLong(&ok, 10);
+    return ok ? TraceValue::known(value, 32) : TraceValue::x(32);
+}
+
+bool isUnaryOperator(const QString& text)
+{
+    return text == QLatin1String("!")
+        || text == QLatin1String("~")
+        || text == QLatin1String("+")
+        || text == QLatin1String("-");
+}
+
+TraceValue mergeBinaryWidth(const TraceValue& lhs, const TraceValue& rhs)
+{
+    return TraceValue::x(qMax(lhs.width, rhs.width));
+}
+
+TraceValue applyUnaryOperator(const QString& op, const TraceValue& value)
+{
+    if (op == QLatin1String("+"))
+        return value;
+    if (value.unknown)
+        return TraceValue::x(value.width);
+    if (op == QLatin1String("-"))
+        return TraceValue::known(-value.value, value.width);
+    if (op == QLatin1String("!"))
+        return TraceValue::known(value.value == 0 ? 1 : 0, 1);
+    if (op == QLatin1String("~")) {
+        const int width = qMax(1, value.width);
+        if (width >= 63)
+            return TraceValue::known(~value.value, width);
+        const qint64 mask = (qint64(1) << width) - 1;
+        return TraceValue::known((~value.value) & mask, width);
+    }
+    return TraceValue::x(value.width);
+}
+
+TraceValue applyBinaryOperator(const QString& op,
+                               const TraceValue& lhs,
+                               const TraceValue& rhs)
+{
+    const int width = qMax(lhs.width, rhs.width);
+    if (lhs.unknown || rhs.unknown)
+        return (op == QLatin1String("&&") || op == QLatin1String("||")
+                || op == QLatin1String("==") || op == QLatin1String("!=")
+                || op == QLatin1String(">=") || op == QLatin1String("<=")
+                || op == QLatin1String(">") || op == QLatin1String("<"))
+            ? TraceValue::x(1)
+            : TraceValue::x(width);
+
+    if (op == QLatin1String("+"))
+        return TraceValue::known(lhs.value + rhs.value, width);
+    if (op == QLatin1String("-"))
+        return TraceValue::known(lhs.value - rhs.value, width);
+    if (op == QLatin1String("&"))
+        return TraceValue::known(lhs.value & rhs.value, width);
+    if (op == QLatin1String("|"))
+        return TraceValue::known(lhs.value | rhs.value, width);
+    if (op == QLatin1String("^"))
+        return TraceValue::known(lhs.value ^ rhs.value, width);
+    if (op == QLatin1String("&&"))
+        return TraceValue::known((lhs.value != 0 && rhs.value != 0) ? 1 : 0, 1);
+    if (op == QLatin1String("||"))
+        return TraceValue::known((lhs.value != 0 || rhs.value != 0) ? 1 : 0, 1);
+    if (op == QLatin1String("=="))
+        return TraceValue::known(lhs.value == rhs.value ? 1 : 0, 1);
+    if (op == QLatin1String("!="))
+        return TraceValue::known(lhs.value != rhs.value ? 1 : 0, 1);
+    if (op == QLatin1String(">="))
+        return TraceValue::known(lhs.value >= rhs.value ? 1 : 0, 1);
+    if (op == QLatin1String("<="))
+        return TraceValue::known(lhs.value <= rhs.value ? 1 : 0, 1);
+    if (op == QLatin1String(">"))
+        return TraceValue::known(lhs.value > rhs.value ? 1 : 0, 1);
+    if (op == QLatin1String("<"))
+        return TraceValue::known(lhs.value < rhs.value ? 1 : 0, 1);
+    return mergeBinaryWidth(lhs, rhs);
+}
+
+class TraceExpressionParser
+{
+public:
+    TraceExpressionParser(const QList<Token>& tokens,
+                          int start,
+                          int end,
+                          const TraceEvalContext& context)
+        : tokens(tokens)
+        , pos(qMax(0, start))
+        , end(qMin(end, tokens.size() - 1))
+        , context(context)
+    {
+    }
+
+    TraceValue parse()
+    {
+        return parseLogicalOr();
+    }
+
+private:
+    const QList<Token>& tokens;
+    int pos = 0;
+    int end = -1;
+    const TraceEvalContext& context;
+
+    bool atEnd() const { return pos > end || pos >= tokens.size(); }
+    QString currentText() const { return atEnd() ? QString() : tokens.at(pos).text; }
+
+    TraceValue parseLogicalOr()
+    {
+        TraceValue value = parseLogicalAnd();
+        while (!atEnd() && currentText() == QLatin1String("||")) {
+            const QString op = currentText();
+            ++pos;
+            value = applyBinaryOperator(op, value, parseLogicalAnd());
+        }
+        return value;
+    }
+
+    TraceValue parseLogicalAnd()
+    {
+        TraceValue value = parseBitwiseOr();
+        while (!atEnd() && currentText() == QLatin1String("&&")) {
+            const QString op = currentText();
+            ++pos;
+            value = applyBinaryOperator(op, value, parseBitwiseOr());
+        }
+        return value;
+    }
+
+    TraceValue parseBitwiseOr()
+    {
+        TraceValue value = parseBitwiseXor();
+        while (!atEnd() && currentText() == QLatin1String("|")) {
+            const QString op = currentText();
+            ++pos;
+            value = applyBinaryOperator(op, value, parseBitwiseXor());
+        }
+        return value;
+    }
+
+    TraceValue parseBitwiseXor()
+    {
+        TraceValue value = parseBitwiseAnd();
+        while (!atEnd() && currentText() == QLatin1String("^")) {
+            const QString op = currentText();
+            ++pos;
+            value = applyBinaryOperator(op, value, parseBitwiseAnd());
+        }
+        return value;
+    }
+
+    TraceValue parseBitwiseAnd()
+    {
+        TraceValue value = parseEquality();
+        while (!atEnd() && currentText() == QLatin1String("&")) {
+            const QString op = currentText();
+            ++pos;
+            value = applyBinaryOperator(op, value, parseEquality());
+        }
+        return value;
+    }
+
+    TraceValue parseEquality()
+    {
+        TraceValue value = parseRelational();
+        while (!atEnd()
+               && (currentText() == QLatin1String("==")
+                   || currentText() == QLatin1String("!="))) {
+            const QString op = currentText();
+            ++pos;
+            value = applyBinaryOperator(op, value, parseRelational());
+        }
+        return value;
+    }
+
+    TraceValue parseRelational()
+    {
+        TraceValue value = parseAdditive();
+        while (!atEnd()
+               && (currentText() == QLatin1String(">=")
+                   || currentText() == QLatin1String("<=")
+                   || currentText() == QLatin1String(">")
+                   || currentText() == QLatin1String("<"))) {
+            const QString op = currentText();
+            ++pos;
+            value = applyBinaryOperator(op, value, parseAdditive());
+        }
+        return value;
+    }
+
+    TraceValue parseAdditive()
+    {
+        TraceValue value = parseUnary();
+        while (!atEnd()
+               && (currentText() == QLatin1String("+")
+                   || currentText() == QLatin1String("-"))) {
+            const QString op = currentText();
+            ++pos;
+            value = applyBinaryOperator(op, value, parseUnary());
+        }
+        return value;
+    }
+
+    TraceValue parseUnary()
+    {
+        if (!atEnd() && isUnaryOperator(currentText())) {
+            const QString op = currentText();
+            ++pos;
+            return applyUnaryOperator(op, parseUnary());
+        }
+        return parsePrimary();
+    }
+
+    TraceValue parsePrimary()
+    {
+        if (atEnd())
+            return TraceValue::x();
+
+        const Token token = tokens.at(pos);
+        if (token.text == QLatin1String("(")) {
+            ++pos;
+            TraceValue value = parseLogicalOr();
+            if (!atEnd() && currentText() == QLatin1String(")"))
+                ++pos;
+            return value;
+        }
+
+        if (token.kind == TokenKind::Number) {
+            ++pos;
+            return literalValue(token.text);
+        }
+
+        if (token.text == QLatin1String("'") && pos + 1 <= end) {
+            const QString literal =
+                token.text + tokens.at(pos + 1).text;
+            pos += 2;
+            return literalValue(literal);
+        }
+
+        if (token.kind == TokenKind::Identifier) {
+            QString name = token.text;
+            ++pos;
+            if (!atEnd() && currentText() == QLatin1String("[")) {
+                const int close = matchingSymbol(tokens,
+                                                 pos,
+                                                 QStringLiteral("["),
+                                                 QStringLiteral("]"),
+                                                 end);
+                if (close >= 0)
+                    pos = close + 1;
+            }
+            if (context.values.contains(name))
+                return context.values.value(name);
+            if (context.parameters.contains(name))
+                return context.parameters.value(name);
+            return TraceValue::x(context.widths.value(name, 1));
+        }
+
+        ++pos;
+        return TraceValue::x();
+    }
+};
+
+TraceValue evaluateTraceExpression(const QList<Token>& tokens,
+                                   int start,
+                                   int end,
+                                   const TraceEvalContext& context)
+{
+    if (start < 0 || end < start || start >= tokens.size())
+        return TraceValue::x();
+    TraceExpressionParser parser(tokens, start, end, context);
+    return parser.parse();
+}
+
+struct TraceAlwaysRange {
+    WavePreviewBlock block;
+    int startToken = -1;
+    int bodyStart = -1;
+    int bodyEnd = -1;
+};
+
+int tokenIndexForStartPosition(const QList<Token>& tokens, int startPosition)
+{
+    for (int i = 0; i < tokens.size(); ++i) {
+        if (tokens.at(i).start == startPosition)
+            return i;
+    }
+    return -1;
+}
+
+int tokenIndexForEndPosition(const QList<Token>& tokens, int endPosition)
+{
+    for (int i = 0; i < tokens.size(); ++i) {
+        if (tokens.at(i).end == endPosition)
+            return i;
+    }
+    return -1;
+}
+
+TraceAlwaysRange traceRangeForBlock(const QString& text,
+                                    const QList<Token>& tokens,
+                                    const WavePreviewBlock& block)
+{
+    TraceAlwaysRange range;
+    range.block = block;
+    range.startToken = tokenIndexForStartPosition(tokens, block.startPosition);
+    if (range.startToken < 0)
+        return range;
+
+    const int endToken = tokenIndexForEndPosition(tokens, block.endPosition);
+    const int limit = endToken >= 0 ? endToken : tokens.size() - 1;
+    WavePreviewBlock parsedBlock;
+    QList<WavePreviewAssignment> ignoredAssignments;
+    int consumedIndex = -1;
+    if (!parseAlwaysBlock(text,
+                          tokens,
+                          range.startToken,
+                          &parsedBlock,
+                          &ignoredAssignments,
+                          &consumedIndex)) {
+        return range;
+    }
+
+    const int beginIndex = firstBeginForAlways(tokens, range.startToken, limit);
+    if (beginIndex >= 0) {
+        range.bodyStart = beginIndex + 1;
+        range.bodyEnd = qMax(range.bodyStart - 1, consumedIndex - 1);
+    } else {
+        range.bodyStart = range.startToken + 1;
+        range.bodyEnd = consumedIndex;
+    }
+    return range;
+}
+
+void collectTraceWidths(const SignalContextCollection& contexts,
+                        TraceEvalContext* context)
+{
+    if (!context)
+        return;
+    for (const WavePreviewSignalContext& signal : contexts.contexts) {
+        if (!signal.isValid())
+            continue;
+        context->widths.insert(signal.signalName,
+                               widthFromTypeText(signal.typeText));
+    }
+}
+
+void collectTraceParameters(const QList<Token>& tokens,
+                            TraceEvalContext* context)
+{
+    if (!context)
+        return;
+    for (int i = 0; i < tokens.size(); ++i) {
+        if (!isIdentifierToken(tokens.at(i), QStringLiteral("parameter"))
+            && !isIdentifierToken(tokens.at(i), QStringLiteral("localparam"))) {
+            continue;
+        }
+        const int end = declarationEndBeforeDelimiter(tokens, i, true);
+        if (end < i + 1)
+            continue;
+        const QList<QPair<int, int>> segments =
+            topLevelCommaSegments(tokens, i + 1, end);
+        for (const QPair<int, int>& segment : segments) {
+            const int assignmentIndex =
+                topLevelAssignmentIndex(tokens, segment.first, segment.second);
+            if (assignmentIndex < 0)
+                continue;
+            const int nameIndex =
+                lastTopLevelSignalNameIndex(tokens,
+                                            segment.first,
+                                            assignmentIndex - 1);
+            if (nameIndex < 0)
+                continue;
+            const TraceValue value =
+                evaluateTraceExpression(tokens,
+                                        assignmentIndex + 1,
+                                        segment.second,
+                                        *context);
+            context->parameters.insert(tokens.at(nameIndex).text, value);
+        }
+    }
+}
+
+void collectTraceInitialValues(const QList<Token>& tokens,
+                               const SignalContextCollection& contexts,
+                               TraceEvalContext* context)
+{
+    if (!context)
+        return;
+    for (const WavePreviewSignalContext& signal : contexts.contexts) {
+        if (!signal.isValid())
+            continue;
+        const int width = context->widths.value(signal.signalName, 1);
+        context->values.insert(signal.signalName, TraceValue::x(width));
+    }
+
+    for (int i = 0; i < tokens.size(); ++i) {
+        if (tokens.at(i).kind != TokenKind::Identifier)
+            continue;
+        if (!isDirectionTokenText(tokens.at(i).text)
+            && !isSignalDeclarationTypeTokenText(tokens.at(i).text)) {
+            continue;
+        }
+
+        const bool isPort = isDirectionTokenText(tokens.at(i).text);
+        const int end = declarationEndBeforeDelimiter(tokens, i, isPort);
+        if (end < i + 1)
+            continue;
+        const QList<QPair<int, int>> segments =
+            topLevelCommaSegments(tokens, i, end);
+        for (const QPair<int, int>& segment : segments) {
+            const int assignmentIndex =
+                topLevelAssignmentIndex(tokens, segment.first, segment.second);
+            if (assignmentIndex < 0)
+                continue;
+            const int nameIndex =
+                lastTopLevelSignalNameIndex(tokens,
+                                            segment.first,
+                                            assignmentIndex - 1);
+            if (nameIndex < 0)
+                continue;
+            const QString name = tokens.at(nameIndex).text;
+            const int width = context->widths.value(name, 1);
+            TraceValue value =
+                evaluateTraceExpression(tokens,
+                                        assignmentIndex + 1,
+                                        segment.second,
+                                        *context);
+            value.width = width;
+            context->values.insert(name, value.masked());
+        }
+    }
+}
+
+int expressionEndBeforeSemicolon(const QList<Token>& tokens,
+                                 int expressionStart,
+                                 int limit)
+{
+    const int semicolon = nextSemicolon(tokens, expressionStart, limit);
+    return semicolon > expressionStart ? semicolon - 1 : -1;
+}
+
+void executeTraceStatementRange(const QList<Token>& tokens,
+                                int start,
+                                int end,
+                                TraceEvalContext* context,
+                                QHash<QString, TraceValue>* pending);
+
+void applyTraceAssignment(const QList<Token>& tokens,
+                          int lvalueIndex,
+                          int operatorIndex,
+                          int semicolonIndex,
+                          TraceEvalContext* context,
+                          QHash<QString, TraceValue>* pending)
+{
+    if (!context || !pending || lvalueIndex < 0 || operatorIndex < 0
+        || semicolonIndex < 0) {
+        return;
+    }
+    const QString target = tokens.at(lvalueIndex).text;
+    TraceValue value = evaluateTraceExpression(tokens,
+                                               operatorIndex + 1,
+                                               semicolonIndex - 1,
+                                               *context);
+    value.width = context->widths.value(target, value.width);
+    value = value.masked();
+    if (tokens.at(operatorIndex).text == QLatin1String("<=")) {
+        pending->insert(target, value);
+    } else {
+        context->values.insert(target, value);
+    }
+}
+
+int elseIndexAfterBody(const QList<Token>& tokens, int bodyEnd, int limit)
+{
+    const int candidate = bodyEnd + 1;
+    if (candidate <= limit && candidate < tokens.size()
+        && isIdentifierToken(tokens.at(candidate), QStringLiteral("else"))) {
+        return candidate;
+    }
+    return -1;
+}
+
+void executeTraceIf(const QList<Token>& tokens,
+                    int ifIndex,
+                    int limit,
+                    TraceEvalContext* context,
+                    QHash<QString, TraceValue>* pending,
+                    int* consumedIndex)
+{
+    int conditionEnd = -1;
+    const QString ignoredText;
+    const QString conditionText =
+        ifConditionTextForToken(ignoredText,
+                                tokens,
+                                ifIndex,
+                                limit,
+                                &conditionEnd);
+    Q_UNUSED(conditionText);
+    if (conditionEnd < 0) {
+        if (consumedIndex)
+            *consumedIndex = ifIndex;
+        return;
+    }
+    int bodyStart = -1;
+    int bodyEnd = -1;
+    if (!statementBodyRange(tokens,
+                            conditionEnd + 1,
+                            limit,
+                            &bodyStart,
+                            &bodyEnd)) {
+        if (consumedIndex)
+            *consumedIndex = conditionEnd;
+        return;
+    }
+
+    const TraceValue condition =
+        evaluateTraceExpression(tokens, ifIndex + 2, conditionEnd - 1, *context);
+    bool known = false;
+    const bool takeIf = condition.truthy(&known);
+    const int elseIndex = elseIndexAfterBody(tokens, bodyEnd, limit);
+    int consumed = bodyEnd;
+    if (elseIndex >= 0) {
+        int elseStart = -1;
+        int elseEnd = -1;
+        if (statementBodyRange(tokens,
+                               elseIndex + 1,
+                               limit,
+                               &elseStart,
+                               &elseEnd)) {
+            consumed = elseEnd;
+            if (known && !takeIf)
+                executeTraceStatementRange(tokens,
+                                           elseStart,
+                                           elseEnd,
+                                           context,
+                                           pending);
+        }
+    }
+    if (known && takeIf)
+        executeTraceStatementRange(tokens, bodyStart, bodyEnd, context, pending);
+    if (!known) {
+        context->warnings.append(
+            QStringLiteral("unknown branch condition near line %1")
+                .arg(tokens.at(ifIndex).line));
+    }
+    if (consumedIndex)
+        *consumedIndex = consumed;
+}
+
+void executeTraceStatementRange(const QList<Token>& tokens,
+                                int start,
+                                int end,
+                                TraceEvalContext* context,
+                                QHash<QString, TraceValue>* pending)
+{
+    if (!context || !pending || start < 0 || end < start)
+        return;
+    const int limit = qMin(end, tokens.size() - 1);
+    int pos = qMax(0, start);
+    while (pos <= limit) {
+        if (isIdentifierToken(tokens.at(pos), QStringLiteral("if"))) {
+            int consumed = pos;
+            executeTraceIf(tokens, pos, limit, context, pending, &consumed);
+            pos = qMax(pos + 1, consumed + 1);
+            continue;
+        }
+        if (isIdentifierToken(tokens.at(pos), QStringLiteral("begin"))) {
+            const int bodyEnd = matchingBeginEnd(tokens, pos, limit);
+            if (bodyEnd > pos) {
+                executeTraceStatementRange(tokens,
+                                           pos + 1,
+                                           bodyEnd - 1,
+                                           context,
+                                           pending);
+                pos = bodyEnd + 1;
+                continue;
+            }
+        }
+
+        QString target;
+        int operatorIndex = -1;
+        if (parseLvalueAt(tokens, pos, limit, &target, &operatorIndex)) {
+            const int semicolon =
+                nextSemicolon(tokens, operatorIndex + 1, limit);
+            if (semicolon > operatorIndex) {
+                applyTraceAssignment(tokens,
+                                     pos,
+                                     operatorIndex,
+                                     semicolon,
+                                     context,
+                                     pending);
+                pos = semicolon + 1;
+                continue;
+            }
+        }
+        ++pos;
+    }
+}
+
+void executeContinuousAssignments(const QList<Token>& tokens,
+                                  const QList<WavePreviewLane>& lanes,
+                                  TraceEvalContext* context)
+{
+    if (!context)
+        return;
+    for (const WavePreviewLane& lane : lanes) {
+        for (const WavePreviewAssignment& assignment : lane.assignments) {
+            if (assignment.kind != WavePreviewAssignmentKind::Continuous)
+                continue;
+            const int startToken =
+                tokenIndexForStartPosition(tokens, assignment.startPosition);
+            const int endToken =
+                tokenIndexForEndPosition(tokens, assignment.endPosition);
+            if (startToken < 0 || endToken < 0)
+                continue;
+            QString target;
+            int operatorIndex = -1;
+            if (!parseLvalueAt(tokens,
+                               startToken,
+                               endToken,
+                               &target,
+                               &operatorIndex)) {
+                continue;
+            }
+            TraceValue value =
+                evaluateTraceExpression(tokens,
+                                        operatorIndex + 1,
+                                        endToken - 1,
+                                        *context);
+            value.width = context->widths.value(target, value.width);
+            context->values.insert(target, value.masked());
+        }
+    }
+}
+
+QStringList traceSignalNames(const WavePreviewReport& report)
+{
+    QStringList names;
+    for (const WavePreviewBlock& block : report.blocks) {
+        for (const QString& clock : block.clockSignals)
+            appendUnique(&names, clock);
+    }
+    for (const WavePreviewLane& lane : report.lanes) {
+        appendUnique(&names, lane.signalName);
+        for (const WavePreviewAssignment& assignment : lane.assignments) {
+            for (const QString& source : assignment.sourceSignals)
+                appendUnique(&names, source);
+        }
+    }
+    return names;
+}
+
+void appendTraceSamples(QHash<QString, QStringList>* samples,
+                        const QStringList& names,
+                        const TraceEvalContext& context,
+                        int cycle)
+{
+    if (!samples)
+        return;
+    for (const QString& name : names) {
+        if (name.isEmpty())
+            continue;
+        const TraceValue value =
+            name == QStringLiteral("__cycle_clock__")
+                ? TraceValue::known(cycle % 2, 1)
+                : context.values.value(name,
+                                       TraceValue::x(context.widths.value(name, 1)));
+        (*samples)[name].append(value.text());
+    }
+}
+
+WavePreviewTraceReport buildTraceReport(const QString& text,
+                                        const QList<Token>& tokens,
+                                        const SignalContextCollection& contexts,
+                                        const WavePreviewReport& report)
+{
+    WavePreviewTraceReport trace;
+    if (report.blocks.isEmpty() && report.lanes.isEmpty())
+        return trace;
+
+    TraceEvalContext context;
+    collectTraceWidths(contexts, &context);
+    collectTraceParameters(tokens, &context);
+    collectTraceInitialValues(tokens, contexts, &context);
+
+    QList<TraceAlwaysRange> sequentialBlocks;
+    QList<TraceAlwaysRange> combinationalBlocks;
+    for (const WavePreviewBlock& block : report.blocks) {
+        const TraceAlwaysRange range = traceRangeForBlock(text, tokens, block);
+        if (range.bodyStart < 0 || range.bodyEnd < range.bodyStart)
+            continue;
+        if (block.isClocked())
+            sequentialBlocks.append(range);
+        else
+            combinationalBlocks.append(range);
+    }
+
+    const QStringList names = traceSignalNames(report);
+    if (names.isEmpty())
+        return trace;
+
+    constexpr int kTraceCycles = 8;
+    QHash<QString, QStringList> samples;
+    auto settleCombinational = [&]() {
+        executeContinuousAssignments(tokens, report.lanes, &context);
+        for (const TraceAlwaysRange& block : combinationalBlocks) {
+            QHash<QString, TraceValue> ignoredPending;
+            executeTraceStatementRange(tokens,
+                                       block.bodyStart,
+                                       block.bodyEnd,
+                                       &context,
+                                       &ignoredPending);
+        }
+    };
+
+    settleCombinational();
+    appendTraceSamples(&samples, names, context, 0);
+    for (int cycle = 1; cycle <= kTraceCycles; ++cycle) {
+        QHash<QString, TraceValue> pending;
+        for (const TraceAlwaysRange& block : sequentialBlocks) {
+            executeTraceStatementRange(tokens,
+                                       block.bodyStart,
+                                       block.bodyEnd,
+                                       &context,
+                                       &pending);
+        }
+        for (auto it = pending.constBegin(); it != pending.constEnd(); ++it)
+            context.values.insert(it.key(), it.value());
+        settleCombinational();
+        appendTraceSamples(&samples, names, context, cycle);
+    }
+
+    trace.cycleCount = kTraceCycles;
+    trace.available = true;
+    trace.warnings = context.warnings;
+    trace.warnings.removeDuplicates();
+    for (const QString& name : names) {
+        WavePreviewTraceSignal signal;
+        signal.signalName = name;
+        signal.width = context.widths.value(name, 1);
+        signal.values = samples.value(name);
+        signal.clock = false;
+        for (const WavePreviewBlock& block : report.blocks) {
+            if (block.clockSignals.contains(name)) {
+                signal.clock = true;
+                break;
+            }
+        }
+        if (signal.isValid())
+            trace.traceSignals.append(signal);
+    }
+    trace.available = !trace.traceSignals.isEmpty();
+    return trace;
+}
+
+struct ScopeRange {
+    int start = -1;
+    int end = -1;
+
+    bool isValid() const
+    {
+        return start >= 0 && end > start;
+    }
+};
+
+ScopeRange scopeRangeForQuery(const WavePreviewQuery& query)
+{
+    ScopeRange range;
+    if (!query.hasScope())
+        return range;
+
+    const int textSize = query.documentText.size();
+    range.start = std::max(0, std::min(query.scopeStartPosition, textSize));
+    range.end = std::max(0, std::min(query.scopeEndPosition, textSize));
+    if (range.end < range.start)
+        std::swap(range.start, range.end);
+    if (!range.isValid()) {
+        range.start = -1;
+        range.end = -1;
+    }
+    return range;
+}
+
+bool rangeIntersectsScope(int start, int end, const ScopeRange& scope)
+{
+    if (!scope.isValid())
+        return true;
+    return end > scope.start && start < scope.end;
+}
+
+bool assignmentMatchesScope(const WavePreviewAssignment& assignment,
+                            const ScopeRange& scope)
+{
+    return rangeIntersectsScope(assignment.startPosition,
+                                assignment.endPosition,
+                                scope);
+}
+
+int lineForPosition(const QString& text, int position)
+{
+    const int textSize = static_cast<int>(text.size());
+    const int bounded = std::max(0, std::min(position, textSize));
+    int line = 1;
+    for (int i = 0; i < bounded; ++i) {
+        if (text.at(i) == QLatin1Char('\n'))
+            ++line;
+    }
+    return line;
+}
+
+void applyScopeMetadata(const WavePreviewQuery& query,
+                        const ScopeRange& scope,
+                        WavePreviewReport* report)
+{
+    if (!report || !scope.isValid())
+        return;
+
+    report->scoped = true;
+    report->scopeStartLine = lineForPosition(query.documentText, scope.start);
+    report->scopeEndLine = lineForPosition(query.documentText, scope.end - 1);
+    report->scopeLabel =
+        query.scopeLabel.isEmpty()
+            ? QStringLiteral("selected lines %1-%2")
+                  .arg(report->scopeStartLine)
+                  .arg(report->scopeEndLine)
+            : query.scopeLabel;
+}
+
 QString edgeSignalListKey(const QList<WavePreviewEdgeSignal>& values,
                           const QStringList& fallbackSignals)
 {
@@ -2000,6 +2971,8 @@ WavePreviewReport WavePreviewService::previewForDocument(
     const WavePreviewQuery& query) const
 {
     WavePreviewReport report;
+    const ScopeRange scope = scopeRangeForQuery(query);
+    applyScopeMetadata(query, scope, &report);
     if (query.documentText.trimmed().isEmpty())
         return report;
 
@@ -2016,7 +2989,8 @@ WavePreviewReport WavePreviewService::previewForDocument(
         const Token& token = tokens.at(pos);
         if (isIdentifierToken(token, QStringLiteral("assign"))) {
             WavePreviewAssignment assignment;
-            if (parseContinuousAssign(query.documentText, tokens, pos, &assignment)) {
+            if (parseContinuousAssign(query.documentText, tokens, pos, &assignment)
+                && assignmentMatchesScope(assignment, scope)) {
                 appendLaneAssignment(&report.lanes,
                                      &laneIndexes,
                                      &contextsByName,
@@ -2037,11 +3011,20 @@ WavePreviewReport WavePreviewService::previewForDocument(
                                  &block,
                                  &assignments,
                                  &consumedIndex)) {
-                const int blockIndex = report.blocks.size();
-                fixBlockIndexes(&assignments, blockIndex);
-                block.assignmentCount = assignments.size();
-                report.blocks.append(block);
+                QList<WavePreviewAssignment> scopedAssignments;
                 for (const WavePreviewAssignment& assignment : assignments) {
+                    if (assignmentMatchesScope(assignment, scope))
+                        scopedAssignments.append(assignment);
+                }
+
+                if (!scopedAssignments.isEmpty()) {
+                    const int blockIndex = report.blocks.size();
+                    fixBlockIndexes(&scopedAssignments, blockIndex);
+                    block.assignmentCount = scopedAssignments.size();
+                    report.blocks.append(block);
+                }
+
+                for (const WavePreviewAssignment& assignment : scopedAssignments) {
                     appendLaneAssignment(&report.lanes,
                                          &laneIndexes,
                                          &contextsByName,
@@ -2069,6 +3052,14 @@ WavePreviewReport WavePreviewService::previewForDocument(
     refreshLaneSummaries(&report.lanes);
     report.activitySummary = activitySummaryForLanes(report.lanes);
     report.warnings = applyWarningTextsForLanes(&report.lanes);
+    report.trace = buildTraceReport(query.documentText,
+                                    tokens,
+                                    signalContextCollection,
+                                    report);
+    for (const QString& warning : report.trace.warnings) {
+        if (!report.warnings.contains(warning))
+            report.warnings.append(warning);
+    }
     report.available = report.assignmentCount > 0;
     return report;
 }

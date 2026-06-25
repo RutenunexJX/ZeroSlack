@@ -4,18 +4,18 @@
 #include "tabmanager.h"
 #include "workspacemanager.h"
 
-void NavigationManager::updateFileHierarchyData()
+bool NavigationManager::updateFileHierarchyData()
 {
-    if (!caches.fileList.isEmpty() && !shouldRefreshCache()) {
-        return; // Use cached data.
-    }
+    if (!shouldRefreshCache())
+        return false;
 
-    caches.fileList = getSystemVerilogFiles();
-
-    // Apply the search filter.
-    if (!context.searchFilter.isEmpty()) {
-        caches.fileList = filterFiles(caches.fileList, context.searchFilter);
-    }
+    const QStringList files = getSystemVerilogFiles();
+    const bool changed = !caches.fileListValid || caches.fileList != files;
+    caches.fileList = files;
+    caches.fileListValid = true;
+    if (changed)
+        caches.fileHierarchyValid = false;
+    return changed;
 }
 
 bool NavigationManager::updateModuleHierarchyData()
@@ -61,19 +61,41 @@ bool NavigationManager::updateDesignHierarchyData(bool force)
 {
     if (!navigationService)
         return false;
-    if (caches.designTopModule.isEmpty()) {
-        caches.designHierarchy = {};
-        caches.designHierarchyValid = false;
-        return true;
+
+    const std::uint64_t snapshotRevision =
+        navigationService->semanticSnapshotRevision();
+    if (caches.designTopInferred || caches.designTopModule.isEmpty()) {
+        const QString inferredTop = navigationService->inferDesignTopModule();
+        if (caches.designTopModule != inferredTop) {
+            caches.designTopModule = inferredTop;
+            caches.designHierarchyValid = false;
+        }
+        caches.designTopInferred = true;
     }
+
+    if (caches.designTopModule.isEmpty()) {
+        const bool changed =
+            force
+            || !caches.designHierarchyValid
+            || caches.designSnapshotGeneration != snapshotRevision
+            || !caches.designHierarchy.topModule.isEmpty();
+        caches.designHierarchy = {};
+        caches.designHierarchy.snapshotGeneration = snapshotRevision;
+        caches.designSnapshotGeneration = snapshotRevision;
+        caches.designHierarchyValid = true;
+        return changed;
+    }
+
     if (!force && caches.designHierarchyValid
         && caches.designHierarchy.topModule == caches.designTopModule
-        && caches.designHierarchy.snapshotGeneration == caches.designSnapshotGeneration) {
+        && caches.designSnapshotGeneration == snapshotRevision) {
         return false;
     }
 
     caches.designHierarchy = navigationService->findDesignHierarchy(caches.designTopModule);
-    caches.designSnapshotGeneration = caches.designHierarchy.snapshotGeneration;
+    caches.designSnapshotGeneration = snapshotRevision;
+    if (caches.designHierarchy.snapshotGeneration == 0)
+        caches.designHierarchy.snapshotGeneration = snapshotRevision;
     caches.designHierarchyValid = true;
     return true;
 }
@@ -82,16 +104,16 @@ bool NavigationManager::shouldRefreshCache() const
 {
     // Workspace mode owns the file list.
     if (connectedWorkspaceManager && connectedWorkspaceManager->isWorkspaceOpen()) {
-        return caches.fileList.isEmpty();
+        return !caches.fileListValid;
     }
 
     // Without a workspace, derive the file list from open tabs.
     if (connectedTabManager) {
         QStringList openFiles = connectedTabManager->getOpenSystemVerilogFiles();
-        return caches.fileList != openFiles;
+        return !caches.fileListValid || caches.fileList != openFiles;
     }
 
-    return true;
+    return !caches.fileListValid || !caches.fileList.isEmpty();
 }
 
 QStringList NavigationManager::getSystemVerilogFiles() const

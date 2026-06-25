@@ -11,6 +11,7 @@ class EditorSourceHover
 public:
     bool setCtrlPressed(bool pressed);
     bool isCtrlPressed() const;
+    bool hasTarget() const;
     QCursor cursorForTarget(const EditorSourceNavigationTarget& target) const;
     QCursor nonJumpableCursor() const;
     bool matches(const EditorSourceNavigationTarget& target) const;

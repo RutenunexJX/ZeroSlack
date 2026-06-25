@@ -167,10 +167,43 @@ struct WavePreviewLane {
     }
 };
 
+struct WavePreviewTraceSignal {
+    QString signalName;
+    int width = 1;
+    QStringList values;
+    bool clock = false;
+
+    bool isValid() const
+    {
+        return !signalName.isEmpty() && !values.isEmpty();
+    }
+};
+
+struct WavePreviewTraceReport {
+    QList<WavePreviewTraceSignal> traceSignals;
+    QStringList warnings;
+    int cycleCount = 0;
+    bool available = false;
+
+    bool isValid() const
+    {
+        return available && !traceSignals.isEmpty() && cycleCount > 0;
+    }
+};
+
 struct WavePreviewQuery {
     QString fileName;
     QString documentText;
     std::shared_ptr<const SemanticIndexSnapshot> semanticSnapshot;
+    int scopeStartPosition = -1;
+    int scopeEndPosition = -1;
+    QString scopeLabel;
+
+    bool hasScope() const
+    {
+        return scopeStartPosition >= 0
+            && scopeEndPosition > scopeStartPosition;
+    }
 };
 
 struct WavePreviewReport {
@@ -179,7 +212,12 @@ struct WavePreviewReport {
     QList<WavePreviewSignalContext> signalContexts;
     QList<WavePreviewLane> lanes;
     WavePreviewActivitySummary activitySummary;
+    WavePreviewTraceReport trace;
     QStringList warnings;
+    QString scopeLabel;
+    int scopeStartLine = 0;
+    int scopeEndLine = 0;
+    bool scoped = false;
     int assignmentCount = 0;
     bool available = false;
 };

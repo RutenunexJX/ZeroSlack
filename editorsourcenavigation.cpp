@@ -73,19 +73,11 @@ void EditorSourceNavigationUi::handleControlKeyRelease(
     const EditorSourceContextProvider& contextProvider,
     EditorSelection& selections)
 {
+    Q_UNUSED(service)
+    Q_UNUSED(contextProvider)
     if (event->key() == Qt::Key_Control
         && sourceHover.setCtrlPressed(false)) {
-        const QPoint mousePos = editor->mapFromGlobal(QCursor::pos());
-        if (editor->rect().contains(mousePos)) {
-            refreshHoverAt(
-                editor,
-                mousePos,
-                service,
-                contextProvider,
-                selections);
-        } else {
-            clearHover(editor, selections);
-        }
+        clearHover(editor, selections);
     }
 }
 
@@ -122,21 +114,19 @@ void EditorSourceNavigationUi::handleMouseMove(
     const bool isCtrlPressed =
         (event->modifiers() & Qt::ControlModifier);
 
-    if (sourceHover.setCtrlPressed(isCtrlPressed)) {
-        refreshHoverAt(
-            editor,
-            event->pos(),
-            service,
-            contextProvider,
-            selections);
-    } else {
-        refreshHoverAt(
-            editor,
-            event->pos(),
-            service,
-            contextProvider,
-            selections);
+    sourceHover.setCtrlPressed(isCtrlPressed);
+    if (!isCtrlPressed) {
+        if (hasActiveHover())
+            clearHover(editor, selections);
+        return;
     }
+
+    refreshHoverAt(
+        editor,
+        event->pos(),
+        service,
+        contextProvider,
+        selections);
 }
 
 void EditorSourceNavigationUi::handleLeave(
@@ -169,7 +159,8 @@ void EditorSourceNavigationUi::handleEditorScrolled(
     MyCodeEditor* editor,
     EditorSelection& selections)
 {
-    clearHover(editor, selections);
+    if (hasActiveHover())
+        clearHover(editor, selections);
 }
 
 void EditorSourceNavigationUi::shutdown()
@@ -397,10 +388,20 @@ void EditorSourceNavigationUi::clearHover(
     MyCodeEditor* editor,
     EditorSelection& selections)
 {
-    editor->viewport()->setCursor(Qt::IBeamCursor);
-    selections.clearHoveredSymbol(editor);
-    sourceHover.clearTarget();
-    closePopup();
+    if (editor)
+        editor->viewport()->setCursor(Qt::IBeamCursor);
+    if (sourceHover.hasTarget()) {
+        selections.clearHoveredSymbol(editor);
+        sourceHover.clearTarget();
+    }
+    if (popup && popup->isVisible())
+        closePopup();
+    else {
+        popupStartPos = -1;
+        popupEndPos = -1;
+        popupNumericMode = false;
+        popupPreviewMode = false;
+    }
 }
 
 void EditorSourceNavigationUi::closePopup()
@@ -411,6 +412,11 @@ void EditorSourceNavigationUi::closePopup()
     popupEndPos = -1;
     popupNumericMode = false;
     popupPreviewMode = false;
+}
+
+bool EditorSourceNavigationUi::hasActiveHover() const
+{
+    return sourceHover.hasTarget() || (popup && popup->isVisible());
 }
 
 EditorHoverPopup* EditorSourceNavigationUi::ensurePopup(MyCodeEditor* editor)

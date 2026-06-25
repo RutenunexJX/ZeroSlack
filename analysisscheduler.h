@@ -67,6 +67,10 @@ signals:
                                          int filesDone,
                                          int totalFiles);
     void workspaceSymbolAnalysisFinished(const ProjectSnapshot& project, int filesAnalyzed, int totalSymbols);
+    void workspaceSymbolAnalysisDeferred(const ProjectSnapshot& project,
+                                         int totalFiles,
+                                         qint64 totalBytes,
+                                         qint64 largestFileBytes);
     void workspaceAnalysisRequestQueued(
         const WorkspaceAnalysisRequestTelemetry& telemetry);
     void workspaceAnalysisRequestResolved(

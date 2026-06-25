@@ -106,14 +106,18 @@ private:
         QList<ModuleHierarchyGroup> moduleHierarchy;
         QList<SymbolOutlineGroup> symbolOutline;
         DesignHierarchyReport designHierarchy;
+        QString fileHierarchyFilter;
         QString moduleHierarchyFilter;
         QString symbolOutlineFileName;
         QString symbolOutlineFilter;
         QString designTopModule;
         std::uint64_t designSnapshotGeneration = 0;
+        bool fileListValid = false;
+        bool fileHierarchyValid = false;
         bool moduleHierarchyValid = false;
         bool symbolOutlineValid = false;
         bool designHierarchyValid = false;
+        bool designTopInferred = true;
 
         void reserveDefaults();
         void clearFileList();
@@ -135,7 +139,7 @@ private:
 
     // Helper methods
     void setupConnections();
-    void updateFileHierarchyData();
+    bool updateFileHierarchyData();
     bool updateModuleHierarchyData();
     bool updateSymbolHierarchyData();
     bool updateDesignHierarchyData(bool force = false);

@@ -37,6 +37,7 @@ constexpr int kSearchSelectionMarker = 1005;
 constexpr int kFlashSelectionProperty = QTextFormat::UserProperty + 6;
 constexpr int kFlashSelectionMarker = 1006;
 constexpr int kMaxPassiveMatchHighlights = 500;
+constexpr int kMaxPassiveSymbolHighlightCharacters = 1024 * 1024;
 
 void removeSelectionsByProperty(
     QList<QTextEdit::ExtraSelection>& selections,
@@ -160,8 +161,11 @@ void EditorSelection::removeByProperty(
     int property,
     int value)
 {
-    QList<QTextEdit::ExtraSelection> selections =
-        editorSelectionsWithout(editor, property, value);
+    QList<QTextEdit::ExtraSelection> selections = editor->extraSelections();
+    const int before = selections.size();
+    removeSelectionsByProperty(selections, property, value);
+    if (selections.size() == before)
+        return;
     editor->setExtraSelections(selections);
 }
 
@@ -366,6 +370,13 @@ void EditorSelection::highlightCurrentSymbolReferences(MyCodeEditor* editor)
             editor,
             kCurrentSymbolSelectionProperty,
             kCurrentSymbolSelectionMarker);
+
+    if (editor->document()->characterCount()
+        > kMaxPassiveSymbolHighlightCharacters) {
+        if (selections.size() != editor->extraSelections().size())
+            editor->setExtraSelections(selections);
+        return;
+    }
 
     QTextCursor wordCursor = editor->textCursor();
     wordCursor.select(QTextCursor::WordUnderCursor);

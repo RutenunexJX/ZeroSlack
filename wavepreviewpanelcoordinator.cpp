@@ -73,7 +73,9 @@ public:
 
     QSize sizeHint() const override
     {
-        const int laneCount = report.available ? report.lanes.size() : 2;
+        const int laneCount = report.trace.isValid()
+            ? report.trace.traceSignals.size()
+            : (report.available ? report.lanes.size() : 2);
         return QSize(460, qBound(132, 52 + laneCount * 34, 260));
     }
 
@@ -136,7 +138,12 @@ protected:
             painter.setPen(QColor(QStringLiteral("#64748b")));
             painter.drawText(canvasRect,
                              Qt::AlignCenter,
-                             QStringLiteral("No waveform sketch"));
+                             QStringLiteral("No local waveform"));
+            return;
+        }
+
+        if (report.trace.isValid()) {
+            paintTrace(painter, canvasRect);
             return;
         }
 
@@ -357,6 +364,129 @@ protected:
     }
 
 private:
+    void paintTrace(QPainter& painter, const QRect& canvasRect)
+    {
+        const int labelWidth = qMin(130, qMax(84, width() / 4));
+        const int left = 10;
+        const int right = 12;
+        const int top = 28;
+        const int rowHeight = 32;
+        const int timelineLeft = left + labelWidth;
+        const int timelineRight = width() - right;
+        const int timelineWidth = std::max(80, timelineRight - timelineLeft);
+        const int maxCycle = qMax(1, report.trace.cycleCount);
+        const int laneBottom = top + report.trace.traceSignals.size() * rowHeight;
+
+        painter.setPen(QColor(QStringLiteral("#64748b")));
+        for (int cycle = 0; cycle <= maxCycle; ++cycle) {
+            const int x = timelineLeft
+                + static_cast<int>((timelineWidth * cycle) / maxCycle);
+            painter.drawLine(x, top - 8, x, laneBottom + 4);
+            painter.drawText(QRect(x - 20, 4, 40, 18),
+                             Qt::AlignCenter,
+                             QStringLiteral("%1").arg(cycle));
+        }
+
+        QFont labelFont = painter.font();
+        labelFont.setBold(true);
+        painter.setFont(labelFont);
+
+        for (int signalIndex = 0;
+             signalIndex < report.trace.traceSignals.size();
+             ++signalIndex) {
+            const WavePreviewTraceSignal& signal =
+                report.trace.traceSignals.at(signalIndex);
+            const int y = top + signalIndex * rowHeight;
+            const int centerY = y + rowHeight / 2;
+            const QRect laneRect(left,
+                                 y + 2,
+                                 timelineRight - left,
+                                 rowHeight - 4);
+            if (signal.signalName == selectedSignalName)
+                painter.fillRect(laneRect, QColor(QStringLiteral("#e0f2fe")));
+            const QString signalValues =
+                signal.values.join(QStringLiteral(" -> "));
+            laneHits.append(
+                {laneRect,
+                 QStringLiteral("waveform signal: %1\nvalues: %2")
+                     .arg(signal.signalName, signalValues),
+                 QStringLiteral("Selected waveform %1 values %2")
+                     .arg(signal.signalName, signalValues),
+                 signal.signalName});
+            painter.setPen(QPen(QColor(QStringLiteral("#e2e8f0"))));
+            painter.drawLine(left, centerY, timelineRight, centerY);
+            painter.setPen(QColor(QStringLiteral("#0f172a")));
+            painter.drawText(QRect(left, y + 2, labelWidth - 8, rowHeight - 4),
+                             Qt::AlignRight | Qt::AlignVCenter,
+                             signal.signalName);
+
+            const int highY = y + 7;
+            const int lowY = y + rowHeight - 8;
+            const int busTop = y + 7;
+            const int busHeight = rowHeight - 14;
+            QPen wavePen(QColor(QStringLiteral("#0f766e")), 2);
+            painter.setPen(wavePen);
+            painter.setBrush(Qt::NoBrush);
+
+            const int sampleCount = signal.values.size();
+            if (sampleCount < 2)
+                continue;
+
+            auto xForSample = [&](int sample) {
+                return timelineLeft
+                    + static_cast<int>((timelineWidth * sample)
+                                       / qMax(1, sampleCount - 1));
+            };
+            if (signal.width <= 1) {
+                for (int sample = 0; sample < sampleCount - 1; ++sample) {
+                    const QString value = signal.values.at(sample);
+                    const QString nextValue = signal.values.at(sample + 1);
+                    const bool unknown = value == QStringLiteral("x");
+                    const int yValue =
+                        unknown ? centerY
+                                : (value == QStringLiteral("0") ? lowY : highY);
+                    const int x0 = xForSample(sample);
+                    const int x1 = xForSample(sample + 1);
+                    if (unknown) {
+                        painter.setPen(QPen(QColor(QStringLiteral("#94a3b8")), 1));
+                        painter.drawLine(x0, centerY, x1, centerY);
+                        painter.drawText(QRect(x0, y + 2, x1 - x0, 12),
+                                         Qt::AlignCenter,
+                                         QStringLiteral("x"));
+                    } else {
+                        painter.setPen(wavePen);
+                        painter.drawLine(x0, yValue, x1, yValue);
+                    }
+                    if (nextValue != value) {
+                        const bool nextUnknown = nextValue == QStringLiteral("x");
+                        const int nextY =
+                            nextUnknown ? centerY
+                                        : (nextValue == QStringLiteral("0")
+                                               ? lowY
+                                               : highY);
+                        painter.drawLine(x1, yValue, x1, nextY);
+                    }
+                }
+            } else {
+                for (int sample = 0; sample < sampleCount - 1; ++sample) {
+                    const int x0 = xForSample(sample);
+                    const int x1 = xForSample(sample + 1);
+                    QRect segment(x0 + 1,
+                                  busTop,
+                                  qMax(8, x1 - x0 - 2),
+                                  busHeight);
+                    painter.setPen(QPen(QColor(QStringLiteral("#0f766e")), 1));
+                    painter.setBrush(QColor(QStringLiteral("#ccfbf1")));
+                    painter.drawRect(segment);
+                    painter.setPen(QColor(QStringLiteral("#0f172a")));
+                    painter.drawText(segment.adjusted(2, 0, -2, 0),
+                                     Qt::AlignCenter,
+                                     signal.values.at(sample));
+                }
+            }
+        }
+    }
+
     WavePreviewReport report;
     QVector<CanvasEventHit> eventHits;
     QVector<CanvasLaneHit> laneHits;
@@ -613,7 +743,24 @@ QString reportSummaryText(const WavePreviewReport& report, bool dirty)
                   .arg(countText(report.warnings.size(),
                                  QStringLiteral("warning"),
                                  QStringLiteral("warnings")));
-    return QStringLiteral("%1 lanes, %2 events, %3 blocks, %4 clock/reset groups, activity %5%6%7%8")
+    const QString scopeText =
+        report.scoped
+            ? QStringLiteral("%1 scope, ").arg(report.scopeLabel)
+            : QString();
+    if (report.trace.isValid()) {
+        return QStringLiteral("%1local waveform: %2 signals, %3 cycles, %4 lanes, %5 events, activity %6%7%8%9")
+            .arg(scopeText)
+            .arg(report.trace.traceSignals.size())
+            .arg(report.trace.cycleCount)
+            .arg(report.lanes.size())
+            .arg(report.assignmentCount)
+            .arg(activitySummaryText(report.activitySummary))
+            .arg(busiestLaneText(report))
+            .arg(warningText)
+            .arg(dirty ? QStringLiteral(" - live dirty buffer") : QString());
+    }
+    return QStringLiteral("%1code sketch, not simulated waveform: %2 lanes, %3 events, %4 blocks, %5 clock/reset groups, activity %6%7%8%9")
+        .arg(scopeText)
         .arg(report.lanes.size())
         .arg(report.assignmentCount)
         .arg(report.blocks.size())
@@ -942,7 +1089,10 @@ void WavePreviewPanelCoordinator::setNavigationHandler(
 void WavePreviewPanelCoordinator::refreshFromDocument(
     const QString& fileName,
     const QString& documentText,
-    bool dirty)
+    bool dirty,
+    int scopeStartPosition,
+    int scopeEndPosition,
+    const QString& scopeLabel)
 {
     currentFileName = fileName;
     if (documentText.trimmed().isEmpty()) {
@@ -951,28 +1101,48 @@ void WavePreviewPanelCoordinator::refreshFromDocument(
     }
 
     if (shouldQueueRefresh(documentText, dirty)) {
-        queueRefresh(fileName, documentText, dirty);
+        queueRefresh(fileName,
+                     documentText,
+                     dirty,
+                     scopeStartPosition,
+                     scopeEndPosition,
+                     scopeLabel);
         return;
     }
 
     clearQueuedRefresh();
-    renderDocumentNow(fileName, documentText, dirty);
+    renderDocumentNow(fileName,
+                      documentText,
+                      dirty,
+                      scopeStartPosition,
+                      scopeEndPosition,
+                      scopeLabel);
 }
 
 void WavePreviewPanelCoordinator::queueRefresh(
     const QString& fileName,
     const QString& documentText,
-    bool dirty)
+    bool dirty,
+    int scopeStartPosition,
+    int scopeEndPosition,
+    const QString& scopeLabel)
 {
     pendingFileName = fileName;
     pendingDocumentText = documentText;
+    pendingScopeStartPosition = scopeStartPosition;
+    pendingScopeEndPosition = scopeEndPosition;
+    pendingScopeLabel = scopeLabel;
     pendingDirty = dirty;
     pendingRefresh = true;
     currentFileName = fileName;
 
     if (titleLabel) {
-        titleLabel->setText(QStringLiteral("Wave Preview - %1")
-                                .arg(displayFileName(fileName)));
+        const QString titleScope =
+            scopeLabel.isEmpty()
+                ? QString()
+                : QStringLiteral(" - %1").arg(scopeLabel);
+        titleLabel->setText(QStringLiteral("Wave Preview - %1%2")
+                                .arg(displayFileName(fileName), titleScope));
     }
     if (summaryLabel) {
         currentSummaryText = QStringLiteral("Refresh queued for large buffer");
@@ -990,9 +1160,15 @@ void WavePreviewPanelCoordinator::flushQueuedRefresh()
 
     const QString fileName = pendingFileName;
     const QString documentText = pendingDocumentText;
+    const int scopeStartPosition = pendingScopeStartPosition;
+    const int scopeEndPosition = pendingScopeEndPosition;
+    const QString scopeLabel = pendingScopeLabel;
     const bool dirty = pendingDirty;
     pendingFileName.clear();
     pendingDocumentText.clear();
+    pendingScopeStartPosition = -1;
+    pendingScopeEndPosition = -1;
+    pendingScopeLabel.clear();
     pendingDirty = false;
     pendingRefresh = false;
 
@@ -1000,13 +1176,21 @@ void WavePreviewPanelCoordinator::flushQueuedRefresh()
         renderUnavailable(QStringLiteral("No SystemVerilog text to preview."));
         return;
     }
-    renderDocumentNow(fileName, documentText, dirty);
+    renderDocumentNow(fileName,
+                      documentText,
+                      dirty,
+                      scopeStartPosition,
+                      scopeEndPosition,
+                      scopeLabel);
 }
 
 void WavePreviewPanelCoordinator::clearQueuedRefresh()
 {
     pendingFileName.clear();
     pendingDocumentText.clear();
+    pendingScopeStartPosition = -1;
+    pendingScopeEndPosition = -1;
+    pendingScopeLabel.clear();
     pendingDirty = false;
     pendingRefresh = false;
     if (refreshTimer)
@@ -1016,13 +1200,19 @@ void WavePreviewPanelCoordinator::clearQueuedRefresh()
 void WavePreviewPanelCoordinator::renderDocumentNow(
     const QString& fileName,
     const QString& documentText,
-    bool dirty)
+    bool dirty,
+    int scopeStartPosition,
+    int scopeEndPosition,
+    const QString& scopeLabel)
 {
     const WavePreviewReport report =
         WavePreviewService::getInstance()->previewForDocument(
             {fileName,
              documentText,
-             SemanticIndex::getInstance()->snapshot()});
+             SemanticIndex::getInstance()->snapshot(),
+             scopeStartPosition,
+             scopeEndPosition,
+             scopeLabel});
     renderReport(report, fileName, dirty);
 }
 
@@ -1053,8 +1243,12 @@ void WavePreviewPanelCoordinator::renderReport(
     if (auto* canvas = static_cast<WavePreviewCanvas*>(previewCanvas))
         canvas->setReport(report, fileName);
     if (titleLabel) {
-        titleLabel->setText(QStringLiteral("Wave Preview - %1")
-                                .arg(displayFileName(fileName)));
+        const QString titleScope =
+            report.scoped && !report.scopeLabel.isEmpty()
+                ? QStringLiteral(" - %1").arg(report.scopeLabel)
+                : QString();
+        titleLabel->setText(QStringLiteral("Wave Preview - %1%2")
+                                .arg(displayFileName(fileName), titleScope));
     }
     if (summaryLabel) {
         currentSummaryText = reportSummaryText(report, dirty);
@@ -1063,7 +1257,7 @@ void WavePreviewPanelCoordinator::renderReport(
 
     if (!report.available) {
         auto* item = new QTreeWidgetItem(previewTree);
-        item->setText(0, QStringLiteral("No assign/always waveform sketch found"));
+        item->setText(0, QStringLiteral("No assign/always code-sketch events found"));
         item->setText(1, QStringLiteral("-"));
         item->setText(2, QStringLiteral("-"));
         item->setText(3, QStringLiteral("-"));
@@ -1071,6 +1265,48 @@ void WavePreviewPanelCoordinator::renderReport(
         item->setText(5, QStringLiteral("-"));
         item->setText(6, QStringLiteral("-"));
         return;
+    }
+
+    if (report.trace.isValid()) {
+        auto* traceRoot = new QTreeWidgetItem(previewTree);
+        traceRoot->setText(0, QStringLiteral("Waveform Trace"));
+        traceRoot->setText(1,
+                           QStringLiteral("%1 cycles")
+                               .arg(report.trace.cycleCount));
+        traceRoot->setText(2, QStringLiteral("-"));
+        traceRoot->setText(3, QStringLiteral("-"));
+        traceRoot->setText(4,
+                           QStringLiteral("%1 signals")
+                               .arg(report.trace.traceSignals.size()));
+        traceRoot->setText(5, QStringLiteral("local waveform"));
+        traceRoot->setText(6, QStringLiteral("-"));
+        QFont traceFont = traceRoot->font(0);
+        traceFont.setBold(true);
+        traceRoot->setFont(0, traceFont);
+        setItemTooltip(traceRoot,
+                       QStringLiteral("local waveform trace: %1 signals, %2 cycles")
+                           .arg(report.trace.traceSignals.size())
+                           .arg(report.trace.cycleCount));
+        for (const WavePreviewTraceSignal& signal : report.trace.traceSignals) {
+            auto* signalItem = new QTreeWidgetItem(traceRoot);
+            signalItem->setText(0, signal.signalName);
+            signalItem->setText(1,
+                                signal.values.join(QStringLiteral(" -> ")));
+            signalItem->setText(2,
+                                signal.clock ? QStringLiteral("clock")
+                                             : QStringLiteral("-"));
+            signalItem->setText(3, QStringLiteral("-"));
+            signalItem->setText(4,
+                                QStringLiteral("%1-bit").arg(signal.width));
+            signalItem->setText(5, QStringLiteral("trace"));
+            signalItem->setText(6, QStringLiteral("-"));
+            setItemTooltip(
+                signalItem,
+                QStringLiteral("%1: %2")
+                    .arg(signal.signalName,
+                         signal.values.join(QStringLiteral(" -> "))));
+        }
+        traceRoot->setExpanded(true);
     }
 
     if (!report.warnings.isEmpty()) {
