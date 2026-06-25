@@ -2,6 +2,7 @@
 
 #include "activitylogservice.h"
 #include "analysisscheduler.h"
+#include "semanticindex.h"
 #include "workspaceanalysisrequestqueue.h"
 #include "workspaceanalysisplanservice.h"
 
@@ -41,6 +42,19 @@ QString bandSuffix(const QString& band)
     return band.isEmpty()
         ? QString()
         : QStringLiteral(" [%1]").arg(band);
+}
+
+SemanticAnalysisBandReport analysisBandReportForProject(
+    const ProjectSnapshot& project)
+{
+    QList<SemanticSymbolRecord> records;
+    SemanticIndex* semanticIndex = SemanticIndex::getInstance();
+    for (const QString& fileName : project.systemVerilogFiles) {
+        const QList<SemanticSymbolRecord> fileRecords =
+            semanticIndex->getSymbolRecords(fileName);
+        records.append(fileRecords);
+    }
+    return semanticAnalysisBandReportForRecords(records);
 }
 }
 
@@ -93,20 +107,7 @@ void AnalysisProgressCoordinator::connectToScheduler(AnalysisScheduler* newSched
     connect(scheduler,
             &AnalysisScheduler::workspaceSymbolAnalysisFinished,
             this,
-            [this](const ProjectSnapshot& project, int filesAnalyzed, int totalSymbols) {
-                emit statusMessageRequested(
-                    QString("Symbol analysis complete: %1 files, %2 symbols")
-                        .arg(filesAnalyzed)
-                        .arg(totalSymbols),
-                    3000);
-                showRelationshipStageStarted(project.systemVerilogFiles);
-                ActivityLogService::getInstance()->append(
-                    QStringLiteral("Analyzer"),
-                    ActivityLogLevel::Info,
-                    QStringLiteral("Parsed %1 files, %2 symbols")
-                        .arg(filesAnalyzed)
-                        .arg(totalSymbols));
-            });
+            &AnalysisProgressCoordinator::handleWorkspaceSymbolAnalysisFinished);
     connect(scheduler,
             &AnalysisScheduler::workspaceAnalysisRequestQueued,
             this,
@@ -292,6 +293,33 @@ void AnalysisProgressCoordinator::handleWorkspaceSymbolAnalysisCancelled(
     emit statusMessageRequested(
         QStringLiteral("Workspace symbol analysis cancelled"),
         3000);
+}
+
+void AnalysisProgressCoordinator::handleWorkspaceSymbolAnalysisFinished(
+    const ProjectSnapshot& project,
+    int filesAnalyzed,
+    int totalSymbols)
+{
+    emit statusMessageRequested(
+        QString("Symbol analysis complete: %1 files, %2 symbols")
+            .arg(filesAnalyzed)
+            .arg(totalSymbols),
+        3000);
+    showRelationshipStageStarted(project.systemVerilogFiles);
+
+    QString message =
+        QStringLiteral("Parsed %1 files, %2 symbols")
+            .arg(filesAnalyzed)
+            .arg(totalSymbols);
+    const SemanticAnalysisBandReport report =
+        analysisBandReportForProject(project);
+    if (!report.bands.isEmpty())
+        message += QStringLiteral("; %1").arg(report.summaryText());
+
+    ActivityLogService::getInstance()->append(
+        QStringLiteral("Analyzer"),
+        ActivityLogLevel::Info,
+        message);
 }
 
 bool AnalysisProgressCoordinator::isSymbolAnalysisCancelled() const

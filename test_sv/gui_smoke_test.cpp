@@ -997,6 +997,96 @@ static void runActivityLogServiceRegression()
                true);
     service->clear();
 
+    const QString bandReportCurrentFile =
+        QDir::temp().absoluteFilePath(QStringLiteral("zs_activity_current.sv"));
+    const QString bandReportBackgroundFile =
+        QDir::temp().absoluteFilePath(QStringLiteral("zs_activity_background.sv"));
+    QHash<QString, SemanticAnalysisBandMetadata> activityBandMetadata;
+    SemanticAnalysisBandMetadata currentBand;
+    currentBand.label = QStringLiteral("current");
+    currentBand.displayName = QStringLiteral("current");
+    currentBand.priority = true;
+    currentBand.publicationCheckpoint = 1;
+    activityBandMetadata.insert(bandReportCurrentFile, currentBand);
+    SemanticAnalysisBandMetadata backgroundBand;
+    backgroundBand.label = QStringLiteral("background");
+    backgroundBand.displayName = QStringLiteral("background");
+    backgroundBand.priority = false;
+    activityBandMetadata.insert(bandReportBackgroundFile, backgroundBand);
+    SemanticIndex* semanticIndex = SemanticIndex::getInstance();
+    semanticIndex->setWorkspaceFileAnalysisBands(activityBandMetadata);
+    const SemanticSymbolRecord currentBandModule =
+        SemanticFixtureRecordBuilder(
+            QStringLiteral("activity_current_top"),
+            SymbolTaxonomy::DeclarationKind::Module)
+            .withFile(bandReportCurrentFile)
+            .withLocalHandle(91001)
+            .record();
+    const SemanticSymbolRecord currentBandSignal =
+        SemanticFixtureRecordBuilder(
+            QStringLiteral("activity_current_sig"),
+            SymbolTaxonomy::DeclarationKind::Signal)
+            .withFile(bandReportCurrentFile)
+            .withLocalHandle(91002)
+            .inModule(QStringLiteral("activity_current_top"))
+            .record();
+    const SemanticSymbolRecord backgroundBandModule =
+        SemanticFixtureRecordBuilder(
+            QStringLiteral("activity_background_top"),
+            SymbolTaxonomy::DeclarationKind::Module)
+            .withFile(bandReportBackgroundFile)
+            .withLocalHandle(91003)
+            .record();
+    semanticIndex->updateSymbolRecordsForFile(
+        bandReportCurrentFile,
+        {currentBandModule, currentBandSignal},
+        QStringLiteral("module activity_current_top; logic activity_current_sig; endmodule\n"));
+    semanticIndex->updateSymbolRecordsForFile(
+        bandReportBackgroundFile,
+        {backgroundBandModule},
+        QStringLiteral("module activity_background_top; endmodule\n"));
+    ProjectSnapshot bandReportProject;
+    bandReportProject.workspaceRoot = QDir::tempPath();
+    bandReportProject.systemVerilogFiles = {
+        bandReportCurrentFile,
+        bandReportBackgroundFile
+    };
+    QSignalSpy bandReportStatusSpy(
+        &planCoordinator,
+        &AnalysisProgressCoordinator::statusMessageRequested);
+    planCoordinator.handleWorkspaceSymbolAnalysisFinished(
+        bandReportProject,
+        2,
+        3);
+    bool sawAnalysisBandReport = false;
+    for (const ActivityLogEvent& event : service->events()) {
+        sawAnalysisBandReport = sawAnalysisBandReport
+            || (event.source == QStringLiteral("Analyzer")
+                && event.message.contains(QStringLiteral("Parsed 2 files, 3 symbols"))
+                && event.message.contains(
+                    QStringLiteral("bands current 2 symbols/1 file"))
+                && event.message.contains(
+                    QStringLiteral("background 1 symbol/1 file")));
+    }
+    expectBool("activity log records analysis band report summary",
+               sawAnalysisBandReport,
+               true);
+    expectBool("workspace symbol finish keeps status visibility",
+               bandReportStatusSpy.count() == 1
+                   && bandReportStatusSpy.at(0).at(0).toString().contains(
+                       QStringLiteral("2 files, 3 symbols")),
+               true);
+    semanticIndex->updateSymbolRecordsForFile(
+        bandReportCurrentFile,
+        {},
+        QString());
+    semanticIndex->updateSymbolRecordsForFile(
+        bandReportBackgroundFile,
+        {},
+        QString());
+    semanticIndex->clearWorkspaceFileAnalysisBands();
+    service->clear();
+
     AnalysisProgressCoordinator progressCoordinator(nullptr);
     progressCoordinator.handleWorkspaceSymbolProgress(
         1,

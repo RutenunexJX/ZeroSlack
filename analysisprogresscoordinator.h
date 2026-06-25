@@ -9,6 +9,7 @@
 
 class AnalysisScheduler;
 class QWidget;
+struct ProjectSnapshot;
 struct WorkspaceAnalysisPlan;
 struct WorkspaceAnalysisRequestTelemetry;
 struct WorkspaceRelationshipAnalysisResult;
@@ -33,6 +34,10 @@ public:
         const WorkspaceAnalysisRequestTelemetry& telemetry);
     void handleWorkspaceSymbolAnalysisCancelled(
         const WorkspaceAnalysisRequestTelemetry& telemetry);
+    void handleWorkspaceSymbolAnalysisFinished(
+        const ProjectSnapshot& project,
+        int filesAnalyzed,
+        int totalSymbols);
     bool isSymbolAnalysisCancelled() const;
 
 signals:

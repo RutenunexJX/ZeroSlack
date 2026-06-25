@@ -1009,6 +1009,17 @@ feature direction that violates them.
 - Next Huge Workspace milestones: per-band diagnostics if semantically safe, richer tiered index publication, and UI/report surfaces that consume `SemanticAnalysisBandReport` without recomputing priority policy.
 - Verification for this block: focused build target `completion_test`; direct `completion_test` run with 533 checks; direct `gui_smoke_test` run with 418 checks against `test_sv/new` plus `test_sv/test_symbols.sv`. Final release verification for the commit also includes changed-file C++ regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
 
+### Post-L: Huge Workspace Analysis Band Activity Visibility MVP
+
+- Status: implemented in the current worktree.
+- Scope: twenty-seventh usable Huge Workspace Mode milestone and the first Activity/Output consumer of `SemanticAnalysisBandReport`. It does not change extraction order, staged publication, diagnostics, relationship analysis, or query ranking.
+- `AnalysisProgressCoordinator::handleWorkspaceSymbolAnalysisFinished()` now preserves the existing status-bar message and relationship-stage startup, then appends a parsed-file/symbol Activity entry enriched with the analysis-band report for the finished project files.
+- The report is generated from `ProjectSnapshot::systemVerilogFiles`, so Activity visibility stays scoped to the just-finished project instead of accidentally including unrelated native records left in `SemanticIndex`.
+- `gui_smoke_test` covers the user-visible Activity path by publishing temporary current/background records, invoking the finish handler, and checking the logged `bands current ... background ...` summary while cleaning the temporary records and band metadata afterward.
+- Implementation remains no-regex and keeps tier policy outside UI: the coordinator consumes `SemanticAnalysisBandReport` data rather than recomputing priority tiers.
+- Next Huge Workspace milestones: per-band diagnostics if semantically safe, richer tiered index publication, and additional UI/report surfaces that consume `SemanticAnalysisBandReport` without recomputing priority policy.
+- Verification for this block: focused build target `gui_smoke_test`; direct `gui_smoke_test` run with 420 checks; focused build target `completion_test`; direct `completion_test` run with 533 checks. Final release verification for the commit also includes changed-file C++ regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
+
 ## Batch Policy
 
 - Phase D can proceed in batches when blocks do not share service contracts or UI surfaces.
