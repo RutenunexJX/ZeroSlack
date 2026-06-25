@@ -1049,6 +1049,55 @@ int main(int argc, char** argv) {
              indentOnlyProceduralBodyReport.formattedText,
              formatterProceduralBodyReport.formattedText);
 
+    const QString formatterMultilineHeaderBodyInput =
+        QStringLiteral("module multiline_header_demo;\n"
+                       "always_ff @(posedge clk or\n"
+                       "negedge rst_n)\n"
+                       "q <= d;\n"
+                       "always @(a or\n"
+                       "b)\n"
+                       "y = a & b;\n"
+                       "always_comb begin\n"
+                       "if (sel &&\n"
+                       "ready)\n"
+                       "z = a;\n"
+                       "end\n"
+                       "endmodule\n");
+    const FormatterReport formatterMultilineHeaderBodyReport =
+        FormatterService::getInstance()->formatDocument(
+            formatterMultilineHeaderBodyInput);
+    expectBool("Formatter multiline header body report changed",
+               formatterMultilineHeaderBodyReport.changed,
+               true);
+    expectEq("Formatter indents multiline header single statement bodies",
+             formatterMultilineHeaderBodyReport.formattedText,
+             QStringLiteral("module multiline_header_demo;\n"
+                            "    always_ff @(posedge clk or\n"
+                            "        negedge rst_n)\n"
+                            "        q <= d;\n"
+                            "    always @(a or\n"
+                            "        b)\n"
+                            "        y = a & b;\n"
+                            "    always_comb begin\n"
+                            "        if (sel &&\n"
+                            "            ready)\n"
+                            "            z = a;\n"
+                            "    end\n"
+                            "endmodule\n"));
+    const FormatterReport unchangedMultilineHeaderBodyReport =
+        FormatterService::getInstance()->formatDocument(
+            formatterMultilineHeaderBodyReport.formattedText);
+    expectBool("Formatter multiline header body idempotent",
+               unchangedMultilineHeaderBodyReport.changed,
+               false);
+    const FormatterReport indentOnlyMultilineHeaderBodyReport =
+        FormatterService::getInstance()->formatDocument(
+            formatterMultilineHeaderBodyInput,
+            FormatterProfile::IndentOnly);
+    expectEq("Formatter indent-only keeps multiline header body indentation",
+             indentOnlyMultilineHeaderBodyReport.formattedText,
+             formatterMultilineHeaderBodyReport.formattedText);
+
     const QString formatterSvBlockInput =
         QStringLiteral("program tb;\n"
                        "default clocking cb @(posedge clk);\n"

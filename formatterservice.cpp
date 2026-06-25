@@ -385,6 +385,7 @@ bool startsWithLeadingContinuationOperator(const QString& code)
 }
 
 int delimiterContinuationBalance(const QString& codeOnly);
+bool lineHasCode(const QString& line);
 
 bool containsToken(const QStringList& tokens, const QString& needle)
 {
@@ -393,6 +394,32 @@ bool containsToken(const QStringList& tokens, const QString& needle)
             return true;
     }
     return false;
+}
+
+bool isSingleStatementControlHeaderKeyword(const QString& token)
+{
+    return token == QStringLiteral("if")
+        || token == QStringLiteral("for")
+        || token == QStringLiteral("foreach")
+        || token == QStringLiteral("while")
+        || token == QStringLiteral("repeat")
+        || token == QStringLiteral("forever")
+        || token == QStringLiteral("always")
+        || token == QStringLiteral("always_comb")
+        || token == QStringLiteral("always_ff")
+        || token == QStringLiteral("always_latch")
+        || token == QStringLiteral("initial")
+        || token == QStringLiteral("final")
+        || token == QStringLiteral("else");
+}
+
+bool hasSingleStatementHeaderBlockToken(const QStringList& tokens)
+{
+    return containsToken(tokens, QStringLiteral("begin"))
+        || containsToken(tokens, QStringLiteral("fork"))
+        || containsToken(tokens, QStringLiteral("case"))
+        || containsToken(tokens, QStringLiteral("casex"))
+        || containsToken(tokens, QStringLiteral("casez"));
 }
 
 bool isSingleStatementControlHeader(const QString& codeOnly)
@@ -408,30 +435,69 @@ bool isSingleStatementControlHeader(const QString& codeOnly)
     const QStringList tokens = codeTokens(trimmed);
     if (tokens.isEmpty())
         return false;
-    if (containsToken(tokens, QStringLiteral("begin"))
-        || containsToken(tokens, QStringLiteral("fork"))
-        || containsToken(tokens, QStringLiteral("case"))
-        || containsToken(tokens, QStringLiteral("casex"))
-        || containsToken(tokens, QStringLiteral("casez"))) {
+    if (hasSingleStatementHeaderBlockToken(tokens))
+        return false;
+
+    return isSingleStatementControlHeaderKeyword(tokens.first());
+}
+
+bool startsSingleStatementControlHeader(const QString& codeOnly)
+{
+    const QString trimmed = codeOnly.trimmed();
+    if (trimmed.isEmpty()
+        || trimmed.endsWith(QLatin1Char(';'))
+        || startsWithPreprocessor(trimmed)
+        || delimiterContinuationBalance(trimmed) <= 0) {
         return false;
     }
 
-    const QString first = tokens.first();
-    if (first == QStringLiteral("if")
-        || first == QStringLiteral("for")
-        || first == QStringLiteral("foreach")
-        || first == QStringLiteral("while")
-        || first == QStringLiteral("repeat")
-        || first == QStringLiteral("forever")
-        || first == QStringLiteral("always")
-        || first == QStringLiteral("always_comb")
-        || first == QStringLiteral("always_ff")
-        || first == QStringLiteral("always_latch")
-        || first == QStringLiteral("initial")
-        || first == QStringLiteral("final")) {
-        return true;
+    const QStringList tokens = codeTokens(trimmed);
+    if (tokens.isEmpty())
+        return false;
+    if (hasSingleStatementHeaderBlockToken(tokens))
+        return false;
+
+    return isSingleStatementControlHeaderKeyword(tokens.first());
+}
+
+int singleStatementControlHeaderEndIndex(const QStringList& lines,
+                                         int startIndex,
+                                         const QString& startCode)
+{
+    if (isSingleStatementControlHeader(startCode))
+        return startIndex;
+    if (!startsSingleStatementControlHeader(startCode))
+        return -1;
+
+    int balance = delimiterContinuationBalance(startCode);
+    bool inBlockComment = false;
+    for (int i = startIndex + 1; i < lines.size(); ++i) {
+        const QString line = lines.at(i);
+        if (!lineHasCode(line))
+            return -1;
+        if (startsWithPreprocessor(line))
+            return -1;
+
+        const QString codeOnly = codeOnlyLine(line, &inBlockComment);
+        const QString trimmed = codeOnly.trimmed();
+        if (inBlockComment
+            || trimmed.isEmpty()
+            || trimmed.endsWith(QLatin1Char(';'))) {
+            return -1;
+        }
+
+        const QStringList tokens = codeTokens(trimmed);
+        if (hasSingleStatementHeaderBlockToken(tokens))
+            return -1;
+
+        balance += delimiterContinuationBalance(trimmed);
+        if (balance == 0)
+            return i;
+        if (balance < 0)
+            return -1;
     }
-    return first == QStringLiteral("else");
+
+    return -1;
 }
 
 bool startsWithElseOrClosingToken(const QString& codeOnly)
@@ -1138,11 +1204,15 @@ void indentSingleStatementBodyLines(QStringList* lines, int indentWidth)
             continue;
 
         const QString headerCode = codeOnlyLine(headerLine, &inBlockComment);
-        if (!isSingleStatementControlHeader(headerCode))
+        const int headerEndIndex =
+            singleStatementControlHeaderEndIndex(*lines, i, headerCode);
+        if (headerEndIndex < 0)
             continue;
 
         const int headerIndent = leadingWhitespaceWidth(headerLine);
-        for (int bodyIndex = i + 1; bodyIndex < lines->size(); ++bodyIndex) {
+        for (int bodyIndex = headerEndIndex + 1;
+             bodyIndex < lines->size();
+             ++bodyIndex) {
             const QString bodyLine = lines->at(bodyIndex);
             if (!lineHasCode(bodyLine))
                 continue;
@@ -1165,6 +1235,7 @@ void indentSingleStatementBodyLines(QStringList* lines, int indentWidth)
                 + stripLeadingWhitespace(bodyLine);
             break;
         }
+        i = headerEndIndex;
     }
 }
 

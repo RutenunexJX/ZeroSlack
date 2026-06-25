@@ -588,6 +588,19 @@ feature direction that violates them.
 - Next Formatter milestones: deeper Tree-sitter-backed structural formatting, richer parser-aware continuation decisions, and safer expansion beyond simple single-statement body cases.
 - Verification for this block: focused build target `completion_test`; direct `completion_test` run with 546 checks. Final release verification for the commit also includes changed-file C++ regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
 
+### Post-L: Formatter Multiline Header Body Indent MVP
+
+- Status: implemented in the current worktree.
+- Scope: twenty-second usable formatter milestone and a conservative continuation-aware body-indent expansion. It does not split, merge, reorder, or rewrite statements, and it does not add `begin` / `end`.
+- `FormatterService` now recognizes single-statement control/procedural headers that start on one line and finish on a later line once delimiter balance returns to zero.
+- The scan remains conservative: header continuations are rejected if they hit preprocessor lines, unterminated block comments, `begin`, `fork`, `case` / `casex` / `casez`, or statement terminators before the header closes.
+- The existing body-indent pass now searches for the body after the detected header end line, so split `always_ff @(...)`, plain `always @(...)`, and split `if (...)` headers indent their following statement correctly.
+- The behavior is active in both `Structured` and `Indent Only` profiles because it only changes leading whitespace and composes with the existing delimiter continuation indentation.
+- `completion_test` verifies Structured output, Indent Only output, idempotence, split procedural event controls, and a split `if` header inside an `always_comb begin` block.
+- Implementation remains no-regex and uses deterministic code-token/comment/delimiter scans.
+- Next Formatter milestones: deeper Tree-sitter-backed structural formatting, richer parser-aware continuation decisions, and safer expansion beyond conservative header scans.
+- Verification for this block: focused build target `completion_test`; direct `completion_test` run with 550 checks. Final release verification for the commit also includes changed-file C++ regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
+
 ### Post-L: Wave Preview Data MVP
 
 - Status: implemented in the current worktree.
