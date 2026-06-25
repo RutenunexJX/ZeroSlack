@@ -4156,9 +4156,18 @@ int main(int argc, char** argv)
     bool sawWaveWarnings = false;
     bool sawWaveMixedWarning = false;
     bool sawWaveMultiBlockWarning = false;
+    bool sawWaveWarningLane = false;
     if (waveTree) {
         for (int i = 0; i < waveTree->topLevelItemCount(); ++i) {
             QTreeWidgetItem* root = waveTree->topLevelItem(i);
+            if (root && root->text(0) == QStringLiteral("q")) {
+                sawWaveWarningLane =
+                    root->text(1).contains(QStringLiteral("2 warnings"))
+                    && root->toolTip(0).contains(
+                        QStringLiteral("warnings: signal q mixes assign/comb/seq activity"))
+                    && root->toolTip(0).contains(
+                        QStringLiteral("assigned from 2 procedural blocks"));
+            }
             if (!root || root->text(0) != QStringLiteral("Warnings"))
                 continue;
             sawWaveWarnings =
@@ -4182,7 +4191,8 @@ int main(int argc, char** argv)
                waveTree
                    && sawWaveWarnings
                    && sawWaveMixedWarning
-                   && sawWaveMultiBlockWarning,
+                   && sawWaveMultiBlockWarning
+                   && sawWaveWarningLane,
                true);
     expectBool("wave preview summary shows warnings",
                waveSummary

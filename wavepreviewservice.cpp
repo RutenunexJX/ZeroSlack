@@ -1870,17 +1870,34 @@ QStringList activityKindsForLane(const WavePreviewLaneSummary& summary)
     return parts;
 }
 
-QStringList warningTextsForLanes(const QList<WavePreviewLane>& lanes)
+void appendLaneWarning(WavePreviewLane* lane,
+                       QStringList* warnings,
+                       const QString& warning)
+{
+    if (warning.isEmpty())
+        return;
+    if (warnings && !warnings->contains(warning))
+        warnings->append(warning);
+    if (lane && !lane->summary.warningTexts.contains(warning))
+        lane->summary.warningTexts.append(warning);
+}
+
+QStringList applyWarningTextsForLanes(QList<WavePreviewLane>* lanes)
 {
     QStringList warnings;
-    for (const WavePreviewLane& lane : lanes) {
+    if (!lanes)
+        return warnings;
+
+    for (WavePreviewLane& lane : *lanes) {
         if (!lane.summary.isValid())
             continue;
 
         const QStringList activityKinds =
             activityKindsForLane(lane.summary);
         if (activityKinds.size() > 1) {
-            warnings.append(
+            appendLaneWarning(
+                &lane,
+                &warnings,
                 QStringLiteral(
                     "signal %1 mixes %2 activity; Wave Preview does not resolve writer priority")
                     .arg(lane.signalName,
@@ -1888,7 +1905,9 @@ QStringList warningTextsForLanes(const QList<WavePreviewLane>& lanes)
         }
 
         if (lane.summary.blockCount > 1) {
-            warnings.append(
+            appendLaneWarning(
+                &lane,
+                &warnings,
                 QStringLiteral(
                     "signal %1 is assigned from %2 procedural blocks; inspect block ownership before trusting lane timing")
                     .arg(lane.signalName)
@@ -2049,7 +2068,7 @@ WavePreviewReport WavePreviewService::previewForDocument(
     report.clockResetGroups = clockResetGroupsForBlocks(report.blocks);
     refreshLaneSummaries(&report.lanes);
     report.activitySummary = activitySummaryForLanes(report.lanes);
-    report.warnings = warningTextsForLanes(report.lanes);
+    report.warnings = applyWarningTextsForLanes(&report.lanes);
     report.available = report.assignmentCount > 0;
     return report;
 }

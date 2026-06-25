@@ -2039,6 +2039,18 @@ int main(int argc, char** argv) {
                    QStringLiteral(
                        "signal q is assigned from 2 procedural blocks; inspect block ownership before trusting lane timing")),
                true);
+    const WavePreviewLane* warningQLane =
+        waveLaneNamed(waveWarningReport, QStringLiteral("q"));
+    expectBool("WavePreview lane summary carries warnings",
+               warningQLane
+                   && warningQLane->summary.warningTexts.size() == 2
+                   && warningQLane->summary.warningTexts.contains(
+                       QStringLiteral(
+                           "signal q mixes assign/comb/seq activity; Wave Preview does not resolve writer priority"))
+                   && warningQLane->summary.warningTexts.contains(
+                       QStringLiteral(
+                           "signal q is assigned from 2 procedural blocks; inspect block ownership before trusting lane timing")),
+               true);
     QList<SemanticSymbolRecord> waveSemanticRecords;
     waveSemanticRecords.append(
         makeSemanticFixtureRecord(QStringLiteral("remote_cfg"),

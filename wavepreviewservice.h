@@ -95,6 +95,7 @@ struct WavePreviewLaneSummary {
     int combinationalEventCount = 0;
     int sequentialEventCount = 0;
     QStringList guardTexts;
+    QStringList warningTexts;
     bool hasContinuousEvent = false;
     bool hasCombinationalEvent = false;
     bool hasSequentialEvent = false;

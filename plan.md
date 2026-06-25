@@ -824,6 +824,18 @@ feature direction that violates them.
 - Next Wave Preview milestones: richer dense-canvas interaction, semantic relationship overlays where report-driven, and additional evidence-based guard/context summaries that stay out of UI-side parsing.
 - Verification for this block: focused build targets `completion_test` and `gui_smoke_test`; direct `completion_test` run with 553 checks; direct `gui_smoke_test` run with 434 checks. Final release verification for the commit also includes changed-file C++ regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
 
+### Post-L: Wave Preview Lane Warning Detail MVP
+
+- Status: implemented in the current worktree.
+- Scope: dense-lane readability milestone for Wave Preview. It does not change assignment extraction, semantic enrichment, canvas hit testing, report warning policy, or waveform simulation policy.
+- `WavePreviewLaneSummary` now carries service-owned `warningTexts` for the lane, populated while `WavePreviewService` builds the report-level warnings.
+- Report warnings and lane warnings share the same warning text and are de-duplicated at their respective surfaces, so UI code does not parse warning strings or derive writer-priority policy.
+- `WavePreviewPanelCoordinator` renders lane warning counts in lane summary text and adds lane warning detail to lane tooltips plus canvas lane click summaries.
+- `completion_test` verifies warning lane summaries carry both mixed-activity and multi-procedural-block warnings; `gui_smoke_test` verifies the lane row summary and tooltip expose those lane-owned warnings in the dock.
+- Implementation remains no-regex and report-driven; UI code consumes `WavePreviewLaneSummary::warningTexts` and does not derive lane warning policy.
+- Next Wave Preview milestones: richer dense-canvas interaction, semantic relationship overlays where report-driven, and additional evidence-based guard/context summaries that stay out of UI-side parsing.
+- Verification for this block: focused build targets `completion_test` and `gui_smoke_test`; direct `completion_test` run with 557 checks; direct `gui_smoke_test` run with 434 checks. Final release verification for the commit also includes changed-file C++ regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
+
 ### Post-L: Huge Workspace Analysis Plan MVP
 
 - Status: implemented in the current worktree.

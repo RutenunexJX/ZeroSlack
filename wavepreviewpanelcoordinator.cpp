@@ -36,6 +36,7 @@ QString assignmentDetailTooltip(const WavePreviewAssignment& assignment,
                                 const WavePreviewReport& report);
 QString laneDetailTooltip(const WavePreviewLane& lane);
 QString laneSummaryText(const WavePreviewLaneSummary& summary);
+QString laneWarningText(const WavePreviewLaneSummary& summary);
 QString reportSummaryText(const WavePreviewReport& report, bool dirty);
 
 bool shouldQueueRefresh(const QString& documentText, bool)
@@ -534,11 +535,35 @@ QString laneGuardText(const WavePreviewLaneSummary& summary)
     return visible.join(QStringLiteral("; "));
 }
 
+QString laneWarningText(const WavePreviewLaneSummary& summary)
+{
+    if (summary.warningTexts.isEmpty())
+        return QStringLiteral("-");
+
+    QStringList visible;
+    const int visibleCount =
+        qMin(2, static_cast<int>(summary.warningTexts.size()));
+    for (int i = 0; i < visibleCount; ++i)
+        visible.append(summary.warningTexts.at(i));
+    if (summary.warningTexts.size() > visibleCount) {
+        visible.append(QStringLiteral("+%1 more")
+                           .arg(summary.warningTexts.size() - visibleCount));
+    }
+    return visible.join(QStringLiteral("; "));
+}
+
 QString laneSummaryText(const WavePreviewLaneSummary& summary)
 {
     if (!summary.isValid())
         return QStringLiteral("-");
-    return QStringLiteral("%1, %2, %3, max t+%4, %5, %6")
+    const QString warningText =
+        summary.warningTexts.isEmpty()
+            ? QString()
+            : QStringLiteral(", %1")
+                  .arg(countText(summary.warningTexts.size(),
+                                 QStringLiteral("warning"),
+                                 QStringLiteral("warnings")));
+    return QStringLiteral("%1, %2, %3, max t+%4, %5, %6%7")
         .arg(countText(summary.eventCount,
                        QStringLiteral("event"),
                        QStringLiteral("events")),
@@ -552,7 +577,8 @@ QString laneSummaryText(const WavePreviewLaneSummary& summary)
              countText(summary.blockCount,
                        QStringLiteral("block"),
                        QStringLiteral("blocks")),
-             laneActivityText(summary));
+             laneActivityText(summary),
+             warningText);
 }
 
 QString busiestLaneText(const WavePreviewReport& report)
@@ -723,6 +749,9 @@ QString canvasLaneSelectionText(const WavePreviewLane& lane)
     const QString activity = laneActivityText(lane.summary);
     if (activity != QStringLiteral("-"))
         parts.append(QStringLiteral("activity %1").arg(activity));
+    const QString warnings = laneWarningText(lane.summary);
+    if (warnings != QStringLiteral("-"))
+        parts.append(QStringLiteral("warnings %1").arg(warnings));
     const QString context =
         signalContextBrief(lane.context.isValid() ? &lane.context : nullptr);
     if (context != QStringLiteral("-"))
@@ -749,6 +778,7 @@ QString laneDetailTooltip(const WavePreviewLane& lane)
         QStringLiteral("summary: %1").arg(laneSummaryText(lane.summary)),
         QStringLiteral("activity: %1").arg(laneActivityText(lane.summary)),
         QStringLiteral("guards: %1").arg(laneGuardText(lane.summary)),
+        QStringLiteral("warnings: %1").arg(laneWarningText(lane.summary)),
         QStringLiteral("sources: %1").arg(sourcesText(sources))
     }.join(QStringLiteral("\n"));
 }
