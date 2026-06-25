@@ -67,6 +67,12 @@ QList<SemanticSymbolRecord> SemanticIndexSnapshot::getSymbolRecords(
     return result;
 }
 
+SemanticAnalysisBandReport SemanticIndexSnapshot::analysisBandReport(
+    const QString& fileName) const
+{
+    return semanticAnalysisBandReportForRecords(getSymbolRecords(fileName));
+}
+
 SemanticSymbolRecord SemanticIndexSnapshot::getSymbolRecordByStableKey(
     const SymbolStableKey& key) const
 {

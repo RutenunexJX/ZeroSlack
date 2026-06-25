@@ -345,6 +345,12 @@ SemanticAnalysisBandMetadata SemanticIndex::analysisBandForFile(
     return m_workspaceFileAnalysisBands.value(normalized);
 }
 
+SemanticAnalysisBandReport SemanticIndex::analysisBandReport(
+    const QString& fileName) const
+{
+    return semanticAnalysisBandReportForRecords(getSymbolRecords(fileName));
+}
+
 SemanticSymbolRecord SemanticIndex::recordWithAnalysisBand(
     SemanticSymbolRecord record) const
 {

@@ -21,6 +21,8 @@ public:
 
     QList<SemanticSymbolRecord> getSymbolRecords(
         const QString& fileName = QString()) const;
+    SemanticAnalysisBandReport analysisBandReport(
+        const QString& fileName = QString()) const;
     SemanticSymbolRecord getSymbolRecordByStableKey(
         const SymbolStableKey& key) const;
     QList<SemanticSymbolRecord> findDefinitionRecords(

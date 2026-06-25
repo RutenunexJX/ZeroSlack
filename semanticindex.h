@@ -88,6 +88,26 @@ struct SemanticAnalysisBandMetadata {
     bool isValid() const;
 };
 
+struct SemanticAnalysisBandReportItem {
+    QString label;
+    QString displayName;
+    bool priority = false;
+    int publicationCheckpoint = 0;
+    int symbolCount = 0;
+    int fileCount = 0;
+    QStringList files;
+
+    bool isValid() const;
+};
+
+struct SemanticAnalysisBandReport {
+    QList<SemanticAnalysisBandReportItem> bands;
+    int totalSymbolCount = 0;
+    int totalFileCount = 0;
+
+    QString summaryText() const;
+};
+
 struct SemanticSymbolRecord {
     SymbolStableKey stableKey;
     int localHandle = -1;
@@ -216,6 +236,10 @@ struct SemanticDefinitionResult {
 
 SymbolTaxonomy::SemanticMetadata semanticMetadataForSymbolRecord(
     const SemanticSymbolRecord& record);
+QString semanticAnalysisBandDisplayName(
+    const SemanticAnalysisBandMetadata& metadata);
+SemanticAnalysisBandReport semanticAnalysisBandReportForRecords(
+    const QList<SemanticSymbolRecord>& records);
 int semanticAnalysisBandSortPriority(
     const SemanticAnalysisBandMetadata& metadata);
 int semanticSymbolAnalysisBandSortPriority(
@@ -262,6 +286,8 @@ public:
     void clearWorkspaceFileAnalysisBands();
     SemanticAnalysisBandMetadata analysisBandForFile(
         const QString& fileName) const;
+    SemanticAnalysisBandReport analysisBandReport(
+        const QString& fileName = QString()) const;
 
     QList<SemanticSymbolRecord> getSymbolRecords(
         const QString& fileName = QString()) const;

@@ -998,6 +998,17 @@ feature direction that violates them.
 - Next Huge Workspace milestones: showing tier/report provenance where helpful, per-band diagnostics if semantically safe, and eventually richer tiered index publication that preserves dirty/open-file protection.
 - Verification for this block: focused build target `completion_test`; direct `completion_test` run with 519 checks; direct `gui_smoke_test` run with 417 checks against `test_sv/new` plus `test_sv/test_symbols.sv`. Final release verification for the commit also includes changed-file C++ regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
 
+### Post-L: Huge Workspace Analysis Band Report MVP
+
+- Status: implemented in the current worktree.
+- Scope: twenty-sixth usable Huge Workspace Mode milestone and a report/provenance visibility step. It does not change extraction order, symbol publication, diagnostics, relationship analysis, or query ranking; it exposes the tier metadata already produced by the analysis plan and consumed by query ordering.
+- `SemanticAnalysisBandReport` summarizes returned semantic records by analysis band, including label, display name, priority flag, publication checkpoint, symbol count, file count, file list, total symbol count, total file count, and a compact summary string.
+- `SemanticIndex::analysisBandReport()` and `SemanticIndexSnapshot::analysisBandReport()` provide the report from live native/snapshot records through the same record-native query boundary instead of making UI or completion code inspect maps or recompute priority tiers.
+- `CompletionResult::SemanticCompletionItem`, `CompletionModel::CompletionItem`, and `CommandSymbolCompletionItem` now carry `analysisBand` plus `analysisBandDisplayName`; symbol completion tooltips append `band: <name>` when provenance is available.
+- Implementation remains no-regex and keeps tier ownership in `WorkspaceAnalysisPlanService` / `SemanticIndex`; consumers receive provenance as data rather than policy.
+- Next Huge Workspace milestones: per-band diagnostics if semantically safe, richer tiered index publication, and UI/report surfaces that consume `SemanticAnalysisBandReport` without recomputing priority policy.
+- Verification for this block: focused build target `completion_test`; direct `completion_test` run with 533 checks; direct `gui_smoke_test` run with 418 checks against `test_sv/new` plus `test_sv/test_symbols.sv`. Final release verification for the commit also includes changed-file C++ regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
+
 ## Batch Policy
 
 - Phase D can proceed in batches when blocks do not share service contracts or UI surfaces.

@@ -40,6 +40,9 @@ void fillSymbolMetadataFromRecord(
     item.ownerScopeName = ownerScopeNameForRecord(record);
     item.sourceRoleDisplayName =
         SymbolTaxonomy::sourceRoleDisplayName(metadata.sourceRole);
+    item.analysisBand = record.analysisBand;
+    item.analysisBandDisplayName =
+        semanticAnalysisBandDisplayName(record.analysisBand);
     item.declarationKind = metadata.declarationKind;
     item.usageRole = metadata.usageRole;
     item.ownerScope = metadata.ownerScope;
@@ -69,6 +72,8 @@ void CompletionModel::updateCompletions(const CompletionResult &completion,
         item.typeDisplayName = semanticItem.typeDisplayName;
         item.ownerScopeName = semanticItem.ownerScopeName;
         item.sourceRoleDisplayName = semanticItem.sourceRoleDisplayName;
+        item.analysisBand = semanticItem.analysisBand;
+        item.analysisBandDisplayName = semanticItem.analysisBandDisplayName;
         item.declarationKind = semanticItem.declarationKind;
         item.usageRole = semanticItem.usageRole;
         item.ownerScope = semanticItem.ownerScope;

@@ -26,6 +26,8 @@ struct CompletionResult {
         QString typeDisplayName;
         QString ownerScopeName;
         QString sourceRoleDisplayName;
+        QString analysisBandDisplayName;
+        SemanticAnalysisBandMetadata analysisBand;
         SemanticSymbolRecord symbolRecord;
         SymbolStableKey symbolStableKey;
         SymbolTaxonomy::DeclarationKind declarationKind =
@@ -185,6 +187,8 @@ struct CommandSymbolCompletionItem {
         SymbolTaxonomy::SymbolOwnerScope::Unknown;
     SymbolTaxonomy::SourceRole sourceRole =
         SymbolTaxonomy::SourceRole::Unknown;
+    QString analysisBandDisplayName;
+    SemanticAnalysisBandMetadata analysisBand;
     int score = 0;
 };
 

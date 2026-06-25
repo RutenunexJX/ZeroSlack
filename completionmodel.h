@@ -35,6 +35,8 @@ public:
         QString typeDisplayName;
         QString ownerScopeName;
         QString sourceRoleDisplayName;
+        QString analysisBandDisplayName;
+        SemanticAnalysisBandMetadata analysisBand;
         CompletionType type = KeywordCompletion;
         CompletionVisualKind visualKind = KeywordVisual;
         SemanticSymbolRecord symbolRecord;

@@ -44,6 +44,9 @@ CompletionResult::SemanticCompletionItem semanticCompletionItemForRecord(
     item.ownerScopeName = ownerScopeNameForRecord(record);
     item.sourceRoleDisplayName =
         SymbolTaxonomy::sourceRoleDisplayName(metadata.sourceRole);
+    item.analysisBand = record.analysisBand;
+    item.analysisBandDisplayName =
+        semanticAnalysisBandDisplayName(record.analysisBand);
     item.symbolRecord = record;
     item.symbolStableKey = record.stableKey;
     item.declarationKind = metadata.declarationKind;

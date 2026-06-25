@@ -117,6 +117,9 @@ CommandSymbolCompletionItem CompletionCommandMode::symbolCompletionItem(
     item.usageRole = item.symbolRecord.usageRole;
     item.ownerScope = item.symbolRecord.owner.kind;
     item.sourceRole = item.symbolRecord.sourceRole;
+    item.analysisBand = item.symbolRecord.analysisBand;
+    item.analysisBandDisplayName =
+        semanticAnalysisBandDisplayName(item.symbolRecord.analysisBand);
     item.defaultValue = symbolName;
     item.description = symbolPresentation(requestedKind)
         .typeDescription

@@ -445,7 +445,7 @@ int main(int argc, char** argv) {
     expectEq("CompletionModel display role",
              modelScoring.data(modelScoring.index(2, 0), Qt::DisplayRole).toString(),
              QStringLiteral("always_ff (logic)"));
-    const SemanticSymbolRecord metadataModelRecord =
+    SemanticSymbolRecord metadataModelRecord =
         SemanticFixtureRecordBuilder(
             QStringLiteral("metadata_top"),
             SymbolTaxonomy::DeclarationKind::Module)
@@ -454,6 +454,10 @@ int main(int argc, char** argv) {
             .withSourceRole(SymbolTaxonomy::SourceRole::Unknown)
             .withCollectorKind(SymbolTaxonomy::CollectorKind::Module)
             .record();
+    metadataModelRecord.analysisBand.label = QStringLiteral("current");
+    metadataModelRecord.analysisBand.displayName = QStringLiteral("current");
+    metadataModelRecord.analysisBand.priority = true;
+    metadataModelRecord.analysisBand.publicationCheckpoint = 1;
     CompletionResult metadataCompletion;
     metadataCompletion.names.append(metadataModelRecord.name);
     CompletionResult::SemanticCompletionItem metadataCompletionItem;
@@ -462,6 +466,9 @@ int main(int argc, char** argv) {
     metadataCompletionItem.ownerScopeName = QStringLiteral("global");
     metadataCompletionItem.sourceRoleDisplayName =
         SymbolTaxonomy::sourceRoleDisplayName(metadataModelRecord.sourceRole);
+    metadataCompletionItem.analysisBand = metadataModelRecord.analysisBand;
+    metadataCompletionItem.analysisBandDisplayName =
+        semanticAnalysisBandDisplayName(metadataModelRecord.analysisBand);
     metadataCompletionItem.symbolRecord = metadataModelRecord;
     metadataCompletionItem.symbolStableKey = metadataModelRecord.stableKey;
     metadataCompletionItem.declarationKind = metadataModelRecord.declarationKind;
@@ -509,7 +516,19 @@ int main(int argc, char** argv) {
                        == SymbolTaxonomy::SymbolOwnerScope::Global
                    && metadataDescriptionModel.getItem(
                        metadataDescriptionModel.index(0, 0)).sourceRole
-                       == SymbolTaxonomy::SourceRole::Unknown,
+                       == SymbolTaxonomy::SourceRole::Unknown
+                   && metadataDescriptionModel.getItem(
+                       metadataDescriptionModel.index(0, 0))
+                          .analysisBandDisplayName == QStringLiteral("current")
+                   && metadataDescriptionModel.getItem(
+                       metadataDescriptionModel.index(0, 0))
+                          .analysisBand.label == QStringLiteral("current"),
+               true);
+    expectBool("CompletionModel metadata tooltip band",
+               metadataDescriptionModel.data(
+                   metadataDescriptionModel.index(0, 0),
+                   Qt::ToolTipRole).toString().contains(
+                       QStringLiteral("band: current")),
                true);
     CompletionModel commandDisplayModel;
     commandDisplayModel.updateCommandCompletions({QStringLiteral("save")},
@@ -2079,10 +2098,20 @@ int main(int argc, char** argv) {
     currentTierDuplicateRecord.location.startLine = 3;
     currentTierDuplicateRecord.declarationKind =
         SymbolTaxonomy::DeclarationKind::Signal;
+    const SemanticSymbolRecord currentTierModuleRecord =
+        SemanticFixtureRecordBuilder(
+            QStringLiteral("zz_tier_module"),
+            SymbolTaxonomy::DeclarationKind::Module)
+            .withFile(planC)
+            .withLine(4)
+            .record();
     tierIndex.updateSymbolRecordsForFile(
         planC,
-        {tierRecord, currentTierQueryRecord, currentTierDuplicateRecord},
-        QStringLiteral("module tier_top; logic tier_sig; logic zz_tier_match; logic shared_tier_symbol; endmodule\n"));
+        {tierRecord,
+         currentTierQueryRecord,
+         currentTierDuplicateRecord,
+         currentTierModuleRecord},
+        QStringLiteral("module tier_top; logic tier_sig; logic zz_tier_match; logic shared_tier_symbol; endmodule\nmodule zz_tier_module; endmodule\n"));
     SemanticSymbolRecord backgroundTierQueryRecord;
     backgroundTierQueryRecord.name = QStringLiteral("aa_tier_match");
     backgroundTierQueryRecord.location.fileName = planA;
@@ -2095,10 +2124,19 @@ int main(int argc, char** argv) {
     backgroundTierDuplicateRecord.location.startLine = 2;
     backgroundTierDuplicateRecord.declarationKind =
         SymbolTaxonomy::DeclarationKind::Signal;
+    const SemanticSymbolRecord backgroundTierModuleRecord =
+        SemanticFixtureRecordBuilder(
+            QStringLiteral("aa_tier_module"),
+            SymbolTaxonomy::DeclarationKind::Module)
+            .withFile(planA)
+            .withLine(3)
+            .record();
     tierIndex.updateSymbolRecordsForFile(
         planA,
-        {backgroundTierQueryRecord, backgroundTierDuplicateRecord},
-        QStringLiteral("module tier_bg; logic aa_tier_match; logic shared_tier_symbol; endmodule\n"));
+        {backgroundTierQueryRecord,
+         backgroundTierDuplicateRecord,
+         backgroundTierModuleRecord},
+        QStringLiteral("module tier_bg; logic aa_tier_match; logic shared_tier_symbol; endmodule\nmodule aa_tier_module; endmodule\n"));
     const QList<SemanticSymbolRecord> tierRecords =
         tierIndex.getSymbolRecords(QDir::toNativeSeparators(planC));
     expectBool("SemanticIndex records carry analysis band metadata",
@@ -2117,6 +2155,69 @@ int main(int argc, char** argv) {
                    && tierSnapshotRecords.first().analysisBand.label
                        == QStringLiteral("current")
                    && tierSnapshotRecords.first().analysisBand.displayName
+                       == QStringLiteral("current"),
+               true);
+    const SemanticAnalysisBandReport tierIndexBandReport =
+        tierIndex.analysisBandReport();
+    expectEq("SemanticIndex reports analysis band summary",
+             tierIndexBandReport.summaryText(),
+             QStringLiteral("bands current 4 symbols/1 file, background 3 symbols/1 file"));
+    expectBool("SemanticIndex report exposes band provenance",
+               tierIndexBandReport.totalSymbolCount == 7
+                   && tierIndexBandReport.totalFileCount == 2
+                   && tierIndexBandReport.bands.size() == 2
+                   && tierIndexBandReport.bands.first().label
+                       == QStringLiteral("current")
+                   && tierIndexBandReport.bands.first().priority
+                   && tierIndexBandReport.bands.first().publicationCheckpoint == 1
+                   && tierIndexBandReport.bands.first().files.contains(planC),
+               true);
+    const SemanticAnalysisBandReport tierSnapshotBandReport =
+        tierSnapshot->analysisBandReport();
+    expectBool("Semantic snapshot reports analysis bands",
+               tierSnapshotBandReport.summaryText()
+                       == tierIndexBandReport.summaryText()
+                   && tierSnapshotBandReport.bands.size()
+                       == tierIndexBandReport.bands.size(),
+               true);
+    CompletionService tierCompletionService(&tierIndex);
+    CompletionQuery tierCompletionQuery;
+    tierCompletionQuery.prefix = QStringLiteral("zz_tier");
+    const CompletionResult tierCompletionResult =
+        tierCompletionService.findCompletionResult(tierCompletionQuery);
+    expectBool("Completion result exposes analysis band provenance",
+               tierCompletionResult.items.size() == 1
+                   && tierCompletionResult.items.first().label
+                       == QStringLiteral("zz_tier_module")
+                   && tierCompletionResult.items.first()
+                          .analysisBandDisplayName == QStringLiteral("current")
+                   && tierCompletionResult.items.first().analysisBand.label
+                       == QStringLiteral("current"),
+               true);
+    CompletionModel tierCompletionModel;
+    tierCompletionModel.updateCompletions(tierCompletionResult,
+                                          QStringLiteral("zz_tier"));
+    expectBool("CompletionModel exposes analysis band provenance",
+               tierCompletionModel.rowCount() == 1
+                   && tierCompletionModel.getItem(
+                          tierCompletionModel.index(0, 0))
+                          .analysisBandDisplayName == QStringLiteral("current")
+                   && tierCompletionModel.data(
+                          tierCompletionModel.index(0, 0),
+                          Qt::ToolTipRole).toString().contains(
+                              QStringLiteral("band: current")),
+               true);
+    const CommandSymbolCompletionItem tierCommandItem =
+        tierCompletionService.commandSymbolCompletionItem(
+            tierCompletionResult.items.isEmpty()
+                ? SemanticSymbolRecord()
+                : tierCompletionResult.items.first().symbolRecord,
+            CompletionCommandKind::Module,
+            QStringLiteral("zz"));
+    expectBool("Command symbol item exposes analysis band provenance",
+               tierCommandItem.analysisBandDisplayName
+                       == QStringLiteral("current")
+                   && tierCommandItem.analysisBand.label
                        == QStringLiteral("current"),
                true);
     const QList<SemanticSymbolSearchResult> tierSearchResults =

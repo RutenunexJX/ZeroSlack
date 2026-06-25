@@ -165,6 +165,9 @@ void CompletionModel::fillDisplayMetadata(CompletionItem &item)
                 tooltipParts.append(QStringLiteral("owner: %1").arg(item.ownerScopeName));
             if (!item.sourceRoleDisplayName.isEmpty())
                 tooltipParts.append(item.sourceRoleDisplayName);
+            if (!item.analysisBandDisplayName.isEmpty())
+                tooltipParts.append(QStringLiteral("band: %1")
+                                        .arg(item.analysisBandDisplayName));
             if (!tooltipParts.isEmpty())
                 item.toolTipText = tooltipParts.join(QStringLiteral(" | "));
         }
