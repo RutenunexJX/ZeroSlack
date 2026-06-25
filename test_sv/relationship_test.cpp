@@ -751,6 +751,10 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                    && diagnosticReport.analysisBandGroups.last()
                           .severityCounts.value(SemanticDiagnostic::Error) == 1,
                true);
+    expectBool("diagnostic report formats analysis band summary",
+               diagnosticReport.analysisBandSummaryText()
+                   == QStringLiteral("diagnostic bands current 2 diagnostics (1 warning, 1 info), background 1 diagnostic (1 error)"),
+               true);
     expectBool("diagnostic report sorts errors first",
                !diagnosticReport.diagnostics.isEmpty()
                    && diagnosticReport.diagnostics.first().diagnostic.severity

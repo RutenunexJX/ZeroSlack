@@ -1087,6 +1087,82 @@ static void runActivityLogServiceRegression()
     semanticIndex->clearWorkspaceFileAnalysisBands();
     service->clear();
 
+    const QString diagnosticActivityCurrentFile =
+        QDir::temp().absoluteFilePath(QStringLiteral("zs_activity_diag_current.sv"));
+    const QString diagnosticActivityBackgroundFile =
+        QDir::temp().absoluteFilePath(QStringLiteral("zs_activity_diag_background.sv"));
+    SemanticDiagnostic diagnosticActivityWarning;
+    diagnosticActivityWarning.fileName = diagnosticActivityCurrentFile;
+    diagnosticActivityWarning.line = 3;
+    diagnosticActivityWarning.column = 5;
+    diagnosticActivityWarning.message = QStringLiteral("current warning");
+    diagnosticActivityWarning.severity = SemanticDiagnostic::Warning;
+    diagnosticActivityWarning.owner = SemanticDiagnostic::SemanticIndexOwner;
+    SemanticDiagnostic diagnosticActivityInfo;
+    diagnosticActivityInfo.fileName = diagnosticActivityCurrentFile;
+    diagnosticActivityInfo.line = 4;
+    diagnosticActivityInfo.column = 7;
+    diagnosticActivityInfo.message = QStringLiteral("current info");
+    diagnosticActivityInfo.severity = SemanticDiagnostic::Info;
+    diagnosticActivityInfo.owner = SemanticDiagnostic::SemanticIndexOwner;
+    SemanticDiagnostic diagnosticActivityError;
+    diagnosticActivityError.fileName = diagnosticActivityBackgroundFile;
+    diagnosticActivityError.line = 8;
+    diagnosticActivityError.column = 2;
+    diagnosticActivityError.message = QStringLiteral("background error");
+    diagnosticActivityError.severity = SemanticDiagnostic::Error;
+    diagnosticActivityError.owner = SemanticDiagnostic::SlangCompiler;
+    semanticIndex->setSnapshot(snapshotFromRecords(
+        {},
+        {},
+        {diagnosticActivityWarning,
+         diagnosticActivityInfo,
+         diagnosticActivityError}));
+    QHash<QString, SemanticAnalysisBandMetadata> diagnosticActivityBands;
+    diagnosticActivityBands.insert(diagnosticActivityCurrentFile, currentBand);
+    diagnosticActivityBands.insert(diagnosticActivityBackgroundFile, backgroundBand);
+    semanticIndex->setWorkspaceFileAnalysisBands(diagnosticActivityBands);
+
+    QWidget diagnosticActivityParent;
+    ProblemsPanelCoordinator diagnosticActivityProblems(&diagnosticActivityParent);
+    diagnosticActivityProblems.setCurrentFileProvider([=]() {
+        return diagnosticActivityCurrentFile;
+    });
+    diagnosticActivityProblems.setWorkspaceFilesProvider([=]() {
+        return QStringList{
+            diagnosticActivityCurrentFile,
+            diagnosticActivityBackgroundFile,
+        };
+    });
+    if (diagnosticActivityProblems.scopeCombo()) {
+        const int allFilesIndex =
+            diagnosticActivityProblems.scopeCombo()->findText(
+                QStringLiteral("All Files"));
+        if (allFilesIndex >= 0)
+            diagnosticActivityProblems.scopeCombo()->setCurrentIndex(allFilesIndex);
+    }
+    diagnosticActivityProblems.update();
+    bool sawDiagnosticBandActivity = false;
+    for (const ActivityLogEvent& event : service->events()) {
+        sawDiagnosticBandActivity = sawDiagnosticBandActivity
+            || (event.source == QStringLiteral("Analyzer")
+                && event.message.contains(
+                    QStringLiteral("Diagnostics visible: 3 diagnostics"))
+                && event.message.contains(
+                    QStringLiteral("diagnostic bands current 2 diagnostics"))
+                && event.message.contains(QStringLiteral("1 warning"))
+                && event.message.contains(QStringLiteral("1 info"))
+                && event.message.contains(
+                    QStringLiteral("background 1 diagnostic"))
+                && event.message.contains(QStringLiteral("1 error")));
+    }
+    expectBool("activity log records diagnostic band summary",
+               sawDiagnosticBandActivity,
+               true);
+    semanticIndex->clearSnapshot();
+    semanticIndex->clearWorkspaceFileAnalysisBands();
+    service->clear();
+
     AnalysisProgressCoordinator progressCoordinator(nullptr);
     progressCoordinator.handleWorkspaceSymbolProgress(
         1,

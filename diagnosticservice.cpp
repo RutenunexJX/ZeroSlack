@@ -54,6 +54,80 @@ int diagnosticAnalysisBandGroupSortPriority(
 {
     return semanticAnalysisBandSortPriority(group.analysisBand);
 }
+
+QString diagnosticCountText(int count)
+{
+    return QStringLiteral("%1 %2")
+        .arg(count)
+        .arg(count == 1
+                 ? QStringLiteral("diagnostic")
+                 : QStringLiteral("diagnostics"));
+}
+
+QString diagnosticSeverityCountText(SemanticDiagnostic::Severity severity,
+                                    int count)
+{
+    QString label;
+    switch (severity) {
+    case SemanticDiagnostic::Error:
+        label = count == 1
+            ? QStringLiteral("error")
+            : QStringLiteral("errors");
+        break;
+    case SemanticDiagnostic::Warning:
+        label = count == 1
+            ? QStringLiteral("warning")
+            : QStringLiteral("warnings");
+        break;
+    case SemanticDiagnostic::Info:
+    default:
+        label = QStringLiteral("info");
+        break;
+    }
+
+    return QStringLiteral("%1 %2").arg(count).arg(label);
+}
+
+QString diagnosticAnalysisBandSeveritySummary(
+    const DiagnosticAnalysisBandGroup& group)
+{
+    QStringList parts;
+    const QList<SemanticDiagnostic::Severity> orderedSeverities{
+        SemanticDiagnostic::Error,
+        SemanticDiagnostic::Warning,
+        SemanticDiagnostic::Info,
+    };
+    for (SemanticDiagnostic::Severity severity : orderedSeverities) {
+        const int count = group.severityCounts.value(severity);
+        if (count > 0)
+            parts.append(diagnosticSeverityCountText(severity, count));
+    }
+
+    return parts.join(QStringLiteral(", "));
+}
+}
+
+QString DiagnosticReport::analysisBandSummaryText() const
+{
+    if (analysisBandGroups.isEmpty())
+        return QStringLiteral("diagnostic bands none");
+
+    QStringList parts;
+    for (const DiagnosticAnalysisBandGroup& group : analysisBandGroups) {
+        const QString displayName =
+            group.displayName.isEmpty() ? group.label : group.displayName;
+        QString part = QStringLiteral("%1 %2")
+                           .arg(displayName,
+                                diagnosticCountText(group.count));
+        const QString severitySummary =
+            diagnosticAnalysisBandSeveritySummary(group);
+        if (!severitySummary.isEmpty())
+            part += QStringLiteral(" (%1)").arg(severitySummary);
+        parts.append(part);
+    }
+
+    return QStringLiteral("diagnostic bands %1")
+        .arg(parts.join(QStringLiteral(", ")));
 }
 
 DiagnosticService* DiagnosticService::getInstance()

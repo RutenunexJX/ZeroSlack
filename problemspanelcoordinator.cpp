@@ -1,5 +1,6 @@
 #include "problemspanelcoordinator.h"
 
+#include "activitylogservice.h"
 #include "diagnosticservice.h"
 #include "semanticpanelutils.h"
 
@@ -55,6 +56,15 @@ DiagnosticSeverityFilter diagnosticSeverityFilterFromValue(int value)
     default:
         return DiagnosticSeverityFilter::All;
     }
+}
+
+QString diagnosticVisibilityCountText(int count)
+{
+    return QStringLiteral("%1 %2")
+        .arg(count)
+        .arg(count == 1
+                 ? QStringLiteral("diagnostic")
+                 : QStringLiteral("diagnostics"));
 }
 
 } // namespace
@@ -164,6 +174,21 @@ void ProblemsPanelCoordinator::update(const QString& fileName)
     const DiagnosticQuery query = diagnosticService->queryForPanel(queryOptions);
     const DiagnosticReport report = diagnosticService->findDiagnosticReport(query);
     const QList<DiagnosticResult>& diagnostics = report.diagnostics;
+    if (report.totalCount > 0) {
+        const QString activityMessage =
+            QStringLiteral("Diagnostics visible: %1; %2")
+                .arg(diagnosticVisibilityCountText(report.totalCount),
+                     report.analysisBandSummaryText());
+        if (activityMessage != lastDiagnosticActivityMessage) {
+            ActivityLogService::getInstance()->append(
+                QStringLiteral("Analyzer"),
+                ActivityLogLevel::Info,
+                activityMessage);
+            lastDiagnosticActivityMessage = activityMessage;
+        }
+    } else {
+        lastDiagnosticActivityMessage.clear();
+    }
 
     const bool currentFileOnly =
         queryOptions.scope == DiagnosticPanelScope::CurrentFile;

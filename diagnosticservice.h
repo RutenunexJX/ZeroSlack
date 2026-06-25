@@ -77,6 +77,8 @@ struct DiagnosticReport {
     QMap<QString, int> analysisBandCounts;
     QMap<SemanticDiagnostic::Severity, int> severityCounts;
     QMap<SemanticDiagnostic::Owner, int> ownerCounts;
+
+    QString analysisBandSummaryText() const;
 };
 
 class DiagnosticService

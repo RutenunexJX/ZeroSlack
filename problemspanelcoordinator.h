@@ -30,6 +30,7 @@ private:
     QTreeWidget* problemsTree = nullptr;
     QComboBox* problemsScopeCombo = nullptr;
     QComboBox* problemsSeverityCombo = nullptr;
+    QString lastDiagnosticActivityMessage;
 
     std::function<QString()> currentFileProvider;
     std::function<QStringList()> workspaceFilesProvider;

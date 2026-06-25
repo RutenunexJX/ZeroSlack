@@ -1056,6 +1056,18 @@ feature direction that violates them.
 - Next Huge Workspace milestones: UI/report surfaces that consume diagnostic band groups where useful, per-band diagnostics publication only if semantically safe, and richer tiered index publication that preserves dirty/open-file protection.
 - Verification for this block: focused build target `relationship_test`; direct `relationship_test` run with 782 checks; focused build target `gui_smoke_test`; direct `gui_smoke_test` run with 420 checks. Final release verification for the commit also includes changed-file C++ regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
 
+### Post-L: Huge Workspace Diagnostic Band Activity Visibility MVP
+
+- Status: implemented in the current worktree.
+- Scope: twenty-ninth usable Huge Workspace Mode milestone and the first Activity/Output consumer of diagnostic analysis-band groups. It does not change Slang diagnostic extraction, diagnostics replacement, debounce/coalescing, Problems sorting/filtering/grouping, or per-band diagnostics publication.
+- `DiagnosticReport::analysisBandSummaryText()` now formats the report-owned band summary with per-band diagnostic counts and severity mix, including the existing `unbanded` fallback for diagnostics outside known workspace tiers.
+- `ProblemsPanelCoordinator` records a de-duplicated `Analyzer` Activity/Output entry when visible diagnostics have a non-empty report, using the service-owned summary instead of recomputing priority tiers or severity counts in UI code.
+- Repeated refreshes with the same visible diagnostic summary do not spam Activity/Output; clearing diagnostics resets the last summary so a later diagnostic state can be reported again.
+- `relationship_test` verifies the service-owned summary text for current/background diagnostic groups, and `gui_smoke_test` verifies the Problems-panel Activity path with temporary current/background diagnostic metadata.
+- Implementation remains no-regex and keeps priority policy in `WorkspaceAnalysisPlanService` / `SemanticIndex`; Problems UI consumes `DiagnosticReport` data rather than deriving scheduling policy.
+- Next Huge Workspace milestones: per-band diagnostics publication only if semantically safe, richer tiered index publication, and additional report surfaces that consume diagnostic band groups without recomputing priority policy.
+- Verification for this block: focused build target `relationship_test`; direct `relationship_test` run with 783 checks; focused build target `gui_smoke_test`; direct `gui_smoke_test` run with 421 checks. Final release verification for the commit also includes changed-file C++ regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
+
 ## Batch Policy
 
 - Phase D can proceed in batches when blocks do not share service contracts or UI surfaces.
