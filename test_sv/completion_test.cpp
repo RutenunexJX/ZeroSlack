@@ -1538,6 +1538,63 @@ int main(int argc, char** argv) {
     expectBool("Formatter case item idempotent",
                unchangedCaseItemReport.changed,
                false);
+    const QString formatterCaseBodyInput =
+        QStringLiteral("module case_body_demo;\n"
+                       "always_comb begin\n"
+                       "case (state)\n"
+                       "IDLE:\n"
+                       "next = RUN;\n"
+                       "LONG_STATE:\n"
+                       "next = DONE;\n"
+                       "default:\n"
+                       "next = IDLE;\n"
+                       "endcase\n"
+                       "end\n"
+                       "endmodule\n");
+    const FormatterReport formatterCaseBodyReport =
+        FormatterService::getInstance()->formatDocument(
+            formatterCaseBodyInput);
+    expectBool("Formatter case item body report changed",
+               formatterCaseBodyReport.changed,
+               true);
+    expectEq("Formatter indents case item bodies",
+             formatterCaseBodyReport.formattedText,
+             QStringLiteral("module case_body_demo;\n"
+                            "    always_comb begin\n"
+                            "        case (state)\n"
+                            "            IDLE:\n"
+                            "                next = RUN;\n"
+                            "            LONG_STATE:\n"
+                            "                next = DONE;\n"
+                            "            default:\n"
+                            "                next = IDLE;\n"
+                            "        endcase\n"
+                            "    end\n"
+                            "endmodule\n"));
+    const FormatterReport unchangedCaseBodyReport =
+        FormatterService::getInstance()->formatDocument(
+            formatterCaseBodyReport.formattedText);
+    expectBool("Formatter case item body idempotent",
+               unchangedCaseBodyReport.changed,
+               false);
+    const FormatterReport indentOnlyCaseBodyReport =
+        FormatterService::getInstance()->formatDocument(
+            formatterCaseBodyInput,
+            FormatterProfile::IndentOnly);
+    expectEq("Formatter indent-only keeps case item body indentation",
+             indentOnlyCaseBodyReport.formattedText,
+             QStringLiteral("module case_body_demo;\n"
+                            "    always_comb begin\n"
+                            "        case (state)\n"
+                            "            IDLE:\n"
+                            "                next = RUN;\n"
+                            "            LONG_STATE:\n"
+                            "                next = DONE;\n"
+                            "            default:\n"
+                            "                next = IDLE;\n"
+                            "        endcase\n"
+                            "    end\n"
+                            "endmodule\n"));
 
     const QString formatterEnumInput =
         QStringLiteral("module enum_demo;\n"

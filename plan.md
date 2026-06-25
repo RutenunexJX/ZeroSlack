@@ -601,6 +601,18 @@ feature direction that violates them.
 - Next Formatter milestones: deeper Tree-sitter-backed structural formatting, richer parser-aware continuation decisions, and safer expansion beyond conservative header scans.
 - Verification for this block: focused build target `completion_test`; direct `completion_test` run with 550 checks. Final release verification for the commit also includes changed-file C++ regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
 
+### Post-L: Formatter Case Item Body Indent MVP
+
+- Status: implemented in the current worktree.
+- Scope: twenty-third usable formatter milestone and a conservative case-item body-indent expansion. It does not split, merge, reorder, or rewrite statements, and it does not add `begin` / `end`.
+- `FormatterService` now recognizes label-only `case` / `casez` / `casex` item rows at the active case-item indentation level and indents the next simple single-line statement body one level deeper.
+- The scan remains conservative: inline case items with suffix statements are left to existing alignment, block bodies such as `begin` / `fork` / nested `case` are not shifted, preprocessor lines clear the pending body, and only semicolon-terminated simple body lines are adjusted.
+- The behavior is active in both `Structured` and `Indent Only` profiles because it only changes leading whitespace; Structured can still apply existing case-item label alignment where that existing pass already applies.
+- `completion_test` verifies Structured output, Indent Only output, and idempotence for label-only case items whose bodies are written on following lines.
+- Implementation remains no-regex and uses deterministic code-token/comment/case-depth scans.
+- Next Formatter milestones: deeper Tree-sitter-backed structural formatting, richer parser-aware continuation decisions, and safer expansion beyond conservative case/header scans.
+- Verification for this block: focused build target `completion_test`; direct `completion_test` run with 561 checks. Final release verification for the commit also includes changed-file C++ regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
+
 ### Post-L: Wave Preview Data MVP
 
 - Status: implemented in the current worktree.

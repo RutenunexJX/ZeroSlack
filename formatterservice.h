@@ -15,6 +15,7 @@ struct FormatterOptions {
     bool indentContinuationLines = true;
     bool indentAssignmentRhsContinuations = true;
     bool indentSingleStatementBodies = true;
+    bool indentCaseItemBodies = true;
     bool alignDeclarationBlocks = true;
     bool alignPortLists = true;
     bool alignInstanceMaps = true;

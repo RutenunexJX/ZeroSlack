@@ -1733,6 +1733,98 @@ void alignCaseItemBlocks(QStringList* lines, int indentWidth)
     flush();
 }
 
+bool isLabelOnlyCaseItemLine(const QString& codeOnly)
+{
+    const QString trimmed = codeOnly.trimmed();
+    if (trimmed.isEmpty())
+        return false;
+
+    const int colonIndex = findTopLevelCaseItemColon(trimmed);
+    if (colonIndex <= 0)
+        return false;
+    return trimmed.mid(colonIndex + 1).trimmed().isEmpty();
+}
+
+bool isSimpleCaseItemBodyLine(const QString& codeOnly)
+{
+    const QString trimmed = codeOnly.trimmed();
+    if (trimmed.isEmpty()
+        || startsWithPreprocessor(trimmed)
+        || !trimmed.endsWith(QLatin1Char(';'))) {
+        return false;
+    }
+
+    const QStringList tokens = codeTokens(trimmed);
+    if (tokens.isEmpty())
+        return false;
+    if (isClosingToken(tokens.first()))
+        return false;
+    if (hasSingleStatementHeaderBlockToken(tokens))
+        return false;
+    return true;
+}
+
+void indentCaseItemBodyLines(QStringList* lines, int indentWidth)
+{
+    if (!lines)
+        return;
+
+    QList<int> caseItemIndentStack;
+    int pendingBodyIndent = -1;
+    bool inBlockComment = false;
+    for (int i = 0; i < lines->size(); ++i) {
+        const QString line = lines->at(i);
+        if (!lineHasCode(line))
+            continue;
+        if (startsWithPreprocessor(line)) {
+            pendingBodyIndent = -1;
+            continue;
+        }
+
+        const QString codeOnly = codeOnlyLine(line, &inBlockComment);
+        const QString trimmed = codeOnly.trimmed();
+        if (trimmed.isEmpty())
+            continue;
+
+        const QStringList tokens = codeTokens(codeOnly);
+        const bool closingCase = isCaseClosingLine(tokens);
+        const bool caseItem =
+            !caseItemIndentStack.isEmpty()
+            && leadingWhitespaceWidth(line) == caseItemIndentStack.last()
+            && parseCaseItemAlignmentLine(line).valid;
+
+        if (pendingBodyIndent >= 0 && !closingCase && !caseItem) {
+            if (isSimpleCaseItemBodyLine(codeOnly)) {
+                (*lines)[i] =
+                    repeatSpaces(pendingBodyIndent)
+                    + stripLeadingWhitespace(line);
+            }
+            pendingBodyIndent = -1;
+        } else if (pendingBodyIndent >= 0 && (closingCase || caseItem)) {
+            pendingBodyIndent = -1;
+        }
+
+        if (closingCase) {
+            if (!caseItemIndentStack.isEmpty())
+                caseItemIndentStack.removeLast();
+            continue;
+        }
+
+        if (caseItem) {
+            pendingBodyIndent =
+                isLabelOnlyCaseItemLine(codeOnly)
+                    ? leadingWhitespaceWidth(line) + std::max(1, indentWidth)
+                    : -1;
+        }
+
+        if (isCaseOpeningLine(tokens)) {
+            pendingBodyIndent = -1;
+            caseItemIndentStack.append(
+                leadingWhitespaceWidth(line) + std::max(1, indentWidth));
+        }
+    }
+}
+
 bool isEnumOpeningLine(const QStringList& tokens, const QString& codeOnly)
 {
     bool hasEnum = false;
@@ -2318,6 +2410,8 @@ FormatterReport FormatterService::formatDocument(
 
     if (options.indentSingleStatementBodies)
         indentSingleStatementBodyLines(&formatted, options.indentWidth);
+    if (options.indentCaseItemBodies)
+        indentCaseItemBodyLines(&formatted, options.indentWidth);
 
     if (options.alignDeclarationBlocks)
         alignDeclarationBlocks(&formatted);
