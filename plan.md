@@ -747,6 +747,19 @@ feature direction that violates them.
 - Next Wave Preview milestones: richer dense-canvas interaction, semantic relationship overlays where report-driven, and additional evidence-based guard/context summaries that stay out of UI-side parsing.
 - Verification for this block: focused build target `completion_test`; direct `completion_test` run with 534 checks; focused build target `gui_smoke_test`; direct `gui_smoke_test` run with 420 checks against `test_sv/new` plus `test_sv/test_symbols.sv`. Final release verification for the commit also includes changed-file C++ regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
 
+### Post-L: Wave Preview Report Activity Summary MVP
+
+- Status: implemented in the current worktree.
+- Scope: report-level readability and extraction-accuracy milestone for Wave Preview. It does not simulate values, evaluate branch truth, scan workspace files, change semantic enrichment, or alter canvas hit-test/navigation behavior.
+- `WavePreviewReport` now carries a service-owned `WavePreviewActivitySummary` with total, continuous assign, blocking/combinational, and nonblocking/sequential event counts.
+- `WavePreviewService` computes the report activity summary from parsed lane assignments after lane cleanup, keeping report-level activity policy outside tree, tooltip, and canvas rendering code.
+- Procedural assignment extraction now ignores candidate lvalues while inside parenthesized/bracketed/braced expression regions, so `for (int i = 0; ...)` loop-counter initialization is not treated as a waveform event or busiest lane.
+- `WavePreviewPanelCoordinator` renders the report activity mix in the top summary label and in a report-level `Activity Mix` tree row, while existing lane/event rows continue to render report-owned lane and assignment data.
+- `gui_smoke_test` verifies the `Activity Mix` row, top summary text, and the corrected three-event mix for a fixture containing continuous, combinational, and sequential assignments plus a `for` loop header.
+- Implementation remains no-regex and keeps Wave Preview positioned as a code-understanding sketch rather than a simulator.
+- Next Wave Preview milestones: richer dense-canvas interaction, semantic relationship overlays where report-driven, and additional evidence-based guard/context summaries that stay out of UI-side parsing.
+- Verification for this block: focused build target `gui_smoke_test`; direct `gui_smoke_test` run with 428 checks. Final release verification for the commit also includes changed-file C++ regex API scan, full default CMake build, full `ctest --output-on-failure` 7/7, and `git diff --check`.
+
 ### Post-L: Huge Workspace Analysis Plan MVP
 
 - Status: implemented in the current worktree.

@@ -3883,6 +3883,7 @@ int main(int argc, char** argv)
     bool sawWaveContext = false;
     bool sawWaveLaneGuardSummary = false;
     bool sawWaveLaneSummary = false;
+    bool sawWaveActivityMix = false;
     QTreeWidgetItem* waveQEventItem = nullptr;
     QTreeWidgetItem* waveQLaneItem = nullptr;
     if (waveTree) {
@@ -3893,6 +3894,14 @@ int main(int argc, char** argv)
             sawWaveOut = sawWaveOut || name == QStringLiteral("out");
             sawWaveClockReset = sawWaveClockReset
                 || name == QStringLiteral("Clock/Reset Groups");
+            if (name == QStringLiteral("Activity Mix")) {
+                sawWaveActivityMix = laneItem->text(1).contains(
+                                         QStringLiteral("3 events"))
+                    && laneItem->text(4)
+                        == QStringLiteral("assign 1/comb 1/seq 1")
+                    && laneItem->toolTip(0).contains(
+                        QStringLiteral("activity: assign 1/comb 1/seq 1"));
+            }
             if (name == QStringLiteral("q")) {
                 waveQLaneItem = laneItem;
                 sawWaveLaneSummary = sawWaveLaneSummary
@@ -3954,6 +3963,9 @@ int main(int argc, char** argv)
     expectBool("wave preview renders lane summary",
                waveTree && sawWaveLaneSummary,
                true);
+    expectBool("wave preview renders activity mix summary",
+               waveTree && sawWaveActivityMix,
+               true);
     const QString waveQLaneTooltip =
         waveQLaneItem ? waveQLaneItem->toolTip(0) : QString();
     expectBool("wave preview lane tooltip has summary",
@@ -3971,6 +3983,12 @@ int main(int argc, char** argv)
                    && waveQTooltip.contains(QStringLiteral("target context: internal logic [7:0]"))
                    && waveQTooltip.contains(QStringLiteral("source context: data: input logic [7:0]"))
                    && waveQTooltip.contains(QStringLiteral("location:")),
+               true);
+    QLabel* waveSummary = wavePreviewSummaryLabel(window);
+    expectBool("wave preview report summary shows activity mix",
+               waveSummary
+                   && waveSummary->text().contains(
+                       QStringLiteral("activity assign 1/comb 1/seq 1")),
                true);
     QWidget* waveCanvas = wavePreviewCanvas(window);
     expectBool("wave preview canvas exists",
@@ -4010,7 +4028,6 @@ int main(int argc, char** argv)
                    && waveCanvas->toolTip().contains(QStringLiteral("target: q"))
                    && waveCanvas->toolTip().contains(QStringLiteral("sources: data")),
                true);
-    QLabel* waveSummary = wavePreviewSummaryLabel(window);
     expectBool("wave preview canvas click selects event summary",
                waveSummary
                    && waveSummary->text().contains(QStringLiteral("Selected q"))

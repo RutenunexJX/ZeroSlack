@@ -1613,10 +1613,29 @@ QList<WavePreviewAssignment> assignmentsInRange(const QString& text,
     QList<WavePreviewAssignment> assignments;
     const int end = qMin(to, tokens.size() - 1);
     int pos = qMax(0, from);
+    int parenDepth = 0;
+    int bracketDepth = 0;
+    int braceDepth = 0;
     while (pos <= end) {
+        const QString tokenText = tokens.at(pos).text;
+        const bool topLevel =
+            parenDepth == 0 && bracketDepth == 0 && braceDepth == 0;
         QString target;
         int operatorIndex = -1;
-        if (!parseLvalueAt(tokens, pos, end, &target, &operatorIndex)) {
+        if (!topLevel
+            || !parseLvalueAt(tokens, pos, end, &target, &operatorIndex)) {
+            if (tokenText == QLatin1String("("))
+                ++parenDepth;
+            else if (tokenText == QLatin1String(")"))
+                parenDepth = qMax(0, parenDepth - 1);
+            else if (tokenText == QLatin1String("["))
+                ++bracketDepth;
+            else if (tokenText == QLatin1String("]"))
+                bracketDepth = qMax(0, bracketDepth - 1);
+            else if (tokenText == QLatin1String("{"))
+                ++braceDepth;
+            else if (tokenText == QLatin1String("}"))
+                braceDepth = qMax(0, braceDepth - 1);
             ++pos;
             continue;
         }
@@ -1647,6 +1666,9 @@ QList<WavePreviewAssignment> assignmentsInRange(const QString& text,
         if (assignment.isValid())
             assignments.append(assignment);
         pos = semicolonIndex + 1;
+        parenDepth = 0;
+        bracketDepth = 0;
+        braceDepth = 0;
     }
     return assignments;
 }
@@ -1806,6 +1828,36 @@ WavePreviewLaneSummary summaryForLane(const WavePreviewLane& lane)
     return summary;
 }
 
+void includeActivityAssignment(WavePreviewActivitySummary* summary,
+                               const WavePreviewAssignment& assignment)
+{
+    if (!summary)
+        return;
+
+    ++summary->eventCount;
+    if (assignment.kind == WavePreviewAssignmentKind::Continuous) {
+        ++summary->continuousEventCount;
+        summary->hasContinuousEvent = true;
+    } else if (assignment.kind == WavePreviewAssignmentKind::NonBlocking) {
+        ++summary->sequentialEventCount;
+        summary->hasSequentialEvent = true;
+    } else {
+        ++summary->combinationalEventCount;
+        summary->hasCombinationalEvent = true;
+    }
+}
+
+WavePreviewActivitySummary activitySummaryForLanes(
+    const QList<WavePreviewLane>& lanes)
+{
+    WavePreviewActivitySummary summary;
+    for (const WavePreviewLane& lane : lanes) {
+        for (const WavePreviewAssignment& assignment : lane.assignments)
+            includeActivityAssignment(&summary, assignment);
+    }
+    return summary;
+}
+
 void refreshLaneSummaries(QList<WavePreviewLane>* lanes)
 {
     if (!lanes)
@@ -1956,6 +2008,7 @@ WavePreviewReport WavePreviewService::previewForDocument(
     applySignalContextsToReport(signalContextCollection, &report);
     report.clockResetGroups = clockResetGroupsForBlocks(report.blocks);
     refreshLaneSummaries(&report.lanes);
+    report.activitySummary = activitySummaryForLanes(report.lanes);
     report.available = report.assignmentCount > 0;
     return report;
 }

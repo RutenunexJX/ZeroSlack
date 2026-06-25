@@ -444,6 +444,26 @@ QString laneActivityText(const WavePreviewLaneSummary& summary)
         : parts.join(QStringLiteral("/"));
 }
 
+QString activitySummaryText(const WavePreviewActivitySummary& summary)
+{
+    QStringList parts;
+    if (summary.hasContinuousEvent) {
+        parts.append(QStringLiteral("assign %1")
+                         .arg(summary.continuousEventCount));
+    }
+    if (summary.hasCombinationalEvent) {
+        parts.append(QStringLiteral("comb %1")
+                         .arg(summary.combinationalEventCount));
+    }
+    if (summary.hasSequentialEvent) {
+        parts.append(QStringLiteral("seq %1")
+                         .arg(summary.sequentialEventCount));
+    }
+    return parts.isEmpty()
+        ? QStringLiteral("-")
+        : parts.join(QStringLiteral("/"));
+}
+
 QString laneGuardText(const WavePreviewLaneSummary& summary)
 {
     if (summary.guardTexts.isEmpty())
@@ -506,11 +526,12 @@ QString busiestLaneText(const WavePreviewReport& report)
 
 QString reportSummaryText(const WavePreviewReport& report, bool dirty)
 {
-    return QStringLiteral("%1 lanes, %2 events, %3 blocks, %4 clock/reset groups%5%6")
+    return QStringLiteral("%1 lanes, %2 events, %3 blocks, %4 clock/reset groups, activity %5%6%7")
         .arg(report.lanes.size())
         .arg(report.assignmentCount)
         .arg(report.blocks.size())
         .arg(report.clockResetGroups.size())
+        .arg(activitySummaryText(report.activitySummary))
         .arg(busiestLaneText(report))
         .arg(dirty ? QStringLiteral(" - live dirty buffer") : QString());
 }
@@ -977,6 +998,31 @@ void WavePreviewPanelCoordinator::renderReport(
             groupItem->setText(6, QStringLiteral("-"));
         }
         groupRoot->setExpanded(true);
+    }
+
+    if (report.activitySummary.isValid()) {
+        auto* activityRoot = new QTreeWidgetItem(previewTree);
+        activityRoot->setText(0, QStringLiteral("Activity Mix"));
+        activityRoot->setText(1,
+                              countText(report.activitySummary.eventCount,
+                                        QStringLiteral("event"),
+                                        QStringLiteral("events")));
+        activityRoot->setText(2, QStringLiteral("-"));
+        activityRoot->setText(3, QStringLiteral("-"));
+        activityRoot->setText(4, activitySummaryText(report.activitySummary));
+        activityRoot->setText(5, QStringLiteral("report"));
+        activityRoot->setText(6, QStringLiteral("-"));
+        QFont activityFont = activityRoot->font(0);
+        activityFont.setBold(true);
+        activityRoot->setFont(0, activityFont);
+        setItemTooltip(
+            activityRoot,
+            QStringList{
+                QStringLiteral("activity: %1")
+                    .arg(activitySummaryText(report.activitySummary)),
+                QStringLiteral("events: %1")
+                    .arg(report.activitySummary.eventCount)
+            }.join(QStringLiteral("\n")));
     }
 
     for (const WavePreviewLane& lane : report.lanes) {

@@ -105,6 +105,21 @@ struct WavePreviewLaneSummary {
     }
 };
 
+struct WavePreviewActivitySummary {
+    int eventCount = 0;
+    int continuousEventCount = 0;
+    int combinationalEventCount = 0;
+    int sequentialEventCount = 0;
+    bool hasContinuousEvent = false;
+    bool hasCombinationalEvent = false;
+    bool hasSequentialEvent = false;
+
+    bool isValid() const
+    {
+        return eventCount > 0;
+    }
+};
+
 struct WavePreviewBlock {
     WavePreviewBlockKind kind = WavePreviewBlockKind::Unknown;
     QString trigger;
@@ -162,6 +177,7 @@ struct WavePreviewReport {
     QList<WavePreviewClockResetGroup> clockResetGroups;
     QList<WavePreviewSignalContext> signalContexts;
     QList<WavePreviewLane> lanes;
+    WavePreviewActivitySummary activitySummary;
     QStringList warnings;
     int assignmentCount = 0;
     bool available = false;
