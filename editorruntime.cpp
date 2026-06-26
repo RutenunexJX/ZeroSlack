@@ -201,11 +201,12 @@ bool handleBracketRangeTab(MyCodeEditor* editor, QKeyEvent* event)
     return true;
 }
 
-bool handleBracketRangeControlClick(MyCodeEditor* editor, QMouseEvent* event)
+bool handleBracketRangeAltClick(MyCodeEditor* editor, QMouseEvent* event)
 {
     if (!editor || !event
         || event->button() != Qt::LeftButton
-        || !event->modifiers().testFlag(Qt::ControlModifier))
+        || !event->modifiers().testFlag(Qt::AltModifier)
+        || event->modifiers().testFlag(Qt::ControlModifier))
         return false;
 
     QTextCursor cursor = editor->cursorForPosition(
@@ -1166,7 +1167,7 @@ bool MyCodeEditorState::handleMousePress(
         clearColumnSelection(editor, *this);
     }
 
-    if (handleBracketRangeControlClick(editor, event))
+    if (handleBracketRangeAltClick(editor, event))
         return true;
 
     return sourceNavigation.handleMousePress(

@@ -8,7 +8,6 @@ This file is a running checklist for problems to fix and new features to conside
 
 ## Feature Ideas
 
-- [ ] Change bracket range quick-select from `Ctrl+left-click` to `Alt+left-click`, so `Ctrl+left-click` inside `[PW-1:0]` and similar ranges can consistently mean jump-to-definition for parameters/macros/symbols.
 - [ ] Enhance bracket range Up/Down adjustment for parameter or expression bounds. Examples: `[P_TEST:0]` plus Up should become `[P_TEST+1:0]`; Down should first ensure `P_TEST-1` is not below the right bound, then become `[P_TEST-1:0]`; complex expressions should be parenthesized before arithmetic, e.g. `[P_TEST0*P_TEST1:0]` Down becomes `[(P_TEST0*P_TEST1)-1:0]`.
 - [ ] Add a dedicated semantic highlight role for enum values at declaration and use sites, so enum constants such as `IDLE`, `BUSY`, and `DONE` are visually distinct from enum types, enum variables, parameters, macros, and ordinary identifiers. Keep declaration-site ghost values, and use hover/double-click details for richer enum value information instead of always-on inline labels.
 - [ ] Add a dedicated semantic highlight role for typedef/type-alias names at use sites, such as `type_def_type test;`, so alias types are visually distinct from ordinary identifiers and not limited to declaration-site `PackageClassType` coloring.
@@ -35,3 +34,4 @@ This file is a running checklist for problems to fix and new features to conside
 - [x] Add a visible close action for workspace tabs/workspaces. Workspace tabs now show close buttons, closing a workspace prompts for unsaved files in that workspace before removing its editor tabs, switches the active workspace predictably, tears down the previous watcher, and leaves scratch/external tabs available.
 - [x] Add workspace alias rename from the workspace tab right-click menu. The action is named `Rename`, edits only the workspace alias/display name, preserves the disk folder path, rejects empty or duplicate aliases, and updates workspace tabs plus recent-workspace metadata.
 - [x] Add editor font zoom with `Ctrl+Shift+mouse wheel`: wheel up increases editor font size, wheel down decreases editor font size, and `Ctrl+mouse wheel` remains a fast-scroll gesture instead of changing font size.
+- [x] Change bracket range quick-select from `Ctrl+left-click` to `Alt+left-click`, so `Ctrl+left-click` inside `[PW-1:0]` and similar ranges remains available for jump-to-definition while `Alt+left-click` selects the range body.

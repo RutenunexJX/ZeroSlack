@@ -1128,7 +1128,14 @@ static void runEditorBracketRangeRegression()
                       Qt::LeftButton,
                       Qt::ControlModifier,
                       clickRect.center());
-    expectBool("editor ctrl-click selects range body",
+    expectBool("editor ctrl-click leaves range body unselected",
+               stepEditor.textCursor().selectedText().isEmpty(),
+               true);
+    QTest::mouseClick(stepEditor.viewport(),
+                      Qt::LeftButton,
+                      Qt::AltModifier,
+                      clickRect.center());
+    expectBool("editor alt-click selects range body",
                stepEditor.textCursor().selectedText()
                    == QStringLiteral("7:0"),
                true);
