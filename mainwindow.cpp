@@ -178,6 +178,10 @@ void MainWindow::setupWorkspaceBar()
             [this](int, const QString&, const QString&) {
                 refreshWorkspaceTabs();
             });
+    connect(workspaceManager.get(),
+            &WorkspaceManager::workspaceClosed,
+            this,
+            &MainWindow::refreshWorkspaceTabs);
 }
 
 void MainWindow::refreshWorkspaceTabs()
@@ -190,14 +194,24 @@ void MainWindow::refreshWorkspaceTabs()
         workspaceTabBar->removeTab(0);
     const QList<WorkspaceManager::WorkspaceEntry> entries =
         workspaceManager->workspaceEntries();
+    QStringList workspaceRoots;
+    workspaceRoots.reserve(entries.size());
     for (const WorkspaceManager::WorkspaceEntry& entry : entries) {
         const int tab = workspaceTabBar->addTab(entry.alias);
         workspaceTabBar->setTabToolTip(tab, QDir::toNativeSeparators(entry.path));
+        workspaceRoots.append(entry.path);
     }
     workspaceTabBar->setVisible(!entries.isEmpty());
     const int activeIndex = workspaceManager->activeWorkspaceIndex();
     if (activeIndex >= 0 && activeIndex < workspaceTabBar->count())
         workspaceTabBar->setCurrentIndex(activeIndex);
+
+    const QString activeWorkspacePath =
+        activeIndex >= 0 && activeIndex < entries.size()
+            ? entries.at(activeIndex).path
+            : QString();
+    if (tabManager)
+        tabManager->setWorkspaceScope(workspaceRoots, activeWorkspacePath);
 }
 
 void MainWindow::setupWorkspaceProgressIndicator()

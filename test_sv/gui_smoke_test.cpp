@@ -16,6 +16,7 @@
 #include <QImage>
 #include <QSettings>
 #include <QSignalSpy>
+#include <QTabBar>
 #include <QTabWidget>
 #include <QLineEdit>
 #include <QListWidget>
@@ -531,6 +532,89 @@ static void runTabOpenDedupRegression()
     expectBool("tab open existing from scratch reuses tab",
                tabs.editorCount() == 2
                    && tabs.getCurrentEditor() == firstEditor,
+               true);
+
+    QTemporaryDir workspaceA;
+    QTemporaryDir workspaceB;
+    QTemporaryDir externalDir;
+    expectBool("tab workspace scope dirs valid",
+               workspaceA.isValid()
+                   && workspaceB.isValid()
+                   && externalDir.isValid(),
+               true);
+    if (!workspaceA.isValid()
+        || !workspaceB.isValid()
+        || !externalDir.isValid()) {
+        return;
+    }
+
+    const QString fileA =
+        QDir(workspaceA.path()).absoluteFilePath(QStringLiteral("a.sv"));
+    const QString fileB =
+        QDir(workspaceB.path()).absoluteFilePath(QStringLiteral("b.sv"));
+    const QString externalFile =
+        QDir(externalDir.path()).absoluteFilePath(QStringLiteral("external.sv"));
+    auto writeProbeFile = [](const QString& path, const QByteArray& text) {
+        QFile probe(path);
+        if (!probe.open(QIODevice::WriteOnly | QIODevice::Text))
+            return false;
+        probe.write(text);
+        return true;
+    };
+    expectBool("tab workspace scope files writable",
+               writeProbeFile(fileA, "module a; endmodule\n")
+                   && writeProbeFile(fileB, "module b; endmodule\n")
+                   && writeProbeFile(externalFile, "module ext; endmodule\n"),
+               true);
+
+    QTabWidget scopedWidget;
+    TabManager scopedTabs(&scopedWidget);
+    expectBool("tab workspace scope open A",
+               scopedTabs.openFileInTab(fileA),
+               true);
+    MyCodeEditor* editorA = scopedTabs.getCurrentEditor();
+    expectBool("tab workspace scope open B",
+               scopedTabs.openFileInTab(fileB),
+               true);
+    MyCodeEditor* editorB = scopedTabs.getCurrentEditor();
+    expectBool("tab workspace scope open external",
+               scopedTabs.openFileInTab(externalFile),
+               true);
+    MyCodeEditor* externalEditor = scopedTabs.getCurrentEditor();
+    scopedTabs.createNewTab();
+    MyCodeEditor* scratchEditor = scopedTabs.getCurrentEditor();
+
+    auto tabVisible = [&scopedWidget](MyCodeEditor* editor) {
+        const int index = scopedWidget.indexOf(editor);
+        return index >= 0 && scopedWidget.tabBar()->isTabVisible(index);
+    };
+
+    scopedTabs.setWorkspaceScope(
+        {workspaceA.path(), workspaceB.path()},
+        workspaceA.path());
+    expectBool("workspace A scope shows A scratch external",
+               tabVisible(editorA)
+                   && !tabVisible(editorB)
+                   && tabVisible(externalEditor)
+                   && tabVisible(scratchEditor),
+               true);
+
+    scopedTabs.setWorkspaceScope(
+        {workspaceA.path(), workspaceB.path()},
+        workspaceB.path());
+    expectBool("workspace B scope shows B scratch external",
+               !tabVisible(editorA)
+                   && tabVisible(editorB)
+                   && tabVisible(externalEditor)
+                   && tabVisible(scratchEditor),
+               true);
+
+    scopedTabs.setWorkspaceScope({}, {});
+    expectBool("workspace scope cleared shows all tabs",
+               tabVisible(editorA)
+                   && tabVisible(editorB)
+                   && tabVisible(externalEditor)
+                   && tabVisible(scratchEditor),
                true);
 }
 

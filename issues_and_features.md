@@ -8,7 +8,6 @@ This file is a running checklist for problems to fix and new features to conside
 
 ## Feature Ideas
 
-- [ ] When multiple workspaces are open, switching the active workspace should hide editor tabs that belong to other workspaces, so each workspace tab shows only its own files instead of mixing all open editor tabs together. Decide how unsaved scratch tabs and files outside any workspace should be scoped.
 - [ ] Add a visible close action for workspace tabs/workspaces, including clear behavior for active workspace switching, file watcher teardown, open tabs that belong to the closed workspace, and unsaved files.
 - [ ] Add workspace alias rename from the workspace tab right-click menu. The action should be named `Rename`, edit only the workspace alias/display name, leave the disk folder path unchanged, reject empty or duplicate aliases, and update workspace tabs plus recent-workspace metadata.
 - [ ] Add editor font zoom with `Ctrl+Shift+mouse wheel`: wheel up increases editor font size, and wheel down decreases editor font size. Keep `Ctrl+mouse wheel` reserved for fast scrolling.
@@ -35,3 +34,4 @@ This file is a running checklist for problems to fix and new features to conside
 - [x] If the mouse is already hovering a symbol, pressing Ctrl does not immediately show the definition hover; it only appears after a small mouse move. The editor now remembers the last mouse position and refreshes hover there when Ctrl is pressed.
 - [x] Double-click numeric base-conversion hover for values such as `'haaaa` disappears after a tiny mouse move. Numeric hover pinning now accepts double-click selections that cover the literal digits even when the quote/base prefix is outside the selection.
 - [x] Ctrl+click jump-to-definition can still show a duplicate definition hover at the definition site. Ctrl hover now suppresses definition preview popups when the resolved target is the current editor location.
+- [x] When multiple workspaces are open, switching the active workspace should hide editor tabs that belong to other workspaces, so each workspace tab shows only its own files instead of mixing all open editor tabs together. Scratch tabs and files outside all opened workspaces are scoped as global tabs and stay visible in every workspace.

@@ -1,6 +1,51 @@
 #include "tabmanager.h"
 #include "documentmodel.h"
 
+#include <QDir>
+#include <QFileInfo>
+#include <QSignalBlocker>
+
+namespace {
+QString normalizedTabWorkspacePath(const QString& path)
+{
+    if (path.isEmpty())
+        return QString();
+
+    QString normalized = QDir::cleanPath(
+        QDir::fromNativeSeparators(QFileInfo(path).absoluteFilePath()));
+#ifdef Q_OS_WIN
+    normalized = normalized.toCaseFolded();
+#endif
+    return normalized;
+}
+
+bool pathInsideWorkspaceRoot(const QString& fileName,
+                             const QString& workspaceRoot)
+{
+    const QString filePath = normalizedTabWorkspacePath(fileName);
+    const QString rootPath = normalizedTabWorkspacePath(workspaceRoot);
+    if (filePath.isEmpty() || rootPath.isEmpty())
+        return false;
+
+    const QString rootPrefix = rootPath.endsWith(QLatin1Char('/'))
+        ? rootPath
+        : rootPath + QLatin1Char('/');
+    return filePath == rootPath || filePath.startsWith(rootPrefix);
+}
+
+QStringList normalizedTabWorkspaceRoots(const QStringList& roots)
+{
+    QStringList normalized;
+    normalized.reserve(roots.size());
+    for (const QString& root : roots) {
+        const QString path = normalizedTabWorkspacePath(root);
+        if (!path.isEmpty() && !normalized.contains(path))
+            normalized.append(path);
+    }
+    return normalized;
+}
+}
+
 TabManager::TabManager(QTabWidget* tabWidget, QObject *parent)
     : QObject(parent)
     , tabWidget(tabWidget)
@@ -39,8 +84,10 @@ TabManager::~TabManager()
 void TabManager::createNewTab()
 {
     MyCodeEditor* editor = openController.createNewTab();
-    if (editor)
+    if (editor) {
+        applyWorkspaceScope();
         emit tabCreated(editor);
+    }
 }
 
 bool TabManager::openFileInTab(const QString& fileName)
@@ -52,6 +99,7 @@ bool TabManager::openFileInTab(const QString& fileName)
     if (!editor)
         return false;
 
+    applyWorkspaceScope();
     emit tabCreated(editor);
     return true;
 }
@@ -64,6 +112,7 @@ bool TabManager::saveCurrentTab()
     QString savedFileName;
     if (saveController.saveEditor(codeEditor, false, &savedFileName)) {
         updateTabTitle(codeEditor);
+        applyWorkspaceScope();
         emit fileSaved(savedFileName);
         return true;
     }
@@ -78,6 +127,7 @@ bool TabManager::saveAsCurrentTab()
     QString savedFileName;
     if (saveController.saveEditor(codeEditor, true, &savedFileName)) {
         updateTabTitle(codeEditor);
+        applyWorkspaceScope();
         emit fileSaved(savedFileName);
         return true;
     }
@@ -103,6 +153,7 @@ void TabManager::closeTab(int index)
 
     documentModel->unregisterEditor(codeEditor);
     tabWidget->removeTab(index);
+    applyWorkspaceScope();
     emit tabClosed(fileName);
 }
 
@@ -176,9 +227,71 @@ void TabManager::updateTabTitle(MyCodeEditor* editor)
     titleController.updateTitle(editor);
 }
 
+void TabManager::setWorkspaceScope(const QStringList& workspaceRoots,
+                                   const QString& activeWorkspaceRootPath)
+{
+    scopedWorkspaceRoots = normalizedTabWorkspaceRoots(workspaceRoots);
+    activeWorkspaceRoot = normalizedTabWorkspacePath(activeWorkspaceRootPath);
+    applyWorkspaceScope();
+}
+
 bool TabManager::hasUnsavedChanges() const
 {
     return documentQueries.hasUnsavedChanges();
+}
+
+void TabManager::applyWorkspaceScope()
+{
+    if (!tabWidget)
+        return;
+
+    const int previousIndex = tabWidget->currentIndex();
+    int firstVisibleIndex = -1;
+    bool currentStillVisible = false;
+    {
+        const QSignalBlocker blocker(tabWidget);
+        for (int i = 0; i < tabWidget->count(); ++i) {
+            MyCodeEditor* editor = getEditorAt(i);
+            const bool visible = editorVisibleInWorkspaceScope(editor);
+            tabWidget->setTabVisible(i, visible);
+            if (visible && firstVisibleIndex < 0)
+                firstVisibleIndex = i;
+            if (visible && i == tabWidget->currentIndex())
+                currentStillVisible = true;
+        }
+
+        if (!currentStillVisible && firstVisibleIndex >= 0)
+            tabWidget->setCurrentIndex(firstVisibleIndex);
+    }
+
+    if (tabWidget->currentIndex() != previousIndex)
+        onCurrentTabChanged(tabWidget->currentIndex());
+}
+
+bool TabManager::editorVisibleInWorkspaceScope(MyCodeEditor* editor) const
+{
+    if (!editor || activeWorkspaceRoot.isEmpty()
+        || scopedWorkspaceRoots.isEmpty()) {
+        return true;
+    }
+
+    const QString fileName =
+        documentModel ? documentModel->documentForEditor(editor).fileName
+                      : QString();
+    if (fileName.isEmpty())
+        return true;
+
+    if (pathInsideWorkspaceRoot(fileName, activeWorkspaceRoot))
+        return true;
+
+    for (const QString& root : scopedWorkspaceRoots) {
+        if (root == activeWorkspaceRoot)
+            continue;
+        if (pathInsideWorkspaceRoot(fileName, root))
+            return false;
+    }
+
+    return true;
 }
 
 void TabManager::onTabCloseRequested(int index)

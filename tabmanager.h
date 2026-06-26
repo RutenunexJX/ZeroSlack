@@ -42,6 +42,8 @@ public:
 
     // Tab state management
     void updateTabTitle(MyCodeEditor* editor);
+    void setWorkspaceScope(const QStringList& workspaceRoots,
+                           const QString& activeWorkspaceRoot);
     bool hasUnsavedChanges() const;
 
 signals:
@@ -63,6 +65,11 @@ private:
     TabDocumentQueries documentQueries;
     TabSaveController saveController;
     TabTitleController titleController;
+    QStringList scopedWorkspaceRoots;
+    QString activeWorkspaceRoot;
+
+    void applyWorkspaceScope();
+    bool editorVisibleInWorkspaceScope(MyCodeEditor* editor) const;
 };
 
 #endif // TABMANAGER_H
