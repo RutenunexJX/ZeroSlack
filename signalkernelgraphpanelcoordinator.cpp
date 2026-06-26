@@ -25,6 +25,7 @@
 #include <QPoint>
 #include <QPolygonF>
 #include <QVBoxLayout>
+#include <QWheelEvent>
 #include <QWidget>
 
 #include <cmath>
@@ -36,6 +37,28 @@ constexpr qreal kNodeHeight = 64.0;
 constexpr qreal kColumnOffset = 430.0;
 constexpr qreal kVerticalSpacing = 92.0;
 constexpr double kPi = 3.14159265358979323846;
+
+class SignalKernelGraphView : public QGraphicsView
+{
+public:
+    using QGraphicsView::QGraphicsView;
+
+protected:
+    void wheelEvent(QWheelEvent* event) override
+    {
+        if (!event)
+            return;
+        const qreal currentScale = transform().m11();
+        const qreal factor = event->angleDelta().y() > 0 ? 1.15 : 1.0 / 1.15;
+        const qreal nextScale = currentScale * factor;
+        if (nextScale < 0.18 || nextScale > 4.5) {
+            event->accept();
+            return;
+        }
+        scale(factor, factor);
+        event->accept();
+    }
+};
 
 QString elidedText(const QString& text, const QFont& font, int width)
 {
@@ -320,7 +343,7 @@ SignalKernelGraphPanelCoordinator::SignalKernelGraphPanelCoordinator(
     layout->addWidget(titleLabel);
 
     graphScene = new QGraphicsScene(panel);
-    graphView = new QGraphicsView(graphScene, panel);
+    graphView = new SignalKernelGraphView(graphScene, panel);
     graphView->setObjectName(QStringLiteral("signalKernelGraphView"));
     graphView->setRenderHint(QPainter::Antialiasing, true);
     graphView->setDragMode(QGraphicsView::ScrollHandDrag);

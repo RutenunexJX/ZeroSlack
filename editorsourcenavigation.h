@@ -44,7 +44,14 @@ public:
         MyCodeEditor* editor,
         QMouseEvent* event,
         EditorSemanticContextService* service,
-        const EditorSourceContextProvider& contextProvider);
+        const EditorSourceContextProvider& contextProvider,
+        EditorSelection& selections);
+    bool handleMouseDoubleClick(
+        MyCodeEditor* editor,
+        QMouseEvent* event,
+        EditorSemanticContextService* service,
+        const EditorSourceContextProvider& contextProvider,
+        EditorSelection& selections);
     void handleMouseMove(
         MyCodeEditor* editor,
         QMouseEvent* event,
@@ -97,11 +104,13 @@ private:
     bool popupMatches(const EditorSourceNavigationTarget& target,
                       bool previewMode) const;
     bool numericPopupMatches(int startPosition, int endPosition) const;
+    bool popupSelectionStillActive(MyCodeEditor* editor) const;
 
     EditorSourceHover sourceHover;
     std::unique_ptr<EditorHoverPopup> popup;
     bool popupNumericMode = false;
     bool popupPreviewMode = false;
+    bool popupPinnedBySelection = false;
     int popupStartPos = -1;
     int popupEndPos = -1;
 };

@@ -21,6 +21,7 @@
 #include <QVBoxLayout>
 
 #include <memory>
+#include <utility>
 
 namespace {
 void showFindDialog(MyCodeEditor* editor)
@@ -120,6 +121,19 @@ void MyCodeEditor::setAlternateModeEnabled(bool enabled)
     state->setAlternateModeEnabled(enabled);
 }
 
+void MyCodeEditor::setIncludeFileCompletionProvider(
+    std::function<QStringList(const QString& currentFile)> provider)
+{
+    state->setIncludeFileProvider(std::move(provider));
+}
+
+void MyCodeEditor::setIncludeNewHeaderCreator(
+    std::function<IncludeNewHeaderResult(
+        const IncludeNewHeaderRequest& request)> creator)
+{
+    state->setIncludeNewHeaderCreator(std::move(creator));
+}
+
 void MyCodeEditor::setSemanticContextService(EditorSemanticContextService* service)
 {
     state->setSemanticContextService(service);
@@ -146,6 +160,7 @@ void MyCodeEditor::paintEvent(QPaintEvent *event)
     QPlainTextEdit::paintEvent(event);
     state->paintFoldPlaceholders(this, event);
     state->paintGhostAnnotations(this, event);
+    state->paintColumnSelection(this, event);
 }
 
 void MyCodeEditor::contextMenuEvent(QContextMenuEvent *event)
@@ -247,6 +262,11 @@ void MyCodeEditor::highlightSearchMatches(
 void MyCodeEditor::clearSearchMatches()
 {
     state->clearSearchMatches(this);
+}
+
+void MyCodeEditor::flashLine(int lineNumber)
+{
+    state->flashLine(this, lineNumber);
 }
 
 void MyCodeEditor::applyAppearanceSettings(
@@ -382,12 +402,28 @@ void MyCodeEditor::mousePressEvent(QMouseEvent *event)
     QPlainTextEdit::mousePressEvent(event);
 }
 
+void MyCodeEditor::mouseDoubleClickEvent(QMouseEvent *event)
+{
+    if (state->handleMouseDoubleClick(this, event))
+        return;
+
+    QPlainTextEdit::mouseDoubleClickEvent(event);
+}
+
 void MyCodeEditor::mouseMoveEvent(QMouseEvent *event)
 {
     if (state->handleMouseMove(this, event))
         return;
 
     QPlainTextEdit::mouseMoveEvent(event);
+}
+
+void MyCodeEditor::mouseReleaseEvent(QMouseEvent *event)
+{
+    if (state->handleMouseRelease(this, event))
+        return;
+
+    QPlainTextEdit::mouseReleaseEvent(event);
 }
 
 void MyCodeEditor::leaveEvent(QEvent *event)

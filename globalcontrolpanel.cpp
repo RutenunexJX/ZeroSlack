@@ -37,7 +37,7 @@ GlobalControlPanel::GlobalControlPanel(QWidget* parent)
 
     searchEdit = new QLineEdit(this);
     searchEdit->setObjectName(QStringLiteral("globalControlSearchEdit"));
-    searchEdit->setPlaceholderText(QStringLiteral("Type ow, fd, or fds"));
+    searchEdit->setPlaceholderText(QStringLiteral("Type ow, ow r, fd, or fds"));
     layout->addWidget(searchEdit);
 
     resultList = new QListWidget(this);

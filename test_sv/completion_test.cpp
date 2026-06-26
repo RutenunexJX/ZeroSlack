@@ -777,6 +777,14 @@ int main(int argc, char** argv) {
                        "  assign cat = {4{8'hAA}};\n"
                        "  for (genvar i = 0; i < 8; i++) begin : g\n"
                        "  end\n"
+                       "  function automatic [31:0] function_add1(input [31:0] x);\n"
+                       "    function_add1 = x + 1;\n"
+                       "  endfunction\n"
+                       "  localparam FROM_PW = PW;\n"
+                       "  localparam SUM = 32'ha452_0000 + 32'454654;\n"
+                       "  localparam STR = \"test\";\n"
+                       "  localparam CLOG = $clog2(PW);\n"
+                       "  localparam FADD = function_add1(PW);\n"
                        "endmodule\n");
     const QList<SemanticSymbolRecord> ghostRecords{
         SemanticFixtureRecordBuilder(QStringLiteral("data"),
@@ -884,6 +892,46 @@ int main(int argc, char** argv) {
             .withOwner(SymbolTaxonomy::SymbolOwnerScope::Module,
                        QStringLiteral("state_t"))
             .record(),
+        SemanticFixtureRecordBuilder(QStringLiteral("FROM_PW"),
+                                     SymbolTaxonomy::DeclarationKind::Localparam)
+            .withFile(ghostFile)
+            .withLine(25, 14)
+            .withCollectorKind(SymbolTaxonomy::CollectorKind::Localparam)
+            .withOwner(SymbolTaxonomy::SymbolOwnerScope::Module,
+                       QStringLiteral("top"))
+            .record(),
+        SemanticFixtureRecordBuilder(QStringLiteral("SUM"),
+                                     SymbolTaxonomy::DeclarationKind::Localparam)
+            .withFile(ghostFile)
+            .withLine(26, 14)
+            .withCollectorKind(SymbolTaxonomy::CollectorKind::Localparam)
+            .withOwner(SymbolTaxonomy::SymbolOwnerScope::Module,
+                       QStringLiteral("top"))
+            .record(),
+        SemanticFixtureRecordBuilder(QStringLiteral("STR"),
+                                     SymbolTaxonomy::DeclarationKind::Localparam)
+            .withFile(ghostFile)
+            .withLine(27, 14)
+            .withCollectorKind(SymbolTaxonomy::CollectorKind::Localparam)
+            .withOwner(SymbolTaxonomy::SymbolOwnerScope::Module,
+                       QStringLiteral("top"))
+            .record(),
+        SemanticFixtureRecordBuilder(QStringLiteral("CLOG"),
+                                     SymbolTaxonomy::DeclarationKind::Localparam)
+            .withFile(ghostFile)
+            .withLine(28, 14)
+            .withCollectorKind(SymbolTaxonomy::CollectorKind::Localparam)
+            .withOwner(SymbolTaxonomy::SymbolOwnerScope::Module,
+                       QStringLiteral("top"))
+            .record(),
+        SemanticFixtureRecordBuilder(QStringLiteral("FADD"),
+                                     SymbolTaxonomy::DeclarationKind::Localparam)
+            .withFile(ghostFile)
+            .withLine(29, 14)
+            .withCollectorKind(SymbolTaxonomy::CollectorKind::Localparam)
+            .withOwner(SymbolTaxonomy::SymbolOwnerScope::Module,
+                       QStringLiteral("top"))
+            .record(),
     };
     SemanticIndex ghostIndex;
     ghostIndex.setSnapshot(
@@ -901,11 +949,36 @@ int main(int argc, char** argv) {
                         GhostAnnotationKind::FormalPort,
                         13,
                         QStringLiteral("in logic [7:0]"));
-    expectGhostContains("Ghost parameter value",
+    expectGhostNotContains("Ghost literal parameter hidden",
+                           ghostReport,
+                           GhostAnnotationKind::ParameterValue,
+                           6,
+                           QStringLiteral("(D)8"));
+    expectGhostContains("Ghost parameter identifier value",
                         ghostReport,
                         GhostAnnotationKind::ParameterValue,
-                        6,
-                        QStringLiteral("= 8"));
+                        25,
+                        QStringLiteral("(D)32"));
+    expectGhostContains("Ghost parameter expression value",
+                        ghostReport,
+                        GhostAnnotationKind::ParameterValue,
+                        26,
+                        QStringLiteral("(H)A458EFFE"));
+    expectGhostContains("Ghost parameter ascii value",
+                        ghostReport,
+                        GhostAnnotationKind::ParameterValue,
+                        27,
+                        QStringLiteral("(H)74657374"));
+    expectGhostContains("Ghost parameter clog2 value",
+                        ghostReport,
+                        GhostAnnotationKind::ParameterValue,
+                        28,
+                        QStringLiteral("(D)5"));
+    expectGhostContains("Ghost parameter function value",
+                        ghostReport,
+                        GhostAnnotationKind::ParameterValue,
+                        29,
+                        QStringLiteral("(D)33"));
     expectGhostContains("Ghost parameter override",
                         ghostReport,
                         GhostAnnotationKind::ParameterOverride,
@@ -968,7 +1041,10 @@ int main(int argc, char** argv) {
 
     const QString numericHoverText =
         QStringLiteral("assign a = 16'hFF00;\n"
-                       "assign b = \"123\"; // 456\n");
+                       "assign b = \"123\"; // 456\n"
+                       "assign c = 'd4545;\n"
+                       "assign d = 'hadda;\n"
+                       "`include \"test.sv\"\n");
     const int literalHoverPosition =
         static_cast<int>(numericHoverText.indexOf(QStringLiteral("16'hFF00")))
         + 3;
@@ -976,6 +1052,12 @@ int main(int argc, char** argv) {
         static_cast<int>(numericHoverText.indexOf(QStringLiteral("123")));
     const int commentHoverPosition =
         static_cast<int>(numericHoverText.indexOf(QStringLiteral("456")));
+    const int unsizedDecimalHoverPosition =
+        static_cast<int>(numericHoverText.indexOf(QStringLiteral("'d4545"))) + 2;
+    const int unsizedHexHoverPosition =
+        static_cast<int>(numericHoverText.indexOf(QStringLiteral("'hadda"))) + 2;
+    const int includeStringHoverPosition =
+        static_cast<int>(numericHoverText.indexOf(QStringLiteral("test.sv")));
     const GhostNumericLiteralReport literalHover =
         ghostService.numericLiteralAt(GhostNumericLiteralQuery{
             numericHoverText,
@@ -985,13 +1067,46 @@ int main(int argc, char** argv) {
                true);
     expectEq("Ghost literal hover text",
              literalHover.displayText,
-             QStringLiteral("(D)65280 (B)1111_1111_0000_0000 (H)FF00"));
+             QStringLiteral("(B)1111_1111_0000_0000 (D)65280"));
     const GhostNumericLiteralReport stringHover =
         ghostService.numericLiteralAt(GhostNumericLiteralQuery{
             numericHoverText,
             stringHoverPosition});
-    expectBool("Ghost literal hover skips string",
-               stringHover.available,
+    expectBool("Ghost literal hover supports ascii string",
+               stringHover.available
+                   && stringHover.displayText.contains(QStringLiteral("(H)313233")),
+               true);
+    const GhostNumericLiteralReport includeStringHover =
+        ghostService.numericLiteralAt(GhostNumericLiteralQuery{
+            numericHoverText,
+            includeStringHoverPosition});
+    expectBool("Ghost literal hover skips include string",
+               includeStringHover.available,
+               false);
+    const GhostNumericLiteralReport unsizedDecimalHover =
+        ghostService.numericLiteralAt(GhostNumericLiteralQuery{
+            numericHoverText,
+            unsizedDecimalHoverPosition});
+    expectBool("Ghost literal hover supports unsized decimal base",
+               unsizedDecimalHover.available
+                   && unsizedDecimalHover.displayText.contains(QStringLiteral("(H)11C1"))
+                   && !unsizedDecimalHover.displayText.contains(QStringLiteral("(D)4545")),
+               true);
+    const GhostNumericLiteralReport unsizedHexHover =
+        ghostService.numericLiteralAt(GhostNumericLiteralQuery{
+            numericHoverText,
+            unsizedHexHoverPosition});
+    expectBool("Ghost literal hover supports unsized hex base",
+               unsizedHexHover.available
+                   && unsizedHexHover.displayText.contains(QStringLiteral("(D)44506"))
+                   && !unsizedHexHover.displayText.contains(QStringLiteral("(H)ADDA")),
+               true);
+    const GhostNumericLiteralReport legacyStringHover =
+        ghostService.numericLiteralAt(GhostNumericLiteralQuery{
+            QStringLiteral("`include \"123.sv\"\n"),
+            10});
+    expectBool("Ghost literal hover skips include legacy string",
+               legacyStringHover.available,
                false);
     const GhostNumericLiteralReport commentHover =
         ghostService.numericLiteralAt(GhostNumericLiteralQuery{

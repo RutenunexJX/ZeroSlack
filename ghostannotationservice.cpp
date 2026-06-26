@@ -2,6 +2,7 @@
 
 #include <QChar>
 #include <QHash>
+#include <QRegularExpression>
 #include <QStringList>
 
 #include <algorithm>
@@ -24,6 +25,22 @@ struct LiteralValue {
     unsigned long long value = 0;
     QString digits;
     QString original;
+};
+
+using UInt128 = unsigned __int128;
+
+struct WideValue {
+    bool valid = false;
+    UInt128 value = 0;
+    int width = 0;
+    int sourceBase = 10;
+    bool simpleLiteral = false;
+    bool stringLiteral = false;
+};
+
+struct UserFunctionDefinition {
+    QString argumentName;
+    QString expression;
 };
 
 bool isIdentifierStart(QChar ch)
@@ -62,6 +79,78 @@ int hexDigitValue(QChar ch)
     if (ch >= QLatin1Char('A') && ch <= QLatin1Char('F'))
         return 10 + ch.unicode() - QLatin1Char('A').unicode();
     return 0;
+}
+
+QString decimalDigits(UInt128 value)
+{
+    if (value == 0)
+        return QStringLiteral("0");
+
+    QString result;
+    while (value > 0) {
+        const int digit = static_cast<int>(value % 10);
+        result.prepend(QChar(QLatin1Char('0' + digit)));
+        value /= 10;
+    }
+    return result;
+}
+
+QString binaryDigitsWide(UInt128 value, int width)
+{
+    const int bitCount = qBound(1, width, 128);
+    QString result;
+    result.reserve(bitCount + bitCount / 4);
+    for (int i = bitCount - 1; i >= 0; --i) {
+        const bool bitSet = ((value >> i) & 1) != 0;
+        result.append(bitSet ? QLatin1Char('1') : QLatin1Char('0'));
+        if (i > 0 && i % 4 == 0)
+            result.append(QLatin1Char('_'));
+    }
+    return result;
+}
+
+QString hexDigitsWide(UInt128 value, int width)
+{
+    const int nibbleCount = qBound(1, (width + 3) / 4, 32);
+    QString result;
+    result.reserve(nibbleCount);
+    const char* chars = "0123456789ABCDEF";
+    for (int i = nibbleCount - 1; i >= 0; --i) {
+        const int shift = i * 4;
+        const int nibble = static_cast<int>((value >> shift) & 0xFULL);
+        result.append(QLatin1Char(chars[nibble]));
+    }
+    return result;
+}
+
+int inferredWidthWide(UInt128 value)
+{
+    int width = 1;
+    while (value > 1) {
+        value >>= 1;
+        ++width;
+    }
+    return width;
+}
+
+UInt128 maskForWidth(int width)
+{
+    if (width <= 0 || width >= 128)
+        return ~static_cast<UInt128>(0);
+    return (static_cast<UInt128>(1) << width) - 1;
+}
+
+QString radixDisplayText(UInt128 value, int width, int omitBase = 0)
+{
+    const int displayWidth = qBound(1, width, 128);
+    QStringList parts;
+    if (omitBase != 2)
+        parts.append(QStringLiteral("(B)%1").arg(binaryDigitsWide(value, displayWidth)));
+    if (omitBase != 10)
+        parts.append(QStringLiteral("(D)%1").arg(decimalDigits(value)));
+    if (omitBase != 16)
+        parts.append(QStringLiteral("(H)%1").arg(hexDigitsWide(value, displayWidth)));
+    return parts.join(QLatin1Char(' '));
 }
 
 bool isUnknownDigit(QChar ch)
@@ -238,10 +327,12 @@ bool parseLiteralAt(const QString& line,
             base = 10;
         else if (baseChar == QLatin1Char('h'))
             base = 16;
+        else if (isDecimalDigit(baseChar))
+            base = 10;
         else
             return false;
 
-        pos += 2;
+        pos += isDecimalDigit(baseChar) ? 1 : 2;
         QString digits;
         while (pos < line.size()) {
             const QChar ch = line.at(pos);
@@ -288,6 +379,179 @@ bool parseLiteralAt(const QString& line,
     if (end)
         *end = pos;
     return true;
+}
+
+bool valueForDigitsWide(const QString& digits,
+                        int base,
+                        UInt128* out)
+{
+    UInt128 value = 0;
+    for (const QChar ch : digits) {
+        if (ch == QLatin1Char('_'))
+            continue;
+        UInt128 digit = 0;
+        if (base == 16)
+            digit = static_cast<UInt128>(hexDigitValue(ch));
+        else
+            digit = static_cast<UInt128>(
+                ch.unicode() - QLatin1Char('0').unicode());
+        value = value * static_cast<UInt128>(base) + digit;
+    }
+    if (out)
+        *out = value;
+    return true;
+}
+
+bool parseWideLiteralAt(const QString& line,
+                        int start,
+                        WideValue* value,
+                        int* end)
+{
+    if (start < 0 || start >= line.size())
+        return false;
+
+    int pos = start;
+    QString firstDigits;
+    while (pos < line.size()
+           && (isDecimalDigit(line.at(pos))
+               || line.at(pos) == QLatin1Char('_'))) {
+        firstDigits.append(line.at(pos));
+        ++pos;
+    }
+
+    int width = 0;
+    bool hasWidth = false;
+    if (pos < line.size() && line.at(pos) == QLatin1Char('\'')) {
+        hasWidth = !firstDigits.isEmpty();
+        if (hasWidth && !parseUnsignedInt(cleanDigits(firstDigits), &width))
+            return false;
+        if (pos + 1 >= line.size())
+            return false;
+
+        const QChar baseChar = line.at(pos + 1).toLower();
+        int base = 0;
+        int digitsStart = pos + 2;
+        if (baseChar == QLatin1Char('b'))
+            base = 2;
+        else if (baseChar == QLatin1Char('d'))
+            base = 10;
+        else if (baseChar == QLatin1Char('h'))
+            base = 16;
+        else if (hasWidth && isDecimalDigit(baseChar)) {
+            base = 10;
+            digitsStart = pos + 1;
+        } else {
+            return false;
+        }
+
+        pos = digitsStart;
+        QString digits;
+        while (pos < line.size()) {
+            const QChar ch = line.at(pos);
+            if (ch == QLatin1Char('_')
+                || (base == 2 && isBinaryDigit(ch))
+                || (base == 10 && isDecimalDigit(ch))
+                || (base == 16 && isHexDigit(ch))) {
+                digits.append(ch);
+                ++pos;
+                continue;
+            }
+            break;
+        }
+
+        bool exact = false;
+        if (!digitsValidForBase(digits, base, &exact) || !exact)
+            return false;
+
+        UInt128 parsed = 0;
+        valueForDigitsWide(digits, base, &parsed);
+        WideValue result;
+        result.valid = true;
+        result.value = parsed;
+        result.width = hasWidth ? width : qMax(1, base == 16
+            ? cleanDigits(digits).size() * 4
+            : inferredWidthWide(parsed));
+        result.sourceBase = base;
+        result.simpleLiteral = true;
+        if (result.width > 0)
+            result.value &= maskForWidth(result.width);
+        if (value)
+            *value = result;
+        if (end)
+            *end = pos;
+        return true;
+    }
+
+    if (firstDigits.isEmpty())
+        return false;
+
+    bool exact = false;
+    if (!digitsValidForBase(firstDigits, 10, &exact) || !exact)
+        return false;
+    UInt128 parsed = 0;
+    valueForDigitsWide(firstDigits, 10, &parsed);
+    WideValue result;
+    result.valid = true;
+    result.value = parsed;
+    result.width = inferredWidthWide(parsed);
+    result.sourceBase = 10;
+    result.simpleLiteral = true;
+    if (value)
+        *value = result;
+    if (end)
+        *end = pos;
+    return true;
+}
+
+bool parseStringLiteralAt(const QString& line,
+                          int start,
+                          WideValue* value,
+                          int* end)
+{
+    if (start < 0 || start >= line.size()
+        || line.at(start) != QLatin1Char('"')) {
+        return false;
+    }
+
+    int pos = start + 1;
+    UInt128 parsed = 0;
+    int bytes = 0;
+    bool escaped = false;
+    while (pos < line.size()) {
+        const QChar ch = line.at(pos);
+        if (escaped) {
+            parsed = (parsed << 8)
+                | static_cast<UInt128>(ch.toLatin1());
+            ++bytes;
+            escaped = false;
+            ++pos;
+            continue;
+        }
+        if (ch == QLatin1Char('\\')) {
+            escaped = true;
+            ++pos;
+            continue;
+        }
+        if (ch == QLatin1Char('"')) {
+            WideValue result;
+            result.valid = bytes > 0;
+            result.value = parsed;
+            result.width = qBound(1, bytes * 8, 128);
+            result.sourceBase = 16;
+            result.simpleLiteral = true;
+            result.stringLiteral = true;
+            if (value)
+                *value = result;
+            if (end)
+                *end = pos + 1;
+            return result.valid;
+        }
+        parsed = (parsed << 8)
+            | static_cast<UInt128>(ch.toLatin1());
+        ++bytes;
+        ++pos;
+    }
+    return false;
 }
 
 int lineCommentStart(const QString& line)
@@ -680,6 +944,278 @@ bool evaluateAdditiveExpression(const QString& expression,
     return true;
 }
 
+bool evaluateWideExpression(const QString& expression,
+                            const QHash<QString, WideValue>& values,
+                            const QHash<QString, UserFunctionDefinition>& functions,
+                            WideValue* out);
+
+QString stripOuterExpressionParens(QString expression)
+{
+    expression = expression.trimmed();
+    bool changed = true;
+    while (changed && expression.startsWith(QLatin1Char('('))
+           && expression.endsWith(QLatin1Char(')'))) {
+        changed = false;
+        int depth = 0;
+        bool wraps = true;
+        for (int i = 0; i < expression.size(); ++i) {
+            const QChar ch = expression.at(i);
+            if (ch == QLatin1Char('('))
+                ++depth;
+            else if (ch == QLatin1Char(')'))
+                --depth;
+            if (depth == 0 && i != expression.size() - 1) {
+                wraps = false;
+                break;
+            }
+        }
+        if (wraps) {
+            expression = expression.mid(1, expression.size() - 2).trimmed();
+            changed = true;
+        }
+    }
+    return expression;
+}
+
+int matchingParenAt(const QString& text, int open)
+{
+    int depth = 0;
+    for (int i = open; i < text.size(); ++i) {
+        if (text.at(i) == QLatin1Char('(')) {
+            ++depth;
+            continue;
+        }
+        if (text.at(i) != QLatin1Char(')'))
+            continue;
+        --depth;
+        if (depth == 0)
+            return i;
+    }
+    return -1;
+}
+
+bool lookupWideValue(const QHash<QString, WideValue>& values,
+                     const QString& name,
+                     WideValue* out)
+{
+    if (values.contains(name)) {
+        if (out)
+            *out = values.value(name);
+        return true;
+    }
+    const QString alternate = name.startsWith(QLatin1Char('`'))
+        ? name.mid(1)
+        : QStringLiteral("`%1").arg(name);
+    if (!values.contains(alternate))
+        return false;
+    if (out)
+        *out = values.value(alternate);
+    return true;
+}
+
+bool evaluateWidePrimary(const QString& expression,
+                         const QHash<QString, WideValue>& values,
+                         const QHash<QString, UserFunctionDefinition>& functions,
+                         WideValue* out)
+{
+    const QString text = stripOuterExpressionParens(expression);
+    if (text.isEmpty())
+        return false;
+
+    WideValue literal;
+    int literalEnd = 0;
+    if (parseWideLiteralAt(text, 0, &literal, &literalEnd)
+        && literalEnd == text.size()) {
+        if (out)
+            *out = literal;
+        return true;
+    }
+    if (parseStringLiteralAt(text, 0, &literal, &literalEnd)
+        && literalEnd == text.size()) {
+        if (out)
+            *out = literal;
+        return true;
+    }
+
+    int nameEnd = 0;
+    QString name;
+    if (!parseIdentifierOrMacroAt(text, 0, &name, &nameEnd))
+        return false;
+
+    if (nameEnd == text.size()) {
+        WideValue value;
+        if (!lookupWideValue(values, name, &value))
+            return false;
+        value.simpleLiteral = false;
+        if (out)
+            *out = value;
+        return true;
+    }
+
+    int open = nameEnd;
+    while (open < text.size() && text.at(open).isSpace())
+        ++open;
+    if (open >= text.size() || text.at(open) != QLatin1Char('('))
+        return false;
+    const int close = matchingParenAt(text, open);
+    if (close != text.size() - 1)
+        return false;
+
+    const QString argumentExpression =
+        text.mid(open + 1, close - open - 1);
+    WideValue argument;
+    if (!evaluateWideExpression(argumentExpression, values, functions, &argument))
+        return false;
+
+    if (name == QStringLiteral("$clog2")) {
+        UInt128 v = argument.value;
+        int result = 0;
+        UInt128 threshold = 1;
+        while (threshold < v && result < 128) {
+            threshold <<= 1;
+            ++result;
+        }
+        WideValue value;
+        value.valid = true;
+        value.value = static_cast<UInt128>(result);
+        value.width = inferredWidthWide(value.value);
+        value.sourceBase = 10;
+        if (out)
+            *out = value;
+        return true;
+    }
+
+    if (!functions.contains(name))
+        return false;
+
+    QHash<QString, WideValue> localValues = values;
+    const UserFunctionDefinition function = functions.value(name);
+    if (!function.argumentName.isEmpty())
+        localValues.insert(function.argumentName, argument);
+    WideValue result;
+    if (!evaluateWideExpression(function.expression, localValues, functions, &result))
+        return false;
+    result.simpleLiteral = false;
+    if (out)
+        *out = result;
+    return true;
+}
+
+bool evaluateWideExpression(const QString& expression,
+                            const QHash<QString, WideValue>& values,
+                            const QHash<QString, UserFunctionDefinition>& functions,
+                            WideValue* out)
+{
+    const QString text = stripOuterExpressionParens(expression);
+    if (text.isEmpty())
+        return false;
+
+    int depth = 0;
+    int question = -1;
+    int colon = -1;
+    for (int i = 0; i < text.size(); ++i) {
+        const QChar ch = text.at(i);
+        if (ch == QLatin1Char('(')) {
+            ++depth;
+        } else if (ch == QLatin1Char(')')) {
+            depth = qMax(0, depth - 1);
+        } else if (depth == 0 && ch == QLatin1Char('?')) {
+            question = i;
+        } else if (depth == 0 && ch == QLatin1Char(':') && question >= 0) {
+            colon = i;
+            break;
+        }
+    }
+    if (question > 0 && colon > question) {
+        WideValue condition;
+        if (!evaluateWideExpression(text.left(question),
+                                    values,
+                                    functions,
+                                    &condition)) {
+            return false;
+        }
+        WideValue branch;
+        const QString branchExpression = condition.value != 0
+            ? text.mid(question + 1, colon - question - 1)
+            : text.mid(colon + 1);
+        if (!evaluateWideExpression(branchExpression, values, functions, &branch))
+            return false;
+        branch.simpleLiteral = false;
+        if (out)
+            *out = branch;
+        return true;
+    }
+
+    depth = 0;
+    for (int i = text.size() - 1; i >= 0; --i) {
+        const QChar ch = text.at(i);
+        if (ch == QLatin1Char(')')) {
+            ++depth;
+            continue;
+        }
+        if (ch == QLatin1Char('(')) {
+            depth = qMax(0, depth - 1);
+            continue;
+        }
+        if (depth != 0 || (ch != QLatin1Char('+') && ch != QLatin1Char('-')))
+            continue;
+        if (i == 0)
+            continue;
+
+        WideValue left;
+        WideValue right;
+        if (!evaluateWideExpression(text.left(i), values, functions, &left)
+            || !evaluateWideExpression(text.mid(i + 1), values, functions, &right)) {
+            return false;
+        }
+        WideValue result;
+        result.valid = true;
+        result.value = ch == QLatin1Char('+')
+            ? left.value + right.value
+            : left.value - right.value;
+        result.width = qMax(left.width, right.width);
+        result.sourceBase = 10;
+        result.simpleLiteral = false;
+        if (out)
+            *out = result;
+        return true;
+    }
+
+    int castWidthEnd = 0;
+    int castWidth = 0;
+    while (castWidthEnd < text.size()
+           && isDecimalDigit(text.at(castWidthEnd))) {
+        castWidth = castWidth * 10
+            + text.at(castWidthEnd).unicode() - QLatin1Char('0').unicode();
+        ++castWidthEnd;
+    }
+    if (castWidthEnd > 0
+        && castWidthEnd + 1 < text.size()
+        && text.at(castWidthEnd) == QLatin1Char('\'')
+        && text.at(castWidthEnd + 1) == QLatin1Char('(')) {
+        const int close = matchingParenAt(text, castWidthEnd + 1);
+        if (close == text.size() - 1) {
+            WideValue inner;
+            if (!evaluateWideExpression(
+                    text.mid(castWidthEnd + 2, close - castWidthEnd - 2),
+                    values,
+                    functions,
+                    &inner)) {
+                return false;
+            }
+            inner.value &= maskForWidth(castWidth);
+            inner.width = castWidth;
+            inner.sourceBase = 10;
+            inner.simpleLiteral = false;
+            if (out)
+                *out = inner;
+            return true;
+        }
+    }
+
+    return evaluateWidePrimary(text, values, functions, out);
+}
+
 void addLiteralValue(QHash<QString, int>* values,
                      const QString& name,
                      const LiteralValue& literal)
@@ -757,6 +1293,186 @@ QHash<QString, int> literalValuesForDocument(
         int literalEnd = 0;
         if (parseLiteralAt(line.text, literalStart, &literal, &literalEnd))
             addLiteralValue(&values, name, literal);
+    }
+    return values;
+}
+
+QHash<QString, UserFunctionDefinition> userFunctionsForDocument(
+    const QList<LineInfo>& lines)
+{
+    QHash<QString, UserFunctionDefinition> functions;
+    bool inFunction = false;
+    QString functionName;
+    QString argumentName;
+    QString assignmentExpression;
+
+    for (const LineInfo& line : lines) {
+        const QString trimmed = line.text.trimmed();
+        if (!inFunction) {
+            if (!trimmed.startsWith(QStringLiteral("function")))
+                continue;
+            const int paren = trimmed.indexOf(QLatin1Char('('));
+            const QString header = paren >= 0 ? trimmed.left(paren) : trimmed;
+            const QStringList tokens =
+                header.split(QRegularExpression(QStringLiteral("\\s+")),
+                             Qt::SkipEmptyParts);
+            if (tokens.size() < 2)
+                continue;
+            functionName = tokens.last();
+            inFunction = !functionName.isEmpty();
+            argumentName.clear();
+            assignmentExpression.clear();
+            if (paren >= 0) {
+                const int close = trimmed.indexOf(QLatin1Char(')'), paren + 1);
+                const QString arguments = close > paren
+                    ? trimmed.mid(paren + 1, close - paren - 1)
+                    : QString();
+                const QStringList argTokens =
+                    arguments.split(QRegularExpression(QStringLiteral("[,\\s]+")),
+                                    Qt::SkipEmptyParts);
+                if (!argTokens.isEmpty())
+                    argumentName = argTokens.last();
+            }
+            continue;
+        }
+
+        if (trimmed.startsWith(QStringLiteral("endfunction"))) {
+            if (!functionName.isEmpty() && !assignmentExpression.isEmpty()) {
+                UserFunctionDefinition definition;
+                definition.argumentName = argumentName;
+                definition.expression = assignmentExpression;
+                functions.insert(functionName, definition);
+            }
+            inFunction = false;
+            functionName.clear();
+            argumentName.clear();
+            assignmentExpression.clear();
+            continue;
+        }
+
+        if (argumentName.isEmpty()) {
+            const QStringList tokens =
+                trimmed.split(QRegularExpression(QStringLiteral("[,;\\s]+")),
+                              Qt::SkipEmptyParts);
+            if (!tokens.isEmpty()
+                && (tokens.first() == QStringLiteral("input")
+                    || tokens.contains(QStringLiteral("input")))) {
+                argumentName = tokens.last();
+            }
+        }
+
+        const QString prefix = functionName + QStringLiteral(" =");
+        const int assign = trimmed.indexOf(prefix);
+        if (assign >= 0) {
+            QString expr = trimmed.mid(assign + prefix.size()).trimmed();
+            if (expr.endsWith(QLatin1Char(';')))
+                expr.chop(1);
+            assignmentExpression = expr.trimmed();
+            continue;
+        }
+        if (trimmed.startsWith(QStringLiteral("return"))) {
+            QString expr = trimmed.mid(QStringLiteral("return").size()).trimmed();
+            if (expr.endsWith(QLatin1Char(';')))
+                expr.chop(1);
+            assignmentExpression = expr.trimmed();
+        }
+    }
+    return functions;
+}
+
+QString parameterExpressionOnLine(const QString& line,
+                                  int nameStart,
+                                  int nameLength)
+{
+    const int equal = line.indexOf(QLatin1Char('='), nameStart + nameLength);
+    if (equal < 0)
+        return QString();
+    int end = line.indexOf(QLatin1Char(';'), equal + 1);
+    const int comma = line.indexOf(QLatin1Char(','), equal + 1);
+    if (end < 0 || (comma >= 0 && comma < end))
+        end = comma;
+    if (end < 0)
+        end = line.size();
+    return line.mid(equal + 1, end - equal - 1).trimmed();
+}
+
+void insertWideValueAliases(QHash<QString, WideValue>* values,
+                            const QString& name,
+                            const WideValue& value)
+{
+    if (!values || name.isEmpty() || !value.valid)
+        return;
+    values->insert(name, value);
+    if (name.startsWith(QLatin1Char('`')))
+        values->insert(name.mid(1), value);
+    else
+        values->insert(QStringLiteral("`%1").arg(name), value);
+}
+
+QHash<QString, WideValue> wideValuesForDocument(
+    const QList<LineInfo>& lines,
+    QList<SemanticSymbolRecord> records,
+    const QHash<QString, UserFunctionDefinition>& functions)
+{
+    QHash<QString, WideValue> values;
+
+    for (const LineInfo& line : lines) {
+        int pos = 0;
+        while (pos < line.text.size() && line.text.at(pos).isSpace())
+            ++pos;
+        if (pos >= line.text.size() || line.text.at(pos) != QLatin1Char('`'))
+            continue;
+        ++pos;
+        const QString keyword = QStringLiteral("define");
+        if (line.text.mid(pos, keyword.size()) != keyword)
+            continue;
+        pos += keyword.size();
+        if (pos < line.text.size() && isIdentifierPart(line.text.at(pos)))
+            continue;
+        while (pos < line.text.size() && line.text.at(pos).isSpace())
+            ++pos;
+        QString name;
+        int nameEnd = 0;
+        if (!parseIdentifierOrMacroAt(line.text, pos, &name, &nameEnd))
+            continue;
+        const QString expression = line.text.mid(nameEnd).trimmed();
+        WideValue value;
+        if (evaluateWideExpression(expression, values, functions, &value))
+            insertWideValueAliases(&values, name, value);
+    }
+
+    records.erase(
+        std::remove_if(records.begin(),
+                       records.end(),
+                       [](const SemanticSymbolRecord& record) {
+                           return !isParameterLikeRecord(record)
+                               || record.location.startLine <= 0;
+                       }),
+        records.end());
+    std::stable_sort(records.begin(),
+                     records.end(),
+                     [](const SemanticSymbolRecord& lhs,
+                        const SemanticSymbolRecord& rhs) {
+                         if (lhs.location.startLine != rhs.location.startLine)
+                             return lhs.location.startLine < rhs.location.startLine;
+                         return lhs.location.startColumn < rhs.location.startColumn;
+                     });
+
+    for (const SemanticSymbolRecord& record : records) {
+        if (record.location.startLine > lines.size())
+            continue;
+        const LineInfo& line = lines.at(record.location.startLine - 1);
+        const int nameStart =
+            findNameOnLine(line.text, record.name, record.location.startColumn);
+        if (nameStart < 0)
+            continue;
+        const QString expression =
+            parameterExpressionOnLine(line.text, nameStart, record.name.size());
+        if (expression.isEmpty())
+            continue;
+        WideValue value;
+        if (evaluateWideExpression(expression, values, functions, &value))
+            insertWideValueAliases(&values, record.name, value);
     }
     return values;
 }
@@ -939,6 +1655,8 @@ void appendParameterOverrideAnnotations(const QList<LineInfo>& lines,
 void appendDeclarationAnnotations(const QList<LineInfo>& lines,
                                   const QList<SemanticSymbolRecord>& records,
                                   const QHash<QString, int>& literalValues,
+                                  const QHash<QString, WideValue>& wideValues,
+                                  const QHash<QString, UserFunctionDefinition>& functions,
                                   QList<GhostAnnotation>* out)
 {
     if (!out)
@@ -958,24 +1676,22 @@ void appendDeclarationAnnotations(const QList<LineInfo>& lines,
 
         const int anchor = line.startPosition + nameStart;
         if (isParameterLikeRecord(record)) {
-            const int equal = line.text.indexOf(QLatin1Char('='),
-                                                nameStart + record.name.size());
-            const int semicolon = line.text.indexOf(QLatin1Char(';'),
-                                                    equal + 1);
-            if (equal >= 0 && semicolon > equal) {
-                const QString valueText =
-                    line.text.mid(equal + 1, semicolon - equal - 1).trimmed();
-                LiteralValue literal;
-                int literalEnd = 0;
-                if (parseLiteralAt(valueText, 0, &literal, &literalEnd)
-                    && literalEnd == valueText.size()
-                    && literal.exact) {
+            const QString valueText =
+                parameterExpressionOnLine(line.text, nameStart, record.name.size());
+            if (!valueText.isEmpty()) {
+                WideValue value;
+                if (evaluateWideExpression(valueText, wideValues, functions, &value)
+                    && value.valid
+                    && (!value.simpleLiteral || value.stringLiteral)) {
                     out->append(makeAnnotation(
                         GhostAnnotationKind::ParameterValue,
                         GhostAnnotationPlacement::RightOfLine,
-                        QStringLiteral("= %1").arg(literal.value),
+                        radixDisplayText(value.value,
+                                         value.width > 0
+                                             ? value.width
+                                             : inferredWidthWide(value.value)),
                         record.location.startLine,
-                        line.startPosition + semicolon,
+                        anchor + record.name.size(),
                         0));
                 }
             }
@@ -1442,11 +2158,17 @@ GhostAnnotationReport GhostAnnotationService::annotationsForDocument(
                                 allRecords,
                                 &report.annotations);
     appendParameterOverrideAnnotations(lines, &report.annotations);
+    const QHash<QString, UserFunctionDefinition> userFunctions =
+        userFunctionsForDocument(lines);
+    const QHash<QString, WideValue> wideValues =
+        wideValuesForDocument(lines, fileRecords, userFunctions);
     const QHash<QString, int> literalValues =
         literalValuesForDocument(lines, fileRecords);
     appendDeclarationAnnotations(lines,
                                  fileRecords,
                                  literalValues,
+                                 wideValues,
+                                 userFunctions,
                                  &report.annotations);
     appendEnumValueAnnotations(lines, fileRecords, &report.annotations);
     appendPartSelectAnnotations(lines, &report.annotations);
@@ -1483,8 +2205,41 @@ GhostNumericLiteralReport GhostAnnotationService::numericLiteralAt(
         qBound(0, query.cursorPosition - line.startPosition, line.text.size());
     const int commentStart = lineCommentStart(line.text);
     const int limit = commentStart >= 0 ? commentStart : line.text.size();
-    if (column >= limit || positionInsideString(line.text, column))
+    if (column >= limit)
         return report;
+
+    if (positionInsideString(line.text, column)) {
+        int quoteStart = -1;
+        bool escaped = false;
+        for (int i = column; i >= 0; --i) {
+            const QChar ch = line.text.at(i);
+            if (ch == QLatin1Char('"') && !escaped) {
+                quoteStart = i;
+                break;
+            }
+            escaped = ch == QLatin1Char('\\') && !escaped;
+            if (ch != QLatin1Char('\\'))
+                escaped = false;
+        }
+        if (quoteStart < 0)
+            return report;
+        if (line.text.left(quoteStart).trimmed().startsWith(
+                QStringLiteral("`include"))) {
+            return report;
+        }
+        WideValue stringValue;
+        int stringEnd = 0;
+        if (parseStringLiteralAt(line.text, quoteStart, &stringValue, &stringEnd)
+            && column >= quoteStart + 1
+            && column < stringEnd - 1) {
+            report.available = true;
+            report.displayText =
+                radixDisplayText(stringValue.value, stringValue.width);
+            report.startPosition = line.startPosition + quoteStart + 1;
+            report.endPosition = line.startPosition + stringEnd - 1;
+        }
+        return report;
+    }
 
     int pos = 0;
     while (pos < limit) {
@@ -1492,7 +2247,8 @@ GhostNumericLiteralReport GhostAnnotationService::numericLiteralAt(
             ++pos;
             continue;
         }
-        if (!isDecimalDigit(line.text.at(pos))) {
+        if (!isDecimalDigit(line.text.at(pos))
+            && line.text.at(pos) != QLatin1Char('\'')) {
             ++pos;
             continue;
         }
@@ -1502,9 +2258,9 @@ GhostNumericLiteralReport GhostAnnotationService::numericLiteralAt(
             continue;
         }
 
-        LiteralValue literal;
+        WideValue literal;
         int end = 0;
-        if (!parseLiteralAt(line.text, pos, &literal, &end)) {
+        if (!parseWideLiteralAt(line.text, pos, &literal, &end)) {
             ++pos;
             continue;
         }
@@ -1513,7 +2269,12 @@ GhostNumericLiteralReport GhostAnnotationService::numericLiteralAt(
             continue;
         }
         if (column >= pos && column <= end) {
-            const QString text = numericLiteralHoverText(literal);
+            const QString text =
+                radixDisplayText(literal.value,
+                                 literal.width > 0
+                                     ? literal.width
+                                     : inferredWidthWide(literal.value),
+                                 literal.sourceBase);
             if (text.isEmpty())
                 return report;
             report.available = true;

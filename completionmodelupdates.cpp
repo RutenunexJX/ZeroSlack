@@ -7,6 +7,17 @@
 #include <algorithm>
 
 namespace {
+QString visibleIncludeTemplatePreview(QString text)
+{
+    QStringList lines = text.trimmed().split(QLatin1Char('\n'));
+    constexpr int kMaxPreviewLines = 8;
+    if (lines.size() > kMaxPreviewLines) {
+        lines = lines.mid(0, kMaxPreviewLines);
+        lines.append(QStringLiteral("..."));
+    }
+    return lines.join(QLatin1Char('\n'));
+}
+
 QString ownerScopeNameForRecord(const SemanticSymbolRecord& record)
 {
     if (!record.owner.name.isEmpty())
@@ -179,6 +190,118 @@ void CompletionModel::updateCommandCompletions(const QStringList &commands, cons
     if (completions.size() > MaxCompletionItems) {
         completions = completions.mid(0, MaxCompletionItems);
     }
+    endResetModel();
+}
+
+void CompletionModel::updateIncludeFileCompletions(
+    const QStringList& filePaths,
+    const QString& prefix)
+{
+    beginResetModel();
+    completions.clear();
+
+    CompletionItem headerItem;
+    headerItem.text = prefix.isEmpty()
+        ? QStringLiteral(":: INCLUDE FILES ::")
+        : QStringLiteral(":: INCLUDE FILES - %1 ::").arg(prefix);
+    headerItem.type = CommandCompletion;
+    headerItem.description = QStringLiteral("Workspace include files");
+    headerItem.selectable = false;
+    headerItem.score = 1000;
+    fillDisplayMetadata(headerItem);
+    completions.append(headerItem);
+
+    CompletionService* completionService = CompletionService::getInstance();
+    for (const QString& filePath : filePaths) {
+        if (!prefix.isEmpty()
+            && !filePath.contains(prefix, Qt::CaseInsensitive)
+            && !completionService->matchesCompletionAbbreviation(filePath, prefix)) {
+            continue;
+        }
+
+        CompletionItem item;
+        item.text = filePath;
+        item.type = CommandCompletion;
+        item.description = QStringLiteral("include file");
+        item.score = prefix.isEmpty()
+            ? 1
+            : completionService->completionItemScore(filePath, prefix);
+        fillDisplayMetadata(item);
+        completions.append(item);
+    }
+
+    if (completions.size() == 1) {
+        CompletionItem emptyItem;
+        emptyItem.text = QStringLiteral("No matching include files");
+        emptyItem.type = CommandCompletion;
+        emptyItem.description = QStringLiteral("No workspace files match");
+        emptyItem.selectable = false;
+        fillDisplayMetadata(emptyItem);
+        completions.append(emptyItem);
+    }
+
+    sortCompletionsByScore();
+    if (completions.size() > MaxCompletionItems)
+        completions = completions.mid(0, MaxCompletionItems);
+    if (completions.size() > 80)
+        completions = completions.mid(0, 80);
+
+    endResetModel();
+}
+
+void CompletionModel::updateIncludeNewHeaderCompletions(
+    const QList<IncludeNewHeaderChoice>& choices,
+    const QString& title)
+{
+    beginResetModel();
+    completions.clear();
+
+    CompletionItem headerItem;
+    headerItem.text = title.isEmpty()
+        ? QStringLiteral(":: INCLUDE NEW HEADER ::")
+        : QStringLiteral(":: INCLUDE NEW HEADER - %1 ::").arg(title);
+    headerItem.type = CommandCompletion;
+    headerItem.description = QStringLiteral("Create workspace header");
+    headerItem.selectable = false;
+    headerItem.score = 1000;
+    fillDisplayMetadata(headerItem);
+    completions.append(headerItem);
+
+    int score = 999;
+    for (const IncludeNewHeaderChoice& choice : choices) {
+        CompletionItem item;
+        item.text = choice.text;
+        item.type = CommandCompletion;
+        item.description = choice.description;
+        item.toolTipText = choice.previewText.isEmpty()
+            ? choice.description
+            : choice.previewText;
+        item.score = score--;
+        fillDisplayMetadata(item);
+        if (!choice.previewText.isEmpty()) {
+            const QString preview = visibleIncludeTemplatePreview(choice.previewText);
+            item.displayText =
+                QStringLiteral("%1 - %2\n%3")
+                    .arg(choice.text,
+                         choice.description,
+                         preview);
+            item.toolTipText = choice.previewText;
+            item.rowHeight = 18 * (item.displayText.count(QLatin1Char('\n')) + 1)
+                + 4;
+        }
+        completions.append(item);
+    }
+
+    if (choices.isEmpty()) {
+        CompletionItem emptyItem;
+        emptyItem.text = QStringLiteral("No include-new choices");
+        emptyItem.type = CommandCompletion;
+        emptyItem.description = QStringLiteral("Type -n followed by a file name");
+        emptyItem.selectable = false;
+        fillDisplayMetadata(emptyItem);
+        completions.append(emptyItem);
+    }
+
     endResetModel();
 }
 

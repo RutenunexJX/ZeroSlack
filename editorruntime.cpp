@@ -16,13 +16,19 @@
 #include <QPlainTextEdit>
 #include <QRect>
 #include <QTextBlock>
+#include <QTextCharFormat>
 #include <QTextCursor>
 #include <QTextDocument>
+#include <QTextEdit>
+
+#include <utility>
 
 #include "formatterservice.h"
 
 namespace {
 constexpr int kMaxPassiveGhostAnnotationCharacters = 2 * 1024 * 1024;
+constexpr int kColumnSelectionProperty = QTextFormat::UserProperty + 20;
+constexpr int kColumnSelectionMarker = 1020;
 
 bool hasCommandModifier(QKeyEvent* event)
 {
@@ -307,6 +313,400 @@ bool adjustSelectedRangeBound(MyCodeEditor* editor,
     event->accept();
     return true;
 }
+
+bool hasColumnSelection(const MyCodeEditorState& state)
+{
+    return state.columnSelectionActive
+        && state.columnAnchorLine >= 0
+        && state.columnCurrentLine >= 0
+        && state.columnAnchorColumn >= 0
+        && state.columnCurrentColumn >= 0;
+}
+
+QPair<int, int> lineSpan(const MyCodeEditorState& state)
+{
+    return {qMin(state.columnAnchorLine, state.columnCurrentLine),
+            qMax(state.columnAnchorLine, state.columnCurrentLine)};
+}
+
+QPair<int, int> columnSpan(const MyCodeEditorState& state)
+{
+    return {qMin(state.columnAnchorColumn, state.columnCurrentColumn),
+            qMax(state.columnAnchorColumn, state.columnCurrentColumn)};
+}
+
+void removeColumnSelections(MyCodeEditor* editor)
+{
+    if (!editor)
+        return;
+
+    QList<QTextEdit::ExtraSelection> selections = editor->extraSelections();
+    selections.erase(
+        std::remove_if(selections.begin(),
+                       selections.end(),
+                       [](const QTextEdit::ExtraSelection& selection) {
+                           return selection.format
+                                      .property(kColumnSelectionProperty)
+                                      .toInt()
+                                  == kColumnSelectionMarker;
+                       }),
+        selections.end());
+    editor->setExtraSelections(selections);
+}
+
+void clearColumnSelection(MyCodeEditor* editor, MyCodeEditorState& state)
+{
+    state.columnSelectionActive = false;
+    state.columnSelectionDragging = false;
+    state.columnSelectionAwaitingEndpoint = false;
+    state.columnSelectionDragMoved = false;
+    state.columnAnchorLine = -1;
+    state.columnAnchorColumn = -1;
+    state.columnCurrentLine = -1;
+    state.columnCurrentColumn = -1;
+    removeColumnSelections(editor);
+    if (editor)
+        editor->viewport()->setCursor(Qt::IBeamCursor);
+}
+
+void updateColumnSelectionHighlight(MyCodeEditor* editor,
+                                    const MyCodeEditorState& state)
+{
+    if (!editor)
+        return;
+
+    removeColumnSelections(editor);
+    if (!hasColumnSelection(state))
+        return;
+
+    const auto [firstLine, lastLine] = lineSpan(state);
+    const auto [leftColumn, rightColumn] = columnSpan(state);
+    QList<QTextEdit::ExtraSelection> selections = editor->extraSelections();
+    for (int line = firstLine; line <= lastLine; ++line) {
+        const QTextBlock block = editor->document()->findBlockByNumber(line);
+        if (!block.isValid())
+            continue;
+
+        const int lineLength = block.text().size();
+        const int startColumn = qMin(leftColumn, lineLength);
+        const int visibleEndColumn =
+            qMin(qMax(rightColumn, leftColumn + 1), lineLength);
+        if (visibleEndColumn <= startColumn)
+            continue;
+
+        QTextCursor cursor(block);
+        cursor.setPosition(block.position() + startColumn);
+        cursor.setPosition(block.position() + visibleEndColumn,
+                           QTextCursor::KeepAnchor);
+
+        QTextEdit::ExtraSelection selection;
+        selection.cursor = cursor;
+        selection.format.setBackground(QColor(37, 99, 235, 80));
+        selection.format.setProperty(kColumnSelectionProperty,
+                                     kColumnSelectionMarker);
+        selections.append(selection);
+    }
+    editor->setExtraSelections(selections);
+}
+
+void setColumnPointFromCursor(const QTextCursor& cursor,
+                              int* line,
+                              int* column)
+{
+    if (!cursor.block().isValid())
+        return;
+    if (line)
+        *line = cursor.block().blockNumber();
+    if (column)
+        *column = qMax(0, cursor.position() - cursor.block().position());
+}
+
+bool beginColumnSelection(MyCodeEditor* editor,
+                          QMouseEvent* event,
+                          MyCodeEditorState& state)
+{
+    if (!editor || !event
+        || event->button() != Qt::LeftButton
+        || !event->modifiers().testFlag(Qt::ShiftModifier)
+        || !event->modifiers().testFlag(Qt::AltModifier)) {
+        return false;
+    }
+
+    const QTextCursor cursor =
+        editor->cursorForPosition(event->position().toPoint());
+    if (state.columnSelectionActive
+        && state.columnSelectionAwaitingEndpoint) {
+        setColumnPointFromCursor(cursor,
+                                 &state.columnCurrentLine,
+                                 &state.columnCurrentColumn);
+        state.columnSelectionAwaitingEndpoint = false;
+        state.columnSelectionDragging = false;
+        state.columnSelectionDragMoved = false;
+        updateColumnSelectionHighlight(editor, state);
+        editor->viewport()->setCursor(Qt::CrossCursor);
+        editor->viewport()->update();
+        event->accept();
+        return true;
+    }
+
+    state.columnSelectionActive = true;
+    state.columnSelectionDragging = true;
+    state.columnSelectionAwaitingEndpoint = true;
+    state.columnSelectionDragMoved = false;
+    setColumnPointFromCursor(cursor,
+                             &state.columnAnchorLine,
+                             &state.columnAnchorColumn);
+    state.columnCurrentLine = state.columnAnchorLine;
+    state.columnCurrentColumn = state.columnAnchorColumn;
+    updateColumnSelectionHighlight(editor, state);
+    editor->viewport()->setCursor(Qt::CrossCursor);
+    editor->viewport()->update();
+    event->accept();
+    return true;
+}
+
+bool updateColumnSelectionDrag(MyCodeEditor* editor,
+                               QMouseEvent* event,
+                               MyCodeEditorState& state)
+{
+    if (!editor || !event || !state.columnSelectionDragging)
+        return false;
+    if (!event->buttons().testFlag(Qt::LeftButton))
+        return false;
+
+    const QTextCursor cursor =
+        editor->cursorForPosition(event->position().toPoint());
+    state.columnSelectionDragMoved = true;
+    state.columnSelectionAwaitingEndpoint = false;
+    setColumnPointFromCursor(cursor,
+                             &state.columnCurrentLine,
+                             &state.columnCurrentColumn);
+    updateColumnSelectionHighlight(editor, state);
+    editor->viewport()->update();
+    event->accept();
+    return true;
+}
+
+bool endColumnSelectionDrag(MyCodeEditor* editor,
+                            QMouseEvent* event,
+                            MyCodeEditorState& state)
+{
+    if (!editor || !event || !state.columnSelectionDragging)
+        return false;
+
+    if (state.columnSelectionDragMoved) {
+        const QTextCursor cursor =
+            editor->cursorForPosition(event->position().toPoint());
+        setColumnPointFromCursor(cursor,
+                                 &state.columnCurrentLine,
+                                 &state.columnCurrentColumn);
+        state.columnSelectionAwaitingEndpoint = false;
+        updateColumnSelectionHighlight(editor, state);
+    }
+    state.columnSelectionDragging = false;
+    state.columnSelectionDragMoved = false;
+    editor->viewport()->update();
+    event->accept();
+    return true;
+}
+
+bool handleColumnSelectionKeyInput(MyCodeEditor* editor,
+                                   QKeyEvent* event,
+                                   MyCodeEditorState& state)
+{
+    if (!editor || !event || !hasColumnSelection(state))
+        return false;
+    if (event->modifiers().testFlag(Qt::ControlModifier)
+        || event->modifiers().testFlag(Qt::MetaModifier)) {
+        return false;
+    }
+    if (event->key() == Qt::Key_Return
+        || event->key() == Qt::Key_Enter
+        || event->key() == Qt::Key_Tab
+        || event->key() == Qt::Key_Escape) {
+        return false;
+    }
+
+    const bool backspace = event->key() == Qt::Key_Backspace;
+    const bool deleteKey = event->key() == Qt::Key_Delete;
+    const bool printable = !event->text().isEmpty()
+        && !backspace
+        && !deleteKey;
+    if (!printable && !backspace && !deleteKey)
+        return false;
+
+    const QString text = printable ? event->text() : QString();
+    const auto [firstLine, lastLine] = lineSpan(state);
+    const auto [leftColumn, rightColumn] = columnSpan(state);
+    const bool hasWidth = rightColumn > leftColumn;
+    const int editColumn = backspace && !hasWidth
+        ? qMax(0, leftColumn - 1)
+        : leftColumn;
+    QTextCursor cursor(editor->document());
+    cursor.beginEditBlock();
+    for (int line = lastLine; line >= firstLine; --line) {
+        const QTextBlock block = editor->document()->findBlockByNumber(line);
+        if (!block.isValid())
+            continue;
+
+        const int lineLength = block.text().size();
+        int startColumn = qMin(editColumn, lineLength);
+        int endColumn = startColumn;
+        if (hasWidth) {
+            startColumn = qMin(leftColumn, lineLength);
+            endColumn = qMin(rightColumn, lineLength);
+        } else if (deleteKey && leftColumn < lineLength) {
+            startColumn = leftColumn;
+            endColumn = leftColumn + 1;
+        } else if (backspace && leftColumn > 0 && editColumn < lineLength) {
+            startColumn = editColumn;
+            endColumn = qMin(leftColumn, lineLength);
+        }
+
+        cursor.setPosition(block.position() + startColumn);
+        cursor.setPosition(block.position() + qMax(startColumn, endColumn),
+                           QTextCursor::KeepAnchor);
+        if (printable) {
+            const QString padding =
+                leftColumn > lineLength
+                    ? QString(leftColumn - lineLength, QLatin1Char(' '))
+                    : QString();
+            cursor.insertText(padding + text);
+        } else if (endColumn > startColumn) {
+            cursor.removeSelectedText();
+        }
+    }
+    cursor.endEditBlock();
+
+    const bool wasRectangularSelection = leftColumn != rightColumn;
+    const int collapsedColumn = wasRectangularSelection
+        ? leftColumn
+        : (printable ? leftColumn + text.size() : editColumn);
+    state.columnAnchorColumn = collapsedColumn;
+    state.columnCurrentColumn = state.columnAnchorColumn;
+    state.columnSelectionAwaitingEndpoint = false;
+    state.columnSelectionDragging = false;
+    state.columnSelectionDragMoved = false;
+    const QTextBlock currentBlock =
+        editor->document()->findBlockByNumber(lastLine);
+    if (currentBlock.isValid()) {
+        QTextCursor caret(editor->document());
+        caret.setPosition(currentBlock.position()
+                          + qMin(state.columnCurrentColumn,
+                                 currentBlock.text().size()));
+        editor->setTextCursor(caret);
+    }
+    updateColumnSelectionHighlight(editor, state);
+    editor->viewport()->update();
+    event->accept();
+    return true;
+}
+
+bool handleColumnSelectionNavigation(MyCodeEditor* editor,
+                                     QKeyEvent* event,
+                                     MyCodeEditorState& state)
+{
+    if (!editor || !event || !hasColumnSelection(state))
+        return false;
+
+    const int key = event->key();
+    const bool vertical =
+        key == Qt::Key_Up || key == Qt::Key_Down;
+    const bool horizontal =
+        key == Qt::Key_Left || key == Qt::Key_Right;
+    if (!vertical && !horizontal)
+        return false;
+
+    const Qt::KeyboardModifiers modifiers = event->modifiers();
+    const bool adjustSelection =
+        modifiers.testFlag(Qt::ShiftModifier)
+        && modifiers.testFlag(Qt::AltModifier)
+        && !modifiers.testFlag(Qt::ControlModifier)
+        && !modifiers.testFlag(Qt::MetaModifier);
+    const bool moveSelection =
+        !modifiers.testFlag(Qt::ShiftModifier)
+        && !modifiers.testFlag(Qt::AltModifier)
+        && !modifiers.testFlag(Qt::ControlModifier)
+        && !modifiers.testFlag(Qt::MetaModifier);
+    if (!adjustSelection && !moveSelection)
+        return false;
+
+    const int lastLine = qMax(0, editor->document()->blockCount() - 1);
+    const int lineDelta =
+        key == Qt::Key_Up ? -1 : key == Qt::Key_Down ? 1 : 0;
+    const int columnDelta =
+        key == Qt::Key_Left ? -1 : key == Qt::Key_Right ? 1 : 0;
+
+    if (adjustSelection) {
+        state.columnCurrentLine =
+            qBound(0, state.columnCurrentLine + lineDelta, lastLine);
+        state.columnCurrentColumn =
+            qMax(0, state.columnCurrentColumn + columnDelta);
+    } else {
+        const auto [firstLine, lastSelectedLine] = lineSpan(state);
+        if ((lineDelta < 0 && firstLine <= 0)
+            || (lineDelta > 0 && lastSelectedLine >= lastLine)) {
+            event->accept();
+            return true;
+        }
+        const auto [leftColumn, rightColumn] = columnSpan(state);
+        if (columnDelta < 0 && leftColumn <= 0) {
+            event->accept();
+            return true;
+        }
+
+        state.columnAnchorLine += lineDelta;
+        state.columnCurrentLine += lineDelta;
+        state.columnAnchorColumn = qMax(0, state.columnAnchorColumn + columnDelta);
+        state.columnCurrentColumn = qMax(0, state.columnCurrentColumn + columnDelta);
+        Q_UNUSED(rightColumn)
+    }
+
+    state.columnSelectionAwaitingEndpoint = false;
+    state.columnSelectionDragging = false;
+    state.columnSelectionDragMoved = false;
+    updateColumnSelectionHighlight(editor, state);
+    editor->viewport()->update();
+    event->accept();
+    return true;
+}
+
+void paintColumnSelectionOverlay(MyCodeEditor* editor,
+                                 const MyCodeEditorState& state,
+                                 QPaintEvent* event)
+{
+    if (!editor || !event || !hasColumnSelection(state))
+        return;
+
+    const auto [leftColumn, rightColumn] = columnSpan(state);
+    if (leftColumn != rightColumn)
+        return;
+
+    const auto [firstLine, lastLine] = lineSpan(state);
+    QPainter painter(editor->viewport());
+    painter.setRenderHint(QPainter::Antialiasing, false);
+    QPen pen(QColor(255, 87, 34));
+    pen.setWidth(2);
+    painter.setPen(pen);
+
+    for (int line = firstLine; line <= lastLine; ++line) {
+        const QTextBlock block = editor->document()->findBlockByNumber(line);
+        if (!block.isValid() || !block.isVisible())
+            continue;
+
+        const int column = qMin(leftColumn, block.text().size());
+        QTextCursor cursor(block);
+        cursor.setPosition(block.position() + column);
+        const QRect rect = editor->cursorRect(cursor);
+        if (!event->rect().intersects(rect.adjusted(-4, -2, 4, 2)))
+            continue;
+
+        painter.drawLine(rect.left(),
+                         rect.top() + 1,
+                         rect.left(),
+                         rect.bottom() - 1);
+    }
+}
 }
 
 void MyCodeEditorState::initializeCore(MyCodeEditor* editor)
@@ -501,6 +901,12 @@ bool MyCodeEditorState::handleKeyPress(MyCodeEditor* editor, QKeyEvent* event)
         return true;
     }
 
+    if (event->key() == Qt::Key_Escape && columnSelectionActive) {
+        clearColumnSelection(editor, *this);
+        event->accept();
+        return true;
+    }
+
     handleControlKeyPress(editor, event);
 
     if (sourceNavigation.handleSourceSymbolShortcut(
@@ -515,6 +921,12 @@ bool MyCodeEditorState::handleKeyPress(MyCodeEditor* editor, QKeyEvent* event)
         event->ignore();
         return true;
     }
+
+    if (handleColumnSelectionNavigation(editor, event, *this))
+        return true;
+
+    if (handleColumnSelectionKeyInput(editor, event, *this))
+        return true;
 
     if (adjustSelectedRangeBound(editor, event))
         return true;
@@ -719,6 +1131,13 @@ void MyCodeEditorState::paintGhostAnnotations(
     }
 }
 
+void MyCodeEditorState::paintColumnSelection(
+    MyCodeEditor* editor,
+    QPaintEvent* event) const
+{
+    paintColumnSelectionOverlay(editor, *this, event);
+}
+
 void MyCodeEditorState::handleContextMenu(
     MyCodeEditor* editor,
     QContextMenuEvent* event)
@@ -736,6 +1155,17 @@ bool MyCodeEditorState::handleMousePress(
     if (folding.handleFoldShelfMousePress(editor, event))
         return true;
 
+    if (beginColumnSelection(editor, event, *this))
+        return true;
+
+    if (columnSelectionActive
+        && event
+        && event->button() == Qt::LeftButton
+        && !(event->modifiers().testFlag(Qt::ShiftModifier)
+             && event->modifiers().testFlag(Qt::AltModifier))) {
+        clearColumnSelection(editor, *this);
+    }
+
     if (handleBracketRangeControlClick(editor, event))
         return true;
 
@@ -743,13 +1173,29 @@ bool MyCodeEditorState::handleMousePress(
         editor,
         event,
         semanticService(),
-        sourceContextProvider(editor));
+        sourceContextProvider(editor),
+        selections);
+}
+
+bool MyCodeEditorState::handleMouseDoubleClick(
+    MyCodeEditor* editor,
+    QMouseEvent* event)
+{
+    return sourceNavigation.handleMouseDoubleClick(
+        editor,
+        event,
+        semanticService(),
+        sourceContextProvider(editor),
+        selections);
 }
 
 bool MyCodeEditorState::handleMouseMove(
     MyCodeEditor* editor,
     QMouseEvent* event)
 {
+    if (updateColumnSelectionDrag(editor, event, *this))
+        return true;
+
     if (folding.handleFoldRegionMouseMove(editor, event))
         gutter.handleUpdateRequest(editor, editor->viewport()->rect(), 0);
 
@@ -764,6 +1210,13 @@ bool MyCodeEditorState::handleMouseMove(
         sourceContextProvider(editor),
         selections);
     return false;
+}
+
+bool MyCodeEditorState::handleMouseRelease(
+    MyCodeEditor* editor,
+    QMouseEvent* event)
+{
+    return endColumnSelectionDrag(editor, event, *this);
 }
 
 void MyCodeEditorState::handleLeaveEvent(MyCodeEditor* editor)
@@ -781,6 +1234,18 @@ void MyCodeEditorState::refreshScopeAndCurrentLineHighlight(
 void MyCodeEditorState::setAlternateModeEnabled(bool enabled)
 {
     modes.setAlternateModeEnabled(enabled);
+}
+
+void MyCodeEditorState::setIncludeFileProvider(
+    EditorCompletionWorkflow::IncludeFileProvider provider)
+{
+    completionWorkflow.setIncludeFileProvider(std::move(provider));
+}
+
+void MyCodeEditorState::setIncludeNewHeaderCreator(
+    EditorCompletionWorkflow::IncludeNewHeaderCreator creator)
+{
+    completionWorkflow.setIncludeNewHeaderCreator(std::move(creator));
 }
 
 void MyCodeEditorState::executeAlternateModeCommand(const QString& command)
@@ -1079,6 +1544,11 @@ void MyCodeEditorState::highlightSearchMatches(
 void MyCodeEditorState::clearSearchMatches(MyCodeEditor* editor)
 {
     selections.clearSearchMatches(editor);
+}
+
+void MyCodeEditorState::flashLine(MyCodeEditor* editor, int lineNumber)
+{
+    selections.flashLine(editor, lineNumber);
 }
 
 void MyCodeEditorState::applyLineNavigationTarget(

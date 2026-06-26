@@ -45,6 +45,9 @@ void TabManager::createNewTab()
 
 bool TabManager::openFileInTab(const QString& fileName)
 {
+    if (!fileName.isEmpty() && activateOpenFile(fileName))
+        return true;
+
     MyCodeEditor* editor = openController.openFile(fileName);
     if (!editor)
         return false;

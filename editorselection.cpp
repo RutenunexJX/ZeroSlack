@@ -453,14 +453,25 @@ void EditorSelection::clearSearchMatches(QPlainTextEdit* editor)
 
 void EditorSelection::flashLine(MyCodeEditor* editor)
 {
+    if (!editor)
+        return;
+    flashLine(editor, editor->textCursor().blockNumber() + 1);
+}
+
+void EditorSelection::flashLine(MyCodeEditor* editor, int lineNumber)
+{
     QList<QTextEdit::ExtraSelection> selections =
         editorSelectionsWithout(
             editor,
             kFlashSelectionProperty,
             kFlashSelectionMarker);
 
+    QTextBlock block = editor->document()->findBlockByNumber(lineNumber - 1);
+    if (!block.isValid())
+        return;
+
     QTextEdit::ExtraSelection flash;
-    flash.cursor = editor->textCursor();
+    flash.cursor = QTextCursor(block);
     flash.format.setBackground(QColor(97, 175, 239, 70));
     flash.format.setProperty(QTextFormat::FullWidthSelection, true);
     flash.format.setProperty(kFlashSelectionProperty, kFlashSelectionMarker);

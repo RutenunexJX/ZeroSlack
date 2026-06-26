@@ -7,8 +7,18 @@
 #include <QElapsedTimer>
 #include <QInputDialog>
 #include <QLineEdit>
+#include <QSettings>
 #include <QTimer>
+#include <algorithm>
 #include <utility>
+
+namespace {
+constexpr int kMaxRecentWorkspaces = 20;
+constexpr const char* kRecentWorkspaceGroup = "recentWorkspaces";
+constexpr const char* kRecentWorkspaceItems = "items";
+constexpr const char* kRecentWorkspaceAlias = "alias";
+constexpr const char* kRecentWorkspacePath = "path";
+}
 
 WorkspaceManager::WorkspaceManager(QObject *parent)
     : QObject(parent)
@@ -16,6 +26,7 @@ WorkspaceManager::WorkspaceManager(QObject *parent)
 {
     qRegisterMetaType<WorkspaceManager::WorkspaceEntry>("WorkspaceManager::WorkspaceEntry");
     files.reserveDefaults();
+    loadRecentWorkspaces();
 
     connect(projectModel.get(), &ProjectModel::projectChanged,
             this, &WorkspaceManager::projectChanged);
@@ -139,8 +150,9 @@ bool WorkspaceManager::openWorkspace(const QString& folderPath)
         return false;
 
     const int existingIndex = workspaceIndexForPath(pathToOpen);
-    if (existingIndex >= 0)
+    if (existingIndex >= 0) {
         return switchWorkspace(existingIndex);
+    }
 
     const QString alias = interactive
         ? promptWorkspaceAlias(pathToOpen)
@@ -159,6 +171,7 @@ bool WorkspaceManager::openWorkspace(const QString& folderPath)
     entry.path = pathToOpen;
     workspaces.append(entry);
     activeIndex = workspaces.size() - 1;
+    rememberRecentWorkspace(entry);
     emit workspaceListChanged();
 
     activateWorkspacePath(entry.path, entry.alias, activeIndex);
@@ -213,6 +226,11 @@ QList<WorkspaceManager::WorkspaceEntry> WorkspaceManager::workspaceEntries() con
     return workspaces;
 }
 
+QList<WorkspaceManager::WorkspaceEntry> WorkspaceManager::recentWorkspaceEntries() const
+{
+    return recentWorkspaces;
+}
+
 int WorkspaceManager::activeWorkspaceIndex() const
 {
     return activeIndex;
@@ -232,11 +250,16 @@ bool WorkspaceManager::switchWorkspace(int index)
 {
     if (index < 0 || index >= workspaces.size())
         return false;
-    if (index == activeIndex && isWorkspaceOpen())
-        return true;
-
     const WorkspaceEntry entry = workspaces.at(index);
-    return activateWorkspacePath(entry.path, entry.alias, index);
+    if (index == activeIndex && isWorkspaceOpen()) {
+        rememberRecentWorkspace(entry);
+        return true;
+    }
+
+    const bool activated = activateWorkspacePath(entry.path, entry.alias, index);
+    if (activated)
+        rememberRecentWorkspace(entry);
+    return activated;
 }
 
 QStringList WorkspaceManager::getAllFiles() const
@@ -428,6 +451,83 @@ bool WorkspaceManager::activateWorkspacePath(const QString& path,
     emit workspaceOpened(workspacePath);
     startDirectoryScan(workspacePath);
     return true;
+}
+
+void WorkspaceManager::loadRecentWorkspaces()
+{
+    recentWorkspaces.clear();
+
+    QSettings settings(QStringLiteral("ZeroSlack"), QStringLiteral("ZeroSlack"));
+    settings.beginGroup(QString::fromLatin1(kRecentWorkspaceGroup));
+    const int count = settings.beginReadArray(
+        QString::fromLatin1(kRecentWorkspaceItems));
+    for (int i = 0; i < count; ++i) {
+        settings.setArrayIndex(i);
+        WorkspaceEntry entry;
+        entry.alias =
+            settings.value(QString::fromLatin1(kRecentWorkspaceAlias)).toString().trimmed();
+        entry.path = normalizeWorkspacePath(
+            settings.value(QString::fromLatin1(kRecentWorkspacePath)).toString());
+        if (entry.path.isEmpty())
+            continue;
+        if (entry.alias.isEmpty())
+            entry.alias = defaultWorkspaceAlias(entry.path);
+        if (workspaceIndexForPath(entry.path) >= 0)
+            continue;
+
+        const bool alreadyRecent =
+            std::any_of(recentWorkspaces.cbegin(),
+                        recentWorkspaces.cend(),
+                        [&entry](const WorkspaceEntry& existing) {
+                            return existing.path == entry.path;
+                        });
+        if (!alreadyRecent)
+            recentWorkspaces.append(entry);
+        if (recentWorkspaces.size() >= kMaxRecentWorkspaces)
+            break;
+    }
+    settings.endArray();
+    settings.endGroup();
+}
+
+void WorkspaceManager::saveRecentWorkspaces() const
+{
+    QSettings settings(QStringLiteral("ZeroSlack"), QStringLiteral("ZeroSlack"));
+    settings.beginGroup(QString::fromLatin1(kRecentWorkspaceGroup));
+    settings.remove(QString());
+    settings.beginWriteArray(QString::fromLatin1(kRecentWorkspaceItems));
+    for (int i = 0; i < recentWorkspaces.size(); ++i) {
+        settings.setArrayIndex(i);
+        const WorkspaceEntry& entry = recentWorkspaces.at(i);
+        settings.setValue(QString::fromLatin1(kRecentWorkspaceAlias),
+                          entry.alias);
+        settings.setValue(QString::fromLatin1(kRecentWorkspacePath),
+                          entry.path);
+    }
+    settings.endArray();
+    settings.endGroup();
+    settings.sync();
+}
+
+void WorkspaceManager::rememberRecentWorkspace(const WorkspaceEntry& entry)
+{
+    WorkspaceEntry normalized;
+    normalized.path = normalizeWorkspacePath(entry.path);
+    if (normalized.path.isEmpty())
+        return;
+
+    normalized.alias = entry.alias.trimmed();
+    if (normalized.alias.isEmpty())
+        normalized.alias = defaultWorkspaceAlias(normalized.path);
+
+    for (int i = recentWorkspaces.size() - 1; i >= 0; --i) {
+        if (recentWorkspaces.at(i).path == normalized.path)
+            recentWorkspaces.removeAt(i);
+    }
+    recentWorkspaces.prepend(normalized);
+    while (recentWorkspaces.size() > kMaxRecentWorkspaces)
+        recentWorkspaces.removeLast();
+    saveRecentWorkspaces();
 }
 
 QString WorkspaceManager::promptWorkspaceAlias(const QString& path) const

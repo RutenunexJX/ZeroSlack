@@ -178,7 +178,9 @@ void CompletionModel::fillDisplayMetadata(CompletionItem &item)
             item.selectable = false;
             item.emphasized = true;
         } else if (item.text == QStringLiteral("No matching commands")
-                   || item.text == QStringLiteral("No matching symbols")) {
+                   || item.text == QStringLiteral("No matching symbols")
+                   || item.text == QStringLiteral("No matching include files")
+                   || item.text == QStringLiteral("No include-new choices")) {
             item.visualKind = CommandEmptyVisual;
             item.selectable = false;
         } else {

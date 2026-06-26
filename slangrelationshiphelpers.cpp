@@ -31,7 +31,9 @@ slang::SourceLocation fileOrExpansionLocation(const slang::SourceManager* sm,
 {
     if (!sm || !loc)
         return {};
-    return sm->isFileLoc(loc) ? loc : sm->getExpansionLoc(loc);
+
+    const slang::SourceLocation expanded = sm->getFullyExpandedLoc(loc);
+    return expanded && sm->isFileLoc(expanded) ? expanded : slang::SourceLocation();
 }
 
 } // namespace

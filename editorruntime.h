@@ -48,6 +48,14 @@ struct MyCodeEditorState
     QList<GhostAnnotation> ghostAnnotations;
     FormatterProfile currentFormatterProfile = FormatterProfile::Structured;
     bool currentFormatOnSaveEnabled = false;
+    bool columnSelectionActive = false;
+    bool columnSelectionDragging = false;
+    bool columnSelectionAwaitingEndpoint = false;
+    bool columnSelectionDragMoved = false;
+    int columnAnchorLine = -1;
+    int columnAnchorColumn = -1;
+    int columnCurrentLine = -1;
+    int columnCurrentColumn = -1;
 
     void initializeCore(MyCodeEditor* editor);
     void shutdown();
@@ -79,14 +87,21 @@ struct MyCodeEditorState
                                 const QRect& rect) const;
     void paintFoldPlaceholders(MyCodeEditor* editor, QPaintEvent* event) const;
     void paintGhostAnnotations(MyCodeEditor* editor, QPaintEvent* event) const;
+    void paintColumnSelection(MyCodeEditor* editor, QPaintEvent* event) const;
     void handleContextMenu(MyCodeEditor* editor, QContextMenuEvent* event);
     bool handleMousePress(MyCodeEditor* editor, QMouseEvent* event);
+    bool handleMouseDoubleClick(MyCodeEditor* editor, QMouseEvent* event);
     bool handleMouseMove(MyCodeEditor* editor, QMouseEvent* event);
+    bool handleMouseRelease(MyCodeEditor* editor, QMouseEvent* event);
     void handleLeaveEvent(MyCodeEditor* editor);
 
     void refreshScopeAndCurrentLineHighlight(MyCodeEditor* editor);
     void setAlternateModeEnabled(bool enabled);
     void executeAlternateModeCommand(const QString& command);
+    void setIncludeFileProvider(
+        EditorCompletionWorkflow::IncludeFileProvider provider);
+    void setIncludeNewHeaderCreator(
+        EditorCompletionWorkflow::IncludeNewHeaderCreator creator);
     void executeEditorActionCommand(MyCodeEditor* editor, const QString& command);
     void setFormatterProfile(FormatterProfile profile);
     FormatterProfile formatterProfile() const;
@@ -133,6 +148,7 @@ struct MyCodeEditorState
                                 const QString& text,
                                 bool caseSensitive);
     void clearSearchMatches(MyCodeEditor* editor);
+    void flashLine(MyCodeEditor* editor, int lineNumber);
     void applyAppearanceSettings(
         MyCodeEditor* editor,
         const EditorAppearanceOptions& options);

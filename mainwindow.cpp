@@ -39,11 +39,15 @@
 #include "wavepreviewpanelcoordinator.h"
 #include "version.h"
 #include <QAction>
+#include <QAbstractItemView>
 #include <QCloseEvent>
 #include <QCoreApplication>
+#include <QDialog>
+#include <QDialogButtonBox>
 #include <QDockWidget>
 #include <QDir>
 #include <QFileInfo>
+#include <QHeaderView>
 #include <QTextBlock>
 #include <QTextCursor>
 #include <QKeyEvent>
@@ -51,10 +55,12 @@
 #include <QMenu>
 #include <QMenuBar>
 #include <QProgressBar>
+#include <QPushButton>
 #include <QSignalBlocker>
 #include <QStatusBar>
 #include <QTabBar>
 #include <QToolButton>
+#include <QTreeWidget>
 #include <QVBoxLayout>
 #include <QWidget>
 
@@ -607,6 +613,8 @@ void MainWindow::setupGlobalControl()
             if (item.id == QStringLiteral("ow")) {
                 if (fileCommandCoordinator)
                     fileCommandCoordinator->openDirectoryAsWorkspace();
+            } else if (item.id == QStringLiteral("ow r")) {
+                showRecentWorkspacesDialog();
             } else if (item.id == QStringLiteral("openFile")) {
                 if (fileCommandCoordinator)
                     fileCommandCoordinator->openFile();
@@ -940,6 +948,88 @@ void MainWindow::togglePanelById(const QString& panelId)
         dock->hide();
     else
         showPanelById(panelId);
+}
+
+void MainWindow::showRecentWorkspacesDialog()
+{
+    auto* dialog = new QDialog(this);
+    dialog->setObjectName(QStringLiteral("recentWorkspacesDialog"));
+    dialog->setAttribute(Qt::WA_DeleteOnClose);
+    dialog->setWindowTitle(tr("Recent Workspaces"));
+    dialog->resize(720, 360);
+
+    auto* layout = new QVBoxLayout(dialog);
+    layout->setContentsMargins(12, 12, 12, 12);
+    layout->setSpacing(8);
+
+    auto* tree = new QTreeWidget(dialog);
+    tree->setObjectName(QStringLiteral("recentWorkspacesTree"));
+    tree->setColumnCount(2);
+    tree->setHeaderLabels({tr("Alias"), tr("Path")});
+    tree->setRootIsDecorated(false);
+    tree->setAlternatingRowColors(true);
+    tree->setSelectionMode(QAbstractItemView::SingleSelection);
+    tree->setSelectionBehavior(QAbstractItemView::SelectRows);
+    tree->header()->setStretchLastSection(true);
+    tree->header()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
+    layout->addWidget(tree, 1);
+
+    const QList<WorkspaceManager::WorkspaceEntry> entries =
+        workspaceManager ? workspaceManager->recentWorkspaceEntries()
+                         : QList<WorkspaceManager::WorkspaceEntry>();
+    for (const WorkspaceManager::WorkspaceEntry& entry : entries) {
+        auto* item = new QTreeWidgetItem;
+        item->setText(0, entry.alias);
+        item->setText(1, QDir::toNativeSeparators(entry.path));
+        item->setData(0, Qt::UserRole, entry.path);
+        tree->addTopLevelItem(item);
+    }
+
+    if (entries.isEmpty()) {
+        auto* emptyItem = new QTreeWidgetItem;
+        emptyItem->setText(0, tr("No recent workspaces"));
+        emptyItem->setText(1, tr("Open a workspace first"));
+        emptyItem->setDisabled(true);
+        tree->addTopLevelItem(emptyItem);
+    } else {
+        tree->setCurrentItem(tree->topLevelItem(0));
+    }
+
+    auto* buttons = new QDialogButtonBox(dialog);
+    QPushButton* openButton =
+        buttons->addButton(tr("Open"), QDialogButtonBox::AcceptRole);
+    buttons->addButton(QDialogButtonBox::Close);
+    openButton->setEnabled(!entries.isEmpty());
+    layout->addWidget(buttons);
+
+    auto openSelected = [this, dialog, tree]() {
+        QTreeWidgetItem* item = tree ? tree->currentItem() : nullptr;
+        const QString path =
+            item ? item->data(0, Qt::UserRole).toString() : QString();
+        if (path.isEmpty() || !workspaceManager)
+            return;
+        if (workspaceManager->openWorkspace(path))
+            dialog->close();
+    };
+
+    connect(tree,
+            &QTreeWidget::itemDoubleClicked,
+            dialog,
+            [openSelected](QTreeWidgetItem*, int) {
+                openSelected();
+            });
+    connect(buttons,
+            &QDialogButtonBox::accepted,
+            dialog,
+            openSelected);
+    connect(buttons,
+            &QDialogButtonBox::rejected,
+            dialog,
+            &QDialog::close);
+
+    dialog->show();
+    dialog->raise();
+    dialog->activateWindow();
 }
 
 void MainWindow::resetPanelLayout()

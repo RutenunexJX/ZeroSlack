@@ -72,6 +72,8 @@ private:
         void navigateToFileAndLine(const QString& fileName,
                                    int line,
                                    int column) const;
+        void revealFileAndFlashLine(const QString& fileName,
+                                    int line) const;
         void handleActiveEditorChanged(MyCodeEditor* editor) const;
     };
 
@@ -107,6 +109,7 @@ private:
         void configureSignalKernelGraphPanel(
             DocumentModel* documentModel,
             const NavigationHandler& navigationHandler,
+            const NavigationHandler& revealHandler,
             const StatusMessageHandler& statusMessageHandler) const;
         void updateProblemsPanel(const QString& fileName) const;
         void showReferencesForSymbol(const QString& symbolName,
@@ -131,6 +134,7 @@ private:
     QStringList workspaceFiles() const;
     QString currentEditorWord(MyCodeEditor* editor) const;
     void navigateToFileAndLine(const QString& fileName, int line, int column) const;
+    void revealFileAndFlashLine(const QString& fileName, int line) const;
     void showStatusMessage(const QString& message, int timeoutMs) const;
     bool problemsPanelShowsCurrentFile() const;
 

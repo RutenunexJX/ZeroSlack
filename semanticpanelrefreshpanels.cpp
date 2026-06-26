@@ -81,13 +81,15 @@ void SemanticPanelRefreshCoordinator::PanelSet::configureRtlInsightsPanel(
 void SemanticPanelRefreshCoordinator::PanelSet::configureSignalKernelGraphPanel(
     DocumentModel* documentModel,
     const NavigationHandler& navigationHandler,
+    const NavigationHandler& revealHandler,
     const StatusMessageHandler& statusMessageHandler) const
 {
     if (!signalKernelGraphPanel)
         return;
 
     signalKernelGraphPanel->setDocumentModel(documentModel);
-    signalKernelGraphPanel->setNavigationHandler(navigationHandler);
+    Q_UNUSED(navigationHandler)
+    signalKernelGraphPanel->setNavigationHandler(revealHandler);
     signalKernelGraphPanel->setStatusMessageHandler(statusMessageHandler);
 }
 

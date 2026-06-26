@@ -34,6 +34,7 @@ public:
                                 bool caseSensitive);
     void clearSearchMatches(QPlainTextEdit* editor);
     void flashLine(MyCodeEditor* editor);
+    void flashLine(MyCodeEditor* editor, int lineNumber);
 
 private:
     void removeByProperty(QPlainTextEdit* editor, int property, int value);

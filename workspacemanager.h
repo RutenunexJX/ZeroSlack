@@ -32,6 +32,7 @@ public:
     QString getWorkspacePath() const;
     QString getWorkspaceAlias() const;
     QList<WorkspaceEntry> workspaceEntries() const;
+    QList<WorkspaceEntry> recentWorkspaceEntries() const;
     int activeWorkspaceIndex() const;
     ProjectModel* getProjectModel() const;
     ProjectSnapshot projectSnapshot() const;
@@ -94,6 +95,7 @@ private:
     QString workspacePath;
     QString workspaceAlias;
     QList<WorkspaceEntry> workspaces;
+    QList<WorkspaceEntry> recentWorkspaces;
     int activeIndex = -1;
     WorkspaceFiles files;
     WorkspaceWatcher watcher;
@@ -111,6 +113,9 @@ private:
     bool activateWorkspacePath(const QString& path,
                                const QString& alias,
                                int index);
+    void loadRecentWorkspaces();
+    void saveRecentWorkspaces() const;
+    void rememberRecentWorkspace(const WorkspaceEntry& entry);
     QString promptWorkspaceAlias(const QString& path) const;
     QString defaultWorkspaceAlias(const QString& path) const;
     int workspaceIndexForPath(const QString& path) const;

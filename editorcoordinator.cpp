@@ -14,9 +14,14 @@
 
 #include <QDir>
 #include <QFileInfo>
+#include <QIODevice>
 #include <QMessageBox>
 #include <QMenu>
+#include <QSaveFile>
+#include <QTextCursor>
+#include <QTextDocument>
 
+#include <algorithm>
 #include <utility>
 
 namespace {
@@ -55,6 +60,22 @@ bool targetIsCurrentEditorFile(
         && !contextFile.isEmpty()
         && targetFile == contextFile;
 }
+
+bool isIncludeCandidateFile(const QString& fileName)
+{
+    const QString suffix = QFileInfo(fileName).suffix().toLower();
+    return suffix == QStringLiteral("vh")
+        || suffix == QStringLiteral("svh");
+}
+
+QString includeCompletionTextForFile(const QString& fileName,
+                                     const QString& workspaceRoot)
+{
+    QString includeText = fileName;
+    if (!workspaceRoot.isEmpty())
+        includeText = QDir(workspaceRoot).relativeFilePath(fileName);
+    return QDir::fromNativeSeparators(includeText);
+}
 }
 
 EditorCoordinator::EditorCoordinator(TabManager* tabManager,
@@ -86,6 +107,36 @@ QString EditorCoordinator::WorkflowDependencies::resolveIncludePath(
     return workspaceManager
         ? workspaceManager->resolveIncludePath(includePath, currentFile)
         : QString();
+}
+
+QStringList
+EditorCoordinator::WorkflowDependencies::includeFileCompletionCandidates(
+    const QString& currentFile) const
+{
+    QStringList candidates;
+    if (!workspaceManager)
+        return candidates;
+
+    const QString workspaceRoot = workspaceManager->getWorkspacePath();
+    const QString normalizedCurrent =
+        normalizedEditorCoordinatorFileName(currentFile);
+    for (const QString& fileName : workspaceManager->getAllFiles()) {
+        if (!isIncludeCandidateFile(fileName))
+            continue;
+
+        const QString normalizedFile =
+            normalizedEditorCoordinatorFileName(fileName);
+        if (!normalizedCurrent.isEmpty()
+            && normalizedFile == normalizedCurrent) {
+            continue;
+        }
+
+        candidates.append(includeCompletionTextForFile(fileName, workspaceRoot));
+    }
+
+    candidates.removeDuplicates();
+    candidates.sort(Qt::CaseInsensitive);
+    return candidates;
 }
 
 void EditorCoordinator::WorkflowDependencies::executeAlternateCommand(
@@ -301,6 +352,14 @@ void EditorCoordinator::attachEditor(MyCodeEditor* editor)
         return;
 
     editor->setSemanticContextService(contextService());
+    editor->setIncludeFileCompletionProvider(
+        [this](const QString& currentFile) {
+            return dependencies.includeFileCompletionCandidates(currentFile);
+        });
+    editor->setIncludeNewHeaderCreator(
+        [this](const IncludeNewHeaderRequest& request) {
+            return createIncludeNewHeader(request);
+        });
     applyAppearance(editor);
     applyFormatterSettings(editor);
     applyAlternateMode(editor);
@@ -441,6 +500,78 @@ void EditorCoordinator::handleIncludeOpenRequested(
 
     if (tabManager)
         tabManager->openFileInTab(targetPath);
+}
+
+IncludeNewHeaderResult EditorCoordinator::createIncludeNewHeader(
+    const IncludeNewHeaderRequest& request) const
+{
+    IncludeNewHeaderResult result;
+    if (!dependencies.workspaceManager
+        || !dependencies.workspaceManager->isWorkspaceOpen()) {
+        result.errorMessage = tr("Open a workspace before creating an include file.");
+        return result;
+    }
+
+    const QString stem = request.fileStem.trimmed();
+    const QString extension = request.extension.trimmed().toLower();
+    if (stem.isEmpty()
+        || (extension != QStringLiteral("vh")
+            && extension != QStringLiteral("svh"))) {
+        result.errorMessage = tr("Invalid include file name or format.");
+        return result;
+    }
+
+    const QString workspaceRoot = dependencies.workspaceManager->getWorkspacePath();
+    const QString fileName = stem + QLatin1Char('.') + extension;
+    const QString filePath = QDir(workspaceRoot).absoluteFilePath(fileName);
+    const QFileInfo fileInfo(filePath);
+    if (fileInfo.exists()) {
+        result.errorMessage =
+            tr("Include file already exists: %1").arg(fileName);
+        return result;
+    }
+
+    QString body = request.templateBody;
+    int cursorPosition = body.indexOf(request.cursorToken);
+    if (cursorPosition >= 0)
+        body.remove(cursorPosition, request.cursorToken.size());
+    else
+        cursorPosition = body.size();
+
+    QSaveFile file(filePath);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        result.errorMessage =
+            tr("Can not create include file: %1").arg(fileName);
+        return result;
+    }
+    file.write(body.toUtf8());
+    if (!file.commit()) {
+        result.errorMessage =
+            tr("Can not save include file: %1").arg(fileName);
+        return result;
+    }
+
+    if (tabManager && tabManager->openFileInTab(filePath)) {
+        MyCodeEditor* openedEditor = tabManager->getCurrentEditor();
+        if (openedEditor) {
+            QTextCursor cursor(openedEditor->document());
+            const int maxPosition =
+                std::max(0, openedEditor->document()->characterCount() - 1);
+            cursor.setPosition(std::clamp(cursorPosition, 0, maxPosition));
+            openedEditor->setTextCursor(cursor);
+            openedEditor->setFocus();
+        }
+    } else {
+        result.errorMessage =
+            tr("Created include file but could not open it: %1").arg(fileName);
+        return result;
+    }
+
+    result.success = true;
+    result.includePath = QDir::fromNativeSeparators(fileName);
+    result.filePath = QDir::fromNativeSeparators(filePath);
+    result.cursorPosition = cursorPosition;
+    return result;
 }
 
 void EditorCoordinator::handleDefinitionNavigationRequested(

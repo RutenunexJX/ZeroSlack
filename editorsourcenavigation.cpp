@@ -85,8 +85,16 @@ bool EditorSourceNavigationUi::handleMousePress(
     MyCodeEditor* editor,
     QMouseEvent* event,
     EditorSemanticContextService* service,
-    const EditorSourceContextProvider& contextProvider)
+    const EditorSourceContextProvider& contextProvider,
+    EditorSelection& selections)
 {
+    if (event->button() == Qt::LeftButton
+        && !(event->modifiers() & Qt::ControlModifier)
+        && popupPinnedBySelection) {
+        clearHover(editor, selections);
+        return false;
+    }
+
     if (event->button() != Qt::LeftButton
         || !(event->modifiers() & Qt::ControlModifier)) {
         return false;
@@ -100,8 +108,38 @@ bool EditorSourceNavigationUi::handleMousePress(
         return false;
     }
 
+    clearHover(editor, selections);
     event->accept();
     return true;
+}
+
+bool EditorSourceNavigationUi::handleMouseDoubleClick(
+    MyCodeEditor* editor,
+    QMouseEvent* event,
+    EditorSemanticContextService* service,
+    const EditorSourceContextProvider& contextProvider,
+    EditorSelection& selections)
+{
+    if (event->button() != Qt::LeftButton
+        || (event->modifiers() & Qt::ControlModifier)) {
+        return false;
+    }
+
+    sourceHover.setCtrlPressed(false);
+    selections.clearHoveredSymbol(editor);
+    sourceHover.clearTarget();
+
+    const EditorSourceNavigationTarget target =
+        targetAtPosition(editor, event->pos(), service, contextProvider);
+    refreshPopupAt(
+        editor,
+        event->pos(),
+        service,
+        contextProvider,
+        target);
+    popupPinnedBySelection = popup && popup->isVisible();
+
+    return false;
 }
 
 void EditorSourceNavigationUi::handleMouseMove(
@@ -116,6 +154,8 @@ void EditorSourceNavigationUi::handleMouseMove(
 
     sourceHover.setCtrlPressed(isCtrlPressed);
     if (!isCtrlPressed) {
+        if (popupPinnedBySelection && popupSelectionStillActive(editor))
+            return;
         if (hasActiveHover())
             clearHover(editor, selections);
         return;
@@ -134,6 +174,8 @@ void EditorSourceNavigationUi::handleLeave(
     EditorSelection& selections)
 {
     sourceHover.setCtrlPressed(false);
+    if (popupPinnedBySelection && popupSelectionStillActive(editor))
+        return;
     clearHover(editor, selections);
 }
 
@@ -401,6 +443,7 @@ void EditorSourceNavigationUi::clearHover(
         popupEndPos = -1;
         popupNumericMode = false;
         popupPreviewMode = false;
+        popupPinnedBySelection = false;
     }
 }
 
@@ -412,6 +455,7 @@ void EditorSourceNavigationUi::closePopup()
     popupEndPos = -1;
     popupNumericMode = false;
     popupPreviewMode = false;
+    popupPinnedBySelection = false;
 }
 
 bool EditorSourceNavigationUi::hasActiveHover() const
@@ -456,4 +500,20 @@ bool EditorSourceNavigationUi::numericPopupMatches(
         && popupNumericMode
         && popupStartPos == startPosition
         && popupEndPos == endPosition;
+}
+
+bool EditorSourceNavigationUi::popupSelectionStillActive(
+    MyCodeEditor* editor) const
+{
+    if (!editor || !popup || !popup->isVisible()
+        || popupStartPos < 0 || popupEndPos <= popupStartPos) {
+        return false;
+    }
+
+    const QTextCursor cursor = editor->textCursor();
+    if (!cursor.hasSelection())
+        return false;
+
+    return cursor.selectionStart() <= popupStartPos
+        && cursor.selectionEnd() >= popupEndPos;
 }

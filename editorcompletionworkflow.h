@@ -2,8 +2,11 @@
 #define EDITORCOMPLETIONWORKFLOW_H
 
 #include "editorsemanticcontextservice.h"
+#include "includeheaderworkflowtypes.h"
 
 #include <functional>
+#include <QList>
+#include <QStringList>
 
 class EditorCompletionUi;
 class EditorModeState;
@@ -22,6 +25,11 @@ public:
     using ModuleNameProvider = std::function<QString(int)>;
     using SemanticServiceProvider =
         std::function<EditorSemanticContextService*()>;
+    using IncludeFileProvider =
+        std::function<QStringList(const QString& currentFile)>;
+    using IncludeNewHeaderCreator =
+        std::function<IncludeNewHeaderResult(
+            const IncludeNewHeaderRequest& request)>;
 
     void bind(
         MyCodeEditor* editor,
@@ -38,14 +46,29 @@ public:
     void handleCompletionActivated(const QModelIndex& index);
     void handleAutoCompleteTimer();
     void executeAlternateModeCommand(const QString& command);
+    void setIncludeFileProvider(IncludeFileProvider provider);
+    void setIncludeNewHeaderCreator(IncludeNewHeaderCreator creator);
 
 private:
+    enum class IncludeCompletionMode {
+        None,
+        File,
+        NewFormat,
+        NewTemplate
+    };
+
+    struct IncludeCompletionContext {
+        bool active = false;
+        QString prefix;
+        int pathStartPosition = -1;
+    };
+
     EditorSemanticContextService* semanticService() const;
     EditorSemanticContext semanticContextForCursor(
         const QTextCursor& cursor,
         bool includeDocumentText) const;
     void hideAutoComplete();
-    void showAutoComplete();
+    void showAutoComplete(bool selectFirstCompletion = false);
     void applyAlternateModeCompletionDisplayState(
         const EditorAlternateModeCompletionDisplayState& displayState);
     void processAlternateModeInput(const QString& input);
@@ -67,6 +90,15 @@ private:
     void refreshSymbolCompletion(
         EditorSemanticContext context,
         const QTextBlock& currentBlock);
+    bool handleIncludeCompletionTextChange();
+    IncludeCompletionContext includeCompletionContextAtCursor() const;
+    bool shouldInsertIncludeQuotesAtCursor() const;
+    void showIncludeFileCompletions(
+        const IncludeCompletionContext& context);
+    bool showIncludeNewHeaderCompletions(
+        const IncludeCompletionContext& context);
+    void applyIncludeCompletion(const QString& includePath);
+    void applyIncludeNewHeaderChoice(const QString& choice);
 
     MyCodeEditor* editor = nullptr;
     EditorCompletionUi* completion = nullptr;
@@ -75,6 +107,13 @@ private:
     ContextProvider contextProvider;
     ModuleNameProvider moduleNameProvider;
     SemanticServiceProvider serviceProvider;
+    IncludeFileProvider includeFileProvider;
+    IncludeNewHeaderCreator includeNewHeaderCreator;
+    bool includeCompletionActive = false;
+    bool applyingIncludeCompletionEdit = false;
+    IncludeCompletionMode includeCompletionMode = IncludeCompletionMode::None;
+    QString includeNewHeaderStem;
+    QString includeNewHeaderExtension;
 };
 
 #endif // EDITORCOMPLETIONWORKFLOW_H

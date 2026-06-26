@@ -64,6 +64,14 @@ void SemanticPanelRefreshCoordinator::ContextDependencies::navigateToFileAndLine
         navigationCommandCoordinator->navigateToFileAndLine(fileName, line, column);
 }
 
+void SemanticPanelRefreshCoordinator::ContextDependencies::revealFileAndFlashLine(
+    const QString& fileName,
+    int line) const
+{
+    if (navigationCommandCoordinator)
+        navigationCommandCoordinator->revealFileAndFlashLine(fileName, line);
+}
+
 void SemanticPanelRefreshCoordinator::ContextDependencies::handleActiveEditorChanged(
     MyCodeEditor* editor) const
 {
@@ -94,6 +102,10 @@ void SemanticPanelRefreshCoordinator::configurePanels()
         [this](const QString& fileName, int line, int column) {
             navigateToFileAndLine(fileName, line, column);
         };
+    const NavigationHandler revealHandler =
+        [this](const QString& fileName, int line, int) {
+            revealFileAndFlashLine(fileName, line);
+        };
     const StatusMessageHandler statusMessageHandler =
         [this](const QString& message, int timeoutMs) {
             showStatusMessage(message, timeoutMs);
@@ -112,6 +124,7 @@ void SemanticPanelRefreshCoordinator::configurePanels()
     panels.configureSignalKernelGraphPanel(
         dependencies.tabManager ? dependencies.tabManager->getDocumentModel() : nullptr,
         navigationHandler,
+        revealHandler,
         statusMessageHandler);
     panels.markConfigured();
 }
@@ -195,6 +208,13 @@ void SemanticPanelRefreshCoordinator::navigateToFileAndLine(
     int column) const
 {
     dependencies.navigateToFileAndLine(fileName, line, column);
+}
+
+void SemanticPanelRefreshCoordinator::revealFileAndFlashLine(
+    const QString& fileName,
+    int line) const
+{
+    dependencies.revealFileAndFlashLine(fileName, line);
 }
 
 void SemanticPanelRefreshCoordinator::showStatusMessage(

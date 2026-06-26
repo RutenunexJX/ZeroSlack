@@ -3,8 +3,10 @@
 
 #include <QMetaType>
 #include <QAbstractItemModel>
+#include <QList>
 #include <QStringList>
 #include "completiontypes.h"
+#include "includeheaderworkflowtypes.h"
 
 class CompletionModel : public QAbstractItemModel
 {
@@ -71,6 +73,11 @@ public:
     void updateCompletions(const CompletionResult &completion,
                            const QString &prefix);
     void updateCommandCompletions(const QStringList &commands, const QString &prefix);
+    void updateIncludeFileCompletions(const QStringList& filePaths,
+                                      const QString& prefix);
+    void updateIncludeNewHeaderCompletions(
+        const QList<IncludeNewHeaderChoice>& choices,
+        const QString& title);
     void updateCommandHelpCompletions(const QList<CommandModeCommand>& commands);
     void updateInlineCommandCompletions(
         const CommandModeCompletionState& state);

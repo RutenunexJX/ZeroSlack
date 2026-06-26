@@ -137,6 +137,20 @@ void NavigationCommandCoordinator::navigateToFileAndLine(
     navigateEditorToLine(targets.currentEditor(), lineNumber, columnNumber);
 }
 
+void NavigationCommandCoordinator::revealFileAndFlashLine(
+    const QString& filePath,
+    int lineNumber)
+{
+    if (!targets.activateOrOpenFile(filePath))
+        return;
+    if (lineNumber <= 0)
+        return;
+
+    MyCodeEditor* editor = targets.currentEditor();
+    if (editor)
+        editor->flashLine(lineNumber);
+}
+
 void NavigationCommandCoordinator::navigateEditorToLine(
     MyCodeEditor* editor,
     int lineNumber,

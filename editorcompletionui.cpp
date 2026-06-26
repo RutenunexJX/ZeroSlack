@@ -147,6 +147,20 @@ void EditorCompletionUi::updateCommandModeCompletions(
         commandState.completion.commandKind);
 }
 
+void EditorCompletionUi::updateIncludeFileCompletions(
+    const QStringList& filePaths,
+    const QString& prefix) const
+{
+    model->updateIncludeFileCompletions(filePaths, prefix);
+}
+
+void EditorCompletionUi::updateIncludeNewHeaderCompletions(
+    const QList<IncludeNewHeaderChoice>& choices,
+    const QString& title) const
+{
+    model->updateIncludeNewHeaderCompletions(choices, title);
+}
+
 void EditorCompletionUi::updateSymbolCompletions(
     const EditorCompletionState& completionState) const
 {

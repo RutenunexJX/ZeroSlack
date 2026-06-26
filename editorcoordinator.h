@@ -3,7 +3,10 @@
 
 #include <QObject>
 #include <QString>
+#include <QStringList>
 #include <functional>
+
+#include "includeheaderworkflowtypes.h"
 
 class FileCommandCoordinator;
 class EditorAppearanceSettings;
@@ -58,6 +61,8 @@ private:
                  SemanticPanelRefreshCoordinator* semanticPanelRefresh);
         QString resolveIncludePath(const QString& includePath,
                                    const QString& currentFile) const;
+        QStringList includeFileCompletionCandidates(
+            const QString& currentFile) const;
         void executeAlternateCommand(MyCodeEditor* editor,
                                      const QString& command) const;
         void navigateEditorToLine(MyCodeEditor* editor,
@@ -100,6 +105,8 @@ private:
     void handleIncludeOpenRequested(MyCodeEditor* editor,
                                     const QString& includePath,
                                     const QString& currentFile) const;
+    IncludeNewHeaderResult createIncludeNewHeader(
+        const IncludeNewHeaderRequest& request) const;
     void handleDefinitionNavigationRequested(
         MyCodeEditor* editor,
         const QString& symbolName,

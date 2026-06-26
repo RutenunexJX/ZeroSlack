@@ -102,6 +102,7 @@ private:
     void setupEditorModeChip();
     void updateEditorModeChip(const QString& message);
     void setFoldShelfModeVisualActive(bool active);
+    void showRecentWorkspacesDialog();
     void showFoldBlockShelf();
     void restoreFoldShelfItem(const QString& id);
     void setupEditorAppearanceSettings();

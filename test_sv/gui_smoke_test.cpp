@@ -6,6 +6,7 @@
 #include <QAction>
 #include <QCompleter>
 #include <QComboBox>
+#include <QDialog>
 #include <QDockWidget>
 #include <QDir>
 #include <QElapsedTimer>
@@ -454,6 +455,282 @@ static void runFormatterCoordinatorRegression()
                true);
 }
 
+static void runTabOpenDedupRegression()
+{
+    QTemporaryDir dir;
+    expectBool("tab open dedup temp dir valid", dir.isValid(), true);
+    if (!dir.isValid())
+        return;
+
+    const QString filePath = dir.filePath(QStringLiteral("defs.svh"));
+    QFile file(filePath);
+    expectBool("tab open dedup fixture writable",
+               file.open(QIODevice::WriteOnly | QIODevice::Text),
+               true);
+    if (!file.isOpen())
+        return;
+    file.write("`define WIDTH 8\n");
+    file.close();
+
+    QTabWidget tabsWidget;
+    TabManager tabs(&tabsWidget);
+
+    expectBool("tab open first file succeeds",
+               tabs.openFileInTab(filePath),
+               true);
+    MyCodeEditor* firstEditor = tabs.getCurrentEditor();
+    expectBool("tab open first file creates one tab",
+               firstEditor && tabs.editorCount() == 1,
+               true);
+
+    const QString nativePath = QDir::toNativeSeparators(filePath);
+    expectBool("tab open duplicate file succeeds",
+               tabs.openFileInTab(nativePath),
+               true);
+    expectBool("tab open duplicate activates existing tab",
+               tabs.editorCount() == 1
+                   && tabs.getCurrentEditor() == firstEditor,
+               true);
+
+    tabs.createNewTab();
+    expectBool("tab open dedup has scratch tab",
+               tabs.editorCount() == 2
+                   && tabs.getCurrentEditor() != firstEditor,
+               true);
+    expectBool("tab open existing from scratch succeeds",
+               tabs.openFileInTab(filePath),
+               true);
+    expectBool("tab open existing from scratch reuses tab",
+               tabs.editorCount() == 2
+                   && tabs.getCurrentEditor() == firstEditor,
+               true);
+}
+
+static void runIncludeCompletionRegression()
+{
+    auto includeProvider = [](const QString&) {
+        return QStringList{
+            QStringLiteral("defs.svh"),
+            QStringLiteral("rtl/top_defs.svh")
+        };
+    };
+
+    MyCodeEditor partialEditor;
+    partialEditor.setIncludeFileCompletionProvider(includeProvider);
+    partialEditor.resize(480, 120);
+    partialEditor.show();
+    partialEditor.setFocus();
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    partialEditor.insertPlainText(QStringLiteral("`inc "));
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    expectBool("include completion waits for full keyword",
+               partialEditor.toPlainText() == QStringLiteral("`inc "),
+               true);
+
+    MyCodeEditor plainEditor;
+    plainEditor.setIncludeFileCompletionProvider(includeProvider);
+    plainEditor.resize(480, 120);
+    plainEditor.show();
+    plainEditor.setFocus();
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    plainEditor.insertPlainText(QStringLiteral("include "));
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    expectBool("include completion requires backtick keyword",
+               plainEditor.toPlainText() == QStringLiteral("include "),
+               true);
+
+    MyCodeEditor editor;
+    editor.setIncludeFileCompletionProvider(includeProvider);
+    editor.resize(560, 160);
+    editor.show();
+    editor.setFocus();
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    editor.insertPlainText(QStringLiteral("`include "));
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
+
+    expectBool("include completion inserts quotes",
+               editor.toPlainText() == QStringLiteral("`include \"\""),
+               true);
+    expectBool("include completion places cursor inside quotes",
+               editor.textCursor().position()
+                   == QStringLiteral("`include \"").size(),
+               true);
+
+    QCompleter* completer = editor.findChild<QCompleter*>();
+    bool hasDefsCandidate = false;
+    if (completer && completer->model()) {
+        for (int row = 0; row < completer->model()->rowCount(); ++row) {
+            const QString text =
+                completer->model()->data(
+                    completer->model()->index(row, 0),
+                    Qt::DisplayRole).toString();
+            hasDefsCandidate = hasDefsCandidate
+                || text.contains(QStringLiteral("defs.svh"));
+        }
+    }
+    expectBool("include completion shows workspace file candidate",
+               completer && completer->popup()->isVisible() && hasDefsCandidate,
+               true);
+
+    editor.insertPlainText(QStringLiteral("de"));
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
+    QTest::keyClick(&editor, Qt::Key_Tab);
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    expectBool("include completion tab inserts selected file",
+               editor.toPlainText() == QStringLiteral("`include \"defs.svh\""),
+               true);
+
+    MyCodeEditor newHeaderEditor;
+    newHeaderEditor.setIncludeFileCompletionProvider(includeProvider);
+    IncludeNewHeaderRequest createdRequest;
+    int createCalls = 0;
+    newHeaderEditor.setIncludeNewHeaderCreator(
+        [&](const IncludeNewHeaderRequest& request) {
+            createdRequest = request;
+            ++createCalls;
+            IncludeNewHeaderResult result;
+            result.success = true;
+            result.includePath =
+                request.fileStem + QLatin1Char('.') + request.extension;
+            return result;
+        });
+    newHeaderEditor.resize(640, 180);
+    newHeaderEditor.show();
+    newHeaderEditor.setFocus();
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    newHeaderEditor.insertPlainText(QStringLiteral("`include "));
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
+    newHeaderEditor.insertPlainText(QStringLiteral("-n new_defs"));
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
+
+    QCompleter* newHeaderCompleter =
+        newHeaderEditor.findChild<QCompleter*>();
+    auto selectCompletionContaining =
+        [](QCompleter* targetCompleter, const QString& needle) {
+            if (!targetCompleter || !targetCompleter->model())
+                return QModelIndex();
+            for (int row = 0; row < targetCompleter->model()->rowCount(); ++row) {
+                const QModelIndex index =
+                    targetCompleter->model()->index(row, 0);
+                const QString text =
+                    targetCompleter->model()->data(
+                        index,
+                        Qt::DisplayRole).toString();
+                if (text.contains(needle)) {
+                    targetCompleter->popup()->setCurrentIndex(index);
+                    return index;
+                }
+            }
+            return QModelIndex();
+        };
+
+    const QString defaultFormatText =
+        newHeaderCompleter && newHeaderCompleter->popup()
+        ? newHeaderCompleter->model()->data(
+            newHeaderCompleter->popup()->currentIndex(),
+            Qt::DisplayRole).toString()
+        : QString();
+    const QModelIndex vhIndex =
+        selectCompletionContaining(newHeaderCompleter,
+                                   QStringLiteral("vh - Verilog header"));
+    expectBool("include new header shows format choices",
+               newHeaderCompleter && newHeaderCompleter->popup()->isVisible()
+                   && vhIndex.isValid(),
+               true);
+    expectBool("include new header defaults to first format",
+               defaultFormatText.contains(QStringLiteral("vh - Verilog header")),
+               true);
+    QTest::keyClick(&newHeaderEditor, Qt::Key_Tab);
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
+    expectBool("include new header format moves to template stage",
+               newHeaderEditor.toPlainText()
+                   == QStringLiteral("`include \"-n new_defs vh \""),
+               true);
+
+    const QModelIndex guardIndex =
+        newHeaderCompleter && newHeaderCompleter->popup()
+        ? newHeaderCompleter->popup()->currentIndex()
+        : QModelIndex();
+    const QString guardDisplay = guardIndex.isValid()
+        ? newHeaderCompleter->model()->data(
+            guardIndex,
+            Qt::DisplayRole).toString()
+        : QString();
+    const QString guardPreview = guardIndex.isValid()
+        ? newHeaderCompleter->model()->data(
+            guardIndex,
+            Qt::ToolTipRole).toString()
+        : QString();
+    expectBool("include new header defaults to first template",
+               guardDisplay.contains(QStringLiteral("empty - blank header")),
+               true);
+    expectBool("include new header shows template preview",
+               guardIndex.isValid()
+                   && guardDisplay.contains(QStringLiteral("<cursor>"))
+                   && guardPreview.contains(QStringLiteral("<cursor>")),
+               true);
+    QTest::keyClick(&newHeaderEditor, Qt::Key_Tab);
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
+    expectBool("include new header creates requested file",
+               createCalls == 1
+                   && createdRequest.fileStem == QStringLiteral("new_defs")
+                   && createdRequest.extension == QStringLiteral("vh")
+                   && createdRequest.templateName == QStringLiteral("empty"),
+               true);
+    expectBool("include new header inserts created include",
+               newHeaderEditor.toPlainText()
+                   == QStringLiteral("`include \"new_defs.vh\""),
+               true);
+
+    QTemporaryDir workspaceDir;
+    expectBool("include new header workspace temp dir valid",
+               workspaceDir.isValid(),
+               true);
+    if (!workspaceDir.isValid())
+        return;
+    QTabWidget tabsWidget;
+    TabManager tabs(&tabsWidget);
+    ModeManager modes(&tabsWidget);
+    WorkspaceManager workspace;
+    EditorCoordinator coordinator(&tabs, &modes);
+    coordinator.setWorkflowDependencies(&workspace, nullptr, nullptr, nullptr);
+    coordinator.connectSignals();
+    expectBool("include new header opens test workspace",
+               workspace.openWorkspace(workspaceDir.path()),
+               true);
+    IncludeNewHeaderRequest request;
+    request.fileStem = QStringLiteral("created_defs");
+    request.extension = QStringLiteral("svh");
+    request.templateName = QStringLiteral("guard");
+    request.cursorToken = QStringLiteral("__CURSOR__");
+    request.templateBody =
+        QStringLiteral("`ifndef CREATED_DEFS_SVH_\n"
+                       "`define CREATED_DEFS_SVH_\n\n"
+                       "__CURSOR__\n\n"
+                       "`endif\n");
+    const IncludeNewHeaderResult result =
+        coordinator.createIncludeNewHeader(request);
+    const QString createdPath =
+        QDir(workspaceDir.path()).absoluteFilePath(
+            QStringLiteral("created_defs.svh"));
+    expectBool("include new header coordinator creates file",
+               result.success && QFileInfo::exists(createdPath),
+               true);
+    expectBool("include new header coordinator opens file",
+               tabs.editorCount() == 1
+                   && tabs.getCurrentEditor()
+                   && QDir::cleanPath(QDir::fromNativeSeparators(
+                          tabs.getCurrentEditor()->documentFileName()))
+                       == QDir::cleanPath(QDir::fromNativeSeparators(
+                          createdPath)),
+               true);
+    expectBool("include new header coordinator places cursor",
+               tabs.getCurrentEditor()
+                   && tabs.getCurrentEditor()->textCursor().position()
+                       == result.cursorPosition,
+               true);
+}
+
 static void runEditorBracketRangeRegression()
 {
     MyCodeEditor editor;
@@ -540,6 +817,88 @@ static void runEditorBracketRangeRegression()
                stepEditor.toPlainText() == QStringLiteral("[8:0]")
                    && stepEditor.textCursor().selectedText()
                        == QStringLiteral("8:0"),
+               true);
+}
+
+static void runEditorColumnEditRegression()
+{
+    MyCodeEditor editor;
+    editor.resize(480, 180);
+    editor.setPlainText(QStringLiteral("abc\nabc\nabc\n"));
+    editor.show();
+    editor.setFocus();
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+
+    QTextBlock firstBlock = editor.document()->findBlockByNumber(0);
+    QTextBlock lastBlock = editor.document()->findBlockByNumber(2);
+    QTextCursor startCursor(firstBlock);
+    startCursor.setPosition(firstBlock.position() + 1);
+    QTextCursor endCursor(lastBlock);
+    endCursor.setPosition(lastBlock.position() + 1);
+    const QPoint startPoint = editor.cursorRect(startCursor).center();
+    const QPoint endPoint = editor.cursorRect(endCursor).center();
+    const QPoint globalStart = editor.viewport()->mapToGlobal(startPoint);
+    const QPoint globalEnd = editor.viewport()->mapToGlobal(endPoint);
+    const Qt::KeyboardModifiers columnModifiers =
+        Qt::ShiftModifier | Qt::AltModifier;
+
+    Q_UNUSED(globalStart)
+    Q_UNUSED(globalEnd)
+    QTest::mouseClick(editor.viewport(),
+                      Qt::LeftButton,
+                      columnModifiers,
+                      startPoint);
+    QTest::mouseClick(editor.viewport(),
+                      Qt::LeftButton,
+                      columnModifiers,
+                      endPoint);
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+
+    QTest::keyClicks(&editor, "X");
+    expectBool("editor column mode inserts on each selected line",
+               editor.toPlainText() == QStringLiteral("aXbc\naXbc\naXbc\n"),
+               true);
+
+    QTest::keyClick(&editor, Qt::Key_Backspace);
+    expectBool("editor column mode backspace edits each line",
+               editor.toPlainText() == QStringLiteral("abc\nabc\nabc\n"),
+               true);
+
+    QTest::keyClicks(&editor, "Y");
+    expectBool("editor column mode remains active after backspace",
+               editor.toPlainText() == QStringLiteral("aYbc\naYbc\naYbc\n"),
+               true);
+
+    QTest::keyClick(&editor, Qt::Key_Left);
+    QTest::keyClicks(&editor, "Z");
+    expectBool("editor column mode plain arrow moves vertical cursor",
+               editor.toPlainText()
+                   == QStringLiteral("aZYbc\naZYbc\naZYbc\n"),
+               true);
+
+    QTest::keyClick(&editor, Qt::Key_Backspace);
+    expectBool("editor column mode backspace remains multi-line after move",
+               editor.toPlainText() == QStringLiteral("aYbc\naYbc\naYbc\n"),
+               true);
+
+    QTest::keyClick(&editor,
+                    Qt::Key_Right,
+                    columnModifiers);
+    QTest::keyClick(&editor, Qt::Key_Right);
+    QTest::keyClicks(&editor, "Q");
+    expectBool("editor column mode adjusts then moves rectangular selection",
+               editor.toPlainText() == QStringLiteral("aYQc\naYQc\naYQc\n"),
+               true);
+
+    const QPoint plainClickPoint =
+        editor.cursorRect(editor.textCursor()).center();
+    QTest::mouseClick(editor.viewport(),
+                      Qt::LeftButton,
+                      Qt::NoModifier,
+                      plainClickPoint);
+    QTest::keyClicks(&editor, "Z");
+    expectBool("editor plain click exits column mode",
+               editor.toPlainText().count(QLatin1Char('Z')) == 1,
                true);
 }
 
@@ -820,6 +1179,57 @@ static void runEditorHoverPreviewRegression(const QString& workspacePath)
                    && popupColumn == signalColumn + 1,
                true);
     popup.closePopup();
+
+    const auto previousGlobalSnapshot = SemanticIndex::getInstance()->snapshot();
+    SemanticIndex::getInstance()->setSnapshot(hoverIndex.snapshot());
+    SymbolHoverService::getInstance()->setSemanticIndex(SemanticIndex::getInstance());
+
+    MyCodeEditor hoverEditor;
+    hoverEditor.setDocumentFileName(rtlTopPath);
+    hoverEditor.setLineWrapMode(QPlainTextEdit::NoWrap);
+    hoverEditor.resize(800, 320);
+    hoverEditor.setPlainText(rtlTopText);
+    QTextBlock signalBlock =
+        hoverEditor.document()->findBlockByNumber(signalLine - 1);
+    QTextCursor hoverCursor(signalBlock);
+    hoverCursor.setPosition(signalBlock.position() + signalColumn);
+    hoverEditor.setTextCursor(hoverCursor);
+    hoverEditor.show();
+    hoverEditor.ensureCursorVisible();
+    QApplication::processEvents();
+
+    const QRect signalRect = hoverEditor.cursorRect(hoverCursor);
+    const QPoint signalPoint(signalRect.left() + 3, signalRect.center().y());
+    QTest::mouseDClick(hoverEditor.viewport(),
+                       Qt::LeftButton,
+                       Qt::NoModifier,
+                       signalPoint);
+    QApplication::processEvents();
+    QTest::qWait(20);
+
+    bool doubleClickHoverVisible = false;
+    QString doubleClickHoverText;
+    for (QWidget* widget : QApplication::topLevelWidgets()) {
+        if (!widget || widget->objectName() != QStringLiteral("editorHoverPopup")
+            || !widget->isVisible()) {
+            continue;
+        }
+        doubleClickHoverVisible = true;
+        const QList<QLabel*> labels = widget->findChildren<QLabel*>();
+        for (const QLabel* label : labels)
+            doubleClickHoverText += label->text() + QLatin1Char('\n');
+        widget->hide();
+    }
+    expectBool("editor double-click shows symbol hover",
+               doubleClickHoverVisible
+                   && doubleClickHoverText.contains(QStringLiteral("clk_main"))
+                   && doubleClickHoverText.contains(QStringLiteral("owner: rtl_top")),
+               true);
+
+    if (previousGlobalSnapshot)
+        SemanticIndex::getInstance()->setSnapshot(previousGlobalSnapshot);
+    else
+        SemanticIndex::getInstance()->clearSnapshot();
 
     const EditorSourceNavigationTarget navigationTarget =
         EditorSemanticContextService::getInstance()
@@ -3566,12 +3976,18 @@ static void runGlobalControlRegression(MainWindow& window,
                       window.workspaceManager->getProjectModel(),
                       SemanticIndex::getInstance());
     bool foundOpenWorkspaceAction = false;
+    bool foundRecentWorkspaceAction = false;
     for (const GlobalControlItem& item : commandMatches) {
         if (item.id == QStringLiteral("ow"))
             foundOpenWorkspaceAction = true;
+        if (item.id == QStringLiteral("ow r"))
+            foundRecentWorkspaceAction = true;
     }
     expectBool("global control finds ow command",
                foundOpenWorkspaceAction,
+               true);
+    expectBool("global control finds ow recent command",
+               foundRecentWorkspaceAction,
                true);
 
     const QList<GlobalControlItem> allCommands =
@@ -3583,12 +3999,28 @@ static void runGlobalControlRegression(MainWindow& window,
         if (item.kind == GlobalControlItemKind::Command)
             commandIds.insert(item.id);
     }
-    expectBool("global control only exposes ow fd fds",
+    expectBool("global control exposes workspace and fold commands",
                commandIds == QSet<QString>({
                    QStringLiteral("ow"),
+                   QStringLiteral("ow r"),
                    QStringLiteral("fd"),
                    QStringLiteral("fds"),
                }),
+               true);
+
+    const QList<GlobalControlItem> recentWorkspaceMatches =
+        service.query(QStringLiteral("ow r"),
+                      window.workspaceManager->getProjectModel(),
+                      SemanticIndex::getInstance());
+    bool foundRecentByExactCommand = false;
+    for (const GlobalControlItem& item : recentWorkspaceMatches) {
+        if (item.id == QStringLiteral("ow r")
+            && item.subtitle.contains(QStringLiteral("Recent Workspaces"))) {
+            foundRecentByExactCommand = true;
+        }
+    }
+    expectBool("global control exact ow r finds recent workspaces",
+               foundRecentByExactCommand,
                true);
 
     const QList<GlobalControlItem> foldActionMatches =
@@ -3644,6 +4076,44 @@ static void runGlobalControlRegression(MainWindow& window,
     expectBool("global control dispatches command",
                dispatched,
                true);
+
+    window.globalControlCoordinator->dispatch(
+        GlobalControlItem{GlobalControlItemKind::Command,
+                          QStringLiteral("ow r"),
+                          QStringLiteral("ow r"),
+                          QStringLiteral("Recent Workspaces")});
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
+    QDialog* recentDialog =
+        window.findChild<QDialog*>(QStringLiteral("recentWorkspacesDialog"));
+    QTreeWidget* recentTree = recentDialog
+        ? recentDialog->findChild<QTreeWidget*>(
+              QStringLiteral("recentWorkspacesTree"))
+        : nullptr;
+    const QString activeAlias =
+        window.workspaceManager ? window.workspaceManager->getWorkspaceAlias()
+                                : QString();
+    const QString activePath =
+        window.workspaceManager ? window.workspaceManager->getWorkspacePath()
+                                : QString();
+    bool recentWindowShowsActiveWorkspace = false;
+    if (recentTree) {
+        for (int i = 0; i < recentTree->topLevelItemCount(); ++i) {
+            QTreeWidgetItem* item = recentTree->topLevelItem(i);
+            recentWindowShowsActiveWorkspace =
+                recentWindowShowsActiveWorkspace
+                || (item
+                    && item->text(0) == activeAlias
+                    && item->data(0, Qt::UserRole).toString() == activePath);
+        }
+    }
+    expectBool("ow r opens recent workspace window",
+               recentDialog && recentDialog->isVisible() && recentTree,
+               true);
+    expectBool("ow r window lists alias and path",
+               recentWindowShowsActiveWorkspace,
+               true);
+    if (recentDialog)
+        recentDialog->close();
 
     QWidget* focusTarget = navWidget ? static_cast<QWidget*>(navWidget) : &window;
     focusTarget->setFocus();
@@ -3746,9 +4216,12 @@ int main(int argc, char** argv)
     runEditorAppearanceSettingsRegression();
     runFormatterSettingsRegression();
     runEditorBracketRangeRegression();
+    runEditorColumnEditRegression();
     runEditorFormatterRegression();
     runEditorAppearanceCoordinatorRegression();
     runFormatterCoordinatorRegression();
+    runTabOpenDedupRegression();
+    runIncludeCompletionRegression();
     runTreeSitterFoldingProviderRegression();
     runNavigationHierarchyModelRegression();
 
@@ -4503,6 +4976,29 @@ int main(int argc, char** argv)
                                                  .absoluteFilePath()))
                                && window.tabManager->editorCount()
                                       == editorCountBeforeIncludeClick + 2,
+                           true);
+
+                const int editorCountAfterFirstIncludeClick =
+                    window.tabManager->editorCount();
+                expectBool("return to include source tab",
+                           window.tabManager->activateOpenFile(includeSourcePath),
+                           true);
+                includeEditor = window.tabManager->getCurrentEditor();
+                if (includeEditor) {
+                    includeEditor->setTextCursor(includeCursor);
+                    includeEditor->centerCursor();
+                    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+                    const QPoint repeatClickPoint =
+                        includeEditor->cursorRect(includeCursor).center();
+                    QTest::mouseClick(includeEditor->viewport(),
+                                      Qt::LeftButton,
+                                      Qt::ControlModifier,
+                                      repeatClickPoint);
+                    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+                }
+                expectBool("Ctrl+Click include reuses target tab",
+                           window.tabManager->editorCount()
+                               == editorCountAfterFirstIncludeClick,
                            true);
             }
         }

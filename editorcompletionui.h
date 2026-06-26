@@ -1,9 +1,12 @@
 #ifndef EDITORCOMPLETIONUI_H
 #define EDITORCOMPLETIONUI_H
 
+#include <QList>
 #include <QString>
 
 #include <functional>
+
+#include "includeheaderworkflowtypes.h"
 
 class CompletionModel;
 class EditorModeState;
@@ -48,6 +51,11 @@ public:
         const EditorModeState& modes) const;
     void updateCommandModeCompletions(
         const EditorCommandModeCompletionRefreshState& commandState) const;
+    void updateIncludeFileCompletions(const QStringList& filePaths,
+                                      const QString& prefix) const;
+    void updateIncludeNewHeaderCompletions(
+        const QList<IncludeNewHeaderChoice>& choices,
+        const QString& title) const;
     void updateSymbolCompletions(
         const EditorCompletionState& completionState) const;
     void updateAlternateModeCompletions(

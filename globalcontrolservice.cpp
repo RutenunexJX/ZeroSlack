@@ -77,6 +77,7 @@ QList<GlobalControlItem> GlobalControlService::commandItems() const
 {
     return {
         item(GlobalControlItemKind::Command, QStringLiteral("ow"), QStringLiteral("ow"), QStringLiteral("Open Workspace - choose and alias a workspace")),
+        item(GlobalControlItemKind::Command, QStringLiteral("ow r"), QStringLiteral("ow r"), QStringLiteral("Recent Workspaces - show aliases and paths")),
         item(GlobalControlItemKind::Command, QStringLiteral("fd"), QStringLiteral("fd"), QStringLiteral("Fold Region - mark a custom fold block in the active editor")),
         item(GlobalControlItemKind::Command, QStringLiteral("fds"), QStringLiteral("fds"), QStringLiteral("Fold Shelf - drag custom fold blocks to or from the shelf")),
     };

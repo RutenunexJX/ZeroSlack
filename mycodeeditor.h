@@ -5,9 +5,12 @@
 #include "semanticdecorationservice.h"
 #include "ghostannotationservice.h"
 #include "foldblockshelfmodel.h"
+#include "includeheaderworkflowtypes.h"
 
 #include <QList>
 #include <QPlainTextEdit>
+#include <QStringList>
+#include <functional>
 #include <memory>
 
 class QMenu;
@@ -51,6 +54,11 @@ public:
     qreal documentHeightPx() const;
     void refreshScopeAndCurrentLineHighlight();
     void setAlternateModeEnabled(bool enabled);
+    void setIncludeFileCompletionProvider(
+        std::function<QStringList(const QString& currentFile)> provider);
+    void setIncludeNewHeaderCreator(
+        std::function<IncludeNewHeaderResult(
+            const IncludeNewHeaderRequest& request)> creator);
     void setSemanticContextService(EditorSemanticContextService* service);
     void setDocumentFileName(QString fileName);
     QString documentFileName() const;
@@ -71,6 +79,7 @@ public:
     void formatSelection();
     void highlightSearchMatches(const QString& text, bool caseSensitive);
     void clearSearchMatches();
+    void flashLine(int lineNumber);
     void applyAppearanceSettings(const EditorAppearanceOptions& options);
     void startFoldRegionMarkMode();
     void cancelFoldRegionMarkMode();
@@ -101,7 +110,9 @@ protected:
     void dropEvent(QDropEvent* event) override;
 
     void mousePressEvent(QMouseEvent *event) override;
+    void mouseDoubleClickEvent(QMouseEvent *event) override;
     void mouseMoveEvent(QMouseEvent *event) override;
+    void mouseReleaseEvent(QMouseEvent *event) override;
     void leaveEvent(QEvent *event) override;
 
 private:
