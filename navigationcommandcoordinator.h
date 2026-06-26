@@ -69,6 +69,9 @@ private:
     bool replayingHistory = false;
     bool signalsConnected = false;
 
+    void recordLocationBeforeNavigation(
+        const NavigationLocation& current,
+        const NavigationLocation& destination);
     void recordCurrentLocationBeforeNavigation(
         const NavigationLocation& destination);
     bool applyLocation(const NavigationLocation& location);

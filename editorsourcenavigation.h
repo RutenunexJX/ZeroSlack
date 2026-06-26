@@ -7,6 +7,7 @@
 
 #include <functional>
 #include <memory>
+#include <QPoint>
 
 class EditorSelection;
 class MyCodeEditor;
@@ -111,6 +112,8 @@ private:
     bool popupNumericMode = false;
     bool popupPreviewMode = false;
     bool popupPinnedBySelection = false;
+    bool hasLastMousePosition = false;
+    QPoint lastMousePosition;
     int popupStartPos = -1;
     int popupEndPos = -1;
 };

@@ -67,6 +67,7 @@
 #include "symbolhoverservice.h"
 #include "modemanager.h"
 #include "navigationmanager.h"
+#include "navigationcommandcoordinator.h"
 #include "problemspanelcoordinator.h"
 #include "referencespanelcoordinator.h"
 #include "relationshipspanelcoordinator.h"
@@ -111,6 +112,33 @@ static void expectBool(const char* what, bool got, bool want)
     printf("[%s] %-48s got=%s want=%s\n",
            ok ? "PASS" : "FAIL", what, got ? "true" : "false", want ? "true" : "false");
     fflush(stdout);
+}
+
+static QString visibleEditorHoverPopupText(bool* visible = nullptr)
+{
+    bool found = false;
+    QString text;
+    for (QWidget* widget : QApplication::topLevelWidgets()) {
+        if (!widget || widget->objectName() != QStringLiteral("editorHoverPopup")
+            || !widget->isVisible()) {
+            continue;
+        }
+        found = true;
+        const QList<QLabel*> labels = widget->findChildren<QLabel*>();
+        for (const QLabel* label : labels)
+            text += label->text() + QLatin1Char('\n');
+    }
+    if (visible)
+        *visible = found;
+    return text;
+}
+
+static void hideEditorHoverPopups()
+{
+    for (QWidget* widget : QApplication::topLevelWidgets()) {
+        if (widget && widget->objectName() == QStringLiteral("editorHoverPopup"))
+            widget->hide();
+    }
 }
 
 static std::unique_ptr<QSettings> makeTemporarySettings(
@@ -1024,21 +1052,31 @@ static void runEditorHoverPreviewRegression(const QString& workspacePath)
     const QStringList rtlLines = rtlTopText.split(QLatin1Char('\n'));
     int moduleLine = -1;
     int signalLine = -1;
+    int useLine = -1;
     for (int i = 0; i < rtlLines.size(); ++i) {
         if (moduleLine < 0 && rtlLines.at(i).contains(QStringLiteral("module rtl_top")))
             moduleLine = i + 1;
         if (signalLine < 0 && rtlLines.at(i).contains(QStringLiteral("clk_main")))
             signalLine = i + 1;
+        if (useLine < 0 && signalLine > 0 && i + 1 != signalLine
+            && rtlLines.at(i).contains(QStringLiteral("clk_main"))
+            && !rtlLines.at(i).trimmed().startsWith(QStringLiteral("//"))) {
+            useLine = i + 1;
+        }
     }
     expectBool("hover fixture has module line", moduleLine > 0, true);
     expectBool("hover fixture has signal line", signalLine > 0, true);
-    if (moduleLine <= 0 || signalLine <= 0)
+    expectBool("hover fixture has signal use line", useLine > 0, true);
+    if (moduleLine <= 0 || signalLine <= 0 || useLine <= 0)
         return;
 
     const int signalColumn =
         rtlLines.at(signalLine - 1).indexOf(QStringLiteral("clk_main"));
+    const int useColumn =
+        rtlLines.at(useLine - 1).indexOf(QStringLiteral("clk_main"));
     expectBool("hover fixture has signal column", signalColumn >= 0, true);
-    if (signalColumn < 0)
+    expectBool("hover fixture has signal use column", useColumn >= 0, true);
+    if (signalColumn < 0 || useColumn < 0)
         return;
 
     const SemanticSymbolRecord moduleRecord =
@@ -1208,23 +1246,74 @@ static void runEditorHoverPreviewRegression(const QString& workspacePath)
     QTest::qWait(20);
 
     bool doubleClickHoverVisible = false;
-    QString doubleClickHoverText;
-    for (QWidget* widget : QApplication::topLevelWidgets()) {
-        if (!widget || widget->objectName() != QStringLiteral("editorHoverPopup")
-            || !widget->isVisible()) {
-            continue;
-        }
-        doubleClickHoverVisible = true;
-        const QList<QLabel*> labels = widget->findChildren<QLabel*>();
-        for (const QLabel* label : labels)
-            doubleClickHoverText += label->text() + QLatin1Char('\n');
-        widget->hide();
-    }
+    const QString doubleClickHoverText =
+        visibleEditorHoverPopupText(&doubleClickHoverVisible);
     expectBool("editor double-click shows symbol hover",
                doubleClickHoverVisible
                    && doubleClickHoverText.contains(QStringLiteral("clk_main"))
                    && doubleClickHoverText.contains(QStringLiteral("owner: rtl_top")),
                true);
+    QTest::mouseMove(hoverEditor.viewport(), signalPoint + QPoint(2, 0));
+    QApplication::processEvents();
+    QTest::qWait(20);
+    bool movedDoubleClickHoverVisible = false;
+    visibleEditorHoverPopupText(&movedDoubleClickHoverVisible);
+    expectBool("editor double-click hover survives tiny mouse move",
+               movedDoubleClickHoverVisible,
+               true);
+    hideEditorHoverPopups();
+
+    MyCodeEditor numericEditor;
+    numericEditor.setLineWrapMode(QPlainTextEdit::NoWrap);
+    numericEditor.resize(500, 160);
+    numericEditor.setPlainText(
+        QStringLiteral("module radix_hover;\n"
+                       "initial a <= 'haaaa;\n"
+                       "endmodule\n"));
+    numericEditor.show();
+    QApplication::processEvents();
+    const int numericPosition =
+        numericEditor.toPlainText().indexOf(QStringLiteral("haaaa"));
+    expectBool("numeric hover fixture has literal",
+               numericPosition >= 0,
+               true);
+    if (numericPosition < 0) {
+        hideEditorHoverPopups();
+        if (previousGlobalSnapshot)
+            SemanticIndex::getInstance()->setSnapshot(previousGlobalSnapshot);
+        else
+            SemanticIndex::getInstance()->clearSnapshot();
+        return;
+    }
+    QTextCursor numericCursor(numericEditor.document());
+    numericCursor.setPosition(numericPosition);
+    numericEditor.setTextCursor(numericCursor);
+    numericEditor.ensureCursorVisible();
+    const QPoint numericPoint = numericEditor.cursorRect(numericCursor).center();
+    QTest::mouseDClick(numericEditor.viewport(),
+                       Qt::LeftButton,
+                       Qt::NoModifier,
+                       numericPoint);
+    QApplication::processEvents();
+    QTest::qWait(20);
+    bool numericHoverVisible = false;
+    const QString numericHoverText =
+        visibleEditorHoverPopupText(&numericHoverVisible);
+    expectBool("numeric double-click shows other base conversions",
+               numericHoverVisible
+                   && numericHoverText.contains(QStringLiteral("(B)"))
+                   && numericHoverText.contains(QStringLiteral("(D)"))
+                   && !numericHoverText.contains(QStringLiteral("(H)")),
+               true);
+    QTest::mouseMove(numericEditor.viewport(), numericPoint + QPoint(2, 0));
+    QApplication::processEvents();
+    QTest::qWait(20);
+    bool movedNumericHoverVisible = false;
+    visibleEditorHoverPopupText(&movedNumericHoverVisible);
+    expectBool("numeric double-click hover survives tiny mouse move",
+               movedNumericHoverVisible,
+               true);
+    hideEditorHoverPopups();
 
     if (previousGlobalSnapshot)
         SemanticIndex::getInstance()->setSnapshot(previousGlobalSnapshot);
@@ -4840,6 +4929,29 @@ int main(int argc, char** argv)
                    savedDoc.savedTextVersion == savedDoc.textVersion,
                    true);
 
+        const QString shortcutSavedText =
+            QStringLiteral("module shortcut_saved_tab;\nendmodule\n");
+        saveEditor->setPlainText(shortcutSavedText);
+        saveEditor->setFocus();
+        QTest::keyClick(saveEditor, Qt::Key_S, Qt::ControlModifier);
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
+        QFile shortcutSavedFile(savePath);
+        expectBool("ctrl-s save file reopens",
+                   shortcutSavedFile.open(QIODevice::ReadOnly | QFile::Text),
+                   true);
+        const QString shortcutSavedFileText =
+            QTextStream(&shortcutSavedFile).readAll();
+        shortcutSavedFile.close();
+        expectBool("ctrl-s saves current editor with focus",
+                   shortcutSavedFileText == shortcutSavedText,
+                   true);
+        expectBool("ctrl-s emits fileSaved",
+                   fileSavedSpy.count() == 2,
+                   true);
+        expectBool("ctrl-s emits documentSaved",
+                   documentSavedSpy.count() == 2,
+                   true);
+
         const QString formatOnSaveText =
             QStringLiteral("module format_save;\n"
                            "logic [7:0] data;\n"
@@ -4977,6 +5089,23 @@ int main(int argc, char** argv)
                                && window.tabManager->editorCount()
                                       == editorCountBeforeIncludeClick + 2,
                            true);
+                if (openedIncludeEditor) {
+                    QTest::mouseClick(openedIncludeEditor->viewport(),
+                                      Qt::BackButton,
+                                      Qt::NoModifier,
+                                      QPoint(4, 4));
+                    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+                }
+                const DocumentSnapshot includeBackDocument =
+                    window.tabManager->getCurrentDocument();
+                expectBool("mouse back returns from include target",
+                           QDir::cleanPath(QDir::fromNativeSeparators(
+                               QFileInfo(includeBackDocument.fileName)
+                                   .absoluteFilePath()))
+                               == QDir::cleanPath(QDir::fromNativeSeparators(
+                                   QFileInfo(includeSourcePath)
+                                       .absoluteFilePath())),
+                           true);
 
                 const int editorCountAfterFirstIncludeClick =
                     window.tabManager->editorCount();
@@ -5000,6 +5129,57 @@ int main(int argc, char** argv)
                            window.tabManager->editorCount()
                                == editorCountAfterFirstIncludeClick,
                            true);
+
+                MyCodeEditor* targetHistoryEditor =
+                    window.tabManager->getCurrentEditor();
+                const bool targetHasSecondLine =
+                    targetHistoryEditor
+                    && targetHistoryEditor->document()->blockCount() > 1;
+                expectBool("include target has line-navigation history fixture",
+                           targetHasSecondLine,
+                           true);
+                if (targetHasSecondLine) {
+                    QTextCursor oldTargetCursor(
+                        targetHistoryEditor->document()->findBlockByNumber(0));
+                    targetHistoryEditor->setTextCursor(oldTargetCursor);
+                    expectBool("return to include source before line navigation",
+                               window.tabManager->activateOpenFile(includeSourcePath),
+                               true);
+                    includeEditor = window.tabManager->getCurrentEditor();
+                    if (includeEditor) {
+                        includeEditor->setTextCursor(includeCursor);
+                        includeEditor->centerCursor();
+                        QCoreApplication::processEvents(
+                            QEventLoop::AllEvents,
+                            50);
+                    }
+                    window.navigationCommandCoordinator->navigateToFileAndLine(
+                        includeTargetPath,
+                        2,
+                        1);
+                    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+                    MyCodeEditor* lineTargetEditor =
+                        window.tabManager->getCurrentEditor();
+                    if (lineTargetEditor) {
+                        QTest::mouseClick(lineTargetEditor->viewport(),
+                                          Qt::BackButton,
+                                          Qt::NoModifier,
+                                          QPoint(4, 4));
+                        QCoreApplication::processEvents(
+                            QEventLoop::AllEvents,
+                            50);
+                    }
+                    const DocumentSnapshot lineBackDocument =
+                        window.tabManager->getCurrentDocument();
+                    expectBool("mouse back after cross-file line jump skips target old cursor",
+                               QDir::cleanPath(QDir::fromNativeSeparators(
+                                   QFileInfo(lineBackDocument.fileName)
+                                       .absoluteFilePath()))
+                                   == QDir::cleanPath(QDir::fromNativeSeparators(
+                                       QFileInfo(includeSourcePath)
+                                           .absoluteFilePath())),
+                               true);
+                }
             }
         }
     }
@@ -5336,17 +5516,28 @@ int main(int argc, char** argv)
                                                    QStringLiteral("counter       <= add_one(counter)"));
         expectBool("found Ctrl+Click source", jumpBlock.isValid(), true);
         if (jumpBlock.isValid()) {
-            const int clickPosition = jumpBlock.position() + jumpBlock.text().indexOf(QStringLiteral("counter")) + 3;
-            QTextCursor cursor(editor->document());
-            cursor.setPosition(clickPosition);
-            editor->setTextCursor(cursor);
+            const int counterStart =
+                jumpBlock.position()
+                + jumpBlock.text().indexOf(QStringLiteral("counter"));
+            const int clickPosition = counterStart + 3;
+            QTextCursor clickCursor(editor->document());
+            clickCursor.setPosition(clickPosition);
+            QTextCursor selectedCounter(editor->document());
+            selectedCounter.setPosition(counterStart);
+            selectedCounter.setPosition(
+                counterStart + QStringLiteral("counter").size(),
+                QTextCursor::KeepAnchor);
+            editor->setTextCursor(selectedCounter);
             editor->centerCursor();
             QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-            const QPoint clickPoint = editor->cursorRect(cursor).center();
+            const QPoint clickPoint = editor->cursorRect(clickCursor).center();
             QTest::mouseClick(editor->viewport(), Qt::LeftButton, Qt::ControlModifier, clickPoint);
 
             expectBool("Ctrl+Click jumps to counter definition",
                        waitUntil([&]() { return editor->textCursor().blockNumber() == 78; }, 2000),
+                       true);
+            expectBool("Ctrl+Click clears double-click style selection",
+                       !editor->textCursor().hasSelection(),
                        true);
         }
     }

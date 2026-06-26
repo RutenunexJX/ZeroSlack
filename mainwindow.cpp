@@ -571,6 +571,10 @@ void MainWindow::setupFileCommandCoordinator()
 {
     fileCommandCoordinator = std::make_unique<FileCommandCoordinator>(
         tabManager.get(), workspaceManager.get(), this);
+    if (ui->save_file) {
+        ui->save_file->setShortcutContext(Qt::ApplicationShortcut);
+        addAction(ui->save_file);
+    }
     fileCommandCoordinator->connectActions(
         ui->new_file,
         ui->open_file,

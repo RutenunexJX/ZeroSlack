@@ -126,15 +126,20 @@ void NavigationCommandCoordinator::navigateToFileAndLine(
     int lineNumber,
     int columnNumber)
 {
-    recordCurrentLocationBeforeNavigation({filePath, lineNumber, columnNumber});
+    const NavigationLocation current = targets.currentLocation();
+    const NavigationLocation destination{filePath, lineNumber, columnNumber};
 
     if (!targets.activateOrOpenFile(filePath))
         return;
 
+    recordLocationBeforeNavigation(current, destination);
+
     if (lineNumber <= 0)
         return;
 
-    navigateEditorToLine(targets.currentEditor(), lineNumber, columnNumber);
+    lineResolver.applyToEditor(targets.currentEditor(),
+                               lineNumber,
+                               columnNumber);
 }
 
 void NavigationCommandCoordinator::revealFileAndFlashLine(
@@ -210,11 +215,14 @@ void NavigationCommandCoordinator::navigateForward()
 void NavigationCommandCoordinator::recordCurrentLocationBeforeNavigation(
     const NavigationLocation& destination)
 {
-    if (replayingHistory)
-        return;
+    recordLocationBeforeNavigation(targets.currentLocation(), destination);
+}
 
-    const NavigationLocation current = targets.currentLocation();
-    if (!current.isValid() || current == destination)
+void NavigationCommandCoordinator::recordLocationBeforeNavigation(
+    const NavigationLocation& current,
+    const NavigationLocation& destination)
+{
+    if (replayingHistory || !current.isValid() || current == destination)
         return;
 
     if (backStack.isEmpty() || !(backStack.last() == current))

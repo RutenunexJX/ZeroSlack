@@ -10,12 +10,80 @@
 #include <QActionGroup>
 #include <QContextMenuEvent>
 #include <QCursor>
+#include <QDir>
+#include <QFileInfo>
 #include <QKeyEvent>
 #include <QMenu>
 #include <QMouseEvent>
 #include <QTextBlock>
 #include <QTextCursor>
 #include <QWidget>
+
+namespace {
+QString normalizedSourceNavigationFileName(const QString& fileName)
+{
+    if (fileName.isEmpty())
+        return QString();
+    return QDir::cleanPath(
+        QDir::fromNativeSeparators(QFileInfo(fileName).absoluteFilePath()));
+}
+
+bool definitionPreviewTargetIsCurrentLocation(
+    const EditorSemanticContext& context,
+    const DefinitionPreviewReport& report)
+{
+    if (!report.targetResolved
+        || context.fileName.isEmpty()
+        || context.cursorLine <= 0
+        || report.targetLine <= 0
+        || context.cursorLine != report.targetLine) {
+        return false;
+    }
+
+    const QString targetFile = report.targetFile.isEmpty()
+        ? context.fileName
+        : report.targetFile;
+    if (normalizedSourceNavigationFileName(context.fileName)
+        != normalizedSourceNavigationFileName(targetFile)) {
+        return false;
+    }
+
+    if (report.targetColumn <= 0 || context.column < 0)
+        return true;
+
+    const int oneBasedColumn = context.column + 1;
+    const int symbolWidth = qMax(1, report.symbolName.size());
+    return oneBasedColumn >= report.targetColumn
+        && oneBasedColumn <= report.targetColumn + symbolWidth;
+}
+
+int numericPopupSelectionStart(const QString& text,
+                               int startPosition,
+                               int endPosition)
+{
+    if (startPosition < 0 || endPosition <= startPosition
+        || startPosition >= text.size()) {
+        return startPosition;
+    }
+
+    const QString literal =
+        text.mid(startPosition, endPosition - startPosition);
+    const int quote = literal.indexOf(QLatin1Char('\''));
+    if (quote < 0 || quote + 1 >= literal.size())
+        return startPosition;
+
+    const QChar baseChar = literal.at(quote + 1).toLower();
+    if (baseChar == QLatin1Char('b')
+        || baseChar == QLatin1Char('d')
+        || baseChar == QLatin1Char('h')) {
+        return startPosition + quote + 2;
+    }
+    if (baseChar.isDigit())
+        return startPosition + quote + 1;
+
+    return startPosition;
+}
+}
 
 EditorSourceNavigationUi::~EditorSourceNavigationUi() = default;
 
@@ -55,7 +123,9 @@ void EditorSourceNavigationUi::handleControlKeyPress(
         return;
     }
 
-    const QPoint mousePos = editor->mapFromGlobal(QCursor::pos());
+    const QPoint mousePos = hasLastMousePosition
+        ? lastMousePosition
+        : editor->mapFromGlobal(QCursor::pos());
     if (editor->rect().contains(mousePos)) {
         refreshHoverAt(
             editor,
@@ -149,6 +219,9 @@ void EditorSourceNavigationUi::handleMouseMove(
     const EditorSourceContextProvider& contextProvider,
     EditorSelection& selections)
 {
+    lastMousePosition = event->pos();
+    hasLastMousePosition = true;
+
     const bool isCtrlPressed =
         (event->modifiers() & Qt::ControlModifier);
 
@@ -173,6 +246,7 @@ void EditorSourceNavigationUi::handleLeave(
     MyCodeEditor* editor,
     EditorSelection& selections)
 {
+    hasLastMousePosition = false;
     sourceHover.setCtrlPressed(false);
     if (popupPinnedBySelection && popupSelectionStillActive(editor))
         return;
@@ -307,10 +381,17 @@ bool EditorSourceNavigationUi::requestNavigationAtPosition(
 {
     const EditorSourceNavigationTarget target =
         targetAtPosition(editor, position, service, contextProvider);
+    if (!target.matched || target.text.isEmpty())
+        return false;
+
+    QTextCursor clickCursor = editor->cursorForPosition(position);
+    clickCursor.clearSelection();
+    editor->setTextCursor(clickCursor);
+
     emit editor->sourceNavigationRequested(
         target,
         contextProvider(target.cursorPosition, false));
-    return target.matched && !target.text.isEmpty();
+    return true;
 }
 
 void EditorSourceNavigationUi::refreshHoverAt(
@@ -382,6 +463,10 @@ void EditorSourceNavigationUi::refreshPopupAt(
     if (previewMode) {
         const DefinitionPreviewReport report =
             service->definitionPreviewReport(context);
+        if (definitionPreviewTargetIsCurrentLocation(context, report)) {
+            closePopup();
+            return;
+        }
         if (report.symbolName.isEmpty()
             && report.unavailableReason.isEmpty()) {
             closePopup();
@@ -514,6 +599,12 @@ bool EditorSourceNavigationUi::popupSelectionStillActive(
     if (!cursor.hasSelection())
         return false;
 
-    return cursor.selectionStart() <= popupStartPos
+    const int selectionStart = popupNumericMode
+        ? numericPopupSelectionStart(editor->toPlainText(),
+                                     popupStartPos,
+                                     popupEndPos)
+        : popupStartPos;
+
+    return cursor.selectionStart() <= selectionStart
         && cursor.selectionEnd() >= popupEndPos;
 }

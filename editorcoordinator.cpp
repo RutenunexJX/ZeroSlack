@@ -498,7 +498,9 @@ void EditorCoordinator::handleIncludeOpenRequested(
         return;
     }
 
-    if (tabManager)
+    if (dependencies.canNavigate())
+        dependencies.navigateToFileAndLine(targetPath, -1, -1);
+    else if (tabManager)
         tabManager->openFileInTab(targetPath);
 }
 
