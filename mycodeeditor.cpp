@@ -16,14 +16,56 @@
 #include <QMouseEvent>
 #include <QPaintEvent>
 #include <QPushButton>
+#include <QScrollBar>
 #include <QTextCursor>
 #include <QTextDocument>
 #include <QVBoxLayout>
+#include <QWheelEvent>
 
 #include <memory>
 #include <utility>
 
 namespace {
+int wheelNotchSteps(QWheelEvent* event)
+{
+    if (!event)
+        return 0;
+
+    const int angleY = event->angleDelta().y();
+    if (angleY == 0)
+        return event->pixelDelta().y() > 0
+            ? 1
+            : (event->pixelDelta().y() < 0 ? -1 : 0);
+
+    const int absoluteSteps = qMax(1, qAbs(angleY) / 120);
+    return angleY > 0 ? absoluteSteps : -absoluteSteps;
+}
+
+bool handleControlWheelFastScroll(MyCodeEditor* editor, QWheelEvent* event)
+{
+    if (!editor || !event)
+        return false;
+
+    QScrollBar* bar = editor->verticalScrollBar();
+    if (!bar)
+        return false;
+
+    if (!event->pixelDelta().isNull()) {
+        bar->setValue(bar->value() - event->pixelDelta().y() * 3);
+        event->accept();
+        return true;
+    }
+
+    const int steps = wheelNotchSteps(event);
+    if (steps == 0)
+        return false;
+
+    const int fastStep = qMax(bar->singleStep() * 6, bar->pageStep() / 2);
+    bar->setValue(bar->value() - steps * fastStep);
+    event->accept();
+    return true;
+}
+
 void showFindDialog(MyCodeEditor* editor)
 {
     if (!editor)
@@ -424,6 +466,27 @@ void MyCodeEditor::mouseReleaseEvent(QMouseEvent *event)
         return;
 
     QPlainTextEdit::mouseReleaseEvent(event);
+}
+
+void MyCodeEditor::wheelEvent(QWheelEvent* event)
+{
+    if (event
+        && event->modifiers().testFlag(Qt::ControlModifier)
+        && event->modifiers().testFlag(Qt::ShiftModifier)) {
+        const int steps = wheelNotchSteps(event);
+        if (steps != 0)
+            emit fontZoomRequested(steps);
+        event->accept();
+        return;
+    }
+
+    if (event
+        && event->modifiers().testFlag(Qt::ControlModifier)
+        && handleControlWheelFastScroll(this, event)) {
+        return;
+    }
+
+    QPlainTextEdit::wheelEvent(event);
 }
 
 void MyCodeEditor::leaveEvent(QEvent *event)

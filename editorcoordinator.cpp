@@ -412,6 +412,16 @@ void EditorCoordinator::attachEditor(MyCodeEditor* editor)
                     return;
                 formatterSettings->setFormatOnSaveEnabled(enabled);
             });
+    connect(editor, &MyCodeEditor::fontZoomRequested,
+            this, [this](int steps) {
+                if (!appearanceSettings || steps == 0)
+                    return;
+
+                const EditorAppearanceOptions options =
+                    appearanceSettings->options();
+                appearanceSettings->setFontSizePt(
+                    options.fontSizePt + steps);
+            });
     connect(editor, &MyCodeEditor::foldShelfRequested,
             this, [this]() {
                 if (foldShelfRequestedHandler)

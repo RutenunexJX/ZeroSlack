@@ -8,7 +8,6 @@ This file is a running checklist for problems to fix and new features to conside
 
 ## Feature Ideas
 
-- [ ] Add editor font zoom with `Ctrl+Shift+mouse wheel`: wheel up increases editor font size, and wheel down decreases editor font size. Keep `Ctrl+mouse wheel` reserved for fast scrolling.
 - [ ] Change bracket range quick-select from `Ctrl+left-click` to `Alt+left-click`, so `Ctrl+left-click` inside `[PW-1:0]` and similar ranges can consistently mean jump-to-definition for parameters/macros/symbols.
 - [ ] Enhance bracket range Up/Down adjustment for parameter or expression bounds. Examples: `[P_TEST:0]` plus Up should become `[P_TEST+1:0]`; Down should first ensure `P_TEST-1` is not below the right bound, then become `[P_TEST-1:0]`; complex expressions should be parenthesized before arithmetic, e.g. `[P_TEST0*P_TEST1:0]` Down becomes `[(P_TEST0*P_TEST1)-1:0]`.
 - [ ] Add a dedicated semantic highlight role for enum values at declaration and use sites, so enum constants such as `IDLE`, `BUSY`, and `DONE` are visually distinct from enum types, enum variables, parameters, macros, and ordinary identifiers. Keep declaration-site ghost values, and use hover/double-click details for richer enum value information instead of always-on inline labels.
@@ -35,3 +34,4 @@ This file is a running checklist for problems to fix and new features to conside
 - [x] When multiple workspaces are open, switching the active workspace should hide editor tabs that belong to other workspaces, so each workspace tab shows only its own files instead of mixing all open editor tabs together. Scratch tabs and files outside all opened workspaces are scoped as global tabs and stay visible in every workspace.
 - [x] Add a visible close action for workspace tabs/workspaces. Workspace tabs now show close buttons, closing a workspace prompts for unsaved files in that workspace before removing its editor tabs, switches the active workspace predictably, tears down the previous watcher, and leaves scratch/external tabs available.
 - [x] Add workspace alias rename from the workspace tab right-click menu. The action is named `Rename`, edits only the workspace alias/display name, preserves the disk folder path, rejects empty or duplicate aliases, and updates workspace tabs plus recent-workspace metadata.
+- [x] Add editor font zoom with `Ctrl+Shift+mouse wheel`: wheel up increases editor font size, wheel down decreases editor font size, and `Ctrl+mouse wheel` remains a fast-scroll gesture instead of changing font size.

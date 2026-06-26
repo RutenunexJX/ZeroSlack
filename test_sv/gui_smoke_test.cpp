@@ -25,6 +25,7 @@
 #include <QMouseEvent>
 #include <QMenu>
 #include <QPlainTextEdit>
+#include <QScrollBar>
 #include <QTemporaryDir>
 #include <QTextBlock>
 #include <QTextCursor>
@@ -32,6 +33,7 @@
 #include <QTimer>
 #include <QToolButton>
 #include <QTreeWidget>
+#include <QWheelEvent>
 #include <QtTest/QTest>
 
 #include <algorithm>
@@ -140,6 +142,28 @@ static void hideEditorHoverPopups()
         if (widget && widget->objectName() == QStringLiteral("editorHoverPopup"))
             widget->hide();
     }
+}
+
+static bool sendEditorWheel(MyCodeEditor* editor,
+                            Qt::KeyboardModifiers modifiers,
+                            int angleY)
+{
+    if (!editor || !editor->viewport())
+        return false;
+
+    const QPoint point(16, 16);
+    const QPoint globalPoint = editor->viewport()->mapToGlobal(point);
+    QWheelEvent event(QPointF(point),
+                      QPointF(globalPoint),
+                      QPoint(),
+                      QPoint(0, angleY),
+                      Qt::NoButton,
+                      modifiers,
+                      Qt::NoScrollPhase,
+                      false);
+    event.ignore();
+    QCoreApplication::sendEvent(editor->viewport(), &event);
+    return event.isAccepted();
 }
 
 static std::unique_ptr<QSettings> makeTemporarySettings(
@@ -370,6 +394,39 @@ static void runEditorAppearanceCoordinatorRegression()
     expectBool("appearance coordinator applies new editor",
                newEditor && newEditor->font().pointSize() == options.fontSizePt,
                true);
+    if (newEditor) {
+        QStringList scrollLines;
+        for (int i = 0; i < 200; ++i)
+            scrollLines.append(QStringLiteral("line %1").arg(i));
+        newEditor->setPlainText(scrollLines.join(QLatin1Char('\n')));
+        newEditor->resize(420, 180);
+        newEditor->show();
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+
+        expectBool("appearance wheel zoom event accepted",
+                   sendEditorWheel(newEditor,
+                                   Qt::ControlModifier | Qt::ShiftModifier,
+                                   120),
+                   true);
+        expectBool("appearance wheel zoom increases font size",
+                   settings.options().fontSizePt == options.fontSizePt + 1
+                       && newEditor->font().pointSize()
+                              == options.fontSizePt + 1,
+                   true);
+
+        const int fontSizeAfterZoom = settings.options().fontSizePt;
+        const int scrollBefore = newEditor->verticalScrollBar()->value();
+        expectBool("appearance ctrl wheel fast scroll accepted",
+                   sendEditorWheel(newEditor, Qt::ControlModifier, -120),
+                   true);
+        expectBool("appearance ctrl wheel keeps font size",
+                   settings.options().fontSizePt == fontSizeAfterZoom
+                       && newEditor->font().pointSize() == fontSizeAfterZoom,
+                   true);
+        expectBool("appearance ctrl wheel scrolls editor",
+                   newEditor->verticalScrollBar()->value() >= scrollBefore,
+                   true);
+    }
 }
 
 static void runFormatterSettingsRegression()

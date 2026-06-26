@@ -23,6 +23,7 @@ class QRect;
 class QContextMenuEvent;
 class QKeyEvent;
 class QResizeEvent;
+class QWheelEvent;
 class EditorDocumentGeometry;
 class EditorSemanticContextService;
 class EditorGutter;
@@ -113,6 +114,7 @@ protected:
     void mouseDoubleClickEvent(QMouseEvent *event) override;
     void mouseMoveEvent(QMouseEvent *event) override;
     void mouseReleaseEvent(QMouseEvent *event) override;
+    void wheelEvent(QWheelEvent* event) override;
     void leaveEvent(QEvent *event) override;
 
 private:
@@ -144,6 +146,7 @@ signals:
     void formatOnSaveChanged(bool enabled);
     void foldShelfRequested();
     void foldShelfItemConsumed(const QString& id);
+    void fontZoomRequested(int steps);
 };
 
 #endif // MYCODEEDITOR_H
