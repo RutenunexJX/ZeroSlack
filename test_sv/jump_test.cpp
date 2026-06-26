@@ -230,9 +230,14 @@ int main(int argc, char** argv) {
     const QString decorationFile =
         QFileInfo(path).dir().filePath(QStringLiteral("semantic_decoration_fixture.sv"));
     const QString decorationContent =
-        QStringLiteral("module top;\n"
-                       "  localparam int WIDTH = 8;\n"
-                       "  logic clk;\n"
+        QStringLiteral("module top #(parameter int WIDTH = 8) (\n"
+                       "  input logic clk,\n"
+                       "  output logic done\n"
+                       ");\n"
+                       "  typedef enum logic [1:0] {IDLE, BUSY, DONE} state_t;\n"
+                       "  state_t state;\n"
+                       "  localparam int DEPTH = WIDTH + 1;\n"
+                       "  assign done = (state == IDLE) && clk && (DEPTH > WIDTH);\n"
                        "  child u_child (\n"
                        "    .clk(clk)\n"
                        "  );\n"
@@ -248,25 +253,81 @@ int main(int argc, char** argv) {
             .record());
     decorationRecords.append(
         SemanticFixtureRecordBuilder(QStringLiteral("WIDTH"),
-                                     SymbolTaxonomy::DeclarationKind::Localparam)
+                                     SymbolTaxonomy::DeclarationKind::Parameter)
             .withFile(decorationFile)
-            .withLine(2, 18)
-            .withCollectorKind(SymbolTaxonomy::CollectorKind::Localparam)
+            .withLine(1, 28)
+            .withCollectorKind(SymbolTaxonomy::CollectorKind::Parameter)
             .inModule(QStringLiteral("top"))
             .record());
     decorationRecords.append(
         SemanticFixtureRecordBuilder(QStringLiteral("clk"),
+                                     SymbolTaxonomy::DeclarationKind::Port)
+            .withFile(decorationFile)
+            .withLine(2, 15)
+            .withCollectorKind(SymbolTaxonomy::CollectorKind::PortInput)
+            .inModule(QStringLiteral("top"))
+            .record());
+    decorationRecords.append(
+        SemanticFixtureRecordBuilder(QStringLiteral("done"),
+                                     SymbolTaxonomy::DeclarationKind::Port)
+            .withFile(decorationFile)
+            .withLine(3, 16)
+            .withCollectorKind(SymbolTaxonomy::CollectorKind::PortOutput)
+            .inModule(QStringLiteral("top"))
+            .record());
+    decorationRecords.append(
+        SemanticFixtureRecordBuilder(QStringLiteral("state_t"),
+                                     SymbolTaxonomy::DeclarationKind::Typedef)
+            .withFile(decorationFile)
+            .withLine(5, 57)
+            .withCollectorKind(SymbolTaxonomy::CollectorKind::Typedef)
+            .inModule(QStringLiteral("top"))
+            .record());
+    decorationRecords.append(
+        SemanticFixtureRecordBuilder(QStringLiteral("IDLE"),
+                                     SymbolTaxonomy::DeclarationKind::Enum)
+            .withFile(decorationFile)
+            .withLine(5, 31)
+            .withCollectorKind(SymbolTaxonomy::CollectorKind::EnumValue)
+            .inModule(QStringLiteral("top"))
+            .record());
+    decorationRecords.append(
+        SemanticFixtureRecordBuilder(QStringLiteral("BUSY"),
+                                     SymbolTaxonomy::DeclarationKind::Enum)
+            .withFile(decorationFile)
+            .withLine(5, 37)
+            .withCollectorKind(SymbolTaxonomy::CollectorKind::EnumValue)
+            .inModule(QStringLiteral("top"))
+            .record());
+    decorationRecords.append(
+        SemanticFixtureRecordBuilder(QStringLiteral("DONE"),
+                                     SymbolTaxonomy::DeclarationKind::Enum)
+            .withFile(decorationFile)
+            .withLine(5, 43)
+            .withCollectorKind(SymbolTaxonomy::CollectorKind::EnumValue)
+            .inModule(QStringLiteral("top"))
+            .record());
+    decorationRecords.append(
+        SemanticFixtureRecordBuilder(QStringLiteral("state"),
                                      SymbolTaxonomy::DeclarationKind::Signal)
             .withFile(decorationFile)
-            .withLine(3, 9)
-            .withCollectorKind(SymbolTaxonomy::CollectorKind::Logic)
+            .withLine(6, 11)
+            .withCollectorKind(SymbolTaxonomy::CollectorKind::EnumVariable)
+            .inModule(QStringLiteral("top"))
+            .record());
+    decorationRecords.append(
+        SemanticFixtureRecordBuilder(QStringLiteral("DEPTH"),
+                                     SymbolTaxonomy::DeclarationKind::Localparam)
+            .withFile(decorationFile)
+            .withLine(7, 18)
+            .withCollectorKind(SymbolTaxonomy::CollectorKind::Localparam)
             .inModule(QStringLiteral("top"))
             .record());
     decorationRecords.append(
         SemanticFixtureRecordBuilder(QStringLiteral("u_child"),
                                      SymbolTaxonomy::DeclarationKind::Instance)
             .withFile(decorationFile)
-            .withLine(4, 9)
+            .withLine(9, 9)
             .withCollectorKind(SymbolTaxonomy::CollectorKind::Inst)
             .withType(QStringLiteral("child"),
                       QStringLiteral("child"),
@@ -277,7 +338,7 @@ int main(int argc, char** argv) {
         SemanticFixtureRecordBuilder(QStringLiteral("clk"),
                                      SymbolTaxonomy::DeclarationKind::Port)
             .withFile(decorationFile)
-            .withRange(5, 6, 5, 9)
+            .withRange(10, 6, 10, 9)
             .withCollectorKind(SymbolTaxonomy::CollectorKind::InstPin)
             .withType(QStringLiteral("child"),
                       QStringLiteral("child"),
@@ -304,6 +365,16 @@ int main(int argc, char** argv) {
         }
         return false;
     };
+    auto decorationCount = [&decorationReport](
+        SemanticDecorationRole role,
+        const QString& text) {
+        int count = 0;
+        for (const SemanticDecoration& decoration : decorationReport.decorations) {
+            if (decoration.role == role && decoration.text == text)
+                ++count;
+        }
+        return count;
+    };
     expectBool("SemanticDecoration maps module/interface role",
                hasDecoration(SemanticDecorationRole::ModuleInterface,
                              QStringLiteral("top")),
@@ -311,6 +382,30 @@ int main(int argc, char** argv) {
     expectBool("SemanticDecoration maps parameter role",
                hasDecoration(SemanticDecorationRole::Parameter,
                              QStringLiteral("WIDTH")),
+               true);
+    expectBool("SemanticDecoration maps parameter references",
+               decorationCount(SemanticDecorationRole::Parameter,
+                               QStringLiteral("WIDTH")) >= 2
+                   && decorationCount(SemanticDecorationRole::Parameter,
+                                      QStringLiteral("DEPTH")) >= 2,
+               true);
+    expectBool("SemanticDecoration maps module port role",
+               decorationCount(SemanticDecorationRole::ModulePort,
+                               QStringLiteral("clk")) >= 2
+                   && decorationCount(SemanticDecorationRole::ModulePort,
+                                      QStringLiteral("done")) >= 2,
+               true);
+    expectBool("SemanticDecoration maps typedef use role",
+               decorationCount(SemanticDecorationRole::TypeAlias,
+                               QStringLiteral("state_t")) >= 2,
+               true);
+    expectBool("SemanticDecoration maps enum value use role",
+               decorationCount(SemanticDecorationRole::EnumValue,
+                               QStringLiteral("IDLE")) >= 2
+                   && hasDecoration(SemanticDecorationRole::EnumValue,
+                                    QStringLiteral("BUSY"))
+                   && hasDecoration(SemanticDecorationRole::EnumValue,
+                                    QStringLiteral("DONE")),
                true);
     expectBool("SemanticDecoration maps instance role",
                hasDecoration(SemanticDecorationRole::InstanceName,

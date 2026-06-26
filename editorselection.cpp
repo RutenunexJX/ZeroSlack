@@ -108,11 +108,23 @@ QTextCharFormat semanticFormatForRole(
     case SemanticDecorationRole::FormalPort:
         format.setForeground(color("#98C379", "#22863A"));
         break;
+    case SemanticDecorationRole::ModulePort:
+        format.setForeground(color("#9CDCFE", "#0366D6"));
+        format.setFontWeight(QFont::DemiBold);
+        break;
     case SemanticDecorationRole::ActualSignal:
         format.setForeground(color("#D19A66", "#B05A00"));
         break;
     case SemanticDecorationRole::Parameter:
         format.setForeground(color("#E06C75", "#D73A49"));
+        break;
+    case SemanticDecorationRole::EnumValue:
+        format.setForeground(color("#DCDCAA", "#795E26"));
+        format.setFontWeight(QFont::DemiBold);
+        break;
+    case SemanticDecorationRole::TypeAlias:
+        format.setForeground(color("#4EC9B0", "#00796B"));
+        format.setFontWeight(QFont::Bold);
         break;
     case SemanticDecorationRole::Macro:
         format.setForeground(color("#D7BA7D", "#735C0F"));

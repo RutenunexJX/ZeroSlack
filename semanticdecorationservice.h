@@ -15,7 +15,10 @@ enum class SemanticDecorationRole {
     ActualSignal,
     Parameter,
     Macro,
-    SystemTask
+    SystemTask,
+    EnumValue,
+    TypeAlias,
+    ModulePort
 };
 
 struct SemanticDecoration {
