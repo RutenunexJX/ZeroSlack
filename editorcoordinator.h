@@ -2,11 +2,13 @@
 #define EDITORCOORDINATOR_H
 
 #include <QObject>
+#include <QHash>
 #include <QString>
 #include <QStringList>
 #include <functional>
 
 #include "includeheaderworkflowtypes.h"
+#include "saferenameservice.h"
 
 class FileCommandCoordinator;
 class EditorAppearanceSettings;
@@ -122,10 +124,28 @@ private:
     void handleSourceSymbolActionRequested(
         SourceSymbolAction action,
         const EditorSemanticContext& context) const;
+    void handleSafeRenameRequested(
+        MyCodeEditor* editor,
+        const QString& symbolName,
+        const EditorSemanticContext& context,
+        bool* handled);
     void handleSourceSymbolContextMenuRequested(
         QMenu* menu,
         const EditorSemanticContext& context) const;
     void handleActiveEditorChanged(MyCodeEditor* editor);
+    QHash<QString, QString> openFileContents() const;
+    SafeRenamePlanQuery safeRenameQuery(
+        const QString& symbolName,
+        const QString& newName,
+        const EditorSemanticContext& context,
+        bool forceConflicts = false) const;
+    bool applySafeRenamePlan(MyCodeEditor* originEditor,
+                             const SafeRenamePlan& plan) const;
+    bool createDefinitionAndRenameCurrentFile(
+        MyCodeEditor* editor,
+        const QString& symbolName,
+        const QString& newName,
+        const EditorSemanticContext& context) const;
 
     TabManager* tabManager = nullptr;
     ModeManager* modeManager = nullptr;

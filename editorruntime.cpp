@@ -466,6 +466,16 @@ bool handleSafeRename(MyCodeEditor* editor, QKeyEvent* event)
     if (!isStandaloneIdentifierText(oldName))
         return false;
 
+    bool handledByCoordinator = false;
+    emit editor->safeRenameRequested(
+        oldName,
+        editor->editorSemanticContextForPosition(symbolSpan.start, true),
+        &handledByCoordinator);
+    if (handledByCoordinator) {
+        event->accept();
+        return true;
+    }
+
     QString newName;
     if (!promptForRenameName(editor,
                              QStringLiteral("Rename Symbol"),

@@ -3,6 +3,7 @@
 // the GUI workflow is alive, while detailed semantic behavior stays in the focused
 // headless tests.
 #include <QApplication>
+#include <QAbstractButton>
 #include <QAction>
 #include <QCompleter>
 #include <QComboBox>
@@ -25,11 +26,13 @@
 #include <QLabel>
 #include <QMouseEvent>
 #include <QMenu>
+#include <QMessageBox>
 #include <QPlainTextEdit>
 #include <QScrollBar>
 #include <QTemporaryDir>
 #include <QTextBlock>
 #include <QTextCursor>
+#include <QTextEdit>
 #include <QTextStream>
 #include <QTimer>
 #include <QToolButton>
@@ -169,10 +172,14 @@ static bool sendEditorWheel(MyCodeEditor* editor,
 
 static void acceptNextLineEditDialog(const QString& text)
 {
-    QTimer::singleShot(0, [text]() {
+    auto action = std::make_shared<std::function<void(int)>>();
+    *action = [text, action](int attempts) {
         QWidget* dialog = QApplication::activeModalWidget();
-        if (!dialog)
+        if (!dialog) {
+            if (attempts > 0)
+                QTimer::singleShot(10, [action, attempts]() { (*action)(attempts - 1); });
             return;
+        }
 
         QLineEdit* lineEdit = dialog->findChild<QLineEdit*>();
         if (lineEdit) {
@@ -189,7 +196,58 @@ static void acceptNextLineEditDialog(const QString& text)
 
         if (QDialog* asDialog = qobject_cast<QDialog*>(dialog))
             asDialog->accept();
-    });
+    };
+    QTimer::singleShot(0, [action]() { (*action)(50); });
+}
+
+static void acceptNextMessageBoxYes()
+{
+    auto action = std::make_shared<std::function<void(int)>>();
+    *action = [action](int attempts) {
+        QMessageBox* box = qobject_cast<QMessageBox*>(QApplication::activeModalWidget());
+        if (!box) {
+            if (attempts > 0)
+                QTimer::singleShot(10, [action, attempts]() { (*action)(attempts - 1); });
+            return;
+        }
+        if (QAbstractButton* yes = box->button(QMessageBox::Yes))
+            yes->click();
+    };
+    QTimer::singleShot(0, [action]() { (*action)(50); });
+}
+
+static void acceptNextMultilineDialog(const QString& text)
+{
+    auto action = std::make_shared<std::function<void(int)>>();
+    *action = [text, action](int attempts) {
+        QWidget* dialog = QApplication::activeModalWidget();
+        QTextEdit* textEdit = dialog ? dialog->findChild<QTextEdit*>() : nullptr;
+        QPlainTextEdit* plainTextEdit =
+            dialog ? dialog->findChild<QPlainTextEdit*>() : nullptr;
+        if (!dialog || (!textEdit && !plainTextEdit)) {
+            if (attempts > 0)
+                QTimer::singleShot(10, [action, attempts]() { (*action)(attempts - 1); });
+            return;
+        }
+
+        if (textEdit) {
+            textEdit->setPlainText(text);
+            textEdit->selectAll();
+        } else if (plainTextEdit) {
+            plainTextEdit->setPlainText(text);
+            plainTextEdit->selectAll();
+        }
+
+        QDialogButtonBox* buttons =
+            dialog->findChild<QDialogButtonBox*>();
+        if (buttons && buttons->button(QDialogButtonBox::Ok)) {
+            buttons->button(QDialogButtonBox::Ok)->click();
+            return;
+        }
+        if (QDialog* asDialog = qobject_cast<QDialog*>(dialog))
+            asDialog->accept();
+    };
+    QTimer::singleShot(0, [action]() { (*action)(50); });
 }
 
 static std::unique_ptr<QSettings> makeTemporarySettings(
@@ -1358,6 +1416,204 @@ static void runEditorSafeRenameRegression()
                editor.textCursor().selectedText() == QStringLiteral("newName")
                    && editor.toPlainText().contains(QStringLiteral("oldName_next")),
                true);
+}
+
+static void runSafeRenameCoordinatorRegression()
+{
+    QTemporaryDir dir;
+    expectBool("safe rename coordinator temp dir valid", dir.isValid(), true);
+    if (!dir.isValid())
+        return;
+
+    const QString defFile =
+        QDir(dir.path()).absoluteFilePath(QStringLiteral("defs.sv"));
+    const QString useFile =
+        QDir(dir.path()).absoluteFilePath(QStringLiteral("use.sv"));
+    const QString defText =
+        QStringLiteral("module top;\n"
+                       "  parameter int P_WIDTH = 8;\n"
+                       "endmodule\n");
+    const QString useText =
+        QStringLiteral("module top;\n"
+                       "  logic [P_WIDTH-1:0] data;\n"
+                       "endmodule\n");
+    auto writeTextFile = [](const QString& fileName, const QString& text) {
+        QFile file(fileName);
+        if (!file.open(QIODevice::WriteOnly | QIODevice::Text))
+            return false;
+        file.write(text.toUtf8());
+        return true;
+    };
+    expectBool("safe rename coordinator write def file",
+               writeTextFile(defFile, defText),
+               true);
+    expectBool("safe rename coordinator write use file",
+               writeTextFile(useFile, useText),
+               true);
+
+    const int defPos = defText.indexOf(QStringLiteral("P_WIDTH"));
+    const int usePos = useText.indexOf(QStringLiteral("P_WIDTH"));
+    const SemanticSymbolRecord defModule =
+        SemanticFixtureRecordBuilder(QStringLiteral("top"),
+                                     SymbolTaxonomy::DeclarationKind::Module)
+            .withFile(defFile)
+            .withLocalHandle(101)
+            .withRange(1, 1, 3, 10)
+            .record();
+    const SemanticSymbolRecord useModule =
+        SemanticFixtureRecordBuilder(QStringLiteral("top"),
+                                     SymbolTaxonomy::DeclarationKind::Module)
+            .withFile(useFile)
+            .withLocalHandle(102)
+            .withRange(1, 1, 3, 10)
+            .record();
+    const SemanticSymbolRecord parameter =
+        SemanticFixtureRecordBuilder(QStringLiteral("P_WIDTH"),
+                                     SymbolTaxonomy::DeclarationKind::Parameter)
+            .withFile(defFile)
+            .withLocalHandle(103)
+            .withLine(2, defPos - defText.lastIndexOf(QLatin1Char('\n'), defPos))
+            .withTextSpan(defPos, QStringLiteral("P_WIDTH").size())
+            .inModule(QStringLiteral("top"))
+            .record();
+    QHash<QString, QString> contents;
+    contents.insert(defFile, defText);
+    contents.insert(useFile, useText);
+
+    const auto previousSnapshot = SemanticIndex::getInstance()->snapshot();
+    SemanticIndex::getInstance()->setSnapshot(
+        snapshotFromRecords({defModule, useModule, parameter},
+                            {},
+                            {},
+                            contents));
+
+    QTabWidget tabsWidget;
+    TabManager tabs(&tabsWidget);
+    ModeManager modes(&tabsWidget, &tabsWidget);
+    EditorCoordinator coordinator(&tabs, &modes);
+    coordinator.connectSignals();
+
+    expectBool("safe rename coordinator opens use file",
+               tabs.openFileInTab(useFile),
+               true);
+    MyCodeEditor* editor = tabs.getCurrentEditor();
+    expectBool("safe rename coordinator has editor", editor != nullptr, true);
+    if (editor) {
+        QTextCursor cursor = editor->textCursor();
+        cursor.setPosition(usePos);
+        cursor.setPosition(usePos + QStringLiteral("P_WIDTH").size(),
+                           QTextCursor::KeepAnchor);
+        editor->setTextCursor(cursor);
+        editor->setFocus();
+
+        acceptNextLineEditDialog(QStringLiteral("P_DATA"));
+        QTest::keyClick(editor, Qt::Key_R, Qt::ControlModifier);
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    }
+
+    expectBool("safe rename coordinator updates definition file",
+               tabs.getPlainTextFromOpenFile(defFile)
+                   == QStringLiteral("module top;\n"
+                                     "  parameter int P_DATA = 8;\n"
+                                     "endmodule\n"),
+               true);
+    expectBool("safe rename coordinator updates use file",
+               tabs.getPlainTextFromOpenFile(useFile)
+                   == QStringLiteral("module top;\n"
+                                     "  logic [P_DATA-1:0] data;\n"
+                                     "endmodule\n"),
+               true);
+
+    if (previousSnapshot)
+        SemanticIndex::getInstance()->setSnapshot(previousSnapshot);
+    else
+        SemanticIndex::getInstance()->clearSnapshot();
+}
+
+static void runSafeRenameCreateDefinitionRegression()
+{
+    QTemporaryDir dir;
+    expectBool("safe rename create definition temp dir valid", dir.isValid(), true);
+    if (!dir.isValid())
+        return;
+
+    const QString fileName =
+        QDir(dir.path()).absoluteFilePath(QStringLiteral("create_def.sv"));
+    const QString text =
+        QStringLiteral("module top;\n"
+                       "  typedef enum logic {IDLE} st_e;\n"
+                       "  assign sink = cs;\n"
+                       "endmodule\n");
+    QFile file(fileName);
+    expectBool("safe rename create definition write file",
+               file.open(QIODevice::WriteOnly | QIODevice::Text),
+               true);
+    if (!file.isOpen())
+        return;
+    file.write(text.toUtf8());
+    file.close();
+
+    const SemanticSymbolRecord module =
+        SemanticFixtureRecordBuilder(QStringLiteral("top"),
+                                     SymbolTaxonomy::DeclarationKind::Module)
+            .withFile(fileName)
+            .withLocalHandle(201)
+            .withRange(1, 1, 4, 10)
+            .record();
+    const SemanticSymbolRecord enumType =
+        SemanticFixtureRecordBuilder(QStringLiteral("st_e"),
+                                     SymbolTaxonomy::DeclarationKind::Enum)
+            .withFile(fileName)
+            .withLocalHandle(202)
+            .withRange(2, 29, 2, 33)
+            .inModule(QStringLiteral("top"))
+            .record();
+    QHash<QString, QString> contents;
+    contents.insert(fileName, text);
+
+    const auto previousSnapshot = SemanticIndex::getInstance()->snapshot();
+    SemanticIndex::getInstance()->setSnapshot(
+        snapshotFromRecords({module, enumType}, {}, {}, contents));
+
+    QTabWidget tabsWidget;
+    TabManager tabs(&tabsWidget);
+    ModeManager modes(&tabsWidget, &tabsWidget);
+    EditorCoordinator coordinator(&tabs, &modes);
+    coordinator.connectSignals();
+
+    expectBool("safe rename create definition opens file",
+               tabs.openFileInTab(fileName),
+               true);
+    MyCodeEditor* editor = tabs.getCurrentEditor();
+    expectBool("safe rename create definition has editor", editor != nullptr, true);
+    if (editor) {
+        const int csPos = text.indexOf(QStringLiteral("cs"));
+        QTextCursor cursor = editor->textCursor();
+        cursor.setPosition(csPos);
+        cursor.setPosition(csPos + 2, QTextCursor::KeepAnchor);
+        editor->setTextCursor(cursor);
+        editor->setFocus();
+
+        acceptNextLineEditDialog(QStringLiteral("ns"));
+        acceptNextMessageBoxYes();
+        acceptNextMultilineDialog(QStringLiteral("st_e ns;"));
+        QTest::keyClick(editor, Qt::Key_R, Qt::ControlModifier);
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
+    }
+
+    expectBool("safe rename create definition inserts after type",
+               tabs.getPlainTextFromOpenFile(fileName)
+                   == QStringLiteral("module top;\n"
+                                     "  typedef enum logic {IDLE} st_e;\n"
+                                     "  st_e ns;\n"
+                                     "  assign sink = ns;\n"
+                                     "endmodule\n"),
+               true);
+
+    if (previousSnapshot)
+        SemanticIndex::getInstance()->setSnapshot(previousSnapshot);
+    else
+        SemanticIndex::getInstance()->clearSnapshot();
 }
 
 static void runEditorColumnEditRegression()
@@ -4820,6 +5076,8 @@ int main(int argc, char** argv)
     runEditorSmartSelectionRegression();
     runEditorOccurrenceNavigationRegression();
     runEditorSafeRenameRegression();
+    runSafeRenameCoordinatorRegression();
+    runSafeRenameCreateDefinitionRegression();
     runEditorColumnEditRegression();
     runEditorFormatterRegression();
     runEditorAppearanceCoordinatorRegression();

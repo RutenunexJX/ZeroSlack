@@ -173,6 +173,7 @@ set(ZEROSLACK_CORE_SOURCES
     relationshipanalysisworker.cpp
     relationshipresultpublisher.cpp
     rtlinsightspanelcoordinator.cpp
+    saferenameservice.cpp
     searchservice.cpp
     scopebandservice.cpp
     semanticdiffservice.cpp
@@ -327,6 +328,7 @@ set(ZEROSLACK_CORE_SOURCES
     relationshipanalysisworker.h
     relationshipresultpublisher.h
     rtlinsightspanelcoordinator.h
+    saferenameservice.h
     searchservice.h
     scopebandservice.h
     semanticdiffservice.h

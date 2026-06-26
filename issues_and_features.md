@@ -8,7 +8,7 @@ This file is a running checklist for problems to fix and new features to conside
 
 ## Feature Ideas
 
-- [ ] Extend `Ctrl+R` safe rename beyond the current-file MVP to rename resolved cross-file definitions and references, support missing-definition creation with `;cmd` / `;;cmd` expansion, insert generated declarations at semantically valid locations before first use and after required type definitions such as `st_e`, and perform chained conflict-resolution renames without introducing another definition conflict.
+- [ ] No open feature ideas from the current batch.
 
 ## Discussion Needed
 
@@ -36,3 +36,4 @@ This file is a running checklist for problems to fix and new features to conside
 - [x] Add `Ctrl+W` smart selection expansion. It now expands symbol -> member/hierarchical expression -> current parenthesized expression content -> next outer parenthesized expression content, and starts from operator/number positions inside parentheses by selecting the parenthesized expression content.
 - [x] Add selected-symbol occurrence navigation in the current file. When a symbol is selected, `Ctrl+E` jumps to the next occurrence/call site and `Ctrl+Q` jumps to the previous occurrence/call site, preserving selection and wrapping at file boundaries.
 - [x] Add current-file `Ctrl+R` safe rename MVP. It prompts for a valid identifier, renames all current-file word-boundary occurrences in one edit block, preserves similarly prefixed names, and offers `Force rename` / `Rename conflicting definition first` choices for current-file name conflicts.
+- [x] Extend `Ctrl+R` safe rename beyond the current-file MVP. The app-level path now resolves the selected symbol, builds a cross-file edit plan for definition and resolved reference occurrences from semantic file contents/open editors, applies edits through `TabManager` so files stay tracked as open/dirty documents, detects new-name definition conflicts with `Force rename` and `Rename conflicting definition first`, rejects intermediate conflict names, and supports missing-definition creation through raw declarations or `;cmd` / `;;cmd` template expansion inserted before first use and after required type definitions such as enum/typedef records.

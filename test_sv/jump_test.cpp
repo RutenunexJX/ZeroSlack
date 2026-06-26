@@ -24,6 +24,7 @@
 #include "semanticdecorationservice.h"
 #include "semantic_fixture_records.h"
 #include "semanticindexsnapshot.h"
+#include "saferenameservice.h"
 #include "symboltaxonomy.h"
 #include "mycodeeditor.h"
 
@@ -63,8 +64,125 @@ static void placeCursor(MyCodeEditor& ed, int block) {
     ed.setTextCursor(c);
 }
 
+static bool safeRenamePlanHasEdit(const SafeRenamePlan& plan,
+                                  const QString& fileName,
+                                  int position,
+                                  const QString& newText)
+{
+    const QString normalizedFile =
+        QDir::cleanPath(QDir::fromNativeSeparators(QFileInfo(fileName).absoluteFilePath()));
+    for (const SafeRenameFileEdits& fileEdits : plan.fileEdits) {
+        const QString candidateFile =
+            QDir::cleanPath(QDir::fromNativeSeparators(QFileInfo(fileEdits.fileName).absoluteFilePath()));
+        if (candidateFile != normalizedFile)
+            continue;
+        for (const SafeRenameTextEdit& edit : fileEdits.edits) {
+            if (edit.startPosition == position && edit.newText == newText)
+                return true;
+        }
+    }
+    return false;
+}
+
+static void runSafeRenameServiceRegression()
+{
+    const QString defFile =
+        QFileInfo(QStringLiteral("test_sv/safe_rename_defs.sv")).absoluteFilePath();
+    const QString useFile =
+        QFileInfo(QStringLiteral("test_sv/safe_rename_use.sv")).absoluteFilePath();
+    const QString defText =
+        QStringLiteral("module top;\n"
+                       "  parameter int P_WIDTH = 8;\n"
+                       "endmodule\n");
+    const QString useText =
+        QStringLiteral("module top;\n"
+                       "  logic [P_WIDTH-1:0] data;\n"
+                       "endmodule\n");
+    const int defPos = defText.indexOf(QStringLiteral("P_WIDTH"));
+    const int usePos = useText.indexOf(QStringLiteral("P_WIDTH"));
+
+    const SemanticSymbolRecord defModule =
+        SemanticFixtureRecordBuilder(QStringLiteral("top"),
+                                     SymbolTaxonomy::DeclarationKind::Module)
+            .withFile(defFile)
+            .withLocalHandle(1)
+            .withRange(1, 1, 3, 10)
+            .record();
+    const SemanticSymbolRecord useModule =
+        SemanticFixtureRecordBuilder(QStringLiteral("top"),
+                                     SymbolTaxonomy::DeclarationKind::Module)
+            .withFile(useFile)
+            .withLocalHandle(2)
+            .withRange(1, 1, 3, 10)
+            .record();
+    const SemanticSymbolRecord parameter =
+        SemanticFixtureRecordBuilder(QStringLiteral("P_WIDTH"),
+                                     SymbolTaxonomy::DeclarationKind::Parameter)
+            .withFile(defFile)
+            .withLocalHandle(3)
+            .withLine(2, defPos - defText.lastIndexOf(QLatin1Char('\n'), defPos))
+            .withTextSpan(defPos, QStringLiteral("P_WIDTH").size())
+            .inModule(QStringLiteral("top"))
+            .record();
+    const SemanticSymbolRecord conflict =
+        SemanticFixtureRecordBuilder(QStringLiteral("P_DEPTH"),
+                                     SymbolTaxonomy::DeclarationKind::Parameter)
+            .withFile(defFile)
+            .withLocalHandle(4)
+            .withLine(2, 3)
+            .inModule(QStringLiteral("top"))
+            .record();
+
+    QHash<QString, QString> contents;
+    contents.insert(defFile, defText);
+    contents.insert(useFile, useText);
+
+    SemanticIndex index;
+    index.setSnapshot(sharedSnapshotFromRecords({defModule, useModule, parameter},
+                                                {},
+                                                {},
+                                                contents));
+    SafeRenameService renameService(&index);
+    SafeRenamePlanQuery query;
+    query.symbolName = QStringLiteral("P_WIDTH");
+    query.newName = QStringLiteral("P_DATA");
+    query.fileName = useFile;
+    query.moduleName = QStringLiteral("top");
+    query.documentText = useText;
+    query.cursorPosition = usePos;
+
+    const SafeRenamePlan plan = renameService.createRenamePlan(query);
+    expectBool("safe rename service resolves use to definition",
+               plan.isReady() && plan.editCount() == 2,
+               true);
+    expectBool("safe rename service includes definition edit",
+               safeRenamePlanHasEdit(plan, defFile, defPos, QStringLiteral("P_DATA")),
+               true);
+    expectBool("safe rename service includes use edit",
+               safeRenamePlanHasEdit(plan, useFile, usePos, QStringLiteral("P_DATA")),
+               true);
+
+    index.setSnapshot(sharedSnapshotFromRecords({defModule, useModule, parameter, conflict},
+                                                {},
+                                                {},
+                                                contents));
+    query.newName = QStringLiteral("P_DEPTH");
+    const SafeRenamePlan conflictPlan = renameService.createRenamePlan(query);
+    expectBool("safe rename service detects definition conflict",
+               conflictPlan.status == SafeRenamePlanStatus::ConflictingDefinition
+                   && conflictPlan.conflictingDefinitions.size() == 1,
+               true);
+    query.forceConflicts = true;
+    const SafeRenamePlan forcedPlan = renameService.createRenamePlan(query);
+    expectBool("safe rename service can force conflicting target",
+               forcedPlan.isReady() && forcedPlan.editCount() == 2,
+               true);
+}
+
 int main(int argc, char** argv) {
     QApplication app(argc, argv);
+
+    runSafeRenameServiceRegression();
 
     QString path = (argc > 1) ? QString::fromLocal8Bit(argv[1])
                               : QStringLiteral("test_sv/test_symbols.sv");

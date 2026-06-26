@@ -134,6 +134,9 @@ signals:
                                    const EditorSemanticContext& context);
     void sourceSymbolActionRequested(SourceSymbolAction action,
                                      const EditorSemanticContext& context);
+    void safeRenameRequested(const QString& symbolName,
+                             const EditorSemanticContext& context,
+                             bool* handled);
     void sourceSymbolContextMenuRequested(QMenu* menu,
                                           const EditorSemanticContext& context);
     void definitionPreviewNavigationRequested(const QString& fileName,
