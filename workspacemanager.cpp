@@ -266,6 +266,65 @@ bool WorkspaceManager::closeWorkspace(int index)
     return activatedNext;
 }
 
+bool WorkspaceManager::renameWorkspaceAlias(int index,
+                                            const QString& alias,
+                                            QString* errorMessage)
+{
+    if (errorMessage)
+        errorMessage->clear();
+
+    auto fail = [errorMessage](const QString& message) {
+        if (errorMessage)
+            *errorMessage = message;
+        return false;
+    };
+
+    if (index < 0 || index >= workspaces.size())
+        return fail(QStringLiteral("Workspace does not exist."));
+
+    const QString trimmedAlias = alias.trimmed();
+    if (trimmedAlias.isEmpty())
+        return fail(QStringLiteral("Workspace alias cannot be empty."));
+
+    for (int i = 0; i < workspaces.size(); ++i) {
+        if (i == index)
+            continue;
+        if (QString::compare(workspaces.at(i).alias.trimmed(),
+                             trimmedAlias,
+                             Qt::CaseInsensitive) == 0) {
+            return fail(QStringLiteral("Workspace alias already exists."));
+        }
+    }
+
+    WorkspaceEntry& entry = workspaces[index];
+    if (entry.alias == trimmedAlias)
+        return true;
+
+    entry.alias = trimmedAlias;
+    if (index == activeIndex)
+        workspaceAlias = trimmedAlias;
+
+    bool updatedRecent = false;
+    for (WorkspaceEntry& recent : recentWorkspaces) {
+        if (recent.path == entry.path) {
+            recent.alias = trimmedAlias;
+            updatedRecent = true;
+        }
+    }
+    if (updatedRecent)
+        saveRecentWorkspaces();
+    else
+        rememberRecentWorkspace(entry);
+
+    emit workspaceListChanged();
+    ActivityLogService::getInstance()->append(
+        QStringLiteral("Workspace"),
+        ActivityLogLevel::Info,
+        QStringLiteral("Renamed %1 to \"%2\"")
+            .arg(QDir::toNativeSeparators(entry.path), trimmedAlias));
+    return true;
+}
+
 bool WorkspaceManager::isWorkspaceOpen() const
 {
     return !workspacePath.isEmpty();

@@ -48,14 +48,17 @@
 #include <QDir>
 #include <QFileInfo>
 #include <QHeaderView>
+#include <QInputDialog>
 #include <QTextBlock>
 #include <QTextCursor>
 #include <QKeyEvent>
 #include <QLabel>
+#include <QLineEdit>
 #include <QMenu>
 #include <QMenuBar>
 #include <QProgressBar>
 #include <QPushButton>
+#include <QMessageBox>
 #include <QSignalBlocker>
 #include <QStatusBar>
 #include <QTabBar>
@@ -140,6 +143,7 @@ void MainWindow::setupWorkspaceBar()
     workspaceTabBar->setExpanding(false);
     workspaceTabBar->setMovable(false);
     workspaceTabBar->setTabsClosable(true);
+    workspaceTabBar->setContextMenuPolicy(Qt::CustomContextMenu);
     workspaceTabBar->hide();
     workspaceTabBar->setStyleSheet(QStringLiteral(
         "QTabBar#workspaceTabBar { background: #eef2f7; }"
@@ -173,6 +177,10 @@ void MainWindow::setupWorkspaceBar()
             &QTabBar::tabCloseRequested,
             this,
             &MainWindow::closeWorkspaceTab);
+    connect(workspaceTabBar,
+            &QWidget::customContextMenuRequested,
+            this,
+            &MainWindow::showWorkspaceTabContextMenu);
     connect(workspaceManager.get(),
             &WorkspaceManager::workspaceListChanged,
             this,
@@ -233,6 +241,54 @@ void MainWindow::closeWorkspaceTab(int index)
         return;
 
     workspaceManager->closeWorkspace(index);
+}
+
+void MainWindow::showWorkspaceTabContextMenu(const QPoint& position)
+{
+    if (!workspaceTabBar)
+        return;
+
+    const int index = workspaceTabBar->tabAt(position);
+    if (index < 0)
+        return;
+
+    QMenu menu(this);
+    QAction* renameAction = menu.addAction(QStringLiteral("Rename"));
+    QAction* chosen = menu.exec(workspaceTabBar->mapToGlobal(position));
+    if (chosen == renameAction)
+        renameWorkspaceTab(index);
+}
+
+void MainWindow::renameWorkspaceTab(int index)
+{
+    if (!workspaceManager)
+        return;
+
+    const QList<WorkspaceManager::WorkspaceEntry> entries =
+        workspaceManager->workspaceEntries();
+    if (index < 0 || index >= entries.size())
+        return;
+
+    bool accepted = false;
+    const QString alias = QInputDialog::getText(
+        this,
+        QStringLiteral("Rename Workspace"),
+        QStringLiteral("Alias"),
+        QLineEdit::Normal,
+        entries.at(index).alias,
+        &accepted).trimmed();
+    if (!accepted)
+        return;
+
+    QString errorMessage;
+    if (!workspaceManager->renameWorkspaceAlias(index, alias, &errorMessage)) {
+        QMessageBox::warning(
+            this,
+            QStringLiteral("Rename Workspace"),
+            errorMessage.isEmpty()
+                ? QStringLiteral("Unable to rename workspace.")
+                : errorMessage);
+    }
 }
 
 void MainWindow::setupWorkspaceProgressIndicator()

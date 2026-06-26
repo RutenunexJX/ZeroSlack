@@ -114,6 +114,8 @@ private:
     void setupWorkspaceProgressIndicator();
     void refreshWorkspaceTabs();
     void closeWorkspaceTab(int index);
+    void showWorkspaceTabContextMenu(const QPoint& position);
+    void renameWorkspaceTab(int index);
     void refreshActiveEditorDiagnosticHighlights(
         const QString& changedFileName = QString());
     void refreshActiveEditorSemanticDecorations(

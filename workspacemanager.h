@@ -29,6 +29,9 @@ public:
     bool openWorkspace(const QString& folderPath);
     void closeWorkspace();
     bool closeWorkspace(int index);
+    bool renameWorkspaceAlias(int index,
+                              const QString& alias,
+                              QString* errorMessage = nullptr);
     bool isWorkspaceOpen() const;
     QString getWorkspacePath() const;
     QString getWorkspaceAlias() const;

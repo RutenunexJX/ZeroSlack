@@ -697,6 +697,90 @@ static void runWorkspaceCloseRegression()
                true);
 }
 
+static void runWorkspaceAliasRenameRegression()
+{
+    QTemporaryDir workspaceA;
+    QTemporaryDir workspaceB;
+    expectBool("workspace rename temp dirs valid",
+               workspaceA.isValid() && workspaceB.isValid(),
+               true);
+    if (!workspaceA.isValid() || !workspaceB.isValid())
+        return;
+
+    WorkspaceManager workspace;
+    QSignalSpy listSpy(&workspace, &WorkspaceManager::workspaceListChanged);
+    expectBool("workspace rename open A",
+               workspace.openWorkspace(workspaceA.path()),
+               true);
+    expectBool("workspace rename open B",
+               workspace.openWorkspace(workspaceB.path()),
+               true);
+    const QString pathA = workspace.workspaceEntries().at(0).path;
+    const QString pathB = workspace.workspaceEntries().at(1).path;
+    const QString originalAliasA = workspace.workspaceEntries().at(0).alias;
+
+    QString errorMessage;
+    expectBool("workspace rename active succeeds",
+               workspace.renameWorkspaceAlias(
+                   1,
+                   QStringLiteral("SharedName"),
+                   &errorMessage),
+               true);
+    expectBool("workspace rename active updates current alias",
+               workspace.getWorkspaceAlias() == QStringLiteral("SharedName")
+                   && workspace.workspaceEntries().at(1).path == pathB,
+               true);
+
+    expectBool("workspace rename switch to A",
+               workspace.switchWorkspace(0),
+               true);
+    expectBool("workspace rename rejects empty alias",
+               workspace.renameWorkspaceAlias(0, QStringLiteral("   "),
+                                             &errorMessage),
+               false);
+    expectBool("workspace rename rejects duplicate alias",
+               workspace.renameWorkspaceAlias(
+                   0,
+                   QStringLiteral("sharedname"),
+                   &errorMessage),
+               false);
+    expectBool("workspace rename failed attempts keep alias",
+               workspace.workspaceEntries().at(0).alias == originalAliasA,
+               true);
+
+    expectBool("workspace rename active workspace succeeds",
+               workspace.renameWorkspaceAlias(
+                   0,
+                   QStringLiteral("RTL Core"),
+                   &errorMessage),
+               true);
+    expectBool("workspace rename updates active alias and preserves path",
+               workspace.getWorkspaceAlias() == QStringLiteral("RTL Core")
+                   && workspace.workspaceEntries().at(0).alias
+                          == QStringLiteral("RTL Core")
+                   && workspace.workspaceEntries().at(0).path == pathA,
+               true);
+
+    bool sawRecentA = false;
+    bool sawRecentB = false;
+    const QList<WorkspaceManager::WorkspaceEntry> recentEntries =
+        workspace.recentWorkspaceEntries();
+    for (const WorkspaceManager::WorkspaceEntry& entry : recentEntries) {
+        sawRecentA = sawRecentA
+            || (entry.path == pathA
+                && entry.alias == QStringLiteral("RTL Core"));
+        sawRecentB = sawRecentB
+            || (entry.path == pathB
+                && entry.alias == QStringLiteral("SharedName"));
+    }
+    expectBool("workspace rename updates recent metadata",
+               sawRecentA && sawRecentB,
+               true);
+    expectBool("workspace rename emits list changes",
+               listSpy.size() >= 4,
+               true);
+}
+
 static void runIncludeCompletionRegression()
 {
     auto includeProvider = [](const QString&) {
@@ -4474,6 +4558,7 @@ int main(int argc, char** argv)
     runFormatterCoordinatorRegression();
     runTabOpenDedupRegression();
     runWorkspaceCloseRegression();
+    runWorkspaceAliasRenameRegression();
     runIncludeCompletionRegression();
     runTreeSitterFoldingProviderRegression();
     runNavigationHierarchyModelRegression();
@@ -4514,7 +4599,9 @@ int main(int argc, char** argv)
     expectBool("main window visible", waitUntil([&]() { return window.isVisible(); }, 2000), true);
     expectBool("workspace tab bar has close action",
                window.workspaceTabBar
-                   && window.workspaceTabBar->tabsClosable(),
+                   && window.workspaceTabBar->tabsClosable()
+                   && window.workspaceTabBar->contextMenuPolicy()
+                          == Qt::CustomContextMenu,
                true);
     expectBool("activity output panel exists",
                window.findChild<QPlainTextEdit*>(
