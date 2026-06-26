@@ -1157,6 +1157,58 @@ static void runEditorBracketRangeRegression()
                    && stepEditor.textCursor().selectedText()
                        == QStringLiteral("8:0"),
                true);
+
+    auto selectRangeBody = [](MyCodeEditor& rangeEditor) {
+        QTextCursor cursor = rangeEditor.textCursor();
+        cursor.setPosition(1);
+        cursor.setPosition(rangeEditor.toPlainText().size() - 1,
+                           QTextCursor::KeepAnchor);
+        rangeEditor.setTextCursor(cursor);
+    };
+    auto showRangeEditor = [](MyCodeEditor& rangeEditor,
+                              const QString& text) {
+        rangeEditor.resize(360, 120);
+        rangeEditor.setPlainText(text);
+        rangeEditor.show();
+        rangeEditor.setFocus();
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    };
+
+    MyCodeEditor parameterUpEditor;
+    showRangeEditor(parameterUpEditor, QStringLiteral("[P_TEST:0]"));
+    selectRangeBody(parameterUpEditor);
+    QTest::keyClick(&parameterUpEditor, Qt::Key_Up);
+    expectBool("editor parameter range up adds one",
+               parameterUpEditor.toPlainText()
+                   == QStringLiteral("[P_TEST+1:0]"),
+               true);
+
+    MyCodeEditor parameterDownEditor;
+    showRangeEditor(parameterDownEditor, QStringLiteral("[P_TEST:0]"));
+    selectRangeBody(parameterDownEditor);
+    QTest::keyClick(&parameterDownEditor, Qt::Key_Down);
+    expectBool("editor parameter range down subtracts one",
+               parameterDownEditor.toPlainText()
+                   == QStringLiteral("[P_TEST-1:0]"),
+               true);
+
+    MyCodeEditor complexDownEditor;
+    showRangeEditor(complexDownEditor,
+                    QStringLiteral("[P_TEST0*P_TEST1:0]"));
+    selectRangeBody(complexDownEditor);
+    QTest::keyClick(&complexDownEditor, Qt::Key_Down);
+    expectBool("editor complex range down parenthesizes expression",
+               complexDownEditor.toPlainText()
+                   == QStringLiteral("[(P_TEST0*P_TEST1)-1:0]"),
+               true);
+
+    MyCodeEditor numericGuardEditor;
+    showRangeEditor(numericGuardEditor, QStringLiteral("[0:0]"));
+    selectRangeBody(numericGuardEditor);
+    QTest::keyClick(&numericGuardEditor, Qt::Key_Down);
+    expectBool("editor numeric range down respects right bound",
+               numericGuardEditor.toPlainText() == QStringLiteral("[0:0]"),
+               true);
 }
 
 static void runEditorColumnEditRegression()

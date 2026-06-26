@@ -224,10 +224,10 @@ bool handleBracketRangeAltClick(MyCodeEditor* editor, QMouseEvent* event)
     return true;
 }
 
-bool selectedRangeDigitSpan(const QString& selected,
+bool selectedRangeBoundSpan(const QString& selected,
                             bool rightBound,
-                            int* digitStart,
-                            int* digitEnd)
+                            int* boundStart,
+                            int* boundEnd)
 {
     int colonIndex = -1;
     for (int i = 0; i < selected.size(); ++i) {
@@ -250,18 +250,88 @@ bool selectedRangeDigitSpan(const QString& selected,
     while (start < stop && selected.at(start).isSpace())
         ++start;
 
-    int end = start;
-    while (end < stop && selected.at(end).isDigit())
-        ++end;
+    int end = stop;
+    while (end > start && selected.at(end - 1).isSpace())
+        --end;
 
     if (end == start)
         return false;
 
-    if (digitStart)
-        *digitStart = start;
-    if (digitEnd)
-        *digitEnd = end;
+    if (boundStart)
+        *boundStart = start;
+    if (boundEnd)
+        *boundEnd = end;
     return true;
+}
+
+bool parseNonNegativeInteger(const QString& text, int* value)
+{
+    const QString trimmed = text.trimmed();
+    if (trimmed.isEmpty())
+        return false;
+
+    for (const QChar ch : trimmed) {
+        if (!ch.isDigit())
+            return false;
+    }
+
+    bool ok = false;
+    const int parsed = trimmed.toInt(&ok);
+    if (!ok)
+        return false;
+
+    if (value)
+        *value = parsed;
+    return true;
+}
+
+bool simpleRangeExpression(const QString& expression)
+{
+    const QString trimmed = expression.trimmed();
+    if (trimmed.isEmpty())
+        return false;
+
+    for (const QChar ch : trimmed) {
+        if (!(ch.isLetterOrNumber()
+              || ch == QLatin1Char('_')
+              || ch == QLatin1Char('$'))) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool wrappedByOuterParentheses(const QString& expression)
+{
+    const QString trimmed = expression.trimmed();
+    if (!trimmed.startsWith(QLatin1Char('('))
+        || !trimmed.endsWith(QLatin1Char(')'))) {
+        return false;
+    }
+
+    int depth = 0;
+    for (int i = 0; i < trimmed.size(); ++i) {
+        const QChar ch = trimmed.at(i);
+        if (ch == QLatin1Char('('))
+            ++depth;
+        else if (ch == QLatin1Char(')'))
+            --depth;
+        if (depth == 0 && i < trimmed.size() - 1)
+            return false;
+        if (depth < 0)
+            return false;
+    }
+    return depth == 0;
+}
+
+QString adjustedExpressionBound(const QString& expression, bool increment)
+{
+    const QString trimmed = expression.trimmed();
+    const QString base =
+        simpleRangeExpression(trimmed) || wrappedByOuterParentheses(trimmed)
+            ? trimmed
+            : QStringLiteral("(%1)").arg(trimmed);
+    return base + (increment ? QStringLiteral("+1") : QStringLiteral("-1"));
 }
 
 bool adjustSelectedRangeBound(MyCodeEditor* editor,
@@ -293,17 +363,40 @@ bool adjustSelectedRangeBound(MyCodeEditor* editor,
     const QString selected = cursor.selectedText();
     const bool rightBound =
         event->modifiers().testFlag(Qt::ShiftModifier);
-    int digitStart = -1;
-    int digitEnd = -1;
-    if (!selectedRangeDigitSpan(selected, rightBound, &digitStart, &digitEnd))
+    int boundStart = -1;
+    int boundEnd = -1;
+    if (!selectedRangeBoundSpan(selected, rightBound, &boundStart, &boundEnd))
         return false;
 
-    const int current = selected.mid(digitStart, digitEnd - digitStart).toInt();
-    const int next = qMax(0, current + (increment ? 1 : -1));
+    const QString currentText =
+        selected.mid(boundStart, boundEnd - boundStart);
+    int current = 0;
+    QString nextText;
+    if (parseNonNegativeInteger(currentText, &current)) {
+        int lowerBound = 0;
+        if (!rightBound) {
+            int rightValue = 0;
+            int rightStart = -1;
+            int rightEnd = -1;
+            if (selectedRangeBoundSpan(selected, true, &rightStart, &rightEnd)
+                && parseNonNegativeInteger(
+                    selected.mid(rightStart, rightEnd - rightStart),
+                    &rightValue)) {
+                lowerBound = rightValue;
+            }
+        }
+        const int next = increment
+            ? current + 1
+            : qMax(lowerBound, current - 1);
+        nextText = QString::number(next);
+    } else {
+        nextText = adjustedExpressionBound(currentText, increment);
+    }
+
     const QString replacement =
-        selected.left(digitStart)
-        + QString::number(next)
-        + selected.mid(digitEnd);
+        selected.left(boundStart)
+        + nextText
+        + selected.mid(boundEnd);
 
     cursor.insertText(replacement);
     QTextCursor reselection = editor->textCursor();
