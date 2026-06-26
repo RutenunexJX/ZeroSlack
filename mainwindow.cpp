@@ -139,6 +139,7 @@ void MainWindow::setupWorkspaceBar()
     workspaceTabBar->setObjectName(QStringLiteral("workspaceTabBar"));
     workspaceTabBar->setExpanding(false);
     workspaceTabBar->setMovable(false);
+    workspaceTabBar->setTabsClosable(true);
     workspaceTabBar->hide();
     workspaceTabBar->setStyleSheet(QStringLiteral(
         "QTabBar#workspaceTabBar { background: #eef2f7; }"
@@ -168,6 +169,10 @@ void MainWindow::setupWorkspaceBar()
                 if (workspaceManager)
                     workspaceManager->switchWorkspace(index);
             });
+    connect(workspaceTabBar,
+            &QTabBar::tabCloseRequested,
+            this,
+            &MainWindow::closeWorkspaceTab);
     connect(workspaceManager.get(),
             &WorkspaceManager::workspaceListChanged,
             this,
@@ -212,6 +217,22 @@ void MainWindow::refreshWorkspaceTabs()
             : QString();
     if (tabManager)
         tabManager->setWorkspaceScope(workspaceRoots, activeWorkspacePath);
+}
+
+void MainWindow::closeWorkspaceTab(int index)
+{
+    if (!workspaceManager || !tabManager)
+        return;
+
+    const QList<WorkspaceManager::WorkspaceEntry> entries =
+        workspaceManager->workspaceEntries();
+    if (index < 0 || index >= entries.size())
+        return;
+
+    if (!tabManager->closeTabsInWorkspace(entries.at(index).path))
+        return;
+
+    workspaceManager->closeWorkspace(index);
 }
 
 void MainWindow::setupWorkspaceProgressIndicator()

@@ -44,6 +44,7 @@ public:
     void updateTabTitle(MyCodeEditor* editor);
     void setWorkspaceScope(const QStringList& workspaceRoots,
                            const QString& activeWorkspaceRoot);
+    bool closeTabsInWorkspace(const QString& workspaceRoot);
     bool hasUnsavedChanges() const;
 
 signals:

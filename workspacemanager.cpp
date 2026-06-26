@@ -189,21 +189,81 @@ bool WorkspaceManager::openWorkspace(const QString& folderPath)
 
 void WorkspaceManager::closeWorkspace()
 {
-    if (!isWorkspaceOpen()) return;
-    const QString closingPath = workspacePath;
+    if (!isWorkspaceOpen())
+        return;
+
+    const int indexToClose = activeIndex >= 0
+        ? activeIndex
+        : workspaceIndexForPath(workspacePath);
+    if (indexToClose >= 0) {
+        closeWorkspace(indexToClose);
+        return;
+    }
+
     cancelDirectoryScan();
     stopFileWatching();
+    const QString closingPath = workspacePath;
     workspacePath.clear();
     workspaceAlias.clear();
     activeIndex = -1;
     files.clear();
-    projectModel->closeProject();
+    if (projectModel)
+        projectModel->closeProject();
 
     emit workspaceClosed();
     ActivityLogService::getInstance()->append(
         QStringLiteral("Workspace"),
         ActivityLogLevel::Info,
         QStringLiteral("Closed %1").arg(QDir::toNativeSeparators(closingPath)));
+}
+
+bool WorkspaceManager::closeWorkspace(int index)
+{
+    if (index < 0 || index >= workspaces.size())
+        return false;
+
+    const WorkspaceEntry closingEntry = workspaces.at(index);
+    const bool closingActive = index == activeIndex;
+
+    if (closingActive) {
+        cancelDirectoryScan();
+        stopFileWatching();
+        workspacePath.clear();
+        workspaceAlias.clear();
+        activeIndex = -1;
+        files.clear();
+        if (projectModel)
+            projectModel->closeProject();
+    }
+
+    workspaces.removeAt(index);
+    if (!closingActive && index < activeIndex)
+        --activeIndex;
+
+    ActivityLogService::getInstance()->append(
+        QStringLiteral("Workspace"),
+        ActivityLogLevel::Info,
+        QStringLiteral("Closed %1")
+            .arg(QDir::toNativeSeparators(closingEntry.path)));
+
+    if (closingActive)
+        emit workspaceClosed();
+
+    bool activatedNext = true;
+    if (closingActive && !workspaces.isEmpty()) {
+        int nextIndex = index;
+        if (nextIndex >= workspaces.size())
+            nextIndex = workspaces.size() - 1;
+
+        const WorkspaceEntry nextEntry = workspaces.at(nextIndex);
+        activatedNext =
+            activateWorkspacePath(nextEntry.path, nextEntry.alias, nextIndex);
+        if (activatedNext)
+            rememberRecentWorkspace(nextEntry);
+    }
+
+    emit workspaceListChanged();
+    return activatedNext;
 }
 
 bool WorkspaceManager::isWorkspaceOpen() const

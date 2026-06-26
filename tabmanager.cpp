@@ -235,6 +235,56 @@ void TabManager::setWorkspaceScope(const QStringList& workspaceRoots,
     applyWorkspaceScope();
 }
 
+bool TabManager::closeTabsInWorkspace(const QString& workspaceRoot)
+{
+    if (!tabWidget || workspaceRoot.isEmpty())
+        return false;
+
+    struct PendingClose {
+        MyCodeEditor* editor = nullptr;
+        QString originalFileName;
+        QString savedFileName;
+    };
+
+    QList<PendingClose> pending;
+    for (int i = 0; i < tabWidget->count(); ++i) {
+        MyCodeEditor* editor = getEditorAt(i);
+        if (!editor)
+            continue;
+
+        const DocumentSnapshot snapshot = getDocumentForEditor(editor);
+        if (pathInsideWorkspaceRoot(snapshot.fileName, workspaceRoot)) {
+            PendingClose close;
+            close.editor = editor;
+            close.originalFileName = snapshot.fileName;
+            pending.append(close);
+        }
+    }
+
+    for (PendingClose& close : pending) {
+        if (!saveController.confirmCloseUnsaved(close.editor,
+                                                &close.savedFileName)) {
+            return false;
+        }
+        if (!close.savedFileName.isEmpty()) {
+            updateTabTitle(close.editor);
+            emit fileSaved(close.savedFileName);
+        }
+    }
+
+    for (const PendingClose& close : pending) {
+        const int index = tabWidget->indexOf(close.editor);
+        if (index < 0)
+            continue;
+        documentModel->unregisterEditor(close.editor);
+        tabWidget->removeTab(index);
+        emit tabClosed(close.originalFileName);
+    }
+
+    applyWorkspaceScope();
+    return true;
+}
+
 bool TabManager::hasUnsavedChanges() const
 {
     return documentQueries.hasUnsavedChanges();

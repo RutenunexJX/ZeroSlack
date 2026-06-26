@@ -616,6 +616,85 @@ static void runTabOpenDedupRegression()
                    && tabVisible(externalEditor)
                    && tabVisible(scratchEditor),
                true);
+
+    QSignalSpy scopedCloseSpy(&scopedTabs, &TabManager::tabClosed);
+    expectBool("close workspace tabs succeeds",
+               scopedTabs.closeTabsInWorkspace(workspaceB.path()),
+               true);
+    expectBool("close workspace tabs removes only workspace file",
+               scopedWidget.indexOf(editorA) >= 0
+                   && scopedWidget.indexOf(editorB) < 0
+                   && scopedWidget.indexOf(externalEditor) >= 0
+                   && scopedWidget.indexOf(scratchEditor) >= 0
+                   && scopedTabs.editorCount() == 3
+                   && scopedCloseSpy.size() == 1,
+               true);
+}
+
+static void runWorkspaceCloseRegression()
+{
+    QTemporaryDir workspaceA;
+    QTemporaryDir workspaceB;
+    QTemporaryDir workspaceC;
+    expectBool("workspace close temp dirs valid",
+               workspaceA.isValid()
+                   && workspaceB.isValid()
+                   && workspaceC.isValid(),
+               true);
+    if (!workspaceA.isValid()
+        || !workspaceB.isValid()
+        || !workspaceC.isValid()) {
+        return;
+    }
+
+    WorkspaceManager workspace;
+    QSignalSpy closedSpy(&workspace, &WorkspaceManager::workspaceClosed);
+    expectBool("workspace close open A",
+               workspace.openWorkspace(workspaceA.path()),
+               true);
+    expectBool("workspace close open B",
+               workspace.openWorkspace(workspaceB.path()),
+               true);
+    expectBool("workspace close open C",
+               workspace.openWorkspace(workspaceC.path()),
+               true);
+    expectBool("workspace close switch to B",
+               workspace.switchWorkspace(1),
+               true);
+
+    expectBool("workspace close removes inactive before active",
+               workspace.closeWorkspace(0),
+               true);
+    expectBool("workspace close keeps active path after inactive close",
+               workspace.workspaceEntries().size() == 2
+                   && workspace.activeWorkspaceIndex() == 0
+                   && workspace.getWorkspacePath()
+                       == QDir::cleanPath(QDir::fromNativeSeparators(
+                              QFileInfo(workspaceB.path()).absoluteFilePath()))
+                   && closedSpy.size() == 0,
+               true);
+
+    expectBool("workspace close active switches next workspace",
+               workspace.closeWorkspace(0),
+               true);
+    expectBool("workspace close active selects remaining workspace",
+               workspace.workspaceEntries().size() == 1
+                   && workspace.activeWorkspaceIndex() == 0
+                   && workspace.getWorkspacePath()
+                       == QDir::cleanPath(QDir::fromNativeSeparators(
+                              QFileInfo(workspaceC.path()).absoluteFilePath()))
+                   && closedSpy.size() == 1,
+               true);
+
+    expectBool("workspace close final workspace succeeds",
+               workspace.closeWorkspace(0),
+               true);
+    expectBool("workspace close final clears active workspace",
+               workspace.workspaceEntries().isEmpty()
+                   && workspace.activeWorkspaceIndex() == -1
+                   && !workspace.isWorkspaceOpen()
+                   && closedSpy.size() == 2,
+               true);
 }
 
 static void runIncludeCompletionRegression()
@@ -4394,6 +4473,7 @@ int main(int argc, char** argv)
     runEditorAppearanceCoordinatorRegression();
     runFormatterCoordinatorRegression();
     runTabOpenDedupRegression();
+    runWorkspaceCloseRegression();
     runIncludeCompletionRegression();
     runTreeSitterFoldingProviderRegression();
     runNavigationHierarchyModelRegression();
@@ -4432,6 +4512,10 @@ int main(int argc, char** argv)
     window.resize(1100, 760);
     window.show();
     expectBool("main window visible", waitUntil([&]() { return window.isVisible(); }, 2000), true);
+    expectBool("workspace tab bar has close action",
+               window.workspaceTabBar
+                   && window.workspaceTabBar->tabsClosable(),
+               true);
     expectBool("activity output panel exists",
                window.findChild<QPlainTextEdit*>(
                    QStringLiteral("activityOutputText")) != nullptr,

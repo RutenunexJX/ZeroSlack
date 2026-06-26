@@ -28,6 +28,7 @@ public:
     // Workspace operations
     bool openWorkspace(const QString& folderPath);
     void closeWorkspace();
+    bool closeWorkspace(int index);
     bool isWorkspaceOpen() const;
     QString getWorkspacePath() const;
     QString getWorkspaceAlias() const;
