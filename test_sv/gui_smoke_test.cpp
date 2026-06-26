@@ -1256,6 +1256,51 @@ static void runEditorSmartSelectionRegression()
                true);
 }
 
+static void runEditorOccurrenceNavigationRegression()
+{
+    MyCodeEditor editor;
+    editor.resize(520, 140);
+    editor.setPlainText(
+        QStringLiteral("assign foo = foo + bar;\nassign bar = foo;\n"));
+    editor.show();
+    editor.setFocus();
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+
+    const QString text = editor.toPlainText();
+    const int firstFoo = text.indexOf(QStringLiteral("foo"));
+    const int secondFoo = text.indexOf(QStringLiteral("foo"), firstFoo + 1);
+    const int thirdFoo = text.indexOf(QStringLiteral("foo"), secondFoo + 1);
+    QTextCursor cursor = editor.textCursor();
+    cursor.setPosition(firstFoo);
+    cursor.setPosition(firstFoo + 3, QTextCursor::KeepAnchor);
+    editor.setTextCursor(cursor);
+
+    QTest::keyClick(&editor, Qt::Key_E, Qt::ControlModifier);
+    expectBool("occurrence navigation next selects second occurrence",
+               editor.textCursor().selectionStart() == secondFoo
+                   && editor.textCursor().selectedText()
+                          == QStringLiteral("foo"),
+               true);
+    QTest::keyClick(&editor, Qt::Key_E, Qt::ControlModifier);
+    expectBool("occurrence navigation next selects third occurrence",
+               editor.textCursor().selectionStart() == thirdFoo
+                   && editor.textCursor().selectedText()
+                          == QStringLiteral("foo"),
+               true);
+    QTest::keyClick(&editor, Qt::Key_E, Qt::ControlModifier);
+    expectBool("occurrence navigation next wraps",
+               editor.textCursor().selectionStart() == firstFoo
+                   && editor.textCursor().selectedText()
+                          == QStringLiteral("foo"),
+               true);
+    QTest::keyClick(&editor, Qt::Key_Q, Qt::ControlModifier);
+    expectBool("occurrence navigation previous wraps",
+               editor.textCursor().selectionStart() == thirdFoo
+                   && editor.textCursor().selectedText()
+                          == QStringLiteral("foo"),
+               true);
+}
+
 static void runEditorColumnEditRegression()
 {
     MyCodeEditor editor;
@@ -4714,6 +4759,7 @@ int main(int argc, char** argv)
     runFormatterSettingsRegression();
     runEditorBracketRangeRegression();
     runEditorSmartSelectionRegression();
+    runEditorOccurrenceNavigationRegression();
     runEditorColumnEditRegression();
     runEditorFormatterRegression();
     runEditorAppearanceCoordinatorRegression();

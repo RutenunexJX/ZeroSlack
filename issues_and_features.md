@@ -8,7 +8,6 @@ This file is a running checklist for problems to fix and new features to conside
 
 ## Feature Ideas
 
-- [ ] Add selected-symbol occurrence navigation in the current file. When a symbol is selected, `Ctrl+E` should jump to the next occurrence/call site in the file, and `Ctrl+Q` should jump to the previous occurrence/call site. Navigation should wrap around from the end to the beginning, and from the beginning to the end.
 - [ ] Add safe rename for the selected symbol with `Ctrl+R`. Show a rename dialog, then rename the definition and all resolved call/reference sites. If the selected symbol has no definition, prompt whether to create one; accepting opens a definition input dialog that supports `;cmd` and `;;cmd` expansion, analyzes the generated declaration, and inserts it at a valid location before the first use and after required type definitions such as inserting `st_e cs;` after the `st_e` enum type definition. Rejecting cancels the rename. If the new name conflicts with an existing definition, show `Force rename` and `Rename conflicting definition first`; the second option must rename the conflicting definition before the requested rename, and that intermediate rename must not introduce another definition conflict.
 
 ## Discussion Needed
@@ -35,3 +34,4 @@ This file is a running checklist for problems to fix and new features to conside
 - [x] Add semantic highlighting for parameter and localparam references at use sites, such as `[P_WIDTH-1:0]`, `assign x = P_DEPTH;`, and parameter expressions. References now reuse the parameter semantic role instead of falling back to ordinary identifier coloring.
 - [x] Add dedicated semantic highlighting for module ports, so input/output/inout port names are visually distinct from internal signals at declaration and use sites.
 - [x] Add `Ctrl+W` smart selection expansion. It now expands symbol -> member/hierarchical expression -> current parenthesized expression content -> next outer parenthesized expression content, and starts from operator/number positions inside parentheses by selecting the parenthesized expression content.
+- [x] Add selected-symbol occurrence navigation in the current file. When a symbol is selected, `Ctrl+E` jumps to the next occurrence/call site and `Ctrl+Q` jumps to the previous occurrence/call site, preserving selection and wrapping at file boundaries.

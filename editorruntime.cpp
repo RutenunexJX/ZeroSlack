@@ -251,6 +251,94 @@ bool handleSmartSelectionExpansion(MyCodeEditor* editor, QKeyEvent* event)
     return false;
 }
 
+bool isStandaloneIdentifierText(const QString& text)
+{
+    if (text.isEmpty() || !isSmartIdentifierStart(text.at(0)))
+        return false;
+    for (int i = 1; i < text.size(); ++i) {
+        if (!isSmartIdentifierPart(text.at(i)))
+            return false;
+    }
+    return true;
+}
+
+QList<TextSpan> identifierOccurrences(const QString& text,
+                                      const QString& symbol)
+{
+    QList<TextSpan> occurrences;
+    if (!isStandaloneIdentifierText(symbol))
+        return occurrences;
+
+    int pos = 0;
+    while (pos >= 0 && pos < text.size()) {
+        pos = text.indexOf(symbol, pos, Qt::CaseSensitive);
+        if (pos < 0)
+            break;
+
+        const int end = pos + symbol.size();
+        const bool leftOk = pos == 0 || !isSmartIdentifierPart(text.at(pos - 1));
+        const bool rightOk =
+            end >= text.size() || !isSmartIdentifierPart(text.at(end));
+        if (leftOk && rightOk)
+            occurrences.append({pos, end});
+        pos = end;
+    }
+    return occurrences;
+}
+
+bool handleSelectedSymbolOccurrenceNavigation(MyCodeEditor* editor,
+                                              QKeyEvent* event)
+{
+    if (!editor || !event
+        || !event->modifiers().testFlag(Qt::ControlModifier)
+        || event->modifiers().testFlag(Qt::AltModifier)
+        || event->modifiers().testFlag(Qt::MetaModifier)) {
+        return false;
+    }
+
+    const bool next = event->key() == Qt::Key_E;
+    const bool previous = event->key() == Qt::Key_Q;
+    if (!next && !previous)
+        return false;
+
+    QTextCursor cursor = editor->textCursor();
+    if (!cursor.hasSelection())
+        return false;
+
+    const QString symbol = cursor.selectedText();
+    if (!isStandaloneIdentifierText(symbol))
+        return false;
+
+    const QList<TextSpan> occurrences =
+        identifierOccurrences(editor->toPlainText(), symbol);
+    if (occurrences.isEmpty())
+        return false;
+
+    const int currentStart = cursor.selectionStart();
+    TextSpan target = occurrences.constFirst();
+    if (next) {
+        for (const TextSpan& occurrence : occurrences) {
+            if (occurrence.start > currentStart) {
+                target = occurrence;
+                break;
+            }
+        }
+    } else {
+        target = occurrences.constLast();
+        for (int i = occurrences.size() - 1; i >= 0; --i) {
+            if (occurrences.at(i).start < currentStart) {
+                target = occurrences.at(i);
+                break;
+            }
+        }
+    }
+
+    selectTextSpan(editor, target);
+    editor->centerCursor();
+    event->accept();
+    return true;
+}
+
 QString rangeFromBracketInnerText(const QString& innerText)
 {
     const QString trimmed = innerText.trimmed();
@@ -1202,6 +1290,9 @@ bool MyCodeEditorState::handleKeyPress(MyCodeEditor* editor, QKeyEvent* event)
     }
 
     if (handleSmartSelectionExpansion(editor, event))
+        return true;
+
+    if (handleSelectedSymbolOccurrenceNavigation(editor, event))
         return true;
 
     handleControlKeyPress(editor, event);
