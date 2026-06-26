@@ -2,18 +2,23 @@
 
 #include "mycodeeditor.h"
 
+#include <QAbstractButton>
 #include <QContextMenuEvent>
 #include <QDragEnterEvent>
 #include <QDragMoveEvent>
 #include <QDropEvent>
 #include <QFontMetrics>
+#include <QInputDialog>
 #include <QHash>
 #include <QKeyEvent>
+#include <QLineEdit>
+#include <QMessageBox>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPaintEvent>
 #include <QPalette>
 #include <QPlainTextEdit>
+#include <QPushButton>
 #include <QRect>
 #include <QTextBlock>
 #include <QTextCharFormat>
@@ -335,6 +340,182 @@ bool handleSelectedSymbolOccurrenceNavigation(MyCodeEditor* editor,
 
     selectTextSpan(editor, target);
     editor->centerCursor();
+    event->accept();
+    return true;
+}
+
+bool replaceIdentifierOccurrences(MyCodeEditor* editor,
+                                  const QString& oldName,
+                                  const QString& newName)
+{
+    if (!editor || oldName == newName)
+        return false;
+
+    const QList<TextSpan> occurrences =
+        identifierOccurrences(editor->toPlainText(), oldName);
+    if (occurrences.isEmpty())
+        return false;
+
+    QTextCursor cursor(editor->document());
+    cursor.beginEditBlock();
+    for (int i = occurrences.size() - 1; i >= 0; --i) {
+        const TextSpan span = occurrences.at(i);
+        cursor.setPosition(span.start);
+        cursor.setPosition(span.end, QTextCursor::KeepAnchor);
+        cursor.insertText(newName);
+    }
+    cursor.endEditBlock();
+    return true;
+}
+
+void selectFirstIdentifierOccurrence(MyCodeEditor* editor,
+                                     const QString& name)
+{
+    if (!editor)
+        return;
+    const QList<TextSpan> occurrences =
+        identifierOccurrences(editor->toPlainText(), name);
+    if (!occurrences.isEmpty())
+        selectTextSpan(editor, occurrences.constFirst());
+}
+
+bool promptForRenameName(MyCodeEditor* editor,
+                         const QString& title,
+                         const QString& label,
+                         const QString& currentName,
+                         QString* outName)
+{
+    if (outName)
+        outName->clear();
+
+    bool accepted = false;
+    const QString newName = QInputDialog::getText(
+        editor,
+        title,
+        label,
+        QLineEdit::Normal,
+        currentName,
+        &accepted).trimmed();
+    if (!accepted)
+        return false;
+
+    if (!isStandaloneIdentifierText(newName)) {
+        QMessageBox::warning(
+            editor,
+            title,
+            QStringLiteral("Enter a valid SystemVerilog identifier."));
+        return false;
+    }
+
+    if (outName)
+        *outName = newName;
+    return true;
+}
+
+enum class RenameConflictChoice {
+    Cancel,
+    Force,
+    RenameConflictFirst
+};
+
+RenameConflictChoice promptRenameConflictChoice(MyCodeEditor* editor,
+                                                const QString& newName)
+{
+    QMessageBox box(editor);
+    box.setWindowTitle(QStringLiteral("Rename Symbol"));
+    box.setIcon(QMessageBox::Warning);
+    box.setText(
+        QStringLiteral("The name \"%1\" already exists in this file.")
+            .arg(newName));
+    QAbstractButton* forceButton =
+        box.addButton(QStringLiteral("Force rename"),
+                      QMessageBox::AcceptRole);
+    QAbstractButton* renameConflictButton =
+        box.addButton(QStringLiteral("Rename conflicting definition first"),
+                      QMessageBox::ActionRole);
+    box.addButton(QMessageBox::Cancel);
+    box.exec();
+
+    if (box.clickedButton() == forceButton)
+        return RenameConflictChoice::Force;
+    if (box.clickedButton() == renameConflictButton)
+        return RenameConflictChoice::RenameConflictFirst;
+    return RenameConflictChoice::Cancel;
+}
+
+bool handleSafeRename(MyCodeEditor* editor, QKeyEvent* event)
+{
+    if (!editor || !event
+        || event->key() != Qt::Key_R
+        || !event->modifiers().testFlag(Qt::ControlModifier)
+        || event->modifiers().testFlag(Qt::ShiftModifier)
+        || event->modifiers().testFlag(Qt::AltModifier)
+        || event->modifiers().testFlag(Qt::MetaModifier)) {
+        return false;
+    }
+
+    const QString text = editor->toPlainText();
+    QTextCursor cursor = editor->textCursor();
+    TextSpan symbolSpan = cursor.hasSelection()
+        ? TextSpan{cursor.selectionStart(), cursor.selectionEnd()}
+        : symbolSpanAt(text, cursor.position());
+    if (!symbolSpan.isValid())
+        return false;
+
+    const QString oldName = text.mid(symbolSpan.start, symbolSpan.length());
+    if (!isStandaloneIdentifierText(oldName))
+        return false;
+
+    QString newName;
+    if (!promptForRenameName(editor,
+                             QStringLiteral("Rename Symbol"),
+                             QStringLiteral("New name"),
+                             oldName,
+                             &newName)) {
+        event->accept();
+        return true;
+    }
+    if (newName == oldName) {
+        event->accept();
+        return true;
+    }
+
+    if (!identifierOccurrences(text, newName).isEmpty()) {
+        const RenameConflictChoice choice =
+            promptRenameConflictChoice(editor, newName);
+        if (choice == RenameConflictChoice::Cancel) {
+            event->accept();
+            return true;
+        }
+
+        if (choice == RenameConflictChoice::RenameConflictFirst) {
+            QString conflictReplacement;
+            if (!promptForRenameName(
+                    editor,
+                    QStringLiteral("Rename Conflicting Definition"),
+                    QStringLiteral("Temporary name"),
+                    newName + QStringLiteral("_renamed"),
+                    &conflictReplacement)) {
+                event->accept();
+                return true;
+            }
+            if (conflictReplacement == oldName
+                || conflictReplacement == newName
+                || !identifierOccurrences(editor->toPlainText(),
+                                          conflictReplacement).isEmpty()) {
+                QMessageBox::warning(
+                    editor,
+                    QStringLiteral("Rename Conflicting Definition"),
+                    QStringLiteral("Choose a unique temporary name."));
+                event->accept();
+                return true;
+            }
+            replaceIdentifierOccurrences(editor, newName, conflictReplacement);
+        }
+    }
+
+    replaceIdentifierOccurrences(editor, oldName, newName);
+    selectFirstIdentifierOccurrence(editor, newName);
     event->accept();
     return true;
 }
@@ -1293,6 +1474,9 @@ bool MyCodeEditorState::handleKeyPress(MyCodeEditor* editor, QKeyEvent* event)
         return true;
 
     if (handleSelectedSymbolOccurrenceNavigation(editor, event))
+        return true;
+
+    if (handleSafeRename(editor, event))
         return true;
 
     handleControlKeyPress(editor, event);

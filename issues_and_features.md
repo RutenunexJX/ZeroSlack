@@ -8,7 +8,7 @@ This file is a running checklist for problems to fix and new features to conside
 
 ## Feature Ideas
 
-- [ ] Add safe rename for the selected symbol with `Ctrl+R`. Show a rename dialog, then rename the definition and all resolved call/reference sites. If the selected symbol has no definition, prompt whether to create one; accepting opens a definition input dialog that supports `;cmd` and `;;cmd` expansion, analyzes the generated declaration, and inserts it at a valid location before the first use and after required type definitions such as inserting `st_e cs;` after the `st_e` enum type definition. Rejecting cancels the rename. If the new name conflicts with an existing definition, show `Force rename` and `Rename conflicting definition first`; the second option must rename the conflicting definition before the requested rename, and that intermediate rename must not introduce another definition conflict.
+- [ ] Extend `Ctrl+R` safe rename beyond the current-file MVP to rename resolved cross-file definitions and references, support missing-definition creation with `;cmd` / `;;cmd` expansion, insert generated declarations at semantically valid locations before first use and after required type definitions such as `st_e`, and perform chained conflict-resolution renames without introducing another definition conflict.
 
 ## Discussion Needed
 
@@ -35,3 +35,4 @@ This file is a running checklist for problems to fix and new features to conside
 - [x] Add dedicated semantic highlighting for module ports, so input/output/inout port names are visually distinct from internal signals at declaration and use sites.
 - [x] Add `Ctrl+W` smart selection expansion. It now expands symbol -> member/hierarchical expression -> current parenthesized expression content -> next outer parenthesized expression content, and starts from operator/number positions inside parentheses by selecting the parenthesized expression content.
 - [x] Add selected-symbol occurrence navigation in the current file. When a symbol is selected, `Ctrl+E` jumps to the next occurrence/call site and `Ctrl+Q` jumps to the previous occurrence/call site, preserving selection and wrapping at file boundaries.
+- [x] Add current-file `Ctrl+R` safe rename MVP. It prompts for a valid identifier, renames all current-file word-boundary occurrences in one edit block, preserves similarly prefixed names, and offers `Force rename` / `Rename conflicting definition first` choices for current-file name conflicts.

@@ -7,6 +7,7 @@
 #include <QCompleter>
 #include <QComboBox>
 #include <QDialog>
+#include <QDialogButtonBox>
 #include <QDockWidget>
 #include <QDir>
 #include <QElapsedTimer>
@@ -164,6 +165,31 @@ static bool sendEditorWheel(MyCodeEditor* editor,
     event.ignore();
     QCoreApplication::sendEvent(editor->viewport(), &event);
     return event.isAccepted();
+}
+
+static void acceptNextLineEditDialog(const QString& text)
+{
+    QTimer::singleShot(0, [text]() {
+        QWidget* dialog = QApplication::activeModalWidget();
+        if (!dialog)
+            return;
+
+        QLineEdit* lineEdit = dialog->findChild<QLineEdit*>();
+        if (lineEdit) {
+            lineEdit->setText(text);
+            lineEdit->selectAll();
+        }
+
+        QDialogButtonBox* buttons =
+            dialog->findChild<QDialogButtonBox*>();
+        if (buttons && buttons->button(QDialogButtonBox::Ok)) {
+            buttons->button(QDialogButtonBox::Ok)->click();
+            return;
+        }
+
+        if (QDialog* asDialog = qobject_cast<QDialog*>(dialog))
+            asDialog->accept();
+    });
 }
 
 static std::unique_ptr<QSettings> makeTemporarySettings(
@@ -1298,6 +1324,39 @@ static void runEditorOccurrenceNavigationRegression()
                editor.textCursor().selectionStart() == thirdFoo
                    && editor.textCursor().selectedText()
                           == QStringLiteral("foo"),
+               true);
+}
+
+static void runEditorSafeRenameRegression()
+{
+    MyCodeEditor editor;
+    editor.resize(520, 160);
+    editor.setPlainText(
+        QStringLiteral("logic oldName;\n"
+                       "assign oldName_next = oldName;\n"
+                       "assign sink = oldName;\n"));
+    editor.show();
+    editor.setFocus();
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+
+    QTextCursor cursor = editor.textCursor();
+    const int firstOldName = editor.toPlainText().indexOf(QStringLiteral("oldName"));
+    cursor.setPosition(firstOldName);
+    cursor.setPosition(firstOldName + QStringLiteral("oldName").size(),
+                       QTextCursor::KeepAnchor);
+    editor.setTextCursor(cursor);
+
+    acceptNextLineEditDialog(QStringLiteral("newName"));
+    QTest::keyClick(&editor, Qt::Key_R, Qt::ControlModifier);
+    expectBool("safe rename updates current file occurrences",
+               editor.toPlainText()
+                   == QStringLiteral("logic newName;\n"
+                                     "assign oldName_next = newName;\n"
+                                     "assign sink = newName;\n"),
+               true);
+    expectBool("safe rename preserves word boundaries and selection",
+               editor.textCursor().selectedText() == QStringLiteral("newName")
+                   && editor.toPlainText().contains(QStringLiteral("oldName_next")),
                true);
 }
 
@@ -4760,6 +4819,7 @@ int main(int argc, char** argv)
     runEditorBracketRangeRegression();
     runEditorSmartSelectionRegression();
     runEditorOccurrenceNavigationRegression();
+    runEditorSafeRenameRegression();
     runEditorColumnEditRegression();
     runEditorFormatterRegression();
     runEditorAppearanceCoordinatorRegression();
