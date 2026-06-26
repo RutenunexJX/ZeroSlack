@@ -9,8 +9,10 @@ ZeroSlack should:
 - open real SV workspaces reliably
 - understand modules, packages, includes, typedefs, enums, structs, interfaces, instances, tasks, functions, ports, variables, diagnostics, references, and relationships
 - provide trustworthy completion, jump-to-definition, navigation, diagnostics, references, relationship browsing, RTL insight reports, and signal-centric driver/consumer graphs
+- provide practical include-file workflows for SystemVerilog headers, including precise `` `include`` triggering, header-only candidates, and visible new-file template previews
 - provide fast declaration templates for common SystemVerilog signals and parameters without taking ownership of user value expressions
-- provide passive ghost inline values for semantic context that users often compute mentally, without changing source text
+- provide passive ghost inline values for semantic context that users often compute mentally, including evaluated parameters, macros, expressions, casts, system functions, simple user functions, numeric bases, and ASCII values without changing source text
+- provide editor interaction modes that stay predictable after modifier keys are released, including durable double-click hover and column editing selections
 - provide conservative source formatting that improves indentation and common RTL alignment without surprising source rewrites
 - remain responsive on large files and multi-file workspaces
 - keep semantic behavior testable through real fixtures
@@ -28,6 +30,12 @@ ZeroSlack should:
 - Formatter is considered usable as a conservative source-preserving formatter: it supports opt-in `Structured` and `Indent Only` profiles, common declaration/port/instance/case/enum/assignment alignment, continuation shaping, format selection, format-on-save, and safe leading-whitespace indentation for common SystemVerilog blocks and single-statement bodies.
 - Huge Workspace Mode is considered usable as a responsiveness and provenance baseline: it prioritizes current/open files, coalesces and expires stale background requests, supports non-blocking cancellation boundaries where available, publishes safe staged symbol snapshots, and exposes current/open/background analysis-band provenance through Activity, Problems, diagnostics, and completion surfaces.
 - This baseline does not close the long-term objective. It defines the stable product floor that future Wave Preview, Formatter, and Huge Workspace work must preserve.
+
+## Current Product Polish Baseline
+
+- The r4 polish baseline keeps the editor centered on concrete RTL work: include completion is header-scoped, new include files default to the first format/template choice, hover behavior is stable across Ctrl navigation and double-click selection, and column mode supports persistent vertical or rectangular edits with clear adjust-vs-move arrow semantics.
+- Passive value help now aims to show computed values instead of source spelling when that is useful: simple numeric parameter literals stay quiet, while references, expressions, casts, `$clog2`, simple functions, and ASCII strings render binary/decimal/hex values; numeric and string hovers avoid includes and comments.
+- Signal Kernel Graph exploration supports zooming and non-disruptive double-click reveal/flash navigation. Dense output fanout should be solved next with grouped or collapsible output presentation rather than a one-off tall stack.
 
 ## Target Architecture
 

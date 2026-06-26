@@ -23,6 +23,11 @@ Thin UI consumers
 
 ## Latest Strategy
 
+- Current r4 polish baseline is committed on top of the Post-L work: include completion now waits for the complete `` `include`` keyword, suggests only `.vh` / `.svh` include targets, defaults include-new format/template rows to the first selectable item, and shows template content while the row is selected.
+- Editor interaction polish in the r4 baseline keeps Ctrl+hover definition popups unchanged but clears them after Ctrl+left-click navigation, keeps double-click basic hover visible while the selection remains active, and strengthens column mode with Shift+Alt click-click selection, persistent vertical or rectangular column selections, Esc cancellation, multi-line insert/delete/backspace, and the documented arrow-key adjust-vs-move split.
+- Ghost value polish in the r4 baseline evaluates parameter/localparam expressions to actual values, suppresses simple numeric literal ghosts, shows binary/decimal/hex for parameter, macro, expression, cast, `$clog2`, simple function, and ASCII-string cases, and keeps numeric/string conversion hovers out of includes and comments.
+- Signal Kernel Graph polish in the r4 baseline adds view zooming and changes double-click graph navigation to reveal and flash the target line without moving the editor cursor. High-fanout output layout remains intentionally open for a grouped or collapsible design decision.
+- r4 verification passed locally with `completion_test` 582 checks, `gui_smoke_test` 478 checks, `jump_test` 115 checks, and `relationship_test` 787 checks before packaging `ZeroSlack-0.0.20-slang25-win64-20260626-r4`.
 - Wave Preview, Formatter, and Huge Workspace Mode are long-term goals captured in `goal.md`, not automatic blockers for unrelated feature work. Resume them when the user explicitly asks, or when a requested feature naturally belongs to one of those areas.
 - When the user asks to stabilize, converge, or make the branch a non-intermediate version, stop extending those three long-term goals, preserve a coherent baseline, and make room for new feature work.
 - Current Three-Feature Stable Baseline is the branch head after this stabilization pass. It is the non-intermediate baseline for the current Wave Preview, Formatter, and Huge Workspace work: usable behavior is documented, verified, and pushed before further expansion starts.

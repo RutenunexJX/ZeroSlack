@@ -10,6 +10,8 @@ Use `readme.md` for handoff state and `goal.md` for stable product and architect
 - This is a non-intermediate delivery point, not the end of the long-term objective. Future work should start from this baseline and produce a new coherent baseline only after another usable milestone is implemented, documented, verified, committed, and pushed.
 - Wave Preview remains a code-understanding sketch rather than a simulator. Formatter remains conservative, profile-driven, and source-preserving. Huge Workspace Mode remains priority/cancellation/provenance driven, with staged symbol visibility and explicit current/open/background band semantics.
 - Baseline stabilization should not add feature behavior unless a broken edge prevents the baseline from being coherent. The expected gate is a clean starting branch, current docs, full default CMake build, full `ctest --output-on-failure`, `git diff --check`, and a pushed commit.
+- Current r4 polish is a coherent feature-polish block after the Post-L baseline. It covers include completion/new-header workflow, Ctrl and double-click hover lifecycle, column-mode persistence and arrow semantics, evaluated ghost values and numeric/ASCII conversion, Signal Kernel Graph zoom/reveal behavior, and a local zip/setup package for trial use.
+- r4 verification used focused UI and semantic regressions rather than a full rebuild gate: `completion_test` 582 checks, `gui_smoke_test` 478 checks, `jump_test` 115 checks, and `relationship_test` 787 checks. A future broad semantic/scheduler change should still use the full Ninja plus full CTest gate.
 
 ## Architecture Flow
 
@@ -20,6 +22,7 @@ Use `readme.md` for handoff state and `goal.md` for stable product and architect
 - Move policy into services only when there is a real production boundary.
 - Expand RTL Insights only through stable semantic contracts and service-owned reports.
 - Signal-centric visual features must build graph/report models in feature services before UI render, and must use precise relationship evidence for preview and navigation when available.
+- Graph navigation from visual panels may reveal and flash a target line without moving the editor cursor when the user is exploring context rather than explicitly opening a source location; ordinary source navigation commands may still move the cursor.
 
 ## Feature Expansion Guardrails
 
