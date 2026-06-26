@@ -1211,6 +1211,51 @@ static void runEditorBracketRangeRegression()
                true);
 }
 
+static void runEditorSmartSelectionRegression()
+{
+    MyCodeEditor editor;
+    editor.resize(520, 140);
+    editor.setPlainText(
+        QStringLiteral("assign y = ((test_s.test_m == 1) & (test_data == 1));\n"));
+    editor.show();
+    editor.setFocus();
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+
+    QTextCursor cursor = editor.textCursor();
+    cursor.setPosition(editor.toPlainText().indexOf(QStringLiteral("test_m")) + 2);
+    editor.setTextCursor(cursor);
+    QTest::keyClick(&editor, Qt::Key_W, Qt::ControlModifier);
+    expectBool("smart selection starts with symbol",
+               editor.textCursor().selectedText() == QStringLiteral("test_m"),
+               true);
+    QTest::keyClick(&editor, Qt::Key_W, Qt::ControlModifier);
+    expectBool("smart selection expands to hierarchical expression",
+               editor.textCursor().selectedText()
+                   == QStringLiteral("test_s.test_m"),
+               true);
+    QTest::keyClick(&editor, Qt::Key_W, Qt::ControlModifier);
+    expectBool("smart selection expands to inner parentheses",
+               editor.textCursor().selectedText()
+                   == QStringLiteral("test_s.test_m == 1"),
+               true);
+    QTest::keyClick(&editor, Qt::Key_W, Qt::ControlModifier);
+    expectBool("smart selection expands to outer parentheses",
+               editor.textCursor().selectedText()
+                   == QStringLiteral(
+                       "(test_s.test_m == 1) & (test_data == 1)"),
+               true);
+
+    QTextCursor numberCursor = editor.textCursor();
+    numberCursor.clearSelection();
+    numberCursor.setPosition(editor.toPlainText().lastIndexOf(QLatin1Char('1')));
+    editor.setTextCursor(numberCursor);
+    QTest::keyClick(&editor, Qt::Key_W, Qt::ControlModifier);
+    expectBool("smart selection starts operator number at parentheses",
+               editor.textCursor().selectedText()
+                   == QStringLiteral("test_data == 1"),
+               true);
+}
+
 static void runEditorColumnEditRegression()
 {
     MyCodeEditor editor;
@@ -4668,6 +4713,7 @@ int main(int argc, char** argv)
     runEditorAppearanceSettingsRegression();
     runFormatterSettingsRegression();
     runEditorBracketRangeRegression();
+    runEditorSmartSelectionRegression();
     runEditorColumnEditRegression();
     runEditorFormatterRegression();
     runEditorAppearanceCoordinatorRegression();

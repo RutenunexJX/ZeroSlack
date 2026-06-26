@@ -30,6 +30,23 @@ constexpr int kMaxPassiveGhostAnnotationCharacters = 2 * 1024 * 1024;
 constexpr int kColumnSelectionProperty = QTextFormat::UserProperty + 20;
 constexpr int kColumnSelectionMarker = 1020;
 
+struct TextSpan {
+    int start = -1;
+    int end = -1;
+
+    bool isValid() const { return start >= 0 && end > start; }
+    int length() const { return end - start; }
+    bool contains(const TextSpan& other) const
+    {
+        return isValid() && other.isValid()
+            && start <= other.start && end >= other.end;
+    }
+    bool operator==(const TextSpan& other) const
+    {
+        return start == other.start && end == other.end;
+    }
+};
+
 bool hasCommandModifier(QKeyEvent* event)
 {
     if (!event)
@@ -49,6 +66,189 @@ bool isUnsignedIntegerText(const QString& text)
             return false;
     }
     return true;
+}
+
+bool isSmartIdentifierStart(QChar ch)
+{
+    return ch.isLetter() || ch == QLatin1Char('_')
+        || ch == QLatin1Char('$');
+}
+
+bool isSmartIdentifierPart(QChar ch)
+{
+    return ch.isLetterOrNumber() || ch == QLatin1Char('_')
+        || ch == QLatin1Char('$');
+}
+
+TextSpan symbolSpanAt(const QString& text, int position)
+{
+    if (text.isEmpty())
+        return {};
+
+    int pos = qBound(0, position, text.size());
+    if (pos >= text.size() || !isSmartIdentifierPart(text.at(pos))) {
+        if (pos > 0 && isSmartIdentifierPart(text.at(pos - 1)))
+            --pos;
+        else
+            return {};
+    }
+
+    int start = pos;
+    while (start > 0 && isSmartIdentifierPart(text.at(start - 1)))
+        --start;
+    if (start >= text.size() || !isSmartIdentifierStart(text.at(start)))
+        return {};
+
+    int end = pos + 1;
+    while (end < text.size() && isSmartIdentifierPart(text.at(end)))
+        ++end;
+    return {start, end};
+}
+
+TextSpan identifierSpanEndingAt(const QString& text, int end)
+{
+    int pos = end - 1;
+    if (pos < 0 || pos >= text.size() || !isSmartIdentifierPart(text.at(pos)))
+        return {};
+
+    int start = pos;
+    while (start > 0 && isSmartIdentifierPart(text.at(start - 1)))
+        --start;
+    if (!isSmartIdentifierStart(text.at(start)))
+        return {};
+    return {start, end};
+}
+
+TextSpan identifierSpanStartingAt(const QString& text, int start)
+{
+    if (start < 0 || start >= text.size()
+        || !isSmartIdentifierStart(text.at(start))) {
+        return {};
+    }
+
+    int end = start + 1;
+    while (end < text.size() && isSmartIdentifierPart(text.at(end)))
+        ++end;
+    return {start, end};
+}
+
+TextSpan hierarchicalExpressionSpan(const QString& text, TextSpan span)
+{
+    if (!span.isValid())
+        return {};
+
+    TextSpan result = span;
+    while (result.start >= 2 && text.at(result.start - 1) == QLatin1Char('.')) {
+        const TextSpan previous =
+            identifierSpanEndingAt(text, result.start - 1);
+        if (!previous.isValid())
+            break;
+        result.start = previous.start;
+    }
+    while (result.end + 1 < text.size()
+           && text.at(result.end) == QLatin1Char('.')) {
+        const TextSpan next =
+            identifierSpanStartingAt(text, result.end + 1);
+        if (!next.isValid())
+            break;
+        result.end = next.end;
+    }
+
+    return result == span ? TextSpan{} : result;
+}
+
+TextSpan parenthesizedContentSpan(const QString& text, TextSpan currentSpan)
+{
+    if (text.isEmpty())
+        return {};
+
+    const int targetStart = currentSpan.isValid()
+        ? currentSpan.start
+        : qBound(0, currentSpan.start, text.size());
+    const int targetEnd = currentSpan.isValid()
+        ? currentSpan.end
+        : targetStart;
+
+    QList<TextSpan> stack;
+    TextSpan best;
+    for (int i = 0; i < text.size(); ++i) {
+        const QChar ch = text.at(i);
+        if (ch == QLatin1Char('(')) {
+            stack.append({i, i + 1});
+            continue;
+        }
+        if (ch != QLatin1Char(')') || stack.isEmpty())
+            continue;
+
+        const TextSpan opening = stack.takeLast();
+        const TextSpan content{opening.start + 1, i};
+        if (!content.isValid())
+            continue;
+        if (content.start > targetStart || content.end < targetEnd)
+            continue;
+        if (currentSpan.isValid() && content == currentSpan)
+            continue;
+        if (!best.isValid() || content.length() < best.length())
+            best = content;
+    }
+    return best;
+}
+
+void selectTextSpan(MyCodeEditor* editor, TextSpan span)
+{
+    if (!editor || !span.isValid())
+        return;
+
+    QTextCursor cursor = editor->textCursor();
+    cursor.setPosition(span.start);
+    cursor.setPosition(span.end, QTextCursor::KeepAnchor);
+    editor->setTextCursor(cursor);
+}
+
+bool handleSmartSelectionExpansion(MyCodeEditor* editor, QKeyEvent* event)
+{
+    if (!editor || !event
+        || event->key() != Qt::Key_W
+        || !event->modifiers().testFlag(Qt::ControlModifier)
+        || event->modifiers().testFlag(Qt::AltModifier)
+        || event->modifiers().testFlag(Qt::MetaModifier)) {
+        return false;
+    }
+
+    const QString text = editor->toPlainText();
+    QTextCursor cursor = editor->textCursor();
+    const TextSpan current = cursor.hasSelection()
+        ? TextSpan{cursor.selectionStart(), cursor.selectionEnd()}
+        : TextSpan{cursor.position(), cursor.position()};
+
+    if (!cursor.hasSelection()) {
+        const TextSpan symbol = symbolSpanAt(text, cursor.position());
+        if (symbol.isValid()) {
+            selectTextSpan(editor, symbol);
+            event->accept();
+            return true;
+        }
+    } else {
+        const TextSpan symbol = symbolSpanAt(text, current.start);
+        const TextSpan hierarchy =
+            symbol.isValid() && current == symbol
+                ? hierarchicalExpressionSpan(text, symbol)
+                : hierarchicalExpressionSpan(text, current);
+        if (hierarchy.isValid() && hierarchy.contains(current)) {
+            selectTextSpan(editor, hierarchy);
+            event->accept();
+            return true;
+        }
+    }
+
+    const TextSpan parenthesized = parenthesizedContentSpan(text, current);
+    if (parenthesized.isValid()) {
+        selectTextSpan(editor, parenthesized);
+        event->accept();
+        return true;
+    }
+
+    return false;
 }
 
 QString rangeFromBracketInnerText(const QString& innerText)
@@ -1000,6 +1200,9 @@ bool MyCodeEditorState::handleKeyPress(MyCodeEditor* editor, QKeyEvent* event)
         event->accept();
         return true;
     }
+
+    if (handleSmartSelectionExpansion(editor, event))
+        return true;
 
     handleControlKeyPress(editor, event);
 
