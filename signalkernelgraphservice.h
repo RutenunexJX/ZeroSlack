@@ -15,6 +15,12 @@ enum class SignalKernelGraphNodeRole {
     Output
 };
 
+enum class SignalKernelGraphInputLane {
+    Data,
+    Control,
+    Timing
+};
+
 enum class SignalKernelGraphNotFoundReason {
     None,
     SignalJourneyUnavailable
@@ -31,6 +37,7 @@ struct SignalKernelGraphQuery {
 struct SignalKernelGraphNode {
     int id = -1;
     SignalKernelGraphNodeRole role = SignalKernelGraphNodeRole::Kernel;
+    SignalKernelGraphInputLane inputLane = SignalKernelGraphInputLane::Data;
     QString displayName;
     QString detailDisplayName;
     QString moduleDisplayName;
@@ -86,6 +93,7 @@ public:
         const SignalKernelGraphQuery& query) const;
 
     static QString nodeRoleDisplayName(SignalKernelGraphNodeRole role);
+    static QString inputLaneDisplayName(SignalKernelGraphInputLane lane);
 
 private:
     SemanticIndex* index = nullptr;

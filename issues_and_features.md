@@ -6,23 +6,6 @@ This file is a running checklist for problems to fix and new features to conside
 
 ## Feature Ideas
 
-- [ ] Redesign Signal Kernel Graph node and module presentation. Node line 1
-      should show the signal/access-path name, node line 2 should show only type
-      and width, while relationship/evidence/detail text moves to hover. Draw a
-      module frame for every module represented in the graph, including the
-      kernel module, and place all input, kernel, and output nodes that belong to
-      the same module inside that module frame with the module name as the frame
-      title.
-- [ ] Split Signal Kernel Graph inputs into dependency lanes instead of a flat
-      input list. Use structure as the primary distinction and color only as an
-      aid: Data inputs for RHS data dependencies, Control inputs for assignment
-      guards such as `if` / `case` / ternary conditions, and Timing inputs for
-      clock/reset/event-control dependencies. Module frames answer ownership;
-      Data/Control/Timing lanes answer how each signal affects the kernel.
-      Conditions should eventually be bound to the specific assignment target
-      they control, so unrelated module-level condition reads do not appear as
-      inputs for every signal in the module.
-
 ## Discussion Needed
 
 - [ ] 
@@ -37,6 +20,8 @@ This file is a running checklist for problems to fix and new features to conside
 - [x] Global or package-defined enum values are not semantically highlighted at use sites. Semantic decorations now derive usage candidates from the current file plus visible imported, qualified, include, and global/package records, while current-file symbols suppress external same-name candidates.
 - [x] Signal Kernel Graph hover preview flickers and can move outside the graph viewport. Graph hover now reuses the active popup for the same node, clamps placement to the graph viewport, avoids hover scale hit-test churn, and closes after a short leave delay.
 - [x] Signal Kernel Graph node double-click navigation is currently broken. Node double-click now closes the hover popup and navigates through both item-level handling and a graph-view fallback that resolves the node under the cursor when `ScrollHandDrag` intercepts item events.
+- [x] Redesign Signal Kernel Graph node and module presentation. Nodes now show the signal/access-path on line 1 and type/source information on line 2, while relationship/evidence/module detail moves to hover. The graph draws a module frame for every represented module, including the kernel module, and frames all input, kernel, and output nodes owned by that module.
+- [x] Split Signal Kernel Graph inputs into dependency lanes instead of a flat input list. Inputs now carry Data, Control, or Timing lane metadata; the panel renders lane bands before nodes, classifies clocks/resets as Timing, condition-like evidence as Control, and ordinary RHS dependencies as Data. Module frames show ownership while lanes show how each input affects the kernel.
 - [x] Ctrl+S save shortcut does not work in manual testing, even though the Save action still declares `Ctrl+S` in `mainwindow.ui`. Registered the Save action as an application-level shortcut on the main window and verified current-editor save behavior.
 - [x] After Ctrl+click jumping to a package definition, mouse side-button back navigation behaves abnormally and requires two presses. Navigation history now records the pre-jump source once before cross-file line jumps.
 - [x] After Ctrl+click jumping to an include file, mouse side-button back navigation fails. Include Ctrl+click now routes through the navigation coordinator so the source location is pushed to back history.

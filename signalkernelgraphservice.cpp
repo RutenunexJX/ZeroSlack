@@ -114,6 +114,33 @@ QString detailForItem(const SignalJourneyItem& item)
     return parts.join(QStringLiteral(" | "));
 }
 
+SignalKernelGraphInputLane inputLaneForItem(const SignalJourneyItem& item)
+{
+    if (item.relationshipType == SymbolRelationshipEngine::CLOCKS
+        || item.relationshipType == SymbolRelationshipEngine::RESETS) {
+        return SignalKernelGraphInputLane::Timing;
+    }
+
+    const QString hint =
+        QStringLiteral("%1 %2 %3 %4")
+            .arg(item.relationshipTypeDisplayName,
+                 item.detailDisplayName,
+                 item.evidenceDisplayName,
+                 item.evidenceText)
+            .toLower();
+    if (hint.contains(QStringLiteral("guard"))
+        || hint.contains(QStringLiteral("condition"))
+        || hint.contains(QStringLiteral("control"))
+        || hint.contains(QStringLiteral(" if "))
+        || hint.contains(QStringLiteral("if("))
+        || hint.contains(QStringLiteral("case "))
+        || hint.contains(QLatin1Char('?'))) {
+        return SignalKernelGraphInputLane::Control;
+    }
+
+    return SignalKernelGraphInputLane::Data;
+}
+
 bool nameLooksInputLike(const QString& name)
 {
     const QString lower = name.toLower();
@@ -179,6 +206,9 @@ SignalKernelGraphNode nodeForJourneyItem(
     SignalKernelGraphNode node;
     node.id = id;
     node.role = role;
+    node.inputLane = role == SignalKernelGraphNodeRole::Input
+        ? inputLaneForItem(item)
+        : SignalKernelGraphInputLane::Data;
     node.displayName = item.peerSymbolDisplayName;
     node.detailDisplayName = detailForItem(item);
     node.moduleDisplayName = displayModuleNameForRecord(item.peerSymbolRecord);
@@ -383,7 +413,7 @@ SignalKernelGraphReport SignalKernelGraphService::buildSignalKernelGraph(
                         existingNodes,
                         nextNodeId,
                         item,
-                        roleForItem(item, SignalKernelGraphNodeRole::Output));
+                        SignalKernelGraphNodeRole::Input);
     }
 
     sortNodes(report.inputs);
@@ -414,4 +444,18 @@ QString SignalKernelGraphService::nodeRoleDisplayName(
         return QStringLiteral("output");
     }
     return QStringLiteral("node");
+}
+
+QString SignalKernelGraphService::inputLaneDisplayName(
+    SignalKernelGraphInputLane lane)
+{
+    switch (lane) {
+    case SignalKernelGraphInputLane::Data:
+        return QStringLiteral("Data");
+    case SignalKernelGraphInputLane::Control:
+        return QStringLiteral("Control");
+    case SignalKernelGraphInputLane::Timing:
+        return QStringLiteral("Timing");
+    }
+    return QStringLiteral("Data");
 }

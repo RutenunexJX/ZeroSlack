@@ -5435,6 +5435,14 @@ static void runSignalJourneyServiceFixture()
                    && graphReport.inputs.size() == 2
                    && graphReport.outputs.size() == 3,
                true);
+    expectBool("signal kernel graph data input lanes",
+               nextDataInput
+                   && nextDataInput->inputLane
+                          == SignalKernelGraphInputLane::Data
+                   && interfaceInput
+                   && interfaceInput->inputLane
+                          == SignalKernelGraphInputLane::Data,
+               true);
     expectBool("signal kernel graph precise input evidence",
                nextDataInput
                    && nextDataInput->preciseEvidence

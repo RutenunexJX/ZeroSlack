@@ -94,6 +94,26 @@ QString roleTitle(SignalKernelGraphNodeRole role)
     return QStringLiteral("Node");
 }
 
+QList<SignalKernelGraphInputLane> inputLaneOrder()
+{
+    return {SignalKernelGraphInputLane::Data,
+            SignalKernelGraphInputLane::Control,
+            SignalKernelGraphInputLane::Timing};
+}
+
+QColor inputLaneColor(SignalKernelGraphInputLane lane)
+{
+    switch (lane) {
+    case SignalKernelGraphInputLane::Data:
+        return QColor(QStringLiteral("#dcfce7"));
+    case SignalKernelGraphInputLane::Control:
+        return QColor(QStringLiteral("#fef3c7"));
+    case SignalKernelGraphInputLane::Timing:
+        return QColor(QStringLiteral("#e0f2fe"));
+    }
+    return QColor(QStringLiteral("#dcfce7"));
+}
+
 QColor fillColorForRole(SignalKernelGraphNodeRole role)
 {
     switch (role) {
@@ -136,6 +156,35 @@ QRectF nodeRectAt(qreal centerX, qreal centerY)
                   centerY - kNodeHeight / 2.0,
                   kNodeWidth,
                   kNodeHeight);
+}
+
+QString moduleDisplayNameForNode(const SignalKernelGraphNode& node)
+{
+    if (!node.moduleDisplayName.isEmpty())
+        return node.moduleDisplayName;
+    if (!node.symbolRecord.owner.name.isEmpty())
+        return node.symbolRecord.owner.name;
+    return QFileInfo(node.navigateCodeLink.fileName).fileName();
+}
+
+QString hoverDetailForNode(const SignalKernelGraphNode& node)
+{
+    QStringList parts;
+    if (node.role == SignalKernelGraphNodeRole::Input) {
+        parts.append(QStringLiteral("%1 input")
+                         .arg(SignalKernelGraphService::inputLaneDisplayName(
+                             node.inputLane)));
+    } else {
+        parts.append(roleTitle(node.role));
+    }
+    if (!node.typeDisplayName.isEmpty())
+        parts.append(node.typeDisplayName);
+    const QString moduleName = moduleDisplayNameForNode(node);
+    if (!moduleName.isEmpty())
+        parts.append(QStringLiteral("module %1").arg(moduleName));
+    if (!node.detailDisplayName.isEmpty())
+        parts.append(node.detailDisplayName);
+    return parts.join(QStringLiteral(" | "));
 }
 
 qreal rowY(int index, int count)
@@ -181,12 +230,9 @@ public:
         title->setBrush(QBrush(QColor(QStringLiteral("#0f172a"))));
         title->setPos(rect.left() + 10, rect.top() + 8);
 
-        QString detail = node.detailDisplayName;
-        if (!node.moduleDisplayName.isEmpty()) {
-            detail = detail.isEmpty()
-                ? node.moduleDisplayName
-                : QStringLiteral("%1 | %2").arg(node.moduleDisplayName, detail);
-        }
+        QString detail = node.typeDisplayName;
+        if (detail.isEmpty())
+            detail = node.sourceRoleDisplayName;
         auto* detailItem = new QGraphicsSimpleTextItem(
             elidedText(detail, detailFont,
                        static_cast<int>(rect.width() - 18)),
@@ -320,21 +366,147 @@ QRectF unitedRectForGroup(
     return groupRect;
 }
 
+struct InputLaneBand {
+    SignalKernelGraphInputLane lane = SignalKernelGraphInputLane::Data;
+    QRectF rect;
+};
+
+struct InputLaneLayout {
+    QHash<int, QRectF> nodeRects;
+    QList<InputLaneBand> bands;
+    QRectF bounds;
+};
+
+InputLaneLayout layoutInputLanes(const QList<SignalKernelGraphNode>& inputs)
+{
+    InputLaneLayout layout;
+    if (inputs.isEmpty())
+        return layout;
+
+    QList<QList<SignalKernelGraphNode>> lanes;
+    int nonEmptyLaneCount = 0;
+    for (SignalKernelGraphInputLane lane : inputLaneOrder()) {
+        QList<SignalKernelGraphNode> laneNodes;
+        for (const SignalKernelGraphNode& node : inputs) {
+            if (node.inputLane == lane)
+                laneNodes.append(node);
+        }
+        if (!laneNodes.isEmpty())
+            ++nonEmptyLaneCount;
+        lanes.append(laneNodes);
+    }
+
+    const qreal totalHeight =
+        qMax<qreal>(0.0,
+                    (inputs.size() - 1) * kVerticalSpacing
+                        + qMax(0, nonEmptyLaneCount - 1) * 44.0);
+    qreal y = -totalHeight / 2.0;
+    bool firstLane = true;
+    for (int laneIndex = 0; laneIndex < lanes.size(); ++laneIndex) {
+        const QList<SignalKernelGraphNode>& laneNodes = lanes.at(laneIndex);
+        if (laneNodes.isEmpty())
+            continue;
+        if (!firstLane)
+            y += 44.0;
+        firstLane = false;
+
+        QRectF laneRect;
+        bool firstNode = true;
+        for (const SignalKernelGraphNode& node : laneNodes) {
+            const QRectF rect = nodeRectAt(-kColumnOffset, y);
+            layout.nodeRects.insert(node.id, rect);
+            laneRect = firstNode ? rect : laneRect.united(rect);
+            layout.bounds = layout.bounds.isValid()
+                ? layout.bounds.united(rect)
+                : rect;
+            firstNode = false;
+            y += kVerticalSpacing;
+        }
+
+        InputLaneBand band;
+        band.lane = inputLaneOrder().at(laneIndex);
+        band.rect = laneRect.adjusted(-28, -30, 28, 30);
+        layout.bands.append(band);
+    }
+
+    return layout;
+}
+
+void addInputLaneBand(QGraphicsScene* scene,
+                      const InputLaneBand& band,
+                      const QFont& font)
+{
+    if (!scene || !band.rect.isValid())
+        return;
+    QColor fill = inputLaneColor(band.lane);
+    fill.setAlpha(74);
+    QPen pen(inputLaneColor(band.lane).darker(150), 1.0);
+    auto* rectItem = scene->addRect(band.rect, pen, QBrush(fill));
+    rectItem->setZValue(-30);
+
+    QFont labelFont = font;
+    labelFont.setBold(true);
+    labelFont.setPointSize(qMax(8, labelFont.pointSize() - 1));
+    auto* label = scene->addSimpleText(
+        SignalKernelGraphService::inputLaneDisplayName(band.lane),
+        labelFont);
+    label->setBrush(QBrush(QColor(QStringLiteral("#334155"))));
+    label->setPos(band.rect.left() + 8, band.rect.top() + 5);
+    label->setZValue(-29);
+}
+
+QList<SignalKernelGraphModuleGroup> moduleGroupsForReport(
+    const SignalKernelGraphReport& report)
+{
+    QList<SignalKernelGraphModuleGroup> groups;
+    QHash<QString, int> groupIndexByModule;
+
+    auto appendNode = [&](const SignalKernelGraphNode& node) {
+        QString moduleName = moduleDisplayNameForNode(node);
+        if (moduleName.isEmpty())
+            moduleName = QStringLiteral("<unknown>");
+        if (!groupIndexByModule.contains(moduleName)) {
+            SignalKernelGraphModuleGroup group;
+            group.moduleName = moduleName;
+            group.crossModule = !report.kernelModuleName.isEmpty()
+                && moduleName != report.kernelModuleName;
+            groupIndexByModule.insert(moduleName, groups.size());
+            groups.append(group);
+        }
+        groups[groupIndexByModule.value(moduleName)].nodeIds.append(node.id);
+    };
+
+    for (const SignalKernelGraphNode& node : report.inputs)
+        appendNode(node);
+    appendNode(report.kernel);
+    for (const SignalKernelGraphNode& node : report.outputs)
+        appendNode(node);
+    return groups;
+}
+
 void addModuleWrapper(QGraphicsScene* scene,
                       const SignalKernelGraphModuleGroup& group,
                       const QHash<int, QRectF>& nodeRects,
                       const QFont& font)
 {
-    if (!scene || !group.crossModule)
+    if (!scene)
         return;
 
     const QRectF groupRect =
-        unitedRectForGroup(nodeRects, group.nodeIds).adjusted(-18, -24, 18, 18);
+        unitedRectForGroup(nodeRects, group.nodeIds).adjusted(-20, -28, 20, 22);
     if (!groupRect.isValid())
         return;
 
-    QPen pen(QColor(QStringLiteral("#64748b")), 1.0, Qt::DashLine);
-    auto* wrapper = scene->addRect(groupRect, pen, Qt::NoBrush);
+    QPen pen(group.crossModule
+                 ? QColor(QStringLiteral("#64748b"))
+                 : QColor(QStringLiteral("#2563eb")),
+             group.crossModule ? 1.0 : 1.3,
+             group.crossModule ? Qt::DashLine : Qt::SolidLine);
+    QColor fill = group.crossModule
+        ? QColor(QStringLiteral("#f8fafc"))
+        : QColor(QStringLiteral("#eff6ff"));
+    fill.setAlpha(group.crossModule ? 34 : 48);
+    auto* wrapper = scene->addRect(groupRect, pen, QBrush(fill));
     wrapper->setZValue(-20);
 
     QFont labelFont = font;
@@ -524,11 +696,23 @@ void SignalKernelGraphPanelCoordinator::renderReport(
     const QFont baseFont = graphView ? graphView->font() : QFont();
     QHash<int, QRectF> nodeRects;
     QHash<int, SignalKernelGraphNodeItem*> nodeItems;
+    const InputLaneLayout inputLayout = layoutInputLanes(report.inputs);
+    const QRectF outputBounds =
+        report.outputs.isEmpty()
+            ? QRectF()
+            : QRectF(kColumnOffset - kNodeWidth / 2.0,
+                     rowY(0, report.outputs.size()) - kNodeHeight / 2.0,
+                     kNodeWidth,
+                     (report.outputs.size() - 1) * kVerticalSpacing
+                         + kNodeHeight);
 
     addSectionLabel(graphScene,
                     QStringLiteral("Inputs"),
                     -kColumnOffset,
-                    -kVerticalSpacing * qMax(1, report.inputs.size()) / 2.0 - 58,
+                    (inputLayout.bounds.isValid()
+                         ? inputLayout.bounds.top()
+                         : -kNodeHeight / 2.0)
+                        - 66,
                     baseFont);
     addSectionLabel(graphScene,
                     QStringLiteral("Kernel"),
@@ -538,8 +722,14 @@ void SignalKernelGraphPanelCoordinator::renderReport(
     addSectionLabel(graphScene,
                     QStringLiteral("Outputs"),
                     kColumnOffset,
-                    -kVerticalSpacing * qMax(1, report.outputs.size()) / 2.0 - 58,
+                    (outputBounds.isValid()
+                         ? outputBounds.top()
+                         : -kNodeHeight / 2.0)
+                        - 58,
                     baseFont);
+
+    for (const InputLaneBand& band : inputLayout.bands)
+        addInputLaneBand(graphScene, band, baseFont);
 
     auto addNode = [&](const SignalKernelGraphNode& node,
                        const QRectF& rect) {
@@ -567,9 +757,11 @@ void SignalKernelGraphPanelCoordinator::renderReport(
         nodeItems.insert(node.id, item);
     };
 
-    for (int i = 0; i < report.inputs.size(); ++i) {
-        addNode(report.inputs.at(i),
-                nodeRectAt(-kColumnOffset, rowY(i, report.inputs.size())));
+    for (const SignalKernelGraphNode& node : report.inputs) {
+        addNode(node,
+                inputLayout.nodeRects.value(
+                    node.id,
+                    nodeRectAt(-kColumnOffset, 0)));
     }
     addNode(report.kernel, nodeRectAt(0, 0));
     for (int i = 0; i < report.outputs.size(); ++i) {
@@ -577,10 +769,10 @@ void SignalKernelGraphPanelCoordinator::renderReport(
                 nodeRectAt(kColumnOffset, rowY(i, report.outputs.size())));
     }
 
-    for (const SignalKernelGraphModuleGroup& group : report.inputModuleGroups)
+    for (const SignalKernelGraphModuleGroup& group :
+         moduleGroupsForReport(report)) {
         addModuleWrapper(graphScene, group, nodeRects, baseFont);
-    for (const SignalKernelGraphModuleGroup& group : report.outputModuleGroups)
-        addModuleWrapper(graphScene, group, nodeRects, baseFont);
+    }
 
     QPen edgePen(QColor(QStringLiteral("#94a3b8")), 1.5);
     for (const SignalKernelGraphEdge& edge : report.edges) {
@@ -651,7 +843,7 @@ void SignalKernelGraphPanelCoordinator::showNodePreview(
     query.sourceRange = node.evidenceRange;
     query.title = QStringLiteral("%1: %2")
                       .arg(roleTitle(node.role), node.displayName);
-    query.detail = node.detailDisplayName;
+    query.detail = hoverDetailForNode(node);
     const CodePreviewReport report =
         CodePreviewService::getInstance()->previewForCodeLink(query);
     hoverPopup->showCodePreview(report,
