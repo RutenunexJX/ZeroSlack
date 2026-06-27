@@ -13,6 +13,7 @@ class EditorHoverPopup;
 class QLabel;
 class QGraphicsScene;
 class QGraphicsView;
+class QTimer;
 
 class SignalKernelGraphPanelCoordinator
 {
@@ -40,6 +41,8 @@ private:
     QGraphicsView* graphView = nullptr;
     QGraphicsScene* graphScene = nullptr;
     EditorHoverPopup* hoverPopup = nullptr;
+    QTimer* hoverCloseTimer = nullptr;
+    QString currentHoverNodeKey;
     SignalKernelGraphQuery currentQuery;
 
     std::function<void(const QString&, int, int)> navigationHandler;
@@ -49,6 +52,9 @@ private:
     void renderUnavailable(const QString& message);
     void showNodePreview(const SignalKernelGraphNode& node,
                          const QPoint& globalPosition);
+    void closeNodePreviewDelayed();
+    void closeNodePreviewNow();
+    void clampHoverPopupToGraphViewport() const;
     void navigateNode(const SignalKernelGraphNode& node) const;
     void rebaseToNode(const SignalKernelGraphNode& node);
     void showDock();

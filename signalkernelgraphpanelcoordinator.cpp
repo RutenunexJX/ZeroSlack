@@ -20,10 +20,12 @@
 #include <QGraphicsView>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QMouseEvent>
 #include <QPainter>
 #include <QPen>
 #include <QPoint>
 #include <QPolygonF>
+#include <QTimer>
 #include <QVBoxLayout>
 #include <QWheelEvent>
 #include <QWidget>
@@ -42,8 +44,21 @@ class SignalKernelGraphView : public QGraphicsView
 {
 public:
     using QGraphicsView::QGraphicsView;
+    std::function<bool(const QPoint&)> doubleClickHandler;
 
 protected:
+    void mouseDoubleClickEvent(QMouseEvent* event) override
+    {
+        if (event
+            && event->button() == Qt::LeftButton
+            && doubleClickHandler
+            && doubleClickHandler(event->pos())) {
+            event->accept();
+            return;
+        }
+        QGraphicsView::mouseDoubleClickEvent(event);
+    }
+
     void wheelEvent(QWheelEvent* event) override
     {
         if (!event)
@@ -181,6 +196,8 @@ public:
         detailItem->setPos(rect.left() + 10, rect.top() + 34);
     }
 
+    const SignalKernelGraphNode& graphNode() const { return node; }
+
     HoverHandler hoverHandler;
     LeaveHandler leaveHandler;
     NodeHandler navigateHandler;
@@ -189,7 +206,6 @@ public:
 protected:
     void hoverEnterEvent(QGraphicsSceneHoverEvent* event) override
     {
-        setScale(1.08);
         setZValue(40);
         if (hoverHandler)
             hoverHandler(node, event->screenPos());
@@ -205,7 +221,6 @@ protected:
 
     void hoverLeaveEvent(QGraphicsSceneHoverEvent* event) override
     {
-        setScale(1.0);
         setZValue(10);
         if (leaveHandler)
             leaveHandler();
@@ -237,6 +252,30 @@ protected:
 private:
     SignalKernelGraphNode node;
 };
+
+QString hoverKeyForNode(const SignalKernelGraphNode& node)
+{
+    const QString stable = symbolStableKeyText(node.stableKey);
+    if (!stable.isEmpty())
+        return stable;
+    return QStringLiteral("%1|%2|%3|%4")
+        .arg(QString::number(node.id),
+             QString::number(static_cast<int>(node.role)),
+             node.displayName,
+             node.navigateCodeLink.fileName);
+}
+
+SignalKernelGraphNodeItem* nodeItemFromGraphicsItem(QGraphicsItem* item)
+{
+    while (item) {
+        if (auto* nodeItem =
+                dynamic_cast<SignalKernelGraphNodeItem*>(item)) {
+            return nodeItem;
+        }
+        item = item->parentItem();
+    }
+    return nullptr;
+}
 
 void addArrow(QGraphicsScene* scene,
               const QLineF& line,
@@ -350,6 +389,26 @@ SignalKernelGraphPanelCoordinator::SignalKernelGraphPanelCoordinator(
     graphView->setTransformationAnchor(QGraphicsView::AnchorUnderMouse);
     graphView->setResizeAnchor(QGraphicsView::AnchorViewCenter);
     graphView->setBackgroundBrush(QBrush(QColor(QStringLiteral("#f8fafc"))));
+    if (auto* signalGraphView =
+            dynamic_cast<SignalKernelGraphView*>(graphView)) {
+        signalGraphView->doubleClickHandler =
+            [this](const QPoint& viewPosition) {
+                if (!graphView)
+                    return false;
+                const QList<QGraphicsItem*> items =
+                    graphView->items(viewPosition);
+                for (QGraphicsItem* item : items) {
+                    SignalKernelGraphNodeItem* nodeItem =
+                        nodeItemFromGraphicsItem(item);
+                    if (!nodeItem)
+                        continue;
+                    closeNodePreviewNow();
+                    navigateNode(nodeItem->graphNode());
+                    return true;
+                }
+                return false;
+            };
+    }
     layout->addWidget(graphView, 1);
 
     graphDock = new QDockWidget(QStringLiteral("Signal Kernel Graph"), parent);
@@ -361,6 +420,14 @@ SignalKernelGraphPanelCoordinator::SignalKernelGraphPanelCoordinator(
     graphDock->hide();
 
     hoverPopup = new EditorHoverPopup(graphDock);
+    hoverCloseTimer = new QTimer(graphDock);
+    hoverCloseTimer->setSingleShot(true);
+    QObject::connect(hoverCloseTimer,
+                     &QTimer::timeout,
+                     graphDock,
+                     [this]() {
+                         closeNodePreviewNow();
+                     });
 
     renderUnavailable(QStringLiteral("No signal selected."));
 }
@@ -436,6 +503,7 @@ void SignalKernelGraphPanelCoordinator::renderReport(
     if (!graphScene)
         return;
 
+    closeNodePreviewNow();
     graphScene->clear();
     if (!report.found) {
         renderUnavailable(report.notFoundReasonDisplayName);
@@ -484,11 +552,11 @@ void SignalKernelGraphPanelCoordinator::renderReport(
                 showNodePreview(hoveredNode, globalPosition);
             };
         item->leaveHandler = [this]() {
-            if (hoverPopup)
-                hoverPopup->closePopup();
+            closeNodePreviewDelayed();
         };
         item->navigateHandler =
             [this](const SignalKernelGraphNode& clickedNode) {
+                closeNodePreviewNow();
                 navigateNode(clickedNode);
             };
         item->rebaseHandler =
@@ -548,6 +616,7 @@ void SignalKernelGraphPanelCoordinator::renderUnavailable(
     if (!graphScene)
         return;
 
+    closeNodePreviewNow();
     graphScene->clear();
     const QString text = message.isEmpty()
         ? QStringLiteral("Signal kernel graph unavailable.")
@@ -569,6 +638,14 @@ void SignalKernelGraphPanelCoordinator::showNodePreview(
     if (!hoverPopup)
         return;
 
+    if (hoverCloseTimer)
+        hoverCloseTimer->stop();
+
+    const QString hoverKey = hoverKeyForNode(node);
+    if (hoverPopup->isVisible() && currentHoverNodeKey == hoverKey)
+        return;
+    currentHoverNodeKey = hoverKey;
+
     CodePreviewQuery query;
     query.codeLink = node.previewCodeLink;
     query.sourceRange = node.evidenceRange;
@@ -580,6 +657,58 @@ void SignalKernelGraphPanelCoordinator::showNodePreview(
     hoverPopup->showCodePreview(report,
                                 globalPosition,
                                 graphView ? graphView->font() : QFont());
+    clampHoverPopupToGraphViewport();
+}
+
+void SignalKernelGraphPanelCoordinator::closeNodePreviewDelayed()
+{
+    if (hoverCloseTimer)
+        hoverCloseTimer->start(180);
+}
+
+void SignalKernelGraphPanelCoordinator::closeNodePreviewNow()
+{
+    if (hoverCloseTimer)
+        hoverCloseTimer->stop();
+    currentHoverNodeKey.clear();
+    if (hoverPopup)
+        hoverPopup->closePopup();
+}
+
+void SignalKernelGraphPanelCoordinator::clampHoverPopupToGraphViewport() const
+{
+    if (!hoverPopup || !hoverPopup->isVisible() || !graphView)
+        return;
+
+    QWidget* viewport = graphView->viewport();
+    if (!viewport)
+        return;
+
+    const QRect viewportRect(
+        viewport->mapToGlobal(viewport->rect().topLeft()),
+        viewport->mapToGlobal(viewport->rect().bottomRight()));
+    QRect popupRect(hoverPopup->pos(), hoverPopup->size());
+    const int margin = 6;
+    int x = popupRect.x();
+    int y = popupRect.y();
+
+    if (popupRect.width() + margin * 2 <= viewportRect.width()) {
+        x = qBound(viewportRect.left() + margin,
+                   x,
+                   viewportRect.right() - popupRect.width() - margin);
+    } else {
+        x = viewportRect.left() + margin;
+    }
+
+    if (popupRect.height() + margin * 2 <= viewportRect.height()) {
+        y = qBound(viewportRect.top() + margin,
+                   y,
+                   viewportRect.bottom() - popupRect.height() - margin);
+    } else {
+        y = viewportRect.top() + margin;
+    }
+
+    hoverPopup->move(x, y);
 }
 
 void SignalKernelGraphPanelCoordinator::navigateNode(

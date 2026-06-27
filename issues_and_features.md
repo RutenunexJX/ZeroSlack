@@ -4,18 +4,6 @@ This file is a running checklist for problems to fix and new features to conside
 
 ## Issues
 
-- [ ] Signal Kernel Graph hover preview flickers and can move outside the graph
-      viewport. The panel already uses `EditorHoverPopup`, so stabilize the
-      graph-side hover lifecycle instead of introducing a second popup class:
-      avoid rebuilding the popup on every hover move over the same node, clamp
-      placement to the graph view/dock viewport, avoid hover scale changes that
-      perturb hit testing, and delay close briefly on hover leave.
-- [ ] Signal Kernel Graph node double-click navigation is currently broken.
-      Double-clicking a node should close any hover popup and navigate to the
-      node's evidence or declaration link. If item-level double-click handling
-      remains unreliable under `QGraphicsView::ScrollHandDrag`, add a graph-view
-      level fallback that resolves the node under the cursor and routes the same
-      navigation action.
 ## Feature Ideas
 
 - [ ] Redesign Signal Kernel Graph node and module presentation. Node line 1
@@ -47,6 +35,8 @@ This file is a running checklist for problems to fix and new features to conside
 - [x] Refine column selection to the requested Notepad++-like interaction model. The normal editor caret is the anchor, `Shift+Alt+click` sets or updates the endpoint, `Shift+Alt+Arrow` adjusts the endpoint, plain click or `Esc` exits, and text input, Backspace, Delete, virtual-column padding, rectangular Copy/Cut/Paste operate on every selected line.
 - [x] Add `Alt+Up` / `Alt+Down` line-block move. It moves the current logical line or every logical line touched by the selection, preserves cursor or selection range, treats a selection ending at next-line column 0 as excluding that line, and reports that `Alt+Up/Down` is disabled while column selection is active.
 - [x] Global or package-defined enum values are not semantically highlighted at use sites. Semantic decorations now derive usage candidates from the current file plus visible imported, qualified, include, and global/package records, while current-file symbols suppress external same-name candidates.
+- [x] Signal Kernel Graph hover preview flickers and can move outside the graph viewport. Graph hover now reuses the active popup for the same node, clamps placement to the graph viewport, avoids hover scale hit-test churn, and closes after a short leave delay.
+- [x] Signal Kernel Graph node double-click navigation is currently broken. Node double-click now closes the hover popup and navigates through both item-level handling and a graph-view fallback that resolves the node under the cursor when `ScrollHandDrag` intercepts item events.
 - [x] Ctrl+S save shortcut does not work in manual testing, even though the Save action still declares `Ctrl+S` in `mainwindow.ui`. Registered the Save action as an application-level shortcut on the main window and verified current-editor save behavior.
 - [x] After Ctrl+click jumping to a package definition, mouse side-button back navigation behaves abnormally and requires two presses. Navigation history now records the pre-jump source once before cross-file line jumps.
 - [x] After Ctrl+click jumping to an include file, mouse side-button back navigation fails. Include Ctrl+click now routes through the navigation coordinator so the source location is pushed to back history.
