@@ -27,6 +27,7 @@
 #include "wavepreviewservice.h"
 #include "workspaceanalysisplanservice.h"
 #include "workspaceanalysisrequestqueue.h"
+#include "workspacesymbolanalysiscontroller.h"
 #include <QApplication>
 #include <QColor>
 #include <QCoreApplication>
@@ -3156,6 +3157,35 @@ int main(int argc, char** argv) {
                    && foregroundPlan.currentFileInWorkspace,
                true);
     foregroundAnalyzer.cancelWorkspaceAnalysisAndInvalidate();
+
+    WorkspaceSymbolAnalysisController cachedWorkspaceController;
+    SymbolAnalyzer cachedWorkspaceAnalyzer;
+    cachedWorkspaceController.setSymbolAnalyzer(&cachedWorkspaceAnalyzer);
+    int cachedWorkspaceStarts = 0;
+    int cachedRelationshipCancels = 0;
+    QObject::connect(&cachedWorkspaceController,
+                     &WorkspaceSymbolAnalysisController::workspaceSymbolAnalysisStarted,
+                     &cachedWorkspaceController,
+                     [&cachedWorkspaceStarts](const ProjectSnapshot&, int) {
+                         ++cachedWorkspaceStarts;
+                     });
+    QObject::connect(&cachedWorkspaceController,
+                     &WorkspaceSymbolAnalysisController::workspaceRelationshipAnalysisCancelRequested,
+                     &cachedWorkspaceController,
+                     [&cachedRelationshipCancels]() {
+                         ++cachedRelationshipCancels;
+                     });
+    cachedWorkspaceController.requestWorkspaceAnalysis(foregroundProject);
+    cachedWorkspaceAnalyzer.batchAnalysisCompleted(1, 1);
+    cachedWorkspaceController.requestWorkspaceAnalysis(foregroundProject);
+    expectBool("Workspace cached activation skips completed symbol analysis",
+               cachedWorkspaceStarts == 1,
+               true);
+    expectBool("Workspace cached activation cancels stale relationship analysis",
+               cachedRelationshipCancels == 1,
+               true);
+    cachedWorkspaceController.cancelWorkspaceAnalysis();
+    cachedWorkspaceAnalyzer.cancelWorkspaceAnalysisAndInvalidate();
 
     SmartRelationshipBuilder foregroundRelationshipBuilder(nullptr, nullptr);
     foregroundScheduler.setRelationshipBuilder(&foregroundRelationshipBuilder);

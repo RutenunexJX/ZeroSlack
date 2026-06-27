@@ -6,6 +6,7 @@
 #include "workspaceanalysisrequestqueue.h"
 
 #include <QObject>
+#include <QSet>
 #include <QString>
 #include <functional>
 
@@ -63,6 +64,8 @@ private:
     std::function<QString()> currentFileProvider;
     WorkspaceAnalysisRequestQueue requestQueue;
     ProjectSnapshot activeProject;
+    QString activeWorkspaceRoot;
+    QSet<QString> completedWorkspaceAnalysisKeys;
     bool workspaceAnalysisActive = false;
     bool activeWorkspaceAnalysisComplete = true;
     bool projectSemanticStateCleared = true;

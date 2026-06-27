@@ -78,6 +78,14 @@ QHash<QString, SemanticAnalysisBandMetadata> semanticBandMetadataForPlan(
     }
     return bands;
 }
+
+QString workspaceAnalysisKey(const ProjectSnapshot& project)
+{
+    QStringList files = project.systemVerilogFiles;
+    files.sort(Qt::CaseInsensitive);
+    return QStringLiteral("%1\n%2")
+        .arg(project.workspaceRoot, files.join(QLatin1Char('\n')));
+}
 }
 
 void WorkspaceSymbolAnalysisController::requestWorkspaceAnalysis(
@@ -90,6 +98,19 @@ void WorkspaceSymbolAnalysisController::requestWorkspaceAnalysis(
         workspaceAnalysisActive = false;
         symbolAnalyzer->setWorkspaceFileAnalysisBands({});
         symbolAnalyzer->cancelWorkspaceAnalysisAndInvalidate();
+        return;
+    }
+
+    const QString projectKey = workspaceAnalysisKey(project);
+    if (completedWorkspaceAnalysisKeys.contains(projectKey)) {
+        workspaceAnalysisActive = false;
+        activeProject = ProjectSnapshot();
+        activeWorkspaceAnalysisComplete = true;
+        requestQueue.clear();
+        if (symbolAnalyzer)
+            symbolAnalyzer->expireWorkspaceAnalysis();
+        emit workspaceRelationshipAnalysisCancelRequested();
+        emit diagnosticsRefreshRequested(QString());
         return;
     }
 
@@ -178,6 +199,8 @@ void WorkspaceSymbolAnalysisController::clearProjectSemanticState()
     activeWorkspaceAnalysisComplete = true;
     requestQueue.clear();
     activeProject = ProjectSnapshot();
+    activeWorkspaceRoot.clear();
+    completedWorkspaceAnalysisKeys.clear();
     if (symbolAnalyzer) {
         symbolAnalyzer->setWorkspaceFileAnalysisBands({});
         symbolAnalyzer->cancelWorkspaceAnalysisAndInvalidate();
@@ -197,6 +220,11 @@ void WorkspaceSymbolAnalysisController::onProjectChanged(
     }
 
     projectSemanticStateCleared = false;
+    if (activeWorkspaceRoot != project.workspaceRoot) {
+        if (!activeWorkspaceRoot.isEmpty())
+            emit workspaceRelationshipAnalysisCancelRequested();
+        activeWorkspaceRoot = project.workspaceRoot;
+    }
     requestWorkspaceAnalysis(project);
 }
 
@@ -222,6 +250,8 @@ void WorkspaceSymbolAnalysisController::onWorkspaceSymbolAnalysisCompleted(
         return;
 
     const bool completeWorkspaceAnalysis = activeWorkspaceAnalysisComplete;
+    if (completeWorkspaceAnalysis)
+        completedWorkspaceAnalysisKeys.insert(workspaceAnalysisKey(project));
     emit workspaceSymbolAnalysisFinished(project, filesAnalyzed, totalSymbols);
     if (completeWorkspaceAnalysis)
         emit workspaceRelationshipAnalysisRequested(project);

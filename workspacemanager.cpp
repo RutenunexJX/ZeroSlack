@@ -174,7 +174,7 @@ bool WorkspaceManager::openWorkspace(const QString& folderPath)
     rememberRecentWorkspace(entry);
     emit workspaceListChanged();
 
-    activateWorkspacePath(entry.path, entry.alias, activeIndex);
+    activateWorkspacePath(entry.path, entry.alias, activeIndex, true);
 
     ActivityLogService::getInstance()->append(
         QStringLiteral("Workspace"),
@@ -224,15 +224,18 @@ bool WorkspaceManager::closeWorkspace(int index)
 
     const WorkspaceEntry closingEntry = workspaces.at(index);
     const bool closingActive = index == activeIndex;
+    const bool activateReplacement = closingActive && workspaces.size() > 1;
 
     if (closingActive) {
         cancelDirectoryScan();
         stopFileWatching();
-        workspacePath.clear();
-        workspaceAlias.clear();
-        activeIndex = -1;
-        files.clear();
-        if (projectModel)
+        if (!activateReplacement) {
+            workspacePath.clear();
+            workspaceAlias.clear();
+            activeIndex = -1;
+            files.clear();
+        }
+        if (!activateReplacement && projectModel)
             projectModel->closeProject();
     }
 
@@ -257,7 +260,10 @@ bool WorkspaceManager::closeWorkspace(int index)
 
         const WorkspaceEntry nextEntry = workspaces.at(nextIndex);
         activatedNext =
-            activateWorkspacePath(nextEntry.path, nextEntry.alias, nextIndex);
+            activateWorkspacePath(nextEntry.path,
+                                  nextEntry.alias,
+                                  nextIndex,
+                                  false);
         if (activatedNext)
             rememberRecentWorkspace(nextEntry);
     }
@@ -375,7 +381,8 @@ bool WorkspaceManager::switchWorkspace(int index)
         return true;
     }
 
-    const bool activated = activateWorkspacePath(entry.path, entry.alias, index);
+    const bool activated =
+        activateWorkspacePath(entry.path, entry.alias, index, false);
     if (activated)
         rememberRecentWorkspace(entry);
     return activated;
@@ -514,6 +521,11 @@ void WorkspaceManager::finishDirectoryScan()
     scanningPath.clear();
     const QStringList oldFiles = files.allFiles;
     files.setScannedFiles(projectModel.get(), pendingScannedFiles);
+    if (activeIndex >= 0 && activeIndex < workspaces.size()
+        && workspaces.at(activeIndex).path == finishedPath) {
+        workspaces[activeIndex].scannedFiles = files.allFiles;
+        workspaces[activeIndex].scanComplete = true;
+    }
     pendingScannedFiles.clear();
     updateFileWatcher();
 
@@ -547,28 +559,54 @@ void WorkspaceManager::updateFileWatcher()
     watcher.updateFiles(files.allFiles);
 }
 
+bool WorkspaceManager::restoreWorkspaceFilesFromEntry(int index)
+{
+    if (index < 0 || index >= workspaces.size() || !projectModel)
+        return false;
+
+    const WorkspaceEntry entry = workspaces.at(index);
+    projectModel->setWorkspaceState(entry.path, entry.scannedFiles);
+    files.allFiles = projectModel->allFiles();
+    files.systemVerilogFiles = projectModel->systemVerilogFiles();
+    return true;
+}
+
 bool WorkspaceManager::activateWorkspacePath(const QString& path,
                                              const QString& alias,
-                                             int index)
+                                             int index,
+                                             bool openedNewWorkspace)
 {
     const QString normalizedPath = normalizeWorkspacePath(path);
     if (normalizedPath.isEmpty() || alias.trimmed().isEmpty())
         return false;
 
+    cancelDirectoryScan();
     stopFileWatching();
-    files.clear();
-    if (projectModel)
-        projectModel->closeProject();
 
     workspaceAlias = alias.trimmed();
-    projectModel->setWorkspaceRoot(normalizedPath);
-    workspacePath = projectModel->workspaceRoot();
     activeIndex = index;
+
+    if (index >= 0 && index < workspaces.size()
+        && workspaces.at(index).scanComplete) {
+        restoreWorkspaceFilesFromEntry(index);
+    } else {
+        files.clear();
+        if (projectModel)
+            projectModel->setWorkspaceState(normalizedPath, {});
+    }
+
+    workspacePath = projectModel ? projectModel->workspaceRoot() : normalizedPath;
     startFileWatching();
 
     emit workspaceActivated(activeIndex, workspaceAlias, workspacePath);
-    emit workspaceOpened(workspacePath);
-    startDirectoryScan(workspacePath);
+    if (openedNewWorkspace)
+        emit workspaceOpened(workspacePath);
+    if (openedNewWorkspace
+        || index < 0
+        || index >= workspaces.size()
+        || !workspaces.at(index).scanComplete) {
+        startDirectoryScan(workspacePath);
+    }
     return true;
 }
 

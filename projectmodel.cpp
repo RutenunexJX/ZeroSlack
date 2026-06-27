@@ -51,6 +51,29 @@ void ProjectModel::setWorkspaceRoot(const QString& rootPath)
     publishChanged();
 }
 
+void ProjectModel::setWorkspaceState(const QString& rootPath,
+                                     const QStringList& scannedFiles)
+{
+    const QString normalized = pathRules.normalizePath(rootPath);
+    const QStringList normalizedFiles =
+        pathRules.uniqueSorted(pathRules.normalizePathList(scannedFiles));
+    if (current.workspaceRoot == normalized
+        && rawScannedFiles == normalizedFiles) {
+        return;
+    }
+
+    current = ProjectSnapshot();
+    rawScannedFiles.clear();
+    includeDirsExplicit = false;
+    current.workspaceRoot = normalized;
+    if (!includeDirsExplicit) {
+        current.includeDirs =
+            normalized.isEmpty() ? QStringList() : QStringList{normalized};
+    }
+    applyScannedFiles(normalizedFiles);
+    publishChanged();
+}
+
 void ProjectModel::closeProject()
 {
     if (!current.isOpen())
@@ -64,6 +87,12 @@ void ProjectModel::closeProject()
 }
 
 void ProjectModel::setScannedFiles(const QStringList& files)
+{
+    applyScannedFiles(files);
+    publishChanged();
+}
+
+void ProjectModel::applyScannedFiles(const QStringList& files)
 {
     rawScannedFiles = pathRules.uniqueSorted(pathRules.normalizePathList(files));
     QStringList acceptedFiles;
@@ -93,7 +122,6 @@ void ProjectModel::setScannedFiles(const QStringList& files)
         current.includeDirs = pathRules.defaultIncludeDirsForFiles(
             current.workspaceRoot,
             acceptedFiles);
-    publishChanged();
 }
 
 void ProjectModel::setIncludeDirs(const QStringList& dirs)

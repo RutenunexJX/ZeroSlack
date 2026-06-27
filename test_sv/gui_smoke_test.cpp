@@ -848,6 +848,98 @@ static void runWorkspaceCloseRegression()
                true);
 }
 
+static void runWorkspaceCachedSwitchRegression()
+{
+    QTemporaryDir workspaceA;
+    QTemporaryDir workspaceB;
+    expectBool("workspace cached switch temp dirs valid",
+               workspaceA.isValid() && workspaceB.isValid(),
+               true);
+    if (!workspaceA.isValid() || !workspaceB.isValid())
+        return;
+
+    const QString fileA =
+        QDir(workspaceA.path()).absoluteFilePath(QStringLiteral("a_top.sv"));
+    const QString fileB =
+        QDir(workspaceB.path()).absoluteFilePath(QStringLiteral("b_top.sv"));
+    {
+        QFile out(fileA);
+        if (out.open(QIODevice::WriteOnly | QIODevice::Text))
+            out.write("module a_top; endmodule\n");
+    }
+    {
+        QFile out(fileB);
+        if (out.open(QIODevice::WriteOnly | QIODevice::Text))
+            out.write("module b_top; endmodule\n");
+    }
+
+    WorkspaceManager workspace;
+    QSignalSpy openedSpy(&workspace, &WorkspaceManager::workspaceOpened);
+    QSignalSpy activatedSpy(&workspace, &WorkspaceManager::workspaceActivated);
+    QSignalSpy filesScannedSpy(&workspace, &WorkspaceManager::filesScanned);
+    QSignalSpy scanStartedSpy(&workspace, &WorkspaceManager::workspaceScanStarted);
+
+    expectBool("workspace cached switch open A",
+               workspace.openWorkspace(workspaceA.path()),
+               true);
+    expectBool("workspace cached switch scans A",
+               waitUntil([&]() {
+                   return workspace.getSystemVerilogFiles().contains(
+                       QDir::cleanPath(QDir::fromNativeSeparators(
+                           QFileInfo(fileA).absoluteFilePath())));
+               }, 2000),
+               true);
+
+    expectBool("workspace cached switch open B",
+               workspace.openWorkspace(workspaceB.path()),
+               true);
+    expectBool("workspace cached switch scans B",
+               waitUntil([&]() {
+                   return workspace.getSystemVerilogFiles().contains(
+                       QDir::cleanPath(QDir::fromNativeSeparators(
+                           QFileInfo(fileB).absoluteFilePath())));
+               }, 2000),
+               true);
+
+    const int openedBeforeSwitch = openedSpy.count();
+    const int filesScannedBeforeSwitch = filesScannedSpy.count();
+    const int scanStartedBeforeSwitch = scanStartedSpy.count();
+    const int activatedBeforeSwitch = activatedSpy.count();
+
+    expectBool("workspace cached switch activates A",
+               workspace.switchWorkspace(0),
+               true);
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
+    const QString normalizedA =
+        QDir::cleanPath(QDir::fromNativeSeparators(
+            QFileInfo(fileA).absoluteFilePath()));
+    expectBool("workspace cached switch restores A files",
+               workspace.getSystemVerilogFiles() == QStringList{normalizedA},
+               true);
+    expectBool("workspace cached switch emits activation only",
+               activatedSpy.count() == activatedBeforeSwitch + 1
+                   && openedSpy.count() == openedBeforeSwitch
+                   && filesScannedSpy.count() == filesScannedBeforeSwitch
+                   && scanStartedSpy.count() == scanStartedBeforeSwitch,
+               true);
+
+    expectBool("workspace cached switch activates B",
+               workspace.switchWorkspace(1),
+               true);
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
+    const QString normalizedB =
+        QDir::cleanPath(QDir::fromNativeSeparators(
+            QFileInfo(fileB).absoluteFilePath()));
+    expectBool("workspace cached switch restores B files",
+               workspace.getSystemVerilogFiles() == QStringList{normalizedB},
+               true);
+    expectBool("workspace cached switch still avoids rescan",
+               openedSpy.count() == openedBeforeSwitch
+                   && filesScannedSpy.count() == filesScannedBeforeSwitch
+                   && scanStartedSpy.count() == scanStartedBeforeSwitch,
+               true);
+}
+
 static void runWorkspaceAliasRenameRegression()
 {
     QTemporaryDir workspaceA;
@@ -5656,6 +5748,7 @@ int main(int argc, char** argv)
     runFormatterCoordinatorRegression();
     runTabOpenDedupRegression();
     runWorkspaceCloseRegression();
+    runWorkspaceCachedSwitchRegression();
     runWorkspaceAliasRenameRegression();
     runIncludeCompletionRegression();
     runTreeSitterFoldingProviderRegression();

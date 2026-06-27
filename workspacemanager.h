@@ -20,6 +20,8 @@ public:
     struct WorkspaceEntry {
         QString alias;
         QString path;
+        QStringList scannedFiles;
+        bool scanComplete = false;
     };
 
     explicit WorkspaceManager(QObject *parent = nullptr);
@@ -116,7 +118,9 @@ private:
     void updateFileWatcher();
     bool activateWorkspacePath(const QString& path,
                                const QString& alias,
-                               int index);
+                               int index,
+                               bool openedNewWorkspace);
+    bool restoreWorkspaceFilesFromEntry(int index);
     void loadRecentWorkspaces();
     void saveRecentWorkspaces() const;
     void rememberRecentWorkspace(const WorkspaceEntry& entry);

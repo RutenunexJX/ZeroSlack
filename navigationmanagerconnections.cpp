@@ -65,11 +65,19 @@ void NavigationManager::connectToWorkspaceManager(WorkspaceManager* workspaceMan
 
     if (connectedWorkspaceManager) {
         // Wire workspace events into navigation refreshes.
-        connect(connectedWorkspaceManager, &WorkspaceManager::workspaceOpened,
-                this, &NavigationManager::onWorkspaceChanged);
+        connect(connectedWorkspaceManager,
+                &WorkspaceManager::workspaceActivated,
+                this,
+                [this](int, const QString&, const QString& path) {
+                    onWorkspaceChanged(path);
+                });
 
         connect(connectedWorkspaceManager, &WorkspaceManager::workspaceClosed,
                 this, [this]() {
+                    if (connectedWorkspaceManager
+                        && connectedWorkspaceManager->isWorkspaceOpen()) {
+                        return;
+                    }
                     context.clearCurrentWorkspacePath();
                     caches.clearFileList();
                     caches.clearModuleHierarchy();

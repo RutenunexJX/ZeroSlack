@@ -34,6 +34,8 @@ public:
     ~ProjectModel() override;
 
     void setWorkspaceRoot(const QString& rootPath);
+    void setWorkspaceState(const QString& rootPath,
+                           const QStringList& scannedFiles);
     void closeProject();
 
     void setScannedFiles(const QStringList& files);
@@ -86,6 +88,7 @@ private:
     ProjectPathRules pathRules;
 
     void publishChanged();
+    void applyScannedFiles(const QStringList& files);
 };
 
 Q_DECLARE_METATYPE(ProjectSnapshot)
