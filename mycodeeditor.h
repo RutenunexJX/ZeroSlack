@@ -89,6 +89,8 @@ public:
     bool formatDocumentForSave();
     void formatDocument();
     void formatSelection();
+    void commentSelectionOrLine();
+    void uncommentSelectionOrLine();
     void highlightSearchMatches(const QString& text, bool caseSensitive);
     void clearSearchMatches();
     void flashLine(int lineNumber);

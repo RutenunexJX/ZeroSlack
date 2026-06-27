@@ -58,10 +58,10 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
 - Wave Preview exists as a code-understanding sketch, not a simulator.
 - Formatter support exists as conservative editor formatting. Current daily
   editor action inventory: `Ctrl+F` opens Find; formatter document/selection
-  actions live in the editor context menu; alternate command metadata lists
-  replace, goto line, comment, uncomment, indent, and unindent, but only
-  `comment` has a thin dispatcher that inserts `// `. The next daily action
-  implementation target is a real comment/uncomment action family.
+  actions live in the editor context menu; line comment actions are available
+  through `Ctrl+/`, `Ctrl+Shift+/`, editor context-menu actions, and alternate
+  commands `comment` / `uncomment`. Replace, goto line, indent, and unindent
+  still need reliable entry points.
 
 ## Huge Workspace Status
 

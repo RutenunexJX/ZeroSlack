@@ -123,6 +123,8 @@ struct MyCodeEditorState
     void formatDocument(MyCodeEditor* editor);
     void formatSelection(MyCodeEditor* editor);
     bool formatDocumentForSave(MyCodeEditor* editor);
+    void commentSelectionOrLine(MyCodeEditor* editor);
+    void uncommentSelectionOrLine(MyCodeEditor* editor);
     void startFoldRegionMarkMode(MyCodeEditor* editor);
     void cancelFoldRegionMarkMode(MyCodeEditor* editor);
     bool foldRegionMarkModeActive() const;

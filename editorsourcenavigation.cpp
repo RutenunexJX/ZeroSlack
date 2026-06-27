@@ -320,6 +320,18 @@ void EditorSourceNavigationUi::handleContextMenu(
         menu.get(),
         contextProvider(cursorAtPos.position(), false));
     menu->addSeparator();
+
+    QAction* commentAction = menu->addAction(QStringLiteral("Comment Lines"));
+    QObject::connect(commentAction, &QAction::triggered, editor, [editor]() {
+        editor->commentSelectionOrLine();
+    });
+    QAction* uncommentAction =
+        menu->addAction(QStringLiteral("Uncomment Lines"));
+    QObject::connect(uncommentAction, &QAction::triggered, editor, [editor]() {
+        editor->uncommentSelectionOrLine();
+    });
+    menu->addSeparator();
+
     QMenu* profileMenu = menu->addMenu(QStringLiteral("Formatter Profile"));
     QActionGroup* profileGroup = new QActionGroup(profileMenu);
     profileGroup->setExclusive(true);

@@ -111,7 +111,14 @@ void FileCommandCoordinator::EditorCommandDispatcher::comment(
     MyCodeEditor* editor) const
 {
     if (editor)
-        editor->insertPlainText(QStringLiteral("// "));
+        editor->commentSelectionOrLine();
+}
+
+void FileCommandCoordinator::EditorCommandDispatcher::uncomment(
+    MyCodeEditor* editor) const
+{
+    if (editor)
+        editor->uncommentSelectionOrLine();
 }
 
 void FileCommandCoordinator::newFile()

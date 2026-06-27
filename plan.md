@@ -74,8 +74,10 @@ First milestones:
   only `comment` dispatches today and it only inserts `// `)
 - M1.2 add reliable entry points for one action family, with focused editor
   tests
-  (next target: comment/uncomment, without reviving active `;:` commands)
+  (complete: comment/uncomment are available through `Ctrl+/`,
+  `Ctrl+Shift+/`, editor context-menu actions, and alternate commands)
 - M1.3 repeat per action family until all listed actions have usable entries
+  (next target: indent/unindent)
 
 ### 2. Slot Mode After Template Insertion
 

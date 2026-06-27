@@ -71,6 +71,7 @@ private:
         void redo(MyCodeEditor* editor) const;
         void selectAll(MyCodeEditor* editor) const;
         void comment(MyCodeEditor* editor) const;
+        void uncomment(MyCodeEditor* editor) const;
     };
 
     CommandTargets targets;

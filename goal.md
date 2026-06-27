@@ -28,7 +28,7 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
 
 ## Current Goal State
 
-Current milestone: `G1.2 Comment And Uncomment Entry Points`.
+Current milestone: `G1.3 Indent And Unindent Entry Points`.
 
 Status:
 
@@ -57,16 +57,23 @@ Status:
   and it only inserts `// ` at the cursor. `replace`, `goto_line`, `uncomment`,
   `indent`, and `unindent` are catalog-only or missing reliable editor entry
   points today.
+- G1.2 Comment And Uncomment Entry Points is complete in the current milestone:
+  active-line and selected-line line comments are available through `Ctrl+/`,
+  `Ctrl+Shift+/`, editor context-menu actions, and alternate commands
+  `comment` / `uncomment`, without reviving active `;:` commands.
+- Focused verification for G1.2: Release `gui_smoke_test` target compile/link
+  passed without launching the executable.
 - Verification flow now includes checking for external Windows application-error
   or memory-read dialogs when CTest appears stalled.
 
-Completion criteria for G1.2:
+Completion criteria for G1.3:
 
-- implement a reliable comment action for the active editor and selected lines
-- implement a matching uncomment action for line comments
+- implement reliable indent action for the active editor and selected lines
+- implement matching unindent action for leading indentation
 - provide clear editor entry points without reviving active `;:` commands
-- preserve existing `comment` alternate command compatibility where practical
-- add focused editor tests for comment and uncomment behavior
+- preserve existing `indent` / `unindent` alternate command compatibility where
+  practical
+- add focused editor tests for indent and unindent behavior
 - `readme.md`, `plan.md`, and `goal.md` are updated
 - appropriate focused verification passes
 - milestone commit is pushed

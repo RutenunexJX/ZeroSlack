@@ -1882,6 +1882,76 @@ static void runEditorColumnEditRegression()
 
 static void runEditorLineActionRegression()
 {
+    MyCodeEditor shortcutCommentEditor;
+    shortcutCommentEditor.resize(480, 120);
+    shortcutCommentEditor.setPlainText(QStringLiteral("logic a;\n"));
+    shortcutCommentEditor.show();
+    shortcutCommentEditor.setFocus();
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    QTest::keyClick(&shortcutCommentEditor,
+                    Qt::Key_Slash,
+                    Qt::ControlModifier);
+    expectBool("Ctrl+/ comments current line",
+               shortcutCommentEditor.toPlainText()
+                   == QStringLiteral("// logic a;\n"),
+               true);
+    QTest::keyClick(&shortcutCommentEditor,
+                    Qt::Key_Slash,
+                    Qt::ControlModifier | Qt::ShiftModifier);
+    expectBool("Ctrl+Shift+/ uncomments current line",
+               shortcutCommentEditor.toPlainText()
+                   == QStringLiteral("logic a;\n"),
+               true);
+
+    MyCodeEditor selectionCommentEditor;
+    selectionCommentEditor.resize(480, 150);
+    selectionCommentEditor.setPlainText(QStringLiteral("aa\n  bb\ncc\n"));
+    selectionCommentEditor.show();
+    selectionCommentEditor.setFocus();
+    QTextBlock selectFirst =
+        selectionCommentEditor.document()->findBlockByNumber(0);
+    QTextBlock selectThird =
+        selectionCommentEditor.document()->findBlockByNumber(2);
+    QTextCursor selectionCommentCursor(selectFirst);
+    selectionCommentCursor.setPosition(selectFirst.position());
+    selectionCommentCursor.setPosition(selectThird.position(),
+                                       QTextCursor::KeepAnchor);
+    selectionCommentEditor.setTextCursor(selectionCommentCursor);
+    selectionCommentEditor.commentSelectionOrLine();
+    expectBool("comment action comments selected touched lines",
+               selectionCommentEditor.toPlainText()
+                   == QStringLiteral("// aa\n  // bb\ncc\n"),
+               true);
+    expectBool("comment action excludes selection endpoint line",
+               !selectionCommentEditor.toPlainText().contains(
+                   QStringLiteral("// cc")),
+               true);
+    selectionCommentEditor.undo();
+    expectBool("comment action undo restores selected lines",
+               selectionCommentEditor.toPlainText()
+                   == QStringLiteral("aa\n  bb\ncc\n"),
+               true);
+
+    selectionCommentEditor.setTextCursor(selectionCommentCursor);
+    selectionCommentEditor.commentSelectionOrLine();
+    selectionCommentEditor.uncommentSelectionOrLine();
+    expectBool("uncomment action restores selected line comments",
+               selectionCommentEditor.toPlainText()
+                   == QStringLiteral("aa\n  bb\ncc\n"),
+               true);
+
+    MyCodeEditor inlineCommentEditor;
+    inlineCommentEditor.resize(480, 120);
+    inlineCommentEditor.setPlainText(
+        QStringLiteral("assign a = b; // keep\n"));
+    inlineCommentEditor.show();
+    inlineCommentEditor.setFocus();
+    inlineCommentEditor.uncommentSelectionOrLine();
+    expectBool("uncomment action ignores trailing comments",
+               inlineCommentEditor.toPlainText()
+                   == QStringLiteral("assign a = b; // keep\n"),
+               true);
+
     MyCodeEditor duplicateEditor;
     duplicateEditor.resize(480, 180);
     duplicateEditor.setPlainText(QStringLiteral("one\ntwo\nthree\n"));
@@ -3861,11 +3931,24 @@ static void runReferenceDockRegression(MainWindow& window, const QString& fixtur
                shortcutEditor.toPlainText() == QStringLiteral("// "),
                true);
 
+    editorCommandCoordinator.executeAlternateCommandText(
+        &shortcutEditor, QStringLiteral("uncomment"));
+    expectBool("file coordinator executes uncomment command text",
+               shortcutEditor.toPlainText().isEmpty(),
+               true);
+
     shortcutEditor.clear();
     editorCommandCoordinator.executeAlternateCommand(&shortcutEditor,
                                                     AlternateCommandAction::Comment);
     expectBool("file coordinator executes editor command",
                shortcutEditor.toPlainText() == QStringLiteral("// "),
+               true);
+
+    editorCommandCoordinator.executeAlternateCommand(
+        &shortcutEditor,
+        AlternateCommandAction::Uncomment);
+    expectBool("file coordinator executes uncomment editor command",
+               shortcutEditor.toPlainText().isEmpty(),
                true);
 
     semanticPanelRefresh(window)->showRelationshipsForSymbol(QStringLiteral("target_ref"),

@@ -349,6 +349,16 @@ void MyCodeEditor::formatSelection()
     state->formatSelection(this);
 }
 
+void MyCodeEditor::commentSelectionOrLine()
+{
+    state->commentSelectionOrLine(this);
+}
+
+void MyCodeEditor::uncommentSelectionOrLine()
+{
+    state->uncommentSelectionOrLine(this);
+}
+
 void MyCodeEditor::highlightSearchMatches(
     const QString& text,
     bool caseSensitive)
