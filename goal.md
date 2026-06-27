@@ -28,23 +28,28 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
 
 ## Current Goal State
 
-Current milestone: `G0 Documentation And Goal Reset`.
+Current milestone: `G4.1 Registry Metadata For Existing COM Commands`.
 
 Status:
 
-- `readme.md`, `plan.md`, and `goal.md` are being reset from historical
-  migration logs to current development guidance.
-- No product feature implementation is part of G0.
-- Existing dirty implementation files from other work must not be staged into a
-  docs-only commit.
+- G0 Documentation And Goal Reset is complete and pushed in commit `bc2c059`.
+- The next preferred track is COM Mode framework completion.
+- Before implementing G4.1, inspect the current COM Mode command handling and
+  design the smallest registry metadata milestone that preserves existing
+  g-domain behavior.
+- Verification flow now includes checking for external Windows application-error
+  or memory-read dialogs when CTest appears stalled.
 
-Completion criteria for G0:
+Completion criteria for G4.1:
 
-- docs describe the current ZeroSlack identity accurately
-- docs list only the allowed long-term goals
-- docs record the Huge Workspace status-audit-only rule
-- `git diff --check` passes
-- stage, commit, and push only documentation files for this docs-only milestone
+- existing COM commands and non-executable prefixes are represented by one
+  registry metadata source
+- current command behavior is preserved
+- help/hints can be built on top of the metadata in G4.2
+- conflict validation can be centralized on top of the metadata in G4.3
+- `readme.md`, `plan.md`, and `goal.md` are updated
+- appropriate focused verification passes
+- milestone commit is pushed
 
 ## Track 1: Editor Daily Operations Completion
 

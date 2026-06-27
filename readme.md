@@ -125,6 +125,9 @@ Do not add unlisted long-term goals without explicit user approval.
 - Shared semantic, scheduler, editor, project, snapshot, or relationship
   boundary changes: run full Ninja and full `ctest --output-on-failure` unless
   the user has blocked executable test runs.
+- If `ctest` appears to hang or runs far longer than expected, check for an
+  external Windows application-error or memory-read dialog before assuming the
+  test process is still making progress.
 - Avoid launching GUI smoke executables in this environment when they are known
   to produce external Windows error dialogs; compile/link targets instead unless
   the user explicitly asks to run them.

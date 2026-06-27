@@ -303,6 +303,9 @@ Documentation-only milestones:
   problematic executables.
 - Shared semantic/scheduler/project/snapshot changes: full Ninja and full CTest
   unless executable tests are blocked by the user/environment.
+- During CTest, if execution stalls or runs much longer than expected, inspect
+  the desktop for a Windows application-error or memory-read dialog before
+  treating the run as ordinary long-running test work.
 - Visual panels: verify service reports first, then UI smoke if executable runs
   are safe.
 
