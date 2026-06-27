@@ -81,6 +81,7 @@
 #include "symbolhoverservice.h"
 #include "modemanager.h"
 #include "navigationmanager.h"
+#include "navigationservice.h"
 #include "navigationcommandcoordinator.h"
 #include "problemspanelcoordinator.h"
 #include "referencespanelcoordinator.h"
@@ -4040,6 +4041,118 @@ static SemanticSymbolRecord makeGuiSmokeRecord(
     return builder.record();
 }
 
+static void runNavigationDesignCacheWorkspaceActivationRegression()
+{
+    QTemporaryDir workspaceA;
+    QTemporaryDir workspaceB;
+    expectBool("navigation design cache temp dirs valid",
+               workspaceA.isValid() && workspaceB.isValid(),
+               true);
+    if (!workspaceA.isValid() || !workspaceB.isValid())
+        return;
+
+    const QString fileA =
+        QDir(workspaceA.path()).absoluteFilePath(QStringLiteral("a_top.sv"));
+    const QString fileB =
+        QDir(workspaceB.path()).absoluteFilePath(QStringLiteral("b_top.sv"));
+    {
+        QFile out(fileA);
+        if (out.open(QIODevice::WriteOnly | QIODevice::Text))
+            out.write("module a_top; endmodule\n");
+    }
+    {
+        QFile out(fileB);
+        if (out.open(QIODevice::WriteOnly | QIODevice::Text))
+            out.write("module b_top; endmodule\n");
+    }
+
+    const SemanticSymbolRecord aTop =
+        makeGuiSmokeRecord(1300,
+                           fileA,
+                           QStringLiteral("a_top"),
+                           SymbolTaxonomy::DeclarationKind::Module,
+                           SymbolTaxonomy::CollectorKind::Module,
+                           1);
+    const SemanticSymbolRecord bTop =
+        makeGuiSmokeRecord(1301,
+                           fileB,
+                           QStringLiteral("b_top"),
+                           SymbolTaxonomy::DeclarationKind::Module,
+                           SymbolTaxonomy::CollectorKind::Module,
+                           1);
+    SemanticIndex index;
+    index.setSnapshot(snapshotFromRecords({aTop, bTop}));
+    NavigationService service(&index);
+    NavigationWidget widget;
+    WorkspaceManager workspace;
+    NavigationManager manager;
+    manager.setNavigationService(&service);
+    manager.setNavigationWidget(&widget);
+    manager.connectToWorkspaceManager(&workspace);
+
+    expectBool("navigation design cache opens A",
+               workspace.openWorkspace(workspaceA.path()),
+               true);
+    expectBool("navigation design cache scans A",
+               waitUntil([&]() {
+                   return workspace.getSystemVerilogFiles().contains(
+                       QDir::cleanPath(QDir::fromNativeSeparators(
+                           QFileInfo(fileA).absoluteFilePath())));
+               }, 2000),
+               true);
+    manager.setActiveView(NavigationManager::DesignHierarchyView);
+    expectBool("navigation design cache builds A once",
+               manager.caches.designHierarchyValid
+                   && manager.caches.designHierarchy.topModule
+                          == QStringLiteral("a_top"),
+               true);
+    expectBool("navigation design cache keeps A immediately",
+               !manager.updateDesignHierarchyData(false),
+               true);
+
+    manager.setActiveView(NavigationManager::FileHierarchyView);
+    expectBool("navigation design cache opens B",
+               workspace.openWorkspace(workspaceB.path()),
+               true);
+    expectBool("navigation design cache scans B",
+               waitUntil([&]() {
+                   return workspace.getSystemVerilogFiles().contains(
+                       QDir::cleanPath(QDir::fromNativeSeparators(
+                           QFileInfo(fileB).absoluteFilePath())));
+               }, 2000),
+               true);
+    manager.setActiveView(NavigationManager::DesignHierarchyView);
+    expectBool("navigation design cache builds B once",
+               manager.caches.designHierarchyValid
+                   && manager.caches.designHierarchy.topModule
+                          == QStringLiteral("b_top"),
+               true);
+
+    manager.setActiveView(NavigationManager::FileHierarchyView);
+    expectBool("navigation design cache switches back to A",
+               workspace.switchWorkspace(0),
+               true);
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
+    expectBool("navigation design cache restores A without rebuild",
+               manager.caches.designHierarchyValid
+                   && manager.caches.designHierarchy.topModule
+                          == QStringLiteral("a_top")
+                   && !manager.updateDesignHierarchyData(false),
+               true);
+
+    manager.setActiveView(NavigationManager::FileHierarchyView);
+    expectBool("navigation design cache close A activates B",
+               workspace.closeWorkspace(0),
+               true);
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
+    expectBool("navigation design cache restores B after close",
+               manager.caches.designHierarchyValid
+                   && manager.caches.designHierarchy.topModule
+                          == QStringLiteral("b_top")
+                   && !manager.updateDesignHierarchyData(false),
+               true);
+}
+
 static void runRtlInsightsPanelRegression(MainWindow& window, const QString& fixturePath)
 {
     printf("\n-- RTL insights panel regression --\n");
@@ -5752,6 +5865,7 @@ int main(int argc, char** argv)
     runWorkspaceAliasRenameRegression();
     runIncludeCompletionRegression();
     runTreeSitterFoldingProviderRegression();
+    runNavigationDesignCacheWorkspaceActivationRegression();
     runNavigationHierarchyModelRegression();
 
     const QString workspacePath = (argc > 1)

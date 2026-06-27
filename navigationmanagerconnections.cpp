@@ -82,6 +82,7 @@ void NavigationManager::connectToWorkspaceManager(WorkspaceManager* workspaceMan
                     caches.clearFileList();
                     caches.clearModuleHierarchy();
                     caches.clearDesignHierarchy();
+                    designHierarchyCacheByScope.clear();
                     caches.designTopModule.clear();
                     caches.designTopInferred = true;
                     if (currentView == DesignHierarchyView) {
@@ -95,7 +96,7 @@ void NavigationManager::connectToWorkspaceManager(WorkspaceManager* workspaceMan
         connect(connectedWorkspaceManager, &WorkspaceManager::filesScanned,
                 this, [this](const QStringList&) {
                     caches.clearFileList();
-                    caches.clearDesignHierarchy();
+                    invalidateCurrentDesignHierarchyCache();
                     if (currentView == FileHierarchyView)
                         refreshFileHierarchy();
                     else if (currentView == DesignHierarchyView)
@@ -109,7 +110,7 @@ void NavigationManager::connectToWorkspaceManager(WorkspaceManager* workspaceMan
                         caches.clearSymbolOutline();
                         refreshSymbolHierarchy();
                     } else if (currentView == DesignHierarchyView) {
-                        caches.clearDesignHierarchy();
+                        invalidateCurrentDesignHierarchyCache();
                         refreshDesignHierarchy();
                     }
                 });

@@ -207,7 +207,7 @@ void NavigationManager::setDesignTop(const QString& moduleName)
         return;
     caches.designTopModule = moduleName;
     caches.designTopInferred = false;
-    caches.clearDesignHierarchy();
+    invalidateCurrentDesignHierarchyCache();
     refreshDesignHierarchy(true);
     if (navigationWidget)
         navigationWidget->setActiveTab(NavigationWidget::DesignTab);
@@ -221,7 +221,7 @@ void NavigationManager::clearDesignTop()
 {
     caches.designTopModule.clear();
     caches.designTopInferred = true;
-    caches.clearDesignHierarchy();
+    invalidateCurrentDesignHierarchyCache();
     refreshDesignHierarchy(true);
     ActivityLogService::getInstance()->append(
         QStringLiteral("Navigation"),
@@ -269,10 +269,15 @@ void NavigationManager::onTabChanged(const QString& fileName)
 
 void NavigationManager::onWorkspaceChanged(const QString& workspacePath)
 {
+    saveDesignHierarchyCache();
     context.setCurrentWorkspacePath(workspacePath);
 
-    // Clear caches and refresh the active view.
-    caches.clearAll();
+    // Workspace activation changes file/module/symbol scope, while Design
+    // hierarchy is cached per workspace to keep tab switching lightweight.
+    caches.clearFileList();
+    caches.clearModuleHierarchy();
+    caches.clearSymbolOutline();
+    restoreDesignHierarchyCache();
 
     refreshCurrentView();
 }
@@ -320,7 +325,7 @@ void NavigationManager::onSymbolAnalysisCompleted(const QString& fileName, int s
             }
             break;
         }
-        caches.clearDesignHierarchy();
+        invalidateCurrentDesignHierarchyCache();
         refreshDesignHierarchy();
         break;
     }
@@ -343,7 +348,7 @@ void NavigationManager::onBatchSymbolAnalysisCompleted(
         caches.clearModuleHierarchy();
         refreshSymbolHierarchy();
     } else if (currentView == DesignHierarchyView) {
-        caches.clearDesignHierarchy();
+        invalidateCurrentDesignHierarchyCache();
         refreshDesignHierarchy();
     }
 }

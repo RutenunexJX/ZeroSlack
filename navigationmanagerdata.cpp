@@ -126,6 +126,7 @@ bool NavigationManager::updateDesignHierarchyData(bool force)
         caches.designFileScope = fileScope;
         caches.designSnapshotGeneration = snapshotRevision;
         caches.designHierarchyValid = true;
+        saveDesignHierarchyCache();
         return changed;
     }
 
@@ -158,6 +159,7 @@ bool NavigationManager::updateDesignHierarchyData(bool force)
         caches.designSnapshotGeneration = snapshotRevision;
         caches.designFileScope = fileScope;
         caches.designHierarchyValid = true;
+        saveDesignHierarchyCache();
         return changed;
     }
 
@@ -168,6 +170,7 @@ bool NavigationManager::updateDesignHierarchyData(bool force)
     if (caches.designHierarchy.snapshotGeneration == 0)
         caches.designHierarchy.snapshotGeneration = snapshotRevision;
     caches.designHierarchyValid = true;
+    saveDesignHierarchyCache();
     return true;
 }
 

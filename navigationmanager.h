@@ -130,6 +130,16 @@ private:
         void clearAll();
     };
 
+    struct DesignHierarchyCacheEntry {
+        DesignHierarchyReport hierarchy;
+        QString topModule;
+        QStringList rootModules;
+        QStringList fileScope;
+        std::uint64_t snapshotGeneration = 0;
+        bool hierarchyValid = false;
+        bool topInferred = true;
+    };
+
     NavigationWidget* navigationWidget = nullptr;
     NavigationService* navigationService = nullptr;
     NavigationView currentView = FileHierarchyView;
@@ -139,6 +149,7 @@ private:
 
     NavigationContext context;
     NavigationCaches caches;
+    QHash<QString, DesignHierarchyCacheEntry> designHierarchyCacheByScope;
 
     // Helper methods
     void setupConnections();
@@ -149,6 +160,10 @@ private:
     bool shouldRefreshCache() const;
     QStringList getSystemVerilogFiles() const;
     QStringList filterFiles(const QStringList& files, const QString& filter) const;
+    QString designHierarchyCacheKey() const;
+    void saveDesignHierarchyCache();
+    void restoreDesignHierarchyCache();
+    void invalidateCurrentDesignHierarchyCache();
 };
 
 #endif // NAVIGATIONMANAGER_H
