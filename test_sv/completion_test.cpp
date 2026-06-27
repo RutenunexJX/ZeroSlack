@@ -26,6 +26,7 @@
 #include "symbolanalyzer.h"
 #include "symboltaxonomy.h"
 #include "tsdocument.h"
+#include "usertemplateservice.h"
 #include "wavepreviewservice.h"
 #include "workspaceanalysisplanservice.h"
 #include "workspaceanalysisrequestqueue.h"
@@ -4956,6 +4957,103 @@ int main(int argc, char** argv) {
                             "module uart(\n"
                             ");\n"
                             "endmodule"));
+
+    QTemporaryDir userTemplateSettingsDir;
+    expectBool("UserTemplateService temp dir valid",
+               userTemplateSettingsDir.isValid(),
+               true);
+    const QString userTemplateSettingsFile =
+        QDir(userTemplateSettingsDir.path()).absoluteFilePath(
+            QStringLiteral("user_templates.ini"));
+    UserTemplateService userTemplateService(userTemplateSettingsFile);
+    UserTemplateRecord pipeTemplate;
+    pipeTemplate.id = QStringLiteral("pipe_stage");
+    pipeTemplate.commandToken = QStringLiteral(";;pipe");
+    pipeTemplate.label = QStringLiteral("pipeline stage");
+    pipeTemplate.description = QStringLiteral("user pipeline register");
+    pipeTemplate.insertText =
+        QStringLiteral("logic [WIDTH-1:0] data_q;\n"
+                       "always_ff @(posedge clk) data_q <= data_d;");
+    pipeTemplate.selectionStart =
+        pipeTemplate.insertText.indexOf(QStringLiteral("data_q"));
+    pipeTemplate.selectionLength = QStringLiteral("data_q").size();
+    CodeTemplateSlot pipeSlot;
+    pipeSlot.name = QStringLiteral("signal");
+    pipeSlot.start = pipeTemplate.selectionStart;
+    pipeSlot.length = pipeTemplate.selectionLength;
+    pipeTemplate.templateSlots.append(pipeSlot);
+
+    const UserTemplateSaveReport userTemplateSaveReport =
+        userTemplateService.setRecords({pipeTemplate});
+    expectBool("UserTemplateService saves valid template",
+               userTemplateSaveReport.valid
+                   && userTemplateSaveReport.records.size() == 1
+                   && userTemplateSaveReport.records.first().id
+                       == QStringLiteral("pipe_stage"),
+               true);
+    UserTemplateService reloadedUserTemplates(userTemplateSettingsFile);
+    const QList<CodeTemplateItem> userTemplateCatalog =
+        reloadedUserTemplates.catalog();
+    expectBool("UserTemplateService reloads catalog item",
+               userTemplateCatalog.size() == 1
+                   && userTemplateCatalog.first().commandToken
+                       == QStringLiteral(";;pipe")
+                   && userTemplateCatalog.first().label
+                       == QStringLiteral("pipeline stage"),
+               true);
+    const QList<CodeTemplateItem> userTemplateMatches =
+        reloadedUserTemplates.matchingTemplates(QStringLiteral(";;pipe"));
+    expectBool("UserTemplateService query preserves slots",
+               userTemplateMatches.size() == 1
+                   && userTemplateMatches.first().insertText
+                       == pipeTemplate.insertText
+                   && userTemplateMatches.first().selectionStart
+                       == pipeTemplate.selectionStart
+                   && userTemplateMatches.first().selectionLength
+                       == pipeTemplate.selectionLength
+                   && userTemplateMatches.first().templateSlots.size() == 1
+                   && userTemplateMatches.first().templateSlots.first().name
+                       == QStringLiteral("signal"),
+               true);
+    expectBool("UserTemplateService unknown command empty",
+               reloadedUserTemplates
+                   .matchingTemplates(QStringLiteral(";;missing"))
+                   .isEmpty(),
+               true);
+
+    UserTemplateRecord invalidTemplate = pipeTemplate;
+    invalidTemplate.id = QStringLiteral("bad_token");
+    invalidTemplate.commandToken = QStringLiteral(";pipe");
+    const UserTemplateSaveReport invalidTokenReport =
+        userTemplateService.setRecords({invalidTemplate});
+    expectBool("UserTemplateService rejects non-template token",
+               !invalidTokenReport.valid
+                   && !invalidTokenReport.failureReason.isEmpty()
+                   && reloadedUserTemplates.records().size() == 1,
+               true);
+
+    UserTemplateRecord duplicateTemplate = pipeTemplate;
+    duplicateTemplate.commandToken = QStringLiteral(";;other_pipe");
+    const UserTemplateSaveReport duplicateReport =
+        userTemplateService.validateRecords(
+            {pipeTemplate, duplicateTemplate});
+    expectBool("UserTemplateService rejects duplicate ids",
+               !duplicateReport.valid
+                   && duplicateReport.failureReason.contains(
+                       QStringLiteral("unique"),
+                       Qt::CaseInsensitive),
+               true);
+    expectBool("UserTemplateService leaves built-in templates separate",
+               CodeTemplateService::getInstance()
+                       ->templateForCommand(QStringLiteral(";;pipe"))
+                       .insertText.isEmpty()
+                   && CodeTemplateService::getInstance()
+                          ->templateForCommand(QStringLiteral(";;l"),
+                                               QStringLiteral("clk"))
+                          .insertText
+                       == QStringLiteral("logic clk;"),
+               true);
+
     const CodeTemplateItem widthLogic =
         CodeTemplateService::getInstance()->templateForCommand(
             QStringLiteral(";;l"), QStringLiteral("8 sig"));

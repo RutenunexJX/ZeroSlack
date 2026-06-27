@@ -28,7 +28,7 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
 
 ## Current Goal State
 
-Current milestone: `G6.2 User Template Storage/Query Model`.
+Current milestone: `G6.3 Custom Abbreviation Resolution`.
 
 Status:
 
@@ -165,16 +165,27 @@ Status:
   Control app/workspace/global.
 - Focused verification for G6.1: documentation inspection plus
   `git diff --check`.
+- G6.2 User Template Storage/Query Model is complete:
+  `UserTemplateService` now owns validation, persistence, reload, exact-token
+  query, add/update, remove, and clear operations for compact `;;` user
+  template records. Records persist under `QSettings` `userTemplates/items`,
+  preserve selection and `CodeTemplateSlotList` metadata, and expose
+  `CodeTemplateItem`-compatible query results. Built-in `CodeTemplateService`
+  behavior remains separate and unchanged; arbitrary user template tokens are
+  not wired into the inline `;;cmd` popup in this milestone.
+- Focused verification for G6.2: `git diff --check`; Release
+  `completion_test` and `gui_smoke_test` targets compile/link; Release
+  `completion_test` passed directly with 680 checks and 0 failures; `ctest -R
+  "^completion_test$"` passed. `gui_smoke_test` was not launched.
 
-Completion criteria for G6.2:
+Completion criteria for G6.3:
 
-- add a service-owned user-template storage/query model
-- preserve built-in `CodeTemplateService` template behavior and existing Slot
-  Mode metadata compatibility
-- keep UI widgets out of template storage/query policy
-- do not change `;cmd`, COM Mode, or Global Control namespaces
-- do not implement custom abbreviations or broaden Slot Mode coverage in this
-  milestone
+- add service-owned custom abbreviation resolution for completion/template
+  commands
+- keep built-in command behavior compatible
+- keep UI widgets out of abbreviation storage/query policy
+- do not change COM Mode or Global Control namespaces
+- do not broaden Slot Mode coverage in this milestone
 - `readme.md`, `plan.md`, and `goal.md` are updated
 - appropriate focused verification passes
 - milestone commit is pushed
@@ -291,6 +302,7 @@ Milestones:
 - G6.1 Document current responsibilities and conflict boundaries.
   (complete: command surface ownership and conflict boundaries documented)
 - G6.2 Add user-template storage/query model.
+  (complete: `UserTemplateService` storage/query model)
 - G6.3 Add custom abbreviation resolution.
 - G6.4 Integrate user templates with slot mode.
 

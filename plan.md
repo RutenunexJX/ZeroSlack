@@ -330,6 +330,8 @@ First milestones:
   (complete: `;cmd`, `;;cmd`, alternate commands, COM Mode, and Global Control
   ownership and conflict boundaries are documented)
 - M6.2 add user-template storage/query model
+  (complete: `UserTemplateService` persists and queries validated user template
+  records as `CodeTemplateItem`-compatible data)
 - M6.3 add custom abbreviation resolution
 - M6.4 integrate user templates with slot mode
 
@@ -359,6 +361,27 @@ M6.2 implementation constraints:
   compatible.
 - `;cmd`, COM Mode, and Global Control namespaces must not be changed by the
   user-template storage milestone.
+
+M6.2 implementation status:
+
+- Complete: `UserTemplateService` owns user template validation, persistence,
+  reload, exact-token query, add/update, remove, and clear operations.
+- Complete: user templates are stored under `QSettings`
+  `userTemplates/items`, with injectable ini-file storage for focused tests.
+- Complete: user template records use compact `;;` command tokens, require
+  unique ids and non-empty template text, reject invalid selection/slot ranges,
+  and preserve `CodeTemplateSlotList` metadata through serialization.
+- Complete: query results are `CodeTemplateItem`-compatible, so future template
+  popup and Slot Mode work can consume the same data shape.
+- Complete: built-in `CodeTemplateService` behavior remains separate and
+  unchanged in this milestone; arbitrary user template tokens are not wired into
+  the inline `;;cmd` popup yet.
+- Not done in M6.2: user-template UI, custom abbreviations, changes to
+  `;cmd`, COM Mode, Global Control, or broader Slot Mode activation.
+- Verification: `git diff --check`; Release `completion_test` and
+  `gui_smoke_test` targets compile/link; Release `completion_test` passed
+  directly with 680 checks and 0 failures; `ctest -R "^completion_test$"`
+  passed. `gui_smoke_test` was not launched.
 
 ### 7. Fold / Fold Shelf
 

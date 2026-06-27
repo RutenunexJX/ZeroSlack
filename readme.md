@@ -173,11 +173,16 @@ Current command surfaces are intentionally separate:
   comment/string rejection. `CompletionCommandMode` and `CompletionService`
   shape command state, help, symbol presentation, activation state, and
   `CompletionSemanticQuery` requests against `SemanticIndexSnapshot` data.
-- `;;cmd` is inline code template expansion. Its command prefixes are derived
-  from the inline descriptor set, but template text and relative slot metadata
-  come from `CodeTemplateService`. `EditorCompletionWorkflow` applies the
-  selected template and starts Slot Mode through `MyCodeEditor` when slot
-  metadata exists.
+- `;;cmd` is inline code template expansion. Its built-in command prefixes are
+  derived from the inline descriptor set, while built-in template text and
+  relative slot metadata come from `CodeTemplateService`.
+  `EditorCompletionWorkflow` applies the selected template and starts Slot Mode
+  through `MyCodeEditor` when slot metadata exists.
+- User template storage/query is service-owned by `UserTemplateService`. It
+  persists validated `;;` template records in `QSettings`, exposes
+  `CodeTemplateItem`-compatible catalog and exact-token query results, and keeps
+  template slot metadata intact for future Slot Mode integration. G6.2 does not
+  wire user templates into the inline template popup yet.
 - Alternate commands such as `replace`, `goto_line`, `comment`, `uncomment`,
   `indent`, `unindent`, and `clear_rhs` are named editor/app actions owned by
   `AlternateCommandService`. `EditorCompletionWorkflow` may emit an alternate
@@ -199,6 +204,9 @@ Conflict boundaries:
   Slang from UI, or perform editor-local structural edits.
 - `;;cmd` must stay template insertion; template storage/query work belongs in
   a service layer, not in UI widgets.
+- User template records must use compact `;;` command tokens. `;:` remains
+  reserved/inactive, and user template storage must not alter `;cmd`, COM Mode,
+  or Global Control namespaces.
 - COM Mode must not become a Vim clone or share syntax with `;cmd` / `;;cmd`.
 - Global Control must stay Ctrl+Space app/workspace control and must not become
   editor-local COM Mode.
