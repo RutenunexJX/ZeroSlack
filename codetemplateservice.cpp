@@ -189,6 +189,10 @@ CodeTemplateItem expandSignalDeclarationTemplate(CodeTemplateItem item,
     text += QLatin1Char(' ');
     item.selectionStart = text.size();
     item.selectionLength = name.size();
+    item.templateSlots.append(makeSlot(
+        QStringLiteral("name"),
+        item.selectionStart,
+        item.selectionLength));
     text += name;
     if (!unpackedDimensions.isEmpty()) {
         text += QLatin1Char(' ');

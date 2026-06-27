@@ -52,7 +52,8 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
 - `;cmd` remains semantic command completion. `;;cmd` remains template
   expansion. COM Mode is for editor-local command actions. Slot Mode is the
   post-template editor-local fill flow; it is active for `;;p` / `;;lp`
-  parameter templates and not yet active for other template families.
+  parameter templates and `;;l` / `;;w` / `;;r` signal declaration templates,
+  and not yet active for other template families.
 - Fold Region and Fold Shelf are available through Global Control. Fold Shelf
   is not yet the long-term persistent shelf system.
 - Signal Kernel Graph exists as a signal-centric exploration graph. Dense
@@ -124,8 +125,9 @@ Known reference points captured before this cleanup:
 
 Slot Mode is the `;;cmd` follow-up state for filling editable points in an
 inserted template. It currently applies to `;;p` / `;;lp` parameter declaration
-templates. Other template families keep current insertion behavior until an
-implementation milestone explicitly enables slots for that family.
+templates and `;;l` / `;;w` / `;;r` signal declaration templates. Other
+template families keep current insertion behavior until an implementation
+milestone explicitly enables slots for that family.
 
 - Slot data is an ordered set of relative ranges inside inserted template text.
   A range may be empty, preselected text, or a named placeholder. Existing
@@ -144,6 +146,8 @@ implementation milestone explicitly enables slots for that family.
 - Parameter template slots are ordered as name then value. Editing the name
   shifts the value slot; Tab reaches the value; final Tab exits before the
   semicolon.
+- Signal declaration templates use a single name slot. Editing the signal name
+  keeps packed/unpacked dimensions intact; final Tab exits before the semicolon.
 
 ## Long-Term Goal Scope
 

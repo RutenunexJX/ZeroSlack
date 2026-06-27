@@ -28,7 +28,7 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
 
 ## Current Goal State
 
-Current milestone: `G2.3 Signal Template Slot Mode`.
+Current milestone: `G3.1 Clear-RHS Report/Service Design`.
 
 Status:
 
@@ -88,17 +88,25 @@ Status:
 - Focused verification for G2.2: Release `completion_test` passed with 625
   checks and 0 failures; Release `completion_test` and `gui_smoke_test` targets
   compile/link, with `gui_smoke_test` not launched.
+- G2.3 Signal Template Slot Mode is complete: `;;l`, `;;w`, and `;;r` produce
+  a signal-name slot; signal template activation reuses the existing Slot Mode
+  session path; signal-name editing preserves packed/unpacked dimensions and
+  final Tab exits before the semicolon; parameter template behavior is
+  preserved.
+- Focused verification for G2.3: Release `completion_test` passed with 630
+  checks and 0 failures; Release `completion_test` and `gui_smoke_test` targets
+  compile/link, with `gui_smoke_test` not launched.
 - Verification flow now includes checking for external Windows application-error
   or memory-read dialogs when CTest appears stalled.
 
-Completion criteria for G2.3:
+Completion criteria for G3.1:
 
-- add concrete slot metadata for `;;l` / `;;w` / `;;r` signal declaration
-  templates
-- reuse the existing Slot Mode session path from parameter templates
-- support signal-name editing and any existing value/range placeholder behavior
-  without changing parameter template behavior
-- preserve current template insertion behavior for all non-signal templates
+- define the service/report data model for clearing selected assignment RHS
+  expressions and producing fill slots
+- define supported assignment forms and explicit unsupported cases
+- define validation and failure reasons without mutating editor text
+- identify focused verification cases for the future clear-RHS command
+- do not implement the editor command in this milestone
 - `readme.md`, `plan.md`, and `goal.md` are updated
 - appropriate focused verification passes
 - milestone commit is pushed

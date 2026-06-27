@@ -4888,7 +4888,11 @@ int main(int argc, char** argv) {
              QStringLiteral("logic [7:0] sig;"));
     expectBool("CodeTemplateService logic selects name",
                widthLogic.selectionStart == widthLogic.insertText.indexOf(QStringLiteral("sig"))
-                   && widthLogic.selectionLength == QStringLiteral("sig").size(),
+                   && widthLogic.selectionLength == QStringLiteral("sig").size()
+                   && widthLogic.templateSlots.size() == 1
+                   && widthLogic.templateSlots.first().name == QStringLiteral("name")
+                   && widthLogic.templateSlots.first().start == widthLogic.selectionStart
+                   && widthLogic.templateSlots.first().length == widthLogic.selectionLength,
                true);
     expectEq("CodeTemplateService logic unpacked dimension",
              CodeTemplateService::getInstance()
@@ -4930,7 +4934,10 @@ int main(int argc, char** argv) {
                widthWire.selectionStart
                        == widthWire.insertText.indexOf(QStringLiteral("net_sig"))
                    && widthWire.selectionLength
-                       == QStringLiteral("net_sig").size(),
+                       == QStringLiteral("net_sig").size()
+                   && widthWire.templateSlots.size() == 1
+                   && widthWire.templateSlots.first().start
+                       == widthWire.selectionStart,
                true);
     expectEq("CodeTemplateService reg signed dimensions",
              CodeTemplateService::getInstance()
@@ -4944,6 +4951,18 @@ int main(int argc, char** argv) {
                                       QStringLiteral(":PW+DW:0 state"))
                  .insertText,
              QStringLiteral("reg [PW+DW:0] state;"));
+    const CodeTemplateItem regTemplate =
+        CodeTemplateService::getInstance()->templateForCommand(
+            QStringLiteral(";;r"), QStringLiteral(":PW+DW:0 state"));
+    expectBool("CodeTemplateService reg carries name slot",
+               regTemplate.templateSlots.size() == 1
+                   && regTemplate.templateSlots.first().name
+                       == QStringLiteral("name")
+                   && regTemplate.templateSlots.first().start
+                       == regTemplate.selectionStart
+                   && regTemplate.templateSlots.first().length
+                       == regTemplate.selectionLength,
+               true);
     const CommandModeCompletionState widthTemplateState =
         CompletionService::getInstance()->commandModeCompletionState(
             CommandModeCompletionQuery{QStringLiteral(";;l 8 data")});
@@ -4955,7 +4974,9 @@ int main(int argc, char** argv) {
                    && widthTemplateState.templateItems.first().selectionStart
                        == QStringLiteral("logic [7:0] ").size()
                    && widthTemplateState.templateItems.first().selectionLength
-                       == QStringLiteral("data").size(),
+                       == QStringLiteral("data").size()
+                   && widthTemplateState.templateItems.first().templateSlots.size()
+                       == 1,
                true);
     const CommandModeCompletionState wireTemplateState =
         CompletionService::getInstance()->commandModeCompletionState(
@@ -4968,7 +4989,51 @@ int main(int argc, char** argv) {
                    && wireTemplateState.templateItems.first().selectionStart
                        == QStringLiteral("wire [7:0] ").size()
                    && wireTemplateState.templateItems.first().selectionLength
-                       == QStringLiteral("net_sig").size(),
+                       == QStringLiteral("net_sig").size()
+                   && wireTemplateState.templateItems.first().templateSlots.size()
+                       == 1,
+               true);
+    CompletionActivationQuery signalTemplateActivation;
+    signalTemplateActivation.selectable = true;
+    signalTemplateActivation.mode = CompletionActivationMode::CommandMode;
+    signalTemplateActivation.defaultValue = widthLogic.insertText;
+    signalTemplateActivation.selectionStart = widthLogic.selectionStart;
+    signalTemplateActivation.selectionLength = widthLogic.selectionLength;
+    signalTemplateActivation.templateSlots = widthLogic.templateSlots;
+    const CompletionActivationState signalTemplateActivationState =
+        CompletionService::getInstance()->completionActivationState(
+            signalTemplateActivation);
+    expectBool("CompletionService signal activation carries slot",
+               signalTemplateActivationState.action
+                       == CompletionActivationAction::ReplaceCommandInput
+                   && signalTemplateActivationState.clearCommandMode
+                   && signalTemplateActivationState.hidePopup
+                   && signalTemplateActivationState.templateSlots.size() == 1,
+               true);
+    MyCodeEditor signalSlotEditor;
+    signalSlotEditor.setPlainText(widthLogic.insertText);
+    signalSlotEditor.startTemplateSlotMode(0,
+                                           widthLogic.insertText.size(),
+                                           widthLogic.templateSlots);
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 10);
+    expectBool("Signal Slot Mode starts on name",
+               signalSlotEditor.templateSlotModeActive()
+                   && signalSlotEditor.templateSlotModeActiveIndex() == 0
+                   && signalSlotEditor.textCursor().selectedText()
+                       == QStringLiteral("sig"),
+               true);
+    insertAtEditorCursor(signalSlotEditor, QStringLiteral("data_bus"));
+    expectBool("Signal Slot Mode edit updates name",
+               signalSlotEditor.toPlainText()
+                       == QStringLiteral("logic [7:0] data_bus;")
+                   && signalSlotEditor.templateSlotModeActive(),
+               true);
+    expectBool("Signal Slot Mode final Tab completes",
+               sendEditorKey(signalSlotEditor, Qt::Key_Tab)
+                   && !signalSlotEditor.templateSlotModeActive()
+                   && signalSlotEditor.textCursor().position()
+                       == signalSlotEditor.toPlainText()
+                              .indexOf(QStringLiteral(";")),
                true);
     const CodeTemplateItem parameterScalar =
         CodeTemplateService::getInstance()->templateForCommand(

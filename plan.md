@@ -133,6 +133,16 @@ M2.2 implementation status:
 - Verification: Release `completion_test` passed; Release `completion_test` and
   `gui_smoke_test` targets compile/link.
 
+M2.3 implementation status:
+
+- Complete: `;;l`, `;;w`, and `;;r` produce a signal-name slot.
+- Complete: signal template activation reuses the existing editor-local Slot
+  Mode path from parameter templates.
+- Complete: signal name editing preserves packed/unpacked dimensions and final
+  Tab exits before the semicolon.
+- Verification: Release `completion_test` passed; Release `completion_test` and
+  `gui_smoke_test` targets compile/link.
+
 ### 3. Batch RTL Edit Actions
 
 Goal: support focused RTL batch edits that reduce repetitive cleanup.
@@ -148,6 +158,15 @@ First milestones:
 - M3.1 service/report design for selected assignment cleanup
 - M3.2 editor command for clear-RHS on selected assignments
 - M3.3 connect result to slot mode
+
+M3.1 design scope:
+
+- Design only the report/service path for clearing selected assignment RHS
+  expressions and producing fill slots.
+- Do not add the editor command or mutate documents in M3.1.
+- The future implementation must remain editor-local or service-owned and must
+  not scan the workspace, run Slang from UI, or use regex as SystemVerilog
+  semantic analysis.
 
 ### 4. COM Mode Framework Completion
 
