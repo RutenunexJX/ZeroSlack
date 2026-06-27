@@ -28,7 +28,7 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
 
 ## Current Goal State
 
-Current milestone: `G3.1 Clear-RHS Report/Service Design`.
+Current milestone: `G3.2 Clear-RHS Editor Command`.
 
 Status:
 
@@ -98,15 +98,23 @@ Status:
   compile/link, with `gui_smoke_test` not launched.
 - Verification flow now includes checking for external Windows application-error
   or memory-read dialogs when CTest appears stalled.
+- G3.1 Clear-RHS Report/Service Design is complete:
+  `RtlBatchEditService::planClearAssignmentRhs` now returns a non-mutating
+  selected-text report with replacement text, per-assignment edit metadata,
+  document-relative RHS offsets, zero-length `rhsN` template slots, and failure
+  reasons. Supported first-pass forms are complete selected blocking,
+  nonblocking, and continuous `assign` statements. Unsupported selections fail
+  without mutation for empty selection, incomplete statement, declaration
+  initializer, control-flow statement, macro statement, ambiguous top-level
+  assignment, unmatched delimiter, unterminated string, or unterminated comment.
 
-Completion criteria for G3.1:
+Completion criteria for G3.2:
 
-- define the service/report data model for clearing selected assignment RHS
-  expressions and producing fill slots
-- define supported assignment forms and explicit unsupported cases
-- define validation and failure reasons without mutating editor text
-- identify focused verification cases for the future clear-RHS command
-- do not implement the editor command in this milestone
+- add an editor-local command entry for selected assignment RHS cleanup
+- route command execution through `RtlBatchEditService`
+- apply the returned replacement in one undoable edit block
+- preserve all G3.1 validation failure reasons in status/command feedback
+- do not start Slot Mode in this milestone
 - `readme.md`, `plan.md`, and `goal.md` are updated
 - appropriate focused verification passes
 - milestone commit is pushed
@@ -155,6 +163,8 @@ First target:
 Milestones:
 
 - G3.1 Design the clear-RHS report/service path.
+  (complete: non-mutating `RtlBatchEditService` report, failure reasons, and
+  fill-slot metadata)
 - G3.2 Implement the editor-local clear-RHS command for selected assignments.
 - G3.3 Connect clear-RHS output to slot mode.
 

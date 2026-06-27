@@ -156,14 +156,28 @@ Allowed scope:
 First milestones:
 
 - M3.1 service/report design for selected assignment cleanup
+  (complete: `RtlBatchEditService` plans selected-text RHS clearing without
+  mutating editor text)
 - M3.2 editor command for clear-RHS on selected assignments
 - M3.3 connect result to slot mode
 
-M3.1 design scope:
+M3.1 implementation status:
 
-- Design only the report/service path for clearing selected assignment RHS
-  expressions and producing fill slots.
-- Do not add the editor command or mutate documents in M3.1.
+- Complete: `RtlBatchEditService::planClearAssignmentRhs` returns a
+  `RtlClearAssignmentRhsReport` containing replacement text, edit metadata,
+  zero-length `rhsN` template slots, and validation failure reasons.
+- Complete: the service supports complete selected blocking assignments,
+  nonblocking assignments, and continuous `assign` statements, while preserving
+  surrounding whitespace/comments.
+- Complete: unsupported selections fail without mutation for empty selection,
+  incomplete statements, declaration initializers, control-flow statements,
+  macro statements, ambiguous top-level assignments, unmatched delimiters,
+  unterminated strings, and unterminated comments.
+- Complete: focused verification covers ready multi-assignment cleanup, slot
+  metadata, document-relative edit offsets, declaration rejection, incomplete
+  statement rejection, and empty selection reporting.
+- Not done in M3.1: editor command wiring, undo block application, and Slot Mode
+  entry after replacement. Those stay in M3.2/M3.3.
 - The future implementation must remain editor-local or service-owned and must
   not scan the workspace, run Slang from UI, or use regex as SystemVerilog
   semantic analysis.

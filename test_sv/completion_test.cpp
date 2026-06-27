@@ -17,6 +17,7 @@
 #include "mycodeeditor.h"
 #include "myhighlighter.h"
 #include "relationshipservice.h"
+#include "rtlbatcheditservice.h"
 #include "semanticdecorationservice.h"
 #include "semantic_fixture_records.h"
 #include "semanticindexsnapshot.h"
@@ -5232,6 +5233,53 @@ int main(int argc, char** argv) {
     QCoreApplication::processEvents(QEventLoop::AllEvents, 10);
     expectBool("Slot Mode cursor outside exits",
                !slotStaleEditor.templateSlotModeActive(),
+               true);
+
+    const RtlClearAssignmentRhsReport clearRhsReport =
+        RtlBatchEditService::getInstance()->planClearAssignmentRhs(
+            RtlClearAssignmentRhsQuery{
+                QStringLiteral("a <= xxx;\n"
+                               "b = foo(bar);\n"
+                               "assign c = d ? e : f;\n"),
+                100});
+    expectBool("RtlBatch clear RHS report ready",
+               clearRhsReport.canApply()
+                   && clearRhsReport.edits.size() == 3
+                   && clearRhsReport.templateSlots.size() == 3,
+               true);
+    expectEq("RtlBatch clear RHS replacement",
+             clearRhsReport.replacementText,
+             QStringLiteral("a <= ;\n"
+                            "b = ;\n"
+                            "assign c = ;\n"));
+    expectBool("RtlBatch clear RHS slots",
+               clearRhsReport.templateSlots.at(0).name == QStringLiteral("rhs1")
+                   && clearRhsReport.templateSlots.at(0).start
+                       == clearRhsReport.replacementText
+                              .indexOf(QStringLiteral(";"))
+                   && clearRhsReport.edits.at(0).documentRhsStart
+                       == clearRhsReport.edits.at(0).selectionRhsStart + 100,
+               true);
+    const RtlClearAssignmentRhsReport clearRhsDeclaration =
+        RtlBatchEditService::getInstance()->planClearAssignmentRhs(
+            RtlClearAssignmentRhsQuery{QStringLiteral("logic a = b;"), 0});
+    expectBool("RtlBatch clear RHS rejects declaration",
+               clearRhsDeclaration.status
+                   == RtlClearAssignmentRhsStatus::UnsupportedSelection,
+               true);
+    const RtlClearAssignmentRhsReport clearRhsIncomplete =
+        RtlBatchEditService::getInstance()->planClearAssignmentRhs(
+            RtlClearAssignmentRhsQuery{QStringLiteral("a <= b"), 0});
+    expectBool("RtlBatch clear RHS rejects incomplete",
+               clearRhsIncomplete.status
+                   == RtlClearAssignmentRhsStatus::UnsupportedSelection,
+               true);
+    const RtlClearAssignmentRhsReport clearRhsEmpty =
+        RtlBatchEditService::getInstance()->planClearAssignmentRhs(
+            RtlClearAssignmentRhsQuery{QStringLiteral("  // comment\n"), 0});
+    expectBool("RtlBatch clear RHS empty selection",
+               clearRhsEmpty.status
+                   == RtlClearAssignmentRhsStatus::EmptySelection,
                true);
 
     expectBool("CompletionService command statement reject",

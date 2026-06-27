@@ -116,6 +116,10 @@ Known reference points captured before this cleanup:
   the insertion and starts an editor-local slot session; `MyCodeEditor` state
   owns active slot ranges, highlighting, navigation, and invalidation.
   Slot state must not live in UI panels or semantic services.
+- Batch RTL edit baseline: `RtlBatchEditService` owns selected-text RTL batch
+  edit planning and returns reports with replacement text, failure reasons, and
+  template-slot metadata. It does not mutate editor text, scan workspaces, or
+  run Slang.
 - `WorkspaceAnalysisPlanService`, `WorkspaceAnalysisRequestQueue`,
   `WorkspaceSymbolAnalysisController`, `RelationshipAnalysisController`, and
   `AnalysisProgressCoordinator` own Huge Workspace planning, request lifecycle,
@@ -148,6 +152,25 @@ milestone explicitly enables slots for that family.
   semicolon.
 - Signal declaration templates use a single name slot. Editing the signal name
   keeps packed/unpacked dimensions intact; final Tab exits before the semicolon.
+
+## Batch RTL Edit Contract
+
+The first batch RTL edit target is clearing RHS expressions from selected
+assignment statements and producing fill slots for the future Slot Mode flow.
+
+- `RtlBatchEditService::planClearAssignmentRhs` accepts selected text and
+  returns a `RtlClearAssignmentRhsReport`.
+- A ready report contains replacement text, per-assignment edit metadata, and
+  `rhs1`, `rhs2`, ... zero-length template slots placed before each semicolon.
+- Supported first-pass forms are complete selected blocking assignments,
+  nonblocking assignments, and continuous `assign` statements. Whitespace and
+  comments around selected statements are preserved.
+- Unsupported cases fail without text mutation: empty selection, incomplete
+  statement, declaration initializer, control-flow statement, macro statement,
+  ambiguous top-level assignment, unmatched delimiter, unterminated string, or
+  unterminated comment.
+- Editor command wiring and Slot Mode entry for this report are not implemented
+  yet; those are the next Batch RTL milestones.
 
 ## Long-Term Goal Scope
 
