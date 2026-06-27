@@ -164,6 +164,45 @@ and restoring Global Control `ow r` for recent workspaces.
   normalization. `WorkspaceManager` is the workspace-level model entry point;
   UI should call it rather than mutating `ProjectModel::ignoredPaths` directly.
 
+## Command Responsibility Map
+
+Current command surfaces are intentionally separate:
+
+- `;cmd` is inline semantic command completion. `InlineCommandMode` owns the
+  built-in prefix descriptors and parsing guardrails, including safe-prefix and
+  comment/string rejection. `CompletionCommandMode` and `CompletionService`
+  shape command state, help, symbol presentation, activation state, and
+  `CompletionSemanticQuery` requests against `SemanticIndexSnapshot` data.
+- `;;cmd` is inline code template expansion. Its command prefixes are derived
+  from the inline descriptor set, but template text and relative slot metadata
+  come from `CodeTemplateService`. `EditorCompletionWorkflow` applies the
+  selected template and starts Slot Mode through `MyCodeEditor` when slot
+  metadata exists.
+- Alternate commands such as `replace`, `goto_line`, `comment`, `uncomment`,
+  `indent`, `unindent`, and `clear_rhs` are named editor/app actions owned by
+  `AlternateCommandService`. `EditorCompletionWorkflow` may emit an alternate
+  command request, and `FileCommandCoordinator` maps known actions to the
+  existing editor or file APIs.
+- COM Mode is editor-local and registry-backed. `commodecommandregistry` owns
+  command metadata and conflict validation; `ComModeService` owns picker/query
+  reports; `ComModeCoordinator` owns mode state, strip text, picker UI, and
+  navigation dispatch.
+- Global Control is app/workspace/global command discovery. `GlobalControlService`
+  owns root domains and domain child command shaping; `MainWindow` dispatches
+  selected items through existing coordinators and dialogs.
+
+Conflict boundaries:
+
+- Do not revive `;:cmd`. `InlineCommandMode::actionDescriptors()` is currently
+  empty, and `;:` remains reserved/inactive.
+- `;cmd` must stay semantic completion; it must not open workspace UI, run
+  Slang from UI, or perform editor-local structural edits.
+- `;;cmd` must stay template insertion; template storage/query work belongs in
+  a service layer, not in UI widgets.
+- COM Mode must not become a Vim clone or share syntax with `;cmd` / `;;cmd`.
+- Global Control must stay Ctrl+Space app/workspace control and must not become
+  editor-local COM Mode.
+
 ## Slot Mode Contract
 
 Slot Mode is the `;;cmd` follow-up state for filling editable points in an

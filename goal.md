@@ -28,7 +28,7 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
 
 ## Current Goal State
 
-Current milestone: `G6.1 Completion Command Responsibility Audit`.
+Current milestone: `G6.2 User Template Storage/Query Model`.
 
 Status:
 
@@ -151,17 +151,32 @@ Status:
   `completion_test` and `gui_smoke_test` targets compile/link; Release
   `completion_test` passed directly with 672 checks and 0 failures; `ctest -R
   "^completion_test$"` passed. `gui_smoke_test` was not launched.
+- G6.1 Completion Command Responsibility Audit is complete:
+  `;cmd` is documented as inline semantic command completion owned by
+  `InlineCommandMode`, `CompletionCommandMode`, `CompletionService`, and
+  `CompletionSemanticQuery`; `;;cmd` is documented as template expansion owned
+  by `CodeTemplateService` and applied through `EditorCompletionWorkflow` /
+  Slot Mode; alternate commands are documented as `AlternateCommandService`
+  names dispatched through existing file/editor APIs; COM Mode and Global
+  Control are documented as separate command surfaces with separate registries,
+  services, and coordinators.
+- G6.1 conflict boundaries are documented: do not revive `;:cmd`, keep `;cmd`
+  semantic, keep `;;cmd` template-only, keep COM editor-local, and keep Global
+  Control app/workspace/global.
+- Focused verification for G6.1: documentation inspection plus
+  `git diff --check`.
 
-Completion criteria for G6.1:
+Completion criteria for G6.2:
 
-- document current responsibilities and conflict boundaries for completion,
-  `;cmd`, `;;cmd`, COM Mode, and Global Control
-- identify current storage/query owners for built-in command completion and
-  templates
-- do not implement user templates, custom abbreviations, or slot-mode expansion
-  in this milestone
+- add a service-owned user-template storage/query model
+- preserve built-in `CodeTemplateService` template behavior and existing Slot
+  Mode metadata compatibility
+- keep UI widgets out of template storage/query policy
+- do not change `;cmd`, COM Mode, or Global Control namespaces
+- do not implement custom abbreviations or broaden Slot Mode coverage in this
+  milestone
 - `readme.md`, `plan.md`, and `goal.md` are updated
-- documentation inspection and `git diff --check` pass
+- appropriate focused verification passes
 - milestone commit is pushed
 
 ## Track 1: Editor Daily Operations Completion
@@ -274,6 +289,7 @@ Allowed work:
 Milestones:
 
 - G6.1 Document current responsibilities and conflict boundaries.
+  (complete: command surface ownership and conflict boundaries documented)
 - G6.2 Add user-template storage/query model.
 - G6.3 Add custom abbreviation resolution.
 - G6.4 Integrate user templates with slot mode.

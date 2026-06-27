@@ -327,9 +327,38 @@ Allowed scope:
 First milestones:
 
 - M6.1 document current command/template responsibilities
+  (complete: `;cmd`, `;;cmd`, alternate commands, COM Mode, and Global Control
+  ownership and conflict boundaries are documented)
 - M6.2 add user-template storage/query model
 - M6.3 add custom abbreviation resolution
 - M6.4 integrate user templates with slot mode
+
+M6.1 audit status:
+
+- Complete: `;cmd` is documented as inline semantic command completion owned by
+  `InlineCommandMode`, `CompletionCommandMode`, `CompletionService`, and
+  `CompletionSemanticQuery` over semantic snapshot data.
+- Complete: `;;cmd` is documented as inline template expansion owned by
+  `CodeTemplateService`, with `EditorCompletionWorkflow` applying insertion and
+  starting Slot Mode when template slot metadata exists.
+- Complete: alternate commands are documented as daily editor/app action names
+  owned by `AlternateCommandService` and dispatched by `FileCommandCoordinator`
+  or existing editor/file APIs.
+- Complete: COM Mode and Global Control are documented as separate command
+  surfaces with separate registries/services/coordinators.
+- Complete: conflict boundaries are documented: do not revive `;:cmd`, keep
+  `;cmd` semantic, keep `;;cmd` template-only, keep COM editor-local, and keep
+  Global Control app/workspace/global.
+- Verification: documentation inspection plus `git diff --check`.
+
+M6.2 implementation constraints:
+
+- User-template storage/query must extend service-owned template data, not UI
+  widgets.
+- Built-in template behavior and current Slot Mode metadata must remain
+  compatible.
+- `;cmd`, COM Mode, and Global Control namespaces must not be changed by the
+  user-template storage milestone.
 
 ### 7. Fold / Fold Shelf
 
