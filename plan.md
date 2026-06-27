@@ -625,6 +625,8 @@ First milestones:
   (complete: `SignalKernelGraphPanelCoordinator` renders collapsible fanout
   group summary/header items while preserving raw visible-node actions)
 - M8.3 filtering and in-graph search
+  (complete: panel-local input/output/cross-module filters and graph search
+  consume existing report/node data while preserving fanout collapse behavior)
 
 M8.1 implementation constraints:
 
@@ -670,6 +672,29 @@ M8.2 implementation status:
   again.
 - Complete: collapse/expand state is panel-owned and is verified through
   offscreen `completion_test` coverage.
+- Verification: `git diff --check`; Release `completion_test`,
+  `relationship_test`, and `gui_smoke_test` targets compile/link; `ctest -R
+  "^completion_test$"` and `ctest -R "^relationship_test$"` passed.
+  `gui_smoke_test` was not launched.
+
+M8.3 implementation constraints:
+
+- Use existing `SignalKernelGraphReport` and node fields; do not scan the
+  workspace or run Slang from panel code.
+- Keep filtering and graph-search state in `SignalKernelGraphPanelCoordinator`.
+- Preserve G8.2 fanout group collapse/expand state, grouped edge routing, and
+  raw visible-node preview/navigation/rebase handlers.
+
+M8.3 implementation status:
+
+- Complete: the panel exposes search plus input, output, and cross-module
+  filters above the graph.
+- Complete: filtering rebuilds the visible graph from existing report/node data
+  and hides fanout groups when all of their members are filtered out.
+- Complete: graph search highlights/focuses visible node matches and collapsed
+  fanout-group matches without expanding groups implicitly.
+- Complete: offscreen `completion_test` coverage verifies filters, collapsed
+  group search, and expanded filtered search behavior.
 - Verification: `git diff --check`; Release `completion_test`,
   `relationship_test`, and `gui_smoke_test` targets compile/link; `ctest -R
   "^completion_test$"` and `ctest -R "^relationship_test$"` passed.

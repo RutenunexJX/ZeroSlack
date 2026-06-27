@@ -11,7 +11,9 @@
 
 class DocumentModel;
 class EditorHoverPopup;
+class QCheckBox;
 class QLabel;
+class QLineEdit;
 class QGraphicsScene;
 class QGraphicsView;
 class QTimer;
@@ -42,10 +44,20 @@ public:
     int visibleGraphNodeCountForTest() const;
     int renderedFanoutGroupItemCountForTest() const;
     bool toggleFanoutGroupForTest(const QString& groupKey);
+    void setGraphSearchTextForTest(const QString& text);
+    void setGraphFilterForTest(bool showInputs,
+                               bool showOutputs,
+                               bool crossModuleOnly);
+    int searchMatchCountForTest() const;
+    int focusedSearchNodeIdForTest() const;
 
 private:
     QDockWidget* graphDock = nullptr;
     QLabel* titleLabel = nullptr;
+    QLineEdit* graphSearchEdit = nullptr;
+    QCheckBox* showInputsCheck = nullptr;
+    QCheckBox* showOutputsCheck = nullptr;
+    QCheckBox* crossModuleOnlyCheck = nullptr;
     QGraphicsView* graphView = nullptr;
     QGraphicsScene* graphScene = nullptr;
     EditorHoverPopup* hoverPopup = nullptr;
@@ -55,14 +67,22 @@ private:
     SignalKernelGraphReport currentReport;
     QSet<QString> knownFanoutGroupKeys;
     QSet<QString> collapsedFanoutGroupKeys;
+    QString graphSearchText;
+    bool graphShowInputs = true;
+    bool graphShowOutputs = true;
+    bool graphCrossModuleOnly = false;
     int lastVisibleGraphNodeCount = 0;
     int lastRenderedFanoutGroupItemCount = 0;
+    int lastSearchMatchCount = 0;
+    int lastFocusedSearchNodeId = -1;
 
     std::function<void(const QString&, int, int)> navigationHandler;
     std::function<void(const QString&, int)> statusMessageHandler;
 
     void renderReport(const SignalKernelGraphReport& report);
     void renderUnavailable(const QString& message);
+    bool nodePassesGraphFilter(const SignalKernelGraphNode& node) const;
+    bool nodeMatchesGraphSearch(const SignalKernelGraphNode& node) const;
     QString fanoutGroupUiKey(const SignalKernelGraphFanoutGroup& group) const;
     void initializeFanoutCollapseState(const SignalKernelGraphReport& report);
     bool isFanoutGroupCollapsed(

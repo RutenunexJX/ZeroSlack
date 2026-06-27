@@ -28,7 +28,7 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
 
 ## Current Goal State
 
-Current milestone: `G8.3 Add Signal Kernel Graph Filtering And Search`.
+Current milestone: `G9.1 Selected-Always Wave Preview Entry And Scoped Report`.
 
 Status:
 
@@ -278,13 +278,27 @@ Status:
   compile/link; `ctest -R "^completion_test$"` and `ctest -R
   "^relationship_test$"` passed. `gui_smoke_test` was not launched.
 
-Completion criteria for G8.3:
+- G8.3 Add Signal Kernel Graph Filtering And Search is complete:
+  `SignalKernelGraphPanelCoordinator` now exposes graph search plus
+  input/output/cross-module filters above the graph. Filtering rebuilds the
+  visible graph from existing `SignalKernelGraphReport` node data, preserves
+  fanout collapse/expand state, hides groups with no visible members, and keeps
+  raw visible-node preview, navigation, and rebase behavior. Graph search
+  highlights/focuses visible node matches and collapsed fanout-group matches
+  without expanding groups implicitly. No workspace scan or UI-side Slang work
+  was added.
+- Focused verification for G8.3: `git diff --check`; Release
+  `completion_test`, `relationship_test`, and `gui_smoke_test` targets
+  compile/link; `ctest -R "^completion_test$"` and `ctest -R
+  "^relationship_test$"` passed. `gui_smoke_test` was not launched.
 
-- add Signal Kernel Graph filtering controls using existing report/node data
-- add in-graph search that highlights or focuses matching graph nodes
-- preserve fanout grouping and collapse/expand behavior from G8.2
-- keep filtering/search UI policy in the panel without scanning workspace files
-  or running Slang from UI
+Completion criteria for G9.1:
+
+- add a selected-`always` Wave Preview entry point without adding simulator
+  behavior
+- shape a scoped report through existing model/service boundaries
+- keep UI as a report consumer; do not scan workspace files or run Slang from UI
+- selected module Wave Preview remains out of scope for this milestone
 - `readme.md`, `plan.md`, and `goal.md` are updated
 - appropriate focused verification passes
 - milestone commit is pushed
@@ -437,8 +451,11 @@ Allowed work:
 Milestones:
 
 - G8.1 Add service/report grouping for high fanout.
+  (complete: service/report metadata)
 - G8.2 Render collapsible fanout groups.
+  (complete: panel collapse/expand)
 - G8.3 Add filter and in-graph search.
+  (complete: panel filters and graph search)
 
 ## Track 9: Wave Preview
 

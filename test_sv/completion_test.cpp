@@ -6719,6 +6719,120 @@ int main(int argc, char** argv) {
                           == 1,
                true);
 
+    SignalKernelGraphReport filteredSignalGraph;
+    filteredSignalGraph.found = true;
+    filteredSignalGraph.kernelModuleName = QStringLiteral("graph_top");
+    filteredSignalGraph.kernel.id = 100;
+    filteredSignalGraph.kernel.role = SignalKernelGraphNodeRole::Kernel;
+    filteredSignalGraph.kernel.displayName = QStringLiteral("core_signal");
+    filteredSignalGraph.kernel.moduleDisplayName =
+        QStringLiteral("graph_top");
+    filteredSignalGraph.kernel.typeDisplayName = QStringLiteral("logic");
+    filteredSignalGraph.kernel.navigateCodeLink =
+        RtlInsightLink::fromFileLine(QStringLiteral("graph_top.sv"), 12, 1);
+
+    SignalKernelGraphNode localInputNode;
+    localInputNode.id = 101;
+    localInputNode.role = SignalKernelGraphNodeRole::Input;
+    localInputNode.inputLane = SignalKernelGraphInputLane::Control;
+    localInputNode.displayName = QStringLiteral("start_pulse");
+    localInputNode.moduleDisplayName = QStringLiteral("graph_top");
+    localInputNode.typeDisplayName = QStringLiteral("logic");
+    localInputNode.navigateCodeLink =
+        RtlInsightLink::fromFileLine(QStringLiteral("graph_top.sv"), 18, 1);
+    filteredSignalGraph.inputs.append(localInputNode);
+    filteredSignalGraph.edges.append(
+        {localInputNode.id, filteredSignalGraph.kernel.id, QString()});
+
+    SignalKernelGraphNode localOutputNode;
+    localOutputNode.id = 102;
+    localOutputNode.role = SignalKernelGraphNodeRole::Output;
+    localOutputNode.displayName = QStringLiteral("done_local");
+    localOutputNode.moduleDisplayName = QStringLiteral("graph_top");
+    localOutputNode.typeDisplayName = QStringLiteral("logic");
+    localOutputNode.navigateCodeLink =
+        RtlInsightLink::fromFileLine(QStringLiteral("graph_top.sv"), 22, 1);
+    filteredSignalGraph.outputs.append(localOutputNode);
+    filteredSignalGraph.edges.append(
+        {filteredSignalGraph.kernel.id, localOutputNode.id, QString()});
+
+    SignalKernelGraphFanoutGroup crossOutputGroup;
+    crossOutputGroup.id = 2;
+    crossOutputGroup.role = SignalKernelGraphNodeRole::Output;
+    crossOutputGroup.groupKey = QStringLiteral("output:consumer_mod");
+    crossOutputGroup.displayName =
+        QStringLiteral("Outputs in consumer_mod");
+    crossOutputGroup.moduleName = QStringLiteral("consumer_mod");
+    crossOutputGroup.totalRoleNodeCount = 3;
+    crossOutputGroup.highFanout = true;
+    for (int i = 0; i < 2; ++i) {
+        SignalKernelGraphNode remoteOutputNode;
+        remoteOutputNode.id = 103 + i;
+        remoteOutputNode.role = SignalKernelGraphNodeRole::Output;
+        remoteOutputNode.displayName =
+            i == 0 ? QStringLiteral("result_remote")
+                   : QStringLiteral("status_remote");
+        remoteOutputNode.moduleDisplayName = QStringLiteral("consumer_mod");
+        remoteOutputNode.typeDisplayName = QStringLiteral("logic");
+        remoteOutputNode.crossModule = true;
+        remoteOutputNode.navigateCodeLink =
+            RtlInsightLink::fromFileLine(
+                QStringLiteral("consumer_mod.sv"),
+                30 + i,
+                1);
+        filteredSignalGraph.outputs.append(remoteOutputNode);
+        filteredSignalGraph.edges.append(
+            {filteredSignalGraph.kernel.id, remoteOutputNode.id, QString()});
+        crossOutputGroup.nodeIds.append(remoteOutputNode.id);
+    }
+    crossOutputGroup.nodeCount = crossOutputGroup.nodeIds.size();
+    filteredSignalGraph.outputFanoutGroups.append(crossOutputGroup);
+
+    signalKernelGraphPanel.renderReportForTest(filteredSignalGraph);
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 10);
+    expectBool("SignalKernelGraphPanel filters inputs",
+               signalKernelGraphPanel.visibleGraphNodeCountForTest() == 3
+                   && signalKernelGraphPanel
+                          .renderedFanoutGroupItemCountForTest() == 1,
+               true);
+    signalKernelGraphPanel.setGraphFilterForTest(true, false, false);
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 10);
+    expectBool("SignalKernelGraphPanel hides outputs",
+               signalKernelGraphPanel.visibleGraphNodeCountForTest() == 2
+                   && signalKernelGraphPanel
+                          .renderedFanoutGroupItemCountForTest() == 0,
+               true);
+    signalKernelGraphPanel.setGraphFilterForTest(false, true, false);
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 10);
+    expectBool("SignalKernelGraphPanel hides inputs",
+               signalKernelGraphPanel.visibleGraphNodeCountForTest() == 2
+                   && signalKernelGraphPanel
+                          .renderedFanoutGroupItemCountForTest() == 1,
+               true);
+    signalKernelGraphPanel.setGraphFilterForTest(true, true, true);
+    signalKernelGraphPanel.setGraphSearchTextForTest(
+        QStringLiteral("status_remote"));
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 10);
+    expectBool("SignalKernelGraphPanel searches collapsed cross-module group",
+               signalKernelGraphPanel.visibleGraphNodeCountForTest() == 1
+                   && signalKernelGraphPanel
+                          .renderedFanoutGroupItemCountForTest() == 1
+                   && signalKernelGraphPanel.searchMatchCountForTest() == 1
+                   && signalKernelGraphPanel.focusedSearchNodeIdForTest()
+                          == 104,
+               true);
+    expectBool("SignalKernelGraphPanel expands filtered search group",
+               signalKernelGraphPanel.toggleFanoutGroupForTest(
+                   crossOutputGroup.groupKey)
+                   && signalKernelGraphPanel.visibleGraphNodeCountForTest()
+                          == 3
+                   && signalKernelGraphPanel.searchMatchCountForTest() == 1
+                   && signalKernelGraphPanel.focusedSearchNodeIdForTest()
+                          == 104,
+               true);
+    signalKernelGraphPanel.setGraphFilterForTest(true, true, false);
+    signalKernelGraphPanel.setGraphSearchTextForTest(QString());
+
     CommandCompletionQuery commandQuery;
     commandQuery.fileName = path;
     commandQuery.moduleName = "top";

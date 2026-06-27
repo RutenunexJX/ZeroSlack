@@ -5,6 +5,7 @@
 #include "editorhoverpopup.h"
 
 #include <QBrush>
+#include <QCheckBox>
 #include <QColor>
 #include <QFileInfo>
 #include <QFont>
@@ -20,11 +21,13 @@
 #include <QGraphicsView>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QLineEdit>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPen>
 #include <QPoint>
 #include <QPolygonF>
+#include <QSignalBlocker>
 #include <QTimer>
 #include <QVBoxLayout>
 #include <QWheelEvent>
@@ -201,6 +204,48 @@ QString hoverDetailForNode(const SignalKernelGraphNode& node)
     return parts.join(QStringLiteral(" | "));
 }
 
+bool textMatchesSearch(const QString& text, const QString& searchText)
+{
+    return !searchText.isEmpty()
+        && text.contains(searchText, Qt::CaseInsensitive);
+}
+
+bool nodeMatchesSearchText(const SignalKernelGraphNode& node,
+                           const QString& searchText)
+{
+    if (searchText.isEmpty())
+        return false;
+    return textMatchesSearch(node.displayName, searchText)
+        || textMatchesSearch(node.detailDisplayName, searchText)
+        || textMatchesSearch(moduleDisplayNameForNode(node), searchText)
+        || textMatchesSearch(node.typeDisplayName, searchText)
+        || textMatchesSearch(node.sourceRoleDisplayName, searchText)
+        || textMatchesSearch(node.navigateCodeLink.fileName, searchText)
+        || textMatchesSearch(QFileInfo(node.navigateCodeLink.fileName)
+                                 .fileName(),
+                             searchText);
+}
+
+int firstMatchingFanoutGroupNodeId(
+    const SignalKernelGraphFanoutGroup& group,
+    const QHash<int, SignalKernelGraphNode>& nodesById,
+    const QString& searchText)
+{
+    if (searchText.isEmpty())
+        return -1;
+    if (textMatchesSearch(group.displayName, searchText)
+        || textMatchesSearch(group.moduleName, searchText)) {
+        return group.nodeIds.isEmpty() ? -1 : group.nodeIds.first();
+    }
+    for (int nodeId : group.nodeIds) {
+        if (nodesById.contains(nodeId)
+            && nodeMatchesSearchText(nodesById.value(nodeId), searchText)) {
+            return nodeId;
+        }
+    }
+    return -1;
+}
+
 qreal rowY(int index, int count)
 {
     if (count <= 1)
@@ -217,7 +262,8 @@ public:
 
     SignalKernelGraphNodeItem(const SignalKernelGraphNode& graphNode,
                               const QRectF& rect,
-                              const QFont& font)
+                              const QFont& font,
+                              bool searchMatch)
         : QGraphicsRectItem(rect),
           node(graphNode)
     {
@@ -225,8 +271,11 @@ public:
         setFlag(QGraphicsItem::ItemIsSelectable, true);
         setTransformOriginPoint(rect.center());
         setBrush(fillColorForRole(node.role));
-        setPen(QPen(strokeColorForRole(node.role),
-                    node.role == SignalKernelGraphNodeRole::Kernel ? 2.0 : 1.4));
+        setPen(searchMatch
+                   ? QPen(QColor(QStringLiteral("#db2777")), 2.8)
+                   : QPen(strokeColorForRole(node.role),
+                          node.role == SignalKernelGraphNodeRole::Kernel ? 2.0
+                                                                          : 1.4));
 
         QFont titleFont = font;
         titleFont.setBold(true);
@@ -320,7 +369,8 @@ public:
         const QString& uiKey,
         bool collapsedState,
         const QRectF& rect,
-        const QFont& font)
+        const QFont& font,
+        bool searchMatch)
         : QGraphicsRectItem(rect),
           group(fanoutGroup),
           key(uiKey),
@@ -331,9 +381,11 @@ public:
         setBrush(QColor(collapsed
                             ? QStringLiteral("#f8fafc")
                             : QStringLiteral("#eef2ff")));
-        setPen(QPen(QColor(QStringLiteral("#475569")),
-                    collapsed ? 1.5 : 1.1,
-                    collapsed ? Qt::SolidLine : Qt::DashLine));
+        setPen(searchMatch
+                   ? QPen(QColor(QStringLiteral("#db2777")), 2.6)
+                   : QPen(QColor(QStringLiteral("#475569")),
+                          collapsed ? 1.5 : 1.1,
+                          collapsed ? Qt::SolidLine : Qt::DashLine));
 
         QFont titleFont = font;
         titleFont.setBold(true);
@@ -652,6 +704,66 @@ SignalKernelGraphPanelCoordinator::SignalKernelGraphPanelCoordinator(
         "}"));
     layout->addWidget(titleLabel);
 
+    auto* controlsLayout = new QHBoxLayout();
+    controlsLayout->setContentsMargins(0, 0, 0, 0);
+    controlsLayout->setSpacing(6);
+    graphSearchEdit = new QLineEdit(panel);
+    graphSearchEdit->setObjectName(
+        QStringLiteral("signalKernelGraphSearchEdit"));
+    graphSearchEdit->setPlaceholderText(QStringLiteral("Search graph"));
+    graphSearchEdit->setClearButtonEnabled(true);
+    graphSearchEdit->setMinimumWidth(160);
+    controlsLayout->addWidget(graphSearchEdit, 1);
+
+    showInputsCheck = new QCheckBox(QStringLiteral("Inputs"), panel);
+    showInputsCheck->setObjectName(
+        QStringLiteral("signalKernelGraphShowInputsCheck"));
+    showInputsCheck->setChecked(graphShowInputs);
+    controlsLayout->addWidget(showInputsCheck);
+
+    showOutputsCheck = new QCheckBox(QStringLiteral("Outputs"), panel);
+    showOutputsCheck->setObjectName(
+        QStringLiteral("signalKernelGraphShowOutputsCheck"));
+    showOutputsCheck->setChecked(graphShowOutputs);
+    controlsLayout->addWidget(showOutputsCheck);
+
+    crossModuleOnlyCheck =
+        new QCheckBox(QStringLiteral("Cross-module"), panel);
+    crossModuleOnlyCheck->setObjectName(
+        QStringLiteral("signalKernelGraphCrossModuleOnlyCheck"));
+    crossModuleOnlyCheck->setChecked(graphCrossModuleOnly);
+    controlsLayout->addWidget(crossModuleOnlyCheck);
+    layout->addLayout(controlsLayout);
+
+    QObject::connect(graphSearchEdit,
+                     &QLineEdit::textChanged,
+                     graphSearchEdit,
+                     [this](const QString& text) {
+                         graphSearchText = text;
+                         renderReport(currentReport);
+                     });
+    QObject::connect(showInputsCheck,
+                     &QCheckBox::toggled,
+                     showInputsCheck,
+                     [this](bool checked) {
+                         graphShowInputs = checked;
+                         renderReport(currentReport);
+                     });
+    QObject::connect(showOutputsCheck,
+                     &QCheckBox::toggled,
+                     showOutputsCheck,
+                     [this](bool checked) {
+                         graphShowOutputs = checked;
+                         renderReport(currentReport);
+                     });
+    QObject::connect(crossModuleOnlyCheck,
+                     &QCheckBox::toggled,
+                     crossModuleOnlyCheck,
+                     [this](bool checked) {
+                         graphCrossModuleOnly = checked;
+                         renderReport(currentReport);
+                     });
+
     graphScene = new QGraphicsScene(panel);
     graphView = new SignalKernelGraphView(graphScene, panel);
     graphView->setObjectName(QStringLiteral("signalKernelGraphView"));
@@ -776,6 +888,50 @@ bool SignalKernelGraphPanelCoordinator::toggleFanoutGroupForTest(
     return true;
 }
 
+void SignalKernelGraphPanelCoordinator::setGraphSearchTextForTest(
+    const QString& text)
+{
+    graphSearchText = text;
+    if (graphSearchEdit) {
+        const QSignalBlocker blocker(graphSearchEdit);
+        graphSearchEdit->setText(text);
+    }
+    renderReport(currentReport);
+}
+
+void SignalKernelGraphPanelCoordinator::setGraphFilterForTest(
+    bool showInputs,
+    bool showOutputs,
+    bool crossModuleOnly)
+{
+    graphShowInputs = showInputs;
+    graphShowOutputs = showOutputs;
+    graphCrossModuleOnly = crossModuleOnly;
+    if (showInputsCheck) {
+        const QSignalBlocker blocker(showInputsCheck);
+        showInputsCheck->setChecked(showInputs);
+    }
+    if (showOutputsCheck) {
+        const QSignalBlocker blocker(showOutputsCheck);
+        showOutputsCheck->setChecked(showOutputs);
+    }
+    if (crossModuleOnlyCheck) {
+        const QSignalBlocker blocker(crossModuleOnlyCheck);
+        crossModuleOnlyCheck->setChecked(crossModuleOnly);
+    }
+    renderReport(currentReport);
+}
+
+int SignalKernelGraphPanelCoordinator::searchMatchCountForTest() const
+{
+    return lastSearchMatchCount;
+}
+
+int SignalKernelGraphPanelCoordinator::focusedSearchNodeIdForTest() const
+{
+    return lastFocusedSearchNodeId;
+}
+
 void SignalKernelGraphPanelCoordinator::setNavigationHandler(
     std::function<void(const QString&, int, int)> handler)
 {
@@ -850,16 +1006,40 @@ void SignalKernelGraphPanelCoordinator::renderReport(
     currentReport = report;
     lastVisibleGraphNodeCount = 0;
     lastRenderedFanoutGroupItemCount = 0;
+    lastSearchMatchCount = 0;
+    lastFocusedSearchNodeId = -1;
     if (!report.found) {
         renderUnavailable(report.notFoundReasonDisplayName);
         return;
     }
     initializeFanoutCollapseState(report);
 
+    QList<SignalKernelGraphNode> visibleInputs;
+    QList<SignalKernelGraphNode> visibleOutputs;
+    QHash<int, SignalKernelGraphNode> visibleNodesById;
+    visibleNodesById.insert(report.kernel.id, report.kernel);
+    for (const SignalKernelGraphNode& node : report.inputs) {
+        if (!nodePassesGraphFilter(node))
+            continue;
+        visibleInputs.append(node);
+        visibleNodesById.insert(node.id, node);
+    }
+    for (const SignalKernelGraphNode& node : report.outputs) {
+        if (!nodePassesGraphFilter(node))
+            continue;
+        visibleOutputs.append(node);
+        visibleNodesById.insert(node.id, node);
+    }
+    const QString searchText = graphSearchText.trimmed();
+    bool hasSearchFocusRect = false;
+    QRectF firstSearchFocusRect;
+
     if (titleLabel) {
-        titleLabel->setText(QStringLiteral("%1   Inputs %2   Outputs %3")
+        titleLabel->setText(QStringLiteral("%1   Inputs %2/%3   Outputs %4/%5")
                                 .arg(report.kernel.displayName)
+                                .arg(visibleInputs.size())
                                 .arg(report.inputs.size())
+                                .arg(visibleOutputs.size())
                                 .arg(report.outputs.size()));
     }
     if (graphDock) {
@@ -873,24 +1053,24 @@ void SignalKernelGraphPanelCoordinator::renderReport(
     QHash<int, int> collapsedNodeToGroupRectId;
     QSet<int> hiddenNodeIds;
     QHash<int, SignalKernelGraphNodeItem*> nodeItems;
-    const InputLaneLayout inputLayout = layoutInputLanes(report.inputs);
+    const InputLaneLayout inputLayout = layoutInputLanes(visibleInputs);
     for (auto it = inputLayout.nodeRects.constBegin();
          it != inputLayout.nodeRects.constEnd();
          ++it) {
         rawNodeRects.insert(it.key(), it.value());
     }
     const QRectF outputBounds =
-        report.outputs.isEmpty()
+        visibleOutputs.isEmpty()
             ? QRectF()
             : QRectF(kColumnOffset - kNodeWidth / 2.0,
-                     rowY(0, report.outputs.size()) - kNodeHeight / 2.0,
+                     rowY(0, visibleOutputs.size()) - kNodeHeight / 2.0,
                      kNodeWidth,
-                     (report.outputs.size() - 1) * kVerticalSpacing
+                     (visibleOutputs.size() - 1) * kVerticalSpacing
                         + kNodeHeight);
-    for (int i = 0; i < report.outputs.size(); ++i) {
+    for (int i = 0; i < visibleOutputs.size(); ++i) {
         rawNodeRects.insert(
-            report.outputs.at(i).id,
-            nodeRectAt(kColumnOffset, rowY(i, report.outputs.size())));
+            visibleOutputs.at(i).id,
+            nodeRectAt(kColumnOffset, rowY(i, visibleOutputs.size())));
     }
     rawNodeRects.insert(report.kernel.id, nodeRectAt(0, 0));
 
@@ -921,7 +1101,17 @@ void SignalKernelGraphPanelCoordinator::renderReport(
 
     int nextFanoutGroupRectId = -1000;
     auto addFanoutGroupItem =
-        [&](const SignalKernelGraphFanoutGroup& group) {
+        [&](const SignalKernelGraphFanoutGroup& sourceGroup) {
+            SignalKernelGraphFanoutGroup group = sourceGroup;
+            group.nodeIds.clear();
+            for (int nodeId : sourceGroup.nodeIds) {
+                if (rawNodeRects.contains(nodeId))
+                    group.nodeIds.append(nodeId);
+            }
+            group.nodeCount = group.nodeIds.size();
+            if (group.nodeIds.isEmpty())
+                return;
+
             const QRectF groupBounds =
                 unitedRectForGroup(rawNodeRects, group.nodeIds)
                     .adjusted(-18, -34, 18, 28);
@@ -937,19 +1127,34 @@ void SignalKernelGraphPanelCoordinator::renderReport(
                                   qMin<qreal>(52.0, groupBounds.height()));
             }
 
+            const int matchingGroupNodeId =
+                collapsed ? firstMatchingFanoutGroupNodeId(group,
+                                                           visibleNodesById,
+                                                           searchText)
+                          : -1;
+            const bool searchMatch = matchingGroupNodeId >= 0;
             const QString key = fanoutGroupUiKey(group);
             auto* item = new SignalKernelGraphFanoutGroupItem(
                 group,
                 key,
                 collapsed,
                 itemRect,
-                baseFont);
-            item->setZValue(collapsed ? 12 : 14);
+                baseFont,
+                searchMatch);
+            item->setZValue(searchMatch ? 18 : (collapsed ? 12 : 14));
             item->toggleHandler = [this](const QString& groupKey) {
                 toggleFanoutGroup(groupKey);
             };
             graphScene->addItem(item);
             ++lastRenderedFanoutGroupItemCount;
+            if (searchMatch) {
+                ++lastSearchMatchCount;
+                if (!hasSearchFocusRect) {
+                    hasSearchFocusRect = true;
+                    firstSearchFocusRect = itemRect;
+                    lastFocusedSearchNodeId = matchingGroupNodeId;
+                }
+            }
 
             if (!collapsed)
                 return;
@@ -972,8 +1177,10 @@ void SignalKernelGraphPanelCoordinator::renderReport(
         if (hiddenNodeIds.contains(node.id))
             return;
         visibleRects.insert(node.id, rect);
-        auto* item = new SignalKernelGraphNodeItem(node, rect, baseFont);
-        item->setZValue(10);
+        const bool searchMatch = nodeMatchesGraphSearch(node);
+        auto* item =
+            new SignalKernelGraphNodeItem(node, rect, baseFont, searchMatch);
+        item->setZValue(searchMatch ? 18 : 10);
         item->previewHandler =
             [this](const SignalKernelGraphNode& clickedNode,
                    const QRectF& nodeSceneRect) {
@@ -991,24 +1198,35 @@ void SignalKernelGraphPanelCoordinator::renderReport(
         graphScene->addItem(item);
         nodeItems.insert(node.id, item);
         ++lastVisibleGraphNodeCount;
+        if (searchMatch) {
+            ++lastSearchMatchCount;
+            if (!hasSearchFocusRect) {
+                hasSearchFocusRect = true;
+                firstSearchFocusRect = rect;
+                lastFocusedSearchNodeId = node.id;
+            }
+        }
     };
 
-    for (const SignalKernelGraphNode& node : report.inputs) {
+    for (const SignalKernelGraphNode& node : visibleInputs) {
         addNode(node,
                 inputLayout.nodeRects.value(
                     node.id,
                     nodeRectAt(-kColumnOffset, 0)));
     }
     addNode(report.kernel, nodeRectAt(0, 0));
-    for (int i = 0; i < report.outputs.size(); ++i) {
-        addNode(report.outputs.at(i),
-                rawNodeRects.value(report.outputs.at(i).id,
+    for (int i = 0; i < visibleOutputs.size(); ++i) {
+        addNode(visibleOutputs.at(i),
+                rawNodeRects.value(visibleOutputs.at(i).id,
                                    nodeRectAt(kColumnOffset,
-                                              rowY(i, report.outputs.size()))));
+                                              rowY(i, visibleOutputs.size()))));
     }
 
+    SignalKernelGraphReport visibleReport = report;
+    visibleReport.inputs = visibleInputs;
+    visibleReport.outputs = visibleOutputs;
     for (const SignalKernelGraphModuleGroup& group :
-         moduleGroupsForReport(report)) {
+         moduleGroupsForReport(visibleReport)) {
         addModuleWrapper(graphScene, group, rawNodeRects, baseFont);
     }
 
@@ -1051,10 +1269,17 @@ void SignalKernelGraphPanelCoordinator::renderReport(
     const QRectF bounds =
         graphScene->itemsBoundingRect().adjusted(-60, -60, 60, 60);
     graphScene->setSceneRect(bounds);
-    if (graphView)
+    if (graphView) {
         graphView->fitInView(bounds, Qt::KeepAspectRatio);
+        if (hasSearchFocusRect)
+            graphView->centerOn(firstSearchFocusRect.center());
+    }
 
-    showStatusMessage(QStringLiteral("Rendered signal kernel graph"), 1500);
+    showStatusMessage(searchText.isEmpty()
+                          ? QStringLiteral("Rendered signal kernel graph")
+                          : QStringLiteral("%1 graph match(es)")
+                                .arg(lastSearchMatchCount),
+                      1500);
 }
 
 void SignalKernelGraphPanelCoordinator::renderUnavailable(
@@ -1065,6 +1290,10 @@ void SignalKernelGraphPanelCoordinator::renderUnavailable(
 
     closeNodePreviewNow();
     graphScene->clear();
+    lastVisibleGraphNodeCount = 0;
+    lastRenderedFanoutGroupItemCount = 0;
+    lastSearchMatchCount = 0;
+    lastFocusedSearchNodeId = -1;
     const QString text = message.isEmpty()
         ? QStringLiteral("Signal kernel graph unavailable.")
         : message;
@@ -1076,6 +1305,26 @@ void SignalKernelGraphPanelCoordinator::renderUnavailable(
         titleLabel->setText(QStringLiteral("Signal Kernel Graph"));
     if (graphDock)
         graphDock->setWindowTitle(QStringLiteral("Signal Kernel Graph"));
+}
+
+bool SignalKernelGraphPanelCoordinator::nodePassesGraphFilter(
+    const SignalKernelGraphNode& node) const
+{
+    if (node.role == SignalKernelGraphNodeRole::Kernel)
+        return true;
+    if (node.role == SignalKernelGraphNodeRole::Input && !graphShowInputs)
+        return false;
+    if (node.role == SignalKernelGraphNodeRole::Output && !graphShowOutputs)
+        return false;
+    if (graphCrossModuleOnly && !node.crossModule)
+        return false;
+    return true;
+}
+
+bool SignalKernelGraphPanelCoordinator::nodeMatchesGraphSearch(
+    const SignalKernelGraphNode& node) const
+{
+    return nodeMatchesSearchText(node, graphSearchText.trimmed());
 }
 
 QString SignalKernelGraphPanelCoordinator::fanoutGroupUiKey(
