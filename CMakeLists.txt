@@ -141,6 +141,7 @@ set(ZEROSLACK_CORE_SOURCES
     hierarchyservicetraversal.cpp
     inlinecommandmode.cpp
     sourcenavigationservice.cpp
+    statetransitiongraphservice.cpp
     statetransitiontriggerservice.cpp
     tsdocument.cpp
     modecommandcoordinator.cpp
@@ -319,6 +320,7 @@ set(ZEROSLACK_CORE_SOURCES
     hierarchyservice.h
     inlinecommandmode.h
     sourcenavigationservice.h
+    statetransitiongraphservice.h
     statetransitiontriggerservice.h
     tsdocument.h
     modecommandcoordinator.h

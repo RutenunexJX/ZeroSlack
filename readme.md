@@ -72,9 +72,9 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
   the sketch without implying simulation accuracy.
 - State Transition Graph entry gating exists for editor source-symbol actions:
   selected `ns` and `next_state` can trigger the graph, while selected `cs` and
-  `current_state` cannot. The gated entry currently reuses the existing RTL
-  Insights FSM graph rendering path; no new transition extraction/report layer
-  has been added yet.
+  `current_state` cannot. `StateTransitionGraphService` shapes accepted
+  requests into selected next-state graph reports by filtering existing
+  `FsmGraphService` data.
 - Formatter support exists as conservative editor formatting. Current daily
   editor action inventory: `Ctrl+F` opens Find; formatter document/selection
   actions live in the editor context menu; line comment actions are available
@@ -203,8 +203,10 @@ and restoring Global Control `ow r` for recent workspaces.
 - State Transition Graph baseline: `StateTransitionTriggerService` owns the
   first entry-gating policy for selected source symbols. `EditorSourceNavigationQuery`
   asks that service before enabling or dispatching `Show State Transition Graph`.
-  `EditorCoordinator` and `SemanticPanelRefreshCoordinator` only route the
-  accepted request to the existing RTL Insights FSM graph path.
+  `StateTransitionGraphService` then owns accepted-request report shaping and
+  exact next-state graph filtering on top of `FsmGraphService`. `EditorCoordinator`
+  and `SemanticPanelRefreshCoordinator` only route accepted requests; RTL
+  Insights consumes the service report and reuses existing FSM row rendering.
 
 ## Command Responsibility Map
 

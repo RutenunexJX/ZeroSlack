@@ -28,7 +28,7 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
 
 ## Current Goal State
 
-Current milestone: `G10.2 State Transition Service-Owned Report`.
+Current milestone: `G10.3 State Transition Graph UI And Navigation Evidence`.
 
 Status:
 
@@ -345,16 +345,30 @@ Status:
   compile/link; `ctest -R "^completion_test$"` and `ctest -R
   "^relationship_test$"` passed. `gui_smoke_test` was not launched.
 
-Completion criteria for G10.2:
+- G10.2 State Transition Service-Owned Report is complete:
+  `StateTransitionGraphService` validates accepted requests through
+  `StateTransitionTriggerService`, builds module FSM graph data through
+  `FsmGraphService`, and filters the result to the selected next-state signal.
+  Accepted `ns` / `next_state` reports expose selected signal, module, state
+  count, transition count, and the matching `FsmGraph`; rejected `cs` /
+  `current_state`, no-FSM modules, and accepted trigger names without a matching
+  next-state graph return service-owned failure reasons. The existing
+  state-transition UI route consumes the new service report and reuses RTL
+  Insights FSM row rendering. No workspace scan or UI-side Slang work was
+  added.
+- Focused verification for G10.2: `git diff --check`; Release
+  `completion_test`, `relationship_test`, and `gui_smoke_test` targets
+  compile/link; `ctest -R "^relationship_test$"` and `ctest -R
+  "^completion_test$"` passed. `gui_smoke_test` was not launched.
 
-- add service-owned State Transition Graph report shaping for accepted
-  next-state trigger requests
-- preserve G10.1 gating: only selected `ns` and `next_state` can request the
-  graph entry
-- keep extraction/report logic out of UI code; UI must consume report data only
-- use existing semantic/index or Tree-sitter service capabilities, not UI
-  workspace scans or UI-side Slang execution
-- do not add broad graph UI rendering beyond the report milestone
+Completion criteria for G10.3:
+
+- add graph UI/navigation evidence for the service-owned State Transition Graph
+  report
+- preserve G10.1 gating and G10.2 selected next-state report filtering
+- UI must render/route from report data only; do not move extraction into UI
+- double-click or equivalent navigation evidence reaches module/state/transition
+  source links already carried by the report
 - `readme.md`, `plan.md`, and `goal.md` are updated
 - appropriate focused verification passes
 - milestone commit is pushed
@@ -556,6 +570,7 @@ Milestones:
 - G10.1 Trigger gating and tests for allowed/disallowed names.
   (complete: service-owned exact-name gate plus editor source-symbol action)
 - G10.2 Service-owned transition extraction/report.
+  (complete: selected next-state report service and filtered FSM graph data)
 - G10.3 Graph UI rendering and navigation evidence.
 
 ## Track 11: Module Block Diagram

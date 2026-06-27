@@ -23,6 +23,7 @@
 #include "semanticdiffservice.h"
 #include "signalkernelgraphservice.h"
 #include "signaljourneyservice.h"
+#include "statetransitiongraphservice.h"
 #include "symbolrelationshipengine.h"
 #include "semanticindexsnapshot.h"
 #include "symboltaxonomy.h"
@@ -6418,6 +6419,27 @@ static void runFsmGraphServiceFixture()
         "    endcase\n"
         "  end\n"
         "endmodule\n");
+    const QString dualFileName =
+        QStringLiteral("test_sv/state_transition_dual_fixture.sv");
+    const QString dualContent = QStringLiteral(
+        "module dual_fsm_top(input logic go);\n"
+        "  typedef enum logic [0:0] {A_IDLE, A_RUN} dual_state_a_e;\n"
+        "  typedef enum logic [0:0] {B_IDLE, B_RUN} dual_state_b_e;\n"
+        "  dual_state_a_e cs;\n"
+        "  dual_state_a_e ns;\n"
+        "  dual_state_b_e current_state;\n"
+        "  dual_state_b_e next_state;\n"
+        "  always_comb begin\n"
+        "    case (cs)\n"
+        "      A_IDLE: ns = go ? A_RUN : A_IDLE;\n"
+        "      A_RUN: ns = A_IDLE;\n"
+        "    endcase\n"
+        "    case (current_state)\n"
+        "      B_IDLE: next_state = go ? B_RUN : B_IDLE;\n"
+        "      B_RUN: next_state = B_IDLE;\n"
+        "    endcase\n"
+        "  end\n"
+        "endmodule\n");
     const SemanticSymbolRecord packageModule =
         SemanticFixtureRecordBuilder(QStringLiteral("pkg_fsm_top"),
                                      DeclarationKind::Module)
@@ -6466,6 +6488,94 @@ static void runFsmGraphServiceFixture()
             .inPackage(QStringLiteral("fsm_pkg"))
             .withType(QStringLiteral("pkg_state_e"))
             .record();
+    const SemanticSymbolRecord dualModule =
+        SemanticFixtureRecordBuilder(QStringLiteral("dual_fsm_top"),
+                                     DeclarationKind::Module)
+            .withFile(dualFileName)
+            .withLocalHandle(9320)
+            .withRange(1, 1, 18, 1)
+            .withCollectorKind(CollectorKind::Module)
+            .record();
+    const SemanticSymbolRecord dualCs =
+        SemanticFixtureRecordBuilder(QStringLiteral("cs"),
+                                     DeclarationKind::Enum)
+            .withFile(dualFileName)
+            .withLocalHandle(9321)
+            .withLine(4)
+            .withCollectorKind(CollectorKind::EnumVariable)
+            .inModule(QStringLiteral("dual_fsm_top"))
+            .withType(QStringLiteral("dual_state_a_e"))
+            .record();
+    const SemanticSymbolRecord dualNs =
+        SemanticFixtureRecordBuilder(QStringLiteral("ns"),
+                                     DeclarationKind::Enum)
+            .withFile(dualFileName)
+            .withLocalHandle(9322)
+            .withLine(5)
+            .withCollectorKind(CollectorKind::EnumVariable)
+            .inModule(QStringLiteral("dual_fsm_top"))
+            .withType(QStringLiteral("dual_state_a_e"))
+            .record();
+    const SemanticSymbolRecord dualCurrentState =
+        SemanticFixtureRecordBuilder(QStringLiteral("current_state"),
+                                     DeclarationKind::Enum)
+            .withFile(dualFileName)
+            .withLocalHandle(9323)
+            .withLine(6)
+            .withCollectorKind(CollectorKind::EnumVariable)
+            .inModule(QStringLiteral("dual_fsm_top"))
+            .withType(QStringLiteral("dual_state_b_e"))
+            .record();
+    const SemanticSymbolRecord dualNextState =
+        SemanticFixtureRecordBuilder(QStringLiteral("next_state"),
+                                     DeclarationKind::Enum)
+            .withFile(dualFileName)
+            .withLocalHandle(9324)
+            .withLine(7)
+            .withCollectorKind(CollectorKind::EnumVariable)
+            .inModule(QStringLiteral("dual_fsm_top"))
+            .withType(QStringLiteral("dual_state_b_e"))
+            .record();
+    const SemanticSymbolRecord dualAIdle =
+        SemanticFixtureRecordBuilder(QStringLiteral("A_IDLE"),
+                                     DeclarationKind::Enum)
+            .withFile(dualFileName)
+            .withLocalHandle(9325)
+            .withLine(2)
+            .withCollectorKind(CollectorKind::EnumValue)
+            .inModule(QStringLiteral("dual_fsm_top"))
+            .withType(QStringLiteral("dual_state_a_e"))
+            .record();
+    const SemanticSymbolRecord dualARun =
+        SemanticFixtureRecordBuilder(QStringLiteral("A_RUN"),
+                                     DeclarationKind::Enum)
+            .withFile(dualFileName)
+            .withLocalHandle(9326)
+            .withLine(2)
+            .withCollectorKind(CollectorKind::EnumValue)
+            .inModule(QStringLiteral("dual_fsm_top"))
+            .withType(QStringLiteral("dual_state_a_e"))
+            .record();
+    const SemanticSymbolRecord dualBIdle =
+        SemanticFixtureRecordBuilder(QStringLiteral("B_IDLE"),
+                                     DeclarationKind::Enum)
+            .withFile(dualFileName)
+            .withLocalHandle(9327)
+            .withLine(3)
+            .withCollectorKind(CollectorKind::EnumValue)
+            .inModule(QStringLiteral("dual_fsm_top"))
+            .withType(QStringLiteral("dual_state_b_e"))
+            .record();
+    const SemanticSymbolRecord dualBRun =
+        SemanticFixtureRecordBuilder(QStringLiteral("B_RUN"),
+                                     DeclarationKind::Enum)
+            .withFile(dualFileName)
+            .withLocalHandle(9328)
+            .withLine(3)
+            .withCollectorKind(CollectorKind::EnumValue)
+            .inModule(QStringLiteral("dual_fsm_top"))
+            .withType(QStringLiteral("dual_state_b_e"))
+            .record();
     const SemanticSymbolRecord noFsmModule =
         SemanticFixtureRecordBuilder(QStringLiteral("no_fsm_top"),
                                      DeclarationKind::Module)
@@ -6486,12 +6596,22 @@ static void runFsmGraphServiceFixture()
         packageNs,
         packageIdle,
         packageRun,
+        dualModule,
+        dualCs,
+        dualNs,
+        dualCurrentState,
+        dualNextState,
+        dualAIdle,
+        dualARun,
+        dualBIdle,
+        dualBRun,
         noFsmModule,
     };
 
     QHash<QString, QString> fileContents;
     fileContents.insert(fileName, content);
     fileContents.insert(packageModuleFileName, packageModuleContent);
+    fileContents.insert(dualFileName, dualContent);
     SemanticIndex index;
     index.setSnapshot(sharedSnapshotFromRecords(
         records,
@@ -6499,6 +6619,7 @@ static void runFsmGraphServiceFixture()
         QList<SemanticDiagnostic>(),
         fileContents));
     FsmGraphService service(&index);
+    StateTransitionGraphService stateTransitionService(&index);
 
     FsmGraphQuery query;
     query.moduleName = QStringLiteral("fsm_top");
@@ -6895,6 +7016,116 @@ static void runFsmGraphServiceFixture()
                           .sourceRoleDisplayName == QStringLiteral("design source")
                    && packageReport.graphs.first().stateRows.first()
                           .moduleDisplayName == QStringLiteral("fsm_pkg"),
+               true);
+
+    FsmGraphQuery dualFsmQuery;
+    dualFsmQuery.moduleName = QStringLiteral("dual_fsm_top");
+    dualFsmQuery.fileName = dualFileName;
+    const FsmGraphReport dualFsmReport = service.buildFsmGraph(dualFsmQuery);
+    expectBool("state transition fixture has two fsm graphs",
+               dualFsmReport.found && dualFsmReport.graphs.size() == 2,
+               true);
+
+    StateTransitionGraphQuery stateTransitionNsQuery;
+    stateTransitionNsQuery.symbolName = QStringLiteral("ns");
+    stateTransitionNsQuery.fileName = dualFileName;
+    stateTransitionNsQuery.moduleName = QStringLiteral("dual_fsm_top");
+    const StateTransitionGraphReport stateTransitionNsReport =
+        stateTransitionService.buildStateTransitionGraph(
+            stateTransitionNsQuery);
+    expectBool("state transition graph ns found",
+               stateTransitionNsReport.found
+                   && stateTransitionNsReport.groupDisplayName
+                       == QStringLiteral("State Transition Graph")
+                   && stateTransitionNsReport.trigger.available
+                   && stateTransitionNsReport.selectedSignalDisplayName
+                       == QStringLiteral("ns")
+                   && stateTransitionNsReport.graph.stateRegisterDisplayName
+                       == QStringLiteral("cs")
+                   && stateTransitionNsReport.graph.nextStateSignalDisplayName
+                       == QStringLiteral("ns")
+                   && stateTransitionNsReport.stateCount == 2
+                   && stateTransitionNsReport.transitionCount == 3,
+               true);
+
+    StateTransitionGraphQuery stateTransitionNextQuery;
+    stateTransitionNextQuery.symbolName = QStringLiteral("next_state");
+    stateTransitionNextQuery.fileName = dualFileName;
+    stateTransitionNextQuery.moduleName = QStringLiteral("dual_fsm_top");
+    const StateTransitionGraphReport stateTransitionNextReport =
+        stateTransitionService.buildStateTransitionGraph(
+            stateTransitionNextQuery);
+    expectBool("state transition graph next_state found",
+               stateTransitionNextReport.found
+                   && stateTransitionNextReport.selectedSignalDisplayName
+                       == QStringLiteral("next_state")
+                   && stateTransitionNextReport.graph.stateRegisterDisplayName
+                       == QStringLiteral("current_state")
+                   && stateTransitionNextReport.graph.nextStateSignalDisplayName
+                       == QStringLiteral("next_state")
+                   && stateTransitionNextReport.stateCount == 2
+                   && stateTransitionNextReport.transitionCount == 3,
+               true);
+
+    StateTransitionGraphQuery stateTransitionCsQuery;
+    stateTransitionCsQuery.symbolName = QStringLiteral("cs");
+    stateTransitionCsQuery.fileName = dualFileName;
+    stateTransitionCsQuery.moduleName = QStringLiteral("dual_fsm_top");
+    const StateTransitionGraphReport stateTransitionCsReport =
+        stateTransitionService.buildStateTransitionGraph(
+            stateTransitionCsQuery);
+    expectBool("state transition graph rejects cs",
+               !stateTransitionCsReport.found
+                   && !stateTransitionCsReport.trigger.available
+                   && stateTransitionCsReport.notFoundReason
+                       == StateTransitionGraphNotFoundReason::TriggerRejected,
+               true);
+
+    StateTransitionGraphQuery stateTransitionCurrentQuery;
+    stateTransitionCurrentQuery.symbolName = QStringLiteral("current_state");
+    stateTransitionCurrentQuery.fileName = dualFileName;
+    stateTransitionCurrentQuery.moduleName = QStringLiteral("dual_fsm_top");
+    const StateTransitionGraphReport stateTransitionCurrentReport =
+        stateTransitionService.buildStateTransitionGraph(
+            stateTransitionCurrentQuery);
+    expectBool("state transition graph rejects current_state",
+               !stateTransitionCurrentReport.found
+                   && !stateTransitionCurrentReport.trigger.available
+                   && stateTransitionCurrentReport.notFoundReason
+                       == StateTransitionGraphNotFoundReason::TriggerRejected,
+               true);
+
+    StateTransitionGraphQuery stateTransitionNoMatchQuery;
+    stateTransitionNoMatchQuery.symbolName = QStringLiteral("ns");
+    stateTransitionNoMatchQuery.fileName = fileName;
+    stateTransitionNoMatchQuery.moduleName = QStringLiteral("fsm_top");
+    const StateTransitionGraphReport stateTransitionNoMatchReport =
+        stateTransitionService.buildStateTransitionGraph(
+            stateTransitionNoMatchQuery);
+    expectBool("state transition graph requires selected next-state graph",
+               !stateTransitionNoMatchReport.found
+                   && stateTransitionNoMatchReport.trigger.available
+                   && stateTransitionNoMatchReport.notFoundReason
+                       == StateTransitionGraphNotFoundReason
+                              ::NoMatchingNextStateSignal
+                   && stateTransitionNoMatchReport.notFoundReasonDisplayName
+                       == QStringLiteral("no state transition graph for ns"),
+               true);
+
+    StateTransitionGraphQuery stateTransitionNoFsmQuery;
+    stateTransitionNoFsmQuery.symbolName = QStringLiteral("ns");
+    stateTransitionNoFsmQuery.fileName = fileName;
+    stateTransitionNoFsmQuery.moduleName = QStringLiteral("no_fsm_top");
+    const StateTransitionGraphReport stateTransitionNoFsmReport =
+        stateTransitionService.buildStateTransitionGraph(
+            stateTransitionNoFsmQuery);
+    expectBool("state transition graph reports no fsm graph",
+               !stateTransitionNoFsmReport.found
+                   && stateTransitionNoFsmReport.trigger.available
+                   && stateTransitionNoFsmReport.notFoundReason
+                       == StateTransitionGraphNotFoundReason::NoFsmGraph
+                   && stateTransitionNoFsmReport.notFoundReasonDisplayName
+                       == QStringLiteral("no FSM graph"),
                true);
 
     FsmGraphQuery emptyModuleQuery;

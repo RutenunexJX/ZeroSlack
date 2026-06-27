@@ -7,6 +7,7 @@
 #include "semanticdiffservice.h"
 #include "semanticpanelutils.h"
 #include "signaljourneyservice.h"
+#include "statetransitiongraphservice.h"
 
 #include <QElapsedTimer>
 #include <QFileInfo>
@@ -578,6 +579,33 @@ void appendFsmGraphs(QTreeWidget* tree, const FsmGraphReport& report)
     }
 }
 
+void appendStateTransitionGraph(QTreeWidget* tree,
+                                const StateTransitionGraphReport& report)
+{
+    if (report.found) {
+        FsmGraphReport fsmReport;
+        fsmReport.found = true;
+        fsmReport.groupDisplayName = report.groupDisplayName;
+        fsmReport.graphs.append(report.graph);
+        appendFsmGraphs(tree, fsmReport);
+        return;
+    }
+
+    QTreeWidgetItem* group = createGroupItem(
+        tree,
+        report.groupDisplayName.isEmpty()
+            ? QStringLiteral("State Transition Graph")
+            : report.groupDisplayName,
+        0);
+    createChildItem(group,
+                    QStringLiteral("Unavailable"),
+                    report.trigger.symbolName,
+                    report.notFoundReasonDisplayName,
+                    report.trigger.fileName,
+                    0,
+                    0);
+}
+
 void appendSignalJourneyItems(QTreeWidgetItem* parent,
                               const QString& section,
                               const QList<SignalJourneyItem>& items)
@@ -1002,7 +1030,37 @@ void RtlInsightsPanelCoordinator::showStateTransitionGraphForSignal(
     const QString& signalName)
 {
     updateModuleContext(fileName, moduleName, signalName);
-    showFsmGraph();
+    if (!insightsTree)
+        return;
+
+    insightsTree->clear();
+    if (currentFileName.isEmpty() || currentModuleName.isEmpty()) {
+        renderNoContext();
+        return;
+    }
+
+    QElapsedTimer timer;
+    timer.start();
+    logReportStart(QStringLiteral("State Transition Graph"));
+    StateTransitionGraphReport report;
+    try {
+        StateTransitionGraphQuery query;
+        query.fileName = currentFileName;
+        query.moduleName = currentModuleName;
+        query.symbolName = currentSignalName;
+        report = StateTransitionGraphService::getInstance()
+            ->buildStateTransitionGraph(query);
+    } catch (const std::exception& error) {
+        logReportError(QStringLiteral("State Transition Graph"),
+                       QString::fromLocal8Bit(error.what()));
+        return;
+    } catch (...) {
+        logReportError(QStringLiteral("State Transition Graph"),
+                       QStringLiteral("unknown error"));
+        return;
+    }
+
+    appendStateTransitionGraph(insightsTree, report);
     if (insightsDock) {
         insightsDock->setWindowTitle(
             QStringLiteral("RTL Insights: State Transition Graph %1")
@@ -1010,6 +1068,16 @@ void RtlInsightsPanelCoordinator::showStateTransitionGraphForSignal(
         insightsDock->show();
         insightsDock->raise();
     }
+    if (statusMessageHandler) {
+        statusMessageHandler(
+            report.found
+                ? QStringLiteral("Rendered state transition graph for %1")
+                      .arg(report.selectedSignalDisplayName)
+                : report.notFoundReasonDisplayName,
+            1500);
+    }
+    logReportDone(QStringLiteral("State Transition Graph"),
+                  static_cast<int>(timer.elapsed()));
 }
 
 void RtlInsightsPanelCoordinator::showSemanticDiff(

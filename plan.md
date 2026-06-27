@@ -813,6 +813,8 @@ First milestones:
   for selected `ns` / `next_state`, and rejects selected `cs` /
   `current_state`)
 - M10.2 transition report service
+  (complete: `StateTransitionGraphService` shapes accepted `ns` /
+  `next_state` requests into selected next-state graph reports)
 - M10.3 graph UI rendering and navigation evidence
 
 M10.1 implementation constraints:
@@ -836,6 +838,30 @@ M10.1 implementation status:
 - Verification: `git diff --check`; Release `completion_test`,
   `relationship_test`, and `gui_smoke_test` targets compile/link; `ctest -R
   "^completion_test$"` and `ctest -R "^relationship_test$"` passed.
+  `gui_smoke_test` was not launched.
+
+M10.2 implementation constraints:
+
+- Preserve M10.1 trigger gating.
+- Own accepted-request report shaping in a service path, not UI code.
+- Reuse existing semantic/index-backed FSM graph data where practical.
+- Do not add new broad graph UI rendering in this milestone.
+
+M10.2 implementation status:
+
+- Complete: `StateTransitionGraphService` validates accepted requests through
+  `StateTransitionTriggerService`, builds module FSM graph data through
+  `FsmGraphService`, and filters the result to the selected next-state signal.
+- Complete: accepted `ns` / `next_state` reports expose selected signal,
+  module, state count, transition count, and the matching `FsmGraph`.
+- Complete: rejected `cs` / `current_state`, no-FSM modules, and accepted
+  trigger names without a matching next-state graph return service-owned
+  failure reasons.
+- Complete: the existing state-transition UI route consumes the new service
+  report and reuses the existing RTL Insights FSM row rendering path.
+- Verification: `git diff --check`; Release `completion_test`,
+  `relationship_test`, and `gui_smoke_test` targets compile/link; `ctest -R
+  "^relationship_test$"` and `ctest -R "^completion_test$"` passed.
   `gui_smoke_test` was not launched.
 
 ### 11. Module Block Diagram
