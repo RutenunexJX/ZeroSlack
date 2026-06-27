@@ -28,7 +28,7 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
 
 ## Current Goal State
 
-Current milestone: `G1.1 Editor Daily Action Inventory`.
+Current milestone: `G1.2 Comment And Uncomment Entry Points`.
 
 Status:
 
@@ -50,18 +50,25 @@ Status:
   practical.
 - Focused verification for G4.3: Release `gui_smoke_test` target compile/link
   passed without launching the executable.
+- G1.1 Editor Daily Action Inventory is complete in the current milestone:
+  `Ctrl+F` opens Find; formatter document/selection actions are available from
+  the editor context menu; alternate command metadata lists replace, goto line,
+  comment, uncomment, indent, and unindent; only `comment` currently dispatches,
+  and it only inserts `// ` at the cursor. `replace`, `goto_line`, `uncomment`,
+  `indent`, and `unindent` are catalog-only or missing reliable editor entry
+  points today.
 - Verification flow now includes checking for external Windows application-error
   or memory-read dialogs when CTest appears stalled.
 
-Completion criteria for G1.1:
+Completion criteria for G1.2:
 
-- inventory current replace, goto, comment, uncomment, indent, and unindent
-  action paths
-- document existing shortcuts, command entry points, and missing entry points
-- identify the first coherent action family for implementation
-- no editor behavior changes
+- implement a reliable comment action for the active editor and selected lines
+- implement a matching uncomment action for line comments
+- provide clear editor entry points without reviving active `;:` commands
+- preserve existing `comment` alternate command compatibility where practical
+- add focused editor tests for comment and uncomment behavior
 - `readme.md`, `plan.md`, and `goal.md` are updated
-- appropriate documentation verification passes
+- appropriate focused verification passes
 - milestone commit is pushed
 
 ## Track 1: Editor Daily Operations Completion

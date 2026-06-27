@@ -69,8 +69,12 @@ First milestones:
 
 - M1.1 inventory existing actions and shortcuts, document gaps, no behavior
   change
+  (complete: `Ctrl+F` find and formatter context-menu actions exist; alternate
+  command metadata lists replace/goto/comment/uncomment/indent/unindent, but
+  only `comment` dispatches today and it only inserts `// `)
 - M1.2 add reliable entry points for one action family, with focused editor
   tests
+  (next target: comment/uncomment, without reviving active `;:` commands)
 - M1.3 repeat per action family until all listed actions have usable entries
 
 ### 2. Slot Mode After Template Insertion

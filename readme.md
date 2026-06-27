@@ -56,8 +56,12 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
 - Signal Kernel Graph exists as a signal-centric exploration graph. Dense
   fanout still needs grouping, filtering, and search.
 - Wave Preview exists as a code-understanding sketch, not a simulator.
-- Formatter support exists as conservative editor formatting, but daily editor
-  actions such as replace/goto/comment/indent still need better entry points.
+- Formatter support exists as conservative editor formatting. Current daily
+  editor action inventory: `Ctrl+F` opens Find; formatter document/selection
+  actions live in the editor context menu; alternate command metadata lists
+  replace, goto line, comment, uncomment, indent, and unindent, but only
+  `comment` has a thin dispatcher that inserts `// `. The next daily action
+  implementation target is a real comment/uncomment action family.
 
 ## Huge Workspace Status
 
