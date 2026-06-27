@@ -71,6 +71,7 @@
 #include "foldblockshelfmodel.h"
 #include "foldblockshelfpanel.h"
 #include "formattersettings.h"
+#include "commodecommandregistry.h"
 #include "commodecoordinator.h"
 #include "commodeservice.h"
 #include "globalcontrolcoordinator.h"
@@ -6023,6 +6024,69 @@ static void runComModeRegression(MainWindow& window)
     expectBool("com g<num> reports missing current module",
                !lineResult.ok
                    && lineResult.message == QStringLiteral("No current module"),
+               true);
+
+    QString registryError;
+    expectBool("COM registry metadata is valid",
+               comModeCommandRegistryIsValid(&registryError),
+               true);
+    const QStringList executableCommands = {
+        QStringLiteral("gm"),
+        QStringLiteral("gpk"),
+        QStringLiteral("gpa"),
+        QStringLiteral("gpo"),
+        QStringLiteral("gpi"),
+        QStringLiteral("gsd"),
+        QStringLiteral("gsi"),
+        QStringLiteral("gii"),
+        QStringLiteral("gac"),
+        QStringLiteral("gef"),
+    };
+    bool allExecutableCommandsRegistered = true;
+    for (const QString& command : executableCommands) {
+        const ComModeCommandMetadata* metadata =
+            findComModeCommandMetadata(command);
+        allExecutableCommandsRegistered =
+            allExecutableCommandsRegistered
+            && metadata
+            && metadata->executable
+            && metadata->inputKind == ComModeCommandInputKind::Fixed
+            && executableComModeCommand(command) == command;
+    }
+    expectBool("COM registry lists existing executable commands",
+               allExecutableCommandsRegistered,
+               true);
+    const QStringList prefixCommands = {
+        QStringLiteral("gp"),
+        QStringLiteral("gs"),
+        QStringLiteral("gi"),
+        QStringLiteral("ga"),
+        QStringLiteral("ge"),
+    };
+    bool allPrefixesRegistered = true;
+    for (const QString& command : prefixCommands) {
+        const ComModeCommandMetadata* metadata =
+            findComModeCommandMetadata(command);
+        allPrefixesRegistered =
+            allPrefixesRegistered
+            && metadata
+            && !metadata->executable
+            && metadata->inputKind == ComModeCommandInputKind::Fixed
+            && executableComModeCommand(command).isEmpty()
+            && isComModeBufferPrefix(command);
+    }
+    expectBool("COM registry lists non-executable prefixes",
+               allPrefixesRegistered,
+               true);
+    const ComModeCommandMetadata* relativeLineMetadata =
+        findComModeCommandMetadata(QStringLiteral("g<num>"));
+    expectBool("COM registry lists module-relative line command",
+               relativeLineMetadata
+                   && relativeLineMetadata->executable
+                   && relativeLineMetadata->inputKind
+                          == ComModeCommandInputKind::ModuleRelativeLine
+                   && isComModeLineBuffer(QStringLiteral("g20"))
+                   && isComModeBufferPrefix(QStringLiteral("g20")),
                true);
 
     MyCodeEditor insertEditor;

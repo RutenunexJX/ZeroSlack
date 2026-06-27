@@ -28,25 +28,29 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
 
 ## Current Goal State
 
-Current milestone: `G4.1 Registry Metadata For Existing COM Commands`.
+Current milestone: `G4.2 Help And Hint Rendering For COM Commands`.
 
 Status:
 
 - G0 Documentation And Goal Reset is complete and pushed in commit `bc2c059`.
-- The next preferred track is COM Mode framework completion.
-- Before implementing G4.1, inspect the current COM Mode command handling and
-  design the smallest registry metadata milestone that preserves existing
-  g-domain behavior.
+- G4.1 Registry Metadata For Existing COM Commands is complete in the current
+  milestone: `commodecommandregistry` now owns metadata for fixed executable
+  commands, non-executable prefixes, and the module-relative line command.
+- Existing COM command behavior is preserved; editor runtime parsing now reads
+  executable commands, prefixes, and `g<num>` checks from the shared registry
+  API.
+- Focused verification for G4.1: Release `gui_smoke_test` target compile/link
+  passed without launching the executable.
 - Verification flow now includes checking for external Windows application-error
   or memory-read dialogs when CTest appears stalled.
 
-Completion criteria for G4.1:
+Completion criteria for G4.2:
 
-- existing COM commands and non-executable prefixes are represented by one
-  registry metadata source
+- COM Mode help or hint text is rendered from `commodecommandregistry` metadata
+- non-executable prefixes can show available child commands or next-step hints
+- executable commands can expose concise descriptions before execution where
+  useful
 - current command behavior is preserved
-- help/hints can be built on top of the metadata in G4.2
-- conflict validation can be centralized on top of the metadata in G4.3
 - `readme.md`, `plan.md`, and `goal.md` are updated
 - appropriate focused verification passes
 - milestone commit is pushed

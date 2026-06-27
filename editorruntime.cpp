@@ -2,6 +2,8 @@
 
 #include "mycodeeditor.h"
 
+#include "commodecommandregistry.h"
+
 #include <QApplication>
 #include <QAbstractButton>
 #include <QClipboard>
@@ -82,94 +84,6 @@ bool isUnsignedIntegerText(const QString& text)
             return false;
     }
     return true;
-}
-
-bool isComLineBuffer(const QString& buffer)
-{
-    if (buffer.size() < 2 || !buffer.startsWith(QLatin1Char('g')))
-        return false;
-    return isUnsignedIntegerText(buffer.mid(1));
-}
-
-struct ComCommandRegistration {
-    QString command;
-    bool executable = false;
-};
-
-const QList<ComCommandRegistration>& comCommandRegistry()
-{
-    static const QList<ComCommandRegistration> registry = {
-        {QStringLiteral("gm"), true},
-        {QStringLiteral("ga"), false},
-        {QStringLiteral("gac"), true},
-        {QStringLiteral("ge"), false},
-        {QStringLiteral("gef"), true},
-        {QStringLiteral("gp"), false},
-        {QStringLiteral("gi"), false},
-        {QStringLiteral("gii"), true},
-        {QStringLiteral("gpi"), true},
-        {QStringLiteral("gpk"), true},
-        {QStringLiteral("gpa"), true},
-        {QStringLiteral("gpo"), true},
-        {QStringLiteral("gs"), false},
-        {QStringLiteral("gsd"), true},
-        {QStringLiteral("gsi"), true},
-    };
-    return registry;
-}
-
-bool comCommandRegistryIsValid()
-{
-    const QList<ComCommandRegistration>& registry = comCommandRegistry();
-    for (int i = 0; i < registry.size(); ++i) {
-        for (int j = i + 1; j < registry.size(); ++j) {
-            const ComCommandRegistration& left = registry.at(i);
-            const ComCommandRegistration& right = registry.at(j);
-            if (left.command == right.command)
-                return false;
-            if (left.executable && right.executable
-                && (left.command.startsWith(right.command)
-                    || right.command.startsWith(left.command))) {
-                return false;
-            }
-        }
-    }
-    return true;
-}
-
-bool registeredComCommandPrefix(const QString& buffer)
-{
-    static const bool registryValid = comCommandRegistryIsValid();
-    if (!registryValid)
-        return false;
-    for (const ComCommandRegistration& registration : comCommandRegistry()) {
-        if (registration.command.startsWith(buffer))
-            return true;
-    }
-    return false;
-}
-
-QString executableComCommand(const QString& buffer)
-{
-    static const bool registryValid = comCommandRegistryIsValid();
-    if (!registryValid)
-        return QString();
-    for (const ComCommandRegistration& registration : comCommandRegistry()) {
-        if (registration.executable && registration.command == buffer)
-            return registration.command;
-    }
-    return QString();
-}
-
-bool isComBufferPrefix(const QString& buffer)
-{
-    if (buffer.isEmpty())
-        return true;
-    if (buffer == QStringLiteral("g"))
-        return true;
-    if (registeredComCommandPrefix(buffer))
-        return true;
-    return isComLineBuffer(buffer);
 }
 
 bool isSmartIdentifierStart(QChar ch)
@@ -2222,7 +2136,7 @@ bool handleComModeKeyPress(MyCodeEditor* editor,
     if (event->key() == Qt::Key_Return || event->key() == Qt::Key_Enter) {
         const QString buffer = state.modes.comBuffer;
         state.modes.clearComBuffer();
-        if (isComLineBuffer(buffer)) {
+        if (isComModeLineBuffer(buffer)) {
             const int moduleLine = buffer.mid(1).toInt();
             if (moduleLine <= 0) {
                 const QString message =
@@ -2255,7 +2169,7 @@ bool handleComModeKeyPress(MyCodeEditor* editor,
         return accept();
 
     const QString nextBuffer = state.modes.comBuffer + text;
-    const QString executableCommand = executableComCommand(nextBuffer);
+    const QString executableCommand = executableComModeCommand(nextBuffer);
     if (!executableCommand.isEmpty()) {
         state.modes.clearComBuffer();
         state.publishComModeState(editor);
@@ -2263,7 +2177,7 @@ bool handleComModeKeyPress(MyCodeEditor* editor,
         return accept();
     }
 
-    if (isComBufferPrefix(nextBuffer)) {
+    if (isComModeBufferPrefix(nextBuffer)) {
         state.modes.setComBuffer(nextBuffer);
         state.publishComModeState(editor);
         return accept();
