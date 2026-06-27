@@ -17,6 +17,9 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QFont>
+#include <QGraphicsItem>
+#include <QGraphicsRectItem>
+#include <QGraphicsView>
 #include <QImage>
 #include <QSettings>
 #include <QSignalSpy>
@@ -31,6 +34,7 @@
 #include <QMessageBox>
 #include <QPlainTextEdit>
 #include <QScrollBar>
+#include <QSet>
 #include <QTemporaryDir>
 #include <QTextBlock>
 #include <QTextCursor>
@@ -73,6 +77,7 @@
 #include "navigationwidget.h"
 #include "navigationpanecoordinator.h"
 #include "semantic_fixture_records.h"
+#include "sourcenavigationservice.h"
 #include "symbolhoverservice.h"
 #include "modemanager.h"
 #include "navigationmanager.h"
@@ -86,6 +91,7 @@
 #include "semanticdockcoordinator.h"
 #include "semanticpanelrefreshcoordinator.h"
 #include "semanticruntimecoordinator.h"
+#include "signalkernelgraphpanelcoordinator.h"
 #include "smartrelationshipbuilder.h"
 #include "tabmanager.h"
 #include "tsdocument.h"
@@ -97,6 +103,8 @@
 
 static int g_checks = 0;
 static int g_fails = 0;
+
+static bool waitUntil(const std::function<bool()>& predicate, int timeoutMs);
 
 static std::shared_ptr<const SemanticIndexSnapshot> snapshotFromRecords(
     const QList<SemanticSymbolRecord>& records,
@@ -1919,6 +1927,258 @@ static void runEditorLineActionRegression()
                columnMoveEditor.toPlainText()
                        == QStringLiteral("abc\nabc\nabc\n")
                    && columnStatus.contains(QStringLiteral("Column selection")),
+               true);
+}
+
+static void runEditorCtrlClickNavigationRegression()
+{
+    const QString path =
+        QDir::current().absoluteFilePath(
+            QStringLiteral("test_sv/huge_prj/vendor_ip_ctl.sv"));
+    QFile file(path);
+    expectBool("VENDOR ctrl-click fixture opens",
+               file.open(QIODevice::ReadOnly | QIODevice::Text),
+               true);
+    if (!file.isOpen())
+        return;
+
+    const QString text = QString::fromUtf8(file.readAll());
+    const QString symbol =
+        QStringLiteral("CC_IB_MCPL_SEG_BUF_RAM_ADDR_WD");
+    MyCodeEditor editor;
+    editor.setDocumentFileName(path);
+    editor.setPlainText(text);
+    editor.resize(980, 520);
+    editor.show();
+
+    const QTextBlock useBlock =
+        editor.document()->findBlockByNumber(1659);
+    const QTextBlock definitionBlock =
+        editor.document()->findBlockByNumber(339);
+    expectBool("VENDOR ctrl-click use line exists",
+               useBlock.isValid() && useBlock.text().contains(symbol),
+               true);
+    expectBool("VENDOR ctrl-click definition line exists",
+               definitionBlock.isValid()
+                   && definitionBlock.text().contains(symbol),
+               true);
+    if (!useBlock.isValid() || !definitionBlock.isValid())
+        return;
+
+    bool navigationRequested = false;
+    QObject::connect(
+        &editor,
+        &MyCodeEditor::sourceNavigationRequested,
+        &editor,
+        [&](const EditorSourceNavigationTarget& target,
+            const EditorSemanticContext&) {
+            if (target.text != symbol)
+                return;
+            navigationRequested = true;
+            const SourceLineNavigationTarget lineTarget =
+                SourceNavigationService::getInstance()
+                    ->lineNavigationTarget(340,
+                                           definitionBlock.text().indexOf(symbol)
+                                               + 1);
+            editor.applyLineNavigationTarget(lineTarget);
+        });
+
+    const int useStart = useBlock.text().indexOf(symbol);
+    const int usePosition = useBlock.position() + useStart;
+    QTextCursor selected(editor.document());
+    selected.setPosition(usePosition);
+    selected.setPosition(usePosition + symbol.size(),
+                         QTextCursor::KeepAnchor);
+    editor.setTextCursor(selected);
+    editor.centerCursor();
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+
+    QTextCursor clickCursor(editor.document());
+    clickCursor.setPosition(usePosition + 6);
+    const QPoint clickPoint = editor.cursorRect(clickCursor).center();
+    QTest::mousePress(editor.viewport(),
+                      Qt::LeftButton,
+                      Qt::ControlModifier,
+                      clickPoint);
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+
+    QMouseEvent dragAfterJump(QEvent::MouseMove,
+                              editor.cursorRect().center(),
+                              editor.viewport()->mapToGlobal(
+                                  editor.cursorRect().center()),
+                              Qt::NoButton,
+                              Qt::LeftButton,
+                              Qt::ControlModifier);
+    QCoreApplication::sendEvent(editor.viewport(), &dragAfterJump);
+    QTest::mouseRelease(editor.viewport(),
+                        Qt::LeftButton,
+                        Qt::ControlModifier,
+                        clickPoint);
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+
+    expectBool("VENDOR ctrl-click requested parameter navigation",
+               navigationRequested,
+               true);
+    expectBool("VENDOR ctrl-click lands on parameter definition",
+               editor.textCursor().blockNumber() == 339,
+               true);
+    expectBool("VENDOR ctrl-click does not extend selection",
+               !editor.textCursor().hasSelection(),
+               true);
+}
+
+static void runSignalKernelGraphPopupInteractionRegression()
+{
+    QMainWindow host;
+    host.resize(900, 560);
+    SignalKernelGraphPanelCoordinator graph(&host);
+    host.addDockWidget(Qt::BottomDockWidgetArea, graph.dock());
+    host.show();
+    graph.dock()->show();
+
+    SignalKernelGraphReport report;
+    report.found = true;
+    report.kernelModuleName = QStringLiteral("graph_top");
+    report.kernel.id = 10;
+    report.kernel.role = SignalKernelGraphNodeRole::Kernel;
+    report.kernel.displayName = QStringLiteral("kernel_sig");
+    report.kernel.moduleDisplayName = QStringLiteral("graph_top");
+    report.kernel.typeDisplayName = QStringLiteral("logic");
+    report.kernel.detailDisplayName =
+        QStringLiteral("assignment with enough detail to build a popup");
+    report.kernel.navigateCodeLink =
+        RtlInsightLink::fromFileLine(QStringLiteral("graph_top.sv"), 10, 3);
+
+    SignalKernelGraphNode input;
+    input.id = 11;
+    input.role = SignalKernelGraphNodeRole::Input;
+    input.inputLane = SignalKernelGraphInputLane::Data;
+    input.displayName = QStringLiteral("data_in");
+    input.moduleDisplayName = QStringLiteral("graph_top");
+    input.typeDisplayName = QStringLiteral("logic");
+    report.inputs.append(input);
+
+    SignalKernelGraphNode output;
+    output.id = 12;
+    output.role = SignalKernelGraphNodeRole::Output;
+    output.displayName = QStringLiteral("data_out");
+    output.moduleDisplayName = QStringLiteral("graph_top");
+    output.typeDisplayName = QStringLiteral("logic");
+    report.outputs.append(output);
+    report.edges.append({input.id, report.kernel.id, QString()});
+    report.edges.append({report.kernel.id, output.id, QString()});
+
+    bool graphNavigated = false;
+    graph.setNavigationHandler(
+        [&](const QString& fileName, int line, int column) {
+            graphNavigated =
+                fileName == QStringLiteral("graph_top.sv")
+                && line == 10
+                && column == 3;
+        });
+    graph.renderReport(report);
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+
+    QGraphicsView* view = graph.view();
+    expectBool("signal kernel graph view exists", view != nullptr, true);
+    expectBool("signal kernel graph popup starts hidden",
+               graph.hoverPopup && !graph.hoverPopup->isVisible(),
+               true);
+    if (!view || !graph.hoverPopup)
+        return;
+
+    const QPoint kernelPoint = view->mapFromScene(QPointF(0, 0));
+    QGraphicsRectItem* kernelRectItem = nullptr;
+    for (QGraphicsItem* item : view->items(kernelPoint)) {
+        auto* rectItem = dynamic_cast<QGraphicsRectItem*>(item);
+        if (!rectItem)
+            continue;
+        const QRectF rect = rectItem->rect();
+        if (rect.width() > 120.0 && rect.width() < 260.0
+            && rect.height() > 40.0 && rect.height() < 90.0) {
+            kernelRectItem = rectItem;
+            break;
+        }
+    }
+    expectBool("signal kernel graph kernel item found",
+               kernelRectItem != nullptr,
+               true);
+    if (!kernelRectItem)
+        return;
+
+    QTest::mouseMove(view->viewport(), kernelPoint);
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    expectBool("signal kernel graph hover does not show popup",
+               !graph.hoverPopup->isVisible(),
+               true);
+
+    QTest::mouseClick(view->viewport(),
+                      Qt::RightButton,
+                      Qt::NoModifier,
+                      kernelPoint);
+    expectBool("signal kernel graph right-click shows popup",
+               waitUntil([&]() { return graph.hoverPopup->isVisible(); },
+                         1000),
+               true);
+
+    const QRect nodeViewRect =
+        view->mapFromScene(kernelRectItem->sceneBoundingRect())
+            .boundingRect();
+    const QRect nodeGlobalRect(
+        view->viewport()->mapToGlobal(nodeViewRect.topLeft()),
+        view->viewport()->mapToGlobal(nodeViewRect.bottomRight()));
+    const QRect popupRect(graph.hoverPopup->pos(), graph.hoverPopup->size());
+    expectBool("signal kernel graph popup avoids clicked node",
+               !popupRect.intersects(nodeGlobalRect.normalized()),
+               true);
+
+    const QPoint outputPoint = view->mapFromScene(QPointF(430, 0));
+    QTest::mouseClick(view->viewport(),
+                      Qt::RightButton,
+                      Qt::NoModifier,
+                      outputPoint);
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    bool outputPopupVisible = false;
+    const QString popupText = visibleEditorHoverPopupText(&outputPopupVisible);
+    expectBool("signal kernel graph right-click switches popup",
+               outputPopupVisible
+                   && popupText.contains(QStringLiteral("Output: data_out")),
+               true);
+
+    const QPoint blankPoint(4, view->viewport()->height() - 4);
+    QTest::mouseClick(view->viewport(),
+                      Qt::LeftButton,
+                      Qt::NoModifier,
+                      blankPoint);
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    expectBool("signal kernel graph blank left-click closes popup",
+               !graph.hoverPopup->isVisible(),
+               true);
+
+    QTest::mouseClick(view->viewport(),
+                      Qt::RightButton,
+                      Qt::NoModifier,
+                      kernelPoint);
+    expectBool("signal kernel graph right-click reopens popup",
+               waitUntil([&]() { return graph.hoverPopup->isVisible(); },
+                         1000),
+               true);
+    QTest::mouseClick(view->viewport(),
+                      Qt::RightButton,
+                      Qt::NoModifier,
+                      blankPoint);
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    expectBool("signal kernel graph blank right-click closes popup",
+               !graph.hoverPopup->isVisible(),
+               true);
+
+    QTest::mouseDClick(view->viewport(),
+                       Qt::LeftButton,
+                       Qt::NoModifier,
+                       kernelPoint);
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    expectBool("signal kernel graph double-click navigates",
+               graphNavigated,
                true);
 }
 
@@ -4977,6 +5237,80 @@ static void runNavigationHierarchyModelRegression()
                    .contains(QStringLiteral("design_top")),
                true);
 
+    const QString ws1TopFile = QStringLiteral("C:/fixture/ws1/top.sv");
+    const QString ws1LeafFile = QStringLiteral("C:/fixture/ws1/shared_leaf.sv");
+    const QString ws2TopFile = QStringLiteral("C:/fixture/ws2/top.sv");
+    const QString ws2LeafFile = QStringLiteral("C:/fixture/ws2/shared_leaf.sv");
+    const SemanticSymbolRecord ws1Top =
+        makeGuiSmokeRecord(1250,
+                           ws1TopFile,
+                           QStringLiteral("ws1_top"),
+                           SymbolTaxonomy::DeclarationKind::Module,
+                           SymbolTaxonomy::CollectorKind::Module,
+                           1);
+    const SemanticSymbolRecord ws1Leaf =
+        makeGuiSmokeRecord(1251,
+                           ws1LeafFile,
+                           QStringLiteral("shared_leaf"),
+                           SymbolTaxonomy::DeclarationKind::Module,
+                           SymbolTaxonomy::CollectorKind::Module,
+                           1);
+    const SemanticSymbolRecord ws2Top =
+        makeGuiSmokeRecord(1252,
+                           ws2TopFile,
+                           QStringLiteral("ws2_top"),
+                           SymbolTaxonomy::DeclarationKind::Module,
+                           SymbolTaxonomy::CollectorKind::Module,
+                           1);
+    const SemanticSymbolRecord ws2Leaf =
+        makeGuiSmokeRecord(1253,
+                           ws2LeafFile,
+                           QStringLiteral("shared_leaf"),
+                           SymbolTaxonomy::DeclarationKind::Module,
+                           SymbolTaxonomy::CollectorKind::Module,
+                           50);
+    const SemanticSymbolRecord ws2Instance =
+        makeGuiSmokeRecord(1254,
+                           ws2TopFile,
+                           QStringLiteral("u_shared_leaf"),
+                           SymbolTaxonomy::DeclarationKind::Instance,
+                           SymbolTaxonomy::CollectorKind::Inst,
+                           5,
+                           SymbolTaxonomy::SymbolOwnerScope::Module,
+                           QStringLiteral("ws2_top"),
+                           QStringLiteral("shared_leaf"));
+    const SemanticRelationship scopedInstantiates =
+        semanticFixtureRelationship(ws2Top,
+                                    ws2Instance,
+                                    SymbolRelationshipEngine::INSTANTIATES);
+    SemanticIndex scopedDesignIndex;
+    scopedDesignIndex.setSnapshot(snapshotFromRecords(
+        {ws1Top, ws1Leaf, ws2Top, ws2Leaf, ws2Instance},
+        {scopedInstantiates}));
+    HierarchyService scopedHierarchyService(&scopedDesignIndex);
+    QSet<QString> ws2Scope;
+    ws2Scope.insert(QDir::cleanPath(
+        QDir::fromNativeSeparators(QFileInfo(ws2TopFile).absoluteFilePath())));
+    ws2Scope.insert(QDir::cleanPath(
+        QDir::fromNativeSeparators(QFileInfo(ws2LeafFile).absoluteFilePath())));
+    const QStringList scopedTops =
+        scopedHierarchyService.inferDesignTopModules(ws2Scope);
+    const DesignHierarchyReport scopedReport =
+        scopedHierarchyService.getDesignHierarchyReport(scopedTops,
+                                                        QStringLiteral("ws2_top"),
+                                                        ws2Scope);
+    expectBool("scoped design top excludes other workspace",
+               scopedTops.contains(QStringLiteral("ws2_top"))
+                   && !scopedTops.contains(QStringLiteral("ws1_top")),
+               true);
+    expectBool("scoped design hierarchy uses scoped duplicate module",
+               scopedReport.nodes.size() == 2
+                   && scopedReport.nodes.last().moduleType == QStringLiteral("shared_leaf")
+                   && scopedReport.nodes.last().definitionFile
+                          == QDir::cleanPath(QDir::fromNativeSeparators(
+                              QFileInfo(ws2LeafFile).absoluteFilePath())),
+               true);
+
     const QString normalizedTopFile =
         QDir::cleanPath(QDir::fromNativeSeparators(QFileInfo(designTopFile).absoluteFilePath()));
     const QString normalizedStageFile =
@@ -5315,6 +5649,8 @@ int main(int argc, char** argv)
     runSafeRenameCreateDefinitionRegression();
     runEditorColumnEditRegression();
     runEditorLineActionRegression();
+    runEditorCtrlClickNavigationRegression();
+    runSignalKernelGraphPopupInteractionRegression();
     runEditorFormatterRegression();
     runEditorAppearanceCoordinatorRegression();
     runFormatterCoordinatorRegression();

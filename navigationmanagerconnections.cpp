@@ -76,14 +76,22 @@ void NavigationManager::connectToWorkspaceManager(WorkspaceManager* workspaceMan
                     caches.clearDesignHierarchy();
                     caches.designTopModule.clear();
                     caches.designTopInferred = true;
+                    if (currentView == DesignHierarchyView) {
+                        if (navigationWidget)
+                            navigationWidget->clearDesignHierarchy();
+                        return;
+                    }
                     refreshCurrentView();
                 });
 
         connect(connectedWorkspaceManager, &WorkspaceManager::filesScanned,
                 this, [this](const QStringList&) {
                     caches.clearFileList();
+                    caches.clearDesignHierarchy();
                     if (currentView == FileHierarchyView)
                         refreshFileHierarchy();
+                    else if (currentView == DesignHierarchyView)
+                        refreshDesignHierarchy();
                 });
 
         connect(connectedWorkspaceManager, &WorkspaceManager::fileChanged,

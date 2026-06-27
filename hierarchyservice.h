@@ -133,11 +133,20 @@ public:
     QList<HierarchyNode> getHierarchy(const HierarchyQuery& query) const;
     HierarchyReport getHierarchyReport(const HierarchyQuery& query) const;
     QString inferDesignTopModule() const;
+    QString inferDesignTopModule(const QSet<QString>& fileScope) const;
     QStringList inferDesignTopModules() const;
+    QStringList inferDesignTopModules(const QSet<QString>& fileScope) const;
     DesignHierarchyReport getDesignHierarchyReport(const QString& topModule) const;
+    DesignHierarchyReport getDesignHierarchyReport(
+        const QString& topModule,
+        const QSet<QString>& fileScope) const;
     DesignHierarchyReport getDesignHierarchyReport(
         const QStringList& topModules,
         const QString& selectedTopModule = QString()) const;
+    DesignHierarchyReport getDesignHierarchyReport(
+        const QStringList& topModules,
+        const QString& selectedTopModule,
+        const QSet<QString>& fileScope) const;
     QStringList modulesDefinedInFile(const QString& fileName) const;
     HierarchyQuery queryForPanel(const HierarchyPanelQueryOptions& options) const;
     QList<HierarchyNode> moduleInstantiationChildren(const SymbolStableKey& moduleStableKey) const;

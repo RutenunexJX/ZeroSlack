@@ -44,9 +44,23 @@ class SignalKernelGraphView : public QGraphicsView
 {
 public:
     using QGraphicsView::QGraphicsView;
+    std::function<bool(const QPoint&,
+                       Qt::MouseButton,
+                       Qt::KeyboardModifiers)> pressHandler;
     std::function<bool(const QPoint&)> doubleClickHandler;
 
 protected:
+    void mousePressEvent(QMouseEvent* event) override
+    {
+        if (event
+            && pressHandler
+            && pressHandler(event->pos(), event->button(), event->modifiers())) {
+            event->accept();
+            return;
+        }
+        QGraphicsView::mousePressEvent(event);
+    }
+
     void mouseDoubleClickEvent(QMouseEvent* event) override
     {
         if (event
@@ -197,9 +211,8 @@ qreal rowY(int index, int count)
 class SignalKernelGraphNodeItem : public QGraphicsRectItem
 {
 public:
-    using HoverHandler =
-        std::function<void(const SignalKernelGraphNode&, const QPoint&)>;
-    using LeaveHandler = std::function<void()>;
+    using PreviewHandler =
+        std::function<void(const SignalKernelGraphNode&, const QRectF&)>;
     using NodeHandler = std::function<void(const SignalKernelGraphNode&)>;
 
     SignalKernelGraphNodeItem(const SignalKernelGraphNode& graphNode,
@@ -214,7 +227,6 @@ public:
         setBrush(fillColorForRole(node.role));
         setPen(QPen(strokeColorForRole(node.role),
                     node.role == SignalKernelGraphNodeRole::Kernel ? 2.0 : 1.4));
-        setToolTip(node.displayName);
 
         QFont titleFont = font;
         titleFont.setBold(true);
@@ -244,8 +256,7 @@ public:
 
     const SignalKernelGraphNode& graphNode() const { return node; }
 
-    HoverHandler hoverHandler;
-    LeaveHandler leaveHandler;
+    PreviewHandler previewHandler;
     NodeHandler navigateHandler;
     NodeHandler rebaseHandler;
 
@@ -253,23 +264,17 @@ protected:
     void hoverEnterEvent(QGraphicsSceneHoverEvent* event) override
     {
         setZValue(40);
-        if (hoverHandler)
-            hoverHandler(node, event->screenPos());
         QGraphicsRectItem::hoverEnterEvent(event);
     }
 
     void hoverMoveEvent(QGraphicsSceneHoverEvent* event) override
     {
-        if (hoverHandler)
-            hoverHandler(node, event->screenPos());
         QGraphicsRectItem::hoverMoveEvent(event);
     }
 
     void hoverLeaveEvent(QGraphicsSceneHoverEvent* event) override
     {
         setZValue(10);
-        if (leaveHandler)
-            leaveHandler();
         QGraphicsRectItem::hoverLeaveEvent(event);
     }
 
@@ -279,6 +284,12 @@ protected:
             && event->modifiers().testFlag(Qt::ControlModifier)
             && rebaseHandler) {
             rebaseHandler(node);
+            event->accept();
+            return;
+        }
+        if (event->button() == Qt::RightButton && previewHandler) {
+            setSelected(true);
+            previewHandler(node, sceneBoundingRect());
             event->accept();
             return;
         }
@@ -558,11 +569,38 @@ SignalKernelGraphPanelCoordinator::SignalKernelGraphPanelCoordinator(
     graphView->setObjectName(QStringLiteral("signalKernelGraphView"));
     graphView->setRenderHint(QPainter::Antialiasing, true);
     graphView->setDragMode(QGraphicsView::ScrollHandDrag);
+    graphView->setFocusPolicy(Qt::StrongFocus);
     graphView->setTransformationAnchor(QGraphicsView::AnchorUnderMouse);
     graphView->setResizeAnchor(QGraphicsView::AnchorViewCenter);
     graphView->setBackgroundBrush(QBrush(QColor(QStringLiteral("#f8fafc"))));
     if (auto* signalGraphView =
             dynamic_cast<SignalKernelGraphView*>(graphView)) {
+        signalGraphView->pressHandler =
+            [this](const QPoint& viewPosition,
+                   Qt::MouseButton button,
+                   Qt::KeyboardModifiers modifiers) {
+                if (!graphView)
+                    return false;
+                const QList<QGraphicsItem*> items =
+                    graphView->items(viewPosition);
+                for (QGraphicsItem* item : items) {
+                    SignalKernelGraphNodeItem* nodeItem =
+                        nodeItemFromGraphicsItem(item);
+                    if (!nodeItem)
+                        continue;
+                    if (button != Qt::RightButton || modifiers != Qt::NoModifier)
+                        return false;
+                    showNodePreview(nodeItem->graphNode(),
+                                    nodeItem->sceneBoundingRect());
+                    return true;
+                }
+                if ((button == Qt::LeftButton || button == Qt::RightButton)
+                    && hoverPopup && hoverPopup->isVisible()) {
+                    closeNodePreviewNow();
+                    return true;
+                }
+                return false;
+            };
         signalGraphView->doubleClickHandler =
             [this](const QPoint& viewPosition) {
                 if (!graphView)
@@ -736,14 +774,11 @@ void SignalKernelGraphPanelCoordinator::renderReport(
         nodeRects.insert(node.id, rect);
         auto* item = new SignalKernelGraphNodeItem(node, rect, baseFont);
         item->setZValue(10);
-        item->hoverHandler =
-            [this](const SignalKernelGraphNode& hoveredNode,
-                   const QPoint& globalPosition) {
-                showNodePreview(hoveredNode, globalPosition);
+        item->previewHandler =
+            [this](const SignalKernelGraphNode& clickedNode,
+                   const QRectF& nodeSceneRect) {
+                showNodePreview(clickedNode, nodeSceneRect);
             };
-        item->leaveHandler = [this]() {
-            closeNodePreviewDelayed();
-        };
         item->navigateHandler =
             [this](const SignalKernelGraphNode& clickedNode) {
                 closeNodePreviewNow();
@@ -825,9 +860,9 @@ void SignalKernelGraphPanelCoordinator::renderUnavailable(
 
 void SignalKernelGraphPanelCoordinator::showNodePreview(
     const SignalKernelGraphNode& node,
-    const QPoint& globalPosition)
+    const QRectF& nodeSceneRect)
 {
-    if (!hoverPopup)
+    if (!hoverPopup || !graphView)
         return;
 
     if (hoverCloseTimer)
@@ -837,6 +872,8 @@ void SignalKernelGraphPanelCoordinator::showNodePreview(
     if (hoverPopup->isVisible() && currentHoverNodeKey == hoverKey)
         return;
     currentHoverNodeKey = hoverKey;
+    graphView->setFocus(Qt::MouseFocusReason);
+    hoverPopup->setMaximumSize(QWIDGETSIZE_MAX, QWIDGETSIZE_MAX);
 
     CodePreviewQuery query;
     query.codeLink = node.previewCodeLink;
@@ -846,10 +883,20 @@ void SignalKernelGraphPanelCoordinator::showNodePreview(
     query.detail = hoverDetailForNode(node);
     const CodePreviewReport report =
         CodePreviewService::getInstance()->previewForCodeLink(query);
-    hoverPopup->showCodePreview(report,
-                                globalPosition,
-                                graphView ? graphView->font() : QFont());
-    clampHoverPopupToGraphViewport();
+    QWidget* viewport = graphView->viewport();
+    if (!viewport)
+        return;
+
+    const QRect nodeViewRect =
+        graphView->mapFromScene(nodeSceneRect).boundingRect();
+    const QRect nodeGlobalRect(
+        viewport->mapToGlobal(nodeViewRect.topLeft()),
+        viewport->mapToGlobal(nodeViewRect.bottomRight()));
+    hoverPopup->showCodePreview(
+        report,
+        nodeGlobalRect.topRight() + QPoint(14, 0),
+        graphView->font());
+    placeHoverPopupAvoidingNode(nodeGlobalRect.normalized());
 }
 
 void SignalKernelGraphPanelCoordinator::closeNodePreviewDelayed()
@@ -867,7 +914,8 @@ void SignalKernelGraphPanelCoordinator::closeNodePreviewNow()
         hoverPopup->closePopup();
 }
 
-void SignalKernelGraphPanelCoordinator::clampHoverPopupToGraphViewport() const
+void SignalKernelGraphPanelCoordinator::placeHoverPopupAvoidingNode(
+    const QRect& nodeGlobalRect) const
 {
     if (!hoverPopup || !hoverPopup->isVisible() || !graphView)
         return;
@@ -876,28 +924,105 @@ void SignalKernelGraphPanelCoordinator::clampHoverPopupToGraphViewport() const
     if (!viewport)
         return;
 
-    const QRect viewportRect(
+    const QRect rawViewportRect(
         viewport->mapToGlobal(viewport->rect().topLeft()),
         viewport->mapToGlobal(viewport->rect().bottomRight()));
-    QRect popupRect(hoverPopup->pos(), hoverPopup->size());
     const int margin = 6;
-    int x = popupRect.x();
-    int y = popupRect.y();
+    const int gap = 12;
+    const QRect viewportRect =
+        rawViewportRect.normalized().adjusted(margin, margin, -margin, -margin);
+    if (viewportRect.isEmpty())
+        return;
 
-    if (popupRect.width() + margin * 2 <= viewportRect.width()) {
-        x = qBound(viewportRect.left() + margin,
-                   x,
-                   viewportRect.right() - popupRect.width() - margin);
-    } else {
-        x = viewportRect.left() + margin;
+    const QRect avoidRect =
+        nodeGlobalRect.normalized().adjusted(-gap, -gap, gap, gap)
+            .intersected(viewportRect);
+
+    QList<QRect> candidates;
+    const int rightX = avoidRect.right() + 1;
+    if (rightX <= viewportRect.right()) {
+        candidates.append(QRect(rightX,
+                                viewportRect.top(),
+                                viewportRect.right() - rightX + 1,
+                                viewportRect.height()));
+    }
+    const int leftW = avoidRect.left() - viewportRect.left();
+    if (leftW > 0) {
+        candidates.append(QRect(viewportRect.left(),
+                                viewportRect.top(),
+                                leftW,
+                                viewportRect.height()));
+    }
+    const int belowY = avoidRect.bottom() + 1;
+    if (belowY <= viewportRect.bottom()) {
+        candidates.append(QRect(viewportRect.left(),
+                                belowY,
+                                viewportRect.width(),
+                                viewportRect.bottom() - belowY + 1));
+    }
+    const int aboveH = avoidRect.top() - viewportRect.top();
+    if (aboveH > 0) {
+        candidates.append(QRect(viewportRect.left(),
+                                viewportRect.top(),
+                                viewportRect.width(),
+                                aboveH));
     }
 
-    if (popupRect.height() + margin * 2 <= viewportRect.height()) {
-        y = qBound(viewportRect.top() + margin,
-                   y,
-                   viewportRect.bottom() - popupRect.height() - margin);
+    if (candidates.isEmpty()) {
+        hoverPopup->move(viewportRect.topLeft());
+        return;
+    }
+
+    QSize popupSize = hoverPopup->size();
+    int bestIndex = -1;
+    for (int i = 0; i < candidates.size(); ++i) {
+        const QRect candidate = candidates.at(i);
+        if (candidate.width() >= popupSize.width()
+            && candidate.height() >= popupSize.height()) {
+            bestIndex = i;
+            break;
+        }
+    }
+    if (bestIndex < 0) {
+        int bestArea = -1;
+        for (int i = 0; i < candidates.size(); ++i) {
+            const QRect candidate = candidates.at(i);
+            const int area = candidate.width() * candidate.height();
+            if (area > bestArea) {
+                bestArea = area;
+                bestIndex = i;
+            }
+        }
+    }
+
+    const QRect available = candidates.at(bestIndex);
+    popupSize.setWidth(qMax(1, qMin(popupSize.width(), available.width())));
+    popupSize.setHeight(qMax(1, qMin(popupSize.height(), available.height())));
+    hoverPopup->setMaximumSize(available.size());
+    hoverPopup->resize(popupSize);
+
+    int x = available.left();
+    int y = available.top();
+    if (bestIndex == 0) {
+        x = available.left();
+        y = qBound(available.top(),
+                   nodeGlobalRect.top(),
+                   available.bottom() - popupSize.height() + 1);
+    } else if (bestIndex == 1) {
+        x = available.right() - popupSize.width() + 1;
+        y = qBound(available.top(),
+                   nodeGlobalRect.top(),
+                   available.bottom() - popupSize.height() + 1);
+    } else if (bestIndex == 2) {
+        x = qBound(available.left(),
+                   nodeGlobalRect.left(),
+                   available.right() - popupSize.width() + 1);
+        y = available.top();
     } else {
-        y = viewportRect.top() + margin;
+        x = qBound(available.left(),
+                   nodeGlobalRect.left(),
+                   available.right() - popupSize.width() + 1);
+        y = available.bottom() - popupSize.height() + 1;
     }
 
     hoverPopup->move(x, y);

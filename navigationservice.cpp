@@ -233,9 +233,21 @@ QString NavigationService::inferDesignTopModule() const
     return hierarchyService.inferDesignTopModule();
 }
 
+QString NavigationService::inferDesignTopModule(
+    const QSet<QString>& fileScope) const
+{
+    return hierarchyService.inferDesignTopModule(fileScope);
+}
+
 QStringList NavigationService::inferDesignTopModules() const
 {
     return hierarchyService.inferDesignTopModules();
+}
+
+QStringList NavigationService::inferDesignTopModules(
+    const QSet<QString>& fileScope) const
+{
+    return hierarchyService.inferDesignTopModules(fileScope);
 }
 
 DesignHierarchyReport NavigationService::findDesignHierarchy(
@@ -245,10 +257,27 @@ DesignHierarchyReport NavigationService::findDesignHierarchy(
 }
 
 DesignHierarchyReport NavigationService::findDesignHierarchy(
+    const QString& topModule,
+    const QSet<QString>& fileScope) const
+{
+    return hierarchyService.getDesignHierarchyReport(topModule, fileScope);
+}
+
+DesignHierarchyReport NavigationService::findDesignHierarchy(
     const QStringList& topModules,
     const QString& selectedTopModule) const
 {
     return hierarchyService.getDesignHierarchyReport(topModules, selectedTopModule);
+}
+
+DesignHierarchyReport NavigationService::findDesignHierarchy(
+    const QStringList& topModules,
+    const QString& selectedTopModule,
+    const QSet<QString>& fileScope) const
+{
+    return hierarchyService.getDesignHierarchyReport(topModules,
+                                                     selectedTopModule,
+                                                     fileScope);
 }
 
 std::uint64_t NavigationService::semanticSnapshotRevision() const

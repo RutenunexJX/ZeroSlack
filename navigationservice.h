@@ -8,6 +8,7 @@
 #include "symboloutlinemodel.h"
 
 #include <QList>
+#include <QSet>
 #include <QString>
 #include <cstdint>
 #include <memory>
@@ -41,11 +42,20 @@ public:
     QList<SymbolOutlineGroup> findSymbolOutline(
         const NavigationSymbolOutlineQuery& query) const;
     QString inferDesignTopModule() const;
+    QString inferDesignTopModule(const QSet<QString>& fileScope) const;
     QStringList inferDesignTopModules() const;
+    QStringList inferDesignTopModules(const QSet<QString>& fileScope) const;
     DesignHierarchyReport findDesignHierarchy(const QString& topModule) const;
+    DesignHierarchyReport findDesignHierarchy(
+        const QString& topModule,
+        const QSet<QString>& fileScope) const;
     DesignHierarchyReport findDesignHierarchy(
         const QStringList& topModules,
         const QString& selectedTopModule = QString()) const;
+    DesignHierarchyReport findDesignHierarchy(
+        const QStringList& topModules,
+        const QString& selectedTopModule,
+        const QSet<QString>& fileScope) const;
     std::uint64_t semanticSnapshotRevision() const;
     QStringList modulesDefinedInFile(const QString& fileName) const;
     NavigationModuleTarget resolveModuleTarget(const QString& moduleName) const;

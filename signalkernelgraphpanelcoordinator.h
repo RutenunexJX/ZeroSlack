@@ -14,6 +14,8 @@ class QLabel;
 class QGraphicsScene;
 class QGraphicsView;
 class QTimer;
+class QRect;
+class QRectF;
 
 class SignalKernelGraphPanelCoordinator
 {
@@ -51,10 +53,10 @@ private:
     void renderReport(const SignalKernelGraphReport& report);
     void renderUnavailable(const QString& message);
     void showNodePreview(const SignalKernelGraphNode& node,
-                         const QPoint& globalPosition);
+                         const QRectF& nodeSceneRect);
     void closeNodePreviewDelayed();
     void closeNodePreviewNow();
-    void clampHoverPopupToGraphViewport() const;
+    void placeHoverPopupAvoidingNode(const QRect& nodeGlobalRect) const;
     void navigateNode(const SignalKernelGraphNode& node) const;
     void rebaseToNode(const SignalKernelGraphNode& node);
     void showDock();

@@ -2209,12 +2209,14 @@ bool MyCodeEditorState::handleMouseMove(
     if (folding.handleFoldShelfMouseMove(editor, event))
         return true;
 
-    sourceNavigation.handleMouseMove(
+    if (sourceNavigation.handleMouseMove(
         editor,
         event,
         semanticService(),
         sourceContextProvider(editor),
-        selections);
+        selections)) {
+        return true;
+    }
     return false;
 }
 

@@ -4,11 +4,15 @@
 #include "sourcenavigationservice.h"
 
 #include <QCursor>
+#include <QGuiApplication>
 #include <QTextCursor>
 #include <QWidget>
 
 void EditorCursorNavigation::moveMouseToCursor(MyCodeEditor* editor) const
 {
+    if (QGuiApplication::mouseButtons() != Qt::NoButton)
+        return;
+
     if (editor->viewport() && editor->viewport()->isVisible()) {
         QCursor::setPos(
             editor->viewport()->mapToGlobal(

@@ -113,6 +113,7 @@ private:
         QString symbolOutlineFilter;
         QString designTopModule;
         QStringList designRootModules;
+        QStringList designFileScope;
         std::uint64_t designSnapshotGeneration = 0;
         bool fileListValid = false;
         bool fileHierarchyValid = false;

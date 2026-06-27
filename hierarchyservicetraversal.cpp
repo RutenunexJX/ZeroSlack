@@ -67,6 +67,16 @@ void addDesignParticipatingFile(DesignHierarchyReport& report, const QString& fi
         report.participatingFiles.insert(normalized);
 }
 
+bool designFileScopeContains(const QSet<QString>& fileScope,
+                             const QString& fileName)
+{
+    if (fileScope.isEmpty())
+        return true;
+    const QString normalized = normalizedDesignHierarchyFileName(fileName);
+    return fileScope.contains(normalized)
+        || fileScope.contains(normalized.toCaseFolded());
+}
+
 QStringList uniqueSortedStringList(QSet<QString> values)
 {
     QStringList result = values.values();
@@ -79,11 +89,14 @@ QStringList uniqueSortedStringList(QSet<QString> values)
 void appendDesignModuleRecord(
     QHash<QString, SemanticSymbolRecord>* modulesByName,
     QList<SemanticSymbolRecord>* modules,
-    const SemanticSymbolRecord& record)
+    const SemanticSymbolRecord& record,
+    const QSet<QString>& fileScope = {})
 {
     if (!modulesByName || !modules)
         return;
     if (!isDesignModuleDeclaration(record) || record.name.isEmpty())
+        return;
+    if (!designFileScopeContains(fileScope, record.location.fileName))
         return;
 
     const auto existing = modulesByName->constFind(record.name);
@@ -372,13 +385,26 @@ QString HierarchyService::inferDesignTopModule() const
     return modules.isEmpty() ? QString() : modules.first();
 }
 
+QString HierarchyService::inferDesignTopModule(
+    const QSet<QString>& fileScope) const
+{
+    const QStringList modules = inferDesignTopModules(fileScope);
+    return modules.isEmpty() ? QString() : modules.first();
+}
+
 QStringList HierarchyService::inferDesignTopModules() const
+{
+    return inferDesignTopModules({});
+}
+
+QStringList HierarchyService::inferDesignTopModules(
+    const QSet<QString>& fileScope) const
 {
     QHash<QString, SemanticSymbolRecord> modulesByName;
     QList<SemanticSymbolRecord> modules;
     const QList<SemanticSymbolRecord> records = semanticIndex()->getSymbolRecords();
     for (const SemanticSymbolRecord& record : records)
-        appendDesignModuleRecord(&modulesByName, &modules, record);
+        appendDesignModuleRecord(&modulesByName, &modules, record, fileScope);
 
     if (modules.isEmpty())
         return {};
@@ -486,8 +512,23 @@ DesignHierarchyReport HierarchyService::getDesignHierarchyReport(const QString& 
 }
 
 DesignHierarchyReport HierarchyService::getDesignHierarchyReport(
+    const QString& topModule,
+    const QSet<QString>& fileScope) const
+{
+    return getDesignHierarchyReport(QStringList{topModule}, topModule, fileScope);
+}
+
+DesignHierarchyReport HierarchyService::getDesignHierarchyReport(
     const QStringList& topModules,
     const QString& selectedTopModule) const
+{
+    return getDesignHierarchyReport(topModules, selectedTopModule, {});
+}
+
+DesignHierarchyReport HierarchyService::getDesignHierarchyReport(
+    const QStringList& topModules,
+    const QString& selectedTopModule,
+    const QSet<QString>& fileScope) const
 {
     DesignHierarchyReport report;
     report.snapshotGeneration = semanticIndex()->snapshotRevision();
@@ -520,7 +561,7 @@ DesignHierarchyReport HierarchyService::getDesignHierarchyReport(
     QList<SemanticSymbolRecord> modules;
     const QList<SemanticSymbolRecord> records = semanticIndex()->getSymbolRecords();
     for (const SemanticSymbolRecord& record : records)
-        appendDesignModuleRecord(&modulesByName, &modules, record);
+        appendDesignModuleRecord(&modulesByName, &modules, record, fileScope);
 
     int nextNodeId = 0;
     auto nextId = [&]() {

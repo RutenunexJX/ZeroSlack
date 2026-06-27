@@ -54,7 +54,7 @@ public:
         const EditorSourceContextProvider& contextProvider,
         EditorSelection& selections);
     bool handleMouseRelease(MyCodeEditor* editor, QMouseEvent* event);
-    void handleMouseMove(
+    bool handleMouseMove(
         MyCodeEditor* editor,
         QMouseEvent* event,
         EditorSemanticContextService* service,

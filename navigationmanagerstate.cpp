@@ -66,6 +66,7 @@ void NavigationManager::NavigationCaches::clearDesignHierarchy()
 {
     designHierarchy = {};
     designRootModules.clear();
+    designFileScope.clear();
     designSnapshotGeneration = 0;
     designHierarchyValid = false;
 }

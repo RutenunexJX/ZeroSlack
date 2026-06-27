@@ -2,6 +2,7 @@
 
 #include <QChar>
 #include <QDir>
+#include <QFile>
 #include <QFileInfo>
 #include <QHash>
 #include <QPair>
@@ -83,6 +84,14 @@ QString stripCodeLineComment(const QString& line)
 {
     const int commentStart = lineCommentStart(line);
     return commentStart >= 0 ? line.left(commentStart) : line;
+}
+
+QString normalizedDecorationFileName(const QString& fileName)
+{
+    if (fileName.isEmpty())
+        return QString();
+    return QDir::cleanPath(
+        QDir::fromNativeSeparators(QFileInfo(fileName).absoluteFilePath()));
 }
 
 QString parseIncludePath(const QString& line)
@@ -638,6 +647,221 @@ bool documentContainsQualifiedReference(const QStringList& lines,
     return false;
 }
 
+QHash<QString, QSet<QString>> packageNamesByOwnedTypeName(
+    const QList<SemanticSymbolRecord>& records)
+{
+    QHash<QString, QSet<QString>> result;
+    for (const SemanticSymbolRecord& record : records) {
+        if (record.name.isEmpty() || record.owner.name.isEmpty())
+            continue;
+        const bool packageOwned =
+            record.owner.kind == SymbolTaxonomy::SymbolOwnerScope::Package
+            || record.visibility
+                == SymbolTaxonomy::SymbolVisibility::PackageVisible;
+        if (packageOwned)
+            result[record.name].insert(record.owner.name);
+    }
+    return result;
+}
+
+bool packageImportMakesRecordVisible(
+    const SemanticSymbolRecord& record,
+    const QSet<QString>& starPackages,
+    const QHash<QString, QSet<QString>>& importedSymbolsByPackage,
+    const QHash<QString, QSet<QString>>& packageNamesByOwnerName)
+{
+    if (record.owner.name.isEmpty())
+        return false;
+
+    if (starPackages.contains(record.owner.name))
+        return true;
+
+    const auto directlyImported =
+        importedSymbolsByPackage.constFind(record.owner.name);
+    if (directlyImported != importedSymbolsByPackage.constEnd()
+        && directlyImported->contains(record.name)) {
+        return true;
+    }
+
+    const auto ownerPackages =
+        packageNamesByOwnerName.constFind(record.owner.name);
+    if (ownerPackages == packageNamesByOwnerName.constEnd())
+        return false;
+
+    for (const QString& packageName : *ownerPackages) {
+        if (starPackages.contains(packageName))
+            return true;
+        const auto imported =
+            importedSymbolsByPackage.constFind(packageName);
+        if (imported != importedSymbolsByPackage.constEnd()
+            && imported->contains(record.name)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool packageQualificationMakesRecordVisible(
+    const SemanticSymbolRecord& record,
+    const QStringList& lines,
+    const QSet<QString>& qualifiedPackages,
+    const QHash<QString, QSet<QString>>& packageNamesByOwnerName)
+{
+    if (record.owner.name.isEmpty())
+        return false;
+
+    if (qualifiedPackages.contains(record.owner.name)
+        && documentContainsQualifiedReference(lines,
+                                             record.owner.name,
+                                             record.name)) {
+        return true;
+    }
+
+    const auto ownerPackages =
+        packageNamesByOwnerName.constFind(record.owner.name);
+    if (ownerPackages == packageNamesByOwnerName.constEnd())
+        return false;
+
+    for (const QString& packageName : *ownerPackages) {
+        if (qualifiedPackages.contains(packageName)
+            && documentContainsQualifiedReference(lines,
+                                                 packageName,
+                                                 record.name)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool decorationFileKnown(SemanticIndex* index, const QString& fileName)
+{
+    if (fileName.isEmpty())
+        return false;
+    if (QFileInfo::exists(fileName))
+        return true;
+    if (!index)
+        return false;
+    if (!index->getCachedFileContent(fileName).isEmpty())
+        return true;
+    return !index->getSymbolRecords(fileName).isEmpty();
+}
+
+QString resolveDecorationIncludeFile(SemanticIndex* index,
+                                     const QString& includingFile,
+                                     const QString& includePath)
+{
+    if (includePath.isEmpty())
+        return QString();
+
+    const QFileInfo includeInfo(includePath);
+    if (includeInfo.isAbsolute()) {
+        const QString normalized = normalizedDecorationFileName(includePath);
+        return decorationFileKnown(index, normalized) ? normalized : QString();
+    }
+
+    QDir dir(QFileInfo(includingFile).absolutePath());
+    while (!dir.path().isEmpty()) {
+        const QString candidate =
+            normalizedDecorationFileName(dir.absoluteFilePath(includePath));
+        if (decorationFileKnown(index, candidate))
+            return candidate;
+        if (!dir.cdUp())
+            break;
+    }
+
+    return QString();
+}
+
+QString decorationFileContent(SemanticIndex* index, const QString& fileName)
+{
+    if (fileName.isEmpty())
+        return QString();
+
+    if (index) {
+        const QString cached = index->getCachedFileContent(fileName);
+        if (!cached.isEmpty())
+            return cached;
+    }
+
+    QFile file(fileName);
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
+        return QString();
+    return QString::fromUtf8(file.readAll());
+}
+
+void collectVisibleImportsAndIncludes(
+    SemanticIndex* index,
+    const QString& currentFile,
+    const QString& text,
+    const QSet<QString>& identifiers,
+    const QSet<QString>& localNames,
+    QList<SemanticSymbolRecord>* result,
+    QSet<QString>* seen,
+    QSet<QString>* starPackages,
+    QHash<QString, QSet<QString>>* importedSymbolsByPackage,
+    QSet<QString>* visitedFiles)
+{
+    if (!result || !seen || !starPackages || !importedSymbolsByPackage
+        || !visitedFiles) {
+        return;
+    }
+
+    const QString normalizedCurrent = normalizedDecorationFileName(currentFile);
+    if (!normalizedCurrent.isEmpty())
+        visitedFiles->insert(normalizedCurrent);
+
+    const QStringList lines = text.split(QLatin1Char('\n'));
+    for (const QString& line : lines) {
+        const QString includePath = parseIncludePath(line);
+        if (!includePath.isEmpty()) {
+            const QString includeFile =
+                resolveDecorationIncludeFile(index, currentFile, includePath);
+            if (!includeFile.isEmpty()
+                && !visitedFiles->contains(includeFile)) {
+                visitedFiles->insert(includeFile);
+                const QList<SemanticSymbolRecord> includeRecords =
+                    index ? index->getSymbolRecords(includeFile)
+                          : QList<SemanticSymbolRecord>();
+                for (const SemanticSymbolRecord& record : includeRecords) {
+                    if (identifiers.contains(record.name)
+                        && !localNames.contains(record.name)) {
+                        appendUniqueUsageRecord(record, result, seen);
+                    }
+                }
+
+                const QString includeContent =
+                    decorationFileContent(index, includeFile);
+                if (!includeContent.isEmpty()) {
+                    collectVisibleImportsAndIncludes(
+                        index,
+                        includeFile,
+                        includeContent,
+                        identifiers,
+                        localNames,
+                        result,
+                        seen,
+                        starPackages,
+                        importedSymbolsByPackage,
+                        visitedFiles);
+                }
+            }
+        }
+
+        QString packageName;
+        QString symbolName;
+        bool importStar = false;
+        if (parseImportStatement(line,
+                                 &packageName,
+                                 &symbolName,
+                                 &importStar)) {
+            if (importStar)
+                starPackages->insert(packageName);
+            else
+                (*importedSymbolsByPackage)[packageName].insert(symbolName);
+        }
+    }
+}
+
 QList<SemanticSymbolRecord> visibleUsageRecords(
     SemanticIndex* index,
     const SemanticDecorationQuery& query,
@@ -659,41 +883,24 @@ QList<SemanticSymbolRecord> visibleUsageRecords(
 
     const QSet<QString> identifiers = documentIdentifierNames(document);
     const QStringList lines = query.documentText.split(QLatin1Char('\n'));
-    const QString baseDir = QFileInfo(query.fileName).absolutePath();
     QSet<QString> starPackages;
     QSet<QString> qualifiedPackages;
     QHash<QString, QSet<QString>> importedSymbolsByPackage;
 
     for (const QString& line : lines) {
         collectQualifiedPackageNames(line, &qualifiedPackages);
-
-        const QString includePath = parseIncludePath(line);
-        if (!includePath.isEmpty()) {
-            const QString includeFile =
-                QDir(baseDir).absoluteFilePath(includePath);
-            const QList<SemanticSymbolRecord> includeRecords =
-                index->getSymbolRecords(includeFile);
-            for (const SemanticSymbolRecord& record : includeRecords) {
-                if (identifiers.contains(record.name)
-                    && !localNames.contains(record.name)) {
-                    appendUniqueUsageRecord(record, &result, &seen);
-                }
-            }
-        }
-
-        QString packageName;
-        QString symbolName;
-        bool importStar = false;
-        if (parseImportStatement(line,
-                                 &packageName,
-                                 &symbolName,
-                                 &importStar)) {
-            if (importStar)
-                starPackages.insert(packageName);
-            else
-                importedSymbolsByPackage[packageName].insert(symbolName);
-        }
     }
+    QSet<QString> visitedIncludeFiles;
+    collectVisibleImportsAndIncludes(index,
+                                     query.fileName,
+                                     query.documentText,
+                                     identifiers,
+                                     localNames,
+                                     &result,
+                                     &seen,
+                                     &starPackages,
+                                     &importedSymbolsByPackage,
+                                     &visitedIncludeFiles);
 
     const bool needsExternalScan =
         !starPackages.isEmpty()
@@ -704,6 +911,8 @@ QList<SemanticSymbolRecord> visibleUsageRecords(
         return result;
 
     const QList<SemanticSymbolRecord> allRecords = index->getSymbolRecords();
+    const QHash<QString, QSet<QString>> packageNamesByOwnerName =
+        packageNamesByOwnedTypeName(allRecords);
     for (const SemanticSymbolRecord& record : allRecords) {
         if (!identifiers.contains(record.name))
             continue;
@@ -719,21 +928,16 @@ QList<SemanticSymbolRecord> visibleUsageRecords(
             record.visibility == SymbolTaxonomy::SymbolVisibility::Global
             || record.owner.kind == SymbolTaxonomy::SymbolOwnerScope::Global
             || record.owner.name.isEmpty();
-        bool importedVisible = starPackages.contains(record.owner.name);
-        if (!importedVisible) {
-            const auto imported =
-                importedSymbolsByPackage.constFind(record.owner.name);
-            importedVisible = imported != importedSymbolsByPackage.constEnd()
-                && imported->contains(record.name);
-        }
-
-        bool qualifiedVisible = false;
-        if (qualifiedPackages.contains(record.owner.name)) {
-            qualifiedVisible = documentContainsQualifiedReference(
-                lines,
-                record.owner.name,
-                record.name);
-        }
+        const bool importedVisible =
+            packageImportMakesRecordVisible(record,
+                                            starPackages,
+                                            importedSymbolsByPackage,
+                                            packageNamesByOwnerName);
+        const bool qualifiedVisible =
+            packageQualificationMakesRecordVisible(record,
+                                                   lines,
+                                                   qualifiedPackages,
+                                                   packageNamesByOwnerName);
 
         if (globalVisible || importedVisible || qualifiedVisible)
             appendUniqueUsageRecord(record, &result, &seen);

@@ -7,6 +7,9 @@
 #include <QString>
 #include <QFileInfo>
 #include <QDir>
+#include <QDirIterator>
+#include <QTextBlock>
+#include <QTextDocument>
 #include <QPlainTextEdit>
 #include <QCompleter>
 #include <QTimer>
@@ -82,6 +85,20 @@ static bool safeRenamePlanHasEdit(const SafeRenamePlan& plan,
         }
     }
     return false;
+}
+
+static QString normalizedTestPath(const QString& fileName)
+{
+    return QDir::cleanPath(
+        QDir::fromNativeSeparators(QFileInfo(fileName).absoluteFilePath()));
+}
+
+static QString loadTestTextFile(const QString& fileName)
+{
+    QFile file(fileName);
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
+        return QString();
+    return QString::fromUtf8(file.readAll());
 }
 
 static void runSafeRenameServiceRegression()
@@ -179,10 +196,95 @@ static void runSafeRenameServiceRegression()
                true);
 }
 
+static void runRealWorkspaceEnumDecorationRegression()
+{
+    const QString workspaceRoot =
+        normalizedTestPath(QStringLiteral("test_sv/new"));
+    if (!QFileInfo(workspaceRoot).isDir()) {
+        expectBool("real enum decoration workspace exists", false, true);
+        return;
+    }
+
+    QStringList files;
+    QDirIterator it(workspaceRoot,
+                    QStringList{"*.sv", "*.svh", "*.v"},
+                    QDir::Files,
+                    QDirIterator::Subdirectories);
+    while (it.hasNext())
+        files.append(normalizedTestPath(it.next()));
+
+    ProjectModel project;
+    project.setWorkspaceRoot(workspaceRoot);
+    project.setScannedFiles(files);
+    const ProjectSnapshot snapshot = project.snapshot();
+
+    SlangManager slang;
+    QList<SemanticSymbolRecord> records =
+        slang.extractWorkspaceSymbolRecords(snapshot.systemVerilogFiles,
+                                            snapshot.includeDirs,
+                                            snapshot.defines);
+    QHash<QString, QString> fileContents;
+    for (const QString& fileName : files)
+        fileContents.insert(fileName, loadTestTextFile(fileName));
+
+    const QString enumUseFile = normalizedTestPath(
+        QDir(workspaceRoot).filePath(
+            QStringLiteral("elec_phy_import/elec/elec_inj.sv")));
+    const QString enumUseContent = fileContents.value(enumUseFile);
+
+    bool hasRealEnumRecord = false;
+    for (const SemanticSymbolRecord& record : records) {
+        if (record.name == QStringLiteral("E_NOISE_WGN")
+            && record.collectorKind
+                == SymbolTaxonomy::CollectorKind::EnumValue) {
+            hasRealEnumRecord = true;
+            break;
+        }
+    }
+    expectBool("real workspace has E_NOISE_WGN enum value record",
+               hasRealEnumRecord,
+               true);
+
+    const auto previousSnapshot = SemanticIndex::getInstance()->snapshot();
+    SemanticIndex::getInstance()->setSnapshot(
+        sharedSnapshotFromRecords(records,
+                                  {},
+                                  {},
+                                  fileContents));
+
+    SemanticDecorationQuery query;
+    query.fileName = enumUseFile;
+    query.documentText = enumUseContent;
+    const SemanticDecorationReport report =
+        SemanticDecorationService::getInstance()
+            ->decorationsForDocument(query);
+
+    bool hasEnumDecorationAtRealUse = false;
+    for (const SemanticDecoration& decoration : report.decorations) {
+        if (decoration.role != SemanticDecorationRole::EnumValue
+            || decoration.text != QStringLiteral("E_NOISE_WGN")) {
+            continue;
+        }
+        const QTextDocument document(enumUseContent);
+        const QTextBlock block =
+            document.findBlock(decoration.startPosition);
+        if (block.isValid() && block.blockNumber() == 1093) {
+            hasEnumDecorationAtRealUse = true;
+            break;
+        }
+    }
+    expectBool("real workspace decorates E_NOISE_WGN at elec_inj:1094",
+               hasEnumDecorationAtRealUse,
+               true);
+
+    SemanticIndex::getInstance()->setSnapshot(previousSnapshot);
+}
+
 int main(int argc, char** argv) {
     QApplication app(argc, argv);
 
     runSafeRenameServiceRegression();
+    runRealWorkspaceEnumDecorationRegression();
 
     QString path = (argc > 1) ? QString::fromLocal8Bit(argv[1])
                               : QStringLiteral("test_sv/test_symbols.sv");
@@ -639,6 +741,81 @@ int main(int argc, char** argv) {
                                          QStringLiteral("PKG_LOCAL")) >= 2
                    && packageUseDecorationCount(SemanticDecorationRole::EnumValue,
                                                 QStringLiteral("PKG_LOCAL")) == 0,
+               true);
+
+    const QString realLikeRoot =
+        QFileInfo(path).dir().filePath(QStringLiteral("new"));
+    const QString realLikePackageFile =
+        QDir(realLikeRoot).filePath(QStringLiteral("PKG_global.sv"));
+    const QString realLikeIncludeFile =
+        QDir(realLikeRoot).filePath(QStringLiteral("_svh.svh"));
+    const QString realLikeUseFile =
+        QDir(realLikeRoot).filePath(
+            QStringLiteral("elec_phy_import/elec/elec_inj.sv"));
+    const QString realLikePackageContent =
+        QStringLiteral("package gl_pkg;\n"
+                       "  typedef enum logic[2:0]{\n"
+                       "    E_NOISE_DIS,\n"
+                       "    E_NOISE_WGN,\n"
+                       "    E_NOISE_SAWT\n"
+                       "  } noise_type_e;\n"
+                       "endpackage\n");
+    const QString realLikeIncludeContent =
+        QStringLiteral("import gl_pkg::*;\n");
+    const QString realLikeUseContent =
+        QStringLiteral("`include \"_svh.svh\"\n"
+                       "module elec_inj;\n"
+                       "  assign wgn_addr = (elec_noise_type == E_NOISE_WGN) ? cnt : 19'd0;\n"
+                       "endmodule\n");
+    QList<SemanticSymbolRecord> realLikePackageRecords;
+    realLikePackageRecords.append(
+        SemanticFixtureRecordBuilder(QStringLiteral("gl_pkg"),
+                                     SymbolTaxonomy::DeclarationKind::Package)
+            .withFile(realLikePackageFile)
+            .withLine(1, 9)
+            .withCollectorKind(SymbolTaxonomy::CollectorKind::Package)
+            .record());
+    realLikePackageRecords.append(
+        SemanticFixtureRecordBuilder(QStringLiteral("E_NOISE_WGN"),
+                                     SymbolTaxonomy::DeclarationKind::Enum)
+            .withFile(realLikePackageFile)
+            .withLine(4, 5)
+            .withCollectorKind(SymbolTaxonomy::CollectorKind::EnumValue)
+            .inPackage(QStringLiteral("gl_pkg"))
+            .record());
+    SemanticIndex::getInstance()->updateSymbolRecordsForFile(
+        realLikePackageFile,
+        realLikePackageRecords,
+        realLikePackageContent);
+    SemanticIndex::getInstance()->updateSymbolRecordsForFile(
+        realLikeIncludeFile,
+        {},
+        realLikeIncludeContent);
+    SemanticIndex::getInstance()->updateSymbolRecordsForFile(
+        realLikeUseFile,
+        {SemanticFixtureRecordBuilder(QStringLiteral("elec_inj"),
+                                      SymbolTaxonomy::DeclarationKind::Module)
+             .withFile(realLikeUseFile)
+             .withRange(2, 8, 4, 10)
+             .withCollectorKind(SymbolTaxonomy::CollectorKind::Module)
+             .record()},
+        realLikeUseContent);
+
+    SemanticDecorationQuery realLikeUseQuery;
+    realLikeUseQuery.fileName = realLikeUseFile;
+    realLikeUseQuery.documentText = realLikeUseContent;
+    const SemanticDecorationReport realLikeUseReport =
+        SemanticDecorationService::getInstance()
+            ->decorationsForDocument(realLikeUseQuery);
+    int realLikeEnumUseCount = 0;
+    for (const SemanticDecoration& decoration : realLikeUseReport.decorations) {
+        if (decoration.role == SemanticDecorationRole::EnumValue
+            && decoration.text == QStringLiteral("E_NOISE_WGN")) {
+            ++realLikeEnumUseCount;
+        }
+    }
+    expectBool("SemanticDecoration follows include import package enum values",
+               realLikeEnumUseCount >= 1,
                true);
 
     MyCodeEditor diagnosticEditor;

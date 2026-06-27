@@ -228,7 +228,7 @@ bool EditorSourceNavigationUi::handleMouseDoubleClick(
     return false;
 }
 
-void EditorSourceNavigationUi::handleMouseMove(
+bool EditorSourceNavigationUi::handleMouseMove(
     MyCodeEditor* editor,
     QMouseEvent* event,
     EditorSemanticContextService* service,
@@ -238,16 +238,22 @@ void EditorSourceNavigationUi::handleMouseMove(
     lastMousePosition = event->pos();
     hasLastMousePosition = true;
 
+    if (consumeNextNavigationRelease
+        && event->buttons().testFlag(Qt::LeftButton)) {
+        event->accept();
+        return true;
+    }
+
     const bool isCtrlPressed =
         (event->modifiers() & Qt::ControlModifier);
 
     sourceHover.setCtrlPressed(isCtrlPressed);
     if (!isCtrlPressed) {
         if (popupPinnedBySelection && popupSelectionStillActive(editor))
-            return;
+            return false;
         if (hasActiveHover())
             clearHover(editor, selections);
-        return;
+        return false;
     }
 
     refreshHoverAt(
@@ -256,6 +262,7 @@ void EditorSourceNavigationUi::handleMouseMove(
         service,
         contextProvider,
         selections);
+    return false;
 }
 
 void EditorSourceNavigationUi::handleLeave(
