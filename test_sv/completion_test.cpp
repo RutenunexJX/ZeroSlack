@@ -9,6 +9,7 @@
 #include "completionsemanticquery.h"
 #include "completionservice.h"
 #include "codetemplateservice.h"
+#include "customabbreviationservice.h"
 #include "diagnosticsrefreshcontroller.h"
 #include "documentmodel.h"
 #include "editorsemanticcontextservice.h"
@@ -5053,6 +5054,105 @@ int main(int argc, char** argv) {
                           .insertText
                        == QStringLiteral("logic clk;"),
                true);
+
+    QTemporaryDir customAbbreviationSettingsDir;
+    expectBool("CustomAbbreviationService temp dir valid",
+               customAbbreviationSettingsDir.isValid(),
+               true);
+    const QString customAbbreviationSettingsFile =
+        QDir(customAbbreviationSettingsDir.path()).absoluteFilePath(
+            QStringLiteral("custom_abbreviations.ini"));
+    CustomAbbreviationService customAbbreviationService(
+        customAbbreviationSettingsFile);
+    CustomAbbreviationRecord logicAlias;
+    logicAlias.id = QStringLiteral("logic_alias");
+    logicAlias.abbreviation = QStringLiteral("lg");
+    logicAlias.commandToken = QStringLiteral(";l");
+    logicAlias.label = QStringLiteral("logic command");
+    logicAlias.description = QStringLiteral("semantic logic shortcut");
+    CustomAbbreviationRecord pipeAlias;
+    pipeAlias.id = QStringLiteral("pipe_template_alias");
+    pipeAlias.abbreviation = QStringLiteral("pt");
+    pipeAlias.commandToken = QStringLiteral(";;pipe");
+    pipeAlias.label = QStringLiteral("pipe template");
+    pipeAlias.description = QStringLiteral("template shortcut");
+
+    const CustomAbbreviationSaveReport abbreviationSaveReport =
+        customAbbreviationService.setRecords({logicAlias, pipeAlias});
+    expectBool("CustomAbbreviationService saves valid aliases",
+               abbreviationSaveReport.valid
+                   && abbreviationSaveReport.records.size() == 2,
+               true);
+    CustomAbbreviationService reloadedAbbreviations(
+        customAbbreviationSettingsFile);
+    const CustomAbbreviationResolution logicResolution =
+        reloadedAbbreviations.resolveForIntent(
+            QStringLiteral("LG"),
+            InlineCommandIntent::SemanticCompletion);
+    expectBool("CustomAbbreviationService resolves ;cmd alias",
+               logicResolution.matched
+                   && logicResolution.record.commandToken == QStringLiteral(";l")
+                   && logicResolution.intent
+                       == InlineCommandIntent::SemanticCompletion,
+               true);
+    const CustomAbbreviationResolution pipeResolution =
+        reloadedAbbreviations.resolveForIntent(
+            QStringLiteral("pt"),
+            InlineCommandIntent::CodeTemplate);
+    expectBool("CustomAbbreviationService resolves ;;cmd alias",
+               pipeResolution.matched
+                   && pipeResolution.record.commandToken
+                       == QStringLiteral(";;pipe")
+                   && pipeResolution.intent == InlineCommandIntent::CodeTemplate,
+               true);
+    expectBool("CustomAbbreviationService intent filter separates aliases",
+               !reloadedAbbreviations
+                    .resolveForIntent(QStringLiteral("pt"),
+                                      InlineCommandIntent::SemanticCompletion)
+                    .matched,
+               true);
+    const QList<CustomAbbreviationRecord> prefixMatches =
+        reloadedAbbreviations.matchingRecords(QStringLiteral("p"));
+    expectBool("CustomAbbreviationService prefix query",
+               prefixMatches.size() == 1
+                   && prefixMatches.first().commandToken
+                       == QStringLiteral(";;pipe"),
+               true);
+
+    CustomAbbreviationRecord invalidActionAlias = logicAlias;
+    invalidActionAlias.id = QStringLiteral("fold_action_alias");
+    invalidActionAlias.abbreviation = QStringLiteral("fd");
+    invalidActionAlias.commandToken = QStringLiteral(";:fd");
+    const CustomAbbreviationSaveReport invalidActionReport =
+        customAbbreviationService.setRecords({invalidActionAlias});
+    expectBool("CustomAbbreviationService rejects ;: namespace",
+               !invalidActionReport.valid
+                   && !invalidActionReport.failureReason.isEmpty()
+                   && reloadedAbbreviations.records().size() == 2,
+               true);
+    CustomAbbreviationRecord duplicateAlias = pipeAlias;
+    duplicateAlias.id = QStringLiteral("other_pipe_template_alias");
+    duplicateAlias.abbreviation = QStringLiteral("LG");
+    duplicateAlias.commandToken = QStringLiteral(";;m");
+    const CustomAbbreviationSaveReport duplicateAliasReport =
+        customAbbreviationService.validateRecords({logicAlias, duplicateAlias});
+    expectBool("CustomAbbreviationService rejects duplicate aliases",
+               !duplicateAliasReport.valid
+                   && duplicateAliasReport.failureReason.contains(
+                       QStringLiteral("unique"),
+                       Qt::CaseInsensitive),
+               true);
+    expectBool("CustomAbbreviationService leaves built-in ;cmd unchanged",
+               CompletionService::getInstance()
+                   ->matchCommandMode(QStringLiteral(";l "))
+                   .matched,
+               true);
+    expectEq("CustomAbbreviationService leaves built-in ;;cmd unchanged",
+             CodeTemplateService::getInstance()
+                 ->templateForCommand(QStringLiteral(";;l"),
+                                      QStringLiteral("clk"))
+                 .insertText,
+             QStringLiteral("logic clk;"));
 
     const CodeTemplateItem widthLogic =
         CodeTemplateService::getInstance()->templateForCommand(

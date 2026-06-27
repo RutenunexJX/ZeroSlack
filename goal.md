@@ -28,7 +28,7 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
 
 ## Current Goal State
 
-Current milestone: `G6.3 Custom Abbreviation Resolution`.
+Current milestone: `G6.4 Integrate User Templates With Slot Mode`.
 
 Status:
 
@@ -177,15 +177,30 @@ Status:
   `completion_test` and `gui_smoke_test` targets compile/link; Release
   `completion_test` passed directly with 680 checks and 0 failures; `ctest -R
   "^completion_test$"` passed. `gui_smoke_test` was not launched.
+- G6.3 Custom Abbreviation Resolution is complete:
+  `CustomAbbreviationService` now owns validation, persistence, reload, prefix
+  query, intent-scoped query, exact resolution, add/update, remove, and clear
+  operations for compact custom abbreviations. Records persist under
+  `QSettings` `customAbbreviations/items`, reject duplicate aliases, invalid
+  command tokens, command-surface marker aliases, and reserved `;:` action
+  tokens, and resolve only to existing `;cmd` semantic command tokens or
+  `;;cmd` template command tokens. Built-in `;cmd` / `;;cmd` behavior remains
+  unchanged; custom abbreviations are not COM Mode or Global Control commands.
+- Focused verification for G6.3: `git diff --check`; Release
+  `completion_test` and `gui_smoke_test` targets compile/link; `ctest -R
+  "^completion_test$"` passed. `gui_smoke_test` was not launched.
 
-Completion criteria for G6.3:
+Completion criteria for G6.4:
 
-- add service-owned custom abbreviation resolution for completion/template
-  commands
-- keep built-in command behavior compatible
-- keep UI widgets out of abbreviation storage/query policy
-- do not change COM Mode or Global Control namespaces
-- do not broaden Slot Mode coverage in this milestone
+- integrate service-owned user template query results into the `;;cmd`
+  template completion path
+- user template activation must preserve `CodeTemplateSlotList` and start Slot
+  Mode through the existing `EditorCompletionWorkflow` path
+- keep built-in template behavior and existing parameter/signal Slot Mode
+  behavior compatible
+- keep UI widgets out of user-template storage/query policy
+- do not change `;cmd`, COM Mode, Global Control, or custom abbreviation
+  namespaces
 - `readme.md`, `plan.md`, and `goal.md` are updated
 - appropriate focused verification passes
 - milestone commit is pushed

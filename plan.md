@@ -333,6 +333,8 @@ First milestones:
   (complete: `UserTemplateService` persists and queries validated user template
   records as `CodeTemplateItem`-compatible data)
 - M6.3 add custom abbreviation resolution
+  (complete: `CustomAbbreviationService` persists and resolves compact aliases
+  for existing `;cmd` and `;;cmd` tokens)
 - M6.4 integrate user templates with slot mode
 
 M6.1 audit status:
@@ -382,6 +384,35 @@ M6.2 implementation status:
   `gui_smoke_test` targets compile/link; Release `completion_test` passed
   directly with 680 checks and 0 failures; `ctest -R "^completion_test$"`
   passed. `gui_smoke_test` was not launched.
+
+M6.3 implementation constraints:
+
+- Custom abbreviation storage/query must stay in a service layer, not UI
+  widgets.
+- Custom abbreviations may resolve only to existing compact `;cmd` semantic
+  command tokens or `;;cmd` template command tokens.
+- `;:cmd`, COM Mode, and Global Control namespaces must remain unchanged.
+- Built-in command/template behavior and current Slot Mode activation must
+  remain compatible.
+
+M6.3 implementation status:
+
+- Complete: `CustomAbbreviationService` owns validation, persistence, reload,
+  prefix query, intent-scoped query, exact resolution, add/update, remove, and
+  clear operations for compact custom abbreviations.
+- Complete: custom abbreviations are stored under `QSettings`
+  `customAbbreviations/items`, with injectable ini-file storage for focused
+  tests.
+- Complete: records reject empty or non-compact abbreviations, command-surface
+  marker aliases, duplicate aliases, invalid command tokens, and reserved
+  `;:` action tokens.
+- Complete: resolution returns the target inline command intent and command
+  token without scanning workspaces, running Slang, or touching UI rendering.
+- Complete: built-in `;cmd` and `;;cmd` behavior remains unchanged; custom
+  abbreviations are not COM Mode or Global Control commands.
+- Verification: `git diff --check`; Release `completion_test` and
+  `gui_smoke_test` targets compile/link; `ctest -R "^completion_test$"` passed.
+  `gui_smoke_test` was not launched.
 
 ### 7. Fold / Fold Shelf
 

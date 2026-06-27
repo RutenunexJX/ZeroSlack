@@ -60,6 +60,7 @@ set(ZEROSLACK_CORE_SOURCES
     commodecoordinator.cpp
     commodeservice.cpp
     codetemplateservice.cpp
+    customabbreviationservice.cpp
     mainwindow.cpp
     modulebriefservice.cpp
     alternatecommandservice.cpp
@@ -251,6 +252,7 @@ set(ZEROSLACK_CORE_SOURCES
     commodecoordinator.h
     commodeservice.h
     codetemplateservice.h
+    customabbreviationservice.h
     mainwindow.h
     modulebriefservice.h
     alternatecommandservice.h
