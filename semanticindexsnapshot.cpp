@@ -147,11 +147,15 @@ void SemanticIndexSnapshot::rebuildSymbolIndexes()
 {
     m_symbolRecordIndexesByFile.clear();
     m_symbolRecordIndexesByName.clear();
+    m_symbolRecordIndexesByOwner.clear();
+    m_symbolRecordIndexesByDeclarationKind.clear();
     m_symbolRecordIndexByStableKey.clear();
     m_symbolRecordIndexByLocalHandle.clear();
 
     m_symbolRecordIndexesByFile.reserve(m_symbolRecords.size());
     m_symbolRecordIndexesByName.reserve(m_symbolRecords.size());
+    m_symbolRecordIndexesByOwner.reserve(m_symbolRecords.size());
+    m_symbolRecordIndexesByDeclarationKind.reserve(m_symbolRecords.size());
     m_symbolRecordIndexByStableKey.reserve(m_symbolRecords.size());
     m_symbolRecordIndexByLocalHandle.reserve(m_symbolRecords.size());
 
@@ -163,6 +167,10 @@ void SemanticIndexSnapshot::rebuildSymbolIndexes()
 
         if (!record.name.isEmpty())
             m_symbolRecordIndexesByName[record.name].append(i);
+
+        m_symbolRecordIndexesByOwner[record.owner.name].append(i);
+        m_symbolRecordIndexesByDeclarationKind[
+            static_cast<int>(record.declarationKind)].append(i);
 
         const QString stableKey = symbolStableKeyText(record.stableKey);
         if (!stableKey.isEmpty()
@@ -224,11 +232,20 @@ SemanticIndexSnapshot SemanticIndexSnapshot::withAdditionalRelationships(
         merged.append(rebound);
     }
 
-    return SemanticIndexSnapshot(FromRecordsTag{},
-                                 m_symbolRecords,
-                                 merged,
-                                 m_diagnostics,
-                                 m_fileContents);
+    SemanticIndexSnapshot next;
+    next.m_symbolRecords = m_symbolRecords;
+    next.m_symbolRecordIndexesByFile = m_symbolRecordIndexesByFile;
+    next.m_symbolRecordIndexesByName = m_symbolRecordIndexesByName;
+    next.m_symbolRecordIndexesByOwner = m_symbolRecordIndexesByOwner;
+    next.m_symbolRecordIndexesByDeclarationKind =
+        m_symbolRecordIndexesByDeclarationKind;
+    next.m_symbolRecordIndexByStableKey = m_symbolRecordIndexByStableKey;
+    next.m_symbolRecordIndexByLocalHandle = m_symbolRecordIndexByLocalHandle;
+    next.m_relationships = std::move(merged);
+    next.m_diagnostics = m_diagnostics;
+    next.m_fileContents = m_fileContents;
+    next.rebuildRelationshipIndexes();
+    return next;
 }
 
 SemanticIndexSnapshot SemanticIndexSnapshot::withReplacedDiagnostics(

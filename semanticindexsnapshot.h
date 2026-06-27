@@ -23,6 +23,10 @@ public:
         const QString& fileName = QString()) const;
     QList<SemanticSymbolRecord> getSymbolRecordsByName(
         const QString& name) const;
+    QList<SemanticSymbolRecord> getSymbolRecordsByOwner(
+        const QString& ownerName) const;
+    QList<SemanticSymbolRecord> getSymbolRecordsByDeclarationKind(
+        SymbolTaxonomy::DeclarationKind declarationKind) const;
     SemanticAnalysisBandReport analysisBandReport(
         const QString& fileName = QString()) const;
     SemanticSymbolRecord getSymbolRecordByStableKey(
@@ -60,6 +64,8 @@ private:
     QList<SemanticSymbolRecord> m_symbolRecords;
     QHash<QString, QList<int>> m_symbolRecordIndexesByFile;
     QHash<QString, QList<int>> m_symbolRecordIndexesByName;
+    QHash<QString, QList<int>> m_symbolRecordIndexesByOwner;
+    QHash<int, QList<int>> m_symbolRecordIndexesByDeclarationKind;
     QHash<QString, int> m_symbolRecordIndexByStableKey;
     QHash<int, int> m_symbolRecordIndexByLocalHandle;
     QList<SemanticRelationship> m_relationships;

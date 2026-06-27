@@ -87,8 +87,12 @@ QStringList SemanticIndex::getEnumValueCompletionNames(
 {
     QList<SemanticSymbolRecord> result;
     const QList<SemanticSymbolRecord> records =
-        completionContextRecordsByKind(getSymbolRecords(),
-                                       CompletionCommandKind::EnumValue);
+        completionContextRecordsByKind(
+            enumTypeName.isEmpty()
+                ? getSymbolRecordsByDeclarationKind(
+                    SymbolTaxonomy::DeclarationKind::Enum)
+                : getSymbolRecordsByOwner(enumTypeName),
+            CompletionCommandKind::EnumValue);
     for (const SemanticSymbolRecord& record : records) {
         if (!enumTypeName.isEmpty()
             && ownerNameForCompletionContextRecord(record) != enumTypeName)
@@ -117,7 +121,7 @@ QString SemanticIndex::enumTypeForVariable(
     }
 
     const QList<SemanticSymbolRecord> records =
-        completionContextRecordsByKind(getSymbolRecords(),
+        completionContextRecordsByKind(getSymbolRecordsByName(variableName),
                                        CompletionCommandKind::EnumVariable);
     for (const SemanticSymbolRecord& record : records) {
         if (record.name == variableName)
@@ -135,7 +139,7 @@ QStringList SemanticIndex::getModulePortCompletionNames(
         return {};
 
     bool moduleExists = false;
-    for (const SemanticSymbolRecord& record : getSymbolRecords()) {
+    for (const SemanticSymbolRecord& record : getSymbolRecordsByName(moduleTypeName)) {
         if (record.declarationKind != SymbolTaxonomy::DeclarationKind::Module)
             continue;
         if (record.name == moduleTypeName) {
@@ -166,13 +170,15 @@ QString SemanticIndex::getStructTypeForVariable(const QString& variableName,
     if (variableName.isEmpty())
         return QString();
 
+    const QList<SemanticSymbolRecord> variableCandidates =
+        getSymbolRecordsByName(variableName);
     QList<SemanticSymbolRecord> structVariables =
         completionContextRecordsByKind(
-            getSymbolRecords(),
+            variableCandidates,
             CompletionCommandKind::PackedStructVariable);
     structVariables.append(
         completionContextRecordsByKind(
-            getSymbolRecords(),
+            variableCandidates,
             CompletionCommandKind::UnpackedStructVariable));
 
     if (!moduleName.isEmpty()) {
@@ -204,8 +210,12 @@ QList<SemanticSymbolRecord> SemanticIndex::getStructMemberRecords(
 {
     QList<SemanticSymbolRecord> result;
     const QList<SemanticSymbolRecord> members =
-        completionContextRecordsByKind(getSymbolRecords(),
-                                       CompletionCommandKind::StructMember);
+        completionContextRecordsByKind(
+            structTypeName.isEmpty()
+                ? getSymbolRecordsByDeclarationKind(
+                    SymbolTaxonomy::DeclarationKind::StructMember)
+                : getSymbolRecordsByOwner(structTypeName),
+            CompletionCommandKind::StructMember);
     for (const SemanticSymbolRecord& record : members) {
         if (!structTypeName.isEmpty()
             && ownerNameForCompletionContextRecord(record) != structTypeName)

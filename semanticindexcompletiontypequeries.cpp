@@ -37,7 +37,14 @@ QList<SemanticSymbolRecord> SemanticIndex::getCommandCompletionSymbolRecords(
         && !completionCommandKindIsGlobalCommand(commandKind))
         return result;
 
-    const QList<SemanticSymbolRecord> records = getSymbolRecords();
+    const bool useGlobalScope = moduleName.isEmpty()
+        || completionCommandKindIsAlwaysGlobalCommand(commandKind);
+    const QList<SemanticSymbolRecord> records =
+        useGlobalScope
+            ? getSymbolRecordsByOwner(QString())
+            : (completionCommandKindIsPackageVisibleCommand(commandKind)
+                   ? getSymbolRecords()
+                   : getSymbolRecordsByOwner(moduleName));
     for (const SemanticSymbolRecord& record : records) {
         if (!commandCompletionScopeVisibleForRecord(
                 record,

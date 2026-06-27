@@ -7,6 +7,7 @@
 #include <QDir>
 #include <QFileInfo>
 #include <QSet>
+#include <algorithm>
 
 namespace {
 QString normalizedStoreFileName(const QString& fileName)
@@ -23,28 +24,55 @@ QString nativeContentHash(const QString& content)
 
 QString nativeSymbolRelevantHash(const QString& content)
 {
-    QString work = content;
-    int i = 0;
-    while (i < work.length()) {
-        int start = work.indexOf(QStringLiteral("/*"), i);
-        if (start < 0)
-            break;
-        int end = work.indexOf(QStringLiteral("*/"), start + 2);
-        if (end < 0)
-            end = work.length();
-        work.replace(start, end - start + 2, QStringLiteral(" "));
-        i = start + 1;
-    }
+    QString joined;
+    joined.reserve(content.size());
+    QString line;
+    line.reserve(256);
+    bool inBlockComment = false;
 
-    QStringList kept;
-    const QStringList lines = work.split(QLatin1Char('\n'));
-    for (const QString& line : lines) {
-        QString trimmed = line.trimmed();
+    auto flushLine = [&]() {
+        const QString trimmed = line.trimmed();
         if (trimmed.isEmpty() || trimmed.startsWith(QStringLiteral("//")))
+            return;
+        const QString collapsed = SvTokenUtils::collapseWhitespaceRuns(trimmed);
+        if (collapsed.isEmpty())
+            return;
+        if (!joined.isEmpty())
+            joined.append(QLatin1Char(' '));
+        joined.append(collapsed);
+    };
+
+    for (int i = 0; i < content.size(); ++i) {
+        const QChar ch = content.at(i);
+        if (inBlockComment) {
+            if (ch == QLatin1Char('*')
+                && i + 1 < content.size()
+                && content.at(i + 1) == QLatin1Char('/')) {
+                inBlockComment = false;
+                ++i;
+            } else if (ch == QLatin1Char('\n')) {
+                flushLine();
+                line.clear();
+            }
             continue;
-        kept.append(SvTokenUtils::collapseWhitespaceRuns(trimmed));
+        }
+
+        if (ch == QLatin1Char('/')
+            && i + 1 < content.size()
+            && content.at(i + 1) == QLatin1Char('*')) {
+            inBlockComment = true;
+            line.append(QLatin1Char(' '));
+            ++i;
+            continue;
+        }
+        if (ch == QLatin1Char('\n')) {
+            flushLine();
+            line.clear();
+            continue;
+        }
+        line.append(ch);
     }
-    const QString joined = kept.join(QLatin1Char(' ')).trimmed();
+    flushLine();
     return QString::number(qHash(joined));
 }
 
@@ -143,13 +171,32 @@ QStringList scopeSymbolNamesForRecords(
     return result;
 }
 
+void removeRecordsCoveredByNativeFiles(
+    QList<SemanticSymbolRecord>* records,
+    const QSet<QString>& nativeFiles)
+{
+    if (!records || nativeFiles.isEmpty())
+        return;
+    records->erase(
+        std::remove_if(records->begin(),
+                       records->end(),
+                       [&nativeFiles](const SemanticSymbolRecord& record) {
+                           const QString normalized =
+                               normalizedStoreFileName(record.location.fileName);
+                           return !normalized.isEmpty()
+                               && nativeFiles.contains(normalized);
+                       }),
+        records->end());
+}
+
 }
 
 void SemanticIndex::replaceNativeSymbolRecordsForFile(
     const QString& fileName,
     const QList<SemanticSymbolRecord>& records,
     const QString& content,
-    bool rebuildIndexes)
+    bool rebuildIndexes,
+    bool updateIndexesIncrementally)
 {
     const QString normalizedTarget = normalizedStoreFileName(fileName);
     if (normalizedTarget.isEmpty())
@@ -206,7 +253,10 @@ void SemanticIndex::replaceNativeSymbolRecordsForFile(
         record.stableKey.declarationKind = record.declarationKind;
         record.stableKey.ownerScope = record.owner.name;
         nextHandles.insert(record.localHandle);
+        const int recordIndex = m_nativeSymbolRecords.size();
         m_nativeSymbolRecords.append(record);
+        if (!rebuildIndexes && updateIndexesIncrementally)
+            appendNativeStoreIndexForRecord(recordIndex);
     }
     m_nativeRecordHandlesByAnalysisFile.insert(normalizedTarget, nextHandles);
 
@@ -220,21 +270,35 @@ void SemanticIndex::rebuildNativeStoreIndexes()
 {
     m_nativeRecordIndexesByFile.clear();
     m_nativeRecordIndexesByName.clear();
+    m_nativeRecordIndexesByOwner.clear();
+    m_nativeRecordIndexesByDeclarationKind.clear();
     m_nativeStableKeyIndexes.clear();
     for (int i = 0; i < m_nativeSymbolRecords.size(); ++i) {
-        const SemanticSymbolRecord& record = m_nativeSymbolRecords.at(i);
-        const QString normalized =
-            normalizedStoreFileName(record.location.fileName);
-        if (!normalized.isEmpty())
-            m_nativeRecordIndexesByFile[normalized].append(i);
-
-        if (!record.name.isEmpty())
-            m_nativeRecordIndexesByName[record.name].append(i);
-
-        const QString stableKeyText = symbolStableKeyText(record.stableKey);
-        if (!stableKeyText.isEmpty())
-            m_nativeStableKeyIndexes.insert(stableKeyText, i);
+        appendNativeStoreIndexForRecord(i);
     }
+}
+
+void SemanticIndex::appendNativeStoreIndexForRecord(int index)
+{
+    if (index < 0 || index >= m_nativeSymbolRecords.size())
+        return;
+
+    const SemanticSymbolRecord& record = m_nativeSymbolRecords.at(index);
+    const QString normalized =
+        normalizedStoreFileName(record.location.fileName);
+    if (!normalized.isEmpty())
+        m_nativeRecordIndexesByFile[normalized].append(index);
+
+    if (!record.name.isEmpty())
+        m_nativeRecordIndexesByName[record.name].append(index);
+
+    m_nativeRecordIndexesByOwner[record.owner.name].append(index);
+    m_nativeRecordIndexesByDeclarationKind[
+        static_cast<int>(record.declarationKind)].append(index);
+
+    const QString stableKeyText = symbolStableKeyText(record.stableKey);
+    if (!stableKeyText.isEmpty())
+        m_nativeStableKeyIndexes.insert(stableKeyText, index);
 }
 
 QList<SemanticSymbolRecord> SemanticIndex::nativeSymbolRecords(
@@ -262,6 +326,34 @@ QList<SemanticSymbolRecord> SemanticIndex::nativeSymbolRecordsByName(
 
     QList<SemanticSymbolRecord> records;
     const QList<int> indexes = m_nativeRecordIndexesByName.value(name);
+    records.reserve(indexes.size());
+    for (int index : indexes) {
+        if (index >= 0 && index < m_nativeSymbolRecords.size())
+            records.append(m_nativeSymbolRecords.at(index));
+    }
+    return records;
+}
+
+QList<SemanticSymbolRecord> SemanticIndex::nativeSymbolRecordsByOwner(
+    const QString& ownerName) const
+{
+    QList<SemanticSymbolRecord> records;
+    const QList<int> indexes = m_nativeRecordIndexesByOwner.value(ownerName);
+    records.reserve(indexes.size());
+    for (int index : indexes) {
+        if (index >= 0 && index < m_nativeSymbolRecords.size())
+            records.append(m_nativeSymbolRecords.at(index));
+    }
+    return records;
+}
+
+QList<SemanticSymbolRecord> SemanticIndex::nativeSymbolRecordsByDeclarationKind(
+    SymbolTaxonomy::DeclarationKind declarationKind) const
+{
+    QList<SemanticSymbolRecord> records;
+    const QList<int> indexes =
+        m_nativeRecordIndexesByDeclarationKind.value(
+            static_cast<int>(declarationKind));
     records.reserve(indexes.size());
     for (int index : indexes) {
         if (index >= 0 && index < m_nativeSymbolRecords.size())
@@ -420,14 +512,28 @@ void SemanticIndex::updateSymbolRecordsForFiles(
     if (updates.isEmpty())
         return;
 
+    bool requiresIndexRebuild = false;
+    for (const SemanticFileSymbolUpdate& update : updates) {
+        const QString normalizedTarget =
+            normalizedStoreFileName(update.fileName);
+        if (!normalizedTarget.isEmpty()
+            && (m_nativeCoveredFiles.contains(normalizedTarget)
+                || m_nativeRecordHandlesByAnalysisFile.contains(normalizedTarget))) {
+            requiresIndexRebuild = true;
+            break;
+        }
+    }
+
     for (const SemanticFileSymbolUpdate& update : updates) {
         replaceNativeSymbolRecordsForFile(update.fileName,
                                           update.symbolRecords,
                                           update.content,
-                                          false);
+                                          false,
+                                          !requiresIndexRebuild);
     }
 
-    rebuildNativeStoreIndexes();
+    if (requiresIndexRebuild)
+        rebuildNativeStoreIndexes();
 
     if (!buildRelationships || !m_relationshipEngine)
         return;
@@ -482,24 +588,46 @@ QList<SemanticSymbolRecord> SemanticIndex::getSymbolRecordsByName(
     if (m_snapshot) {
         records = recordsWithAnalysisBands(
             m_snapshot->getSymbolRecordsByName(name));
-        if (!m_nativeCoveredFiles.isEmpty()) {
-            records.erase(
-                std::remove_if(records.begin(),
-                               records.end(),
-                               [this](const SemanticSymbolRecord& record) {
-                                   const QString normalized =
-                                       normalizedStoreFileName(
-                                           record.location.fileName);
-                                   return !normalized.isEmpty()
-                                       && m_nativeCoveredFiles.contains(
-                                           normalized);
-                               }),
-                records.end());
-        }
+        removeRecordsCoveredByNativeFiles(&records, m_nativeCoveredFiles);
     }
 
     QList<SemanticSymbolRecord> nativeRecords =
         recordsWithAnalysisBands(nativeSymbolRecordsByName(name));
+    if (!nativeRecords.isEmpty())
+        records.append(nativeRecords);
+    return records;
+}
+
+QList<SemanticSymbolRecord> SemanticIndex::getSymbolRecordsByOwner(
+    const QString& ownerName) const
+{
+    QList<SemanticSymbolRecord> records;
+    if (m_snapshot) {
+        records = recordsWithAnalysisBands(
+            m_snapshot->getSymbolRecordsByOwner(ownerName));
+        removeRecordsCoveredByNativeFiles(&records, m_nativeCoveredFiles);
+    }
+
+    QList<SemanticSymbolRecord> nativeRecords =
+        recordsWithAnalysisBands(nativeSymbolRecordsByOwner(ownerName));
+    if (!nativeRecords.isEmpty())
+        records.append(nativeRecords);
+    return records;
+}
+
+QList<SemanticSymbolRecord> SemanticIndex::getSymbolRecordsByDeclarationKind(
+    SymbolTaxonomy::DeclarationKind declarationKind) const
+{
+    QList<SemanticSymbolRecord> records;
+    if (m_snapshot) {
+        records = recordsWithAnalysisBands(
+            m_snapshot->getSymbolRecordsByDeclarationKind(declarationKind));
+        removeRecordsCoveredByNativeFiles(&records, m_nativeCoveredFiles);
+    }
+
+    QList<SemanticSymbolRecord> nativeRecords =
+        recordsWithAnalysisBands(
+            nativeSymbolRecordsByDeclarationKind(declarationKind));
     if (!nativeRecords.isEmpty())
         records.append(nativeRecords);
     return records;

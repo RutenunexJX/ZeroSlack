@@ -302,6 +302,10 @@ public:
         const QString& fileName = QString()) const;
     QList<SemanticSymbolRecord> getSymbolRecordsByName(
         const QString& name) const;
+    QList<SemanticSymbolRecord> getSymbolRecordsByOwner(
+        const QString& ownerName) const;
+    QList<SemanticSymbolRecord> getSymbolRecordsByDeclarationKind(
+        SymbolTaxonomy::DeclarationKind declarationKind) const;
     QList<SemanticSymbolSearchResult> searchSymbols(
         const SemanticSymbolSearchQuery& query) const;
     QList<SemanticSymbolRecord> getModuleCompletionSymbolRecords(
@@ -403,6 +407,8 @@ private:
     QList<SemanticSymbolRecord> m_nativeSymbolRecords;
     QHash<QString, QList<int>> m_nativeRecordIndexesByFile;
     QHash<QString, QList<int>> m_nativeRecordIndexesByName;
+    QHash<QString, QList<int>> m_nativeRecordIndexesByOwner;
+    QHash<int, QList<int>> m_nativeRecordIndexesByDeclarationKind;
     QHash<QString, QString> m_nativeFileContents;
     QHash<QString, NativeFileState> m_nativeFileStates;
     QHash<QString, int> m_nativeStableKeyIndexes;
@@ -417,12 +423,18 @@ private:
         const QString& fileName,
         const QList<SemanticSymbolRecord>& records,
         const QString& content,
-        bool rebuildIndexes = true);
+        bool rebuildIndexes = true,
+        bool updateIndexesIncrementally = true);
     void rebuildNativeStoreIndexes();
+    void appendNativeStoreIndexForRecord(int index);
     QList<SemanticSymbolRecord> nativeSymbolRecords(
         const QString& fileName = QString()) const;
     QList<SemanticSymbolRecord> nativeSymbolRecordsByName(
         const QString& name) const;
+    QList<SemanticSymbolRecord> nativeSymbolRecordsByOwner(
+        const QString& ownerName) const;
+    QList<SemanticSymbolRecord> nativeSymbolRecordsByDeclarationKind(
+        SymbolTaxonomy::DeclarationKind declarationKind) const;
     SemanticSymbolRecord nativeSymbolRecordByStableKey(
         const SymbolStableKey& key) const;
     bool hasNativeFileCoverage(const QString& fileName) const;

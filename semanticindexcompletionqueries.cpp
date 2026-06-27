@@ -42,7 +42,8 @@ QList<SemanticSymbolRecord> SemanticIndex::getModuleCompletionSymbolRecords(
     if (moduleName.isEmpty())
         return {};
 
-    const QList<SemanticSymbolRecord> records = getSymbolRecords();
+    const QList<SemanticSymbolRecord> records =
+        getSymbolRecordsByOwner(moduleName);
     for (const SemanticSymbolRecord& record : records) {
         if (record.owner.name != moduleName
             || !SymbolTaxonomy::isInternalCompletionCandidate(
@@ -67,7 +68,8 @@ QList<SemanticSymbolRecord> SemanticIndex::getGlobalCompletionSymbolRecords(
 {
     QList<SemanticSymbolRecord> result;
     QSet<QString> seenNames;
-    const QList<SemanticSymbolRecord> records = getSymbolRecords();
+    const QList<SemanticSymbolRecord> records =
+        getSymbolRecordsByOwner(QString());
     for (const SemanticSymbolRecord& record : records) {
         if (!SymbolTaxonomy::isGlobalCompletionCandidate(
                 metadataForCompletionQueryRecord(record))

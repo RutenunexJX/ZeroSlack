@@ -136,10 +136,9 @@ QList<SemanticSymbolRecord> SemanticIndex::getModuleInternalSymbolRecordsByType(
     if (moduleName.isEmpty())
         return result;
 
-    const QList<SemanticSymbolRecord> allRecords = getSymbolRecords();
     SemanticSymbolRecord moduleRecord;
     bool foundModule = false;
-    for (const SemanticSymbolRecord& record : allRecords) {
+    for (const SemanticSymbolRecord& record : getSymbolRecordsByName(moduleName)) {
         if (record.declarationKind == SymbolTaxonomy::DeclarationKind::Module
             && record.name == moduleName) {
             moduleRecord = record;
@@ -192,7 +191,11 @@ QList<SemanticSymbolRecord> SemanticIndex::getModuleInternalSymbolRecordsByType(
         result.append(record);
     };
 
-    for (const SemanticSymbolRecord& record : allRecords) {
+    const QList<SemanticSymbolRecord> candidateRecords =
+        completionCommandKindIsModuleRange(commandKind) && foundModule
+            ? getSymbolRecords(moduleRecord.location.fileName)
+            : getSymbolRecordsByOwner(moduleName);
+    for (const SemanticSymbolRecord& record : candidateRecords) {
         bool correctModule = false;
         if (completionCommandKindIsModuleRange(commandKind)) {
             correctModule = foundModule
@@ -293,8 +296,11 @@ QList<SemanticSymbolRecord> SemanticIndex::getModuleContextSymbolRecordsByType(
         result.append(record);
     };
 
-    const QList<SemanticSymbolRecord> allRecords = getSymbolRecords();
-    for (const SemanticSymbolRecord& record : allRecords) {
+    const QList<SemanticSymbolRecord> candidateRecords =
+        completionCommandKindIsModuleRange(commandKind)
+            ? fileRecords
+            : getSymbolRecordsByOwner(moduleName);
+    for (const SemanticSymbolRecord& record : candidateRecords) {
         bool isCorrectModule = false;
         if (completionCommandKindIsModuleRange(commandKind)) {
             isCorrectModule = inModuleRange(record);
@@ -347,15 +353,18 @@ QList<SemanticSymbolRecord> SemanticIndex::getModuleContextSymbolRecordsByType(
             }
         }
 
-        for (const SemanticSymbolRecord& record : allRecords) {
-            bool imported = starPackages.contains(record.owner.name);
-            if (!imported) {
-                auto it = importedSymbolsByPackage.constFind(record.owner.name);
-                imported = it != importedSymbolsByPackage.constEnd()
-                    && it->contains(record.name);
+        if (!starPackages.isEmpty() || !importedSymbolsByPackage.isEmpty()) {
+            const QList<SemanticSymbolRecord> allRecords = getSymbolRecords();
+            for (const SemanticSymbolRecord& record : allRecords) {
+                bool imported = starPackages.contains(record.owner.name);
+                if (!imported) {
+                    auto it = importedSymbolsByPackage.constFind(record.owner.name);
+                    imported = it != importedSymbolsByPackage.constEnd()
+                        && it->contains(record.name);
+                }
+                if (imported)
+                    appendRecord(record);
             }
-            if (imported)
-                appendRecord(record);
         }
     }
 

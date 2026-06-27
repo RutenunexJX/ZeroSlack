@@ -142,7 +142,7 @@ int SemanticIndex::scopeScoreForSymbol(const QString& symbolName,
     if (symbolName.isEmpty() || moduleName.isEmpty())
         return 0;
 
-    const QList<SemanticSymbolRecord> records = getSymbolRecords();
+    const QList<SemanticSymbolRecord> records = getSymbolRecordsByName(symbolName);
     for (const SemanticSymbolRecord& record : records) {
         if (relationshipRecordDisplayName(record) == symbolName
             && record.owner.name == moduleName) {

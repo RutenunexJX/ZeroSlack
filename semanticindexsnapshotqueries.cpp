@@ -83,6 +83,34 @@ QList<SemanticSymbolRecord> SemanticIndexSnapshot::getSymbolRecordsByName(
     return result;
 }
 
+QList<SemanticSymbolRecord> SemanticIndexSnapshot::getSymbolRecordsByOwner(
+    const QString& ownerName) const
+{
+    QList<SemanticSymbolRecord> result;
+    const QList<int> indexes = m_symbolRecordIndexesByOwner.value(ownerName);
+    result.reserve(indexes.size());
+    for (int index : indexes) {
+        if (index >= 0 && index < m_symbolRecords.size())
+            result.append(m_symbolRecords.at(index));
+    }
+    return result;
+}
+
+QList<SemanticSymbolRecord> SemanticIndexSnapshot::getSymbolRecordsByDeclarationKind(
+    SymbolTaxonomy::DeclarationKind declarationKind) const
+{
+    QList<SemanticSymbolRecord> result;
+    const QList<int> indexes =
+        m_symbolRecordIndexesByDeclarationKind.value(
+            static_cast<int>(declarationKind));
+    result.reserve(indexes.size());
+    for (int index : indexes) {
+        if (index >= 0 && index < m_symbolRecords.size())
+            result.append(m_symbolRecords.at(index));
+    }
+    return result;
+}
+
 SemanticAnalysisBandReport SemanticIndexSnapshot::analysisBandReport(
     const QString& fileName) const
 {
