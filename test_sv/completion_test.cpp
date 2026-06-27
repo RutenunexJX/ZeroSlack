@@ -28,6 +28,8 @@
 #include "wavepreviewservice.h"
 #include "workspaceanalysisplanservice.h"
 #include "workspaceanalysisrequestqueue.h"
+#include "workspaceignoreservice.h"
+#include "workspacemanager.h"
 #include "workspacesymbolanalysiscontroller.h"
 #include <QApplication>
 #include <QColor>
@@ -44,6 +46,7 @@
 #include <QString>
 #include <QStringList>
 #include <QKeyEvent>
+#include <QSettings>
 #include <algorithm>
 #include <cstdio>
 #include <memory>
@@ -7050,6 +7053,207 @@ int main(int argc, char** argv) {
         out << text;
         return true;
     };
+
+    {
+        QTemporaryDir ignoreSettingsDir;
+        expectBool("Workspace ignore settings temp dir valid",
+                   ignoreSettingsDir.isValid(),
+                   true);
+        const QSettings::Format previousSettingsFormat =
+            QSettings::defaultFormat();
+        QSettings::setDefaultFormat(QSettings::IniFormat);
+        QSettings::setPath(QSettings::IniFormat,
+                           QSettings::UserScope,
+                           ignoreSettingsDir.path());
+
+        QTemporaryDir ignoreWorkspaceA;
+        QTemporaryDir ignoreWorkspaceB;
+        expectBool("Workspace ignore temp dir A valid",
+                   ignoreWorkspaceA.isValid(),
+                   true);
+        expectBool("Workspace ignore temp dir B valid",
+                   ignoreWorkspaceB.isValid(),
+                   true);
+
+        const QString rtlDir =
+            QDir(ignoreWorkspaceA.path()).absoluteFilePath(
+                QStringLiteral("rtl"));
+        const QString generatedDir =
+            QDir(ignoreWorkspaceA.path()).absoluteFilePath(
+                QStringLiteral("generated"));
+        expectBool("Workspace ignore child dirs created",
+                   QDir().mkpath(rtlDir) && QDir().mkpath(generatedDir),
+                   true);
+
+        const QString keepFile =
+            QDir(rtlDir).absoluteFilePath(QStringLiteral("keep_top.sv"));
+        const QString ignoredFile =
+            QDir(generatedDir).absoluteFilePath(
+                QStringLiteral("ignored_top.sv"));
+        const QString workspaceBFile =
+            QDir(ignoreWorkspaceB.path()).absoluteFilePath(
+                QStringLiteral("b_top.sv"));
+        expectBool("Workspace ignore keep file created",
+                   writeTextFile(
+                       keepFile,
+                       QStringLiteral("module keep_top; endmodule\n")),
+                   true);
+        expectBool("Workspace ignore generated file created",
+                   writeTextFile(
+                       ignoredFile,
+                       QStringLiteral("module ignored_top; endmodule\n")),
+                   true);
+        expectBool("Workspace ignore B file created",
+                   writeTextFile(
+                       workspaceBFile,
+                       QStringLiteral("module b_top; endmodule\n")),
+                   true);
+
+        auto normalizeTestPath = [](const QString& path) {
+            return QDir::cleanPath(
+                QDir::fromNativeSeparators(
+                    QFileInfo(path).absoluteFilePath()));
+        };
+        const QString normalizedGeneratedDir =
+            normalizeTestPath(generatedDir);
+        const QString normalizedKeepFile = normalizeTestPath(keepFile);
+        const QString normalizedIgnoredFile = normalizeTestPath(ignoredFile);
+        const QString normalizedWorkspaceBFile =
+            normalizeTestPath(workspaceBFile);
+
+        const WorkspaceIgnoreReport relativeIgnoreReport =
+            WorkspaceIgnoreService::getInstance()
+                ->normalizeIgnoredDirectories(
+                    WorkspaceIgnoreQuery{
+                        ignoreWorkspaceA.path(),
+                        {QStringLiteral("generated"), generatedDir}});
+        expectBool("Workspace ignore service normalizes and dedupes",
+                   relativeIgnoreReport.valid
+                       && relativeIgnoreReport.ignoredDirectories
+                              == QStringList{normalizedGeneratedDir},
+                   true);
+
+        const WorkspaceIgnoreReport outsideIgnoreReport =
+            WorkspaceIgnoreService::getInstance()
+                ->normalizeIgnoredDirectories(
+                    WorkspaceIgnoreQuery{
+                        ignoreWorkspaceA.path(),
+                        {QDir::tempPath()}});
+        expectBool("Workspace ignore service rejects outside path",
+                   !outsideIgnoreReport.valid
+                       && !outsideIgnoreReport.failureReason.isEmpty(),
+                   true);
+
+        const WorkspaceIgnoreReport rootIgnoreReport =
+            WorkspaceIgnoreService::getInstance()
+                ->normalizeIgnoredDirectories(
+                    WorkspaceIgnoreQuery{
+                        ignoreWorkspaceA.path(),
+                        {ignoreWorkspaceA.path()}});
+        expectBool("Workspace ignore service rejects workspace root",
+                   !rootIgnoreReport.valid
+                       && !rootIgnoreReport.failureReason.isEmpty(),
+                   true);
+
+        WorkspaceManager ignoreWorkspaceManager;
+        expectBool("Workspace ignore open workspace A",
+                   ignoreWorkspaceManager.openWorkspace(
+                       ignoreWorkspaceA.path()),
+                   true);
+        expectBool("Workspace ignore scan workspace A",
+                   waitForEventPredicate(
+                       [&]() {
+                           const QStringList svFiles =
+                               ignoreWorkspaceManager.getSystemVerilogFiles();
+                           return ignoreWorkspaceManager.workspaceEntries().size()
+                                      == 1
+                               && ignoreWorkspaceManager.workspaceEntries()
+                                      .first()
+                                      .scanComplete
+                               && svFiles.contains(normalizedKeepFile)
+                               && svFiles.contains(normalizedIgnoredFile);
+                       },
+                       3000),
+                   true);
+
+        QString ignoreError;
+        expectBool("Workspace ignore manager applies generated dir",
+                   ignoreWorkspaceManager.setIgnoredDirectories(
+                       {generatedDir},
+                       &ignoreError),
+                   true);
+        expectList("Workspace ignore manager stores normalized dir",
+                   ignoreWorkspaceManager.ignoredDirectories(),
+                   {normalizedGeneratedDir});
+        expectBool("Workspace ignore manager hides generated file",
+                   ignoreWorkspaceManager.getSystemVerilogFiles().contains(
+                       normalizedKeepFile)
+                       && !ignoreWorkspaceManager.getSystemVerilogFiles()
+                               .contains(normalizedIgnoredFile),
+                   true);
+
+        const QStringList rejectedBaseline =
+            ignoreWorkspaceManager.ignoredDirectories();
+        expectBool("Workspace ignore manager rejects outside dir",
+                   !ignoreWorkspaceManager.setIgnoredDirectories(
+                       {QDir::tempPath()},
+                       &ignoreError)
+                       && !ignoreError.isEmpty(),
+                   true);
+        expectList("Workspace ignore reject preserves dirs",
+                   ignoreWorkspaceManager.ignoredDirectories(),
+                   rejectedBaseline);
+
+        expectBool("Workspace ignore open workspace B",
+                   ignoreWorkspaceManager.openWorkspace(
+                       ignoreWorkspaceB.path()),
+                   true);
+        expectBool("Workspace ignore scan workspace B",
+                   waitForEventPredicate(
+                       [&]() {
+                           return ignoreWorkspaceManager.activeWorkspaceIndex()
+                                      == 1
+                               && ignoreWorkspaceManager.workspaceEntries().size()
+                                      == 2
+                               && ignoreWorkspaceManager.workspaceEntries()
+                                      .at(1)
+                                      .scanComplete
+                               && ignoreWorkspaceManager.getSystemVerilogFiles()
+                                      .contains(normalizedWorkspaceBFile);
+                       },
+                       3000),
+                   true);
+        expectBool("Workspace ignore switch back to A",
+                   ignoreWorkspaceManager.switchWorkspace(0),
+                   true);
+        expectList("Workspace ignore cached switch restores dirs",
+                   ignoreWorkspaceManager.ignoredDirectories(),
+                   {normalizedGeneratedDir});
+        expectBool("Workspace ignore cached switch filters files",
+                   ignoreWorkspaceManager.getSystemVerilogFiles().contains(
+                       normalizedKeepFile)
+                       && !ignoreWorkspaceManager.getSystemVerilogFiles()
+                               .contains(normalizedIgnoredFile),
+                   true);
+
+        expectBool("Workspace ignore clear succeeds",
+                   ignoreWorkspaceManager.setIgnoredDirectories(
+                       QStringList(),
+                       &ignoreError),
+                   true);
+        expectList("Workspace ignore clear resets dirs",
+                   ignoreWorkspaceManager.ignoredDirectories(),
+                   QStringList());
+        expectBool("Workspace ignore clear restores hidden file",
+                   ignoreWorkspaceManager.getSystemVerilogFiles().contains(
+                       normalizedKeepFile)
+                       && ignoreWorkspaceManager.getSystemVerilogFiles()
+                              .contains(normalizedIgnoredFile),
+                   true);
+
+        QSettings::setDefaultFormat(previousSettingsFormat);
+    }
+
     expectBool("Workspace staged current file created",
                writeTextFile(
                    stagedCurrentFile,

@@ -21,6 +21,7 @@ public:
         QString alias;
         QString path;
         QStringList scannedFiles;
+        QStringList ignoredDirectories;
         bool scanComplete = false;
     };
 
@@ -40,6 +41,9 @@ public:
     QList<WorkspaceEntry> workspaceEntries() const;
     QList<WorkspaceEntry> recentWorkspaceEntries() const;
     int activeWorkspaceIndex() const;
+    QStringList ignoredDirectories() const;
+    bool setIgnoredDirectories(const QStringList& directories,
+                               QString* errorMessage = nullptr);
     ProjectModel* getProjectModel() const;
     ProjectSnapshot projectSnapshot() const;
     bool switchWorkspace(int index);

@@ -258,6 +258,8 @@ First milestones:
   Global Control `ow` behavior, hidden `ow r` compatibility, and ignored-path
   baseline are documented)
 - M5.2 add ignored-directory model/service path
+  (complete: `WorkspaceIgnoreService` and `WorkspaceManager` now provide the
+  workspace-owned path for active ignored directories)
 - M5.3 restore `ow r` as a displayed Global Control child command
 
 M5.1 audit status:
@@ -275,6 +277,25 @@ M5.1 audit status:
 - Complete: `ProjectModel` already filters `ignoredPaths`, but no workspace
   workflow/service path sets ignored directories yet.
 - Verification: documentation inspection plus `git diff --check`.
+
+M5.2 implementation status:
+
+- Complete: `WorkspaceIgnoreService` validates ignored-directory requests for a
+  workspace, normalizes relative/absolute paths, deduplicates them, and rejects
+  the workspace root, outside paths, and existing non-directory paths.
+- Complete: `WorkspaceManager::setIgnoredDirectories()` applies the normalized
+  ignored directories through `ProjectModel::setIgnoredPaths()`, refreshes
+  current file lists from the model, updates file watching, and emits existing
+  workspace/file-list signals.
+- Complete: each open `WorkspaceEntry` stores its ignored directories; cached
+  workspace restore reapplies raw scanned files before ignored paths, so hidden
+  files reappear after clearing ignores.
+- Not done in M5.2: ignored-directory UI, `ow r`, session restore, include
+  dirs/defines UI, recent files, or broader workspace workflow changes.
+- Verification: `git diff --check`; Release `completion_test` and
+  `gui_smoke_test` targets compile/link; Release `completion_test` passed
+  directly with 669 checks and 0 failures; `ctest -R "^completion_test$"`
+  passed.
 
 ### 6. Completion / `;cmd` / `;;cmd`
 

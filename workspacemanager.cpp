@@ -1,5 +1,6 @@
 #include "workspacemanager.h"
 #include "activitylogservice.h"
+#include "workspaceignoreservice.h"
 #include <QFileDialog>
 #include <QDir>
 #include <QDirIterator>
@@ -361,6 +362,52 @@ int WorkspaceManager::activeWorkspaceIndex() const
     return activeIndex;
 }
 
+QStringList WorkspaceManager::ignoredDirectories() const
+{
+    return projectModel ? projectModel->ignoredPaths() : QStringList();
+}
+
+bool WorkspaceManager::setIgnoredDirectories(const QStringList& directories,
+                                             QString* errorMessage)
+{
+    if (errorMessage)
+        errorMessage->clear();
+
+    const WorkspaceIgnoreReport report =
+        WorkspaceIgnoreService::getInstance()->normalizeIgnoredDirectories(
+            WorkspaceIgnoreQuery{workspacePath, directories});
+    if (!report.valid) {
+        if (errorMessage)
+            *errorMessage = report.failureReason;
+        return false;
+    }
+
+    if (!projectModel)
+        return false;
+
+    projectModel->setIgnoredPaths(report.ignoredDirectories);
+    files.allFiles = projectModel->allFiles();
+    files.systemVerilogFiles = projectModel->systemVerilogFiles();
+
+    if (activeIndex >= 0 && activeIndex < workspaces.size()
+        && workspaces.at(activeIndex).path == workspacePath) {
+        workspaces[activeIndex].ignoredDirectories = report.ignoredDirectories;
+    }
+
+    updateFileWatcher();
+    emit filesScanned(files.systemVerilogFiles);
+    emit workspaceListChanged();
+    ActivityLogService::getInstance()->append(
+        QStringLiteral("Workspace"),
+        ActivityLogLevel::Info,
+        QStringLiteral("Ignored %1 workspace director%2")
+            .arg(report.ignoredDirectories.size())
+            .arg(report.ignoredDirectories.size() == 1
+                     ? QStringLiteral("y")
+                     : QStringLiteral("ies")));
+    return true;
+}
+
 ProjectModel* WorkspaceManager::getProjectModel() const
 {
     return projectModel.get();
@@ -523,7 +570,9 @@ void WorkspaceManager::finishDirectoryScan()
     files.setScannedFiles(projectModel.get(), pendingScannedFiles);
     if (activeIndex >= 0 && activeIndex < workspaces.size()
         && workspaces.at(activeIndex).path == finishedPath) {
-        workspaces[activeIndex].scannedFiles = files.allFiles;
+        workspaces[activeIndex].scannedFiles = pendingScannedFiles;
+        workspaces[activeIndex].ignoredDirectories =
+            projectModel ? projectModel->ignoredPaths() : QStringList();
         workspaces[activeIndex].scanComplete = true;
     }
     pendingScannedFiles.clear();
@@ -566,6 +615,7 @@ bool WorkspaceManager::restoreWorkspaceFilesFromEntry(int index)
 
     const WorkspaceEntry entry = workspaces.at(index);
     projectModel->setWorkspaceState(entry.path, entry.scannedFiles);
+    projectModel->setIgnoredPaths(entry.ignoredDirectories);
     files.allFiles = projectModel->allFiles();
     files.systemVerilogFiles = projectModel->systemVerilogFiles();
     return true;
@@ -591,8 +641,11 @@ bool WorkspaceManager::activateWorkspacePath(const QString& path,
         restoreWorkspaceFilesFromEntry(index);
     } else {
         files.clear();
-        if (projectModel)
+        if (projectModel) {
             projectModel->setWorkspaceState(normalizedPath, {});
+            if (index >= 0 && index < workspaces.size())
+                projectModel->setIgnoredPaths(workspaces.at(index).ignoredDirectories);
+        }
     }
 
     workspacePath = projectModel ? projectModel->workspaceRoot() : normalizedPath;

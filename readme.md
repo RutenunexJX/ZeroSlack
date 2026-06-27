@@ -117,8 +117,17 @@ and restoring Global Control `ow r` for recent workspaces.
   has an internal `ow r` action handler and recent-workspaces dialog, and tests
   cover that hidden compatibility path.
 - `ProjectModel` already has `ignoredPaths` and filters raw scanned files
-  through `setIgnoredPaths()`. The missing long-term piece is a workspace-owned
-  service/model path for setting ignored directories without broad workspace UX.
+  through `setIgnoredPaths()`.
+- `WorkspaceIgnoreService` normalizes and validates ignored-directory requests
+  for the active workspace. It rejects the workspace root, paths outside the
+  workspace, and existing non-directory paths while allowing not-yet-created
+  directories under the workspace.
+- `WorkspaceManager::setIgnoredDirectories()` applies ignored directories to
+  the active `ProjectModel`, updates current file lists from the model, and
+  stores ignored-directory state per open `WorkspaceEntry`. Switching back to a
+  cached workspace restores raw scanned files first, then reapplies its ignored
+  directories so clearing ignores can reveal previously hidden files. No broad
+  ignored-directory UI exists yet.
 
 ## Current Architecture
 
@@ -151,6 +160,9 @@ and restoring Global Control `ow r` for recent workspaces.
   `WorkspaceSymbolAnalysisController`, `RelationshipAnalysisController`, and
   `AnalysisProgressCoordinator` own Huge Workspace planning, request lifecycle,
   staged publication, cancellation, and visibility.
+- `WorkspaceIgnoreService` owns ignored-directory request validation and
+  normalization. `WorkspaceManager` is the workspace-level model entry point;
+  UI should call it rather than mutating `ProjectModel::ignoredPaths` directly.
 
 ## Slot Mode Contract
 

@@ -233,6 +233,7 @@ set(ZEROSLACK_CORE_SOURCES
     tabtitlecontroller.cpp
     workspacemanager.cpp
     workspaceanalysisplanservice.cpp
+    workspaceignoreservice.cpp
     workspaceanalysisrequestqueue.cpp
     workspacesymbolanalysiscontroller.cpp
     workspacesymbolanalysiscontrollerlifecycle.cpp
@@ -377,6 +378,7 @@ set(ZEROSLACK_CORE_SOURCES
     tabtitlecontroller.h
     workspacemanager.h
     workspaceanalysisplanservice.h
+    workspaceignoreservice.h
     workspaceanalysisrequestqueue.h
     workspacesymbolanalysiscontroller.h
 
