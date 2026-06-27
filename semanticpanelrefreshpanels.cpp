@@ -143,6 +143,17 @@ void SemanticPanelRefreshCoordinator::PanelSet::showSignalKernelGraphForSymbol(
                                                                signalAccessPath);
 }
 
+void SemanticPanelRefreshCoordinator::PanelSet::showStateTransitionGraphForSymbol(
+    const QString& symbolName,
+    const QString& fileName,
+    const QString& moduleName) const
+{
+    if (rtlInsightsPanel)
+        rtlInsightsPanel->showStateTransitionGraphForSignal(fileName,
+                                                            moduleName,
+                                                            symbolName);
+}
+
 void SemanticPanelRefreshCoordinator::PanelSet::updateRtlInsightsPanel(
     const QString& fileName,
     const QString& moduleName,

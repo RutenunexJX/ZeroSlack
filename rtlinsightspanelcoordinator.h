@@ -25,6 +25,9 @@ public:
     void showModuleInsights(const QString& fileName,
                             const QString& moduleName,
                             const QString& signalName = QString());
+    void showStateTransitionGraphForSignal(const QString& fileName,
+                                           const QString& moduleName,
+                                           const QString& signalName);
     void showSemanticDiff(std::shared_ptr<const SemanticIndexSnapshot> beforeSnapshot,
                           std::shared_ptr<const SemanticIndexSnapshot> afterSnapshot,
                           const QString& moduleName = QString(),

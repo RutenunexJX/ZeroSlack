@@ -48,6 +48,8 @@ QString sourceSymbolActionText(SourceSymbolAction action)
         return QStringLiteral("Show Relationships");
     case SourceSymbolAction::ShowSignalKernelGraph:
         return QStringLiteral("Show Signal Kernel Graph");
+    case SourceSymbolAction::ShowStateTransitionGraph:
+        return QStringLiteral("Show State Transition Graph");
     }
     return QString();
 }
@@ -527,6 +529,18 @@ void EditorCoordinator::WorkflowDependencies::showSignalKernelGraphForSymbol(
     }
 }
 
+void EditorCoordinator::WorkflowDependencies::showStateTransitionGraphForSymbol(
+    const QString& symbolName,
+    const QString& fileName,
+    const QString& moduleName) const
+{
+    if (semanticPanelRefresh) {
+        semanticPanelRefresh->showStateTransitionGraphForSymbol(symbolName,
+                                                                fileName,
+                                                                moduleName);
+    }
+}
+
 void EditorCoordinator::WorkflowDependencies::handleActiveEditorChanged(
     MyCodeEditor* editor) const
 {
@@ -997,6 +1011,12 @@ void EditorCoordinator::handleSourceSymbolActionRequested(
             requestState.fileName,
             requestState.moduleName,
             requestState.signalAccessPath);
+        break;
+    case SourceSymbolAction::ShowStateTransitionGraph:
+        dependencies.showStateTransitionGraphForSymbol(
+            requestState.symbolName,
+            requestState.fileName,
+            requestState.moduleName);
         break;
     }
 }

@@ -28,7 +28,7 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
 
 ## Current Goal State
 
-Current milestone: `G10.1 State Transition Trigger Gating For ns/next_state`.
+Current milestone: `G10.2 State Transition Service-Owned Report`.
 
 Status:
 
@@ -331,16 +331,30 @@ Status:
   compile/link; `ctest -R "^completion_test$"` and `ctest -R
   "^relationship_test$"` passed. `gui_smoke_test` was not launched.
 
-Completion criteria for G10.1:
+- G10.1 State Transition Trigger Gating For ns/next_state is complete:
+  `StateTransitionTriggerService` owns the first exact-name trigger policy for
+  editor source-symbol actions. `EditorSourceNavigationQuery` enables and
+  dispatches `Show State Transition Graph` only for selected `ns` and
+  `next_state`; selected `cs`, selected `current_state`, ordinary symbols, and
+  missing module context do not dispatch. Accepted requests route through
+  `EditorCoordinator` and `SemanticPanelRefreshCoordinator` to the existing RTL
+  Insights FSM graph path. No new transition extraction, report shaping, graph
+  rendering, workspace scan, or UI-side Slang work was added.
+- Focused verification for G10.1: `git diff --check`; Release
+  `completion_test`, `relationship_test`, and `gui_smoke_test` targets
+  compile/link; `ctest -R "^completion_test$"` and `ctest -R
+  "^relationship_test$"` passed. `gui_smoke_test` was not launched.
 
-- add trigger gating for the State Transition Graph entry point
-- selected identifier `ns` triggers
-- selected identifier `next_state` triggers
-- selected identifier `cs` does not trigger
-- selected identifier `current_state` does not trigger
-- do not add transition extraction/report rendering beyond the gating milestone
-- keep state-transition policy in a service/report path, not direct UI semantic
-  scanning
+Completion criteria for G10.2:
+
+- add service-owned State Transition Graph report shaping for accepted
+  next-state trigger requests
+- preserve G10.1 gating: only selected `ns` and `next_state` can request the
+  graph entry
+- keep extraction/report logic out of UI code; UI must consume report data only
+- use existing semantic/index or Tree-sitter service capabilities, not UI
+  workspace scans or UI-side Slang execution
+- do not add broad graph UI rendering beyond the report milestone
 - `readme.md`, `plan.md`, and `goal.md` are updated
 - appropriate focused verification passes
 - milestone commit is pushed
@@ -540,6 +554,7 @@ Rules:
 Milestones:
 
 - G10.1 Trigger gating and tests for allowed/disallowed names.
+  (complete: service-owned exact-name gate plus editor source-symbol action)
 - G10.2 Service-owned transition extraction/report.
 - G10.3 Graph UI rendering and navigation evidence.
 

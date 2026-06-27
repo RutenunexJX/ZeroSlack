@@ -809,8 +809,34 @@ Allowed scope:
 First milestones:
 
 - M10.1 trigger gating test for `ns` / `next_state` only
+  (complete: editor source-symbol action exposes State Transition Graph only
+  for selected `ns` / `next_state`, and rejects selected `cs` /
+  `current_state`)
 - M10.2 transition report service
 - M10.3 graph UI rendering and navigation evidence
+
+M10.1 implementation constraints:
+
+- Do not add new state-transition extraction, report shaping, or graph
+  rendering.
+- Keep the trigger policy in a service path, not in direct UI checks.
+- Preserve existing RTL Insights FSM graph behavior and use it only after the
+  trigger gate accepts the selected symbol.
+
+M10.1 implementation status:
+
+- Complete: `StateTransitionTriggerService` owns the first exact-name gate for
+  selected source symbols.
+- Complete: editor source-symbol menu/request state enables `Show State
+  Transition Graph` only for selected `ns` and `next_state`.
+- Complete: selected `cs`, selected `current_state`, ordinary symbols, and
+  missing module context do not dispatch the state-transition action.
+- Complete: accepted requests route through `EditorCoordinator` and
+  `SemanticPanelRefreshCoordinator` to the existing RTL Insights FSM graph path.
+- Verification: `git diff --check`; Release `completion_test`,
+  `relationship_test`, and `gui_smoke_test` targets compile/link; `ctest -R
+  "^completion_test$"` and `ctest -R "^relationship_test$"` passed.
+  `gui_smoke_test` was not launched.
 
 ### 11. Module Block Diagram
 

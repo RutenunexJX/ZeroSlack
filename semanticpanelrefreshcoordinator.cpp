@@ -172,6 +172,14 @@ void SemanticPanelRefreshCoordinator::showSignalKernelGraphForSymbol(
                                           signalAccessPath);
 }
 
+void SemanticPanelRefreshCoordinator::showStateTransitionGraphForSymbol(
+    const QString& symbolName,
+    const QString& fileName,
+    const QString& moduleName)
+{
+    panels.showStateTransitionGraphForSymbol(symbolName, fileName, moduleName);
+}
+
 void SemanticPanelRefreshCoordinator::handleActiveEditorChanged(MyCodeEditor* editor)
 {
     dependencies.handleActiveEditorChanged(editor);

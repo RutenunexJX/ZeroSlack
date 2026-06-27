@@ -1,6 +1,21 @@
 #include "editorsourcenavigationquery.h"
 
+#include "statetransitiontriggerservice.h"
+
 #include <Qt>
+
+namespace {
+StateTransitionTriggerReport stateTransitionTriggerForContext(
+    const SourceSymbolActionContext& actionContext)
+{
+    StateTransitionTriggerQuery query;
+    query.symbolName = actionContext.symbolName;
+    query.fileName = actionContext.fileName;
+    query.moduleName = actionContext.moduleName;
+    return StateTransitionTriggerService::getInstance()
+        ->triggerForSymbol(query);
+}
+}
 
 SourceSymbolActionContext EditorSourceNavigationQuery::sourceSymbolActionContext(
     const EditorSemanticContext& context)
@@ -61,6 +76,11 @@ EditorSourceNavigationQuery::sourceSymbolContextMenuState(
         SourceSymbolAction::ShowSignalKernelGraph,
         actionContext.available
     });
+    state.items.append({
+        SourceSymbolAction::ShowStateTransitionGraph,
+        actionContext.available
+            && stateTransitionTriggerForContext(actionContext).available
+    });
     return state;
 }
 
@@ -76,6 +96,11 @@ EditorSourceNavigationQuery::sourceSymbolActionRequestState(
     state.action = action;
     if (!actionContext.available)
         return state;
+
+    if (action == SourceSymbolAction::ShowStateTransitionGraph
+        && !stateTransitionTriggerForContext(actionContext).available) {
+        return state;
+    }
 
     state.available = true;
     state.symbolName = actionContext.symbolName;

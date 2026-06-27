@@ -47,6 +47,9 @@ public:
                                         const QString& fileName,
                                         const QString& moduleName,
                                         const QString& signalAccessPath = {});
+    void showStateTransitionGraphForSymbol(const QString& symbolName,
+                                           const QString& fileName,
+                                           const QString& moduleName);
     void handleActiveEditorChanged(MyCodeEditor* editor);
 
 private:
@@ -124,6 +127,9 @@ private:
                                             const QString& fileName,
                                             const QString& moduleName,
                                             const QString& signalAccessPath = {}) const;
+        void showStateTransitionGraphForSymbol(const QString& symbolName,
+                                               const QString& fileName,
+                                               const QString& moduleName) const;
         void updateRtlInsightsPanel(const QString& fileName,
                                     const QString& moduleName,
                                     const QString& signalName) const;

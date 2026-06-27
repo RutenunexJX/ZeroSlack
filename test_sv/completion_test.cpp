@@ -28,6 +28,7 @@
 #include "semanticindexsnapshot.h"
 #include "smartrelationshipbuilder.h"
 #include "signalkernelgraphpanelcoordinator.h"
+#include "statetransitiontriggerservice.h"
 #include "symbolanalyzer.h"
 #include "symboltaxonomy.h"
 #include "tsdocument.h"
@@ -6785,7 +6786,7 @@ int main(int argc, char** argv) {
         EditorSemanticContextService::getInstance()
             ->sourceSymbolContextMenuState(sourceSymbolContext);
     expectBool("EditorSemanticContext source menu enabled",
-               sourceMenuState.items.size() == 3
+               sourceMenuState.items.size() == 4
                    && sourceMenuState.items.at(0).enabled
                    && sourceMenuState.items.at(0).action
                        == SourceSymbolAction::FindReferences
@@ -6794,7 +6795,10 @@ int main(int argc, char** argv) {
                        == SourceSymbolAction::ShowRelationships
                    && sourceMenuState.items.at(2).enabled
                    && sourceMenuState.items.at(2).action
-                       == SourceSymbolAction::ShowSignalKernelGraph,
+                       == SourceSymbolAction::ShowSignalKernelGraph
+                   && !sourceMenuState.items.at(3).enabled
+                   && sourceMenuState.items.at(3).action
+                       == SourceSymbolAction::ShowStateTransitionGraph,
                true);
     const EditorSourceSymbolActionRequestState sourceRefsRequest =
         EditorSemanticContextService::getInstance()
@@ -6834,6 +6838,108 @@ int main(int argc, char** argv) {
                    && sourceKernelGraphRequest.moduleName
                        == QStringLiteral("top"),
                true);
+    const StateTransitionTriggerService stateTransitionTriggerService;
+    expectBool("StateTransition trigger accepts ns",
+               stateTransitionTriggerService
+                   .triggerForSymbol({QStringLiteral("ns"), path,
+                                      QStringLiteral("top")})
+                   .available,
+               true);
+    expectBool("StateTransition trigger accepts next_state",
+               stateTransitionTriggerService
+                   .triggerForSymbol({QStringLiteral("next_state"), path,
+                                      QStringLiteral("top")})
+                   .available,
+               true);
+    expectBool("StateTransition trigger rejects cs",
+               !stateTransitionTriggerService
+                    .triggerForSymbol({QStringLiteral("cs"), path,
+                                       QStringLiteral("top")})
+                    .available,
+               true);
+    expectBool("StateTransition trigger rejects current_state",
+               !stateTransitionTriggerService
+                    .triggerForSymbol({QStringLiteral("current_state"), path,
+                                       QStringLiteral("top")})
+                    .available,
+               true);
+    auto sourceSymbolContextForName =
+        [&](const QString& symbolName) {
+            EditorSemanticContext context;
+            context.fileName = path;
+            context.moduleName = QStringLiteral("top");
+            context.lineText = QStringLiteral("assign probe_%1 = %1;")
+                                   .arg(symbolName);
+            context.column = context.lineText.lastIndexOf(symbolName);
+            return context;
+        };
+    const EditorSemanticContext nsContext =
+        sourceSymbolContextForName(QStringLiteral("ns"));
+    const EditorSourceSymbolContextMenuState nsMenuState =
+        EditorSemanticContextService::getInstance()
+            ->sourceSymbolContextMenuState(nsContext);
+    const EditorSourceSymbolActionRequestState nsStateRequest =
+        EditorSemanticContextService::getInstance()
+            ->sourceSymbolActionRequestState(
+                SourceSymbolAction::ShowStateTransitionGraph,
+                nsContext);
+    expectBool("EditorSemanticContext state transition ns menu",
+               nsMenuState.items.size() == 4
+                   && nsMenuState.items.at(3).action
+                       == SourceSymbolAction::ShowStateTransitionGraph
+                   && nsMenuState.items.at(3).enabled
+                   && nsStateRequest.available
+                   && nsStateRequest.action
+                       == SourceSymbolAction::ShowStateTransitionGraph
+                   && nsStateRequest.symbolName == QStringLiteral("ns"),
+               true);
+    const EditorSemanticContext nextStateContext =
+        sourceSymbolContextForName(QStringLiteral("next_state"));
+    const EditorSourceSymbolContextMenuState nextStateMenuState =
+        EditorSemanticContextService::getInstance()
+            ->sourceSymbolContextMenuState(nextStateContext);
+    const EditorSourceSymbolActionRequestState nextStateRequest =
+        EditorSemanticContextService::getInstance()
+            ->sourceSymbolActionRequestState(
+                SourceSymbolAction::ShowStateTransitionGraph,
+                nextStateContext);
+    expectBool("EditorSemanticContext state transition next_state menu",
+               nextStateMenuState.items.size() == 4
+                   && nextStateMenuState.items.at(3).enabled
+                   && nextStateRequest.available
+                   && nextStateRequest.symbolName
+                       == QStringLiteral("next_state"),
+               true);
+    const EditorSemanticContext csContext =
+        sourceSymbolContextForName(QStringLiteral("cs"));
+    const EditorSourceSymbolContextMenuState csMenuState =
+        EditorSemanticContextService::getInstance()
+            ->sourceSymbolContextMenuState(csContext);
+    const EditorSourceSymbolActionRequestState csStateRequest =
+        EditorSemanticContextService::getInstance()
+            ->sourceSymbolActionRequestState(
+                SourceSymbolAction::ShowStateTransitionGraph,
+                csContext);
+    expectBool("EditorSemanticContext state transition rejects cs",
+               csMenuState.items.size() == 4
+                   && !csMenuState.items.at(3).enabled
+                   && !csStateRequest.available,
+               true);
+    const EditorSemanticContext currentStateContext =
+        sourceSymbolContextForName(QStringLiteral("current_state"));
+    const EditorSourceSymbolContextMenuState currentStateMenuState =
+        EditorSemanticContextService::getInstance()
+            ->sourceSymbolContextMenuState(currentStateContext);
+    const EditorSourceSymbolActionRequestState currentStateRequest =
+        EditorSemanticContextService::getInstance()
+            ->sourceSymbolActionRequestState(
+                SourceSymbolAction::ShowStateTransitionGraph,
+                currentStateContext);
+    expectBool("EditorSemanticContext state transition rejects current_state",
+               currentStateMenuState.items.size() == 4
+                   && !currentStateMenuState.items.at(3).enabled
+                   && !currentStateRequest.available,
+               true);
     EditorSemanticContext unavailableSourceSymbolContext;
     unavailableSourceSymbolContext.lineText = sourceSymbolContext.lineText;
     unavailableSourceSymbolContext.column = sourceSymbolContext.column;
@@ -6841,10 +6947,11 @@ int main(int argc, char** argv) {
         EditorSemanticContextService::getInstance()
             ->sourceSymbolContextMenuState(unavailableSourceSymbolContext);
     expectBool("EditorSemanticContext source menu disabled",
-               disabledSourceMenuState.items.size() == 3
+               disabledSourceMenuState.items.size() == 4
                    && !disabledSourceMenuState.items.at(0).enabled
                    && !disabledSourceMenuState.items.at(1).enabled
-                   && !disabledSourceMenuState.items.at(2).enabled,
+                   && !disabledSourceMenuState.items.at(2).enabled
+                   && !disabledSourceMenuState.items.at(3).enabled,
                true);
     const EditorSourceSymbolActionRequestState unavailableSourceRequest =
         EditorSemanticContextService::getInstance()

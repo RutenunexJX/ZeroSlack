@@ -62,7 +62,8 @@ struct SourceSymbolActionContext {
 enum class SourceSymbolAction {
     FindReferences,
     ShowRelationships,
-    ShowSignalKernelGraph
+    ShowSignalKernelGraph,
+    ShowStateTransitionGraph
 };
 
 struct SourceEditorNavigationTarget {

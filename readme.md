@@ -70,6 +70,11 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
   when not in an `always` block, the selected/current module. The panel renders
   scope and legend/readability cues from the report data so users can interpret
   the sketch without implying simulation accuracy.
+- State Transition Graph entry gating exists for editor source-symbol actions:
+  selected `ns` and `next_state` can trigger the graph, while selected `cs` and
+  `current_state` cannot. The gated entry currently reuses the existing RTL
+  Insights FSM graph rendering path; no new transition extraction/report layer
+  has been added yet.
 - Formatter support exists as conservative editor formatting. Current daily
   editor action inventory: `Ctrl+F` opens Find; formatter document/selection
   actions live in the editor context menu; line comment actions are available
@@ -195,6 +200,11 @@ and restoring Global Control `ow r` for recent workspaces.
   shapes the scoped report. `WavePreviewPanelCoordinator` renders scope,
   legend, and readability overview rows from that report. UI code remains a
   consumer and does not scan workspace files or run Slang.
+- State Transition Graph baseline: `StateTransitionTriggerService` owns the
+  first entry-gating policy for selected source symbols. `EditorSourceNavigationQuery`
+  asks that service before enabling or dispatching `Show State Transition Graph`.
+  `EditorCoordinator` and `SemanticPanelRefreshCoordinator` only route the
+  accepted request to the existing RTL Insights FSM graph path.
 
 ## Command Responsibility Map
 

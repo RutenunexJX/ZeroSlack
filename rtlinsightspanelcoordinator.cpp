@@ -996,6 +996,22 @@ void RtlInsightsPanelCoordinator::showModuleInsights(
     }
 }
 
+void RtlInsightsPanelCoordinator::showStateTransitionGraphForSignal(
+    const QString& fileName,
+    const QString& moduleName,
+    const QString& signalName)
+{
+    updateModuleContext(fileName, moduleName, signalName);
+    showFsmGraph();
+    if (insightsDock) {
+        insightsDock->setWindowTitle(
+            QStringLiteral("RTL Insights: State Transition Graph %1")
+                .arg(signalName.isEmpty() ? moduleName : signalName));
+        insightsDock->show();
+        insightsDock->raise();
+    }
+}
+
 void RtlInsightsPanelCoordinator::showSemanticDiff(
     std::shared_ptr<const SemanticIndexSnapshot> beforeSnapshot,
     std::shared_ptr<const SemanticIndexSnapshot> afterSnapshot,
