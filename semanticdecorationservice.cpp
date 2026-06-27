@@ -1,8 +1,11 @@
 #include "semanticdecorationservice.h"
 
 #include <QChar>
+#include <QDir>
+#include <QFileInfo>
 #include <QHash>
 #include <QPair>
+#include <QSet>
 #include <QTextBlock>
 #include <QTextDocument>
 
@@ -20,6 +23,33 @@ bool isIdentifierStart(QChar ch)
 bool isIdentifierPart(QChar ch)
 {
     return ch.isLetterOrNumber() || ch == QLatin1Char('_');
+}
+
+int skipSpaces(const QString& line, int pos)
+{
+    while (pos < line.size() && line.at(pos).isSpace())
+        ++pos;
+    return pos;
+}
+
+bool readIdentifier(const QString& line,
+                    int pos,
+                    QString* identifier,
+                    int* end)
+{
+    if (!identifier || !end
+        || pos < 0
+        || pos >= line.size()
+        || !isIdentifierStart(line.at(pos))) {
+        return false;
+    }
+
+    int next = pos + 1;
+    while (next < line.size() && isIdentifierPart(line.at(next)))
+        ++next;
+    *identifier = line.mid(pos, next - pos);
+    *end = next;
+    return true;
 }
 
 int lineCommentStart(const QString& line)
@@ -47,6 +77,91 @@ int lineCommentStart(const QString& line)
             return i;
     }
     return -1;
+}
+
+QString stripCodeLineComment(const QString& line)
+{
+    const int commentStart = lineCommentStart(line);
+    return commentStart >= 0 ? line.left(commentStart) : line;
+}
+
+QString parseIncludePath(const QString& line)
+{
+    const QString trimmed = stripCodeLineComment(line).trimmed();
+    const int includePos = trimmed.indexOf(QStringLiteral("`include"));
+    if (includePos < 0)
+        return QString();
+
+    int pos = includePos + QStringLiteral("`include").size();
+    if (pos < trimmed.size() && isIdentifierPart(trimmed.at(pos)))
+        return QString();
+
+    pos = skipSpaces(trimmed, pos);
+    if (pos >= trimmed.size() || trimmed.at(pos) != QLatin1Char('"'))
+        return QString();
+    const int pathStart = pos + 1;
+    const int pathEnd = trimmed.indexOf(QLatin1Char('"'), pathStart);
+    if (pathEnd < 0)
+        return QString();
+    return trimmed.mid(pathStart, pathEnd - pathStart).trimmed();
+}
+
+bool parseImportStatement(const QString& line,
+                          QString* packageName,
+                          QString* symbolName,
+                          bool* importStar)
+{
+    if (!packageName || !symbolName || !importStar)
+        return false;
+    packageName->clear();
+    symbolName->clear();
+    *importStar = false;
+
+    const QString trimmed = stripCodeLineComment(line).trimmed();
+    if (trimmed.isEmpty())
+        return false;
+
+    int importPos = -1;
+    int pos = 0;
+    while (pos < trimmed.size()) {
+        if (!isIdentifierStart(trimmed.at(pos))) {
+            ++pos;
+            continue;
+        }
+        const int start = pos;
+        ++pos;
+        while (pos < trimmed.size() && isIdentifierPart(trimmed.at(pos)))
+            ++pos;
+        if (trimmed.mid(start, pos - start) == QStringLiteral("import")) {
+            importPos = start;
+            break;
+        }
+    }
+    if (importPos < 0)
+        return false;
+
+    int end = 0;
+    pos = skipSpaces(trimmed, importPos + QStringLiteral("import").size());
+    if (!readIdentifier(trimmed, pos, packageName, &end))
+        return false;
+    pos = skipSpaces(trimmed, end);
+    if (pos + 1 >= trimmed.size()
+        || trimmed.mid(pos, 2) != QStringLiteral("::")) {
+        return false;
+    }
+
+    pos = skipSpaces(trimmed, pos + 2);
+    if (pos < trimmed.size() && trimmed.at(pos) == QLatin1Char('*')) {
+        *importStar = true;
+        ++pos;
+    } else if (!readIdentifier(trimmed, pos, symbolName, &end)) {
+        return false;
+    } else {
+        pos = end;
+    }
+
+    pos = skipSpaces(trimmed, pos);
+    return pos < trimmed.size() && trimmed.at(pos) == QLatin1Char(';');
 }
 
 bool hasIdentifierBoundary(const QString& line, int start, int length)
@@ -408,6 +523,225 @@ struct UsageDecorationCandidate {
     SemanticSymbolRecord record;
 };
 
+QString decorationRecordDedupeKey(const SemanticSymbolRecord& record)
+{
+    const QString stable = symbolStableKeyText(record.stableKey);
+    if (!stable.isEmpty())
+        return stable;
+    return QStringLiteral("%1|%2|%3|%4|%5")
+        .arg(record.location.fileName,
+             QString::number(record.location.startLine),
+             record.owner.name,
+             QString::number(static_cast<int>(record.declarationKind)),
+             record.name);
+}
+
+void appendUniqueUsageRecord(const SemanticSymbolRecord& record,
+                             QList<SemanticSymbolRecord>* out,
+                             QSet<QString>* seen)
+{
+    if (!out || !seen || record.name.isEmpty())
+        return;
+    SemanticDecorationRole role = SemanticDecorationRole::ActualSignal;
+    if (!usageDecorationRoleForRecord(record, &role))
+        return;
+    Q_UNUSED(role)
+    const QString key = decorationRecordDedupeKey(record);
+    if (key.isEmpty() || seen->contains(key))
+        return;
+    seen->insert(key);
+    out->append(record);
+}
+
+QSet<QString> documentIdentifierNames(const QTextDocument& document)
+{
+    QSet<QString> names;
+    for (QTextBlock block = document.firstBlock();
+         block.isValid();
+         block = block.next()) {
+        const QString line = block.text();
+        const QList<QPair<int, int>> spans = identifierSpansInCodeLine(line);
+        for (const QPair<int, int>& span : spans)
+            names.insert(line.mid(span.first, span.second));
+    }
+    return names;
+}
+
+void collectQualifiedPackageNames(const QString& line,
+                                  QSet<QString>* packageNames)
+{
+    if (!packageNames)
+        return;
+
+    const QString code = stripCodeLineComment(line);
+    int pos = 0;
+    while (pos < code.size()) {
+        QString identifier;
+        int end = 0;
+        if (!readIdentifier(code, pos, &identifier, &end)) {
+            ++pos;
+            continue;
+        }
+        int after = skipSpaces(code, end);
+        if (after + 1 < code.size()
+            && code.mid(after, 2) == QStringLiteral("::")) {
+            packageNames->insert(identifier);
+        }
+        pos = end;
+    }
+}
+
+bool lineContainsQualifiedReference(const QString& line,
+                                    const QString& packageName,
+                                    const QString& symbolName)
+{
+    if (packageName.isEmpty() || symbolName.isEmpty())
+        return false;
+
+    const QString code = stripCodeLineComment(line);
+    int pos = 0;
+    while (pos < code.size()) {
+        pos = code.indexOf(packageName, pos, Qt::CaseSensitive);
+        if (pos < 0)
+            return false;
+        if (!hasIdentifierBoundary(code, pos, packageName.size())) {
+            ++pos;
+            continue;
+        }
+
+        int afterPackage = skipSpaces(code, pos + packageName.size());
+        if (afterPackage + 1 >= code.size()
+            || code.mid(afterPackage, 2) != QStringLiteral("::")) {
+            ++pos;
+            continue;
+        }
+
+        int symbolStart = skipSpaces(code, afterPackage + 2);
+        if (symbolStart + symbolName.size() <= code.size()
+            && code.mid(symbolStart, symbolName.size()) == symbolName
+            && hasIdentifierBoundary(code, symbolStart, symbolName.size())) {
+            return true;
+        }
+        pos = afterPackage + 2;
+    }
+    return false;
+}
+
+bool documentContainsQualifiedReference(const QStringList& lines,
+                                        const QString& packageName,
+                                        const QString& symbolName)
+{
+    for (const QString& line : lines) {
+        if (lineContainsQualifiedReference(line, packageName, symbolName))
+            return true;
+    }
+    return false;
+}
+
+QList<SemanticSymbolRecord> visibleUsageRecords(
+    SemanticIndex* index,
+    const SemanticDecorationQuery& query,
+    const QTextDocument& document,
+    const QList<SemanticSymbolRecord>& localRecords)
+{
+    QList<SemanticSymbolRecord> result;
+    QSet<QString> seen;
+    QSet<QString> localNames;
+    for (const SemanticSymbolRecord& record : localRecords)
+    {
+        if (!record.name.isEmpty())
+            localNames.insert(record.name);
+        appendUniqueUsageRecord(record, &result, &seen);
+    }
+
+    if (!index)
+        return result;
+
+    const QSet<QString> identifiers = documentIdentifierNames(document);
+    const QStringList lines = query.documentText.split(QLatin1Char('\n'));
+    const QString baseDir = QFileInfo(query.fileName).absolutePath();
+    QSet<QString> starPackages;
+    QSet<QString> qualifiedPackages;
+    QHash<QString, QSet<QString>> importedSymbolsByPackage;
+
+    for (const QString& line : lines) {
+        collectQualifiedPackageNames(line, &qualifiedPackages);
+
+        const QString includePath = parseIncludePath(line);
+        if (!includePath.isEmpty()) {
+            const QString includeFile =
+                QDir(baseDir).absoluteFilePath(includePath);
+            const QList<SemanticSymbolRecord> includeRecords =
+                index->getSymbolRecords(includeFile);
+            for (const SemanticSymbolRecord& record : includeRecords) {
+                if (identifiers.contains(record.name)
+                    && !localNames.contains(record.name)) {
+                    appendUniqueUsageRecord(record, &result, &seen);
+                }
+            }
+        }
+
+        QString packageName;
+        QString symbolName;
+        bool importStar = false;
+        if (parseImportStatement(line,
+                                 &packageName,
+                                 &symbolName,
+                                 &importStar)) {
+            if (importStar)
+                starPackages.insert(packageName);
+            else
+                importedSymbolsByPackage[packageName].insert(symbolName);
+        }
+    }
+
+    const bool needsExternalScan =
+        !starPackages.isEmpty()
+        || !qualifiedPackages.isEmpty()
+        || !importedSymbolsByPackage.isEmpty()
+        || !identifiers.isEmpty();
+    if (!needsExternalScan)
+        return result;
+
+    const QList<SemanticSymbolRecord> allRecords = index->getSymbolRecords();
+    for (const SemanticSymbolRecord& record : allRecords) {
+        if (!identifiers.contains(record.name))
+            continue;
+        if (localNames.contains(record.name))
+            continue;
+
+        SemanticDecorationRole role = SemanticDecorationRole::ActualSignal;
+        if (!usageDecorationRoleForRecord(record, &role))
+            continue;
+        Q_UNUSED(role)
+
+        const bool globalVisible =
+            record.visibility == SymbolTaxonomy::SymbolVisibility::Global
+            || record.owner.kind == SymbolTaxonomy::SymbolOwnerScope::Global
+            || record.owner.name.isEmpty();
+        bool importedVisible = starPackages.contains(record.owner.name);
+        if (!importedVisible) {
+            const auto imported =
+                importedSymbolsByPackage.constFind(record.owner.name);
+            importedVisible = imported != importedSymbolsByPackage.constEnd()
+                && imported->contains(record.name);
+        }
+
+        bool qualifiedVisible = false;
+        if (qualifiedPackages.contains(record.owner.name)) {
+            qualifiedVisible = documentContainsQualifiedReference(
+                lines,
+                record.owner.name,
+                record.name);
+        }
+
+        if (globalVisible || importedVisible || qualifiedVisible)
+            appendUniqueUsageRecord(record, &result, &seen);
+    }
+
+    return result;
+}
+
 void appendUsageDecorations(const QList<SemanticSymbolRecord>& records,
                             const QTextDocument& document,
                             QList<SemanticDecoration>* out)
@@ -600,7 +934,9 @@ SemanticDecorationReport SemanticDecorationService::decorationsForDocument(
         appendRecordDecoration(record, document, &report.decorations);
         appendActualSignalDecoration(record, document, &report.decorations);
     }
-    appendUsageDecorations(records, document, &report.decorations);
+    const QList<SemanticSymbolRecord> usageRecords =
+        visibleUsageRecords(semanticIndex(), query, document, records);
+    appendUsageDecorations(usageRecords, document, &report.decorations);
     appendSystemTaskDecorations(document, &report.decorations);
 
     std::stable_sort(report.decorations.begin(),

@@ -538,6 +538,109 @@ int main(int argc, char** argv) {
                              QStringLiteral("clk")),
                true);
 
+    const QString packageFile =
+        QFileInfo(path).dir().filePath(QStringLiteral("pkg_states.sv"));
+    const QString packageUseFile =
+        QFileInfo(path).dir().filePath(QStringLiteral("uses_pkg.sv"));
+    const QString packageContent =
+        QStringLiteral("package pkg_states;\n"
+                       "  typedef enum logic {PKG_IDLE, PKG_RUN, PKG_LOCAL} pkg_state_t;\n"
+                       "endpackage\n");
+    const QString packageUseContent =
+        QStringLiteral("module uses_pkg;\n"
+                       "  import pkg_states::*;\n"
+                       "  localparam int PKG_LOCAL = 1;\n"
+                       "  assign a = (PKG_IDLE == PKG_RUN);\n"
+                       "  assign b = (pkg_states::PKG_RUN == PKG_IDLE);\n"
+                       "  assign c = PKG_LOCAL;\n"
+                       "endmodule\n");
+    QList<SemanticSymbolRecord> packageRecords;
+    packageRecords.append(
+        SemanticFixtureRecordBuilder(QStringLiteral("pkg_states"),
+                                     SymbolTaxonomy::DeclarationKind::Package)
+            .withFile(packageFile)
+            .withLine(1, 9)
+            .withCollectorKind(SymbolTaxonomy::CollectorKind::Package)
+            .record());
+    packageRecords.append(
+        SemanticFixtureRecordBuilder(QStringLiteral("PKG_IDLE"),
+                                     SymbolTaxonomy::DeclarationKind::Enum)
+            .withFile(packageFile)
+            .withLine(2, 23)
+            .withCollectorKind(SymbolTaxonomy::CollectorKind::EnumValue)
+            .inPackage(QStringLiteral("pkg_states"))
+            .record());
+    packageRecords.append(
+        SemanticFixtureRecordBuilder(QStringLiteral("PKG_RUN"),
+                                     SymbolTaxonomy::DeclarationKind::Enum)
+            .withFile(packageFile)
+            .withLine(2, 33)
+            .withCollectorKind(SymbolTaxonomy::CollectorKind::EnumValue)
+            .inPackage(QStringLiteral("pkg_states"))
+            .record());
+    packageRecords.append(
+        SemanticFixtureRecordBuilder(QStringLiteral("PKG_LOCAL"),
+                                     SymbolTaxonomy::DeclarationKind::Enum)
+            .withFile(packageFile)
+            .withLine(2, 42)
+            .withCollectorKind(SymbolTaxonomy::CollectorKind::EnumValue)
+            .inPackage(QStringLiteral("pkg_states"))
+            .record());
+    SemanticIndex::getInstance()->updateSymbolRecordsForFile(
+        packageFile,
+        packageRecords,
+        packageContent);
+
+    QList<SemanticSymbolRecord> packageUseRecords;
+    packageUseRecords.append(
+        SemanticFixtureRecordBuilder(QStringLiteral("uses_pkg"),
+                                     SymbolTaxonomy::DeclarationKind::Module)
+            .withFile(packageUseFile)
+            .withRange(1, 8, 7, 10)
+            .withCollectorKind(SymbolTaxonomy::CollectorKind::Module)
+            .record());
+    packageUseRecords.append(
+        SemanticFixtureRecordBuilder(QStringLiteral("PKG_LOCAL"),
+                                     SymbolTaxonomy::DeclarationKind::Localparam)
+            .withFile(packageUseFile)
+            .withLine(3, 18)
+            .withCollectorKind(SymbolTaxonomy::CollectorKind::Localparam)
+            .inModule(QStringLiteral("uses_pkg"))
+            .record());
+    SemanticIndex::getInstance()->updateSymbolRecordsForFile(
+        packageUseFile,
+        packageUseRecords,
+        packageUseContent);
+
+    SemanticDecorationQuery packageUseQuery;
+    packageUseQuery.fileName = packageUseFile;
+    packageUseQuery.documentText = packageUseContent;
+    const SemanticDecorationReport packageUseReport =
+        SemanticDecorationService::getInstance()
+            ->decorationsForDocument(packageUseQuery);
+    auto packageUseDecorationCount = [&packageUseReport](
+        SemanticDecorationRole role,
+        const QString& text) {
+        int count = 0;
+        for (const SemanticDecoration& decoration : packageUseReport.decorations) {
+            if (decoration.role == role && decoration.text == text)
+                ++count;
+        }
+        return count;
+    };
+    expectBool("SemanticDecoration maps imported package enum values",
+               packageUseDecorationCount(SemanticDecorationRole::EnumValue,
+                                         QStringLiteral("PKG_IDLE")) >= 2
+                   && packageUseDecorationCount(SemanticDecorationRole::EnumValue,
+                                                QStringLiteral("PKG_RUN")) >= 2,
+               true);
+    expectBool("SemanticDecoration keeps local symbols above package enum values",
+               packageUseDecorationCount(SemanticDecorationRole::Parameter,
+                                         QStringLiteral("PKG_LOCAL")) >= 2
+                   && packageUseDecorationCount(SemanticDecorationRole::EnumValue,
+                                                QStringLiteral("PKG_LOCAL")) == 0,
+               true);
+
     MyCodeEditor diagnosticEditor;
     diagnosticEditor.setPlainText(QStringLiteral("module bad;\n  broken\nendmodule\n"));
     SemanticDiagnostic diagnostic;

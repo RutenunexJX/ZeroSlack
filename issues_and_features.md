@@ -16,16 +16,6 @@ This file is a running checklist for problems to fix and new features to conside
       remains unreliable under `QGraphicsView::ScrollHandDrag`, add a graph-view
       level fallback that resolves the node under the cursor and routes the same
       navigation action.
-- [ ] Global or package-defined enum values are not semantically highlighted at
-      use sites, while locally defined enum values are highlighted. The likely
-      cause is `SemanticDecorationService::decorationsForDocument()` building
-      usage-highlight candidates only from `getSymbolRecords(query.fileName)`;
-      enum values defined in package/global/include files are therefore absent
-      from the current document's usage candidate set. Fix by deriving visible
-      usage candidates from the current file plus imported/package/global
-      semantic records, while keeping local symbols higher priority to avoid
-      false highlighting of unrelated same-name identifiers.
-
 ## Feature Ideas
 
 - [ ] Redesign Signal Kernel Graph node and module presentation. Node line 1
@@ -56,6 +46,7 @@ This file is a running checklist for problems to fix and new features to conside
 - [x] Add `Ctrl+D` duplicate selection/line editor action. With a selection, it duplicates the selected text and selects the new copy; without a selection, it duplicates the current logical line below while preserving the cursor column, including final lines without trailing newlines.
 - [x] Refine column selection to the requested Notepad++-like interaction model. The normal editor caret is the anchor, `Shift+Alt+click` sets or updates the endpoint, `Shift+Alt+Arrow` adjusts the endpoint, plain click or `Esc` exits, and text input, Backspace, Delete, virtual-column padding, rectangular Copy/Cut/Paste operate on every selected line.
 - [x] Add `Alt+Up` / `Alt+Down` line-block move. It moves the current logical line or every logical line touched by the selection, preserves cursor or selection range, treats a selection ending at next-line column 0 as excluding that line, and reports that `Alt+Up/Down` is disabled while column selection is active.
+- [x] Global or package-defined enum values are not semantically highlighted at use sites. Semantic decorations now derive usage candidates from the current file plus visible imported, qualified, include, and global/package records, while current-file symbols suppress external same-name candidates.
 - [x] Ctrl+S save shortcut does not work in manual testing, even though the Save action still declares `Ctrl+S` in `mainwindow.ui`. Registered the Save action as an application-level shortcut on the main window and verified current-editor save behavior.
 - [x] After Ctrl+click jumping to a package definition, mouse side-button back navigation behaves abnormally and requires two presses. Navigation history now records the pre-jump source once before cross-file line jumps.
 - [x] After Ctrl+click jumping to an include file, mouse side-button back navigation fails. Include Ctrl+click now routes through the navigation coordinator so the source location is pushed to back history.
