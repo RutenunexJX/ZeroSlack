@@ -996,8 +996,32 @@ document whether existing low-level strategies still work:
 Audit milestones:
 
 - HWA.1 list current strategy owners and tests/harnesses
+  (complete: current owners and existing verification anchors are documented;
+  no Huge Workspace UX features were added)
 - HWA.2 run or compile appropriate verification based on environment safety
 - HWA.3 update docs with confirmed status and gaps
+
+HWA.1 inventory status:
+
+- Current/open/dirty-open/background planning is owned by
+  `WorkspaceAnalysisPlanService`; dirty-open files become protected files,
+  priority files get band metadata, and checkpoints drive staged publication.
+- Active/pending request coalescing, stale pending replacement, and request
+  telemetry are owned by `WorkspaceAnalysisRequestQueue` and routed through
+  `WorkspaceSymbolAnalysisController`.
+- Symbol analysis cancellation/expiration and staged publication are owned by
+  `WorkspaceSymbolAnalysisController` plus `SymbolAnalyzer`; `SemanticIndex`
+  stores band metadata and publishes snapshots for priority-aware queries.
+- Relationship cancellation and stale/cancelled result rejection are owned by
+  `RelationshipAnalysisController`, `RelationshipAnalysisWorker`, and
+  `RelationshipResultPublisher`.
+- Activity visibility is owned by `AnalysisProgressCoordinator` and
+  `ActivityLogService`.
+- Existing coverage anchors are `completion_test`, `relationship_test`,
+  `large_file_perf_test`, and `relationship_perf_test`.
+- Release `huge_prj` references remain the current baseline: 428 HDL files,
+  about 18.59 MiB, about 5.096s async symbol publication in the focused
+  harness, and about 3.891s relationship analysis in the focused harness.
 
 ## Milestone Definition Of Done
 

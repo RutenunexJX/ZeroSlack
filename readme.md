@@ -98,18 +98,47 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
 Huge Workspace work is in status-audit mode only. Do not add new Huge Workspace
 UX features as part of the current long-term plan.
 
-Current low-level strategies to preserve and verify:
+HWA.1 owner inventory:
 
-- current/open/dirty-open file priority in workspace analysis planning
-- analysis bands for current, dirty-open, open, background, and unbanded data
-- stale request coalescing and expiration
-- cancellation boundaries for symbol and relationship work
-- staged symbol publication before full background completion where safe
-- Activity/status telemetry for analysis progress, request restarts, bands,
-  cancellation, symbol publication, diagnostics, and relationship timing
-- Release-oriented performance measurements for `huge_prj`
+- `WorkspaceAnalysisPlanService` owns current/dirty-open/clean-open/background
+  ordering, protected dirty-open files, band summaries, band metadata, and
+  priority publication checkpoints.
+- `WorkspaceAnalysisRequestQueue` owns active/pending workspace requests,
+  latest-request coalescing, cancellation telemetry, and stale pending request
+  replacement.
+- `WorkspaceSymbolAnalysisController` owns plan application to
+  `SymbolAnalyzer`, cached-project reuse, workspace expiration, cancellation,
+  and the handoff from completed symbol analysis to relationship analysis.
+- `SymbolAnalyzer` owns async workspace symbol/diagnostic extraction, generation
+  expiration, protected-file preservation, chunked/staged publication, and
+  publication telemetry.
+- `SemanticIndex` / `SemanticIndexSnapshot` own analysis-band metadata storage
+  and priority-aware query ordering exposed to completion, definition, and
+  semantic search paths.
+- `RelationshipAnalysisController`, `RelationshipAnalysisWorker`, and
+  `RelationshipResultPublisher` own workspace relationship cancellation and
+  stale/cancelled result rejection.
+- `AnalysisProgressCoordinator` and `ActivityLogService` own visible Activity
+  telemetry for planning, progress, queued/restarted requests, cancellation,
+  symbol timing, diagnostics, and relationship timing.
 
-Known reference points captured before this cleanup:
+Existing verification and harness anchors:
+
+- `completion_test` covers workspace plan priority/protected files,
+  publication checkpoints, analysis-band propagation and query preference,
+  request queue coalescing, cancellation telemetry, staged publication, and
+  final background publication.
+- `relationship_test` covers stale snapshot rejection, stale async file
+  analysis, relationship request coalescing, workspace relationship
+  cancellation, cancelled worker telemetry, and publisher rejection of
+  cancelled workspace results.
+- `large_file_perf_test` guards large-file/workspace responsiveness and verifies
+  whitespace edits do not queue semantic or relationship reanalysis.
+- `relationship_perf_test` is the focused `huge_prj` performance harness for
+  symbol publication, relationship extraction/compute/publish timing, and
+  design hierarchy metrics.
+
+Known reference points:
 
 - `test_sv/huge_prj`: 428 HDL files, about 18.59 MiB.
 - Release relationship analysis reference: about 3.891s in the focused harness.

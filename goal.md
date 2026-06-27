@@ -28,7 +28,7 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
 
 ## Current Goal State
 
-Current milestone: `HWA.1 Inventory owner classes, current behavior, and existing verification`.
+Current milestone: `HWA.2 Run safe verification or compile relevant targets`.
 
 Status:
 
@@ -410,15 +410,37 @@ Status:
   `relationship_test` target compile/link; `ctest -R "^relationship_test$"`
   passed.
 
-Completion criteria for HWA.1:
+- HWA.1 Huge Workspace Owner And Verification Inventory is complete:
+  `WorkspaceAnalysisPlanService` owns current/dirty-open/clean-open/background
+  priority planning, protected files, band metadata, and staged publication
+  checkpoints; `WorkspaceAnalysisRequestQueue` owns active/pending request
+  coalescing, stale pending replacement, cancellation state, and telemetry;
+  `WorkspaceSymbolAnalysisController` plus `SymbolAnalyzer` own workspace
+  expiration, cancellation, async extraction, and chunked/staged publication;
+  `SemanticIndex` / `SemanticIndexSnapshot` own band metadata and
+  priority-aware query ordering; `RelationshipAnalysisController`,
+  `RelationshipAnalysisWorker`, and `RelationshipResultPublisher` own
+  relationship cancellation and stale/cancelled result rejection; and
+  `AnalysisProgressCoordinator` plus `ActivityLogService` own visible Activity
+  telemetry.
+- Existing HWA verification anchors are documented as `completion_test`,
+  `relationship_test`, `large_file_perf_test`, and `relationship_perf_test`.
+  No Huge Workspace UX feature was added in HWA.1.
+- Focused verification for HWA.1: documentation inspection plus
+  `git diff --check`.
 
-- inventory owner classes for current/open/dirty-open priority, analysis
-  bands, stale request coalescing/expiration, cancellation, staged publication,
-  Activity telemetry, and Release `huge_prj` references
-- document current behavior and existing tests/harnesses only
+Completion criteria for HWA.2:
+
+- choose safe Huge Workspace status verification for the current environment,
+  preferring compile/link or narrow non-GUI tests when executable GUI runs are
+  likely to show external Windows error dialogs
+- if `ctest` stalls or runs far longer than expected, check for an external
+  Windows application-error or memory-read dialog before treating it as normal
+  long-running test work
+- run or compile the selected verification and record the result
 - do not add Huge Workspace UX features
 - `readme.md`, `plan.md`, and `goal.md` are updated
-- documentation inspection and `git diff --check` pass
+- `git diff --check` passes
 - milestone commit is pushed
 
 ## Track 1: Editor Daily Operations Completion
@@ -663,6 +685,7 @@ Audit topics:
 Milestones:
 
 - HWA.1 Inventory owner classes, current behavior, and existing verification.
+  (complete: owners and existing harnesses documented)
 - HWA.2 Run safe verification or compile relevant targets.
 - HWA.3 Update docs with confirmed status and open gaps.
 
