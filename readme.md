@@ -96,6 +96,30 @@ Known reference points captured before this cleanup:
 - Release async symbol publication reference: about 5.096s in the focused
   harness after the first-publication native-store scan fix.
 
+## Workspace Workflow Status
+
+The current long-term workspace workflow scope is limited to ignored directories
+and restoring Global Control `ow r` for recent workspaces.
+
+- `WorkspaceManager` owns open, close, switch, alias rename, file scanning,
+  cached scanned-file restoration, and the recent-workspace list.
+- Multiple workspaces can be open. Each `WorkspaceEntry` carries alias, path,
+  scanned files, and `scanComplete`; switching back to a scanned entry restores
+  cached files without starting a new directory scan.
+- Recent workspaces are already persisted through `QSettings` under the
+  `ZeroSlack` / `ZeroSlack` application settings. Entries store alias and path,
+  are normalized, deduplicated, capped at 20, and exposed through
+  `WorkspaceManager::recentWorkspaceEntries()`.
+- Workspace alias rename updates matching recent-workspace metadata.
+- Global Control root shows only the `ow` and `fd` domains. The `ow` domain
+  currently displays `ow 1`, `ow 2`, and accepts numeric `ow <num>` queries.
+- `ow r` is not displayed by `GlobalControlService` today. `MainWindow` still
+  has an internal `ow r` action handler and recent-workspaces dialog, and tests
+  cover that hidden compatibility path.
+- `ProjectModel` already has `ignoredPaths` and filters raw scanned files
+  through `setIgnoredPaths()`. The missing long-term piece is a workspace-owned
+  service/model path for setting ignored directories without broad workspace UX.
+
 ## Current Architecture
 
 - `ProjectModel` owns workspace root, file list, include dirs, defines, top, and

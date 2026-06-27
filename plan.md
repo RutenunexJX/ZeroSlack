@@ -254,8 +254,27 @@ Not in scope:
 First milestones:
 
 - M5.1 document and audit current workspace open/recent behavior
+  (complete: owner classes, existing recent-workspace persistence, current
+  Global Control `ow` behavior, hidden `ow r` compatibility, and ignored-path
+  baseline are documented)
 - M5.2 add ignored-directory model/service path
 - M5.3 restore `ow r` as a displayed Global Control child command
+
+M5.1 audit status:
+
+- Complete: `WorkspaceManager` owns open/close/switch, aliases, cached scanned
+  files, directory scan lifecycle, file watching, and recent-workspace storage.
+- Complete: `WorkspaceEntry` already caches scanned files and `scanComplete`;
+  switching to a scanned workspace restores cached files without a new scan.
+- Complete: recent workspaces are persisted with `QSettings`, deduplicated,
+  capped at 20, and exposed through `recentWorkspaceEntries()`.
+- Complete: Global Control currently shows root domains only, and the `ow`
+  domain displays `ow 1`, `ow 2`, and parameterized `ow <num>` behavior.
+- Complete: `ow r` is hidden from `GlobalControlService`, but `MainWindow`
+  still has an internal `ow r` handler and recent-workspaces dialog.
+- Complete: `ProjectModel` already filters `ignoredPaths`, but no workspace
+  workflow/service path sets ignored directories yet.
+- Verification: documentation inspection plus `git diff --check`.
 
 ### 6. Completion / `;cmd` / `;;cmd`
 

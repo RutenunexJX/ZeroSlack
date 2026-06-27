@@ -28,7 +28,7 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
 
 ## Current Goal State
 
-Current milestone: `G5.1 Workspace Open/Recent Behavior Audit`.
+Current milestone: `G5.2 Ignored-Directory Model/Service Path`.
 
 Status:
 
@@ -119,13 +119,23 @@ Status:
   one undoable text replacement. G3.2 failure behavior is unchanged; Slot Mode
   start, slot editing, Tab advance, final Tab exit, undo restore, and
   declaration rejection are covered by focused tests.
+- G5.1 Workspace Open/Recent Behavior Audit is complete:
+  `WorkspaceManager` owns workspace open/close/switch, alias rename, cached
+  scanned-file restoration, directory scan lifecycle, file watching, and recent
+  workspace persistence. Recent entries are stored through `QSettings`,
+  normalized, deduplicated, capped at 20, and exposed through
+  `recentWorkspaceEntries()`. Global Control currently displays `ow 1`, `ow 2`,
+  and numeric `ow <num>` only; `ow r` is hidden by `GlobalControlService` but
+  still handled internally by `MainWindow` through the existing recent
+  workspaces dialog. `ProjectModel` already supports `ignoredPaths` filtering,
+  but there is no workspace-owned service/model path to set ignored directories.
 
-Completion criteria for G5.1:
+Completion criteria for G5.2:
 
-- audit current workspace open and recent-workspace behavior
-- identify owner classes and existing Global Control `ow` behavior
-- document what already exists and what is missing before `ow r`
-- do not implement ignored directories or `ow r` in this milestone
+- add the ignored-directory model/service path without adding broad workspace UX
+- preserve existing `ProjectModel::ignoredPaths` filtering behavior
+- keep UI code out of workspace scanning and semantic policy
+- do not implement `ow r` in this milestone
 - `readme.md`, `plan.md`, and `goal.md` are updated
 - appropriate focused verification passes
 - milestone commit is pushed
@@ -219,6 +229,8 @@ Not allowed in this track:
 Milestones:
 
 - G5.1 Audit current workspace open/recent behavior.
+  (complete: owners, current `ow` behavior, hidden `ow r` compatibility, recent
+  persistence, and ignored-path baseline documented)
 - G5.2 Add ignored-directory model/service support.
 - G5.3 Restore `ow r` as a displayed Global Control child command.
 
