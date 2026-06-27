@@ -5,6 +5,8 @@
 #include <QApplication>
 #include <QAbstractButton>
 #include <QAction>
+#include <QClipboard>
+#include <QColor>
 #include <QCompleter>
 #include <QComboBox>
 #include <QDialog>
@@ -1631,19 +1633,11 @@ static void runEditorColumnEditRegression()
     startCursor.setPosition(firstBlock.position() + 1);
     QTextCursor endCursor(lastBlock);
     endCursor.setPosition(lastBlock.position() + 1);
-    const QPoint startPoint = editor.cursorRect(startCursor).center();
     const QPoint endPoint = editor.cursorRect(endCursor).center();
-    const QPoint globalStart = editor.viewport()->mapToGlobal(startPoint);
-    const QPoint globalEnd = editor.viewport()->mapToGlobal(endPoint);
     const Qt::KeyboardModifiers columnModifiers =
         Qt::ShiftModifier | Qt::AltModifier;
 
-    Q_UNUSED(globalStart)
-    Q_UNUSED(globalEnd)
-    QTest::mouseClick(editor.viewport(),
-                      Qt::LeftButton,
-                      columnModifiers,
-                      startPoint);
+    editor.setTextCursor(startCursor);
     QTest::mouseClick(editor.viewport(),
                       Qt::LeftButton,
                       columnModifiers,
@@ -1695,6 +1689,236 @@ static void runEditorColumnEditRegression()
     QTest::keyClicks(&editor, "Z");
     expectBool("editor plain click exits column mode",
                editor.toPlainText().count(QLatin1Char('Z')) == 1,
+               true);
+
+    MyCodeEditor virtualEditor;
+    virtualEditor.resize(480, 180);
+    virtualEditor.setPlainText(QStringLiteral("a\nab\nabc\n"));
+    virtualEditor.show();
+    virtualEditor.setFocus();
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+
+    QTextBlock virtualFirstBlock =
+        virtualEditor.document()->findBlockByNumber(0);
+    QTextBlock virtualLastBlock =
+        virtualEditor.document()->findBlockByNumber(2);
+    QTextCursor virtualStartCursor(virtualFirstBlock);
+    virtualStartCursor.setPosition(virtualFirstBlock.position() + 1);
+    QTextCursor virtualEndCursor(virtualLastBlock);
+    virtualEndCursor.setPosition(virtualLastBlock.position() + 1);
+    const QPoint virtualEndPoint =
+        virtualEditor.cursorRect(virtualEndCursor).center();
+
+    virtualEditor.setTextCursor(virtualStartCursor);
+    QTest::mouseClick(virtualEditor.viewport(),
+                      Qt::LeftButton,
+                      columnModifiers,
+                      virtualEndPoint);
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+
+    int broadColumnHighlights = 0;
+    for (const QTextEdit::ExtraSelection& selection :
+         virtualEditor.extraSelections()) {
+        if (selection.format.background().style() != Qt::NoBrush
+            && selection.format.background().color()
+                   == QColor(37, 99, 235, 80)
+            && selection.cursor.hasSelection()) {
+            ++broadColumnHighlights;
+        }
+    }
+    expectBool("editor zero-width column mode avoids broad highlight",
+               broadColumnHighlights == 0,
+               true);
+
+    for (int i = 0; i < 4; ++i)
+        QTest::keyClick(&virtualEditor, Qt::Key_Right);
+    QTest::keyClicks(&virtualEditor, "X");
+    expectBool("editor zero-width column mode pads virtual columns",
+               virtualEditor.toPlainText()
+                   == QStringLiteral("a    X\nab   X\nabc  X\n"),
+               true);
+
+    MyCodeEditor clipboardEditor;
+    clipboardEditor.resize(480, 180);
+    clipboardEditor.setPlainText(QStringLiteral("abc\nabc\nabc\n"));
+    clipboardEditor.show();
+    clipboardEditor.setFocus();
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+
+    QTextBlock clipFirstBlock =
+        clipboardEditor.document()->findBlockByNumber(0);
+    QTextBlock clipLastBlock =
+        clipboardEditor.document()->findBlockByNumber(2);
+    QTextCursor clipStartCursor(clipFirstBlock);
+    clipStartCursor.setPosition(clipFirstBlock.position() + 1);
+    QTextCursor clipEndCursor(clipLastBlock);
+    clipEndCursor.setPosition(clipLastBlock.position() + 2);
+    clipboardEditor.setTextCursor(clipStartCursor);
+    QTest::mouseClick(clipboardEditor.viewport(),
+                      Qt::LeftButton,
+                      columnModifiers,
+                      clipboardEditor.cursorRect(clipEndCursor).center());
+    QTest::keyClick(&clipboardEditor, Qt::Key_C, Qt::ControlModifier);
+    expectBool("editor rectangular copy uses column rows",
+               QApplication::clipboard()->text()
+                   == QStringLiteral("b\nb\nb"),
+               true);
+    QTest::keyClick(&clipboardEditor, Qt::Key_X, Qt::ControlModifier);
+    expectBool("editor rectangular cut edits each selected line",
+               clipboardEditor.toPlainText()
+                   == QStringLiteral("ac\nac\nac\n"),
+               true);
+    QApplication::clipboard()->setText(QStringLiteral("XY"));
+    QTest::keyClick(&clipboardEditor, Qt::Key_V, Qt::ControlModifier);
+    expectBool("editor rectangular paste repeats one clipboard row",
+               clipboardEditor.toPlainText()
+                   == QStringLiteral("aXYc\naXYc\naXYc\n"),
+               true);
+}
+
+static void runEditorLineActionRegression()
+{
+    MyCodeEditor duplicateEditor;
+    duplicateEditor.resize(480, 180);
+    duplicateEditor.setPlainText(QStringLiteral("one\ntwo\nthree\n"));
+    duplicateEditor.show();
+    duplicateEditor.setFocus();
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+
+    QTextBlock twoBlock = duplicateEditor.document()->findBlockByNumber(1);
+    QTextCursor duplicateCursor(twoBlock);
+    duplicateCursor.setPosition(twoBlock.position() + 1);
+    duplicateEditor.setTextCursor(duplicateCursor);
+    QTest::keyClick(&duplicateEditor, Qt::Key_D, Qt::ControlModifier);
+    QTextCursor afterDuplicate = duplicateEditor.textCursor();
+    expectBool("Ctrl+D duplicates current line below",
+               duplicateEditor.toPlainText()
+                   == QStringLiteral("one\ntwo\ntwo\nthree\n"),
+               true);
+    expectBool("Ctrl+D preserves current line cursor column",
+               afterDuplicate.blockNumber() == 2
+                   && afterDuplicate.position() - afterDuplicate.block().position() == 1,
+               true);
+
+    MyCodeEditor finalLineEditor;
+    finalLineEditor.resize(480, 120);
+    finalLineEditor.setPlainText(QStringLiteral("last"));
+    finalLineEditor.show();
+    finalLineEditor.setFocus();
+    QTextCursor finalCursor(finalLineEditor.document());
+    finalCursor.setPosition(2);
+    finalLineEditor.setTextCursor(finalCursor);
+    QTest::keyClick(&finalLineEditor, Qt::Key_D, Qt::ControlModifier);
+    expectBool("Ctrl+D duplicates final line onto new line",
+               finalLineEditor.toPlainText() == QStringLiteral("last\nlast"),
+               true);
+    expectBool("Ctrl+D final line keeps cursor column",
+               finalLineEditor.textCursor().blockNumber() == 1
+                   && finalLineEditor.textCursor().position()
+                          - finalLineEditor.textCursor().block().position()
+                          == 2,
+               true);
+
+    MyCodeEditor selectionDuplicateEditor;
+    selectionDuplicateEditor.resize(480, 120);
+    selectionDuplicateEditor.setPlainText(QStringLiteral("abc def\n"));
+    selectionDuplicateEditor.show();
+    selectionDuplicateEditor.setFocus();
+    QTextCursor selectionCursor(selectionDuplicateEditor.document());
+    const int defStart =
+        selectionDuplicateEditor.toPlainText().indexOf(QStringLiteral("def"));
+    selectionCursor.setPosition(defStart);
+    selectionCursor.setPosition(defStart + 3, QTextCursor::KeepAnchor);
+    selectionDuplicateEditor.setTextCursor(selectionCursor);
+    QTest::keyClick(&selectionDuplicateEditor,
+                    Qt::Key_D,
+                    Qt::ControlModifier);
+    expectBool("Ctrl+D duplicates selection after selection",
+               selectionDuplicateEditor.toPlainText()
+                   == QStringLiteral("abc defdef\n"),
+               true);
+    expectBool("Ctrl+D selects duplicated selection",
+               selectionDuplicateEditor.textCursor().selectedText()
+                   == QStringLiteral("def"),
+               true);
+
+    MyCodeEditor moveEditor;
+    moveEditor.resize(480, 180);
+    moveEditor.setPlainText(QStringLiteral("aa\nbb\ncc\n"));
+    moveEditor.show();
+    moveEditor.setFocus();
+    QTextBlock bbBlock = moveEditor.document()->findBlockByNumber(1);
+    QTextCursor moveCursor(bbBlock);
+    moveCursor.setPosition(bbBlock.position() + 1);
+    moveEditor.setTextCursor(moveCursor);
+    QTest::keyClick(&moveEditor, Qt::Key_Up, Qt::AltModifier);
+    expectBool("Alt+Up moves current logical line up",
+               moveEditor.toPlainText() == QStringLiteral("bb\naa\ncc\n"),
+               true);
+    expectBool("Alt+Up preserves cursor column",
+               moveEditor.textCursor().blockNumber() == 0
+                   && moveEditor.textCursor().position()
+                          - moveEditor.textCursor().block().position()
+                          == 1,
+               true);
+    QTest::keyClick(&moveEditor, Qt::Key_Down, Qt::AltModifier);
+    expectBool("Alt+Down moves current logical line down",
+               moveEditor.toPlainText() == QStringLiteral("aa\nbb\ncc\n"),
+               true);
+
+    MyCodeEditor touchedSelectionEditor;
+    touchedSelectionEditor.resize(480, 180);
+    touchedSelectionEditor.setPlainText(QStringLiteral("aa\nbb\ncc\n"));
+    touchedSelectionEditor.show();
+    touchedSelectionEditor.setFocus();
+    QTextBlock touchedStart =
+        touchedSelectionEditor.document()->findBlockByNumber(1);
+    QTextBlock touchedNext =
+        touchedSelectionEditor.document()->findBlockByNumber(2);
+    QTextCursor touchedCursor(touchedStart);
+    touchedCursor.setPosition(touchedStart.position());
+    touchedCursor.setPosition(touchedNext.position(), QTextCursor::KeepAnchor);
+    touchedSelectionEditor.setTextCursor(touchedCursor);
+    QTest::keyClick(&touchedSelectionEditor,
+                    Qt::Key_Up,
+                    Qt::AltModifier);
+    expectBool("Alt+Up excludes selection ending at next line column zero",
+               touchedSelectionEditor.toPlainText()
+                   == QStringLiteral("bb\naa\ncc\n"),
+               true);
+
+    MyCodeEditor columnMoveEditor;
+    columnMoveEditor.resize(480, 180);
+    columnMoveEditor.setPlainText(QStringLiteral("abc\nabc\nabc\n"));
+    columnMoveEditor.show();
+    columnMoveEditor.setFocus();
+    QString columnStatus;
+    QObject::connect(&columnMoveEditor,
+                     &MyCodeEditor::editorStatusMessageRequested,
+                     &columnMoveEditor,
+                     [&](const QString& message) {
+                         columnStatus = message;
+                     });
+    QTextBlock columnStart =
+        columnMoveEditor.document()->findBlockByNumber(0);
+    QTextBlock columnEnd =
+        columnMoveEditor.document()->findBlockByNumber(2);
+    QTextCursor columnStartCursor(columnStart);
+    columnStartCursor.setPosition(columnStart.position() + 1);
+    QTextCursor columnEndCursor(columnEnd);
+    columnEndCursor.setPosition(columnEnd.position() + 1);
+    const Qt::KeyboardModifiers columnModifiers =
+        Qt::ShiftModifier | Qt::AltModifier;
+    columnMoveEditor.setTextCursor(columnStartCursor);
+    QTest::mouseClick(columnMoveEditor.viewport(),
+                      Qt::LeftButton,
+                      columnModifiers,
+                      columnMoveEditor.cursorRect(columnEndCursor).center());
+    QTest::keyClick(&columnMoveEditor, Qt::Key_Down, Qt::AltModifier);
+    expectBool("Alt+Down is disabled while column selection is active",
+               columnMoveEditor.toPlainText()
+                       == QStringLiteral("abc\nabc\nabc\n")
+                   && columnStatus.contains(QStringLiteral("Column selection")),
                true);
 }
 
@@ -2809,25 +3033,32 @@ static QTextBlock findBlockContaining(QTextDocument* doc, const QString& needle)
     return QTextBlock();
 }
 
-static QTreeWidgetItem* findItemByText(QTreeWidgetItem* item, const QString& text)
+static QTreeWidgetItem* findItemByText(
+    QTreeWidgetItem* item,
+    const QString& text,
+    int column = 0)
 {
     if (!item)
         return nullptr;
-    if (item->text(0) == text)
+    if (item->text(column) == text)
         return item;
     for (int i = 0; i < item->childCount(); ++i) {
-        if (QTreeWidgetItem* found = findItemByText(item->child(i), text))
+        if (QTreeWidgetItem* found = findItemByText(item->child(i), text, column))
             return found;
     }
     return nullptr;
 }
 
-static QTreeWidgetItem* findItemByText(QTreeWidget* tree, const QString& text)
+static QTreeWidgetItem* findItemByText(
+    QTreeWidget* tree,
+    const QString& text,
+    int column = 0)
 {
     if (!tree)
         return nullptr;
     for (int i = 0; i < tree->topLevelItemCount(); ++i) {
-        if (QTreeWidgetItem* found = findItemByText(tree->topLevelItem(i), text))
+        if (QTreeWidgetItem* found =
+                findItemByText(tree->topLevelItem(i), text, column))
             return found;
     }
     return nullptr;
@@ -4770,7 +5001,11 @@ static void runNavigationHierarchyModelRegression()
         }
     }
     for (QTreeWidget* tree : widget.findChildren<QTreeWidget*>()) {
-        designItem = findItemByText(tree, QStringLiteral("u_stage : design_stage"));
+        designItem = findItemByText(tree, QStringLiteral("u_stage"), 0);
+        if (designItem
+            && designItem->text(1) != QStringLiteral("design_stage")) {
+            designItem = nullptr;
+        }
         if (designItem)
             break;
     }
@@ -5079,6 +5314,7 @@ int main(int argc, char** argv)
     runSafeRenameCoordinatorRegression();
     runSafeRenameCreateDefinitionRegression();
     runEditorColumnEditRegression();
+    runEditorLineActionRegression();
     runEditorFormatterRegression();
     runEditorAppearanceCoordinatorRegression();
     runFormatterCoordinatorRegression();
@@ -6312,11 +6548,18 @@ int main(int argc, char** argv)
             editor->centerCursor();
             QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
             const QPoint clickPoint = editor->cursorRect(clickCursor).center();
-            QTest::mouseClick(editor->viewport(), Qt::LeftButton, Qt::ControlModifier, clickPoint);
-
+            QTest::mousePress(editor->viewport(),
+                              Qt::LeftButton,
+                              Qt::ControlModifier,
+                              clickPoint);
             expectBool("Ctrl+Click jumps to counter definition",
                        waitUntil([&]() { return editor->textCursor().blockNumber() == 78; }, 2000),
                        true);
+            QTest::mouseRelease(editor->viewport(),
+                                Qt::LeftButton,
+                                Qt::ControlModifier,
+                                clickPoint);
+            QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
             expectBool("Ctrl+Click clears double-click style selection",
                        !editor->textCursor().hasSelection(),
                        true);

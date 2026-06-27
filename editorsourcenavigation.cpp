@@ -178,7 +178,23 @@ bool EditorSourceNavigationUi::handleMousePress(
         return false;
     }
 
+    consumeNextNavigationRelease = true;
     clearHover(editor, selections);
+    event->accept();
+    return true;
+}
+
+bool EditorSourceNavigationUi::handleMouseRelease(
+    MyCodeEditor* editor,
+    QMouseEvent* event)
+{
+    Q_UNUSED(editor)
+    if (!consumeNextNavigationRelease)
+        return false;
+    if (!event || event->button() != Qt::LeftButton)
+        return false;
+
+    consumeNextNavigationRelease = false;
     event->accept();
     return true;
 }

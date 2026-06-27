@@ -53,6 +53,7 @@ public:
         EditorSemanticContextService* service,
         const EditorSourceContextProvider& contextProvider,
         EditorSelection& selections);
+    bool handleMouseRelease(MyCodeEditor* editor, QMouseEvent* event);
     void handleMouseMove(
         MyCodeEditor* editor,
         QMouseEvent* event,
@@ -112,6 +113,7 @@ private:
     bool popupNumericMode = false;
     bool popupPreviewMode = false;
     bool popupPinnedBySelection = false;
+    bool consumeNextNavigationRelease = false;
     bool hasLastMousePosition = false;
     QPoint lastMousePosition;
     int popupStartPos = -1;

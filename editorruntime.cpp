@@ -2,7 +2,9 @@
 
 #include "mycodeeditor.h"
 
+#include <QApplication>
 #include <QAbstractButton>
+#include <QClipboard>
 #include <QContextMenuEvent>
 #include <QDragEnterEvent>
 #include <QDragMoveEvent>
@@ -25,6 +27,7 @@
 #include <QTextCursor>
 #include <QTextDocument>
 #include <QTextEdit>
+#include <QStringList>
 
 #include <utility>
 
@@ -612,6 +615,248 @@ bool handleBracketPairInsertion(MyCodeEditor* editor, QKeyEvent* event)
     return true;
 }
 
+bool isPlainCtrlShortcut(QKeyEvent* event, int key)
+{
+    if (!event || event->key() != key)
+        return false;
+    const Qt::KeyboardModifiers modifiers = event->modifiers();
+    return modifiers.testFlag(Qt::ControlModifier)
+        && !modifiers.testFlag(Qt::ShiftModifier)
+        && !modifiers.testFlag(Qt::AltModifier)
+        && !modifiers.testFlag(Qt::MetaModifier);
+}
+
+bool isPlainAltShortcut(QKeyEvent* event, int key)
+{
+    if (!event || event->key() != key)
+        return false;
+    const Qt::KeyboardModifiers modifiers = event->modifiers();
+    return modifiers.testFlag(Qt::AltModifier)
+        && !modifiers.testFlag(Qt::ShiftModifier)
+        && !modifiers.testFlag(Qt::ControlModifier)
+        && !modifiers.testFlag(Qt::MetaModifier);
+}
+
+bool handleDuplicateSelectionOrLine(MyCodeEditor* editor, QKeyEvent* event)
+{
+    if (!editor || !isPlainCtrlShortcut(event, Qt::Key_D))
+        return false;
+
+    QTextCursor cursor = editor->textCursor();
+    if (cursor.hasSelection()) {
+        const int start = cursor.selectionStart();
+        const int end = cursor.selectionEnd();
+        const QString selected =
+            editor->toPlainText().mid(start, end - start);
+        cursor.beginEditBlock();
+        cursor.setPosition(end);
+        cursor.insertText(selected);
+        cursor.endEditBlock();
+        cursor.setPosition(end);
+        cursor.setPosition(end + selected.size(), QTextCursor::KeepAnchor);
+        editor->setTextCursor(cursor);
+        event->accept();
+        return true;
+    }
+
+    const QTextBlock block = cursor.block();
+    if (!block.isValid())
+        return false;
+
+    const QString lineText = block.text();
+    const int column = qMax(0, cursor.position() - block.position());
+    const int insertPos = block.position() + lineText.size();
+    cursor.beginEditBlock();
+    cursor.setPosition(insertPos);
+    cursor.insertText(QStringLiteral("\n") + lineText);
+    cursor.endEditBlock();
+
+    QTextCursor duplicated(editor->document());
+    duplicated.setPosition(insertPos + 1 + qMin(column, lineText.size()));
+    editor->setTextCursor(duplicated);
+    event->accept();
+    return true;
+}
+
+struct LineBlockMoveRange {
+    QTextBlock firstBlock;
+    QTextBlock lastBlock;
+    int selectionStart = -1;
+    int selectionEnd = -1;
+    int originalLineOffset = 0;
+    int originalColumn = 0;
+    bool hasSelection = false;
+};
+
+LineBlockMoveRange lineBlockMoveRange(MyCodeEditor* editor)
+{
+    LineBlockMoveRange range;
+    if (!editor || !editor->document())
+        return range;
+
+    const QTextCursor cursor = editor->textCursor();
+    range.hasSelection = cursor.hasSelection()
+        && cursor.selectionEnd() > cursor.selectionStart();
+    range.selectionStart = cursor.selectionStart();
+    range.selectionEnd = cursor.selectionEnd();
+
+    if (!range.hasSelection) {
+        range.firstBlock = cursor.block();
+        range.lastBlock = cursor.block();
+        range.originalLineOffset = 0;
+        range.originalColumn =
+            cursor.block().isValid()
+                ? qMax(0, cursor.position() - cursor.block().position())
+                : 0;
+        return range;
+    }
+
+    int adjustedEnd = range.selectionEnd;
+    const QTextBlock endAtBlock =
+        editor->document()->findBlock(range.selectionEnd);
+    if (endAtBlock.isValid()
+        && range.selectionEnd == endAtBlock.position()
+        && range.selectionEnd > range.selectionStart) {
+        --adjustedEnd;
+    } else {
+        --adjustedEnd;
+    }
+
+    range.firstBlock = editor->document()->findBlock(range.selectionStart);
+    range.lastBlock =
+        editor->document()->findBlock(qMax(range.selectionStart, adjustedEnd));
+    if (range.firstBlock.isValid() && cursor.block().isValid()) {
+        range.originalLineOffset =
+            qMax(0, cursor.block().blockNumber()
+                     - range.firstBlock.blockNumber());
+        range.originalColumn =
+            qMax(0, cursor.position() - cursor.block().position());
+    }
+    return range;
+}
+
+int blockRangeEndInPlainText(QTextDocument* document, const QTextBlock& block)
+{
+    if (!document || !block.isValid())
+        return -1;
+    const int plainTextLength =
+        qMax(0, document->characterCount() - 1);
+    int end = block.position() + block.text().size();
+    if (end < plainTextLength)
+        ++end;
+    return end;
+}
+
+void restoreMovedLineCursor(MyCodeEditor* editor,
+                            const LineBlockMoveRange& range,
+                            int movedFirstLine,
+                            int positionShift)
+{
+    if (!editor)
+        return;
+
+    if (range.hasSelection) {
+        QTextCursor selection(editor->document());
+        selection.setPosition(qMax(0, range.selectionStart + positionShift));
+        selection.setPosition(qMax(0, range.selectionEnd + positionShift),
+                              QTextCursor::KeepAnchor);
+        editor->setTextCursor(selection);
+        return;
+    }
+
+    const QTextBlock targetBlock =
+        editor->document()->findBlockByNumber(movedFirstLine
+                                              + range.originalLineOffset);
+    if (!targetBlock.isValid())
+        return;
+
+    QTextCursor next(editor->document());
+    next.setPosition(targetBlock.position()
+                     + qMin(range.originalColumn, targetBlock.text().size()));
+    editor->setTextCursor(next);
+}
+
+bool handleMoveLineBlock(MyCodeEditor* editor,
+                         QKeyEvent* event,
+                         bool columnSelectionActive)
+{
+    if (!editor
+        || (!isPlainAltShortcut(event, Qt::Key_Up)
+            && !isPlainAltShortcut(event, Qt::Key_Down))) {
+        return false;
+    }
+
+    if (columnSelectionActive) {
+        emit editor->editorStatusMessageRequested(
+            QStringLiteral("Column selection: Alt+Up/Down is disabled"));
+        event->accept();
+        return true;
+    }
+
+    const bool moveUp = event->key() == Qt::Key_Up;
+    QTextDocument* document = editor->document();
+    const QString text = editor->toPlainText();
+    const LineBlockMoveRange range = lineBlockMoveRange(editor);
+    if (!document || !range.firstBlock.isValid() || !range.lastBlock.isValid())
+        return false;
+    if (moveUp && !range.firstBlock.previous().isValid()) {
+        event->accept();
+        return true;
+    }
+
+    const int start = range.firstBlock.position();
+    const int end = blockRangeEndInPlainText(document, range.lastBlock);
+    if (start < 0 || end <= start || end > text.size())
+        return false;
+
+    const QString movedText = text.mid(start, end - start);
+    QTextCursor cursor(document);
+    if (moveUp) {
+        const QTextBlock previousBlock = range.firstBlock.previous();
+        const int previousStart = previousBlock.position();
+        const int previousLength = start - previousStart;
+        cursor.beginEditBlock();
+        cursor.setPosition(start);
+        cursor.setPosition(end, QTextCursor::KeepAnchor);
+        cursor.removeSelectedText();
+        cursor.setPosition(previousStart);
+        cursor.insertText(movedText);
+        cursor.endEditBlock();
+        restoreMovedLineCursor(editor,
+                               range,
+                               previousBlock.blockNumber(),
+                               -previousLength);
+    } else {
+        if (end >= text.size()) {
+            event->accept();
+            return true;
+        }
+        const QTextBlock nextBlock = range.lastBlock.next();
+        if (!nextBlock.isValid()) {
+            event->accept();
+            return true;
+        }
+        const int nextEnd = blockRangeEndInPlainText(document, nextBlock);
+        if (nextEnd <= end || nextEnd > text.size())
+            return false;
+        const int nextLength = nextEnd - end;
+        cursor.beginEditBlock();
+        cursor.setPosition(nextEnd);
+        cursor.insertText(movedText);
+        cursor.setPosition(start);
+        cursor.setPosition(end, QTextCursor::KeepAnchor);
+        cursor.removeSelectedText();
+        cursor.endEditBlock();
+        restoreMovedLineCursor(editor,
+                               range,
+                               range.firstBlock.blockNumber() + 1,
+                               nextLength);
+    }
+
+    event->accept();
+    return true;
+}
+
 bool selectedFullLineRange(MyCodeEditor* editor, int* rangeStart, int* rangeEnd)
 {
     if (!editor)
@@ -908,6 +1153,120 @@ QPair<int, int> columnSpan(const MyCodeEditorState& state)
             qMax(state.columnAnchorColumn, state.columnCurrentColumn)};
 }
 
+QStringList normalizedClipboardRows(QString text)
+{
+    text.replace(QStringLiteral("\r\n"), QStringLiteral("\n"));
+    text.replace(QLatin1Char('\r'), QLatin1Char('\n'));
+    QStringList rows = text.split(QLatin1Char('\n'));
+    if (rows.size() > 1 && rows.last().isEmpty())
+        rows.removeLast();
+    return rows;
+}
+
+QString columnSelectionClipboardText(MyCodeEditor* editor,
+                                     const MyCodeEditorState& state)
+{
+    if (!editor || !hasColumnSelection(state))
+        return QString();
+
+    QStringList rows;
+    const auto [firstLine, lastLine] = lineSpan(state);
+    const auto [leftColumn, rightColumn] = columnSpan(state);
+    for (int line = firstLine; line <= lastLine; ++line) {
+        const QTextBlock block = editor->document()->findBlockByNumber(line);
+        if (!block.isValid()) {
+            rows.append(QString());
+            continue;
+        }
+        const QString lineText = block.text();
+        const int startColumn = qMin(leftColumn, lineText.size());
+        const int endColumn = qMin(rightColumn, lineText.size());
+        rows.append(endColumn > startColumn
+                        ? lineText.mid(startColumn, endColumn - startColumn)
+                        : QString());
+    }
+    return rows.join(QLatin1Char('\n'));
+}
+
+void updateColumnSelectionHighlight(MyCodeEditor* editor,
+                                    const MyCodeEditorState& state);
+
+void replaceColumnSelectionRows(MyCodeEditor* editor,
+                                MyCodeEditorState& state,
+                                const QStringList& rows,
+                                bool pasteMode)
+{
+    if (!editor || !hasColumnSelection(state))
+        return;
+
+    const auto [firstLine, lastLine] = lineSpan(state);
+    const auto [leftColumn, rightColumn] = columnSpan(state);
+    const bool hasWidth = rightColumn > leftColumn;
+    const bool repeatSingleRow = pasteMode && rows.size() == 1;
+    int maxInsertedColumns = 0;
+
+    QTextCursor cursor(editor->document());
+    cursor.beginEditBlock();
+    for (int line = lastLine; line >= firstLine; --line) {
+        const QTextBlock block = editor->document()->findBlockByNumber(line);
+        if (!block.isValid())
+            continue;
+
+        const int rowIndex = line - firstLine;
+        const QString rowText =
+            rows.isEmpty()
+                ? QString()
+                : (repeatSingleRow
+                       ? rows.constFirst()
+                       : (rowIndex < rows.size() ? rows.at(rowIndex)
+                                                 : QString()));
+        maxInsertedColumns = qMax(maxInsertedColumns, rowText.size());
+
+        const int lineLength = block.text().size();
+        const int startColumn = qMin(leftColumn, lineLength);
+        int endColumn = startColumn;
+        if (hasWidth)
+            endColumn = qMin(rightColumn, lineLength);
+
+        cursor.setPosition(block.position() + startColumn);
+        cursor.setPosition(block.position() + qMax(startColumn, endColumn),
+                           QTextCursor::KeepAnchor);
+
+        if (pasteMode) {
+            const QString padding =
+                leftColumn > lineLength
+                    ? QString(leftColumn - lineLength, QLatin1Char(' '))
+                    : QString();
+            cursor.insertText(padding + rowText);
+        } else if (endColumn > startColumn) {
+            cursor.removeSelectedText();
+        }
+    }
+    cursor.endEditBlock();
+
+    const int collapsedColumn =
+        pasteMode ? leftColumn + maxInsertedColumns : leftColumn;
+    state.columnAnchorLine = firstLine;
+    state.columnCurrentLine = lastLine;
+    state.columnAnchorColumn = collapsedColumn;
+    state.columnCurrentColumn = collapsedColumn;
+    state.columnSelectionAwaitingEndpoint = false;
+    state.columnSelectionDragging = false;
+    state.columnSelectionDragMoved = false;
+
+    const QTextBlock currentBlock =
+        editor->document()->findBlockByNumber(lastLine);
+    if (currentBlock.isValid()) {
+        QTextCursor caret(editor->document());
+        caret.setPosition(currentBlock.position()
+                          + qMin(collapsedColumn,
+                                 currentBlock.text().size()));
+        editor->setTextCursor(caret);
+    }
+    updateColumnSelectionHighlight(editor, state);
+    editor->viewport()->update();
+}
+
 void removeColumnSelections(MyCodeEditor* editor)
 {
     if (!editor)
@@ -954,6 +1313,9 @@ void updateColumnSelectionHighlight(MyCodeEditor* editor,
 
     const auto [firstLine, lastLine] = lineSpan(state);
     const auto [leftColumn, rightColumn] = columnSpan(state);
+    if (leftColumn == rightColumn)
+        return;
+
     QList<QTextEdit::ExtraSelection> selections = editor->extraSelections();
     for (int line = firstLine; line <= lastLine; ++line) {
         const QTextBlock block = editor->document()->findBlockByNumber(line);
@@ -962,8 +1324,7 @@ void updateColumnSelectionHighlight(MyCodeEditor* editor,
 
         const int lineLength = block.text().size();
         const int startColumn = qMin(leftColumn, lineLength);
-        const int visibleEndColumn =
-            qMin(qMax(rightColumn, leftColumn + 1), lineLength);
+        const int visibleEndColumn = qMin(rightColumn, lineLength);
         if (visibleEndColumn <= startColumn)
             continue;
 
@@ -1007,8 +1368,7 @@ bool beginColumnSelection(MyCodeEditor* editor,
 
     const QTextCursor cursor =
         editor->cursorForPosition(event->position().toPoint());
-    if (state.columnSelectionActive
-        && state.columnSelectionAwaitingEndpoint) {
+    if (state.columnSelectionActive) {
         setColumnPointFromCursor(cursor,
                                  &state.columnCurrentLine,
                                  &state.columnCurrentColumn);
@@ -1022,18 +1382,67 @@ bool beginColumnSelection(MyCodeEditor* editor,
         return true;
     }
 
+    const QTextCursor anchor = editor->textCursor();
     state.columnSelectionActive = true;
-    state.columnSelectionDragging = true;
-    state.columnSelectionAwaitingEndpoint = true;
+    state.columnSelectionDragging = false;
+    state.columnSelectionAwaitingEndpoint = false;
     state.columnSelectionDragMoved = false;
-    setColumnPointFromCursor(cursor,
+    setColumnPointFromCursor(anchor,
                              &state.columnAnchorLine,
                              &state.columnAnchorColumn);
-    state.columnCurrentLine = state.columnAnchorLine;
-    state.columnCurrentColumn = state.columnAnchorColumn;
+    setColumnPointFromCursor(cursor,
+                             &state.columnCurrentLine,
+                             &state.columnCurrentColumn);
     updateColumnSelectionHighlight(editor, state);
     editor->viewport()->setCursor(Qt::CrossCursor);
     editor->viewport()->update();
+    event->accept();
+    return true;
+}
+
+bool handleColumnSelectionClipboard(MyCodeEditor* editor,
+                                    QKeyEvent* event,
+                                    MyCodeEditorState& state)
+{
+    if (!editor || !event || !hasColumnSelection(state))
+        return false;
+    const Qt::KeyboardModifiers modifiers = event->modifiers();
+    if (!modifiers.testFlag(Qt::ControlModifier)
+        || modifiers.testFlag(Qt::ShiftModifier)
+        || modifiers.testFlag(Qt::AltModifier)
+        || modifiers.testFlag(Qt::MetaModifier)) {
+        return false;
+    }
+
+    const bool copy = event->key() == Qt::Key_C;
+    const bool cut = event->key() == Qt::Key_X;
+    const bool paste = event->key() == Qt::Key_V;
+    if (!copy && !cut && !paste)
+        return false;
+
+    QClipboard* clipboard = QApplication::clipboard();
+    if (!clipboard)
+        return false;
+
+    if (copy || cut) {
+        clipboard->setText(columnSelectionClipboardText(editor, state));
+        if (cut) {
+            const auto [firstLine, lastLine] = lineSpan(state);
+            replaceColumnSelectionRows(
+                editor,
+                state,
+                QStringList(lastLine - firstLine + 1, QString()),
+                false);
+        }
+        event->accept();
+        return true;
+    }
+
+    replaceColumnSelectionRows(
+        editor,
+        state,
+        normalizedClipboardRows(clipboard->text()),
+        true);
     event->accept();
     return true;
 }
@@ -1270,7 +1679,13 @@ void paintColumnSelectionOverlay(MyCodeEditor* editor,
         const int column = qMin(leftColumn, block.text().size());
         QTextCursor cursor(block);
         cursor.setPosition(block.position() + column);
-        const QRect rect = editor->cursorRect(cursor);
+        QRect rect = editor->cursorRect(cursor);
+        if (leftColumn > block.text().size()) {
+            const QFontMetrics metrics(editor->font());
+            rect.translate(metrics.horizontalAdvance(QLatin1Char(' '))
+                               * (leftColumn - block.text().size()),
+                           0);
+        }
         if (!event->rect().intersects(rect.adjusted(-4, -2, 4, 2)))
             continue;
 
@@ -1489,6 +1904,12 @@ bool MyCodeEditorState::handleKeyPress(MyCodeEditor* editor, QKeyEvent* event)
     if (handleSafeRename(editor, event))
         return true;
 
+    if (handleDuplicateSelectionOrLine(editor, event))
+        return true;
+
+    if (handleMoveLineBlock(editor, event, columnSelectionActive))
+        return true;
+
     handleControlKeyPress(editor, event);
 
     if (sourceNavigation.handleSourceSymbolShortcut(
@@ -1503,6 +1924,9 @@ bool MyCodeEditorState::handleKeyPress(MyCodeEditor* editor, QKeyEvent* event)
         event->ignore();
         return true;
     }
+
+    if (handleColumnSelectionClipboard(editor, event, *this))
+        return true;
 
     if (handleColumnSelectionNavigation(editor, event, *this))
         return true;
@@ -1798,6 +2222,9 @@ bool MyCodeEditorState::handleMouseRelease(
     MyCodeEditor* editor,
     QMouseEvent* event)
 {
+    if (sourceNavigation.handleMouseRelease(editor, event))
+        return true;
+
     return endColumnSelectionDrag(editor, event, *this);
 }
 
