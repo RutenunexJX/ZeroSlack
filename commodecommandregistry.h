@@ -21,8 +21,12 @@ struct ComModeCommandMetadata {
 const QList<ComModeCommandMetadata>& comModeCommandRegistry();
 const ComModeCommandMetadata* findComModeCommandMetadata(
     const QString& command);
+bool validateComModeCommandRegistry(
+    const QList<ComModeCommandMetadata>& registry,
+    QString* reason = nullptr);
 bool comModeCommandRegistryIsValid(QString* reason = nullptr);
 QString comModeCommandHint(const QString& buffer);
+QString comModeCommandFailureMessage(const QString& buffer);
 QString executableComModeCommand(const QString& buffer);
 bool isComModeBufferPrefix(const QString& buffer);
 bool isComModeLineBuffer(const QString& buffer);

@@ -6106,6 +6106,75 @@ static void runComModeRegression(MainWindow& window)
                comModeCommandHint(QStringLiteral("g20"))
                    .contains(QStringLiteral("Go module line")),
                true);
+    QString registryValidationError;
+    const QList<ComModeCommandMetadata> duplicateRegistry = {
+        {QStringLiteral("gm"),
+         true,
+         ComModeCommandInputKind::Fixed,
+         QStringLiteral("navigation"),
+         QStringLiteral("Go module"),
+         QStringLiteral("Open the module picker.")},
+        {QStringLiteral("gm"),
+         true,
+         ComModeCommandInputKind::Fixed,
+         QStringLiteral("navigation"),
+         QStringLiteral("Go module duplicate"),
+         QStringLiteral("Duplicate command.")},
+    };
+    expectBool("COM registry validation reports duplicate commands",
+               !validateComModeCommandRegistry(duplicateRegistry,
+                                               &registryValidationError)
+                   && registryValidationError
+                          .contains(QStringLiteral("duplicate COM command"))
+                   && registryValidationError.contains(QStringLiteral("gm")),
+               true);
+    const QList<ComModeCommandMetadata> prefixConflictRegistry = {
+        {QStringLiteral("g"),
+         true,
+         ComModeCommandInputKind::Fixed,
+         QStringLiteral("navigation"),
+         QStringLiteral("Go"),
+         QStringLiteral("Executable short command.")},
+        {QStringLiteral("gm"),
+         true,
+         ComModeCommandInputKind::Fixed,
+         QStringLiteral("navigation"),
+         QStringLiteral("Go module"),
+         QStringLiteral("Open the module picker.")},
+    };
+    expectBool("COM registry validation reports executable prefix conflicts",
+               !validateComModeCommandRegistry(prefixConflictRegistry,
+                                               &registryValidationError)
+                   && registryValidationError
+                          .contains(QStringLiteral("prefix conflict"))
+                   && registryValidationError.contains(QStringLiteral("g"))
+                   && registryValidationError.contains(QStringLiteral("gm")),
+               true);
+    const QList<ComModeCommandMetadata> malformedPrefixRegistry = {
+        {QStringLiteral("gp"),
+         false,
+         ComModeCommandInputKind::Fixed,
+         QStringLiteral("package-parameter-port"),
+         QStringLiteral("P-family prefix"),
+         QStringLiteral("Prefix without a child.")},
+    };
+    expectBool("COM registry validation reports malformed prefixes",
+               !validateComModeCommandRegistry(malformedPrefixRegistry,
+                                               &registryValidationError)
+                   && registryValidationError
+                          .contains(QStringLiteral("no registered child"))
+                   && registryValidationError.contains(QStringLiteral("gp")),
+               true);
+    expectBool("COM failure message names incomplete prefixes",
+               comModeCommandFailureMessage(QStringLiteral("gp"))
+                       .contains(QStringLiteral("Incomplete COM command"))
+                   && comModeCommandFailureMessage(QStringLiteral("gp"))
+                          .contains(QStringLiteral("gpk")),
+               true);
+    expectBool("COM failure message names unknown buffers",
+               comModeCommandFailureMessage(QStringLiteral("gx"))
+                   .contains(QStringLiteral("gx")),
+               true);
 
     MyCodeEditor insertEditor;
     insertEditor.resize(360, 120);
@@ -6141,6 +6210,18 @@ static void runComModeRegression(MainWindow& window)
     expectBool("Esc clears COM buffer without exiting",
                modeEditor.comModeActive()
                    && modeEditor.comModeBuffer().isEmpty(),
+               true);
+    QSignalSpy comStatusSpy(&modeEditor,
+                            &MyCodeEditor::editorStatusMessageRequested);
+    sendWidgetKey(&modeEditor, Qt::Key_G, QStringLiteral("g"));
+    sendWidgetKey(&modeEditor, Qt::Key_X, QStringLiteral("x"));
+    expectBool("COM unknown input reports centralized failure message",
+               modeEditor.comModeActive()
+                   && modeEditor.comModeBuffer().isEmpty()
+                   && comStatusSpy.count() == 1
+                   && comStatusSpy.takeFirst().at(0).toString()
+                          == comModeCommandFailureMessage(
+                              QStringLiteral("gx")),
                true);
     QSignalSpy comCommandSpy(&modeEditor,
                              &MyCodeEditor::comCommandRequested);

@@ -2148,7 +2148,7 @@ bool handleComModeKeyPress(MyCodeEditor* editor,
                 emit editor->comRelativeLineRequested(moduleLine);
             }
         } else if (!buffer.isEmpty()) {
-            const QString message = QStringLiteral("Unknown COM command");
+            const QString message = comModeCommandFailureMessage(buffer);
             state.publishComModeState(editor, message);
             emit editor->editorStatusMessageRequested(message);
         } else {
@@ -2184,7 +2184,7 @@ bool handleComModeKeyPress(MyCodeEditor* editor,
     }
 
     state.modes.clearComBuffer();
-    const QString message = QStringLiteral("Unknown COM command");
+    const QString message = comModeCommandFailureMessage(nextBuffer);
     state.publishComModeState(editor, message);
     emit editor->editorStatusMessageRequested(message);
     return accept();

@@ -127,6 +127,7 @@ First milestones:
 - M4.2 add help/hint rendering in the command strip or picker
   (complete: command strip renders registry-backed prefix and line hints)
 - M4.3 centralize conflict validation and failure messages
+  (complete: registry validates conflicts and supplies COM failure messages)
 
 ### 5. Limited Workspace Workflow Additions
 

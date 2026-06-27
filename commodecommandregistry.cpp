@@ -41,6 +41,13 @@ bool fixedRegistryHasChild(const QList<ComModeCommandMetadata>& registry,
     return false;
 }
 
+QString commandLabel(const ComModeCommandMetadata& command)
+{
+    return command.command.isEmpty()
+        ? QStringLiteral("<empty>")
+        : command.command;
+}
+
 const ComModeCommandMetadata* moduleRelativeLineCommand()
 {
     for (const ComModeCommandMetadata& command : comModeCommandRegistry()) {
@@ -213,9 +220,10 @@ const ComModeCommandMetadata* findComModeCommandMetadata(
     return nullptr;
 }
 
-bool comModeCommandRegistryIsValid(QString* reason)
+bool validateComModeCommandRegistry(
+    const QList<ComModeCommandMetadata>& registry,
+    QString* reason)
 {
-    const QList<ComModeCommandMetadata>& registry = comModeCommandRegistry();
     for (int i = 0; i < registry.size(); ++i) {
         const ComModeCommandMetadata& left = registry.at(i);
         if (left.command.isEmpty()) {
@@ -224,7 +232,8 @@ bool comModeCommandRegistryIsValid(QString* reason)
         }
         if (!left.executable && left.inputKind != ComModeCommandInputKind::Fixed) {
             setReason(reason,
-                      QStringLiteral("non-fixed COM commands must execute"));
+                      QStringLiteral("COM prefix must be fixed: %1")
+                          .arg(commandLabel(left)));
             return false;
         }
         if (!left.executable && !fixedRegistryHasChild(registry, left)) {
@@ -249,7 +258,9 @@ bool comModeCommandRegistryIsValid(QString* reason)
                     || right.command.startsWith(left.command))) {
                 setReason(
                     reason,
-                    QStringLiteral("executable COM command prefix conflict"));
+                    QStringLiteral(
+                        "executable COM command prefix conflict: %1 / %2")
+                        .arg(left.command, right.command));
                 return false;
             }
         }
@@ -257,6 +268,11 @@ bool comModeCommandRegistryIsValid(QString* reason)
     if (reason)
         reason->clear();
     return true;
+}
+
+bool comModeCommandRegistryIsValid(QString* reason)
+{
+    return validateComModeCommandRegistry(comModeCommandRegistry(), reason);
 }
 
 QString comModeCommandHint(const QString& buffer)
@@ -281,6 +297,35 @@ QString comModeCommandHint(const QString& buffer)
     }
 
     return childCommandHint(buffer);
+}
+
+QString comModeCommandFailureMessage(const QString& buffer)
+{
+    QString registryError;
+    if (!comModeCommandRegistryIsValid(&registryError)) {
+        return registryError.isEmpty()
+            ? QStringLiteral("COM command registry is invalid")
+            : QStringLiteral("COM command registry is invalid: %1")
+                  .arg(registryError);
+    }
+
+    if (buffer.isEmpty())
+        return QStringLiteral("Unknown COM command");
+
+    if (const ComModeCommandMetadata* metadata =
+            findComModeCommandMetadata(buffer)) {
+        if (!metadata->executable) {
+            const QString hint = childCommandHint(buffer);
+            if (!hint.isEmpty()) {
+                return QStringLiteral("Incomplete COM command: %1 (%2)")
+                    .arg(buffer, hint);
+            }
+            return QStringLiteral("Incomplete COM command: %1")
+                .arg(buffer);
+        }
+    }
+
+    return QStringLiteral("Unknown COM command: %1").arg(buffer);
 }
 
 QString executableComModeCommand(const QString& buffer)

@@ -28,7 +28,7 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
 
 ## Current Goal State
 
-Current milestone: `G4.3 Centralized Conflict Validation And Failure Reason Display`.
+Current milestone: `G1.1 Editor Daily Action Inventory`.
 
 Status:
 
@@ -43,20 +43,25 @@ Status:
   milestone: `commodecommandregistry` exposes hint text for executable commands,
   non-executable prefixes, and module-relative line buffers; the app-level
   command strip renders those hints.
-- Focused verification for G4.2: Release `gui_smoke_test` target compile/link
+- G4.3 Centralized Conflict Validation And Failure Reason Display is complete in
+  the current milestone: registry validation can be tested against injected
+  metadata, reports duplicate command, executable prefix conflict, and malformed
+  prefix reasons, and editor COM failures use registry-backed messages where
+  practical.
+- Focused verification for G4.3: Release `gui_smoke_test` target compile/link
   passed without launching the executable.
 - Verification flow now includes checking for external Windows application-error
   or memory-read dialogs when CTest appears stalled.
 
-Completion criteria for G4.3:
+Completion criteria for G1.1:
 
-- command conflict validation stays centralized in `commodecommandregistry`
-- registry validation reports actionable failure reasons for duplicates,
-  executable prefix conflicts, and malformed prefixes
-- COM Mode failure messages use the centralized command metadata where practical
-- current command behavior is preserved
+- inventory current replace, goto, comment, uncomment, indent, and unindent
+  action paths
+- document existing shortcuts, command entry points, and missing entry points
+- identify the first coherent action family for implementation
+- no editor behavior changes
 - `readme.md`, `plan.md`, and `goal.md` are updated
-- appropriate focused verification passes
+- appropriate documentation verification passes
 - milestone commit is pushed
 
 ## Track 1: Editor Daily Operations Completion
