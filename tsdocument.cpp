@@ -259,6 +259,32 @@ TSNode ancestorOfType(TSNode node, const char* expected)
     return {};
 }
 
+bool isRtlContainerDeclaration(TSNode node)
+{
+    return nodeTypeIs(node, "module_declaration")
+        || nodeTypeIs(node, "interface_declaration")
+        || nodeTypeIs(node, "program_declaration");
+}
+
+TSNode rtlContainerAncestor(TSNode node)
+{
+    while (!ts_node_is_null(node)) {
+        if (isRtlContainerDeclaration(node))
+            return node;
+        node = ts_node_parent(node);
+    }
+    return {};
+}
+
+QString rtlContainerKindText(TSNode node)
+{
+    if (nodeTypeIs(node, "interface_declaration"))
+        return QStringLiteral("interface");
+    if (nodeTypeIs(node, "program_declaration"))
+        return QStringLiteral("program");
+    return QStringLiteral("module");
+}
+
 TSNode directNamedChildOfType(TSNode node, const char* expected)
 {
     if (ts_node_is_null(node))
@@ -1604,6 +1630,70 @@ TSAlwaysScopeTarget TSDocument::alwaysScopeTarget(
         target.kindText = QStringLiteral("always");
     target.label = QStringLiteral("%1 lines %2-%3")
                        .arg(target.kindText)
+                       .arg(target.startLine)
+                       .arg(target.endLine);
+    return target;
+}
+
+TSModuleScopeTarget TSDocument::moduleScopeTarget(
+    int cursorChar,
+    int selectionStartChar,
+    int selectionEndChar) const
+{
+    TSModuleScopeTarget target;
+
+    const int textSize = m_text.size();
+    if (textSize <= 0)
+        return target;
+
+    const bool hasSelection =
+        selectionStartChar >= 0 && selectionEndChar > selectionStartChar;
+    int lookupStart = qBound(0, cursorChar, textSize - 1);
+    int lookupEnd = lookupStart;
+    if (hasSelection) {
+        const int rawStart = qBound(0,
+                                    qMin(selectionStartChar, selectionEndChar),
+                                    textSize);
+        const int rawEnd = qBound(0,
+                                  qMax(selectionStartChar, selectionEndChar),
+                                  textSize);
+        lookupStart = firstNonSpaceChar(m_text, rawStart, rawEnd);
+        lookupEnd = lastNonSpaceChar(m_text, rawStart, rawEnd);
+        if (lookupStart > lookupEnd) {
+            lookupStart = qBound(0, cursorChar, textSize - 1);
+            lookupEnd = lookupStart;
+        }
+    }
+
+    TSNode startNode = namedNodeAtChar(m_tree, lookupStart, textSize);
+    TSNode module = rtlContainerAncestor(startNode);
+    if (ts_node_is_null(module))
+        return target;
+
+    if (hasSelection) {
+        TSNode endNode = namedNodeAtChar(m_tree, lookupEnd, textSize);
+        TSNode endModule = rtlContainerAncestor(endNode);
+        if (ts_node_is_null(endModule) || !ts_node_eq(module, endModule)) {
+            target.status = TSModuleScopeStatus::AmbiguousSelection;
+            return target;
+        }
+    }
+
+    if (ts_node_has_error(module))
+        return target;
+
+    target.status = TSModuleScopeStatus::Ok;
+    target.startChar = nodeStartChar(module);
+    target.endChar = nodeEndChar(module);
+    target.startLine = nodeStartLine(module);
+    target.endLine = nodeEndLine(module);
+    target.kindText = rtlContainerKindText(module);
+    target.moduleName = declarationName(m_text, module);
+    const QString displayName =
+        target.moduleName.isEmpty() ? QStringLiteral("<unnamed>")
+                                    : target.moduleName;
+    target.label = QStringLiteral("%1 %2 lines %3-%4")
+                       .arg(target.kindText, displayName)
                        .arg(target.startLine)
                        .arg(target.endLine);
     return target;

@@ -28,7 +28,7 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
 
 ## Current Goal State
 
-Current milestone: `G9.2 Selected-Module Wave Preview Entry And Scoped Report`.
+Current milestone: `G9.3 Wave Preview Sketch Readability Polish`.
 
 Status:
 
@@ -305,13 +305,25 @@ Status:
   compile/link; `ctest -R "^completion_test$"` and `ctest -R
   "^relationship_test$"` passed. `gui_smoke_test` was not launched.
 
-Completion criteria for G9.2:
+- G9.2 Selected-Module Wave Preview Entry And Scoped Report is complete:
+  `TSDocument` now exposes current/selected module/interface/program scope
+  targets and rejects selections spanning multiple RTL containers. `MyCodeEditor`
+  exposes that editor-local target to `MainWindow`; Wave Preview uses selected
+  `always` scope first and falls back to selected/current module scope only when
+  no `always` scope is active. The report still flows through existing
+  `WavePreviewQuery` / `WavePreviewService` scoped fields; no simulator
+  behavior, workspace scan, UI-side Slang work, or sketch readability polish was
+  added.
+- Focused verification for G9.2: `git diff --check`; Release
+  `completion_test`, `relationship_test`, and `gui_smoke_test` targets
+  compile/link; `ctest -R "^completion_test$"` and `ctest -R
+  "^relationship_test$"` passed. `gui_smoke_test` was not launched.
 
-- add a selected-module Wave Preview entry point without adding simulator
-  behavior
-- shape a scoped module report through existing model/service boundaries
+Completion criteria for G9.3:
+
+- improve Wave Preview sketch readability without adding simulator behavior
+- preserve selected-`always` and selected/current module scoped entries
 - keep UI as a report consumer; do not scan workspace files or run Slang from UI
-- preserve the selected-`always` entry behavior from G9.1
 - `readme.md`, `plan.md`, and `goal.md` are updated
 - appropriate focused verification passes
 - milestone commit is pushed
@@ -492,6 +504,7 @@ Milestones:
 - G9.1 Selected-`always` entry and scoped report.
   (complete: editor Tree-sitter scope target plus scoped service report)
 - G9.2 Selected-module entry and scoped report.
+  (complete: module fallback scope target plus scoped service report)
 - G9.3 Sketch readability polish.
 
 ## Track 10: State Transition Graph

@@ -2702,6 +2702,87 @@ int main(int argc, char** argv) {
                    && !waveLaneNamed(editorAlwaysReport,
                                      QStringLiteral("pulse")),
                true);
+
+    const QString moduleScopedWaveInput =
+        QStringLiteral("module wave_a(\n"
+                       "    input logic a,\n"
+                       "    output logic y\n"
+                       ");\n"
+                       "always_comb begin\n"
+                       "    y = a;\n"
+                       "end\n"
+                       "endmodule\n"
+                       "\n"
+                       "module wave_b(\n"
+                       "    input logic b,\n"
+                       "    output logic z\n"
+                       ");\n"
+                       "assign z = b;\n"
+                       "endmodule\n");
+    TSDocument moduleScopeDocument;
+    moduleScopeDocument.setText(moduleScopedWaveInput);
+    const int waveAModulePosition =
+        moduleScopedWaveInput.indexOf(QStringLiteral("module wave_a"));
+    const int waveBModulePosition =
+        moduleScopedWaveInput.indexOf(QStringLiteral("module wave_b"));
+    const int waveBAssignPosition =
+        moduleScopedWaveInput.indexOf(QStringLiteral("assign z"));
+    const TSModuleScopeTarget waveBModuleScope =
+        moduleScopeDocument.moduleScopeTarget(waveBAssignPosition);
+    const TSModuleScopeTarget selectedWaveAModuleScope =
+        moduleScopeDocument.moduleScopeTarget(waveAModulePosition,
+                                              waveAModulePosition,
+                                              waveBModulePosition);
+    const TSModuleScopeTarget ambiguousModuleScope =
+        moduleScopeDocument.moduleScopeTarget(waveAModulePosition,
+                                              waveAModulePosition,
+                                              moduleScopedWaveInput.size());
+    expectBool("TSDocument current module scope",
+               waveBModuleScope.ok()
+                   && waveBModuleScope.moduleName == QStringLiteral("wave_b")
+                   && waveBModuleScope.label.contains(QStringLiteral("wave_b")),
+               true);
+    expectBool("TSDocument selected module scope trims whitespace",
+               selectedWaveAModuleScope.ok()
+                   && selectedWaveAModuleScope.moduleName
+                          == QStringLiteral("wave_a")
+                   && selectedWaveAModuleScope.startChar
+                          == waveAModulePosition,
+               true);
+    expectBool("TSDocument selected module rejects multiple modules",
+               !ambiguousModuleScope.ok()
+                   && ambiguousModuleScope.status
+                          == TSModuleScopeStatus::AmbiguousSelection,
+               true);
+
+    MyCodeEditor moduleScopeEditor;
+    moduleScopeEditor.setPlainText(moduleScopedWaveInput);
+    QTextCursor moduleScopeCursor(moduleScopeEditor.document());
+    moduleScopeCursor.setPosition(waveBAssignPosition);
+    moduleScopeEditor.setTextCursor(moduleScopeCursor);
+    const EditorModuleScopeTarget editorModuleScope =
+        moduleScopeEditor.currentModuleScopeTarget();
+    WavePreviewQuery editorModuleQuery;
+    editorModuleQuery.fileName = QStringLiteral("module_wave_probe.sv");
+    editorModuleQuery.documentText = moduleScopedWaveInput;
+    editorModuleQuery.scopeStartPosition = editorModuleScope.startPosition;
+    editorModuleQuery.scopeEndPosition = editorModuleScope.endPosition;
+    editorModuleQuery.scopeLabel = editorModuleScope.label;
+    const WavePreviewReport editorModuleReport =
+        WavePreviewService::getInstance()->previewForDocument(
+            editorModuleQuery);
+    expectBool("Editor WavePreview module scope report",
+               editorModuleScope.ok()
+                   && editorModuleScope.moduleName == QStringLiteral("wave_b")
+                   && editorModuleReport.scoped
+                   && editorModuleReport.scopeLabel == editorModuleScope.label
+                   && editorModuleReport.available
+                   && editorModuleReport.assignmentCount == 1
+                   && waveLaneNamed(editorModuleReport,
+                                    QStringLiteral("z"))
+                   && !waveLaneNamed(editorModuleReport,
+                                     QStringLiteral("y")),
+               true);
     expectBool("WavePreview q lane has two events",
                waveLaneNamed(waveReport, QStringLiteral("q"))
                    && waveLaneNamed(waveReport, QStringLiteral("q"))->assignments.size() == 2,

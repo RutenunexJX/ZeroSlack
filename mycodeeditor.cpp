@@ -412,6 +412,11 @@ EditorAlwaysScopeTarget MyCodeEditor::currentAlwaysScopeTarget() const
     return state->currentAlwaysScopeTarget(this);
 }
 
+EditorModuleScopeTarget MyCodeEditor::currentModuleScopeTarget() const
+{
+    return state->currentModuleScopeTarget(this);
+}
+
 bool MyCodeEditor::executeComPortAppend(QString* message)
 {
     return state->executeComPortAppend(this, message);

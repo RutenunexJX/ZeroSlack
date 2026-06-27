@@ -724,6 +724,8 @@ First milestones:
   block through editor Tree-sitter scope detection and the existing service
   report path)
 - M9.2 selected-module entry and scoped report
+  (complete: Wave Preview falls back to selected/current module scope when no
+  selected/current `always` scope is active)
 - M9.3 UI polish for sketch readability
 
 M9.1 implementation constraints:
@@ -743,6 +745,29 @@ M9.1 implementation status:
   `MainWindow` refreshes the Wave Preview dock from that scope only.
 - Complete: `WavePreviewService` continues to own scoped report shaping through
   its existing query fields; UI code remains a report consumer.
+- Verification: `git diff --check`; Release `completion_test`,
+  `relationship_test`, and `gui_smoke_test` targets compile/link; `ctest -R
+  "^completion_test$"` and `ctest -R "^relationship_test$"` passed.
+  `gui_smoke_test` was not launched.
+
+M9.2 implementation constraints:
+
+- Preserve M9.1 `always` priority: when the cursor or selection identifies an
+  `always` block, the preview remains block-scoped.
+- Use editor/Tree-sitter scope detection for the current/selected module and
+  pass a bounded module scope into the existing Wave Preview query/report path.
+- Do not add simulator behavior, workspace scans, UI-side Slang work, or sketch
+  readability polish in M9.2.
+
+M9.2 implementation status:
+
+- Complete: `TSDocument` exposes a current/selected module/interface/program
+  scope target and rejects selections spanning multiple RTL containers.
+- Complete: `MyCodeEditor` exposes an editor-local module scope target, and
+  `MainWindow` falls back to it only when no selected/current `always` scope is
+  active.
+- Complete: module-scoped reports continue through the existing
+  `WavePreviewQuery` / `WavePreviewService` scoped report path.
 - Verification: `git diff --check`; Release `completion_test`,
   `relationship_test`, and `gui_smoke_test` targets compile/link; `ctest -R
   "^completion_test$"` and `ctest -R "^relationship_test$"` passed.

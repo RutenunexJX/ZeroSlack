@@ -621,20 +621,34 @@ void MainWindow::refreshActiveEditorWavePreview()
     const DocumentSnapshot document = tabManager->getCurrentDocument();
     const EditorAlwaysScopeTarget alwaysScope =
         editor->currentAlwaysScopeTarget();
-    if (!alwaysScope.ok()) {
-        semanticDocks->wavePreviewPanelCoordinator()->renderUnavailable(
-            alwaysScope.failureMessage.isEmpty()
-                ? QStringLiteral("Place the cursor in an always block to preview.")
-                : alwaysScope.failureMessage);
+    if (alwaysScope.ok()) {
+        semanticDocks->wavePreviewPanelCoordinator()->refreshFromDocument(
+            document.fileName,
+            editor->toPlainText(),
+            document.dirty,
+            alwaysScope.startPosition,
+            alwaysScope.endPosition,
+            alwaysScope.label);
         return;
     }
+
+    const EditorModuleScopeTarget moduleScope =
+        editor->currentModuleScopeTarget();
+    if (!moduleScope.ok()) {
+        semanticDocks->wavePreviewPanelCoordinator()->renderUnavailable(
+            moduleScope.failureMessage.isEmpty()
+                ? QStringLiteral("Place the cursor in a module or always block to preview.")
+                : moduleScope.failureMessage);
+        return;
+    }
+
     semanticDocks->wavePreviewPanelCoordinator()->refreshFromDocument(
         document.fileName,
         editor->toPlainText(),
         document.dirty,
-        alwaysScope.startPosition,
-        alwaysScope.endPosition,
-        alwaysScope.label);
+        moduleScope.startPosition,
+        moduleScope.endPosition,
+        moduleScope.label);
 }
 
 

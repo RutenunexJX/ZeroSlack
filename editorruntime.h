@@ -30,6 +30,7 @@ class QMouseEvent;
 class QPainter;
 class QPaintEvent;
 struct EditorAlwaysScopeTarget;
+struct EditorModuleScopeTarget;
 
 struct MyCodeEditorState
 {
@@ -80,6 +81,8 @@ struct MyCodeEditorState
     QString currentModuleNameAt(int charPos) const;
     QString currentModuleName(const MyCodeEditor* editor) const;
     EditorAlwaysScopeTarget currentAlwaysScopeTarget(
+        const MyCodeEditor* editor) const;
+    EditorModuleScopeTarget currentModuleScopeTarget(
         const MyCodeEditor* editor) const;
     bool executeComPortAppend(MyCodeEditor* editor, QString* message);
     bool executeComSignalInsert(MyCodeEditor* editor, QString* message);

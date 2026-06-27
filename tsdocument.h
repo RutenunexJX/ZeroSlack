@@ -157,6 +157,25 @@ struct TSAlwaysScopeTarget {
     bool ok() const { return status == TSAlwaysScopeStatus::Ok; }
 };
 
+enum class TSModuleScopeStatus {
+    Ok,
+    NoCurrentModule,
+    AmbiguousSelection
+};
+
+struct TSModuleScopeTarget {
+    TSModuleScopeStatus status = TSModuleScopeStatus::NoCurrentModule;
+    int startChar = -1;
+    int endChar = -1;
+    int startLine = 0;
+    int endLine = 0;
+    QString moduleName;
+    QString kindText;
+    QString label;
+
+    bool ok() const { return status == TSModuleScopeStatus::Ok; }
+};
+
 // Persistent, per-document Tree-sitter model: keeps a live parse tree plus the document text and
 // supports incremental re-parse on edits. Foundation of the real-time syntactic layer
 // (highlighting, live outline / scope) in the Slang + Tree-sitter architecture.
@@ -227,6 +246,11 @@ public:
 
     // Current/selected always block range for scoped Wave Preview.
     TSAlwaysScopeTarget alwaysScopeTarget(int cursorChar,
+                                          int selectionStartChar = -1,
+                                          int selectionEndChar = -1) const;
+
+    // Current/selected module/interface/program range for scoped Wave Preview.
+    TSModuleScopeTarget moduleScopeTarget(int cursorChar,
                                           int selectionStartChar = -1,
                                           int selectionEndChar = -1) const;
 

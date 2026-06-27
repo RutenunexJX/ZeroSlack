@@ -2288,6 +2288,42 @@ EditorAlwaysScopeTarget MyCodeEditorState::currentAlwaysScopeTarget(
     return result;
 }
 
+EditorModuleScopeTarget MyCodeEditorState::currentModuleScopeTarget(
+    const MyCodeEditor* editor) const
+{
+    EditorModuleScopeTarget result;
+    if (!editor) {
+        result.failureMessage = QStringLiteral("No document selected.");
+        return result;
+    }
+
+    const QTextCursor cursor = editor->textCursor();
+    const TSModuleScopeTarget target =
+        syntax.moduleScopeTargetAt(cursor.position(),
+                                   cursor.hasSelection()
+                                       ? cursor.selectionStart()
+                                       : -1,
+                                   cursor.hasSelection()
+                                       ? cursor.selectionEnd()
+                                       : -1);
+    if (!target.ok()) {
+        result.failureMessage =
+            target.status == TSModuleScopeStatus::AmbiguousSelection
+                ? QStringLiteral("Select only one module to preview.")
+                : QStringLiteral("Place the cursor in a module or always block to preview.");
+        return result;
+    }
+
+    result.available = true;
+    result.startPosition = target.startChar;
+    result.endPosition = target.endChar;
+    result.startLine = target.startLine;
+    result.endLine = target.endLine;
+    result.moduleName = target.moduleName;
+    result.label = target.label;
+    return result;
+}
+
 bool MyCodeEditorState::executeComPortAppend(MyCodeEditor* editor,
                                              QString* message)
 {
