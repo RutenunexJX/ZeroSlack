@@ -61,8 +61,10 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
   now has a service/model-owned persistence baseline and explicit cross-file
   restore flow plus basic rename, search, and stale/consumed cleanup
   management.
-- Signal Kernel Graph exists as a signal-centric exploration graph. Dense
-  fanout still needs grouping, filtering, and search.
+- Signal Kernel Graph exists as a signal-centric exploration graph.
+  Service/report-layer high-fanout grouping metadata is available for dense
+  input/output sides; UI collapse/expand, filtering, and graph search remain
+  pending.
 - Wave Preview exists as a code-understanding sketch, not a simulator.
 - Formatter support exists as conservative editor formatting. Current daily
   editor action inventory: `Ctrl+F` opens Find; formatter document/selection
@@ -175,6 +177,11 @@ and restoring Global Control `ow r` for recent workspaces.
   and reinserts custom fold block text, and `MainWindow` wires the dock/model
   plus restore command flow. Durable shelf persistence and restore policy live
   in the model/service layer, not in the panel.
+- Signal Kernel Graph baseline: `SignalKernelGraphService` builds graph
+  reports from `SignalJourneyService` and `SemanticIndexSnapshot` data. The
+  report preserves raw nodes/edges while adding high-fanout grouping metadata
+  for dense input/output sides. UI widgets may render that metadata later, but
+  grouping policy belongs in the service/report layer.
 
 ## Command Responsibility Map
 

@@ -619,8 +619,34 @@ Allowed scope:
 First milestones:
 
 - M8.1 fanout grouping model in service/report layer
+  (complete: `SignalKernelGraphReport` now carries high-fanout grouping
+  metadata without changing raw nodes/edges)
 - M8.2 UI collapse/expand for grouped fanout
 - M8.3 filtering and in-graph search
+
+M8.1 implementation constraints:
+
+- Fanout grouping policy belongs in `SignalKernelGraphService` and report data,
+  not in UI widgets.
+- Preserve existing `inputs`, `outputs`, and `edges` so non-grouped rendering
+  remains unchanged.
+- Do not add collapse/expand UI, filtering UI, or graph search in M8.1.
+
+M8.1 implementation status:
+
+- Complete: `SignalKernelGraphFanoutGroup` records group id, role, lane,
+  module, display name, grouped node ids, per-group count, total side count,
+  cross-module state, and high-fanout state.
+- Complete: `SignalKernelGraphReport` exposes the service threshold plus input
+  and output fanout group lists.
+- Complete: `SignalKernelGraphService` emits grouping metadata only when a
+  graph side reaches the service-owned fanout threshold; original nodes, edges,
+  and module groups are preserved.
+- Complete: focused synthetic graph coverage verifies non-dense graphs stay
+  ungrouped and dense output fanout reports group metadata.
+- Verification: `git diff --check`; Release `relationship_test` and
+  `gui_smoke_test` targets compile/link; `ctest -R "^relationship_test$"`
+  passed. `gui_smoke_test` was not launched.
 
 ### 9. Wave Preview
 

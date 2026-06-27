@@ -12,6 +12,8 @@ std::unique_ptr<SignalKernelGraphService>
     SignalKernelGraphService::instance = nullptr;
 
 namespace {
+constexpr int kDefaultFanoutGroupingThreshold = 5;
+
 QString symbolDisplayName(const SemanticSymbolRecord& record)
 {
     return record.name.isEmpty() ? QStringLiteral("<unknown>") : record.name;
@@ -271,6 +273,72 @@ void appendModuleGroups(QList<SignalKernelGraphModuleGroup>& groups,
     }
 }
 
+QString fanoutGroupModuleName(const SignalKernelGraphNode& node)
+{
+    return node.moduleDisplayName.isEmpty()
+        ? QStringLiteral("<unknown>")
+        : node.moduleDisplayName;
+}
+
+QString fanoutGroupKeyForNode(const SignalKernelGraphNode& node)
+{
+    if (node.role == SignalKernelGraphNodeRole::Input) {
+        return QStringLiteral("%1:%2:%3")
+            .arg(static_cast<int>(node.role))
+            .arg(static_cast<int>(node.inputLane))
+            .arg(fanoutGroupModuleName(node));
+    }
+    return QStringLiteral("%1:%2")
+        .arg(static_cast<int>(node.role))
+        .arg(fanoutGroupModuleName(node));
+}
+
+QString fanoutGroupDisplayName(const SignalKernelGraphNode& node)
+{
+    const QString moduleName = fanoutGroupModuleName(node);
+    if (node.role == SignalKernelGraphNodeRole::Input) {
+        return QStringLiteral("%1 inputs in %2")
+            .arg(SignalKernelGraphService::inputLaneDisplayName(node.inputLane),
+                 moduleName);
+    }
+    return QStringLiteral("Outputs in %1").arg(moduleName);
+}
+
+void appendFanoutGroups(QList<SignalKernelGraphFanoutGroup>& groups,
+                        const QList<SignalKernelGraphNode>& nodes,
+                        SignalKernelGraphNodeRole role,
+                        const QString& kernelModuleName,
+                        int threshold,
+                        int& nextGroupId)
+{
+    if (nodes.size() < threshold)
+        return;
+
+    QHash<QString, int> groupIndexByKey;
+    for (const SignalKernelGraphNode& node : nodes) {
+        const QString key = fanoutGroupKeyForNode(node);
+        if (!groupIndexByKey.contains(key)) {
+            SignalKernelGraphFanoutGroup group;
+            group.id = nextGroupId++;
+            group.role = role;
+            group.inputLane = node.inputLane;
+            group.groupKey = key;
+            group.displayName = fanoutGroupDisplayName(node);
+            group.moduleName = fanoutGroupModuleName(node);
+            group.totalRoleNodeCount = nodes.size();
+            group.crossModule = !kernelModuleName.isEmpty()
+                && group.moduleName != kernelModuleName;
+            group.highFanout = true;
+            groupIndexByKey.insert(key, groups.size());
+            groups.append(group);
+        }
+        SignalKernelGraphFanoutGroup& group =
+            groups[groupIndexByKey.value(key)];
+        group.nodeIds.append(node.id);
+        group.nodeCount = group.nodeIds.size();
+    }
+}
+
 void appendGraphNode(SignalKernelGraphReport& report,
                      QHash<QString, int>& existingNodes,
                      int& nextNodeId,
@@ -369,6 +437,7 @@ SignalKernelGraphReport SignalKernelGraphService::buildSignalKernelGraph(
     }
 
     report.found = true;
+    report.fanoutGroupingThreshold = kDefaultFanoutGroupingThreshold;
     report.kernelModuleName =
         moduleNameForRecord(journey.declarationSymbolRecord);
     report.kernel = kernelNodeForJourney(journey, report.kernelModuleName);
@@ -424,6 +493,19 @@ SignalKernelGraphReport SignalKernelGraphService::buildSignalKernelGraph(
     appendModuleGroups(report.outputModuleGroups,
                        report.outputs,
                        report.kernelModuleName);
+    int nextFanoutGroupId = 1;
+    appendFanoutGroups(report.inputFanoutGroups,
+                       report.inputs,
+                       SignalKernelGraphNodeRole::Input,
+                       report.kernelModuleName,
+                       report.fanoutGroupingThreshold,
+                       nextFanoutGroupId);
+    appendFanoutGroups(report.outputFanoutGroups,
+                       report.outputs,
+                       SignalKernelGraphNodeRole::Output,
+                       report.kernelModuleName,
+                       report.fanoutGroupingThreshold,
+                       nextFanoutGroupId);
     return report;
 }
 

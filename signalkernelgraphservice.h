@@ -65,6 +65,20 @@ struct SignalKernelGraphModuleGroup {
     bool crossModule = false;
 };
 
+struct SignalKernelGraphFanoutGroup {
+    int id = -1;
+    SignalKernelGraphNodeRole role = SignalKernelGraphNodeRole::Output;
+    SignalKernelGraphInputLane inputLane = SignalKernelGraphInputLane::Data;
+    QString groupKey;
+    QString displayName;
+    QString moduleName;
+    QList<int> nodeIds;
+    int nodeCount = 0;
+    int totalRoleNodeCount = 0;
+    bool crossModule = false;
+    bool highFanout = false;
+};
+
 struct SignalKernelGraphReport {
     bool found = false;
     SignalKernelGraphNotFoundReason notFoundReason =
@@ -77,6 +91,9 @@ struct SignalKernelGraphReport {
     QList<SignalKernelGraphEdge> edges;
     QList<SignalKernelGraphModuleGroup> inputModuleGroups;
     QList<SignalKernelGraphModuleGroup> outputModuleGroups;
+    int fanoutGroupingThreshold = 0;
+    QList<SignalKernelGraphFanoutGroup> inputFanoutGroups;
+    QList<SignalKernelGraphFanoutGroup> outputFanoutGroups;
 };
 
 class SignalKernelGraphService

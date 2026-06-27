@@ -5475,6 +5475,101 @@ static void runSignalJourneyServiceFixture()
     expectBool("signal kernel graph edge directions",
                sawInputEdge && sawOutputEdge && graphReport.edges.size() == 5,
                true);
+    expectBool("signal kernel graph normal fanout ungrouped",
+               graphReport.fanoutGroupingThreshold > 0
+                   && graphReport.inputFanoutGroups.isEmpty()
+                   && graphReport.outputFanoutGroups.isEmpty(),
+               true);
+
+    const QString fanoutFileName =
+        QStringLiteral("test_sv/signal_kernel_fanout_fixture.sv");
+    const SemanticSymbolRecord fanoutModule =
+        SemanticFixtureRecordBuilder(QStringLiteral("fanout_top"),
+                                     DeclarationKind::Module)
+            .withFile(fanoutFileName)
+            .withLocalHandle(9300)
+            .withRange(1, 1, 80, 1)
+            .withCollectorKind(CollectorKind::Module)
+            .record();
+    const SemanticSymbolRecord fanoutKernel =
+        SemanticFixtureRecordBuilder(QStringLiteral("fanout_sig"),
+                                     DeclarationKind::Signal)
+            .withFile(fanoutFileName)
+            .withLocalHandle(9301)
+            .withLine(10)
+            .withCollectorKind(CollectorKind::Logic)
+            .inModule(QStringLiteral("fanout_top"))
+            .withType(QStringLiteral("logic"))
+            .record();
+    QList<SemanticSymbolRecord> fanoutRecords{fanoutModule, fanoutKernel};
+    QList<SemanticRelationship> fanoutRelationships;
+    for (int i = 0; i < 6; ++i) {
+        const QString readerName =
+            QStringLiteral("reader_%1").arg(i + 1);
+        const SemanticSymbolRecord reader =
+            SemanticFixtureRecordBuilder(readerName, DeclarationKind::Signal)
+                .withFile(fanoutFileName)
+                .withLocalHandle(9310 + i)
+                .withLine(20 + i)
+                .withCollectorKind(CollectorKind::Logic)
+                .inModule(QStringLiteral("fanout_top"))
+                .withType(QStringLiteral("logic"))
+                .record();
+        fanoutRecords.append(reader);
+        SemanticSourceRange evidence;
+        evidence.fileName = fanoutFileName;
+        evidence.line = 40 + i;
+        evidence.column = 8;
+        evidence.endLine = 40 + i;
+        evidence.endColumn = 18;
+        fanoutRelationships.append(
+            semanticFixtureRelationship(
+                reader,
+                fanoutKernel,
+                SymbolRelationshipEngine::READS_FROM,
+                RelationshipProvenance::Inferred,
+                90,
+                QStringLiteral("reader fanout"),
+                evidence));
+    }
+
+    SemanticIndex fanoutIndex;
+    fanoutIndex.setSnapshot(sharedSnapshotFromRecords(
+        fanoutRecords,
+        fanoutRelationships));
+    SignalKernelGraphService fanoutGraphService(&fanoutIndex);
+    SignalKernelGraphQuery fanoutGraphQuery;
+    fanoutGraphQuery.signalName = QStringLiteral("fanout_sig");
+    fanoutGraphQuery.fileName = fanoutFileName;
+    fanoutGraphQuery.moduleName = QStringLiteral("fanout_top");
+    const SignalKernelGraphReport fanoutGraph =
+        fanoutGraphService.buildSignalKernelGraph(fanoutGraphQuery);
+    const SignalKernelGraphFanoutGroup outputFanoutGroup =
+        fanoutGraph.outputFanoutGroups.isEmpty()
+            ? SignalKernelGraphFanoutGroup{}
+            : fanoutGraph.outputFanoutGroups.first();
+    bool fanoutGroupContainsAllOutputs = true;
+    for (const SignalKernelGraphNode& node : fanoutGraph.outputs)
+        fanoutGroupContainsAllOutputs =
+            fanoutGroupContainsAllOutputs
+            && outputFanoutGroup.nodeIds.contains(node.id);
+    expectBool("signal kernel graph high fanout grouping report",
+               fanoutGraph.found
+                   && fanoutGraph.outputs.size() == 6
+                   && fanoutGraph.outputFanoutGroups.size() == 1
+                   && fanoutGraph.inputFanoutGroups.isEmpty()
+                   && outputFanoutGroup.highFanout
+                   && outputFanoutGroup.role
+                       == SignalKernelGraphNodeRole::Output
+                   && outputFanoutGroup.moduleName
+                       == QStringLiteral("fanout_top")
+                   && outputFanoutGroup.nodeCount == 6
+                   && outputFanoutGroup.totalRoleNodeCount == 6
+                   && outputFanoutGroup.nodeIds.size() == 6
+                   && outputFanoutGroup.displayName
+                       == QStringLiteral("Outputs in fanout_top")
+                   && fanoutGroupContainsAllOutputs,
+               true);
 
     const SemanticSymbolRecord packetType =
         SemanticFixtureRecordBuilder(QStringLiteral("packet_t"),
@@ -8396,7 +8491,7 @@ static void runRealWorkspaceIncludeFixture()
             sawRealClockGraphHsDacMember
             || (node.displayName == QStringLiteral("HS_DAC.DA_clk_11")
                 && node.preciseEvidence
-                && node.previewCodeLink.line == 126);
+                && node.previewCodeLink.line == 125);
     }
 
     SignalKernelGraphQuery realHsDacMemberGraphQuery;
@@ -8414,7 +8509,7 @@ static void runRealWorkspaceIncludeFixture()
             sawRealHsDacMemberInput
             || (node.displayName == QStringLiteral("clk_main")
                 && node.preciseEvidence
-                && node.previewCodeLink.line == 126);
+                && node.previewCodeLink.line == 125);
     }
     expectBool("real workspace relationship extracts struct member access",
                sawHsDacClockMemberRelationship,

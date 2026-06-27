@@ -28,7 +28,7 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
 
 ## Current Goal State
 
-Current milestone: `G8.1 Add Signal Kernel Graph Fanout Grouping Reports`.
+Current milestone: `G8.2 Render Collapsible Signal Kernel Graph Fanout Groups`.
 
 Status:
 
@@ -254,13 +254,25 @@ Status:
   `completion_test` and `gui_smoke_test` targets compile/link; `ctest -R
   "^completion_test$"` passed. `gui_smoke_test` was not launched.
 
-Completion criteria for G8.1:
+- G8.1 Add Signal Kernel Graph Fanout Grouping Reports is complete:
+  `SignalKernelGraphReport` now carries service-owned high-fanout grouping
+  metadata for dense input/output sides while preserving raw inputs, outputs,
+  edges, and module groups. `SignalKernelGraphFanoutGroup` records group id,
+  role, input lane, module, display name, grouped node ids, per-group count,
+  total side count, cross-module state, and high-fanout state. Grouping is
+  emitted only when a graph side reaches the service-owned threshold; UI
+  collapse/expand, filtering UI, and graph search were not added.
+- Focused verification for G8.1: `git diff --check`; Release
+  `relationship_test` and `gui_smoke_test` targets compile/link; `ctest -R
+  "^relationship_test$"` passed. `gui_smoke_test` was not launched.
 
-- add a service/report-layer model for grouping high-fanout Signal Kernel Graph
-  nodes
-- keep graph policy out of UI widgets and do not scan workspace files from UI
-- preserve existing Signal Kernel Graph behavior for non-grouped data
-- do not add collapse/expand UI, filtering UI, or graph search in G8.1
+Completion criteria for G8.2:
+
+- render collapsible fanout groups from the existing G8.1 report metadata
+- preserve raw node navigation, rebase, and preview behavior for visible nodes
+- keep collapse/expand state in the UI layer without moving grouping policy
+  out of `SignalKernelGraphService`
+- do not add filtering UI or graph search in G8.2
 - `readme.md`, `plan.md`, and `goal.md` are updated
 - appropriate focused verification passes
 - milestone commit is pushed
