@@ -28,7 +28,7 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
 
 ## Current Goal State
 
-Current milestone: `G1.3 Indent And Unindent Entry Points`.
+Current milestone: `G1.4 Replace And Goto Line Entry Points`.
 
 Status:
 
@@ -63,17 +63,23 @@ Status:
   `comment` / `uncomment`, without reviving active `;:` commands.
 - Focused verification for G1.2: Release `gui_smoke_test` target compile/link
   passed without launching the executable.
+- G1.3 Indent And Unindent Entry Points is complete in the current milestone:
+  active-line and selected-line indentation is available through `Ctrl+]`,
+  `Ctrl+[`, editor context-menu actions, and alternate commands `indent` /
+  `unindent`, without reviving active `;:` commands.
+- Focused verification for G1.3: Release `gui_smoke_test` target compile/link
+  passed without launching the executable.
 - Verification flow now includes checking for external Windows application-error
   or memory-read dialogs when CTest appears stalled.
 
-Completion criteria for G1.3:
+Completion criteria for G1.4:
 
-- implement reliable indent action for the active editor and selected lines
-- implement matching unindent action for leading indentation
+- implement a reliable goto line action for the active editor
+- implement a reliable replace action for the active editor
 - provide clear editor entry points without reviving active `;:` commands
-- preserve existing `indent` / `unindent` alternate command compatibility where
+- preserve existing `goto_line` / `replace` alternate command compatibility where
   practical
-- add focused editor tests for indent and unindent behavior
+- add focused editor tests for goto line and replace behavior
 - `readme.md`, `plan.md`, and `goal.md` are updated
 - appropriate focused verification passes
 - milestone commit is pushed
@@ -96,6 +102,7 @@ Milestones:
 - G1.1 Inventory current commands/actions and document missing entry points.
 - G1.2 Deliver one coherent action family with tests.
 - G1.3 Repeat until all listed daily actions have usable entry points.
+- G1.4 Replace and goto line entry points.
 
 ## Track 2: Slot Mode After Template Insertion
 

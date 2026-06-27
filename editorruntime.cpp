@@ -40,6 +40,7 @@ namespace {
 constexpr int kMaxPassiveGhostAnnotationCharacters = 2 * 1024 * 1024;
 constexpr int kColumnSelectionProperty = QTextFormat::UserProperty + 20;
 constexpr int kColumnSelectionMarker = 1020;
+constexpr int kManualIndentWidth = 4;
 
 struct TextSpan {
     int start = -1;
@@ -1106,6 +1107,171 @@ bool applyLineUncomment(MyCodeEditor* editor)
                                          : QStringLiteral("s"))
             : QStringLiteral("No line comments to uncomment"));
     return changedLines > 0;
+}
+
+int leadingUnindentCount(const QString& text)
+{
+    if (text.startsWith(QLatin1Char('\t')))
+        return 1;
+
+    int count = 0;
+    while (count < text.size()
+           && count < kManualIndentWidth
+           && text.at(count) == QLatin1Char(' ')) {
+        ++count;
+    }
+    return count;
+}
+
+void restoreLinePrefixActionCursor(MyCodeEditor* editor,
+                                   const TouchedLineRange& range,
+                                   const QList<int>& insertedByLine,
+                                   const QList<int>& removedByLine)
+{
+    if (!editor || range.firstLine < 0 || range.lastLine < range.firstLine)
+        return;
+
+    QTextDocument* document = editor->document();
+    if (!document)
+        return;
+
+    if (range.hadSelection) {
+        const QTextBlock firstBlock =
+            document->findBlockByNumber(range.firstLine);
+        if (!firstBlock.isValid())
+            return;
+        const int end = lineEndPosition(document, range.lastLine);
+        if (end < firstBlock.position())
+            return;
+        QTextCursor cursor(document);
+        cursor.setPosition(firstBlock.position());
+        cursor.setPosition(end, QTextCursor::KeepAnchor);
+        editor->setTextCursor(cursor);
+        return;
+    }
+
+    const QTextBlock currentBlock =
+        document->findBlockByNumber(range.currentLine);
+    if (!currentBlock.isValid())
+        return;
+
+    const int index = range.currentLine - range.firstLine;
+    const int inserted = insertedByLine.value(index);
+    const int removed = removedByLine.value(index);
+    int nextColumn = range.currentColumn + inserted;
+    if (removed > 0)
+        nextColumn = range.currentColumn >= removed
+            ? range.currentColumn - removed
+            : 0;
+
+    QTextCursor cursor(document);
+    cursor.setPosition(currentBlock.position()
+                       + qMin(nextColumn, currentBlock.text().size()));
+    editor->setTextCursor(cursor);
+}
+
+bool applyLineIndent(MyCodeEditor* editor)
+{
+    const TouchedLineRange range = touchedLineRange(editor);
+    if (!editor || range.firstLine < 0 || range.lastLine < range.firstLine)
+        return false;
+
+    QTextDocument* document = editor->document();
+    QTextCursor cursor(document);
+    QList<int> insertedByLine;
+    insertedByLine.reserve(range.lastLine - range.firstLine + 1);
+
+    int changedLines = 0;
+    cursor.beginEditBlock();
+    for (int line = range.lastLine; line >= range.firstLine; --line) {
+        const QTextBlock block = document->findBlockByNumber(line);
+        if (!block.isValid()) {
+            insertedByLine.prepend(0);
+            continue;
+        }
+        cursor.setPosition(block.position());
+        cursor.insertText(QString(kManualIndentWidth, QLatin1Char(' ')));
+        insertedByLine.prepend(kManualIndentWidth);
+        ++changedLines;
+    }
+    cursor.endEditBlock();
+
+    restoreLinePrefixActionCursor(editor, range, insertedByLine, {});
+    emit editor->editorStatusMessageRequested(
+        QStringLiteral("Indented %1 line%2")
+            .arg(changedLines)
+            .arg(changedLines == 1 ? QString() : QStringLiteral("s")));
+    return changedLines > 0;
+}
+
+bool applyLineUnindent(MyCodeEditor* editor)
+{
+    const TouchedLineRange range = touchedLineRange(editor);
+    if (!editor || range.firstLine < 0 || range.lastLine < range.firstLine)
+        return false;
+
+    QTextDocument* document = editor->document();
+    QTextCursor cursor(document);
+    QList<int> removedByLine;
+    removedByLine.reserve(range.lastLine - range.firstLine + 1);
+
+    int changedLines = 0;
+    cursor.beginEditBlock();
+    for (int line = range.lastLine; line >= range.firstLine; --line) {
+        const QTextBlock block = document->findBlockByNumber(line);
+        if (!block.isValid()) {
+            removedByLine.prepend(0);
+            continue;
+        }
+
+        const int removed = leadingUnindentCount(block.text());
+        if (removed > 0) {
+            cursor.setPosition(block.position());
+            cursor.setPosition(block.position() + removed,
+                               QTextCursor::KeepAnchor);
+            cursor.removeSelectedText();
+            ++changedLines;
+        }
+        removedByLine.prepend(removed);
+    }
+    cursor.endEditBlock();
+
+    restoreLinePrefixActionCursor(editor, range, {}, removedByLine);
+    emit editor->editorStatusMessageRequested(
+        changedLines > 0
+            ? QStringLiteral("Unindented %1 line%2")
+                  .arg(changedLines)
+                  .arg(changedLines == 1 ? QString()
+                                         : QStringLiteral("s"))
+            : QStringLiteral("No indentation to remove"));
+    return changedLines > 0;
+}
+
+bool isCtrlBracketShortcut(QKeyEvent* event, int key)
+{
+    if (!event || event->key() != key)
+        return false;
+
+    const Qt::KeyboardModifiers modifiers = event->modifiers();
+    return modifiers.testFlag(Qt::ControlModifier)
+        && !modifiers.testFlag(Qt::ShiftModifier)
+        && !modifiers.testFlag(Qt::AltModifier)
+        && !modifiers.testFlag(Qt::MetaModifier);
+}
+
+bool handleLineIndentShortcut(MyCodeEditor* editor, QKeyEvent* event)
+{
+    if (isCtrlBracketShortcut(event, Qt::Key_BracketRight)) {
+        applyLineIndent(editor);
+        event->accept();
+        return true;
+    }
+    if (isCtrlBracketShortcut(event, Qt::Key_BracketLeft)) {
+        applyLineUnindent(editor);
+        event->accept();
+        return true;
+    }
+    return false;
 }
 
 bool isCtrlSlashShortcut(QKeyEvent* event, bool shiftRequired)
@@ -2504,6 +2670,9 @@ bool MyCodeEditorState::handleKeyPress(MyCodeEditor* editor, QKeyEvent* event)
     if (handleLineCommentShortcut(editor, event))
         return true;
 
+    if (handleLineIndentShortcut(editor, event))
+        return true;
+
     if (sourceNavigation.handleSourceSymbolShortcut(
             editor,
             event,
@@ -2998,6 +3167,16 @@ void MyCodeEditorState::commentSelectionOrLine(MyCodeEditor* editor)
 void MyCodeEditorState::uncommentSelectionOrLine(MyCodeEditor* editor)
 {
     applyLineUncomment(editor);
+}
+
+void MyCodeEditorState::indentSelectionOrLine(MyCodeEditor* editor)
+{
+    applyLineIndent(editor);
+}
+
+void MyCodeEditorState::unindentSelectionOrLine(MyCodeEditor* editor)
+{
+    applyLineUnindent(editor);
 }
 
 void MyCodeEditorState::startFoldRegionMarkMode(MyCodeEditor* editor)

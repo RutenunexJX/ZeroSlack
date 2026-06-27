@@ -91,6 +91,8 @@ public:
     void formatSelection();
     void commentSelectionOrLine();
     void uncommentSelectionOrLine();
+    void indentSelectionOrLine();
+    void unindentSelectionOrLine();
     void highlightSearchMatches(const QString& text, bool caseSensitive);
     void clearSearchMatches();
     void flashLine(int lineNumber);

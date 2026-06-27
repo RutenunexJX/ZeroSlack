@@ -72,6 +72,8 @@ private:
         void selectAll(MyCodeEditor* editor) const;
         void comment(MyCodeEditor* editor) const;
         void uncomment(MyCodeEditor* editor) const;
+        void indent(MyCodeEditor* editor) const;
+        void unindent(MyCodeEditor* editor) const;
     };
 
     CommandTargets targets;

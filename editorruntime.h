@@ -125,6 +125,8 @@ struct MyCodeEditorState
     bool formatDocumentForSave(MyCodeEditor* editor);
     void commentSelectionOrLine(MyCodeEditor* editor);
     void uncommentSelectionOrLine(MyCodeEditor* editor);
+    void indentSelectionOrLine(MyCodeEditor* editor);
+    void unindentSelectionOrLine(MyCodeEditor* editor);
     void startFoldRegionMarkMode(MyCodeEditor* editor);
     void cancelFoldRegionMarkMode(MyCodeEditor* editor);
     bool foldRegionMarkModeActive() const;

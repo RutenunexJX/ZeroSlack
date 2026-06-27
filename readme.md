@@ -60,8 +60,10 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
   editor action inventory: `Ctrl+F` opens Find; formatter document/selection
   actions live in the editor context menu; line comment actions are available
   through `Ctrl+/`, `Ctrl+Shift+/`, editor context-menu actions, and alternate
-  commands `comment` / `uncomment`. Replace, goto line, indent, and unindent
-  still need reliable entry points.
+  commands `comment` / `uncomment`; line indent actions are available through
+  `Ctrl+]`, `Ctrl+[`, editor context-menu actions, and alternate commands
+  `indent` / `unindent`. Replace and goto line still need reliable entry
+  points.
 
 ## Huge Workspace Status
 

@@ -359,6 +359,16 @@ void MyCodeEditor::uncommentSelectionOrLine()
     state->uncommentSelectionOrLine(this);
 }
 
+void MyCodeEditor::indentSelectionOrLine()
+{
+    state->indentSelectionOrLine(this);
+}
+
+void MyCodeEditor::unindentSelectionOrLine()
+{
+    state->unindentSelectionOrLine(this);
+}
+
 void MyCodeEditor::highlightSearchMatches(
     const QString& text,
     bool caseSensitive)

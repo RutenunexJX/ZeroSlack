@@ -121,6 +121,20 @@ void FileCommandCoordinator::EditorCommandDispatcher::uncomment(
         editor->uncommentSelectionOrLine();
 }
 
+void FileCommandCoordinator::EditorCommandDispatcher::indent(
+    MyCodeEditor* editor) const
+{
+    if (editor)
+        editor->indentSelectionOrLine();
+}
+
+void FileCommandCoordinator::EditorCommandDispatcher::unindent(
+    MyCodeEditor* editor) const
+{
+    if (editor)
+        editor->unindentSelectionOrLine();
+}
+
 void FileCommandCoordinator::newFile()
 {
     targets.createNewTab();

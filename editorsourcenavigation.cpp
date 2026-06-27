@@ -330,6 +330,15 @@ void EditorSourceNavigationUi::handleContextMenu(
     QObject::connect(uncommentAction, &QAction::triggered, editor, [editor]() {
         editor->uncommentSelectionOrLine();
     });
+    QAction* indentAction = menu->addAction(QStringLiteral("Indent Lines"));
+    QObject::connect(indentAction, &QAction::triggered, editor, [editor]() {
+        editor->indentSelectionOrLine();
+    });
+    QAction* unindentAction =
+        menu->addAction(QStringLiteral("Unindent Lines"));
+    QObject::connect(unindentAction, &QAction::triggered, editor, [editor]() {
+        editor->unindentSelectionOrLine();
+    });
     menu->addSeparator();
 
     QMenu* profileMenu = menu->addMenu(QStringLiteral("Formatter Profile"));

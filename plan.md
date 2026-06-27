@@ -77,7 +77,10 @@ First milestones:
   (complete: comment/uncomment are available through `Ctrl+/`,
   `Ctrl+Shift+/`, editor context-menu actions, and alternate commands)
 - M1.3 repeat per action family until all listed actions have usable entries
-  (next target: indent/unindent)
+  (indent/unindent complete: `Ctrl+]`, `Ctrl+[`, editor context-menu actions,
+  and alternate commands; remaining target: replace/goto line)
+- M1.4 add reliable replace and goto line entry points, with focused editor
+  tests
 
 ### 2. Slot Mode After Template Insertion
 

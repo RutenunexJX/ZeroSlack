@@ -1952,6 +1952,75 @@ static void runEditorLineActionRegression()
                    == QStringLiteral("assign a = b; // keep\n"),
                true);
 
+    MyCodeEditor shortcutIndentEditor;
+    shortcutIndentEditor.resize(480, 120);
+    shortcutIndentEditor.setPlainText(QStringLiteral("logic a;\n"));
+    shortcutIndentEditor.show();
+    shortcutIndentEditor.setFocus();
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    QTest::keyClick(&shortcutIndentEditor,
+                    Qt::Key_BracketRight,
+                    Qt::ControlModifier);
+    expectBool("Ctrl+] indents current line",
+               shortcutIndentEditor.toPlainText()
+                   == QStringLiteral("    logic a;\n"),
+               true);
+    QTest::keyClick(&shortcutIndentEditor,
+                    Qt::Key_BracketLeft,
+                    Qt::ControlModifier);
+    expectBool("Ctrl+[ unindents current line",
+               shortcutIndentEditor.toPlainText()
+                   == QStringLiteral("logic a;\n"),
+               true);
+
+    MyCodeEditor selectionIndentEditor;
+    selectionIndentEditor.resize(480, 150);
+    selectionIndentEditor.setPlainText(QStringLiteral("aa\n  bb\ncc\n"));
+    selectionIndentEditor.show();
+    selectionIndentEditor.setFocus();
+    QTextBlock indentFirst =
+        selectionIndentEditor.document()->findBlockByNumber(0);
+    QTextBlock indentThird =
+        selectionIndentEditor.document()->findBlockByNumber(2);
+    QTextCursor selectionIndentCursor(indentFirst);
+    selectionIndentCursor.setPosition(indentFirst.position());
+    selectionIndentCursor.setPosition(indentThird.position(),
+                                      QTextCursor::KeepAnchor);
+    selectionIndentEditor.setTextCursor(selectionIndentCursor);
+    selectionIndentEditor.indentSelectionOrLine();
+    expectBool("indent action indents selected touched lines",
+               selectionIndentEditor.toPlainText()
+                   == QStringLiteral("    aa\n      bb\ncc\n"),
+               true);
+    expectBool("indent action excludes selection endpoint line",
+               !selectionIndentEditor.toPlainText().startsWith(
+                   QStringLiteral("    aa\n      bb\n    cc")),
+               true);
+    selectionIndentEditor.undo();
+    expectBool("indent action undo restores selected lines",
+               selectionIndentEditor.toPlainText()
+                   == QStringLiteral("aa\n  bb\ncc\n"),
+               true);
+
+    selectionIndentEditor.setTextCursor(selectionIndentCursor);
+    selectionIndentEditor.indentSelectionOrLine();
+    selectionIndentEditor.unindentSelectionOrLine();
+    expectBool("unindent action restores selected indentation",
+               selectionIndentEditor.toPlainText()
+                   == QStringLiteral("aa\n  bb\ncc\n"),
+               true);
+
+    MyCodeEditor tabUnindentEditor;
+    tabUnindentEditor.resize(480, 120);
+    tabUnindentEditor.setPlainText(QStringLiteral("\tlogic a;\n"));
+    tabUnindentEditor.show();
+    tabUnindentEditor.setFocus();
+    tabUnindentEditor.unindentSelectionOrLine();
+    expectBool("unindent action removes one leading tab",
+               tabUnindentEditor.toPlainText()
+                   == QStringLiteral("logic a;\n"),
+               true);
+
     MyCodeEditor duplicateEditor;
     duplicateEditor.resize(480, 180);
     duplicateEditor.setPlainText(QStringLiteral("one\ntwo\nthree\n"));
@@ -3949,6 +4018,37 @@ static void runReferenceDockRegression(MainWindow& window, const QString& fixtur
         AlternateCommandAction::Uncomment);
     expectBool("file coordinator executes uncomment editor command",
                shortcutEditor.toPlainText().isEmpty(),
+               true);
+
+    shortcutEditor.setPlainText(QStringLiteral("logic a;\n"));
+    editorCommandCoordinator.executeAlternateCommandText(
+        &shortcutEditor, QStringLiteral("indent"));
+    expectBool("file coordinator executes indent command text",
+               shortcutEditor.toPlainText()
+                   == QStringLiteral("    logic a;\n"),
+               true);
+
+    editorCommandCoordinator.executeAlternateCommandText(
+        &shortcutEditor, QStringLiteral("unindent"));
+    expectBool("file coordinator executes unindent command text",
+               shortcutEditor.toPlainText()
+                   == QStringLiteral("logic a;\n"),
+               true);
+
+    editorCommandCoordinator.executeAlternateCommand(
+        &shortcutEditor,
+        AlternateCommandAction::Indent);
+    expectBool("file coordinator executes indent editor command",
+               shortcutEditor.toPlainText()
+                   == QStringLiteral("    logic a;\n"),
+               true);
+
+    editorCommandCoordinator.executeAlternateCommand(
+        &shortcutEditor,
+        AlternateCommandAction::Unindent);
+    expectBool("file coordinator executes unindent editor command",
+               shortcutEditor.toPlainText()
+                   == QStringLiteral("logic a;\n"),
                true);
 
     semanticPanelRefresh(window)->showRelationshipsForSymbol(QStringLiteral("target_ref"),

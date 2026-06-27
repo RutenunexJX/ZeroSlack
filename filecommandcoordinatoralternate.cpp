@@ -42,12 +42,16 @@ void FileCommandCoordinator::executeAlternateCommand(MyCodeEditor* editor,
     case AlternateCommandAction::Uncomment:
         editorCommands.uncomment(editor);
         break;
+    case AlternateCommandAction::Indent:
+        editorCommands.indent(editor);
+        break;
+    case AlternateCommandAction::Unindent:
+        editorCommands.unindent(editor);
+        break;
     case AlternateCommandAction::Close:
     case AlternateCommandAction::Find:
     case AlternateCommandAction::Replace:
     case AlternateCommandAction::GotoLine:
-    case AlternateCommandAction::Indent:
-    case AlternateCommandAction::Unindent:
     case AlternateCommandAction::None:
         break;
     }
