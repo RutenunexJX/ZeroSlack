@@ -235,6 +235,61 @@ QString MyCodeEditor::currentModuleName() const
     return state->currentModuleName(this);
 }
 
+bool MyCodeEditor::executeComPortAppend(QString* message)
+{
+    return state->executeComPortAppend(this, message);
+}
+
+bool MyCodeEditor::executeComSignalInsert(QString* message)
+{
+    return state->executeComSignalInsert(this, message);
+}
+
+bool MyCodeEditor::executeComInstanceInsert(QString* message)
+{
+    return state->executeComInstanceInsert(this, message);
+}
+
+bool MyCodeEditor::executeComAssignInsert(QString* message)
+{
+    return state->executeComAssignInsert(this, message);
+}
+
+bool MyCodeEditor::executeComParameterInsert(QString* message)
+{
+    return state->executeComParameterInsert(this, message);
+}
+
+bool MyCodeEditor::executeComModuleEndInsert(QString* message)
+{
+    return state->executeComModuleEndInsert(this, message);
+}
+
+bool MyCodeEditor::comModeActive() const
+{
+    return state->comModeActive();
+}
+
+QString MyCodeEditor::comModeBuffer() const
+{
+    return state->comModeBuffer();
+}
+
+void MyCodeEditor::enterComMode(const QString& message)
+{
+    state->enterComMode(this, message);
+}
+
+void MyCodeEditor::exitComMode()
+{
+    state->exitComMode(this);
+}
+
+void MyCodeEditor::showComModeMessage(const QString& message)
+{
+    state->showComModeMessage(this, message);
+}
+
 void MyCodeEditor::setDiagnosticHighlights(
     const QList<SemanticDiagnostic>& diagnostics)
 {

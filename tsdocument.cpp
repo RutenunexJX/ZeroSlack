@@ -231,12 +231,462 @@ QString foldSyntaxLabel(const char* type)
 
 QString nodeText(const QString& text, TSNode node)
 {
+    if (ts_node_is_null(node))
+        return QString();
     const uint32_t start = ts_node_start_byte(node);
     const uint32_t end = ts_node_end_byte(node);
     if (end <= start)
         return QString();
     return text.mid(static_cast<int>(start / 2),
                     static_cast<int>((end - start) / 2));
+}
+
+bool nodeTypeIs(TSNode node, const char* expected)
+{
+    if (ts_node_is_null(node) || !expected)
+        return false;
+    const char* type = ts_node_type(node);
+    return type && std::strcmp(type, expected) == 0;
+}
+
+TSNode ancestorOfType(TSNode node, const char* expected)
+{
+    while (!ts_node_is_null(node)) {
+        if (nodeTypeIs(node, expected))
+            return node;
+        node = ts_node_parent(node);
+    }
+    return {};
+}
+
+TSNode directNamedChildOfType(TSNode node, const char* expected)
+{
+    if (ts_node_is_null(node))
+        return {};
+    const uint32_t childCount = ts_node_named_child_count(node);
+    for (uint32_t i = 0; i < childCount; ++i) {
+        TSNode child = ts_node_named_child(node, i);
+        if (nodeTypeIs(child, expected))
+            return child;
+    }
+    return {};
+}
+
+int nodeStartChar(TSNode node)
+{
+    return static_cast<int>(ts_node_start_byte(node) / 2);
+}
+
+int nodeEndChar(TSNode node)
+{
+    return static_cast<int>(ts_node_end_byte(node) / 2);
+}
+
+int lineStartChar(const QString& text, int line)
+{
+    if (line <= 0)
+        return 0;
+    int currentLine = 0;
+    for (int i = 0; i < text.size(); ++i) {
+        if (text.at(i) != QLatin1Char('\n'))
+            continue;
+        ++currentLine;
+        if (currentLine == line)
+            return i + 1;
+    }
+    return text.size();
+}
+
+int lineEndChar(const QString& text, int line)
+{
+    const int start = lineStartChar(text, line);
+    for (int i = start; i < text.size(); ++i) {
+        if (text.at(i) == QLatin1Char('\n'))
+            return i;
+    }
+    return text.size();
+}
+
+QString lineIndentAt(const QString& text, int line)
+{
+    const int start = lineStartChar(text, line);
+    const int end = lineEndChar(text, line);
+    int pos = start;
+    while (pos < end) {
+        const QChar ch = text.at(pos);
+        if (ch != QLatin1Char(' ') && ch != QLatin1Char('\t'))
+            break;
+        ++pos;
+    }
+    return text.mid(start, pos - start);
+}
+
+bool lineIsBlank(const QString& text, int line)
+{
+    if (line < 0)
+        return false;
+    const int start = lineStartChar(text, line);
+    const int end = lineEndChar(text, line);
+    for (int pos = start; pos < end; ++pos) {
+        const QChar ch = text.at(pos);
+        if (ch != QLatin1Char(' ') && ch != QLatin1Char('\t'))
+            return false;
+    }
+    return true;
+}
+
+int previousNonBlankLine(const QString& text, int line)
+{
+    for (int current = line; current >= 0; --current) {
+        if (!lineIsBlank(text, current))
+            return current;
+    }
+    return -1;
+}
+
+int nodeLastLine(TSNode node)
+{
+    const TSPoint start = ts_node_start_point(node);
+    const TSPoint end = ts_node_end_point(node);
+    int row = static_cast<int>(end.row);
+    if (end.column == 0 && row > static_cast<int>(start.row))
+        --row;
+    return row;
+}
+
+struct PortParenRange {
+    TSNode openParen{};
+    TSNode closeParen{};
+};
+
+PortParenRange findPortListParens(const QString& text, TSNode header)
+{
+    PortParenRange range;
+    const uint32_t childCount = ts_node_child_count(header);
+    int closeIndex = -1;
+    for (int i = static_cast<int>(childCount) - 1; i >= 0; --i) {
+        TSNode child = ts_node_child(header, static_cast<uint32_t>(i));
+        if (nodeText(text, child) == QStringLiteral(")")) {
+            range.closeParen = child;
+            closeIndex = i;
+            break;
+        }
+    }
+    if (closeIndex < 0)
+        return range;
+
+    for (int i = closeIndex - 1; i >= 0; --i) {
+        TSNode child = ts_node_child(header, static_cast<uint32_t>(i));
+        if (nodeText(text, child) == QStringLiteral("(")) {
+            range.openParen = child;
+            break;
+        }
+    }
+    return range;
+}
+
+bool portListContainsOnlyClearChildren(TSNode portList)
+{
+    const uint32_t childCount = ts_node_named_child_count(portList);
+    for (uint32_t i = 0; i < childCount; ++i) {
+        TSNode child = ts_node_named_child(portList, i);
+        if (nodeTypeIs(child, "ansi_port_declaration")
+            || nodeTypeIs(child, "attribute_instance")) {
+            continue;
+        }
+        return false;
+    }
+    return true;
+}
+
+QList<TSNode> ansiPortDeclarations(TSNode portList)
+{
+    QList<TSNode> result;
+    const uint32_t childCount = ts_node_named_child_count(portList);
+    for (uint32_t i = 0; i < childCount; ++i) {
+        TSNode child = ts_node_named_child(portList, i);
+        if (nodeTypeIs(child, "ansi_port_declaration")
+            && nodeEndChar(child) > nodeStartChar(child)) {
+            result.append(child);
+        }
+    }
+    return result;
+}
+
+bool isParameterPortEntryNode(TSNode node)
+{
+    return nodeTypeIs(node, "parameter_port_declaration")
+        || nodeTypeIs(node, "list_of_param_assignments");
+}
+
+bool parameterPortListContainsOnlyClearChildren(TSNode parameterPortList)
+{
+    const uint32_t childCount = ts_node_named_child_count(parameterPortList);
+    for (uint32_t i = 0; i < childCount; ++i) {
+        TSNode child = ts_node_named_child(parameterPortList, i);
+        if (isParameterPortEntryNode(child)
+            || nodeTypeIs(child, "attribute_instance")) {
+            continue;
+        }
+        return false;
+    }
+    return true;
+}
+
+QList<TSNode> parameterPortEntries(TSNode parameterPortList)
+{
+    QList<TSNode> result;
+    const uint32_t childCount = ts_node_named_child_count(parameterPortList);
+    for (uint32_t i = 0; i < childCount; ++i) {
+        TSNode child = ts_node_named_child(parameterPortList, i);
+        if (isParameterPortEntryNode(child)
+            && nodeEndChar(child) > nodeStartChar(child)) {
+            result.append(child);
+        }
+    }
+    return result;
+}
+
+bool trailingCommaStateOnPortLine(const QString& text,
+                                  TSNode portDecl,
+                                  int portLine,
+                                  bool* hasComma,
+                                  int* commaInsertChar)
+{
+    if (!hasComma || !commaInsertChar)
+        return false;
+
+    const int lineEnd = lineEndChar(text, portLine);
+    const int lineStart = lineStartChar(text, portLine);
+    int scanStart = qBound(lineStart, nodeEndChar(portDecl), lineEnd);
+    int nodeTrimmedEnd = scanStart;
+    while (nodeTrimmedEnd > lineStart
+           && text.at(nodeTrimmedEnd - 1).isSpace()) {
+        --nodeTrimmedEnd;
+    }
+    if (nodeTrimmedEnd > lineStart
+        && text.at(nodeTrimmedEnd - 1) == QLatin1Char(',')) {
+        int pos = scanStart;
+        while (pos < lineEnd && text.at(pos).isSpace())
+            ++pos;
+        if (pos != lineEnd)
+            return false;
+        *hasComma = true;
+        *commaInsertChar = -1;
+        return true;
+    }
+
+    int pos = scanStart;
+    while (pos < lineEnd && text.at(pos).isSpace())
+        ++pos;
+
+    if (pos >= lineEnd) {
+        int trimmedEnd = lineEnd;
+        while (trimmedEnd > scanStart && text.at(trimmedEnd - 1).isSpace())
+            --trimmedEnd;
+        *hasComma = false;
+        *commaInsertChar = trimmedEnd;
+        return true;
+    }
+
+    if (text.at(pos) != QLatin1Char(','))
+        return false;
+
+    ++pos;
+    while (pos < lineEnd && text.at(pos).isSpace())
+        ++pos;
+    if (pos != lineEnd)
+        return false;
+
+    *hasComma = true;
+    *commaInsertChar = -1;
+    return true;
+}
+
+bool emptyPortListHasNoNamedContent(TSNode portList)
+{
+    return ts_node_named_child_count(portList) == 0;
+}
+
+bool descendantNodeTypeIs(TSNode node, const char* expected)
+{
+    if (ts_node_is_null(node))
+        return false;
+    if (nodeTypeIs(node, expected))
+        return true;
+    const uint32_t childCount = ts_node_child_count(node);
+    for (uint32_t i = 0; i < childCount; ++i) {
+        if (descendantNodeTypeIs(ts_node_child(node, i), expected))
+            return true;
+    }
+    return false;
+}
+
+TSNode effectiveModuleMemberNode(TSNode node)
+{
+    if (!nodeTypeIs(node, "module_item"))
+        return node;
+    if (ts_node_named_child_count(node) != 1)
+        return node;
+    return ts_node_named_child(node, 0);
+}
+
+TSNode effectivePackageItemNode(TSNode node)
+{
+    if (!nodeTypeIs(node, "package_item"))
+        return node;
+    if (ts_node_named_child_count(node) != 1)
+        return node;
+    return ts_node_named_child(node, 0);
+}
+
+bool isInternalSignalDeclaration(TSNode node)
+{
+    if (nodeTypeIs(node, "net_declaration")) {
+        return !ts_node_is_null(
+                   directNamedChildOfType(node,
+                                          "list_of_net_decl_assignments"))
+            && descendantNodeTypeIs(node, "wire");
+    }
+    if (nodeTypeIs(node, "data_declaration")) {
+        return !ts_node_is_null(
+                   directNamedChildOfType(node,
+                                          "list_of_variable_decl_assignments"))
+            && (descendantNodeTypeIs(node, "logic")
+                || descendantNodeTypeIs(node, "reg"));
+    }
+    return false;
+}
+
+bool isParameterLikeDeclaration(TSNode node)
+{
+    return nodeTypeIs(node, "parameter_declaration")
+        || nodeTypeIs(node, "local_parameter_declaration");
+}
+
+bool isModuleHeaderNode(TSNode node)
+{
+    return nodeTypeIs(node, "module_ansi_header")
+        || nodeTypeIs(node, "module_nonansi_header");
+}
+
+bool isModuleBodyBoundaryNode(TSNode node)
+{
+    return nodeTypeIs(node, "always_construct")
+        || nodeTypeIs(node, "initial_construct")
+        || nodeTypeIs(node, "final_construct")
+        || nodeTypeIs(node, "continuous_assign")
+        || nodeTypeIs(node, "generate_region")
+        || nodeTypeIs(node, "conditional_generate_construct")
+        || nodeTypeIs(node, "loop_generate_construct")
+        || nodeTypeIs(node, "case_generate_construct")
+        || nodeTypeIs(node, "module_instantiation")
+        || nodeTypeIs(node, "interface_instantiation")
+        || nodeTypeIs(node, "gate_instantiation")
+        || nodeTypeIs(node, "function_declaration")
+        || nodeTypeIs(node, "task_declaration");
+}
+
+bool isInstanceDeclaration(TSNode node)
+{
+    return nodeTypeIs(node, "module_instantiation")
+        || nodeTypeIs(node, "interface_instantiation");
+}
+
+bool isInstanceBodyBoundaryNode(TSNode node)
+{
+    return nodeTypeIs(node, "always_construct")
+        || nodeTypeIs(node, "initial_construct")
+        || nodeTypeIs(node, "final_construct")
+        || nodeTypeIs(node, "continuous_assign")
+        || nodeTypeIs(node, "generate_region")
+        || nodeTypeIs(node, "conditional_generate_construct")
+        || nodeTypeIs(node, "loop_generate_construct")
+        || nodeTypeIs(node, "case_generate_construct")
+        || nodeTypeIs(node, "function_declaration")
+        || nodeTypeIs(node, "task_declaration");
+}
+
+bool isAssignBodyBoundaryNode(TSNode node)
+{
+    return nodeTypeIs(node, "always_construct")
+        || nodeTypeIs(node, "initial_construct")
+        || nodeTypeIs(node, "final_construct")
+        || nodeTypeIs(node, "generate_region")
+        || nodeTypeIs(node, "conditional_generate_construct")
+        || nodeTypeIs(node, "loop_generate_construct")
+        || nodeTypeIs(node, "case_generate_construct")
+        || nodeTypeIs(node, "function_declaration")
+        || nodeTypeIs(node, "task_declaration");
+}
+
+bool isDeclarationSectionNode(TSNode node)
+{
+    return isInternalSignalDeclaration(node)
+        || isParameterLikeDeclaration(node)
+        || nodeTypeIs(node, "genvar_declaration")
+        || nodeTypeIs(node, "package_import_declaration");
+}
+
+TSNode directModuleHeader(TSNode module)
+{
+    TSNode header = directNamedChildOfType(module, "module_ansi_header");
+    if (!ts_node_is_null(header))
+        return header;
+    return directNamedChildOfType(module, "module_nonansi_header");
+}
+
+int endmoduleLine(TSNode module, const QString& text)
+{
+    const uint32_t childCount = ts_node_child_count(module);
+    for (uint32_t i = 0; i < childCount; ++i) {
+        TSNode child = ts_node_child(module, i);
+        if (nodeText(text, child) == QStringLiteral("endmodule"))
+            return static_cast<int>(ts_node_start_point(child).row);
+    }
+    return -1;
+}
+
+int endpackageLine(TSNode package, const QString& text)
+{
+    const uint32_t childCount = ts_node_child_count(package);
+    for (uint32_t i = 0; i < childCount; ++i) {
+        TSNode child = ts_node_child(package, i);
+        if (nodeText(text, child) == QStringLiteral("endpackage"))
+            return static_cast<int>(ts_node_start_point(child).row);
+    }
+    return -1;
+}
+
+struct SignalInsertAnchor {
+    bool valid = false;
+    bool insertAfterLine = true;
+    int line = -1;
+    QString indent;
+};
+
+SignalInsertAnchor anchorAfterNode(const QString& text, TSNode node)
+{
+    SignalInsertAnchor anchor;
+    anchor.valid = !ts_node_is_null(node);
+    anchor.insertAfterLine = true;
+    anchor.line = nodeLastLine(node);
+    anchor.indent = lineIndentAt(text, anchor.line);
+    return anchor;
+}
+
+SignalInsertAnchor anchorBeforeLine(const QString& text,
+                                    int line,
+                                    const QString& indent)
+{
+    SignalInsertAnchor anchor;
+    anchor.valid = line >= 0;
+    anchor.insertAfterLine = false;
+    anchor.line = line;
+    anchor.indent = indent;
+    if (anchor.indent.isNull())
+        anchor.indent = lineIndentAt(text, line);
+    return anchor;
 }
 
 QString commentPayload(const QString& commentText)
@@ -330,6 +780,708 @@ QString TSDocument::enclosingModuleName(int charOffset) const
         node = ts_node_parent(node);
     }
     return QString();
+}
+
+TSPortAppendTarget TSDocument::portAppendTarget(int charOffset) const
+{
+    TSPortAppendTarget target;
+
+    const int boundedCharOffset = qBound(0, charOffset, m_text.size());
+    const uint32_t byte =
+        static_cast<uint32_t>(boundedCharOffset) * 2u;
+    TSNode node =
+        ts_node_named_descendant_for_byte_range(ts_tree_root_node(m_tree),
+                                                byte,
+                                                byte);
+    TSNode module = ancestorOfType(node, "module_declaration");
+    if (ts_node_is_null(module)) {
+        target.status = TSPortAppendStatus::NoCurrentModule;
+        return target;
+    }
+
+    TSNode header = directNamedChildOfType(module, "module_ansi_header");
+    if (ts_node_is_null(header)) {
+        TSNode nonAnsiHeader =
+            directNamedChildOfType(module, "module_nonansi_header");
+        TSNode emptyPortList =
+            directNamedChildOfType(nonAnsiHeader, "list_of_ports");
+        if (ts_node_is_null(nonAnsiHeader)
+            || ts_node_is_null(emptyPortList)
+            || ts_node_has_error(nonAnsiHeader)
+            || ts_node_has_error(emptyPortList)
+            || !emptyPortListHasNoNamedContent(emptyPortList)) {
+            return target;
+        }
+
+        const PortParenRange parens =
+            findPortListParens(m_text, emptyPortList);
+        if (ts_node_is_null(parens.openParen)
+            || ts_node_is_null(parens.closeParen)) {
+            return target;
+        }
+        const int openLine =
+            static_cast<int>(ts_node_start_point(parens.openParen).row);
+        const int closeLine =
+            static_cast<int>(ts_node_start_point(parens.closeParen).row);
+        if (openLine >= closeLine)
+            return target;
+
+        const QString indent = lineIndentAt(m_text, closeLine)
+            + QStringLiteral("    ");
+        target.status = TSPortAppendStatus::Ok;
+        target.insertChar = lineStartChar(m_text, closeLine);
+        target.insertText = indent + QLatin1Char('\n');
+        target.caretCharAfterEdit = target.insertChar + indent.size();
+        return target;
+    }
+
+    TSNode portList =
+        directNamedChildOfType(header, "list_of_port_declarations");
+    if (ts_node_is_null(portList))
+        return target;
+
+    const PortParenRange parens = findPortListParens(m_text, portList);
+    if (ts_node_is_null(parens.openParen)
+        || ts_node_is_null(parens.closeParen)) {
+        return target;
+    }
+
+    const int openLine =
+        static_cast<int>(ts_node_start_point(parens.openParen).row);
+    const int closeLine =
+        static_cast<int>(ts_node_start_point(parens.closeParen).row);
+    if (openLine >= closeLine)
+        return target;
+
+    if (!portListContainsOnlyClearChildren(portList)) {
+        return target;
+    }
+
+    const QList<TSNode> ports = ansiPortDeclarations(portList);
+
+    if (ports.isEmpty()) {
+        if (ts_node_named_child_count(portList) > 0)
+            return target;
+
+        const QString indent = lineIndentAt(m_text, closeLine)
+            + QStringLiteral("    ");
+        target.status = TSPortAppendStatus::Ok;
+        target.insertChar = lineStartChar(m_text, closeLine);
+        target.insertText = indent + QLatin1Char('\n');
+        target.caretCharAfterEdit = target.insertChar + indent.size();
+        return target;
+    }
+
+    TSNode lastPort = ports.last();
+    if (ts_node_has_error(lastPort))
+        return target;
+
+    const int lastPortLine = nodeLastLine(lastPort);
+    if (lastPortLine <= openLine || lastPortLine >= closeLine)
+        return target;
+
+    bool hasComma = false;
+    int commaInsertChar = -1;
+    if (!trailingCommaStateOnPortLine(m_text,
+                                      lastPort,
+                                      lastPortLine,
+                                      &hasComma,
+                                      &commaInsertChar)) {
+        return target;
+    }
+
+    const QString indent = lineIndentAt(m_text, lastPortLine);
+    const int insertChar = lineEndChar(m_text, lastPortLine);
+    target.status = TSPortAppendStatus::Ok;
+    target.needsTrailingComma = !hasComma;
+    target.trailingCommaInsertChar = commaInsertChar;
+    target.insertChar = insertChar;
+    target.insertText = QLatin1Char('\n') + indent;
+    target.caretCharAfterEdit =
+        insertChar + 1 + indent.size() + (target.needsTrailingComma ? 1 : 0);
+    return target;
+}
+
+TSSignalInsertTarget TSDocument::signalInsertTarget(int charOffset) const
+{
+    TSSignalInsertTarget target;
+
+    const int boundedCharOffset = qBound(0, charOffset, m_text.size());
+    const uint32_t byte =
+        static_cast<uint32_t>(boundedCharOffset) * 2u;
+    TSNode node =
+        ts_node_named_descendant_for_byte_range(ts_tree_root_node(m_tree),
+                                                byte,
+                                                byte);
+    TSNode module = ancestorOfType(node, "module_declaration");
+    if (ts_node_is_null(module)) {
+        target.status = TSSignalInsertStatus::NoCurrentModule;
+        return target;
+    }
+    if (ts_node_has_error(module))
+        return target;
+
+    TSNode header = directModuleHeader(module);
+    if (ts_node_is_null(header))
+        return target;
+
+    TSNode lastSignalDecl{};
+    TSNode lastParameterDecl{};
+    TSNode firstBodyNode{};
+    bool seenHeader = false;
+
+    const uint32_t childCount = ts_node_named_child_count(module);
+    for (uint32_t i = 0; i < childCount; ++i) {
+        TSNode rawChild = ts_node_named_child(module, i);
+        TSNode child = effectiveModuleMemberNode(rawChild);
+        if (ts_node_eq(child, header)) {
+            seenHeader = true;
+            continue;
+        }
+        if (!seenHeader)
+            continue;
+
+        if (isModuleBodyBoundaryNode(child)) {
+            firstBodyNode = child;
+            break;
+        }
+        if (isInternalSignalDeclaration(child)) {
+            lastSignalDecl = child;
+            continue;
+        }
+        if (isParameterLikeDeclaration(child)) {
+            lastParameterDecl = child;
+            continue;
+        }
+        if (nodeTypeIs(child, "attribute_instance")
+            || nodeTypeIs(child, "package_import_declaration")
+            || nodeTypeIs(child, "genvar_declaration")
+            || nodeTypeIs(child, "include_compiler_directive")
+            || nodeTypeIs(child, "line_compiler_directive")
+            || nodeTypeIs(child, "file_or_line_compiler_directive")
+            || nodeTypeIs(child, "default_nettype_compiler_directive")
+            || nodeTypeIs(child, "pragma")) {
+            continue;
+        }
+        if (nodeStartChar(child) >= nodeEndChar(header)) {
+            firstBodyNode = child;
+            break;
+        }
+    }
+
+    SignalInsertAnchor anchor;
+    if (!ts_node_is_null(lastSignalDecl)) {
+        anchor = anchorAfterNode(m_text, lastSignalDecl);
+    } else if (!ts_node_is_null(lastParameterDecl)) {
+        anchor = anchorAfterNode(m_text, lastParameterDecl);
+    } else {
+        const int headerLastLine = nodeLastLine(header);
+        int insertLine = -1;
+        QString indent;
+        if (!ts_node_is_null(firstBodyNode)) {
+            insertLine =
+                static_cast<int>(ts_node_start_point(firstBodyNode).row);
+            indent = lineIndentAt(m_text, insertLine);
+        } else {
+            insertLine = endmoduleLine(module, m_text);
+            if (insertLine < 0)
+                return target;
+            indent = lineIndentAt(m_text, insertLine)
+                + QStringLiteral("    ");
+        }
+        if (insertLine <= headerLastLine)
+            return target;
+        anchor = anchorBeforeLine(m_text, insertLine, indent);
+    }
+
+    if (!anchor.valid || anchor.line < 0)
+        return target;
+
+    if (anchor.insertAfterLine) {
+        const int insertChar = lineEndChar(m_text, anchor.line);
+        target.status = TSSignalInsertStatus::Ok;
+        target.insertChar = insertChar;
+        target.insertText = QLatin1Char('\n') + anchor.indent;
+        target.caretCharAfterEdit = insertChar + 1 + anchor.indent.size();
+        return target;
+    }
+
+    const int insertChar = lineStartChar(m_text, anchor.line);
+    target.status = TSSignalInsertStatus::Ok;
+    target.insertChar = insertChar;
+    target.insertText = anchor.indent + QLatin1Char('\n');
+    target.caretCharAfterEdit = insertChar + anchor.indent.size();
+    return target;
+}
+
+TSInstanceInsertTarget TSDocument::instanceInsertTarget(int charOffset) const
+{
+    TSInstanceInsertTarget target;
+
+    const int boundedCharOffset = qBound(0, charOffset, m_text.size());
+    const uint32_t byte =
+        static_cast<uint32_t>(boundedCharOffset) * 2u;
+    TSNode node =
+        ts_node_named_descendant_for_byte_range(ts_tree_root_node(m_tree),
+                                                byte,
+                                                byte);
+    TSNode module = ancestorOfType(node, "module_declaration");
+    if (ts_node_is_null(module)) {
+        target.status = TSInstanceInsertStatus::NoCurrentModule;
+        return target;
+    }
+    if (ts_node_has_error(module))
+        return target;
+
+    TSNode header = directModuleHeader(module);
+    if (ts_node_is_null(header))
+        return target;
+
+    TSNode lastInstance{};
+    TSNode lastDeclaration{};
+    TSNode firstBodyNode{};
+    bool seenHeader = false;
+
+    const uint32_t childCount = ts_node_named_child_count(module);
+    for (uint32_t i = 0; i < childCount; ++i) {
+        TSNode rawChild = ts_node_named_child(module, i);
+        TSNode child = effectiveModuleMemberNode(rawChild);
+        if (ts_node_eq(child, header)) {
+            seenHeader = true;
+            continue;
+        }
+        if (!seenHeader)
+            continue;
+
+        if (isInstanceBodyBoundaryNode(child)) {
+            firstBodyNode = child;
+            break;
+        }
+        if (isInstanceDeclaration(child)) {
+            lastInstance = child;
+            continue;
+        }
+        if (isDeclarationSectionNode(child)) {
+            lastDeclaration = child;
+            continue;
+        }
+        if (nodeTypeIs(child, "attribute_instance")
+            || nodeTypeIs(child, "include_compiler_directive")
+            || nodeTypeIs(child, "line_compiler_directive")
+            || nodeTypeIs(child, "file_or_line_compiler_directive")
+            || nodeTypeIs(child, "default_nettype_compiler_directive")
+            || nodeTypeIs(child, "pragma")) {
+            continue;
+        }
+        if (nodeStartChar(child) >= nodeEndChar(header)) {
+            firstBodyNode = child;
+            break;
+        }
+    }
+
+    SignalInsertAnchor anchor;
+    if (!ts_node_is_null(lastInstance)) {
+        anchor = anchorAfterNode(m_text, lastInstance);
+    } else if (!ts_node_is_null(lastDeclaration)) {
+        anchor = anchorAfterNode(m_text, lastDeclaration);
+    } else {
+        const int headerLastLine = nodeLastLine(header);
+        int insertLine = -1;
+        QString indent;
+        if (!ts_node_is_null(firstBodyNode)) {
+            insertLine =
+                static_cast<int>(ts_node_start_point(firstBodyNode).row);
+            indent = lineIndentAt(m_text, insertLine);
+        } else {
+            insertLine = endmoduleLine(module, m_text);
+            if (insertLine < 0)
+                return target;
+            indent = lineIndentAt(m_text, insertLine)
+                + QStringLiteral("    ");
+        }
+        if (insertLine <= headerLastLine)
+            return target;
+        anchor = anchorBeforeLine(m_text, insertLine, indent);
+    }
+
+    if (!anchor.valid || anchor.line < 0)
+        return target;
+
+    if (anchor.insertAfterLine) {
+        const int insertChar = lineEndChar(m_text, anchor.line);
+        target.status = TSInstanceInsertStatus::Ok;
+        target.insertChar = insertChar;
+        target.insertText = QLatin1Char('\n') + anchor.indent;
+        target.caretCharAfterEdit = insertChar + 1 + anchor.indent.size();
+        return target;
+    }
+
+    const int insertChar = lineStartChar(m_text, anchor.line);
+    target.status = TSInstanceInsertStatus::Ok;
+    target.insertChar = insertChar;
+    target.insertText = anchor.indent + QLatin1Char('\n');
+    target.caretCharAfterEdit = insertChar + anchor.indent.size();
+    return target;
+}
+
+TSAssignInsertTarget TSDocument::assignInsertTarget(int charOffset) const
+{
+    TSAssignInsertTarget target;
+
+    const int boundedCharOffset = qBound(0, charOffset, m_text.size());
+    const uint32_t byte =
+        static_cast<uint32_t>(boundedCharOffset) * 2u;
+    TSNode node =
+        ts_node_named_descendant_for_byte_range(ts_tree_root_node(m_tree),
+                                                byte,
+                                                byte);
+    TSNode module = ancestorOfType(node, "module_declaration");
+    if (ts_node_is_null(module)) {
+        target.status = TSAssignInsertStatus::NoCurrentModule;
+        return target;
+    }
+    if (ts_node_has_error(module))
+        return target;
+
+    TSNode header = directModuleHeader(module);
+    if (ts_node_is_null(header))
+        return target;
+
+    TSNode lastAssign{};
+    TSNode lastDeclarationOrInstance{};
+    TSNode firstBodyNode{};
+    bool seenHeader = false;
+
+    const uint32_t childCount = ts_node_named_child_count(module);
+    for (uint32_t i = 0; i < childCount; ++i) {
+        TSNode rawChild = ts_node_named_child(module, i);
+        TSNode child = effectiveModuleMemberNode(rawChild);
+        if (ts_node_eq(child, header)) {
+            seenHeader = true;
+            continue;
+        }
+        if (!seenHeader)
+            continue;
+
+        if (isAssignBodyBoundaryNode(child)) {
+            firstBodyNode = child;
+            break;
+        }
+        if (nodeTypeIs(child, "continuous_assign")) {
+            lastAssign = child;
+            continue;
+        }
+        if (isDeclarationSectionNode(child) || isInstanceDeclaration(child)) {
+            lastDeclarationOrInstance = child;
+            continue;
+        }
+        if (nodeTypeIs(child, "attribute_instance")
+            || nodeTypeIs(child, "include_compiler_directive")
+            || nodeTypeIs(child, "line_compiler_directive")
+            || nodeTypeIs(child, "file_or_line_compiler_directive")
+            || nodeTypeIs(child, "default_nettype_compiler_directive")
+            || nodeTypeIs(child, "pragma")) {
+            continue;
+        }
+        if (nodeStartChar(child) >= nodeEndChar(header)) {
+            firstBodyNode = child;
+            break;
+        }
+    }
+
+    SignalInsertAnchor anchor;
+    if (!ts_node_is_null(lastAssign)) {
+        anchor = anchorAfterNode(m_text, lastAssign);
+    } else if (!ts_node_is_null(lastDeclarationOrInstance)) {
+        anchor = anchorAfterNode(m_text, lastDeclarationOrInstance);
+    } else {
+        const int headerLastLine = nodeLastLine(header);
+        int insertLine = -1;
+        QString indent;
+        if (!ts_node_is_null(firstBodyNode)) {
+            insertLine =
+                static_cast<int>(ts_node_start_point(firstBodyNode).row);
+            indent = lineIndentAt(m_text, insertLine);
+        } else {
+            insertLine = endmoduleLine(module, m_text);
+            if (insertLine < 0)
+                return target;
+            indent = lineIndentAt(m_text, insertLine)
+                + QStringLiteral("    ");
+        }
+        if (insertLine <= headerLastLine)
+            return target;
+        anchor = anchorBeforeLine(m_text, insertLine, indent);
+    }
+
+    if (!anchor.valid || anchor.line < 0)
+        return target;
+
+    if (anchor.insertAfterLine) {
+        const int insertChar = lineEndChar(m_text, anchor.line);
+        target.status = TSAssignInsertStatus::Ok;
+        target.insertChar = insertChar;
+        target.insertText = QLatin1Char('\n') + anchor.indent;
+        target.caretCharAfterEdit = insertChar + 1 + anchor.indent.size();
+        return target;
+    }
+
+    const int insertChar = lineStartChar(m_text, anchor.line);
+    target.status = TSAssignInsertStatus::Ok;
+    target.insertChar = insertChar;
+    target.insertText = anchor.indent + QLatin1Char('\n');
+    target.caretCharAfterEdit = insertChar + anchor.indent.size();
+    return target;
+}
+
+TSParameterInsertTarget TSDocument::parameterInsertTarget(int charOffset) const
+{
+    TSParameterInsertTarget target;
+
+    const int boundedCharOffset = qBound(0, charOffset, m_text.size());
+    const uint32_t byte =
+        static_cast<uint32_t>(boundedCharOffset) * 2u;
+    TSNode node =
+        ts_node_named_descendant_for_byte_range(ts_tree_root_node(m_tree),
+                                                byte,
+                                                byte);
+    TSNode module = ancestorOfType(node, "module_declaration");
+    TSNode package = ancestorOfType(node, "package_declaration");
+    if (ts_node_is_null(module) && ts_node_is_null(package)) {
+        target.status = TSParameterInsertStatus::NoCurrentParameterScope;
+        return target;
+    }
+
+    auto targetFromParameterPortList =
+        [this](TSNode parameterPortList) -> TSParameterInsertTarget {
+            TSParameterInsertTarget listTarget;
+            if (ts_node_is_null(parameterPortList)
+                || ts_node_has_error(parameterPortList)) {
+                return listTarget;
+            }
+
+            const PortParenRange parens =
+                findPortListParens(m_text, parameterPortList);
+            if (ts_node_is_null(parens.openParen)
+                || ts_node_is_null(parens.closeParen)) {
+                return listTarget;
+            }
+
+            const int openLine =
+                static_cast<int>(ts_node_start_point(parens.openParen).row);
+            const int closeLine =
+                static_cast<int>(ts_node_start_point(parens.closeParen).row);
+            if (openLine >= closeLine)
+                return listTarget;
+
+            if (!parameterPortListContainsOnlyClearChildren(parameterPortList))
+                return listTarget;
+
+            const QList<TSNode> entries =
+                parameterPortEntries(parameterPortList);
+            if (entries.isEmpty()) {
+                if (ts_node_named_child_count(parameterPortList) > 0)
+                    return listTarget;
+
+                const QString indent = lineIndentAt(m_text, closeLine)
+                    + QStringLiteral("    ");
+                listTarget.status = TSParameterInsertStatus::Ok;
+                listTarget.insertChar = lineStartChar(m_text, closeLine);
+                listTarget.insertText = indent + QLatin1Char('\n');
+                listTarget.caretCharAfterEdit =
+                    listTarget.insertChar + indent.size();
+                return listTarget;
+            }
+
+            TSNode lastEntry = entries.last();
+            if (ts_node_has_error(lastEntry))
+                return listTarget;
+
+            const int lastEntryLine = nodeLastLine(lastEntry);
+            if (lastEntryLine <= openLine || lastEntryLine >= closeLine)
+                return listTarget;
+
+            bool hasComma = false;
+            int commaInsertChar = -1;
+            if (!trailingCommaStateOnPortLine(m_text,
+                                              lastEntry,
+                                              lastEntryLine,
+                                              &hasComma,
+                                              &commaInsertChar)) {
+                return listTarget;
+            }
+
+            const QString indent = lineIndentAt(m_text, lastEntryLine);
+            const int insertChar = lineEndChar(m_text, lastEntryLine);
+            listTarget.status = TSParameterInsertStatus::Ok;
+            listTarget.needsTrailingComma = !hasComma;
+            listTarget.trailingCommaInsertChar = commaInsertChar;
+            listTarget.insertChar = insertChar;
+            listTarget.insertText = QLatin1Char('\n') + indent;
+            listTarget.caretCharAfterEdit =
+                insertChar + 1 + indent.size()
+                + (listTarget.needsTrailingComma ? 1 : 0);
+            return listTarget;
+        };
+
+    auto targetAfterAnchor =
+        [this](const SignalInsertAnchor& anchor) -> TSParameterInsertTarget {
+            TSParameterInsertTarget anchorTarget;
+            if (!anchor.valid || anchor.line < 0)
+                return anchorTarget;
+
+            if (anchor.insertAfterLine) {
+                const int insertChar = lineEndChar(m_text, anchor.line);
+                anchorTarget.status = TSParameterInsertStatus::Ok;
+                anchorTarget.insertChar = insertChar;
+                anchorTarget.insertText = QLatin1Char('\n') + anchor.indent;
+                anchorTarget.caretCharAfterEdit =
+                    insertChar + 1 + anchor.indent.size();
+                return anchorTarget;
+            }
+
+            const int insertChar = lineStartChar(m_text, anchor.line);
+            anchorTarget.status = TSParameterInsertStatus::Ok;
+            anchorTarget.insertChar = insertChar;
+            anchorTarget.insertText = anchor.indent + QLatin1Char('\n');
+            anchorTarget.caretCharAfterEdit =
+                insertChar + anchor.indent.size();
+            return anchorTarget;
+        };
+
+    if (!ts_node_is_null(module)) {
+        if (ts_node_has_error(module))
+            return target;
+
+        TSNode header = directModuleHeader(module);
+        if (ts_node_is_null(header))
+            return target;
+
+        TSNode parameterPortList =
+            directNamedChildOfType(header, "parameter_port_list");
+        if (!ts_node_is_null(parameterPortList)) {
+            const TSParameterInsertTarget listTarget =
+                targetFromParameterPortList(parameterPortList);
+            if (listTarget.ok())
+                return listTarget;
+        }
+
+        TSNode lastParameterDecl{};
+        bool seenHeader = false;
+
+        const uint32_t childCount = ts_node_named_child_count(module);
+        for (uint32_t i = 0; i < childCount; ++i) {
+            TSNode rawChild = ts_node_named_child(module, i);
+            TSNode child = effectiveModuleMemberNode(rawChild);
+            if (ts_node_eq(child, header)) {
+                seenHeader = true;
+                continue;
+            }
+            if (!seenHeader)
+                continue;
+
+            if (isModuleBodyBoundaryNode(child))
+                break;
+            if (isParameterLikeDeclaration(child)) {
+                lastParameterDecl = child;
+                continue;
+            }
+            if (nodeTypeIs(child, "attribute_instance")
+                || nodeTypeIs(child, "package_import_declaration")
+                || nodeTypeIs(child, "genvar_declaration")
+                || nodeTypeIs(child, "include_compiler_directive")
+                || nodeTypeIs(child, "line_compiler_directive")
+                || nodeTypeIs(child, "file_or_line_compiler_directive")
+                || nodeTypeIs(child, "default_nettype_compiler_directive")
+                || nodeTypeIs(child, "pragma")) {
+                continue;
+            }
+            if (nodeStartChar(child) >= nodeEndChar(header))
+                break;
+        }
+
+        if (ts_node_is_null(lastParameterDecl))
+            return target;
+
+        return targetAfterAnchor(anchorAfterNode(m_text, lastParameterDecl));
+    }
+
+    if (ts_node_has_error(package))
+        return target;
+
+    TSNode lastPackageParameter{};
+    const uint32_t childCount = ts_node_named_child_count(package);
+    for (uint32_t i = 0; i < childCount; ++i) {
+        TSNode rawChild = ts_node_named_child(package, i);
+        TSNode child = effectivePackageItemNode(rawChild);
+        if (isParameterLikeDeclaration(child))
+            lastPackageParameter = child;
+    }
+
+    if (ts_node_is_null(lastPackageParameter))
+        return target;
+
+    const int endLine = endpackageLine(package, m_text);
+    if (endLine >= 0 && nodeLastLine(lastPackageParameter) >= endLine)
+        return target;
+
+    return targetAfterAnchor(anchorAfterNode(m_text, lastPackageParameter));
+}
+
+TSModuleEndInsertTarget TSDocument::moduleEndInsertTarget(int charOffset) const
+{
+    TSModuleEndInsertTarget target;
+
+    const int boundedCharOffset = qBound(0, charOffset, m_text.size());
+    const uint32_t byte =
+        static_cast<uint32_t>(boundedCharOffset) * 2u;
+    TSNode node =
+        ts_node_named_descendant_for_byte_range(ts_tree_root_node(m_tree),
+                                                byte,
+                                                byte);
+    TSNode module = ancestorOfType(node, "module_declaration");
+    if (ts_node_is_null(module)) {
+        target.status = TSModuleEndInsertStatus::NoCurrentModule;
+        return target;
+    }
+    if (ts_node_has_error(module))
+        return target;
+
+    TSNode header = directModuleHeader(module);
+    if (ts_node_is_null(header))
+        return target;
+
+    const int endLine = endmoduleLine(module, m_text);
+    if (endLine < 0)
+        return target;
+
+    const int headerLastLine = nodeLastLine(header);
+    if (endLine <= headerLastLine)
+        return target;
+
+    const int previousLine = previousNonBlankLine(m_text, endLine - 1);
+    const QString bodyIndent =
+        previousLine > headerLastLine
+            ? lineIndentAt(m_text, previousLine)
+            : lineIndentAt(m_text, endLine) + QStringLiteral("    ");
+
+    const int blankLine = endLine - 1;
+    if (blankLine > headerLastLine && lineIsBlank(m_text, blankLine)) {
+        target.status = TSModuleEndInsertStatus::Ok;
+        target.replaceStartChar = lineStartChar(m_text, blankLine);
+        target.replaceEndChar = lineEndChar(m_text, blankLine);
+        target.replacementText = bodyIndent;
+        target.caretCharAfterEdit =
+            target.replaceStartChar + bodyIndent.size();
+        return target;
+    }
+
+    target.status = TSModuleEndInsertStatus::Ok;
+    target.replaceStartChar = lineStartChar(m_text, endLine);
+    target.replaceEndChar = target.replaceStartChar;
+    target.replacementText = bodyIndent + QLatin1Char('\n');
+    target.caretCharAfterEdit = target.replaceStartChar + bodyIndent.size();
+    return target;
 }
 
 namespace {

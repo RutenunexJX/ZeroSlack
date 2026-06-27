@@ -17,6 +17,7 @@ class NavigationManager;
 class NavigationPaneCoordinator;
 class AnalysisCoordinator;
 class AnalysisScheduler;
+class ComModeCoordinator;
 class EditorCoordinator;
 class FileCommandCoordinator;
 class FoldBlockShelfModel;
@@ -63,6 +64,7 @@ private:
     std::unique_ptr<NavigationPaneCoordinator> navigationPane;
     std::unique_ptr<SemanticRuntimeCoordinator> semanticRuntime;
     std::unique_ptr<AnalysisCoordinator> analysisCoordinator;
+    std::unique_ptr<ComModeCoordinator> comModeCoordinator;
     std::unique_ptr<EditorCoordinator> editorCoordinator;
     std::unique_ptr<FileCommandCoordinator> fileCommandCoordinator;
     std::unique_ptr<FoldBlockShelfModel> foldShelfModel;
@@ -92,6 +94,7 @@ private:
     void setupFileCommandCoordinator();
     void setupModeCommandCoordinator();
     void setupGlobalControl();
+    void setupComMode();
     void setupFoldBlockShelf();
     void setupViewMenu();
     void addPanelViewAction(QDockWidget* dock,

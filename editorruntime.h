@@ -67,6 +67,19 @@ struct MyCodeEditorState
         const MyCodeEditor* editor) const;
     QString currentModuleNameAt(int charPos) const;
     QString currentModuleName(const MyCodeEditor* editor) const;
+    bool executeComPortAppend(MyCodeEditor* editor, QString* message);
+    bool executeComSignalInsert(MyCodeEditor* editor, QString* message);
+    bool executeComInstanceInsert(MyCodeEditor* editor, QString* message);
+    bool executeComAssignInsert(MyCodeEditor* editor, QString* message);
+    bool executeComParameterInsert(MyCodeEditor* editor, QString* message);
+    bool executeComModuleEndInsert(MyCodeEditor* editor, QString* message);
+    bool comModeActive() const;
+    QString comModeBuffer() const;
+    void enterComMode(MyCodeEditor* editor, const QString& message = QString());
+    void exitComMode(MyCodeEditor* editor);
+    void showComModeMessage(MyCodeEditor* editor, const QString& message);
+    void publishComModeState(MyCodeEditor* editor,
+                             const QString& message = QString()) const;
     EditorSemanticContext semanticContextForPosition(
         const MyCodeEditor* editor,
         int cursorPosition,

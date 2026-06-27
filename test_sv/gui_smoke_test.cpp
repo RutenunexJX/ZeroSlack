@@ -71,6 +71,8 @@
 #include "foldblockshelfmodel.h"
 #include "foldblockshelfpanel.h"
 #include "formattersettings.h"
+#include "commodecoordinator.h"
+#include "commodeservice.h"
 #include "globalcontrolcoordinator.h"
 #include "globalcontrolpanel.h"
 #include "globalcontrolservice.h"
@@ -5596,47 +5598,735 @@ static void runNavigationHierarchyModelRegression()
                true);
 }
 
+static void sendWidgetKey(QWidget* widget,
+                          int key,
+                          const QString& text = QString())
+{
+    if (!widget)
+        return;
+    QKeyEvent event(QEvent::KeyPress, key, Qt::NoModifier, text);
+    QApplication::sendEvent(widget, &event);
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+}
+
+static void runComModeRegression(MainWindow& window)
+{
+    printf("\n-- com mode regression --\n");
+
+    QTemporaryDir tempDir;
+    expectBool("com mode temp workspace valid", tempDir.isValid(), true);
+    const QString root = QDir::cleanPath(tempDir.path());
+    QDir(root).mkpath(QStringLiteral("rtl"));
+    const QString topFile =
+        QDir::cleanPath(QDir(root).filePath(QStringLiteral("rtl/top.sv")));
+    const QString childFile =
+        QDir::cleanPath(QDir(root).filePath(QStringLiteral("rtl/child.sv")));
+    const QString packageFile =
+        QDir::cleanPath(QDir(root).filePath(QStringLiteral("rtl/cfg_pkg.sv")));
+    const QString outsideFile =
+        QDir::cleanPath(QDir(root).filePath(QStringLiteral("../outside.sv")));
+
+    ProjectModel project;
+    project.setWorkspaceState(root, {topFile, childFile, packageFile});
+
+    const SemanticSymbolRecord topModule =
+        SemanticFixtureRecordBuilder(QStringLiteral("top"),
+                                     SymbolTaxonomy::DeclarationKind::Module)
+            .withFile(topFile)
+            .withLocalHandle(87001)
+            .withRange(10, 1, 15, 10)
+            .record();
+    const SemanticSymbolRecord childModule =
+        SemanticFixtureRecordBuilder(QStringLiteral("child"),
+                                     SymbolTaxonomy::DeclarationKind::Module)
+            .withFile(childFile)
+            .withLocalHandle(87002)
+            .withRange(30, 1, 35, 10)
+            .record();
+    const SemanticSymbolRecord outsideModule =
+        SemanticFixtureRecordBuilder(QStringLiteral("outside"),
+                                     SymbolTaxonomy::DeclarationKind::Module)
+            .withFile(outsideFile)
+            .withLocalHandle(87003)
+            .withRange(1, 1, 4, 10)
+            .record();
+    const SemanticSymbolRecord topParameter =
+        SemanticFixtureRecordBuilder(QStringLiteral("TOP_P"),
+                                     SymbolTaxonomy::DeclarationKind::Parameter)
+            .withFile(topFile)
+            .withLocalHandle(87004)
+            .withRange(11, 15, 11, 20)
+            .inModule(QStringLiteral("top"))
+            .record();
+    const SemanticSymbolRecord topLocalparam =
+        SemanticFixtureRecordBuilder(QStringLiteral("TOP_LP"),
+                                     SymbolTaxonomy::DeclarationKind::Localparam)
+            .withFile(topFile)
+            .withLocalHandle(87005)
+            .withRange(12, 15, 12, 21)
+            .inModule(QStringLiteral("top"))
+            .record();
+    const SemanticSymbolRecord topLogicSignal =
+        SemanticFixtureRecordBuilder(QStringLiteral("data_bus"),
+                                     SymbolTaxonomy::DeclarationKind::Signal)
+            .withFile(topFile)
+            .withLocalHandle(87009)
+            .withRange(13, 17, 13, 25)
+            .withCollectorKind(SymbolTaxonomy::CollectorKind::Logic)
+            .inModule(QStringLiteral("top"))
+            .withType(QStringLiteral("logic [7:0]"))
+            .record();
+    const SemanticSymbolRecord topWireSignal =
+        SemanticFixtureRecordBuilder(QStringLiteral("ready_w"),
+                                     SymbolTaxonomy::DeclarationKind::Signal)
+            .withFile(topFile)
+            .withLocalHandle(87010)
+            .withRange(14, 14, 14, 21)
+            .withCollectorKind(SymbolTaxonomy::CollectorKind::Wire)
+            .inModule(QStringLiteral("top"))
+            .record();
+    const SemanticSymbolRecord childRegSignal =
+        SemanticFixtureRecordBuilder(QStringLiteral("child_state"),
+                                     SymbolTaxonomy::DeclarationKind::Signal)
+            .withFile(childFile)
+            .withLocalHandle(87011)
+            .withRange(31, 10, 31, 21)
+            .withCollectorKind(SymbolTaxonomy::CollectorKind::Reg)
+            .inModule(QStringLiteral("child"))
+            .withType(QStringLiteral("reg [3:0]"))
+            .record();
+    const SemanticSymbolRecord topPortRecord =
+        SemanticFixtureRecordBuilder(QStringLiteral("clk"),
+                                     SymbolTaxonomy::DeclarationKind::Port)
+            .withFile(topFile)
+            .withLocalHandle(87012)
+            .withRange(11, 15, 11, 18)
+            .withCollectorKind(SymbolTaxonomy::CollectorKind::PortInput)
+            .inModule(QStringLiteral("top"))
+            .record();
+    const SemanticSymbolRecord packageRecord =
+        SemanticFixtureRecordBuilder(QStringLiteral("cfg_pkg"),
+                                     SymbolTaxonomy::DeclarationKind::Package)
+            .withFile(packageFile)
+            .withLocalHandle(87006)
+            .withRange(5, 1, 10, 11)
+            .record();
+    const SemanticSymbolRecord packageParameter =
+        SemanticFixtureRecordBuilder(QStringLiteral("PKG_P"),
+                                     SymbolTaxonomy::DeclarationKind::Parameter)
+            .withFile(packageFile)
+            .withLocalHandle(87007)
+            .withRange(6, 15, 6, 20)
+            .inPackage(QStringLiteral("cfg_pkg"))
+            .record();
+    const SemanticSymbolRecord outsidePackage =
+        SemanticFixtureRecordBuilder(QStringLiteral("outside_pkg"),
+                                     SymbolTaxonomy::DeclarationKind::Package)
+            .withFile(outsideFile)
+            .withLocalHandle(87008)
+            .withRange(10, 1, 14, 11)
+            .record();
+    QHash<QString, QString> contents;
+    contents.insert(topFile,
+                    QStringLiteral("// 1\n"
+                                   "// 2\n"
+                                   "// 3\n"
+                                   "// 4\n"
+                                   "// 5\n"
+                                   "// 6\n"
+                                   "// 7\n"
+                                   "// 8\n"
+                                   "// 9\n"
+                                   "module top;\n"
+                                   "  input logic clk;\n"
+                                   "  parameter TOP_P = 1;\n"
+                                   "  logic [7:0] data_bus;\n"
+                                   "  wire ready_w;\n"
+                                   "endmodule\n"));
+    contents.insert(childFile,
+                    QStringLiteral("module child;\n"
+                                   "endmodule\n"));
+    contents.insert(packageFile,
+                    QStringLiteral("package cfg_pkg;\n"
+                                   "  parameter PKG_P = 1;\n"
+                                   "endpackage\n"));
+
+    const auto snapshot =
+        snapshotFromRecords({topModule,
+                             childModule,
+                             outsideModule,
+                             topParameter,
+                             topLocalparam,
+                             topLogicSignal,
+                             topWireSignal,
+                             childRegSignal,
+                             topPortRecord,
+                             packageRecord,
+                             packageParameter,
+                             outsidePackage},
+                            {},
+                            {},
+                            contents);
+    ComModeService service;
+    ComModePickerQuery moduleQuery;
+    moduleQuery.snapshot = snapshot;
+    moduleQuery.project = project.snapshot();
+    const QList<ComModePickerItem> moduleItems =
+        service.moduleItems(moduleQuery);
+    bool sawTopModule = false;
+    bool sawChildModule = false;
+    bool sawOutsideModule = false;
+    bool topPathIsRelative = false;
+    for (const ComModePickerItem& item : moduleItems) {
+        if (item.name == QStringLiteral("top")) {
+            sawTopModule = true;
+            topPathIsRelative = item.displayPath.endsWith(
+                QDir::toNativeSeparators(QStringLiteral("rtl/top.sv")));
+        }
+        if (item.name == QStringLiteral("child"))
+            sawChildModule = true;
+        if (item.name == QStringLiteral("outside"))
+            sawOutsideModule = true;
+    }
+    expectBool("com gm lists workspace modules from snapshot",
+               sawTopModule && sawChildModule && !sawOutsideModule,
+               true);
+    expectBool("com gm displays relative module path",
+               topPathIsRelative,
+               true);
+
+    moduleQuery.filter = QStringLiteral("chd");
+    const QList<ComModePickerItem> filteredModuleItems =
+        service.moduleItems(moduleQuery);
+    expectBool("com gm supports fuzzy module matching",
+               !filteredModuleItems.isEmpty()
+                   && filteredModuleItems.first().name
+                          == QStringLiteral("child"),
+               true);
+
+    ComModePickerQuery packageQuery;
+    packageQuery.snapshot = snapshot;
+    packageQuery.project = project.snapshot();
+    const QList<ComModePickerItem> packageItems =
+        service.packageItems(packageQuery);
+    bool sawPackage = false;
+    bool sawOutsidePackage = false;
+    bool packagePathIsRelative = false;
+    for (const ComModePickerItem& item : packageItems) {
+        if (item.name == QStringLiteral("cfg_pkg")) {
+            sawPackage = true;
+            packagePathIsRelative = item.displayPath.endsWith(
+                QDir::toNativeSeparators(QStringLiteral("rtl/cfg_pkg.sv")));
+        }
+        if (item.name == QStringLiteral("outside_pkg"))
+            sawOutsidePackage = true;
+    }
+    expectBool("com gpk lists workspace packages from snapshot",
+               sawPackage && !sawOutsidePackage,
+               true);
+    expectBool("com gpk displays relative package path",
+               packagePathIsRelative,
+               true);
+
+    packageQuery.filter = QStringLiteral("cfg");
+    const QList<ComModePickerItem> filteredPackageItems =
+        service.packageItems(packageQuery);
+    expectBool("com gpk supports fuzzy package matching",
+               !filteredPackageItems.isEmpty()
+                   && filteredPackageItems.first().name
+                          == QStringLiteral("cfg_pkg"),
+               true);
+
+    ComModeScopedPickerQuery parameterQuery;
+    parameterQuery.snapshot = snapshot;
+    parameterQuery.project = project.snapshot();
+    parameterQuery.fileName = topFile;
+    parameterQuery.currentModuleName = QStringLiteral("top");
+    parameterQuery.currentLine = 12;
+    const ComModeScopedPickerResult moduleParameterResult =
+        service.parameterItems(parameterQuery);
+    bool sawTopParameter = false;
+    bool sawTopLocalparam = false;
+    bool sawPackageParameterInModule = false;
+    bool moduleParameterHasScope = false;
+    for (const ComModePickerItem& item : moduleParameterResult.items) {
+        if (item.name == QStringLiteral("TOP_P")) {
+            sawTopParameter = true;
+            moduleParameterHasScope =
+                item.scopeName == QStringLiteral("top");
+        }
+        if (item.name == QStringLiteral("TOP_LP"))
+            sawTopLocalparam = true;
+        if (item.name == QStringLiteral("PKG_P"))
+            sawPackageParameterInModule = true;
+    }
+    expectBool("com gpa lists current module parameters",
+               moduleParameterResult.hasScope
+                   && sawTopParameter
+                   && sawTopLocalparam
+                   && !sawPackageParameterInModule,
+               true);
+    expectBool("com gpa parameter item shows scope",
+               moduleParameterHasScope,
+               true);
+
+    parameterQuery.filter = QStringLiteral("lp");
+    const ComModeScopedPickerResult filteredParameterResult =
+        service.parameterItems(parameterQuery);
+    expectBool("com gpa supports fuzzy parameter matching",
+               filteredParameterResult.hasScope
+                   && !filteredParameterResult.items.isEmpty()
+                   && filteredParameterResult.items.first().name
+                          == QStringLiteral("TOP_LP"),
+               true);
+
+    parameterQuery.filter.clear();
+    parameterQuery.fileName = packageFile;
+    parameterQuery.currentModuleName.clear();
+    parameterQuery.currentLine = 6;
+    const ComModeScopedPickerResult packageParameterResult =
+        service.parameterItems(parameterQuery);
+    bool sawPackageParameter = false;
+    for (const ComModePickerItem& item : packageParameterResult.items) {
+        if (item.name == QStringLiteral("PKG_P")
+            && item.scopeName == QStringLiteral("cfg_pkg"))
+            sawPackageParameter = true;
+    }
+    expectBool("com gpa lists current package parameters",
+               packageParameterResult.hasScope && sawPackageParameter,
+               true);
+
+    parameterQuery.fileName = childFile;
+    parameterQuery.currentLine = 20;
+    const ComModeScopedPickerResult missingParameterScope =
+        service.parameterItems(parameterQuery);
+    expectBool("com gpa reports missing parameter scope",
+               !missingParameterScope.hasScope
+                   && missingParameterScope.message
+                          == QStringLiteral("No current parameter scope"),
+               true);
+
+    ComModeScopedPickerQuery signalQuery;
+    signalQuery.snapshot = snapshot;
+    signalQuery.project = project.snapshot();
+    signalQuery.fileName = topFile;
+    signalQuery.currentModuleName = QStringLiteral("top");
+    signalQuery.currentLine = 13;
+    const ComModeScopedPickerResult signalResult =
+        service.signalItems(signalQuery);
+    bool sawDataBus = false;
+    bool sawReadyWire = false;
+    bool sawChildState = false;
+    bool sawPortAsSignal = false;
+    bool dataBusHasDetail = false;
+    for (const ComModePickerItem& item : signalResult.items) {
+        if (item.name == QStringLiteral("data_bus")) {
+            sawDataBus = true;
+            dataBusHasDetail =
+                item.kind == ComModePickerItemKind::Signal
+                && item.kindLabel == QStringLiteral("logic")
+                && item.detailLabel == QStringLiteral("[7:0]");
+        }
+        if (item.name == QStringLiteral("ready_w")) {
+            sawReadyWire =
+                item.kindLabel == QStringLiteral("wire")
+                && item.detailLabel == QStringLiteral("scalar");
+        }
+        if (item.name == QStringLiteral("child_state"))
+            sawChildState = true;
+        if (item.name == QStringLiteral("clk"))
+            sawPortAsSignal = true;
+    }
+    expectBool("com gsd lists current module signals",
+               signalResult.hasScope
+                   && sawDataBus
+                   && sawReadyWire
+                   && !sawChildState
+                   && !sawPortAsSignal,
+               true);
+    expectBool("com gsd signal item shows kind and width",
+               dataBusHasDetail,
+               true);
+
+    signalQuery.filter = QStringLiteral("db");
+    const ComModeScopedPickerResult filteredSignalResult =
+        service.signalItems(signalQuery);
+    expectBool("com gsd supports fuzzy signal matching",
+               filteredSignalResult.hasScope
+                   && !filteredSignalResult.items.isEmpty()
+                   && filteredSignalResult.items.first().name
+                          == QStringLiteral("data_bus"),
+               true);
+
+    signalQuery.fileName = packageFile;
+    signalQuery.currentModuleName.clear();
+    signalQuery.currentLine = 6;
+    const ComModeScopedPickerResult missingSignalScope =
+        service.signalItems(signalQuery);
+    expectBool("com gsd reports missing current module",
+               !missingSignalScope.hasScope
+                   && missingSignalScope.message
+                          == QStringLiteral("No current module"),
+               true);
+
+    signalQuery.fileName = childFile;
+    signalQuery.currentModuleName = QStringLiteral("child");
+    signalQuery.currentLine = 31;
+    signalQuery.filter = QStringLiteral("no_match_signal");
+    const ComModeScopedPickerResult emptySignalResult =
+        service.signalItems(signalQuery);
+    expectBool("com gsd keeps scope for empty signal results",
+               emptySignalResult.hasScope && emptySignalResult.items.isEmpty(),
+               true);
+
+    ComModeRelativeLineQuery lineQuery;
+    lineQuery.snapshot = snapshot;
+    lineQuery.fileName = topFile;
+    lineQuery.currentModuleName = QStringLiteral("top");
+    lineQuery.currentLine = 12;
+    lineQuery.requestedModuleLine = 3;
+    ComModeRelativeLineResult lineResult =
+        service.relativeLineTarget(lineQuery);
+    expectBool("com g<num> resolves module-relative line",
+               lineResult.ok
+                   && lineResult.filePath == topFile
+                   && lineResult.line == 12,
+               true);
+
+    lineQuery.requestedModuleLine = 1;
+    lineResult = service.relativeLineTarget(lineQuery);
+    expectBool("com g1 resolves module declaration line",
+               lineResult.ok
+                   && lineResult.line == 10
+                   && lineResult.column == 1,
+               true);
+
+    lineQuery.requestedModuleLine = 6;
+    lineResult = service.relativeLineTarget(lineQuery);
+    expectBool("com g<num> rejects out of range module line",
+               !lineResult.ok
+                   && lineResult.message
+                          == QStringLiteral("Module has only 5 lines"),
+               true);
+
+    lineQuery.requestedModuleLine = 0;
+    lineResult = service.relativeLineTarget(lineQuery);
+    expectBool("com g0 is invalid",
+               !lineResult.ok
+                   && lineResult.message
+                          == QStringLiteral("Line number must be >= 1"),
+               true);
+
+    lineQuery.currentModuleName.clear();
+    lineQuery.requestedModuleLine = 1;
+    lineResult = service.relativeLineTarget(lineQuery);
+    expectBool("com g<num> reports missing current module",
+               !lineResult.ok
+                   && lineResult.message == QStringLiteral("No current module"),
+               true);
+
+    MyCodeEditor insertEditor;
+    insertEditor.resize(360, 120);
+    insertEditor.show();
+    insertEditor.setFocus();
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    sendWidgetKey(&insertEditor, Qt::Key_QuoteLeft, QStringLiteral("`"));
+    expectBool("insert mode backtick inserts text",
+               insertEditor.toPlainText() == QStringLiteral("`")
+                   && !insertEditor.comModeActive(),
+               true);
+    insertEditor.close();
+
+    MyCodeEditor modeEditor;
+    modeEditor.setPlainText(QStringLiteral("module top;\nendmodule\n"));
+    modeEditor.resize(360, 120);
+    modeEditor.show();
+    modeEditor.setFocus();
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    sendWidgetKey(&modeEditor, Qt::Key_Escape);
+    expectBool("Esc enters COM mode from editor focus",
+               modeEditor.comModeActive()
+                   && modeEditor.comModeBuffer().isEmpty(),
+               true);
+    sendWidgetKey(&modeEditor, Qt::Key_G, QStringLiteral("g"));
+    sendWidgetKey(&modeEditor, Qt::Key_2, QStringLiteral("2"));
+    sendWidgetKey(&modeEditor, Qt::Key_0, QStringLiteral("0"));
+    expectBool("COM shows g<num> buffer",
+               modeEditor.comModeActive()
+                   && modeEditor.comModeBuffer() == QStringLiteral("g20"),
+               true);
+    sendWidgetKey(&modeEditor, Qt::Key_Escape);
+    expectBool("Esc clears COM buffer without exiting",
+               modeEditor.comModeActive()
+                   && modeEditor.comModeBuffer().isEmpty(),
+               true);
+    QSignalSpy comCommandSpy(&modeEditor,
+                             &MyCodeEditor::comCommandRequested);
+    sendWidgetKey(&modeEditor, Qt::Key_G, QStringLiteral("g"));
+    sendWidgetKey(&modeEditor, Qt::Key_P, QStringLiteral("p"));
+    expectBool("COM gp stays a non-executable prefix",
+               modeEditor.comModeActive()
+                   && modeEditor.comModeBuffer() == QStringLiteral("gp")
+                   && comCommandSpy.count() == 0,
+               true);
+    sendWidgetKey(&modeEditor, Qt::Key_K, QStringLiteral("k"));
+    expectBool("COM gpk executes package picker command",
+               modeEditor.comModeActive()
+                   && modeEditor.comModeBuffer().isEmpty()
+                   && comCommandSpy.count() == 1
+                   && comCommandSpy.takeFirst().at(0).toString()
+                          == QStringLiteral("gpk"),
+               true);
+    sendWidgetKey(&modeEditor, Qt::Key_G, QStringLiteral("g"));
+    sendWidgetKey(&modeEditor, Qt::Key_P, QStringLiteral("p"));
+    sendWidgetKey(&modeEditor, Qt::Key_A, QStringLiteral("a"));
+    expectBool("COM gpa executes parameter picker command",
+               modeEditor.comModeActive()
+                   && modeEditor.comModeBuffer().isEmpty()
+                   && comCommandSpy.count() == 1
+                   && comCommandSpy.takeFirst().at(0).toString()
+                          == QStringLiteral("gpa"),
+               true);
+    sendWidgetKey(&modeEditor, Qt::Key_G, QStringLiteral("g"));
+    sendWidgetKey(&modeEditor, Qt::Key_P, QStringLiteral("p"));
+    sendWidgetKey(&modeEditor, Qt::Key_O, QStringLiteral("o"));
+    expectBool("COM gpo executes port append command",
+               modeEditor.comModeActive()
+                   && modeEditor.comModeBuffer().isEmpty()
+                   && comCommandSpy.count() == 1
+                   && comCommandSpy.takeFirst().at(0).toString()
+                          == QStringLiteral("gpo"),
+               true);
+    sendWidgetKey(&modeEditor, Qt::Key_G, QStringLiteral("g"));
+    sendWidgetKey(&modeEditor, Qt::Key_P, QStringLiteral("p"));
+    sendWidgetKey(&modeEditor, Qt::Key_I, QStringLiteral("i"));
+    expectBool("COM gpi executes parameter insert command",
+               modeEditor.comModeActive()
+                   && modeEditor.comModeBuffer().isEmpty()
+                   && comCommandSpy.count() == 1
+                   && comCommandSpy.takeFirst().at(0).toString()
+                          == QStringLiteral("gpi"),
+               true);
+    sendWidgetKey(&modeEditor, Qt::Key_G, QStringLiteral("g"));
+    sendWidgetKey(&modeEditor, Qt::Key_S, QStringLiteral("s"));
+    expectBool("COM gs stays a non-executable prefix",
+               modeEditor.comModeActive()
+                   && modeEditor.comModeBuffer() == QStringLiteral("gs")
+                   && comCommandSpy.count() == 0,
+               true);
+    sendWidgetKey(&modeEditor, Qt::Key_D, QStringLiteral("d"));
+    expectBool("COM gsd executes signal declaration picker command",
+               modeEditor.comModeActive()
+                   && modeEditor.comModeBuffer().isEmpty()
+                   && comCommandSpy.count() == 1
+                   && comCommandSpy.takeFirst().at(0).toString()
+                          == QStringLiteral("gsd"),
+               true);
+    sendWidgetKey(&modeEditor, Qt::Key_G, QStringLiteral("g"));
+    sendWidgetKey(&modeEditor, Qt::Key_S, QStringLiteral("s"));
+    expectBool("COM gs stays a prefix before signal insert",
+               modeEditor.comModeActive()
+                   && modeEditor.comModeBuffer() == QStringLiteral("gs")
+                   && comCommandSpy.count() == 0,
+               true);
+    sendWidgetKey(&modeEditor, Qt::Key_I, QStringLiteral("i"));
+    expectBool("COM gsi executes signal insert command",
+               modeEditor.comModeActive()
+                   && modeEditor.comModeBuffer().isEmpty()
+                   && comCommandSpy.count() == 1
+                   && comCommandSpy.takeFirst().at(0).toString()
+                          == QStringLiteral("gsi"),
+               true);
+    sendWidgetKey(&modeEditor, Qt::Key_G, QStringLiteral("g"));
+    sendWidgetKey(&modeEditor, Qt::Key_I, QStringLiteral("i"));
+    expectBool("COM gi stays a non-executable prefix",
+               modeEditor.comModeActive()
+                   && modeEditor.comModeBuffer() == QStringLiteral("gi")
+                   && comCommandSpy.count() == 0,
+               true);
+    sendWidgetKey(&modeEditor, Qt::Key_I, QStringLiteral("i"));
+    expectBool("COM gii executes instance insert command",
+               modeEditor.comModeActive()
+                   && modeEditor.comModeBuffer().isEmpty()
+                   && comCommandSpy.count() == 1
+                   && comCommandSpy.takeFirst().at(0).toString()
+                          == QStringLiteral("gii"),
+               true);
+    sendWidgetKey(&modeEditor, Qt::Key_G, QStringLiteral("g"));
+    sendWidgetKey(&modeEditor, Qt::Key_A, QStringLiteral("a"));
+    expectBool("COM ga stays a non-executable prefix",
+               modeEditor.comModeActive()
+                   && modeEditor.comModeBuffer() == QStringLiteral("ga")
+                   && comCommandSpy.count() == 0,
+               true);
+    sendWidgetKey(&modeEditor, Qt::Key_C, QStringLiteral("c"));
+    expectBool("COM gac executes assign insert command",
+               modeEditor.comModeActive()
+                   && modeEditor.comModeBuffer().isEmpty()
+                   && comCommandSpy.count() == 1
+                   && comCommandSpy.takeFirst().at(0).toString()
+                          == QStringLiteral("gac"),
+               true);
+    sendWidgetKey(&modeEditor, Qt::Key_G, QStringLiteral("g"));
+    sendWidgetKey(&modeEditor, Qt::Key_E, QStringLiteral("e"));
+    expectBool("COM ge stays a non-executable prefix",
+               modeEditor.comModeActive()
+                   && modeEditor.comModeBuffer() == QStringLiteral("ge")
+                   && comCommandSpy.count() == 0,
+               true);
+    sendWidgetKey(&modeEditor, Qt::Key_F, QStringLiteral("f"));
+    expectBool("COM gef executes module end insert command",
+               modeEditor.comModeActive()
+                   && modeEditor.comModeBuffer().isEmpty()
+                   && comCommandSpy.count() == 1
+                   && comCommandSpy.takeFirst().at(0).toString()
+                          == QStringLiteral("gef"),
+               true);
+    sendWidgetKey(&modeEditor, Qt::Key_QuoteLeft, QStringLiteral("`"));
+    expectBool("backtick exits COM mode",
+               !modeEditor.comModeActive(),
+               true);
+    modeEditor.close();
+
+    MyCodeEditor* activeEditor =
+        window.tabManager ? window.tabManager->getCurrentEditor() : nullptr;
+    if (activeEditor && window.comModeCoordinator) {
+        if (QCompleter* completer = activeEditor->findChild<QCompleter*>())
+            completer->popup()->hide();
+        activeEditor->cancelFoldRegionMarkMode();
+        activeEditor->cancelFoldShelfMode();
+        if (activeEditor->comModeActive())
+            activeEditor->exitComMode();
+        QTextCursor cursor = activeEditor->textCursor();
+        cursor.clearSelection();
+        activeEditor->setTextCursor(cursor);
+        activeEditor->setFocus();
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+
+        sendWidgetKey(activeEditor, Qt::Key_Escape);
+        QLabel* strip = window.comModeCoordinator->commandStripWidget();
+        expectBool("COM mode shows app command strip",
+                   activeEditor->comModeActive()
+                       && strip
+                       && strip->isVisible()
+                       && strip->text() == QStringLiteral("COM"),
+                   true);
+
+        sendWidgetKey(activeEditor, Qt::Key_G, QStringLiteral("g"));
+        sendWidgetKey(activeEditor, Qt::Key_M, QStringLiteral("m"));
+        ComModuleSelectorPanel* selector =
+            window.comModeCoordinator->moduleSelectorPanel();
+        expectBool("gm opens module selector",
+                   selector && selector->isVisible(),
+                   true);
+        sendWidgetKey(selector, Qt::Key_Escape);
+        expectBool("gm selector Esc returns to COM mode",
+                   selector
+                       && !selector->isVisible()
+                       && activeEditor->comModeActive(),
+                   true);
+
+        sendWidgetKey(activeEditor, Qt::Key_G, QStringLiteral("g"));
+        sendWidgetKey(activeEditor, Qt::Key_P, QStringLiteral("p"));
+        sendWidgetKey(activeEditor, Qt::Key_K, QStringLiteral("k"));
+        expectBool("gpk opens package selector",
+                   selector && selector->isVisible(),
+                   true);
+        sendWidgetKey(selector && selector->searchEdit
+                          ? static_cast<QWidget*>(selector->searchEdit)
+                          : static_cast<QWidget*>(selector),
+                      Qt::Key_QuoteLeft,
+                      QStringLiteral("`"));
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+        expectBool("picker backtick exits COM mode",
+                   selector
+                       && !selector->isVisible()
+                       && !activeEditor->comModeActive(),
+                   true);
+
+        sendWidgetKey(activeEditor, Qt::Key_Escape);
+        expectBool("COM re-enters after picker backtick exit",
+                   activeEditor->comModeActive(),
+                   true);
+        sendWidgetKey(activeEditor, Qt::Key_QuoteLeft, QStringLiteral("`"));
+        expectBool("COM strip hides after backtick exit",
+                   !activeEditor->comModeActive()
+                       && strip
+                       && !strip->isVisible(),
+                   true);
+    }
+}
+
 static void runGlobalControlRegression(MainWindow& window,
                                        NavigationWidget* navWidget)
 {
     printf("\n-- global control regression --\n");
 
     GlobalControlService service;
-    const QList<GlobalControlItem> commandMatches =
-        service.query(QStringLiteral("ow"),
-                      window.workspaceManager->getProjectModel(),
-                      SemanticIndex::getInstance());
-    bool foundOpenWorkspaceAction = false;
-    bool foundRecentWorkspaceAction = false;
-    for (const GlobalControlItem& item : commandMatches) {
-        if (item.id == QStringLiteral("ow"))
-            foundOpenWorkspaceAction = true;
-        if (item.id == QStringLiteral("ow r"))
-            foundRecentWorkspaceAction = true;
-    }
-    expectBool("global control finds ow command",
-               foundOpenWorkspaceAction,
-               true);
-    expectBool("global control finds ow recent command",
-               foundRecentWorkspaceAction,
-               true);
-
-    const QList<GlobalControlItem> allCommands =
+    const QList<GlobalControlItem> rootMatches =
         service.query(QString(),
                       window.workspaceManager->getProjectModel(),
                       SemanticIndex::getInstance());
-    QSet<QString> commandIds;
-    for (const GlobalControlItem& item : allCommands) {
+    QSet<QString> rootDomainIds;
+    QSet<QString> rootCommandIds;
+    for (const GlobalControlItem& item : rootMatches) {
+        if (item.kind == GlobalControlItemKind::Domain)
+            rootDomainIds.insert(item.id);
         if (item.kind == GlobalControlItemKind::Command)
-            commandIds.insert(item.id);
+            rootCommandIds.insert(item.id);
     }
-    expectBool("global control exposes workspace and fold commands",
-               commandIds == QSet<QString>({
+    expectBool("global control root shows command domains",
+               rootDomainIds == QSet<QString>({
                    QStringLiteral("ow"),
-                   QStringLiteral("ow r"),
                    QStringLiteral("fd"),
-                   QStringLiteral("fds"),
                }),
+               true);
+    expectBool("global control root hides direct commands",
+               rootCommandIds.isEmpty(),
+               true);
+
+    const QList<GlobalControlItem> workspaceMatches =
+        service.query(QStringLiteral("ow"),
+                      window.workspaceManager->getProjectModel(),
+                      SemanticIndex::getInstance());
+    bool foundOpenOneWorkspaceAction = false;
+    bool foundOpenTwoWorkspacesAction = false;
+    bool foundDeprecatedWorkspaceAction = false;
+    for (const GlobalControlItem& item : workspaceMatches) {
+        if (item.id == QStringLiteral("ow 1")
+            && item.kind == GlobalControlItemKind::Command)
+            foundOpenOneWorkspaceAction = true;
+        if (item.id == QStringLiteral("ow 2")
+            && item.kind == GlobalControlItemKind::Command)
+            foundOpenTwoWorkspacesAction = true;
+        if (item.id == QStringLiteral("ow")
+            || item.id == QStringLiteral("ow r"))
+            foundDeprecatedWorkspaceAction = true;
+    }
+    expectBool("global control ow domain shows ow 1",
+               foundOpenOneWorkspaceAction,
+               true);
+    expectBool("global control ow domain shows ow 2",
+               foundOpenTwoWorkspacesAction,
+               true);
+    expectBool("global control ow domain hides deprecated commands",
+               foundDeprecatedWorkspaceAction,
+               false);
+
+    const QList<GlobalControlItem> workspaceCountMatches =
+        service.query(QStringLiteral("ow 3"),
+                      window.workspaceManager->getProjectModel(),
+                      SemanticIndex::getInstance());
+    bool foundOpenThreeWorkspacesAction = false;
+    for (const GlobalControlItem& item : workspaceCountMatches) {
+        if (item.id == QStringLiteral("ow 3")
+            && item.kind == GlobalControlItemKind::Command
+            && item.subtitle.contains(QStringLiteral("Open 3 workspaces"))) {
+            foundOpenThreeWorkspacesAction = true;
+        }
+    }
+    expectBool("global control ow count command is parameterized",
+               foundOpenThreeWorkspacesAction,
                true);
 
     const QList<GlobalControlItem> recentWorkspaceMatches =
@@ -5644,14 +6334,19 @@ static void runGlobalControlRegression(MainWindow& window,
                       window.workspaceManager->getProjectModel(),
                       SemanticIndex::getInstance());
     bool foundRecentByExactCommand = false;
+    bool foundWorkspaceCountHint = false;
     for (const GlobalControlItem& item : recentWorkspaceMatches) {
-        if (item.id == QStringLiteral("ow r")
-            && item.subtitle.contains(QStringLiteral("Recent Workspaces"))) {
+        if (item.id == QStringLiteral("ow r"))
             foundRecentByExactCommand = true;
-        }
+        if (item.kind == GlobalControlItemKind::Domain
+            && item.title == QStringLiteral("ow <num>"))
+            foundWorkspaceCountHint = true;
     }
-    expectBool("global control exact ow r finds recent workspaces",
+    expectBool("global control UI hides old ow r command",
                foundRecentByExactCommand,
+               false);
+    expectBool("global control ow r query gives count hint",
+               foundWorkspaceCountHint,
                true);
 
     const QList<GlobalControlItem> foldActionMatches =
@@ -5661,23 +6356,30 @@ static void runGlobalControlRegression(MainWindow& window,
     bool foundFoldRegionAction = false;
     bool foundFoldShelfAction = false;
     bool foldActionsExplainBehavior = false;
+    bool foundDeprecatedFoldAction = false;
     for (const GlobalControlItem& item : foldActionMatches) {
-        if (item.id == QStringLiteral("fd")) {
-            foundFoldRegionAction = item.title == QStringLiteral("fd")
+        if (item.id == QStringLiteral("fd r")) {
+            foundFoldRegionAction = item.title == QStringLiteral("fd r")
                 && item.subtitle.contains(QStringLiteral("Fold Region"));
         }
-        if (item.id == QStringLiteral("fds")) {
-            foundFoldShelfAction = item.title == QStringLiteral("fds")
+        if (item.id == QStringLiteral("fd s")) {
+            foundFoldShelfAction = item.title == QStringLiteral("fd s")
                 && item.subtitle.contains(QStringLiteral("Fold Shelf"));
         }
+        if (item.id == QStringLiteral("fd")
+            || item.id == QStringLiteral("fds"))
+            foundDeprecatedFoldAction = true;
     }
     foldActionsExplainBehavior = foundFoldRegionAction && foundFoldShelfAction;
-    expectBool("global control finds fd fold actions",
+    expectBool("global control fd domain finds fold subcommands",
                foundFoldRegionAction && foundFoldShelfAction,
                true);
     expectBool("global control fold actions include explanations",
                foldActionsExplainBehavior,
                true);
+    expectBool("global control fd domain hides deprecated commands",
+               foundDeprecatedFoldAction,
+               false);
 
     const QList<GlobalControlItem> fileMatches =
         service.query(QStringLiteral("SVH_interface"),
@@ -5697,13 +6399,13 @@ static void runGlobalControlRegression(MainWindow& window,
     bool dispatched = false;
     GlobalControlCoordinator dispatcherProbe(&window);
     dispatcherProbe.setActionHandler([&](const GlobalControlItem& item) {
-        dispatched = item.id == QStringLiteral("ow");
+        dispatched = item.id == QStringLiteral("ow 1");
     });
     dispatcherProbe.dispatch(
         GlobalControlItem{GlobalControlItemKind::Command,
-                          QStringLiteral("ow"),
-                          QStringLiteral("ow"),
-                          QStringLiteral("Open Workspace")});
+                          QStringLiteral("ow 1"),
+                          QStringLiteral("ow 1"),
+                          QStringLiteral("Open 1 workspace")});
     expectBool("global control dispatches command",
                dispatched,
                true);
@@ -5764,6 +6466,25 @@ static void runGlobalControlRegression(MainWindow& window,
 
     if (window.globalControlCoordinator
         && window.globalControlCoordinator->panel) {
+        bool panelShowsWorkspaceDomain = false;
+        bool panelShowsFoldDomain = false;
+        bool panelShowsRootCommand = false;
+        for (const GlobalControlItem& item :
+             window.globalControlCoordinator->panel->currentItems) {
+            if (item.kind == GlobalControlItemKind::Domain
+                && item.id == QStringLiteral("ow"))
+                panelShowsWorkspaceDomain = true;
+            if (item.kind == GlobalControlItemKind::Domain
+                && item.id == QStringLiteral("fd"))
+                panelShowsFoldDomain = true;
+            if (item.kind == GlobalControlItemKind::Command)
+                panelShowsRootCommand = true;
+        }
+        expectBool("global control panel root shows only domains",
+                   panelShowsWorkspaceDomain && panelShowsFoldDomain
+                       && !panelShowsRootCommand,
+                   true);
+
         window.globalControlCoordinator->panel->searchEdit->setText(
             QStringLiteral("fd"));
         QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
@@ -5771,16 +6492,16 @@ static void runGlobalControlRegression(MainWindow& window,
         bool panelShowsFoldShelf = false;
         for (const GlobalControlItem& item :
              window.globalControlCoordinator->panel->currentItems) {
-            if (item.id == QStringLiteral("fd")
+            if (item.id == QStringLiteral("fd r")
                 && item.subtitle.contains(QStringLiteral("Fold Region"))) {
                 panelShowsFoldRegion = true;
             }
-            if (item.id == QStringLiteral("fds")
+            if (item.id == QStringLiteral("fd s")
                 && item.subtitle.contains(QStringLiteral("Fold Shelf"))) {
                 panelShowsFoldShelf = true;
             }
         }
-        expectBool("global control fd query shows fd and fds",
+        expectBool("global control fd query shows fd r and fd s",
                    panelShowsFoldRegion && panelShowsFoldShelf,
                    true);
         window.globalControlCoordinator->panel->hide();
@@ -5810,10 +6531,10 @@ static void runGlobalControlRegression(MainWindow& window,
         activeEditor->cancelFoldShelfMode();
     window.globalControlCoordinator->dispatch(
         GlobalControlItem{GlobalControlItemKind::Command,
-                          QStringLiteral("fd"),
-                          QStringLiteral("fd"),
+                          QStringLiteral("fd r"),
+                          QStringLiteral("fd r"),
                           QStringLiteral("Fold Region")});
-    expectBool("global control fd starts fold region mode",
+    expectBool("global control fd r starts fold region mode",
                activeEditor && activeEditor->foldRegionMarkModeActive(),
                true);
     if (activeEditor)
@@ -5821,12 +6542,12 @@ static void runGlobalControlRegression(MainWindow& window,
 
     window.globalControlCoordinator->dispatch(
         GlobalControlItem{GlobalControlItemKind::Command,
-                          QStringLiteral("fds"),
-                          QStringLiteral("fds"),
+                          QStringLiteral("fd s"),
+                          QStringLiteral("fd s"),
                           QStringLiteral("Fold Shelf")});
     QDockWidget* foldShelfDock =
         window.findChild<QDockWidget*>(QStringLiteral("FoldShelfDock"));
-    expectBool("global control fds starts fold shelf mode",
+    expectBool("global control fd s starts fold shelf mode",
                activeEditor
                    && activeEditor->foldShelfModeActive()
                    && foldShelfDock
@@ -7111,6 +7832,7 @@ int main(int argc, char** argv)
 
     NavigationWidget* navWidget = window.findChild<NavigationWidget*>();
     expectBool("navigation widget exists", navWidget != nullptr, true);
+    runComModeRegression(window);
     runGlobalControlRegression(window, navWidget);
     if (navWidget && editor) {
         navWidget->setActiveTab(NavigationWidget::FileTab);

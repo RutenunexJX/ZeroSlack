@@ -39,6 +39,106 @@ struct TSFoldRange {
     QString label;
 };
 
+enum class TSPortAppendStatus {
+    Ok,
+    NoCurrentModule,
+    NoClearPortAppendPoint
+};
+
+struct TSPortAppendTarget {
+    TSPortAppendStatus status = TSPortAppendStatus::NoClearPortAppendPoint;
+    bool needsTrailingComma = false;
+    int trailingCommaInsertChar = -1;
+    int insertChar = -1;
+    QString insertText;
+    int caretCharAfterEdit = -1;
+
+    bool ok() const { return status == TSPortAppendStatus::Ok; }
+};
+
+enum class TSSignalInsertStatus {
+    Ok,
+    NoCurrentModule,
+    NoClearSignalInsertPoint
+};
+
+struct TSSignalInsertTarget {
+    TSSignalInsertStatus status =
+        TSSignalInsertStatus::NoClearSignalInsertPoint;
+    int insertChar = -1;
+    QString insertText;
+    int caretCharAfterEdit = -1;
+
+    bool ok() const { return status == TSSignalInsertStatus::Ok; }
+};
+
+enum class TSInstanceInsertStatus {
+    Ok,
+    NoCurrentModule,
+    NoClearInstanceInsertPoint
+};
+
+struct TSInstanceInsertTarget {
+    TSInstanceInsertStatus status =
+        TSInstanceInsertStatus::NoClearInstanceInsertPoint;
+    int insertChar = -1;
+    QString insertText;
+    int caretCharAfterEdit = -1;
+
+    bool ok() const { return status == TSInstanceInsertStatus::Ok; }
+};
+
+enum class TSAssignInsertStatus {
+    Ok,
+    NoCurrentModule,
+    NoClearAssignInsertPoint
+};
+
+struct TSAssignInsertTarget {
+    TSAssignInsertStatus status =
+        TSAssignInsertStatus::NoClearAssignInsertPoint;
+    int insertChar = -1;
+    QString insertText;
+    int caretCharAfterEdit = -1;
+
+    bool ok() const { return status == TSAssignInsertStatus::Ok; }
+};
+
+enum class TSParameterInsertStatus {
+    Ok,
+    NoCurrentParameterScope,
+    NoClearParameterInsertPoint
+};
+
+struct TSParameterInsertTarget {
+    TSParameterInsertStatus status =
+        TSParameterInsertStatus::NoClearParameterInsertPoint;
+    int insertChar = -1;
+    QString insertText;
+    int caretCharAfterEdit = -1;
+    bool needsTrailingComma = false;
+    int trailingCommaInsertChar = -1;
+
+    bool ok() const { return status == TSParameterInsertStatus::Ok; }
+};
+
+enum class TSModuleEndInsertStatus {
+    Ok,
+    NoCurrentModule,
+    NoClearModuleEndPoint
+};
+
+struct TSModuleEndInsertTarget {
+    TSModuleEndInsertStatus status =
+        TSModuleEndInsertStatus::NoClearModuleEndPoint;
+    int replaceStartChar = -1;
+    int replaceEndChar = -1;
+    QString replacementText;
+    int caretCharAfterEdit = -1;
+
+    bool ok() const { return status == TSModuleEndInsertStatus::Ok; }
+};
+
 // Persistent, per-document Tree-sitter model: keeps a live parse tree plus the document text and
 // supports incremental re-parse on edits. Foundation of the real-time syntactic layer
 // (highlighting, live outline / scope) in the Slang + Tree-sitter architecture.
@@ -88,6 +188,24 @@ public:
     // live from the parse tree (instant, error-tolerant). Empty if the offset is not inside one.
     // Replaces the Slang+regex getCurrentModuleScope for cursor-scope decisions.
     QString enclosingModuleName(int charOffset) const;
+
+    // Clear ANSI module port-list append point for editor-local COM commands.
+    TSPortAppendTarget portAppendTarget(int charOffset) const;
+
+    // Clear module-member insert point for adding an internal signal declaration.
+    TSSignalInsertTarget signalInsertTarget(int charOffset) const;
+
+    // Clear module-member insert point for adding a module/interface instance.
+    TSInstanceInsertTarget instanceInsertTarget(int charOffset) const;
+
+    // Clear module-member insert point for adding a continuous assign.
+    TSAssignInsertTarget assignInsertTarget(int charOffset) const;
+
+    // Clear module/package-scope insert point for adding a parameter/localparam.
+    TSParameterInsertTarget parameterInsertTarget(int charOffset) const;
+
+    // Clear insert point immediately before the current module's final endmodule.
+    TSModuleEndInsertTarget moduleEndInsertTarget(int charOffset) const;
 
     // Highlight spans (block-local char coords) for the char range [blockStartChar, +blockLenChar).
     // Walks the live tree; clips tokens to the block. Multi-line tokens (block comments, strings)

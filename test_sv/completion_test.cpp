@@ -46,6 +46,7 @@
 #include <cstdio>
 #include <memory>
 #include <QTemporaryDir>
+#include <QTextCursor>
 
 static int g_checks = 0;
 static int g_fails = 0;
@@ -1139,6 +1140,308 @@ int main(int argc, char** argv) {
     }
     expectBool("Highlighter line comment wins",
                commentNumberUsesCommentFormat,
+               true);
+
+    const QString portAppendOriginal =
+        QStringLiteral("module demo (\n"
+                       "    input  logic clk,\n"
+                       "    output logic done\n"
+                       ");\n"
+                       "endmodule\n");
+    const QString portAppendExpected =
+        QStringLiteral("module demo (\n"
+                       "    input  logic clk,\n"
+                       "    output logic done,\n"
+                       "    \n"
+                       ");\n"
+                       "endmodule\n");
+    MyCodeEditor portAppendEditor;
+    portAppendEditor.setPlainText(portAppendOriginal);
+    QTextCursor portAppendCursor = portAppendEditor.textCursor();
+    portAppendCursor.setPosition(
+        portAppendOriginal.indexOf(QStringLiteral("done")));
+    portAppendEditor.setTextCursor(portAppendCursor);
+    QString portAppendMessage;
+    const bool portAppendOk =
+        portAppendEditor.executeComPortAppend(&portAppendMessage);
+    expectBool("COM gpo editor append succeeds", portAppendOk, true);
+    expectEq("COM gpo editor append text",
+             portAppendEditor.toPlainText(),
+             portAppendExpected);
+    expectBool("COM gpo editor caret at indent",
+               portAppendEditor.textCursor().position()
+                   == portAppendExpected.indexOf(QStringLiteral("    \n);"))
+                          + 4,
+               true);
+    portAppendEditor.undo();
+    expectEq("COM gpo editor undo restores original",
+             portAppendEditor.toPlainText(),
+             portAppendOriginal);
+
+    const QString singleLinePortList =
+        QStringLiteral("module demo (input logic clk);\nendmodule\n");
+    portAppendEditor.setPlainText(singleLinePortList);
+    portAppendCursor = portAppendEditor.textCursor();
+    portAppendCursor.setPosition(
+        singleLinePortList.indexOf(QStringLiteral("clk")));
+    portAppendEditor.setTextCursor(portAppendCursor);
+    portAppendMessage.clear();
+    expectBool("COM gpo editor rejects unclear list",
+               !portAppendEditor.executeComPortAppend(&portAppendMessage)
+                   && portAppendMessage
+                          == QStringLiteral("No clear port append point")
+                   && portAppendEditor.toPlainText() == singleLinePortList,
+               true);
+
+    const QString signalInsertOriginal =
+        QStringLiteral("module sig_demo;\n"
+                       "  logic a;\n"
+                       "  wire b;\n"
+                       "  assign y = b;\n"
+                       "endmodule\n");
+    const QString signalInsertExpected =
+        QStringLiteral("module sig_demo;\n"
+                       "  logic a;\n"
+                       "  wire b;\n"
+                       "  \n"
+                       "  assign y = b;\n"
+                       "endmodule\n");
+    MyCodeEditor signalInsertEditor;
+    signalInsertEditor.setPlainText(signalInsertOriginal);
+    QTextCursor signalInsertCursor = signalInsertEditor.textCursor();
+    signalInsertCursor.setPosition(
+        signalInsertOriginal.indexOf(QStringLiteral("assign")));
+    signalInsertEditor.setTextCursor(signalInsertCursor);
+    QString signalInsertMessage;
+    const bool signalInsertOk =
+        signalInsertEditor.executeComSignalInsert(&signalInsertMessage);
+    expectBool("COM gsi editor insert succeeds", signalInsertOk, true);
+    expectEq("COM gsi editor insert text",
+             signalInsertEditor.toPlainText(),
+             signalInsertExpected);
+    expectBool("COM gsi editor caret at indent",
+               signalInsertEditor.textCursor().position()
+                   == signalInsertExpected.indexOf(
+                          QStringLiteral("  \n  assign")) + 2,
+               true);
+    signalInsertEditor.undo();
+    expectEq("COM gsi editor undo restores original",
+             signalInsertEditor.toPlainText(),
+             signalInsertOriginal);
+
+    const QString noModuleSignalInsert = QStringLiteral("logic stray;\n");
+    signalInsertEditor.setPlainText(noModuleSignalInsert);
+    signalInsertCursor = signalInsertEditor.textCursor();
+    signalInsertCursor.setPosition(0);
+    signalInsertEditor.setTextCursor(signalInsertCursor);
+    signalInsertMessage.clear();
+    expectBool("COM gsi editor reports no module",
+               !signalInsertEditor.executeComSignalInsert(&signalInsertMessage)
+                   && signalInsertMessage == QStringLiteral("No current module")
+                   && signalInsertEditor.toPlainText() == noModuleSignalInsert,
+               true);
+
+    const QString instanceInsertOriginal =
+        QStringLiteral("module inst_demo;\n"
+                       "  logic a;\n"
+                       "  child u_child();\n"
+                       "  assign y = a;\n"
+                       "endmodule\n");
+    const QString instanceInsertExpected =
+        QStringLiteral("module inst_demo;\n"
+                       "  logic a;\n"
+                       "  child u_child();\n"
+                       "  \n"
+                       "  assign y = a;\n"
+                       "endmodule\n");
+    MyCodeEditor instanceInsertEditor;
+    instanceInsertEditor.setPlainText(instanceInsertOriginal);
+    QTextCursor instanceInsertCursor = instanceInsertEditor.textCursor();
+    instanceInsertCursor.setPosition(
+        instanceInsertOriginal.indexOf(QStringLiteral("assign")));
+    instanceInsertEditor.setTextCursor(instanceInsertCursor);
+    QString instanceInsertMessage;
+    const bool instanceInsertOk =
+        instanceInsertEditor.executeComInstanceInsert(&instanceInsertMessage);
+    expectBool("COM gii editor insert succeeds", instanceInsertOk, true);
+    expectEq("COM gii editor insert text",
+             instanceInsertEditor.toPlainText(),
+             instanceInsertExpected);
+    expectBool("COM gii editor caret at indent",
+               instanceInsertEditor.textCursor().position()
+                   == instanceInsertExpected.indexOf(
+                          QStringLiteral("  \n  assign")) + 2,
+               true);
+    instanceInsertEditor.undo();
+    expectEq("COM gii editor undo restores original",
+             instanceInsertEditor.toPlainText(),
+             instanceInsertOriginal);
+
+    const QString noModuleInstanceInsert = QStringLiteral("child u0();\n");
+    instanceInsertEditor.setPlainText(noModuleInstanceInsert);
+    instanceInsertCursor = instanceInsertEditor.textCursor();
+    instanceInsertCursor.setPosition(0);
+    instanceInsertEditor.setTextCursor(instanceInsertCursor);
+    instanceInsertMessage.clear();
+    expectBool("COM gii editor reports no module",
+               !instanceInsertEditor.executeComInstanceInsert(
+                   &instanceInsertMessage)
+                   && instanceInsertMessage
+                          == QStringLiteral("No current module")
+                   && instanceInsertEditor.toPlainText()
+                          == noModuleInstanceInsert,
+               true);
+
+    const QString assignInsertOriginal =
+        QStringLiteral("module assign_demo;\n"
+                       "  logic a;\n"
+                       "  assign y = a;\n"
+                       "  always_comb z = y;\n"
+                       "endmodule\n");
+    const QString assignInsertExpected =
+        QStringLiteral("module assign_demo;\n"
+                       "  logic a;\n"
+                       "  assign y = a;\n"
+                       "  \n"
+                       "  always_comb z = y;\n"
+                       "endmodule\n");
+    MyCodeEditor assignInsertEditor;
+    assignInsertEditor.setPlainText(assignInsertOriginal);
+    QTextCursor assignInsertCursor = assignInsertEditor.textCursor();
+    assignInsertCursor.setPosition(
+        assignInsertOriginal.indexOf(QStringLiteral("always")));
+    assignInsertEditor.setTextCursor(assignInsertCursor);
+    QString assignInsertMessage;
+    const bool assignInsertOk =
+        assignInsertEditor.executeComAssignInsert(&assignInsertMessage);
+    expectBool("COM gac editor insert succeeds", assignInsertOk, true);
+    expectEq("COM gac editor insert text",
+             assignInsertEditor.toPlainText(),
+             assignInsertExpected);
+    expectBool("COM gac editor caret at indent",
+               assignInsertEditor.textCursor().position()
+                   == assignInsertExpected.indexOf(
+                          QStringLiteral("  \n  always")) + 2,
+               true);
+    assignInsertEditor.undo();
+    expectEq("COM gac editor undo restores original",
+             assignInsertEditor.toPlainText(),
+             assignInsertOriginal);
+
+    const QString noModuleAssignInsert = QStringLiteral("assign y = a;\n");
+    assignInsertEditor.setPlainText(noModuleAssignInsert);
+    assignInsertCursor = assignInsertEditor.textCursor();
+    assignInsertCursor.setPosition(0);
+    assignInsertEditor.setTextCursor(assignInsertCursor);
+    assignInsertMessage.clear();
+    expectBool("COM gac editor reports no module",
+               !assignInsertEditor.executeComAssignInsert(
+                   &assignInsertMessage)
+                   && assignInsertMessage == QStringLiteral("No current module")
+                   && assignInsertEditor.toPlainText() == noModuleAssignInsert,
+               true);
+
+    const QString parameterInsertOriginal =
+        QStringLiteral("module parameter_demo #(\n"
+                       "  parameter int WIDTH = 8\n"
+                       ") (\n"
+                       "  input logic clk\n"
+                       ");\n"
+                       "endmodule\n");
+    const QString parameterInsertExpected =
+        QStringLiteral("module parameter_demo #(\n"
+                       "  parameter int WIDTH = 8,\n"
+                       "  \n"
+                       ") (\n"
+                       "  input logic clk\n"
+                       ");\n"
+                       "endmodule\n");
+    MyCodeEditor parameterInsertEditor;
+    parameterInsertEditor.setPlainText(parameterInsertOriginal);
+    QTextCursor parameterInsertCursor = parameterInsertEditor.textCursor();
+    parameterInsertCursor.setPosition(
+        parameterInsertOriginal.indexOf(QStringLiteral("clk")));
+    parameterInsertEditor.setTextCursor(parameterInsertCursor);
+    QString parameterInsertMessage;
+    const bool parameterInsertOk =
+        parameterInsertEditor.executeComParameterInsert(
+            &parameterInsertMessage);
+    expectBool("COM gpi editor insert succeeds", parameterInsertOk, true);
+    expectEq("COM gpi editor insert text",
+             parameterInsertEditor.toPlainText(),
+             parameterInsertExpected);
+    expectBool("COM gpi editor caret at indent",
+               parameterInsertEditor.textCursor().position()
+                   == parameterInsertExpected.indexOf(
+                          QStringLiteral("  \n)")) + 2,
+               true);
+    parameterInsertEditor.undo();
+    expectEq("COM gpi editor undo restores original",
+             parameterInsertEditor.toPlainText(),
+             parameterInsertOriginal);
+
+    const QString noScopeParameterInsert =
+        QStringLiteral("parameter int WIDTH = 8;\n");
+    parameterInsertEditor.setPlainText(noScopeParameterInsert);
+    parameterInsertCursor = parameterInsertEditor.textCursor();
+    parameterInsertCursor.setPosition(0);
+    parameterInsertEditor.setTextCursor(parameterInsertCursor);
+    parameterInsertMessage.clear();
+    expectBool("COM gpi editor reports no parameter scope",
+               !parameterInsertEditor.executeComParameterInsert(
+                   &parameterInsertMessage)
+                   && parameterInsertMessage
+                          == QStringLiteral("No current parameter scope")
+                   && parameterInsertEditor.toPlainText()
+                          == noScopeParameterInsert,
+               true);
+
+    const QString moduleEndInsertOriginal =
+        QStringLiteral("module module_end_demo;\n"
+                       "  logic a;\n"
+                       "endmodule\n");
+    const QString moduleEndInsertExpected =
+        QStringLiteral("module module_end_demo;\n"
+                       "  logic a;\n"
+                       "  \n"
+                       "endmodule\n");
+    MyCodeEditor moduleEndInsertEditor;
+    moduleEndInsertEditor.setPlainText(moduleEndInsertOriginal);
+    QTextCursor moduleEndInsertCursor = moduleEndInsertEditor.textCursor();
+    moduleEndInsertCursor.setPosition(
+        moduleEndInsertOriginal.indexOf(QStringLiteral("logic")));
+    moduleEndInsertEditor.setTextCursor(moduleEndInsertCursor);
+    QString moduleEndInsertMessage;
+    const bool moduleEndInsertOk =
+        moduleEndInsertEditor.executeComModuleEndInsert(
+            &moduleEndInsertMessage);
+    expectBool("COM gef editor insert succeeds", moduleEndInsertOk, true);
+    expectEq("COM gef editor insert text",
+             moduleEndInsertEditor.toPlainText(),
+             moduleEndInsertExpected);
+    expectBool("COM gef editor caret at indent",
+               moduleEndInsertEditor.textCursor().position()
+                   == moduleEndInsertExpected.indexOf(
+                          QStringLiteral("  \nendmodule")) + 2,
+               true);
+    moduleEndInsertEditor.undo();
+    expectEq("COM gef editor undo restores original",
+             moduleEndInsertEditor.toPlainText(),
+             moduleEndInsertOriginal);
+
+    const QString noModuleEndInsert = QStringLiteral("logic a;\n");
+    moduleEndInsertEditor.setPlainText(noModuleEndInsert);
+    moduleEndInsertCursor = moduleEndInsertEditor.textCursor();
+    moduleEndInsertCursor.setPosition(0);
+    moduleEndInsertEditor.setTextCursor(moduleEndInsertCursor);
+    moduleEndInsertMessage.clear();
+    expectBool("COM gef editor reports no module",
+               !moduleEndInsertEditor.executeComModuleEndInsert(
+                   &moduleEndInsertMessage)
+                   && moduleEndInsertMessage
+                          == QStringLiteral("No current module")
+                   && moduleEndInsertEditor.toPlainText()
+                          == noModuleEndInsert,
                true);
 
     const QString formatterInput =

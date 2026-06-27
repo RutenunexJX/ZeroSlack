@@ -32,6 +32,7 @@
 #include <utility>
 
 #include "formatterservice.h"
+#include "tsdocument.h"
 
 namespace {
 constexpr int kMaxPassiveGhostAnnotationCharacters = 2 * 1024 * 1024;
@@ -65,6 +66,13 @@ bool hasCommandModifier(QKeyEvent* event)
         || modifiers.testFlag(Qt::MetaModifier);
 }
 
+bool isBacktickKey(QKeyEvent* event)
+{
+    return event
+        && (event->key() == Qt::Key_QuoteLeft
+            || event->text() == QStringLiteral("`"));
+}
+
 bool isUnsignedIntegerText(const QString& text)
 {
     if (text.isEmpty())
@@ -74,6 +82,94 @@ bool isUnsignedIntegerText(const QString& text)
             return false;
     }
     return true;
+}
+
+bool isComLineBuffer(const QString& buffer)
+{
+    if (buffer.size() < 2 || !buffer.startsWith(QLatin1Char('g')))
+        return false;
+    return isUnsignedIntegerText(buffer.mid(1));
+}
+
+struct ComCommandRegistration {
+    QString command;
+    bool executable = false;
+};
+
+const QList<ComCommandRegistration>& comCommandRegistry()
+{
+    static const QList<ComCommandRegistration> registry = {
+        {QStringLiteral("gm"), true},
+        {QStringLiteral("ga"), false},
+        {QStringLiteral("gac"), true},
+        {QStringLiteral("ge"), false},
+        {QStringLiteral("gef"), true},
+        {QStringLiteral("gp"), false},
+        {QStringLiteral("gi"), false},
+        {QStringLiteral("gii"), true},
+        {QStringLiteral("gpi"), true},
+        {QStringLiteral("gpk"), true},
+        {QStringLiteral("gpa"), true},
+        {QStringLiteral("gpo"), true},
+        {QStringLiteral("gs"), false},
+        {QStringLiteral("gsd"), true},
+        {QStringLiteral("gsi"), true},
+    };
+    return registry;
+}
+
+bool comCommandRegistryIsValid()
+{
+    const QList<ComCommandRegistration>& registry = comCommandRegistry();
+    for (int i = 0; i < registry.size(); ++i) {
+        for (int j = i + 1; j < registry.size(); ++j) {
+            const ComCommandRegistration& left = registry.at(i);
+            const ComCommandRegistration& right = registry.at(j);
+            if (left.command == right.command)
+                return false;
+            if (left.executable && right.executable
+                && (left.command.startsWith(right.command)
+                    || right.command.startsWith(left.command))) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+bool registeredComCommandPrefix(const QString& buffer)
+{
+    static const bool registryValid = comCommandRegistryIsValid();
+    if (!registryValid)
+        return false;
+    for (const ComCommandRegistration& registration : comCommandRegistry()) {
+        if (registration.command.startsWith(buffer))
+            return true;
+    }
+    return false;
+}
+
+QString executableComCommand(const QString& buffer)
+{
+    static const bool registryValid = comCommandRegistryIsValid();
+    if (!registryValid)
+        return QString();
+    for (const ComCommandRegistration& registration : comCommandRegistry()) {
+        if (registration.executable && registration.command == buffer)
+            return registration.command;
+    }
+    return QString();
+}
+
+bool isComBufferPrefix(const QString& buffer)
+{
+    if (buffer.isEmpty())
+        return true;
+    if (buffer == QStringLiteral("g"))
+        return true;
+    if (registeredComCommandPrefix(buffer))
+        return true;
+    return isComLineBuffer(buffer);
 }
 
 bool isSmartIdentifierStart(QChar ch)
@@ -1819,6 +1915,237 @@ QString MyCodeEditorState::currentModuleName(const MyCodeEditor* editor) const
     return currentModuleNameAt(editor->textCursor().position());
 }
 
+bool MyCodeEditorState::executeComPortAppend(MyCodeEditor* editor,
+                                             QString* message)
+{
+    if (!editor)
+        return false;
+
+    const TSPortAppendTarget target =
+        syntax.portAppendTargetAt(editor->textCursor().position());
+    if (!target.ok()) {
+        if (message) {
+            *message = target.status == TSPortAppendStatus::NoCurrentModule
+                ? QStringLiteral("No current module")
+                : QStringLiteral("No clear port append point");
+        }
+        return false;
+    }
+
+    QTextCursor cursor = editor->textCursor();
+    cursor.beginEditBlock();
+    cursor.setPosition(target.insertChar);
+    cursor.insertText(target.insertText);
+    if (target.needsTrailingComma
+        && target.trailingCommaInsertChar >= 0) {
+        cursor.setPosition(target.trailingCommaInsertChar);
+        cursor.insertText(QStringLiteral(","));
+    }
+    cursor.endEditBlock();
+
+    QTextCursor caret = editor->textCursor();
+    caret.setPosition(target.caretCharAfterEdit);
+    editor->setTextCursor(caret);
+    return true;
+}
+
+bool MyCodeEditorState::executeComSignalInsert(MyCodeEditor* editor,
+                                               QString* message)
+{
+    if (!editor)
+        return false;
+
+    const TSSignalInsertTarget target =
+        syntax.signalInsertTargetAt(editor->textCursor().position());
+    if (!target.ok()) {
+        if (message) {
+            *message = target.status == TSSignalInsertStatus::NoCurrentModule
+                ? QStringLiteral("No current module")
+                : QStringLiteral("No clear signal insert point");
+        }
+        return false;
+    }
+
+    QTextCursor cursor = editor->textCursor();
+    cursor.beginEditBlock();
+    cursor.setPosition(target.insertChar);
+    cursor.insertText(target.insertText);
+    cursor.endEditBlock();
+
+    QTextCursor caret = editor->textCursor();
+    caret.setPosition(target.caretCharAfterEdit);
+    editor->setTextCursor(caret);
+    return true;
+}
+
+bool MyCodeEditorState::executeComInstanceInsert(MyCodeEditor* editor,
+                                                 QString* message)
+{
+    if (!editor)
+        return false;
+
+    const TSInstanceInsertTarget target =
+        syntax.instanceInsertTargetAt(editor->textCursor().position());
+    if (!target.ok()) {
+        if (message) {
+            *message = target.status == TSInstanceInsertStatus::NoCurrentModule
+                ? QStringLiteral("No current module")
+                : QStringLiteral("No clear instance insert point");
+        }
+        return false;
+    }
+
+    QTextCursor cursor = editor->textCursor();
+    cursor.beginEditBlock();
+    cursor.setPosition(target.insertChar);
+    cursor.insertText(target.insertText);
+    cursor.endEditBlock();
+
+    QTextCursor caret = editor->textCursor();
+    caret.setPosition(target.caretCharAfterEdit);
+    editor->setTextCursor(caret);
+    return true;
+}
+
+bool MyCodeEditorState::executeComAssignInsert(MyCodeEditor* editor,
+                                               QString* message)
+{
+    if (!editor)
+        return false;
+
+    const TSAssignInsertTarget target =
+        syntax.assignInsertTargetAt(editor->textCursor().position());
+    if (!target.ok()) {
+        if (message) {
+            *message = target.status == TSAssignInsertStatus::NoCurrentModule
+                ? QStringLiteral("No current module")
+                : QStringLiteral("No clear assign insert point");
+        }
+        return false;
+    }
+
+    QTextCursor cursor = editor->textCursor();
+    cursor.beginEditBlock();
+    cursor.setPosition(target.insertChar);
+    cursor.insertText(target.insertText);
+    cursor.endEditBlock();
+
+    QTextCursor caret = editor->textCursor();
+    caret.setPosition(target.caretCharAfterEdit);
+    editor->setTextCursor(caret);
+    return true;
+}
+
+bool MyCodeEditorState::executeComParameterInsert(MyCodeEditor* editor,
+                                                  QString* message)
+{
+    if (!editor)
+        return false;
+
+    const TSParameterInsertTarget target =
+        syntax.parameterInsertTargetAt(editor->textCursor().position());
+    if (!target.ok()) {
+        if (message) {
+            *message =
+                target.status
+                    == TSParameterInsertStatus::NoCurrentParameterScope
+                ? QStringLiteral("No current parameter scope")
+                : QStringLiteral("No clear parameter insert point");
+        }
+        return false;
+    }
+
+    QTextCursor cursor = editor->textCursor();
+    cursor.beginEditBlock();
+    cursor.setPosition(target.insertChar);
+    cursor.insertText(target.insertText);
+    if (target.needsTrailingComma
+        && target.trailingCommaInsertChar >= 0) {
+        cursor.setPosition(target.trailingCommaInsertChar);
+        cursor.insertText(QStringLiteral(","));
+    }
+    cursor.endEditBlock();
+
+    QTextCursor caret = editor->textCursor();
+    caret.setPosition(target.caretCharAfterEdit);
+    editor->setTextCursor(caret);
+    return true;
+}
+
+bool MyCodeEditorState::executeComModuleEndInsert(MyCodeEditor* editor,
+                                                  QString* message)
+{
+    if (!editor)
+        return false;
+
+    const TSModuleEndInsertTarget target =
+        syntax.moduleEndInsertTargetAt(editor->textCursor().position());
+    if (!target.ok()) {
+        if (message) {
+            *message = target.status == TSModuleEndInsertStatus::NoCurrentModule
+                ? QStringLiteral("No current module")
+                : QStringLiteral("No clear module end point");
+        }
+        return false;
+    }
+
+    QTextCursor cursor = editor->textCursor();
+    cursor.beginEditBlock();
+    cursor.setPosition(target.replaceStartChar);
+    cursor.setPosition(target.replaceEndChar, QTextCursor::KeepAnchor);
+    cursor.insertText(target.replacementText);
+    cursor.endEditBlock();
+
+    QTextCursor caret = editor->textCursor();
+    caret.setPosition(target.caretCharAfterEdit);
+    editor->setTextCursor(caret);
+    return true;
+}
+
+bool MyCodeEditorState::comModeActive() const
+{
+    return modes.comModeActive;
+}
+
+QString MyCodeEditorState::comModeBuffer() const
+{
+    return modes.comBuffer;
+}
+
+void MyCodeEditorState::publishComModeState(
+    MyCodeEditor* editor,
+    const QString& message) const
+{
+    if (!editor)
+        return;
+    emit editor->comModeStateChanged(modes.comModeActive,
+                                     modes.comBuffer,
+                                     message);
+}
+
+void MyCodeEditorState::enterComMode(MyCodeEditor* editor,
+                                     const QString& message)
+{
+    modes.setComModeActive(true);
+    modes.clearComBuffer();
+    publishComModeState(editor, message);
+}
+
+void MyCodeEditorState::exitComMode(MyCodeEditor* editor)
+{
+    modes.setComModeActive(false);
+    publishComModeState(editor);
+}
+
+void MyCodeEditorState::showComModeMessage(MyCodeEditor* editor,
+                                           const QString& message)
+{
+    if (!modes.comModeActive)
+        return;
+    modes.clearComBuffer();
+    publishComModeState(editor, message);
+}
+
 EditorSemanticContext MyCodeEditorState::semanticContextForPosition(
     const MyCodeEditor* editor,
     int cursorPosition,
@@ -1860,6 +2187,96 @@ void MyCodeEditorState::handleControlKeyRelease(
         selections);
 }
 
+namespace {
+bool handleComModeKeyPress(MyCodeEditor* editor,
+                           QKeyEvent* event,
+                           MyCodeEditorState& state)
+{
+    if (!editor || !event || !state.modes.comModeActive)
+        return false;
+
+    auto accept = [event]() {
+        event->accept();
+        return true;
+    };
+
+    if (isBacktickKey(event)) {
+        state.exitComMode(editor);
+        return accept();
+    }
+
+    if (event->key() == Qt::Key_Escape) {
+        state.modes.clearComBuffer();
+        state.publishComModeState(editor);
+        return accept();
+    }
+
+    if (event->key() == Qt::Key_Backspace) {
+        if (!state.modes.comBuffer.isEmpty())
+            state.modes.setComBuffer(
+                state.modes.comBuffer.left(state.modes.comBuffer.size() - 1));
+        state.publishComModeState(editor);
+        return accept();
+    }
+
+    if (event->key() == Qt::Key_Return || event->key() == Qt::Key_Enter) {
+        const QString buffer = state.modes.comBuffer;
+        state.modes.clearComBuffer();
+        if (isComLineBuffer(buffer)) {
+            const int moduleLine = buffer.mid(1).toInt();
+            if (moduleLine <= 0) {
+                const QString message =
+                    QStringLiteral("Line number must be >= 1");
+                state.publishComModeState(editor, message);
+                emit editor->editorStatusMessageRequested(message);
+            } else {
+                state.publishComModeState(editor);
+                emit editor->comRelativeLineRequested(moduleLine);
+            }
+        } else if (!buffer.isEmpty()) {
+            const QString message = QStringLiteral("Unknown COM command");
+            state.publishComModeState(editor, message);
+            emit editor->editorStatusMessageRequested(message);
+        } else {
+            state.publishComModeState(editor);
+        }
+        return accept();
+    }
+
+    if (hasCommandModifier(event))
+        return accept();
+
+    const QString text = event->text();
+    if (text.isEmpty())
+        return accept();
+
+    const QChar ch = text.at(0);
+    if (!ch.isPrint())
+        return accept();
+
+    const QString nextBuffer = state.modes.comBuffer + text;
+    const QString executableCommand = executableComCommand(nextBuffer);
+    if (!executableCommand.isEmpty()) {
+        state.modes.clearComBuffer();
+        state.publishComModeState(editor);
+        emit editor->comCommandRequested(executableCommand);
+        return accept();
+    }
+
+    if (isComBufferPrefix(nextBuffer)) {
+        state.modes.setComBuffer(nextBuffer);
+        state.publishComModeState(editor);
+        return accept();
+    }
+
+    state.modes.clearComBuffer();
+    const QString message = QStringLiteral("Unknown COM command");
+    state.publishComModeState(editor, message);
+    emit editor->editorStatusMessageRequested(message);
+    return accept();
+}
+} // namespace
+
 bool MyCodeEditorState::handleKeyPress(MyCodeEditor* editor, QKeyEvent* event)
 {
     if (folding.foldRegionMarkModeActive()) {
@@ -1883,6 +2300,14 @@ bool MyCodeEditorState::handleKeyPress(MyCodeEditor* editor, QKeyEvent* event)
         return true;
     }
 
+    if (handleComModeKeyPress(editor, event, *this))
+        return true;
+
+    if (event->key() == Qt::Key_Escape
+        && completionWorkflow.handleCompletionPopupKey(event)) {
+        return true;
+    }
+
     if (event->key() == Qt::Key_Escape
         && sourceNavigation.handleEscape(editor, selections)) {
         event->accept();
@@ -1891,6 +2316,20 @@ bool MyCodeEditorState::handleKeyPress(MyCodeEditor* editor, QKeyEvent* event)
 
     if (event->key() == Qt::Key_Escape && columnSelectionActive) {
         clearColumnSelection(editor, *this);
+        event->accept();
+        return true;
+    }
+
+    if (event->key() == Qt::Key_Escape && editor->textCursor().hasSelection()) {
+        QTextCursor cursor = editor->textCursor();
+        cursor.clearSelection();
+        editor->setTextCursor(cursor);
+        event->accept();
+        return true;
+    }
+
+    if (event->key() == Qt::Key_Escape) {
+        enterComMode(editor);
         event->accept();
         return true;
     }

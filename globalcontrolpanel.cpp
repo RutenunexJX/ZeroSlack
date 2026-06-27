@@ -37,7 +37,7 @@ GlobalControlPanel::GlobalControlPanel(QWidget* parent)
 
     searchEdit = new QLineEdit(this);
     searchEdit->setObjectName(QStringLiteral("globalControlSearchEdit"));
-    searchEdit->setPlaceholderText(QStringLiteral("Type ow, ow r, fd, or fds"));
+    searchEdit->setPlaceholderText(QStringLiteral("Type a domain: ow or fd"));
     layout->addWidget(searchEdit);
 
     resultList = new QListWidget(this);
@@ -149,6 +149,12 @@ void GlobalControlPanel::activateCurrentItem()
     if (row < 0 || row >= currentItems.size())
         return;
     const GlobalControlItem selected = currentItems.at(row);
+    if (selected.kind == GlobalControlItemKind::Domain && searchEdit) {
+        searchEdit->setText(selected.id);
+        searchEdit->setCursorPosition(searchEdit->text().size());
+        focusSearch();
+        return;
+    }
     hide();
     if (itemActivatedHandler)
         itemActivatedHandler(selected);

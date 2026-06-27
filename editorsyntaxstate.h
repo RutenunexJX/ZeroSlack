@@ -9,6 +9,12 @@ class MyCodeEditor;
 class MyHighlighter;
 class QTextDocument;
 class TSDocument;
+struct TSPortAppendTarget;
+struct TSSignalInsertTarget;
+struct TSInstanceInsertTarget;
+struct TSAssignInsertTarget;
+struct TSParameterInsertTarget;
+struct TSModuleEndInsertTarget;
 
 class EditorSyntaxState
 {
@@ -29,6 +35,12 @@ public:
                    int charsAdded,
                    const QString& text);
     QString moduleNameAt(int charPos) const;
+    TSPortAppendTarget portAppendTargetAt(int charPos) const;
+    TSSignalInsertTarget signalInsertTargetAt(int charPos) const;
+    TSInstanceInsertTarget instanceInsertTargetAt(int charPos) const;
+    TSAssignInsertTarget assignInsertTargetAt(int charPos) const;
+    TSParameterInsertTarget parameterInsertTargetAt(int charPos) const;
+    TSModuleEndInsertTarget moduleEndInsertTargetAt(int charPos) const;
     const TSDocument* tsDocument() const;
 
 private:

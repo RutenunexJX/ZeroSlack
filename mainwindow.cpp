@@ -9,6 +9,7 @@
 #include "analysisscheduler.h"
 #include "analysiscoordinator.h"
 #include "analysisprogresscoordinator.h"
+#include "commodecoordinator.h"
 #include "editorcoordinator.h"
 #include "filecommandcoordinator.h"
 #include "modecommandcoordinator.h"
@@ -95,6 +96,7 @@ MainWindow::MainWindow(QWidget *parent)
     setupViewMenu();
     setupEditorModeChip();
     setupGlobalControl();
+    setupComMode();
     setupEditorCoordinator();
     setupManagerConnections();
 
@@ -741,11 +743,20 @@ void MainWindow::setupGlobalControl()
                 return;
             }
 
-            if (item.id == QStringLiteral("ow")) {
-                if (fileCommandCoordinator)
-                    fileCommandCoordinator->openDirectoryAsWorkspace();
-            } else if (item.id == QStringLiteral("ow r")) {
+            if (item.id == QStringLiteral("ow r")) {
                 showRecentWorkspacesDialog();
+            } else if (item.id.startsWith(QStringLiteral("ow "))) {
+                bool ok = false;
+                const int count = item.id.mid(3).trimmed().toInt(&ok);
+                if (ok && count > 0 && fileCommandCoordinator) {
+                    for (int i = 0; i < count; ++i)
+                        fileCommandCoordinator->openDirectoryAsWorkspace();
+                }
+            } else if (item.id == QStringLiteral("ow")) {
+                if (statusBar())
+                    statusBar()->showMessage(
+                        QStringLiteral("Use ow <num>, for example ow 1"),
+                        3000);
             } else if (item.id == QStringLiteral("openFile")) {
                 if (fileCommandCoordinator)
                     fileCommandCoordinator->openFile();
@@ -763,10 +774,12 @@ void MainWindow::setupGlobalControl()
                                     QStringLiteral("f"));
                     QCoreApplication::sendEvent(editor, &press);
                 }
-            } else if (item.id == QStringLiteral("fd")) {
+            } else if (item.id == QStringLiteral("fd r")
+                       || item.id == QStringLiteral("fd")) {
                 if (MyCodeEditor* editor = tabManager ? tabManager->getCurrentEditor() : nullptr)
                     editor->startFoldRegionMarkMode();
-            } else if (item.id == QStringLiteral("fds")) {
+            } else if (item.id == QStringLiteral("fd s")
+                       || item.id == QStringLiteral("fds")) {
                 showFoldBlockShelf();
                 if (MyCodeEditor* editor = tabManager ? tabManager->getCurrentEditor() : nullptr)
                     editor->startFoldShelfMode();
@@ -801,6 +814,19 @@ void MainWindow::setupGlobalControl()
             }
         });
     globalControlCoordinator->install();
+}
+
+void MainWindow::setupComMode()
+{
+    comModeCoordinator = std::make_unique<ComModeCoordinator>(
+        statusBar(),
+        this,
+        tabManager.get(),
+        workspaceManager ? workspaceManager->getProjectModel() : nullptr,
+        SemanticIndex::getInstance(),
+        navigationCommandCoordinator.get(),
+        this);
+    comModeCoordinator->connectSignals();
 }
 
 void MainWindow::setupFoldBlockShelf()

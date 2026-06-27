@@ -104,6 +104,56 @@ QString EditorSyntaxState::moduleNameAt(int charPos) const
     return document->enclosingModuleName(charPos < 0 ? 0 : charPos);
 }
 
+TSPortAppendTarget EditorSyntaxState::portAppendTargetAt(int charPos) const
+{
+    TSPortAppendTarget target;
+    if (!interactiveSyntaxEnabled)
+        return target;
+    return document->portAppendTarget(charPos < 0 ? 0 : charPos);
+}
+
+TSSignalInsertTarget EditorSyntaxState::signalInsertTargetAt(int charPos) const
+{
+    TSSignalInsertTarget target;
+    if (!interactiveSyntaxEnabled)
+        return target;
+    return document->signalInsertTarget(charPos < 0 ? 0 : charPos);
+}
+
+TSInstanceInsertTarget EditorSyntaxState::instanceInsertTargetAt(int charPos) const
+{
+    TSInstanceInsertTarget target;
+    if (!interactiveSyntaxEnabled)
+        return target;
+    return document->instanceInsertTarget(charPos < 0 ? 0 : charPos);
+}
+
+TSAssignInsertTarget EditorSyntaxState::assignInsertTargetAt(int charPos) const
+{
+    TSAssignInsertTarget target;
+    if (!interactiveSyntaxEnabled)
+        return target;
+    return document->assignInsertTarget(charPos < 0 ? 0 : charPos);
+}
+
+TSParameterInsertTarget EditorSyntaxState::parameterInsertTargetAt(
+    int charPos) const
+{
+    TSParameterInsertTarget target;
+    if (!interactiveSyntaxEnabled)
+        return target;
+    return document->parameterInsertTarget(charPos < 0 ? 0 : charPos);
+}
+
+TSModuleEndInsertTarget EditorSyntaxState::moduleEndInsertTargetAt(
+    int charPos) const
+{
+    TSModuleEndInsertTarget target;
+    if (!interactiveSyntaxEnabled)
+        return target;
+    return document->moduleEndInsertTarget(charPos < 0 ? 0 : charPos);
+}
+
 const TSDocument* EditorSyntaxState::tsDocument() const
 {
     return interactiveSyntaxEnabled ? document.get() : nullptr;

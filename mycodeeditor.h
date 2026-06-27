@@ -64,6 +64,17 @@ public:
     void setDocumentFileName(QString fileName);
     QString documentFileName() const;
     QString currentModuleName() const;
+    bool executeComPortAppend(QString* message = nullptr);
+    bool executeComSignalInsert(QString* message = nullptr);
+    bool executeComInstanceInsert(QString* message = nullptr);
+    bool executeComAssignInsert(QString* message = nullptr);
+    bool executeComParameterInsert(QString* message = nullptr);
+    bool executeComModuleEndInsert(QString* message = nullptr);
+    bool comModeActive() const;
+    QString comModeBuffer() const;
+    void enterComMode(const QString& message = QString());
+    void exitComMode();
+    void showComModeMessage(const QString& message);
     void executeAlternateModeCommand(const QString& command);
     void setDiagnosticHighlights(
         const QList<SemanticDiagnostic>& diagnostics);
@@ -150,6 +161,11 @@ signals:
     void foldShelfRequested();
     void foldShelfItemConsumed(const QString& id);
     void fontZoomRequested(int steps);
+    void comModeStateChanged(bool active,
+                             const QString& buffer,
+                             const QString& message);
+    void comCommandRequested(const QString& command);
+    void comRelativeLineRequested(int moduleLine);
 };
 
 #endif // MYCODEEDITOR_H

@@ -48,3 +48,20 @@ void EditorModeState::clearAlternateBuffer()
 {
     alternateBuffer.clear();
 }
+
+void EditorModeState::setComModeActive(bool active)
+{
+    comModeActive = active;
+    if (!active)
+        comBuffer.clear();
+}
+
+void EditorModeState::setComBuffer(const QString& input)
+{
+    comBuffer = input;
+}
+
+void EditorModeState::clearComBuffer()
+{
+    comBuffer.clear();
+}

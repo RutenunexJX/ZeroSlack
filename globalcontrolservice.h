@@ -8,6 +8,7 @@ class ProjectModel;
 class SemanticIndex;
 
 enum class GlobalControlItemKind {
+    Domain,
     Command,
     File,
     Symbol,
