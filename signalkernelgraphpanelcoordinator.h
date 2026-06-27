@@ -4,6 +4,7 @@
 #include "signalkernelgraphservice.h"
 
 #include <QDockWidget>
+#include <QSet>
 #include <QString>
 
 #include <functional>
@@ -36,6 +37,11 @@ public:
 
     QDockWidget* dock() const { return graphDock; }
     QGraphicsView* view() const { return graphView; }
+    void renderReportForTest(const SignalKernelGraphReport& report);
+    int collapsedFanoutGroupCountForTest() const;
+    int visibleGraphNodeCountForTest() const;
+    int renderedFanoutGroupItemCountForTest() const;
+    bool toggleFanoutGroupForTest(const QString& groupKey);
 
 private:
     QDockWidget* graphDock = nullptr;
@@ -46,12 +52,22 @@ private:
     QTimer* hoverCloseTimer = nullptr;
     QString currentHoverNodeKey;
     SignalKernelGraphQuery currentQuery;
+    SignalKernelGraphReport currentReport;
+    QSet<QString> knownFanoutGroupKeys;
+    QSet<QString> collapsedFanoutGroupKeys;
+    int lastVisibleGraphNodeCount = 0;
+    int lastRenderedFanoutGroupItemCount = 0;
 
     std::function<void(const QString&, int, int)> navigationHandler;
     std::function<void(const QString&, int)> statusMessageHandler;
 
     void renderReport(const SignalKernelGraphReport& report);
     void renderUnavailable(const QString& message);
+    QString fanoutGroupUiKey(const SignalKernelGraphFanoutGroup& group) const;
+    void initializeFanoutCollapseState(const SignalKernelGraphReport& report);
+    bool isFanoutGroupCollapsed(
+        const SignalKernelGraphFanoutGroup& group) const;
+    void toggleFanoutGroup(const QString& groupKey);
     void showNodePreview(const SignalKernelGraphNode& node,
                          const QRectF& nodeSceneRect);
     void closeNodePreviewDelayed();

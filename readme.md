@@ -63,8 +63,8 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
   management.
 - Signal Kernel Graph exists as a signal-centric exploration graph.
   Service/report-layer high-fanout grouping metadata is available for dense
-  input/output sides; UI collapse/expand, filtering, and graph search remain
-  pending.
+  input/output sides, and the panel can render those groups as collapsible
+  summaries. Filtering and graph search remain pending.
 - Wave Preview exists as a code-understanding sketch, not a simulator.
 - Formatter support exists as conservative editor formatting. Current daily
   editor action inventory: `Ctrl+F` opens Find; formatter document/selection
@@ -180,8 +180,9 @@ and restoring Global Control `ow r` for recent workspaces.
 - Signal Kernel Graph baseline: `SignalKernelGraphService` builds graph
   reports from `SignalJourneyService` and `SemanticIndexSnapshot` data. The
   report preserves raw nodes/edges while adding high-fanout grouping metadata
-  for dense input/output sides. UI widgets may render that metadata later, but
-  grouping policy belongs in the service/report layer.
+  for dense input/output sides. `SignalKernelGraphPanelCoordinator` owns only
+  collapse/expand UI state and renders group summary/header items from that
+  metadata; grouping policy remains in the service/report layer.
 
 ## Command Responsibility Map
 

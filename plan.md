@@ -622,6 +622,8 @@ First milestones:
   (complete: `SignalKernelGraphReport` now carries high-fanout grouping
   metadata without changing raw nodes/edges)
 - M8.2 UI collapse/expand for grouped fanout
+  (complete: `SignalKernelGraphPanelCoordinator` renders collapsible fanout
+  group summary/header items while preserving raw visible-node actions)
 - M8.3 filtering and in-graph search
 
 M8.1 implementation constraints:
@@ -647,6 +649,31 @@ M8.1 implementation status:
 - Verification: `git diff --check`; Release `relationship_test` and
   `gui_smoke_test` targets compile/link; `ctest -R "^relationship_test$"`
   passed. `gui_smoke_test` was not launched.
+
+M8.2 implementation constraints:
+
+- Use the G8.1 `SignalKernelGraphReport` fanout group metadata; do not move
+  grouping policy into the panel.
+- Keep collapse/expand state in `SignalKernelGraphPanelCoordinator`.
+- Preserve visible raw node preview, navigation, and rebase handlers.
+- Do not add filtering UI or graph search in M8.2.
+
+M8.2 implementation status:
+
+- Complete: high-fanout groups default to collapsed the first time a group key
+  appears in the panel.
+- Complete: collapsed groups hide their raw nodes, render a summary item, and
+  route grouped edges through the summary while deduplicating only collapsed
+  group edges.
+- Complete: expanded groups render the raw nodes with existing preview,
+  navigation, and rebase handlers, plus a clickable group header to collapse
+  again.
+- Complete: collapse/expand state is panel-owned and is verified through
+  offscreen `completion_test` coverage.
+- Verification: `git diff --check`; Release `completion_test`,
+  `relationship_test`, and `gui_smoke_test` targets compile/link; `ctest -R
+  "^completion_test$"` and `ctest -R "^relationship_test$"` passed.
+  `gui_smoke_test` was not launched.
 
 ### 9. Wave Preview
 

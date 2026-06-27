@@ -27,6 +27,7 @@
 #include "semantic_fixture_records.h"
 #include "semanticindexsnapshot.h"
 #include "smartrelationshipbuilder.h"
+#include "signalkernelgraphpanelcoordinator.h"
 #include "symbolanalyzer.h"
 #include "symboltaxonomy.h"
 #include "tsdocument.h"
@@ -49,6 +50,7 @@
 #include <QTextDocument>
 #include <QTextLayout>
 #include <QTextStream>
+#include <QWidget>
 #include <QString>
 #include <QStringList>
 #include <QKeyEvent>
@@ -6647,6 +6649,74 @@ int main(int argc, char** argv) {
                 unavailableSourceSymbolContext);
     expectBool("EditorSemanticContext source request unavailable",
                !unavailableSourceRequest.available,
+               true);
+
+    QWidget signalKernelGraphHost;
+    SignalKernelGraphPanelCoordinator signalKernelGraphPanel(
+        &signalKernelGraphHost);
+    SignalKernelGraphReport groupedSignalGraph;
+    groupedSignalGraph.found = true;
+    groupedSignalGraph.kernelModuleName = QStringLiteral("fanout_top");
+    groupedSignalGraph.fanoutGroupingThreshold = 5;
+    groupedSignalGraph.kernel.id = 1;
+    groupedSignalGraph.kernel.role = SignalKernelGraphNodeRole::Kernel;
+    groupedSignalGraph.kernel.displayName = QStringLiteral("fanout_sig");
+    groupedSignalGraph.kernel.moduleDisplayName =
+        QStringLiteral("fanout_top");
+    groupedSignalGraph.kernel.typeDisplayName = QStringLiteral("logic");
+    groupedSignalGraph.kernel.navigateCodeLink =
+        RtlInsightLink::fromFileLine(QStringLiteral("fanout_top.sv"), 10, 1);
+    SignalKernelGraphFanoutGroup outputGroup;
+    outputGroup.id = 1;
+    outputGroup.role = SignalKernelGraphNodeRole::Output;
+    outputGroup.groupKey = QStringLiteral("output:fanout_top");
+    outputGroup.displayName = QStringLiteral("Outputs in fanout_top");
+    outputGroup.moduleName = QStringLiteral("fanout_top");
+    outputGroup.totalRoleNodeCount = 6;
+    outputGroup.highFanout = true;
+    for (int i = 0; i < 6; ++i) {
+        SignalKernelGraphNode outputNode;
+        outputNode.id = 10 + i;
+        outputNode.role = SignalKernelGraphNodeRole::Output;
+        outputNode.displayName = QStringLiteral("reader_%1").arg(i + 1);
+        outputNode.moduleDisplayName = QStringLiteral("fanout_top");
+        outputNode.typeDisplayName = QStringLiteral("logic");
+        outputNode.navigateCodeLink =
+            RtlInsightLink::fromFileLine(QStringLiteral("fanout_top.sv"),
+                                         20 + i,
+                                         1);
+        groupedSignalGraph.outputs.append(outputNode);
+        groupedSignalGraph.edges.append(
+            {groupedSignalGraph.kernel.id, outputNode.id, QString()});
+        outputGroup.nodeIds.append(outputNode.id);
+    }
+    outputGroup.nodeCount = outputGroup.nodeIds.size();
+    groupedSignalGraph.outputFanoutGroups.append(outputGroup);
+    signalKernelGraphPanel.renderReportForTest(groupedSignalGraph);
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 10);
+    expectBool("SignalKernelGraphPanel defaults fanout collapsed",
+               signalKernelGraphPanel.collapsedFanoutGroupCountForTest() == 1
+                   && signalKernelGraphPanel.visibleGraphNodeCountForTest() == 1
+                   && signalKernelGraphPanel
+                          .renderedFanoutGroupItemCountForTest() == 1,
+               true);
+    expectBool("SignalKernelGraphPanel expands fanout group",
+               signalKernelGraphPanel.toggleFanoutGroupForTest(
+                   outputGroup.groupKey)
+                   && signalKernelGraphPanel
+                          .collapsedFanoutGroupCountForTest() == 0
+                   && signalKernelGraphPanel.visibleGraphNodeCountForTest()
+                          == 7
+                   && signalKernelGraphPanel
+                          .renderedFanoutGroupItemCountForTest() == 1,
+               true);
+    expectBool("SignalKernelGraphPanel collapses fanout group again",
+               signalKernelGraphPanel.toggleFanoutGroupForTest(
+                   outputGroup.groupKey)
+                   && signalKernelGraphPanel
+                          .collapsedFanoutGroupCountForTest() == 1
+                   && signalKernelGraphPanel.visibleGraphNodeCountForTest()
+                          == 1,
                true);
 
     CommandCompletionQuery commandQuery;

@@ -28,7 +28,7 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
 
 ## Current Goal State
 
-Current milestone: `G8.2 Render Collapsible Signal Kernel Graph Fanout Groups`.
+Current milestone: `G8.3 Add Signal Kernel Graph Filtering And Search`.
 
 Status:
 
@@ -266,13 +266,25 @@ Status:
   `relationship_test` and `gui_smoke_test` targets compile/link; `ctest -R
   "^relationship_test$"` passed. `gui_smoke_test` was not launched.
 
-Completion criteria for G8.2:
+- G8.2 Render Collapsible Signal Kernel Graph Fanout Groups is complete:
+  `SignalKernelGraphPanelCoordinator` renders G8.1 fanout groups as
+  collapsible summaries. New group keys default to collapsed; collapsed groups
+  hide raw nodes, render a summary item, and route grouped edges through that
+  summary while deduplicating only collapsed group edges. Expanded groups show
+  raw nodes with their existing preview, navigation, and rebase handlers plus a
+  clickable header to collapse again. Collapse/expand state stays in the panel.
+- Focused verification for G8.2: `git diff --check`; Release
+  `completion_test`, `relationship_test`, and `gui_smoke_test` targets
+  compile/link; `ctest -R "^completion_test$"` and `ctest -R
+  "^relationship_test$"` passed. `gui_smoke_test` was not launched.
 
-- render collapsible fanout groups from the existing G8.1 report metadata
-- preserve raw node navigation, rebase, and preview behavior for visible nodes
-- keep collapse/expand state in the UI layer without moving grouping policy
-  out of `SignalKernelGraphService`
-- do not add filtering UI or graph search in G8.2
+Completion criteria for G8.3:
+
+- add Signal Kernel Graph filtering controls using existing report/node data
+- add in-graph search that highlights or focuses matching graph nodes
+- preserve fanout grouping and collapse/expand behavior from G8.2
+- keep filtering/search UI policy in the panel without scanning workspace files
+  or running Slang from UI
 - `readme.md`, `plan.md`, and `goal.md` are updated
 - appropriate focused verification passes
 - milestone commit is pushed
