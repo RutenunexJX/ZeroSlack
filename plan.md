@@ -999,6 +999,8 @@ Audit milestones:
   (complete: current owners and existing verification anchors are documented;
   no Huge Workspace UX features were added)
 - HWA.2 run or compile appropriate verification based on environment safety
+  (complete: Release build of the HWA-related test/harness targets passed
+  without launching GUI executables)
 - HWA.3 update docs with confirmed status and gaps
 
 HWA.1 inventory status:
@@ -1022,6 +1024,18 @@ HWA.1 inventory status:
 - Release `huge_prj` references remain the current baseline: 428 HDL files,
   about 18.59 MiB, about 5.096s async symbol publication in the focused
   harness, and about 3.891s relationship analysis in the focused harness.
+
+HWA.2 verification status:
+
+- Chosen safe verification path: compile/link relevant Release targets instead
+  of launching GUI executables, because this environment has recently shown
+  external Windows application-error dialogs during GUI test runs.
+- Passed command: Release CMake build target set `completion_test`,
+  `relationship_test`, `large_file_perf_test`, and `relationship_perf_test`.
+- Artifact check confirmed all four executables exist in the Release build
+  directory.
+- `ctest` was not run for HWA.2, so no long-running CTest or external
+  memory-read dialog check was needed in this milestone.
 
 ## Milestone Definition Of Done
 

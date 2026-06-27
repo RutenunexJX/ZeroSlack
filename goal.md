@@ -28,7 +28,7 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
 
 ## Current Goal State
 
-Current milestone: `HWA.2 Run safe verification or compile relevant targets`.
+Current milestone: `HWA.3 Update docs with confirmed status and open gaps`.
 
 Status:
 
@@ -429,16 +429,26 @@ Status:
 - Focused verification for HWA.1: documentation inspection plus
   `git diff --check`.
 
-Completion criteria for HWA.2:
+- HWA.2 Huge Workspace Safe Verification is complete:
+  the safe verification path was Release compile/link of the HWA-related
+  test/harness targets rather than launching GUI executables in an environment
+  that has recently shown external Windows application-error dialogs.
+  `completion_test`, `relationship_test`, `large_file_perf_test`, and
+  `relationship_perf_test` built successfully in the Release CMake build
+  directory, and artifact inspection confirmed all four executables exist.
+  `ctest` was not run, so no stalled-CTest or external memory-read dialog check
+  was exercised in this milestone.
+- Focused verification for HWA.2: Release build of `completion_test`,
+  `relationship_test`, `large_file_perf_test`, and `relationship_perf_test`;
+  documentation inspection plus `git diff --check`.
 
-- choose safe Huge Workspace status verification for the current environment,
-  preferring compile/link or narrow non-GUI tests when executable GUI runs are
-  likely to show external Windows error dialogs
-- if `ctest` stalls or runs far longer than expected, check for an external
-  Windows application-error or memory-read dialog before treating it as normal
-  long-running test work
-- run or compile the selected verification and record the result
-- do not add Huge Workspace UX features
+Completion criteria for HWA.3:
+
+- update the Huge Workspace docs with confirmed current status and explicit
+  open gaps from HWA.1/HWA.2 evidence
+- do not add or implement Huge Workspace UX features
+- keep the audit scoped to owner status, existing verification, safe
+  verification results, and remaining audit gaps
 - `readme.md`, `plan.md`, and `goal.md` are updated
 - `git diff --check` passes
 - milestone commit is pushed
@@ -687,6 +697,7 @@ Milestones:
 - HWA.1 Inventory owner classes, current behavior, and existing verification.
   (complete: owners and existing harnesses documented)
 - HWA.2 Run safe verification or compile relevant targets.
+  (complete: Release build of related targets passed)
 - HWA.3 Update docs with confirmed status and open gaps.
 
 ## Completion Order

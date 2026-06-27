@@ -144,6 +144,10 @@ Known reference points:
 - Release relationship analysis reference: about 3.891s in the focused harness.
 - Release async symbol publication reference: about 5.096s in the focused
   harness after the first-publication native-store scan fix.
+- HWA.2 safe verification: Release build of `completion_test`,
+  `relationship_test`, `large_file_perf_test`, and `relationship_perf_test`
+  passed. No test executable was launched in this milestone; `ctest` was not
+  run, so the external Windows error-dialog check was not exercised.
 
 ## Workspace Workflow Status
 
