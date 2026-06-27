@@ -74,6 +74,8 @@ private:
         void uncomment(MyCodeEditor* editor) const;
         void indent(MyCodeEditor* editor) const;
         void unindent(MyCodeEditor* editor) const;
+        void replace(MyCodeEditor* editor) const;
+        void gotoLine(MyCodeEditor* editor) const;
     };
 
     CommandTargets targets;

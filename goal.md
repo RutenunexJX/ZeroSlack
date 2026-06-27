@@ -28,58 +28,61 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
 
 ## Current Goal State
 
-Current milestone: `G1.4 Replace And Goto Line Entry Points`.
+Current milestone: `G2.1 Slot Mode Model And Editor State`.
 
 Status:
 
 - G0 Documentation And Goal Reset is complete and pushed in commit `bc2c059`.
-- G4.1 Registry Metadata For Existing COM Commands is complete in the current
-  milestone: `commodecommandregistry` now owns metadata for fixed executable
-  commands, non-executable prefixes, and the module-relative line command.
+- G4.1 Registry Metadata For Existing COM Commands is complete:
+  `commodecommandregistry` now owns metadata for fixed executable commands,
+  non-executable prefixes, and the module-relative line command.
 - Existing COM command behavior is preserved; editor runtime parsing now reads
   executable commands, prefixes, and `g<num>` checks from the shared registry
   API.
-- G4.2 Help And Hint Rendering For COM Commands is complete in the current
-  milestone: `commodecommandregistry` exposes hint text for executable commands,
+- G4.2 Help And Hint Rendering For COM Commands is complete:
+  `commodecommandregistry` exposes hint text for executable commands,
   non-executable prefixes, and module-relative line buffers; the app-level
   command strip renders those hints.
-- G4.3 Centralized Conflict Validation And Failure Reason Display is complete in
-  the current milestone: registry validation can be tested against injected
-  metadata, reports duplicate command, executable prefix conflict, and malformed
-  prefix reasons, and editor COM failures use registry-backed messages where
-  practical.
+- G4.3 Centralized Conflict Validation And Failure Reason Display is complete:
+  registry validation can be tested against injected metadata, reports duplicate
+  command, executable prefix conflict, and malformed prefix reasons, and editor
+  COM failures use registry-backed messages where practical.
 - Focused verification for G4.3: Release `gui_smoke_test` target compile/link
   passed without launching the executable.
-- G1.1 Editor Daily Action Inventory is complete in the current milestone:
-  `Ctrl+F` opens Find; formatter document/selection actions are available from
-  the editor context menu; alternate command metadata lists replace, goto line,
-  comment, uncomment, indent, and unindent; only `comment` currently dispatches,
-  and it only inserts `// ` at the cursor. `replace`, `goto_line`, `uncomment`,
-  `indent`, and `unindent` are catalog-only or missing reliable editor entry
-  points today.
-- G1.2 Comment And Uncomment Entry Points is complete in the current milestone:
+- G1.1 Editor Daily Action Inventory is complete: the baseline captured
+  `Ctrl+F` Find, formatter context-menu actions, alternate command metadata,
+  and the missing daily action entry points.
+- G1.2 Comment And Uncomment Entry Points is complete:
   active-line and selected-line line comments are available through `Ctrl+/`,
   `Ctrl+Shift+/`, editor context-menu actions, and alternate commands
   `comment` / `uncomment`, without reviving active `;:` commands.
 - Focused verification for G1.2: Release `gui_smoke_test` target compile/link
   passed without launching the executable.
-- G1.3 Indent And Unindent Entry Points is complete in the current milestone:
+- G1.3 Indent And Unindent Entry Points is complete:
   active-line and selected-line indentation is available through `Ctrl+]`,
   `Ctrl+[`, editor context-menu actions, and alternate commands `indent` /
   `unindent`, without reviving active `;:` commands.
 - Focused verification for G1.3: Release `gui_smoke_test` target compile/link
   passed without launching the executable.
+- G1.4 Replace And Goto Line Entry Points is complete:
+  replace is available through `Ctrl+H`, editor context-menu action, and
+  alternate command `replace`; goto line is available through `Ctrl+G`, editor
+  context-menu action, and alternate command `goto_line`; non-dialog editor API
+  coverage checks valid/invalid goto line, replace-next, selected replacement,
+  replace-all, and replace-all undo behavior.
+- Focused verification for G1.4: Release `gui_smoke_test` target compile/link
+  passed without launching the executable.
 - Verification flow now includes checking for external Windows application-error
   or memory-read dialogs when CTest appears stalled.
 
-Completion criteria for G1.4:
+Completion criteria for G2.1:
 
-- implement a reliable goto line action for the active editor
-- implement a reliable replace action for the active editor
-- provide clear editor entry points without reviving active `;:` commands
-- preserve existing `goto_line` / `replace` alternate command compatibility where
-  practical
-- add focused editor tests for goto line and replace behavior
+- define the slot model ownership and editor state needed after `;;cmd`
+  template insertion
+- define slot entry, next-slot, previous-slot, completion, cancel, and exit
+  behavior without changing template expansion yet
+- identify focused verification cases for the future slot model implementation
+- do not implement template behavior changes in this milestone
 - `readme.md`, `plan.md`, and `goal.md` are updated
 - appropriate focused verification passes
 - milestone commit is pushed

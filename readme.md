@@ -62,8 +62,10 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
   through `Ctrl+/`, `Ctrl+Shift+/`, editor context-menu actions, and alternate
   commands `comment` / `uncomment`; line indent actions are available through
   `Ctrl+]`, `Ctrl+[`, editor context-menu actions, and alternate commands
-  `indent` / `unindent`. Replace and goto line still need reliable entry
-  points.
+  `indent` / `unindent`; replace is available through `Ctrl+H`, editor
+  context-menu action, and alternate command `replace`; goto line is available
+  through `Ctrl+G`, editor context-menu action, and alternate command
+  `goto_line`. The first-pass daily editor operation entry points are complete.
 
 ## Huge Workspace Status
 

@@ -2021,6 +2021,97 @@ static void runEditorLineActionRegression()
                    == QStringLiteral("logic a;\n"),
                true);
 
+    MyCodeEditor gotoLineEditor;
+    gotoLineEditor.resize(480, 150);
+    gotoLineEditor.setPlainText(QStringLiteral("line1\nline2\nline3\n"));
+    gotoLineEditor.show();
+    gotoLineEditor.setFocus();
+    expectBool("goto line accepts valid line",
+               gotoLineEditor.goToLineNumber(2),
+               true);
+    QTextCursor gotoCursor = gotoLineEditor.textCursor();
+    expectBool("goto line moves to requested line start",
+               gotoCursor.blockNumber() == 1
+                   && gotoCursor.positionInBlock() == 0,
+               true);
+    const int validGotoPosition = gotoCursor.position();
+    expectBool("goto line rejects out-of-range line",
+               !gotoLineEditor.goToLineNumber(20)
+                   && gotoLineEditor.textCursor().position()
+                          == validGotoPosition,
+               true);
+
+    MyCodeEditor replaceNextEditor;
+    replaceNextEditor.resize(480, 150);
+    replaceNextEditor.setPlainText(QStringLiteral("aa bb aa\n"));
+    replaceNextEditor.show();
+    replaceNextEditor.setFocus();
+    expectBool("replace next replaces first match",
+               replaceNextEditor.replaceNextText(
+                   QStringLiteral("aa"),
+                   QStringLiteral("zz")),
+               true);
+    expectBool("replace next updates first occurrence",
+               replaceNextEditor.toPlainText()
+                   == QStringLiteral("zz bb aa\n"),
+               true);
+    expectBool("replace next advances to later match",
+               replaceNextEditor.replaceNextText(
+                   QStringLiteral("aa"),
+                   QStringLiteral("yy")),
+               true);
+    expectBool("replace next updates later occurrence",
+               replaceNextEditor.toPlainText()
+                   == QStringLiteral("zz bb yy\n"),
+               true);
+    const int cursorBeforeMissingReplace =
+        replaceNextEditor.textCursor().position();
+    expectBool("replace next rejects missing text",
+               !replaceNextEditor.replaceNextText(
+                   QStringLiteral("missing"),
+                   QStringLiteral("unused"))
+                   && replaceNextEditor.textCursor().position()
+                          == cursorBeforeMissingReplace,
+               true);
+
+    MyCodeEditor replaceSelectionEditor;
+    replaceSelectionEditor.resize(480, 150);
+    replaceSelectionEditor.setPlainText(QStringLiteral("aa bb aa\n"));
+    QTextBlock replaceSelectionBlock =
+        replaceSelectionEditor.document()->findBlockByNumber(0);
+    QTextCursor replaceSelectionCursor(replaceSelectionBlock);
+    replaceSelectionCursor.setPosition(replaceSelectionBlock.position() + 3);
+    replaceSelectionCursor.setPosition(replaceSelectionBlock.position() + 5,
+                                       QTextCursor::KeepAnchor);
+    replaceSelectionEditor.setTextCursor(replaceSelectionCursor);
+    expectBool("replace next uses matching current selection",
+               replaceSelectionEditor.replaceNextText(
+                   QStringLiteral("bb"),
+                   QStringLiteral("cc")),
+               true);
+    expectBool("replace next updates current selection",
+               replaceSelectionEditor.toPlainText()
+                   == QStringLiteral("aa cc aa\n"),
+               true);
+
+    MyCodeEditor replaceAllEditor;
+    replaceAllEditor.resize(480, 150);
+    replaceAllEditor.setPlainText(QStringLiteral("foo FOO\nfoo\n"));
+    const int replaceAllCount =
+        replaceAllEditor.replaceAllText(QStringLiteral("foo"),
+                                        QStringLiteral("bar"),
+                                        false);
+    expectBool("replace all is case-insensitive by default",
+               replaceAllCount == 3
+                   && replaceAllEditor.toPlainText()
+                          == QStringLiteral("bar bar\nbar\n"),
+               true);
+    replaceAllEditor.undo();
+    expectBool("replace all undo restores document",
+               replaceAllEditor.toPlainText()
+                   == QStringLiteral("foo FOO\nfoo\n"),
+               true);
+
     MyCodeEditor duplicateEditor;
     duplicateEditor.resize(480, 180);
     duplicateEditor.setPlainText(QStringLiteral("one\ntwo\nthree\n"));

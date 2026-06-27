@@ -89,6 +89,15 @@ public:
     bool formatDocumentForSave();
     void formatDocument();
     void formatSelection();
+    bool goToLineNumber(int lineNumber);
+    bool replaceNextText(const QString& needle,
+                         const QString& replacement,
+                         bool caseSensitive = false);
+    int replaceAllText(const QString& needle,
+                       const QString& replacement,
+                       bool caseSensitive = false);
+    void showGotoLineDialog();
+    void showReplaceDialog();
     void commentSelectionOrLine();
     void uncommentSelectionOrLine();
     void indentSelectionOrLine();

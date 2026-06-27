@@ -69,18 +69,19 @@ First milestones:
 
 - M1.1 inventory existing actions and shortcuts, document gaps, no behavior
   change
-  (complete: `Ctrl+F` find and formatter context-menu actions exist; alternate
-  command metadata lists replace/goto/comment/uncomment/indent/unindent, but
-  only `comment` dispatches today and it only inserts `// `)
+  (complete: baseline captured for find, formatter, alternate commands, and
+  missing daily action entry points)
 - M1.2 add reliable entry points for one action family, with focused editor
   tests
   (complete: comment/uncomment are available through `Ctrl+/`,
   `Ctrl+Shift+/`, editor context-menu actions, and alternate commands)
 - M1.3 repeat per action family until all listed actions have usable entries
-  (indent/unindent complete: `Ctrl+]`, `Ctrl+[`, editor context-menu actions,
-  and alternate commands; remaining target: replace/goto line)
+  (complete: indent/unindent are available through `Ctrl+]`, `Ctrl+[`, editor
+  context-menu actions, and alternate commands)
 - M1.4 add reliable replace and goto line entry points, with focused editor
   tests
+  (complete: replace uses `Ctrl+H`, context menu, and `replace`; goto line uses
+  `Ctrl+G`, context menu, and `goto_line`)
 
 ### 2. Slot Mode After Template Insertion
 

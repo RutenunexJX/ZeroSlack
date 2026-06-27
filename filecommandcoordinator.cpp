@@ -135,6 +135,20 @@ void FileCommandCoordinator::EditorCommandDispatcher::unindent(
         editor->unindentSelectionOrLine();
 }
 
+void FileCommandCoordinator::EditorCommandDispatcher::replace(
+    MyCodeEditor* editor) const
+{
+    if (editor)
+        editor->showReplaceDialog();
+}
+
+void FileCommandCoordinator::EditorCommandDispatcher::gotoLine(
+    MyCodeEditor* editor) const
+{
+    if (editor)
+        editor->showGotoLineDialog();
+}
+
 void FileCommandCoordinator::newFile()
 {
     targets.createNewTab();

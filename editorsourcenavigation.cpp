@@ -321,6 +321,16 @@ void EditorSourceNavigationUi::handleContextMenu(
         contextProvider(cursorAtPos.position(), false));
     menu->addSeparator();
 
+    QAction* gotoLineAction = menu->addAction(QStringLiteral("Go to Line..."));
+    QObject::connect(gotoLineAction, &QAction::triggered, editor, [editor]() {
+        editor->showGotoLineDialog();
+    });
+    QAction* replaceAction = menu->addAction(QStringLiteral("Replace..."));
+    QObject::connect(replaceAction, &QAction::triggered, editor, [editor]() {
+        editor->showReplaceDialog();
+    });
+    menu->addSeparator();
+
     QAction* commentAction = menu->addAction(QStringLiteral("Comment Lines"));
     QObject::connect(commentAction, &QAction::triggered, editor, [editor]() {
         editor->commentSelectionOrLine();

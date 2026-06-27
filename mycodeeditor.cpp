@@ -9,6 +9,7 @@
 #include <QDragMoveEvent>
 #include <QDropEvent>
 #include <QHBoxLayout>
+#include <QInputDialog>
 #include <QKeyEvent>
 #include <QKeySequence>
 #include <QLabel>
@@ -17,6 +18,7 @@
 #include <QPaintEvent>
 #include <QPushButton>
 #include <QScrollBar>
+#include <QTextBlock>
 #include <QTextCursor>
 #include <QTextDocument>
 #include <QVBoxLayout>
@@ -64,6 +66,75 @@ bool handleControlWheelFastScroll(MyCodeEditor* editor, QWheelEvent* event)
     bar->setValue(bar->value() - steps * fastStep);
     event->accept();
     return true;
+}
+
+bool isPlainCtrlKey(const QKeyEvent* event, int key)
+{
+    if (!event || event->key() != key)
+        return false;
+
+    const Qt::KeyboardModifiers modifiers =
+        event->modifiers()
+        & (Qt::ShiftModifier
+           | Qt::ControlModifier
+           | Qt::AltModifier
+           | Qt::MetaModifier);
+    return modifiers == Qt::ControlModifier;
+}
+
+QString selectedPlainText(const QTextCursor& cursor)
+{
+    QString text = cursor.selectedText();
+    text.replace(QChar::ParagraphSeparator, QLatin1Char('\n'));
+    return text;
+}
+
+bool stringsEqual(const QString& lhs,
+                  const QString& rhs,
+                  Qt::CaseSensitivity sensitivity)
+{
+    return QString::compare(lhs, rhs, sensitivity) == 0;
+}
+
+int occurrenceCount(const QString& text,
+                    const QString& needle,
+                    Qt::CaseSensitivity sensitivity)
+{
+    if (needle.isEmpty())
+        return 0;
+
+    int count = 0;
+    int index = text.indexOf(needle, 0, sensitivity);
+    while (index >= 0) {
+        ++count;
+        index = text.indexOf(needle, index + needle.size(), sensitivity);
+    }
+    return count;
+}
+
+bool findNextInEditor(MyCodeEditor* editor,
+                      const QString& needle,
+                      bool caseSensitive)
+{
+    if (!editor || needle.isEmpty())
+        return false;
+
+    QTextDocument::FindFlags flags;
+    if (caseSensitive)
+        flags |= QTextDocument::FindCaseSensitively;
+
+    const QTextCursor originalCursor = editor->textCursor();
+    if (editor->find(needle, flags))
+        return true;
+
+    QTextCursor wrappedCursor = originalCursor;
+    wrappedCursor.movePosition(QTextCursor::Start);
+    editor->setTextCursor(wrappedCursor);
+    if (editor->find(needle, flags))
+        return true;
+
+    editor->setTextCursor(originalCursor);
+    return false;
 }
 
 void showFindDialog(MyCodeEditor* editor)
@@ -138,6 +209,107 @@ void showFindDialog(MyCodeEditor* editor)
     input->setFocus();
     input->selectAll();
     editor->highlightSearchMatches(input->text(), caseSensitive->isChecked());
+}
+
+void showReplaceDialogFor(MyCodeEditor* editor)
+{
+    if (!editor)
+        return;
+
+    auto* dialog = new QDialog(editor);
+    dialog->setAttribute(Qt::WA_DeleteOnClose);
+    dialog->setWindowTitle(QObject::tr("Replace"));
+
+    auto* layout = new QVBoxLayout(dialog);
+    auto* findRow = new QHBoxLayout;
+    auto* replaceRow = new QHBoxLayout;
+    auto* buttonRow = new QHBoxLayout;
+    auto* findLabel = new QLabel(QObject::tr("Find:"), dialog);
+    auto* findInput = new QLineEdit(dialog);
+    auto* replaceLabel = new QLabel(QObject::tr("Replace:"), dialog);
+    auto* replaceInput = new QLineEdit(dialog);
+    auto* caseSensitive = new QCheckBox(QObject::tr("Match case"), dialog);
+    auto* findNext = new QPushButton(QObject::tr("Find Next"), dialog);
+    auto* replace = new QPushButton(QObject::tr("Replace"), dialog);
+    auto* replaceAll = new QPushButton(QObject::tr("Replace All"), dialog);
+
+    findRow->addWidget(findLabel);
+    findRow->addWidget(findInput, 1);
+    findRow->addWidget(caseSensitive);
+    replaceRow->addWidget(replaceLabel);
+    replaceRow->addWidget(replaceInput, 1);
+    buttonRow->addStretch(1);
+    buttonRow->addWidget(findNext);
+    buttonRow->addWidget(replace);
+    buttonRow->addWidget(replaceAll);
+    layout->addLayout(findRow);
+    layout->addLayout(replaceRow);
+    layout->addLayout(buttonRow);
+
+    const QString selectedText = selectedPlainText(editor->textCursor());
+    if (!selectedText.isEmpty())
+        findInput->setText(selectedText);
+
+    auto findNextMatch = [editor, findInput, caseSensitive]() {
+        const QString needle = findInput->text();
+        if (needle.isEmpty()) {
+            emit editor->editorStatusMessageRequested(
+                QObject::tr("Find text is empty"));
+            return;
+        }
+        if (!findNextInEditor(editor, needle, caseSensitive->isChecked())) {
+            emit editor->editorStatusMessageRequested(
+                QObject::tr("No match for \"%1\"").arg(needle));
+        }
+    };
+
+    QObject::connect(findNext, &QPushButton::clicked, dialog, findNextMatch);
+    QObject::connect(replace, &QPushButton::clicked, dialog, [editor,
+                                                              findInput,
+                                                              replaceInput,
+                                                              caseSensitive]() {
+        editor->replaceNextText(findInput->text(),
+                                replaceInput->text(),
+                                caseSensitive->isChecked());
+    });
+    QObject::connect(replaceAll, &QPushButton::clicked, dialog, [editor,
+                                                                 findInput,
+                                                                 replaceInput,
+                                                                 caseSensitive]() {
+        editor->replaceAllText(findInput->text(),
+                               replaceInput->text(),
+                               caseSensitive->isChecked());
+    });
+    QObject::connect(findInput, &QLineEdit::returnPressed,
+                     dialog, findNextMatch);
+    QObject::connect(replaceInput, &QLineEdit::returnPressed,
+                     dialog, [editor,
+                              findInput,
+                              replaceInput,
+                              caseSensitive]() {
+        editor->replaceNextText(findInput->text(),
+                                replaceInput->text(),
+                                caseSensitive->isChecked());
+    });
+    QObject::connect(findInput, &QLineEdit::textChanged,
+                     dialog, [editor, findInput, caseSensitive]() {
+        editor->highlightSearchMatches(findInput->text(),
+                                       caseSensitive->isChecked());
+    });
+    QObject::connect(caseSensitive, &QCheckBox::toggled,
+                     dialog, [editor, findInput](bool checked) {
+        editor->highlightSearchMatches(findInput->text(), checked);
+    });
+    QObject::connect(dialog, &QDialog::finished, dialog, [editor]() {
+        editor->clearSearchMatches();
+    });
+
+    dialog->resize(620, dialog->sizeHint().height());
+    dialog->show();
+    findInput->setFocus();
+    findInput->selectAll();
+    editor->highlightSearchMatches(findInput->text(),
+                                   caseSensitive->isChecked());
 }
 }
 
@@ -349,6 +521,129 @@ void MyCodeEditor::formatSelection()
     state->formatSelection(this);
 }
 
+bool MyCodeEditor::goToLineNumber(int lineNumber)
+{
+    const int maxLine = document() ? document()->blockCount() : 0;
+    if (lineNumber < 1 || lineNumber > maxLine) {
+        emit editorStatusMessageRequested(
+            tr("Line must be between 1 and %1").arg(qMax(1, maxLine)));
+        return false;
+    }
+
+    const QTextBlock block = document()->findBlockByNumber(lineNumber - 1);
+    if (!block.isValid()) {
+        emit editorStatusMessageRequested(
+            tr("Line must be between 1 and %1").arg(qMax(1, maxLine)));
+        return false;
+    }
+
+    QTextCursor cursor(block);
+    cursor.setPosition(block.position());
+    setTextCursor(cursor);
+    centerCursor();
+    flashLine(lineNumber);
+    emit editorStatusMessageRequested(tr("Line %1").arg(lineNumber));
+    return true;
+}
+
+bool MyCodeEditor::replaceNextText(const QString& needle,
+                                   const QString& replacement,
+                                   bool caseSensitive)
+{
+    if (needle.isEmpty()) {
+        emit editorStatusMessageRequested(tr("Find text is empty"));
+        return false;
+    }
+
+    const Qt::CaseSensitivity sensitivity = caseSensitive
+        ? Qt::CaseSensitive
+        : Qt::CaseInsensitive;
+    QTextCursor cursor = textCursor();
+    if (!cursor.hasSelection()
+        || !stringsEqual(selectedPlainText(cursor), needle, sensitivity)) {
+        if (!findNextInEditor(this, needle, caseSensitive)) {
+            emit editorStatusMessageRequested(
+                tr("No match for \"%1\"").arg(needle));
+            return false;
+        }
+        cursor = textCursor();
+    }
+
+    if (!cursor.hasSelection()) {
+        emit editorStatusMessageRequested(
+            tr("No match for \"%1\"").arg(needle));
+        return false;
+    }
+
+    cursor.beginEditBlock();
+    cursor.insertText(replacement);
+    cursor.endEditBlock();
+    setTextCursor(cursor);
+    emit editorStatusMessageRequested(tr("Replaced next match"));
+    return true;
+}
+
+int MyCodeEditor::replaceAllText(const QString& needle,
+                                 const QString& replacement,
+                                 bool caseSensitive)
+{
+    if (needle.isEmpty()) {
+        emit editorStatusMessageRequested(tr("Find text is empty"));
+        return 0;
+    }
+
+    const Qt::CaseSensitivity sensitivity = caseSensitive
+        ? Qt::CaseSensitive
+        : Qt::CaseInsensitive;
+    const QString originalText = toPlainText();
+    const int count = occurrenceCount(originalText, needle, sensitivity);
+    if (count == 0) {
+        emit editorStatusMessageRequested(
+            tr("No match for \"%1\"").arg(needle));
+        return 0;
+    }
+
+    QString replacedText = originalText;
+    replacedText.replace(needle, replacement, sensitivity);
+
+    const int oldPosition = textCursor().position();
+    QTextCursor cursor(document());
+    cursor.beginEditBlock();
+    cursor.select(QTextCursor::Document);
+    cursor.insertText(replacedText);
+    cursor.endEditBlock();
+
+    const int restoredPosition =
+        qBound(0, oldPosition, document()->characterCount() - 1);
+    cursor.setPosition(restoredPosition);
+    setTextCursor(cursor);
+    emit editorStatusMessageRequested(
+        tr("Replaced %1 match(es)").arg(count));
+    return count;
+}
+
+void MyCodeEditor::showGotoLineDialog()
+{
+    const int maxLine = qMax(1, document() ? document()->blockCount() : 1);
+    bool accepted = false;
+    const int lineNumber = QInputDialog::getInt(
+        this,
+        tr("Go to Line"),
+        tr("Line:"),
+        qBound(1, textCursor().blockNumber() + 1, maxLine),
+        1,
+        maxLine,
+        1,
+        &accepted);
+    if (accepted)
+        goToLineNumber(lineNumber);
+}
+
+void MyCodeEditor::showReplaceDialog()
+{
+    showReplaceDialogFor(this);
+}
+
 void MyCodeEditor::commentSelectionOrLine()
 {
     state->commentSelectionOrLine(this);
@@ -396,6 +691,18 @@ void MyCodeEditor::keyPressEvent(QKeyEvent *event)
 {
     if (event->matches(QKeySequence::Find)) {
         showFindDialog(this);
+        event->accept();
+        return;
+    }
+
+    if (isPlainCtrlKey(event, Qt::Key_H)) {
+        showReplaceDialog();
+        event->accept();
+        return;
+    }
+
+    if (isPlainCtrlKey(event, Qt::Key_G)) {
+        showGotoLineDialog();
         event->accept();
         return;
     }
