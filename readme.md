@@ -76,6 +76,10 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
   requests into selected next-state graph reports by filtering existing
   `FsmGraphService` data, and RTL Insights renders those reports with
   navigable state and transition rows.
+- Module Block Diagram has a service/report baseline. `ModuleBlockDiagramService`
+  builds selected-module containment reports from hierarchy/`INSTANTIATES`
+  data, keeps the report module/interface-only, excludes signals, and carries
+  module definition navigation links. UI rendering is not implemented yet.
 - Formatter support exists as conservative editor formatting. Current daily
   editor action inventory: `Ctrl+F` opens Find; formatter document/selection
   actions live in the editor context menu; line comment actions are available
@@ -209,6 +213,12 @@ and restoring Global Control `ow r` for recent workspaces.
   and `SemanticPanelRefreshCoordinator` only route accepted requests; RTL
   Insights consumes the service report, reuses existing FSM row rendering, and
   keeps navigation wired through row source links carried by the report.
+- Module Block Diagram baseline: `ModuleBlockDiagramService` owns selected
+  module/interface containment report shaping on top of `HierarchyService`
+  and `INSTANTIATES` relationships. The report carries root/child module nodes,
+  module-definition links, and instantiation edges only; signal and non-instance
+  relationship filtering stays in the service/report layer. No module block
+  diagram UI rendering exists yet.
 
 ## Command Responsibility Map
 

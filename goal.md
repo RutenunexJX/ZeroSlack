@@ -28,7 +28,7 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
 
 ## Current Goal State
 
-Current milestone: `G11.1 Module Block Diagram Service Report`.
+Current milestone: `G11.2 Module Block Diagram Rendering`.
 
 Status:
 
@@ -375,13 +375,25 @@ Status:
   compile/link; `ctest -R "^relationship_test$"` and `ctest -R
   "^completion_test$"` passed. `gui_smoke_test` was not launched.
 
-Completion criteria for G11.1:
+- G11.1 Module Block Diagram Service Report is complete:
+  `ModuleBlockDiagramService` owns selected-module containment report shaping
+  on top of `HierarchyService` and `INSTANTIATES` relationships. The report
+  returns module/interface definition nodes, instantiation edges, and module
+  definition navigation links; signal and non-instance relationships are
+  filtered before UI consumption. No module block diagram UI rendering was
+  added.
+- Focused verification for G11.1: `git diff --check`; Release
+  `relationship_test` target compile/link; `ctest -R "^relationship_test$"`
+  passed.
 
-- add a service-owned module block diagram report for a selected module
-- report only module/interface instance containment or wrapping relationships
-- do not include signals in the report
-- carry module definition navigation links in the report data
-- keep extraction/report logic out of UI code; UI rendering waits for G11.2
+Completion criteria for G11.2:
+
+- render the service-owned module block diagram report in UI
+- selected module is the diagram root
+- show only module/interface instance containment or wrapping relationships
+- do not render signals
+- UI consumes `ModuleBlockDiagramReport`; no UI workspace scan or Slang work
+- extraction/report logic stays outside UI code
 - `readme.md`, `plan.md`, and `goal.md` are updated
 - appropriate focused verification passes
 - milestone commit is pushed
@@ -601,6 +613,8 @@ Rules:
 Milestones:
 
 - G11.1 Service report for module containment from selected module.
+  (complete: `ModuleBlockDiagramService` owns the module-only containment
+  report and definition links)
 - G11.2 Module-only block diagram rendering.
 - G11.3 Click navigation to module definitions.
 

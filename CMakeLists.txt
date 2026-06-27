@@ -62,6 +62,7 @@ set(ZEROSLACK_CORE_SOURCES
     codetemplateservice.cpp
     customabbreviationservice.cpp
     mainwindow.cpp
+    moduleblockdiagramservice.cpp
     modulebriefservice.cpp
     alternatecommandservice.cpp
     completioncommandmode.cpp
@@ -258,6 +259,7 @@ set(ZEROSLACK_CORE_SOURCES
     codetemplateservice.h
     customabbreviationservice.h
     mainwindow.h
+    moduleblockdiagramservice.h
     modulebriefservice.h
     alternatecommandservice.h
     completioncommandmode.h

@@ -902,8 +902,35 @@ Allowed scope:
 First milestones:
 
 - M11.1 service report for module-instance containment from selected module
+  (complete: `ModuleBlockDiagramService` builds selected-module containment
+  reports from hierarchy/`INSTANTIATES` data, excludes signals, and carries
+  module definition links)
 - M11.2 render module-only block diagram
 - M11.3 click navigation to module definitions
+
+M11.1 implementation constraints:
+
+- Report shaping must live in a service path, not in UI code.
+- Consume existing semantic/hierarchy/relationship data; do not scan workspace
+  files or run Slang from UI.
+- Include only module/interface containment or wrapping relationships.
+- Carry module definition navigation links in report data.
+- Defer all visual rendering to M11.2.
+
+M11.1 implementation status:
+
+- Complete: `ModuleBlockDiagramService` owns `ModuleBlockDiagramReport` for a
+  selected module query.
+- Complete: the report is built from `HierarchyService` with
+  `INSTANTIATES` filtering and returns module nodes plus instantiation edges.
+- Complete: child records are normalized to module/interface definitions when
+  possible, so report links point to module definitions rather than UI-side
+  lookups.
+- Complete: focused relationship coverage verifies root/child containment,
+  no signal nodes, edge type filtering, named query resolution, missing-root
+  failure reason, and carried definition links.
+- Verification: `git diff --check`; Release `relationship_test` target
+  compile/link; `ctest -R "^relationship_test$"` passed.
 
 ## Huge Workspace Status Audit
 

@@ -12,6 +12,7 @@
 #include "documentmodel.h"
 #include "fsmgraphservice.h"
 #include "hierarchyservice.h"
+#include "moduleblockdiagramservice.h"
 #include "modulebriefservice.h"
 #include "navigationservice.h"
 #include "relationshipanalysisworker.h"
@@ -3645,6 +3646,94 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                true);
     expectBool("hierarchy service exposes all tree types",
                HierarchyService::allRelationshipTypes().contains(SymbolRelationshipEngine::READS_FROM),
+               true);
+
+    ModuleBlockDiagramService moduleBlockDiagramService(&index);
+    ModuleBlockDiagramQuery moduleBlockQuery;
+    moduleBlockQuery.moduleStableKey = topStableKey;
+    moduleBlockQuery.maxDepth = 1;
+    const ModuleBlockDiagramReport moduleBlockReport =
+        moduleBlockDiagramService.buildModuleBlockDiagram(moduleBlockQuery);
+    expectBool("module block diagram report found",
+               moduleBlockReport.found
+                   && moduleBlockReport.notFoundReason
+                       == ModuleBlockDiagramNotFoundReason::None,
+               true);
+    expectInt("module block diagram module count",
+              moduleBlockReport.moduleCount,
+              2);
+    expectInt("module block diagram edge count",
+              moduleBlockReport.edgeCount,
+              1);
+    expectBool("module block diagram keeps root definition link",
+               moduleBlockReport.root.moduleSymbolRecord.localHandle == topId
+                   && moduleBlockReport.root.moduleStableKey == topStableKey
+                   && moduleBlockReport.root.moduleDisplayName
+                       == QStringLiteral("rel_top")
+                   && moduleBlockReport.root.definitionCodeLink.fileName == topPath
+                   && moduleBlockReport.root.definitionCodeLink.line > 0,
+               true);
+    bool moduleBlockHasStage = false;
+    bool moduleBlockHasOnlyModuleNodes = true;
+    for (const ModuleBlockDiagramNode& node : moduleBlockReport.nodes) {
+        const SymbolTaxonomy::SemanticMetadata metadata =
+            semanticMetadataForSymbolRecord(node.moduleSymbolRecord);
+        moduleBlockHasOnlyModuleNodes = moduleBlockHasOnlyModuleNodes
+            && (metadata.declarationKind == SymbolTaxonomy::DeclarationKind::Module
+                || metadata.declarationKind
+                       == SymbolTaxonomy::DeclarationKind::Interface);
+        moduleBlockHasStage = moduleBlockHasStage
+            || (node.depth == 1
+                && node.parentNodeId == moduleBlockReport.root.nodeId
+                && node.moduleSymbolRecord.localHandle == stageId
+                && node.moduleStableKey == stageStableKey
+                && node.moduleDisplayName == QStringLiteral("rel_stage")
+                && node.definitionCodeLink.fileName == stagePath
+                && node.definitionCodeLink.line > 0);
+    }
+    expectBool("module block diagram keeps child module definition",
+               moduleBlockHasStage,
+               true);
+    expectBool("module block diagram excludes signal nodes",
+               moduleBlockHasOnlyModuleNodes,
+               true);
+    expectBool("module block diagram edge carries navigation link",
+               !moduleBlockReport.edges.isEmpty()
+                   && moduleBlockReport.edges.first().relationshipType
+                       == SymbolRelationshipEngine::INSTANTIATES
+                   && moduleBlockReport.edges.first().relationshipDisplayName
+                       == QStringLiteral("Instantiates")
+                   && moduleBlockReport.edges.first().fromStableKey
+                       == topStableKey
+                   && moduleBlockReport.edges.first().toStableKey
+                       == stageStableKey
+                   && moduleBlockReport.edges.first()
+                          .childDefinitionCodeLink.fileName == stagePath
+                   && moduleBlockReport.edges.first()
+                          .childDefinitionCodeLink.line > 0,
+               true);
+    ModuleBlockDiagramQuery namedModuleBlockQuery;
+    namedModuleBlockQuery.moduleName = QStringLiteral("rel_top");
+    namedModuleBlockQuery.fileName =
+        QDir(QFileInfo(topPath).dir()).filePath(QStringLiteral("./relationship_top.sv"));
+    namedModuleBlockQuery.maxDepth = 1;
+    const ModuleBlockDiagramReport namedModuleBlockReport =
+        moduleBlockDiagramService.buildModuleBlockDiagram(
+            namedModuleBlockQuery);
+    expectBool("module block diagram resolves named query",
+               namedModuleBlockReport.found
+                   && namedModuleBlockReport.root.moduleStableKey == topStableKey
+                   && namedModuleBlockReport.edgeCount == 1,
+               true);
+    ModuleBlockDiagramQuery missingModuleBlockQuery;
+    missingModuleBlockQuery.moduleName = QStringLiteral("missing_module");
+    const ModuleBlockDiagramReport missingModuleBlockReport =
+        moduleBlockDiagramService.buildModuleBlockDiagram(
+            missingModuleBlockQuery);
+    expectBool("module block diagram reports missing root",
+               !missingModuleBlockReport.found
+                   && missingModuleBlockReport.notFoundReason
+                       == ModuleBlockDiagramNotFoundReason::NoRootModule,
                true);
 
     HierarchyQuery parentQuery;
