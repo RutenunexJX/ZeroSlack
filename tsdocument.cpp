@@ -282,6 +282,68 @@ int nodeEndChar(TSNode node)
     return static_cast<int>(ts_node_end_byte(node) / 2);
 }
 
+int nodeStartLine(TSNode node)
+{
+    return static_cast<int>(ts_node_start_point(node).row) + 1;
+}
+
+int nodeEndLine(TSNode node)
+{
+    return static_cast<int>(ts_node_end_point(node).row) + 1;
+}
+
+QString leadingIdentifierAt(const QString& text, int start, int end)
+{
+    int pos = qBound(0, start, text.size());
+    const int limit = qBound(pos, end, text.size());
+    while (pos < limit && text.at(pos).isSpace())
+        ++pos;
+
+    const int identifierStart = pos;
+    while (pos < limit) {
+        const QChar ch = text.at(pos);
+        const ushort value = ch.unicode();
+        const bool asciiAlpha =
+            (value >= 'A' && value <= 'Z') || (value >= 'a' && value <= 'z');
+        const bool asciiDigit = value >= '0' && value <= '9';
+        if (!(asciiAlpha || asciiDigit || ch == QLatin1Char('_')))
+            break;
+        ++pos;
+    }
+    return pos > identifierStart
+        ? text.mid(identifierStart, pos - identifierStart)
+        : QString();
+}
+
+int firstNonSpaceChar(const QString& text, int start, int end)
+{
+    int pos = qBound(0, start, text.size());
+    const int limit = qBound(pos, end, text.size());
+    while (pos < limit && text.at(pos).isSpace())
+        ++pos;
+    return pos;
+}
+
+int lastNonSpaceChar(const QString& text, int start, int end)
+{
+    const int boundedStart = qBound(0, start, text.size());
+    int pos = qBound(boundedStart, end, text.size());
+    while (pos > boundedStart && text.at(pos - 1).isSpace())
+        --pos;
+    return pos - 1;
+}
+
+TSNode namedNodeAtChar(TSTree* tree, int charOffset, int textSize)
+{
+    if (!tree)
+        return {};
+    const int bounded = qBound(0, charOffset, qMax(0, textSize - 1));
+    const uint32_t byte = static_cast<uint32_t>(bounded) * 2u;
+    return ts_node_named_descendant_for_byte_range(ts_tree_root_node(tree),
+                                                   byte,
+                                                   byte);
+}
+
 int lineStartChar(const QString& text, int line)
 {
     if (line <= 0)
@@ -1481,6 +1543,69 @@ TSModuleEndInsertTarget TSDocument::moduleEndInsertTarget(int charOffset) const
     target.replaceEndChar = target.replaceStartChar;
     target.replacementText = bodyIndent + QLatin1Char('\n');
     target.caretCharAfterEdit = target.replaceStartChar + bodyIndent.size();
+    return target;
+}
+
+TSAlwaysScopeTarget TSDocument::alwaysScopeTarget(
+    int cursorChar,
+    int selectionStartChar,
+    int selectionEndChar) const
+{
+    TSAlwaysScopeTarget target;
+
+    const int textSize = m_text.size();
+    if (textSize <= 0)
+        return target;
+
+    const bool hasSelection =
+        selectionStartChar >= 0 && selectionEndChar > selectionStartChar;
+    int lookupStart = qBound(0, cursorChar, textSize - 1);
+    int lookupEnd = lookupStart;
+    if (hasSelection) {
+        const int rawStart = qBound(0,
+                                    qMin(selectionStartChar, selectionEndChar),
+                                    textSize);
+        const int rawEnd = qBound(0,
+                                  qMax(selectionStartChar, selectionEndChar),
+                                  textSize);
+        lookupStart = firstNonSpaceChar(m_text, rawStart, rawEnd);
+        lookupEnd = lastNonSpaceChar(m_text, rawStart, rawEnd);
+        if (lookupStart > lookupEnd) {
+            lookupStart = qBound(0, cursorChar, textSize - 1);
+            lookupEnd = lookupStart;
+        }
+    }
+
+    TSNode startNode = namedNodeAtChar(m_tree, lookupStart, textSize);
+    TSNode always = ancestorOfType(startNode, "always_construct");
+    if (ts_node_is_null(always))
+        return target;
+
+    if (hasSelection) {
+        TSNode endNode = namedNodeAtChar(m_tree, lookupEnd, textSize);
+        TSNode endAlways = ancestorOfType(endNode, "always_construct");
+        if (ts_node_is_null(endAlways) || !ts_node_eq(always, endAlways)) {
+            target.status = TSAlwaysScopeStatus::AmbiguousSelection;
+            return target;
+        }
+    }
+
+    if (ts_node_has_error(always))
+        return target;
+
+    target.status = TSAlwaysScopeStatus::Ok;
+    target.startChar = nodeStartChar(always);
+    target.endChar = nodeEndChar(always);
+    target.startLine = nodeStartLine(always);
+    target.endLine = nodeEndLine(always);
+    target.kindText =
+        leadingIdentifierAt(m_text, target.startChar, target.endChar);
+    if (target.kindText.isEmpty())
+        target.kindText = QStringLiteral("always");
+    target.label = QStringLiteral("%1 lines %2-%3")
+                       .arg(target.kindText)
+                       .arg(target.startLine)
+                       .arg(target.endLine);
     return target;
 }
 

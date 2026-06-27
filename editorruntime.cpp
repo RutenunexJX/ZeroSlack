@@ -2253,6 +2253,41 @@ QString MyCodeEditorState::currentModuleName(const MyCodeEditor* editor) const
     return currentModuleNameAt(editor->textCursor().position());
 }
 
+EditorAlwaysScopeTarget MyCodeEditorState::currentAlwaysScopeTarget(
+    const MyCodeEditor* editor) const
+{
+    EditorAlwaysScopeTarget result;
+    if (!editor) {
+        result.failureMessage = QStringLiteral("No document selected.");
+        return result;
+    }
+
+    const QTextCursor cursor = editor->textCursor();
+    const TSAlwaysScopeTarget target =
+        syntax.alwaysScopeTargetAt(cursor.position(),
+                                   cursor.hasSelection()
+                                       ? cursor.selectionStart()
+                                       : -1,
+                                   cursor.hasSelection()
+                                       ? cursor.selectionEnd()
+                                       : -1);
+    if (!target.ok()) {
+        result.failureMessage =
+            target.status == TSAlwaysScopeStatus::AmbiguousSelection
+                ? QStringLiteral("Select only one always block to preview.")
+                : QStringLiteral("Place the cursor in an always block to preview.");
+        return result;
+    }
+
+    result.available = true;
+    result.startPosition = target.startChar;
+    result.endPosition = target.endChar;
+    result.startLine = target.startLine;
+    result.endLine = target.endLine;
+    result.label = target.label;
+    return result;
+}
+
 bool MyCodeEditorState::executeComPortAppend(MyCodeEditor* editor,
                                              QString* message)
 {

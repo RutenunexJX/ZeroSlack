@@ -139,6 +139,24 @@ struct TSModuleEndInsertTarget {
     bool ok() const { return status == TSModuleEndInsertStatus::Ok; }
 };
 
+enum class TSAlwaysScopeStatus {
+    Ok,
+    NoCurrentAlways,
+    AmbiguousSelection
+};
+
+struct TSAlwaysScopeTarget {
+    TSAlwaysScopeStatus status = TSAlwaysScopeStatus::NoCurrentAlways;
+    int startChar = -1;
+    int endChar = -1;
+    int startLine = 0;
+    int endLine = 0;
+    QString kindText;
+    QString label;
+
+    bool ok() const { return status == TSAlwaysScopeStatus::Ok; }
+};
+
 // Persistent, per-document Tree-sitter model: keeps a live parse tree plus the document text and
 // supports incremental re-parse on edits. Foundation of the real-time syntactic layer
 // (highlighting, live outline / scope) in the Slang + Tree-sitter architecture.
@@ -206,6 +224,11 @@ public:
 
     // Clear insert point immediately before the current module's final endmodule.
     TSModuleEndInsertTarget moduleEndInsertTarget(int charOffset) const;
+
+    // Current/selected always block range for scoped Wave Preview.
+    TSAlwaysScopeTarget alwaysScopeTarget(int cursorChar,
+                                          int selectionStartChar = -1,
+                                          int selectionEndChar = -1) const;
 
     // Highlight spans (block-local char coords) for the char range [blockStartChar, +blockLenChar).
     // Walks the live tree; clips tokens to the block. Multi-line tokens (block comments, strings)

@@ -15,6 +15,7 @@ struct TSInstanceInsertTarget;
 struct TSAssignInsertTarget;
 struct TSParameterInsertTarget;
 struct TSModuleEndInsertTarget;
+struct TSAlwaysScopeTarget;
 
 class EditorSyntaxState
 {
@@ -41,6 +42,9 @@ public:
     TSAssignInsertTarget assignInsertTargetAt(int charPos) const;
     TSParameterInsertTarget parameterInsertTargetAt(int charPos) const;
     TSModuleEndInsertTarget moduleEndInsertTargetAt(int charPos) const;
+    TSAlwaysScopeTarget alwaysScopeTargetAt(int cursorChar,
+                                            int selectionStartChar = -1,
+                                            int selectionEndChar = -1) const;
     const TSDocument* tsDocument() const;
 
 private:

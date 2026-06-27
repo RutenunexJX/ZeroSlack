@@ -407,6 +407,11 @@ QString MyCodeEditor::currentModuleName() const
     return state->currentModuleName(this);
 }
 
+EditorAlwaysScopeTarget MyCodeEditor::currentAlwaysScopeTarget() const
+{
+    return state->currentAlwaysScopeTarget(this);
+}
+
 bool MyCodeEditor::executeComPortAppend(QString* message)
 {
     return state->executeComPortAppend(this, message);

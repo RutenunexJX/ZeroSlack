@@ -720,8 +720,33 @@ Not in scope:
 First milestones:
 
 - M9.1 selected-always entry and report refresh
+  (complete: Wave Preview refresh is scoped to the selected/current `always`
+  block through editor Tree-sitter scope detection and the existing service
+  report path)
 - M9.2 selected-module entry and scoped report
 - M9.3 UI polish for sketch readability
+
+M9.1 implementation constraints:
+
+- Do not add simulator behavior, waveform database import, testbench execution,
+  or timing-accurate verification.
+- Use editor/Tree-sitter scope detection for the current/selected `always`
+  block and pass a bounded scope into the existing Wave Preview query/report
+  path.
+- Keep selected-module Wave Preview out of scope until M9.2.
+
+M9.1 implementation status:
+
+- Complete: `TSDocument` exposes a current/selected `always_construct` scope
+  target and rejects selections spanning multiple `always` blocks.
+- Complete: `MyCodeEditor` exposes an editor-local always scope target, and
+  `MainWindow` refreshes the Wave Preview dock from that scope only.
+- Complete: `WavePreviewService` continues to own scoped report shaping through
+  its existing query fields; UI code remains a report consumer.
+- Verification: `git diff --check`; Release `completion_test`,
+  `relationship_test`, and `gui_smoke_test` targets compile/link; `ctest -R
+  "^completion_test$"` and `ctest -R "^relationship_test$"` passed.
+  `gui_smoke_test` was not launched.
 
 ### 10. State Transition Graph
 

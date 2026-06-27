@@ -39,6 +39,21 @@ enum class FormatterProfile;
 enum class SourceSymbolAction;
 struct MyCodeEditorState;
 
+struct EditorAlwaysScopeTarget {
+    int startPosition = -1;
+    int endPosition = -1;
+    int startLine = 0;
+    int endLine = 0;
+    QString label;
+    QString failureMessage;
+    bool available = false;
+
+    bool ok() const
+    {
+        return available && startPosition >= 0 && endPosition > startPosition;
+    }
+};
+
 struct EditorBlockGeometry {
     qreal top = 0;
     qreal height = 0;
@@ -65,6 +80,7 @@ public:
     void setDocumentFileName(QString fileName);
     QString documentFileName() const;
     QString currentModuleName() const;
+    EditorAlwaysScopeTarget currentAlwaysScopeTarget() const;
     bool executeComPortAppend(QString* message = nullptr);
     bool executeComSignalInsert(QString* message = nullptr);
     bool executeComInstanceInsert(QString* message = nullptr);

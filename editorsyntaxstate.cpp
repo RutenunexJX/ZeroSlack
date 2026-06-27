@@ -154,6 +154,19 @@ TSModuleEndInsertTarget EditorSyntaxState::moduleEndInsertTargetAt(
     return document->moduleEndInsertTarget(charPos < 0 ? 0 : charPos);
 }
 
+TSAlwaysScopeTarget EditorSyntaxState::alwaysScopeTargetAt(
+    int cursorChar,
+    int selectionStartChar,
+    int selectionEndChar) const
+{
+    TSAlwaysScopeTarget target;
+    if (!interactiveSyntaxEnabled)
+        return target;
+    return document->alwaysScopeTarget(cursorChar < 0 ? 0 : cursorChar,
+                                       selectionStartChar,
+                                       selectionEndChar);
+}
+
 const TSDocument* EditorSyntaxState::tsDocument() const
 {
     return interactiveSyntaxEnabled ? document.get() : nullptr;

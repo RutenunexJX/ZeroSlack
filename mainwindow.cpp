@@ -423,22 +423,12 @@ void MainWindow::setupManagerConnections()
                         &MyCodeEditor::cursorPositionChanged,
                         this,
                         [this, editor]() {
-                            const bool hasSelection =
-                                editor && editor->textCursor().hasSelection();
-                            const bool hadSelection =
-                                editor
-                                && editor->property("wavePreviewHadSelection")
-                                       .toBool();
-                            if (editor)
-                                editor->setProperty("wavePreviewHadSelection",
-                                                    hasSelection);
                             QDockWidget* waveDock =
                                 dockForPanelId(QStringLiteral("wavePreview"));
                             if (tabManager
                                 && tabManager->getCurrentEditor() == editor
                                 && waveDock
-                                && waveDock->isVisible()
-                                && (hasSelection || hadSelection)) {
+                                && waveDock->isVisible()) {
                                 refreshActiveEditorWavePreview();
                             }
                         });
@@ -629,31 +619,22 @@ void MainWindow::refreshActiveEditorWavePreview()
     }
 
     const DocumentSnapshot document = tabManager->getCurrentDocument();
-    int scopeStartPosition = -1;
-    int scopeEndPosition = -1;
-    QString scopeLabel;
-    const QTextCursor cursor = editor->textCursor();
-    if (cursor.hasSelection()) {
-        scopeStartPosition = cursor.selectionStart();
-        scopeEndPosition = cursor.selectionEnd();
-        const int startLine =
-            editor->document()->findBlock(scopeStartPosition).blockNumber() + 1;
-        const int endLine =
-            editor->document()->findBlock(qMax(scopeStartPosition,
-                                               scopeEndPosition - 1))
-                .blockNumber()
-            + 1;
-        scopeLabel = QStringLiteral("selected lines %1-%2")
-                         .arg(startLine)
-                         .arg(endLine);
+    const EditorAlwaysScopeTarget alwaysScope =
+        editor->currentAlwaysScopeTarget();
+    if (!alwaysScope.ok()) {
+        semanticDocks->wavePreviewPanelCoordinator()->renderUnavailable(
+            alwaysScope.failureMessage.isEmpty()
+                ? QStringLiteral("Place the cursor in an always block to preview.")
+                : alwaysScope.failureMessage);
+        return;
     }
     semanticDocks->wavePreviewPanelCoordinator()->refreshFromDocument(
         document.fileName,
         editor->toPlainText(),
         document.dirty,
-        scopeStartPosition,
-        scopeEndPosition,
-        scopeLabel);
+        alwaysScope.startPosition,
+        alwaysScope.endPosition,
+        alwaysScope.label);
 }
 
 

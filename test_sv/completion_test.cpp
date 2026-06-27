@@ -2631,6 +2631,77 @@ int main(int argc, char** argv) {
     expectBool("WavePreview no comment/string ghost lane",
                waveLaneNamed(waveReport, QStringLiteral("ghost")) == nullptr,
                true);
+    TSDocument waveScopeDocument;
+    waveScopeDocument.setText(wavePreviewInput);
+    const int firstAlwaysPosition =
+        wavePreviewInput.indexOf(QStringLiteral("always_ff"));
+    const int combAlwaysPosition =
+        wavePreviewInput.indexOf(QStringLiteral("always_comb"));
+    const int pulseAlwaysPosition =
+        wavePreviewInput.indexOf(QStringLiteral("always @(posedge"));
+    const TSAlwaysScopeTarget firstAlwaysScope =
+        waveScopeDocument.alwaysScopeTarget(
+            wavePreviewInput.indexOf(QStringLiteral("q <= '0")));
+    const TSAlwaysScopeTarget combSelectedScope =
+        waveScopeDocument.alwaysScopeTarget(combAlwaysPosition,
+                                            combAlwaysPosition,
+                                            pulseAlwaysPosition);
+    const TSAlwaysScopeTarget ambiguousAlwaysScope =
+        waveScopeDocument.alwaysScopeTarget(combAlwaysPosition,
+                                            combAlwaysPosition,
+                                            pulseAlwaysPosition + 12);
+    expectBool("TSDocument current always scope",
+               firstAlwaysScope.ok()
+                   && firstAlwaysScope.startChar == firstAlwaysPosition
+                   && firstAlwaysScope.kindText == QStringLiteral("always_ff")
+                   && firstAlwaysScope.label.contains(QStringLiteral("always_ff")),
+               true);
+    expectBool("TSDocument selected always scope trims whitespace",
+               combSelectedScope.ok()
+                   && combSelectedScope.startChar == combAlwaysPosition
+                   && combSelectedScope.kindText == QStringLiteral("always_comb"),
+               true);
+    expectBool("TSDocument selected always rejects multiple blocks",
+               !ambiguousAlwaysScope.ok()
+                   && ambiguousAlwaysScope.status
+                          == TSAlwaysScopeStatus::AmbiguousSelection,
+               true);
+
+    MyCodeEditor waveScopeEditor;
+    waveScopeEditor.setPlainText(wavePreviewInput);
+    QTextCursor waveScopeCursor(waveScopeEditor.document());
+    waveScopeCursor.setPosition(
+        wavePreviewInput.indexOf(QStringLiteral("next = q")));
+    waveScopeEditor.setTextCursor(waveScopeCursor);
+    const EditorAlwaysScopeTarget editorAlwaysScope =
+        waveScopeEditor.currentAlwaysScopeTarget();
+    WavePreviewQuery editorAlwaysQuery;
+    editorAlwaysQuery.fileName = QStringLiteral("wave_probe.sv");
+    editorAlwaysQuery.documentText = wavePreviewInput;
+    editorAlwaysQuery.scopeStartPosition = editorAlwaysScope.startPosition;
+    editorAlwaysQuery.scopeEndPosition = editorAlwaysScope.endPosition;
+    editorAlwaysQuery.scopeLabel = editorAlwaysScope.label;
+    const WavePreviewReport editorAlwaysReport =
+        WavePreviewService::getInstance()->previewForDocument(
+            editorAlwaysQuery);
+    expectBool("Editor WavePreview always scope report",
+               editorAlwaysScope.ok()
+                   && editorAlwaysScope.label.contains(
+                       QStringLiteral("always_comb"))
+                   && editorAlwaysReport.scoped
+                   && editorAlwaysReport.scopeLabel == editorAlwaysScope.label
+                   && editorAlwaysReport.available
+                   && editorAlwaysReport.blocks.size() == 1
+                   && editorAlwaysReport.assignmentCount == 1
+                   && waveLaneNamed(editorAlwaysReport,
+                                    QStringLiteral("next"))
+                   && !waveLaneNamed(editorAlwaysReport,
+                                     QStringLiteral("q"))
+                   && !waveLaneNamed(editorAlwaysReport,
+                                     QStringLiteral("out"))
+                   && !waveLaneNamed(editorAlwaysReport,
+                                     QStringLiteral("pulse")),
+               true);
     expectBool("WavePreview q lane has two events",
                waveLaneNamed(waveReport, QStringLiteral("q"))
                    && waveLaneNamed(waveReport, QStringLiteral("q"))->assignments.size() == 2,
