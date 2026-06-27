@@ -8,8 +8,6 @@ This file is a running checklist for problems to fix and new features to conside
 
 ## Discussion Needed
 
-- [ ] 
-
 ## Done
 
 - [x] Regression: after double-click selecting a symbol, Ctrl+click jump-to-definition can select all text between the call site and the definition in large design contexts. Ctrl+click navigation now consumes the matching mouse release after the jump so the editor cannot extend the previous selection anchor at the definition site.
