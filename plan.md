@@ -159,6 +159,8 @@ First milestones:
   (complete: `RtlBatchEditService` plans selected-text RHS clearing without
   mutating editor text)
 - M3.2 editor command for clear-RHS on selected assignments
+  (complete: alternate command `clear_rhs` applies the report in one undoable
+  edit block)
 - M3.3 connect result to slot mode
 
 M3.1 implementation status:
@@ -181,6 +183,21 @@ M3.1 implementation status:
 - The future implementation must remain editor-local or service-owned and must
   not scan the workspace, run Slang from UI, or use regex as SystemVerilog
   semantic analysis.
+
+M3.2 implementation status:
+
+- Complete: `MyCodeEditor::clearSelectedAssignmentRhs` routes the current
+  selection through `RtlBatchEditService`.
+- Complete: successful reports are applied in one undoable edit block, and the
+  replacement range remains selected.
+- Complete: validation failures are surfaced through editor status feedback
+  without mutating text.
+- Complete: alternate command `clear_rhs` is registered and dispatched through
+  the existing alternate-command path.
+- Not done in M3.2: Slot Mode entry after replacement. That stays in M3.3.
+- Verification: Release `completion_test` covers alternate command mapping,
+  selection application, undo restore, and declaration rejection; Release
+  `completion_test` and `gui_smoke_test` targets compile/link.
 
 ### 4. COM Mode Framework Completion
 

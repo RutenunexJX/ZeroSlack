@@ -30,7 +30,8 @@ AlternateCommandService::AlternateCommandService()
         QStringLiteral("comment"),
         QStringLiteral("uncomment"),
         QStringLiteral("indent"),
-        QStringLiteral("unindent")}
+        QStringLiteral("unindent"),
+        QStringLiteral("clear_rhs")}
 {
 }
 
@@ -119,5 +120,7 @@ AlternateCommandAction AlternateCommandService::commandAction(
         return AlternateCommandAction::Indent;
     if (normalizedCommand == QStringLiteral("unindent"))
         return AlternateCommandAction::Unindent;
+    if (normalizedCommand == QStringLiteral("clear_rhs"))
+        return AlternateCommandAction::ClearRhs;
     return AlternateCommandAction::None;
 }

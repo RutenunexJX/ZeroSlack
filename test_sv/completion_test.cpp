@@ -3924,7 +3924,8 @@ int main(int argc, char** argv) {
                {"save", "save_as", "open", "new", "close",
                 "copy", "paste", "cut", "undo", "redo",
                 "find", "replace", "goto_line", "select_all",
-                "comment", "uncomment", "indent", "unindent"});
+                "comment", "uncomment", "indent", "unindent",
+                "clear_rhs"});
     expectList("AlternateCommand filter",
                alternateCommandService->matchingCommands(QStringLiteral("s")),
                {"save", "save_as", "select_all"});
@@ -4073,6 +4074,8 @@ int main(int argc, char** argv) {
             == AlternateCommandAction::NewFile
         && alternateCommandService->commandAction(QStringLiteral("select_all"))
             == AlternateCommandAction::SelectAll
+        && alternateCommandService->commandAction(QStringLiteral("clear_rhs"))
+            == AlternateCommandAction::ClearRhs
         && alternateCommandService->commandAction(QStringLiteral("unknown"))
             == AlternateCommandAction::None;
     if (!alternateActionOk)
@@ -5280,6 +5283,44 @@ int main(int argc, char** argv) {
     expectBool("RtlBatch clear RHS empty selection",
                clearRhsEmpty.status
                    == RtlClearAssignmentRhsStatus::EmptySelection,
+               true);
+    MyCodeEditor clearRhsEditor;
+    const QString clearRhsOriginal =
+        QStringLiteral("module batch_demo;\n"
+                       "  a <= foo;\n"
+                       "  b = bar;\n"
+                       "endmodule\n");
+    clearRhsEditor.setPlainText(clearRhsOriginal);
+    const int clearRhsStart = clearRhsOriginal.indexOf(QStringLiteral("  a"));
+    const int clearRhsEnd =
+        clearRhsOriginal.indexOf(QStringLiteral("endmodule"));
+    QTextCursor clearRhsCursor(clearRhsEditor.document());
+    clearRhsCursor.setPosition(clearRhsStart);
+    clearRhsCursor.setPosition(clearRhsEnd, QTextCursor::KeepAnchor);
+    clearRhsEditor.setTextCursor(clearRhsCursor);
+    expectBool("Editor clear RHS applies selection",
+               clearRhsEditor.clearSelectedAssignmentRhs(),
+               true);
+    expectEq("Editor clear RHS text",
+             clearRhsEditor.toPlainText(),
+             QStringLiteral("module batch_demo;\n"
+                            "  a <= ;\n"
+                            "  b = ;\n"
+                            "endmodule\n"));
+    clearRhsEditor.undo();
+    expectEq("Editor clear RHS undo restores original",
+             clearRhsEditor.toPlainText(),
+             clearRhsOriginal);
+
+    MyCodeEditor clearRhsRejectEditor;
+    clearRhsRejectEditor.setPlainText(QStringLiteral("logic a = b;\n"));
+    QTextCursor clearRhsRejectCursor(clearRhsRejectEditor.document());
+    clearRhsRejectCursor.select(QTextCursor::Document);
+    clearRhsRejectEditor.setTextCursor(clearRhsRejectCursor);
+    expectBool("Editor clear RHS rejects declaration",
+               !clearRhsRejectEditor.clearSelectedAssignmentRhs()
+                   && clearRhsRejectEditor.toPlainText()
+                       == QStringLiteral("logic a = b;\n"),
                true);
 
     expectBool("CompletionService command statement reject",

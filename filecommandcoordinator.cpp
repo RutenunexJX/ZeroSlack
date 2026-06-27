@@ -149,6 +149,13 @@ void FileCommandCoordinator::EditorCommandDispatcher::gotoLine(
         editor->showGotoLineDialog();
 }
 
+void FileCommandCoordinator::EditorCommandDispatcher::clearRhs(
+    MyCodeEditor* editor) const
+{
+    if (editor)
+        editor->clearSelectedAssignmentRhs();
+}
+
 void FileCommandCoordinator::newFile()
 {
     targets.createNewTab();

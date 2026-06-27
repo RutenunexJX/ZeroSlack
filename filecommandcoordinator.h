@@ -76,6 +76,7 @@ private:
         void unindent(MyCodeEditor* editor) const;
         void replace(MyCodeEditor* editor) const;
         void gotoLine(MyCodeEditor* editor) const;
+        void clearRhs(MyCodeEditor* editor) const;
     };
 
     CommandTargets targets;

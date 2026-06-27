@@ -108,6 +108,7 @@ public:
     void uncommentSelectionOrLine();
     void indentSelectionOrLine();
     void unindentSelectionOrLine();
+    bool clearSelectedAssignmentRhs();
     void highlightSearchMatches(const QString& text, bool caseSensitive);
     void clearSearchMatches();
     void flashLine(int lineNumber);

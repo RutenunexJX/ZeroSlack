@@ -24,7 +24,8 @@ enum class AlternateCommandAction {
     Comment,
     Uncomment,
     Indent,
-    Unindent
+    Unindent,
+    ClearRhs
 };
 
 struct AlternateCommandCompletionState {

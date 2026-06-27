@@ -3,6 +3,7 @@
 #include "mycodeeditor.h"
 
 #include "commodecommandregistry.h"
+#include "rtlbatcheditservice.h"
 
 #include <QApplication>
 #include <QAbstractButton>
@@ -3444,6 +3445,53 @@ void MyCodeEditorState::indentSelectionOrLine(MyCodeEditor* editor)
 void MyCodeEditorState::unindentSelectionOrLine(MyCodeEditor* editor)
 {
     applyLineUnindent(editor);
+}
+
+bool MyCodeEditorState::clearSelectedAssignmentRhs(MyCodeEditor* editor)
+{
+    if (!editor || !editor->document())
+        return false;
+
+    QTextCursor cursor = editor->textCursor();
+    if (!cursor.hasSelection()) {
+        emit editor->editorStatusMessageRequested(
+            QStringLiteral("Select assignments to clear RHS"));
+        return false;
+    }
+
+    const int selectionStart = cursor.selectionStart();
+    const int selectionEnd = cursor.selectionEnd();
+    const QString selectedText =
+        editor->toPlainText().mid(selectionStart,
+                                  selectionEnd - selectionStart);
+    const RtlClearAssignmentRhsReport report =
+        RtlBatchEditService::getInstance()->planClearAssignmentRhs(
+            RtlClearAssignmentRhsQuery{selectedText, selectionStart});
+    if (!report.canApply()) {
+        emit editor->editorStatusMessageRequested(
+            report.failureReason.isEmpty()
+                ? QStringLiteral("No assignment RHS found")
+                : report.failureReason);
+        return false;
+    }
+
+    clearTemplateSlotMode(editor);
+    cursor.beginEditBlock();
+    cursor.setPosition(selectionStart);
+    cursor.setPosition(selectionEnd, QTextCursor::KeepAnchor);
+    cursor.insertText(report.replacementText);
+    cursor.endEditBlock();
+
+    QTextCursor nextCursor(editor->document());
+    nextCursor.setPosition(selectionStart);
+    nextCursor.setPosition(selectionStart + report.replacementText.size(),
+                           QTextCursor::KeepAnchor);
+    editor->setTextCursor(nextCursor);
+    emit editor->editorStatusMessageRequested(
+        QStringLiteral("Cleared RHS for %1 assignment%2")
+            .arg(report.edits.size())
+            .arg(report.edits.size() == 1 ? QString() : QStringLiteral("s")));
+    return true;
 }
 
 void MyCodeEditorState::startFoldRegionMarkMode(MyCodeEditor* editor)

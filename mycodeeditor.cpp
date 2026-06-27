@@ -685,6 +685,11 @@ void MyCodeEditor::unindentSelectionOrLine()
     state->unindentSelectionOrLine(this);
 }
 
+bool MyCodeEditor::clearSelectedAssignmentRhs()
+{
+    return state->clearSelectedAssignmentRhs(this);
+}
+
 void MyCodeEditor::highlightSearchMatches(
     const QString& text,
     bool caseSensitive)

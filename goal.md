@@ -28,7 +28,7 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
 
 ## Current Goal State
 
-Current milestone: `G3.2 Clear-RHS Editor Command`.
+Current milestone: `G3.3 Clear-RHS Slot Mode Integration`.
 
 Status:
 
@@ -107,14 +107,22 @@ Status:
   without mutation for empty selection, incomplete statement, declaration
   initializer, control-flow statement, macro statement, ambiguous top-level
   assignment, unmatched delimiter, unterminated string, or unterminated comment.
+- G3.2 Clear-RHS Editor Command is complete:
+  `MyCodeEditor::clearSelectedAssignmentRhs` routes selected text through
+  `RtlBatchEditService`, applies successful reports in one undoable edit block,
+  leaves the replacement range selected, and reports validation failures without
+  text mutation. Alternate command `clear_rhs` is registered through the
+  existing alternate-command service and dispatcher.
 
-Completion criteria for G3.2:
+Completion criteria for G3.3:
 
-- add an editor-local command entry for selected assignment RHS cleanup
-- route command execution through `RtlBatchEditService`
-- apply the returned replacement in one undoable edit block
-- preserve all G3.1 validation failure reasons in status/command feedback
-- do not start Slot Mode in this milestone
+- start Slot Mode from the `RtlClearAssignmentRhsReport` template-slot metadata
+  after a successful clear-RHS edit
+- preserve one undoable edit block for the text replacement itself
+- keep G3.2 failure behavior unchanged
+- Tab, Shift+Tab, final Tab, Esc, and cursor-outside behavior reuse the existing
+  Slot Mode state
+- no new batch RTL command is added in this milestone
 - `readme.md`, `plan.md`, and `goal.md` are updated
 - appropriate focused verification passes
 - milestone commit is pushed
@@ -166,6 +174,8 @@ Milestones:
   (complete: non-mutating `RtlBatchEditService` report, failure reasons, and
   fill-slot metadata)
 - G3.2 Implement the editor-local clear-RHS command for selected assignments.
+  (complete: `clear_rhs` alternate command applies the service report in one
+  undoable edit block and preserves failure reasons)
 - G3.3 Connect clear-RHS output to slot mode.
 
 ## Track 4: COM Mode Framework Completion

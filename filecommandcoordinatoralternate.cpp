@@ -54,6 +54,9 @@ void FileCommandCoordinator::executeAlternateCommand(MyCodeEditor* editor,
     case AlternateCommandAction::GotoLine:
         editorCommands.gotoLine(editor);
         break;
+    case AlternateCommandAction::ClearRhs:
+        editorCommands.clearRhs(editor);
+        break;
     case AlternateCommandAction::Close:
     case AlternateCommandAction::Find:
     case AlternateCommandAction::None:

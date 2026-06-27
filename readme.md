@@ -54,6 +54,9 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
   post-template editor-local fill flow; it is active for `;;p` / `;;lp`
   parameter templates and `;;l` / `;;w` / `;;r` signal declaration templates,
   and not yet active for other template families.
+- Batch RTL editing has a first editor-local action: alternate command
+  `clear_rhs` clears RHS expressions in the current selection for supported
+  assignment statements. It does not start Slot Mode yet.
 - Fold Region and Fold Shelf are available through Global Control. Fold Shelf
   is not yet the long-term persistent shelf system.
 - Signal Kernel Graph exists as a signal-centric exploration graph. Dense
@@ -169,8 +172,11 @@ assignment statements and producing fill slots for the future Slot Mode flow.
   statement, declaration initializer, control-flow statement, macro statement,
   ambiguous top-level assignment, unmatched delimiter, unterminated string, or
   unterminated comment.
-- Editor command wiring and Slot Mode entry for this report are not implemented
-  yet; those are the next Batch RTL milestones.
+- Editor command wiring is available through `MyCodeEditor` and alternate
+  command `clear_rhs`. The command applies the report in one undoable edit
+  block and preserves failure reasons in editor status feedback.
+- Slot Mode entry for this report is not implemented yet; that is the next
+  Batch RTL milestone.
 
 ## Long-Term Goal Scope
 
