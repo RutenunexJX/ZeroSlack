@@ -29,6 +29,7 @@
 #include <QTextCursor>
 #include <QTextDocument>
 #include <QTextEdit>
+#include <QTimer>
 #include <QStringList>
 
 #include <utility>
@@ -2155,6 +2156,26 @@ void MyCodeEditorState::attachEditorConnections(MyCodeEditor* editor)
             folding.refresh(editor, syntax.tsDocument());
             refreshGhostAnnotations(editor);
         });
+    QObject::connect(
+        editor->document(),
+        &QTextDocument::contentsChange,
+        editor,
+        [this, editor](int position, int charsRemoved, int charsAdded) {
+            handleTemplateSlotContentsChange(
+                editor,
+                position,
+                charsRemoved,
+                charsAdded);
+        });
+    QObject::connect(
+        editor,
+        &QPlainTextEdit::cursorPositionChanged,
+        editor,
+        [this, editor]() {
+            QTimer::singleShot(0, editor, [this, editor]() {
+                handleTemplateSlotCursorChanged(editor);
+            });
+        });
 }
 
 void MyCodeEditorState::attachToEditor(MyCodeEditor* editor)
@@ -2442,6 +2463,7 @@ void MyCodeEditorState::publishComModeState(
 void MyCodeEditorState::enterComMode(MyCodeEditor* editor,
                                      const QString& message)
 {
+    clearTemplateSlotMode(editor);
     modes.setComModeActive(true);
     modes.clearComBuffer();
     publishComModeState(editor, message);
@@ -2591,7 +2613,238 @@ bool handleComModeKeyPress(MyCodeEditor* editor,
     emit editor->editorStatusMessageRequested(message);
     return accept();
 }
+
+QList<QPair<int, int>> templateSlotHighlightRanges(
+    const MyCodeEditorState& state)
+{
+    QList<QPair<int, int>> ranges;
+    ranges.reserve(state.templateSlotRanges.size());
+    for (const MyCodeEditorState::TemplateSlotRange& slot :
+         state.templateSlotRanges) {
+        ranges.append(qMakePair(slot.start, qMax(0, slot.end - slot.start)));
+    }
+    return ranges;
+}
+
+bool templateSlotCursorInsideActiveRange(
+    MyCodeEditor* editor,
+    const MyCodeEditorState& state)
+{
+    if (!editor || !state.templateSlotModeActive())
+        return false;
+    if (state.templateSlotActiveIndex < 0
+        || state.templateSlotActiveIndex >= state.templateSlotRanges.size()) {
+        return false;
+    }
+
+    const MyCodeEditorState::TemplateSlotRange slot =
+        state.templateSlotRanges.at(state.templateSlotActiveIndex);
+    QTextCursor cursor = editor->textCursor();
+    const int selectionStart = cursor.hasSelection()
+        ? cursor.selectionStart()
+        : cursor.position();
+    const int selectionEnd = cursor.hasSelection()
+        ? cursor.selectionEnd()
+        : cursor.position();
+    return selectionStart >= slot.start && selectionEnd <= slot.end;
+}
+
+void selectTemplateSlot(MyCodeEditor* editor,
+                        MyCodeEditorState& state,
+                        int index)
+{
+    if (!editor || index < 0 || index >= state.templateSlotRanges.size())
+        return;
+
+    state.templateSlotActiveIndex = index;
+    const MyCodeEditorState::TemplateSlotRange slot =
+        state.templateSlotRanges.at(index);
+    QTextCursor cursor(editor->document());
+    cursor.setPosition(slot.start);
+    if (slot.end > slot.start)
+        cursor.setPosition(slot.end, QTextCursor::KeepAnchor);
+    editor->setTextCursor(cursor);
+    state.selections.highlightTemplateSlots(
+        editor,
+        templateSlotHighlightRanges(state),
+        state.templateSlotActiveIndex);
+    emit editor->editorStatusMessageRequested(
+        QStringLiteral("Slot %1/%2")
+            .arg(index + 1)
+            .arg(state.templateSlotRanges.size()));
+}
 } // namespace
+
+void MyCodeEditorState::startTemplateSlotMode(
+    MyCodeEditor* editor,
+    int insertionStart,
+    int insertedLength,
+    const CodeTemplateSlotList& slotMetadata)
+{
+    clearTemplateSlotMode(editor);
+    if (!editor || !editor->document() || insertedLength < 0
+        || slotMetadata.isEmpty())
+        return;
+
+    const int docEnd = qMax(0, editor->document()->characterCount() - 1);
+    if (insertionStart < 0 || insertionStart + insertedLength > docEnd)
+        return;
+
+    for (const CodeTemplateSlot& slotInfo : slotMetadata) {
+        if (slotInfo.start < 0 || slotInfo.length < 0
+            || slotInfo.start + slotInfo.length > insertedLength) {
+            continue;
+        }
+
+        TemplateSlotRange range;
+        range.name = slotInfo.name;
+        range.start = insertionStart + slotInfo.start;
+        range.end = range.start + slotInfo.length;
+        if (range.start < 0 || range.end < range.start || range.end > docEnd)
+            continue;
+        templateSlotRanges.append(range);
+    }
+
+    if (templateSlotRanges.isEmpty()) {
+        clearTemplateSlotMode(editor);
+        return;
+    }
+
+    templateSlotSessionStart = insertionStart;
+    templateSlotSessionEnd = insertionStart + insertedLength;
+    selectTemplateSlot(editor, *this, 0);
+}
+
+bool MyCodeEditorState::templateSlotModeActive() const
+{
+    return templateSlotActiveIndex >= 0
+        && templateSlotActiveIndex < templateSlotRanges.size();
+}
+
+int MyCodeEditorState::templateSlotModeActiveIndex() const
+{
+    return templateSlotActiveIndex;
+}
+
+void MyCodeEditorState::clearTemplateSlotMode(MyCodeEditor* editor,
+                                              const QString& message)
+{
+    const bool wasActive = templateSlotModeActive()
+        || !templateSlotRanges.isEmpty();
+    templateSlotRanges.clear();
+    templateSlotActiveIndex = -1;
+    templateSlotSessionStart = -1;
+    templateSlotSessionEnd = -1;
+    if (editor)
+        selections.clearTemplateSlots(editor);
+    if (wasActive && editor && !message.isEmpty())
+        emit editor->editorStatusMessageRequested(message);
+}
+
+bool MyCodeEditorState::handleTemplateSlotKeyPress(MyCodeEditor* editor,
+                                                   QKeyEvent* event)
+{
+    if (!editor || !event || !templateSlotModeActive())
+        return false;
+
+    if (!templateSlotCursorInsideActiveRange(editor, *this)) {
+        clearTemplateSlotMode(editor);
+        return false;
+    }
+
+    if (event->key() == Qt::Key_Escape) {
+        clearTemplateSlotMode(editor, QStringLiteral("Slot Mode canceled"));
+        event->accept();
+        return true;
+    }
+
+    const Qt::KeyboardModifiers modifiers =
+        event->modifiers()
+        & (Qt::ShiftModifier
+           | Qt::ControlModifier
+           | Qt::AltModifier
+           | Qt::MetaModifier);
+    if (event->key() != Qt::Key_Tab
+        || (modifiers != Qt::NoModifier
+            && modifiers != Qt::ShiftModifier)) {
+        return false;
+    }
+
+    if (modifiers == Qt::ShiftModifier) {
+        selectTemplateSlot(
+            editor,
+            *this,
+            qMax(0, templateSlotActiveIndex - 1));
+        event->accept();
+        return true;
+    }
+
+    if (templateSlotActiveIndex + 1 >= templateSlotRanges.size()) {
+        const TemplateSlotRange finalSlot =
+            templateSlotRanges.at(templateSlotActiveIndex);
+        QTextCursor cursor(editor->document());
+        cursor.setPosition(finalSlot.end);
+        editor->setTextCursor(cursor);
+        clearTemplateSlotMode(editor, QStringLiteral("Slot Mode complete"));
+        event->accept();
+        return true;
+    }
+
+    selectTemplateSlot(editor, *this, templateSlotActiveIndex + 1);
+    event->accept();
+    return true;
+}
+
+void MyCodeEditorState::handleTemplateSlotContentsChange(
+    MyCodeEditor* editor,
+    int position,
+    int charsRemoved,
+    int charsAdded)
+{
+    if (!editor || !templateSlotModeActive())
+        return;
+
+    const int changeStart = position;
+    const int changeEnd = position + charsRemoved;
+    if (changeStart < templateSlotSessionStart
+        || changeStart > templateSlotSessionEnd) {
+        clearTemplateSlotMode(editor);
+        return;
+    }
+
+    TemplateSlotRange& activeSlot =
+        templateSlotRanges[templateSlotActiveIndex];
+    if (changeStart < activeSlot.start || changeEnd > activeSlot.end) {
+        clearTemplateSlotMode(editor);
+        return;
+    }
+
+    const int delta = charsAdded - charsRemoved;
+    activeSlot.end += delta;
+    if (activeSlot.end < activeSlot.start) {
+        clearTemplateSlotMode(editor);
+        return;
+    }
+    for (int i = templateSlotActiveIndex + 1;
+         i < templateSlotRanges.size();
+         ++i) {
+        templateSlotRanges[i].start += delta;
+        templateSlotRanges[i].end += delta;
+    }
+    templateSlotSessionEnd += delta;
+    selections.highlightTemplateSlots(
+        editor,
+        templateSlotHighlightRanges(*this),
+        templateSlotActiveIndex);
+}
+
+void MyCodeEditorState::handleTemplateSlotCursorChanged(MyCodeEditor* editor)
+{
+    if (!templateSlotModeActive())
+        return;
+    if (!templateSlotCursorInsideActiveRange(editor, *this))
+        clearTemplateSlotMode(editor);
+}
 
 bool MyCodeEditorState::handleKeyPress(MyCodeEditor* editor, QKeyEvent* event)
 {
@@ -2615,6 +2868,9 @@ bool MyCodeEditorState::handleKeyPress(MyCodeEditor* editor, QKeyEvent* event)
         event->accept();
         return true;
     }
+
+    if (handleTemplateSlotKeyPress(editor, event))
+        return true;
 
     if (handleComModeKeyPress(editor, event, *this))
         return true;
@@ -2919,6 +3175,17 @@ bool MyCodeEditorState::handleMousePress(
     MyCodeEditor* editor,
     QMouseEvent* event)
 {
+    if (templateSlotModeActive() && editor && event) {
+        const QTextCursor targetCursor =
+            editor->cursorForPosition(event->position().toPoint());
+        const TemplateSlotRange activeSlot =
+            templateSlotRanges.at(templateSlotActiveIndex);
+        if (targetCursor.position() < activeSlot.start
+            || targetCursor.position() > activeSlot.end) {
+            clearTemplateSlotMode(editor);
+        }
+    }
+
     if (folding.handleFoldShelfMousePress(editor, event))
         return true;
 

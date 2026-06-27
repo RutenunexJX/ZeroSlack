@@ -19,6 +19,15 @@ CodeTemplateItem makeItem(const QString& token,
     return item;
 }
 
+CodeTemplateSlot makeSlot(const QString& name, int start, int length)
+{
+    CodeTemplateSlot slot;
+    slot.name = name;
+    slot.start = start;
+    slot.length = length;
+    return slot;
+}
+
 bool isIdentifierStart(QChar ch)
 {
     return ch == QLatin1Char('$') || ch == QLatin1Char('_')
@@ -343,19 +352,38 @@ CodeTemplateItem expandParameterDeclarationTemplate(CodeTemplateItem item,
         text += packedDimensions.join(QString());
     }
     text += QLatin1Char(' ');
+    const int nameStart = text.size();
     text += name;
     if (!unpackedDimensions.isEmpty()) {
         text += QLatin1Char(' ');
         text += unpackedDimensions.join(QString());
         text += QStringLiteral(" = '{};");
         const int braceIndex = text.indexOf(QStringLiteral("{}"));
-        item.selectionStart = braceIndex >= 0 ? braceIndex + 1 : text.size() - 2;
+        item.selectionStart = nameStart;
+        item.selectionLength = name.size();
+        item.templateSlots.append(makeSlot(
+            QStringLiteral("name"),
+            nameStart,
+            name.size()));
+        item.templateSlots.append(makeSlot(
+            QStringLiteral("value"),
+            braceIndex >= 0 ? braceIndex + 1 : text.size() - 2,
+            0));
     } else {
         text += QStringLiteral(" = ");
-        item.selectionStart = text.size();
+        const int valueStart = text.size();
+        item.selectionStart = nameStart;
+        item.selectionLength = name.size();
         text += QLatin1Char(';');
+        item.templateSlots.append(makeSlot(
+            QStringLiteral("name"),
+            nameStart,
+            name.size()));
+        item.templateSlots.append(makeSlot(
+            QStringLiteral("value"),
+            valueStart,
+            0));
     }
-    item.selectionLength = 0;
 
     item.insertText = text;
     item.defaultValue = text;

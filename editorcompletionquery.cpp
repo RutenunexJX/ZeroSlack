@@ -232,6 +232,7 @@ CompletionActivationState EditorCompletionQueryHelper::completionActivationState
     query.defaultValue = context.defaultValue;
     query.selectionStart = context.selectionStart;
     query.selectionLength = context.selectionLength;
+    query.templateSlots = context.templateSlots;
     return completionActivationState(query);
 }
 

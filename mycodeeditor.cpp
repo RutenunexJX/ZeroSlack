@@ -462,6 +462,27 @@ void MyCodeEditor::showComModeMessage(const QString& message)
     state->showComModeMessage(this, message);
 }
 
+void MyCodeEditor::startTemplateSlotMode(
+    int insertionStart,
+    int insertedLength,
+    const CodeTemplateSlotList& slotMetadata)
+{
+    state->startTemplateSlotMode(this,
+                                 insertionStart,
+                                 insertedLength,
+                                 slotMetadata);
+}
+
+bool MyCodeEditor::templateSlotModeActive() const
+{
+    return state->templateSlotModeActive();
+}
+
+int MyCodeEditor::templateSlotModeActiveIndex() const
+{
+    return state->templateSlotModeActiveIndex();
+}
+
 void MyCodeEditor::setDiagnosticHighlights(
     const QList<SemanticDiagnostic>& diagnostics)
 {

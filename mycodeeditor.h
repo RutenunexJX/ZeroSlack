@@ -6,6 +6,7 @@
 #include "ghostannotationservice.h"
 #include "foldblockshelfmodel.h"
 #include "includeheaderworkflowtypes.h"
+#include "completiontypes.h"
 
 #include <QList>
 #include <QPlainTextEdit>
@@ -76,6 +77,11 @@ public:
     void exitComMode();
     void showComModeMessage(const QString& message);
     void executeAlternateModeCommand(const QString& command);
+    void startTemplateSlotMode(int insertionStart,
+                               int insertedLength,
+                               const CodeTemplateSlotList& slotMetadata);
+    bool templateSlotModeActive() const;
+    int templateSlotModeActiveIndex() const;
     void setDiagnosticHighlights(
         const QList<SemanticDiagnostic>& diagnostics);
     void setSemanticDecorations(

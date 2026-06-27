@@ -51,7 +51,8 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
   `fd s`.
 - `;cmd` remains semantic command completion. `;;cmd` remains template
   expansion. COM Mode is for editor-local command actions. Slot Mode is the
-  planned post-template editor-local fill flow; it is not active yet.
+  post-template editor-local fill flow; it is active for `;;p` / `;;lp`
+  parameter templates and not yet active for other template families.
 - Fold Region and Fold Shelf are available through Global Control. Fold Shelf
   is not yet the long-term persistent shelf system.
 - Signal Kernel Graph exists as a signal-centric exploration graph. Dense
@@ -109,10 +110,10 @@ Known reference points captured before this cleanup:
 - `ComModeCoordinator` owns COM state, command strip, and picker presentation.
   `ComModeService` owns COM picker query/report shaping.
 - `GlobalControlService` owns Global Control command/domain shaping.
-- Slot Mode design baseline: `CodeTemplateService` should produce template
-  text plus relative editable slot metadata; `EditorCompletionWorkflow` should
-  apply the insertion and start an editor-local slot session; `MyCodeEditor`
-  state should own active slot ranges, highlighting, navigation, and invalidation.
+- Slot Mode baseline: `CodeTemplateService` produces template
+  text plus relative editable slot metadata; `EditorCompletionWorkflow` applies
+  the insertion and starts an editor-local slot session; `MyCodeEditor` state
+  owns active slot ranges, highlighting, navigation, and invalidation.
   Slot state must not live in UI panels or semantic services.
 - `WorkspaceAnalysisPlanService`, `WorkspaceAnalysisRequestQueue`,
   `WorkspaceSymbolAnalysisController`, `RelationshipAnalysisController`, and
@@ -121,13 +122,14 @@ Known reference points captured before this cleanup:
 
 ## Slot Mode Contract
 
-Slot Mode is the planned `;;cmd` follow-up state for filling editable points in
-an inserted template. It must preserve current template insertion behavior until
-an implementation milestone explicitly enables slots for a template family.
+Slot Mode is the `;;cmd` follow-up state for filling editable points in an
+inserted template. It currently applies to `;;p` / `;;lp` parameter declaration
+templates. Other template families keep current insertion behavior until an
+implementation milestone explicitly enables slots for that family.
 
 - Slot data is an ordered set of relative ranges inside inserted template text.
   A range may be empty, preselected text, or a named placeholder. Existing
-  `selectionStart` / `selectionLength` fields map to a single primary slot.
+  `selectionStart` / `selectionLength` fields map to the first primary slot.
 - Entry happens only after a template activation inserts text through the
   existing completion workflow. The insertion remains one undoable edit block.
 - Tab moves to the next slot; Shift+Tab moves to the previous slot. Tab on the
@@ -139,6 +141,9 @@ an implementation milestone explicitly enables slots for a template family.
   Slot Mode without rollback.
 - Slot Mode is editor-local text state. It must not run Slang, scan the
   workspace, or add semantic policy.
+- Parameter template slots are ordered as name then value. Editing the name
+  shifts the value slot; Tab reaches the value; final Tab exits before the
+  semicolon.
 
 ## Long-Term Goal Scope
 

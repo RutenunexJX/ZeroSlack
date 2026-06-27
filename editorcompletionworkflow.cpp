@@ -285,12 +285,18 @@ void EditorCompletionWorkflow::applyCompletionActivationState(
         }
     } else if (activationState.action
                == CompletionActivationAction::ReplaceCommandInput) {
-        replaceCommandInputAtCursor(activationState.text,
-                                    activationState.selectionStart,
-                                    activationState.selectionLength);
+        const int insertionStart =
+            replaceCommandInputAtCursor(activationState.text,
+                                        activationState.selectionStart,
+                                        activationState.selectionLength);
         if (activationState.clearCommandMode) {
             modes->clearCommandMode();
             selections->clearCommand(editor);
+        }
+        if (insertionStart >= 0 && !activationState.templateSlots.isEmpty()) {
+            editor->startTemplateSlotMode(insertionStart,
+                                          activationState.text.size(),
+                                          activationState.templateSlots);
         }
     } else if (activationState.action
                == CompletionActivationAction::ReplaceWord) {
@@ -301,7 +307,7 @@ void EditorCompletionWorkflow::applyCompletionActivationState(
         hideAutoComplete();
 }
 
-void EditorCompletionWorkflow::replaceCommandInputAtCursor(
+int EditorCompletionWorkflow::replaceCommandInputAtCursor(
     const QString& text,
     int selectionStart,
     int selectionLength)
@@ -313,7 +319,7 @@ void EditorCompletionWorkflow::replaceCommandInputAtCursor(
     const CommandModeInputState inputState =
         semanticService()->commandModeInputState(context);
     if (!inputState.matched)
-        return;
+        return -1;
 
     const int commandStartPosition =
         cursor.block().position() + inputState.prefixPosition;
@@ -332,6 +338,7 @@ void EditorCompletionWorkflow::replaceCommandInputAtCursor(
         }
         editor->setTextCursor(selectionCursor);
     }
+    return commandStartPosition;
 }
 
 void EditorCompletionWorkflow::clearCommandInputAtCursor()

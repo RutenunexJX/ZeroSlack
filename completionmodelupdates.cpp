@@ -395,6 +395,7 @@ void CompletionModel::updateInlineCommandCompletions(
                 : templateItem.insertText;
             item.selectionStart = templateItem.selectionStart;
             item.selectionLength = templateItem.selectionLength;
+            item.templateSlots = templateItem.templateSlots;
             item.score = score--;
             fillDisplayMetadata(item);
             completions.append(item);

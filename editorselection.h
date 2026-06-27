@@ -5,6 +5,7 @@
 #include "semanticdecorationservice.h"
 
 #include <QList>
+#include <QPair>
 #include <functional>
 
 class MyCodeEditor;
@@ -33,6 +34,10 @@ public:
                                 const QString& text,
                                 bool caseSensitive);
     void clearSearchMatches(QPlainTextEdit* editor);
+    void highlightTemplateSlots(MyCodeEditor* editor,
+                                const QList<QPair<int, int>>& ranges,
+                                int activeIndex);
+    void clearTemplateSlots(QPlainTextEdit* editor);
     void flashLine(MyCodeEditor* editor);
     void flashLine(MyCodeEditor* editor, int lineNumber);
 

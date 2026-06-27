@@ -204,6 +204,7 @@ CompletionActivationState CompletionCommandMode::activationState(
             : query.defaultValue;
         state.selectionStart = query.selectionStart;
         state.selectionLength = query.selectionLength;
+        state.templateSlots = query.templateSlots;
         state.clearCommandMode =
             !state.text.startsWith(QLatin1Char(';'));
         state.hidePopup = state.clearCommandMode;

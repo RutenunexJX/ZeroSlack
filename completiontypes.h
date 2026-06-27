@@ -112,6 +112,14 @@ enum class CompletionActivationAction {
     ExecuteEditorAction
 };
 
+struct CodeTemplateSlot {
+    QString name;
+    int start = -1;
+    int length = 0;
+};
+
+using CodeTemplateSlotList = QList<CodeTemplateSlot>;
+
 struct CompletionActivationQuery {
     bool selectable = false;
     CompletionActivationMode mode = CompletionActivationMode::EditorWord;
@@ -119,6 +127,7 @@ struct CompletionActivationQuery {
     QString defaultValue;
     int selectionStart = -1;
     int selectionLength = 0;
+    CodeTemplateSlotList templateSlots;
 };
 
 struct CompletionActivationState {
@@ -126,6 +135,7 @@ struct CompletionActivationState {
     QString text;
     int selectionStart = -1;
     int selectionLength = 0;
+    CodeTemplateSlotList templateSlots;
     bool clearCommandMode = false;
     bool hidePopup = false;
 };
@@ -235,6 +245,7 @@ struct CodeTemplateItem {
     QString insertText;
     int selectionStart = -1;
     int selectionLength = 0;
+    CodeTemplateSlotList templateSlots;
 };
 
 struct CommandModeMatch {

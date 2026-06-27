@@ -34,6 +34,8 @@ constexpr int kCurrentSymbolSelectionProperty = QTextFormat::UserProperty + 4;
 constexpr int kCurrentSymbolSelectionMarker = 1004;
 constexpr int kSearchSelectionProperty = QTextFormat::UserProperty + 5;
 constexpr int kSearchSelectionMarker = 1005;
+constexpr int kTemplateSlotSelectionProperty = QTextFormat::UserProperty + 7;
+constexpr int kTemplateSlotSelectionMarker = 1007;
 constexpr int kFlashSelectionProperty = QTextFormat::UserProperty + 6;
 constexpr int kFlashSelectionMarker = 1006;
 constexpr int kMaxPassiveMatchHighlights = 500;
@@ -461,6 +463,59 @@ void EditorSelection::highlightSearchMatches(
 void EditorSelection::clearSearchMatches(QPlainTextEdit* editor)
 {
     removeByProperty(editor, kSearchSelectionProperty, kSearchSelectionMarker);
+}
+
+void EditorSelection::highlightTemplateSlots(
+    MyCodeEditor* editor,
+    const QList<QPair<int, int>>& ranges,
+    int activeIndex)
+{
+    if (!editor || !editor->document())
+        return;
+
+    QList<QTextEdit::ExtraSelection> selections =
+        editorSelectionsWithout(
+            editor,
+            kTemplateSlotSelectionProperty,
+            kTemplateSlotSelectionMarker);
+
+    const int docEnd = qMax(0, editor->document()->characterCount() - 1);
+    for (int i = 0; i < ranges.size(); ++i) {
+        const int start = ranges.at(i).first;
+        const int length = ranges.at(i).second;
+        if (start < 0 || length <= 0 || start > docEnd)
+            continue;
+
+        QTextCursor cursor(editor->document());
+        cursor.setPosition(qBound(0, start, docEnd));
+        cursor.setPosition(qBound(0, start + length, docEnd),
+                           QTextCursor::KeepAnchor);
+
+        QTextEdit::ExtraSelection slotSelection;
+        slotSelection.cursor = cursor;
+        slotSelection.format.setBackground(
+            i == activeIndex
+                ? QColor(34, 197, 94, 70)
+                : QColor(59, 130, 246, 42));
+        slotSelection.format.setUnderlineStyle(
+            QTextCharFormat::SingleUnderline);
+        slotSelection.format.setUnderlineColor(
+            i == activeIndex ? QColor("#16A34A") : QColor("#2563EB"));
+        slotSelection.format.setProperty(
+            kTemplateSlotSelectionProperty,
+            kTemplateSlotSelectionMarker);
+        selections.append(slotSelection);
+    }
+
+    editor->setExtraSelections(selections);
+}
+
+void EditorSelection::clearTemplateSlots(QPlainTextEdit* editor)
+{
+    removeByProperty(
+        editor,
+        kTemplateSlotSelectionProperty,
+        kTemplateSlotSelectionMarker);
 }
 
 void EditorSelection::flashLine(MyCodeEditor* editor)

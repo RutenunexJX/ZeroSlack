@@ -115,6 +115,7 @@ EditorCompletionUi::activationContextForIndex(
     context.defaultValue = item.defaultValue;
     context.selectionStart = item.selectionStart;
     context.selectionLength = item.selectionLength;
+    context.templateSlots = item.templateSlots;
     return context;
 }
 

@@ -2,6 +2,7 @@
 #define EDITORRUNTIME_H
 
 #include "editorappearance.h"
+#include "completiontypes.h"
 #include "editorcompletionui.h"
 #include "editorcompletionworkflow.h"
 #include "editorcursornavigation.h"
@@ -31,6 +32,12 @@ class QPaintEvent;
 
 struct MyCodeEditorState
 {
+    struct TemplateSlotRange {
+        QString name;
+        int start = -1;
+        int end = -1;
+    };
+
     EditorAppearance appearance;
     EditorGutter gutter;
     EditorDocumentGeometry geometry;
@@ -56,6 +63,10 @@ struct MyCodeEditorState
     int columnAnchorColumn = -1;
     int columnCurrentLine = -1;
     int columnCurrentColumn = -1;
+    QList<TemplateSlotRange> templateSlotRanges;
+    int templateSlotActiveIndex = -1;
+    int templateSlotSessionStart = -1;
+    int templateSlotSessionEnd = -1;
 
     void initializeCore(MyCodeEditor* editor);
     void shutdown();
@@ -78,6 +89,20 @@ struct MyCodeEditorState
     void enterComMode(MyCodeEditor* editor, const QString& message = QString());
     void exitComMode(MyCodeEditor* editor);
     void showComModeMessage(MyCodeEditor* editor, const QString& message);
+    void startTemplateSlotMode(MyCodeEditor* editor,
+                               int insertionStart,
+                               int insertedLength,
+                               const CodeTemplateSlotList& slotMetadata);
+    bool templateSlotModeActive() const;
+    int templateSlotModeActiveIndex() const;
+    void clearTemplateSlotMode(MyCodeEditor* editor,
+                               const QString& message = QString());
+    bool handleTemplateSlotKeyPress(MyCodeEditor* editor, QKeyEvent* event);
+    void handleTemplateSlotContentsChange(MyCodeEditor* editor,
+                                          int position,
+                                          int charsRemoved,
+                                          int charsAdded);
+    void handleTemplateSlotCursorChanged(MyCodeEditor* editor);
     void publishComModeState(MyCodeEditor* editor,
                              const QString& message = QString()) const;
     EditorSemanticContext semanticContextForPosition(

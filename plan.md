@@ -99,7 +99,7 @@ First milestones:
 
 - M2.1 define slot model and editor state without changing templates
 - M2.2 enable slots for the parameter declaration template family
-- M2.3 expand slots to existing signal/parameter template families
+- M2.3 expand slots to existing signal declaration template families
 
 M2.1 design contract:
 
@@ -121,6 +121,17 @@ M2.1 design contract:
   without reverting inserted text, editing a slot keeps later ranges correct,
   moving the cursor outside the session exits, and undo that removes the
   inserted template clears the session safely.
+
+M2.2 implementation status:
+
+- Complete: `;;p` and `;;lp` produce name/value slot metadata.
+- Complete: parameter template activation starts editor-local Slot Mode through
+  the completion workflow.
+- Complete: Slot Mode owns ordered ranges, highlights non-empty slots, supports
+  Tab, Shift+Tab, final Tab completion, Esc cancel, name-edit range shifting,
+  and cursor-outside stale exit.
+- Verification: Release `completion_test` passed; Release `completion_test` and
+  `gui_smoke_test` targets compile/link.
 
 ### 3. Batch RTL Edit Actions
 

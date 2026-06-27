@@ -33,6 +33,7 @@ struct EditorCompletionActivationContext {
     QString defaultValue;
     int selectionStart = -1;
     int selectionLength = 0;
+    CodeTemplateSlotList templateSlots;
 };
 
 struct EditorCompletionPopupKeyContext {

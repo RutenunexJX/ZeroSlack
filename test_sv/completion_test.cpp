@@ -42,6 +42,7 @@
 #include <QTextStream>
 #include <QString>
 #include <QStringList>
+#include <QKeyEvent>
 #include <algorithm>
 #include <cstdio>
 #include <memory>
@@ -81,6 +82,25 @@ static void expectBool(const char* what, bool got, bool want) {
     if (!ok) ++g_fails;
     printf("[%s] %-34s got=%s want=%s\n", ok ? "PASS" : "FAIL", what,
            got ? "true" : "false", want ? "true" : "false");
+}
+
+static bool sendEditorKey(MyCodeEditor& editor,
+                          int key,
+                          Qt::KeyboardModifiers modifiers = Qt::NoModifier,
+                          const QString& text = QString())
+{
+    QKeyEvent event(QEvent::KeyPress, key, modifiers, text);
+    QCoreApplication::sendEvent(&editor, &event);
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 10);
+    return event.isAccepted();
+}
+
+static void insertAtEditorCursor(MyCodeEditor& editor, const QString& text)
+{
+    QTextCursor cursor = editor.textCursor();
+    cursor.insertText(text);
+    editor.setTextCursor(cursor);
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 10);
 }
 
 static void expectList(const char* what, QStringList got, QStringList want) {
@@ -4956,10 +4976,26 @@ int main(int argc, char** argv) {
     expectEq("CodeTemplateService parameter scalar",
              parameterScalar.insertText,
              QStringLiteral("parameter WIDTH = ;"));
-    expectBool("CodeTemplateService parameter value cursor",
+    expectBool("CodeTemplateService parameter slots",
                parameterScalar.selectionStart
+                       == parameterScalar.insertText.indexOf(QStringLiteral("WIDTH"))
+                   && parameterScalar.selectionLength == QStringLiteral("WIDTH").size()
+                   && parameterScalar.templateSlots.size() == 2
+                   && parameterScalar.templateSlots.at(0).name == QStringLiteral("name")
+                   && parameterScalar.templateSlots.at(0).start
+                       == parameterScalar.insertText.indexOf(QStringLiteral("WIDTH"))
+                   && parameterScalar.templateSlots.at(0).length
+                       == QStringLiteral("WIDTH").size()
+                   && parameterScalar.templateSlots.at(1).name == QStringLiteral("value")
+                   && parameterScalar.templateSlots.at(1).start
                        == QStringLiteral("parameter WIDTH = ").size()
-                   && parameterScalar.selectionLength == 0,
+                   && parameterScalar.templateSlots.at(1).length == 0,
+               true);
+    expectBool("CodeTemplateService parameter primary slot selects name",
+               parameterScalar.selectionStart
+                       == parameterScalar.templateSlots.at(0).start
+                   && parameterScalar.selectionLength
+                       == parameterScalar.templateSlots.at(0).length,
                true);
     const CodeTemplateItem parameterArray =
         CodeTemplateService::getInstance()->templateForCommand(
@@ -4967,10 +5003,15 @@ int main(int argc, char** argv) {
     expectEq("CodeTemplateService parameter array",
              parameterArray.insertText,
              QStringLiteral("parameter [7:0] test [7:0] = '{};"));
-    expectBool("CodeTemplateService parameter array cursor",
-               parameterArray.selectionStart
+    expectBool("CodeTemplateService parameter array slots",
+               parameterArray.templateSlots.size() == 2
+                   && parameterArray.templateSlots.at(0).start
+                       == parameterArray.insertText.indexOf(QStringLiteral("test"))
+                   && parameterArray.templateSlots.at(0).length
+                       == QStringLiteral("test").size()
+                   && parameterArray.templateSlots.at(1).start
                        == parameterArray.insertText.indexOf(QStringLiteral("{}")) + 1
-                   && parameterArray.selectionLength == 0,
+                   && parameterArray.templateSlots.at(1).length == 0,
                true);
     expectEq("CodeTemplateService typed parameter array",
              CodeTemplateService::getInstance()
@@ -5027,6 +5068,105 @@ int main(int argc, char** argv) {
                        == QStringLiteral(";;p -logic ")
                    && !parameterTypeActivationState.clearCommandMode
                    && !parameterTypeActivationState.hidePopup,
+               true);
+
+    const CommandModeCompletionState parameterTemplateState =
+        CompletionService::getInstance()->commandModeCompletionState(
+            CommandModeCompletionQuery{QStringLiteral(";;p WIDTH")});
+    expectBool("CompletionService parameter template carries slots",
+               parameterTemplateState.matched
+                   && !parameterTemplateState.templateItems.isEmpty()
+                   && parameterTemplateState.templateItems.first().templateSlots.size() == 2
+                   && parameterTemplateState.templateItems.first().templateSlots.at(0).name
+                       == QStringLiteral("name")
+                   && parameterTemplateState.templateItems.first().templateSlots.at(1).name
+                       == QStringLiteral("value"),
+               true);
+    CompletionActivationQuery parameterTemplateActivation;
+    parameterTemplateActivation.selectable = true;
+    parameterTemplateActivation.mode = CompletionActivationMode::CommandMode;
+    parameterTemplateActivation.defaultValue = parameterScalar.insertText;
+    parameterTemplateActivation.selectionStart = parameterScalar.selectionStart;
+    parameterTemplateActivation.selectionLength = parameterScalar.selectionLength;
+    parameterTemplateActivation.templateSlots = parameterScalar.templateSlots;
+    const CompletionActivationState parameterTemplateActivationState =
+        CompletionService::getInstance()->completionActivationState(
+            parameterTemplateActivation);
+    expectBool("CompletionService parameter activation carries slots",
+               parameterTemplateActivationState.action
+                       == CompletionActivationAction::ReplaceCommandInput
+                   && parameterTemplateActivationState.clearCommandMode
+                   && parameterTemplateActivationState.hidePopup
+                   && parameterTemplateActivationState.templateSlots.size() == 2,
+               true);
+
+    MyCodeEditor slotEditor;
+    slotEditor.setPlainText(parameterScalar.insertText);
+    slotEditor.startTemplateSlotMode(0,
+                                     parameterScalar.insertText.size(),
+                                     parameterScalar.templateSlots);
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 10);
+    expectBool("Slot Mode starts on parameter name",
+               slotEditor.templateSlotModeActive()
+                   && slotEditor.templateSlotModeActiveIndex() == 0
+                   && slotEditor.textCursor().selectedText()
+                       == QStringLiteral("WIDTH"),
+               true);
+    insertAtEditorCursor(slotEditor, QStringLiteral("DEPTH"));
+    expectBool("Slot Mode edit updates active slot",
+               slotEditor.toPlainText()
+                       == QStringLiteral("parameter DEPTH = ;")
+                   && slotEditor.templateSlotModeActive(),
+               true);
+    expectBool("Slot Mode Tab advances to value",
+               sendEditorKey(slotEditor, Qt::Key_Tab)
+                   && slotEditor.templateSlotModeActiveIndex() == 1
+                   && !slotEditor.textCursor().hasSelection()
+                   && slotEditor.textCursor().position()
+                       == slotEditor.toPlainText().indexOf(QStringLiteral(";")),
+               true);
+    insertAtEditorCursor(slotEditor, QStringLiteral("8"));
+    expectBool("Slot Mode Shift+Tab returns to name",
+               sendEditorKey(slotEditor, Qt::Key_Tab, Qt::ShiftModifier)
+                   && slotEditor.templateSlotModeActiveIndex() == 0
+                   && slotEditor.textCursor().selectedText()
+                       == QStringLiteral("DEPTH"),
+               true);
+    expectBool("Slot Mode Tab returns to value",
+               sendEditorKey(slotEditor, Qt::Key_Tab)
+                   && slotEditor.templateSlotModeActiveIndex() == 1
+                   && slotEditor.textCursor().selectedText()
+                       == QStringLiteral("8"),
+               true);
+    expectBool("Slot Mode final Tab completes",
+               sendEditorKey(slotEditor, Qt::Key_Tab)
+                   && !slotEditor.templateSlotModeActive()
+                   && slotEditor.textCursor().position()
+                       == slotEditor.toPlainText().indexOf(QStringLiteral(";")),
+               true);
+
+    MyCodeEditor slotCancelEditor;
+    slotCancelEditor.setPlainText(parameterScalar.insertText);
+    slotCancelEditor.startTemplateSlotMode(0,
+                                           parameterScalar.insertText.size(),
+                                           parameterScalar.templateSlots);
+    expectBool("Slot Mode Esc cancels without rollback",
+               sendEditorKey(slotCancelEditor, Qt::Key_Escape)
+                   && !slotCancelEditor.templateSlotModeActive()
+                   && slotCancelEditor.toPlainText() == parameterScalar.insertText,
+               true);
+
+    MyCodeEditor slotStaleEditor;
+    slotStaleEditor.setPlainText(parameterScalar.insertText);
+    slotStaleEditor.startTemplateSlotMode(0,
+                                          parameterScalar.insertText.size(),
+                                          parameterScalar.templateSlots);
+    QTextCursor staleCursor(slotStaleEditor.document());
+    staleCursor.setPosition(slotStaleEditor.document()->characterCount() - 1);
+    slotStaleEditor.setTextCursor(staleCursor);
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 10);
+    expectBool("Slot Mode cursor outside exits",
+               !slotStaleEditor.templateSlotModeActive(),
                true);
 
     expectBool("CompletionService command statement reject",

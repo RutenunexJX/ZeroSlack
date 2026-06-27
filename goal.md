@@ -28,7 +28,7 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
 
 ## Current Goal State
 
-Current milestone: `G2.2 Parameter Template Slot Mode`.
+Current milestone: `G2.3 Signal Template Slot Mode`.
 
 Status:
 
@@ -79,18 +79,26 @@ Status:
   completion, Esc cancel, natural exit, stale-session invalidation, and future
   verification cases are defined without changing template behavior.
 - Focused verification for G2.1: documentation inspection plus `git diff --check`.
+- G2.2 Parameter Template Slot Mode is complete: `;;p` and `;;lp` produce
+  ordered name/value slot metadata; parameter template activation starts Slot
+  Mode through the existing completion workflow; `MyCodeEditor` state owns
+  active slot ranges, highlighting, Tab/Shift+Tab navigation, final Tab
+  completion, Esc cancel, edit-driven range shifts, cursor-outside stale exit,
+  and COM Mode entry cleanup; non-parameter template behavior is preserved.
+- Focused verification for G2.2: Release `completion_test` passed with 625
+  checks and 0 failures; Release `completion_test` and `gui_smoke_test` targets
+  compile/link, with `gui_smoke_test` not launched.
 - Verification flow now includes checking for external Windows application-error
   or memory-read dialogs when CTest appears stalled.
 
-Completion criteria for G2.2:
+Completion criteria for G2.3:
 
-- add concrete slot metadata for `;;p` / `;;lp` parameter declaration templates
-- start Slot Mode after parameter template activation through the existing
-  completion workflow
-- implement editor-local Slot Mode session state for ordered ranges,
-  highlighting, Tab/Shift+Tab navigation, completion, Esc cancel, and stale
-  session exit
-- preserve current template insertion behavior for all non-parameter templates
+- add concrete slot metadata for `;;l` / `;;w` / `;;r` signal declaration
+  templates
+- reuse the existing Slot Mode session path from parameter templates
+- support signal-name editing and any existing value/range placeholder behavior
+  without changing parameter template behavior
+- preserve current template insertion behavior for all non-signal templates
 - `readme.md`, `plan.md`, and `goal.md` are updated
 - appropriate focused verification passes
 - milestone commit is pushed
@@ -125,7 +133,7 @@ Milestones:
 - G2.1 Define slot model, editor state, cancel/exit behavior, and verification
   cases.
 - G2.2 Enable slot mode for the parameter declaration template family.
-- G2.3 Expand slot mode to remaining signal/parameter template families.
+- G2.3 Expand slot mode to signal declaration template families.
 
 ## Track 3: Batch RTL Edit Actions
 

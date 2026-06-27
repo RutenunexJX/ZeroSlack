@@ -54,6 +54,7 @@ public:
         QString defaultValue;
         int selectionStart = -1;
         int selectionLength = 0;
+        CodeTemplateSlotList templateSlots;
         int score = 0;
         int rowHeight = 18;
         bool selectable = true;
