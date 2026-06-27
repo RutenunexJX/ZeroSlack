@@ -162,6 +162,7 @@ First milestones:
   (complete: alternate command `clear_rhs` applies the report in one undoable
   edit block)
 - M3.3 connect result to slot mode
+  (complete: successful clear-RHS reports start Slot Mode on `rhsN` fill slots)
 
 M3.1 implementation status:
 
@@ -197,6 +198,19 @@ M3.2 implementation status:
 - Not done in M3.2: Slot Mode entry after replacement. That stays in M3.3.
 - Verification: Release `completion_test` covers alternate command mapping,
   selection application, undo restore, and declaration rejection; Release
+  `completion_test` and `gui_smoke_test` targets compile/link.
+
+M3.3 implementation status:
+
+- Complete: successful `clear_rhs` execution starts Slot Mode using the
+  `RtlClearAssignmentRhsReport` template-slot metadata.
+- Complete: the text replacement itself remains one undoable edit block.
+- Complete: G3.2 failure behavior is unchanged: unsupported selections do not
+  mutate text and surface service-owned failure reasons.
+- Complete: Tab advances between cleared RHS slots, final Tab exits Slot Mode,
+  and slot edits shift later RHS ranges through the existing Slot Mode state.
+- Verification: Release `completion_test` covers Slot Mode start, slot editing,
+  Tab advance, final Tab exit, undo restore, and declaration rejection; Release
   `completion_test` and `gui_smoke_test` targets compile/link.
 
 ### 4. COM Mode Framework Completion

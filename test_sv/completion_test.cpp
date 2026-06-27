@@ -5307,10 +5307,46 @@ int main(int argc, char** argv) {
                             "  a <= ;\n"
                             "  b = ;\n"
                             "endmodule\n"));
+    expectBool("Editor clear RHS starts slot mode",
+               clearRhsEditor.templateSlotModeActive()
+                   && clearRhsEditor.templateSlotModeActiveIndex() == 0
+                   && clearRhsEditor.textCursor().position()
+                       == clearRhsEditor.toPlainText().indexOf(
+                              QStringLiteral("a <= ;"))
+                              + QStringLiteral("a <= ").size(),
+               true);
     clearRhsEditor.undo();
     expectEq("Editor clear RHS undo restores original",
              clearRhsEditor.toPlainText(),
              clearRhsOriginal);
+
+    MyCodeEditor clearRhsSlotEditor;
+    clearRhsSlotEditor.setPlainText(clearRhsOriginal);
+    QTextCursor clearRhsSlotCursor(clearRhsSlotEditor.document());
+    clearRhsSlotCursor.setPosition(clearRhsStart);
+    clearRhsSlotCursor.setPosition(clearRhsEnd, QTextCursor::KeepAnchor);
+    clearRhsSlotEditor.setTextCursor(clearRhsSlotCursor);
+    clearRhsSlotEditor.clearSelectedAssignmentRhs();
+    insertAtEditorCursor(clearRhsSlotEditor, QStringLiteral("foo_next"));
+    expectBool("Editor clear RHS slot edit shifts next",
+               clearRhsSlotEditor.templateSlotModeActive()
+                   && clearRhsSlotEditor.toPlainText().contains(
+                       QStringLiteral("a <= foo_next;")),
+               true);
+    expectBool("Editor clear RHS Tab advances",
+               sendEditorKey(clearRhsSlotEditor, Qt::Key_Tab)
+                   && clearRhsSlotEditor.templateSlotModeActiveIndex() == 1
+                   && clearRhsSlotEditor.textCursor().position()
+                       == clearRhsSlotEditor.toPlainText()
+                              .lastIndexOf(QStringLiteral(";")),
+               true);
+    insertAtEditorCursor(clearRhsSlotEditor, QStringLiteral("bar_next"));
+    expectBool("Editor clear RHS final Tab exits slot mode",
+               sendEditorKey(clearRhsSlotEditor, Qt::Key_Tab)
+                   && !clearRhsSlotEditor.templateSlotModeActive()
+                   && clearRhsSlotEditor.toPlainText().contains(
+                       QStringLiteral("b = bar_next;")),
+               true);
 
     MyCodeEditor clearRhsRejectEditor;
     clearRhsRejectEditor.setPlainText(QStringLiteral("logic a = b;\n"));

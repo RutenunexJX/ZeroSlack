@@ -3482,11 +3482,10 @@ bool MyCodeEditorState::clearSelectedAssignmentRhs(MyCodeEditor* editor)
     cursor.insertText(report.replacementText);
     cursor.endEditBlock();
 
-    QTextCursor nextCursor(editor->document());
-    nextCursor.setPosition(selectionStart);
-    nextCursor.setPosition(selectionStart + report.replacementText.size(),
-                           QTextCursor::KeepAnchor);
-    editor->setTextCursor(nextCursor);
+    startTemplateSlotMode(editor,
+                          selectionStart,
+                          report.replacementText.size(),
+                          report.templateSlots);
     emit editor->editorStatusMessageRequested(
         QStringLiteral("Cleared RHS for %1 assignment%2")
             .arg(report.edits.size())
