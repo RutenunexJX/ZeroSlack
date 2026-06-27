@@ -28,7 +28,7 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
 
 ## Current Goal State
 
-Current milestone: `G7.1 Fold Shelf Persistence Schema And Ownership`.
+Current milestone: `G7.2 Persist And Restore Same-File Fold Shelf Items`.
 
 Status:
 
@@ -202,15 +202,36 @@ Status:
 - Focused verification for G6.4: `git diff --check`; Release
   `completion_test` and `gui_smoke_test` targets compile/link; `ctest -R
   "^completion_test$"` passed. `gui_smoke_test` was not launched.
+- G7.1 Fold Shelf Persistence Schema And Ownership is complete:
+  existing owners are documented. `FoldBlockShelfModel` owns the in-memory
+  shelf item list and add/consume/remove/clear lifecycle; `FoldShelfItem`
+  carries id, alias, text, source file/module, source line range, line count,
+  origin kind, consumed, and stale; MIME helpers are drag/drop transport only;
+  `FoldBlockShelfPanel` renders and manages preview/delete/drop/drag UI;
+  `EditorFoldingController` owns shelf mode, custom fold extraction, source
+  deletion, and insertion; `MainWindow` wires dock/model visibility and restore
+  dispatch. The durable schema is versioned under `foldShelf/v1/items`, scoped
+  by normalized workspace root, and persists the current item fields with
+  normalized `sourceFile`. Persistence policy belongs in the model/service
+  layer, not the panel. G7.2 same-file restore requirements are documented
+  without implementing restore behavior in G7.1.
+- Focused verification for G7.1: source inspection of
+  `foldblockshelfmodel`, `foldblockshelfpanel`, `editorfolding`,
+  `mainwindow`, and existing Fold Shelf tests, plus `git diff --check`.
 
-Completion criteria for G7.1:
+Completion criteria for G7.2:
 
-- inventory existing Fold Shelf owner classes, item lifecycle, and in-memory
-  data flow
-- define a durable persistence schema and ownership boundary for shelf items
-- define same-file restore requirements for G7.2 without implementing restore
-  behavior in G7.1
-- keep persistence policy in model/service code, not ad hoc UI state
+- implement service/model-owned persistence for Fold Shelf items using the
+  G7.1 schema
+- persist on add, consume, remove, and clear mutations
+- reload persisted items for the current workspace without panel-owned storage
+  policy
+- restore same-file items through the existing editor insertion path
+- remove or consume a persisted item only after successful restore
+- mark missing or invalid same-file restore targets stale instead of silently
+  deleting them
+- do not implement cross-file relocation, rename, search, or clean management
+  in G7.2
 - `readme.md`, `plan.md`, and `goal.md` are updated
 - appropriate focused verification passes
 - milestone commit is pushed

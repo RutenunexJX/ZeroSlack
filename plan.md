@@ -459,9 +459,56 @@ Allowed scope:
 First milestones:
 
 - M7.1 define shelf persistence model
+  (complete: owner inventory, versioned item schema, service/model boundary,
+  and G7.2 same-file restore requirements are documented)
 - M7.2 persist and restore same-file items
 - M7.3 cross-file restore
 - M7.4 rename/search/clean management actions
+
+M7.1 inventory:
+
+- `FoldBlockShelfModel` owns the current in-memory `FoldShelfItem` list and
+  item lifecycle: add, consume, remove, and clear.
+- `FoldShelfItem` currently carries id, alias, text, source file/module,
+  source line range, line count, origin kind, consumed, and stale fields.
+- `encodeFoldShelfItem` / `decodeFoldShelfItem` serialize the current item
+  shape for drag/drop MIME transport, not durable storage ownership.
+- `FoldBlockShelfPanel` renders model items, previews text, accepts editor
+  fold-block drops, initiates shelf-item drags, and handles delete/restore
+  prompts for moved unconsumed items.
+- `EditorFoldingController` owns shelf mode, custom fold extraction,
+  move/delete source behavior, shelf-item insertion, and custom fold marker
+  editing.
+- `MainWindow` owns the dock/model wiring, Global Control `fd s` entry, panel
+  visibility, mode highlighting, and restore command dispatch through
+  `TabManager` plus the editor insertion API.
+
+M7.1 persistence schema:
+
+- Use a versioned durable root such as `foldShelf/v1/items`, scoped by
+  normalized workspace root when available.
+- Persist only model/service data: `id`, `alias`, `text`, `sourceFile`,
+  `sourceModule`, `sourceStartLine`, `sourceEndLine`, `lineCount`,
+  `originKind`, `consumed`, and `stale`.
+- Keep `originKind` limited to `moved` and `copied`.
+- Store `sourceFile` normalized; UI may derive relative display text but must
+  not be the persistence owner.
+- Treat MIME JSON as drag/drop transport. Durable load/save may share fields
+  but must own validation, migration, and write timing separately.
+
+M7.1 ownership and G7.2 requirements:
+
+- Persistence policy belongs in `FoldBlockShelfModel` or a dedicated Fold
+  Shelf persistence service. `FoldBlockShelfPanel` must remain a consumer.
+- `MainWindow` may wire model/service lifetime and route restore actions, but
+  must not hand-roll serialization.
+- G7.2 should persist on model mutations, reload shelf items for the current
+  workspace, restore same-file items through the existing editor insertion
+  path, and remove/consume items only after successful insertion.
+- G7.2 should mark missing/invalid source locations stale and leave cross-file
+  relocation, rename, search, and cleanup for later milestones.
+- Verification: source inspection of Fold Shelf owner classes plus
+  `git diff --check`.
 
 ### 8. Signal Kernel Graph
 
