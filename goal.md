@@ -28,7 +28,7 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
 
 ## Current Goal State
 
-Current milestone: `G2.1 Slot Mode Model And Editor State`.
+Current milestone: `G2.2 Parameter Template Slot Mode`.
 
 Status:
 
@@ -72,17 +72,25 @@ Status:
   replace-all, and replace-all undo behavior.
 - Focused verification for G1.4: Release `gui_smoke_test` target compile/link
   passed without launching the executable.
+- G2.1 Slot Mode Model And Editor State is complete: Slot Mode ownership is
+  documented as template-relative slot metadata from `CodeTemplateService`,
+  insertion/start routing through `EditorCompletionWorkflow`, and editor-local
+  session ownership in `MyCodeEditor` state; entry, Tab/Shift+Tab navigation,
+  completion, Esc cancel, natural exit, stale-session invalidation, and future
+  verification cases are defined without changing template behavior.
+- Focused verification for G2.1: documentation inspection plus `git diff --check`.
 - Verification flow now includes checking for external Windows application-error
   or memory-read dialogs when CTest appears stalled.
 
-Completion criteria for G2.1:
+Completion criteria for G2.2:
 
-- define the slot model ownership and editor state needed after `;;cmd`
-  template insertion
-- define slot entry, next-slot, previous-slot, completion, cancel, and exit
-  behavior without changing template expansion yet
-- identify focused verification cases for the future slot model implementation
-- do not implement template behavior changes in this milestone
+- add concrete slot metadata for `;;p` / `;;lp` parameter declaration templates
+- start Slot Mode after parameter template activation through the existing
+  completion workflow
+- implement editor-local Slot Mode session state for ordered ranges,
+  highlighting, Tab/Shift+Tab navigation, completion, Esc cancel, and stale
+  session exit
+- preserve current template insertion behavior for all non-parameter templates
 - `readme.md`, `plan.md`, and `goal.md` are updated
 - appropriate focused verification passes
 - milestone commit is pushed
@@ -116,7 +124,7 @@ Milestones:
 
 - G2.1 Define slot model, editor state, cancel/exit behavior, and verification
   cases.
-- G2.2 Enable slot mode for one existing template family.
+- G2.2 Enable slot mode for the parameter declaration template family.
 - G2.3 Expand slot mode to remaining signal/parameter template families.
 
 ## Track 3: Batch RTL Edit Actions

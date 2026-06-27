@@ -98,8 +98,29 @@ Allowed scope:
 First milestones:
 
 - M2.1 define slot model and editor state without changing templates
-- M2.2 enable slots for one template family
+- M2.2 enable slots for the parameter declaration template family
 - M2.3 expand slots to existing signal/parameter template families
+
+M2.1 design contract:
+
+- Slot metadata belongs to template expansion data as ranges relative to the
+  inserted text. Existing `selectionStart` / `selectionLength` is the
+  compatibility path for a single primary slot.
+- `EditorCompletionWorkflow` applies template insertion and starts Slot Mode
+  after activation; `MyCodeEditor` editor state owns active slot ranges,
+  highlight rendering, navigation, and stale-session invalidation.
+- Tab advances, Shift+Tab goes backward, Tab on the last slot completes, and
+  Esc exits Slot Mode without reverting inserted text.
+- Slot Mode exits when the cursor leaves the session, the document edit stream
+  makes slot ranges unsafe, the tab changes/closes, COM Mode starts, or Global
+  Control starts.
+- First implementation target is `;;p` / `;;lp` because parameter declarations
+  naturally have at least name and value fill points.
+- Focused verification cases for implementation: activation selects the first
+  slot, Tab advances, Shift+Tab returns, Tab on the last slot exits, Esc exits
+  without reverting inserted text, editing a slot keeps later ranges correct,
+  moving the cursor outside the session exits, and undo that removes the
+  inserted template clears the session safely.
 
 ### 3. Batch RTL Edit Actions
 
