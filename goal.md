@@ -28,7 +28,7 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
 
 ## Current Goal State
 
-Current milestone: `G5.3 Restore ow r Global Control Command`.
+Current milestone: `G6.1 Completion Command Responsibility Audit`.
 
 Status:
 
@@ -141,17 +141,27 @@ Status:
   `completion_test` and `gui_smoke_test` targets compile/link; Release
   `completion_test` passed directly with 669 checks and 0 failures; `ctest -R
   "^completion_test$"` passed.
+- G5.3 Restore ow r Global Control Command is complete:
+  `GlobalControlService` displays `ow r` as an `ow` domain child command, exact
+  `ow r` queries return the recent-workspaces command instead of the numeric
+  count hint, and dispatch continues through the existing `MainWindow` recent
+  workspaces dialog path. No session restore, include dirs/defines UI, recent
+  files, or broader workspace UX was added.
+- Focused verification for G5.3: `git diff --check`; Release
+  `completion_test` and `gui_smoke_test` targets compile/link; Release
+  `completion_test` passed directly with 672 checks and 0 failures; `ctest -R
+  "^completion_test$"` passed. `gui_smoke_test` was not launched.
 
-Completion criteria for G5.3:
+Completion criteria for G6.1:
 
-- display `ow r` as an `ow` domain child command in Global Control
-- route `ow r` through the existing `MainWindow` recent-workspaces dialog path
-- keep Global Control root domain-only behavior
-- keep UI code out of workspace scanning and semantic policy
-- do not add session restore, include dirs/defines UI, recent files, or broad
-  workspace UX
+- document current responsibilities and conflict boundaries for completion,
+  `;cmd`, `;;cmd`, COM Mode, and Global Control
+- identify current storage/query owners for built-in command completion and
+  templates
+- do not implement user templates, custom abbreviations, or slot-mode expansion
+  in this milestone
 - `readme.md`, `plan.md`, and `goal.md` are updated
-- appropriate focused verification passes
+- documentation inspection and `git diff --check` pass
 - milestone commit is pushed
 
 ## Track 1: Editor Daily Operations Completion
@@ -248,6 +258,7 @@ Milestones:
 - G5.2 Add ignored-directory model/service support.
   (complete: service validation plus workspace manager state path)
 - G5.3 Restore `ow r` as a displayed Global Control child command.
+  (complete: visible `ow r` child command plus existing recent dialog routing)
 
 ## Track 6: Completion / `;cmd` / `;;cmd`
 

@@ -14,6 +14,7 @@
 #include "editorsemanticcontextservice.h"
 #include "formatterservice.h"
 #include "ghostannotationservice.h"
+#include "globalcontrolservice.h"
 #include "mycodeeditor.h"
 #include "myhighlighter.h"
 #include "relationshipservice.h"
@@ -404,6 +405,74 @@ int main(int argc, char** argv) {
                cm->getAbbreviationMatches({"always_ff", "logic"},
                                           QStringLiteral("af")),
                {"always_ff"});
+    GlobalControlService globalControlService;
+    const QList<GlobalControlItem> globalRootItems =
+        globalControlService.query(QString(),
+                                   nullptr,
+                                   SemanticIndex::getInstance());
+    bool globalRootHasWorkspaceDomain = false;
+    bool globalRootHasFoldDomain = false;
+    bool globalRootHasCommands = false;
+    for (const GlobalControlItem& item : globalRootItems) {
+        if (item.kind == GlobalControlItemKind::Domain
+            && item.id == QStringLiteral("ow"))
+            globalRootHasWorkspaceDomain = true;
+        if (item.kind == GlobalControlItemKind::Domain
+            && item.id == QStringLiteral("fd"))
+            globalRootHasFoldDomain = true;
+        if (item.kind == GlobalControlItemKind::Command)
+            globalRootHasCommands = true;
+    }
+    expectBool("GlobalControl root shows only domains",
+               globalRootHasWorkspaceDomain
+                   && globalRootHasFoldDomain
+                   && !globalRootHasCommands,
+               true);
+    const QList<GlobalControlItem> globalWorkspaceItems =
+        globalControlService.query(QStringLiteral("ow"),
+                                   nullptr,
+                                   SemanticIndex::getInstance());
+    bool globalWorkspaceShowsOpenOne = false;
+    bool globalWorkspaceShowsOpenTwo = false;
+    bool globalWorkspaceShowsRecent = false;
+    bool globalWorkspaceShowsDeprecatedOw = false;
+    for (const GlobalControlItem& item : globalWorkspaceItems) {
+        if (item.kind == GlobalControlItemKind::Command
+            && item.id == QStringLiteral("ow 1"))
+            globalWorkspaceShowsOpenOne = true;
+        if (item.kind == GlobalControlItemKind::Command
+            && item.id == QStringLiteral("ow 2"))
+            globalWorkspaceShowsOpenTwo = true;
+        if (item.kind == GlobalControlItemKind::Command
+            && item.id == QStringLiteral("ow r"))
+            globalWorkspaceShowsRecent = true;
+        if (item.id == QStringLiteral("ow")
+            && item.kind == GlobalControlItemKind::Command)
+            globalWorkspaceShowsDeprecatedOw = true;
+    }
+    expectBool("GlobalControl ow domain shows ow r",
+               globalWorkspaceShowsOpenOne
+                   && globalWorkspaceShowsOpenTwo
+                   && globalWorkspaceShowsRecent
+                   && !globalWorkspaceShowsDeprecatedOw,
+               true);
+    const QList<GlobalControlItem> globalRecentItems =
+        globalControlService.query(QStringLiteral("ow r"),
+                                   nullptr,
+                                   SemanticIndex::getInstance());
+    bool globalRecentCommandFound = false;
+    bool globalRecentCountHintFound = false;
+    for (const GlobalControlItem& item : globalRecentItems) {
+        if (item.kind == GlobalControlItemKind::Command
+            && item.id == QStringLiteral("ow r"))
+            globalRecentCommandFound = true;
+        if (item.kind == GlobalControlItemKind::Domain
+            && item.title == QStringLiteral("ow <num>"))
+            globalRecentCountHintFound = true;
+    }
+    expectBool("GlobalControl ow r query finds recent command",
+               globalRecentCommandFound && !globalRecentCountHintFound,
+               true);
     const QList<SemanticSymbolRecord> modelScoringRecords{
         SemanticFixtureRecordBuilder(
             QStringLiteral("logic"),

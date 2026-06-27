@@ -261,6 +261,8 @@ First milestones:
   (complete: `WorkspaceIgnoreService` and `WorkspaceManager` now provide the
   workspace-owned path for active ignored directories)
 - M5.3 restore `ow r` as a displayed Global Control child command
+  (complete: `ow r` is displayed in the `ow` domain and routes to the existing
+  recent-workspaces dialog)
 
 M5.1 audit status:
 
@@ -296,6 +298,20 @@ M5.2 implementation status:
   `gui_smoke_test` targets compile/link; Release `completion_test` passed
   directly with 669 checks and 0 failures; `ctest -R "^completion_test$"`
   passed.
+
+M5.3 implementation status:
+
+- Complete: `GlobalControlService` now displays `ow r` as an `ow` domain child
+  command next to `ow 1` and `ow 2`.
+- Complete: exact `ow r` queries return the recent-workspaces command instead
+  of the numeric count hint.
+- Complete: dispatch continues through the existing `MainWindow` recent
+  workspaces dialog path; no new session restore, include dirs/defines UI,
+  recent files, or broad workspace UX was added.
+- Verification: `git diff --check`; Release `completion_test` and
+  `gui_smoke_test` targets compile/link; Release `completion_test` passed
+  directly with 672 checks and 0 failures; `ctest -R "^completion_test$"`
+  passed. `gui_smoke_test` was not launched.
 
 ### 6. Completion / `;cmd` / `;;cmd`
 

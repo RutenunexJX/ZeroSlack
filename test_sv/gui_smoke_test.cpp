@@ -6764,6 +6764,7 @@ static void runGlobalControlRegression(MainWindow& window,
                       SemanticIndex::getInstance());
     bool foundOpenOneWorkspaceAction = false;
     bool foundOpenTwoWorkspacesAction = false;
+    bool foundRecentWorkspaceAction = false;
     bool foundDeprecatedWorkspaceAction = false;
     for (const GlobalControlItem& item : workspaceMatches) {
         if (item.id == QStringLiteral("ow 1")
@@ -6772,8 +6773,11 @@ static void runGlobalControlRegression(MainWindow& window,
         if (item.id == QStringLiteral("ow 2")
             && item.kind == GlobalControlItemKind::Command)
             foundOpenTwoWorkspacesAction = true;
-        if (item.id == QStringLiteral("ow")
-            || item.id == QStringLiteral("ow r"))
+        if (item.id == QStringLiteral("ow r")
+            && item.kind == GlobalControlItemKind::Command
+            && item.subtitle.contains(QStringLiteral("Recent Workspaces")))
+            foundRecentWorkspaceAction = true;
+        if (item.id == QStringLiteral("ow"))
             foundDeprecatedWorkspaceAction = true;
     }
     expectBool("global control ow domain shows ow 1",
@@ -6781,6 +6785,9 @@ static void runGlobalControlRegression(MainWindow& window,
                true);
     expectBool("global control ow domain shows ow 2",
                foundOpenTwoWorkspacesAction,
+               true);
+    expectBool("global control ow domain shows ow r",
+               foundRecentWorkspaceAction,
                true);
     expectBool("global control ow domain hides deprecated commands",
                foundDeprecatedWorkspaceAction,
@@ -6815,12 +6822,12 @@ static void runGlobalControlRegression(MainWindow& window,
             && item.title == QStringLiteral("ow <num>"))
             foundWorkspaceCountHint = true;
     }
-    expectBool("global control UI hides old ow r command",
+    expectBool("global control ow r query finds recent command",
                foundRecentByExactCommand,
-               false);
-    expectBool("global control ow r query gives count hint",
-               foundWorkspaceCountHint,
                true);
+    expectBool("global control ow r query hides count hint",
+               foundWorkspaceCountHint,
+               false);
 
     const QList<GlobalControlItem> foldActionMatches =
         service.query(QStringLiteral("fd"),

@@ -97,11 +97,33 @@ QList<GlobalControlItem> foldDomainItems(const QString& filter)
 
 QList<GlobalControlItem> workspaceDomainItems(const QString& query)
 {
+    const QList<GlobalControlItem> baseItems = {
+        item(GlobalControlItemKind::Command,
+             QStringLiteral("ow 1"),
+             QStringLiteral("ow 1"),
+             QStringLiteral("Open 1 workspace")),
+        item(GlobalControlItemKind::Command,
+             QStringLiteral("ow 2"),
+             QStringLiteral("ow 2"),
+             QStringLiteral("Open 2 workspaces")),
+        item(GlobalControlItemKind::Command,
+             QStringLiteral("ow r"),
+             QStringLiteral("ow r"),
+             QStringLiteral("Recent Workspaces")),
+    };
+
     const QStringList parts = query.split(QLatin1Char(' '),
                                          Qt::SkipEmptyParts);
     if (parts.size() >= 2) {
+        const QString argument = parts.at(1);
+        if (QStringLiteral("r").startsWith(argument, Qt::CaseInsensitive)) {
+            QList<GlobalControlItem> result;
+            appendFiltered(&result, baseItems, query);
+            return result;
+        }
+
         bool ok = false;
-        const int count = parts.at(1).toInt(&ok);
+        const int count = argument.toInt(&ok);
         if (ok && count > 0) {
             return {
                 item(GlobalControlItemKind::Command,
@@ -120,16 +142,7 @@ QList<GlobalControlItem> workspaceDomainItems(const QString& query)
         };
     }
 
-    return {
-        item(GlobalControlItemKind::Command,
-             QStringLiteral("ow 1"),
-             QStringLiteral("ow 1"),
-             QStringLiteral("Open 1 workspace")),
-        item(GlobalControlItemKind::Command,
-             QStringLiteral("ow 2"),
-             QStringLiteral("ow 2"),
-             QStringLiteral("Open 2 workspaces")),
-    };
+    return baseItems;
 }
 }
 
@@ -166,6 +179,7 @@ QList<GlobalControlItem> GlobalControlService::commandItems() const
         item(GlobalControlItemKind::Domain, QStringLiteral("fd"), QStringLiteral("fd"), QStringLiteral("Fold")),
         item(GlobalControlItemKind::Command, QStringLiteral("ow 1"), QStringLiteral("ow 1"), QStringLiteral("Open 1 workspace")),
         item(GlobalControlItemKind::Command, QStringLiteral("ow 2"), QStringLiteral("ow 2"), QStringLiteral("Open 2 workspaces")),
+        item(GlobalControlItemKind::Command, QStringLiteral("ow r"), QStringLiteral("ow r"), QStringLiteral("Recent Workspaces")),
         item(GlobalControlItemKind::Command, QStringLiteral("fd r"), QStringLiteral("fd r"), QStringLiteral("Fold Region - mark a custom fold block in the active editor")),
         item(GlobalControlItemKind::Command, QStringLiteral("fd s"), QStringLiteral("fd s"), QStringLiteral("Fold Shelf - drag custom fold blocks to or from the shelf")),
     };

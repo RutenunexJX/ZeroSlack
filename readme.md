@@ -47,8 +47,8 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
   prefix conflict, and malformed prefix reasons, and COM command failures use
   centralized registry-backed messages where practical.
 - Ctrl+Space opens Global Control as a domain-first surface. Current root
-  domains are `ow` and `fd`; displayed commands are `ow <num>`, `fd r`, and
-  `fd s`.
+  domains are `ow` and `fd`; displayed commands are `ow <num>`, `ow r`,
+  `fd r`, and `fd s`.
 - `;cmd` remains semantic command completion. `;;cmd` remains template
   expansion. COM Mode is for editor-local command actions. Slot Mode is the
   post-template editor-local fill flow; it is active for `;;p` / `;;lp`
@@ -112,10 +112,10 @@ and restoring Global Control `ow r` for recent workspaces.
   `WorkspaceManager::recentWorkspaceEntries()`.
 - Workspace alias rename updates matching recent-workspace metadata.
 - Global Control root shows only the `ow` and `fd` domains. The `ow` domain
-  currently displays `ow 1`, `ow 2`, and accepts numeric `ow <num>` queries.
-- `ow r` is not displayed by `GlobalControlService` today. `MainWindow` still
-  has an internal `ow r` action handler and recent-workspaces dialog, and tests
-  cover that hidden compatibility path.
+  displays `ow 1`, `ow 2`, `ow r`, and accepts numeric `ow <num>` queries.
+- `ow r` is a displayed Global Control child command. It routes through the
+  existing `MainWindow` recent-workspaces dialog and uses
+  `WorkspaceManager::recentWorkspaceEntries()`.
 - `ProjectModel` already has `ignoredPaths` and filters raw scanned files
   through `setIgnoredPaths()`.
 - `WorkspaceIgnoreService` normalizes and validates ignored-directory requests
