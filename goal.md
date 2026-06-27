@@ -28,7 +28,7 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
 
 ## Current Goal State
 
-Current milestone: `G10.3 State Transition Graph UI And Navigation Evidence`.
+Current milestone: `G11.1 Module Block Diagram Service Report`.
 
 Status:
 
@@ -361,14 +361,27 @@ Status:
   compile/link; `ctest -R "^relationship_test$"` and `ctest -R
   "^completion_test$"` passed. `gui_smoke_test` was not launched.
 
-Completion criteria for G10.3:
+- G10.3 State Transition Graph UI And Navigation Evidence is complete:
+  RTL Insights renders the service-owned `StateTransitionGraphReport` through
+  the existing FSM row renderer. Panel-level coverage verifies that selecting
+  `next_state` renders only the matching next-state graph and excludes the
+  sibling `ns` graph in the same module. The same coverage invokes the
+  double-click navigation signal for transition and next-state rows and verifies
+  that source links from the report reach the navigation handler. G10.1 gating
+  and G10.2 selected next-state filtering are preserved; extraction and report
+  shaping remain outside UI code.
+- Focused verification for G10.3: `git diff --check`; Release
+  `completion_test`, `relationship_test`, and `gui_smoke_test` targets
+  compile/link; `ctest -R "^relationship_test$"` and `ctest -R
+  "^completion_test$"` passed. `gui_smoke_test` was not launched.
 
-- add graph UI/navigation evidence for the service-owned State Transition Graph
-  report
-- preserve G10.1 gating and G10.2 selected next-state report filtering
-- UI must render/route from report data only; do not move extraction into UI
-- double-click or equivalent navigation evidence reaches module/state/transition
-  source links already carried by the report
+Completion criteria for G11.1:
+
+- add a service-owned module block diagram report for a selected module
+- report only module/interface instance containment or wrapping relationships
+- do not include signals in the report
+- carry module definition navigation links in the report data
+- keep extraction/report logic out of UI code; UI rendering waits for G11.2
 - `readme.md`, `plan.md`, and `goal.md` are updated
 - appropriate focused verification passes
 - milestone commit is pushed
@@ -572,6 +585,7 @@ Milestones:
 - G10.2 Service-owned transition extraction/report.
   (complete: selected next-state report service and filtered FSM graph data)
 - G10.3 Graph UI rendering and navigation evidence.
+  (complete: RTL Insights report rendering and source-link navigation evidence)
 
 ## Track 11: Module Block Diagram
 

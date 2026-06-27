@@ -21,6 +21,7 @@
 #include "searchservice.h"
 #include "semantic_fixture_records.h"
 #include "semanticdiffservice.h"
+#include "rtlinsightspanelcoordinator.h"
 #include "signalkernelgraphservice.h"
 #include "signaljourneyservice.h"
 #include "statetransitiongraphservice.h"
@@ -39,10 +40,14 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QHash>
+#include <QMetaObject>
 #include <QSet>
 #include <QString>
 #include <QTemporaryDir>
 #include <QTimer>
+#include <QTreeWidget>
+#include <QTreeWidgetItem>
+#include <QWidget>
 #include <cstdio>
 #include <memory>
 
@@ -184,6 +189,48 @@ static void expectInt(const char* what, int got, int want)
     if (!ok)
         ++g_fails;
     printf("[%s] %-46s got=%d want=%d\n", ok ? "PASS" : "FAIL", what, got, want);
+}
+
+static QTreeWidgetItem* findTreeItem(
+    QTreeWidgetItem* item,
+    const QString& column0,
+    const QString& column1 = QString(),
+    const QString& column2 = QString())
+{
+    if (!item)
+        return nullptr;
+    const bool matches = item->text(0) == column0
+        && (column1.isNull() || item->text(1) == column1)
+        && (column2.isNull() || item->text(2) == column2);
+    if (matches)
+        return item;
+    for (int i = 0; i < item->childCount(); ++i) {
+        if (QTreeWidgetItem* found =
+                findTreeItem(item->child(i), column0, column1, column2)) {
+            return found;
+        }
+    }
+    return nullptr;
+}
+
+static QTreeWidgetItem* findTreeItem(
+    QTreeWidget* tree,
+    const QString& column0,
+    const QString& column1 = QString(),
+    const QString& column2 = QString())
+{
+    if (!tree)
+        return nullptr;
+    for (int i = 0; i < tree->topLevelItemCount(); ++i) {
+        if (QTreeWidgetItem* found =
+                findTreeItem(tree->topLevelItem(i),
+                             column0,
+                             column1,
+                             column2)) {
+            return found;
+        }
+    }
+    return nullptr;
 }
 
 static QString loadTextFile(const QString& path)
@@ -7127,6 +7174,86 @@ static void runFsmGraphServiceFixture()
                    && stateTransitionNoFsmReport.notFoundReasonDisplayName
                        == QStringLiteral("no FSM graph"),
                true);
+
+    StateTransitionGraphService::getInstance()->setSemanticIndex(&index);
+    QWidget stateTransitionPanelHost;
+    RtlInsightsPanelCoordinator stateTransitionPanel(
+        &stateTransitionPanelHost);
+    QString navigatedFileName;
+    int navigatedLine = 0;
+    int navigatedColumn = 0;
+    stateTransitionPanel.setNavigationHandler(
+        [&](const QString& fileName, int line, int column) {
+            navigatedFileName = fileName;
+            navigatedLine = line;
+            navigatedColumn = column;
+        });
+    stateTransitionPanel.showStateTransitionGraphForSignal(
+        dualFileName,
+        QStringLiteral("dual_fsm_top"),
+        QStringLiteral("next_state"));
+    QTreeWidget* stateTransitionTree = stateTransitionPanel.tree();
+    QTreeWidgetItem* stateTransitionRoot =
+        stateTransitionTree && stateTransitionTree->topLevelItemCount() > 0
+            ? stateTransitionTree->topLevelItem(0)
+            : nullptr;
+    QTreeWidgetItem* nextStateSignalItem =
+        findTreeItem(stateTransitionTree,
+                     QStringLiteral("Next State Signal"),
+                     QStringLiteral("next_state"),
+                     QStringLiteral("enum"));
+    QTreeWidgetItem* filteredOutNsItem =
+        findTreeItem(stateTransitionTree,
+                     QStringLiteral("Next State Signal"),
+                     QStringLiteral("ns"),
+                     QStringLiteral("enum"));
+    QTreeWidgetItem* transitionItem =
+        findTreeItem(stateTransitionTree,
+                     QStringLiteral("B_IDLE"),
+                     QStringLiteral("B_RUN"));
+    expectBool("state transition panel renders service report",
+               stateTransitionRoot
+                   && stateTransitionRoot->text(0).contains(
+                       QStringLiteral("State Transition Graph"))
+                   && nextStateSignalItem
+                   && !filteredOutNsItem
+                   && transitionItem
+                   && transitionItem->data(0, Qt::UserRole).toString()
+                       == dualFileName
+                   && transitionItem->data(0, Qt::UserRole + 1).toInt()
+                       == 14,
+               true);
+    const bool invokedTransitionNavigation =
+        transitionItem
+        && QMetaObject::invokeMethod(stateTransitionTree,
+                                     "itemDoubleClicked",
+                                     Qt::DirectConnection,
+                                     Q_ARG(QTreeWidgetItem*, transitionItem),
+                                     Q_ARG(int, 0));
+    expectBool("state transition panel transition navigation",
+               invokedTransitionNavigation
+                   && navigatedFileName == dualFileName
+                   && navigatedLine == 14
+                   && navigatedColumn == 1,
+               true);
+    navigatedFileName.clear();
+    navigatedLine = 0;
+    navigatedColumn = 0;
+    const bool invokedNextStateNavigation =
+        nextStateSignalItem
+        && QMetaObject::invokeMethod(stateTransitionTree,
+                                     "itemDoubleClicked",
+                                     Qt::DirectConnection,
+                                     Q_ARG(QTreeWidgetItem*, nextStateSignalItem),
+                                     Q_ARG(int, 0));
+    expectBool("state transition panel next-state navigation",
+               invokedNextStateNavigation
+                   && navigatedFileName == dualFileName
+                   && navigatedLine == 7
+                   && navigatedColumn == 1,
+               true);
+    StateTransitionGraphService::getInstance()->setSemanticIndex(
+        SemanticIndex::getInstance());
 
     FsmGraphQuery emptyModuleQuery;
     const FsmGraphReport emptyModuleReport =

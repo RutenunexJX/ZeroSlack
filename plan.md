@@ -816,6 +816,8 @@ First milestones:
   (complete: `StateTransitionGraphService` shapes accepted `ns` /
   `next_state` requests into selected next-state graph reports)
 - M10.3 graph UI rendering and navigation evidence
+  (complete: RTL Insights renders the service-owned State Transition Graph
+  report and double-click navigation follows report source links)
 
 M10.1 implementation constraints:
 
@@ -859,6 +861,28 @@ M10.2 implementation status:
   failure reasons.
 - Complete: the existing state-transition UI route consumes the new service
   report and reuses the existing RTL Insights FSM row rendering path.
+- Verification: `git diff --check`; Release `completion_test`,
+  `relationship_test`, and `gui_smoke_test` targets compile/link; `ctest -R
+  "^relationship_test$"` and `ctest -R "^completion_test$"` passed.
+  `gui_smoke_test` was not launched.
+
+M10.3 implementation constraints:
+
+- Preserve G10.1 trigger gating and G10.2 selected next-state report filtering.
+- UI must render and route from `StateTransitionGraphReport` data only.
+- Do not move transition extraction, graph filtering, workspace scanning, or
+  Slang execution into UI code.
+
+M10.3 implementation status:
+
+- Complete: RTL Insights renders the service-owned State Transition Graph
+  report through the existing FSM row renderer.
+- Complete: panel-level tests verify that selecting `next_state` renders only
+  the matching next-state graph and excludes the sibling `ns` graph in the same
+  module.
+- Complete: panel-level tests invoke the double-click navigation signal for
+  transition and next-state rows and verify the source links from the report are
+  delivered to the navigation handler.
 - Verification: `git diff --check`; Release `completion_test`,
   `relationship_test`, and `gui_smoke_test` targets compile/link; `ctest -R
   "^relationship_test$"` and `ctest -R "^completion_test$"` passed.

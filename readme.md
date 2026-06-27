@@ -74,7 +74,8 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
   selected `ns` and `next_state` can trigger the graph, while selected `cs` and
   `current_state` cannot. `StateTransitionGraphService` shapes accepted
   requests into selected next-state graph reports by filtering existing
-  `FsmGraphService` data.
+  `FsmGraphService` data, and RTL Insights renders those reports with
+  navigable state and transition rows.
 - Formatter support exists as conservative editor formatting. Current daily
   editor action inventory: `Ctrl+F` opens Find; formatter document/selection
   actions live in the editor context menu; line comment actions are available
@@ -206,7 +207,8 @@ and restoring Global Control `ow r` for recent workspaces.
   `StateTransitionGraphService` then owns accepted-request report shaping and
   exact next-state graph filtering on top of `FsmGraphService`. `EditorCoordinator`
   and `SemanticPanelRefreshCoordinator` only route accepted requests; RTL
-  Insights consumes the service report and reuses existing FSM row rendering.
+  Insights consumes the service report, reuses existing FSM row rendering, and
+  keeps navigation wired through row source links carried by the report.
 
 ## Command Responsibility Map
 
