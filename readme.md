@@ -59,7 +59,8 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
   assignment statements, then starts Slot Mode on the cleared RHS fill points.
 - Fold Region and Fold Shelf are available through Global Control. Fold Shelf
   now has a service/model-owned persistence baseline and explicit cross-file
-  restore flow; rename, search, and cleanup management remain pending.
+  restore flow plus basic rename, search, and stale/consumed cleanup
+  management.
 - Signal Kernel Graph exists as a signal-centric exploration graph. Dense
   fanout still needs grouping, filtering, and search.
 - Wave Preview exists as a code-understanding sketch, not a simulator.
@@ -165,8 +166,9 @@ and restoring Global Control `ow r` for recent workspaces.
   normalization. `WorkspaceManager` is the workspace-level model entry point;
   UI should call it rather than mutating `ProjectModel::ignoredPaths` directly.
 - Fold Shelf baseline: `FoldBlockShelfModel` owns the shelf item list and
-  mutation lifecycle, `FoldShelfPersistenceService` owns versioned
-  QSettings-backed load/save scoped by workspace root,
+  mutation lifecycle including rename, query/filter, and stale/consumed
+  cleanup, `FoldShelfPersistenceService` owns versioned QSettings-backed
+  load/save scoped by workspace root,
   `FoldShelfRestoreService` owns explicit restore reports for active-editor
   relocation, `FoldBlockShelfPanel` renders the list and handles
   preview/delete/drag/restore UI requests, `EditorFoldingController` creates
@@ -303,8 +305,13 @@ active-editor restore path. The panel emits a restore request for the selected
 item; `MainWindow` supplies the active editor and cursor line; the service
 inserts through the existing editor fold-shelf insertion API, then consumes or
 removes the persisted item only after successful insertion. Missing active
-editors or failed insertions mark the item stale with a failure reason. Rename,
-search, and clean-up actions remain later G7 milestones.
+editors or failed insertions mark the item stale with a failure reason.
+
+G7.4 management actions keep shelf policy in `FoldBlockShelfModel`: renaming
+trims and persists aliases, search/filtering reads only shelf item fields, and
+cleanup removes stale or consumed items as an explicit model mutation. The panel
+provides the search box and management buttons but does not own persistence or
+workspace scanning.
 
 ## Batch RTL Edit Contract
 

@@ -5,6 +5,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QRegularExpression>
+#include <QStringList>
 
 #include <utility>
 
@@ -45,6 +46,34 @@ void normalizeShelfItem(FoldShelfItem* item)
     item->lineCount = lineCountForText(item->text);
     if (item->alias.isEmpty())
         item->alias = item->id;
+}
+
+bool containsAllTerms(const QString& haystack, const QStringList& terms)
+{
+    for (const QString& term : terms) {
+        if (!haystack.contains(term, Qt::CaseInsensitive))
+            return false;
+    }
+    return true;
+}
+
+QString searchableTextForItem(const FoldShelfItem& item)
+{
+    const QString origin = item.originKind == FoldShelfOriginKind::Moved
+        ? QStringLiteral("moved")
+        : QStringLiteral("copied");
+    QStringList fields;
+    fields << item.id
+           << item.alias
+           << item.sourceFile
+           << item.sourceModule
+           << item.text
+           << origin;
+    if (item.consumed)
+        fields << QStringLiteral("consumed");
+    if (item.stale)
+        fields << QStringLiteral("stale");
+    return fields.join(QLatin1Char('\n'));
 }
 }
 
@@ -128,6 +157,64 @@ bool FoldBlockShelfModel::markItemStale(const QString& id)
         return true;
     }
     return false;
+}
+
+bool FoldBlockShelfModel::renameItem(const QString& id, const QString& alias)
+{
+    const QString cleanAlias = alias.trimmed();
+    if (id.trimmed().isEmpty() || cleanAlias.isEmpty())
+        return false;
+
+    for (FoldShelfItem& item : shelfItems) {
+        if (item.id != id)
+            continue;
+        if (item.alias == cleanAlias)
+            return true;
+        item.alias = cleanAlias;
+        persistItems();
+        emit changed();
+        return true;
+    }
+    return false;
+}
+
+QList<FoldShelfItem> FoldBlockShelfModel::itemsMatching(
+    const QString& query) const
+{
+    const QString cleanQuery = query.trimmed();
+    if (cleanQuery.isEmpty())
+        return shelfItems;
+
+    const QStringList terms =
+        cleanQuery.split(QRegularExpression(QStringLiteral("\\s+")),
+                         Qt::SkipEmptyParts);
+    if (terms.isEmpty())
+        return shelfItems;
+
+    QList<FoldShelfItem> result;
+    for (const FoldShelfItem& item : shelfItems) {
+        if (containsAllTerms(searchableTextForItem(item), terms))
+            result.append(item);
+    }
+    return result;
+}
+
+int FoldBlockShelfModel::removeConsumedOrStaleItems()
+{
+    int removed = 0;
+    for (int i = shelfItems.size() - 1; i >= 0; --i) {
+        const FoldShelfItem& item = shelfItems.at(i);
+        if (!item.consumed && !item.stale)
+            continue;
+        shelfItems.removeAt(i);
+        ++removed;
+    }
+
+    if (removed > 0) {
+        persistItems();
+        emit changed();
+    }
+    return removed;
 }
 
 bool FoldBlockShelfModel::removeItem(const QString& id)

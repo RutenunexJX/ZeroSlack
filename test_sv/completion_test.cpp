@@ -5251,6 +5251,9 @@ int main(int argc, char** argv) {
     const QString foldShelfWorkspaceB =
         QDir(foldShelfSettingsDir.path()).absoluteFilePath(
             QStringLiteral("workspace_b"));
+    const QString foldShelfWorkspaceC =
+        QDir(foldShelfSettingsDir.path()).absoluteFilePath(
+            QStringLiteral("workspace_c"));
     FoldShelfPersistenceService foldShelfPersistence(
         foldShelfSettingsFile);
     FoldBlockShelfModel persistentFoldShelf;
@@ -5426,6 +5429,84 @@ int main(int argc, char** argv) {
                    && removeRestoreShelf.item(removeRestoreId).id.isEmpty()
                    && removeRestoreEditor.toPlainText().contains(
                        QStringLiteral("logic valid")),
+               true);
+
+    FoldBlockShelfModel managedFoldShelf;
+    managedFoldShelf.setPersistenceService(&foldShelfPersistence);
+    managedFoldShelf.setWorkspaceRoot(foldShelfWorkspaceC);
+    FoldShelfItem activeManagedItem = persistentFoldItem;
+    activeManagedItem.alias = QStringLiteral("active pipe");
+    activeManagedItem.sourceModule = QStringLiteral("alpha_top");
+    activeManagedItem.consumed = false;
+    activeManagedItem.stale = false;
+    const QString activeManagedId =
+        managedFoldShelf.addItem(activeManagedItem);
+    FoldShelfItem consumedManagedItem = persistentFoldItem;
+    consumedManagedItem.alias = QStringLiteral("done response");
+    consumedManagedItem.sourceModule = QStringLiteral("beta_mod");
+    const QString consumedManagedId =
+        managedFoldShelf.addItem(consumedManagedItem);
+    FoldShelfItem staleManagedItem = persistentFoldItem;
+    staleManagedItem.alias = QStringLiteral("stale cache");
+    staleManagedItem.sourceModule = QStringLiteral("gamma_mod");
+    const QString staleManagedId =
+        managedFoldShelf.addItem(staleManagedItem);
+    expectBool("FoldShelfManagement marks setup states",
+               managedFoldShelf.consumeItem(consumedManagedId)
+                   && managedFoldShelf.markItemStale(staleManagedId),
+               true);
+    expectBool("FoldShelfManagement renames item",
+               managedFoldShelf.renameItem(
+                   activeManagedId,
+                   QStringLiteral("  renamed pipe  "))
+                   && managedFoldShelf.item(activeManagedId).alias
+                          == QStringLiteral("renamed pipe"),
+               true);
+    expectBool("FoldShelfManagement rejects blank rename",
+               !managedFoldShelf.renameItem(activeManagedId,
+                                            QStringLiteral("   "))
+                   && managedFoldShelf.item(activeManagedId).alias
+                          == QStringLiteral("renamed pipe"),
+               true);
+    FoldBlockShelfModel renamedManagedReload;
+    renamedManagedReload.setPersistenceService(&foldShelfPersistence);
+    renamedManagedReload.setWorkspaceRoot(foldShelfWorkspaceC);
+    expectBool("FoldShelfManagement persists rename",
+               renamedManagedReload.item(activeManagedId).alias
+                   == QStringLiteral("renamed pipe"),
+               true);
+    const QList<FoldShelfItem> alphaMatches =
+        managedFoldShelf.itemsMatching(QStringLiteral("renamed alpha"));
+    expectBool("FoldShelfManagement filters by terms",
+               alphaMatches.size() == 1
+                   && alphaMatches.first().id == activeManagedId,
+               true);
+    const QList<FoldShelfItem> staleMatches =
+        managedFoldShelf.itemsMatching(QStringLiteral("stale gamma"));
+    expectBool("FoldShelfManagement filters stale item",
+               staleMatches.size() == 1
+                   && staleMatches.first().id == staleManagedId,
+               true);
+    const int cleanedManagedCount =
+        managedFoldShelf.removeConsumedOrStaleItems();
+    expectBool("FoldShelfManagement cleans consumed and stale",
+               cleanedManagedCount == 2
+                   && managedFoldShelf.items().size() == 1
+                   && managedFoldShelf.item(activeManagedId).id
+                          == activeManagedId
+                   && managedFoldShelf.item(consumedManagedId).id.isEmpty()
+                   && managedFoldShelf.item(staleManagedId).id.isEmpty(),
+               true);
+    FoldBlockShelfModel cleanedManagedReload;
+    cleanedManagedReload.setPersistenceService(&foldShelfPersistence);
+    cleanedManagedReload.setWorkspaceRoot(foldShelfWorkspaceC);
+    expectBool("FoldShelfManagement persists clean",
+               cleanedManagedReload.items().size() == 1
+                   && cleanedManagedReload.item(activeManagedId).id
+                          == activeManagedId,
+               true);
+    expectBool("FoldShelfManagement clean no-op",
+               managedFoldShelf.removeConsumedOrStaleItems() == 0,
                true);
 
     const CodeTemplateItem widthLogic =

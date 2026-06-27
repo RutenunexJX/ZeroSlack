@@ -28,7 +28,7 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
 
 ## Current Goal State
 
-Current milestone: `G7.4 Add Fold Shelf Rename/Search/Clean Management Actions`.
+Current milestone: `G8.1 Add Signal Kernel Graph Fanout Grouping Reports`.
 
 Status:
 
@@ -243,16 +243,24 @@ Status:
 - Focused verification for G7.3: `git diff --check`; Release
   `completion_test` and `gui_smoke_test` targets compile/link; `ctest -R
   "^completion_test$"` passed. `gui_smoke_test` was not launched.
+- G7.4 Add Fold Shelf Rename/Search/Clean Management Actions is complete:
+  `FoldBlockShelfModel` owns rename, query/filter, and stale/consumed cleanup
+  behavior. Rename trims aliases, rejects blank aliases, persists successful
+  changes, and emits the existing change signal. Filtering reads only shelf
+  item data, and clean management removes stale or consumed items through an
+  explicit model mutation. `FoldBlockShelfPanel` provides the search field and
+  Rename / Clean Stale/Consumed buttons while remaining a model consumer.
+- Focused verification for G7.4: `git diff --check`; Release
+  `completion_test` and `gui_smoke_test` targets compile/link; `ctest -R
+  "^completion_test$"` passed. `gui_smoke_test` was not launched.
 
-Completion criteria for G7.4:
+Completion criteria for G8.1:
 
-- support renaming Fold Shelf items without moving persistence policy into the
-  panel
-- support searching/filtering Fold Shelf items from model/service data
-- support cleaning stale or consumed Fold Shelf items through explicit
-  management actions
-- preserve the existing persistence and restore ownership boundaries
-- do not add broad Fold Shelf UX beyond rename, search, and clean management
+- add a service/report-layer model for grouping high-fanout Signal Kernel Graph
+  nodes
+- keep graph policy out of UI widgets and do not scan workspace files from UI
+- preserve existing Signal Kernel Graph behavior for non-grouped data
+- do not add collapse/expand UI, filtering UI, or graph search in G8.1
 - `readme.md`, `plan.md`, and `goal.md` are updated
 - appropriate focused verification passes
 - milestone commit is pushed

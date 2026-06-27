@@ -41,6 +41,9 @@ public:
     QString addItem(FoldShelfItem item);
     bool consumeItem(const QString& id);
     bool markItemStale(const QString& id);
+    bool renameItem(const QString& id, const QString& alias);
+    QList<FoldShelfItem> itemsMatching(const QString& query) const;
+    int removeConsumedOrStaleItems();
     bool removeItem(const QString& id);
     void clear();
 

@@ -469,6 +469,8 @@ First milestones:
   editor through the existing insertion path and persists consume/remove/stale
   outcomes)
 - M7.4 rename/search/clean management actions
+  (complete: `FoldBlockShelfModel` owns rename, query/filter, and
+  stale/consumed cleanup mutations; the panel provides only management UI)
 
 M7.1 inventory:
 
@@ -573,6 +575,33 @@ M7.3 implementation status:
   paths.
 - Not done in M7.3: rename, search, clean management, broader shelf UX, or
   semantic/workspace analysis changes.
+- Verification: `git diff --check`; Release `completion_test` and
+  `gui_smoke_test` targets compile/link; `ctest -R "^completion_test$"` passed.
+  `gui_smoke_test` was not launched.
+
+M7.4 implementation constraints:
+
+- Rename, search/filter, and clean management must stay model/service-owned.
+- `FoldBlockShelfPanel` may render controls and route user requests, but it
+  must not own persistence policy, scan workspaces, or inspect editor text.
+- Clean management is limited to explicit removal of stale or consumed shelf
+  items.
+- Do not add broad Fold Shelf UX beyond rename, search/filter, and clean.
+
+M7.4 implementation status:
+
+- Complete: `FoldBlockShelfModel::renameItem` trims aliases, rejects blank
+  aliases, persists successful changes, and emits the existing change signal.
+- Complete: `FoldBlockShelfModel::itemsMatching` filters against shelf item
+  data only: id, alias, source file, source module, fold text, origin kind,
+  and stale/consumed state.
+- Complete: `FoldBlockShelfModel::removeConsumedOrStaleItems` removes only
+  stale or consumed items, persists the mutation, and reports the removal
+  count.
+- Complete: `FoldBlockShelfPanel` adds a search field plus Rename and
+  Clean Stale/Consumed buttons while remaining a model consumer.
+- Not done in M7.4: broader shelf UX, editor semantic behavior, workspace
+  scanning, or unrelated Fold Shelf workflow.
 - Verification: `git diff --check`; Release `completion_test` and
   `gui_smoke_test` targets compile/link; `ctest -R "^completion_test$"` passed.
   `gui_smoke_test` was not launched.

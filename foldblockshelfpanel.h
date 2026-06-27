@@ -6,6 +6,7 @@
 #include <QWidget>
 
 class QListWidget;
+class QLineEdit;
 class QPushButton;
 class QDragEnterEvent;
 class QDragMoveEvent;
@@ -36,7 +37,10 @@ protected:
 private:
     FoldBlockShelfModel* shelfModel = nullptr;
     QListWidget* listWidget = nullptr;
+    QLineEdit* searchEdit = nullptr;
     QPushButton* restoreButton = nullptr;
+    QPushButton* renameButton = nullptr;
+    QPushButton* cleanButton = nullptr;
     bool activeShelfMode = false;
 
     void refresh();
@@ -44,7 +48,10 @@ private:
     void showPreview(const FoldShelfItem& item);
     void handleDeleteSelectedItem();
     void handleRestoreSelectedItem();
+    void handleRenameSelectedItem();
+    void handleCleanItems();
     void updateActionState();
+    bool hasCleanableItems() const;
     QString selectedItemId() const;
 };
 

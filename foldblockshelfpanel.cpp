@@ -7,7 +7,10 @@
 #include <QDragEnterEvent>
 #include <QDragMoveEvent>
 #include <QDropEvent>
+#include <QHBoxLayout>
+#include <QInputDialog>
 #include <QKeyEvent>
+#include <QLineEdit>
 #include <QListWidget>
 #include <QListWidgetItem>
 #include <QMessageBox>
@@ -90,10 +93,31 @@ FoldBlockShelfPanel::FoldBlockShelfPanel(QWidget* parent)
     layout->setContentsMargins(4, 4, 4, 4);
     layout->setSpacing(4);
 
+    searchEdit = new QLineEdit(this);
+    searchEdit->setObjectName(QStringLiteral("foldShelfSearchEdit"));
+    searchEdit->setPlaceholderText(QStringLiteral("Search Fold Shelf"));
+    layout->addWidget(searchEdit);
+
+    auto* actionLayout = new QHBoxLayout;
+    actionLayout->setContentsMargins(0, 0, 0, 0);
+    actionLayout->setSpacing(4);
+
     restoreButton = new QPushButton(QStringLiteral("Restore to Active Editor"), this);
     restoreButton->setObjectName(QStringLiteral("foldShelfRestoreButton"));
     restoreButton->setEnabled(false);
-    layout->addWidget(restoreButton);
+    actionLayout->addWidget(restoreButton);
+
+    renameButton = new QPushButton(QStringLiteral("Rename"), this);
+    renameButton->setObjectName(QStringLiteral("foldShelfRenameButton"));
+    renameButton->setEnabled(false);
+    actionLayout->addWidget(renameButton);
+
+    cleanButton = new QPushButton(QStringLiteral("Clean Stale/Consumed"), this);
+    cleanButton->setObjectName(QStringLiteral("foldShelfCleanButton"));
+    cleanButton->setEnabled(false);
+    actionLayout->addWidget(cleanButton);
+
+    layout->addLayout(actionLayout);
 
     listWidget = new FoldShelfListWidget(this);
     listWidget->setObjectName(QStringLiteral("foldShelfListWidget"));
@@ -114,10 +138,24 @@ FoldBlockShelfPanel::FoldBlockShelfPanel(QWidget* parent)
             [this](QListWidgetItem*, QListWidgetItem*) {
                 updateActionState();
             });
+    connect(searchEdit,
+            &QLineEdit::textChanged,
+            this,
+            [this](const QString&) {
+                refresh();
+            });
     connect(restoreButton,
             &QPushButton::clicked,
             this,
             &FoldBlockShelfPanel::handleRestoreSelectedItem);
+    connect(renameButton,
+            &QPushButton::clicked,
+            this,
+            &FoldBlockShelfPanel::handleRenameSelectedItem);
+    connect(cleanButton,
+            &QPushButton::clicked,
+            this,
+            &FoldBlockShelfPanel::handleCleanItems);
     updateModeStyle();
     updateActionState();
 }
@@ -179,13 +217,15 @@ void FoldBlockShelfPanel::updateModeStyle()
 
 void FoldBlockShelfPanel::refresh()
 {
+    const QString previousId = selectedItemId();
     listWidget->clear();
     if (!shelfModel) {
         updateActionState();
         return;
     }
 
-    for (const FoldShelfItem& item : shelfModel->items()) {
+    const QString query = searchEdit ? searchEdit->text() : QString();
+    for (const FoldShelfItem& item : shelfModel->itemsMatching(query)) {
         auto* row = new QListWidgetItem(itemDisplayText(item), listWidget);
         row->setData(Qt::UserRole, item.id);
         row->setToolTip(QStringLiteral("%1\n%2:%3-%4")
@@ -193,6 +233,8 @@ void FoldBlockShelfPanel::refresh()
                                  item.sourceFile)
                             .arg(item.sourceStartLine)
                             .arg(item.sourceEndLine));
+        if (item.id == previousId)
+            listWidget->setCurrentItem(row);
     }
     updateActionState();
 }
@@ -318,10 +360,80 @@ void FoldBlockShelfPanel::handleRestoreSelectedItem()
         emit restoreToActiveEditorRequested(id);
 }
 
+void FoldBlockShelfPanel::handleRenameSelectedItem()
+{
+    if (!shelfModel)
+        return;
+
+    const QString id = selectedItemId();
+    if (id.isEmpty())
+        return;
+
+    const FoldShelfItem item = shelfModel->item(id);
+    if (item.id.isEmpty())
+        return;
+
+    bool accepted = false;
+    const QString alias = QInputDialog::getText(
+        this,
+        QStringLiteral("Rename Fold Shelf Item"),
+        QStringLiteral("Alias"),
+        QLineEdit::Normal,
+        item.alias,
+        &accepted);
+    if (!accepted)
+        return;
+
+    if (!shelfModel->renameItem(id, alias)) {
+        QMessageBox::warning(
+            this,
+            QStringLiteral("Rename Fold Shelf Item"),
+            QStringLiteral("Alias cannot be empty."));
+        return;
+    }
+
+    ActivityLogService::getInstance()->append(
+        QStringLiteral("Fold Shelf"),
+        ActivityLogLevel::Info,
+        QStringLiteral("Renamed shelf item \"%1\"").arg(alias.trimmed()));
+}
+
+void FoldBlockShelfPanel::handleCleanItems()
+{
+    if (!shelfModel)
+        return;
+
+    const int removed = shelfModel->removeConsumedOrStaleItems();
+    if (removed <= 0)
+        return;
+
+    ActivityLogService::getInstance()->append(
+        QStringLiteral("Fold Shelf"),
+        ActivityLogLevel::Info,
+        QStringLiteral("Cleaned %1 stale/consumed shelf item(s)")
+            .arg(removed));
+}
+
 void FoldBlockShelfPanel::updateActionState()
 {
+    const bool hasSelection = !selectedItemId().isEmpty();
     if (restoreButton)
-        restoreButton->setEnabled(!selectedItemId().isEmpty());
+        restoreButton->setEnabled(hasSelection);
+    if (renameButton)
+        renameButton->setEnabled(hasSelection);
+    if (cleanButton)
+        cleanButton->setEnabled(hasCleanableItems());
+}
+
+bool FoldBlockShelfPanel::hasCleanableItems() const
+{
+    if (!shelfModel)
+        return false;
+    for (const FoldShelfItem& item : shelfModel->items()) {
+        if (item.consumed || item.stale)
+            return true;
+    }
+    return false;
 }
 
 QString FoldBlockShelfPanel::selectedItemId() const
