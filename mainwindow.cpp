@@ -23,6 +23,7 @@
 #include "foldblockshelfmodel.h"
 #include "foldblockshelfpanel.h"
 #include "foldshelfpersistenceservice.h"
+#include "foldshelfrestoreservice.h"
 #include "ghostannotationservice.h"
 #include "semanticdecorationservice.h"
 #include "globalcontrolcoordinator.h"
@@ -854,6 +855,10 @@ void MainWindow::setupFoldBlockShelf()
             &FoldBlockShelfPanel::restoreItemRequested,
             this,
             &MainWindow::restoreFoldShelfItem);
+    connect(foldShelfPanel,
+            &FoldBlockShelfPanel::restoreToActiveEditorRequested,
+            this,
+            &MainWindow::restoreFoldShelfItemToActiveEditor);
     foldShelfDock->setWidget(foldShelfPanel);
     addDockWidget(Qt::BottomDockWidgetArea, foldShelfDock);
     foldShelfDock->hide();
@@ -1312,6 +1317,49 @@ void MainWindow::restoreFoldShelfItem(const QString& id)
         QStringLiteral("Restored shelf item \"%1\"").arg(item.alias));
     if (statusBar())
         statusBar()->showMessage(QStringLiteral("Fold Shelf item restored"), 3000);
+}
+
+void MainWindow::restoreFoldShelfItemToActiveEditor(const QString& id)
+{
+    if (!foldShelfModel || !tabManager)
+        return;
+
+    MyCodeEditor* editor = tabManager->getCurrentEditor();
+    const int targetLine = editor ? editor->textCursor().blockNumber() : -1;
+    const FoldShelfRestoreReport report =
+        FoldShelfRestoreService::restoreIntoEditor(
+            foldShelfModel.get(),
+            editor,
+            id,
+            targetLine,
+            FoldShelfRestoreCompletion::ConsumeItem);
+
+    if (!report.success) {
+        ActivityLogService::getInstance()->append(
+            QStringLiteral("Fold Shelf"),
+            ActivityLogLevel::Warning,
+            QStringLiteral("Cross-file restore failed for \"%1\": %2")
+                .arg(report.item.alias.isEmpty() ? id : report.item.alias,
+                     report.failureReason));
+        if (statusBar()) {
+            statusBar()->showMessage(
+                QStringLiteral("Fold Shelf restore failed: %1")
+                    .arg(report.failureReason),
+                5000);
+        }
+        return;
+    }
+
+    ActivityLogService::getInstance()->append(
+        QStringLiteral("Fold Shelf"),
+        ActivityLogLevel::Info,
+        QStringLiteral("Restored shelf item \"%1\" to active editor")
+            .arg(report.item.alias));
+    if (statusBar()) {
+        statusBar()->showMessage(
+            QStringLiteral("Fold Shelf item restored to active editor"),
+            3000);
+    }
 }
 
 void MainWindow::setupEditorAppearanceSettings()

@@ -112,6 +112,7 @@ private:
     void showRecentWorkspacesDialog();
     void showFoldBlockShelf();
     void restoreFoldShelfItem(const QString& id);
+    void restoreFoldShelfItemToActiveEditor(const QString& id);
     void setupEditorAppearanceSettings();
     void setupEditorCoordinator();
 

@@ -58,7 +58,8 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
   `clear_rhs` clears RHS expressions in the current selection for supported
   assignment statements, then starts Slot Mode on the cleared RHS fill points.
 - Fold Region and Fold Shelf are available through Global Control. Fold Shelf
-  is not yet the long-term persistent shelf system.
+  now has a service/model-owned persistence baseline and explicit cross-file
+  restore flow; rename, search, and cleanup management remain pending.
 - Signal Kernel Graph exists as a signal-centric exploration graph. Dense
   fanout still needs grouping, filtering, and search.
 - Wave Preview exists as a code-understanding sketch, not a simulator.
@@ -165,11 +166,13 @@ and restoring Global Control `ow r` for recent workspaces.
   UI should call it rather than mutating `ProjectModel::ignoredPaths` directly.
 - Fold Shelf baseline: `FoldBlockShelfModel` owns the shelf item list and
   mutation lifecycle, `FoldShelfPersistenceService` owns versioned
-  QSettings-backed load/save scoped by workspace root, `FoldBlockShelfPanel`
-  renders the list and handles preview/delete/drag UI, `EditorFoldingController`
-  creates and reinserts custom fold block text, and `MainWindow` wires the
-  dock/model plus restore command flow. Durable shelf persistence lives in the
-  model/service layer, not in the panel.
+  QSettings-backed load/save scoped by workspace root,
+  `FoldShelfRestoreService` owns explicit restore reports for active-editor
+  relocation, `FoldBlockShelfPanel` renders the list and handles
+  preview/delete/drag/restore UI requests, `EditorFoldingController` creates
+  and reinserts custom fold block text, and `MainWindow` wires the dock/model
+  plus restore command flow. Durable shelf persistence and restore policy live
+  in the model/service layer, not in the panel.
 
 ## Command Responsibility Map
 
@@ -293,8 +296,15 @@ Ownership rules:
 G7.2 same-file restore reloads persisted shelf items for the current workspace
 and restores them to their recorded source file through the existing editor
 insertion path. Items are removed or consumed only after successful insertion;
-missing or invalid restore targets are marked stale. Cross-file relocation,
-rename, search, and clean-up actions remain later G7 milestones.
+missing or invalid restore targets are marked stale.
+
+G7.3 cross-file restore adds `FoldShelfRestoreService` as the explicit
+active-editor restore path. The panel emits a restore request for the selected
+item; `MainWindow` supplies the active editor and cursor line; the service
+inserts through the existing editor fold-shelf insertion API, then consumes or
+removes the persisted item only after successful insertion. Missing active
+editors or failed insertions mark the item stale with a failure reason. Rename,
+search, and clean-up actions remain later G7 milestones.
 
 ## Batch RTL Edit Contract
 

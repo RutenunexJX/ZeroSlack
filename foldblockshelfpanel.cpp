@@ -90,6 +90,11 @@ FoldBlockShelfPanel::FoldBlockShelfPanel(QWidget* parent)
     layout->setContentsMargins(4, 4, 4, 4);
     layout->setSpacing(4);
 
+    restoreButton = new QPushButton(QStringLiteral("Restore to Active Editor"), this);
+    restoreButton->setObjectName(QStringLiteral("foldShelfRestoreButton"));
+    restoreButton->setEnabled(false);
+    layout->addWidget(restoreButton);
+
     listWidget = new FoldShelfListWidget(this);
     listWidget->setObjectName(QStringLiteral("foldShelfListWidget"));
     listWidget->setSelectionMode(QAbstractItemView::SingleSelection);
@@ -103,7 +108,18 @@ FoldBlockShelfPanel::FoldBlockShelfPanel(QWidget* parent)
                     return;
                 showPreview(shelfModel->item(item->data(Qt::UserRole).toString()));
             });
+    connect(listWidget,
+            &QListWidget::currentItemChanged,
+            this,
+            [this](QListWidgetItem*, QListWidgetItem*) {
+                updateActionState();
+            });
+    connect(restoreButton,
+            &QPushButton::clicked,
+            this,
+            &FoldBlockShelfPanel::handleRestoreSelectedItem);
     updateModeStyle();
+    updateActionState();
 }
 
 void FoldBlockShelfPanel::setModel(FoldBlockShelfModel* model)
@@ -164,8 +180,10 @@ void FoldBlockShelfPanel::updateModeStyle()
 void FoldBlockShelfPanel::refresh()
 {
     listWidget->clear();
-    if (!shelfModel)
+    if (!shelfModel) {
+        updateActionState();
         return;
+    }
 
     for (const FoldShelfItem& item : shelfModel->items()) {
         auto* row = new QListWidgetItem(itemDisplayText(item), listWidget);
@@ -176,6 +194,7 @@ void FoldBlockShelfPanel::refresh()
                             .arg(item.sourceStartLine)
                             .arg(item.sourceEndLine));
     }
+    updateActionState();
 }
 
 void FoldBlockShelfPanel::dragEnterEvent(QDragEnterEvent* event)
@@ -259,11 +278,10 @@ void FoldBlockShelfPanel::handleDeleteSelectedItem()
     if (!shelfModel || !listWidget)
         return;
 
-    QListWidgetItem* selected = listWidget->currentItem();
-    if (!selected)
+    const QString id = selectedItemId();
+    if (id.isEmpty())
         return;
 
-    const QString id = selected->data(Qt::UserRole).toString();
     const FoldShelfItem item = shelfModel->item(id);
     if (item.id.isEmpty())
         return;
@@ -291,4 +309,25 @@ void FoldBlockShelfPanel::handleDeleteSelectedItem()
         QStringLiteral("Fold Shelf"),
         ActivityLogLevel::Info,
         QStringLiteral("Deleted shelf item \"%1\"").arg(item.alias));
+}
+
+void FoldBlockShelfPanel::handleRestoreSelectedItem()
+{
+    const QString id = selectedItemId();
+    if (!id.isEmpty())
+        emit restoreToActiveEditorRequested(id);
+}
+
+void FoldBlockShelfPanel::updateActionState()
+{
+    if (restoreButton)
+        restoreButton->setEnabled(!selectedItemId().isEmpty());
+}
+
+QString FoldBlockShelfPanel::selectedItemId() const
+{
+    if (!listWidget)
+        return QString();
+    QListWidgetItem* selected = listWidget->currentItem();
+    return selected ? selected->data(Qt::UserRole).toString() : QString();
 }

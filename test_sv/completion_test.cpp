@@ -15,6 +15,7 @@
 #include "editorsemanticcontextservice.h"
 #include "foldblockshelfmodel.h"
 #include "foldshelfpersistenceservice.h"
+#include "foldshelfrestoreservice.h"
 #include "formatterservice.h"
 #include "ghostannotationservice.h"
 #include "globalcontrolservice.h"
@@ -5338,6 +5339,93 @@ int main(int argc, char** argv) {
     clearedFoldShelf.setWorkspaceRoot(foldShelfWorkspaceA);
     expectBool("FoldShelfPersistence saves clear",
                clearedFoldShelf.items().isEmpty(),
+               true);
+
+    FoldBlockShelfModel crossFileFoldShelf;
+    crossFileFoldShelf.setPersistenceService(&foldShelfPersistence);
+    crossFileFoldShelf.setWorkspaceRoot(foldShelfWorkspaceA);
+    const QString crossFileFoldId =
+        crossFileFoldShelf.addItem(persistentFoldItem);
+    MyCodeEditor crossFileTargetEditor;
+    crossFileTargetEditor.setDocumentFileName(
+        QDir(foldShelfWorkspaceB).absoluteFilePath(
+            QStringLiteral("rtl/target.sv")));
+    crossFileTargetEditor.setPlainText(
+        QStringLiteral("module target;\nendmodule\n"));
+    const FoldShelfRestoreReport crossFileRestoreReport =
+        FoldShelfRestoreService::restoreIntoEditor(
+            &crossFileFoldShelf,
+            &crossFileTargetEditor,
+            crossFileFoldId,
+            1,
+            FoldShelfRestoreCompletion::ConsumeItem);
+    expectBool("FoldShelfRestore cross-file consumes after insert",
+               crossFileRestoreReport.success
+                   && crossFileRestoreReport.inserted
+                   && crossFileRestoreReport.itemConsumed
+                   && crossFileFoldShelf.item(crossFileFoldId).consumed
+                   && crossFileTargetEditor.toPlainText().contains(
+                       QStringLiteral("// fold pipe block"))
+                   && QDir::fromNativeSeparators(
+                          crossFileTargetEditor.documentFileName())
+                          .endsWith(QStringLiteral(
+                              "workspace_b/rtl/target.sv")),
+               true);
+    FoldBlockShelfModel crossFileReloadedShelf;
+    crossFileReloadedShelf.setPersistenceService(&foldShelfPersistence);
+    crossFileReloadedShelf.setWorkspaceRoot(foldShelfWorkspaceA);
+    expectBool("FoldShelfRestore persists cross-file consume",
+               crossFileReloadedShelf.item(crossFileFoldId).consumed,
+               true);
+
+    FoldShelfItem staleCandidate = persistentFoldItem;
+    staleCandidate.alias = QStringLiteral("stale candidate");
+    FoldBlockShelfModel failedCrossFileShelf;
+    failedCrossFileShelf.setPersistenceService(&foldShelfPersistence);
+    failedCrossFileShelf.setWorkspaceRoot(foldShelfWorkspaceB);
+    const QString staleFoldId = failedCrossFileShelf.addItem(staleCandidate);
+    const FoldShelfRestoreReport failedCrossFileReport =
+        FoldShelfRestoreService::restoreIntoEditor(
+            &failedCrossFileShelf,
+            nullptr,
+            staleFoldId,
+            -1,
+            FoldShelfRestoreCompletion::ConsumeItem);
+    expectBool("FoldShelfRestore marks failed target stale",
+               !failedCrossFileReport.success
+                   && failedCrossFileReport.staleMarked
+                   && failedCrossFileReport.failureReason.contains(
+                       QStringLiteral("active editor"),
+                       Qt::CaseInsensitive),
+               true);
+    FoldBlockShelfModel staleReloadedShelf;
+    staleReloadedShelf.setPersistenceService(&foldShelfPersistence);
+    staleReloadedShelf.setWorkspaceRoot(foldShelfWorkspaceB);
+    expectBool("FoldShelfRestore persists failed target stale",
+               staleReloadedShelf.item(staleFoldId).stale,
+               true);
+
+    FoldBlockShelfModel removeRestoreShelf;
+    removeRestoreShelf.setPersistenceService(&foldShelfPersistence);
+    removeRestoreShelf.setWorkspaceRoot(foldShelfWorkspaceB);
+    const QString removeRestoreId =
+        removeRestoreShelf.addItem(persistentFoldItem);
+    MyCodeEditor removeRestoreEditor;
+    removeRestoreEditor.setPlainText(
+        QStringLiteral("module remove_target;\nendmodule\n"));
+    const FoldShelfRestoreReport removeRestoreReport =
+        FoldShelfRestoreService::restoreIntoEditor(
+            &removeRestoreShelf,
+            &removeRestoreEditor,
+            removeRestoreId,
+            1,
+            FoldShelfRestoreCompletion::RemoveItem);
+    expectBool("FoldShelfRestore removes after successful insert",
+               removeRestoreReport.success
+                   && removeRestoreReport.itemRemoved
+                   && removeRestoreShelf.item(removeRestoreId).id.isEmpty()
+                   && removeRestoreEditor.toPlainText().contains(
+                       QStringLiteral("logic valid")),
                true);
 
     const CodeTemplateItem widthLogic =

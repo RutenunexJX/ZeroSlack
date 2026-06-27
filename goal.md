@@ -28,7 +28,7 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
 
 ## Current Goal State
 
-Current milestone: `G7.3 Restore Fold Shelf Items Across Files`.
+Current milestone: `G7.4 Add Fold Shelf Rename/Search/Clean Management Actions`.
 
 Status:
 
@@ -232,17 +232,27 @@ Status:
 - Focused verification for G7.2: `git diff --check`; Release
   `completion_test` and `gui_smoke_test` targets compile/link; `ctest -R
   "^completion_test$"` passed. `gui_smoke_test` was not launched.
+- G7.3 Restore Fold Shelf Items Across Files is complete:
+  `FoldShelfRestoreService` owns explicit active-editor restore reports,
+  validates model/item/editor availability, restores selected persisted shelf
+  items through the existing editor fold-shelf insertion API, and consumes or
+  removes items only after successful insertion. Missing active editor or failed
+  insertion marks the item stale with a clear failure reason. `FoldBlockShelfPanel`
+  stays storage-policy free and only emits restore requests; `MainWindow` wires
+  the selected shelf item to the active editor/cursor line.
+- Focused verification for G7.3: `git diff --check`; Release
+  `completion_test` and `gui_smoke_test` targets compile/link; `ctest -R
+  "^completion_test$"` passed. `gui_smoke_test` was not launched.
 
-Completion criteria for G7.3:
+Completion criteria for G7.4:
 
-- define and implement explicit cross-file restore behavior for persisted Fold
-  Shelf items
-- preserve service/model persistence ownership and keep the panel storage-policy
-  free
-- use existing editor insertion paths rather than hand-editing from UI code
-- remove or consume persisted items only after successful cross-file insertion
-- mark failed cross-file restore targets stale with a clear failure reason
-- do not add rename, search, or clean management in G7.3
+- support renaming Fold Shelf items without moving persistence policy into the
+  panel
+- support searching/filtering Fold Shelf items from model/service data
+- support cleaning stale or consumed Fold Shelf items through explicit
+  management actions
+- preserve the existing persistence and restore ownership boundaries
+- do not add broad Fold Shelf UX beyond rename, search, and clean management
 - `readme.md`, `plan.md`, and `goal.md` are updated
 - appropriate focused verification passes
 - milestone commit is pushed

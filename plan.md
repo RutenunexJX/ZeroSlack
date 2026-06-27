@@ -465,6 +465,9 @@ First milestones:
   (complete: `FoldShelfPersistenceService` plus model mutation persistence and
   same-file stale restore handling)
 - M7.3 cross-file restore
+  (complete: `FoldShelfRestoreService` restores selected items into the active
+  editor through the existing insertion path and persists consume/remove/stale
+  outcomes)
 - M7.4 rename/search/clean management actions
 
 M7.1 inventory:
@@ -540,6 +543,36 @@ M7.2 implementation status:
   source insertion marks the item stale; successful restore removes the item
   after insertion.
 - Complete: `FoldBlockShelfPanel` remains storage-policy free.
+- Verification: `git diff --check`; Release `completion_test` and
+  `gui_smoke_test` targets compile/link; `ctest -R "^completion_test$"` passed.
+  `gui_smoke_test` was not launched.
+
+M7.3 implementation constraints:
+
+- Cross-file restore must be service/model-owned; `FoldBlockShelfPanel` remains
+  a consumer that emits restore requests.
+- Restore must target the active editor and use the existing fold-shelf editor
+  insertion API instead of UI-owned text editing.
+- Persisted items are consumed or removed only after successful insertion.
+- Missing active editor or failed insertion marks the item stale and reports a
+  clear failure reason.
+- Do not add rename, search, or clean management in M7.3.
+
+M7.3 implementation status:
+
+- Complete: `FoldShelfRestoreService` owns active-editor restore reports,
+  validates model/item/editor availability, inserts through the existing
+  editor fold-shelf insertion path, and records target file/line details.
+- Complete: successful restore can consume or remove the item only after
+  insertion succeeds; failed target availability or insertion marks the item
+  stale with a service-owned failure reason.
+- Complete: `FoldBlockShelfPanel` adds a restore request UI action while
+  staying storage-policy free.
+- Complete: `MainWindow` wires the panel request to the active editor/cursor
+  line and reports restore success or failure through existing status/log
+  paths.
+- Not done in M7.3: rename, search, clean management, broader shelf UX, or
+  semantic/workspace analysis changes.
 - Verification: `git diff --check`; Release `completion_test` and
   `gui_smoke_test` targets compile/link; `ctest -R "^completion_test$"` passed.
   `gui_smoke_test` was not launched.
