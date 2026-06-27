@@ -1,440 +1,279 @@
-# ZeroSlack Product And Architecture Goal
+# ZeroSlack Long-Term Goal Model
 
-ZeroSlack is a reliable SystemVerilog workspace browser and lightweight editor. It should grow through stable semantic boundaries instead of ad hoc UI logic.
-
-## Product Goal
-
-ZeroSlack should:
-
-- open real SV workspaces reliably
-- understand modules, packages, includes, typedefs, enums, structs, interfaces, instances, tasks, functions, ports, variables, diagnostics, references, and relationships
-- provide trustworthy completion, jump-to-definition, navigation, diagnostics, references, relationship browsing, RTL insight reports, and signal-centric driver/consumer graphs
-- provide practical include-file workflows for SystemVerilog headers, including precise `` `include`` triggering, header-only candidates, and visible new-file template previews
-- provide fast declaration templates for common SystemVerilog signals and parameters without taking ownership of user value expressions
-- provide passive ghost inline values for semantic context that users often compute mentally, including evaluated parameters, macros, expressions, casts, system functions, simple user functions, numeric bases, and ASCII values without changing source text
-- provide editor interaction modes that stay predictable after modifier keys are released, including durable double-click hover and column editing selections
-- provide conservative source formatting that improves indentation and common RTL alignment without surprising source rewrites
-- remain responsive on large files and multi-file workspaces
-- keep semantic behavior testable through real fixtures
-
-## Long-Term Three-Feature Goals
-
-- Wave Preview, Formatter, and Huge Workspace Mode are long-term goals captured here so they can be resumed whenever the user explicitly asks to continue one of them or a requested feature naturally belongs to that area.
-- These goals should not automatically dominate unrelated feature work. When the user asks to stabilize, converge, or "make this a non-intermediate version", treat that as a request to stop extending the three-feature work, preserve a coherent stable baseline, and make room for other features.
-- When one of these goals is reactivated, advance it through a coherent usable milestone: update `readme.md`, `plan.md`, and `goal.md` as needed, run appropriate verification, and keep the branch in a clean handoff state.
-
-## Current Three-Feature Baseline
-
-- The current branch head after the stabilization pass is the non-intermediate baseline for the active Wave Preview, Formatter, and Huge Workspace Mode work.
-- Wave Preview is considered usable as a code-understanding waveform sketch: it renders current-buffer lanes, events, clock/reset context, guard hints, activity summaries, canvas interaction, navigation, and lane warnings without simulating values or claiming engineering-grade waveform proof.
-- Formatter is considered usable as a conservative source-preserving formatter: it supports opt-in `Structured` and `Indent Only` profiles, common declaration/port/instance/case/enum/assignment alignment, continuation shaping, format selection, format-on-save, and safe leading-whitespace indentation for common SystemVerilog blocks and single-statement bodies.
-- Huge Workspace Mode is considered usable as a responsiveness and provenance baseline: it prioritizes current/open files, coalesces and expires stale background requests, supports non-blocking cancellation boundaries where available, publishes safe staged symbol snapshots, exposes current/open/background analysis-band provenance through Activity, Problems, diagnostics, and completion surfaces, and now has Release-measured full symbol and relationship warm-up paths for `huge_prj`.
-- This baseline does not close the long-term objective. It defines the stable product floor that future Wave Preview, Formatter, and Huge Workspace work must preserve.
-
-## Current Product Polish Baseline
-
-- The r4 polish baseline keeps the editor centered on concrete RTL work: include completion is header-scoped, new include files default to the first format/template choice, hover behavior is stable across Ctrl navigation and double-click selection, and column mode supports persistent vertical or rectangular edits with clear adjust-vs-move arrow semantics.
-- Passive value help now aims to show computed values instead of source spelling when that is useful: simple numeric parameter literals stay quiet, while references, expressions, casts, `$clog2`, simple functions, and ASCII strings render binary/decimal/hex values; numeric and string hovers avoid includes and comments.
-- Signal Kernel Graph exploration supports zooming and non-disruptive double-click reveal/flash navigation. Dense output fanout should be solved next with grouped or collapsible output presentation rather than a one-off tall stack.
-
-## Target Architecture
+ZeroSlack is a SystemVerilog code editor and workspace browser. Long-term work
+must improve daily RTL editing and understanding while preserving the service
+boundary:
 
 ```text
-ProjectModel
-  Owns workspace inputs: root, file list, include dirs, defines, top, ignored paths.
-
-DocumentModel
-  Owns open document identity, text snapshots, versions, dirty/saved state, cursor, live module, and registry-backed text queries.
-
-AnalysisScheduler
-  Owns analysis timing, debounce, cancellation, refresh requests, relationship work, lifecycle, and analysis event routing.
-
-SemanticIndex / SemanticIndexSnapshot
-  Own semantic facts: symbols, definitions, relationships, references, diagnostics, and cached content.
-
-Query Services / Feature Services
-  Own feature-specific reads, report shaping, and semantic policy.
-  Signal Kernel Graphs are built here from Signal Journey and relationship evidence.
-  Ghost Inline Values are built here from current document text and semantic records.
-  Formatter reports are built here from current document text; UI applies the result.
-
-Coordinators
-  Own UI command routing, progress policy, navigation commands, panel refresh, semantic runtime setup, and workflow glue.
-
-UI Layer
-  Renders service/model output.
+ProjectModel / DocumentModel / SemanticIndexSnapshot
+  -> Query Service or Feature Service
+  -> Report / Model
+  -> UI render
 ```
 
-## Development Phases
+## Goal Mode Rules
 
-### Phase A: Semantic State And Snapshot Publication
+- Work only on the goal tracks listed in this file.
+- Each milestone must be small, verifiable, and deliverable.
+- Each completed milestone must update `readme.md`, `plan.md`, and `goal.md`.
+- Each completed milestone must run verification appropriate to the changed
+  scope.
+- Each completed milestone must be committed and pushed.
+- Do not add unlisted features to a milestone.
+- Do not put semantic policy, workspace scans, or Slang execution in UI code.
+- Do not restore qmake/pro/pri, SVLexer, old Tree-sitter symbol parsing, regex
+  relationship analysis, or active `;:` commands.
+- Huge Workspace work is status audit only unless the user explicitly changes
+  the scope.
 
-- Status: complete baseline.
-- Make `SemanticIndexSnapshot` the single UI query truth.
-- Define one publication and merge policy for workspace, open-document, dirty text, external file, and relationship analysis results.
-- Add generation, version, and hash guards so stale async results cannot overwrite newer semantic state.
-- Preserve open, dirty, and out-of-workspace documents when workspace results publish.
-- Relationship analysis must not replace the visible semantic truth with an older or narrower snapshot.
+## Current Goal State
 
-### Phase B: Symbol Taxonomy And Source Role
+Current milestone: `G0 Documentation And Goal Reset`.
 
-- Status: complete baseline.
-- Stabilize taxonomy/source-role helper rules first.
-- Keep `sym_type_e` as legacy/raw collector kind during Phase B.
-- Do not rush a broad `SymbolInfo` layout migration in Phase B.
-- Move product semantic policy into `SymbolTaxonomy`, source-role helpers, Query Services, or feature services.
+Status:
 
-### Phase C: Semantic Metadata, Query Service, And UI Data Flow
+- `readme.md`, `plan.md`, and `goal.md` are being reset from historical
+  migration logs to current development guidance.
+- No product feature implementation is part of G0.
+- Existing dirty implementation files from other work must not be staged into a
+  docs-only commit.
 
-- Status: complete baseline.
-- Introduce stable semantic metadata after Phase B helper rules are stable.
-- `SymbolInfo` may gain fields, or an equivalent metadata layer, for declaration kind, usage role, owner scope, visibility, source role, and raw collector kind.
-- Keep `sym_type_e` available as raw/legacy collector kind during migration.
-- Query Services and feature services should prefer stable semantic metadata over scattered raw enum checks.
-- UI should consume reports/models, not semantic internals.
-- CompletionService, DefinitionService, DiagnosticService, RelationshipService, and RTL Insights services should own query policy.
-- Coordinators route state and refreshes; they should not encode semantic feature rules.
-- Scheduler schedules and Analyzer executes analysis; neither owns product feature policy.
+Completion criteria for G0:
 
-### Phase D: RTL Insights Expansion
+- docs describe the current ZeroSlack identity accurately
+- docs list only the allowed long-term goals
+- docs record the Huge Workspace status-audit-only rule
+- `git diff --check` passes
+- stage, commit, and push only documentation files for this docs-only milestone
 
-- Status: complete baseline.
-- Expand FSM graph, Signal Journey, Module Brief, Clock/Reset Domain Map, Semantic Diff, and code/document links through feature services.
-- Continue small RTL Insights improvements only when they do not require semantic data model changes.
-- Defer features that need `SymbolInfo`, `sym_type_e`, identity, owner/type metadata, source role, relationship provenance, query result, completion item, or report-model changes to Phase E.
-- Use `test_sv/new` and similar real projects as first-class fixtures.
-- Add focused tests at service level first, then UI smoke coverage where needed.
-- Do not add feature-specific workarounds around semantic gaps in UI, scheduler, analyzer, or coordinator code.
-- Keep feature reports explicit enough for UI render without understanding semantic internals.
+## Track 1: Editor Daily Operations Completion
 
-### Phase E: Semantic Data Model Hardening
+Goal: provide practical entry points for daily editing actions.
 
-- Status: complete on this branch.
-- Query services and RTL report models carry stable identity, semantic metadata, source-role display, relationship provenance/confidence/evidence, and not-found reasons where useful.
-- E1 Symbol Identity And Snapshot Handles: treat `symbolId` as snapshot-local, add stable identity, carry stable identity plus local handles, and define merge/rebind rules.
-- E2 Semantic Metadata On Symbols: keep `sym_type_e` raw, add stable declaration/usage/owner/visibility/source-role metadata, and generate it consistently.
-- E3 Owner Scope And Type Reference Model: reduce `moduleScope` and `dataType` overloads, model owner/type/modport explicitly, and resolve interface modports through type rules.
-- E4 Source Role, Diagnostics, And Snapshot Publication Metadata: formalize source roles, diagnostic ownership, snapshot metadata, and stale-result protection.
-- E5 Relationship Provenance And Query Result Contracts: add provenance, confidence, evidence, candidate counts, failure reasons, and consistent query contracts.
-- E6 Completion Item And RTL Report Model Hardening: formalize completion items and RTL report models with display fields, evidence, confidence, not-found reasons, and stable identity references.
+Allowed actions:
 
-### Phase F0: Legacy Field Retirement
+- replace
+- goto
+- comment
+- uncomment
+- indent
+- unindent
 
-- Status: complete on this branch.
-- This cleanup gate retired or fenced product dependence on legacy `SymbolInfo` fields.
-- `symbolId` is snapshot-local unless a stable identity rule says otherwise.
-- `symbolType` / `sym_type_e` remain raw collector compatibility, not product policy.
-- Product logic should use explicit owner metadata instead of overloaded `moduleScope`.
-- Product logic should use explicit type metadata instead of overloaded `dataType`.
-- Completion models expose structured items with semantic identity and insertion metadata.
-- Query services resolve UI string inputs into stable subject/context handles before feature policy where needed.
-- Diagnostic contracts expose explicit source and ownership metadata.
-- Product-facing guard tests prevent UI, scheduler, analyzer, and feature code from reintroducing direct legacy-field policy.
+Milestones:
 
-### Phase F1: Semantic Symbol Record Replacement
+- G1.1 Inventory current commands/actions and document missing entry points.
+- G1.2 Deliver one coherent action family with tests.
+- G1.3 Repeat until all listed daily actions have usable entry points.
 
-- Status: complete on this branch.
-- Introduce or expand a real semantic symbol record.
-- Let `SymbolInfo` degrade into a collector/adapter compatibility carrier.
-- Product, service, report, and query layers should consume semantic symbol records, stable identity, and semantic metadata first.
-- Owner, type, source-role, provenance, and not-found reason metadata should be carried by the semantic model, not by reusing `symbolType`, `moduleScope`, or `dataType`.
-- Keep Qt 6 + CMake + Ninja only.
-- New features must still flow through `ProjectModel` / `DocumentModel` / `SemanticIndexSnapshot -> Query Service or feature service -> report/model -> UI render`.
+## Track 2: Slot Mode After Template Insertion
 
-### Phase F2: Stable Relationship And Index Migration
+Goal: after `;;cmd` insertion, users can jump through editable slots instead of
+manually moving the cursor.
 
-- Status: complete on this branch.
-- Move relationship engine, snapshot, lookup, and query-service main paths from int `symbolId` / `sym_type_e` to stable identity plus semantic enum/model contracts.
-- Keep compatibility APIs only as transition layers.
-- Guard product-facing code against continued compatibility API use.
-- Relationship, reference, hierarchy, and RTL feature reports must expose stable keys, owner/type metadata, source role, provenance, and not-found reasons.
-- Do not restore regex relationship analysis, the old Tree-sitter symbol parser, direct UI Slang execution, or UI workspace scans.
+Milestones:
 
-### Phase F3: Legacy Compatibility Removal
+- G2.1 Define slot model, editor state, cancel/exit behavior, and verification
+  cases.
+- G2.2 Enable slot mode for one existing template family.
+- G2.3 Expand slot mode to remaining signal/parameter template families.
 
-- Status: complete on this branch for product-facing compatibility payloads and guarded service/report paths.
-- Delete or isolate legacy fields and APIs: `symbolId`, `symbolType`, `moduleScope`, `dataType`, `sym_type_e`, `getSymbolById`, `findSymbolId`, int-id `getRelationships`, and similar compatibility surfaces.
-- If an internal adapter is still required, it must stay limited to the collector/import boundary and be constrained by guards.
-- Clean tests and docs that assume legacy identity.
-- After F3, run the release gate before broad RTL feature expansion.
+## Track 3: Batch RTL Edit Actions
 
-### Release Gate After Phase F3
+Goal: add focused RTL batch edits that feed slot mode.
 
-- Full Ninja must pass.
-- Full CTest must pass.
-- Legacy guard and product-facing API audit must pass.
-- Docs, goal, and plan consistency checks must pass.
-- Real RTL workspace smoke pass must be covered.
-- Confirm qmake, `*.pro`, `*.pri`, `.claude`, SVLexer, the old Tree-sitter symbol parser, the Tree-sitter verify button, regex relationship analysis, and long-lived scattered perflog probes have not returned.
+First target:
 
-### Phase G: Complete Legacy Field Deletion
+- clear assignment RHS expressions and create fill points
+- example: `a <= xxx; b <= yyy;` becomes `a <= ; b <= ;`
 
-- Status: complete on this branch.
-- G0 is complete: relationship result endpoint payloads `fromSymbol` and `toSymbol` were deleted; consumers now use endpoint `SemanticSymbolRecord` and stable keys.
-- G1 is complete: definition result payload `symbol` was deleted; consumers now use `symbolRecord` and `symbolStableKey`.
-- G2 is complete: `SemanticIndex` / `SemanticIndexSnapshot` retired `SymbolInfo` public APIs; callers use semantic records and stable identity.
-- G3 is complete: `symbolId`, `symbolType`, `moduleScope`, `dataType`, `sym_type_e`, and raw collector compatibility are deleted from product-facing contracts or isolated to collector/import, taxonomy, completion compatibility, snapshot-local, and guarded adapter boundaries.
-- The Phase G release gate passed locally; broad RTL feature expansion is no longer blocked by Phase G, but must still preserve the architecture rules below.
+Milestones:
 
-### Phase H: Semantic Core Slimdown
+- G3.1 Design the clear-RHS report/service path.
+- G3.2 Implement the editor-local clear-RHS command for selected assignments.
+- G3.3 Connect clear-RHS output to slot mode.
 
-- Status: complete on this branch.
-- Purpose achieved: Phase G's isolated compatibility boundaries were tightened into real deletion where possible, so legacy collector fields and APIs no longer shape product, service, report, completion, snapshot, or query contracts.
-- Phase H reduced `sym_list::SymbolInfo` and `sym_list::sym_type_e` exposure to guarded transition code; later Phase I/J cleanup removed the remaining first-party carrier and fixture paths.
-- Raw collector-kind query inputs have been replaced in completion and query contracts by semantic-native models such as `CompletionCommandKind`, semantic metadata, stable keys, owner/type metadata, and source-role records.
-- Snapshot/store public contracts consume semantic records; the former `SymbolInfo` conversion boundary has since been retired from first-party source.
-- Redundant conversion, compatibility, filtering, sorting, display helper, and raw query APIs were deleted or made private.
-- Phase H release gate passed with guards enforcing the final allowlist and full Ninja plus full CTest passing locally.
+## Track 4: COM Mode Framework Completion
 
-### Phase I: Semantic Store Native / Collector Native
+Goal: improve COM Mode framework quality before adding more commands.
 
-- Status: complete on this branch.
-- Purpose achieved: delete the former legacy collector/store body instead of only guarding its boundary.
-- I0 is complete: the Phase I migration contract is documented and the opt-in `ZEROSLACK_PHASE_I_ZERO_TARGET` guard defines the final zero-legacy source scan for I5.
-- Slang collection should emit semantic-native records or store entries as the primary output.
-- I1 is complete: the analyzer-facing collection path consumes semantic-native records directly, the collector internals build `SemanticSymbolRecord` as the primary carrier, and the legacy `collectSymbols` / `extractSymbols` / `extractWorkspaceSymbols` extraction APIs are deleted.
-- The backing semantic store owns semantic-native records, cached content, local handles, stable-key indexes, and file replacement without depending on `sym_list::SymbolInfo`.
-- I2 is complete: `SemanticIndex` now owns native symbol records, file contents, file-state hashes, file coverage, refresh state, local handles, stable-key indexes, native/snapshot-only record queries, native content/state queries, and native-over-snapshot replacement.
-- I3 is complete: scope rebuild, module containment, module lookup, and relationship containment use semantic metadata, owner/type records, stable keys, and explicit local handles instead of `symbolId`, `symbolType`, `moduleScope`, or `dataType`. Relationship builder, relationship engine, and `SemanticIndex` relationship rebuilds route containment through semantic records; legacy `sym_list` current-module lookup and module-scope auto-inference are deleted. `SymbolRelationshipEngine` no longer accepts or stores a `sym_list` database pointer, `SemanticIndex` relationship queries, completion relationship facts, and snapshot publication use the native attached relationship engine pointer, `sym_list` no longer stores, exposes, or forwards a relationship engine, and the legacy semantic-record-to-`sym_list` relationship/scope mirror is deleted.
-- I4 is complete: legacy carrier APIs, compatibility taxonomy surface, and adapter conversions were deleted or isolated; unused legacy adapter files, legacy taxonomy includes, semantic-index legacy injection APIs, dead symbol database storage, legacy metadata helpers, legacy taxonomy overloads, legacy completion matching APIs, and legacy outline grouping APIs were removed or guarded.
-- I5 is complete: the Phase I release gate passed for core source, and Phase J later expanded the zero target to first-party repo source.
-- I5 first block is complete: lowercase `rawCollectorKind` / `requestedRawCollectorKind` field and helper names were replaced by `collectorKind` fields and `CollectorKind` enum/type names.
-- I5 second block is complete: `symboltaxonomylegacy.h` and production `sym_type_e` / `SymbolInfo` taxonomy overloads were deleted; tracked tests temporarily used a fixture-local conversion helper until Phase J removed it.
-- I5 third block is complete: root/core `syminfo*` carrier files moved into `test_sv` fixture scope, core CMake stopped building them, and Phase J later deleted the fixture carrier.
-- I5 fourth block is complete: stale core `syminfo` includes and `SymbolInfo`-named helpers were removed, tracked tests moved to semantic-native helpers, GUI smoke fixtures synchronized native records before snapshot-based panel checks, and the final Phase I full Ninja/full CTest/guard/static-scan gate passed.
-- Phase I is complete: the release gate proves zero remaining legacy collector/store terms in core source except historical docs or explicitly named migration notes; Phase J proves the broader repo-source target.
+Allowed work:
 
-### Phase I Goal Mode
+- unified command registry
+- help/hints
+- conflict handling
+- failure reason display
+- metadata for existing commands and prefixes
 
-- Progress is tracked per subphase I0-I5.
-- Each subphase is its own 100% unit.
-- End every work turn by naming the current subphase and reporting that subphase's remaining percentage.
-- Move to the next subphase only after the current subphase is implemented, verified, and committed.
-- Phase I completion requires I0-I5 completion, current docs, full Ninja, full CTest, guard success, and final static legacy scans.
+Milestones:
 
-### Phase J: Test Fixture Native Cleanup
+- G4.1 Registry metadata for existing commands and prefixes.
+- G4.2 Help/hint rendering for commands and prefixes.
+- G4.3 Centralized conflict validation and failure reason display.
 
-- Status: complete.
-- Purpose achieved: delete the fixture-only legacy `sym_list` / `syminfo` carrier after Phase I proved the core source was clean.
-- Phase J should not add RTL feature behavior; it should preserve existing behavior while replacing test fixture inputs with semantic-native builders.
-- J0 is complete: it defines the repo-wide fixture cleanup allowlist and guards the remaining test-only legacy terms.
-- J1 is complete: native test builders cover semantic records, metadata, owners, type info, stable keys, local handles, and relationship endpoints.
-- J2 is complete: completion and jump tests have moved away from `sym_list::SymbolInfo`.
-- J3 is complete: relationship and GUI smoke tests have moved away from `sym_list::SymbolInfo`.
-- J4 is complete: `test_sv/syminfo*` and the reverse fixture adapter have been deleted now that no tracked test includes or builds them.
-- J5 is complete: the release gate passes and the zero target now scans repo source except docs and guard definitions.
+## Track 5: Limited Workspace Workflow Additions
 
-### Phase J Goal Mode
+Goal: add only the explicitly allowed workspace workflow pieces.
 
-- Progress is tracked per subphase J0-J5.
-- Each subphase is its own 100% unit.
-- End every work turn by naming the current subphase and reporting that subphase's remaining percentage.
-- Move to the next subphase only after the current subphase is implemented, verified, and committed.
-- Phase J completion requires J0-J5 completion, current docs, full Ninja, full CTest, guard success, final repo-source static legacy scans, and deletion of the fixture-only legacy carrier.
+Allowed work:
 
-### Phase K: Follow-up Editor Structure Features
+- ignored directories
+- Global Control `ow r` recent workspace command
 
-- Status: complete.
-- Product goal achieved: editor structure tools now make large SystemVerilog workspaces easier to understand, fold, rearrange, and reuse without moving semantic policy into UI code.
-- K1 Design Hierarchy view provides Files/Design-only Navigation, right-click-only Design Top selection, cached module-only hierarchy reports, instance nodes rendered as `instance_name : module_type`, instantiation and module-definition navigation, and Files view dimming based on hierarchy participation.
-- K2 Code Folding and Custom Folding provides Tree-sitter folding ranges, gutter collapse/expand controls, custom `// fold <alias>` / `// endfold` ranges parsed from comment nodes, persistent custom-fold background tint, manual marker creation/rename behavior, silent removal when marker pairs are broken, and the Global Control `fd r` action for inserting custom fold markers as one undoable edit with visible mode status, live range preview, and gutter start/end badges.
-- K3 Fold Block Shelf provides the Global Control `fd s` action, visible mode status, active shelf dock/list styling, custom fold block hover highlighting with a clear bottom boundary, move/copy drag into a shelf with a compact drag pixmap, protected text input while drag mode is active, consume/copy drag back into editors, preview, protected delete, restore paths for moved code, and Activity/Output logging for shelf operations.
-- `;:` is reserved for future expansion and currently has no completion or execution behavior. Global Control currently exposes root domains `ow` and `fd`; `ow <num>` replaces the former single-workspace open action, and `fd r` / `fd s` replace the previous flat fold commands.
-- Startup keeps Editor Appearance, RTL Insights, and Activity hidden until needed; workspace open/switch raises Activity/Output. Multiple workspaces are represented as alias tabs above editor tabs, and selecting one reloads the active project model and watcher.
-- Phase K verification passed with focused Ninja targets, `completion_test` with 315 checks, `gui_smoke_test` with 331 checks, `git diff --check`, normal `legacy_field_policy_guard`, and opt-in `ZEROSLACK_PHASE_J_ZERO_TARGET`. The latest workspace/UI/Fold/Global Control polish additionally passed focused `completion_test` with 321 checks and `gui_smoke_test` with 338 checks.
-- Design hierarchy reports must be produced by `HierarchyService` or an equivalent query-service boundary from `SemanticIndexSnapshot`, not by UI file scans or direct Slang runs.
-- Folding and Fold Shelf must reuse Tree-sitter/comment-node parsing and a shared folding range model; regex parsing of code structure or fold directives is not allowed.
-- Fold and shelf edits must use document/editor edit APIs so undo/redo remains coherent and source code cannot be silently lost.
-- Activity/Output logs should expose hierarchy builds, top changes, fold/shelf operations, and malformed custom fold warnings without adding scattered long-lived perflog.
+Not allowed in this track:
 
-### Phase K Goal Mode
+- session restore
+- include dirs/defines configuration UI
+- recent files
+- broad workspace UX expansion
 
-- Progress is tracked per feature subphase K1-K3.
-- Each subphase is its own 100% unit.
-- Current subphase: K3 Fold Block Shelf complete, 0% remaining.
-- End every work turn by naming the current Phase K subphase and reporting that subphase's remaining percentage.
-- K1 is complete only when Design Hierarchy view, right-click top selection, cached reports, navigation actions, Files dimming, and real-fixture tests are implemented and verified.
-- K2 is complete only when syntax folding, custom comment-node folding, Global Control `fd` marker mode, gutter interactions, undo behavior, and tests are implemented and verified without regex parsing.
-- K3 is complete: Fold Shelf mode, shelf panel/model, move/copy/insert/delete/restore flows, preview, Activity logs, and tests are implemented and verified without regex parsing.
+Milestones:
 
-### Phase L: Regex Logic Native Cleanup
+- G5.1 Audit current workspace open/recent behavior.
+- G5.2 Add ignored-directory model/service support.
+- G5.3 Restore `ow r` as a displayed Global Control child command.
 
-- Status: complete.
-- Product goal achieved: regex-driven production logic was removed from semantic/editor feature paths while preserving SystemVerilog understanding through semantic records, `SemanticIndex` / `SemanticIndexSnapshot` flow, service-owned query contracts, and deterministic SV token helpers.
-- L0 Regex Inventory and Guard Baseline is complete: first-party production regex cleanup files are inventoried, docs and guard definitions remain valid regex locations, normal guard blocks new regex API spread, and optional `ZEROSLACK_PHASE_L_ZERO_TARGET` is defined for L6.
-- L1 Utility Regex Replacement is complete: low-risk regex helpers for identifiers, keyword boundaries, module/endmodule scans, and whitespace normalization now use deterministic token helpers.
-- L2 Completion Context Native is complete: completion context parsing no longer uses regex and deterministic token helpers cover struct members, enum values, assignments, and instantiations.
-- L3 Module Range / Include / Import Native is complete: module-range fallback, include/import context collection, and scope-band module end lookup no longer use regex.
-- L4 FSM Graph Native Extraction is complete: FSM transition discovery no longer uses regex and relies on deterministic token parsing plus semantic state records.
-- L5 Open Document Scheduling Cleanup is complete: structural-change scheduling no longer uses keyword regex and preserves the existing lightweight policy with deterministic token-boundary checks.
-- L6 Final Regex Zero Target is complete: guards reject regex APIs outside docs and guard definitions, and focused tests, affected GUI smoke tests, full Ninja/full CTest, guard scans, static scans, and `git diff --check` passed.
-- Phase L must not restore the old Tree-sitter symbol parser, SVLexer, regex relationship analysis, direct UI Slang execution, UI workspace scans, or timer-delay responsiveness masking.
+## Track 6: Completion / `;cmd` / `;;cmd`
 
-### Phase L Goal Mode
+Goal: support user customization and clarify command responsibilities.
 
-- Progress is tracked per cleanup subphase L0-L6.
-- Each subphase is its own 100% unit.
-- Current subphase: L6 Final Regex Zero Target complete, 0% remaining.
-- End every work turn by naming the current Phase L subphase and reporting that subphase's remaining percentage.
-- L0 is complete only when the regex inventory, cleanup allowlist, and guard plan are documented and the guard baseline can prevent new regex spread.
-- L1 is complete only when low-risk utility regex use is replaced and covered by focused tests or existing guard scans.
-- L2 is complete only when completion context no longer depends on regex parsing and completion tests cover the migrated contexts.
-- L3 is complete only when module range, include, and import context logic no longer depends on regex parsing and real fixture coverage remains intact.
-- L4 is complete: FSM graph transition extraction no longer depends on regex parsing and GUI smoke RTL Insights coverage remains green against `test_sv/new`.
-- L5 is complete: open-document structural scheduling no longer depends on keyword regex and editor workflow coverage remains green.
-- L6 is complete: first-party source/tests reject regex APIs outside docs and guard definitions, docs are current, verification passes, and final scans are clean.
+Allowed work:
 
-## Architecture Rules
+- user templates
+- custom abbreviations
+- slot mode integration
+- clear boundary between `;cmd`, `;;cmd`, and COM Mode
 
-- New semantic features must flow through `ProjectModel` / `DocumentModel` / `SemanticIndexSnapshot -> Query Service or feature service -> report/model -> UI render`.
-- UI code must render service/model output only; it must not run Slang directly, scan workspace files directly, own semantic policy, or patch around missing semantic data.
-- Scheduler and analyzer code must stay limited to timing, lifecycle, extraction, publication, and refresh routing; they must not own feature policy.
-- Slang owns semantic truth; Tree-sitter owns low-latency editor syntax and live scope.
-- Real engineering fixtures, especially `test_sv/new`, should guide feature expansion.
-- Performance probes should be targeted, manually invoked where possible, and judged from Release builds for product decisions; do not restore scattered long-lived perflog.
+Milestones:
 
-## Feature Expansion Guardrails
+- G6.1 Document current responsibilities and conflict boundaries.
+- G6.2 Add user-template storage/query model.
+- G6.3 Add custom abbreviation resolution.
+- G6.4 Integrate user templates with slot mode.
 
-These constraints are mandatory for every new feature.
+## Track 7: Fold / Fold Shelf
 
-- New semantic or RTL behavior must flow through `ProjectModel` / `DocumentModel` / `SemanticIndexSnapshot -> Query Service or feature service -> report/model -> UI render`.
-- UI code must render service/model output only; it must not run Slang, scan workspace files, own semantic policy, or patch around missing semantic data.
-- `AnalysisScheduler` and `SymbolAnalyzer` must stay limited to timing, lifecycle, extraction, publication, and refresh routing; they must not own feature policy.
-- New tests and fixtures must use semantic-native records/builders and must not reintroduce `sym_list`, `syminfo`, reverse adapters, legacy taxonomy headers, or legacy field/API names.
-- New feature reports must expose stable keys, semantic records or typed report rows, owner/type/source-role metadata, navigation payloads, evidence, confidence, and not-found reasons where relevant.
-- Real workspace fixtures, especially `test_sv/new`, must cover behavior that depends on package/import/include/interface/modport/cross-file semantics.
-- `legacy_field_policy_guard.ctest` and the final repo-source zero target must keep passing after every feature change.
-- Feature work must be rejected or redesigned if it requires qmake/pro/pri, `.claude`, SVLexer, the old Tree-sitter symbol parser, direct UI Slang execution, UI workspace scans, regex relationship analysis, long-lived scattered perflog, or legacy carrier/API resurrection.
+Goal: make Fold Shelf durable across work sessions and files.
 
-## Hard Rules
+Allowed work:
 
-- Use Qt 6 + CMake + Ninja only.
-- Do not restore qmake, `*.pro`, `*.pri`, `.claude`, SVLexer, the old Tree-sitter symbol parser, the Tree-sitter verify button, regex relationship analysis, or long-lived scattered perflog probes.
-- Do not discard user changes.
-- Do not touch user dirty RTL fixture files.
-- Do not push unless explicitly asked.
-- Keep local commits coherent and architecture-oriented.
+- persistence
+- cross-file restore
+- rename shelf item
+- search shelf item
+- clean shelf item
 
-## Definition Of Done
+Milestones:
 
-The foundation is healthy when:
+- G7.1 Define persistence schema and ownership.
+- G7.2 Persist/restore same-file shelf items.
+- G7.3 Restore shelf items across files.
+- G7.4 Add rename/search/clean management actions.
 
-- feature reads use stable models, snapshots, Query Services, or feature services
-- stale workspace, open-document, and relationship analysis results cannot overwrite newer semantic snapshots
-- product logic is stable only when snapshot publication, taxonomy/source-role helpers, stable semantic metadata, query services, and UI data flow have clear contracts and tests
-- product logic is not ready for broad feature expansion until Phase E, Phase F0, Phase F1, Phase F2, Phase F3, Phase G, and the release gate after Phase G pass
-- Phase H is complete on this branch: legacy collector compatibility is deleted from semantic core contracts or held only in historical guard definitions
-- Phase I is complete on this branch: the legacy collector/store body is replaced by semantic-native collection and storage, and final scans proved legacy carrier names gone from core source
-- Phase J is done only when tracked tests use semantic-native fixture builders, `test_sv/syminfo*` and reverse fixture adapters are deleted, and final scans prove legacy carrier names are gone from repo source except docs and guard definitions
-- Post-J editor correctness includes usable completion popup sizing, normal completion that triggers from identifier prefixes or strong semantic contexts, semantic command completion that requires `;cmd` plus Space, code template insertion through `;;cmd` plus Space, reserved-but-inactive `;:`, scoped `;?` / `;;?` help, removal of old single-letter plus Space command triggers, cross-file interface/header definition targets, named instance port formal-to-child-port jumps, actual-signal local jumps, and Navigation responsiveness fixes that remove unnecessary synchronous rebuilds instead of masking stalls with delayed timers
-- Global app control is available through Ctrl+Space from editor and non-editor focus; the current surfaced command set is domain-first with root domains `ow` and `fd`, while broader ProjectModel/SemanticIndex/template/action search remains reserved for future expansion
-- Signal Kernel Graph is available from a signal right-click action and is done through `SignalJourneyService` / `SignalKernelGraphService` reports: drivers render left of the kernel, consumers render right, cross-module nodes are module-wrapped, hover previews show precise evidence code, Ctrl+left-click rebases the kernel, and double-click navigation uses evidence or declaration links
-- Wave Preview Data MVP is available through `WavePreviewService`: current editor text is tokenized without regex into continuous/procedural assignment events, multiple `always` blocks are preserved as block records, assignments are grouped into per-signal lanes, and clocked blocks receive a lightweight cycle-offset hint for future rendering
-- Wave Preview Preview-Panel MVP is available through a View-menu dock: `WavePreviewPanelCoordinator` renders per-signal lanes and assignment events from the active dirty editor buffer while visible, with source/timing/source-signal columns and location navigation hooks, without moving extraction or simulation policy into UI code
-- Wave Preview Canvas MVP is available in the same dock: a lightweight graphical lane canvas draws signal rows, `t+N` timing guides, and colored assignment blocks from `WavePreviewReport`, while remaining a code-understanding sketch rather than a value simulator
-- Wave Preview Guard Labels MVP is available through `WavePreviewService` and the dock: assignment events can show nearby `if` / `else if` and `case` / `default` guard labels in the report, tree, tooltip, and canvas block text without evaluating branch truth
-- Wave Preview Clock/Reset Groups MVP is available through `WavePreviewService` and the dock: edge-triggered `always` blocks carry detected clock/reset signals, matching domains are summarized as report groups, and the tree exposes Clock/Reset context without doing CDC or reset-polarity analysis
-- Wave Preview Queued Refresh MVP is available through `WavePreviewPanelCoordinator`: large active-buffer refreshes are coalesced behind a short single-shot timer, only the latest pending document text is rendered, normal-sized buffers still refresh immediately, and hidden docks cancel pending Wave Preview work
-- Wave Preview Hover Details MVP is available through `WavePreviewPanelCoordinator`: tree event rows and canvas assignment blocks share source/target hover details from `WavePreviewReport`, including target, expression, sources, kind, block, timing, trigger, clock/reset, guard, and line/column evidence
-- Wave Preview Clock/Reset Polarity Hints MVP is available through `WavePreviewService` and `WavePreviewPanelCoordinator`: block and clock/reset group reports preserve `posedge` / `negedge` event-control hints alongside existing clock/reset signal names, and the dock renders those hints in columns and hover details without treating them as CDC or reset-polarity proof
-- Wave Preview Declaration Context MVP is available through `WavePreviewService` and `WavePreviewPanelCoordinator`: lanes now carry current-document signal declaration context, including port/internal role, type/range text, declaration text, and declaration location, and the dock renders that context in the tree plus target/source hover details without simulating or scanning workspace files
-- Wave Preview Lane Summary MVP is available through `WavePreviewService` and `WavePreviewPanelCoordinator`: lanes now carry service-owned event/source/block/max-cycle/activity summaries, and the dock renders them in lane rows, hover details, top summary text, and compact canvas lane labels for dense reports
-- Wave Preview Loop Guard Labels MVP is available through `WavePreviewService` and `WavePreviewPanelCoordinator`: assignments nested under `for`, `foreach`, `while`, and `repeat` now show local loop/repeat guard labels in the existing report-driven Guard column, hover details, and canvas labels without simulating iteration counts or values
-- Wave Preview Ternary Guard Hints MVP is available through `WavePreviewService` and `WavePreviewPanelCoordinator`: continuous and procedural assignments whose right-hand expression contains a top-level ternary now show `?: <condition>` in the existing report-driven Guard column, hover details, and canvas labels, combining with enclosing guards without simulating branch values
-- Wave Preview Semantic Context MVP is available through `WavePreviewService` and `WavePreviewPanelCoordinator`: Wave Preview reports can consume the published semantic snapshot to enrich missing target/source context from existing semantic records, while local declarations remain dominant and the feature still avoids simulation, workspace scans, and UI-side parsing
-- Wave Preview Canvas Navigation MVP is available through `WavePreviewPanelCoordinator`: canvas assignment blocks expose a hover cursor and double-click navigation using the same report-owned assignment line/column evidence as tree rows, while canvas code stays render/hit-test only and does not parse RTL or scan workspace files
-- Wave Preview Canvas Event Selection MVP is available through `WavePreviewPanelCoordinator`: single-clicking a canvas assignment block selects it, redraws it with a stronger outline, and pins a concise report-driven event summary while hover and double-click navigation continue to use the same assignment evidence
-- Wave Preview Lane Guard Summary MVP is available through `WavePreviewService` and `WavePreviewPanelCoordinator`: lane summaries now aggregate existing assignment guard labels, and the dock renders compact lane-level guard context in lane rows, hover details, and canvas lane summaries without UI-side RTL parsing
-- Wave Preview Activity Mix Summary MVP is available through `WavePreviewService` and `WavePreviewPanelCoordinator`: lane summaries now carry exact continuous assign, blocking/combinational, and nonblocking/sequential event counts, and the dock renders those counts in lane summaries, hover details, busiest-lane text, and canvas labels without changing extraction or simulating values
-- Wave Preview Report Activity Summary MVP is available through `WavePreviewService` and `WavePreviewPanelCoordinator`: reports now carry total continuous/combinational/sequential activity counts, the dock renders that mix in the top summary and an Activity Mix row, and control-header assignments such as `for (int i = 0; ...)` are skipped as non-waveform events
-- Wave Preview Canvas Lane Interaction MVP is available through `WavePreviewPanelCoordinator`: canvas lane rows now support hover details, click-to-pin lane summaries, and selected-lane highlighting while assignment blocks keep priority for event selection and navigation
-- Wave Preview Lane Warning Summary MVP is available through `WavePreviewService` and `WavePreviewPanelCoordinator`: reports now warn when a lane mixes assign/comb/seq activity or is assigned from multiple procedural blocks, and the dock renders those service-owned warnings without trying to resolve writer priority or simulate values
-- Wave Preview Lane Warning Detail MVP is available through `WavePreviewService` and `WavePreviewPanelCoordinator`: warning lanes now carry service-owned warning text in `WavePreviewLaneSummary`, and lane rows, lane hover tooltips, and canvas lane selection summaries expose that warning detail without UI-side policy derivation
-- Huge Workspace Analysis Plan MVP is available through `WorkspaceAnalysisPlanService`: workspace symbol analysis now receives an explicit planned order with active file first, dirty open files next, clean open files next, and remaining workspace files after that; dirty files stay protected from stale workspace publication, while `SymbolAnalyzer` remains the execution layer rather than owning UI priority policy
-- Huge Workspace Expirable Request MVP is available through `WorkspaceAnalysisRequestQueue`: active workspace analysis can be expired without a synchronous wait, only the newest pending workspace request is retained, stale watcher completions are ignored, and the controller restarts the latest project request after the old background watcher returns
-- Huge Workspace Request Telemetry MVP is available through `WorkspaceAnalysisRequestQueue`: active and pending request age, pending update pressure, and last finished active/pending wait metrics are observable at the queue boundary without moving timing policy into controller code
-- Huge Workspace Telemetry Activity MVP is available through `AnalysisProgressCoordinator`: queued and resolved workspace-analysis request pressure is logged to Activity/Output from routed telemetry while timing ownership remains in `WorkspaceAnalysisRequestQueue`
-- Huge Workspace Foreground Open Documents MVP is available through `AnalysisScheduler`: open-document semantic snapshots refresh from live editor buffers at workspace-analysis start before the background project batch launches, with the existing finish-time refresh retained for reconciliation
-- Huge Workspace Relationship Foreground Refresh MVP is available through `AnalysisScheduler`: workspace relationship analysis now refreshes live open-document semantic snapshots before building the relationship-analysis snapshot, reusing the same foreground refresh helper as workspace symbol analysis while relationship execution remains owned by `RelationshipAnalysisController`
-- Huge Workspace Diagnostics Refresh Coalescing MVP is available through `DiagnosticsRefreshController`: diagnostics refresh bursts keep only one debounced request while preserving full-refresh scope over later file-specific requests, so large workspace analysis cannot accidentally narrow a pending all-files diagnostics refresh
-- Huge Workspace Progress Checkpoint Activity MVP is available through `AnalysisProgressCoordinator`: workspace symbol progress is routed into status updates, and symbol/relationship passes record bounded 25/50/75% Activity checkpoints for long analyses while final completion logs remain the 100% signal
-- Huge Workspace Request Restart Visibility MVP is available through `AnalysisProgressCoordinator`: coalesced workspace analysis replacements now emit status-bar visibility and Activity/Output messages showing that stale work will give way to the latest pending request
-- Huge Workspace Workspace-Relationship Cancellation Visibility MVP is available through `AnalysisProgressCoordinator`: workspace relationship cancellation now emits warning-level Activity/Output feedback and a status-bar message instead of being silent at the coordinator boundary
-- Huge Workspace Plan Summary Visibility MVP is available through `WorkspaceAnalysisPlanService`, `WorkspaceSymbolAnalysisController`, `AnalysisScheduler`, and `AnalysisProgressCoordinator`: prepared workspace plans now report total, priority, background, open, protected, and current-file status through Activity/Output plus the status bar without moving priority policy into UI code
-- Huge Workspace Priority Bands MVP is available through `WorkspaceAnalysisPlanService` and `AnalysisProgressCoordinator`: prepared workspace plans now expose current-file, dirty-open, clean-open, and background bands as explicit ordered lists, and Activity/Output plus the status bar render those counts without moving priority policy into UI code
-- Huge Workspace Band Progress Visibility MVP is available through `AnalysisProgressCoordinator`: symbol-analysis status and Activity/Output checkpoints now show the known priority band for the current file (`current`, `dirty-open`, `open`, or `background`) using the prepared workspace plan instead of recomputing priority policy
-- Huge Workspace Staged Symbol Publication MVP is available through `WorkspaceSymbolAnalysisController` and `SymbolAnalyzer`: the plan-derived priority-file count now acts as a publication boundary, so workspace symbol analysis publishes a diagnostics-preserving snapshot after the priority segment before the final full-workspace diagnostics replacement
-- Huge Workspace Band-Staged Symbol Publication MVP is available through `WorkspaceAnalysisPlanService`, `WorkspaceSymbolAnalysisController`, and `SymbolAnalyzer`: the prepared plan now carries cumulative current/dirty-open/clean-open publication checkpoints, and workspace symbol analysis publishes diagnostics-preserving snapshots as each checkpoint is crossed before the final background-inclusive diagnostics replacement
-- Huge Workspace Cancellation Checkpoint MVP is available through `SymbolAnalyzerWorkspace` and `SymbolAnalyzer`: canceled workspace file-result assembly marks the result as expired, skips partial publication, and avoids diagnostics extraction when cancellation is observed before diagnostics starts
-- Huge Workspace Direct Symbol Cancellation MVP is available through `AnalysisScheduler`, `WorkspaceSymbolAnalysisController`, `WorkspaceAnalysisRequestQueue`, and `AnalysisProgressCoordinator`: callers can explicitly cancel active workspace symbol analysis without queuing a replacement, pending requests are discarded with telemetry, Activity/status records the cancellation, and the async worker is expired without a blocking wait
-- Huge Workspace Slang Boundary Cancellation MVP is available through `SlangManager`, `slang_symbols::collectSymbolRecords`, and `SymbolAnalyzer`: workspace symbol and diagnostics extraction now receive the active cancel provider at Slang boundary and collector checkpoints, canceled symbol collection clears partial records, and synchronous workspace analysis reports cancellation through the expired path before publication
-- Huge Workspace Relationship Boundary Cancellation MVP is available through `SlangManager`, `SmartRelationshipBuilder`, and `RelationshipAnalysisWorker`: workspace relationship extraction now receives the active cancel provider at Slang boundary, visitor traversal, and grouped-result assembly checkpoints, returning empty per-file relationship buckets instead of partial facts after cancellation
-- Huge Workspace Relationship Cancelled Result Contract MVP is available through `RelationshipAnalysisWorker`, `RelationshipAnalysisController`, and `RelationshipResultPublisher`: canceled workspace relationship worker results are explicit, partial relationships are cleared, the base snapshot is preserved, cancellation emits the workspace-cancelled signal, and the publisher refuses canceled results before any relationship snapshot can be applied
-- Huge Workspace Relationship Result Telemetry MVP is available through `RelationshipAnalysisWorker` and `AnalysisProgressCoordinator`: workspace relationship results now expose processed-file count, relationship count, and elapsed time, and Activity/Output plus status messages report those metrics without changing publication or cancellation semantics
-- Huge Workspace File-Band Index MVP is available through `WorkspaceAnalysisPlanService`: prepared workspace plans now carry a normalized file-to-band index for `current`, `dirty-open`, `open`, and `background` tiers, and progress rendering consumes that plan-owned index instead of recomputing priority tiers
-- Huge Workspace Band Summary Metadata MVP is available through `WorkspaceAnalysisPlanService`: prepared workspace plans now carry service-owned tier summaries with labels, display names, counts, priority flags, and publication checkpoints, and progress rendering consumes the plan-owned summary text instead of assembling band policy itself
-- Huge Workspace Tier-Aware Symbol Metadata MVP is available through `WorkspaceAnalysisPlanService`, `WorkspaceSymbolAnalysisController`, `SymbolAnalyzer`, and `SemanticIndex`: prepared plans now carry per-file band metadata into the matching workspace analysis generation, and semantic symbol records plus published snapshots expose current/dirty-open/open/background tier details without query-side priority recomputation
-- Huge Workspace Tier-Aware Query Ordering MVP is available through `SemanticIndex`, `SemanticIndexSnapshot`, `CompletionSymbolQuery`, and `CompletionSemanticQuery`: semantic search, definition tie-breaks, and completion record/name ordering now consume analysis-band metadata so current/dirty-open/open symbols outrank background symbols when match quality is otherwise equal
-- Huge Workspace Analysis Band Report MVP is available through `SemanticIndex`, `SemanticIndexSnapshot`, and completion item models: semantic records can be summarized by analysis band with symbol/file counts and compact summary text, and completion result/model/command symbol items carry analysis-band provenance without recomputing workspace priority tiers
-- Huge Workspace Analysis Band Activity Visibility MVP is available through `AnalysisProgressCoordinator`: workspace symbol-analysis completion logs the parsed file/symbol totals plus `SemanticAnalysisBandReport` summary for the finished project files, keeping Activity visibility scoped to the project and avoiding UI-side priority recomputation
-- Huge Workspace Diagnostic Band Report MVP is available through `DiagnosticService`: diagnostic rows and reports can carry current/dirty-open/open/background/unbanded analysis-band provenance with per-band counts and severity summaries while preserving existing diagnostic extraction, replacement, sorting, filtering, and Problems UI behavior
-- Huge Workspace Diagnostic Band Activity Visibility MVP is available through `DiagnosticService` and `ProblemsPanelCoordinator`: visible diagnostic reports now produce de-duplicated Activity/Output summaries with per-band diagnostic counts and severity mix without recomputing workspace priority tiers in UI code
-- Huge Workspace Diagnostic Band Problems Column MVP is available through `DiagnosticService` and `ProblemsPanelCoordinator`: Problems rows and file groups now show a service-owned `Band` column for current/open/background/unbanded diagnostic provenance while preserving existing navigation metadata
-- Huge Workspace Diagnostic Band Filter MVP is available through `DiagnosticService` and `ProblemsPanelCoordinator`: diagnostic queries and the Problems panel can narrow visible diagnostics by current/dirty-open/open/background/unbanded band labels while keeping filtering policy in the service layer
-- Huge Workspace Diagnostic Band Count Labels MVP is available through `ProblemsPanelCoordinator`: the Problems band selector shows current scope/severity diagnostic counts per band from `DiagnosticReport::analysisBandCounts`, and those labels remain un-narrowed by the selected band filter
-- Huge Workspace Diagnostic Band Severity Tooltip MVP is available through `DiagnosticService` and `ProblemsPanelCoordinator`: diagnostic band groups expose service-owned count/severity summary text, and the Problems band selector publishes per-band tooltip/status/accessibility summaries from the current scope/severity view while keeping them un-narrowed by the selected band filter
-- Huge Workspace Completion Band Summary Header MVP is available through `CompletionResult` and `CompletionModel`: ordinary semantic completion results summarize item analysis-band provenance and show a non-selectable completion-band header only when rows span multiple current/open/background/unbanded bands, without recomputing priority policy in UI code
-- Huge Workspace Command Symbol Band Summary Header MVP is available through `CompletionModel`: `;cmd` symbol-completion lists summarize visible command-symbol rows by analysis band and show a non-selectable command-symbol band header after the default row only when multiple bands are present, without changing query ordering or default insertion behavior
-- Huge Workspace Visible Completion Band Summary Header MVP is available through `CompletionModel`: ordinary semantic completion popups summarize only visible, sorted, truncated rows for their band header, so hidden background results do not appear in UI chrome while `CompletionResult` keeps the full-result summary for service/report callers
-- Huge Workspace Relationship Performance MVP is available through `relationship_perf_test`, `SemanticIndexSnapshot`, and `SmartRelationshipBuilder`: full workspace relationship warm-up remains automatic after workspace symbol analysis, but `huge_prj` now completes the Release relationship path in 3.891s by using indexed snapshot merge/rebind lookups, per-run relationship context indexes, and no global all-symbol provider fallback when a snapshot is present; Debug reference is 13.062s and is not the product-performance baseline
-- Huge Workspace Symbol Publication Performance MVP is available through `WorkspaceAnalysisTelemetry`, `relationship_perf_test`, and `SemanticIndex`: Release async `huge_prj` symbol analysis is now measured by stage and completes in 5.096s instead of the 46.206s pre-fix baseline, with the former 44.157s publication-update bottleneck reduced to 3.043s by skipping first-publication native-store old-record scans for files with no previous native coverage
-- COM Mode and the revised Global Control command surface are available through `ComModeCoordinator`, `ComModeService`, `EditorSyntaxState`, `TSDocument`, and `GlobalControlService`: editor-local COM Mode supports the implemented g-domain commands (`gm`, `g<num><Enter>`, `gp`, `gpk`, `gpa`, `gpo`, `gsi`, `gii`, `gac`, `gpi`, `ge`, `gef`, `gsd`) through command registration and service/query boundaries, while Ctrl+Space Global Control now exposes root domains `ow` and `fd` with `ow <num>`, `fd r`, and `fd s`
-- Inline declaration templates are done through `CodeTemplateService`: `;;l`, `;;w`, and `;;r` share packed/unpacked dimension parsing; `;;p` and `;;lp` support scalar parameters, unpacked parameter arrays with `'{}` value skeletons, and command-local type suggestions after `-`; editor bracket ranges support Tab expansion plus Ctrl+left-click bound editing
-- Ghost Inline Values are available through `GhostAnnotationService`: formal port details, parameter/localparam literal values, parameter overrides, parameter/macro-derived signal widths, nonzero numeric ranges, array extents, enum values, part-select widths, generate loop counts, and concatenation widths render as passive editor overlays, while binary/decimal/hex literal conversion is hover-only as `(D)... (B)... (H)...`; both paths are computed by deterministic token scans plus semantic records without modifying text
-- Formatter initial MVP is available through `FormatterService`: `Format Document` in the editor context menu established a conservative indent-first report path as one undoable edit, changing leading whitespace while preserving line-internal text and preprocessor directive lines in that first milestone
-- Formatter Declaration Alignment MVP is available through `FormatterService`: the formatter now aligns consecutive simple signal declarations and parameter/localparam assignment columns after indentation, while skipping comments, preprocessor lines, multi-declaration lines, typedefs, and complex statements
-- Formatter Port List Alignment MVP is available through `FormatterService`: the formatter now aligns contiguous simple ANSI `input` / `output` / `inout` port-list lines by direction, type/range prefix, and port name, while skipping comments, preprocessor lines, multi-port lines, default-value ports, inline closing forms, and complex declarations
-- Formatter Instance Map Alignment MVP is available through `FormatterService`: the formatter now aligns contiguous simple named association lines such as `.PARAM(value)` and `.port(signal)` by association name, while preserving expression text and skipping comments, preprocessor lines, inline semicolon forms, and complex non-single-line associations
-- Formatter Trailing Comment Alignment MVP is available through `FormatterService`: simple declaration, ANSI port-list, and named instance-map alignment now preserve trailing `//` comments by aligning code first and reattaching comments at a stable comment column, while block comments and complex skipped forms remain untouched
-- Formatter Format Selection MVP is available through `FormatterService` and the editor context menu: selected full-line ranges are formatted with common base indentation preserved, applied as one undoable edit, and reselected after formatting
-- Formatter Profile Controls MVP is available through `FormatterService`, `MyCodeEditorState`, and the editor context menu: users can choose `Structured` or `Indent Only`, the editor stores the active profile for document and selection formatting, and status messages name the profile while formatter policy remains outside UI code
-- Formatter Profile Persistence MVP is available through `FormatterSettings` and `EditorCoordinator`: the selected formatter profile is persisted with `QSettings`, applied to open and newly-created editors, and written back when an editor profile changes, while explicit formatting remains service-owned and undoable
-- Formatter Format-on-Save MVP is available through `FormatterSettings`, `EditorCoordinator`, and `TabSaveController`: users can opt in to save-time formatting from the editor context menu, the setting persists across sessions and editors, and saves format the live buffer with the active profile before writing the file and marking the document saved
-- Formatter Case Item Alignment MVP is available through `FormatterService`: the Structured profile aligns simple same-level `case` / `casex` / `casez` item labels and trailing `//` comments while Indent Only keeps the alignment disabled
-- Formatter Enum Item Alignment MVP is available through `FormatterService`: the Structured profile aligns simple enum member value columns inside multi-line enum blocks while preserving trailing commas/comments and keeping Indent Only free of enum-column changes
-- Formatter Assignment Alignment MVP is available through `FormatterService`: the Structured profile aligns consecutive simple continuous/procedural assignment statements by top-level `=` or `<=`, preserves trailing `//` comments, skips declarations/case-item suffixes/uncertain lines, and keeps Indent Only free of assignment alignment
-- Formatter Continuation Indent MVP is available through `FormatterService`: unterminated `(` / `[` / `{` continuations now indent one extra level until their closing delimiter, with module/interface/function/task headers kept at the existing port-list depth, and the behavior remains enabled for Indent Only because it only changes leading whitespace
-- Formatter Continuation Operator Alignment MVP is available through `FormatterService`: the Structured profile aligns leading binary-operator continuation lines to the RHS start column of the preceding multi-line assignment while preserving expression text and keeping Indent Only free of structural operator alignment
-- Formatter Ternary Continuation Alignment MVP is available through `FormatterService`: the Structured profile also aligns leading `?` / `:` ternary continuation branches to the same RHS anchor while preserving expression text and leaving Indent Only unchanged
-- Formatter Declaration Array Dimension Alignment MVP is available through `FormatterService`: the Structured profile aligns unpacked array dimension suffixes in consecutive simple signal and parameter/localparam declaration blocks while preserving assignment/comment alignment and keeping Indent Only free of structural declaration-column changes
-- Formatter Parameter Port List Alignment MVP is available through `FormatterService`: the Structured profile aligns simple module `#(...)` parameter/localparam rows while preserving comma or final no-terminator endings, and `Indent Only` keeps those structural declaration-column changes disabled
-- Formatter Single Statement Body Indent MVP is available through `FormatterService`: simple single-statement bodies after single-line control headers without `begin` now indent one level as a leading-whitespace-only behavior, and `Indent Only` keeps it enabled
-- Formatter RHS Continuation Indent MVP is available through `FormatterService`: RHS lines after a top-level assignment operator-only line now indent one level as a leading-whitespace-only behavior, composing with delimiter continuation and staying enabled for `Indent Only`
-- Formatter Call Argument Continuation Alignment MVP is available through `FormatterService`: the Structured profile aligns already-multiline function/task call argument rows to the column after the opening parenthesis while skipping control/module headers and named instance-map associations, and `Indent Only` keeps pure continuation indentation
-- Formatter SystemVerilog Block Boundary Indent MVP is available through `FormatterService`: additional SV blocks such as program, default clocking, property, sequence, covergroup, checker, specify, primitive, and table now indent with matching end tokens in both profiles, while assertion forms such as `assert property (...)` do not open fake formatter blocks
-- Formatter Procedural Body Indent MVP is available through `FormatterService`: single-line `always` / `always_comb` / `always_ff` / `always_latch` / `initial` / `final` / `forever` headers without block delimiters now indent their following single statement by one level in both profiles without rewriting code
-- Formatter Multiline Header Body Indent MVP is available through `FormatterService`: split single-statement headers such as multi-line event controls and multi-line `if` conditions now indent the following body after the header closes, while conservative rejection keeps block headers and terminated statements untouched
-- Formatter Case Item Body Indent MVP is available through `FormatterService`: label-only `case` / `casez` / `casex` item rows now indent the following simple single-line statement one level deeper in both profiles, while inline items, block bodies, preprocessor lines, and complex multi-line forms stay untouched
-- Formatter Fork Statement Indent MVP is available through `FormatterService`: statement-leading `fork` opens fork blocks for indentation, while `disable fork;` and `wait fork;` no longer open fake formatter blocks or drift following statements deeper
-- The post-J editor workflow baseline was verified by `completion_test` with 311 checks and `gui_smoke_test` with 276 checks for the layered inline command and Global Control paths
-- Phase K is done only when K1 Design Hierarchy, K2 Code Folding/Custom Folding, and K3 Fold Block Shelf are implemented through service/model-backed UI boundaries, mode state is visible and cancelable, shelf drag mode guards against accidental text edits, affected flows are verified with focused tests and GUI smoke coverage, and the implementation is proven not to use UI workspace scans, direct UI Slang runs, regex structure/fold parsing, or timer-delay responsiveness masking
-- Phase L is done only when first-party production regex logic is removed from semantic/editor feature paths, docs and guard definitions are the only regex allowlist, completion/module/import/FSM/scheduler behavior is backed by Tree-sitter, Slang/semantic records, `SemanticIndexSnapshot`, or deterministic token helpers, and final guards prove the cleanup
-- `sym_type_e` is not used as a product, service, report, completion, snapshot, or query contract surface
-- `symbolId` is not used as a product identity and should disappear from non-adapter contracts in favor of stable keys and explicit local handles where local handles are truly needed
-- `moduleScope` and `dataType` are not used as overloaded product-policy fields and should disappear from semantic-native contracts
-- completion items expose structured semantic identity and insertion metadata
-- query services normalize string inputs into stable subject/context handles before feature logic
-- semantic symbol records carry owner, type, source-role, provenance, and not-found reason metadata instead of overloading legacy fields
-- relationship and index main paths use stable identity plus semantic enum/model contracts
-- compatibility APIs are transition-only and guarded away from product-facing code
-- Query Services and RTL feature services consume stable semantic metadata and contracts
-- RTL Insights expansion should not proceed broadly until stable semantic metadata, Query Service contracts, Phase E, Phase F0, F1, F2, F3, Phase G, and the release gate after Phase G are in place
-- Broad RTL feature expansion may resume, but any new semantic model work must keep the Phase H compatibility boundaries intact.
-- Phase D features are done only when service-level behavior, report shape, UI render path, and real fixture evidence are covered
-- new feature work is done only when the Feature Expansion Guardrails are satisfied and verified for the changed scope
-- UI panels render reports/models without owning semantic policy
-- scheduler, analyzer, project, document, and editor ownership boundaries stay clear
-- real fixtures cover package/import, cross-file jump, instantiation, calls, assignments, reads, clocks/resets, FSMs, diagnostics, relationship browsing, signal journeys, module briefs, semantic diff, and large-file response
-- verification may be batched, but commits remain coherent by block
-- full Ninja and full `ctest --output-on-failure` pass after shared semantic state, scheduler, editor, project, symbol identity, `SymbolInfo`, source role, or query contract boundary changes
-- handoff docs are short, current, and easy to reread
+## Track 8: Signal Kernel Graph
+
+Goal: make dense graphs readable.
+
+Allowed work:
+
+- high fanout collapse/grouping
+- filtering
+- graph search
+
+Milestones:
+
+- G8.1 Add service/report grouping for high fanout.
+- G8.2 Render collapsible fanout groups.
+- G8.3 Add filter and in-graph search.
+
+## Track 9: Wave Preview
+
+Goal: show waveform sketches for selected RTL context only.
+
+Allowed work:
+
+- selected `always` block sketch
+- selected module sketch
+- readability polish for the sketch
+
+Not allowed:
+
+- simulator behavior
+- timing-accurate verification
+- waveform database import
+- testbench execution
+
+Milestones:
+
+- G9.1 Selected-`always` entry and scoped report.
+- G9.2 Selected-module entry and scoped report.
+- G9.3 Sketch readability polish.
+
+## Track 10: State Transition Graph
+
+Goal: show a state transition graph only when the selected variable is a
+next-state variable.
+
+Rules:
+
+- Selected `ns` triggers.
+- Selected `next_state` triggers.
+- Selected `cs` does not trigger.
+- Selected `current_state` does not trigger.
+
+Milestones:
+
+- G10.1 Trigger gating and tests for allowed/disallowed names.
+- G10.2 Service-owned transition extraction/report.
+- G10.3 Graph UI rendering and navigation evidence.
+
+## Track 11: Module Block Diagram
+
+Goal: from a selected module name, show a module-only block diagram rooted at
+that module.
+
+Rules:
+
+- show module/interface instance and wrapping relationships only
+- do not show signals
+- clicking a module block jumps to the module definition
+
+Milestones:
+
+- G11.1 Service report for module containment from selected module.
+- G11.2 Module-only block diagram rendering.
+- G11.3 Click navigation to module definitions.
+
+## Huge Workspace Status Audit
+
+Huge Workspace is not an active feature expansion track in this goal model.
+Only audit and document existing strategy status.
+
+Audit topics:
+
+- current/open/dirty-open priority
+- analysis bands and query ordering
+- stale request coalescing and expiration
+- cancellation
+- staged publication
+- Activity telemetry
+- Release `huge_prj` performance references
+
+Milestones:
+
+- HWA.1 Inventory owner classes, current behavior, and existing verification.
+- HWA.2 Run safe verification or compile relevant targets.
+- HWA.3 Update docs with confirmed status and open gaps.
+
+## Completion Order
+
+Preferred starting order:
+
+1. G0 Documentation And Goal Reset.
+2. G4 COM Mode Framework Completion.
+3. G1 Editor Daily Operations Completion.
+4. G2 Slot Mode After Template Insertion.
+5. G3 Batch RTL Edit Actions.
+
+The remaining tracks may be pulled forward only when the user explicitly asks or
+when a milestone naturally depends on them. Do not combine unrelated tracks in
+one milestone.
