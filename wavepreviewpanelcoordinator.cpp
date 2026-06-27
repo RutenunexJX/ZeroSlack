@@ -4,6 +4,7 @@
 
 #include <QFileInfo>
 #include <QFont>
+#include <QFontMetrics>
 #include <QHeaderView>
 #include <QLabel>
 #include <QMouseEvent>
@@ -38,6 +39,8 @@ QString laneDetailTooltip(const WavePreviewLane& lane);
 QString laneSummaryText(const WavePreviewLaneSummary& summary);
 QString laneWarningText(const WavePreviewLaneSummary& summary);
 QString reportSummaryText(const WavePreviewReport& report, bool dirty);
+QString sketchLegendText(const WavePreviewReport& report);
+QColor colorForAssignmentKind(WavePreviewAssignmentKind kind);
 
 bool shouldQueueRefresh(const QString& documentText, bool)
 {
@@ -76,7 +79,7 @@ public:
         const int laneCount = report.trace.isValid()
             ? report.trace.traceSignals.size()
             : (report.available ? report.lanes.size() : 2);
-        return QSize(460, qBound(132, 52 + laneCount * 34, 260));
+        return QSize(460, qBound(144, 66 + laneCount * 34, 280));
     }
 
     void setReport(const WavePreviewReport& nextReport,
@@ -157,19 +160,21 @@ protected:
         const int labelWidth = qMin(130, qMax(84, width() / 4));
         const int left = 10;
         const int right = 12;
-        const int top = 28;
+        const int top = 44;
         const int rowHeight = 32;
         const int timelineLeft = left + labelWidth;
         const int timelineRight = width() - right;
         const int timelineWidth = std::max(80, timelineRight - timelineLeft);
         const int laneBottom = top + report.lanes.size() * rowHeight;
 
+        paintSketchLegend(painter, canvasRect);
+
         painter.setPen(QColor(QStringLiteral("#64748b")));
         for (int cycle = 0; cycle <= maxCycle; ++cycle) {
             const int x = timelineLeft
                 + static_cast<int>((timelineWidth * cycle) / maxCycle);
             painter.drawLine(x, top - 8, x, laneBottom + 4);
-            painter.drawText(QRect(x - 20, 4, 40, 18),
+            painter.drawText(QRect(x - 20, 22, 40, 18),
                              Qt::AlignCenter,
                              QStringLiteral("t+%1").arg(cycle));
         }
@@ -236,12 +241,7 @@ protected:
                     QRect(timelineLeft + 2, y + 2,
                           timelineWidth - 4, rowHeight - 4));
 
-                QColor fill(QStringLiteral("#2f855a"));
-                if (assignment.kind == WavePreviewAssignmentKind::Blocking)
-                    fill = QColor(QStringLiteral("#2563eb"));
-                else if (assignment.kind
-                         == WavePreviewAssignmentKind::NonBlocking)
-                    fill = QColor(QStringLiteral("#9333ea"));
+                const QColor fill = colorForAssignmentKind(assignment.kind);
 
                 const bool selected =
                     assignment.line > 0
@@ -364,12 +364,98 @@ protected:
     }
 
 private:
+    static void drawLegendChip(QPainter& painter,
+                               int* x,
+                               int y,
+                               const QColor& color,
+                               const QString& text)
+    {
+        if (!x || text.isEmpty())
+            return;
+        const QFontMetrics metrics(painter.font());
+        const int textWidth = metrics.horizontalAdvance(text);
+        const QRect chipRect(*x, y, textWidth + 22, 18);
+        painter.setPen(QPen(color.darker(130), 1));
+        painter.setBrush(color.lighter(180));
+        painter.drawRoundedRect(chipRect, 4, 4);
+        painter.setPen(QColor(QStringLiteral("#111827")));
+        painter.drawText(chipRect.adjusted(18, 0, -5, 0),
+                         Qt::AlignVCenter | Qt::AlignLeft,
+                         text);
+        painter.setBrush(color);
+        painter.setPen(Qt::NoPen);
+        painter.drawEllipse(QRect(chipRect.left() + 6,
+                                  chipRect.top() + 5,
+                                  8,
+                                  8));
+        *x += chipRect.width() + 6;
+    }
+
+    void paintSketchLegend(QPainter& painter, const QRect& canvasRect) const
+    {
+        painter.save();
+        int x = canvasRect.left() + 10;
+        constexpr int y = 5;
+        QFont legendFont = painter.font();
+        legendFont.setPointSize(qMax(8, legendFont.pointSize() - 1));
+        painter.setFont(legendFont);
+        drawLegendChip(painter,
+                       &x,
+                       y,
+                       colorForAssignmentKind(
+                           WavePreviewAssignmentKind::Continuous),
+                       QStringLiteral("assign"));
+        drawLegendChip(painter,
+                       &x,
+                       y,
+                       colorForAssignmentKind(
+                           WavePreviewAssignmentKind::Blocking),
+                       QStringLiteral("blocking"));
+        drawLegendChip(painter,
+                       &x,
+                       y,
+                       colorForAssignmentKind(
+                           WavePreviewAssignmentKind::NonBlocking),
+                       QStringLiteral("nonblocking"));
+        painter.setPen(QColor(QStringLiteral("#64748b")));
+        painter.drawText(QRect(x + 4,
+                               y,
+                               qMax(40, canvasRect.right() - x - 8),
+                               18),
+                         Qt::AlignVCenter | Qt::AlignLeft,
+                         QStringLiteral("code sketch"));
+        painter.restore();
+    }
+
+    void paintTraceLegend(QPainter& painter, const QRect& canvasRect) const
+    {
+        painter.save();
+        int x = canvasRect.left() + 10;
+        constexpr int y = 5;
+        QFont legendFont = painter.font();
+        legendFont.setPointSize(qMax(8, legendFont.pointSize() - 1));
+        painter.setFont(legendFont);
+        drawLegendChip(painter,
+                       &x,
+                       y,
+                       QColor(QStringLiteral("#0f766e")),
+                       QStringLiteral("trace"));
+        painter.setPen(QColor(QStringLiteral("#64748b")));
+        painter.drawText(QRect(x + 4,
+                               y,
+                               qMax(40, canvasRect.right() - x - 8),
+                               18),
+                         Qt::AlignVCenter | Qt::AlignLeft,
+                         QStringLiteral("local waveform sketch"));
+        painter.restore();
+    }
+
     void paintTrace(QPainter& painter, const QRect& canvasRect)
     {
         const int labelWidth = qMin(130, qMax(84, width() / 4));
         const int left = 10;
         const int right = 12;
-        const int top = 28;
+        const int top = 44;
         const int rowHeight = 32;
         const int timelineLeft = left + labelWidth;
         const int timelineRight = width() - right;
@@ -377,12 +463,14 @@ private:
         const int maxCycle = qMax(1, report.trace.cycleCount);
         const int laneBottom = top + report.trace.traceSignals.size() * rowHeight;
 
+        paintTraceLegend(painter, canvasRect);
+
         painter.setPen(QColor(QStringLiteral("#64748b")));
         for (int cycle = 0; cycle <= maxCycle; ++cycle) {
             const int x = timelineLeft
                 + static_cast<int>((timelineWidth * cycle) / maxCycle);
             painter.drawLine(x, top - 8, x, laneBottom + 4);
-            painter.drawText(QRect(x - 20, 4, 40, 18),
+            painter.drawText(QRect(x - 20, 22, 40, 18),
                              Qt::AlignCenter,
                              QStringLiteral("%1").arg(cycle));
         }
@@ -516,6 +604,26 @@ QString assignmentKindText(WavePreviewAssignmentKind kind)
         return QStringLiteral("nonblocking");
     }
     return QStringLiteral("assignment");
+}
+
+QColor colorForAssignmentKind(WavePreviewAssignmentKind kind)
+{
+    switch (kind) {
+    case WavePreviewAssignmentKind::Continuous:
+        return QColor(QStringLiteral("#2f855a"));
+    case WavePreviewAssignmentKind::Blocking:
+        return QColor(QStringLiteral("#2563eb"));
+    case WavePreviewAssignmentKind::NonBlocking:
+        return QColor(QStringLiteral("#9333ea"));
+    }
+    return QColor(QStringLiteral("#64748b"));
+}
+
+QString sketchLegendText(const WavePreviewReport& report)
+{
+    if (report.trace.isValid())
+        return QStringLiteral("trace lanes show sampled local values");
+    return QStringLiteral("assign = continuous, blocking = '=', nonblocking = '<='");
 }
 
 QString blockKindText(WavePreviewBlockKind kind)
@@ -973,6 +1081,74 @@ void setItemTooltip(QTreeWidgetItem* item, const QString& tooltip)
     for (int column = 0; column < item->columnCount(); ++column)
         item->setToolTip(column, tooltip);
 }
+
+void setItemBold(QTreeWidgetItem* item, int column = 0)
+{
+    if (!item)
+        return;
+    QFont font = item->font(column);
+    font.setBold(true);
+    item->setFont(column, font);
+}
+
+void addOverviewItems(QTreeWidget* tree,
+                      const WavePreviewReport& report,
+                      bool dirty)
+{
+    if (!tree)
+        return;
+
+    auto* scopeItem = new QTreeWidgetItem(tree);
+    scopeItem->setText(0, QStringLiteral("Scope"));
+    scopeItem->setText(1,
+                       report.scoped && !report.scopeLabel.isEmpty()
+                           ? report.scopeLabel
+                           : QStringLiteral("full document"));
+    scopeItem->setText(2,
+                       report.trace.isValid()
+                           ? QStringLiteral("local waveform")
+                           : QStringLiteral("code sketch"));
+    scopeItem->setText(3,
+                       report.scoped
+                           ? QStringLiteral("lines %1-%2")
+                                 .arg(report.scopeStartLine)
+                                 .arg(report.scopeEndLine)
+                           : QStringLiteral("-"));
+    scopeItem->setText(4,
+                       countText(report.assignmentCount,
+                                 QStringLiteral("event"),
+                                 QStringLiteral("events")));
+    scopeItem->setText(5,
+                       countText(report.lanes.size(),
+                                 QStringLiteral("lane"),
+                                 QStringLiteral("lanes")));
+    scopeItem->setText(6,
+                       dirty ? QStringLiteral("dirty buffer")
+                             : QStringLiteral("-"));
+    setItemBold(scopeItem);
+    setItemTooltip(
+        scopeItem,
+        QStringLiteral("Wave Preview report scope. UI consumes a scoped report; it does not simulate or scan the workspace."));
+
+    auto* legendItem = new QTreeWidgetItem(tree);
+    legendItem->setText(0, QStringLiteral("Legend"));
+    legendItem->setText(1, sketchLegendText(report));
+    legendItem->setText(2, QStringLiteral("activity %1")
+                              .arg(activitySummaryText(report.activitySummary)));
+    legendItem->setText(3, QStringLiteral("not simulation"));
+    legendItem->setText(4,
+                        report.warnings.isEmpty()
+                            ? QStringLiteral("-")
+                            : countText(report.warnings.size(),
+                                        QStringLiteral("warning"),
+                                        QStringLiteral("warnings")));
+    legendItem->setText(5, QStringLiteral("readability"));
+    legendItem->setText(6, QStringLiteral("-"));
+    setItemBold(legendItem);
+    setItemTooltip(
+        legendItem,
+        QStringLiteral("Canvas legend for interpreting the Wave Preview sketch."));
+}
 }
 
 WavePreviewPanelCoordinator::WavePreviewPanelCoordinator(QWidget* parent)
@@ -1254,6 +1430,8 @@ void WavePreviewPanelCoordinator::renderReport(
         currentSummaryText = reportSummaryText(report, dirty);
         summaryLabel->setText(currentSummaryText);
     }
+
+    addOverviewItems(previewTree, report, dirty);
 
     if (!report.available) {
         auto* item = new QTreeWidgetItem(previewTree);

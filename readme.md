@@ -67,7 +67,9 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
   summaries with report-data filters and graph search highlighting/focus.
 - Wave Preview exists as a code-understanding sketch, not a simulator. The
   current entry points are scoped to the selected/current `always` block or,
-  when not in an `always` block, the selected/current module.
+  when not in an `always` block, the selected/current module. The panel renders
+  scope and legend/readability cues from the report data so users can interpret
+  the sketch without implying simulation accuracy.
 - Formatter support exists as conservative editor formatting. Current daily
   editor action inventory: `Ctrl+F` opens Find; formatter document/selection
   actions live in the editor context menu; line comment actions are available
@@ -190,8 +192,9 @@ and restoring Global Control `ow r` for recent workspaces.
   module scope detection, `MyCodeEditor` exposes editor-local scope targets,
   `MainWindow` passes those targets into `WavePreviewPanelCoordinator` with
   `always` scope taking priority over module scope, and `WavePreviewService`
-  shapes the scoped report. UI code remains a consumer and does not scan
-  workspace files or run Slang.
+  shapes the scoped report. `WavePreviewPanelCoordinator` renders scope,
+  legend, and readability overview rows from that report. UI code remains a
+  consumer and does not scan workspace files or run Slang.
 
 ## Command Responsibility Map
 

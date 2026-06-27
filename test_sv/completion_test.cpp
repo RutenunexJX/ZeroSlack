@@ -32,6 +32,7 @@
 #include "symboltaxonomy.h"
 #include "tsdocument.h"
 #include "usertemplateservice.h"
+#include "wavepreviewpanelcoordinator.h"
 #include "wavepreviewservice.h"
 #include "workspaceanalysisplanservice.h"
 #include "workspaceanalysisrequestqueue.h"
@@ -50,6 +51,8 @@
 #include <QTextDocument>
 #include <QTextLayout>
 #include <QTextStream>
+#include <QTreeWidget>
+#include <QTreeWidgetItem>
 #include <QWidget>
 #include <QString>
 #include <QStringList>
@@ -2782,6 +2785,55 @@ int main(int argc, char** argv) {
                                     QStringLiteral("z"))
                    && !waveLaneNamed(editorModuleReport,
                                      QStringLiteral("y")),
+               true);
+    QWidget wavePreviewPanelHost;
+    WavePreviewPanelCoordinator wavePreviewPanel(&wavePreviewPanelHost);
+    wavePreviewPanel.refreshFromDocument(QStringLiteral("wave_probe.sv"),
+                                         wavePreviewInput,
+                                         false,
+                                         editorAlwaysScope.startPosition,
+                                         editorAlwaysScope.endPosition,
+                                         editorAlwaysScope.label);
+    QTreeWidget* wavePreviewTree = wavePreviewPanel.tree();
+    QTreeWidgetItem* wavePreviewScopeItem =
+        wavePreviewTree && wavePreviewTree->topLevelItemCount() > 0
+            ? wavePreviewTree->topLevelItem(0)
+            : nullptr;
+    QTreeWidgetItem* wavePreviewLegendItem =
+        wavePreviewTree && wavePreviewTree->topLevelItemCount() > 1
+            ? wavePreviewTree->topLevelItem(1)
+            : nullptr;
+    const QString wavePreviewSketchType =
+        wavePreviewScopeItem ? wavePreviewScopeItem->text(2) : QString();
+    expectBool("WavePreview panel scope overview",
+               wavePreviewScopeItem
+                   && wavePreviewScopeItem->text(0) == QStringLiteral("Scope")
+                   && wavePreviewScopeItem->text(1) == editorAlwaysScope.label
+                   && (wavePreviewSketchType
+                           == QStringLiteral("local waveform")
+                       || wavePreviewSketchType
+                           == QStringLiteral("code sketch"))
+                   && wavePreviewScopeItem->text(3)
+                          .startsWith(QStringLiteral("lines "))
+                   && wavePreviewScopeItem->text(4)
+                          == QStringLiteral("1 event")
+                   && wavePreviewScopeItem->text(5)
+                          == QStringLiteral("1 lane")
+                   && wavePreviewScopeItem->text(6) == QStringLiteral("-"),
+               true);
+    expectBool("WavePreview panel legend overview",
+               wavePreviewLegendItem
+                   && wavePreviewLegendItem->text(0)
+                          == QStringLiteral("Legend")
+                   && !wavePreviewLegendItem->text(1).isEmpty()
+                   && wavePreviewLegendItem->text(3)
+                          == QStringLiteral("not simulation")
+                   && wavePreviewLegendItem->text(5)
+                          == QStringLiteral("readability"),
+               true);
+    expectBool("WavePreview canvas leaves legend room",
+               wavePreviewPanel.canvas()
+                   && wavePreviewPanel.canvas()->sizeHint().height() >= 144,
                true);
     expectBool("WavePreview q lane has two events",
                waveLaneNamed(waveReport, QStringLiteral("q"))

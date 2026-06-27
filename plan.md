@@ -727,6 +727,8 @@ First milestones:
   (complete: Wave Preview falls back to selected/current module scope when no
   selected/current `always` scope is active)
 - M9.3 UI polish for sketch readability
+  (complete: canvas legend plus Scope/Legend overview rows make scoped
+  sketches easier to interpret without adding simulator behavior)
 
 M9.1 implementation constraints:
 
@@ -768,6 +770,27 @@ M9.2 implementation status:
   active.
 - Complete: module-scoped reports continue through the existing
   `WavePreviewQuery` / `WavePreviewService` scoped report path.
+- Verification: `git diff --check`; Release `completion_test`,
+  `relationship_test`, and `gui_smoke_test` targets compile/link; `ctest -R
+  "^completion_test$"` and `ctest -R "^relationship_test$"` passed.
+  `gui_smoke_test` was not launched.
+
+M9.3 implementation constraints:
+
+- Preserve M9.1 and M9.2 scope selection behavior.
+- Do not add simulator behavior, waveform database import, testbench execution,
+  or timing-accurate verification.
+- Keep readability polish in `WavePreviewPanelCoordinator` as report
+  rendering only; do not scan workspace files or run Slang from UI code.
+
+M9.3 implementation status:
+
+- Complete: Wave Preview canvas renders a compact legend for trace sketches and
+  assign/blocking/nonblocking code sketches.
+- Complete: the tree view adds Scope and Legend overview rows before detailed
+  trace, warning, activity, lane, and event rows.
+- Complete: focused panel coverage verifies scoped overview rows and reserved
+  canvas space for the legend.
 - Verification: `git diff --check`; Release `completion_test`,
   `relationship_test`, and `gui_smoke_test` targets compile/link; `ctest -R
   "^completion_test$"` and `ctest -R "^relationship_test$"` passed.

@@ -28,7 +28,7 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
 
 ## Current Goal State
 
-Current milestone: `G9.3 Wave Preview Sketch Readability Polish`.
+Current milestone: `G10.1 State Transition Trigger Gating For ns/next_state`.
 
 Status:
 
@@ -319,11 +319,28 @@ Status:
   compile/link; `ctest -R "^completion_test$"` and `ctest -R
   "^relationship_test$"` passed. `gui_smoke_test` was not launched.
 
-Completion criteria for G9.3:
+- G9.3 Wave Preview Sketch Readability Polish is complete:
+  `WavePreviewPanelCoordinator` renders compact canvas legends for trace
+  sketches and assign/blocking/nonblocking code sketches. The Wave Preview tree
+  adds Scope and Legend overview rows ahead of detailed trace, warning,
+  activity, lane, and event rows. The selected-`always` and selected/current
+  module entry behavior is preserved, and the UI remains a scoped report
+  consumer with no workspace scan, UI-side Slang work, or simulator behavior.
+- Focused verification for G9.3: `git diff --check`; Release
+  `completion_test`, `relationship_test`, and `gui_smoke_test` targets
+  compile/link; `ctest -R "^completion_test$"` and `ctest -R
+  "^relationship_test$"` passed. `gui_smoke_test` was not launched.
 
-- improve Wave Preview sketch readability without adding simulator behavior
-- preserve selected-`always` and selected/current module scoped entries
-- keep UI as a report consumer; do not scan workspace files or run Slang from UI
+Completion criteria for G10.1:
+
+- add trigger gating for the State Transition Graph entry point
+- selected identifier `ns` triggers
+- selected identifier `next_state` triggers
+- selected identifier `cs` does not trigger
+- selected identifier `current_state` does not trigger
+- do not add transition extraction/report rendering beyond the gating milestone
+- keep state-transition policy in a service/report path, not direct UI semantic
+  scanning
 - `readme.md`, `plan.md`, and `goal.md` are updated
 - appropriate focused verification passes
 - milestone commit is pushed
@@ -506,6 +523,7 @@ Milestones:
 - G9.2 Selected-module entry and scoped report.
   (complete: module fallback scope target plus scoped service report)
 - G9.3 Sketch readability polish.
+  (complete: canvas legend plus Scope/Legend overview rows)
 
 ## Track 10: State Transition Graph
 
