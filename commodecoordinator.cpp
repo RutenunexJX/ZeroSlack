@@ -7,6 +7,7 @@
 #include "tabmanager.h"
 
 #include <QApplication>
+#include <QEvent>
 #include <QFont>
 #include <QGuiApplication>
 #include <QKeyEvent>
@@ -58,6 +59,26 @@ QString pickerItemLabel(const ComModePickerItem& item)
     }
     return QStringLiteral("%1\n%2").arg(item.name, location);
 }
+
+bool objectBelongsToEditor(QObject* object, MyCodeEditor* editor)
+{
+    if (!object || !editor)
+        return false;
+    if (object == editor)
+        return true;
+
+    auto* widget = qobject_cast<QWidget*>(object);
+    return widget && (widget == editor || editor->isAncestorOf(widget));
+}
+
+bool focusBelongsToWindow(QWidget* anchor)
+{
+    QWidget* focus = QApplication::focusWidget();
+    if (!focus || !anchor)
+        return true;
+    QWidget* anchorWindow = anchor->window();
+    return !anchorWindow || focus->window() == anchorWindow;
+}
 } // namespace
 
 ComModeCoordinator::ComModeCoordinator(
@@ -90,7 +111,11 @@ ComModeCoordinator::ComModeCoordinator(
         [this]() { exitComModeFromPicker(); });
 }
 
-ComModeCoordinator::~ComModeCoordinator() = default;
+ComModeCoordinator::~ComModeCoordinator()
+{
+    if (globalEscapeInstalled && qApp)
+        qApp->removeEventFilter(this);
+}
 
 void ComModeCoordinator::connectSignals()
 {
@@ -118,7 +143,15 @@ void ComModeCoordinator::connectSignals()
                                    editor->comModeBuffer(),
                                    QString());
             });
+    installGlobalEscapeFilter();
     connected = true;
+}
+
+bool ComModeCoordinator::eventFilter(QObject* watched, QEvent* event)
+{
+    if (handleGlobalEscape(watched, event))
+        return true;
+    return QObject::eventFilter(watched, event);
 }
 
 void ComModeCoordinator::attachEditor(MyCodeEditor* editor)
@@ -196,6 +229,59 @@ void ComModeCoordinator::ensureCommandStrip()
         "}"));
     commandStrip->hide();
     statusBar->addWidget(commandStrip, 1);
+}
+
+void ComModeCoordinator::installGlobalEscapeFilter()
+{
+    if (globalEscapeInstalled || !qApp)
+        return;
+    qApp->installEventFilter(this);
+    globalEscapeInstalled = true;
+}
+
+bool ComModeCoordinator::handleGlobalEscape(QObject* watched, QEvent* event)
+{
+    if (forwardingEscapeToEditor || !event
+        || event->type() != QEvent::KeyPress) {
+        return false;
+    }
+
+    auto* keyEvent = static_cast<QKeyEvent*>(event);
+    if (keyEvent->key() != Qt::Key_Escape || keyEvent->isAutoRepeat())
+        return false;
+
+    if (QApplication::activeModalWidget() || QApplication::activePopupWidget())
+        return false;
+
+    MyCodeEditor* editor = tabManager ? tabManager->getCurrentEditor() : nullptr;
+    if (!editor || !editor->isEnabled())
+        return false;
+
+    if (objectBelongsToEditor(watched, editor)
+        || objectBelongsToEditor(QApplication::focusWidget(), editor)) {
+        return false;
+    }
+
+    if (!focusBelongsToWindow(anchor))
+        return false;
+
+    QKeyEvent forwarded(QEvent::KeyPress,
+                        keyEvent->key(),
+                        keyEvent->modifiers(),
+                        keyEvent->text(),
+                        keyEvent->isAutoRepeat(),
+                        keyEvent->count());
+
+    forwardingEscapeToEditor = true;
+    editor->setFocus(Qt::ShortcutFocusReason);
+    QApplication::sendEvent(editor, &forwarded);
+    forwardingEscapeToEditor = false;
+
+    if (!forwarded.isAccepted())
+        return false;
+
+    keyEvent->accept();
+    return true;
 }
 
 void ComModeCoordinator::updateCommandStrip(MyCodeEditor* editor,

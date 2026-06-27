@@ -6044,7 +6044,7 @@ static void runComModeRegression(MainWindow& window)
     modeEditor.setFocus();
     QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
     sendWidgetKey(&modeEditor, Qt::Key_Escape);
-    expectBool("Esc enters COM mode from editor focus",
+    expectBool("Esc still enters COM mode from editor focus",
                modeEditor.comModeActive()
                    && modeEditor.comModeBuffer().isEmpty(),
                true);
@@ -6254,6 +6254,27 @@ static void runComModeRegression(MainWindow& window)
                        && strip
                        && !strip->isVisible(),
                    true);
+
+        QLineEdit offEditorFocus(&window);
+        offEditorFocus.setObjectName(QStringLiteral("comModeOffEditorFocus"));
+        offEditorFocus.resize(120, 24);
+        offEditorFocus.show();
+        offEditorFocus.setFocus(Qt::ShortcutFocusReason);
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+        sendWidgetKey(&offEditorFocus, Qt::Key_Escape);
+        QWidget* focusedAfterOffEditorEsc = QApplication::focusWidget();
+        const bool focusReturnedToEditor =
+            focusedAfterOffEditorEsc == activeEditor
+            || activeEditor->isAncestorOf(focusedAfterOffEditorEsc);
+        expectBool("Esc enters COM mode from non-editor focus",
+                   activeEditor->comModeActive()
+                       && focusReturnedToEditor
+                       && strip
+                       && strip->isVisible()
+                       && strip->text() == QStringLiteral("COM"),
+                   true);
+        sendWidgetKey(activeEditor, Qt::Key_QuoteLeft, QStringLiteral("`"));
+        offEditorFocus.close();
     }
 }
 

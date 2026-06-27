@@ -13,6 +13,7 @@ class QLabel;
 class QListWidget;
 class QListWidgetItem;
 class QLineEdit;
+class QEvent;
 class QStatusBar;
 class QKeyEvent;
 class ProjectModel;
@@ -41,6 +42,9 @@ public:
     QLabel* commandStripWidget() const;
     ComModuleSelectorPanel* moduleSelectorPanel() const;
 
+protected:
+    bool eventFilter(QObject* watched, QEvent* event) override;
+
 private:
     enum class PickerMode {
         Module,
@@ -63,8 +67,12 @@ private:
     PickerMode activePickerMode = PickerMode::Module;
     QString activePickerCommand = QStringLiteral("gm");
     bool connected = false;
+    bool globalEscapeInstalled = false;
+    bool forwardingEscapeToEditor = false;
 
     void ensureCommandStrip();
+    void installGlobalEscapeFilter();
+    bool handleGlobalEscape(QObject* watched, QEvent* event);
     void updateCommandStrip(MyCodeEditor* editor,
                             bool active,
                             const QString& buffer,
