@@ -3740,6 +3740,15 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     ModuleBlockDiagramService::getInstance()->setSemanticIndex(&index);
     QWidget moduleBlockPanelHost;
     RtlInsightsPanelCoordinator moduleBlockPanel(&moduleBlockPanelHost);
+    QString moduleBlockNavigatedFileName;
+    int moduleBlockNavigatedLine = 0;
+    int moduleBlockNavigatedColumn = 0;
+    moduleBlockPanel.setNavigationHandler(
+        [&](const QString& fileName, int line, int column) {
+            moduleBlockNavigatedFileName = fileName;
+            moduleBlockNavigatedLine = line;
+            moduleBlockNavigatedColumn = column;
+        });
     moduleBlockPanel.showModuleBlockDiagramForModule(
         topPath,
         QStringLiteral("rel_top"));
@@ -3772,6 +3781,39 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                    && moduleBlockStageItem->data(0, Qt::UserRole).toString()
                        == stagePath
                    && !moduleBlockSignalItem,
+               true);
+    const bool invokedModuleBlockStageNavigation =
+        moduleBlockStageItem
+        && QMetaObject::invokeMethod(moduleBlockTree,
+                                     "itemDoubleClicked",
+                                     Qt::DirectConnection,
+                                     Q_ARG(QTreeWidgetItem*, moduleBlockStageItem),
+                                     Q_ARG(int, 0));
+    expectBool("module block diagram child module navigation",
+               invokedModuleBlockStageNavigation
+                   && moduleBlockNavigatedFileName == stagePath
+                   && moduleBlockNavigatedLine
+                       == stageRecord.location.startLine
+                   && moduleBlockNavigatedColumn
+                       == stageRecord.location.startColumn,
+               true);
+    moduleBlockNavigatedFileName.clear();
+    moduleBlockNavigatedLine = 0;
+    moduleBlockNavigatedColumn = 0;
+    const bool invokedModuleBlockTopNavigation =
+        moduleBlockTopItem
+        && QMetaObject::invokeMethod(moduleBlockTree,
+                                     "itemDoubleClicked",
+                                     Qt::DirectConnection,
+                                     Q_ARG(QTreeWidgetItem*, moduleBlockTopItem),
+                                     Q_ARG(int, 0));
+    expectBool("module block diagram root module navigation",
+               invokedModuleBlockTopNavigation
+                   && moduleBlockNavigatedFileName == topPath
+                   && moduleBlockNavigatedLine
+                       == topRecord.location.startLine
+                   && moduleBlockNavigatedColumn
+                       == topRecord.location.startColumn,
                true);
 
     EditorSemanticContext moduleBlockActionContext;

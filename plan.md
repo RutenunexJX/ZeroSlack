@@ -909,6 +909,8 @@ First milestones:
   (complete: RTL Insights renders `ModuleBlockDiagramReport` as a module-only
   block diagram tree from active or selected module names)
 - M11.3 click navigation to module definitions
+  (complete: double-clicking rendered module rows follows report-carried
+  definition links through the existing navigation handler)
 
 M11.1 implementation constraints:
 
@@ -957,6 +959,26 @@ M11.2 implementation status:
 - Verification: `git diff --check`; Release `relationship_test` and
   `gui_smoke_test` targets compile/link; `ctest -R "^relationship_test$"`
   passed. `gui_smoke_test` was not launched.
+
+M11.3 implementation constraints:
+
+- Preserve G11.1 report ownership and G11.2 module-only rendering.
+- Navigation must use module definition links already carried by
+  `ModuleBlockDiagramReport`.
+- Do not render signals.
+- Do not add workspace scans, UI-side Slang work, or new relationship
+  extraction.
+
+M11.3 implementation status:
+
+- Complete: rendered top-module and child-module rows carry definition links
+  from `ModuleBlockDiagramReport` into the existing RTL Insights tree item
+  navigation slots.
+- Complete: focused panel coverage invokes the existing double-click navigation
+  signal for root and child module rows and verifies that the navigation handler
+  receives the corresponding module definition file, line, and column.
+- Verification: `git diff --check`; Release `relationship_test` target
+  compile/link; `ctest -R "^relationship_test$"` passed.
 
 ## Huge Workspace Status Audit
 

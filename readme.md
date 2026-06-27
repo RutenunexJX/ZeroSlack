@@ -80,7 +80,8 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
   `ModuleBlockDiagramReport`. The current UI entry points are the RTL Insights
   `Module Block Diagram` action for the active module and the editor source
   action for selected module names. Rendering is module/interface-only and does
-  not show signals.
+  not show signals. Double-clicking rendered module rows follows the carried
+  definition link through the existing navigation handler.
 - Formatter support exists as conservative editor formatting. Current daily
   editor action inventory: `Ctrl+F` opens Find; formatter document/selection
   actions live in the editor context menu; line comment actions are available
@@ -220,8 +221,9 @@ and restoring Global Control `ow r` for recent workspaces.
   module-definition links, and instantiation edges only; signal and non-instance
   relationship filtering stays in the service/report layer. `RtlInsightsPanelCoordinator`
   renders that report as a module-only block diagram tree and routes source
-  symbol requests through `SemanticPanelRefreshCoordinator` without scanning
-  workspaces or running Slang in UI code.
+  symbol requests through `SemanticPanelRefreshCoordinator`; double-click
+  navigation uses the module definition links already carried by the report.
+  UI code does not scan workspaces or run Slang.
 
 ## Command Responsibility Map
 

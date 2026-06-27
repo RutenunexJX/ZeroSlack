@@ -28,7 +28,7 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
 
 ## Current Goal State
 
-Current milestone: `G11.3 Module Block Diagram Navigation Evidence`.
+Current milestone: `HWA.1 Inventory owner classes, current behavior, and existing verification`.
 
 Status:
 
@@ -397,17 +397,28 @@ Status:
   `relationship_test` and `gui_smoke_test` targets compile/link; `ctest -R
   "^relationship_test$"` passed. `gui_smoke_test` was not launched.
 
-Completion criteria for G11.3:
+- G11.3 Module Block Diagram Navigation Evidence is complete:
+  rendered top-module and child-module rows carry report-provided module
+  definition links into the existing RTL Insights navigation slots. Focused
+  panel coverage invokes the double-click navigation signal for root and child
+  module rows and verifies that the navigation handler receives the
+  corresponding module definition file, line, and column. G11.1 report
+  ownership and G11.2 module-only rendering are preserved; no signal rendering,
+  UI workspace scan, UI-side Slang work, or new relationship extraction was
+  added.
+- Focused verification for G11.3: `git diff --check`; Release
+  `relationship_test` target compile/link; `ctest -R "^relationship_test$"`
+  passed.
 
-- clicking or double-clicking a rendered module block jumps to that module
-  definition through the existing navigation handler
-- navigation evidence is covered by focused tests
-- preserve G11.1 report ownership and G11.2 module-only rendering
-- do not render signals
-- UI still consumes `ModuleBlockDiagramReport`; no UI workspace scan or Slang
-  work
+Completion criteria for HWA.1:
+
+- inventory owner classes for current/open/dirty-open priority, analysis
+  bands, stale request coalescing/expiration, cancellation, staged publication,
+  Activity telemetry, and Release `huge_prj` references
+- document current behavior and existing tests/harnesses only
+- do not add Huge Workspace UX features
 - `readme.md`, `plan.md`, and `goal.md` are updated
-- appropriate focused verification passes
+- documentation inspection and `git diff --check` pass
 - milestone commit is pushed
 
 ## Track 1: Editor Daily Operations Completion
@@ -631,6 +642,8 @@ Milestones:
   (complete: RTL Insights renders `ModuleBlockDiagramReport` for active or
   selected modules)
 - G11.3 Click navigation to module definitions.
+  (complete: focused tests verify root/child module row double-click
+  navigation to module definitions)
 
 ## Huge Workspace Status Audit
 
