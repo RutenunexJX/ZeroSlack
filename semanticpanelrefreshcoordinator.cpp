@@ -180,6 +180,14 @@ void SemanticPanelRefreshCoordinator::showStateTransitionGraphForSymbol(
     panels.showStateTransitionGraphForSymbol(symbolName, fileName, moduleName);
 }
 
+void SemanticPanelRefreshCoordinator::showModuleBlockDiagramForSymbol(
+    const QString& symbolName,
+    const QString& fileName,
+    const QString& moduleName)
+{
+    panels.showModuleBlockDiagramForSymbol(symbolName, fileName, moduleName);
+}
+
 void SemanticPanelRefreshCoordinator::handleActiveEditorChanged(MyCodeEditor* editor)
 {
     dependencies.handleActiveEditorChanged(editor);

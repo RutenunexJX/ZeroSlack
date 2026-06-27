@@ -28,7 +28,7 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
 
 ## Current Goal State
 
-Current milestone: `G11.2 Module Block Diagram Rendering`.
+Current milestone: `G11.3 Module Block Diagram Navigation Evidence`.
 
 Status:
 
@@ -386,14 +386,26 @@ Status:
   `relationship_test` target compile/link; `ctest -R "^relationship_test$"`
   passed.
 
-Completion criteria for G11.2:
+- G11.2 Module Block Diagram Rendering is complete:
+  RTL Insights renders `ModuleBlockDiagramReport` as a module-only block
+  diagram tree. The panel action renders the active module, and editor
+  source-symbol routing can render selected module names as the diagram root.
+  The rendered rows come from the service report, show module/interface
+  containment only, and do not show signal nodes. No UI workspace scan,
+  UI-side Slang work, or new relationship extraction was added.
+- Focused verification for G11.2: `git diff --check`; Release
+  `relationship_test` and `gui_smoke_test` targets compile/link; `ctest -R
+  "^relationship_test$"` passed. `gui_smoke_test` was not launched.
 
-- render the service-owned module block diagram report in UI
-- selected module is the diagram root
-- show only module/interface instance containment or wrapping relationships
+Completion criteria for G11.3:
+
+- clicking or double-clicking a rendered module block jumps to that module
+  definition through the existing navigation handler
+- navigation evidence is covered by focused tests
+- preserve G11.1 report ownership and G11.2 module-only rendering
 - do not render signals
-- UI consumes `ModuleBlockDiagramReport`; no UI workspace scan or Slang work
-- extraction/report logic stays outside UI code
+- UI still consumes `ModuleBlockDiagramReport`; no UI workspace scan or Slang
+  work
 - `readme.md`, `plan.md`, and `goal.md` are updated
 - appropriate focused verification passes
 - milestone commit is pushed
@@ -616,6 +628,8 @@ Milestones:
   (complete: `ModuleBlockDiagramService` owns the module-only containment
   report and definition links)
 - G11.2 Module-only block diagram rendering.
+  (complete: RTL Insights renders `ModuleBlockDiagramReport` for active or
+  selected modules)
 - G11.3 Click navigation to module definitions.
 
 ## Huge Workspace Status Audit

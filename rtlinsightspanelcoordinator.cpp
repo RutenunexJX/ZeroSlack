@@ -3,6 +3,7 @@
 #include "activitylogservice.h"
 #include "clockresetdomainservice.h"
 #include "fsmgraphservice.h"
+#include "moduleblockdiagramservice.h"
 #include "modulebriefservice.h"
 #include "semanticdiffservice.h"
 #include "semanticpanelutils.h"
@@ -606,6 +607,94 @@ void appendStateTransitionGraph(QTreeWidget* tree,
                     0);
 }
 
+void appendModuleBlockDiagram(QTreeWidget* tree,
+                              const ModuleBlockDiagramReport& report)
+{
+    QTreeWidgetItem* group = createGroupItem(
+        tree,
+        report.groupDisplayName.isEmpty()
+            ? QStringLiteral("Module Block Diagram")
+            : report.groupDisplayName,
+        report.edgeCount);
+
+    if (!report.found) {
+        createChildItem(group,
+                        QStringLiteral("Unavailable"),
+                        report.root.moduleDisplayName,
+                        report.notFoundReasonDisplayName,
+                        QString(),
+                        0,
+                        0);
+        return;
+    }
+
+    QHash<int, QTreeWidgetItem*> itemsByNodeId;
+    QTreeWidgetItem* rootItem =
+        createChildItem(group,
+                        QStringLiteral("Top Module"),
+                        report.root.moduleDisplayName,
+                        report.root.moduleTypeDisplayName,
+                        report.root.definitionCodeLink.fileName,
+                        report.root.definitionCodeLink.line,
+                        report.root.definitionCodeLink.column,
+                        report.root.definitionCodeLink.fileDisplayName,
+                        report.root.definitionCodeLink.lineDisplayName);
+    itemsByNodeId.insert(report.root.nodeId, rootItem);
+
+    for (const ModuleBlockDiagramNode& node : report.nodes) {
+        if (node.nodeId == report.root.nodeId)
+            continue;
+
+        QTreeWidgetItem* parent = itemsByNodeId.value(node.parentNodeId,
+                                                      rootItem);
+        if (!parent)
+            parent = rootItem;
+
+        QString parentDisplayName = report.root.moduleDisplayName;
+        for (const ModuleBlockDiagramEdge& edge : report.edges) {
+            if (edge.toNodeId == node.nodeId) {
+                parentDisplayName = edge.parentModuleDisplayName;
+                break;
+            }
+        }
+
+        QTreeWidgetItem* item =
+            createChildItem(parent,
+                            QStringLiteral("Instantiates"),
+                            node.moduleDisplayName,
+                            QStringLiteral("%1 -> %2")
+                                .arg(parentDisplayName,
+                                     node.moduleDisplayName),
+                            node.definitionCodeLink.fileName,
+                            node.definitionCodeLink.line,
+                            node.definitionCodeLink.column,
+                            node.definitionCodeLink.fileDisplayName,
+                            node.definitionCodeLink.lineDisplayName);
+        createChildItem(item,
+                        QStringLiteral("Type"),
+                        node.moduleTypeDisplayName,
+                        node.sourceRoleDisplayName,
+                        node.definitionCodeLink.fileName,
+                        node.definitionCodeLink.line,
+                        node.definitionCodeLink.column,
+                        node.definitionCodeLink.fileDisplayName,
+                        node.definitionCodeLink.lineDisplayName);
+        itemsByNodeId.insert(node.nodeId, item);
+    }
+
+    if (report.edgeCount == 0) {
+        createChildItem(rootItem,
+                        QStringLiteral("Containment"),
+                        QStringLiteral("No child modules"),
+                        report.notFoundReasonDisplayName,
+                        report.root.definitionCodeLink.fileName,
+                        report.root.definitionCodeLink.line,
+                        report.root.definitionCodeLink.column,
+                        report.root.definitionCodeLink.fileDisplayName,
+                        report.root.definitionCodeLink.lineDisplayName);
+    }
+}
+
 void appendSignalJourneyItems(QTreeWidgetItem* parent,
                               const QString& section,
                               const QList<SignalJourneyItem>& items)
@@ -938,10 +1027,15 @@ RtlInsightsPanelCoordinator::RtlInsightsPanelCoordinator(QWidget* parent)
     clockResetButton->setObjectName(QStringLiteral("rtlClockResetButton"));
     fsmGraphButton = new QPushButton(QStringLiteral("FSM Graph"), panel);
     fsmGraphButton->setObjectName(QStringLiteral("rtlFsmGraphButton"));
+    moduleBlockDiagramButton =
+        new QPushButton(QStringLiteral("Module Block Diagram"), panel);
+    moduleBlockDiagramButton->setObjectName(
+        QStringLiteral("rtlModuleBlockDiagramButton"));
     actionLayout->addWidget(moduleBriefButton);
     actionLayout->addWidget(signalJourneyButton);
     actionLayout->addWidget(clockResetButton);
     actionLayout->addWidget(fsmGraphButton);
+    actionLayout->addWidget(moduleBlockDiagramButton);
     actionLayout->addStretch(1);
     layout->addLayout(actionLayout);
 
@@ -985,6 +1079,8 @@ RtlInsightsPanelCoordinator::RtlInsightsPanelCoordinator(QWidget* parent)
                      insightsDock, [this]() { showClockResetDomainMap(); });
     QObject::connect(fsmGraphButton, &QPushButton::clicked,
                      insightsDock, [this]() { showFsmGraph(); });
+    QObject::connect(moduleBlockDiagramButton, &QPushButton::clicked,
+                     insightsDock, [this]() { showModuleBlockDiagram(); });
 
     renderNoContext();
 }
@@ -1078,6 +1174,14 @@ void RtlInsightsPanelCoordinator::showStateTransitionGraphForSignal(
     }
     logReportDone(QStringLiteral("State Transition Graph"),
                   static_cast<int>(timer.elapsed()));
+}
+
+void RtlInsightsPanelCoordinator::showModuleBlockDiagramForModule(
+    const QString& fileName,
+    const QString& moduleName)
+{
+    updateModuleContext(fileName, moduleName);
+    showModuleBlockDiagram();
 }
 
 void RtlInsightsPanelCoordinator::showSemanticDiff(
@@ -1175,11 +1279,11 @@ void RtlInsightsPanelCoordinator::renderActionList()
     createGroupItem(
         insightsTree,
         QStringLiteral("Ready: %1").arg(currentModuleName),
-        4);
+        5);
     createGroupItem(
         insightsTree,
         currentSignalName.isEmpty()
-            ? QStringLiteral("Select a signal or click Module Brief / Clock/Reset / FSM")
+            ? QStringLiteral("Select a signal or click Module Brief / Clock/Reset / FSM / Module Block Diagram")
             : QStringLiteral("Current signal: %1").arg(currentSignalName),
         0);
     if (insightsDock)
@@ -1404,6 +1508,57 @@ void RtlInsightsPanelCoordinator::showFsmGraph()
                   static_cast<int>(timer.elapsed()));
 }
 
+void RtlInsightsPanelCoordinator::showModuleBlockDiagram()
+{
+    if (!insightsTree)
+        return;
+
+    insightsTree->clear();
+    if (currentFileName.isEmpty() || currentModuleName.isEmpty()) {
+        renderNoContext();
+        return;
+    }
+
+    QElapsedTimer timer;
+    timer.start();
+    logReportStart(QStringLiteral("Module Block Diagram"));
+    ModuleBlockDiagramReport report;
+    try {
+        ModuleBlockDiagramQuery query;
+        query.fileName = currentFileName;
+        query.moduleName = currentModuleName;
+        report = ModuleBlockDiagramService::getInstance()
+            ->buildModuleBlockDiagram(query);
+    } catch (const std::exception& error) {
+        logReportError(QStringLiteral("Module Block Diagram"),
+                       QString::fromLocal8Bit(error.what()));
+        return;
+    } catch (...) {
+        logReportError(QStringLiteral("Module Block Diagram"),
+                       QStringLiteral("unknown error"));
+        return;
+    }
+
+    appendModuleBlockDiagram(insightsTree, report);
+    if (insightsDock) {
+        insightsDock->setWindowTitle(
+            QStringLiteral("RTL Insights: Module Block Diagram %1")
+                .arg(currentModuleName));
+        insightsDock->show();
+        insightsDock->raise();
+    }
+    if (statusMessageHandler) {
+        statusMessageHandler(
+            report.found
+                ? QStringLiteral("Rendered module block diagram for %1")
+                      .arg(report.root.moduleDisplayName)
+                : report.notFoundReasonDisplayName,
+            1500);
+    }
+    logReportDone(QStringLiteral("Module Block Diagram"),
+                  static_cast<int>(timer.elapsed()));
+}
+
 void RtlInsightsPanelCoordinator::updateActionState()
 {
     const bool hasModule = !currentFileName.isEmpty() && !currentModuleName.isEmpty();
@@ -1415,6 +1570,8 @@ void RtlInsightsPanelCoordinator::updateActionState()
         clockResetButton->setEnabled(hasModule);
     if (fsmGraphButton)
         fsmGraphButton->setEnabled(hasModule);
+    if (moduleBlockDiagramButton)
+        moduleBlockDiagramButton->setEnabled(hasModule);
 }
 
 void RtlInsightsPanelCoordinator::logReportStart(const QString& reportName) const

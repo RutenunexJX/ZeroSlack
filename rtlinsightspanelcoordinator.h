@@ -28,6 +28,8 @@ public:
     void showStateTransitionGraphForSignal(const QString& fileName,
                                            const QString& moduleName,
                                            const QString& signalName);
+    void showModuleBlockDiagramForModule(const QString& fileName,
+                                         const QString& moduleName);
     void showSemanticDiff(std::shared_ptr<const SemanticIndexSnapshot> beforeSnapshot,
                           std::shared_ptr<const SemanticIndexSnapshot> afterSnapshot,
                           const QString& moduleName = QString(),
@@ -45,6 +47,7 @@ private:
     QPushButton* signalJourneyButton = nullptr;
     QPushButton* clockResetButton = nullptr;
     QPushButton* fsmGraphButton = nullptr;
+    QPushButton* moduleBlockDiagramButton = nullptr;
     QString currentFileName;
     QString currentModuleName;
     QString currentSignalName;
@@ -58,6 +61,7 @@ private:
     void showSignalJourney();
     void showClockResetDomainMap();
     void showFsmGraph();
+    void showModuleBlockDiagram();
     void updateActionState();
     void logReportStart(const QString& reportName) const;
     void logReportDone(const QString& reportName, int durationMs) const;

@@ -50,6 +50,8 @@ QString sourceSymbolActionText(SourceSymbolAction action)
         return QStringLiteral("Show Signal Kernel Graph");
     case SourceSymbolAction::ShowStateTransitionGraph:
         return QStringLiteral("Show State Transition Graph");
+    case SourceSymbolAction::ShowModuleBlockDiagram:
+        return QStringLiteral("Show Module Block Diagram");
     }
     return QString();
 }
@@ -541,6 +543,18 @@ void EditorCoordinator::WorkflowDependencies::showStateTransitionGraphForSymbol(
     }
 }
 
+void EditorCoordinator::WorkflowDependencies::showModuleBlockDiagramForSymbol(
+    const QString& symbolName,
+    const QString& fileName,
+    const QString& moduleName) const
+{
+    if (semanticPanelRefresh) {
+        semanticPanelRefresh->showModuleBlockDiagramForSymbol(symbolName,
+                                                              fileName,
+                                                              moduleName);
+    }
+}
+
 void EditorCoordinator::WorkflowDependencies::handleActiveEditorChanged(
     MyCodeEditor* editor) const
 {
@@ -1014,6 +1028,12 @@ void EditorCoordinator::handleSourceSymbolActionRequested(
         break;
     case SourceSymbolAction::ShowStateTransitionGraph:
         dependencies.showStateTransitionGraphForSymbol(
+            requestState.symbolName,
+            requestState.fileName,
+            requestState.moduleName);
+        break;
+    case SourceSymbolAction::ShowModuleBlockDiagram:
+        dependencies.showModuleBlockDiagramForSymbol(
             requestState.symbolName,
             requestState.fileName,
             requestState.moduleName);

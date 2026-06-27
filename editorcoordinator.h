@@ -88,6 +88,9 @@ private:
         void showStateTransitionGraphForSymbol(const QString& symbolName,
                                                const QString& fileName,
                                                const QString& moduleName) const;
+        void showModuleBlockDiagramForSymbol(const QString& symbolName,
+                                             const QString& fileName,
+                                             const QString& moduleName) const;
         void handleActiveEditorChanged(MyCodeEditor* editor) const;
         bool canNavigate() const;
         bool hasSemanticPanelRefresh() const;

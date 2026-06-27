@@ -10,6 +10,7 @@
 #include "semanticindex.h"
 #include "diagnosticservice.h"
 #include "documentmodel.h"
+#include "editorsourcenavigationquery.h"
 #include "fsmgraphservice.h"
 #include "hierarchyservice.h"
 #include "moduleblockdiagramservice.h"
@@ -3735,6 +3736,76 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                    && missingModuleBlockReport.notFoundReason
                        == ModuleBlockDiagramNotFoundReason::NoRootModule,
                true);
+
+    ModuleBlockDiagramService::getInstance()->setSemanticIndex(&index);
+    QWidget moduleBlockPanelHost;
+    RtlInsightsPanelCoordinator moduleBlockPanel(&moduleBlockPanelHost);
+    moduleBlockPanel.showModuleBlockDiagramForModule(
+        topPath,
+        QStringLiteral("rel_top"));
+    QTreeWidget* moduleBlockTree = moduleBlockPanel.tree();
+    QTreeWidgetItem* moduleBlockRoot =
+        moduleBlockTree && moduleBlockTree->topLevelItemCount() > 0
+            ? moduleBlockTree->topLevelItem(0)
+            : nullptr;
+    QTreeWidgetItem* moduleBlockTopItem =
+        findTreeItem(moduleBlockTree,
+                     QStringLiteral("Top Module"),
+                     QStringLiteral("rel_top"));
+    QTreeWidgetItem* moduleBlockStageItem =
+        findTreeItem(moduleBlockTree,
+                     QStringLiteral("Instantiates"),
+                     QStringLiteral("rel_stage"),
+                     QStringLiteral("rel_top -> rel_stage"));
+    QTreeWidgetItem* moduleBlockSignalItem =
+        findTreeItem(moduleBlockTree,
+                     QStringLiteral("Instantiates"),
+                     QStringLiteral("req_valid"));
+    expectBool("module block diagram panel renders module-only report",
+               moduleBlockRoot
+                   && moduleBlockRoot->text(0).contains(
+                       QStringLiteral("Module Block Diagram"))
+                   && moduleBlockTopItem
+                   && moduleBlockTopItem->data(0, Qt::UserRole).toString()
+                       == topPath
+                   && moduleBlockStageItem
+                   && moduleBlockStageItem->data(0, Qt::UserRole).toString()
+                       == stagePath
+                   && !moduleBlockSignalItem,
+               true);
+
+    EditorSemanticContext moduleBlockActionContext;
+    moduleBlockActionContext.fileName = topPath;
+    moduleBlockActionContext.moduleName = QStringLiteral("rel_top");
+    moduleBlockActionContext.lineText =
+        QStringLiteral("  rel_stage u_stage();");
+    moduleBlockActionContext.column = 3;
+    const EditorSourceSymbolActionRequestState moduleBlockActionState =
+        EditorSourceNavigationQuery::sourceSymbolActionRequestState(
+            SourceSymbolAction::ShowModuleBlockDiagram,
+            moduleBlockActionContext);
+    expectBool("module block diagram source action accepts module name",
+               moduleBlockActionState.available
+                   && moduleBlockActionState.symbolName
+                       == QStringLiteral("rel_stage")
+                   && moduleBlockActionState.fileName == topPath
+                   && moduleBlockActionState.moduleName
+                       == QStringLiteral("rel_top"),
+               true);
+    EditorSemanticContext signalBlockActionContext;
+    signalBlockActionContext.fileName = topPath;
+    signalBlockActionContext.moduleName = QStringLiteral("rel_top");
+    signalBlockActionContext.lineText = QStringLiteral("  req_valid");
+    signalBlockActionContext.column = 3;
+    const EditorSourceSymbolActionRequestState signalBlockActionState =
+        EditorSourceNavigationQuery::sourceSymbolActionRequestState(
+            SourceSymbolAction::ShowModuleBlockDiagram,
+            signalBlockActionContext);
+    expectBool("module block diagram source action rejects signal name",
+               !signalBlockActionState.available,
+               true);
+    ModuleBlockDiagramService::getInstance()->setSemanticIndex(
+        SemanticIndex::getInstance());
 
     HierarchyQuery parentQuery;
     parentQuery.symbolStableKey = stageStableKey;

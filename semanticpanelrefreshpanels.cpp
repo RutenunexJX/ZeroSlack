@@ -154,6 +154,17 @@ void SemanticPanelRefreshCoordinator::PanelSet::showStateTransitionGraphForSymbo
                                                             symbolName);
 }
 
+void SemanticPanelRefreshCoordinator::PanelSet::showModuleBlockDiagramForSymbol(
+    const QString& symbolName,
+    const QString& fileName,
+    const QString& moduleName) const
+{
+    Q_UNUSED(moduleName)
+    if (rtlInsightsPanel)
+        rtlInsightsPanel->showModuleBlockDiagramForModule(fileName,
+                                                          symbolName);
+}
+
 void SemanticPanelRefreshCoordinator::PanelSet::updateRtlInsightsPanel(
     const QString& fileName,
     const QString& moduleName,

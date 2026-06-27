@@ -906,6 +906,8 @@ First milestones:
   reports from hierarchy/`INSTANTIATES` data, excludes signals, and carries
   module definition links)
 - M11.2 render module-only block diagram
+  (complete: RTL Insights renders `ModuleBlockDiagramReport` as a module-only
+  block diagram tree from active or selected module names)
 - M11.3 click navigation to module definitions
 
 M11.1 implementation constraints:
@@ -931,6 +933,30 @@ M11.1 implementation status:
   failure reason, and carried definition links.
 - Verification: `git diff --check`; Release `relationship_test` target
   compile/link; `ctest -R "^relationship_test$"` passed.
+
+M11.2 implementation constraints:
+
+- UI must consume `ModuleBlockDiagramReport` only.
+- Selected module names must become the diagram root.
+- Render module/interface containment only; do not render signals.
+- Do not add workspace scans, UI-side Slang work, or new relationship
+  extraction.
+- Leave explicit click-navigation evidence to M11.3.
+
+M11.2 implementation status:
+
+- Complete: RTL Insights has a `Module Block Diagram` action for the active
+  module context.
+- Complete: editor source-symbol actions can dispatch `Show Module Block
+  Diagram` for selected names that `ModuleBlockDiagramService` accepts as
+  modules.
+- Complete: `RtlInsightsPanelCoordinator` renders root and child module rows
+  from `ModuleBlockDiagramReport` and does not render signals.
+- Complete: source-symbol routing passes through
+  `SemanticPanelRefreshCoordinator`; UI code remains a report consumer.
+- Verification: `git diff --check`; Release `relationship_test` and
+  `gui_smoke_test` targets compile/link; `ctest -R "^relationship_test$"`
+  passed. `gui_smoke_test` was not launched.
 
 ## Huge Workspace Status Audit
 

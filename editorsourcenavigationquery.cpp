@@ -1,5 +1,6 @@
 #include "editorsourcenavigationquery.h"
 
+#include "moduleblockdiagramservice.h"
 #include "statetransitiontriggerservice.h"
 
 #include <Qt>
@@ -14,6 +15,18 @@ StateTransitionTriggerReport stateTransitionTriggerForContext(
     query.moduleName = actionContext.moduleName;
     return StateTransitionTriggerService::getInstance()
         ->triggerForSymbol(query);
+}
+
+bool moduleBlockDiagramAvailableForContext(
+    const SourceSymbolActionContext& actionContext)
+{
+    ModuleBlockDiagramQuery query;
+    query.moduleName = actionContext.symbolName;
+    query.fileName = actionContext.fileName;
+    query.maxDepth = 0;
+    return ModuleBlockDiagramService::getInstance()
+        ->buildModuleBlockDiagram(query)
+        .found;
 }
 }
 
@@ -81,6 +94,11 @@ EditorSourceNavigationQuery::sourceSymbolContextMenuState(
         actionContext.available
             && stateTransitionTriggerForContext(actionContext).available
     });
+    state.items.append({
+        SourceSymbolAction::ShowModuleBlockDiagram,
+        actionContext.available
+            && moduleBlockDiagramAvailableForContext(actionContext)
+    });
     return state;
 }
 
@@ -99,6 +117,10 @@ EditorSourceNavigationQuery::sourceSymbolActionRequestState(
 
     if (action == SourceSymbolAction::ShowStateTransitionGraph
         && !stateTransitionTriggerForContext(actionContext).available) {
+        return state;
+    }
+    if (action == SourceSymbolAction::ShowModuleBlockDiagram
+        && !moduleBlockDiagramAvailableForContext(actionContext)) {
         return state;
     }
 

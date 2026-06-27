@@ -50,6 +50,9 @@ public:
     void showStateTransitionGraphForSymbol(const QString& symbolName,
                                            const QString& fileName,
                                            const QString& moduleName);
+    void showModuleBlockDiagramForSymbol(const QString& symbolName,
+                                         const QString& fileName,
+                                         const QString& moduleName);
     void handleActiveEditorChanged(MyCodeEditor* editor);
 
 private:
@@ -130,6 +133,9 @@ private:
         void showStateTransitionGraphForSymbol(const QString& symbolName,
                                                const QString& fileName,
                                                const QString& moduleName) const;
+        void showModuleBlockDiagramForSymbol(const QString& symbolName,
+                                             const QString& fileName,
+                                             const QString& moduleName) const;
         void updateRtlInsightsPanel(const QString& fileName,
                                     const QString& moduleName,
                                     const QString& signalName) const;
