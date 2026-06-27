@@ -22,6 +22,7 @@
 #include "formattersettings.h"
 #include "foldblockshelfmodel.h"
 #include "foldblockshelfpanel.h"
+#include "foldshelfpersistenceservice.h"
 #include "ghostannotationservice.h"
 #include "semanticdecorationservice.h"
 #include "globalcontrolcoordinator.h"
@@ -191,13 +192,22 @@ void MainWindow::setupWorkspaceBar()
     connect(workspaceManager.get(),
             &WorkspaceManager::workspaceActivated,
             this,
-            [this](int, const QString&, const QString&) {
+            [this](int, const QString&, const QString& path) {
+                if (foldShelfModel)
+                    foldShelfModel->setWorkspaceRoot(path);
                 refreshWorkspaceTabs();
             });
     connect(workspaceManager.get(),
             &WorkspaceManager::workspaceClosed,
             this,
-            &MainWindow::refreshWorkspaceTabs);
+            [this]() {
+                const QString activePath =
+                    workspaceManager ? workspaceManager->getWorkspacePath()
+                                     : QString();
+                if (foldShelfModel)
+                    foldShelfModel->setWorkspaceRoot(activePath);
+                refreshWorkspaceTabs();
+            });
 }
 
 void MainWindow::refreshWorkspaceTabs()
@@ -832,6 +842,10 @@ void MainWindow::setupComMode()
 void MainWindow::setupFoldBlockShelf()
 {
     foldShelfModel = std::make_unique<FoldBlockShelfModel>(this);
+    foldShelfModel->setPersistenceService(
+        FoldShelfPersistenceService::getInstance());
+    if (workspaceManager)
+        foldShelfModel->setWorkspaceRoot(workspaceManager->getWorkspacePath());
     foldShelfDock = new QDockWidget(QStringLiteral("Fold Shelf"), this);
     foldShelfDock->setObjectName(QStringLiteral("FoldShelfDock"));
     foldShelfPanel = new FoldBlockShelfPanel(foldShelfDock);
@@ -1257,6 +1271,7 @@ void MainWindow::restoreFoldShelfItem(const QString& id)
         return;
     }
     if (item.sourceFile.isEmpty()) {
+        foldShelfModel->markItemStale(id);
         ActivityLogService::getInstance()->append(
             QStringLiteral("Fold Shelf"),
             ActivityLogLevel::Warning,
@@ -1268,6 +1283,7 @@ void MainWindow::restoreFoldShelfItem(const QString& id)
 
     if (!tabManager->activateOpenFile(item.sourceFile)
         && !tabManager->openFileInTab(item.sourceFile)) {
+        foldShelfModel->markItemStale(id);
         ActivityLogService::getInstance()->append(
             QStringLiteral("Fold Shelf"),
             ActivityLogLevel::Warning,
@@ -1279,6 +1295,7 @@ void MainWindow::restoreFoldShelfItem(const QString& id)
 
     MyCodeEditor* editor = tabManager->getCurrentEditor();
     if (!editor || !editor->insertFoldShelfItemAtLineForTest(item, item.sourceStartLine)) {
+        foldShelfModel->markItemStale(id);
         ActivityLogService::getInstance()->append(
             QStringLiteral("Fold Shelf"),
             ActivityLogLevel::Warning,

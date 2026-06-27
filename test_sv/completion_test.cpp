@@ -13,6 +13,8 @@
 #include "diagnosticsrefreshcontroller.h"
 #include "documentmodel.h"
 #include "editorsemanticcontextservice.h"
+#include "foldblockshelfmodel.h"
+#include "foldshelfpersistenceservice.h"
 #include "formatterservice.h"
 #include "ghostannotationservice.h"
 #include "globalcontrolservice.h"
@@ -5234,6 +5236,109 @@ int main(int argc, char** argv) {
                                       QStringLiteral("clk"))
                  .insertText,
              QStringLiteral("logic clk;"));
+
+    QTemporaryDir foldShelfSettingsDir;
+    expectBool("FoldShelfPersistence temp dir valid",
+               foldShelfSettingsDir.isValid(),
+               true);
+    const QString foldShelfSettingsFile =
+        QDir(foldShelfSettingsDir.path()).absoluteFilePath(
+            QStringLiteral("fold_shelf.ini"));
+    const QString foldShelfWorkspaceA =
+        QDir(foldShelfSettingsDir.path()).absoluteFilePath(
+            QStringLiteral("workspace_a"));
+    const QString foldShelfWorkspaceB =
+        QDir(foldShelfSettingsDir.path()).absoluteFilePath(
+            QStringLiteral("workspace_b"));
+    FoldShelfPersistenceService foldShelfPersistence(
+        foldShelfSettingsFile);
+    FoldBlockShelfModel persistentFoldShelf;
+    persistentFoldShelf.setPersistenceService(&foldShelfPersistence);
+    persistentFoldShelf.setWorkspaceRoot(foldShelfWorkspaceA);
+
+    FoldShelfItem persistentFoldItem;
+    persistentFoldItem.alias = QStringLiteral("pipe block");
+    persistentFoldItem.text =
+        QStringLiteral("// fold pipe block\nlogic valid;\n// endfold\n");
+    persistentFoldItem.sourceFile =
+        QDir(foldShelfWorkspaceA).absoluteFilePath(
+            QStringLiteral("rtl/top.sv"));
+    persistentFoldItem.sourceModule = QStringLiteral("top");
+    persistentFoldItem.sourceStartLine = 10;
+    persistentFoldItem.sourceEndLine = 12;
+    persistentFoldItem.originKind = FoldShelfOriginKind::Moved;
+    const QString persistentFoldId =
+        persistentFoldShelf.addItem(persistentFoldItem);
+    expectBool("FoldShelfPersistence saves add",
+               !persistentFoldId.isEmpty()
+                   && persistentFoldShelf.items().size() == 1,
+               true);
+
+    FoldBlockShelfModel reloadedFoldShelf;
+    reloadedFoldShelf.setPersistenceService(&foldShelfPersistence);
+    reloadedFoldShelf.setWorkspaceRoot(foldShelfWorkspaceA);
+    const FoldShelfItem reloadedFoldItem =
+        reloadedFoldShelf.item(persistentFoldId);
+    expectBool("FoldShelfPersistence reloads workspace item",
+               reloadedFoldShelf.items().size() == 1
+                   && reloadedFoldItem.alias == QStringLiteral("pipe block")
+                   && reloadedFoldItem.text == persistentFoldItem.text
+                   && reloadedFoldItem.sourceModule == QStringLiteral("top")
+                   && reloadedFoldItem.sourceFile.endsWith(
+                       QStringLiteral("workspace_a/rtl/top.sv"))
+                   && reloadedFoldItem.lineCount == 3,
+               true);
+
+    FoldBlockShelfModel isolatedFoldShelf;
+    isolatedFoldShelf.setPersistenceService(&foldShelfPersistence);
+    isolatedFoldShelf.setWorkspaceRoot(foldShelfWorkspaceB);
+    expectBool("FoldShelfPersistence scopes by workspace",
+               isolatedFoldShelf.items().isEmpty(),
+               true);
+
+    expectBool("FoldShelfPersistence saves consume",
+               reloadedFoldShelf.consumeItem(persistentFoldId),
+               true);
+    FoldBlockShelfModel consumedFoldShelf;
+    consumedFoldShelf.setPersistenceService(&foldShelfPersistence);
+    consumedFoldShelf.setWorkspaceRoot(foldShelfWorkspaceA);
+    expectBool("FoldShelfPersistence reloads consumed item",
+               consumedFoldShelf.item(persistentFoldId).consumed,
+               true);
+
+    expectBool("FoldShelfPersistence saves stale mark",
+               consumedFoldShelf.markItemStale(persistentFoldId),
+               true);
+    FoldBlockShelfModel staleFoldShelf;
+    staleFoldShelf.setPersistenceService(&foldShelfPersistence);
+    staleFoldShelf.setWorkspaceRoot(foldShelfWorkspaceA);
+    expectBool("FoldShelfPersistence reloads stale item",
+               staleFoldShelf.item(persistentFoldId).stale,
+               true);
+
+    expectBool("FoldShelfPersistence saves remove",
+               staleFoldShelf.removeItem(persistentFoldId),
+               true);
+    FoldBlockShelfModel removedFoldShelf;
+    removedFoldShelf.setPersistenceService(&foldShelfPersistence);
+    removedFoldShelf.setWorkspaceRoot(foldShelfWorkspaceA);
+    expectBool("FoldShelfPersistence reloads removed empty",
+               removedFoldShelf.items().isEmpty(),
+               true);
+
+    const QString clearFoldId =
+        removedFoldShelf.addItem(persistentFoldItem);
+    expectBool("FoldShelfPersistence re-add before clear",
+               !clearFoldId.isEmpty()
+                   && !removedFoldShelf.items().isEmpty(),
+               true);
+    removedFoldShelf.clear();
+    FoldBlockShelfModel clearedFoldShelf;
+    clearedFoldShelf.setPersistenceService(&foldShelfPersistence);
+    clearedFoldShelf.setWorkspaceRoot(foldShelfWorkspaceA);
+    expectBool("FoldShelfPersistence saves clear",
+               clearedFoldShelf.items().isEmpty(),
+               true);
 
     const CodeTemplateItem widthLogic =
         CodeTemplateService::getInstance()->templateForCommand(

@@ -462,6 +462,8 @@ First milestones:
   (complete: owner inventory, versioned item schema, service/model boundary,
   and G7.2 same-file restore requirements are documented)
 - M7.2 persist and restore same-file items
+  (complete: `FoldShelfPersistenceService` plus model mutation persistence and
+  same-file stale restore handling)
 - M7.3 cross-file restore
 - M7.4 rename/search/clean management actions
 
@@ -509,6 +511,38 @@ M7.1 ownership and G7.2 requirements:
   relocation, rename, search, and cleanup for later milestones.
 - Verification: source inspection of Fold Shelf owner classes plus
   `git diff --check`.
+
+M7.2 implementation constraints:
+
+- Persistence must be service/model-owned; `FoldBlockShelfPanel` must remain a
+  consumer.
+- Use the G7.1 `foldShelf/v1/items` schema and scope items by normalized
+  workspace root.
+- Persist add, consume, stale mark, remove, and clear mutations.
+- Restore same-file items through the existing `MainWindow` / `TabManager` /
+  `MyCodeEditor` insertion path.
+- Remove or consume a persisted item only after successful insertion.
+- Mark unavailable source file, failed file open, or failed source-location
+  insertion as stale.
+- Do not add cross-file relocation, rename, search, or clean management.
+
+M7.2 implementation status:
+
+- Complete: `FoldShelfPersistenceService` owns versioned QSettings-backed
+  load/save under `foldShelf/v1/workspaces/<scope>/items`, with workspace-root
+  hashing and normalized source paths.
+- Complete: `FoldBlockShelfModel` can attach a persistence service and
+  workspace root, reload persisted items on root changes, and persist add,
+  consume, stale mark, remove, and clear mutations.
+- Complete: `MainWindow` wires the singleton persistence service into the model
+  and updates the model workspace scope on workspace activation/close.
+- Complete: restore failure for missing source file, failed open, or failed
+  source insertion marks the item stale; successful restore removes the item
+  after insertion.
+- Complete: `FoldBlockShelfPanel` remains storage-policy free.
+- Verification: `git diff --check`; Release `completion_test` and
+  `gui_smoke_test` targets compile/link; `ctest -R "^completion_test$"` passed.
+  `gui_smoke_test` was not launched.
 
 ### 8. Signal Kernel Graph
 

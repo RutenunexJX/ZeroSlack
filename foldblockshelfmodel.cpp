@@ -1,7 +1,12 @@
 #include "foldblockshelfmodel.h"
 
+#include "foldshelfpersistenceservice.h"
+
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QRegularExpression>
+
+#include <utility>
 
 namespace {
 QString originToString(FoldShelfOriginKind origin)
@@ -17,11 +22,59 @@ FoldShelfOriginKind originFromString(const QString& origin)
         ? FoldShelfOriginKind::Moved
         : FoldShelfOriginKind::Copied;
 }
+
+int lineCountForText(const QString& text)
+{
+    if (text.isEmpty())
+        return 0;
+    int count = text.count(QLatin1Char('\n'));
+    if (!text.endsWith(QLatin1Char('\n')))
+        ++count;
+    return count;
+}
+
+void normalizeShelfItem(FoldShelfItem* item)
+{
+    if (!item)
+        return;
+    item->id = item->id.trimmed();
+    item->alias = item->alias.trimmed();
+    item->sourceModule = item->sourceModule.trimmed();
+    item->sourceFile =
+        FoldShelfPersistenceService::normalizedSourceFile(item->sourceFile);
+    item->lineCount = lineCountForText(item->text);
+    if (item->alias.isEmpty())
+        item->alias = item->id;
+}
 }
 
 FoldBlockShelfModel::FoldBlockShelfModel(QObject* parent)
     : QObject(parent)
 {
+}
+
+void FoldBlockShelfModel::setPersistenceService(
+    FoldShelfPersistenceService* service)
+{
+    if (persistence == service)
+        return;
+    persistence = service;
+    loadPersistedItems();
+}
+
+void FoldBlockShelfModel::setWorkspaceRoot(const QString& rootPath)
+{
+    const QString normalizedRoot =
+        FoldShelfPersistenceService::normalizedWorkspaceRoot(rootPath);
+    if (persistenceWorkspaceRoot == normalizedRoot)
+        return;
+    persistenceWorkspaceRoot = normalizedRoot;
+    loadPersistedItems();
+}
+
+QString FoldBlockShelfModel::workspaceRoot() const
+{
+    return persistenceWorkspaceRoot;
 }
 
 QList<FoldShelfItem> FoldBlockShelfModel::items() const
@@ -44,10 +97,9 @@ QString FoldBlockShelfModel::addItem(FoldShelfItem item)
         item.id = QStringLiteral("fold_shelf_%1").arg(nextId++);
     if (item.alias.isEmpty())
         item.alias = item.id;
-    item.lineCount = item.text.count(QLatin1Char('\n'));
-    if (!item.text.isEmpty() && !item.text.endsWith(QLatin1Char('\n')))
-        item.lineCount += 1;
+    normalizeShelfItem(&item);
     shelfItems.append(item);
+    persistItems();
     emit changed();
     return item.id;
 }
@@ -58,6 +110,20 @@ bool FoldBlockShelfModel::consumeItem(const QString& id)
         if (item.id != id)
             continue;
         item.consumed = true;
+        persistItems();
+        emit changed();
+        return true;
+    }
+    return false;
+}
+
+bool FoldBlockShelfModel::markItemStale(const QString& id)
+{
+    for (FoldShelfItem& item : shelfItems) {
+        if (item.id != id)
+            continue;
+        item.stale = true;
+        persistItems();
         emit changed();
         return true;
     }
@@ -70,6 +136,7 @@ bool FoldBlockShelfModel::removeItem(const QString& id)
         if (shelfItems.at(i).id != id)
             continue;
         shelfItems.removeAt(i);
+        persistItems();
         emit changed();
         return true;
     }
@@ -81,7 +148,40 @@ void FoldBlockShelfModel::clear()
     if (shelfItems.isEmpty())
         return;
     shelfItems.clear();
+    persistItems();
     emit changed();
+}
+
+void FoldBlockShelfModel::loadPersistedItems()
+{
+    if (!persistence)
+        return;
+
+    shelfItems = persistence->loadItems(persistenceWorkspaceRoot);
+    refreshNextId();
+    emit changed();
+}
+
+void FoldBlockShelfModel::persistItems() const
+{
+    if (persistence)
+        persistence->saveItems(persistenceWorkspaceRoot, shelfItems);
+}
+
+void FoldBlockShelfModel::refreshNextId()
+{
+    int next = 1;
+    const QRegularExpression idPattern(QStringLiteral("^fold_shelf_(\\d+)$"));
+    for (const FoldShelfItem& item : std::as_const(shelfItems)) {
+        const QRegularExpressionMatch match = idPattern.match(item.id);
+        if (!match.hasMatch())
+            continue;
+        bool ok = false;
+        const int value = match.captured(1).toInt(&ok);
+        if (ok)
+            next = qMax(next, value + 1);
+    }
+    nextId = next;
 }
 
 QString foldShelfBlockMimeType()

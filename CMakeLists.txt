@@ -126,6 +126,7 @@ set(ZEROSLACK_CORE_SOURCES
     filecommandcoordinator.cpp
     foldblockshelfmodel.cpp
     foldblockshelfpanel.cpp
+    foldshelfpersistenceservice.cpp
     fsmgraphservice.cpp
     formattersettings.cpp
     formatterservice.cpp
@@ -302,6 +303,7 @@ set(ZEROSLACK_CORE_SOURCES
     filecommandcoordinator.h
     foldblockshelfmodel.h
     foldblockshelfpanel.h
+    foldshelfpersistenceservice.h
     fsmgraphservice.h
     formattersettings.h
     formatterservice.h

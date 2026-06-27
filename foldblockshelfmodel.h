@@ -5,6 +5,8 @@
 #include <QList>
 #include <QString>
 
+class FoldShelfPersistenceService;
+
 enum class FoldShelfOriginKind {
     Moved,
     Copied
@@ -31,10 +33,14 @@ class FoldBlockShelfModel : public QObject
 public:
     explicit FoldBlockShelfModel(QObject* parent = nullptr);
 
+    void setPersistenceService(FoldShelfPersistenceService* service);
+    void setWorkspaceRoot(const QString& rootPath);
+    QString workspaceRoot() const;
     QList<FoldShelfItem> items() const;
     FoldShelfItem item(const QString& id) const;
     QString addItem(FoldShelfItem item);
     bool consumeItem(const QString& id);
+    bool markItemStale(const QString& id);
     bool removeItem(const QString& id);
     void clear();
 
@@ -44,6 +50,12 @@ signals:
 private:
     QList<FoldShelfItem> shelfItems;
     int nextId = 1;
+    QString persistenceWorkspaceRoot;
+    FoldShelfPersistenceService* persistence = nullptr;
+
+    void loadPersistedItems();
+    void persistItems() const;
+    void refreshNextId();
 };
 
 QString foldShelfBlockMimeType();

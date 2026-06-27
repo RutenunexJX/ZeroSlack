@@ -163,12 +163,13 @@ and restoring Global Control `ow r` for recent workspaces.
 - `WorkspaceIgnoreService` owns ignored-directory request validation and
   normalization. `WorkspaceManager` is the workspace-level model entry point;
   UI should call it rather than mutating `ProjectModel::ignoredPaths` directly.
-- Fold Shelf baseline: `FoldBlockShelfModel` owns the in-memory shelf item
-  list and item lifecycle, `FoldBlockShelfPanel` renders the list and handles
-  preview/delete/drag UI, `EditorFoldingController` creates and reinserts
-  custom fold block text, and `MainWindow` wires the dock/model plus restore
-  command flow. Durable shelf persistence must live in the model/service layer,
-  not in the panel.
+- Fold Shelf baseline: `FoldBlockShelfModel` owns the shelf item list and
+  mutation lifecycle, `FoldShelfPersistenceService` owns versioned
+  QSettings-backed load/save scoped by workspace root, `FoldBlockShelfPanel`
+  renders the list and handles preview/delete/drag UI, `EditorFoldingController`
+  creates and reinserts custom fold block text, and `MainWindow` wires the
+  dock/model plus restore command flow. Durable shelf persistence lives in the
+  model/service layer, not in the panel.
 
 ## Command Responsibility Map
 
@@ -258,11 +259,12 @@ explicitly enables slots for that family.
 ## Fold Shelf Persistence Contract
 
 Fold Shelf stores custom fold blocks that users move or copy out of editors.
-The current runtime path is in-memory: editor shelf mode creates a
-`FoldShelfItem`, the panel drops it into `FoldBlockShelfModel`, and restore
-uses `MainWindow` plus the current editor insertion path.
+The runtime path is model/service-owned: editor shelf mode creates a
+`FoldShelfItem`, the panel drops it into `FoldBlockShelfModel`, the model
+persists mutations through `FoldShelfPersistenceService`, and restore uses
+`MainWindow` plus the current editor insertion path.
 
-G7 persistence must use a versioned service/model schema:
+G7 persistence uses a versioned service/model schema:
 
 - Storage root: `foldShelf/v1/items`, scoped by normalized workspace root when
   a workspace exists.
@@ -279,8 +281,8 @@ G7 persistence must use a versioned service/model schema:
 
 Ownership rules:
 
-- `FoldBlockShelfModel` or a dedicated Fold Shelf persistence service owns
-  load/save validation and mutation reports.
+- `FoldShelfPersistenceService` owns load/save normalization and the versioned
+  storage layout; `FoldBlockShelfModel` owns when mutations are persisted.
 - `FoldBlockShelfPanel` must remain a model consumer. It must not read/write
   `QSettings`, scan workspaces, or decide persistence policy.
 - `MainWindow` may wire the service/model and route restore actions, but should
@@ -288,11 +290,11 @@ Ownership rules:
 - `EditorFoldingController` keeps owning text extraction/insertion and shelf
   mode behavior.
 
-G7.2 same-file restore should only reload persisted shelf items and restore
-them to their recorded source file through the existing editor insertion path.
-It must remove/consume an item only after a successful insertion, mark items
-stale on missing or invalid source locations, and leave cross-file relocation,
-rename, search, and clean-up actions for later G7 milestones.
+G7.2 same-file restore reloads persisted shelf items for the current workspace
+and restores them to their recorded source file through the existing editor
+insertion path. Items are removed or consumed only after successful insertion;
+missing or invalid restore targets are marked stale. Cross-file relocation,
+rename, search, and clean-up actions remain later G7 milestones.
 
 ## Batch RTL Edit Contract
 

@@ -28,7 +28,7 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
 
 ## Current Goal State
 
-Current milestone: `G7.2 Persist And Restore Same-File Fold Shelf Items`.
+Current milestone: `G7.3 Restore Fold Shelf Items Across Files`.
 
 Status:
 
@@ -218,20 +218,31 @@ Status:
 - Focused verification for G7.1: source inspection of
   `foldblockshelfmodel`, `foldblockshelfpanel`, `editorfolding`,
   `mainwindow`, and existing Fold Shelf tests, plus `git diff --check`.
+- G7.2 Persist And Restore Same-File Fold Shelf Items is complete:
+  `FoldShelfPersistenceService` owns versioned QSettings-backed storage under
+  `foldShelf/v1/workspaces/<scope>/items`, scoped by normalized workspace root
+  and normalized source paths. `FoldBlockShelfModel` attaches the persistence
+  service and workspace root, reloads persisted items on root changes, and
+  persists add, consume, stale mark, remove, and clear mutations.
+  `MainWindow` wires the singleton service into the model, updates model scope
+  on workspace activation/close, and marks items stale when same-file restore
+  fails because the source file is unavailable, cannot be opened, or cannot be
+  inserted at the recorded location. Successful restore removes the item only
+  after insertion. `FoldBlockShelfPanel` remains storage-policy free.
+- Focused verification for G7.2: `git diff --check`; Release
+  `completion_test` and `gui_smoke_test` targets compile/link; `ctest -R
+  "^completion_test$"` passed. `gui_smoke_test` was not launched.
 
-Completion criteria for G7.2:
+Completion criteria for G7.3:
 
-- implement service/model-owned persistence for Fold Shelf items using the
-  G7.1 schema
-- persist on add, consume, remove, and clear mutations
-- reload persisted items for the current workspace without panel-owned storage
-  policy
-- restore same-file items through the existing editor insertion path
-- remove or consume a persisted item only after successful restore
-- mark missing or invalid same-file restore targets stale instead of silently
-  deleting them
-- do not implement cross-file relocation, rename, search, or clean management
-  in G7.2
+- define and implement explicit cross-file restore behavior for persisted Fold
+  Shelf items
+- preserve service/model persistence ownership and keep the panel storage-policy
+  free
+- use existing editor insertion paths rather than hand-editing from UI code
+- remove or consume persisted items only after successful cross-file insertion
+- mark failed cross-file restore targets stale with a clear failure reason
+- do not add rename, search, or clean management in G7.3
 - `readme.md`, `plan.md`, and `goal.md` are updated
 - appropriate focused verification passes
 - milestone commit is pushed
