@@ -54,7 +54,10 @@ void NavigationWidget::updateDesignHierarchy(const DesignHierarchyReport& report
     designParticipatingFiles = report.participatingFiles;
     refreshDesignHeader();
     populateDesignTree();
-    populateFileTree();
+    if (hideUnrelatedFiles)
+        populateFileTree();
+    else
+        refreshFileTreeDirectoryDimming();
 }
 
 void NavigationWidget::clearDesignHierarchy()
@@ -63,17 +66,31 @@ void NavigationWidget::clearDesignHierarchy()
     designParticipatingFiles.clear();
     refreshDesignHeader();
     populateDesignTree();
-    populateFileTree();
+    if (hideUnrelatedFiles)
+        populateFileTree();
+    else
+        refreshFileTreeDirectoryDimming();
 }
 
 void NavigationWidget::setDesignParticipatingFiles(const QSet<QString>& fileNames)
 {
     designParticipatingFiles = fileNames;
-    populateFileTree();
+    if (hideUnrelatedFiles)
+        populateFileTree();
+    else
+        refreshFileTreeDirectoryDimming();
 }
 
 void NavigationWidget::highlightFile(const QString& filePath)
 {
+    if (currentHighlightedFile == filePath) {
+        QTreeWidgetItem* current =
+            fileTreeWidget ? fileTreeWidget->currentItem() : nullptr;
+        if (current
+            && current->data(0, Qt::UserRole).toString() == filePath) {
+            return;
+        }
+    }
     currentHighlightedFile = filePath;
 
     QTreeWidgetItem* item = findFileItemByPath(filePath);
@@ -259,6 +276,9 @@ void NavigationWidget::setupFileTab()
             this,
             &NavigationWidget::processFileTreePopulationChunk);
 
+    hideUnrelatedFilesCheckBox = new QCheckBox(QStringLiteral("Hide unrelated"), fileTab);
+    hideUnrelatedFilesCheckBox->setChecked(false);
+    fileTabLayout->addWidget(hideUnrelatedFilesCheckBox);
     fileTabLayout->addWidget(fileTreeWidget);
     fileTab->setLayout(fileTabLayout);
 
@@ -325,11 +345,14 @@ void NavigationWidget::setupDesignTab()
     designTabLayout->addLayout(topLayout);
 
     designTreeWidget = new QTreeWidget(designTab);
-    designTreeWidget->setHeaderLabel("Design Hierarchy");
+    designTreeWidget->setColumnCount(2);
+    designTreeWidget->setHeaderLabels({QStringLiteral("Instance"),
+                                       QStringLiteral("Module")});
     designTreeWidget->setAlternatingRowColors(true);
     designTreeWidget->setRootIsDecorated(true);
     designTreeWidget->setSortingEnabled(false);
-    designTreeWidget->header()->hide();
+    designTreeWidget->header()->setStretchLastSection(true);
+    designTreeWidget->header()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
     designTabLayout->addWidget(designTreeWidget);
 
     designTab->setLayout(designTabLayout);
@@ -350,6 +373,13 @@ void NavigationWidget::setupConnections()
     fileTreeWidget->setContextMenuPolicy(Qt::CustomContextMenu);
     connect(fileTreeWidget, &QTreeWidget::customContextMenuRequested,
             this, &NavigationWidget::onFileTreeContextMenuRequested);
+    connect(hideUnrelatedFilesCheckBox,
+            &QCheckBox::toggled,
+            this,
+            [this](bool checked) {
+                hideUnrelatedFiles = checked;
+                populateFileTree();
+            });
 
     connect(designTreeWidget, &QTreeWidget::itemDoubleClicked,
             this, &NavigationWidget::onDesignTreeDoubleClicked);

@@ -1,8 +1,33 @@
 #include "navigationwidget.h"
 
+#include <QPainter>
+#include <QPixmap>
 #include <QStyle>
 
 #include "symboltaxonomy.h"
+
+namespace {
+QIcon makeInstanceIcon()
+{
+    QPixmap pixmap(16, 16);
+    pixmap.fill(Qt::transparent);
+
+    QPainter painter(&pixmap);
+    painter.setRenderHint(QPainter::Antialiasing, true);
+    QPen linePen(QColor(55, 65, 81), 1.4);
+    painter.setPen(linePen);
+    painter.drawLine(QPointF(5.0, 5.0), QPointF(11.0, 11.0));
+    painter.drawLine(QPointF(5.0, 11.0), QPointF(11.0, 5.0));
+
+    painter.setPen(QPen(QColor(31, 41, 55), 1.0));
+    painter.setBrush(QColor(226, 232, 240));
+    painter.drawRoundedRect(QRectF(2.0, 2.0, 5.0, 5.0), 1.2, 1.2);
+    painter.drawRoundedRect(QRectF(9.0, 2.0, 5.0, 5.0), 1.2, 1.2);
+    painter.drawRoundedRect(QRectF(5.5, 9.0, 5.0, 5.0), 1.2, 1.2);
+
+    return QIcon(pixmap);
+}
+}
 
 QIcon NavigationWidget::getFileIcon(const QString& filePath)
 {
@@ -51,7 +76,7 @@ QIcon NavigationWidget::getSymbolIcon(SymbolOutlineIconKind iconKind)
         icon = style()->standardIcon(QStyle::SP_ArrowRight);
         break;
     case SymbolOutlineIconKind::Instance:
-        icon = style()->standardIcon(QStyle::SP_DirIcon);
+        icon = makeInstanceIcon();
         break;
     case SymbolOutlineIconKind::Type:
         icon = style()->standardIcon(QStyle::SP_FileIcon);

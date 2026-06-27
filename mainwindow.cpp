@@ -62,6 +62,7 @@
 #include <QSignalBlocker>
 #include <QStatusBar>
 #include <QTabBar>
+#include <QTimer>
 #include <QToolButton>
 #include <QTreeWidget>
 #include <QVBoxLayout>
@@ -381,9 +382,7 @@ void MainWindow::setupManagerConnections()
             &TabManager::activeDocumentChanged,
             this,
             [this](const DocumentSnapshot&) {
-                refreshActiveEditorDiagnosticHighlights();
-                refreshActiveEditorSemanticDecorations();
-                refreshActiveEditorGhostAnnotations();
+                scheduleActiveEditorPassiveRefresh();
                 QDockWidget* waveDock = dockForPanelId(QStringLiteral("wavePreview"));
                 if (waveDock && waveDock->isVisible())
                     refreshActiveEditorWavePreview();
@@ -435,17 +434,54 @@ void MainWindow::setupManagerConnections()
             &AnalysisScheduler::fileSymbolAnalysisFinished,
             this,
             [this](const QString& fileName, int) {
-                refreshActiveEditorSemanticDecorations(fileName);
-                refreshActiveEditorGhostAnnotations(fileName);
+                scheduleActiveEditorPassiveRefresh(fileName);
             });
     connect(analysisScheduler.get(),
             &AnalysisScheduler::workspaceSymbolAnalysisFinished,
             this,
             [this](const ProjectSnapshot&, int, int) {
-                refreshActiveEditorSemanticDecorations();
-                refreshActiveEditorGhostAnnotations();
+                scheduleActiveEditorPassiveRefresh();
             });
 
+}
+
+void MainWindow::scheduleActiveEditorPassiveRefresh(
+    const QString& changedFileName)
+{
+    if (!activeEditorPassiveRefreshTimer) {
+        activeEditorPassiveRefreshTimer = new QTimer(this);
+        activeEditorPassiveRefreshTimer->setSingleShot(true);
+        connect(activeEditorPassiveRefreshTimer,
+                &QTimer::timeout,
+                this,
+                &MainWindow::runActiveEditorPassiveRefresh);
+    }
+
+    if (changedFileName.isEmpty()) {
+        pendingActiveEditorPassiveRefreshAll = true;
+        pendingActiveEditorPassiveRefreshFile.clear();
+    } else if (!pendingActiveEditorPassiveRefreshAll
+               && pendingActiveEditorPassiveRefreshFile.isEmpty()) {
+        pendingActiveEditorPassiveRefreshFile = changedFileName;
+    } else if (!pendingActiveEditorPassiveRefreshAll
+               && pendingActiveEditorPassiveRefreshFile != changedFileName) {
+        pendingActiveEditorPassiveRefreshAll = true;
+        pendingActiveEditorPassiveRefreshFile.clear();
+    }
+
+    activeEditorPassiveRefreshTimer->start(50);
+}
+
+void MainWindow::runActiveEditorPassiveRefresh()
+{
+    const QString changedFileName = pendingActiveEditorPassiveRefreshAll
+        ? QString()
+        : pendingActiveEditorPassiveRefreshFile;
+    pendingActiveEditorPassiveRefreshFile.clear();
+    pendingActiveEditorPassiveRefreshAll = false;
+    refreshActiveEditorDiagnosticHighlights(changedFileName);
+    refreshActiveEditorSemanticDecorations(changedFileName);
+    refreshActiveEditorGhostAnnotations(changedFileName);
 }
 
 void MainWindow::refreshActiveEditorDiagnosticHighlights(

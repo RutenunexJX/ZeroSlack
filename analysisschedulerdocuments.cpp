@@ -57,11 +57,13 @@ void AnalysisScheduler::handleExternalFileChanged(const QString& fileName, int d
 
 void AnalysisScheduler::handleDocumentClosed(const QString& fileName)
 {
+    const bool workspaceOpen = openDocumentAnalysis && openDocumentAnalysis->isWorkspaceOpen();
+
     if (openDocumentAnalysis)
         openDocumentAnalysis->handleDocumentClosed(fileName);
     if (relationshipAnalysisQueue)
         relationshipAnalysisQueue->clearFile(fileName);
-    if (openDocumentAnalysis)
+    if (openDocumentAnalysis && !workspaceOpen)
         openDocumentAnalysis->analyzeOpenDocumentsNow();
 
     if (relationshipResultPublisher)

@@ -65,6 +65,7 @@ void NavigationManager::NavigationCaches::clearSymbolOutline()
 void NavigationManager::NavigationCaches::clearDesignHierarchy()
 {
     designHierarchy = {};
+    designRootModules.clear();
     designSnapshotGeneration = 0;
     designHierarchyValid = false;
 }

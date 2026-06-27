@@ -89,7 +89,8 @@ void SymbolAnalyzer::publishFileAnalysisResult(
 
 int SymbolAnalyzer::publishWorkspaceAnalysisResult(
     const WorkspaceAnalysisResult& result,
-    int totalFiles)
+    int totalFiles,
+    WorkspaceAnalysisTelemetry* telemetry)
 {
     SemanticIndex* semanticIndex = SemanticIndex::getInstance();
     semanticIndex->setWorkspaceFileAnalysisBands(result.fileAnalysisBands);
@@ -111,8 +112,12 @@ int SymbolAnalyzer::publishWorkspaceAnalysisResult(
             ++nextCheckpointIndex;
             if (filesAnalyzed <= lastPublishedFilesAnalyzed)
                 continue;
+            QElapsedTimer snapshotTimer;
+            snapshotTimer.start();
             semanticIndex->setSnapshot(
                 semanticIndex->captureSnapshotPreservingDiagnostics());
+            if (telemetry)
+                telemetry->checkpointSnapshotMs += snapshotTimer.elapsed();
             lastPublishedFilesAnalyzed = filesAnalyzed;
         }
     };
@@ -125,10 +130,14 @@ int SymbolAnalyzer::publishWorkspaceAnalysisResult(
             continue;
         }
 
+        QElapsedTimer updateTimer;
+        updateTimer.start();
         updateFileSymbols(
             fileResult.fileName,
             fileResult.content,
             fileResult.symbolRecords);
+        if (telemetry)
+            telemetry->publicationUpdateMs += updateTimer.elapsed();
         analyzedFiles.append(fileResult.fileName);
         filesAnalyzed++;
         publishCrossedCheckpoints();
@@ -140,8 +149,12 @@ int SymbolAnalyzer::publishWorkspaceAnalysisResult(
             diagnostics.append(diagnostic);
     }
 
+    QElapsedTimer finalSnapshotTimer;
+    finalSnapshotTimer.start();
     semanticIndex->publishSnapshotReplacingDiagnostics(analyzedFiles,
                                                        diagnostics);
+    if (telemetry)
+        telemetry->finalSnapshotMs += finalSnapshotTimer.elapsed();
     return filesAnalyzed;
 }
 
@@ -166,6 +179,10 @@ void SymbolAnalyzer::startWorkspacePublication(
         pendingWorkspacePublication->files.size());
     pendingWorkspacePublicationDiagnostics.reserve(
         pendingWorkspacePublication->diagnostics.size());
+    pendingWorkspacePublicationTimer.restart();
+    pendingWorkspacePublicationUpdateMs = 0;
+    pendingWorkspacePublicationCheckpointSnapshotMs = 0;
+    pendingWorkspacePublicationFinalSnapshotMs = 0;
 
     for (const SemanticDiagnostic& diagnostic :
          std::as_const(pendingWorkspacePublication->diagnostics)) {
@@ -194,6 +211,9 @@ void SymbolAnalyzer::cancelWorkspacePublication()
     pendingWorkspacePublicationPlannedVisited = 0;
     pendingWorkspacePublicationLastSnapshotFiles = 0;
     pendingWorkspacePublicationNextCheckpoint = 0;
+    pendingWorkspacePublicationUpdateMs = 0;
+    pendingWorkspacePublicationCheckpointSnapshotMs = 0;
+    pendingWorkspacePublicationFinalSnapshotMs = 0;
     pendingWorkspacePublicationProtectedFiles.clear();
     pendingWorkspacePublicationCheckpoints.clear();
     pendingWorkspacePublicationAnalyzedFiles.clear();
@@ -264,7 +284,10 @@ void SymbolAnalyzer::processWorkspacePublicationChunk()
         }
     }
 
+    QElapsedTimer updateTimer;
+    updateTimer.start();
     semanticIndex->updateSymbolRecordsForFiles(updates, false);
+    pendingWorkspacePublicationUpdateMs += updateTimer.elapsed();
     for (const auto& progressEvent : std::as_const(progressEvents)) {
         emit batchProgress(progressEvent.first,
                            pendingWorkspacePublicationTotalFiles,
@@ -274,8 +297,12 @@ void SymbolAnalyzer::processWorkspacePublicationChunk()
     if (crossedCheckpoint
         && pendingWorkspacePublicationFilesAnalyzed
                > pendingWorkspacePublicationLastSnapshotFiles) {
+        QElapsedTimer snapshotTimer;
+        snapshotTimer.start();
         semanticIndex->setSnapshot(
             semanticIndex->captureSnapshotPreservingDiagnostics());
+        pendingWorkspacePublicationCheckpointSnapshotMs +=
+            snapshotTimer.elapsed();
         pendingWorkspacePublicationLastSnapshotFiles =
             pendingWorkspacePublicationFilesAnalyzed;
     }
@@ -289,11 +316,52 @@ void SymbolAnalyzer::processWorkspacePublicationChunk()
     const int totalSymbols = pendingWorkspacePublication->totalSymbols;
     const QString workspacePath = pendingWorkspacePublicationPath;
 
+    QElapsedTimer finalSnapshotTimer;
+    finalSnapshotTimer.start();
     semanticIndex->publishSnapshotReplacingDiagnostics(
         pendingWorkspacePublicationAnalyzedFiles,
         pendingWorkspacePublicationDiagnostics);
+    pendingWorkspacePublicationFinalSnapshotMs += finalSnapshotTimer.elapsed();
+    const qint64 publicationMs = pendingWorkspacePublicationTimer.elapsed();
+    emitWorkspaceAnalysisTelemetry(
+        workspacePath,
+        *pendingWorkspacePublication,
+        pendingWorkspacePublicationTotalFiles,
+        filesAnalyzed,
+        publicationMs,
+        pendingWorkspacePublicationUpdateMs,
+        pendingWorkspacePublicationCheckpointSnapshotMs,
+        pendingWorkspacePublicationFinalSnapshotMs);
     cancelWorkspacePublication();
 
     emit batchAnalysisCompleted(filesAnalyzed, totalSymbols);
     emit analysisCompleted(workspacePath, totalSymbols);
+}
+
+void SymbolAnalyzer::emitWorkspaceAnalysisTelemetry(
+    const QString& workspacePath,
+    const WorkspaceAnalysisResult& result,
+    int totalFiles,
+    int filesAnalyzed,
+    qint64 publicationMs,
+    qint64 publicationUpdateMs,
+    qint64 checkpointSnapshotMs,
+    qint64 finalSnapshotMs)
+{
+    WorkspaceAnalysisTelemetry telemetry;
+    telemetry.workspaceRoot = workspacePath;
+    telemetry.totalFiles = totalFiles;
+    telemetry.filesAnalyzed = filesAnalyzed;
+    telemetry.totalSymbols = result.totalSymbols;
+    telemetry.diagnostics = result.diagnostics.size();
+    telemetry.workerElapsedMs = result.workerElapsedMs;
+    telemetry.symbolExtractionMs = result.symbolExtractionMs;
+    telemetry.resultAssemblyMs = result.resultAssemblyMs;
+    telemetry.diagnosticsExtractionMs = result.diagnosticsExtractionMs;
+    telemetry.publicationMs = publicationMs;
+    telemetry.publicationUpdateMs = publicationUpdateMs;
+    telemetry.checkpointSnapshotMs = checkpointSnapshotMs;
+    telemetry.finalSnapshotMs = finalSnapshotMs;
+    telemetry.totalElapsedMs = result.workerElapsedMs + publicationMs;
+    emit workspaceAnalysisTelemetry(telemetry);
 }

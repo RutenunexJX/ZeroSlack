@@ -75,6 +75,137 @@ QStringList uniqueSortedStringList(QSet<QString> values)
     });
     return result;
 }
+
+void appendDesignModuleRecord(
+    QHash<QString, SemanticSymbolRecord>* modulesByName,
+    QList<SemanticSymbolRecord>* modules,
+    const SemanticSymbolRecord& record)
+{
+    if (!modulesByName || !modules)
+        return;
+    if (!isDesignModuleDeclaration(record) || record.name.isEmpty())
+        return;
+
+    const auto existing = modulesByName->constFind(record.name);
+    if (existing != modulesByName->constEnd()) {
+        const SemanticSymbolRecord& existingRecord = existing.value();
+        if (existingRecord.location.startLine > 0
+            && (record.location.startLine <= 0
+                || existingRecord.location.startLine <= record.location.startLine)) {
+            return;
+        }
+        for (SemanticSymbolRecord& module : *modules) {
+            if (module.name == record.name) {
+                module = record;
+                break;
+            }
+        }
+        modulesByName->insert(record.name, record);
+        return;
+    }
+
+    modulesByName->insert(record.name, record);
+    modules->append(record);
+}
+
+QString designModuleTypeForRelationship(
+    const RelationshipResult& relationship)
+{
+    const SemanticSymbolRecord targetRecord = relationship.toSymbolRecord;
+    const bool targetIsModule = isDesignModuleDeclaration(targetRecord);
+    QString moduleType = targetIsModule
+        ? targetRecord.name
+        : designModuleTypeForInstance(targetRecord,
+                                      relationship.toStableKey.symbolName);
+    if (moduleType.isEmpty())
+        moduleType = targetRecord.name;
+    return moduleType;
+}
+
+QString designAccessPathDisplayName(const QString& accessPath)
+{
+    const int suffix = accessPath.lastIndexOf(QLatin1Char('@'));
+    if (suffix > 0)
+        return accessPath.left(suffix);
+    return accessPath;
+}
+
+QString designInstanceNameForRelationship(
+    const RelationshipResult& relationship,
+    const SemanticSymbolRecord& targetRecord,
+    bool targetIsInstance,
+    const QString& moduleType)
+{
+    const QString accessName =
+        designAccessPathDisplayName(relationship.toAccessPath).trimmed();
+    if (!accessName.isEmpty())
+        return accessName;
+    if (targetIsInstance && !targetRecord.name.isEmpty())
+        return targetRecord.name;
+    if (!targetRecord.name.isEmpty()
+        && !isDesignModuleDeclaration(targetRecord)) {
+        return targetRecord.name;
+    }
+    return moduleType;
+}
+
+QString designRelationshipFileName(
+    const RelationshipResult& relationship,
+    const SemanticSymbolRecord& targetRecord)
+{
+    if (!relationship.evidenceRange.fileName.isEmpty())
+        return relationship.evidenceRange.fileName;
+    return targetRecord.location.fileName;
+}
+
+int designRelationshipLine(
+    const RelationshipResult& relationship,
+    const SemanticSymbolRecord& targetRecord)
+{
+    return relationship.evidenceRange.line > 0
+        ? relationship.evidenceRange.line
+        : targetRecord.location.startLine;
+}
+
+int designRelationshipColumn(
+    const RelationshipResult& relationship,
+    const SemanticSymbolRecord& targetRecord)
+{
+    return relationship.evidenceRange.column > 0
+        ? relationship.evidenceRange.column
+        : targetRecord.location.startColumn;
+}
+
+bool designRelationshipLess(const RelationshipResult& lhs,
+                            const RelationshipResult& rhs)
+{
+    const QString leftFile =
+        designRelationshipFileName(lhs, lhs.toSymbolRecord);
+    const QString rightFile =
+        designRelationshipFileName(rhs, rhs.toSymbolRecord);
+    const int fileCompare =
+        QString::compare(leftFile, rightFile, Qt::CaseInsensitive);
+    if (fileCompare != 0)
+        return fileCompare < 0;
+
+    const int leftLine =
+        designRelationshipLine(lhs, lhs.toSymbolRecord);
+    const int rightLine =
+        designRelationshipLine(rhs, rhs.toSymbolRecord);
+    if (leftLine != rightLine)
+        return leftLine < rightLine;
+
+    const int leftColumn =
+        designRelationshipColumn(lhs, lhs.toSymbolRecord);
+    const int rightColumn =
+        designRelationshipColumn(rhs, rhs.toSymbolRecord);
+    if (leftColumn != rightColumn)
+        return leftColumn < rightColumn;
+
+    return QString::compare(lhs.toAccessPath,
+                            rhs.toAccessPath,
+                            Qt::CaseInsensitive) < 0;
+}
 }
 
 QList<HierarchyNode> HierarchyService::getHierarchy(const HierarchyQuery& query) const
@@ -237,40 +368,24 @@ QStringList HierarchyService::modulesDefinedInFile(const QString& fileName) cons
 
 QString HierarchyService::inferDesignTopModule() const
 {
+    const QStringList modules = inferDesignTopModules();
+    return modules.isEmpty() ? QString() : modules.first();
+}
+
+QStringList HierarchyService::inferDesignTopModules() const
+{
     QHash<QString, SemanticSymbolRecord> modulesByName;
     QList<SemanticSymbolRecord> modules;
     const QList<SemanticSymbolRecord> records = semanticIndex()->getSymbolRecords();
-    for (const SemanticSymbolRecord& record : records) {
-        if (!isDesignModuleDeclaration(record) || record.name.isEmpty())
-            continue;
-
-        const auto existing = modulesByName.constFind(record.name);
-        if (existing != modulesByName.constEnd()) {
-            const SemanticSymbolRecord& existingRecord = existing.value();
-            if (existingRecord.location.startLine > 0
-                && (record.location.startLine <= 0
-                    || existingRecord.location.startLine <= record.location.startLine)) {
-                continue;
-            }
-            for (SemanticSymbolRecord& module : modules) {
-                if (module.name == record.name) {
-                    module = record;
-                    break;
-                }
-            }
-            modulesByName.insert(record.name, record);
-            continue;
-        }
-
-        modulesByName.insert(record.name, record);
-        modules.append(record);
-    }
+    for (const SemanticSymbolRecord& record : records)
+        appendDesignModuleRecord(&modulesByName, &modules, record);
 
     if (modules.isEmpty())
-        return QString();
+        return {};
 
     QSet<QString> instantiatedModules;
     QHash<QString, int> outgoingInstantiationCounts;
+    QHash<QString, QStringList> childrenByModule;
     for (const SemanticSymbolRecord& module : modules) {
         if (!module.stableKey.isValid())
             continue;
@@ -282,28 +397,36 @@ QString HierarchyService::inferDesignTopModule() const
         const QList<RelationshipResult> relationships =
             relationshipService.findRelationships(relationshipQuery);
         for (const RelationshipResult& relationship : relationships) {
-            const SemanticSymbolRecord targetRecord = relationship.toSymbolRecord;
-            if (!targetRecord.isValid())
-                continue;
-
-            const bool targetIsModule = isDesignModuleDeclaration(targetRecord);
-            const QString moduleType = targetIsModule
-                ? targetRecord.name
-                : designModuleTypeForInstance(targetRecord,
-                                              relationship.toStableKey.symbolName);
+            const QString moduleType =
+                designModuleTypeForRelationship(relationship);
             if (moduleType.isEmpty() || !modulesByName.contains(moduleType))
+                continue;
+            if (moduleType == module.name)
                 continue;
 
             instantiatedModules.insert(moduleType);
             outgoingInstantiationCounts[module.name] += 1;
+            childrenByModule[module.name].append(moduleType);
         }
     }
+
+    std::function<int(const QString&, QSet<QString>)> subtreeSize;
+    subtreeSize = [&](const QString& moduleName, QSet<QString> path) {
+        if (path.contains(moduleName))
+            return 0;
+        path.insert(moduleName);
+        int total = 1;
+        for (const QString& child : childrenByModule.value(moduleName))
+            total += subtreeSize(child, path);
+        return total;
+    };
 
     struct Candidate {
         QString name;
         QString fileName;
         int line = 0;
         int childCount = 0;
+        int subtreeCount = 0;
         bool topLike = false;
     };
 
@@ -316,6 +439,7 @@ QString HierarchyService::inferDesignTopModule() const
         candidate.line = module.location.startLine;
         candidate.childCount =
             outgoingInstantiationCounts.value(module.name);
+        candidate.subtreeCount = subtreeSize(module.name, {});
         candidate.topLike =
             module.name.contains(QStringLiteral("top"), Qt::CaseInsensitive);
         candidates.append(candidate);
@@ -332,6 +456,8 @@ QString HierarchyService::inferDesignTopModule() const
 
     std::sort(candidates.begin(), candidates.end(),
               [](const Candidate& lhs, const Candidate& rhs) {
+        if (lhs.subtreeCount != rhs.subtreeCount)
+            return lhs.subtreeCount > rhs.subtreeCount;
         if (lhs.childCount != rhs.childCount)
             return lhs.childCount > rhs.childCount;
         if (lhs.topLike != rhs.topLike)
@@ -347,58 +473,78 @@ QString HierarchyService::inferDesignTopModule() const
         return lhs.line < rhs.line;
     });
 
-    return candidates.isEmpty() ? QString() : candidates.first().name;
+    QStringList result;
+    result.reserve(candidates.size());
+    for (const Candidate& candidate : std::as_const(candidates))
+        result.append(candidate.name);
+    return result;
 }
 
 DesignHierarchyReport HierarchyService::getDesignHierarchyReport(const QString& topModule) const
 {
+    return getDesignHierarchyReport(QStringList{topModule}, topModule);
+}
+
+DesignHierarchyReport HierarchyService::getDesignHierarchyReport(
+    const QStringList& topModules,
+    const QString& selectedTopModule) const
+{
     DesignHierarchyReport report;
-    report.topModule = topModule;
     report.snapshotGeneration = semanticIndex()->snapshotRevision();
-    if (topModule.trimmed().isEmpty())
+
+    const QString selectedTop = selectedTopModule.trimmed();
+    report.selectedTopModule = selectedTop;
+
+    QSet<QString> seenRoots;
+    QStringList roots;
+    auto appendRootName = [&](const QString& moduleName) {
+        const QString trimmed = moduleName.trimmed();
+        if (trimmed.isEmpty() || seenRoots.contains(trimmed))
+            return;
+        seenRoots.insert(trimmed);
+        roots.append(trimmed);
+    };
+    if (!selectedTop.isEmpty())
+        appendRootName(selectedTop);
+    for (const QString& moduleName : topModules)
+        appendRootName(moduleName);
+
+    report.rootModules = roots;
+    report.topModule = selectedTop.isEmpty()
+        ? (roots.isEmpty() ? QString() : roots.first())
+        : selectedTop;
+    if (roots.isEmpty())
         return report;
 
     QHash<QString, SemanticSymbolRecord> modulesByName;
+    QList<SemanticSymbolRecord> modules;
     const QList<SemanticSymbolRecord> records = semanticIndex()->getSymbolRecords();
-    for (const SemanticSymbolRecord& record : records) {
-        if (!isDesignModuleDeclaration(record) || record.name.isEmpty())
-            continue;
-        if (modulesByName.contains(record.name)) {
-            const SemanticSymbolRecord& existing = modulesByName.value(record.name);
-            if (existing.location.startLine > 0
-                && (record.location.startLine <= 0
-                    || existing.location.startLine <= record.location.startLine)) {
-                continue;
-            }
-        }
-        modulesByName.insert(record.name, record);
-    }
-
-    const SemanticSymbolRecord topRecord = modulesByName.value(topModule);
-    if (!topRecord.isValid())
-        return report;
+    for (const SemanticSymbolRecord& record : records)
+        appendDesignModuleRecord(&modulesByName, &modules, record);
 
     int nextNodeId = 0;
     auto nextId = [&]() {
         return QString::number(nextNodeId++);
     };
 
-    DesignHierarchyNode topNode;
-    topNode.id = nextId();
-    topNode.instanceName = topRecord.name;
-    topNode.moduleType = topRecord.name;
-    topNode.definitionFile = normalizedDesignHierarchyFileName(topRecord.location.fileName);
-    topNode.definitionLine = topRecord.location.startLine;
-    topNode.definitionColumn = topRecord.location.startColumn;
-    topNode.isTop = true;
-    report.nodes.append(topNode);
-    addDesignParticipatingFile(report, topRecord.location.fileName);
+    auto addParticipatingFile = [&](const QString& fileName, bool inSelectedTop) {
+        if (selectedTop.isEmpty() || inSelectedTop)
+            addDesignParticipatingFile(report, fileName);
+    };
 
     QSet<QString> unresolvedModules;
     QSet<QString> emittedEdges;
-    std::function<void(const SemanticSymbolRecord&, const QString&, QSet<QString>)> appendChildren;
+    std::function<void(const SemanticSymbolRecord&,
+                       const QString&,
+                       const QString&,
+                       const QString&,
+                       bool,
+                       QSet<QString>)> appendChildren;
     appendChildren = [&](const SemanticSymbolRecord& parentModule,
                          const QString& parentNodeId,
+                         const QString& rootNodeId,
+                         const QString& rootModule,
+                         bool inSelectedTop,
                          QSet<QString> modulePath) {
         if (!parentModule.stableKey.isValid())
             return;
@@ -413,23 +559,7 @@ DesignHierarchyReport HierarchyService::getDesignHierarchyReport(const QString& 
         relationshipQuery.types = {SymbolRelationshipEngine::INSTANTIATES};
         QList<RelationshipResult> relationships =
             relationshipService.findRelationships(relationshipQuery);
-        std::sort(relationships.begin(), relationships.end(),
-                  [](const RelationshipResult& lhs, const RelationshipResult& rhs) {
-            const SemanticSymbolLocation& left = lhs.toSymbolRecord.location;
-            const SemanticSymbolLocation& right = rhs.toSymbolRecord.location;
-            const int fileCompare = QString::compare(left.fileName,
-                                                     right.fileName,
-                                                     Qt::CaseInsensitive);
-            if (fileCompare != 0)
-                return fileCompare < 0;
-            if (left.startLine != right.startLine)
-                return left.startLine < right.startLine;
-            if (left.startColumn != right.startColumn)
-                return left.startColumn < right.startColumn;
-            return QString::compare(lhs.toSymbolRecord.name,
-                                    rhs.toSymbolRecord.name,
-                                    Qt::CaseInsensitive) < 0;
-        });
+        std::sort(relationships.begin(), relationships.end(), designRelationshipLess);
 
         for (const RelationshipResult& relationship : relationships) {
             const SemanticSymbolRecord targetRecord = relationship.toSymbolRecord;
@@ -437,21 +567,36 @@ DesignHierarchyReport HierarchyService::getDesignHierarchyReport(const QString& 
                 continue;
 
             const bool targetIsInstance = isDesignInstanceDeclaration(targetRecord);
-            const bool targetIsModule = isDesignModuleDeclaration(targetRecord);
-            QString moduleType = targetIsModule
-                ? targetRecord.name
-                : designModuleTypeForInstance(targetRecord,
-                                              relationship.toStableKey.symbolName);
-            if (moduleType.isEmpty())
-                moduleType = targetRecord.name;
+            QString moduleType = designModuleTypeForRelationship(relationship);
             const SemanticSymbolRecord definitionRecord = modulesByName.value(moduleType);
-            if (!targetIsModule && !definitionRecord.isValid())
+            if (moduleType.isEmpty())
                 continue;
-            const QString edgeKey = QStringLiteral("%1:%2:%3:%4")
-                .arg(parentNodeId,
-                     targetRecord.name,
-                     moduleType,
-                     QString::number(targetRecord.location.startLine));
+            if (moduleType == parentModule.name)
+                continue;
+
+            const QString instanceName =
+                designInstanceNameForRelationship(relationship,
+                                                  targetRecord,
+                                                  targetIsInstance,
+                                                  moduleType);
+            const QString instanceFile =
+                normalizedDesignHierarchyFileName(
+                    designRelationshipFileName(relationship, targetRecord));
+            const int instanceLine =
+                designRelationshipLine(relationship, targetRecord);
+            const int instanceColumn =
+                designRelationshipColumn(relationship, targetRecord);
+            const QString relationshipKey =
+                semanticRelationshipStableKeyText(relationship.relationship);
+            const QString edgeKey = relationshipKey.isEmpty()
+                ? QStringLiteral("%1:%2:%3:%4:%5:%6")
+                      .arg(parentNodeId,
+                           instanceName,
+                           moduleType,
+                           instanceFile,
+                           QString::number(instanceLine),
+                           QString::number(instanceColumn))
+                : QStringLiteral("%1:%2").arg(parentNodeId, relationshipKey);
             if (emittedEdges.contains(edgeKey))
                 continue;
             emittedEdges.insert(edgeKey);
@@ -459,26 +604,27 @@ DesignHierarchyReport HierarchyService::getDesignHierarchyReport(const QString& 
             DesignHierarchyNode node;
             node.id = nextId();
             node.parentId = parentNodeId;
-            node.instanceName = targetIsInstance
-                ? targetRecord.name
-                : (targetRecord.name.isEmpty() ? moduleType : targetRecord.name);
+            node.rootId = rootNodeId;
+            node.rootModule = rootModule;
+            node.instanceName = instanceName;
             node.moduleType = moduleType;
-            node.instanceFile = normalizedDesignHierarchyFileName(targetRecord.location.fileName);
-            node.instanceLine = targetRecord.location.startLine;
-            node.instanceColumn = targetRecord.location.startColumn;
+            node.instanceFile = instanceFile;
+            node.instanceLine = instanceLine;
+            node.instanceColumn = instanceColumn;
+            node.inSelectedTop = inSelectedTop;
             if (definitionRecord.isValid()) {
                 node.definitionFile =
                     normalizedDesignHierarchyFileName(definitionRecord.location.fileName);
                 node.definitionLine = definitionRecord.location.startLine;
                 node.definitionColumn = definitionRecord.location.startColumn;
-                addDesignParticipatingFile(report, targetRecord.location.fileName);
-                addDesignParticipatingFile(report, definitionRecord.location.fileName);
+                addParticipatingFile(instanceFile, inSelectedTop);
+                addParticipatingFile(definitionRecord.location.fileName, inSelectedTop);
             } else {
                 node.unresolved = true;
                 node.unresolvedReason = QStringLiteral("module definition not found");
                 if (!moduleType.isEmpty())
                     unresolvedModules.insert(moduleType);
-                addDesignParticipatingFile(report, targetRecord.location.fileName);
+                addParticipatingFile(instanceFile, inSelectedTop);
             }
             report.nodes.append(node);
 
@@ -493,11 +639,43 @@ DesignHierarchyReport HierarchyService::getDesignHierarchyReport(const QString& 
                 unresolvedModules.insert(moduleType);
                 continue;
             }
-            appendChildren(definitionRecord, node.id, modulePath);
+            appendChildren(definitionRecord,
+                           node.id,
+                           rootNodeId,
+                           rootModule,
+                           inSelectedTop,
+                           modulePath);
         }
     };
 
-    appendChildren(topRecord, topNode.id, {});
+    for (const QString& rootModule : std::as_const(roots)) {
+        const SemanticSymbolRecord topRecord = modulesByName.value(rootModule);
+        if (!topRecord.isValid())
+            continue;
+
+        const bool inSelectedTop = selectedTop.isEmpty() || rootModule == selectedTop;
+        DesignHierarchyNode topNode;
+        topNode.id = nextId();
+        topNode.rootId = topNode.id;
+        topNode.rootModule = topRecord.name;
+        topNode.instanceName = topRecord.name;
+        topNode.moduleType = topRecord.name;
+        topNode.definitionFile =
+            normalizedDesignHierarchyFileName(topRecord.location.fileName);
+        topNode.definitionLine = topRecord.location.startLine;
+        topNode.definitionColumn = topRecord.location.startColumn;
+        topNode.isTop = true;
+        topNode.inSelectedTop = inSelectedTop;
+        report.nodes.append(topNode);
+        addParticipatingFile(topRecord.location.fileName, inSelectedTop);
+
+        appendChildren(topRecord,
+                       topNode.id,
+                       topNode.id,
+                       topRecord.name,
+                       inSelectedTop,
+                       {});
+    }
     report.unresolvedModules = uniqueSortedStringList(unresolvedModules);
     return report;
 }

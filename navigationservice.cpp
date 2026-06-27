@@ -233,10 +233,22 @@ QString NavigationService::inferDesignTopModule() const
     return hierarchyService.inferDesignTopModule();
 }
 
+QStringList NavigationService::inferDesignTopModules() const
+{
+    return hierarchyService.inferDesignTopModules();
+}
+
 DesignHierarchyReport NavigationService::findDesignHierarchy(
     const QString& topModule) const
 {
     return hierarchyService.getDesignHierarchyReport(topModule);
+}
+
+DesignHierarchyReport NavigationService::findDesignHierarchy(
+    const QStringList& topModules,
+    const QString& selectedTopModule) const
+{
+    return hierarchyService.getDesignHierarchyReport(topModules, selectedTopModule);
 }
 
 std::uint64_t NavigationService::semanticSnapshotRevision() const

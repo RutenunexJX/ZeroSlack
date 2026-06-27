@@ -4,6 +4,7 @@
 #include "navigationwidget.h"
 
 #include <QElapsedTimer>
+#include <QFileInfo>
 
 namespace {
 QString navigationViewName(NavigationManager::NavigationView view)
@@ -19,6 +20,11 @@ QString navigationViewName(NavigationManager::NavigationView view)
         return QStringLiteral("design hierarchy");
     }
     return QStringLiteral("navigation");
+}
+
+bool isOpenTabsAnalysisFile(const QString& fileName)
+{
+    return QFileInfo(fileName).fileName() == QStringLiteral("open_tabs");
 }
 }
 
@@ -127,7 +133,8 @@ void NavigationManager::refreshDesignHierarchy(bool force)
     timer.start();
     const bool changed = updateDesignHierarchyData(force);
 
-    if (navigationWidget && (changed || force)) {
+    if (navigationWidget
+        && (changed || force || currentView == DesignHierarchyView)) {
         navigationWidget->updateDesignHierarchy(caches.designHierarchy);
     }
 
@@ -139,6 +146,18 @@ void NavigationManager::refreshDesignHierarchy(bool force)
             .arg(changed || force ? QStringLiteral("Rebuilt") : QStringLiteral("Kept cached"),
                  navigationViewName(DesignHierarchyView)),
         static_cast<int>(timer.elapsed()));
+}
+
+void NavigationManager::warmDesignHierarchyCache()
+{
+    if (currentView == DesignHierarchyView)
+        return;
+
+    const bool changed = updateDesignHierarchyData(false);
+    if (changed && navigationWidget) {
+        navigationWidget->setDesignParticipatingFiles(
+            caches.designHierarchy.participatingFiles);
+    }
 }
 
 void NavigationManager::refreshCurrentView()
@@ -292,6 +311,15 @@ void NavigationManager::onSymbolAnalysisCompleted(const QString& fileName, int s
         }
         break;
     case DesignHierarchyView:
+        if (isOpenTabsAnalysisFile(fileName)) {
+            if (navigationService && caches.designHierarchyValid) {
+                const std::uint64_t snapshotRevision =
+                    navigationService->semanticSnapshotRevision();
+                caches.designSnapshotGeneration = snapshotRevision;
+                caches.designHierarchy.snapshotGeneration = snapshotRevision;
+            }
+            break;
+        }
         caches.clearDesignHierarchy();
         refreshDesignHierarchy();
         break;

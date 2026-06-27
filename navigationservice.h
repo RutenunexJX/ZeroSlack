@@ -41,7 +41,11 @@ public:
     QList<SymbolOutlineGroup> findSymbolOutline(
         const NavigationSymbolOutlineQuery& query) const;
     QString inferDesignTopModule() const;
+    QStringList inferDesignTopModules() const;
     DesignHierarchyReport findDesignHierarchy(const QString& topModule) const;
+    DesignHierarchyReport findDesignHierarchy(
+        const QStringList& topModules,
+        const QString& selectedTopModule = QString()) const;
     std::uint64_t semanticSnapshotRevision() const;
     QStringList modulesDefinedInFile(const QString& fileName) const;
     NavigationModuleTarget resolveModuleTarget(const QString& moduleName) const;

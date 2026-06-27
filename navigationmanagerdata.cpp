@@ -64,16 +64,25 @@ bool NavigationManager::updateDesignHierarchyData(bool force)
 
     const std::uint64_t snapshotRevision =
         navigationService->semanticSnapshotRevision();
-    if (caches.designTopInferred || caches.designTopModule.isEmpty()) {
-        const QString inferredTop = navigationService->inferDesignTopModule();
-        if (caches.designTopModule != inferredTop) {
-            caches.designTopModule = inferredTop;
-            caches.designHierarchyValid = false;
-        }
-        caches.designTopInferred = true;
+    const QString selectedTop =
+        caches.designTopInferred ? QString() : caches.designTopModule;
+    if (!force && caches.designHierarchyValid
+        && caches.designSnapshotGeneration == snapshotRevision
+        && caches.designHierarchy.selectedTopModule == selectedTop
+        && caches.designHierarchy.rootModules == caches.designRootModules) {
+        return false;
     }
 
-    if (caches.designTopModule.isEmpty()) {
+    QStringList rootModules = navigationService->inferDesignTopModules();
+    if (!caches.designTopInferred && !caches.designTopModule.isEmpty()
+        && !rootModules.contains(caches.designTopModule)) {
+        rootModules.prepend(caches.designTopModule);
+    }
+    if (caches.designTopInferred)
+        caches.designTopModule = rootModules.isEmpty() ? QString() : rootModules.first();
+    caches.designRootModules = rootModules;
+
+    if (rootModules.isEmpty()) {
         const bool changed =
             force
             || !caches.designHierarchyValid
@@ -86,13 +95,8 @@ bool NavigationManager::updateDesignHierarchyData(bool force)
         return changed;
     }
 
-    if (!force && caches.designHierarchyValid
-        && caches.designHierarchy.topModule == caches.designTopModule
-        && caches.designSnapshotGeneration == snapshotRevision) {
-        return false;
-    }
-
-    caches.designHierarchy = navigationService->findDesignHierarchy(caches.designTopModule);
+    caches.designHierarchy =
+        navigationService->findDesignHierarchy(rootModules, selectedTop);
     caches.designSnapshotGeneration = snapshotRevision;
     if (caches.designHierarchy.snapshotGeneration == 0)
         caches.designHierarchy.snapshotGeneration = snapshotRevision;

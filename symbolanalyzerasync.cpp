@@ -5,6 +5,7 @@
 #include "workspacemanager.h"
 
 #include <QtConcurrent/QtConcurrent>
+#include <QElapsedTimer>
 #include <QFuture>
 #include <QFutureWatcher>
 #include <QTimer>
@@ -69,6 +70,8 @@ void SymbolAnalyzer::startAnalyzeProjectAsync(
     emit analysisStarted(workspacePath);
 
     QFuture<WorkspaceAnalysisResult> future = QtConcurrent::run([svFiles, includeDirs, defines, isCancelled, generation, protectedFiles, priorityPublicationCheckpoints, fileAnalysisBands]() {
+        QElapsedTimer workerTimer;
+        workerTimer.start();
         auto applyResultMetadata =
             [generation,
              &protectedFiles,
@@ -89,42 +92,56 @@ void SymbolAnalyzer::startAnalyzeProjectAsync(
         WorkspaceAnalysisResult result;
         if (cancelled()) {
             result.cancelled = true;
+            result.workerElapsedMs = workerTimer.elapsed();
             applyResultMetadata(&result);
             return result;
         }
 
         SlangManager symbolAnalyzer;
+        QElapsedTimer stageTimer;
+        stageTimer.start();
         const auto records =
             symbolAnalyzer.extractWorkspaceSymbolRecords(svFiles,
                                                          includeDirs,
                                                          defines,
                                                          isCancelled);
+        const qint64 symbolExtractionMs = stageTimer.elapsed();
         if (cancelled()) {
             result.cancelled = true;
+            result.symbolExtractionMs = symbolExtractionMs;
+            result.workerElapsedMs = workerTimer.elapsed();
             applyResultMetadata(&result);
             return result;
         }
 
+        stageTimer.restart();
         result =
             SymbolAnalyzerWorkspace::buildWorkspaceAnalysisResult(
                 svFiles,
                 records,
                 isCancelled);
+        result.symbolExtractionMs = symbolExtractionMs;
+        result.resultAssemblyMs = stageTimer.elapsed();
         applyResultMetadata(&result);
         if (result.cancelled || cancelled()) {
             result.cancelled = true;
+            result.workerElapsedMs = workerTimer.elapsed();
             return result;
         }
 
         SlangManager diagnosticsAnalyzer;
+        stageTimer.restart();
         result.diagnostics =
             diagnosticsAnalyzer.extractWorkspaceDiagnostics(svFiles,
                                                            includeDirs,
                                                            defines,
                                                            isCancelled);
+        result.diagnosticsExtractionMs = stageTimer.elapsed();
+        result.workerElapsedMs = workerTimer.elapsed();
         if (cancelled()) {
             result.cancelled = true;
             result.diagnostics.clear();
+            result.workerElapsedMs = workerTimer.elapsed();
         }
         return result;
     });

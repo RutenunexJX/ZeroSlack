@@ -742,12 +742,11 @@ QString formalPortGhostText(const SemanticSymbolRecord& port)
 
 QList<SemanticSymbolRecord> matchingPortRecords(
     const QList<SemanticSymbolRecord>& records,
-    const QString& formalName,
     const QString& moduleName)
 {
     QList<SemanticSymbolRecord> matches;
     for (const SemanticSymbolRecord& record : records) {
-        if (record.name != formalName || !isPortRecord(record))
+        if (!isPortRecord(record))
             continue;
         if (!moduleName.isEmpty() && record.owner.name != moduleName)
             continue;
@@ -757,7 +756,7 @@ QList<SemanticSymbolRecord> matchingPortRecords(
         return matches;
 
     for (const SemanticSymbolRecord& record : records) {
-        if (record.name == formalName && isPortRecord(record))
+        if (isPortRecord(record))
             matches.append(record);
     }
     return matches;
@@ -1521,12 +1520,13 @@ GhostAnnotation makeAnnotation(GhostAnnotationKind kind,
 
 void appendFormalPortAnnotations(const QList<LineInfo>& lines,
                                  const QList<SemanticSymbolRecord>& instPinRecords,
-                                 const QList<SemanticSymbolRecord>& allRecords,
+                                 SemanticIndex* index,
                                  QList<GhostAnnotation>* out)
 {
     if (!out)
         return;
 
+    QHash<QString, QList<SemanticSymbolRecord>> recordsByFormalName;
     for (const SemanticSymbolRecord& record : instPinRecords) {
         if (record.collectorKind != SymbolTaxonomy::CollectorKind::InstPin
             || record.location.startLine <= 0
@@ -1539,8 +1539,15 @@ void appendFormalPortAnnotations(const QList<LineInfo>& lines,
             !record.type.resolvedTypeName.isEmpty()
                 ? record.type.resolvedTypeName
                 : record.type.rawTypeText;
+        if (!recordsByFormalName.contains(formalName)) {
+            recordsByFormalName.insert(
+                formalName,
+                index ? index->getSymbolRecordsByName(formalName)
+                      : QList<SemanticSymbolRecord>());
+        }
         const QList<SemanticSymbolRecord> ports =
-            matchingPortRecords(allRecords, formalName, moduleName);
+            matchingPortRecords(recordsByFormalName.value(formalName),
+                                moduleName);
         if (ports.size() != 1)
             continue;
 
@@ -2144,18 +2151,15 @@ GhostAnnotationReport GhostAnnotationService::annotationsForDocument(
         return report;
 
     const QList<LineInfo> lines = documentLines(query.documentText);
+    SemanticIndex* index = semanticIndex();
     const QList<SemanticSymbolRecord> fileRecords =
         query.fileName.isEmpty()
             ? QList<SemanticSymbolRecord>()
-            : semanticIndex()->getSymbolRecords(query.fileName);
-    const QList<SemanticSymbolRecord> allRecords =
-        query.fileName.isEmpty()
-            ? QList<SemanticSymbolRecord>()
-            : semanticIndex()->getSymbolRecords();
+            : index->getSymbolRecords(query.fileName);
 
     appendFormalPortAnnotations(lines,
                                 fileRecords,
-                                allRecords,
+                                index,
                                 &report.annotations);
     appendParameterOverrideAnnotations(lines, &report.annotations);
     const QHash<QString, UserFunctionDefinition> userFunctions =

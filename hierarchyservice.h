@@ -91,6 +91,8 @@ struct HierarchyReport {
 struct DesignHierarchyNode {
     QString id;
     QString parentId;
+    QString rootId;
+    QString rootModule;
     QString instanceName;
     QString moduleType;
     QString instanceFile;
@@ -100,12 +102,15 @@ struct DesignHierarchyNode {
     int definitionLine = -1;
     int definitionColumn = -1;
     bool isTop = false;
+    bool inSelectedTop = true;
     bool unresolved = false;
     QString unresolvedReason;
 };
 
 struct DesignHierarchyReport {
     QString topModule;
+    QString selectedTopModule;
+    QStringList rootModules;
     QList<DesignHierarchyNode> nodes;
     QSet<QString> participatingFiles;
     QList<QString> unresolvedModules;
@@ -128,7 +133,11 @@ public:
     QList<HierarchyNode> getHierarchy(const HierarchyQuery& query) const;
     HierarchyReport getHierarchyReport(const HierarchyQuery& query) const;
     QString inferDesignTopModule() const;
+    QStringList inferDesignTopModules() const;
     DesignHierarchyReport getDesignHierarchyReport(const QString& topModule) const;
+    DesignHierarchyReport getDesignHierarchyReport(
+        const QStringList& topModules,
+        const QString& selectedTopModule = QString()) const;
     QStringList modulesDefinedInFile(const QString& fileName) const;
     HierarchyQuery queryForPanel(const HierarchyPanelQueryOptions& options) const;
     QList<HierarchyNode> moduleInstantiationChildren(const SymbolStableKey& moduleStableKey) const;

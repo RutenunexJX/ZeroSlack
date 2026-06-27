@@ -69,6 +69,8 @@ void MyHighlighter::highlightBlock(const QString &text)
 {
     if (!m_tsdoc)
         return;
+    if (m_tsdoc->text().isEmpty() && !text.isEmpty())
+        return;
 
     // The editor has already synced m_tsdoc to the current document (its contentsChange slot is
     // connected before this highlighter, so it runs first). Just read spans for this block.

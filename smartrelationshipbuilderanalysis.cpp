@@ -18,6 +18,20 @@ QStringList accessPathsOrNames(const QStringList& accessPaths,
         return accessPaths;
     return names;
 }
+
+QString instanceAccessPath(const QString& instanceName,
+                           const SemanticSourceRange& sourceRange)
+{
+    QString result = instanceName.trimmed();
+    if (result.isEmpty())
+        result = QStringLiteral("<unnamed>");
+    if (sourceRange.line > 0) {
+        result += QStringLiteral("@%1:%2")
+            .arg(sourceRange.line)
+            .arg(sourceRange.column);
+    }
+    return result;
+}
 }
 
 void SmartRelationshipBuilder::analyzeModuleInstantiations(const QString& content, AnalysisContext& context, int lineMin, int lineMax)
@@ -38,15 +52,27 @@ void SmartRelationshipBuilder::analyzeModuleInstantiations(const QString& conten
         if (ownerModuleHandle == -1)
             ownerModuleHandle = context.currentModuleLocalHandle;
         if (moduleTypeHandle != -1 && ownerModuleHandle != -1) {
+            if (moduleTypeHandle == ownerModuleHandle)
+                continue;
+            const QString accessPath =
+                instanceAccessPath(info.instanceName, info.sourceRange);
+            const QString key = QStringLiteral("%1:%2:%3")
+                                    .arg(ownerModuleHandle)
+                                    .arg(moduleTypeHandle)
+                                    .arg(accessPath);
+            if (emitted.contains(key))
+                continue;
             addRelationshipWithContext(
                 ownerModuleHandle,
                 moduleTypeHandle,
                 SymbolRelationshipEngine::INSTANTIATES,
                 QString("Instance: %1 at line %2").arg(info.instanceName).arg(info.lineNumber),
                 90,
-                info.sourceRange
+                info.sourceRange,
+                QString(),
+                accessPath
             );
-            emitted.insert(QStringLiteral("%1:%2").arg(ownerModuleHandle).arg(moduleTypeHandle));
+            emitted.insert(key);
         }
     }
 
@@ -70,11 +96,29 @@ void SmartRelationshipBuilder::analyzeModuleInstantiations(const QString& conten
         if (ownerModuleHandle == -1)
             ownerModuleHandle = context.currentModuleLocalHandle;
         if (moduleTypeHandle != -1 && ownerModuleHandle != -1) {
+            if (moduleTypeHandle == ownerModuleHandle)
+                continue;
             const QString key =
-                QStringLiteral("%1:%2").arg(ownerModuleHandle).arg(moduleTypeHandle);
+                QStringLiteral("%1:%2:%3")
+                    .arg(ownerModuleHandle)
+                    .arg(moduleTypeHandle)
+                    .arg(instanceAccessPath(
+                        record.name,
+                        SemanticSourceRange{record.location.fileName,
+                                            record.location.startLine,
+                                            record.location.startColumn,
+                                            record.location.endLine,
+                                            record.location.endColumn}));
             if (emitted.contains(key))
                 continue;
 
+            const SemanticSourceRange sourceRange{
+                record.location.fileName,
+                record.location.startLine,
+                record.location.startColumn,
+                record.location.endLine,
+                record.location.endColumn
+            };
             addRelationshipWithContext(
                 ownerModuleHandle,
                 moduleTypeHandle,
@@ -83,11 +127,9 @@ void SmartRelationshipBuilder::analyzeModuleInstantiations(const QString& conten
                     .arg(record.name)
                     .arg(record.location.startLine),
                 90,
-                SemanticSourceRange{record.location.fileName,
-                                    record.location.startLine,
-                                    record.location.startColumn,
-                                    record.location.endLine,
-                                    record.location.endColumn}
+                sourceRange,
+                QString(),
+                instanceAccessPath(record.name, sourceRange)
             );
             emitted.insert(key);
         }

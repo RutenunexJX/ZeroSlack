@@ -188,13 +188,12 @@ void NavigationManager::onDesignNodeContextMenuRequested(
 
 void NavigationManager::onDesignNodeDoubleClicked(const DesignHierarchyNode& node)
 {
-    if (node.isTop) {
-        if (!node.definitionFile.isEmpty())
-            navigateToFile(node.definitionFile, node.definitionLine);
+    if (!node.definitionFile.isEmpty()) {
+        navigateToFile(node.definitionFile);
         return;
     }
     if (!node.instanceFile.isEmpty())
-        navigateToFile(node.instanceFile, node.instanceLine);
+        navigateToFile(node.instanceFile);
 }
 
 void NavigationManager::setupConnections()

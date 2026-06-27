@@ -4,6 +4,7 @@
 #include "symbolanalyzerworkspace.h"
 #include "workspacemanager.h"
 
+#include <QElapsedTimer>
 #include <QFile>
 #include <QTextStream>
 #include <utility>
@@ -54,6 +55,8 @@ void SymbolAnalyzer::analyzeProject(
     if (!project.isOpen())
         return;
 
+    QElapsedTimer totalTimer;
+    totalTimer.start();
     emit analysisStarted(project.workspaceRoot);
 
     QStringList svFiles = project.systemVerilogFiles;
@@ -65,11 +68,14 @@ void SymbolAnalyzer::analyzeProject(
     }
 
     SlangManager symbolAnalyzer;
+    QElapsedTimer stageTimer;
+    stageTimer.start();
     const auto allRecords =
         symbolAnalyzer.extractWorkspaceSymbolRecords(svFiles,
                                                      project.includeDirs,
                                                      project.defines,
                                                      isCancelled);
+    const qint64 symbolExtractionMs = stageTimer.elapsed();
     if (isCancelled && isCancelled()) {
         emit workspaceAnalysisExpired();
         emit batchAnalysisCompleted(0, 0);
@@ -77,11 +83,14 @@ void SymbolAnalyzer::analyzeProject(
         return;
     }
 
+    stageTimer.restart();
     WorkspaceAnalysisResult result =
         SymbolAnalyzerWorkspace::buildWorkspaceAnalysisResult(
             svFiles,
             allRecords,
             isCancelled);
+    result.symbolExtractionMs = symbolExtractionMs;
+    result.resultAssemblyMs = stageTimer.elapsed();
     result.protectedFiles = workspaceProtectedFiles;
     result.priorityPublicationCheckpoints =
         workspacePriorityPublicationCheckpoints;
@@ -95,19 +104,33 @@ void SymbolAnalyzer::analyzeProject(
         return;
     }
     SlangManager diagnosticsAnalyzer;
+    stageTimer.restart();
     result.diagnostics =
         diagnosticsAnalyzer.extractWorkspaceDiagnostics(svFiles,
                                                        project.includeDirs,
                                                        project.defines,
                                                        isCancelled);
+    result.diagnosticsExtractionMs = stageTimer.elapsed();
+    result.workerElapsedMs = totalTimer.elapsed();
     if (isCancelled && isCancelled()) {
         emit workspaceAnalysisExpired();
         emit batchAnalysisCompleted(0, 0);
         emit analysisCompleted(project.workspaceRoot, 0);
         return;
     }
+    WorkspaceAnalysisTelemetry telemetry;
+    stageTimer.restart();
     const int filesAnalyzed =
-        publishWorkspaceAnalysisResult(result, totalFiles);
+        publishWorkspaceAnalysisResult(result, totalFiles, &telemetry);
+    const qint64 publicationMs = stageTimer.elapsed();
+    emitWorkspaceAnalysisTelemetry(project.workspaceRoot,
+                                   result,
+                                   totalFiles,
+                                   filesAnalyzed,
+                                   publicationMs,
+                                   telemetry.publicationUpdateMs,
+                                   telemetry.checkpointSnapshotMs,
+                                   telemetry.finalSnapshotMs);
     emit batchAnalysisCompleted(filesAnalyzed, result.totalSymbols);
     emit analysisCompleted(project.workspaceRoot, result.totalSymbols);
 }

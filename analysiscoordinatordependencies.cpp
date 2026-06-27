@@ -69,8 +69,10 @@ bool AnalysisCoordinator::AnalysisDependencies::isWorkspaceSymbolAnalysisCancell
 
 void AnalysisCoordinator::AnalysisDependencies::refreshRelationshipDataView() const
 {
-    if (navigationManager)
+    if (navigationManager) {
         navigationManager->refreshCurrentView();
+        navigationManager->warmDesignHierarchyCache();
+    }
 }
 
 void AnalysisCoordinator::AnalysisDependencies::handleFileSymbolAnalysisFinished(

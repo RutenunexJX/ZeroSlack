@@ -300,6 +300,8 @@ public:
 
     QList<SemanticSymbolRecord> getSymbolRecords(
         const QString& fileName = QString()) const;
+    QList<SemanticSymbolRecord> getSymbolRecordsByName(
+        const QString& name) const;
     QList<SemanticSymbolSearchResult> searchSymbols(
         const SemanticSymbolSearchQuery& query) const;
     QList<SemanticSymbolRecord> getModuleCompletionSymbolRecords(
@@ -400,6 +402,7 @@ private:
     };
     QList<SemanticSymbolRecord> m_nativeSymbolRecords;
     QHash<QString, QList<int>> m_nativeRecordIndexesByFile;
+    QHash<QString, QList<int>> m_nativeRecordIndexesByName;
     QHash<QString, QString> m_nativeFileContents;
     QHash<QString, NativeFileState> m_nativeFileStates;
     QHash<QString, int> m_nativeStableKeyIndexes;
@@ -418,6 +421,8 @@ private:
     void rebuildNativeStoreIndexes();
     QList<SemanticSymbolRecord> nativeSymbolRecords(
         const QString& fileName = QString()) const;
+    QList<SemanticSymbolRecord> nativeSymbolRecordsByName(
+        const QString& name) const;
     SemanticSymbolRecord nativeSymbolRecordByStableKey(
         const SymbolStableKey& key) const;
     bool hasNativeFileCoverage(const QString& fileName) const;

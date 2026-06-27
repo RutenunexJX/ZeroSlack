@@ -127,6 +127,7 @@ SemanticIndexSnapshot::SemanticIndexSnapshot(
     const SnapshotRecordLookup lookup(m_symbolRecords);
     for (SemanticRelationship& relationship : m_relationships)
         relationship = rebindRelationshipToSnapshot(relationship, lookup);
+    rebuildRelationshipIndexes();
 }
 
 SemanticIndexSnapshot SemanticIndexSnapshot::fromSymbolRecords(
@@ -173,6 +174,25 @@ void SemanticIndexSnapshot::rebuildSymbolIndexes()
             && !m_symbolRecordIndexByLocalHandle.contains(record.localHandle)) {
             m_symbolRecordIndexByLocalHandle.insert(record.localHandle, i);
         }
+    }
+}
+
+void SemanticIndexSnapshot::rebuildRelationshipIndexes()
+{
+    m_relationshipIndexesByFromStableKey.clear();
+    m_relationshipIndexesByToStableKey.clear();
+    m_relationshipIndexesByFromStableKey.reserve(m_relationships.size());
+    m_relationshipIndexesByToStableKey.reserve(m_relationships.size());
+
+    for (int i = 0; i < m_relationships.size(); ++i) {
+        const SemanticRelationship& relationship = m_relationships.at(i);
+        const QString fromKey = symbolStableKeyText(relationship.fromStableKey);
+        if (!fromKey.isEmpty())
+            m_relationshipIndexesByFromStableKey[fromKey].append(i);
+
+        const QString toKey = symbolStableKeyText(relationship.toStableKey);
+        if (!toKey.isEmpty())
+            m_relationshipIndexesByToStableKey[toKey].append(i);
     }
 }
 

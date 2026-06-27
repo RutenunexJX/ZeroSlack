@@ -35,6 +35,7 @@ public:
                                 bool requestRelationships = true);
     void analyzeOpenDocumentsNow();
     QString contentForOpenFile(const QString& fileName) const;
+    bool isWorkspaceOpen() const;
 
 signals:
     void documentRefreshRequested(const QString& fileName);
@@ -51,7 +52,6 @@ private:
     QMap<QString, QTimer*> openFileAnalysisTimers;
     QMap<QString, QTimer*> fileChangeDebounceTimers;
 
-    bool isWorkspaceOpen() const;
     bool isDirtyOpenDocument(const QString& fileName) const;
     bool lineContainsStructuralKeyword(const QString& content, int oneBasedLine) const;
     bool hasNonWhitespaceChange(const QString& oldContent,

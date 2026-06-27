@@ -1,6 +1,8 @@
 #include "projectmodel.h"
+#include "navigationservice.h"
 #include "relationshipanalysisworker.h"
 #include "relationshipresultpublisher.h"
+#include "relationshipservice.h"
 #include "semanticindex.h"
 #include "slangmanager.h"
 #include "symbolanalyzer.h"
@@ -10,10 +12,12 @@
 #include <QDir>
 #include <QDirIterator>
 #include <QElapsedTimer>
+#include <QEventLoop>
 #include <QFile>
 #include <QFileInfo>
 #include <QStringList>
 #include <QTextStream>
+#include <QTimer>
 
 #include <cstdio>
 
@@ -161,7 +165,50 @@ int main(int argc, char** argv)
     printEvent(QStringLiteral("symbol_start"));
     timer.restart();
     SymbolAnalyzer symbolAnalyzer;
-    symbolAnalyzer.analyzeProject(project);
+    WorkspaceAnalysisTelemetry symbolTelemetry;
+    QEventLoop symbolLoop;
+    QTimer symbolTimeout;
+    symbolTimeout.setSingleShot(true);
+    int symbolExitCode = 0;
+    QObject::connect(
+        &symbolAnalyzer,
+        &SymbolAnalyzer::workspaceAnalysisTelemetry,
+        &symbolAnalyzer,
+        [&](const WorkspaceAnalysisTelemetry& telemetry) {
+            symbolTelemetry = telemetry;
+        });
+    QObject::connect(
+        &symbolAnalyzer,
+        &SymbolAnalyzer::analysisCompleted,
+        &symbolAnalyzer,
+        [&](const QString& fileName, int) {
+            if (normalizedPath(fileName) == project.workspaceRoot)
+                symbolLoop.quit();
+        });
+    QObject::connect(
+        &symbolAnalyzer,
+        &SymbolAnalyzer::workspaceAnalysisExpired,
+        &symbolAnalyzer,
+        [&]() {
+            symbolExitCode = 5;
+            symbolLoop.quit();
+        });
+    QObject::connect(&symbolTimeout,
+                     &QTimer::timeout,
+                     &symbolLoop,
+                     [&]() {
+                         symbolExitCode = 6;
+                         symbolLoop.quit();
+                     });
+    symbolTimeout.start(180000);
+    symbolAnalyzer.startAnalyzeProjectAsync(project);
+    symbolLoop.exec();
+    if (symbolExitCode != 0) {
+        std::fprintf(stderr,
+                     "workspace symbol analysis failed: %d\n",
+                     symbolExitCode);
+        return symbolExitCode;
+    }
     const qint64 symbolMs = timer.elapsed();
 
     SemanticIndex* semanticIndex = SemanticIndex::getInstance();
@@ -174,6 +221,26 @@ int main(int argc, char** argv)
         ? baseSnapshot.snapshot->getSymbolRecords().size()
         : 0;
     printMetric(QStringLiteral("symbol_ms"), symbolMs);
+    printMetric(QStringLiteral("symbol_worker_ms"),
+                symbolTelemetry.workerElapsedMs);
+    printMetric(QStringLiteral("symbol_extraction_ms"),
+                symbolTelemetry.symbolExtractionMs);
+    printMetric(QStringLiteral("symbol_result_assembly_ms"),
+                symbolTelemetry.resultAssemblyMs);
+    printMetric(QStringLiteral("symbol_diagnostics_ms"),
+                symbolTelemetry.diagnosticsExtractionMs);
+    printMetric(QStringLiteral("symbol_publication_ms"),
+                symbolTelemetry.publicationMs);
+    printMetric(QStringLiteral("symbol_publication_update_ms"),
+                symbolTelemetry.publicationUpdateMs);
+    printMetric(QStringLiteral("symbol_checkpoint_snapshot_ms"),
+                symbolTelemetry.checkpointSnapshotMs);
+    printMetric(QStringLiteral("symbol_final_snapshot_ms"),
+                symbolTelemetry.finalSnapshotMs);
+    printMetric(QStringLiteral("symbol_total_telemetry_ms"),
+                symbolTelemetry.totalElapsedMs);
+    printMetric(QStringLiteral("diagnostics"),
+                symbolTelemetry.diagnostics);
     printMetric(QStringLiteral("symbols"), symbolCount);
 
     SlangManager slangManager;
@@ -313,6 +380,58 @@ int main(int argc, char** argv)
     printMetric(QStringLiteral("relationships"), result.relationshipCount);
     printMetric(QStringLiteral("engine_relationships"),
                 relationshipEngine.getRelationshipCount());
+
+    RelationshipService relationshipService(semanticIndex);
+    const QList<SemanticSymbolRecord> ctlDefs =
+        semanticIndex->findDefinitionRecords(QStringLiteral("vendor_ip_ctl"));
+    if (!ctlDefs.isEmpty()) {
+        RelationshipQuery ctlIncomingQuery;
+        ctlIncomingQuery.symbolStableKey = ctlDefs.first().stableKey;
+        ctlIncomingQuery.outgoing = false;
+        ctlIncomingQuery.types = {SymbolRelationshipEngine::INSTANTIATES};
+        const QList<RelationshipResult> ctlParents =
+            relationshipService.findRelationships(ctlIncomingQuery);
+        QStringList parentNames;
+        for (const RelationshipResult& parent : ctlParents)
+            parentNames.append(parent.fromSymbolRecord.name);
+        parentNames.removeDuplicates();
+        printMetric(QStringLiteral("design_ctl_parent_count"), parentNames.size());
+        printTextMetric(QStringLiteral("design_ctl_parents"),
+                        parentNames.mid(0, 12).join(QLatin1Char(',')));
+    }
+
+    NavigationService navigationService(semanticIndex);
+    printEvent(QStringLiteral("design_top_infer_start"));
+    timer.restart();
+    const QStringList designTops = navigationService.inferDesignTopModules();
+    const QString designTop = designTops.isEmpty() ? QString() : designTops.first();
+    const qint64 designTopInferMs = timer.elapsed();
+    printMetric(QStringLiteral("design_top_infer_ms"), designTopInferMs);
+    printTextMetric(QStringLiteral("design_top"), designTop);
+    printMetric(QStringLiteral("design_top_count"), designTops.size());
+    printTextMetric(QStringLiteral("design_top_roots"),
+                    designTops.mid(0, 12).join(QLatin1Char(',')));
+
+    printEvent(QStringLiteral("design_hierarchy_start"));
+    timer.restart();
+    const DesignHierarchyReport designReport =
+        navigationService.findDesignHierarchy(designTop);
+    const qint64 designHierarchyMs = timer.elapsed();
+    printMetric(QStringLiteral("design_hierarchy_ms"), designHierarchyMs);
+    printMetric(QStringLiteral("design_hierarchy_nodes"),
+                designReport.nodes.size());
+    printMetric(QStringLiteral("design_hierarchy_files"),
+                designReport.participatingFiles.size());
+    printMetric(QStringLiteral("design_unresolved_modules"),
+                designReport.unresolvedModules.size());
+    const DesignHierarchyReport ctlReport =
+        navigationService.findDesignHierarchy(QStringLiteral("vendor_ip_ctl"));
+    printMetric(QStringLiteral("design_ctl_nodes"), ctlReport.nodes.size());
+    printMetric(QStringLiteral("design_ctl_files"), ctlReport.participatingFiles.size());
+    const DesignHierarchyReport gphyReport =
+        navigationService.findDesignHierarchy(QStringLiteral("vendor_ip_gphy"));
+    printMetric(QStringLiteral("design_gphy_nodes"), gphyReport.nodes.size());
+    printMetric(QStringLiteral("design_gphy_files"), gphyReport.participatingFiles.size());
 
     return 0;
 }

@@ -30,6 +30,7 @@ class QLabel;
 class QMenu;
 class QProgressBar;
 class QTabBar;
+class QTimer;
 class QToolButton;
 
 QT_BEGIN_NAMESPACE
@@ -79,6 +80,9 @@ private:
     QLabel* editorModeChip = nullptr;
     QProgressBar* workspaceProgressBar = nullptr;
     QTabBar* workspaceTabBar = nullptr;
+    QTimer* activeEditorPassiveRefreshTimer = nullptr;
+    QString pendingActiveEditorPassiveRefreshFile;
+    bool pendingActiveEditorPassiveRefreshAll = false;
 
     static const int kFileChangeDebounceMs = 350;
 
@@ -122,6 +126,9 @@ private:
         const QString& changedFileName = QString());
     void refreshActiveEditorGhostAnnotations(
         const QString& changedFileName = QString());
+    void scheduleActiveEditorPassiveRefresh(
+        const QString& changedFileName = QString());
+    void runActiveEditorPassiveRefresh();
     void refreshActiveEditorWavePreview();
 
 };

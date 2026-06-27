@@ -67,6 +67,22 @@ QList<SemanticSymbolRecord> SemanticIndexSnapshot::getSymbolRecords(
     return result;
 }
 
+QList<SemanticSymbolRecord> SemanticIndexSnapshot::getSymbolRecordsByName(
+    const QString& name) const
+{
+    if (name.isEmpty())
+        return {};
+
+    QList<SemanticSymbolRecord> result;
+    const QList<int> indexes = m_symbolRecordIndexesByName.value(name);
+    result.reserve(indexes.size());
+    for (int index : indexes) {
+        if (index >= 0 && index < m_symbolRecords.size())
+            result.append(m_symbolRecords.at(index));
+    }
+    return result;
+}
+
 SemanticAnalysisBandReport SemanticIndexSnapshot::analysisBandReport(
     const QString& fileName) const
 {
@@ -204,12 +220,17 @@ QList<SemanticRelationship> SemanticIndexSnapshot::relationshipsForStableKey(
     if (!key.isValid())
         return result;
 
-    for (const SemanticRelationship& relationship : m_relationships) {
-        const SymbolStableKey relationshipKey =
-            relationshipEndpointStableKey(*this, relationship, outgoing);
-        if (relationshipKey == key) {
-            result.append(relationship);
-        }
+    const QString keyText = symbolStableKeyText(key);
+    if (keyText.isEmpty())
+        return result;
+
+    const QList<int> indexes = outgoing
+        ? m_relationshipIndexesByFromStableKey.value(keyText)
+        : m_relationshipIndexesByToStableKey.value(keyText);
+    result.reserve(indexes.size());
+    for (int index : indexes) {
+        if (index >= 0 && index < m_relationships.size())
+            result.append(m_relationships.at(index));
     }
     return result;
 }

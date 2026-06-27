@@ -10,6 +10,7 @@
 #include <QIcon>
 #include <QLabel>
 #include <QPushButton>
+#include <QCheckBox>
 #include <QTimer>
 #include <QTreeWidgetItem>
 #include <QSet>
@@ -85,6 +86,7 @@ private:
     QWidget* fileTab = nullptr;
     QTreeWidget* fileTreeWidget = nullptr;
     QVBoxLayout* fileTabLayout = nullptr;
+    QCheckBox* hideUnrelatedFilesCheckBox = nullptr;
 
     QWidget* moduleTab = nullptr;
     QTreeWidget* moduleTreeWidget = nullptr;
@@ -113,6 +115,9 @@ private:
 
     QString currentSearchFilter;
     QString currentHighlightedFile;
+    QString fileTreeRootPath;
+    bool hideUnrelatedFiles = false;
+    QHash<QString, QTreeWidgetItem*> fileItemsByNormalizedPath;
     QTimer* fileTreePopulationTimer = nullptr;
     QStringList pendingFileTreeFiles;
     QHash<QString, QTreeWidgetItem*> pendingFileTreeDirItems;
@@ -146,7 +151,9 @@ private:
     QIcon getFileIcon(const QString& filePath);
     QIcon getSymbolIcon(SymbolOutlineIconKind iconKind);
     void applyDesignFileDimming(QTreeWidgetItem* item, bool dimmed);
+    void applyDesignItemDimming(QTreeWidgetItem* item, bool dimmed);
     bool fileParticipatesInDesign(const QString& filePath) const;
+    QString normalizedFileItemPath(const QString& filePath) const;
     void refreshDesignHeader();
     void expandCurrentFileNodes();
     QTreeWidgetItem* findFileItemByPath(const QString& filePath);

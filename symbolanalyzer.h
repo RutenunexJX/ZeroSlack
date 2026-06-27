@@ -2,6 +2,7 @@
 #define SYMBOLANALYZER_H
 
 #include <QObject>
+#include <QElapsedTimer>
 #include <QStringList>
 #include <QHash>
 #include <QList>
@@ -38,6 +39,27 @@ struct WorkspaceAnalysisResult {
     bool cancelled = false;
     int totalSymbols = 0;
     std::uint64_t generation = 0;
+    qint64 workerElapsedMs = 0;
+    qint64 symbolExtractionMs = 0;
+    qint64 resultAssemblyMs = 0;
+    qint64 diagnosticsExtractionMs = 0;
+};
+
+struct WorkspaceAnalysisTelemetry {
+    QString workspaceRoot;
+    int totalFiles = 0;
+    int filesAnalyzed = 0;
+    int totalSymbols = 0;
+    int diagnostics = 0;
+    qint64 workerElapsedMs = 0;
+    qint64 symbolExtractionMs = 0;
+    qint64 resultAssemblyMs = 0;
+    qint64 diagnosticsExtractionMs = 0;
+    qint64 publicationMs = 0;
+    qint64 publicationUpdateMs = 0;
+    qint64 checkpointSnapshotMs = 0;
+    qint64 finalSnapshotMs = 0;
+    qint64 totalElapsedMs = 0;
 };
 
 struct FileAnalysisResult {
@@ -86,6 +108,7 @@ signals:
     void batchAnalysisCompleted(int filesAnalyzed, int totalSymbols);
     void batchProgress(int filesDone, int totalFiles, const QString& currentFileName);
     void workspaceAnalysisExpired();
+    void workspaceAnalysisTelemetry(const WorkspaceAnalysisTelemetry& telemetry);
 
 private slots:
     void onWorkspaceAnalysisFinished();
@@ -110,6 +133,10 @@ private:
     int pendingWorkspacePublicationPlannedVisited = 0;
     int pendingWorkspacePublicationLastSnapshotFiles = 0;
     int pendingWorkspacePublicationNextCheckpoint = 0;
+    QElapsedTimer pendingWorkspacePublicationTimer;
+    qint64 pendingWorkspacePublicationUpdateMs = 0;
+    qint64 pendingWorkspacePublicationCheckpointSnapshotMs = 0;
+    qint64 pendingWorkspacePublicationFinalSnapshotMs = 0;
     QSet<QString> pendingWorkspacePublicationProtectedFiles;
     QList<int> pendingWorkspacePublicationCheckpoints;
     QStringList pendingWorkspacePublicationAnalyzedFiles;
@@ -129,11 +156,21 @@ private:
         const QList<SemanticDiagnostic>& diagnostics);
     int publishWorkspaceAnalysisResult(
         const WorkspaceAnalysisResult& result,
-        int totalFiles);
+        int totalFiles,
+        WorkspaceAnalysisTelemetry* telemetry = nullptr);
     void startWorkspacePublication(WorkspaceAnalysisResult result,
                                    int totalFiles,
                                    const QString& workspacePath);
     void cancelWorkspacePublication();
+    void emitWorkspaceAnalysisTelemetry(
+        const QString& workspacePath,
+        const WorkspaceAnalysisResult& result,
+        int totalFiles,
+        int filesAnalyzed,
+        qint64 publicationMs,
+        qint64 publicationUpdateMs,
+        qint64 checkpointSnapshotMs,
+        qint64 finalSnapshotMs);
     QString contentHash(const QString& content) const;
     void cancelWorkspaceAnalysisAndWait();
     QStringList filterSystemVerilogFiles(const QStringList& files) const;

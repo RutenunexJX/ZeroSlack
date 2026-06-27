@@ -21,6 +21,8 @@ public:
 
     QList<SemanticSymbolRecord> getSymbolRecords(
         const QString& fileName = QString()) const;
+    QList<SemanticSymbolRecord> getSymbolRecordsByName(
+        const QString& name) const;
     SemanticAnalysisBandReport analysisBandReport(
         const QString& fileName = QString()) const;
     SemanticSymbolRecord getSymbolRecordByStableKey(
@@ -61,10 +63,13 @@ private:
     QHash<QString, int> m_symbolRecordIndexByStableKey;
     QHash<int, int> m_symbolRecordIndexByLocalHandle;
     QList<SemanticRelationship> m_relationships;
+    QHash<QString, QList<int>> m_relationshipIndexesByFromStableKey;
+    QHash<QString, QList<int>> m_relationshipIndexesByToStableKey;
     QList<SemanticDiagnostic> m_diagnostics;
     QHash<QString, QString> m_fileContents;
 
     void rebuildSymbolIndexes();
+    void rebuildRelationshipIndexes();
     QList<SemanticSymbolRecord> sortedDefinitionRecords(
         const QList<SemanticSymbolRecord>& records,
         const SemanticQueryContext& context) const;

@@ -46,6 +46,7 @@ public:
     void refreshModuleHierarchy();
     void refreshSymbolHierarchy();
     void refreshDesignHierarchy(bool force = false);
+    void warmDesignHierarchyCache();
     void refreshCurrentView();
 
     // Navigation operations
@@ -111,6 +112,7 @@ private:
         QString symbolOutlineFileName;
         QString symbolOutlineFilter;
         QString designTopModule;
+        QStringList designRootModules;
         std::uint64_t designSnapshotGeneration = 0;
         bool fileListValid = false;
         bool fileHierarchyValid = false;
