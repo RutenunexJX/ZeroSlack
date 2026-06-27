@@ -336,6 +336,8 @@ First milestones:
   (complete: `CustomAbbreviationService` persists and resolves compact aliases
   for existing `;cmd` and `;;cmd` tokens)
 - M6.4 integrate user templates with slot mode
+  (complete: service-owned user templates enter the `;;cmd` completion path and
+  preserve slot metadata through activation)
 
 M6.1 audit status:
 
@@ -410,6 +412,34 @@ M6.3 implementation status:
   token without scanning workspaces, running Slang, or touching UI rendering.
 - Complete: built-in `;cmd` and `;;cmd` behavior remains unchanged; custom
   abbreviations are not COM Mode or Global Control commands.
+- Verification: `git diff --check`; Release `completion_test` and
+  `gui_smoke_test` targets compile/link; `ctest -R "^completion_test$"` passed.
+  `gui_smoke_test` was not launched.
+
+M6.4 implementation constraints:
+
+- User template integration must consume `UserTemplateService` from
+  `CompletionService`, not from UI widgets.
+- User template command recognition must stay inside the `;;cmd` template
+  namespace and must not change `;cmd`, COM Mode, Global Control, or custom
+  abbreviation behavior.
+- Built-in `CodeTemplateService` templates must remain first-class and
+  compatible.
+- User template activation must preserve `CodeTemplateSlotList` and use the
+  existing `EditorCompletionWorkflow` / `MyCodeEditor` Slot Mode path.
+
+M6.4 implementation status:
+
+- Complete: `CompletionService` can consume an injected `UserTemplateService`
+  for tests and falls back to the singleton service in normal use.
+- Complete: compact user `;;token ` commands are recognized as
+  `InlineCommandIntent::CodeTemplate` through service-owned user template
+  records, while built-in inline descriptors keep priority.
+- Complete: template completion results merge built-in `CodeTemplateService`
+  items with exact-token `UserTemplateService` items.
+- Complete: user template activation carries insert text, primary selection,
+  and `CodeTemplateSlotList` metadata through the existing completion
+  activation and Slot Mode path.
 - Verification: `git diff --check`; Release `completion_test` and
   `gui_smoke_test` targets compile/link; `ctest -R "^completion_test$"` passed.
   `gui_smoke_test` was not launched.

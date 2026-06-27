@@ -28,7 +28,7 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
 
 ## Current Goal State
 
-Current milestone: `G6.4 Integrate User Templates With Slot Mode`.
+Current milestone: `G7.1 Fold Shelf Persistence Schema And Ownership`.
 
 Status:
 
@@ -189,18 +189,28 @@ Status:
 - Focused verification for G6.3: `git diff --check`; Release
   `completion_test` and `gui_smoke_test` targets compile/link; `ctest -R
   "^completion_test$"` passed. `gui_smoke_test` was not launched.
+- G6.4 Integrate User Templates With Slot Mode is complete:
+  `CompletionService` now consumes service-owned `UserTemplateService` records
+  in the inline `;;cmd` template path. Normal use falls back to the singleton
+  user-template service; tests can inject an ini-backed service. Compact user
+  `;;token ` commands are recognized as `CodeTemplate` intent without changing
+  `;cmd`, COM Mode, Global Control, or custom abbreviation namespaces. Built-in
+  templates keep priority, template completion results merge built-in and exact
+  user-template records, and activation preserves insert text, primary
+  selection, and `CodeTemplateSlotList` metadata through the existing
+  `EditorCompletionWorkflow` / `MyCodeEditor` Slot Mode path.
+- Focused verification for G6.4: `git diff --check`; Release
+  `completion_test` and `gui_smoke_test` targets compile/link; `ctest -R
+  "^completion_test$"` passed. `gui_smoke_test` was not launched.
 
-Completion criteria for G6.4:
+Completion criteria for G7.1:
 
-- integrate service-owned user template query results into the `;;cmd`
-  template completion path
-- user template activation must preserve `CodeTemplateSlotList` and start Slot
-  Mode through the existing `EditorCompletionWorkflow` path
-- keep built-in template behavior and existing parameter/signal Slot Mode
-  behavior compatible
-- keep UI widgets out of user-template storage/query policy
-- do not change `;cmd`, COM Mode, Global Control, or custom abbreviation
-  namespaces
+- inventory existing Fold Shelf owner classes, item lifecycle, and in-memory
+  data flow
+- define a durable persistence schema and ownership boundary for shelf items
+- define same-file restore requirements for G7.2 without implementing restore
+  behavior in G7.1
+- keep persistence policy in model/service code, not ad hoc UI state
 - `readme.md`, `plan.md`, and `goal.md` are updated
 - appropriate focused verification passes
 - milestone commit is pushed

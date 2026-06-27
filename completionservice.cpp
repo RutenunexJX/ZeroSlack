@@ -3,6 +3,7 @@
 #include "completionsemanticquery.h"
 #include "completionsymbolquery.h"
 #include "semanticindex.h"
+#include "usertemplateservice.h"
 
 #include <QStringList>
 #include <QVector>
@@ -201,6 +202,11 @@ void CompletionService::setSemanticIndex(SemanticIndex* semanticIndex)
     index = semanticIndex ? semanticIndex : SemanticIndex::getInstance();
 }
 
+void CompletionService::setUserTemplateService(UserTemplateService* service)
+{
+    templates = service;
+}
+
 QStringList CompletionService::findCompletions(const CompletionQuery& query) const
 {
     return findCompletionResult(query).names;
@@ -252,4 +258,9 @@ QStringList CompletionService::findSymbolCompletionsByKind(
 SemanticIndex* CompletionService::semanticIndex() const
 {
     return index ? index : SemanticIndex::getInstance();
+}
+
+UserTemplateService* CompletionService::userTemplateService() const
+{
+    return templates ? templates : UserTemplateService::getInstance();
 }

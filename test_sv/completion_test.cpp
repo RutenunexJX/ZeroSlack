@@ -5022,6 +5022,87 @@ int main(int argc, char** argv) {
                    .isEmpty(),
                true);
 
+    CompletionService userTemplateCompletionService;
+    userTemplateCompletionService.setUserTemplateService(
+        &reloadedUserTemplates);
+    const CommandModeInputState userTemplateInputState =
+        userTemplateCompletionService.commandModeInputState(
+            QStringLiteral(";;pipe stage"));
+    expectBool("CompletionService recognizes user template command",
+               userTemplateInputState.matched
+                   && userTemplateInputState.intent
+                       == InlineCommandIntent::CodeTemplate
+                   && userTemplateInputState.descriptor.label
+                       == QStringLiteral(";;pipe")
+                   && userTemplateInputState.input == QStringLiteral("stage"),
+               true);
+    const CommandModeCompletionState userTemplateCompletionState =
+        userTemplateCompletionService.commandModeCompletionState(
+            CommandModeCompletionQuery{QStringLiteral(";;pipe ")});
+    expectBool("CompletionService returns user template item",
+               userTemplateCompletionState.matched
+                   && userTemplateCompletionState.intent
+                       == InlineCommandIntent::CodeTemplate
+                   && userTemplateCompletionState.showCompletions
+                   && userTemplateCompletionState.templateItems.size() == 1
+                   && userTemplateCompletionState.templateItems.first()
+                          .commandToken == QStringLiteral(";;pipe")
+                   && userTemplateCompletionState.templateItems.first()
+                          .insertText == pipeTemplate.insertText
+                   && userTemplateCompletionState.templateItems.first()
+                          .templateSlots.size() == 1,
+               true);
+    const CodeTemplateItem userTemplateCompletionItem =
+        userTemplateCompletionState.templateItems.isEmpty()
+            ? CodeTemplateItem()
+            : userTemplateCompletionState.templateItems.first();
+    CompletionActivationQuery userTemplateActivation;
+    userTemplateActivation.selectable = true;
+    userTemplateActivation.mode = CompletionActivationMode::CommandMode;
+    userTemplateActivation.defaultValue =
+        userTemplateCompletionItem.insertText;
+    userTemplateActivation.selectionStart =
+        userTemplateCompletionItem.selectionStart;
+    userTemplateActivation.selectionLength =
+        userTemplateCompletionItem.selectionLength;
+    userTemplateActivation.templateSlots =
+        userTemplateCompletionItem.templateSlots;
+    const CompletionActivationState userTemplateActivationState =
+        userTemplateCompletionService.completionActivationState(
+            userTemplateActivation);
+    expectBool("CompletionService user template activation carries slot",
+               userTemplateActivationState.action
+                       == CompletionActivationAction::ReplaceCommandInput
+                   && userTemplateActivationState.clearCommandMode
+                   && userTemplateActivationState.hidePopup
+                   && userTemplateActivationState.text == pipeTemplate.insertText
+                   && userTemplateActivationState.templateSlots.size() == 1,
+               true);
+    MyCodeEditor userTemplateSlotEditor;
+    userTemplateSlotEditor.setPlainText(pipeTemplate.insertText);
+    userTemplateSlotEditor.startTemplateSlotMode(
+        0,
+        pipeTemplate.insertText.size(),
+        userTemplateCompletionItem.templateSlots);
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 10);
+    expectBool("User template Slot Mode starts on slot",
+               userTemplateSlotEditor.templateSlotModeActive()
+                   && userTemplateSlotEditor.templateSlotModeActiveIndex() == 0
+                   && userTemplateSlotEditor.textCursor().selectedText()
+                       == QStringLiteral("data_q"),
+               true);
+    insertAtEditorCursor(userTemplateSlotEditor,
+                         QStringLiteral("stage_data"));
+    expectBool("User template Slot Mode edit keeps document",
+               userTemplateSlotEditor.toPlainText().startsWith(
+                   QStringLiteral("logic [WIDTH-1:0] stage_data;"))
+                   && userTemplateSlotEditor.templateSlotModeActive(),
+               true);
+    expectBool("User template Slot Mode final Tab completes",
+               sendEditorKey(userTemplateSlotEditor, Qt::Key_Tab)
+                   && !userTemplateSlotEditor.templateSlotModeActive(),
+               true);
+
     UserTemplateRecord invalidTemplate = pipeTemplate;
     invalidTemplate.id = QStringLiteral("bad_token");
     invalidTemplate.commandToken = QStringLiteral(";pipe");

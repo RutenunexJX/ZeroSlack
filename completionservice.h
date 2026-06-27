@@ -8,6 +8,7 @@
 #include <memory>
 
 class SemanticIndex;
+class UserTemplateService;
 
 class CompletionService
 {
@@ -18,6 +19,7 @@ public:
     ~CompletionService();
 
     void setSemanticIndex(SemanticIndex* semanticIndex);
+    void setUserTemplateService(UserTemplateService* service);
 
     QStringList findCompletions(const CompletionQuery& query) const;
     CompletionResult findCompletionResult(const CompletionQuery& query) const;
@@ -114,9 +116,11 @@ public:
 
 private:
     SemanticIndex* index = nullptr;
+    UserTemplateService* templates = nullptr;
     static std::unique_ptr<CompletionService> instance;
 
     SemanticIndex* semanticIndex() const;
+    UserTemplateService* userTemplateService() const;
 };
 
 #endif // COMPLETIONSERVICE_H

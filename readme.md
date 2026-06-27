@@ -180,9 +180,10 @@ Current command surfaces are intentionally separate:
   through `MyCodeEditor` when slot metadata exists.
 - User template storage/query is service-owned by `UserTemplateService`. It
   persists validated `;;` template records in `QSettings`, exposes
-  `CodeTemplateItem`-compatible catalog and exact-token query results, and keeps
-  template slot metadata intact for future Slot Mode integration. G6.2 does not
-  wire user templates into the inline template popup yet.
+  `CodeTemplateItem`-compatible catalog and exact-token query results, and is
+  consumed by `CompletionService` for inline `;;cmd` template completion.
+  Activation preserves template slot metadata and starts Slot Mode through the
+  existing `EditorCompletionWorkflow` path when a user template carries slots.
 - Custom abbreviation resolution is service-owned by
   `CustomAbbreviationService`. It persists validated compact abbreviations in
   `QSettings`, resolves them to existing `;cmd` semantic command tokens or
@@ -223,9 +224,10 @@ Conflict boundaries:
 
 Slot Mode is the `;;cmd` follow-up state for filling editable points in an
 inserted template. It currently applies to `;;p` / `;;lp` parameter declaration
-templates and `;;l` / `;;w` / `;;r` signal declaration templates. Other
-template families keep current insertion behavior until an implementation
-milestone explicitly enables slots for that family.
+templates, `;;l` / `;;w` / `;;r` signal declaration templates, and user
+templates that provide `CodeTemplateSlotList` metadata. Other template
+families keep current insertion behavior until an implementation milestone
+explicitly enables slots for that family.
 
 - Slot data is an ordered set of relative ranges inside inserted template text.
   A range may be empty, preselected text, or a named placeholder. Existing
