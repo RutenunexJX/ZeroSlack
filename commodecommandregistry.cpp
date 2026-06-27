@@ -1,6 +1,10 @@
 #include "commodecommandregistry.h"
 
+#include <QStringList>
+
 namespace {
+constexpr int kVisibleHintCommandLimit = 8;
+
 bool isUnsignedIntegerText(const QString& text)
 {
     if (text.isEmpty())
@@ -35,6 +39,64 @@ bool fixedRegistryHasChild(const QList<ComModeCommandMetadata>& registry,
         }
     }
     return false;
+}
+
+const ComModeCommandMetadata* moduleRelativeLineCommand()
+{
+    for (const ComModeCommandMetadata& command : comModeCommandRegistry()) {
+        if (command.inputKind == ComModeCommandInputKind::ModuleRelativeLine)
+            return &command;
+    }
+    return nullptr;
+}
+
+QStringList directChildCommands(const QString& prefix)
+{
+    QStringList children;
+    for (const ComModeCommandMetadata& command : comModeCommandRegistry()) {
+        if (!isFixedCommand(command)
+            || command.command.size() <= prefix.size()
+            || !command.command.startsWith(prefix)) {
+            continue;
+        }
+
+        const QChar next = command.command.at(prefix.size());
+        int existingIndex = -1;
+        for (int i = 0; i < children.size(); ++i) {
+            if (children.at(i).at(prefix.size()) == next) {
+                existingIndex = i;
+                break;
+            }
+        }
+        if (existingIndex < 0) {
+            children.append(command.command);
+        } else if (command.command.size()
+                   < children.at(existingIndex).size()) {
+            children[existingIndex] = command.command;
+        }
+    }
+
+    children.sort(Qt::CaseSensitive);
+    return children;
+}
+
+QString childCommandHint(const QString& prefix)
+{
+    QStringList children = directChildCommands(prefix);
+    if (children.isEmpty())
+        return QString();
+
+    QStringList visibleChildren;
+    for (int i = 0;
+         i < children.size() && i < kVisibleHintCommandLimit;
+         ++i) {
+        visibleChildren.append(children.at(i));
+    }
+    if (children.size() > kVisibleHintCommandLimit)
+        visibleChildren.append(QStringLiteral("..."));
+
+    return QStringLiteral("next: %1")
+        .arg(visibleChildren.join(QStringLiteral(", ")));
 }
 } // namespace
 
@@ -195,6 +257,30 @@ bool comModeCommandRegistryIsValid(QString* reason)
     if (reason)
         reason->clear();
     return true;
+}
+
+QString comModeCommandHint(const QString& buffer)
+{
+    if (buffer.isEmpty() || !comModeCommandRegistryIsValid())
+        return QString();
+
+    if (isComModeLineBuffer(buffer)) {
+        const ComModeCommandMetadata* metadata = moduleRelativeLineCommand();
+        if (!metadata)
+            return QStringLiteral("Enter: go module line");
+        return QStringLiteral("Enter: %1").arg(metadata->title);
+    }
+
+    if (const ComModeCommandMetadata* metadata =
+            findComModeCommandMetadata(buffer)) {
+        if (!metadata->executable) {
+            const QString children = childCommandHint(buffer);
+            return children.isEmpty() ? metadata->description : children;
+        }
+        return metadata->description;
+    }
+
+    return childCommandHint(buffer);
 }
 
 QString executableComModeCommand(const QString& buffer)

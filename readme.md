@@ -42,7 +42,9 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
   `g<num><Enter>`, `gp`, `gpk`, `gpa`, `gpo`, `gsi`, `gsd`, `gii`, `gac`,
   `gpi`, `ge`, and `gef`. Existing fixed commands, prefixes, and the
   module-relative line command are described by shared `commodecommandregistry`
-  metadata so future help and conflict checks do not need a second command list.
+  metadata. The command strip renders registry-backed hints for prefixes and
+  module-relative line buffers, so help and conflict checks do not need a second
+  command list.
 - Ctrl+Space opens Global Control as a domain-first surface. Current root
   domains are `ow` and `fd`; displayed commands are `ow <num>`, `fd r`, and
   `fd s`.

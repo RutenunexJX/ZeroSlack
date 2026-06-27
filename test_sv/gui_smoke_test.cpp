@@ -6088,6 +6088,24 @@ static void runComModeRegression(MainWindow& window)
                    && isComModeLineBuffer(QStringLiteral("g20"))
                    && isComModeBufferPrefix(QStringLiteral("g20")),
                true);
+    expectBool("COM registry exposes executable command hint",
+               comModeCommandHint(QStringLiteral("gm"))
+                   .contains(QStringLiteral("module picker")),
+               true);
+    expectBool("COM registry exposes prefix child hints",
+               comModeCommandHint(QStringLiteral("gp"))
+                       .contains(QStringLiteral("gpa"))
+                   && comModeCommandHint(QStringLiteral("gp"))
+                          .contains(QStringLiteral("gpi"))
+                   && comModeCommandHint(QStringLiteral("gp"))
+                          .contains(QStringLiteral("gpk"))
+                   && comModeCommandHint(QStringLiteral("gp"))
+                          .contains(QStringLiteral("gpo")),
+               true);
+    expectBool("COM registry exposes relative line hint",
+               comModeCommandHint(QStringLiteral("g20"))
+                   .contains(QStringLiteral("Go module line")),
+               true);
 
     MyCodeEditor insertEditor;
     insertEditor.resize(360, 120);
@@ -6273,6 +6291,21 @@ static void runComModeRegression(MainWindow& window)
                    activeEditor->comModeActive()
                        && strip
                        && strip->isVisible()
+                       && strip->text() == QStringLiteral("COM"),
+                   true);
+
+        sendWidgetKey(activeEditor, Qt::Key_G, QStringLiteral("g"));
+        sendWidgetKey(activeEditor, Qt::Key_P, QStringLiteral("p"));
+        expectBool("COM strip shows prefix child hints",
+                   strip
+                       && strip->text().contains(QStringLiteral("COM  gp"))
+                       && strip->text().contains(QStringLiteral("gpa"))
+                       && strip->text().contains(QStringLiteral("gpo")),
+                   true);
+        sendWidgetKey(activeEditor, Qt::Key_Escape);
+        expectBool("COM prefix hint clears with Esc",
+                   activeEditor->comModeActive()
+                       && strip
                        && strip->text() == QStringLiteral("COM"),
                    true);
 

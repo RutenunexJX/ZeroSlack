@@ -22,6 +22,7 @@ const QList<ComModeCommandMetadata>& comModeCommandRegistry();
 const ComModeCommandMetadata* findComModeCommandMetadata(
     const QString& command);
 bool comModeCommandRegistryIsValid(QString* reason = nullptr);
+QString comModeCommandHint(const QString& buffer);
 QString executableComModeCommand(const QString& buffer);
 bool isComModeBufferPrefix(const QString& buffer);
 bool isComModeLineBuffer(const QString& buffer);

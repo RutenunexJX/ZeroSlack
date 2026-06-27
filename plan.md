@@ -125,6 +125,7 @@ First milestones:
 - M4.1 introduce registry metadata for existing commands and prefixes
   (complete: `commodecommandregistry` now owns existing command metadata)
 - M4.2 add help/hint rendering in the command strip or picker
+  (complete: command strip renders registry-backed prefix and line hints)
 - M4.3 centralize conflict validation and failure messages
 
 ### 5. Limited Workspace Workflow Additions

@@ -1,5 +1,6 @@
 #include "commodecoordinator.h"
 
+#include "commodecommandregistry.h"
 #include "mycodeeditor.h"
 #include "navigationcommandcoordinator.h"
 #include "projectmodel.h"
@@ -34,8 +35,12 @@ QString stripText(bool active,
         return QString();
     if (!message.isEmpty())
         return QStringLiteral("COM  %1").arg(message);
-    if (!buffer.isEmpty())
+    if (!buffer.isEmpty()) {
+        const QString hint = comModeCommandHint(buffer);
+        if (!hint.isEmpty())
+            return QStringLiteral("COM  %1  %2").arg(buffer, hint);
         return QStringLiteral("COM  %1").arg(buffer);
+    }
     return QStringLiteral("COM");
 }
 
