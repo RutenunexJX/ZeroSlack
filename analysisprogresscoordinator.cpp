@@ -148,6 +148,13 @@ void AnalysisProgressCoordinator::connectToScheduler(AnalysisScheduler* newSched
             &AnalysisProgressCoordinator::showRelationshipAnalysisFinished);
 
     connect(scheduler,
+            &AnalysisScheduler::workspaceRelationshipAnalysisStarted,
+            this,
+            [this](const ProjectSnapshot& project, int) {
+                showRelationshipStageStarted(project.systemVerilogFiles);
+            });
+
+    connect(scheduler,
             &AnalysisScheduler::relationshipAnalysisProgress,
             this,
             &AnalysisProgressCoordinator::showRelationshipProgress);
@@ -326,7 +333,6 @@ void AnalysisProgressCoordinator::handleWorkspaceSymbolAnalysisFinished(
             .arg(filesAnalyzed)
             .arg(totalSymbols),
         3000);
-    showRelationshipStageStarted(project.systemVerilogFiles);
 
     QString message =
         QStringLiteral("Parsed %1 files, %2 symbols")

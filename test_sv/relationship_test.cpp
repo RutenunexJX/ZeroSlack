@@ -3011,6 +3011,77 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                                       SymbolRelationshipEngine::CLOCKS),
                true);
 
+    QTemporaryDir automaticRelationshipWarmupDir;
+    expectBool("automatic relationship warmup temp dir created",
+               automaticRelationshipWarmupDir.isValid(),
+               true);
+    if (automaticRelationshipWarmupDir.isValid()) {
+        QStringList warmupFiles;
+        bool warmupFilesWritten = true;
+        for (int i = 0; i < 161; ++i) {
+            const QString fileName = normalizedPath(
+                automaticRelationshipWarmupDir.filePath(
+                    QStringLiteral("auto_rel_%1.sv").arg(i)));
+            warmupFiles.append(fileName);
+            warmupFilesWritten =
+                warmupFilesWritten
+                && writeTextFile(
+                    fileName,
+                    QStringLiteral("module auto_rel_%1; endmodule\n").arg(i));
+        }
+        expectBool("automatic relationship warmup files written",
+                   warmupFilesWritten,
+                   true);
+
+        const auto automaticRelationshipPreviousSnapshot =
+            SemanticIndex::getInstance()->snapshot();
+        AnalysisScheduler automaticRelationshipScheduler;
+        SymbolAnalyzer automaticRelationshipAnalyzer;
+        SlangManager automaticRelationshipSlang;
+        SmartRelationshipBuilder automaticRelationshipBuilder(
+            nullptr,
+            &automaticRelationshipSlang);
+        automaticRelationshipScheduler.setSymbolAnalyzer(
+            &automaticRelationshipAnalyzer);
+        automaticRelationshipScheduler.setRelationshipBuilder(
+            &automaticRelationshipBuilder);
+
+        bool automaticRelationshipStarted = false;
+        QEventLoop automaticRelationshipLoop;
+        QObject::connect(
+            &automaticRelationshipScheduler,
+            &AnalysisScheduler::workspaceRelationshipAnalysisStarted,
+            &automaticRelationshipLoop,
+            [&](const ProjectSnapshot&, int) {
+                automaticRelationshipStarted = true;
+                automaticRelationshipLoop.quit();
+            });
+
+        ProjectSnapshot automaticRelationshipProject;
+        automaticRelationshipProject.workspaceRoot =
+            normalizedPath(automaticRelationshipWarmupDir.path());
+        automaticRelationshipProject.allFiles = warmupFiles;
+        automaticRelationshipProject.systemVerilogFiles = warmupFiles;
+        automaticRelationshipProject.includeDirs = {
+            automaticRelationshipProject.workspaceRoot};
+        QTimer::singleShot(10000,
+                           &automaticRelationshipLoop,
+                           &QEventLoop::quit);
+        automaticRelationshipScheduler.requestWorkspaceAnalysis(
+            automaticRelationshipProject);
+        automaticRelationshipLoop.exec();
+        expectBool("large workspace starts automatic relationship analysis",
+                   automaticRelationshipStarted,
+                   true);
+        automaticRelationshipScheduler.cancelWorkspaceAnalysis();
+        automaticRelationshipScheduler.cancelWorkspaceRelationshipAnalysis();
+        if (automaticRelationshipPreviousSnapshot)
+            SemanticIndex::getInstance()->setSnapshot(
+                automaticRelationshipPreviousSnapshot);
+        else
+            SemanticIndex::getInstance()->clearSnapshot();
+    }
+
     RelationshipService relationshipService(&index);
 
     RelationshipQuery relationshipQuery;

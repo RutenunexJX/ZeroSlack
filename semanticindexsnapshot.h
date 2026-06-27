@@ -56,10 +56,15 @@ private:
                           QHash<QString, QString> fileContents);
 
     QList<SemanticSymbolRecord> m_symbolRecords;
+    QHash<QString, QList<int>> m_symbolRecordIndexesByFile;
+    QHash<QString, QList<int>> m_symbolRecordIndexesByName;
+    QHash<QString, int> m_symbolRecordIndexByStableKey;
+    QHash<int, int> m_symbolRecordIndexByLocalHandle;
     QList<SemanticRelationship> m_relationships;
     QList<SemanticDiagnostic> m_diagnostics;
     QHash<QString, QString> m_fileContents;
 
+    void rebuildSymbolIndexes();
     QList<SemanticSymbolRecord> sortedDefinitionRecords(
         const QList<SemanticSymbolRecord>& records,
         const SemanticQueryContext& context) const;

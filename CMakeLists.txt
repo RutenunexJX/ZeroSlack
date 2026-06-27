@@ -465,6 +465,9 @@ if(BUILD_TESTING)
     add_executable(large_file_perf_test test_sv/large_file_perf_test.cpp)
     target_link_libraries(large_file_perf_test PRIVATE zeroslack_core Qt6::Test)
 
+    add_executable(relationship_perf_test test_sv/relationship_perf_test.cpp)
+    target_link_libraries(relationship_perf_test PRIVATE zeroslack_core)
+
     add_test(NAME ts_doc_test
         COMMAND ${CMAKE_COMMAND} -E env
             "PATH=${ZEROSLACK_TEST_PATH}"

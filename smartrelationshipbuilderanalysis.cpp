@@ -231,83 +231,94 @@ SemanticSymbolRecord SmartRelationshipBuilder::findSymbolRecordByName(
     const AnalysisContext& context,
     int lineNumber)
 {
-    QList<SemanticSymbolRecord> candidates;
-    for (const SemanticSymbolRecord& record
-         : std::as_const(context.fileSymbolRecords)) {
-        if (record.name == symbolName)
-            candidates.append(record);
-    }
+    const QString cacheKey =
+        QStringLiteral("%1:%2").arg(symbolName).arg(lineNumber);
+    const auto cacheIt = context.symbolRecordLookupCache.constFind(cacheKey);
+    if (cacheIt != context.symbolRecordLookupCache.constEnd())
+        return cacheIt.value();
+
+    auto cacheAndReturn = [&context, &cacheKey](
+                              const SemanticSymbolRecord& record) {
+        context.symbolRecordLookupCache.insert(cacheKey, record);
+        return record;
+    };
+
+    QList<SemanticSymbolRecord> candidates =
+        context.recordsByName.value(symbolName);
     if (!candidates.isEmpty()) {
         const QString containingModule =
             lineNumber > 0 ? findContainingModule(lineNumber, context) : QString();
-        std::stable_sort(candidates.begin(),
-                         candidates.end(),
-                         [&containingModule, &context, lineNumber](
-                             const SemanticSymbolRecord& lhs,
-                             const SemanticSymbolRecord& rhs) {
-            auto score = [&containingModule, &context, lineNumber](
-                             const SemanticSymbolRecord& record) {
-                int value = 0;
-                if (!containingModule.isEmpty()
-                    && record.owner.name == containingModule) {
-                    value += 100;
-                }
-                if (lineNumber > 0
-                    && record.location.startLine <= lineNumber
-                    && (record.location.endLine <= 0
-                        || record.location.endLine >= lineNumber)) {
-                    value += 50;
-                }
-                if (!context.currentModuleName.isEmpty()
-                    && record.owner.name == context.currentModuleName) {
-                    value += 10;
-                }
-                return value;
-            };
-            const int leftScore = score(lhs);
-            const int rightScore = score(rhs);
-            if (leftScore != rightScore)
-                return leftScore > rightScore;
-            if (lhs.location.startLine != rhs.location.startLine)
-                return lhs.location.startLine < rhs.location.startLine;
-            return lhs.localHandle < rhs.localHandle;
-        });
-        return candidates.first();
+        auto score = [&containingModule, &context, lineNumber](
+                         const SemanticSymbolRecord& record) {
+            int value = 0;
+            if (!containingModule.isEmpty()
+                && record.owner.name == containingModule) {
+                value += 100;
+            }
+            if (lineNumber > 0
+                && record.location.startLine <= lineNumber
+                && (record.location.endLine <= 0
+                    || record.location.endLine >= lineNumber)) {
+                value += 50;
+            }
+            if (!context.currentModuleName.isEmpty()
+                && record.owner.name == context.currentModuleName) {
+                value += 10;
+            }
+            return value;
+        };
+
+        SemanticSymbolRecord best = candidates.first();
+        int bestScore = score(best);
+        for (int i = 1; i < candidates.size(); ++i) {
+            const SemanticSymbolRecord& candidate = candidates.at(i);
+            const int candidateScore = score(candidate);
+            const bool better =
+                candidateScore > bestScore
+                || (candidateScore == bestScore
+                    && candidate.location.startLine < best.location.startLine)
+                || (candidateScore == bestScore
+                    && candidate.location.startLine == best.location.startLine
+                    && candidate.localHandle < best.localHandle);
+            if (better) {
+                best = candidate;
+                bestScore = candidateScore;
+            }
+        }
+        return cacheAndReturn(best);
     }
 
     if (context.localSymbolHandles.contains(symbolName)) {
         const int localHandle = context.localSymbolHandles.value(symbolName);
-        for (const SemanticSymbolRecord& record
-             : std::as_const(context.fileSymbolRecords)) {
-            if (record.localHandle == localHandle)
-                return record;
-        }
+        const auto it = context.recordsByLocalHandle.constFind(localHandle);
+        if (it != context.recordsByLocalHandle.constEnd())
+            return cacheAndReturn(it.value());
 
         SemanticSymbolRecord record;
         record.localHandle = localHandle;
         record.name = symbolName;
-        return record;
+        return cacheAndReturn(record);
     }
 
     if (context.snapshot) {
         const QList<SemanticSymbolRecord> definitions =
             context.snapshot->findDefinitionRecords(symbolName);
         if (!definitions.isEmpty()) {
-            return definitions.first();
+            return cacheAndReturn(definitions.first());
         }
     }
 
-    if (m_symbolRecordProvider) {
+    if (!context.snapshot && m_symbolRecordProvider) {
         const QList<SemanticSymbolRecord> records = m_symbolRecordProvider(QString());
         for (const SemanticSymbolRecord& record : records) {
             if (record.name == symbolName)
-                return record;
+                return cacheAndReturn(record);
         }
     }
 
     SemanticSymbolRecord missing;
     missing.localHandle = -1;
-    return missing;
+    return cacheAndReturn(missing);
 }
 
 int SmartRelationshipBuilder::findSymbolLocalHandleByName(
@@ -349,19 +360,22 @@ int SmartRelationshipBuilder::getContainingModuleLocalHandle(
     int lineNumber,
     const AnalysisContext& context)
 {
+    const auto cached = context.containingModuleHandleByLine.constFind(lineNumber);
+    if (cached != context.containingModuleHandleByLine.constEnd())
+        return cached.value();
+
     int foundHandle = -1;
     int foundStart = -1;
     for (const SemanticSymbolRecord& record
-         : std::as_const(context.fileSymbolRecords)) {
-        if (SymbolTaxonomy::isModuleDeclaration(
-                semanticMetadataForSymbolRecord(record))
-            && record.location.startLine <= lineNumber
+         : std::as_const(context.moduleRecords)) {
+        if (record.location.startLine <= lineNumber
             && record.location.endLine >= lineNumber
             && (foundHandle < 0 || record.location.startLine > foundStart)) {
             foundHandle = record.localHandle;
             foundStart = record.location.startLine;
         }
     }
+    context.containingModuleHandleByLine.insert(lineNumber, foundHandle);
     return foundHandle;
 }
 
@@ -370,12 +384,10 @@ QString SmartRelationshipBuilder::findContainingModule(int lineNumber, const Ana
     int localHandle = getContainingModuleLocalHandle(lineNumber, context);
     if (localHandle < 0)
         return QString();
-    for (const SemanticSymbolRecord& record
-         : std::as_const(context.fileSymbolRecords)) {
-        if (record.localHandle == localHandle)
-            return record.name;
-    }
-    return QString();
+    const auto it = context.recordsByLocalHandle.constFind(localHandle);
+    return it == context.recordsByLocalHandle.constEnd()
+        ? QString()
+        : it.value().name;
 }
 
 QSet<int> SmartRelationshipBuilder::getAffectedSymbolLocalHandles(

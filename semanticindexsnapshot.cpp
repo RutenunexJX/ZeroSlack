@@ -1,6 +1,7 @@
 #include "semanticindexsnapshot.h"
 
 #include <QDir>
+#include <QHash>
 #include <QSet>
 #include <utility>
 
@@ -12,92 +13,92 @@ QString normalizedSnapshotFileName(const QString& fileName)
     return QDir::cleanPath(QDir::fromNativeSeparators(QFileInfo(fileName).absoluteFilePath()));
 }
 
-int snapshotLocalHandleForRecord(const SemanticSymbolRecord& record)
-{
-    return record.localHandle;
-}
+struct SnapshotRecordLookup {
+    explicit SnapshotRecordLookup(const QList<SemanticSymbolRecord>& records)
+    {
+        recordByLocalHandle.reserve(records.size());
+        localHandleByStableKey.reserve(records.size());
+        for (const SemanticSymbolRecord& record : records) {
+            if (record.localHandle >= 0)
+                recordByLocalHandle.insert(record.localHandle, record);
 
-SemanticSymbolRecord snapshotRecordByLocalHandle(
-    const QList<SemanticSymbolRecord>& records,
-    int localHandle)
-{
-    for (const SemanticSymbolRecord& record : records) {
-        if (snapshotLocalHandleForRecord(record) == localHandle)
-            return record;
+            const QString stableKey = symbolStableKeyText(record.stableKey);
+            if (!stableKey.isEmpty()
+                && !localHandleByStableKey.contains(stableKey)) {
+                localHandleByStableKey.insert(stableKey, record.localHandle);
+            }
+        }
     }
-    return {};
-}
+
+    SymbolStableKey stableKeyForLocalHandle(int localHandle) const
+    {
+        const auto it = recordByLocalHandle.constFind(localHandle);
+        return it == recordByLocalHandle.constEnd()
+            ? SymbolStableKey()
+            : it.value().stableKey;
+    }
+
+    int localHandleForStableKey(const SymbolStableKey& key) const
+    {
+        const QString stableKey = symbolStableKeyText(key);
+        if (stableKey.isEmpty())
+            return -1;
+        return localHandleByStableKey.value(stableKey, -1);
+    }
+
+    QHash<int, SemanticSymbolRecord> recordByLocalHandle;
+    QHash<QString, int> localHandleByStableKey;
+};
 
 void fillRelationshipStableKeys(
     SemanticRelationship* relationship,
-    const QList<SemanticSymbolRecord>& records)
+    const SnapshotRecordLookup& lookup)
 {
     if (!relationship)
         return;
 
     if (!relationship->fromStableKey.isValid()) {
         relationship->fromStableKey =
-            snapshotRecordByLocalHandle(
-                records, relationship->fromId).stableKey;
+            lookup.stableKeyForLocalHandle(relationship->fromId);
     }
     if (!relationship->toStableKey.isValid()) {
         relationship->toStableKey =
-            snapshotRecordByLocalHandle(
-                records, relationship->toId).stableKey;
+            lookup.stableKeyForLocalHandle(relationship->toId);
     }
-}
-
-int snapshotLocalHandleByStableKey(
-    const QList<SemanticSymbolRecord>& records,
-    const SymbolStableKey& key)
-{
-    if (!key.isValid())
-        return -1;
-
-    for (const SemanticSymbolRecord& record : records) {
-        if (record.stableKey == key)
-            return snapshotLocalHandleForRecord(record);
-    }
-    return -1;
 }
 
 SemanticRelationship rebindRelationshipToSnapshot(
     const SemanticRelationship& relationship,
-    const QList<SemanticSymbolRecord>& records)
+    const SnapshotRecordLookup& lookup)
 {
     SemanticRelationship rebound = relationship;
-    fillRelationshipStableKeys(&rebound, records);
+    fillRelationshipStableKeys(&rebound, lookup);
 
     const int reboundFromHandle =
-        snapshotLocalHandleByStableKey(records, rebound.fromStableKey);
+        lookup.localHandleForStableKey(rebound.fromStableKey);
     if (reboundFromHandle >= 0)
         rebound.fromId = reboundFromHandle;
 
     const int reboundToHandle =
-        snapshotLocalHandleByStableKey(records, rebound.toStableKey);
+        lookup.localHandleForStableKey(rebound.toStableKey);
     if (reboundToHandle >= 0)
         rebound.toId = reboundToHandle;
 
-    fillRelationshipStableKeys(&rebound, records);
+    fillRelationshipStableKeys(&rebound, lookup);
     return rebound;
 }
 
-QString snapshotRelationshipDedupeKey(
-    const SemanticRelationship& relationship,
-    const QList<SemanticSymbolRecord>& records)
+QString snapshotRelationshipDedupeKey(const SemanticRelationship& relationship)
 {
-    SemanticRelationship keyedRelationship =
-        rebindRelationshipToSnapshot(relationship, records);
-
     const QString stableKey =
-        semanticRelationshipStableKeyText(keyedRelationship);
+        semanticRelationshipStableKeyText(relationship);
     if (!stableKey.isEmpty())
         return stableKey;
 
     return QStringLiteral("local:%1:%2:%3")
-        .arg(keyedRelationship.fromId)
-        .arg(keyedRelationship.toId)
-        .arg(static_cast<int>(keyedRelationship.type));
+        .arg(relationship.fromId)
+        .arg(relationship.toId)
+        .arg(static_cast<int>(relationship.type));
 }
 
 }
@@ -122,8 +123,10 @@ SemanticIndexSnapshot::SemanticIndexSnapshot(
       m_diagnostics(std::move(diagnostics)),
       m_fileContents(std::move(fileContents))
 {
+    rebuildSymbolIndexes();
+    const SnapshotRecordLookup lookup(m_symbolRecords);
     for (SemanticRelationship& relationship : m_relationships)
-        relationship = rebindRelationshipToSnapshot(relationship, m_symbolRecords);
+        relationship = rebindRelationshipToSnapshot(relationship, lookup);
 }
 
 SemanticIndexSnapshot SemanticIndexSnapshot::fromSymbolRecords(
@@ -139,24 +142,62 @@ SemanticIndexSnapshot SemanticIndexSnapshot::fromSymbolRecords(
                                  std::move(fileContents));
 }
 
+void SemanticIndexSnapshot::rebuildSymbolIndexes()
+{
+    m_symbolRecordIndexesByFile.clear();
+    m_symbolRecordIndexesByName.clear();
+    m_symbolRecordIndexByStableKey.clear();
+    m_symbolRecordIndexByLocalHandle.clear();
+
+    m_symbolRecordIndexesByFile.reserve(m_symbolRecords.size());
+    m_symbolRecordIndexesByName.reserve(m_symbolRecords.size());
+    m_symbolRecordIndexByStableKey.reserve(m_symbolRecords.size());
+    m_symbolRecordIndexByLocalHandle.reserve(m_symbolRecords.size());
+
+    for (int i = 0; i < m_symbolRecords.size(); ++i) {
+        const SemanticSymbolRecord& record = m_symbolRecords.at(i);
+        const QString fileName = normalizedSnapshotFileName(record.location.fileName);
+        if (!fileName.isEmpty())
+            m_symbolRecordIndexesByFile[fileName].append(i);
+
+        if (!record.name.isEmpty())
+            m_symbolRecordIndexesByName[record.name].append(i);
+
+        const QString stableKey = symbolStableKeyText(record.stableKey);
+        if (!stableKey.isEmpty()
+            && !m_symbolRecordIndexByStableKey.contains(stableKey)) {
+            m_symbolRecordIndexByStableKey.insert(stableKey, i);
+        }
+
+        if (record.localHandle >= 0
+            && !m_symbolRecordIndexByLocalHandle.contains(record.localHandle)) {
+            m_symbolRecordIndexByLocalHandle.insert(record.localHandle, i);
+        }
+    }
+}
+
 SemanticIndexSnapshot SemanticIndexSnapshot::withAdditionalRelationships(
     const QList<SemanticRelationship>& relationships) const
 {
     QList<SemanticRelationship> merged = m_relationships;
+    merged.reserve(m_relationships.size() + relationships.size());
+    const SnapshotRecordLookup lookup(m_symbolRecords);
     QSet<QString> seen;
+    seen.reserve(m_relationships.size() + relationships.size());
     for (const SemanticRelationship& relationship : std::as_const(merged)) {
         const QString key =
-            snapshotRelationshipDedupeKey(relationship, m_symbolRecords);
+            snapshotRelationshipDedupeKey(relationship);
         if (!key.isEmpty())
             seen.insert(key);
     }
 
     for (const SemanticRelationship& relationship : relationships) {
-        const SemanticRelationship rebound = rebindRelationship(relationship);
+        const SemanticRelationship rebound =
+            rebindRelationshipToSnapshot(relationship, lookup);
         if (rebound.fromId < 0 || rebound.toId < 0)
             continue;
         const QString key =
-            snapshotRelationshipDedupeKey(rebound, m_symbolRecords);
+            snapshotRelationshipDedupeKey(rebound);
         if (seen.contains(key))
             continue;
         seen.insert(key);

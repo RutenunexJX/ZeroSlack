@@ -110,10 +110,13 @@ WorkspaceRelationshipAnalysisResult RelationshipAnalysisWorker::analyzeWorkspace
         return finishCancelled();
 
     const QStringList svFiles = project.systemVerilogFiles;
+    QElapsedTimer stageTimer;
+    stageTimer.start();
     const QHash<QString, RelationshipExtractionInfo> relationshipInfoByFile =
         relationshipBuilder->extractWorkspaceRelationshipInfo(svFiles,
                                                               project.includeDirs,
                                                               project.defines);
+    result.extractionMs = stageTimer.elapsed();
     if (relationshipBuilder->isCancelled())
         return finishCancelled();
     result.fileRelationships.reserve(svFiles.size());
@@ -121,16 +124,19 @@ WorkspaceRelationshipAnalysisResult RelationshipAnalysisWorker::analyzeWorkspace
     for (const QString& filePath : svFiles) {
         if (relationshipBuilder->isCancelled())
             return finishCancelled();
+        stageTimer.restart();
         QFile file(filePath);
         if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
             continue;
         const QString content = QTextStream(&file).readAll();
+        result.fileReadMs += stageTimer.elapsed();
         const QList<SemanticSymbolRecord> fileSymbols =
             fileSymbolRecords(baseSnapshot, filePath);
         const auto infoIt =
             relationshipInfoByFile.constFind(normalizedFileKey(filePath));
         const RelationshipExtractionInfo* relationshipInfo =
             infoIt == relationshipInfoByFile.constEnd() ? nullptr : &infoIt.value();
+        stageTimer.restart();
         const QVector<RelationshipToAdd> relationships =
             relationshipBuilder->computeRelationships(
                 filePath,
@@ -140,18 +146,23 @@ WorkspaceRelationshipAnalysisResult RelationshipAnalysisWorker::analyzeWorkspace
                 project.includeDirs,
                 project.defines,
                 relationshipInfo);
+        result.computeMs += stageTimer.elapsed();
         if (relationshipBuilder->isCancelled())
             return finishCancelled();
+        stageTimer.restart();
         const QList<SemanticRelationship> semanticRelationships =
             toSemanticRelationships(relationships);
         result.fileRelationships.append({filePath, relationships});
         ++result.processedFiles;
         result.relationshipCount += semanticRelationships.size();
         newRelationships.append(semanticRelationships);
+        result.conversionMs += stageTimer.elapsed();
     }
+    stageTimer.restart();
     result.semanticSnapshot =
         SemanticIndex::getInstance()->snapshotWithAdditionalRelationships(
             baseSnapshot.snapshot,
             newRelationships);
+    result.snapshotMergeMs = stageTimer.elapsed();
     return finish();
 }

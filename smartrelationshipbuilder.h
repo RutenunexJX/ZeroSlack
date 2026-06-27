@@ -102,6 +102,11 @@ private:
         QString currentModuleName;
         int currentModuleLocalHandle = -1;
         QHash<QString, int> localSymbolHandles;
+        QHash<QString, QList<SemanticSymbolRecord>> recordsByName;
+        QHash<int, SemanticSymbolRecord> recordsByLocalHandle;
+        mutable QHash<QString, SemanticSymbolRecord> symbolRecordLookupCache;
+        mutable QHash<int, int> containingModuleHandleByLine;
+        QList<SemanticSymbolRecord> moduleRecords;
         QList<SemanticSymbolRecord> fileSymbolRecords;
         RelationshipExtractionInfo relationshipInfo;
         bool relationshipInfoLoaded = false;

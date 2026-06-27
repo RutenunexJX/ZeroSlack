@@ -20,6 +20,11 @@ struct WorkspaceRelationshipAnalysisResult {
     int processedFiles = 0;
     int relationshipCount = 0;
     qint64 elapsedMs = -1;
+    qint64 extractionMs = -1;
+    qint64 fileReadMs = 0;
+    qint64 computeMs = 0;
+    qint64 conversionMs = 0;
+    qint64 snapshotMergeMs = -1;
 };
 
 struct SingleFileRelationshipAnalysisResult {

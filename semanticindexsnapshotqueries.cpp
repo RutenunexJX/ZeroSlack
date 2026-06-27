@@ -57,12 +57,12 @@ QList<SemanticSymbolRecord> SemanticIndexSnapshot::getSymbolRecords(
 
     QList<SemanticSymbolRecord> result;
     const QString normalizedTarget = normalizedSnapshotQueryFileName(fileName);
-    for (const SemanticSymbolRecord& record : m_symbolRecords) {
-        if (record.location.fileName == fileName
-            || normalizedSnapshotQueryFileName(record.location.fileName)
-                   == normalizedTarget) {
-            result.append(record);
-        }
+    const QList<int> indexes =
+        m_symbolRecordIndexesByFile.value(normalizedTarget);
+    result.reserve(indexes.size());
+    for (int index : indexes) {
+        if (index >= 0 && index < m_symbolRecords.size())
+            result.append(m_symbolRecords.at(index));
     }
     return result;
 }
@@ -79,10 +79,10 @@ SemanticSymbolRecord SemanticIndexSnapshot::getSymbolRecordByStableKey(
     if (!key.isValid())
         return {};
 
-    for (const SemanticSymbolRecord& record : m_symbolRecords) {
-        if (record.stableKey == key)
-            return record;
-    }
+    const int index =
+        m_symbolRecordIndexByStableKey.value(symbolStableKeyText(key), -1);
+    if (index >= 0 && index < m_symbolRecords.size())
+        return m_symbolRecords.at(index);
     return {};
 }
 
@@ -94,9 +94,11 @@ QList<SemanticSymbolRecord> SemanticIndexSnapshot::findDefinitionRecords(
         return {};
 
     QList<SemanticSymbolRecord> result;
-    for (const SemanticSymbolRecord& record : m_symbolRecords) {
-        if (record.name == name)
-            result.append(record);
+    const QList<int> indexes = m_symbolRecordIndexesByName.value(name);
+    result.reserve(indexes.size());
+    for (int index : indexes) {
+        if (index >= 0 && index < m_symbolRecords.size())
+            result.append(m_symbolRecords.at(index));
     }
     return sortedDefinitionRecords(result, context);
 }
@@ -106,20 +108,32 @@ SemanticRelationship SemanticIndexSnapshot::rebindRelationship(
 {
     SemanticRelationship rebound = relationship;
 
-    rebound.fromStableKey =
-        relationshipEndpointStableKey(*this, rebound, true);
-    rebound.toStableKey =
-        relationshipEndpointStableKey(*this, rebound, false);
+    if (!rebound.fromStableKey.isValid()) {
+        const int index =
+            m_symbolRecordIndexByLocalHandle.value(rebound.fromId, -1);
+        if (index >= 0 && index < m_symbolRecords.size())
+            rebound.fromStableKey = m_symbolRecords.at(index).stableKey;
+    }
+    if (!rebound.toStableKey.isValid()) {
+        const int index =
+            m_symbolRecordIndexByLocalHandle.value(rebound.toId, -1);
+        if (index >= 0 && index < m_symbolRecords.size())
+            rebound.toStableKey = m_symbolRecords.at(index).stableKey;
+    }
 
-    const SemanticSymbolRecord fromRecord =
-        getSymbolRecordByStableKey(rebound.fromStableKey);
-    if (fromRecord.localHandle >= 0)
-        rebound.fromId = fromRecord.localHandle;
+    int index =
+        m_symbolRecordIndexByStableKey.value(
+            symbolStableKeyText(rebound.fromStableKey),
+            -1);
+    if (index >= 0 && index < m_symbolRecords.size())
+        rebound.fromId = m_symbolRecords.at(index).localHandle;
 
-    const SemanticSymbolRecord toRecord =
-        getSymbolRecordByStableKey(rebound.toStableKey);
-    if (toRecord.localHandle >= 0)
-        rebound.toId = toRecord.localHandle;
+    index =
+        m_symbolRecordIndexByStableKey.value(
+            symbolStableKeyText(rebound.toStableKey),
+            -1);
+    if (index >= 0 && index < m_symbolRecords.size())
+        rebound.toId = m_symbolRecords.at(index).localHandle;
 
     return rebound;
 }
