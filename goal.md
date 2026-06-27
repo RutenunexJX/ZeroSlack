@@ -28,7 +28,9 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
 
 ## Current Goal State
 
-Current milestone: `HWA.3 Update docs with confirmed status and open gaps`.
+Current milestone: none after HWA.3.
+
+Next work should wait for the next explicit scoped request.
 
 Status:
 
@@ -442,16 +444,19 @@ Status:
   `relationship_test`, `large_file_perf_test`, and `relationship_perf_test`;
   documentation inspection plus `git diff --check`.
 
-Completion criteria for HWA.3:
-
-- update the Huge Workspace docs with confirmed current status and explicit
-  open gaps from HWA.1/HWA.2 evidence
-- do not add or implement Huge Workspace UX features
-- keep the audit scoped to owner status, existing verification, safe
-  verification results, and remaining audit gaps
-- `readme.md`, `plan.md`, and `goal.md` are updated
-- `git diff --check` passes
-- milestone commit is pushed
+- HWA.3 Huge Workspace Confirmed Status And Gaps is complete:
+  the Huge Workspace docs now state that owner boundaries exist for planning,
+  request coalescing, symbol cancellation/expiration, staged publication,
+  relationship cancellation, Activity telemetry, and semantic snapshot query
+  exposure. They also state the remaining audit gaps: HWA.2 did not run test
+  executables, full `ctest` was not run in the current dialog-prone
+  environment, `relationship_perf_test` was not freshly executed against
+  `test_sv/huge_prj`, Activity telemetry was not revalidated in a live GUI
+  session, and the prior Release `huge_prj` timings remain reference points
+  rather than refreshed HWA.3 measurements. No Huge Workspace UX or behavior
+  change was added.
+- Focused verification for HWA.3: documentation inspection plus
+  `git diff --check`.
 
 ## Track 1: Editor Daily Operations Completion
 
@@ -699,6 +704,7 @@ Milestones:
 - HWA.2 Run safe verification or compile relevant targets.
   (complete: Release build of related targets passed)
 - HWA.3 Update docs with confirmed status and open gaps.
+  (complete: confirmed status and open audit gaps documented)
 
 ## Completion Order
 

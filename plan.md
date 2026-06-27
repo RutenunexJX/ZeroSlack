@@ -1002,6 +1002,7 @@ Audit milestones:
   (complete: Release build of the HWA-related test/harness targets passed
   without launching GUI executables)
 - HWA.3 update docs with confirmed status and gaps
+  (complete: current status and remaining audit gaps are documented)
 
 HWA.1 inventory status:
 
@@ -1036,6 +1037,32 @@ HWA.2 verification status:
   directory.
 - `ctest` was not run for HWA.2, so no long-running CTest or external
   memory-read dialog check was needed in this milestone.
+
+HWA.3 confirmed status:
+
+- Owner boundaries are documented for planning, request coalescing, symbol
+  cancellation/expiration, staged publication, relationship cancellation,
+  Activity telemetry, and `SemanticIndexSnapshot` query exposure.
+- Existing verification anchors cover the intended strategy surfaces:
+  `completion_test`, `relationship_test`, `large_file_perf_test`, and
+  `relationship_perf_test`.
+- Release compile/link verification for all four HWA-related targets passed in
+  HWA.2.
+- No Huge Workspace UX or behavior change was implemented during the audit.
+
+HWA.3 open audit gaps:
+
+- HWA.2 did not run the test executables, so runtime behavior is not newly
+  confirmed by this audit.
+- Full `ctest` was not run because the current environment has recently shown
+  external Windows GUI/memory-read dialogs during test execution.
+- `relationship_perf_test` was compiled but not executed against
+  `test_sv/huge_prj`; the listed Release `huge_prj` timings remain prior
+  reference points, not freshly refreshed HWA.3 measurements.
+- Activity telemetry was inspected through owner wiring and test anchors, not
+  revalidated in a live GUI session.
+- Future Huge Workspace work should first close these audit gaps with a safe
+  runtime setup before proposing UX or behavior changes.
 
 ## Milestone Definition Of Done
 
