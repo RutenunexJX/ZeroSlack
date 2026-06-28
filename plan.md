@@ -1184,6 +1184,67 @@ M12.3 verification status:
   It still fails on existing VENDOR ctrl-click and Wave Preview checks, but the
   required workspace/cache regression checks pass.
 
+### 13. References / Relationships Workflow Closure
+
+Goal: make source-symbol navigation, references, relationship rows, and graph
+result jumps easy to find, jump from, and return from.
+
+Allowed scope:
+
+- source-symbol right-click workflow organization
+- References result grouping, query context, empty-state reasons, copying, and
+  jumps
+- Relationships result source jumps and existing graph entry points
+- unified navigation path with Back/Forward history isolation per workspace
+- status-bar or panel feedback for jump failures
+
+Not in scope:
+
+- package tools
+- macro/define semantics
+- Wave Preview expansion
+- new graph types
+- complex graph algorithms
+- expanded State Transition Graph trigger rules
+
+Milestones:
+
+- M13.1 Unified Source-Symbol Context Menu
+  (complete: the symbol context menu always shows Go to Definition, Find
+  References, Show Relationships, Signal Kernel Graph, State Transition Graph,
+  and Module Block Diagram; disabled actions expose reasons; Module Block
+  Diagram is limited to existing module/interface definitions; current-state
+  names remain rejected)
+- M13.2 References Panel Workflow Closure
+  (pending: query context, empty reasons, stable jump/flash, copy path or
+  file:line)
+- M13.3 Relationships Panel Workflow Closure
+  (pending: source-code jumps for rows, instance/module-definition jumps where
+  existing data supports them, signal driver/consumer/declaration jumps from
+  existing relationships, and only existing graph entry points)
+- M13.4 Unified Navigation Failure Feedback And History Isolation
+  (pending: References, Relationships, and graph jumps share one navigation
+  path; Back/Forward history is isolated by workspace; failures are visible)
+- M13.5 Verification And Documentation
+  (pending: build `completion_test` and `gui_smoke_test`; run
+  `ctest -R "^completion_test$" --output-on-failure`; run
+  `ctest -R "^gui_smoke_test$" --output-on-failure` when safe, repeating once
+  if it is flaky)
+
+M13.1 implementation status:
+
+- Complete: source-symbol context menu actions are stable and do not disappear
+  when disabled.
+- Complete: disabled source-symbol actions carry status/tooltip reasons such
+  as no source file, no symbol under cursor, symbol not indexed, next-state
+  gating, or module-block gating.
+- Complete: Module Block Diagram activation is UI-gated to existing
+  module/interface definition records, so ordinary signals remain disabled
+  without adding new semantic analysis.
+- Complete: this milestone is workflow/UI closure only. It does not implement
+  package tools, macro/define semantics, Wave Preview expansion, new graph
+  algorithms, or broader State Transition Graph triggers.
+
 ## Huge Workspace Status Audit
 
 Huge Workspace is not an active UX expansion track in this plan. Only audit and

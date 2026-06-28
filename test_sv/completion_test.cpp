@@ -6742,21 +6742,26 @@ int main(int argc, char** argv) {
             return item && item->enabled == enabled;
         };
     expectBool("EditorSemanticContext source menu enabled",
-               sourceMenuState.items.size() == 5
-                   && sourceMenuState.items.at(0).enabled
+               sourceMenuState.items.size() == 6
+                   && !sourceMenuState.items.at(0).enabled
                    && sourceMenuState.items.at(0).action
-                       == SourceSymbolAction::FindReferences
+                       == SourceSymbolAction::GoToDefinition
+                   && sourceMenuState.items.at(0).disabledReason
+                       == QStringLiteral("Symbol not indexed")
                    && sourceMenuState.items.at(1).enabled
                    && sourceMenuState.items.at(1).action
-                       == SourceSymbolAction::ShowRelationships
+                       == SourceSymbolAction::FindReferences
                    && sourceMenuState.items.at(2).enabled
                    && sourceMenuState.items.at(2).action
-                       == SourceSymbolAction::ShowSignalKernelGraph
-                   && !sourceMenuState.items.at(3).enabled
+                       == SourceSymbolAction::ShowRelationships
+                   && sourceMenuState.items.at(3).enabled
                    && sourceMenuState.items.at(3).action
-                       == SourceSymbolAction::ShowStateTransitionGraph
+                       == SourceSymbolAction::ShowSignalKernelGraph
                    && !sourceMenuState.items.at(4).enabled
                    && sourceMenuState.items.at(4).action
+                       == SourceSymbolAction::ShowStateTransitionGraph
+                   && !sourceMenuState.items.at(5).enabled
+                   && sourceMenuState.items.at(5).action
                        == SourceSymbolAction::ShowModuleBlockDiagram,
                true);
     const EditorSourceSymbolActionRequestState sourceRefsRequest =
@@ -6973,7 +6978,7 @@ int main(int argc, char** argv) {
                 SourceSymbolAction::ShowStateTransitionGraph,
                 nsContext);
     expectBool("EditorSemanticContext state transition ns menu",
-               nsMenuState.items.size() == 5
+               nsMenuState.items.size() == 6
                    && sourceMenuItemEnabled(
                        nsMenuState,
                        SourceSymbolAction::ShowStateTransitionGraph,
@@ -6998,7 +7003,7 @@ int main(int argc, char** argv) {
                 SourceSymbolAction::ShowStateTransitionGraph,
                 nextStateContext);
     expectBool("EditorSemanticContext state transition next_state menu",
-               nextStateMenuState.items.size() == 5
+               nextStateMenuState.items.size() == 6
                    && sourceMenuItemEnabled(
                        nextStateMenuState,
                        SourceSymbolAction::ShowStateTransitionGraph,
@@ -7022,7 +7027,7 @@ int main(int argc, char** argv) {
                 SourceSymbolAction::ShowStateTransitionGraph,
                 suffixedNextStateContext);
     expectBool("EditorSemanticContext state transition suffixed ns menu",
-               suffixedNextStateMenuState.items.size() == 5
+               suffixedNextStateMenuState.items.size() == 6
                    && sourceMenuItemEnabled(
                        suffixedNextStateMenuState,
                        SourceSymbolAction::ShowStateTransitionGraph,
@@ -7046,7 +7051,7 @@ int main(int argc, char** argv) {
                 SourceSymbolAction::ShowStateTransitionGraph,
                 csContext);
     expectBool("EditorSemanticContext state transition rejects cs",
-               csMenuState.items.size() == 5
+               csMenuState.items.size() == 6
                    && sourceMenuItemEnabled(
                        csMenuState,
                        SourceSymbolAction::ShowStateTransitionGraph,
@@ -7068,7 +7073,7 @@ int main(int argc, char** argv) {
                 SourceSymbolAction::ShowStateTransitionGraph,
                 currentStateContext);
     expectBool("EditorSemanticContext state transition rejects current_state",
-               currentStateMenuState.items.size() == 5
+               currentStateMenuState.items.size() == 6
                    && sourceMenuItemEnabled(
                        currentStateMenuState,
                        SourceSymbolAction::ShowStateTransitionGraph,
@@ -7090,7 +7095,7 @@ int main(int argc, char** argv) {
                 SourceSymbolAction::ShowStateTransitionGraph,
                 suffixedCurrentStateContext);
     expectBool("EditorSemanticContext state transition rejects suffixed cs",
-               suffixedCurrentStateMenuState.items.size() == 5
+               suffixedCurrentStateMenuState.items.size() == 6
                    && sourceMenuItemEnabled(
                        suffixedCurrentStateMenuState,
                        SourceSymbolAction::ShowStateTransitionGraph,
@@ -7129,7 +7134,7 @@ int main(int argc, char** argv) {
                 SourceSymbolAction::ShowModuleBlockDiagram,
                 moduleBlockContext);
     expectBool("EditorSemanticContext module block module menu",
-               moduleBlockMenuState.items.size() == 5
+               moduleBlockMenuState.items.size() == 6
                    && sourceMenuItemEnabled(
                        moduleBlockMenuState,
                        SourceSymbolAction::ShowModuleBlockDiagram,
@@ -7154,7 +7159,16 @@ int main(int argc, char** argv) {
         EditorSemanticContextService::getInstance()
             ->sourceSymbolContextMenuState(unavailableSourceSymbolContext);
     expectBool("EditorSemanticContext source menu disabled",
-               disabledSourceMenuState.items.size() == 5
+               disabledSourceMenuState.items.size() == 6
+                   && sourceMenuItemEnabled(
+                       disabledSourceMenuState,
+                       SourceSymbolAction::GoToDefinition,
+                       false)
+                   && sourceMenuItemForAction(
+                       disabledSourceMenuState,
+                       SourceSymbolAction::GoToDefinition)
+                          ->disabledReason
+                       == QStringLiteral("No source file for symbol navigation")
                    && sourceMenuItemEnabled(
                        disabledSourceMenuState,
                        SourceSymbolAction::FindReferences,

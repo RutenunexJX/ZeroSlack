@@ -83,6 +83,45 @@ int numericPopupSelectionStart(const QString& text,
 
     return startPosition;
 }
+
+bool isSourceIdentifierText(const QString& text)
+{
+    if (text.isEmpty())
+        return false;
+    const QChar first = text.at(0);
+    if (!first.isLetter() && first != QLatin1Char('_'))
+        return false;
+    for (int i = 1; i < text.size(); ++i) {
+        const QChar ch = text.at(i);
+        if (!ch.isLetterOrNumber() && ch != QLatin1Char('_'))
+            return false;
+    }
+    return true;
+}
+
+int sourceSymbolContextPositionForMenu(MyCodeEditor* editor,
+                                       const QTextCursor& cursorAtPos)
+{
+    if (!editor)
+        return cursorAtPos.position();
+
+    const QTextCursor activeCursor = editor->textCursor();
+    if (!activeCursor.hasSelection())
+        return cursorAtPos.position();
+
+    const int hitPosition = cursorAtPos.position();
+    if (hitPosition < activeCursor.selectionStart()
+        || hitPosition > activeCursor.selectionEnd()) {
+        return cursorAtPos.position();
+    }
+
+    QString selectedText = activeCursor.selectedText().trimmed();
+    selectedText.replace(QChar::ParagraphSeparator, QLatin1Char('\n'));
+    if (!isSourceIdentifierText(selectedText))
+        return cursorAtPos.position();
+
+    return activeCursor.selectionStart();
+}
 }
 
 EditorSourceNavigationUi::~EditorSourceNavigationUi() = default;
@@ -318,7 +357,8 @@ void EditorSourceNavigationUi::handleContextMenu(
     const QTextCursor cursorAtPos = editor->cursorForPosition(event->pos());
     emit editor->sourceSymbolContextMenuRequested(
         menu.get(),
-        contextProvider(cursorAtPos.position(), false));
+        contextProvider(sourceSymbolContextPositionForMenu(editor, cursorAtPos),
+                        false));
     menu->addSeparator();
 
     QAction* gotoLineAction = menu->addAction(QStringLiteral("Go to Line..."));

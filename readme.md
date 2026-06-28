@@ -523,6 +523,7 @@ Only these long-term goals are active:
 10. State transition graph for selected `ns` / `next_state` only.
 11. Module block diagram for selected module names only.
 12. Workspace project configuration and diagnostics workflow.
+13. References / Relationships workflow closure.
 
 Do not add unlisted long-term goals without explicit user approval.
 
@@ -584,3 +585,12 @@ Do not add unlisted long-term goals without explicit user approval.
   passed: `ctest -R "^completion_test$" --output-on-failure` and
   `ctest -R "^gui_smoke_test$" --output-on-failure`; the GUI smoke test was
   repeated successfully.
+- Latest References / Relationships workflow closure stage: source-symbol
+  right-click actions now present a stable six-action menu: Go to Definition,
+  Find References, Show Relationships, Signal Kernel Graph, State Transition
+  Graph, and Module Block Diagram. Disabled actions remain visible with
+  tooltip/status reasons. Module Block Diagram is gated to existing
+  module/interface definition records, ordinary signals remain disabled, and
+  State Transition Graph gating still rejects current-state names. This stage
+  is workflow/UI closure only; it does not add semantic analysis, package
+  tools, macro/define handling, Wave Preview behavior, or new graph algorithms.

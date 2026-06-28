@@ -1,7 +1,9 @@
 #include "editorsourcenavigationquery.h"
 
 #include "moduleblockdiagramservice.h"
+#include "semanticindex.h"
 #include "statetransitiontriggerservice.h"
+#include "symboltaxonomy.h"
 
 #include <Qt>
 
@@ -20,6 +22,28 @@ StateTransitionTriggerReport stateTransitionTriggerForContext(
 bool moduleBlockDiagramAvailableForContext(
     const SourceSymbolActionContext& actionContext)
 {
+    SemanticQueryContext context;
+    context.fileName = actionContext.fileName;
+    context.moduleName = actionContext.moduleName;
+    const QList<SemanticSymbolRecord> definitions =
+        SemanticIndex::getInstance()->findDefinitionRecords(
+            actionContext.symbolName,
+            context);
+    bool hasModuleLikeDefinition = false;
+    for (const SemanticSymbolRecord& record : definitions) {
+        const SymbolTaxonomy::SemanticMetadata metadata =
+            semanticMetadataForSymbolRecord(record);
+        if (metadata.declarationKind
+                == SymbolTaxonomy::DeclarationKind::Module
+            || metadata.declarationKind
+                == SymbolTaxonomy::DeclarationKind::Interface) {
+            hasModuleLikeDefinition = true;
+            break;
+        }
+    }
+    if (!hasModuleLikeDefinition)
+        return false;
+
     ModuleBlockDiagramQuery query;
     query.moduleName = actionContext.symbolName;
     query.fileName = actionContext.fileName;
@@ -27,6 +51,54 @@ bool moduleBlockDiagramAvailableForContext(
     return ModuleBlockDiagramService::getInstance()
         ->buildModuleBlockDiagram(query)
         .found;
+}
+
+QString noSymbolActionReason(const EditorSemanticContext& context)
+{
+    if (context.fileName.isEmpty())
+        return QStringLiteral("No source file for symbol navigation");
+    return QStringLiteral("No symbol under cursor");
+}
+
+QString actionUnavailableReason(
+    SourceSymbolAction action,
+    const SourceSymbolActionContext& actionContext,
+    const EditorSemanticContext& context)
+{
+    if (!actionContext.available)
+        return noSymbolActionReason(context);
+
+    switch (action) {
+    case SourceSymbolAction::GoToDefinition:
+        return QStringLiteral("Symbol not indexed");
+    case SourceSymbolAction::FindReferences:
+    case SourceSymbolAction::ShowRelationships:
+    case SourceSymbolAction::ShowSignalKernelGraph:
+        return QString();
+    case SourceSymbolAction::ShowStateTransitionGraph: {
+        const StateTransitionTriggerReport trigger =
+            stateTransitionTriggerForContext(actionContext);
+        return trigger.reasonDisplayName.isEmpty()
+            ? QStringLiteral("State transition graph unavailable")
+            : trigger.reasonDisplayName;
+    }
+    case SourceSymbolAction::ShowModuleBlockDiagram:
+        return QStringLiteral(
+            "Module Block Diagram requires a module/interface/program name");
+    }
+    return QStringLiteral("Action unavailable");
+}
+
+EditorSourceSymbolMenuItemState sourceSymbolMenuItem(
+    SourceSymbolAction action,
+    bool enabled,
+    const QString& disabledReason = QString())
+{
+    EditorSourceSymbolMenuItemState item;
+    item.action = action;
+    item.enabled = enabled;
+    item.disabledReason = enabled ? QString() : disabledReason;
+    return item;
 }
 }
 
@@ -75,30 +147,60 @@ EditorSourceNavigationQuery::sourceSymbolContextMenuState(
 {
     const SourceSymbolActionContext actionContext =
         sourceSymbolActionContext(context);
+    const bool hasDefinition = actionContext.available
+        && canResolveDefinitionTarget(actionContext.symbolName, context);
+    const StateTransitionTriggerReport stateTransitionTrigger =
+        actionContext.available
+            ? stateTransitionTriggerForContext(actionContext)
+            : StateTransitionTriggerReport();
+    const bool moduleBlockAvailable = actionContext.available
+        && moduleBlockDiagramAvailableForContext(actionContext);
 
     EditorSourceSymbolContextMenuState state;
-    state.items.append({
+    state.items.append(sourceSymbolMenuItem(
+        SourceSymbolAction::GoToDefinition,
+        hasDefinition,
+        actionUnavailableReason(
+            SourceSymbolAction::GoToDefinition,
+            actionContext,
+            context)));
+    state.items.append(sourceSymbolMenuItem(
         SourceSymbolAction::FindReferences,
-        actionContext.available
-    });
-    state.items.append({
+        actionContext.available,
+        actionUnavailableReason(
+            SourceSymbolAction::FindReferences,
+            actionContext,
+            context)));
+    state.items.append(sourceSymbolMenuItem(
         SourceSymbolAction::ShowRelationships,
-        actionContext.available
-    });
-    state.items.append({
+        actionContext.available,
+        actionUnavailableReason(
+            SourceSymbolAction::ShowRelationships,
+            actionContext,
+            context)));
+    state.items.append(sourceSymbolMenuItem(
         SourceSymbolAction::ShowSignalKernelGraph,
-        actionContext.available
-    });
-    state.items.append({
+        actionContext.available,
+        actionUnavailableReason(
+            SourceSymbolAction::ShowSignalKernelGraph,
+            actionContext,
+            context)));
+    state.items.append(sourceSymbolMenuItem(
         SourceSymbolAction::ShowStateTransitionGraph,
+        actionContext.available && stateTransitionTrigger.available,
         actionContext.available
-            && stateTransitionTriggerForContext(actionContext).available
-    });
-    state.items.append({
+            ? stateTransitionTrigger.reasonDisplayName
+            : actionUnavailableReason(
+                SourceSymbolAction::ShowStateTransitionGraph,
+                actionContext,
+                context)));
+    state.items.append(sourceSymbolMenuItem(
         SourceSymbolAction::ShowModuleBlockDiagram,
-        actionContext.available
-            && moduleBlockDiagramAvailableForContext(actionContext)
-    });
+        moduleBlockAvailable,
+        actionUnavailableReason(
+            SourceSymbolAction::ShowModuleBlockDiagram,
+            actionContext,
+            context)));
     return state;
 }
 
@@ -112,15 +214,28 @@ EditorSourceNavigationQuery::sourceSymbolActionRequestState(
 
     EditorSourceSymbolActionRequestState state;
     state.action = action;
-    if (!actionContext.available)
+    if (!actionContext.available) {
+        state.unavailableReason =
+            actionUnavailableReason(action, actionContext, context);
         return state;
+    }
 
+    if (action == SourceSymbolAction::GoToDefinition
+        && !canResolveDefinitionTarget(actionContext.symbolName, context)) {
+        state.unavailableReason =
+            actionUnavailableReason(action, actionContext, context);
+        return state;
+    }
     if (action == SourceSymbolAction::ShowStateTransitionGraph
         && !stateTransitionTriggerForContext(actionContext).available) {
+        state.unavailableReason =
+            actionUnavailableReason(action, actionContext, context);
         return state;
     }
     if (action == SourceSymbolAction::ShowModuleBlockDiagram
         && !moduleBlockDiagramAvailableForContext(actionContext)) {
+        state.unavailableReason =
+            actionUnavailableReason(action, actionContext, context);
         return state;
     }
 

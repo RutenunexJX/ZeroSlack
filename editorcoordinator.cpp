@@ -42,16 +42,18 @@ enum class SafeRenameConflictChoice {
 QString sourceSymbolActionText(SourceSymbolAction action)
 {
     switch (action) {
+    case SourceSymbolAction::GoToDefinition:
+        return QStringLiteral("Go to Definition");
     case SourceSymbolAction::FindReferences:
         return QStringLiteral("Find References");
     case SourceSymbolAction::ShowRelationships:
         return QStringLiteral("Show Relationships");
     case SourceSymbolAction::ShowSignalKernelGraph:
-        return QStringLiteral("Show Signal Kernel Graph");
+        return QStringLiteral("Signal Kernel Graph");
     case SourceSymbolAction::ShowStateTransitionGraph:
-        return QStringLiteral("Show State Transition Graph");
+        return QStringLiteral("State Transition Graph");
     case SourceSymbolAction::ShowModuleBlockDiagram:
-        return QStringLiteral("Show Module Block Diagram");
+        return QStringLiteral("Module Block Diagram");
     }
     return QString();
 }
@@ -964,28 +966,65 @@ void EditorCoordinator::handleSourceSymbolActionRequested(
     SourceSymbolAction action,
     const EditorSemanticContext& context) const
 {
-    if (!dependencies.hasSemanticPanelRefresh())
-        return;
-
     const EditorSourceSymbolActionRequestState requestState =
         contextService()->sourceSymbolActionRequestState(action, context);
-    if (!requestState.available)
+    if (!requestState.available) {
+        if (statusMessageHandler) {
+            statusMessageHandler(
+                requestState.unavailableReason.isEmpty()
+                    ? QStringLiteral("Symbol action unavailable")
+                    : requestState.unavailableReason,
+                3000);
+        }
         return;
+    }
 
     switch (requestState.action) {
+    case SourceSymbolAction::GoToDefinition: {
+        if (!dependencies.canNavigate()) {
+            if (statusMessageHandler) {
+                statusMessageHandler(QStringLiteral("Navigation unavailable"),
+                                     3000);
+            }
+            return;
+        }
+        const DefinitionNavigationTarget target =
+            contextService()->resolveDefinitionTarget(
+                requestState.symbolName,
+                context);
+        if (!target.found) {
+            if (statusMessageHandler) {
+                statusMessageHandler(QStringLiteral("Symbol not indexed"),
+                                     3000);
+            }
+            return;
+        }
+        const QString targetFile =
+            target.fileName.isEmpty() ? context.fileName : target.fileName;
+        dependencies.navigateToFileAndLine(targetFile,
+                                           target.line,
+                                           target.column);
+        break;
+    }
     case SourceSymbolAction::FindReferences:
+        if (!dependencies.hasSemanticPanelRefresh())
+            return;
         dependencies.showReferencesForSymbol(
             requestState.symbolName,
             requestState.fileName,
             requestState.moduleName);
         break;
     case SourceSymbolAction::ShowRelationships:
+        if (!dependencies.hasSemanticPanelRefresh())
+            return;
         dependencies.showRelationshipsForSymbol(
             requestState.symbolName,
             requestState.fileName,
             requestState.moduleName);
         break;
     case SourceSymbolAction::ShowSignalKernelGraph:
+        if (!dependencies.hasSemanticPanelRefresh())
+            return;
         dependencies.showSignalKernelGraphForSymbol(
             requestState.symbolName,
             requestState.fileName,
@@ -993,12 +1032,16 @@ void EditorCoordinator::handleSourceSymbolActionRequested(
             requestState.signalAccessPath);
         break;
     case SourceSymbolAction::ShowStateTransitionGraph:
+        if (!dependencies.hasSemanticPanelRefresh())
+            return;
         dependencies.showStateTransitionGraphForSymbol(
             requestState.symbolName,
             requestState.fileName,
             requestState.moduleName);
         break;
     case SourceSymbolAction::ShowModuleBlockDiagram:
+        if (!dependencies.hasSemanticPanelRefresh())
+            return;
         dependencies.showModuleBlockDiagramForSymbol(
             requestState.symbolName,
             requestState.fileName,
@@ -1311,6 +1354,10 @@ void EditorCoordinator::handleSourceSymbolContextMenuRequested(
     for (const EditorSourceSymbolMenuItemState& item : menuState.items) {
         QAction* action = menu->addAction(sourceSymbolActionText(item.action));
         action->setEnabled(item.enabled);
+        if (!item.disabledReason.isEmpty()) {
+            action->setToolTip(item.disabledReason);
+            action->setStatusTip(item.disabledReason);
+        }
         connect(action, &QAction::triggered, this, [this, context, item]() {
             handleSourceSymbolActionRequested(item.action, context);
         });

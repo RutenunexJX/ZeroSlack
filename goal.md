@@ -874,6 +874,52 @@ Milestones:
 - G12.3 Verification And Documentation.
   (complete: docs updated and focused Release verification recorded)
 
+## Track 13: References / Relationships Workflow Closure
+
+Goal: make source-symbol navigation, references, relationship rows, and graph
+result jumps easy to find, jump from, and return from.
+
+Allowed work:
+
+- source-symbol right-click workflow organization
+- References result grouping, query context, empty-state reasons, copying, and
+  jumps
+- Relationships result source jumps and existing graph entry points
+- unified navigation path with Back/Forward history isolation per workspace
+- status-bar or panel feedback for jump failures
+
+Not allowed:
+
+- package tools
+- macro/define semantics
+- Wave Preview expansion
+- new graph types
+- complex graph algorithms
+- expanded State Transition Graph trigger rules
+
+Milestones:
+
+- G13.1 Unified source-symbol context menu.
+  (complete: Go to Definition, Find References, Show Relationships, Signal
+  Kernel Graph, State Transition Graph, and Module Block Diagram are always
+  present; disabled entries expose reasons; Module Block Diagram is limited to
+  existing module/interface definitions; current-state names remain rejected)
+- G13.2 References panel workflow closure.
+  (pending: query context, empty reasons, stable jump/flash, copy path or
+  file:line)
+- G13.3 Relationships panel workflow closure.
+  (pending: source-code jumps for every result row, instance/module-definition
+  jumps where existing data supports them, signal role jumps from existing
+  relationship data, and only existing graph entry points)
+- G13.4 Unified navigation failure feedback and history isolation.
+  (pending: References, Relationships, and graph jumps share one navigation
+  path; Back/Forward history is isolated by workspace; failures are visible)
+- G13.5 Verification and documentation.
+  (pending: build `completion_test` and `gui_smoke_test`; run
+  `ctest -R "^completion_test$" --output-on-failure`; run
+  `ctest -R "^gui_smoke_test$" --output-on-failure` when safe, repeating once
+  if it is flaky)
+
 ## Huge Workspace Status Audit
 
 Huge Workspace is not an active feature expansion track in this goal model.

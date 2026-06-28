@@ -102,8 +102,9 @@ struct EditorSourceSymbolShortcutState {
 };
 
 struct EditorSourceSymbolMenuItemState {
-    SourceSymbolAction action = SourceSymbolAction::FindReferences;
+    SourceSymbolAction action = SourceSymbolAction::GoToDefinition;
     bool enabled = false;
+    QString disabledReason;
 };
 
 struct EditorSourceSymbolContextMenuState {
@@ -112,7 +113,8 @@ struct EditorSourceSymbolContextMenuState {
 
 struct EditorSourceSymbolActionRequestState {
     bool available = false;
-    SourceSymbolAction action = SourceSymbolAction::FindReferences;
+    SourceSymbolAction action = SourceSymbolAction::GoToDefinition;
+    QString unavailableReason;
     QString symbolName;
     QString signalAccessPath;
     QString fileName;
