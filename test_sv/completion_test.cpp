@@ -8,6 +8,7 @@
 #include "completionsemanticquery.h"
 #include "completionservice.h"
 #include "codetemplateservice.h"
+#include "commodecommandregistry.h"
 #include "customabbreviationservice.h"
 #include "diagnosticsrefreshcontroller.h"
 #include "diagnosticnavigationservice.h"
@@ -121,6 +122,16 @@ static void insertAtEditorCursor(MyCodeEditor& editor, const QString& text)
     cursor.insertText(text);
     editor.setTextCursor(cursor);
     QCoreApplication::processEvents(QEventLoop::AllEvents, 10);
+}
+
+static bool writeTextFile(const QString& fileName, const QString& text)
+{
+    QFile file(fileName);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate | QFile::Text))
+        return false;
+    QTextStream out(&file);
+    out << text;
+    return true;
 }
 
 static void expectList(const char* what, QStringList got, QStringList want) {
@@ -5179,62 +5190,91 @@ int main(int argc, char** argv) {
                             ");\n"
                             "endmodule"));
 
-    QTemporaryDir userTemplateSettingsDir;
+    QTemporaryDir userTemplateJsonDir;
     expectBool("UserTemplateService temp dir valid",
-               userTemplateSettingsDir.isValid(),
+               userTemplateJsonDir.isValid(),
                true);
-    const QString userTemplateSettingsFile =
-        QDir(userTemplateSettingsDir.path()).absoluteFilePath(
-            QStringLiteral("user_templates.ini"));
-    UserTemplateService userTemplateService(userTemplateSettingsFile);
-    UserTemplateRecord pipeTemplate;
-    pipeTemplate.id = QStringLiteral("pipe_stage");
-    pipeTemplate.commandToken = QStringLiteral(";;pipe");
-    pipeTemplate.label = QStringLiteral("pipeline stage");
-    pipeTemplate.description = QStringLiteral("user pipeline register");
-    pipeTemplate.insertText =
-        QStringLiteral("logic [WIDTH-1:0] data_q;\n"
-                       "always_ff @(posedge clk) data_q <= data_d;");
-    pipeTemplate.selectionStart =
-        pipeTemplate.insertText.indexOf(QStringLiteral("data_q"));
-    pipeTemplate.selectionLength = QStringLiteral("data_q").size();
-    CodeTemplateSlot pipeSlot;
-    pipeSlot.name = QStringLiteral("signal");
-    pipeSlot.start = pipeTemplate.selectionStart;
-    pipeSlot.length = pipeTemplate.selectionLength;
-    pipeTemplate.templateSlots.append(pipeSlot);
-
-    const UserTemplateSaveReport userTemplateSaveReport =
-        userTemplateService.setRecords({pipeTemplate});
-    expectBool("UserTemplateService saves valid template",
-               userTemplateSaveReport.valid
-                   && userTemplateSaveReport.records.size() == 1
-                   && userTemplateSaveReport.records.first().id
-                       == QStringLiteral("pipe_stage"),
+    const QString globalTemplateJson =
+        QDir(userTemplateJsonDir.path()).absoluteFilePath(
+            QStringLiteral("global_templates.json"));
+    const QString workspaceTemplateJson =
+        QDir(userTemplateJsonDir.path()).absoluteFilePath(
+            QStringLiteral("workspace_templates.json"));
+    expectBool("write global user template JSON",
+               writeTextFile(globalTemplateJson,
+                             QStringLiteral(
+                                 "{\n"
+                                 "  \"templates\": [\n"
+                                 "    {\n"
+                                 "      \"command\": \";;pipe\",\n"
+                                 "      \"description\": \"global pipeline register\",\n"
+                                 "      \"body\": \"logic [WIDTH-1:0] data_q;\\nalways_ff @(posedge clk) data_q <= data_d;\",\n"
+                                 "      \"slots\": [\n"
+                                 "        {\"name\": \"signal\", \"start\": 20, \"length\": 6}\n"
+                                 "      ]\n"
+                                 "    },\n"
+                                 "    {\n"
+                                 "      \"command\": \";;axi\",\n"
+                                 "      \"description\": \"global AXI shell\",\n"
+                                 "      \"insertText\": \"axi_if axi();\"\n"
+                                 "    }\n"
+                                 "  ]\n"
+                                 "}\n")),
                true);
-    UserTemplateService reloadedUserTemplates(userTemplateSettingsFile);
+    expectBool("write workspace user template JSON",
+               writeTextFile(workspaceTemplateJson,
+                             QStringLiteral(
+                                 "[\n"
+                                 "  {\n"
+                                 "    \"command\": \";;pipe\",\n"
+                                 "    \"description\": \"workspace pipeline register\",\n"
+                                 "    \"body\": \"logic ws_data;\",\n"
+                                 "    \"slots\": [\n"
+                                 "      {\"name\": \"ws_signal\", \"start\": 6, \"length\": 7}\n"
+                                 "    ]\n"
+                                 "  }\n"
+                                 "]\n")),
+               true);
+    UserTemplateService reloadedUserTemplates(globalTemplateJson,
+                                              workspaceTemplateJson);
+    const UserTemplateLoadReport userTemplateLoadReport =
+        reloadedUserTemplates.reload();
+    expectBool("UserTemplateService loads global and workspace JSON",
+               userTemplateLoadReport.valid
+                   && userTemplateLoadReport.records.size() == 2,
+               true);
     const QList<CodeTemplateItem> userTemplateCatalog =
         reloadedUserTemplates.catalog();
-    expectBool("UserTemplateService reloads catalog item",
-               userTemplateCatalog.size() == 1
-                   && userTemplateCatalog.first().commandToken
-                       == QStringLiteral(";;pipe")
-                   && userTemplateCatalog.first().label
-                       == QStringLiteral("pipeline stage"),
+    bool catalogHasAxi = false;
+    bool catalogHasWorkspacePipe = false;
+    for (const CodeTemplateItem& item : userTemplateCatalog) {
+        if (item.commandToken == QStringLiteral(";;axi")
+            && item.insertText == QStringLiteral("axi_if axi();")) {
+            catalogHasAxi = true;
+        }
+        if (item.commandToken == QStringLiteral(";;pipe")
+            && item.description == QStringLiteral("workspace pipeline register")
+            && item.insertText == QStringLiteral("logic ws_data;")) {
+            catalogHasWorkspacePipe = true;
+        }
+    }
+    expectBool("UserTemplateService catalog includes global template",
+               catalogHasAxi,
+               true);
+    expectBool("UserTemplateService workspace overrides global",
+               catalogHasWorkspacePipe,
                true);
     const QList<CodeTemplateItem> userTemplateMatches =
         reloadedUserTemplates.matchingTemplates(QStringLiteral(";;pipe"));
-    expectBool("UserTemplateService query preserves slots",
+    expectBool("UserTemplateService query preserves workspace slots",
                userTemplateMatches.size() == 1
                    && userTemplateMatches.first().insertText
-                       == pipeTemplate.insertText
-                   && userTemplateMatches.first().selectionStart
-                       == pipeTemplate.selectionStart
-                   && userTemplateMatches.first().selectionLength
-                       == pipeTemplate.selectionLength
+                       == QStringLiteral("logic ws_data;")
+                   && userTemplateMatches.first().selectionStart == 6
+                   && userTemplateMatches.first().selectionLength == 7
                    && userTemplateMatches.first().templateSlots.size() == 1
                    && userTemplateMatches.first().templateSlots.first().name
-                       == QStringLiteral("signal"),
+                       == QStringLiteral("ws_signal"),
                true);
     expectBool("UserTemplateService unknown command empty",
                reloadedUserTemplates
@@ -5268,7 +5308,7 @@ int main(int argc, char** argv) {
                    && userTemplateCompletionState.templateItems.first()
                           .commandToken == QStringLiteral(";;pipe")
                    && userTemplateCompletionState.templateItems.first()
-                          .insertText == pipeTemplate.insertText
+                          .insertText == QStringLiteral("logic ws_data;")
                    && userTemplateCompletionState.templateItems.first()
                           .templateSlots.size() == 1,
                true);
@@ -5295,27 +5335,28 @@ int main(int argc, char** argv) {
                        == CompletionActivationAction::ReplaceCommandInput
                    && userTemplateActivationState.clearCommandMode
                    && userTemplateActivationState.hidePopup
-                   && userTemplateActivationState.text == pipeTemplate.insertText
+                   && userTemplateActivationState.text
+                       == QStringLiteral("logic ws_data;")
                    && userTemplateActivationState.templateSlots.size() == 1,
                true);
     MyCodeEditor userTemplateSlotEditor;
-    userTemplateSlotEditor.setPlainText(pipeTemplate.insertText);
+    userTemplateSlotEditor.setPlainText(userTemplateCompletionItem.insertText);
     userTemplateSlotEditor.startTemplateSlotMode(
         0,
-        pipeTemplate.insertText.size(),
+        userTemplateCompletionItem.insertText.size(),
         userTemplateCompletionItem.templateSlots);
     QCoreApplication::processEvents(QEventLoop::AllEvents, 10);
     expectBool("User template Slot Mode starts on slot",
                userTemplateSlotEditor.templateSlotModeActive()
                    && userTemplateSlotEditor.templateSlotModeActiveIndex() == 0
                    && userTemplateSlotEditor.textCursor().selectedText()
-                       == QStringLiteral("data_q"),
+                       == QStringLiteral("ws_data"),
                true);
     insertAtEditorCursor(userTemplateSlotEditor,
                          QStringLiteral("stage_data"));
     expectBool("User template Slot Mode edit keeps document",
-               userTemplateSlotEditor.toPlainText().startsWith(
-                   QStringLiteral("logic [WIDTH-1:0] stage_data;"))
+               userTemplateSlotEditor.toPlainText()
+                       == QStringLiteral("logic stage_data;")
                    && userTemplateSlotEditor.templateSlotModeActive(),
                true);
     expectBool("User template Slot Mode Tab cycles single slot",
@@ -5328,27 +5369,111 @@ int main(int argc, char** argv) {
                    && !userTemplateSlotEditor.templateSlotModeActive(),
                true);
 
-    UserTemplateRecord invalidTemplate = pipeTemplate;
-    invalidTemplate.id = QStringLiteral("bad_token");
-    invalidTemplate.commandToken = QStringLiteral(";pipe");
+    expectBool("rewrite workspace user template JSON for reload",
+               writeTextFile(workspaceTemplateJson,
+                             QStringLiteral(
+                                 "[\n"
+                                 "  {\n"
+                                 "    \"command\": \";;pipe\",\n"
+                                 "    \"description\": \"workspace reload\",\n"
+                                 "    \"body\": \"logic reload_data;\"\n"
+                                 "  }\n"
+                                 "]\n")),
+               true);
+    expectBool("UserTemplateService reload reflects file changes",
+               reloadedUserTemplates.reload().valid
+                   && reloadedUserTemplates
+                          .matchingTemplates(QStringLiteral(";;pipe"))
+                          .first()
+                          .insertText == QStringLiteral("logic reload_data;"),
+               true);
+
+    const QString invalidTemplateJson =
+        QDir(userTemplateJsonDir.path()).absoluteFilePath(
+            QStringLiteral("invalid_templates.json"));
+    expectBool("write invalid user template JSON",
+               writeTextFile(invalidTemplateJson,
+                             QStringLiteral("{ definitely not json")),
+               true);
+    UserTemplateService invalidJsonTemplates(invalidTemplateJson);
+    const UserTemplateLoadReport invalidJsonReport =
+        invalidJsonTemplates.reload();
+    expectBool("UserTemplateService reports invalid JSON",
+               !invalidJsonReport.valid
+                   && !invalidJsonReport.failureReason.isEmpty()
+                   && invalidJsonTemplates.catalog().isEmpty(),
+               true);
+
+    const QString invalidRecordJson =
+        QDir(userTemplateJsonDir.path()).absoluteFilePath(
+            QStringLiteral("invalid_record_templates.json"));
+    expectBool("write invalid user template records",
+               writeTextFile(invalidRecordJson,
+                             QStringLiteral(
+                                 "[\n"
+                                 "  {\"command\": \";pipe\", \"body\": \"logic bad;\"},\n"
+                                 "  {\"command\": \";;bad_slot\", \"body\": \"logic x;\", \"slots\": [{\"name\": \"x\", \"start\": 99, \"length\": 1}]},\n"
+                                 "  {\"command\": \";;l\", \"body\": \"logic should_not_override;\"},\n"
+                                 "  {\"command\": \";;h\", \"body\": \"reserved header;\"}\n"
+                                 "]\n")),
+               true);
+    UserTemplateService invalidRecordTemplates(invalidRecordJson);
+    const UserTemplateLoadReport invalidRecordReport =
+        invalidRecordTemplates.reload();
+    expectBool("UserTemplateService reports invalid records",
+               !invalidRecordReport.valid
+                   && invalidRecordReport.issues.size() >= 4
+                   && invalidRecordTemplates.catalog().isEmpty(),
+               true);
+
+    UserTemplateRecord saveTemplate;
+    saveTemplate.id = QStringLiteral("save_template");
+    saveTemplate.commandToken = QStringLiteral(";;save");
+    saveTemplate.description = QStringLiteral("saved JSON template");
+    saveTemplate.insertText = QStringLiteral("logic saved;");
+    UserTemplateService userTemplateSaveService(
+        QDir(userTemplateJsonDir.path()).absoluteFilePath(
+            QStringLiteral("saved_templates.json")));
+    const UserTemplateSaveReport userTemplateSaveReport =
+        userTemplateSaveService.setRecords({saveTemplate});
+    expectBool("UserTemplateService saves valid JSON template",
+               userTemplateSaveReport.valid
+                   && userTemplateSaveService
+                          .matchingTemplates(QStringLiteral(";;save"))
+                          .size() == 1,
+               true);
+    UserTemplateRecord invalidTemplate = saveTemplate;
+    invalidTemplate.commandToken = QStringLiteral(";save");
     const UserTemplateSaveReport invalidTokenReport =
-        userTemplateService.setRecords({invalidTemplate});
+        userTemplateSaveService.setRecords({invalidTemplate});
     expectBool("UserTemplateService rejects non-template token",
                !invalidTokenReport.valid
                    && !invalidTokenReport.failureReason.isEmpty()
-                   && reloadedUserTemplates.records().size() == 1,
+                   && userTemplateSaveService.records().size() == 1,
                true);
-
-    UserTemplateRecord duplicateTemplate = pipeTemplate;
-    duplicateTemplate.commandToken = QStringLiteral(";;other_pipe");
+    UserTemplateRecord duplicateTemplate = saveTemplate;
+    duplicateTemplate.commandToken = QStringLiteral(";;other_save");
     const UserTemplateSaveReport duplicateReport =
-        userTemplateService.validateRecords(
-            {pipeTemplate, duplicateTemplate});
+        userTemplateSaveService.validateRecords(
+            {saveTemplate, duplicateTemplate});
     expectBool("UserTemplateService rejects duplicate ids",
                !duplicateReport.valid
                    && duplicateReport.failureReason.contains(
                        QStringLiteral("unique"),
                        Qt::CaseInsensitive),
+               true);
+    expectBool("UserTemplateService rejects built-in override on save",
+               !userTemplateSaveService
+                    .validateRecords({UserTemplateRecord{
+                        QString(),
+                        QStringLiteral(";;l"),
+                        QString(),
+                        QStringLiteral("bad"),
+                        QStringLiteral("logic bad;"),
+                        -1,
+                        0,
+                        {}}})
+                    .valid,
                true);
     expectBool("UserTemplateService leaves built-in templates separate",
                CodeTemplateService::getInstance()
@@ -5359,6 +5484,27 @@ int main(int argc, char** argv) {
                                                QStringLiteral("clk"))
                           .insertText
                        == QStringLiteral("logic clk;"),
+               true);
+    expectBool("User templates do not create ;cmd entry",
+               !userTemplateCompletionService
+                    .matchCommandMode(QStringLiteral(";pipe "))
+                    .matched,
+               true);
+    expectBool("User templates do not alter COM registry",
+               executableComModeCommand(QStringLiteral("gpk"))
+                   == QStringLiteral("gpk")
+                   && findComModeCommandMetadata(QStringLiteral(";;pipe"))
+                       == nullptr,
+               true);
+    GlobalControlService userTemplateGlobalControl;
+    bool globalControlHasUserTemplate = false;
+    for (const GlobalControlItem& item :
+         userTemplateGlobalControl.templateItems()) {
+        if (item.id == QStringLiteral(";;pipe"))
+            globalControlHasUserTemplate = true;
+    }
+    expectBool("User templates do not enter Global Control templates",
+               !globalControlHasUserTemplate,
                true);
 
     QTemporaryDir customAbbreviationSettingsDir;

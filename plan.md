@@ -483,22 +483,22 @@ M6.2 implementation status:
 
 - Complete: `UserTemplateService` owns user template validation, persistence,
   reload, exact-token query, add/update, remove, and clear operations.
-- Complete: user templates are stored under `QSettings`
-  `userTemplates/items`, with injectable ini-file storage for focused tests.
-- Complete: user template records use compact `;;` command tokens, require
-  unique ids and non-empty template text, reject invalid selection/slot ranges,
-  and preserve `CodeTemplateSlotList` metadata through serialization.
+- Complete: user templates are file-maintained JSON records. The service reads
+  a global `user_templates.json` and an optional workspace
+  `.zeroslack/user_templates.json`; focused tests can inject both file paths.
+- Complete: user template records use compact `;;` command tokens and
+  non-empty `body` / `insertText`, reject invalid slot ranges and invalid
+  commands, preserve `CodeTemplateSlotList` metadata, and expose load issues
+  for invalid JSON or rejected records.
 - Complete: query results are `CodeTemplateItem`-compatible, so future template
   popup and Slot Mode work can consume the same data shape.
 - Complete: built-in `CodeTemplateService` behavior remains separate and
-  unchanged in this milestone; arbitrary user template tokens are not wired into
-  the inline `;;cmd` popup yet.
+  unchanged; user templates cannot override built-in template tokens, and the
+  reserved `;;h` / `;;pk` holes stay unavailable to user JSON in this phase.
 - Not done in M6.2: user-template UI, custom abbreviations, changes to
   `;cmd`, COM Mode, Global Control, or broader Slot Mode activation.
-- Verification: `git diff --check`; Release `completion_test` and
-  `gui_smoke_test` targets compile/link; Release `completion_test` passed
-  directly with 680 checks and 0 failures; `ctest -R "^completion_test$"`
-  passed. `gui_smoke_test` was not launched.
+- Verification: Release `completion_test` and `gui_smoke_test` passed through
+  `ctest -R "^(completion_test|gui_smoke_test)$" --output-on-failure`.
 
 M6.3 implementation constraints:
 
@@ -549,13 +549,44 @@ M6.4 implementation status:
   `InlineCommandIntent::CodeTemplate` through service-owned user template
   records, while built-in inline descriptors keep priority.
 - Complete: template completion results merge built-in `CodeTemplateService`
-  items with exact-token `UserTemplateService` items.
+  items with exact-token `UserTemplateService` items. Workspace user templates
+  override global user templates with the same token, but user templates never
+  override built-in `;;cmd` records.
 - Complete: user template activation carries insert text, primary selection,
   and `CodeTemplateSlotList` metadata through the existing completion
   activation and Slot Mode path.
-- Verification: `git diff --check`; Release `completion_test` and
-  `gui_smoke_test` targets compile/link; `ctest -R "^completion_test$"` passed.
-  `gui_smoke_test` was not launched.
+- Verification: Release `completion_test` and `gui_smoke_test` passed through
+  `ctest -R "^(completion_test|gui_smoke_test)$" --output-on-failure`.
+
+Latest user template JSON phase:
+
+- Scope: first-stage file-maintained user templates only. This does not add a
+  GUI template editor, import/export, macro recording, variables, new `;cmd`,
+  COM Mode, Global Control, Package Tools, or `;:` entry.
+- Storage: global templates live in the app config `user_templates.json`;
+  workspace templates live at `.zeroslack/user_templates.json` under the active
+  workspace. The JSON root may be an array or an object with a `templates`
+  array.
+- Record fields: `command`, `description`, `body` or `insertText`, and optional
+  `slots` entries with relative `name`, `start`, and `length`.
+- Merge policy: workspace user templates override global user templates by
+  command token. Built-in template tokens cannot be overridden. `;;h` and
+  `;;pk` remain reserved holes in this phase and are reported/ignored if user
+  JSON tries to define them.
+- Runtime: valid user templates enter the existing `;;cmd` template completion
+  path. Activation replaces the command input and starts Slot Mode when slot
+  metadata exists. Invalid JSON, invalid commands, invalid slots, and conflicts
+  are exposed through `UserTemplateService` load reports and do not affect
+  built-in templates.
+- Coverage checks global load, workspace priority, insertion text, Slot Mode
+  metadata, built-in conflicts, invalid JSON, invalid slot/command records,
+  reload after file changes, and unchanged `;cmd`, COM Mode, and Global
+  Control boundaries.
+- Release verification passed: `cmake --build . --target completion_test
+  gui_smoke_test relationship_test`; `ctest -R
+  "^(completion_test|relationship_test|gui_smoke_test)$"
+  --output-on-failure`; `git diff --check -- .
+  ':!test_sv/new/elec_phy_import/ctrl/chl_ctrl.sv'`.
 
 ### 7. Fold / Fold Shelf
 

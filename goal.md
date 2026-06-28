@@ -104,6 +104,20 @@ Status:
   `ctest -R "^(completion_test|relationship_test|gui_smoke_test)$"
   --output-on-failure`; `git diff --check -- .
   ':!test_sv/new/elec_phy_import/ctrl/chl_ctrl.sv'`.
+- User template JSON phase 1 is complete. `UserTemplateService` reads compact
+  `;;` user templates from global `user_templates.json` and active-workspace
+  `.zeroslack/user_templates.json`, with workspace records overriding global
+  records by command token. Built-in templates and reserved `;;h` / `;;pk`
+  holes cannot be overridden; invalid JSON, invalid commands, invalid slots,
+  and conflicts are reported and ignored. Valid user templates enter the
+  existing `;;cmd` completion path and start Slot Mode when slot metadata is
+  present. No template GUI editor, import/export, macro recorder, new `;cmd`,
+  COM Mode command, Global Control command, or Package Tools change was added.
+- Verification for user template JSON phase 1 passed in the Release build:
+  `cmake --build . --target completion_test gui_smoke_test relationship_test`;
+  `ctest -R "^(completion_test|relationship_test|gui_smoke_test)$"
+  --output-on-failure`; `git diff --check -- .
+  ':!test_sv/new/elec_phy_import/ctrl/chl_ctrl.sv'`.
 - Verification Baseline Repair after Package Tools phase 1 is complete. This
   was baseline repair only, not Package Tools phase 2: Release
   `relationship_test` rebuild failures were traced to generated MinGW
@@ -415,15 +429,15 @@ Status:
 - G6.2 User Template Storage/Query Model is complete:
   `UserTemplateService` now owns validation, persistence, reload, exact-token
   query, add/update, remove, and clear operations for compact `;;` user
-  template records. Records persist under `QSettings` `userTemplates/items`,
-  preserve selection and `CodeTemplateSlotList` metadata, and expose
-  `CodeTemplateItem`-compatible query results. Built-in `CodeTemplateService`
-  behavior remains separate and unchanged; arbitrary user template tokens are
-  not wired into the inline `;;cmd` popup in this milestone.
-- Focused verification for G6.2: `git diff --check`; Release
-  `completion_test` and `gui_smoke_test` targets compile/link; Release
-  `completion_test` passed directly with 680 checks and 0 failures; `ctest -R
-  "^completion_test$"` passed. `gui_smoke_test` was not launched.
+  template records. Records are maintained in JSON files: a global
+  `user_templates.json` and an optional workspace
+  `.zeroslack/user_templates.json`. The service preserves
+  `CodeTemplateSlotList` metadata, exposes `CodeTemplateItem`-compatible query
+  results, and reports invalid JSON, invalid commands, invalid slots, and
+  conflicts without mutating built-in templates.
+- Focused verification for G6.2: Release `completion_test` and
+  `gui_smoke_test` passed through `ctest -R
+  "^(completion_test|gui_smoke_test)$" --output-on-failure`.
 - G6.3 Custom Abbreviation Resolution is complete:
   `CustomAbbreviationService` now owns validation, persistence, reload, prefix
   query, intent-scoped query, exact resolution, add/update, remove, and clear
@@ -439,16 +453,17 @@ Status:
 - G6.4 Integrate User Templates With Slot Mode is complete:
   `CompletionService` now consumes service-owned `UserTemplateService` records
   in the inline `;;cmd` template path. Normal use falls back to the singleton
-  user-template service; tests can inject an ini-backed service. Compact user
+  user-template service; tests can inject global/workspace JSON paths. Compact user
   `;;token ` commands are recognized as `CodeTemplate` intent without changing
   `;cmd`, COM Mode, Global Control, or custom abbreviation namespaces. Built-in
-  templates keep priority, template completion results merge built-in and exact
-  user-template records, and activation preserves insert text, primary
+  templates keep priority, workspace user templates override global user
+  templates with the same command token, and reserved `;;h` / `;;pk` holes stay
+  unavailable in this phase. Activation preserves insert text, primary
   selection, and `CodeTemplateSlotList` metadata through the existing
   `EditorCompletionWorkflow` / `MyCodeEditor` Slot Mode path.
-- Focused verification for G6.4: `git diff --check`; Release
-  `completion_test` and `gui_smoke_test` targets compile/link; `ctest -R
-  "^completion_test$"` passed. `gui_smoke_test` was not launched.
+- Focused verification for G6.4: Release `completion_test` and
+  `gui_smoke_test` passed through `ctest -R
+  "^(completion_test|gui_smoke_test)$" --output-on-failure`.
 - G7.1 Fold Shelf Persistence Schema And Ownership is complete:
   existing owners are documented. `FoldBlockShelfModel` owns the in-memory
   shelf item list and add/consume/remove/clear lifecycle; `FoldShelfItem`

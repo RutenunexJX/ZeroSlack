@@ -19,27 +19,38 @@ struct UserTemplateRecord {
 };
 
 struct UserTemplateIssue {
+    QString source;
     QString id;
     QString field;
     QString reason;
 };
 
-struct UserTemplateSaveReport {
+struct UserTemplateLoadReport {
     bool valid = false;
     QList<UserTemplateRecord> records;
     QList<UserTemplateIssue> issues;
     QString failureReason;
 };
 
+using UserTemplateSaveReport = UserTemplateLoadReport;
+
 class UserTemplateService
 {
 public:
     static UserTemplateService* getInstance();
 
-    explicit UserTemplateService(const QString& settingsFilePath = QString());
+    explicit UserTemplateService(
+        const QString& globalTemplateFilePath = QString(),
+        const QString& workspaceTemplateFilePath = QString());
     ~UserTemplateService();
 
     QString storageLocation() const;
+    QString globalTemplateLocation() const;
+    QString workspaceTemplateLocation() const;
+    void setWorkspaceRoot(const QString& workspaceRoot);
+    void setWorkspaceTemplateFilePath(const QString& filePath);
+    UserTemplateLoadReport reload() const;
+    UserTemplateLoadReport lastLoadReport() const;
     QList<UserTemplateRecord> records() const;
     QList<CodeTemplateItem> catalog() const;
     QList<CodeTemplateItem> matchingTemplates(
@@ -56,7 +67,9 @@ public:
     void clear() const;
 
 private:
-    QString settingsFilePath;
+    QString globalTemplateFilePath;
+    QString workspaceTemplateFilePath;
+    mutable UserTemplateLoadReport latestReport;
 
     static std::unique_ptr<UserTemplateService> instance;
 };

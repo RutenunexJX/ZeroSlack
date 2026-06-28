@@ -80,6 +80,12 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
   package symbols and inserts `import pkg_name::*;`. `;p` remains parameter
   semantic completion, COM `gpk` remains package navigation, and `;;pk` is
   intentionally unassigned.
+- User `;;cmd` templates can now be maintained in JSON files. ZeroSlack reads
+  a global `user_templates.json` plus an optional workspace
+  `.zeroslack/user_templates.json`; workspace templates override global
+  templates with the same command token, while built-in templates and the
+  reserved `;;h` / `;;pk` slots cannot be overridden. Valid user templates
+  enter the existing `;;cmd` completion and Slot Mode insertion path.
 - Problems/Diagnostics now expose owner and status data in the existing
   Problems panel: diagnostic rows show owner (`Slang`, `Semantic index`),
   current-file error/warning/info summary follows the active tab, and status
@@ -90,8 +96,8 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
   expansion. COM Mode is for editor-local command actions. Slot Mode is the
   post-template editor-local fill flow; it is active for `;;p` / `;;lp`
   parameter templates and `;;l` / `;;w` / `;;r` signal declaration templates,
-  for `;m` semantic module instantiation completions, and not yet active for
-  other template families. `;;m` remains the module definition skeleton path.
+  for `;m` semantic module instantiation completions, and for user templates
+  that provide slot metadata. `;;m` remains the module definition skeleton path.
 - Package Tools phase 1 is available when the active editor cursor is inside a
   parseable SystemVerilog package. The lightweight editor bar inserts
   package-scoped `parameter`, `localparam`, `typedef enum`,
@@ -400,11 +406,14 @@ Current command surfaces are intentionally separate:
   package-wide sorting, new graphs, and insight panels; Track 15 owns
   macro/define semantics.
 - User template storage/query is service-owned by `UserTemplateService`. It
-  persists validated `;;` template records in `QSettings`, exposes
-  `CodeTemplateItem`-compatible catalog and exact-token query results, and is
-  consumed by `CompletionService` for inline `;;cmd` template completion.
-  Activation preserves template slot metadata and starts Slot Mode through the
-  existing `EditorCompletionWorkflow` path when a user template carries slots.
+  reads validated compact `;;` template records from global and workspace JSON
+  files, exposes `CodeTemplateItem`-compatible catalog and exact-token query
+  results, and is consumed by `CompletionService` for inline `;;cmd` template
+  completion. Workspace JSON has priority over global JSON for user-defined
+  command tokens; built-in `;;cmd` templates and reserved `;;h` / `;;pk` slots
+  are reported and ignored instead of overridden. Activation preserves template
+  slot metadata and starts Slot Mode through the existing
+  `EditorCompletionWorkflow` path when a user template carries slots.
 - Custom abbreviation resolution is service-owned by
   `CustomAbbreviationService`. It persists validated compact abbreviations in
   `QSettings`, resolves them to existing `;cmd` semantic command tokens or
@@ -736,6 +745,21 @@ Do not add unlisted long-term goals without explicit user approval.
   management, COM Mode command, or Global Control entry was added. Release
   verification passed: `cmake --build . --target completion_test
   gui_smoke_test relationship_test`; `ctest -R
+  "^(completion_test|relationship_test|gui_smoke_test)$"
+  --output-on-failure`; `git diff --check -- .
+  ':!test_sv/new/elec_phy_import/ctrl/chl_ctrl.sv'`.
+- Latest user template JSON phase 1: users can maintain compact `;;cmd`
+  templates in JSON files without adding a GUI editor. The service reads a
+  global `user_templates.json` and an active-workspace
+  `.zeroslack/user_templates.json`; each record uses `command`, `description`,
+  `body` or `insertText`, and optional relative `slots`. Workspace templates
+  override global user templates with the same token, but built-in templates
+  and reserved `;;h` / `;;pk` holes are reported and ignored instead of being
+  overridden. Valid templates use the existing `;;cmd` completion and Slot Mode
+  insertion path; this adds no `;cmd`, COM Mode, Global Control, Package Tools,
+  import/export, macro recorder, or variable system. Release verification
+  passed: `cmake --build . --target completion_test gui_smoke_test
+  relationship_test`; `ctest -R
   "^(completion_test|relationship_test|gui_smoke_test)$"
   --output-on-failure`; `git diff --check -- .
   ':!test_sv/new/elec_phy_import/ctrl/chl_ctrl.sv'`.

@@ -106,6 +106,7 @@
 #include "smartrelationshipbuilder.h"
 #include "tabmanager.h"
 #include "tsdocument.h"
+#include "usertemplateservice.h"
 #include "wavepreviewpanelcoordinator.h"
 #include "workspaceanalysisplanservice.h"
 #include "workspaceanalysisrequestqueue.h"
@@ -159,6 +160,16 @@ static void expectBool(const char* what, bool got, bool want)
     printf("[%s] %-48s got=%s want=%s\n",
            ok ? "PASS" : "FAIL", what, got ? "true" : "false", want ? "true" : "false");
     fflush(stdout);
+}
+
+static bool writeTextFile(const QString& fileName, const QString& text)
+{
+    QFile file(fileName);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate | QFile::Text))
+        return false;
+    QTextStream out(&file);
+    out << text;
+    return true;
 }
 
 static QString visibleEditorHoverPopupText(bool* visible = nullptr)
@@ -9050,6 +9061,83 @@ int main(int argc, char** argv)
         guiInstantiationIndex.setSnapshot(
             snapshotFromRecords(guiInstantiationRecords));
         CompletionService::getInstance()->setSemanticIndex(&guiInstantiationIndex);
+
+        QTemporaryDir userTemplateGuiDir;
+        expectBool("user template GUI temp dir valid",
+                   userTemplateGuiDir.isValid(),
+                   true);
+        const QString userTemplateGuiJson =
+            QDir(userTemplateGuiDir.path()).absoluteFilePath(
+                QStringLiteral("user_templates.json"));
+        expectBool("write GUI user template JSON",
+                   writeTextFile(userTemplateGuiJson,
+                                 QStringLiteral(
+                                     "[\n"
+                                     "  {\n"
+                                     "    \"command\": \";;guiut\",\n"
+                                     "    \"description\": \"GUI user template\",\n"
+                                     "    \"body\": \"logic gui_slot;\",\n"
+                                     "    \"slots\": [\n"
+                                     "      {\"name\": \"signal\", \"start\": 6, \"length\": 8}\n"
+                                     "    ]\n"
+                                     "  }\n"
+                                     "]\n")),
+                   true);
+        UserTemplateService::getInstance()->setWorkspaceTemplateFilePath(
+            userTemplateGuiJson);
+        UserTemplateService::getInstance()->reload();
+
+        editor->setPlainText(QStringLiteral("module gui_top;\n"
+                                            "\n"
+                                            "endmodule\n"));
+        QTextCursor userTemplateCursor(editor->document()->findBlockByNumber(1));
+        editor->setTextCursor(userTemplateCursor);
+        editor->setFocus();
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+        QTest::keyClicks(editor, ";;guiut ");
+
+        QCompleter* userTemplateCompleter = editor->findChild<QCompleter*>();
+        QModelIndex guiUserTemplateIndex;
+        expectBool("user template completion popup shows template",
+                   waitUntil([&]() {
+                       if (!userTemplateCompleter
+                           || !userTemplateCompleter->model()) {
+                           return false;
+                       }
+                       QAbstractItemModel* model =
+                           userTemplateCompleter->model();
+                       for (int row = 0; row < model->rowCount(); ++row) {
+                           const QModelIndex index = model->index(row, 0);
+                           const QString display =
+                               model->data(index, Qt::DisplayRole).toString();
+                           if (display.contains(QStringLiteral(";;guiut"))) {
+                               guiUserTemplateIndex = index;
+                               return true;
+                           }
+                       }
+                       return false;
+                   }, 3000),
+                   true);
+        if (userTemplateCompleter && guiUserTemplateIndex.isValid()) {
+            userTemplateCompleter->popup()->setCurrentIndex(
+                guiUserTemplateIndex);
+            QTest::keyClick(editor, Qt::Key_Return);
+            QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
+        }
+        expectBool("user template GUI activation inserts text",
+                   editor->toPlainText().contains(
+                       QStringLiteral("logic gui_slot;")),
+                   true);
+        expectBool("user template GUI activation enters Slot Mode",
+                   waitUntil([&]() {
+                       return editor->templateSlotModeActive()
+                           && editor->templateSlotModeActiveIndex() == 0
+                           && editor->templateSlotModeSlotCount() == 1
+                           && editor->textCursor().selectedText()
+                               == QStringLiteral("gui_slot");
+                   }, 2000),
+                   true);
+        sendWidgetKey(editor, Qt::Key_Escape);
 
         editor->setPlainText(QStringLiteral("module gui_top;\n"
                                             "\n"

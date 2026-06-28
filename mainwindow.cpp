@@ -33,6 +33,7 @@
 #include "semanticindex.h"
 #include "semanticpanelrefreshcoordinator.h"
 #include "semanticruntimecoordinator.h"
+#include "usertemplateservice.h"
 #include "activitylogpanelcoordinator.h"
 #include "activitylogservice.h"
 #include "problemspanelcoordinator.h"
@@ -237,6 +238,8 @@ void MainWindow::setupWorkspaceBar()
             &WorkspaceManager::workspaceActivated,
             this,
             [this](int, const QString&, const QString& path) {
+                UserTemplateService::getInstance()->setWorkspaceRoot(path);
+                UserTemplateService::getInstance()->reload();
                 if (foldShelfModel)
                     foldShelfModel->setWorkspaceRoot(path);
                 refreshWorkspaceTabs();
@@ -248,6 +251,8 @@ void MainWindow::setupWorkspaceBar()
                 const QString activePath =
                     workspaceManager ? workspaceManager->getWorkspacePath()
                                      : QString();
+                UserTemplateService::getInstance()->setWorkspaceRoot(activePath);
+                UserTemplateService::getInstance()->reload();
                 if (foldShelfModel)
                     foldShelfModel->setWorkspaceRoot(activePath);
                 refreshWorkspaceTabs();
