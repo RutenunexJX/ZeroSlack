@@ -163,6 +163,9 @@ First milestones:
   one undoable edit block)
 - M3.3 connect result to slot mode
   (complete: successful clear-RHS reports start Slot Mode on `rhsN` fill slots)
+- M3.4 expose clear-RHS as a COM Mode command
+  (complete: `cr` clears the selected/current assignment RHS and starts Slot
+  Mode through the editor-local clear-RHS path)
 
 M3.1 implementation status:
 
@@ -213,6 +216,24 @@ M3.3 implementation status:
   Tab advance, final Tab exit, undo restore, and declaration rejection; Release
   `completion_test` and `gui_smoke_test` targets compile/link.
 
+M3.4 implementation status:
+
+- Complete: COM Mode registry exposes `cr` as the only clear-domain command
+  with command-strip hint metadata.
+- Complete: `ComModeCoordinator` dispatches `cr` through
+  `MyCodeEditor::clearSelectedAssignmentRhs` and leaves failures in COM Mode
+  with a non-modal `No assignment RHS found` message.
+- Complete: `MyCodeEditor::clearSelectedAssignmentRhs` also supports the
+  no-selection case by locating the current assignment statement and still
+  applying the existing `RtlBatchEditService` report path.
+- Complete: successful `cr` execution starts Slot Mode on the cleared RHS
+  slots and exits COM Mode back to INSERT for immediate editing.
+- Verification: Release `completion_test` covers selection cleanup,
+  current-assignment cleanup, failure without mutation, undo restore, and Slot
+  Mode slot order. Release `gui_smoke_test` target compile/link passed and the
+  launched smoke output shows all new COM `cr` checks passing, but the full
+  monolithic GUI smoke baseline still fails on unrelated existing checks.
+
 ### 4. COM Mode Framework Completion
 
 Goal: improve COM Mode quality before adding more commands.
@@ -234,6 +255,8 @@ First milestones:
   (complete: command strip renders registry-backed prefix and line hints)
 - M4.3 centralize conflict validation and failure messages
   (complete: registry validates conflicts and supplies COM failure messages)
+- M4.4 register the first non-g editor-local editing command
+  (complete: `cr` uses the registry/dispatcher/hint/failure-message framework)
 
 ### 5. Limited Workspace Workflow Additions
 

@@ -6377,6 +6377,16 @@ static void runComModeRegression(MainWindow& window)
                comModeCommandFailureMessage(QStringLiteral("gx"))
                    .contains(QStringLiteral("gx")),
                true);
+    const ComModeCommandMetadata* clearRhsMetadata =
+        findComModeCommandMetadata(QStringLiteral("cr"));
+    expectBool("COM registry exposes clear RHS command",
+               clearRhsMetadata
+                   && clearRhsMetadata->executable
+                   && clearRhsMetadata->description.contains(
+                       QStringLiteral("RHS"))
+                   && executableComModeCommand(QStringLiteral("cr"))
+                       == QStringLiteral("cr"),
+               true);
 
     MyCodeEditor insertEditor;
     insertEditor.resize(360, 120);
@@ -6547,6 +6557,20 @@ static void runComModeRegression(MainWindow& window)
                    && comCommandSpy.takeFirst().at(0).toString()
                           == QStringLiteral("gef"),
                true);
+    sendWidgetKey(&modeEditor, Qt::Key_C, QStringLiteral("c"));
+    expectBool("COM c stays a prefix before clear RHS",
+               modeEditor.comModeActive()
+                   && modeEditor.comModeBuffer() == QStringLiteral("c")
+                   && comCommandSpy.count() == 0,
+               true);
+    sendWidgetKey(&modeEditor, Qt::Key_R, QStringLiteral("r"));
+    expectBool("COM cr executes clear RHS command",
+               modeEditor.comModeActive()
+                   && modeEditor.comModeBuffer().isEmpty()
+                   && comCommandSpy.count() == 1
+                   && comCommandSpy.takeFirst().at(0).toString()
+                          == QStringLiteral("cr"),
+               true);
     sendWidgetKey(&modeEditor, Qt::Key_QuoteLeft, QStringLiteral("`"));
     expectBool("backtick exits COM mode",
                !modeEditor.comModeActive(),
@@ -6613,6 +6637,59 @@ static void runComModeRegression(MainWindow& window)
                        && strip->text() == QStringLiteral("COM")
                        && strip->styleSheet().contains(QStringLiteral("#111827"))
                        && strip->styleSheet().contains(QStringLiteral("#D1FAE5")),
+                   true);
+
+        const QString comClearRhsOriginal =
+            QStringLiteral("module com_clear_rhs;\n"
+                           "  assign a = rhs_value;\n"
+                           "endmodule\n");
+        activeEditor->setPlainText(comClearRhsOriginal);
+        QTextCursor comClearRhsCursor(activeEditor->document());
+        comClearRhsCursor.setPosition(
+            comClearRhsOriginal.indexOf(QStringLiteral("rhs_value")) + 2);
+        activeEditor->setTextCursor(comClearRhsCursor);
+        sendWidgetKey(activeEditor, Qt::Key_C, QStringLiteral("c"));
+        sendWidgetKey(activeEditor, Qt::Key_R, QStringLiteral("r"));
+        expectBool("COM cr clears current assignment RHS",
+                   !activeEditor->comModeActive()
+                       && activeEditor->templateSlotModeActive()
+                       && activeEditor->templateSlotModeActiveIndex() == 0
+                       && activeEditor->toPlainText()
+                           == QStringLiteral("module com_clear_rhs;\n"
+                                             "  assign a = ;\n"
+                                             "endmodule\n"),
+                   true);
+        sendWidgetKey(activeEditor, Qt::Key_Tab);
+        sendWidgetKey(activeEditor, Qt::Key_Escape);
+        expectBool("COM re-enters after cr slot completion",
+                   activeEditor->comModeActive()
+                       && strip
+                       && strip->isVisible()
+                       && strip->text() == QStringLiteral("COM"),
+                   true);
+
+        const QString comClearRhsNoAssignment =
+            QStringLiteral("module com_no_rhs;\nendmodule\n");
+        activeEditor->setPlainText(comClearRhsNoAssignment);
+        QTextCursor comNoAssignmentCursor(activeEditor->document());
+        comNoAssignmentCursor.setPosition(
+            comClearRhsNoAssignment.indexOf(QStringLiteral("com_no_rhs")));
+        activeEditor->setTextCursor(comNoAssignmentCursor);
+        sendWidgetKey(activeEditor, Qt::Key_C, QStringLiteral("c"));
+        sendWidgetKey(activeEditor, Qt::Key_R, QStringLiteral("r"));
+        expectBool("COM cr failure leaves text and reports reason",
+                   activeEditor->comModeActive()
+                       && activeEditor->toPlainText() == comClearRhsNoAssignment
+                       && strip
+                       && strip->text().contains(
+                           QStringLiteral("No assignment RHS found"))
+                       && strip->styleSheet().contains(QStringLiteral("#1F1115")),
+                   true);
+        sendWidgetKey(activeEditor, Qt::Key_Escape);
+        expectBool("COM cr failure clears with Esc",
+                   activeEditor->comModeActive()
+                       && strip
+                       && strip->text() == QStringLiteral("COM"),
                    true);
 
         sendWidgetKey(activeEditor, Qt::Key_G, QStringLiteral("g"));

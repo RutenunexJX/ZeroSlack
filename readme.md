@@ -40,7 +40,8 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
   COM states, enters with Esc when an editor tab is open, exits with backtick,
   and shows an app-level command strip. Current g-domain commands are `gm`,
   `g<num><Enter>`, `gp`, `gpk`, `gpa`, `gpo`, `gsi`, `gsd`, `gii`, `gac`,
-  `gpi`, `ge`, and `gef`. Existing fixed commands, prefixes, and the
+  `gpi`, `ge`, and `gef`; the current clear-domain command is `cr` for clearing
+  assignment RHS fill points. Existing fixed commands, prefixes, and the
   module-relative line command are described by shared `commodecommandregistry`
   metadata. The command strip renders registry-backed hints for prefixes and
   module-relative line buffers, with a normal dark palette and a distinct dark
@@ -57,9 +58,10 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
   and not yet active for other template families.
 - Batch RTL editing has a first editor-local action:
   `MyCodeEditor::clearSelectedAssignmentRhs` clears RHS expressions in the
-  current selection for supported assignment statements, then starts Slot Mode
-  on the cleared RHS fill points. The obsolete named-action entry layer has
-  been removed.
+  current selection, or the current assignment when there is no selection, for
+  supported assignment statements, then starts Slot Mode on the cleared RHS fill
+  points. COM Mode command `cr` invokes this editor-local action. The obsolete
+  named-action entry layer has been removed.
 - Fold Region and Fold Shelf are available through Global Control. Fold Shelf
   now has a service/model-owned persistence baseline and explicit cross-file
   restore flow plus basic rename, search, and stale/consumed cleanup
@@ -439,6 +441,10 @@ assignment statements and producing fill slots for the future Slot Mode flow.
   `MyCodeEditor::clearSelectedAssignmentRhs`. The action applies the report in
   one undoable edit block and preserves failure reasons in editor status
   feedback.
+- COM Mode command `cr` invokes the same editor-local clear-RHS path. It clears
+  selected assignments, or the current assignment when there is no selection,
+  enters Slot Mode on the cleared RHS positions, and reports `No assignment RHS
+  found` in the command strip/status path without opening a modal dialog.
 - Slot Mode entry is active for this report. The first RHS slot is selected
   after replacement; Tab/Shift+Tab/final Tab/Esc reuse the existing Slot Mode
   state.
@@ -478,3 +484,8 @@ Do not add unlisted long-term goals without explicit user approval.
   menu assertions now cover all five actions including `ShowModuleBlockDiagram`.
   Release `ctest -R "^completion_test$" --output-on-failure` and
   `ctest -R "^relationship_test$" --output-on-failure` both passed.
+- Latest COM clear-RHS command repair: Release `completion_test` and
+  `relationship_test` passed; Release `completion_test` and `gui_smoke_test`
+  targets compile/link. `gui_smoke_test` was launched with Windows fault-dialog
+  suppression and its new COM `cr` checks passed, but the monolithic smoke test
+  still fails on existing non-`cr` baseline checks.

@@ -5911,6 +5911,45 @@ int main(int argc, char** argv) {
              clearRhsEditor.toPlainText(),
              clearRhsOriginal);
 
+    MyCodeEditor clearCurrentRhsEditor;
+    const QString clearCurrentRhsOriginal =
+        QStringLiteral("module batch_current;\n"
+                       "  assign c = rhs_value;\n"
+                       "endmodule\n");
+    clearCurrentRhsEditor.setPlainText(clearCurrentRhsOriginal);
+    QTextCursor clearCurrentRhsCursor(clearCurrentRhsEditor.document());
+    clearCurrentRhsCursor.setPosition(
+        clearCurrentRhsOriginal.indexOf(QStringLiteral("rhs_value")) + 3);
+    clearCurrentRhsEditor.setTextCursor(clearCurrentRhsCursor);
+    QString clearCurrentRhsMessage;
+    expectBool("Editor clear RHS applies current assignment",
+               clearCurrentRhsEditor.clearSelectedAssignmentRhs(
+                   &clearCurrentRhsMessage),
+               true);
+    expectEq("Editor clear RHS current assignment text",
+             clearCurrentRhsEditor.toPlainText(),
+             QStringLiteral("module batch_current;\n"
+                            "  assign c = ;\n"
+                            "endmodule\n"));
+    expectBool("Editor clear RHS current assignment slot",
+               clearCurrentRhsEditor.templateSlotModeActive()
+                   && clearCurrentRhsEditor.templateSlotModeActiveIndex() == 0
+                   && clearCurrentRhsEditor.textCursor().position()
+                       == clearCurrentRhsEditor.toPlainText().indexOf(
+                              QStringLiteral("assign c = ;"))
+                              + QStringLiteral("assign c = ").size()
+                   && clearCurrentRhsMessage
+                          == QStringLiteral("Cleared RHS for 1 assignment"),
+               true);
+    expectBool("Editor clear RHS current assignment final Tab exits",
+               sendEditorKey(clearCurrentRhsEditor, Qt::Key_Tab)
+                   && !clearCurrentRhsEditor.templateSlotModeActive(),
+               true);
+    clearCurrentRhsEditor.undo();
+    expectEq("Editor clear RHS current assignment undo restores original",
+             clearCurrentRhsEditor.toPlainText(),
+             clearCurrentRhsOriginal);
+
     MyCodeEditor clearRhsSlotEditor;
     clearRhsSlotEditor.setPlainText(clearRhsOriginal);
     QTextCursor clearRhsSlotCursor(clearRhsSlotEditor.document());
@@ -5948,6 +5987,25 @@ int main(int argc, char** argv) {
                !clearRhsRejectEditor.clearSelectedAssignmentRhs()
                    && clearRhsRejectEditor.toPlainText()
                        == QStringLiteral("logic a = b;\n"),
+               true);
+
+    MyCodeEditor clearRhsNoAssignmentEditor;
+    const QString clearRhsNoAssignmentOriginal =
+        QStringLiteral("module no_rhs;\nendmodule\n");
+    clearRhsNoAssignmentEditor.setPlainText(clearRhsNoAssignmentOriginal);
+    QTextCursor clearRhsNoAssignmentCursor(
+        clearRhsNoAssignmentEditor.document());
+    clearRhsNoAssignmentCursor.setPosition(
+        clearRhsNoAssignmentOriginal.indexOf(QStringLiteral("no_rhs")));
+    clearRhsNoAssignmentEditor.setTextCursor(clearRhsNoAssignmentCursor);
+    QString clearRhsNoAssignmentMessage;
+    expectBool("Editor clear RHS no assignment fails without edit",
+               !clearRhsNoAssignmentEditor.clearSelectedAssignmentRhs(
+                   &clearRhsNoAssignmentMessage)
+                   && clearRhsNoAssignmentEditor.toPlainText()
+                       == clearRhsNoAssignmentOriginal
+                   && clearRhsNoAssignmentMessage
+                       == QStringLiteral("No assignment RHS found"),
                true);
 
     expectBool("CompletionService command statement reject",

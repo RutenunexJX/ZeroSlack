@@ -156,7 +156,8 @@ struct MyCodeEditorState
     void uncommentSelectionOrLine(MyCodeEditor* editor);
     void indentSelectionOrLine(MyCodeEditor* editor);
     void unindentSelectionOrLine(MyCodeEditor* editor);
-    bool clearSelectedAssignmentRhs(MyCodeEditor* editor);
+    bool clearSelectedAssignmentRhs(MyCodeEditor* editor,
+                                    QString* message = nullptr);
     void startFoldRegionMarkMode(MyCodeEditor* editor);
     void cancelFoldRegionMarkMode(MyCodeEditor* editor);
     bool foldRegionMarkModeActive() const;

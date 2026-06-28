@@ -690,9 +690,9 @@ void MyCodeEditor::unindentSelectionOrLine()
     state->unindentSelectionOrLine(this);
 }
 
-bool MyCodeEditor::clearSelectedAssignmentRhs()
+bool MyCodeEditor::clearSelectedAssignmentRhs(QString* message)
 {
-    return state->clearSelectedAssignmentRhs(this);
+    return state->clearSelectedAssignmentRhs(this, message);
 }
 
 void MyCodeEditor::highlightSearchMatches(

@@ -139,7 +139,7 @@ public:
     void uncommentSelectionOrLine();
     void indentSelectionOrLine();
     void unindentSelectionOrLine();
-    bool clearSelectedAssignmentRhs();
+    bool clearSelectedAssignmentRhs(QString* message = nullptr);
     void highlightSearchMatches(const QString& text, bool caseSensitive);
     void clearSearchMatches();
     void flashLine(int lineNumber);

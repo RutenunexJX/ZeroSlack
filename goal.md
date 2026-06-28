@@ -28,8 +28,7 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
 
 ## Current Goal State
 
-Current milestone: none after Module Block Diagram container rendering and
-drill-down repair.
+Current milestone: none after COM clear-RHS command integration.
 
 Next work should wait for the next explicit scoped request.
 
@@ -79,6 +78,18 @@ Status:
   "^(completion_test|relationship_test)$" --output-on-failure` passed. The GUI
   smoke executable was not launched to avoid another modal Windows crash dialog
   during this repair loop.
+- COM clear-RHS command integration is complete: COM Mode now registers `cr`
+  as the clear-RHS editor-local command, dispatches it through
+  `MyCodeEditor::clearSelectedAssignmentRhs`, supports selected assignments and
+  current-assignment no-selection cleanup, starts Slot Mode on cleared RHS fill
+  points, and keeps failure feedback non-modal in the command strip/status path.
+- Focused verification for the COM clear-RHS command: Release
+  `completion_test` and `gui_smoke_test` targets compile/link; Release
+  `ctest -R "^completion_test$" --output-on-failure` and
+  `ctest -R "^relationship_test$" --output-on-failure` passed. Release
+  `gui_smoke_test` was launched with Windows fault-dialog suppression; all new
+  COM `cr` checks passed, but the full smoke baseline still fails on existing
+  non-`cr` checks.
 - G0 Documentation And Goal Reset is complete and pushed in commit `bc2c059`.
 - G4.1 Registry Metadata For Existing COM Commands is complete:
   `commodecommandregistry` now owns metadata for fixed executable commands,

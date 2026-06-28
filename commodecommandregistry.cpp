@@ -110,6 +110,12 @@ QString childCommandHint(const QString& prefix)
 const QList<ComModeCommandMetadata>& comModeCommandRegistry()
 {
     static const QList<ComModeCommandMetadata> registry = {
+        {QStringLiteral("cr"),
+         true,
+         ComModeCommandInputKind::Fixed,
+         QStringLiteral("clear"),
+         QStringLiteral("Clear assignment RHS"),
+         QStringLiteral("Clear assignment RHS and create fill slots.")},
         {QStringLiteral("g<num>"),
          true,
          ComModeCommandInputKind::ModuleRelativeLine,

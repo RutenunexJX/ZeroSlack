@@ -3504,20 +3504,170 @@ void MyCodeEditorState::unindentSelectionOrLine(MyCodeEditor* editor)
     applyLineUnindent(editor);
 }
 
-bool MyCodeEditorState::clearSelectedAssignmentRhs(MyCodeEditor* editor)
+namespace {
+enum class CurrentStatementScanState {
+    Normal,
+    LineComment,
+    BlockComment,
+    String
+};
+
+int topLevelSemicolonEndFrom(const QString& text, int start)
+{
+    int parenDepth = 0;
+    int bracketDepth = 0;
+    int braceDepth = 0;
+    CurrentStatementScanState state = CurrentStatementScanState::Normal;
+
+    for (int i = qBound(0, start, text.size()); i < text.size(); ++i) {
+        const QChar ch = text.at(i);
+        const QChar next = i + 1 < text.size() ? text.at(i + 1) : QChar();
+
+        if (state == CurrentStatementScanState::LineComment) {
+            if (ch == QLatin1Char('\n'))
+                state = CurrentStatementScanState::Normal;
+            continue;
+        }
+        if (state == CurrentStatementScanState::BlockComment) {
+            if (ch == QLatin1Char('*') && next == QLatin1Char('/')) {
+                state = CurrentStatementScanState::Normal;
+                ++i;
+            }
+            continue;
+        }
+        if (state == CurrentStatementScanState::String) {
+            if (ch == QLatin1Char('\\') && i + 1 < text.size()) {
+                ++i;
+                continue;
+            }
+            if (ch == QLatin1Char('"'))
+                state = CurrentStatementScanState::Normal;
+            continue;
+        }
+
+        if (ch == QLatin1Char('/') && next == QLatin1Char('/')) {
+            state = CurrentStatementScanState::LineComment;
+            ++i;
+            continue;
+        }
+        if (ch == QLatin1Char('/') && next == QLatin1Char('*')) {
+            state = CurrentStatementScanState::BlockComment;
+            ++i;
+            continue;
+        }
+        if (ch == QLatin1Char('"')) {
+            state = CurrentStatementScanState::String;
+            continue;
+        }
+
+        if (ch == QLatin1Char('(')) {
+            ++parenDepth;
+            continue;
+        }
+        if (ch == QLatin1Char(')')) {
+            parenDepth = qMax(0, parenDepth - 1);
+            continue;
+        }
+        if (ch == QLatin1Char('[')) {
+            ++bracketDepth;
+            continue;
+        }
+        if (ch == QLatin1Char(']')) {
+            bracketDepth = qMax(0, bracketDepth - 1);
+            continue;
+        }
+        if (ch == QLatin1Char('{')) {
+            ++braceDepth;
+            continue;
+        }
+        if (ch == QLatin1Char('}')) {
+            braceDepth = qMax(0, braceDepth - 1);
+            continue;
+        }
+
+        if (ch == QLatin1Char(';') && parenDepth == 0
+            && bracketDepth == 0 && braceDepth == 0) {
+            return i + 1;
+        }
+    }
+    return -1;
+}
+
+bool currentAssignmentRange(MyCodeEditor* editor,
+                            int cursorPosition,
+                            int* rangeStart,
+                            int* rangeEnd)
+{
+    if (!editor || !editor->document() || !rangeStart || !rangeEnd)
+        return false;
+
+    const QString documentText = editor->toPlainText();
+    QTextBlock block = editor->document()->findBlock(cursorPosition);
+    if (!block.isValid())
+        return false;
+
+    constexpr int kMaxLookbackLines = 40;
+    for (int lookedBack = 0;
+         lookedBack < kMaxLookbackLines && block.isValid();
+         ++lookedBack, block = block.previous()) {
+        const int candidateStart = block.position();
+        const int candidateEnd =
+            topLevelSemicolonEndFrom(documentText, candidateStart);
+        if (candidateEnd <= cursorPosition)
+            continue;
+        if (candidateEnd < 0)
+            continue;
+
+        const QString candidateText =
+            documentText.mid(candidateStart, candidateEnd - candidateStart);
+        const RtlClearAssignmentRhsReport report =
+            RtlBatchEditService::getInstance()->planClearAssignmentRhs(
+                RtlClearAssignmentRhsQuery{candidateText, candidateStart});
+        if (!report.canApply() || report.edits.size() != 1)
+            continue;
+
+        *rangeStart = candidateStart;
+        *rangeEnd = candidateEnd;
+        return true;
+    }
+    return false;
+}
+
+void publishClearRhsFailure(MyCodeEditor* editor,
+                            QString* message,
+                            const QString& failure)
+{
+    const QString resolved = failure.isEmpty()
+        ? QStringLiteral("No assignment RHS found")
+        : failure;
+    if (message)
+        *message = resolved;
+    if (editor)
+        emit editor->editorStatusMessageRequested(resolved);
+}
+} // namespace
+
+bool MyCodeEditorState::clearSelectedAssignmentRhs(MyCodeEditor* editor,
+                                                   QString* message)
 {
     if (!editor || !editor->document())
         return false;
 
     QTextCursor cursor = editor->textCursor();
+    int selectionStart = cursor.selectionStart();
+    int selectionEnd = cursor.selectionEnd();
     if (!cursor.hasSelection()) {
-        emit editor->editorStatusMessageRequested(
-            QStringLiteral("Select assignments to clear RHS"));
-        return false;
+        if (!currentAssignmentRange(editor,
+                                    cursor.position(),
+                                    &selectionStart,
+                                    &selectionEnd)) {
+            publishClearRhsFailure(editor,
+                                   message,
+                                   QStringLiteral("No assignment RHS found"));
+            return false;
+        }
     }
 
-    const int selectionStart = cursor.selectionStart();
-    const int selectionEnd = cursor.selectionEnd();
     const QString selectedText =
         editor->toPlainText().mid(selectionStart,
                                   selectionEnd - selectionStart);
@@ -3525,10 +3675,7 @@ bool MyCodeEditorState::clearSelectedAssignmentRhs(MyCodeEditor* editor)
         RtlBatchEditService::getInstance()->planClearAssignmentRhs(
             RtlClearAssignmentRhsQuery{selectedText, selectionStart});
     if (!report.canApply()) {
-        emit editor->editorStatusMessageRequested(
-            report.failureReason.isEmpty()
-                ? QStringLiteral("No assignment RHS found")
-                : report.failureReason);
+        publishClearRhsFailure(editor, message, report.failureReason);
         return false;
     }
 
@@ -3543,10 +3690,13 @@ bool MyCodeEditorState::clearSelectedAssignmentRhs(MyCodeEditor* editor)
                           selectionStart,
                           report.replacementText.size(),
                           report.templateSlots);
-    emit editor->editorStatusMessageRequested(
+    const QString successMessage =
         QStringLiteral("Cleared RHS for %1 assignment%2")
             .arg(report.edits.size())
-            .arg(report.edits.size() == 1 ? QString() : QStringLiteral("s")));
+            .arg(report.edits.size() == 1 ? QString() : QStringLiteral("s"));
+    if (message)
+        *message = successMessage;
+    emit editor->editorStatusMessageRequested(successMessage);
     return true;
 }
 

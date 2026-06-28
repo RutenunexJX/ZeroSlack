@@ -60,6 +60,7 @@ bool isComModeErrorMessage(const QString& message)
         || message.startsWith(QStringLiteral("Incomplete COM command"))
         || message.startsWith(QStringLiteral("COM command registry is invalid"))
         || message.startsWith(QStringLiteral("Line number must be"))
+        || message.startsWith(QStringLiteral("No assignment"))
         || message.startsWith(QStringLiteral("No current"))
         || message.startsWith(QStringLiteral("No clear"))
         || message.startsWith(QStringLiteral("Module has only"));
@@ -366,6 +367,8 @@ void ComModeCoordinator::handleCommand(MyCodeEditor* editor,
     activeComEditor = editor;
     if (command == QStringLiteral("gm")) {
         showPicker(editor, PickerMode::Module, command);
+    } else if (command == QStringLiteral("cr")) {
+        handleClearAssignmentRhs(editor);
     } else if (command == QStringLiteral("gpk")) {
         showPicker(editor, PickerMode::Package, command);
     } else if (command == QStringLiteral("gpa")) {
@@ -480,6 +483,24 @@ void ComModeCoordinator::handleAssignInsert(MyCodeEditor* editor)
     if (!editor->executeComAssignInsert(&message)) {
         if (message.isEmpty())
             message = QStringLiteral("No clear assign insert point");
+        editor->showComModeMessage(message);
+        emit editor->editorStatusMessageRequested(message);
+        return;
+    }
+
+    editor->exitComMode();
+    editor->setFocus(Qt::ShortcutFocusReason);
+}
+
+void ComModeCoordinator::handleClearAssignmentRhs(MyCodeEditor* editor)
+{
+    if (!editor)
+        return;
+
+    QString message;
+    if (!editor->clearSelectedAssignmentRhs(&message)) {
+        if (message.isEmpty())
+            message = QStringLiteral("No assignment RHS found");
         editor->showComModeMessage(message);
         emit editor->editorStatusMessageRequested(message);
         return;
