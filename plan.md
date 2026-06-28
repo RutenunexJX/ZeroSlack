@@ -1661,6 +1661,27 @@ Latest Macro / Define acceptance stabilization:
   "^(completion_test|relationship_test|gui_smoke_test)$"
   --output-on-failure` twice consecutively.
 
+Latest `;m` module instantiation semantic completion:
+
+- Scope: existing `;m` semantic module completion only. `;;m` remains the
+  module definition skeleton, and no Package Tools phase 2, include/package/
+  import workflow, new command, or COM Mode change was added.
+- `CompletionService` now builds a full named instantiation from indexed module
+  parameter and port records when available, preserving module definition
+  order. Modules without parameters omit `#(...)`; modules without usable port
+  records conservatively fall back to the previous simple instantiation text.
+- Module instantiation activation starts Slot Mode with slots ordered as
+  instance name, parameter values, then port connections. Slot range updates
+  now follow text position rather than Tab order so instance-first Slot Mode
+  works even when parameter values appear earlier in the generated text.
+- Coverage includes parameter+port instantiation text and slot order,
+  no-parameter instantiation without `#(...)`, insufficient-semantics fallback,
+  unchanged `;;m` skeleton behavior, and GUI activation into Slot Mode.
+- Release verification passed: `cmake --build . --target completion_test
+  relationship_test gui_smoke_test`; `ctest -R
+  "^(completion_test|relationship_test|gui_smoke_test)$"
+  --output-on-failure`.
+
 Latest Verification Baseline Repair:
 
 - Scope: baseline repair only after Package Tools phase 1; this is not Package

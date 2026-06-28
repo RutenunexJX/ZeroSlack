@@ -66,6 +66,18 @@ Status:
   --target completion_test relationship_test gui_smoke_test`; Release
   `ctest -R "^(completion_test|relationship_test|gui_smoke_test)$"
   --output-on-failure` passed twice consecutively.
+- `;m` module instantiation semantic completion is complete. Selecting a
+  module through existing `;m` now emits a full named instantiation from
+  semantic parameter and port records when available, omits `#(...)` for
+  modules without parameters, falls back to the previous simple instantiation
+  when parameter/port records are insufficient, and starts Slot Mode with
+  instance, parameter value, then port connection slots. `;;m` remains the
+  module definition skeleton path; no Package Tools phase 2, include/package/
+  import workflow, new command, or COM Mode behavior was added.
+- Verification for `;m` semantic instantiation passed: `cmake --build .
+  --target completion_test relationship_test gui_smoke_test`; Release
+  `ctest -R "^(completion_test|relationship_test|gui_smoke_test)$"
+  --output-on-failure` passed.
 - Verification Baseline Repair after Package Tools phase 1 is complete. This
   was baseline repair only, not Package Tools phase 2: Release
   `relationship_test` rebuild failures were traced to generated MinGW

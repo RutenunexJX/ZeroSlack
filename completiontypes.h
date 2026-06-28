@@ -185,6 +185,9 @@ struct CommandSymbolCompletionItem {
     QString defaultValue;
     QString description;
     QString uniqueKey;
+    int selectionStart = -1;
+    int selectionLength = 0;
+    CodeTemplateSlotList templateSlots;
     SemanticSymbolRecord symbolRecord;
     SymbolStableKey symbolStableKey;
     SymbolTaxonomy::DeclarationKind declarationKind =

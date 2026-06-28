@@ -4,6 +4,7 @@
 // headless tests.
 #include <QApplication>
 #include <QAbstractButton>
+#include <QAbstractItemModel>
 #include <QAction>
 #include <QClipboard>
 #include <QColor>
@@ -74,6 +75,7 @@
 #include "commodecommandregistry.h"
 #include "commodecoordinator.h"
 #include "commodeservice.h"
+#include "completionservice.h"
 #include "globalcontrolcoordinator.h"
 #include "globalcontrolpanel.h"
 #include "globalcontrolservice.h"
@@ -8992,6 +8994,105 @@ int main(int argc, char** argv)
                        !editor->textCursor().hasSelection(),
                        true);
         }
+
+        const QString moduleInstantiationFixturePath =
+            normalizedSymbolFixturePath + QStringLiteral(".module_inst.sv");
+        const SemanticSymbolRecord guiTargetModule =
+            SemanticFixtureRecordBuilder(QStringLiteral("gui_target"),
+                                         SymbolTaxonomy::DeclarationKind::Module)
+                .withFile(moduleInstantiationFixturePath)
+                .withLocalHandle(9401)
+                .withLine(1)
+                .withCollectorKind(SymbolTaxonomy::CollectorKind::Module)
+                .record();
+        const QList<SemanticSymbolRecord> guiInstantiationRecords{
+            guiTargetModule,
+            SemanticFixtureRecordBuilder(QStringLiteral("GUI_WIDTH"),
+                                         SymbolTaxonomy::DeclarationKind::Parameter)
+                .withFile(moduleInstantiationFixturePath)
+                .withLocalHandle(9402)
+                .withLine(2)
+                .withCollectorKind(SymbolTaxonomy::CollectorKind::Parameter)
+                .inModule(QStringLiteral("gui_target"))
+                .record(),
+            SemanticFixtureRecordBuilder(QStringLiteral("clk"),
+                                         SymbolTaxonomy::DeclarationKind::Port)
+                .withFile(moduleInstantiationFixturePath)
+                .withLocalHandle(9403)
+                .withLine(4)
+                .withCollectorKind(SymbolTaxonomy::CollectorKind::PortInput)
+                .inModule(QStringLiteral("gui_target"))
+                .record(),
+            SemanticFixtureRecordBuilder(QStringLiteral("rst_n"),
+                                         SymbolTaxonomy::DeclarationKind::Port)
+                .withFile(moduleInstantiationFixturePath)
+                .withLocalHandle(9404)
+                .withLine(5)
+                .withCollectorKind(SymbolTaxonomy::CollectorKind::PortInput)
+                .inModule(QStringLiteral("gui_target"))
+                .record(),
+        };
+        SemanticIndex guiInstantiationIndex;
+        guiInstantiationIndex.setSnapshot(
+            snapshotFromRecords(guiInstantiationRecords));
+        CompletionService::getInstance()->setSemanticIndex(&guiInstantiationIndex);
+
+        editor->setPlainText(QStringLiteral("module gui_top;\n"
+                                            "\n"
+                                            "endmodule\n"));
+        QTextCursor instantiationCursor(editor->document()->findBlockByNumber(1));
+        editor->setTextCursor(instantiationCursor);
+        editor->setFocus();
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+        QTest::keyClicks(editor, ";m gui_target");
+
+        QCompleter* instantiationCompleter = editor->findChild<QCompleter*>();
+        QModelIndex guiTargetIndex;
+        expectBool("module instantiation completion popup shows target",
+                   waitUntil([&]() {
+                       if (!instantiationCompleter
+                           || !instantiationCompleter->model()) {
+                           return false;
+                       }
+                       QAbstractItemModel* model =
+                           instantiationCompleter->model();
+                       for (int row = 0; row < model->rowCount(); ++row) {
+                           const QModelIndex index = model->index(row, 0);
+                           const QString display =
+                               model->data(index, Qt::DisplayRole).toString();
+                           if (display.contains(QStringLiteral("gui_target"))) {
+                               guiTargetIndex = index;
+                               return true;
+                           }
+                       }
+                       return false;
+                   }, 3000),
+                   true);
+        if (instantiationCompleter && guiTargetIndex.isValid()) {
+            instantiationCompleter->popup()->setCurrentIndex(guiTargetIndex);
+            QTest::keyClick(editor, Qt::Key_Return);
+            QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
+        }
+        CompletionService::getInstance()->setSemanticIndex(SemanticIndex::getInstance());
+        expectBool("module instantiation completion enters Slot Mode",
+                   waitUntil([&]() {
+                       return editor->templateSlotModeActive()
+                           && editor->templateSlotModeActiveIndex() == 0
+                           && editor->templateSlotModeSlotCount() == 4
+                           && editor->textCursor().selectedText()
+                               == QStringLiteral("u_gui_target");
+                   }, 2000),
+                   true);
+        expectBool("module instantiation completion inserts template",
+                   editor->toPlainText().contains(
+                       QStringLiteral("gui_target #(\n"
+                                      "    .GUI_WIDTH(GUI_WIDTH)\n"
+                                      ") u_gui_target (\n"
+                                      "    .clk(clk),\n"
+                                      "    .rst_n(rst_n)\n"
+                                      ");")),
+                   true);
+        sendWidgetKey(editor, Qt::Key_Escape);
     }
 
     NavigationWidget* navWidget = window.findChild<NavigationWidget*>();

@@ -3423,9 +3423,11 @@ void MyCodeEditorState::handleTemplateSlotContentsChange(
         clearTemplateSlotMode(editor);
         return;
     }
-    for (int i = templateSlotActiveIndex + 1;
-         i < templateSlotRanges.size();
-         ++i) {
+    for (int i = 0; i < templateSlotRanges.size(); ++i) {
+        if (i == templateSlotActiveIndex)
+            continue;
+        if (templateSlotRanges.at(i).start < changeEnd)
+            continue;
         templateSlotRanges[i].start += delta;
         templateSlotRanges[i].end += delta;
     }

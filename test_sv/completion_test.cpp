@@ -4287,6 +4287,197 @@ int main(int argc, char** argv) {
              modulePresentationItem.defaultValue,
              QStringLiteral("uart_core u_uart_core (\n);"));
 
+    const QString instantiationFixturePath =
+        QStringLiteral("semantic_module_instantiation.sv");
+    const SemanticSymbolRecord instTargetModule =
+        SemanticFixtureRecordBuilder(QStringLiteral("target_module"),
+                                     SymbolTaxonomy::DeclarationKind::Module)
+            .withFile(instantiationFixturePath)
+            .withLocalHandle(9100)
+            .withLine(1)
+            .withCollectorKind(SymbolTaxonomy::CollectorKind::Module)
+            .record();
+    const QList<SemanticSymbolRecord> instTargetMembers{
+        SemanticFixtureRecordBuilder(QStringLiteral("P_WIDTH"),
+                                     SymbolTaxonomy::DeclarationKind::Parameter)
+            .withFile(instantiationFixturePath)
+            .withLocalHandle(9101)
+            .withLine(2)
+            .withCollectorKind(SymbolTaxonomy::CollectorKind::Parameter)
+            .inModule(QStringLiteral("target_module"))
+            .record(),
+        SemanticFixtureRecordBuilder(QStringLiteral("P_DEPTH"),
+                                     SymbolTaxonomy::DeclarationKind::Parameter)
+            .withFile(instantiationFixturePath)
+            .withLocalHandle(9102)
+            .withLine(3)
+            .withCollectorKind(SymbolTaxonomy::CollectorKind::Parameter)
+            .inModule(QStringLiteral("target_module"))
+            .record(),
+        SemanticFixtureRecordBuilder(QStringLiteral("clk"),
+                                     SymbolTaxonomy::DeclarationKind::Port)
+            .withFile(instantiationFixturePath)
+            .withLocalHandle(9103)
+            .withLine(5)
+            .withCollectorKind(SymbolTaxonomy::CollectorKind::PortInput)
+            .inModule(QStringLiteral("target_module"))
+            .record(),
+        SemanticFixtureRecordBuilder(QStringLiteral("rst_n"),
+                                     SymbolTaxonomy::DeclarationKind::Port)
+            .withFile(instantiationFixturePath)
+            .withLocalHandle(9104)
+            .withLine(6)
+            .withCollectorKind(SymbolTaxonomy::CollectorKind::PortInput)
+            .inModule(QStringLiteral("target_module"))
+            .record(),
+        SemanticFixtureRecordBuilder(QStringLiteral("data_i"),
+                                     SymbolTaxonomy::DeclarationKind::Port)
+            .withFile(instantiationFixturePath)
+            .withLocalHandle(9105)
+            .withLine(7)
+            .withCollectorKind(SymbolTaxonomy::CollectorKind::PortInput)
+            .inModule(QStringLiteral("target_module"))
+            .record(),
+        SemanticFixtureRecordBuilder(QStringLiteral("data_o"),
+                                     SymbolTaxonomy::DeclarationKind::Port)
+            .withFile(instantiationFixturePath)
+            .withLocalHandle(9106)
+            .withLine(8)
+            .withCollectorKind(SymbolTaxonomy::CollectorKind::PortOutput)
+            .inModule(QStringLiteral("target_module"))
+            .record(),
+    };
+    const SemanticSymbolRecord noParamModule =
+        SemanticFixtureRecordBuilder(QStringLiteral("simple_child"),
+                                     SymbolTaxonomy::DeclarationKind::Module)
+            .withFile(instantiationFixturePath)
+            .withLocalHandle(9110)
+            .withLine(20)
+            .withCollectorKind(SymbolTaxonomy::CollectorKind::Module)
+            .record();
+    const QList<SemanticSymbolRecord> noParamMembers{
+        SemanticFixtureRecordBuilder(QStringLiteral("clk"),
+                                     SymbolTaxonomy::DeclarationKind::Port)
+            .withFile(instantiationFixturePath)
+            .withLocalHandle(9111)
+            .withLine(21)
+            .withCollectorKind(SymbolTaxonomy::CollectorKind::PortInput)
+            .inModule(QStringLiteral("simple_child"))
+            .record(),
+        SemanticFixtureRecordBuilder(QStringLiteral("rst_n"),
+                                     SymbolTaxonomy::DeclarationKind::Port)
+            .withFile(instantiationFixturePath)
+            .withLocalHandle(9112)
+            .withLine(22)
+            .withCollectorKind(SymbolTaxonomy::CollectorKind::PortInput)
+            .inModule(QStringLiteral("simple_child"))
+            .record(),
+    };
+    const SemanticSymbolRecord fallbackModule =
+        SemanticFixtureRecordBuilder(QStringLiteral("opaque_child"),
+                                     SymbolTaxonomy::DeclarationKind::Module)
+            .withFile(instantiationFixturePath)
+            .withLocalHandle(9120)
+            .withLine(40)
+            .withCollectorKind(SymbolTaxonomy::CollectorKind::Module)
+            .record();
+    SemanticIndex instantiationIndex;
+    QList<SemanticSymbolRecord> instantiationRecords{instTargetModule};
+    instantiationRecords.append(instTargetMembers);
+    instantiationRecords.append(noParamModule);
+    instantiationRecords.append(noParamMembers);
+    instantiationRecords.append(fallbackModule);
+    instantiationIndex.setSnapshot(sharedSnapshotFromRecords(instantiationRecords));
+    CompletionService instantiationCompletionService(&instantiationIndex);
+
+    const CommandSymbolCompletionItem semanticInstantiation =
+        instantiationCompletionService.commandSymbolCompletionItem(
+            instTargetModule,
+            CompletionCommandKind::Module);
+    const QString expectedSemanticInstantiation =
+        QStringLiteral("target_module #(\n"
+                       "    .P_WIDTH(P_WIDTH),\n"
+                       "    .P_DEPTH(P_DEPTH)\n"
+                       ") u_target_module (\n"
+                       "    .clk(clk),\n"
+                       "    .rst_n(rst_n),\n"
+                       "    .data_i(data_i),\n"
+                       "    .data_o(data_o)\n"
+                       ");");
+    expectEq("CompletionService module semantic instantiation",
+             semanticInstantiation.defaultValue,
+             expectedSemanticInstantiation);
+    QStringList semanticSlotNames;
+    QStringList semanticSlotTexts;
+    for (const CodeTemplateSlot& slot : semanticInstantiation.templateSlots) {
+        semanticSlotNames.append(slot.name);
+        semanticSlotTexts.append(
+            semanticInstantiation.defaultValue.mid(slot.start, slot.length));
+    }
+    expectEq("CompletionService module slot order",
+             semanticSlotNames.join(QStringLiteral("|")),
+             QStringLiteral("instance|parameter:P_WIDTH|parameter:P_DEPTH|port:clk|port:rst_n|port:data_i|port:data_o"));
+    expectEq("CompletionService module slot text",
+             semanticSlotTexts.join(QStringLiteral("|")),
+             QStringLiteral("u_target_module|P_WIDTH|P_DEPTH|clk|rst_n|data_i|data_o"));
+    expectBool("CompletionService module activation selects instance",
+               semanticInstantiation.selectionStart
+                       == semanticInstantiation.templateSlots.first().start
+                   && semanticInstantiation.selectionLength
+                       == semanticInstantiation.templateSlots.first().length,
+               true);
+
+    MyCodeEditor moduleSlotEditor;
+    moduleSlotEditor.setPlainText(semanticInstantiation.defaultValue);
+    moduleSlotEditor.startTemplateSlotMode(
+        0,
+        semanticInstantiation.defaultValue.size(),
+        semanticInstantiation.templateSlots);
+    expectBool("Module instantiation Slot Mode starts on instance",
+               moduleSlotEditor.templateSlotModeActive()
+                   && moduleSlotEditor.templateSlotModeActiveIndex() == 0
+                   && moduleSlotEditor.templateSlotModeSlotCount() == 7
+                   && moduleSlotEditor.textCursor().selectedText()
+                       == QStringLiteral("u_target_module"),
+               true);
+    insertAtEditorCursor(moduleSlotEditor, QStringLiteral("u_dut"));
+    expectBool("Module instantiation Slot Mode advances to first parameter",
+               sendEditorKey(moduleSlotEditor, Qt::Key_Tab)
+                   && moduleSlotEditor.templateSlotModeActiveIndex() == 1
+                   && moduleSlotEditor.textCursor().selectedText()
+                       == QStringLiteral("P_WIDTH"),
+               true);
+    expectBool("Module instantiation Slot Mode preserves edited instance",
+               moduleSlotEditor.toPlainText().contains(
+                   QStringLiteral(") u_dut (\n")),
+               true);
+
+    const CommandSymbolCompletionItem noParamInstantiation =
+        instantiationCompletionService.commandSymbolCompletionItem(
+            noParamModule,
+            CompletionCommandKind::Module);
+    expectEq("CompletionService module no-param instantiation",
+             noParamInstantiation.defaultValue,
+             QStringLiteral("simple_child u_simple_child (\n"
+                            "    .clk(clk),\n"
+                            "    .rst_n(rst_n)\n"
+                            ");"));
+    expectBool("CompletionService module no-param omits parameter block",
+               !noParamInstantiation.defaultValue.contains(QStringLiteral("#("))
+                   && noParamInstantiation.templateSlots.size() == 3,
+               true);
+
+    const CommandSymbolCompletionItem fallbackInstantiation =
+        instantiationCompletionService.commandSymbolCompletionItem(
+            fallbackModule,
+            CompletionCommandKind::Module);
+    expectEq("CompletionService module instantiation fallback",
+             fallbackInstantiation.defaultValue,
+             QStringLiteral("opaque_child u_opaque_child (\n);"));
+    expectBool("CompletionService module fallback has no slots",
+               fallbackInstantiation.templateSlots.isEmpty(),
+               true);
+
     const SemanticSymbolRecord structPresentationRecord =
         SemanticFixtureRecordBuilder(
             QStringLiteral("pixel"),

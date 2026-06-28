@@ -81,7 +81,8 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
   expansion. COM Mode is for editor-local command actions. Slot Mode is the
   post-template editor-local fill flow; it is active for `;;p` / `;;lp`
   parameter templates and `;;l` / `;;w` / `;;r` signal declaration templates,
-  and not yet active for other template families.
+  for `;m` semantic module instantiation completions, and not yet active for
+  other template families. `;;m` remains the module definition skeleton path.
 - Package Tools phase 1 is available when the active editor cursor is inside a
   parseable SystemVerilog package. The lightweight editor bar inserts
   package-scoped `parameter`, `localparam`, `typedef enum`,
@@ -690,6 +691,20 @@ Do not add unlisted long-term goals without explicit user approval.
   `cmake --build . --target completion_test relationship_test gui_smoke_test`;
   `ctest -R "^(completion_test|relationship_test|gui_smoke_test)$"
   --output-on-failure` twice consecutively.
+- Latest `;m` module instantiation completion: semantic module command
+  completion now expands selected modules into full named instantiation
+  templates using indexed module parameter and port records when available.
+  Parameter blocks are emitted only when parameters exist; all ports become
+  named connections. Activation starts Slot Mode with instance name first,
+  followed by parameter value slots and port connection slots in module
+  definition order. If semantic parameter/port records are insufficient, `;m`
+  falls back to the previous simple `module u_module (\n);` text. `;;m` still
+  owns module definition skeletons, and this does not add Package Tools phase
+  2, include/package/import workflows, new commands, or COM Mode behavior.
+  Release verification passed: `cmake --build . --target completion_test
+  relationship_test gui_smoke_test`; `ctest -R
+  "^(completion_test|relationship_test|gui_smoke_test)$"
+  --output-on-failure`.
 - Latest Verification Baseline Repair: this is a baseline repair after Package
   Tools phase 1, not new Package Tools functionality. The blank-diagnostic
   Release rebuild failure was traced to generated MinGW build rules that did

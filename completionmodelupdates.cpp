@@ -470,6 +470,9 @@ void CompletionModel::updateSymbolRecordCompletions(
             ? serviceItem.description
             : item.typeDisplayName;
         item.defaultValue = serviceItem.defaultValue;
+        item.selectionStart = serviceItem.selectionStart;
+        item.selectionLength = serviceItem.selectionLength;
+        item.templateSlots = serviceItem.templateSlots;
         item.score = serviceItem.score;
 
         fillDisplayMetadata(item);
