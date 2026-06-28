@@ -6,6 +6,7 @@
 
 #include <QHBoxLayout>
 #include <QHeaderView>
+#include <QFileInfo>
 #include <QSignalBlocker>
 #include <QVBoxLayout>
 
@@ -23,14 +24,55 @@ QTreeWidgetItem* createDiagnosticItem(QTreeWidgetItem* parent,
     item->setText(2, result.lineDisplayName);
     item->setText(3, result.columnDisplayName);
     item->setText(4, result.messageDisplayName);
-    item->setText(5, result.analysisBandDisplayName);
+    item->setText(5, result.ownerDisplayName);
+    item->setText(6, result.analysisBandDisplayName);
     item->setToolTip(1, diagnostic.fileName);
     item->setToolTip(4, result.messageDisplayName);
-    item->setToolTip(5, result.analysisBandDisplayName);
+    item->setToolTip(5, result.ownerDisplayName);
+    item->setToolTip(6, result.analysisBandDisplayName);
     item->setData(0, Qt::UserRole, diagnostic.fileName);
     item->setData(0, Qt::UserRole + 1, diagnostic.line);
     item->setData(0, Qt::UserRole + 2, diagnostic.column);
     return item;
+}
+
+QString diagnosticSummaryText(const DiagnosticReport& report)
+{
+    const int errors = report.severityCounts.value(SemanticDiagnostic::Error);
+    const int warnings = report.severityCounts.value(SemanticDiagnostic::Warning);
+    const int infos = report.severityCounts.value(SemanticDiagnostic::Info);
+    return QStringLiteral("Current file: %1 errors, %2 warnings, %3 info")
+        .arg(errors)
+        .arg(warnings)
+        .arg(infos);
+}
+
+QString inferredDiagnosticState(const DiagnosticReport& report)
+{
+    if (report.analysisBandGroups.isEmpty())
+        return QStringLiteral("current");
+
+    bool hasCurrent = false;
+    bool hasBackground = false;
+    bool hasStale = false;
+    for (const DiagnosticAnalysisBandGroup& group : report.analysisBandGroups) {
+        const QString label = group.label;
+        if (label == QStringLiteral("background"))
+            hasBackground = true;
+        else if (label == QStringLiteral("unbanded"))
+            hasStale = true;
+        else
+            hasCurrent = true;
+    }
+    QStringList parts;
+    if (hasCurrent)
+        parts.append(QStringLiteral("current"));
+    if (hasStale)
+        parts.append(QStringLiteral("stale"));
+    if (hasBackground)
+        parts.append(QStringLiteral("background"));
+    return parts.isEmpty() ? QStringLiteral("current")
+                           : parts.join(QStringLiteral(" + "));
 }
 
 DiagnosticPanelScope diagnosticPanelScopeFromValue(int value)
@@ -169,10 +211,24 @@ ProblemsPanelCoordinator::ProblemsPanelCoordinator(QWidget* parent)
     filtersLayout->addStretch(1);
     layout->addLayout(filtersLayout);
 
+    auto* statusLayout = new QHBoxLayout();
+    statusLayout->setContentsMargins(0, 0, 0, 0);
+    statusLayout->setSpacing(8);
+    diagnosticSummaryLabel = new QLabel(panel);
+    diagnosticSummaryLabel->setObjectName(QStringLiteral("diagnosticSummaryLabel"));
+    diagnosticSummaryLabel->setText(QStringLiteral("Current file: 0 errors, 0 warnings, 0 info"));
+    diagnosticStateLabel = new QLabel(panel);
+    diagnosticStateLabel->setObjectName(QStringLiteral("diagnosticStateLabel"));
+    diagnosticStateLabel->setText(QStringLiteral("Diagnostics: current"));
+    statusLayout->addWidget(diagnosticSummaryLabel);
+    statusLayout->addStretch(1);
+    statusLayout->addWidget(diagnosticStateLabel);
+    layout->addLayout(statusLayout);
+
     problemsTree = new QTreeWidget(panel);
     problemsTree->setObjectName(QStringLiteral("problemsTree"));
-    problemsTree->setColumnCount(6);
-    problemsTree->setHeaderLabels({"Severity", "File", "Line", "Column", "Message", "Band"});
+    problemsTree->setColumnCount(7);
+    problemsTree->setHeaderLabels({"Severity", "File", "Line", "Column", "Message", "Owner", "Band"});
     problemsTree->setRootIsDecorated(true);
     problemsTree->setAlternatingRowColors(true);
     problemsTree->setSelectionMode(QAbstractItemView::SingleSelection);
@@ -182,6 +238,7 @@ ProblemsPanelCoordinator::ProblemsPanelCoordinator(QWidget* parent)
     problemsTree->header()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
     problemsTree->header()->setSectionResizeMode(3, QHeaderView::ResizeToContents);
     problemsTree->header()->setSectionResizeMode(5, QHeaderView::ResizeToContents);
+    problemsTree->header()->setSectionResizeMode(6, QHeaderView::ResizeToContents);
     layout->addWidget(problemsTree);
 
     problemsDock = new QDockWidget("Problems", parent);
@@ -207,7 +264,28 @@ ProblemsPanelCoordinator::ProblemsPanelCoordinator(QWidget* parent)
                              return;
                          const int line = item->data(0, Qt::UserRole + 1).toInt();
                          const int column = item->data(0, Qt::UserRole + 2).toInt();
-                         navigationHandler(fileName, line, column);
+                         if (!QFileInfo::exists(fileName)) {
+                             if (statusMessageHandler) {
+                                 statusMessageHandler(
+                                     QStringLiteral("Diagnostic file does not exist: %1")
+                                         .arg(fileName),
+                                     4000);
+                             }
+                             return;
+                         }
+                         if (line <= 0) {
+                             if (statusMessageHandler)
+                                 statusMessageHandler(
+                                     QStringLiteral("Diagnostic location is invalid"),
+                                     3000);
+                             return;
+                         }
+                         if (!navigationHandler(fileName, line, column)
+                             && statusMessageHandler) {
+                             statusMessageHandler(
+                                 QStringLiteral("Failed to open diagnostic location"),
+                                 4000);
+                         }
                      });
 }
 
@@ -222,9 +300,24 @@ void ProblemsPanelCoordinator::setWorkspaceFilesProvider(std::function<QStringLi
 }
 
 void ProblemsPanelCoordinator::setNavigationHandler(
-    std::function<void(const QString&, int, int)> handler)
+    std::function<bool(const QString&, int, int)> handler)
 {
     navigationHandler = std::move(handler);
+}
+
+void ProblemsPanelCoordinator::setStatusMessageHandler(
+    std::function<void(const QString&, int)> handler)
+{
+    statusMessageHandler = std::move(handler);
+}
+
+void ProblemsPanelCoordinator::setAnalysisState(const QString& state)
+{
+    externalAnalysisState = state.trimmed();
+    if (diagnosticStateLabel && !externalAnalysisState.isEmpty()) {
+        diagnosticStateLabel->setText(
+            QStringLiteral("Diagnostics: %1").arg(externalAnalysisState));
+    }
 }
 
 void ProblemsPanelCoordinator::update(const QString& fileName)
@@ -255,6 +348,22 @@ void ProblemsPanelCoordinator::update(const QString& fileName)
         diagnosticService->findDiagnosticReport(countQuery);
     updateDiagnosticBandComboPresentation(problemsBandCombo, countReport);
     const DiagnosticReport report = diagnosticService->findDiagnosticReport(query);
+    DiagnosticPanelQueryOptions currentFileSummaryOptions;
+    currentFileSummaryOptions.scope = DiagnosticPanelScope::CurrentFile;
+    currentFileSummaryOptions.severity = DiagnosticSeverityFilter::All;
+    currentFileSummaryOptions.currentFileName = queryOptions.currentFileName;
+    const DiagnosticReport currentFileReport =
+        diagnosticService->findDiagnosticReport(
+            diagnosticService->queryForPanel(currentFileSummaryOptions));
+    if (diagnosticSummaryLabel)
+        diagnosticSummaryLabel->setText(diagnosticSummaryText(currentFileReport));
+    if (diagnosticStateLabel) {
+        const QString state = externalAnalysisState.isEmpty()
+            ? inferredDiagnosticState(report)
+            : externalAnalysisState;
+        diagnosticStateLabel->setText(
+            QStringLiteral("Diagnostics: %1").arg(state));
+    }
     const QList<DiagnosticResult>& diagnostics = report.diagnostics;
     if (report.totalCount > 0) {
         const QString activityMessage =
@@ -288,10 +397,10 @@ void ProblemsPanelCoordinator::update(const QString& fileName)
                                                                  group.count));
             fileGroup->setText(1, group.fileName);
             if (!group.diagnostics.isEmpty())
-                fileGroup->setText(5, group.diagnostics.first().analysisBandDisplayName);
+                fileGroup->setText(6, group.diagnostics.first().analysisBandDisplayName);
             fileGroup->setToolTip(0, group.fileName);
             fileGroup->setToolTip(1, group.fileName);
-            fileGroup->setToolTip(5, fileGroup->text(5));
+            fileGroup->setToolTip(6, fileGroup->text(6));
             for (const DiagnosticResult& result : group.diagnostics)
                 createDiagnosticItem(fileGroup, result);
         }

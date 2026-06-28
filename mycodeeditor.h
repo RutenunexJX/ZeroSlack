@@ -224,6 +224,7 @@ signals:
                              const QString& message);
     void comCommandRequested(const QString& command);
     void comRelativeLineRequested(int moduleLine);
+    void columnNumberToolRequested();
 };
 
 #endif // MYCODEEDITOR_H

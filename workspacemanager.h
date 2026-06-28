@@ -2,9 +2,11 @@
 #define WORKSPACEMANAGER_H
 
 #include "projectmodel.h"
+#include "workspaceconfigurationservice.h"
 
 #include <QObject>
 #include <QFileSystemWatcher>
+#include <QHash>
 #include <QList>
 #include <QStringList>
 #include <memory>
@@ -22,6 +24,10 @@ public:
         QString path;
         QStringList scannedFiles;
         QStringList ignoredDirectories;
+        QStringList includeDirs;
+        QHash<QString, QString> defines;
+        QStringList fileExtensions;
+        QString topModule;
         bool scanComplete = false;
     };
 
@@ -42,8 +48,12 @@ public:
     QList<WorkspaceEntry> recentWorkspaceEntries() const;
     int activeWorkspaceIndex() const;
     QStringList ignoredDirectories() const;
+    WorkspaceConfiguration workspaceConfiguration() const;
     bool setIgnoredDirectories(const QStringList& directories,
                                QString* errorMessage = nullptr);
+    bool setWorkspaceConfiguration(
+        const WorkspaceConfiguration& configuration,
+        QString* errorMessage = nullptr);
     ProjectModel* getProjectModel() const;
     ProjectSnapshot projectSnapshot() const;
     bool switchWorkspace(int index);
@@ -110,6 +120,7 @@ private:
     WorkspaceFiles files;
     WorkspaceWatcher watcher;
     std::unique_ptr<ProjectModel> projectModel;
+    std::unique_ptr<WorkspaceConfigurationService> workspaceConfigurationService;
     std::unique_ptr<QDirIterator> scanIterator;
     QStringList pendingScannedFiles;
     QString scanningPath;
@@ -125,6 +136,14 @@ private:
                                int index,
                                bool openedNewWorkspace);
     bool restoreWorkspaceFilesFromEntry(int index);
+    WorkspaceConfiguration loadConfigurationForWorkspace(
+        const QString& path) const;
+    bool applyWorkspaceConfiguration(
+        const WorkspaceConfiguration& configuration,
+        bool persist,
+        QString* errorMessage = nullptr);
+    void updateActiveEntryConfiguration(
+        const WorkspaceConfiguration& configuration);
     void loadRecentWorkspaces();
     void saveRecentWorkspaces() const;
     void rememberRecentWorkspace(const WorkspaceEntry& entry);

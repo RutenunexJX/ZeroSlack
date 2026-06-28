@@ -60,6 +60,8 @@ private:
     using WorkspaceFilesProvider = std::function<QStringList()>;
     using NavigationHandler =
         std::function<void(const QString&, int, int)>;
+    using ProblemsNavigationHandler =
+        std::function<bool(const QString&, int, int)>;
     using StatusMessageHandler =
         std::function<void(const QString&, int)>;
 
@@ -78,6 +80,9 @@ private:
         void navigateToFileAndLine(const QString& fileName,
                                    int line,
                                    int column) const;
+        bool navigateToFileAndLineAndFlash(const QString& fileName,
+                                           int line,
+                                           int column) const;
         void revealFileAndFlashLine(const QString& fileName,
                                     int line) const;
         void handleActiveEditorChanged(MyCodeEditor* editor) const;
@@ -101,7 +106,8 @@ private:
         void configureProblemsPanel(
             const CurrentFileProvider& currentFileProvider,
             const WorkspaceFilesProvider& workspaceFilesProvider,
-            const NavigationHandler& navigationHandler) const;
+            const ProblemsNavigationHandler& navigationHandler,
+            const StatusMessageHandler& statusMessageHandler) const;
         void configureReferencesPanel(
             const WorkspaceFilesProvider& workspaceFilesProvider,
             const NavigationHandler& navigationHandler,
@@ -146,6 +152,9 @@ private:
     QStringList workspaceFiles() const;
     QString currentEditorWord(MyCodeEditor* editor) const;
     void navigateToFileAndLine(const QString& fileName, int line, int column) const;
+    bool navigateToFileAndLineAndFlash(const QString& fileName,
+                                       int line,
+                                       int column) const;
     void revealFileAndFlashLine(const QString& fileName, int line) const;
     void showStatusMessage(const QString& message, int timeoutMs) const;
     bool problemsPanelShowsCurrentFile() const;

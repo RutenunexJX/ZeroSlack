@@ -360,7 +360,7 @@ Allowed scope:
 Not in scope:
 
 - session restore
-- include dirs/defines configuration UI
+- include dirs/defines configuration UI in this track; that belongs to Track 12
 - recent files
 - broad workspace UX expansion
 
@@ -1102,6 +1102,79 @@ M11.3 implementation status:
   around the jumped module, so its child modules remain visible.
 - Verification: Release `relationship_test` target compile/link; `ctest -R
   "^relationship_test$"` passed.
+
+### 12. Workspace Project Configuration And Diagnostics Workflow
+
+Goal: make workspace-level SystemVerilog configuration explicit and make
+diagnostics usable as a navigation workflow.
+
+Allowed scope:
+
+- per-workspace include dirs
+- per-workspace defines
+- per-workspace ignored dirs
+- per-workspace file extensions
+- optional top module / active top
+- Problems/diagnostics next/previous navigation
+- diagnostic status, owner, current-file summary, and stable jump feedback
+
+Not in scope:
+
+- session restore
+- recent files
+- broad workspace UX expansion
+- new diagnostic engines beyond existing Slang and Semantic index paths
+- UI-side Slang execution or workspace scanning
+
+Milestones:
+
+- M12.1 Workspace Configuration Service And Dialog
+  (complete: `WorkspaceConfigurationService`, `WorkspaceConfigurationDialog`,
+  and `WorkspaceManager::setWorkspaceConfiguration()` persist/apply include
+  dirs, defines, ignored dirs, file extensions, and top module)
+- M12.2 Diagnostics Navigation And Problems Status
+  (complete: `DiagnosticNavigationService`, F8/Shift+F8 actions, owner column,
+  current-file summary, analysis state label, and reveal/flash Problems jumps)
+- M12.3 Verification And Documentation
+  (complete: docs updated; focused Release tests/builds recorded below)
+
+M12.1 implementation status:
+
+- Complete: workspace configuration is stored per workspace through
+  `QSettings` with a versioned `workspaceConfiguration/v1` key space.
+- Complete: include dirs preserve user order; defines are key/value pairs;
+  file extensions default to `.sv`, `.svh`, `.v`, and `.vh`; top module may be
+  empty to preserve automatic/default behavior.
+- Complete: applying configuration updates `ProjectModel`, refreshes filtered
+  workspace file lists, persists ignored dirs through the existing validation
+  service, emits existing workspace/file-list signals, and queues analysis
+  through the project-change path.
+- Complete: workspace analysis keys include include dirs, defines, file
+  extensions, and top module so configuration changes do not reuse a stale
+  completed workspace-analysis key.
+
+M12.2 implementation status:
+
+- Complete: Problems rows display diagnostic owner, currently `Slang` or
+  `Semantic index`, without inventing a new diagnostic owner.
+- Complete: the Problems panel displays current-file error/warning/info
+  summary and a diagnostics state label (`current`, `stale`, `analyzing`, or
+  `background`) using existing analysis signals and band metadata.
+- Complete: F8 and Shift+F8 navigate next/previous diagnostics using the
+  Problems panel's current scope and severity filters. The navigation service
+  sorts by source location after filtering so workspace navigation is
+  predictable.
+- Complete: Problems double-click navigation now validates missing files and
+  invalid locations, routes through `NavigationCommandCoordinator`, and flashes
+  the target line after reveal.
+
+M12.3 verification status:
+
+- Passed: Release `completion_test` and `gui_smoke_test` targets compile/link.
+- Passed: Release `ctest -R "^completion_test$" --output-on-failure`.
+- Attempted: Release `ctest -R "^relationship_test$" --output-on-failure`.
+  It failed in existing RTL Insights FSM graph/panel checks, not in the
+  workspace configuration or diagnostics workflow touched by M12.
 
 ## Huge Workspace Status Audit
 

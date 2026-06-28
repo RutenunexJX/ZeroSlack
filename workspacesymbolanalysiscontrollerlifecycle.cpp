@@ -83,8 +83,25 @@ QString workspaceAnalysisKey(const ProjectSnapshot& project)
 {
     QStringList files = project.systemVerilogFiles;
     files.sort(Qt::CaseInsensitive);
-    return QStringLiteral("%1\n%2")
-        .arg(project.workspaceRoot, files.join(QLatin1Char('\n')));
+    QStringList includeDirs = project.includeDirs;
+    includeDirs.sort(Qt::CaseInsensitive);
+    QStringList fileExtensions = project.fileExtensions;
+    fileExtensions.sort(Qt::CaseInsensitive);
+    QStringList defineKeys = project.defines.keys();
+    defineKeys.sort(Qt::CaseInsensitive);
+    QStringList defineParts;
+    defineParts.reserve(defineKeys.size());
+    for (const QString& key : defineKeys) {
+        defineParts.append(QStringLiteral("%1=%2")
+                               .arg(key, project.defines.value(key)));
+    }
+    return QStringLiteral("%1\nfiles:%2\nincludes:%3\ndefines:%4\next:%5\ntop:%6")
+        .arg(project.workspaceRoot,
+             files.join(QLatin1Char('\n')),
+             includeDirs.join(QLatin1Char('\n')),
+             defineParts.join(QLatin1Char('\n')),
+             fileExtensions.join(QLatin1Char('\n')),
+             project.topModule);
 }
 }
 

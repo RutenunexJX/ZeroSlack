@@ -5,6 +5,7 @@
 
 #include <QFrame>
 #include <QObject>
+#include <QPointer>
 #include <QSet>
 #include <functional>
 #include <memory>
@@ -74,11 +75,16 @@ private:
     bool globalEscapeInstalled = false;
     bool forwardingEscapeToEditor = false;
     QShortcut* comToggleShortcut = nullptr;
+    QShortcut* columnNumberShortcut = nullptr;
+    QPointer<MyCodeEditor> columnNumberEditor;
+    bool columnNumberOpenedFromCom = false;
 
     void ensureCommandStrip();
     void installGlobalEscapeFilter();
     bool handleGlobalEscape(QObject* watched, QEvent* event);
     void toggleCurrentEditorComMode();
+    MyCodeEditor* currentEditorForLocalCommand() const;
+    void openColumnNumberToolForCurrentEditor();
     void updateCommandStrip(MyCodeEditor* editor,
                             bool active,
                             const QString& buffer,

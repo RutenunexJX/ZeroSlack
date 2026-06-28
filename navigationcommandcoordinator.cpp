@@ -142,6 +142,30 @@ void NavigationCommandCoordinator::navigateToFileAndLine(
                                columnNumber);
 }
 
+bool NavigationCommandCoordinator::navigateToFileAndLineAndFlash(
+    const QString& filePath,
+    int lineNumber,
+    int columnNumber)
+{
+    const NavigationLocation current = targets.currentLocation();
+    const NavigationLocation destination{filePath, lineNumber, columnNumber};
+
+    if (!targets.activateOrOpenFile(filePath))
+        return false;
+
+    recordLocationBeforeNavigation(current, destination);
+
+    if (lineNumber <= 0)
+        return false;
+
+    MyCodeEditor* editor = targets.currentEditor();
+    if (!lineResolver.applyToEditor(editor, lineNumber, columnNumber))
+        return false;
+    if (editor)
+        editor->flashLine(lineNumber);
+    return true;
+}
+
 void NavigationCommandCoordinator::revealFileAndFlashLine(
     const QString& filePath,
     int lineNumber)

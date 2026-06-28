@@ -270,35 +270,16 @@ public:
         QFont titleFont = font;
         titleFont.setBold(true);
         titleFont.setPointSize(qMax(8, titleFont.pointSize() + 1));
-        QFont detailFont = font;
-        detailFont.setPointSize(qMax(8, detailFont.pointSize() - 1));
 
         auto* title = new QGraphicsSimpleTextItem(
-            graphElidedText(element.primary,
-                            titleFont,
-                            static_cast<int>(rect.width() - 42)),
+            element.primary,
             this);
         title->setAcceptedMouseButtons(Qt::NoButton);
         title->setFont(titleFont);
         title->setBrush(QBrush(QColor(QStringLiteral("#111827"))));
         const QRectF titleBounds = title->boundingRect();
         title->setPos(rect.center().x() - titleBounds.width() / 2.0,
-                      rect.top() + 12);
-
-        QString detail = element.secondary;
-        if (detail.isEmpty())
-            detail = element.detail;
-        auto* detailItem = new QGraphicsSimpleTextItem(
-            graphElidedText(detail,
-                            detailFont,
-                            static_cast<int>(rect.width() - 52)),
-            this);
-        detailItem->setAcceptedMouseButtons(Qt::NoButton);
-        detailItem->setFont(detailFont);
-        detailItem->setBrush(QBrush(QColor(QStringLiteral("#475569"))));
-        const QRectF detailBounds = detailItem->boundingRect();
-        detailItem->setPos(rect.center().x() - detailBounds.width() / 2.0,
-                           rect.top() + 34);
+                      rect.center().y() - titleBounds.height() / 2.0);
     }
 
     NavigateHandler navigateHandler;
@@ -340,7 +321,8 @@ public:
                             qreal arrowAngle,
                             const QString& label,
                             const QFont& font,
-                            const QColor& color)
+                            const QColor& color,
+                            qreal labelOffset = 0.0)
         : QGraphicsPathItem(path),
           element(graphElement)
     {
@@ -368,15 +350,23 @@ public:
         if (!label.isEmpty()) {
             QFont labelFont = font;
             labelFont.setPointSize(qMax(8, labelFont.pointSize() - 1));
-            auto* labelItem = new QGraphicsTextItem(
-                graphElidedText(label, labelFont, 210),
-                this);
+            auto* labelItem = new QGraphicsTextItem(label, this);
             labelItem->setAcceptedMouseButtons(Qt::NoButton);
             labelItem->setFont(labelFont);
+            labelItem->setTextWidth(460.0);
             labelItem->setDefaultTextColor(QColor(QStringLiteral("#334155")));
             const QRectF pathBounds = path.boundingRect();
-            labelItem->setPos(pathBounds.center().x() - 70,
-                              pathBounds.center().y() - 26);
+            const QRectF labelBounds = labelItem->boundingRect();
+            auto* labelBackground = new QGraphicsRectItem(
+                labelBounds.adjusted(-4.0, -2.0, 4.0, 2.0),
+                labelItem);
+            labelBackground->setAcceptedMouseButtons(Qt::NoButton);
+            labelBackground->setPen(Qt::NoPen);
+            labelBackground->setBrush(QColor(248, 250, 252, 220));
+            labelBackground->setZValue(-1);
+            labelItem->setPos(pathBounds.center().x() - labelBounds.width() / 2.0,
+                              pathBounds.center().y() - labelBounds.height() / 2.0
+                                  + labelOffset);
         }
     }
 
@@ -437,11 +427,20 @@ QRectF insightNodeRectAt(qreal centerX, qreal centerY)
                   kInsightNodeHeight);
 }
 
-QRectF stateNodeRectAt(qreal centerX, qreal centerY)
+qreal stateNodeWidthForText(const QString& text, const QFont& font)
 {
-    return QRectF(centerX - kStateNodeWidth / 2.0,
+    QFont titleFont = font;
+    titleFont.setBold(true);
+    titleFont.setPointSize(qMax(8, titleFont.pointSize() + 1));
+    const qreal textWidth = QFontMetrics(titleFont).horizontalAdvance(text);
+    return qMax(kStateNodeWidth, textWidth + 70.0);
+}
+
+QRectF stateNodeRectAt(qreal centerX, qreal centerY, qreal width = kStateNodeWidth)
+{
+    return QRectF(centerX - width / 2.0,
                   centerY - kStateNodeHeight / 2.0,
-                  kStateNodeWidth,
+                  width,
                   kStateNodeHeight);
 }
 
@@ -627,34 +626,131 @@ struct FsmGraphLayout {
 };
 
 FsmGraphLayout buildFsmGraphLayout(const FsmGraph& graph,
-                                   const QPointF& origin)
+                                   const QPointF& origin,
+                                   const QFont& font)
 {
     FsmGraphLayout layout;
     layout.orderedStates = orderedFsmStateNames(graph);
-    for (const FsmStateRow& row : graph.stateRows)
+    QSet<QString> knownStates;
+    QHash<QString, qreal> stateWidths;
+    qreal maxStateWidth = kStateNodeWidth;
+    for (const FsmStateRow& row : graph.stateRows) {
         layout.stateRowsByName.insert(row.stateDisplayName, row);
+        knownStates.insert(row.stateDisplayName);
+        const qreal width = stateNodeWidthForText(row.stateDisplayName, font);
+        stateWidths.insert(row.stateDisplayName, width);
+        maxStateWidth = qMax(maxStateWidth, width);
+    }
 
     const int stateCount = layout.orderedStates.size();
     if (stateCount <= 0)
         return layout;
 
-    constexpr qreal horizontalSpacing = 315.0;
-    constexpr qreal rowGap = 205.0;
-    const int topCount = stateCount <= 6
-        ? stateCount
-        : (stateCount + 1) / 2;
+    auto uniqueOutgoingTargets = [&](const QString& source) {
+        QList<QString> targets;
+        QSet<QString> seen;
+        for (const FsmTransitionRow& row : graph.transitionRows) {
+            if (row.fromStateDisplayName != source
+                || row.toStateDisplayName == source
+                || !knownStates.contains(row.toStateDisplayName)
+                || seen.contains(row.toStateDisplayName)) {
+                continue;
+            }
+            seen.insert(row.toStateDisplayName);
+            targets.append(row.toStateDisplayName);
+        }
+        return targets;
+    };
 
-    for (int i = 0; i < stateCount; ++i) {
-        const bool topRow = i < topCount;
-        const int rowIndex = topRow ? i : i - topCount;
-        const int xIndex = topRow ? rowIndex : topCount - 1 - rowIndex;
-        const qreal x = origin.x() + xIndex * horizontalSpacing;
-        const qreal y = origin.y() + (topRow ? 0.0 : rowGap);
-        const QRectF rect = stateNodeRectAt(x, y);
-        const QString stateName = layout.orderedStates.at(i);
+    QString hubState;
+    QList<QString> hubTargets;
+    for (const QString& stateName : layout.orderedStates) {
+        const QList<QString> targets = uniqueOutgoingTargets(stateName);
+        const bool betterCount = targets.size() > hubTargets.size();
+        const bool betterIdleTie =
+            targets.size() == hubTargets.size()
+            && stateName.contains(QStringLiteral("idle"), Qt::CaseInsensitive)
+            && !hubState.contains(QStringLiteral("idle"), Qt::CaseInsensitive);
+        if (betterCount || betterIdleTie) {
+            hubState = stateName;
+            hubTargets = targets;
+        }
+    }
+
+    auto placeState = [&](const QString& stateName, const QPointF& center) {
+        const QRectF rect = stateNodeRectAt(
+            center.x(),
+            center.y(),
+            stateWidths.value(stateName, kStateNodeWidth));
         layout.stateRects.insert(stateName, rect);
-        layout.stateIndexes.insert(stateName, i);
         layout.bounds = layout.bounds.isNull() ? rect : layout.bounds.united(rect);
+    };
+
+    if (stateCount == 1) {
+        placeState(layout.orderedStates.constFirst(), origin);
+    } else if (!hubState.isEmpty() && !hubTargets.isEmpty()) {
+        placeState(hubState, origin);
+        QSet<QString> placed;
+        placed.insert(hubState);
+
+        const qreal horizontalGap = maxStateWidth + 210.0;
+        const qreal verticalGap = kStateNodeHeight + 185.0;
+        if (hubTargets.size() <= 4) {
+            const QList<QPointF> offsets = {
+                QPointF(0.0, -verticalGap),
+                QPointF(horizontalGap, 0.0),
+                QPointF(0.0, verticalGap),
+                QPointF(-horizontalGap, 0.0),
+            };
+            for (int i = 0; i < hubTargets.size(); ++i) {
+                placeState(hubTargets.at(i), origin + offsets.at(i));
+                placed.insert(hubTargets.at(i));
+            }
+        } else {
+            const qreal radius =
+                qMax<qreal>(360.0,
+                            hubTargets.size() * (maxStateWidth + 120.0)
+                                / (2.0 * kPi));
+            for (int i = 0; i < hubTargets.size(); ++i) {
+                placeState(hubTargets.at(i),
+                           origin + circularPosition(i, hubTargets.size(), radius));
+                placed.insert(hubTargets.at(i));
+            }
+        }
+
+        QList<QString> remainingStates;
+        for (const QString& stateName : layout.orderedStates) {
+            if (!placed.contains(stateName))
+                remainingStates.append(stateName);
+        }
+        if (!remainingStates.isEmpty()) {
+            const int columns = qMin(4, qMax(1, remainingStates.size()));
+            const qreal startX = origin.x()
+                - (columns - 1) * horizontalGap / 2.0;
+            const qreal startY = origin.y()
+                + (hubTargets.size() <= 4 ? verticalGap * 2.2
+                                           : verticalGap * 2.8);
+            for (int i = 0; i < remainingStates.size(); ++i) {
+                const int row = i / columns;
+                const int column = i % columns;
+                placeState(remainingStates.at(i),
+                           QPointF(startX + column * horizontalGap,
+                                   startY + row * verticalGap));
+            }
+        }
+    } else {
+        const qreal radius =
+            qMax<qreal>(360.0,
+                        stateCount * (maxStateWidth + 120.0)
+                            / (2.0 * kPi));
+        for (int i = 0; i < stateCount; ++i) {
+            placeState(layout.orderedStates.at(i),
+                       origin + circularPosition(i, stateCount, radius));
+        }
+    }
+
+    for (int i = 0; i < layout.orderedStates.size(); ++i) {
+        layout.stateIndexes.insert(layout.orderedStates.at(i), i);
     }
     return layout;
 }
@@ -668,10 +764,37 @@ QString fsmTransitionLabel(const QString& condition)
     return condition;
 }
 
+RtlInsightCodeLink fsmStateTransitionCodeLink(const FsmGraph& graph,
+                                              const QString& stateName,
+                                              const RtlInsightCodeLink& fallback)
+{
+    for (const FsmTransitionRow& row : graph.transitionRows) {
+        if (row.fromStateDisplayName == stateName
+            && row.toStateDisplayName != stateName
+            && !row.codeLink.fileName.isEmpty()) {
+            return row.codeLink;
+        }
+    }
+    for (const FsmTransitionRow& row : graph.transitionRows) {
+        if (row.fromStateDisplayName == stateName
+            && !row.codeLink.fileName.isEmpty()) {
+            return row.codeLink;
+        }
+    }
+    for (const FsmTransitionRow& row : graph.transitionRows) {
+        if (row.toStateDisplayName == stateName
+            && !row.codeLink.fileName.isEmpty()) {
+            return row.codeLink;
+        }
+    }
+    return fallback;
+}
+
 QPainterPath fsmTransitionPath(const QRectF& fromRect,
                                const QRectF& toRect,
                                QPointF* startOut,
-                               QPointF* endOut)
+                               QPointF* endOut,
+                               int lane = 0)
 {
     const QPointF start = ellipseAnchorToward(fromRect, toRect.center());
     const QPointF end = ellipseAnchorToward(toRect, fromRect.center());
@@ -682,18 +805,18 @@ QPainterPath fsmTransitionPath(const QRectF& fromRect,
 
     QPainterPath path(start);
     const bool sameRow = std::abs(fromRect.center().y() - toRect.center().y()) < 1.0;
-    if (sameRow) {
-        const qreal bend = fromRect.center().x() < toRect.center().x()
-            ? -24.0
-            : -78.0;
-        return curvedArrowPath(start, end, bend);
+    const bool sameColumn = std::abs(fromRect.center().x() - toRect.center().x()) < 1.0;
+    if (sameColumn || sameRow) {
+        if (lane == 0)
+            return straightArrowPath(start, end);
+        return curvedArrowPath(start, end, lane * 42.0);
     }
-
+    const qreal laneOffset = lane * 34.0;
     const qreal direction = fromRect.center().x() <= toRect.center().x()
         ? 1.0
         : -1.0;
-    path.cubicTo(start + QPointF(105.0 * direction, 0.0),
-                 end - QPointF(105.0 * direction, 0.0),
+    path.cubicTo(start + QPointF(105.0 * direction, laneOffset),
+                 end - QPointF(105.0 * direction, -laneOffset),
                  end);
     return path;
 }
@@ -724,7 +847,7 @@ QRectF renderFsmStateMachineGraph(
     if (!scene)
         return {};
 
-    FsmGraphLayout layout = buildFsmGraphLayout(graph, origin);
+    FsmGraphLayout layout = buildFsmGraphLayout(graph, origin, font);
     QRectF graphBounds = layout.bounds;
     if (layout.orderedStates.isEmpty())
         return graphBounds;
@@ -756,9 +879,9 @@ QRectF renderFsmStateMachineGraph(
         RtlInsightGraphElement state;
         state.kind = QStringLiteral("state");
         state.primary = row.stateDisplayName;
-        state.secondary = row.typeDisplayName;
         state.detail = row.detailDisplayName;
-        state.codeLink = row.codeLink;
+        state.codeLink =
+            fsmStateTransitionCodeLink(graph, row.stateDisplayName, row.codeLink);
         auto* item = new RtlInsightGraphStateNodeItem(
             state,
             rect,
@@ -782,62 +905,27 @@ QRectF renderFsmStateMachineGraph(
         addStateNode(row, layout.stateRects.value(stateName), highlighted, false);
     }
 
-    QHash<QString, QRectF> ghostRectsByTransition;
-    QHash<QString, FsmStateRow> ghostRowsByTransition;
-    for (const FsmTransitionRow& row : graph.transitionRows) {
-        if (!layout.stateIndexes.contains(row.fromStateDisplayName)
-            || !layout.stateIndexes.contains(row.toStateDisplayName)
-            || row.fromStateDisplayName == row.toStateDisplayName) {
-            continue;
-        }
-        const int fromIndex = layout.stateIndexes.value(row.fromStateDisplayName);
-        const int toIndex = layout.stateIndexes.value(row.toStateDisplayName);
-        if (fromIndex - toIndex <= 2)
-            continue;
-
-        const QRectF fromRect = layout.stateRects.value(row.fromStateDisplayName);
-        const QRectF toRect = layout.stateRects.value(row.toStateDisplayName);
-        const QPointF center(
-            (fromRect.center().x() + toRect.center().x()) / 2.0,
-            (fromRect.center().y() + toRect.center().y()) / 2.0 - 78.0);
-        const QRectF ghostRect = stateNodeRectAt(center.x(), center.y());
-        const QString key =
-            row.fromStateDisplayName + QLatin1Char('\n') + row.toStateDisplayName;
-        ghostRectsByTransition.insert(key, ghostRect);
-        ghostRowsByTransition.insert(
-            key,
-            layout.stateRowsByName.value(row.toStateDisplayName));
-        graphBounds = graphBounds.united(ghostRect);
-    }
-
-    for (auto it = ghostRectsByTransition.cbegin();
-         it != ghostRectsByTransition.cend();
-         ++it) {
-        addStateNode(ghostRowsByTransition.value(it.key()),
-                     it.value(),
-                     false,
-                     true);
-    }
-
     auto addTransition = [&](const FsmTransitionRow& row,
                              const QRectF& fromRect,
-                             const QRectF& toRect) {
+                             const QRectF& toRect,
+                             int lane) {
         QPointF start;
         QPointF end;
         QPainterPath path;
         qreal angle = 0.0;
         if (row.fromStateDisplayName == row.toStateDisplayName) {
+            const qreal loopShift = lane * 18.0;
             start = QPointF(fromRect.center().x() + fromRect.width() * 0.24,
-                            fromRect.top() + 6.0);
+                            fromRect.top() + 6.0 + loopShift);
             end = QPointF(fromRect.center().x() - fromRect.width() * 0.24,
-                          fromRect.top() + 6.0);
+                          fromRect.top() + 6.0 + loopShift);
             path.moveTo(start);
-            path.cubicTo(start + QPointF(36.0, -86.0),
-                         end + QPointF(-36.0, -86.0),
+            path.cubicTo(start + QPointF(48.0, -96.0 - lane * 22.0),
+                         end + QPointF(-48.0, -96.0 - lane * 22.0),
                          end);
             angle = kPi;
         } else {
-            path = fsmTransitionPath(fromRect, toRect, &start, &end);
+            path = fsmTransitionPath(fromRect, toRect, &start, &end, lane);
             angle = std::atan2(end.y() - start.y(), end.x() - start.x());
         }
 
@@ -854,24 +942,29 @@ QRectF renderFsmStateMachineGraph(
             angle,
             fsmTransitionLabel(row.conditionDisplayName),
             font,
-            QColor(QStringLiteral("#111827")));
+            QColor(QStringLiteral("#111827")),
+            lane * 26.0);
         item->navigateHandler = navigate;
         item->selectHandler = select;
         scene->addItem(item);
+        graphBounds = graphBounds.united(item->sceneBoundingRect());
     };
 
+    QHash<QString, int> edgeLaneCounts;
     for (const FsmTransitionRow& row : graph.transitionRows) {
         if (!layout.stateRects.contains(row.fromStateDisplayName)
             || !layout.stateRects.contains(row.toStateDisplayName)) {
             continue;
         }
         const QRectF fromRect = layout.stateRects.value(row.fromStateDisplayName);
-        QRectF toRect = layout.stateRects.value(row.toStateDisplayName);
-        const QString ghostKey =
+        const QRectF toRect = layout.stateRects.value(row.toStateDisplayName);
+        const QString edgeKey =
             row.fromStateDisplayName + QLatin1Char('\n') + row.toStateDisplayName;
-        if (ghostRectsByTransition.contains(ghostKey))
-            toRect = ghostRectsByTransition.value(ghostKey);
-        addTransition(row, fromRect, toRect);
+        const int ordinal = edgeLaneCounts.value(edgeKey);
+        edgeLaneCounts.insert(edgeKey, ordinal + 1);
+        const int lane = ordinal == 0 ? 0 : ((ordinal + 1) / 2)
+            * (ordinal % 2 == 0 ? -1 : 1);
+        addTransition(row, fromRect, toRect, lane);
     }
 
     return graphBounds.adjusted(-90.0, -110.0, 90.0, 90.0);
@@ -1744,6 +1837,55 @@ int RtlInsightsPanelCoordinator::graphEdgeItemCountForTest() const
             ++count;
     }
     return count;
+}
+
+QStringList RtlInsightsPanelCoordinator::graphTextItemsForTest() const
+{
+    QStringList texts;
+    if (!insightsGraphScene)
+        return texts;
+    for (QGraphicsItem* item : insightsGraphScene->items()) {
+        if (auto* simpleText = dynamic_cast<QGraphicsSimpleTextItem*>(item)) {
+            texts.append(simpleText->text());
+        } else if (auto* text = dynamic_cast<QGraphicsTextItem*>(item)) {
+            texts.append(text->toPlainText());
+        }
+    }
+    return texts;
+}
+
+bool RtlInsightsPanelCoordinator::graphNodeRectsOverlapForTest() const
+{
+    if (!insightsGraphScene)
+        return false;
+    QList<QRectF> rects;
+    for (QGraphicsItem* item : insightsGraphScene->items()) {
+        if (dynamic_cast<RtlInsightGraphNodeItem*>(item)
+            || dynamic_cast<RtlInsightGraphStateNodeItem*>(item)) {
+            rects.append(item->sceneBoundingRect());
+        }
+    }
+    for (int i = 0; i < rects.size(); ++i) {
+        for (int j = i + 1; j < rects.size(); ++j) {
+            if (rects.at(i).adjusted(1.0, 1.0, -1.0, -1.0)
+                    .intersects(rects.at(j).adjusted(1.0, 1.0, -1.0, -1.0))) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+int RtlInsightsPanelCoordinator::graphElementLineForTest(
+    const QString& elementKind,
+    const QString& primaryText,
+    const QString& secondaryText) const
+{
+    QGraphicsItem* item = graphItemByData(insightsGraphScene,
+                                          elementKind,
+                                          primaryText,
+                                          secondaryText);
+    return item ? item->data(kGraphLineRole).toInt() : -1;
 }
 
 bool RtlInsightsPanelCoordinator::triggerGraphNavigationForTest(

@@ -3278,6 +3278,25 @@ static void runActivityLogServiceRegression()
             diagnosticActivityProblems.scopeCombo()->setCurrentIndex(allFilesIndex);
     }
     diagnosticActivityProblems.update();
+    expectBool("problems current file diagnostic summary",
+               diagnosticActivityProblems.summaryLabel()
+                   && diagnosticActivityProblems.summaryLabel()->text()
+                          == QStringLiteral(
+                              "Current file: 0 errors, 1 warnings, 1 info"),
+               true);
+    expectBool("problems diagnostic state label",
+               diagnosticActivityProblems.stateLabel()
+                   && diagnosticActivityProblems.stateLabel()->text()
+                          == QStringLiteral(
+                              "Diagnostics: current + background"),
+               true);
+    diagnosticActivityProblems.setAnalysisState(QStringLiteral("analyzing"));
+    expectBool("problems explicit diagnostic state label",
+               diagnosticActivityProblems.stateLabel()
+                   && diagnosticActivityProblems.stateLabel()->text()
+                          == QStringLiteral("Diagnostics: analyzing"),
+               true);
+    diagnosticActivityProblems.setAnalysisState(QString());
     bool sawBandCountLabels = false;
     if (diagnosticActivityProblems.bandCombo()) {
         const int allBandIndex =
@@ -3350,33 +3369,45 @@ static void runActivityLogServiceRegression()
     QTreeWidget* diagnosticActivityTree = diagnosticActivityProblems.tree();
     expectBool("problems band column visible",
                diagnosticActivityTree
-                   && diagnosticActivityTree->columnCount() == 6
+                   && diagnosticActivityTree->columnCount() == 7
                    && diagnosticActivityTree->headerItem()
                    && diagnosticActivityTree->headerItem()->text(5)
+                       == QStringLiteral("Owner")
+                   && diagnosticActivityTree->headerItem()->text(6)
                        == QStringLiteral("Band"),
                true);
     bool sawCurrentBandRow = false;
     bool sawBackgroundBandRow = false;
+    bool sawSlangOwnerRow = false;
+    bool sawSemanticOwnerRow = false;
     if (diagnosticActivityTree) {
         for (int i = 0; i < diagnosticActivityTree->topLevelItemCount(); ++i) {
             QTreeWidgetItem* group = diagnosticActivityTree->topLevelItem(i);
             if (!group)
                 continue;
             sawCurrentBandRow = sawCurrentBandRow
-                || group->text(5) == QStringLiteral("current");
+                || group->text(6) == QStringLiteral("current");
             sawBackgroundBandRow = sawBackgroundBandRow
-                || group->text(5) == QStringLiteral("background");
+                || group->text(6) == QStringLiteral("background");
             for (int child = 0; child < group->childCount(); ++child) {
                 QTreeWidgetItem* row = group->child(child);
                 sawCurrentBandRow = sawCurrentBandRow
-                    || (row && row->text(5) == QStringLiteral("current"));
+                    || (row && row->text(6) == QStringLiteral("current"));
                 sawBackgroundBandRow = sawBackgroundBandRow
-                    || (row && row->text(5) == QStringLiteral("background"));
+                    || (row && row->text(6) == QStringLiteral("background"));
+                sawSlangOwnerRow = sawSlangOwnerRow
+                    || (row && row->text(5) == QStringLiteral("Slang"));
+                sawSemanticOwnerRow = sawSemanticOwnerRow
+                    || (row && row->text(5)
+                               == QStringLiteral("Semantic index"));
             }
         }
     }
     expectBool("problems rows show diagnostic bands",
                sawCurrentBandRow && sawBackgroundBandRow,
+               true);
+    expectBool("problems rows show diagnostic owners",
+               sawSlangOwnerRow && sawSemanticOwnerRow,
                true);
     if (diagnosticActivityProblems.bandCombo()) {
         const int backgroundIndex =
@@ -3396,7 +3427,7 @@ static void runActivityLogServiceRegression()
             if (group->childCount() == 0) {
                 ++diagnosticRows;
                 allBackground = allBackground
-                    && group->text(5) == QStringLiteral("background");
+                    && group->text(6) == QStringLiteral("background");
                 continue;
             }
             for (int child = 0; child < group->childCount(); ++child) {
@@ -3405,7 +3436,7 @@ static void runActivityLogServiceRegression()
                     continue;
                 ++diagnosticRows;
                 allBackground = allBackground
-                    && row->text(5) == QStringLiteral("background");
+                    && row->text(6) == QStringLiteral("background");
             }
         }
         sawOnlyBackgroundRows = diagnosticRows == 1 && allBackground;
@@ -4959,6 +4990,21 @@ static void runRtlInsightsPanelRegression(MainWindow& window, const QString& fix
             ->triggerGraphNavigationForTest(QStringLiteral("transition"),
                                             QStringLiteral("IDLE"),
                                             QStringLiteral("RUN"));
+    const QStringList fsmGraphTexts =
+        window.semanticDocks->rtlInsightsPanelCoordinator()
+            ->graphTextItemsForTest();
+    const int fsmGraphStateLine =
+        window.semanticDocks->rtlInsightsPanelCoordinator()
+            ->graphElementLineForTest(QStringLiteral("state"),
+                                      QStringLiteral("IDLE"));
+    const int fsmGraphTransitionLine =
+        window.semanticDocks->rtlInsightsPanelCoordinator()
+            ->graphElementLineForTest(QStringLiteral("transition"),
+                                      QStringLiteral("IDLE"),
+                                      QStringLiteral("RUN"));
+    const bool fsmGraphNodesOverlap =
+        window.semanticDocks->rtlInsightsPanelCoordinator()
+            ->graphNodeRectsOverlapForTest();
     window.semanticDocks->rtlInsightsPanelCoordinator()->updateModuleContext(
         fixturePath,
         QStringLiteral("insight_top"),
@@ -5050,6 +5096,20 @@ static void runRtlInsightsPanelRegression(MainWindow& window, const QString& fix
                true);
     expectBool("RTL insights FSM graph transition navigates",
                fsmGraphTransitionNavigates,
+               true);
+    expectBool("RTL insights FSM graph shows full state text",
+               fsmGraphTexts.contains(QStringLiteral("IDLE"))
+                   && fsmGraphTexts.contains(QStringLiteral("RUN")),
+               true);
+    expectBool("RTL insights FSM graph hides enum value detail",
+               !fsmGraphTexts.contains(QStringLiteral("enum value")),
+               true);
+    expectBool("RTL insights FSM graph state navigates to transition",
+               fsmGraphStateLine > 0
+                   && fsmGraphStateLine == fsmGraphTransitionLine,
+               true);
+    expectBool("RTL insights FSM graph nodes avoid overlap",
+               !fsmGraphNodesOverlap,
                true);
     expectBool("RTL insights renders signal journey", sawSignalJourney, true);
     expectBool("RTL insights renders signal journey declaration source role",
@@ -6953,7 +7013,7 @@ static void runComModeRegression(MainWindow& window)
         sendWidgetKey(activeEditor, Qt::Key_Escape);
         sendWidgetKey(activeEditor, Qt::Key_QuoteLeft, QStringLiteral("`"));
 
-        activeEditor->setPlainText(QStringLiteral("8'h0A\n8'h0B\n"));
+        activeEditor->setPlainText(QStringLiteral("0010\n9999\n"));
         activeEditor->setFocus();
         QTextBlock numberFirst =
             activeEditor->document()->findBlockByNumber(0);
@@ -6962,7 +7022,7 @@ static void runComModeRegression(MainWindow& window)
         QTextCursor numberStart(numberFirst);
         numberStart.setPosition(numberFirst.position());
         QTextCursor numberEnd(numberSecond);
-        numberEnd.setPosition(numberSecond.position() + 5);
+        numberEnd.setPosition(numberSecond.position() + 4);
         activeEditor->setTextCursor(numberStart);
         QTest::mouseClick(activeEditor->viewport(),
                           Qt::LeftButton,
@@ -6986,8 +7046,8 @@ static void runComModeRegression(MainWindow& window)
         expectBool("COM cn opens column number tool without editing",
                    numberTool
                        && numberTool->isVisible()
-                       && activeEditor->toPlainText()
-                              == QStringLiteral("8'h0A\n8'h0B\n"),
+                              && activeEditor->toPlainText()
+                              == QStringLiteral("0010\n9999\n"),
                    true);
         sendWidgetKey(numberTool, Qt::Key_Escape);
         expectBool("Column number tool Esc closes and returns to COM",
@@ -6995,6 +7055,27 @@ static void runComModeRegression(MainWindow& window)
                        && !numberTool->isVisible()
                        && activeEditor->comModeActive(),
                    true);
+        sendWidgetKey(activeEditor, Qt::Key_QuoteLeft, QStringLiteral("`"));
+        QTest::keyClick(activeEditor, Qt::Key_C, Qt::AltModifier);
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+        expectBool("Alt+C opens column number tool",
+                   numberTool
+                       && numberTool->isVisible()
+                       && !activeEditor->comModeActive(),
+                   true);
+        sendWidgetKey(numberTool, Qt::Key_Return);
+        expectBool("Column number tool Enter applies numbering",
+                   numberTool
+                       && !numberTool->isVisible()
+                       && activeEditor->toPlainText()
+                              == QStringLiteral("0010\n0011\n"),
+                   true);
+        activeEditor->undo();
+        expectBool("Column number tool applies as one undo block",
+                   activeEditor->toPlainText()
+                       == QStringLiteral("0010\n9999\n"),
+                   true);
+        activeEditor->enterComMode();
 
         sendWidgetKey(activeEditor, Qt::Key_G, QStringLiteral("g"));
         sendWidgetKey(activeEditor, Qt::Key_M, QStringLiteral("m"));

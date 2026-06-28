@@ -3,6 +3,7 @@
 
 #include <QComboBox>
 #include <QDockWidget>
+#include <QLabel>
 #include <QStringList>
 #include <QTreeWidget>
 
@@ -15,7 +16,9 @@ public:
 
     void setCurrentFileProvider(std::function<QString()> provider);
     void setWorkspaceFilesProvider(std::function<QStringList()> provider);
-    void setNavigationHandler(std::function<void(const QString&, int, int)> handler);
+    void setNavigationHandler(std::function<bool(const QString&, int, int)> handler);
+    void setStatusMessageHandler(std::function<void(const QString&, int)> handler);
+    void setAnalysisState(const QString& state);
 
     void update(const QString& fileName = QString());
 
@@ -24,6 +27,8 @@ public:
     QComboBox* scopeCombo() const { return problemsScopeCombo; }
     QComboBox* severityCombo() const { return problemsSeverityCombo; }
     QComboBox* bandCombo() const { return problemsBandCombo; }
+    QLabel* summaryLabel() const { return diagnosticSummaryLabel; }
+    QLabel* stateLabel() const { return diagnosticStateLabel; }
     bool showsCurrentFileScope() const;
 
 private:
@@ -32,11 +37,15 @@ private:
     QComboBox* problemsScopeCombo = nullptr;
     QComboBox* problemsSeverityCombo = nullptr;
     QComboBox* problemsBandCombo = nullptr;
+    QLabel* diagnosticSummaryLabel = nullptr;
+    QLabel* diagnosticStateLabel = nullptr;
     QString lastDiagnosticActivityMessage;
+    QString externalAnalysisState;
 
     std::function<QString()> currentFileProvider;
     std::function<QStringList()> workspaceFilesProvider;
-    std::function<void(const QString&, int, int)> navigationHandler;
+    std::function<bool(const QString&, int, int)> navigationHandler;
+    std::function<void(const QString&, int)> statusMessageHandler;
 };
 
 #endif // PROBLEMSPANELCOORDINATOR_H

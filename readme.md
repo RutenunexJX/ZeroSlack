@@ -57,6 +57,17 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
 - Ctrl+Space opens Global Control as a domain-first surface. Current root
   domains are `ow` and `fd`; displayed commands are `ow <num>`, `ow r`,
   `fd r`, and `fd s`.
+- Workspace Configuration is available from the app-level Workspace menu. It is
+  scoped per workspace and persists include dirs, defines, ignored dirs, file
+  extensions, and optional top module / active top. Applying configuration
+  updates `ProjectModel`, refreshes workspace file filtering, and queues
+  analysis through the existing project-change path.
+- Problems/Diagnostics now expose owner and status data in the existing
+  Problems panel: diagnostic rows show owner (`Slang`, `Semantic index`),
+  current-file error/warning/info summary follows the active tab, and status
+  reports current/stale/analyzing/background. F8 / Shift+F8 navigate
+  next/previous diagnostics using the current Problems scope and severity
+  filters, then reveal and flash the target editor line.
 - `;cmd` remains semantic command completion. `;;cmd` remains template
   expansion. COM Mode is for editor-local command actions. Slot Mode is the
   post-template editor-local fill flow; it is active for `;;p` / `;;lp`
@@ -189,8 +200,9 @@ Known reference points:
 
 ## Workspace Workflow Status
 
-The current long-term workspace workflow scope is limited to ignored directories
-and restoring Global Control `ow r` for recent workspaces.
+The workspace workflow scope now has two explicit lanes: the earlier limited
+workspace navigation lane (`ow r`, ignored directories) and the workspace
+engineering configuration / diagnostics lane.
 
 - `WorkspaceManager` owns open, close, switch, alias rename, file scanning,
   cached scanned-file restoration, and the recent-workspace list.
@@ -217,13 +229,22 @@ and restoring Global Control `ow r` for recent workspaces.
   the active `ProjectModel`, updates current file lists from the model, and
   stores ignored-directory state per open `WorkspaceEntry`. Switching back to a
   cached workspace restores raw scanned files first, then reapplies its ignored
-  directories so clearing ignores can reveal previously hidden files. No broad
-  ignored-directory UI exists yet.
+  directories so clearing ignores can reveal previously hidden files.
+- `WorkspaceConfigurationService` persists per-workspace engineering settings
+  in `QSettings`: include dirs, defines, ignored dirs, file extensions, and
+  optional top module / active top.
+- `WorkspaceConfigurationDialog` is the first workspace-focused configuration
+  UI. It edits include dirs, defines as key/value pairs, ignored dirs, file
+  extensions, and top module without running Slang or scanning files from UI.
+- `ProjectModel` now carries file extensions alongside include dirs, defines,
+  ignored paths, and top module. Workspace analysis keys include include dirs,
+  defines, file extensions, and top module so configuration changes invalidate
+  the previous full-workspace analysis key.
 
 ## Current Architecture
 
-- `ProjectModel` owns workspace root, file list, include dirs, defines, top, and
-  ignored paths.
+- `ProjectModel` owns workspace root, file list, include dirs, defines, file
+  extensions, top, and ignored paths.
 - `DocumentModel` owns open document identity, text snapshots, versions,
   dirty/saved state, cursor, live module names, and registry-backed text
   queries.
@@ -256,6 +277,12 @@ and restoring Global Control `ow r` for recent workspaces.
 - `WorkspaceIgnoreService` owns ignored-directory request validation and
   normalization. `WorkspaceManager` is the workspace-level model entry point;
   UI should call it rather than mutating `ProjectModel::ignoredPaths` directly.
+- `WorkspaceConfigurationService` owns persistent per-workspace engineering
+  configuration. `WorkspaceConfigurationDialog` is only a form consumer;
+  applying settings goes through `WorkspaceManager::setWorkspaceConfiguration`.
+- `DiagnosticNavigationService` owns next/previous diagnostic selection using
+  existing `DiagnosticService` filters. Problems panel and main-window actions
+  consume its result and navigate through `NavigationCommandCoordinator`.
 - Fold Shelf baseline: `FoldBlockShelfModel` owns the shelf item list and
   mutation lifecycle including rename, query/filter, and stale/consumed
   cleanup, `FoldShelfPersistenceService` owns versioned QSettings-backed
@@ -495,6 +522,7 @@ Only these long-term goals are active:
 9. Wave Preview as selected-block or selected-module waveform sketch only.
 10. State transition graph for selected `ns` / `next_state` only.
 11. Module block diagram for selected module names only.
+12. Workspace project configuration and diagnostics workflow.
 
 Do not add unlisted long-term goals without explicit user approval.
 
@@ -533,3 +561,9 @@ Do not add unlisted long-term goals without explicit user approval.
   checks passing. The full monolithic GUI smoke baseline still fails on
   existing non-current checks: one VENDOR ctrl-click fixture check and the Wave
   Preview rendering group.
+- Latest workspace configuration / diagnostics workflow: Release
+  `completion_test` passed through `ctest`; Release `completion_test` and
+  `gui_smoke_test` targets compile/link. A Release `relationship_test` run was
+  attempted and failed in existing RTL Insights FSM graph/panel checks, not in
+  the workspace configuration or diagnostics workflow covered by this
+  milestone.

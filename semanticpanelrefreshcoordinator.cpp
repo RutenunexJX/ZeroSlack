@@ -64,6 +64,18 @@ void SemanticPanelRefreshCoordinator::ContextDependencies::navigateToFileAndLine
         navigationCommandCoordinator->navigateToFileAndLine(fileName, line, column);
 }
 
+bool SemanticPanelRefreshCoordinator::ContextDependencies::navigateToFileAndLineAndFlash(
+    const QString& fileName,
+    int line,
+    int column) const
+{
+    return navigationCommandCoordinator
+        && navigationCommandCoordinator->navigateToFileAndLineAndFlash(
+            fileName,
+            line,
+            column);
+}
+
 void SemanticPanelRefreshCoordinator::ContextDependencies::revealFileAndFlashLine(
     const QString& fileName,
     int line) const
@@ -102,6 +114,10 @@ void SemanticPanelRefreshCoordinator::configurePanels()
         [this](const QString& fileName, int line, int column) {
             navigateToFileAndLine(fileName, line, column);
         };
+    const ProblemsNavigationHandler problemsNavigationHandler =
+        [this](const QString& fileName, int line, int column) {
+            return navigateToFileAndLineAndFlash(fileName, line, column);
+        };
     const NavigationHandler revealHandler =
         [this](const QString& fileName, int line, int) {
             revealFileAndFlashLine(fileName, line);
@@ -113,7 +129,8 @@ void SemanticPanelRefreshCoordinator::configurePanels()
 
     panels.configureProblemsPanel(currentFileProvider,
                                   workspaceFilesProvider,
-                                  navigationHandler);
+                                  problemsNavigationHandler,
+                                  statusMessageHandler);
     panels.configureReferencesPanel(workspaceFilesProvider,
                                     navigationHandler,
                                     statusMessageHandler);
@@ -194,8 +211,7 @@ void SemanticPanelRefreshCoordinator::handleActiveEditorChanged(MyCodeEditor* ed
     panels.updateRtlInsightsPanel(editor ? editor->documentFileName() : QString(),
                                   editor ? editor->currentModuleName() : QString(),
                                   currentEditorWord(editor));
-    if (problemsPanelShowsCurrentFile())
-        updateProblemsPanel();
+    updateProblemsPanel();
 }
 
 QString SemanticPanelRefreshCoordinator::currentFileName() const
@@ -224,6 +240,14 @@ void SemanticPanelRefreshCoordinator::navigateToFileAndLine(
     int column) const
 {
     dependencies.navigateToFileAndLine(fileName, line, column);
+}
+
+bool SemanticPanelRefreshCoordinator::navigateToFileAndLineAndFlash(
+    const QString& fileName,
+    int line,
+    int column) const
+{
+    return dependencies.navigateToFileAndLineAndFlash(fileName, line, column);
 }
 
 void SemanticPanelRefreshCoordinator::revealFileAndFlashLine(

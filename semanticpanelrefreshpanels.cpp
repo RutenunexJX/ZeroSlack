@@ -33,7 +33,8 @@ void SemanticPanelRefreshCoordinator::PanelSet::markConfigured()
 void SemanticPanelRefreshCoordinator::PanelSet::configureProblemsPanel(
     const CurrentFileProvider& currentFileProvider,
     const WorkspaceFilesProvider& workspaceFilesProvider,
-    const NavigationHandler& navigationHandler) const
+    const ProblemsNavigationHandler& navigationHandler,
+    const StatusMessageHandler& statusMessageHandler) const
 {
     if (!problemsPanel)
         return;
@@ -41,6 +42,7 @@ void SemanticPanelRefreshCoordinator::PanelSet::configureProblemsPanel(
     problemsPanel->setCurrentFileProvider(currentFileProvider);
     problemsPanel->setWorkspaceFilesProvider(workspaceFilesProvider);
     problemsPanel->setNavigationHandler(navigationHandler);
+    problemsPanel->setStatusMessageHandler(statusMessageHandler);
 }
 
 void SemanticPanelRefreshCoordinator::PanelSet::configureReferencesPanel(

@@ -24,6 +24,8 @@ constexpr const char* kRecentWorkspacePath = "path";
 WorkspaceManager::WorkspaceManager(QObject *parent)
     : QObject(parent)
     , projectModel(std::make_unique<ProjectModel>(this))
+    , workspaceConfigurationService(
+          std::make_unique<WorkspaceConfigurationService>())
 {
     qRegisterMetaType<WorkspaceManager::WorkspaceEntry>("WorkspaceManager::WorkspaceEntry");
     files.reserveDefaults();
@@ -367,6 +369,23 @@ QStringList WorkspaceManager::ignoredDirectories() const
     return projectModel ? projectModel->ignoredPaths() : QStringList();
 }
 
+WorkspaceConfiguration WorkspaceManager::workspaceConfiguration() const
+{
+    WorkspaceConfiguration configuration;
+    if (!projectModel)
+        return configuration;
+    const ProjectSnapshot snapshot = projectModel->snapshot();
+    configuration.workspaceRoot = snapshot.workspaceRoot;
+    configuration.includeDirs = snapshot.includeDirs;
+    configuration.defines = snapshot.defines;
+    configuration.ignoredDirs = snapshot.ignoredPaths;
+    configuration.fileExtensions = snapshot.fileExtensions;
+    configuration.topModule = snapshot.topModule;
+    return workspaceConfigurationService
+        ? workspaceConfigurationService->normalized(configuration)
+        : configuration;
+}
+
 bool WorkspaceManager::setIgnoredDirectories(const QStringList& directories,
                                              QString* errorMessage)
 {
@@ -393,6 +412,11 @@ bool WorkspaceManager::setIgnoredDirectories(const QStringList& directories,
         && workspaces.at(activeIndex).path == workspacePath) {
         workspaces[activeIndex].ignoredDirectories = report.ignoredDirectories;
     }
+    WorkspaceConfiguration configuration = workspaceConfiguration();
+    configuration.ignoredDirs = report.ignoredDirectories;
+    if (workspaceConfigurationService)
+        workspaceConfigurationService->save(configuration);
+    updateActiveEntryConfiguration(configuration);
 
     updateFileWatcher();
     emit filesScanned(files.systemVerilogFiles);
@@ -406,6 +430,13 @@ bool WorkspaceManager::setIgnoredDirectories(const QStringList& directories,
                      ? QStringLiteral("y")
                      : QStringLiteral("ies")));
     return true;
+}
+
+bool WorkspaceManager::setWorkspaceConfiguration(
+    const WorkspaceConfiguration& configuration,
+    QString* errorMessage)
+{
+    return applyWorkspaceConfiguration(configuration, true, errorMessage);
 }
 
 ProjectModel* WorkspaceManager::getProjectModel() const
@@ -615,10 +646,102 @@ bool WorkspaceManager::restoreWorkspaceFilesFromEntry(int index)
 
     const WorkspaceEntry entry = workspaces.at(index);
     projectModel->setWorkspaceState(entry.path, entry.scannedFiles);
-    projectModel->setIgnoredPaths(entry.ignoredDirectories);
+    WorkspaceConfiguration configuration = loadConfigurationForWorkspace(entry.path);
+    if (!entry.includeDirs.isEmpty())
+        configuration.includeDirs = entry.includeDirs;
+    if (!entry.fileExtensions.isEmpty())
+        configuration.fileExtensions = entry.fileExtensions;
+    if (!entry.defines.isEmpty())
+        configuration.defines = entry.defines;
+    if (!entry.topModule.isEmpty())
+        configuration.topModule = entry.topModule;
+    if (!entry.ignoredDirectories.isEmpty())
+        configuration.ignoredDirs = entry.ignoredDirectories;
+    applyWorkspaceConfiguration(configuration, false);
     files.allFiles = projectModel->allFiles();
     files.systemVerilogFiles = projectModel->systemVerilogFiles();
     return true;
+}
+
+WorkspaceConfiguration WorkspaceManager::loadConfigurationForWorkspace(
+    const QString& path) const
+{
+    if (workspaceConfigurationService)
+        return workspaceConfigurationService->load(path);
+    WorkspaceConfigurationService fallback;
+    return fallback.defaultConfiguration(path);
+}
+
+bool WorkspaceManager::applyWorkspaceConfiguration(
+    const WorkspaceConfiguration& configuration,
+    bool persist,
+    QString* errorMessage)
+{
+    if (errorMessage)
+        errorMessage->clear();
+    if (!projectModel)
+        return false;
+
+    WorkspaceConfiguration clean =
+        workspaceConfigurationService
+            ? workspaceConfigurationService->normalized(configuration)
+            : configuration;
+    if (clean.workspaceRoot.isEmpty())
+        clean.workspaceRoot = workspacePath;
+    if (clean.workspaceRoot.isEmpty())
+        return false;
+
+    const WorkspaceIgnoreReport ignoreReport =
+        WorkspaceIgnoreService::getInstance()->normalizeIgnoredDirectories(
+            WorkspaceIgnoreQuery{clean.workspaceRoot, clean.ignoredDirs});
+    if (!ignoreReport.valid) {
+        if (errorMessage)
+            *errorMessage = ignoreReport.failureReason;
+        return false;
+    }
+    clean.ignoredDirs = ignoreReport.ignoredDirectories;
+
+    if (persist && workspaceConfigurationService
+        && !workspaceConfigurationService->save(clean)) {
+        if (errorMessage)
+            *errorMessage = QStringLiteral("Failed to save workspace configuration.");
+        return false;
+    }
+
+    projectModel->setWorkspaceConfiguration(clean.includeDirs,
+                                            clean.defines,
+                                            clean.fileExtensions,
+                                            clean.topModule,
+                                            clean.ignoredDirs);
+    files.allFiles = projectModel->allFiles();
+    files.systemVerilogFiles = projectModel->systemVerilogFiles();
+    updateActiveEntryConfiguration(clean);
+    updateFileWatcher();
+    emit filesScanned(files.systemVerilogFiles);
+    emit workspaceListChanged();
+    ActivityLogService::getInstance()->append(
+        QStringLiteral("Workspace"),
+        ActivityLogLevel::Info,
+        QStringLiteral("Applied workspace configuration: %1 include dirs, %2 defines, %3 ignored dirs")
+            .arg(clean.includeDirs.size())
+            .arg(clean.defines.size())
+            .arg(clean.ignoredDirs.size()));
+    return true;
+}
+
+void WorkspaceManager::updateActiveEntryConfiguration(
+    const WorkspaceConfiguration& configuration)
+{
+    if (activeIndex < 0 || activeIndex >= workspaces.size())
+        return;
+    WorkspaceEntry& entry = workspaces[activeIndex];
+    if (entry.path != configuration.workspaceRoot)
+        return;
+    entry.ignoredDirectories = configuration.ignoredDirs;
+    entry.includeDirs = configuration.includeDirs;
+    entry.defines = configuration.defines;
+    entry.fileExtensions = configuration.fileExtensions;
+    entry.topModule = configuration.topModule;
 }
 
 bool WorkspaceManager::activateWorkspacePath(const QString& path,
@@ -643,8 +766,14 @@ bool WorkspaceManager::activateWorkspacePath(const QString& path,
         files.clear();
         if (projectModel) {
             projectModel->setWorkspaceState(normalizedPath, {});
-            if (index >= 0 && index < workspaces.size())
-                projectModel->setIgnoredPaths(workspaces.at(index).ignoredDirectories);
+            WorkspaceConfiguration configuration =
+                loadConfigurationForWorkspace(normalizedPath);
+            if (index >= 0 && index < workspaces.size()
+                && !workspaces.at(index).ignoredDirectories.isEmpty()) {
+                configuration.ignoredDirs =
+                    workspaces.at(index).ignoredDirectories;
+            }
+            applyWorkspaceConfiguration(configuration, false);
         }
     }
 
@@ -783,7 +912,10 @@ bool WorkspaceManager::isSystemVerilogFile(const QString& fileName) const
 {
     if (fileName.isEmpty()) return false;
 
-    static const QStringList svExtensions = {"sv", "v", "vh", "svh", "vp", "svp"};
-    const QString suffix = QFileInfo(fileName).suffix().toLower();
-    return svExtensions.contains(suffix);
+    const QString suffix =
+        QStringLiteral(".%1").arg(QFileInfo(fileName).suffix().toLower());
+    const QStringList extensions =
+        projectModel ? projectModel->fileExtensions()
+                     : WorkspaceConfigurationService::defaultFileExtensions();
+    return extensions.contains(suffix, Qt::CaseInsensitive);
 }

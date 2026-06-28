@@ -3,6 +3,7 @@
 
 #include <QDockWidget>
 #include <QString>
+#include <QStringList>
 #include <QTreeWidget>
 
 #include <functional>
@@ -48,6 +49,11 @@ public:
     QGraphicsView* graphView() const { return insightsGraphView; }
     int graphNodeItemCountForTest() const;
     int graphEdgeItemCountForTest() const;
+    QStringList graphTextItemsForTest() const;
+    bool graphNodeRectsOverlapForTest() const;
+    int graphElementLineForTest(const QString& elementKind,
+                                const QString& primaryText,
+                                const QString& secondaryText = QString()) const;
     bool triggerGraphNavigationForTest(const QString& elementKind,
                                        const QString& primaryText,
                                        const QString& secondaryText = QString());

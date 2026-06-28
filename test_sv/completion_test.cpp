@@ -10,6 +10,7 @@
 #include "codetemplateservice.h"
 #include "customabbreviationservice.h"
 #include "diagnosticsrefreshcontroller.h"
+#include "diagnosticnavigationservice.h"
 #include "documentmodel.h"
 #include "editorsemanticcontextservice.h"
 #include "foldblockshelfmodel.h"
@@ -37,6 +38,7 @@
 #include "wavepreviewservice.h"
 #include "workspaceanalysisplanservice.h"
 #include "workspaceanalysisrequestqueue.h"
+#include "workspaceconfigurationservice.h"
 #include "workspaceignoreservice.h"
 #include "workspacemanager.h"
 #include "workspacesymbolanalysiscontroller.h"
@@ -8589,8 +8591,360 @@ int main(int argc, char** argv) {
                               .contains(normalizedIgnoredFile),
                    true);
 
+        WorkspaceConfigurationService explicitConfigStore(
+            QDir(ignoreSettingsDir.path()).absoluteFilePath(
+                QStringLiteral("workspace-config.ini")));
+        WorkspaceConfiguration storedConfig =
+            explicitConfigStore.defaultConfiguration(ignoreWorkspaceA.path());
+        storedConfig.includeDirs = {rtlDir, ignoreWorkspaceA.path()};
+        storedConfig.defines.insert(QStringLiteral("WIDTH"),
+                                    QStringLiteral("32"));
+        storedConfig.defines.insert(QStringLiteral("FOO"), QString());
+        storedConfig.fileExtensions = {QStringLiteral("svx"),
+                                       QStringLiteral(".sv")};
+        storedConfig.ignoredDirs = {generatedDir};
+        storedConfig.topModule = QStringLiteral("keep_top");
+        expectBool("Workspace configuration service saves",
+                   explicitConfigStore.save(storedConfig),
+                   true);
+        const WorkspaceConfiguration loadedConfig =
+            explicitConfigStore.load(ignoreWorkspaceA.path());
+        expectBool("Workspace configuration service persists fields",
+                   loadedConfig.includeDirs.contains(normalizedGeneratedDir)
+                       == false
+                       && loadedConfig.includeDirs.contains(
+                              normalizeTestPath(rtlDir))
+                       && loadedConfig.defines.value(QStringLiteral("WIDTH"))
+                              == QStringLiteral("32")
+                       && loadedConfig.defines.contains(QStringLiteral("FOO"))
+                       && loadedConfig.fileExtensions
+                              == QStringList{QStringLiteral(".svx"),
+                                             QStringLiteral(".sv")}
+                       && loadedConfig.ignoredDirs
+                              == QStringList{normalizedGeneratedDir}
+                       && loadedConfig.topModule
+                              == QStringLiteral("keep_top"),
+                   true);
+
+        QTemporaryDir configWorkspace;
+        expectBool("Workspace configuration temp workspace valid",
+                   configWorkspace.isValid(),
+                   true);
+        const QString configRtlDir =
+            QDir(configWorkspace.path()).absoluteFilePath(
+                QStringLiteral("rtl"));
+        const QString configGeneratedDir =
+            QDir(configWorkspace.path()).absoluteFilePath(
+                QStringLiteral("generated"));
+        const QString configIncludeDir =
+            QDir(configWorkspace.path()).absoluteFilePath(
+                QStringLiteral("include"));
+        expectBool("Workspace configuration dirs created",
+                   QDir().mkpath(configRtlDir)
+                       && QDir().mkpath(configGeneratedDir)
+                       && QDir().mkpath(configIncludeDir),
+                   true);
+        const QString configSvFile =
+            QDir(configRtlDir).absoluteFilePath(
+                QStringLiteral("config_default.sv"));
+        const QString configSvxFile =
+            QDir(configRtlDir).absoluteFilePath(
+                QStringLiteral("config_extra.svx"));
+        const QString configIgnoredFile =
+            QDir(configGeneratedDir).absoluteFilePath(
+                QStringLiteral("config_generated.svx"));
+        expectBool("Workspace configuration sv file created",
+                   writeTextFile(configSvFile,
+                                 QStringLiteral("module config_default; endmodule\n")),
+                   true);
+        expectBool("Workspace configuration svx file created",
+                   writeTextFile(configSvxFile,
+                                 QStringLiteral("module config_extra; endmodule\n")),
+                   true);
+        expectBool("Workspace configuration ignored svx file created",
+                   writeTextFile(configIgnoredFile,
+                                 QStringLiteral("module config_generated; endmodule\n")),
+                   true);
+
+        WorkspaceManager configWorkspaceManager;
+        expectBool("Workspace configuration manager opens workspace",
+                   configWorkspaceManager.openWorkspace(configWorkspace.path()),
+                   true);
+        expectBool("Workspace configuration manager scans workspace",
+                   waitForEventPredicate(
+                       [&]() {
+                           return configWorkspaceManager.workspaceEntries().size()
+                                      == 1
+                               && configWorkspaceManager.workspaceEntries()
+                                      .first()
+                                      .scanComplete;
+                       },
+                       3000),
+                   true);
+        WorkspaceConfiguration managerConfig =
+            configWorkspaceManager.workspaceConfiguration();
+        managerConfig.includeDirs = {configIncludeDir};
+        managerConfig.defines.insert(QStringLiteral("WIDTH"),
+                                     QStringLiteral("64"));
+        managerConfig.defines.insert(QStringLiteral("USE_FEATURE"),
+                                     QString());
+        managerConfig.fileExtensions = {QStringLiteral(".svx")};
+        managerConfig.ignoredDirs = {configGeneratedDir};
+        managerConfig.topModule = QStringLiteral("config_extra");
+        QString workspaceConfigError;
+        expectBool("Workspace configuration manager applies config",
+                   configWorkspaceManager.setWorkspaceConfiguration(
+                       managerConfig,
+                       &workspaceConfigError),
+                   true);
+        const QString normalizedConfigSvx =
+            normalizeTestPath(configSvxFile);
+        const QString normalizedConfigSv =
+            normalizeTestPath(configSvFile);
+        const QString normalizedConfigIgnored =
+            normalizeTestPath(configIgnoredFile);
+        const QStringList configuredSvFiles =
+            configWorkspaceManager.getSystemVerilogFiles();
+        expectBool("Workspace configuration file extensions filter",
+                   configuredSvFiles.contains(normalizedConfigSvx)
+                       && !configuredSvFiles.contains(normalizedConfigSv)
+                       && !configuredSvFiles.contains(normalizedConfigIgnored),
+                   true);
+        const WorkspaceConfiguration activeConfig =
+            configWorkspaceManager.workspaceConfiguration();
+        expectBool("Workspace configuration active values round trip",
+                   activeConfig.includeDirs
+                           == QStringList{normalizeTestPath(configIncludeDir)}
+                       && activeConfig.defines.value(
+                              QStringLiteral("WIDTH")) == QStringLiteral("64")
+                       && activeConfig.defines.contains(
+                              QStringLiteral("USE_FEATURE"))
+                       && activeConfig.fileExtensions
+                              == QStringList{QStringLiteral(".svx")}
+                       && activeConfig.ignoredDirs
+                              == QStringList{
+                                  normalizeTestPath(configGeneratedDir)}
+                       && activeConfig.topModule
+                              == QStringLiteral("config_extra"),
+                   true);
+
+        WorkspaceManager persistedConfigWorkspaceManager;
+        expectBool("Workspace configuration persisted workspace opens",
+                   persistedConfigWorkspaceManager.openWorkspace(
+                       configWorkspace.path()),
+                   true);
+        expectBool("Workspace configuration persisted scan",
+                   waitForEventPredicate(
+                       [&]() {
+                           return persistedConfigWorkspaceManager
+                                      .workspaceEntries()
+                                      .size()
+                                      == 1
+                               && persistedConfigWorkspaceManager
+                                      .workspaceEntries()
+                                      .first()
+                                      .scanComplete;
+                       },
+                       3000),
+                   true);
+        const WorkspaceConfiguration persistedActiveConfig =
+            persistedConfigWorkspaceManager.workspaceConfiguration();
+        expectBool("Workspace configuration persists via manager",
+                   persistedActiveConfig.fileExtensions
+                           == QStringList{QStringLiteral(".svx")}
+                       && persistedActiveConfig.topModule
+                              == QStringLiteral("config_extra")
+                       && persistedConfigWorkspaceManager
+                              .getSystemVerilogFiles()
+                              .contains(normalizedConfigSvx)
+                       && !persistedConfigWorkspaceManager
+                               .getSystemVerilogFiles()
+                               .contains(normalizedConfigSv),
+                   true);
+
+        QTemporaryDir slangConfigWorkspace;
+        expectBool("Workspace configuration slang temp dir valid",
+                   slangConfigWorkspace.isValid(),
+                   true);
+        const QString slangIncludeDir =
+            QDir(slangConfigWorkspace.path()).absoluteFilePath(
+                QStringLiteral("inc"));
+        expectBool("Workspace configuration slang include dir created",
+                   QDir().mkpath(slangIncludeDir),
+                   true);
+        const QString slangHeaderFile =
+            QDir(slangIncludeDir).absoluteFilePath(
+                QStringLiteral("defs.svh"));
+        const QString slangSourceFile =
+            QDir(slangConfigWorkspace.path()).absoluteFilePath(
+                QStringLiteral("uses_include.sv"));
+        expectBool("Workspace configuration slang header created",
+                   writeTextFile(slangHeaderFile,
+                                 QStringLiteral("`define INCLUDED_OK\n")),
+                   true);
+        expectBool("Workspace configuration slang source created",
+                   writeTextFile(
+                       slangSourceFile,
+                       QStringLiteral("`include \"defs.svh\"\nmodule uses_include; endmodule\n")),
+                   true);
+        const QString slangSourceText =
+            QStringLiteral("`include \"defs.svh\"\nmodule uses_include; endmodule\n");
+        SlangManager configSlang;
+        const QList<SemanticDiagnostic> missingIncludeDiagnostics =
+            configSlang.extractDiagnostics(slangSourceFile,
+                                           slangSourceText,
+                                           QStringList{});
+        const QList<SemanticDiagnostic> resolvedIncludeDiagnostics =
+            configSlang.extractDiagnostics(slangSourceFile,
+                                           slangSourceText,
+                                           QStringList{slangIncludeDir});
+        expectBool("Workspace configuration include dirs affect Slang diagnostics",
+                   !missingIncludeDiagnostics.isEmpty()
+                       && resolvedIncludeDiagnostics.isEmpty(),
+                   true);
+        const QString defineDiagnosticFile =
+            QDir(slangConfigWorkspace.path()).absoluteFilePath(
+                QStringLiteral("uses_define.sv"));
+        expectBool("Workspace configuration define source created",
+                   writeTextFile(
+                       defineDiagnosticFile,
+                       QStringLiteral(
+                           "`ifndef ENABLE_OK\n"
+                           "module define_bad(input logic a\n"
+                           "endmodule\n"
+                           "`else\n"
+                           "module define_ok; endmodule\n"
+                           "`endif\n")),
+                   true);
+        const QList<SemanticDiagnostic> missingDefineDiagnostics =
+            configSlang.extractWorkspaceDiagnostics(
+                QStringList{defineDiagnosticFile},
+                QStringList{slangConfigWorkspace.path()});
+        QHash<QString, QString> enabledDefines;
+        enabledDefines.insert(QStringLiteral("ENABLE_OK"), QStringLiteral("1"));
+        const QList<SemanticDiagnostic> resolvedDefineDiagnostics =
+            configSlang.extractWorkspaceDiagnostics(
+                QStringList{defineDiagnosticFile},
+                QStringList{slangConfigWorkspace.path()},
+                enabledDefines);
+        expectBool("Workspace configuration defines affect Slang diagnostics",
+                   !missingDefineDiagnostics.isEmpty()
+                       && resolvedDefineDiagnostics.isEmpty(),
+                   true);
+
         QSettings::setDefaultFormat(previousSettingsFormat);
     }
+
+    SemanticIndex::getInstance()->clearSnapshot();
+    QTemporaryDir diagnosticNavigationWorkspace;
+    expectBool("Diagnostic navigation temp dir valid",
+               diagnosticNavigationWorkspace.isValid(),
+               true);
+    const QString diagnosticNavFileA =
+        QDir(diagnosticNavigationWorkspace.path()).absoluteFilePath(
+            QStringLiteral("nav_a.sv"));
+    const QString diagnosticNavFileB =
+        QDir(diagnosticNavigationWorkspace.path()).absoluteFilePath(
+            QStringLiteral("nav_b.sv"));
+    SemanticDiagnostic diagnosticNavErrorA;
+    diagnosticNavErrorA.fileName = diagnosticNavFileA;
+    diagnosticNavErrorA.line = 2;
+    diagnosticNavErrorA.column = 4;
+    diagnosticNavErrorA.message = QStringLiteral("first error");
+    diagnosticNavErrorA.severity = SemanticDiagnostic::Error;
+    diagnosticNavErrorA.owner = SemanticDiagnostic::SlangCompiler;
+    SemanticDiagnostic diagnosticNavWarningA;
+    diagnosticNavWarningA.fileName = diagnosticNavFileA;
+    diagnosticNavWarningA.line = 5;
+    diagnosticNavWarningA.column = 2;
+    diagnosticNavWarningA.message = QStringLiteral("later warning");
+    diagnosticNavWarningA.severity = SemanticDiagnostic::Warning;
+    diagnosticNavWarningA.owner = SemanticDiagnostic::SlangCompiler;
+    SemanticDiagnostic diagnosticNavErrorB;
+    diagnosticNavErrorB.fileName = diagnosticNavFileB;
+    diagnosticNavErrorB.line = 1;
+    diagnosticNavErrorB.column = 1;
+    diagnosticNavErrorB.message = QStringLiteral("workspace error");
+    diagnosticNavErrorB.severity = SemanticDiagnostic::Error;
+    diagnosticNavErrorB.owner = SemanticDiagnostic::SemanticIndexOwner;
+    SemanticIndex::getInstance()->setSnapshot(sharedSnapshotFromRecords(
+        {},
+        {},
+        {diagnosticNavErrorB, diagnosticNavWarningA, diagnosticNavErrorA}));
+    DiagnosticNavigationService diagnosticNavigation;
+    DiagnosticNavigationQuery navQuery;
+    navQuery.currentFileName = diagnosticNavFileA;
+    navQuery.currentLine = 3;
+    navQuery.currentColumn = 1;
+    navQuery.scope = DiagnosticPanelScope::CurrentFile;
+    navQuery.severity = DiagnosticSeverityFilter::All;
+    DiagnosticNavigationResult navResult =
+        diagnosticNavigation.navigate(navQuery);
+    expectBool("Diagnostic navigation current file next",
+               navResult.found
+                   && navResult.diagnostic.diagnostic.fileName
+                          == diagnosticNavFileA
+                   && navResult.diagnostic.diagnostic.line == 5,
+               true);
+    navQuery.previous = true;
+    navResult = diagnosticNavigation.navigate(navQuery);
+    expectBool("Diagnostic navigation current file previous",
+               navResult.found
+                   && navResult.diagnostic.diagnostic.fileName
+                          == diagnosticNavFileA
+                   && navResult.diagnostic.diagnostic.line == 2,
+               true);
+    navQuery.previous = false;
+    navQuery.currentLine = 1;
+    navQuery.severity = DiagnosticSeverityFilter::Errors;
+    navResult = diagnosticNavigation.navigate(navQuery);
+    expectBool("Diagnostic navigation severity filter",
+               navResult.found
+                   && navResult.diagnostic.diagnostic.fileName
+                          == diagnosticNavFileA
+                   && navResult.diagnostic.diagnostic.line == 2,
+               true);
+    navQuery.scope = DiagnosticPanelScope::WorkspaceFiles;
+    navQuery.severity = DiagnosticSeverityFilter::All;
+    navQuery.workspaceFiles = {diagnosticNavFileA, diagnosticNavFileB};
+    navQuery.currentFileName = diagnosticNavFileA;
+    navQuery.currentLine = 6;
+    navResult = diagnosticNavigation.navigate(navQuery);
+    expectBool("Diagnostic navigation workspace wraps by location",
+               navResult.found
+                   && navResult.diagnostic.diagnostic.fileName
+                          == diagnosticNavFileB
+                   && navResult.diagnostic.diagnostic.line == 1,
+               true);
+    DiagnosticPanelQueryOptions ownerOptions;
+    ownerOptions.scope = DiagnosticPanelScope::AllFiles;
+    const DiagnosticReport ownerReport =
+        DiagnosticService::getInstance()->findDiagnosticReport(
+            DiagnosticService::getInstance()->queryForPanel(ownerOptions));
+    bool sawSlangOwner = false;
+    bool sawSemanticOwner = false;
+    for (const DiagnosticResult& result : ownerReport.diagnostics) {
+        sawSlangOwner = sawSlangOwner
+            || result.ownerDisplayName == QStringLiteral("Slang");
+        sawSemanticOwner = sawSemanticOwner
+            || result.ownerDisplayName == QStringLiteral("Semantic index");
+    }
+    expectBool("Diagnostic owner display names",
+               sawSlangOwner && sawSemanticOwner,
+               true);
+    DiagnosticNavigationQuery noDiagnosticQuery;
+    noDiagnosticQuery.currentFileName = diagnosticNavFileA;
+    noDiagnosticQuery.scope = DiagnosticPanelScope::WorkspaceFiles;
+    noDiagnosticQuery.workspaceFiles = {diagnosticNavFileA};
+    noDiagnosticQuery.severity = DiagnosticSeverityFilter::Info;
+    const DiagnosticNavigationResult noDiagnosticResult =
+        diagnosticNavigation.navigate(noDiagnosticQuery);
+    expectBool("Diagnostic navigation reports empty result",
+               !noDiagnosticResult.found
+                   && noDiagnosticResult.failureReason
+                          == QStringLiteral("No diagnostics"),
+               true);
+    SemanticIndex::getInstance()->clearSnapshot();
 
     expectBool("Workspace staged current file created",
                writeTextFile(

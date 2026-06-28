@@ -28,10 +28,11 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
 
 ## Current Goal State
 
-Current milestone: none after COM toggle, visual-column column selection, and
-Column Number Tool repair.
+Current milestone: Workspace Project Configuration And Diagnostics Workflow is
+complete pending commit/push.
 
-Next work should wait for the next explicit scoped request.
+Next work should wait for the next explicit scoped request after this milestone
+is published.
 
 Status:
 
@@ -119,6 +120,25 @@ Status:
   mode, column-mode Tab/Shift+Tab, `cn`, Column Number Tool, and inference
   checks passed. The full smoke baseline still fails on existing non-current
   checks: `VENDOR ctrl-click fixture opens` and the Wave Preview rendering group.
+- Workspace Project Configuration And Diagnostics Workflow is complete:
+  `WorkspaceConfigurationService` persists per-workspace include dirs,
+  defines, ignored dirs, file extensions, and optional top module;
+  `WorkspaceConfigurationDialog` provides the workspace-focused UI;
+  `WorkspaceManager::setWorkspaceConfiguration()` applies settings through
+  `ProjectModel` and existing ignored-directory validation; and workspace
+  analysis keys include the configuration fields that affect Slang analysis.
+- Diagnostics workflow completion: Problems rows show diagnostic owner,
+  current-file diagnostic summary follows the active tab, diagnostics state
+  displays current/stale/analyzing/background, Problems jumps validate target
+  files/locations and flash the revealed line, and F8 / Shift+F8 use
+  `DiagnosticNavigationService` to move next/previous by the Problems panel's
+  scope and severity filters.
+- Focused verification for the workspace configuration / diagnostics workflow:
+  Release `completion_test` and `gui_smoke_test` targets compile/link; Release
+  `ctest -R "^completion_test$" --output-on-failure` passed. Release
+  `ctest -R "^relationship_test$" --output-on-failure` was attempted and
+  failed in existing RTL Insights FSM graph/panel checks, not in this
+  milestone's workspace configuration or diagnostics workflow.
 - G0 Documentation And Goal Reset is complete and pushed in commit `bc2c059`.
 - G4.1 Registry Metadata For Existing COM Commands is complete:
   `commodecommandregistry` now owns metadata for fixed executable commands,
@@ -797,6 +817,41 @@ Milestones:
 - G11.3 Click navigation to module definitions.
   (complete: focused tests verify root/child module graph-element navigation
   to module definitions)
+
+## Track 12: Workspace Project Configuration And Diagnostics Workflow
+
+Goal: make workspace-level project configuration explicit and make diagnostics
+usable for day-to-day navigation.
+
+Allowed work:
+
+- include dirs
+- defines
+- ignored dirs
+- file extensions
+- optional top module / active top
+- next/previous diagnostic navigation
+- Problems jump stability, flash, owner, status, and current-file summary
+
+Not allowed in this track:
+
+- session restore
+- recent files
+- new diagnostic engines beyond the existing Slang and Semantic index paths
+- UI-side Slang execution
+- UI-side workspace scanning
+- broad workspace UX expansion
+
+Milestones:
+
+- G12.1 Workspace Configuration Service And Dialog.
+  (complete: per-workspace persisted include dirs, defines, ignored dirs, file
+  extensions, and top module with a focused dialog)
+- G12.2 Diagnostics Navigation And Problems Status.
+  (complete: next/previous diagnostic navigation, owner display, current-file
+  summary, diagnostics state, validated jumps, and flash)
+- G12.3 Verification And Documentation.
+  (complete: docs updated and focused Release verification recorded)
 
 ## Huge Workspace Status Audit
 

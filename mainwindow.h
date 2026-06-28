@@ -78,6 +78,7 @@ private:
     std::unique_ptr<FormatterSettings> formatterSettings;
     QDockWidget* editorAppearanceDock = nullptr;
     QMenu* viewMenu = nullptr;
+    QMenu* workspaceMenu = nullptr;
     QToolButton* panelsStatusButton = nullptr;
     QLabel* editorModeChip = nullptr;
     QProgressBar* workspaceProgressBar = nullptr;
@@ -97,6 +98,7 @@ private:
     void setupComMode();
     void setupFoldBlockShelf();
     void setupViewMenu();
+    void setupWorkspaceMenu();
     void addPanelViewAction(QDockWidget* dock,
                             const QString& text,
                             const QString& objectName);
@@ -110,6 +112,9 @@ private:
     void updateEditorModeChip(const QString& message);
     void setFoldShelfModeVisualActive(bool active);
     void showRecentWorkspacesDialog();
+    void showWorkspaceConfigurationDialog();
+    void navigateDiagnostic(bool previous);
+    void setDiagnosticsAnalysisState(const QString& state);
     void showFoldBlockShelf();
     void restoreFoldShelfItem(const QString& id);
     void restoreFoldShelfItemToActiveEditor(const QString& id);

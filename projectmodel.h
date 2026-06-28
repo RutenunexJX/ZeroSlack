@@ -14,6 +14,7 @@ struct ProjectSnapshot {
     QStringList systemVerilogFiles;
     QStringList includeDirs;
     QHash<QString, QString> defines;
+    QStringList fileExtensions;
     QHash<QString, SymbolTaxonomy::SourceRole> sourceRoles;
     QString filelistPath;
     QString topModule;
@@ -41,9 +42,15 @@ public:
     void setScannedFiles(const QStringList& files);
     void setIncludeDirs(const QStringList& dirs);
     void setDefines(const QHash<QString, QString>& newDefines);
+    void setFileExtensions(const QStringList& extensions);
     void setFilelistPath(const QString& path);
     void setTopModule(const QString& moduleName);
     void setIgnoredPaths(const QStringList& paths);
+    void setWorkspaceConfiguration(const QStringList& includeDirs,
+                                   const QHash<QString, QString>& defines,
+                                   const QStringList& fileExtensions,
+                                   const QString& topModule,
+                                   const QStringList& ignoredPaths);
 
     ProjectSnapshot snapshot() const;
     QString workspaceRoot() const;
@@ -51,6 +58,7 @@ public:
     QStringList systemVerilogFiles() const;
     QStringList includeDirs() const;
     QHash<QString, QString> defines() const;
+    QStringList fileExtensions() const;
     QHash<QString, SymbolTaxonomy::SourceRole> sourceRoles() const;
     SymbolTaxonomy::SourceRole sourceRoleForFile(const QString& filePath) const;
     QStringList filesForSourceRole(SymbolTaxonomy::SourceRole role) const;
@@ -72,12 +80,19 @@ private:
         QString normalizePath(const QString& path) const;
         QStringList normalizePathList(const QStringList& paths) const;
         QStringList uniqueSorted(QStringList values) const;
+        QStringList uniquePreservingOrder(const QStringList& values) const;
         QStringList defaultIncludeDirsForFiles(
             const QString& workspaceRoot,
             const QStringList& files) const;
+        QStringList defaultFileExtensions() const;
+        QStringList normalizeFileExtensions(
+            const QStringList& extensions) const;
+        QHash<QString, QString> normalizeDefines(
+            const QHash<QString, QString>& defines) const;
         bool isIgnored(const QString& filePath,
                        const QStringList& ignoredPaths) const;
-        bool isSystemVerilogFile(const QString& filePath) const;
+        bool isSystemVerilogFile(const QString& filePath,
+                                 const QStringList& fileExtensions) const;
         SymbolTaxonomy::SourceRole sourceRoleForFile(
             const QString& filePath) const;
     };

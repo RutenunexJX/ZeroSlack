@@ -16,6 +16,7 @@
 #include "navigationcommandcoordinator.h"
 #include "navigationmanager.h"
 #include "navigationpanecoordinator.h"
+#include "diagnosticnavigationservice.h"
 #include "diagnosticservice.h"
 #include "editorappearancepanel.h"
 #include "editorappearancesettings.h"
@@ -40,10 +41,12 @@
 #include "rtlinsightspanelcoordinator.h"
 #include "signalkernelgraphpanelcoordinator.h"
 #include "wavepreviewpanelcoordinator.h"
+#include "workspaceconfigurationdialog.h"
 #include "version.h"
 #include <QAction>
 #include <QAbstractItemView>
 #include <QCloseEvent>
+#include <QComboBox>
 #include <QCoreApplication>
 #include <QDialog>
 #include <QDialogButtonBox>
@@ -55,6 +58,7 @@
 #include <QTextBlock>
 #include <QTextCursor>
 #include <QKeyEvent>
+#include <QKeySequence>
 #include <QLabel>
 #include <QLineEdit>
 #include <QMenu>
@@ -70,6 +74,40 @@
 #include <QTreeWidget>
 #include <QVBoxLayout>
 #include <QWidget>
+
+namespace {
+DiagnosticPanelScope diagnosticScopeFromProblemsCombo(QComboBox* combo)
+{
+    if (!combo)
+        return DiagnosticPanelScope::CurrentFile;
+
+    switch (combo->currentData().toInt()) {
+    case 1:
+        return DiagnosticPanelScope::WorkspaceFiles;
+    case 2:
+        return DiagnosticPanelScope::AllFiles;
+    default:
+        return DiagnosticPanelScope::CurrentFile;
+    }
+}
+
+DiagnosticSeverityFilter diagnosticSeverityFromProblemsCombo(QComboBox* combo)
+{
+    if (!combo)
+        return DiagnosticSeverityFilter::All;
+
+    switch (combo->currentData().toInt()) {
+    case 1:
+        return DiagnosticSeverityFilter::Errors;
+    case 2:
+        return DiagnosticSeverityFilter::Warnings;
+    case 3:
+        return DiagnosticSeverityFilter::Info;
+    default:
+        return DiagnosticSeverityFilter::All;
+    }
+}
+}
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -95,6 +133,7 @@ MainWindow::MainWindow(QWidget *parent)
     setupFileCommandCoordinator();
     setupModeCommandCoordinator();
     setupFoldBlockShelf();
+    setupWorkspaceMenu();
     setupViewMenu();
     setupEditorModeChip();
     setupGlobalControl();
@@ -437,13 +476,39 @@ void MainWindow::setupManagerConnections()
             &AnalysisScheduler::fileSymbolAnalysisFinished,
             this,
             [this](const QString& fileName, int) {
+                setDiagnosticsAnalysisState(QStringLiteral("current"));
                 scheduleActiveEditorPassiveRefresh(fileName);
+            });
+    connect(analysisScheduler.get(),
+            &AnalysisScheduler::fileSymbolAnalysisStarted,
+            this,
+            [this](const QString&) {
+                setDiagnosticsAnalysisState(QStringLiteral("analyzing"));
+            });
+    connect(analysisScheduler.get(),
+            &AnalysisScheduler::workspaceSymbolAnalysisStarted,
+            this,
+            [this](const ProjectSnapshot&, int) {
+                setDiagnosticsAnalysisState(QStringLiteral("analyzing"));
             });
     connect(analysisScheduler.get(),
             &AnalysisScheduler::workspaceSymbolAnalysisFinished,
             this,
             [this](const ProjectSnapshot&, int, int) {
+                setDiagnosticsAnalysisState(QStringLiteral("current"));
                 scheduleActiveEditorPassiveRefresh();
+            });
+    connect(analysisScheduler.get(),
+            &AnalysisScheduler::workspaceSymbolAnalysisDeferred,
+            this,
+            [this](const ProjectSnapshot&, int, qint64, qint64) {
+                setDiagnosticsAnalysisState(QStringLiteral("background"));
+            });
+    connect(analysisScheduler.get(),
+            &AnalysisScheduler::workspaceSymbolAnalysisCancelled,
+            this,
+            [this](const WorkspaceAnalysisRequestTelemetry&) {
+                setDiagnosticsAnalysisState(QStringLiteral("stale"));
             });
 
 }
@@ -939,6 +1004,154 @@ void MainWindow::setupViewMenu()
         panelsStatusButton->setMenu(viewMenu);
         statusBar()->addPermanentWidget(panelsStatusButton);
     }
+}
+
+void MainWindow::setupWorkspaceMenu()
+{
+    if (!menuBar() || workspaceMenu)
+        return;
+
+    workspaceMenu = menuBar()->addMenu(tr("&Workspace"));
+    workspaceMenu->setObjectName(QStringLiteral("workspaceMenu"));
+
+    QAction* configureAction =
+        workspaceMenu->addAction(tr("Workspace Configuration..."));
+    configureAction->setObjectName(
+        QStringLiteral("workspaceConfigurationAction"));
+    connect(configureAction,
+            &QAction::triggered,
+            this,
+            &MainWindow::showWorkspaceConfigurationDialog);
+
+    workspaceMenu->addSeparator();
+    QAction* nextDiagnosticAction =
+        workspaceMenu->addAction(tr("Next Diagnostic"));
+    nextDiagnosticAction->setObjectName(
+        QStringLiteral("nextDiagnosticAction"));
+    nextDiagnosticAction->setShortcut(QKeySequence(Qt::Key_F8));
+    nextDiagnosticAction->setShortcutContext(Qt::ApplicationShortcut);
+    addAction(nextDiagnosticAction);
+    connect(nextDiagnosticAction,
+            &QAction::triggered,
+            this,
+            [this]() { navigateDiagnostic(false); });
+
+    QAction* previousDiagnosticAction =
+        workspaceMenu->addAction(tr("Previous Diagnostic"));
+    previousDiagnosticAction->setObjectName(
+        QStringLiteral("previousDiagnosticAction"));
+    previousDiagnosticAction->setShortcut(QKeySequence(Qt::SHIFT | Qt::Key_F8));
+    previousDiagnosticAction->setShortcutContext(Qt::ApplicationShortcut);
+    addAction(previousDiagnosticAction);
+    connect(previousDiagnosticAction,
+            &QAction::triggered,
+            this,
+            [this]() { navigateDiagnostic(true); });
+}
+
+void MainWindow::showWorkspaceConfigurationDialog()
+{
+    if (!workspaceManager || !workspaceManager->isWorkspaceOpen()) {
+        if (statusBar())
+            statusBar()->showMessage(
+                QStringLiteral("Open a workspace before configuring it"),
+                3000);
+        return;
+    }
+
+    WorkspaceConfigurationDialog dialog(this);
+    dialog.setConfiguration(workspaceManager->workspaceConfiguration());
+    if (dialog.exec() != QDialog::Accepted)
+        return;
+
+    QString errorMessage;
+    if (!workspaceManager->setWorkspaceConfiguration(dialog.configuration(),
+                                                     &errorMessage)) {
+        if (errorMessage.isEmpty())
+            errorMessage = QStringLiteral("Failed to apply workspace configuration.");
+        QMessageBox::warning(this,
+                             tr("Workspace Configuration"),
+                             errorMessage);
+        return;
+    }
+
+    if (statusBar()) {
+        statusBar()->showMessage(
+            QStringLiteral("Workspace configuration saved; analysis queued"),
+            4000);
+    }
+    if (semanticDocks && semanticDocks->refreshCoordinator())
+        semanticDocks->refreshCoordinator()->updateProblemsPanel();
+}
+
+void MainWindow::navigateDiagnostic(bool previous)
+{
+    ProblemsPanelCoordinator* problemsPanel =
+        semanticDocks ? semanticDocks->problemsPanelCoordinator() : nullptr;
+    MyCodeEditor* editor = tabManager ? tabManager->getCurrentEditor() : nullptr;
+    const DocumentSnapshot document =
+        tabManager ? tabManager->getCurrentDocument() : DocumentSnapshot();
+
+    DiagnosticNavigationQuery query;
+    query.currentFileName = document.fileName;
+    if (editor) {
+        const QTextCursor cursor = editor->textCursor();
+        query.currentLine = cursor.blockNumber() + 1;
+        query.currentColumn = cursor.positionInBlock() + 1;
+    }
+    query.previous = previous;
+    query.workspaceFiles =
+        workspaceManager ? workspaceManager->getSystemVerilogFiles()
+                         : QStringList();
+    query.scope = diagnosticScopeFromProblemsCombo(
+        problemsPanel ? problemsPanel->scopeCombo() : nullptr);
+    query.severity = diagnosticSeverityFromProblemsCombo(
+        problemsPanel ? problemsPanel->severityCombo() : nullptr);
+
+    DiagnosticNavigationService service;
+    const DiagnosticNavigationResult result = service.navigate(query);
+    if (!result.found) {
+        if (statusBar()) {
+            statusBar()->showMessage(
+                result.failureReason.isEmpty()
+                    ? QStringLiteral("No diagnostics")
+                    : result.failureReason,
+                3000);
+        }
+        return;
+    }
+
+    if (!navigationCommandCoordinator
+        || !navigationCommandCoordinator->navigateToFileAndLineAndFlash(
+            result.diagnostic.diagnostic.fileName,
+            result.diagnostic.diagnostic.line,
+            result.diagnostic.diagnostic.column)) {
+        if (statusBar())
+            statusBar()->showMessage(
+                QStringLiteral("Failed to open diagnostic location"),
+                4000);
+        return;
+    }
+
+    if (statusBar()) {
+        statusBar()->showMessage(
+            QStringLiteral("%1 diagnostic: %2")
+                .arg(previous ? QStringLiteral("Previous")
+                              : QStringLiteral("Next"),
+                     result.diagnostic.messageDisplayName),
+            3000);
+    }
+}
+
+void MainWindow::setDiagnosticsAnalysisState(const QString& state)
+{
+    ProblemsPanelCoordinator* problemsPanel =
+        semanticDocks ? semanticDocks->problemsPanelCoordinator() : nullptr;
+    if (!problemsPanel)
+        return;
+
+    problemsPanel->setAnalysisState(state);
+    problemsPanel->update();
 }
 
 void MainWindow::setupEditorModeChip()

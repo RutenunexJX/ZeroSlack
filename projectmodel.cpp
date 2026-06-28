@@ -2,6 +2,7 @@
 
 #include <QDir>
 #include <QFileInfo>
+#include <QSet>
 
 QStringList ProjectSnapshot::filesForSourceRole(
     SymbolTaxonomy::SourceRole role) const
@@ -46,6 +47,8 @@ void ProjectModel::setWorkspaceRoot(const QString& rootPath)
         return;
 
     current.workspaceRoot = normalized;
+    if (current.fileExtensions.isEmpty())
+        current.fileExtensions = pathRules.defaultFileExtensions();
     if (!includeDirsExplicit)
         current.includeDirs = normalized.isEmpty() ? QStringList() : QStringList{normalized};
     publishChanged();
@@ -66,6 +69,7 @@ void ProjectModel::setWorkspaceState(const QString& rootPath,
     rawScannedFiles.clear();
     includeDirsExplicit = false;
     current.workspaceRoot = normalized;
+    current.fileExtensions = pathRules.defaultFileExtensions();
     if (!includeDirsExplicit) {
         current.includeDirs =
             normalized.isEmpty() ? QStringList() : QStringList{normalized};
@@ -111,7 +115,7 @@ void ProjectModel::applyScannedFiles(const QStringList& files)
             pathRules.sourceRoleForFile(filePath);
         if (sourceRole != SymbolTaxonomy::SourceRole::Unknown)
             sourceRoles.insert(filePath, sourceRole);
-        if (pathRules.isSystemVerilogFile(filePath))
+        if (pathRules.isSystemVerilogFile(filePath, current.fileExtensions))
             svFiles.append(filePath);
     }
 
@@ -128,13 +132,20 @@ void ProjectModel::setIncludeDirs(const QStringList& dirs)
 {
     includeDirsExplicit = true;
     current.includeDirs =
-        pathRules.uniqueSorted(pathRules.normalizePathList(dirs));
+        pathRules.uniquePreservingOrder(pathRules.normalizePathList(dirs));
     publishChanged();
 }
 
 void ProjectModel::setDefines(const QHash<QString, QString>& newDefines)
 {
-    current.defines = newDefines;
+    current.defines = pathRules.normalizeDefines(newDefines);
+    publishChanged();
+}
+
+void ProjectModel::setFileExtensions(const QStringList& extensions)
+{
+    current.fileExtensions = pathRules.normalizeFileExtensions(extensions);
+    applyScannedFiles(rawScannedFiles);
     publishChanged();
 }
 
@@ -155,6 +166,25 @@ void ProjectModel::setIgnoredPaths(const QStringList& paths)
     current.ignoredPaths =
         pathRules.uniqueSorted(pathRules.normalizePathList(paths));
     setScannedFiles(rawScannedFiles);
+}
+
+void ProjectModel::setWorkspaceConfiguration(
+    const QStringList& includeDirs,
+    const QHash<QString, QString>& defines,
+    const QStringList& fileExtensions,
+    const QString& topModule,
+    const QStringList& ignoredPaths)
+{
+    includeDirsExplicit = true;
+    current.includeDirs =
+        pathRules.uniquePreservingOrder(pathRules.normalizePathList(includeDirs));
+    current.defines = pathRules.normalizeDefines(defines);
+    current.fileExtensions = pathRules.normalizeFileExtensions(fileExtensions);
+    current.topModule = topModule.trimmed();
+    current.ignoredPaths =
+        pathRules.uniqueSorted(pathRules.normalizePathList(ignoredPaths));
+    applyScannedFiles(rawScannedFiles);
+    publishChanged();
 }
 
 ProjectSnapshot ProjectModel::snapshot() const
@@ -185,6 +215,11 @@ QStringList ProjectModel::includeDirs() const
 QHash<QString, QString> ProjectModel::defines() const
 {
     return current.defines;
+}
+
+QStringList ProjectModel::fileExtensions() const
+{
+    return current.fileExtensions;
 }
 
 QHash<QString, SymbolTaxonomy::SourceRole> ProjectModel::sourceRoles() const
@@ -268,6 +303,22 @@ QStringList ProjectModel::ProjectPathRules::uniqueSorted(QStringList values) con
     return values;
 }
 
+QStringList ProjectModel::ProjectPathRules::uniquePreservingOrder(
+    const QStringList& values) const
+{
+    QStringList result;
+    QSet<QString> seen;
+    result.reserve(values.size());
+    for (const QString& value : values) {
+        const QString key = value.toCaseFolded();
+        if (value.isEmpty() || seen.contains(key))
+            continue;
+        seen.insert(key);
+        result.append(value);
+    }
+    return result;
+}
+
 QStringList ProjectModel::ProjectPathRules::defaultIncludeDirsForFiles(
     const QString& workspaceRoot,
     const QStringList& files) const
@@ -284,6 +335,44 @@ QStringList ProjectModel::ProjectPathRules::defaultIncludeDirsForFiles(
     return uniqueSorted(dirs);
 }
 
+QStringList ProjectModel::ProjectPathRules::defaultFileExtensions() const
+{
+    return {QStringLiteral(".sv"),
+            QStringLiteral(".svh"),
+            QStringLiteral(".v"),
+            QStringLiteral(".vh")};
+}
+
+QStringList ProjectModel::ProjectPathRules::normalizeFileExtensions(
+    const QStringList& extensions) const
+{
+    QStringList normalized;
+    normalized.reserve(extensions.size());
+    for (QString extension : extensions) {
+        extension = extension.trimmed().toLower();
+        if (extension.isEmpty())
+            continue;
+        if (!extension.startsWith(QLatin1Char('.')))
+            extension.prepend(QLatin1Char('.'));
+        normalized.append(extension);
+    }
+    normalized = uniquePreservingOrder(normalized);
+    return normalized.isEmpty() ? defaultFileExtensions() : normalized;
+}
+
+QHash<QString, QString> ProjectModel::ProjectPathRules::normalizeDefines(
+    const QHash<QString, QString>& defines) const
+{
+    QHash<QString, QString> normalized;
+    for (auto it = defines.cbegin(); it != defines.cend(); ++it) {
+        const QString key = it.key().trimmed();
+        if (key.isEmpty())
+            continue;
+        normalized.insert(key, it.value().trimmed());
+    }
+    return normalized;
+}
+
 bool ProjectModel::ProjectPathRules::isIgnored(
     const QString& filePath,
     const QStringList& ignoredPaths) const
@@ -297,13 +386,15 @@ bool ProjectModel::ProjectPathRules::isIgnored(
 }
 
 bool ProjectModel::ProjectPathRules::isSystemVerilogFile(
-    const QString& filePath) const
+    const QString& filePath,
+    const QStringList& fileExtensions) const
 {
     if (filePath.isEmpty())
         return false;
 
-    static const QStringList svExtensions = {"sv", "v", "vh", "svh", "vp", "svp"};
-    return svExtensions.contains(QFileInfo(filePath).suffix().toLower());
+    const QString extension =
+        QStringLiteral(".%1").arg(QFileInfo(filePath).suffix().toLower());
+    return fileExtensions.contains(extension, Qt::CaseInsensitive);
 }
 
 SymbolTaxonomy::SourceRole ProjectModel::ProjectPathRules::sourceRoleForFile(

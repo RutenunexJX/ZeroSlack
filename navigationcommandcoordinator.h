@@ -24,6 +24,9 @@ public:
     void navigateToFileAndLine(const QString& filePath,
                                int lineNumber = -1,
                                int columnNumber = -1);
+    bool navigateToFileAndLineAndFlash(const QString& filePath,
+                                       int lineNumber,
+                                       int columnNumber = -1);
     void revealFileAndFlashLine(const QString& filePath,
                                 int lineNumber);
     void navigateEditorToLine(MyCodeEditor* editor,

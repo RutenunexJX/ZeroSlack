@@ -87,6 +87,7 @@ set(ZEROSLACK_CORE_SOURCES
     definitionnavigationservice.cpp
     definitionpreviewservice.cpp
     definitionservice.cpp
+    diagnosticnavigationservice.cpp
     diagnosticservice.cpp
     diagnosticsrefreshcontroller.cpp
     documentmodel.cpp
@@ -134,6 +135,8 @@ set(ZEROSLACK_CORE_SOURCES
     ghostannotationservice.cpp
     wavepreviewpanelcoordinator.cpp
     wavepreviewservice.cpp
+    workspaceconfigurationdialog.cpp
+    workspaceconfigurationservice.cpp
     globalcontrolcoordinator.cpp
     globalcontrolpanel.cpp
     globalcontrolservice.cpp
@@ -276,6 +279,7 @@ set(ZEROSLACK_CORE_SOURCES
     definitionnavigationservice.h
     definitionpreviewservice.h
     definitionservice.h
+    diagnosticnavigationservice.h
     diagnosticservice.h
     diagnosticsrefreshcontroller.h
     documentmodel.h
@@ -315,6 +319,8 @@ set(ZEROSLACK_CORE_SOURCES
     ghostannotationservice.h
     wavepreviewpanelcoordinator.h
     wavepreviewservice.h
+    workspaceconfigurationdialog.h
+    workspaceconfigurationservice.h
     globalcontrolcoordinator.h
     globalcontrolpanel.h
     globalcontrolservice.h

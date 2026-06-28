@@ -150,6 +150,19 @@ bool isComModeToggleKey(QKeyEvent* event)
         == (Qt::ShiftModifier | Qt::ControlModifier | Qt::AltModifier);
 }
 
+bool isColumnNumberShortcutKey(QKeyEvent* event)
+{
+    if (!event || event->key() != Qt::Key_C)
+        return false;
+    const Qt::KeyboardModifiers modifiers =
+        event->modifiers()
+        & (Qt::ShiftModifier
+           | Qt::ControlModifier
+           | Qt::AltModifier
+           | Qt::MetaModifier);
+    return modifiers == Qt::AltModifier;
+}
+
 void setComboValue(QComboBox* combo, int value)
 {
     if (!combo)
@@ -607,31 +620,38 @@ ComModeCoordinator::ComModeCoordinator(
         [this]() { exitComModeFromPicker(); });
     columnNumberTool = std::make_unique<ColumnNumberToolPanel>(anchor);
     columnNumberTool->setCancelledHandler([this]() {
-        if (activeComEditor)
-            activeComEditor->setFocus(Qt::ShortcutFocusReason);
+        if (columnNumberEditor)
+            columnNumberEditor->setFocus(Qt::ShortcutFocusReason);
+        columnNumberEditor.clear();
+        columnNumberOpenedFromCom = false;
     });
     columnNumberTool->setApplyHandler(
         [this](const ColumnNumberConfig& config, int rows) {
-            if (!activeComEditor)
+            QPointer<MyCodeEditor> editor = columnNumberEditor;
+            const bool openedFromCom = columnNumberOpenedFromCom;
+            columnNumberEditor.clear();
+            columnNumberOpenedFromCom = false;
+            if (!editor)
                 return;
             const QStringList textRows = previewColumnNumbers(config, rows);
             QString message;
             const bool replaceSelection =
                 config.replaceMode
                 == ColumnNumberReplaceMode::ReplaceSelection;
-            if (!activeComEditor->applyColumnSelectionTexts(
+            if (!editor->applyColumnSelectionTexts(
                     textRows,
                     replaceSelection,
                     &message)) {
                 if (message.isEmpty())
                     message = QStringLiteral("No column selection");
-                activeComEditor->showComModeMessage(message);
-                emit activeComEditor->editorStatusMessageRequested(message);
-                activeComEditor->setFocus(Qt::ShortcutFocusReason);
+                editor->showComModeMessage(message);
+                emit editor->editorStatusMessageRequested(message);
+                editor->setFocus(Qt::ShortcutFocusReason);
                 return;
             }
-            activeComEditor->exitComMode();
-            activeComEditor->setFocus(Qt::ShortcutFocusReason);
+            if (openedFromCom && editor->comModeActive())
+                editor->exitComMode();
+            editor->setFocus(Qt::ShortcutFocusReason);
         });
 }
 
@@ -714,6 +734,12 @@ void ComModeCoordinator::attachEditor(MyCodeEditor* editor)
             [this, editor](int moduleLine) {
                 handleRelativeLine(editor, moduleLine);
             });
+    connect(editor,
+            &MyCodeEditor::columnNumberToolRequested,
+            this,
+            [this, editor]() {
+                handleColumnNumberTool(editor);
+            });
 }
 
 QLabel* ComModeCoordinator::commandStripWidget() const
@@ -773,9 +799,19 @@ void ComModeCoordinator::installGlobalEscapeFilter()
                 this,
                 &ComModeCoordinator::toggleCurrentEditorComMode);
     }
+    if (shortcutParent && !columnNumberShortcut) {
+        columnNumberShortcut = new QShortcut(
+            QKeySequence(Qt::ALT | Qt::Key_C),
+            shortcutParent);
+        columnNumberShortcut->setContext(Qt::WindowShortcut);
+        connect(columnNumberShortcut,
+                &QShortcut::activated,
+                this,
+                &ComModeCoordinator::openColumnNumberToolForCurrentEditor);
+    }
 }
 
-void ComModeCoordinator::toggleCurrentEditorComMode()
+MyCodeEditor* ComModeCoordinator::currentEditorForLocalCommand() const
 {
     MyCodeEditor* editor = tabManager ? tabManager->getCurrentEditor() : nullptr;
     if (!editor || !editor->isEnabled()) {
@@ -787,6 +823,12 @@ void ComModeCoordinator::toggleCurrentEditorComMode()
             }
         }
     }
+    return editor;
+}
+
+void ComModeCoordinator::toggleCurrentEditorComMode()
+{
+    MyCodeEditor* editor = currentEditorForLocalCommand();
     if (!editor)
         return;
     if (editor->comModeActive())
@@ -795,6 +837,20 @@ void ComModeCoordinator::toggleCurrentEditorComMode()
         editor->enterComMode();
     activeComEditor = editor->comModeActive() ? editor : nullptr;
     editor->setFocus(Qt::ShortcutFocusReason);
+}
+
+void ComModeCoordinator::openColumnNumberToolForCurrentEditor()
+{
+    if (QApplication::activeModalWidget())
+        return;
+    if (QWidget* popup = QApplication::activePopupWidget();
+        popup && popup->isVisible()) {
+        return;
+    }
+    MyCodeEditor* editor = currentEditorForLocalCommand();
+    if (!editor)
+        return;
+    handleColumnNumberTool(editor);
 }
 
 bool ComModeCoordinator::handleGlobalEscape(QObject* watched, QEvent* event)
@@ -813,6 +869,14 @@ bool ComModeCoordinator::handleGlobalEscape(QObject* watched, QEvent* event)
     if (QWidget* popup = QApplication::activePopupWidget();
         popup && popup->isVisible()) {
         return false;
+    }
+
+    if (isColumnNumberShortcutKey(keyEvent)) {
+        if (!focusBelongsToWindow(anchor))
+            return false;
+        openColumnNumberToolForCurrentEditor();
+        keyEvent->accept();
+        return true;
     }
 
     MyCodeEditor* editor = tabManager ? tabManager->getCurrentEditor() : nullptr;
@@ -1069,7 +1133,9 @@ void ComModeCoordinator::handleColumnNumberTool(MyCodeEditor* editor)
         return;
     }
 
-    activeComEditor = editor;
+    activeComEditor = editor->comModeActive() ? editor : activeComEditor;
+    columnNumberEditor = editor;
+    columnNumberOpenedFromCom = editor->comModeActive();
     ColumnNumberConfig config =
         inferColumnNumberConfig(selectedRows.constFirst());
     if (columnNumberTool) {

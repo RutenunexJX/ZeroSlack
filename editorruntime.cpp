@@ -93,6 +93,19 @@ bool isComModeToggleKey(QKeyEvent* event)
         == (Qt::ShiftModifier | Qt::ControlModifier | Qt::AltModifier);
 }
 
+bool isColumnNumberShortcutKey(QKeyEvent* event)
+{
+    if (!event || event->key() != Qt::Key_C)
+        return false;
+    const Qt::KeyboardModifiers modifiers =
+        event->modifiers()
+        & (Qt::ShiftModifier
+           | Qt::ControlModifier
+           | Qt::AltModifier
+           | Qt::MetaModifier);
+    return modifiers == Qt::AltModifier;
+}
+
 bool isUnsignedIntegerText(const QString& text)
 {
     if (text.isEmpty())
@@ -3379,6 +3392,12 @@ bool MyCodeEditorState::handleKeyPress(MyCodeEditor* editor, QKeyEvent* event)
             exitComMode(editor);
         else
             enterComMode(editor);
+        event->accept();
+        return true;
+    }
+
+    if (isColumnNumberShortcutKey(event)) {
+        emit editor->columnNumberToolRequested();
         event->accept();
         return true;
     }
