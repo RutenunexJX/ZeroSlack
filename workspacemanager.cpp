@@ -657,7 +657,7 @@ bool WorkspaceManager::restoreWorkspaceFilesFromEntry(int index)
         configuration.topModule = entry.topModule;
     if (!entry.ignoredDirectories.isEmpty())
         configuration.ignoredDirs = entry.ignoredDirectories;
-    applyWorkspaceConfiguration(configuration, false);
+    applyWorkspaceConfiguration(configuration, false, nullptr, false);
     files.allFiles = projectModel->allFiles();
     files.systemVerilogFiles = projectModel->systemVerilogFiles();
     return true;
@@ -675,7 +675,8 @@ WorkspaceConfiguration WorkspaceManager::loadConfigurationForWorkspace(
 bool WorkspaceManager::applyWorkspaceConfiguration(
     const WorkspaceConfiguration& configuration,
     bool persist,
-    QString* errorMessage)
+    QString* errorMessage,
+    bool notify)
 {
     if (errorMessage)
         errorMessage->clear();
@@ -717,15 +718,17 @@ bool WorkspaceManager::applyWorkspaceConfiguration(
     files.systemVerilogFiles = projectModel->systemVerilogFiles();
     updateActiveEntryConfiguration(clean);
     updateFileWatcher();
-    emit filesScanned(files.systemVerilogFiles);
-    emit workspaceListChanged();
-    ActivityLogService::getInstance()->append(
-        QStringLiteral("Workspace"),
-        ActivityLogLevel::Info,
-        QStringLiteral("Applied workspace configuration: %1 include dirs, %2 defines, %3 ignored dirs")
-            .arg(clean.includeDirs.size())
-            .arg(clean.defines.size())
-            .arg(clean.ignoredDirs.size()));
+    if (notify) {
+        emit filesScanned(files.systemVerilogFiles);
+        emit workspaceListChanged();
+        ActivityLogService::getInstance()->append(
+            QStringLiteral("Workspace"),
+            ActivityLogLevel::Info,
+            QStringLiteral("Applied workspace configuration: %1 include dirs, %2 defines, %3 ignored dirs")
+                .arg(clean.includeDirs.size())
+                .arg(clean.defines.size())
+                .arg(clean.ignoredDirs.size()));
+    }
     return true;
 }
 
@@ -773,7 +776,7 @@ bool WorkspaceManager::activateWorkspacePath(const QString& path,
                 configuration.ignoredDirs =
                     workspaces.at(index).ignoredDirectories;
             }
-            applyWorkspaceConfiguration(configuration, false);
+            applyWorkspaceConfiguration(configuration, false, nullptr, false);
         }
     }
 

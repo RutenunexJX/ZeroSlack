@@ -141,7 +141,8 @@ private:
     bool applyWorkspaceConfiguration(
         const WorkspaceConfiguration& configuration,
         bool persist,
-        QString* errorMessage = nullptr);
+        QString* errorMessage = nullptr,
+        bool notify = true);
     void updateActiveEntryConfiguration(
         const WorkspaceConfiguration& configuration);
     void loadRecentWorkspaces();

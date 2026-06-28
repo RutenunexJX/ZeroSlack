@@ -47,7 +47,6 @@ private:
     void addDefineRow(const QString& key = QString(),
                       const QString& value = QString());
     void removeSelectedDefineRows();
-    void moveSelectedDefineRow(int delta);
 };
 
 #endif // WORKSPACECONFIGURATIONDIALOG_H

@@ -1172,9 +1172,17 @@ M12.3 verification status:
 
 - Passed: Release `completion_test` and `gui_smoke_test` targets compile/link.
 - Passed: Release `ctest -R "^completion_test$" --output-on-failure`.
-- Attempted: Release `ctest -R "^relationship_test$" --output-on-failure`.
-  It failed in existing RTL Insights FSM graph/panel checks, not in the
-  workspace configuration or diagnostics workflow touched by M12.
+- Fixed after initial M12 acceptance: workspace activation/cached restore now
+  applies configuration silently, avoiding extra `filesScanned` /
+  `workspaceListChanged` signals and preserving Navigation design hierarchy
+  caches for cached workspace switches and closes.
+- Passed within Release `gui_smoke_test`: `workspace cached switch emits
+  activation only`, `workspace cached switch still avoids rescan`, `navigation
+  design cache restores A without rebuild`, and `navigation design cache
+  restores B after close`.
+- Attempted: Release `ctest -R "^gui_smoke_test$" --output-on-failure`.
+  It still fails on existing VENDOR ctrl-click and Wave Preview checks, but the
+  required workspace/cache regression checks pass.
 
 ## Huge Workspace Status Audit
 

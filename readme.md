@@ -567,3 +567,12 @@ Do not add unlisted long-term goals without explicit user approval.
   attempted and failed in existing RTL Insights FSM graph/panel checks, not in
   the workspace configuration or diagnostics workflow covered by this
   milestone.
+- Latest workspace cache repair: cached workspace activation now restores
+  workspace configuration silently and no longer emits `filesScanned` /
+  `workspaceListChanged`, so Navigation design hierarchy caches survive cached
+  workspace switch/close flows. Explicit Workspace Configuration edits still
+  notify and refresh. Release `completion_test` and `gui_smoke_test` targets
+  compile/link; `ctest -R "^completion_test$" --output-on-failure` passed.
+  `ctest -R "^gui_smoke_test$" --output-on-failure` still fails on existing
+  VENDOR ctrl-click and Wave Preview checks, while the required workspace/cache
+  regression checks pass.

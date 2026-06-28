@@ -91,12 +91,8 @@ WorkspaceConfigurationDialog::WorkspaceConfigurationDialog(QWidget* parent)
     auto* defineButtons = new QHBoxLayout();
     auto* addDefineButton = new QPushButton(QStringLiteral("Add"), definesGroup);
     auto* removeDefineButton = new QPushButton(QStringLiteral("Remove"), definesGroup);
-    auto* defineUpButton = new QPushButton(QStringLiteral("Up"), definesGroup);
-    auto* defineDownButton = new QPushButton(QStringLiteral("Down"), definesGroup);
     defineButtons->addWidget(addDefineButton);
     defineButtons->addWidget(removeDefineButton);
-    defineButtons->addWidget(defineUpButton);
-    defineButtons->addWidget(defineDownButton);
     defineButtons->addStretch(1);
     definesLayout->addLayout(defineButtons);
     connect(addDefineButton, &QPushButton::clicked, this, [this]() {
@@ -116,12 +112,6 @@ WorkspaceConfigurationDialog::WorkspaceConfigurationDialog(QWidget* parent)
     });
     connect(removeDefineButton, &QPushButton::clicked,
             this, &WorkspaceConfigurationDialog::removeSelectedDefineRows);
-    connect(defineUpButton, &QPushButton::clicked, this, [this]() {
-        moveSelectedDefineRow(-1);
-    });
-    connect(defineDownButton, &QPushButton::clicked, this, [this]() {
-        moveSelectedDefineRow(1);
-    });
     grid->addWidget(definesGroup, 1, 1);
 
     auto* topLayout = new QFormLayout();
@@ -356,26 +346,4 @@ void WorkspaceConfigurationDialog::removeSelectedDefineRows()
     const int row = definesTable->currentRow();
     if (row >= 0)
         definesTable->removeRow(row);
-}
-
-void WorkspaceConfigurationDialog::moveSelectedDefineRow(int delta)
-{
-    if (!definesTable)
-        return;
-    const int row = definesTable->currentRow();
-    const int nextRow = row + delta;
-    if (row < 0 || nextRow < 0 || nextRow >= definesTable->rowCount())
-        return;
-
-    const QString key =
-        definesTable->item(row, 0) ? definesTable->item(row, 0)->text()
-                                   : QString();
-    const QString value =
-        definesTable->item(row, 1) ? definesTable->item(row, 1)->text()
-                                   : QString();
-    definesTable->removeRow(row);
-    definesTable->insertRow(nextRow);
-    definesTable->setItem(nextRow, 0, new QTableWidgetItem(key));
-    definesTable->setItem(nextRow, 1, new QTableWidgetItem(value));
-    definesTable->setCurrentCell(nextRow, 0);
 }

@@ -28,11 +28,10 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
 
 ## Current Goal State
 
-Current milestone: Workspace Project Configuration And Diagnostics Workflow is
-complete pending commit/push.
+Current milestone: none after the Workspace Project Configuration And
+Diagnostics Workflow cache repair.
 
-Next work should wait for the next explicit scoped request after this milestone
-is published.
+Next work should wait for the next explicit scoped request.
 
 Status:
 
@@ -139,6 +138,19 @@ Status:
   `ctest -R "^relationship_test$" --output-on-failure` was attempted and
   failed in existing RTL Insights FSM graph/panel checks, not in this
   milestone's workspace configuration or diagnostics workflow.
+- Workspace cache repair after the workflow milestone is complete:
+  `WorkspaceManager` now applies workspace configuration silently during
+  workspace activation/cached restore, so cached workspace switching no longer
+  emits `filesScanned` / `workspaceListChanged` or invalidates the Navigation
+  design hierarchy cache. Explicit Workspace Configuration edits still notify
+  and refresh file filtering. The Defines table no longer shows misleading
+  Up/Down buttons because define order is not persisted.
+- Focused verification for the cache repair: Release `completion_test` and
+  `gui_smoke_test` targets compile/link; Release `ctest -R
+  "^completion_test$" --output-on-failure` passed. Release `ctest -R
+  "^gui_smoke_test$" --output-on-failure` still fails on existing VENDOR
+  ctrl-click and Wave Preview checks, but the four workspace/navigation cache
+  regression checks now pass.
 - G0 Documentation And Goal Reset is complete and pushed in commit `bc2c059`.
 - G4.1 Registry Metadata For Existing COM Commands is complete:
   `commodecommandregistry` now owns metadata for fixed executable commands,
