@@ -176,6 +176,28 @@ struct TSModuleScopeTarget {
     bool ok() const { return status == TSModuleScopeStatus::Ok; }
 };
 
+enum class TSBeginEndInsideStatus {
+    Ok,
+    NoBeginEndBlock,
+    EmptyBeginEndBlock
+};
+
+struct TSBeginEndInsideTarget {
+    TSBeginEndInsideStatus status =
+        TSBeginEndInsideStatus::NoBeginEndBlock;
+    int startChar = -1;
+    int endChar = -1;
+    int startLine = -1; // 0-based QTextBlock line
+    int endLine = -1;   // 0-based inclusive
+
+    bool ok() const
+    {
+        return status == TSBeginEndInsideStatus::Ok
+            && startChar >= 0
+            && endChar >= startChar;
+    }
+};
+
 // Persistent, per-document Tree-sitter model: keeps a live parse tree plus the document text and
 // supports incremental re-parse on edits. Foundation of the real-time syntactic layer
 // (highlighting, live outline / scope) in the Slang + Tree-sitter architecture.
@@ -253,6 +275,10 @@ public:
     TSModuleScopeTarget moduleScopeTarget(int cursorChar,
                                           int selectionStartChar = -1,
                                           int selectionEndChar = -1) const;
+
+    // Nearest begin/end block interior as complete lines for editor-local COM
+    // selection commands.
+    TSBeginEndInsideTarget beginEndInsideTarget(int cursorChar) const;
 
     // Highlight spans (block-local char coords) for the char range [blockStartChar, +blockLenChar).
     // Walks the live tree; clips tokens to the block. Multi-line tokens (block comments, strings)

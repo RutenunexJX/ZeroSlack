@@ -36,7 +36,8 @@ public:
     void clearSearchMatches(QPlainTextEdit* editor);
     void highlightTemplateSlots(MyCodeEditor* editor,
                                 const QList<QPair<int, int>>& ranges,
-                                int activeIndex);
+                                int activeIndex,
+                                bool pulseOn = true);
     void clearTemplateSlots(QPlainTextEdit* editor);
     void flashLine(MyCodeEditor* editor);
     void flashLine(MyCodeEditor* editor, int lineNumber);

@@ -23,6 +23,7 @@
 #include <QPaintEvent>
 #include <QPalette>
 #include <QPlainTextEdit>
+#include <QPoint>
 #include <QPushButton>
 #include <QRect>
 #include <QTextBlock>
@@ -2511,6 +2512,38 @@ bool MyCodeEditorState::executeComModuleEndInsert(MyCodeEditor* editor,
     return true;
 }
 
+bool MyCodeEditorState::selectInsideBeginEnd(MyCodeEditor* editor,
+                                             QString* message)
+{
+    if (!editor || !editor->document())
+        return false;
+
+    const TSBeginEndInsideTarget target =
+        syntax.beginEndInsideTargetAt(editor->textCursor().position());
+    if (!target.ok()) {
+        if (message) {
+            *message =
+                target.status == TSBeginEndInsideStatus::EmptyBeginEndBlock
+                    ? QStringLiteral("No begin-end body")
+                    : QStringLiteral("No begin-end block");
+        }
+        return false;
+    }
+
+    QTextCursor cursor(editor->document());
+    cursor.setPosition(target.startChar);
+    cursor.setPosition(target.endChar, QTextCursor::KeepAnchor);
+    editor->setTextCursor(cursor);
+    if (message) {
+        *message = QStringLiteral("Selected inside begin-end");
+    }
+    emit editor->editorStatusMessageRequested(
+        QStringLiteral("Selected inside begin-end lines %1-%2")
+            .arg(target.startLine + 1)
+            .arg(target.endLine + 1));
+    return true;
+}
+
 bool MyCodeEditorState::comModeActive() const
 {
     return modes.comModeActive;
@@ -2539,12 +2572,16 @@ void MyCodeEditorState::enterComMode(MyCodeEditor* editor,
     modes.setComModeActive(true);
     modes.clearComBuffer();
     publishComModeState(editor, message);
+    if (editor)
+        editor->viewport()->update();
 }
 
 void MyCodeEditorState::exitComMode(MyCodeEditor* editor)
 {
     modes.setComModeActive(false);
     publishComModeState(editor);
+    if (editor)
+        editor->viewport()->update();
 }
 
 void MyCodeEditorState::showComModeMessage(MyCodeEditor* editor,
@@ -2698,19 +2735,13 @@ QList<QPair<int, int>> templateSlotHighlightRanges(
     return ranges;
 }
 
-bool templateSlotCursorInsideActiveRange(
+int templateSlotIndexForCursor(
     MyCodeEditor* editor,
     const MyCodeEditorState& state)
 {
     if (!editor || !state.templateSlotModeActive())
-        return false;
-    if (state.templateSlotActiveIndex < 0
-        || state.templateSlotActiveIndex >= state.templateSlotRanges.size()) {
-        return false;
-    }
+        return -1;
 
-    const MyCodeEditorState::TemplateSlotRange slot =
-        state.templateSlotRanges.at(state.templateSlotActiveIndex);
     QTextCursor cursor = editor->textCursor();
     const int selectionStart = cursor.hasSelection()
         ? cursor.selectionStart()
@@ -2718,7 +2749,82 @@ bool templateSlotCursorInsideActiveRange(
     const int selectionEnd = cursor.hasSelection()
         ? cursor.selectionEnd()
         : cursor.position();
-    return selectionStart >= slot.start && selectionEnd <= slot.end;
+    for (int i = 0; i < state.templateSlotRanges.size(); ++i) {
+        const MyCodeEditorState::TemplateSlotRange slot =
+            state.templateSlotRanges.at(i);
+        if (selectionStart >= slot.start && selectionEnd <= slot.end)
+            return i;
+    }
+    return -1;
+}
+
+bool templateSlotCursorInsideActiveRange(
+    MyCodeEditor* editor,
+    const MyCodeEditorState& state)
+{
+    return templateSlotIndexForCursor(editor, state)
+        == state.templateSlotActiveIndex;
+}
+
+bool templateSlotPositionInsideAnyRange(
+    const MyCodeEditorState& state,
+    int position)
+{
+    if (!state.templateSlotModeActive())
+        return false;
+    for (const MyCodeEditorState::TemplateSlotRange& slot :
+         state.templateSlotRanges) {
+        if (position >= slot.start && position <= slot.end)
+            return true;
+    }
+    return false;
+}
+
+void refreshTemplateSlotHighlights(MyCodeEditor* editor,
+                                   MyCodeEditorState& state)
+{
+    if (!editor)
+        return;
+    state.selections.highlightTemplateSlots(
+        editor,
+        templateSlotHighlightRanges(state),
+        state.templateSlotActiveIndex,
+        state.templateSlotBlinkOn);
+}
+
+void stopTemplateSlotBlinkTimer(MyCodeEditor* editor,
+                                MyCodeEditorState& state)
+{
+    Q_UNUSED(editor)
+    if (!state.templateSlotBlinkTimer)
+        return;
+    state.templateSlotBlinkTimer->stop();
+    state.templateSlotBlinkTimer->deleteLater();
+    state.templateSlotBlinkTimer = nullptr;
+}
+
+void ensureTemplateSlotBlinkTimer(MyCodeEditor* editor,
+                                  MyCodeEditorState& state)
+{
+    if (!editor || state.templateSlotBlinkTimer)
+        return;
+
+    state.templateSlotBlinkOn = true;
+    state.templateSlotBlinkTimer = new QTimer(editor);
+    state.templateSlotBlinkTimer->setInterval(500);
+    QObject::connect(
+        state.templateSlotBlinkTimer,
+        &QTimer::timeout,
+        editor,
+        [&state, editor]() {
+            if (!state.templateSlotModeActive()) {
+                stopTemplateSlotBlinkTimer(editor, state);
+                return;
+            }
+            state.templateSlotBlinkOn = !state.templateSlotBlinkOn;
+            refreshTemplateSlotHighlights(editor, state);
+        });
+    state.templateSlotBlinkTimer->start();
 }
 
 void selectTemplateSlot(MyCodeEditor* editor,
@@ -2735,13 +2841,11 @@ void selectTemplateSlot(MyCodeEditor* editor,
     cursor.setPosition(slot.start);
     if (slot.end > slot.start)
         cursor.setPosition(slot.end, QTextCursor::KeepAnchor);
+    state.templateSlotIgnoreNextCursorCheck = true;
     editor->setTextCursor(cursor);
-    state.selections.highlightTemplateSlots(
-        editor,
-        templateSlotHighlightRanges(state),
-        state.templateSlotActiveIndex);
+    refreshTemplateSlotHighlights(editor, state);
     emit editor->editorStatusMessageRequested(
-        QStringLiteral("Slot %1/%2")
+        QStringLiteral("SLOT %1/%2")
             .arg(index + 1)
             .arg(state.templateSlotRanges.size()));
 }
@@ -2785,6 +2889,7 @@ void MyCodeEditorState::startTemplateSlotMode(
     templateSlotSessionStart = insertionStart;
     templateSlotSessionEnd = insertionStart + insertedLength;
     selectTemplateSlot(editor, *this, 0);
+    ensureTemplateSlotBlinkTimer(editor, *this);
 }
 
 bool MyCodeEditorState::templateSlotModeActive() const
@@ -2798,15 +2903,28 @@ int MyCodeEditorState::templateSlotModeActiveIndex() const
     return templateSlotActiveIndex;
 }
 
+int MyCodeEditorState::templateSlotModeSlotCount() const
+{
+    return templateSlotRanges.size();
+}
+
+bool MyCodeEditorState::templateSlotModeBlinkOn() const
+{
+    return templateSlotBlinkOn;
+}
+
 void MyCodeEditorState::clearTemplateSlotMode(MyCodeEditor* editor,
                                               const QString& message)
 {
     const bool wasActive = templateSlotModeActive()
         || !templateSlotRanges.isEmpty();
+    stopTemplateSlotBlinkTimer(editor, *this);
     templateSlotRanges.clear();
     templateSlotActiveIndex = -1;
     templateSlotSessionStart = -1;
     templateSlotSessionEnd = -1;
+    templateSlotBlinkOn = true;
+    templateSlotIgnoreNextCursorCheck = false;
     if (editor)
         selections.clearTemplateSlots(editor);
     if (wasActive && editor && !message.isEmpty())
@@ -2819,6 +2937,11 @@ bool MyCodeEditorState::handleTemplateSlotKeyPress(MyCodeEditor* editor,
     if (!editor || !event || !templateSlotModeActive())
         return false;
 
+    const int cursorSlotIndex = templateSlotIndexForCursor(editor, *this);
+    if (cursorSlotIndex >= 0 && cursorSlotIndex != templateSlotActiveIndex) {
+        templateSlotActiveIndex = cursorSlotIndex;
+        refreshTemplateSlotHighlights(editor, *this);
+    }
     if (!templateSlotCursorInsideActiveRange(editor, *this)) {
         clearTemplateSlotMode(editor);
         return false;
@@ -2836,33 +2959,31 @@ bool MyCodeEditorState::handleTemplateSlotKeyPress(MyCodeEditor* editor,
            | Qt::ControlModifier
            | Qt::AltModifier
            | Qt::MetaModifier);
-    if (event->key() != Qt::Key_Tab
+    const bool isForwardTab = event->key() == Qt::Key_Tab
+        && modifiers == Qt::NoModifier;
+    const bool isBackwardTab =
+        event->key() == Qt::Key_Backtab
+        || (event->key() == Qt::Key_Tab
+            && modifiers == Qt::ShiftModifier);
+    if ((!isForwardTab && !isBackwardTab)
         || (modifiers != Qt::NoModifier
             && modifiers != Qt::ShiftModifier)) {
         return false;
     }
 
-    if (modifiers == Qt::ShiftModifier) {
-        selectTemplateSlot(
-            editor,
-            *this,
-            qMax(0, templateSlotActiveIndex - 1));
+    if (isBackwardTab) {
+        const int count = templateSlotRanges.size();
+        selectTemplateSlot(editor,
+                           *this,
+                           (templateSlotActiveIndex - 1 + count) % count);
         event->accept();
         return true;
     }
 
-    if (templateSlotActiveIndex + 1 >= templateSlotRanges.size()) {
-        const TemplateSlotRange finalSlot =
-            templateSlotRanges.at(templateSlotActiveIndex);
-        QTextCursor cursor(editor->document());
-        cursor.setPosition(finalSlot.end);
-        editor->setTextCursor(cursor);
-        clearTemplateSlotMode(editor, QStringLiteral("Slot Mode complete"));
-        event->accept();
-        return true;
-    }
-
-    selectTemplateSlot(editor, *this, templateSlotActiveIndex + 1);
+    selectTemplateSlot(editor,
+                       *this,
+                       (templateSlotActiveIndex + 1)
+                           % templateSlotRanges.size());
     event->accept();
     return true;
 }
@@ -2904,16 +3025,29 @@ void MyCodeEditorState::handleTemplateSlotContentsChange(
         templateSlotRanges[i].end += delta;
     }
     templateSlotSessionEnd += delta;
-    selections.highlightTemplateSlots(
-        editor,
-        templateSlotHighlightRanges(*this),
-        templateSlotActiveIndex);
+    refreshTemplateSlotHighlights(editor, *this);
 }
 
 void MyCodeEditorState::handleTemplateSlotCursorChanged(MyCodeEditor* editor)
 {
     if (!templateSlotModeActive())
         return;
+    if (templateSlotIgnoreNextCursorCheck) {
+        templateSlotIgnoreNextCursorCheck = false;
+        return;
+    }
+    const int cursorSlotIndex = templateSlotIndexForCursor(editor, *this);
+    if (cursorSlotIndex >= 0) {
+        if (cursorSlotIndex != templateSlotActiveIndex) {
+            templateSlotActiveIndex = cursorSlotIndex;
+            refreshTemplateSlotHighlights(editor, *this);
+            emit editor->editorStatusMessageRequested(
+                QStringLiteral("SLOT %1/%2")
+                    .arg(templateSlotActiveIndex + 1)
+                    .arg(templateSlotRanges.size()));
+        }
+        return;
+    }
     if (!templateSlotCursorInsideActiveRange(editor, *this))
         clearTemplateSlotMode(editor);
 }
@@ -3229,6 +3363,36 @@ void MyCodeEditorState::paintColumnSelection(
     paintColumnSelectionOverlay(editor, *this, event);
 }
 
+void MyCodeEditorState::paintComModeOverlay(
+    MyCodeEditor* editor,
+    QPaintEvent* event) const
+{
+    Q_UNUSED(event)
+    if (!editor || !modes.comModeActive)
+        return;
+
+    QPainter painter(editor->viewport());
+    painter.setRenderHint(QPainter::Antialiasing, true);
+
+    const QRect viewportRect = editor->viewport()->rect();
+    QPen borderPen(QColor("#38BDF8"));
+    borderPen.setWidth(3);
+    painter.setPen(borderPen);
+    painter.drawLine(viewportRect.bottomLeft() + QPoint(0, -1),
+                     viewportRect.bottomRight() + QPoint(0, -1));
+
+    const QRect badgeRect(8, 6, 44, 20);
+    painter.setPen(Qt::NoPen);
+    painter.setBrush(QColor(17, 24, 39, 230));
+    painter.drawRoundedRect(badgeRect, 4, 4);
+    painter.setPen(QColor("#D1FAE5"));
+    QFont badgeFont = editor->font();
+    badgeFont.setBold(true);
+    badgeFont.setPointSize(qMax(8, badgeFont.pointSize() - 2));
+    painter.setFont(badgeFont);
+    painter.drawText(badgeRect, Qt::AlignCenter, QStringLiteral("COM"));
+}
+
 void MyCodeEditorState::handleContextMenu(
     MyCodeEditor* editor,
     QContextMenuEvent* event)
@@ -3246,10 +3410,8 @@ bool MyCodeEditorState::handleMousePress(
     if (templateSlotModeActive() && editor && event) {
         const QTextCursor targetCursor =
             editor->cursorForPosition(event->position().toPoint());
-        const TemplateSlotRange activeSlot =
-            templateSlotRanges.at(templateSlotActiveIndex);
-        if (targetCursor.position() < activeSlot.start
-            || targetCursor.position() > activeSlot.end) {
+        if (!templateSlotPositionInsideAnyRange(*this,
+                                                targetCursor.position())) {
             clearTemplateSlotMode(editor);
         }
     }
@@ -3633,6 +3795,43 @@ bool currentAssignmentRange(MyCodeEditor* editor,
     return false;
 }
 
+bool selectedCompleteLineRange(MyCodeEditor* editor,
+                               const QTextCursor& cursor,
+                               int* rangeStart,
+                               int* rangeEnd)
+{
+    if (!editor || !editor->document() || !cursor.hasSelection()
+        || !rangeStart || !rangeEnd) {
+        return false;
+    }
+
+    const int selectionStart = cursor.selectionStart();
+    int adjustedEnd = cursor.selectionEnd();
+    if (adjustedEnd <= selectionStart)
+        return false;
+
+    const QTextBlock endAtBlock =
+        editor->document()->findBlock(adjustedEnd);
+    if (endAtBlock.isValid()
+        && adjustedEnd == endAtBlock.position()
+        && adjustedEnd > selectionStart) {
+        --adjustedEnd;
+    } else {
+        --adjustedEnd;
+    }
+
+    const QTextBlock firstBlock =
+        editor->document()->findBlock(selectionStart);
+    const QTextBlock lastBlock =
+        editor->document()->findBlock(qMax(selectionStart, adjustedEnd));
+    if (!firstBlock.isValid() || !lastBlock.isValid())
+        return false;
+
+    *rangeStart = firstBlock.position();
+    *rangeEnd = lineEndPosition(editor->document(), lastBlock.blockNumber());
+    return *rangeEnd >= *rangeStart;
+}
+
 void publishClearRhsFailure(MyCodeEditor* editor,
                             QString* message,
                             const QString& failure)
@@ -3656,7 +3855,17 @@ bool MyCodeEditorState::clearSelectedAssignmentRhs(MyCodeEditor* editor,
     QTextCursor cursor = editor->textCursor();
     int selectionStart = cursor.selectionStart();
     int selectionEnd = cursor.selectionEnd();
-    if (!cursor.hasSelection()) {
+    if (cursor.hasSelection()) {
+        if (!selectedCompleteLineRange(editor,
+                                       cursor,
+                                       &selectionStart,
+                                       &selectionEnd)) {
+            publishClearRhsFailure(editor,
+                                   message,
+                                   QStringLiteral("No assignment RHS found"));
+            return false;
+        }
+    } else {
         if (!currentAssignmentRange(editor,
                                     cursor.position(),
                                     &selectionStart,

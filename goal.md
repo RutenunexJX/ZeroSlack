@@ -28,7 +28,8 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
 
 ## Current Goal State
 
-Current milestone: none after COM clear-RHS command integration.
+Current milestone: none after COM select-inside and Slot Mode interaction
+repair.
 
 Next work should wait for the next explicit scoped request.
 
@@ -90,6 +91,19 @@ Status:
   `gui_smoke_test` was launched with Windows fault-dialog suppression; all new
   COM `cr` checks passed, but the full smoke baseline still fails on existing
   non-`cr` checks.
+- COM select-inside and Slot Mode interaction repair is complete: `cr` now
+  expands text selections to complete touched lines, `si` selects complete
+  interior lines of the nearest Tree-sitter `begin ... end` block and stays in
+  COM Mode, active COM editors paint a visible badge/bottom-edge indicator, and
+  Slot Mode highlights all slots with a weak blink while Tab / Shift+Tab cycle
+  without implicit exit.
+- Focused verification for the COM select-inside and Slot Mode repair: Release
+  `completion_test` and `gui_smoke_test` targets compile/link; Release
+  `ctest -R "^completion_test$" --output-on-failure` and
+  `ctest -R "^relationship_test$" --output-on-failure` passed. Release
+  `gui_smoke_test` was launched with Windows fault-dialog suppression; all new
+  `si`, partial-selection `cr`, and Slot Mode cycling checks passed, while the
+  full smoke baseline still fails on existing non-current checks.
 - G0 Documentation And Goal Reset is complete and pushed in commit `bc2c059`.
 - G4.1 Registry Metadata For Existing COM Commands is complete:
   `commodecommandregistry` now owns metadata for fixed executable commands,

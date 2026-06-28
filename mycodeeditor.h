@@ -103,6 +103,7 @@ public:
     bool executeComAssignInsert(QString* message = nullptr);
     bool executeComParameterInsert(QString* message = nullptr);
     bool executeComModuleEndInsert(QString* message = nullptr);
+    bool selectInsideBeginEnd(QString* message = nullptr);
     bool comModeActive() const;
     QString comModeBuffer() const;
     void enterComMode(const QString& message = QString());
@@ -113,6 +114,8 @@ public:
                                const CodeTemplateSlotList& slotMetadata);
     bool templateSlotModeActive() const;
     int templateSlotModeActiveIndex() const;
+    int templateSlotModeSlotCount() const;
+    bool templateSlotModeBlinkOnForTest() const;
     void setDiagnosticHighlights(
         const QList<SemanticDiagnostic>& diagnostics);
     void setSemanticDecorations(

@@ -51,6 +51,7 @@
 #include <QTextDocument>
 #include <QTextLayout>
 #include <QTextStream>
+#include <QTimer>
 #include <QTreeWidget>
 #include <QTreeWidgetItem>
 #include <QWidget>
@@ -5067,8 +5068,13 @@ int main(int argc, char** argv) {
                    QStringLiteral("logic [WIDTH-1:0] stage_data;"))
                    && userTemplateSlotEditor.templateSlotModeActive(),
                true);
-    expectBool("User template Slot Mode final Tab completes",
+    expectBool("User template Slot Mode Tab cycles single slot",
                sendEditorKey(userTemplateSlotEditor, Qt::Key_Tab)
+                   && userTemplateSlotEditor.templateSlotModeActive()
+                   && userTemplateSlotEditor.templateSlotModeActiveIndex() == 0,
+               true);
+    expectBool("User template Slot Mode Esc exits",
+               sendEditorKey(userTemplateSlotEditor, Qt::Key_Escape)
                    && !userTemplateSlotEditor.templateSlotModeActive(),
                true);
 
@@ -5623,12 +5629,16 @@ int main(int argc, char** argv) {
                        == QStringLiteral("logic [7:0] data_bus;")
                    && signalSlotEditor.templateSlotModeActive(),
                true);
-    expectBool("Signal Slot Mode final Tab completes",
+    expectBool("Signal Slot Mode Tab cycles single slot",
                sendEditorKey(signalSlotEditor, Qt::Key_Tab)
-                   && !signalSlotEditor.templateSlotModeActive()
-                   && signalSlotEditor.textCursor().position()
-                       == signalSlotEditor.toPlainText()
-                              .indexOf(QStringLiteral(";")),
+                   && signalSlotEditor.templateSlotModeActive()
+                   && signalSlotEditor.templateSlotModeActiveIndex() == 0
+                   && signalSlotEditor.textCursor().selectedText()
+                       == QStringLiteral("data_bus"),
+               true);
+    expectBool("Signal Slot Mode Esc exits",
+               sendEditorKey(signalSlotEditor, Qt::Key_Escape)
+                   && !signalSlotEditor.templateSlotModeActive(),
                true);
     const CodeTemplateItem parameterScalar =
         CodeTemplateService::getInstance()->templateForCommand(
@@ -5798,11 +5808,35 @@ int main(int argc, char** argv) {
                    && slotEditor.textCursor().selectedText()
                        == QStringLiteral("8"),
                true);
-    expectBool("Slot Mode final Tab completes",
+    expectBool("Slot Mode final Tab cycles to name",
                sendEditorKey(slotEditor, Qt::Key_Tab)
-                   && !slotEditor.templateSlotModeActive()
-                   && slotEditor.textCursor().position()
-                       == slotEditor.toPlainText().indexOf(QStringLiteral(";")),
+                   && slotEditor.templateSlotModeActive()
+                   && slotEditor.templateSlotModeActiveIndex() == 0
+                   && slotEditor.textCursor().selectedText()
+                       == QStringLiteral("DEPTH"),
+               true);
+    const QString slotTextBeforeBacktab = slotEditor.toPlainText();
+    expectBool("Slot Mode Shift+Tab cycles to final slot",
+               sendEditorKey(slotEditor, Qt::Key_Backtab, Qt::ShiftModifier)
+                   && slotEditor.templateSlotModeActive()
+                   && slotEditor.templateSlotModeActiveIndex() == 1
+                   && slotEditor.textCursor().selectedText()
+                       == QStringLiteral("8")
+                   && slotEditor.toPlainText() == slotTextBeforeBacktab,
+               true);
+    expectBool("Slot Mode Backtab does not insert tab",
+               !slotEditor.toPlainText().contains(QLatin1Char('\t')),
+               true);
+    QEventLoop slotBlinkLoop;
+    QTimer::singleShot(600, &slotBlinkLoop, &QEventLoop::quit);
+    slotBlinkLoop.exec();
+    expectBool("Slot Mode blink timer toggles",
+               slotEditor.templateSlotModeActive()
+                   && !slotEditor.templateSlotModeBlinkOnForTest(),
+               true);
+    expectBool("Slot Mode Esc exits after cycling",
+               sendEditorKey(slotEditor, Qt::Key_Escape)
+                   && !slotEditor.templateSlotModeActive(),
                true);
 
     MyCodeEditor slotCancelEditor;
@@ -5911,6 +5945,41 @@ int main(int argc, char** argv) {
              clearRhsEditor.toPlainText(),
              clearRhsOriginal);
 
+    MyCodeEditor clearPartialRhsEditor;
+    const QString clearPartialRhsOriginal =
+        QStringLiteral("module batch_partial;\n"
+                       "  a <= foo;\n"
+                       "  b = bar;\n"
+                       "  c <= keep;\n"
+                       "endmodule\n");
+    clearPartialRhsEditor.setPlainText(clearPartialRhsOriginal);
+    QTextCursor clearPartialRhsCursor(clearPartialRhsEditor.document());
+    clearPartialRhsCursor.setPosition(
+        clearPartialRhsOriginal.indexOf(QStringLiteral("foo")) + 1);
+    clearPartialRhsCursor.setPosition(
+        clearPartialRhsOriginal.indexOf(QStringLiteral("bar")) + 2,
+        QTextCursor::KeepAnchor);
+    clearPartialRhsEditor.setTextCursor(clearPartialRhsCursor);
+    expectBool("Editor clear RHS expands partial selection to lines",
+               clearPartialRhsEditor.clearSelectedAssignmentRhs(),
+               true);
+    expectEq("Editor clear RHS partial-line text",
+             clearPartialRhsEditor.toPlainText(),
+             QStringLiteral("module batch_partial;\n"
+                            "  a <= ;\n"
+                            "  b = ;\n"
+                            "  c <= keep;\n"
+                            "endmodule\n"));
+    expectBool("Editor clear RHS partial-line slots",
+               clearPartialRhsEditor.templateSlotModeActive()
+                   && clearPartialRhsEditor.templateSlotModeSlotCount() == 2
+                   && clearPartialRhsEditor.templateSlotModeActiveIndex() == 0,
+               true);
+    clearPartialRhsEditor.undo();
+    expectEq("Editor clear RHS partial-line undo restores original",
+             clearPartialRhsEditor.toPlainText(),
+             clearPartialRhsOriginal);
+
     MyCodeEditor clearCurrentRhsEditor;
     const QString clearCurrentRhsOriginal =
         QStringLiteral("module batch_current;\n"
@@ -5941,8 +6010,13 @@ int main(int argc, char** argv) {
                    && clearCurrentRhsMessage
                           == QStringLiteral("Cleared RHS for 1 assignment"),
                true);
-    expectBool("Editor clear RHS current assignment final Tab exits",
+    expectBool("Editor clear RHS current assignment Tab cycles",
                sendEditorKey(clearCurrentRhsEditor, Qt::Key_Tab)
+                   && clearCurrentRhsEditor.templateSlotModeActive()
+                   && clearCurrentRhsEditor.templateSlotModeActiveIndex() == 0,
+               true);
+    expectBool("Editor clear RHS current assignment Esc exits",
+               sendEditorKey(clearCurrentRhsEditor, Qt::Key_Escape)
                    && !clearCurrentRhsEditor.templateSlotModeActive(),
                true);
     clearCurrentRhsEditor.undo();
@@ -5971,11 +6045,16 @@ int main(int argc, char** argv) {
                               .lastIndexOf(QStringLiteral(";")),
                true);
     insertAtEditorCursor(clearRhsSlotEditor, QStringLiteral("bar_next"));
-    expectBool("Editor clear RHS final Tab exits slot mode",
+    expectBool("Editor clear RHS final Tab cycles to first slot",
                sendEditorKey(clearRhsSlotEditor, Qt::Key_Tab)
-                   && !clearRhsSlotEditor.templateSlotModeActive()
+                   && clearRhsSlotEditor.templateSlotModeActive()
+                   && clearRhsSlotEditor.templateSlotModeActiveIndex() == 0
                    && clearRhsSlotEditor.toPlainText().contains(
                        QStringLiteral("b = bar_next;")),
+               true);
+    expectBool("Editor clear RHS Esc exits slot mode",
+               sendEditorKey(clearRhsSlotEditor, Qt::Key_Escape)
+                   && !clearRhsSlotEditor.templateSlotModeActive(),
                true);
 
     MyCodeEditor clearRhsRejectEditor;
@@ -6006,6 +6085,46 @@ int main(int argc, char** argv) {
                        == clearRhsNoAssignmentOriginal
                    && clearRhsNoAssignmentMessage
                        == QStringLiteral("No assignment RHS found"),
+               true);
+
+    MyCodeEditor selectInsideEditor;
+    const QString selectInsideText =
+        QStringLiteral("module select_inside;\n"
+                       "  always_comb begin\n"
+                       "    a = foo;\n"
+                       "    if (en) begin\n"
+                       "      b <= bar;\n"
+                       "    end\n"
+                       "  end\n"
+                       "endmodule\n");
+    selectInsideEditor.setPlainText(selectInsideText);
+    QTextCursor selectInsideCursor(selectInsideEditor.document());
+    selectInsideCursor.setPosition(
+        selectInsideText.indexOf(QStringLiteral("bar")));
+    selectInsideEditor.setTextCursor(selectInsideCursor);
+    QString selectInsideMessage;
+    expectBool("Editor si selects nearest begin-end interior",
+               selectInsideEditor.selectInsideBeginEnd(&selectInsideMessage)
+                   && selectInsideMessage
+                          == QStringLiteral("Selected inside begin-end")
+                   && selectInsideEditor.textCursor().selectedText()
+                          == QStringLiteral("      b <= bar;"),
+               true);
+    expectBool("Editor si excludes begin and end lines",
+               !selectInsideEditor.textCursor().selectedText().contains(
+                   QStringLiteral("begin"))
+                   && !selectInsideEditor.textCursor().selectedText().contains(
+                       QStringLiteral("end")),
+               true);
+    MyCodeEditor selectInsideFailEditor;
+    selectInsideFailEditor.setPlainText(
+        QStringLiteral("module no_begin_end;\n  assign a = b;\nendmodule\n"));
+    QString selectInsideFailMessage;
+    expectBool("Editor si fails outside begin-end",
+               !selectInsideFailEditor.selectInsideBeginEnd(
+                   &selectInsideFailMessage)
+                   && selectInsideFailMessage
+                          == QStringLiteral("No begin-end block"),
                true);
 
     expectBool("CompletionService command statement reject",

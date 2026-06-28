@@ -6387,6 +6387,16 @@ static void runComModeRegression(MainWindow& window)
                    && executableComModeCommand(QStringLiteral("cr"))
                        == QStringLiteral("cr"),
                true);
+    const ComModeCommandMetadata* selectInsideMetadata =
+        findComModeCommandMetadata(QStringLiteral("si"));
+    expectBool("COM registry exposes select-inside command",
+               selectInsideMetadata
+                   && selectInsideMetadata->executable
+                   && selectInsideMetadata->description.contains(
+                       QStringLiteral("begin-end"))
+                   && executableComModeCommand(QStringLiteral("si"))
+                       == QStringLiteral("si"),
+               true);
 
     MyCodeEditor insertEditor;
     insertEditor.resize(360, 120);
@@ -6571,6 +6581,20 @@ static void runComModeRegression(MainWindow& window)
                    && comCommandSpy.takeFirst().at(0).toString()
                           == QStringLiteral("cr"),
                true);
+    sendWidgetKey(&modeEditor, Qt::Key_S, QStringLiteral("s"));
+    expectBool("COM s stays a prefix before select inside",
+               modeEditor.comModeActive()
+                   && modeEditor.comModeBuffer() == QStringLiteral("s")
+                   && comCommandSpy.count() == 0,
+               true);
+    sendWidgetKey(&modeEditor, Qt::Key_I, QStringLiteral("i"));
+    expectBool("COM si executes select inside command",
+               modeEditor.comModeActive()
+                   && modeEditor.comModeBuffer().isEmpty()
+                   && comCommandSpy.count() == 1
+                   && comCommandSpy.takeFirst().at(0).toString()
+                          == QStringLiteral("si"),
+               true);
     sendWidgetKey(&modeEditor, Qt::Key_QuoteLeft, QStringLiteral("`"));
     expectBool("backtick exits COM mode",
                !modeEditor.comModeActive(),
@@ -6618,6 +6642,21 @@ static void runComModeRegression(MainWindow& window)
                        && strip->text() == QStringLiteral("COM"),
                    true);
 
+        sendWidgetKey(activeEditor, Qt::Key_S, QStringLiteral("s"));
+        expectBool("COM strip shows select-inside hint",
+                   strip
+                       && strip->text().contains(QStringLiteral("COM  s"))
+                       && strip->text().contains(QStringLiteral("si"))
+                       && strip->text().contains(
+                           QStringLiteral("Select inside begin-end")),
+                   true);
+        sendWidgetKey(activeEditor, Qt::Key_Escape);
+        expectBool("COM select prefix clears with Esc",
+                   activeEditor->comModeActive()
+                       && strip
+                       && strip->text() == QStringLiteral("COM"),
+                   true);
+
         sendWidgetKey(activeEditor, Qt::Key_G, QStringLiteral("g"));
         sendWidgetKey(activeEditor, Qt::Key_0, QStringLiteral("0"));
         sendWidgetKey(activeEditor, Qt::Key_Return);
@@ -6637,6 +6676,64 @@ static void runComModeRegression(MainWindow& window)
                        && strip->text() == QStringLiteral("COM")
                        && strip->styleSheet().contains(QStringLiteral("#111827"))
                        && strip->styleSheet().contains(QStringLiteral("#D1FAE5")),
+                   true);
+
+        const QString comSelectClearRhsOriginal =
+            QStringLiteral("module com_select_clear_rhs;\n"
+                           "  always_comb begin\n"
+                           "    a <= foo;\n"
+                           "    b = bar;\n"
+                           "  end\n"
+                           "endmodule\n");
+        activeEditor->setPlainText(comSelectClearRhsOriginal);
+        QTextCursor comSelectClearCursor(activeEditor->document());
+        comSelectClearCursor.setPosition(
+            comSelectClearRhsOriginal.indexOf(QStringLiteral("foo")));
+        activeEditor->setTextCursor(comSelectClearCursor);
+        sendWidgetKey(activeEditor, Qt::Key_S, QStringLiteral("s"));
+        sendWidgetKey(activeEditor, Qt::Key_I, QStringLiteral("i"));
+        expectBool("COM si selects begin-end interior and stays COM",
+                   activeEditor->comModeActive()
+                       && activeEditor->textCursor().hasSelection()
+                       && activeEditor->textCursor().selectedText().contains(
+                           QStringLiteral("a <= foo"))
+                       && activeEditor->textCursor().selectedText().contains(
+                           QStringLiteral("b = bar"))
+                       && !activeEditor->textCursor().selectedText().contains(
+                           QStringLiteral("begin"))
+                       && !activeEditor->textCursor().selectedText().contains(
+                           QStringLiteral("end")),
+                   true);
+        sendWidgetKey(activeEditor, Qt::Key_C, QStringLiteral("c"));
+        sendWidgetKey(activeEditor, Qt::Key_R, QStringLiteral("r"));
+        expectBool("COM si then cr clears selected assignment RHS",
+                   !activeEditor->comModeActive()
+                       && activeEditor->templateSlotModeActive()
+                       && activeEditor->templateSlotModeActiveIndex() == 0
+                       && activeEditor->templateSlotModeSlotCount() == 2
+                       && activeEditor->toPlainText()
+                           == QStringLiteral("module com_select_clear_rhs;\n"
+                                             "  always_comb begin\n"
+                                             "    a <= ;\n"
+                                             "    b = ;\n"
+                                             "  end\n"
+                                             "endmodule\n"),
+                   true);
+        sendWidgetKey(activeEditor, Qt::Key_Tab);
+        expectBool("COM cr Slot Mode Tab cycles without exiting",
+                   activeEditor->templateSlotModeActive()
+                       && activeEditor->templateSlotModeActiveIndex() == 1,
+                   true);
+        sendWidgetKey(activeEditor, Qt::Key_Escape);
+        expectBool("COM cr Slot Mode exits with Esc",
+                   !activeEditor->templateSlotModeActive(),
+                   true);
+        sendWidgetKey(activeEditor, Qt::Key_Escape);
+        expectBool("COM re-enters after cr Slot Mode Esc",
+                   activeEditor->comModeActive()
+                       && strip
+                       && strip->isVisible()
+                       && strip->text() == QStringLiteral("COM"),
                    true);
 
         const QString comClearRhsOriginal =
@@ -6659,14 +6756,8 @@ static void runComModeRegression(MainWindow& window)
                                              "  assign a = ;\n"
                                              "endmodule\n"),
                    true);
-        sendWidgetKey(activeEditor, Qt::Key_Tab);
         sendWidgetKey(activeEditor, Qt::Key_Escape);
-        expectBool("COM re-enters after cr slot completion",
-                   activeEditor->comModeActive()
-                       && strip
-                       && strip->isVisible()
-                       && strip->text() == QStringLiteral("COM"),
-                   true);
+        sendWidgetKey(activeEditor, Qt::Key_Escape);
 
         const QString comClearRhsNoAssignment =
             QStringLiteral("module com_no_rhs;\nendmodule\n");

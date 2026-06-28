@@ -100,6 +100,9 @@ First milestones:
 - M2.1 define slot model and editor state without changing templates
 - M2.2 enable slots for the parameter declaration template family
 - M2.3 expand slots to existing signal declaration template families
+- M2.4 make Slot Mode visible and cyclic
+  (complete: all slots blink, active slot is emphasized, status reports
+  `SLOT n/m`, and Tab / Shift+Tab wrap without implicit exit)
 
 M2.1 design contract:
 
@@ -109,15 +112,16 @@ M2.1 design contract:
 - `EditorCompletionWorkflow` applies template insertion and starts Slot Mode
   after activation; `MyCodeEditor` editor state owns active slot ranges,
   highlight rendering, navigation, and stale-session invalidation.
-- Tab advances, Shift+Tab goes backward, Tab on the last slot completes, and
-  Esc exits Slot Mode without reverting inserted text.
+- Tab advances, Shift+Tab goes backward, both directions wrap, and Esc exits
+  Slot Mode without reverting inserted text. Tab / Shift+Tab never complete
+  Slot Mode implicitly.
 - Slot Mode exits when the cursor leaves the session, the document edit stream
   makes slot ranges unsafe, the tab changes/closes, COM Mode starts, or Global
   Control starts.
 - First implementation target is `;;p` / `;;lp` because parameter declarations
   naturally have at least name and value fill points.
 - Focused verification cases for implementation: activation selects the first
-  slot, Tab advances, Shift+Tab returns, Tab on the last slot exits, Esc exits
+  slot, Tab advances, Shift+Tab returns, Tab and Shift+Tab wrap, Esc exits
   without reverting inserted text, editing a slot keeps later ranges correct,
   moving the cursor outside the session exits, and undo that removes the
   inserted template clears the session safely.
@@ -127,9 +131,9 @@ M2.2 implementation status:
 - Complete: `;;p` and `;;lp` produce name/value slot metadata.
 - Complete: parameter template activation starts editor-local Slot Mode through
   the completion workflow.
-- Complete: Slot Mode owns ordered ranges, highlights non-empty slots, supports
-  Tab, Shift+Tab, final Tab completion, Esc cancel, name-edit range shifting,
-  and cursor-outside stale exit.
+- Complete: Slot Mode owns ordered ranges, highlights slots, supports Tab,
+  Shift+Tab, explicit Esc exit, name-edit range shifting, and cursor-outside
+  stale exit.
 - Verification: Release `completion_test` passed; Release `completion_test` and
   `gui_smoke_test` targets compile/link.
 
@@ -138,10 +142,22 @@ M2.3 implementation status:
 - Complete: `;;l`, `;;w`, and `;;r` produce a signal-name slot.
 - Complete: signal template activation reuses the existing editor-local Slot
   Mode path from parameter templates.
-- Complete: signal name editing preserves packed/unpacked dimensions and final
-  Tab exits before the semicolon.
+- Complete: signal name editing preserves packed/unpacked dimensions; Tab keeps
+  cycling the signal slot until Esc exits Slot Mode.
 - Verification: Release `completion_test` passed; Release `completion_test` and
   `gui_smoke_test` targets compile/link.
+
+M2.4 implementation status:
+
+- Complete: Slot Mode paints every slot with a weak blinking highlight and a
+  stronger active-slot highlight, including zero-length RHS fill points.
+- Complete: status messages report `SLOT n/m`.
+- Complete: Tab and Shift+Tab wrap between slots and are captured by the Slot
+  handler, including Qt Backtab events, without inserting tab characters.
+- Complete: Slot Mode now exits through explicit Esc or stale-session actions,
+  not by reaching the final slot with Tab.
+- Verification: Release `completion_test` covers Slot Mode blink state, Tab
+  wrap, Shift+Tab wrap, Backtab capture without text mutation, and Esc exit.
 
 ### 3. Batch RTL Edit Actions
 
@@ -166,6 +182,9 @@ First milestones:
 - M3.4 expose clear-RHS as a COM Mode command
   (complete: `cr` clears the selected/current assignment RHS and starts Slot
   Mode through the editor-local clear-RHS path)
+- M3.5 make clear-RHS line-oriented for selections
+  (complete: selected text expands to touched complete lines before planning
+  assignment RHS cleanup)
 
 M3.1 implementation status:
 
@@ -210,10 +229,10 @@ M3.3 implementation status:
 - Complete: the text replacement itself remains one undoable edit block.
 - Complete: G3.2 failure behavior is unchanged: unsupported selections do not
   mutate text and surface service-owned failure reasons.
-- Complete: Tab advances between cleared RHS slots, final Tab exits Slot Mode,
-  and slot edits shift later RHS ranges through the existing Slot Mode state.
+- Complete: Tab advances between cleared RHS slots, Esc exits Slot Mode, and
+  slot edits shift later RHS ranges through the existing Slot Mode state.
 - Verification: Release `completion_test` covers Slot Mode start, slot editing,
-  Tab advance, final Tab exit, undo restore, and declaration rejection; Release
+  Tab advance, Esc exit, undo restore, and declaration rejection; Release
   `completion_test` and `gui_smoke_test` targets compile/link.
 
 M3.4 implementation status:
@@ -233,6 +252,23 @@ M3.4 implementation status:
   Mode slot order. Release `gui_smoke_test` target compile/link passed and the
   launched smoke output shows all new COM `cr` checks passing, but the full
   monolithic GUI smoke baseline still fails on unrelated existing checks.
+
+M3.5 implementation status:
+
+- Complete: when `clearSelectedAssignmentRhs` sees a selection, it expands the
+  selection to the complete line range touched by the selection before passing
+  text to `RtlBatchEditService`.
+- Complete: partial selections on assignment lines no longer need to include
+  the full assignment or RHS; no-selection behavior still targets the current
+  assignment statement.
+- Complete: Slot Mode slot ordering remains source ordered after line-oriented
+  cleanup.
+- Verification: Release `completion_test` covers partial multi-line selection
+  cleanup, current-assignment cleanup, no-RHS failure without mutation, slot
+  ordering, and undo restore. Release `gui_smoke_test` target compile/link
+  passed and the launched smoke output shows the new COM `si -> cr` flow
+  passing, while the full smoke baseline still fails on unrelated existing
+  checks.
 
 ### 4. COM Mode Framework Completion
 
@@ -257,6 +293,9 @@ First milestones:
   (complete: registry validates conflicts and supplies COM failure messages)
 - M4.4 register the first non-g editor-local editing command
   (complete: `cr` uses the registry/dispatcher/hint/failure-message framework)
+- M4.5 add select-inside begin-end COM command
+  (complete: `si` uses Tree-sitter begin/end structure, stays in COM Mode, and
+  can feed `cr`)
 
 ### 5. Limited Workspace Workflow Additions
 

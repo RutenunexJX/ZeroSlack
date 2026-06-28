@@ -41,13 +41,16 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
   and shows an app-level command strip. Current g-domain commands are `gm`,
   `g<num><Enter>`, `gp`, `gpk`, `gpa`, `gpo`, `gsi`, `gsd`, `gii`, `gac`,
   `gpi`, `ge`, and `gef`; the current clear-domain command is `cr` for clearing
-  assignment RHS fill points. Existing fixed commands, prefixes, and the
+  assignment RHS fill points; the current select-domain command is `si` for
+  selecting complete lines inside the nearest `begin ... end`. Existing fixed
+  commands, prefixes, and the
   module-relative line command are described by shared `commodecommandregistry`
   metadata. The command strip renders registry-backed hints for prefixes and
   module-relative line buffers, with a normal dark palette and a distinct dark
   alert palette for command failures. Registry validation owns duplicate,
   executable prefix conflict, and malformed prefix reasons, and COM command
-  failures use centralized registry-backed messages where practical.
+  failures use centralized registry-backed messages where practical. Active COM
+  editors also paint a small `COM` badge and highlighted bottom edge.
 - Ctrl+Space opens Global Control as a domain-first surface. Current root
   domains are `ow` and `fd`; displayed commands are `ow <num>`, `ow r`,
   `fd r`, and `fd s`.
@@ -58,10 +61,11 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
   and not yet active for other template families.
 - Batch RTL editing has a first editor-local action:
   `MyCodeEditor::clearSelectedAssignmentRhs` clears RHS expressions in the
-  current selection, or the current assignment when there is no selection, for
-  supported assignment statements, then starts Slot Mode on the cleared RHS fill
-  points. COM Mode command `cr` invokes this editor-local action. The obsolete
-  named-action entry layer has been removed.
+  complete line range touched by the current selection, or the current
+  assignment when there is no selection, for supported assignment statements,
+  then starts Slot Mode on the cleared RHS fill points. COM Mode command `cr`
+  invokes this editor-local action. The obsolete named-action entry layer has
+  been removed.
 - Fold Region and Fold Shelf are available through Global Control. Fold Shelf
   now has a service/model-owned persistence baseline and explicit cross-file
   restore flow plus basic rename, search, and stale/consumed cleanup
@@ -354,20 +358,24 @@ explicitly enables slots for that family.
   `selectionStart` / `selectionLength` fields map to the first primary slot.
 - Entry happens only after a template activation inserts text through the
   existing completion workflow. The insertion remains one undoable edit block.
-- Tab moves to the next slot; Shift+Tab moves to the previous slot. Tab on the
-  last slot completes Slot Mode and leaves the cursor at the final slot end.
+- Tab moves to the next slot; Shift+Tab moves to the previous slot. Both wrap
+  around, so Tab on the last slot returns to the first slot and Shift+Tab on
+  the first slot returns to the last slot. Tab navigation never exits Slot Mode.
 - Esc cancels Slot Mode only: inserted text and user edits stay in the document,
   slot highlights clear, and normal editor input resumes.
 - Cursor movement outside the active slot/session, document edits that make slot
   ranges stale, tab switch/close, COM Mode entry, or Global Control entry exits
   Slot Mode without rollback.
+- While active, Slot Mode paints all slots with a weak blinking highlight,
+  emphasizes the active slot, and reports status as `SLOT n/m`.
 - Slot Mode is editor-local text state. It must not run Slang, scan the
   workspace, or add semantic policy.
 - Parameter template slots are ordered as name then value. Editing the name
-  shifts the value slot; Tab reaches the value; final Tab exits before the
-  semicolon.
+  shifts the value slot; Tab reaches the value and wraps from the value slot
+  back to the name slot.
 - Signal declaration templates use a single name slot. Editing the signal name
-  keeps packed/unpacked dimensions intact; final Tab exits before the semicolon.
+  keeps packed/unpacked dimensions intact; Tab keeps cycling that slot until
+  Esc exits Slot Mode.
 
 ## Fold Shelf Persistence Contract
 
@@ -441,10 +449,15 @@ assignment statements and producing fill slots for the future Slot Mode flow.
   `MyCodeEditor::clearSelectedAssignmentRhs`. The action applies the report in
   one undoable edit block and preserves failure reasons in editor status
   feedback.
-- COM Mode command `cr` invokes the same editor-local clear-RHS path. It clears
-  selected assignments, or the current assignment when there is no selection,
-  enters Slot Mode on the cleared RHS positions, and reports `No assignment RHS
-  found` in the command strip/status path without opening a modal dialog.
+- COM Mode command `cr` invokes the same editor-local clear-RHS path. It expands
+  any text selection to the touched complete line range, clears assignments
+  found on those lines, or clears the current assignment when there is no
+  selection. It enters Slot Mode on the cleared RHS positions and reports `No
+  assignment RHS found` in the command strip/status path without opening a
+  modal dialog.
+- COM Mode command `si` selects the complete interior lines of the nearest
+  Tree-sitter `seq_block` (`begin ... end`) and stays in COM Mode so users can
+  immediately run `cr`.
 - Slot Mode entry is active for this report. The first RHS slot is selected
   after replacement; Tab/Shift+Tab/final Tab/Esc reuse the existing Slot Mode
   state.
@@ -489,3 +502,9 @@ Do not add unlisted long-term goals without explicit user approval.
   targets compile/link. `gui_smoke_test` was launched with Windows fault-dialog
   suppression and its new COM `cr` checks passed, but the monolithic smoke test
   still fails on existing non-`cr` baseline checks.
+- Latest COM/Slot interaction repair: Release `completion_test` and
+  `relationship_test` passed; Release `completion_test` and `gui_smoke_test`
+  targets compile/link. `gui_smoke_test` was launched with Windows fault-dialog
+  suppression and all new `si`, partial-selection `cr`, and Slot Mode cycling
+  checks passed; the monolithic smoke test still fails on existing non-current
+  baseline checks.

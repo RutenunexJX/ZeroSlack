@@ -468,7 +468,8 @@ void EditorSelection::clearSearchMatches(QPlainTextEdit* editor)
 void EditorSelection::highlightTemplateSlots(
     MyCodeEditor* editor,
     const QList<QPair<int, int>>& ranges,
-    int activeIndex)
+    int activeIndex,
+    bool pulseOn)
 {
     if (!editor || !editor->document())
         return;
@@ -482,25 +483,41 @@ void EditorSelection::highlightTemplateSlots(
     const int docEnd = qMax(0, editor->document()->characterCount() - 1);
     for (int i = 0; i < ranges.size(); ++i) {
         const int start = ranges.at(i).first;
-        const int length = ranges.at(i).second;
-        if (start < 0 || length <= 0 || start > docEnd)
+        const int requestedLength = ranges.at(i).second;
+        if (start < 0 || requestedLength < 0 || start > docEnd)
             continue;
 
+        int visibleStart = qBound(0, start, docEnd);
+        int visibleEnd = qBound(0, start + requestedLength, docEnd);
+        if (visibleEnd <= visibleStart) {
+            if (visibleStart < docEnd) {
+                visibleEnd = visibleStart + 1;
+            } else if (visibleStart > 0) {
+                --visibleStart;
+                visibleEnd = visibleStart + 1;
+            } else {
+                continue;
+            }
+        }
+
         QTextCursor cursor(editor->document());
-        cursor.setPosition(qBound(0, start, docEnd));
-        cursor.setPosition(qBound(0, start + length, docEnd),
-                           QTextCursor::KeepAnchor);
+        cursor.setPosition(visibleStart);
+        cursor.setPosition(visibleEnd, QTextCursor::KeepAnchor);
 
         QTextEdit::ExtraSelection slotSelection;
         slotSelection.cursor = cursor;
+        const bool active = i == activeIndex;
+        const int weakAlpha = pulseOn ? 58 : 26;
+        const int activeAlpha = pulseOn ? 118 : 82;
         slotSelection.format.setBackground(
-            i == activeIndex
-                ? QColor(34, 197, 94, 70)
-                : QColor(59, 130, 246, 42));
+            active
+                ? QColor(34, 197, 94, activeAlpha)
+                : QColor(59, 130, 246, weakAlpha));
         slotSelection.format.setUnderlineStyle(
-            QTextCharFormat::SingleUnderline);
+            active ? QTextCharFormat::DashUnderline
+                   : QTextCharFormat::SingleUnderline);
         slotSelection.format.setUnderlineColor(
-            i == activeIndex ? QColor("#16A34A") : QColor("#2563EB"));
+            active ? QColor("#22C55E") : QColor("#60A5FA"));
         slotSelection.format.setProperty(
             kTemplateSlotSelectionProperty,
             kTemplateSlotSelectionMarker);

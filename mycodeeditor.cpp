@@ -370,6 +370,7 @@ void MyCodeEditor::paintEvent(QPaintEvent *event)
     state->paintFoldPlaceholders(this, event);
     state->paintGhostAnnotations(this, event);
     state->paintColumnSelection(this, event);
+    state->paintComModeOverlay(this, event);
 }
 
 void MyCodeEditor::contextMenuEvent(QContextMenuEvent *event)
@@ -442,6 +443,11 @@ bool MyCodeEditor::executeComModuleEndInsert(QString* message)
     return state->executeComModuleEndInsert(this, message);
 }
 
+bool MyCodeEditor::selectInsideBeginEnd(QString* message)
+{
+    return state->selectInsideBeginEnd(this, message);
+}
+
 bool MyCodeEditor::comModeActive() const
 {
     return state->comModeActive();
@@ -486,6 +492,16 @@ bool MyCodeEditor::templateSlotModeActive() const
 int MyCodeEditor::templateSlotModeActiveIndex() const
 {
     return state->templateSlotModeActiveIndex();
+}
+
+int MyCodeEditor::templateSlotModeSlotCount() const
+{
+    return state->templateSlotModeSlotCount();
+}
+
+bool MyCodeEditor::templateSlotModeBlinkOnForTest() const
+{
+    return state->templateSlotModeBlinkOn();
 }
 
 void MyCodeEditor::setDiagnosticHighlights(

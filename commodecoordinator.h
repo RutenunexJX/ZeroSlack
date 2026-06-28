@@ -85,6 +85,7 @@ private:
     void handleInstanceInsert(MyCodeEditor* editor);
     void handleAssignInsert(MyCodeEditor* editor);
     void handleClearAssignmentRhs(MyCodeEditor* editor);
+    void handleSelectInsideBeginEnd(MyCodeEditor* editor);
     void handleParameterInsert(MyCodeEditor* editor);
     void handleModuleEndInsert(MyCodeEditor* editor);
     void showPicker(MyCodeEditor* editor,

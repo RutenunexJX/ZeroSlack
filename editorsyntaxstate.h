@@ -17,6 +17,7 @@ struct TSParameterInsertTarget;
 struct TSModuleEndInsertTarget;
 struct TSAlwaysScopeTarget;
 struct TSModuleScopeTarget;
+struct TSBeginEndInsideTarget;
 
 class EditorSyntaxState
 {
@@ -49,6 +50,7 @@ public:
     TSModuleScopeTarget moduleScopeTargetAt(int cursorChar,
                                             int selectionStartChar = -1,
                                             int selectionEndChar = -1) const;
+    TSBeginEndInsideTarget beginEndInsideTargetAt(int cursorChar) const;
     const TSDocument* tsDocument() const;
 
 private:

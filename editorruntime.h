@@ -29,6 +29,7 @@ class QKeyEvent;
 class QMouseEvent;
 class QPainter;
 class QPaintEvent;
+class QTimer;
 struct EditorAlwaysScopeTarget;
 struct EditorModuleScopeTarget;
 
@@ -69,6 +70,9 @@ struct MyCodeEditorState
     int templateSlotActiveIndex = -1;
     int templateSlotSessionStart = -1;
     int templateSlotSessionEnd = -1;
+    QTimer* templateSlotBlinkTimer = nullptr;
+    bool templateSlotBlinkOn = true;
+    bool templateSlotIgnoreNextCursorCheck = false;
 
     void initializeCore(MyCodeEditor* editor);
     void shutdown();
@@ -90,6 +94,7 @@ struct MyCodeEditorState
     bool executeComAssignInsert(MyCodeEditor* editor, QString* message);
     bool executeComParameterInsert(MyCodeEditor* editor, QString* message);
     bool executeComModuleEndInsert(MyCodeEditor* editor, QString* message);
+    bool selectInsideBeginEnd(MyCodeEditor* editor, QString* message);
     bool comModeActive() const;
     QString comModeBuffer() const;
     void enterComMode(MyCodeEditor* editor, const QString& message = QString());
@@ -101,6 +106,8 @@ struct MyCodeEditorState
                                const CodeTemplateSlotList& slotMetadata);
     bool templateSlotModeActive() const;
     int templateSlotModeActiveIndex() const;
+    int templateSlotModeSlotCount() const;
+    bool templateSlotModeBlinkOn() const;
     void clearTemplateSlotMode(MyCodeEditor* editor,
                                const QString& message = QString());
     bool handleTemplateSlotKeyPress(MyCodeEditor* editor, QKeyEvent* event);
@@ -132,6 +139,7 @@ struct MyCodeEditorState
     void paintFoldPlaceholders(MyCodeEditor* editor, QPaintEvent* event) const;
     void paintGhostAnnotations(MyCodeEditor* editor, QPaintEvent* event) const;
     void paintColumnSelection(MyCodeEditor* editor, QPaintEvent* event) const;
+    void paintComModeOverlay(MyCodeEditor* editor, QPaintEvent* event) const;
     void handleContextMenu(MyCodeEditor* editor, QContextMenuEvent* event);
     bool handleMousePress(MyCodeEditor* editor, QMouseEvent* event);
     bool handleMouseDoubleClick(MyCodeEditor* editor, QMouseEvent* event);

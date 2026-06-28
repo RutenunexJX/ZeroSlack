@@ -93,6 +93,16 @@ QString childCommandHint(const QString& prefix)
     if (children.isEmpty())
         return QString();
 
+    if (children.size() == 1) {
+        const QString child = children.constFirst();
+        if (const ComModeCommandMetadata* metadata =
+                findComModeCommandMetadata(child)) {
+            return QStringLiteral("%1 %2")
+                .arg(child, metadata->title);
+        }
+        return child;
+    }
+
     QStringList visibleChildren;
     for (int i = 0;
          i < children.size() && i < kVisibleHintCommandLimit;
@@ -116,6 +126,12 @@ const QList<ComModeCommandMetadata>& comModeCommandRegistry()
          QStringLiteral("clear"),
          QStringLiteral("Clear assignment RHS"),
          QStringLiteral("Clear assignment RHS and create fill slots.")},
+        {QStringLiteral("si"),
+         true,
+         ComModeCommandInputKind::Fixed,
+         QStringLiteral("select"),
+         QStringLiteral("Select inside begin-end"),
+         QStringLiteral("Select complete lines inside the nearest begin-end block.")},
         {QStringLiteral("g<num>"),
          true,
          ComModeCommandInputKind::ModuleRelativeLine,

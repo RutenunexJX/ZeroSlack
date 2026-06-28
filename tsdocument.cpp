@@ -746,6 +746,17 @@ int endpackageLine(TSNode package, const QString& text)
     return -1;
 }
 
+int seqBlockEndLine(TSNode block, const QString& text)
+{
+    const uint32_t childCount = ts_node_child_count(block);
+    for (uint32_t i = 0; i < childCount; ++i) {
+        TSNode child = ts_node_child(block, i);
+        if (nodeText(text, child) == QStringLiteral("end"))
+            return static_cast<int>(ts_node_start_point(child).row);
+    }
+    return nodeLastLine(block);
+}
+
 struct SignalInsertAnchor {
     bool valid = false;
     bool insertAfterLine = true;
@@ -1696,6 +1707,39 @@ TSModuleScopeTarget TSDocument::moduleScopeTarget(
                        .arg(target.kindText, displayName)
                        .arg(target.startLine)
                        .arg(target.endLine);
+    return target;
+}
+
+TSBeginEndInsideTarget TSDocument::beginEndInsideTarget(int cursorChar) const
+{
+    TSBeginEndInsideTarget target;
+
+    const int textSize = m_text.size();
+    if (textSize <= 0)
+        return target;
+
+    TSNode node =
+        namedNodeAtChar(m_tree,
+                        qBound(0, cursorChar, textSize - 1),
+                        textSize);
+    TSNode block = ancestorOfType(node, "seq_block");
+    if (ts_node_is_null(block) || ts_node_has_error(block))
+        return target;
+
+    const int beginLine = static_cast<int>(ts_node_start_point(block).row);
+    const int endLine = seqBlockEndLine(block, m_text);
+    const int firstInsideLine = beginLine + 1;
+    const int lastInsideLine = endLine - 1;
+    if (firstInsideLine > lastInsideLine) {
+        target.status = TSBeginEndInsideStatus::EmptyBeginEndBlock;
+        return target;
+    }
+
+    target.startChar = lineStartChar(m_text, firstInsideLine);
+    target.endChar = lineEndChar(m_text, lastInsideLine);
+    target.startLine = firstInsideLine;
+    target.endLine = lastInsideLine;
+    target.status = TSBeginEndInsideStatus::Ok;
     return target;
 }
 

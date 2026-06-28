@@ -180,6 +180,15 @@ TSModuleScopeTarget EditorSyntaxState::moduleScopeTargetAt(
                                        selectionEndChar);
 }
 
+TSBeginEndInsideTarget EditorSyntaxState::beginEndInsideTargetAt(
+    int cursorChar) const
+{
+    TSBeginEndInsideTarget target;
+    if (!interactiveSyntaxEnabled)
+        return target;
+    return document->beginEndInsideTarget(cursorChar < 0 ? 0 : cursorChar);
+}
+
 const TSDocument* EditorSyntaxState::tsDocument() const
 {
     return interactiveSyntaxEnabled ? document.get() : nullptr;

@@ -61,6 +61,7 @@ bool isComModeErrorMessage(const QString& message)
         || message.startsWith(QStringLiteral("COM command registry is invalid"))
         || message.startsWith(QStringLiteral("Line number must be"))
         || message.startsWith(QStringLiteral("No assignment"))
+        || message.startsWith(QStringLiteral("No begin-end"))
         || message.startsWith(QStringLiteral("No current"))
         || message.startsWith(QStringLiteral("No clear"))
         || message.startsWith(QStringLiteral("Module has only"));
@@ -369,6 +370,8 @@ void ComModeCoordinator::handleCommand(MyCodeEditor* editor,
         showPicker(editor, PickerMode::Module, command);
     } else if (command == QStringLiteral("cr")) {
         handleClearAssignmentRhs(editor);
+    } else if (command == QStringLiteral("si")) {
+        handleSelectInsideBeginEnd(editor);
     } else if (command == QStringLiteral("gpk")) {
         showPicker(editor, PickerMode::Package, command);
     } else if (command == QStringLiteral("gpa")) {
@@ -507,6 +510,26 @@ void ComModeCoordinator::handleClearAssignmentRhs(MyCodeEditor* editor)
     }
 
     editor->exitComMode();
+    editor->setFocus(Qt::ShortcutFocusReason);
+}
+
+void ComModeCoordinator::handleSelectInsideBeginEnd(MyCodeEditor* editor)
+{
+    if (!editor)
+        return;
+
+    QString message;
+    if (!editor->selectInsideBeginEnd(&message)) {
+        if (message.isEmpty())
+            message = QStringLiteral("No begin-end block");
+        editor->showComModeMessage(message);
+        emit editor->editorStatusMessageRequested(message);
+        return;
+    }
+
+    editor->showComModeMessage(message.isEmpty()
+                                   ? QStringLiteral("Selected inside begin-end")
+                                   : message);
     editor->setFocus(Qt::ShortcutFocusReason);
 }
 
