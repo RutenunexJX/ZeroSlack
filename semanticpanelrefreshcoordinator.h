@@ -59,7 +59,11 @@ private:
     using CurrentFileProvider = std::function<QString()>;
     using WorkspaceFilesProvider = std::function<QStringList()>;
     using NavigationHandler =
-        std::function<void(const QString&, int, int)>;
+        std::function<bool(const QString&, int, int)>;
+    using SignalGraphHandler =
+        std::function<void(const QString&, const QString&, const QString&)>;
+    using ModuleGraphHandler =
+        std::function<void(const QString&, const QString&)>;
     using ProblemsNavigationHandler =
         std::function<bool(const QString&, int, int)>;
     using StatusMessageHandler =
@@ -77,7 +81,7 @@ private:
                  NavigationCommandCoordinator* navigationCommandCoordinator);
         QString currentFileName() const;
         QStringList workspaceFiles() const;
-        void navigateToFileAndLine(const QString& fileName,
+        bool navigateToFileAndLine(const QString& fileName,
                                    int line,
                                    int column) const;
         bool navigateToFileAndLineAndFlash(const QString& fileName,
@@ -114,6 +118,9 @@ private:
             const StatusMessageHandler& statusMessageHandler) const;
         void configureRelationshipsPanel(
             const NavigationHandler& navigationHandler,
+            const SignalGraphHandler& signalKernelGraphHandler,
+            const SignalGraphHandler& stateTransitionGraphHandler,
+            const ModuleGraphHandler& moduleBlockDiagramHandler,
             const StatusMessageHandler& statusMessageHandler) const;
         void configureRtlInsightsPanel(
             const NavigationHandler& navigationHandler,
@@ -151,7 +158,7 @@ private:
     QString currentFileName() const;
     QStringList workspaceFiles() const;
     QString currentEditorWord(MyCodeEditor* editor) const;
-    void navigateToFileAndLine(const QString& fileName, int line, int column) const;
+    bool navigateToFileAndLine(const QString& fileName, int line, int column) const;
     bool navigateToFileAndLineAndFlash(const QString& fileName,
                                        int line,
                                        int column) const;

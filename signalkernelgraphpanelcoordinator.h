@@ -26,7 +26,7 @@ public:
     explicit SignalKernelGraphPanelCoordinator(QWidget* parent);
     ~SignalKernelGraphPanelCoordinator();
 
-    void setNavigationHandler(std::function<void(const QString&, int, int)> handler);
+    void setNavigationHandler(std::function<bool(const QString&, int, int)> handler);
     void setStatusMessageHandler(std::function<void(const QString&, int)> handler);
     void setDocumentModel(DocumentModel* documentModel);
 
@@ -76,7 +76,7 @@ private:
     int lastSearchMatchCount = 0;
     int lastFocusedSearchNodeId = -1;
 
-    std::function<void(const QString&, int, int)> navigationHandler;
+    std::function<bool(const QString&, int, int)> navigationHandler;
     std::function<void(const QString&, int)> statusMessageHandler;
 
     void renderReport(const SignalKernelGraphReport& report);

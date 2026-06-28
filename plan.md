@@ -1216,15 +1216,16 @@ Milestones:
   Diagram is limited to existing module/interface definitions; current-state
   names remain rejected)
 - M13.2 References Panel Workflow Closure
-  (pending: query context, empty reasons, stable jump/flash, copy path or
-  file:line)
+  (complete: query context, empty reasons, click/activated jump with flash,
+  and copy path or file:line)
 - M13.3 Relationships Panel Workflow Closure
-  (pending: source-code jumps for rows, instance/module-definition jumps where
+  (complete: source-code jumps for rows, instance/module-definition jumps where
   existing data supports them, signal driver/consumer/declaration jumps from
   existing relationships, and only existing graph entry points)
 - M13.4 Unified Navigation Failure Feedback And History Isolation
-  (pending: References, Relationships, and graph jumps share one navigation
-  path; Back/Forward history is isolated by workspace; failures are visible)
+  (complete: References, Relationships, and graph jumps share one validated
+  navigation path; Back/Forward history is isolated by workspace; failures are
+  visible)
 - M13.5 Verification And Documentation
   (pending: build `completion_test` and `gui_smoke_test`; run
   `ctest -R "^completion_test$" --output-on-failure`; run
@@ -1244,6 +1245,28 @@ M13.1 implementation status:
 - Complete: this milestone is workflow/UI closure only. It does not implement
   package tools, macro/define semantics, Wave Preview expansion, new graph
   algorithms, or broader State Transition Graph triggers.
+
+M13.2-M13.4 implementation status:
+
+- Complete: References and Relationships panels display query context for the
+  active symbol, source file, scope/view/direction/type/depth filters.
+- Complete: empty panels render explicit reasons: no symbol under cursor,
+  symbol not indexed, no references/relationships found, or workspace analysis
+  stale / not ready when the index has no records.
+- Complete: result rows support path and `file:line` copy; click and activated
+  rows route through the shared navigation path and flash the target line.
+- Complete: Relationship rows store existing relationship data for driver,
+  consumer, declaration, and instance navigation; instantiation rows prefer
+  existing module/interface definition records when available.
+- Complete: Relationship result context menus call only existing graphs:
+  Signal Kernel Graph, Module Block Diagram, and State Transition Graph.
+- Complete: panel and graph jumps are validated for missing files, invalid
+  line/column data, stale semantic snapshots or missing symbols, and workspace
+  mismatch; failures are surfaced through the status bar.
+- Complete: `NavigationCommandCoordinator` history entries carry a workspace
+  key and Back/Forward prunes entries from other workspaces.
+- Verification so far: Release `completion_test` and `gui_smoke_test` targets
+  compile/link.
 
 ## Huge Workspace Status Audit
 

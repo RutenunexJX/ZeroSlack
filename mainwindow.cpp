@@ -730,7 +730,10 @@ void MainWindow::setupNavigationPane()
 void MainWindow::setupNavigationCommandCoordinator()
 {
     navigationCommandCoordinator = std::make_unique<NavigationCommandCoordinator>(
-        tabManager.get(), navigationManager.get(), this);
+        tabManager.get(),
+        navigationManager.get(),
+        workspaceManager.get(),
+        this);
     navigationCommandCoordinator->connectSignals();
 }
 

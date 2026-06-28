@@ -933,14 +933,18 @@ int SignalKernelGraphPanelCoordinator::focusedSearchNodeIdForTest() const
 }
 
 void SignalKernelGraphPanelCoordinator::setNavigationHandler(
-    std::function<void(const QString&, int, int)> handler)
+    std::function<bool(const QString&, int, int)> handler)
 {
     navigationHandler = std::move(handler);
     if (hoverPopup) {
         hoverPopup->setNavigationHandler(
             [this](const QString& fileName, int line, int column) {
-                if (navigationHandler)
-                    navigationHandler(fileName, line, column);
+                if (navigationHandler
+                    && !navigationHandler(fileName, line, column)) {
+                    showStatusMessage(
+                        QStringLiteral("Signal kernel graph jump failed"),
+                        4000);
+                }
             });
     }
 }
@@ -1552,11 +1556,16 @@ void SignalKernelGraphPanelCoordinator::navigateNode(
         return;
     if (node.navigateCodeLink.fileName.isEmpty()
         || node.navigateCodeLink.line <= 0) {
+        showStatusMessage(QStringLiteral("Signal kernel graph node has no source location"),
+                          3000);
         return;
     }
-    navigationHandler(node.navigateCodeLink.fileName,
-                      node.navigateCodeLink.line,
-                      node.navigateCodeLink.column);
+    if (!navigationHandler(node.navigateCodeLink.fileName,
+                           node.navigateCodeLink.line,
+                           node.navigateCodeLink.column)) {
+        showStatusMessage(QStringLiteral("Signal kernel graph jump failed"),
+                          4000);
+    }
 }
 
 void SignalKernelGraphPanelCoordinator::rebaseToNode(

@@ -23,7 +23,7 @@ class RtlInsightsPanelCoordinator
 public:
     explicit RtlInsightsPanelCoordinator(QWidget* parent);
 
-    void setNavigationHandler(std::function<void(const QString&, int, int)> handler);
+    void setNavigationHandler(std::function<bool(const QString&, int, int)> handler);
     void setStatusMessageHandler(std::function<void(const QString&, int)> handler);
 
     void updateModuleContext(const QString& fileName,
@@ -76,7 +76,7 @@ private:
     QString currentModuleName;
     QString currentSignalName;
 
-    std::function<void(const QString&, int, int)> navigationHandler;
+    std::function<bool(const QString&, int, int)> navigationHandler;
     std::function<void(const QString&, int)> statusMessageHandler;
 
     void renderActionList();

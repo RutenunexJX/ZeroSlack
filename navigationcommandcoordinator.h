@@ -10,6 +10,7 @@
 class NavigationManager;
 class MyCodeEditor;
 class TabManager;
+class WorkspaceManager;
 
 class NavigationCommandCoordinator : public QObject
 {
@@ -18,6 +19,7 @@ class NavigationCommandCoordinator : public QObject
 public:
     explicit NavigationCommandCoordinator(TabManager* tabManager,
                                           NavigationManager* navigationManager,
+                                          WorkspaceManager* workspaceManager = nullptr,
                                           QObject* parent = nullptr);
 
     void connectSignals();
@@ -39,6 +41,7 @@ public:
 private:
     struct NavigationLocation {
         QString filePath;
+        QString workspacePath;
         int lineNumber = -1;
         int columnNumber = -1;
 
@@ -49,14 +52,17 @@ private:
     struct NavigationTargets {
         TabManager* tabManager = nullptr;
         NavigationManager* navigationManager = nullptr;
+        WorkspaceManager* workspaceManager = nullptr;
 
         void set(TabManager* tabManager,
-                 NavigationManager* navigationManager);
+                 NavigationManager* navigationManager,
+                 WorkspaceManager* workspaceManager);
         bool hasNavigationManager() const;
         NavigationManager* navigationManagerObject() const;
         bool activateOrOpenFile(const QString& filePath) const;
         MyCodeEditor* currentEditor() const;
         NavigationLocation currentLocation() const;
+        QString currentWorkspacePath() const;
     };
 
     struct LineNavigationResolver {
@@ -78,6 +84,7 @@ private:
     void recordCurrentLocationBeforeNavigation(
         const NavigationLocation& destination);
     bool applyLocation(const NavigationLocation& location);
+    void pruneHistoryForCurrentWorkspace();
 };
 
 #endif // NAVIGATIONCOMMANDCOORDINATOR_H

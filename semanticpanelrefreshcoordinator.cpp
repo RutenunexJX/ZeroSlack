@@ -7,9 +7,68 @@
 #include "tabmanager.h"
 #include "workspacemanager.h"
 
+#include <QDir>
+#include <QFileInfo>
 #include <QTextCursor>
 
 #include <utility>
+
+namespace {
+
+QString normalizedPanelNavigationFileName(const QString& fileName)
+{
+    if (fileName.isEmpty())
+        return QString();
+    return QDir::cleanPath(
+        QDir::fromNativeSeparators(QFileInfo(fileName).absoluteFilePath()));
+}
+
+bool pathIsInsideWorkspace(const QString& fileName,
+                           const QString& workspacePath)
+{
+    const QString target = normalizedPanelNavigationFileName(fileName);
+    const QString workspace = normalizedPanelNavigationFileName(workspacePath);
+    if (target.isEmpty() || workspace.isEmpty())
+        return false;
+    return target == workspace
+        || target.startsWith(workspace + QLatin1Char('/'),
+                             Qt::CaseInsensitive);
+}
+
+bool fileKnownToWorkspace(WorkspaceManager* workspaceManager,
+                          const QString& fileName)
+{
+    if (!workspaceManager)
+        return true;
+    const QString target = normalizedPanelNavigationFileName(fileName);
+    for (const QString& file : workspaceManager->getAllFiles()) {
+        if (QString::compare(normalizedPanelNavigationFileName(file),
+                             target,
+                             Qt::CaseInsensitive) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+QString panelNavigationFailureReason(WorkspaceManager* workspaceManager,
+                                     const QString& fileName,
+                                     int line,
+                                     int column)
+{
+    if (fileName.isEmpty() || !QFileInfo::exists(fileName))
+        return QStringLiteral("file missing");
+    if (line <= 0 || column < -1)
+        return QStringLiteral("invalid line/column");
+    if (workspaceManager && workspaceManager->isWorkspaceOpen()
+        && !pathIsInsideWorkspace(fileName, workspaceManager->getWorkspacePath())
+        && !fileKnownToWorkspace(workspaceManager, fileName)) {
+        return QStringLiteral("workspace mismatch");
+    }
+    return QString();
+}
+
+}
 
 SemanticPanelRefreshCoordinator::SemanticPanelRefreshCoordinator(
     TabManager* tabManager,
@@ -55,13 +114,16 @@ QStringList SemanticPanelRefreshCoordinator::ContextDependencies::workspaceFiles
     return workspaceManager ? workspaceManager->getSystemVerilogFiles() : QStringList();
 }
 
-void SemanticPanelRefreshCoordinator::ContextDependencies::navigateToFileAndLine(
+bool SemanticPanelRefreshCoordinator::ContextDependencies::navigateToFileAndLine(
     const QString& fileName,
     int line,
     int column) const
 {
-    if (navigationCommandCoordinator)
-        navigationCommandCoordinator->navigateToFileAndLine(fileName, line, column);
+    return navigationCommandCoordinator
+        && navigationCommandCoordinator->navigateToFileAndLineAndFlash(
+            fileName,
+            line,
+            column);
 }
 
 bool SemanticPanelRefreshCoordinator::ContextDependencies::navigateToFileAndLineAndFlash(
@@ -112,7 +174,7 @@ void SemanticPanelRefreshCoordinator::configurePanels()
     };
     const NavigationHandler navigationHandler =
         [this](const QString& fileName, int line, int column) {
-            navigateToFileAndLine(fileName, line, column);
+            return navigateToFileAndLine(fileName, line, column);
         };
     const ProblemsNavigationHandler problemsNavigationHandler =
         [this](const QString& fileName, int line, int column) {
@@ -121,6 +183,7 @@ void SemanticPanelRefreshCoordinator::configurePanels()
     const NavigationHandler revealHandler =
         [this](const QString& fileName, int line, int) {
             revealFileAndFlashLine(fileName, line);
+            return true;
         };
     const StatusMessageHandler statusMessageHandler =
         [this](const QString& message, int timeoutMs) {
@@ -135,6 +198,29 @@ void SemanticPanelRefreshCoordinator::configurePanels()
                                     navigationHandler,
                                     statusMessageHandler);
     panels.configureRelationshipsPanel(navigationHandler,
+                                       [this](const QString& symbolName,
+                                              const QString& fileName,
+                                              const QString& moduleName) {
+                                           showSignalKernelGraphForSymbol(
+                                               symbolName,
+                                               fileName,
+                                               moduleName);
+                                       },
+                                       [this](const QString& symbolName,
+                                              const QString& fileName,
+                                              const QString& moduleName) {
+                                           showStateTransitionGraphForSymbol(
+                                               symbolName,
+                                               fileName,
+                                               moduleName);
+                                       },
+                                       [this](const QString& fileName,
+                                              const QString& moduleName) {
+                                           showModuleBlockDiagramForSymbol(
+                                               moduleName,
+                                               fileName,
+                                               moduleName);
+                                       },
                                        statusMessageHandler);
     panels.configureRtlInsightsPanel(navigationHandler,
                                      statusMessageHandler);
@@ -234,12 +320,29 @@ QString SemanticPanelRefreshCoordinator::currentEditorWord(MyCodeEditor* editor)
     return cursor.selectedText().trimmed();
 }
 
-void SemanticPanelRefreshCoordinator::navigateToFileAndLine(
+bool SemanticPanelRefreshCoordinator::navigateToFileAndLine(
     const QString& fileName,
     int line,
     int column) const
 {
-    dependencies.navigateToFileAndLine(fileName, line, column);
+    const QString failureReason =
+        panelNavigationFailureReason(dependencies.workspaceManager,
+                                     fileName,
+                                     line,
+                                     column);
+    if (!failureReason.isEmpty()) {
+        showStatusMessage(QStringLiteral("Navigation failed: %1")
+                              .arg(failureReason),
+                          4000);
+        return false;
+    }
+    if (!dependencies.navigateToFileAndLine(fileName, line, column)) {
+        showStatusMessage(
+            QStringLiteral("Navigation failed: stale semantic snapshot or symbol no longer exists"),
+            4000);
+        return false;
+    }
+    return true;
 }
 
 bool SemanticPanelRefreshCoordinator::navigateToFileAndLineAndFlash(

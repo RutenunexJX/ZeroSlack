@@ -905,15 +905,16 @@ Milestones:
   present; disabled entries expose reasons; Module Block Diagram is limited to
   existing module/interface definitions; current-state names remain rejected)
 - G13.2 References panel workflow closure.
-  (pending: query context, empty reasons, stable jump/flash, copy path or
-  file:line)
+  (complete: query context, empty reasons, click/activated jump with flash,
+  and copy path or file:line)
 - G13.3 Relationships panel workflow closure.
-  (pending: source-code jumps for every result row, instance/module-definition
+  (complete: source-code jumps for every result row, instance/module-definition
   jumps where existing data supports them, signal role jumps from existing
   relationship data, and only existing graph entry points)
 - G13.4 Unified navigation failure feedback and history isolation.
-  (pending: References, Relationships, and graph jumps share one navigation
-  path; Back/Forward history is isolated by workspace; failures are visible)
+  (complete: References, Relationships, and graph jumps share one validated
+  navigation path; Back/Forward history is isolated by workspace; failures are
+  visible)
 - G13.5 Verification and documentation.
   (pending: build `completion_test` and `gui_smoke_test`; run
   `ctest -R "^completion_test$" --output-on-failure`; run

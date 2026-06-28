@@ -2478,6 +2478,7 @@ static void runSignalKernelGraphPopupInteractionRegression()
                 fileName == QStringLiteral("graph_top.sv")
                 && line == 10
                 && column == 3;
+            return graphNavigated;
         });
     graph.renderReport(report);
     QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
@@ -3899,6 +3900,13 @@ static QTreeWidget* referencesTree(MainWindow& window)
         : nullptr;
 }
 
+static QLabel* referencesContextLabel(MainWindow& window)
+{
+    return window.semanticDocks && window.semanticDocks->referencesPanelCoordinator()
+        ? window.semanticDocks->referencesPanelCoordinator()->contextLabel()
+        : nullptr;
+}
+
 static QComboBox* referenceScopeCombo(MainWindow& window)
 {
     return window.semanticDocks && window.semanticDocks->referencesPanelCoordinator()
@@ -3917,6 +3925,13 @@ static QTreeWidget* relationshipsTree(MainWindow& window)
 {
     return window.semanticDocks && window.semanticDocks->relationshipsPanelCoordinator()
         ? window.semanticDocks->relationshipsPanelCoordinator()->tree()
+        : nullptr;
+}
+
+static QLabel* relationshipsContextLabel(MainWindow& window)
+{
+    return window.semanticDocks && window.semanticDocks->relationshipsPanelCoordinator()
+        ? window.semanticDocks->relationshipsPanelCoordinator()->contextLabel()
         : nullptr;
 }
 
@@ -4105,9 +4120,30 @@ static void runReferenceDockRegression(MainWindow& window, const QString& fixtur
                                                           QStringLiteral("ref_top"));
 
     expectBool("references tree exists", referencesTree(window) != nullptr, true);
+    expectBool("references context label records query",
+               referencesContextLabel(window)
+                   && referencesContextLabel(window)->text().contains(
+                       QStringLiteral("Symbol: target_ref"))
+                   && referencesContextLabel(window)->text().contains(
+                       QStringLiteral("Scope: All Files"))
+                   && referencesContextLabel(window)->text().contains(
+                       QStringLiteral("Type: All Types")),
+               true);
     expectBool("reference results rendered",
                navigableItemCount(referencesTree(window)) == 2,
                true);
+    semanticPanelRefresh(window)->showReferencesForSymbol(QString(),
+                                                          fixturePath,
+                                                          QStringLiteral("ref_top"));
+    expectBool("references empty symbol reason rendered",
+               referencesTree(window)
+                   && referencesTree(window)->topLevelItemCount() == 1
+                   && referencesTree(window)->topLevelItem(0)->text(0)
+                       == QStringLiteral("no symbol under cursor"),
+               true);
+    semanticPanelRefresh(window)->showReferencesForSymbol(QStringLiteral("target_ref"),
+                                                          fixturePath,
+                                                          QStringLiteral("ref_top"));
     expectBool("reference scope filter exists",
                referenceScopeCombo(window) != nullptr,
                true);
@@ -4205,9 +4241,30 @@ static void runReferenceDockRegression(MainWindow& window, const QString& fixtur
                                                              fixturePath,
                                                              QStringLiteral("ref_top"));
     expectBool("relationships tree exists", relationshipsTree(window) != nullptr, true);
+    expectBool("relationships context label records query",
+               relationshipsContextLabel(window)
+                   && relationshipsContextLabel(window)->text().contains(
+                       QStringLiteral("Symbol: target_ref"))
+                   && relationshipsContextLabel(window)->text().contains(
+                       QStringLiteral("Direction: All Directions"))
+                   && relationshipsContextLabel(window)->text().contains(
+                       QStringLiteral("Type: All Types")),
+               true);
     expectBool("relationship results rendered",
                navigableItemCount(relationshipsTree(window)) == 3,
                true);
+    semanticPanelRefresh(window)->showRelationshipsForSymbol(QString(),
+                                                             fixturePath,
+                                                             QStringLiteral("ref_top"));
+    expectBool("relationships empty symbol reason rendered",
+               relationshipsTree(window)
+                   && relationshipsTree(window)->topLevelItemCount() == 1
+                   && relationshipsTree(window)->topLevelItem(0)->text(5)
+                       == QStringLiteral("no symbol under cursor"),
+               true);
+    semanticPanelRefresh(window)->showRelationshipsForSymbol(QStringLiteral("target_ref"),
+                                                             fixturePath,
+                                                             QStringLiteral("ref_top"));
     if (relationshipsTree(window) && navigableItemCount(relationshipsTree(window)) == 3) {
         bool sawIncoming = false;
         bool sawOutgoing = false;

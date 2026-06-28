@@ -60,12 +60,18 @@ void SemanticPanelRefreshCoordinator::PanelSet::configureReferencesPanel(
 
 void SemanticPanelRefreshCoordinator::PanelSet::configureRelationshipsPanel(
     const NavigationHandler& navigationHandler,
+    const SignalGraphHandler& signalKernelGraphHandler,
+    const SignalGraphHandler& stateTransitionGraphHandler,
+    const ModuleGraphHandler& moduleBlockDiagramHandler,
     const StatusMessageHandler& statusMessageHandler) const
 {
     if (!relationshipsPanel)
         return;
 
     relationshipsPanel->setNavigationHandler(navigationHandler);
+    relationshipsPanel->setSignalKernelGraphHandler(signalKernelGraphHandler);
+    relationshipsPanel->setStateTransitionGraphHandler(stateTransitionGraphHandler);
+    relationshipsPanel->setModuleBlockDiagramHandler(moduleBlockDiagramHandler);
     relationshipsPanel->setStatusMessageHandler(statusMessageHandler);
 }
 
@@ -90,8 +96,8 @@ void SemanticPanelRefreshCoordinator::PanelSet::configureSignalKernelGraphPanel(
         return;
 
     signalKernelGraphPanel->setDocumentModel(documentModel);
-    Q_UNUSED(navigationHandler)
-    signalKernelGraphPanel->setNavigationHandler(revealHandler);
+    Q_UNUSED(revealHandler)
+    signalKernelGraphPanel->setNavigationHandler(navigationHandler);
     signalKernelGraphPanel->setStatusMessageHandler(statusMessageHandler);
 }
 

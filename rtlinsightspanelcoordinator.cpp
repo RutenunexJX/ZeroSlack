@@ -1767,7 +1767,12 @@ RtlInsightsPanelCoordinator::RtlInsightsPanelCoordinator(QWidget* parent)
                              return;
                          const int line = item->data(0, Qt::UserRole + 1).toInt();
                          const int column = item->data(0, Qt::UserRole + 2).toInt();
-                         navigationHandler(fileName, line, column);
+                         if (!navigationHandler(fileName, line, column)
+                             && statusMessageHandler) {
+                             statusMessageHandler(
+                                 QStringLiteral("RTL Insights jump failed"),
+                                 4000);
+                         }
                      });
     QObject::connect(moduleBriefButton, &QPushButton::clicked,
                      insightsDock, [this]() { showModuleBrief(); });
@@ -1803,7 +1808,7 @@ RtlInsightsPanelCoordinator::RtlInsightsPanelCoordinator(QWidget* parent)
 }
 
 void RtlInsightsPanelCoordinator::setNavigationHandler(
-    std::function<void(const QString&, int, int)> handler)
+    std::function<bool(const QString&, int, int)> handler)
 {
     navigationHandler = std::move(handler);
 }
@@ -1903,9 +1908,11 @@ bool RtlInsightsPanelCoordinator::triggerGraphNavigationForTest(
     const QString fileName = item->data(kGraphFileRole).toString();
     if (fileName.isEmpty())
         return false;
-    navigationHandler(fileName,
-                      item->data(kGraphLineRole).toInt(),
-                      item->data(kGraphColumnRole).toInt());
+    if (!navigationHandler(fileName,
+                           item->data(kGraphLineRole).toInt(),
+                           item->data(kGraphColumnRole).toInt())) {
+        return false;
+    }
     const QString drillModuleName =
         item->data(kGraphDrillModuleRole).toString();
     if (!drillModuleName.isEmpty()) {
@@ -1978,8 +1985,12 @@ void RtlInsightsPanelCoordinator::renderStateTransitionGraphScene(
     const QFont font = insightsGraphView->font();
     const auto navigate = [this](const RtlInsightGraphElement& element) {
         const RtlInsightCodeLink& link = element.codeLink;
-        if (navigationHandler && !link.fileName.isEmpty())
-            navigationHandler(link.fileName, link.line, link.column);
+        if (navigationHandler && !link.fileName.isEmpty()
+            && !navigationHandler(link.fileName, link.line, link.column)
+            && statusMessageHandler) {
+            statusMessageHandler(QStringLiteral("RTL graph jump failed"),
+                                 4000);
+        }
     };
     const auto select = [this](const RtlInsightGraphElement& element) {
         if (statusMessageHandler) {
@@ -2026,8 +2037,12 @@ void RtlInsightsPanelCoordinator::renderFsmGraphScene(
     const QFont font = insightsGraphView->font();
     const auto navigate = [this](const RtlInsightGraphElement& element) {
         const RtlInsightCodeLink& link = element.codeLink;
-        if (navigationHandler && !link.fileName.isEmpty())
-            navigationHandler(link.fileName, link.line, link.column);
+        if (navigationHandler && !link.fileName.isEmpty()
+            && !navigationHandler(link.fileName, link.line, link.column)
+            && statusMessageHandler) {
+            statusMessageHandler(QStringLiteral("RTL graph jump failed"),
+                                 4000);
+        }
     };
     const auto select = [this](const RtlInsightGraphElement& element) {
         if (statusMessageHandler) {
@@ -2083,8 +2098,12 @@ void RtlInsightsPanelCoordinator::renderModuleBlockDiagramScene(
     const QFont font = insightsGraphView->font();
     const auto navigate = [this](const RtlInsightGraphElement& element) {
         const RtlInsightCodeLink& link = element.codeLink;
-        if (navigationHandler && !link.fileName.isEmpty())
-            navigationHandler(link.fileName, link.line, link.column);
+        if (navigationHandler && !link.fileName.isEmpty()
+            && !navigationHandler(link.fileName, link.line, link.column)
+            && statusMessageHandler) {
+            statusMessageHandler(QStringLiteral("RTL graph jump failed"),
+                                 4000);
+        }
         if (!element.drillModuleName.isEmpty()) {
             const QString drillFileName = element.drillFileName.isEmpty()
                 ? link.fileName

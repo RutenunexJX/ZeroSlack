@@ -3750,6 +3750,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
             moduleBlockNavigatedFileName = fileName;
             moduleBlockNavigatedLine = line;
             moduleBlockNavigatedColumn = column;
+            return true;
         });
     moduleBlockPanel.showModuleBlockDiagramForModule(
         topPath,
@@ -3873,6 +3874,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
             drillNavigatedFileName = fileName;
             drillNavigatedLine = line;
             drillNavigatedColumn = column;
+            return true;
         });
     drillPanel.showModuleBlockDiagramForModule(
         diagramTopPath,
@@ -7522,6 +7524,7 @@ static void runFsmGraphServiceFixture()
             navigatedFileName = fileName;
             navigatedLine = line;
             navigatedColumn = column;
+            return true;
         });
     stateTransitionPanel.showStateTransitionGraphForSignal(
         dualFileName,

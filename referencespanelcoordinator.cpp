@@ -1,15 +1,26 @@
 #include "referencespanelcoordinator.h"
 
 #include "referenceservice.h"
+#include "semanticindex.h"
 #include "semanticpanelutils.h"
 
+#include <QAction>
+#include <QApplication>
+#include <QClipboard>
+#include <QFileInfo>
 #include <QHBoxLayout>
 #include <QHeaderView>
+#include <QMenu>
+#include <QPoint>
 #include <QVBoxLayout>
 
 #include <utility>
 
 namespace {
+
+constexpr int kNavigationFileRole = Qt::UserRole;
+constexpr int kNavigationLineRole = Qt::UserRole + 1;
+constexpr int kNavigationColumnRole = Qt::UserRole + 2;
 
 QTreeWidgetItem* createReferenceItem(QTreeWidgetItem* parent,
                                      const ReferenceResult& reference)
@@ -22,10 +33,78 @@ QTreeWidgetItem* createReferenceItem(QTreeWidgetItem* parent,
     item->setText(2, reference.lineDisplayName);
     item->setText(3, reference.relationshipTypeDisplayName);
     item->setToolTip(1, sourceLocation.fileName);
-    item->setData(0, Qt::UserRole, sourceLocation.fileName);
-    item->setData(0, Qt::UserRole + 1, sourceLocation.startLine);
-    item->setData(0, Qt::UserRole + 2, sourceLocation.startColumn);
+    item->setData(0, kNavigationFileRole, sourceLocation.fileName);
+    item->setData(0, kNavigationLineRole, sourceLocation.startLine);
+    item->setData(0, kNavigationColumnRole, sourceLocation.startColumn);
     return item;
+}
+
+QString referenceSourceDisplayName(const QString& fileName)
+{
+    if (fileName.isEmpty())
+        return QStringLiteral("<none>");
+    const QString displayName = QFileInfo(fileName).fileName();
+    return displayName.isEmpty() ? fileName : displayName;
+}
+
+QString referenceQueryContextText(const QString& symbolName,
+                                  const QString& fileName,
+                                  QComboBox* scopeCombo,
+                                  QComboBox* typeCombo)
+{
+    const QString symbol = symbolName.isEmpty()
+        ? QStringLiteral("<none>")
+        : symbolName;
+    return QStringLiteral("Symbol: %1 | Source: %2 | Scope: %3 | Type: %4")
+        .arg(symbol,
+             referenceSourceDisplayName(fileName),
+             scopeCombo ? scopeCombo->currentText()
+                        : QStringLiteral("All Files"),
+             typeCombo ? typeCombo->currentText()
+                       : QStringLiteral("All Types"));
+}
+
+QString referenceEmptyReason(const ReferenceReport& report,
+                             const QString& symbolName)
+{
+    if (symbolName.isEmpty())
+        return QStringLiteral("no symbol under cursor");
+
+    switch (report.notFoundReason) {
+    case ReferenceReportNotFoundReason::None:
+        break;
+    case ReferenceReportNotFoundReason::NoSubjectSymbol:
+        if (SemanticIndex::getInstance()->getSymbolRecords().isEmpty())
+            return QStringLiteral("workspace analysis stale / not ready");
+        return QStringLiteral("symbol not indexed");
+    case ReferenceReportNotFoundReason::NoReferences:
+        return QStringLiteral("no references found");
+    }
+    return report.notFoundReasonDisplayName.isEmpty()
+        ? QStringLiteral("no references found")
+        : report.notFoundReasonDisplayName;
+}
+
+bool itemHasNavigationTarget(QTreeWidgetItem* item)
+{
+    return item
+        && !item->data(0, kNavigationFileRole).toString().isEmpty();
+}
+
+QString itemPath(QTreeWidgetItem* item)
+{
+    return item ? item->data(0, kNavigationFileRole).toString() : QString();
+}
+
+QString itemFileLine(QTreeWidgetItem* item)
+{
+    const QString fileName = itemPath(item);
+    if (fileName.isEmpty())
+        return QString();
+    const int line = item ? item->data(0, kNavigationLineRole).toInt() : 0;
+    if (line <= 0)
+        return fileName;
+    return QStringLiteral("%1:%2").arg(fileName).arg(line);
 }
 
 ReferencePanelScope referencePanelScopeFromValue(int value)
@@ -73,6 +152,15 @@ ReferencesPanelCoordinator::ReferencesPanelCoordinator(QWidget* parent)
     filtersLayout->addStretch(1);
     layout->addLayout(filtersLayout);
 
+    referenceContextLabel = new QLabel(panel);
+    referenceContextLabel->setObjectName(QStringLiteral("referenceContextLabel"));
+    referenceContextLabel->setText(referenceQueryContextText(
+        currentReferenceSymbolName,
+        currentReferenceFileName,
+        referenceScopeCombo,
+        referenceTypeCombo));
+    layout->addWidget(referenceContextLabel);
+
     referencesTree = new QTreeWidget(panel);
     referencesTree->setObjectName(QStringLiteral("referencesTree"));
     referencesTree->setColumnCount(4);
@@ -80,6 +168,7 @@ ReferencesPanelCoordinator::ReferencesPanelCoordinator(QWidget* parent)
     referencesTree->setRootIsDecorated(true);
     referencesTree->setAlternatingRowColors(true);
     referencesTree->setSelectionMode(QAbstractItemView::SingleSelection);
+    referencesTree->setContextMenuPolicy(Qt::CustomContextMenu);
     referencesTree->header()->setStretchLastSection(true);
     referencesTree->header()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
     referencesTree->header()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
@@ -99,16 +188,66 @@ ReferencesPanelCoordinator::ReferencesPanelCoordinator(QWidget* parent)
     QObject::connect(referenceTypeCombo, qOverload<int>(&QComboBox::currentIndexChanged),
                      referencesDock, [this](int) { refresh(); });
 
-    QObject::connect(referencesTree, &QTreeWidget::itemDoubleClicked,
-                     referencesDock, [this](QTreeWidgetItem* item, int) {
-                         if (!item || !navigationHandler)
+    auto navigateReferenceItem = [this](QTreeWidgetItem* item) {
+        if (!item)
+            return;
+        if (!itemHasNavigationTarget(item)) {
+            if (statusMessageHandler) {
+                statusMessageHandler(QStringLiteral("Reference row has no source location"),
+                                     3000);
+            }
+            return;
+        }
+        if (!navigationHandler) {
+            if (statusMessageHandler)
+                statusMessageHandler(QStringLiteral("Navigation unavailable"), 3000);
+            return;
+        }
+
+        const QString fileName = item->data(0, kNavigationFileRole).toString();
+        const int line = item->data(0, kNavigationLineRole).toInt();
+        const int column = item->data(0, kNavigationColumnRole).toInt();
+        if (!navigationHandler(fileName, line, column)
+            && statusMessageHandler) {
+            statusMessageHandler(QStringLiteral("Reference jump failed"), 4000);
+        }
+    };
+    QObject::connect(referencesTree, &QTreeWidget::itemClicked,
+                     referencesDock, [navigateReferenceItem](QTreeWidgetItem* item, int) {
+                         navigateReferenceItem(item);
+                     });
+    QObject::connect(referencesTree, &QTreeWidget::itemActivated,
+                     referencesDock, [navigateReferenceItem](QTreeWidgetItem* item, int) {
+                         navigateReferenceItem(item);
+                     });
+    QObject::connect(referencesTree, &QTreeWidget::customContextMenuRequested,
+                     referencesDock, [this](const QPoint& pos) {
+                         QTreeWidgetItem* item = referencesTree
+                             ? referencesTree->itemAt(pos)
+                             : nullptr;
+                         if (!itemHasNavigationTarget(item))
                              return;
-                         const QString fileName = item->data(0, Qt::UserRole).toString();
-                         if (fileName.isEmpty())
+
+                         QMenu menu(referencesTree);
+                         QAction* copyPath =
+                             menu.addAction(QStringLiteral("Copy Path"));
+                         QAction* copyFileLine =
+                             menu.addAction(QStringLiteral("Copy file:line"));
+                         QAction* chosen =
+                             menu.exec(referencesTree->viewport()->mapToGlobal(pos));
+                         if (!chosen)
                              return;
-                         const int line = item->data(0, Qt::UserRole + 1).toInt();
-                         const int column = item->data(0, Qt::UserRole + 2).toInt();
-                         navigationHandler(fileName, line, column);
+
+                         const QString text = chosen == copyFileLine
+                             ? itemFileLine(item)
+                             : itemPath(item);
+                         if (text.isEmpty())
+                             return;
+                         QApplication::clipboard()->setText(text);
+                         if (statusMessageHandler) {
+                             statusMessageHandler(QStringLiteral("Copied %1").arg(text),
+                                                  1500);
+                         }
                      });
 }
 
@@ -119,7 +258,7 @@ void ReferencesPanelCoordinator::setWorkspaceFilesProvider(
 }
 
 void ReferencesPanelCoordinator::setNavigationHandler(
-    std::function<void(const QString&, int, int)> handler)
+    std::function<bool(const QString&, int, int)> handler)
 {
     navigationHandler = std::move(handler);
 }
@@ -134,7 +273,7 @@ void ReferencesPanelCoordinator::showReferencesForSymbol(const QString& symbolNa
                                                         const QString& fileName,
                                                         const QString& moduleName)
 {
-    if (!referencesTree || symbolName.isEmpty())
+    if (!referencesTree)
         return;
 
     currentReferenceSymbolName = symbolName;
@@ -145,8 +284,33 @@ void ReferencesPanelCoordinator::showReferencesForSymbol(const QString& symbolNa
 
 void ReferencesPanelCoordinator::refresh()
 {
-    if (!referencesTree || currentReferenceSymbolName.isEmpty())
+    if (!referencesTree)
         return;
+
+    if (referenceContextLabel) {
+        referenceContextLabel->setText(referenceQueryContextText(
+            currentReferenceSymbolName,
+            currentReferenceFileName,
+            referenceScopeCombo,
+            referenceTypeCombo));
+        referenceContextLabel->setToolTip(currentReferenceFileName);
+    }
+
+    if (currentReferenceSymbolName.isEmpty()) {
+        referencesTree->clear();
+        auto* emptyItem = new QTreeWidgetItem(referencesTree);
+        emptyItem->setText(0, QStringLiteral("no symbol under cursor"));
+        if (referencesDock) {
+            referencesDock->setWindowTitle(QStringLiteral("References"));
+            referencesDock->show();
+            referencesDock->raise();
+        }
+        if (statusMessageHandler) {
+            statusMessageHandler(QStringLiteral("References: no symbol under cursor"),
+                                 3000);
+        }
+        return;
+    }
 
     ReferencePanelQueryOptions queryOptions;
     queryOptions.symbolName = currentReferenceSymbolName;
@@ -170,6 +334,12 @@ void ReferencesPanelCoordinator::refresh()
     const bool hadExpandableItems = SemanticPanelUtils::treeHasExpandableItems(referencesTree);
     const QSet<QString> expandedKeys = SemanticPanelUtils::collectExpandedKeys(referencesTree);
     referencesTree->clear();
+    if (report.totalCount == 0) {
+        const QString reason = referenceEmptyReason(report, currentReferenceSymbolName);
+        auto* emptyItem = new QTreeWidgetItem(referencesTree);
+        emptyItem->setText(0, reason);
+        emptyItem->setToolTip(0, reason);
+    }
     for (const ReferenceFileGroup& fileGroupReport : report.fileGroups) {
         auto* fileGroup = new QTreeWidgetItem(referencesTree);
         fileGroup->setText(0, SemanticPanelUtils::countLabel(fileGroupReport.displayName,
@@ -200,10 +370,13 @@ void ReferencesPanelCoordinator::refresh()
     }
 
     if (statusMessageHandler) {
-        statusMessageHandler(
-            QStringLiteral("Found %1 references for %2")
-                .arg(report.totalCount)
-                .arg(subjectName),
-            3000);
+        const QString message = report.totalCount == 0
+            ? QStringLiteral("References: %1")
+                  .arg(referenceEmptyReason(report,
+                                            currentReferenceSymbolName))
+            : QStringLiteral("Found %1 references for %2")
+                  .arg(report.totalCount)
+                  .arg(subjectName);
+        statusMessageHandler(message, 3000);
     }
 }

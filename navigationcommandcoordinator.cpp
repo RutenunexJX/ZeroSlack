@@ -4,16 +4,30 @@
 #include "navigationmanager.h"
 #include "sourcenavigationservice.h"
 #include "tabmanager.h"
+#include "workspacemanager.h"
 
+#include <QDir>
+#include <QFileInfo>
 #include <QTextCursor>
+
+namespace {
+QString normalizedNavigationWorkspacePath(const QString& path)
+{
+    if (path.isEmpty())
+        return QString();
+    return QDir::cleanPath(
+        QDir::fromNativeSeparators(QFileInfo(path).absoluteFilePath()));
+}
+}
 
 NavigationCommandCoordinator::NavigationCommandCoordinator(
     TabManager* tabManager,
     NavigationManager* navigationManager,
+    WorkspaceManager* workspaceManager,
     QObject* parent)
     : QObject(parent)
 {
-    targets.set(tabManager, navigationManager);
+    targets.set(tabManager, navigationManager, workspaceManager);
 }
 
 bool NavigationCommandCoordinator::NavigationLocation::isValid() const
@@ -25,16 +39,19 @@ bool NavigationCommandCoordinator::NavigationLocation::operator==(
     const NavigationLocation& other) const
 {
     return filePath == other.filePath
+        && workspacePath == other.workspacePath
         && lineNumber == other.lineNumber
         && columnNumber == other.columnNumber;
 }
 
 void NavigationCommandCoordinator::NavigationTargets::set(
     TabManager* newTabManager,
-    NavigationManager* newNavigationManager)
+    NavigationManager* newNavigationManager,
+    WorkspaceManager* newWorkspaceManager)
 {
     tabManager = newTabManager;
     navigationManager = newNavigationManager;
+    workspaceManager = newWorkspaceManager;
 }
 
 bool NavigationCommandCoordinator::NavigationTargets::hasNavigationManager() const
@@ -77,9 +94,17 @@ NavigationCommandCoordinator::NavigationTargets::currentLocation() const
 
     const QTextCursor cursor = editor->textCursor();
     location.filePath = document.fileName;
+    location.workspacePath = currentWorkspacePath();
     location.lineNumber = cursor.blockNumber() + 1;
     location.columnNumber = cursor.positionInBlock() + 1;
     return location;
+}
+
+QString NavigationCommandCoordinator::NavigationTargets::currentWorkspacePath() const
+{
+    if (!workspaceManager || !workspaceManager->isWorkspaceOpen())
+        return QString();
+    return normalizedNavigationWorkspacePath(workspaceManager->getWorkspacePath());
 }
 
 bool NavigationCommandCoordinator::LineNavigationResolver::applyToEditor(
@@ -127,7 +152,11 @@ void NavigationCommandCoordinator::navigateToFileAndLine(
     int columnNumber)
 {
     const NavigationLocation current = targets.currentLocation();
-    const NavigationLocation destination{filePath, lineNumber, columnNumber};
+    const NavigationLocation destination{
+        filePath,
+        targets.currentWorkspacePath(),
+        lineNumber,
+        columnNumber};
 
     if (!targets.activateOrOpenFile(filePath))
         return;
@@ -148,7 +177,11 @@ bool NavigationCommandCoordinator::navigateToFileAndLineAndFlash(
     int columnNumber)
 {
     const NavigationLocation current = targets.currentLocation();
-    const NavigationLocation destination{filePath, lineNumber, columnNumber};
+    const NavigationLocation destination{
+        filePath,
+        targets.currentWorkspacePath(),
+        lineNumber,
+        columnNumber};
 
     if (!targets.activateOrOpenFile(filePath))
         return false;
@@ -189,7 +222,10 @@ void NavigationCommandCoordinator::navigateEditorToLine(
         targets.tabManager ? targets.tabManager->getDocumentForEditor(editor)
                            : DocumentSnapshot();
     recordCurrentLocationBeforeNavigation(
-        {document.fileName, lineNumber, columnNumber});
+        {document.fileName,
+         targets.currentWorkspacePath(),
+         lineNumber,
+         columnNumber});
     lineResolver.applyToEditor(editor, lineNumber, columnNumber);
 }
 
@@ -208,6 +244,7 @@ void NavigationCommandCoordinator::navigateToSymbol(
 
 void NavigationCommandCoordinator::navigateBack()
 {
+    pruneHistoryForCurrentWorkspace();
     if (backStack.isEmpty())
         return;
 
@@ -223,6 +260,7 @@ void NavigationCommandCoordinator::navigateBack()
 
 void NavigationCommandCoordinator::navigateForward()
 {
+    pruneHistoryForCurrentWorkspace();
     if (forwardStack.isEmpty())
         return;
 
@@ -248,6 +286,8 @@ void NavigationCommandCoordinator::recordLocationBeforeNavigation(
 {
     if (replayingHistory || !current.isValid() || current == destination)
         return;
+    if (current.workspacePath != destination.workspacePath)
+        return;
 
     if (backStack.isEmpty() || !(backStack.last() == current))
         backStack.append(current);
@@ -259,9 +299,24 @@ bool NavigationCommandCoordinator::applyLocation(
 {
     if (!location.isValid())
         return false;
+    if (location.workspacePath != targets.currentWorkspacePath())
+        return false;
     if (!targets.activateOrOpenFile(location.filePath))
         return false;
     return lineResolver.applyToEditor(targets.currentEditor(),
                                       location.lineNumber,
                                       location.columnNumber);
+}
+
+void NavigationCommandCoordinator::pruneHistoryForCurrentWorkspace()
+{
+    const QString workspacePath = targets.currentWorkspacePath();
+    auto prune = [&workspacePath](QVector<NavigationLocation>& stack) {
+        for (int i = stack.size() - 1; i >= 0; --i) {
+            if (stack.at(i).workspacePath != workspacePath)
+                stack.removeAt(i);
+        }
+    };
+    prune(backStack);
+    prune(forwardStack);
 }

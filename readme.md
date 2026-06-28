@@ -594,3 +594,12 @@ Do not add unlisted long-term goals without explicit user approval.
   State Transition Graph gating still rejects current-state names. This stage
   is workflow/UI closure only; it does not add semantic analysis, package
   tools, macro/define handling, Wave Preview behavior, or new graph algorithms.
+- Latest References / Relationships panel closure stage: References and
+  Relationships now keep visible query context, render explicit empty-state
+  reasons, support path and `file:line` copy from result rows, and use one
+  validated jump/flash path. Relationship rows carry existing-data graph
+  entries for Signal Kernel Graph, Module Block Diagram, and State Transition
+  Graph only. Instance relationships prefer existing module/interface
+  definition links when available. Navigation history entries are keyed by
+  workspace so Back/Forward does not cross workspace boundaries. Release
+  `completion_test` and `gui_smoke_test` targets compile/link.
