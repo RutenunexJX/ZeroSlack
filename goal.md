@@ -54,6 +54,18 @@ Status:
   `ctest -R "^(completion_test|relationship_test|gui_smoke_test)$"
   --output-on-failure`; `git diff --check -- .
   ':!test_sv/new/elec_phy_import/ctrl/chl_ctrl.sv'`.
+- Macro / Define acceptance stabilization is complete. The GUI smoke
+  reference/relationship dock regression now uses an isolated local semantic
+  snapshot injected into `ReferenceService`, `RelationshipService`, and
+  `HierarchyService`, resets dock filters at fixture entry/exit, and restores
+  services to the global semantic index. This fixes CTest-order state leakage
+  without weakening reference/relationship assertions or expanding the Macro /
+  Define feature scope.
+- Verification for the acceptance stabilization passed: `git diff --check -- .
+  ':!test_sv/new/elec_phy_import/ctrl/chl_ctrl.sv'`; `cmake --build .
+  --target completion_test relationship_test gui_smoke_test`; Release
+  `ctest -R "^(completion_test|relationship_test|gui_smoke_test)$"
+  --output-on-failure` passed twice consecutively.
 - Verification Baseline Repair after Package Tools phase 1 is complete. This
   was baseline repair only, not Package Tools phase 2: Release
   `relationship_test` rebuild failures were traced to generated MinGW
@@ -1059,6 +1071,10 @@ Milestones:
   (complete: outline, goto definition, hover, references, supplemental
   undefined diagnostics, and inactive branch gray decorations are available
   with conservative static behavior)
+- G15.1a Acceptance Stabilization.
+  (complete: GUI smoke reference/relationship dock regression now isolates
+  semantic services and panel filters; Release acceptance CTest passed twice
+  consecutively)
 
 ## Huge Workspace Status Audit
 

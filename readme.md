@@ -680,6 +680,16 @@ Do not add unlisted long-term goals without explicit user approval.
   "^(completion_test|relationship_test|gui_smoke_test)$"
   --output-on-failure`; `git diff --check -- .
   ':!test_sv/new/elec_phy_import/ctrl/chl_ctrl.sv'`.
+- Latest Macro / Define acceptance stabilization: the GUI smoke
+  reference/relationship dock regression now uses an isolated local semantic
+  snapshot injected into `ReferenceService`, `RelationshipService`, and
+  `HierarchyService`, with dock filters reset at fixture entry and exit. This
+  repairs CTest-order state leakage without weakening reference/relationship
+  assertions or expanding macro scope. Release verification passed:
+  `git diff --check -- . ':!test_sv/new/elec_phy_import/ctrl/chl_ctrl.sv'`;
+  `cmake --build . --target completion_test relationship_test gui_smoke_test`;
+  `ctest -R "^(completion_test|relationship_test|gui_smoke_test)$"
+  --output-on-failure` twice consecutively.
 - Latest Verification Baseline Repair: this is a baseline repair after Package
   Tools phase 1, not new Package Tools functionality. The blank-diagnostic
   Release rebuild failure was traced to generated MinGW build rules that did

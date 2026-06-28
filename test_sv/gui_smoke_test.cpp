@@ -77,6 +77,7 @@
 #include "globalcontrolcoordinator.h"
 #include "globalcontrolpanel.h"
 #include "globalcontrolservice.h"
+#include "hierarchyservice.h"
 #include "navigationwidget.h"
 #include "navigationpanecoordinator.h"
 #include "semantic_fixture_records.h"
@@ -89,7 +90,9 @@
 #include "packagetoolservice.h"
 #include "problemspanelcoordinator.h"
 #include "referencespanelcoordinator.h"
+#include "referenceservice.h"
 #include "relationshipspanelcoordinator.h"
+#include "relationshipservice.h"
 #include "rtlinsightspanelcoordinator.h"
 #include "semanticindex.h"
 #include "semanticindexsnapshot.h"
@@ -4016,6 +4019,48 @@ static QComboBox* relationshipDepthCombo(MainWindow& window)
         : nullptr;
 }
 
+static void setComboTextIfPresent(QComboBox* combo, const QString& text)
+{
+    if (!combo)
+        return;
+    const int index = combo->findText(text);
+    if (index >= 0 && combo->currentIndex() != index)
+        combo->setCurrentIndex(index);
+}
+
+static void resetReferenceRelationshipDockFilters(MainWindow& window)
+{
+    setComboTextIfPresent(referenceScopeCombo(window), QStringLiteral("All Files"));
+    setComboTextIfPresent(referenceTypeCombo(window), QStringLiteral("All Types"));
+    setComboTextIfPresent(relationshipViewCombo(window), QStringLiteral("Direct"));
+    setComboTextIfPresent(relationshipDirectionCombo(window),
+                          QStringLiteral("All Directions"));
+    setComboTextIfPresent(relationshipTypeCombo(window), QStringLiteral("All Types"));
+    setComboTextIfPresent(relationshipDepthCombo(window), QStringLiteral("Depth 1"));
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+}
+
+class ScopedSemanticServiceIndex
+{
+public:
+    explicit ScopedSemanticServiceIndex(SemanticIndex* semanticIndex)
+    {
+        ReferenceService::getInstance()->setSemanticIndex(semanticIndex);
+        RelationshipService::getInstance()->setSemanticIndex(semanticIndex);
+        HierarchyService::getInstance()->setSemanticIndex(semanticIndex);
+    }
+
+    ~ScopedSemanticServiceIndex()
+    {
+        ReferenceService::getInstance()->setSemanticIndex(SemanticIndex::getInstance());
+        RelationshipService::getInstance()->setSemanticIndex(SemanticIndex::getInstance());
+        HierarchyService::getInstance()->setSemanticIndex(SemanticIndex::getInstance());
+    }
+
+    ScopedSemanticServiceIndex(const ScopedSemanticServiceIndex&) = delete;
+    ScopedSemanticServiceIndex& operator=(const ScopedSemanticServiceIndex&) = delete;
+};
+
 static SemanticPanelRefreshCoordinator* semanticPanelRefresh(MainWindow& window)
 {
     return window.semanticDocks ? window.semanticDocks->refreshCoordinator() : nullptr;
@@ -4101,20 +4146,16 @@ static void runReferenceDockRegression(MainWindow& window, const QString& fixtur
         externalReferencing,
         target,
     };
-    SemanticIndex::getInstance()->updateSymbolRecordsForFile(
-        fixturePath,
-        QList<SemanticSymbolRecord>{referenced, referencing, target},
-        QString());
-    SemanticIndex::getInstance()->updateSymbolRecordsForFile(
-        externalReferencing.location.fileName,
-        QList<SemanticSymbolRecord>{externalReferencing},
-        QString());
-    SemanticIndex::getInstance()->setSnapshot(
+
+    SemanticIndex fixtureIndex;
+    fixtureIndex.setSnapshot(
         snapshotFromRecords(
             referenceRecords,
             QList<SemanticRelationship>{incomingRelationship,
                                         externalIncomingRelationship,
                                         outgoingRelationship}));
+    ScopedSemanticServiceIndex scopedIndex(&fixtureIndex);
+    resetReferenceRelationshipDockFilters(window);
 
     semanticPanelRefresh(window)->showReferencesForSymbol(QStringLiteral("target_ref"),
                                                           fixturePath,
@@ -4406,6 +4447,7 @@ static void runReferenceDockRegression(MainWindow& window, const QString& fixtur
                        true);
         }
     }
+    resetReferenceRelationshipDockFilters(window);
 }
 
 static SemanticSymbolRecord makeGuiSmokeRecord(

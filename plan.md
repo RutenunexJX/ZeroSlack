@@ -1388,6 +1388,10 @@ Milestones:
   (complete: outline, goto definition, hover, references, supplemental
   undefined diagnostics, and inactive branch gray decorations are available
   with conservative static behavior)
+- M15.1a Acceptance Stabilization
+  (complete: GUI smoke reference/relationship dock regression isolates semantic
+  services and panel filters; Release acceptance CTest passed twice
+  consecutively)
 
 ## Huge Workspace Status Audit
 
@@ -1636,6 +1640,26 @@ Latest Macro / Define semantic workflow:
   "^(completion_test|relationship_test|gui_smoke_test)$"
   --output-on-failure`; `git diff --check -- .
   ':!test_sv/new/elec_phy_import/ctrl/chl_ctrl.sv'`.
+
+Latest Macro / Define acceptance stabilization:
+
+- Scope: test isolation and acceptance stability only; no new macro/define
+  feature surface.
+- The GUI smoke reference/relationship dock regression now runs against an
+  isolated local semantic snapshot injected into `ReferenceService`,
+  `RelationshipService`, and `HierarchyService`, then restores the services to
+  the global semantic index.
+- The fixture resets reference and relationship dock filters at entry and exit
+  so reference, direct relationship, and hierarchy tree assertions are not
+  affected by prior panel state.
+- Reference/relationship assertions were not weakened, and Package Tools, COM
+  Mode, Slot Mode, diagnostics, references, and relationships behavior outside
+  this test fixture was not expanded.
+- Release verification passed: `git diff --check -- .
+  ':!test_sv/new/elec_phy_import/ctrl/chl_ctrl.sv'`; `cmake --build .
+  --target completion_test relationship_test gui_smoke_test`; `ctest -R
+  "^(completion_test|relationship_test|gui_smoke_test)$"
+  --output-on-failure` twice consecutively.
 
 Latest Verification Baseline Repair:
 
