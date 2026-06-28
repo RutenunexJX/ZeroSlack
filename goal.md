@@ -28,8 +28,8 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
 
 ## Current Goal State
 
-Current milestone: none after RTL Insights FSM Graph rendering/candidate
-repair.
+Current milestone: none after Module Block Diagram container rendering and
+drill-down repair.
 
 Next work should wait for the next explicit scoped request.
 
@@ -68,6 +68,17 @@ Status:
   compile/link; `ctest -R "^(completion_test|relationship_test)$"
   --output-on-failure` passed. The GUI smoke executable was not launched to
   avoid another modal Windows crash dialog during this repair loop.
+- Module Block Diagram container rendering and drill-down is complete: RTL
+  Insights now renders the selected module as a large container on a grid-backed
+  canvas, arranges child modules inside it, exposes `-` / `Fit` / `+` zoom
+  controls alongside mouse-wheel zoom, and re-renders the diagram around a
+  double-clicked module after navigation.
+- Focused verification for the Module Block Diagram repair: Release
+  `relationship_test` and `gui_smoke_test` targets compile/link; `ctest -R
+  "^relationship_test$"` and `ctest -R
+  "^(completion_test|relationship_test)$" --output-on-failure` passed. The GUI
+  smoke executable was not launched to avoid another modal Windows crash dialog
+  during this repair loop.
 - G0 Documentation And Goal Reset is complete and pushed in commit `bc2c059`.
 - G4.1 Registry Metadata For Existing COM Commands is complete:
   `commodecommandregistry` now owns metadata for fixed executable commands,

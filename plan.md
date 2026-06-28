@@ -957,11 +957,15 @@ M11.2 implementation status:
 - Complete: `RtlInsightsPanelCoordinator` renders root and child module nodes
   plus instantiation edges from `ModuleBlockDiagramReport` and does not render
   signals.
+- Complete: the module diagram now uses a grid-backed canvas with the selected
+  module rendered as a large container and child modules arranged inside it.
+- Complete: visible `-` / `Fit` / `+` controls supplement mouse-wheel graph
+  zoom.
 - Complete: source-symbol routing passes through
   `SemanticPanelRefreshCoordinator`; UI code remains a report consumer.
-- Verification: `git diff --check`; Release `relationship_test` and
-  `gui_smoke_test` targets compile/link; `ctest -R "^relationship_test$"`
-  passed. `gui_smoke_test` was not launched.
+- Verification: Release `relationship_test` and `gui_smoke_test` targets
+  compile/link; `ctest -R "^relationship_test$"` passed.
+  `gui_smoke_test` was not launched.
 
 M11.3 implementation constraints:
 
@@ -980,8 +984,11 @@ M11.3 implementation status:
 - Complete: focused panel coverage invokes graph-element navigation for root
   and child module nodes and verifies that the navigation handler receives the
   corresponding module definition file, line, and column.
-- Verification: `git diff --check`; Release `relationship_test` target
-  compile/link; `ctest -R "^relationship_test$"` passed.
+- Complete: double-clicking or test-triggering a module graph element now
+  navigates to that module definition and re-renders the Module Block Diagram
+  around the jumped module, so its child modules remain visible.
+- Verification: Release `relationship_test` target compile/link; `ctest -R
+  "^relationship_test$"` passed.
 
 ## Huge Workspace Status Audit
 

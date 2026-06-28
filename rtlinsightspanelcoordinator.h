@@ -50,7 +50,7 @@ public:
     int graphEdgeItemCountForTest() const;
     bool triggerGraphNavigationForTest(const QString& elementKind,
                                        const QString& primaryText,
-                                       const QString& secondaryText = QString()) const;
+                                       const QString& secondaryText = QString());
 
 private:
     QDockWidget* insightsDock = nullptr;
@@ -63,6 +63,9 @@ private:
     QPushButton* clockResetButton = nullptr;
     QPushButton* fsmGraphButton = nullptr;
     QPushButton* moduleBlockDiagramButton = nullptr;
+    QPushButton* graphZoomOutButton = nullptr;
+    QPushButton* graphFitButton = nullptr;
+    QPushButton* graphZoomInButton = nullptr;
     QString currentFileName;
     QString currentModuleName;
     QString currentSignalName;

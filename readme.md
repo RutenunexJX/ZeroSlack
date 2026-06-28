@@ -89,9 +89,12 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
   `ModuleBlockDiagramReport`. The current UI entry points are the RTL Insights
   `Module Block Diagram` action for the active module and the editor source
   action for selected module names. Rendering is module/interface-only and does
-  not show signals. Module nodes and containment edges are selectable, and
-  double-clicking a graph element follows the carried definition link through
-  the existing navigation handler.
+  not show signals. The graph uses a grid canvas with the selected module as a
+  large container and child modules arranged inside it. Module nodes and
+  containment edges are selectable; mouse wheel and `-` / `Fit` / `+` controls
+  zoom the canvas. Double-clicking a module graph element follows the carried
+  definition link and refreshes the diagram around that jumped module so its
+  child modules remain visible.
 - Formatter support exists as conservative editor formatting. Current daily
   editor action inventory: `Ctrl+F` opens Find; formatter document/selection
   actions live in the editor context menu; line comment actions are available
@@ -272,10 +275,12 @@ and restoring Global Control `ow r` for recent workspaces.
   and `INSTANTIATES` relationships. The report carries root/child module nodes,
   module-definition links, and instantiation edges only; signal and non-instance
   relationship filtering stays in the service/report layer. `RtlInsightsPanelCoordinator`
-  renders that report as a module-only interactive graph and routes source
-  symbol requests through `SemanticPanelRefreshCoordinator`; double-click
-  navigation uses the module definition links already carried by graph
-  elements.
+  renders that report as a module-only interactive graph with a root-module
+  container, child module blocks, visible zoom controls, and graph-element
+  drill-down. Source symbol requests still route through
+  `SemanticPanelRefreshCoordinator`; double-click navigation uses the module
+  definition links already carried by graph elements and then requests the
+  service report for the jumped module.
   UI code does not scan workspaces or run Slang.
 
 ## Command Responsibility Map

@@ -3761,17 +3761,21 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                    && moduleBlockPanel.graphNodeItemCountForTest() == 2
                    && moduleBlockPanel.graphEdgeItemCountForTest() == 1,
                true);
-    const bool invokedModuleBlockStageNavigation =
-        moduleBlockPanel.triggerGraphNavigationForTest(
-            QStringLiteral("module"),
-            QStringLiteral("rel_stage"));
-    expectBool("module block diagram child module navigation",
-               invokedModuleBlockStageNavigation
-                   && moduleBlockNavigatedFileName == stagePath
-                   && moduleBlockNavigatedLine
-                       == stageRecord.location.startLine
-                   && moduleBlockNavigatedColumn
-                       == stageRecord.location.startColumn,
+    QPushButton* moduleBlockZoomIn =
+        moduleBlockPanel.dock()
+            ? moduleBlockPanel.dock()->findChild<QPushButton*>(
+                  QStringLiteral("rtlGraphZoomInButton"))
+            : nullptr;
+    const qreal moduleBlockScaleBeforeZoom = moduleBlockGraphView
+        ? moduleBlockGraphView->transform().m11()
+        : 0.0;
+    if (moduleBlockZoomIn)
+        moduleBlockZoomIn->click();
+    expectBool("module block diagram zoom control scales graph",
+               moduleBlockZoomIn
+                   && moduleBlockGraphView
+                   && moduleBlockGraphView->transform().m11()
+                       > moduleBlockScaleBeforeZoom,
                true);
     moduleBlockNavigatedFileName.clear();
     moduleBlockNavigatedLine = 0;
@@ -3788,6 +3792,108 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                    && moduleBlockNavigatedColumn
                        == topRecord.location.startColumn,
                true);
+    moduleBlockPanel.showModuleBlockDiagramForModule(
+        topPath,
+        QStringLiteral("rel_top"));
+    moduleBlockNavigatedFileName.clear();
+    moduleBlockNavigatedLine = 0;
+    moduleBlockNavigatedColumn = 0;
+    const bool invokedModuleBlockStageNavigation =
+        moduleBlockPanel.triggerGraphNavigationForTest(
+            QStringLiteral("module"),
+            QStringLiteral("rel_stage"));
+    expectBool("module block diagram child module navigation",
+               invokedModuleBlockStageNavigation
+                   && moduleBlockNavigatedFileName == stagePath
+                   && moduleBlockNavigatedLine
+                       == stageRecord.location.startLine
+                   && moduleBlockNavigatedColumn
+                       == stageRecord.location.startColumn,
+               true);
+
+    const QString diagramTopPath =
+        normalizedPath(fixtureDir.filePath(QStringLiteral("diagram_top.sv")));
+    const QString diagramStagePath =
+        normalizedPath(fixtureDir.filePath(QStringLiteral("diagram_stage.sv")));
+    const QString diagramLeafPath =
+        normalizedPath(fixtureDir.filePath(QStringLiteral("diagram_leaf.sv")));
+    const SemanticSymbolRecord diagramTopRecord =
+        SemanticFixtureRecordBuilder(QStringLiteral("diagram_top"),
+                                     SymbolTaxonomy::DeclarationKind::Module)
+            .withFile(diagramTopPath)
+            .withLine(1)
+            .withLocalHandle(9701)
+            .record();
+    const SemanticSymbolRecord diagramStageRecord =
+        SemanticFixtureRecordBuilder(QStringLiteral("diagram_stage"),
+                                     SymbolTaxonomy::DeclarationKind::Module)
+            .withFile(diagramStagePath)
+            .withLine(3)
+            .withLocalHandle(9702)
+            .record();
+    const SemanticSymbolRecord diagramLeafRecord =
+        SemanticFixtureRecordBuilder(QStringLiteral("diagram_leaf"),
+                                     SymbolTaxonomy::DeclarationKind::Module)
+            .withFile(diagramLeafPath)
+            .withLine(5)
+            .withLocalHandle(9703)
+            .record();
+    SemanticIndex diagramIndex;
+    diagramIndex.updateSymbolRecordsForFile(
+        diagramTopPath,
+        {diagramTopRecord},
+        QStringLiteral("module diagram_top; endmodule\n"));
+    diagramIndex.updateSymbolRecordsForFile(
+        diagramStagePath,
+        {diagramStageRecord},
+        QStringLiteral("module diagram_stage; endmodule\n"));
+    diagramIndex.updateSymbolRecordsForFile(
+        diagramLeafPath,
+        {diagramLeafRecord},
+        QStringLiteral("module diagram_leaf; endmodule\n"));
+    SymbolRelationshipEngine diagramEngine;
+    diagramIndex.attachRelationshipEngine(&diagramEngine);
+    diagramEngine.addRelationship(diagramTopRecord.localHandle,
+                                  diagramStageRecord.localHandle,
+                                  SymbolRelationshipEngine::INSTANTIATES,
+                                  QStringLiteral("diagram_top instantiates diagram_stage"));
+    diagramEngine.addRelationship(diagramStageRecord.localHandle,
+                                  diagramLeafRecord.localHandle,
+                                  SymbolRelationshipEngine::INSTANTIATES,
+                                  QStringLiteral("diagram_stage instantiates diagram_leaf"));
+
+    ModuleBlockDiagramService::getInstance()->setSemanticIndex(&diagramIndex);
+    QWidget drillPanelHost;
+    RtlInsightsPanelCoordinator drillPanel(&drillPanelHost);
+    QString drillNavigatedFileName;
+    int drillNavigatedLine = 0;
+    int drillNavigatedColumn = 0;
+    drillPanel.setNavigationHandler(
+        [&](const QString& fileName, int line, int column) {
+            drillNavigatedFileName = fileName;
+            drillNavigatedLine = line;
+            drillNavigatedColumn = column;
+        });
+    drillPanel.showModuleBlockDiagramForModule(
+        diagramTopPath,
+        QStringLiteral("diagram_top"));
+    expectBool("module block diagram renders nested container graph",
+               drillPanel.graphNodeItemCountForTest() == 3
+                   && drillPanel.graphEdgeItemCountForTest() == 2,
+               true);
+    const bool invokedStageDrill =
+        drillPanel.triggerGraphNavigationForTest(
+            QStringLiteral("module"),
+            QStringLiteral("diagram_stage"));
+    expectBool("module block diagram drills into jumped module children",
+               invokedStageDrill
+                   && drillNavigatedFileName == diagramStagePath
+                   && drillNavigatedLine
+                       == diagramStageRecord.location.startLine
+                   && drillPanel.graphNodeItemCountForTest() == 2
+                   && drillPanel.graphEdgeItemCountForTest() == 1,
+               true);
+    ModuleBlockDiagramService::getInstance()->setSemanticIndex(&index);
 
     EditorSemanticContext moduleBlockActionContext;
     moduleBlockActionContext.fileName = topPath;
