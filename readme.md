@@ -454,3 +454,7 @@ Do not add unlisted long-term goals without explicit user approval.
 - Avoid launching GUI smoke executables in this environment when they are known
   to produce external Windows error dialogs; compile/link targets instead unless
   the user explicitly asks to run them.
+- Latest acceptance baseline repair: `completion_test` source-symbol context
+  menu assertions now cover all five actions including `ShowModuleBlockDiagram`.
+  Release `ctest -R "^completion_test$" --output-on-failure` and
+  `ctest -R "^relationship_test$" --output-on-failure` both passed.

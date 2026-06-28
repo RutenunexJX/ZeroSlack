@@ -1097,6 +1097,19 @@ Documentation-only milestones:
 - Visual panels: verify service reports first, then UI smoke if executable runs
   are safe.
 
+Latest acceptance baseline repair:
+
+- Scope: test baseline only; no product feature behavior was changed.
+- `completion_test` source-symbol context menu assertions were updated for the
+  five-action menu: Find References, Relationships, Signal Kernel Graph, State
+  Transition Graph, and Module Block Diagram.
+- The test now explicitly verifies ordinary signals keep Module Block Diagram
+  disabled, selected module names enable it, and state-transition `ns` /
+  `next_state` versus `cs` / `current_state` behavior remains unchanged.
+- Release verification passed: `ctest -R "^completion_test$"
+  --output-on-failure` and `ctest -R "^relationship_test$"
+  --output-on-failure`.
+
 ## Commit Policy
 
 - Keep commits coherent and architecture-oriented.

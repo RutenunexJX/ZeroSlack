@@ -458,6 +458,17 @@ Status:
 - Focused verification for HWA.3: documentation inspection plus
   `git diff --check`.
 
+- Post-HWA acceptance baseline repair is complete:
+  `completion_test` source-symbol context menu assertions now match the current
+  five-action menu after Module Block Diagram was added. The repaired baseline
+  verifies ordinary signals keep Module Block Diagram disabled, selected module
+  names enable it and carry the expected action/file/module payload, `ns` and
+  `next_state` still enable State Transition Graph, and `cs` /
+  `current_state` still reject it. No product feature behavior was changed.
+- Focused verification for the baseline repair: Release `ctest -R
+  "^completion_test$" --output-on-failure` and Release `ctest -R
+  "^relationship_test$" --output-on-failure` both passed.
+
 ## Track 1: Editor Daily Operations Completion
 
 Goal: provide practical entry points for daily editing actions.
