@@ -12,6 +12,22 @@ set(CMAKE_C_STANDARD 99)            # Used by tree-sitter
 
 include(CTest)
 
+# MinGW helper tools load runtime DLLs from the compiler bin directory. Make
+# generated build rules self-contained so `cmake --build` works from a plain
+# shell without the caller manually preparing PATH.
+if(WIN32 AND CMAKE_CXX_COMPILER)
+    get_filename_component(ZEROSLACK_COMPILER_BIN_DIR
+        "${CMAKE_CXX_COMPILER}" DIRECTORY)
+    set(ZEROSLACK_BUILD_TOOL_PATH
+        "${ZEROSLACK_COMPILER_BIN_DIR};$ENV{PATH}")
+    string(REPLACE ";" "\\;" ZEROSLACK_BUILD_TOOL_PATH
+        "${ZEROSLACK_BUILD_TOOL_PATH}")
+    set_property(GLOBAL PROPERTY RULE_LAUNCH_COMPILE
+        "${CMAKE_COMMAND} -E env \"PATH=${ZEROSLACK_BUILD_TOOL_PATH}\"")
+    set_property(GLOBAL PROPERTY RULE_LAUNCH_LINK
+        "${CMAKE_COMMAND} -E env \"PATH=${ZEROSLACK_BUILD_TOOL_PATH}\"")
+endif()
+
 # =========================================================
 # 2. Slang Integration
 # =========================================================

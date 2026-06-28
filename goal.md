@@ -28,12 +28,32 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
 
 ## Current Goal State
 
-Current milestone: Package Tools phase 1 is complete.
+Current milestone: Verification Baseline Repair after Package Tools phase 1 is
+complete.
 
 Next work should wait for the next explicit scoped request.
 
 Status:
 
+- Verification Baseline Repair after Package Tools phase 1 is complete. This
+  was baseline repair only, not Package Tools phase 2: Release
+  `relationship_test` rebuild failures were traced to generated MinGW
+  compile/link rules missing the compiler bin on `PATH`, and CMake now injects
+  the detected compiler directory through `cmake -E env PATH=...` for generated
+  compile and link rules. No `relationship_test` target was skipped and no
+  assertions were weakened.
+- Package Tools coverage is reinforced: `completion_test` verifies non-empty
+  insert text and slot metadata for `parameter`, `localparam`, `typedef enum`,
+  `typedef struct`, `typedef struct packed`, and `function`, plus exact
+  `typedef struct packed` text and an exact six-tool count; `gui_smoke_test`
+  verifies all six stable package-tool buttons exist, exactly six Package
+  Tools buttons are present, and still covers one clicked insertion into Slot
+  Mode. Existing `;;cmd` template behavior is unchanged.
+- Verification for this repair passed: Release `completion_test`,
+  `relationship_test`, and `gui_smoke_test` targets compile/link; Release
+  `ctest -R "^(completion_test|relationship_test|gui_smoke_test)$"
+  --output-on-failure` passed; `git diff --check -- .
+  ':!test_sv/new/elec_phy_import/ctrl/chl_ctrl.sv'` passed.
 - Package Tools phase 1 is complete: when the active cursor is inside a
   parseable SystemVerilog package, the editor shows a lightweight Package Tools
   bar with `parameter`, `localparam`, `typedef enum`, `typedef struct`,
@@ -981,6 +1001,11 @@ Milestones:
   (complete: `parameter`, `localparam`, `typedef enum`, `typedef struct`,
   `typedef struct packed`, and `function` buttons insert package-only
   templates inside the current package and start Slot Mode)
+- G14.1a Verification Baseline Repair.
+  (complete: Release `relationship_test` rebuild baseline repaired and all six
+  Package Tools phase-1 templates/buttons covered without Package Tools phase
+  2, package/import semantics, macro/define handling, cross-file package
+  management, package sorting, graph work, or `;;cmd` changes)
 - G14.2 Future Package Tools expansion.
   (not started: additional package templates, semantic package handling,
   package sorting, or cross-file workflows require a new scoped request)

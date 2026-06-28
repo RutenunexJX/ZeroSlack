@@ -79,6 +79,12 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
   `typedef struct`, `typedef struct packed`, and `function` templates at
   syntax-derived positions inside the current package, then starts Slot Mode
   on all editable slots. It does not change `;;cmd` template behavior.
+- Verification Baseline Repair after Package Tools phase 1 is baseline-only,
+  not Package Tools phase 2. Release `relationship_test` rebuilds now work
+  from a plain `cmake --build` because generated Windows compile/link rules
+  inject the detected MinGW compiler bin into `PATH`. Package Tools regression
+  coverage now checks all six first-phase templates/buttons while preserving
+  the same feature boundaries.
 - Batch RTL editing has a first editor-local action:
   `MyCodeEditor::clearSelectedAssignmentRhs` clears RHS expressions in the
   complete line range touched by the current selection, or the current
@@ -277,7 +283,11 @@ engineering configuration / diagnostics lane.
   and syntax-derived insertion targets, including same-kind append anchors and
   the default `endpackage` insertion point. `MyCodeEditor` applies the returned
   text in one undoable edit and starts Slot Mode. `MainWindow` only renders the
-  lightweight button bar and dispatches selected tools.
+  lightweight button bar and dispatches selected tools. Baseline coverage
+  verifies non-empty text and slot metadata for all six first-phase templates,
+  exact `typedef struct packed` template text, six stable GUI button object
+  names with exactly six package-tool buttons, and one GUI insertion path into
+  Slot Mode.
 - Batch RTL edit baseline: `RtlBatchEditService` owns selected-text RTL batch
   edit planning and returns reports with replacement text, failure reasons, and
   template-slot metadata. It does not mutate editor text, scan workspaces, or
@@ -641,3 +651,20 @@ Do not add unlisted long-term goals without explicit user approval.
   or new graph algorithms. Release verification passed:
   `ctest -R "^(completion_test|relationship_test|gui_smoke_test)$"
   --output-on-failure`.
+- Latest Verification Baseline Repair: this is a baseline repair after Package
+  Tools phase 1, not new Package Tools functionality. The blank-diagnostic
+  Release rebuild failure was traced to generated MinGW build rules that did
+  not make the compiler bin available on `PATH`; CMake now wraps generated
+  compile and link rules with `cmake -E env PATH=...` using the detected
+  compiler directory, so `relationship_test.cpp` can rebuild from a plain
+  `cmake --build`. Package Tools coverage was reinforced in `completion_test`
+  for all six templates' non-empty text/slots and exact packed-struct text,
+  and in `gui_smoke_test` for the six stable package-tool buttons while still
+  only exercising one GUI click/Slot Mode path; both service and GUI coverage
+  assert the phase remains exactly six tools. This did not change `;;cmd`
+  behavior and did not add package/import semantics, macro/define handling,
+  cross-file package management, automatic package sorting, or Package Tools
+  phase 2. Release verification passed: `cmake --build . --target
+  completion_test relationship_test gui_smoke_test`; `ctest -R
+  "^(completion_test|relationship_test|gui_smoke_test)$" --output-on-failure`;
+  `git diff --check -- . ':!test_sv/new/elec_phy_import/ctrl/chl_ctrl.sv'`.

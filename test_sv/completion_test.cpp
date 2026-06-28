@@ -6133,6 +6133,30 @@ int main(int argc, char** argv) {
                true);
 
     const PackageToolService packageToolService;
+    const auto packageToolOrder = PackageToolService::toolOrder();
+    expectBool("Package Tools first phase tool count",
+               packageToolOrder.size() == 6,
+               true);
+    bool allPackageTemplatesHaveTextAndSlots = true;
+    bool packedStructTemplateContainsPacked = false;
+    for (PackageToolKind kind : packageToolOrder) {
+        const CodeTemplateItem item = packageToolService.templateForKind(kind);
+        allPackageTemplatesHaveTextAndSlots =
+            allPackageTemplatesHaveTextAndSlots
+            && !item.insertText.isEmpty()
+            && !item.templateSlots.isEmpty();
+        if (kind == PackageToolKind::TypedefStructPacked) {
+            packedStructTemplateContainsPacked =
+                item.insertText.contains(
+                    QStringLiteral("typedef struct packed"));
+        }
+    }
+    expectBool("Package Tools six templates have slots",
+               allPackageTemplatesHaveTextAndSlots,
+               true);
+    expectBool("Package Tools packed struct text",
+               packedStructTemplateContainsPacked,
+               true);
     const CodeTemplateItem packageStructTemplate =
         packageToolService.templateForKind(PackageToolKind::TypedefStruct);
     expectBool("Package Tools struct template slots",

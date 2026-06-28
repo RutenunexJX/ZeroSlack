@@ -1310,6 +1310,9 @@ Milestones:
   (complete: package-only buttons insert the six requested definition
   templates, stay inside the current package, reject module/interface scope,
   and start Slot Mode)
+- M14.1a Verification Baseline Repair
+  (complete: Release `relationship_test` rebuild baseline repaired and Package
+  Tools phase-1 coverage reinforced without adding Package Tools phase 2)
 - M14.2 Future Package Tools Expansion
   (not started: any additional templates, semantic package handling, sorting,
   or cross-file package workflows require a new scoped request)
@@ -1330,6 +1333,31 @@ M14.1 implementation status:
 - Verification: Release `completion_test` and `gui_smoke_test` targets
   compile/link; Release `ctest -R "completion_test|gui_smoke_test"
   --output-on-failure` passed.
+
+M14.1a verification baseline repair status:
+
+- Complete: the Release `relationship_test` rebuild failure was traced to
+  generated MinGW build rules that lacked the compiler bin on `PATH`, producing
+  blank subcommand failures during object rebuilds. CMake now wraps generated
+  compile and link rules with `cmake -E env PATH=...` using the detected
+  compiler directory, so `cmake --build` can rebuild `relationship_test` from a
+  plain shell without weakening assertions or skipping the target.
+- Complete: `completion_test` now checks that all six Package Tools phase-1
+  templates have non-empty insert text and slot metadata, and that the packed
+  struct template text contains `typedef struct packed`. It also asserts the
+  phase-1 tool list remains exactly six entries.
+- Complete: `gui_smoke_test` now checks that the six stable
+  `packageToolButton_<id>` buttons exist and that the Package Tools button
+  count is exactly six; it still only needs one actual click to cover GUI
+  insertion and Slot Mode.
+- Boundary: no Package Tools phase 2, no package/import semantics, no
+  macro/define handling, no cross-file package management, no package sorting,
+  no graph/insight changes, and no `;;cmd` behavior change.
+- Verification: Release `completion_test`, `relationship_test`, and
+  `gui_smoke_test` targets compile/link; Release `ctest -R
+  "^(completion_test|relationship_test|gui_smoke_test)$" --output-on-failure`
+  passed; `git diff --check -- .
+  ':!test_sv/new/elec_phy_import/ctrl/chl_ctrl.sv'` passed.
 
 ## Huge Workspace Status Audit
 
@@ -1548,6 +1576,29 @@ Latest Package Tools first phase:
 - Release verification passed: `completion_test` and `gui_smoke_test` targets
   compile/link; `ctest -R "completion_test|gui_smoke_test"
   --output-on-failure` passed.
+
+Latest Verification Baseline Repair:
+
+- Scope: baseline repair only after Package Tools phase 1; this is not Package
+  Tools phase 2 and does not change product feature behavior beyond making the
+  accepted build/test baseline reproducible.
+- `relationship_test` was not skipped and no assertions were weakened. The
+  rebuild failure was caused by generated MinGW compile/link rules not
+  supplying the compiler bin on `PATH`, which allowed blank subcommand failures
+  during object rebuilds. The top-level CMake file now injects the detected
+  compiler bin into generated compile and link rule launchers.
+- Package Tools coverage now verifies all six first-phase templates have
+  non-empty text and slot metadata, verifies `typedef struct packed` appears in
+  the packed struct template, and verifies the GUI exposes six stable package
+  tool buttons with exactly six Package Tools buttons total while preserving
+  one clicked insertion/Slot Mode path.
+- Existing `;;cmd` template behavior is unchanged. Package/import semantics,
+  macro/define handling, cross-file package management, package-wide sorting,
+  and new insight/graph surfaces remain out of scope.
+- Release verification passed: `cmake --build . --target completion_test
+  relationship_test gui_smoke_test`; `ctest -R
+  "^(completion_test|relationship_test|gui_smoke_test)$" --output-on-failure`;
+  `git diff --check -- . ':!test_sv/new/elec_phy_import/ctrl/chl_ctrl.sv'`.
 
 ## Commit Policy
 

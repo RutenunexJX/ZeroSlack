@@ -7299,6 +7299,34 @@ static void runPackageToolsRegression(MainWindow& window)
     expectBool("package tools hidden outside package",
                bar && !bar->isVisible(),
                true);
+    const auto packageToolOrder = PackageToolService::toolOrder();
+    expectBool("package tools first phase tool count",
+               packageToolOrder.size() == 6,
+               true);
+    bool foundAllPackageToolButtons = true;
+    for (PackageToolKind kind : packageToolOrder) {
+        foundAllPackageToolButtons =
+            foundAllPackageToolButtons
+            && window.findChild<QToolButton*>(
+                QStringLiteral("packageToolButton_%1")
+                    .arg(PackageToolService::idForKind(kind)));
+    }
+    expectBool("package tools six stable buttons exist",
+               foundAllPackageToolButtons,
+               true);
+    int packageToolButtonCount = 0;
+    const QList<QToolButton*> toolButtons =
+        window.findChildren<QToolButton*>();
+    for (QToolButton* button : toolButtons) {
+        if (button
+            && button->objectName().startsWith(
+                QStringLiteral("packageToolButton_"))) {
+            ++packageToolButtonCount;
+        }
+    }
+    expectBool("package tools exactly six buttons",
+               packageToolButtonCount == 6,
+               true);
 
     const QString packageText =
         QStringLiteral("package gui_pkg;\n"
