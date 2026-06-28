@@ -461,7 +461,8 @@ SemanticSymbolRecord FsmGraphService::nextStateSignal(
     const QList<SemanticSymbolRecord>& moduleRecords,
     const SemanticSymbolRecord& stateRegister) const
 {
-    QList<SemanticSymbolRecord> candidates;
+    QList<SemanticSymbolRecord> pairedCandidates;
+    QList<SemanticSymbolRecord> fallbackCandidates;
     const QString stateRegisterType = rawTypeTextForRecord(stateRegister);
     for (const SemanticSymbolRecord& record : moduleRecords) {
         if (!SymbolTaxonomy::isFsmStateRegisterDeclaration(
@@ -471,10 +472,9 @@ SemanticSymbolRecord FsmGraphService::nextStateSignal(
         if (record.localHandle == stateRegister.localHandle) {
             continue;
         }
-        const bool looksNext =
-            looksLikeNextStateName(record.name)
-            || isPairedNextStateName(stateRegister.name, record.name);
-        if (!looksNext)
+        const bool paired =
+            isPairedNextStateName(stateRegister.name, record.name);
+        if (!paired && !looksLikeNextStateName(record.name))
             continue;
         const QString symbolType = rawTypeTextForRecord(record);
         if (!stateRegisterType.isEmpty()
@@ -482,10 +482,18 @@ SemanticSymbolRecord FsmGraphService::nextStateSignal(
             && symbolType != stateRegisterType) {
             continue;
         }
-        candidates.append(record);
+        if (paired)
+            pairedCandidates.append(record);
+        else
+            fallbackCandidates.append(record);
     }
-    sortRecords(candidates);
-    return candidates.isEmpty() ? missingFsmRecord() : candidates.first();
+    sortRecords(pairedCandidates);
+    sortRecords(fallbackCandidates);
+    if (!pairedCandidates.isEmpty())
+        return pairedCandidates.first();
+    return fallbackCandidates.isEmpty()
+        ? missingFsmRecord()
+        : fallbackCandidates.first();
 }
 
 QList<FsmTransition> FsmGraphService::parseTransitions(
@@ -644,9 +652,8 @@ bool FsmGraphService::hasPairedNextStateSignal(
             && symbolType != stateRegisterType) {
             continue;
         }
-        if (looksLikeNextStateName(record.name)
-            || isPairedNextStateName(stateRegister.name,
-                                     record.name)) {
+        if (isPairedNextStateName(stateRegister.name,
+                                  record.name)) {
             return true;
         }
     }
@@ -661,6 +668,17 @@ bool FsmGraphService::isPairedNextStateName(
     const QString candidate = candidateName.toLower();
     if (current.isEmpty() || candidate.isEmpty())
         return false;
+    if (current == QStringLiteral("current_state"))
+        return candidate == QStringLiteral("next_state");
+    if (current == QStringLiteral("state"))
+        return candidate == QStringLiteral("next_state")
+            || candidate == QStringLiteral("ns");
+    if (current.endsWith(QStringLiteral("_current_state"))) {
+        return candidate
+            == current.left(current.size()
+                            - QStringLiteral("_current_state").size())
+                + QStringLiteral("_next_state");
+    }
     if (current.endsWith(QStringLiteral("_cs")))
         return candidate == current.left(current.size() - 3) + QStringLiteral("_ns");
     if (current.endsWith(QStringLiteral("cs")))

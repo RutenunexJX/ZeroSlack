@@ -16,6 +16,7 @@ class QLineEdit;
 class QEvent;
 class QStatusBar;
 class QKeyEvent;
+class QShortcut;
 class ProjectModel;
 class SemanticIndex;
 class NavigationCommandCoordinator;
@@ -24,6 +25,7 @@ class TabManager;
 class QWidget;
 
 class ComModuleSelectorPanel;
+class ColumnNumberToolPanel;
 
 class ComModeCoordinator : public QObject
 {
@@ -41,6 +43,7 @@ public:
     void attachEditor(MyCodeEditor* editor);
     QLabel* commandStripWidget() const;
     ComModuleSelectorPanel* moduleSelectorPanel() const;
+    ColumnNumberToolPanel* columnNumberToolPanel() const;
 
 protected:
     bool eventFilter(QObject* watched, QEvent* event) override;
@@ -61,6 +64,7 @@ private:
     NavigationCommandCoordinator* navigation = nullptr;
     QLabel* commandStrip = nullptr;
     std::unique_ptr<ComModuleSelectorPanel> moduleSelector;
+    std::unique_ptr<ColumnNumberToolPanel> columnNumberTool;
     ComModeService service;
     QSet<MyCodeEditor*> attachedEditors;
     MyCodeEditor* activeComEditor = nullptr;
@@ -69,10 +73,12 @@ private:
     bool connected = false;
     bool globalEscapeInstalled = false;
     bool forwardingEscapeToEditor = false;
+    QShortcut* comToggleShortcut = nullptr;
 
     void ensureCommandStrip();
     void installGlobalEscapeFilter();
     bool handleGlobalEscape(QObject* watched, QEvent* event);
+    void toggleCurrentEditorComMode();
     void updateCommandStrip(MyCodeEditor* editor,
                             bool active,
                             const QString& buffer,
@@ -86,6 +92,7 @@ private:
     void handleAssignInsert(MyCodeEditor* editor);
     void handleClearAssignmentRhs(MyCodeEditor* editor);
     void handleSelectInsideBeginEnd(MyCodeEditor* editor);
+    void handleColumnNumberTool(MyCodeEditor* editor);
     void handleParameterInsert(MyCodeEditor* editor);
     void handleModuleEndInsert(MyCodeEditor* editor);
     void showPicker(MyCodeEditor* editor,

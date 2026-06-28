@@ -116,8 +116,8 @@ M2.1 design contract:
   Slot Mode without reverting inserted text. Tab / Shift+Tab never complete
   Slot Mode implicitly.
 - Slot Mode exits when the cursor leaves the session, the document edit stream
-  makes slot ranges unsafe, the tab changes/closes, COM Mode starts, or Global
-  Control starts.
+  makes slot ranges unsafe, the tab changes/closes, or Global Control starts.
+  COM Mode toggle does not clear Slot Mode by itself.
 - First implementation target is `;;p` / `;;lp` because parameter declarations
   naturally have at least name and value fill points.
 - Focused verification cases for implementation: activation selects the first
@@ -296,6 +296,57 @@ First milestones:
 - M4.5 add select-inside begin-end COM command
   (complete: `si` uses Tree-sitter begin/end structure, stays in COM Mode, and
   can feed `cr`)
+- M4.6 make COM entry explicit and non-destructive
+  (complete: `Ctrl+Shift+Alt+backtick` toggles COM Mode from any app focus when
+  an editor tab is open; Esc no longer enters COM Mode and remains
+  cancellation-only)
+- M4.7 add Column Number Tool through COM command `cn`
+  (complete: `cn` opens the column-number popup only when column selection is
+  active; formatting/inference lives in `columnnumbertool`)
+
+M4.6 implementation status:
+
+- Complete: `Ctrl+Shift+Alt+backtick` toggles COM Mode on/off when an editor
+  tab is open, including when focus is outside the editor.
+- Complete: Esc no longer enters COM Mode. It still cancels completion, hover,
+  column selection, Slot Mode, selection, or COM buffers according to the
+  highest-priority active temporary state.
+- Complete: entering COM Mode through the toggle does not clear existing column
+  selection and does not clear Slot Mode.
+- Verification: Release `gui_smoke_test` target compile/link passed; launched
+  smoke output shows the new COM toggle and Esc-entry regression checks
+  passing. The full monolithic smoke baseline still fails on unrelated existing
+  checks.
+
+M4.7 implementation status:
+
+- Complete: `commodecommandregistry` registers `c` as a non-executable prefix
+  and `cn` as the Column Number Tool command without changing existing `g*`,
+  `cr`, or Global Control behavior.
+- Complete: `columnnumbertool` owns Dec/Hex/Bin formatting, Plain/C-like/SV
+  unsized/SV sized style generation, step/repeat/direction, padding, digit
+  width, hex case, and first-row inference for samples such as `8'h0A`,
+  `'h0a`, `0x0A`, and `0010`.
+- Complete: `ComModeCoordinator` opens a dark popup with Start/Base/Style/Bit
+  width/Direction/Step/Repeat/Digit width/Pad/Hex case/Replace mode controls
+  and a live preview. Enter applies one column edit; Esc closes without
+  mutation and returns to COM Mode.
+- Verification: Release `completion_test` passed through `ctest`; Release
+  `gui_smoke_test` target compile/link passed; launched smoke output shows all
+  new `cn`, tool-open, cancel, formatting, and inference checks passing. The
+  full monolithic smoke baseline still fails on unrelated existing checks.
+
+Column Selection visual-column repair status:
+
+- Complete: column mode stores and edits by visual column, converting through
+  the editor tab width for selection highlight, copy/cut/paste, delete,
+  backspace, printable input, navigation, and mouse selection.
+- Complete: column-mode Tab and Shift+Tab are captured by the column handler.
+  Tab inserts spaces to the next visual tab stop; Shift+Tab performs visual
+  outdent and does not leak to normal editor indentation.
+- Verification: Release `gui_smoke_test` target compile/link passed; launched
+  smoke output shows the new tab-containing column selection, column input, and
+  Tab/Shift+Tab checks passing.
 
 ### 5. Limited Workspace Workflow Additions
 
@@ -1213,6 +1264,26 @@ Latest COM Mode strip alert styling repair:
   "^(completion_test|relationship_test)$" --output-on-failure` passed. The GUI
   smoke executable was not launched to avoid another modal Windows crash dialog
   during this repair loop.
+
+Latest COM/Column Selection repair:
+
+- Scope: COM Mode entry, column-selection visual-column behavior, and the
+  column-number editor-local tool only.
+- COM Mode now toggles with `Ctrl+Shift+Alt+backtick` from editor or
+  non-editor focus when an editor tab is open. Esc is no longer a COM entry
+  key and remains cancellation-only.
+- Column Selection stores visual columns and converts through editor tab width
+  for selection, copy/cut/paste, text input, deletion, navigation, and mouse
+  adjustment. Column-mode Tab and Shift+Tab are captured as visual alignment
+  edits.
+- COM command `cn` opens the Column Number Tool. Formatting/inference lives in
+  `columnnumbertool`; the popup previews and applies one undoable column edit.
+- Release verification: `completion_test` and `gui_smoke_test` targets
+  compile/link; `ctest -R "^completion_test$" --output-on-failure` passed.
+  `gui_smoke_test` was launched and all new COM toggle, visual-column column
+  mode, `cn`, Column Number Tool, and inference checks passed. The full smoke
+  baseline still fails on existing non-current checks: `VENDOR ctrl-click fixture
+  opens` and the Wave Preview rendering group.
 
 ## Commit Policy
 

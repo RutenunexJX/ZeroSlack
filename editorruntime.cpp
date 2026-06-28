@@ -79,6 +79,20 @@ bool isBacktickKey(QKeyEvent* event)
             || event->text() == QStringLiteral("`"));
 }
 
+bool isComModeToggleKey(QKeyEvent* event)
+{
+    if (!isBacktickKey(event))
+        return false;
+    const Qt::KeyboardModifiers modifiers =
+        event->modifiers()
+        & (Qt::ShiftModifier
+           | Qt::ControlModifier
+           | Qt::AltModifier
+           | Qt::MetaModifier);
+    return modifiers
+        == (Qt::ShiftModifier | Qt::ControlModifier | Qt::AltModifier);
+}
+
 bool isUnsignedIntegerText(const QString& text)
 {
     if (text.isEmpty())
@@ -1578,6 +1592,142 @@ QStringList normalizedClipboardRows(QString text)
     return rows;
 }
 
+int editorTabStopColumns(const MyCodeEditor* editor)
+{
+    if (!editor)
+        return kManualIndentWidth;
+    const QFontMetrics metrics(editor->font());
+    const int spaceWidth = qMax(1, metrics.horizontalAdvance(QLatin1Char(' ')));
+    return qMax(1, qRound(editor->tabStopDistance() / spaceWidth));
+}
+
+int visualAdvanceForChar(QChar ch, int visualColumn, int tabWidth)
+{
+    if (ch == QLatin1Char('\t')) {
+        const int remainder = visualColumn % qMax(1, tabWidth);
+        return remainder == 0 ? qMax(1, tabWidth) : qMax(1, tabWidth) - remainder;
+    }
+    return 1;
+}
+
+int visualColumnForOffset(const QString& text, int offset, int tabWidth)
+{
+    int visual = 0;
+    const int boundedOffset = qBound(0, offset, text.size());
+    for (int i = 0; i < boundedOffset; ++i)
+        visual += visualAdvanceForChar(text.at(i), visual, tabWidth);
+    return visual;
+}
+
+enum class VisualBoundary {
+    Start,
+    End
+};
+
+int offsetForVisualColumn(const QString& text,
+                          int visualColumn,
+                          int tabWidth,
+                          VisualBoundary boundary)
+{
+    const int target = qMax(0, visualColumn);
+    int visual = 0;
+    for (int i = 0; i < text.size(); ++i) {
+        const int next =
+            visual + visualAdvanceForChar(text.at(i), visual, tabWidth);
+        if (target == visual)
+            return i;
+        if (target > visual && target < next)
+            return boundary == VisualBoundary::End ? i + 1 : i;
+        if (target == next)
+            return i + 1;
+        visual = next;
+    }
+    return text.size();
+}
+
+QString visualSlice(const QString& text,
+                    int leftVisual,
+                    int rightVisual,
+                    int tabWidth)
+{
+    const int left = qMax(0, leftVisual);
+    const int right = qMax(left, rightVisual);
+    if (right <= left)
+        return QString();
+
+    QString result;
+    int visual = 0;
+    for (const QChar ch : text) {
+        const int next = visual + visualAdvanceForChar(ch, visual, tabWidth);
+        if (next <= left) {
+            visual = next;
+            continue;
+        }
+        if (visual >= right)
+            break;
+
+        const int segmentStart = qMax(left, visual);
+        const int segmentEnd = qMin(right, next);
+        if (segmentEnd > segmentStart) {
+            if (ch == QLatin1Char('\t')
+                || segmentStart != visual
+                || segmentEnd != next) {
+                result += QString(segmentEnd - segmentStart,
+                                  QLatin1Char(' '));
+            } else {
+                result += ch;
+            }
+        }
+        visual = next;
+    }
+    if (right > visual && right > left)
+        result += QString(right - qMax(left, visual), QLatin1Char(' '));
+    return result;
+}
+
+int visualWidthOfText(const QString& text, int startVisual, int tabWidth)
+{
+    int visual = qMax(0, startVisual);
+    for (const QChar ch : text)
+        visual += visualAdvanceForChar(ch, visual, tabWidth);
+    return visual - qMax(0, startVisual);
+}
+
+int nextTabStopVisual(int visualColumn, int tabWidth)
+{
+    const int width = qMax(1, tabWidth);
+    const int visual = qMax(0, visualColumn);
+    const int remainder = visual % width;
+    return visual + (remainder == 0 ? width : width - remainder);
+}
+
+int previousTabStopVisual(int visualColumn, int tabWidth)
+{
+    const int width = qMax(1, tabWidth);
+    const int visual = qMax(0, visualColumn);
+    if (visual <= 0)
+        return 0;
+    const int remainder = visual % width;
+    return remainder == 0 ? visual - width : visual - remainder;
+}
+
+void setCaretToVisualColumn(MyCodeEditor* editor, int line, int visualColumn)
+{
+    if (!editor)
+        return;
+    const QTextBlock block = editor->document()->findBlockByNumber(line);
+    if (!block.isValid())
+        return;
+    const int tabWidth = editorTabStopColumns(editor);
+    const int offset = offsetForVisualColumn(block.text(),
+                                             visualColumn,
+                                             tabWidth,
+                                             VisualBoundary::Start);
+    QTextCursor caret(editor->document());
+    caret.setPosition(block.position() + offset);
+    editor->setTextCursor(caret);
+}
+
 QString columnSelectionClipboardText(MyCodeEditor* editor,
                                      const MyCodeEditorState& state)
 {
@@ -1587,20 +1737,42 @@ QString columnSelectionClipboardText(MyCodeEditor* editor,
     QStringList rows;
     const auto [firstLine, lastLine] = lineSpan(state);
     const auto [leftColumn, rightColumn] = columnSpan(state);
+    const int tabWidth = editorTabStopColumns(editor);
     for (int line = firstLine; line <= lastLine; ++line) {
         const QTextBlock block = editor->document()->findBlockByNumber(line);
         if (!block.isValid()) {
             rows.append(QString());
             continue;
         }
-        const QString lineText = block.text();
-        const int startColumn = qMin(leftColumn, lineText.size());
-        const int endColumn = qMin(rightColumn, lineText.size());
-        rows.append(endColumn > startColumn
-                        ? lineText.mid(startColumn, endColumn - startColumn)
-                        : QString());
+        rows.append(visualSlice(block.text(),
+                                leftColumn,
+                                rightColumn,
+                                tabWidth));
     }
     return rows.join(QLatin1Char('\n'));
+}
+
+QStringList columnSelectionRowTexts(MyCodeEditor* editor,
+                                    const MyCodeEditorState& state)
+{
+    if (!editor || !hasColumnSelection(state))
+        return {};
+
+    QStringList rows;
+    const auto [firstLine, lastLine] = lineSpan(state);
+    const auto [leftColumn, rightColumn] = columnSpan(state);
+    const int tabWidth = editorTabStopColumns(editor);
+    rows.reserve(lastLine - firstLine + 1);
+    for (int line = firstLine; line <= lastLine; ++line) {
+        const QTextBlock block = editor->document()->findBlockByNumber(line);
+        rows.append(block.isValid()
+                        ? visualSlice(block.text(),
+                                      leftColumn,
+                                      rightColumn,
+                                      tabWidth)
+                        : QString());
+    }
+    return rows;
 }
 
 void updateColumnSelectionHighlight(MyCodeEditor* editor,
@@ -1609,15 +1781,17 @@ void updateColumnSelectionHighlight(MyCodeEditor* editor,
 void replaceColumnSelectionRows(MyCodeEditor* editor,
                                 MyCodeEditorState& state,
                                 const QStringList& rows,
-                                bool pasteMode)
+                                bool pasteMode,
+                                bool replaceSelectionArea = true)
 {
     if (!editor || !hasColumnSelection(state))
         return;
 
     const auto [firstLine, lastLine] = lineSpan(state);
     const auto [leftColumn, rightColumn] = columnSpan(state);
-    const bool hasWidth = rightColumn > leftColumn;
+    const bool hasWidth = replaceSelectionArea && rightColumn > leftColumn;
     const bool repeatSingleRow = pasteMode && rows.size() == 1;
+    const int tabWidth = editorTabStopColumns(editor);
     int maxInsertedColumns = 0;
 
     QTextCursor cursor(editor->document());
@@ -1635,13 +1809,23 @@ void replaceColumnSelectionRows(MyCodeEditor* editor,
                        ? rows.constFirst()
                        : (rowIndex < rows.size() ? rows.at(rowIndex)
                                                  : QString()));
-        maxInsertedColumns = qMax(maxInsertedColumns, rowText.size());
+        maxInsertedColumns =
+            qMax(maxInsertedColumns,
+                 visualWidthOfText(rowText, leftColumn, tabWidth));
 
-        const int lineLength = block.text().size();
-        const int startColumn = qMin(leftColumn, lineLength);
+        const QString lineText = block.text();
+        const int lineEndVisual =
+            visualColumnForOffset(lineText, lineText.size(), tabWidth);
+        const int startColumn = offsetForVisualColumn(lineText,
+                                                      leftColumn,
+                                                      tabWidth,
+                                                      VisualBoundary::Start);
         int endColumn = startColumn;
         if (hasWidth)
-            endColumn = qMin(rightColumn, lineLength);
+            endColumn = offsetForVisualColumn(lineText,
+                                              rightColumn,
+                                              tabWidth,
+                                              VisualBoundary::End);
 
         cursor.setPosition(block.position() + startColumn);
         cursor.setPosition(block.position() + qMax(startColumn, endColumn),
@@ -1649,8 +1833,8 @@ void replaceColumnSelectionRows(MyCodeEditor* editor,
 
         if (pasteMode) {
             const QString padding =
-                leftColumn > lineLength
-                    ? QString(leftColumn - lineLength, QLatin1Char(' '))
+                leftColumn > lineEndVisual
+                    ? QString(leftColumn - lineEndVisual, QLatin1Char(' '))
                     : QString();
             cursor.insertText(padding + rowText);
         } else if (endColumn > startColumn) {
@@ -1672,11 +1856,7 @@ void replaceColumnSelectionRows(MyCodeEditor* editor,
     const QTextBlock currentBlock =
         editor->document()->findBlockByNumber(lastLine);
     if (currentBlock.isValid()) {
-        QTextCursor caret(editor->document());
-        caret.setPosition(currentBlock.position()
-                          + qMin(collapsedColumn,
-                                 currentBlock.text().size()));
-        editor->setTextCursor(caret);
+        setCaretToVisualColumn(editor, lastLine, collapsedColumn);
     }
     updateColumnSelectionHighlight(editor, state);
     editor->viewport()->update();
@@ -1731,15 +1911,22 @@ void updateColumnSelectionHighlight(MyCodeEditor* editor,
     if (leftColumn == rightColumn)
         return;
 
+    const int tabWidth = editorTabStopColumns(editor);
     QList<QTextEdit::ExtraSelection> selections = editor->extraSelections();
     for (int line = firstLine; line <= lastLine; ++line) {
         const QTextBlock block = editor->document()->findBlockByNumber(line);
         if (!block.isValid())
             continue;
 
-        const int lineLength = block.text().size();
-        const int startColumn = qMin(leftColumn, lineLength);
-        const int visibleEndColumn = qMin(rightColumn, lineLength);
+        const QString lineText = block.text();
+        const int startColumn = offsetForVisualColumn(lineText,
+                                                      leftColumn,
+                                                      tabWidth,
+                                                      VisualBoundary::Start);
+        const int visibleEndColumn = offsetForVisualColumn(lineText,
+                                                           rightColumn,
+                                                           tabWidth,
+                                                           VisualBoundary::End);
         if (visibleEndColumn <= startColumn)
             continue;
 
@@ -1758,7 +1945,8 @@ void updateColumnSelectionHighlight(MyCodeEditor* editor,
     editor->setExtraSelections(selections);
 }
 
-void setColumnPointFromCursor(const QTextCursor& cursor,
+void setColumnPointFromCursor(const MyCodeEditor* editor,
+                              const QTextCursor& cursor,
                               int* line,
                               int* column)
 {
@@ -1766,8 +1954,12 @@ void setColumnPointFromCursor(const QTextCursor& cursor,
         return;
     if (line)
         *line = cursor.block().blockNumber();
-    if (column)
-        *column = qMax(0, cursor.position() - cursor.block().position());
+    if (column) {
+        *column = visualColumnForOffset(
+            cursor.block().text(),
+            qMax(0, cursor.position() - cursor.block().position()),
+            editorTabStopColumns(editor));
+    }
 }
 
 bool beginColumnSelection(MyCodeEditor* editor,
@@ -1784,7 +1976,8 @@ bool beginColumnSelection(MyCodeEditor* editor,
     const QTextCursor cursor =
         editor->cursorForPosition(event->position().toPoint());
     if (state.columnSelectionActive) {
-        setColumnPointFromCursor(cursor,
+        setColumnPointFromCursor(editor,
+                                 cursor,
                                  &state.columnCurrentLine,
                                  &state.columnCurrentColumn);
         state.columnSelectionAwaitingEndpoint = false;
@@ -1802,10 +1995,12 @@ bool beginColumnSelection(MyCodeEditor* editor,
     state.columnSelectionDragging = false;
     state.columnSelectionAwaitingEndpoint = false;
     state.columnSelectionDragMoved = false;
-    setColumnPointFromCursor(anchor,
+    setColumnPointFromCursor(editor,
+                             anchor,
                              &state.columnAnchorLine,
                              &state.columnAnchorColumn);
-    setColumnPointFromCursor(cursor,
+    setColumnPointFromCursor(editor,
+                             cursor,
                              &state.columnCurrentLine,
                              &state.columnCurrentColumn);
     updateColumnSelectionHighlight(editor, state);
@@ -1875,7 +2070,8 @@ bool updateColumnSelectionDrag(MyCodeEditor* editor,
         editor->cursorForPosition(event->position().toPoint());
     state.columnSelectionDragMoved = true;
     state.columnSelectionAwaitingEndpoint = false;
-    setColumnPointFromCursor(cursor,
+    setColumnPointFromCursor(editor,
+                             cursor,
                              &state.columnCurrentLine,
                              &state.columnCurrentColumn);
     updateColumnSelectionHighlight(editor, state);
@@ -1894,7 +2090,8 @@ bool endColumnSelectionDrag(MyCodeEditor* editor,
     if (state.columnSelectionDragMoved) {
         const QTextCursor cursor =
             editor->cursorForPosition(event->position().toPoint());
-        setColumnPointFromCursor(cursor,
+        setColumnPointFromCursor(editor,
+                                 cursor,
                                  &state.columnCurrentLine,
                                  &state.columnCurrentColumn);
         state.columnSelectionAwaitingEndpoint = false;
@@ -1914,12 +2111,23 @@ bool handleColumnSelectionKeyInput(MyCodeEditor* editor,
     if (!editor || !event || !hasColumnSelection(state))
         return false;
     if (event->modifiers().testFlag(Qt::ControlModifier)
-        || event->modifiers().testFlag(Qt::MetaModifier)) {
+        || event->modifiers().testFlag(Qt::MetaModifier)
+        || event->modifiers().testFlag(Qt::AltModifier)) {
         return false;
     }
+    const Qt::KeyboardModifiers textModifiers =
+        event->modifiers()
+        & (Qt::ShiftModifier
+           | Qt::ControlModifier
+           | Qt::AltModifier
+           | Qt::MetaModifier);
+    const bool forwardTab = event->key() == Qt::Key_Tab
+        && textModifiers == Qt::NoModifier;
+    const bool backwardTab = event->key() == Qt::Key_Backtab
+        || (event->key() == Qt::Key_Tab
+            && textModifiers == Qt::ShiftModifier);
     if (event->key() == Qt::Key_Return
         || event->key() == Qt::Key_Enter
-        || event->key() == Qt::Key_Tab
         || event->key() == Qt::Key_Escape) {
         return false;
     }
@@ -1928,17 +2136,28 @@ bool handleColumnSelectionKeyInput(MyCodeEditor* editor,
     const bool deleteKey = event->key() == Qt::Key_Delete;
     const bool printable = !event->text().isEmpty()
         && !backspace
-        && !deleteKey;
-    if (!printable && !backspace && !deleteKey)
+        && !deleteKey
+        && !forwardTab
+        && !backwardTab;
+    if (!printable && !backspace && !deleteKey && !forwardTab && !backwardTab)
         return false;
 
-    const QString text = printable ? event->text() : QString();
+    const int tabWidth = editorTabStopColumns(editor);
     const auto [firstLine, lastLine] = lineSpan(state);
     const auto [leftColumn, rightColumn] = columnSpan(state);
     const bool hasWidth = rightColumn > leftColumn;
-    const int editColumn = backspace && !hasWidth
-        ? qMax(0, leftColumn - 1)
-        : leftColumn;
+    const int backwardTargetColumn =
+        backwardTab ? previousTabStopVisual(leftColumn, tabWidth) : leftColumn;
+    const int editColumn =
+        backwardTab
+            ? backwardTargetColumn
+            : (backspace && !hasWidth ? qMax(0, leftColumn - 1) : leftColumn);
+    QString text;
+    if (printable)
+        text = event->text();
+    else if (forwardTab)
+        text = QString(nextTabStopVisual(leftColumn, tabWidth) - leftColumn,
+                       QLatin1Char(' '));
     QTextCursor cursor(editor->document());
     cursor.beginEditBlock();
     for (int line = lastLine; line >= firstLine; --line) {
@@ -1946,27 +2165,59 @@ bool handleColumnSelectionKeyInput(MyCodeEditor* editor,
         if (!block.isValid())
             continue;
 
-        const int lineLength = block.text().size();
-        int startColumn = qMin(editColumn, lineLength);
+        const QString lineText = block.text();
+        const int lineEndVisual =
+            visualColumnForOffset(lineText, lineText.size(), tabWidth);
+        int startColumn = offsetForVisualColumn(lineText,
+                                                editColumn,
+                                                tabWidth,
+                                                VisualBoundary::Start);
         int endColumn = startColumn;
         if (hasWidth) {
-            startColumn = qMin(leftColumn, lineLength);
-            endColumn = qMin(rightColumn, lineLength);
-        } else if (deleteKey && leftColumn < lineLength) {
-            startColumn = leftColumn;
-            endColumn = leftColumn + 1;
-        } else if (backspace && leftColumn > 0 && editColumn < lineLength) {
-            startColumn = editColumn;
-            endColumn = qMin(leftColumn, lineLength);
+            startColumn = offsetForVisualColumn(lineText,
+                                                leftColumn,
+                                                tabWidth,
+                                                VisualBoundary::Start);
+            endColumn = offsetForVisualColumn(lineText,
+                                              rightColumn,
+                                              tabWidth,
+                                              VisualBoundary::End);
+        } else if (deleteKey && leftColumn < lineEndVisual) {
+            startColumn = offsetForVisualColumn(lineText,
+                                                leftColumn,
+                                                tabWidth,
+                                                VisualBoundary::Start);
+            endColumn = offsetForVisualColumn(lineText,
+                                              leftColumn + 1,
+                                              tabWidth,
+                                              VisualBoundary::End);
+        } else if (backspace && leftColumn > 0 && editColumn < lineEndVisual) {
+            startColumn = offsetForVisualColumn(lineText,
+                                                editColumn,
+                                                tabWidth,
+                                                VisualBoundary::Start);
+            endColumn = offsetForVisualColumn(lineText,
+                                              leftColumn,
+                                              tabWidth,
+                                              VisualBoundary::End);
+        } else if (backwardTab && leftColumn > backwardTargetColumn) {
+            startColumn = offsetForVisualColumn(lineText,
+                                                backwardTargetColumn,
+                                                tabWidth,
+                                                VisualBoundary::Start);
+            endColumn = offsetForVisualColumn(lineText,
+                                              leftColumn,
+                                              tabWidth,
+                                              VisualBoundary::End);
         }
 
         cursor.setPosition(block.position() + startColumn);
         cursor.setPosition(block.position() + qMax(startColumn, endColumn),
                            QTextCursor::KeepAnchor);
-        if (printable) {
+        if (printable || forwardTab) {
             const QString padding =
-                leftColumn > lineLength
-                    ? QString(leftColumn - lineLength, QLatin1Char(' '))
+                leftColumn > lineEndVisual
+                    ? QString(leftColumn - lineEndVisual, QLatin1Char(' '))
                     : QString();
             cursor.insertText(padding + text);
         } else if (endColumn > startColumn) {
@@ -1978,7 +2229,9 @@ bool handleColumnSelectionKeyInput(MyCodeEditor* editor,
     const bool wasRectangularSelection = leftColumn != rightColumn;
     const int collapsedColumn = wasRectangularSelection
         ? leftColumn
-        : (printable ? leftColumn + text.size() : editColumn);
+        : ((printable || forwardTab)
+               ? leftColumn + visualWidthOfText(text, leftColumn, tabWidth)
+               : editColumn);
     state.columnAnchorColumn = collapsedColumn;
     state.columnCurrentColumn = state.columnAnchorColumn;
     state.columnSelectionAwaitingEndpoint = false;
@@ -1987,11 +2240,7 @@ bool handleColumnSelectionKeyInput(MyCodeEditor* editor,
     const QTextBlock currentBlock =
         editor->document()->findBlockByNumber(lastLine);
     if (currentBlock.isValid()) {
-        QTextCursor caret(editor->document());
-        caret.setPosition(currentBlock.position()
-                          + qMin(state.columnCurrentColumn,
-                                 currentBlock.text().size()));
-        editor->setTextCursor(caret);
+        setCaretToVisualColumn(editor, lastLine, state.columnCurrentColumn);
     }
     updateColumnSelectionHighlight(editor, state);
     editor->viewport()->update();
@@ -2063,9 +2312,38 @@ bool handleColumnSelectionNavigation(MyCodeEditor* editor,
     state.columnSelectionDragging = false;
     state.columnSelectionDragMoved = false;
     updateColumnSelectionHighlight(editor, state);
+    setCaretToVisualColumn(editor,
+                           state.columnCurrentLine,
+                           state.columnCurrentColumn);
     editor->viewport()->update();
     event->accept();
     return true;
+}
+
+int xForVisualColumn(MyCodeEditor* editor,
+                     const QTextBlock& block,
+                     int visualColumn)
+{
+    if (!editor || !block.isValid())
+        return 0;
+
+    const int tabWidth = editorTabStopColumns(editor);
+    const QString text = block.text();
+    const int offset = offsetForVisualColumn(text,
+                                             visualColumn,
+                                             tabWidth,
+                                             VisualBoundary::Start);
+    QTextCursor cursor(block);
+    cursor.setPosition(block.position() + offset);
+    QRect rect = editor->cursorRect(cursor);
+    const int offsetVisual = visualColumnForOffset(text, offset, tabWidth);
+    if (visualColumn > offsetVisual) {
+        const QFontMetrics metrics(editor->font());
+        rect.translate(metrics.horizontalAdvance(QLatin1Char(' '))
+                           * (visualColumn - offsetVisual),
+                       0);
+    }
+    return rect.left();
 }
 
 void paintColumnSelectionOverlay(MyCodeEditor* editor,
@@ -2091,16 +2369,10 @@ void paintColumnSelectionOverlay(MyCodeEditor* editor,
         if (!block.isValid() || !block.isVisible())
             continue;
 
-        const int column = qMin(leftColumn, block.text().size());
         QTextCursor cursor(block);
-        cursor.setPosition(block.position() + column);
+        cursor.setPosition(block.position());
         QRect rect = editor->cursorRect(cursor);
-        if (leftColumn > block.text().size()) {
-            const QFontMetrics metrics(editor->font());
-            rect.translate(metrics.horizontalAdvance(QLatin1Char(' '))
-                               * (leftColumn - block.text().size()),
-                           0);
-        }
+        rect.moveLeft(xForVisualColumn(editor, block, leftColumn));
         if (!event->rect().intersects(rect.adjusted(-4, -2, 4, 2)))
             continue;
 
@@ -2568,7 +2840,6 @@ void MyCodeEditorState::publishComModeState(
 void MyCodeEditorState::enterComMode(MyCodeEditor* editor,
                                      const QString& message)
 {
-    clearTemplateSlotMode(editor);
     modes.setComModeActive(true);
     modes.clearComBuffer();
     publishComModeState(editor, message);
@@ -2913,6 +3184,34 @@ bool MyCodeEditorState::templateSlotModeBlinkOn() const
     return templateSlotBlinkOn;
 }
 
+bool MyCodeEditorState::columnSelectionActiveForCommand() const
+{
+    return hasColumnSelection(*this);
+}
+
+QStringList MyCodeEditorState::columnSelectionRowTexts(
+    MyCodeEditor* editor) const
+{
+    return ::columnSelectionRowTexts(editor, *this);
+}
+
+bool MyCodeEditorState::applyColumnSelectionRowTexts(
+    MyCodeEditor* editor,
+    const QStringList& rows,
+    bool replaceSelection,
+    QString* message)
+{
+    if (!editor || !hasColumnSelection(*this)) {
+        if (message)
+            *message = QStringLiteral("No column selection");
+        return false;
+    }
+    replaceColumnSelectionRows(editor, *this, rows, true, replaceSelection);
+    if (message)
+        message->clear();
+    return true;
+}
+
 void MyCodeEditorState::clearTemplateSlotMode(MyCodeEditor* editor,
                                               const QString& message)
 {
@@ -3075,6 +3374,15 @@ bool MyCodeEditorState::handleKeyPress(MyCodeEditor* editor, QKeyEvent* event)
         return true;
     }
 
+    if (isComModeToggleKey(event)) {
+        if (modes.comModeActive)
+            exitComMode(editor);
+        else
+            enterComMode(editor);
+        event->accept();
+        return true;
+    }
+
     if (handleTemplateSlotKeyPress(editor, event))
         return true;
 
@@ -3102,12 +3410,6 @@ bool MyCodeEditorState::handleKeyPress(MyCodeEditor* editor, QKeyEvent* event)
         QTextCursor cursor = editor->textCursor();
         cursor.clearSelection();
         editor->setTextCursor(cursor);
-        event->accept();
-        return true;
-    }
-
-    if (event->key() == Qt::Key_Escape) {
-        enterComMode(editor);
         event->accept();
         return true;
     }

@@ -28,8 +28,8 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
 
 ## Current Goal State
 
-Current milestone: none after COM select-inside and Slot Mode interaction
-repair.
+Current milestone: none after COM toggle, visual-column column selection, and
+Column Number Tool repair.
 
 Next work should wait for the next explicit scoped request.
 
@@ -104,6 +104,21 @@ Status:
   `gui_smoke_test` was launched with Windows fault-dialog suppression; all new
   `si`, partial-selection `cr`, and Slot Mode cycling checks passed, while the
   full smoke baseline still fails on existing non-current checks.
+- COM toggle, visual-column column selection, and Column Number Tool repair is
+  complete: `Ctrl+Shift+Alt+backtick` toggles COM Mode from editor or
+  non-editor focus whenever an editor tab is open; Esc no longer enters COM
+  Mode and remains cancellation-only. Column Selection now stores visual
+  columns, converts through editor tab width, and captures Tab / Shift+Tab for
+  visual alignment edits. COM command `cn` opens a Column Number Tool popup
+  backed by `columnnumbertool` formatting/inference and applies one undoable
+  column edit.
+- Focused verification for the COM/Column Selection repair: Release
+  `completion_test` and `gui_smoke_test` targets compile/link; Release
+  `ctest -R "^completion_test$" --output-on-failure` passed. Release
+  `gui_smoke_test` was launched; all new COM toggle, visual-column column
+  mode, column-mode Tab/Shift+Tab, `cn`, Column Number Tool, and inference
+  checks passed. The full smoke baseline still fails on existing non-current
+  checks: `VENDOR ctrl-click fixture opens` and the Wave Preview rendering group.
 - G0 Documentation And Goal Reset is complete and pushed in commit `bc2c059`.
 - G4.1 Registry Metadata For Existing COM Commands is complete:
   `commodecommandregistry` now owns metadata for fixed executable commands,
@@ -153,17 +168,18 @@ Status:
 - G2.2 Parameter Template Slot Mode is complete: `;;p` and `;;lp` produce
   ordered name/value slot metadata; parameter template activation starts Slot
   Mode through the existing completion workflow; `MyCodeEditor` state owns
-  active slot ranges, highlighting, Tab/Shift+Tab navigation, final Tab
-  completion, Esc cancel, edit-driven range shifts, cursor-outside stale exit,
-  and COM Mode entry cleanup; non-parameter template behavior is preserved.
+  active slot ranges, highlighting, Tab/Shift+Tab navigation, Esc cancel,
+  edit-driven range shifts, and cursor-outside stale exit; non-parameter
+  template behavior is preserved. Current COM Mode toggle behavior does not
+  clear Slot Mode by itself.
 - Focused verification for G2.2: Release `completion_test` passed with 625
   checks and 0 failures; Release `completion_test` and `gui_smoke_test` targets
   compile/link, with `gui_smoke_test` not launched.
 - G2.3 Signal Template Slot Mode is complete: `;;l`, `;;w`, and `;;r` produce
   a signal-name slot; signal template activation reuses the existing Slot Mode
   session path; signal-name editing preserves packed/unpacked dimensions and
-  final Tab exits before the semicolon; parameter template behavior is
-  preserved.
+  Tab / Shift+Tab keep cycling until Esc exits Slot Mode. Parameter template
+  behavior is preserved.
 - Focused verification for G2.3: Release `completion_test` passed with 630
   checks and 0 failures; Release `completion_test` and `gui_smoke_test` targets
   compile/link, with `gui_smoke_test` not launched.
@@ -187,7 +203,7 @@ Status:
   successful clear-RHS execution starts Slot Mode from the
   `RtlClearAssignmentRhsReport` `rhsN` template-slot metadata while preserving
   one undoable text replacement. G3.2 failure behavior is unchanged; Slot Mode
-  start, slot editing, Tab advance, final Tab exit, undo restore, and
+  start, slot editing, Tab / Shift+Tab cycling, Esc exit, undo restore, and
   declaration rejection are covered by focused tests.
 - G5.1 Workspace Open/Recent Behavior Audit is complete:
   `WorkspaceManager` owns workspace open/close/switch, alias rename, cached
@@ -590,6 +606,13 @@ Milestones:
 - G3.3 Connect clear-RHS output to slot mode.
   (complete: successful clear-RHS execution starts Slot Mode on `rhsN` fill
   slots)
+- G3.4 Expose clear-RHS as COM command `cr`.
+  (complete: `cr` dispatches through the editor-local clear-RHS path, supports
+  selected/current assignment cleanup, starts Slot Mode, and keeps failures
+  non-modal)
+- G3.5 Make clear-RHS line-oriented for partial selections.
+  (complete: selected text expands to touched complete lines before RHS
+  cleanup, preserving source-order slot flow)
 
 ## Track 4: COM Mode Framework Completion
 
@@ -608,6 +631,17 @@ Milestones:
 - G4.1 Registry metadata for existing commands and prefixes.
 - G4.2 Help/hint rendering for commands and prefixes.
 - G4.3 Centralized conflict validation and failure reason display.
+- G4.4 Register the first non-g editor-local editing command.
+  (complete: `cr` uses the registry/dispatcher/hint/failure-message path)
+- G4.5 Select-inside begin-end COM command.
+  (complete: `si` uses editor Tree-sitter structure, stays in COM Mode, and
+  feeds line-oriented `cr`)
+- G4.6 Explicit COM toggle and cancellation-only Esc.
+  (complete: `Ctrl+Shift+Alt+backtick` toggles COM Mode without clearing
+  column selection or Slot Mode; Esc no longer enters COM Mode)
+- G4.7 Column Number Tool COM command.
+  (complete: `cn` opens the column-number popup for active column selections,
+  backed by `columnnumbertool` formatting and inference)
 
 ## Track 5: Limited Workspace Workflow Additions
 

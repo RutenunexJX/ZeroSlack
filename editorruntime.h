@@ -108,6 +108,12 @@ struct MyCodeEditorState
     int templateSlotModeActiveIndex() const;
     int templateSlotModeSlotCount() const;
     bool templateSlotModeBlinkOn() const;
+    bool columnSelectionActiveForCommand() const;
+    QStringList columnSelectionRowTexts(MyCodeEditor* editor) const;
+    bool applyColumnSelectionRowTexts(MyCodeEditor* editor,
+                                      const QStringList& rows,
+                                      bool replaceSelection,
+                                      QString* message = nullptr);
     void clearTemplateSlotMode(MyCodeEditor* editor,
                                const QString& message = QString());
     bool handleTemplateSlotKeyPress(MyCodeEditor* editor, QKeyEvent* event);

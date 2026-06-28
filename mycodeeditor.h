@@ -116,6 +116,11 @@ public:
     int templateSlotModeActiveIndex() const;
     int templateSlotModeSlotCount() const;
     bool templateSlotModeBlinkOnForTest() const;
+    bool columnSelectionActive() const;
+    QStringList columnSelectionTexts() const;
+    bool applyColumnSelectionTexts(const QStringList& rows,
+                                   bool replaceSelection,
+                                   QString* message = nullptr);
     void setDiagnosticHighlights(
         const QList<SemanticDiagnostic>& diagnostics);
     void setSemanticDecorations(

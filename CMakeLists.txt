@@ -56,6 +56,7 @@ set(ZEROSLACK_CORE_SOURCES
     analysisschedulerwiring.cpp
     clockresetdomainservice.cpp
     codepreviewservice.cpp
+    columnnumbertool.cpp
     commodecommandregistry.cpp
     commodecoordinator.cpp
     commodeservice.cpp
@@ -251,6 +252,7 @@ set(ZEROSLACK_CORE_SOURCES
     analysisscheduler.h
     clockresetdomainservice.h
     codepreviewservice.h
+    columnnumbertool.h
     commodecommandregistry.h
     commodecoordinator.h
     commodeservice.h

@@ -17,6 +17,7 @@
 #include <QGraphicsPathItem>
 #include <QGraphicsPolygonItem>
 #include <QGraphicsRectItem>
+#include <QGraphicsEllipseItem>
 #include <QGraphicsScene>
 #include <QGraphicsSceneMouseEvent>
 #include <QGraphicsSimpleTextItem>
@@ -39,6 +40,7 @@
 #include <algorithm>
 #include <cmath>
 #include <exception>
+#include <limits>
 #include <utility>
 
 namespace {
@@ -54,6 +56,10 @@ constexpr int kGraphDrillFileRole = Qt::UserRole + 1207;
 
 constexpr qreal kInsightNodeWidth = 190.0;
 constexpr qreal kInsightNodeHeight = 62.0;
+constexpr qreal kStateNodeWidth = 250.0;
+constexpr qreal kStateNodeHeight = 58.0;
+constexpr qreal kGraphMinScale = 0.05;
+constexpr qreal kGraphMaxScale = 6.0;
 constexpr double kPi = 3.14159265358979323846;
 
 struct RtlInsightGraphElement {
@@ -97,7 +103,8 @@ protected:
         const qreal currentScale = transform().m11();
         const qreal factor = event->angleDelta().y() > 0 ? 1.15 : 1.0 / 1.15;
         const qreal nextScale = currentScale * factor;
-        if (nextScale < 0.2 || nextScale > 4.0) {
+        if ((nextScale < kGraphMinScale && factor < 1.0)
+            || (nextScale > kGraphMaxScale && factor > 1.0)) {
             event->accept();
             return;
         }
@@ -234,6 +241,93 @@ private:
     RtlInsightGraphElement element;
 };
 
+class RtlInsightGraphStateNodeItem : public QGraphicsEllipseItem
+{
+public:
+    using NavigateHandler = std::function<void(const RtlInsightGraphElement&)>;
+    using SelectHandler = std::function<void(const RtlInsightGraphElement&)>;
+
+    RtlInsightGraphStateNodeItem(const RtlInsightGraphElement& graphElement,
+                                 const QRectF& rect,
+                                 const QColor& fill,
+                                 const QColor& stroke,
+                                 const QFont& font,
+                                 bool dashed = false)
+        : QGraphicsEllipseItem(rect),
+          element(graphElement)
+    {
+        setFlag(QGraphicsItem::ItemIsSelectable, true);
+        setAcceptHoverEvents(true);
+        setAcceptedMouseButtons(Qt::LeftButton | Qt::RightButton);
+        setBrush(fill);
+        QPen nodePen(stroke, dashed ? 1.6 : 2.0);
+        if (dashed)
+            nodePen.setStyle(Qt::DashLine);
+        setPen(nodePen);
+        setZValue(10);
+        applyGraphElementData(this, element);
+
+        QFont titleFont = font;
+        titleFont.setBold(true);
+        titleFont.setPointSize(qMax(8, titleFont.pointSize() + 1));
+        QFont detailFont = font;
+        detailFont.setPointSize(qMax(8, detailFont.pointSize() - 1));
+
+        auto* title = new QGraphicsSimpleTextItem(
+            graphElidedText(element.primary,
+                            titleFont,
+                            static_cast<int>(rect.width() - 42)),
+            this);
+        title->setAcceptedMouseButtons(Qt::NoButton);
+        title->setFont(titleFont);
+        title->setBrush(QBrush(QColor(QStringLiteral("#111827"))));
+        const QRectF titleBounds = title->boundingRect();
+        title->setPos(rect.center().x() - titleBounds.width() / 2.0,
+                      rect.top() + 12);
+
+        QString detail = element.secondary;
+        if (detail.isEmpty())
+            detail = element.detail;
+        auto* detailItem = new QGraphicsSimpleTextItem(
+            graphElidedText(detail,
+                            detailFont,
+                            static_cast<int>(rect.width() - 52)),
+            this);
+        detailItem->setAcceptedMouseButtons(Qt::NoButton);
+        detailItem->setFont(detailFont);
+        detailItem->setBrush(QBrush(QColor(QStringLiteral("#475569"))));
+        const QRectF detailBounds = detailItem->boundingRect();
+        detailItem->setPos(rect.center().x() - detailBounds.width() / 2.0,
+                           rect.top() + 34);
+    }
+
+    NavigateHandler navigateHandler;
+    SelectHandler selectHandler;
+
+protected:
+    void mousePressEvent(QGraphicsSceneMouseEvent* event) override
+    {
+        setSelected(true);
+        if (selectHandler)
+            selectHandler(element);
+        QGraphicsEllipseItem::mousePressEvent(event);
+    }
+
+    void mouseDoubleClickEvent(QGraphicsSceneMouseEvent* event) override
+    {
+        if (event && event->button() == Qt::LeftButton && navigateHandler
+            && !element.codeLink.fileName.isEmpty()) {
+            navigateHandler(element);
+            event->accept();
+            return;
+        }
+        QGraphicsEllipseItem::mouseDoubleClickEvent(event);
+    }
+
+private:
+    RtlInsightGraphElement element;
+};
+
 class RtlInsightGraphEdgeItem : public QGraphicsPathItem
 {
 public:
@@ -343,6 +437,14 @@ QRectF insightNodeRectAt(qreal centerX, qreal centerY)
                   kInsightNodeHeight);
 }
 
+QRectF stateNodeRectAt(qreal centerX, qreal centerY)
+{
+    return QRectF(centerX - kStateNodeWidth / 2.0,
+                  centerY - kStateNodeHeight / 2.0,
+                  kStateNodeWidth,
+                  kStateNodeHeight);
+}
+
 QPointF rectAnchorToward(const QRectF& rect, const QPointF& target)
 {
     const QPointF center = rect.center();
@@ -356,6 +458,22 @@ QPointF rectAnchorToward(const QRectF& rect, const QPointF& target)
     return QPointF(center.x() + dx / std::max<qreal>(1.0, std::abs(dy))
                               * rect.height() / 2.0,
                    dy >= 0 ? rect.bottom() : rect.top());
+}
+
+QPointF ellipseAnchorToward(const QRectF& rect, const QPointF& target)
+{
+    const QPointF center = rect.center();
+    const qreal dx = target.x() - center.x();
+    const qreal dy = target.y() - center.y();
+    if (std::abs(dx) < 0.1 && std::abs(dy) < 0.1)
+        return center;
+    const qreal rx = rect.width() / 2.0;
+    const qreal ry = rect.height() / 2.0;
+    const qreal scale =
+        1.0 / std::sqrt((dx * dx) / std::max<qreal>(1.0, rx * rx)
+                        + (dy * dy) / std::max<qreal>(1.0, ry * ry));
+    return QPointF(center.x() + dx * scale,
+                   center.y() + dy * scale);
 }
 
 QPointF circularPosition(int index, int count, qreal radius)
@@ -386,6 +504,377 @@ QGraphicsItem* graphItemByData(QGraphicsScene* scene,
         return item;
     }
     return nullptr;
+}
+
+int indexInList(const QList<QString>& values, const QString& value)
+{
+    for (int i = 0; i < values.size(); ++i) {
+        if (values.at(i) == value)
+            return i;
+    }
+    return -1;
+}
+
+QList<QString> orderedFsmStateNames(const FsmGraph& graph)
+{
+    QList<QString> originalOrder;
+    QSet<QString> knownStates;
+    for (const FsmStateRow& row : graph.stateRows) {
+        if (row.stateDisplayName.isEmpty()
+            || knownStates.contains(row.stateDisplayName)) {
+            continue;
+        }
+        knownStates.insert(row.stateDisplayName);
+        originalOrder.append(row.stateDisplayName);
+    }
+    if (originalOrder.size() <= 2)
+        return originalOrder;
+
+    QHash<QString, QList<QString>> outgoing;
+    QHash<QString, int> incomingCount;
+    QSet<QString> seenEdges;
+    for (const FsmTransitionRow& row : graph.transitionRows) {
+        if (!knownStates.contains(row.fromStateDisplayName)
+            || !knownStates.contains(row.toStateDisplayName)
+            || row.fromStateDisplayName == row.toStateDisplayName) {
+            continue;
+        }
+        const QString edgeKey =
+            row.fromStateDisplayName + QLatin1Char('\n') + row.toStateDisplayName;
+        if (seenEdges.contains(edgeKey))
+            continue;
+        seenEdges.insert(edgeKey);
+        outgoing[row.fromStateDisplayName].append(row.toStateDisplayName);
+        incomingCount[row.toStateDisplayName] =
+            incomingCount.value(row.toStateDisplayName) + 1;
+    }
+
+    auto preferredState = [&](const QList<QString>& candidates) {
+        QString best;
+        int bestOriginalIndex = std::numeric_limits<int>::max();
+        for (const QString& candidate : candidates) {
+            const int originalIndex = indexInList(originalOrder, candidate);
+            if (originalIndex >= 0 && originalIndex < bestOriginalIndex) {
+                best = candidate;
+                bestOriginalIndex = originalIndex;
+            }
+        }
+        return best;
+    };
+
+    QString start;
+    for (const QString& state : originalOrder) {
+        if (state.contains(QStringLiteral("idle"), Qt::CaseInsensitive)) {
+            start = state;
+            break;
+        }
+    }
+    if (start.isEmpty()) {
+        QList<QString> roots;
+        for (const QString& state : originalOrder) {
+            if (incomingCount.value(state) == 0)
+                roots.append(state);
+        }
+        start = preferredState(roots);
+    }
+    if (start.isEmpty())
+        start = originalOrder.first();
+
+    QList<QString> ordered;
+    QSet<QString> visited;
+    QString current = start;
+    while (ordered.size() < originalOrder.size()) {
+        if (!current.isEmpty() && !visited.contains(current)) {
+            ordered.append(current);
+            visited.insert(current);
+        }
+
+        QList<QString> nextCandidates;
+        for (const QString& target : outgoing.value(current)) {
+            if (!visited.contains(target))
+                nextCandidates.append(target);
+        }
+        QString next = preferredState(nextCandidates);
+        if (next.isEmpty()) {
+            QList<QString> rootCandidates;
+            for (const QString& state : originalOrder) {
+                if (!visited.contains(state) && incomingCount.value(state) == 0)
+                    rootCandidates.append(state);
+            }
+            next = preferredState(rootCandidates);
+        }
+        if (next.isEmpty()) {
+            for (const QString& state : originalOrder) {
+                if (!visited.contains(state)) {
+                    next = state;
+                    break;
+                }
+            }
+        }
+        if (next.isEmpty())
+            break;
+        current = next;
+    }
+    return ordered;
+}
+
+struct FsmGraphLayout {
+    QList<QString> orderedStates;
+    QHash<QString, QRectF> stateRects;
+    QHash<QString, int> stateIndexes;
+    QHash<QString, FsmStateRow> stateRowsByName;
+    QRectF bounds;
+};
+
+FsmGraphLayout buildFsmGraphLayout(const FsmGraph& graph,
+                                   const QPointF& origin)
+{
+    FsmGraphLayout layout;
+    layout.orderedStates = orderedFsmStateNames(graph);
+    for (const FsmStateRow& row : graph.stateRows)
+        layout.stateRowsByName.insert(row.stateDisplayName, row);
+
+    const int stateCount = layout.orderedStates.size();
+    if (stateCount <= 0)
+        return layout;
+
+    constexpr qreal horizontalSpacing = 315.0;
+    constexpr qreal rowGap = 205.0;
+    const int topCount = stateCount <= 6
+        ? stateCount
+        : (stateCount + 1) / 2;
+
+    for (int i = 0; i < stateCount; ++i) {
+        const bool topRow = i < topCount;
+        const int rowIndex = topRow ? i : i - topCount;
+        const int xIndex = topRow ? rowIndex : topCount - 1 - rowIndex;
+        const qreal x = origin.x() + xIndex * horizontalSpacing;
+        const qreal y = origin.y() + (topRow ? 0.0 : rowGap);
+        const QRectF rect = stateNodeRectAt(x, y);
+        const QString stateName = layout.orderedStates.at(i);
+        layout.stateRects.insert(stateName, rect);
+        layout.stateIndexes.insert(stateName, i);
+        layout.bounds = layout.bounds.isNull() ? rect : layout.bounds.united(rect);
+    }
+    return layout;
+}
+
+QString fsmTransitionLabel(const QString& condition)
+{
+    if (condition.isEmpty()
+        || condition == QStringLiteral("unconditional")) {
+        return QString();
+    }
+    return condition;
+}
+
+QPainterPath fsmTransitionPath(const QRectF& fromRect,
+                               const QRectF& toRect,
+                               QPointF* startOut,
+                               QPointF* endOut)
+{
+    const QPointF start = ellipseAnchorToward(fromRect, toRect.center());
+    const QPointF end = ellipseAnchorToward(toRect, fromRect.center());
+    if (startOut)
+        *startOut = start;
+    if (endOut)
+        *endOut = end;
+
+    QPainterPath path(start);
+    const bool sameRow = std::abs(fromRect.center().y() - toRect.center().y()) < 1.0;
+    if (sameRow) {
+        const qreal bend = fromRect.center().x() < toRect.center().x()
+            ? -24.0
+            : -78.0;
+        return curvedArrowPath(start, end, bend);
+    }
+
+    const qreal direction = fromRect.center().x() <= toRect.center().x()
+        ? 1.0
+        : -1.0;
+    path.cubicTo(start + QPointF(105.0 * direction, 0.0),
+                 end - QPointF(105.0 * direction, 0.0),
+                 end);
+    return path;
+}
+
+QRectF expandedToMinimum(const QRectF& rect, qreal minWidth, qreal minHeight)
+{
+    QRectF result = rect;
+    if (result.width() < minWidth) {
+        const qreal extra = (minWidth - result.width()) / 2.0;
+        result.adjust(-extra, 0, extra, 0);
+    }
+    if (result.height() < minHeight) {
+        const qreal extra = (minHeight - result.height()) / 2.0;
+        result.adjust(0, -extra, 0, extra);
+    }
+    return result;
+}
+
+QRectF renderFsmStateMachineGraph(
+    QGraphicsScene* scene,
+    const FsmGraph& graph,
+    const QString& title,
+    const QPointF& origin,
+    const QFont& font,
+    const RtlInsightGraphNodeItem::NavigateHandler& navigate,
+    const RtlInsightGraphNodeItem::SelectHandler& select)
+{
+    if (!scene)
+        return {};
+
+    FsmGraphLayout layout = buildFsmGraphLayout(graph, origin);
+    QRectF graphBounds = layout.bounds;
+    if (layout.orderedStates.isEmpty())
+        return graphBounds;
+
+    QFont titleFont = font;
+    titleFont.setBold(true);
+    titleFont.setPointSize(qMax(10, titleFont.pointSize() + 1));
+    auto* titleItem = scene->addSimpleText(title, titleFont);
+    titleItem->setBrush(QBrush(QColor(QStringLiteral("#111827"))));
+    titleItem->setPos(layout.bounds.left(), layout.bounds.top() - 86.0);
+    graphBounds = graphBounds.united(titleItem->sceneBoundingRect());
+
+    QFont captionFont = font;
+    captionFont.setPointSize(qMax(8, captionFont.pointSize() - 1));
+    const QString caption = graph.nextStateSignalDisplayName.isEmpty()
+        ? graph.stateRegisterDisplayName
+        : QStringLiteral("%1  ->  %2")
+              .arg(graph.stateRegisterDisplayName,
+                   graph.nextStateSignalDisplayName);
+    auto* captionItem = scene->addSimpleText(caption, captionFont);
+    captionItem->setBrush(QBrush(QColor(QStringLiteral("#475569"))));
+    captionItem->setPos(layout.bounds.left(), layout.bounds.top() - 56.0);
+    graphBounds = graphBounds.united(captionItem->sceneBoundingRect());
+
+    auto addStateNode = [&](const FsmStateRow& row,
+                            const QRectF& rect,
+                            bool highlighted,
+                            bool dashed) {
+        RtlInsightGraphElement state;
+        state.kind = QStringLiteral("state");
+        state.primary = row.stateDisplayName;
+        state.secondary = row.typeDisplayName;
+        state.detail = row.detailDisplayName;
+        state.codeLink = row.codeLink;
+        auto* item = new RtlInsightGraphStateNodeItem(
+            state,
+            rect,
+            highlighted ? QColor(QStringLiteral("#fff7d6"))
+                        : QColor(QStringLiteral("#ffffff")),
+            QColor(QStringLiteral("#111827")),
+            font,
+            dashed);
+        item->navigateHandler = navigate;
+        item->selectHandler = select;
+        scene->addItem(item);
+        return item;
+    };
+
+    for (int i = 0; i < layout.orderedStates.size(); ++i) {
+        const QString stateName = layout.orderedStates.at(i);
+        const FsmStateRow row = layout.stateRowsByName.value(stateName);
+        const bool highlighted =
+            i == 0 || stateName.contains(QStringLiteral("idle"),
+                                         Qt::CaseInsensitive);
+        addStateNode(row, layout.stateRects.value(stateName), highlighted, false);
+    }
+
+    QHash<QString, QRectF> ghostRectsByTransition;
+    QHash<QString, FsmStateRow> ghostRowsByTransition;
+    for (const FsmTransitionRow& row : graph.transitionRows) {
+        if (!layout.stateIndexes.contains(row.fromStateDisplayName)
+            || !layout.stateIndexes.contains(row.toStateDisplayName)
+            || row.fromStateDisplayName == row.toStateDisplayName) {
+            continue;
+        }
+        const int fromIndex = layout.stateIndexes.value(row.fromStateDisplayName);
+        const int toIndex = layout.stateIndexes.value(row.toStateDisplayName);
+        if (fromIndex - toIndex <= 2)
+            continue;
+
+        const QRectF fromRect = layout.stateRects.value(row.fromStateDisplayName);
+        const QRectF toRect = layout.stateRects.value(row.toStateDisplayName);
+        const QPointF center(
+            (fromRect.center().x() + toRect.center().x()) / 2.0,
+            (fromRect.center().y() + toRect.center().y()) / 2.0 - 78.0);
+        const QRectF ghostRect = stateNodeRectAt(center.x(), center.y());
+        const QString key =
+            row.fromStateDisplayName + QLatin1Char('\n') + row.toStateDisplayName;
+        ghostRectsByTransition.insert(key, ghostRect);
+        ghostRowsByTransition.insert(
+            key,
+            layout.stateRowsByName.value(row.toStateDisplayName));
+        graphBounds = graphBounds.united(ghostRect);
+    }
+
+    for (auto it = ghostRectsByTransition.cbegin();
+         it != ghostRectsByTransition.cend();
+         ++it) {
+        addStateNode(ghostRowsByTransition.value(it.key()),
+                     it.value(),
+                     false,
+                     true);
+    }
+
+    auto addTransition = [&](const FsmTransitionRow& row,
+                             const QRectF& fromRect,
+                             const QRectF& toRect) {
+        QPointF start;
+        QPointF end;
+        QPainterPath path;
+        qreal angle = 0.0;
+        if (row.fromStateDisplayName == row.toStateDisplayName) {
+            start = QPointF(fromRect.center().x() + fromRect.width() * 0.24,
+                            fromRect.top() + 6.0);
+            end = QPointF(fromRect.center().x() - fromRect.width() * 0.24,
+                          fromRect.top() + 6.0);
+            path.moveTo(start);
+            path.cubicTo(start + QPointF(36.0, -86.0),
+                         end + QPointF(-36.0, -86.0),
+                         end);
+            angle = kPi;
+        } else {
+            path = fsmTransitionPath(fromRect, toRect, &start, &end);
+            angle = std::atan2(end.y() - start.y(), end.x() - start.x());
+        }
+
+        RtlInsightGraphElement transition;
+        transition.kind = QStringLiteral("transition");
+        transition.primary = row.fromStateDisplayName;
+        transition.secondary = row.toStateDisplayName;
+        transition.detail = row.conditionDisplayName;
+        transition.codeLink = row.codeLink;
+        auto* item = new RtlInsightGraphEdgeItem(
+            transition,
+            path,
+            end,
+            angle,
+            fsmTransitionLabel(row.conditionDisplayName),
+            font,
+            QColor(QStringLiteral("#111827")));
+        item->navigateHandler = navigate;
+        item->selectHandler = select;
+        scene->addItem(item);
+    };
+
+    for (const FsmTransitionRow& row : graph.transitionRows) {
+        if (!layout.stateRects.contains(row.fromStateDisplayName)
+            || !layout.stateRects.contains(row.toStateDisplayName)) {
+            continue;
+        }
+        const QRectF fromRect = layout.stateRects.value(row.fromStateDisplayName);
+        QRectF toRect = layout.stateRects.value(row.toStateDisplayName);
+        const QString ghostKey =
+            row.fromStateDisplayName + QLatin1Char('\n') + row.toStateDisplayName;
+        if (ghostRectsByTransition.contains(ghostKey))
+            toRect = ghostRectsByTransition.value(ghostKey);
+        addTransition(row, fromRect, toRect);
+    }
+
+    return graphBounds.adjusted(-90.0, -110.0, 90.0, 90.0);
 }
 
 QTreeWidgetItem* createGroupItem(QTreeWidget* tree,
@@ -1238,7 +1727,8 @@ int RtlInsightsPanelCoordinator::graphNodeItemCountForTest() const
         return 0;
     int count = 0;
     for (QGraphicsItem* item : insightsGraphScene->items()) {
-        if (dynamic_cast<RtlInsightGraphNodeItem*>(item))
+        if (dynamic_cast<RtlInsightGraphNodeItem*>(item)
+            || dynamic_cast<RtlInsightGraphStateNodeItem*>(item))
             ++count;
     }
     return count;
@@ -1357,143 +1847,17 @@ void RtlInsightsPanelCoordinator::renderStateTransitionGraphScene(
         }
     };
 
-    auto addNode = [&](const RtlInsightGraphElement& element,
-                       const QRectF& rect,
-                       const QColor& fill,
-                       const QColor& stroke) {
-        auto* item = new RtlInsightGraphNodeItem(element,
-                                                rect,
-                                                fill,
-                                                stroke,
-                                                font);
-        item->navigateHandler = navigate;
-        item->selectHandler = select;
-        insightsGraphScene->addItem(item);
-        return item;
-    };
-    auto addEdge = [&](const RtlInsightGraphElement& element,
-                       const QPainterPath& path,
-                       const QPointF& tip,
-                       qreal angle,
-                       const QString& label,
-                       const QColor& color) {
-        auto* item = new RtlInsightGraphEdgeItem(element,
-                                                path,
-                                                tip,
-                                                angle,
-                                                label,
-                                                font,
-                                                color);
-        item->navigateHandler = navigate;
-        item->selectHandler = select;
-        insightsGraphScene->addItem(item);
-        return item;
-    };
-
-    const QRectF stateRegisterRect = insightNodeRectAt(-140, -130);
-    RtlInsightGraphElement stateRegister;
-    stateRegister.kind = QStringLiteral("state-register");
-    stateRegister.primary = report.graph.stateRegisterDisplayName;
-    stateRegister.secondary = report.graph.stateRegisterTypeDisplayName;
-    stateRegister.detail = report.graph.stateRegisterDetailDisplayName;
-    stateRegister.codeLink = report.graph.stateRegisterCodeLink;
-    addNode(stateRegister,
-            stateRegisterRect,
-            QColor(QStringLiteral("#eff6ff")),
-            QColor(QStringLiteral("#2563eb")));
-
-    const QRectF nextStateRect = insightNodeRectAt(140, -130);
-    RtlInsightGraphElement nextState;
-    nextState.kind = QStringLiteral("next-state-signal");
-    nextState.primary = report.graph.nextStateSignalDisplayName;
-    nextState.secondary = report.graph.nextStateSignalTypeDisplayName;
-    nextState.detail = report.graph.nextStateSignalSourceRoleDisplayName;
-    nextState.codeLink = report.graph.nextStateSignalCodeLink;
-    addNode(nextState,
-            nextStateRect,
-            QColor(QStringLiteral("#f0fdf4")),
-            QColor(QStringLiteral("#16a34a")));
-
-    const QPointF registerEnd =
-        rectAnchorToward(stateRegisterRect, nextStateRect.center());
-    const QPointF nextStart =
-        rectAnchorToward(nextStateRect, stateRegisterRect.center());
-    RtlInsightGraphElement signalEdge;
-    signalEdge.kind = QStringLiteral("state-signal-edge");
-    signalEdge.primary = stateRegister.primary;
-    signalEdge.secondary = nextState.primary;
-    signalEdge.detail = QStringLiteral("paired next-state signal");
-    signalEdge.codeLink = nextState.codeLink;
-    addEdge(signalEdge,
-            straightArrowPath(registerEnd, nextStart),
-            nextStart,
-            std::atan2(nextStart.y() - registerEnd.y(),
-                       nextStart.x() - registerEnd.x()),
-            QStringLiteral("next"),
-            QColor(QStringLiteral("#64748b")));
-
-    QHash<QString, QRectF> stateRects;
-    const int stateCount = report.graph.stateRows.size();
-    const qreal radius = qMax<qreal>(170.0, stateCount * 34.0);
-    for (int i = 0; i < stateCount; ++i) {
-        const FsmStateRow& row = report.graph.stateRows.at(i);
-        const QPointF position = circularPosition(i, stateCount, radius);
-        const QRectF rect = insightNodeRectAt(position.x(), position.y());
-        stateRects.insert(row.stateDisplayName, rect);
-        RtlInsightGraphElement state;
-        state.kind = QStringLiteral("state");
-        state.primary = row.stateDisplayName;
-        state.secondary = row.typeDisplayName;
-        state.detail = row.detailDisplayName;
-        state.codeLink = row.codeLink;
-        addNode(state,
-                rect,
-                QColor(QStringLiteral("#fff7ed")),
-                QColor(QStringLiteral("#ea580c")));
-    }
-
-    for (const FsmTransitionRow& row : report.graph.transitionRows) {
-        if (!stateRects.contains(row.fromStateDisplayName)
-            || !stateRects.contains(row.toStateDisplayName)) {
-            continue;
-        }
-        const QRectF fromRect = stateRects.value(row.fromStateDisplayName);
-        const QRectF toRect = stateRects.value(row.toStateDisplayName);
-        QPointF start;
-        QPointF end;
-        QPainterPath path;
-        qreal angle = 0.0;
-        if (row.fromStateDisplayName == row.toStateDisplayName) {
-            start = QPointF(fromRect.right(), fromRect.center().y() - 10);
-            end = QPointF(fromRect.right(), fromRect.center().y() + 10);
-            path.moveTo(start);
-            path.cubicTo(start + QPointF(70, -70),
-                         end + QPointF(70, 70),
-                         end);
-            angle = kPi / 2.0;
-        } else {
-            start = rectAnchorToward(fromRect, toRect.center());
-            end = rectAnchorToward(toRect, fromRect.center());
-            path = curvedArrowPath(start, end, 22.0);
-            angle = std::atan2(end.y() - start.y(), end.x() - start.x());
-        }
-
-        RtlInsightGraphElement transition;
-        transition.kind = QStringLiteral("transition");
-        transition.primary = row.fromStateDisplayName;
-        transition.secondary = row.toStateDisplayName;
-        transition.detail = row.conditionDisplayName;
-        transition.codeLink = row.codeLink;
-        addEdge(transition,
-                path,
-                end,
-                angle,
-                row.conditionDisplayName,
-                QColor(QStringLiteral("#334155")));
-    }
-
-    const QRectF bounds =
-        insightsGraphScene->itemsBoundingRect().adjusted(-60, -60, 60, 60);
+    const QString graphTitle = report.selectedSignalDisplayName.isEmpty()
+        ? QStringLiteral("State Transition Graph")
+        : QStringLiteral("State Transition Graph: %1")
+              .arg(report.selectedSignalDisplayName);
+    const QRectF bounds = renderFsmStateMachineGraph(insightsGraphScene,
+                                                     report.graph,
+                                                     graphTitle,
+                                                     QPointF(0.0, 0.0),
+                                                     font,
+                                                     navigate,
+                                                     select);
     insightsGraphScene->setSceneRect(bounds);
     insightsGraphView->fitInView(bounds, Qt::KeepAspectRatio);
 }
@@ -1531,170 +1895,27 @@ void RtlInsightsPanelCoordinator::renderFsmGraphScene(
         }
     };
 
-    auto addNode = [&](const RtlInsightGraphElement& element,
-                       const QRectF& rect,
-                       const QColor& fill,
-                       const QColor& stroke) {
-        auto* item = new RtlInsightGraphNodeItem(element,
-                                                rect,
-                                                fill,
-                                                stroke,
-                                                font);
-        item->navigateHandler = navigate;
-        item->selectHandler = select;
-        insightsGraphScene->addItem(item);
-        return item;
-    };
-    auto addEdge = [&](const RtlInsightGraphElement& element,
-                       const QPainterPath& path,
-                       const QPointF& tip,
-                       qreal angle,
-                       const QString& label,
-                       const QColor& color) {
-        auto* item = new RtlInsightGraphEdgeItem(element,
-                                                path,
-                                                tip,
-                                                angle,
-                                                label,
-                                                font,
-                                                color);
-        item->navigateHandler = navigate;
-        item->selectHandler = select;
-        insightsGraphScene->addItem(item);
-        return item;
-    };
-
-    QFont titleFont = font;
-    titleFont.setBold(true);
-    titleFont.setPointSize(qMax(10, titleFont.pointSize() + 1));
-    auto* titleItem = insightsGraphScene->addSimpleText(
-        title.isEmpty() ? QStringLiteral("FSM Graph") : title,
-        titleFont);
-    titleItem->setBrush(QBrush(QColor(QStringLiteral("#0f172a"))));
-    titleItem->setPos(-260, -250);
-
-    constexpr qreal graphSpacing = 470.0;
+    QRectF bounds;
+    qreal nextOriginY = 0.0;
     for (int graphIndex = 0; graphIndex < report.graphs.size(); ++graphIndex) {
         const FsmGraph& graph = report.graphs.at(graphIndex);
-        const qreal baseX = graphIndex * graphSpacing;
-        const qreal baseY = 0.0;
-
-        QFont labelFont = font;
-        labelFont.setBold(true);
-        auto* label = insightsGraphScene->addSimpleText(
-            graph.stateRegisterDisplayName,
-            labelFont);
-        label->setBrush(QBrush(QColor(QStringLiteral("#334155"))));
-        label->setPos(baseX - 240, baseY - 214);
-
-        const QRectF stateRegisterRect =
-            insightNodeRectAt(baseX - 140, baseY - 130);
-        RtlInsightGraphElement stateRegister;
-        stateRegister.kind = QStringLiteral("state-register");
-        stateRegister.primary = graph.stateRegisterDisplayName;
-        stateRegister.secondary = graph.stateRegisterTypeDisplayName;
-        stateRegister.detail = graph.stateRegisterDetailDisplayName;
-        stateRegister.codeLink = graph.stateRegisterCodeLink;
-        addNode(stateRegister,
-                stateRegisterRect,
-                QColor(QStringLiteral("#eff6ff")),
-                QColor(QStringLiteral("#2563eb")));
-
-        const QRectF nextStateRect = insightNodeRectAt(baseX + 140, baseY - 130);
-        RtlInsightGraphElement nextState;
-        nextState.kind = QStringLiteral("next-state-signal");
-        nextState.primary = graph.nextStateSignalDisplayName;
-        nextState.secondary = graph.nextStateSignalTypeDisplayName;
-        nextState.detail = graph.nextStateSignalSourceRoleDisplayName;
-        nextState.codeLink = graph.nextStateSignalCodeLink;
-        addNode(nextState,
-                nextStateRect,
-                QColor(QStringLiteral("#f0fdf4")),
-                QColor(QStringLiteral("#16a34a")));
-
-        const QPointF registerEnd =
-            rectAnchorToward(stateRegisterRect, nextStateRect.center());
-        const QPointF nextStart =
-            rectAnchorToward(nextStateRect, stateRegisterRect.center());
-        RtlInsightGraphElement signalEdge;
-        signalEdge.kind = QStringLiteral("state-signal-edge");
-        signalEdge.primary = stateRegister.primary;
-        signalEdge.secondary = nextState.primary;
-        signalEdge.detail = QStringLiteral("paired next-state signal");
-        signalEdge.codeLink = nextState.codeLink;
-        addEdge(signalEdge,
-                straightArrowPath(registerEnd, nextStart),
-                nextStart,
-                std::atan2(nextStart.y() - registerEnd.y(),
-                           nextStart.x() - registerEnd.x()),
-                QStringLiteral("next"),
-                QColor(QStringLiteral("#64748b")));
-
-        QHash<QString, QRectF> stateRects;
-        const int stateCount = graph.stateRows.size();
-        const qreal radius = qMax<qreal>(150.0, stateCount * 28.0);
-        for (int i = 0; i < stateCount; ++i) {
-            const FsmStateRow& row = graph.stateRows.at(i);
-            const QPointF position = circularPosition(i, stateCount, radius);
-            const QRectF rect = insightNodeRectAt(baseX + position.x(),
-                                                  baseY + position.y());
-            stateRects.insert(row.stateDisplayName, rect);
-            RtlInsightGraphElement state;
-            state.kind = QStringLiteral("state");
-            state.primary = row.stateDisplayName;
-            state.secondary = row.typeDisplayName;
-            state.detail = row.detailDisplayName;
-            state.codeLink = row.codeLink;
-            addNode(state,
-                    rect,
-                    QColor(QStringLiteral("#fff7ed")),
-                    QColor(QStringLiteral("#ea580c")));
-        }
-
-        for (const FsmTransitionRow& row : graph.transitionRows) {
-            if (!stateRects.contains(row.fromStateDisplayName)
-                || !stateRects.contains(row.toStateDisplayName)) {
-                continue;
-            }
-            const QRectF fromRect = stateRects.value(row.fromStateDisplayName);
-            const QRectF toRect = stateRects.value(row.toStateDisplayName);
-            QPointF start;
-            QPointF end;
-            QPainterPath path;
-            qreal angle = 0.0;
-            if (row.fromStateDisplayName == row.toStateDisplayName) {
-                start = QPointF(fromRect.right(), fromRect.center().y() - 10);
-                end = QPointF(fromRect.right(), fromRect.center().y() + 10);
-                path.moveTo(start);
-                path.cubicTo(start + QPointF(70, -70),
-                             end + QPointF(70, 70),
-                             end);
-                angle = kPi / 2.0;
-            } else {
-                start = rectAnchorToward(fromRect, toRect.center());
-                end = rectAnchorToward(toRect, fromRect.center());
-                path = curvedArrowPath(start, end, 22.0);
-                angle = std::atan2(end.y() - start.y(),
-                                   end.x() - start.x());
-            }
-
-            RtlInsightGraphElement transition;
-            transition.kind = QStringLiteral("transition");
-            transition.primary = row.fromStateDisplayName;
-            transition.secondary = row.toStateDisplayName;
-            transition.detail = row.conditionDisplayName;
-            transition.codeLink = row.codeLink;
-            addEdge(transition,
-                    path,
-                    end,
-                    angle,
-                    row.conditionDisplayName,
-                    QColor(QStringLiteral("#334155")));
-        }
+        const QString graphTitle = report.graphs.size() == 1
+            ? (title.isEmpty() ? QStringLiteral("FSM Graph") : title)
+            : QStringLiteral("FSM Graph: %1")
+                  .arg(graph.nextStateSignalDisplayName.isEmpty()
+                           ? graph.stateRegisterDisplayName
+                           : graph.nextStateSignalDisplayName);
+        const QRectF graphBounds =
+            renderFsmStateMachineGraph(insightsGraphScene,
+                                       graph,
+                                       graphTitle,
+                                       QPointF(0.0, nextOriginY),
+                                       font,
+                                       navigate,
+                                       select);
+        bounds = bounds.isNull() ? graphBounds : bounds.united(graphBounds);
+        nextOriginY = graphBounds.bottom() + 190.0;
     }
-
-    const QRectF bounds =
-        insightsGraphScene->itemsBoundingRect().adjusted(-80, -80, 80, 80);
     insightsGraphScene->setSceneRect(bounds);
     insightsGraphView->fitInView(bounds, Qt::KeepAspectRatio);
 }
@@ -1772,11 +1993,19 @@ void RtlInsightsPanelCoordinator::renderModuleBlockDiagramScene(
                        const QRectF& fromRect,
                        const QRectF& toRect,
                        bool fromRoot) {
-        const QPointF start = fromRoot && fromRect.contains(toRect.center())
-            ? QPointF(qMax(fromRect.left() + 82.0, toRect.left() - 82.0),
-                      toRect.center().y())
-            : rectAnchorToward(fromRect, toRect.center());
-        const QPointF end = rectAnchorToward(toRect, start);
+        const QPointF start = fromRoot
+            ? QPointF(fromRect.left() + 62.0, toRect.center().y())
+            : QPointF(fromRect.right(), fromRect.center().y());
+        const QPointF end = QPointF(toRect.left(), toRect.center().y());
+        QPainterPath path(start);
+        if (std::abs(start.y() - end.y()) < 1.0) {
+            path.lineTo(end);
+        } else {
+            const qreal midX = (start.x() + end.x()) / 2.0;
+            path.cubicTo(QPointF(midX, start.y()),
+                         QPointF(midX, end.y()),
+                         end);
+        }
         RtlInsightGraphElement element;
         element.kind = QStringLiteral("module-edge");
         element.primary = edge.parentModuleDisplayName;
@@ -1787,12 +2016,10 @@ void RtlInsightsPanelCoordinator::renderModuleBlockDiagramScene(
         element.drillFileName = edge.childDefinitionCodeLink.fileName;
         auto* item = new RtlInsightGraphEdgeItem(
             element,
-            straightArrowPath(start, end),
+            path,
             end,
             std::atan2(end.y() - start.y(), end.x() - start.x()),
-            edge.relationshipDisplayName.isEmpty()
-                ? QStringLiteral("instantiates")
-                : edge.relationshipDisplayName,
+            QString(),
             font,
             QColor(QStringLiteral("#334155")));
         item->navigateHandler = navigate;
@@ -1800,62 +2027,80 @@ void RtlInsightsPanelCoordinator::renderModuleBlockDiagramScene(
         insightsGraphScene->addItem(item);
     };
 
-    QHash<int, QList<ModuleBlockDiagramNode>> nodesByDepth;
+    QHash<int, ModuleBlockDiagramNode> nodeById;
+    QHash<int, QList<ModuleBlockDiagramNode>> childrenByParent;
     int maxDepth = 0;
-    int maxRows = 1;
+    for (const ModuleBlockDiagramNode& node : report.nodes) {
+        nodeById.insert(node.nodeId, node);
+        maxDepth = qMax(maxDepth, node.depth);
+        if (node.parentNodeId >= 0)
+            childrenByParent[node.parentNodeId].append(node);
+    }
+    for (auto it = childrenByParent.begin(); it != childrenByParent.end(); ++it) {
+        std::sort(it.value().begin(),
+                  it.value().end(),
+                  [](const ModuleBlockDiagramNode& lhs,
+                     const ModuleBlockDiagramNode& rhs) {
+                      if (lhs.depth != rhs.depth)
+                          return lhs.depth < rhs.depth;
+                      return lhs.nodeId < rhs.nodeId;
+                  });
+    }
+
+    QHash<int, qreal> centerYByNodeId;
+    constexpr qreal columnSpacing = 300.0;
+    constexpr qreal rowSpacing = 122.0;
+    qreal nextLeafY = 0.0;
+    std::function<qreal(int)> assignTreeY = [&](int nodeId) -> qreal {
+        const QList<ModuleBlockDiagramNode> children =
+            childrenByParent.value(nodeId);
+        if (children.isEmpty()) {
+            const qreal y = nextLeafY;
+            nextLeafY += rowSpacing;
+            centerYByNodeId.insert(nodeId, y);
+            return y;
+        }
+
+        qreal firstChildY = 0.0;
+        qreal lastChildY = 0.0;
+        bool haveChild = false;
+        for (const ModuleBlockDiagramNode& child : children) {
+            const qreal childY = assignTreeY(child.nodeId);
+            if (!haveChild) {
+                firstChildY = childY;
+                haveChild = true;
+            }
+            lastChildY = childY;
+        }
+        const qreal y = (firstChildY + lastChildY) / 2.0;
+        centerYByNodeId.insert(nodeId, y);
+        return y;
+    };
+    assignTreeY(report.root.nodeId);
+
+    QHash<int, QRectF> rectByNodeId;
+    QRectF childBounds;
     for (const ModuleBlockDiagramNode& node : report.nodes) {
         if (node.nodeId == report.root.nodeId)
             continue;
-        nodesByDepth[node.depth].append(node);
-        maxDepth = qMax(maxDepth, node.depth);
-        maxRows = qMax(maxRows, nodesByDepth.value(node.depth).size());
+        const qreal x = (node.depth - 1) * columnSpacing;
+        const QRectF rect = insightNodeRectAt(x,
+                                              centerYByNodeId.value(node.nodeId));
+        rectByNodeId.insert(node.nodeId, rect);
+        childBounds = childBounds.isNull() ? rect : childBounds.united(rect);
     }
 
-    QHash<int, QRectF> rectByNodeId;
-    constexpr qreal columnSpacing = 260.0;
-    constexpr qreal rowSpacing = 118.0;
-    constexpr qreal marginX = 110.0;
-    constexpr qreal topMargin = 92.0;
-    constexpr qreal bottomMargin = 74.0;
-    const int columnCount = qMax(1, maxDepth);
-    const qreal containerWidth =
-        qMax<qreal>(640.0,
-                    marginX * 2.0
-                        + kInsightNodeWidth * columnCount
-                        + columnSpacing * (columnCount - 1));
-    const qreal neededRowsHeight =
-        kInsightNodeHeight * maxRows + rowSpacing * (maxRows - 1);
-    const qreal containerHeight =
-        qMax<qreal>(360.0, topMargin + bottomMargin + neededRowsHeight);
-    const QRectF rootRect(-containerWidth / 2.0,
-                          -containerHeight / 2.0,
-                          containerWidth,
-                          containerHeight);
+    QRectF rootRect;
+    if (childBounds.isNull()) {
+        rootRect = QRectF(-320.0, -180.0, 640.0, 360.0);
+    } else {
+        rootRect = childBounds.adjusted(-130.0, -120.0, 130.0, 95.0);
+        rootRect = expandedToMinimum(rootRect,
+                                     qMax<qreal>(680.0,
+                                                 maxDepth * columnSpacing + 260.0),
+                                     360.0);
+    }
     rectByNodeId.insert(report.root.nodeId, rootRect);
-
-    for (int depth = 1; depth <= maxDepth; ++depth) {
-        QList<ModuleBlockDiagramNode> nodes = nodesByDepth.value(depth);
-        std::sort(nodes.begin(), nodes.end(),
-                  [](const ModuleBlockDiagramNode& lhs,
-                     const ModuleBlockDiagramNode& rhs) {
-                      return lhs.nodeId < rhs.nodeId;
-                  });
-        const qreal x = rootRect.left() + marginX + kInsightNodeWidth / 2.0
-            + (depth - 1) * columnSpacing;
-        const qreal contentHeight =
-            rootRect.height() - topMargin - bottomMargin;
-        const qreal rowsHeight = nodes.isEmpty()
-            ? 0.0
-            : kInsightNodeHeight + rowSpacing * (nodes.size() - 1);
-        const qreal firstCenterY = rootRect.top() + topMargin
-            + (contentHeight - rowsHeight) / 2.0
-            + kInsightNodeHeight / 2.0;
-        for (int i = 0; i < nodes.size(); ++i) {
-            const QRectF rect = insightNodeRectAt(x,
-                                                  firstCenterY + i * rowSpacing);
-            rectByNodeId.insert(nodes.at(i).nodeId, rect);
-        }
-    }
 
     addNode(report.root, rootRect, true);
 

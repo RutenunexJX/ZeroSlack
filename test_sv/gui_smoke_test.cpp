@@ -70,6 +70,7 @@
 #include "foldblockshelfmodel.h"
 #include "foldblockshelfpanel.h"
 #include "formattersettings.h"
+#include "columnnumbertool.h"
 #include "commodecommandregistry.h"
 #include "commodecoordinator.h"
 #include "commodeservice.h"
@@ -1876,6 +1877,65 @@ static void runEditorColumnEditRegression()
     expectBool("editor rectangular paste repeats one clipboard row",
                clipboardEditor.toPlainText()
                    == QStringLiteral("aXYc\naXYc\naXYc\n"),
+               true);
+
+    MyCodeEditor tabColumnEditor;
+    tabColumnEditor.resize(520, 180);
+    const QFontMetrics tabMetrics(tabColumnEditor.font());
+    tabColumnEditor.setTabStopDistance(
+        tabMetrics.horizontalAdvance(QLatin1Char(' ')) * 4);
+    tabColumnEditor.setPlainText(QStringLiteral("\tfoo\n    foo\n\tfoo\n"));
+    tabColumnEditor.show();
+    tabColumnEditor.setFocus();
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+
+    QTextBlock tabFirstBlock =
+        tabColumnEditor.document()->findBlockByNumber(0);
+    QTextBlock tabLastBlock =
+        tabColumnEditor.document()->findBlockByNumber(2);
+    QTextCursor tabStartCursor(tabFirstBlock);
+    tabStartCursor.setPosition(tabFirstBlock.position() + 1);
+    QTextCursor tabEndCursor(tabLastBlock);
+    tabEndCursor.setPosition(tabLastBlock.position() + 1);
+    tabColumnEditor.setTextCursor(tabStartCursor);
+    QTest::mouseClick(tabColumnEditor.viewport(),
+                      Qt::LeftButton,
+                      columnModifiers,
+                      tabColumnEditor.cursorRect(tabEndCursor).center());
+    QTest::keyClicks(&tabColumnEditor, "X");
+    expectBool("editor column mode inserts by visual column through tabs",
+               tabColumnEditor.toPlainText()
+                   == QStringLiteral("\tXfoo\n    Xfoo\n\tXfoo\n"),
+               true);
+
+    MyCodeEditor tabKeyEditor;
+    tabKeyEditor.resize(520, 160);
+    tabKeyEditor.setTabStopDistance(
+        tabMetrics.horizontalAdvance(QLatin1Char(' ')) * 4);
+    tabKeyEditor.setPlainText(QStringLiteral("\tfoo\n    foo\n"));
+    tabKeyEditor.show();
+    tabKeyEditor.setFocus();
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    QTextBlock tabKeyFirst = tabKeyEditor.document()->findBlockByNumber(0);
+    QTextBlock tabKeyLast = tabKeyEditor.document()->findBlockByNumber(1);
+    QTextCursor tabKeyStart(tabKeyFirst);
+    tabKeyStart.setPosition(tabKeyFirst.position() + 1);
+    QTextCursor tabKeyEnd(tabKeyLast);
+    tabKeyEnd.setPosition(tabKeyLast.position() + 4);
+    tabKeyEditor.setTextCursor(tabKeyStart);
+    QTest::mouseClick(tabKeyEditor.viewport(),
+                      Qt::LeftButton,
+                      columnModifiers,
+                      tabKeyEditor.cursorRect(tabKeyEnd).center());
+    QTest::keyClick(&tabKeyEditor, Qt::Key_Tab);
+    expectBool("editor column mode Tab inserts spaces to next visual tab stop",
+               tabKeyEditor.toPlainText()
+                   == QStringLiteral("\t    foo\n        foo\n"),
+               true);
+    QTest::keyClick(&tabKeyEditor, Qt::Key_Backtab);
+    expectBool("editor column mode Shift+Tab is captured as visual outdent",
+               tabKeyEditor.toPlainText()
+                   == QStringLiteral("\tfoo\n    foo\n"),
                true);
 }
 
@@ -4884,7 +4944,25 @@ static void runRtlInsightsPanelRegression(MainWindow& window, const QString& fix
     scanRtlInsightItems();
     window.semanticDocks->rtlInsightsPanelCoordinator()->showFsmGraph();
     QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-    scanRtlInsightItems();
+    const int fsmGraphNodeCount =
+        window.semanticDocks->rtlInsightsPanelCoordinator()
+            ->graphNodeItemCountForTest();
+    const int fsmGraphEdgeCount =
+        window.semanticDocks->rtlInsightsPanelCoordinator()
+            ->graphEdgeItemCountForTest();
+    const bool fsmGraphStateNavigates =
+        window.semanticDocks->rtlInsightsPanelCoordinator()
+            ->triggerGraphNavigationForTest(QStringLiteral("state"),
+                                            QStringLiteral("IDLE"));
+    const bool fsmGraphTransitionNavigates =
+        window.semanticDocks->rtlInsightsPanelCoordinator()
+            ->triggerGraphNavigationForTest(QStringLiteral("transition"),
+                                            QStringLiteral("IDLE"),
+                                            QStringLiteral("RUN"));
+    window.semanticDocks->rtlInsightsPanelCoordinator()->updateModuleContext(
+        fixturePath,
+        QStringLiteral("insight_top"),
+        QStringLiteral("data_q"));
     window.semanticDocks->rtlInsightsPanelCoordinator()->showSignalJourney();
     QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
     scanRtlInsightItems();
@@ -4961,36 +5039,17 @@ static void runRtlInsightsPanelRegression(MainWindow& window, const QString& fix
     expectBool("RTL insights renders unmapped clock category",
                sawUnmappedClockCategory,
                true);
-    expectBool("RTL insights renders FSM transition", sawTransition, true);
-    expectBool("RTL insights renders FSM state type",
-               sawFsmStateType,
+    expectBool("RTL insights renders FSM graph nodes",
+               fsmGraphNodeCount >= 2,
                true);
-    expectBool("RTL insights renders FSM state source role",
-               sawFsmStateSourceRole,
+    expectBool("RTL insights renders FSM graph transitions",
+               fsmGraphEdgeCount >= 2,
                true);
-    expectBool("RTL insights renders FSM state module",
-               sawFsmStateModule,
+    expectBool("RTL insights FSM graph state navigates",
+               fsmGraphStateNavigates,
                true);
-    expectBool("RTL insights renders FSM register type",
-               sawFsmRegisterType,
-               true);
-    expectBool("RTL insights renders FSM register source role",
-               sawFsmRegisterSourceRole,
-               true);
-    expectBool("RTL insights renders FSM next state signal",
-               sawFsmNextStateSignal,
-               true);
-    expectBool("RTL insights renders FSM next state source role",
-               sawFsmNextStateSourceRole,
-               true);
-    expectBool("RTL insights renders FSM from state endpoint",
-               sawFsmFromStateEndpoint,
-               true);
-    expectBool("RTL insights renders FSM to state endpoint",
-               sawFsmToStateEndpoint,
-               true);
-    expectBool("RTL insights renders FSM transition source role",
-               sawFsmTransitionSourceRole,
+    expectBool("RTL insights FSM graph transition navigates",
+               fsmGraphTransitionNavigates,
                true);
     expectBool("RTL insights renders signal journey", sawSignalJourney, true);
     expectBool("RTL insights renders signal journey declaration source role",
@@ -5803,11 +5862,12 @@ static void runNavigationHierarchyModelRegression()
 
 static void sendWidgetKey(QWidget* widget,
                           int key,
-                          const QString& text = QString())
+                          const QString& text = QString(),
+                          Qt::KeyboardModifiers modifiers = Qt::NoModifier)
 {
     if (!widget)
         return;
-    QKeyEvent event(QEvent::KeyPress, key, Qt::NoModifier, text);
+    QKeyEvent event(QEvent::KeyPress, key, modifiers, text);
     QApplication::sendEvent(widget, &event);
     QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
 }
@@ -5816,6 +5876,8 @@ static void runComModeRegression(MainWindow& window)
 {
     printf("\n-- com mode regression --\n");
 
+    const Qt::KeyboardModifiers comToggleModifiers =
+        Qt::ControlModifier | Qt::ShiftModifier | Qt::AltModifier;
     QTemporaryDir tempDir;
     expectBool("com mode temp workspace valid", tempDir.isValid(), true);
     const QString root = QDir::cleanPath(tempDir.path());
@@ -6387,6 +6449,72 @@ static void runComModeRegression(MainWindow& window)
                    && executableComModeCommand(QStringLiteral("cr"))
                        == QStringLiteral("cr"),
                true);
+    const ComModeCommandMetadata* columnNumberMetadata =
+        findComModeCommandMetadata(QStringLiteral("cn"));
+    expectBool("COM registry exposes column number command",
+               columnNumberMetadata
+                   && columnNumberMetadata->executable
+                   && columnNumberMetadata->description.contains(
+                       QStringLiteral("column number"))
+                   && executableComModeCommand(QStringLiteral("cn"))
+                       == QStringLiteral("cn"),
+               true);
+    ColumnNumberConfig svHexConfig =
+        inferColumnNumberConfig(QStringLiteral("8'h0A"));
+    expectBool("Column number inference recognizes SV sized hex",
+               svHexConfig.base == ColumnNumberBase::Hex
+                   && svHexConfig.style == ColumnNumberStyle::SvSized
+                   && svHexConfig.bitWidth == 8
+                   && svHexConfig.start == 10
+                   && svHexConfig.fixedDigitWidth
+                   && svHexConfig.digitWidth == 2
+                   && svHexConfig.pad == ColumnNumberPad::Zero
+                   && svHexConfig.uppercaseHex,
+               true);
+    ColumnNumberConfig svLowerConfig =
+        inferColumnNumberConfig(QStringLiteral("'h0a"));
+    expectBool("Column number inference recognizes SV unsized lower hex",
+               svLowerConfig.base == ColumnNumberBase::Hex
+                   && svLowerConfig.style == ColumnNumberStyle::SvUnsized
+                   && svLowerConfig.start == 10
+                   && !svLowerConfig.uppercaseHex,
+               true);
+    ColumnNumberConfig cHexConfig =
+        inferColumnNumberConfig(QStringLiteral("0x0A"));
+    expectBool("Column number inference recognizes C-like hex",
+               cHexConfig.base == ColumnNumberBase::Hex
+                   && cHexConfig.style == ColumnNumberStyle::CLike
+                   && cHexConfig.start == 10
+                   && cHexConfig.fixedDigitWidth
+                   && cHexConfig.digitWidth == 2,
+               true);
+    ColumnNumberConfig paddedDecConfig =
+        inferColumnNumberConfig(QStringLiteral("0010"));
+    expectBool("Column number inference recognizes padded decimal",
+               paddedDecConfig.base == ColumnNumberBase::Dec
+                   && paddedDecConfig.style == ColumnNumberStyle::Plain
+                   && paddedDecConfig.start == 10
+                   && paddedDecConfig.fixedDigitWidth
+                   && paddedDecConfig.digitWidth == 4,
+               true);
+    ColumnNumberConfig generatedConfig;
+    generatedConfig.base = ColumnNumberBase::Bin;
+    generatedConfig.style = ColumnNumberStyle::SvSized;
+    generatedConfig.bitWidth = 8;
+    generatedConfig.start = 2;
+    generatedConfig.step = 2;
+    generatedConfig.repeat = 2;
+    generatedConfig.direction = ColumnNumberDirection::Up;
+    generatedConfig.fixedDigitWidth = true;
+    generatedConfig.digitWidth = 4;
+    generatedConfig.pad = ColumnNumberPad::Zero;
+    expectBool("Column number preview handles binary SV repeat step",
+               previewColumnNumbers(generatedConfig, 4)
+                   == QStringList({QStringLiteral("8'b0010"),
+                                   QStringLiteral("8'b0010"),
+                                   QStringLiteral("8'b0100"),
+                                   QStringLiteral("8'b0100")}),
+               true);
     const ComModeCommandMetadata* selectInsideMetadata =
         findComModeCommandMetadata(QStringLiteral("si"));
     expectBool("COM registry exposes select-inside command",
@@ -6417,7 +6545,14 @@ static void runComModeRegression(MainWindow& window)
     modeEditor.setFocus();
     QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
     sendWidgetKey(&modeEditor, Qt::Key_Escape);
-    expectBool("Esc still enters COM mode from editor focus",
+    expectBool("Esc no longer enters COM mode from editor focus",
+               !modeEditor.comModeActive(),
+               true);
+    sendWidgetKey(&modeEditor,
+                  Qt::Key_QuoteLeft,
+                  QStringLiteral("`"),
+                  comToggleModifiers);
+    expectBool("Ctrl+Shift+Alt+backtick enters COM mode from editor focus",
                modeEditor.comModeActive()
                    && modeEditor.comModeBuffer().isEmpty(),
                true);
@@ -6568,6 +6703,20 @@ static void runComModeRegression(MainWindow& window)
                           == QStringLiteral("gef"),
                true);
     sendWidgetKey(&modeEditor, Qt::Key_C, QStringLiteral("c"));
+    expectBool("COM c stays a prefix before column or clear commands",
+               modeEditor.comModeActive()
+                   && modeEditor.comModeBuffer() == QStringLiteral("c")
+                   && comCommandSpy.count() == 0,
+               true);
+    sendWidgetKey(&modeEditor, Qt::Key_N, QStringLiteral("n"));
+    expectBool("COM cn executes column number command",
+               modeEditor.comModeActive()
+                   && modeEditor.comModeBuffer().isEmpty()
+                   && comCommandSpy.count() == 1
+                   && comCommandSpy.takeFirst().at(0).toString()
+                          == QStringLiteral("cn"),
+               true);
+    sendWidgetKey(&modeEditor, Qt::Key_C, QStringLiteral("c"));
     expectBool("COM c stays a prefix before clear RHS",
                modeEditor.comModeActive()
                    && modeEditor.comModeBuffer() == QStringLiteral("c")
@@ -6616,7 +6765,10 @@ static void runComModeRegression(MainWindow& window)
         activeEditor->setFocus();
         QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
 
-        sendWidgetKey(activeEditor, Qt::Key_Escape);
+        sendWidgetKey(activeEditor,
+                      Qt::Key_QuoteLeft,
+                      QStringLiteral("`"),
+                      comToggleModifiers);
         QLabel* strip = window.comModeCoordinator->commandStripWidget();
         expectBool("COM mode shows app command strip",
                    activeEditor->comModeActive()
@@ -6728,8 +6880,11 @@ static void runComModeRegression(MainWindow& window)
         expectBool("COM cr Slot Mode exits with Esc",
                    !activeEditor->templateSlotModeActive(),
                    true);
-        sendWidgetKey(activeEditor, Qt::Key_Escape);
-        expectBool("COM re-enters after cr Slot Mode Esc",
+        sendWidgetKey(activeEditor,
+                      Qt::Key_QuoteLeft,
+                      QStringLiteral("`"),
+                      comToggleModifiers);
+        expectBool("COM toggle re-enters after cr Slot Mode Esc",
                    activeEditor->comModeActive()
                        && strip
                        && strip->isVisible()
@@ -6757,7 +6912,10 @@ static void runComModeRegression(MainWindow& window)
                                              "endmodule\n"),
                    true);
         sendWidgetKey(activeEditor, Qt::Key_Escape);
-        sendWidgetKey(activeEditor, Qt::Key_Escape);
+        sendWidgetKey(activeEditor,
+                      Qt::Key_QuoteLeft,
+                      QStringLiteral("`"),
+                      comToggleModifiers);
 
         const QString comClearRhsNoAssignment =
             QStringLiteral("module com_no_rhs;\nendmodule\n");
@@ -6781,6 +6939,61 @@ static void runComModeRegression(MainWindow& window)
                    activeEditor->comModeActive()
                        && strip
                        && strip->text() == QStringLiteral("COM"),
+                   true);
+
+        sendWidgetKey(activeEditor, Qt::Key_C, QStringLiteral("c"));
+        sendWidgetKey(activeEditor, Qt::Key_N, QStringLiteral("n"));
+        expectBool("COM cn failure reports missing column selection",
+                   activeEditor->comModeActive()
+                       && strip
+                       && strip->text().contains(
+                           QStringLiteral("No column selection"))
+                       && strip->styleSheet().contains(QStringLiteral("#1F1115")),
+                   true);
+        sendWidgetKey(activeEditor, Qt::Key_Escape);
+        sendWidgetKey(activeEditor, Qt::Key_QuoteLeft, QStringLiteral("`"));
+
+        activeEditor->setPlainText(QStringLiteral("8'h0A\n8'h0B\n"));
+        activeEditor->setFocus();
+        QTextBlock numberFirst =
+            activeEditor->document()->findBlockByNumber(0);
+        QTextBlock numberSecond =
+            activeEditor->document()->findBlockByNumber(1);
+        QTextCursor numberStart(numberFirst);
+        numberStart.setPosition(numberFirst.position());
+        QTextCursor numberEnd(numberSecond);
+        numberEnd.setPosition(numberSecond.position() + 5);
+        activeEditor->setTextCursor(numberStart);
+        QTest::mouseClick(activeEditor->viewport(),
+                          Qt::LeftButton,
+                          Qt::ShiftModifier | Qt::AltModifier,
+                          activeEditor->cursorRect(numberEnd).center());
+        expectBool("COM toggle preserves column selection before cn",
+                   activeEditor->columnSelectionActive(),
+                   true);
+        sendWidgetKey(activeEditor,
+                      Qt::Key_QuoteLeft,
+                      QStringLiteral("`"),
+                      comToggleModifiers);
+        expectBool("COM toggle enters without clearing column selection",
+                   activeEditor->comModeActive()
+                       && activeEditor->columnSelectionActive(),
+                   true);
+        sendWidgetKey(activeEditor, Qt::Key_C, QStringLiteral("c"));
+        sendWidgetKey(activeEditor, Qt::Key_N, QStringLiteral("n"));
+        QWidget* numberTool =
+            window.findChild<QWidget*>(QStringLiteral("columnNumberToolPanel"));
+        expectBool("COM cn opens column number tool without editing",
+                   numberTool
+                       && numberTool->isVisible()
+                       && activeEditor->toPlainText()
+                              == QStringLiteral("8'h0A\n8'h0B\n"),
+                   true);
+        sendWidgetKey(numberTool, Qt::Key_Escape);
+        expectBool("Column number tool Esc closes and returns to COM",
+                   numberTool
+                       && !numberTool->isVisible()
+                       && activeEditor->comModeActive(),
                    true);
 
         sendWidgetKey(activeEditor, Qt::Key_G, QStringLiteral("g"));
@@ -6815,8 +7028,11 @@ static void runComModeRegression(MainWindow& window)
                        && !activeEditor->comModeActive(),
                    true);
 
-        sendWidgetKey(activeEditor, Qt::Key_Escape);
-        expectBool("COM re-enters after picker backtick exit",
+        sendWidgetKey(activeEditor,
+                      Qt::Key_QuoteLeft,
+                      QStringLiteral("`"),
+                      comToggleModifiers);
+        expectBool("COM toggle re-enters after picker backtick exit",
                    activeEditor->comModeActive(),
                    true);
         sendWidgetKey(activeEditor, Qt::Key_QuoteLeft, QStringLiteral("`"));
@@ -6837,14 +7053,22 @@ static void runComModeRegression(MainWindow& window)
         const bool focusReturnedToEditor =
             focusedAfterOffEditorEsc == activeEditor
             || activeEditor->isAncestorOf(focusedAfterOffEditorEsc);
-        expectBool("Esc enters COM mode from non-editor focus",
-                   activeEditor->comModeActive()
-                       && focusReturnedToEditor
+        expectBool("Esc does not enter COM mode from non-editor focus",
+                   !activeEditor->comModeActive()
+                       && !focusReturnedToEditor,
+                   true);
+        window.comModeCoordinator->toggleCurrentEditorComMode();
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+        MyCodeEditor* toggledEditor =
+            window.comModeCoordinator->activeComEditor;
+        expectBool("COM toggle enters from non-editor focus",
+                   toggledEditor
+                       && toggledEditor->comModeActive()
                        && strip
                        && strip->isVisible()
                        && strip->text() == QStringLiteral("COM"),
                    true);
-        sendWidgetKey(activeEditor, Qt::Key_QuoteLeft, QStringLiteral("`"));
+        sendWidgetKey(toggledEditor, Qt::Key_QuoteLeft, QStringLiteral("`"));
         offEditorFocus.close();
     }
 }

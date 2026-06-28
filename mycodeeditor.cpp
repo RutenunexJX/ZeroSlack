@@ -504,6 +504,26 @@ bool MyCodeEditor::templateSlotModeBlinkOnForTest() const
     return state->templateSlotModeBlinkOn();
 }
 
+bool MyCodeEditor::columnSelectionActive() const
+{
+    return state->columnSelectionActiveForCommand();
+}
+
+QStringList MyCodeEditor::columnSelectionTexts() const
+{
+    return state->columnSelectionRowTexts(const_cast<MyCodeEditor*>(this));
+}
+
+bool MyCodeEditor::applyColumnSelectionTexts(const QStringList& rows,
+                                             bool replaceSelection,
+                                             QString* message)
+{
+    return state->applyColumnSelectionRowTexts(this,
+                                               rows,
+                                               replaceSelection,
+                                               message);
+}
+
 void MyCodeEditor::setDiagnosticHighlights(
     const QList<SemanticDiagnostic>& diagnostics)
 {

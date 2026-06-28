@@ -37,13 +37,16 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
 - Tree-sitter owns low-latency editor syntax and live editor structure. Slang
   owns semantic facts. `SemanticIndexSnapshot` is the UI-facing query truth.
 - COM Mode is an editor-local command layer, not a Vim clone. It has INSERT and
-  COM states, enters with Esc when an editor tab is open, exits with backtick,
-  and shows an app-level command strip. Current g-domain commands are `gm`,
+  COM states, toggles with `Ctrl+Shift+Alt+backtick` whenever an editor tab is open,
+  exits with plain backtick while active, and shows an app-level command strip.
+  Esc is cancellation-only: it clears/cancels the highest-priority temporary
+  editor state or COM buffer, but no longer enters COM Mode. Current g-domain
+  commands are `gm`,
   `g<num><Enter>`, `gp`, `gpk`, `gpa`, `gpo`, `gsi`, `gsd`, `gii`, `gac`,
-  `gpi`, `ge`, and `gef`; the current clear-domain command is `cr` for clearing
-  assignment RHS fill points; the current select-domain command is `si` for
-  selecting complete lines inside the nearest `begin ... end`. Existing fixed
-  commands, prefixes, and the
+  `gpi`, `ge`, and `gef`; current c-domain commands are `cn` for the Column
+  Number Tool and `cr` for clearing assignment RHS fill points; the current
+  select-domain command is `si` for selecting complete lines inside the nearest
+  `begin ... end`. Existing fixed commands, prefixes, and the
   module-relative line command are described by shared `commodecommandregistry`
   metadata. The command strip renders registry-backed hints for prefixes and
   module-relative line buffers, with a normal dark palette and a distinct dark
@@ -66,6 +69,18 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
   then starts Slot Mode on the cleared RHS fill points. COM Mode command `cr`
   invokes this editor-local action. The obsolete named-action entry layer has
   been removed.
+- Column Selection is visual-column based. Internal column state converts
+  through the editor tab width so selections, copy/cut/paste, delete/backspace,
+  text input, mouse adjustment, and Tab / Shift+Tab stay visually rectangular
+  on lines that contain `\t`. In column mode, Tab inserts spaces to the next
+  tab stop and Shift+Tab performs visual outdent instead of leaking to normal
+  editor indentation.
+- COM Mode command `cn` opens the Column Number Tool when a column selection is
+  active. The tool previews and applies Dec/Hex/Bin numbering with Plain,
+  C-like, SystemVerilog unsized, and SystemVerilog sized styles, plus step,
+  repeat, direction, digit width, padding, hex case, and replace/insert modes.
+  Number formatting and first-row inference live in `columnnumbertool`, while
+  the COM popup only consumes that model and applies one undoable column edit.
 - Fold Region and Fold Shelf are available through Global Control. Fold Shelf
   now has a service/model-owned persistence baseline and explicit cross-file
   restore flow plus basic rename, search, and stale/consumed cleanup
@@ -227,7 +242,9 @@ and restoring Global Control `ow r` for recent workspaces.
   text plus relative editable slot metadata; `EditorCompletionWorkflow` applies
   the insertion and starts an editor-local slot session; `MyCodeEditor` state
   owns active slot ranges, highlighting, navigation, and invalidation.
-  Slot state must not live in UI panels or semantic services.
+  Slot state must not live in UI panels or semantic services. COM Mode toggle
+  does not clear an active Slot Mode session; explicit Esc and stale-session
+  events own slot exit.
 - Batch RTL edit baseline: `RtlBatchEditService` owns selected-text RTL batch
   edit planning and returns reports with replacement text, failure reasons, and
   template-slot metadata. It does not mutate editor text, scan workspaces, or
@@ -321,7 +338,8 @@ Current command surfaces are intentionally separate:
 - COM Mode is editor-local and registry-backed. `commodecommandregistry` owns
   command metadata and conflict validation; `ComModeService` owns picker/query
   reports; `ComModeCoordinator` owns mode state, strip text, picker UI, and
-  navigation dispatch.
+  navigation dispatch. Column-number formatting and inference are owned by
+  `columnnumbertool`; the `cn` popup is only a COM/editor-local UI consumer.
 - Global Control is app/workspace/global command discovery. `GlobalControlService`
   owns root domains and domain child command shaping; `MainWindow` dispatches
   selected items through existing coordinators and dialogs.
@@ -364,8 +382,8 @@ explicitly enables slots for that family.
 - Esc cancels Slot Mode only: inserted text and user edits stay in the document,
   slot highlights clear, and normal editor input resumes.
 - Cursor movement outside the active slot/session, document edits that make slot
-  ranges stale, tab switch/close, COM Mode entry, or Global Control entry exits
-  Slot Mode without rollback.
+  ranges stale, tab switch/close, or Global Control entry exits Slot Mode
+  without rollback. COM Mode toggle does not clear Slot Mode by itself.
 - While active, Slot Mode paints all slots with a weak blinking highlight,
   emphasizes the active slot, and reports status as `SLOT n/m`.
 - Slot Mode is editor-local text state. It must not run Slang, scan the
@@ -459,8 +477,8 @@ assignment statements and producing fill slots for the future Slot Mode flow.
   Tree-sitter `seq_block` (`begin ... end`) and stays in COM Mode so users can
   immediately run `cr`.
 - Slot Mode entry is active for this report. The first RHS slot is selected
-  after replacement; Tab/Shift+Tab/final Tab/Esc reuse the existing Slot Mode
-  state.
+  after replacement; Tab and Shift+Tab wrap between slots, while Esc exits Slot
+  Mode.
 
 ## Long-Term Goal Scope
 
@@ -508,3 +526,10 @@ Do not add unlisted long-term goals without explicit user approval.
   suppression and all new `si`, partial-selection `cr`, and Slot Mode cycling
   checks passed; the monolithic smoke test still fails on existing non-current
   baseline checks.
+- Latest COM/Column Selection repair: Release `completion_test` passed through
+  `ctest`; Release `gui_smoke_test` target compile/link passed. The launched
+  smoke output shows all new COM toggle, visual-column column selection,
+  column-mode Tab/Shift+Tab, `cn`, Column Number Tool, and number inference
+  checks passing. The full monolithic GUI smoke baseline still fails on
+  existing non-current checks: one VENDOR ctrl-click fixture check and the Wave
+  Preview rendering group.
