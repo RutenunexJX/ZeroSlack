@@ -28,8 +28,7 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
 
 ## Current Goal State
 
-Current milestone: none after the Workspace Project Configuration And
-Diagnostics Workflow cache repair.
+Current milestone: none after the GUI smoke baseline repair.
 
 Next work should wait for the next explicit scoped request.
 
@@ -148,9 +147,19 @@ Status:
 - Focused verification for the cache repair: Release `completion_test` and
   `gui_smoke_test` targets compile/link; Release `ctest -R
   "^completion_test$" --output-on-failure` passed. Release `ctest -R
-  "^gui_smoke_test$" --output-on-failure` still fails on existing VENDOR
-  ctrl-click and Wave Preview checks, but the four workspace/navigation cache
-  regression checks now pass.
+  "^gui_smoke_test$" --output-on-failure` initially still failed on existing
+  VENDOR ctrl-click and Wave Preview checks, but the four workspace/navigation
+  cache regression checks passed.
+- GUI smoke baseline repair is complete: VENDOR ctrl-click, Wave Preview,
+  RTL Insights, and Problems diagnostics failures were confirmed as current
+  regression coverage rather than obsolete features. The fix stabilized fixture
+  path lookup, Tree-sitter scope fallback for safe Wave Preview ranges, RTL
+  Insights synthetic snapshot isolation, and the external-diagnostic
+  preservation probe.
+- Focused verification for the GUI smoke baseline repair: Release
+  `completion_test` and `gui_smoke_test` targets compile/link; Release
+  `ctest -R "^completion_test$" --output-on-failure` passed; Release
+  `ctest -R "^gui_smoke_test$" --output-on-failure` passed twice.
 - G0 Documentation And Goal Reset is complete and pushed in commit `bc2c059`.
 - G4.1 Registry Metadata For Existing COM Commands is complete:
   `commodecommandregistry` now owns metadata for fixed executable commands,

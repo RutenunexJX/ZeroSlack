@@ -1366,6 +1366,26 @@ Latest COM/Column Selection repair:
   baseline still fails on existing non-current checks: `VENDOR ctrl-click fixture
   opens` and the Wave Preview rendering group.
 
+Latest GUI smoke baseline repair:
+
+- Scope: failing Release `gui_smoke_test` baseline only; no new product feature
+  was added and no current regression coverage was deleted.
+- VENDOR ctrl-click test fixture lookup now resolves from source or build roots so
+  Release CTest can find `test_sv/huge_prj/vendor_ip_ctl.sv`.
+- Wave Preview scope lookup now keeps safe module/always ranges available when
+  Tree-sitter reports localized parse errors inside the scope; the Wave Preview
+  test assertions were updated to the current scoped summary wording and canvas
+  lane geometry.
+- RTL Insights GUI smoke fixture installation now refreshes both the native
+  semantic store and snapshot before each panel action, isolating synthetic
+  RTL Insights checks from staged workspace publication.
+- Problems external-diagnostic preservation now uses an unopened external probe
+  file and checks for the exact diagnostic row instead of depending on a fragile
+  item count.
+- Release verification passed: `ctest -R "^completion_test$"
+  --output-on-failure` and `ctest -R "^gui_smoke_test$"
+  --output-on-failure`; `gui_smoke_test` was repeated successfully.
+
 ## Commit Policy
 
 - Keep commits coherent and architecture-oriented.

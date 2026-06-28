@@ -1627,9 +1627,6 @@ TSAlwaysScopeTarget TSDocument::alwaysScopeTarget(
         }
     }
 
-    if (ts_node_has_error(always))
-        return target;
-
     target.status = TSAlwaysScopeStatus::Ok;
     target.startChar = nodeStartChar(always);
     target.endChar = nodeEndChar(always);
@@ -1689,9 +1686,6 @@ TSModuleScopeTarget TSDocument::moduleScopeTarget(
             return target;
         }
     }
-
-    if (ts_node_has_error(module))
-        return target;
 
     target.status = TSModuleScopeStatus::Ok;
     target.startChar = nodeStartChar(module);

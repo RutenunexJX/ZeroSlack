@@ -573,6 +573,14 @@ Do not add unlisted long-term goals without explicit user approval.
   workspace switch/close flows. Explicit Workspace Configuration edits still
   notify and refresh. Release `completion_test` and `gui_smoke_test` targets
   compile/link; `ctest -R "^completion_test$" --output-on-failure` passed.
-  `ctest -R "^gui_smoke_test$" --output-on-failure` still fails on existing
-  VENDOR ctrl-click and Wave Preview checks, while the required workspace/cache
-  regression checks pass.
+  The required workspace/cache regression checks pass.
+- Latest GUI smoke baseline repair: VENDOR ctrl-click now resolves the
+  `huge_prj` fixture from either source or build execution roots; Wave Preview
+  scope lookup accepts safe Tree-sitter module/always ranges even when a
+  contained parse node has localized errors; RTL Insights synthetic fixture
+  snapshots are reinstalled before each panel action so staged workspace
+  publication cannot overwrite the test input; and the Problems preservation
+  check now uses an unopened external diagnostic probe. Release verification
+  passed: `ctest -R "^completion_test$" --output-on-failure` and
+  `ctest -R "^gui_smoke_test$" --output-on-failure`; the GUI smoke test was
+  repeated successfully.

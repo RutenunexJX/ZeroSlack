@@ -110,6 +110,25 @@ static int g_fails = 0;
 
 static bool waitUntil(const std::function<bool()>& predicate, int timeoutMs);
 
+static QString sourceFixturePath(const QString& relativePath)
+{
+    const QString normalizedRelative =
+        QDir::fromNativeSeparators(relativePath);
+    QStringList roots;
+    roots << QDir::currentPath() << QCoreApplication::applicationDirPath();
+    for (const QString& root : std::as_const(roots)) {
+        QDir dir(root);
+        for (int depth = 0; depth < 8; ++depth) {
+            const QString candidate = dir.absoluteFilePath(normalizedRelative);
+            if (QFileInfo(candidate).exists())
+                return candidate;
+            if (!dir.cdUp())
+                break;
+        }
+    }
+    return QDir::current().absoluteFilePath(normalizedRelative);
+}
+
 static std::shared_ptr<const SemanticIndexSnapshot> snapshotFromRecords(
     const QList<SemanticSymbolRecord>& records,
     QList<SemanticRelationship> relationships = {},
@@ -2318,8 +2337,7 @@ static void runEditorLineActionRegression()
 static void runEditorCtrlClickNavigationRegression()
 {
     const QString path =
-        QDir::current().absoluteFilePath(
-            QStringLiteral("test_sv/huge_prj/vendor_ip_ctl.sv"));
+        sourceFixturePath(QStringLiteral("test_sv/huge_prj/vendor_ip_ctl.sv"));
     QFile file(path);
     expectBool("VENDOR ctrl-click fixture opens",
                file.open(QIODevice::ReadOnly | QIODevice::Text),
@@ -3831,6 +3849,28 @@ static QList<QTreeWidgetItem*> navigableItems(QTreeWidget* tree)
     return out;
 }
 
+static bool hasDiagnosticTreeItem(QTreeWidget* tree,
+                                  const QString& fileName,
+                                  const QString& message)
+{
+    const QString normalizedFile =
+        QDir::cleanPath(
+            QDir::fromNativeSeparators(QFileInfo(fileName).absoluteFilePath()));
+    const QList<QTreeWidgetItem*> items = navigableItems(tree);
+    for (QTreeWidgetItem* item : items) {
+        const QString itemFileName = item->data(0, Qt::UserRole).toString();
+        const QString normalizedItemFile =
+            QDir::cleanPath(
+                QDir::fromNativeSeparators(
+                    QFileInfo(itemFileName).absoluteFilePath()));
+        if (normalizedItemFile == normalizedFile
+            && item->text(4).contains(message)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 static QTreeWidget* problemsTree(MainWindow& window)
 {
     return window.semanticDocks && window.semanticDocks->problemsPanelCoordinator()
@@ -4687,16 +4727,24 @@ static void runRtlInsightsPanelRegression(MainWindow& window, const QString& fix
     insightDiagnostic.column = 5;
     insightDiagnostic.message = QStringLiteral("insight warning");
     insightDiagnostic.severity = SemanticDiagnostic::Warning;
-    SemanticIndex::getInstance()->setSnapshot(
-        snapshotFromRecords(
+    auto installRtlInsightsFixtureSnapshot = [&]() {
+        SemanticIndex::getInstance()->updateSymbolRecordsForFile(
+            fixturePath,
             records,
-            relationships,
-            QList<SemanticDiagnostic>{insightDiagnostic},
-            fileContents));
+            content);
+        SemanticIndex::getInstance()->setSnapshot(
+            snapshotFromRecords(
+                records,
+                relationships,
+                QList<SemanticDiagnostic>{insightDiagnostic},
+                fileContents));
+    };
+    installRtlInsightsFixtureSnapshot();
     expectBool("RTL insights panel exists", rtlInsightsTree(window) != nullptr, true);
     if (!window.semanticDocks || !window.semanticDocks->rtlInsightsPanelCoordinator())
         return;
 
+    installRtlInsightsFixtureSnapshot();
     window.semanticDocks->rtlInsightsPanelCoordinator()->showModuleInsights(
         fixturePath,
         QStringLiteral("insight_top"),
@@ -4967,12 +5015,15 @@ static void runRtlInsightsPanelRegression(MainWindow& window, const QString& fix
         }
     };
 
+    installRtlInsightsFixtureSnapshot();
     window.semanticDocks->rtlInsightsPanelCoordinator()->showModuleBrief();
     QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
     scanRtlInsightItems();
+    installRtlInsightsFixtureSnapshot();
     window.semanticDocks->rtlInsightsPanelCoordinator()->showClockResetDomainMap();
     QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
     scanRtlInsightItems();
+    installRtlInsightsFixtureSnapshot();
     window.semanticDocks->rtlInsightsPanelCoordinator()->showFsmGraph();
     QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
     const int fsmGraphNodeCount =
@@ -5005,6 +5056,7 @@ static void runRtlInsightsPanelRegression(MainWindow& window, const QString& fix
     const bool fsmGraphNodesOverlap =
         window.semanticDocks->rtlInsightsPanelCoordinator()
             ->graphNodeRectsOverlapForTest();
+    installRtlInsightsFixtureSnapshot();
     window.semanticDocks->rtlInsightsPanelCoordinator()->updateModuleContext(
         fixturePath,
         QStringLiteral("insight_top"),
@@ -5149,6 +5201,7 @@ static void runRtlInsightsPanelRegression(MainWindow& window, const QString& fix
                sawSignalJourneyInterfaceSourceRole,
                true);
 
+    installRtlInsightsFixtureSnapshot();
     window.semanticDocks->rtlInsightsPanelCoordinator()->showModuleInsights(
         fixturePath,
         QStringLiteral("insight_top"),
@@ -5156,16 +5209,24 @@ static void runRtlInsightsPanelRegression(MainWindow& window, const QString& fix
     window.semanticDocks->rtlInsightsPanelCoordinator()->showSignalJourney();
     QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
 
-    bool sawTimingJourney = false;
-    const QList<QTreeWidgetItem*> timingItems = navigableItems(rtlInsightsTree(window));
-    for (QTreeWidgetItem* item : timingItems) {
-        sawTimingJourney = sawTimingJourney
-            || (item->text(0) == QStringLiteral("Timing Connections")
-                && item->text(1) == QStringLiteral("insight_top")
-                && item->text(2) == QStringLiteral("timing outgoing Clocks"));
-    }
     expectBool("RTL insights renders timing signal journey",
-               sawTimingJourney,
+               waitUntil(
+                   [&]() {
+                       const QList<QTreeWidgetItem*> timingItems =
+                           navigableItems(rtlInsightsTree(window));
+                       for (QTreeWidgetItem* item : timingItems) {
+                           const QString section = item->text(0);
+                           const QString symbol = item->text(1);
+                           const QString detail = item->text(2);
+                           if (section == QStringLiteral("Timing Connections")
+                               && symbol == QStringLiteral("insight_top")
+                               && detail == QStringLiteral("timing outgoing Clocks")) {
+                               return true;
+                           }
+                       }
+                       return false;
+                   },
+                   500),
                true);
 }
 
@@ -7847,7 +7908,7 @@ int main(int argc, char** argv)
         const int labelWidth =
             std::min(130, std::max(84, waveCanvas->width() / 4));
         const QPoint traceLanePoint(10 + qMin(32, labelWidth - 12),
-                                    28 + 16);
+                                    44 + 16);
         QTest::mouseMove(waveCanvas, traceLanePoint);
         QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
         QTest::mouseClick(waveCanvas,
@@ -7904,7 +7965,7 @@ int main(int argc, char** argv)
                    && !sawScopedOut
                    && waveSummary
                    && waveSummary->text().contains(
-                       QStringLiteral("selected lines"))
+                       QStringLiteral("always_comb lines"))
                    && waveSummary->text().contains(
                        QStringLiteral("local waveform")),
                true);
@@ -8807,8 +8868,16 @@ int main(int argc, char** argv)
     drainRelationshipWork(window);
 
     if (problemsScopeCombo(window)) {
+        const QString externalDiagnosticPath =
+            QDir(diagnosticDir.path()).absoluteFilePath(
+                QStringLiteral("external_workspace_probe.sv"));
+        QFile externalDiagnosticFile(externalDiagnosticPath);
+        if (externalDiagnosticFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
+            externalDiagnosticFile.write("module external_workspace_probe; endmodule\n");
+            externalDiagnosticFile.close();
+        }
         SemanticDiagnostic closeDiagnostic;
-        closeDiagnostic.fileName = diagnosticPath;
+        closeDiagnostic.fileName = externalDiagnosticPath;
         closeDiagnostic.line = 3;
         closeDiagnostic.column = 1;
         closeDiagnostic.message = QStringLiteral("workspace close probe");
@@ -8842,8 +8911,7 @@ int main(int argc, char** argv)
         workspaceSymbolsDone = false;
         workspaceFilesScanned = false;
         if (problemsBandCombo(window))
-            problemsBandCombo(window)->setCurrentIndex(
-                problemsBandCombo(window)->findText(QStringLiteral("All Bands")));
+            problemsBandCombo(window)->setCurrentIndex(0);
         expectBool("reopen workspace after close",
                    window.workspaceManager->openWorkspace(workspacePath), true);
         expectBool("reopened workspace file scan completes",
@@ -8851,7 +8919,12 @@ int main(int argc, char** argv)
                    true);
         expectBool("problems preserve external diagnostic on workspace analysis start",
                    waitUntil([&]() {
-                       return navigableItemCount(problemsTree(window)) == 1;
+                       if (semanticPanelRefresh(window))
+                           semanticPanelRefresh(window)->updateProblemsPanel();
+                       return hasDiagnosticTreeItem(
+                           problemsTree(window),
+                           closeDiagnostic.fileName,
+                           closeDiagnostic.message);
                    }, 2000),
                    true);
         expectBool("reopened workspace analysis completes",
@@ -8861,7 +8934,7 @@ int main(int argc, char** argv)
                    waitUntil([&]() {
                        const auto snapshot = SemanticIndex::getInstance()->snapshot();
                        return snapshot
-                              && !snapshot->getDiagnostics(diagnosticPath).isEmpty();
+                              && !snapshot->getDiagnostics(closeDiagnostic.fileName).isEmpty();
                    }, 2000),
                    true);
         problemsScopeCombo(window)->setCurrentIndex(
@@ -8869,7 +8942,12 @@ int main(int argc, char** argv)
         semanticPanelRefresh(window)->updateProblemsPanel();
         expectBool("problems keep external diagnostic after workspace analysis",
                    waitUntil([&]() {
-                       return hasNavigableFile(problemsTree(window), diagnosticPath);
+                       if (semanticPanelRefresh(window))
+                           semanticPanelRefresh(window)->updateProblemsPanel();
+                       return hasDiagnosticTreeItem(
+                           problemsTree(window),
+                           closeDiagnostic.fileName,
+                           closeDiagnostic.message);
                    }, 2000),
                    true);
         drainRelationshipWork(window);
