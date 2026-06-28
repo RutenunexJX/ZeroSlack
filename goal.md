@@ -28,12 +28,30 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
 
 ## Current Goal State
 
-Current milestone: none after the GUI smoke baseline repair.
+Current milestone: References / Relationships workflow closure is complete
+after acceptance-failure repair.
 
 Next work should wait for the next explicit scoped request.
 
 Status:
 
+- References / Relationships workflow closure is complete: source-symbol
+  context actions are stable, References and Relationships panels keep query
+  context and explicit empty reasons, result rows jump/copy through one
+  validated path, graph entry points call only existing graphs, and navigation
+  history is isolated per workspace.
+- Acceptance repair for the workflow closure is complete: RTL Insights FSM
+  Graph and State Transition Graph panels render the service report's
+  state-register and next-state signal nodes, preserve existing transition
+  edges, add the existing-data signal-flow edge, and let next-state signal
+  nodes invoke the existing navigation handler. No FSM extraction semantics,
+  State Transition trigger rules, package tools, macro/define handling, Wave
+  Preview behavior, or graph algorithms were added.
+- Final verification for the workflow closure passed: Release
+  `completion_test`, `relationship_test`, and `gui_smoke_test` targets
+  compile/link; Release `ctest -R
+  "^(completion_test|relationship_test|gui_smoke_test)$"
+  --output-on-failure` passed.
 - Scoped named-action cleanup is complete: the obsolete named-action service,
   editor mode path, shortcut hooks, dispatcher path, tests, and user-facing
   docs were removed while preserving normal editor shortcuts, context menus,
@@ -916,11 +934,10 @@ Milestones:
   navigation path; Back/Forward history is isolated by workspace; failures are
   visible)
 - G13.5 Verification and documentation.
-  (complete: Release `completion_test` and `gui_smoke_test` targets
-  compile/link; Release `completion_test` CTest passed; Release
-  `gui_smoke_test` failed once and failed on the required rerun due to an
-  over-strict external-result workspace-mismatch check, then passed after
-  mismatch detection was narrowed to targets in a different open workspace)
+  (complete: Release `completion_test`, `relationship_test`, and
+  `gui_smoke_test` targets compile/link; Release acceptance CTest
+  `ctest -R "^(completion_test|relationship_test|gui_smoke_test)$"
+  --output-on-failure` passed)
 
 ## Huge Workspace Status Audit
 

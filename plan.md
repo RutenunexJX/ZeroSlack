@@ -1227,11 +1227,10 @@ Milestones:
   navigation path; Back/Forward history is isolated by workspace; failures are
   visible)
 - M13.5 Verification And Documentation
-  (complete: Release `completion_test` and `gui_smoke_test` targets
-  compile/link; Release `completion_test` CTest passed; Release
-  `gui_smoke_test` failed once and failed on the required rerun due to an
-  over-strict external-result workspace-mismatch check, then passed after
-  mismatch detection was narrowed to targets in a different open workspace)
+  (complete: Release `completion_test`, `relationship_test`, and
+  `gui_smoke_test` targets compile/link; Release acceptance CTest
+  `ctest -R "^(completion_test|relationship_test|gui_smoke_test)$"
+  --output-on-failure` passed)
 
 M13.1 implementation status:
 
@@ -1268,10 +1267,15 @@ M13.2-M13.4 implementation status:
   status bar.
 - Complete: `NavigationCommandCoordinator` history entries carry a workspace
   key and Back/Forward prunes entries from other workspaces.
-- Complete: final Release verification passed after the workspace-mismatch
-  adjustment: `completion_test` and `gui_smoke_test` targets compile/link,
-  `ctest -R "^completion_test$" --output-on-failure`, and
-  `ctest -R "^gui_smoke_test$" --output-on-failure`.
+- Complete: acceptance repair for the FSM Graph / State Transition Graph
+  panel closure renders service-owned state-register and next-state signal
+  nodes, preserves transition edges, adds the existing-data signal-flow edge,
+  and lets next-state signal nodes invoke the existing navigation handler.
+- Complete: final Release verification passed after the panel rendering and
+  workspace-mismatch adjustments: `completion_test`, `relationship_test`, and
+  `gui_smoke_test` targets compile/link, and `ctest -R
+  "^(completion_test|relationship_test|gui_smoke_test)$"
+  --output-on-failure`.
 
 ## Huge Workspace Status Audit
 

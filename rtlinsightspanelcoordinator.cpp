@@ -852,12 +852,23 @@ QRectF renderFsmStateMachineGraph(
     if (layout.orderedStates.isEmpty())
         return graphBounds;
 
+    const bool renderSignalNodes = !graph.stateRegisterDisplayName.isEmpty()
+        || !graph.nextStateSignalDisplayName.isEmpty();
+    const qreal signalNodeTop =
+        layout.bounds.top() - kInsightNodeHeight - 38.0;
+    const qreal titleTop = renderSignalNodes
+        ? signalNodeTop - 64.0
+        : layout.bounds.top() - 86.0;
+    const qreal captionTop = renderSignalNodes
+        ? signalNodeTop - 34.0
+        : layout.bounds.top() - 56.0;
+
     QFont titleFont = font;
     titleFont.setBold(true);
     titleFont.setPointSize(qMax(10, titleFont.pointSize() + 1));
     auto* titleItem = scene->addSimpleText(title, titleFont);
     titleItem->setBrush(QBrush(QColor(QStringLiteral("#111827"))));
-    titleItem->setPos(layout.bounds.left(), layout.bounds.top() - 86.0);
+    titleItem->setPos(layout.bounds.left(), titleTop);
     graphBounds = graphBounds.united(titleItem->sceneBoundingRect());
 
     QFont captionFont = font;
@@ -869,8 +880,110 @@ QRectF renderFsmStateMachineGraph(
                    graph.nextStateSignalDisplayName);
     auto* captionItem = scene->addSimpleText(caption, captionFont);
     captionItem->setBrush(QBrush(QColor(QStringLiteral("#475569"))));
-    captionItem->setPos(layout.bounds.left(), layout.bounds.top() - 56.0);
+    captionItem->setPos(layout.bounds.left(), captionTop);
     graphBounds = graphBounds.united(captionItem->sceneBoundingRect());
+
+    auto addSignalNode = [&](const QString& kind,
+                             const QString& primary,
+                             const QString& secondary,
+                             const QString& detail,
+                             const RtlInsightCodeLink& codeLink,
+                             const QRectF& rect,
+                             const QColor& fill,
+                             const QColor& stroke) {
+        RtlInsightGraphElement element;
+        element.kind = kind;
+        element.primary = primary;
+        element.secondary = secondary;
+        element.detail = detail;
+        element.codeLink = codeLink;
+        auto* item = new RtlInsightGraphNodeItem(element,
+                                                rect,
+                                                fill,
+                                                stroke,
+                                                font);
+        item->navigateHandler = navigate;
+        item->selectHandler = select;
+        scene->addItem(item);
+        graphBounds = graphBounds.united(item->sceneBoundingRect());
+        return item;
+    };
+
+    RtlInsightGraphNodeItem* stateRegisterNode = nullptr;
+    RtlInsightGraphNodeItem* nextStateSignalNode = nullptr;
+    QRectF stateRegisterRect;
+    QRectF nextStateSignalRect;
+    if (renderSignalNodes) {
+        const qreal centerX = layout.bounds.center().x();
+        const qreal signalCenterY = signalNodeTop + kInsightNodeHeight / 2.0;
+        constexpr qreal signalGap = 58.0;
+        const bool hasStateRegister =
+            !graph.stateRegisterDisplayName.isEmpty();
+        const bool hasNextStateSignal =
+            !graph.nextStateSignalDisplayName.isEmpty();
+        if (hasStateRegister && hasNextStateSignal) {
+            stateRegisterRect = insightNodeRectAt(
+                centerX - kInsightNodeWidth / 2.0 - signalGap / 2.0,
+                signalCenterY);
+            nextStateSignalRect = insightNodeRectAt(
+                centerX + kInsightNodeWidth / 2.0 + signalGap / 2.0,
+                signalCenterY);
+        } else {
+            const QRectF singleRect =
+                insightNodeRectAt(centerX, signalCenterY);
+            stateRegisterRect = singleRect;
+            nextStateSignalRect = singleRect;
+        }
+
+        if (hasStateRegister) {
+            stateRegisterNode = addSignalNode(
+                QStringLiteral("state-register"),
+                graph.stateRegisterDisplayName,
+                graph.stateRegisterDetailDisplayName,
+                graph.stateRegisterSourceRoleDisplayName,
+                graph.stateRegisterCodeLink,
+                stateRegisterRect,
+                QColor(QStringLiteral("#eef6e6")),
+                QColor(QStringLiteral("#31572c")));
+        }
+        if (hasNextStateSignal) {
+            nextStateSignalNode = addSignalNode(
+                QStringLiteral("next-state-signal"),
+                graph.nextStateSignalDisplayName,
+                graph.nextStateSignalTypeDisplayName,
+                graph.nextStateSignalSourceRoleDisplayName,
+                graph.nextStateSignalCodeLink,
+                nextStateSignalRect,
+                QColor(QStringLiteral("#dff3f8")),
+                QColor(QStringLiteral("#0f6c7a")));
+        }
+        if (stateRegisterNode && nextStateSignalNode) {
+            RtlInsightGraphElement flow;
+            flow.kind = QStringLiteral("state-signal-flow");
+            flow.primary = graph.stateRegisterDisplayName;
+            flow.secondary = graph.nextStateSignalDisplayName;
+            flow.detail = QStringLiteral("next-state signal");
+            flow.codeLink = graph.nextStateSignalCodeLink;
+            const QPointF start(stateRegisterRect.right(),
+                                stateRegisterRect.center().y());
+            const QPointF end(nextStateSignalRect.left(),
+                              nextStateSignalRect.center().y());
+            QPainterPath path(start);
+            path.lineTo(end);
+            auto* edge = new RtlInsightGraphEdgeItem(
+                flow,
+                path,
+                end,
+                0.0,
+                QStringLiteral("next"),
+                font,
+                QColor(QStringLiteral("#2563eb")));
+            edge->navigateHandler = navigate;
+            edge->selectHandler = select;
+            scene->addItem(edge);
+            graphBounds = graphBounds.united(edge->sceneBoundingRect());
+        }
+    }
 
     auto addStateNode = [&](const FsmStateRow& row,
                             const QRectF& rect,
