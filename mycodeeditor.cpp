@@ -443,6 +443,18 @@ bool MyCodeEditor::executeComModuleEndInsert(QString* message)
     return state->executeComModuleEndInsert(this, message);
 }
 
+EditorPackageToolAvailability MyCodeEditor::currentPackageToolAvailability()
+    const
+{
+    return state->currentPackageToolAvailability(this);
+}
+
+bool MyCodeEditor::executePackageToolInsert(PackageToolKind kind,
+                                            QString* message)
+{
+    return state->executePackageToolInsert(this, kind, message);
+}
+
 bool MyCodeEditor::selectInsideBeginEnd(QString* message)
 {
     return state->selectInsideBeginEnd(this, message);

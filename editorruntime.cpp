@@ -2767,6 +2767,99 @@ bool MyCodeEditorState::executeComParameterInsert(MyCodeEditor* editor,
     return true;
 }
 
+namespace {
+QString packageToolFailureMessage(TSPackageToolInsertStatus status)
+{
+    switch (status) {
+    case TSPackageToolInsertStatus::NoCurrentPackage:
+        return QStringLiteral("No current package");
+    case TSPackageToolInsertStatus::InsideRtlScope:
+        return QStringLiteral(
+            "Package tools are unavailable inside module/interface scope");
+    case TSPackageToolInsertStatus::PackageHasSyntaxError:
+        return QStringLiteral("Current package has syntax errors");
+    case TSPackageToolInsertStatus::NoEndpackage:
+        return QStringLiteral("No endpackage found");
+    case TSPackageToolInsertStatus::NoClearPackageInsertPoint:
+        return QStringLiteral("No clear package insert point");
+    case TSPackageToolInsertStatus::Ok:
+        return QString();
+    }
+    return QStringLiteral("No clear package insert point");
+}
+} // namespace
+
+EditorPackageToolAvailability MyCodeEditorState::currentPackageToolAvailability(
+    const MyCodeEditor* editor) const
+{
+    EditorPackageToolAvailability availability;
+    if (!editor)
+        return availability;
+
+    const TSPackageToolInsertTarget target =
+        syntax.packageToolInsertTargetAt(editor->textCursor().position(),
+                                         PackageToolKind::Parameter);
+    availability.available = target.ok();
+    availability.packageName = target.packageName;
+    availability.failureMessage = packageToolFailureMessage(target.status);
+    return availability;
+}
+
+bool MyCodeEditorState::executePackageToolInsert(MyCodeEditor* editor,
+                                                 PackageToolKind kind,
+                                                 QString* message)
+{
+    if (!editor)
+        return false;
+
+    const TSPackageToolInsertTarget target =
+        syntax.packageToolInsertTargetAt(editor->textCursor().position(), kind);
+    if (!target.ok()) {
+        const QString failure = packageToolFailureMessage(target.status);
+        if (message)
+            *message = failure;
+        emit editor->editorStatusMessageRequested(failure);
+        return false;
+    }
+
+    const PackageToolService service;
+    const CodeTemplateItem packageTemplate =
+        service.templateForInsertion(kind,
+                                     target.lineIndent,
+                                     target.insertAfterLine);
+    if (packageTemplate.insertText.isEmpty()) {
+        const QString failure = QStringLiteral("No package template available");
+        if (message)
+            *message = failure;
+        emit editor->editorStatusMessageRequested(failure);
+        return false;
+    }
+
+    clearTemplateSlotMode(editor);
+    QTextCursor cursor = editor->textCursor();
+    cursor.beginEditBlock();
+    cursor.setPosition(target.insertChar);
+    cursor.insertText(packageTemplate.insertText);
+    cursor.endEditBlock();
+
+    startTemplateSlotMode(editor,
+                          target.insertChar,
+                          packageTemplate.insertText.size(),
+                          packageTemplate.templateSlots);
+
+    const QString packageName =
+        target.packageName.isEmpty()
+            ? QStringLiteral("package")
+            : QStringLiteral("package %1").arg(target.packageName);
+    const QString success =
+        QStringLiteral("Inserted %1 in %2")
+            .arg(PackageToolService::labelForKind(kind), packageName);
+    if (message)
+        *message = success;
+    emit editor->editorStatusMessageRequested(success);
+    return true;
+}
+
 bool MyCodeEditorState::executeComModuleEndInsert(MyCodeEditor* editor,
                                                   QString* message)
 {

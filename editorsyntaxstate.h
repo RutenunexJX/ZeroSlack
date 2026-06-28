@@ -9,11 +9,13 @@ class MyCodeEditor;
 class MyHighlighter;
 class QTextDocument;
 class TSDocument;
+enum class PackageToolKind;
 struct TSPortAppendTarget;
 struct TSSignalInsertTarget;
 struct TSInstanceInsertTarget;
 struct TSAssignInsertTarget;
 struct TSParameterInsertTarget;
+struct TSPackageToolInsertTarget;
 struct TSModuleEndInsertTarget;
 struct TSAlwaysScopeTarget;
 struct TSModuleScopeTarget;
@@ -43,6 +45,9 @@ public:
     TSInstanceInsertTarget instanceInsertTargetAt(int charPos) const;
     TSAssignInsertTarget assignInsertTargetAt(int charPos) const;
     TSParameterInsertTarget parameterInsertTargetAt(int charPos) const;
+    TSPackageToolInsertTarget packageToolInsertTargetAt(
+        int charPos,
+        PackageToolKind kind) const;
     TSModuleEndInsertTarget moduleEndInsertTargetAt(int charPos) const;
     TSAlwaysScopeTarget alwaysScopeTargetAt(int cursorChar,
                                             int selectionStartChar = -1,

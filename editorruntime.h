@@ -12,6 +12,7 @@
 #include "editorgeometry.h"
 #include "editorgutter.h"
 #include "editormodestate.h"
+#include "packagetoolservice.h"
 #include "editorselection.h"
 #include "editorsemanticcontextservice.h"
 #include "editorsemanticruntime.h"
@@ -94,6 +95,11 @@ struct MyCodeEditorState
     bool executeComAssignInsert(MyCodeEditor* editor, QString* message);
     bool executeComParameterInsert(MyCodeEditor* editor, QString* message);
     bool executeComModuleEndInsert(MyCodeEditor* editor, QString* message);
+    EditorPackageToolAvailability currentPackageToolAvailability(
+        const MyCodeEditor* editor) const;
+    bool executePackageToolInsert(MyCodeEditor* editor,
+                                  PackageToolKind kind,
+                                  QString* message);
     bool selectInsideBeginEnd(MyCodeEditor* editor, QString* message);
     bool comModeActive() const;
     QString comModeBuffer() const;

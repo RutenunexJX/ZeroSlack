@@ -2,8 +2,11 @@
 #define MAINWINDOW_H
 
 #include <QMainWindow>
+#include <QList>
 #include <QString>
 #include <memory>
+
+#include "packagetoolservice.h"
 
 class AnalysisProgressCoordinator;
 class EditorAppearanceSettings;
@@ -33,6 +36,8 @@ class QProgressBar;
 class QTabBar;
 class QTimer;
 class QToolButton;
+class QVBoxLayout;
+class QWidget;
 
 QT_BEGIN_NAMESPACE
 namespace Ui { class MainWindow; }
@@ -81,6 +86,9 @@ private:
     QMenu* workspaceMenu = nullptr;
     QToolButton* panelsStatusButton = nullptr;
     QLabel* editorModeChip = nullptr;
+    QWidget* packageToolsBar = nullptr;
+    QLabel* packageToolsPackageLabel = nullptr;
+    QList<QToolButton*> packageToolButtons;
     QProgressBar* workspaceProgressBar = nullptr;
     QTabBar* workspaceTabBar = nullptr;
     QTimer* activeEditorPassiveRefreshTimer = nullptr;
@@ -96,6 +104,9 @@ private:
     void setupModeCommandCoordinator();
     void setupGlobalControl();
     void setupComMode();
+    void setupPackageTools(QVBoxLayout* editorLayout, QWidget* parent);
+    void updatePackageTools();
+    void insertPackageTool(PackageToolKind kind);
     void setupFoldBlockShelf();
     void setupViewMenu();
     void setupWorkspaceMenu();

@@ -159,6 +159,7 @@ set(ZEROSLACK_CORE_SOURCES
     navigationmanagerdata.cpp
     navigationmanagerstate.cpp
     navigationpanecoordinator.cpp
+    packagetoolservice.cpp
     navigationservice.cpp
     navigationservicehierarchy.cpp
     navigationwidgetpresentation.cpp
@@ -339,6 +340,7 @@ set(ZEROSLACK_CORE_SOURCES
     navigationcommandcoordinator.h
     navigationmanager.h
     navigationpanecoordinator.h
+    packagetoolservice.h
     navigationservice.h
     navigationwidget.h
     problemspanelcoordinator.h

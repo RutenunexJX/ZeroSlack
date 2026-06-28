@@ -145,6 +145,16 @@ TSParameterInsertTarget EditorSyntaxState::parameterInsertTargetAt(
     return document->parameterInsertTarget(charPos < 0 ? 0 : charPos);
 }
 
+TSPackageToolInsertTarget EditorSyntaxState::packageToolInsertTargetAt(
+    int charPos,
+    PackageToolKind kind) const
+{
+    TSPackageToolInsertTarget target;
+    if (!interactiveSyntaxEnabled)
+        return target;
+    return document->packageToolInsertTarget(charPos < 0 ? 0 : charPos, kind);
+}
+
 TSModuleEndInsertTarget EditorSyntaxState::moduleEndInsertTargetAt(
     int charPos) const
 {

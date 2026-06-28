@@ -1277,6 +1277,60 @@ M13.2-M13.4 implementation status:
   "^(completion_test|relationship_test|gui_smoke_test)$"
   --output-on-failure`.
 
+### 14. Package Tools
+
+Goal: give SystemVerilog package scopes a lightweight, package-only insertion
+surface for common definitions.
+
+Allowed scope:
+
+- show a Package Tools bar/buttons only when the active editor cursor is inside
+  a parseable package scope
+- insert first-phase package definition templates for `parameter`,
+  `localparam`, `typedef enum`, `typedef struct`,
+  `typedef struct packed`, and `function`
+- choose insertion positions from Tree-sitter package structure
+- default to the line before `endpackage`, with same-kind append anchors when
+  a matching package item already exists
+- start Slot Mode after insertion and highlight all editable slots
+- report clear failure reasons when the current package cannot be determined
+
+Not in scope:
+
+- package/import semantic interpretation
+- macro/define handling
+- cross-file package management
+- automatic sorting or broad package reordering
+- new graph or insight surfaces
+- changing existing `;;cmd` template behavior
+
+Milestones:
+
+- M14.1 Package Tools First Phase
+  (complete: package-only buttons insert the six requested definition
+  templates, stay inside the current package, reject module/interface scope,
+  and start Slot Mode)
+- M14.2 Future Package Tools Expansion
+  (not started: any additional templates, semantic package handling, sorting,
+  or cross-file package workflows require a new scoped request)
+
+M14.1 implementation status:
+
+- Complete: `PackageToolService` owns package-only templates and slot metadata
+  for parameter, localparam, enum typedef, struct typedef, packed struct
+  typedef, and function definitions.
+- Complete: `TSDocument::packageToolInsertTarget` derives the current package
+  and insertion point from Tree-sitter nodes, rejects module/interface/program
+  scope, appends near same-kind direct package items when present, and defaults
+  before `endpackage`.
+- Complete: `MyCodeEditor::executePackageToolInsert` applies the generated
+  template in one edit block and starts Slot Mode with all remapped slots.
+- Complete: `MainWindow` renders a lightweight Package Tools bar in the editor
+  area only while the active cursor is in a valid package scope.
+- Verification: Release `completion_test` and `gui_smoke_test` targets
+  compile/link; Release `ctest -R "completion_test|gui_smoke_test"
+  --output-on-failure` passed.
+
 ## Huge Workspace Status Audit
 
 Huge Workspace is not an active UX expansion track in this plan. Only audit and
@@ -1478,6 +1532,22 @@ Latest GUI smoke baseline repair:
 - Release verification passed: `ctest -R "^completion_test$"
   --output-on-failure` and `ctest -R "^gui_smoke_test$"
   --output-on-failure`; `gui_smoke_test` was repeated successfully.
+
+Latest Package Tools first phase:
+
+- Scope: package-only insertion buttons for the first six requested templates.
+- `PackageToolService` owns template text and slot metadata; `TSDocument`
+  owns current-package validation and insertion targets; `MainWindow` only
+  renders the lightweight button bar.
+- Insertions stay inside the current package, default before `endpackage`, and
+  append near existing same-kind direct package items when present. Module,
+  interface, and program scopes are rejected with clear failure reasons.
+- Existing `;;cmd` template behavior is unchanged. Package/import semantics,
+  macro/define handling, cross-file package management, package-wide sorting,
+  and new insight/graph surfaces remain out of scope.
+- Release verification passed: `completion_test` and `gui_smoke_test` targets
+  compile/link; `ctest -R "completion_test|gui_smoke_test"
+  --output-on-failure` passed.
 
 ## Commit Policy
 

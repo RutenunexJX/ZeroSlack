@@ -7,6 +7,7 @@
 #include "foldblockshelfmodel.h"
 #include "includeheaderworkflowtypes.h"
 #include "completiontypes.h"
+#include "packagetoolservice.h"
 
 #include <QList>
 #include <QPlainTextEdit>
@@ -103,6 +104,9 @@ public:
     bool executeComAssignInsert(QString* message = nullptr);
     bool executeComParameterInsert(QString* message = nullptr);
     bool executeComModuleEndInsert(QString* message = nullptr);
+    EditorPackageToolAvailability currentPackageToolAvailability() const;
+    bool executePackageToolInsert(PackageToolKind kind,
+                                  QString* message = nullptr);
     bool selectInsideBeginEnd(QString* message = nullptr);
     bool comModeActive() const;
     QString comModeBuffer() const;

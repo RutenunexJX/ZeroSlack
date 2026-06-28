@@ -54,6 +54,7 @@
 #include <QDir>
 #include <QFileInfo>
 #include <QHeaderView>
+#include <QHBoxLayout>
 #include <QInputDialog>
 #include <QTextBlock>
 #include <QTextCursor>
@@ -74,6 +75,8 @@
 #include <QTreeWidget>
 #include <QVBoxLayout>
 #include <QWidget>
+
+#include <utility>
 
 namespace {
 DiagnosticPanelScope diagnosticScopeFromProblemsCombo(QComboBox* combo)
@@ -207,6 +210,7 @@ void MainWindow::setupWorkspaceBar()
         "  color: #111827;"
         "}"));
     layout->addWidget(workspaceTabBar);
+    setupPackageTools(layout, editorContainer);
     layout->addWidget(ui->tabWidget, 1);
     setCentralWidget(editorContainer);
 
@@ -248,6 +252,117 @@ void MainWindow::setupWorkspaceBar()
                     foldShelfModel->setWorkspaceRoot(activePath);
                 refreshWorkspaceTabs();
             });
+}
+
+void MainWindow::setupPackageTools(QVBoxLayout* editorLayout, QWidget* parent)
+{
+    if (!editorLayout)
+        return;
+
+    packageToolsBar = new QWidget(parent ? parent : this);
+    packageToolsBar->setObjectName(QStringLiteral("packageToolsBar"));
+    auto* layout = new QHBoxLayout(packageToolsBar);
+    layout->setContentsMargins(8, 4, 8, 4);
+    layout->setSpacing(6);
+
+    QLabel* title =
+        new QLabel(QStringLiteral("Package Tools"), packageToolsBar);
+    title->setObjectName(QStringLiteral("packageToolsTitle"));
+    title->setStyleSheet(QStringLiteral("font-weight:600;color:#1f2937;"));
+    layout->addWidget(title);
+
+    packageToolsPackageLabel = new QLabel(packageToolsBar);
+    packageToolsPackageLabel->setObjectName(
+        QStringLiteral("packageToolsPackageLabel"));
+    packageToolsPackageLabel->setStyleSheet(QStringLiteral("color:#64748b;"));
+    layout->addWidget(packageToolsPackageLabel);
+
+    const PackageToolService service;
+    for (PackageToolKind kind : PackageToolService::toolOrder()) {
+        auto* button = new QToolButton(packageToolsBar);
+        button->setObjectName(
+            QStringLiteral("packageToolButton_%1")
+                .arg(PackageToolService::idForKind(kind)));
+        button->setText(PackageToolService::labelForKind(kind));
+        button->setAutoRaise(true);
+        button->setToolButtonStyle(Qt::ToolButtonTextOnly);
+        button->setToolTip(
+            QStringLiteral("Insert %1").arg(service.labelForKind(kind)));
+        connect(button,
+                &QToolButton::clicked,
+                this,
+                [this, kind]() { insertPackageTool(kind); });
+        packageToolButtons.append(button);
+        layout->addWidget(button);
+    }
+
+    layout->addStretch(1);
+    packageToolsBar->setStyleSheet(QStringLiteral(
+        "QWidget#packageToolsBar {"
+        "  background:#f8fafc;"
+        "  border-bottom:1px solid #dbe3ee;"
+        "}"
+        "QToolButton {"
+        "  color:#1f2937;"
+        "  padding:3px 6px;"
+        "  border:1px solid transparent;"
+        "}"
+        "QToolButton:hover {"
+        "  background:#e0f2fe;"
+        "  border-color:#bae6fd;"
+        "}"
+        "QToolButton:disabled { color:#94a3b8; }"));
+    packageToolsBar->hide();
+    editorLayout->addWidget(packageToolsBar);
+}
+
+void MainWindow::updatePackageTools()
+{
+    if (!packageToolsBar)
+        return;
+
+    MyCodeEditor* editor = tabManager ? tabManager->getCurrentEditor()
+                                      : nullptr;
+    const EditorPackageToolAvailability availability =
+        editor ? editor->currentPackageToolAvailability()
+               : EditorPackageToolAvailability();
+    packageToolsBar->setVisible(availability.available);
+
+    const QString packageText =
+        availability.packageName.isEmpty()
+            ? QStringLiteral("package")
+            : QStringLiteral("package %1").arg(availability.packageName);
+    if (packageToolsPackageLabel)
+        packageToolsPackageLabel->setText(packageText);
+
+    const QString tooltip =
+        availability.available
+            ? QStringLiteral("Insert definition in %1").arg(packageText)
+            : availability.failureMessage;
+    for (QToolButton* button : std::as_const(packageToolButtons)) {
+        if (!button)
+            continue;
+        button->setEnabled(availability.available);
+        if (!tooltip.isEmpty())
+            button->setToolTip(tooltip);
+    }
+}
+
+void MainWindow::insertPackageTool(PackageToolKind kind)
+{
+    MyCodeEditor* editor = tabManager ? tabManager->getCurrentEditor()
+                                      : nullptr;
+    if (!editor) {
+        if (statusBar())
+            statusBar()->showMessage(QStringLiteral("No active editor"), 3000);
+        return;
+    }
+
+    QString message;
+    const bool inserted = editor->executePackageToolInsert(kind, &message);
+    if (statusBar() && !message.isEmpty())
+        statusBar()->showMessage(message, inserted ? 3000 : 5000);
+    updatePackageTools();
 }
 
 void MainWindow::refreshWorkspaceTabs()
@@ -435,6 +550,7 @@ void MainWindow::setupManagerConnections()
             this,
             [this](const DocumentSnapshot&) {
                 scheduleActiveEditorPassiveRefresh();
+                updatePackageTools();
                 QDockWidget* waveDock = dockForPanelId(QStringLiteral("wavePreview"));
                 if (waveDock && waveDock->isVisible())
                     refreshActiveEditorWavePreview();
@@ -449,6 +565,10 @@ void MainWindow::setupManagerConnections()
                         &MyCodeEditor::textChanged,
                         this,
                         [this, editor]() {
+                            if (tabManager
+                                && tabManager->getCurrentEditor() == editor) {
+                                updatePackageTools();
+                            }
                             QDockWidget* waveDock =
                                 dockForPanelId(QStringLiteral("wavePreview"));
                             if (tabManager
@@ -462,6 +582,10 @@ void MainWindow::setupManagerConnections()
                         &MyCodeEditor::cursorPositionChanged,
                         this,
                         [this, editor]() {
+                            if (tabManager
+                                && tabManager->getCurrentEditor() == editor) {
+                                updatePackageTools();
+                            }
                             QDockWidget* waveDock =
                                 dockForPanelId(QStringLiteral("wavePreview"));
                             if (tabManager

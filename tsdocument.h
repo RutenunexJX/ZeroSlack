@@ -5,6 +5,8 @@
 #include <QList>
 #include <QVector>
 
+#include "packagetoolservice.h"
+
 extern "C" {
 #include <tree_sitter/api.h>
 }
@@ -120,6 +122,26 @@ struct TSParameterInsertTarget {
     int trailingCommaInsertChar = -1;
 
     bool ok() const { return status == TSParameterInsertStatus::Ok; }
+};
+
+enum class TSPackageToolInsertStatus {
+    Ok,
+    NoCurrentPackage,
+    InsideRtlScope,
+    PackageHasSyntaxError,
+    NoEndpackage,
+    NoClearPackageInsertPoint
+};
+
+struct TSPackageToolInsertTarget {
+    TSPackageToolInsertStatus status =
+        TSPackageToolInsertStatus::NoClearPackageInsertPoint;
+    int insertChar = -1;
+    QString lineIndent;
+    QString packageName;
+    bool insertAfterLine = false;
+
+    bool ok() const { return status == TSPackageToolInsertStatus::Ok; }
 };
 
 enum class TSModuleEndInsertStatus {
@@ -262,6 +284,11 @@ public:
 
     // Clear module/package-scope insert point for adding a parameter/localparam.
     TSParameterInsertTarget parameterInsertTarget(int charOffset) const;
+
+    // Clear package-scope insert point for package-only definition tools.
+    TSPackageToolInsertTarget packageToolInsertTarget(
+        int charOffset,
+        PackageToolKind kind) const;
 
     // Clear insert point immediately before the current module's final endmodule.
     TSModuleEndInsertTarget moduleEndInsertTarget(int charOffset) const;

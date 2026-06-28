@@ -22,6 +22,7 @@
 #include "globalcontrolservice.h"
 #include "mycodeeditor.h"
 #include "myhighlighter.h"
+#include "packagetoolservice.h"
 #include "relationshipservice.h"
 #include "rtlbatcheditservice.h"
 #include "semanticdecorationservice.h"
@@ -6088,6 +6089,114 @@ int main(int argc, char** argv) {
                        == clearRhsNoAssignmentOriginal
                    && clearRhsNoAssignmentMessage
                        == QStringLiteral("No assignment RHS found"),
+               true);
+
+    const QString packageToolText =
+        QStringLiteral("package pkg_tools;\n"
+                       "    parameter int EXISTING = 1;\n"
+                       "\n"
+                       "endpackage : pkg_tools\n"
+                       "\n"
+                       "module outside_pkg;\n"
+                       "endmodule\n");
+    TSDocument packageToolDocument;
+    packageToolDocument.setText(packageToolText);
+    const TSPackageToolInsertTarget packageParameterTarget =
+        packageToolDocument.packageToolInsertTarget(
+            packageToolText.indexOf(QStringLiteral("EXISTING")),
+            PackageToolKind::Parameter);
+    expectBool("Package Tools appends parameter near same kind",
+               packageParameterTarget.ok()
+                   && packageParameterTarget.insertAfterLine
+                   && packageParameterTarget.lineIndent == QStringLiteral("    ")
+                   && packageParameterTarget.insertChar
+                       == packageToolText.indexOf(QStringLiteral("\n\n")),
+               true);
+    const TSPackageToolInsertTarget packageLocalparamTarget =
+        packageToolDocument.packageToolInsertTarget(
+            packageToolText.indexOf(QStringLiteral("EXISTING")),
+            PackageToolKind::Localparam);
+    expectBool("Package Tools defaults before endpackage",
+               packageLocalparamTarget.ok()
+                   && !packageLocalparamTarget.insertAfterLine
+                   && packageLocalparamTarget.insertChar
+                       == packageToolText.indexOf(QStringLiteral("endpackage")),
+               true);
+    const TSPackageToolInsertTarget packageModuleRejectTarget =
+        packageToolDocument.packageToolInsertTarget(
+            packageToolText.indexOf(QStringLiteral("outside_pkg")),
+            PackageToolKind::Parameter);
+    expectBool("Package Tools rejects module scope",
+               !packageModuleRejectTarget.ok()
+                   && packageModuleRejectTarget.status
+                       == TSPackageToolInsertStatus::InsideRtlScope,
+               true);
+
+    const PackageToolService packageToolService;
+    const CodeTemplateItem packageStructTemplate =
+        packageToolService.templateForKind(PackageToolKind::TypedefStruct);
+    expectBool("Package Tools struct template slots",
+               packageStructTemplate.templateSlots.size() == 3
+                   && packageStructTemplate.templateSlots.at(0).name
+                       == QStringLiteral("field_type")
+                   && packageStructTemplate.templateSlots.at(1).name
+                       == QStringLiteral("field_name")
+                   && packageStructTemplate.templateSlots.at(2).name
+                       == QStringLiteral("type_name"),
+               true);
+    const CodeTemplateItem packageEnumIndented =
+        packageToolService.templateForInsertion(
+            PackageToolKind::TypedefEnum,
+            QStringLiteral("    "),
+            false);
+    expectBool("Package Tools indentation remaps multiline slot",
+               packageEnumIndented.insertText.startsWith(
+                   QStringLiteral("    typedef enum"))
+                   && packageEnumIndented.templateSlots.size() == 2
+                   && packageEnumIndented.templateSlots.first().length
+                       > QStringLiteral("IDLE,\n    BUSY").size(),
+               true);
+
+    MyCodeEditor packageToolEditor;
+    const QString packageToolOriginal =
+        QStringLiteral("package edit_pkg;\n"
+                       "\n"
+                       "endpackage\n");
+    packageToolEditor.setPlainText(packageToolOriginal);
+    QTextCursor packageToolCursor(packageToolEditor.document());
+    packageToolCursor.setPosition(
+        packageToolOriginal.indexOf(QStringLiteral("edit_pkg")));
+    packageToolEditor.setTextCursor(packageToolCursor);
+    QString packageToolMessage;
+    expectBool("Package Tools inserts parameter and starts Slot Mode",
+               packageToolEditor.executePackageToolInsert(
+                   PackageToolKind::Parameter,
+                   &packageToolMessage)
+                   && packageToolEditor.templateSlotModeActive()
+                   && packageToolEditor.templateSlotModeSlotCount() == 3
+                   && packageToolEditor.templateSlotModeActiveIndex() == 0
+                   && packageToolEditor.textCursor().selectedText()
+                       == QStringLiteral("int")
+                   && packageToolEditor.toPlainText().contains(
+                       QStringLiteral("    parameter int PARAM = 0;\n"
+                                      "endpackage")),
+               true);
+    insertAtEditorCursor(packageToolEditor, QStringLiteral("logic [7:0]"));
+    expectBool("Package Tools slot edit shifts later slots",
+               sendEditorKey(packageToolEditor, Qt::Key_Tab)
+                   && packageToolEditor.templateSlotModeActiveIndex() == 1
+                   && packageToolEditor.textCursor().selectedText()
+                       == QStringLiteral("PARAM")
+                   && packageToolEditor.toPlainText().contains(
+                       QStringLiteral("parameter logic [7:0] PARAM = 0;")),
+               true);
+    MyCodeEditor packageToolNoPackageEditor;
+    packageToolNoPackageEditor.setPlainText(QStringLiteral("logic loose;\n"));
+    expectBool("Package Tools failure reports package absence",
+               !packageToolNoPackageEditor.executePackageToolInsert(
+                   PackageToolKind::Function,
+                   &packageToolMessage)
+                   && packageToolMessage == QStringLiteral("No current package"),
                true);
 
     MyCodeEditor selectInsideEditor;

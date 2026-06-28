@@ -86,6 +86,7 @@
 #include "navigationmanager.h"
 #include "navigationservice.h"
 #include "navigationcommandcoordinator.h"
+#include "packagetoolservice.h"
 #include "problemspanelcoordinator.h"
 #include "referencespanelcoordinator.h"
 #include "relationshipspanelcoordinator.h"
@@ -7272,6 +7273,77 @@ static void runComModeRegression(MainWindow& window)
     }
 }
 
+static void runPackageToolsRegression(MainWindow& window)
+{
+    printf("\n-- package tools regression --\n");
+
+    MyCodeEditor* editor =
+        window.tabManager ? window.tabManager->getCurrentEditor() : nullptr;
+    expectBool("package tools active editor exists", editor != nullptr, true);
+    if (!editor)
+        return;
+
+    if (editor->comModeActive())
+        editor->exitComMode();
+    editor->setPlainText(QStringLiteral("module package_tools_hidden;\n"
+                                        "endmodule\n"));
+    QTextCursor hiddenCursor(editor->document());
+    hiddenCursor.setPosition(
+        editor->toPlainText().indexOf(QStringLiteral("package_tools_hidden")));
+    editor->setTextCursor(hiddenCursor);
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+
+    QWidget* bar =
+        window.findChild<QWidget*>(QStringLiteral("packageToolsBar"));
+    expectBool("package tools bar exists", bar != nullptr, true);
+    expectBool("package tools hidden outside package",
+               bar && !bar->isVisible(),
+               true);
+
+    const QString packageText =
+        QStringLiteral("package gui_pkg;\n"
+                       "\n"
+                       "endpackage\n");
+    editor->setPlainText(packageText);
+    QTextCursor packageCursor(editor->document());
+    packageCursor.setPosition(packageText.indexOf(QStringLiteral("gui_pkg")));
+    editor->setTextCursor(packageCursor);
+    editor->setFocus();
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+
+    QToolButton* parameterButton =
+        window.findChild<QToolButton*>(
+            QStringLiteral("packageToolButton_parameter"));
+    expectBool("package tools parameter button visible",
+               waitUntil([&]() {
+                   return bar && bar->isVisible()
+                       && parameterButton
+                       && parameterButton->isEnabled();
+               },
+                         1000),
+               true);
+    if (parameterButton)
+        parameterButton->click();
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    expectBool("package tools button inserts and starts Slot Mode",
+               editor->templateSlotModeActive()
+                   && editor->templateSlotModeSlotCount() == 3
+                   && editor->textCursor().selectedText()
+                       == QStringLiteral("int")
+                   && editor->toPlainText().contains(
+                       QStringLiteral("    parameter int PARAM = 0;\n"
+                                      "endpackage")),
+               true);
+
+    sendWidgetKey(editor, Qt::Key_Escape);
+    editor->setPlainText(QStringLiteral("module package_tools_reset;\n"
+                                        "endmodule\n"));
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    expectBool("package tools hides after reset",
+               bar && !bar->isVisible(),
+               true);
+}
+
 static void runGlobalControlRegression(MainWindow& window,
                                        NavigationWidget* navWidget)
 {
@@ -8855,6 +8927,7 @@ int main(int argc, char** argv)
     NavigationWidget* navWidget = window.findChild<NavigationWidget*>();
     expectBool("navigation widget exists", navWidget != nullptr, true);
     runComModeRegression(window);
+    runPackageToolsRegression(window);
     runGlobalControlRegression(window, navWidget);
     if (navWidget && editor) {
         navWidget->setActiveTab(NavigationWidget::FileTab);

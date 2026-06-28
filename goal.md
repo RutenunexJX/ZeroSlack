@@ -28,13 +28,26 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
 
 ## Current Goal State
 
-Current milestone: References / Relationships workflow closure is complete
-after acceptance-failure repair.
+Current milestone: Package Tools phase 1 is complete.
 
 Next work should wait for the next explicit scoped request.
 
 Status:
 
+- Package Tools phase 1 is complete: when the active cursor is inside a
+  parseable SystemVerilog package, the editor shows a lightweight Package Tools
+  bar with `parameter`, `localparam`, `typedef enum`, `typedef struct`,
+  `typedef struct packed`, and `function` insertion buttons. Insert positions
+  are derived from Tree-sitter package structure, stay inside the current
+  package, default before `endpackage`, append near same-kind direct package
+  items when present, and reject module/interface/program scope with clear
+  failure messages. Inserted templates start Slot Mode on all editable slots.
+  Existing `;;cmd` behavior is unchanged; package/import semantics,
+  macro/define handling, cross-file package management, package-wide sorting,
+  and new insight/graph surfaces remain out of scope.
+- Focused verification for Package Tools phase 1 passed: Release
+  `completion_test` and `gui_smoke_test` targets compile/link; Release
+  `ctest -R "completion_test|gui_smoke_test" --output-on-failure` passed.
 - References / Relationships workflow closure is complete: source-symbol
   context actions are stable, References and Relationships panels keep query
   context and explicit empty reasons, result rows jump/copy through one
@@ -938,6 +951,39 @@ Milestones:
   `gui_smoke_test` targets compile/link; Release acceptance CTest
   `ctest -R "^(completion_test|relationship_test|gui_smoke_test)$"
   --output-on-failure` passed)
+
+## Track 14: Package Tools
+
+Goal: give SystemVerilog package scopes a lightweight package-only insertion
+surface for common definitions.
+
+Allowed work:
+
+- package-scope detection from Tree-sitter editor structure
+- package-only insertion buttons for common definition templates
+- same-kind direct package item append anchors
+- default insertion before `endpackage`
+- Slot Mode after insertion
+- clear failure reasons when the current package cannot be determined
+
+Not allowed:
+
+- package/import semantic interpretation
+- macro/define handling
+- cross-file package management
+- automatic package-wide sorting
+- new graphs or insight panels
+- changing existing `;;cmd` template behavior
+
+Milestones:
+
+- G14.1 Package Tools first phase.
+  (complete: `parameter`, `localparam`, `typedef enum`, `typedef struct`,
+  `typedef struct packed`, and `function` buttons insert package-only
+  templates inside the current package and start Slot Mode)
+- G14.2 Future Package Tools expansion.
+  (not started: additional package templates, semantic package handling,
+  package sorting, or cross-file workflows require a new scoped request)
 
 ## Huge Workspace Status Audit
 

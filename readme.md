@@ -73,6 +73,12 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
   post-template editor-local fill flow; it is active for `;;p` / `;;lp`
   parameter templates and `;;l` / `;;w` / `;;r` signal declaration templates,
   and not yet active for other template families.
+- Package Tools phase 1 is available when the active editor cursor is inside a
+  parseable SystemVerilog package. The lightweight editor bar inserts
+  package-scoped `parameter`, `localparam`, `typedef enum`,
+  `typedef struct`, `typedef struct packed`, and `function` templates at
+  syntax-derived positions inside the current package, then starts Slot Mode
+  on all editable slots. It does not change `;;cmd` template behavior.
 - Batch RTL editing has a first editor-local action:
   `MyCodeEditor::clearSelectedAssignmentRhs` clears RHS expressions in the
   complete line range touched by the current selection, or the current
@@ -266,6 +272,12 @@ engineering configuration / diagnostics lane.
   Slot state must not live in UI panels or semantic services. COM Mode toggle
   does not clear an active Slot Mode session; explicit Esc and stale-session
   events own slot exit.
+- Package Tools baseline: `PackageToolService` owns the package-only template
+  text and relative slot metadata. `TSDocument` owns current-package detection
+  and syntax-derived insertion targets, including same-kind append anchors and
+  the default `endpackage` insertion point. `MyCodeEditor` applies the returned
+  text in one undoable edit and starts Slot Mode. `MainWindow` only renders the
+  lightweight button bar and dispatches selected tools.
 - Batch RTL edit baseline: `RtlBatchEditService` owns selected-text RTL batch
   edit planning and returns reports with replacement text, failure reasons, and
   template-slot metadata. It does not mutate editor text, scan workspaces, or
@@ -347,6 +359,12 @@ Current command surfaces are intentionally separate:
   relative slot metadata come from `CodeTemplateService`.
   `EditorCompletionWorkflow` applies the selected template and starts Slot Mode
   through `MyCodeEditor` when slot metadata exists.
+- Package Tools is a package-scoped button surface, not a `;;cmd` alias. It
+  reuses the Slot Mode editor machinery after insertion, but package templates,
+  current-package validation, and insertion targets stay in the package tool
+  and Tree-sitter layers. The first phase intentionally excludes package/import
+  semantic interpretation, macro/define handling, cross-file package
+  management, automatic package-wide sorting, new graphs, and insight panels.
 - User template storage/query is service-owned by `UserTemplateService`. It
   persists validated `;;` template records in `QSettings`, exposes
   `CodeTemplateItem`-compatible catalog and exact-token query results, and is
