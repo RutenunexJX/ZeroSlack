@@ -28,7 +28,7 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
 
 ## Current Goal State
 
-Current milestone: Macro / Define first-class semantic workflow is complete.
+Current milestone: header/include command convergence is complete.
 
 Next work should wait for the next explicit scoped request.
 
@@ -78,6 +78,20 @@ Status:
   --target completion_test relationship_test gui_smoke_test`; Release
   `ctest -R "^(completion_test|relationship_test|gui_smoke_test)$"
   --output-on-failure` passed.
+- Header/include command convergence is complete. The old hidden `` `include
+  `` + space entry is removed. `;h <query>` searches existing header/include
+  candidates through the existing service-owned candidate/filter path and
+  inserts a full SystemVerilog `` `include "..."`` statement. `;h -n <name>`
+  creates a header before insertion, defaults suffix-less names to `.svh`,
+  accepts `.vh` / `.svh`, prefers the current file directory, and refuses to
+  overwrite existing files. `;;h` remains absent; no package/import completion,
+  COM Mode command, or Global Control command was added.
+- Verification for header/include convergence passed in the Release build:
+  `cmake --build . --target completion_test gui_smoke_test`; `cmake --build .
+  --target relationship_test`; `ctest -R
+  "^(completion_test|relationship_test|gui_smoke_test)$"
+  --output-on-failure`; `git diff --check -- .
+  ':!test_sv/new/elec_phy_import/ctrl/chl_ctrl.sv'`.
 - Verification Baseline Repair after Package Tools phase 1 is complete. This
   was baseline repair only, not Package Tools phase 2: Release
   `relationship_test` rebuild failures were traced to generated MinGW

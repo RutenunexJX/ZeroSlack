@@ -213,7 +213,8 @@ struct CommandModeCommand {
 enum class InlineCommandIntent {
     SemanticCompletion,
     CodeTemplate,
-    EditorAction
+    EditorAction,
+    HeaderInclude
 };
 
 struct InlineCommandDescriptor {

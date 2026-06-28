@@ -12,6 +12,7 @@ struct IncludeNewHeaderChoice {
 struct IncludeNewHeaderRequest {
     QString fileStem;
     QString extension;
+    QString currentFileName;
     QString templateName;
     QString templateBody;
     QString cursorToken;

@@ -1682,6 +1682,27 @@ Latest `;m` module instantiation semantic completion:
   "^(completion_test|relationship_test|gui_smoke_test)$"
   --output-on-failure`.
 
+Latest header/include command convergence:
+
+- Scope: explicit header include command entry only. Package/import completion,
+  COM Mode, Global Control, and `;;h` template descriptors remain out of scope.
+- `;h <query>` now owns include insertion for existing headers. It reuses the
+  existing include candidate/filter path and inserts a full SystemVerilog
+  `` `include "..."`` statement.
+- `;h -n <name>` creates a header and inserts the include. Names without a
+  suffix default to `.svh`; `.vh` / `.svh` suffixes are accepted; creation
+  prefers the current file directory and refuses to overwrite existing files
+  with an explicit already-exists result.
+- The old hidden `` `include `` + space trigger was removed, so typing an
+  include directive no longer auto-inserts quotes or opens the include popup.
+- Coverage now checks existing-header insertion, `.svh` default creation,
+  no-overwrite behavior, absent `;;h`, and legacy include-space inactivity.
+- Release verification passed: `cmake --build . --target completion_test
+  gui_smoke_test`; `cmake --build . --target relationship_test`; `ctest -R
+  "^(completion_test|relationship_test|gui_smoke_test)$"
+  --output-on-failure`; `git diff --check -- .
+  ':!test_sv/new/elec_phy_import/ctrl/chl_ctrl.sv'`.
+
 Latest Verification Baseline Repair:
 
 - Scope: baseline repair only after Package Tools phase 1; this is not Package

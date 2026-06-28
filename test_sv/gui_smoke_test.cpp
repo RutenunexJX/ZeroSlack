@@ -22,6 +22,7 @@
 #include <QGraphicsRectItem>
 #include <QGraphicsView>
 #include <QImage>
+#include <QIODevice>
 #include <QSettings>
 #include <QSignalSpy>
 #include <QTabBar>
@@ -1074,16 +1075,19 @@ static void runIncludeCompletionRegression()
                partialEditor.toPlainText() == QStringLiteral("`inc "),
                true);
 
-    MyCodeEditor plainEditor;
-    plainEditor.setIncludeFileCompletionProvider(includeProvider);
-    plainEditor.resize(480, 120);
-    plainEditor.show();
-    plainEditor.setFocus();
+    MyCodeEditor legacyEditor;
+    legacyEditor.setIncludeFileCompletionProvider(includeProvider);
+    legacyEditor.resize(480, 120);
+    legacyEditor.show();
+    legacyEditor.setFocus();
     QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-    plainEditor.insertPlainText(QStringLiteral("include "));
+    legacyEditor.insertPlainText(QStringLiteral("`include "));
     QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-    expectBool("include completion requires backtick keyword",
-               plainEditor.toPlainText() == QStringLiteral("include "),
+    QCompleter* legacyCompleter = legacyEditor.findChild<QCompleter*>();
+    expectBool("legacy include space no longer triggers",
+               legacyEditor.toPlainText() == QStringLiteral("`include ")
+                   && (!legacyCompleter
+                       || !legacyCompleter->popup()->isVisible()),
                true);
 
     MyCodeEditor editor;
@@ -1092,18 +1096,28 @@ static void runIncludeCompletionRegression()
     editor.show();
     editor.setFocus();
     QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-    editor.insertPlainText(QStringLiteral("`include "));
+    editor.insertPlainText(QStringLiteral(";h de"));
     QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
 
-    expectBool("include completion inserts quotes",
-               editor.toPlainText() == QStringLiteral("`include \"\""),
-               true);
-    expectBool("include completion places cursor inside quotes",
-               editor.textCursor().position()
-                   == QStringLiteral("`include \"").size(),
-               true);
-
     QCompleter* completer = editor.findChild<QCompleter*>();
+    auto selectCompletionContaining =
+        [](QCompleter* targetCompleter, const QString& needle) {
+            if (!targetCompleter || !targetCompleter->model())
+                return QModelIndex();
+            for (int row = 0; row < targetCompleter->model()->rowCount(); ++row) {
+                const QModelIndex index =
+                    targetCompleter->model()->index(row, 0);
+                const QString text =
+                    targetCompleter->model()->data(
+                        index,
+                        Qt::DisplayRole).toString();
+                if (text.contains(needle)) {
+                    targetCompleter->popup()->setCurrentIndex(index);
+                    return index;
+                }
+            }
+            return QModelIndex();
+        };
     bool hasDefsCandidate = false;
     if (completer && completer->model()) {
         for (int row = 0; row < completer->model()->rowCount(); ++row) {
@@ -1119,11 +1133,9 @@ static void runIncludeCompletionRegression()
                completer && completer->popup()->isVisible() && hasDefsCandidate,
                true);
 
-    editor.insertPlainText(QStringLiteral("de"));
-    QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
     QTest::keyClick(&editor, Qt::Key_Tab);
     QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-    expectBool("include completion tab inserts selected file",
+    expectBool(";h include completion tab inserts selected file",
                editor.toPlainText() == QStringLiteral("`include \"defs.svh\""),
                true);
 
@@ -1145,88 +1157,29 @@ static void runIncludeCompletionRegression()
     newHeaderEditor.show();
     newHeaderEditor.setFocus();
     QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-    newHeaderEditor.insertPlainText(QStringLiteral("`include "));
-    QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
-    newHeaderEditor.insertPlainText(QStringLiteral("-n new_defs"));
+    newHeaderEditor.insertPlainText(QStringLiteral(";h -n new_defs"));
     QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
 
     QCompleter* newHeaderCompleter =
         newHeaderEditor.findChild<QCompleter*>();
-    auto selectCompletionContaining =
-        [](QCompleter* targetCompleter, const QString& needle) {
-            if (!targetCompleter || !targetCompleter->model())
-                return QModelIndex();
-            for (int row = 0; row < targetCompleter->model()->rowCount(); ++row) {
-                const QModelIndex index =
-                    targetCompleter->model()->index(row, 0);
-                const QString text =
-                    targetCompleter->model()->data(
-                        index,
-                        Qt::DisplayRole).toString();
-                if (text.contains(needle)) {
-                    targetCompleter->popup()->setCurrentIndex(index);
-                    return index;
-                }
-            }
-            return QModelIndex();
-        };
-
-    const QString defaultFormatText =
-        newHeaderCompleter && newHeaderCompleter->popup()
-        ? newHeaderCompleter->model()->data(
-            newHeaderCompleter->popup()->currentIndex(),
-            Qt::DisplayRole).toString()
-        : QString();
-    const QModelIndex vhIndex =
+    const QModelIndex createIndex =
         selectCompletionContaining(newHeaderCompleter,
-                                   QStringLiteral("vh - Verilog header"));
-    expectBool("include new header shows format choices",
+                                   QStringLiteral("new_defs.svh - create header"));
+    expectBool(";h -n shows create header choice",
                newHeaderCompleter && newHeaderCompleter->popup()->isVisible()
-                   && vhIndex.isValid(),
-               true);
-    expectBool("include new header defaults to first format",
-               defaultFormatText.contains(QStringLiteral("vh - Verilog header")),
+                   && createIndex.isValid(),
                true);
     QTest::keyClick(&newHeaderEditor, Qt::Key_Tab);
     QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
-    expectBool("include new header format moves to template stage",
-               newHeaderEditor.toPlainText()
-                   == QStringLiteral("`include \"-n new_defs vh \""),
-               true);
-
-    const QModelIndex guardIndex =
-        newHeaderCompleter && newHeaderCompleter->popup()
-        ? newHeaderCompleter->popup()->currentIndex()
-        : QModelIndex();
-    const QString guardDisplay = guardIndex.isValid()
-        ? newHeaderCompleter->model()->data(
-            guardIndex,
-            Qt::DisplayRole).toString()
-        : QString();
-    const QString guardPreview = guardIndex.isValid()
-        ? newHeaderCompleter->model()->data(
-            guardIndex,
-            Qt::ToolTipRole).toString()
-        : QString();
-    expectBool("include new header defaults to first template",
-               guardDisplay.contains(QStringLiteral("empty - blank header")),
-               true);
-    expectBool("include new header shows template preview",
-               guardIndex.isValid()
-                   && guardDisplay.contains(QStringLiteral("<cursor>"))
-                   && guardPreview.contains(QStringLiteral("<cursor>")),
-               true);
-    QTest::keyClick(&newHeaderEditor, Qt::Key_Tab);
-    QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
-    expectBool("include new header creates requested file",
+    expectBool(";h -n creates requested svh file",
                createCalls == 1
                    && createdRequest.fileStem == QStringLiteral("new_defs")
-                   && createdRequest.extension == QStringLiteral("vh")
+                   && createdRequest.extension == QStringLiteral("svh")
                    && createdRequest.templateName == QStringLiteral("empty"),
                true);
-    expectBool("include new header inserts created include",
+    expectBool(";h -n inserts created include",
                newHeaderEditor.toPlainText()
-                   == QStringLiteral("`include \"new_defs.vh\""),
+                   == QStringLiteral("`include \"new_defs.svh\""),
                true);
 
     QTemporaryDir workspaceDir;
@@ -1275,6 +1228,60 @@ static void runIncludeCompletionRegression()
                tabs.getCurrentEditor()
                    && tabs.getCurrentEditor()->textCursor().position()
                        == result.cursorPosition,
+               true);
+
+    const QByteArray createdBodyBefore = [&]() {
+        QFile file(createdPath);
+        if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
+            return QByteArray();
+        return file.readAll();
+    }();
+    IncludeNewHeaderResult duplicateResult =
+        coordinator.createIncludeNewHeader(request);
+    const QByteArray createdBodyAfter = [&]() {
+        QFile file(createdPath);
+        if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
+            return QByteArray();
+        return file.readAll();
+    }();
+    expectBool("include new header coordinator refuses overwrite",
+               !duplicateResult.success
+                   && duplicateResult.errorMessage.contains(
+                       QStringLiteral("already exists"))
+                   && !createdBodyBefore.isEmpty()
+                   && createdBodyBefore == createdBodyAfter,
+               true);
+
+    const QString rtlDirPath =
+        QDir(workspaceDir.path()).absoluteFilePath(QStringLiteral("rtl"));
+    QDir().mkpath(rtlDirPath);
+    const QString currentSourcePath =
+        QDir(rtlDirPath).absoluteFilePath(QStringLiteral("current.sv"));
+    QFile currentSource(currentSourcePath);
+    expectBool("include new header current source fixture created",
+               currentSource.open(QIODevice::WriteOnly | QIODevice::Text),
+               true);
+    if (currentSource.isOpen()) {
+        currentSource.write("module current; endmodule\n");
+        currentSource.close();
+    }
+    IncludeNewHeaderRequest siblingRequest;
+    siblingRequest.fileStem = QStringLiteral("sibling_defs");
+    siblingRequest.extension = QStringLiteral("svh");
+    siblingRequest.currentFileName = currentSourcePath;
+    siblingRequest.templateName = QStringLiteral("empty");
+    siblingRequest.cursorToken = QStringLiteral("__CURSOR__");
+    siblingRequest.templateBody = QStringLiteral("__CURSOR__\n");
+    const IncludeNewHeaderResult siblingResult =
+        coordinator.createIncludeNewHeader(siblingRequest);
+    expectBool("include new header prefers current file directory",
+               siblingResult.success
+                   && QFileInfo::exists(
+                       QDir(rtlDirPath).absoluteFilePath(
+                           QStringLiteral("sibling_defs.svh")))
+                   && !QFileInfo::exists(
+                       QDir(workspaceDir.path()).absoluteFilePath(
+                           QStringLiteral("sibling_defs.svh"))),
                true);
 }
 

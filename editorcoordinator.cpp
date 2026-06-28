@@ -855,7 +855,18 @@ IncludeNewHeaderResult EditorCoordinator::createIncludeNewHeader(
 
     const QString workspaceRoot = dependencies.workspaceManager->getWorkspacePath();
     const QString fileName = stem + QLatin1Char('.') + extension;
-    const QString filePath = QDir(workspaceRoot).absoluteFilePath(fileName);
+    QString targetDirectory = workspaceRoot;
+    const QString currentFile =
+        normalizedEditorCoordinatorFileName(request.currentFileName);
+    if (!currentFile.isEmpty()) {
+        const QFileInfo currentInfo(currentFile);
+        const QString currentDirectory =
+            currentInfo.absoluteDir().absolutePath();
+        if (!currentDirectory.isEmpty())
+            targetDirectory = currentDirectory;
+    }
+
+    const QString filePath = QDir(targetDirectory).absoluteFilePath(fileName);
     const QFileInfo fileInfo(filePath);
     if (fileInfo.exists()) {
         result.errorMessage =

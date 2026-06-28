@@ -117,6 +117,18 @@ QList<InlineCommandDescriptor> templateDescriptors()
     return result;
 }
 
+QList<InlineCommandDescriptor> headerIncludeDescriptors()
+{
+    return {
+        descriptor(QStringLiteral(";h "),
+                   InlineCommandIntent::HeaderInclude,
+                   CompletionCommandKind::User,
+                   QStringLiteral(";h"),
+                   QStringLiteral("header includes"),
+                   QStringLiteral("`include \"...\""))
+    };
+}
+
 QList<InlineCommandDescriptor> actionDescriptors()
 {
     return {};
@@ -140,6 +152,7 @@ QList<InlineCommandDescriptor> InlineCommandMode::descriptors()
 {
     QList<InlineCommandDescriptor> result = semanticDescriptors();
     result.append(templateDescriptors());
+    result.append(headerIncludeDescriptors());
     result.append(actionDescriptors());
     return result;
 }
@@ -251,6 +264,8 @@ QString InlineCommandMode::headerText(const InlineCommandDescriptor& descriptor)
         return QStringLiteral(":: TEMPLATE MODE - %1 ::").arg(descriptor.description);
     case InlineCommandIntent::EditorAction:
         return QStringLiteral(":: ACTION MODE ::");
+    case InlineCommandIntent::HeaderInclude:
+        return QStringLiteral(":: HEADER INCLUDE - `include ::");
     }
     return QStringLiteral(":: COMMAND MODE ::");
 }

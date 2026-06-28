@@ -37,11 +37,6 @@ bool hasLongerExactEditorActionPrefix(const InlineCommandDescriptor& descriptor)
     return false;
 }
 
-bool isIdentifierContinuation(QChar ch)
-{
-    return ch.isLetterOrNumber() || ch == QLatin1Char('_');
-}
-
 QString sanitizedIncludeHeaderStem(QString text)
 {
     text = text.trimmed();
@@ -131,13 +126,6 @@ QList<IncludeTemplateDefinition> includeHeaderTemplates(
     return templates;
 }
 
-QString includePreviewText(QString text)
-{
-    text.replace(QStringLiteral("__ZEROSLACK_CURSOR__"),
-                 QStringLiteral("<cursor>"));
-    return text.trimmed();
-}
-
 QStringList splitIncludeNewCommand(const QString& prefix)
 {
     return prefix.trimmed().split(QRegularExpression(QStringLiteral("\\s+")),
@@ -218,8 +206,6 @@ void EditorCompletionWorkflow::updateCompletionTriggerForTextChange(
 void EditorCompletionWorkflow::handleTextChanged()
 {
     completion->stopTimer();
-    if (handleIncludeCompletionTextChange())
-        return;
     updateCompletionTriggerForTextChange(editor->textCursor());
 }
 
@@ -318,8 +304,7 @@ void EditorCompletionWorkflow::handleCompletionActivated(
         const EditorCompletionActivationContext activationContext =
             completion->activationContextForIndex(index, *modes);
         if (activationContext.selectable) {
-            if (includeCompletionMode == IncludeCompletionMode::NewFormat
-                || includeCompletionMode == IncludeCompletionMode::NewTemplate) {
+            if (includeCompletionMode == IncludeCompletionMode::NewHeader) {
                 applyIncludeNewHeaderChoice(activationContext.itemText);
             } else {
                 applyIncludeCompletion(activationContext.itemText);
@@ -396,6 +381,14 @@ bool EditorCompletionWorkflow::refreshCommandModeCompletion(
             return true;
         }
 
+        if (commandState.completion.intent == InlineCommandIntent::HeaderInclude) {
+            if (commandState.showCompletions)
+                showIncludeCommandCompletions(commandState.completion);
+            return true;
+        }
+
+        includeCompletionActive = false;
+        includeCompletionMode = IncludeCompletionMode::None;
         if (commandState.showCompletions) {
             completion->updateCommandModeCompletions(commandState);
             showAutoComplete();
@@ -408,6 +401,8 @@ bool EditorCompletionWorkflow::refreshCommandModeCompletion(
 
     selections->clearCommand(editor);
     modes->clearCommandMode();
+    includeCompletionActive = false;
+    includeCompletionMode = IncludeCompletionMode::None;
 
     return false;
 }
@@ -443,39 +438,6 @@ void EditorCompletionWorkflow::handleAutoCompleteTimer()
     refreshSymbolCompletion(context, currentBlock);
 }
 
-bool EditorCompletionWorkflow::handleIncludeCompletionTextChange()
-{
-    if (!editor || !completion || applyingIncludeCompletionEdit)
-        return false;
-
-    if (shouldInsertIncludeQuotesAtCursor()) {
-        applyingIncludeCompletionEdit = true;
-        QTextCursor cursor = editor->textCursor();
-        cursor.insertText(QStringLiteral("\"\""));
-        cursor.movePosition(QTextCursor::Left);
-        editor->setTextCursor(cursor);
-        applyingIncludeCompletionEdit = false;
-
-        const IncludeCompletionContext context =
-            includeCompletionContextAtCursor();
-        if (context.active)
-            showIncludeFileCompletions(context);
-        return true;
-    }
-
-    const IncludeCompletionContext context = includeCompletionContextAtCursor();
-    if (context.active) {
-        showIncludeFileCompletions(context);
-        return true;
-    }
-
-    if (includeCompletionActive && completion->popupVisible())
-        completion->hidePopup();
-    includeCompletionActive = false;
-    includeCompletionMode = IncludeCompletionMode::None;
-    return false;
-}
-
 EditorCompletionWorkflow::IncludeCompletionContext
 EditorCompletionWorkflow::includeCompletionContextAtCursor() const
 {
@@ -484,69 +446,43 @@ EditorCompletionWorkflow::includeCompletionContextAtCursor() const
         return context;
 
     const QTextCursor cursor = editor->textCursor();
-    const QTextBlock block = cursor.block();
-    if (!block.isValid())
-        return context;
-
-    const QString line = block.text();
-    const int column = cursor.position() - block.position();
-    if (column < 0 || column > line.size())
-        return context;
-
-    int pos = 0;
-    while (pos < line.size() && line.at(pos).isSpace())
-        ++pos;
-
-    constexpr int includeLength = 8;
-    if (line.mid(pos, includeLength) != QStringLiteral("`include"))
-        return context;
-
-    int afterKeyword = pos + includeLength;
-    if (afterKeyword < line.size()
-        && isIdentifierContinuation(line.at(afterKeyword))) {
+    const EditorSemanticContext semanticContext =
+        semanticContextForCursor(cursor, false);
+    const CommandModeInputState inputState =
+        semanticService()->commandModeInputState(semanticContext);
+    if (!inputState.matched
+        || inputState.intent != InlineCommandIntent::HeaderInclude
+        || inputState.prefixPosition < 0) {
         return context;
     }
-    if (afterKeyword >= line.size() || !line.at(afterKeyword).isSpace())
-        return context;
-
-    while (afterKeyword < line.size() && line.at(afterKeyword).isSpace())
-        ++afterKeyword;
-    if (afterKeyword >= line.size()
-        || line.at(afterKeyword) != QLatin1Char('"')) {
-        return context;
-    }
-
-    const int pathStartColumn = afterKeyword + 1;
-    if (column < pathStartColumn)
-        return context;
-
-    const int closingQuote = line.indexOf(QLatin1Char('"'), pathStartColumn);
-    if (closingQuote >= 0 && column > closingQuote)
-        return context;
 
     context.active = true;
-    context.pathStartPosition = block.position() + pathStartColumn;
-    context.prefix = line.mid(pathStartColumn,
-                              qMax(0, column - pathStartColumn));
+    context.prefix = inputState.input.trimmed();
+    context.replacementStartPosition =
+        cursor.block().position() + inputState.prefixPosition;
+    context.replacementEndPosition = cursor.position();
     return context;
 }
 
-bool EditorCompletionWorkflow::shouldInsertIncludeQuotesAtCursor() const
+bool EditorCompletionWorkflow::showIncludeCommandCompletions(
+    const CommandModeCompletionState& state)
 {
     if (!editor || !includeFileProvider)
         return false;
 
-    const QTextCursor cursor = editor->textCursor();
-    const QTextBlock block = cursor.block();
-    if (!block.isValid())
+    IncludeCompletionContext context;
+    context.active = true;
+    context.prefix = state.input.trimmed();
+    context.replacementStartPosition =
+        editor->textCursor().block().position() + state.prefixPosition;
+    context.replacementEndPosition = editor->textCursor().position();
+    if (context.replacementStartPosition < 0
+        || context.replacementEndPosition < context.replacementStartPosition) {
         return false;
+    }
 
-    const QString lineUpToCursor =
-        block.text().left(cursor.position() - block.position());
-    if (lineUpToCursor.isEmpty() || !lineUpToCursor.back().isSpace())
-        return false;
-
-    return lineUpToCursor.trimmed() == QStringLiteral("`include");
+    showIncludeFileCompletions(context);
+    return true;
 }
 
 void EditorCompletionWorkflow::showIncludeFileCompletions(
@@ -574,16 +510,17 @@ bool EditorCompletionWorkflow::showIncludeNewHeaderCompletions(
         return false;
 
     includeCompletionActive = true;
-    includeNewHeaderStem.clear();
-    includeNewHeaderExtension.clear();
+    includeCompletionMode = IncludeCompletionMode::NewHeader;
 
     QList<IncludeNewHeaderChoice> choices;
-    const QString stem = parts.size() >= 2
-        ? sanitizedIncludeHeaderStem(parts.at(1))
+    const QString typedName = parts.size() >= 2
+        ? parts.at(1).trimmed()
+        : QString();
+    const QString stem = !typedName.isEmpty()
+        ? sanitizedIncludeHeaderStem(typedName)
         : QString();
 
     if (stem.isEmpty()) {
-        includeCompletionMode = IncludeCompletionMode::NewFormat;
         completion->updateIncludeNewHeaderCompletions(
             choices,
             QStringLiteral("type -n name"));
@@ -591,44 +528,29 @@ bool EditorCompletionWorkflow::showIncludeNewHeaderCompletions(
         return true;
     }
 
-    includeNewHeaderStem = stem;
-    const QString typedExtension = parts.size() >= 3
-        ? parts.at(2).trimmed().toLower()
-        : QString();
-
-    if (typedExtension != QStringLiteral("vh")
-        && typedExtension != QStringLiteral("svh")) {
-        includeCompletionMode = IncludeCompletionMode::NewFormat;
-        choices.append({
-            QStringLiteral("vh"),
-            QStringLiteral("Verilog header"),
-            QStringLiteral("%1.vh").arg(stem)
-        });
-        choices.append({
-            QStringLiteral("svh"),
-            QStringLiteral("SystemVerilog header"),
-            QStringLiteral("%1.svh").arg(stem)
-        });
+    QString extension = QFileInfo(QDir::fromNativeSeparators(typedName))
+        .suffix()
+        .toLower();
+    if (extension.isEmpty())
+        extension = QStringLiteral("svh");
+    if (extension != QStringLiteral("vh")
+        && extension != QStringLiteral("svh")) {
         completion->updateIncludeNewHeaderCompletions(
             choices,
-            QStringLiteral("%1 format").arg(stem));
+            QStringLiteral("use .vh or .svh"));
         showAutoComplete(true);
         return true;
     }
 
-    includeCompletionMode = IncludeCompletionMode::NewTemplate;
-    includeNewHeaderExtension = typedExtension;
-    for (const IncludeTemplateDefinition& tmpl :
-         includeHeaderTemplates(stem, typedExtension)) {
-        choices.append({
-            tmpl.name,
-            tmpl.description,
-            includePreviewText(tmpl.body)
-        });
-    }
+    const QString fileName = stem + QLatin1Char('.') + extension;
+    choices.append({
+        fileName,
+        QStringLiteral("create header"),
+        QStringLiteral("Create %1 and insert include").arg(fileName)
+    });
     completion->updateIncludeNewHeaderCompletions(
         choices,
-        QStringLiteral("%1.%2 template").arg(stem, typedExtension));
+        QStringLiteral("create %1").arg(fileName));
     showAutoComplete(true);
     return true;
 }
@@ -643,13 +565,12 @@ void EditorCompletionWorkflow::applyIncludeCompletion(
     if (!context.active)
         return;
 
-    applyingIncludeCompletionEdit = true;
     QTextCursor cursor = editor->textCursor();
-    cursor.setPosition(context.pathStartPosition);
-    cursor.setPosition(editor->textCursor().position(), QTextCursor::KeepAnchor);
-    cursor.insertText(includePath);
+    cursor.setPosition(context.replacementStartPosition);
+    cursor.setPosition(context.replacementEndPosition,
+                       QTextCursor::KeepAnchor);
+    cursor.insertText(QStringLiteral("`include \"%1\"").arg(includePath));
     editor->setTextCursor(cursor);
-    applyingIncludeCompletionEdit = false;
 
     includeCompletionActive = false;
     hideAutoComplete();
@@ -664,45 +585,21 @@ void EditorCompletionWorkflow::applyIncludeNewHeaderChoice(const QString& choice
     if (!context.active)
         return;
 
-    if (includeCompletionMode == IncludeCompletionMode::NewFormat) {
-        const QString extension = choice.trimmed().toLower();
-        if (extension != QStringLiteral("vh")
-            && extension != QStringLiteral("svh")) {
-            return;
-        }
-        const QStringList parts = splitIncludeNewCommand(context.prefix);
-        if (parts.size() < 2)
-            return;
-        const QString stem = sanitizedIncludeHeaderStem(parts.at(1));
-        if (stem.isEmpty())
-            return;
-
-        applyingIncludeCompletionEdit = true;
-        QTextCursor cursor = editor->textCursor();
-        cursor.setPosition(context.pathStartPosition);
-        cursor.setPosition(editor->textCursor().position(),
-                           QTextCursor::KeepAnchor);
-        cursor.insertText(QStringLiteral("-n %1 %2 ").arg(stem, extension));
-        editor->setTextCursor(cursor);
-        applyingIncludeCompletionEdit = false;
-
-        const IncludeCompletionContext nextContext =
-            includeCompletionContextAtCursor();
-        if (nextContext.active)
-            showIncludeNewHeaderCompletions(nextContext);
-        return;
-    }
-
-    if (includeCompletionMode != IncludeCompletionMode::NewTemplate
+    if (includeCompletionMode != IncludeCompletionMode::NewHeader
         || !includeNewHeaderCreator) {
         return;
     }
 
     const QStringList parts = splitIncludeNewCommand(context.prefix);
-    if (parts.size() < 3)
+    if (parts.size() < 2)
         return;
-    const QString stem = sanitizedIncludeHeaderStem(parts.at(1));
-    const QString extension = parts.at(2).trimmed().toLower();
+    const QString typedName = parts.at(1).trimmed();
+    const QString stem = sanitizedIncludeHeaderStem(typedName);
+    QString extension = QFileInfo(QDir::fromNativeSeparators(typedName))
+        .suffix()
+        .toLower();
+    if (extension.isEmpty())
+        extension = QStringLiteral("svh");
     if (stem.isEmpty()
         || (extension != QStringLiteral("vh")
             && extension != QStringLiteral("svh"))) {
@@ -711,21 +608,17 @@ void EditorCompletionWorkflow::applyIncludeNewHeaderChoice(const QString& choice
 
     const QList<IncludeTemplateDefinition> templates =
         includeHeaderTemplates(stem, extension);
-    auto templateIt = std::find_if(
-        templates.cbegin(),
-        templates.cend(),
-        [&choice](const IncludeTemplateDefinition& tmpl) {
-            return tmpl.name == choice;
-        });
-    if (templateIt == templates.cend())
+    if (templates.isEmpty())
         return;
+    const IncludeTemplateDefinition defaultTemplate = templates.constFirst();
 
     IncludeNewHeaderRequest request;
     request.fileStem = stem;
     request.extension = extension;
-    request.templateName = templateIt->name;
-    request.templateBody = templateIt->body;
+    request.templateName = defaultTemplate.name;
+    request.templateBody = defaultTemplate.body;
     request.cursorToken = QStringLiteral("__ZEROSLACK_CURSOR__");
+    request.currentFileName = editor->documentFileName();
 
     const IncludeNewHeaderResult result = includeNewHeaderCreator(request);
     if (!result.success) {

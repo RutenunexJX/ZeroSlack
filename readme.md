@@ -71,6 +71,11 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
   `ifndef` branches are grayed using configured defines plus static
   current-file `define` / `undef` state. This is not a full SystemVerilog
   preprocessor and does not add Vivado project parsing or new define UI.
+- Header include insertion is explicit through `;h`: `;h <query>` inserts a
+  SystemVerilog `` `include "..."`` from existing header candidates, and
+  `;h -n <name>` creates a `.svh` header by default before inserting the
+  include. The old hidden `` `include `` + space trigger is no longer active,
+  and `;;h` is intentionally unassigned.
 - Problems/Diagnostics now expose owner and status data in the existing
   Problems panel: diagnostic rows show owner (`Slang`, `Semantic index`),
   current-file error/warning/info summary follows the active tab, and status
@@ -705,6 +710,19 @@ Do not add unlisted long-term goals without explicit user approval.
   relationship_test gui_smoke_test`; `ctest -R
   "^(completion_test|relationship_test|gui_smoke_test)$"
   --output-on-failure`.
+- Latest header/include command convergence: the hidden `` `include `` +
+  space completion entry has been removed. Use `;h <query>` to search the
+  existing workspace/include header candidates and insert `` `include
+  "path.svh"``. Use `;h -n <name>` to create a header, defaulting to `.svh`
+  when no suffix is supplied and preferring the current file directory; existing
+  files are not overwritten and report an explicit already-exists failure.
+  `;;h` remains intentionally absent, and this does not add package/import
+  completion, COM Mode commands, or Global Control entries. Release
+  verification passed: `cmake --build . --target completion_test
+  gui_smoke_test`; `cmake --build . --target relationship_test`; `ctest -R
+  "^(completion_test|relationship_test|gui_smoke_test)$"
+  --output-on-failure`; `git diff --check -- .
+  ':!test_sv/new/elec_phy_import/ctrl/chl_ctrl.sv'`.
 - Latest Verification Baseline Repair: this is a baseline repair after Package
   Tools phase 1, not new Package Tools functionality. The blank-diagnostic
   Release rebuild failure was traced to generated MinGW build rules that did

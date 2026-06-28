@@ -4738,6 +4738,20 @@ int main(int argc, char** argv) {
                        ->matchCommandMode(QStringLiteral(";lp LOCAL"))
                        .command.kind == CompletionCommandKind::Localparam,
                true);
+    const CommandModeMatch headerIncludeMatch =
+        CompletionService::getInstance()
+            ->matchCommandMode(QStringLiteral(";h defs"));
+    expectBool("CompletionService header include command match",
+               headerIncludeMatch.matched
+                   && headerIncludeMatch.intent
+                       == InlineCommandIntent::HeaderInclude
+                   && headerIncludeMatch.input == QStringLiteral("defs"),
+               true);
+    expectBool("CompletionService header template absent",
+               !CompletionService::getInstance()
+                    ->matchCommandMode(QStringLiteral(";;h defs"))
+                    .matched,
+               true);
 
     const CommandModeInputState commandInputState =
         CompletionService::getInstance()->commandModeInputState(QStringLiteral(";l ena"));
@@ -4828,6 +4842,19 @@ int main(int argc, char** argv) {
                        == commandCompletionState.symbolRecords.first().stableKey,
                true);
 
+    const CommandModeCompletionState headerIncludeState =
+        CompletionService::getInstance()->commandModeCompletionState(
+            CommandModeCompletionQuery{QStringLiteral(";h defs")});
+    expectBool("CompletionService header include state",
+               headerIncludeState.matched
+                   && headerIncludeState.intent
+                       == InlineCommandIntent::HeaderInclude
+                   && headerIncludeState.showCompletions
+                   && headerIncludeState.completionPrefix
+                       == QStringLiteral("defs")
+                   && headerIncludeState.symbolRecords.isEmpty(),
+               true);
+
     CommandModeCompletionQuery commandCompletionExitQuery;
     commandCompletionExitQuery.lineUpToCursor = QStringLiteral(";");
     const CommandModeCompletionState commandCompletionExitState =
@@ -4879,6 +4906,13 @@ int main(int argc, char** argv) {
     expectBool("CompletionService trigger command hide",
                commandTriggerState.hidePopup,
                false);
+    CompletionTriggerQuery headerCreateTriggerQuery;
+    headerCreateTriggerQuery.lineUpToCursor = QStringLiteral(";h -n defs.svh");
+    headerCreateTriggerQuery.commandModeActive = true;
+    expectBool("CompletionService trigger header create command",
+               CompletionService::getInstance()->shouldContinueCompletion(
+                   headerCreateTriggerQuery),
+               true);
 
     CompletionTriggerQuery wordTriggerQuery;
     wordTriggerQuery.lineUpToCursor = QStringLiteral("assign en");

@@ -469,6 +469,11 @@ CommandModeCompletionState CompletionService::commandModeCompletionState(
         return state;
     }
 
+    if (state.intent == InlineCommandIntent::HeaderInclude) {
+        state.showCompletions = true;
+        return state;
+    }
+
     CommandCompletionQuery completionQuery;
     completionQuery.prefix = state.completionPrefix;
     completionQuery.fileName = query.fileName;

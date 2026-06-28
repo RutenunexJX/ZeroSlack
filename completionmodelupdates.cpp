@@ -356,6 +356,9 @@ void CompletionModel::updateInlineCommandCompletions(
         case InlineCommandIntent::EditorAction:
             headerItem.text = QStringLiteral(":: ACTION HELP - ;:cmd ::");
             break;
+        case InlineCommandIntent::HeaderInclude:
+            headerItem.text = QStringLiteral(":: HEADER INCLUDE HELP - ;h ::");
+            break;
         }
     } else {
         headerItem.text = state.headerText.isEmpty()

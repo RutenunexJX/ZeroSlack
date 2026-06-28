@@ -51,14 +51,14 @@ private:
     enum class IncludeCompletionMode {
         None,
         File,
-        NewFormat,
-        NewTemplate
+        NewHeader
     };
 
     struct IncludeCompletionContext {
         bool active = false;
         QString prefix;
-        int pathStartPosition = -1;
+        int replacementStartPosition = -1;
+        int replacementEndPosition = -1;
     };
 
     EditorSemanticContextService* semanticService() const;
@@ -83,9 +83,9 @@ private:
     void refreshSymbolCompletion(
         EditorSemanticContext context,
         const QTextBlock& currentBlock);
-    bool handleIncludeCompletionTextChange();
     IncludeCompletionContext includeCompletionContextAtCursor() const;
-    bool shouldInsertIncludeQuotesAtCursor() const;
+    bool showIncludeCommandCompletions(
+        const CommandModeCompletionState& state);
     void showIncludeFileCompletions(
         const IncludeCompletionContext& context);
     bool showIncludeNewHeaderCompletions(
@@ -103,10 +103,7 @@ private:
     IncludeFileProvider includeFileProvider;
     IncludeNewHeaderCreator includeNewHeaderCreator;
     bool includeCompletionActive = false;
-    bool applyingIncludeCompletionEdit = false;
     IncludeCompletionMode includeCompletionMode = IncludeCompletionMode::None;
-    QString includeNewHeaderStem;
-    QString includeNewHeaderExtension;
 };
 
 #endif // EDITORCOMPLETIONWORKFLOW_H
