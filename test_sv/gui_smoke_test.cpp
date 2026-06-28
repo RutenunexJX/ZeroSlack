@@ -6583,13 +6583,36 @@ static void runComModeRegression(MainWindow& window)
                    strip
                        && strip->text().contains(QStringLiteral("COM  gp"))
                        && strip->text().contains(QStringLiteral("gpa"))
-                       && strip->text().contains(QStringLiteral("gpo")),
+                       && strip->text().contains(QStringLiteral("gpo"))
+                       && strip->styleSheet().contains(QStringLiteral("#111827"))
+                       && strip->styleSheet().contains(QStringLiteral("#D1FAE5")),
                    true);
         sendWidgetKey(activeEditor, Qt::Key_Escape);
         expectBool("COM prefix hint clears with Esc",
                    activeEditor->comModeActive()
                        && strip
                        && strip->text() == QStringLiteral("COM"),
+                   true);
+
+        sendWidgetKey(activeEditor, Qt::Key_G, QStringLiteral("g"));
+        sendWidgetKey(activeEditor, Qt::Key_0, QStringLiteral("0"));
+        sendWidgetKey(activeEditor, Qt::Key_Return);
+        expectBool("COM error uses dark alert strip",
+                   activeEditor->comModeActive()
+                       && strip
+                       && strip->text().contains(
+                           QStringLiteral("Line number must be >= 1"))
+                       && strip->styleSheet().contains(QStringLiteral("#1F1115"))
+                       && strip->styleSheet().contains(QStringLiteral("#FCA5A5"))
+                       && strip->styleSheet().contains(QStringLiteral("#F43F5E")),
+                   true);
+        sendWidgetKey(activeEditor, Qt::Key_Escape);
+        expectBool("COM error strip resets after Esc",
+                   activeEditor->comModeActive()
+                       && strip
+                       && strip->text() == QStringLiteral("COM")
+                       && strip->styleSheet().contains(QStringLiteral("#111827"))
+                       && strip->styleSheet().contains(QStringLiteral("#D1FAE5")),
                    true);
 
         sendWidgetKey(activeEditor, Qt::Key_G, QStringLiteral("g"));

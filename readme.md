@@ -43,9 +43,10 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
   `gpi`, `ge`, and `gef`. Existing fixed commands, prefixes, and the
   module-relative line command are described by shared `commodecommandregistry`
   metadata. The command strip renders registry-backed hints for prefixes and
-  module-relative line buffers. Registry validation owns duplicate, executable
-  prefix conflict, and malformed prefix reasons, and COM command failures use
-  centralized registry-backed messages where practical.
+  module-relative line buffers, with a normal dark palette and a distinct dark
+  alert palette for command failures. Registry validation owns duplicate,
+  executable prefix conflict, and malformed prefix reasons, and COM command
+  failures use centralized registry-backed messages where practical.
 - Ctrl+Space opens Global Control as a domain-first surface. Current root
   domains are `ow` and `fd`; displayed commands are `ow <num>`, `ow r`,
   `fd r`, and `fd s`.
@@ -72,6 +73,10 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
   when not in an `always` block, the selected/current module. The panel renders
   scope and legend/readability cues from the report data so users can interpret
   the sketch without implying simulation accuracy.
+- RTL Insights `FSM Graph` renders `FsmGraphService` reports as an interactive
+  graph, not a tree table. FSM candidates must have states and parsed
+  case-derived transitions, so ordinary enum/register declarations such as
+  non-case bookkeeping registers are not promoted to FSM graphs.
 - State Transition Graph entry gating exists for editor source-symbol actions:
   selected `ns` and `next_state` can trigger the graph, while selected `cs` and
   `current_state` cannot. `StateTransitionGraphService` shapes accepted
@@ -257,6 +262,11 @@ and restoring Global Control `ow r` for recent workspaces.
   and `SemanticPanelRefreshCoordinator` only route accepted requests; RTL
   Insights consumes the service report, renders an interactive graph scene,
   and keeps navigation wired through source links carried by graph elements.
+- FSM Graph baseline: `FsmGraphService` owns candidate selection and transition
+  extraction. A report graph requires both state values and parsed case-derived
+  transition evidence before the UI renders it. `RtlInsightsPanelCoordinator`
+  consumes that report as selectable graph nodes/edges and does not scan
+  workspace files or run Slang.
 - Module Block Diagram baseline: `ModuleBlockDiagramService` owns selected
   module/interface containment report shaping on top of `HierarchyService`
   and `INSTANTIATES` relationships. The report carries root/child module nodes,

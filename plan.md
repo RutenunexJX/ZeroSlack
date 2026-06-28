@@ -1113,6 +1113,38 @@ Latest acceptance baseline repair:
   --output-on-failure` and `ctest -R "^relationship_test$"
   --output-on-failure`.
 
+Latest RTL Insights FSM graph repair:
+
+- Scope: FSM Graph rendering and candidate filtering only.
+- `FsmGraphService` now requires parsed case-derived transition evidence before
+  publishing an FSM graph candidate, which filters ordinary enum/register
+  declarations that merely have a paired next-state-looking signal.
+- RTL Insights `FSM Graph` now renders the service-owned report as selectable
+  `QGraphicsScene` nodes and transition edges, matching the State Transition
+  Graph and Module Block Diagram interaction model.
+- Regression coverage must verify a non-case enum register is ignored and the
+  real `chl_ctrl` `phy_pass_thrg_cfg_cs` / `phy_pass_thrg_cfg_ns` FSM remains
+  present with transitions.
+- Release verification passed: `completion_test`, `relationship_test`, and
+  `gui_smoke_test` targets compile/link; `ctest -R
+  "^(completion_test|relationship_test)$" --output-on-failure` passed. The GUI
+  smoke executable was not launched to avoid another modal Windows crash dialog
+  during this repair loop.
+
+Latest COM Mode strip alert styling repair:
+
+- Scope: command strip presentation only; COM command parsing and dispatch are
+  unchanged.
+- Normal COM input/prefix hints keep a cold dark strip. Command failure
+  messages such as unknown commands, incomplete commands, invalid line numbers,
+  missing current scope, and unclear insertion points now use a dark alert
+  background, red alert text, and red border.
+- Release verification passed: `completion_test`, `relationship_test`, and
+  `gui_smoke_test` targets compile/link; `ctest -R
+  "^(completion_test|relationship_test)$" --output-on-failure` passed. The GUI
+  smoke executable was not launched to avoid another modal Windows crash dialog
+  during this repair loop.
+
 ## Commit Policy
 
 - Keep commits coherent and architecture-oriented.

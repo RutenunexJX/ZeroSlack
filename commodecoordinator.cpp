@@ -27,6 +27,44 @@
 #include <utility>
 
 namespace {
+enum class CommandStripTone {
+    Normal,
+    Error
+};
+
+QString commandStripStyleSheet(CommandStripTone tone)
+{
+    if (tone == CommandStripTone::Error) {
+        return QStringLiteral(
+            "QLabel#comModeCommandStrip {"
+            "  background: #1F1115;"
+            "  color: #FCA5A5;"
+            "  border: 1px solid #F43F5E;"
+            "  padding: 0 10px;"
+            "}");
+    }
+    return QStringLiteral(
+        "QLabel#comModeCommandStrip {"
+        "  background: #111827;"
+        "  color: #D1FAE5;"
+        "  border: 1px solid #38BDF8;"
+        "  padding: 0 10px;"
+        "}");
+}
+
+bool isComModeErrorMessage(const QString& message)
+{
+    if (message.isEmpty())
+        return false;
+    return message.startsWith(QStringLiteral("Unknown COM command"))
+        || message.startsWith(QStringLiteral("Incomplete COM command"))
+        || message.startsWith(QStringLiteral("COM command registry is invalid"))
+        || message.startsWith(QStringLiteral("Line number must be"))
+        || message.startsWith(QStringLiteral("No current"))
+        || message.startsWith(QStringLiteral("No clear"))
+        || message.startsWith(QStringLiteral("Module has only"));
+}
+
 QString stripText(bool active,
                   const QString& buffer,
                   const QString& message)
@@ -225,13 +263,7 @@ void ComModeCoordinator::ensureCommandStrip()
                       QStringLiteral("monospace")});
     mono.setStyleHint(QFont::Monospace);
     commandStrip->setFont(mono);
-    commandStrip->setStyleSheet(QStringLiteral(
-        "QLabel#comModeCommandStrip {"
-        "  background: #111827;"
-        "  color: #F9FAFB;"
-        "  border: 1px solid #38BDF8;"
-        "  padding: 0 10px;"
-        "}"));
+    commandStrip->setStyleSheet(commandStripStyleSheet(CommandStripTone::Normal));
     commandStrip->hide();
     statusBar->addWidget(commandStrip, 1);
 }
@@ -309,6 +341,10 @@ void ComModeCoordinator::updateCommandStrip(MyCodeEditor* editor,
     }
 
     activeComEditor = editor;
+    commandStrip->setStyleSheet(
+        commandStripStyleSheet(isComModeErrorMessage(message)
+                                   ? CommandStripTone::Error
+                                   : CommandStripTone::Normal));
     commandStrip->setText(stripText(active, buffer, message));
     commandStrip->show();
 }
@@ -317,6 +353,7 @@ void ComModeCoordinator::hideCommandStrip()
 {
     if (!commandStrip)
         return;
+    commandStrip->setStyleSheet(commandStripStyleSheet(CommandStripTone::Normal));
     commandStrip->clear();
     commandStrip->hide();
 }

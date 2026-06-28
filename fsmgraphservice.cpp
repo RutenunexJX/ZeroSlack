@@ -284,7 +284,7 @@ FsmGraphReport FsmGraphService::buildFsmGraph(const FsmGraphQuery& query) const
                                                             stateRegister,
                                                             nextState,
                                                             states);
-        if (states.isEmpty() && transitions.isEmpty())
+        if (states.isEmpty() || transitions.isEmpty())
             continue;
         fillDisplayMetadata(graph,
                             moduleRecord,

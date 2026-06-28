@@ -28,7 +28,8 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
 
 ## Current Goal State
 
-Current milestone: none after interactive RTL Insights graph rendering.
+Current milestone: none after RTL Insights FSM Graph rendering/candidate
+repair.
 
 Next work should wait for the next explicit scoped request.
 
@@ -47,6 +48,26 @@ Status:
 - Focused verification for the interactive graph rendering: Release
   `completion_test` and `relationship_test` passed through `ctest`; Release
   `gui_smoke_test` target compiled and linked without launching the executable.
+- RTL Insights FSM Graph rendering/candidate repair is complete: the direct
+  `FSM Graph` entry renders selectable graph nodes/edges, and
+  `FsmGraphService` filters out state-register candidates that lack parsed
+  case-derived transitions. The regression target keeps the real
+  `phy_pass_thrg_cfg_cs` / `phy_pass_thrg_cfg_ns` FSM present while excluding
+  non-case enum/register noise.
+- Focused verification for the FSM Graph repair: Release `completion_test`,
+  `relationship_test`, and `gui_smoke_test` targets compile/link; `ctest -R
+  "^(completion_test|relationship_test)$" --output-on-failure` passed. The GUI
+  smoke executable was not launched to avoid another modal Windows crash dialog
+  during this repair loop.
+- COM Mode strip alert styling is complete: command failure messages now use a
+  dark alert background, red alert text, and red border while normal command
+  entry and prefix hints keep the cold dark strip. Parsing and dispatch are
+  unchanged.
+- Focused verification for the COM strip styling repair: Release
+  `completion_test`, `relationship_test`, and `gui_smoke_test` targets
+  compile/link; `ctest -R "^(completion_test|relationship_test)$"
+  --output-on-failure` passed. The GUI smoke executable was not launched to
+  avoid another modal Windows crash dialog during this repair loop.
 - G0 Documentation And Goal Reset is complete and pushed in commit `bc2c059`.
 - G4.1 Registry Metadata For Existing COM Commands is complete:
   `commodecommandregistry` now owns metadata for fixed executable commands,

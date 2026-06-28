@@ -15,6 +15,7 @@ class QPushButton;
 class QStackedWidget;
 struct ModuleBlockDiagramReport;
 struct StateTransitionGraphReport;
+struct FsmGraphReport;
 
 class RtlInsightsPanelCoordinator
 {
@@ -80,6 +81,8 @@ private:
     void showGraphSurface();
     void renderStateTransitionGraphScene(
         const StateTransitionGraphReport& report);
+    void renderFsmGraphScene(const FsmGraphReport& report,
+                             const QString& title);
     void renderModuleBlockDiagramScene(
         const ModuleBlockDiagramReport& report);
     void renderGraphUnavailable(const QString& title,

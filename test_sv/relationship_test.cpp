@@ -43,6 +43,7 @@
 #include <QFileInfo>
 #include <QHash>
 #include <QMetaObject>
+#include <QPushButton>
 #include <QSet>
 #include <QString>
 #include <QTemporaryDir>
@@ -6549,6 +6550,7 @@ static void runFsmGraphServiceFixture()
         "  typedef enum logic [1:0] {IDLE, RUN, DONE} state_t;\n"
         "  state_t state_q;\n"
         "  state_t state_d;\n"
+        "  state_t status_reg;\n"
         "  always_comb begin\n"
         "    state_d = state_q;\n"
         "    case (state_q)\n"
@@ -6591,6 +6593,16 @@ static void runFsmGraphServiceFixture()
             .withFile(fileName)
             .withLocalHandle(9303)
             .withLine(4)
+            .withCollectorKind(CollectorKind::EnumVariable)
+            .inModule(QStringLiteral("fsm_top"))
+            .withType(QStringLiteral("state_t"))
+            .record();
+    const SemanticSymbolRecord statusReg =
+        SemanticFixtureRecordBuilder(QStringLiteral("status_reg"),
+                                     DeclarationKind::Enum)
+            .withFile(fileName)
+            .withLocalHandle(9307)
+            .withLine(5)
             .withCollectorKind(CollectorKind::EnumVariable)
             .inModule(QStringLiteral("fsm_top"))
             .withType(QStringLiteral("state_t"))
@@ -6809,6 +6821,7 @@ static void runFsmGraphServiceFixture()
         module,
         stateQ,
         stateD,
+        statusReg,
         idle,
         run,
         done,
@@ -6879,6 +6892,14 @@ static void runFsmGraphServiceFixture()
                                            CollectorKind::EnumValue)),
                true);
     expectInt("fsm graph count", report.graphs.size(), 1);
+    bool sawStatusRegGraph = false;
+    for (const FsmGraph& graph : report.graphs) {
+        sawStatusRegGraph = sawStatusRegGraph
+            || graph.stateRegisterDisplayName == QStringLiteral("status_reg");
+    }
+    expectBool("fsm graph ignores non-case enum register",
+               !sawStatusRegGraph,
+               true);
     expectBool("fsm graph state register",
                !report.graphs.isEmpty()
                    && report.graphs.first().stateRegisterDisplayName
@@ -7048,7 +7069,7 @@ static void runFsmGraphServiceFixture()
                    && report.graphs.first().transitionRows.first().conditionDisplayName
                        == QStringLiteral("start")
                    && report.graphs.first().transitionRows.first().sourceLineDisplayName
-                       == QStringLiteral("line 10")
+                       == QStringLiteral("line 11")
                    && report.graphs.first().transitionRows.first().sourceRoleDisplayName
                        == QStringLiteral("design source"),
                true);
@@ -7057,12 +7078,12 @@ static void runFsmGraphServiceFixture()
                    && !report.graphs.first().transitionRows.isEmpty()
                    && report.graphs.first().transitionRows.first().codeLink.fileName
                        == fileName
-                   && report.graphs.first().transitionRows.first().codeLink.line == 10
+                   && report.graphs.first().transitionRows.first().codeLink.line == 11
                    && report.graphs.first().transitionRows.first().codeLink.column == 1
                    && report.graphs.first().transitionRows.first().codeLink.fileDisplayName
                        == QStringLiteral("fsm_graph_fixture.sv")
                    && report.graphs.first().transitionRows.first().codeLink.lineDisplayName
-                       == QStringLiteral("10"),
+                       == QStringLiteral("11"),
                true);
     expectBool("fsm graph transition state endpoints",
                !report.graphs.isEmpty()
@@ -7238,6 +7259,40 @@ static void runFsmGraphServiceFixture()
                    && packageReport.graphs.first().stateRows.first()
                           .moduleDisplayName == QStringLiteral("fsm_pkg"),
                true);
+
+    FsmGraphService::getInstance()->setSemanticIndex(&index);
+    QWidget fsmPanelHost;
+    RtlInsightsPanelCoordinator fsmPanel(&fsmPanelHost);
+    fsmPanel.updateModuleContext(fileName, QStringLiteral("fsm_top"));
+    QPushButton* fsmGraphButton =
+        fsmPanel.dock()
+            ? fsmPanel.dock()->findChild<QPushButton*>(
+                  QStringLiteral("rtlFsmGraphButton"))
+            : nullptr;
+    if (fsmGraphButton)
+        fsmGraphButton->click();
+    QGraphicsView* fsmGraphView = fsmPanel.graphView();
+    expectBool("fsm graph panel button available",
+               fsmGraphButton && fsmGraphButton->isEnabled(),
+               true);
+    expectBool("fsm graph panel has graph view",
+               fsmGraphView && fsmGraphView->scene(),
+               true);
+    expectInt("fsm graph panel node count",
+              fsmPanel.graphNodeItemCountForTest(),
+              5);
+    expectInt("fsm graph panel edge count",
+              fsmPanel.graphEdgeItemCountForTest(),
+              4);
+    expectBool("fsm graph panel renders interactive graph",
+               fsmGraphButton
+                   && fsmGraphView
+                   && fsmGraphView->scene()
+                   && fsmPanel.graphNodeItemCountForTest() == 5
+                   && fsmPanel.graphEdgeItemCountForTest() == 4,
+               true);
+    FsmGraphService::getInstance()->setSemanticIndex(
+        SemanticIndex::getInstance());
 
     FsmGraphQuery dualFsmQuery;
     dualFsmQuery.moduleName = QStringLiteral("dual_fsm_top");
@@ -9045,7 +9100,13 @@ static void runRealWorkspaceIncludeFixture()
     bool sawRealPhyPassFsmTransitionStateLink = false;
     bool sawRealPhyPassTernaryTransition = false;
     bool sawRealPhyPassTernaryElseTransition = false;
+    bool sawRealBogusRegIsIniFsm = false;
+    bool sawRealEmptyTransitionFsm = false;
     for (const FsmGraph& graph : realFsmReport.graphs) {
+        sawRealBogusRegIsIniFsm = sawRealBogusRegIsIniFsm
+            || graph.stateRegisterDisplayName == QStringLiteral("reg_is_ini");
+        sawRealEmptyTransitionFsm = sawRealEmptyTransitionFsm
+            || graph.transitionRows.isEmpty();
         if (graph.stateRegisterDisplayName
             != QStringLiteral("phy_pass_thrg_cfg_cs")) {
             continue;
@@ -9113,6 +9174,9 @@ static void runRealWorkspaceIncludeFixture()
     }
     expectBool("real workspace fsm graph found",
                realFsmReport.found,
+               true);
+    expectBool("real workspace fsm graph filters non-case registers",
+               !sawRealBogusRegIsIniFsm && !sawRealEmptyTransitionFsm,
                true);
     expectBool("real workspace fsm graph phy pass current next pair",
                sawRealPhyPassFsm,
