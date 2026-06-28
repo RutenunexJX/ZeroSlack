@@ -1,5 +1,7 @@
 #include "sourcenavigationservice.h"
 
+#include <QStringList>
+
 std::unique_ptr<SourceNavigationService> SourceNavigationService::instance = nullptr;
 
 SourceNavigationService* SourceNavigationService::getInstance()
@@ -45,6 +47,31 @@ bool isInsideLineCommentOrString(const QString& lineText, int column)
         }
     }
     return inString && column >= lineText.size();
+}
+
+bool isPreprocessorDirectiveIdentifier(const QString& identifier)
+{
+    static const QStringList directives = {
+        QStringLiteral("begin_keywords"),
+        QStringLiteral("celldefine"),
+        QStringLiteral("default_nettype"),
+        QStringLiteral("define"),
+        QStringLiteral("else"),
+        QStringLiteral("elsif"),
+        QStringLiteral("end_keywords"),
+        QStringLiteral("endcelldefine"),
+        QStringLiteral("endif"),
+        QStringLiteral("ifdef"),
+        QStringLiteral("ifndef"),
+        QStringLiteral("include"),
+        QStringLiteral("line"),
+        QStringLiteral("pragma"),
+        QStringLiteral("resetall"),
+        QStringLiteral("timescale"),
+        QStringLiteral("undef"),
+        QStringLiteral("unconnected_drive"),
+    };
+    return directives.contains(identifier);
 }
 }
 
@@ -157,6 +184,13 @@ SourceIdentifierTarget SourceNavigationService::identifierAtColumn(
         ++hitColumn;
     }
 
+    if (hitColumn >= 0
+        && lineText.at(hitColumn) == QLatin1Char('`')
+        && hitColumn + 1 < lineText.size()
+        && isIdentifierStart(lineText.at(hitColumn + 1))) {
+        ++hitColumn;
+    }
+
     if (hitColumn < 0 || !isIdentifierPart(lineText.at(hitColumn)))
         return target;
 
@@ -175,8 +209,15 @@ SourceIdentifierTarget SourceNavigationService::identifierAtColumn(
         ++endColumn;
     }
 
+    const QString identifier = lineText.mid(startColumn, endColumn - startColumn);
+    if (startColumn > 0
+        && lineText.at(startColumn - 1) == QLatin1Char('`')
+        && isPreprocessorDirectiveIdentifier(identifier)) {
+        return target;
+    }
+
     target.matched = true;
-    target.identifier = lineText.mid(startColumn, endColumn - startColumn);
+    target.identifier = identifier;
     target.startColumn = startColumn;
     target.endColumn = endColumn;
     return target;

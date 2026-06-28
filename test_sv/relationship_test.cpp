@@ -23,12 +23,14 @@
 #include "searchservice.h"
 #include "semantic_fixture_records.h"
 #include "semanticdiffservice.h"
+#include "semanticdecorationservice.h"
 #include "rtlinsightspanelcoordinator.h"
 #include "signalkernelgraphservice.h"
 #include "signaljourneyservice.h"
 #include "statetransitiongraphservice.h"
 #include "symbolrelationshipengine.h"
 #include "semanticindexsnapshot.h"
+#include "symbolhoverservice.h"
 #include "symboltaxonomy.h"
 #include "scopebandservice.h"
 #include "mycodeeditor.h"
@@ -9509,6 +9511,312 @@ static void runPostWorkspaceDiagnosticFixture()
                true);
 }
 
+static void runMacroDefineSemanticFixture()
+{
+    printf("\n-- macro / define semantic fixture --\n");
+
+    QTemporaryDir macroDir;
+    expectBool("macro temp dir created", macroDir.isValid(), true);
+    if (!macroDir.isValid())
+        return;
+
+    const QString headerPath =
+        normalizedPath(macroDir.filePath(QStringLiteral("macro_defs.svh")));
+    const QString sourcePath =
+        normalizedPath(macroDir.filePath(QStringLiteral("macro_use.sv")));
+    const QString headerContent = QStringLiteral(
+        "`define SHARED_MACRO 42\n"
+        "`define FUNC_MACRO(a, b) ((a) + (b))\n"
+        "`define LOCAL_MACRO 99\n");
+    const QString sourceContent = QStringLiteral(
+        "`include \"macro_defs.svh\"\n"
+        "`define LOCAL_MACRO 8\n"
+        "`define LOCAL_SWITCH\n"
+        "`ifdef WSDEF\n"
+        "module macro_top;\n"
+        "  localparam int A = `LOCAL_MACRO;\n"
+        "  localparam int B = `FUNC_MACRO(1, 2);\n"
+        "  localparam int C = `SHARED_MACRO;\n"
+        "`ifdef LOCAL_SWITCH\n"
+        "  wire active_local;\n"
+        "`else\n"
+        "  wire inactive_local;\n"
+        "`endif\n"
+        "`undef LOCAL_SWITCH\n"
+        "`ifdef LOCAL_SWITCH\n"
+        "  wire inactive_after_undef;\n"
+        "`endif\n"
+        "`else\n"
+        "  wire inactive_workspace;\n"
+        "`endif\n"
+        "`ifndef WSDEF\n"
+        "  wire inactive_ifndef;\n"
+        "`elsif BAR\n"
+        "  wire inactive_elsif;\n"
+        "`else\n"
+        "  wire active_else;\n"
+        "`endif\n"
+        "endmodule\n");
+
+    expectBool("macro header written",
+               writeTextFile(headerPath, headerContent),
+               true);
+    expectBool("macro source written",
+               writeTextFile(sourcePath, sourceContent),
+               true);
+
+    const QStringList files{headerPath, sourcePath};
+    const QStringList includeDirs{macroDir.path()};
+    QHash<QString, QString> defines;
+    defines.insert(QStringLiteral("WSDEF"), QStringLiteral("1"));
+    SlangManager slang;
+    const QList<SemanticSymbolRecord> records =
+        slang.extractWorkspaceSymbolRecords(files, includeDirs, defines);
+    QHash<QString, QString> fileContents;
+    fileContents.insert(headerPath, headerContent);
+    fileContents.insert(sourcePath, sourceContent);
+    SemanticIndex index;
+    index.setSnapshot(sharedSnapshotFromRecords(records, {}, {}, fileContents));
+
+    auto lineNumberContaining = [](const QString& content, const QString& needle) {
+        const QStringList lines = content.split(QLatin1Char('\n'));
+        for (int i = 0; i < lines.size(); ++i) {
+            if (lines.at(i).contains(needle))
+                return i + 1;
+        }
+        return -1;
+    };
+    auto lineTextContaining = [](const QString& content, const QString& needle) {
+        const QStringList lines = content.split(QLatin1Char('\n'));
+        for (const QString& line : lines) {
+            if (line.contains(needle))
+                return line;
+        }
+        return QString();
+    };
+
+    NavigationService navigationService(&index);
+    NavigationSymbolOutlineQuery headerOutlineQuery;
+    headerOutlineQuery.fileName = headerPath;
+    const QList<SymbolOutlineGroup> headerOutline =
+        navigationService.findSymbolOutline(headerOutlineQuery);
+    QSet<QString> headerMacroNames;
+    bool sawDirectiveOutline = false;
+    for (const SymbolOutlineGroup& group : headerOutline) {
+        for (const SymbolOutlineSymbolRow& row : group.symbolRows) {
+            if (row.symbolRecord.declarationKind
+                == SymbolTaxonomy::DeclarationKind::Macro) {
+                headerMacroNames.insert(row.displayName);
+            }
+            sawDirectiveOutline = sawDirectiveOutline
+                || row.displayName == QStringLiteral("ifdef")
+                || row.displayName == QStringLiteral("ifndef")
+                || row.displayName == QStringLiteral("else")
+                || row.displayName == QStringLiteral("endif");
+        }
+    }
+    expectBool("macro outline includes object macro",
+               headerMacroNames.contains(QStringLiteral("SHARED_MACRO")),
+               true);
+    expectBool("macro outline includes function macro name",
+               headerMacroNames.contains(QStringLiteral("FUNC_MACRO")),
+               true);
+    expectBool("macro outline excludes preprocessor branches",
+               sawDirectiveOutline,
+               false);
+
+    NavigationSymbolOutlineQuery sourceOutlineQuery;
+    sourceOutlineQuery.fileName = sourcePath;
+    const QList<SymbolOutlineGroup> sourceOutline =
+        navigationService.findSymbolOutline(sourceOutlineQuery);
+    bool sourceOutlineHasLocalMacro = false;
+    for (const SymbolOutlineGroup& group : sourceOutline) {
+        for (const SymbolOutlineSymbolRow& row : group.symbolRows) {
+            sourceOutlineHasLocalMacro = sourceOutlineHasLocalMacro
+                || (row.symbolRecord.declarationKind
+                    == SymbolTaxonomy::DeclarationKind::Macro
+                    && row.displayName == QStringLiteral("LOCAL_MACRO"));
+        }
+    }
+    expectBool("macro outline includes current file define",
+               sourceOutlineHasLocalMacro,
+               true);
+
+    const QString localLine =
+        lineTextContaining(sourceContent, QStringLiteral("`LOCAL_MACRO"));
+    const int localColumn = localLine.indexOf(QStringLiteral("`LOCAL_MACRO"));
+    const SourceIdentifierTarget localIdentifier =
+        SourceNavigationService::getInstance()->identifierAtColumn(localLine,
+                                                                   localColumn);
+    expectBool("macro identifier matches at backtick",
+               localIdentifier.matched
+                   && localIdentifier.identifier == QStringLiteral("LOCAL_MACRO"),
+               true);
+
+    DefinitionNavigationService definitionService(&index);
+    DefinitionNavigationContext localContext;
+    localContext.symbolName = localIdentifier.identifier;
+    localContext.fileName = sourcePath;
+    localContext.moduleName = QStringLiteral("macro_top");
+    localContext.lineText = localLine;
+    localContext.cursorLine =
+        lineNumberContaining(sourceContent, QStringLiteral("`LOCAL_MACRO"));
+    localContext.column = localColumn;
+    const DefinitionNavigationTarget localTarget =
+        definitionService.resolveTarget(
+            definitionService.navigationQueryForContext(localContext));
+    expectBool("macro goto prefers current file define",
+               localTarget.found
+                   && normalizedPath(localTarget.fileName) == sourcePath
+                   && localTarget.line == 2,
+               true);
+
+    const QString sharedLine =
+        lineTextContaining(sourceContent, QStringLiteral("`SHARED_MACRO"));
+    const int sharedColumn = sharedLine.indexOf(QStringLiteral("SHARED_MACRO"));
+    const SourceIdentifierTarget sharedIdentifier =
+        SourceNavigationService::getInstance()->identifierAtColumn(sharedLine,
+                                                                   sharedColumn);
+    DefinitionNavigationContext sharedContext;
+    sharedContext.symbolName = sharedIdentifier.identifier;
+    sharedContext.fileName = sourcePath;
+    sharedContext.moduleName = QStringLiteral("macro_top");
+    sharedContext.lineText = sharedLine;
+    sharedContext.cursorLine =
+        lineNumberContaining(sourceContent, QStringLiteral("`SHARED_MACRO"));
+    sharedContext.column = sharedColumn;
+    const DefinitionNavigationTarget sharedTarget =
+        definitionService.resolveTarget(
+            definitionService.navigationQueryForContext(sharedContext));
+    expectBool("macro goto resolves workspace include define",
+               sharedTarget.found
+                   && normalizedPath(sharedTarget.fileName) == headerPath
+                   && sharedTarget.line == 1,
+               true);
+
+    SymbolHoverService hoverService(&index);
+    const QString functionLine =
+        lineTextContaining(sourceContent, QStringLiteral("`FUNC_MACRO"));
+    EditorSemanticContext hoverContext;
+    hoverContext.fileName = sourcePath;
+    hoverContext.moduleName = QStringLiteral("macro_top");
+    hoverContext.documentText = sourceContent;
+    hoverContext.lineText = functionLine;
+    hoverContext.cursorLine =
+        lineNumberContaining(sourceContent, QStringLiteral("`FUNC_MACRO"));
+    hoverContext.column = functionLine.indexOf(QStringLiteral("`FUNC_MACRO"));
+    const SymbolHoverReport hoverReport =
+        hoverService.hoverForContext(hoverContext);
+    expectBool("macro hover resolves function macro",
+               hoverReport.available
+                   && hoverReport.displayKind == QStringLiteral("macro")
+                   && normalizedPath(hoverReport.definitionFile) == headerPath
+                   && hoverReport.definitionLine == 2,
+               true);
+    expectBool("macro hover shows params and body",
+               hoverReport.macroSignatureText
+                       == QStringLiteral("FUNC_MACRO(a, b)")
+                   && hoverReport.macroBodyText.contains(
+                       QStringLiteral("((a) + (b))")),
+               true);
+
+    ReferenceService referenceService(&index);
+    ReferenceQuery referenceQuery;
+    referenceQuery.symbolName = QStringLiteral("FUNC_MACRO");
+    referenceQuery.fileName = sourcePath;
+    referenceQuery.moduleName = QStringLiteral("macro_top");
+    referenceQuery.workspaceFiles = files;
+    const ReferenceReport referenceReport =
+        referenceService.findReferenceReport(referenceQuery);
+    bool sawMacroDefinitionReference = false;
+    bool sawMacroUseReference = false;
+    for (const ReferenceResult& reference : referenceReport.references) {
+        sawMacroDefinitionReference = sawMacroDefinitionReference
+            || (normalizedPath(
+                    reference.referencingSymbolRecord.location.fileName)
+                    == headerPath
+                && reference.referencingSymbolRecord.location.startLine == 2);
+        sawMacroUseReference = sawMacroUseReference
+            || (normalizedPath(
+                    reference.referencingSymbolRecord.location.fileName)
+                    == sourcePath
+                && reference.referencingSymbolRecord.location.startLine
+                    == hoverContext.cursorLine);
+    }
+    expectBool("macro references include define and use",
+               referenceReport.totalCount == 2
+                   && sawMacroDefinitionReference
+                   && sawMacroUseReference,
+               true);
+
+    const QString badMacroContent = QStringLiteral("module bad_macro;\n"
+                                                   "  `UNDEFINED_MACRO\n"
+                                                   "endmodule\n");
+    const QList<SemanticDiagnostic> macroDiagnostics =
+        slang.extractDiagnostics(
+            normalizedPath(macroDir.filePath(QStringLiteral("bad_macro.sv"))),
+            badMacroContent);
+    bool sawUndefinedMacroDiagnostic = false;
+    for (const SemanticDiagnostic& diagnostic : macroDiagnostics) {
+        sawUndefinedMacroDiagnostic = sawUndefinedMacroDiagnostic
+            || (diagnostic.owner == SemanticDiagnostic::SemanticIndexOwner
+                && diagnostic.line == 2
+                && diagnostic.column == 4
+                && diagnostic.message.contains(
+                    QStringLiteral("Undefined macro `UNDEFINED_MACRO`")));
+    }
+    expectBool("undefined macro diagnostic is explicit",
+               sawUndefinedMacroDiagnostic,
+               true);
+
+    SemanticDecorationService decorationService(&index);
+    SemanticDecorationQuery decorationQuery;
+    decorationQuery.fileName = sourcePath;
+    decorationQuery.documentText = sourceContent;
+    decorationQuery.configuredDefines = defines;
+    const SemanticDecorationReport decorationReport =
+        decorationService.decorationsForDocument(decorationQuery);
+    bool sawInactiveWorkspaceElse = false;
+    bool sawInactiveLocalElse = false;
+    bool sawInactiveAfterUndef = false;
+    bool sawInactiveIfndef = false;
+    bool sawInactiveElsif = false;
+    bool sawActiveLocalGrayed = false;
+    bool sawActiveElseGrayed = false;
+    for (const SemanticDecoration& decoration : decorationReport.decorations) {
+        if (decoration.role != SemanticDecorationRole::InactivePreprocessorBranch)
+            continue;
+        const QString decoratedText =
+            sourceContent.mid(decoration.startPosition, decoration.length);
+        sawInactiveWorkspaceElse = sawInactiveWorkspaceElse
+            || decoratedText.contains(QStringLiteral("inactive_workspace"));
+        sawInactiveLocalElse = sawInactiveLocalElse
+            || decoratedText.contains(QStringLiteral("inactive_local"));
+        sawInactiveAfterUndef = sawInactiveAfterUndef
+            || decoratedText.contains(QStringLiteral("inactive_after_undef"));
+        sawInactiveIfndef = sawInactiveIfndef
+            || decoratedText.contains(QStringLiteral("inactive_ifndef"));
+        sawInactiveElsif = sawInactiveElsif
+            || decoratedText.contains(QStringLiteral("inactive_elsif"));
+        sawActiveLocalGrayed = sawActiveLocalGrayed
+            || decoratedText.contains(QStringLiteral("wire active_local"));
+        sawActiveElseGrayed = sawActiveElseGrayed
+            || decoratedText.contains(QStringLiteral("wire active_else"));
+    }
+    expectBool("inactive branch grays configured define else",
+               sawInactiveWorkspaceElse,
+               true);
+    expectBool("inactive branch honors local define",
+               sawInactiveLocalElse && !sawActiveLocalGrayed,
+               true);
+    expectBool("inactive branch honors local undef",
+               sawInactiveAfterUndef,
+               true);
+    expectBool("inactive branch handles ifndef elsif else",
+               sawInactiveIfndef && sawInactiveElsif && !sawActiveElseGrayed,
+               true);
+}
+
 static void runWorkspaceRelationshipCancellationFixture()
 {
     printf("\n-- workspace relationship cancellation fixture --\n");
@@ -9649,6 +9957,7 @@ int main(int argc, char** argv)
     runSemanticDiffServiceFixture();
     runRealWorkspaceIncludeFixture();
     runPostWorkspaceDiagnosticFixture();
+    runMacroDefineSemanticFixture();
     runWorkspaceRelationshipCancellationFixture();
 
     printf("\n%d checks, %d failed\n", g_checks, g_fails);

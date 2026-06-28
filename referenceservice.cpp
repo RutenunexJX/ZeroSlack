@@ -1,5 +1,7 @@
 #include "referenceservice.h"
 
+#include "svmacrosemantics.h"
+
 #include <QDir>
 #include <QFileInfo>
 #include <QSet>
@@ -116,6 +118,97 @@ QString reportNotFoundReasonDisplayName(ReferenceReportNotFoundReason reason)
     }
     return QStringLiteral("reference report unavailable");
 }
+
+bool isMacroDefinitionRecord(const SemanticSymbolRecord& record)
+{
+    return record.declarationKind == SymbolTaxonomy::DeclarationKind::Macro
+        && record.usageRole == SymbolTaxonomy::SymbolUsageRole::Declaration;
+}
+
+SymbolStableKey macroReferenceStableKey(const SvMacroSemantics::MacroReference& reference)
+{
+    SymbolStableKey key;
+    key.fileName = normalizedReferenceFileName(reference.fileName);
+    key.symbolName = reference.name;
+    key.declarationKind = SymbolTaxonomy::DeclarationKind::Macro;
+    key.ownerScope = QStringLiteral("macro-reference:%1:%2")
+                         .arg(reference.line)
+                         .arg(reference.column);
+    return key;
+}
+
+SemanticSymbolRecord macroReferenceRecord(
+    const SvMacroSemantics::MacroReference& reference)
+{
+    SemanticSymbolRecord record;
+    record.name = reference.name;
+    record.location.fileName = reference.fileName;
+    record.location.startLine = reference.line;
+    record.location.startColumn = reference.column;
+    record.location.endLine = reference.line;
+    record.location.endColumn = reference.column + reference.length;
+    record.location.position = reference.position;
+    record.location.length = reference.length;
+    record.declarationKind = SymbolTaxonomy::DeclarationKind::Macro;
+    record.usageRole = SymbolTaxonomy::SymbolUsageRole::Reference;
+    record.visibility = SymbolTaxonomy::SymbolVisibility::Global;
+    record.sourceRole = SymbolTaxonomy::sourceRoleForFileName(reference.fileName);
+    record.collectorKind = SymbolTaxonomy::CollectorKind::DefDefine;
+    record.owner.kind = SymbolTaxonomy::SymbolOwnerScope::Global;
+    record.stableKey = macroReferenceStableKey(reference);
+    return record;
+}
+
+ReferenceResult macroReferenceResult(
+    const SemanticSymbolRecord& referencingRecord,
+    const SemanticSymbolRecord& referencedRecord)
+{
+    ReferenceResult result;
+    result.relationshipType = SymbolRelationshipEngine::REFERENCES;
+    result.referencingSymbolRecord = referencingRecord;
+    result.referencedSymbolRecord = referencedRecord;
+    result.referencingStableKey = referencingRecord.stableKey;
+    result.referencedStableKey = referencedRecord.stableKey;
+    result.symbolDisplayName = referenceRecordName(referencingRecord);
+    result.fileDisplayName = QFileInfo(
+        referencingRecord.location.fileName).fileName();
+    if (result.fileDisplayName.isEmpty())
+        result.fileDisplayName = referencingRecord.location.fileName;
+    result.lineDisplayName =
+        QString::number(referencingRecord.location.startLine);
+    result.relationshipTypeDisplayName =
+        referenceTypeDisplayName(result.relationshipType);
+    return result;
+}
+
+QStringList macroReferenceScanFiles(const ReferenceQuery& query,
+                                    const QList<SemanticSymbolRecord>& records)
+{
+    QStringList files;
+    QSet<QString> seen;
+    auto appendFile = [&](const QString& fileName) {
+        const QString normalized = normalizedReferenceFileName(fileName);
+        if (normalized.isEmpty() || seen.contains(normalized))
+            return;
+        seen.insert(normalized);
+        files.append(fileName);
+    };
+
+    if (query.currentFileOnly) {
+        appendFile(query.fileName);
+        return files;
+    }
+    if (query.workspaceFilesOnly) {
+        for (const QString& fileName : query.workspaceFiles)
+            appendFile(fileName);
+        return files;
+    }
+
+    appendFile(query.fileName);
+    for (const SemanticSymbolRecord& record : records)
+        appendFile(record.location.fileName);
+    return files;
+}
 }
 
 ReferenceService* ReferenceService::getInstance()
@@ -142,11 +235,15 @@ void ReferenceService::setSemanticIndex(SemanticIndex* semanticIndex)
 QList<ReferenceResult> ReferenceService::findReferences(const ReferenceQuery& query) const
 {
     const ReferenceQuery normalized = normalizedQuery(query);
+    const SemanticSymbolRecord subjectRecord =
+        resolveSubjectSymbolRecord(normalized);
     const SymbolStableKey subjectStableKey = normalized.symbolStableKey.isValid()
         ? normalized.symbolStableKey
-        : resolveSubjectSymbolRecord(normalized).stableKey;
+        : subjectRecord.stableKey;
     if (!subjectStableKey.isValid())
         return {};
+    if (isMacroDefinitionRecord(subjectRecord))
+        return findMacroReferences(normalized, subjectRecord);
 
     RelationshipQuery relationshipQuery;
     relationshipQuery.symbolStableKey = subjectStableKey;
@@ -327,6 +424,61 @@ bool ReferenceService::scopeMatches(const ReferenceQuery& query,
     }
 
     return true;
+}
+
+QList<ReferenceResult> ReferenceService::findMacroReferences(
+    const ReferenceQuery& query,
+    const SemanticSymbolRecord& subjectRecord) const
+{
+    if (!isMacroDefinitionRecord(subjectRecord))
+        return {};
+    if (!query.types.isEmpty()
+        && !query.types.contains(SymbolRelationshipEngine::REFERENCES)) {
+        return {};
+    }
+
+    QList<ReferenceResult> result;
+    QSet<QString> seen;
+    const QList<SemanticSymbolRecord> records = semanticIndex()->getSymbolRecords();
+    auto appendResult = [&](const SemanticSymbolRecord& referencingRecord) {
+        if (!scopeMatches(query, referencingRecord))
+            return;
+        const QString key = QStringLiteral("%1:%2:%3:%4")
+                                .arg(normalizedReferenceFileName(
+                                    referencingRecord.location.fileName))
+                                .arg(referencingRecord.location.startLine)
+                                .arg(referencingRecord.location.startColumn)
+                                .arg(static_cast<int>(
+                                    referencingRecord.usageRole));
+        if (seen.contains(key))
+            return;
+        seen.insert(key);
+        result.append(macroReferenceResult(referencingRecord, subjectRecord));
+    };
+
+    for (const SemanticSymbolRecord& record :
+         semanticIndex()->getSymbolRecordsByName(subjectRecord.name)) {
+        if (isMacroDefinitionRecord(record)
+            && record.name == subjectRecord.name) {
+            appendResult(record);
+        }
+    }
+
+    const QStringList files = macroReferenceScanFiles(query, records);
+    for (const QString& fileName : files) {
+        const QString content = semanticIndex()->getCachedFileContent(fileName);
+        if (content.isEmpty())
+            continue;
+        for (const SvMacroSemantics::MacroReference& reference :
+             SvMacroSemantics::collectMacroReferences(fileName, content)) {
+            if (reference.name != subjectRecord.name)
+                continue;
+            appendResult(macroReferenceRecord(reference));
+        }
+    }
+
+    std::sort(result.begin(), result.end(), referenceLocationLess);
+    return result;
 }
 
 ReferenceResult ReferenceService::toReferenceResult(

@@ -111,6 +111,9 @@ private:
         const ReferenceQuery& query) const;
     bool scopeMatches(const ReferenceQuery& query,
                       const SemanticSymbolRecord& record) const;
+    QList<ReferenceResult> findMacroReferences(
+        const ReferenceQuery& query,
+        const SemanticSymbolRecord& subjectRecord) const;
     ReferenceResult toReferenceResult(const RelationshipResult& relationship) const;
     static ReferenceQuery normalizedQuery(const ReferenceQuery& query);
     static QString referenceFileDisplayName(const QString& fileName);

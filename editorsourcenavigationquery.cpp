@@ -60,6 +60,22 @@ QString noSymbolActionReason(const EditorSemanticContext& context)
     return QStringLiteral("No symbol under cursor");
 }
 
+bool contextLooksLikeMacroInvocation(const EditorSemanticContext& context,
+                                     const SourceSymbolActionContext& actionContext)
+{
+    if (!actionContext.available)
+        return false;
+    const SourceIdentifierTarget identifier =
+        SourceNavigationService::getInstance()->identifierAtColumn(
+            context.lineText,
+            context.column);
+    return identifier.matched
+        && identifier.identifier == actionContext.symbolName
+        && identifier.startColumn > 0
+        && identifier.startColumn <= context.lineText.size()
+        && context.lineText.at(identifier.startColumn - 1) == QLatin1Char('`');
+}
+
 QString actionUnavailableReason(
     SourceSymbolAction action,
     const SourceSymbolActionContext& actionContext,
@@ -70,6 +86,11 @@ QString actionUnavailableReason(
 
     switch (action) {
     case SourceSymbolAction::GoToDefinition:
+        if (contextLooksLikeMacroInvocation(context, actionContext)) {
+            return QStringLiteral(
+                "Macro `%1` was not found in the current file or indexed workspace/include files")
+                .arg(actionContext.symbolName);
+        }
         return QStringLiteral("Symbol not indexed");
     case SourceSymbolAction::FindReferences:
     case SourceSymbolAction::ShowRelationships:

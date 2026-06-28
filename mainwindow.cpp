@@ -748,6 +748,8 @@ void MainWindow::refreshActiveEditorSemanticDecorations(
     SemanticDecorationQuery query;
     query.fileName = document.fileName;
     query.documentText = editor->toPlainText();
+    if (workspaceManager)
+        query.configuredDefines = workspaceManager->workspaceConfiguration().defines;
     const SemanticDecorationReport report =
         SemanticDecorationService::getInstance()->decorationsForDocument(query);
     editor->setSemanticDecorations(report.decorations);

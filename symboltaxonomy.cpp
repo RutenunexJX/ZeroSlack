@@ -36,6 +36,7 @@ bool isDefinitionCollectorKind(CollectorKind kind)
     case CollectorKind::Enum:
     case CollectorKind::EnumVariable:
     case CollectorKind::EnumValue:
+    case CollectorKind::DefDefine:
         return true;
     case CollectorKind::InterfaceAssocStruct:
     case CollectorKind::InterfaceParameter:
@@ -53,7 +54,6 @@ bool isDefinitionCollectorKind(CollectorKind kind)
     case CollectorKind::DefElse:
     case CollectorKind::DefElsif:
     case CollectorKind::DefEndif:
-    case CollectorKind::DefDefine:
     case CollectorKind::Case:
     case CollectorKind::Casex:
     case CollectorKind::Casez:
@@ -99,6 +99,7 @@ int collectorKindDefinitionPriority(CollectorKind kind)
     case CollectorKind::Typedef: return 6;
     case CollectorKind::StructMember:
     case CollectorKind::EnumValue: return 7;
+    case CollectorKind::DefDefine: return 8;
     case CollectorKind::InterfaceAssocStruct:
     case CollectorKind::InterfaceParameter:
     case CollectorKind::DefParameter:
@@ -115,7 +116,6 @@ int collectorKindDefinitionPriority(CollectorKind kind)
     case CollectorKind::DefElse:
     case CollectorKind::DefElsif:
     case CollectorKind::DefEndif:
-    case CollectorKind::DefDefine:
     case CollectorKind::Case:
     case CollectorKind::Casex:
     case CollectorKind::Casez:
@@ -321,13 +321,13 @@ bool isOutlineCollectorKind(CollectorKind kind)
     case CollectorKind::Task:
     case CollectorKind::Function:
     case CollectorKind::Inst:
+    case CollectorKind::DefDefine:
         return true;
     case CollectorKind::User:
     case CollectorKind::Interface:
     case CollectorKind::InterfaceAssocStruct:
     case CollectorKind::InterfaceParameter:
     case CollectorKind::Package:
-    case CollectorKind::DefDefine:
     case CollectorKind::DefIfdef:
     case CollectorKind::DefIfndef:
     case CollectorKind::DefElse:
@@ -427,9 +427,9 @@ bool isDefinitionCandidate(const SemanticMetadata& metadata)
     case DeclarationKind::Modport:
     case DeclarationKind::Task:
     case DeclarationKind::Function:
+    case DeclarationKind::Macro:
         return true;
     case DeclarationKind::Unknown:
-    case DeclarationKind::Macro:
     case DeclarationKind::Process:
     case DeclarationKind::Generate:
     case DeclarationKind::Constraint:
@@ -443,7 +443,8 @@ bool isGlobalDefinition(const SemanticMetadata& metadata)
 {
     return metadata.declarationKind == DeclarationKind::Module
         || metadata.declarationKind == DeclarationKind::Interface
-        || metadata.declarationKind == DeclarationKind::Package;
+        || metadata.declarationKind == DeclarationKind::Package
+        || metadata.declarationKind == DeclarationKind::Macro;
 }
 
 bool isPackageVisibleDefinition(const SemanticMetadata& metadata)
@@ -554,12 +555,12 @@ bool isOutlineSymbol(const SemanticMetadata& metadata)
     case DeclarationKind::Instance:
     case DeclarationKind::Task:
     case DeclarationKind::Function:
+    case DeclarationKind::Macro:
         return true;
     case DeclarationKind::Unknown:
     case DeclarationKind::Interface:
     case DeclarationKind::Package:
     case DeclarationKind::Modport:
-    case DeclarationKind::Macro:
     case DeclarationKind::Process:
     case DeclarationKind::Generate:
     case DeclarationKind::Constraint:
@@ -598,9 +599,10 @@ int definitionPriority(const SemanticMetadata& metadata)
         return 6;
     case DeclarationKind::StructMember:
         return 7;
+    case DeclarationKind::Macro:
+        return 8;
     case DeclarationKind::Unknown:
     case DeclarationKind::Instance:
-    case DeclarationKind::Macro:
     case DeclarationKind::Process:
     case DeclarationKind::Generate:
     case DeclarationKind::Constraint:

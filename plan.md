@@ -1201,7 +1201,7 @@ Allowed scope:
 Not in scope:
 
 - package tools
-- macro/define semantics
+- macro/define semantics, which is owned by Track 15
 - Wave Preview expansion
 - new graph types
 - complex graph algorithms
@@ -1243,8 +1243,8 @@ M13.1 implementation status:
   module/interface definition records, so ordinary signals remain disabled
   without adding new semantic analysis.
 - Complete: this milestone is workflow/UI closure only. It does not implement
-  package tools, macro/define semantics, Wave Preview expansion, new graph
-  algorithms, or broader State Transition Graph triggers.
+  package tools, Wave Preview expansion, new graph algorithms, or broader
+  State Transition Graph triggers; Track 15 owns macro/define semantics.
 
 M13.2-M13.4 implementation status:
 
@@ -1298,7 +1298,7 @@ Allowed scope:
 Not in scope:
 
 - package/import semantic interpretation
-- macro/define handling
+- macro/define handling, which is owned by Track 15
 - cross-file package management
 - automatic sorting or broad package reordering
 - new graph or insight surfaces
@@ -1351,13 +1351,43 @@ M14.1a verification baseline repair status:
   count is exactly six; it still only needs one actual click to cover GUI
   insertion and Slot Mode.
 - Boundary: no Package Tools phase 2, no package/import semantics, no
-  macro/define handling, no cross-file package management, no package sorting,
-  no graph/insight changes, and no `;;cmd` behavior change.
+  cross-file package management, no package sorting, no graph/insight changes,
+  and no `;;cmd` behavior change; Track 15 owns macro/define semantics.
 - Verification: Release `completion_test`, `relationship_test`, and
   `gui_smoke_test` targets compile/link; Release `ctest -R
   "^(completion_test|relationship_test|gui_smoke_test)$" --output-on-failure`
   passed; `git diff --check -- .
   ':!test_sv/new/elec_phy_import/ctrl/chl_ctrl.sv'` passed.
+
+### 15. Macro / Define Semantic Workflow
+
+Goal: make common SystemVerilog macro and preprocessor-branch workflows usable
+without turning ZeroSlack into a full preprocessor.
+
+Allowed scope:
+
+- static `define` symbol records and outline rows
+- goto definition, hover, and Find References for `` `MACRO`` uses
+- clearer undefined macro diagnostics as Semantic index supplements to Slang
+- conservative inactive `ifdef` / `ifndef` / `elsif` / `else` / `endif`
+  branch decorations using workspace configured defines and static current-file
+  `define` / `undef` state
+
+Not in scope:
+
+- Vivado `.xpr` / Tcl parsing
+- new define configuration UI
+- complete SystemVerilog macro expansion or argument substitution
+- formatter-visible text mutation
+- changing Package Tools, COM Mode, Slot Mode, diagnostics, references, or
+  relationship ownership boundaries
+
+Milestones:
+
+- M15.1 Macro / Define First-Class Semantics
+  (complete: outline, goto definition, hover, references, supplemental
+  undefined diagnostics, and inactive branch gray decorations are available
+  with conservative static behavior)
 
 ## Huge Workspace Status Audit
 
@@ -1571,11 +1601,41 @@ Latest Package Tools first phase:
   append near existing same-kind direct package items when present. Module,
   interface, and program scopes are rejected with clear failure reasons.
 - Existing `;;cmd` template behavior is unchanged. Package/import semantics,
-  macro/define handling, cross-file package management, package-wide sorting,
-  and new insight/graph surfaces remain out of scope.
+  cross-file package management, package-wide sorting, and new insight/graph
+  surfaces remain out of Package Tools scope; Track 15 owns macro/define
+  semantics.
 - Release verification passed: `completion_test` and `gui_smoke_test` targets
   compile/link; `ctest -R "completion_test|gui_smoke_test"
   --output-on-failure` passed.
+
+Latest Macro / Define semantic workflow:
+
+- Scope: conservative static macro semantics, not a full SystemVerilog
+  preprocessor.
+- `SlangManager` symbol extraction supplements Slang records with static
+  `define` macro records, so outline and definition lookup can treat macros as
+  first-class symbols while keeping `ifdef` / `ifndef` / `else` / `endif` out
+  of outline.
+- `` `MACRO`` navigation now resolves current-file definitions first, then
+  workspace/include-visible macro definitions from the semantic index.
+- Macro hover shows the definition location plus signature/body text, with
+  function-like macros showing their parameter list without performing argument
+  substitution.
+- Find References for macros returns the `define` row and all indexed
+  backtick uses through the existing References panel jump/flash workflow.
+- Undefined macro diagnostics are supplemented under the Semantic index owner
+  without replacing Slang diagnostics.
+- Inactive preprocessor branches are grayed conservatively using configured
+  workspace defines and static current-file `define` / `undef` state across
+  basic `ifdef` / `ifndef` / `elsif` / `else` / `endif` structures.
+- Boundaries: no Vivado `.xpr` / Tcl parsing, no define configuration UI, no
+  complete macro expansion, no formatter text mutation, and no Package Tools,
+  COM Mode, Slot Mode, or relationship ownership change.
+- Verification passed: `cmake --build . --target completion_test
+  relationship_test gui_smoke_test`; `ctest -R
+  "^(completion_test|relationship_test|gui_smoke_test)$"
+  --output-on-failure`; `git diff --check -- .
+  ':!test_sv/new/elec_phy_import/ctrl/chl_ctrl.sv'`.
 
 Latest Verification Baseline Repair:
 
@@ -1593,8 +1653,9 @@ Latest Verification Baseline Repair:
   tool buttons with exactly six Package Tools buttons total while preserving
   one clicked insertion/Slot Mode path.
 - Existing `;;cmd` template behavior is unchanged. Package/import semantics,
-  macro/define handling, cross-file package management, package-wide sorting,
-  and new insight/graph surfaces remain out of scope.
+  cross-file package management, package-wide sorting, and new insight/graph
+  surfaces remain out of Package Tools scope; Track 15 owns macro/define
+  semantics.
 - Release verification passed: `cmake --build . --target completion_test
   relationship_test gui_smoke_test`; `ctest -R
   "^(completion_test|relationship_test|gui_smoke_test)$" --output-on-failure`;

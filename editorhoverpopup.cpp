@@ -81,6 +81,19 @@ void EditorHoverPopup::showHover(const SymbolHoverReport& report,
             addLabel(location,
                      QStringLiteral("color: palette(mid);"),
                      editorFont);
+        QFont codeFont = editorFont;
+        codeFont.setStyleHint(QFont::Monospace);
+        codeFont.setFixedPitch(true);
+        if (!report.macroSignatureText.isEmpty()) {
+            addLabel(QStringLiteral("macro: %1").arg(report.macroSignatureText),
+                     QStringLiteral("padding-top: 2px;"),
+                     codeFont);
+        }
+        if (!report.macroBodyText.isEmpty()) {
+            addLabel(QStringLiteral("body: %1").arg(report.macroBodyText),
+                     QStringLiteral("color: palette(text);"),
+                     codeFont);
+        }
     }
 
     adjustSize();

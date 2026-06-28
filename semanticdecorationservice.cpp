@@ -1,5 +1,7 @@
 #include "semanticdecorationservice.h"
 
+#include "svmacrosemantics.h"
+
 #include <QChar>
 #include <QDir>
 #include <QFile>
@@ -1094,6 +1096,12 @@ void appendSystemTaskDecorations(const QTextDocument& document,
 bool startsBefore(const SemanticDecoration& lhs,
                   const SemanticDecoration& rhs)
 {
+    const bool leftInactive =
+        lhs.role == SemanticDecorationRole::InactivePreprocessorBranch;
+    const bool rightInactive =
+        rhs.role == SemanticDecorationRole::InactivePreprocessorBranch;
+    if (leftInactive != rightInactive)
+        return !leftInactive;
     if (lhs.startPosition != rhs.startPosition)
         return lhs.startPosition < rhs.startPosition;
     return lhs.length > rhs.length;
@@ -1142,6 +1150,11 @@ SemanticDecorationReport SemanticDecorationService::decorationsForDocument(
         visibleUsageRecords(semanticIndex(), query, document, records);
     appendUsageDecorations(usageRecords, document, &report.decorations);
     appendSystemTaskDecorations(document, &report.decorations);
+    report.decorations.append(
+        SvMacroSemantics::inactiveBranchDecorations(
+            query.fileName,
+            query.documentText,
+            query.configuredDefines));
 
     std::stable_sort(report.decorations.begin(),
                      report.decorations.end(),

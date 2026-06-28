@@ -134,6 +134,11 @@ QTextCharFormat semanticFormatForRole(
     case SemanticDecorationRole::SystemTask:
         format.setForeground(color("#56B6C2", "#007C89"));
         break;
+    case SemanticDecorationRole::InactivePreprocessorBranch:
+        format.setForeground(color("#6B7280", "#9CA3AF"));
+        format.setBackground(color("#1F2937", "#F3F4F6"));
+        format.setProperty(QTextFormat::FullWidthSelection, true);
+        break;
     }
 
     format.setProperty(kSemanticSelectionProperty, kSemanticSelectionMarker);

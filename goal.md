@@ -28,13 +28,32 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
 
 ## Current Goal State
 
-Current milestone: Verification Baseline Repair after Package Tools phase 1 is
-complete.
+Current milestone: Macro / Define first-class semantic workflow is complete.
 
 Next work should wait for the next explicit scoped request.
 
 Status:
 
+- Macro / Define first-class semantics are complete. Static `define` records
+  enter the semantic index as Macro definitions; outline shows object-like and
+  function-like macro names while keeping `ifdef` / `ifndef` / `else` /
+  `endif` out of the main symbol list; `` `MACRO`` goto prefers current-file
+  definitions and then workspace/include-visible definitions; hover shows
+  definition location plus signature/body text; Find References returns the
+  `define` row and all indexed backtick uses; undefined macro diagnostics are
+  supplemented under the Semantic index owner; and inactive preprocessor
+  branches are grayed conservatively from configured defines plus static
+  current-file `define` / `undef` state.
+- Macro / Define boundaries: no Vivado `.xpr` / Tcl parsing, no new define
+  configuration UI, no complete SystemVerilog preprocessor or argument
+  substitution engine, no formatter text mutation, and no ownership changes to
+  Package Tools, COM Mode, Slot Mode, References, Relationships, or Problems
+  workflows.
+- Verification for Macro / Define first-class semantics passed: `cmake
+  --build . --target completion_test relationship_test gui_smoke_test`;
+  `ctest -R "^(completion_test|relationship_test|gui_smoke_test)$"
+  --output-on-failure`; `git diff --check -- .
+  ':!test_sv/new/elec_phy_import/ctrl/chl_ctrl.sv'`.
 - Verification Baseline Repair after Package Tools phase 1 is complete. This
   was baseline repair only, not Package Tools phase 2: Release
   `relationship_test` rebuild failures were traced to generated MinGW
@@ -63,8 +82,9 @@ Status:
   items when present, and reject module/interface/program scope with clear
   failure messages. Inserted templates start Slot Mode on all editable slots.
   Existing `;;cmd` behavior is unchanged; package/import semantics,
-  macro/define handling, cross-file package management, package-wide sorting,
-  and new insight/graph surfaces remain out of scope.
+  cross-file package management, package-wide sorting, and new insight/graph
+  surfaces remain out of Package Tools scope; Track 15 owns macro/define
+  semantics.
 - Focused verification for Package Tools phase 1 passed: Release
   `completion_test` and `gui_smoke_test` targets compile/link; Release
   `ctest -R "completion_test|gui_smoke_test" --output-on-failure` passed.
@@ -78,8 +98,8 @@ Status:
   state-register and next-state signal nodes, preserve existing transition
   edges, add the existing-data signal-flow edge, and let next-state signal
   nodes invoke the existing navigation handler. No FSM extraction semantics,
-  State Transition trigger rules, package tools, macro/define handling, Wave
-  Preview behavior, or graph algorithms were added.
+  State Transition trigger rules, package tools, Wave Preview behavior, or
+  graph algorithms were added; Track 15 owns macro/define semantics.
 - Final verification for the workflow closure passed: Release
   `completion_test`, `relationship_test`, and `gui_smoke_test` targets
   compile/link; Release `ctest -R
@@ -942,7 +962,7 @@ Allowed work:
 Not allowed:
 
 - package tools
-- macro/define semantics
+- macro/define semantics, which is owned by Track 15
 - Wave Preview expansion
 - new graph types
 - complex graph algorithms
@@ -989,7 +1009,7 @@ Allowed work:
 Not allowed:
 
 - package/import semantic interpretation
-- macro/define handling
+- macro/define handling, which is owned by Track 15
 - cross-file package management
 - automatic package-wide sorting
 - new graphs or insight panels
@@ -1004,11 +1024,41 @@ Milestones:
 - G14.1a Verification Baseline Repair.
   (complete: Release `relationship_test` rebuild baseline repaired and all six
   Package Tools phase-1 templates/buttons covered without Package Tools phase
-  2, package/import semantics, macro/define handling, cross-file package
-  management, package sorting, graph work, or `;;cmd` changes)
+  2, package/import semantics, cross-file package management, package sorting,
+  graph work, or `;;cmd` changes; Track 15 owns macro/define semantics)
 - G14.2 Future Package Tools expansion.
   (not started: additional package templates, semantic package handling,
   package sorting, or cross-file workflows require a new scoped request)
+
+## Track 15: Macro / Define Semantic Workflow
+
+Goal: make common SystemVerilog macro and preprocessor-branch workflows usable
+without turning ZeroSlack into a full preprocessor.
+
+Allowed work:
+
+- static `define` symbol records and outline rows
+- goto definition, hover, and Find References for `` `MACRO`` uses
+- clearer undefined macro diagnostics as Semantic index supplements to Slang
+- conservative inactive `ifdef` / `ifndef` / `elsif` / `else` / `endif`
+  branch decorations using workspace configured defines and static current-file
+  `define` / `undef` state
+
+Not allowed:
+
+- Vivado `.xpr` / Tcl parsing
+- new define configuration UI
+- complete SystemVerilog macro expansion or argument substitution
+- formatter-visible text mutation
+- changing Package Tools, COM Mode, Slot Mode, diagnostics, references, or
+  relationship ownership boundaries
+
+Milestones:
+
+- G15.1 Macro / Define First-Class Semantics.
+  (complete: outline, goto definition, hover, references, supplemental
+  undefined diagnostics, and inactive branch gray decorations are available
+  with conservative static behavior)
 
 ## Huge Workspace Status Audit
 

@@ -3,6 +3,7 @@
 
 #include "semanticindex.h"
 
+#include <QHash>
 #include <QList>
 #include <QString>
 #include <memory>
@@ -18,7 +19,8 @@ enum class SemanticDecorationRole {
     SystemTask,
     EnumValue,
     TypeAlias,
-    ModulePort
+    ModulePort,
+    InactivePreprocessorBranch
 };
 
 struct SemanticDecoration {
@@ -34,6 +36,7 @@ struct SemanticDecoration {
 struct SemanticDecorationQuery {
     QString fileName;
     QString documentText;
+    QHash<QString, QString> configuredDefines;
 };
 
 struct SemanticDecorationReport {

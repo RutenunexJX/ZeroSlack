@@ -1,11 +1,15 @@
 #include "slangmanager.h"
 #include "slangparseoptions.h"
 #include "slangsymbolcollector.h"
+#include "svmacrosemantics.h"
 
 #include <slang/ast/Compilation.h>
 #include <slang/syntax/SyntaxTree.h>
 #include <slang/text/SourceManager.h>
 #include <slang/util/Bag.h>
+
+#include <QFile>
+#include <QTextStream>
 
 #include <memory>
 #include <string>
@@ -13,6 +17,17 @@
 #include <vector>
 
 using namespace slang::ast;
+
+namespace {
+QString readMacroScanTextFile(const QString& filePath)
+{
+    QFile file(filePath);
+    if (!file.open(QIODevice::ReadOnly | QFile::Text))
+        return QString();
+    QTextStream stream(&file);
+    return stream.readAll();
+}
+}
 
 QList<SemanticSymbolRecord> SlangManager::extractSymbolRecords(
     const QString& fileName,
@@ -54,6 +69,8 @@ QList<SemanticSymbolRecord> SlangManager::extractSymbolRecords(
         compilation.addSyntaxTree(tree);
 
         slang_symbols::collectSymbolRecords(compilation, result);
+        result.append(
+            SvMacroSemantics::collectMacroDefinitionRecords(fileName, content));
     } catch (const std::exception&) {
         result.clear();
     } catch (...) {
@@ -126,6 +143,17 @@ QList<SemanticSymbolRecord> SlangManager::extractWorkspaceSymbolRecords(
             return result;
 
         slang_symbols::collectSymbolRecords(compilation, result, isCancelled);
+        if (cancelled())
+            return result;
+        for (const QString& filePath : filePaths) {
+            if (cancelled())
+                return result;
+            const QString content = readMacroScanTextFile(filePath);
+            if (content.isEmpty())
+                continue;
+            result.append(
+                SvMacroSemantics::collectMacroDefinitionRecords(filePath, content));
+        }
     } catch (const std::exception&) {
         result.clear();
     } catch (...) {

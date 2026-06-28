@@ -62,6 +62,15 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
   extensions, and optional top module / active top. Applying configuration
   updates `ProjectModel`, refreshes workspace file filtering, and queues
   analysis through the existing project-change path.
+- Macro / define semantics are now first-class editor workflow data. Static
+  `define` records appear in outline and semantic lookup, `` `MACRO`` uses can
+  jump to current-file or workspace/include-visible definitions, hover shows
+  macro signature/body text, Find References returns the `define` row and all
+  indexed uses, undefined macro diagnostics are supplemented under the
+  Semantic index owner, and conservatively evaluated inactive `ifdef` /
+  `ifndef` branches are grayed using configured defines plus static
+  current-file `define` / `undef` state. This is not a full SystemVerilog
+  preprocessor and does not add Vivado project parsing or new define UI.
 - Problems/Diagnostics now expose owner and status data in the existing
   Problems panel: diagnostic rows show owner (`Slang`, `Semantic index`),
   current-file error/warning/info summary follows the active tab, and status
@@ -305,6 +314,10 @@ engineering configuration / diagnostics lane.
 - `DiagnosticNavigationService` owns next/previous diagnostic selection using
   existing `DiagnosticService` filters. Problems panel and main-window actions
   consume its result and navigate through `NavigationCommandCoordinator`.
+- `SvMacroSemantics` owns the conservative macro scanner used by symbol
+  extraction, hover/reference helpers, undefined-macro diagnostics, and
+  inactive-branch decorations. UI code consumes records/reports/decorations
+  only; it does not run its own preprocessor.
 - Fold Shelf baseline: `FoldBlockShelfModel` owns the shelf item list and
   mutation lifecycle including rename, query/filter, and stale/consumed
   cleanup, `FoldShelfPersistenceService` owns versioned QSettings-backed
@@ -373,8 +386,9 @@ Current command surfaces are intentionally separate:
   reuses the Slot Mode editor machinery after insertion, but package templates,
   current-package validation, and insertion targets stay in the package tool
   and Tree-sitter layers. The first phase intentionally excludes package/import
-  semantic interpretation, macro/define handling, cross-file package
-  management, automatic package-wide sorting, new graphs, and insight panels.
+  semantic interpretation, cross-file package management, automatic
+  package-wide sorting, new graphs, and insight panels; Track 15 owns
+  macro/define semantics.
 - User template storage/query is service-owned by `UserTemplateService`. It
   persists validated `;;` template records in `QSettings`, exposes
   `CodeTemplateItem`-compatible catalog and exact-token query results, and is
@@ -552,6 +566,8 @@ Only these long-term goals are active:
 11. Module block diagram for selected module names only.
 12. Workspace project configuration and diagnostics workflow.
 13. References / Relationships workflow closure.
+14. Package Tools.
+15. Macro / Define semantic workflow.
 
 Do not add unlisted long-term goals without explicit user approval.
 
@@ -621,7 +637,8 @@ Do not add unlisted long-term goals without explicit user approval.
   module/interface definition records, ordinary signals remain disabled, and
   State Transition Graph gating still rejects current-state names. This stage
   is workflow/UI closure only; it does not add semantic analysis, package
-  tools, macro/define handling, Wave Preview behavior, or new graph algorithms.
+  tools, Wave Preview behavior, or new graph algorithms; Track 15 owns
+  macro/define semantics.
 - Latest References / Relationships panel closure stage: References and
   Relationships now keep visible query context, render explicit empty-state
   reasons, support path and `file:line` copy from result rows, and use one
@@ -651,6 +668,18 @@ Do not add unlisted long-term goals without explicit user approval.
   or new graph algorithms. Release verification passed:
   `ctest -R "^(completion_test|relationship_test|gui_smoke_test)$"
   --output-on-failure`.
+- Latest Macro / Define semantic workflow stage: static `define` records now
+  enter the semantic index as macros, outline shows object-like and
+  function-like macro names, goto/hover/references work for `` `MACRO`` uses,
+  undefined macro diagnostics are supplemented without replacing Slang
+  diagnostics, and inactive preprocessor branches are grayed using configured
+  defines plus static current-file `define` / `undef` handling. Boundaries:
+  no Vivado `.xpr` / Tcl parsing, no define configuration UI, and no complete
+  macro expansion engine. Verification passed: `cmake --build . --target
+  completion_test relationship_test gui_smoke_test`; `ctest -R
+  "^(completion_test|relationship_test|gui_smoke_test)$"
+  --output-on-failure`; `git diff --check -- .
+  ':!test_sv/new/elec_phy_import/ctrl/chl_ctrl.sv'`.
 - Latest Verification Baseline Repair: this is a baseline repair after Package
   Tools phase 1, not new Package Tools functionality. The blank-diagnostic
   Release rebuild failure was traced to generated MinGW build rules that did
@@ -662,9 +691,9 @@ Do not add unlisted long-term goals without explicit user approval.
   and in `gui_smoke_test` for the six stable package-tool buttons while still
   only exercising one GUI click/Slot Mode path; both service and GUI coverage
   assert the phase remains exactly six tools. This did not change `;;cmd`
-  behavior and did not add package/import semantics, macro/define handling,
-  cross-file package management, automatic package sorting, or Package Tools
-  phase 2. Release verification passed: `cmake --build . --target
+  behavior and did not add package/import semantics, cross-file package
+  management, automatic package sorting, or Package Tools phase 2; Track 15
+  owns macro/define semantics. Release verification passed: `cmake --build . --target
   completion_test relationship_test gui_smoke_test`; `ctest -R
   "^(completion_test|relationship_test|gui_smoke_test)$" --output-on-failure`;
   `git diff --check -- . ':!test_sv/new/elec_phy_import/ctrl/chl_ctrl.sv'`.

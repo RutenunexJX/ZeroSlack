@@ -11,6 +11,8 @@ struct SymbolHoverReport {
     QString ownerName;
     QString sourceRole;
     QString typeText;
+    QString macroSignatureText;
+    QString macroBodyText;
     QString definitionFile;
     int definitionLine = -1;
     QString unavailableReason;
