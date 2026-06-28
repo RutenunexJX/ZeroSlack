@@ -51,6 +51,23 @@ bool fileKnownToWorkspace(WorkspaceManager* workspaceManager,
     return false;
 }
 
+bool pathIsInsideInactiveWorkspace(WorkspaceManager* workspaceManager,
+                                   const QString& fileName)
+{
+    if (!workspaceManager)
+        return false;
+    const int activeIndex = workspaceManager->activeWorkspaceIndex();
+    const QList<WorkspaceManager::WorkspaceEntry> entries =
+        workspaceManager->workspaceEntries();
+    for (int i = 0; i < entries.size(); ++i) {
+        if (i == activeIndex)
+            continue;
+        if (pathIsInsideWorkspace(fileName, entries.at(i).path))
+            return true;
+    }
+    return false;
+}
+
 QString panelNavigationFailureReason(WorkspaceManager* workspaceManager,
                                      const QString& fileName,
                                      int line,
@@ -62,7 +79,8 @@ QString panelNavigationFailureReason(WorkspaceManager* workspaceManager,
         return QStringLiteral("invalid line/column");
     if (workspaceManager && workspaceManager->isWorkspaceOpen()
         && !pathIsInsideWorkspace(fileName, workspaceManager->getWorkspacePath())
-        && !fileKnownToWorkspace(workspaceManager, fileName)) {
+        && !fileKnownToWorkspace(workspaceManager, fileName)
+        && pathIsInsideInactiveWorkspace(workspaceManager, fileName)) {
         return QStringLiteral("workspace mismatch");
     }
     return QString();

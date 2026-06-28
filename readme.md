@@ -601,5 +601,16 @@ Do not add unlisted long-term goals without explicit user approval.
   entries for Signal Kernel Graph, Module Block Diagram, and State Transition
   Graph only. Instance relationships prefer existing module/interface
   definition links when available. Navigation history entries are keyed by
-  workspace so Back/Forward does not cross workspace boundaries. Release
-  `completion_test` and `gui_smoke_test` targets compile/link.
+  workspace so Back/Forward does not cross workspace boundaries. Workspace
+  mismatch feedback is limited to targets that belong to a different open
+  workspace; ordinary external files from current panel results may still jump
+  through the same validated path. This remains workflow/UI closure only, not a
+  new semantic-analysis pass.
+- Latest References / Relationships workflow verification: Release
+  `completion_test` and `gui_smoke_test` targets compile/link. Release
+  `ctest -R "^completion_test$" --output-on-failure` passed. The first
+  Release `ctest -R "^gui_smoke_test$" --output-on-failure` run and the
+  required rerun both failed on RTL Insights FSM graph navigation because
+  workspace-mismatch validation rejected an external panel-result fixture;
+  after narrowing mismatch detection to different open workspaces, the same
+  GUI smoke CTest passed.

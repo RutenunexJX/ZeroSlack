@@ -1227,10 +1227,11 @@ Milestones:
   navigation path; Back/Forward history is isolated by workspace; failures are
   visible)
 - M13.5 Verification And Documentation
-  (pending: build `completion_test` and `gui_smoke_test`; run
-  `ctest -R "^completion_test$" --output-on-failure`; run
-  `ctest -R "^gui_smoke_test$" --output-on-failure` when safe, repeating once
-  if it is flaky)
+  (complete: Release `completion_test` and `gui_smoke_test` targets
+  compile/link; Release `completion_test` CTest passed; Release
+  `gui_smoke_test` failed once and failed on the required rerun due to an
+  over-strict external-result workspace-mismatch check, then passed after
+  mismatch detection was narrowed to targets in a different open workspace)
 
 M13.1 implementation status:
 
@@ -1262,11 +1263,15 @@ M13.2-M13.4 implementation status:
   Signal Kernel Graph, Module Block Diagram, and State Transition Graph.
 - Complete: panel and graph jumps are validated for missing files, invalid
   line/column data, stale semantic snapshots or missing symbols, and workspace
-  mismatch; failures are surfaced through the status bar.
+  mismatch; workspace mismatch means a target in a different open workspace,
+  not an ordinary external result file; failures are surfaced through the
+  status bar.
 - Complete: `NavigationCommandCoordinator` history entries carry a workspace
   key and Back/Forward prunes entries from other workspaces.
-- Verification so far: Release `completion_test` and `gui_smoke_test` targets
-  compile/link.
+- Complete: final Release verification passed after the workspace-mismatch
+  adjustment: `completion_test` and `gui_smoke_test` targets compile/link,
+  `ctest -R "^completion_test$" --output-on-failure`, and
+  `ctest -R "^gui_smoke_test$" --output-on-failure`.
 
 ## Huge Workspace Status Audit
 

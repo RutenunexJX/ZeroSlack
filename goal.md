@@ -916,10 +916,11 @@ Milestones:
   navigation path; Back/Forward history is isolated by workspace; failures are
   visible)
 - G13.5 Verification and documentation.
-  (pending: build `completion_test` and `gui_smoke_test`; run
-  `ctest -R "^completion_test$" --output-on-failure`; run
-  `ctest -R "^gui_smoke_test$" --output-on-failure` when safe, repeating once
-  if it is flaky)
+  (complete: Release `completion_test` and `gui_smoke_test` targets
+  compile/link; Release `completion_test` CTest passed; Release
+  `gui_smoke_test` failed once and failed on the required rerun due to an
+  over-strict external-result workspace-mismatch check, then passed after
+  mismatch detection was narrowed to targets in a different open workspace)
 
 ## Huge Workspace Status Audit
 
