@@ -1703,6 +1703,25 @@ Latest header/include command convergence:
   --output-on-failure`; `git diff --check -- .
   ':!test_sv/new/elec_phy_import/ctrl/chl_ctrl.sv'`.
 
+Latest package import explicit entry:
+
+- Scope: explicit package import insertion only. This is not package
+  navigation, Package Tools phase 2, `pkg::symbol` completion, cross-file
+  package management, COM Mode, or Global Control work.
+- `;pk <query>` searches existing package semantic records through the
+  completion service and inserts `import pkg_name::*;` on activation.
+- `;p` remains the parameter semantic command, COM `gpk` remains the package
+  picker / package jump workflow, Package Tools remain package-file editing
+  tools, and `;;pk` remains absent.
+- Coverage checks package candidate matching, activation text insertion,
+  absent `;;pk`, unchanged `;p`, and unchanged `gpk` behavior through the
+  existing COM smoke coverage.
+- Release verification passed: `cmake --build . --target completion_test
+  gui_smoke_test relationship_test`; `ctest -R
+  "^(completion_test|relationship_test|gui_smoke_test)$"
+  --output-on-failure`; `git diff --check -- .
+  ':!test_sv/new/elec_phy_import/ctrl/chl_ctrl.sv'`.
+
 Latest Verification Baseline Repair:
 
 - Scope: baseline repair only after Package Tools phase 1; this is not Package

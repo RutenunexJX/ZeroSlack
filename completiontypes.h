@@ -214,7 +214,8 @@ enum class InlineCommandIntent {
     SemanticCompletion,
     CodeTemplate,
     EditorAction,
-    HeaderInclude
+    HeaderInclude,
+    PackageImport
 };
 
 struct InlineCommandDescriptor {

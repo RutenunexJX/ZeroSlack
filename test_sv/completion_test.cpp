@@ -4733,10 +4733,31 @@ int main(int argc, char** argv) {
                        ->matchCommandMode(QStringLiteral(";p WIDTH"))
                        .command.kind == CompletionCommandKind::Parameter,
                true);
+    expectBool("CompletionService parameter command remains parameter",
+               CompletionService::getInstance()
+                       ->matchCommandMode(QStringLiteral(";p WIDTH"))
+                       .intent == InlineCommandIntent::SemanticCompletion,
+               true);
     expectBool("CompletionService localparam command match",
                CompletionService::getInstance()
                        ->matchCommandMode(QStringLiteral(";lp LOCAL"))
                        .command.kind == CompletionCommandKind::Localparam,
+               true);
+    const CommandModeMatch packageImportMatch =
+        CompletionService::getInstance()
+            ->matchCommandMode(QStringLiteral(";pk cfg"));
+    expectBool("CompletionService package import command match",
+               packageImportMatch.matched
+                   && packageImportMatch.intent
+                       == InlineCommandIntent::PackageImport
+                   && packageImportMatch.command.kind
+                       == CompletionCommandKind::Package
+                   && packageImportMatch.input == QStringLiteral("cfg"),
+               true);
+    expectBool("CompletionService package import template absent",
+               !CompletionService::getInstance()
+                    ->matchCommandMode(QStringLiteral(";;pk cfg"))
+                    .matched,
                true);
     const CommandModeMatch headerIncludeMatch =
         CompletionService::getInstance()
@@ -8376,6 +8397,54 @@ int main(int argc, char** argv) {
            snapshotPackageCommandOk ? "PASS" : "FAIL",
            "snapshot command package symbols",
            snapshotPackageCommandSymbols.size());
+    CommandModeCompletionQuery snapshotPackageImportStateQuery;
+    snapshotPackageImportStateQuery.lineUpToCursor =
+        QStringLiteral(";pk snap");
+    snapshotPackageImportStateQuery.moduleName = QStringLiteral("snap_top");
+    const CommandModeCompletionState snapshotPackageImportState =
+        snapshotCompletionService.commandModeCompletionState(
+            snapshotPackageImportStateQuery);
+    expectBool("snapshot package import command state",
+               snapshotPackageImportState.matched
+                   && snapshotPackageImportState.intent
+                       == InlineCommandIntent::PackageImport
+                   && snapshotPackageImportState.showCompletions
+                   && snapshotPackageImportState.commandKind
+                       == CompletionCommandKind::Package
+                   && recordNames(snapshotPackageImportState.symbolRecords)
+                          == QStringList{QStringLiteral("snap_pkg")},
+               true);
+    if (!snapshotPackageCommandSymbols.isEmpty()) {
+        const CommandSymbolCompletionItem packageImportItem =
+            snapshotCompletionService.commandSymbolCompletionItem(
+                snapshotPackageCommandSymbols.first(),
+                CompletionCommandKind::Package,
+                QStringLiteral("snap"));
+        expectBool("snapshot package import item",
+                   packageImportItem.text == QStringLiteral("snap_pkg")
+                       && packageImportItem.defaultValue
+                           == QStringLiteral("import snap_pkg::*;")
+                       && packageImportItem.description
+                           == QStringLiteral("package import"),
+                   true);
+        CompletionActivationQuery packageImportActivationQuery;
+        packageImportActivationQuery.selectable = true;
+        packageImportActivationQuery.mode = CompletionActivationMode::CommandMode;
+        packageImportActivationQuery.itemText = packageImportItem.text;
+        packageImportActivationQuery.defaultValue =
+            packageImportItem.defaultValue;
+        const CompletionActivationState packageImportActivation =
+            snapshotCompletionService.completionActivationState(
+                packageImportActivationQuery);
+        expectBool("snapshot package import activation",
+                   packageImportActivation.action
+                           == CompletionActivationAction::ReplaceCommandInput
+                       && packageImportActivation.text
+                           == QStringLiteral("import snap_pkg::*;")
+                       && packageImportActivation.clearCommandMode
+                       && packageImportActivation.hidePopup,
+                   true);
+    }
     CommandCompletionQuery snapshotSemanticPackageParamQuery;
     snapshotSemanticPackageParamQuery.moduleName = QStringLiteral("snap_top");
     snapshotSemanticPackageParamQuery.commandKind =

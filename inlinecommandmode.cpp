@@ -129,6 +129,18 @@ QList<InlineCommandDescriptor> headerIncludeDescriptors()
     };
 }
 
+QList<InlineCommandDescriptor> packageImportDescriptors()
+{
+    return {
+        descriptor(QStringLiteral(";pk "),
+                   InlineCommandIntent::PackageImport,
+                   CompletionCommandKind::Package,
+                   QStringLiteral(";pk"),
+                   QStringLiteral("package imports"),
+                   QStringLiteral("import package_name::*;"))
+    };
+}
+
 QList<InlineCommandDescriptor> actionDescriptors()
 {
     return {};
@@ -153,6 +165,7 @@ QList<InlineCommandDescriptor> InlineCommandMode::descriptors()
     QList<InlineCommandDescriptor> result = semanticDescriptors();
     result.append(templateDescriptors());
     result.append(headerIncludeDescriptors());
+    result.append(packageImportDescriptors());
     result.append(actionDescriptors());
     return result;
 }
@@ -266,6 +279,8 @@ QString InlineCommandMode::headerText(const InlineCommandDescriptor& descriptor)
         return QStringLiteral(":: ACTION MODE ::");
     case InlineCommandIntent::HeaderInclude:
         return QStringLiteral(":: HEADER INCLUDE - `include ::");
+    case InlineCommandIntent::PackageImport:
+        return QStringLiteral(":: PACKAGE IMPORT - import pkg::* ::");
     }
     return QStringLiteral(":: COMMAND MODE ::");
 }

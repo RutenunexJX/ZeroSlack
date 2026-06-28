@@ -76,6 +76,10 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
   `;h -n <name>` creates a `.svh` header by default before inserting the
   include. The old hidden `` `include `` + space trigger is no longer active,
   and `;;h` is intentionally unassigned.
+- Package imports are explicit through `;pk`: `;pk <query>` searches indexed
+  package symbols and inserts `import pkg_name::*;`. `;p` remains parameter
+  semantic completion, COM `gpk` remains package navigation, and `;;pk` is
+  intentionally unassigned.
 - Problems/Diagnostics now expose owner and status data in the existing
   Problems panel: diagnostic rows show owner (`Slang`, `Semantic index`),
   current-file error/warning/info summary follows the active tab, and status
@@ -720,6 +724,18 @@ Do not add unlisted long-term goals without explicit user approval.
   completion, COM Mode commands, or Global Control entries. Release
   verification passed: `cmake --build . --target completion_test
   gui_smoke_test`; `cmake --build . --target relationship_test`; `ctest -R
+  "^(completion_test|relationship_test|gui_smoke_test)$"
+  --output-on-failure`; `git diff --check -- .
+  ':!test_sv/new/elec_phy_import/ctrl/chl_ctrl.sv'`.
+- Latest package import explicit entry: use `;pk <query>` to search existing
+  SystemVerilog package records from the semantic index and insert
+  `import pkg_name::*;`. This is import insertion only, not jump/navigation:
+  COM `gpk` still owns package picker navigation, `;p` still owns parameter
+  completion, Package Tools still only edit package files, and `;;pk` remains
+  intentionally absent. No `pkg::symbol` completion, cross-file package
+  management, COM Mode command, or Global Control entry was added. Release
+  verification passed: `cmake --build . --target completion_test
+  gui_smoke_test relationship_test`; `ctest -R
   "^(completion_test|relationship_test|gui_smoke_test)$"
   --output-on-failure`; `git diff --check -- .
   ':!test_sv/new/elec_phy_import/ctrl/chl_ctrl.sv'`.

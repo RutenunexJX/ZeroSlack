@@ -28,7 +28,7 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
 
 ## Current Goal State
 
-Current milestone: header/include command convergence is complete.
+Current milestone: package import explicit entry is complete.
 
 Next work should wait for the next explicit scoped request.
 
@@ -90,6 +90,18 @@ Status:
   `cmake --build . --target completion_test gui_smoke_test`; `cmake --build .
   --target relationship_test`; `ctest -R
   "^(completion_test|relationship_test|gui_smoke_test)$"
+  --output-on-failure`; `git diff --check -- .
+  ':!test_sv/new/elec_phy_import/ctrl/chl_ctrl.sv'`.
+- Package import explicit entry is complete. `;pk <query>` searches existing
+  package semantic records through the completion service and inserts
+  `import pkg_name::*;`. `;p` remains parameter completion, COM `gpk` remains
+  package picker / package navigation, Package Tools remain package-file
+  editing tools, and `;;pk` remains absent. No `pkg::symbol` completion,
+  cross-file package management, COM Mode command, or Global Control command
+  was added.
+- Verification for package import explicit entry passed in the Release build:
+  `cmake --build . --target completion_test gui_smoke_test relationship_test`;
+  `ctest -R "^(completion_test|relationship_test|gui_smoke_test)$"
   --output-on-failure`; `git diff --check -- .
   ':!test_sv/new/elec_phy_import/ctrl/chl_ctrl.sv'`.
 - Verification Baseline Repair after Package Tools phase 1 is complete. This

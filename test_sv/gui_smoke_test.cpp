@@ -9014,6 +9014,13 @@ int main(int argc, char** argv)
                 .record();
         const QList<SemanticSymbolRecord> guiInstantiationRecords{
             guiTargetModule,
+            SemanticFixtureRecordBuilder(QStringLiteral("gui_pkg"),
+                                         SymbolTaxonomy::DeclarationKind::Package)
+                .withFile(moduleInstantiationFixturePath)
+                .withLocalHandle(9405)
+                .withLine(8)
+                .withCollectorKind(SymbolTaxonomy::CollectorKind::Package)
+                .record(),
             SemanticFixtureRecordBuilder(QStringLiteral("GUI_WIDTH"),
                                          SymbolTaxonomy::DeclarationKind::Parameter)
                 .withFile(moduleInstantiationFixturePath)
@@ -9043,6 +9050,47 @@ int main(int argc, char** argv)
         guiInstantiationIndex.setSnapshot(
             snapshotFromRecords(guiInstantiationRecords));
         CompletionService::getInstance()->setSemanticIndex(&guiInstantiationIndex);
+
+        editor->setPlainText(QStringLiteral("module gui_top;\n"
+                                            "\n"
+                                            "endmodule\n"));
+        QTextCursor packageImportCursor(editor->document()->findBlockByNumber(1));
+        editor->setTextCursor(packageImportCursor);
+        editor->setFocus();
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+        QTest::keyClicks(editor, ";pk gui");
+
+        QCompleter* packageImportCompleter = editor->findChild<QCompleter*>();
+        QModelIndex guiPackageIndex;
+        expectBool("package import completion popup shows package",
+                   waitUntil([&]() {
+                       if (!packageImportCompleter
+                           || !packageImportCompleter->model()) {
+                           return false;
+                       }
+                       QAbstractItemModel* model =
+                           packageImportCompleter->model();
+                       for (int row = 0; row < model->rowCount(); ++row) {
+                           const QModelIndex index = model->index(row, 0);
+                           const QString display =
+                               model->data(index, Qt::DisplayRole).toString();
+                           if (display.contains(QStringLiteral("gui_pkg"))) {
+                               guiPackageIndex = index;
+                               return true;
+                           }
+                       }
+                       return false;
+                   }, 3000),
+                   true);
+        if (packageImportCompleter && guiPackageIndex.isValid()) {
+            packageImportCompleter->popup()->setCurrentIndex(guiPackageIndex);
+            QTest::keyClick(editor, Qt::Key_Return);
+            QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
+        }
+        expectBool("package import completion inserts import",
+                   editor->toPlainText().contains(
+                       QStringLiteral("import gui_pkg::*;")),
+                   true);
 
         editor->setPlainText(QStringLiteral("module gui_top;\n"
                                             "\n"

@@ -359,6 +359,9 @@ void CompletionModel::updateInlineCommandCompletions(
         case InlineCommandIntent::HeaderInclude:
             headerItem.text = QStringLiteral(":: HEADER INCLUDE HELP - ;h ::");
             break;
+        case InlineCommandIntent::PackageImport:
+            headerItem.text = QStringLiteral(":: PACKAGE IMPORT HELP - ;pk ::");
+            break;
         }
     } else {
         headerItem.text = state.headerText.isEmpty()

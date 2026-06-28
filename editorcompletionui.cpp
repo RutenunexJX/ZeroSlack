@@ -133,8 +133,10 @@ EditorCompletionPopupKeyContext EditorCompletionUi::popupKeyContextForEvent(
 void EditorCompletionUi::updateCommandModeCompletions(
     const EditorCommandModeCompletionRefreshState& commandState) const
 {
-    if (commandState.completion.intent != InlineCommandIntent::SemanticCompletion
-        || commandState.completion.helpRequested) {
+    const bool usesSymbolRecords =
+        commandState.completion.intent == InlineCommandIntent::SemanticCompletion
+        || commandState.completion.intent == InlineCommandIntent::PackageImport;
+    if (!usesSymbolRecords || commandState.completion.helpRequested) {
         model->updateInlineCommandCompletions(commandState.completion);
         return;
     }

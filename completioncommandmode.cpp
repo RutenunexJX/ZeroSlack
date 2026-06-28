@@ -87,6 +87,13 @@ CommandModeInputState CompletionCommandMode::inputState(
 CommandSymbolPresentation CompletionCommandMode::symbolPresentation(
     CompletionCommandKind kind)
 {
+    if (kind == CompletionCommandKind::Package) {
+        CommandSymbolPresentation presentation;
+        presentation.defaultValue = QStringLiteral("import package_name::*;");
+        presentation.typeDescription = QStringLiteral("package imports");
+        return presentation;
+    }
+
     for (const CommandModeCommand& command : commands()) {
         if (command.kind == kind) {
             CommandSymbolPresentation presentation;
@@ -129,6 +136,11 @@ CommandSymbolCompletionItem CompletionCommandMode::symbolCompletionItem(
     if (requestedKind == CompletionCommandKind::Module) {
         item.defaultValue = moduleInstantiationText(symbolName);
         item.description = QStringLiteral("module instantiation");
+        item.text = symbolName;
+        item.uniqueKey = symbolName;
+    } else if (requestedKind == CompletionCommandKind::Package) {
+        item.defaultValue = QStringLiteral("import %1::*;").arg(symbolName);
+        item.description = QStringLiteral("package import");
         item.text = symbolName;
         item.uniqueKey = symbolName;
     } else if (requestedKind == CompletionCommandKind::PackedStructVariable
