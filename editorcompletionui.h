@@ -17,7 +17,6 @@ class QKeyEvent;
 class QModelIndex;
 class QRect;
 class QTimer;
-struct EditorAlternateModeCompletionDisplayState;
 struct EditorCommandModeCompletionRefreshState;
 struct EditorCompletionActivationContext;
 struct EditorCompletionPopupKeyContext;
@@ -58,8 +57,6 @@ public:
         const QString& title) const;
     void updateSymbolCompletions(
         const EditorCompletionState& completionState) const;
-    void updateAlternateModeCompletions(
-        const EditorAlternateModeCompletionDisplayState& displayState) const;
     void setReplacementStart(int blockPosition, int replacementStartColumn);
     QString wordUnderCursor(MyCodeEditor* editor);
     void replaceWordAtCursor(MyCodeEditor* editor, const QString& text) const;

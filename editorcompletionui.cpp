@@ -109,7 +109,6 @@ EditorCompletionUi::activationContextForIndex(
     const CompletionModel::CompletionItem item = model->getItem(index);
     EditorCompletionActivationContext context;
     context.selectable = model->isSelectableIndex(index);
-    context.alternateModeActive = modes.alternateModeActive;
     context.commandModeActive = modes.commandModeActive;
     context.itemText = item.text;
     context.defaultValue = item.defaultValue;
@@ -125,11 +124,9 @@ EditorCompletionPopupKeyContext EditorCompletionUi::popupKeyContextForEvent(
 {
     EditorCompletionPopupKeyContext context;
     context.key = event->key();
-    context.alternateModeActive = modes.alternateModeActive;
     context.commandModeActive = modes.commandModeActive;
     context.currentIndexValid = currentIndex().isValid();
     context.hasRows = hasRows();
-    context.alternateBufferEmpty = modes.alternateBuffer.isEmpty();
     return context;
 }
 
@@ -166,14 +163,6 @@ void EditorCompletionUi::updateSymbolCompletions(
     const EditorCompletionState& completionState) const
 {
     model->updateCompletions(completionState.completion, completionState.prefix);
-}
-
-void EditorCompletionUi::updateAlternateModeCompletions(
-    const EditorAlternateModeCompletionDisplayState& displayState) const
-{
-    model->updateCommandCompletions(
-        displayState.matches,
-        displayState.normalizedInput);
 }
 
 void EditorCompletionUi::setReplacementStart(

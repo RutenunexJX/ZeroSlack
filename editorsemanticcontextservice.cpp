@@ -204,27 +204,6 @@ CommandModeMatch EditorSemanticContextService::commandModeMatch(
     return EditorCompletionQueryHelper::commandModeMatch(context);
 }
 
-EditorAlternateModeCompletionDisplayState
-EditorSemanticContextService::alternateModeCompletionDisplayState(
-    const QString& input) const
-{
-    return EditorCompletionQueryHelper::alternateModeCompletionDisplayState(
-        input);
-}
-
-EditorAlternateModeKeyState EditorSemanticContextService::alternateModeKeyState(
-    const EditorAlternateModeKeyContext& context) const
-{
-    return EditorCompletionQueryHelper::alternateModeKeyState(context);
-}
-
-AlternateCommandCompletionState
-EditorSemanticContextService::alternateCommandCompletionState(
-    const QString& input) const
-{
-    return EditorCompletionQueryHelper::alternateCommandCompletionState(input);
-}
-
 EditorCompletionQuery EditorSemanticContextService::editorCompletionQuery(
     const EditorSemanticContext& context) const
 {

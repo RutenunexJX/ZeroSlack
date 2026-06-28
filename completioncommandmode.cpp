@@ -193,10 +193,6 @@ CompletionActivationState CompletionCommandMode::activationState(
         return state;
 
     switch (query.mode) {
-    case CompletionActivationMode::AlternateMode:
-        state.action = CompletionActivationAction::ExecuteAlternateCommand;
-        state.text = query.itemText;
-        return state;
     case CompletionActivationMode::CommandMode:
         state.action = CompletionActivationAction::ReplaceCommandInput;
         state.text = query.defaultValue.isEmpty()
@@ -230,39 +226,24 @@ CompletionPopupKeyState CompletionCommandMode::popupKeyState(
         state.action = CompletionPopupKeyAction::ForwardToPopup;
         return state;
     case Qt::Key_Escape:
-        if (query.mode == CompletionActivationMode::AlternateMode) {
-            state.action = CompletionPopupKeyAction::HidePopupAndClearAlternate;
-        } else if (query.mode == CompletionActivationMode::CommandMode) {
+        if (query.mode == CompletionActivationMode::CommandMode) {
             state.action = CompletionPopupKeyAction::HidePopupAndClearCommand;
         } else {
             state.action = CompletionPopupKeyAction::HidePopup;
         }
         return state;
     case Qt::Key_Backspace:
-        if (query.mode == CompletionActivationMode::AlternateMode) {
-            state.action = query.alternateBufferEmpty
-                ? CompletionPopupKeyAction::HidePopup
-                : CompletionPopupKeyAction::BackspaceAlternateInput;
-        }
         return state;
     case Qt::Key_Return:
     case Qt::Key_Enter:
-        if (query.mode == CompletionActivationMode::AlternateMode) {
-            state.action = query.currentIndexValid
-                ? CompletionPopupKeyAction::ActivateCurrent
-                : CompletionPopupKeyAction::Consume;
-        } else {
-            state.action = query.hasRows
-                ? CompletionPopupKeyAction::ActivateCurrentOrFirstSelectable
-                : CompletionPopupKeyAction::Consume;
-        }
+        state.action = query.hasRows
+            ? CompletionPopupKeyAction::ActivateCurrentOrFirstSelectable
+            : CompletionPopupKeyAction::Consume;
         return state;
     case Qt::Key_Tab:
-        if (query.mode != CompletionActivationMode::AlternateMode) {
-            state.action = query.hasRows
-                ? CompletionPopupKeyAction::ActivateCurrentOrFirstSelectable
-                : CompletionPopupKeyAction::Consume;
-        }
+        state.action = query.hasRows
+            ? CompletionPopupKeyAction::ActivateCurrentOrFirstSelectable
+            : CompletionPopupKeyAction::Consume;
         return state;
     default:
         return state;

@@ -64,7 +64,6 @@ set(ZEROSLACK_CORE_SOURCES
     mainwindow.cpp
     moduleblockdiagramservice.cpp
     modulebriefservice.cpp
-    alternatecommandservice.cpp
     completioncommandmode.cpp
     completioncontexthelper.cpp
     completioncontextquery.cpp
@@ -123,7 +122,6 @@ set(ZEROSLACK_CORE_SOURCES
     editorsourcehover.cpp
     editorsyntaxstate.cpp
     editormodestate.cpp
-    filecommandcoordinatoralternate.cpp
     filecommandcoordinator.cpp
     foldblockshelfmodel.cpp
     foldblockshelfpanel.cpp
@@ -261,7 +259,6 @@ set(ZEROSLACK_CORE_SOURCES
     mainwindow.h
     moduleblockdiagramservice.h
     modulebriefservice.h
-    alternatecommandservice.h
     completioncommandmode.h
     completioncommandkindadapter.h
     completionmanager.h

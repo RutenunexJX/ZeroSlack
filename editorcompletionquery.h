@@ -30,12 +30,6 @@ public:
         const EditorSemanticContext& context);
     static CommandModeMatch commandModeMatch(
         const EditorSemanticContext& context);
-    static EditorAlternateModeCompletionDisplayState
-        alternateModeCompletionDisplayState(const QString& input);
-    static EditorAlternateModeKeyState alternateModeKeyState(
-        const EditorAlternateModeKeyContext& context);
-    static AlternateCommandCompletionState alternateCommandCompletionState(
-        const QString& input);
     static EditorCompletionQuery editorCompletionQuery(
         const EditorSemanticContext& context);
     static EditorCompletionState editorCompletionState(

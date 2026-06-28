@@ -57,7 +57,6 @@
 #include "analysisprogresscoordinator.h"
 #include "analysisscheduler.h"
 #include "activitylogservice.h"
-#include "alternatecommandservice.h"
 #include "documentmodel.h"
 #include "definitionpreviewservice.h"
 #include "editorappearance.h"
@@ -4069,77 +4068,6 @@ static void runReferenceDockRegression(MainWindow& window, const QString& fixtur
                lastSourceActionContext.lineText.contains(QStringLiteral("target_ref"))
                    && lastSourceActionContext.fileName == fixturePath
                    && lastSourceActionContext.moduleName == QStringLiteral("ref_top"),
-               true);
-
-    QString emittedAlternateCommand;
-    QObject::connect(&shortcutEditor,
-                     &MyCodeEditor::alternateCommandRequested,
-                     &shortcutEditor,
-                     [&](const QString& command) {
-                         emittedAlternateCommand = command;
-                     });
-    shortcutEditor.executeAlternateModeCommand(QStringLiteral("save"));
-    expectBool("alternate command emits command request",
-               emittedAlternateCommand == QStringLiteral("save"),
-               true);
-
-    shortcutEditor.clear();
-    FileCommandCoordinator editorCommandCoordinator(nullptr, nullptr);
-    editorCommandCoordinator.executeAlternateCommandText(
-        &shortcutEditor, QStringLiteral("comment"));
-    expectBool("file coordinator executes command text",
-               shortcutEditor.toPlainText() == QStringLiteral("// "),
-               true);
-
-    editorCommandCoordinator.executeAlternateCommandText(
-        &shortcutEditor, QStringLiteral("uncomment"));
-    expectBool("file coordinator executes uncomment command text",
-               shortcutEditor.toPlainText().isEmpty(),
-               true);
-
-    shortcutEditor.clear();
-    editorCommandCoordinator.executeAlternateCommand(&shortcutEditor,
-                                                    AlternateCommandAction::Comment);
-    expectBool("file coordinator executes editor command",
-               shortcutEditor.toPlainText() == QStringLiteral("// "),
-               true);
-
-    editorCommandCoordinator.executeAlternateCommand(
-        &shortcutEditor,
-        AlternateCommandAction::Uncomment);
-    expectBool("file coordinator executes uncomment editor command",
-               shortcutEditor.toPlainText().isEmpty(),
-               true);
-
-    shortcutEditor.setPlainText(QStringLiteral("logic a;\n"));
-    editorCommandCoordinator.executeAlternateCommandText(
-        &shortcutEditor, QStringLiteral("indent"));
-    expectBool("file coordinator executes indent command text",
-               shortcutEditor.toPlainText()
-                   == QStringLiteral("    logic a;\n"),
-               true);
-
-    editorCommandCoordinator.executeAlternateCommandText(
-        &shortcutEditor, QStringLiteral("unindent"));
-    expectBool("file coordinator executes unindent command text",
-               shortcutEditor.toPlainText()
-                   == QStringLiteral("logic a;\n"),
-               true);
-
-    editorCommandCoordinator.executeAlternateCommand(
-        &shortcutEditor,
-        AlternateCommandAction::Indent);
-    expectBool("file coordinator executes indent editor command",
-               shortcutEditor.toPlainText()
-                   == QStringLiteral("    logic a;\n"),
-               true);
-
-    editorCommandCoordinator.executeAlternateCommand(
-        &shortcutEditor,
-        AlternateCommandAction::Unindent);
-    expectBool("file coordinator executes unindent editor command",
-               shortcutEditor.toPlainText()
-                   == QStringLiteral("logic a;\n"),
                true);
 
     semanticPanelRefresh(window)->showRelationshipsForSymbol(QStringLiteral("target_ref"),

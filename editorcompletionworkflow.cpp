@@ -192,38 +192,6 @@ void EditorCompletionWorkflow::showAutoComplete(bool selectFirstCompletion)
         selectFirstCompletion || modes->commandModeActive);
 }
 
-void EditorCompletionWorkflow::applyAlternateModeCompletionDisplayState(
-    const EditorAlternateModeCompletionDisplayState& displayState)
-{
-    if (!displayState.updateCompletions)
-        return;
-
-    modes->setAlternateBuffer(displayState.normalizedInput);
-    completion->updateAlternateModeCompletions(displayState);
-
-    if (displayState.showPopup)
-        showAutoComplete();
-}
-
-void EditorCompletionWorkflow::processAlternateModeInput(const QString& input)
-{
-    if (!modes->alternateModeActive)
-        return;
-
-    const EditorAlternateModeCompletionDisplayState completionState =
-        semanticService()->alternateModeCompletionDisplayState(input);
-    applyAlternateModeCompletionDisplayState(completionState);
-}
-
-void EditorCompletionWorkflow::executeAlternateModeCommand(
-    const QString& command)
-{
-    if (!command.trimmed().isEmpty())
-        emit editor->alternateCommandRequested(command);
-    modes->clearAlternateBuffer();
-    hideAutoComplete();
-}
-
 void EditorCompletionWorkflow::executeEditorActionCommand(const QString& command)
 {
     clearCommandInputAtCursor();
@@ -263,11 +231,6 @@ void EditorCompletionWorkflow::applyCompletionActivationState(
 
     QTextCursor cursor = editor->textCursor();
 
-    if (activationState.action
-        == CompletionActivationAction::ExecuteAlternateCommand) {
-        executeAlternateModeCommand(activationState.text);
-        return;
-    }
     if (activationState.action
         == CompletionActivationAction::ExecuteEditorAction) {
         executeEditorActionCommand(activationState.text);
@@ -476,11 +439,6 @@ void EditorCompletionWorkflow::handleAutoCompleteTimer()
 
     if (refreshCommandModeCompletion(context))
         return;
-
-    if (modes->alternateModeActive) {
-        processAlternateModeInput(context.lineUpToCursor);
-        return;
-    }
 
     refreshSymbolCompletion(context, currentBlock);
 }

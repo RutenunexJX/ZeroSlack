@@ -1,7 +1,6 @@
 #ifndef EDITORSEMANTICCONTEXTSERVICE_H
 #define EDITORSEMANTICCONTEXTSERVICE_H
 
-#include "alternatecommandservice.h"
 #include "completionservice.h"
 #include "definitionnavigationservice.h"
 #include "sourcenavigationservice.h"
@@ -27,7 +26,6 @@ struct EditorSemanticContext {
 
 struct EditorCompletionActivationContext {
     bool selectable = false;
-    bool alternateModeActive = false;
     bool commandModeActive = false;
     QString itemText;
     QString defaultValue;
@@ -38,11 +36,9 @@ struct EditorCompletionActivationContext {
 
 struct EditorCompletionPopupKeyContext {
     int key = 0;
-    bool alternateModeActive = false;
     bool commandModeActive = false;
     bool currentIndexValid = false;
     bool hasRows = false;
-    bool alternateBufferEmpty = true;
 };
 
 struct EditorCompletionTextChangeState {
@@ -65,37 +61,6 @@ struct EditorCommandModeCompletionRefreshState {
     bool hidePopup = false;
     bool showCompletions = false;
     CommandModeCompletionState completion;
-};
-
-struct EditorAlternateModeKeyContext {
-    int key = 0;
-    QString text;
-    QString buffer;
-};
-
-struct EditorAlternateModeCompletionDisplayState {
-    bool updateCompletions = false;
-    bool showPopup = false;
-    QString normalizedInput;
-    QStringList matches;
-};
-
-enum class EditorAlternateModeKeyAction {
-    Consume,
-    UpdateInput,
-    RefreshCompletions,
-    ExecuteCommand,
-    ClearAndHide
-};
-
-struct EditorAlternateModeKeyState {
-    EditorAlternateModeKeyAction action =
-        EditorAlternateModeKeyAction::Consume;
-    QString nextInput;
-    QString command;
-    bool hidePopup = false;
-    bool clearBuffer = false;
-    EditorAlternateModeCompletionDisplayState completion;
 };
 
 struct EditorSourceNavigationTarget {
@@ -220,12 +185,6 @@ public:
         const EditorSemanticContext& context) const;
     CommandModeMatch commandModeMatch(
         const EditorSemanticContext& context) const;
-    EditorAlternateModeCompletionDisplayState
-        alternateModeCompletionDisplayState(const QString& input) const;
-    EditorAlternateModeKeyState alternateModeKeyState(
-        const EditorAlternateModeKeyContext& context) const;
-    AlternateCommandCompletionState alternateCommandCompletionState(
-        const QString& input) const;
     EditorCompletionQuery editorCompletionQuery(
         const EditorSemanticContext& context) const;
     EditorCompletionState editorCompletionState(

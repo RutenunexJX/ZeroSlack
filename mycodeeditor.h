@@ -86,7 +86,6 @@ public:
     EditorBlockGeometry blockGeometry(int blockNumber) const;
     qreal documentHeightPx() const;
     void refreshScopeAndCurrentLineHighlight();
-    void setAlternateModeEnabled(bool enabled);
     void setIncludeFileCompletionProvider(
         std::function<QStringList(const QString& currentFile)> provider);
     void setIncludeNewHeaderCreator(
@@ -109,7 +108,6 @@ public:
     void enterComMode(const QString& message = QString());
     void exitComMode();
     void showComModeMessage(const QString& message);
-    void executeAlternateModeCommand(const QString& command);
     void startTemplateSlotMode(int insertionStart,
                                int insertedLength,
                                const CodeTemplateSlotList& slotMetadata);
@@ -193,7 +191,6 @@ private:
 
 signals:
     void fileNameChanged(const QString& fileName);
-    void alternateCommandRequested(const QString& command);
     void sourceNavigationRequested(const EditorSourceNavigationTarget& target,
                                    const EditorSemanticContext& context);
     void sourceSymbolActionRequested(SourceSymbolAction action,

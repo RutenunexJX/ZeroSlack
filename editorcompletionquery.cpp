@@ -4,11 +4,8 @@
 
 namespace {
 CompletionActivationMode completionModeForEditorState(
-    bool alternateModeActive,
     bool commandModeActive)
 {
-    if (alternateModeActive)
-        return CompletionActivationMode::AlternateMode;
     if (commandModeActive)
         return CompletionActivationMode::CommandMode;
     return CompletionActivationMode::EditorWord;
@@ -136,70 +133,6 @@ CommandModeMatch EditorCompletionQueryHelper::commandModeMatch(
         context.lineUpToCursor);
 }
 
-EditorAlternateModeCompletionDisplayState
-EditorCompletionQueryHelper::alternateModeCompletionDisplayState(
-    const QString& input)
-{
-    const AlternateCommandCompletionState completion =
-        alternateCommandCompletionState(input);
-
-    EditorAlternateModeCompletionDisplayState state;
-    state.updateCompletions = true;
-    state.showPopup = completion.showCompletions;
-    state.normalizedInput = completion.normalizedInput;
-    state.matches = completion.matches;
-    return state;
-}
-
-EditorAlternateModeKeyState EditorCompletionQueryHelper::alternateModeKeyState(
-    const EditorAlternateModeKeyContext& context)
-{
-    EditorAlternateModeKeyState state;
-
-    if (context.key == Qt::Key_Backspace) {
-        if (context.buffer.isEmpty()) {
-            state.action = EditorAlternateModeKeyAction::RefreshCompletions;
-            state.nextInput = QString();
-        } else {
-            state.action = EditorAlternateModeKeyAction::UpdateInput;
-            state.nextInput = context.buffer.left(context.buffer.size() - 1);
-        }
-        state.completion = alternateModeCompletionDisplayState(state.nextInput);
-        return state;
-    }
-
-    if (context.key == Qt::Key_Escape) {
-        state.action = EditorAlternateModeKeyAction::ClearAndHide;
-        state.hidePopup = true;
-        state.clearBuffer = true;
-        return state;
-    }
-
-    if (context.key == Qt::Key_Return || context.key == Qt::Key_Enter) {
-        if (!context.buffer.isEmpty()) {
-            state.action = EditorAlternateModeKeyAction::ExecuteCommand;
-            state.command = context.buffer;
-        }
-        return state;
-    }
-
-    if (!context.text.isEmpty() && context.text.at(0).isPrint()) {
-        state.action = EditorAlternateModeKeyAction::UpdateInput;
-        state.nextInput = context.buffer + context.text;
-        state.completion = alternateModeCompletionDisplayState(state.nextInput);
-        return state;
-    }
-
-    return state;
-}
-
-AlternateCommandCompletionState
-EditorCompletionQueryHelper::alternateCommandCompletionState(
-    const QString& input)
-{
-    return AlternateCommandService::getInstance()->completionState(input);
-}
-
 EditorCompletionQuery EditorCompletionQueryHelper::editorCompletionQuery(
     const EditorSemanticContext& context)
 {
@@ -226,7 +159,6 @@ CompletionActivationState EditorCompletionQueryHelper::completionActivationState
     CompletionActivationQuery query;
     query.selectable = context.selectable;
     query.mode = completionModeForEditorState(
-        context.alternateModeActive,
         context.commandModeActive);
     query.itemText = context.itemText;
     query.defaultValue = context.defaultValue;
@@ -248,11 +180,9 @@ CompletionPopupKeyState EditorCompletionQueryHelper::completionPopupKeyState(
     CompletionPopupKeyQuery query;
     query.key = context.key;
     query.mode = completionModeForEditorState(
-        context.alternateModeActive,
         context.commandModeActive);
     query.currentIndexValid = context.currentIndexValid;
     query.hasRows = context.hasRows;
-    query.alternateBufferEmpty = context.alternateBufferEmpty;
     return completionPopupKeyState(query);
 }
 

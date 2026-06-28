@@ -54,9 +54,11 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
   post-template editor-local fill flow; it is active for `;;p` / `;;lp`
   parameter templates and `;;l` / `;;w` / `;;r` signal declaration templates,
   and not yet active for other template families.
-- Batch RTL editing has a first editor-local action: alternate command
-  `clear_rhs` clears RHS expressions in the current selection for supported
-  assignment statements, then starts Slot Mode on the cleared RHS fill points.
+- Batch RTL editing has a first editor-local action:
+  `MyCodeEditor::clearSelectedAssignmentRhs` clears RHS expressions in the
+  current selection for supported assignment statements, then starts Slot Mode
+  on the cleared RHS fill points. The obsolete named-action entry layer has
+  been removed.
 - Fold Region and Fold Shelf are available through Global Control. Fold Shelf
   now has a service/model-owned persistence baseline and explicit cross-file
   restore flow plus basic rename, search, and stale/consumed cleanup
@@ -85,13 +87,12 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
 - Formatter support exists as conservative editor formatting. Current daily
   editor action inventory: `Ctrl+F` opens Find; formatter document/selection
   actions live in the editor context menu; line comment actions are available
-  through `Ctrl+/`, `Ctrl+Shift+/`, editor context-menu actions, and alternate
-  commands `comment` / `uncomment`; line indent actions are available through
-  `Ctrl+]`, `Ctrl+[`, editor context-menu actions, and alternate commands
-  `indent` / `unindent`; replace is available through `Ctrl+H`, editor
-  context-menu action, and alternate command `replace`; goto line is available
-  through `Ctrl+G`, editor context-menu action, and alternate command
-  `goto_line`. The first-pass daily editor operation entry points are complete.
+  through `Ctrl+/`, `Ctrl+Shift+/`, and editor context-menu actions; line
+  indent actions are available through `Ctrl+]`, `Ctrl+[`, and editor
+  context-menu actions; replace is available through `Ctrl+H` and editor
+  context-menu action; goto line is available through `Ctrl+G` and editor
+  context-menu action. The first-pass daily editor operation entry points are
+  complete.
 
 ## Huge Workspace Status
 
@@ -288,11 +289,10 @@ Current command surfaces are intentionally separate:
   `QSettings`, resolves them to existing `;cmd` semantic command tokens or
   `;;cmd` template command tokens, exposes prefix and intent-scoped exact
   queries, and does not own UI rendering or semantic lookup policy.
-- Alternate commands such as `replace`, `goto_line`, `comment`, `uncomment`,
-  `indent`, `unindent`, and `clear_rhs` are named editor/app actions owned by
-  `AlternateCommandService`. `EditorCompletionWorkflow` may emit an alternate
-  command request, and `FileCommandCoordinator` maps known actions to the
-  existing editor or file APIs.
+- The obsolete named-action layer has been removed. Editor actions stay
+  available through normal shortcuts, context menus, COM Mode where explicitly
+  registered, or direct editor APIs; no legacy alternate-action service or
+  dispatcher remains.
 - COM Mode is editor-local and registry-backed. `commodecommandregistry` owns
   command metadata and conflict validation; `ComModeService` owns picker/query
   reports; `ComModeCoordinator` owns mode state, strip text, picker UI, and
@@ -416,9 +416,10 @@ assignment statements and producing fill slots for the future Slot Mode flow.
   statement, declaration initializer, control-flow statement, macro statement,
   ambiguous top-level assignment, unmatched delimiter, unterminated string, or
   unterminated comment.
-- Editor command wiring is available through `MyCodeEditor` and alternate
-  command `clear_rhs`. The command applies the report in one undoable edit
-  block and preserves failure reasons in editor status feedback.
+- Editor command wiring is available through
+  `MyCodeEditor::clearSelectedAssignmentRhs`. The action applies the report in
+  one undoable edit block and preserves failure reasons in editor status
+  feedback.
 - Slot Mode entry is active for this report. The first RHS slot is selected
   after replacement; Tab/Shift+Tab/final Tab/Esc reuse the existing Slot Mode
   state.

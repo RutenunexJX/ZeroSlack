@@ -20,11 +20,6 @@ ModeManager::~ModeManager()
 {
 }
 
-void ModeManager::ModeState::toggle()
-{
-    currentMode = isNormal() ? AlternateMode : NormalMode;
-}
-
 bool ModeManager::ModeState::set(AppMode mode)
 {
     if (currentMode == mode)
@@ -39,11 +34,6 @@ bool ModeManager::ModeState::isNormal() const
     return currentMode == NormalMode;
 }
 
-bool ModeManager::ModeState::isAlternate() const
-{
-    return currentMode == AlternateMode;
-}
-
 void ModeManager::ShortcutSets::setup(ModeManager* owner, QWidget* parent)
 {
     if (!parent)
@@ -55,24 +45,10 @@ void ModeManager::ShortcutSets::setup(ModeManager* owner, QWidget* parent)
         QKeySequence("Ctrl+2"), parent);
     normalModeShortcuts[2] = std::make_unique<QShortcut>(
         QKeySequence("Ctrl+3"), parent);
-    alternateModeShortcuts[0] = std::make_unique<QShortcut>(
-        QKeySequence("Ctrl+7"), parent);
-    alternateModeShortcuts[1] = std::make_unique<QShortcut>(
-        QKeySequence("Alt+O"), parent);
-    alternateModeShortcuts[2] = std::make_unique<QShortcut>(
-        QKeySequence("Alt+S"), parent);
-
     connect(normalModeShortcuts[0].get(), &QShortcut::activated,
             owner, [owner]() {
                 emit owner->navigationToggleRequested();
             });
-
-    connect(alternateModeShortcuts[0].get(), &QShortcut::activated, owner, []() {
-    });
-    connect(alternateModeShortcuts[1].get(), &QShortcut::activated, owner, []() {
-    });
-    connect(alternateModeShortcuts[2].get(), &QShortcut::activated, owner, []() {
-    });
 }
 
 void ModeManager::ShortcutSets::updateForMode(const ModeState& modeState)
@@ -80,11 +56,6 @@ void ModeManager::ShortcutSets::updateForMode(const ModeState& modeState)
     for (auto& shortcut : normalModeShortcuts) {
         if (shortcut)
             shortcut->setEnabled(modeState.isNormal());
-    }
-
-    for (auto& shortcut : alternateModeShortcuts) {
-        if (shortcut)
-            shortcut->setEnabled(modeState.isAlternate());
     }
 }
 
@@ -95,7 +66,6 @@ ModeManager::AppMode ModeManager::getCurrentMode() const
 
 void ModeManager::switchMode()
 {
-    modeState.toggle();
     applyModeStyles();
     updateShortcutStates();
 

@@ -1,10 +1,5 @@
 #include "editormodestate.h"
 
-void EditorModeState::setAlternateModeEnabled(bool enabled)
-{
-    alternateModeActive = enabled;
-}
-
 void EditorModeState::setCommandModeActive(bool active)
 {
     commandModeActive = active;
@@ -32,21 +27,6 @@ void EditorModeState::resetCommandModeExit()
 void EditorModeState::clearCommandMode()
 {
     commandModeActive = false;
-}
-
-void EditorModeState::setAlternateBuffer(const QString& input)
-{
-    alternateBuffer = input;
-}
-
-QString EditorModeState::alternateBufferWithoutLastChar() const
-{
-    return alternateBuffer.left(alternateBuffer.size() - 1);
-}
-
-void EditorModeState::clearAlternateBuffer()
-{
-    alternateBuffer.clear();
 }
 
 void EditorModeState::setComModeActive(bool active)

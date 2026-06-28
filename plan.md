@@ -69,19 +69,19 @@ First milestones:
 
 - M1.1 inventory existing actions and shortcuts, document gaps, no behavior
   change
-  (complete: baseline captured for find, formatter, alternate commands, and
-  missing daily action entry points)
+  (complete: baseline captured for find, formatter, shortcut/context-menu
+  entries, and missing daily action entry points)
 - M1.2 add reliable entry points for one action family, with focused editor
   tests
   (complete: comment/uncomment are available through `Ctrl+/`,
-  `Ctrl+Shift+/`, editor context-menu actions, and alternate commands)
+  `Ctrl+Shift+/`, and editor context-menu actions)
 - M1.3 repeat per action family until all listed actions have usable entries
   (complete: indent/unindent are available through `Ctrl+]`, `Ctrl+[`, editor
-  context-menu actions, and alternate commands)
+  context-menu actions)
 - M1.4 add reliable replace and goto line entry points, with focused editor
   tests
-  (complete: replace uses `Ctrl+H`, context menu, and `replace`; goto line uses
-  `Ctrl+G`, context menu, and `goto_line`)
+  (complete: replace uses `Ctrl+H` and context menu; goto line uses `Ctrl+G`
+  and context menu)
 
 ### 2. Slot Mode After Template Insertion
 
@@ -159,8 +159,8 @@ First milestones:
   (complete: `RtlBatchEditService` plans selected-text RHS clearing without
   mutating editor text)
 - M3.2 editor command for clear-RHS on selected assignments
-  (complete: alternate command `clear_rhs` applies the report in one undoable
-  edit block)
+  (complete: `MyCodeEditor::clearSelectedAssignmentRhs` applies the report in
+  one undoable edit block)
 - M3.3 connect result to slot mode
   (complete: successful clear-RHS reports start Slot Mode on `rhsN` fill slots)
 
@@ -193,17 +193,17 @@ M3.2 implementation status:
   replacement range remains selected.
 - Complete: validation failures are surfaced through editor status feedback
   without mutating text.
-- Complete: alternate command `clear_rhs` is registered and dispatched through
-  the existing alternate-command path.
+- Complete: `MyCodeEditor::clearSelectedAssignmentRhs` exposes the editor-local
+  action without the obsolete named-action layer.
 - Not done in M3.2: Slot Mode entry after replacement. That stays in M3.3.
-- Verification: Release `completion_test` covers alternate command mapping,
-  selection application, undo restore, and declaration rejection; Release
-  `completion_test` and `gui_smoke_test` targets compile/link.
+- Verification: Release `completion_test` covers selection application, undo
+  restore, and declaration rejection; Release `completion_test` and
+  `gui_smoke_test` targets compile/link.
 
 M3.3 implementation status:
 
-- Complete: successful `clear_rhs` execution starts Slot Mode using the
-  `RtlClearAssignmentRhsReport` template-slot metadata.
+- Complete: successful clear-RHS editor-action execution starts Slot Mode using
+  the `RtlClearAssignmentRhsReport` template-slot metadata.
 - Complete: the text replacement itself remains one undoable edit block.
 - Complete: G3.2 failure behavior is unchanged: unsupported selections do not
   mutate text and surface service-owned failure reasons.
@@ -327,8 +327,8 @@ Allowed scope:
 First milestones:
 
 - M6.1 document current command/template responsibilities
-  (complete: `;cmd`, `;;cmd`, alternate commands, COM Mode, and Global Control
-  ownership and conflict boundaries are documented)
+  (complete: `;cmd`, `;;cmd`, COM Mode, Global Control, and removed
+  named-action ownership/conflict boundaries are documented)
 - M6.2 add user-template storage/query model
   (complete: `UserTemplateService` persists and queries validated user template
   records as `CodeTemplateItem`-compatible data)
@@ -347,9 +347,9 @@ M6.1 audit status:
 - Complete: `;;cmd` is documented as inline template expansion owned by
   `CodeTemplateService`, with `EditorCompletionWorkflow` applying insertion and
   starting Slot Mode when template slot metadata exists.
-- Complete: alternate commands are documented as daily editor/app action names
-  owned by `AlternateCommandService` and dispatched by `FileCommandCoordinator`
-  or existing editor/file APIs.
+- Complete: the obsolete named-action layer is documented as removed;
+  daily editor/app actions are owned by their normal shortcuts, context menus,
+  COM Mode registrations, or direct editor/file APIs.
 - Complete: COM Mode and Global Control are documented as separate command
   surfaces with separate registries/services/coordinators.
 - Complete: conflict boundaries are documented: do not revive `;:cmd`, keep

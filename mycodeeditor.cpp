@@ -330,11 +330,6 @@ void MyCodeEditor::refreshScopeAndCurrentLineHighlight()
     state->refreshScopeAndCurrentLineHighlight(this);
 }
 
-void MyCodeEditor::setAlternateModeEnabled(bool enabled)
-{
-    state->setAlternateModeEnabled(enabled);
-}
-
 void MyCodeEditor::setIncludeFileCompletionProvider(
     std::function<QStringList(const QString& currentFile)> provider)
 {
@@ -747,11 +742,6 @@ void MyCodeEditor::keyPressEvent(QKeyEvent *event)
         return;
 
     QPlainTextEdit::keyPressEvent(event);
-}
-
-void MyCodeEditor::executeAlternateModeCommand(const QString& command)
-{
-    state->executeAlternateModeCommand(command);
 }
 
 void MyCodeEditor::startFoldRegionMarkMode()

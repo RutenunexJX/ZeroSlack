@@ -17,8 +17,7 @@ class ModeManager : public QObject
 
 public:
     enum AppMode {
-        NormalMode,
-        AlternateMode
+        NormalMode
     };
 
     explicit ModeManager(QTabWidget* tabWidget, QObject *parent = nullptr);
@@ -42,15 +41,12 @@ private:
     struct ModeState {
         AppMode currentMode = NormalMode;
 
-        void toggle();
         bool set(AppMode mode);
         bool isNormal() const;
-        bool isAlternate() const;
     };
 
     struct ShortcutSets {
         std::array<std::unique_ptr<QShortcut>, 10> normalModeShortcuts;
-        std::array<std::unique_ptr<QShortcut>, 10> alternateModeShortcuts;
 
         void setup(ModeManager* owner, QWidget* parent);
         void updateForMode(const ModeState& modeState);

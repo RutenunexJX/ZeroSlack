@@ -3032,11 +3032,6 @@ bool MyCodeEditorState::handleKeyPress(MyCodeEditor* editor, QKeyEvent* event)
     if (handleBracketPairInsertion(editor, event))
         return true;
 
-    if (modes.alternateModeActive) {
-        completionWorkflow.handleAlternateModeKey(event);
-        return true;
-    }
-
     return completionWorkflow.handleCompletionPopupKey(event);
 }
 
@@ -3045,7 +3040,8 @@ bool MyCodeEditorState::handleKeyRelease(
     QKeyEvent* event)
 {
     handleControlKeyRelease(editor, event);
-    return event->key() != Qt::Key_Shift && modes.alternateModeActive;
+    Q_UNUSED(event)
+    return false;
 }
 
 bool MyCodeEditorState::handleDragEnter(
@@ -3342,11 +3338,6 @@ void MyCodeEditorState::refreshScopeAndCurrentLineHighlight(
     selections.highlightCurrentLine(editor);
 }
 
-void MyCodeEditorState::setAlternateModeEnabled(bool enabled)
-{
-    modes.setAlternateModeEnabled(enabled);
-}
-
 void MyCodeEditorState::setIncludeFileProvider(
     EditorCompletionWorkflow::IncludeFileProvider provider)
 {
@@ -3357,11 +3348,6 @@ void MyCodeEditorState::setIncludeNewHeaderCreator(
     EditorCompletionWorkflow::IncludeNewHeaderCreator creator)
 {
     completionWorkflow.setIncludeNewHeaderCreator(std::move(creator));
-}
-
-void MyCodeEditorState::executeAlternateModeCommand(const QString& command)
-{
-    completionWorkflow.executeAlternateModeCommand(command);
 }
 
 void MyCodeEditorState::executeEditorActionCommand(

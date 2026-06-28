@@ -99,8 +99,7 @@ struct CompletionTriggerState {
 
 enum class CompletionActivationMode {
     EditorWord,
-    CommandMode,
-    AlternateMode
+    CommandMode
 };
 
 enum class CompletionActivationAction {
@@ -108,7 +107,6 @@ enum class CompletionActivationAction {
     ReplaceWord,
     ReplaceLine,
     ReplaceCommandInput,
-    ExecuteAlternateCommand,
     ExecuteEditorAction
 };
 
@@ -147,9 +145,7 @@ enum class CompletionPopupKeyAction {
     ActivateCurrent,
     ActivateCurrentOrFirstSelectable,
     HidePopup,
-    HidePopupAndClearCommand,
-    HidePopupAndClearAlternate,
-    BackspaceAlternateInput
+    HidePopupAndClearCommand
 };
 
 struct CompletionPopupKeyQuery {
@@ -157,7 +153,6 @@ struct CompletionPopupKeyQuery {
     CompletionActivationMode mode = CompletionActivationMode::EditorWord;
     bool currentIndexValid = false;
     bool hasRows = false;
-    bool alternateBufferEmpty = true;
 };
 
 struct CompletionPopupKeyState {

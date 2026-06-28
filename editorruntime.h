@@ -140,8 +140,6 @@ struct MyCodeEditorState
     void handleLeaveEvent(MyCodeEditor* editor);
 
     void refreshScopeAndCurrentLineHighlight(MyCodeEditor* editor);
-    void setAlternateModeEnabled(bool enabled);
-    void executeAlternateModeCommand(const QString& command);
     void setIncludeFileProvider(
         EditorCompletionWorkflow::IncludeFileProvider provider);
     void setIncludeNewHeaderCreator(

@@ -28,12 +28,19 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
 
 ## Current Goal State
 
-Current milestone: none after HWA.3.
+Current milestone: none after the scoped named-action cleanup.
 
 Next work should wait for the next explicit scoped request.
 
 Status:
 
+- Scoped named-action cleanup is complete: the obsolete named-action service,
+  editor mode path, shortcut hooks, dispatcher path, tests, and user-facing
+  docs were removed while preserving normal editor shortcuts, context menus,
+  COM Mode, `;cmd`, and `;;cmd` boundaries.
+- Focused verification for the cleanup: Release `completion_test` and
+  `relationship_test` passed through `ctest`; Release `gui_smoke_test` target
+  compiled and linked without launching the executable.
 - G0 Documentation And Goal Reset is complete and pushed in commit `bc2c059`.
 - G4.1 Registry Metadata For Existing COM Commands is complete:
   `commodecommandregistry` now owns metadata for fixed executable commands,
@@ -52,26 +59,25 @@ Status:
 - Focused verification for G4.3: Release `gui_smoke_test` target compile/link
   passed without launching the executable.
 - G1.1 Editor Daily Action Inventory is complete: the baseline captured
-  `Ctrl+F` Find, formatter context-menu actions, alternate command metadata,
-  and the missing daily action entry points.
+  `Ctrl+F` Find, formatter context-menu actions, shortcut/context-menu
+  metadata, and the missing daily action entry points.
 - G1.2 Comment And Uncomment Entry Points is complete:
   active-line and selected-line line comments are available through `Ctrl+/`,
-  `Ctrl+Shift+/`, editor context-menu actions, and alternate commands
-  `comment` / `uncomment`, without reviving active `;:` commands.
+  `Ctrl+Shift+/`, and editor context-menu actions, without reviving active
+  `;:` commands.
 - Focused verification for G1.2: Release `gui_smoke_test` target compile/link
   passed without launching the executable.
 - G1.3 Indent And Unindent Entry Points is complete:
   active-line and selected-line indentation is available through `Ctrl+]`,
-  `Ctrl+[`, editor context-menu actions, and alternate commands `indent` /
-  `unindent`, without reviving active `;:` commands.
+  `Ctrl+[`, and editor context-menu actions, without reviving active `;:`
+  commands.
 - Focused verification for G1.3: Release `gui_smoke_test` target compile/link
   passed without launching the executable.
 - G1.4 Replace And Goto Line Entry Points is complete:
-  replace is available through `Ctrl+H`, editor context-menu action, and
-  alternate command `replace`; goto line is available through `Ctrl+G`, editor
-  context-menu action, and alternate command `goto_line`; non-dialog editor API
-  coverage checks valid/invalid goto line, replace-next, selected replacement,
-  replace-all, and replace-all undo behavior.
+  replace is available through `Ctrl+H` and editor context-menu action; goto
+  line is available through `Ctrl+G` and editor context-menu action;
+  non-dialog editor API coverage checks valid/invalid goto line, replace-next,
+  selected replacement, replace-all, and replace-all undo behavior.
 - Focused verification for G1.4: Release `gui_smoke_test` target compile/link
   passed without launching the executable.
 - G2.1 Slot Mode Model And Editor State is complete: Slot Mode ownership is
@@ -112,11 +118,10 @@ Status:
 - G3.2 Clear-RHS Editor Command is complete:
   `MyCodeEditor::clearSelectedAssignmentRhs` routes selected text through
   `RtlBatchEditService`, applies successful reports in one undoable edit block,
-  leaves the replacement range selected, and reports validation failures without
-  text mutation. Alternate command `clear_rhs` is registered through the
-  existing alternate-command service and dispatcher.
+  leaves the replacement range selected, and reports validation failures
+  without text mutation. The obsolete named-action layer has been removed.
 - G3.3 Clear-RHS Slot Mode Integration is complete:
-  successful `clear_rhs` execution starts Slot Mode from the
+  successful clear-RHS execution starts Slot Mode from the
   `RtlClearAssignmentRhsReport` `rhsN` template-slot metadata while preserving
   one undoable text replacement. G3.2 failure behavior is unchanged; Slot Mode
   start, slot editing, Tab advance, final Tab exit, undo restore, and
@@ -158,10 +163,9 @@ Status:
   `InlineCommandMode`, `CompletionCommandMode`, `CompletionService`, and
   `CompletionSemanticQuery`; `;;cmd` is documented as template expansion owned
   by `CodeTemplateService` and applied through `EditorCompletionWorkflow` /
-  Slot Mode; alternate commands are documented as `AlternateCommandService`
-  names dispatched through existing file/editor APIs; COM Mode and Global
-  Control are documented as separate command surfaces with separate registries,
-  services, and coordinators.
+  Slot Mode; the obsolete named-action layer is documented as removed;
+  COM Mode and Global Control are documented as separate command surfaces with
+  separate registries, services, and coordinators.
 - G6.1 conflict boundaries are documented: do not revive `;:cmd`, keep `;cmd`
   semantic, keep `;;cmd` template-only, keep COM editor-local, and keep Global
   Control app/workspace/global.
@@ -516,10 +520,11 @@ Milestones:
   (complete: non-mutating `RtlBatchEditService` report, failure reasons, and
   fill-slot metadata)
 - G3.2 Implement the editor-local clear-RHS command for selected assignments.
-  (complete: `clear_rhs` alternate command applies the service report in one
-  undoable edit block and preserves failure reasons)
+  (complete: `MyCodeEditor::clearSelectedAssignmentRhs` applies the service
+  report in one undoable edit block and preserves failure reasons)
 - G3.3 Connect clear-RHS output to slot mode.
-  (complete: successful `clear_rhs` starts Slot Mode on `rhsN` fill slots)
+  (complete: successful clear-RHS execution starts Slot Mode on `rhsN` fill
+  slots)
 
 ## Track 4: COM Mode Framework Completion
 

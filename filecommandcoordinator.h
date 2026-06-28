@@ -4,7 +4,6 @@
 #include <QObject>
 #include <QString>
 
-enum class AlternateCommandAction;
 class QAction;
 class QCloseEvent;
 class QWidget;
@@ -30,10 +29,6 @@ public:
     void cut();
     void undo();
     void redo();
-    void executeAlternateCommand(MyCodeEditor* editor,
-                                 AlternateCommandAction action);
-    void executeAlternateCommandText(MyCodeEditor* editor,
-                                     const QString& command);
     void openDirectoryAsWorkspace();
     void handleCloseEvent(QCloseEvent* event, QWidget* dialogParent);
     void connectActions(QAction* newFileAction,

@@ -461,14 +461,6 @@ EditorCoordinator::WorkflowDependencies::includeFileCompletionCandidates(
     return candidates;
 }
 
-void EditorCoordinator::WorkflowDependencies::executeAlternateCommand(
-    MyCodeEditor* editor,
-    const QString& command) const
-{
-    if (fileCommandCoordinator)
-        fileCommandCoordinator->executeAlternateCommandText(editor, command);
-}
-
 void EditorCoordinator::WorkflowDependencies::navigateEditorToLine(
     MyCodeEditor* editor,
     int line,
@@ -682,11 +674,6 @@ void EditorCoordinator::connectSignals()
             this, &EditorCoordinator::attachEditor);
     connect(tabManager, &TabManager::activeTabChanged,
             this, &EditorCoordinator::handleActiveEditorChanged);
-    connect(modeManager, &ModeManager::modeChanged,
-            this, [this](ModeManager::AppMode) {
-                applyAlternateModeToOpenEditors();
-            });
-
     DefinitionPreviewService::getInstance()->setDocumentModel(
         tabManager->getDocumentModel());
     signalsConnected = true;
@@ -708,11 +695,6 @@ void EditorCoordinator::attachEditor(MyCodeEditor* editor)
         });
     applyAppearance(editor);
     applyFormatterSettings(editor);
-    applyAlternateMode(editor);
-    connect(editor, &MyCodeEditor::alternateCommandRequested,
-            this, [this, editor](const QString& command) {
-                dependencies.executeAlternateCommand(editor, command);
-            });
     connect(editor, &MyCodeEditor::sourceNavigationRequested,
             this, [this, editor](const EditorSourceNavigationTarget& target,
                                  const EditorSemanticContext& context) {
@@ -786,13 +768,6 @@ void EditorCoordinator::attachEditor(MyCodeEditor* editor)
             });
 }
 
-void EditorCoordinator::applyAlternateMode(MyCodeEditor* editor) const
-{
-    if (!editor || !modeManager)
-        return;
-    editor->setAlternateModeEnabled(modeManager->getCurrentMode() == ModeManager::AlternateMode);
-}
-
 void EditorCoordinator::applyAppearance(MyCodeEditor* editor) const
 {
     if (!editor || !appearanceSettings)
@@ -832,15 +807,6 @@ void EditorCoordinator::applyFormatterSettingsToOpenEditors() const
 
     for (int i = 0; i < tabManager->editorCount(); ++i)
         applyFormatterSettings(tabManager->getEditorAt(i));
-}
-
-void EditorCoordinator::applyAlternateModeToOpenEditors() const
-{
-    if (!tabManager)
-        return;
-
-    for (int i = 0; i < tabManager->editorCount(); ++i)
-        applyAlternateMode(tabManager->getEditorAt(i));
 }
 
 void EditorCoordinator::handleIncludeOpenRequested(
@@ -1361,6 +1327,5 @@ void EditorCoordinator::handleActiveEditorChanged(MyCodeEditor* editor)
             }
         }
     }
-    applyAlternateMode(editor);
     dependencies.handleActiveEditorChanged(editor);
 }

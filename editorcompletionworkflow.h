@@ -40,12 +40,10 @@ public:
         const ModuleNameProvider& moduleNameProvider,
         const SemanticServiceProvider& serviceProvider);
 
-    bool handleAlternateModeKey(QKeyEvent* event);
     bool handleCompletionPopupKey(QKeyEvent* event);
     void handleTextChanged();
     void handleCompletionActivated(const QModelIndex& index);
     void handleAutoCompleteTimer();
-    void executeAlternateModeCommand(const QString& command);
     void setIncludeFileProvider(IncludeFileProvider provider);
     void setIncludeNewHeaderCreator(IncludeNewHeaderCreator creator);
 
@@ -69,9 +67,6 @@ private:
         bool includeDocumentText) const;
     void hideAutoComplete();
     void showAutoComplete(bool selectFirstCompletion = false);
-    void applyAlternateModeCompletionDisplayState(
-        const EditorAlternateModeCompletionDisplayState& displayState);
-    void processAlternateModeInput(const QString& input);
     void executeEditorActionCommand(const QString& command);
     void updateCompletionTriggerForTextChange(const QTextCursor& cursor);
     void applyCompletionActivationState(
@@ -80,8 +75,6 @@ private:
                                     int selectionStart = -1,
                                     int selectionLength = 0);
     void clearCommandInputAtCursor();
-    void applyAlternateModeKeyState(
-        const EditorAlternateModeKeyState& keyState);
     bool applyCompletionPopupKeyState(
         QKeyEvent* event,
         const CompletionPopupKeyState& popupState);

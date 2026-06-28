@@ -65,8 +65,6 @@ private:
                                    const QString& currentFile) const;
         QStringList includeFileCompletionCandidates(
             const QString& currentFile) const;
-        void executeAlternateCommand(MyCodeEditor* editor,
-                                     const QString& command) const;
         void navigateEditorToLine(MyCodeEditor* editor,
                                   int line,
                                   int column) const;
@@ -108,8 +106,6 @@ private:
     void applyAppearanceToOpenEditors() const;
     void applyFormatterSettings(MyCodeEditor* editor) const;
     void applyFormatterSettingsToOpenEditors() const;
-    void applyAlternateMode(MyCodeEditor* editor) const;
-    void applyAlternateModeToOpenEditors() const;
     void handleIncludeOpenRequested(MyCodeEditor* editor,
                                     const QString& includePath,
                                     const QString& currentFile) const;

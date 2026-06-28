@@ -1,7 +1,6 @@
 // Headless completion-logic test. Populates semantic records from Slang, then drives CompletionManager's
 // public query methods and asserts the results. No GUI window is shown.
 #include "slangmanager.h"
-#include "alternatecommandservice.h"
 #include "analysisscheduler.h"
 #include "completioncontexthelper.h"
 #include "completionmanager.h"
@@ -4198,176 +4197,6 @@ int main(int argc, char** argv) {
                SymbolTaxonomy::isModuleDeclaration(finalModuleMetadata),
                true);
 
-    AlternateCommandService* alternateCommandService =
-        AlternateCommandService::getInstance();
-    expectEq("AlternateCommand normalize",
-             alternateCommandService->normalizeCommandInput(QStringLiteral(" SAVE_AS ")),
-             QStringLiteral("save_as"));
-    expectList("AlternateCommand catalog",
-               alternateCommandService->commands(),
-               {"save", "save_as", "open", "new", "close",
-                "copy", "paste", "cut", "undo", "redo",
-                "find", "replace", "goto_line", "select_all",
-                "comment", "uncomment", "indent", "unindent",
-                "clear_rhs"});
-    expectList("AlternateCommand filter",
-               alternateCommandService->matchingCommands(QStringLiteral("s")),
-               {"save", "save_as", "select_all"});
-    const AlternateCommandCompletionState alternateCompletionState =
-        alternateCommandService->completionState(QStringLiteral(" S "));
-    expectEq("AlternateCommand state input",
-             alternateCompletionState.normalizedInput,
-             QStringLiteral("s"));
-    expectList("AlternateCommand state matches",
-               alternateCompletionState.matches,
-               {"save", "save_as", "select_all"});
-    expectBool("AlternateCommand state visible",
-               alternateCompletionState.showCompletions,
-               true);
-    const AlternateCommandCompletionState contextAlternateState =
-        EditorSemanticContextService::getInstance()
-            ->alternateCommandCompletionState(QStringLiteral(" S "));
-    expectEq("EditorContext alternate input",
-             contextAlternateState.normalizedInput,
-             QStringLiteral("s"));
-    expectList("EditorContext alternate matches",
-               contextAlternateState.matches,
-               {"save", "save_as", "select_all"});
-    const EditorAlternateModeCompletionDisplayState alternateDisplayState =
-        EditorSemanticContextService::getInstance()
-            ->alternateModeCompletionDisplayState(QStringLiteral(" S "));
-    expectBool("EditorContext alternate display",
-               alternateDisplayState.updateCompletions
-                   && alternateDisplayState.showPopup
-                   && alternateDisplayState.normalizedInput == QStringLiteral("s")
-                   && alternateDisplayState.matches
-                       == QStringList{QStringLiteral("save"),
-                                      QStringLiteral("save_as"),
-                                      QStringLiteral("select_all")},
-               true);
-    const EditorAlternateModeCompletionDisplayState alternateNoMatchDisplayState =
-        EditorSemanticContextService::getInstance()
-            ->alternateModeCompletionDisplayState(QStringLiteral("zz"));
-    expectBool("EditorContext alternate display no match",
-               alternateNoMatchDisplayState.updateCompletions
-                   && !alternateNoMatchDisplayState.showPopup
-                   && alternateNoMatchDisplayState.normalizedInput
-                       == QStringLiteral("zz")
-                   && alternateNoMatchDisplayState.matches.isEmpty(),
-               true);
-    EditorAlternateModeKeyContext alternateKeyContext;
-    alternateKeyContext.key = Qt::Key_Backspace;
-    alternateKeyContext.buffer = QStringLiteral("sav");
-    const EditorAlternateModeKeyState alternateBackspaceState =
-        EditorSemanticContextService::getInstance()
-            ->alternateModeKeyState(alternateKeyContext);
-    expectBool("EditorContext alternate key backspace",
-               alternateBackspaceState.action
-                       == EditorAlternateModeKeyAction::UpdateInput
-                   && alternateBackspaceState.nextInput == QStringLiteral("sa")
-                   && alternateBackspaceState.completion.updateCompletions
-                   && alternateBackspaceState.completion.showPopup
-                   && alternateBackspaceState.completion.normalizedInput
-                       == QStringLiteral("sa")
-                   && alternateBackspaceState.completion.matches
-                       == QStringList{QStringLiteral("save"),
-                                      QStringLiteral("save_as")},
-               true);
-    alternateKeyContext.buffer.clear();
-    const EditorAlternateModeKeyState alternateEmptyBackspaceState =
-        EditorSemanticContextService::getInstance()
-            ->alternateModeKeyState(alternateKeyContext);
-    expectBool("EditorContext alternate key empty backspace",
-               alternateEmptyBackspaceState.action
-                       == EditorAlternateModeKeyAction::RefreshCompletions
-                   && alternateEmptyBackspaceState.nextInput.isEmpty()
-                   && alternateEmptyBackspaceState.completion.updateCompletions
-                   && alternateEmptyBackspaceState.completion.showPopup
-                   && alternateEmptyBackspaceState.completion.matches.size()
-                       == alternateCommandService->commands().size(),
-               true);
-    alternateKeyContext.key = Qt::Key_Escape;
-    alternateKeyContext.buffer = QStringLiteral("save");
-    const EditorAlternateModeKeyState alternateEscapeState =
-        EditorSemanticContextService::getInstance()
-            ->alternateModeKeyState(alternateKeyContext);
-    expectBool("EditorContext alternate key escape",
-               alternateEscapeState.action
-                       == EditorAlternateModeKeyAction::ClearAndHide
-                   && alternateEscapeState.hidePopup
-                   && alternateEscapeState.clearBuffer,
-               true);
-    alternateKeyContext.key = Qt::Key_Return;
-    const EditorAlternateModeKeyState alternateReturnState =
-        EditorSemanticContextService::getInstance()
-            ->alternateModeKeyState(alternateKeyContext);
-    expectBool("EditorContext alternate key return",
-               alternateReturnState.action
-                       == EditorAlternateModeKeyAction::ExecuteCommand
-                   && alternateReturnState.command == QStringLiteral("save"),
-               true);
-    alternateKeyContext.key = Qt::Key_A;
-    alternateKeyContext.text = QStringLiteral("a");
-    alternateKeyContext.buffer = QStringLiteral("s");
-    const EditorAlternateModeKeyState alternatePrintableState =
-        EditorSemanticContextService::getInstance()
-            ->alternateModeKeyState(alternateKeyContext);
-    expectBool("EditorContext alternate key printable",
-               alternatePrintableState.action
-                       == EditorAlternateModeKeyAction::UpdateInput
-                   && alternatePrintableState.nextInput == QStringLiteral("sa")
-                   && alternatePrintableState.completion.updateCompletions
-                   && alternatePrintableState.completion.normalizedInput
-                       == QStringLiteral("sa")
-                   && alternatePrintableState.completion.matches
-                       == QStringList{QStringLiteral("save"),
-                                      QStringLiteral("save_as")},
-               true);
-    alternateKeyContext.key = Qt::Key_F1;
-    alternateKeyContext.text.clear();
-    const EditorAlternateModeKeyState alternateConsumeState =
-        EditorSemanticContextService::getInstance()
-            ->alternateModeKeyState(alternateKeyContext);
-    expectBool("EditorContext alternate key consume",
-               alternateConsumeState.action
-                   == EditorAlternateModeKeyAction::Consume,
-               true);
-    const AlternateCommandCompletionState alternateEmptyState =
-        alternateCommandService->completionState(QString());
-    expectBool("AlternateCommand empty visible",
-               alternateEmptyState.showCompletions,
-               true);
-    const AlternateCommandCompletionState alternateNoMatchState =
-        alternateCommandService->completionState(QStringLiteral("zz"));
-    expectBool("AlternateCommand no-match hidden",
-               alternateNoMatchState.showCompletions,
-               false);
-    ++g_checks;
-    const bool alternateKnownOk =
-        alternateCommandService->isKnownCommand(QStringLiteral(" SELECT_ALL "));
-    if (!alternateKnownOk)
-        ++g_fails;
-    printf("[%s] %-34s\n",
-           alternateKnownOk ? "PASS" : "FAIL",
-           "AlternateCommand known command");
-    ++g_checks;
-    const bool alternateActionOk =
-        alternateCommandService->commandAction(QStringLiteral(" SAVE_AS "))
-            == AlternateCommandAction::SaveAs
-        && alternateCommandService->commandAction(QStringLiteral("new"))
-            == AlternateCommandAction::NewFile
-        && alternateCommandService->commandAction(QStringLiteral("select_all"))
-            == AlternateCommandAction::SelectAll
-        && alternateCommandService->commandAction(QStringLiteral("clear_rhs"))
-            == AlternateCommandAction::ClearRhs
-        && alternateCommandService->commandAction(QStringLiteral("unknown"))
-            == AlternateCommandAction::None;
-    if (!alternateActionOk)
-        ++g_fails;
-    printf("[%s] %-34s\n",
-           alternateActionOk ? "PASS" : "FAIL",
-           "AlternateCommand action mapping");
-
     CompletionModel commandSelectionModel;
     commandSelectionModel.updateCommandCompletions(
         QStringList{QStringLiteral("save"), QStringLiteral("open")},
@@ -4582,26 +4411,6 @@ int main(int argc, char** argv) {
            "CompletionService activate fallback",
            commandFallbackState.text.toLocal8Bit().constData());
 
-    CompletionActivationQuery alternateActivationQuery;
-    alternateActivationQuery.selectable = true;
-    alternateActivationQuery.mode = CompletionActivationMode::AlternateMode;
-    alternateActivationQuery.itemText = QStringLiteral("save");
-    const CompletionActivationState alternateActivationState =
-        CompletionService::getInstance()->completionActivationState(
-            alternateActivationQuery);
-    ++g_checks;
-    const bool alternateActivationOk =
-        alternateActivationState.action
-            == CompletionActivationAction::ExecuteAlternateCommand
-        && alternateActivationState.text == QStringLiteral("save")
-        && !alternateActivationState.clearCommandMode
-        && !alternateActivationState.hidePopup;
-    if (!alternateActivationOk)
-        ++g_fails;
-    printf("[%s] %-34s text=\"%s\"\n",
-           alternateActivationOk ? "PASS" : "FAIL",
-           "CompletionService activate alt",
-           alternateActivationState.text.toLocal8Bit().constData());
     EditorCompletionActivationContext contextCommandActivation;
     contextCommandActivation.selectable = true;
     contextCommandActivation.commandModeActive = true;
@@ -4618,22 +4427,6 @@ int main(int argc, char** argv) {
                    && contextCommandActivationState.clearCommandMode
                    && contextCommandActivationState.hidePopup,
                true);
-    EditorCompletionActivationContext contextAlternateActivation;
-    contextAlternateActivation.selectable = true;
-    contextAlternateActivation.alternateModeActive = true;
-    contextAlternateActivation.commandModeActive = true;
-    contextAlternateActivation.itemText = QStringLiteral("save");
-    const CompletionActivationState contextAlternateActivationState =
-        EditorSemanticContextService::getInstance()
-            ->completionActivationState(contextAlternateActivation);
-    expectBool("EditorContext alternate activation",
-               contextAlternateActivationState.action
-                       == CompletionActivationAction::ExecuteAlternateCommand
-                   && contextAlternateActivationState.text
-                       == QStringLiteral("save")
-                   && !contextAlternateActivationState.clearCommandMode,
-               true);
-
     CompletionActivationQuery inactiveActivationQuery;
     inactiveActivationQuery.selectable = false;
     inactiveActivationQuery.mode = CompletionActivationMode::EditorWord;
@@ -4685,16 +4478,6 @@ int main(int argc, char** argv) {
                        .action
                    == CompletionPopupKeyAction::ActivateCurrentOrFirstSelectable,
                true);
-    EditorCompletionPopupKeyContext contextPopupQuery;
-    contextPopupQuery.key = Qt::Key_Escape;
-    contextPopupQuery.alternateModeActive = true;
-    contextPopupQuery.commandModeActive = true;
-    expectBool("EditorContext alternate popup clears",
-               EditorSemanticContextService::getInstance()
-                       ->completionPopupKeyState(contextPopupQuery)
-                       .action
-                   == CompletionPopupKeyAction::HidePopupAndClearAlternate,
-               true);
     EditorCompletionPopupKeyContext contextCommandPopupQuery;
     contextCommandPopupQuery.key = Qt::Key_Escape;
     contextCommandPopupQuery.commandModeActive = true;
@@ -4703,30 +4486,6 @@ int main(int argc, char** argv) {
                        ->completionPopupKeyState(contextCommandPopupQuery)
                        .action
                    == CompletionPopupKeyAction::HidePopupAndClearCommand,
-               true);
-
-    CompletionPopupKeyQuery alternatePopupQuery;
-    alternatePopupQuery.mode = CompletionActivationMode::AlternateMode;
-    alternatePopupQuery.key = Qt::Key_Backspace;
-    alternatePopupQuery.alternateBufferEmpty = false;
-    expectBool("CompletionService alternate popup edits buffer",
-               CompletionService::getInstance()
-                       ->completionPopupKeyState(alternatePopupQuery)
-                       .action == CompletionPopupKeyAction::BackspaceAlternateInput,
-               true);
-    alternatePopupQuery.key = Qt::Key_Escape;
-    expectBool("CompletionService alternate popup clears",
-               CompletionService::getInstance()
-                       ->completionPopupKeyState(alternatePopupQuery)
-                       .action
-                   == CompletionPopupKeyAction::HidePopupAndClearAlternate,
-               true);
-    alternatePopupQuery.key = Qt::Key_Return;
-    alternatePopupQuery.currentIndexValid = false;
-    expectBool("CompletionService alternate popup consumes empty return",
-               CompletionService::getInstance()
-                       ->completionPopupKeyState(alternatePopupQuery)
-                       .action == CompletionPopupKeyAction::Consume,
                true);
 
     const CommandModeMatch oldCommandModeMatch =
