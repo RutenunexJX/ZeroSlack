@@ -76,14 +76,17 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
   selected `ns` and `next_state` can trigger the graph, while selected `cs` and
   `current_state` cannot. `StateTransitionGraphService` shapes accepted
   requests into selected next-state graph reports by filtering existing
-  `FsmGraphService` data, and RTL Insights renders those reports with
-  navigable state and transition rows.
+  `FsmGraphService` data, and RTL Insights renders those reports as an
+  interactive graph. State/register/signal nodes and transition edges are
+  selectable, and double-clicking a graph element follows its carried source
+  link.
 - Module Block Diagram renders in RTL Insights from the service-owned
   `ModuleBlockDiagramReport`. The current UI entry points are the RTL Insights
   `Module Block Diagram` action for the active module and the editor source
   action for selected module names. Rendering is module/interface-only and does
-  not show signals. Double-clicking rendered module rows follows the carried
-  definition link through the existing navigation handler.
+  not show signals. Module nodes and containment edges are selectable, and
+  double-clicking a graph element follows the carried definition link through
+  the existing navigation handler.
 - Formatter support exists as conservative editor formatting. Current daily
   editor action inventory: `Ctrl+F` opens Find; formatter document/selection
   actions live in the editor context menu; line comment actions are available
@@ -252,16 +255,17 @@ and restoring Global Control `ow r` for recent workspaces.
   `StateTransitionGraphService` then owns accepted-request report shaping and
   exact next-state graph filtering on top of `FsmGraphService`. `EditorCoordinator`
   and `SemanticPanelRefreshCoordinator` only route accepted requests; RTL
-  Insights consumes the service report, reuses existing FSM row rendering, and
-  keeps navigation wired through row source links carried by the report.
+  Insights consumes the service report, renders an interactive graph scene,
+  and keeps navigation wired through source links carried by graph elements.
 - Module Block Diagram baseline: `ModuleBlockDiagramService` owns selected
   module/interface containment report shaping on top of `HierarchyService`
   and `INSTANTIATES` relationships. The report carries root/child module nodes,
   module-definition links, and instantiation edges only; signal and non-instance
   relationship filtering stays in the service/report layer. `RtlInsightsPanelCoordinator`
-  renders that report as a module-only block diagram tree and routes source
+  renders that report as a module-only interactive graph and routes source
   symbol requests through `SemanticPanelRefreshCoordinator`; double-click
-  navigation uses the module definition links already carried by the report.
+  navigation uses the module definition links already carried by graph
+  elements.
   UI code does not scan workspaces or run Slang.
 
 ## Command Responsibility Map

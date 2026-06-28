@@ -47,6 +47,7 @@
 #include <QString>
 #include <QTemporaryDir>
 #include <QTimer>
+#include <QGraphicsView>
 #include <QTreeWidget>
 #include <QTreeWidgetItem>
 #include <QWidget>
@@ -3752,43 +3753,17 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     moduleBlockPanel.showModuleBlockDiagramForModule(
         topPath,
         QStringLiteral("rel_top"));
-    QTreeWidget* moduleBlockTree = moduleBlockPanel.tree();
-    QTreeWidgetItem* moduleBlockRoot =
-        moduleBlockTree && moduleBlockTree->topLevelItemCount() > 0
-            ? moduleBlockTree->topLevelItem(0)
-            : nullptr;
-    QTreeWidgetItem* moduleBlockTopItem =
-        findTreeItem(moduleBlockTree,
-                     QStringLiteral("Top Module"),
-                     QStringLiteral("rel_top"));
-    QTreeWidgetItem* moduleBlockStageItem =
-        findTreeItem(moduleBlockTree,
-                     QStringLiteral("Instantiates"),
-                     QStringLiteral("rel_stage"),
-                     QStringLiteral("rel_top -> rel_stage"));
-    QTreeWidgetItem* moduleBlockSignalItem =
-        findTreeItem(moduleBlockTree,
-                     QStringLiteral("Instantiates"),
-                     QStringLiteral("req_valid"));
+    QGraphicsView* moduleBlockGraphView = moduleBlockPanel.graphView();
     expectBool("module block diagram panel renders module-only report",
-               moduleBlockRoot
-                   && moduleBlockRoot->text(0).contains(
-                       QStringLiteral("Module Block Diagram"))
-                   && moduleBlockTopItem
-                   && moduleBlockTopItem->data(0, Qt::UserRole).toString()
-                       == topPath
-                   && moduleBlockStageItem
-                   && moduleBlockStageItem->data(0, Qt::UserRole).toString()
-                       == stagePath
-                   && !moduleBlockSignalItem,
+               moduleBlockGraphView
+                   && moduleBlockGraphView->scene()
+                   && moduleBlockPanel.graphNodeItemCountForTest() == 2
+                   && moduleBlockPanel.graphEdgeItemCountForTest() == 1,
                true);
     const bool invokedModuleBlockStageNavigation =
-        moduleBlockStageItem
-        && QMetaObject::invokeMethod(moduleBlockTree,
-                                     "itemDoubleClicked",
-                                     Qt::DirectConnection,
-                                     Q_ARG(QTreeWidgetItem*, moduleBlockStageItem),
-                                     Q_ARG(int, 0));
+        moduleBlockPanel.triggerGraphNavigationForTest(
+            QStringLiteral("module"),
+            QStringLiteral("rel_stage"));
     expectBool("module block diagram child module navigation",
                invokedModuleBlockStageNavigation
                    && moduleBlockNavigatedFileName == stagePath
@@ -3801,12 +3776,9 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     moduleBlockNavigatedLine = 0;
     moduleBlockNavigatedColumn = 0;
     const bool invokedModuleBlockTopNavigation =
-        moduleBlockTopItem
-        && QMetaObject::invokeMethod(moduleBlockTree,
-                                     "itemDoubleClicked",
-                                     Qt::DirectConnection,
-                                     Q_ARG(QTreeWidgetItem*, moduleBlockTopItem),
-                                     Q_ARG(int, 0));
+        moduleBlockPanel.triggerGraphNavigationForTest(
+            QStringLiteral("module"),
+            QStringLiteral("rel_top"));
     expectBool("module block diagram root module navigation",
                invokedModuleBlockTopNavigation
                    && moduleBlockNavigatedFileName == topPath
@@ -7394,44 +7366,18 @@ static void runFsmGraphServiceFixture()
         dualFileName,
         QStringLiteral("dual_fsm_top"),
         QStringLiteral("next_state"));
-    QTreeWidget* stateTransitionTree = stateTransitionPanel.tree();
-    QTreeWidgetItem* stateTransitionRoot =
-        stateTransitionTree && stateTransitionTree->topLevelItemCount() > 0
-            ? stateTransitionTree->topLevelItem(0)
-            : nullptr;
-    QTreeWidgetItem* nextStateSignalItem =
-        findTreeItem(stateTransitionTree,
-                     QStringLiteral("Next State Signal"),
-                     QStringLiteral("next_state"),
-                     QStringLiteral("enum"));
-    QTreeWidgetItem* filteredOutNsItem =
-        findTreeItem(stateTransitionTree,
-                     QStringLiteral("Next State Signal"),
-                     QStringLiteral("ns"),
-                     QStringLiteral("enum"));
-    QTreeWidgetItem* transitionItem =
-        findTreeItem(stateTransitionTree,
-                     QStringLiteral("B_IDLE"),
-                     QStringLiteral("B_RUN"));
+    QGraphicsView* stateTransitionGraphView = stateTransitionPanel.graphView();
     expectBool("state transition panel renders service report",
-               stateTransitionRoot
-                   && stateTransitionRoot->text(0).contains(
-                       QStringLiteral("State Transition Graph"))
-                   && nextStateSignalItem
-                   && !filteredOutNsItem
-                   && transitionItem
-                   && transitionItem->data(0, Qt::UserRole).toString()
-                       == dualFileName
-                   && transitionItem->data(0, Qt::UserRole + 1).toInt()
-                       == 14,
+               stateTransitionGraphView
+                   && stateTransitionGraphView->scene()
+                   && stateTransitionPanel.graphNodeItemCountForTest() == 4
+                   && stateTransitionPanel.graphEdgeItemCountForTest() == 4,
                true);
     const bool invokedTransitionNavigation =
-        transitionItem
-        && QMetaObject::invokeMethod(stateTransitionTree,
-                                     "itemDoubleClicked",
-                                     Qt::DirectConnection,
-                                     Q_ARG(QTreeWidgetItem*, transitionItem),
-                                     Q_ARG(int, 0));
+        stateTransitionPanel.triggerGraphNavigationForTest(
+            QStringLiteral("transition"),
+            QStringLiteral("B_IDLE"),
+            QStringLiteral("B_RUN"));
     expectBool("state transition panel transition navigation",
                invokedTransitionNavigation
                    && navigatedFileName == dualFileName
@@ -7442,12 +7388,9 @@ static void runFsmGraphServiceFixture()
     navigatedLine = 0;
     navigatedColumn = 0;
     const bool invokedNextStateNavigation =
-        nextStateSignalItem
-        && QMetaObject::invokeMethod(stateTransitionTree,
-                                     "itemDoubleClicked",
-                                     Qt::DirectConnection,
-                                     Q_ARG(QTreeWidgetItem*, nextStateSignalItem),
-                                     Q_ARG(int, 0));
+        stateTransitionPanel.triggerGraphNavigationForTest(
+            QStringLiteral("next-state-signal"),
+            QStringLiteral("next_state"));
     expectBool("state transition panel next-state navigation",
                invokedNextStateNavigation
                    && navigatedFileName == dualFileName

@@ -12,15 +12,356 @@
 
 #include <QElapsedTimer>
 #include <QFileInfo>
+#include <QFont>
+#include <QFontMetrics>
+#include <QGraphicsPathItem>
+#include <QGraphicsPolygonItem>
+#include <QGraphicsRectItem>
+#include <QGraphicsScene>
+#include <QGraphicsSceneMouseEvent>
+#include <QGraphicsSimpleTextItem>
+#include <QGraphicsTextItem>
+#include <QGraphicsView>
 #include <QHeaderView>
 #include <QHBoxLayout>
+#include <QMouseEvent>
+#include <QPainter>
+#include <QPainterPath>
+#include <QPen>
+#include <QPoint>
+#include <QPolygonF>
 #include <QPushButton>
+#include <QStackedWidget>
 #include <QVBoxLayout>
+#include <QWheelEvent>
 
+#include <algorithm>
+#include <cmath>
 #include <exception>
 #include <utility>
 
 namespace {
+
+constexpr int kGraphKindRole = Qt::UserRole + 1200;
+constexpr int kGraphPrimaryRole = Qt::UserRole + 1201;
+constexpr int kGraphSecondaryRole = Qt::UserRole + 1202;
+constexpr int kGraphFileRole = Qt::UserRole + 1203;
+constexpr int kGraphLineRole = Qt::UserRole + 1204;
+constexpr int kGraphColumnRole = Qt::UserRole + 1205;
+
+constexpr qreal kInsightNodeWidth = 190.0;
+constexpr qreal kInsightNodeHeight = 62.0;
+constexpr double kPi = 3.14159265358979323846;
+
+struct RtlInsightGraphElement {
+    QString kind;
+    QString primary;
+    QString secondary;
+    QString detail;
+    RtlInsightCodeLink codeLink;
+};
+
+class RtlInsightsGraphView : public QGraphicsView
+{
+public:
+    using QGraphicsView::QGraphicsView;
+
+protected:
+    void wheelEvent(QWheelEvent* event) override
+    {
+        if (!event)
+            return;
+        const qreal currentScale = transform().m11();
+        const qreal factor = event->angleDelta().y() > 0 ? 1.15 : 1.0 / 1.15;
+        const qreal nextScale = currentScale * factor;
+        if (nextScale < 0.2 || nextScale > 4.0) {
+            event->accept();
+            return;
+        }
+        scale(factor, factor);
+        event->accept();
+    }
+
+    void mousePressEvent(QMouseEvent* event) override
+    {
+        if (event && event->button() == Qt::LeftButton
+            && items(event->pos()).isEmpty() && scene()) {
+            scene()->clearSelection();
+        }
+        QGraphicsView::mousePressEvent(event);
+    }
+};
+
+QString graphElidedText(const QString& text, const QFont& font, int width)
+{
+    return QFontMetrics(font).elidedText(text, Qt::ElideRight, width);
+}
+
+QString graphElementTooltip(const RtlInsightGraphElement& element)
+{
+    QStringList lines;
+    const auto appendLine = [&lines](const QString& line) {
+        if (!line.trimmed().isEmpty())
+            lines.append(line);
+    };
+    appendLine(element.primary);
+    appendLine(element.secondary);
+    appendLine(element.detail);
+    if (!element.codeLink.fileDisplayName.isEmpty()
+        || !element.codeLink.lineDisplayName.isEmpty()) {
+        appendLine(QStringLiteral("%1:%2")
+                       .arg(element.codeLink.fileDisplayName,
+                            element.codeLink.lineDisplayName));
+    }
+    return lines.join(QLatin1Char('\n'));
+}
+
+void applyGraphElementData(QGraphicsItem* item,
+                           const RtlInsightGraphElement& element)
+{
+    if (!item)
+        return;
+    item->setData(kGraphKindRole, element.kind);
+    item->setData(kGraphPrimaryRole, element.primary);
+    item->setData(kGraphSecondaryRole, element.secondary);
+    item->setData(kGraphFileRole, element.codeLink.fileName);
+    item->setData(kGraphLineRole, element.codeLink.line);
+    item->setData(kGraphColumnRole, element.codeLink.column);
+    item->setToolTip(graphElementTooltip(element));
+}
+
+class RtlInsightGraphNodeItem : public QGraphicsRectItem
+{
+public:
+    using NavigateHandler = std::function<void(const RtlInsightCodeLink&)>;
+    using SelectHandler = std::function<void(const RtlInsightGraphElement&)>;
+
+    RtlInsightGraphNodeItem(const RtlInsightGraphElement& graphElement,
+                            const QRectF& rect,
+                            const QColor& fill,
+                            const QColor& stroke,
+                            const QFont& font)
+        : QGraphicsRectItem(rect),
+          element(graphElement)
+    {
+        setFlag(QGraphicsItem::ItemIsSelectable, true);
+        setAcceptHoverEvents(true);
+        setAcceptedMouseButtons(Qt::LeftButton | Qt::RightButton);
+        setBrush(fill);
+        setPen(QPen(stroke, 1.6));
+        setZValue(10);
+        applyGraphElementData(this, element);
+
+        QFont titleFont = font;
+        titleFont.setBold(true);
+        titleFont.setPointSize(qMax(8, titleFont.pointSize() + 1));
+        QFont detailFont = font;
+        detailFont.setPointSize(qMax(8, detailFont.pointSize() - 1));
+
+        auto* title = new QGraphicsSimpleTextItem(
+            graphElidedText(element.primary,
+                            titleFont,
+                            static_cast<int>(rect.width() - 18)),
+            this);
+        title->setAcceptedMouseButtons(Qt::NoButton);
+        title->setFont(titleFont);
+        title->setBrush(QBrush(QColor(QStringLiteral("#0f172a"))));
+        title->setPos(rect.left() + 10, rect.top() + 8);
+
+        QString detail = element.secondary;
+        if (detail.isEmpty())
+            detail = element.detail;
+        auto* detailItem = new QGraphicsSimpleTextItem(
+            graphElidedText(detail,
+                            detailFont,
+                            static_cast<int>(rect.width() - 18)),
+            this);
+        detailItem->setAcceptedMouseButtons(Qt::NoButton);
+        detailItem->setFont(detailFont);
+        detailItem->setBrush(QBrush(QColor(QStringLiteral("#475569"))));
+        detailItem->setPos(rect.left() + 10, rect.top() + 34);
+    }
+
+    NavigateHandler navigateHandler;
+    SelectHandler selectHandler;
+
+protected:
+    void mousePressEvent(QGraphicsSceneMouseEvent* event) override
+    {
+        setSelected(true);
+        if (selectHandler)
+            selectHandler(element);
+        QGraphicsRectItem::mousePressEvent(event);
+    }
+
+    void mouseDoubleClickEvent(QGraphicsSceneMouseEvent* event) override
+    {
+        if (event && event->button() == Qt::LeftButton && navigateHandler
+            && !element.codeLink.fileName.isEmpty()) {
+            navigateHandler(element.codeLink);
+            event->accept();
+            return;
+        }
+        QGraphicsRectItem::mouseDoubleClickEvent(event);
+    }
+
+private:
+    RtlInsightGraphElement element;
+};
+
+class RtlInsightGraphEdgeItem : public QGraphicsPathItem
+{
+public:
+    using NavigateHandler = std::function<void(const RtlInsightCodeLink&)>;
+    using SelectHandler = std::function<void(const RtlInsightGraphElement&)>;
+
+    RtlInsightGraphEdgeItem(const RtlInsightGraphElement& graphElement,
+                            const QPainterPath& path,
+                            const QPointF& arrowTip,
+                            qreal arrowAngle,
+                            const QString& label,
+                            const QFont& font,
+                            const QColor& color)
+        : QGraphicsPathItem(path),
+          element(graphElement)
+    {
+        setFlag(QGraphicsItem::ItemIsSelectable, true);
+        setAcceptHoverEvents(true);
+        setAcceptedMouseButtons(Qt::LeftButton | Qt::RightButton);
+        setPen(QPen(color, 2.0, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+        setZValue(2);
+        applyGraphElementData(this, element);
+
+        constexpr qreal arrowSize = 10.0;
+        const QPointF p1 = arrowTip
+            - QPointF(std::cos(arrowAngle - kPi / 6.0) * arrowSize,
+                      std::sin(arrowAngle - kPi / 6.0) * arrowSize);
+        const QPointF p2 = arrowTip
+            - QPointF(std::cos(arrowAngle + kPi / 6.0) * arrowSize,
+                      std::sin(arrowAngle + kPi / 6.0) * arrowSize);
+        QPolygonF arrow;
+        arrow << arrowTip << p1 << p2;
+        auto* arrowItem = new QGraphicsPolygonItem(arrow, this);
+        arrowItem->setAcceptedMouseButtons(Qt::NoButton);
+        arrowItem->setPen(QPen(color, 1.0));
+        arrowItem->setBrush(QBrush(color));
+
+        if (!label.isEmpty()) {
+            QFont labelFont = font;
+            labelFont.setPointSize(qMax(8, labelFont.pointSize() - 1));
+            auto* labelItem = new QGraphicsTextItem(
+                graphElidedText(label, labelFont, 210),
+                this);
+            labelItem->setAcceptedMouseButtons(Qt::NoButton);
+            labelItem->setFont(labelFont);
+            labelItem->setDefaultTextColor(QColor(QStringLiteral("#334155")));
+            const QRectF pathBounds = path.boundingRect();
+            labelItem->setPos(pathBounds.center().x() - 70,
+                              pathBounds.center().y() - 26);
+        }
+    }
+
+    NavigateHandler navigateHandler;
+    SelectHandler selectHandler;
+
+protected:
+    void mousePressEvent(QGraphicsSceneMouseEvent* event) override
+    {
+        setSelected(true);
+        if (selectHandler)
+            selectHandler(element);
+        QGraphicsPathItem::mousePressEvent(event);
+    }
+
+    void mouseDoubleClickEvent(QGraphicsSceneMouseEvent* event) override
+    {
+        if (event && event->button() == Qt::LeftButton && navigateHandler
+            && !element.codeLink.fileName.isEmpty()) {
+            navigateHandler(element.codeLink);
+            event->accept();
+            return;
+        }
+        QGraphicsPathItem::mouseDoubleClickEvent(event);
+    }
+
+private:
+    RtlInsightGraphElement element;
+};
+
+QPainterPath straightArrowPath(const QPointF& start, const QPointF& end)
+{
+    QPainterPath path(start);
+    path.lineTo(end);
+    return path;
+}
+
+QPainterPath curvedArrowPath(const QPointF& start,
+                             const QPointF& end,
+                             qreal bend)
+{
+    QPainterPath path(start);
+    const QPointF mid = (start + end) / 2.0;
+    const QPointF normal(-(end.y() - start.y()), end.x() - start.x());
+    const qreal length = std::hypot(normal.x(), normal.y());
+    const QPointF offset = length > 0.1
+        ? QPointF(normal.x() / length * bend, normal.y() / length * bend)
+        : QPointF(0, bend);
+    path.quadTo(mid + offset, end);
+    return path;
+}
+
+QRectF insightNodeRectAt(qreal centerX, qreal centerY)
+{
+    return QRectF(centerX - kInsightNodeWidth / 2.0,
+                  centerY - kInsightNodeHeight / 2.0,
+                  kInsightNodeWidth,
+                  kInsightNodeHeight);
+}
+
+QPointF rectAnchorToward(const QRectF& rect, const QPointF& target)
+{
+    const QPointF center = rect.center();
+    const qreal dx = target.x() - center.x();
+    const qreal dy = target.y() - center.y();
+    if (std::abs(dx) > std::abs(dy)) {
+        return QPointF(dx >= 0 ? rect.right() : rect.left(),
+                       center.y() + dy / std::max<qreal>(1.0, std::abs(dx))
+                                      * rect.width() / 2.0);
+    }
+    return QPointF(center.x() + dx / std::max<qreal>(1.0, std::abs(dy))
+                              * rect.height() / 2.0,
+                   dy >= 0 ? rect.bottom() : rect.top());
+}
+
+QPointF circularPosition(int index, int count, qreal radius)
+{
+    if (count <= 1)
+        return QPointF(0, 100);
+    const qreal angle = -kPi / 2.0 + 2.0 * kPi * index / count;
+    return QPointF(std::cos(angle) * radius,
+                   120 + std::sin(angle) * radius);
+}
+
+QGraphicsItem* graphItemByData(QGraphicsScene* scene,
+                               const QString& kind,
+                               const QString& primary,
+                               const QString& secondary)
+{
+    if (!scene)
+        return nullptr;
+    for (QGraphicsItem* item : scene->items()) {
+        if (item->data(kGraphKindRole).toString() != kind)
+            continue;
+        if (item->data(kGraphPrimaryRole).toString() != primary)
+            continue;
+        if (!secondary.isEmpty()
+            && item->data(kGraphSecondaryRole).toString() != secondary) {
+            continue;
+        }
+        return item;
+    }
+    return nullptr;
+}
 
 QTreeWidgetItem* createGroupItem(QTreeWidget* tree,
                                  const QString& title,
@@ -580,121 +921,6 @@ void appendFsmGraphs(QTreeWidget* tree, const FsmGraphReport& report)
     }
 }
 
-void appendStateTransitionGraph(QTreeWidget* tree,
-                                const StateTransitionGraphReport& report)
-{
-    if (report.found) {
-        FsmGraphReport fsmReport;
-        fsmReport.found = true;
-        fsmReport.groupDisplayName = report.groupDisplayName;
-        fsmReport.graphs.append(report.graph);
-        appendFsmGraphs(tree, fsmReport);
-        return;
-    }
-
-    QTreeWidgetItem* group = createGroupItem(
-        tree,
-        report.groupDisplayName.isEmpty()
-            ? QStringLiteral("State Transition Graph")
-            : report.groupDisplayName,
-        0);
-    createChildItem(group,
-                    QStringLiteral("Unavailable"),
-                    report.trigger.symbolName,
-                    report.notFoundReasonDisplayName,
-                    report.trigger.fileName,
-                    0,
-                    0);
-}
-
-void appendModuleBlockDiagram(QTreeWidget* tree,
-                              const ModuleBlockDiagramReport& report)
-{
-    QTreeWidgetItem* group = createGroupItem(
-        tree,
-        report.groupDisplayName.isEmpty()
-            ? QStringLiteral("Module Block Diagram")
-            : report.groupDisplayName,
-        report.edgeCount);
-
-    if (!report.found) {
-        createChildItem(group,
-                        QStringLiteral("Unavailable"),
-                        report.root.moduleDisplayName,
-                        report.notFoundReasonDisplayName,
-                        QString(),
-                        0,
-                        0);
-        return;
-    }
-
-    QHash<int, QTreeWidgetItem*> itemsByNodeId;
-    QTreeWidgetItem* rootItem =
-        createChildItem(group,
-                        QStringLiteral("Top Module"),
-                        report.root.moduleDisplayName,
-                        report.root.moduleTypeDisplayName,
-                        report.root.definitionCodeLink.fileName,
-                        report.root.definitionCodeLink.line,
-                        report.root.definitionCodeLink.column,
-                        report.root.definitionCodeLink.fileDisplayName,
-                        report.root.definitionCodeLink.lineDisplayName);
-    itemsByNodeId.insert(report.root.nodeId, rootItem);
-
-    for (const ModuleBlockDiagramNode& node : report.nodes) {
-        if (node.nodeId == report.root.nodeId)
-            continue;
-
-        QTreeWidgetItem* parent = itemsByNodeId.value(node.parentNodeId,
-                                                      rootItem);
-        if (!parent)
-            parent = rootItem;
-
-        QString parentDisplayName = report.root.moduleDisplayName;
-        for (const ModuleBlockDiagramEdge& edge : report.edges) {
-            if (edge.toNodeId == node.nodeId) {
-                parentDisplayName = edge.parentModuleDisplayName;
-                break;
-            }
-        }
-
-        QTreeWidgetItem* item =
-            createChildItem(parent,
-                            QStringLiteral("Instantiates"),
-                            node.moduleDisplayName,
-                            QStringLiteral("%1 -> %2")
-                                .arg(parentDisplayName,
-                                     node.moduleDisplayName),
-                            node.definitionCodeLink.fileName,
-                            node.definitionCodeLink.line,
-                            node.definitionCodeLink.column,
-                            node.definitionCodeLink.fileDisplayName,
-                            node.definitionCodeLink.lineDisplayName);
-        createChildItem(item,
-                        QStringLiteral("Type"),
-                        node.moduleTypeDisplayName,
-                        node.sourceRoleDisplayName,
-                        node.definitionCodeLink.fileName,
-                        node.definitionCodeLink.line,
-                        node.definitionCodeLink.column,
-                        node.definitionCodeLink.fileDisplayName,
-                        node.definitionCodeLink.lineDisplayName);
-        itemsByNodeId.insert(node.nodeId, item);
-    }
-
-    if (report.edgeCount == 0) {
-        createChildItem(rootItem,
-                        QStringLiteral("Containment"),
-                        QStringLiteral("No child modules"),
-                        report.notFoundReasonDisplayName,
-                        report.root.definitionCodeLink.fileName,
-                        report.root.definitionCodeLink.line,
-                        report.root.definitionCodeLink.column,
-                        report.root.definitionCodeLink.fileDisplayName,
-                        report.root.definitionCodeLink.lineDisplayName);
-    }
-}
-
 void appendSignalJourneyItems(QTreeWidgetItem* parent,
                               const QString& section,
                               const QList<SignalJourneyItem>& items)
@@ -1051,7 +1277,22 @@ RtlInsightsPanelCoordinator::RtlInsightsPanelCoordinator(QWidget* parent)
     insightsTree->header()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
     insightsTree->header()->setSectionResizeMode(3, QHeaderView::ResizeToContents);
     insightsTree->header()->setSectionResizeMode(4, QHeaderView::ResizeToContents);
-    layout->addWidget(insightsTree);
+
+    insightsGraphScene = new QGraphicsScene(panel);
+    insightsGraphView = new RtlInsightsGraphView(insightsGraphScene, panel);
+    insightsGraphView->setObjectName(QStringLiteral("rtlInsightsGraphView"));
+    insightsGraphView->setRenderHint(QPainter::Antialiasing, true);
+    insightsGraphView->setDragMode(QGraphicsView::ScrollHandDrag);
+    insightsGraphView->setFocusPolicy(Qt::StrongFocus);
+    insightsGraphView->setTransformationAnchor(QGraphicsView::AnchorUnderMouse);
+    insightsGraphView->setResizeAnchor(QGraphicsView::AnchorViewCenter);
+    insightsGraphView->setBackgroundBrush(
+        QBrush(QColor(QStringLiteral("#f8fafc"))));
+
+    insightsStack = new QStackedWidget(panel);
+    insightsStack->addWidget(insightsTree);
+    insightsStack->addWidget(insightsGraphView);
+    layout->addWidget(insightsStack, 1);
 
     insightsDock = new QDockWidget(QStringLiteral("RTL Insights"), parent);
     insightsDock->setObjectName(QStringLiteral("rtlInsightsDock"));
@@ -1097,6 +1338,399 @@ void RtlInsightsPanelCoordinator::setStatusMessageHandler(
     statusMessageHandler = std::move(handler);
 }
 
+int RtlInsightsPanelCoordinator::graphNodeItemCountForTest() const
+{
+    if (!insightsGraphScene)
+        return 0;
+    int count = 0;
+    for (QGraphicsItem* item : insightsGraphScene->items()) {
+        if (dynamic_cast<RtlInsightGraphNodeItem*>(item))
+            ++count;
+    }
+    return count;
+}
+
+int RtlInsightsPanelCoordinator::graphEdgeItemCountForTest() const
+{
+    if (!insightsGraphScene)
+        return 0;
+    int count = 0;
+    for (QGraphicsItem* item : insightsGraphScene->items()) {
+        if (dynamic_cast<RtlInsightGraphEdgeItem*>(item))
+            ++count;
+    }
+    return count;
+}
+
+bool RtlInsightsPanelCoordinator::triggerGraphNavigationForTest(
+    const QString& elementKind,
+    const QString& primaryText,
+    const QString& secondaryText) const
+{
+    QGraphicsItem* item = graphItemByData(insightsGraphScene,
+                                          elementKind,
+                                          primaryText,
+                                          secondaryText);
+    if (!item || !navigationHandler)
+        return false;
+    item->setSelected(true);
+    const QString fileName = item->data(kGraphFileRole).toString();
+    if (fileName.isEmpty())
+        return false;
+    navigationHandler(fileName,
+                      item->data(kGraphLineRole).toInt(),
+                      item->data(kGraphColumnRole).toInt());
+    return true;
+}
+
+void RtlInsightsPanelCoordinator::showTreeSurface()
+{
+    if (insightsStack && insightsTree)
+        insightsStack->setCurrentWidget(insightsTree);
+}
+
+void RtlInsightsPanelCoordinator::showGraphSurface()
+{
+    if (insightsStack && insightsGraphView)
+        insightsStack->setCurrentWidget(insightsGraphView);
+}
+
+void RtlInsightsPanelCoordinator::renderGraphUnavailable(
+    const QString& title,
+    const QString& message)
+{
+    showGraphSurface();
+    if (!insightsGraphScene || !insightsGraphView)
+        return;
+    insightsGraphScene->clear();
+    insightsGraphView->resetTransform();
+
+    QFont titleFont = insightsGraphView->font();
+    titleFont.setBold(true);
+    titleFont.setPointSize(qMax(10, titleFont.pointSize() + 2));
+    auto* titleItem = insightsGraphScene->addSimpleText(title, titleFont);
+    titleItem->setBrush(QBrush(QColor(QStringLiteral("#0f172a"))));
+    titleItem->setPos(-160, -34);
+
+    QFont detailFont = insightsGraphView->font();
+    auto* detailItem = insightsGraphScene->addSimpleText(message, detailFont);
+    detailItem->setBrush(QBrush(QColor(QStringLiteral("#475569"))));
+    detailItem->setPos(-160, 0);
+
+    insightsGraphScene->setSceneRect(-220, -90, 440, 180);
+    insightsGraphView->fitInView(insightsGraphScene->sceneRect(),
+                                 Qt::KeepAspectRatio);
+}
+
+void RtlInsightsPanelCoordinator::renderStateTransitionGraphScene(
+    const StateTransitionGraphReport& report)
+{
+    showGraphSurface();
+    if (!insightsGraphScene || !insightsGraphView)
+        return;
+    insightsGraphScene->clear();
+    insightsGraphView->resetTransform();
+
+    if (!report.found) {
+        renderGraphUnavailable(
+            report.groupDisplayName.isEmpty()
+                ? QStringLiteral("State Transition Graph")
+                : report.groupDisplayName,
+            report.notFoundReasonDisplayName);
+        return;
+    }
+
+    const QFont font = insightsGraphView->font();
+    const auto navigate = [this](const RtlInsightCodeLink& link) {
+        if (navigationHandler && !link.fileName.isEmpty())
+            navigationHandler(link.fileName, link.line, link.column);
+    };
+    const auto select = [this](const RtlInsightGraphElement& element) {
+        if (statusMessageHandler) {
+            statusMessageHandler(QStringLiteral("%1: %2")
+                                     .arg(element.kind, element.primary),
+                                 1200);
+        }
+    };
+
+    auto addNode = [&](const RtlInsightGraphElement& element,
+                       const QRectF& rect,
+                       const QColor& fill,
+                       const QColor& stroke) {
+        auto* item = new RtlInsightGraphNodeItem(element,
+                                                rect,
+                                                fill,
+                                                stroke,
+                                                font);
+        item->navigateHandler = navigate;
+        item->selectHandler = select;
+        insightsGraphScene->addItem(item);
+        return item;
+    };
+    auto addEdge = [&](const RtlInsightGraphElement& element,
+                       const QPainterPath& path,
+                       const QPointF& tip,
+                       qreal angle,
+                       const QString& label,
+                       const QColor& color) {
+        auto* item = new RtlInsightGraphEdgeItem(element,
+                                                path,
+                                                tip,
+                                                angle,
+                                                label,
+                                                font,
+                                                color);
+        item->navigateHandler = navigate;
+        item->selectHandler = select;
+        insightsGraphScene->addItem(item);
+        return item;
+    };
+
+    const QRectF stateRegisterRect = insightNodeRectAt(-140, -130);
+    RtlInsightGraphElement stateRegister;
+    stateRegister.kind = QStringLiteral("state-register");
+    stateRegister.primary = report.graph.stateRegisterDisplayName;
+    stateRegister.secondary = report.graph.stateRegisterTypeDisplayName;
+    stateRegister.detail = report.graph.stateRegisterDetailDisplayName;
+    stateRegister.codeLink = report.graph.stateRegisterCodeLink;
+    addNode(stateRegister,
+            stateRegisterRect,
+            QColor(QStringLiteral("#eff6ff")),
+            QColor(QStringLiteral("#2563eb")));
+
+    const QRectF nextStateRect = insightNodeRectAt(140, -130);
+    RtlInsightGraphElement nextState;
+    nextState.kind = QStringLiteral("next-state-signal");
+    nextState.primary = report.graph.nextStateSignalDisplayName;
+    nextState.secondary = report.graph.nextStateSignalTypeDisplayName;
+    nextState.detail = report.graph.nextStateSignalSourceRoleDisplayName;
+    nextState.codeLink = report.graph.nextStateSignalCodeLink;
+    addNode(nextState,
+            nextStateRect,
+            QColor(QStringLiteral("#f0fdf4")),
+            QColor(QStringLiteral("#16a34a")));
+
+    const QPointF registerEnd =
+        rectAnchorToward(stateRegisterRect, nextStateRect.center());
+    const QPointF nextStart =
+        rectAnchorToward(nextStateRect, stateRegisterRect.center());
+    RtlInsightGraphElement signalEdge;
+    signalEdge.kind = QStringLiteral("state-signal-edge");
+    signalEdge.primary = stateRegister.primary;
+    signalEdge.secondary = nextState.primary;
+    signalEdge.detail = QStringLiteral("paired next-state signal");
+    signalEdge.codeLink = nextState.codeLink;
+    addEdge(signalEdge,
+            straightArrowPath(registerEnd, nextStart),
+            nextStart,
+            std::atan2(nextStart.y() - registerEnd.y(),
+                       nextStart.x() - registerEnd.x()),
+            QStringLiteral("next"),
+            QColor(QStringLiteral("#64748b")));
+
+    QHash<QString, QRectF> stateRects;
+    const int stateCount = report.graph.stateRows.size();
+    const qreal radius = qMax<qreal>(170.0, stateCount * 34.0);
+    for (int i = 0; i < stateCount; ++i) {
+        const FsmStateRow& row = report.graph.stateRows.at(i);
+        const QPointF position = circularPosition(i, stateCount, radius);
+        const QRectF rect = insightNodeRectAt(position.x(), position.y());
+        stateRects.insert(row.stateDisplayName, rect);
+        RtlInsightGraphElement state;
+        state.kind = QStringLiteral("state");
+        state.primary = row.stateDisplayName;
+        state.secondary = row.typeDisplayName;
+        state.detail = row.detailDisplayName;
+        state.codeLink = row.codeLink;
+        addNode(state,
+                rect,
+                QColor(QStringLiteral("#fff7ed")),
+                QColor(QStringLiteral("#ea580c")));
+    }
+
+    for (const FsmTransitionRow& row : report.graph.transitionRows) {
+        if (!stateRects.contains(row.fromStateDisplayName)
+            || !stateRects.contains(row.toStateDisplayName)) {
+            continue;
+        }
+        const QRectF fromRect = stateRects.value(row.fromStateDisplayName);
+        const QRectF toRect = stateRects.value(row.toStateDisplayName);
+        QPointF start;
+        QPointF end;
+        QPainterPath path;
+        qreal angle = 0.0;
+        if (row.fromStateDisplayName == row.toStateDisplayName) {
+            start = QPointF(fromRect.right(), fromRect.center().y() - 10);
+            end = QPointF(fromRect.right(), fromRect.center().y() + 10);
+            path.moveTo(start);
+            path.cubicTo(start + QPointF(70, -70),
+                         end + QPointF(70, 70),
+                         end);
+            angle = kPi / 2.0;
+        } else {
+            start = rectAnchorToward(fromRect, toRect.center());
+            end = rectAnchorToward(toRect, fromRect.center());
+            path = curvedArrowPath(start, end, 22.0);
+            angle = std::atan2(end.y() - start.y(), end.x() - start.x());
+        }
+
+        RtlInsightGraphElement transition;
+        transition.kind = QStringLiteral("transition");
+        transition.primary = row.fromStateDisplayName;
+        transition.secondary = row.toStateDisplayName;
+        transition.detail = row.conditionDisplayName;
+        transition.codeLink = row.codeLink;
+        addEdge(transition,
+                path,
+                end,
+                angle,
+                row.conditionDisplayName,
+                QColor(QStringLiteral("#334155")));
+    }
+
+    const QRectF bounds =
+        insightsGraphScene->itemsBoundingRect().adjusted(-60, -60, 60, 60);
+    insightsGraphScene->setSceneRect(bounds);
+    insightsGraphView->fitInView(bounds, Qt::KeepAspectRatio);
+}
+
+void RtlInsightsPanelCoordinator::renderModuleBlockDiagramScene(
+    const ModuleBlockDiagramReport& report)
+{
+    showGraphSurface();
+    if (!insightsGraphScene || !insightsGraphView)
+        return;
+    insightsGraphScene->clear();
+    insightsGraphView->resetTransform();
+
+    if (!report.found) {
+        renderGraphUnavailable(
+            report.groupDisplayName.isEmpty()
+                ? QStringLiteral("Module Block Diagram")
+                : report.groupDisplayName,
+            report.notFoundReasonDisplayName);
+        return;
+    }
+
+    const QFont font = insightsGraphView->font();
+    const auto navigate = [this](const RtlInsightCodeLink& link) {
+        if (navigationHandler && !link.fileName.isEmpty())
+            navigationHandler(link.fileName, link.line, link.column);
+    };
+    const auto select = [this](const RtlInsightGraphElement& element) {
+        if (statusMessageHandler) {
+            statusMessageHandler(QStringLiteral("%1: %2")
+                                     .arg(element.kind, element.primary),
+                                 1200);
+        }
+    };
+
+    auto addNode = [&](const ModuleBlockDiagramNode& node,
+                       const QRectF& rect,
+                       bool root) {
+        RtlInsightGraphElement element;
+        element.kind = QStringLiteral("module");
+        element.primary = node.moduleDisplayName;
+        element.secondary = node.moduleTypeDisplayName;
+        element.detail = node.sourceRoleDisplayName;
+        element.codeLink = node.definitionCodeLink;
+        auto* item = new RtlInsightGraphNodeItem(
+            element,
+            rect,
+            root ? QColor(QStringLiteral("#eff6ff"))
+                 : QColor(QStringLiteral("#f0fdf4")),
+            root ? QColor(QStringLiteral("#2563eb"))
+                 : QColor(QStringLiteral("#16a34a")),
+            font);
+        item->navigateHandler = navigate;
+        item->selectHandler = select;
+        insightsGraphScene->addItem(item);
+    };
+    auto addEdge = [&](const ModuleBlockDiagramEdge& edge,
+                       const QRectF& fromRect,
+                       const QRectF& toRect) {
+        const QPointF start = rectAnchorToward(fromRect, toRect.center());
+        const QPointF end = rectAnchorToward(toRect, fromRect.center());
+        RtlInsightGraphElement element;
+        element.kind = QStringLiteral("module-edge");
+        element.primary = edge.parentModuleDisplayName;
+        element.secondary = edge.childModuleDisplayName;
+        element.detail = edge.relationshipDisplayName;
+        element.codeLink = edge.childDefinitionCodeLink;
+        auto* item = new RtlInsightGraphEdgeItem(
+            element,
+            straightArrowPath(start, end),
+            end,
+            std::atan2(end.y() - start.y(), end.x() - start.x()),
+            edge.relationshipDisplayName.isEmpty()
+                ? QStringLiteral("instantiates")
+                : edge.relationshipDisplayName,
+            font,
+            QColor(QStringLiteral("#334155")));
+        item->navigateHandler = navigate;
+        item->selectHandler = select;
+        insightsGraphScene->addItem(item);
+    };
+
+    QHash<int, QList<ModuleBlockDiagramNode>> nodesByDepth;
+    int maxDepth = 0;
+    for (const ModuleBlockDiagramNode& node : report.nodes) {
+        nodesByDepth[node.depth].append(node);
+        maxDepth = qMax(maxDepth, node.depth);
+    }
+    Q_UNUSED(maxDepth)
+
+    QHash<int, QRectF> rectByNodeId;
+    constexpr qreal columnSpacing = 300.0;
+    constexpr qreal rowSpacing = 110.0;
+    for (auto it = nodesByDepth.begin(); it != nodesByDepth.end(); ++it) {
+        QList<ModuleBlockDiagramNode> nodes = it.value();
+        std::sort(nodes.begin(), nodes.end(),
+                  [](const ModuleBlockDiagramNode& lhs,
+                     const ModuleBlockDiagramNode& rhs) {
+                      return lhs.nodeId < rhs.nodeId;
+                  });
+        const int depth = it.key();
+        const qreal x = depth * columnSpacing;
+        for (int i = 0; i < nodes.size(); ++i) {
+            const qreal y = (i - (nodes.size() - 1) / 2.0) * rowSpacing;
+            const QRectF rect = insightNodeRectAt(x, y);
+            rectByNodeId.insert(nodes.at(i).nodeId, rect);
+        }
+    }
+
+    for (const ModuleBlockDiagramEdge& edge : report.edges) {
+        if (!rectByNodeId.contains(edge.fromNodeId)
+            || !rectByNodeId.contains(edge.toNodeId)) {
+            continue;
+        }
+        addEdge(edge,
+                rectByNodeId.value(edge.fromNodeId),
+                rectByNodeId.value(edge.toNodeId));
+    }
+
+    for (const ModuleBlockDiagramNode& node : report.nodes) {
+        if (!rectByNodeId.contains(node.nodeId))
+            continue;
+        addNode(node,
+                rectByNodeId.value(node.nodeId),
+                node.nodeId == report.root.nodeId);
+    }
+
+    if (report.edgeCount == 0) {
+        auto* label = insightsGraphScene->addSimpleText(
+            QStringLiteral("No child modules"),
+            font);
+        label->setBrush(QBrush(QColor(QStringLiteral("#475569"))));
+        label->setPos(-70, 68);
+    }
+
+    const QRectF bounds =
+        insightsGraphScene->itemsBoundingRect().adjusted(-80, -80, 80, 80);
+    insightsGraphScene->setSceneRect(bounds);
+    insightsGraphView->fitInView(bounds, Qt::KeepAspectRatio);
+}
+
 void RtlInsightsPanelCoordinator::updateModuleContext(
     const QString& fileName,
     const QString& moduleName,
@@ -1126,10 +1760,9 @@ void RtlInsightsPanelCoordinator::showStateTransitionGraphForSignal(
     const QString& signalName)
 {
     updateModuleContext(fileName, moduleName, signalName);
-    if (!insightsTree)
+    if (!insightsGraphScene)
         return;
 
-    insightsTree->clear();
     if (currentFileName.isEmpty() || currentModuleName.isEmpty()) {
         renderNoContext();
         return;
@@ -1156,7 +1789,7 @@ void RtlInsightsPanelCoordinator::showStateTransitionGraphForSignal(
         return;
     }
 
-    appendStateTransitionGraph(insightsTree, report);
+    renderStateTransitionGraphScene(report);
     if (insightsDock) {
         insightsDock->setWindowTitle(
             QStringLiteral("RTL Insights: State Transition Graph %1")
@@ -1193,6 +1826,7 @@ void RtlInsightsPanelCoordinator::showSemanticDiff(
 {
     if (!insightsTree)
         return;
+    showTreeSurface();
 
     QElapsedTimer timer;
     timer.start();
@@ -1257,6 +1891,7 @@ void RtlInsightsPanelCoordinator::renderNoContext()
 {
     if (!insightsTree)
         return;
+    showTreeSurface();
 
     insightsTree->clear();
     createGroupItem(insightsTree, QStringLiteral("No module context"), 0);
@@ -1269,6 +1904,7 @@ void RtlInsightsPanelCoordinator::renderActionList()
 {
     if (!insightsTree)
         return;
+    showTreeSurface();
 
     insightsTree->clear();
     if (currentFileName.isEmpty() || currentModuleName.isEmpty()) {
@@ -1296,6 +1932,7 @@ void RtlInsightsPanelCoordinator::showModuleBrief()
 {
     if (!insightsTree)
         return;
+    showTreeSurface();
 
     const bool hadExpandableItems =
         SemanticPanelUtils::treeHasExpandableItems(insightsTree);
@@ -1379,6 +2016,7 @@ void RtlInsightsPanelCoordinator::showSignalJourney()
 {
     if (!insightsTree)
         return;
+    showTreeSurface();
 
     insightsTree->clear();
     if (currentFileName.isEmpty() || currentModuleName.isEmpty()) {
@@ -1416,6 +2054,7 @@ void RtlInsightsPanelCoordinator::showClockResetDomainMap()
 {
     if (!insightsTree)
         return;
+    showTreeSurface();
 
     insightsTree->clear();
     if (currentFileName.isEmpty() || currentModuleName.isEmpty()) {
@@ -1473,6 +2112,7 @@ void RtlInsightsPanelCoordinator::showFsmGraph()
 {
     if (!insightsTree)
         return;
+    showTreeSurface();
 
     insightsTree->clear();
     if (currentFileName.isEmpty() || currentModuleName.isEmpty()) {
@@ -1510,10 +2150,9 @@ void RtlInsightsPanelCoordinator::showFsmGraph()
 
 void RtlInsightsPanelCoordinator::showModuleBlockDiagram()
 {
-    if (!insightsTree)
+    if (!insightsGraphScene)
         return;
 
-    insightsTree->clear();
     if (currentFileName.isEmpty() || currentModuleName.isEmpty()) {
         renderNoContext();
         return;
@@ -1539,7 +2178,7 @@ void RtlInsightsPanelCoordinator::showModuleBlockDiagram()
         return;
     }
 
-    appendModuleBlockDiagram(insightsTree, report);
+    renderModuleBlockDiagramScene(report);
     if (insightsDock) {
         insightsDock->setWindowTitle(
             QStringLiteral("RTL Insights: Module Block Diagram %1")

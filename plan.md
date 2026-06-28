@@ -817,7 +817,8 @@ First milestones:
   `next_state` requests into selected next-state graph reports)
 - M10.3 graph UI rendering and navigation evidence
   (complete: RTL Insights renders the service-owned State Transition Graph
-  report and double-click navigation follows report source links)
+  report as an interactive graph; double-click navigation follows graph element
+  source links)
 
 M10.1 implementation constraints:
 
@@ -860,7 +861,7 @@ M10.2 implementation status:
   trigger names without a matching next-state graph return service-owned
   failure reasons.
 - Complete: the existing state-transition UI route consumes the new service
-  report and reuses the existing RTL Insights FSM row rendering path.
+  report through RTL Insights without moving extraction or filtering into UI.
 - Verification: `git diff --check`; Release `completion_test`,
   `relationship_test`, and `gui_smoke_test` targets compile/link; `ctest -R
   "^relationship_test$"` and `ctest -R "^completion_test$"` passed.
@@ -876,13 +877,14 @@ M10.3 implementation constraints:
 M10.3 implementation status:
 
 - Complete: RTL Insights renders the service-owned State Transition Graph
-  report through the existing FSM row renderer.
+  report as a `QGraphicsScene` with selectable state/register/signal nodes and
+  selectable transition edges.
 - Complete: panel-level tests verify that selecting `next_state` renders only
   the matching next-state graph and excludes the sibling `ns` graph in the same
   module.
-- Complete: panel-level tests invoke the double-click navigation signal for
-  transition and next-state rows and verify the source links from the report are
-  delivered to the navigation handler.
+- Complete: panel-level tests invoke graph-element navigation for transition
+  edges and next-state signal nodes and verify the source links from the report
+  are delivered to the navigation handler.
 - Verification: `git diff --check`; Release `completion_test`,
   `relationship_test`, and `gui_smoke_test` targets compile/link; `ctest -R
   "^relationship_test$"` and `ctest -R "^completion_test$"` passed.
@@ -907,10 +909,10 @@ First milestones:
   module definition links)
 - M11.2 render module-only block diagram
   (complete: RTL Insights renders `ModuleBlockDiagramReport` as a module-only
-  block diagram tree from active or selected module names)
+  interactive graph from active or selected module names)
 - M11.3 click navigation to module definitions
-  (complete: double-clicking rendered module rows follows report-carried
-  definition links through the existing navigation handler)
+  (complete: double-clicking rendered module graph elements follows
+  report-carried definition links through the existing navigation handler)
 
 M11.1 implementation constraints:
 
@@ -952,8 +954,9 @@ M11.2 implementation status:
 - Complete: editor source-symbol actions can dispatch `Show Module Block
   Diagram` for selected names that `ModuleBlockDiagramService` accepts as
   modules.
-- Complete: `RtlInsightsPanelCoordinator` renders root and child module rows
-  from `ModuleBlockDiagramReport` and does not render signals.
+- Complete: `RtlInsightsPanelCoordinator` renders root and child module nodes
+  plus instantiation edges from `ModuleBlockDiagramReport` and does not render
+  signals.
 - Complete: source-symbol routing passes through
   `SemanticPanelRefreshCoordinator`; UI code remains a report consumer.
 - Verification: `git diff --check`; Release `relationship_test` and
@@ -971,12 +974,12 @@ M11.3 implementation constraints:
 
 M11.3 implementation status:
 
-- Complete: rendered top-module and child-module rows carry definition links
-  from `ModuleBlockDiagramReport` into the existing RTL Insights tree item
-  navigation slots.
-- Complete: focused panel coverage invokes the existing double-click navigation
-  signal for root and child module rows and verifies that the navigation handler
-  receives the corresponding module definition file, line, and column.
+- Complete: rendered top-module and child-module graph nodes carry definition
+  links from `ModuleBlockDiagramReport`; instantiation edges carry child module
+  definition links.
+- Complete: focused panel coverage invokes graph-element navigation for root
+  and child module nodes and verifies that the navigation handler receives the
+  corresponding module definition file, line, and column.
 - Verification: `git diff --check`; Release `relationship_test` target
   compile/link; `ctest -R "^relationship_test$"` passed.
 

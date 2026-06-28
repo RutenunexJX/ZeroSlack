@@ -9,7 +9,12 @@
 #include <memory>
 
 class SemanticIndexSnapshot;
+class QGraphicsScene;
+class QGraphicsView;
 class QPushButton;
+class QStackedWidget;
+struct ModuleBlockDiagramReport;
+struct StateTransitionGraphReport;
 
 class RtlInsightsPanelCoordinator
 {
@@ -39,10 +44,19 @@ public:
 
     QDockWidget* dock() const { return insightsDock; }
     QTreeWidget* tree() const { return insightsTree; }
+    QGraphicsView* graphView() const { return insightsGraphView; }
+    int graphNodeItemCountForTest() const;
+    int graphEdgeItemCountForTest() const;
+    bool triggerGraphNavigationForTest(const QString& elementKind,
+                                       const QString& primaryText,
+                                       const QString& secondaryText = QString()) const;
 
 private:
     QDockWidget* insightsDock = nullptr;
+    QStackedWidget* insightsStack = nullptr;
     QTreeWidget* insightsTree = nullptr;
+    QGraphicsScene* insightsGraphScene = nullptr;
+    QGraphicsView* insightsGraphView = nullptr;
     QPushButton* moduleBriefButton = nullptr;
     QPushButton* signalJourneyButton = nullptr;
     QPushButton* clockResetButton = nullptr;
@@ -62,6 +76,14 @@ private:
     void showClockResetDomainMap();
     void showFsmGraph();
     void showModuleBlockDiagram();
+    void showTreeSurface();
+    void showGraphSurface();
+    void renderStateTransitionGraphScene(
+        const StateTransitionGraphReport& report);
+    void renderModuleBlockDiagramScene(
+        const ModuleBlockDiagramReport& report);
+    void renderGraphUnavailable(const QString& title,
+                                const QString& message);
     void updateActionState();
     void logReportStart(const QString& reportName) const;
     void logReportDone(const QString& reportName, int durationMs) const;

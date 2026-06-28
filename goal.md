@@ -28,7 +28,7 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
 
 ## Current Goal State
 
-Current milestone: none after the scoped named-action cleanup.
+Current milestone: none after interactive RTL Insights graph rendering.
 
 Next work should wait for the next explicit scoped request.
 
@@ -41,6 +41,12 @@ Status:
 - Focused verification for the cleanup: Release `completion_test` and
   `relationship_test` passed through `ctest`; Release `gui_smoke_test` target
   compiled and linked without launching the executable.
+- Interactive RTL Insights graph rendering is complete: State Transition Graph
+  and Module Block Diagram now render as selectable QGraphics nodes/edges with
+  graph-element navigation sourced from service reports.
+- Focused verification for the interactive graph rendering: Release
+  `completion_test` and `relationship_test` passed through `ctest`; Release
+  `gui_smoke_test` target compiled and linked without launching the executable.
 - G0 Documentation And Goal Reset is complete and pushed in commit `bc2c059`.
 - G4.1 Registry Metadata For Existing COM Commands is complete:
   `commodecommandregistry` now owns metadata for fixed executable commands,
@@ -359,23 +365,24 @@ Status:
   count, transition count, and the matching `FsmGraph`; rejected `cs` /
   `current_state`, no-FSM modules, and accepted trigger names without a matching
   next-state graph return service-owned failure reasons. The existing
-  state-transition UI route consumes the new service report and reuses RTL
-  Insights FSM row rendering. No workspace scan or UI-side Slang work was
-  added.
+  state-transition UI route consumes the new service report through RTL
+  Insights without moving extraction or filtering into UI. No workspace scan or
+  UI-side Slang work was added.
 - Focused verification for G10.2: `git diff --check`; Release
   `completion_test`, `relationship_test`, and `gui_smoke_test` targets
   compile/link; `ctest -R "^relationship_test$"` and `ctest -R
   "^completion_test$"` passed. `gui_smoke_test` was not launched.
 
 - G10.3 State Transition Graph UI And Navigation Evidence is complete:
-  RTL Insights renders the service-owned `StateTransitionGraphReport` through
-  the existing FSM row renderer. Panel-level coverage verifies that selecting
-  `next_state` renders only the matching next-state graph and excludes the
-  sibling `ns` graph in the same module. The same coverage invokes the
-  double-click navigation signal for transition and next-state rows and verifies
-  that source links from the report reach the navigation handler. G10.1 gating
-  and G10.2 selected next-state filtering are preserved; extraction and report
-  shaping remain outside UI code.
+  RTL Insights renders the service-owned `StateTransitionGraphReport` as an
+  interactive graph scene with selectable state/register/signal nodes and
+  transition edges. Panel-level coverage verifies that selecting `next_state`
+  renders only the matching next-state graph and excludes the sibling `ns`
+  graph in the same module. The same coverage invokes graph-element navigation
+  for transition edges and next-state signal nodes and verifies that source
+  links from the report reach the navigation handler. G10.1 gating and G10.2
+  selected next-state filtering are preserved; extraction and report shaping
+  remain outside UI code.
 - Focused verification for G10.3: `git diff --check`; Release
   `completion_test`, `relationship_test`, and `gui_smoke_test` targets
   compile/link; `ctest -R "^relationship_test$"` and `ctest -R
@@ -393,21 +400,22 @@ Status:
   passed.
 
 - G11.2 Module Block Diagram Rendering is complete:
-  RTL Insights renders `ModuleBlockDiagramReport` as a module-only block
-  diagram tree. The panel action renders the active module, and editor
+  RTL Insights renders `ModuleBlockDiagramReport` as a module-only interactive
+  graph scene. The panel action renders the active module, and editor
   source-symbol routing can render selected module names as the diagram root.
-  The rendered rows come from the service report, show module/interface
-  containment only, and do not show signal nodes. No UI workspace scan,
+  The rendered nodes and edges come from the service report, show
+  module/interface containment only, and do not show signal nodes. No UI workspace scan,
   UI-side Slang work, or new relationship extraction was added.
 - Focused verification for G11.2: `git diff --check`; Release
   `relationship_test` and `gui_smoke_test` targets compile/link; `ctest -R
   "^relationship_test$"` passed. `gui_smoke_test` was not launched.
 
 - G11.3 Module Block Diagram Navigation Evidence is complete:
-  rendered top-module and child-module rows carry report-provided module
-  definition links into the existing RTL Insights navigation slots. Focused
-  panel coverage invokes the double-click navigation signal for root and child
-  module rows and verifies that the navigation handler receives the
+  rendered top-module and child-module graph nodes carry report-provided module
+  definition links into the existing RTL Insights navigation path; instantiation
+  edges carry child module definition links. Focused panel coverage invokes
+  graph-element navigation for root and child module nodes and verifies that
+  the navigation handler receives the
   corresponding module definition file, line, and column. G11.1 report
   ownership and G11.2 module-only rendering are preserved; no signal rendering,
   UI workspace scan, UI-side Slang work, or new relationship extraction was
@@ -673,7 +681,8 @@ Milestones:
 - G10.2 Service-owned transition extraction/report.
   (complete: selected next-state report service and filtered FSM graph data)
 - G10.3 Graph UI rendering and navigation evidence.
-  (complete: RTL Insights report rendering and source-link navigation evidence)
+  (complete: RTL Insights interactive graph rendering and graph-element
+  source-link navigation evidence)
 
 ## Track 11: Module Block Diagram
 
@@ -695,8 +704,8 @@ Milestones:
   (complete: RTL Insights renders `ModuleBlockDiagramReport` for active or
   selected modules)
 - G11.3 Click navigation to module definitions.
-  (complete: focused tests verify root/child module row double-click
-  navigation to module definitions)
+  (complete: focused tests verify root/child module graph-element navigation
+  to module definitions)
 
 ## Huge Workspace Status Audit
 
