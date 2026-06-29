@@ -4,8 +4,12 @@
 #include "semanticindexsnapshot.h"
 #include "symboltaxonomy.h"
 
+#include <QDir>
+#include <QFileInfo>
+#include <QRegularExpression>
 #include <QSet>
 #include <algorithm>
+#include <functional>
 
 using namespace semantic_index_lookup;
 
@@ -45,13 +49,17 @@ SymbolTaxonomy::SemanticMetadata metadataForRecord(
 
 bool definitionRecordVisibleInContext(
     const SemanticSymbolRecord& record,
-    const QString& moduleName)
+    const SemanticQueryContext& context,
+    const SemanticIndex* index)
 {
     const SymbolTaxonomy::SemanticMetadata metadata = metadataForRecord(record);
+    if (record.visibility == SymbolTaxonomy::SymbolVisibility::PackageVisible)
+        return index && index->packageVisibleRecordImported(record, context);
+
     return SymbolTaxonomy::isDefinitionVisibleInContext(
         metadata,
         record.owner.name,
-        moduleName);
+        context.moduleName);
 }
 
 int definitionRecordContextPriorityAdjustment(
@@ -63,6 +71,136 @@ int definitionRecordContextPriorityAdjustment(
     if (record.visibility == SymbolTaxonomy::SymbolVisibility::PackageVisible)
         return -20;
     return 0;
+}
+
+SemanticQueryContext semanticContextForDefinitionQuery(
+    const SemanticDefinitionQuery& query)
+{
+    SemanticQueryContext context;
+    context.fileName = query.fileName;
+    context.moduleName = query.moduleName;
+    context.cursorLine = query.cursorLine;
+    context.cursorPosition = query.cursorPosition;
+    context.importedPackageNames = query.importedPackageNames;
+    return context;
+}
+
+bool isPackageWildcardImportLine(const QString& line, QStringList* packages)
+{
+    static const QRegularExpression importKeyword(
+        QStringLiteral("\\bimport\\b"));
+    if (!importKeyword.match(line).hasMatch())
+        return false;
+
+    static const QRegularExpression wildcardPackage(
+        QStringLiteral("\\b([A-Za-z_$][A-Za-z0-9_$]*)\\s*::\\s*\\*"));
+    QRegularExpressionMatchIterator it = wildcardPackage.globalMatch(line);
+    bool matched = false;
+    while (it.hasNext()) {
+        const QRegularExpressionMatch match = it.next();
+        if (packages)
+            packages->append(match.captured(1));
+        matched = true;
+    }
+    return matched;
+}
+
+QString codeLineWithoutComments(const QString& line, bool* inBlockComment)
+{
+    QString result;
+    result.reserve(line.size());
+    bool inString = false;
+    bool escaped = false;
+    for (int i = 0; i < line.size(); ++i) {
+        const QChar ch = line.at(i);
+        const QChar next = (i + 1 < line.size()) ? line.at(i + 1) : QChar();
+
+        if (inBlockComment && *inBlockComment) {
+            if (ch == QLatin1Char('*') && next == QLatin1Char('/')) {
+                *inBlockComment = false;
+                ++i;
+            }
+            continue;
+        }
+
+        if (inString) {
+            result.append(ch);
+            if (escaped)
+                escaped = false;
+            else if (ch == QLatin1Char('\\'))
+                escaped = true;
+            else if (ch == QLatin1Char('"'))
+                inString = false;
+            continue;
+        }
+
+        if (ch == QLatin1Char('/') && next == QLatin1Char('/'))
+            break;
+        if (ch == QLatin1Char('/') && next == QLatin1Char('*')) {
+            if (inBlockComment)
+                *inBlockComment = true;
+            ++i;
+            continue;
+        }
+        if (ch == QLatin1Char('"'))
+            inString = true;
+        result.append(ch);
+    }
+    return result;
+}
+
+QString moduleNameAtLine(const QList<SemanticSymbolRecord>& records, int line)
+{
+    if (line <= 0)
+        return {};
+
+    QString best;
+    int bestStartLine = -1;
+    for (const SemanticSymbolRecord& record : records) {
+        if (record.declarationKind != SymbolTaxonomy::DeclarationKind::Module)
+            continue;
+        if (record.location.startLine <= 0
+            || record.location.startLine > line) {
+            continue;
+        }
+        if (record.location.endLine > 0 && record.location.endLine < line)
+            continue;
+        if (record.location.startLine > bestStartLine) {
+            best = record.name;
+            bestStartLine = record.location.startLine;
+        }
+    }
+    return best;
+}
+
+bool importLineVisibleForContext(
+    const QString& importModule,
+    const SemanticQueryContext& context)
+{
+    if (context.moduleName.isEmpty())
+        return importModule.isEmpty();
+    return importModule.isEmpty() || importModule == context.moduleName;
+}
+
+QString includeFileNameFromLine(const QString& line, const QString& parentFileName)
+{
+    static const QRegularExpression includePattern(
+        QStringLiteral("^\\s*`include\\s+\"([^\"]+)\""));
+    const QRegularExpressionMatch match = includePattern.match(line);
+    if (!match.hasMatch())
+        return {};
+
+    const QString includeName = match.captured(1);
+    if (includeName.isEmpty())
+        return {};
+    QFileInfo includeInfo(includeName);
+    if (!includeInfo.isAbsolute()) {
+        QDir dir = QFileInfo(parentFileName).dir();
+        includeInfo = QFileInfo(dir, includeName);
+        while (!includeInfo.exists() && dir.cdUp())
+            includeInfo = QFileInfo(dir, includeName);
+    }
+    return normalizedLookupFileName(includeInfo.absoluteFilePath());
 }
 
 bool definitionRecordIsInQueryFile(
@@ -146,9 +284,14 @@ SemanticDefinitionResult SemanticIndex::resolveDefinition(
             definitionRecordIsInQueryFile(local.symbolRecord, query.fileName);
         return local;
     }
+    if (local.missReason
+        == SemanticDefinitionMissReason::AmbiguousImportedPackageSymbol) {
+        return local;
+    }
 
+    const SemanticQueryContext context = semanticContextForDefinitionQuery(query);
     QList<SemanticSymbolRecord> globalCandidates =
-        findDefinitionRecords(query.symbolName);
+        findDefinitionRecords(query.symbolName, context);
     const QString queryFile = normalizedLookupFileName(query.fileName);
     globalCandidates.erase(
         std::remove_if(globalCandidates.begin(), globalCandidates.end(),
@@ -161,6 +304,14 @@ SemanticDefinitionResult SemanticIndex::resolveDefinition(
         bestDefinitionFromCandidates(globalCandidates, query, false);
     if (global.found)
         return global;
+    if (global.missReason
+        == SemanticDefinitionMissReason::AmbiguousImportedPackageSymbol) {
+        global.inspectedCandidateCount += local.inspectedCandidateCount;
+        global.matchingNameCandidateCount += local.matchingNameCandidateCount;
+        global.typeCompatibleCandidateCount += local.typeCompatibleCandidateCount;
+        global.visibleCandidateCount += local.visibleCandidateCount;
+        return global;
+    }
     return combinedDefinitionMissEvidence(local, global);
 }
 
@@ -218,6 +369,78 @@ QList<SemanticSymbolRecord> SemanticIndex::findDefinitionRecords(
     return sorted;
 }
 
+QSet<QString> SemanticIndex::activeImportedPackageNames(
+    const SemanticQueryContext& context) const
+{
+    QSet<QString> result = context.importedPackageNames;
+    if (context.fileName.isEmpty())
+        return result;
+
+    QSet<QString> visitedFiles;
+    std::function<void(const SemanticQueryContext&)> scanContext;
+    scanContext = [&](const SemanticQueryContext& scanContextValue) {
+        const QString normalizedFile =
+            normalizedLookupFileName(scanContextValue.fileName);
+        if (normalizedFile.isEmpty() || visitedFiles.contains(normalizedFile))
+            return;
+        visitedFiles.insert(normalizedFile);
+
+        const QString content = getCachedFileContent(scanContextValue.fileName);
+        if (content.isEmpty())
+            return;
+
+        const QList<SemanticSymbolRecord> fileRecords =
+            getSymbolRecords(scanContextValue.fileName);
+        const QStringList lines = content.split(QLatin1Char('\n'));
+        const int maxLine =
+            scanContextValue.cursorLine > 0
+                ? qMin(scanContextValue.cursorLine, lines.size())
+                : lines.size();
+        bool inBlockComment = false;
+        for (int i = 0; i < maxLine; ++i) {
+            const int lineNumber = i + 1;
+            const QString code =
+                codeLineWithoutComments(lines.at(i), &inBlockComment);
+
+            const QString includeFileName =
+                includeFileNameFromLine(code, scanContextValue.fileName);
+            if (!includeFileName.isEmpty()) {
+                SemanticQueryContext includeContext = scanContextValue;
+                includeContext.fileName = includeFileName;
+                includeContext.cursorLine = -1;
+                scanContext(includeContext);
+            }
+
+            QStringList packages;
+            if (!isPackageWildcardImportLine(code, &packages))
+                continue;
+
+            const QString importModule = moduleNameAtLine(fileRecords, lineNumber);
+            if (!importLineVisibleForContext(importModule, scanContextValue))
+                continue;
+
+            for (const QString& packageName : packages) {
+                if (!packageName.isEmpty())
+                    result.insert(packageName);
+            }
+        }
+    };
+
+    scanContext(context);
+    return result;
+}
+
+bool SemanticIndex::packageVisibleRecordImported(
+    const SemanticSymbolRecord& record,
+    const SemanticQueryContext& context) const
+{
+    if (record.visibility != SymbolTaxonomy::SymbolVisibility::PackageVisible)
+        return true;
+    if (record.owner.name.isEmpty())
+        return false;
+    return activeImportedPackageNames(context).contains(record.owner.name);
+}
+
 SemanticDefinitionResult SemanticIndex::bestDefinitionFromCandidates(
     const QList<SemanticSymbolRecord>& candidates,
     const SemanticDefinitionQuery& query,
@@ -226,6 +449,8 @@ SemanticDefinitionResult SemanticIndex::bestDefinitionFromCandidates(
     SemanticDefinitionResult best;
     best.localFile = localFile;
     int bestPriority = 999;
+    QSet<QString> bestImportedPackageOwners;
+    const SemanticQueryContext context = semanticContextForDefinitionQuery(query);
 
     for (const SemanticSymbolRecord& record : candidates) {
         ++best.inspectedCandidateCount;
@@ -235,13 +460,15 @@ SemanticDefinitionResult SemanticIndex::bestDefinitionFromCandidates(
         if (semanticDefinitionSkipForStructMemberType(record, query))
             continue;
         ++best.typeCompatibleCandidateCount;
-        if (!definitionRecordVisibleInContext(record, query.moduleName)) {
+        if (!definitionRecordVisibleInContext(record, context, this)) {
             continue;
         }
         ++best.visibleCandidateCount;
 
         int priority = semanticDefinitionTypePriority(record)
             + definitionRecordContextPriorityAdjustment(record, query.moduleName);
+        const bool importedPackageMember =
+            record.visibility == SymbolTaxonomy::SymbolVisibility::PackageVisible;
 
         if (!best.found || priority < bestPriority) {
             best.found = true;
@@ -250,7 +477,24 @@ SemanticDefinitionResult SemanticIndex::bestDefinitionFromCandidates(
             best.symbolStableKey = best.symbolRecord.stableKey;
             best.missReason = SemanticDefinitionMissReason::None;
             bestPriority = priority;
+            bestImportedPackageOwners.clear();
+            if (importedPackageMember)
+                bestImportedPackageOwners.insert(record.owner.name);
+        } else if (priority == bestPriority
+                   && best.symbolRecord.visibility
+                       == SymbolTaxonomy::SymbolVisibility::PackageVisible
+                   && importedPackageMember) {
+            bestImportedPackageOwners.insert(record.owner.name);
         }
+    }
+
+    if (best.found && bestImportedPackageOwners.size() > 1) {
+        best.found = false;
+        best.symbolRecord = {};
+        best.symbolStableKey = {};
+        best.missReason =
+            SemanticDefinitionMissReason::AmbiguousImportedPackageSymbol;
+        return best;
     }
 
     if (!best.found) {

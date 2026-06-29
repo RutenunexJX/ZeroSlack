@@ -282,7 +282,18 @@ QList<SemanticSymbolRecord> SemanticIndex::getModuleContextSymbolRecordsByType(
     };
 
     QSet<QString> seenStableKeys;
+    SemanticQueryContext queryContext;
+    queryContext.fileName = fileName;
+    queryContext.moduleName = moduleName;
+    queryContext.prefix = prefix;
+    queryContext.cursorLine = moduleEndLineExclusive == std::numeric_limits<int>::max()
+        ? -1
+        : moduleEndLineExclusive - 1;
     auto appendRecord = [&](const SemanticSymbolRecord& record) {
+        if (record.visibility == SymbolTaxonomy::SymbolVisibility::PackageVisible
+            && !packageVisibleRecordImported(record, queryContext)) {
+            return;
+        }
         if (!completionCommandKindMatchesModuleContextRecord(record, commandKind)) {
             return;
         }

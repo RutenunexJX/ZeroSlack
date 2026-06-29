@@ -13,6 +13,7 @@ SemanticDefinitionQuery toSemanticDefinitionQuery(const DefinitionQuery& query)
     semanticQuery.fileName = query.fileName;
     semanticQuery.moduleName = query.moduleName;
     semanticQuery.structTypeNameForMember = query.structTypeNameForMember;
+    semanticQuery.cursorLine = query.cursorLine;
     return semanticQuery;
 }
 

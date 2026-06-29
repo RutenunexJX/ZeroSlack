@@ -8206,6 +8206,271 @@ static void runSemanticDiffServiceFixture()
                true);
 }
 
+static void runImportAwarePackageVisibilityFixture()
+{
+    printf("\n-- import-aware package visibility --\n");
+
+    using CollectorKind = SymbolTaxonomy::CollectorKind;
+    using DeclarationKind = SymbolTaxonomy::DeclarationKind;
+
+    const QString topFile = QStringLiteral("import_visibility_top.sv");
+    const QString cfgFile = QStringLiteral("cfg_pkg.sv");
+    const QString altFile = QStringLiteral("alt_pkg.sv");
+    const QString topContent =
+        QStringLiteral("module no_import_top;\n"
+                       "  logic [DATA_W-1:0] no_import_data;\n"
+                       "endmodule\n"
+                       "\n"
+                       "module import_top;\n"
+                       "  import cfg_pkg::*;\n"
+                       "  logic [DATA_W-1:0] imported_data;\n"
+                       "endmodule\n"
+                       "\n"
+                       "module local_top;\n"
+                       "  import cfg_pkg::*;\n"
+                       "  localparam int DATA_W = 32;\n"
+                       "  logic [DATA_W-1:0] local_data;\n"
+                       "endmodule\n"
+                       "\n"
+                       "module conflict_top;\n"
+                       "  import cfg_pkg::*;\n"
+                       "  import alt_pkg::*;\n"
+                       "  logic [DATA_W-1:0] conflict_data;\n"
+                       "endmodule\n");
+
+    const SemanticSymbolRecord noImportTop =
+        SemanticFixtureRecordBuilder(QStringLiteral("no_import_top"),
+                                     DeclarationKind::Module)
+            .withFile(topFile)
+            .withLocalHandle(10100)
+            .withRange(1, 1, 3, 10)
+            .withCollectorKind(CollectorKind::Module)
+            .record();
+    const SemanticSymbolRecord importTop =
+        SemanticFixtureRecordBuilder(QStringLiteral("import_top"),
+                                     DeclarationKind::Module)
+            .withFile(topFile)
+            .withLocalHandle(10101)
+            .withRange(5, 1, 8, 10)
+            .withCollectorKind(CollectorKind::Module)
+            .record();
+    const SemanticSymbolRecord localTop =
+        SemanticFixtureRecordBuilder(QStringLiteral("local_top"),
+                                     DeclarationKind::Module)
+            .withFile(topFile)
+            .withLocalHandle(10102)
+            .withRange(10, 1, 14, 10)
+            .withCollectorKind(CollectorKind::Module)
+            .record();
+    const SemanticSymbolRecord conflictTop =
+        SemanticFixtureRecordBuilder(QStringLiteral("conflict_top"),
+                                     DeclarationKind::Module)
+            .withFile(topFile)
+            .withLocalHandle(10103)
+            .withRange(16, 1, 20, 10)
+            .withCollectorKind(CollectorKind::Module)
+            .record();
+    const SemanticSymbolRecord cfgPkg =
+        SemanticFixtureRecordBuilder(QStringLiteral("cfg_pkg"),
+                                     DeclarationKind::Package)
+            .withFile(cfgFile)
+            .withLocalHandle(10110)
+            .withLine(1)
+            .withCollectorKind(CollectorKind::Package)
+            .record();
+    const SemanticSymbolRecord cfgDataW =
+        SemanticFixtureRecordBuilder(QStringLiteral("DATA_W"),
+                                     DeclarationKind::Parameter)
+            .withFile(cfgFile)
+            .withLocalHandle(10111)
+            .withLine(2)
+            .withCollectorKind(CollectorKind::Parameter)
+            .inPackage(QStringLiteral("cfg_pkg"))
+            .record();
+    const SemanticSymbolRecord cfgType =
+        SemanticFixtureRecordBuilder(QStringLiteral("cfg_word_t"),
+                                     DeclarationKind::Typedef)
+            .withFile(cfgFile)
+            .withLocalHandle(10112)
+            .withLine(3)
+            .withCollectorKind(CollectorKind::Typedef)
+            .inPackage(QStringLiteral("cfg_pkg"))
+            .record();
+    const SemanticSymbolRecord altPkg =
+        SemanticFixtureRecordBuilder(QStringLiteral("alt_pkg"),
+                                     DeclarationKind::Package)
+            .withFile(altFile)
+            .withLocalHandle(10120)
+            .withLine(1)
+            .withCollectorKind(CollectorKind::Package)
+            .record();
+    const SemanticSymbolRecord altDataW =
+        SemanticFixtureRecordBuilder(QStringLiteral("DATA_W"),
+                                     DeclarationKind::Parameter)
+            .withFile(altFile)
+            .withLocalHandle(10121)
+            .withLine(2)
+            .withCollectorKind(CollectorKind::Parameter)
+            .inPackage(QStringLiteral("alt_pkg"))
+            .record();
+    const SemanticSymbolRecord localDataW =
+        SemanticFixtureRecordBuilder(QStringLiteral("DATA_W"),
+                                     DeclarationKind::Localparam)
+            .withFile(topFile)
+            .withLocalHandle(10130)
+            .withLine(12)
+            .withCollectorKind(CollectorKind::Localparam)
+            .inModule(QStringLiteral("local_top"))
+            .record();
+
+    QHash<QString, QString> fileContents;
+    fileContents.insert(topFile, topContent);
+    fileContents.insert(cfgFile,
+                        QStringLiteral("package cfg_pkg;\n"
+                                       "  parameter int DATA_W = 16;\n"
+                                       "  typedef logic [DATA_W-1:0] cfg_word_t;\n"
+                                       "endpackage\n"));
+    fileContents.insert(altFile,
+                        QStringLiteral("package alt_pkg;\n"
+                                       "  parameter int DATA_W = 8;\n"
+                                       "endpackage\n"));
+
+    SemanticIndex index;
+    index.setSnapshot(sharedSnapshotFromRecords(
+        {noImportTop,
+         importTop,
+         localTop,
+         conflictTop,
+         cfgPkg,
+         cfgDataW,
+         cfgType,
+         altPkg,
+         altDataW,
+         localDataW},
+        {},
+        {},
+        fileContents));
+
+    CompletionService completionService(&index);
+    DefinitionService definitionService(&index);
+    SymbolHoverService hoverService(&index);
+
+    CompletionQuery noImportCompletion;
+    noImportCompletion.fileName = topFile;
+    noImportCompletion.moduleName = QStringLiteral("no_import_top");
+    noImportCompletion.prefix = QStringLiteral("DATA");
+    noImportCompletion.cursorLine = 2;
+    expectBool("unimported package parameter hidden from completion",
+               !completionService.findCompletionResult(noImportCompletion)
+                    .names.contains(QStringLiteral("DATA_W")),
+               true);
+    expectBool("unimported package parameter hidden from scope completion",
+               !index.getScopeSymbolNames(topFile, 2)
+                    .contains(QStringLiteral("DATA_W")),
+               true);
+
+    DefinitionQuery noImportDefinition;
+    noImportDefinition.symbolName = QStringLiteral("DATA_W");
+    noImportDefinition.fileName = topFile;
+    noImportDefinition.moduleName = QStringLiteral("no_import_top");
+    noImportDefinition.cursorLine = 2;
+    const DefinitionResult noImportDefinitionResult =
+        definitionService.resolveDefinition(noImportDefinition);
+    expectBool("unimported package parameter does not jump",
+               !noImportDefinitionResult.found
+                   && noImportDefinitionResult.missReason
+                       == SemanticDefinitionMissReason::NotVisibleInContext,
+               true);
+
+    CompletionQuery importCompletion = noImportCompletion;
+    importCompletion.moduleName = QStringLiteral("import_top");
+    importCompletion.cursorLine = 7;
+    const CompletionResult importedResult =
+        completionService.findCompletionResult(importCompletion);
+    expectBool("imported package parameter completes",
+               importedResult.names.contains(QStringLiteral("DATA_W")),
+               true);
+
+    CommandCompletionQuery typedefCompletion;
+    typedefCompletion.fileName = topFile;
+    typedefCompletion.moduleName = QStringLiteral("import_top");
+    typedefCompletion.commandKind = CompletionCommandKind::Typedef;
+    typedefCompletion.prefix = QStringLiteral("cfg");
+    typedefCompletion.cursorLine = 7;
+    expectBool("imported package typedef command completes",
+               completionService.findCommandCompletions(typedefCompletion)
+                   .contains(QStringLiteral("cfg_word_t")),
+               true);
+
+    DefinitionQuery importDefinition = noImportDefinition;
+    importDefinition.moduleName = QStringLiteral("import_top");
+    importDefinition.cursorLine = 7;
+    const DefinitionResult importDefinitionResult =
+        definitionService.resolveDefinition(importDefinition);
+    expectBool("imported package parameter jumps",
+               importDefinitionResult.found
+                   && importDefinitionResult.symbolRecord.owner.name
+                       == QStringLiteral("cfg_pkg"),
+               true);
+
+    EditorSemanticContext hoverContext;
+    hoverContext.fileName = topFile;
+    hoverContext.moduleName = QStringLiteral("import_top");
+    hoverContext.cursorLine = 7;
+    hoverContext.lineText = QStringLiteral("  logic [DATA_W-1:0] imported_data;");
+    hoverContext.column = hoverContext.lineText.indexOf(QStringLiteral("DATA_W")) + 1;
+    const SymbolHoverReport hoverReport =
+        hoverService.hoverForContext(hoverContext);
+    expectBool("imported package parameter hover resolves",
+               hoverReport.available
+                   && hoverReport.definitionFile == cfgFile
+                   && hoverReport.ownerName == QStringLiteral("cfg_pkg"),
+               true);
+
+    CompletionQuery localCompletion = noImportCompletion;
+    localCompletion.moduleName = QStringLiteral("local_top");
+    localCompletion.cursorLine = 13;
+    const CompletionResult localResult =
+        completionService.findCompletionResult(localCompletion);
+    bool localCompletionPrefersLocal = false;
+    for (const CompletionResult::SemanticCompletionItem& item : localResult.items) {
+        if (item.label == QStringLiteral("DATA_W"))
+            localCompletionPrefersLocal =
+                item.symbolRecord.owner.name == QStringLiteral("local_top");
+    }
+    expectBool("local same-name completion wins over import",
+               localCompletionPrefersLocal,
+               true);
+    DefinitionQuery localDefinition = noImportDefinition;
+    localDefinition.moduleName = QStringLiteral("local_top");
+    localDefinition.cursorLine = 13;
+    const DefinitionResult localDefinitionResult =
+        definitionService.resolveDefinition(localDefinition);
+    expectBool("local same-name definition wins over import",
+               localDefinitionResult.found
+                   && localDefinitionResult.symbolRecord.owner.name
+                       == QStringLiteral("local_top"),
+               true);
+
+    CompletionQuery conflictCompletion = noImportCompletion;
+    conflictCompletion.moduleName = QStringLiteral("conflict_top");
+    conflictCompletion.cursorLine = 19;
+    expectBool("conflicting imported packages hide unqualified completion",
+               !completionService.findCompletionResult(conflictCompletion)
+                    .names.contains(QStringLiteral("DATA_W")),
+               true);
+    DefinitionQuery conflictDefinition = noImportDefinition;
+    conflictDefinition.moduleName = QStringLiteral("conflict_top");
+    conflictDefinition.cursorLine = 19;
+    const DefinitionResult conflictDefinitionResult =
+        definitionService.resolveDefinition(conflictDefinition);
+    expectBool("conflicting imported packages do not jump randomly",
+               !conflictDefinitionResult.found
+                   && conflictDefinitionResult.missReason
+                       == SemanticDefinitionMissReason::AmbiguousImportedPackageSymbol,
+               true);
+}
+
 static void runRealWorkspaceIncludeFixture()
 {
     printf("\n-- real workspace include fixture --\n");
@@ -8540,9 +8805,11 @@ static void runRealWorkspaceIncludeFixture()
 
     CompletionService completionService(&index);
     CommandCompletionQuery parameterCompletion;
+    parameterCompletion.fileName = topPath;
     parameterCompletion.moduleName = QStringLiteral("rtl_top");
     parameterCompletion.commandKind = CompletionCommandKind::Parameter;
     parameterCompletion.prefix = QStringLiteral("P_SW");
+    parameterCompletion.cursorLine = rtlTopRecord.location.startLine + 1;
     expectBool("real workspace completes package parameter",
                CompletionSymbolQuery::namesFromRecords(
                    completionService.findCommandCompletionSymbolRecords(
@@ -8551,9 +8818,11 @@ static void runRealWorkspaceIncludeFixture()
                true);
 
     CommandCompletionQuery typedefCompletion;
+    typedefCompletion.fileName = topPath;
     typedefCompletion.moduleName = QStringLiteral("rtl_top");
     typedefCompletion.commandKind = CompletionCommandKind::Typedef;
     typedefCompletion.prefix = QStringLiteral("cpld");
+    typedefCompletion.cursorLine = rtlTopRecord.location.startLine + 1;
     expectBool("real workspace completes package typedef",
                CompletionSymbolQuery::namesFromRecords(
                    completionService.findCommandCompletionSymbolRecords(
@@ -9955,6 +10224,7 @@ int main(int argc, char** argv)
     runClockResetDomainServiceFixture();
     runFsmGraphServiceFixture();
     runSemanticDiffServiceFixture();
+    runImportAwarePackageVisibilityFixture();
     runRealWorkspaceIncludeFixture();
     runPostWorkspaceDiagnosticFixture();
     runMacroDefineSemanticFixture();

@@ -34,20 +34,36 @@ request.
 
 Current baseline highlights:
 
-- Most recent completed milestone: user template JSON usage entry. Tools /
-  User Templates opens or creates global and workspace `user_templates.json`
-  files, reloads templates through `UserTemplateService`, and reports loaded /
-  ignored counts plus validation issues.
-- Recently completed workflow baselines also include user template JSON phase
-  1, explicit header/include and package import commands, semantic `;m` module
-  instantiation Slot Mode, Macro / Define first-class semantics, Package Tools
-  phase 1, References / Relationships workflow closure, and Fold Shelf
-  persistence/restore/management.
-- Package import explicit entry remains a completed historical milestone, not
-  the current milestone marker.
+- Most recent completed milestone: import-aware SystemVerilog package symbol
+  visibility. Unqualified package members are available to completion, goto,
+  and hover only from active `import pkg::*;` context; local/module symbols win
+  over imports; ambiguous same-name imported package members do not produce a
+  random jump.
+- Recently completed workflow baselines also include user template JSON usage,
+  user template JSON phase 1, explicit header/include and package import
+  commands, semantic `;m` module instantiation Slot Mode, Macro / Define
+  first-class semantics, Package Tools phase 1, References / Relationships
+  workflow closure, and Fold Shelf persistence/restore/management.
+- `;pk` remains the explicit package import insertion entry. Package Tools
+  remain package-file editing tools, and `pkg::symbol` completion was not added.
 
 Status history:
 
+- Package/import semantic visibility repair is complete. `PackageVisible`
+  package parameters, localparams, typedefs, enums, and structs are no longer
+  treated as globally visible for unqualified lookup. Completion, definition,
+  and hover use the current file/scope import context, including
+  `import pkg::*;`; local/module declarations take priority over imported
+  package members; and conflicting same-name members from multiple imported
+  packages are reported as ambiguous rather than resolved randomly. `;pk`
+  remains an import insertion command only, Package Tools behavior is
+  unchanged, and `pkg::symbol` completion was not added.
+- Verification for package/import semantic visibility repair passed in the
+  Debug build: `cmake --build . --target completion_test relationship_test
+  gui_smoke_test`; `ctest -R
+  "^(completion_test|relationship_test|gui_smoke_test)$"
+  --output-on-failure`; `git diff --check -- .
+  ':!test_sv/new/elec_phy_import/ctrl/chl_ctrl.sv'`.
 - Macro / Define first-class semantics are complete. Static `define` records
   enter the semantic index as Macro definitions; outline shows object-like and
   function-like macro names while keeping `ifdef` / `ifndef` / `else` /

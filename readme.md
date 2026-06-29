@@ -32,11 +32,12 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
 ## Current Product Baseline
 
 - Current handoff state: no implementation milestone is active. The latest
-  completed work is the user template JSON usage entry; the current baseline
-  also includes user template JSON phase 1, explicit header/include and
-  package import commands, semantic `;m` module instantiation Slot Mode, Macro
-  / Define semantics, Package Tools phase 1, References / Relationships
-  workflow closure, and Fold Shelf persistence/restore/management.
+  completed work is import-aware SystemVerilog package symbol visibility. The
+  current baseline also includes user template JSON usage, explicit
+  header/include and package import commands, semantic `;m` module
+  instantiation Slot Mode, Macro / Define semantics, Package Tools phase 1,
+  References / Relationships workflow closure, and Fold Shelf
+  persistence/restore/management.
 - The app is a lightweight SystemVerilog editor/workspace browser with tabs,
   workspace file navigation, semantic indexing, diagnostics, completion,
   jump-to-definition, references/relationships, and focused RTL visual helpers.
@@ -86,6 +87,13 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
   package symbols and inserts `import pkg_name::*;`. `;p` remains parameter
   semantic completion, COM `gpk` remains package navigation, and `;;pk` is
   intentionally unassigned.
+- Package members are import-aware for ordinary unqualified lookup. Package
+  parameters, localparams, typedefs, enums, and structs marked
+  `PackageVisible` participate in completion, goto, and hover only when the
+  current file/scope has an active `import pkg::*;`. Local/module definitions
+  win over imported package members, and conflicting same-name members from
+  multiple imported packages do not produce a random jump. Explicit
+  `pkg::symbol` completion remains outside the current baseline.
 - User `;;cmd` templates can now be maintained in JSON files. ZeroSlack reads
   a global `user_templates.json` plus an optional workspace
   `.zeroslack/user_templates.json`; workspace templates override global
@@ -755,6 +763,17 @@ Do not add unlisted long-term goals without explicit user approval.
   management, COM Mode command, or Global Control entry was added. Release
   verification passed: `cmake --build . --target completion_test
   gui_smoke_test relationship_test`; `ctest -R
+  "^(completion_test|relationship_test|gui_smoke_test)$"
+  --output-on-failure`; `git diff --check -- .
+  ':!test_sv/new/elec_phy_import/ctrl/chl_ctrl.sv'`.
+- Latest package/import semantic repair: unqualified package member visibility
+  is driven by active `import pkg::*;` context. Completion, definition, and
+  hover hide package members before import, expose them after import, prefer
+  local/module symbols over imports, and reject ambiguous same-name imported
+  package members instead of jumping to an arbitrary definition. `;pk` remains
+  an insertion command only, and Package Tools behavior is unchanged. Debug
+  verification passed in the current build: `cmake --build . --target
+  completion_test relationship_test gui_smoke_test`; `ctest -R
   "^(completion_test|relationship_test|gui_smoke_test)$"
   --output-on-failure`; `git diff --check -- .
   ':!test_sv/new/elec_phy_import/ctrl/chl_ctrl.sv'`.

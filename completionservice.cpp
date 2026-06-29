@@ -149,9 +149,15 @@ QList<SemanticSymbolRecord> completionRecords(
     if (query.prefix.isEmpty())
         return {};
 
-    if (!query.moduleName.isEmpty())
-        return semanticIndex->getModuleCompletionSymbolRecords(
-            query.moduleName, query.prefix);
+    if (!query.moduleName.isEmpty()) {
+        SemanticQueryContext context;
+        context.fileName = query.fileName;
+        context.moduleName = query.moduleName;
+        context.prefix = query.prefix;
+        context.cursorLine = query.cursorLine;
+        context.cursorPosition = query.cursorPosition;
+        return semanticIndex->getModuleCompletionSymbolRecords(context);
+    }
 
     return semanticIndex->getGlobalCompletionSymbolRecords(query.prefix);
 }

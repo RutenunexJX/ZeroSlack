@@ -6,6 +6,7 @@
 
 #include <QDir>
 #include <QFileInfo>
+#include <QHash>
 #include <QSet>
 #include <algorithm>
 
@@ -169,6 +170,26 @@ QStringList scopeSymbolNamesForRecords(
         result.append(displayName);
     }
     return result;
+}
+
+QString containingModuleNameForRecords(
+    const QList<SemanticSymbolRecord>& records,
+    int cursorLine)
+{
+    QString containingModule;
+    int containingModuleStart = -1;
+    for (const SemanticSymbolRecord& record : records) {
+        if (record.declarationKind != SymbolTaxonomy::DeclarationKind::Module)
+            continue;
+        if (record.location.startLine <= cursorLine
+            && (record.location.endLine <= 0
+                || record.location.endLine >= cursorLine)
+            && record.location.startLine > containingModuleStart) {
+            containingModule = record.name;
+            containingModuleStart = record.location.startLine;
+        }
+    }
+    return containingModule;
 }
 
 void removeRecordsCoveredByNativeFiles(
@@ -676,18 +697,50 @@ QString SemanticIndex::getCachedFileContent(const QString& fileName) const
 
 QStringList SemanticIndex::getScopeSymbolNames(const QString& fileName, int cursorLine) const
 {
-    if (m_snapshot) {
-        const QStringList snapshotNames =
-            m_snapshot->getScopeSymbolNames(fileName, cursorLine);
-        if (!snapshotNames.isEmpty())
-            return snapshotNames;
-    }
-
     QStringList result;
     if (fileName.isEmpty() || cursorLine < 0)
         return result;
 
-    return scopeSymbolNamesForRecords(getSymbolRecords(fileName), cursorLine);
+    const QList<SemanticSymbolRecord> fileRecords = getSymbolRecords(fileName);
+    result = scopeSymbolNamesForRecords(fileRecords, cursorLine);
+    QSet<QString> seenNames;
+    for (const QString& name : result)
+        seenNames.insert(name.toCaseFolded());
+
+    SemanticQueryContext context;
+    context.fileName = fileName;
+    context.cursorLine = cursorLine;
+    context.moduleName = containingModuleNameForRecords(fileRecords, cursorLine);
+
+    QHash<QString, QList<SemanticSymbolRecord>> importedRecordsByName;
+    for (const QString& packageName : activeImportedPackageNames(context)) {
+        for (const SemanticSymbolRecord& record :
+             getSymbolRecordsByOwner(packageName)) {
+            if (!packageVisibleRecordImported(record, context))
+                continue;
+            if (!SymbolTaxonomy::isPackageVisibleDefinition(
+                    semanticMetadataForSymbolRecord(record))) {
+                continue;
+            }
+            importedRecordsByName[record.name.toCaseFolded()].append(record);
+        }
+    }
+
+    for (auto it = importedRecordsByName.constBegin();
+         it != importedRecordsByName.constEnd();
+         ++it) {
+        if (seenNames.contains(it.key()))
+            continue;
+        QSet<QString> owners;
+        for (const SemanticSymbolRecord& record : it.value())
+            owners.insert(record.owner.name);
+        if (owners.size() != 1 || it.value().isEmpty())
+            continue;
+        seenNames.insert(it.key());
+        result.append(it.value().first().name);
+    }
+    result.sort(Qt::CaseInsensitive);
+    return result;
 }
 
 bool SemanticIndex::isValidModuleName(const QString& name) const

@@ -46,8 +46,14 @@ QList<SemanticSymbolRecord> CompletionSemanticQuery::commandSymbolRecords(
             query.prefix);
     }
 
+    SemanticQueryContext context;
+    context.fileName = query.fileName;
+    context.moduleName = query.moduleName;
+    context.prefix = query.prefix;
+    context.cursorLine = query.cursorLine;
+    context.cursorPosition = query.cursorPosition;
     return semanticIndex->getCommandCompletionSymbolRecords(
-        query.moduleName,
+        context,
         query.commandKind,
         query.prefix);
 }

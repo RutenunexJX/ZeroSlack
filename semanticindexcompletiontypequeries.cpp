@@ -2,6 +2,7 @@
 #include "completioncommandkindadapter.h"
 #include "semanticindexcompletionfilters.h"
 
+#include <QHash>
 #include <QSet>
 #include <algorithm>
 
@@ -11,17 +12,20 @@ namespace {
 bool commandCompletionScopeVisibleForRecord(
     const SemanticSymbolRecord& record,
     CompletionCommandKind requestedKind,
-    const QString& moduleName)
+    const SemanticQueryContext& context,
+    const SemanticIndex* index)
 {
-    const bool useGlobalScope = moduleName.isEmpty()
+    const bool useGlobalScope = context.moduleName.isEmpty()
         || completionCommandKindIsAlwaysGlobalCommand(requestedKind);
     if (useGlobalScope)
         return record.owner.name.isEmpty();
 
-    return record.owner.name == moduleName
-        || (completionCommandKindIsPackageVisibleCommand(requestedKind)
-            && record.visibility
-                == SymbolTaxonomy::SymbolVisibility::PackageVisible);
+    if (record.owner.name == context.moduleName)
+        return true;
+    return completionCommandKindIsPackageVisibleCommand(requestedKind)
+        && record.visibility == SymbolTaxonomy::SymbolVisibility::PackageVisible
+        && index
+        && index->packageVisibleRecordImported(record, context);
 }
 
 }
@@ -31,35 +35,67 @@ QList<SemanticSymbolRecord> SemanticIndex::getCommandCompletionSymbolRecords(
     CompletionCommandKind commandKind,
     const QString& prefix) const
 {
+    SemanticQueryContext context;
+    context.moduleName = moduleName;
+    context.prefix = prefix;
+    return getCommandCompletionSymbolRecords(context, commandKind, prefix);
+}
+
+QList<SemanticSymbolRecord> SemanticIndex::getCommandCompletionSymbolRecords(
+    const SemanticQueryContext& context,
+    CompletionCommandKind commandKind,
+    const QString& prefix) const
+{
     QList<SemanticSymbolRecord> result;
     QSet<QString> seenNames;
-    if (moduleName.isEmpty()
+    if (context.moduleName.isEmpty()
         && !completionCommandKindIsGlobalCommand(commandKind))
         return result;
 
-    const bool useGlobalScope = moduleName.isEmpty()
+    const bool useGlobalScope = context.moduleName.isEmpty()
         || completionCommandKindIsAlwaysGlobalCommand(commandKind);
     const QList<SemanticSymbolRecord> records =
         useGlobalScope
             ? getSymbolRecordsByOwner(QString())
             : (completionCommandKindIsPackageVisibleCommand(commandKind)
                    ? getSymbolRecords()
-                   : getSymbolRecordsByOwner(moduleName));
+                   : getSymbolRecordsByOwner(context.moduleName));
+    QHash<QString, QList<SemanticSymbolRecord>> importedRecordsByName;
     for (const SemanticSymbolRecord& record : records) {
         if (!commandCompletionScopeVisibleForRecord(
                 record,
                 commandKind,
-                moduleName)
+                context,
+                this)
             || !completionCommandKindMatchesCommandRecord(record, commandKind)
             || !semanticCompletionNameMatches(record.name, prefix)) {
             continue;
         }
 
         const QString key = record.name.toCaseFolded();
-        if (seenNames.contains(key))
+        if (record.visibility
+            == SymbolTaxonomy::SymbolVisibility::PackageVisible) {
+            importedRecordsByName[key].append(record);
+        } else {
+            if (seenNames.contains(key))
+                continue;
+            seenNames.insert(key);
+            result.append(record);
+        }
+    }
+
+    for (auto it = importedRecordsByName.constBegin();
+         it != importedRecordsByName.constEnd();
+         ++it) {
+        if (seenNames.contains(it.key()))
             continue;
-        seenNames.insert(key);
-        result.append(record);
+        QSet<QString> owners;
+        for (const SemanticSymbolRecord& record : it.value())
+            owners.insert(record.owner.name);
+        if (owners.size() != 1 || it.value().isEmpty())
+            continue;
+        seenNames.insert(it.key());
+        result.append(it.value().first());
     }
 
     std::sort(

@@ -4157,22 +4157,22 @@ int main(int argc, char** argv) {
         semanticFixtureMetadata(SymbolTaxonomy::DeclarationKind::Parameter,
                                 SymbolTaxonomy::SymbolOwnerScope::Package);
     const QString packageParameterOwner = QStringLiteral("pkg_scope");
-    expectBool("SymbolTaxonomy package definition visible",
+    expectBool("SymbolTaxonomy package definition hidden without import context",
                SymbolTaxonomy::isDefinitionVisibleInContext(
                    packageParameterMetadata,
                    packageParameterOwner,
                    QStringLiteral("top")),
-               true);
+               false);
     const SymbolTaxonomy::SemanticMetadata metadataPackageParameterMetadata =
         semanticFixtureMetadata(SymbolTaxonomy::DeclarationKind::Parameter,
                                 SymbolTaxonomy::SymbolOwnerScope::Package);
     const QString metadataPackageParameterOwner = QStringLiteral("pkg_scope");
-    expectBool("SymbolTaxonomy metadata package definition visible",
+    expectBool("SymbolTaxonomy metadata package definition hidden without import context",
                SymbolTaxonomy::isDefinitionVisibleInContext(
                    metadataPackageParameterMetadata,
                    metadataPackageParameterOwner,
                    QStringLiteral("top")),
-               true);
+               false);
     const SymbolTaxonomy::SemanticMetadata metadataStructMemberMetadata =
         semanticFixtureMetadata(SymbolTaxonomy::DeclarationKind::StructMember,
                                 SymbolTaxonomy::SymbolOwnerScope::Struct);
@@ -8328,6 +8328,10 @@ int main(int argc, char** argv) {
                                     snapshotTop,
                                     SymbolRelationshipEngine::RESETS));
     QHash<QString, QString> snapshotFileContents;
+    snapshotFileContents.insert(snapshotOnlyFile,
+                                QStringLiteral("import snap_pkg::*;\n"
+                                               "module snap_top;\n"
+                                               "endmodule\n"));
     snapshotFileContents.insert(snapshotScopeFile, snapshotScopeContent);
     snapshotFileContents.insert(semanticModuleScopeFile, semanticModuleScopeContent);
     SemanticIndex snapshotIndex;
@@ -8596,6 +8600,12 @@ int main(int argc, char** argv) {
     snapshotSemanticPackageParamQuery.commandKind =
         CompletionCommandKind::Parameter;
     snapshotSemanticPackageParamQuery.prefix = QStringLiteral("semantic");
+    expectList("snapshot semantic package parameter hidden before import context",
+               snapshotCompletionService.findCommandCompletions(
+                   snapshotSemanticPackageParamQuery),
+               {});
+    snapshotSemanticPackageParamQuery.fileName = snapshotOnlyFile;
+    snapshotSemanticPackageParamQuery.cursorLine = 2;
     expectList("snapshot semantic package parameter command",
                snapshotCompletionService.findCommandCompletions(
                    snapshotSemanticPackageParamQuery),

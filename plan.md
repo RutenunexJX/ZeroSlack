@@ -13,13 +13,14 @@ into an analyzer.
 
 - No implementation milestone is active. Start the next milestone only from a
   new explicit scoped request.
-- The current completed baseline includes user template JSON usage actions,
-  user template JSON phase 1, explicit header/include and package import
-  commands, semantic `;m` module instantiation Slot Mode, Macro / Define
-  semantics, Package Tools phase 1, References / Relationships workflow
-  closure, and Fold Shelf persistence/restore/management.
-- Package import explicit entry remains a completed historical milestone, not
-  the current milestone marker.
+- The current completed baseline includes import-aware package member
+  visibility for unqualified completion, definition, and hover; user template
+  JSON usage actions; explicit header/include and package import commands;
+  semantic `;m` module instantiation Slot Mode; Macro / Define semantics;
+  Package Tools phase 1; References / Relationships workflow closure; and Fold
+  Shelf persistence/restore/management.
+- `;pk` remains an explicit import insertion command. Package member lookup is
+  import-aware, and Package Tools remain package-file editing tools.
 
 ## Non-Negotiable Architecture
 
@@ -1789,6 +1790,23 @@ Latest package import explicit entry:
   existing COM smoke coverage.
 - Release verification passed: `cmake --build . --target completion_test
   gui_smoke_test relationship_test`; `ctest -R
+  "^(completion_test|relationship_test|gui_smoke_test)$"
+  --output-on-failure`; `git diff --check -- .
+  ':!test_sv/new/elec_phy_import/ctrl/chl_ctrl.sv'`.
+
+Latest package/import semantic repair:
+
+- Scope: unqualified package member visibility for ordinary completion,
+  definition, and hover. Package members marked `PackageVisible` are not global;
+  they are visible only when the current file/scope has an active
+  `import pkg::*;`.
+- Local/module declarations keep priority over imported package members.
+  Same-name members imported from multiple packages are treated as ambiguous
+  and are not used for random unqualified jumps.
+- `;pk` remains import insertion only, COM `gpk` remains package navigation,
+  Package Tools remain unchanged, and `pkg::symbol` completion was not added.
+- Debug verification passed: `cmake --build . --target completion_test
+  relationship_test gui_smoke_test`; `ctest -R
   "^(completion_test|relationship_test|gui_smoke_test)$"
   --output-on-failure`; `git diff --check -- .
   ':!test_sv/new/elec_phy_import/ctrl/chl_ctrl.sv'`.

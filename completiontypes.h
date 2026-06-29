@@ -76,6 +76,8 @@ struct CommandCompletionQuery {
     QString fileName;
     QString moduleName;
     QString documentText;
+    int cursorLine = -1;
+    int cursorPosition = -1;
     CompletionCommandKind commandKind = CompletionCommandKind::User;
 };
 
@@ -274,6 +276,8 @@ struct CommandModeCompletionQuery {
     QString fileName;
     QString moduleName;
     QString documentText;
+    int cursorLine = -1;
+    int cursorPosition = -1;
 };
 
 struct CommandModeCompletionState {

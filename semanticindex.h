@@ -32,6 +32,7 @@ struct SemanticQueryContext {
     QString prefix;
     int cursorLine = -1;      // 1-based
     int cursorPosition = -1;  // QTextDocument position, when available
+    QSet<QString> importedPackageNames;
 };
 
 struct SymbolStableKey {
@@ -216,6 +217,9 @@ struct SemanticDefinitionQuery {
     QString fileName;
     QString moduleName;
     QString structTypeNameForMember;
+    int cursorLine = -1;
+    int cursorPosition = -1;
+    QSet<QString> importedPackageNames;
 };
 
 enum class SemanticDefinitionMissReason {
@@ -224,7 +228,8 @@ enum class SemanticDefinitionMissReason {
     NoCandidateSymbols,
     NoMatchingName,
     StructMemberTypeMismatch,
-    NotVisibleInContext
+    NotVisibleInContext,
+    AmbiguousImportedPackageSymbol
 };
 
 struct SemanticDefinitionResult {
@@ -311,10 +316,16 @@ public:
     QList<SemanticSymbolRecord> getModuleCompletionSymbolRecords(
         const QString& moduleName,
         const QString& prefix = QString()) const;
+    QList<SemanticSymbolRecord> getModuleCompletionSymbolRecords(
+        const SemanticQueryContext& context) const;
     QList<SemanticSymbolRecord> getGlobalCompletionSymbolRecords(
         const QString& prefix = QString()) const;
     QList<SemanticSymbolRecord> getCommandCompletionSymbolRecords(
         const QString& moduleName,
+        CompletionCommandKind commandKind,
+        const QString& prefix = QString()) const;
+    QList<SemanticSymbolRecord> getCommandCompletionSymbolRecords(
+        const SemanticQueryContext& context,
         CompletionCommandKind commandKind,
         const QString& prefix = QString()) const;
     QStringList getCompletionSymbolNames() const;
@@ -348,6 +359,11 @@ public:
         const SemanticDefinitionQuery& query) const;
     QString getCachedFileContent(const QString& fileName) const;
     QStringList getScopeSymbolNames(const QString& fileName, int cursorLine) const;
+    QSet<QString> activeImportedPackageNames(
+        const SemanticQueryContext& context) const;
+    bool packageVisibleRecordImported(
+        const SemanticSymbolRecord& record,
+        const SemanticQueryContext& context) const;
     QString getStructTypeForVariable(const QString& variableName,
                                      const QString& moduleName = QString()) const;
     QList<SemanticSymbolRecord> getStructMemberRecords(

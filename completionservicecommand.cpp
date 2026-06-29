@@ -479,6 +479,8 @@ CommandModeCompletionState CompletionService::commandModeCompletionState(
     completionQuery.fileName = query.fileName;
     completionQuery.moduleName = query.moduleName;
     completionQuery.documentText = query.documentText;
+    completionQuery.cursorLine = query.cursorLine;
+    completionQuery.cursorPosition = query.cursorPosition;
     completionQuery.commandKind = state.command.kind;
 
     state.symbolRecords = findCommandCompletionSymbolRecords(completionQuery);

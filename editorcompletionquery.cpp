@@ -76,6 +76,8 @@ EditorCompletionQueryHelper::commandModeCompletionQuery(
     query.fileName = context.fileName;
     query.moduleName = context.moduleName;
     query.documentText = context.documentText;
+    query.cursorLine = context.cursorLine;
+    query.cursorPosition = context.cursorPosition;
     return query;
 }
 

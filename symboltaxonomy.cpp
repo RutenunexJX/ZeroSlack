@@ -764,8 +764,7 @@ bool isDefinitionVisibleInContext(
         || collectorKindIs(metadata, CollectorKind::EnumValue)
         || isGlobalDefinition(metadata)
         || moduleName.isEmpty()
-        || ownerName == moduleName
-        || metadata.visibility == SymbolVisibility::PackageVisible;
+        || ownerName == moduleName;
 }
 
 bool semanticCompletionKindMatches(const SemanticMetadata& metadata,
