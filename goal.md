@@ -1197,6 +1197,27 @@ Milestones:
 - HWA.3 Update docs with confirmed status and open gaps.
   (complete: confirmed status and open audit gaps documented)
 
+## Functional Corpus Audit
+
+Goal: audit real corpus behavior across core semantic/RTL insight features
+without mutating `test_sv/new` or `test_sv/huge_prj` source files.
+
+Milestones:
+
+- FCA.1 Add repeatable corpus audit target.
+  (complete: `corpus_audit_test` recursively opens all 454 `.sv` / `.svh` /
+  `.v` corpus files read-only and writes JSON + Markdown reports)
+- FCA.2 Run four priority feature sweeps.
+  (complete: latest report covers State Transition Graph, Signal Kernel Graph,
+  Module Block Diagram, and Wave Preview through service/report-layer paths)
+- FCA.3 Document known issues and residual risk.
+  (complete: latest run covered 424 modules, 49,345 signal/port candidates,
+  113,127 semantic records, 82,636 audit relationships, and 704 diagnostics;
+  State Transition Graph has 66 real `no FSM graph` misses, Signal Kernel Graph
+  uses a bounded deep-call budget, Module Block Diagram has 216 root-only leaf
+  results, Wave Preview passed `cpld_preproc.sv` with 220 lanes / 590
+  assignments, and 3 source files have empty outline results)
+
 ## Completion Order
 
 Preferred starting order:

@@ -825,3 +825,25 @@ Do not add unlisted long-term goals without explicit user approval.
   completion_test relationship_test gui_smoke_test`; `ctest -R
   "^(completion_test|relationship_test|gui_smoke_test)$" --output-on-failure`;
   `git diff --check -- . ':!test_sv/new/elec_phy_import/ctrl/chl_ctrl.sv'`.
+- Latest Functional Corpus Audit: added `corpus_audit_test`, a headless
+  service/report-layer audit target for `test_sv/new` and `test_sv/huge_prj`.
+  It recursively opens all `.sv`, `.svh`, and `.v` files read-only, builds a
+  semantic snapshot, emits direct Slang-fact relationships for audit use, and
+  writes `test_sv/corpus_audit_report.json` plus
+  `test_sv/corpus_audit_report.md`. Latest run covered 454 files, 424 modules,
+  49,345 signal/port candidates, 113,127 semantic records, 82,636 audit
+  relationships, and 704 diagnostics. Summary: State Transition Graph 77 pass /
+  66 fail / 384 skipped; Signal Kernel Graph 388 pass / 12 empty-but-valid /
+  1,592 skipped by explicit budget or no candidates; Module Block Diagram 208
+  pass / 216 empty-but-valid leaf/root-only diagrams; Wave Preview 408 pass /
+  16 skipped; semantic baseline 874 pass / 3 fail / 2 empty-but-valid.
+  `cpld_preproc.sv` is covered by Wave Preview and passed with 220 lanes and
+  590 assignments. The 66 State Transition Graph failures are real `ns` /
+  `next_state` candidates returning `no FSM graph`; current-state negative
+  triggers remain rejected. Signal Kernel Graph caps expensive graph calls at 4
+  signals per module and 400 total calls while counting skipped candidates.
+  Verification run: `ninja corpus_audit_test`; direct offscreen
+  `corpus_audit_test.exe E:\ZeroSlack\ZeroSlack\test_sv\new
+  E:\ZeroSlack\ZeroSlack\test_sv\huge_prj`. Full CTest wrapping was not rerun
+  because the direct command is the CTest payload and takes about 12 minutes in
+  the current Debug build.

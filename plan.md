@@ -1549,6 +1549,26 @@ HWA.3 open audit gaps:
 - Future Huge Workspace work should first close these audit gaps with a safe
   runtime setup before proposing UX or behavior changes.
 
+## Functional Corpus Audit
+
+Goal: run a broad service/report-layer audit over the real `test_sv/new` and
+`test_sv/huge_prj` SystemVerilog corpus without mutating corpus files.
+
+Milestones:
+
+- FCA.1 Add repeatable corpus audit target and reports.
+  (complete: `corpus_audit_test` recursively covers all 454 `.sv` / `.svh` /
+  `.v` files and writes JSON + Markdown reports under `test_sv`)
+- FCA.2 Exercise four priority features on real corpus.
+  (complete: State Transition Graph, Signal Kernel Graph, Module Block
+  Diagram, and Wave Preview are invoked through service/report-layer paths;
+  GUI smoke remains out of this stage)
+- FCA.3 Record failures and residual risk.
+  (complete: latest run recorded 66 next-state FSM misses, 3 empty source-file
+  outline misses, Signal Kernel Graph budget skips, and Wave Preview module
+  fallback skips; `cpld_preproc.sv` Wave Preview passed with 220 lanes / 590
+  assignments)
+
 ## Milestone Definition Of Done
 
 Every implementation milestone must be small, verifiable, and deliverable.
