@@ -28,11 +28,25 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
 
 ## Current Goal State
 
-Current milestone: package import explicit entry is complete.
+Current milestone: none active. The last requested implementation milestone is
+complete and pushed; the next milestone should wait for a new explicit scoped
+request.
 
-Next work should wait for the next explicit scoped request.
+Current baseline highlights:
 
-Status:
+- Most recent completed milestone: user template JSON usage entry. Tools /
+  User Templates opens or creates global and workspace `user_templates.json`
+  files, reloads templates through `UserTemplateService`, and reports loaded /
+  ignored counts plus validation issues.
+- Recently completed workflow baselines also include user template JSON phase
+  1, explicit header/include and package import commands, semantic `;m` module
+  instantiation Slot Mode, Macro / Define first-class semantics, Package Tools
+  phase 1, References / Relationships workflow closure, and Fold Shelf
+  persistence/restore/management.
+- Package import explicit entry remains a completed historical milestone, not
+  the current milestone marker.
+
+Status history:
 
 - Macro / Define first-class semantics are complete. Static `define` records
   enter the semantic index as Macro definitions; outline shows object-like and

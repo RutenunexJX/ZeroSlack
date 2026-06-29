@@ -9,6 +9,18 @@ ZeroSlack is a SystemVerilog code editor and workspace browser. It should help
 users read, navigate, edit, and understand RTL projects without turning UI code
 into an analyzer.
 
+## Current Execution Baseline
+
+- No implementation milestone is active. Start the next milestone only from a
+  new explicit scoped request.
+- The current completed baseline includes user template JSON usage actions,
+  user template JSON phase 1, explicit header/include and package import
+  commands, semantic `;m` module instantiation Slot Mode, Macro / Define
+  semantics, Package Tools phase 1, References / Relationships workflow
+  closure, and Fold Shelf persistence/restore/management.
+- Package import explicit entry remains a completed historical milestone, not
+  the current milestone marker.
+
 ## Non-Negotiable Architecture
 
 - Use Qt 6, CMake, and Ninja only.

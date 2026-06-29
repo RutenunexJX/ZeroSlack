@@ -31,6 +31,12 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
 
 ## Current Product Baseline
 
+- Current handoff state: no implementation milestone is active. The latest
+  completed work is the user template JSON usage entry; the current baseline
+  also includes user template JSON phase 1, explicit header/include and
+  package import commands, semantic `;m` module instantiation Slot Mode, Macro
+  / Define semantics, Package Tools phase 1, References / Relationships
+  workflow closure, and Fold Shelf persistence/restore/management.
 - The app is a lightweight SystemVerilog editor/workspace browser with tabs,
   workspace file navigation, semantic indexing, diagnostics, completion,
   jump-to-definition, references/relationships, and focused RTL visual helpers.
