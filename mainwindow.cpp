@@ -53,6 +53,7 @@
 #include <QDialogButtonBox>
 #include <QDockWidget>
 #include <QDir>
+#include <QFile>
 #include <QFileInfo>
 #include <QHeaderView>
 #include <QHBoxLayout>
@@ -139,6 +140,7 @@ MainWindow::MainWindow(QWidget *parent)
     setupFoldBlockShelf();
     setupWorkspaceMenu();
     setupViewMenu();
+    setupToolsMenu();
     setupEditorModeChip();
     setupGlobalControl();
     setupComMode();
@@ -1181,6 +1183,197 @@ void MainWindow::setupWorkspaceMenu()
             &QAction::triggered,
             this,
             [this]() { navigateDiagnostic(true); });
+}
+
+void MainWindow::setupToolsMenu()
+{
+    if (!menuBar() || toolsMenu)
+        return;
+
+    toolsMenu = menuBar()->addMenu(tr("&Tools"));
+    toolsMenu->setObjectName(QStringLiteral("toolsMenu"));
+
+    userTemplatesMenu = toolsMenu->addMenu(tr("User Templates"));
+    userTemplatesMenu->setObjectName(QStringLiteral("userTemplatesMenu"));
+
+    QAction* openGlobalAction =
+        userTemplatesMenu->addAction(tr("Open Global User Templates"));
+    openGlobalAction->setObjectName(
+        QStringLiteral("openGlobalUserTemplatesAction"));
+    connect(openGlobalAction,
+            &QAction::triggered,
+            this,
+            &MainWindow::openGlobalUserTemplates);
+
+    QAction* openWorkspaceAction =
+        userTemplatesMenu->addAction(tr("Open Workspace User Templates"));
+    openWorkspaceAction->setObjectName(
+        QStringLiteral("openWorkspaceUserTemplatesAction"));
+    connect(openWorkspaceAction,
+            &QAction::triggered,
+            this,
+            &MainWindow::openWorkspaceUserTemplates);
+
+    userTemplatesMenu->addSeparator();
+    QAction* reloadAction =
+        userTemplatesMenu->addAction(tr("Reload User Templates"));
+    reloadAction->setObjectName(QStringLiteral("reloadUserTemplatesAction"));
+    connect(reloadAction,
+            &QAction::triggered,
+            this,
+            &MainWindow::reloadUserTemplates);
+}
+
+void MainWindow::openGlobalUserTemplates()
+{
+    openUserTemplateFile(
+        UserTemplateService::getInstance()->globalTemplateLocation(),
+        QStringLiteral("global user templates"));
+}
+
+void MainWindow::openWorkspaceUserTemplates()
+{
+    if (!workspaceManager || !workspaceManager->isWorkspaceOpen()) {
+        if (statusBar()) {
+            statusBar()->showMessage(
+                QStringLiteral("Open a workspace before opening workspace user templates"),
+                5000);
+        }
+        return;
+    }
+
+    UserTemplateService* service = UserTemplateService::getInstance();
+    service->setWorkspaceRoot(workspaceManager->getWorkspacePath());
+    openUserTemplateFile(service->workspaceTemplateLocation(),
+                         QStringLiteral("workspace user templates"));
+}
+
+bool MainWindow::openUserTemplateFile(const QString& filePath,
+                                      const QString& label)
+{
+    QString errorMessage;
+    if (!ensureUserTemplateJsonFile(filePath, &errorMessage)) {
+        if (errorMessage.isEmpty())
+            errorMessage = QStringLiteral("Failed to prepare user template file.");
+        if (statusBar())
+            statusBar()->showMessage(errorMessage, 5000);
+        QMessageBox::warning(this, tr("User Templates"), errorMessage);
+        return false;
+    }
+
+    if (!tabManager || !tabManager->openFileInTab(filePath)) {
+        const QString message =
+            QStringLiteral("Failed to open %1.").arg(label);
+        if (statusBar())
+            statusBar()->showMessage(message, 5000);
+        QMessageBox::warning(this, tr("User Templates"), message);
+        return false;
+    }
+
+    if (statusBar()) {
+        statusBar()->showMessage(
+            QStringLiteral("Opened %1").arg(label),
+            3000);
+    }
+    return true;
+}
+
+bool MainWindow::ensureUserTemplateJsonFile(const QString& filePath,
+                                            QString* errorMessage) const
+{
+    if (errorMessage)
+        errorMessage->clear();
+    if (filePath.trimmed().isEmpty()) {
+        if (errorMessage)
+            *errorMessage = QStringLiteral("No user template file path is configured.");
+        return false;
+    }
+
+    const QFileInfo fileInfo(filePath);
+    if (fileInfo.exists()) {
+        if (fileInfo.isFile())
+            return true;
+        if (errorMessage) {
+            *errorMessage =
+                QStringLiteral("User template path exists but is not a file: %1")
+                    .arg(filePath);
+        }
+        return false;
+    }
+
+    QDir parentDir = fileInfo.dir();
+    if (!parentDir.exists() && !parentDir.mkpath(QStringLiteral("."))) {
+        if (errorMessage) {
+            *errorMessage =
+                QStringLiteral("Failed to create user template directory: %1")
+                    .arg(parentDir.absolutePath());
+        }
+        return false;
+    }
+
+    QFile file(filePath);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text)) {
+        if (errorMessage) {
+            *errorMessage =
+                QStringLiteral("Failed to create user template file: %1")
+                    .arg(filePath);
+        }
+        return false;
+    }
+    file.write("{\n  \"templates\": []\n}\n");
+    return true;
+}
+
+void MainWindow::reloadUserTemplates()
+{
+    const UserTemplateLoadReport report =
+        UserTemplateService::getInstance()->reload();
+    const QString summary = userTemplateReloadSummary(report);
+    if (statusBar())
+        statusBar()->showMessage(summary, report.issues.isEmpty() ? 3000 : 7000);
+
+    if (!report.issues.isEmpty()) {
+        QMessageBox::warning(this,
+                             tr("User Templates"),
+                             userTemplateIssueReportText(report));
+    }
+}
+
+QString MainWindow::userTemplateReloadSummary(
+    const UserTemplateLoadReport& report) const
+{
+    return QStringLiteral("User templates loaded: %1, ignored: %2")
+        .arg(report.records.size())
+        .arg(report.issues.size());
+}
+
+QString MainWindow::userTemplateIssueReportText(
+    const UserTemplateLoadReport& report) const
+{
+    QStringList lines;
+    lines.append(userTemplateReloadSummary(report));
+    lines.append(QString());
+
+    constexpr int kMaxVisibleIssues = 20;
+    for (int i = 0; i < report.issues.size() && i < kMaxVisibleIssues; ++i) {
+        const UserTemplateIssue& issue = report.issues.at(i);
+        const QString source = issue.source.trimmed().isEmpty()
+            ? QStringLiteral("<unknown file>")
+            : issue.source;
+        const QString command = issue.id.trimmed().isEmpty()
+            ? QStringLiteral("<unknown command>")
+            : issue.id;
+        const QString field = issue.field.trimmed().isEmpty()
+            ? QStringLiteral("<unknown field>")
+            : issue.field;
+        lines.append(QStringLiteral("%1 | command %2 | field %3 | %4")
+                         .arg(source, command, field, issue.reason));
+    }
+    if (report.issues.size() > kMaxVisibleIssues) {
+        lines.append(QStringLiteral("... %1 more issue(s)")
+                         .arg(report.issues.size() - kMaxVisibleIssues));
+    }
+    return lines.join(QLatin1Char('\n'));
 }
 
 void MainWindow::showWorkspaceConfigurationDialog()

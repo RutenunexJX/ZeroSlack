@@ -25,6 +25,7 @@
 #include <QIODevice>
 #include <QSettings>
 #include <QSignalSpy>
+#include <QStatusBar>
 #include <QTabBar>
 #include <QTabWidget>
 #include <QLineEdit>
@@ -77,6 +78,7 @@
 #include "commodecoordinator.h"
 #include "commodeservice.h"
 #include "completionservice.h"
+#include "codetemplateservice.h"
 #include "globalcontrolcoordinator.h"
 #include "globalcontrolpanel.h"
 #include "globalcontrolservice.h"
@@ -263,6 +265,25 @@ static void acceptNextMessageBoxYes()
         }
         if (QAbstractButton* yes = box->button(QMessageBox::Yes))
             yes->click();
+    };
+    QTimer::singleShot(0, [action]() { (*action)(50); });
+}
+
+static void acceptNextMessageBoxOk()
+{
+    auto action = std::make_shared<std::function<void(int)>>();
+    *action = [action](int attempts) {
+        QMessageBox* box =
+            qobject_cast<QMessageBox*>(QApplication::activeModalWidget());
+        if (!box) {
+            if (attempts > 0)
+                QTimer::singleShot(
+                    10,
+                    [action, attempts]() { (*action)(attempts - 1); });
+            return;
+        }
+        if (QAbstractButton* ok = box->button(QMessageBox::Ok))
+            ok->click();
     };
     QTimer::singleShot(0, [action]() { (*action)(50); });
 }
@@ -7832,6 +7853,199 @@ int main(int argc, char** argv)
     expectBool("panels status button exists",
                panelsStatusButton && panelsStatusButton->menu() == viewMenu,
                true);
+    QMenu* toolsMenu = window.findChild<QMenu*>(QStringLiteral("toolsMenu"));
+    QMenu* userTemplatesMenu =
+        window.findChild<QMenu*>(QStringLiteral("userTemplatesMenu"));
+    QAction* openGlobalUserTemplatesAction =
+        window.findChild<QAction*>(
+            QStringLiteral("openGlobalUserTemplatesAction"));
+    QAction* openWorkspaceUserTemplatesAction =
+        window.findChild<QAction*>(
+            QStringLiteral("openWorkspaceUserTemplatesAction"));
+    QAction* reloadUserTemplatesAction =
+        window.findChild<QAction*>(
+            QStringLiteral("reloadUserTemplatesAction"));
+    expectBool("tools menu exists", toolsMenu != nullptr, true);
+    expectBool("user templates menu exists",
+               userTemplatesMenu != nullptr,
+               true);
+    expectBool("user templates actions exist",
+               openGlobalUserTemplatesAction
+                   && openWorkspaceUserTemplatesAction
+                   && reloadUserTemplatesAction,
+               true);
+
+    QTemporaryDir userTemplateEntryDir;
+    expectBool("user template entry temp dir valid",
+               userTemplateEntryDir.isValid(),
+               true);
+    const QString globalUserTemplatePath =
+        userTemplateEntryDir.filePath(QStringLiteral("global_user_templates.json"));
+    UserTemplateService::getInstance()->setGlobalTemplateFilePath(
+        globalUserTemplatePath);
+    UserTemplateService::getInstance()->setWorkspaceTemplateFilePath(QString());
+
+    if (openWorkspaceUserTemplatesAction) {
+        openWorkspaceUserTemplatesAction->trigger();
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    }
+    expectBool("workspace user templates requires workspace",
+               window.statusBar()
+                   && window.statusBar()->currentMessage().contains(
+                       QStringLiteral("Open a workspace")),
+               true);
+
+    if (openGlobalUserTemplatesAction) {
+        openGlobalUserTemplatesAction->trigger();
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
+    }
+    QFile globalUserTemplateFile(globalUserTemplatePath);
+    QString globalUserTemplateText;
+    if (globalUserTemplateFile.open(QIODevice::ReadOnly | QFile::Text)) {
+        globalUserTemplateText =
+            QTextStream(&globalUserTemplateFile).readAll();
+        globalUserTemplateFile.close();
+    }
+    const DocumentSnapshot globalUserTemplateDocument =
+        window.tabManager->getCurrentDocument();
+    expectBool("open global user templates creates skeleton",
+               QFileInfo(globalUserTemplatePath).isFile()
+                   && globalUserTemplateText
+                       == QStringLiteral("{\n  \"templates\": []\n}\n"),
+               true);
+    expectBool("open global user templates opens tab",
+               QDir::cleanPath(QDir::fromNativeSeparators(
+                   QFileInfo(globalUserTemplateDocument.fileName)
+                       .absoluteFilePath()))
+                   == QDir::cleanPath(QDir::fromNativeSeparators(
+                       QFileInfo(globalUserTemplatePath).absoluteFilePath())),
+               true);
+
+    expectBool("write reloadable user template JSON",
+               writeTextFile(globalUserTemplatePath,
+                             QStringLiteral(
+                                 "[{\"command\":\";;menuut\","
+                                 "\"description\":\"menu template\","
+                                 "\"body\":\"logic menu_user;\"}]\n")),
+               true);
+    if (reloadUserTemplatesAction) {
+        reloadUserTemplatesAction->trigger();
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
+    }
+    expectBool("reload user templates status has loaded count",
+               window.statusBar()
+                   && window.statusBar()->currentMessage().contains(
+                       QStringLiteral("loaded: 1"))
+                   && window.statusBar()->currentMessage().contains(
+                       QStringLiteral("ignored: 0")),
+               true);
+    expectBool("user template menu does not create ;cmd",
+               !CompletionService::getInstance()
+                    ->matchCommandMode(QStringLiteral(";menuut "))
+                    .matched,
+               true);
+    expectBool("user template menu does not create COM command",
+               findComModeCommandMetadata(QStringLiteral("menuut")) == nullptr,
+               true);
+    bool globalControlHasMenuTemplate = false;
+    for (const GlobalControlItem& item :
+         GlobalControlService().templateItems()) {
+        globalControlHasMenuTemplate =
+            globalControlHasMenuTemplate
+            || item.id == QStringLiteral(";;menuut");
+    }
+    expectBool("user template menu does not change Global Control templates",
+               !globalControlHasMenuTemplate,
+               true);
+
+    expectBool("write invalid-json user template file",
+               writeTextFile(globalUserTemplatePath,
+                             QStringLiteral("{ invalid json")),
+               true);
+    const UserTemplateLoadReport invalidJsonReport =
+        UserTemplateService::getInstance()->reload();
+    expectBool("reload report text includes invalid JSON",
+               !invalidJsonReport.valid
+                   && window.userTemplateIssueReportText(invalidJsonReport)
+                          .contains(QStringLiteral("Invalid user template JSON")),
+               true);
+    expectBool("invalid reload leaves built-in template intact",
+               CodeTemplateService::getInstance()
+                       ->templateForCommand(QStringLiteral(";;l"),
+                                            QStringLiteral("clk"))
+                       .insertText
+                   == QStringLiteral("logic clk;"),
+               true);
+
+    expectBool("write invalid user template issue file",
+               writeTextFile(globalUserTemplatePath,
+                             QStringLiteral(
+                                 "[\n"
+                                 "  {\"command\":\";;badslot\","
+                                 "\"body\":\"logic x;\","
+                                 "\"slots\":[{\"name\":\"x\","
+                                 "\"start\":99,\"length\":1}]},\n"
+                                 "  {\"command\":\";;pk\","
+                                 "\"body\":\"reserved;\"}\n"
+                                 "]\n")),
+               true);
+    acceptNextMessageBoxOk();
+    if (reloadUserTemplatesAction) {
+        reloadUserTemplatesAction->trigger();
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 150);
+    }
+    expectBool("reload user templates status has ignored count",
+               window.statusBar()
+                   && window.statusBar()->currentMessage().contains(
+                       QStringLiteral("loaded: 0"))
+                   && window.statusBar()->currentMessage().contains(
+                       QStringLiteral("ignored:")),
+               true);
+
+    QTemporaryDir userTemplateWorkspaceDir;
+    expectBool("user template workspace temp dir valid",
+               userTemplateWorkspaceDir.isValid(),
+               true);
+    if (userTemplateWorkspaceDir.isValid()) {
+        expectBool("open temp workspace for user templates",
+                   window.workspaceManager->openWorkspace(
+                       userTemplateWorkspaceDir.path()),
+                   true);
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
+    }
+    if (openWorkspaceUserTemplatesAction) {
+        openWorkspaceUserTemplatesAction->trigger();
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
+    }
+    const QString workspaceUserTemplatePath =
+        QDir(userTemplateWorkspaceDir.path())
+            .absoluteFilePath(
+                QStringLiteral(".zeroslack/user_templates.json"));
+    QFile workspaceUserTemplateFile(workspaceUserTemplatePath);
+    QString workspaceUserTemplateText;
+    if (workspaceUserTemplateFile.open(QIODevice::ReadOnly | QFile::Text)) {
+        workspaceUserTemplateText =
+            QTextStream(&workspaceUserTemplateFile).readAll();
+        workspaceUserTemplateFile.close();
+    }
+    const DocumentSnapshot workspaceUserTemplateDocument =
+        window.tabManager->getCurrentDocument();
+    expectBool("open workspace user templates creates skeleton",
+               QFileInfo(workspaceUserTemplatePath).isFile()
+                   && workspaceUserTemplateText
+                       == QStringLiteral("{\n  \"templates\": []\n}\n"),
+               true);
+    expectBool("open workspace user templates opens tab",
+               QDir::cleanPath(QDir::fromNativeSeparators(
+                   QFileInfo(workspaceUserTemplateDocument.fileName)
+                       .absoluteFilePath()))
+                   == QDir::cleanPath(QDir::fromNativeSeparators(
+                       QFileInfo(workspaceUserTemplatePath).absoluteFilePath())),
+               true);
+    window.workspaceManager->closeWorkspace();
+    workspaceFilesScanned = false;
+    workspaceSymbolsDone = false;
+
     QAction* viewFoldShelfAction =
         window.findChild<QAction*>(QStringLiteral("viewFoldShelfAction"));
     expectBool("view menu has fold shelf action",

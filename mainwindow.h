@@ -38,6 +38,7 @@ class QTimer;
 class QToolButton;
 class QVBoxLayout;
 class QWidget;
+struct UserTemplateLoadReport;
 
 QT_BEGIN_NAMESPACE
 namespace Ui { class MainWindow; }
@@ -84,6 +85,8 @@ private:
     QDockWidget* editorAppearanceDock = nullptr;
     QMenu* viewMenu = nullptr;
     QMenu* workspaceMenu = nullptr;
+    QMenu* toolsMenu = nullptr;
+    QMenu* userTemplatesMenu = nullptr;
     QToolButton* panelsStatusButton = nullptr;
     QLabel* editorModeChip = nullptr;
     QWidget* packageToolsBar = nullptr;
@@ -110,6 +113,18 @@ private:
     void setupFoldBlockShelf();
     void setupViewMenu();
     void setupWorkspaceMenu();
+    void setupToolsMenu();
+    void openGlobalUserTemplates();
+    void openWorkspaceUserTemplates();
+    void reloadUserTemplates();
+    bool openUserTemplateFile(const QString& filePath,
+                              const QString& label);
+    bool ensureUserTemplateJsonFile(const QString& filePath,
+                                    QString* errorMessage) const;
+    QString userTemplateReloadSummary(
+        const UserTemplateLoadReport& report) const;
+    QString userTemplateIssueReportText(
+        const UserTemplateLoadReport& report) const;
     void addPanelViewAction(QDockWidget* dock,
                             const QString& text,
                             const QString& objectName);

@@ -85,7 +85,11 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
   `.zeroslack/user_templates.json`; workspace templates override global
   templates with the same command token, while built-in templates and the
   reserved `;;h` / `;;pk` slots cannot be overridden. Valid user templates
-  enter the existing `;;cmd` completion and Slot Mode insertion path.
+  enter the existing `;;cmd` completion and Slot Mode insertion path. The
+  Tools / User Templates menu opens or creates the global/workspace JSON files
+  with an empty `{"templates":[]}` skeleton and reloads templates with a
+  status/report summary for invalid JSON, invalid commands, invalid slots, and
+  conflicts.
 - Problems/Diagnostics now expose owner and status data in the existing
   Problems panel: diagnostic rows show owner (`Slang`, `Semantic index`),
   current-file error/warning/info summary follows the active tab, and status
@@ -758,6 +762,22 @@ Do not add unlisted long-term goals without explicit user approval.
   overridden. Valid templates use the existing `;;cmd` completion and Slot Mode
   insertion path; this adds no `;cmd`, COM Mode, Global Control, Package Tools,
   import/export, macro recorder, or variable system. Release verification
+  passed: `cmake --build . --target completion_test gui_smoke_test
+  relationship_test`; `ctest -R
+  "^(completion_test|relationship_test|gui_smoke_test)$"
+  --output-on-failure`; `git diff --check -- .
+  ':!test_sv/new/elec_phy_import/ctrl/chl_ctrl.sv'`.
+- Latest user template JSON usage entry: Tools / User Templates now exposes
+  Open Global User Templates, Open Workspace User Templates, and Reload User
+  Templates. Opening a missing file creates only the minimal legal skeleton
+  `{"templates":[]}` before using the existing tab/open-file workflow.
+  Workspace opening requires an active workspace and creates the `.zeroslack`
+  directory as needed. Reload reports loaded and ignored counts in the status
+  bar; invalid JSON, invalid commands, invalid slots, reserved tokens, and
+  conflicts are listed in a lightweight warning report with file, command,
+  field, and reason. This is still direct JSON editing only: no template GUI
+  editor, import/export, variable system, macro recorder, `;cmd`, COM Mode,
+  Global Control, or Package Tools feature was added. Release verification
   passed: `cmake --build . --target completion_test gui_smoke_test
   relationship_test`; `ctest -R
   "^(completion_test|relationship_test|gui_smoke_test)$"

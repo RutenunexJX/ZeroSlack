@@ -47,6 +47,7 @@ public:
     QString storageLocation() const;
     QString globalTemplateLocation() const;
     QString workspaceTemplateLocation() const;
+    void setGlobalTemplateFilePath(const QString& filePath);
     void setWorkspaceRoot(const QString& workspaceRoot);
     void setWorkspaceTemplateFilePath(const QString& filePath);
     UserTemplateLoadReport reload() const;

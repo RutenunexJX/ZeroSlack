@@ -286,7 +286,7 @@ UserTemplateRecord recordFromJsonObject(const QJsonObject& object,
         slotsFromJson(object.value(QString::fromLatin1(kUserTemplateSlots)),
                       record.insertText,
                       source,
-                      record.id,
+                      record.commandToken,
                       report);
 
     if (record.selectionStart < 0 && !record.templateSlots.isEmpty()) {
@@ -403,6 +403,9 @@ bool appendValidRecord(UserTemplateLoadReport* report,
     record.commandToken = normalizedCommandToken(record.commandToken);
     record.label = record.commandToken;
     record.description = record.description.trimmed();
+    const QString issueCommand = record.commandToken.isEmpty()
+        ? record.id
+        : record.commandToken;
 
     const QString lowerId = record.id.toCaseFolded();
     const QString lowerCommand = record.commandToken.toCaseFolded();
@@ -411,14 +414,14 @@ bool appendValidRecord(UserTemplateLoadReport* report,
     if (record.id.isEmpty()) {
         appendIssue(report,
                     source,
-                    record.id,
+                    issueCommand,
                     QStringLiteral("id"),
                     QStringLiteral("Template id is required."));
     }
     if (!lowerId.isEmpty() && seenIds->contains(lowerId)) {
         appendIssue(report,
                     source,
-                    record.id,
+                    issueCommand,
                     QStringLiteral("id"),
                     QStringLiteral("Template id must be unique."));
     }
@@ -428,28 +431,28 @@ bool appendValidRecord(UserTemplateLoadReport* report,
         || commandTokenHasWhitespace(record.commandToken)) {
         appendIssue(report,
                     source,
-                    record.id,
+                    issueCommand,
                     QStringLiteral("command"),
                     QStringLiteral("Template command token must be a compact ;; token."));
     }
     if (record.commandToken.startsWith(QStringLiteral(";:"))) {
         appendIssue(report,
                     source,
-                    record.id,
+                    issueCommand,
                     QStringLiteral("command"),
                     QStringLiteral(";: is reserved and inactive."));
     }
     if (isBuiltInTemplateToken(record.commandToken)) {
         appendIssue(report,
                     source,
-                    record.id,
+                    issueCommand,
                     QStringLiteral("command"),
                     QStringLiteral("User templates cannot override built-in ;;cmd templates."));
     }
     if (isReservedTemplateToken(record.commandToken)) {
         appendIssue(report,
                     source,
-                    record.id,
+                    issueCommand,
                     QStringLiteral("command"),
                     QStringLiteral("This template command is reserved for a suspended built-in slot."));
     }
@@ -457,14 +460,14 @@ bool appendValidRecord(UserTemplateLoadReport* report,
         && seenCommands->contains(lowerCommand)) {
         appendIssue(report,
                     source,
-                    record.id,
+                    issueCommand,
                     QStringLiteral("command"),
                     QStringLiteral("Template command token must be unique."));
     }
     if (record.insertText.isEmpty()) {
         appendIssue(report,
                     source,
-                    record.id,
+                    issueCommand,
                     QStringLiteral("body"),
                     QStringLiteral("Template text is required."));
     }
@@ -473,7 +476,7 @@ bool appendValidRecord(UserTemplateLoadReport* report,
                          record.insertText)) {
         appendIssue(report,
                     source,
-                    record.id,
+                    issueCommand,
                     QStringLiteral("selection"),
                     QStringLiteral("Selection range must stay inside template text."));
     }
@@ -491,7 +494,7 @@ bool appendValidRecord(UserTemplateLoadReport* report,
         if (!slotRangeWithinText(slot.start, slot.length, record.insertText)) {
             appendIssue(report,
                         source,
-                        record.id,
+                        issueCommand,
                         QStringLiteral("slots"),
                         QStringLiteral("Template slot ranges must stay inside template text."));
             continue;
@@ -673,6 +676,13 @@ QString UserTemplateService::globalTemplateLocation() const
 QString UserTemplateService::workspaceTemplateLocation() const
 {
     return workspaceTemplateFilePath;
+}
+
+void UserTemplateService::setGlobalTemplateFilePath(const QString& filePath)
+{
+    globalTemplateFilePath = filePath.trimmed().isEmpty()
+        ? defaultGlobalTemplatePath()
+        : normalizePath(filePath);
 }
 
 void UserTemplateService::setWorkspaceRoot(const QString& workspaceRoot)

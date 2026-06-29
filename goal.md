@@ -118,6 +118,20 @@ Status:
   `ctest -R "^(completion_test|relationship_test|gui_smoke_test)$"
   --output-on-failure`; `git diff --check -- .
   ':!test_sv/new/elec_phy_import/ctrl/chl_ctrl.sv'`.
+- User template JSON usage entry is complete. Tools / User Templates now has
+  actions to open or create the global `user_templates.json`, open or create
+  the active workspace `.zeroslack/user_templates.json`, and reload templates.
+  Missing files are created with the empty legal skeleton only. Reload reports
+  loaded/ignored counts in the status bar and lists invalid JSON, invalid
+  commands, invalid slots, reserved tokens, and conflicts with file, command,
+  field, and reason. No GUI template editor, import/export, variable system,
+  macro recorder, new `;cmd`, new `;;cmd`, COM Mode, Global Control, or
+  Package Tools feature was added.
+- Verification for user template JSON usage entry passed in the Release build:
+  `cmake --build . --target completion_test gui_smoke_test relationship_test`;
+  `ctest -R "^(completion_test|relationship_test|gui_smoke_test)$"
+  --output-on-failure`; `git diff --check -- .
+  ':!test_sv/new/elec_phy_import/ctrl/chl_ctrl.sv'`.
 - Verification Baseline Repair after Package Tools phase 1 is complete. This
   was baseline repair only, not Package Tools phase 2: Release
   `relationship_test` rebuild failures were traced to generated MinGW

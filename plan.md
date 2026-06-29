@@ -588,6 +588,34 @@ Latest user template JSON phase:
   --output-on-failure`; `git diff --check -- .
   ':!test_sv/new/elec_phy_import/ctrl/chl_ctrl.sv'`.
 
+Latest user template JSON usage entry:
+
+- Scope: lightweight menu/action access to the existing JSON workflow only.
+  This does not add a template GUI editor, import/export, variables, macro
+  recording, new `;cmd`, new `;;cmd`, COM Mode, Global Control, or Package
+  Tools features.
+- Tools / User Templates contains Open Global User Templates, Open Workspace
+  User Templates, and Reload User Templates.
+- Open Global uses `UserTemplateService`'s global path. Open Workspace requires
+  an active workspace and uses `.zeroslack/user_templates.json` under that
+  workspace. Missing files are created with only:
+  `{ "templates": [] }`
+- Reload calls `UserTemplateService::reload()`, shows loaded/ignored counts in
+  the status bar, and shows a lightweight issue report when invalid JSON,
+  invalid commands, invalid slots, reserved tokens, or conflicts are ignored.
+  Issue rows include file, command, field, and reason.
+- Coverage checks global skeleton creation/opening, workspace skeleton
+  creation/opening, no-workspace failure, reload success status, visible issue
+  reporting for invalid records, invalid JSON report text, unchanged built-in
+  templates, unchanged `;cmd`, unchanged COM registry, unchanged Global
+  Control template list, and the previous user-template insertion/Slot Mode
+  regressions.
+- Release verification passed: `cmake --build . --target completion_test
+  gui_smoke_test relationship_test`; `ctest -R
+  "^(completion_test|relationship_test|gui_smoke_test)$"
+  --output-on-failure`; `git diff --check -- .
+  ':!test_sv/new/elec_phy_import/ctrl/chl_ctrl.sv'`.
+
 ### 7. Fold / Fold Shelf
 
 Goal: make Fold Shelf durable and maintainable.
