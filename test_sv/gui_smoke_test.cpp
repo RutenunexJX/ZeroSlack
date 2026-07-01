@@ -4646,7 +4646,7 @@ static void runRtlInsightsPanelRegression(MainWindow& window, const QString& fix
         DeclarationKind::Module,
         CollectorKind::Module,
         1);
-    module.location.endLine = 18;
+    module.location.endLine = 19;
     records.append(module);
     const SemanticSymbolRecord clk = makeGuiSmokeRecord(
         9602,
@@ -4848,6 +4848,10 @@ static void runRtlInsightsPanelRegression(MainWindow& window, const QString& fix
         "  typedef enum logic {IDLE, RUN} state_t;\n"
         "  state_t state_q;\n"
         "  state_t state_d;\n"
+        "  always_ff @(posedge clk or negedge rst_n) begin\n"
+        "    if (!rst_n) state_q <= IDLE;\n"
+        "    else state_q <= state_d;\n"
+        "  end\n"
         "  always_comb begin\n"
         "    case (state_q)\n"
         "      IDLE: state_d = RUN;\n"

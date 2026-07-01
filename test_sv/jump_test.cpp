@@ -12,6 +12,7 @@
 #include <QTextDocument>
 #include <QPlainTextEdit>
 #include <QCompleter>
+#include <QCoreApplication>
 #include <QTimer>
 #include <QMouseEvent>
 #include <QTextEdit>
@@ -89,6 +90,28 @@ static bool safeRenamePlanHasEdit(const SafeRenamePlan& plan,
 
 static QString normalizedTestPath(const QString& fileName)
 {
+    const QFileInfo directInfo(fileName);
+    if (directInfo.exists() || directInfo.isAbsolute()) {
+        return QDir::cleanPath(
+            QDir::fromNativeSeparators(directInfo.absoluteFilePath()));
+    }
+
+    QStringList roots;
+    roots << QDir::currentPath() << QCoreApplication::applicationDirPath();
+    for (const QString& root : std::as_const(roots)) {
+        QDir dir(root);
+        for (int depth = 0; depth < 8; ++depth) {
+            const QString candidate = dir.absoluteFilePath(fileName);
+            if (QFileInfo(candidate).exists()) {
+                return QDir::cleanPath(
+                    QDir::fromNativeSeparators(
+                        QFileInfo(candidate).absoluteFilePath()));
+            }
+            if (!dir.cdUp())
+                break;
+        }
+    }
+
     return QDir::cleanPath(
         QDir::fromNativeSeparators(QFileInfo(fileName).absoluteFilePath()));
 }
@@ -1267,9 +1290,21 @@ int main(int argc, char** argv) {
             .record();
     snapshotDefinitionRecords.append(snapshotGlobalMetadataDuplicate);
 
+    QHash<QString, QString> snapshotContents;
+    snapshotContents.insert(
+        snapshotOnlyFile,
+        QStringLiteral("module snap_top;\n"
+                       "  import snap_pkg::*;\n"
+                       "  snap_word_t imported_value;\n"
+                       "  localparam int W = SNAP_WIDTH;\n"
+                       "endmodule\n"));
+
     SemanticIndex snapshotIndex;
     snapshotIndex.setSnapshot(
-        sharedSnapshotFromRecords(snapshotDefinitionRecords));
+        sharedSnapshotFromRecords(snapshotDefinitionRecords,
+                                  {},
+                                  {},
+                                  snapshotContents));
     DefinitionService snapshotDefinitionService(&snapshotIndex);
     DefinitionQuery snapshotMemberQuery;
     snapshotMemberQuery.symbolName = QStringLiteral("red");
@@ -1441,8 +1476,9 @@ int main(int argc, char** argv) {
 
     DefinitionQuery snapshotPackageParamQuery;
     snapshotPackageParamQuery.symbolName = QStringLiteral("SNAP_WIDTH");
-    snapshotPackageParamQuery.fileName = QStringLiteral("snapshot_only.sv");
+    snapshotPackageParamQuery.fileName = snapshotOnlyFile;
     snapshotPackageParamQuery.moduleName = QStringLiteral("snap_top");
+    snapshotPackageParamQuery.cursorLine = 4;
     const DefinitionResult snapshotPackageParamResult =
         snapshotDefinitionService.resolveDefinition(snapshotPackageParamQuery);
     ++g_checks;
@@ -1463,8 +1499,9 @@ int main(int argc, char** argv) {
 
     DefinitionQuery snapshotPackageTypedefQuery;
     snapshotPackageTypedefQuery.symbolName = QStringLiteral("snap_word_t");
-    snapshotPackageTypedefQuery.fileName = QStringLiteral("snapshot_only.sv");
+    snapshotPackageTypedefQuery.fileName = snapshotOnlyFile;
     snapshotPackageTypedefQuery.moduleName = QStringLiteral("snap_top");
+    snapshotPackageTypedefQuery.cursorLine = 3;
     const DefinitionResult snapshotPackageTypedefResult =
         snapshotDefinitionService.resolveDefinition(snapshotPackageTypedefQuery);
     ++g_checks;

@@ -877,7 +877,7 @@ Do not add unlisted long-term goals without explicit user approval.
 - Latest Full Feature Audit: `full_feature_audit_test` now inventories the
   broader product surface and writes `test_sv/full_feature_audit_report.json`
   plus `test_sv/full_feature_audit_report.md`. Latest report generated
-  2026-07-01T07:29:54Z UTC and covers 23 feature rows, 93 user entry points,
+  2026-07-01T09:26:34Z UTC and covers 23 feature rows, 93 user entry points,
   75 service/test touchpoints, 454 recursive corpus files, 117,069 semantic
   records, 82,636 audit relationships, and 704 diagnostics. Summary: 21 pass /
   0 fail / 0 skipped / 2 known-issue. Known issues are intentionally not fixed
@@ -885,4 +885,16 @@ Do not add unlisted long-term goals without explicit user approval.
   Wave Preview has 29 no-lane/no-warning always-block failures. Verification
   passed: `ctest -R "^corpus_audit_test$" --output-on-failure`; `ctest -R
   "^(completion_test|jump_test|relationship_test|gui_smoke_test|full_feature_audit_test)$"
+  --output-on-failure`.
+- Latest Full Feature Audit acceptance repair: fast regression failures after
+  `fbf7273` were traced to stale test context, not new product behavior. The
+  FSM assertions now use structural current<=next fixtures instead of
+  name-gated `ns`/`*_ns` assumptions; the GUI FSM graph fixture includes the
+  clocked `state_q <= state_d` update required by structural discovery; and
+  `jump_test` now resolves `test_sv/new` from the source tree when run from the
+  build directory while package-member definition assertions provide an
+  explicit `import snap_pkg::*;` context. Verification passed individually:
+  `ctest -R "^completion_test$" --output-on-failure`; `ctest -R
+  "^jump_test$" --output-on-failure`; `ctest -R "^gui_smoke_test$"
+  --output-on-failure`; `ctest -R "^full_feature_audit_test$"
   --output-on-failure`.

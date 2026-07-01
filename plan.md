@@ -1625,6 +1625,15 @@ Milestones:
   `ctest -R
   "^(completion_test|jump_test|relationship_test|gui_smoke_test|full_feature_audit_test)$"
   --output-on-failure` passed.)
+- FFA.5 Acceptance repair after independent rerun.
+  (complete: stale fast-regression fixtures were repaired instead of
+  converting failures to known issues. FSM assertions now use structural
+  current<=next fixtures, GUI FSM graph smoke includes the clocked
+  `state_q <= state_d` update required by structural discovery, `jump_test`
+  resolves `test_sv/new` from the source tree when launched from the build
+  directory, and package member definition checks provide explicit
+  `import snap_pkg::*;` context. Individual `completion_test`, `jump_test`,
+  `gui_smoke_test`, and `full_feature_audit_test` CTest runs pass.)
 
 ## Milestone Definition Of Done
 

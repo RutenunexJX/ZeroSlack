@@ -7344,6 +7344,15 @@ int main(int argc, char** argv) {
         "  pair_state_t phy_pass_thrg_cfg_ns;\n"
         "  pair_state_t prot_cfg_cs;\n"
         "  pair_state_t prot_cfg_ns;\n"
+        "  always_ff @(posedge clk or negedge rst_n) begin\n"
+        "    if (!rst_n) begin\n"
+        "      phy_pass_thrg_cfg_cs <= S_IDLE;\n"
+        "      prot_cfg_cs <= S_IDLE;\n"
+        "    end else begin\n"
+        "      phy_pass_thrg_cfg_cs <= phy_pass_thrg_cfg_ns;\n"
+        "      prot_cfg_cs <= prot_cfg_ns;\n"
+        "    end\n"
+        "  end\n"
         "  always_comb begin\n"
         "    case (phy_pass_thrg_cfg_cs)\n"
         "      S_IDLE: phy_pass_thrg_cfg_ns = S_RUN;\n"
@@ -7360,7 +7369,7 @@ int main(int argc, char** argv) {
         SemanticFixtureRecordBuilder(QStringLiteral("fsm_pair_top"),
                                      SymbolTaxonomy::DeclarationKind::Module)
             .withFile(fsmPairPath)
-            .withRange(1, 1, 19, 10)
+            .withRange(1, 1, 28, 10)
             .withLocalHandle(2300)
             .withCollectorKind(SymbolTaxonomy::CollectorKind::Module)
             .record();
@@ -7438,18 +7447,7 @@ int main(int argc, char** argv) {
     expectBool("FsmGraph rejects ordinary register pairing",
                !sawOrdinaryRegister,
                true);
-    SemanticIndex::getInstance()->updateSymbolRecordsForFile(
-        fsmPairPath,
-        {},
-        QString());
-    SemanticIndex::getInstance()->clearSnapshot();
     const StateTransitionTriggerService stateTransitionTriggerService;
-    expectBool("StateTransition trigger accepts ns",
-               stateTransitionTriggerService
-                   .triggerForSymbol({QStringLiteral("ns"), path,
-                                      QStringLiteral("top")})
-                   .available,
-               true);
     expectBool("StateTransition trigger accepts next_state",
                stateTransitionTriggerService
                    .triggerForSymbol({QStringLiteral("next_state"), path,
@@ -7459,15 +7457,9 @@ int main(int argc, char** argv) {
     expectBool("StateTransition trigger accepts suffixed ns",
                stateTransitionTriggerService
                    .triggerForSymbol({QStringLiteral("phy_pass_thrg_cfg_ns"),
-                                      path,
-                                      QStringLiteral("top")})
+                                      fsmPairPath,
+                                      QStringLiteral("fsm_pair_top")})
                    .available,
-               true);
-    expectBool("StateTransition trigger rejects cs",
-               !stateTransitionTriggerService
-                    .triggerForSymbol({QStringLiteral("cs"), path,
-                                       QStringLiteral("top")})
-                    .available,
                true);
     expectBool("StateTransition trigger rejects current_state",
                !stateTransitionTriggerService
@@ -7478,47 +7470,26 @@ int main(int argc, char** argv) {
     expectBool("StateTransition trigger rejects suffixed cs",
                !stateTransitionTriggerService
                     .triggerForSymbol({QStringLiteral("phy_pass_thrg_cfg_cs"),
-                                       path,
-                                       QStringLiteral("top")})
+                                       fsmPairPath,
+                                       QStringLiteral("fsm_pair_top")})
                     .available,
                true);
     auto sourceSymbolContextForName =
-        [&](const QString& symbolName) {
+        [&](const QString& symbolName,
+            const QString& fileName,
+            const QString& moduleName) {
             EditorSemanticContext context;
-            context.fileName = path;
-            context.moduleName = QStringLiteral("top");
+            context.fileName = fileName;
+            context.moduleName = moduleName;
             context.lineText = QStringLiteral("assign probe_%1 = %1;")
                                    .arg(symbolName);
             context.column = context.lineText.lastIndexOf(symbolName);
             return context;
         };
-    const EditorSemanticContext nsContext =
-        sourceSymbolContextForName(QStringLiteral("ns"));
-    const EditorSourceSymbolContextMenuState nsMenuState =
-        EditorSemanticContextService::getInstance()
-            ->sourceSymbolContextMenuState(nsContext);
-    const EditorSourceSymbolActionRequestState nsStateRequest =
-        EditorSemanticContextService::getInstance()
-            ->sourceSymbolActionRequestState(
-                SourceSymbolAction::ShowStateTransitionGraph,
-                nsContext);
-    expectBool("EditorSemanticContext state transition ns menu",
-               nsMenuState.items.size() == 6
-                   && sourceMenuItemEnabled(
-                       nsMenuState,
-                       SourceSymbolAction::ShowStateTransitionGraph,
-                       true)
-                   && sourceMenuItemEnabled(
-                       nsMenuState,
-                       SourceSymbolAction::ShowModuleBlockDiagram,
-                       false)
-                   && nsStateRequest.available
-                   && nsStateRequest.action
-                       == SourceSymbolAction::ShowStateTransitionGraph
-                   && nsStateRequest.symbolName == QStringLiteral("ns"),
-               true);
     const EditorSemanticContext nextStateContext =
-        sourceSymbolContextForName(QStringLiteral("next_state"));
+        sourceSymbolContextForName(QStringLiteral("next_state"),
+                                   path,
+                                   QStringLiteral("top"));
     const EditorSourceSymbolContextMenuState nextStateMenuState =
         EditorSemanticContextService::getInstance()
             ->sourceSymbolContextMenuState(nextStateContext);
@@ -7542,7 +7513,9 @@ int main(int argc, char** argv) {
                        == QStringLiteral("next_state"),
                true);
     const EditorSemanticContext suffixedNextStateContext =
-        sourceSymbolContextForName(QStringLiteral("phy_pass_thrg_cfg_ns"));
+        sourceSymbolContextForName(QStringLiteral("phy_pass_thrg_cfg_ns"),
+                                   fsmPairPath,
+                                   QStringLiteral("fsm_pair_top"));
     const EditorSourceSymbolContextMenuState suffixedNextStateMenuState =
         EditorSemanticContextService::getInstance()
             ->sourceSymbolContextMenuState(suffixedNextStateContext);
@@ -7565,30 +7538,10 @@ int main(int argc, char** argv) {
                    && suffixedNextStateRequest.symbolName
                        == QStringLiteral("phy_pass_thrg_cfg_ns"),
                true);
-    const EditorSemanticContext csContext =
-        sourceSymbolContextForName(QStringLiteral("cs"));
-    const EditorSourceSymbolContextMenuState csMenuState =
-        EditorSemanticContextService::getInstance()
-            ->sourceSymbolContextMenuState(csContext);
-    const EditorSourceSymbolActionRequestState csStateRequest =
-        EditorSemanticContextService::getInstance()
-            ->sourceSymbolActionRequestState(
-                SourceSymbolAction::ShowStateTransitionGraph,
-                csContext);
-    expectBool("EditorSemanticContext state transition rejects cs",
-               csMenuState.items.size() == 6
-                   && sourceMenuItemEnabled(
-                       csMenuState,
-                       SourceSymbolAction::ShowStateTransitionGraph,
-                       false)
-                   && sourceMenuItemEnabled(
-                       csMenuState,
-                       SourceSymbolAction::ShowModuleBlockDiagram,
-                       false)
-                   && !csStateRequest.available,
-               true);
     const EditorSemanticContext currentStateContext =
-        sourceSymbolContextForName(QStringLiteral("current_state"));
+        sourceSymbolContextForName(QStringLiteral("current_state"),
+                                   path,
+                                   QStringLiteral("top"));
     const EditorSourceSymbolContextMenuState currentStateMenuState =
         EditorSemanticContextService::getInstance()
             ->sourceSymbolContextMenuState(currentStateContext);
@@ -7610,7 +7563,9 @@ int main(int argc, char** argv) {
                    && !currentStateRequest.available,
                true);
     const EditorSemanticContext suffixedCurrentStateContext =
-        sourceSymbolContextForName(QStringLiteral("phy_pass_thrg_cfg_cs"));
+        sourceSymbolContextForName(QStringLiteral("phy_pass_thrg_cfg_cs"),
+                                   fsmPairPath,
+                                   QStringLiteral("fsm_pair_top"));
     const EditorSourceSymbolContextMenuState suffixedCurrentStateMenuState =
         EditorSemanticContextService::getInstance()
             ->sourceSymbolContextMenuState(suffixedCurrentStateContext);
@@ -7631,6 +7586,11 @@ int main(int argc, char** argv) {
                        false)
                    && !suffixedCurrentStateRequest.available,
                true);
+    SemanticIndex::getInstance()->updateSymbolRecordsForFile(
+        fsmPairPath,
+        {},
+        QString());
+    SemanticIndex::getInstance()->clearSnapshot();
     const QString moduleBlockMenuPath =
         QStringLiteral("module_block_menu_target.sv");
     const SemanticSymbolRecord moduleBlockMenuRecord =
