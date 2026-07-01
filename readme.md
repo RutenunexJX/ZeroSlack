@@ -31,12 +31,11 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
 
 ## Current Product Baseline
 
-- Current audit milestone: FSM Structural Discovery is complete. FSM Graph and
-  State Transition Graph discovery now starts from clocked `current <= next`
-  structure plus `case(current)` / `if (current == STATE)` next-state logic;
-  signal names are display/order hints only, not semantic gates. Selecting a
-  discovered next-state role opens the State Transition Graph, while selecting
-  the current-state role is rejected with a next-state prompt.
+- Current audit milestone: Wave Preview No-Lane Repair is complete. Scoped
+  always/process previews that cannot produce lanes now return explicit
+  unsupported warnings instead of silent empty reports, including commented-out
+  stale process records, macro/preprocessor-only process scopes, and parsed
+  always blocks with no recognized assignment lanes.
 - Latest corpus audit report: `test_sv/corpus_audit_report.json` and
   `test_sv/corpus_audit_report.md` cover 454 files, 424 modules, 3942
   always/process records, 117069 semantic records, 82636 relationships, and 704
@@ -44,14 +43,16 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
   Graph changed from 88 pass / 21 fail / 418 skipped to 90 pass / 0 fail / 400
   skipped because the audit now counts discovered structural FSM pairs instead
   of `ns` / `next_state` name candidates.
-- Remaining known issues from the current report: 400 modules have no structural
-  FSM pair under the current extractor, 29 Wave Preview always-block records
-  return no lane and no warning, Signal Kernel Graph remains bounded by the
-  existing audit budget, and 216 module block diagrams are root-only
-  empty-but-valid.
+- Current Wave Preview corpus result: 3963 pass / 0 fail / 15 skipped / 30
+  empty-but-valid. The previous 29 no-lane/no-warning failures are now explicit
+  unsupported empty-valid cases or valid lane-producing previews.
+- Remaining known issue from the full-feature report: Signal Kernel Graph still
+  uses the bounded audit budget. FSM no-pair modules and root-only Module Block
+  Diagram cases remain explicit skipped/empty-valid corpus outcomes, not
+  current failing milestones.
 - Current handoff state: no implementation milestone is active. The latest
-  completed work is FSM Structural Discovery for FSM/State Transition Graph
-  audit behavior. The current baseline also includes import-aware
+  completed work is Wave Preview No-Lane Repair for full-feature/corpus audit
+  behavior. The current baseline also includes import-aware
   SystemVerilog package symbol visibility, user template JSON usage, explicit
   header/include and package import commands, semantic `;m` module
   instantiation Slot Mode, Macro / Define semantics, Package Tools phase 1,

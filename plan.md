@@ -11,20 +11,19 @@ into an analyzer.
 
 ## Current Execution Baseline
 
-- Corpus Audit Findings repair is complete for the scoped Graph/Wave +
-  semantic-baseline follow-up. The fix did not expand the Signal Kernel Graph
-  sweep budget or mutate real RTL corpus files.
-- Verification baseline for this repair: Debug `cmake --build . --target
-  corpus_audit_test relationship_test` passed; `relationship_test` passed with
-  860 checks; full `corpus_audit_test test_sv/new test_sv/huge_prj` regenerated
-  the JSON/Markdown reports.
-- Current audit deltas: State Transition Graph now uses structural FSM pairs
-  instead of name-based `ns` / `next_state` candidates. The latest run changed
-  from the previous 88 pass / 21 fail / 418 skipped name-based result to 90
-  pass / 0 fail / 400 skipped, with 45 discovered pairs audited as next-state
-  positives plus current-state negative triggers. Wave Preview remains 3963
-  pass / 29 fail / 16 skipped, and semantic baseline remains 874 pass / 0 fail
-  / 5 empty-but-valid.
+- Wave Preview No-Lane Repair is complete for the full-feature/corpus audit.
+  Scoped always/process previews no longer return silent empty results; empty
+  unsupported cases now carry explicit warnings. The fix did not expand Signal
+  Kernel Graph, add simulation, or mutate real RTL corpus files.
+- Verification baseline for this repair: Debug builds of `completion_test`,
+  `corpus_audit_test`, `full_feature_audit_test`, and `gui_smoke_test` passed.
+  Full `corpus_audit_test` regenerated the JSON/Markdown corpus reports, and
+  `full_feature_audit_test` regenerated the full feature reports.
+- Current audit deltas: Wave Preview moved from 3963 pass / 29 fail / 16
+  skipped / 0 empty-valid to 3963 pass / 0 fail / 15 skipped / 30
+  empty-valid. The full-feature matrix now marks Wave Preview as `pass`; the
+  only remaining full-feature `known-issue` is Signal Kernel Graph's bounded
+  audit budget.
 - No implementation milestone is active. Start the next milestone only from a
   new explicit scoped request.
 - The current completed baseline includes import-aware package member

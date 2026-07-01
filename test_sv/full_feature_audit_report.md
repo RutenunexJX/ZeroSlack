@@ -1,6 +1,6 @@
 # ZeroSlack Full Feature Audit
 
-- Generated: 2026-07-01T09:26:34Z UTC
+- Generated: 2026-07-01T10:59:05Z UTC
 - Workspace: E:\ZeroSlack\ZeroSlack
 - Roots: test_sv/new, test_sv/huge_prj
 - Recursive SV files: 454
@@ -16,11 +16,11 @@
 
 | Status | Count |
 | --- | ---: |
-| `pass` | 21 |
+| `pass` | 22 |
 | `fail` | 0 |
 | `skipped` | 0 |
 | `empty-valid` | 0 |
-| `known-issue` | 2 |
+| `known-issue` | 1 |
 
 ## Feature Matrix
 
@@ -47,23 +47,12 @@
 | `rtl_semantic_diff` RTL Insights: Semantic Diff | RTL Insights Semantic Diff<br>compare workflow | SemanticDiffService<br>RtlInsightsPanelCoordinator | temporary fixture compare | fixture only; corpus read-only | `pass` | GUI smoke covers semantic diff panel/action on temporary fixtures | no | Add copied-corpus pair diff sweep if needed. |
 | `rtl_signal_kernel_graph` RTL Insights: Signal Kernel Graph | Signal Kernel Graph panel<br>signal graph action | SignalKernelGraphService<br>SignalKernelGraphPanelCoordinator | bounded full corpus graph sweep | recursive test_sv/new + test_sv/huge_prj (454 files) | `known-issue` | corpus_audit: pass=388 fail=0 skipped=1592 timeout=0 empty-valid=12 | no | Known issue: deep sweep is budgeted at audit level; expand in a dedicated performance pass. |
 | `rtl_module_block_diagram` RTL Insights: Module Block Diagram | Module Block Diagram<br>RTL Insights diagram action | ModuleBlockDiagramService<br>RtlInsightsPanelCoordinator | full corpus module diagram sweep | recursive test_sv/new + test_sv/huge_prj (454 files) | `pass` | corpus_audit: pass=208 fail=0 skipped=0 timeout=0 empty-valid=216 | no | Empty-valid modules should remain explicit in reports. |
-| `rtl_wave_preview` RTL Insights: Wave Preview | Wave Preview dock<br>active-editor wave refresh | WavePreviewService<br>WavePreviewPanelCoordinator | full corpus always/process preview sweep | recursive test_sv/new + test_sv/huge_prj (454 files) | `known-issue` | corpus_audit: pass=3963 fail=29 skipped=16 timeout=0 empty-valid=0 | no | Known issue: fix no-lane/no-warning always-block cases in priority order. |
+| `rtl_wave_preview` RTL Insights: Wave Preview | Wave Preview dock<br>active-editor wave refresh | WavePreviewService<br>WavePreviewPanelCoordinator | full corpus always/process preview sweep | recursive test_sv/new + test_sv/huge_prj (454 files) | `pass` | corpus_audit: pass=3963 fail=0 skipped=15 timeout=0 empty-valid=30 | no | Keep no-lane/no-warning regression coverage and review empty-valid unsupported reasons periodically. |
 | `search_rename_workspace_workflow` Search, rename, semantic diff, and workspace workflow | search<br>safe rename<br>workspace open/close/recent<br>semantic diff | SearchService<br>SafeRenameService<br>WorkspaceManager<br>SemanticDiffService | temporary workspace plus service-level smoke | fixture only; corpus read-only | `pass` | service and GUI smoke cover search/rename/workspace open-close paths on fixtures | no | Add rename collision/cross-file fixture matrix. |
 
 ## Known Issues
 
-- `wave_preview` test_sv/huge_prj/Adm/radm_filter_ep.sv:2161 module `radm_filter_ep` symbol `always@2161`: preview returned no lane and no warning
-- `wave_preview` test_sv/huge_prj/Bridge/outbound/vendor_ip_axi_cpl_comp_ctl.sv:1018 module `vendor_ip_axi_cpl_comp_ctl` symbol `always@1018`: preview returned no lane and no warning
-- `wave_preview` test_sv/huge_prj/Cdm/cdm_pl_reg.sv:1599 module `cdm_pl_reg` symbol `always@1599`: preview returned no lane and no warning
-- `wave_preview` test_sv/huge_prj/Cdm/cdm_rasdes_sd_reg.sv:510 module `cdm_rasdes_sd_reg` symbol `always@510`: preview returned no lane and no warning
-- `wave_preview` test_sv/huge_prj/Edma/vendor_ip_edma_cpld2mwr.sv:638 module `vendor_ip_edma_cpld2mwr` symbol `always@638`: preview returned no lane and no warning
-- `wave_preview` test_sv/huge_prj/Edma/vendor_ip_edma_cpld2mwr.sv:672 module `vendor_ip_edma_cpld2mwr` symbol `always@672`: preview returned no lane and no warning
-- `wave_preview` test_sv/huge_prj/Edma/vendor_ip_edma_rdbuff_ctrl.sv:787 module `vendor_ip_edma_rdbuff_ctrl` symbol `always@787`: preview returned no lane and no warning
-- `wave_preview` test_sv/huge_prj/Layer1/rmlh_token_finder3.sv:278 module `rmlh_token_finder3` symbol `always@278`: preview returned no lane and no warning
-- `wave_preview` test_sv/huge_prj/Layer1/rmlh_token_finder4.sv:269 module `rmlh_token_finder4` symbol `always@269`: preview returned no lane and no warning
-- `wave_preview` test_sv/huge_prj/Layer1/smlh_link.sv:526 module `smlh_link` symbol `always@526`: preview returned no lane and no warning
-- `wave_preview` test_sv/huge_prj/Layer1/smlh_link.sv:759 module `smlh_link` symbol `always@759`: preview returned no lane and no warning
-- `wave_preview` test_sv/huge_prj/Layer1/smlh_link.sv:768 module `smlh_link` symbol `always@768`: preview returned no lane and no warning
+- `rtl_signal_kernel_graph` RTL Insights: Signal Kernel Graph: corpus_audit: pass=388 fail=0 skipped=1592 timeout=0 empty-valid=12 Next: Known issue: deep sweep is budgeted at audit level; expand in a dedicated performance pass.
 
 ## Notes
 

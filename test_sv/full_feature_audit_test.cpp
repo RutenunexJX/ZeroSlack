@@ -405,6 +405,21 @@ QStringList knownIssuesFromFailures(const QJsonArray& failures)
     return issues;
 }
 
+QStringList knownIssuesFromRows(const QList<FeatureRow>& rows)
+{
+    QStringList issues;
+    for (const FeatureRow& row : rows) {
+        if (statusBadge(row.status) != QStringLiteral("known-issue"))
+            continue;
+        issues.append(QStringLiteral("`%1` %2: %3 Next: %4")
+                          .arg(row.id,
+                               row.name,
+                               row.reason,
+                               row.nextStep));
+    }
+    return issues;
+}
+
 } // namespace
 
 int main(int argc, char** argv)
@@ -756,7 +771,7 @@ int main(int argc, char** argv)
               QStringLiteral("full corpus always/process preview sweep"),
               fullCorpusCoverage,
               false,
-              QStringLiteral("Known issue: fix no-lane/no-warning always-block cases in priority order."));
+              QStringLiteral("Keep no-lane/no-warning regression coverage and review empty-valid unsupported reasons periodically."));
 
     appendRow(&rows, QStringLiteral("search_rename_workspace_workflow"),
               QStringLiteral("Search, rename, semantic diff, and workspace workflow"),
@@ -822,7 +837,8 @@ int main(int argc, char** argv)
     root.insert(QStringLiteral("features"), featureArray);
     root.insert(QStringLiteral("topFailures"), topFailures);
 
-    const QStringList knownIssues = knownIssuesFromFailures(topFailures);
+    QStringList knownIssues = knownIssuesFromFailures(topFailures);
+    knownIssues.append(knownIssuesFromRows(rows));
     root.insert(QStringLiteral("knownIssues"), stringArray(knownIssues));
 
     const QString jsonPath = normalizedPath(

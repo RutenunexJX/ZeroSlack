@@ -2942,6 +2942,147 @@ int main(int argc, char** argv) {
                        QStringLiteral(
                            "signal q is assigned from 2 procedural blocks; inspect block ownership before trusting lane timing")),
                true);
+    auto scopedNoLaneWaveReport =
+        [](const QString& fileName,
+           const QString& text,
+           const QString& marker) -> WavePreviewReport {
+        WavePreviewQuery query;
+        query.fileName = fileName;
+        query.documentText = text;
+        query.scopeStartPosition = text.indexOf(marker);
+        query.scopeEndPosition = text.indexOf(QStringLiteral("endmodule"));
+        query.scopeLabel = QStringLiteral("selected no-lane always");
+        return WavePreviewService::getInstance()->previewForDocument(query);
+    };
+    auto waveWarningsContain =
+        [](const WavePreviewReport& report, const QString& needle) -> bool {
+        for (const QString& warning : report.warnings) {
+            if (warning.contains(needle))
+                return true;
+        }
+        return false;
+    };
+    const QString noLaneNeedle =
+        QStringLiteral("no recognized assignment lanes");
+    const QString waveNoLaneAlwaysFfInput =
+        QStringLiteral("module wave_no_lane_ff(input logic clk);\n"
+                       "always_ff @(posedge clk) begin\n"
+                       "    observe_side_effect();\n"
+                       "end\n"
+                       "endmodule\n");
+    const WavePreviewReport waveNoLaneAlwaysFfReport =
+        scopedNoLaneWaveReport(QStringLiteral("wave_no_lane_ff.sv"),
+                               waveNoLaneAlwaysFfInput,
+                               QStringLiteral("always_ff"));
+    expectBool("WavePreview always_ff no-lane warns",
+               !waveNoLaneAlwaysFfReport.available
+                   && waveNoLaneAlwaysFfReport.lanes.isEmpty()
+                   && waveWarningsContain(waveNoLaneAlwaysFfReport,
+                                          noLaneNeedle),
+               true);
+
+    const QString waveNoLaneLegacyInput =
+        QStringLiteral("module wave_no_lane_legacy(input logic clk);\n"
+                       "always @(posedge clk) begin\n"
+                       "    $display(\"tick\");\n"
+                       "end\n"
+                       "endmodule\n");
+    const WavePreviewReport waveNoLaneLegacyReport =
+        scopedNoLaneWaveReport(QStringLiteral("wave_no_lane_legacy.sv"),
+                               waveNoLaneLegacyInput,
+                               QStringLiteral("always @"));
+    expectBool("WavePreview legacy always no-lane warns",
+               !waveNoLaneLegacyReport.available
+                   && waveNoLaneLegacyReport.lanes.isEmpty()
+                   && waveWarningsContain(waveNoLaneLegacyReport,
+                                          noLaneNeedle),
+               true);
+
+    const QString waveNoLaneMacroInput =
+        QStringLiteral("`define WAVE_DRIVE_Q q <= d\n"
+                       "module wave_no_lane_macro(input logic clk);\n"
+                       "always_ff @(posedge clk) begin\n"
+                       "    `WAVE_DRIVE_Q\n"
+                       "end\n"
+                       "endmodule\n");
+    const WavePreviewReport waveNoLaneMacroReport =
+        scopedNoLaneWaveReport(QStringLiteral("wave_no_lane_macro.sv"),
+                               waveNoLaneMacroInput,
+                               QStringLiteral("always_ff"));
+    expectBool("WavePreview macro no-lane warns",
+               !waveNoLaneMacroReport.available
+                   && waveNoLaneMacroReport.lanes.isEmpty()
+                   && waveWarningsContain(waveNoLaneMacroReport,
+                                          noLaneNeedle),
+               true);
+
+    const QString waveNoLaneEmptyInput =
+        QStringLiteral("module wave_no_lane_empty;\n"
+                       "always @(*) begin\n"
+                       "end\n"
+                       "endmodule\n");
+    const WavePreviewReport waveNoLaneEmptyReport =
+        scopedNoLaneWaveReport(QStringLiteral("wave_no_lane_empty.sv"),
+                               waveNoLaneEmptyInput,
+                               QStringLiteral("always @"));
+    expectBool("WavePreview empty always no-lane warns",
+               !waveNoLaneEmptyReport.available
+                   && waveNoLaneEmptyReport.lanes.isEmpty()
+                   && waveWarningsContain(waveNoLaneEmptyReport,
+                                          noLaneNeedle),
+               true);
+    const QString emptyScopeNeedle =
+        QStringLiteral("no recognized Wave Preview process body");
+    const QString waveNoLaneCommentInput =
+        QStringLiteral("module wave_no_lane_comment(input logic clk, input logic d, output logic q);\n"
+                       "/*\n"
+                       "always @(posedge clk) begin\n"
+                       "    q <= d;\n"
+                       "end\n"
+                       "*/\n"
+                       "endmodule\n");
+    WavePreviewQuery waveNoLaneCommentQuery;
+    waveNoLaneCommentQuery.fileName = QStringLiteral("wave_no_lane_comment.sv");
+    waveNoLaneCommentQuery.documentText = waveNoLaneCommentInput;
+    waveNoLaneCommentQuery.scopeStartPosition =
+        waveNoLaneCommentInput.indexOf(QStringLiteral("always @"));
+    waveNoLaneCommentQuery.scopeEndPosition =
+        waveNoLaneCommentInput.indexOf(QStringLiteral("*/"));
+    waveNoLaneCommentQuery.scopeLabel =
+        QStringLiteral("stale commented always");
+    const WavePreviewReport waveNoLaneCommentReport =
+        WavePreviewService::getInstance()->previewForDocument(
+            waveNoLaneCommentQuery);
+    expectBool("WavePreview commented process scope warns",
+               !waveNoLaneCommentReport.available
+                   && waveNoLaneCommentReport.lanes.isEmpty()
+                   && waveWarningsContain(waveNoLaneCommentReport,
+                                          emptyScopeNeedle),
+               true);
+
+    const QString waveNoLaneMacroScopeInput =
+        QStringLiteral("module wave_no_lane_macro_scope(input logic clk);\n"
+                       "`SNPS_UNR_CONSTRAINT(\"unsupported constraint\", 1, clk, 1'b1)\n"
+                       "endmodule\n");
+    WavePreviewQuery waveNoLaneMacroScopeQuery;
+    waveNoLaneMacroScopeQuery.fileName =
+        QStringLiteral("wave_no_lane_macro_scope.sv");
+    waveNoLaneMacroScopeQuery.documentText = waveNoLaneMacroScopeInput;
+    waveNoLaneMacroScopeQuery.scopeStartPosition =
+        waveNoLaneMacroScopeInput.indexOf(QStringLiteral("`SNPS_UNR_CONSTRAINT"));
+    waveNoLaneMacroScopeQuery.scopeEndPosition =
+        waveNoLaneMacroScopeInput.indexOf(QStringLiteral("endmodule"));
+    waveNoLaneMacroScopeQuery.scopeLabel =
+        QStringLiteral("macro process");
+    const WavePreviewReport waveNoLaneMacroScopeReport =
+        WavePreviewService::getInstance()->previewForDocument(
+            waveNoLaneMacroScopeQuery);
+    expectBool("WavePreview macro process scope warns",
+               !waveNoLaneMacroScopeReport.available
+                   && waveNoLaneMacroScopeReport.lanes.isEmpty()
+                   && waveWarningsContain(waveNoLaneMacroScopeReport,
+                                          emptyScopeNeedle),
+               true);
     QList<SemanticSymbolRecord> waveSemanticRecords;
     waveSemanticRecords.append(
         makeSemanticFixtureRecord(QStringLiteral("remote_cfg"),

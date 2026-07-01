@@ -28,32 +28,28 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
 
 ## Current Goal State
 
-Current milestone: FSM Structural Discovery is complete. The next milestone
+Current milestone: Wave Preview No-Lane Repair is complete. The next milestone
 should wait for a new explicit scoped request; do not expand this work into a
-full Signal Kernel Graph sweep or Wave Preview repair without that request.
+Signal Kernel Graph sweep without that request.
 
 Current baseline highlights:
 
-- Most recent completed milestone: FSM Structural Discovery. FSM Graph and
-  State Transition Graph no longer decide FSM semantics from `cs` / `ns` /
-  `state_q` / `state_d` names. Discovery starts from clocked `current <= next`
-  assignments and then requires next-state logic using `case(current)` or
-  `if (current == STATE)` evidence. Names remain useful only for display,
-  ordering, compatibility hints, or rejection text.
-- Verification for FSM Structural Discovery passed in the Debug build:
-  `cmake --build . --target corpus_audit_test relationship_test`;
-  `relationship_test` passed 864 checks; full `corpus_audit_test
-  test_sv/new test_sv/huge_prj` regenerated `test_sv/corpus_audit_report.json`
-  and `.md`. The rerun covered 454 files, 424 modules, 3942 always/process
-  records, 49345 signal/port candidates, 117069 semantic records, 82636
-  relationships, and 704 diagnostics.
-- Current corpus result: State Transition Graph is 90 pass / 0 fail / 400
-  skipped under the new structural-pair audit. This replaces the previous
-  name-based 88 pass / 21 fail / 418 skipped result; the candidate definition
-  changed, so the delta is semantic as well as numeric. Wave Preview still has
-  29 always-block failures where the service returned no lane and no warning.
-  Signal Kernel Graph still uses the bounded audit budget from the prior
-  harness.
+- Most recent completed milestone: Wave Preview No-Lane Repair. The service now
+  preserves structural warnings and emits explicit unsupported reasons for
+  scoped always/process previews that produce no lanes, including commented-out
+  stale process records, macro/preprocessor-only process scopes, and parsed
+  always blocks with no recognized assignment lanes. No simulator or waveform
+  evaluator was added.
+- Verification for Wave Preview No-Lane Repair passed in the Debug build:
+  `completion_test`, `corpus_audit_test`, `full_feature_audit_test`, and
+  `gui_smoke_test`. `corpus_audit_test` regenerated
+  `test_sv/corpus_audit_report.json` and `.md`; `full_feature_audit_test`
+  regenerated `test_sv/full_feature_audit_report.json` and `.md`.
+- Current corpus result: Wave Preview is 3963 pass / 0 fail / 15 skipped / 30
+  empty-valid, replacing the previous 3963 pass / 29 fail / 16 skipped / 0
+  empty-valid no-lane/no-warning baseline. State Transition Graph remains 90
+  pass / 0 fail / 400 skipped under the structural-pair audit. Signal Kernel
+  Graph still uses the bounded audit budget from the prior harness.
 - Most recent completed milestone: import-aware SystemVerilog package symbol
   visibility. Unqualified package members are available to completion, goto,
   and hover only from active `import pkg::*;` context; local/module symbols win

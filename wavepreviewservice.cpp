@@ -2874,6 +2874,61 @@ bool assignmentMatchesScope(const WavePreviewAssignment& assignment,
                                 scope);
 }
 
+bool blockMatchesScope(const WavePreviewBlock& block, const ScopeRange& scope)
+{
+    return rangeIntersectsScope(block.startPosition, block.endPosition, scope);
+}
+
+QString lineRangeText(int startLine, int endLine)
+{
+    if (startLine <= 0)
+        return QStringLiteral("unknown line");
+    if (endLine <= startLine)
+        return QStringLiteral("line %1").arg(startLine);
+    return QStringLiteral("lines %1-%2").arg(startLine).arg(endLine);
+}
+
+QString noLaneWarningForBlock(const WavePreviewBlock& block)
+{
+    return QStringLiteral(
+               "selected always block at %1 has no recognized assignment lanes; Wave Preview reports it as unsupported rather than silent empty")
+        .arg(lineRangeText(block.startLine, block.endLine));
+}
+
+QString parseFailureWarningForAlways(const Token& token)
+{
+    return QStringLiteral(
+               "unsupported always block near line %1: could not parse statement body")
+        .arg(qMax(1, token.line));
+}
+
+bool queryLooksLikeProcessScope(const WavePreviewQuery& query,
+                                const ScopeRange& scope)
+{
+    if (!scope.isValid())
+        return false;
+
+    const QString label = query.scopeLabel.toLower();
+    if (label.contains(QStringLiteral("always"))
+        || label.contains(QStringLiteral("process"))) {
+        return true;
+    }
+
+    const QString scopedText =
+        query.documentText.mid(scope.start, scope.end - scope.start).toLower();
+    return scopedText.contains(QStringLiteral("always"))
+        || scopedText.contains(QStringLiteral("always_ff"))
+        || scopedText.contains(QStringLiteral("always_comb"))
+        || scopedText.contains(QStringLiteral("always_latch"));
+}
+
+QString emptyProcessScopeWarning(const WavePreviewReport& report)
+{
+    return QStringLiteral(
+               "selected process scope at %1 has no recognized Wave Preview process body; source may be commented out, preprocessor-only, or otherwise unsupported")
+        .arg(lineRangeText(report.scopeStartLine, report.scopeEndLine));
+}
+
 int lineForPosition(const QString& text, int position)
 {
     const int textSize = static_cast<int>(text.size());
@@ -3022,6 +3077,8 @@ WavePreviewReport WavePreviewService::previewForDocument(
                     fixBlockIndexes(&scopedAssignments, blockIndex);
                     block.assignmentCount = scopedAssignments.size();
                     report.blocks.append(block);
+                } else if (blockMatchesScope(block, scope)) {
+                    appendUnique(&report.warnings, noLaneWarningForBlock(block));
                 }
 
                 for (const WavePreviewAssignment& assignment : scopedAssignments) {
@@ -3033,6 +3090,8 @@ WavePreviewReport WavePreviewService::previewForDocument(
                 }
                 pos = qMax(pos + 1, consumedIndex + 1);
                 continue;
+            } else if (rangeIntersectsScope(token.start, token.end, scope)) {
+                appendUnique(&report.warnings, parseFailureWarningForAlways(token));
             }
         }
 
@@ -3051,7 +3110,10 @@ WavePreviewReport WavePreviewService::previewForDocument(
     report.clockResetGroups = clockResetGroupsForBlocks(report.blocks);
     refreshLaneSummaries(&report.lanes);
     report.activitySummary = activitySummaryForLanes(report.lanes);
+    const QStringList structuralWarnings = report.warnings;
     report.warnings = applyWarningTextsForLanes(&report.lanes);
+    for (const QString& warning : structuralWarnings)
+        appendUnique(&report.warnings, warning);
     report.trace = buildTraceReport(query.documentText,
                                     tokens,
                                     signalContextCollection,
@@ -3059,6 +3121,12 @@ WavePreviewReport WavePreviewService::previewForDocument(
     for (const QString& warning : report.trace.warnings) {
         if (!report.warnings.contains(warning))
             report.warnings.append(warning);
+    }
+    if (report.assignmentCount == 0
+        && report.lanes.isEmpty()
+        && report.warnings.isEmpty()
+        && queryLooksLikeProcessScope(query, scope)) {
+        appendUnique(&report.warnings, emptyProcessScopeWarning(report));
     }
     report.available = report.assignmentCount > 0;
     return report;
