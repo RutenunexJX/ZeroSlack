@@ -703,10 +703,10 @@ int main(int argc, char** argv)
               {QStringLiteral("RTL Insights FSM Graph"), QStringLiteral("state transition graph panel/action")},
               {QStringLiteral("FsmGraphService"), QStringLiteral("StateTransitionGraphService"), QStringLiteral("StateTransitionTriggerService"), QStringLiteral("RtlInsightsPanelCoordinator")},
               {QStringLiteral("gui_smoke_test"), QStringLiteral("corpus_audit_test")},
-              QStringLiteral("full corpus structural FSM sweep"),
+              QStringLiteral("deterministic bounded structural FSM sweep"),
               fullCorpusCoverage,
               false,
-              QStringLiteral("Skipped modules lack current<=next FSM shape under current extractor."));
+              QStringLiteral("Skipped modules lack current<=next FSM shape or are beyond the deterministic audit sample cap."));
 
     appendRow(&rows, QStringLiteral("rtl_signal_journey_clock_reset"),
               QStringLiteral("RTL Insights: Signal Journey and Clock/Reset"),
@@ -768,10 +768,10 @@ int main(int argc, char** argv)
               {QStringLiteral("Wave Preview dock"), QStringLiteral("active-editor wave refresh")},
               {QStringLiteral("WavePreviewService"), QStringLiteral("WavePreviewPanelCoordinator")},
               {QStringLiteral("gui_smoke_test"), QStringLiteral("corpus_audit_test")},
-              QStringLiteral("full corpus always/process preview sweep"),
+              QStringLiteral("deterministic bounded always/process preview sweep"),
               fullCorpusCoverage,
               false,
-              QStringLiteral("Keep no-lane/no-warning regression coverage and review empty-valid unsupported reasons periodically."));
+              QStringLiteral("Keep no-lane/no-warning regression coverage and review bounded skipped reasons periodically."));
 
     appendRow(&rows, QStringLiteral("search_rename_workspace_workflow"),
               QStringLiteral("Search, rename, semantic diff, and workspace workflow"),

@@ -12,18 +12,19 @@ into an analyzer.
 ## Current Execution Baseline
 
 - Signal Kernel Graph Audit Budget Repair is complete for the
-  full-feature/corpus audit. Bounded Signal Kernel Graph coverage now has
-  deterministic case-level skipped reasons instead of a feature-level known
-  issue. No product graph capability or UI behavior was expanded.
+  full-feature/corpus audit. The expensive corpus RTL insight sweeps are now
+  deterministic bounded audits with case-level skipped reasons instead of
+  relying on CTest timeout behavior. No product graph capability or UI behavior
+  was expanded.
 - Verification baseline for this repair: Debug builds of `corpus_audit_test`,
   `full_feature_audit_test`, `gui_smoke_test`, `completion_test`, and
   `relationship_test` passed. Full `corpus_audit_test` regenerated the
   JSON/Markdown corpus reports, and `full_feature_audit_test` regenerated the
   full feature reports.
-- Current audit deltas: Signal Kernel Graph remains 388 pass / 0 fail / 1592
-  skipped / 12 empty-valid, but skipped cases now have explicit
-  unsupported/sample-cap reasons. The full-feature matrix now reports 23 pass /
-  0 known-issue.
+- Current audit deltas: the stable bounded report is now Signal Kernel Graph 32
+  pass / 0 fail / 1960 skipped. State Transition Graph and Wave Preview are
+  also bounded to keep CTest under 1500 seconds. The full-feature matrix now
+  reports 23 pass / 0 known-issue.
 - No implementation milestone is active. Start the next milestone only from a
   new explicit scoped request.
 - The current completed baseline includes import-aware package member
@@ -1582,20 +1583,16 @@ Milestones:
   Diagram, and Wave Preview are invoked through service/report-layer paths;
   GUI smoke remains out of this stage)
 - FCA.3 Record failures and residual risk.
-  (complete: current report generated 2026-07-01T14:15:07Z UTC and covered 454
+  (complete: current report generated 2026-07-01T18:18:18Z UTC and covered 454
   files, 424 modules, 3942 always/process records, 49,345 signal/port
   candidates, 117,069 semantic records, 82,636 relationships, and 704
-  diagnostics. State Transition Graph is 90 pass / 0 fail / 400 skipped under
-  structural FSM discovery; the candidate definition changed from name-based
-  signals to clocked current<=next pairs, so the numbers are not directly
-  comparable to the previous name-based pass/fail set. Signal Kernel Graph is
-  388 pass / 0 fail / 1,592 skipped / 12 empty-valid; skipped cases are
-  deterministic no-candidate or sample-cap audit outcomes, not full-feature
-  known issues.
-  Module Block Diagram is 208 pass / 216 empty-but-valid. Wave Preview uses
-  source-discovered always/process records and now reports 3963 pass / 0 fail /
-  15 skipped / 30 empty-valid after no-lane/no-warning cases were repaired into
-  lane-producing previews or explicit unsupported reasons. Semantic
+  diagnostics. State Transition Graph is 2 pass / 0 fail / 423 skipped under a
+  deterministic module sample cap. Signal Kernel Graph is 32 pass / 0 fail /
+  1,960 skipped under deterministic no-candidate and sample-cap reasons.
+  Module Block Diagram is 208 pass / 216 empty-valid. Wave Preview uses
+  source-discovered always/process records and reports 1047 pass / 0 fail /
+  2957 skipped / 4 empty-valid under a deterministic process preview cap.
+  Semantic
   baseline is 874 pass / 0 fail / 5 empty-but-valid, with empty outlines
   classified as comment/preprocessor-only or header-like empty.)
 
@@ -1619,10 +1616,10 @@ Milestones:
   `test_sv/huge_prj`; semantic totals are 117,069 records, 82,636 audit
   relationships, and 704 diagnostics.)
 - FFA.3 Known issue triage without broad refactor.
-  (complete: current matrix generated 2026-07-01T14:15:25Z UTC is 23 pass / 0
+  (complete: current matrix generated 2026-07-01T18:25:42Z UTC is 23 pass / 0
   fail / 0 skipped / 0 known-issue. Signal Kernel Graph budget limits are now
-  expressed as deterministic case-level skipped reasons; Wave Preview remains
-  pass.)
+  expressed as deterministic case-level skipped reasons; other expensive RTL
+  sweeps are likewise bounded and remain pass.)
 - FFA.4 Verification and documentation.
   (complete: `ctest -R "^corpus_audit_test$" --output-on-failure` and
   `ctest -R

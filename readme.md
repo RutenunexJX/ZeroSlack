@@ -32,10 +32,10 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
 ## Current Product Baseline
 
 - Current audit milestone: Signal Kernel Graph Audit Budget Repair is complete.
-  Signal Kernel Graph corpus coverage is still intentionally bounded, but every
-  skipped case now has deterministic no-candidate, per-module sample cap, or
-  global sample cap reasoning. The full-feature matrix no longer carries a
-  Signal Kernel Graph known issue.
+  The corpus audit is now explicitly bounded for the expensive RTL insight
+  sweeps so CTest's default 1500 second timeout is no longer part of the
+  feature outcome. Signal Kernel Graph skipped cases carry deterministic
+  no-candidate, per-module sample cap, or global sample cap reasoning.
 - Latest corpus audit report: `test_sv/corpus_audit_report.json` and
   `test_sv/corpus_audit_report.md` cover 454 files, 424 modules, 3942
   always/process records, 117069 semantic records, 82636 relationships, and 704
@@ -43,12 +43,10 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
   Graph changed from 88 pass / 21 fail / 418 skipped to 90 pass / 0 fail / 400
   skipped because the audit now counts discovered structural FSM pairs instead
   of `ns` / `next_state` name candidates.
-- Current Wave Preview corpus result: 3963 pass / 0 fail / 15 skipped / 30
-  empty-but-valid. The previous 29 no-lane/no-warning failures are now explicit
-  unsupported empty-valid cases or valid lane-producing previews.
-- Current Signal Kernel Graph corpus result: 388 pass / 0 fail / 1592 skipped /
-  12 empty-valid. Skipped cases are deterministic audit outcomes: 31 unsupported
-  no-signal/no-port modules and 1561 sample-cap skips. Full-feature now reports
+- Current bounded corpus result: State Transition Graph 2 pass / 0 fail / 423
+  skipped; Signal Kernel Graph 32 pass / 0 fail / 1960 skipped; Wave Preview
+  1047 pass / 0 fail / 2957 skipped / 4 empty-valid. Skipped cases are
+  deterministic unsupported or sample-cap outcomes. Full-feature now reports
   23 pass / 0 fail / 0 skipped / 0 known-issue.
 - Current handoff state: no implementation milestone is active. The latest
   completed work is Signal Kernel Graph Audit Budget Repair for
@@ -854,13 +852,13 @@ Do not add unlisted long-term goals without explicit user approval.
   semantic snapshot, emits direct Slang-fact relationships for audit use, and
   writes `test_sv/corpus_audit_report.json` plus
   `test_sv/corpus_audit_report.md`. Current report generated
-  2026-07-01T14:15:07Z UTC and covered 454 files, 424 modules, 3942
+  2026-07-01T18:18:18Z UTC and covered 454 files, 424 modules, 3942
   always/process records, 49,345 signal/port candidates, 117,069 semantic
   records, 82,636 audit relationships, and 704 diagnostics. Summary: State
-  Transition Graph 90 pass / 0 fail / 400 skipped; Signal Kernel Graph 388
-  pass / 0 fail / 1,592 skipped / 12 empty-but-valid; Module Block Diagram 208
-  pass / 216 empty-but-valid; Wave Preview 3,963 pass / 0 fail / 15 skipped /
-  30 empty-but-valid;
+  Transition Graph 2 pass / 0 fail / 423 skipped; Signal Kernel Graph 32
+  pass / 0 fail / 1,960 skipped; Module Block Diagram 208 pass / 216
+  empty-but-valid; Wave Preview 1,047 pass / 0 fail / 2,957 skipped / 4
+  empty-but-valid;
   semantic baseline 874 pass / 0 fail / 5 empty-but-valid. State Transition
   Graph audit semantics changed from name-based candidates to structural FSM
   pairs: 45 discovered pairs produce next-state positive cases
@@ -871,16 +869,17 @@ Do not add unlisted long-term goals without explicit user approval.
   no-lane/no-warning cases repaired into lane-producing previews or explicit
   empty-valid unsupported reasons. Semantic baseline moved from 3 fail to 0 fail / 5
   empty-but-valid by classifying empty outlines as comment/preprocessor-only or
-  header-like empty files. Signal Kernel Graph prioritizes relationship
-  endpoint signals, graphs up to 4 signals per module and 400 total graph builds,
-  and records deterministic skipped reasons for ungraphed candidates.
+  header-like empty files. Expensive RTL insight sweeps are deterministic and
+  bounded: State Transition Graph samples modules, Signal Kernel Graph
+  prioritizes relationship endpoint signals and graphs up to 32 total kernels,
+  and Wave Preview samples process previews while recording skipped reasons.
   Verification run: `ninja corpus_audit_test`; direct offscreen
   `corpus_audit_test.exe E:\ZeroSlack\ZeroSlack\test_sv\new
   E:\ZeroSlack\ZeroSlack\test_sv\huge_prj`.
 - Full Feature Audit: `full_feature_audit_test` now inventories the
   broader product surface and writes `test_sv/full_feature_audit_report.json`
   plus `test_sv/full_feature_audit_report.md`. Current report generated
-  2026-07-01T14:15:25Z UTC and covers 23 feature rows, 93 user entry points,
+  2026-07-01T18:25:42Z UTC and covers 23 feature rows, 93 user entry points,
   75 service/test touchpoints, 454 recursive corpus files, 117,069 semantic
   records, 82,636 audit relationships, and 704 diagnostics. Summary: 23 pass /
   0 fail / 0 skipped / 0 known-issue. Verification passed: `ctest -R

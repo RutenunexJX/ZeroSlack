@@ -36,19 +36,19 @@ Current baseline highlights:
 - Most recent completed milestone: Signal Kernel Graph Audit Budget Repair.
   Signal Kernel Graph's bounded audit coverage now records deterministic
   case-level reasons for unsupported/no-candidate and sample-cap skipped cases,
-  so full-feature no longer carries a budget-limited known issue. No graph
-  product capability, simulator behavior, or UI interaction was added.
+  so full-feature no longer carries a budget-limited known issue. The broader
+  corpus audit is also bounded for expensive State Transition Graph and Wave
+  Preview sweeps so default CTest runs finish before timeout. No graph product
+  capability, simulator behavior, or UI interaction was added.
 - Verification for Signal Kernel Graph Audit Budget Repair passed in the Debug
   build: `corpus_audit_test`, `full_feature_audit_test`, `gui_smoke_test`,
   `completion_test`, and `relationship_test`. `corpus_audit_test` regenerated
   `test_sv/corpus_audit_report.json` and `.md`; `full_feature_audit_test`
   regenerated `test_sv/full_feature_audit_report.json` and `.md`.
-- Current corpus result: Signal Kernel Graph is 388 pass / 0 fail / 1592
-  skipped / 12 empty-valid, with skipped cases split into unsupported
-  no-candidate and deterministic sample-cap reasons. Full-feature is now 23
-  pass / 0 fail / 0 skipped / 0 known-issue. Wave Preview remains 3963 pass / 0
-  fail / 15 skipped / 30 empty-valid, and State Transition Graph remains 90
-  pass / 0 fail / 400 skipped under the structural-pair audit.
+- Current bounded corpus result: State Transition Graph is 2 pass / 0 fail /
+  423 skipped, Signal Kernel Graph is 32 pass / 0 fail / 1960 skipped, and Wave
+  Preview is 1047 pass / 0 fail / 2957 skipped / 4 empty-valid. Full-feature is
+  now 23 pass / 0 fail / 0 skipped / 0 known-issue.
 - Most recent completed milestone: import-aware SystemVerilog package symbol
   visibility. Unqualified package members are available to completion, goto,
   and hover only from active `import pkg::*;` context; local/module symbols win
@@ -1230,20 +1230,19 @@ Milestones:
   (complete: current report covers State Transition Graph, Signal Kernel Graph,
   Module Block Diagram, and Wave Preview through service/report-layer paths)
 - FCA.3 Document known issues and residual risk.
-  (complete: current report generated 2026-07-01T14:15:07Z UTC and covered 454
+  (complete: current report generated 2026-07-01T18:18:18Z UTC and covered 454
   files, 424 modules, 3942 always/process records, 49,345 signal/port
   candidates, 117,069 semantic records, 82,636 audit relationships, and 704
-  diagnostics. State Transition Graph is 90 pass / 0 fail / 400 skipped under
-  structural discovery. The audit now counts discovered clocked FSM pairs, not
+  diagnostics. State Transition Graph is 2 pass / 0 fail / 423 skipped under a
+  deterministic module sample cap. The audit now counts discovered clocked FSM pairs, not
   `ns` / `next_state` name candidates; each discovered pair contributes a
   next-state positive case and a current-state negative trigger case. Signal
-  Kernel Graph reports 388 pass / 0 fail / 1,592 skipped / 12 empty-valid, with
+  Kernel Graph reports 32 pass / 0 fail / 1,960 skipped, with
   skipped cases carrying deterministic no-candidate or sample-cap reasons.
-  Module Block Diagram reports 208 pass /
-  216 empty-but-valid. Wave Preview uses source-discovered always/process
-  records and reports 3963 pass / 0 fail / 15 skipped / 30 empty-valid after
-  no-lane/no-warning cases were repaired into lane-producing previews or
-  explicit unsupported reasons. Semantic baseline is 874 pass / 0 fail / 5
+  Module Block Diagram reports 208 pass / 216 empty-valid. Wave Preview uses source-discovered always/process
+  records and reports 1047 pass / 0 fail / 2957 skipped / 4 empty-valid under
+  a deterministic process preview cap; no-lane/no-warning cases are repaired
+  into lane-producing previews or explicit unsupported reasons. Semantic baseline is 874 pass / 0 fail / 5
   empty-but-valid after classifying empty outlines as comment/preprocessor-only
   or header-like empty.)
 
@@ -1267,10 +1266,10 @@ Milestones:
   `test_sv/huge_prj`; semantic totals are 117,069 records, 82,636 audit
   relationships, and 704 diagnostics.)
 - FFA.3 Known issue triage without broad refactor.
-  (complete: current matrix generated 2026-07-01T14:15:25Z UTC is 23 pass / 0
+  (complete: current matrix generated 2026-07-01T18:25:42Z UTC is 23 pass / 0
   fail / 0 skipped / 0 known-issue. Signal Kernel Graph budget limits are now
-  expressed as deterministic case-level skipped reasons; Wave Preview remains
-  pass.)
+  expressed as deterministic case-level skipped reasons; other expensive RTL
+  sweeps are likewise bounded and remain pass.)
 - FFA.4 Verification and documentation.
   (complete: `ctest -R "^corpus_audit_test$" --output-on-failure` and
   `ctest -R

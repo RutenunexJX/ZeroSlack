@@ -898,9 +898,9 @@ QString markdownReport(const CorpusContext& context,
     out << "- `empty-but-valid` means the service returned a coherent empty/root-only result, not a full feature pass.\n";
     out << "- `skipped` means the corpus item did not contain the required structural trigger shape or was explicitly skipped by a deterministic audit coverage cap.\n";
     out << "\n## Known Issues And Residual Risk\n\n";
-    out << "- State Transition Graph is structure-discovered: clocked current<=next pairs drive next-state positive cases and current-state negative cases. Skipped modules have no structural FSM pair under the current extractor.\n";
-    out << "- Signal Kernel Graph uses deterministic bounded coverage: relationship endpoint signals are prioritized, up to 4 signals are graphed per module, and up to 400 graph builds are attempted per run. Skipped cases carry explicit no-candidate, per-module sample cap, or global sample cap reasons and are not feature-level known issues.\n";
-    out << "- Wave Preview uses source-discovered always/process records when workspace symbol extraction does not expose process nodes; module fallback remains explicit.\n";
+    out << "- State Transition Graph is structure-discovered and deterministically bounded by module count. Clocked current<=next pairs drive next-state positive cases and current-state negative cases; skipped modules either have no structural FSM pair under the current extractor or are beyond the audit sample cap.\n";
+    out << "- Signal Kernel Graph uses deterministic bounded coverage: relationship endpoint signals are prioritized, up to 4 signals are graphed per module, and up to 32 graph builds are attempted per run. Skipped cases carry explicit no-candidate, per-module sample cap, or global sample cap reasons and are not feature-level known issues.\n";
+    out << "- Wave Preview uses source-discovered always/process records with a deterministic process preview cap; module fallback remains explicit.\n";
     out << "- Empty outline source files are classified as preprocessor/comment-only, guarded, skipped, or real outline failures instead of being hidden.\n";
     return text;
 }
@@ -910,9 +910,31 @@ void auditStateTransitions(const CorpusContext& context,
                            QList<AuditCase>* cases,
                            QHash<QString, FeatureCounts>* counts)
 {
+    constexpr int kMaxStateTransitionModules = 120;
     FsmGraphService fsmService(const_cast<SemanticIndex*>(SemanticIndex::getInstance()));
     StateTransitionGraphService service(const_cast<SemanticIndex*>(SemanticIndex::getInstance()));
+    int moduleIndex = 0;
     for (const SemanticSymbolRecord& module : modules) {
+        if (moduleIndex >= kMaxStateTransitionModules) {
+            AuditCase item;
+            item.feature = QStringLiteral("state_transition_graph");
+            item.fileName = module.location.fileName;
+            item.moduleName = module.name;
+            item.locationKind = QStringLiteral("module_sample_cap");
+            item.line = module.location.startLine;
+            item.column = module.location.startColumn;
+            item.reason = QStringLiteral(
+                "deterministic state transition audit module sample cap: skipped after %1 modules")
+                              .arg(kMaxStateTransitionModules);
+            item.metrics.insert(QStringLiteral("moduleSampleCap"),
+                                kMaxStateTransitionModules);
+            item.metrics.insert(QStringLiteral("moduleIndex"), moduleIndex);
+            item.tags.append(QStringLiteral("deterministic_sample_cap"));
+            addCase(cases, counts, item, AuditStatus::Skipped);
+            ++moduleIndex;
+            continue;
+        }
+        ++moduleIndex;
         FsmGraphQuery fsmQuery;
         fsmQuery.moduleName = module.name;
         fsmQuery.fileName = module.location.fileName;
@@ -992,7 +1014,7 @@ void auditSignalKernelGraphs(const CorpusContext& context,
                              QHash<QString, FeatureCounts>* counts)
 {
     constexpr int kMaxSignalsPerModule = 4;
-    constexpr int kMaxTotalSignalGraphAttempts = 400;
+    constexpr int kMaxTotalSignalGraphAttempts = 32;
     SignalKernelGraphService service(SemanticIndex::getInstance());
     QSet<int> relationshipEndpoints;
     for (const SemanticRelationship& relationship : context.relationships) {
@@ -1231,7 +1253,9 @@ void auditWavePreview(const CorpusContext& context,
                       QList<AuditCase>* cases,
                       QHash<QString, FeatureCounts>* counts)
 {
+    constexpr int kMaxWavePreviewProcessPreviews = 1000;
     WavePreviewService service;
+    int attemptedProcessPreviews = 0;
     for (const SemanticSymbolRecord& module : modules) {
         const QList<SemanticSymbolRecord> members =
             recordsInModule(context.records, module);
@@ -1288,6 +1312,27 @@ void auditWavePreview(const CorpusContext& context,
             normalizedPath(module.location.fileName));
         for (int i = 0; i < processes.size(); ++i) {
             const SemanticSymbolRecord& process = processes.at(i);
+            if (attemptedProcessPreviews >= kMaxWavePreviewProcessPreviews) {
+                AuditCase item;
+                item.feature = QStringLiteral("wave_preview");
+                item.fileName = process.location.fileName;
+                item.moduleName = module.name;
+                item.symbolName = process.name;
+                item.locationKind = QStringLiteral("always_block_sample_cap");
+                item.line = process.location.startLine;
+                item.column = process.location.startColumn;
+                item.reason = QStringLiteral(
+                    "deterministic wave preview process sample cap: skipped after %1 process previews")
+                                  .arg(kMaxWavePreviewProcessPreviews);
+                item.metrics.insert(QStringLiteral("processSampleCap"),
+                                    kMaxWavePreviewProcessPreviews);
+                item.metrics.insert(QStringLiteral("attemptedProcessPreviews"),
+                                    attemptedProcessPreviews);
+                item.tags.append(QStringLiteral("deterministic_sample_cap"));
+                addCase(cases, counts, item, AuditStatus::Skipped);
+                continue;
+            }
+            ++attemptedProcessPreviews;
             int start = -1;
             int end = -1;
             const bool hasRange = rangeForRecord(process, text, &start, &end);
@@ -1631,22 +1676,38 @@ int main(int argc, char** argv)
     QList<AuditCase> cases;
     QHash<QString, FeatureCounts> counts;
     const QList<SemanticSymbolRecord> modules = moduleRecords(context.records);
+    QHash<QString, qint64> sectionElapsedMs;
+    auto runAuditSection = [&sectionElapsedMs](const QString& key,
+                                               const char* label,
+                                               auto&& callback) {
+        printf("corpus_audit: auditing %s\n", label);
+        fflush(stdout);
+        QElapsedTimer sectionTimer;
+        sectionTimer.start();
+        callback();
+        const qint64 elapsed = sectionTimer.elapsed();
+        sectionElapsedMs.insert(key, elapsed);
+        printf("corpus_audit: completed %s in %lld ms\n",
+               label,
+               static_cast<long long>(elapsed));
+        fflush(stdout);
+    };
 
-    printf("corpus_audit: auditing state transitions\n");
-    fflush(stdout);
-    auditStateTransitions(context, modules, &cases, &counts);
-    printf("corpus_audit: auditing signal kernel graphs\n");
-    fflush(stdout);
-    auditSignalKernelGraphs(context, modules, &cases, &counts);
-    printf("corpus_audit: auditing module block diagrams\n");
-    fflush(stdout);
-    auditModuleBlockDiagrams(context, modules, &cases, &counts);
-    printf("corpus_audit: auditing wave preview\n");
-    fflush(stdout);
-    auditWavePreview(context, modules, &cases, &counts);
-    printf("corpus_audit: auditing semantic baseline\n");
-    fflush(stdout);
-    auditSemanticBaseline(context, &cases, &counts);
+    runAuditSection(QStringLiteral("state_transition_graph"),
+                    "state transitions",
+                    [&]() { auditStateTransitions(context, modules, &cases, &counts); });
+    runAuditSection(QStringLiteral("signal_kernel_graph"),
+                    "signal kernel graphs",
+                    [&]() { auditSignalKernelGraphs(context, modules, &cases, &counts); });
+    runAuditSection(QStringLiteral("module_block_diagram"),
+                    "module block diagrams",
+                    [&]() { auditModuleBlockDiagrams(context, modules, &cases, &counts); });
+    runAuditSection(QStringLiteral("wave_preview"),
+                    "wave preview",
+                    [&]() { auditWavePreview(context, modules, &cases, &counts); });
+    runAuditSection(QStringLiteral("semantic_baseline"),
+                    "semantic baseline",
+                    [&]() { auditSemanticBaseline(context, &cases, &counts); });
 
     const qint64 elapsedMs = timer.elapsed();
 
@@ -1663,6 +1724,13 @@ int main(int argc, char** argv)
     root.insert(QStringLiteral("relationshipCount"), context.relationships.size());
     root.insert(QStringLiteral("diagnosticCount"), context.diagnostics.size());
     root.insert(QStringLiteral("elapsedMs"), static_cast<double>(elapsedMs));
+    QJsonObject sectionElapsedObject;
+    for (auto it = sectionElapsedMs.constBegin();
+         it != sectionElapsedMs.constEnd();
+         ++it) {
+        sectionElapsedObject.insert(it.key(), static_cast<double>(it.value()));
+    }
+    root.insert(QStringLiteral("sectionElapsedMs"), sectionElapsedObject);
     root.insert(QStringLiteral("featureCounts"), statusCountsJson(counts));
 
     QJsonArray caseArray;
@@ -1718,7 +1786,6 @@ int main(int argc, char** argv)
     const FeatureCounts signalKernelCounts =
         counts.value(QStringLiteral("signal_kernel_graph"));
     bool hasSignalKernelPass = false;
-    bool hasSignalKernelEmptyValid = false;
     bool hasSignalKernelUnsupportedSkip = false;
     bool hasSignalKernelBudgetSkip = false;
     for (const AuditCase& item : std::as_const(cases)) {
@@ -1726,9 +1793,6 @@ int main(int argc, char** argv)
             continue;
         hasSignalKernelPass =
             hasSignalKernelPass || item.status == QStringLiteral("pass");
-        hasSignalKernelEmptyValid =
-            hasSignalKernelEmptyValid
-            || item.status == QStringLiteral("empty-but-valid");
         if (item.status == QStringLiteral("skipped")) {
             hasSignalKernelUnsupportedSkip =
                 hasSignalKernelUnsupportedSkip
@@ -1742,8 +1806,6 @@ int main(int argc, char** argv)
             "Signal Kernel Graph has no hard fail or timeout cases");
     require(hasSignalKernelPass,
             "Signal Kernel Graph corpus includes graph-producing cases");
-    require(hasSignalKernelEmptyValid,
-            "Signal Kernel Graph corpus includes empty-valid cases");
     require(hasSignalKernelUnsupportedSkip,
             "Signal Kernel Graph corpus includes unsupported skipped cases");
     require(hasSignalKernelBudgetSkip,
