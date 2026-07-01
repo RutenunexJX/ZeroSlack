@@ -100,6 +100,19 @@ struct FsmGraphReport {
     QList<FsmGraph> graphs;
 };
 
+enum class FsmSymbolRole {
+    None,
+    CurrentState,
+    NextState
+};
+
+struct FsmSymbolRoleReport {
+    bool inFsm = false;
+    FsmSymbolRole role = FsmSymbolRole::None;
+    QString reasonDisplayName;
+    FsmGraph graph;
+};
+
 class FsmGraphService
 {
 public:
@@ -111,6 +124,8 @@ public:
     void setSemanticIndex(SemanticIndex* semanticIndex);
 
     FsmGraphReport buildFsmGraph(const FsmGraphQuery& query) const;
+    FsmSymbolRoleReport roleForSymbol(const FsmGraphQuery& query,
+                                      const QString& symbolName) const;
 
 private:
     SemanticIndex* index = nullptr;
@@ -122,29 +137,12 @@ private:
         FsmGraphNotFoundReason* reason) const;
     QList<SemanticSymbolRecord> symbolsInModule(
         const SemanticSymbolRecord& moduleRecord) const;
-    QList<SemanticSymbolRecord> stateRegisters(
-        const QList<SemanticSymbolRecord>& moduleRecords,
-        const QList<SemanticSymbolRecord>& allRecords) const;
-    QList<SemanticSymbolRecord> stateValues(
-        const QList<SemanticSymbolRecord>& moduleRecords,
-        const QList<SemanticSymbolRecord>& allRecords,
-        const SemanticSymbolRecord& stateRegister) const;
-    SemanticSymbolRecord nextStateSignal(
-        const QList<SemanticSymbolRecord>& moduleRecords,
-        const SemanticSymbolRecord& stateRegister) const;
     QList<FsmTransition> parseTransitions(
         const SemanticSymbolRecord& moduleRecord,
         const SemanticSymbolRecord& stateRegister,
         const SemanticSymbolRecord& nextStateSignal,
         const QList<SemanticSymbolRecord>& states) const;
 
-    static bool hasPairedNextStateSignal(
-        const QList<SemanticSymbolRecord>& moduleRecords,
-        const SemanticSymbolRecord& stateRegister);
-    static bool isPairedNextStateName(const QString& currentName,
-                                      const QString& candidateName);
-    static bool looksLikeCurrentStateName(const QString& name);
-    static bool looksLikeNextStateName(const QString& name);
     static QString assignmentTarget(const QString& code);
     static QList<QString> assignedStateValues(const QString& code,
                                               const QSet<QString>& stateNames);

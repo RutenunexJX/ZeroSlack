@@ -28,33 +28,32 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
 
 ## Current Goal State
 
-Current milestone: Corpus Audit Findings repair is complete. The next milestone
+Current milestone: FSM Structural Discovery is complete. The next milestone
 should wait for a new explicit scoped request; do not expand this work into a
-full Signal Kernel Graph sweep without that request.
+full Signal Kernel Graph sweep or Wave Preview repair without that request.
 
 Current baseline highlights:
 
-- Most recent completed milestone: Corpus Audit Findings repair. FSM graph
-  state-value discovery now recognizes textual localparam/parameter state
-  constants such as `ST_*`, `SM_*`, and `*_STATE`, including exact
-  `current_state` register pairing. The corpus audit harness now discovers
-  always/process records from source when the semantic extractor does not
-  expose process nodes, classifies State Transition Graph misses by concrete
-  reason, and classifies empty source outlines instead of failing
-  preprocessor/comment-only files.
-- Verification for Corpus Audit Findings repair passed in the Debug build:
+- Most recent completed milestone: FSM Structural Discovery. FSM Graph and
+  State Transition Graph no longer decide FSM semantics from `cs` / `ns` /
+  `state_q` / `state_d` names. Discovery starts from clocked `current <= next`
+  assignments and then requires next-state logic using `case(current)` or
+  `if (current == STATE)` evidence. Names remain useful only for display,
+  ordering, compatibility hints, or rejection text.
+- Verification for FSM Structural Discovery passed in the Debug build:
   `cmake --build . --target corpus_audit_test relationship_test`;
-  `relationship_test` passed 860 checks; full `corpus_audit_test
+  `relationship_test` passed 864 checks; full `corpus_audit_test
   test_sv/new test_sv/huge_prj` regenerated `test_sv/corpus_audit_report.json`
   and `.md`. The rerun covered 454 files, 424 modules, 3942 always/process
   records, 49345 signal/port candidates, 117069 semantic records, 82636
   relationships, and 704 diagnostics.
-- Corpus Audit Findings remaining issues: 21 State Transition Graph failures
-  remain, now split across missing state values, unsupported no-case/no-paired
-  case patterns, missing assignment, and one no-matching graph case. Wave
-  Preview has 29 always-block failures where the service returned no lane and
-  no warning. Signal Kernel Graph still uses the bounded audit budget from the
-  prior harness.
+- Current corpus result: State Transition Graph is 90 pass / 0 fail / 400
+  skipped under the new structural-pair audit. This replaces the previous
+  name-based 88 pass / 21 fail / 418 skipped result; the candidate definition
+  changed, so the delta is semantic as well as numeric. Wave Preview still has
+  29 always-block failures where the service returned no lane and no warning.
+  Signal Kernel Graph still uses the bounded audit budget from the prior
+  harness.
 - Most recent completed milestone: import-aware SystemVerilog package symbol
   visibility. Unqualified package members are available to completion, goto,
   and hover only from active `import pkg::*;` context; local/module symbols win
@@ -1232,19 +1231,20 @@ Milestones:
   (complete: latest report covers State Transition Graph, Signal Kernel Graph,
   Module Block Diagram, and Wave Preview through service/report-layer paths)
 - FCA.3 Document known issues and residual risk.
-  (complete: latest report generated 2026-07-01T04:24:51Z UTC and covered 454
+  (complete: latest report generated 2026-07-01T05:47:30Z UTC and covered 454
   files, 424 modules, 3942 always/process records, 49,345 signal/port
   candidates, 117,069 semantic records, 82,636 audit relationships, and 704
-  diagnostics. State Transition Graph is 88 pass / 21 fail / 418 skipped;
-  fail count dropped from 66 to 21, and remaining misses are split into
-  concrete reason categories. Signal Kernel Graph keeps the bounded deep-call
-  budget and reports 388 pass / 0 fail / 1,592 skipped / 12 empty-but-valid.
-  Module Block Diagram reports 208 pass / 216 empty-but-valid. Wave Preview is
-  no longer module fallback only: 3942 source-discovered always/process records
-  feed always-block results of 3913 pass / 29 fail, with module-scope fallback
-  at 50 pass / 16 skipped. Semantic baseline is 874 pass / 0 fail / 5
-  empty-but-valid after classifying empty outlines as comment/preprocessor-only
-  or header-like empty.)
+  diagnostics. State Transition Graph is 90 pass / 0 fail / 400 skipped under
+  structural discovery. The audit now counts discovered clocked FSM pairs, not
+  `ns` / `next_state` name candidates; each discovered pair contributes a
+  next-state positive case and a current-state negative trigger case. Signal
+  Kernel Graph keeps the bounded deep-call budget and reports 388 pass / 0 fail
+  / 1,592 skipped / 12 empty-but-valid. Module Block Diagram reports 208 pass /
+  216 empty-but-valid. Wave Preview still uses 3942 source-discovered
+  always/process records with always-block results of 3913 pass / 29 fail and
+  module-scope fallback at 50 pass / 16 skipped. Semantic baseline is 874 pass
+  / 0 fail / 5 empty-but-valid after classifying empty outlines as
+  comment/preprocessor-only or header-like empty.)
 
 ## Completion Order
 

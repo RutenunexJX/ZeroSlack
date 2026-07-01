@@ -6661,6 +6661,10 @@ static void runFsmGraphServiceFixture()
         "  state_t state_q;\n"
         "  state_t state_d;\n"
         "  state_t status_reg;\n"
+        "  always_ff @(posedge clk or negedge rst_n) begin\n"
+        "    if (!rst_n) state_q <= IDLE;\n"
+        "    else state_q <= state_d;\n"
+        "  end\n"
         "  always_comb begin\n"
         "    state_d = state_q;\n"
         "    case (state_q)\n"
@@ -6684,7 +6688,7 @@ static void runFsmGraphServiceFixture()
                                      DeclarationKind::Module)
             .withFile(fileName)
             .withLocalHandle(9301)
-            .withRange(1, 1, 17, 1)
+            .withRange(1, 1, 21, 1)
             .withCollectorKind(CollectorKind::Module)
             .record();
     const SemanticSymbolRecord stateQ =
@@ -6752,9 +6756,12 @@ static void runFsmGraphServiceFixture()
     const QString packageModuleFileName =
         QStringLiteral("test_sv/fsm_pkg_module_fixture.sv");
     const QString packageModuleContent = QStringLiteral(
-        "module pkg_fsm_top(input logic go);\n"
+        "module pkg_fsm_top(input logic clk, input logic go);\n"
         "  pkg_state_e cs;\n"
         "  pkg_state_e ns;\n"
+        "  always_ff @(posedge clk) begin\n"
+        "    cs <= ns;\n"
+        "  end\n"
         "  always_comb begin\n"
         "    case (cs)\n"
         "      IDLE: ns = go ? RUN : IDLE;\n"
@@ -6765,13 +6772,17 @@ static void runFsmGraphServiceFixture()
     const QString dualFileName =
         QStringLiteral("test_sv/state_transition_dual_fixture.sv");
     const QString dualContent = QStringLiteral(
-        "module dual_fsm_top(input logic go);\n"
+        "module dual_fsm_top(input logic clk, input logic go);\n"
         "  typedef enum logic [0:0] {A_IDLE, A_RUN} dual_state_a_e;\n"
         "  typedef enum logic [0:0] {B_IDLE, B_RUN} dual_state_b_e;\n"
         "  dual_state_a_e cs;\n"
         "  dual_state_a_e ns;\n"
         "  dual_state_b_e current_state;\n"
         "  dual_state_b_e next_state;\n"
+        "  always_ff @(posedge clk) begin\n"
+        "    cs <= ns;\n"
+        "    current_state <= next_state;\n"
+        "  end\n"
         "  always_comb begin\n"
         "    case (cs)\n"
         "      A_IDLE: ns = go ? A_RUN : A_IDLE;\n"
@@ -6786,11 +6797,14 @@ static void runFsmGraphServiceFixture()
     const QString paramFileName =
         QStringLiteral("test_sv/state_transition_param_fixture.sv");
     const QString paramContent = QStringLiteral(
-        "module param_fsm_top(input logic go);\n"
+        "module param_fsm_top(input logic clk, input logic go);\n"
         "  localparam logic [1:0] ST_IDLE = 2'd0;\n"
         "  localparam logic [1:0] ST_BUSY = 2'd1;\n"
         "  logic [1:0] current_state;\n"
         "  logic [1:0] next_state;\n"
+        "  always_ff @(posedge clk) begin\n"
+        "    current_state <= next_state;\n"
+        "  end\n"
         "  always_comb begin\n"
         "    case (current_state)\n"
         "      ST_IDLE: next_state = go ? ST_BUSY : ST_IDLE;\n"
@@ -6799,12 +6813,31 @@ static void runFsmGraphServiceFixture()
         "    endcase\n"
         "  end\n"
         "endmodule\n");
+    const QString oddFileName =
+        QStringLiteral("test_sv/state_transition_odd_fixture.sv");
+    const QString oddContent = QStringLiteral(
+        "module odd_fsm_top(input logic clk, input logic go);\n"
+        "  typedef enum logic [0:0] {APPLE, PEAR} odd_state_e;\n"
+        "  odd_state_e foo;\n"
+        "  odd_state_e bar;\n"
+        "  logic grant_ns;\n"
+        "  always_ff @(posedge clk) begin\n"
+        "    foo <= bar;\n"
+        "  end\n"
+        "  always_comb begin\n"
+        "    case (foo)\n"
+        "      APPLE: bar = go ? PEAR : APPLE;\n"
+        "      PEAR: bar = APPLE;\n"
+        "    endcase\n"
+        "    grant_ns = go;\n"
+        "  end\n"
+        "endmodule\n");
     const SemanticSymbolRecord packageModule =
         SemanticFixtureRecordBuilder(QStringLiteral("pkg_fsm_top"),
                                      DeclarationKind::Module)
             .withFile(packageModuleFileName)
             .withLocalHandle(9310)
-            .withRange(1, 1, 10, 1)
+            .withRange(1, 1, 13, 1)
             .withCollectorKind(CollectorKind::Module)
             .record();
     const SemanticSymbolRecord packageCs =
@@ -6852,7 +6885,7 @@ static void runFsmGraphServiceFixture()
                                      DeclarationKind::Module)
             .withFile(dualFileName)
             .withLocalHandle(9320)
-            .withRange(1, 1, 18, 1)
+            .withRange(1, 1, 22, 1)
             .withCollectorKind(CollectorKind::Module)
             .record();
     const SemanticSymbolRecord dualCs =
@@ -6940,7 +6973,7 @@ static void runFsmGraphServiceFixture()
                                      DeclarationKind::Module)
             .withFile(paramFileName)
             .withLocalHandle(9330)
-            .withRange(1, 1, 13, 1)
+            .withRange(1, 1, 16, 1)
             .withCollectorKind(CollectorKind::Module)
             .record();
     const SemanticSymbolRecord paramCurrentState =
@@ -6983,6 +7016,64 @@ static void runFsmGraphServiceFixture()
             .inModule(QStringLiteral("param_fsm_top"))
             .withType(QStringLiteral("logic [1:0]"))
             .record();
+    const SemanticSymbolRecord oddModule =
+        SemanticFixtureRecordBuilder(QStringLiteral("odd_fsm_top"),
+                                     DeclarationKind::Module)
+            .withFile(oddFileName)
+            .withLocalHandle(9340)
+            .withRange(1, 1, 16, 1)
+            .withCollectorKind(CollectorKind::Module)
+            .record();
+    const SemanticSymbolRecord oddFoo =
+        SemanticFixtureRecordBuilder(QStringLiteral("foo"),
+                                     DeclarationKind::Enum)
+            .withFile(oddFileName)
+            .withLocalHandle(9341)
+            .withLine(3)
+            .withCollectorKind(CollectorKind::EnumVariable)
+            .inModule(QStringLiteral("odd_fsm_top"))
+            .withType(QStringLiteral("odd_state_e"))
+            .record();
+    const SemanticSymbolRecord oddBar =
+        SemanticFixtureRecordBuilder(QStringLiteral("bar"),
+                                     DeclarationKind::Enum)
+            .withFile(oddFileName)
+            .withLocalHandle(9342)
+            .withLine(4)
+            .withCollectorKind(CollectorKind::EnumVariable)
+            .inModule(QStringLiteral("odd_fsm_top"))
+            .withType(QStringLiteral("odd_state_e"))
+            .record();
+    const SemanticSymbolRecord oddGrantNs =
+        SemanticFixtureRecordBuilder(QStringLiteral("grant_ns"),
+                                     DeclarationKind::Signal)
+            .withFile(oddFileName)
+            .withLocalHandle(9343)
+            .withLine(5)
+            .withCollectorKind(CollectorKind::Logic)
+            .inModule(QStringLiteral("odd_fsm_top"))
+            .withType(QStringLiteral("logic"))
+            .record();
+    const SemanticSymbolRecord oddApple =
+        SemanticFixtureRecordBuilder(QStringLiteral("APPLE"),
+                                     DeclarationKind::Enum)
+            .withFile(oddFileName)
+            .withLocalHandle(9344)
+            .withLine(2)
+            .withCollectorKind(CollectorKind::EnumValue)
+            .inModule(QStringLiteral("odd_fsm_top"))
+            .withType(QStringLiteral("odd_state_e"))
+            .record();
+    const SemanticSymbolRecord oddPear =
+        SemanticFixtureRecordBuilder(QStringLiteral("PEAR"),
+                                     DeclarationKind::Enum)
+            .withFile(oddFileName)
+            .withLocalHandle(9345)
+            .withLine(2)
+            .withCollectorKind(CollectorKind::EnumValue)
+            .inModule(QStringLiteral("odd_fsm_top"))
+            .withType(QStringLiteral("odd_state_e"))
+            .record();
     const SemanticSymbolRecord noFsmModule =
         SemanticFixtureRecordBuilder(QStringLiteral("no_fsm_top"),
                                      DeclarationKind::Module)
@@ -7018,6 +7109,12 @@ static void runFsmGraphServiceFixture()
         paramNextState,
         paramIdle,
         paramBusy,
+        oddModule,
+        oddFoo,
+        oddBar,
+        oddGrantNs,
+        oddApple,
+        oddPear,
         noFsmModule,
     };
 
@@ -7026,6 +7123,7 @@ static void runFsmGraphServiceFixture()
     fileContents.insert(packageModuleFileName, packageModuleContent);
     fileContents.insert(dualFileName, dualContent);
     fileContents.insert(paramFileName, paramContent);
+    fileContents.insert(oddFileName, oddContent);
     SemanticIndex index;
     index.setSnapshot(sharedSnapshotFromRecords(
         records,
@@ -7249,7 +7347,7 @@ static void runFsmGraphServiceFixture()
                    && report.graphs.first().transitionRows.first().conditionDisplayName
                        == QStringLiteral("start")
                    && report.graphs.first().transitionRows.first().sourceLineDisplayName
-                       == QStringLiteral("line 11")
+                       == QStringLiteral("line 15")
                    && report.graphs.first().transitionRows.first().sourceRoleDisplayName
                        == QStringLiteral("design source"),
                true);
@@ -7258,12 +7356,12 @@ static void runFsmGraphServiceFixture()
                    && !report.graphs.first().transitionRows.isEmpty()
                    && report.graphs.first().transitionRows.first().codeLink.fileName
                        == fileName
-                   && report.graphs.first().transitionRows.first().codeLink.line == 11
+                   && report.graphs.first().transitionRows.first().codeLink.line == 15
                    && report.graphs.first().transitionRows.first().codeLink.column == 1
                    && report.graphs.first().transitionRows.first().codeLink.fileDisplayName
                        == QStringLiteral("fsm_graph_fixture.sv")
                    && report.graphs.first().transitionRows.first().codeLink.lineDisplayName
-                       == QStringLiteral("11"),
+                       == QStringLiteral("15"),
                true);
     expectBool("fsm graph transition state endpoints",
                !report.graphs.isEmpty()
@@ -7377,7 +7475,7 @@ static void runFsmGraphServiceFixture()
                 && row.conditionDisplayName == QStringLiteral("go")
                 && row.sourceRoleDisplayName == QStringLiteral("design source")
                 && row.codeLink.fileName == packageModuleFileName
-                && row.codeLink.line == 6);
+                && row.codeLink.line == 9);
         sawPackageTernaryTransitionStateEndpoints =
             sawPackageTernaryTransitionStateEndpoints
             || (row.fromStateDisplayName == QStringLiteral("IDLE")
@@ -7405,7 +7503,7 @@ static void runFsmGraphServiceFixture()
             || (row.fromStateDisplayName == QStringLiteral("IDLE")
                 && row.toStateDisplayName == QStringLiteral("IDLE")
                 && row.conditionDisplayName == QStringLiteral("else go")
-                && row.codeLink.line == 6);
+                && row.codeLink.line == 9);
     }
     expectBool("fsm graph package enum ternary else evidence",
                sawPackageTernaryElseTransition,
@@ -7551,6 +7649,62 @@ static void runFsmGraphServiceFixture()
                    && stateTransitionParamReport.transitionCount == 4,
                true);
 
+    FsmGraphQuery oddFsmQuery;
+    oddFsmQuery.moduleName = QStringLiteral("odd_fsm_top");
+    oddFsmQuery.fileName = oddFileName;
+    const FsmGraphReport oddFsmReport = service.buildFsmGraph(oddFsmQuery);
+    expectBool("fsm graph structural odd names found",
+               oddFsmReport.found
+                   && oddFsmReport.graphs.size() == 1
+                   && oddFsmReport.graphs.first().stateRegisterDisplayName
+                       == QStringLiteral("foo")
+                   && oddFsmReport.graphs.first().nextStateSignalDisplayName
+                       == QStringLiteral("bar")
+                   && oddFsmReport.graphs.first().stateCount == 2
+                   && oddFsmReport.graphs.first().transitionCount == 3,
+               true);
+
+    StateTransitionGraphQuery oddNextQuery;
+    oddNextQuery.symbolName = QStringLiteral("bar");
+    oddNextQuery.fileName = oddFileName;
+    oddNextQuery.moduleName = QStringLiteral("odd_fsm_top");
+    const StateTransitionGraphReport oddNextReport =
+        stateTransitionService.buildStateTransitionGraph(oddNextQuery);
+    expectBool("state transition graph structural odd next role found",
+               oddNextReport.found
+                   && oddNextReport.trigger.available
+                   && oddNextReport.graph.stateRegisterDisplayName
+                       == QStringLiteral("foo")
+                   && oddNextReport.graph.nextStateSignalDisplayName
+                       == QStringLiteral("bar"),
+               true);
+
+    StateTransitionGraphQuery oddCurrentQuery;
+    oddCurrentQuery.symbolName = QStringLiteral("foo");
+    oddCurrentQuery.fileName = oddFileName;
+    oddCurrentQuery.moduleName = QStringLiteral("odd_fsm_top");
+    const StateTransitionGraphReport oddCurrentReport =
+        stateTransitionService.buildStateTransitionGraph(oddCurrentQuery);
+    expectBool("state transition graph structural current role rejected",
+               !oddCurrentReport.found
+                   && !oddCurrentReport.trigger.available
+                   && oddCurrentReport.notFoundReason
+                       == StateTransitionGraphNotFoundReason::TriggerRejected,
+               true);
+
+    StateTransitionGraphQuery oddFalseNameQuery;
+    oddFalseNameQuery.symbolName = QStringLiteral("grant_ns");
+    oddFalseNameQuery.fileName = oddFileName;
+    oddFalseNameQuery.moduleName = QStringLiteral("odd_fsm_top");
+    const StateTransitionGraphReport oddFalseNameReport =
+        stateTransitionService.buildStateTransitionGraph(oddFalseNameQuery);
+    expectBool("state transition graph ignores ns-shaped non-fsm signal",
+               !oddFalseNameReport.found
+                   && !oddFalseNameReport.trigger.available
+                   && oddFalseNameReport.notFoundReason
+                       == StateTransitionGraphNotFoundReason::TriggerRejected,
+               true);
+
     StateTransitionGraphQuery stateTransitionCsQuery;
     stateTransitionCsQuery.symbolName = QStringLiteral("cs");
     stateTransitionCsQuery.fileName = dualFileName;
@@ -7586,14 +7740,11 @@ static void runFsmGraphServiceFixture()
     const StateTransitionGraphReport stateTransitionNoMatchReport =
         stateTransitionService.buildStateTransitionGraph(
             stateTransitionNoMatchQuery);
-    expectBool("state transition graph requires selected next-state graph",
+    expectBool("state transition graph rejects non-structural selected symbol",
                !stateTransitionNoMatchReport.found
-                   && stateTransitionNoMatchReport.trigger.available
+                   && !stateTransitionNoMatchReport.trigger.available
                    && stateTransitionNoMatchReport.notFoundReason
-                       == StateTransitionGraphNotFoundReason
-                              ::NoMatchingNextStateSignal
-                   && stateTransitionNoMatchReport.notFoundReasonDisplayName
-                       == QStringLiteral("no state transition graph for ns"),
+                       == StateTransitionGraphNotFoundReason::TriggerRejected,
                true);
 
     StateTransitionGraphQuery stateTransitionNoFsmQuery;
@@ -7603,13 +7754,11 @@ static void runFsmGraphServiceFixture()
     const StateTransitionGraphReport stateTransitionNoFsmReport =
         stateTransitionService.buildStateTransitionGraph(
             stateTransitionNoFsmQuery);
-    expectBool("state transition graph reports no fsm graph",
+    expectBool("state transition graph rejects module without structural fsm",
                !stateTransitionNoFsmReport.found
-                   && stateTransitionNoFsmReport.trigger.available
+                   && !stateTransitionNoFsmReport.trigger.available
                    && stateTransitionNoFsmReport.notFoundReason
-                       == StateTransitionGraphNotFoundReason::NoFsmGraph
-                   && stateTransitionNoFsmReport.notFoundReasonDisplayName
-                       == QStringLiteral("no FSM graph"),
+                       == StateTransitionGraphNotFoundReason::TriggerRejected,
                true);
 
     StateTransitionGraphService::getInstance()->setSemanticIndex(&index);
@@ -7645,7 +7794,7 @@ static void runFsmGraphServiceFixture()
     expectBool("state transition panel transition navigation",
                invokedTransitionNavigation
                    && navigatedFileName == dualFileName
-                   && navigatedLine == 14
+                   && navigatedLine == 18
                    && navigatedColumn == 1,
                true);
     navigatedFileName.clear();

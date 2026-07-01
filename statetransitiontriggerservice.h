@@ -4,6 +4,8 @@
 #include <QString>
 #include <memory>
 
+class SemanticIndex;
+
 struct StateTransitionTriggerQuery {
     QString symbolName;
     QString fileName;
@@ -26,10 +28,13 @@ public:
     StateTransitionTriggerService();
     ~StateTransitionTriggerService();
 
+    void setSemanticIndex(SemanticIndex* semanticIndex);
+
     StateTransitionTriggerReport triggerForSymbol(
         const StateTransitionTriggerQuery& query) const;
 
 private:
+    SemanticIndex* index = nullptr;
     static std::unique_ptr<StateTransitionTriggerService> instance;
 };
 

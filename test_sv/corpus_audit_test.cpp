@@ -1087,9 +1087,9 @@ QString markdownReport(const CorpusContext& context,
     out << "\n## Notes\n\n";
     out << "- Real corpus files were opened read-only; reports are written under `test_sv`.\n";
     out << "- `empty-but-valid` means the service returned a coherent empty/root-only result, not a full feature pass.\n";
-    out << "- `skipped` means the corpus item did not contain the required trigger shape, such as no next-state signal or no always block.\n";
+    out << "- `skipped` means the corpus item did not contain the required structural trigger shape, such as no clocked FSM pair or no always block.\n";
     out << "\n## Known Issues And Residual Risk\n\n";
-    out << "- State Transition Graph failures are classified by paired current-state lookup, case detection, state-value recognition, and transition extraction.\n";
+    out << "- State Transition Graph is structure-discovered: clocked current<=next pairs drive next-state positive cases and current-state negative cases. Skipped modules have no structural FSM pair under the current extractor.\n";
     out << "- Signal Kernel Graph uses a bounded deep-call budget: 4 signal graph attempts per module and 400 total attempts. Skipped candidates are counted explicitly.\n";
     out << "- Wave Preview uses source-discovered always/process records when workspace symbol extraction does not expose process nodes; module fallback remains explicit.\n";
     out << "- Empty outline source files are classified as preprocessor/comment-only, guarded, skipped, or real outline failures instead of being hidden.\n";
@@ -1101,22 +1101,14 @@ void auditStateTransitions(const CorpusContext& context,
                            QList<AuditCase>* cases,
                            QHash<QString, FeatureCounts>* counts)
 {
+    FsmGraphService fsmService(const_cast<SemanticIndex*>(SemanticIndex::getInstance()));
     StateTransitionGraphService service(const_cast<SemanticIndex*>(SemanticIndex::getInstance()));
     for (const SemanticSymbolRecord& module : modules) {
-        const QList<SemanticSymbolRecord> members =
-            recordsInModule(context.records, module);
-        QList<SemanticSymbolRecord> nextSignals;
-        QList<SemanticSymbolRecord> currentSignals;
-        for (const SemanticSymbolRecord& member : members) {
-            if (!isSignalKernelCandidate(member))
-                continue;
-            if (isNextStateCandidate(member.name))
-                nextSignals.append(member);
-            if (isCurrentStateCandidate(member.name))
-                currentSignals.append(member);
-        }
-
-        if (nextSignals.isEmpty()) {
+        FsmGraphQuery fsmQuery;
+        fsmQuery.moduleName = module.name;
+        fsmQuery.fileName = module.location.fileName;
+        const FsmGraphReport fsmReport = fsmService.buildFsmGraph(fsmQuery);
+        if (!fsmReport.found || fsmReport.graphs.isEmpty()) {
             AuditCase item;
             item.feature = QStringLiteral("state_transition_graph");
             item.fileName = module.location.fileName;
@@ -1124,11 +1116,12 @@ void auditStateTransitions(const CorpusContext& context,
             item.locationKind = QStringLiteral("module");
             item.line = module.location.startLine;
             item.column = module.location.startColumn;
-            item.reason = QStringLiteral("no ns/next_state candidate");
+            item.reason = QStringLiteral("no structural FSM pair discovered");
             addCase(cases, counts, item, AuditStatus::Skipped);
         }
 
-        for (const SemanticSymbolRecord& signal : nextSignals) {
+        for (const FsmGraph& graph : fsmReport.graphs) {
+            const SemanticSymbolRecord& signal = graph.nextStateSignalRecord;
             StateTransitionGraphQuery query;
             query.symbolName = signal.name;
             query.fileName = signal.location.fileName;
@@ -1150,46 +1143,35 @@ void auditStateTransitions(const CorpusContext& context,
             if (report.found && report.stateCount > 0 && report.transitionCount > 0) {
                 addCase(cases, counts, item, AuditStatus::Pass);
             } else {
-                AuditStatus status = AuditStatus::Fail;
-                if (report.notFoundReason
-                    == StateTransitionGraphNotFoundReason::NoFsmGraph) {
-                    status = classifyStateTransitionFailure(context,
-                                                            module,
-                                                            members,
-                                                            signal,
-                                                            &item);
-                } else {
-                    item.reason = relationshipReason(
-                        report.notFoundReasonDisplayName,
-                        QStringLiteral("no transition graph generated"));
-                }
-                addCase(cases, counts, item, status);
+                item.reason = relationshipReason(
+                    report.notFoundReasonDisplayName,
+                    QStringLiteral("structural FSM pair did not produce a transition graph"));
+                addCase(cases, counts, item, AuditStatus::Fail);
             }
-        }
 
-        for (const SemanticSymbolRecord& signal : currentSignals) {
-            StateTransitionGraphQuery query;
-            query.symbolName = signal.name;
-            query.fileName = signal.location.fileName;
-            query.moduleName = module.name;
-            const StateTransitionGraphReport report =
-                service.buildStateTransitionGraph(query);
-            AuditCase item;
-            item.feature = QStringLiteral("state_transition_graph");
-            item.fileName = signal.location.fileName;
-            item.moduleName = module.name;
-            item.symbolName = signal.name;
-            item.locationKind = QStringLiteral("current_state_negative");
-            item.line = signal.location.startLine;
-            item.column = signal.location.startColumn;
-            item.reason = report.notFoundReasonDisplayName;
+            const SemanticSymbolRecord& current = graph.stateRegisterRecord;
+            StateTransitionGraphQuery currentQuery;
+            currentQuery.symbolName = current.name;
+            currentQuery.fileName = current.location.fileName;
+            currentQuery.moduleName = module.name;
+            const StateTransitionGraphReport currentReport =
+                service.buildStateTransitionGraph(currentQuery);
+            AuditCase currentItem;
+            currentItem.feature = QStringLiteral("state_transition_graph");
+            currentItem.fileName = current.location.fileName;
+            currentItem.moduleName = module.name;
+            currentItem.symbolName = current.name;
+            currentItem.locationKind = QStringLiteral("current_state_negative");
+            currentItem.line = current.location.startLine;
+            currentItem.column = current.location.startColumn;
+            currentItem.reason = currentReport.notFoundReasonDisplayName;
             const bool rejected =
-                !report.found
-                && report.notFoundReason
+                !currentReport.found
+                && currentReport.notFoundReason
                     == StateTransitionGraphNotFoundReason::TriggerRejected
-                && report.notFoundReasonDisplayName.contains(
-                    QStringLiteral("current-state"));
-            addCase(cases, counts, item,
+                && currentReport.notFoundReasonDisplayName.contains(
+                    QStringLiteral("next-state"), Qt::CaseInsensitive);
+            addCase(cases, counts, currentItem,
                     rejected ? AuditStatus::Pass : AuditStatus::Fail);
         }
     }

@@ -48,6 +48,7 @@ StateTransitionGraphService::StateTransitionGraphService(
     : fsmGraphService(semanticIndex)
     , trigger(triggerService)
 {
+    this->triggerService()->setSemanticIndex(semanticIndex);
 }
 
 StateTransitionGraphService::~StateTransitionGraphService() = default;
@@ -55,6 +56,7 @@ StateTransitionGraphService::~StateTransitionGraphService() = default;
 void StateTransitionGraphService::setSemanticIndex(SemanticIndex* semanticIndex)
 {
     fsmGraphService.setSemanticIndex(semanticIndex);
+    triggerService()->setSemanticIndex(semanticIndex);
 }
 
 void StateTransitionGraphService::setTriggerService(

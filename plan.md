@@ -18,11 +18,13 @@ into an analyzer.
   corpus_audit_test relationship_test` passed; `relationship_test` passed with
   860 checks; full `corpus_audit_test test_sv/new test_sv/huge_prj` regenerated
   the JSON/Markdown reports.
-- Current audit deltas: State Transition Graph changed from 77 pass / 66 fail /
-  384 skipped to 88 pass / 21 fail / 418 skipped; Wave Preview changed from
-  module fallback only to 3942 always/process records with 3963 pass / 29 fail /
-  16 skipped; semantic baseline changed from 874 pass / 3 fail / 2
-  empty-but-valid to 874 pass / 0 fail / 5 empty-but-valid.
+- Current audit deltas: State Transition Graph now uses structural FSM pairs
+  instead of name-based `ns` / `next_state` candidates. The latest run changed
+  from the previous 88 pass / 21 fail / 418 skipped name-based result to 90
+  pass / 0 fail / 400 skipped, with 45 discovered pairs audited as next-state
+  positives plus current-state negative triggers. Wave Preview remains 3963
+  pass / 29 fail / 16 skipped, and semantic baseline remains 874 pass / 0 fail
+  / 5 empty-but-valid.
 - No implementation milestone is active. Start the next milestone only from a
   new explicit scoped request.
 - The current completed baseline includes import-aware package member
@@ -1576,18 +1578,19 @@ Milestones:
   Diagram, and Wave Preview are invoked through service/report-layer paths;
   GUI smoke remains out of this stage)
 - FCA.3 Record failures and residual risk.
-  (complete: latest report generated 2026-07-01T04:24:51Z UTC and covered 454
+  (complete: latest report generated 2026-07-01T05:47:30Z UTC and covered 454
   files, 424 modules, 3942 always/process records, 49,345 signal/port
   candidates, 117,069 semantic records, 82,636 relationships, and 704
-  diagnostics. State Transition Graph is 88 pass / 21 fail / 418 skipped,
-  down from 66 fails, and the remaining failures are classified by concrete
-  reason. Signal Kernel Graph remains budgeted at 388 pass / 0 fail / 1,592
-  skipped / 12 empty-but-valid. Module Block Diagram is 208 pass / 216
-  empty-but-valid. Wave Preview now uses source-discovered always/process
-  records: always-block results are 3913 pass / 29 fail and module-scope
-  fallback is 50 pass / 16 skipped. Semantic baseline is 874 pass / 0 fail / 5
-  empty-but-valid, with empty outlines classified as comment/preprocessor-only
-  or header-like empty.)
+  diagnostics. State Transition Graph is 90 pass / 0 fail / 400 skipped under
+  structural FSM discovery; the candidate definition changed from name-based
+  signals to clocked current<=next pairs, so the numbers are not directly
+  comparable to the previous name-based pass/fail set. Signal Kernel Graph
+  remains budgeted at 388 pass / 0 fail / 1,592 skipped / 12 empty-but-valid.
+  Module Block Diagram is 208 pass / 216 empty-but-valid. Wave Preview uses
+  source-discovered always/process records: always-block results are 3913 pass
+  / 29 fail and module-scope fallback is 50 pass / 16 skipped. Semantic
+  baseline is 874 pass / 0 fail / 5 empty-but-valid, with empty outlines
+  classified as comment/preprocessor-only or header-like empty.)
 
 ## Milestone Definition Of Done
 
