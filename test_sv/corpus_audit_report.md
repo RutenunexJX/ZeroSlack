@@ -1,6 +1,6 @@
 # ZeroSlack Functional Corpus Audit
 
-- Generated: 2026-07-01T05:47:30Z UTC
+- Generated: 2026-07-01T07:25:07Z UTC
 - Roots: test_sv/new, test_sv/huge_prj
 - Files: 454
 - Modules: 424
@@ -9,7 +9,7 @@
 - Semantic records: 117069
 - Relationships: 82636
 - Diagnostics: 704
-- Elapsed: 1208475 ms
+- Elapsed: 1198391 ms
 
 ## Feature Summary
 

@@ -874,3 +874,15 @@ Do not add unlisted long-term goals without explicit user approval.
   candidates. Verification run: `ninja corpus_audit_test`; direct offscreen
   `corpus_audit_test.exe E:\ZeroSlack\ZeroSlack\test_sv\new
   E:\ZeroSlack\ZeroSlack\test_sv\huge_prj`.
+- Latest Full Feature Audit: `full_feature_audit_test` now inventories the
+  broader product surface and writes `test_sv/full_feature_audit_report.json`
+  plus `test_sv/full_feature_audit_report.md`. Latest report generated
+  2026-07-01T07:29:54Z UTC and covers 23 feature rows, 93 user entry points,
+  75 service/test touchpoints, 454 recursive corpus files, 117,069 semantic
+  records, 82,636 audit relationships, and 704 diagnostics. Summary: 21 pass /
+  0 fail / 0 skipped / 2 known-issue. Known issues are intentionally not fixed
+  here: Signal Kernel Graph remains budget-limited in the audit sweep, and
+  Wave Preview has 29 no-lane/no-warning always-block failures. Verification
+  passed: `ctest -R "^corpus_audit_test$" --output-on-failure`; `ctest -R
+  "^(completion_test|jump_test|relationship_test|gui_smoke_test|full_feature_audit_test)$"
+  --output-on-failure`.

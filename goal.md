@@ -1250,6 +1250,35 @@ Milestones:
   / 0 fail / 5 empty-but-valid after classifying empty outlines as
   comment/preprocessor-only or header-like empty.)
 
+## Full Feature Audit
+
+Goal: inventory the current implemented feature surface, connect entries to
+services/tests, and fold the full recursive corpus audit into a durable feature
+health report without mutating real corpus files.
+
+Milestones:
+
+- FFA.1 Feature inventory and matrix.
+  (complete: `full_feature_audit_test` writes
+  `test_sv/full_feature_audit_report.json` and
+  `test_sv/full_feature_audit_report.md` with 23 feature rows, 93 user entry
+  points, 75 service/test touchpoints, automation method, corpus coverage,
+  pollution risk, status, reason, and next action.)
+- FFA.2 Full recursive corpus integration.
+  (complete: latest run consumes the refreshed `corpus_audit_test` report for
+  all 454 `.sv` / `.svh` / `.v` files under `test_sv/new` and
+  `test_sv/huge_prj`; semantic totals are 117,069 records, 82,636 audit
+  relationships, and 704 diagnostics.)
+- FFA.3 Known issue triage without broad refactor.
+  (complete: latest matrix is 21 pass / 0 fail / 0 skipped / 2 known-issue.
+  Known issues are Signal Kernel Graph audit budget limits and 29 Wave Preview
+  no-lane/no-warning always-block failures. No product behavior was changed.)
+- FFA.4 Verification and documentation.
+  (complete: `ctest -R "^corpus_audit_test$" --output-on-failure` and
+  `ctest -R
+  "^(completion_test|jump_test|relationship_test|gui_smoke_test|full_feature_audit_test)$"
+  --output-on-failure` passed.)
+
 ## Completion Order
 
 Preferred starting order:
