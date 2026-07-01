@@ -19,8 +19,8 @@ into an analyzer.
   `corpus_audit_test`, `full_feature_audit_test`, and `gui_smoke_test` passed.
   Full `corpus_audit_test` regenerated the JSON/Markdown corpus reports, and
   `full_feature_audit_test` regenerated the full feature reports.
-- Current audit deltas: Wave Preview moved from 3963 pass / 29 fail / 16
-  skipped / 0 empty-valid to 3963 pass / 0 fail / 15 skipped / 30
+- Current audit deltas: Wave Preview moved from the previous no-lane failure
+  set to 3963 pass / 0 fail / 15 skipped / 30
   empty-valid. The full-feature matrix now marks Wave Preview as `pass`; the
   only remaining full-feature `known-issue` is Signal Kernel Graph's bounded
   audit budget.
@@ -1582,7 +1582,7 @@ Milestones:
   Diagram, and Wave Preview are invoked through service/report-layer paths;
   GUI smoke remains out of this stage)
 - FCA.3 Record failures and residual risk.
-  (complete: latest report generated 2026-07-01T05:47:30Z UTC and covered 454
+  (complete: current report generated 2026-07-01T10:53:48Z UTC and covered 454
   files, 424 modules, 3942 always/process records, 49,345 signal/port
   candidates, 117,069 semantic records, 82,636 relationships, and 704
   diagnostics. State Transition Graph is 90 pass / 0 fail / 400 skipped under
@@ -1591,8 +1591,9 @@ Milestones:
   comparable to the previous name-based pass/fail set. Signal Kernel Graph
   remains budgeted at 388 pass / 0 fail / 1,592 skipped / 12 empty-but-valid.
   Module Block Diagram is 208 pass / 216 empty-but-valid. Wave Preview uses
-  source-discovered always/process records: always-block results are 3913 pass
-  / 29 fail and module-scope fallback is 50 pass / 16 skipped. Semantic
+  source-discovered always/process records and now reports 3963 pass / 0 fail /
+  15 skipped / 30 empty-valid after no-lane/no-warning cases were repaired into
+  lane-producing previews or explicit unsupported reasons. Semantic
   baseline is 874 pass / 0 fail / 5 empty-but-valid, with empty outlines
   classified as comment/preprocessor-only or header-like empty.)
 
@@ -1611,14 +1612,14 @@ Milestones:
   points, 75 service/test touchpoints, automation method, corpus coverage,
   pollution risk, status, reason, and next action.)
 - FFA.2 Full recursive corpus integration.
-  (complete: latest run consumes the refreshed `corpus_audit_test` report for
+  (complete: current run consumes the refreshed `corpus_audit_test` report for
   all 454 `.sv` / `.svh` / `.v` files under `test_sv/new` and
   `test_sv/huge_prj`; semantic totals are 117,069 records, 82,636 audit
   relationships, and 704 diagnostics.)
 - FFA.3 Known issue triage without broad refactor.
-  (complete: latest matrix is 21 pass / 0 fail / 0 skipped / 2 known-issue.
-  Known issues are Signal Kernel Graph audit budget limits and 29 Wave Preview
-  no-lane/no-warning always-block failures. No product behavior was changed.)
+  (complete: current matrix generated 2026-07-01T10:59:05Z UTC is 22 pass / 0
+  fail / 0 skipped / 1 known-issue. The only remaining known issue is Signal
+  Kernel Graph audit budget limits; Wave Preview is no longer a known issue.)
 - FFA.4 Verification and documentation.
   (complete: `ctest -R "^corpus_audit_test$" --output-on-failure` and
   `ctest -R

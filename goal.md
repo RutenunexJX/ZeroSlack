@@ -46,8 +46,8 @@ Current baseline highlights:
   `test_sv/corpus_audit_report.json` and `.md`; `full_feature_audit_test`
   regenerated `test_sv/full_feature_audit_report.json` and `.md`.
 - Current corpus result: Wave Preview is 3963 pass / 0 fail / 15 skipped / 30
-  empty-valid, replacing the previous 3963 pass / 29 fail / 16 skipped / 0
-  empty-valid no-lane/no-warning baseline. State Transition Graph remains 90
+  empty-valid, replacing the previous no-lane/no-warning failure baseline.
+  State Transition Graph remains 90
   pass / 0 fail / 400 skipped under the structural-pair audit. Signal Kernel
   Graph still uses the bounded audit budget from the prior harness.
 - Most recent completed milestone: import-aware SystemVerilog package symbol
@@ -1228,10 +1228,10 @@ Milestones:
   (complete: `corpus_audit_test` recursively opens all 454 `.sv` / `.svh` /
   `.v` corpus files read-only and writes JSON + Markdown reports)
 - FCA.2 Run four priority feature sweeps.
-  (complete: latest report covers State Transition Graph, Signal Kernel Graph,
+  (complete: current report covers State Transition Graph, Signal Kernel Graph,
   Module Block Diagram, and Wave Preview through service/report-layer paths)
 - FCA.3 Document known issues and residual risk.
-  (complete: latest report generated 2026-07-01T05:47:30Z UTC and covered 454
+  (complete: current report generated 2026-07-01T10:53:48Z UTC and covered 454
   files, 424 modules, 3942 always/process records, 49,345 signal/port
   candidates, 117,069 semantic records, 82,636 audit relationships, and 704
   diagnostics. State Transition Graph is 90 pass / 0 fail / 400 skipped under
@@ -1240,11 +1240,12 @@ Milestones:
   next-state positive case and a current-state negative trigger case. Signal
   Kernel Graph keeps the bounded deep-call budget and reports 388 pass / 0 fail
   / 1,592 skipped / 12 empty-but-valid. Module Block Diagram reports 208 pass /
-  216 empty-but-valid. Wave Preview still uses 3942 source-discovered
-  always/process records with always-block results of 3913 pass / 29 fail and
-  module-scope fallback at 50 pass / 16 skipped. Semantic baseline is 874 pass
-  / 0 fail / 5 empty-but-valid after classifying empty outlines as
-  comment/preprocessor-only or header-like empty.)
+  216 empty-but-valid. Wave Preview uses source-discovered always/process
+  records and reports 3963 pass / 0 fail / 15 skipped / 30 empty-valid after
+  no-lane/no-warning cases were repaired into lane-producing previews or
+  explicit unsupported reasons. Semantic baseline is 874 pass / 0 fail / 5
+  empty-but-valid after classifying empty outlines as comment/preprocessor-only
+  or header-like empty.)
 
 ## Full Feature Audit
 
@@ -1261,14 +1262,14 @@ Milestones:
   points, 75 service/test touchpoints, automation method, corpus coverage,
   pollution risk, status, reason, and next action.)
 - FFA.2 Full recursive corpus integration.
-  (complete: latest run consumes the refreshed `corpus_audit_test` report for
+  (complete: current run consumes the refreshed `corpus_audit_test` report for
   all 454 `.sv` / `.svh` / `.v` files under `test_sv/new` and
   `test_sv/huge_prj`; semantic totals are 117,069 records, 82,636 audit
   relationships, and 704 diagnostics.)
 - FFA.3 Known issue triage without broad refactor.
-  (complete: latest matrix is 21 pass / 0 fail / 0 skipped / 2 known-issue.
-  Known issues are Signal Kernel Graph audit budget limits and 29 Wave Preview
-  no-lane/no-warning always-block failures. No product behavior was changed.)
+  (complete: current matrix generated 2026-07-01T10:59:05Z UTC is 22 pass / 0
+  fail / 0 skipped / 1 known-issue. The only remaining known issue is Signal
+  Kernel Graph audit budget limits; Wave Preview is no longer a known issue.)
 - FFA.4 Verification and documentation.
   (complete: `ctest -R "^corpus_audit_test$" --output-on-failure` and
   `ctest -R

@@ -848,18 +848,19 @@ Do not add unlisted long-term goals without explicit user approval.
   completion_test relationship_test gui_smoke_test`; `ctest -R
   "^(completion_test|relationship_test|gui_smoke_test)$" --output-on-failure`;
   `git diff --check -- . ':!test_sv/new/elec_phy_import/ctrl/chl_ctrl.sv'`.
-- Latest Functional Corpus Audit: `corpus_audit_test` is a headless
+- Functional Corpus Audit: `corpus_audit_test` is a headless
   service/report-layer audit target for `test_sv/new` and `test_sv/huge_prj`.
   It recursively opens all `.sv`, `.svh`, and `.v` files read-only, builds a
   semantic snapshot, emits direct Slang-fact relationships for audit use, and
   writes `test_sv/corpus_audit_report.json` plus
-  `test_sv/corpus_audit_report.md`. Latest report generated
-  2026-07-01T05:47:30Z UTC and covered 454 files, 424 modules, 3942
+  `test_sv/corpus_audit_report.md`. Current report generated
+  2026-07-01T10:53:48Z UTC and covered 454 files, 424 modules, 3942
   always/process records, 49,345 signal/port candidates, 117,069 semantic
   records, 82,636 audit relationships, and 704 diagnostics. Summary: State
   Transition Graph 90 pass / 0 fail / 400 skipped; Signal Kernel Graph 388
   pass / 0 fail / 1,592 skipped / 12 empty-but-valid; Module Block Diagram 208
-  pass / 216 empty-but-valid; Wave Preview 3,963 pass / 29 fail / 16 skipped;
+  pass / 216 empty-but-valid; Wave Preview 3,963 pass / 0 fail / 15 skipped /
+  30 empty-but-valid;
   semantic baseline 874 pass / 0 fail / 5 empty-but-valid. State Transition
   Graph audit semantics changed from name-based candidates to structural FSM
   pairs: 45 discovered pairs produce next-state positive cases
@@ -867,27 +868,26 @@ Do not add unlisted long-term goals without explicit user approval.
   `no structural FSM pair discovered`. Wave Preview is no longer
   module-fallback only: the
   audit now includes 3942 source-discovered always/process records, with
-  always-block results at 3913 pass / 29 fail and module-scope fallback at 50
-  pass / 16 skipped. Semantic baseline moved from 3 fail to 0 fail / 5
+  no-lane/no-warning cases repaired into lane-producing previews or explicit
+  empty-valid unsupported reasons. Semantic baseline moved from 3 fail to 0 fail / 5
   empty-but-valid by classifying empty outlines as comment/preprocessor-only or
   header-like empty files. Signal Kernel Graph still caps expensive graph calls
   at 4 signals per module and 400 total calls while counting skipped
   candidates. Verification run: `ninja corpus_audit_test`; direct offscreen
   `corpus_audit_test.exe E:\ZeroSlack\ZeroSlack\test_sv\new
   E:\ZeroSlack\ZeroSlack\test_sv\huge_prj`.
-- Latest Full Feature Audit: `full_feature_audit_test` now inventories the
+- Full Feature Audit: `full_feature_audit_test` now inventories the
   broader product surface and writes `test_sv/full_feature_audit_report.json`
-  plus `test_sv/full_feature_audit_report.md`. Latest report generated
-  2026-07-01T09:26:34Z UTC and covers 23 feature rows, 93 user entry points,
+  plus `test_sv/full_feature_audit_report.md`. Current report generated
+  2026-07-01T10:59:05Z UTC and covers 23 feature rows, 93 user entry points,
   75 service/test touchpoints, 454 recursive corpus files, 117,069 semantic
-  records, 82,636 audit relationships, and 704 diagnostics. Summary: 21 pass /
-  0 fail / 0 skipped / 2 known-issue. Known issues are intentionally not fixed
-  here: Signal Kernel Graph remains budget-limited in the audit sweep, and
-  Wave Preview has 29 no-lane/no-warning always-block failures. Verification
-  passed: `ctest -R "^corpus_audit_test$" --output-on-failure`; `ctest -R
-  "^(completion_test|jump_test|relationship_test|gui_smoke_test|full_feature_audit_test)$"
-  --output-on-failure`.
-- Latest Full Feature Audit acceptance repair: fast regression failures after
+  records, 82,636 audit relationships, and 704 diagnostics. Summary: 22 pass /
+  0 fail / 0 skipped / 1 known-issue. The remaining known issue is only Signal
+  Kernel Graph's budget-limited audit sweep; Wave Preview is no longer a known
+  issue. Verification passed: `ctest -R "^corpus_audit_test$"
+  --output-on-failure`; `ctest -R "^full_feature_audit_test$"
+  --output-on-failure`; `ctest -R "^gui_smoke_test$" --output-on-failure`.
+- Full Feature Audit acceptance repair: fast regression failures after
   `fbf7273` were traced to stale test context, not new product behavior. The
   FSM assertions now use structural current<=next fixtures instead of
   name-gated `ns`/`*_ns` assumptions; the GUI FSM graph fixture includes the
