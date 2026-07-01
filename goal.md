@@ -1232,12 +1232,19 @@ Milestones:
   (complete: latest report covers State Transition Graph, Signal Kernel Graph,
   Module Block Diagram, and Wave Preview through service/report-layer paths)
 - FCA.3 Document known issues and residual risk.
-  (complete: latest run covered 424 modules, 49,345 signal/port candidates,
-  113,127 semantic records, 82,636 audit relationships, and 704 diagnostics;
-  State Transition Graph has 66 real `no FSM graph` misses, Signal Kernel Graph
-  uses a bounded deep-call budget, Module Block Diagram has 216 root-only leaf
-  results, Wave Preview passed `cpld_preproc.sv` with 220 lanes / 590
-  assignments, and 3 source files have empty outline results)
+  (complete: latest report generated 2026-07-01T04:24:51Z UTC and covered 454
+  files, 424 modules, 3942 always/process records, 49,345 signal/port
+  candidates, 117,069 semantic records, 82,636 audit relationships, and 704
+  diagnostics. State Transition Graph is 88 pass / 21 fail / 418 skipped;
+  fail count dropped from 66 to 21, and remaining misses are split into
+  concrete reason categories. Signal Kernel Graph keeps the bounded deep-call
+  budget and reports 388 pass / 0 fail / 1,592 skipped / 12 empty-but-valid.
+  Module Block Diagram reports 208 pass / 216 empty-but-valid. Wave Preview is
+  no longer module fallback only: 3942 source-discovered always/process records
+  feed always-block results of 3913 pass / 29 fail, with module-scope fallback
+  at 50 pass / 16 skipped. Semantic baseline is 874 pass / 0 fail / 5
+  empty-but-valid after classifying empty outlines as comment/preprocessor-only
+  or header-like empty.)
 
 ## Completion Order
 

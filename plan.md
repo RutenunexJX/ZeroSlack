@@ -1576,10 +1576,18 @@ Milestones:
   Diagram, and Wave Preview are invoked through service/report-layer paths;
   GUI smoke remains out of this stage)
 - FCA.3 Record failures and residual risk.
-  (complete: latest run recorded 66 next-state FSM misses, 3 empty source-file
-  outline misses, Signal Kernel Graph budget skips, and Wave Preview module
-  fallback skips; `cpld_preproc.sv` Wave Preview passed with 220 lanes / 590
-  assignments)
+  (complete: latest report generated 2026-07-01T04:24:51Z UTC and covered 454
+  files, 424 modules, 3942 always/process records, 49,345 signal/port
+  candidates, 117,069 semantic records, 82,636 relationships, and 704
+  diagnostics. State Transition Graph is 88 pass / 21 fail / 418 skipped,
+  down from 66 fails, and the remaining failures are classified by concrete
+  reason. Signal Kernel Graph remains budgeted at 388 pass / 0 fail / 1,592
+  skipped / 12 empty-but-valid. Module Block Diagram is 208 pass / 216
+  empty-but-valid. Wave Preview now uses source-discovered always/process
+  records: always-block results are 3913 pass / 29 fail and module-scope
+  fallback is 50 pass / 16 skipped. Semantic baseline is 874 pass / 0 fail / 5
+  empty-but-valid, with empty outlines classified as comment/preprocessor-only
+  or header-like empty.)
 
 ## Milestone Definition Of Done
 
