@@ -657,15 +657,15 @@ Status history:
   compile/link; `ctest -R "^completion_test$"` and `ctest -R
   "^relationship_test$"` passed. `gui_smoke_test` was not launched.
 
-- G10.1 State Transition Trigger Gating For ns/next_state is complete:
-  `StateTransitionTriggerService` owns the first exact-name trigger policy for
-  editor source-symbol actions. `EditorSourceNavigationQuery` enables and
-  dispatches `Show State Transition Graph` only for selected `ns` and
-  `next_state`; selected `cs`, selected `current_state`, ordinary symbols, and
-  missing module context do not dispatch. Accepted requests route through
+- G10.1 State Transition Trigger Gating is complete and now structural:
+  `StateTransitionTriggerService` asks `FsmGraphService` for the selected
+  symbol's discovered FSM role. `EditorSourceNavigationQuery` enables and
+  dispatches `Show State Transition Graph` only for selected next-state roles;
+  selected current-state roles, ordinary symbols, and missing module context do
+  not dispatch. Names such as `ns`, `next_state`, `cs`, and `current_state` are
+  examples/display hints rather than gates. Accepted requests route through
   `EditorCoordinator` and `SemanticPanelRefreshCoordinator` to the existing RTL
-  Insights FSM graph path. No new transition extraction, report shaping, graph
-  rendering, workspace scan, or UI-side Slang work was added.
+  Insights FSM graph path.
 - Focused verification for G10.1: `git diff --check`; Release
   `completion_test`, `relationship_test`, and `gui_smoke_test` targets
   compile/link; `ctest -R "^completion_test$"` and `ctest -R
@@ -675,9 +675,9 @@ Status history:
   `StateTransitionGraphService` validates accepted requests through
   `StateTransitionTriggerService`, builds module FSM graph data through
   `FsmGraphService`, and filters the result to the selected next-state signal.
-  Accepted `ns` / `next_state` reports expose selected signal, module, state
-  count, transition count, and the matching `FsmGraph`; rejected `cs` /
-  `current_state`, no-FSM modules, and accepted trigger names without a matching
+  Accepted structural next-state role reports expose selected signal, module,
+  state count, transition count, and the matching `FsmGraph`; rejected
+  current-state roles, no-FSM modules, and symbols without a matching
   next-state graph return service-owned failure reasons. The existing
   state-transition UI route consumes the new service report through RTL
   Insights without moving extraction or filtering into UI. No workspace scan or
@@ -690,9 +690,9 @@ Status history:
 - G10.3 State Transition Graph UI And Navigation Evidence is complete:
   RTL Insights renders the service-owned `StateTransitionGraphReport` as an
   interactive graph scene with selectable state/register/signal nodes and
-  transition edges. Panel-level coverage verifies that selecting `next_state`
-  renders only the matching next-state graph and excludes the sibling `ns`
-  graph in the same module. The same coverage invokes graph-element navigation
+  transition edges. Panel-level coverage verifies that selecting a next-state
+  role renders only the matching next-state graph and excludes sibling FSM
+  graphs in the same module. The same coverage invokes graph-element navigation
   for transition edges and next-state signal nodes and verifies that source
   links from the report reach the navigation handler. G10.1 gating and G10.2
   selected next-state filtering are preserved; extraction and report shaping
@@ -996,20 +996,23 @@ Milestones:
 
 ## Track 10: State Transition Graph
 
-Goal: show a state transition graph only when the selected variable is a
-next-state variable.
+Goal: show a state transition graph only when the selected symbol is the
+discovered next-state role of a structural FSM pair.
 
 Rules:
 
-- Selected `ns` triggers.
-- Selected `next_state` triggers.
-- Selected `cs` does not trigger.
-- Selected `current_state` does not trigger.
+- Structural FSM discovery owns current/next role classification.
+- Selected discovered next-state roles trigger.
+- Selected discovered current-state roles do not trigger and should prompt for
+  the next-state role.
+- Names such as `ns`, `next_state`, `cs`, and `current_state` are examples or
+  display hints only.
 
 Milestones:
 
-- G10.1 Trigger gating and tests for allowed/disallowed names.
-  (complete: service-owned exact-name gate plus editor source-symbol action)
+- G10.1 Trigger gating and tests for structural FSM roles.
+  (complete: service-owned structural role gate plus editor source-symbol
+  action)
 - G10.2 Service-owned transition extraction/report.
   (complete: selected next-state report service and filtered FSM graph data)
 - G10.3 Graph UI rendering and navigation evidence.
@@ -1095,7 +1098,7 @@ Not allowed:
 - Wave Preview expansion
 - new graph types
 - complex graph algorithms
-- expanded State Transition Graph trigger rules
+- expanded State Transition Graph behavior beyond structural FSM role gating
 
 Milestones:
 
@@ -1103,7 +1106,8 @@ Milestones:
   (complete: Go to Definition, Find References, Show Relationships, Signal
   Kernel Graph, State Transition Graph, and Module Block Diagram are always
   present; disabled entries expose reasons; Module Block Diagram is limited to
-  existing module/interface definitions; current-state names remain rejected)
+  existing module/interface definitions; discovered current-state roles remain
+  rejected)
 - G13.2 References panel workflow closure.
   (complete: query context, empty reasons, click/activated jump with flash,
   and copy path or file:line)

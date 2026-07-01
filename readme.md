@@ -184,8 +184,11 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
   case-derived transitions, so ordinary enum/register declarations such as
   non-case bookkeeping registers are not promoted to FSM graphs.
 - State Transition Graph entry gating exists for editor source-symbol actions:
-  selected `ns` and `next_state` can trigger the graph, while selected `cs` and
-  `current_state` cannot. `StateTransitionGraphService` shapes accepted
+  `StateTransitionTriggerService` now asks structural FSM discovery for the
+  selected symbol's role. A discovered next-state role can open the graph, a
+  discovered current-state role is rejected with a next-state prompt, and names
+  such as `ns`, `next_state`, `cs`, or `current_state` are examples/display
+  hints rather than gates. `StateTransitionGraphService` shapes accepted
   requests into selected next-state graph reports by filtering existing
   `FsmGraphService` data, and RTL Insights renders those reports as an
   interactive graph. State/register/signal nodes and transition edges are
@@ -618,7 +621,7 @@ Only these long-term goals are active:
 7. Fold / Fold Shelf persistence and management.
 8. Signal Kernel Graph fanout/search/filter improvements.
 9. Wave Preview as selected-block or selected-module waveform sketch only.
-10. State transition graph for selected `ns` / `next_state` only.
+10. State transition graph for selected structural next-state roles only.
 11. Module block diagram for selected module names only.
 12. Workspace project configuration and diagnostics workflow.
 13. References / Relationships workflow closure.
@@ -691,8 +694,8 @@ Do not add unlisted long-term goals without explicit user approval.
   Graph, and Module Block Diagram. Disabled actions remain visible with
   tooltip/status reasons. Module Block Diagram is gated to existing
   module/interface definition records, ordinary signals remain disabled, and
-  State Transition Graph gating still rejects current-state names. This stage
-  is workflow/UI closure only; it does not add semantic analysis, package
+  State Transition Graph gating still rejects discovered current-state roles.
+  This stage is workflow/UI closure only; it does not add semantic analysis, package
   tools, Wave Preview behavior, or new graph algorithms; Track 15 owns
   macro/define semantics.
 - Latest References / Relationships panel closure stage: References and

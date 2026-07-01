@@ -997,23 +997,27 @@ M9.3 implementation status:
 
 ### 10. State Transition Graph
 
-Goal: show state transition graph only for selected next-state variables.
+Goal: show state transition graph only for selected symbols that structural FSM
+discovery identifies as next-state roles.
 
 Allowed scope:
 
-- trigger only when selected identifier is `ns` or `next_state`
-- selected `cs` / `current_state` must not show the graph
+- discover current/next roles from clocked current-state assignments and
+  transition logic
+- trigger only when the selected symbol is the discovered next-state role
+- selected discovered current-state roles must not show the graph
+- names are compatibility/display hints, not semantic gates
 - service-owned transition extraction/report
 
 First milestones:
 
-- M10.1 trigger gating test for `ns` / `next_state` only
+- M10.1 structural role gating test
   (complete: editor source-symbol action exposes State Transition Graph only
-  for selected `ns` / `next_state`, and rejects selected `cs` /
-  `current_state`)
+  for selected symbols that are next-state roles in discovered FSM pairs, and
+  rejects current-state roles or non-FSM symbols)
 - M10.2 transition report service
-  (complete: `StateTransitionGraphService` shapes accepted `ns` /
-  `next_state` requests into selected next-state graph reports)
+  (complete: `StateTransitionGraphService` shapes accepted structural
+  next-state role requests into selected next-state graph reports)
 - M10.3 graph UI rendering and navigation evidence
   (complete: RTL Insights renders the service-owned State Transition Graph
   report as an interactive graph; double-click navigation follows graph element
@@ -1029,12 +1033,13 @@ M10.1 implementation constraints:
 
 M10.1 implementation status:
 
-- Complete: `StateTransitionTriggerService` owns the first exact-name gate for
+- Complete: `StateTransitionTriggerService` owns structural FSM role gating for
   selected source symbols.
 - Complete: editor source-symbol menu/request state enables `Show State
-  Transition Graph` only for selected `ns` and `next_state`.
-- Complete: selected `cs`, selected `current_state`, ordinary symbols, and
-  missing module context do not dispatch the state-transition action.
+  Transition Graph` only for selected symbols that are discovered next-state
+  roles.
+- Complete: selected current-state roles, ordinary symbols, and missing module
+  context do not dispatch the state-transition action.
 - Complete: accepted requests route through `EditorCoordinator` and
   `SemanticPanelRefreshCoordinator` to the existing RTL Insights FSM graph path.
 - Verification: `git diff --check`; Release `completion_test`,
@@ -1044,7 +1049,7 @@ M10.1 implementation status:
 
 M10.2 implementation constraints:
 
-- Preserve M10.1 trigger gating.
+- Preserve M10.1 structural role gating.
 - Own accepted-request report shaping in a service path, not UI code.
 - Reuse existing semantic/index-backed FSM graph data where practical.
 - Do not add new broad graph UI rendering in this milestone.
@@ -1054,11 +1059,10 @@ M10.2 implementation status:
 - Complete: `StateTransitionGraphService` validates accepted requests through
   `StateTransitionTriggerService`, builds module FSM graph data through
   `FsmGraphService`, and filters the result to the selected next-state signal.
-- Complete: accepted `ns` / `next_state` reports expose selected signal,
+- Complete: accepted structural next-state role reports expose selected signal,
   module, state count, transition count, and the matching `FsmGraph`.
-- Complete: rejected `cs` / `current_state`, no-FSM modules, and accepted
-  trigger names without a matching next-state graph return service-owned
-  failure reasons.
+- Complete: rejected current-state roles, no-FSM modules, and symbols without a
+  matching structural next-state graph return service-owned failure reasons.
 - Complete: the existing state-transition UI route consumes the new service
   report through RTL Insights without moving extraction or filtering into UI.
 - Verification: `git diff --check`; Release `completion_test`,
@@ -1068,7 +1072,8 @@ M10.2 implementation status:
 
 M10.3 implementation constraints:
 
-- Preserve G10.1 trigger gating and G10.2 selected next-state report filtering.
+- Preserve G10.1 structural role gating and G10.2 selected next-state report
+  filtering.
 - UI must render and route from `StateTransitionGraphReport` data only.
 - Do not move transition extraction, graph filtering, workspace scanning, or
   Slang execution into UI code.
@@ -1078,9 +1083,9 @@ M10.3 implementation status:
 - Complete: RTL Insights renders the service-owned State Transition Graph
   report as a `QGraphicsScene` with selectable state/register/signal nodes and
   selectable transition edges.
-- Complete: panel-level tests verify that selecting `next_state` renders only
-  the matching next-state graph and excludes the sibling `ns` graph in the same
-  module.
+- Complete: panel-level tests verify that selecting a next-state role renders
+  only the matching next-state graph and excludes sibling FSM graphs in the
+  same module.
 - Complete: panel-level tests invoke graph-element navigation for transition
   edges and next-state signal nodes and verify the source links from the report
   are delivered to the navigation handler.
