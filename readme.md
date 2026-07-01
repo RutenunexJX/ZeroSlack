@@ -31,11 +31,11 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
 
 ## Current Product Baseline
 
-- Current audit milestone: Wave Preview No-Lane Repair is complete. Scoped
-  always/process previews that cannot produce lanes now return explicit
-  unsupported warnings instead of silent empty reports, including commented-out
-  stale process records, macro/preprocessor-only process scopes, and parsed
-  always blocks with no recognized assignment lanes.
+- Current audit milestone: Signal Kernel Graph Audit Budget Repair is complete.
+  Signal Kernel Graph corpus coverage is still intentionally bounded, but every
+  skipped case now has deterministic no-candidate, per-module sample cap, or
+  global sample cap reasoning. The full-feature matrix no longer carries a
+  Signal Kernel Graph known issue.
 - Latest corpus audit report: `test_sv/corpus_audit_report.json` and
   `test_sv/corpus_audit_report.md` cover 454 files, 424 modules, 3942
   always/process records, 117069 semantic records, 82636 relationships, and 704
@@ -46,13 +46,13 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
 - Current Wave Preview corpus result: 3963 pass / 0 fail / 15 skipped / 30
   empty-but-valid. The previous 29 no-lane/no-warning failures are now explicit
   unsupported empty-valid cases or valid lane-producing previews.
-- Remaining known issue from the full-feature report: Signal Kernel Graph still
-  uses the bounded audit budget. FSM no-pair modules and root-only Module Block
-  Diagram cases remain explicit skipped/empty-valid corpus outcomes, not
-  current failing milestones.
+- Current Signal Kernel Graph corpus result: 388 pass / 0 fail / 1592 skipped /
+  12 empty-valid. Skipped cases are deterministic audit outcomes: 31 unsupported
+  no-signal/no-port modules and 1561 sample-cap skips. Full-feature now reports
+  23 pass / 0 fail / 0 skipped / 0 known-issue.
 - Current handoff state: no implementation milestone is active. The latest
-  completed work is Wave Preview No-Lane Repair for full-feature/corpus audit
-  behavior. The current baseline also includes import-aware
+  completed work is Signal Kernel Graph Audit Budget Repair for
+  full-feature/corpus audit behavior. The current baseline also includes import-aware
   SystemVerilog package symbol visibility, user template JSON usage, explicit
   header/include and package import commands, semantic `;m` module
   instantiation Slot Mode, Macro / Define semantics, Package Tools phase 1,
@@ -854,7 +854,7 @@ Do not add unlisted long-term goals without explicit user approval.
   semantic snapshot, emits direct Slang-fact relationships for audit use, and
   writes `test_sv/corpus_audit_report.json` plus
   `test_sv/corpus_audit_report.md`. Current report generated
-  2026-07-01T10:53:48Z UTC and covered 454 files, 424 modules, 3942
+  2026-07-01T14:15:07Z UTC and covered 454 files, 424 modules, 3942
   always/process records, 49,345 signal/port candidates, 117,069 semantic
   records, 82,636 audit relationships, and 704 diagnostics. Summary: State
   Transition Graph 90 pass / 0 fail / 400 skipped; Signal Kernel Graph 388
@@ -871,22 +871,23 @@ Do not add unlisted long-term goals without explicit user approval.
   no-lane/no-warning cases repaired into lane-producing previews or explicit
   empty-valid unsupported reasons. Semantic baseline moved from 3 fail to 0 fail / 5
   empty-but-valid by classifying empty outlines as comment/preprocessor-only or
-  header-like empty files. Signal Kernel Graph still caps expensive graph calls
-  at 4 signals per module and 400 total calls while counting skipped
-  candidates. Verification run: `ninja corpus_audit_test`; direct offscreen
+  header-like empty files. Signal Kernel Graph prioritizes relationship
+  endpoint signals, graphs up to 4 signals per module and 400 total graph builds,
+  and records deterministic skipped reasons for ungraphed candidates.
+  Verification run: `ninja corpus_audit_test`; direct offscreen
   `corpus_audit_test.exe E:\ZeroSlack\ZeroSlack\test_sv\new
   E:\ZeroSlack\ZeroSlack\test_sv\huge_prj`.
 - Full Feature Audit: `full_feature_audit_test` now inventories the
   broader product surface and writes `test_sv/full_feature_audit_report.json`
   plus `test_sv/full_feature_audit_report.md`. Current report generated
-  2026-07-01T10:59:05Z UTC and covers 23 feature rows, 93 user entry points,
+  2026-07-01T14:15:25Z UTC and covers 23 feature rows, 93 user entry points,
   75 service/test touchpoints, 454 recursive corpus files, 117,069 semantic
-  records, 82,636 audit relationships, and 704 diagnostics. Summary: 22 pass /
-  0 fail / 0 skipped / 1 known-issue. The remaining known issue is only Signal
-  Kernel Graph's budget-limited audit sweep; Wave Preview is no longer a known
-  issue. Verification passed: `ctest -R "^corpus_audit_test$"
-  --output-on-failure`; `ctest -R "^full_feature_audit_test$"
-  --output-on-failure`; `ctest -R "^gui_smoke_test$" --output-on-failure`.
+  records, 82,636 audit relationships, and 704 diagnostics. Summary: 23 pass /
+  0 fail / 0 skipped / 0 known-issue. Verification passed: `ctest -R
+  "^corpus_audit_test$" --output-on-failure`; `ctest -R
+  "^full_feature_audit_test$" --output-on-failure`; `ctest -R
+  "^gui_smoke_test$" --output-on-failure`; related `completion_test` and
+  `relationship_test` also passed.
 - Full Feature Audit acceptance repair: fast regression failures after
   `fbf7273` were traced to stale test context, not new product behavior. The
   FSM assertions now use structural current<=next fixtures instead of

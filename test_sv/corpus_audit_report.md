@@ -1,6 +1,6 @@
 # ZeroSlack Functional Corpus Audit
 
-- Generated: 2026-07-01T10:53:48Z UTC
+- Generated: 2026-07-01T14:15:07Z UTC
 - Roots: test_sv/new, test_sv/huge_prj
 - Files: 454
 - Modules: 424
@@ -9,7 +9,7 @@
 - Semantic records: 117069
 - Relationships: 82636
 - Diagnostics: 704
-- Elapsed: 1174515 ms
+- Elapsed: 1150594 ms
 
 ## Feature Summary
 
@@ -29,11 +29,11 @@
 
 - Real corpus files were opened read-only; reports are written under `test_sv`.
 - `empty-but-valid` means the service returned a coherent empty/root-only result, not a full feature pass.
-- `skipped` means the corpus item did not contain the required structural trigger shape, such as no clocked FSM pair or no always block.
+- `skipped` means the corpus item did not contain the required structural trigger shape or was explicitly skipped by a deterministic audit coverage cap.
 
 ## Known Issues And Residual Risk
 
 - State Transition Graph is structure-discovered: clocked current<=next pairs drive next-state positive cases and current-state negative cases. Skipped modules have no structural FSM pair under the current extractor.
-- Signal Kernel Graph uses a bounded deep-call budget: 4 signal graph attempts per module and 400 total attempts. Skipped candidates are counted explicitly.
+- Signal Kernel Graph uses deterministic bounded coverage: relationship endpoint signals are prioritized, up to 4 signals are graphed per module, and up to 400 graph builds are attempted per run. Skipped cases carry explicit no-candidate, per-module sample cap, or global sample cap reasons and are not feature-level known issues.
 - Wave Preview uses source-discovered always/process records when workspace symbol extraction does not expose process nodes; module fallback remains explicit.
 - Empty outline source files are classified as preprocessor/comment-only, guarded, skipped, or real outline failures instead of being hidden.

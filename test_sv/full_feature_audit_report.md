@@ -1,6 +1,6 @@
 # ZeroSlack Full Feature Audit
 
-- Generated: 2026-07-01T10:59:05Z UTC
+- Generated: 2026-07-01T14:15:25Z UTC
 - Workspace: E:\ZeroSlack\ZeroSlack
 - Roots: test_sv/new, test_sv/huge_prj
 - Recursive SV files: 454
@@ -16,11 +16,11 @@
 
 | Status | Count |
 | --- | ---: |
-| `pass` | 22 |
+| `pass` | 23 |
 | `fail` | 0 |
 | `skipped` | 0 |
 | `empty-valid` | 0 |
-| `known-issue` | 1 |
+| `known-issue` | 0 |
 
 ## Feature Matrix
 
@@ -45,14 +45,14 @@
 | `rtl_fsm` RTL Insights: FSM / State Transition Graph | RTL Insights FSM Graph<br>state transition graph panel/action | FsmGraphService<br>StateTransitionGraphService<br>StateTransitionTriggerService<br>RtlInsightsPanelCoordinator | full corpus structural FSM sweep | recursive test_sv/new + test_sv/huge_prj (454 files) | `pass` | corpus_audit: pass=90 fail=0 skipped=400 timeout=0 empty-valid=0 | no | Skipped modules lack current<=next FSM shape under current extractor. |
 | `rtl_signal_journey_clock_reset` RTL Insights: Signal Journey and Clock/Reset | Signal Journey<br>Clock/Reset Domain Map | SignalJourneyService<br>ClockResetDomainService<br>RelationshipService | panel smoke plus full corpus relationship context | recursive test_sv/new + test_sv/huge_prj (454 files) | `pass` | relationships=82636 diagnostics=704 | no | Add corpus-level journey path length distribution. |
 | `rtl_semantic_diff` RTL Insights: Semantic Diff | RTL Insights Semantic Diff<br>compare workflow | SemanticDiffService<br>RtlInsightsPanelCoordinator | temporary fixture compare | fixture only; corpus read-only | `pass` | GUI smoke covers semantic diff panel/action on temporary fixtures | no | Add copied-corpus pair diff sweep if needed. |
-| `rtl_signal_kernel_graph` RTL Insights: Signal Kernel Graph | Signal Kernel Graph panel<br>signal graph action | SignalKernelGraphService<br>SignalKernelGraphPanelCoordinator | bounded full corpus graph sweep | recursive test_sv/new + test_sv/huge_prj (454 files) | `known-issue` | corpus_audit: pass=388 fail=0 skipped=1592 timeout=0 empty-valid=12 | no | Known issue: deep sweep is budgeted at audit level; expand in a dedicated performance pass. |
+| `rtl_signal_kernel_graph` RTL Insights: Signal Kernel Graph | Signal Kernel Graph panel<br>signal graph action | SignalKernelGraphService<br>SignalKernelGraphPanelCoordinator | deterministic bounded corpus graph sweep | recursive test_sv/new + test_sv/huge_prj (454 files) | `pass` | corpus_audit: pass=388 fail=0 skipped=1592 timeout=0 empty-valid=12 | no | Keep case-level skipped reasons explicit; expand graph sampling only in a dedicated performance pass. |
 | `rtl_module_block_diagram` RTL Insights: Module Block Diagram | Module Block Diagram<br>RTL Insights diagram action | ModuleBlockDiagramService<br>RtlInsightsPanelCoordinator | full corpus module diagram sweep | recursive test_sv/new + test_sv/huge_prj (454 files) | `pass` | corpus_audit: pass=208 fail=0 skipped=0 timeout=0 empty-valid=216 | no | Empty-valid modules should remain explicit in reports. |
 | `rtl_wave_preview` RTL Insights: Wave Preview | Wave Preview dock<br>active-editor wave refresh | WavePreviewService<br>WavePreviewPanelCoordinator | full corpus always/process preview sweep | recursive test_sv/new + test_sv/huge_prj (454 files) | `pass` | corpus_audit: pass=3963 fail=0 skipped=15 timeout=0 empty-valid=30 | no | Keep no-lane/no-warning regression coverage and review empty-valid unsupported reasons periodically. |
 | `search_rename_workspace_workflow` Search, rename, semantic diff, and workspace workflow | search<br>safe rename<br>workspace open/close/recent<br>semantic diff | SearchService<br>SafeRenameService<br>WorkspaceManager<br>SemanticDiffService | temporary workspace plus service-level smoke | fixture only; corpus read-only | `pass` | service and GUI smoke cover search/rename/workspace open-close paths on fixtures | no | Add rename collision/cross-file fixture matrix. |
 
 ## Known Issues
 
-- `rtl_signal_kernel_graph` RTL Insights: Signal Kernel Graph: corpus_audit: pass=388 fail=0 skipped=1592 timeout=0 empty-valid=12 Next: Known issue: deep sweep is budgeted at audit level; expand in a dedicated performance pass.
+- None recorded by this audit.
 
 ## Notes
 

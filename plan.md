@@ -11,19 +11,19 @@ into an analyzer.
 
 ## Current Execution Baseline
 
-- Wave Preview No-Lane Repair is complete for the full-feature/corpus audit.
-  Scoped always/process previews no longer return silent empty results; empty
-  unsupported cases now carry explicit warnings. The fix did not expand Signal
-  Kernel Graph, add simulation, or mutate real RTL corpus files.
-- Verification baseline for this repair: Debug builds of `completion_test`,
-  `corpus_audit_test`, `full_feature_audit_test`, and `gui_smoke_test` passed.
-  Full `corpus_audit_test` regenerated the JSON/Markdown corpus reports, and
-  `full_feature_audit_test` regenerated the full feature reports.
-- Current audit deltas: Wave Preview moved from the previous no-lane failure
-  set to 3963 pass / 0 fail / 15 skipped / 30
-  empty-valid. The full-feature matrix now marks Wave Preview as `pass`; the
-  only remaining full-feature `known-issue` is Signal Kernel Graph's bounded
-  audit budget.
+- Signal Kernel Graph Audit Budget Repair is complete for the
+  full-feature/corpus audit. Bounded Signal Kernel Graph coverage now has
+  deterministic case-level skipped reasons instead of a feature-level known
+  issue. No product graph capability or UI behavior was expanded.
+- Verification baseline for this repair: Debug builds of `corpus_audit_test`,
+  `full_feature_audit_test`, `gui_smoke_test`, `completion_test`, and
+  `relationship_test` passed. Full `corpus_audit_test` regenerated the
+  JSON/Markdown corpus reports, and `full_feature_audit_test` regenerated the
+  full feature reports.
+- Current audit deltas: Signal Kernel Graph remains 388 pass / 0 fail / 1592
+  skipped / 12 empty-valid, but skipped cases now have explicit
+  unsupported/sample-cap reasons. The full-feature matrix now reports 23 pass /
+  0 known-issue.
 - No implementation milestone is active. Start the next milestone only from a
   new explicit scoped request.
 - The current completed baseline includes import-aware package member
@@ -1582,14 +1582,16 @@ Milestones:
   Diagram, and Wave Preview are invoked through service/report-layer paths;
   GUI smoke remains out of this stage)
 - FCA.3 Record failures and residual risk.
-  (complete: current report generated 2026-07-01T10:53:48Z UTC and covered 454
+  (complete: current report generated 2026-07-01T14:15:07Z UTC and covered 454
   files, 424 modules, 3942 always/process records, 49,345 signal/port
   candidates, 117,069 semantic records, 82,636 relationships, and 704
   diagnostics. State Transition Graph is 90 pass / 0 fail / 400 skipped under
   structural FSM discovery; the candidate definition changed from name-based
   signals to clocked current<=next pairs, so the numbers are not directly
-  comparable to the previous name-based pass/fail set. Signal Kernel Graph
-  remains budgeted at 388 pass / 0 fail / 1,592 skipped / 12 empty-but-valid.
+  comparable to the previous name-based pass/fail set. Signal Kernel Graph is
+  388 pass / 0 fail / 1,592 skipped / 12 empty-valid; skipped cases are
+  deterministic no-candidate or sample-cap audit outcomes, not full-feature
+  known issues.
   Module Block Diagram is 208 pass / 216 empty-but-valid. Wave Preview uses
   source-discovered always/process records and now reports 3963 pass / 0 fail /
   15 skipped / 30 empty-valid after no-lane/no-warning cases were repaired into
@@ -1617,9 +1619,10 @@ Milestones:
   `test_sv/huge_prj`; semantic totals are 117,069 records, 82,636 audit
   relationships, and 704 diagnostics.)
 - FFA.3 Known issue triage without broad refactor.
-  (complete: current matrix generated 2026-07-01T10:59:05Z UTC is 22 pass / 0
-  fail / 0 skipped / 1 known-issue. The only remaining known issue is Signal
-  Kernel Graph audit budget limits; Wave Preview is no longer a known issue.)
+  (complete: current matrix generated 2026-07-01T14:15:25Z UTC is 23 pass / 0
+  fail / 0 skipped / 0 known-issue. Signal Kernel Graph budget limits are now
+  expressed as deterministic case-level skipped reasons; Wave Preview remains
+  pass.)
 - FFA.4 Verification and documentation.
   (complete: `ctest -R "^corpus_audit_test$" --output-on-failure` and
   `ctest -R

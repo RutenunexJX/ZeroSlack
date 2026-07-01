@@ -896,10 +896,10 @@ QString markdownReport(const CorpusContext& context,
     out << "\n## Notes\n\n";
     out << "- Real corpus files were opened read-only; reports are written under `test_sv`.\n";
     out << "- `empty-but-valid` means the service returned a coherent empty/root-only result, not a full feature pass.\n";
-    out << "- `skipped` means the corpus item did not contain the required structural trigger shape, such as no clocked FSM pair or no always block.\n";
+    out << "- `skipped` means the corpus item did not contain the required structural trigger shape or was explicitly skipped by a deterministic audit coverage cap.\n";
     out << "\n## Known Issues And Residual Risk\n\n";
     out << "- State Transition Graph is structure-discovered: clocked current<=next pairs drive next-state positive cases and current-state negative cases. Skipped modules have no structural FSM pair under the current extractor.\n";
-    out << "- Signal Kernel Graph uses a bounded deep-call budget: 4 signal graph attempts per module and 400 total attempts. Skipped candidates are counted explicitly.\n";
+    out << "- Signal Kernel Graph uses deterministic bounded coverage: relationship endpoint signals are prioritized, up to 4 signals are graphed per module, and up to 400 graph builds are attempted per run. Skipped cases carry explicit no-candidate, per-module sample cap, or global sample cap reasons and are not feature-level known issues.\n";
     out << "- Wave Preview uses source-discovered always/process records when workspace symbol extraction does not expose process nodes; module fallback remains explicit.\n";
     out << "- Empty outline source files are classified as preprocessor/comment-only, guarded, skipped, or real outline failures instead of being hidden.\n";
     return text;
@@ -1019,7 +1019,9 @@ void auditSignalKernelGraphs(const CorpusContext& context,
             item.locationKind = QStringLiteral("module");
             item.line = module.location.startLine;
             item.column = module.location.startColumn;
-            item.reason = QStringLiteral("no signal or port candidate");
+            item.reason = QStringLiteral(
+                "skipped-unsupported: no signal or port candidate");
+            item.tags.append(QStringLiteral("unsupported_no_signal_candidate"));
             addCase(cases, counts, item, AuditStatus::Skipped);
         }
 
@@ -1052,9 +1054,15 @@ void auditSignalKernelGraphs(const CorpusContext& context,
             item.locationKind = QStringLiteral("module_signal_budget");
             item.line = module.location.startLine;
             item.column = module.location.startColumn;
-            item.reason = QStringLiteral("signals traversed but not individually graphed by audit budget");
+            item.reason = QStringLiteral(
+                "deterministic per-module audit sample cap: graphed %1 of %2 signal candidates; remaining candidates skipped without service call")
+                              .arg(selectedSignals.size())
+                              .arg(signalRecords.size());
             item.metrics.insert(QStringLiteral("candidateSignals"), signalRecords.size());
             item.metrics.insert(QStringLiteral("attemptedSignals"), selectedSignals.size());
+            item.metrics.insert(QStringLiteral("perModuleAttemptCap"),
+                                kMaxSignalsPerModule);
+            item.tags.append(QStringLiteral("deterministic_sample_cap"));
             addCase(cases, counts, item, AuditStatus::Skipped);
         }
 
@@ -1068,7 +1076,14 @@ void auditSignalKernelGraphs(const CorpusContext& context,
                 item.locationKind = QStringLiteral("signal");
                 item.line = signal.location.startLine;
                 item.column = signal.location.startColumn;
-                item.reason = QStringLiteral("global signal graph attempt budget exhausted");
+                item.reason = QStringLiteral(
+                    "deterministic global audit sample cap: skipped after %1 graph attempts in this run")
+                                  .arg(kMaxTotalSignalGraphAttempts);
+                item.metrics.insert(QStringLiteral("globalAttemptCap"),
+                                    kMaxTotalSignalGraphAttempts);
+                item.metrics.insert(QStringLiteral("attemptedBeforeSkip"),
+                                    totalAttempts);
+                item.tags.append(QStringLiteral("deterministic_sample_cap"));
                 addCase(cases, counts, item, AuditStatus::Skipped);
                 continue;
             }
@@ -1694,5 +1709,44 @@ int main(int argc, char** argv)
                c.timeout,
                c.emptyButValid);
     }
-    return 0;
+    bool failed = false;
+    auto require = [&failed](bool condition, const char* message) {
+        printf("[%s] %s\n", condition ? "PASS" : "FAIL", message);
+        if (!condition)
+            failed = true;
+    };
+    const FeatureCounts signalKernelCounts =
+        counts.value(QStringLiteral("signal_kernel_graph"));
+    bool hasSignalKernelPass = false;
+    bool hasSignalKernelEmptyValid = false;
+    bool hasSignalKernelUnsupportedSkip = false;
+    bool hasSignalKernelBudgetSkip = false;
+    for (const AuditCase& item : std::as_const(cases)) {
+        if (item.feature != QStringLiteral("signal_kernel_graph"))
+            continue;
+        hasSignalKernelPass =
+            hasSignalKernelPass || item.status == QStringLiteral("pass");
+        hasSignalKernelEmptyValid =
+            hasSignalKernelEmptyValid
+            || item.status == QStringLiteral("empty-but-valid");
+        if (item.status == QStringLiteral("skipped")) {
+            hasSignalKernelUnsupportedSkip =
+                hasSignalKernelUnsupportedSkip
+                || item.reason.contains(QStringLiteral("skipped-unsupported"));
+            hasSignalKernelBudgetSkip =
+                hasSignalKernelBudgetSkip
+                || item.reason.contains(QStringLiteral("audit sample cap"));
+        }
+    }
+    require(signalKernelCounts.fail == 0 && signalKernelCounts.timeout == 0,
+            "Signal Kernel Graph has no hard fail or timeout cases");
+    require(hasSignalKernelPass,
+            "Signal Kernel Graph corpus includes graph-producing cases");
+    require(hasSignalKernelEmptyValid,
+            "Signal Kernel Graph corpus includes empty-valid cases");
+    require(hasSignalKernelUnsupportedSkip,
+            "Signal Kernel Graph corpus includes unsupported skipped cases");
+    require(hasSignalKernelBudgetSkip,
+            "Signal Kernel Graph corpus includes deterministic budget skipped cases");
+    return failed ? 1 : 0;
 }

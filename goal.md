@@ -28,28 +28,27 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
 
 ## Current Goal State
 
-Current milestone: Wave Preview No-Lane Repair is complete. The next milestone
-should wait for a new explicit scoped request; do not expand this work into a
-Signal Kernel Graph sweep without that request.
+Current milestone: Signal Kernel Graph Audit Budget Repair is complete. The
+next milestone should wait for a new explicit scoped request.
 
 Current baseline highlights:
 
-- Most recent completed milestone: Wave Preview No-Lane Repair. The service now
-  preserves structural warnings and emits explicit unsupported reasons for
-  scoped always/process previews that produce no lanes, including commented-out
-  stale process records, macro/preprocessor-only process scopes, and parsed
-  always blocks with no recognized assignment lanes. No simulator or waveform
-  evaluator was added.
-- Verification for Wave Preview No-Lane Repair passed in the Debug build:
-  `completion_test`, `corpus_audit_test`, `full_feature_audit_test`, and
-  `gui_smoke_test`. `corpus_audit_test` regenerated
+- Most recent completed milestone: Signal Kernel Graph Audit Budget Repair.
+  Signal Kernel Graph's bounded audit coverage now records deterministic
+  case-level reasons for unsupported/no-candidate and sample-cap skipped cases,
+  so full-feature no longer carries a budget-limited known issue. No graph
+  product capability, simulator behavior, or UI interaction was added.
+- Verification for Signal Kernel Graph Audit Budget Repair passed in the Debug
+  build: `corpus_audit_test`, `full_feature_audit_test`, `gui_smoke_test`,
+  `completion_test`, and `relationship_test`. `corpus_audit_test` regenerated
   `test_sv/corpus_audit_report.json` and `.md`; `full_feature_audit_test`
   regenerated `test_sv/full_feature_audit_report.json` and `.md`.
-- Current corpus result: Wave Preview is 3963 pass / 0 fail / 15 skipped / 30
-  empty-valid, replacing the previous no-lane/no-warning failure baseline.
-  State Transition Graph remains 90
-  pass / 0 fail / 400 skipped under the structural-pair audit. Signal Kernel
-  Graph still uses the bounded audit budget from the prior harness.
+- Current corpus result: Signal Kernel Graph is 388 pass / 0 fail / 1592
+  skipped / 12 empty-valid, with skipped cases split into unsupported
+  no-candidate and deterministic sample-cap reasons. Full-feature is now 23
+  pass / 0 fail / 0 skipped / 0 known-issue. Wave Preview remains 3963 pass / 0
+  fail / 15 skipped / 30 empty-valid, and State Transition Graph remains 90
+  pass / 0 fail / 400 skipped under the structural-pair audit.
 - Most recent completed milestone: import-aware SystemVerilog package symbol
   visibility. Unqualified package members are available to completion, goto,
   and hover only from active `import pkg::*;` context; local/module symbols win
@@ -1231,15 +1230,16 @@ Milestones:
   (complete: current report covers State Transition Graph, Signal Kernel Graph,
   Module Block Diagram, and Wave Preview through service/report-layer paths)
 - FCA.3 Document known issues and residual risk.
-  (complete: current report generated 2026-07-01T10:53:48Z UTC and covered 454
+  (complete: current report generated 2026-07-01T14:15:07Z UTC and covered 454
   files, 424 modules, 3942 always/process records, 49,345 signal/port
   candidates, 117,069 semantic records, 82,636 audit relationships, and 704
   diagnostics. State Transition Graph is 90 pass / 0 fail / 400 skipped under
   structural discovery. The audit now counts discovered clocked FSM pairs, not
   `ns` / `next_state` name candidates; each discovered pair contributes a
   next-state positive case and a current-state negative trigger case. Signal
-  Kernel Graph keeps the bounded deep-call budget and reports 388 pass / 0 fail
-  / 1,592 skipped / 12 empty-but-valid. Module Block Diagram reports 208 pass /
+  Kernel Graph reports 388 pass / 0 fail / 1,592 skipped / 12 empty-valid, with
+  skipped cases carrying deterministic no-candidate or sample-cap reasons.
+  Module Block Diagram reports 208 pass /
   216 empty-but-valid. Wave Preview uses source-discovered always/process
   records and reports 3963 pass / 0 fail / 15 skipped / 30 empty-valid after
   no-lane/no-warning cases were repaired into lane-producing previews or
@@ -1267,9 +1267,10 @@ Milestones:
   `test_sv/huge_prj`; semantic totals are 117,069 records, 82,636 audit
   relationships, and 704 diagnostics.)
 - FFA.3 Known issue triage without broad refactor.
-  (complete: current matrix generated 2026-07-01T10:59:05Z UTC is 22 pass / 0
-  fail / 0 skipped / 1 known-issue. The only remaining known issue is Signal
-  Kernel Graph audit budget limits; Wave Preview is no longer a known issue.)
+  (complete: current matrix generated 2026-07-01T14:15:25Z UTC is 23 pass / 0
+  fail / 0 skipped / 0 known-issue. Signal Kernel Graph budget limits are now
+  expressed as deterministic case-level skipped reasons; Wave Preview remains
+  pass.)
 - FFA.4 Verification and documentation.
   (complete: `ctest -R "^corpus_audit_test$" --output-on-failure` and
   `ctest -R

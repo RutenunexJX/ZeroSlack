@@ -737,15 +737,15 @@ int main(int argc, char** argv)
     appendRow(&rows, QStringLiteral("rtl_signal_kernel_graph"),
               QStringLiteral("RTL Insights: Signal Kernel Graph"),
               QStringLiteral("rtl-insight"),
-              corpusStatus(counts, QStringLiteral("signal_kernel_graph"), true),
+              corpusStatus(counts, QStringLiteral("signal_kernel_graph")),
               corpusReason(counts, QStringLiteral("signal_kernel_graph")),
               {QStringLiteral("Signal Kernel Graph panel"), QStringLiteral("signal graph action")},
               {QStringLiteral("SignalKernelGraphService"), QStringLiteral("SignalKernelGraphPanelCoordinator")},
               {QStringLiteral("gui_smoke_test"), QStringLiteral("corpus_audit_test")},
-              QStringLiteral("bounded full corpus graph sweep"),
+              QStringLiteral("deterministic bounded corpus graph sweep"),
               fullCorpusCoverage,
               false,
-              QStringLiteral("Known issue: deep sweep is budgeted at audit level; expand in a dedicated performance pass."));
+              QStringLiteral("Keep case-level skipped reasons explicit; expand graph sampling only in a dedicated performance pass."));
 
     appendRow(&rows, QStringLiteral("rtl_module_block_diagram"),
               QStringLiteral("RTL Insights: Module Block Diagram"),
@@ -883,6 +883,15 @@ int main(int argc, char** argv)
     require(!rtlInsightItems.isEmpty(), "RTL insight entries are present");
     require(packageToolCount > 0, "package tools are present");
     require(defaultExtensionCount > 0, "workspace configuration defaults are present");
+    bool signalKernelGraphIsPass = false;
+    for (const FeatureRow& row : std::as_const(rows)) {
+        if (row.id == QStringLiteral("rtl_signal_kernel_graph")) {
+            signalKernelGraphIsPass = row.status == QStringLiteral("pass");
+            break;
+        }
+    }
+    require(signalKernelGraphIsPass,
+            "Signal Kernel Graph skipped audit cases stay case-level");
 
     printf("Full feature audit wrote %s and %s\n",
            jsonPath.toLocal8Bit().constData(),
