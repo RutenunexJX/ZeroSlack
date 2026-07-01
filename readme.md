@@ -31,6 +31,23 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
 
 ## Current Product Baseline
 
+- Current audit milestone: Corpus Audit Findings repair is complete. The
+  corpus harness still traverses `test_sv/new` and `test_sv/huge_prj` read-only,
+  now adds source-discovered always/process records for Wave Preview, classifies
+  State Transition Graph misses by paired-state/case/state-value/transition
+  reason, and treats preprocessor/comment-only empty outlines as
+  empty-but-valid rather than semantic failures.
+- Latest corpus audit report: `test_sv/corpus_audit_report.json` and
+  `test_sv/corpus_audit_report.md` cover 454 files, 424 modules, 3942
+  always/process records, 117069 semantic records, 82636 relationships, and 704
+  diagnostics. Compared with the previous run, State Transition Graph failures
+  dropped from 66 to 21, Wave Preview now runs 3942 always-block cases plus
+  explicit module fallback, and semantic baseline failures dropped from 3 to 0.
+- Remaining known issues from the current report: 21 State Transition Graph
+  misses are now classified by concrete reason, 29 Wave Preview always-block
+  records return no lane and no warning, Signal Kernel Graph remains bounded by
+  the existing audit budget, and 216 module block diagrams are root-only
+  empty-but-valid.
 - Current handoff state: no implementation milestone is active. The latest
   completed work is import-aware SystemVerilog package symbol visibility. The
   current baseline also includes user template JSON usage, explicit

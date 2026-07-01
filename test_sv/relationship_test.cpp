@@ -6783,6 +6783,22 @@ static void runFsmGraphServiceFixture()
         "    endcase\n"
         "  end\n"
         "endmodule\n");
+    const QString paramFileName =
+        QStringLiteral("test_sv/state_transition_param_fixture.sv");
+    const QString paramContent = QStringLiteral(
+        "module param_fsm_top(input logic go);\n"
+        "  localparam logic [1:0] ST_IDLE = 2'd0;\n"
+        "  localparam logic [1:0] ST_BUSY = 2'd1;\n"
+        "  logic [1:0] current_state;\n"
+        "  logic [1:0] next_state;\n"
+        "  always_comb begin\n"
+        "    case (current_state)\n"
+        "      ST_IDLE: next_state = go ? ST_BUSY : ST_IDLE;\n"
+        "      ST_BUSY: next_state = ST_IDLE;\n"
+        "      default: next_state = ST_IDLE;\n"
+        "    endcase\n"
+        "  end\n"
+        "endmodule\n");
     const SemanticSymbolRecord packageModule =
         SemanticFixtureRecordBuilder(QStringLiteral("pkg_fsm_top"),
                                      DeclarationKind::Module)
@@ -6919,6 +6935,54 @@ static void runFsmGraphServiceFixture()
             .inModule(QStringLiteral("dual_fsm_top"))
             .withType(QStringLiteral("dual_state_b_e"))
             .record();
+    const SemanticSymbolRecord paramModule =
+        SemanticFixtureRecordBuilder(QStringLiteral("param_fsm_top"),
+                                     DeclarationKind::Module)
+            .withFile(paramFileName)
+            .withLocalHandle(9330)
+            .withRange(1, 1, 13, 1)
+            .withCollectorKind(CollectorKind::Module)
+            .record();
+    const SemanticSymbolRecord paramCurrentState =
+        SemanticFixtureRecordBuilder(QStringLiteral("current_state"),
+                                     DeclarationKind::Signal)
+            .withFile(paramFileName)
+            .withLocalHandle(9331)
+            .withLine(4)
+            .withCollectorKind(CollectorKind::Logic)
+            .inModule(QStringLiteral("param_fsm_top"))
+            .withType(QStringLiteral("logic [1:0]"))
+            .record();
+    const SemanticSymbolRecord paramNextState =
+        SemanticFixtureRecordBuilder(QStringLiteral("next_state"),
+                                     DeclarationKind::Signal)
+            .withFile(paramFileName)
+            .withLocalHandle(9332)
+            .withLine(5)
+            .withCollectorKind(CollectorKind::Logic)
+            .inModule(QStringLiteral("param_fsm_top"))
+            .withType(QStringLiteral("logic [1:0]"))
+            .record();
+    const SemanticSymbolRecord paramIdle =
+        SemanticFixtureRecordBuilder(QStringLiteral("ST_IDLE"),
+                                     DeclarationKind::Localparam)
+            .withFile(paramFileName)
+            .withLocalHandle(9333)
+            .withLine(2)
+            .withCollectorKind(CollectorKind::Localparam)
+            .inModule(QStringLiteral("param_fsm_top"))
+            .withType(QStringLiteral("logic [1:0]"))
+            .record();
+    const SemanticSymbolRecord paramBusy =
+        SemanticFixtureRecordBuilder(QStringLiteral("ST_BUSY"),
+                                     DeclarationKind::Localparam)
+            .withFile(paramFileName)
+            .withLocalHandle(9334)
+            .withLine(3)
+            .withCollectorKind(CollectorKind::Localparam)
+            .inModule(QStringLiteral("param_fsm_top"))
+            .withType(QStringLiteral("logic [1:0]"))
+            .record();
     const SemanticSymbolRecord noFsmModule =
         SemanticFixtureRecordBuilder(QStringLiteral("no_fsm_top"),
                                      DeclarationKind::Module)
@@ -6949,6 +7013,11 @@ static void runFsmGraphServiceFixture()
         dualARun,
         dualBIdle,
         dualBRun,
+        paramModule,
+        paramCurrentState,
+        paramNextState,
+        paramIdle,
+        paramBusy,
         noFsmModule,
     };
 
@@ -6956,6 +7025,7 @@ static void runFsmGraphServiceFixture()
     fileContents.insert(fileName, content);
     fileContents.insert(packageModuleFileName, packageModuleContent);
     fileContents.insert(dualFileName, dualContent);
+    fileContents.insert(paramFileName, paramContent);
     SemanticIndex index;
     index.setSnapshot(sharedSnapshotFromRecords(
         records,
@@ -7451,6 +7521,34 @@ static void runFsmGraphServiceFixture()
                        == QStringLiteral("next_state")
                    && stateTransitionNextReport.stateCount == 2
                    && stateTransitionNextReport.transitionCount == 3,
+               true);
+
+    StateTransitionGraphQuery stateTransitionParamQuery;
+    stateTransitionParamQuery.symbolName = QStringLiteral("next_state");
+    stateTransitionParamQuery.fileName = paramFileName;
+    stateTransitionParamQuery.moduleName = QStringLiteral("param_fsm_top");
+    const StateTransitionGraphReport stateTransitionParamReport =
+        stateTransitionService.buildStateTransitionGraph(
+            stateTransitionParamQuery);
+    expectBool("state transition graph localparam states available",
+               stateTransitionParamReport.found,
+               true);
+    expectInt("state transition graph localparam state count",
+              stateTransitionParamReport.stateCount,
+              2);
+    expectInt("state transition graph localparam transition count",
+              stateTransitionParamReport.transitionCount,
+              4);
+    expectBool("state transition graph localparam states found",
+               stateTransitionParamReport.found
+                   && stateTransitionParamReport.selectedSignalDisplayName
+                       == QStringLiteral("next_state")
+                   && stateTransitionParamReport.graph.stateRegisterDisplayName
+                       == QStringLiteral("current_state")
+                   && stateTransitionParamReport.graph.nextStateSignalDisplayName
+                       == QStringLiteral("next_state")
+                   && stateTransitionParamReport.stateCount == 2
+                   && stateTransitionParamReport.transitionCount == 4,
                true);
 
     StateTransitionGraphQuery stateTransitionCsQuery;

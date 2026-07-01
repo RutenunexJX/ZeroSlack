@@ -11,6 +11,18 @@ into an analyzer.
 
 ## Current Execution Baseline
 
+- Corpus Audit Findings repair is complete for the scoped Graph/Wave +
+  semantic-baseline follow-up. The fix did not expand the Signal Kernel Graph
+  sweep budget or mutate real RTL corpus files.
+- Verification baseline for this repair: Debug `cmake --build . --target
+  corpus_audit_test relationship_test` passed; `relationship_test` passed with
+  860 checks; full `corpus_audit_test test_sv/new test_sv/huge_prj` regenerated
+  the JSON/Markdown reports.
+- Current audit deltas: State Transition Graph changed from 77 pass / 66 fail /
+  384 skipped to 88 pass / 21 fail / 418 skipped; Wave Preview changed from
+  module fallback only to 3942 always/process records with 3963 pass / 29 fail /
+  16 skipped; semantic baseline changed from 874 pass / 3 fail / 2
+  empty-but-valid to 874 pass / 0 fail / 5 empty-but-valid.
 - No implementation milestone is active. Start the next milestone only from a
   new explicit scoped request.
 - The current completed baseline includes import-aware package member

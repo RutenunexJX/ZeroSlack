@@ -24,6 +24,7 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QRegularExpression>
 #include <QSaveFile>
 #include <QSet>
 #include <QTextStream>
@@ -349,6 +350,187 @@ bool isCurrentStateCandidate(const QString& name)
         || lower == QStringLiteral("current_state")
         || lower.endsWith(QStringLiteral("_cs"))
         || lower.endsWith(QStringLiteral("_current_state"));
+}
+
+QStringList pairedCurrentStateNames(const QString& nextStateName)
+{
+    const QString lower = nextStateName.toLower();
+    QStringList names;
+    if (lower == QStringLiteral("ns")) {
+        names << QStringLiteral("cs")
+              << QStringLiteral("current_state")
+              << QStringLiteral("state");
+    } else if (lower == QStringLiteral("next_state")) {
+        names << QStringLiteral("current_state")
+              << QStringLiteral("state")
+              << QStringLiteral("cs");
+    } else if (lower.endsWith(QStringLiteral("_next_state"))) {
+        const QString prefix =
+            lower.left(lower.size() - QStringLiteral("_next_state").size());
+        names << prefix + QStringLiteral("_current_state")
+              << prefix + QStringLiteral("_state")
+              << prefix + QStringLiteral("_cs");
+    } else if (lower.endsWith(QStringLiteral("_ns"))) {
+        const QString prefix =
+            lower.left(lower.size() - QStringLiteral("_ns").size());
+        names << prefix + QStringLiteral("_cs")
+              << prefix + QStringLiteral("_current_state")
+              << prefix + QStringLiteral("_state");
+    }
+    names.removeDuplicates();
+    return names;
+}
+
+SemanticSymbolRecord matchingCurrentStateSignal(
+    const QList<SemanticSymbolRecord>& members,
+    const SemanticSymbolRecord& nextStateSignal)
+{
+    const QStringList pairedNames = pairedCurrentStateNames(nextStateSignal.name);
+    for (const QString& pairedName : pairedNames) {
+        for (const SemanticSymbolRecord& member : members) {
+            if (!isSignalKernelCandidate(member))
+                continue;
+            if (member.name.compare(pairedName, Qt::CaseInsensitive) == 0)
+                return member;
+        }
+    }
+    return {};
+}
+
+QString stripLineComment(QString line)
+{
+    const int commentStart = line.indexOf(QStringLiteral("//"));
+    if (commentStart >= 0)
+        line.truncate(commentStart);
+    return line;
+}
+
+QString sourceForModule(const CorpusContext& context,
+                        const SemanticSymbolRecord& module)
+{
+    const QString text = context.fileContents.value(
+        normalizedPath(module.location.fileName));
+    if (text.isEmpty())
+        return QString();
+    if (module.location.startLine <= 0 || module.location.endLine <= 0)
+        return text;
+
+    const QStringList lines = text.split(QLatin1Char('\n'), Qt::KeepEmptyParts);
+    const int startLine = qBound(1, module.location.startLine, lines.size());
+    const int endLine = qBound(startLine, module.location.endLine, lines.size());
+    QStringList moduleLines;
+    for (int line = startLine; line <= endLine; ++line)
+        moduleLines.append(lines.at(line - 1));
+    return moduleLines.join(QLatin1Char('\n'));
+}
+
+bool sourceContainsWord(const QString& source, const QString& word)
+{
+    const QRegularExpression expression(
+        QStringLiteral("\\b%1\\b").arg(QRegularExpression::escape(word)),
+        QRegularExpression::CaseInsensitiveOption);
+    return expression.match(source).hasMatch();
+}
+
+bool sourceContainsCaseForSignal(const QString& source, const QString& signalName)
+{
+    const QRegularExpression expression(
+        QStringLiteral("\\bcase\\s*\\(\\s*%1\\b")
+            .arg(QRegularExpression::escape(signalName)),
+        QRegularExpression::CaseInsensitiveOption);
+    return expression.match(source).hasMatch();
+}
+
+bool sourceContainsAssignmentToSignal(const QString& source,
+                                      const QString& signalName)
+{
+    const QRegularExpression expression(
+        QStringLiteral("\\b%1\\b\\s*(?:<=|=)")
+            .arg(QRegularExpression::escape(signalName)),
+        QRegularExpression::CaseInsensitiveOption);
+    return expression.match(source).hasMatch();
+}
+
+bool isParameterLikeStateValue(const SemanticSymbolRecord& record)
+{
+    const SymbolTaxonomy::SemanticMetadata metadata =
+        semanticMetadataForSymbolRecord(record);
+    const bool parameterLike =
+        metadata.collectorKind == SymbolTaxonomy::CollectorKind::Parameter
+        || metadata.collectorKind == SymbolTaxonomy::CollectorKind::Localparam
+        || metadata.declarationKind == SymbolTaxonomy::DeclarationKind::Parameter
+        || metadata.declarationKind == SymbolTaxonomy::DeclarationKind::Localparam;
+    if (!parameterLike)
+        return false;
+
+    const QString upper = record.name.toUpper();
+    return upper.startsWith(QStringLiteral("S_"))
+        || upper.startsWith(QStringLiteral("ST_"))
+        || upper.startsWith(QStringLiteral("SM_"))
+        || upper.endsWith(QStringLiteral("_STATE"))
+        || upper.contains(QStringLiteral("_STATE_"));
+}
+
+bool moduleHasStateValueCandidates(const QList<SemanticSymbolRecord>& members)
+{
+    for (const SemanticSymbolRecord& member : members) {
+        const SymbolTaxonomy::SemanticMetadata metadata =
+            semanticMetadataForSymbolRecord(member);
+        if (SymbolTaxonomy::isFsmStateValueDeclaration(metadata)
+            || isParameterLikeStateValue(member)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+AuditStatus classifyStateTransitionFailure(
+    const CorpusContext& context,
+    const SemanticSymbolRecord& module,
+    const QList<SemanticSymbolRecord>& members,
+    const SemanticSymbolRecord& nextStateSignal,
+    AuditCase* item)
+{
+    const SemanticSymbolRecord currentState =
+        matchingCurrentStateSignal(members, nextStateSignal);
+    if (!currentState.isValid()) {
+        item->reason =
+            QStringLiteral("no paired current-state signal for next-state candidate");
+        return AuditStatus::Skipped;
+    }
+
+    item->metrics.insert(QStringLiteral("pairedCurrentState"),
+                         currentState.name);
+    const QString moduleSource = sourceForModule(context, module);
+    if (moduleSource.isEmpty()) {
+        item->reason = QStringLiteral("source text unavailable for module");
+        return AuditStatus::Fail;
+    }
+    if (!sourceContainsWord(moduleSource, QStringLiteral("case"))) {
+        item->reason =
+            QStringLiteral("unsupported pattern: no case statement in module");
+        return AuditStatus::Fail;
+    }
+    if (!sourceContainsCaseForSignal(moduleSource, currentState.name)) {
+        item->reason =
+            QStringLiteral("unsupported pattern: no case on paired current-state signal %1")
+                .arg(currentState.name);
+        return AuditStatus::Fail;
+    }
+    if (!sourceContainsAssignmentToSignal(moduleSource, nextStateSignal.name)) {
+        item->reason =
+            QStringLiteral("no assignment to next-state candidate in paired FSM case");
+        return AuditStatus::Fail;
+    }
+    if (!moduleHasStateValueCandidates(members)) {
+        item->reason =
+            QStringLiteral("no enum/localparam/parameter state values recognized");
+        return AuditStatus::Fail;
+    }
+
+    item->reason =
+        QStringLiteral("no transitions extracted from recognized FSM pattern");
+    return AuditStatus::Fail;
 }
 
 QString relationshipReason(const QString& displayName, const QString& fallback)
@@ -680,6 +862,146 @@ QList<SemanticSymbolRecord> moduleRecords(const QList<SemanticSymbolRecord>& rec
     return modules;
 }
 
+int wordOccurrenceCount(const QString& text, const QString& word)
+{
+    const QRegularExpression expression(
+        QStringLiteral("\\b%1\\b").arg(QRegularExpression::escape(word)),
+        QRegularExpression::CaseInsensitiveOption);
+    int count = 0;
+    QRegularExpressionMatchIterator it = expression.globalMatch(text);
+    while (it.hasNext()) {
+        it.next();
+        ++count;
+    }
+    return count;
+}
+
+SymbolTaxonomy::CollectorKind processCollectorKindForToken(const QString& token)
+{
+    const QString lower = token.toLower();
+    if (lower == QStringLiteral("always_ff"))
+        return SymbolTaxonomy::CollectorKind::AlwaysFf;
+    if (lower == QStringLiteral("always_comb"))
+        return SymbolTaxonomy::CollectorKind::AlwaysComb;
+    if (lower == QStringLiteral("always_latch"))
+        return SymbolTaxonomy::CollectorKind::AlwaysLatch;
+    return SymbolTaxonomy::CollectorKind::Always;
+}
+
+int estimateProcessEndLine(const QStringList& lines,
+                           int startLine,
+                           int moduleEndLine)
+{
+    int depth = 0;
+    bool sawBegin = false;
+    const int endLine = qBound(startLine, moduleEndLine, lines.size());
+    for (int line = startLine; line <= endLine; ++line) {
+        const QString code = stripLineComment(lines.at(line - 1));
+        const int begins = wordOccurrenceCount(code, QStringLiteral("begin"));
+        const int ends = wordOccurrenceCount(code, QStringLiteral("end"));
+        if (begins > 0)
+            sawBegin = true;
+        depth += begins;
+        depth -= ends;
+        if (sawBegin && line > startLine && depth <= 0)
+            return line;
+        if (!sawBegin && code.contains(QLatin1Char(';')))
+            return line;
+    }
+    return endLine;
+}
+
+void appendDiscoveredProcessRecords(CorpusContext* context, int* nextLocalHandle)
+{
+    if (!context || !nextLocalHandle)
+        return;
+
+    const QRegularExpression alwaysExpression(
+        QStringLiteral("\\balways(?:_(?:ff|comb|latch))?\\b"),
+        QRegularExpression::CaseInsensitiveOption);
+    QSet<QString> existing;
+    for (const SemanticSymbolRecord& record : std::as_const(context->records)) {
+        if (!isProcessRecord(record))
+            continue;
+        existing.insert(QStringLiteral("%1:%2:%3")
+                            .arg(normalizedPath(record.location.fileName))
+                            .arg(record.owner.name)
+                            .arg(record.location.startLine));
+    }
+
+    int appended = 0;
+    const QList<SemanticSymbolRecord> modules = moduleRecords(context->records);
+    for (const SemanticSymbolRecord& module : modules) {
+        const QString fileName = normalizedPath(module.location.fileName);
+        const QString text = context->fileContents.value(fileName);
+        if (text.isEmpty())
+            continue;
+        const QStringList lines = text.split(QLatin1Char('\n'), Qt::KeepEmptyParts);
+        const int moduleStart =
+            qBound(1, qMax(1, module.location.startLine), lines.size());
+        const int moduleEnd =
+            qBound(moduleStart,
+                   module.location.endLine > 0 ? module.location.endLine
+                                               : lines.size(),
+                   lines.size());
+        for (int line = moduleStart; line <= moduleEnd; ++line) {
+            const QString code = stripLineComment(lines.at(line - 1));
+            const QRegularExpressionMatch match =
+                alwaysExpression.match(code);
+            if (!match.hasMatch())
+                continue;
+            const QString existingKey = QStringLiteral("%1:%2:%3")
+                                            .arg(fileName)
+                                            .arg(module.name)
+                                            .arg(line);
+            if (existing.contains(existingKey))
+                continue;
+            existing.insert(existingKey);
+
+            const QString token = match.captured(0);
+            const int startColumn = match.capturedStart(0) + 1;
+            const int endLine = estimateProcessEndLine(lines, line, moduleEnd);
+            const int startPosition = positionForLineColumn(text,
+                                                            line,
+                                                            startColumn);
+            const int endPosition = lineEndPosition(text, endLine);
+
+            SemanticSymbolRecord process;
+            process.name = QStringLiteral("%1@%2").arg(token).arg(line);
+            process.localHandle = (*nextLocalHandle)++;
+            process.location.fileName = fileName;
+            process.location.startLine = line;
+            process.location.startColumn = startColumn;
+            process.location.endLine = endLine;
+            process.location.endColumn = 1;
+            process.location.position = qMax(0, startPosition);
+            process.location.length =
+                endPosition > startPosition ? endPosition - startPosition
+                                            : token.size();
+            process.declarationKind =
+                SymbolTaxonomy::DeclarationKind::Process;
+            process.usageRole = SymbolTaxonomy::SymbolUsageRole::Process;
+            process.visibility = SymbolTaxonomy::SymbolVisibility::ScopeLocal;
+            process.sourceRole =
+                SymbolTaxonomy::sourceRoleForFileName(process.location.fileName);
+            process.collectorKind = processCollectorKindForToken(token);
+            process.owner.kind = SymbolTaxonomy::SymbolOwnerScope::Module;
+            process.owner.name = module.name;
+            process.owner.stableKey = module.stableKey;
+            process.stableKey.fileName = process.location.fileName;
+            process.stableKey.symbolName = process.name;
+            process.stableKey.declarationKind = process.declarationKind;
+            process.stableKey.ownerScope = module.name;
+            context->records.append(process);
+            ++appended;
+        }
+    }
+
+    printf("corpus_audit: discovered %d always/process records from source\n",
+           appended);
+    fflush(stdout);
+}
+
 QJsonArray statusCountsJson(const QHash<QString, FeatureCounts>& counts)
 {
     QJsonArray array;
@@ -767,10 +1089,10 @@ QString markdownReport(const CorpusContext& context,
     out << "- `empty-but-valid` means the service returned a coherent empty/root-only result, not a full feature pass.\n";
     out << "- `skipped` means the corpus item did not contain the required trigger shape, such as no next-state signal or no always block.\n";
     out << "\n## Known Issues And Residual Risk\n\n";
-    out << "- State Transition Graph failures usually mean a real next-state candidate passed the trigger filter but `FsmGraphService` returned `no FSM graph`.\n";
+    out << "- State Transition Graph failures are classified by paired current-state lookup, case detection, state-value recognition, and transition extraction.\n";
     out << "- Signal Kernel Graph uses a bounded deep-call budget: 4 signal graph attempts per module and 400 total attempts. Skipped candidates are counted explicitly.\n";
-    out << "- Wave Preview may use module-scope fallback when workspace symbol records do not expose always/process records.\n";
-    out << "- Empty outline source files are reported under `semantic_baseline` instead of being hidden.\n";
+    out << "- Wave Preview uses source-discovered always/process records when workspace symbol extraction does not expose process nodes; module fallback remains explicit.\n";
+    out << "- Empty outline source files are classified as preprocessor/comment-only, guarded, skipped, or real outline failures instead of being hidden.\n";
     return text;
 }
 
@@ -828,10 +1150,20 @@ void auditStateTransitions(const CorpusContext& context,
             if (report.found && report.stateCount > 0 && report.transitionCount > 0) {
                 addCase(cases, counts, item, AuditStatus::Pass);
             } else {
-                item.reason = relationshipReason(
-                    report.notFoundReasonDisplayName,
-                    QStringLiteral("no transition graph generated"));
-                addCase(cases, counts, item, AuditStatus::Fail);
+                AuditStatus status = AuditStatus::Fail;
+                if (report.notFoundReason
+                    == StateTransitionGraphNotFoundReason::NoFsmGraph) {
+                    status = classifyStateTransitionFailure(context,
+                                                            module,
+                                                            members,
+                                                            signal,
+                                                            &item);
+                } else {
+                    item.reason = relationshipReason(
+                        report.notFoundReasonDisplayName,
+                        QStringLiteral("no transition graph generated"));
+                }
+                addCase(cases, counts, item, status);
             }
         }
 
@@ -1201,6 +1533,80 @@ void auditWavePreview(const CorpusContext& context,
     }
 }
 
+QString sourceWithoutLineComments(const QString& text)
+{
+    QStringList result;
+    const QStringList lines = text.split(QLatin1Char('\n'), Qt::KeepEmptyParts);
+    for (const QString& line : lines)
+        result.append(stripLineComment(line));
+    return result.join(QLatin1Char('\n'));
+}
+
+bool containsDesignDeclaration(const QString& text)
+{
+    const QRegularExpression expression(
+        QStringLiteral("^\\s*(?:module|interface|package|program|primitive)\\b"),
+        QRegularExpression::CaseInsensitiveOption
+            | QRegularExpression::MultilineOption);
+    return expression.match(sourceWithoutLineComments(text)).hasMatch();
+}
+
+bool containsPreprocessorDirective(const QString& text)
+{
+    const QRegularExpression expression(
+        QStringLiteral("^\\s*`(?:ifdef|ifndef|elsif|else|endif|include|define|undef)\\b"),
+        QRegularExpression::CaseInsensitiveOption
+            | QRegularExpression::MultilineOption);
+    return expression.match(text).hasMatch();
+}
+
+bool containsOnlyCommentsWhitespaceAndDirectives(const QString& text)
+{
+    const QStringList lines = text.split(QLatin1Char('\n'), Qt::KeepEmptyParts);
+    bool sawDirective = false;
+    for (QString line : lines) {
+        line = stripLineComment(line).trimmed();
+        if (line.isEmpty())
+            continue;
+        if (line.startsWith(QLatin1Char('`'))) {
+            sawDirective = true;
+            continue;
+        }
+        return false;
+    }
+    return sawDirective || !text.trimmed().isEmpty();
+}
+
+AuditStatus classifyEmptyOutlineSource(const CorpusContext& context,
+                                       const QString& fileName,
+                                       AuditCase* item)
+{
+    const QString text = context.fileContents.value(normalizedPath(fileName));
+    if (text.isEmpty()) {
+        item->reason = QStringLiteral("source file is empty");
+        return AuditStatus::EmptyButValid;
+    }
+    if (!containsDesignDeclaration(text)) {
+        if (containsOnlyCommentsWhitespaceAndDirectives(text)) {
+            item->reason =
+                containsPreprocessorDirective(text)
+                    ? QStringLiteral("no design declarations: preprocessor/comment-only source file")
+                    : QStringLiteral("no design declarations: comment-only source file");
+        } else {
+            item->reason = QStringLiteral("no design declarations in source file");
+        }
+        return AuditStatus::EmptyButValid;
+    }
+    if (containsPreprocessorDirective(text)) {
+        item->reason =
+            QStringLiteral("outline empty for design declaration behind preprocessor guard or include context");
+        return AuditStatus::Skipped;
+    }
+
+    item->reason = QStringLiteral("outline empty despite visible design declarations");
+    return AuditStatus::Fail;
+}
+
 void auditSemanticBaseline(const CorpusContext& context,
                            QList<AuditCase>* cases,
                            QHash<QString, FeatureCounts>* counts)
@@ -1229,8 +1635,9 @@ void auditSemanticBaseline(const CorpusContext& context,
                     outlineRows > 0 ? AuditStatus::Pass
                                     : AuditStatus::EmptyButValid);
         } else {
-            item.reason = QStringLiteral("outline is empty for source file");
-            addCase(cases, counts, item, AuditStatus::Fail);
+            const AuditStatus status =
+                classifyEmptyOutlineSource(context, fileName, &item);
+            addCase(cases, counts, item, status);
         }
     }
 
@@ -1310,6 +1717,7 @@ bool buildCorpusContext(const QString& workspaceRoot,
         if (record.localHandle < 0)
             record.localHandle = nextLocalHandle++;
     }
+    appendDiscoveredProcessRecords(context, &nextLocalHandle);
     printf("corpus_audit: extracted %d symbols in %lld ms\n",
            context->records.size(),
            static_cast<long long>(phaseTimer.elapsed()));

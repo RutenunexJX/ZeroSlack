@@ -234,6 +234,8 @@ bool isInsideModule(const SemanticSymbolRecord& record,
                     const SemanticSymbolRecord& moduleRecord);
 bool hasStateValuesForType(const QList<SemanticSymbolRecord>& records,
                            const QString& rawTypeText);
+bool looksLikeTextualStateValue(const SemanticSymbolRecord& record,
+                                const SemanticSymbolRecord& stateRegister);
 QString stateDetailDisplayName(const SemanticSymbolRecord& state);
 void sortRecords(QList<SemanticSymbolRecord>& records);
 }
@@ -453,6 +455,16 @@ QList<SemanticSymbolRecord> FsmGraphService::stateValues(
             result.append(record);
         }
     }
+    if (result.isEmpty()) {
+        for (const SemanticSymbolRecord& record : moduleRecords) {
+            if (!looksLikeTextualStateValue(record, stateRegister))
+                continue;
+            if (seen.contains(record.localHandle))
+                continue;
+            seen.insert(record.localHandle);
+            result.append(record);
+        }
+    }
     sortRecords(result);
     return result;
 }
@@ -629,6 +641,65 @@ bool hasStateValuesForType(
         }
     }
     return false;
+}
+
+QString stateRegisterPrefix(const QString& name)
+{
+    QString lower = name.toLower();
+    if (lower == QStringLiteral("current_state")
+        || lower == QStringLiteral("state")
+        || lower == QStringLiteral("cs")) {
+        return QString();
+    }
+    for (const QString& suffix : {
+             QStringLiteral("_current_state"),
+             QStringLiteral("_state"),
+             QStringLiteral("_cs"),
+             QStringLiteral("_q"),
+         }) {
+        if (lower.endsWith(suffix)) {
+            lower.chop(suffix.size());
+            return lower;
+        }
+    }
+    return QString();
+}
+
+bool stateValueNameMatchesPrefix(const QString& stateName,
+                                 const QString& registerPrefix)
+{
+    if (registerPrefix.isEmpty())
+        return true;
+    const QString upper = stateName.toUpper();
+    const QString prefix = registerPrefix.toUpper();
+    return upper.startsWith(prefix + QLatin1Char('_'))
+        || upper.contains(QStringLiteral("_") + prefix + QStringLiteral("_"));
+}
+
+bool looksLikeTextualStateValue(const SemanticSymbolRecord& record,
+                                const SemanticSymbolRecord& stateRegister)
+{
+    const SymbolTaxonomy::SemanticMetadata metadata = metadataForRecord(record);
+    const bool parameterLike =
+        metadata.collectorKind == SymbolTaxonomy::CollectorKind::Parameter
+        || metadata.collectorKind == SymbolTaxonomy::CollectorKind::Localparam
+        || metadata.declarationKind == SymbolTaxonomy::DeclarationKind::Parameter
+        || metadata.declarationKind == SymbolTaxonomy::DeclarationKind::Localparam;
+    if (!parameterLike)
+        return false;
+
+    const QString upper = record.name.toUpper();
+    const bool stateShaped =
+        upper.startsWith(QStringLiteral("S_"))
+        || upper.startsWith(QStringLiteral("ST_"))
+        || upper.startsWith(QStringLiteral("SM_"))
+        || upper.endsWith(QStringLiteral("_STATE"))
+        || upper.contains(QStringLiteral("_STATE_"));
+    if (!stateShaped)
+        return false;
+
+    return stateValueNameMatchesPrefix(record.name,
+                                       stateRegisterPrefix(stateRegister.name));
 }
 
 }

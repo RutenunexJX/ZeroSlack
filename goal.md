@@ -28,12 +28,33 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
 
 ## Current Goal State
 
-Current milestone: none active. The last requested implementation milestone is
-complete and pushed; the next milestone should wait for a new explicit scoped
-request.
+Current milestone: Corpus Audit Findings repair is complete. The next milestone
+should wait for a new explicit scoped request; do not expand this work into a
+full Signal Kernel Graph sweep without that request.
 
 Current baseline highlights:
 
+- Most recent completed milestone: Corpus Audit Findings repair. FSM graph
+  state-value discovery now recognizes textual localparam/parameter state
+  constants such as `ST_*`, `SM_*`, and `*_STATE`, including exact
+  `current_state` register pairing. The corpus audit harness now discovers
+  always/process records from source when the semantic extractor does not
+  expose process nodes, classifies State Transition Graph misses by concrete
+  reason, and classifies empty source outlines instead of failing
+  preprocessor/comment-only files.
+- Verification for Corpus Audit Findings repair passed in the Debug build:
+  `cmake --build . --target corpus_audit_test relationship_test`;
+  `relationship_test` passed 860 checks; full `corpus_audit_test
+  test_sv/new test_sv/huge_prj` regenerated `test_sv/corpus_audit_report.json`
+  and `.md`. The rerun covered 454 files, 424 modules, 3942 always/process
+  records, 49345 signal/port candidates, 117069 semantic records, 82636
+  relationships, and 704 diagnostics.
+- Corpus Audit Findings remaining issues: 21 State Transition Graph failures
+  remain, now split across missing state values, unsupported no-case/no-paired
+  case patterns, missing assignment, and one no-matching graph case. Wave
+  Preview has 29 always-block failures where the service returned no lane and
+  no warning. Signal Kernel Graph still uses the bounded audit budget from the
+  prior harness.
 - Most recent completed milestone: import-aware SystemVerilog package symbol
   visibility. Unqualified package members are available to completion, goto,
   and hover only from active `import pkg::*;` context; local/module symbols win
