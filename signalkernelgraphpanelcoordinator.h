@@ -4,6 +4,7 @@
 #include "signalkernelgraphservice.h"
 
 #include <QDockWidget>
+#include <QRectF>
 #include <QSet>
 #include <QString>
 
@@ -18,7 +19,6 @@ class QGraphicsScene;
 class QGraphicsView;
 class QTimer;
 class QRect;
-class QRectF;
 
 class SignalKernelGraphPanelCoordinator
 {
@@ -43,6 +43,7 @@ public:
     int collapsedFanoutGroupCountForTest() const;
     int visibleGraphNodeCountForTest() const;
     int renderedFanoutGroupItemCountForTest() const;
+    QRectF lastRenderedFanoutGroupRectForTest() const;
     bool toggleFanoutGroupForTest(const QString& groupKey);
     void setGraphSearchTextForTest(const QString& text);
     void setGraphFilterForTest(bool showInputs,
@@ -73,6 +74,7 @@ private:
     bool graphCrossModuleOnly = false;
     int lastVisibleGraphNodeCount = 0;
     int lastRenderedFanoutGroupItemCount = 0;
+    QRectF lastRenderedFanoutGroupRect;
     int lastSearchMatchCount = 0;
     int lastFocusedSearchNodeId = -1;
 

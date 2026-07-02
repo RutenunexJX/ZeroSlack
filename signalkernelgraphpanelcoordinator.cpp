@@ -41,6 +41,8 @@ constexpr qreal kNodeWidth = 214.0;
 constexpr qreal kNodeHeight = 64.0;
 constexpr qreal kColumnOffset = 430.0;
 constexpr qreal kVerticalSpacing = 92.0;
+constexpr qreal kFanoutGroupCardWidth = 244.0;
+constexpr qreal kFanoutGroupCardHeight = 58.0;
 constexpr double kPi = 3.14159265358979323846;
 
 class SignalKernelGraphView : public QGraphicsView
@@ -517,6 +519,20 @@ QRectF unitedRectForGroup(
     return groupRect;
 }
 
+QRectF fixedFanoutCardRect(const QRectF& groupBounds,
+                           SignalKernelGraphNodeRole role)
+{
+    if (!groupBounds.isValid())
+        return {};
+    const qreal centerX =
+        role == SignalKernelGraphNodeRole::Input ? -kColumnOffset
+                                                 : kColumnOffset;
+    return QRectF(centerX - kFanoutGroupCardWidth / 2.0,
+                  groupBounds.center().y() - kFanoutGroupCardHeight / 2.0,
+                  kFanoutGroupCardWidth,
+                  kFanoutGroupCardHeight);
+}
+
 struct InputLaneBand {
     SignalKernelGraphInputLane lane = SignalKernelGraphInputLane::Data;
     QRectF rect;
@@ -576,7 +592,7 @@ InputLaneLayout layoutInputLanes(const QList<SignalKernelGraphNode>& inputs)
 
         InputLaneBand band;
         band.lane = inputLaneOrder().at(laneIndex);
-        band.rect = laneRect.adjusted(-28, -30, 28, 30);
+        band.rect = laneRect.adjusted(-32, -48, 32, 32);
         layout.bands.append(band);
     }
 
@@ -593,7 +609,7 @@ void addInputLaneBand(QGraphicsScene* scene,
     fill.setAlpha(74);
     QPen pen(inputLaneColor(band.lane).darker(150), 1.0);
     auto* rectItem = scene->addRect(band.rect, pen, QBrush(fill));
-    rectItem->setZValue(-30);
+    rectItem->setZValue(-35);
 
     QFont labelFont = font;
     labelFont.setBold(true);
@@ -602,8 +618,8 @@ void addInputLaneBand(QGraphicsScene* scene,
         SignalKernelGraphService::inputLaneDisplayName(band.lane),
         labelFont);
     label->setBrush(QBrush(QColor(QStringLiteral("#334155"))));
-    label->setPos(band.rect.left() + 8, band.rect.top() + 5);
-    label->setZValue(-29);
+    label->setPos(band.rect.left() + 10, band.rect.top() + 8);
+    label->setZValue(-13);
 }
 
 QList<SignalKernelGraphModuleGroup> moduleGroupsForReport(
@@ -644,7 +660,7 @@ void addModuleWrapper(QGraphicsScene* scene,
         return;
 
     const QRectF groupRect =
-        unitedRectForGroup(nodeRects, group.nodeIds).adjusted(-20, -28, 20, 22);
+        unitedRectForGroup(nodeRects, group.nodeIds).adjusted(-24, -50, 24, 26);
     if (!groupRect.isValid())
         return;
 
@@ -658,15 +674,16 @@ void addModuleWrapper(QGraphicsScene* scene,
         : QColor(QStringLiteral("#eff6ff"));
     fill.setAlpha(group.crossModule ? 34 : 48);
     auto* wrapper = scene->addRect(groupRect, pen, QBrush(fill));
-    wrapper->setZValue(-20);
+    wrapper->setZValue(-25);
 
     QFont labelFont = font;
     labelFont.setBold(true);
     labelFont.setPointSize(qMax(8, labelFont.pointSize() - 1));
     auto* label = scene->addSimpleText(group.moduleName, labelFont);
     label->setBrush(QBrush(QColor(QStringLiteral("#334155"))));
-    label->setPos(groupRect.left() + 8, groupRect.top() + 4);
-    label->setZValue(-19);
+    label->setPos(groupRect.right() - label->boundingRect().width() - 10,
+                  groupRect.top() + 8);
+    label->setZValue(-14);
 }
 
 void addSectionLabel(QGraphicsScene* scene,
@@ -878,6 +895,11 @@ int SignalKernelGraphPanelCoordinator::renderedFanoutGroupItemCountForTest() con
     return lastRenderedFanoutGroupItemCount;
 }
 
+QRectF SignalKernelGraphPanelCoordinator::lastRenderedFanoutGroupRectForTest() const
+{
+    return lastRenderedFanoutGroupRect;
+}
+
 bool SignalKernelGraphPanelCoordinator::toggleFanoutGroupForTest(
     const QString& groupKey)
 {
@@ -1010,6 +1032,7 @@ void SignalKernelGraphPanelCoordinator::renderReport(
     currentReport = report;
     lastVisibleGraphNodeCount = 0;
     lastRenderedFanoutGroupItemCount = 0;
+    lastRenderedFanoutGroupRect = {};
     lastSearchMatchCount = 0;
     lastFocusedSearchNodeId = -1;
     if (!report.found) {
@@ -1053,6 +1076,7 @@ void SignalKernelGraphPanelCoordinator::renderReport(
 
     const QFont baseFont = graphView ? graphView->font() : QFont();
     QHash<int, QRectF> rawNodeRects;
+    QHash<int, QRectF> moduleWrapperRects;
     QHash<int, QRectF> visibleRects;
     QHash<int, int> collapsedNodeToGroupRectId;
     QSet<int> hiddenNodeIds;
@@ -1062,6 +1086,7 @@ void SignalKernelGraphPanelCoordinator::renderReport(
          it != inputLayout.nodeRects.constEnd();
          ++it) {
         rawNodeRects.insert(it.key(), it.value());
+        moduleWrapperRects.insert(it.key(), it.value());
     }
     const QRectF outputBounds =
         visibleOutputs.isEmpty()
@@ -1075,8 +1100,12 @@ void SignalKernelGraphPanelCoordinator::renderReport(
         rawNodeRects.insert(
             visibleOutputs.at(i).id,
             nodeRectAt(kColumnOffset, rowY(i, visibleOutputs.size())));
+        moduleWrapperRects.insert(visibleOutputs.at(i).id,
+                                  rawNodeRects.value(visibleOutputs.at(i).id));
     }
     rawNodeRects.insert(report.kernel.id, nodeRectAt(0, 0));
+    moduleWrapperRects.insert(report.kernel.id,
+                              rawNodeRects.value(report.kernel.id));
 
     addSectionLabel(graphScene,
                     QStringLiteral("Inputs"),
@@ -1124,7 +1153,9 @@ void SignalKernelGraphPanelCoordinator::renderReport(
 
             const bool collapsed = isFanoutGroupCollapsed(group);
             QRectF itemRect = groupBounds;
-            if (!collapsed) {
+            if (collapsed) {
+                itemRect = fixedFanoutCardRect(groupBounds, group.role);
+            } else {
                 itemRect = QRectF(groupBounds.left(),
                                   groupBounds.top(),
                                   groupBounds.width(),
@@ -1151,6 +1182,7 @@ void SignalKernelGraphPanelCoordinator::renderReport(
             };
             graphScene->addItem(item);
             ++lastRenderedFanoutGroupItemCount;
+            lastRenderedFanoutGroupRect = itemRect;
             if (searchMatch) {
                 ++lastSearchMatchCount;
                 if (!hasSearchFocusRect) {
@@ -1168,6 +1200,7 @@ void SignalKernelGraphPanelCoordinator::renderReport(
             for (int nodeId : group.nodeIds) {
                 hiddenNodeIds.insert(nodeId);
                 collapsedNodeToGroupRectId.insert(nodeId, groupRectId);
+                moduleWrapperRects.insert(nodeId, itemRect);
             }
         };
 
@@ -1231,7 +1264,7 @@ void SignalKernelGraphPanelCoordinator::renderReport(
     visibleReport.outputs = visibleOutputs;
     for (const SignalKernelGraphModuleGroup& group :
          moduleGroupsForReport(visibleReport)) {
-        addModuleWrapper(graphScene, group, rawNodeRects, baseFont);
+        addModuleWrapper(graphScene, group, moduleWrapperRects, baseFont);
     }
 
     QPen edgePen(QColor(QStringLiteral("#94a3b8")), 1.5);
@@ -1296,6 +1329,7 @@ void SignalKernelGraphPanelCoordinator::renderUnavailable(
     graphScene->clear();
     lastVisibleGraphNodeCount = 0;
     lastRenderedFanoutGroupItemCount = 0;
+    lastRenderedFanoutGroupRect = {};
     lastSearchMatchCount = 0;
     lastFocusedSearchNodeId = -1;
     const QString text = message.isEmpty()

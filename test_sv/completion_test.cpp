@@ -7846,9 +7846,9 @@ int main(int argc, char** argv) {
     outputGroup.groupKey = QStringLiteral("output:fanout_top");
     outputGroup.displayName = QStringLiteral("Outputs in fanout_top");
     outputGroup.moduleName = QStringLiteral("fanout_top");
-    outputGroup.totalRoleNodeCount = 6;
+    outputGroup.totalRoleNodeCount = 12;
     outputGroup.highFanout = true;
-    for (int i = 0; i < 6; ++i) {
+    for (int i = 0; i < 12; ++i) {
         SignalKernelGraphNode outputNode;
         outputNode.id = 10 + i;
         outputNode.role = SignalKernelGraphNodeRole::Output;
@@ -7868,11 +7868,18 @@ int main(int argc, char** argv) {
     groupedSignalGraph.outputFanoutGroups.append(outputGroup);
     signalKernelGraphPanel.renderReportForTest(groupedSignalGraph);
     QCoreApplication::processEvents(QEventLoop::AllEvents, 10);
+    const QRectF collapsedFanoutRect =
+        signalKernelGraphPanel.lastRenderedFanoutGroupRectForTest();
     expectBool("SignalKernelGraphPanel defaults fanout collapsed",
                signalKernelGraphPanel.collapsedFanoutGroupCountForTest() == 1
                    && signalKernelGraphPanel.visibleGraphNodeCountForTest() == 1
                    && signalKernelGraphPanel
                           .renderedFanoutGroupItemCountForTest() == 1,
+               true);
+    expectBool("SignalKernelGraphPanel collapsed fanout fixed card",
+               collapsedFanoutRect.isValid()
+                   && collapsedFanoutRect.width() <= 260.0
+                   && collapsedFanoutRect.height() <= 70.0,
                true);
     expectBool("SignalKernelGraphPanel expands fanout group",
                signalKernelGraphPanel.toggleFanoutGroupForTest(
@@ -7880,7 +7887,7 @@ int main(int argc, char** argv) {
                    && signalKernelGraphPanel
                           .collapsedFanoutGroupCountForTest() == 0
                    && signalKernelGraphPanel.visibleGraphNodeCountForTest()
-                          == 7
+                          == 13
                    && signalKernelGraphPanel
                           .renderedFanoutGroupItemCountForTest() == 1,
                true);

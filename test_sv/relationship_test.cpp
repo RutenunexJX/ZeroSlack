@@ -5816,7 +5816,6 @@ static void runSignalJourneyServiceFixture()
 
     const SignalKernelGraphNode* nextDataInput = nullptr;
     const SignalKernelGraphNode* interfaceInput = nullptr;
-    const SignalKernelGraphNode* consumerOutput = nullptr;
     const SignalKernelGraphNode* stageOutput = nullptr;
     const SignalKernelGraphNode* readyOutput = nullptr;
     for (const SignalKernelGraphNode& node : graphReport.inputs) {
@@ -5826,8 +5825,6 @@ static void runSignalJourneyServiceFixture()
             interfaceInput = &node;
     }
     for (const SignalKernelGraphNode& node : graphReport.outputs) {
-        if (node.displayName == QStringLiteral("consumer"))
-            consumerOutput = &node;
         if (node.displayName == QStringLiteral("u_stage.data_i"))
             stageOutput = &node;
         if (node.displayName == QStringLiteral("ready"))
@@ -5843,10 +5840,10 @@ static void runSignalJourneyServiceFixture()
             && edge.label == QStringLiteral("Assigns To")) {
             sawInputEdge = true;
         }
-        if (consumerOutput
+        if (stageOutput
             && edge.fromNodeId == graphReport.kernel.id
-            && edge.toNodeId == consumerOutput->id
-            && edge.label == QStringLiteral("Reads From")) {
+            && edge.toNodeId == stageOutput->id
+            && edge.label == QStringLiteral("References")) {
             sawOutputEdge = true;
         }
     }
@@ -5873,11 +5870,10 @@ static void runSignalJourneyServiceFixture()
     expectBool("signal kernel graph node directions",
                nextDataInput
                    && interfaceInput
-                   && consumerOutput
                    && stageOutput
                    && readyOutput
                    && graphReport.inputs.size() == 2
-                   && graphReport.outputs.size() == 3,
+                   && graphReport.outputs.size() == 2,
                true);
     expectBool("signal kernel graph data input lanes",
                nextDataInput
@@ -5897,12 +5893,12 @@ static void runSignalJourneyServiceFixture()
                    && nextDataInput->evidenceRange.endColumn == 28,
                true);
     expectBool("signal kernel graph precise output evidence",
-               consumerOutput
-                   && consumerOutput->preciseEvidence
-                   && consumerOutput->previewCodeLink.fileName == fileName
-                   && consumerOutput->previewCodeLink.line == 30
-                   && consumerOutput->previewCodeLink.column == 18
-                   && consumerOutput->navigateCodeLink.line == 30,
+               stageOutput
+                   && stageOutput->preciseEvidence
+                   && stageOutput->previewCodeLink.fileName == fileName
+                   && stageOutput->previewCodeLink.line == 40
+                   && stageOutput->previewCodeLink.column == 22
+                   && stageOutput->navigateCodeLink.line == 40,
                true);
     expectBool("signal kernel graph port input is output consumer",
                stageOutput
@@ -5917,7 +5913,7 @@ static void runSignalJourneyServiceFixture()
                    && sawJourneyInterfaceOutputGroup,
                true);
     expectBool("signal kernel graph edge directions",
-               sawInputEdge && sawOutputEdge && graphReport.edges.size() == 5,
+               sawInputEdge && sawOutputEdge && graphReport.edges.size() == 4,
                true);
     expectBool("signal kernel graph normal fanout ungrouped",
                graphReport.fanoutGroupingThreshold > 0
@@ -6141,6 +6137,214 @@ static void runSignalJourneyServiceFixture()
                    && memberGraph.inputs.size() == 1
                    && memberGraph.outputs.size() == 1
                    && memberGraph.edges.size() == 2,
+               true);
+
+    const QString endpointFileName =
+        QStringLiteral("test_sv/signal_kernel_endpoint_fixture.sv");
+    const SemanticSymbolRecord endpointModule =
+        SemanticFixtureRecordBuilder(QStringLiteral("endpoint_top"),
+                                     DeclarationKind::Module)
+            .withFile(endpointFileName)
+            .withLocalHandle(9400)
+            .withLine(1)
+            .withCollectorKind(CollectorKind::Module)
+            .record();
+    const SemanticSymbolRecord endpointInterface =
+        SemanticFixtureRecordBuilder(QStringLiteral("endpoint_if"),
+                                     DeclarationKind::Interface)
+            .withFile(endpointFileName)
+            .withLocalHandle(9401)
+            .withLine(2)
+            .withCollectorKind(CollectorKind::Interface)
+            .record();
+    const SemanticSymbolRecord endpointPackage =
+        SemanticFixtureRecordBuilder(QStringLiteral("endpoint_pkg"),
+                                     DeclarationKind::Package)
+            .withFile(endpointFileName)
+            .withLocalHandle(9402)
+            .withLine(3)
+            .withCollectorKind(CollectorKind::Package)
+            .record();
+    const SemanticSymbolRecord regDriver =
+        SemanticFixtureRecordBuilder(QStringLiteral("reg_driver"),
+                                     DeclarationKind::Signal)
+            .withFile(endpointFileName)
+            .withLocalHandle(9403)
+            .withLine(10)
+            .withCollectorKind(CollectorKind::Logic)
+            .inModule(QStringLiteral("endpoint_top"))
+            .withType(QStringLiteral("logic"))
+            .record();
+    const SemanticSymbolRecord activeOut =
+        SemanticFixtureRecordBuilder(QStringLiteral("active_out"),
+                                     DeclarationKind::Port)
+            .withFile(endpointFileName)
+            .withLocalHandle(9404)
+            .withLine(11)
+            .withCollectorKind(CollectorKind::PortOutput)
+            .inModule(QStringLiteral("endpoint_top"))
+            .withType(QStringLiteral("logic"))
+            .record();
+    const SemanticSymbolRecord enumType =
+        SemanticFixtureRecordBuilder(QStringLiteral("state_e"),
+                                     DeclarationKind::Enum)
+            .withFile(endpointFileName)
+            .withLocalHandle(9405)
+            .withLine(12)
+            .withCollectorKind(CollectorKind::Enum)
+            .record();
+    const SemanticSymbolRecord enumValue =
+        SemanticFixtureRecordBuilder(QStringLiteral("E_IDLE"),
+                                     DeclarationKind::User)
+            .withFile(endpointFileName)
+            .withLocalHandle(9406)
+            .withLine(13)
+            .withCollectorKind(CollectorKind::EnumValue)
+            .inPackage(QStringLiteral("endpoint_pkg"))
+            .record();
+    const SemanticSymbolRecord enumVar =
+        SemanticFixtureRecordBuilder(QStringLiteral("mcs"),
+                                     DeclarationKind::Signal)
+            .withFile(endpointFileName)
+            .withLocalHandle(9407)
+            .withLine(14)
+            .withCollectorKind(CollectorKind::EnumVariable)
+            .inModule(QStringLiteral("endpoint_top"))
+            .withType(QStringLiteral("state_e"),
+                      QStringLiteral("state_e"),
+                      DeclarationKind::Enum)
+            .record();
+    const SemanticSymbolRecord enumSrc =
+        SemanticFixtureRecordBuilder(QStringLiteral("mns"),
+                                     DeclarationKind::Signal)
+            .withFile(endpointFileName)
+            .withLocalHandle(9408)
+            .withLine(15)
+            .withCollectorKind(CollectorKind::EnumVariable)
+            .inModule(QStringLiteral("endpoint_top"))
+            .withType(QStringLiteral("state_e"),
+                      QStringLiteral("state_e"),
+                      DeclarationKind::Enum)
+            .record();
+    const SemanticSymbolRecord packetVar =
+        SemanticFixtureRecordBuilder(QStringLiteral("packet_q"),
+                                     DeclarationKind::StructVariable)
+            .withFile(endpointFileName)
+            .withLocalHandle(9409)
+            .withLine(16)
+            .withCollectorKind(CollectorKind::PackedStructVariable)
+            .inModule(QStringLiteral("endpoint_top"))
+            .withType(QStringLiteral("packet_t"),
+                      QStringLiteral("packet_t"),
+                      DeclarationKind::Struct)
+            .record();
+    const SemanticSymbolRecord endpointSink =
+        SemanticFixtureRecordBuilder(QStringLiteral("endpoint_sink"),
+                                     DeclarationKind::Signal)
+            .withFile(endpointFileName)
+            .withLocalHandle(9410)
+            .withLine(17)
+            .withCollectorKind(CollectorKind::Logic)
+            .inModule(QStringLiteral("endpoint_top"))
+            .record();
+    QList<SemanticRelationship> endpointRelationships;
+    endpointRelationships.append(semanticFixtureRelationship(
+        regDriver,
+        activeOut,
+        SymbolRelationshipEngine::ASSIGNS_TO));
+    endpointRelationships.append(semanticFixtureRelationship(
+        enumValue,
+        enumVar,
+        SymbolRelationshipEngine::ASSIGNS_TO));
+    endpointRelationships.append(semanticFixtureRelationship(
+        enumSrc,
+        enumVar,
+        SymbolRelationshipEngine::ASSIGNS_TO));
+    endpointRelationships.append(semanticFixtureRelationship(
+        packetVar,
+        enumVar,
+        SymbolRelationshipEngine::ASSIGNS_TO));
+    endpointRelationships.append(semanticFixtureRelationship(
+        enumVar,
+        endpointSink,
+        SymbolRelationshipEngine::ASSIGNS_TO));
+    endpointRelationships.append(semanticFixtureRelationship(
+        endpointPackage,
+        enumVar,
+        SymbolRelationshipEngine::ASSIGNS_TO));
+    endpointRelationships.append(semanticFixtureRelationship(
+        enumVar,
+        endpointModule,
+        SymbolRelationshipEngine::ASSIGNS_TO));
+    endpointRelationships.append(semanticFixtureRelationship(
+        enumVar,
+        endpointInterface,
+        SymbolRelationshipEngine::READS_FROM));
+
+    SemanticIndex endpointIndex;
+    endpointIndex.setSnapshot(sharedSnapshotFromRecords(
+        {endpointModule,
+         endpointInterface,
+         endpointPackage,
+         regDriver,
+         activeOut,
+         enumType,
+         enumValue,
+         enumVar,
+         enumSrc,
+         packetVar,
+         endpointSink},
+        endpointRelationships,
+        QList<SemanticDiagnostic>()));
+    SignalKernelGraphService endpointGraphService(&endpointIndex);
+
+    SignalKernelGraphQuery outputPortGraphQuery;
+    outputPortGraphQuery.signalName = QStringLiteral("reg_driver");
+    outputPortGraphQuery.fileName = endpointFileName;
+    outputPortGraphQuery.moduleName = QStringLiteral("endpoint_top");
+    const SignalKernelGraphReport outputPortGraph =
+        endpointGraphService.buildSignalKernelGraph(outputPortGraphQuery);
+    bool activeOutInInputs = false;
+    bool activeOutInOutputs = false;
+    for (const SignalKernelGraphNode& node : outputPortGraph.inputs)
+        activeOutInInputs = activeOutInInputs
+            || node.displayName == QStringLiteral("active_out");
+    for (const SignalKernelGraphNode& node : outputPortGraph.outputs)
+        activeOutInOutputs = activeOutInOutputs
+            || node.displayName == QStringLiteral("active_out");
+    expectBool("signal kernel graph output port is output endpoint",
+               outputPortGraph.found
+                   && activeOutInOutputs
+                   && !activeOutInInputs,
+               true);
+
+    SignalKernelGraphQuery enumGraphQuery;
+    enumGraphQuery.signalName = QStringLiteral("mcs");
+    enumGraphQuery.fileName = endpointFileName;
+    enumGraphQuery.moduleName = QStringLiteral("endpoint_top");
+    const SignalKernelGraphReport enumGraph =
+        endpointGraphService.buildSignalKernelGraph(enumGraphQuery);
+    QSet<QString> enumInputNames;
+    QSet<QString> enumOutputNames;
+    for (const SignalKernelGraphNode& node : enumGraph.inputs)
+        enumInputNames.insert(node.displayName);
+    for (const SignalKernelGraphNode& node : enumGraph.outputs)
+        enumOutputNames.insert(node.displayName);
+    expectBool("signal kernel graph filters enum values",
+               enumGraph.found
+                   && enumInputNames.contains(QStringLiteral("mns"))
+                   && enumInputNames.contains(QStringLiteral("packet_q"))
+                   && enumOutputNames.contains(QStringLiteral("endpoint_sink"))
+                   && !enumInputNames.contains(QStringLiteral("E_IDLE"))
+                   && !enumOutputNames.contains(QStringLiteral("E_IDLE")),
+               true);
+    expectBool("signal kernel graph filters container endpoints",
+               !enumInputNames.contains(QStringLiteral("endpoint_pkg"))
+                   && !enumInputNames.contains(QStringLiteral("endpoint_top"))
+                   && !enumInputNames.contains(QStringLiteral("endpoint_if"))
+                   && !enumOutputNames.contains(QStringLiteral("endpoint_pkg"))
+                   && !enumOutputNames.contains(QStringLiteral("endpoint_top"))
+                   && !enumOutputNames.contains(QStringLiteral("endpoint_if")),
                true);
 
     SignalJourneyQuery clockQuery;

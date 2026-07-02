@@ -165,25 +165,137 @@ bool nameLooksOutputLike(const QString& name)
         || lower.contains(QStringLiteral(".ready_o"));
 }
 
+bool isConnectableGraphEndpoint(const SignalJourneyItem& item)
+{
+    const SemanticSymbolRecord& record = item.peerSymbolRecord;
+    if (!record.isValid())
+        return false;
+
+    const SymbolTaxonomy::SemanticMetadata metadata =
+        semanticMetadataForSymbolRecord(record);
+    using DeclarationKind = SymbolTaxonomy::DeclarationKind;
+    using CollectorKind = SymbolTaxonomy::CollectorKind;
+
+    switch (metadata.declarationKind) {
+    case DeclarationKind::Module:
+    case DeclarationKind::Interface:
+    case DeclarationKind::Package:
+    case DeclarationKind::Typedef:
+    case DeclarationKind::Enum:
+    case DeclarationKind::Struct:
+    case DeclarationKind::Parameter:
+    case DeclarationKind::Localparam:
+    case DeclarationKind::Modport:
+    case DeclarationKind::Task:
+    case DeclarationKind::Function:
+    case DeclarationKind::Macro:
+    case DeclarationKind::Process:
+    case DeclarationKind::Generate:
+    case DeclarationKind::Constraint:
+        return false;
+    case DeclarationKind::Unknown:
+    case DeclarationKind::Port:
+    case DeclarationKind::Signal:
+    case DeclarationKind::StructVariable:
+    case DeclarationKind::StructMember:
+    case DeclarationKind::Instance:
+    case DeclarationKind::User:
+        break;
+    }
+
+    switch (metadata.collectorKind) {
+    case CollectorKind::Reg:
+    case CollectorKind::Wire:
+    case CollectorKind::Logic:
+    case CollectorKind::EnumVariable:
+    case CollectorKind::PackedStructVariable:
+    case CollectorKind::UnpackedStructVariable:
+    case CollectorKind::StructMember:
+    case CollectorKind::InstPin:
+    case CollectorKind::PortInput:
+    case CollectorKind::PortOutput:
+    case CollectorKind::PortInout:
+    case CollectorKind::PortRef:
+    case CollectorKind::PortInterface:
+    case CollectorKind::PortInterfaceModport:
+        return true;
+    case CollectorKind::Inst:
+        return metadata.declarationKind == DeclarationKind::Instance
+            && record.type.resolvedTypeKind == DeclarationKind::Interface;
+    case CollectorKind::Module:
+    case CollectorKind::Interface:
+    case CollectorKind::InterfaceAssocStruct:
+    case CollectorKind::InterfaceParameter:
+    case CollectorKind::InterfaceModport:
+    case CollectorKind::Enum:
+    case CollectorKind::EnumValue:
+    case CollectorKind::PackedStruct:
+    case CollectorKind::UnpackedStruct:
+    case CollectorKind::Typedef:
+    case CollectorKind::GenerateIf:
+    case CollectorKind::GenerateFor:
+    case CollectorKind::GenerateCase:
+    case CollectorKind::Always:
+    case CollectorKind::AlwaysFf:
+    case CollectorKind::AlwaysComb:
+    case CollectorKind::AlwaysLatch:
+    case CollectorKind::Assign:
+    case CollectorKind::DefIfdef:
+    case CollectorKind::DefIfndef:
+    case CollectorKind::DefElse:
+    case CollectorKind::DefElsif:
+    case CollectorKind::DefEndif:
+    case CollectorKind::DefDefine:
+    case CollectorKind::DefParameter:
+    case CollectorKind::Case:
+    case CollectorKind::Casex:
+    case CollectorKind::Casez:
+    case CollectorKind::Endcase:
+    case CollectorKind::CaseDefault:
+    case CollectorKind::FsmState:
+    case CollectorKind::Initial:
+    case CollectorKind::Task:
+    case CollectorKind::Function:
+    case CollectorKind::XilinxConstraint:
+    case CollectorKind::User:
+    case CollectorKind::Localparam:
+    case CollectorKind::Parameter:
+    case CollectorKind::ModuleParameter:
+    case CollectorKind::Package:
+        break;
+    }
+
+    return SymbolTaxonomy::isSignalDeclaration(metadata)
+        || SymbolTaxonomy::isPortDeclaration(metadata)
+        || metadata.declarationKind == DeclarationKind::StructMember;
+}
+
 SignalKernelGraphNodeRole roleForItem(
     const SignalJourneyItem& item,
     SignalKernelGraphNodeRole fallbackRole)
 {
     switch (item.relationshipType) {
     case SymbolRelationshipEngine::ASSIGNS_TO:
-        return SignalKernelGraphNodeRole::Input;
+        return item.outgoing ? SignalKernelGraphNodeRole::Output
+                             : SignalKernelGraphNodeRole::Input;
     case SymbolRelationshipEngine::READS_FROM:
+        return item.outgoing ? SignalKernelGraphNodeRole::Input
+                             : SignalKernelGraphNodeRole::Output;
     case SymbolRelationshipEngine::CLOCKS:
     case SymbolRelationshipEngine::RESETS:
-        return SignalKernelGraphNodeRole::Output;
+        return item.outgoing ? SignalKernelGraphNodeRole::Output
+                             : SignalKernelGraphNodeRole::Input;
     default:
         break;
     }
 
     const SymbolTaxonomy::CollectorKind kind =
         item.peerSymbolRecord.collectorKind;
-    if (kind == SymbolTaxonomy::CollectorKind::PortOutput)
+    if (kind == SymbolTaxonomy::CollectorKind::PortOutput
+        || kind == SymbolTaxonomy::CollectorKind::PortInout
+        || kind == SymbolTaxonomy::CollectorKind::PortRef) {
         return SignalKernelGraphNodeRole::Input;
+    }
     if (kind == SymbolTaxonomy::CollectorKind::PortInput
         || kind == SymbolTaxonomy::CollectorKind::PortInterface
         || kind == SymbolTaxonomy::CollectorKind::PortInterfaceModport) {
@@ -345,6 +457,9 @@ void appendGraphNode(SignalKernelGraphReport& report,
                      const SignalJourneyItem& item,
                      SignalKernelGraphNodeRole role)
 {
+    if (!isConnectableGraphEndpoint(item))
+        return;
+
     const QString key = nodeKeyForItem(item, role);
     int nodeId = existingNodes.value(key, -1);
     if (nodeId < 0) {
