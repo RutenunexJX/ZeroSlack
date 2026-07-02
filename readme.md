@@ -31,26 +31,26 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
 
 ## Current Product Baseline
 
-- Current audit milestone: Signal Kernel Graph Audit Budget Repair is complete.
-  The corpus audit is now explicitly bounded for the expensive RTL insight
-  sweeps so CTest's default 1500 second timeout is no longer part of the
-  feature outcome. Signal Kernel Graph skipped cases carry deterministic
-  no-candidate, per-module sample cap, or global sample cap reasoning.
+- Current audit milestone: State Transition Graph real usability repair is
+  complete. FSM discovery now handles structural `current <= #delay next`
+  update pairs, including common `#TP`, `# TP`, and `#(...)` assignment delay
+  controls, while keeping State Transition Graph gated to discovered next-state
+  roles only.
 - Latest corpus audit report: `test_sv/corpus_audit_report.json` and
   `test_sv/corpus_audit_report.md` cover 454 files, 424 modules, 3942
   always/process records, 117069 semantic records, 82636 relationships, and 704
-  diagnostics. Compared with the previous name-based report, State Transition
-  Graph changed from 88 pass / 21 fail / 418 skipped to 90 pass / 0 fail / 400
-  skipped because the audit now counts discovered structural FSM pairs instead
-  of `ns` / `next_state` name candidates.
-- Current bounded corpus result: State Transition Graph 2 pass / 0 fail / 423
+  diagnostics. State Transition Graph now reports 68 pass / 0 fail / 398
+  skipped under the bounded structural audit, with 34 next-state graph positives
+  and matching current-state negative trigger checks.
+- Current bounded corpus result: State Transition Graph 68 pass / 0 fail / 398
   skipped; Signal Kernel Graph 32 pass / 0 fail / 1960 skipped; Wave Preview
   1047 pass / 0 fail / 2957 skipped / 4 empty-valid. Skipped cases are
   deterministic unsupported or sample-cap outcomes. Full-feature now reports
   23 pass / 0 fail / 0 skipped / 0 known-issue.
 - Current handoff state: no implementation milestone is active. The latest
-  completed work is Signal Kernel Graph Audit Budget Repair for
-  full-feature/corpus audit behavior. The current baseline also includes import-aware
+  completed work is State Transition Graph real usability repair for delayed
+  structural FSM pairs in full-feature/corpus audit behavior. The current
+  baseline also includes import-aware
   SystemVerilog package symbol visibility, user template JSON usage, explicit
   header/include and package import commands, semantic `;m` module
   instantiation Slot Mode, Macro / Define semantics, Package Tools phase 1,
@@ -852,18 +852,18 @@ Do not add unlisted long-term goals without explicit user approval.
   semantic snapshot, emits direct Slang-fact relationships for audit use, and
   writes `test_sv/corpus_audit_report.json` plus
   `test_sv/corpus_audit_report.md`. Current report generated
-  2026-07-01T18:18:18Z UTC and covered 454 files, 424 modules, 3942
+  2026-07-02T07:19:45Z UTC and covered 454 files, 424 modules, 3942
   always/process records, 49,345 signal/port candidates, 117,069 semantic
   records, 82,636 audit relationships, and 704 diagnostics. Summary: State
-  Transition Graph 2 pass / 0 fail / 423 skipped; Signal Kernel Graph 32
+  Transition Graph 68 pass / 0 fail / 398 skipped; Signal Kernel Graph 32
   pass / 0 fail / 1,960 skipped; Module Block Diagram 208 pass / 216
   empty-but-valid; Wave Preview 1,047 pass / 0 fail / 2,957 skipped / 4
   empty-but-valid;
   semantic baseline 874 pass / 0 fail / 5 empty-but-valid. State Transition
-  Graph audit semantics changed from name-based candidates to structural FSM
-  pairs: 45 discovered pairs produce next-state positive cases
-  and matching current-state negative cases, while 400 modules are skipped with
-  `no structural FSM pair discovered`. Wave Preview is no longer
+  Graph audit semantics remain structural: 34 discovered delayed/current-next
+  graph cases produce next-state positives and matching current-state negative
+  trigger checks, while skipped modules retain explicit no-structural-FSM or
+  module sample-cap reasons. Wave Preview is no longer
   module-fallback only: the
   audit now includes 3942 source-discovered always/process records, with
   no-lane/no-warning cases repaired into lane-producing previews or explicit

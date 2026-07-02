@@ -898,7 +898,7 @@ QString markdownReport(const CorpusContext& context,
     out << "- `empty-but-valid` means the service returned a coherent empty/root-only result, not a full feature pass.\n";
     out << "- `skipped` means the corpus item did not contain the required structural trigger shape or was explicitly skipped by a deterministic audit coverage cap.\n";
     out << "\n## Known Issues And Residual Risk\n\n";
-    out << "- State Transition Graph is structure-discovered and deterministically bounded by module count. Clocked current<=next pairs drive next-state positive cases and current-state negative cases; skipped modules either have no structural FSM pair under the current extractor or are beyond the audit sample cap.\n";
+    out << "- State Transition Graph is structure-discovered and deterministically bounded by module count. Clocked current<=next pairs, including delayed assignments such as #TP, drive next-state positive cases and current-state negative cases; skipped modules either have no structural FSM pair under the current extractor or are beyond the audit sample cap.\n";
     out << "- Signal Kernel Graph uses deterministic bounded coverage: relationship endpoint signals are prioritized, up to 4 signals are graphed per module, and up to 32 graph builds are attempted per run. Skipped cases carry explicit no-candidate, per-module sample cap, or global sample cap reasons and are not feature-level known issues.\n";
     out << "- Wave Preview uses source-discovered always/process records with a deterministic process preview cap; module fallback remains explicit.\n";
     out << "- Empty outline source files are classified as preprocessor/comment-only, guarded, skipped, or real outline failures instead of being hidden.\n";

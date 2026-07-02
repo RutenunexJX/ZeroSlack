@@ -255,8 +255,30 @@ QString assignmentRhs(const QString& code)
 {
     int operatorLength = 0;
     const int assignment = findAssignmentOperator(code, &operatorLength);
-    return assignment >= 0 ? code.mid(assignment + operatorLength).trimmed()
-                           : QString();
+    QString rhs = assignment >= 0 ? code.mid(assignment + operatorLength).trimmed()
+                                  : QString();
+    if (!rhs.startsWith(QLatin1Char('#')))
+        return rhs;
+
+    int pos = skipSpaces(rhs, 1);
+    if (pos < rhs.size() && rhs.at(pos) == QLatin1Char('(')) {
+        const int parenEnd = matchingParenEnd(rhs, pos);
+        return parenEnd >= 0 ? rhs.mid(parenEnd + 1).trimmed() : rhs;
+    }
+
+    if (pos < rhs.size() && rhs.at(pos) == QLatin1Char('`'))
+        ++pos;
+    while (pos < rhs.size()) {
+        const QChar ch = rhs.at(pos);
+        if (ch.isSpace())
+            break;
+        if (ch == QLatin1Char('(')
+            || ch == QLatin1Char(';')
+            || ch == QLatin1Char(','))
+            break;
+        ++pos;
+    }
+    return rhs.mid(pos).trimmed();
 }
 
 QString assignmentTargetInCode(const QString& code)

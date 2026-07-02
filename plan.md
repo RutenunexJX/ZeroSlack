@@ -11,20 +11,19 @@ into an analyzer.
 
 ## Current Execution Baseline
 
-- Signal Kernel Graph Audit Budget Repair is complete for the
-  full-feature/corpus audit. The expensive corpus RTL insight sweeps are now
-  deterministic bounded audits with case-level skipped reasons instead of
-  relying on CTest timeout behavior. No product graph capability or UI behavior
-  was expanded.
-- Verification baseline for this repair: Debug builds of `corpus_audit_test`,
-  `full_feature_audit_test`, `gui_smoke_test`, `completion_test`, and
-  `relationship_test` passed. Full `corpus_audit_test` regenerated the
-  JSON/Markdown corpus reports, and `full_feature_audit_test` regenerated the
-  full feature reports.
-- Current audit deltas: the stable bounded report is now Signal Kernel Graph 32
-  pass / 0 fail / 1960 skipped. State Transition Graph and Wave Preview are
-  also bounded to keep CTest under 1500 seconds. The full-feature matrix now
-  reports 23 pass / 0 known-issue.
+- State Transition Graph real usability repair is complete for the
+  full-feature/corpus audit. Structural FSM discovery now handles delayed
+  `current <= next` update pairs (`#TP`, `# TP`, and `#(...)`) while preserving
+  next-state-only graph triggering and current-state rejection.
+- Verification baseline for this repair: Debug builds of `completion_test`,
+  `gui_smoke_test`, `corpus_audit_test`, `full_feature_audit_test`,
+  `jump_test`, and `relationship_test` passed. Full `corpus_audit_test`
+  regenerated the JSON/Markdown corpus reports, and `full_feature_audit_test`
+  regenerated the full feature reports.
+- Current audit deltas: State Transition Graph is now 68 pass / 0 fail / 398
+  skipped, up from 2 pass / 0 fail / 423 skipped. Signal Kernel Graph remains
+  32 pass / 0 fail / 1960 skipped, and the full-feature matrix reports 23 pass
+  / 0 known-issue.
 - No implementation milestone is active. Start the next milestone only from a
   new explicit scoped request.
 - The current completed baseline includes import-aware package member
@@ -1583,11 +1582,14 @@ Milestones:
   Diagram, and Wave Preview are invoked through service/report-layer paths;
   GUI smoke remains out of this stage)
 - FCA.3 Record failures and residual risk.
-  (complete: current report generated 2026-07-01T18:18:18Z UTC and covered 454
+  (complete: current report generated 2026-07-02T07:19:45Z UTC and covered 454
   files, 424 modules, 3942 always/process records, 49,345 signal/port
   candidates, 117,069 semantic records, 82,636 relationships, and 704
-  diagnostics. State Transition Graph is 2 pass / 0 fail / 423 skipped under a
-  deterministic module sample cap. Signal Kernel Graph is 32 pass / 0 fail /
+  diagnostics. State Transition Graph is 68 pass / 0 fail / 398 skipped under a
+  deterministic module sample cap; discovered pairs include delayed
+  current<=next assignments such as `#TP`, `# TP`, and `#(...)`, with
+  next-state positives matched by current-state negative trigger checks. Signal
+  Kernel Graph is 32 pass / 0 fail /
   1,960 skipped under deterministic no-candidate and sample-cap reasons.
   Module Block Diagram is 208 pass / 216 empty-valid. Wave Preview uses
   source-discovered always/process records and reports 1047 pass / 0 fail /

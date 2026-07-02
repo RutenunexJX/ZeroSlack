@@ -28,25 +28,25 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
 
 ## Current Goal State
 
-Current milestone: Signal Kernel Graph Audit Budget Repair is complete. The
-next milestone should wait for a new explicit scoped request.
+Current milestone: State Transition Graph real usability repair is complete.
+The next milestone should wait for a new explicit scoped request.
 
 Current baseline highlights:
 
-- Most recent completed milestone: Signal Kernel Graph Audit Budget Repair.
-  Signal Kernel Graph's bounded audit coverage now records deterministic
-  case-level reasons for unsupported/no-candidate and sample-cap skipped cases,
-  so full-feature no longer carries a budget-limited known issue. The broader
-  corpus audit is also bounded for expensive State Transition Graph and Wave
-  Preview sweeps so default CTest runs finish before timeout. No graph product
-  capability, simulator behavior, or UI interaction was added.
-- Verification for Signal Kernel Graph Audit Budget Repair passed in the Debug
-  build: `corpus_audit_test`, `full_feature_audit_test`, `gui_smoke_test`,
-  `completion_test`, and `relationship_test`. `corpus_audit_test` regenerated
-  `test_sv/corpus_audit_report.json` and `.md`; `full_feature_audit_test`
-  regenerated `test_sv/full_feature_audit_report.json` and `.md`.
-- Current bounded corpus result: State Transition Graph is 2 pass / 0 fail /
-  423 skipped, Signal Kernel Graph is 32 pass / 0 fail / 1960 skipped, and Wave
+- Most recent completed milestone: State Transition Graph real usability
+  repair. FSM discovery now handles structural `current <= #delay next` update
+  pairs, including `#TP`, `# TP`, and `#(...)` controls common in the real
+  corpus, while State Transition Graph remains gated to discovered next-state
+  roles only. Current-state roles still reject with an explicit next-state
+  selection reason.
+- Verification for State Transition Graph real usability repair passed in the
+  Debug build: `completion_test`, `gui_smoke_test`, `corpus_audit_test`,
+  `full_feature_audit_test`, `jump_test`, and `relationship_test`.
+  `corpus_audit_test` regenerated `test_sv/corpus_audit_report.json` and `.md`;
+  `full_feature_audit_test` regenerated
+  `test_sv/full_feature_audit_report.json` and `.md`.
+- Current bounded corpus result: State Transition Graph is 68 pass / 0 fail /
+  398 skipped, Signal Kernel Graph is 32 pass / 0 fail / 1960 skipped, and Wave
   Preview is 1047 pass / 0 fail / 2957 skipped / 4 empty-valid. Full-feature is
   now 23 pass / 0 fail / 0 skipped / 0 known-issue.
 - Most recent completed milestone: import-aware SystemVerilog package symbol
@@ -1230,13 +1230,14 @@ Milestones:
   (complete: current report covers State Transition Graph, Signal Kernel Graph,
   Module Block Diagram, and Wave Preview through service/report-layer paths)
 - FCA.3 Document known issues and residual risk.
-  (complete: current report generated 2026-07-01T18:18:18Z UTC and covered 454
+  (complete: current report generated 2026-07-02T07:19:45Z UTC and covered 454
   files, 424 modules, 3942 always/process records, 49,345 signal/port
   candidates, 117,069 semantic records, 82,636 audit relationships, and 704
-  diagnostics. State Transition Graph is 2 pass / 0 fail / 423 skipped under a
-  deterministic module sample cap. The audit now counts discovered clocked FSM pairs, not
-  `ns` / `next_state` name candidates; each discovered pair contributes a
-  next-state positive case and a current-state negative trigger case. Signal
+  diagnostics. State Transition Graph is 68 pass / 0 fail / 398 skipped under a
+  deterministic module sample cap. The audit counts discovered clocked FSM
+  pairs, including delayed current<=next assignments, not `ns` / `next_state`
+  name candidates; each discovered pair contributes a next-state positive case
+  and a current-state negative trigger case. Signal
   Kernel Graph reports 32 pass / 0 fail / 1,960 skipped, with
   skipped cases carrying deterministic no-candidate or sample-cap reasons.
   Module Block Diagram reports 208 pass / 216 empty-valid. Wave Preview uses source-discovered always/process
