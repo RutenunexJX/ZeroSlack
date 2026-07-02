@@ -866,11 +866,11 @@ Do not add unlisted long-term goals without explicit user approval.
   semantic snapshot, emits direct Slang-fact relationships for audit use, and
   writes `test_sv/corpus_audit_report.json` plus
   `test_sv/corpus_audit_report.md`. Current report generated
-  2026-07-02T07:19:45Z UTC and covered 454 files, 424 modules, 3942
+  2026-07-02T10:46:26Z UTC and covered 454 files, 424 modules, 3942
   always/process records, 49,345 signal/port candidates, 117,069 semantic
   records, 82,636 audit relationships, and 704 diagnostics. Summary: State
   Transition Graph 68 pass / 0 fail / 398 skipped; Signal Kernel Graph 32
-  pass / 0 fail / 1,960 skipped; Module Block Diagram 208 pass / 216
+  pass / 0 fail / 1,960 skipped; Module Block Diagram 209 pass / 215
   empty-but-valid; Wave Preview 1,047 pass / 0 fail / 2,957 skipped / 4
   empty-but-valid;
   semantic baseline 874 pass / 0 fail / 5 empty-but-valid. State Transition

@@ -1243,7 +1243,7 @@ Milestones:
   (complete: current report covers State Transition Graph, Signal Kernel Graph,
   Module Block Diagram, and Wave Preview through service/report-layer paths)
 - FCA.3 Document known issues and residual risk.
-  (complete: current report generated 2026-07-02T07:19:45Z UTC and covered 454
+  (complete: current report generated 2026-07-02T10:46:26Z UTC and covered 454
   files, 424 modules, 3942 always/process records, 49,345 signal/port
   candidates, 117,069 semantic records, 82,636 audit relationships, and 704
   diagnostics. State Transition Graph is 68 pass / 0 fail / 398 skipped under a
@@ -1253,7 +1253,7 @@ Milestones:
   and a current-state negative trigger case. Signal
   Kernel Graph reports 32 pass / 0 fail / 1,960 skipped, with
   skipped cases carrying deterministic no-candidate or sample-cap reasons.
-  Module Block Diagram reports 208 pass / 216 empty-valid. Wave Preview uses source-discovered always/process
+  Module Block Diagram reports 209 pass / 215 empty-valid. Wave Preview uses source-discovered always/process
   records and reports 1047 pass / 0 fail / 2957 skipped / 4 empty-valid under
   a deterministic process preview cap; no-lane/no-warning cases are repaired
   into lane-producing previews or explicit unsupported reasons. Semantic baseline is 874 pass / 0 fail / 5
