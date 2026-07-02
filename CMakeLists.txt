@@ -231,6 +231,7 @@ set(ZEROSLACK_CORE_SOURCES
     semanticruntimewiring.cpp
     signaljourneyservice.cpp
     signalkernelgraphservice.cpp
+    signalusagehotspotservice.cpp
     signalkernelgraphpanelcoordinator.cpp
     slangmanagerdiagnostics.cpp
     slangrelationshiphelpers.cpp
@@ -392,6 +393,7 @@ set(ZEROSLACK_CORE_SOURCES
     semanticruntimecoordinator.h
     signaljourneyservice.h
     signalkernelgraphservice.h
+    signalusagehotspotservice.h
     signalkernelgraphpanelcoordinator.h
     slangmanager.h
     slangparseoptions.h
