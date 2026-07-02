@@ -1,6 +1,6 @@
 # ZeroSlack Functional Corpus Audit
 
-- Generated: 2026-07-02T07:19:45Z UTC
+- Generated: 2026-07-02T10:46:26Z UTC
 - Roots: test_sv/new, test_sv/huge_prj
 - Files: 454
 - Modules: 424
@@ -9,7 +9,7 @@
 - Semantic records: 117069
 - Relationships: 82636
 - Diagnostics: 704
-- Elapsed: 441759 ms
+- Elapsed: 484557 ms
 
 ## Feature Summary
 
@@ -17,7 +17,7 @@
 | --- | ---: | ---: | ---: | ---: | ---: |
 | `state_transition_graph` | 68 | 0 | 398 | 0 | 0 |
 | `signal_kernel_graph` | 32 | 0 | 1960 | 0 | 0 |
-| `module_block_diagram` | 208 | 0 | 0 | 0 | 216 |
+| `module_block_diagram` | 209 | 0 | 0 | 0 | 215 |
 | `wave_preview` | 1047 | 0 | 2957 | 0 | 4 |
 | `semantic_baseline` | 874 | 0 | 0 | 0 | 5 |
 

@@ -29,9 +29,13 @@ struct ModuleBlockDiagramNode {
     int parentNodeId = -1;
     int depth = 0;
     QString moduleDisplayName;
+    QString instanceDisplayName;
     QString moduleTypeDisplayName;
     QString sourceRoleDisplayName;
+    bool unresolved = false;
+    QString unresolvedReason;
     RtlInsightCodeLink definitionCodeLink;
+    RtlInsightCodeLink instanceCodeLink;
 };
 
 struct ModuleBlockDiagramEdge {
@@ -44,7 +48,11 @@ struct ModuleBlockDiagramEdge {
     QString relationshipDisplayName;
     QString parentModuleDisplayName;
     QString childModuleDisplayName;
+    QString childInstanceDisplayName;
+    bool unresolved = false;
+    QString unresolvedReason;
     RtlInsightCodeLink childDefinitionCodeLink;
+    RtlInsightCodeLink childInstanceCodeLink;
 };
 
 struct ModuleBlockDiagramReport {
@@ -58,6 +66,8 @@ struct ModuleBlockDiagramReport {
     QList<ModuleBlockDiagramEdge> edges;
     int moduleCount = 0;
     int edgeCount = 0;
+    int resolvedInstanceCount = 0;
+    int unresolvedInstanceCount = 0;
 };
 
 class ModuleBlockDiagramService

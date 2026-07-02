@@ -1102,20 +1102,26 @@ Allowed scope:
 - selected module name as diagram top
 - module/interface instance wrapping relationship only
 - no signals
-- click module block to jump to module definition
+- click root module block to jump to module definition
+- click child module/instance block to jump to instance declaration and drill
+  into the child module when its definition is resolved
+- unresolved/blackbox instances remain visible with explicit reasons
 
 First milestones:
 
 - M11.1 service report for module-instance containment from selected module
   (complete: `ModuleBlockDiagramService` builds selected-module containment
-  reports from hierarchy/`INSTANTIATES` data, excludes signals, and carries
-  module definition links)
+  reports from indexed module/instance symbols plus `INSTANTIATES` data,
+  excludes signals, and carries module definition links, instance declaration
+  links, instance names, and unresolved/blackbox reasons)
 - M11.2 render module-only block diagram
   (complete: RTL Insights renders `ModuleBlockDiagramReport` as a module-only
-  interactive graph from active or selected module names)
+  interactive graph from active or selected module names, including blackbox
+  instance nodes)
 - M11.3 click navigation to module definitions
-  (complete: double-clicking rendered module graph elements follows
-  report-carried definition links through the existing navigation handler)
+  (complete: root modules navigate to definitions, child instances navigate to
+  instance declarations, and resolved children drill into their own module
+  diagram)
 
 M11.1 implementation constraints:
 
@@ -1130,14 +1136,18 @@ M11.1 implementation status:
 
 - Complete: `ModuleBlockDiagramService` owns `ModuleBlockDiagramReport` for a
   selected module query.
-- Complete: the report is built from `HierarchyService` with
-  `INSTANTIATES` filtering and returns module nodes plus instantiation edges.
+- Complete: the report is built from indexed module/instance symbols plus
+  `INSTANTIATES` filtering and returns module/instance nodes plus
+  instantiation edges.
 - Complete: child records are normalized to module/interface definitions when
-  possible, so report links point to module definitions rather than UI-side
-  lookups.
+  possible, while unresolved child module types stay in the report as blackbox
+  nodes instead of being dropped.
+- Complete: report nodes and edges carry instance names, instance declaration
+  links, module definition links, and unresolved reasons.
 - Complete: focused relationship coverage verifies root/child containment,
   no signal nodes, edge type filtering, named query resolution, missing-root
-  failure reason, and carried definition links.
+  failure reason, carried definition links, instance declaration links, and
+  unresolved blackbox nodes.
 - Verification: `git diff --check`; Release `relationship_test` target
   compile/link; `ctest -R "^relationship_test$"` passed.
 
@@ -1161,7 +1171,11 @@ M11.2 implementation status:
   plus instantiation edges from `ModuleBlockDiagramReport` and does not render
   signals.
 - Complete: the module diagram now uses a grid-backed canvas with the selected
-  module rendered as a large container and child modules arranged inside it.
+  module rendered as a large container and child module/instance nodes arranged
+  inside it.
+- Complete: child nodes show module type plus instance name; unresolved
+  instances render as grey blackbox nodes with their unresolved reason instead
+  of producing a blank graph.
 - Complete: visible `-` / `Fit` / `+` controls supplement mouse-wheel graph
   zoom.
 - Complete: source-symbol routing passes through
@@ -1181,17 +1195,25 @@ M11.3 implementation constraints:
 
 M11.3 implementation status:
 
-- Complete: rendered top-module and child-module graph nodes carry definition
-  links from `ModuleBlockDiagramReport`; instantiation edges carry child module
-  definition links.
+- Complete: rendered top-module graph nodes carry definition links from
+  `ModuleBlockDiagramReport`; child module/instance graph nodes and
+  instantiation edges carry instance declaration links plus child definition
+  links when resolved.
 - Complete: focused panel coverage invokes graph-element navigation for root
-  and child module nodes and verifies that the navigation handler receives the
-  corresponding module definition file, line, and column.
-- Complete: double-clicking or test-triggering a module graph element now
-  navigates to that module definition and re-renders the Module Block Diagram
-  around the jumped module, so its child modules remain visible.
-- Verification: Release `relationship_test` target compile/link; `ctest -R
-  "^relationship_test$"` passed.
+  and child module/instance nodes and verifies that the navigation handler
+  receives the corresponding module definition or instance declaration file,
+  line, and column.
+- Complete: double-clicking or test-triggering a resolved child module element
+  navigates to its instance declaration and re-renders the Module Block Diagram
+  around that child module, so its children remain visible. Unresolved blackbox
+  nodes navigate to their instance declaration and do not drill into a missing
+  definition.
+- Verification: Debug `completion_test`, `relationship_test`,
+  `gui_smoke_test`, `corpus_audit_test`, `full_feature_audit_test`, and
+  `jump_test` targets compile/link; CTest passed for all six named tests.
+  Corpus audit now reports `module_block_diagram` pass=209, fail=0,
+  skipped=0, timeout=0, empty-valid=215, with 8644 resolved diagram
+  instances and 7 unresolved blackbox instances over 424 real modules.
 
 ### 12. Workspace Project Configuration And Diagnostics Workflow
 

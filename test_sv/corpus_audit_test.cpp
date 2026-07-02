@@ -1210,37 +1210,62 @@ void auditModuleBlockDiagrams(const CorpusContext& context,
         item.metrics.insert(QStringLiteral("edgeCount"), report.edgeCount);
         item.metrics.insert(QStringLiteral("unresolvedInstances"),
                             unresolvedInstances);
+        item.metrics.insert(QStringLiteral("resolvedDiagramInstances"),
+                            report.resolvedInstanceCount);
+        item.metrics.insert(QStringLiteral("unresolvedDiagramInstances"),
+                            report.unresolvedInstanceCount);
         item.emptyResult = report.edgeCount == 0;
-        if (unresolvedInstances > 0)
+        if (unresolvedInstances > 0 || report.unresolvedInstanceCount > 0)
             item.tags.append(QStringLiteral("unresolved_instance"));
 
         bool linksOk = report.root.definitionCodeLink.line > 0;
-        bool onlyModules = true;
+        bool moduleOrBlackboxNodes = true;
+        bool unresolvedNodesHaveReasons = true;
         for (const ModuleBlockDiagramNode& node : report.nodes) {
+            if (node.unresolved) {
+                linksOk = linksOk
+                    && node.instanceCodeLink.line > 0
+                    && !node.instanceCodeLink.fileName.isEmpty();
+                unresolvedNodesHaveReasons =
+                    unresolvedNodesHaveReasons
+                    && !node.unresolvedReason.trimmed().isEmpty();
+                continue;
+            }
             linksOk = linksOk && node.definitionCodeLink.line > 0
                 && !node.definitionCodeLink.fileName.isEmpty();
-            onlyModules = onlyModules
+            if (node.depth > 0 && !node.instanceDisplayName.isEmpty()) {
+                linksOk = linksOk
+                    && node.instanceCodeLink.line > 0
+                    && !node.instanceCodeLink.fileName.isEmpty();
+            }
+            moduleOrBlackboxNodes = moduleOrBlackboxNodes
                 && (node.moduleSymbolRecord.declarationKind
                         == SymbolTaxonomy::DeclarationKind::Module
                     || node.moduleSymbolRecord.declarationKind
                         == SymbolTaxonomy::DeclarationKind::Interface);
         }
         item.metrics.insert(QStringLiteral("navigationLinksOk"), linksOk);
-        item.metrics.insert(QStringLiteral("moduleOnlyNodes"), onlyModules);
+        item.metrics.insert(QStringLiteral("moduleOnlyNodes"),
+                            moduleOrBlackboxNodes);
+        item.metrics.insert(QStringLiteral("unresolvedReasonsOk"),
+                            unresolvedNodesHaveReasons);
 
         if (!report.found && report.notFoundReason
             == ModuleBlockDiagramNotFoundReason::NoRootModule) {
             item.reason = relationshipReason(report.notFoundReasonDisplayName,
                                              QStringLiteral("no root module"));
             addCase(cases, counts, item, AuditStatus::Fail);
-        } else if (!linksOk || !onlyModules) {
+        } else if (!linksOk || !moduleOrBlackboxNodes
+                   || !unresolvedNodesHaveReasons) {
             item.reason = !linksOk
                 ? QStringLiteral("diagram node navigation link missing")
-                : QStringLiteral("diagram contains non-module/interface node");
+                : (!moduleOrBlackboxNodes
+                       ? QStringLiteral("diagram contains non-module/interface node")
+                       : QStringLiteral("unresolved diagram node missing reason"));
             addCase(cases, counts, item, AuditStatus::Fail);
         } else if (report.edgeCount == 0) {
             item.reason = relationshipReason(report.notFoundReasonDisplayName,
-                                             QStringLiteral("leaf module"));
+                                             QStringLiteral("no module instances"));
             addCase(cases, counts, item, AuditStatus::EmptyButValid);
         } else {
             addCase(cases, counts, item, AuditStatus::Pass);

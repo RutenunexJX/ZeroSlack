@@ -699,11 +699,11 @@ Status history:
 
 - G11.1 Module Block Diagram Service Report is complete:
   `ModuleBlockDiagramService` owns selected-module containment report shaping
-  on top of `HierarchyService` and `INSTANTIATES` relationships. The report
-  returns module/interface definition nodes, instantiation edges, and module
-  definition navigation links; signal and non-instance relationships are
-  filtered before UI consumption. No module block diagram UI rendering was
-  added.
+  from indexed module/instance symbols plus `INSTANTIATES` relationships. The
+  report returns module/interface definition nodes, child module type names,
+  instance names, instantiation edges, module definition links, instance
+  declaration links, and unresolved/blackbox reasons; signal and non-instance
+  relationships are filtered before UI consumption.
 - Focused verification for G11.1: `git diff --check`; Release
   `relationship_test` target compile/link; `ctest -R "^relationship_test$"`
   passed.
@@ -713,8 +713,10 @@ Status history:
   graph scene. The panel action renders the active module, and editor
   source-symbol routing can render selected module names as the diagram root.
   The rendered nodes and edges come from the service report, show
-  module/interface containment only, and do not show signal nodes. No UI workspace scan,
-  UI-side Slang work, or new relationship extraction was added.
+  module/interface containment only, include module type plus instance names,
+  keep unresolved module types visible as blackbox nodes with reasons, and do
+  not show signal nodes. No UI workspace scan, UI-side Slang work, or new
+  relationship extraction was added.
 - Focused verification for G11.2: `git diff --check`; Release
   `relationship_test` and `gui_smoke_test` targets compile/link; `ctest -R
   "^relationship_test$"` passed. `gui_smoke_test` was not launched.
@@ -1023,19 +1025,30 @@ Rules:
 
 - show module/interface instance and wrapping relationships only
 - do not show signals
-- clicking a module block jumps to the module definition
+- clicking the root module block jumps to the module definition
+- clicking a child module/instance block jumps to the instance declaration and
+  drills into the child module when its definition is resolved
+- unresolved/blackbox instances remain visible with an explicit reason and jump
+  to their instance declaration
 
 Milestones:
 
 - G11.1 Service report for module containment from selected module.
   (complete: `ModuleBlockDiagramService` owns the module-only containment
-  report and definition links)
+  report, definition links, instance links, instance names, and blackbox
+  reasons)
 - G11.2 Module-only block diagram rendering.
   (complete: RTL Insights renders `ModuleBlockDiagramReport` for active or
-  selected modules)
+  selected modules, including blackbox instance nodes)
 - G11.3 Click navigation to module definitions.
-  (complete: focused tests verify root/child module graph-element navigation
-  to module definitions)
+  (complete: focused tests verify root definition navigation, child instance
+  declaration navigation, resolved child drill-down, and unresolved blackbox
+  instance navigation)
+- G11.4 Real corpus usability audit.
+  (complete: 2026-07-02 corpus audit over 424 modules reports
+  `module_block_diagram` pass=209, fail=0, skipped=0, timeout=0,
+  empty-valid=215, with 8644 resolved diagram instances and 7 unresolved
+  blackbox instances)
 
 ## Track 12: Workspace Project Configuration And Diagnostics Workflow
 

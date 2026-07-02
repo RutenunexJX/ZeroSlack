@@ -198,11 +198,15 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
   `Module Block Diagram` action for the active module and the editor source
   action for selected module names. Rendering is module/interface-only and does
   not show signals. The graph uses a grid canvas with the selected module as a
-  large container and child modules arranged inside it. Module nodes and
-  containment edges are selectable; mouse wheel and `-` / `Fit` / `+` controls
-  zoom the canvas. Double-clicking a module graph element follows the carried
-  definition link and refreshes the diagram around that jumped module so its
-  child modules remain visible.
+  large container and child module/instance nodes arranged inside it. Child
+  nodes show both the module type and instance name, unresolved module types
+  remain visible as blackbox nodes with an explicit reason, and containment
+  edges carry instance metadata. Module and instance graph elements are
+  selectable; mouse wheel and `-` / `Fit` / `+` controls zoom the canvas.
+  Double-clicking a root module follows the module definition link; child
+  modules jump to the instance declaration and then refresh the diagram around
+  the jumped module so its children remain visible. Unresolved blackbox nodes
+  jump to the instance declaration without drilling into a missing definition.
 - Formatter support exists as conservative editor formatting. Current daily
   editor action inventory: `Ctrl+F` opens Find; formatter document/selection
   actions live in the editor context menu; line comment actions are available
@@ -411,17 +415,20 @@ engineering configuration / diagnostics lane.
   consumes that report as selectable graph nodes/edges and does not scan
   workspace files or run Slang.
 - Module Block Diagram baseline: `ModuleBlockDiagramService` owns selected
-  module/interface containment report shaping on top of `HierarchyService`
-  and `INSTANTIATES` relationships. The report carries root/child module nodes,
-  module-definition links, and instantiation edges only; signal and non-instance
-  relationship filtering stays in the service/report layer. `RtlInsightsPanelCoordinator`
-  renders that report as a module-only interactive graph with a root-module
-  container, child module blocks, visible zoom controls, and graph-element
-  drill-down. Source symbol requests still route through
-  `SemanticPanelRefreshCoordinator`; double-click navigation uses the module
-  definition links already carried by graph elements and then requests the
-  service report for the jumped module.
-  UI code does not scan workspaces or run Slang.
+  module/interface containment report shaping from indexed symbols plus
+  `INSTANTIATES` relationships. The report carries root module definitions,
+  child module type names, instance names, module-definition links, instance
+  declaration links, instantiation edges, and unresolved/blackbox reasons.
+  Signal and non-instance relationships stay filtered in the service/report
+  layer. `RtlInsightsPanelCoordinator` renders that report as a module-only
+  interactive graph with a root-module container, child module/instance blocks,
+  visible zoom controls, graph-element drill-down for resolved modules, and
+  instance-declaration navigation for child nodes and blackboxes. Source symbol
+  requests still route through `SemanticPanelRefreshCoordinator`; UI code does
+  not scan workspaces or run Slang. The 2026-07-02 corpus audit over
+  `test_sv/new` and `test_sv/huge_prj` reports 209 pass, 0 fail, 0 skipped,
+  215 empty-valid, 8644 resolved diagram instances, and 7 unresolved blackbox
+  instances.
 
 ## Command Responsibility Map
 
@@ -642,6 +649,13 @@ Do not add unlisted long-term goals without explicit user approval.
 - Avoid launching GUI smoke executables in this environment when they are known
   to produce external Windows error dialogs; compile/link targets instead unless
   the user explicitly asks to run them.
+- Latest Module Block Diagram real-usability pass: Debug targets
+  `completion_test`, `relationship_test`, `gui_smoke_test`,
+  `corpus_audit_test`, `full_feature_audit_test`, and `jump_test` compile/link;
+  CTest passed for all six named tests. `test_sv/corpus_audit_report.*` now
+  records `module_block_diagram` pass=209, fail=0, skipped=0, timeout=0,
+  empty-valid=215 across 424 real modules, with 8644 resolved diagram
+  instances and 7 unresolved blackbox instances.
 - Latest acceptance baseline repair: `completion_test` source-symbol context
   menu assertions now cover all five actions including `ShowModuleBlockDiagram`.
   Release `ctest -R "^completion_test$" --output-on-failure` and

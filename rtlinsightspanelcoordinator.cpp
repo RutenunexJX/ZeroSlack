@@ -2244,18 +2244,28 @@ void RtlInsightsPanelCoordinator::renderModuleBlockDiagramScene(
         RtlInsightGraphElement element;
         element.kind = QStringLiteral("module");
         element.primary = node.moduleDisplayName;
-        element.secondary = node.moduleTypeDisplayName;
-        element.detail = node.sourceRoleDisplayName;
-        element.codeLink = node.definitionCodeLink;
-        element.drillModuleName = node.moduleDisplayName;
-        element.drillFileName = node.definitionCodeLink.fileName;
+        element.secondary = !node.instanceDisplayName.isEmpty()
+            ? QStringLiteral("instance: %1").arg(node.instanceDisplayName)
+            : node.moduleTypeDisplayName;
+        element.detail = node.unresolved
+            ? node.unresolvedReason
+            : node.sourceRoleDisplayName;
+        element.codeLink = root || node.instanceCodeLink.fileName.isEmpty()
+            ? node.definitionCodeLink
+            : node.instanceCodeLink;
+        if (!node.unresolved && !node.definitionCodeLink.fileName.isEmpty()) {
+            element.drillModuleName = node.moduleDisplayName;
+            element.drillFileName = node.definitionCodeLink.fileName;
+        }
         auto* item = new RtlInsightGraphNodeItem(
             element,
             rect,
             root ? QColor(QStringLiteral("#eef6e6"))
-                 : QColor(QStringLiteral("#dff3f8")),
+                 : (node.unresolved ? QColor(QStringLiteral("#f3f4f6"))
+                                    : QColor(QStringLiteral("#dff3f8"))),
             root ? QColor(QStringLiteral("#111827"))
-                 : QColor(QStringLiteral("#0f172a")),
+                 : (node.unresolved ? QColor(QStringLiteral("#64748b"))
+                                    : QColor(QStringLiteral("#0f172a"))),
             font);
         item->setZValue(root ? 0.0 : 10.0);
         item->navigateHandler = navigate;
@@ -2284,10 +2294,18 @@ void RtlInsightsPanelCoordinator::renderModuleBlockDiagramScene(
         element.kind = QStringLiteral("module-edge");
         element.primary = edge.parentModuleDisplayName;
         element.secondary = edge.childModuleDisplayName;
-        element.detail = edge.relationshipDisplayName;
-        element.codeLink = edge.childDefinitionCodeLink;
-        element.drillModuleName = edge.childModuleDisplayName;
-        element.drillFileName = edge.childDefinitionCodeLink.fileName;
+        element.detail = edge.childInstanceDisplayName.isEmpty()
+            ? edge.relationshipDisplayName
+            : QStringLiteral("%1: %2")
+                  .arg(edge.relationshipDisplayName,
+                       edge.childInstanceDisplayName);
+        element.codeLink = edge.childInstanceCodeLink.fileName.isEmpty()
+            ? edge.childDefinitionCodeLink
+            : edge.childInstanceCodeLink;
+        if (!edge.unresolved && !edge.childDefinitionCodeLink.fileName.isEmpty()) {
+            element.drillModuleName = edge.childModuleDisplayName;
+            element.drillFileName = edge.childDefinitionCodeLink.fileName;
+        }
         auto* item = new RtlInsightGraphEdgeItem(
             element,
             path,
@@ -2295,7 +2313,8 @@ void RtlInsightsPanelCoordinator::renderModuleBlockDiagramScene(
             std::atan2(end.y() - start.y(), end.x() - start.x()),
             QString(),
             font,
-            QColor(QStringLiteral("#334155")));
+            edge.unresolved ? QColor(QStringLiteral("#94a3b8"))
+                            : QColor(QStringLiteral("#334155")));
         item->navigateHandler = navigate;
         item->selectHandler = select;
         insightsGraphScene->addItem(item);

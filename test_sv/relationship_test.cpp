@@ -562,6 +562,11 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                       QStringLiteral("top_rst_n"),
                       SymbolTaxonomy::CollectorKind::PortInput,
                       QStringLiteral("rel_top"));
+    const SemanticSymbolRecord stageInstanceRecord =
+        recordInScope(topRecords,
+                      QStringLiteral("u_stage"),
+                      SymbolTaxonomy::CollectorKind::Inst,
+                      QStringLiteral("rel_top"));
 
     const int packageId = packageRecord.localHandle;
     const int stateTypeId = stateTypeRecord.localHandle;
@@ -574,6 +579,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     const int rspDataId = rspDataRecord.localHandle;
     const int topClkId = topClkRecord.localHandle;
     const int topRstId = topRstRecord.localHandle;
+    const int stageInstanceId = stageInstanceRecord.localHandle;
 
     expectBool("package symbol extracted", packageId > 0, true);
     expectBool("package typedef extracted", stateTypeId > 0, true);
@@ -586,6 +592,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     expectBool("top rsp_data extracted", rspDataId > 0, true);
     expectBool("top clock extracted", topClkId > 0, true);
     expectBool("top reset extracted", topRstId > 0, true);
+    expectBool("top stage instance extracted", stageInstanceId > 0, true);
 
     SmartRelationshipBuilder fixtureBuilder(
         &engine,
@@ -3670,6 +3677,12 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     expectInt("module block diagram edge count",
               moduleBlockReport.edgeCount,
               1);
+    expectInt("module block diagram resolved instance count",
+              moduleBlockReport.resolvedInstanceCount,
+              1);
+    expectInt("module block diagram unresolved instance count",
+              moduleBlockReport.unresolvedInstanceCount,
+              0);
     expectBool("module block diagram keeps root definition link",
                moduleBlockReport.root.moduleSymbolRecord.localHandle == topId
                    && moduleBlockReport.root.moduleStableKey == topStableKey
@@ -3693,8 +3706,12 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                 && node.moduleSymbolRecord.localHandle == stageId
                 && node.moduleStableKey == stageStableKey
                 && node.moduleDisplayName == QStringLiteral("rel_stage")
+                && node.instanceDisplayName == QStringLiteral("u_stage")
                 && node.definitionCodeLink.fileName == stagePath
-                && node.definitionCodeLink.line > 0);
+                && node.definitionCodeLink.line > 0
+                && node.instanceCodeLink.fileName == topPath
+                && node.instanceCodeLink.line
+                       == stageInstanceRecord.location.startLine);
     }
     expectBool("module block diagram keeps child module definition",
                moduleBlockHasStage,
@@ -3715,7 +3732,14 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                    && moduleBlockReport.edges.first()
                           .childDefinitionCodeLink.fileName == stagePath
                    && moduleBlockReport.edges.first()
-                          .childDefinitionCodeLink.line > 0,
+                          .childDefinitionCodeLink.line > 0
+                   && moduleBlockReport.edges.first()
+                          .childInstanceDisplayName == QStringLiteral("u_stage")
+                   && moduleBlockReport.edges.first()
+                          .childInstanceCodeLink.fileName == topPath
+                   && moduleBlockReport.edges.first()
+                          .childInstanceCodeLink.line
+                          == stageInstanceRecord.location.startLine,
                true);
     ModuleBlockDiagramQuery namedModuleBlockQuery;
     namedModuleBlockQuery.moduleName = QStringLiteral("rel_top");
@@ -3739,6 +3763,58 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                !missingModuleBlockReport.found
                    && missingModuleBlockReport.notFoundReason
                        == ModuleBlockDiagramNotFoundReason::NoRootModule,
+               true);
+
+    const QString blackboxTopPath =
+        normalizedPath(fixtureDir.filePath(QStringLiteral("blackbox_top.sv")));
+    const SemanticSymbolRecord blackboxTopRecord =
+        SemanticFixtureRecordBuilder(QStringLiteral("blackbox_top"),
+                                     SymbolTaxonomy::DeclarationKind::Module)
+            .withFile(blackboxTopPath)
+            .withRange(1, 1, 4, 10)
+            .withLocalHandle(9601)
+            .record();
+    const SemanticSymbolRecord blackboxInstanceRecord =
+        SemanticFixtureRecordBuilder(QStringLiteral("u_ip"),
+                                     SymbolTaxonomy::DeclarationKind::Instance)
+            .withFile(blackboxTopPath)
+            .withLine(2, 3)
+            .withLocalHandle(9602)
+            .withOwner(SymbolTaxonomy::SymbolOwnerScope::Module,
+                       QStringLiteral("blackbox_top"),
+                       blackboxTopRecord.stableKey)
+            .withType(QStringLiteral("vendor_ip"))
+            .record();
+    SemanticIndex blackboxIndex;
+    blackboxIndex.updateSymbolRecordsForFile(
+        blackboxTopPath,
+        {blackboxTopRecord, blackboxInstanceRecord},
+        QStringLiteral("module blackbox_top;\n  vendor_ip u_ip();\nendmodule\n"));
+    ModuleBlockDiagramService blackboxService(&blackboxIndex);
+    ModuleBlockDiagramQuery blackboxQuery;
+    blackboxQuery.moduleName = QStringLiteral("blackbox_top");
+    blackboxQuery.fileName = blackboxTopPath;
+    blackboxQuery.maxDepth = 2;
+    const ModuleBlockDiagramReport blackboxReport =
+        blackboxService.buildModuleBlockDiagram(blackboxQuery);
+    expectBool("module block diagram keeps unresolved blackbox node",
+               blackboxReport.found
+                   && blackboxReport.moduleCount == 2
+                   && blackboxReport.edgeCount == 1
+                   && blackboxReport.resolvedInstanceCount == 0
+                   && blackboxReport.unresolvedInstanceCount == 1
+                   && blackboxReport.nodes.size() == 2
+                   && blackboxReport.nodes.at(1).unresolved
+                   && blackboxReport.nodes.at(1).moduleDisplayName
+                       == QStringLiteral("vendor_ip")
+                   && blackboxReport.nodes.at(1).instanceDisplayName
+                       == QStringLiteral("u_ip")
+                   && blackboxReport.nodes.at(1).instanceCodeLink.fileName
+                       == blackboxTopPath
+                   && blackboxReport.nodes.at(1).instanceCodeLink.line
+                       == blackboxInstanceRecord.location.startLine
+                   && blackboxReport.notFoundReason
+                       == ModuleBlockDiagramNotFoundReason::None,
                true);
 
     ModuleBlockDiagramService::getInstance()->setSemanticIndex(&index);
@@ -3807,11 +3883,46 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
             QStringLiteral("rel_stage"));
     expectBool("module block diagram child module navigation",
                invokedModuleBlockStageNavigation
-                   && moduleBlockNavigatedFileName == stagePath
+                   && moduleBlockNavigatedFileName == topPath
                    && moduleBlockNavigatedLine
-                       == stageRecord.location.startLine
+                       == stageInstanceRecord.location.startLine
                    && moduleBlockNavigatedColumn
-                       == stageRecord.location.startColumn,
+                       == stageInstanceRecord.location.startColumn
+                   && moduleBlockPanel.graphNodeItemCountForTest() == 1
+                   && moduleBlockPanel.graphEdgeItemCountForTest() == 0,
+               true);
+
+    ModuleBlockDiagramService::getInstance()->setSemanticIndex(&blackboxIndex);
+    QWidget blackboxPanelHost;
+    RtlInsightsPanelCoordinator blackboxPanel(&blackboxPanelHost);
+    QString blackboxNavigatedFileName;
+    int blackboxNavigatedLine = 0;
+    int blackboxNavigatedColumn = 0;
+    blackboxPanel.setNavigationHandler(
+        [&](const QString& fileName, int line, int column) {
+            blackboxNavigatedFileName = fileName;
+            blackboxNavigatedLine = line;
+            blackboxNavigatedColumn = column;
+            return true;
+        });
+    blackboxPanel.showModuleBlockDiagramForModule(
+        blackboxTopPath,
+        QStringLiteral("blackbox_top"));
+    const bool invokedBlackboxNavigation =
+        blackboxPanel.triggerGraphNavigationForTest(
+            QStringLiteral("module"),
+            QStringLiteral("vendor_ip"));
+    expectBool("module block diagram unresolved instance navigation",
+               blackboxPanel.graphNodeItemCountForTest() == 2
+                   && blackboxPanel.graphEdgeItemCountForTest() == 1
+                   && invokedBlackboxNavigation
+                   && blackboxNavigatedFileName == blackboxTopPath
+                   && blackboxNavigatedLine
+                       == blackboxInstanceRecord.location.startLine
+                   && blackboxNavigatedColumn
+                       == blackboxInstanceRecord.location.startColumn
+                   && blackboxPanel.graphNodeItemCountForTest() == 2
+                   && blackboxPanel.graphEdgeItemCountForTest() == 1,
                true);
 
     const QString diagramTopPath =

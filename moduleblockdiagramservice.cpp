@@ -4,6 +4,10 @@
 #include "symboltaxonomy.h"
 
 #include <QHash>
+#include <QRegularExpression>
+#include <QSet>
+#include <algorithm>
+#include <functional>
 
 std::unique_ptr<ModuleBlockDiagramService>
     ModuleBlockDiagramService::instance = nullptr;
@@ -47,6 +51,44 @@ QString moduleBlockTypeNameForInstance(const SemanticSymbolRecord& record)
     return QString();
 }
 
+QString normalizedModuleBlockAccessName(QString accessPath)
+{
+    accessPath = accessPath.trimmed();
+    const int suffix = accessPath.lastIndexOf(QLatin1Char('@'));
+    if (suffix > 0)
+        accessPath.truncate(suffix);
+    return accessPath.trimmed();
+}
+
+QString instanceNameFromEvidence(const QString& evidenceText)
+{
+    static const QRegularExpression expression(
+        QStringLiteral("^\\s*Instance:\\s*([^\\s]+)\\s+at\\s+line\\s+\\d+"),
+        QRegularExpression::CaseInsensitiveOption);
+    const QRegularExpressionMatch match = expression.match(evidenceText);
+    return match.hasMatch() ? match.captured(1).trimmed() : QString();
+}
+
+RtlInsightCodeLink moduleBlockCodeLinkForRange(
+    const SemanticSourceRange& range)
+{
+    if (range.fileName.isEmpty() || range.line <= 0)
+        return {};
+    return RtlInsightLink::fromFileLine(range.fileName,
+                                        range.line,
+                                        range.column);
+}
+
+RtlInsightCodeLink moduleBlockCodeLinkForRecord(
+    const SemanticSymbolRecord& record)
+{
+    if (!record.isValid())
+        return {};
+    return RtlInsightLink::fromFileLine(record.location.fileName,
+                                        record.location.startLine,
+                                        record.location.startColumn);
+}
+
 SemanticSymbolRecord moduleDefinitionForRecord(
     SemanticIndex* index,
     const SemanticSymbolRecord& record)
@@ -86,7 +128,12 @@ ModuleBlockDiagramNode moduleBlockNodeFromRecord(
     const SemanticSymbolRecord& record,
     int nodeId,
     int parentNodeId,
-    int depth)
+    int depth,
+    const QString& instanceDisplayName = QString(),
+    const RtlInsightCodeLink& instanceCodeLink = {},
+    bool unresolved = false,
+    const QString& unresolvedReason = QString(),
+    const QString& moduleTypeFallback = QString())
 {
     ModuleBlockDiagramNode node;
     node.moduleSymbolRecord = record;
@@ -94,16 +141,25 @@ ModuleBlockDiagramNode moduleBlockNodeFromRecord(
     node.nodeId = nodeId;
     node.parentNodeId = parentNodeId;
     node.depth = depth;
-    node.moduleDisplayName = moduleDisplayName(record);
+    node.moduleDisplayName = record.isValid()
+        ? moduleDisplayName(record)
+        : (moduleTypeFallback.isEmpty()
+               ? QStringLiteral("<unresolved>")
+               : moduleTypeFallback);
+    node.instanceDisplayName = instanceDisplayName;
     const SymbolTaxonomy::SemanticMetadata metadata =
         semanticMetadataForSymbolRecord(record);
-    node.moduleTypeDisplayName = SymbolTaxonomy::symbolTypeLabel(metadata);
+    node.moduleTypeDisplayName = unresolved
+        ? QStringLiteral("Blackbox")
+        : SymbolTaxonomy::symbolTypeLabel(metadata);
     node.sourceRoleDisplayName =
-        SymbolTaxonomy::sourceRoleDisplayName(metadata.sourceRole);
-    node.definitionCodeLink =
-        RtlInsightLink::fromFileLine(record.location.fileName,
-                                     record.location.startLine,
-                                     record.location.startColumn);
+        unresolved
+            ? unresolvedReason
+            : SymbolTaxonomy::sourceRoleDisplayName(metadata.sourceRole);
+    node.unresolved = unresolved;
+    node.unresolvedReason = unresolvedReason;
+    node.definitionCodeLink = moduleBlockCodeLinkForRecord(record);
+    node.instanceCodeLink = instanceCodeLink;
     return node;
 }
 
@@ -120,8 +176,149 @@ ModuleBlockDiagramEdge moduleBlockEdgeFromNodes(
     edge.relationshipDisplayName = QStringLiteral("Instantiates");
     edge.parentModuleDisplayName = parent.moduleDisplayName;
     edge.childModuleDisplayName = child.moduleDisplayName;
+    edge.childInstanceDisplayName = child.instanceDisplayName;
+    edge.unresolved = child.unresolved;
+    edge.unresolvedReason = child.unresolvedReason;
     edge.childDefinitionCodeLink = child.definitionCodeLink;
+    edge.childInstanceCodeLink = child.instanceCodeLink;
     return edge;
+}
+
+bool isModuleBlockInstanceDeclaration(const SemanticSymbolRecord& record)
+{
+    if (!record.isValid())
+        return false;
+    return SymbolTaxonomy::isInstanceDeclaration(
+        semanticMetadataForSymbolRecord(record));
+}
+
+bool recordIsOwnedByModule(const SemanticSymbolRecord& record,
+                           const SemanticSymbolRecord& module)
+{
+    if (!record.isValid() || !module.isValid())
+        return false;
+    if (record.owner.stableKey.isValid()
+        && module.stableKey.isValid()
+        && record.owner.stableKey == module.stableKey) {
+        return true;
+    }
+    if (record.owner.name != module.name)
+        return false;
+    if (record.location.fileName != module.location.fileName)
+        return true;
+    if (record.location.startLine <= 0 || module.location.startLine <= 0)
+        return true;
+    if (record.location.startLine < module.location.startLine)
+        return false;
+    return module.location.endLine <= 0
+        || record.location.startLine <= module.location.endLine;
+}
+
+struct ModuleBlockChildInstance {
+    QString moduleTypeName;
+    QString instanceName;
+    SemanticSymbolRecord definitionRecord;
+    SemanticSymbolRecord instanceRecord;
+    RtlInsightCodeLink instanceCodeLink;
+    RtlInsightCodeLink definitionCodeLink;
+    bool unresolved = false;
+    QString unresolvedReason;
+    QString dedupeKey;
+};
+
+QString moduleBlockChildDedupeKey(const QString& moduleTypeName,
+                                  const QString& instanceName,
+                                  const RtlInsightCodeLink& instanceCodeLink)
+{
+    return QStringLiteral("%1|%2|%3|%4|%5")
+        .arg(moduleTypeName,
+             instanceName,
+             instanceCodeLink.fileName,
+             QString::number(instanceCodeLink.line),
+             QString::number(instanceCodeLink.column));
+}
+
+bool moduleBlockChildLess(const ModuleBlockChildInstance& lhs,
+                          const ModuleBlockChildInstance& rhs)
+{
+    const int fileCompare =
+        QString::compare(lhs.instanceCodeLink.fileName,
+                         rhs.instanceCodeLink.fileName,
+                         Qt::CaseInsensitive);
+    if (fileCompare != 0)
+        return fileCompare < 0;
+    if (lhs.instanceCodeLink.line != rhs.instanceCodeLink.line)
+        return lhs.instanceCodeLink.line < rhs.instanceCodeLink.line;
+    if (lhs.instanceCodeLink.column != rhs.instanceCodeLink.column)
+        return lhs.instanceCodeLink.column < rhs.instanceCodeLink.column;
+    const int moduleCompare =
+        QString::compare(lhs.moduleTypeName,
+                         rhs.moduleTypeName,
+                         Qt::CaseInsensitive);
+    if (moduleCompare != 0)
+        return moduleCompare < 0;
+    return QString::compare(lhs.instanceName,
+                            rhs.instanceName,
+                            Qt::CaseInsensitive) < 0;
+}
+
+SemanticSymbolRecord moduleDefinitionForTypeName(SemanticIndex* index,
+                                                 const QString& moduleTypeName,
+                                                 const QString& fileName = QString())
+{
+    if (!index || moduleTypeName.trimmed().isEmpty())
+        return {};
+
+    SemanticQueryContext context;
+    context.fileName = fileName;
+    const QList<SemanticSymbolRecord> candidates =
+        index->findDefinitionRecords(moduleTypeName.trimmed(), context);
+    for (const SemanticSymbolRecord& candidate : candidates) {
+        if (isModuleBlockDefinition(candidate))
+            return candidate;
+    }
+    return {};
+}
+
+QString moduleTypeNameForRelationship(const RelationshipResult& relationship)
+{
+    const SemanticSymbolRecord targetRecord = relationship.toSymbolRecord;
+    if (isModuleBlockDefinition(targetRecord))
+        return targetRecord.name;
+    const QString typeName = moduleBlockTypeNameForInstance(targetRecord);
+    if (!typeName.isEmpty())
+        return typeName;
+    if (relationship.toStableKey.isValid()
+        && !relationship.toStableKey.symbolName.isEmpty()) {
+        return relationship.toStableKey.symbolName;
+    }
+    return targetRecord.name;
+}
+
+QString instanceNameForRelationship(const RelationshipResult& relationship,
+                                    const QString& moduleTypeName)
+{
+    QString instanceName =
+        normalizedModuleBlockAccessName(relationship.toAccessPath);
+    if (instanceName.isEmpty())
+        instanceName = instanceNameFromEvidence(relationship.evidenceText);
+    if (instanceName.isEmpty()
+        && isModuleBlockInstanceDeclaration(relationship.toSymbolRecord)) {
+        instanceName = relationship.toSymbolRecord.name;
+    }
+    return instanceName.isEmpty() ? moduleTypeName : instanceName;
+}
+
+RtlInsightCodeLink instanceCodeLinkForRelationship(
+    const RelationshipResult& relationship)
+{
+    RtlInsightCodeLink link =
+        moduleBlockCodeLinkForRange(relationship.evidenceRange);
+    if (!link.fileName.isEmpty())
+        return link;
+    if (isModuleBlockInstanceDeclaration(relationship.toSymbolRecord))
+        return moduleBlockCodeLinkForRecord(relationship.toSymbolRecord);
+    return {};
 }
 }
 
@@ -154,19 +351,14 @@ ModuleBlockDiagramService::buildModuleBlockDiagram(
     ModuleBlockDiagramReport report;
     report.groupDisplayName = QStringLiteral("Module Block Diagram");
 
-    HierarchyQuery hierarchyQuery;
-    hierarchyQuery.symbolStableKey = query.moduleStableKey;
-    hierarchyQuery.symbolName = query.moduleName;
-    hierarchyQuery.fileName = query.fileName;
-    hierarchyQuery.maxDepth = query.maxDepth < 0 ? 0 : query.maxDepth;
-    hierarchyQuery.direction = HierarchyQuery::Children;
-    hierarchyQuery.types = {SymbolRelationshipEngine::INSTANTIATES};
-
-    const HierarchyReport hierarchyReport =
-        hierarchyService.getHierarchyReport(hierarchyQuery);
-    const SemanticSymbolRecord rootRecord =
-        moduleDefinitionForRecord(semanticIndex(),
-                                  hierarchyReport.rootSymbolRecord);
+    SemanticSymbolRecord rootRecord;
+    if (query.moduleStableKey.isValid())
+        rootRecord = semanticIndex()->getSymbolRecordByStableKey(query.moduleStableKey);
+    if (!rootRecord.isValid() && !query.moduleName.trimmed().isEmpty())
+        rootRecord = moduleDefinitionForTypeName(semanticIndex(),
+                                                 query.moduleName,
+                                                 query.fileName);
+    rootRecord = moduleDefinitionForRecord(semanticIndex(), rootRecord);
     if (!rootRecord.isValid()) {
         report.notFoundReason =
             ModuleBlockDiagramNotFoundReason::NoRootModule;
@@ -180,43 +372,157 @@ ModuleBlockDiagramService::buildModuleBlockDiagram(
     report.nodes.append(report.root);
     report.found = true;
 
-    QHash<int, int> outputNodeIdsByHierarchyNodeId;
-    outputNodeIdsByHierarchyNodeId.insert(0, report.root.nodeId);
+    RelationshipService relationshipService(semanticIndex());
+    const int maxDepth = query.maxDepth < 0 ? 0 : query.maxDepth;
+    QSet<QString> emittedChildKeys;
+    std::function<void(const SemanticSymbolRecord&, int, int, QSet<QString>)>
+        appendChildren;
+    appendChildren = [&](const SemanticSymbolRecord& parentRecord,
+                         int parentNodeId,
+                         int depth,
+                         QSet<QString> path) {
+        if (depth >= maxDepth || !parentRecord.stableKey.isValid())
+            return;
 
-    for (const HierarchyNode& hierarchyNode : hierarchyReport.nodes) {
-        if (hierarchyNode.depth <= 0)
-            continue;
-        if (hierarchyNode.viaType != SymbolRelationshipEngine::INSTANTIATES)
-            continue;
-        if (!outputNodeIdsByHierarchyNodeId.contains(
-                hierarchyNode.parentNodeId)) {
-            continue;
+        const QString parentPathKey = parentRecord.stableKey.toString();
+        if (!parentPathKey.isEmpty())
+            path.insert(parentPathKey);
+
+        QList<ModuleBlockChildInstance> children;
+        auto appendChild = [&](ModuleBlockChildInstance child) {
+            if (child.moduleTypeName.trimmed().isEmpty())
+                return;
+            if (child.instanceName.trimmed().isEmpty())
+                child.instanceName = child.moduleTypeName;
+            if (child.instanceCodeLink.fileName.isEmpty()
+                && child.instanceRecord.isValid()) {
+                child.instanceCodeLink =
+                    moduleBlockCodeLinkForRecord(child.instanceRecord);
+            }
+            if (child.definitionRecord.isValid()
+                && child.definitionCodeLink.fileName.isEmpty()) {
+                child.definitionCodeLink =
+                    moduleBlockCodeLinkForRecord(child.definitionRecord);
+            }
+            if (!child.definitionRecord.isValid()) {
+                child.unresolved = true;
+                if (child.unresolvedReason.isEmpty()) {
+                    child.unresolvedReason =
+                        QStringLiteral("module definition not found");
+                }
+            }
+            for (const ModuleBlockChildInstance& existing :
+                 std::as_const(children)) {
+                if (existing.moduleTypeName == child.moduleTypeName
+                    && existing.instanceName == child.instanceName) {
+                    return;
+                }
+                if (child.instanceName == child.moduleTypeName
+                    && existing.moduleTypeName == child.moduleTypeName
+                    && existing.definitionRecord.stableKey
+                        == child.definitionRecord.stableKey) {
+                    return;
+                }
+            }
+            child.dedupeKey = moduleBlockChildDedupeKey(
+                child.moduleTypeName,
+                child.instanceName,
+                child.instanceCodeLink);
+            if (emittedChildKeys.contains(
+                    QStringLiteral("%1|%2").arg(parentNodeId).arg(child.dedupeKey))) {
+                return;
+            }
+            emittedChildKeys.insert(
+                QStringLiteral("%1|%2").arg(parentNodeId).arg(child.dedupeKey));
+            children.append(child);
+        };
+
+        for (const SemanticSymbolRecord& record :
+             semanticIndex()->getSymbolRecordsByOwner(parentRecord.name)) {
+            if (!isModuleBlockInstanceDeclaration(record)
+                || !recordIsOwnedByModule(record, parentRecord)) {
+                continue;
+            }
+            ModuleBlockChildInstance child;
+            child.instanceRecord = record;
+            child.moduleTypeName = moduleBlockTypeNameForInstance(record);
+            child.instanceName = record.name;
+            child.instanceCodeLink = moduleBlockCodeLinkForRecord(record);
+            child.definitionRecord =
+                moduleDefinitionForTypeName(semanticIndex(),
+                                            child.moduleTypeName,
+                                            record.location.fileName);
+            appendChild(child);
         }
 
-        const SemanticSymbolRecord childRecord =
-            moduleDefinitionForRecord(semanticIndex(),
-                                      hierarchyNode.symbolRecord);
-        if (!childRecord.isValid())
-            continue;
+        RelationshipQuery relationshipQuery;
+        relationshipQuery.symbolStableKey = parentRecord.stableKey;
+        relationshipQuery.outgoing = true;
+        relationshipQuery.types = {SymbolRelationshipEngine::INSTANTIATES};
+        const QList<RelationshipResult> relationships =
+            relationshipService.findRelationships(relationshipQuery);
+        for (const RelationshipResult& relationship : relationships) {
+            ModuleBlockChildInstance child;
+            child.moduleTypeName = moduleTypeNameForRelationship(relationship);
+            child.instanceName =
+                instanceNameForRelationship(relationship, child.moduleTypeName);
+            child.instanceCodeLink =
+                instanceCodeLinkForRelationship(relationship);
+            child.definitionRecord =
+                moduleDefinitionForRecord(semanticIndex(),
+                                          relationship.toSymbolRecord);
+            if (!child.definitionRecord.isValid()) {
+                child.definitionRecord =
+                    moduleDefinitionForTypeName(semanticIndex(),
+                                                child.moduleTypeName,
+                                                relationship.evidenceRange.fileName);
+            }
+            child.definitionCodeLink =
+                moduleBlockCodeLinkForRecord(child.definitionRecord);
+            appendChild(child);
+        }
 
-        const int parentOutputId =
-            outputNodeIdsByHierarchyNodeId.value(hierarchyNode.parentNodeId);
-        if (parentOutputId < 0 || parentOutputId >= report.nodes.size())
-            continue;
+        std::sort(children.begin(), children.end(), moduleBlockChildLess);
+        for (ModuleBlockChildInstance child : std::as_const(children)) {
+            const QString childPathKey =
+                child.definitionRecord.stableKey.toString();
+            if (child.definitionRecord.isValid()
+                && !childPathKey.isEmpty()
+                && path.contains(childPathKey)) {
+                child.unresolved = true;
+                child.unresolvedReason =
+                    QStringLiteral("cyclic instantiation");
+            }
 
-        const ModuleBlockDiagramNode child =
-            moduleBlockNodeFromRecord(childRecord,
-                                      nextNodeId++,
-                                      parentOutputId,
-                                      hierarchyNode.depth);
-        const int childIndex = report.nodes.size();
-        report.nodes.append(child);
-        outputNodeIdsByHierarchyNodeId.insert(hierarchyNode.nodeId,
-                                              child.nodeId);
-        report.edges.append(moduleBlockEdgeFromNodes(
-            report.nodes.at(parentOutputId),
-            report.nodes.at(childIndex)));
-    }
+            const ModuleBlockDiagramNode childNode =
+                moduleBlockNodeFromRecord(child.definitionRecord,
+                                          nextNodeId++,
+                                          parentNodeId,
+                                          depth + 1,
+                                          child.instanceName,
+                                          child.instanceCodeLink,
+                                          child.unresolved,
+                                          child.unresolvedReason,
+                                          child.moduleTypeName);
+            const int childIndex = report.nodes.size();
+            report.nodes.append(childNode);
+            report.edges.append(moduleBlockEdgeFromNodes(
+                report.nodes.at(parentNodeId),
+                report.nodes.at(childIndex)));
+            if (child.unresolved)
+                ++report.unresolvedInstanceCount;
+            else
+                ++report.resolvedInstanceCount;
+
+            if (!child.unresolved && child.definitionRecord.isValid())
+                appendChildren(child.definitionRecord,
+                               childNode.nodeId,
+                               depth + 1,
+                               path);
+        }
+    };
+
+    appendChildren(rootRecord, report.root.nodeId, 0, {});
 
     report.moduleCount = report.nodes.size();
     report.edgeCount = report.edges.size();
