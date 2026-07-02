@@ -158,6 +158,7 @@ set(ZEROSLACK_CORE_SOURCES
     globalcontrolservice.cpp
     hierarchyservice.cpp
     hierarchyservicetraversal.cpp
+    insightvisualstyle.cpp
     inlinecommandmode.cpp
     sourcenavigationservice.cpp
     statetransitiongraphservice.cpp
@@ -343,6 +344,7 @@ set(ZEROSLACK_CORE_SOURCES
     globalcontrolpanel.h
     globalcontrolservice.h
     hierarchyservice.h
+    insightvisualstyle.h
     inlinecommandmode.h
     sourcenavigationservice.h
     statetransitiongraphservice.h
@@ -511,6 +513,10 @@ if(BUILD_TESTING)
     add_executable(gui_smoke_test test_sv/gui_smoke_test.cpp)
     target_link_libraries(gui_smoke_test PRIVATE zeroslack_core Qt6::Test)
 
+    add_executable(insight_visual_style_test
+        test_sv/insight_visual_style_test.cpp)
+    target_link_libraries(insight_visual_style_test PRIVATE zeroslack_core)
+
     add_executable(large_file_perf_test test_sv/large_file_perf_test.cpp)
     target_link_libraries(large_file_perf_test PRIVATE zeroslack_core Qt6::Test)
 
@@ -560,6 +566,13 @@ if(BUILD_TESTING)
             $<TARGET_FILE:gui_smoke_test>
             ${CMAKE_CURRENT_SOURCE_DIR}/test_sv/new
             ${CMAKE_CURRENT_SOURCE_DIR}/test_sv/test_symbols.sv
+    )
+    add_test(NAME insight_visual_style_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}"
+            "QT_QPA_PLATFORM=offscreen"
+            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
+            $<TARGET_FILE:insight_visual_style_test>
     )
     add_test(NAME large_file_perf_test
         COMMAND ${CMAKE_COMMAND} -E env

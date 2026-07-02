@@ -33,6 +33,10 @@ The next milestone should wait for a new explicit scoped request.
 
 Current baseline highlights:
 
+- Insight UI v2 visual foundation is established. `InsightVisualStyle` provides
+  reusable light-theme tokens, role colors, selected/hover pens, heat intensity
+  colors, compact control styling, and panel/legend helpers; the Signal Kernel
+  Graph panel is the scoped v2 demonstration surface for future Hotspot UI work.
 - Most recent completed milestone: State Transition Graph real usability
   repair. FSM discovery now handles structural `current <= #delay next` update
   pairs, including `#TP`, `# TP`, and `#(...)` controls common in the real
