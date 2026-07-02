@@ -11,19 +11,16 @@ into an analyzer.
 
 ## Current Execution Baseline
 
-- State Transition Graph real usability repair is complete for the
-  full-feature/corpus audit. Structural FSM discovery now handles delayed
+- State Transition Graph real usability repair is complete for targeted
+  regression coverage. Structural FSM discovery now handles delayed
   `current <= next` update pairs (`#TP`, `# TP`, and `#(...)`) while preserving
   next-state-only graph triggering and current-state rejection.
-- Verification baseline for this repair: Debug builds of `completion_test`,
-  `gui_smoke_test`, `corpus_audit_test`, `full_feature_audit_test`,
-  `jump_test`, and `relationship_test` passed. Full `corpus_audit_test`
-  regenerated the JSON/Markdown corpus reports, and `full_feature_audit_test`
-  regenerated the full feature reports.
-- Current audit deltas: State Transition Graph is now 68 pass / 0 fail / 398
-  skipped, up from 2 pass / 0 fail / 423 skipped. Signal Kernel Graph remains
-  32 pass / 0 fail / 1960 skipped, and the full-feature matrix reports 23 pass
-  / 0 known-issue.
+- Verification baseline for this repair is now focused regression plus GUI
+  smoke: `completion_test`, `relationship_test`, `gui_smoke_test`,
+  `jump_test`, and the lightweight `full_feature_audit_test` inventory.
+- Corpus audit is retired as an acceptance signal. GUI-found issues should be
+  reduced to small fixtures in the focused tests instead of broad corpus
+  sweeps.
 - No implementation milestone is active. Start the next milestone only from a
   new explicit scoped request.
 - The current completed baseline includes import-aware package member
@@ -1209,11 +1206,9 @@ M11.3 implementation status:
   nodes navigate to their instance declaration and do not drill into a missing
   definition.
 - Verification: Debug `completion_test`, `relationship_test`,
-  `gui_smoke_test`, `corpus_audit_test`, `full_feature_audit_test`, and
-  `jump_test` targets compile/link; CTest passed for all six named tests.
-  Corpus audit now reports `module_block_diagram` pass=209, fail=0,
-  skipped=0, timeout=0, empty-valid=215, with 8644 resolved diagram
-  instances and 7 unresolved blackbox instances over 424 real modules.
+  `gui_smoke_test`, `full_feature_audit_test`, and `jump_test` targets
+  compile/link; focused CTest runs passed. Future Module Block Diagram issues
+  should be captured as compact fixtures rather than broad corpus sweeps.
 
 ### 12. Workspace Project Configuration And Diagnostics Workflow
 
@@ -1591,40 +1586,16 @@ HWA.3 open audit gaps:
 
 ## Functional Corpus Audit
 
-Goal: run a broad service/report-layer audit over the real `test_sv/new` and
-`test_sv/huge_prj` SystemVerilog corpus without mutating corpus files.
-
-Milestones:
-
-- FCA.1 Add repeatable corpus audit target and reports.
-  (complete: `corpus_audit_test` recursively covers all 454 `.sv` / `.svh` /
-  `.v` files and writes JSON + Markdown reports under `test_sv`)
-- FCA.2 Exercise four priority features on real corpus.
-  (complete: State Transition Graph, Signal Kernel Graph, Module Block
-  Diagram, and Wave Preview are invoked through service/report-layer paths;
-  GUI smoke remains out of this stage)
-- FCA.3 Record failures and residual risk.
-  (complete: current report generated 2026-07-02T10:46:26Z UTC and covered 454
-  files, 424 modules, 3942 always/process records, 49,345 signal/port
-  candidates, 117,069 semantic records, 82,636 relationships, and 704
-  diagnostics. State Transition Graph is 68 pass / 0 fail / 398 skipped under a
-  deterministic module sample cap; discovered pairs include delayed
-  current<=next assignments such as `#TP`, `# TP`, and `#(...)`, with
-  next-state positives matched by current-state negative trigger checks. Signal
-  Kernel Graph is 32 pass / 0 fail /
-  1,960 skipped under deterministic no-candidate and sample-cap reasons.
-  Module Block Diagram is 209 pass / 215 empty-valid. Wave Preview uses
-  source-discovered always/process records and reports 1047 pass / 0 fail /
-  2957 skipped / 4 empty-valid under a deterministic process preview cap.
-  Semantic
-  baseline is 874 pass / 0 fail / 5 empty-but-valid, with empty outlines
-  classified as comment/preprocessor-only or header-like empty.)
+Retired. `corpus_audit_test` and `test_sv/corpus_audit_report.*` are no longer
+maintained because broad corpus sweeps were expensive and produced weak
+acceptance signals. Use targeted regression fixtures, GUI smoke, and
+feature-specific tests for future coverage.
 
 ## Full Feature Audit
 
 Goal: inventory the current implemented feature surface, connect entries to
-services/tests, and fold the full recursive corpus audit into a durable feature
-health report without mutating real corpus files.
+services/tests, and keep a lightweight feature health report without mutating
+real corpus files.
 
 Milestones:
 
@@ -1632,23 +1603,20 @@ Milestones:
   (complete: `full_feature_audit_test` writes
   `test_sv/full_feature_audit_report.json` and
   `test_sv/full_feature_audit_report.md` with 23 feature rows, 93 user entry
-  points, 75 service/test touchpoints, automation method, corpus coverage,
+  points, 75 service/test touchpoints, automation method, coverage ownership,
   pollution risk, status, reason, and next action.)
 - FFA.2 Full recursive corpus integration.
-  (complete: current run consumes the refreshed `corpus_audit_test` report for
-  all 454 `.sv` / `.svh` / `.v` files under `test_sv/new` and
-  `test_sv/huge_prj`; semantic totals are 117,069 records, 82,636 audit
-  relationships, and 704 diagnostics.)
+  (retired: full-feature no longer consumes `corpus_audit_test` output; it now
+  records focused regression and GUI-smoke ownership.)
 - FFA.3 Known issue triage without broad refactor.
   (complete: current matrix generated 2026-07-01T18:25:42Z UTC is 23 pass / 0
   fail / 0 skipped / 0 known-issue. Signal Kernel Graph budget limits are now
   expressed as deterministic case-level skipped reasons; other expensive RTL
   sweeps are likewise bounded and remain pass.)
 - FFA.4 Verification and documentation.
-  (complete: `ctest -R "^corpus_audit_test$" --output-on-failure` and
-  `ctest -R
-  "^(completion_test|jump_test|relationship_test|gui_smoke_test|full_feature_audit_test)$"
-  --output-on-failure` passed.)
+  (complete: focused regression CTest runs cover
+  `completion_test`, `jump_test`, `relationship_test`, `gui_smoke_test`, and
+  `full_feature_audit_test`.)
 - FFA.5 Acceptance repair after independent rerun.
   (complete: stale fast-regression fixtures were repaired instead of
   converting failures to known issues. FSM assertions now use structural

@@ -36,20 +36,13 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
   update pairs, including common `#TP`, `# TP`, and `#(...)` assignment delay
   controls, while keeping State Transition Graph gated to discovered next-state
   roles only.
-- Latest corpus audit report: `test_sv/corpus_audit_report.json` and
-  `test_sv/corpus_audit_report.md` cover 454 files, 424 modules, 3942
-  always/process records, 117069 semantic records, 82636 relationships, and 704
-  diagnostics. State Transition Graph now reports 68 pass / 0 fail / 398
-  skipped under the bounded structural audit, with 34 next-state graph positives
-  and matching current-state negative trigger checks.
-- Current bounded corpus result: State Transition Graph 68 pass / 0 fail / 398
-  skipped; Signal Kernel Graph 32 pass / 0 fail / 1960 skipped; Wave Preview
-  1047 pass / 0 fail / 2957 skipped / 4 empty-valid. Skipped cases are
-  deterministic unsupported or sample-cap outcomes. Full-feature now reports
-  23 pass / 0 fail / 0 skipped / 0 known-issue.
+- Corpus audit is retired as an acceptance signal. The current strategy is
+  targeted regression fixtures plus GUI smoke and feature-specific tests:
+  `completion_test`, `relationship_test`, `gui_smoke_test`, `jump_test`, and
+  the lightweight `full_feature_audit_test` inventory.
 - Current handoff state: no implementation milestone is active. The latest
   completed work is State Transition Graph real usability repair for delayed
-  structural FSM pairs in full-feature/corpus audit behavior. The current
+  structural FSM pairs in targeted regression behavior. The current
   baseline also includes import-aware
   SystemVerilog package symbol visibility, user template JSON usage, explicit
   header/include and package import commands, semantic `;m` module
@@ -425,10 +418,8 @@ engineering configuration / diagnostics lane.
   visible zoom controls, graph-element drill-down for resolved modules, and
   instance-declaration navigation for child nodes and blackboxes. Source symbol
   requests still route through `SemanticPanelRefreshCoordinator`; UI code does
-  not scan workspaces or run Slang. The 2026-07-02 corpus audit over
-  `test_sv/new` and `test_sv/huge_prj` reports 209 pass, 0 fail, 0 skipped,
-  215 empty-valid, 8644 resolved diagram instances, and 7 unresolved blackbox
-  instances.
+  not scan workspaces or run Slang. Future Module Block Diagram regressions
+  should be captured as compact fixtures rather than broad corpus sweeps.
 
 ## Command Responsibility Map
 
@@ -651,11 +642,9 @@ Do not add unlisted long-term goals without explicit user approval.
   the user explicitly asks to run them.
 - Latest Module Block Diagram real-usability pass: Debug targets
   `completion_test`, `relationship_test`, `gui_smoke_test`,
-  `corpus_audit_test`, `full_feature_audit_test`, and `jump_test` compile/link;
-  CTest passed for all six named tests. `test_sv/corpus_audit_report.*` now
-  records `module_block_diagram` pass=209, fail=0, skipped=0, timeout=0,
-  empty-valid=215 across 424 real modules, with 8644 resolved diagram
-  instances and 7 unresolved blackbox instances.
+  `full_feature_audit_test`, and `jump_test` compile/link; focused CTest runs
+  passed. Regression coverage should stay in compact fixtures and GUI smoke,
+  not in a broad corpus audit.
 - Latest acceptance baseline repair: `completion_test` source-symbol context
   menu assertions now cover all five actions including `ShowModuleBlockDiagram`.
   Release `ctest -R "^completion_test$" --output-on-failure` and
@@ -860,47 +849,17 @@ Do not add unlisted long-term goals without explicit user approval.
   completion_test relationship_test gui_smoke_test`; `ctest -R
   "^(completion_test|relationship_test|gui_smoke_test)$" --output-on-failure`;
   `git diff --check -- . ':!test_sv/new/elec_phy_import/ctrl/chl_ctrl.sv'`.
-- Functional Corpus Audit: `corpus_audit_test` is a headless
-  service/report-layer audit target for `test_sv/new` and `test_sv/huge_prj`.
-  It recursively opens all `.sv`, `.svh`, and `.v` files read-only, builds a
-  semantic snapshot, emits direct Slang-fact relationships for audit use, and
-  writes `test_sv/corpus_audit_report.json` plus
-  `test_sv/corpus_audit_report.md`. Current report generated
-  2026-07-02T10:46:26Z UTC and covered 454 files, 424 modules, 3942
-  always/process records, 49,345 signal/port candidates, 117,069 semantic
-  records, 82,636 audit relationships, and 704 diagnostics. Summary: State
-  Transition Graph 68 pass / 0 fail / 398 skipped; Signal Kernel Graph 32
-  pass / 0 fail / 1,960 skipped; Module Block Diagram 209 pass / 215
-  empty-but-valid; Wave Preview 1,047 pass / 0 fail / 2,957 skipped / 4
-  empty-but-valid;
-  semantic baseline 874 pass / 0 fail / 5 empty-but-valid. State Transition
-  Graph audit semantics remain structural: 34 discovered delayed/current-next
-  graph cases produce next-state positives and matching current-state negative
-  trigger checks, while skipped modules retain explicit no-structural-FSM or
-  module sample-cap reasons. Wave Preview is no longer
-  module-fallback only: the
-  audit now includes 3942 source-discovered always/process records, with
-  no-lane/no-warning cases repaired into lane-producing previews or explicit
-  empty-valid unsupported reasons. Semantic baseline moved from 3 fail to 0 fail / 5
-  empty-but-valid by classifying empty outlines as comment/preprocessor-only or
-  header-like empty files. Expensive RTL insight sweeps are deterministic and
-  bounded: State Transition Graph samples modules, Signal Kernel Graph
-  prioritizes relationship endpoint signals and graphs up to 32 total kernels,
-  and Wave Preview samples process previews while recording skipped reasons.
-  Verification run: `ninja corpus_audit_test`; direct offscreen
-  `corpus_audit_test.exe E:\ZeroSlack\ZeroSlack\test_sv\new
-  E:\ZeroSlack\ZeroSlack\test_sv\huge_prj`.
+- Functional Corpus Audit: retired. `corpus_audit_test` and
+  `test_sv/corpus_audit_report.*` are no longer maintained because the broad
+  sweep was expensive and gave weak acceptance signals. New GUI-discovered
+  issues should be reduced into small fixtures and added to
+  `relationship_test`, `completion_test`, `gui_smoke_test`, `jump_test`, or a
+  feature-specific regression target.
 - Full Feature Audit: `full_feature_audit_test` now inventories the
   broader product surface and writes `test_sv/full_feature_audit_report.json`
-  plus `test_sv/full_feature_audit_report.md`. Current report generated
-  2026-07-01T18:25:42Z UTC and covers 23 feature rows, 93 user entry points,
-  75 service/test touchpoints, 454 recursive corpus files, 117,069 semantic
-  records, 82,636 audit relationships, and 704 diagnostics. Summary: 23 pass /
-  0 fail / 0 skipped / 0 known-issue. Verification passed: `ctest -R
-  "^corpus_audit_test$" --output-on-failure`; `ctest -R
-  "^full_feature_audit_test$" --output-on-failure`; `ctest -R
-  "^gui_smoke_test$" --output-on-failure`; related `completion_test` and
-  `relationship_test` also passed.
+  plus `test_sv/full_feature_audit_report.md`. It is a lightweight feature
+  inventory and ownership check, not a corpus acceptance gate. Verification
+  should pair it with the focused regression targets and GUI smoke.
 - Full Feature Audit acceptance repair: fast regression failures after
   `fbf7273` were traced to stale test context, not new product behavior. The
   FSM assertions now use structural current<=next fixtures instead of

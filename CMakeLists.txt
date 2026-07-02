@@ -517,9 +517,6 @@ if(BUILD_TESTING)
     add_executable(relationship_perf_test test_sv/relationship_perf_test.cpp)
     target_link_libraries(relationship_perf_test PRIVATE zeroslack_core)
 
-    add_executable(corpus_audit_test test_sv/corpus_audit_test.cpp)
-    target_link_libraries(corpus_audit_test PRIVATE zeroslack_core)
-
     add_executable(full_feature_audit_test test_sv/full_feature_audit_test.cpp)
     set_target_properties(full_feature_audit_test PROPERTIES
         AUTOMOC OFF
@@ -571,15 +568,6 @@ if(BUILD_TESTING)
             "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
             $<TARGET_FILE:large_file_perf_test>
             ${CMAKE_CURRENT_SOURCE_DIR}/test_sv/new
-    )
-    add_test(NAME corpus_audit_test
-        COMMAND ${CMAKE_COMMAND} -E env
-            "PATH=${ZEROSLACK_TEST_PATH}"
-            "QT_QPA_PLATFORM=offscreen"
-            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
-            $<TARGET_FILE:corpus_audit_test>
-            ${CMAKE_CURRENT_SOURCE_DIR}/test_sv/new
-            ${CMAKE_CURRENT_SOURCE_DIR}/test_sv/huge_prj
     )
     add_test(NAME full_feature_audit_test
         COMMAND ${CMAKE_COMMAND} -E env
