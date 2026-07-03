@@ -3,6 +3,7 @@
 #include "codepreviewservice.h"
 #include "documentmodel.h"
 #include "editorhoverpopup.h"
+#include "insightvisualstyle.h"
 
 #include <QBrush>
 #include <QCheckBox>
@@ -10,6 +11,7 @@
 #include <QFileInfo>
 #include <QFont>
 #include <QFontMetrics>
+#include <QFrame>
 #include <QGraphicsLineItem>
 #include <QGraphicsPolygonItem>
 #include <QGraphicsRectItem>
@@ -124,39 +126,36 @@ QColor inputLaneColor(SignalKernelGraphInputLane lane)
 {
     switch (lane) {
     case SignalKernelGraphInputLane::Data:
-        return QColor(QStringLiteral("#dcfce7"));
+        return InsightVisualStyle::roleFillColor(InsightVisualRole::Data);
     case SignalKernelGraphInputLane::Control:
-        return QColor(QStringLiteral("#fef3c7"));
+        return InsightVisualStyle::roleFillColor(InsightVisualRole::Control);
     case SignalKernelGraphInputLane::Timing:
-        return QColor(QStringLiteral("#e0f2fe"));
+        return InsightVisualStyle::roleFillColor(InsightVisualRole::Timing);
     }
-    return QColor(QStringLiteral("#dcfce7"));
+    return InsightVisualStyle::roleFillColor(InsightVisualRole::Unknown);
+}
+
+InsightVisualRole visualRoleForGraphRole(SignalKernelGraphNodeRole role)
+{
+    switch (role) {
+    case SignalKernelGraphNodeRole::Kernel:
+        return InsightVisualRole::Kernel;
+    case SignalKernelGraphNodeRole::Input:
+        return InsightVisualRole::Read;
+    case SignalKernelGraphNodeRole::Output:
+        return InsightVisualRole::Write;
+    }
+    return InsightVisualRole::Unknown;
 }
 
 QColor fillColorForRole(SignalKernelGraphNodeRole role)
 {
-    switch (role) {
-    case SignalKernelGraphNodeRole::Kernel:
-        return QColor(QStringLiteral("#eaf2ff"));
-    case SignalKernelGraphNodeRole::Input:
-        return QColor(QStringLiteral("#e8f7ef"));
-    case SignalKernelGraphNodeRole::Output:
-        return QColor(QStringLiteral("#fff4dd"));
-    }
-    return QColor(QStringLiteral("#f8fafc"));
+    return InsightVisualStyle::roleFillColor(visualRoleForGraphRole(role));
 }
 
 QColor strokeColorForRole(SignalKernelGraphNodeRole role)
 {
-    switch (role) {
-    case SignalKernelGraphNodeRole::Kernel:
-        return QColor(QStringLiteral("#2563eb"));
-    case SignalKernelGraphNodeRole::Input:
-        return QColor(QStringLiteral("#15803d"));
-    case SignalKernelGraphNodeRole::Output:
-        return QColor(QStringLiteral("#b45309"));
-    }
-    return QColor(QStringLiteral("#64748b"));
+    return InsightVisualStyle::roleColor(visualRoleForGraphRole(role));
 }
 
 QPointF leftAnchor(const QRectF& rect)
@@ -273,24 +272,25 @@ public:
         setFlag(QGraphicsItem::ItemIsSelectable, true);
         setTransformOriginPoint(rect.center());
         setBrush(fillColorForRole(node.role));
-        setPen(searchMatch
-                   ? QPen(QColor(QStringLiteral("#db2777")), 2.8)
-                   : QPen(strokeColorForRole(node.role),
-                          node.role == SignalKernelGraphNodeRole::Kernel ? 2.0
-                                                                          : 1.4));
+        normalPen =
+            searchMatch
+                ? InsightVisualStyle::selectedPen(2.8)
+                : QPen(strokeColorForRole(node.role),
+                       node.role == SignalKernelGraphNodeRole::Kernel ? 2.0
+                                                                       : 1.4);
+        hoverPen = searchMatch ? normalPen : InsightVisualStyle::hoverPen();
+        setPen(normalPen);
 
-        QFont titleFont = font;
-        titleFont.setBold(true);
+        QFont titleFont = InsightVisualStyle::titleFont(font);
         titleFont.setPointSize(qMax(8, titleFont.pointSize() + 1));
-        QFont detailFont = font;
-        detailFont.setPointSize(qMax(8, detailFont.pointSize() - 1));
+        QFont detailFont = InsightVisualStyle::compactFont(font);
 
         auto* title = new QGraphicsSimpleTextItem(
             elidedText(node.displayName, titleFont,
                        static_cast<int>(rect.width() - 18)),
             this);
         title->setFont(titleFont);
-        title->setBrush(QBrush(QColor(QStringLiteral("#0f172a"))));
+        title->setBrush(QBrush(InsightVisualStyle::theme().textPrimary));
         title->setPos(rect.left() + 10, rect.top() + 8);
 
         QString detail = node.typeDisplayName;
@@ -301,7 +301,7 @@ public:
                        static_cast<int>(rect.width() - 18)),
             this);
         detailItem->setFont(detailFont);
-        detailItem->setBrush(QBrush(QColor(QStringLiteral("#475569"))));
+        detailItem->setBrush(QBrush(InsightVisualStyle::theme().textSecondary));
         detailItem->setPos(rect.left() + 10, rect.top() + 34);
     }
 
@@ -315,6 +315,7 @@ protected:
     void hoverEnterEvent(QGraphicsSceneHoverEvent* event) override
     {
         setZValue(40);
+        setPen(hoverPen);
         QGraphicsRectItem::hoverEnterEvent(event);
     }
 
@@ -326,6 +327,7 @@ protected:
     void hoverLeaveEvent(QGraphicsSceneHoverEvent* event) override
     {
         setZValue(10);
+        setPen(isSelected() ? InsightVisualStyle::selectedPen() : normalPen);
         QGraphicsRectItem::hoverLeaveEvent(event);
     }
 
@@ -340,6 +342,7 @@ protected:
         }
         if (event->button() == Qt::RightButton && previewHandler) {
             setSelected(true);
+            setPen(InsightVisualStyle::selectedPen());
             previewHandler(node, sceneBoundingRect());
             event->accept();
             return;
@@ -359,6 +362,8 @@ protected:
 
 private:
     SignalKernelGraphNode node;
+    QPen normalPen;
+    QPen hoverPen;
 };
 
 class SignalKernelGraphFanoutGroupItem : public QGraphicsRectItem
@@ -380,20 +385,19 @@ public:
     {
         setAcceptHoverEvents(true);
         setFlag(QGraphicsItem::ItemIsSelectable, true);
-        setBrush(QColor(collapsed
-                            ? QStringLiteral("#f8fafc")
-                            : QStringLiteral("#eef2ff")));
-        setPen(searchMatch
-                   ? QPen(QColor(QStringLiteral("#db2777")), 2.6)
-                   : QPen(QColor(QStringLiteral("#475569")),
-                          collapsed ? 1.5 : 1.1,
-                          collapsed ? Qt::SolidLine : Qt::DashLine));
+        setBrush(collapsed ? InsightVisualStyle::panelBrush()
+                           : QBrush(InsightVisualStyle::theme().panelSubtle));
+        normalPen =
+            searchMatch
+                ? InsightVisualStyle::selectedPen(2.6)
+                : QPen(InsightVisualStyle::theme().borderStrong,
+                       collapsed ? 1.5 : 1.1,
+                       collapsed ? Qt::SolidLine : Qt::DashLine);
+        hoverPen = searchMatch ? normalPen : InsightVisualStyle::hoverPen();
+        setPen(normalPen);
 
-        QFont titleFont = font;
-        titleFont.setBold(true);
-        titleFont.setPointSize(qMax(8, titleFont.pointSize()));
-        QFont detailFont = font;
-        detailFont.setPointSize(qMax(8, detailFont.pointSize() - 1));
+        QFont titleFont = InsightVisualStyle::titleFont(font);
+        QFont detailFont = InsightVisualStyle::compactFont(font);
 
         const QString marker = collapsed
             ? QStringLiteral("[+] ")
@@ -404,7 +408,7 @@ public:
                        static_cast<int>(rect.width() - 18)),
             this);
         title->setFont(titleFont);
-        title->setBrush(QBrush(QColor(QStringLiteral("#0f172a"))));
+        title->setBrush(QBrush(InsightVisualStyle::theme().textPrimary));
         title->setPos(rect.left() + 10, rect.top() + 7);
 
         const QString detail =
@@ -417,7 +421,7 @@ public:
                        static_cast<int>(rect.width() - 18)),
             this);
         detailItem->setFont(detailFont);
-        detailItem->setBrush(QBrush(QColor(QStringLiteral("#475569"))));
+        detailItem->setBrush(QBrush(InsightVisualStyle::theme().textSecondary));
         detailItem->setPos(rect.left() + 10, rect.top() + 32);
     }
 
@@ -427,18 +431,22 @@ protected:
     void hoverEnterEvent(QGraphicsSceneHoverEvent* event) override
     {
         setZValue(45);
+        setPen(hoverPen);
         QGraphicsRectItem::hoverEnterEvent(event);
     }
 
     void hoverLeaveEvent(QGraphicsSceneHoverEvent* event) override
     {
         setZValue(collapsed ? 12 : 14);
+        setPen(isSelected() ? InsightVisualStyle::selectedPen() : normalPen);
         QGraphicsRectItem::hoverLeaveEvent(event);
     }
 
     void mousePressEvent(QGraphicsSceneMouseEvent* event) override
     {
         if (event->button() == Qt::LeftButton && toggleHandler) {
+            setSelected(true);
+            setPen(InsightVisualStyle::selectedPen());
             toggleHandler(key);
             event->accept();
             return;
@@ -450,6 +458,8 @@ private:
     SignalKernelGraphFanoutGroup group;
     QString key;
     bool collapsed = false;
+    QPen normalPen;
+    QPen hoverPen;
 };
 
 QString hoverKeyForNode(const SignalKernelGraphNode& node)
@@ -607,17 +617,16 @@ void addInputLaneBand(QGraphicsScene* scene,
         return;
     QColor fill = inputLaneColor(band.lane);
     fill.setAlpha(74);
-    QPen pen(inputLaneColor(band.lane).darker(150), 1.0);
+    QPen pen(inputLaneColor(band.lane).darker(140), 1.0);
     auto* rectItem = scene->addRect(band.rect, pen, QBrush(fill));
     rectItem->setZValue(-35);
 
     QFont labelFont = font;
-    labelFont.setBold(true);
-    labelFont.setPointSize(qMax(8, labelFont.pointSize() - 1));
+    labelFont = InsightVisualStyle::labelFont(font);
     auto* label = scene->addSimpleText(
         SignalKernelGraphService::inputLaneDisplayName(band.lane),
         labelFont);
-    label->setBrush(QBrush(QColor(QStringLiteral("#334155"))));
+    label->setBrush(QBrush(InsightVisualStyle::theme().textSecondary));
     label->setPos(band.rect.left() + 10, band.rect.top() + 8);
     label->setZValue(-13);
 }
@@ -665,22 +674,21 @@ void addModuleWrapper(QGraphicsScene* scene,
         return;
 
     QPen pen(group.crossModule
-                 ? QColor(QStringLiteral("#64748b"))
-                 : QColor(QStringLiteral("#2563eb")),
+                 ? InsightVisualStyle::theme().borderStrong
+                 : InsightVisualStyle::roleColor(InsightVisualRole::Kernel),
              group.crossModule ? 1.0 : 1.3,
              group.crossModule ? Qt::DashLine : Qt::SolidLine);
     QColor fill = group.crossModule
-        ? QColor(QStringLiteral("#f8fafc"))
-        : QColor(QStringLiteral("#eff6ff"));
+        ? InsightVisualStyle::theme().panelSubtle
+        : InsightVisualStyle::roleFillColor(InsightVisualRole::Kernel);
     fill.setAlpha(group.crossModule ? 34 : 48);
     auto* wrapper = scene->addRect(groupRect, pen, QBrush(fill));
     wrapper->setZValue(-25);
 
     QFont labelFont = font;
-    labelFont.setBold(true);
-    labelFont.setPointSize(qMax(8, labelFont.pointSize() - 1));
+    labelFont = InsightVisualStyle::labelFont(font);
     auto* label = scene->addSimpleText(group.moduleName, labelFont);
-    label->setBrush(QBrush(QColor(QStringLiteral("#334155"))));
+    label->setBrush(QBrush(InsightVisualStyle::theme().textSecondary));
     label->setPos(groupRect.right() - label->boundingRect().width() - 10,
                   groupRect.top() + 8);
     label->setZValue(-14);
@@ -694,10 +702,9 @@ void addSectionLabel(QGraphicsScene* scene,
 {
     if (!scene)
         return;
-    QFont labelFont = font;
-    labelFont.setBold(true);
+    QFont labelFont = InsightVisualStyle::labelFont(font);
     auto* label = scene->addSimpleText(text, labelFont);
-    label->setBrush(QBrush(QColor(QStringLiteral("#334155"))));
+    label->setBrush(QBrush(InsightVisualStyle::theme().textSecondary));
     label->setPos(x - label->boundingRect().width() / 2.0, y);
     label->setZValue(20);
 }
@@ -707,18 +714,15 @@ SignalKernelGraphPanelCoordinator::SignalKernelGraphPanelCoordinator(
     QWidget* parent)
 {
     auto* panel = new QWidget(parent);
+    panel->setObjectName(QStringLiteral("signalKernelGraphPanel"));
+    InsightVisualStyle::applyPanel(panel);
     auto* layout = new QVBoxLayout(panel);
-    layout->setContentsMargins(4, 4, 4, 4);
-    layout->setSpacing(4);
+    layout->setContentsMargins(6, 6, 6, 6);
+    layout->setSpacing(6);
 
     titleLabel = new QLabel(QStringLiteral("Signal Kernel Graph"), panel);
     titleLabel->setObjectName(QStringLiteral("signalKernelGraphTitle"));
-    titleLabel->setStyleSheet(QStringLiteral(
-        "QLabel#signalKernelGraphTitle {"
-        "  color: #0f172a;"
-        "  padding: 3px 4px;"
-        "  font-weight: 600;"
-        "}"));
+    InsightVisualStyle::applyTitleLabel(titleLabel);
     layout->addWidget(titleLabel);
 
     auto* controlsLayout = new QHBoxLayout();
@@ -729,19 +733,21 @@ SignalKernelGraphPanelCoordinator::SignalKernelGraphPanelCoordinator(
         QStringLiteral("signalKernelGraphSearchEdit"));
     graphSearchEdit->setPlaceholderText(QStringLiteral("Search graph"));
     graphSearchEdit->setClearButtonEnabled(true);
-    graphSearchEdit->setMinimumWidth(160);
+    InsightVisualStyle::applySearchField(graphSearchEdit);
     controlsLayout->addWidget(graphSearchEdit, 1);
 
     showInputsCheck = new QCheckBox(QStringLiteral("Inputs"), panel);
     showInputsCheck->setObjectName(
         QStringLiteral("signalKernelGraphShowInputsCheck"));
     showInputsCheck->setChecked(graphShowInputs);
+    InsightVisualStyle::applySegmentedCheckBox(showInputsCheck);
     controlsLayout->addWidget(showInputsCheck);
 
     showOutputsCheck = new QCheckBox(QStringLiteral("Outputs"), panel);
     showOutputsCheck->setObjectName(
         QStringLiteral("signalKernelGraphShowOutputsCheck"));
     showOutputsCheck->setChecked(graphShowOutputs);
+    InsightVisualStyle::applySegmentedCheckBox(showOutputsCheck);
     controlsLayout->addWidget(showOutputsCheck);
 
     crossModuleOnlyCheck =
@@ -749,6 +755,7 @@ SignalKernelGraphPanelCoordinator::SignalKernelGraphPanelCoordinator(
     crossModuleOnlyCheck->setObjectName(
         QStringLiteral("signalKernelGraphCrossModuleOnlyCheck"));
     crossModuleOnlyCheck->setChecked(graphCrossModuleOnly);
+    InsightVisualStyle::applySegmentedCheckBox(crossModuleOnlyCheck);
     controlsLayout->addWidget(crossModuleOnlyCheck);
     layout->addLayout(controlsLayout);
 
@@ -789,7 +796,17 @@ SignalKernelGraphPanelCoordinator::SignalKernelGraphPanelCoordinator(
     graphView->setFocusPolicy(Qt::StrongFocus);
     graphView->setTransformationAnchor(QGraphicsView::AnchorUnderMouse);
     graphView->setResizeAnchor(QGraphicsView::AnchorViewCenter);
-    graphView->setBackgroundBrush(QBrush(QColor(QStringLiteral("#f8fafc"))));
+    graphView->setBackgroundBrush(InsightVisualStyle::canvasBrush());
+    graphView->setFrameShape(QFrame::StyledPanel);
+    graphView->setStyleSheet(QStringLiteral(
+        "QGraphicsView#signalKernelGraphView {"
+        "  background: %1;"
+        "  border: 1px solid %2;"
+        "  border-radius: 6px;"
+        "}")
+                                 .arg(InsightVisualStyle::theme()
+                                          .canvasBackground.name(),
+                                      InsightVisualStyle::theme().border.name()));
     if (auto* signalGraphView =
             dynamic_cast<SignalKernelGraphView*>(graphView)) {
         signalGraphView->pressHandler =
@@ -1267,7 +1284,7 @@ void SignalKernelGraphPanelCoordinator::renderReport(
         addModuleWrapper(graphScene, group, moduleWrapperRects, baseFont);
     }
 
-    QPen edgePen(QColor(QStringLiteral("#94a3b8")), 1.5);
+    QPen edgePen(InsightVisualStyle::theme().borderStrong, 1.5);
     QSet<QString> renderedEdgeKeys;
     for (const SignalKernelGraphEdge& edge : report.edges) {
         const int fromRectId =
@@ -1336,7 +1353,7 @@ void SignalKernelGraphPanelCoordinator::renderUnavailable(
         ? QStringLiteral("Signal kernel graph unavailable.")
         : message;
     auto* item = graphScene->addText(text);
-    item->setDefaultTextColor(QColor(QStringLiteral("#64748b")));
+    item->setDefaultTextColor(InsightVisualStyle::theme().textMuted);
     item->setPos(0, 0);
     graphScene->setSceneRect(item->boundingRect().adjusted(-40, -40, 40, 40));
     if (titleLabel)

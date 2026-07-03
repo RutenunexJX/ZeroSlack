@@ -23,6 +23,11 @@ into an analyzer.
   sweeps.
 - No implementation milestone is active. Start the next milestone only from a
   new explicit scoped request.
+- Insight UI v2 visual foundation is established through shared
+  `InsightVisualStyle` Qt helpers and a scoped Signal Kernel Graph shell
+  example. Future Signal Usage Hotspot Track/Matrix panels should consume these
+  color, pen, font, panel, search, segmented-control, legend, and heat helpers
+  instead of adding panel-local palettes.
 - The current completed baseline includes import-aware package member
   visibility for unqualified completion, definition, and hover; user template
   JSON usage actions; explicit header/include and package import commands;

@@ -49,6 +49,11 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
   instantiation Slot Mode, Macro / Define semantics, Package Tools phase 1,
   References / Relationships workflow closure, and Fold Shelf
   persistence/restore/management.
+- Insight UI v2 visual foundation is available through `InsightVisualStyle`.
+  Signal Kernel Graph uses it as the low-risk demonstration panel; future Signal
+  Usage Hotspot Track/Matrix UI should reuse its role colors, heat color helper,
+  selected/hover pens, compact panel, search, segmented control, inspector card,
+  and legend swatch helpers.
 - The app is a lightweight SystemVerilog editor/workspace browser with tabs,
   workspace file navigation, semantic indexing, diagnostics, completion,
   jump-to-definition, references/relationships, and focused RTL visual helpers.
