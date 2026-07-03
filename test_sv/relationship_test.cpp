@@ -27,6 +27,7 @@
 #include "rtlinsightspanelcoordinator.h"
 #include "signalkernelgraphservice.h"
 #include "signaljourneyservice.h"
+#include "signalusagehotspotservice.h"
 #include "statetransitiongraphservice.h"
 #include "symbolrelationshipengine.h"
 #include "semanticindexsnapshot.h"
@@ -6430,6 +6431,470 @@ static void runSignalJourneyServiceFixture()
                true);
 }
 
+static void runSignalUsageHotspotServiceFixture()
+{
+    printf("\n-- signal usage hotspot service fixture --\n");
+
+    const QString fileName = QStringLiteral("test_sv/signal_hotspot_fixture.sv");
+    const QString auxFileName =
+        QStringLiteral("test_sv/signal_hotspot_aux_fixture.sv");
+    using CollectorKind = SymbolTaxonomy::CollectorKind;
+    using DeclarationKind = SymbolTaxonomy::DeclarationKind;
+
+    auto evidenceRange = [](const QString& fileName,
+                            int line,
+                            int column,
+                            int endColumn) {
+        SemanticSourceRange range;
+        range.fileName = fileName;
+        range.line = line;
+        range.column = column;
+        range.endLine = line;
+        range.endColumn = endColumn;
+        return range;
+    };
+
+    const SemanticSymbolRecord module =
+        SemanticFixtureRecordBuilder(QStringLiteral("hotspot_top"),
+                                     DeclarationKind::Module)
+            .withFile(fileName)
+            .withLocalHandle(9500)
+            .withRange(1, 1, 90, 1)
+            .withCollectorKind(CollectorKind::Module)
+            .record();
+    const SemanticSymbolRecord auxModule =
+        SemanticFixtureRecordBuilder(QStringLiteral("hotspot_aux"),
+                                     DeclarationKind::Module)
+            .withFile(auxFileName)
+            .withLocalHandle(9501)
+            .withRange(1, 1, 30, 1)
+            .withCollectorKind(CollectorKind::Module)
+            .record();
+    const SemanticSymbolRecord hotSig =
+        SemanticFixtureRecordBuilder(QStringLiteral("hot_sig"),
+                                     DeclarationKind::Signal)
+            .withFile(fileName)
+            .withLocalHandle(9502)
+            .withLine(5)
+            .withCollectorKind(CollectorKind::Logic)
+            .inModule(QStringLiteral("hotspot_top"))
+            .record();
+    const SemanticSymbolRecord writer =
+        SemanticFixtureRecordBuilder(QStringLiteral("src_data"),
+                                     DeclarationKind::Signal)
+            .withFile(fileName)
+            .withLocalHandle(9503)
+            .withLine(11)
+            .withCollectorKind(CollectorKind::Logic)
+            .inModule(QStringLiteral("hotspot_top"))
+            .record();
+    const SemanticSymbolRecord reader =
+        SemanticFixtureRecordBuilder(QStringLiteral("reader_proc"),
+                                     DeclarationKind::Process)
+            .withFile(fileName)
+            .withLocalHandle(9504)
+            .withLine(20)
+            .withCollectorKind(CollectorKind::AlwaysComb)
+            .inModule(QStringLiteral("hotspot_top"))
+            .record();
+    const SemanticSymbolRecord portPin =
+        SemanticFixtureRecordBuilder(QStringLiteral("u_child.data_i"),
+                                     DeclarationKind::Instance)
+            .withFile(fileName)
+            .withLocalHandle(9505)
+            .withLine(30)
+            .withCollectorKind(CollectorKind::InstPin)
+            .inModule(QStringLiteral("hotspot_top"))
+            .record();
+    const SemanticSymbolRecord conditionProc =
+        SemanticFixtureRecordBuilder(QStringLiteral("condition_proc"),
+                                     DeclarationKind::Process)
+            .withFile(fileName)
+            .withLocalHandle(9506)
+            .withLine(40)
+            .withCollectorKind(CollectorKind::AlwaysComb)
+            .inModule(QStringLiteral("hotspot_top"))
+            .record();
+    const SemanticSymbolRecord caseProc =
+        SemanticFixtureRecordBuilder(QStringLiteral("case_proc"),
+                                     DeclarationKind::Process)
+            .withFile(fileName)
+            .withLocalHandle(9507)
+            .withLine(50)
+            .withCollectorKind(CollectorKind::AlwaysComb)
+            .inModule(QStringLiteral("hotspot_top"))
+            .record();
+    const SemanticSymbolRecord constraintProc =
+        SemanticFixtureRecordBuilder(QStringLiteral("constraint_proc"),
+                                     DeclarationKind::Constraint)
+            .withFile(fileName)
+            .withLocalHandle(9508)
+            .withLine(70)
+            .withCollectorKind(CollectorKind::XilinxConstraint)
+            .inModule(QStringLiteral("hotspot_top"))
+            .record();
+    const SemanticSymbolRecord auxReader =
+        SemanticFixtureRecordBuilder(QStringLiteral("aux_reader"),
+                                     DeclarationKind::Process)
+            .withFile(auxFileName)
+            .withLocalHandle(9509)
+            .withLine(8)
+            .withCollectorKind(CollectorKind::AlwaysComb)
+            .inModule(QStringLiteral("hotspot_aux"))
+            .record();
+
+    QList<SemanticRelationship> relationships;
+    relationships.append(semanticFixtureRelationship(
+        writer,
+        hotSig,
+        SymbolRelationshipEngine::ASSIGNS_TO,
+        RelationshipProvenance::Inferred,
+        90,
+        QStringLiteral("assign hot_sig = src_data"),
+        evidenceRange(fileName, 12, 10, 30)));
+    relationships.append(semanticFixtureRelationship(
+        reader,
+        hotSig,
+        SymbolRelationshipEngine::READS_FROM,
+        RelationshipProvenance::Inferred,
+        80,
+        QStringLiteral("reader consumes hot_sig"),
+        evidenceRange(fileName, 20, 18, 25)));
+    relationships.append(semanticFixtureRelationship(
+        portPin,
+        hotSig,
+        SymbolRelationshipEngine::REFERENCES,
+        RelationshipProvenance::Inferred,
+        100,
+        QStringLiteral("u_child.data_i(hot_sig)"),
+        evidenceRange(fileName, 30, 22, 29)));
+    relationships.append(semanticFixtureRelationship(
+        conditionProc,
+        hotSig,
+        SymbolRelationshipEngine::READS_FROM,
+        RelationshipProvenance::Inferred,
+        85,
+        QStringLiteral("if condition guard uses hot_sig"),
+        evidenceRange(fileName, 40, 9, 16)));
+    relationships.append(semanticFixtureRelationship(
+        caseProc,
+        hotSig,
+        SymbolRelationshipEngine::READS_FROM,
+        RelationshipProvenance::Inferred,
+        85,
+        QStringLiteral("case selector hot_sig"),
+        evidenceRange(fileName, 50, 11, 18)));
+    relationships.append(semanticFixtureRelationship(
+        hotSig,
+        module,
+        SymbolRelationshipEngine::CLOCKS,
+        RelationshipProvenance::Inferred,
+        100,
+        QStringLiteral("posedge hot_sig"),
+        evidenceRange(fileName, 60, 19, 26)));
+    relationships.append(semanticFixtureRelationship(
+        constraintProc,
+        hotSig,
+        SymbolRelationshipEngine::CONSTRAINS,
+        RelationshipProvenance::Inferred,
+        60,
+        QStringLiteral("constraint evidence for hot_sig"),
+        evidenceRange(fileName, 70, 7, 14)));
+    relationships.append(semanticFixtureRelationship(
+        auxReader,
+        hotSig,
+        SymbolRelationshipEngine::READS_FROM,
+        RelationshipProvenance::Workspace,
+        75,
+        QStringLiteral("aux module reads hot_sig"),
+        evidenceRange(auxFileName, 8, 12, 19)));
+
+    SemanticIndex index;
+    index.setSnapshot(sharedSnapshotFromRecords(
+        {module,
+         auxModule,
+         hotSig,
+         writer,
+         reader,
+         portPin,
+         conditionProc,
+         caseProc,
+         constraintProc,
+         auxReader},
+        relationships,
+        QList<SemanticDiagnostic>()));
+    SignalUsageHotspotService service(&index);
+    SignalUsageHotspotQuery query;
+    query.signalName = QStringLiteral("hot_sig");
+    query.fileName = fileName;
+    query.moduleName = QStringLiteral("hotspot_top");
+    const SignalUsageHotspotReport report =
+        service.buildSignalUsageHotspot(query);
+
+    auto roleCount = [&report](SignalUsageHotspotRole role) {
+        for (const SignalUsageHotspotRoleSummary& summary
+             : report.roleSummaries) {
+            if (summary.role == role)
+                return summary.count;
+        }
+        return 0;
+    };
+    auto moduleCount = [&report](const QString& moduleName) {
+        for (const SignalUsageHotspotModuleSummary& summary
+             : report.moduleSummaries) {
+            if (summary.moduleName == moduleName)
+                return summary.count;
+        }
+        return 0;
+    };
+    auto fileCount = [&report](const QString& name) {
+        for (const SignalUsageHotspotFileSummary& summary
+             : report.fileSummaries) {
+            if (summary.fileName == name)
+                return summary.count;
+        }
+        return 0;
+    };
+    auto matrixCount = [&report](const QString& moduleName,
+                                 const QString& name,
+                                 SignalUsageHotspotRole role) {
+        for (const SignalUsageHotspotMatrixCell& cell : report.matrixCells) {
+            if (cell.moduleName == moduleName
+                && cell.fileName == name
+                && cell.role == role) {
+                return cell.count;
+            }
+        }
+        return 0;
+    };
+
+    expectBool("signal usage hotspot found",
+               report.found
+                   && report.declarationDisplayName == QStringLiteral("hot_sig")
+                   && report.declarationStableKey == hotSig.stableKey,
+               true);
+    expectInt("signal usage hotspot total item count",
+              report.items.size(),
+              8);
+    expectBool("signal usage hotspot role counts",
+               roleCount(SignalUsageHotspotRole::Write) == 1
+                   && roleCount(SignalUsageHotspotRole::Read) == 2
+                   && roleCount(SignalUsageHotspotRole::Port) == 1
+                   && roleCount(SignalUsageHotspotRole::Condition) == 1
+                   && roleCount(SignalUsageHotspotRole::Case) == 1
+                   && roleCount(SignalUsageHotspotRole::Timing) == 1
+                   && roleCount(SignalUsageHotspotRole::Unknown) == 1,
+               true);
+    expectBool("signal usage hotspot module and file counts",
+               moduleCount(QStringLiteral("hotspot_top")) == 7
+                   && moduleCount(QStringLiteral("hotspot_aux")) == 1
+                   && fileCount(fileName) == 7
+                   && fileCount(auxFileName) == 1,
+               true);
+    expectBool("signal usage hotspot matrix cells",
+               matrixCount(QStringLiteral("hotspot_top"),
+                           fileName,
+                           SignalUsageHotspotRole::Write) == 1
+                   && matrixCount(QStringLiteral("hotspot_top"),
+                                  fileName,
+                                  SignalUsageHotspotRole::Condition) == 1
+                   && matrixCount(QStringLiteral("hotspot_aux"),
+                                  auxFileName,
+                                  SignalUsageHotspotRole::Read) == 1,
+               true);
+
+    const SignalUsageHotspotTrackLane* topLane = nullptr;
+    for (const SignalUsageHotspotTrackLane& lane : report.trackLanes) {
+        if (lane.moduleName == QStringLiteral("hotspot_top")
+            && lane.fileName == fileName) {
+            topLane = &lane;
+            break;
+        }
+    }
+    expectBool("signal usage hotspot track lane stable range",
+               topLane
+                   && topLane->count == 7
+                   && topLane->startLine == 12
+                   && topLane->endLine == 70
+                   && topLane->positions.size() == 7
+                   && topLane->positions.first().line == 12
+                   && topLane->positions.last().line == 70,
+               true);
+
+    bool sawUnknownEvidence = false;
+    bool sawPrecisePort = false;
+    for (const SignalUsageHotspotItem& item : report.items) {
+        sawUnknownEvidence = sawUnknownEvidence
+            || (item.role == SignalUsageHotspotRole::Unknown
+                && item.roleReasonDisplayName
+                    == QStringLiteral("unclassified relationship")
+                && item.evidenceText.contains(QStringLiteral("constraint"))
+                && item.preciseEvidence);
+        sawPrecisePort = sawPrecisePort
+            || (item.role == SignalUsageHotspotRole::Port
+                && item.line == 30
+                && item.peerSymbolRecord.localHandle == portPin.localHandle
+                && item.relationshipType == SymbolRelationshipEngine::REFERENCES);
+    }
+    expectBool("signal usage hotspot evidence is retained",
+               sawUnknownEvidence && sawPrecisePort,
+               true);
+
+    const SemanticSymbolRecord packetType =
+        SemanticFixtureRecordBuilder(QStringLiteral("hot_packet_t"),
+                                     DeclarationKind::Struct)
+            .withFile(fileName)
+            .withLocalHandle(9520)
+            .withLine(80)
+            .withCollectorKind(CollectorKind::PackedStruct)
+            .record();
+    const SemanticSymbolRecord payloadMember =
+        SemanticFixtureRecordBuilder(QStringLiteral("payload"),
+                                     DeclarationKind::StructMember)
+            .withFile(fileName)
+            .withLocalHandle(9521)
+            .withLine(81)
+            .withCollectorKind(CollectorKind::StructMember)
+            .inStruct(QStringLiteral("hot_packet_t"))
+            .record();
+    const SemanticSymbolRecord bus =
+        SemanticFixtureRecordBuilder(QStringLiteral("bus"),
+                                     DeclarationKind::StructVariable)
+            .withFile(fileName)
+            .withLocalHandle(9522)
+            .withLine(82)
+            .withCollectorKind(CollectorKind::PackedStructVariable)
+            .inModule(QStringLiteral("hotspot_top"))
+            .withType(QStringLiteral("hot_packet_t"),
+                      QStringLiteral("hot_packet_t"),
+                      DeclarationKind::Struct)
+            .record();
+    const SemanticSymbolRecord payloadDriver =
+        SemanticFixtureRecordBuilder(QStringLiteral("payload_driver"),
+                                     DeclarationKind::Signal)
+            .withFile(fileName)
+            .withLocalHandle(9523)
+            .withLine(83)
+            .withCollectorKind(CollectorKind::Logic)
+            .inModule(QStringLiteral("hotspot_top"))
+            .record();
+    SemanticRelationship memberWrite = semanticFixtureRelationship(
+        payloadDriver,
+        bus,
+        SymbolRelationshipEngine::ASSIGNS_TO,
+        RelationshipProvenance::Inferred,
+        90,
+        QStringLiteral("assign bus.payload"),
+        evidenceRange(fileName, 83, 11, 25));
+    memberWrite.toAccessPath = QStringLiteral("bus.payload");
+
+    const SemanticSymbolRecord enumType =
+        SemanticFixtureRecordBuilder(QStringLiteral("hot_state_e"),
+                                     DeclarationKind::Enum)
+            .withFile(fileName)
+            .withLocalHandle(9530)
+            .withLine(84)
+            .withCollectorKind(CollectorKind::Enum)
+            .record();
+    const SemanticSymbolRecord enumValue =
+        SemanticFixtureRecordBuilder(QStringLiteral("HOT_IDLE"),
+                                     DeclarationKind::User)
+            .withFile(fileName)
+            .withLocalHandle(9531)
+            .withLine(85)
+            .withCollectorKind(CollectorKind::EnumValue)
+            .record();
+    const SemanticSymbolRecord enumVar =
+        SemanticFixtureRecordBuilder(QStringLiteral("state_q"),
+                                     DeclarationKind::Signal)
+            .withFile(fileName)
+            .withLocalHandle(9532)
+            .withLine(86)
+            .withCollectorKind(CollectorKind::EnumVariable)
+            .inModule(QStringLiteral("hotspot_top"))
+            .withType(QStringLiteral("hot_state_e"),
+                      QStringLiteral("hot_state_e"),
+                      DeclarationKind::Enum)
+            .record();
+    const SemanticSymbolRecord enumNext =
+        SemanticFixtureRecordBuilder(QStringLiteral("state_d"),
+                                     DeclarationKind::Signal)
+            .withFile(fileName)
+            .withLocalHandle(9533)
+            .withLine(87)
+            .withCollectorKind(CollectorKind::EnumVariable)
+            .inModule(QStringLiteral("hotspot_top"))
+            .withType(QStringLiteral("hot_state_e"),
+                      QStringLiteral("hot_state_e"),
+                      DeclarationKind::Enum)
+            .record();
+    QList<SemanticRelationship> memberAndEnumRelationships{memberWrite};
+    memberAndEnumRelationships.append(semanticFixtureRelationship(
+        enumNext,
+        enumVar,
+        SymbolRelationshipEngine::ASSIGNS_TO,
+        RelationshipProvenance::Inferred,
+        90,
+        QStringLiteral("state_q <= state_d"),
+        evidenceRange(fileName, 88, 9, 25)));
+
+    SemanticIndex memberAndEnumIndex;
+    memberAndEnumIndex.setSnapshot(sharedSnapshotFromRecords(
+        {module,
+         packetType,
+         payloadMember,
+         bus,
+         payloadDriver,
+         enumType,
+         enumValue,
+         enumVar,
+         enumNext},
+        memberAndEnumRelationships,
+        QList<SemanticDiagnostic>()));
+    SignalUsageHotspotService memberAndEnumService(&memberAndEnumIndex);
+
+    SignalUsageHotspotQuery memberQuery;
+    memberQuery.signalName = QStringLiteral("bus");
+    memberQuery.signalAccessPath = QStringLiteral("bus.payload");
+    memberQuery.fileName = fileName;
+    memberQuery.moduleName = QStringLiteral("hotspot_top");
+    const SignalUsageHotspotReport memberReport =
+        memberAndEnumService.buildSignalUsageHotspot(memberQuery);
+    expectBool("signal usage hotspot struct member",
+               memberReport.found
+                   && memberReport.declarationDisplayName
+                       == QStringLiteral("bus.payload")
+                   && memberReport.declarationCodeLink.line == 81
+                   && memberReport.items.size() == 1
+                   && memberReport.items.first().role
+                       == SignalUsageHotspotRole::Write,
+               true);
+
+    SignalUsageHotspotQuery enumVarQuery;
+    enumVarQuery.signalName = QStringLiteral("state_q");
+    enumVarQuery.fileName = fileName;
+    enumVarQuery.moduleName = QStringLiteral("hotspot_top");
+    const SignalUsageHotspotReport enumVarReport =
+        memberAndEnumService.buildSignalUsageHotspot(enumVarQuery);
+    expectBool("signal usage hotspot enum variable",
+               enumVarReport.found
+                   && enumVarReport.items.size() == 1
+                   && enumVarReport.items.first().role
+                       == SignalUsageHotspotRole::Write,
+               true);
+
+    SignalUsageHotspotQuery enumValueQuery;
+    enumValueQuery.signalStableKey = enumValue.stableKey;
+    const SignalUsageHotspotReport enumValueReport =
+        memberAndEnumService.buildSignalUsageHotspot(enumValueQuery);
+    expectBool("signal usage hotspot rejects enum value query",
+               !enumValueReport.found
+                   && enumValueReport.items.isEmpty()
+                   && enumValueReport.notFoundReason
+                       == SignalUsageHotspotNotFoundReason::UnsupportedSymbolKind,
+               true);
+}
+
 static void runClockResetDomainServiceFixture()
 {
     printf("\n-- clock reset domain service fixture --\n");
@@ -10783,6 +11248,7 @@ int main(int argc, char** argv)
     runModuleBriefServiceFixture();
     runScopeBandServiceFixture();
     runSignalJourneyServiceFixture();
+    runSignalUsageHotspotServiceFixture();
     runClockResetDomainServiceFixture();
     runFsmGraphServiceFixture();
     runSemanticDiffServiceFixture();
