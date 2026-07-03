@@ -293,6 +293,18 @@ void SemanticPanelRefreshCoordinator::showSignalKernelGraphForSymbol(
                                           signalAccessPath);
 }
 
+void SemanticPanelRefreshCoordinator::showSignalUsageHotspotForSymbol(
+    const QString& symbolName,
+    const QString& fileName,
+    const QString& moduleName,
+    const QString& signalAccessPath)
+{
+    panels.showSignalUsageHotspotForSymbol(symbolName,
+                                           fileName,
+                                           moduleName,
+                                           signalAccessPath);
+}
+
 void SemanticPanelRefreshCoordinator::showStateTransitionGraphForSymbol(
     const QString& symbolName,
     const QString& fileName,

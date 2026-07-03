@@ -96,6 +96,12 @@ bool isHotspotDeclaration(const SemanticSymbolRecord& record)
         || metadata.declarationKind == SymbolTaxonomy::DeclarationKind::StructMember;
 }
 
+bool isEnumValueRecord(const SemanticSymbolRecord& record)
+{
+    return metadataForRecord(record).collectorKind
+        == SymbolTaxonomy::CollectorKind::EnumValue;
+}
+
 SemanticSymbolRecord missingRecord()
 {
     return {};
@@ -680,6 +686,11 @@ SignalUsageHotspotReport SignalUsageHotspotService::buildSignalUsageHotspot(
         const QList<SemanticRelationshipResult> relationships =
             semanticIndex()->getRelationshipResults(signal.stableKey, outgoing);
         for (const SemanticRelationshipResult& relationship : relationships) {
+            const SemanticSymbolRecord peer =
+                outgoing ? relationship.toSymbolRecord
+                         : relationship.fromSymbolRecord;
+            if (isEnumValueRecord(peer))
+                continue;
             if (!relationshipMatchesSubjectAccessPath(relationship,
                                                       outgoing,
                                                       subjectAccessPath)) {

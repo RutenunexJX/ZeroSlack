@@ -330,13 +330,16 @@ void appendModuleInstantiation(RelationshipExtractionInfo& result,
                                const slang::SourceManager* sm,
                                const InstanceSymbol& inst)
 {
+    const SemanticSourceRange sourceRange =
+        relationshipEvidenceRange(sm, slang::SourceRange(inst.location, inst.location));
+    if (sourceRange.line <= 0)
+        return;
+
     ModuleInstantiationInfo info;
     info.instanceName = QString::fromStdString(std::string(inst.name));
     info.moduleName = QString::fromStdString(std::string(inst.getDefinition().name));
-    size_t line = sm ? sm->getLineNumber(inst.location) : 0;
-    info.lineNumber = (line == 0) ? 1 : static_cast<int>(line);
-    info.sourceRange =
-        relationshipEvidenceRange(sm, slang::SourceRange(inst.location, inst.location));
+    info.lineNumber = sourceRange.line;
+    info.sourceRange = sourceRange;
     result.moduleInstantiations.append(info);
 }
 
@@ -373,6 +376,10 @@ auto makeRelationshipVisitor(RelationshipExtractionInfo& result,
         [&, cancelled](auto& v, const InstanceSymbol& inst) {
             if (cancelled())
                 return;
+            if (inst.instanceDepth == 0) {
+                inst.body.visit(v);
+                return;
+            }
             appendModuleInstantiation(result, sm, inst);
             if (cancelled())
                 return;

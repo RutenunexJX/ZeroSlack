@@ -95,6 +95,7 @@ QString actionUnavailableReason(
     case SourceSymbolAction::FindReferences:
     case SourceSymbolAction::ShowRelationships:
     case SourceSymbolAction::ShowSignalKernelGraph:
+    case SourceSymbolAction::ShowSignalUsageHotspot:
         return QString();
     case SourceSymbolAction::ShowStateTransitionGraph: {
         const StateTransitionTriggerReport trigger =
@@ -207,6 +208,13 @@ EditorSourceNavigationQuery::sourceSymbolContextMenuState(
             actionContext,
             context)));
     state.items.append(sourceSymbolMenuItem(
+        SourceSymbolAction::ShowSignalUsageHotspot,
+        actionContext.available,
+        actionUnavailableReason(
+            SourceSymbolAction::ShowSignalUsageHotspot,
+            actionContext,
+            context)));
+    state.items.append(sourceSymbolMenuItem(
         SourceSymbolAction::ShowStateTransitionGraph,
         actionContext.available && stateTransitionTrigger.available,
         actionContext.available
@@ -262,7 +270,8 @@ EditorSourceNavigationQuery::sourceSymbolActionRequestState(
 
     state.available = true;
     state.symbolName = actionContext.symbolName;
-    if (action == SourceSymbolAction::ShowSignalKernelGraph
+    if ((action == SourceSymbolAction::ShowSignalKernelGraph
+         || action == SourceSymbolAction::ShowSignalUsageHotspot)
         && !actionContext.memberAccessPath.isEmpty()
         && !actionContext.memberAccessRootName.isEmpty()) {
         state.symbolName = actionContext.memberAccessRootName;

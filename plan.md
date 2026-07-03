@@ -11,10 +11,10 @@ into an analyzer.
 
 ## Current Execution Baseline
 
-- State Transition Graph real usability repair is complete for targeted
-  regression coverage. Structural FSM discovery now handles delayed
-  `current <= next` update pairs (`#TP`, `# TP`, and `#(...)`) while preserving
-  next-state-only graph triggering and current-state rejection.
+- Signal Usage Hotspot v2 integration is complete for targeted regression
+  coverage. The A-branch `SignalUsageHotspotService` report layer is wired into
+  the B-branch `InsightVisualStyle` system as a usable dual Track/Matrix RTL
+  Insights panel.
 - Verification baseline for this repair is now focused regression plus GUI
   smoke: `completion_test`, `relationship_test`, `gui_smoke_test`,
   `jump_test`, and the lightweight `full_feature_audit_test` inventory.
@@ -24,10 +24,14 @@ into an analyzer.
 - No implementation milestone is active. Start the next milestone only from a
   new explicit scoped request.
 - Insight UI v2 visual foundation is established through shared
-  `InsightVisualStyle` Qt helpers and a scoped Signal Kernel Graph shell
-  example. Future Signal Usage Hotspot Track/Matrix panels should consume these
-  color, pen, font, panel, search, segmented-control, legend, and heat helpers
-  instead of adding panel-local palettes.
+  `InsightVisualStyle` Qt helpers. Signal Kernel Graph and Signal Usage Hotspot
+  consume these color, pen, font, panel, search, segmented-control, legend, and
+  heat helpers instead of adding panel-local palettes.
+- Signal Usage Hotspot opens from the editor source-symbol context action
+  `Signal Usage Hotspot` and from RTL Insights `Usage Hotspot`. Track mode uses
+  report lanes/items with role-colored blocks; Matrix mode uses report matrix
+  cells and item drill-down. Known follow-up space: richer async progress and
+  deeper virtualization for very large hotspot reports.
 - The current completed baseline includes import-aware package member
   visibility for unqualified completion, definition, and hover; user template
   JSON usage actions; explicit header/include and package import commands;

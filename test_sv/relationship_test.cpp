@@ -9667,6 +9667,9 @@ static void runRealWorkspaceIncludeFixture()
         recordByNameKindAndOwner(QStringLiteral("phy_pass_thrg_cfg_ns"),
                                  CollectorKind::EnumVariable,
                                  QStringLiteral("chl_ctrl"));
+    const SemanticSymbolRecord mcsRecord =
+        recordByNameAndOwner(QStringLiteral("mcs"),
+                             QStringLiteral("chl_ctrl"));
 
     expectBool("real workspace extracts symbols", records.size() > 20, true);
     expectBool("real workspace has rtl_top module",
@@ -9695,6 +9698,8 @@ static void runRealWorkspaceIncludeFixture()
                phyPassCsRecord.isValid(), true);
     expectBool("real workspace has chl_ctrl next fsm state",
                phyPassNsRecord.isValid(), true);
+    expectBool("real workspace has chl_ctrl mcs signal",
+               mcsRecord.isValid(), true);
     expectBool("real workspace taxonomy marks global package",
                packageRecord.owner.kind
                    == SymbolTaxonomy::SymbolOwnerScope::Global,
@@ -10443,6 +10448,90 @@ static void runRealWorkspaceIncludeFixture()
         realComputedRelationships,
         QList<SemanticDiagnostic>(),
         fileContents));
+
+    QList<SemanticSymbolRecord> chlCtrlFileRecords;
+    for (const SemanticSymbolRecord& record : records) {
+        if (normalizedPath(record.location.fileName) == normalizedPath(chlCtrlPath))
+            chlCtrlFileRecords.append(record);
+    }
+    const RelationshipExtractionInfo realChlCtrlRelationshipInfo =
+        realWorkspaceRelationshipInfo.value(normalizedPath(chlCtrlPath));
+    const QVector<RelationshipToAdd> realChlCtrlRelationships =
+        realRelationshipBuilder.computeRelationships(
+            chlCtrlPath,
+            fileContents.value(chlCtrlPath),
+            chlCtrlFileRecords,
+            realBaseSnapshot.get(),
+            snapshot.includeDirs,
+            snapshot.defines,
+            &realChlCtrlRelationshipInfo);
+    QList<SemanticRelationship> realChlCtrlComputedRelationships =
+        realComputedRelationships;
+    for (const RelationshipToAdd& relationship : realChlCtrlRelationships) {
+        if (relationship.fromId < 0 || relationship.toId < 0)
+            continue;
+        SemanticRelationship item;
+        item.fromId = relationship.fromId;
+        item.toId = relationship.toId;
+        item.type = relationship.type;
+        item.confidence = relationship.confidence;
+        item.evidenceText = relationship.context;
+        item.evidenceRange = relationship.evidenceRange;
+        item.fromAccessPath = relationship.fromAccessPath;
+        item.toAccessPath = relationship.toAccessPath;
+        item.provenance = RelationshipProvenance::Inferred;
+        realChlCtrlComputedRelationships.append(item);
+    }
+    SemanticIndex realHotspotIndex;
+    realHotspotIndex.setSnapshot(sharedSnapshotFromRecords(
+        records,
+        realChlCtrlComputedRelationships,
+        QList<SemanticDiagnostic>(),
+        fileContents));
+    SignalUsageHotspotService realHotspotService(&realHotspotIndex);
+    SignalUsageHotspotQuery realMcsHotspotQuery;
+    realMcsHotspotQuery.signalName = QStringLiteral("mcs");
+    realMcsHotspotQuery.fileName = chlCtrlPath;
+    realMcsHotspotQuery.moduleName = QStringLiteral("chl_ctrl");
+    const SignalUsageHotspotReport realMcsHotspot =
+        realHotspotService.buildSignalUsageHotspot(realMcsHotspotQuery);
+    bool sawRealMcsWrite = false;
+    bool sawRealMcsRead = false;
+    bool sawRealMcsCodeLink = false;
+    bool sawEnumValuePollution = false;
+    for (const SignalUsageHotspotItem& item : realMcsHotspot.items) {
+        sawRealMcsWrite = sawRealMcsWrite
+            || item.role == SignalUsageHotspotRole::Write;
+        sawRealMcsRead = sawRealMcsRead
+            || item.role == SignalUsageHotspotRole::Read
+            || item.role == SignalUsageHotspotRole::Condition
+            || item.role == SignalUsageHotspotRole::Case;
+        sawRealMcsCodeLink = sawRealMcsCodeLink
+            || (normalizedPath(item.codeLink.fileName) == normalizedPath(chlCtrlPath)
+                && item.codeLink.line > 0
+                && !item.codeLink.fileDisplayName.isEmpty()
+                && !item.codeLink.lineDisplayName.isEmpty());
+        sawEnumValuePollution = sawEnumValuePollution
+            || item.peerSymbolRecord.name == QStringLiteral("M_IDLE")
+            || item.peerAccessPath == QStringLiteral("M_IDLE");
+    }
+    expectBool("real workspace hotspot mcs found",
+               realMcsHotspot.found,
+               true);
+    expectBool("real workspace hotspot mcs track matrix",
+               !realMcsHotspot.trackLanes.isEmpty()
+                   && !realMcsHotspot.matrixCells.isEmpty(),
+               true);
+    expectBool("real workspace hotspot mcs roles",
+               sawRealMcsWrite && sawRealMcsRead,
+               true);
+    expectBool("real workspace hotspot mcs code link",
+               sawRealMcsCodeLink,
+               true);
+    expectBool("real workspace hotspot mcs filters enum values",
+               sawEnumValuePollution,
+               false);
+
     SignalKernelGraphService realComputedGraphService(&realComputedIndex);
     SignalKernelGraphQuery realClockGraphQuery;
     realClockGraphQuery.signalName = QStringLiteral("clk_main");

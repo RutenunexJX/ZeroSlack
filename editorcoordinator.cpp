@@ -50,6 +50,8 @@ QString sourceSymbolActionText(SourceSymbolAction action)
         return QStringLiteral("Show Relationships");
     case SourceSymbolAction::ShowSignalKernelGraph:
         return QStringLiteral("Signal Kernel Graph");
+    case SourceSymbolAction::ShowSignalUsageHotspot:
+        return QStringLiteral("Signal Usage Hotspot");
     case SourceSymbolAction::ShowStateTransitionGraph:
         return QStringLiteral("State Transition Graph");
     case SourceSymbolAction::ShowModuleBlockDiagram:
@@ -522,6 +524,20 @@ void EditorCoordinator::WorkflowDependencies::showSignalKernelGraphForSymbol(
                                                              fileName,
                                                              moduleName,
                                                              signalAccessPath);
+    }
+}
+
+void EditorCoordinator::WorkflowDependencies::showSignalUsageHotspotForSymbol(
+    const QString& symbolName,
+    const QString& fileName,
+    const QString& moduleName,
+    const QString& signalAccessPath) const
+{
+    if (semanticPanelRefresh) {
+        semanticPanelRefresh->showSignalUsageHotspotForSymbol(symbolName,
+                                                              fileName,
+                                                              moduleName,
+                                                              signalAccessPath);
     }
 }
 
@@ -1037,6 +1053,15 @@ void EditorCoordinator::handleSourceSymbolActionRequested(
         if (!dependencies.hasSemanticPanelRefresh())
             return;
         dependencies.showSignalKernelGraphForSymbol(
+            requestState.symbolName,
+            requestState.fileName,
+            requestState.moduleName,
+            requestState.signalAccessPath);
+        break;
+    case SourceSymbolAction::ShowSignalUsageHotspot:
+        if (!dependencies.hasSemanticPanelRefresh())
+            return;
+        dependencies.showSignalUsageHotspotForSymbol(
             requestState.symbolName,
             requestState.fileName,
             requestState.moduleName,

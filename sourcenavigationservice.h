@@ -64,6 +64,7 @@ enum class SourceSymbolAction {
     FindReferences,
     ShowRelationships,
     ShowSignalKernelGraph,
+    ShowSignalUsageHotspot,
     ShowStateTransitionGraph,
     ShowModuleBlockDiagram
 };

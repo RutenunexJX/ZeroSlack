@@ -13,6 +13,7 @@ class SemanticIndexSnapshot;
 class QGraphicsScene;
 class QGraphicsView;
 class QPushButton;
+class SignalUsageHotspotPanel;
 class QStackedWidget;
 struct ModuleBlockDiagramReport;
 struct StateTransitionGraphReport;
@@ -35,6 +36,10 @@ public:
     void showStateTransitionGraphForSignal(const QString& fileName,
                                            const QString& moduleName,
                                            const QString& signalName);
+    void showSignalUsageHotspotForSignal(const QString& fileName,
+                                         const QString& moduleName,
+                                         const QString& signalName,
+                                         const QString& signalAccessPath = {});
     void showModuleBlockDiagramForModule(const QString& fileName,
                                          const QString& moduleName);
     void showSemanticDiff(std::shared_ptr<const SemanticIndexSnapshot> beforeSnapshot,
@@ -64,8 +69,10 @@ private:
     QTreeWidget* insightsTree = nullptr;
     QGraphicsScene* insightsGraphScene = nullptr;
     QGraphicsView* insightsGraphView = nullptr;
+    SignalUsageHotspotPanel* signalUsageHotspotPanel = nullptr;
     QPushButton* moduleBriefButton = nullptr;
     QPushButton* signalJourneyButton = nullptr;
+    QPushButton* signalUsageHotspotButton = nullptr;
     QPushButton* clockResetButton = nullptr;
     QPushButton* fsmGraphButton = nullptr;
     QPushButton* moduleBlockDiagramButton = nullptr;
@@ -83,11 +90,13 @@ private:
     void renderNoContext();
     void showModuleBrief();
     void showSignalJourney();
+    void showSignalUsageHotspot();
     void showClockResetDomainMap();
     void showFsmGraph();
     void showModuleBlockDiagram();
     void showTreeSurface();
     void showGraphSurface();
+    void showHotspotSurface();
     void renderStateTransitionGraphScene(
         const StateTransitionGraphReport& report);
     void renderFsmGraphScene(const FsmGraphReport& report,

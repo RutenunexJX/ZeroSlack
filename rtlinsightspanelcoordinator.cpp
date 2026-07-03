@@ -8,6 +8,7 @@
 #include "semanticdiffservice.h"
 #include "semanticpanelutils.h"
 #include "signaljourneyservice.h"
+#include "signalusagehotspotpanel.h"
 #include "statetransitiongraphservice.h"
 
 #include <QElapsedTimer>
@@ -1807,6 +1808,10 @@ RtlInsightsPanelCoordinator::RtlInsightsPanelCoordinator(QWidget* parent)
     moduleBriefButton->setObjectName(QStringLiteral("rtlModuleBriefButton"));
     signalJourneyButton = new QPushButton(QStringLiteral("Signal Journey"), panel);
     signalJourneyButton->setObjectName(QStringLiteral("rtlSignalJourneyButton"));
+    signalUsageHotspotButton =
+        new QPushButton(QStringLiteral("Usage Hotspot"), panel);
+    signalUsageHotspotButton->setObjectName(
+        QStringLiteral("rtlSignalUsageHotspotButton"));
     clockResetButton = new QPushButton(QStringLiteral("Clock/Reset Map"), panel);
     clockResetButton->setObjectName(QStringLiteral("rtlClockResetButton"));
     fsmGraphButton = new QPushButton(QStringLiteral("FSM Graph"), panel);
@@ -1826,6 +1831,7 @@ RtlInsightsPanelCoordinator::RtlInsightsPanelCoordinator(QWidget* parent)
     graphZoomInButton->setFixedWidth(30);
     actionLayout->addWidget(moduleBriefButton);
     actionLayout->addWidget(signalJourneyButton);
+    actionLayout->addWidget(signalUsageHotspotButton);
     actionLayout->addWidget(clockResetButton);
     actionLayout->addWidget(fsmGraphButton);
     actionLayout->addWidget(moduleBlockDiagramButton);
@@ -1858,10 +1864,12 @@ RtlInsightsPanelCoordinator::RtlInsightsPanelCoordinator(QWidget* parent)
     insightsGraphView->setResizeAnchor(QGraphicsView::AnchorViewCenter);
     insightsGraphView->setBackgroundBrush(
         QBrush(QColor(QStringLiteral("#f8fafc"))));
+    signalUsageHotspotPanel = new SignalUsageHotspotPanel(panel);
 
     insightsStack = new QStackedWidget(panel);
     insightsStack->addWidget(insightsTree);
     insightsStack->addWidget(insightsGraphView);
+    insightsStack->addWidget(signalUsageHotspotPanel);
     layout->addWidget(insightsStack, 1);
 
     insightsDock = new QDockWidget(QStringLiteral("RTL Insights"), parent);
@@ -1891,6 +1899,8 @@ RtlInsightsPanelCoordinator::RtlInsightsPanelCoordinator(QWidget* parent)
                      insightsDock, [this]() { showModuleBrief(); });
     QObject::connect(signalJourneyButton, &QPushButton::clicked,
                      insightsDock, [this]() { showSignalJourney(); });
+    QObject::connect(signalUsageHotspotButton, &QPushButton::clicked,
+                     insightsDock, [this]() { showSignalUsageHotspot(); });
     QObject::connect(clockResetButton, &QPushButton::clicked,
                      insightsDock, [this]() { showClockResetDomainMap(); });
     QObject::connect(fsmGraphButton, &QPushButton::clicked,
@@ -1924,12 +1934,16 @@ void RtlInsightsPanelCoordinator::setNavigationHandler(
     std::function<bool(const QString&, int, int)> handler)
 {
     navigationHandler = std::move(handler);
+    if (signalUsageHotspotPanel)
+        signalUsageHotspotPanel->setNavigationHandler(navigationHandler);
 }
 
 void RtlInsightsPanelCoordinator::setStatusMessageHandler(
     std::function<void(const QString&, int)> handler)
 {
     statusMessageHandler = std::move(handler);
+    if (signalUsageHotspotPanel)
+        signalUsageHotspotPanel->setStatusMessageHandler(statusMessageHandler);
 }
 
 int RtlInsightsPanelCoordinator::graphNodeItemCountForTest() const
@@ -2048,6 +2062,12 @@ void RtlInsightsPanelCoordinator::showGraphSurface()
 {
     if (insightsStack && insightsGraphView)
         insightsStack->setCurrentWidget(insightsGraphView);
+}
+
+void RtlInsightsPanelCoordinator::showHotspotSurface()
+{
+    if (insightsStack && signalUsageHotspotPanel)
+        insightsStack->setCurrentWidget(signalUsageHotspotPanel);
 }
 
 void RtlInsightsPanelCoordinator::renderGraphUnavailable(
@@ -2512,6 +2532,31 @@ void RtlInsightsPanelCoordinator::showStateTransitionGraphForSignal(
                   static_cast<int>(timer.elapsed()));
 }
 
+void RtlInsightsPanelCoordinator::showSignalUsageHotspotForSignal(
+    const QString& fileName,
+    const QString& moduleName,
+    const QString& signalName,
+    const QString& signalAccessPath)
+{
+    updateModuleContext(fileName, moduleName, signalName);
+    showHotspotSurface();
+    if (!signalUsageHotspotPanel)
+        return;
+
+    if (insightsDock) {
+        insightsDock->setWindowTitle(
+            QStringLiteral("RTL Insights: Signal Usage Hotspot %1")
+                .arg(signalAccessPath.isEmpty() ? signalName
+                                                : signalAccessPath));
+        insightsDock->show();
+        insightsDock->raise();
+    }
+    signalUsageHotspotPanel->showHotspotForSymbol(signalName,
+                                                  fileName,
+                                                  moduleName,
+                                                  signalAccessPath);
+}
+
 void RtlInsightsPanelCoordinator::showModuleBlockDiagramForModule(
     const QString& fileName,
     const QString& moduleName)
@@ -2753,6 +2798,13 @@ void RtlInsightsPanelCoordinator::showSignalJourney()
                   static_cast<int>(timer.elapsed()));
 }
 
+void RtlInsightsPanelCoordinator::showSignalUsageHotspot()
+{
+    showSignalUsageHotspotForSignal(currentFileName,
+                                    currentModuleName,
+                                    currentSignalName);
+}
+
 void RtlInsightsPanelCoordinator::showClockResetDomainMap()
 {
     if (!insightsTree)
@@ -2908,6 +2960,8 @@ void RtlInsightsPanelCoordinator::updateActionState()
         moduleBriefButton->setEnabled(hasModule);
     if (signalJourneyButton)
         signalJourneyButton->setEnabled(hasModule);
+    if (signalUsageHotspotButton)
+        signalUsageHotspotButton->setEnabled(hasModule);
     if (clockResetButton)
         clockResetButton->setEnabled(hasModule);
     if (fsmGraphButton)

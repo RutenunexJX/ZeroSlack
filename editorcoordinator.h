@@ -83,6 +83,10 @@ private:
                                             const QString& fileName,
                                             const QString& moduleName,
                                             const QString& signalAccessPath = {}) const;
+        void showSignalUsageHotspotForSymbol(const QString& symbolName,
+                                             const QString& fileName,
+                                             const QString& moduleName,
+                                             const QString& signalAccessPath = {}) const;
         void showStateTransitionGraphForSymbol(const QString& symbolName,
                                                const QString& fileName,
                                                const QString& moduleName) const;

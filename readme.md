@@ -31,29 +31,30 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
 
 ## Current Product Baseline
 
-- Current audit milestone: State Transition Graph real usability repair is
-  complete. FSM discovery now handles structural `current <= #delay next`
-  update pairs, including common `#TP`, `# TP`, and `#(...)` assignment delay
-  controls, while keeping State Transition Graph gated to discovered next-state
-  roles only.
+- Current audit milestone: Signal Usage Hotspot v2 integration is complete.
+  The service/report layer is wired into RTL Insights as a dual Track/Matrix
+  panel, with editor source-symbol context entry and source reveal/flash from
+  usage items.
 - Corpus audit is retired as an acceptance signal. The current strategy is
   targeted regression fixtures plus GUI smoke and feature-specific tests:
   `completion_test`, `relationship_test`, `gui_smoke_test`, `jump_test`, and
   the lightweight `full_feature_audit_test` inventory.
 - Current handoff state: no implementation milestone is active. The latest
-  completed work is State Transition Graph real usability repair for delayed
-  structural FSM pairs in targeted regression behavior. The current
-  baseline also includes import-aware
+  completed work is Signal Usage Hotspot v2 integration on top of the service
+  and Insight UI v2 branches. The current baseline also includes import-aware
   SystemVerilog package symbol visibility, user template JSON usage, explicit
   header/include and package import commands, semantic `;m` module
   instantiation Slot Mode, Macro / Define semantics, Package Tools phase 1,
   References / Relationships workflow closure, and Fold Shelf
   persistence/restore/management.
 - Insight UI v2 visual foundation is available through `InsightVisualStyle`.
-  Signal Kernel Graph uses it as the low-risk demonstration panel; future Signal
-  Usage Hotspot Track/Matrix UI should reuse its role colors, heat color helper,
-  selected/hover pens, compact panel, search, segmented control, inspector card,
-  and legend swatch helpers.
+  Signal Kernel Graph and Signal Usage Hotspot both use it. Hotspot opens from
+  the editor source-symbol context action `Signal Usage Hotspot` or the RTL
+  Insights `Usage Hotspot` action. Track mode groups usage blocks by module/file
+  lane with role colors; Matrix mode summarizes module/file by role with heat
+  cells and item drill-down. Search, role filters, selection inspector, empty
+  and error states, and source reveal/flash are wired. Future polish can add
+  deeper virtualization/asynchronous progress for very large reports.
 - The app is a lightweight SystemVerilog editor/workspace browser with tabs,
   workspace file navigation, semantic indexing, diagnostics, completion,
   jump-to-definition, references/relationships, and focused RTL visual helpers.

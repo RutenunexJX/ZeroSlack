@@ -232,6 +232,7 @@ set(ZEROSLACK_CORE_SOURCES
     semanticruntimewiring.cpp
     signaljourneyservice.cpp
     signalkernelgraphservice.cpp
+    signalusagehotspotpanel.cpp
     signalusagehotspotservice.cpp
     signalkernelgraphpanelcoordinator.cpp
     slangmanagerdiagnostics.cpp
@@ -395,6 +396,7 @@ set(ZEROSLACK_CORE_SOURCES
     semanticruntimecoordinator.h
     signaljourneyservice.h
     signalkernelgraphservice.h
+    signalusagehotspotpanel.h
     signalusagehotspotservice.h
     signalkernelgraphpanelcoordinator.h
     slangmanager.h
@@ -496,7 +498,7 @@ if(BUILD_TESTING)
     get_filename_component(QT_INSTALL_PREFIX "${Qt6_DIR}/../../.." ABSOLUTE)
     get_filename_component(ZEROSLACK_COMPILER_BIN_DIR "${CMAKE_CXX_COMPILER}" DIRECTORY)
     set(ZEROSLACK_TEST_PATH
-        "${QT_INSTALL_PREFIX}/bin;${ZEROSLACK_COMPILER_BIN_DIR};$ENV{PATH}"
+        "${ZEROSLACK_COMPILER_BIN_DIR};${QT_INSTALL_PREFIX}/bin;$ENV{PATH}"
     )
     string(REPLACE ";" "\\;" ZEROSLACK_TEST_PATH "${ZEROSLACK_TEST_PATH}")
 
@@ -518,6 +520,10 @@ if(BUILD_TESTING)
     add_executable(insight_visual_style_test
         test_sv/insight_visual_style_test.cpp)
     target_link_libraries(insight_visual_style_test PRIVATE zeroslack_core)
+
+    add_executable(signal_usage_hotspot_panel_test
+        test_sv/signal_usage_hotspot_panel_test.cpp)
+    target_link_libraries(signal_usage_hotspot_panel_test PRIVATE zeroslack_core)
 
     add_executable(large_file_perf_test test_sv/large_file_perf_test.cpp)
     target_link_libraries(large_file_perf_test PRIVATE zeroslack_core Qt6::Test)
@@ -575,6 +581,13 @@ if(BUILD_TESTING)
             "QT_QPA_PLATFORM=offscreen"
             "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
             $<TARGET_FILE:insight_visual_style_test>
+    )
+    add_test(NAME signal_usage_hotspot_panel_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}"
+            "QT_QPA_PLATFORM=offscreen"
+            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
+            $<TARGET_FILE:signal_usage_hotspot_panel_test>
     )
     add_test(NAME large_file_perf_test
         COMMAND ${CMAKE_COMMAND} -E env

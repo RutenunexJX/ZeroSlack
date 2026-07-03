@@ -3,6 +3,7 @@
 #include "symboltaxonomy.h"
 
 #include <QSet>
+#include <QRegularExpression>
 
 #include <utility>
 
@@ -406,6 +407,221 @@ void appendTextualAssignmentFallback(RelationshipExtractionInfo& info,
     }
 }
 
+bool relationshipInfoHasLineAccess(const QStringList& existingAccessPaths,
+                                   const QStringList& existingNames,
+                                   int existingLine,
+                                   const QStringList& accessPaths,
+                                   int lineNumber)
+{
+    if (existingLine != lineNumber)
+        return false;
+    const QStringList existing =
+        existingAccessPaths.isEmpty() ? existingNames : existingAccessPaths;
+    for (const QString& accessPath : accessPaths) {
+        if (existing.contains(accessPath)
+            || existing.contains(rootNameForAccessPathText(accessPath))) {
+            return true;
+        }
+    }
+    return false;
+}
+
+SemanticSourceRange sourceRangeForTextLine(const QString& fileName,
+                                           int lineNumber,
+                                           int column,
+                                           int length)
+{
+    SemanticSourceRange range;
+    range.fileName = fileName;
+    range.line = qMax(1, lineNumber);
+    range.column = qMax(1, column);
+    range.endLine = range.line;
+    range.endColumn = qMax(range.column, range.column + qMax(1, length));
+    return range;
+}
+
+void appendTextualConditionFallback(RelationshipExtractionInfo& info,
+                                    const QString& fileName,
+                                    const QString& text,
+                                    int lineNumber)
+{
+    const QString trimmed = text.trimmed();
+    static const QRegularExpression conditionKeyword(
+        QStringLiteral("\\b(if|case)\\b"));
+    const QRegularExpressionMatch keywordMatch =
+        conditionKeyword.match(trimmed);
+    if (!keywordMatch.hasMatch())
+        return;
+
+    const int expressionOpen =
+        trimmed.indexOf(QLatin1Char('('), keywordMatch.capturedEnd(1));
+    if (expressionOpen < 0)
+        return;
+    int depth = 0;
+    int close = -1;
+    for (int i = expressionOpen; i < trimmed.size(); ++i) {
+        if (trimmed.at(i) == QLatin1Char('('))
+            ++depth;
+        else if (trimmed.at(i) == QLatin1Char(')')) {
+            --depth;
+            if (depth == 0) {
+                close = i;
+                break;
+            }
+        }
+    }
+    if (close <= expressionOpen)
+        return;
+
+    const QString expression =
+        trimmed.mid(expressionOpen + 1, close - expressionOpen - 1);
+    const QStringList accessPaths = accessPathsFromText(expression);
+    if (accessPaths.isEmpty())
+        return;
+
+    for (const ConditionReferenceInfo& existing :
+         std::as_const(info.conditionReferences)) {
+        if (relationshipInfoHasLineAccess(existing.symbolAccessPaths,
+                                          existing.symbolNames,
+                                          existing.lineNumber,
+                                          accessPaths,
+                                          lineNumber)) {
+            return;
+        }
+    }
+
+    ConditionReferenceInfo ref;
+    ref.symbolAccessPaths = accessPaths;
+    ref.symbolNames = rootsForAccessPaths(accessPaths);
+    ref.lineNumber = lineNumber;
+    ref.sourceRange =
+        sourceRangeForTextLine(fileName,
+                               lineNumber,
+                               expressionOpen + 1,
+                               expression.size());
+    if (!ref.symbolNames.isEmpty())
+        info.conditionReferences.append(ref);
+}
+
+void appendTextualTimingFallback(RelationshipExtractionInfo& info,
+                                 const QString& fileName,
+                                 const QString& text,
+                                 int lineNumber)
+{
+    const int at = text.indexOf(QLatin1Char('@'));
+    if (at < 0)
+        return;
+    const int open = text.indexOf(QLatin1Char('('), at);
+    const int close = text.indexOf(QLatin1Char(')'), open + 1);
+    if (open < 0 || close <= open)
+        return;
+
+    const QString eventText = text.mid(open + 1, close - open - 1);
+    const QStringList parts = eventText.split(
+        QRegularExpression(QStringLiteral("\\bor\\b|,")),
+        Qt::SkipEmptyParts);
+    for (QString part : parts) {
+        part = part.trimmed();
+        bool edgeSensitive = false;
+        if (startsWithKeyword(part, QStringLiteral("posedge"))) {
+            part = part.mid(QStringLiteral("posedge").size()).trimmed();
+            edgeSensitive = true;
+        } else if (startsWithKeyword(part, QStringLiteral("negedge"))) {
+            part = part.mid(QStringLiteral("negedge").size()).trimmed();
+            edgeSensitive = true;
+        }
+        const QStringList accessPaths = accessPathsFromText(part);
+        if (accessPaths.isEmpty())
+            continue;
+        const QString accessPath = accessPaths.first();
+        const QString signalName = rootNameForAccessPathText(accessPath);
+        if (signalName.isEmpty())
+            continue;
+
+        bool duplicate = false;
+        for (const TimingSignalInfo& existing :
+             std::as_const(info.timingSignals)) {
+            if (existing.lineNumber == lineNumber
+                && (existing.signalAccessPath == accessPath
+                    || existing.signalName == signalName)) {
+                duplicate = true;
+                break;
+            }
+        }
+        if (duplicate)
+            continue;
+
+        TimingSignalInfo signal;
+        signal.signalName = signalName;
+        signal.signalAccessPath = accessPath;
+        signal.lineNumber = lineNumber;
+        signal.edgeSensitive = edgeSensitive;
+        signal.sourceRange =
+            sourceRangeForTextLine(fileName,
+                                   lineNumber,
+                                   open + 1,
+                                   eventText.size());
+        info.timingSignals.append(signal);
+    }
+}
+
+void appendTextualCallFallback(RelationshipExtractionInfo& info,
+                               const QString& fileName,
+                               const QString& text,
+                               int lineNumber)
+{
+    QString trimmed = text.trimmed();
+    if (!trimmed.endsWith(QLatin1Char(';'))
+        || isControlStatementStart(trimmed)
+        || startsWithKeyword(trimmed, QStringLiteral("assign"))
+        || trimmed.contains(QLatin1Char('='))) {
+        return;
+    }
+    trimmed.chop(1);
+    int pos = 0;
+    const QString name = readIdentifier(trimmed, &pos);
+    if (name.isEmpty() || ignoredAccessRoot(name))
+        return;
+    skipSpaces(trimmed, &pos);
+    if (pos < trimmed.size()
+        && trimmed.at(pos) != QLatin1Char('(')) {
+        return;
+    }
+
+    for (const SubroutineCallInfo& existing :
+         std::as_const(info.subroutineCalls)) {
+        if (existing.lineNumber == lineNumber
+            && existing.subroutineName == name) {
+            return;
+        }
+    }
+
+    SubroutineCallInfo call;
+    call.subroutineName = name;
+    call.lineNumber = lineNumber;
+    call.sourceRange =
+        sourceRangeForTextLine(fileName, lineNumber, 1, text.size());
+    info.subroutineCalls.append(call);
+}
+
+void appendTextualControlAndCallFallback(RelationshipExtractionInfo& info,
+                                         const QString& fileName,
+                                         const QString& content)
+{
+    const QStringList lines = content.split(QLatin1Char('\n'));
+    bool inBlockComment = false;
+    for (int i = 0; i < lines.size(); ++i) {
+        const QString cleanLine = stripCommentsFromLine(lines.at(i), &inBlockComment);
+        const QString trimmed = cleanLine.trimmed();
+        if (trimmed.isEmpty())
+            continue;
+        const int lineNumber = i + 1;
+        appendTextualConditionFallback(info, fileName, cleanLine, lineNumber);
+        appendTextualTimingFallback(info, fileName, cleanLine, lineNumber);
+        appendTextualCallFallback(info, fileName, cleanLine, lineNumber);
+    }
+}
+
 } // namespace
 
 void SmartRelationshipBuilder::setupAnalysisContext(const QString& fileName,
@@ -480,13 +696,6 @@ void SmartRelationshipBuilder::ensureRelationshipInfo(const QString& content,
                                                       AnalysisContext& context)
 {
     if (!context.relationshipInfoLoaded) {
-        if (m_slangManager) {
-            context.relationshipInfo =
-                m_slangManager->extractRelationshipInfo(context.currentFileName,
-                                                        content,
-                                                        context.includeDirs,
-                                                        context.defines);
-        }
         context.relationshipInfoLoaded = true;
     }
 
@@ -497,6 +706,9 @@ void SmartRelationshipBuilder::ensureRelationshipInfo(const QString& content,
                                         context.currentFileName,
                                         content,
                                         includeSimpleProceduralAssignments);
+        appendTextualControlAndCallFallback(context.relationshipInfo,
+                                            context.currentFileName,
+                                            content);
         context.textualAssignmentFallbackLoaded = true;
     }
 }

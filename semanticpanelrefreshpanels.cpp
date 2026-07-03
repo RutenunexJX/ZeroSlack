@@ -151,6 +151,19 @@ void SemanticPanelRefreshCoordinator::PanelSet::showSignalKernelGraphForSymbol(
                                                                signalAccessPath);
 }
 
+void SemanticPanelRefreshCoordinator::PanelSet::showSignalUsageHotspotForSymbol(
+    const QString& symbolName,
+    const QString& fileName,
+    const QString& moduleName,
+    const QString& signalAccessPath) const
+{
+    if (rtlInsightsPanel)
+        rtlInsightsPanel->showSignalUsageHotspotForSignal(fileName,
+                                                          moduleName,
+                                                          symbolName,
+                                                          signalAccessPath);
+}
+
 void SemanticPanelRefreshCoordinator::PanelSet::showStateTransitionGraphForSymbol(
     const QString& symbolName,
     const QString& fileName,

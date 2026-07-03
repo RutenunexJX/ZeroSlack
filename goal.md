@@ -28,21 +28,31 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
 
 ## Current Goal State
 
-Current milestone: State Transition Graph real usability repair is complete.
+Current milestone: Signal Usage Hotspot v2 integration is complete.
 The next milestone should wait for a new explicit scoped request.
 
 Current baseline highlights:
 
 - Insight UI v2 visual foundation is established. `InsightVisualStyle` provides
   reusable light-theme tokens, role colors, selected/hover pens, heat intensity
-  colors, compact control styling, and panel/legend helpers; the Signal Kernel
-  Graph panel is the scoped v2 demonstration surface for future Hotspot UI work.
-- Most recent completed milestone: State Transition Graph real usability
-  repair. FSM discovery now handles structural `current <= #delay next` update
-  pairs, including `#TP`, `# TP`, and `#(...)` controls common in the real
-  corpus, while State Transition Graph remains gated to discovered next-state
-  roles only. Current-state roles still reject with an explicit next-state
-  selection reason.
+  colors, compact control styling, and panel/legend helpers; Signal Kernel
+  Graph and Signal Usage Hotspot now both use this visual system.
+- Signal Usage Hotspot is available from the editor source-symbol context action
+  `Signal Usage Hotspot` and the RTL Insights `Usage Hotspot` action. It renders
+  Track lanes from report items, Matrix heat cells from report summaries, role
+  filters/search, item drill-down, inspector metadata, explicit empty/error
+  states, and source reveal/flash navigation. Future polish can improve
+  asynchronous progress and very-large-report virtualization.
+- Most recent completed milestone: Signal Usage Hotspot v2 integration. The
+  A-branch service/report API is connected to the B-branch visual helpers in a
+  dual-mode panel with real `chl_ctrl.sv` / `mcs` coverage and enum-value
+  hotspot filtering.
+- Previous completed milestone: State Transition Graph real usability repair.
+  FSM discovery handles structural `current <= #delay next` update pairs,
+  including `#TP`, `# TP`, and `#(...)` controls common in the real corpus,
+  while State Transition Graph remains gated to discovered next-state roles
+  only. Current-state roles still reject with an explicit next-state selection
+  reason.
 - Verification for State Transition Graph real usability repair now rests on
   focused regression and GUI smoke coverage: `completion_test`,
   `relationship_test`, `gui_smoke_test`, `jump_test`, and the lightweight
