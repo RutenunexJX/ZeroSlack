@@ -45,6 +45,7 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QHash>
+#include <QLineEdit>
 #include <QMetaObject>
 #include <QPushButton>
 #include <QSet>
@@ -3841,6 +3842,19 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                    && moduleBlockPanel.graphNodeItemCountForTest() == 2
                    && moduleBlockPanel.graphEdgeItemCountForTest() == 1,
                true);
+    QLineEdit* moduleBlockSearchEdit =
+        moduleBlockPanel.dock()
+            ? moduleBlockPanel.dock()->findChild<QLineEdit*>(
+                  QStringLiteral("rtlGraphSearchEdit"))
+            : nullptr;
+    if (moduleBlockSearchEdit)
+        moduleBlockSearchEdit->setText(QStringLiteral("rel_stage"));
+    expectBool("module block diagram graph search highlights node",
+               moduleBlockSearchEdit
+                   && moduleBlockPanel.graphSelectedItemCountForTest() > 0,
+               true);
+    if (moduleBlockSearchEdit)
+        moduleBlockSearchEdit->clear();
     QPushButton* moduleBlockZoomIn =
         moduleBlockPanel.dock()
             ? moduleBlockPanel.dock()->findChild<QPushButton*>(
@@ -3891,6 +3905,10 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                        == stageInstanceRecord.location.startColumn
                    && moduleBlockPanel.graphNodeItemCountForTest() == 1
                    && moduleBlockPanel.graphEdgeItemCountForTest() == 0,
+               true);
+    expectBool("module block diagram no-child reason visible",
+               moduleBlockPanel.graphTextItemsForTest().join(QLatin1Char('\n'))
+                   .contains(QStringLiteral("No child modules")),
                true);
 
     ModuleBlockDiagramService::getInstance()->setSemanticIndex(&blackboxIndex);
@@ -8566,6 +8584,19 @@ static void runFsmGraphServiceFixture()
                    && stateTransitionPanel.graphNodeItemCountForTest() == 4
                    && stateTransitionPanel.graphEdgeItemCountForTest() == 4,
                true);
+    QLineEdit* stateTransitionSearchEdit =
+        stateTransitionPanel.dock()
+            ? stateTransitionPanel.dock()->findChild<QLineEdit*>(
+                  QStringLiteral("rtlGraphSearchEdit"))
+            : nullptr;
+    if (stateTransitionSearchEdit)
+        stateTransitionSearchEdit->setText(QStringLiteral("B_IDLE"));
+    expectBool("state transition graph search highlights elements",
+               stateTransitionSearchEdit
+                   && stateTransitionPanel.graphSelectedItemCountForTest() > 0,
+               true);
+    if (stateTransitionSearchEdit)
+        stateTransitionSearchEdit->clear();
     const bool invokedTransitionNavigation =
         stateTransitionPanel.triggerGraphNavigationForTest(
             QStringLiteral("transition"),
@@ -8589,6 +8620,16 @@ static void runFsmGraphServiceFixture()
                    && navigatedFileName == dualFileName
                    && navigatedLine == 7
                    && navigatedColumn == 1,
+               true);
+    stateTransitionPanel.showStateTransitionGraphForSignal(
+        dualFileName,
+        QStringLiteral("dual_fsm_top"),
+        QStringLiteral("current_state"));
+    expectBool("state transition current-state rejection reason visible",
+               stateTransitionPanel.graphNodeItemCountForTest() == 0
+                   && stateTransitionPanel.graphTextItemsForTest()
+                          .join(QLatin1Char('\n'))
+                          .contains(QStringLiteral("Please select the next-state signal")),
                true);
     StateTransitionGraphService::getInstance()->setSemanticIndex(
         SemanticIndex::getInstance());

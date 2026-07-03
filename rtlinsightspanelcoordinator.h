@@ -12,6 +12,7 @@
 class SemanticIndexSnapshot;
 class QGraphicsScene;
 class QGraphicsView;
+class QLineEdit;
 class QPushButton;
 class SignalUsageHotspotPanel;
 class QStackedWidget;
@@ -56,6 +57,7 @@ public:
     int graphEdgeItemCountForTest() const;
     QStringList graphTextItemsForTest() const;
     bool graphNodeRectsOverlapForTest() const;
+    int graphSelectedItemCountForTest() const;
     int graphElementLineForTest(const QString& elementKind,
                                 const QString& primaryText,
                                 const QString& secondaryText = QString()) const;
@@ -79,9 +81,11 @@ private:
     QPushButton* graphZoomOutButton = nullptr;
     QPushButton* graphFitButton = nullptr;
     QPushButton* graphZoomInButton = nullptr;
+    QLineEdit* graphSearchEdit = nullptr;
     QString currentFileName;
     QString currentModuleName;
     QString currentSignalName;
+    QString graphSearchText;
 
     std::function<bool(const QString&, int, int)> navigationHandler;
     std::function<void(const QString&, int)> statusMessageHandler;
@@ -105,6 +109,7 @@ private:
         const ModuleBlockDiagramReport& report);
     void renderGraphUnavailable(const QString& title,
                                 const QString& message);
+    void applyGraphSearchHighlight();
     void updateActionState();
     void logReportStart(const QString& reportName) const;
     void logReportDone(const QString& reportName, int durationMs) const;

@@ -4,6 +4,7 @@
 #include <QCheckBox>
 #include <QLabel>
 #include <QLineEdit>
+#include <QPushButton>
 
 #include <cstdio>
 
@@ -61,6 +62,14 @@ int main(int argc, char** argv)
                search.minimumWidth() >= 180);
     expectTrue("search helper emits focus border",
                search.styleSheet().contains(QStringLiteral(":focus")));
+
+    QPushButton toolbarButton;
+    toolbarButton.setObjectName(QStringLiteral("toolbarButtonProbe"));
+    InsightVisualStyle::applyToolbarButton(&toolbarButton);
+    expectTrue("toolbar button helper sets stable height",
+               toolbarButton.minimumHeight() >= 28);
+    expectTrue("toolbar button helper styles checked state",
+               toolbarButton.styleSheet().contains(QStringLiteral(":checked")));
 
     QCheckBox segment;
     segment.setObjectName(QStringLiteral("segmentProbe"));

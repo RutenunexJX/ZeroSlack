@@ -9,6 +9,7 @@
 
 class QLineEdit;
 class QLabel;
+class QPushButton;
 class QWidget;
 
 enum class InsightVisualRole {
@@ -68,6 +69,8 @@ public:
     static QString titleBarStyleSheet(const QString& objectName = {});
     static QString compactSearchFieldStyleSheet(
         const QString& objectName = {});
+    static QString toolbarButtonStyleSheet(
+        const QString& objectName = {});
     static QString segmentedCheckBoxStyleSheet(
         const QString& objectName = {});
     static QString inspectorCardStyleSheet(const QString& objectName = {});
@@ -76,6 +79,7 @@ public:
     static void applyPanel(QWidget* widget);
     static void applyTitleLabel(QLabel* label);
     static void applySearchField(QLineEdit* edit);
+    static void applyToolbarButton(QPushButton* button);
     static void applySegmentedCheckBox(QWidget* checkBox);
 };
 

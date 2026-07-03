@@ -2,6 +2,7 @@
 
 #include <QLabel>
 #include <QLineEdit>
+#include <QPushButton>
 #include <QWidget>
 
 #include <algorithm>
@@ -283,6 +284,43 @@ QString InsightVisualStyle::segmentedCheckBoxStyleSheet(
              t.accent.name());
 }
 
+QString InsightVisualStyle::toolbarButtonStyleSheet(const QString& objectName)
+{
+    const InsightTheme t = theme();
+    return QStringLiteral(
+               "%1 {"
+               "  background: %2;"
+               "  color: %3;"
+               "  border: 1px solid %4;"
+               "  border-radius: 6px;"
+               "  padding: 4px 9px;"
+               "  min-height: 22px;"
+               "}"
+               "%1:hover {"
+               "  background: %5;"
+               "  border-color: %6;"
+               "}"
+               "%1:pressed, %1:checked {"
+               "  background: %7;"
+               "  color: white;"
+               "  border-color: %7;"
+               "}"
+               "%1:disabled {"
+               "  background: %8;"
+               "  color: %9;"
+               "  border-color: %4;"
+               "}")
+        .arg(objectSelector(QStringLiteral("QPushButton"), objectName),
+             t.panelBackground.name(),
+             t.textSecondary.name(),
+             t.border.name(),
+             t.panelSubtle.name(),
+             t.borderStrong.name(),
+             t.accent.name(),
+             t.panelSubtle.name(),
+             t.textMuted.name());
+}
+
 QString InsightVisualStyle::inspectorCardStyleSheet(const QString& objectName)
 {
     const InsightTheme t = theme();
@@ -337,6 +375,14 @@ void InsightVisualStyle::applySearchField(QLineEdit* edit)
     edit->setMinimumHeight(28);
     edit->setMinimumWidth(180);
     edit->setStyleSheet(compactSearchFieldStyleSheet(edit->objectName()));
+}
+
+void InsightVisualStyle::applyToolbarButton(QPushButton* button)
+{
+    if (!button)
+        return;
+    button->setMinimumHeight(28);
+    button->setStyleSheet(toolbarButtonStyleSheet(button->objectName()));
 }
 
 void InsightVisualStyle::applySegmentedCheckBox(QWidget* checkBox)

@@ -63,6 +63,7 @@
 #include <QString>
 #include <QStringList>
 #include <QKeyEvent>
+#include <QLabel>
 #include <QSettings>
 #include <algorithm>
 #include <cstdio>
@@ -2850,6 +2851,21 @@ int main(int argc, char** argv) {
     expectBool("WavePreview canvas leaves legend room",
                wavePreviewPanel.canvas()
                    && wavePreviewPanel.canvas()->sizeHint().height() >= 144,
+               true);
+    QWidget unavailableWavePreviewHost;
+    WavePreviewPanelCoordinator unavailableWavePreviewPanel(
+        &unavailableWavePreviewHost);
+    unavailableWavePreviewPanel.renderUnavailable(
+        QStringLiteral("Wave Preview unavailable: unsupported selected scope"));
+    QLabel* unavailableWavePreviewSummary =
+        unavailableWavePreviewPanel.dock()
+            ? unavailableWavePreviewPanel.dock()->findChild<QLabel*>(
+                  QStringLiteral("wavePreviewSummary"))
+            : nullptr;
+    expectBool("WavePreview unavailable reason is visible",
+               unavailableWavePreviewSummary
+                   && unavailableWavePreviewSummary->text().contains(
+                       QStringLiteral("unsupported selected scope")),
                true);
     expectBool("WavePreview q lane has two events",
                waveLaneNamed(waveReport, QStringLiteral("q"))

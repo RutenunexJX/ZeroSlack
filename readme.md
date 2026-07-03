@@ -31,10 +31,10 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
 
 ## Current Product Baseline
 
-- Current audit milestone: Signal Usage Hotspot v2 integration is complete.
-  The service/report layer is wired into RTL Insights as a dual Track/Matrix
-  panel, with editor source-symbol context entry and source reveal/flash from
-  usage items.
+- Current audit milestone: Insight UI v2 convergence is complete for the
+  legacy State Transition Graph, Module Block Diagram, and Wave Preview panels.
+  Signal Usage Hotspot v2 remains the accepted baseline and still provides the
+  dual Track/Matrix panel with source reveal/flash from usage items.
 - Corpus audit is retired as an acceptance signal. The current strategy is
   targeted regression fixtures plus GUI smoke and feature-specific tests:
   `completion_test`, `relationship_test`, `gui_smoke_test`, `jump_test`, and
@@ -48,13 +48,15 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
   References / Relationships workflow closure, and Fold Shelf
   persistence/restore/management.
 - Insight UI v2 visual foundation is available through `InsightVisualStyle`.
-  Signal Kernel Graph and Signal Usage Hotspot both use it. Hotspot opens from
-  the editor source-symbol context action `Signal Usage Hotspot` or the RTL
-  Insights `Usage Hotspot` action. Track mode groups usage blocks by module/file
-  lane with role colors; Matrix mode summarizes module/file by role with heat
-  cells and item drill-down. Search, role filters, selection inspector, empty
-  and error states, and source reveal/flash are wired. Future polish can add
-  deeper virtualization/asynchronous progress for very large reports.
+  Signal Kernel Graph, Signal Usage Hotspot, State Transition Graph, Module
+  Block Diagram, and Wave Preview now share the light canvas/panel palette,
+  title/toolbar treatment, empty/failure feedback, hover/selected graph states,
+  and source-navigation status behavior. Hotspot opens from the editor
+  source-symbol context action `Signal Usage Hotspot` or the RTL Insights
+  `Usage Hotspot` action. Track mode groups usage blocks by module/file lane
+  with role colors; Matrix mode summarizes module/file by role with heat cells
+  and item drill-down. Future polish can add deeper virtualization/asynchronous
+  progress for very large reports.
 - The app is a lightweight SystemVerilog editor/workspace browser with tabs,
   workspace file navigation, semantic indexing, diagnostics, completion,
   jump-to-definition, references/relationships, and focused RTL visual helpers.
@@ -174,9 +176,10 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
   summaries with report-data filters and graph search highlighting/focus.
 - Wave Preview exists as a code-understanding sketch, not a simulator. The
   current entry points are scoped to the selected/current `always` block or,
-  when not in an `always` block, the selected/current module. The panel renders
-  scope and legend/readability cues from the report data so users can interpret
-  the sketch without implying simulation accuracy.
+  when not in an `always` block, the selected/current module. The v2 panel shell
+  uses the shared title/summary/canvas styling, shows explicit unsupported or
+  empty-scope reasons, and keeps lane/event selection plus double-click source
+  navigation for recognized assignments.
 - RTL Insights `FSM Graph` renders `FsmGraphService` reports as an interactive
   graph, not a tree table. FSM candidates must have states and parsed
   case-derived transitions, so ordinary enum/register declarations such as
@@ -188,20 +191,22 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
   such as `ns`, `next_state`, `cs`, or `current_state` are examples/display
   hints rather than gates. `StateTransitionGraphService` shapes accepted
   requests into selected next-state graph reports by filtering existing
-  `FsmGraphService` data, and RTL Insights renders those reports as an
-  interactive graph. State/register/signal nodes and transition edges are
-  selectable, and double-clicking a graph element follows its carried source
-  link.
+  `FsmGraphService` data, and RTL Insights renders those reports as a v2
+  interactive graph on the shared canvas. State/register/signal nodes and
+  transition edges are selectable/search-highlightable, and double-clicking a
+  graph element follows its carried source link.
 - Module Block Diagram renders in RTL Insights from the service-owned
   `ModuleBlockDiagramReport`. The current UI entry points are the RTL Insights
   `Module Block Diagram` action for the active module and the editor source
   action for selected module names. Rendering is module/interface-only and does
-  not show signals. The graph uses a grid canvas with the selected module as a
-  large container and child module/instance nodes arranged inside it. Child
-  nodes show both the module type and instance name, unresolved module types
-  remain visible as blackbox nodes with an explicit reason, and containment
-  edges carry instance metadata. Module and instance graph elements are
-  selectable; mouse wheel and `-` / `Fit` / `+` controls zoom the canvas.
+  not show signals. The v2 graph uses the shared light canvas, summary text,
+  hover/selected feedback, graph search highlighting, and a visible no-child or
+  blackbox reason when containment cannot be resolved. The selected module
+  remains a large container with child module/instance nodes arranged inside it.
+  Child nodes show both the module type and instance name, unresolved module
+  types remain visible as blackbox nodes with an explicit reason, and
+  containment edges carry instance metadata. Module and instance graph elements
+  are selectable; mouse wheel and `-` / `Fit` / `+` controls zoom the canvas.
   Double-clicking a root module follows the module definition link; child
   modules jump to the instance declaration and then refresh the diagram around
   the jumped module so its children remain visible. Unresolved blackbox nodes

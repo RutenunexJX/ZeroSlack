@@ -11,22 +11,26 @@ into an analyzer.
 
 ## Current Execution Baseline
 
-- Signal Usage Hotspot v2 integration is complete for targeted regression
-  coverage. The A-branch `SignalUsageHotspotService` report layer is wired into
-  the B-branch `InsightVisualStyle` system as a usable dual Track/Matrix RTL
-  Insights panel.
+- Insight UI v2 convergence is complete for targeted regression coverage. The
+  accepted Signal Usage Hotspot v2 panel remains intact, and State Transition
+  Graph, Module Block Diagram, and Wave Preview now use the shared
+  `InsightVisualStyle` shell, canvas, empty/failure states, and selection
+  feedback without changing their service/report semantics.
 - Verification baseline for this repair is now focused regression plus GUI
   smoke: `completion_test`, `relationship_test`, `gui_smoke_test`,
   `jump_test`, and the lightweight `full_feature_audit_test` inventory.
 - Corpus audit is retired as an acceptance signal. GUI-found issues should be
   reduced to small fixtures in the focused tests instead of broad corpus
   sweeps.
-- No implementation milestone is active. Start the next milestone only from a
-  new explicit scoped request.
+- No implementation milestone is active after the Insight UI v2 convergence
+  pass. Start the next milestone only from a new explicit scoped request.
 - Insight UI v2 visual foundation is established through shared
   `InsightVisualStyle` Qt helpers. Signal Kernel Graph and Signal Usage Hotspot
   consume these color, pen, font, panel, search, segmented-control, legend, and
-  heat helpers instead of adding panel-local palettes.
+  heat helpers instead of adding panel-local palettes. State Transition Graph,
+  Module Block Diagram, and Wave Preview now also consume those helpers for
+  panel shell, canvas, toolbar/button, empty-state, hover, selected, and warning
+  feedback.
 - Signal Usage Hotspot opens from the editor source-symbol context action
   `Signal Usage Hotspot` and from RTL Insights `Usage Hotspot`. Track mode uses
   report lanes/items with role-colored blocks; Matrix mode uses report matrix

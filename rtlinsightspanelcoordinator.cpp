@@ -3,6 +3,7 @@
 #include "activitylogservice.h"
 #include "clockresetdomainservice.h"
 #include "fsmgraphservice.h"
+#include "insightvisualstyle.h"
 #include "moduleblockdiagramservice.h"
 #include "modulebriefservice.h"
 #include "semanticdiffservice.h"
@@ -20,12 +21,15 @@
 #include <QGraphicsRectItem>
 #include <QGraphicsEllipseItem>
 #include <QGraphicsScene>
+#include <QGraphicsSceneHoverEvent>
 #include <QGraphicsSceneMouseEvent>
 #include <QGraphicsSimpleTextItem>
 #include <QGraphicsTextItem>
 #include <QGraphicsView>
 #include <QHeaderView>
 #include <QHBoxLayout>
+#include <QLabel>
+#include <QLineEdit>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPainterPath>
@@ -54,6 +58,7 @@ constexpr int kGraphLineRole = Qt::UserRole + 1204;
 constexpr int kGraphColumnRole = Qt::UserRole + 1205;
 constexpr int kGraphDrillModuleRole = Qt::UserRole + 1206;
 constexpr int kGraphDrillFileRole = Qt::UserRole + 1207;
+constexpr int kGraphDetailRole = Qt::UserRole + 1208;
 
 constexpr qreal kInsightNodeWidth = 190.0;
 constexpr qreal kInsightNodeHeight = 62.0;
@@ -88,7 +93,7 @@ protected:
         constexpr qreal grid = 28.0;
         const qreal left = std::floor(rect.left() / grid) * grid;
         const qreal top = std::floor(rect.top() / grid) * grid;
-        QPen pen(QColor(QStringLiteral("#d9dee8")));
+        QPen pen(InsightVisualStyle::theme().border);
         pen.setWidthF(0.0);
         painter->setPen(pen);
         for (qreal x = left; x <= rect.right(); x += grid)
@@ -160,6 +165,7 @@ void applyGraphElementData(QGraphicsItem* item,
     item->setData(kGraphColumnRole, element.codeLink.column);
     item->setData(kGraphDrillModuleRole, element.drillModuleName);
     item->setData(kGraphDrillFileRole, element.drillFileName);
+    item->setData(kGraphDetailRole, element.detail);
     item->setToolTip(graphElementTooltip(element));
 }
 
@@ -181,15 +187,15 @@ public:
         setAcceptHoverEvents(true);
         setAcceptedMouseButtons(Qt::LeftButton | Qt::RightButton);
         setBrush(fill);
-        setPen(QPen(stroke, 1.6));
+        normalPen = QPen(stroke, 1.6);
+        hoverPen = InsightVisualStyle::hoverPen();
+        setPen(normalPen);
         setZValue(10);
         applyGraphElementData(this, element);
 
-        QFont titleFont = font;
-        titleFont.setBold(true);
+        QFont titleFont = InsightVisualStyle::titleFont(font);
         titleFont.setPointSize(qMax(8, titleFont.pointSize() + 1));
-        QFont detailFont = font;
-        detailFont.setPointSize(qMax(8, detailFont.pointSize() - 1));
+        QFont detailFont = InsightVisualStyle::compactFont(font);
 
         auto* title = new QGraphicsSimpleTextItem(
             graphElidedText(element.primary,
@@ -198,7 +204,7 @@ public:
             this);
         title->setAcceptedMouseButtons(Qt::NoButton);
         title->setFont(titleFont);
-        title->setBrush(QBrush(QColor(QStringLiteral("#0f172a"))));
+        title->setBrush(QBrush(InsightVisualStyle::theme().textPrimary));
         title->setPos(rect.left() + 10, rect.top() + 8);
 
         QString detail = element.secondary;
@@ -211,7 +217,7 @@ public:
             this);
         detailItem->setAcceptedMouseButtons(Qt::NoButton);
         detailItem->setFont(detailFont);
-        detailItem->setBrush(QBrush(QColor(QStringLiteral("#475569"))));
+        detailItem->setBrush(QBrush(InsightVisualStyle::theme().textSecondary));
         detailItem->setPos(rect.left() + 10, rect.top() + 34);
     }
 
@@ -219,9 +225,26 @@ public:
     SelectHandler selectHandler;
 
 protected:
+    void hoverEnterEvent(QGraphicsSceneHoverEvent* event) override
+    {
+        hovered = true;
+        setZValue(40);
+        refreshPen();
+        QGraphicsRectItem::hoverEnterEvent(event);
+    }
+
+    void hoverLeaveEvent(QGraphicsSceneHoverEvent* event) override
+    {
+        hovered = false;
+        setZValue(10);
+        refreshPen();
+        QGraphicsRectItem::hoverLeaveEvent(event);
+    }
+
     void mousePressEvent(QGraphicsSceneMouseEvent* event) override
     {
         setSelected(true);
+        refreshPen();
         if (selectHandler)
             selectHandler(element);
         QGraphicsRectItem::mousePressEvent(event);
@@ -238,8 +261,31 @@ protected:
         QGraphicsRectItem::mouseDoubleClickEvent(event);
     }
 
+    QVariant itemChange(GraphicsItemChange change,
+                        const QVariant& value) override
+    {
+        const QVariant result = QGraphicsRectItem::itemChange(change, value);
+        if (change == QGraphicsItem::ItemSelectedHasChanged)
+            refreshPen();
+        return result;
+    }
+
 private:
+    void refreshPen()
+    {
+        if (isSelected()) {
+            setPen(InsightVisualStyle::selectedPen());
+        } else if (hovered) {
+            setPen(hoverPen);
+        } else {
+            setPen(normalPen);
+        }
+    }
+
     RtlInsightGraphElement element;
+    QPen normalPen;
+    QPen hoverPen;
+    bool hovered = false;
 };
 
 class RtlInsightGraphStateNodeItem : public QGraphicsEllipseItem
@@ -261,15 +307,15 @@ public:
         setAcceptHoverEvents(true);
         setAcceptedMouseButtons(Qt::LeftButton | Qt::RightButton);
         setBrush(fill);
-        QPen nodePen(stroke, dashed ? 1.6 : 2.0);
+        normalPen = QPen(stroke, dashed ? 1.6 : 2.0);
         if (dashed)
-            nodePen.setStyle(Qt::DashLine);
-        setPen(nodePen);
+            normalPen.setStyle(Qt::DashLine);
+        hoverPen = InsightVisualStyle::hoverPen();
+        setPen(normalPen);
         setZValue(10);
         applyGraphElementData(this, element);
 
-        QFont titleFont = font;
-        titleFont.setBold(true);
+        QFont titleFont = InsightVisualStyle::titleFont(font);
         titleFont.setPointSize(qMax(8, titleFont.pointSize() + 1));
 
         auto* title = new QGraphicsSimpleTextItem(
@@ -277,7 +323,7 @@ public:
             this);
         title->setAcceptedMouseButtons(Qt::NoButton);
         title->setFont(titleFont);
-        title->setBrush(QBrush(QColor(QStringLiteral("#111827"))));
+        title->setBrush(QBrush(InsightVisualStyle::theme().textPrimary));
         const QRectF titleBounds = title->boundingRect();
         title->setPos(rect.center().x() - titleBounds.width() / 2.0,
                       rect.center().y() - titleBounds.height() / 2.0);
@@ -287,9 +333,26 @@ public:
     SelectHandler selectHandler;
 
 protected:
+    void hoverEnterEvent(QGraphicsSceneHoverEvent* event) override
+    {
+        hovered = true;
+        setZValue(40);
+        refreshPen();
+        QGraphicsEllipseItem::hoverEnterEvent(event);
+    }
+
+    void hoverLeaveEvent(QGraphicsSceneHoverEvent* event) override
+    {
+        hovered = false;
+        setZValue(10);
+        refreshPen();
+        QGraphicsEllipseItem::hoverLeaveEvent(event);
+    }
+
     void mousePressEvent(QGraphicsSceneMouseEvent* event) override
     {
         setSelected(true);
+        refreshPen();
         if (selectHandler)
             selectHandler(element);
         QGraphicsEllipseItem::mousePressEvent(event);
@@ -306,8 +369,31 @@ protected:
         QGraphicsEllipseItem::mouseDoubleClickEvent(event);
     }
 
+    QVariant itemChange(GraphicsItemChange change,
+                        const QVariant& value) override
+    {
+        const QVariant result = QGraphicsEllipseItem::itemChange(change, value);
+        if (change == QGraphicsItem::ItemSelectedHasChanged)
+            refreshPen();
+        return result;
+    }
+
 private:
+    void refreshPen()
+    {
+        if (isSelected()) {
+            setPen(InsightVisualStyle::selectedPen());
+        } else if (hovered) {
+            setPen(hoverPen);
+        } else {
+            setPen(normalPen);
+        }
+    }
+
     RtlInsightGraphElement element;
+    QPen normalPen;
+    QPen hoverPen;
+    bool hovered = false;
 };
 
 class RtlInsightGraphEdgeItem : public QGraphicsPathItem
@@ -330,7 +416,9 @@ public:
         setFlag(QGraphicsItem::ItemIsSelectable, true);
         setAcceptHoverEvents(true);
         setAcceptedMouseButtons(Qt::LeftButton | Qt::RightButton);
-        setPen(QPen(color, 2.0, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+        normalPen = QPen(color, 2.0, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin);
+        hoverPen = InsightVisualStyle::hoverPen(2.3);
+        setPen(normalPen);
         setZValue(2);
         applyGraphElementData(this, element);
 
@@ -355,7 +443,8 @@ public:
             labelItem->setAcceptedMouseButtons(Qt::NoButton);
             labelItem->setFont(labelFont);
             labelItem->setTextWidth(460.0);
-            labelItem->setDefaultTextColor(QColor(QStringLiteral("#334155")));
+            labelItem->setDefaultTextColor(
+                InsightVisualStyle::theme().textSecondary);
             const QRectF pathBounds = path.boundingRect();
             const QRectF labelBounds = labelItem->boundingRect();
             auto* labelBackground = new QGraphicsRectItem(
@@ -363,7 +452,9 @@ public:
                 labelItem);
             labelBackground->setAcceptedMouseButtons(Qt::NoButton);
             labelBackground->setPen(Qt::NoPen);
-            labelBackground->setBrush(QColor(248, 250, 252, 220));
+            QColor labelFill = InsightVisualStyle::theme().canvasBackground;
+            labelFill.setAlpha(226);
+            labelBackground->setBrush(labelFill);
             labelBackground->setZValue(-1);
             labelItem->setPos(pathBounds.center().x() - labelBounds.width() / 2.0,
                               pathBounds.center().y() - labelBounds.height() / 2.0
@@ -375,9 +466,26 @@ public:
     SelectHandler selectHandler;
 
 protected:
+    void hoverEnterEvent(QGraphicsSceneHoverEvent* event) override
+    {
+        hovered = true;
+        setZValue(30);
+        refreshPen();
+        QGraphicsPathItem::hoverEnterEvent(event);
+    }
+
+    void hoverLeaveEvent(QGraphicsSceneHoverEvent* event) override
+    {
+        hovered = false;
+        setZValue(2);
+        refreshPen();
+        QGraphicsPathItem::hoverLeaveEvent(event);
+    }
+
     void mousePressEvent(QGraphicsSceneMouseEvent* event) override
     {
         setSelected(true);
+        refreshPen();
         if (selectHandler)
             selectHandler(element);
         QGraphicsPathItem::mousePressEvent(event);
@@ -394,8 +502,31 @@ protected:
         QGraphicsPathItem::mouseDoubleClickEvent(event);
     }
 
+    QVariant itemChange(GraphicsItemChange change,
+                        const QVariant& value) override
+    {
+        const QVariant result = QGraphicsPathItem::itemChange(change, value);
+        if (change == QGraphicsItem::ItemSelectedHasChanged)
+            refreshPen();
+        return result;
+    }
+
 private:
+    void refreshPen()
+    {
+        if (isSelected()) {
+            setPen(InsightVisualStyle::selectedPen(2.5));
+        } else if (hovered) {
+            setPen(hoverPen);
+        } else {
+            setPen(normalPen);
+        }
+    }
+
     RtlInsightGraphElement element;
+    QPen normalPen;
+    QPen hoverPen;
+    bool hovered = false;
 };
 
 QPainterPath straightArrowPath(const QPointF& start, const QPointF& end)
@@ -864,11 +995,10 @@ QRectF renderFsmStateMachineGraph(
         ? signalNodeTop - 34.0
         : layout.bounds.top() - 56.0;
 
-    QFont titleFont = font;
-    titleFont.setBold(true);
+    QFont titleFont = InsightVisualStyle::titleFont(font);
     titleFont.setPointSize(qMax(10, titleFont.pointSize() + 1));
     auto* titleItem = scene->addSimpleText(title, titleFont);
-    titleItem->setBrush(QBrush(QColor(QStringLiteral("#111827"))));
+    titleItem->setBrush(QBrush(InsightVisualStyle::theme().textPrimary));
     titleItem->setPos(layout.bounds.left(), titleTop);
     graphBounds = graphBounds.united(titleItem->sceneBoundingRect());
 
@@ -880,7 +1010,7 @@ QRectF renderFsmStateMachineGraph(
               .arg(graph.stateRegisterDisplayName,
                    graph.nextStateSignalDisplayName);
     auto* captionItem = scene->addSimpleText(caption, captionFont);
-    captionItem->setBrush(QBrush(QColor(QStringLiteral("#475569"))));
+    captionItem->setBrush(QBrush(InsightVisualStyle::theme().textSecondary));
     captionItem->setPos(layout.bounds.left(), captionTop);
     graphBounds = graphBounds.united(captionItem->sceneBoundingRect());
 
@@ -944,8 +1074,8 @@ QRectF renderFsmStateMachineGraph(
                 graph.stateRegisterSourceRoleDisplayName,
                 graph.stateRegisterCodeLink,
                 stateRegisterRect,
-                QColor(QStringLiteral("#eef6e6")),
-                QColor(QStringLiteral("#31572c")));
+                InsightVisualStyle::roleFillColor(InsightVisualRole::Read),
+                InsightVisualStyle::roleColor(InsightVisualRole::Read));
         }
         if (hasNextStateSignal) {
             nextStateSignalNode = addSignalNode(
@@ -955,8 +1085,8 @@ QRectF renderFsmStateMachineGraph(
                 graph.nextStateSignalSourceRoleDisplayName,
                 graph.nextStateSignalCodeLink,
                 nextStateSignalRect,
-                QColor(QStringLiteral("#dff3f8")),
-                QColor(QStringLiteral("#0f6c7a")));
+                InsightVisualStyle::roleFillColor(InsightVisualRole::Write),
+                InsightVisualStyle::roleColor(InsightVisualRole::Write));
         }
         if (stateRegisterNode && nextStateSignalNode) {
             RtlInsightGraphElement flow;
@@ -978,7 +1108,7 @@ QRectF renderFsmStateMachineGraph(
                 0.0,
                 QStringLiteral("next"),
                 font,
-                QColor(QStringLiteral("#2563eb")));
+                InsightVisualStyle::theme().accent);
             edge->navigateHandler = navigate;
             edge->selectHandler = select;
             scene->addItem(edge);
@@ -999,9 +1129,9 @@ QRectF renderFsmStateMachineGraph(
         auto* item = new RtlInsightGraphStateNodeItem(
             state,
             rect,
-            highlighted ? QColor(QStringLiteral("#fff7d6"))
-                        : QColor(QStringLiteral("#ffffff")),
-            QColor(QStringLiteral("#111827")),
+            highlighted ? InsightVisualStyle::roleFillColor(InsightVisualRole::Timing)
+                        : InsightVisualStyle::panelBrush().color(),
+            InsightVisualStyle::theme().borderStrong,
             font,
             dashed);
         item->navigateHandler = navigate;
@@ -1056,7 +1186,7 @@ QRectF renderFsmStateMachineGraph(
             angle,
             fsmTransitionLabel(row.conditionDisplayName),
             font,
-            QColor(QStringLiteral("#111827")),
+            InsightVisualStyle::theme().textPrimary,
             lane * 26.0);
         item->navigateHandler = navigate;
         item->selectHandler = select;
@@ -1797,9 +1927,16 @@ void appendSemanticDiff(QTreeWidget* tree, const SemanticDiffReport& report)
 RtlInsightsPanelCoordinator::RtlInsightsPanelCoordinator(QWidget* parent)
 {
     auto* panel = new QWidget(parent);
+    panel->setObjectName(QStringLiteral("rtlInsightsPanel"));
+    InsightVisualStyle::applyPanel(panel);
     auto* layout = new QVBoxLayout(panel);
-    layout->setContentsMargins(4, 4, 4, 4);
-    layout->setSpacing(4);
+    layout->setContentsMargins(8, 8, 8, 8);
+    layout->setSpacing(6);
+
+    auto* titleLabel = new QLabel(QStringLiteral("RTL Insights"), panel);
+    titleLabel->setObjectName(QStringLiteral("rtlInsightsTitle"));
+    InsightVisualStyle::applyTitleLabel(titleLabel);
+    layout->addWidget(titleLabel);
 
     auto* actionLayout = new QHBoxLayout;
     actionLayout->setContentsMargins(0, 0, 0, 0);
@@ -1829,6 +1966,22 @@ RtlInsightsPanelCoordinator::RtlInsightsPanelCoordinator(QWidget* parent)
     graphZoomInButton = new QPushButton(QStringLiteral("+"), panel);
     graphZoomInButton->setObjectName(QStringLiteral("rtlGraphZoomInButton"));
     graphZoomInButton->setFixedWidth(30);
+    graphSearchEdit = new QLineEdit(panel);
+    graphSearchEdit->setObjectName(QStringLiteral("rtlGraphSearchEdit"));
+    graphSearchEdit->setPlaceholderText(QStringLiteral("Search graph"));
+    InsightVisualStyle::applySearchField(graphSearchEdit);
+    for (QPushButton* button :
+         {moduleBriefButton,
+          signalJourneyButton,
+          signalUsageHotspotButton,
+          clockResetButton,
+          fsmGraphButton,
+          moduleBlockDiagramButton,
+          graphZoomOutButton,
+          graphFitButton,
+          graphZoomInButton}) {
+        InsightVisualStyle::applyToolbarButton(button);
+    }
     actionLayout->addWidget(moduleBriefButton);
     actionLayout->addWidget(signalJourneyButton);
     actionLayout->addWidget(signalUsageHotspotButton);
@@ -1836,6 +1989,7 @@ RtlInsightsPanelCoordinator::RtlInsightsPanelCoordinator(QWidget* parent)
     actionLayout->addWidget(fsmGraphButton);
     actionLayout->addWidget(moduleBlockDiagramButton);
     actionLayout->addStretch(1);
+    actionLayout->addWidget(graphSearchEdit);
     actionLayout->addWidget(graphZoomOutButton);
     actionLayout->addWidget(graphFitButton);
     actionLayout->addWidget(graphZoomInButton);
@@ -1862,8 +2016,7 @@ RtlInsightsPanelCoordinator::RtlInsightsPanelCoordinator(QWidget* parent)
     insightsGraphView->setFocusPolicy(Qt::StrongFocus);
     insightsGraphView->setTransformationAnchor(QGraphicsView::AnchorUnderMouse);
     insightsGraphView->setResizeAnchor(QGraphicsView::AnchorViewCenter);
-    insightsGraphView->setBackgroundBrush(
-        QBrush(QColor(QStringLiteral("#f8fafc"))));
+    insightsGraphView->setBackgroundBrush(InsightVisualStyle::canvasBrush());
     signalUsageHotspotPanel = new SignalUsageHotspotPanel(panel);
 
     insightsStack = new QStackedWidget(panel);
@@ -1925,6 +2078,13 @@ RtlInsightsPanelCoordinator::RtlInsightsPanelCoordinator(QWidget* parent)
                                  insightsGraphView->fitInView(rect,
                                                               Qt::KeepAspectRatio);
                          }
+                     });
+    QObject::connect(graphSearchEdit,
+                     &QLineEdit::textChanged,
+                     insightsDock,
+                     [this](const QString& text) {
+                         graphSearchText = text.trimmed();
+                         applyGraphSearchHighlight();
                      });
 
     renderNoContext();
@@ -2008,6 +2168,22 @@ bool RtlInsightsPanelCoordinator::graphNodeRectsOverlapForTest() const
     return false;
 }
 
+int RtlInsightsPanelCoordinator::graphSelectedItemCountForTest() const
+{
+    if (!insightsGraphScene)
+        return 0;
+    int count = 0;
+    for (QGraphicsItem* item : insightsGraphScene->items()) {
+        if ((dynamic_cast<RtlInsightGraphNodeItem*>(item)
+             || dynamic_cast<RtlInsightGraphStateNodeItem*>(item)
+             || dynamic_cast<RtlInsightGraphEdgeItem*>(item))
+            && item->isSelected()) {
+            ++count;
+        }
+    }
+    return count;
+}
+
 int RtlInsightsPanelCoordinator::graphElementLineForTest(
     const QString& elementKind,
     const QString& primaryText,
@@ -2064,6 +2240,45 @@ void RtlInsightsPanelCoordinator::showGraphSurface()
         insightsStack->setCurrentWidget(insightsGraphView);
 }
 
+void RtlInsightsPanelCoordinator::applyGraphSearchHighlight()
+{
+    if (!insightsGraphScene)
+        return;
+
+    const QString needle = graphSearchText.trimmed();
+    const bool active = !needle.isEmpty();
+    int firstMatchCount = 0;
+    QPointF firstMatchCenter;
+    for (QGraphicsItem* item : insightsGraphScene->items()) {
+        if (!dynamic_cast<RtlInsightGraphNodeItem*>(item)
+            && !dynamic_cast<RtlInsightGraphStateNodeItem*>(item)
+            && !dynamic_cast<RtlInsightGraphEdgeItem*>(item)) {
+            continue;
+        }
+        const QString haystack =
+            QStringList{item->data(kGraphKindRole).toString(),
+                        item->data(kGraphPrimaryRole).toString(),
+                        item->data(kGraphSecondaryRole).toString(),
+                        item->data(kGraphDetailRole).toString()}
+                .join(QLatin1Char(' '));
+        const bool match =
+            active && haystack.contains(needle, Qt::CaseInsensitive);
+        item->setSelected(match);
+        if (match) {
+            ++firstMatchCount;
+            if (firstMatchCount == 1)
+                firstMatchCenter = item->sceneBoundingRect().center();
+        }
+    }
+    if (firstMatchCount > 0 && insightsGraphView)
+        insightsGraphView->centerOn(firstMatchCenter);
+    if (statusMessageHandler && active) {
+        statusMessageHandler(QStringLiteral("%1 graph match(es)")
+                                 .arg(firstMatchCount),
+                             1200);
+    }
+}
+
 void RtlInsightsPanelCoordinator::showHotspotSurface()
 {
     if (insightsStack && signalUsageHotspotPanel)
@@ -2080,21 +2295,33 @@ void RtlInsightsPanelCoordinator::renderGraphUnavailable(
     insightsGraphScene->clear();
     insightsGraphView->resetTransform();
 
-    QFont titleFont = insightsGraphView->font();
-    titleFont.setBold(true);
+    const InsightTheme t = InsightVisualStyle::theme();
+    QFont titleFont = InsightVisualStyle::titleFont(insightsGraphView->font());
     titleFont.setPointSize(qMax(10, titleFont.pointSize() + 2));
-    auto* titleItem = insightsGraphScene->addSimpleText(title, titleFont);
-    titleItem->setBrush(QBrush(QColor(QStringLiteral("#0f172a"))));
-    titleItem->setPos(-160, -34);
+    auto* card = insightsGraphScene->addRect(
+        QRectF(-230, -86, 460, 172),
+        InsightVisualStyle::panelBorderPen(),
+        InsightVisualStyle::panelBrush());
+    card->setZValue(-1);
 
-    QFont detailFont = insightsGraphView->font();
-    auto* detailItem = insightsGraphScene->addSimpleText(message, detailFont);
-    detailItem->setBrush(QBrush(QColor(QStringLiteral("#475569"))));
-    detailItem->setPos(-160, 0);
+    auto* titleItem = insightsGraphScene->addSimpleText(title, titleFont);
+    titleItem->setBrush(QBrush(t.textPrimary));
+    titleItem->setPos(-188, -48);
+
+    QFont detailFont = InsightVisualStyle::compactFont(insightsGraphView->font());
+    auto* detailItem = insightsGraphScene->addText(
+        message.isEmpty()
+            ? QStringLiteral("No graph is available for the current selection.")
+            : message,
+        detailFont);
+    detailItem->setTextWidth(376.0);
+    detailItem->setDefaultTextColor(t.warning);
+    detailItem->setPos(-188, -8);
 
     insightsGraphScene->setSceneRect(-220, -90, 440, 180);
     insightsGraphView->fitInView(insightsGraphScene->sceneRect(),
                                  Qt::KeepAspectRatio);
+    applyGraphSearchHighlight();
 }
 
 void RtlInsightsPanelCoordinator::renderStateTransitionGraphScene(
@@ -2146,6 +2373,7 @@ void RtlInsightsPanelCoordinator::renderStateTransitionGraphScene(
                                                      select);
     insightsGraphScene->setSceneRect(bounds);
     insightsGraphView->fitInView(bounds, Qt::KeepAspectRatio);
+    applyGraphSearchHighlight();
 }
 
 void RtlInsightsPanelCoordinator::renderFsmGraphScene(
@@ -2208,6 +2436,7 @@ void RtlInsightsPanelCoordinator::renderFsmGraphScene(
     }
     insightsGraphScene->setSceneRect(bounds);
     insightsGraphView->fitInView(bounds, Qt::KeepAspectRatio);
+    applyGraphSearchHighlight();
 }
 
 void RtlInsightsPanelCoordinator::renderModuleBlockDiagramScene(
@@ -2280,12 +2509,18 @@ void RtlInsightsPanelCoordinator::renderModuleBlockDiagramScene(
         auto* item = new RtlInsightGraphNodeItem(
             element,
             rect,
-            root ? QColor(QStringLiteral("#eef6e6"))
-                 : (node.unresolved ? QColor(QStringLiteral("#f3f4f6"))
-                                    : QColor(QStringLiteral("#dff3f8"))),
-            root ? QColor(QStringLiteral("#111827"))
-                 : (node.unresolved ? QColor(QStringLiteral("#64748b"))
-                                    : QColor(QStringLiteral("#0f172a"))),
+            root ? InsightVisualStyle::roleFillColor(InsightVisualRole::Kernel)
+                 : (node.unresolved
+                        ? InsightVisualStyle::roleFillColor(
+                              InsightVisualRole::Unknown)
+                        : InsightVisualStyle::roleFillColor(
+                              InsightVisualRole::Port)),
+            root ? InsightVisualStyle::roleColor(InsightVisualRole::Kernel)
+                 : (node.unresolved
+                        ? InsightVisualStyle::roleColor(
+                              InsightVisualRole::Unknown)
+                        : InsightVisualStyle::roleColor(
+                              InsightVisualRole::Port)),
             font);
         item->setZValue(root ? 0.0 : 10.0);
         item->navigateHandler = navigate;
@@ -2333,8 +2568,8 @@ void RtlInsightsPanelCoordinator::renderModuleBlockDiagramScene(
             std::atan2(end.y() - start.y(), end.x() - start.x()),
             QString(),
             font,
-            edge.unresolved ? QColor(QStringLiteral("#94a3b8"))
-                            : QColor(QStringLiteral("#334155")));
+            edge.unresolved ? InsightVisualStyle::theme().textMuted
+                            : InsightVisualStyle::theme().borderStrong);
         item->navigateHandler = navigate;
         item->selectHandler = select;
         insightsGraphScene->addItem(item);
@@ -2415,6 +2650,26 @@ void RtlInsightsPanelCoordinator::renderModuleBlockDiagramScene(
     }
     rectByNodeId.insert(report.root.nodeId, rootRect);
 
+    QFont titleFont = InsightVisualStyle::titleFont(font);
+    titleFont.setPointSize(qMax(10, titleFont.pointSize() + 1));
+    auto* titleItem = insightsGraphScene->addSimpleText(
+        QStringLiteral("Module Block Diagram: %1")
+            .arg(report.root.moduleDisplayName),
+        titleFont);
+    titleItem->setBrush(QBrush(InsightVisualStyle::theme().textPrimary));
+    titleItem->setPos(rootRect.left(), rootRect.top() - 72.0);
+
+    const QString summaryText =
+        QStringLiteral("%1 module(s), %2 containment edge(s), %3 blackbox")
+            .arg(report.moduleCount)
+            .arg(report.edgeCount)
+            .arg(report.unresolvedInstanceCount);
+    auto* summaryItem = insightsGraphScene->addSimpleText(
+        summaryText,
+        InsightVisualStyle::compactFont(font));
+    summaryItem->setBrush(QBrush(InsightVisualStyle::theme().textSecondary));
+    summaryItem->setPos(rootRect.left(), rootRect.top() - 42.0);
+
     addNode(report.root, rootRect, true);
 
     for (const ModuleBlockDiagramEdge& edge : report.edges) {
@@ -2440,10 +2695,15 @@ void RtlInsightsPanelCoordinator::renderModuleBlockDiagramScene(
     }
 
     if (report.edgeCount == 0) {
-        auto* label = insightsGraphScene->addSimpleText(
-            QStringLiteral("No child modules"),
-            font);
-        label->setBrush(QBrush(QColor(QStringLiteral("#475569"))));
+        const QString noChildText =
+            report.notFoundReasonDisplayName.isEmpty()
+                ? QStringLiteral("No child modules")
+                : QStringLiteral("No child modules: %1")
+                      .arg(report.notFoundReasonDisplayName);
+        auto* label =
+            insightsGraphScene->addSimpleText(noChildText,
+                                              InsightVisualStyle::compactFont(font));
+        label->setBrush(QBrush(InsightVisualStyle::theme().warning));
         label->setPos(rootRect.center().x() - 70,
                       rootRect.center().y() - 10);
     }
@@ -2452,6 +2712,7 @@ void RtlInsightsPanelCoordinator::renderModuleBlockDiagramScene(
         insightsGraphScene->itemsBoundingRect().adjusted(-80, -80, 80, 80);
     insightsGraphScene->setSceneRect(bounds);
     insightsGraphView->fitInView(bounds, Qt::KeepAspectRatio);
+    applyGraphSearchHighlight();
 }
 
 void RtlInsightsPanelCoordinator::updateModuleContext(

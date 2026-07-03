@@ -28,22 +28,36 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
 
 ## Current Goal State
 
-Current milestone: Signal Usage Hotspot v2 integration is complete.
-The next milestone should wait for a new explicit scoped request.
+Current milestone: Insight UI v2 convergence is complete for State Transition
+Graph, Module Block Diagram, and Wave Preview. The next milestone should wait
+for a new explicit scoped request.
 
 Current baseline highlights:
 
 - Insight UI v2 visual foundation is established. `InsightVisualStyle` provides
   reusable light-theme tokens, role colors, selected/hover pens, heat intensity
   colors, compact control styling, and panel/legend helpers; Signal Kernel
-  Graph and Signal Usage Hotspot now both use this visual system.
+  Graph, Signal Usage Hotspot, State Transition Graph, Module Block Diagram,
+  and Wave Preview now use this visual system for their insight surfaces.
+- Insight UI v2 convergence kept the old insight semantics intact: State
+  Transition Graph still gates on structural next-state roles, Module Block
+  Diagram still shows only module/instance containment, and Wave Preview remains
+  a code-understanding sketch rather than a simulator. The completed pass added
+  shared title/toolbar/canvas styling, graph search highlighting, visible
+  empty/failure reasons, hover/selected graph feedback, and retained source
+  navigation callbacks.
 - Signal Usage Hotspot is available from the editor source-symbol context action
   `Signal Usage Hotspot` and the RTL Insights `Usage Hotspot` action. It renders
   Track lanes from report items, Matrix heat cells from report summaries, role
   filters/search, item drill-down, inspector metadata, explicit empty/error
   states, and source reveal/flash navigation. Future polish can improve
   asynchronous progress and very-large-report virtualization.
-- Most recent completed milestone: Signal Usage Hotspot v2 integration. The
+- Most recent completed milestone: Insight UI v2 convergence for State
+  Transition Graph, Module Block Diagram, and Wave Preview. Verification passed
+  with `completion_test`, `relationship_test`, `gui_smoke_test`,
+  `insight_visual_style_test`, `signal_usage_hotspot_panel_test`, and
+  `git diff --check`.
+- Previous completed milestone: Signal Usage Hotspot v2 integration. The
   A-branch service/report API is connected to the B-branch visual helpers in a
   dual-mode panel with real `chl_ctrl.sv` / `mcs` coverage and enum-value
   hotspot filtering.

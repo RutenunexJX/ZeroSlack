@@ -1,5 +1,6 @@
 #include "wavepreviewpanelcoordinator.h"
 
+#include "insightvisualstyle.h"
 #include "semanticindex.h"
 
 #include <QFileInfo>
@@ -132,16 +133,22 @@ protected:
         QPainter painter(this);
         painter.setRenderHint(QPainter::Antialiasing, true);
 
+        const InsightTheme t = InsightVisualStyle::theme();
         const QRect canvasRect = rect().adjusted(0, 0, -1, -1);
-        painter.fillRect(canvasRect, QColor(QStringLiteral("#f8fafc")));
-        painter.setPen(QPen(QColor(QStringLiteral("#cbd5e1"))));
+        painter.fillRect(canvasRect, t.canvasBackground);
+        painter.setPen(InsightVisualStyle::panelBorderPen());
         painter.drawRect(canvasRect);
 
         if (!report.available || report.lanes.isEmpty()) {
-            painter.setPen(QColor(QStringLiteral("#64748b")));
+            painter.setPen(t.warning);
+            const QString reason =
+                !report.warnings.isEmpty()
+                    ? report.warnings.first()
+                    : QStringLiteral(
+                          "No local waveform: no assign/always events were recognized for this scope.");
             painter.drawText(canvasRect,
-                             Qt::AlignCenter,
-                             QStringLiteral("No local waveform"));
+                             Qt::AlignCenter | Qt::TextWordWrap,
+                             reason);
             return;
         }
 
@@ -169,7 +176,7 @@ protected:
 
         paintSketchLegend(painter, canvasRect);
 
-        painter.setPen(QColor(QStringLiteral("#64748b")));
+        painter.setPen(t.textMuted);
         for (int cycle = 0; cycle <= maxCycle; ++cycle) {
             const int x = timelineLeft
                 + static_cast<int>((timelineWidth * cycle) / maxCycle);
@@ -182,7 +189,7 @@ protected:
         QFont labelFont = painter.font();
         labelFont.setBold(true);
         painter.setFont(labelFont);
-        painter.setPen(QColor(QStringLiteral("#0f172a")));
+        painter.setPen(t.textPrimary);
 
         for (int laneIndex = 0; laneIndex < report.lanes.size(); ++laneIndex) {
             const WavePreviewLane& lane = report.lanes.at(laneIndex);
@@ -194,29 +201,28 @@ protected:
                                  rowHeight - 4);
 
             if (lane.signalName == selectedSignalName) {
-                painter.fillRect(laneRect,
-                                 QColor(QStringLiteral("#e0f2fe")));
+                painter.fillRect(laneRect, t.hover.lighter(190));
             }
             laneHits.append({laneRect,
                              laneDetailTooltip(lane),
                              canvasLaneSelectionText(lane),
                              lane.signalName});
 
-            painter.setPen(QPen(QColor(QStringLiteral("#e2e8f0"))));
+            painter.setPen(InsightVisualStyle::hairlinePen(t.border));
             painter.drawLine(left, centerY, timelineRight, centerY);
-            painter.setPen(QColor(QStringLiteral("#0f172a")));
+            painter.setPen(t.textPrimary);
             painter.drawText(QRect(left, y + 2, labelWidth - 8, 15),
                              Qt::AlignRight | Qt::AlignVCenter,
                              lane.signalName);
             QFont summaryFont = painter.font();
             summaryFont.setBold(false);
             painter.setFont(summaryFont);
-            painter.setPen(QColor(QStringLiteral("#64748b")));
+            painter.setPen(t.textMuted);
             painter.drawText(QRect(left, y + 17, labelWidth - 8, 13),
                              Qt::AlignRight | Qt::AlignVCenter,
                              laneSummaryText(lane.summary));
             painter.setFont(labelFont);
-            painter.setPen(QColor(QStringLiteral("#0f172a")));
+            painter.setPen(t.textPrimary);
 
             for (int eventIndex = 0;
                  eventIndex < lane.assignments.size();
@@ -248,12 +254,12 @@ protected:
                     && assignment.line == selectedLine
                     && qMax(1, assignment.column) == selectedColumn;
                 painter.setPen(QPen(selected
-                                        ? QColor(QStringLiteral("#0f172a"))
+                                        ? t.textPrimary
                                         : fill.darker(125),
                                     selected ? 2 : 1));
                 painter.setBrush(fill.lighter(180));
                 painter.drawRoundedRect(eventRect, 4, 4);
-                painter.setPen(QColor(QStringLiteral("#111827")));
+                painter.setPen(t.textPrimary);
                 painter.drawText(eventRect.adjusted(5, 0, -5, 0),
                                  Qt::AlignCenter,
                                  canvasEventLabel(assignment));
@@ -378,7 +384,7 @@ private:
         painter.setPen(QPen(color.darker(130), 1));
         painter.setBrush(color.lighter(180));
         painter.drawRoundedRect(chipRect, 4, 4);
-        painter.setPen(QColor(QStringLiteral("#111827")));
+        painter.setPen(InsightVisualStyle::theme().textPrimary);
         painter.drawText(chipRect.adjusted(18, 0, -5, 0),
                          Qt::AlignVCenter | Qt::AlignLeft,
                          text);
@@ -417,7 +423,7 @@ private:
                        colorForAssignmentKind(
                            WavePreviewAssignmentKind::NonBlocking),
                        QStringLiteral("nonblocking"));
-        painter.setPen(QColor(QStringLiteral("#64748b")));
+        painter.setPen(InsightVisualStyle::theme().textMuted);
         painter.drawText(QRect(x + 4,
                                y,
                                qMax(40, canvasRect.right() - x - 8),
@@ -438,9 +444,9 @@ private:
         drawLegendChip(painter,
                        &x,
                        y,
-                       QColor(QStringLiteral("#0f766e")),
+                       InsightVisualStyle::theme().hover,
                        QStringLiteral("trace"));
-        painter.setPen(QColor(QStringLiteral("#64748b")));
+        painter.setPen(InsightVisualStyle::theme().textMuted);
         painter.drawText(QRect(x + 4,
                                y,
                                qMax(40, canvasRect.right() - x - 8),
@@ -465,7 +471,7 @@ private:
 
         paintTraceLegend(painter, canvasRect);
 
-        painter.setPen(QColor(QStringLiteral("#64748b")));
+        painter.setPen(InsightVisualStyle::theme().textMuted);
         for (int cycle = 0; cycle <= maxCycle; ++cycle) {
             const int x = timelineLeft
                 + static_cast<int>((timelineWidth * cycle) / maxCycle);
@@ -491,7 +497,8 @@ private:
                                  timelineRight - left,
                                  rowHeight - 4);
             if (signal.signalName == selectedSignalName)
-                painter.fillRect(laneRect, QColor(QStringLiteral("#e0f2fe")));
+                painter.fillRect(laneRect,
+                                 InsightVisualStyle::theme().hover.lighter(190));
             const QString signalValues =
                 signal.values.join(QStringLiteral(" -> "));
             laneHits.append(
@@ -501,9 +508,10 @@ private:
                  QStringLiteral("Selected waveform %1 values %2")
                      .arg(signal.signalName, signalValues),
                  signal.signalName});
-            painter.setPen(QPen(QColor(QStringLiteral("#e2e8f0"))));
+            painter.setPen(InsightVisualStyle::hairlinePen(
+                InsightVisualStyle::theme().border));
             painter.drawLine(left, centerY, timelineRight, centerY);
-            painter.setPen(QColor(QStringLiteral("#0f172a")));
+            painter.setPen(InsightVisualStyle::theme().textPrimary);
             painter.drawText(QRect(left, y + 2, labelWidth - 8, rowHeight - 4),
                              Qt::AlignRight | Qt::AlignVCenter,
                              signal.signalName);
@@ -512,7 +520,7 @@ private:
             const int lowY = y + rowHeight - 8;
             const int busTop = y + 7;
             const int busHeight = rowHeight - 14;
-            QPen wavePen(QColor(QStringLiteral("#0f766e")), 2);
+            QPen wavePen(InsightVisualStyle::theme().hover, 2);
             painter.setPen(wavePen);
             painter.setBrush(Qt::NoBrush);
 
@@ -563,10 +571,11 @@ private:
                                   busTop,
                                   qMax(8, x1 - x0 - 2),
                                   busHeight);
-                    painter.setPen(QPen(QColor(QStringLiteral("#0f766e")), 1));
-                    painter.setBrush(QColor(QStringLiteral("#ccfbf1")));
+                    painter.setPen(QPen(InsightVisualStyle::theme().hover, 1));
+                    painter.setBrush(
+                        InsightVisualStyle::theme().hover.lighter(185));
                     painter.drawRect(segment);
-                    painter.setPen(QColor(QStringLiteral("#0f172a")));
+                    painter.setPen(InsightVisualStyle::theme().textPrimary);
                     painter.drawText(segment.adjusted(2, 0, -2, 0),
                                      Qt::AlignCenter,
                                      signal.values.at(sample));
@@ -616,7 +625,7 @@ QColor colorForAssignmentKind(WavePreviewAssignmentKind kind)
     case WavePreviewAssignmentKind::NonBlocking:
         return QColor(QStringLiteral("#9333ea"));
     }
-    return QColor(QStringLiteral("#64748b"));
+    return InsightVisualStyle::roleColor(InsightVisualRole::Unknown);
 }
 
 QString sketchLegendText(const WavePreviewReport& report)
@@ -1154,27 +1163,23 @@ void addOverviewItems(QTreeWidget* tree,
 WavePreviewPanelCoordinator::WavePreviewPanelCoordinator(QWidget* parent)
 {
     auto* panel = new QWidget(parent);
+    panel->setObjectName(QStringLiteral("wavePreviewPanel"));
+    InsightVisualStyle::applyPanel(panel);
     auto* layout = new QVBoxLayout(panel);
-    layout->setContentsMargins(4, 4, 4, 4);
-    layout->setSpacing(4);
+    layout->setContentsMargins(8, 8, 8, 8);
+    layout->setSpacing(6);
 
     titleLabel = new QLabel(QStringLiteral("Wave Preview"), panel);
     titleLabel->setObjectName(QStringLiteral("wavePreviewTitle"));
-    titleLabel->setStyleSheet(QStringLiteral(
-        "QLabel#wavePreviewTitle {"
-        "  color: #0f172a;"
-        "  padding: 3px 4px;"
-        "  font-weight: 600;"
-        "}"));
+    InsightVisualStyle::applyTitleLabel(titleLabel);
     layout->addWidget(titleLabel);
 
     summaryLabel = new QLabel(QStringLiteral("No document selected."), panel);
     summaryLabel->setObjectName(QStringLiteral("wavePreviewSummary"));
-    summaryLabel->setStyleSheet(QStringLiteral(
-        "QLabel#wavePreviewSummary {"
-        "  color: #475569;"
-        "  padding: 0 4px 3px 4px;"
-        "}"));
+    summaryLabel->setWordWrap(true);
+    summaryLabel->setStyleSheet(
+        QStringLiteral("QLabel#wavePreviewSummary { color: %1; padding: 0 4px 3px 4px; }")
+            .arg(InsightVisualStyle::theme().textSecondary.name()));
     layout->addWidget(summaryLabel);
 
     auto* canvas = new WavePreviewCanvas(panel);
