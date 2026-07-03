@@ -7408,7 +7408,7 @@ int main(int argc, char** argv) {
             return item && item->enabled == enabled;
         };
     expectBool("EditorSemanticContext source menu enabled",
-               sourceMenuState.items.size() == 6
+               sourceMenuState.items.size() == 7
                    && !sourceMenuState.items.at(0).enabled
                    && sourceMenuState.items.at(0).action
                        == SourceSymbolAction::GoToDefinition
@@ -7423,11 +7423,14 @@ int main(int argc, char** argv) {
                    && sourceMenuState.items.at(3).enabled
                    && sourceMenuState.items.at(3).action
                        == SourceSymbolAction::ShowSignalKernelGraph
-                   && !sourceMenuState.items.at(4).enabled
+                   && sourceMenuState.items.at(4).enabled
                    && sourceMenuState.items.at(4).action
-                       == SourceSymbolAction::ShowStateTransitionGraph
+                       == SourceSymbolAction::ShowSignalUsageHotspot
                    && !sourceMenuState.items.at(5).enabled
                    && sourceMenuState.items.at(5).action
+                       == SourceSymbolAction::ShowStateTransitionGraph
+                   && !sourceMenuState.items.at(6).enabled
+                   && sourceMenuState.items.at(6).action
                        == SourceSymbolAction::ShowModuleBlockDiagram,
                true);
     const EditorSourceSymbolActionRequestState sourceRefsRequest =
@@ -7466,6 +7469,21 @@ int main(int argc, char** argv) {
                        == QStringLiteral("menu_sig")
                    && sourceKernelGraphRequest.fileName == path
                    && sourceKernelGraphRequest.moduleName
+                       == QStringLiteral("top"),
+               true);
+    const EditorSourceSymbolActionRequestState sourceHotspotRequest =
+        EditorSemanticContextService::getInstance()
+            ->sourceSymbolActionRequestState(
+                SourceSymbolAction::ShowSignalUsageHotspot,
+                sourceSymbolContext);
+    expectBool("EditorSemanticContext source hotspot request",
+               sourceHotspotRequest.available
+                   && sourceHotspotRequest.action
+                       == SourceSymbolAction::ShowSignalUsageHotspot
+                   && sourceHotspotRequest.symbolName
+                       == QStringLiteral("menu_sig")
+                   && sourceHotspotRequest.fileName == path
+                   && sourceHotspotRequest.moduleName
                        == QStringLiteral("top"),
                true);
     const EditorSourceSymbolActionRequestState sourceModuleBlockSignalRequest =
@@ -7640,7 +7658,11 @@ int main(int argc, char** argv) {
                 SourceSymbolAction::ShowStateTransitionGraph,
                 nextStateContext);
     expectBool("EditorSemanticContext state transition next_state menu",
-               nextStateMenuState.items.size() == 6
+               nextStateMenuState.items.size() == 7
+                   && sourceMenuItemEnabled(
+                       nextStateMenuState,
+                       SourceSymbolAction::ShowSignalUsageHotspot,
+                       true)
                    && sourceMenuItemEnabled(
                        nextStateMenuState,
                        SourceSymbolAction::ShowStateTransitionGraph,
@@ -7666,7 +7688,11 @@ int main(int argc, char** argv) {
                 SourceSymbolAction::ShowStateTransitionGraph,
                 suffixedNextStateContext);
     expectBool("EditorSemanticContext state transition suffixed ns menu",
-               suffixedNextStateMenuState.items.size() == 6
+               suffixedNextStateMenuState.items.size() == 7
+                   && sourceMenuItemEnabled(
+                       suffixedNextStateMenuState,
+                       SourceSymbolAction::ShowSignalUsageHotspot,
+                       true)
                    && sourceMenuItemEnabled(
                        suffixedNextStateMenuState,
                        SourceSymbolAction::ShowStateTransitionGraph,
@@ -7692,7 +7718,11 @@ int main(int argc, char** argv) {
                 SourceSymbolAction::ShowStateTransitionGraph,
                 currentStateContext);
     expectBool("EditorSemanticContext state transition rejects current_state",
-               currentStateMenuState.items.size() == 6
+               currentStateMenuState.items.size() == 7
+                   && sourceMenuItemEnabled(
+                       currentStateMenuState,
+                       SourceSymbolAction::ShowSignalUsageHotspot,
+                       true)
                    && sourceMenuItemEnabled(
                        currentStateMenuState,
                        SourceSymbolAction::ShowStateTransitionGraph,
@@ -7716,7 +7746,11 @@ int main(int argc, char** argv) {
                 SourceSymbolAction::ShowStateTransitionGraph,
                 suffixedCurrentStateContext);
     expectBool("EditorSemanticContext state transition rejects suffixed cs",
-               suffixedCurrentStateMenuState.items.size() == 6
+               suffixedCurrentStateMenuState.items.size() == 7
+                   && sourceMenuItemEnabled(
+                       suffixedCurrentStateMenuState,
+                       SourceSymbolAction::ShowSignalUsageHotspot,
+                       true)
                    && sourceMenuItemEnabled(
                        suffixedCurrentStateMenuState,
                        SourceSymbolAction::ShowStateTransitionGraph,
@@ -7760,7 +7794,11 @@ int main(int argc, char** argv) {
                 SourceSymbolAction::ShowModuleBlockDiagram,
                 moduleBlockContext);
     expectBool("EditorSemanticContext module block module menu",
-               moduleBlockMenuState.items.size() == 6
+               moduleBlockMenuState.items.size() == 7
+                   && sourceMenuItemEnabled(
+                       moduleBlockMenuState,
+                       SourceSymbolAction::ShowSignalUsageHotspot,
+                       false)
                    && sourceMenuItemEnabled(
                        moduleBlockMenuState,
                        SourceSymbolAction::ShowModuleBlockDiagram,
@@ -7772,6 +7810,16 @@ int main(int argc, char** argv) {
                        == QStringLiteral("menu_mod")
                    && moduleBlockRequest.fileName == moduleBlockMenuPath
                    && moduleBlockRequest.moduleName == QStringLiteral("top"),
+               true);
+    const EditorSourceSymbolActionRequestState moduleBlockHotspotRequest =
+        EditorSemanticContextService::getInstance()
+            ->sourceSymbolActionRequestState(
+                SourceSymbolAction::ShowSignalUsageHotspot,
+                moduleBlockContext);
+    expectBool("EditorSemanticContext module hotspot request unavailable",
+               !moduleBlockHotspotRequest.available
+                   && moduleBlockHotspotRequest.unavailableReason.contains(
+                       QStringLiteral("Signal Usage Hotspot")),
                true);
     SemanticIndex::getInstance()->updateSymbolRecordsForFile(
         moduleBlockMenuPath,
@@ -7785,7 +7833,7 @@ int main(int argc, char** argv) {
         EditorSemanticContextService::getInstance()
             ->sourceSymbolContextMenuState(unavailableSourceSymbolContext);
     expectBool("EditorSemanticContext source menu disabled",
-               disabledSourceMenuState.items.size() == 6
+               disabledSourceMenuState.items.size() == 7
                    && sourceMenuItemEnabled(
                        disabledSourceMenuState,
                        SourceSymbolAction::GoToDefinition,
@@ -7806,6 +7854,10 @@ int main(int argc, char** argv) {
                    && sourceMenuItemEnabled(
                        disabledSourceMenuState,
                        SourceSymbolAction::ShowSignalKernelGraph,
+                       false)
+                   && sourceMenuItemEnabled(
+                       disabledSourceMenuState,
+                       SourceSymbolAction::ShowSignalUsageHotspot,
                        false)
                    && sourceMenuItemEnabled(
                        disabledSourceMenuState,

@@ -53,6 +53,37 @@ bool moduleBlockDiagramAvailableForContext(
         .found;
 }
 
+bool signalUsageHotspotAvailableForContext(
+    const SourceSymbolActionContext& actionContext)
+{
+    if (!actionContext.available)
+        return false;
+
+    SemanticQueryContext context;
+    context.fileName = actionContext.fileName;
+    context.moduleName = actionContext.moduleName;
+    const QList<SemanticSymbolRecord> definitions =
+        SemanticIndex::getInstance()->findDefinitionRecords(
+            actionContext.symbolName,
+            context);
+    if (definitions.isEmpty())
+        return true;
+
+    for (const SemanticSymbolRecord& record : definitions) {
+        const SymbolTaxonomy::SemanticMetadata metadata =
+            semanticMetadataForSymbolRecord(record);
+        if (metadata.collectorKind == SymbolTaxonomy::CollectorKind::EnumValue)
+            continue;
+        if (SymbolTaxonomy::isSignalDeclaration(metadata)
+            || SymbolTaxonomy::isPortDeclaration(metadata)
+            || metadata.declarationKind
+                == SymbolTaxonomy::DeclarationKind::StructMember) {
+            return true;
+        }
+    }
+    return false;
+}
+
 QString noSymbolActionReason(const EditorSemanticContext& context)
 {
     if (context.fileName.isEmpty())
@@ -95,8 +126,10 @@ QString actionUnavailableReason(
     case SourceSymbolAction::FindReferences:
     case SourceSymbolAction::ShowRelationships:
     case SourceSymbolAction::ShowSignalKernelGraph:
-    case SourceSymbolAction::ShowSignalUsageHotspot:
         return QString();
+    case SourceSymbolAction::ShowSignalUsageHotspot:
+        return QStringLiteral(
+            "Signal Usage Hotspot requires a signal, port, enum variable, or struct member");
     case SourceSymbolAction::ShowStateTransitionGraph: {
         const StateTransitionTriggerReport trigger =
             stateTransitionTriggerForContext(actionContext);
@@ -177,6 +210,8 @@ EditorSourceNavigationQuery::sourceSymbolContextMenuState(
             : StateTransitionTriggerReport();
     const bool moduleBlockAvailable = actionContext.available
         && moduleBlockDiagramAvailableForContext(actionContext);
+    const bool signalUsageHotspotAvailable =
+        signalUsageHotspotAvailableForContext(actionContext);
 
     EditorSourceSymbolContextMenuState state;
     state.items.append(sourceSymbolMenuItem(
@@ -209,7 +244,7 @@ EditorSourceNavigationQuery::sourceSymbolContextMenuState(
             context)));
     state.items.append(sourceSymbolMenuItem(
         SourceSymbolAction::ShowSignalUsageHotspot,
-        actionContext.available,
+        signalUsageHotspotAvailable,
         actionUnavailableReason(
             SourceSymbolAction::ShowSignalUsageHotspot,
             actionContext,
@@ -257,6 +292,12 @@ EditorSourceNavigationQuery::sourceSymbolActionRequestState(
     }
     if (action == SourceSymbolAction::ShowStateTransitionGraph
         && !stateTransitionTriggerForContext(actionContext).available) {
+        state.unavailableReason =
+            actionUnavailableReason(action, actionContext, context);
+        return state;
+    }
+    if (action == SourceSymbolAction::ShowSignalUsageHotspot
+        && !signalUsageHotspotAvailableForContext(actionContext)) {
         state.unavailableReason =
             actionUnavailableReason(action, actionContext, context);
         return state;
