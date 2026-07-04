@@ -3,6 +3,8 @@
 
 #include <QGraphicsView>
 #include <QPoint>
+#include <QPointF>
+#include <QRectF>
 #include <Qt>
 
 #include <functional>
@@ -36,6 +38,7 @@ public:
     void fitScene(Qt::AspectRatioMode mode = Qt::KeepAspectRatio);
     void fitRect(const QRectF& rect,
                  Qt::AspectRatioMode mode = Qt::KeepAspectRatio);
+    void centerOnPoint(const QPointF& point);
     void centerOnRect(const QRectF& rect);
 
 protected:

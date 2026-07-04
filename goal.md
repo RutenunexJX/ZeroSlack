@@ -28,10 +28,10 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
 
 ## Current Goal State
 
-Current milestone: Phase 2 GraphCanvas foundation is complete for the first
-consumers. The current UI route keeps Qt Widgets, uses `InsightVisualStyle` as
-the global theme layer, and uses `InsightGraphView` as the shared graph view
-interaction layer.
+Current milestone: GraphCanvas Phase 2 migration is complete for current
+QGraphicsView graph consumers. The current UI route keeps Qt Widgets, uses
+`InsightVisualStyle` as the global theme layer, and uses `InsightGraphView` as
+the shared graph view interaction layer.
 
 Current baseline highlights:
 
@@ -46,8 +46,11 @@ Current baseline highlights:
   themed canvas styling from `InsightVisualStyle`, pan/drag mode, wheel zoom
   with zoom limits, zoom in/out helpers, fit, center, reset, optional grid,
   empty-canvas selection clearing, zoom-change callbacks, and press/double-click
-  hooks. Signal Kernel Graph and Signal Usage Hotspot track/matrix views are
-  connected; RTL Insights graph scenes and Wave Preview are still pending.
+  hooks. Signal Kernel Graph, Signal Usage Hotspot track/matrix views, and the
+  RTL Insights shared graph view behind State Transition Graph, FSM Graph, and
+  Module Block Diagram are connected. Signal Journey and Clock/Reset are
+  tree/report surfaces rather than graph views; Wave Preview remains a custom
+  painted QWidget.
 - Insight UI v2 convergence kept the old insight semantics intact: State
   Transition Graph still gates on structural next-state roles, Module Block
   Diagram still shows only module/instance containment, and Wave Preview remains
@@ -61,14 +64,13 @@ Current baseline highlights:
   filters/search, item drill-down, inspector metadata, explicit empty/error
   states, and source reveal/flash navigation. Future polish can improve
   asynchronous progress and very-large-report virtualization.
-- Most recent completed milestone: Phase 2 GraphCanvas foundation.
+- Most recent completed milestone: GraphCanvas Phase 2 migration.
   Verification passed with `gui_smoke_test`, `insight_visual_style_test`,
   `signal_usage_hotspot_panel_test`, `completion_test`, and `git diff --check`.
-- Next recommended milestone: finish GraphCanvas migration for the remaining
-  RTL Insights graph scenes or move to App shell deepening with the phase 1
-  tokens. Do not change semantic analysis, hotspot report data, FSM discovery,
-  module block diagram extraction, Wave Preview business logic, or workspace
-  scanning in that phase.
+- Next recommended milestone: App shell modernization with the phase 1 tokens.
+  Do not change semantic analysis, hotspot report data, FSM discovery, module
+  block diagram extraction, Wave Preview business logic, or workspace scanning
+  in that phase.
 - Previous completed milestone: Signal Usage Hotspot v2 integration. The
   A-branch service/report API is connected to the B-branch visual helpers in a
   dual-mode panel with real `chl_ctrl.sv` / `mcs` coverage and enum-value

@@ -148,7 +148,12 @@ void InsightGraphView::fitRect(const QRectF& rect, Qt::AspectRatioMode mode)
 void InsightGraphView::centerOnRect(const QRectF& rect)
 {
     if (!rect.isEmpty())
-        centerOn(rect.center());
+        centerOnPoint(rect.center());
+}
+
+void InsightGraphView::centerOnPoint(const QPointF& point)
+{
+    centerOn(point);
 }
 
 void InsightGraphView::drawBackground(QPainter* painter, const QRectF& rect)

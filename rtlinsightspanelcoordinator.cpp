@@ -3,6 +3,7 @@
 #include "activitylogservice.h"
 #include "clockresetdomainservice.h"
 #include "fsmgraphservice.h"
+#include "insightgraphview.h"
 #include "insightvisualstyle.h"
 #include "moduleblockdiagramservice.h"
 #include "modulebriefservice.h"
@@ -25,12 +26,10 @@
 #include <QGraphicsSceneMouseEvent>
 #include <QGraphicsSimpleTextItem>
 #include <QGraphicsTextItem>
-#include <QGraphicsView>
 #include <QHeaderView>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
-#include <QMouseEvent>
 #include <QPainter>
 #include <QPainterPath>
 #include <QPen>
@@ -40,7 +39,6 @@
 #include <QStackedWidget>
 #include <QVBoxLayout>
 #include <QTimer>
-#include <QWheelEvent>
 
 #include <algorithm>
 #include <cmath>
@@ -76,56 +74,6 @@ struct RtlInsightGraphElement {
     RtlInsightCodeLink codeLink;
     QString drillModuleName;
     QString drillFileName;
-};
-
-class RtlInsightsGraphView : public QGraphicsView
-{
-public:
-    using QGraphicsView::QGraphicsView;
-
-protected:
-    void drawBackground(QPainter* painter, const QRectF& rect) override
-    {
-        QGraphicsView::drawBackground(painter, rect);
-        if (!painter)
-            return;
-
-        constexpr qreal grid = 28.0;
-        const qreal left = std::floor(rect.left() / grid) * grid;
-        const qreal top = std::floor(rect.top() / grid) * grid;
-        QPen pen(InsightVisualStyle::theme().border);
-        pen.setWidthF(0.0);
-        painter->setPen(pen);
-        for (qreal x = left; x <= rect.right(); x += grid)
-            painter->drawLine(QLineF(x, rect.top(), x, rect.bottom()));
-        for (qreal y = top; y <= rect.bottom(); y += grid)
-            painter->drawLine(QLineF(rect.left(), y, rect.right(), y));
-    }
-
-    void wheelEvent(QWheelEvent* event) override
-    {
-        if (!event)
-            return;
-        const qreal currentScale = transform().m11();
-        const qreal factor = event->angleDelta().y() > 0 ? 1.15 : 1.0 / 1.15;
-        const qreal nextScale = currentScale * factor;
-        if ((nextScale < kGraphMinScale && factor < 1.0)
-            || (nextScale > kGraphMaxScale && factor > 1.0)) {
-            event->accept();
-            return;
-        }
-        scale(factor, factor);
-        event->accept();
-    }
-
-    void mousePressEvent(QMouseEvent* event) override
-    {
-        if (event && event->button() == Qt::LeftButton
-            && items(event->pos()).isEmpty() && scene()) {
-            scene()->clearSelection();
-        }
-        QGraphicsView::mousePressEvent(event);
-    }
 };
 
 QString graphElidedText(const QString& text, const QFont& font, int width)
@@ -2009,14 +1957,12 @@ RtlInsightsPanelCoordinator::RtlInsightsPanelCoordinator(QWidget* parent)
     insightsTree->header()->setSectionResizeMode(4, QHeaderView::ResizeToContents);
 
     insightsGraphScene = new QGraphicsScene(panel);
-    insightsGraphView = new RtlInsightsGraphView(insightsGraphScene, panel);
+    insightsGraphView = new InsightGraphView(insightsGraphScene, panel);
     insightsGraphView->setObjectName(QStringLiteral("rtlInsightsGraphView"));
-    insightsGraphView->setRenderHint(QPainter::Antialiasing, true);
-    insightsGraphView->setDragMode(QGraphicsView::ScrollHandDrag);
-    insightsGraphView->setFocusPolicy(Qt::StrongFocus);
-    insightsGraphView->setTransformationAnchor(QGraphicsView::AnchorUnderMouse);
-    insightsGraphView->setResizeAnchor(QGraphicsView::AnchorViewCenter);
-    insightsGraphView->setBackgroundBrush(InsightVisualStyle::canvasBrush());
+    insightsGraphView->applyInsightGraphStyle();
+    insightsGraphView->setZoomRange(kGraphMinScale, kGraphMaxScale);
+    insightsGraphView->setGridVisible(true);
+    insightsGraphView->setClearSelectionOnEmptyLeftClick(true);
     signalUsageHotspotPanel = new SignalUsageHotspotPanel(panel);
 
     insightsStack = new QStackedWidget(panel);
@@ -2062,22 +2008,18 @@ RtlInsightsPanelCoordinator::RtlInsightsPanelCoordinator(QWidget* parent)
                      insightsDock, [this]() { showModuleBlockDiagram(); });
     QObject::connect(graphZoomOutButton, &QPushButton::clicked,
                      insightsDock, [this]() {
-                         if (insightsGraphView)
-                             insightsGraphView->scale(1.0 / 1.15, 1.0 / 1.15);
+                        if (insightsGraphView)
+                             insightsGraphView->zoomOut();
                      });
     QObject::connect(graphZoomInButton, &QPushButton::clicked,
                      insightsDock, [this]() {
-                         if (insightsGraphView)
-                             insightsGraphView->scale(1.15, 1.15);
+                        if (insightsGraphView)
+                             insightsGraphView->zoomIn();
                      });
     QObject::connect(graphFitButton, &QPushButton::clicked,
                      insightsDock, [this]() {
-                         if (insightsGraphView && insightsGraphScene) {
-                             const QRectF rect = insightsGraphScene->sceneRect();
-                             if (!rect.isEmpty())
-                                 insightsGraphView->fitInView(rect,
-                                                              Qt::KeepAspectRatio);
-                         }
+                         if (insightsGraphView)
+                             insightsGraphView->fitScene(Qt::KeepAspectRatio);
                      });
     QObject::connect(graphSearchEdit,
                      &QLineEdit::textChanged,
@@ -2271,7 +2213,7 @@ void RtlInsightsPanelCoordinator::applyGraphSearchHighlight()
         }
     }
     if (firstMatchCount > 0 && insightsGraphView)
-        insightsGraphView->centerOn(firstMatchCenter);
+        insightsGraphView->centerOnPoint(firstMatchCenter);
     if (statusMessageHandler && active) {
         statusMessageHandler(QStringLiteral("%1 graph match(es)")
                                  .arg(firstMatchCount),
@@ -2293,7 +2235,7 @@ void RtlInsightsPanelCoordinator::renderGraphUnavailable(
     if (!insightsGraphScene || !insightsGraphView)
         return;
     insightsGraphScene->clear();
-    insightsGraphView->resetTransform();
+    insightsGraphView->resetView();
 
     const InsightTheme t = InsightVisualStyle::theme();
     QFont titleFont = InsightVisualStyle::titleFont(insightsGraphView->font());
@@ -2319,8 +2261,7 @@ void RtlInsightsPanelCoordinator::renderGraphUnavailable(
     detailItem->setPos(-188, -8);
 
     insightsGraphScene->setSceneRect(-220, -90, 440, 180);
-    insightsGraphView->fitInView(insightsGraphScene->sceneRect(),
-                                 Qt::KeepAspectRatio);
+    insightsGraphView->fitScene(Qt::KeepAspectRatio);
     applyGraphSearchHighlight();
 }
 
@@ -2331,7 +2272,7 @@ void RtlInsightsPanelCoordinator::renderStateTransitionGraphScene(
     if (!insightsGraphScene || !insightsGraphView)
         return;
     insightsGraphScene->clear();
-    insightsGraphView->resetTransform();
+    insightsGraphView->resetView();
 
     if (!report.found) {
         renderGraphUnavailable(
@@ -2372,7 +2313,7 @@ void RtlInsightsPanelCoordinator::renderStateTransitionGraphScene(
                                                      navigate,
                                                      select);
     insightsGraphScene->setSceneRect(bounds);
-    insightsGraphView->fitInView(bounds, Qt::KeepAspectRatio);
+    insightsGraphView->fitRect(bounds, Qt::KeepAspectRatio);
     applyGraphSearchHighlight();
 }
 
@@ -2384,7 +2325,7 @@ void RtlInsightsPanelCoordinator::renderFsmGraphScene(
     if (!insightsGraphScene || !insightsGraphView)
         return;
     insightsGraphScene->clear();
-    insightsGraphView->resetTransform();
+    insightsGraphView->resetView();
 
     if (!report.found || report.graphs.isEmpty()) {
         renderGraphUnavailable(
@@ -2435,7 +2376,7 @@ void RtlInsightsPanelCoordinator::renderFsmGraphScene(
         nextOriginY = graphBounds.bottom() + 190.0;
     }
     insightsGraphScene->setSceneRect(bounds);
-    insightsGraphView->fitInView(bounds, Qt::KeepAspectRatio);
+    insightsGraphView->fitRect(bounds, Qt::KeepAspectRatio);
     applyGraphSearchHighlight();
 }
 
@@ -2446,7 +2387,7 @@ void RtlInsightsPanelCoordinator::renderModuleBlockDiagramScene(
     if (!insightsGraphScene || !insightsGraphView)
         return;
     insightsGraphScene->clear();
-    insightsGraphView->resetTransform();
+    insightsGraphView->resetView();
 
     if (!report.found) {
         renderGraphUnavailable(
@@ -2711,7 +2652,7 @@ void RtlInsightsPanelCoordinator::renderModuleBlockDiagramScene(
     const QRectF bounds =
         insightsGraphScene->itemsBoundingRect().adjusted(-80, -80, 80, 80);
     insightsGraphScene->setSceneRect(bounds);
-    insightsGraphView->fitInView(bounds, Qt::KeepAspectRatio);
+    insightsGraphView->fitRect(bounds, Qt::KeepAspectRatio);
     applyGraphSearchHighlight();
 }
 

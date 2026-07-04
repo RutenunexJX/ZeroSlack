@@ -6,6 +6,8 @@
 #include <QStringList>
 #include <QTreeWidget>
 
+#include "insightgraphview.h"
+
 #include <functional>
 #include <memory>
 
@@ -70,7 +72,7 @@ private:
     QStackedWidget* insightsStack = nullptr;
     QTreeWidget* insightsTree = nullptr;
     QGraphicsScene* insightsGraphScene = nullptr;
-    QGraphicsView* insightsGraphView = nullptr;
+    InsightGraphView* insightsGraphView = nullptr;
     SignalUsageHotspotPanel* signalUsageHotspotPanel = nullptr;
     QPushButton* moduleBriefButton = nullptr;
     QPushButton* signalJourneyButton = nullptr;

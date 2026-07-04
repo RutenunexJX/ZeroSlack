@@ -33,8 +33,8 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
 
 - Current UI route: keep Qt Widgets, evolve the existing `InsightVisualStyle`
   into the application theme layer, and reuse a shared `InsightGraphView`
-  foundation for graph surfaces. Phase 1 theme foundation and Phase 2 graph
-  view foundation are complete for the first consumers.
+  foundation for graph surfaces. Phase 1 theme foundation and GraphCanvas
+  Phase 2 migration are complete for current QGraphicsView graph consumers.
 - Corpus audit is retired as an acceptance signal. The current strategy is
   targeted regression fixtures plus GUI smoke and feature-specific tests:
   `completion_test`, `relationship_test`, `gui_smoke_test`, `jump_test`, and
@@ -42,10 +42,11 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
 - Current handoff state: `InsightGraphView` now centralizes graph background
   styling, pan/drag mode, wheel zoom, zoom range, fit, center, reset, optional
   grid, empty-canvas selection clearing, zoom-change callbacks, and
-  press/double-click hooks. Signal Kernel Graph and Signal Usage Hotspot
-  track/matrix views are connected. RTL Insights shared graph scenes
-  (State Transition Graph, Module Block Diagram, signal journey/clock reset)
-  and Wave Preview remain future migration candidates.
+  press/double-click hooks. Signal Kernel Graph, Signal Usage Hotspot
+  track/matrix views, and the RTL Insights shared graph view used by State
+  Transition Graph, FSM Graph, and Module Block Diagram are connected. Signal
+  Journey and Clock/Reset remain tree/report surfaces, not graph views. Wave
+  Preview remains a custom painted QWidget and was not migrated.
 - Insight UI v2 remains the accepted panel baseline. Signal Kernel Graph,
   Signal Usage Hotspot, State Transition Graph, Module Block Diagram, and Wave
   Preview still share the light canvas/panel palette, title/toolbar treatment,

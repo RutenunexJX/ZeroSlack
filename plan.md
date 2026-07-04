@@ -11,11 +11,11 @@ into an analyzer.
 
 ## Current Execution Baseline
 
-- Phase 1 and Phase 2 of the current UI route are complete for their first
-  consumers. `InsightVisualStyle` is the shared application theme layer, and
-  `InsightGraphView` is the reusable Qt Widgets graph view foundation for
-  canvas theme application, pan/drag, wheel zoom, fit, center, reset, optional
-  grid, and business-neutral mouse hooks.
+- Phase 1 and GraphCanvas Phase 2 of the current UI route are complete for
+  current QGraphicsView graph consumers. `InsightVisualStyle` is the shared
+  application theme layer, and `InsightGraphView` is the reusable Qt Widgets
+  graph view foundation for canvas theme application, pan/drag, wheel zoom,
+  fit, center, reset, optional grid, and business-neutral mouse hooks.
 - Verification baseline for this repair is now focused regression plus GUI
   smoke: `completion_test`, `relationship_test`, `gui_smoke_test`,
   `jump_test`, and the lightweight `full_feature_audit_test` inventory.
@@ -26,12 +26,14 @@ into an analyzer.
   for themed canvas, wheel zoom, pan, right-click preview, and double-click
   navigation hooks. Signal Usage Hotspot uses it for Track and Matrix surfaces,
   including track zoom/fitting/centering while preserving the existing layout
-  persistence. RTL Insights graph scenes and Wave Preview are not migrated yet.
-- The next scoped UI milestone should either migrate the remaining RTL
-  Insights graph surfaces to `InsightGraphView` or deepen the app shell using
-  the existing phase 1 tokens. Do not broaden either path into semantic
-  analysis, hotspot data, FSM discovery, module block extraction, or workspace
-  scanning.
+  persistence. RTL Insights now uses it for the shared graph view behind State
+  Transition Graph, FSM Graph, and Module Block Diagram. Signal Journey and
+  Clock/Reset stay on tree/report surfaces; Wave Preview stays on its custom
+  painted QWidget.
+- The next scoped UI milestone should deepen the app shell using the existing
+  phase 1 tokens. Do not broaden that path into semantic analysis, hotspot data,
+  FSM discovery, module block extraction, Wave Preview business logic, or
+  workspace scanning.
 - Insight UI v2 visual foundation remains established through shared
   `InsightVisualStyle` Qt helpers. Signal Kernel Graph, Signal Usage Hotspot,
   State Transition Graph, Module Block Diagram, and Wave Preview consume these
