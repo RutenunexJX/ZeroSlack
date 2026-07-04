@@ -93,6 +93,13 @@ int main(int argc, char** argv)
                    .contains(QStringLiteral("QMenuBar"))
                    && InsightVisualStyle::applicationStyleSheet()
                           .contains(QStringLiteral("QDockWidget")));
+    expectTrue("application qss includes common shell controls",
+               InsightVisualStyle::applicationStyleSheet()
+                   .contains(QStringLiteral("QComboBox"))
+                   && InsightVisualStyle::applicationStyleSheet()
+                          .contains(QStringLiteral("QTableWidget"))
+                   && InsightVisualStyle::applicationStyleSheet()
+                          .contains(QStringLiteral("QPlainTextEdit")));
     expectTrue("workspace tab qss is scoped",
                InsightVisualStyle::workspaceTabBarStyleSheet(
                    QStringLiteral("workspaceTabBar"))
@@ -118,6 +125,14 @@ int main(int argc, char** argv)
                InsightVisualStyle::dockAttentionStyleSheet(
                    QStringLiteral("FoldShelfDock"))
                    .contains(QStringLiteral("QDockWidget#FoldShelfDock")));
+    expectTrue("global control qss is scoped",
+               InsightVisualStyle::globalControlPanelStyleSheet(
+                   QStringLiteral("globalControlPanel"))
+                   .contains(QStringLiteral("QFrame#globalControlPanel")));
+    expectTrue("fold shelf active qss is scoped",
+               InsightVisualStyle::foldShelfActiveStyleSheet(
+                   QStringLiteral("foldBlockShelfPanel"))
+                   .contains(QStringLiteral("QWidget#foldBlockShelfPanel")));
     expectTrue("graph view qss is scoped",
                InsightVisualStyle::graphViewStyleSheet(
                    QStringLiteral("signalKernelGraphView"))

@@ -333,6 +333,15 @@ QString InsightVisualStyle::applicationStyleSheet()
                "border: 1px solid %28; border-radius: 4px; padding: 5px 8px; "
                "selection-background-color: %29; }"
                "QLineEdit:focus { border-color: %30; }"
+               "QTextEdit, QPlainTextEdit { background: %26; color: %27; "
+               "border: 1px solid %28; border-radius: 4px; padding: 5px 8px; "
+               "selection-background-color: %29; }"
+               "QTextEdit:focus, QPlainTextEdit:focus { border-color: %30; }"
+               "QComboBox, QAbstractSpinBox { background: %26; color: %27; "
+               "border: 1px solid %28; border-radius: 4px; padding: 4px 8px; "
+               "selection-background-color: %29; }"
+               "QComboBox:focus, QAbstractSpinBox:focus { border-color: %30; }"
+               "QComboBox::drop-down { border: 0; width: 20px; }"
                "QTreeWidget, QTreeView, QListWidget, QListView { "
                "background: %31; alternate-background-color: %32; "
                "border: 1px solid %33; color: %34; }"
@@ -345,6 +354,13 @@ QString InsightVisualStyle::applicationStyleSheet()
                "QHeaderView::section { background: %37; border: 0; "
                "border-bottom: 1px solid %38; padding: 4px 6px; "
                "color: %39; }"
+               "QTableWidget, QTableView { background: %31; "
+               "alternate-background-color: %32; border: 1px solid %33; "
+               "gridline-color: %38; color: %34; }"
+               "QTableWidget::item:hover, QTableView::item:hover { "
+               "background: %35; }"
+               "QTableWidget::item:selected, QTableView::item:selected { "
+               "background: %36; color: %34; }"
                "QPushButton, QToolButton { background: %40; color: %41; "
                "border: 1px solid %42; border-radius: 5px; "
                "padding: 5px 9px; }"
@@ -355,7 +371,22 @@ QString InsightVisualStyle::applicationStyleSheet()
                "QPushButton:checked, QToolButton:checked { "
                "background: %47; border-color: %48; color: %49; }"
                "QPushButton:disabled, QToolButton:disabled { color: %50; }"
-               "QSplitter::handle { background: %51; }")
+               "QToolBar { background: %52; border: 0; spacing: 4px; "
+               "padding: 3px; }"
+               "QToolBar::separator { background: %51; width: 1px; "
+               "margin: 4px; }"
+               "QSplitter::handle { background: %51; }"
+               "QSplitter::handle:hover { background: %53; }"
+               "QScrollBar:vertical, QScrollBar:horizontal { "
+               "background: %54; border: 0; margin: 0; }"
+               "QScrollBar::handle:vertical, QScrollBar::handle:horizontal { "
+               "background: %51; border-radius: 4px; min-height: 24px; "
+               "min-width: 24px; }"
+               "QScrollBar::handle:vertical:hover, "
+               "QScrollBar::handle:horizontal:hover { background: %53; }"
+               "QScrollBar::add-line, QScrollBar::sub-line, "
+               "QScrollBar::add-page, QScrollBar::sub-page { "
+               "background: transparent; border: 0; width: 0; height: 0; }")
         .arg(t.appBackground.name(),
              t.menu.background.name(),
              t.menu.border.name(),
@@ -406,7 +437,10 @@ QString InsightVisualStyle::applicationStyleSheet()
              t.button.borderChecked.name(),
              t.button.textChecked.name(),
              t.button.textDisabled.name(),
-             t.splitterHandle.name());
+             t.splitterHandle.name(),
+             t.toolbarBackground.name(),
+             t.borderStrong.name(),
+             t.panelSubtle.name());
 }
 
 QString InsightVisualStyle::workspaceTabBarStyleSheet(
@@ -592,6 +626,90 @@ QString InsightVisualStyle::dockAttentionStyleSheet(
         .arg(objectName,
              background.name(QColor::HexArgb),
              border.name(QColor::HexArgb));
+}
+
+QString InsightVisualStyle::globalControlPanelStyleSheet(
+    const QString& objectName)
+{
+    const InsightTheme t = theme();
+    const QString selector =
+        objectSelector(QStringLiteral("QFrame"), objectName);
+    return QStringLiteral(
+               "%1 {"
+               "  background: %2;"
+               "  color: %3;"
+               "  border: 1px solid %4;"
+               "  border-radius: 8px;"
+               "}"
+               "%1 QLabel {"
+               "  color: %5;"
+               "  font-weight: 600;"
+               "  padding: 10px 12px 2px 12px;"
+               "}"
+               "%1 QLineEdit {"
+               "  margin: 6px 10px;"
+               "  padding: 8px;"
+               "  border: 1px solid %6;"
+               "  border-radius: 6px;"
+               "  background: %7;"
+               "  color: %3;"
+               "  selection-background-color: %8;"
+               "}"
+               "%1 QLineEdit:focus { border-color: %9; }"
+               "%1 QListWidget {"
+               "  margin: 4px 10px 10px 10px;"
+               "  border: 0;"
+               "  background: %2;"
+               "  color: %10;"
+               "  outline: 0;"
+               "}"
+               "%1 QListWidget::item {"
+               "  padding: 6px 8px;"
+               "  border-radius: 5px;"
+               "}"
+               "%1 QListWidget::item:hover { background: %11; }"
+               "%1 QListWidget::item:selected {"
+               "  background: %12;"
+               "  color: %3;"
+               "}")
+        .arg(selector,
+             t.panelBackground.name(),
+             t.textPrimary.name(),
+             t.borderStrong.name(),
+             t.textSecondary.name(),
+             t.input.border.name(),
+             t.panelSubtle.name(),
+             t.input.selectionBackground.name(),
+             t.input.focusBorder.name(),
+             t.itemView.text.name(),
+             t.itemView.hoverBackground.name(),
+             t.itemView.selectedBackground.name());
+}
+
+QString InsightVisualStyle::foldShelfActiveStyleSheet(
+    const QString& objectName)
+{
+    const InsightTheme t = theme();
+    QColor background = t.statusBar.warningBackground;
+    QColor border = t.statusBar.warningBorder;
+    background.setAlpha(64);
+    border.setAlpha(180);
+    const QString selector =
+        objectSelector(QStringLiteral("QWidget"), objectName);
+    return QStringLiteral(
+               "%1 {"
+               "  border: 2px solid %2;"
+               "  background: %3;"
+               "}"
+               "%1 QListWidget#foldShelfListWidget {"
+               "  border: 1px solid %4;"
+               "  selection-background-color: %5;"
+               "}")
+        .arg(selector,
+             t.statusBar.warningBorder.name(),
+             background.name(QColor::HexArgb),
+             border.name(QColor::HexArgb),
+             t.statusBar.warningBorder.name());
 }
 
 QString InsightVisualStyle::graphViewStyleSheet(const QString& objectName)

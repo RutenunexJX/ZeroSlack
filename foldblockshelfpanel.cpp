@@ -1,6 +1,7 @@
 #include "foldblockshelfpanel.h"
 
 #include "activitylogservice.h"
+#include "insightvisualstyle.h"
 
 #include <QDialog>
 #include <QDrag>
@@ -204,15 +205,8 @@ void FoldBlockShelfPanel::updateModeStyle()
         return;
     }
 
-    setStyleSheet(QStringLiteral(
-        "#foldBlockShelfPanel {"
-        "  border: 2px solid #F59E0B;"
-        "  background: rgba(245, 158, 11, 0.06);"
-        "}"
-        "#foldShelfListWidget {"
-        "  border: 1px solid rgba(245, 158, 11, 0.65);"
-        "  selection-background-color: #F59E0B;"
-        "}"));
+    setStyleSheet(InsightVisualStyle::foldShelfActiveStyleSheet(
+        objectName()));
 }
 
 void FoldBlockShelfPanel::refresh()

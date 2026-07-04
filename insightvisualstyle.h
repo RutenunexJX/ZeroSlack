@@ -208,6 +208,10 @@ public:
     static QString dockAttentionStyleSheet(
         const QString& objectName,
         InsightStatusTone tone = InsightStatusTone::Warning);
+    static QString globalControlPanelStyleSheet(
+        const QString& objectName = {});
+    static QString foldShelfActiveStyleSheet(
+        const QString& objectName = {});
     static QString graphViewStyleSheet(const QString& objectName = {});
     static QString titleBarStyleSheet(const QString& objectName = {});
     static QString compactSearchFieldStyleSheet(

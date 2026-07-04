@@ -28,8 +28,8 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
 
 ## Current Goal State
 
-Current milestone: GraphCanvas Phase 2 migration is complete for current
-QGraphicsView graph consumers. The current UI route keeps Qt Widgets, uses
+Current milestone: App Shell modernization is complete on top of the UI theme
+and graph foundation. The current UI route keeps Qt Widgets, uses
 `InsightVisualStyle` as the global theme layer, and uses `InsightGraphView` as
 the shared graph view interaction layer.
 
@@ -39,9 +39,10 @@ Current baseline highlights:
   `InsightVisualStyle` provides reusable light-theme tokens, role colors,
   selected/hover pens, heat intensity colors, compact control styling,
   panel/legend helpers, app shell/menu/toolbar/tab/side-rail/status/dock/input
-  QSS builders, tree/list/splitter tokens, and graph canvas node/edge/hover/
-  selection tokens. Existing Insight panels continue to use this visual system
-  for their insight surfaces.
+  QSS builders, tree/list/table/splitter/scrollbar coverage, Global Control
+  and Fold Shelf shell builders, and graph canvas node/edge/hover/selection
+  tokens. Existing Insight panels continue to use this visual system for their
+  insight surfaces.
 - `InsightGraphView` provides the business-neutral graph interaction layer:
   themed canvas styling from `InsightVisualStyle`, pan/drag mode, wheel zoom
   with zoom limits, zoom in/out helpers, fit, center, reset, optional grid,
@@ -64,13 +65,14 @@ Current baseline highlights:
   filters/search, item drill-down, inspector metadata, explicit empty/error
   states, and source reveal/flash navigation. Future polish can improve
   asynchronous progress and very-large-report virtualization.
-- Most recent completed milestone: GraphCanvas Phase 2 migration.
-  Verification passed with `gui_smoke_test`, `insight_visual_style_test`,
-  `signal_usage_hotspot_panel_test`, `completion_test`, and `git diff --check`.
-- Next recommended milestone: App shell modernization with the phase 1 tokens.
-  Do not change semantic analysis, hotspot report data, FSM discovery, module
-  block diagram extraction, Wave Preview business logic, or workspace scanning
-  in that phase.
+- Most recent completed milestone: App Shell modernization. Main window shell,
+  common Qt Widgets controls, Global Control, and Fold Shelf active shell state
+  now use `InsightVisualStyle` token/QSS paths instead of local hard-coded
+  shell palettes.
+- Next recommended milestone: visual QA and small app-shell polish, or a
+  concrete product-track task. Do not change semantic analysis, hotspot report
+  data, FSM discovery, module block diagram extraction, Wave Preview business
+  logic, or workspace scanning in UI polish.
 - Previous completed milestone: Signal Usage Hotspot v2 integration. The
   A-branch service/report API is connected to the B-branch visual helpers in a
   dual-mode panel with real `chl_ctrl.sv` / `mcs` coverage and enum-value

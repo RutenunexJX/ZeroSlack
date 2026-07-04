@@ -11,11 +11,13 @@ into an analyzer.
 
 ## Current Execution Baseline
 
-- Phase 1 and GraphCanvas Phase 2 of the current UI route are complete for
-  current QGraphicsView graph consumers. `InsightVisualStyle` is the shared
-  application theme layer, and `InsightGraphView` is the reusable Qt Widgets
-  graph view foundation for canvas theme application, pan/drag, wheel zoom,
-  fit, center, reset, optional grid, and business-neutral mouse hooks.
+- Phase 1, GraphCanvas Phase 2, and the App Shell modernization pass of the
+  current UI route are complete. `InsightVisualStyle` is the shared application
+  theme layer for menu/status/tab/dock/sidebar, toolbar, splitter, common
+  input, tree/list/table, scrollbar, Global Control, Fold Shelf shell state,
+  and graph tokens. `InsightGraphView` is the reusable Qt Widgets graph view
+  foundation for canvas theme application, pan/drag, wheel zoom, fit, center,
+  reset, optional grid, and business-neutral mouse hooks.
 - Verification baseline for this repair is now focused regression plus GUI
   smoke: `completion_test`, `relationship_test`, `gui_smoke_test`,
   `jump_test`, and the lightweight `full_feature_audit_test` inventory.
@@ -30,10 +32,10 @@ into an analyzer.
   Transition Graph, FSM Graph, and Module Block Diagram. Signal Journey and
   Clock/Reset stay on tree/report surfaces; Wave Preview stays on its custom
   painted QWidget.
-- The next scoped UI milestone should deepen the app shell using the existing
-  phase 1 tokens. Do not broaden that path into semantic analysis, hotspot data,
-  FSM discovery, module block extraction, Wave Preview business logic, or
-  workspace scanning.
+- The next scoped UI milestone should be visual QA and small app-shell polish,
+  or return to a concrete product track. Do not broaden UI polish into semantic
+  analysis, hotspot data, FSM discovery, module block extraction, Wave Preview
+  business logic, or workspace scanning.
 - Insight UI v2 visual foundation remains established through shared
   `InsightVisualStyle` Qt helpers. Signal Kernel Graph, Signal Usage Hotspot,
   State Transition Graph, Module Block Diagram, and Wave Preview consume these

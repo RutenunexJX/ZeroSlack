@@ -35,6 +35,10 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
   into the application theme layer, and reuse a shared `InsightGraphView`
   foundation for graph surfaces. Phase 1 theme foundation and GraphCanvas
   Phase 2 migration are complete for current QGraphicsView graph consumers.
+  The App Shell modernization pass is also complete: menu/status/tab/dock/
+  sidebar, toolbar, splitter, common input, tree/list/table, scrollbar,
+  Global Control, and Fold Shelf shell styling now flow through
+  `InsightVisualStyle` tokens and QSS builders.
 - Corpus audit is retired as an acceptance signal. The current strategy is
   targeted regression fixtures plus GUI smoke and feature-specific tests:
   `completion_test`, `relationship_test`, `gui_smoke_test`, `jump_test`, and
@@ -47,6 +51,9 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
   Transition Graph, FSM Graph, and Module Block Diagram are connected. Signal
   Journey and Clock/Reset remain tree/report surfaces, not graph views. Wave
   Preview remains a custom painted QWidget and was not migrated.
+- App shell follow-up should be visual QA and small shell polish only unless a
+  concrete regression appears. Do not turn shell work into semantic analysis,
+  workspace scanning, graph-service changes, or Wave Preview business logic.
 - Insight UI v2 remains the accepted panel baseline. Signal Kernel Graph,
   Signal Usage Hotspot, State Transition Graph, Module Block Diagram, and Wave
   Preview still share the light canvas/panel palette, title/toolbar treatment,

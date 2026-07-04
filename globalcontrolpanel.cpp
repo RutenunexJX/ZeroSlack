@@ -1,5 +1,7 @@
 #include "globalcontrolpanel.h"
 
+#include "insightvisualstyle.h"
+
 #include <QApplication>
 #include <QGuiApplication>
 #include <QKeyEvent>
@@ -17,16 +19,8 @@ GlobalControlPanel::GlobalControlPanel(QWidget* parent)
     setFocusPolicy(Qt::StrongFocus);
     setMinimumWidth(520);
     setMaximumWidth(720);
-    setStyleSheet(QStringLiteral(
-        "QFrame#globalControlPanel { background:#20242b; color:#f4f4f5; "
-        "border:1px solid #4b5563; border-radius:8px; }"
-        "QLabel { color:#d4d4d8; font-weight:600; padding:10px 12px 2px 12px; }"
-        "QLineEdit { margin:6px 10px; padding:8px; border:1px solid #52525b; "
-        "border-radius:5px; background:#111827; color:#f9fafb; }"
-        "QListWidget { margin:4px 10px 10px 10px; border:0; background:#20242b; "
-        "color:#e5e7eb; outline:0; }"
-        "QListWidget::item { padding:6px 8px; border-radius:4px; }"
-        "QListWidget::item:selected { background:#2563eb; color:white; }"));
+    setStyleSheet(InsightVisualStyle::globalControlPanelStyleSheet(
+        objectName()));
 
     auto* layout = new QVBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
