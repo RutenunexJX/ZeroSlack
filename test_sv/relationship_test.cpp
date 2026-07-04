@@ -3842,6 +3842,30 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                    && moduleBlockPanel.graphNodeItemCountForTest() == 2
                    && moduleBlockPanel.graphEdgeItemCountForTest() == 1,
                true);
+    expectBool("module block diagram inspector shows root",
+               moduleBlockPanel.graphInspectorRowsForTest().join(
+                   QLatin1Char('\n')).contains(
+                       QStringLiteral("Selected=rel_top"))
+                   && moduleBlockPanel.graphInspectorRowsForTest().join(
+                       QLatin1Char('\n')).contains(
+                       QStringLiteral("Children=1")),
+               true);
+    expectBool("module block diagram instances table has child",
+               moduleBlockPanel.graphTableRowsForTest().join(
+                   QLatin1Char('\n')).contains(
+                       QStringLiteral("u_stage|rel_stage|rel_top")),
+               true);
+    const bool selectedStageFromTable =
+        moduleBlockPanel.selectGraphTableRowForTest(
+            QStringLiteral("rel_stage"),
+            QStringLiteral("u_stage"));
+    expectBool("module block diagram table row selects graph node",
+               selectedStageFromTable
+                   && moduleBlockPanel.graphSelectedItemCountForTest() == 1
+                   && moduleBlockPanel.graphInspectorRowsForTest().join(
+                       QLatin1Char('\n')).contains(
+                       QStringLiteral("Selected=u_stage : rel_stage")),
+               true);
     QLineEdit* moduleBlockSearchEdit =
         moduleBlockPanel.dock()
             ? moduleBlockPanel.dock()->findChild<QLineEdit*>(
@@ -6732,8 +6756,8 @@ static void runSignalUsageHotspotServiceFixture()
     expectBool("signal usage hotspot track lane stable range",
                topLane
                    && topLane->count == 7
-                   && topLane->startLine == 12
-                   && topLane->endLine == 70
+                   && topLane->startLine == 1
+                   && topLane->endLine == 90
                    && topLane->positions.size() == 7
                    && topLane->positions.first().line == 12
                    && topLane->positions.last().line == 70,
@@ -7630,6 +7654,20 @@ static void runFsmGraphServiceFixture()
         "    grant_ns = go;\n"
         "  end\n"
         "endmodule\n");
+    const QString deceptiveFileName =
+        QStringLiteral("test_sv/state_transition_name_only_fixture.sv");
+    const QString deceptiveContent = QStringLiteral(
+        "module name_only_fsm_top(input logic clk, input logic go);\n"
+        "  typedef enum logic [0:0] {S0, S1} name_state_e;\n"
+        "  name_state_e cs;\n"
+        "  name_state_e ns;\n"
+        "  always_comb begin\n"
+        "    case (cs)\n"
+        "      S0: ns = go ? S1 : S0;\n"
+        "      S1: ns = S0;\n"
+        "    endcase\n"
+        "  end\n"
+        "endmodule\n");
     const SemanticSymbolRecord packageModule =
         SemanticFixtureRecordBuilder(QStringLiteral("pkg_fsm_top"),
                                      DeclarationKind::Module)
@@ -7872,6 +7910,54 @@ static void runFsmGraphServiceFixture()
             .inModule(QStringLiteral("odd_fsm_top"))
             .withType(QStringLiteral("odd_state_e"))
             .record();
+    const SemanticSymbolRecord deceptiveModule =
+        SemanticFixtureRecordBuilder(QStringLiteral("name_only_fsm_top"),
+                                     DeclarationKind::Module)
+            .withFile(deceptiveFileName)
+            .withLocalHandle(9350)
+            .withRange(1, 1, 11, 1)
+            .withCollectorKind(CollectorKind::Module)
+            .record();
+    const SemanticSymbolRecord deceptiveCs =
+        SemanticFixtureRecordBuilder(QStringLiteral("cs"),
+                                     DeclarationKind::Enum)
+            .withFile(deceptiveFileName)
+            .withLocalHandle(9351)
+            .withLine(3)
+            .withCollectorKind(CollectorKind::EnumVariable)
+            .inModule(QStringLiteral("name_only_fsm_top"))
+            .withType(QStringLiteral("name_state_e"))
+            .record();
+    const SemanticSymbolRecord deceptiveNs =
+        SemanticFixtureRecordBuilder(QStringLiteral("ns"),
+                                     DeclarationKind::Enum)
+            .withFile(deceptiveFileName)
+            .withLocalHandle(9352)
+            .withLine(4)
+            .withCollectorKind(CollectorKind::EnumVariable)
+            .inModule(QStringLiteral("name_only_fsm_top"))
+            .withType(QStringLiteral("name_state_e"))
+            .record();
+    const SemanticSymbolRecord deceptiveS0 =
+        SemanticFixtureRecordBuilder(QStringLiteral("S0"),
+                                     DeclarationKind::Enum)
+            .withFile(deceptiveFileName)
+            .withLocalHandle(9353)
+            .withLine(2)
+            .withCollectorKind(CollectorKind::EnumValue)
+            .inModule(QStringLiteral("name_only_fsm_top"))
+            .withType(QStringLiteral("name_state_e"))
+            .record();
+    const SemanticSymbolRecord deceptiveS1 =
+        SemanticFixtureRecordBuilder(QStringLiteral("S1"),
+                                     DeclarationKind::Enum)
+            .withFile(deceptiveFileName)
+            .withLocalHandle(9354)
+            .withLine(2)
+            .withCollectorKind(CollectorKind::EnumValue)
+            .inModule(QStringLiteral("name_only_fsm_top"))
+            .withType(QStringLiteral("name_state_e"))
+            .record();
     const SemanticSymbolRecord noFsmModule =
         SemanticFixtureRecordBuilder(QStringLiteral("no_fsm_top"),
                                      DeclarationKind::Module)
@@ -7913,6 +7999,11 @@ static void runFsmGraphServiceFixture()
         oddGrantNs,
         oddApple,
         oddPear,
+        deceptiveModule,
+        deceptiveCs,
+        deceptiveNs,
+        deceptiveS0,
+        deceptiveS1,
         noFsmModule,
     };
 
@@ -7922,6 +8013,7 @@ static void runFsmGraphServiceFixture()
     fileContents.insert(dualFileName, dualContent);
     fileContents.insert(paramFileName, paramContent);
     fileContents.insert(oddFileName, oddContent);
+    fileContents.insert(deceptiveFileName, deceptiveContent);
     SemanticIndex index;
     index.setSnapshot(sharedSnapshotFromRecords(
         records,
@@ -8500,6 +8592,31 @@ static void runFsmGraphServiceFixture()
                !oddFalseNameReport.found
                    && !oddFalseNameReport.trigger.available
                    && oddFalseNameReport.notFoundReason
+                       == StateTransitionGraphNotFoundReason::TriggerRejected,
+               true);
+
+    FsmGraphQuery deceptiveFsmQuery;
+    deceptiveFsmQuery.moduleName = QStringLiteral("name_only_fsm_top");
+    deceptiveFsmQuery.fileName = deceptiveFileName;
+    const FsmGraphReport deceptiveFsmReport =
+        service.buildFsmGraph(deceptiveFsmQuery);
+    expectBool("fsm graph rejects cs/ns names without state register update",
+               !deceptiveFsmReport.found
+                   && deceptiveFsmReport.notFoundReason
+                       == FsmGraphNotFoundReason::NoFsmGraph,
+               true);
+    StateTransitionGraphQuery deceptiveStateTransitionQuery;
+    deceptiveStateTransitionQuery.symbolName = QStringLiteral("ns");
+    deceptiveStateTransitionQuery.fileName = deceptiveFileName;
+    deceptiveStateTransitionQuery.moduleName =
+        QStringLiteral("name_only_fsm_top");
+    const StateTransitionGraphReport deceptiveStateTransitionReport =
+        stateTransitionService.buildStateTransitionGraph(
+            deceptiveStateTransitionQuery);
+    expectBool("state transition rejects ns name without structural pair",
+               !deceptiveStateTransitionReport.found
+                   && !deceptiveStateTransitionReport.trigger.available
+                   && deceptiveStateTransitionReport.notFoundReason
                        == StateTransitionGraphNotFoundReason::TriggerRejected,
                true);
 

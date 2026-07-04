@@ -14,6 +14,9 @@
 #include "statetransitiongraphservice.h"
 
 #include <QElapsedTimer>
+#include <QCheckBox>
+#include <QComboBox>
+#include <QDir>
 #include <QFileInfo>
 #include <QFont>
 #include <QFontMetrics>
@@ -30,13 +33,19 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
+#include <QMenu>
 #include <QPainter>
 #include <QPainterPath>
 #include <QPen>
 #include <QPoint>
 #include <QPolygonF>
 #include <QPushButton>
+#include <QSignalBlocker>
+#include <QSplitter>
+#include <QSpinBox>
 #include <QStackedWidget>
+#include <QTableWidget>
+#include <QToolButton>
 #include <QVBoxLayout>
 #include <QTimer>
 
@@ -57,6 +66,10 @@ constexpr int kGraphColumnRole = Qt::UserRole + 1205;
 constexpr int kGraphDrillModuleRole = Qt::UserRole + 1206;
 constexpr int kGraphDrillFileRole = Qt::UserRole + 1207;
 constexpr int kGraphDetailRole = Qt::UserRole + 1208;
+constexpr int kGraphNodeIdRole = Qt::UserRole + 1209;
+constexpr int kGraphTablePrimaryRole = Qt::UserRole + 1210;
+constexpr int kGraphTableSecondaryRole = Qt::UserRole + 1211;
+constexpr int kGraphTableKindRole = Qt::UserRole + 1212;
 
 constexpr qreal kInsightNodeWidth = 190.0;
 constexpr qreal kInsightNodeHeight = 62.0;
@@ -1918,6 +1931,82 @@ RtlInsightsPanelCoordinator::RtlInsightsPanelCoordinator(QWidget* parent)
     graphSearchEdit->setObjectName(QStringLiteral("rtlGraphSearchEdit"));
     graphSearchEdit->setPlaceholderText(QStringLiteral("Search graph"));
     InsightVisualStyle::applySearchField(graphSearchEdit);
+    moduleBlockTopCombo = new QComboBox(panel);
+    moduleBlockTopCombo->setObjectName(QStringLiteral("rtlModuleBlockTopCombo"));
+    moduleBlockTopCombo->setMinimumWidth(150);
+    moduleBlockSetSelectionButton =
+        new QPushButton(QStringLiteral("Set from selection"), panel);
+    moduleBlockSetSelectionButton->setObjectName(
+        QStringLiteral("rtlModuleBlockSetSelectionButton"));
+    moduleBlockDepthSpin = new QSpinBox(panel);
+    moduleBlockDepthSpin->setObjectName(QStringLiteral("rtlModuleBlockDepthSpin"));
+    moduleBlockDepthSpin->setRange(0, 8);
+    moduleBlockDepthSpin->setValue(2);
+    moduleBlockDepthSpin->setPrefix(QStringLiteral("Depth "));
+    moduleBlockCollapsePackagesCheck =
+        new QCheckBox(QStringLiteral("Collapse packages"), panel);
+    moduleBlockCollapsePackagesCheck->setObjectName(
+        QStringLiteral("rtlModuleBlockCollapsePackagesCheck"));
+    moduleBlockShowUnresolvedCheck =
+        new QCheckBox(QStringLiteral("Show unresolved"), panel);
+    moduleBlockShowUnresolvedCheck->setObjectName(
+        QStringLiteral("rtlModuleBlockShowUnresolvedCheck"));
+    moduleBlockShowUnresolvedCheck->setChecked(true);
+
+    stateTransitionSignalCombo = new QComboBox(panel);
+    stateTransitionSignalCombo->setObjectName(
+        QStringLiteral("rtlStateTransitionSignalCombo"));
+    stateTransitionCurrentCombo = new QComboBox(panel);
+    stateTransitionCurrentCombo->setObjectName(
+        QStringLiteral("rtlStateTransitionCurrentCombo"));
+    stateTransitionNextCombo = new QComboBox(panel);
+    stateTransitionNextCombo->setObjectName(
+        QStringLiteral("rtlStateTransitionNextCombo"));
+    stateTransitionResetCheck =
+        new QCheckBox(QStringLiteral("Show reset"), panel);
+    stateTransitionResetCheck->setObjectName(
+        QStringLiteral("rtlStateTransitionResetCheck"));
+    stateTransitionResetCheck->setChecked(true);
+    stateTransitionErrorCheck =
+        new QCheckBox(QStringLiteral("Show error"), panel);
+    stateTransitionErrorCheck->setObjectName(
+        QStringLiteral("rtlStateTransitionErrorCheck"));
+    stateTransitionErrorCheck->setChecked(true);
+    stateTransitionUnreachableCheck =
+        new QCheckBox(QStringLiteral("Show unreachable"), panel);
+    stateTransitionUnreachableCheck->setObjectName(
+        QStringLiteral("rtlStateTransitionUnreachableCheck"));
+    stateTransitionUnreachableCheck->setChecked(true);
+
+    graphLayoutCombo = new QComboBox(panel);
+    graphLayoutCombo->setObjectName(QStringLiteral("rtlGraphLayoutCombo"));
+    graphLayoutCombo->addItems({QStringLiteral("Nested blocks"),
+                                QStringLiteral("State flow"),
+                                QStringLiteral("Tree")});
+    graphMoreButton = new QToolButton(panel);
+    graphMoreButton->setObjectName(QStringLiteral("rtlGraphMoreButton"));
+    graphMoreButton->setText(QStringLiteral("..."));
+    graphMoreButton->setPopupMode(QToolButton::InstantPopup);
+    graphMoreButton->setToolTip(QStringLiteral("More graph actions"));
+    auto* graphMoreMenu = new QMenu(graphMoreButton);
+    graphMoreMenu->addAction(QStringLiteral("Jump"),
+                             graphMoreButton,
+                             [this]() { navigateSelectedGraphItem(); });
+    graphMoreMenu->addAction(QStringLiteral("Focus"),
+                             graphMoreButton,
+                             [this]() {
+                                 if (!insightsGraphScene || !insightsGraphView)
+                                     return;
+                                 const QList<QGraphicsItem*> selected =
+                                     insightsGraphScene->selectedItems();
+                                 if (!selected.isEmpty())
+                                     insightsGraphView->centerOnRect(
+                                         selected.first()->sceneBoundingRect());
+                             });
+    graphMoreMenu->addAction(QStringLiteral("Set top"),
+                             graphMoreButton,
+                             [this]() { setModuleBlockTopFromSelected(); });
+    graphMoreButton->setMenu(graphMoreMenu);
     for (QPushButton* button :
          {moduleBriefButton,
           signalJourneyButton,
@@ -1925,10 +2014,19 @@ RtlInsightsPanelCoordinator::RtlInsightsPanelCoordinator(QWidget* parent)
           clockResetButton,
           fsmGraphButton,
           moduleBlockDiagramButton,
+          moduleBlockSetSelectionButton,
           graphZoomOutButton,
           graphFitButton,
           graphZoomInButton}) {
         InsightVisualStyle::applyToolbarButton(button);
+    }
+    for (QCheckBox* checkBox :
+         {moduleBlockCollapsePackagesCheck,
+          moduleBlockShowUnresolvedCheck,
+          stateTransitionResetCheck,
+          stateTransitionErrorCheck,
+          stateTransitionUnreachableCheck}) {
+        InsightVisualStyle::applySegmentedCheckBox(checkBox);
     }
     actionLayout->addWidget(moduleBriefButton);
     actionLayout->addWidget(signalJourneyButton);
@@ -1937,10 +2035,6 @@ RtlInsightsPanelCoordinator::RtlInsightsPanelCoordinator(QWidget* parent)
     actionLayout->addWidget(fsmGraphButton);
     actionLayout->addWidget(moduleBlockDiagramButton);
     actionLayout->addStretch(1);
-    actionLayout->addWidget(graphSearchEdit);
-    actionLayout->addWidget(graphZoomOutButton);
-    actionLayout->addWidget(graphFitButton);
-    actionLayout->addWidget(graphZoomInButton);
     layout->addLayout(actionLayout);
 
     insightsTree = new QTreeWidget(panel);
@@ -1963,11 +2057,125 @@ RtlInsightsPanelCoordinator::RtlInsightsPanelCoordinator(QWidget* parent)
     insightsGraphView->setZoomRange(kGraphMinScale, kGraphMaxScale);
     insightsGraphView->setGridVisible(true);
     insightsGraphView->setClearSelectionOnEmptyLeftClick(true);
+
+    insightsGraphPanel = new QWidget(panel);
+    insightsGraphPanel->setObjectName(QStringLiteral("rtlInsightsGraphPanel"));
+    auto* graphPanelLayout = new QVBoxLayout(insightsGraphPanel);
+    graphPanelLayout->setContentsMargins(0, 0, 0, 0);
+    graphPanelLayout->setSpacing(6);
+
+    auto* graphToolbarLayout = new QHBoxLayout;
+    graphToolbarLayout->setContentsMargins(0, 0, 0, 0);
+    graphToolbarLayout->setSpacing(6);
+    auto* moduleBlockTopLabel = new QLabel(QStringLiteral("Top:"), panel);
+    moduleBlockTopLabel->setObjectName(QStringLiteral("rtlModuleBlockTopLabel"));
+    auto* stateSignalLabel = new QLabel(QStringLiteral("Signal:"), panel);
+    stateSignalLabel->setObjectName(QStringLiteral("rtlStateSignalLabel"));
+    auto* stateCurrentLabel = new QLabel(QStringLiteral("Current:"), panel);
+    stateCurrentLabel->setObjectName(QStringLiteral("rtlStateCurrentLabel"));
+    auto* stateNextLabel = new QLabel(QStringLiteral("Next:"), panel);
+    stateNextLabel->setObjectName(QStringLiteral("rtlStateNextLabel"));
+    graphToolbarLayout->addWidget(moduleBlockTopLabel);
+    graphToolbarLayout->addWidget(moduleBlockTopCombo);
+    graphToolbarLayout->addWidget(stateSignalLabel);
+    graphToolbarLayout->addWidget(stateTransitionSignalCombo);
+    graphToolbarLayout->addWidget(stateCurrentLabel);
+    graphToolbarLayout->addWidget(stateTransitionCurrentCombo);
+    graphToolbarLayout->addWidget(stateNextLabel);
+    graphToolbarLayout->addWidget(stateTransitionNextCombo);
+    graphToolbarLayout->addWidget(graphSearchEdit, 1);
+    graphToolbarLayout->addWidget(moduleBlockSetSelectionButton);
+    graphToolbarLayout->addWidget(graphFitButton);
+    graphToolbarLayout->addWidget(moduleBlockDepthSpin);
+    graphToolbarLayout->addWidget(moduleBlockCollapsePackagesCheck);
+    graphToolbarLayout->addWidget(moduleBlockShowUnresolvedCheck);
+    graphToolbarLayout->addWidget(stateTransitionResetCheck);
+    graphToolbarLayout->addWidget(stateTransitionErrorCheck);
+    graphToolbarLayout->addWidget(stateTransitionUnreachableCheck);
+    graphToolbarLayout->addWidget(graphLayoutCombo);
+    graphToolbarLayout->addWidget(graphZoomOutButton);
+    graphToolbarLayout->addWidget(graphZoomInButton);
+    graphToolbarLayout->addWidget(graphMoreButton);
+    graphPanelLayout->addLayout(graphToolbarLayout);
+
+    graphInspector = new QTreeWidget(panel);
+    graphInspector->setObjectName(QStringLiteral("rtlGraphInspector"));
+    graphInspector->setColumnCount(2);
+    graphInspector->setHeaderLabels({QStringLiteral("Field"),
+                                     QStringLiteral("Value")});
+    graphInspector->setRootIsDecorated(false);
+    graphInspector->setAlternatingRowColors(true);
+    graphInspector->setUniformRowHeights(true);
+    graphInspector->header()->setSectionResizeMode(0,
+                                                   QHeaderView::ResizeToContents);
+    graphInspector->header()->setSectionResizeMode(1, QHeaderView::Stretch);
+    graphInspector->setMinimumWidth(260);
+    graphInspectorJumpButton =
+        new QPushButton(QStringLiteral("Jump"), panel);
+    graphInspectorJumpButton->setObjectName(
+        QStringLiteral("rtlGraphInspectorJumpButton"));
+    graphInspectorFocusButton =
+        new QPushButton(QStringLiteral("Focus"), panel);
+    graphInspectorFocusButton->setObjectName(
+        QStringLiteral("rtlGraphInspectorFocusButton"));
+    graphInspectorSetTopButton =
+        new QPushButton(QStringLiteral("Set Top"), panel);
+    graphInspectorSetTopButton->setObjectName(
+        QStringLiteral("rtlGraphInspectorSetTopButton"));
+    graphInspectorRevealButton =
+        new QPushButton(QStringLiteral("Reveal"), panel);
+    graphInspectorRevealButton->setObjectName(
+        QStringLiteral("rtlGraphInspectorRevealButton"));
+    for (QPushButton* button :
+         {graphInspectorJumpButton,
+          graphInspectorFocusButton,
+          graphInspectorSetTopButton,
+          graphInspectorRevealButton}) {
+        InsightVisualStyle::applyToolbarButton(button);
+    }
+    graphInspectorRevealButton->setEnabled(false);
+    graphInspectorRevealButton->setToolTip(
+        QStringLiteral("Hierarchy reveal is not wired for this panel yet."));
+
+    auto* inspectorPanel = new QWidget(panel);
+    inspectorPanel->setObjectName(QStringLiteral("rtlGraphInspectorPanel"));
+    auto* inspectorLayout = new QVBoxLayout(inspectorPanel);
+    inspectorLayout->setContentsMargins(0, 0, 0, 0);
+    inspectorLayout->setSpacing(5);
+    inspectorLayout->addWidget(graphInspector, 1);
+    auto* inspectorActionLayout = new QHBoxLayout;
+    inspectorActionLayout->setContentsMargins(0, 0, 0, 0);
+    inspectorActionLayout->setSpacing(4);
+    inspectorActionLayout->addWidget(graphInspectorJumpButton);
+    inspectorActionLayout->addWidget(graphInspectorFocusButton);
+    inspectorActionLayout->addWidget(graphInspectorSetTopButton);
+    inspectorActionLayout->addWidget(graphInspectorRevealButton);
+    inspectorLayout->addLayout(inspectorActionLayout);
+
+    auto* graphBodySplitter = new QSplitter(Qt::Horizontal, panel);
+    graphBodySplitter->setObjectName(QStringLiteral("rtlGraphBodySplitter"));
+    graphBodySplitter->addWidget(insightsGraphView);
+    graphBodySplitter->addWidget(inspectorPanel);
+    graphBodySplitter->setStretchFactor(0, 1);
+    graphBodySplitter->setStretchFactor(1, 0);
+    graphPanelLayout->addWidget(graphBodySplitter, 1);
+
+    graphTable = new QTableWidget(panel);
+    graphTable->setObjectName(QStringLiteral("rtlGraphDetailTable"));
+    graphTable->setAlternatingRowColors(true);
+    graphTable->setSelectionBehavior(QAbstractItemView::SelectRows);
+    graphTable->setSelectionMode(QAbstractItemView::SingleSelection);
+    graphTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    graphTable->verticalHeader()->setVisible(false);
+    graphTable->setMinimumHeight(118);
+    graphTable->setMaximumHeight(190);
+    graphPanelLayout->addWidget(graphTable, 0);
+
     signalUsageHotspotPanel = new SignalUsageHotspotPanel(panel);
 
     insightsStack = new QStackedWidget(panel);
     insightsStack->addWidget(insightsTree);
-    insightsStack->addWidget(insightsGraphView);
+    insightsStack->addWidget(insightsGraphPanel);
     insightsStack->addWidget(signalUsageHotspotPanel);
     layout->addWidget(insightsStack, 1);
 
@@ -2028,6 +2236,114 @@ RtlInsightsPanelCoordinator::RtlInsightsPanelCoordinator(QWidget* parent)
                          graphSearchText = text.trimmed();
                          applyGraphSearchHighlight();
                      });
+    QObject::connect(moduleBlockSetSelectionButton,
+                     &QPushButton::clicked,
+                     insightsDock,
+                     [this]() {
+                         if (!setModuleBlockTopFromSelected()
+                             && statusMessageHandler) {
+                             statusMessageHandler(
+                                 QStringLiteral("Select a resolved module block first"),
+                                 1800);
+                             }
+                     });
+    QObject::connect(moduleBlockTopCombo,
+                     qOverload<int>(&QComboBox::activated),
+                     insightsDock,
+                     [this](int index) {
+                         if (!moduleBlockTopCombo
+                             || currentGraphMode != QStringLiteral("module-block")) {
+                             return;
+                         }
+                         const int nodeId =
+                             moduleBlockTopCombo->itemData(index).toInt();
+                         for (const ModuleBlockDiagramNode& node :
+                              currentModuleBlockReport.nodes) {
+                             if (node.nodeId != nodeId
+                                 || node.unresolved
+                                 || node.definitionCodeLink.fileName.isEmpty()) {
+                                 continue;
+                             }
+                             showModuleBlockDiagramForModule(
+                                 node.definitionCodeLink.fileName,
+                                 node.moduleDisplayName);
+                             return;
+                         }
+                     });
+    QObject::connect(moduleBlockDepthSpin,
+                     qOverload<int>(&QSpinBox::valueChanged),
+                     insightsDock,
+                     [this](int) {
+                         if (currentGraphMode == QStringLiteral("module-block"))
+                             showModuleBlockDiagram();
+                     });
+    QObject::connect(moduleBlockShowUnresolvedCheck,
+                     &QCheckBox::toggled,
+                     insightsDock,
+                     [this](bool) {
+                         if (currentGraphMode == QStringLiteral("module-block"))
+                             renderModuleBlockDiagramScene(currentModuleBlockReport);
+                     });
+    QObject::connect(graphLayoutCombo,
+                     qOverload<int>(&QComboBox::currentIndexChanged),
+                     insightsDock,
+                     [this](int) {
+                         if (currentGraphMode == QStringLiteral("module-block"))
+                             renderModuleBlockDiagramScene(currentModuleBlockReport);
+                     });
+    QObject::connect(graphTable,
+                     &QTableWidget::cellClicked,
+                     insightsDock,
+                     [this](int row, int) {
+                         if (!graphTable || row < 0)
+                             return;
+                         const QTableWidgetItem* item =
+                             graphTable->item(row, 0);
+                         if (!item)
+                             return;
+                         if (currentGraphMode == QStringLiteral("module-block"))
+                             selectModuleBlockNode(
+                                 item->data(kGraphNodeIdRole).toInt());
+                     });
+    QObject::connect(graphTable,
+                     &QTableWidget::cellDoubleClicked,
+                     insightsDock,
+                     [this](int row, int) {
+                         if (!graphTable || row < 0)
+                             return;
+                         graphTable->selectRow(row);
+                         if (currentGraphMode == QStringLiteral("module-block")) {
+                             const QTableWidgetItem* item =
+                                 graphTable->item(row, 0);
+                             if (item) {
+                                 selectModuleBlockNode(
+                                     item->data(kGraphNodeIdRole).toInt(),
+                                     false,
+                                     false);
+                             }
+                         }
+                         navigateSelectedGraphItem();
+                     });
+    QObject::connect(graphInspectorJumpButton,
+                     &QPushButton::clicked,
+                     insightsDock,
+                     [this]() { navigateSelectedGraphItem(); });
+    QObject::connect(graphInspectorFocusButton,
+                     &QPushButton::clicked,
+                     insightsDock,
+                     [this]() {
+                         if (!insightsGraphScene || !insightsGraphView)
+                             return;
+                         const QList<QGraphicsItem*> selected =
+                             insightsGraphScene->selectedItems();
+                         if (!selected.isEmpty())
+                             insightsGraphView->centerOnRect(
+                                 selected.first()->sceneBoundingRect());
+                     });
+    QObject::connect(graphInspectorSetTopButton,
+                     &QPushButton::clicked,
+                     insightsDock,
+                     [this]() { setModuleBlockTopFromSelected(); });
 
     renderNoContext();
 }
@@ -2126,6 +2442,62 @@ int RtlInsightsPanelCoordinator::graphSelectedItemCountForTest() const
     return count;
 }
 
+QStringList RtlInsightsPanelCoordinator::graphInspectorRowsForTest() const
+{
+    QStringList rows;
+    if (!graphInspector)
+        return rows;
+    for (int i = 0; i < graphInspector->topLevelItemCount(); ++i) {
+        const QTreeWidgetItem* item = graphInspector->topLevelItem(i);
+        if (!item)
+            continue;
+        rows.append(QStringLiteral("%1=%2")
+                        .arg(item->text(0), item->text(1)));
+    }
+    return rows;
+}
+
+QStringList RtlInsightsPanelCoordinator::graphTableRowsForTest() const
+{
+    QStringList rows;
+    if (!graphTable)
+        return rows;
+    for (int row = 0; row < graphTable->rowCount(); ++row) {
+        QStringList cells;
+        for (int column = 0; column < graphTable->columnCount(); ++column) {
+            const QTableWidgetItem* item = graphTable->item(row, column);
+            cells.append(item ? item->text() : QString());
+        }
+        rows.append(cells.join(QLatin1Char('|')));
+    }
+    return rows;
+}
+
+bool RtlInsightsPanelCoordinator::selectGraphTableRowForTest(
+    const QString& primaryText,
+    const QString& secondaryText)
+{
+    if (!graphTable)
+        return false;
+    for (int row = 0; row < graphTable->rowCount(); ++row) {
+        const QTableWidgetItem* item = graphTable->item(row, 0);
+        if (!item)
+            continue;
+        if (item->data(kGraphTablePrimaryRole).toString() != primaryText)
+            continue;
+        if (!secondaryText.isEmpty()
+            && item->data(kGraphTableSecondaryRole).toString()
+                   != secondaryText) {
+            continue;
+        }
+        graphTable->selectRow(row);
+        if (currentGraphMode == QStringLiteral("module-block"))
+            selectModuleBlockNode(item->data(kGraphNodeIdRole).toInt());
+        return true;
+    }
+    return false;
+}
+
 int RtlInsightsPanelCoordinator::graphElementLineForTest(
     const QString& elementKind,
     const QString& primaryText,
@@ -2170,16 +2542,420 @@ bool RtlInsightsPanelCoordinator::triggerGraphNavigationForTest(
     return true;
 }
 
+void RtlInsightsPanelCoordinator::configureGraphToolbarForMode(
+    const QString& mode)
+{
+    currentGraphMode = mode;
+    const bool moduleMode = mode == QStringLiteral("module-block");
+    const bool stateMode =
+        mode == QStringLiteral("state-transition")
+        || mode == QStringLiteral("fsm");
+    const bool graphMode = moduleMode || stateMode;
+
+    for (QWidget* widget :
+         {static_cast<QWidget*>(moduleBlockTopCombo),
+          insightsGraphPanel
+              ? insightsGraphPanel->findChild<QWidget*>(
+                    QStringLiteral("rtlModuleBlockTopLabel"))
+              : nullptr,
+          static_cast<QWidget*>(moduleBlockSetSelectionButton),
+          static_cast<QWidget*>(moduleBlockDepthSpin),
+          static_cast<QWidget*>(moduleBlockCollapsePackagesCheck),
+          static_cast<QWidget*>(moduleBlockShowUnresolvedCheck)}) {
+        if (widget)
+            widget->setVisible(moduleMode);
+    }
+    for (QWidget* widget :
+         {insightsGraphPanel
+              ? insightsGraphPanel->findChild<QWidget*>(
+                    QStringLiteral("rtlStateSignalLabel"))
+              : nullptr,
+          static_cast<QWidget*>(stateTransitionSignalCombo),
+          insightsGraphPanel
+              ? insightsGraphPanel->findChild<QWidget*>(
+                    QStringLiteral("rtlStateCurrentLabel"))
+              : nullptr,
+          static_cast<QWidget*>(stateTransitionCurrentCombo),
+          insightsGraphPanel
+              ? insightsGraphPanel->findChild<QWidget*>(
+                    QStringLiteral("rtlStateNextLabel"))
+              : nullptr,
+          static_cast<QWidget*>(stateTransitionNextCombo),
+          static_cast<QWidget*>(stateTransitionResetCheck),
+          static_cast<QWidget*>(stateTransitionErrorCheck),
+          static_cast<QWidget*>(stateTransitionUnreachableCheck)}) {
+        if (widget)
+            widget->setVisible(stateMode);
+    }
+    if (graphLayoutCombo) {
+        graphLayoutCombo->setVisible(graphMode);
+        const QSignalBlocker blocker(graphLayoutCombo);
+        if (moduleMode)
+            graphLayoutCombo->setCurrentText(QStringLiteral("Nested blocks"));
+        else if (stateMode)
+            graphLayoutCombo->setCurrentText(QStringLiteral("State flow"));
+    }
+    if (graphTable)
+        graphTable->setVisible(graphMode);
+    if (graphInspector)
+        graphInspector->setVisible(graphMode);
+}
+
+void RtlInsightsPanelCoordinator::clearGraphDetails()
+{
+    if (graphInspector)
+        graphInspector->clear();
+    if (graphTable) {
+        graphTable->clear();
+        graphTable->setRowCount(0);
+        graphTable->setColumnCount(0);
+    }
+    currentModuleBlockSelectedNodeId = -1;
+    if (graphInspectorJumpButton)
+        graphInspectorJumpButton->setEnabled(false);
+    if (graphInspectorFocusButton)
+        graphInspectorFocusButton->setEnabled(false);
+    if (graphInspectorSetTopButton)
+        graphInspectorSetTopButton->setEnabled(false);
+    if (graphInspectorRevealButton)
+        graphInspectorRevealButton->setEnabled(false);
+}
+
+void RtlInsightsPanelCoordinator::renderGenericGraphInspector(
+    const QString& title,
+    const QStringList& rows)
+{
+    if (!graphInspector)
+        return;
+    graphInspector->clear();
+    auto* titleItem = new QTreeWidgetItem(graphInspector);
+    titleItem->setText(0, QStringLiteral("Selected"));
+    titleItem->setText(1, title);
+    QFont font = titleItem->font(0);
+    font.setBold(true);
+    titleItem->setFont(0, font);
+    titleItem->setFont(1, font);
+    for (const QString& row : rows) {
+        const int split = row.indexOf(QLatin1Char('='));
+        auto* item = new QTreeWidgetItem(graphInspector);
+        item->setText(0, split > 0 ? row.left(split) : row);
+        item->setText(1, split > 0 ? row.mid(split + 1) : QString());
+    }
+    if (graphInspectorJumpButton)
+        graphInspectorJumpButton->setEnabled(true);
+    if (graphInspectorFocusButton)
+        graphInspectorFocusButton->setEnabled(true);
+    if (graphInspectorSetTopButton)
+        graphInspectorSetTopButton->setEnabled(false);
+}
+
+void RtlInsightsPanelCoordinator::renderModuleBlockInspector(
+    const ModuleBlockDiagramReport& report,
+    const ModuleBlockDiagramNode& node)
+{
+    if (!graphInspector)
+        return;
+
+    QHash<int, ModuleBlockDiagramNode> nodesById;
+    int childCount = 0;
+    int unresolvedChildCount = 0;
+    for (const ModuleBlockDiagramNode& current : report.nodes) {
+        nodesById.insert(current.nodeId, current);
+        if (current.parentNodeId == node.nodeId) {
+            ++childCount;
+            if (current.unresolved)
+                ++unresolvedChildCount;
+        }
+    }
+
+    QStringList pathParts;
+    int cursor = node.nodeId;
+    QSet<int> seen;
+    while (nodesById.contains(cursor) && !seen.contains(cursor)) {
+        const ModuleBlockDiagramNode current = nodesById.value(cursor);
+        seen.insert(cursor);
+        pathParts.prepend(current.instanceDisplayName.isEmpty()
+                              ? current.moduleDisplayName
+                              : current.instanceDisplayName);
+        cursor = current.parentNodeId;
+    }
+
+    auto addRow = [this](const QString& field, const QString& value) {
+        auto* item = new QTreeWidgetItem(graphInspector);
+        item->setText(0, field);
+        item->setText(1, value.isEmpty() ? QStringLiteral("-") : value);
+        item->setToolTip(1, value);
+    };
+
+    graphInspector->clear();
+    const QString selectedText =
+        node.instanceDisplayName.isEmpty()
+            ? node.moduleDisplayName
+            : QStringLiteral("%1 : %2")
+                  .arg(node.instanceDisplayName, node.moduleDisplayName);
+    addRow(QStringLiteral("Selected"), selectedText);
+    addRow(QStringLiteral("Type"),
+           node.unresolved ? QStringLiteral("unresolved module")
+                           : node.moduleTypeDisplayName);
+    addRow(QStringLiteral("Definition"),
+           node.definitionCodeLink.fileName.isEmpty()
+               ? QStringLiteral("missing")
+               : QStringLiteral("%1:%2")
+                     .arg(node.definitionCodeLink.fileDisplayName,
+                          node.definitionCodeLink.lineDisplayName));
+    const ModuleBlockDiagramNode parentNode =
+        nodesById.value(node.parentNodeId);
+    addRow(QStringLiteral("Parent"),
+           parentNode.nodeId >= 0 ? parentNode.moduleDisplayName
+                                  : QStringLiteral("-"));
+    addRow(QStringLiteral("Children"), QString::number(childCount));
+    addRow(QStringLiteral("Unresolved children"),
+           QString::number(unresolvedChildCount));
+    addRow(QStringLiteral("Status"),
+           node.unresolved
+               ? QStringLiteral("unresolved - %1")
+                     .arg(node.unresolvedReason)
+               : QStringLiteral("resolved"));
+    addRow(QStringLiteral("Workspace"),
+           QFileInfo(currentFileName).dir().dirName());
+    addRow(QStringLiteral("Path"), pathParts.join(QLatin1Char('.')));
+    addRow(QStringLiteral("Depth"), QString::number(node.depth));
+    const RtlInsightCodeLink link =
+        node.instanceCodeLink.fileName.isEmpty()
+            ? node.definitionCodeLink
+            : node.instanceCodeLink;
+    addRow(QStringLiteral("Location"),
+           link.fileName.isEmpty()
+               ? QStringLiteral("-")
+               : QStringLiteral("%1:%2")
+                     .arg(link.fileDisplayName, link.lineDisplayName));
+
+    if (graphInspectorJumpButton)
+        graphInspectorJumpButton->setEnabled(!link.fileName.isEmpty());
+    if (graphInspectorFocusButton)
+        graphInspectorFocusButton->setEnabled(true);
+    if (graphInspectorSetTopButton) {
+        graphInspectorSetTopButton->setEnabled(
+            !node.unresolved && !node.definitionCodeLink.fileName.isEmpty());
+    }
+}
+
+void RtlInsightsPanelCoordinator::populateModuleBlockInstancesTable(
+    const ModuleBlockDiagramReport& report)
+{
+    if (!graphTable)
+        return;
+    graphTable->clear();
+    graphTable->setColumnCount(5);
+    graphTable->setHorizontalHeaderLabels({QStringLiteral("Instance"),
+                                           QStringLiteral("Module"),
+                                           QStringLiteral("Parent"),
+                                           QStringLiteral("File"),
+                                           QStringLiteral("Status")});
+    graphTable->setRowCount(0);
+
+    QHash<int, ModuleBlockDiagramNode> nodesById;
+    for (const ModuleBlockDiagramNode& node : report.nodes)
+        nodesById.insert(node.nodeId, node);
+
+    const bool showUnresolved =
+        !moduleBlockShowUnresolvedCheck || moduleBlockShowUnresolvedCheck->isChecked();
+    for (const ModuleBlockDiagramNode& node : report.nodes) {
+        if (node.nodeId == report.root.nodeId)
+            continue;
+        if (node.unresolved && !showUnresolved)
+            continue;
+        const int row = graphTable->rowCount();
+        graphTable->insertRow(row);
+        const ModuleBlockDiagramNode parent =
+            nodesById.value(node.parentNodeId);
+        const RtlInsightCodeLink link =
+            node.instanceCodeLink.fileName.isEmpty()
+                ? node.definitionCodeLink
+                : node.instanceCodeLink;
+        const QString status =
+            node.unresolved ? QStringLiteral("unresolved")
+                            : QStringLiteral("resolved");
+        const QString instance =
+            node.instanceDisplayName.isEmpty()
+                ? node.moduleDisplayName
+                : node.instanceDisplayName;
+        const QStringList values{
+            instance,
+            node.moduleDisplayName,
+            parent.nodeId >= 0 ? parent.moduleDisplayName : QStringLiteral("-"),
+            link.fileDisplayName.isEmpty()
+                ? QFileInfo(link.fileName).fileName()
+                : link.fileDisplayName,
+            status
+        };
+        for (int column = 0; column < values.size(); ++column) {
+            auto* item = new QTableWidgetItem(values.at(column));
+            item->setData(kGraphNodeIdRole, node.nodeId);
+            item->setData(kGraphTablePrimaryRole, node.moduleDisplayName);
+            item->setData(kGraphTableSecondaryRole, node.instanceDisplayName);
+            item->setData(kGraphTableKindRole, QStringLiteral("module"));
+            if (column == 4) {
+                item->setForeground(node.unresolved
+                                        ? QBrush(InsightVisualStyle::theme().warning)
+                                        : QBrush(InsightVisualStyle::theme().hover));
+            }
+            graphTable->setItem(row, column, item);
+        }
+    }
+    graphTable->resizeColumnsToContents();
+    graphTable->horizontalHeader()->setStretchLastSection(true);
+}
+
+void RtlInsightsPanelCoordinator::populateFsmTransitionsTable(
+    const FsmGraph& graph)
+{
+    if (!graphTable)
+        return;
+    graphTable->clear();
+    graphTable->setColumnCount(5);
+    graphTable->setHorizontalHeaderLabels({QStringLiteral("From"),
+                                           QStringLiteral("To"),
+                                           QStringLiteral("Condition"),
+                                           QStringLiteral("Type"),
+                                           QStringLiteral("Source")});
+    graphTable->setRowCount(graph.transitionRows.size());
+    for (int row = 0; row < graph.transitionRows.size(); ++row) {
+        const FsmTransitionRow& transition = graph.transitionRows.at(row);
+        const QStringList values{
+            transition.fromStateDisplayName,
+            transition.toStateDisplayName,
+            transition.conditionDisplayName,
+            transition.assignmentTargetDisplayName,
+            transition.sourceLineDisplayName
+        };
+        for (int column = 0; column < values.size(); ++column) {
+            auto* item = new QTableWidgetItem(values.at(column));
+            item->setData(kGraphTablePrimaryRole,
+                          transition.fromStateDisplayName);
+            item->setData(kGraphTableSecondaryRole,
+                          transition.toStateDisplayName);
+            item->setData(kGraphTableKindRole, QStringLiteral("transition"));
+            graphTable->setItem(row, column, item);
+        }
+    }
+    graphTable->resizeColumnsToContents();
+    graphTable->horizontalHeader()->setStretchLastSection(true);
+}
+
+void RtlInsightsPanelCoordinator::selectModuleBlockNode(
+    int nodeId,
+    bool centerGraph,
+    bool syncTable)
+{
+    if (nodeId < 0)
+        return;
+    currentModuleBlockSelectedNodeId = nodeId;
+    const ModuleBlockDiagramNode* selectedNode = nullptr;
+    for (const ModuleBlockDiagramNode& node : currentModuleBlockReport.nodes) {
+        if (node.nodeId == nodeId) {
+            selectedNode = &node;
+            break;
+        }
+    }
+    if (!selectedNode)
+        return;
+
+    if (insightsGraphScene) {
+        for (QGraphicsItem* item : insightsGraphScene->items()) {
+            if (!dynamic_cast<RtlInsightGraphNodeItem*>(item))
+                continue;
+            const bool match = item->data(kGraphNodeIdRole).toInt() == nodeId;
+            item->setSelected(match);
+            if (match && centerGraph && insightsGraphView)
+                insightsGraphView->centerOnRect(item->sceneBoundingRect());
+        }
+    }
+    if (syncTable && graphTable) {
+        for (int row = 0; row < graphTable->rowCount(); ++row) {
+            const QTableWidgetItem* item = graphTable->item(row, 0);
+            if (item && item->data(kGraphNodeIdRole).toInt() == nodeId) {
+                const QSignalBlocker blocker(graphTable);
+                graphTable->selectRow(row);
+                break;
+            }
+        }
+    }
+    renderModuleBlockInspector(currentModuleBlockReport, *selectedNode);
+}
+
+bool RtlInsightsPanelCoordinator::navigateGraphItem(QGraphicsItem* item)
+{
+    if (!item || !navigationHandler)
+        return false;
+    const QString fileName = item->data(kGraphFileRole).toString();
+    if (fileName.isEmpty())
+        return false;
+    if (!navigationHandler(fileName,
+                           item->data(kGraphLineRole).toInt(),
+                           item->data(kGraphColumnRole).toInt())) {
+        if (statusMessageHandler)
+            statusMessageHandler(QStringLiteral("RTL graph jump failed"),
+                                 4000);
+        return false;
+    }
+    const QString drillModuleName =
+        item->data(kGraphDrillModuleRole).toString();
+    if (!drillModuleName.isEmpty()) {
+        const QString drillFileName =
+            item->data(kGraphDrillFileRole).toString().isEmpty()
+                ? fileName
+                : item->data(kGraphDrillFileRole).toString();
+        showModuleBlockDiagramForModule(drillFileName, drillModuleName);
+    }
+    return true;
+}
+
+bool RtlInsightsPanelCoordinator::navigateSelectedGraphItem()
+{
+    if (!insightsGraphScene)
+        return false;
+    const QList<QGraphicsItem*> selected = insightsGraphScene->selectedItems();
+    if (selected.isEmpty())
+        return false;
+    return navigateGraphItem(selected.first());
+}
+
+bool RtlInsightsPanelCoordinator::setModuleBlockTopFromSelected()
+{
+    if (!insightsGraphScene
+        || currentGraphMode != QStringLiteral("module-block")) {
+        return false;
+    }
+    const QList<QGraphicsItem*> selected = insightsGraphScene->selectedItems();
+    if (selected.isEmpty())
+        return false;
+    QGraphicsItem* item = selected.first();
+    const QString drillModuleName =
+        item->data(kGraphDrillModuleRole).toString();
+    if (drillModuleName.isEmpty())
+        return false;
+    const QString drillFileName =
+        item->data(kGraphDrillFileRole).toString().isEmpty()
+            ? item->data(kGraphFileRole).toString()
+            : item->data(kGraphDrillFileRole).toString();
+    if (drillFileName.isEmpty())
+        return false;
+    showModuleBlockDiagramForModule(drillFileName, drillModuleName);
+    return true;
+}
+
 void RtlInsightsPanelCoordinator::showTreeSurface()
 {
     if (insightsStack && insightsTree)
         insightsStack->setCurrentWidget(insightsTree);
+    currentGraphMode.clear();
 }
 
 void RtlInsightsPanelCoordinator::showGraphSurface()
 {
-    if (insightsStack && insightsGraphView)
-        insightsStack->setCurrentWidget(insightsGraphView);
+    if (insightsStack && insightsGraphPanel)
+        insightsStack->setCurrentWidget(insightsGraphPanel);
 }
 
 void RtlInsightsPanelCoordinator::applyGraphSearchHighlight()
@@ -2234,6 +3010,8 @@ void RtlInsightsPanelCoordinator::renderGraphUnavailable(
     showGraphSurface();
     if (!insightsGraphScene || !insightsGraphView)
         return;
+    configureGraphToolbarForMode(QString());
+    clearGraphDetails();
     insightsGraphScene->clear();
     insightsGraphView->resetView();
 
@@ -2271,6 +3049,8 @@ void RtlInsightsPanelCoordinator::renderStateTransitionGraphScene(
     showGraphSurface();
     if (!insightsGraphScene || !insightsGraphView)
         return;
+    configureGraphToolbarForMode(QStringLiteral("state-transition"));
+    clearGraphDetails();
     insightsGraphScene->clear();
     insightsGraphView->resetView();
 
@@ -2281,6 +3061,23 @@ void RtlInsightsPanelCoordinator::renderStateTransitionGraphScene(
                 : report.groupDisplayName,
             report.notFoundReasonDisplayName);
         return;
+    }
+    if (stateTransitionSignalCombo) {
+        QSignalBlocker blocker(stateTransitionSignalCombo);
+        stateTransitionSignalCombo->clear();
+        stateTransitionSignalCombo->addItem(report.selectedSignalDisplayName);
+    }
+    if (stateTransitionCurrentCombo) {
+        QSignalBlocker blocker(stateTransitionCurrentCombo);
+        stateTransitionCurrentCombo->clear();
+        stateTransitionCurrentCombo->addItem(
+            report.graph.stateRegisterDisplayName);
+    }
+    if (stateTransitionNextCombo) {
+        QSignalBlocker blocker(stateTransitionNextCombo);
+        stateTransitionNextCombo->clear();
+        stateTransitionNextCombo->addItem(
+            report.graph.nextStateSignalDisplayName);
     }
 
     const QFont font = insightsGraphView->font();
@@ -2294,11 +3091,18 @@ void RtlInsightsPanelCoordinator::renderStateTransitionGraphScene(
         }
     };
     const auto select = [this](const RtlInsightGraphElement& element) {
-        if (statusMessageHandler) {
+        renderGenericGraphInspector(
+            element.primary,
+            {QStringLiteral("Kind=%1").arg(element.kind),
+             QStringLiteral("To=%1").arg(element.secondary),
+             QStringLiteral("Condition=%1").arg(element.detail),
+             QStringLiteral("Location=%1:%2")
+                 .arg(element.codeLink.fileDisplayName,
+                      element.codeLink.lineDisplayName)});
+        if (statusMessageHandler)
             statusMessageHandler(QStringLiteral("%1: %2")
                                      .arg(element.kind, element.primary),
                                  1200);
-        }
     };
 
     const QString graphTitle = report.selectedSignalDisplayName.isEmpty()
@@ -2314,6 +3118,7 @@ void RtlInsightsPanelCoordinator::renderStateTransitionGraphScene(
                                                      select);
     insightsGraphScene->setSceneRect(bounds);
     insightsGraphView->fitRect(bounds, Qt::KeepAspectRatio);
+    populateFsmTransitionsTable(report.graph);
     applyGraphSearchHighlight();
 }
 
@@ -2324,6 +3129,8 @@ void RtlInsightsPanelCoordinator::renderFsmGraphScene(
     showGraphSurface();
     if (!insightsGraphScene || !insightsGraphView)
         return;
+    configureGraphToolbarForMode(QStringLiteral("fsm"));
+    clearGraphDetails();
     insightsGraphScene->clear();
     insightsGraphView->resetView();
 
@@ -2347,11 +3154,18 @@ void RtlInsightsPanelCoordinator::renderFsmGraphScene(
         }
     };
     const auto select = [this](const RtlInsightGraphElement& element) {
-        if (statusMessageHandler) {
+        renderGenericGraphInspector(
+            element.primary,
+            {QStringLiteral("Kind=%1").arg(element.kind),
+             QStringLiteral("To=%1").arg(element.secondary),
+             QStringLiteral("Detail=%1").arg(element.detail),
+             QStringLiteral("Location=%1:%2")
+                 .arg(element.codeLink.fileDisplayName,
+                      element.codeLink.lineDisplayName)});
+        if (statusMessageHandler)
             statusMessageHandler(QStringLiteral("%1: %2")
                                      .arg(element.kind, element.primary),
                                  1200);
-        }
     };
 
     QRectF bounds;
@@ -2377,6 +3191,28 @@ void RtlInsightsPanelCoordinator::renderFsmGraphScene(
     }
     insightsGraphScene->setSceneRect(bounds);
     insightsGraphView->fitRect(bounds, Qt::KeepAspectRatio);
+    if (!report.graphs.isEmpty()) {
+        const FsmGraph& firstGraph = report.graphs.first();
+        if (stateTransitionSignalCombo) {
+            QSignalBlocker blocker(stateTransitionSignalCombo);
+            stateTransitionSignalCombo->clear();
+            stateTransitionSignalCombo->addItem(
+                firstGraph.nextStateSignalDisplayName);
+        }
+        if (stateTransitionCurrentCombo) {
+            QSignalBlocker blocker(stateTransitionCurrentCombo);
+            stateTransitionCurrentCombo->clear();
+            stateTransitionCurrentCombo->addItem(
+                firstGraph.stateRegisterDisplayName);
+        }
+        if (stateTransitionNextCombo) {
+            QSignalBlocker blocker(stateTransitionNextCombo);
+            stateTransitionNextCombo->clear();
+            stateTransitionNextCombo->addItem(
+                firstGraph.nextStateSignalDisplayName);
+        }
+        populateFsmTransitionsTable(firstGraph);
+    }
     applyGraphSearchHighlight();
 }
 
@@ -2386,6 +3222,9 @@ void RtlInsightsPanelCoordinator::renderModuleBlockDiagramScene(
     showGraphSurface();
     if (!insightsGraphScene || !insightsGraphView)
         return;
+    configureGraphToolbarForMode(QStringLiteral("module-block"));
+    clearGraphDetails();
+    currentModuleBlockReport = report;
     insightsGraphScene->clear();
     insightsGraphView->resetView();
 
@@ -2396,6 +3235,17 @@ void RtlInsightsPanelCoordinator::renderModuleBlockDiagramScene(
                 : report.groupDisplayName,
             report.notFoundReasonDisplayName);
         return;
+    }
+    if (moduleBlockTopCombo) {
+        QSignalBlocker blocker(moduleBlockTopCombo);
+        moduleBlockTopCombo->clear();
+        for (const ModuleBlockDiagramNode& node : report.nodes) {
+            if (node.unresolved)
+                continue;
+            moduleBlockTopCombo->addItem(node.moduleDisplayName,
+                                         node.nodeId);
+        }
+        moduleBlockTopCombo->setCurrentText(report.root.moduleDisplayName);
     }
 
     const QFont font = insightsGraphView->font();
@@ -2421,11 +3271,17 @@ void RtlInsightsPanelCoordinator::renderModuleBlockDiagramScene(
         }
     };
     const auto select = [this](const RtlInsightGraphElement& element) {
-        if (statusMessageHandler) {
+        renderGenericGraphInspector(
+            element.primary,
+            {QStringLiteral("Kind=%1").arg(element.kind),
+             QStringLiteral("Detail=%1").arg(element.detail),
+             QStringLiteral("Location=%1:%2")
+                 .arg(element.codeLink.fileDisplayName,
+                      element.codeLink.lineDisplayName)});
+        if (statusMessageHandler)
             statusMessageHandler(QStringLiteral("%1: %2")
                                      .arg(element.kind, element.primary),
                                  1200);
-        }
     };
 
     auto addNode = [&](const ModuleBlockDiagramNode& node,
@@ -2463,9 +3319,12 @@ void RtlInsightsPanelCoordinator::renderModuleBlockDiagramScene(
                         : InsightVisualStyle::roleColor(
                               InsightVisualRole::Port)),
             font);
-        item->setZValue(root ? 0.0 : 10.0);
+        item->setZValue(root ? 0.0 : 5.0 + node.depth * 10.0);
+        item->setData(kGraphNodeIdRole, node.nodeId);
         item->navigateHandler = navigate;
-        item->selectHandler = select;
+        item->selectHandler = [this, node](const RtlInsightGraphElement&) {
+            selectModuleBlockNode(node.nodeId, false, true);
+        };
         insightsGraphScene->addItem(item);
         return item;
     };
@@ -2518,12 +3377,22 @@ void RtlInsightsPanelCoordinator::renderModuleBlockDiagramScene(
 
     QHash<int, ModuleBlockDiagramNode> nodeById;
     QHash<int, QList<ModuleBlockDiagramNode>> childrenByParent;
-    int maxDepth = 0;
+    QSet<int> visibleNodeIds;
+    visibleNodeIds.insert(report.root.nodeId);
+    const bool showUnresolved =
+        !moduleBlockShowUnresolvedCheck
+        || moduleBlockShowUnresolvedCheck->isChecked();
     for (const ModuleBlockDiagramNode& node : report.nodes) {
         nodeById.insert(node.nodeId, node);
-        maxDepth = qMax(maxDepth, node.depth);
-        if (node.parentNodeId >= 0)
+        if (!node.unresolved || showUnresolved)
+            visibleNodeIds.insert(node.nodeId);
+    }
+    for (const ModuleBlockDiagramNode& node : report.nodes) {
+        if (node.parentNodeId >= 0
+            && visibleNodeIds.contains(node.nodeId)
+            && visibleNodeIds.contains(node.parentNodeId)) {
             childrenByParent[node.parentNodeId].append(node);
+        }
     }
     for (auto it = childrenByParent.begin(); it != childrenByParent.end(); ++it) {
         std::sort(it.value().begin(),
@@ -2536,60 +3405,62 @@ void RtlInsightsPanelCoordinator::renderModuleBlockDiagramScene(
                   });
     }
 
-    QHash<int, qreal> centerYByNodeId;
-    constexpr qreal columnSpacing = 300.0;
-    constexpr qreal rowSpacing = 122.0;
-    qreal nextLeafY = 0.0;
-    std::function<qreal(int)> assignTreeY = [&](int nodeId) -> qreal {
+    QHash<int, QRectF> rectByNodeId;
+    QHash<int, QSizeF> measuredSizeByNodeId;
+    constexpr qreal childGap = 18.0;
+    constexpr qreal childInset = 28.0;
+    constexpr qreal titleBand = 64.0;
+    std::function<QSizeF(int)> measureNode = [&](int nodeId) -> QSizeF {
+        if (measuredSizeByNodeId.contains(nodeId))
+            return measuredSizeByNodeId.value(nodeId);
         const QList<ModuleBlockDiagramNode> children =
             childrenByParent.value(nodeId);
-        if (children.isEmpty()) {
-            const qreal y = nextLeafY;
-            nextLeafY += rowSpacing;
-            centerYByNodeId.insert(nodeId, y);
-            return y;
-        }
-
-        qreal firstChildY = 0.0;
-        qreal lastChildY = 0.0;
-        bool haveChild = false;
-        for (const ModuleBlockDiagramNode& child : children) {
-            const qreal childY = assignTreeY(child.nodeId);
-            if (!haveChild) {
-                firstChildY = childY;
-                haveChild = true;
+        QSizeF size(kInsightNodeWidth + 44.0, kInsightNodeHeight + 18.0);
+        if (!children.isEmpty()) {
+            qreal childWidth = 0.0;
+            qreal childHeight = 0.0;
+            for (const ModuleBlockDiagramNode& child : children) {
+                const QSizeF measured = measureNode(child.nodeId);
+                childWidth = qMax(childWidth, measured.width());
+                childHeight += measured.height();
+                if (child.nodeId != children.last().nodeId)
+                    childHeight += childGap;
             }
-            lastChildY = childY;
+            size.setWidth(qMax<qreal>(kInsightNodeWidth + 130.0,
+                                      childWidth + childInset * 2.0));
+            size.setHeight(qMax<qreal>(kInsightNodeHeight + 96.0,
+                                       titleBand + childHeight + childInset));
         }
-        const qreal y = (firstChildY + lastChildY) / 2.0;
-        centerYByNodeId.insert(nodeId, y);
-        return y;
+        if (nodeId == report.root.nodeId) {
+            size.setWidth(qMax<qreal>(size.width(), 720.0));
+            size.setHeight(qMax<qreal>(size.height(), 360.0));
+        }
+        measuredSizeByNodeId.insert(nodeId, size);
+        return size;
     };
-    assignTreeY(report.root.nodeId);
+    const QSizeF rootSize = measureNode(report.root.nodeId);
+    std::function<void(int, QPointF)> placeNode =
+        [&](int nodeId, QPointF topLeft) {
+            const QSizeF size = measuredSizeByNodeId.value(nodeId);
+            const QRectF rect(topLeft, size);
+            rectByNodeId.insert(nodeId, rect);
+            qreal childY = rect.top() + titleBand;
+            for (const ModuleBlockDiagramNode& child :
+                 childrenByParent.value(nodeId)) {
+                const QSizeF childSize =
+                    measuredSizeByNodeId.value(child.nodeId);
+                const QPointF childTopLeft(
+                    rect.left() + childInset,
+                    childY);
+                placeNode(child.nodeId, childTopLeft);
+                childY += childSize.height() + childGap;
+            }
+        };
+    const QPointF rootTopLeft(-rootSize.width() / 2.0,
+                              -rootSize.height() / 2.0);
+    placeNode(report.root.nodeId, rootTopLeft);
 
-    QHash<int, QRectF> rectByNodeId;
-    QRectF childBounds;
-    for (const ModuleBlockDiagramNode& node : report.nodes) {
-        if (node.nodeId == report.root.nodeId)
-            continue;
-        const qreal x = (node.depth - 1) * columnSpacing;
-        const QRectF rect = insightNodeRectAt(x,
-                                              centerYByNodeId.value(node.nodeId));
-        rectByNodeId.insert(node.nodeId, rect);
-        childBounds = childBounds.isNull() ? rect : childBounds.united(rect);
-    }
-
-    QRectF rootRect;
-    if (childBounds.isNull()) {
-        rootRect = QRectF(-320.0, -180.0, 640.0, 360.0);
-    } else {
-        rootRect = childBounds.adjusted(-130.0, -120.0, 130.0, 95.0);
-        rootRect = expandedToMinimum(rootRect,
-                                     qMax<qreal>(680.0,
-                                                 maxDepth * columnSpacing + 260.0),
-                                     360.0);
-    }
-    rectByNodeId.insert(report.root.nodeId, rootRect);
+    const QRectF rootRect = rectByNodeId.value(report.root.nodeId);
 
     QFont titleFont = InsightVisualStyle::titleFont(font);
     titleFont.setPointSize(qMax(10, titleFont.pointSize() + 1));
@@ -2635,7 +3506,9 @@ void RtlInsightsPanelCoordinator::renderModuleBlockDiagramScene(
                 false);
     }
 
-    if (report.edgeCount == 0) {
+    const bool hasVisibleChildren =
+        !childrenByParent.value(report.root.nodeId).isEmpty();
+    if (!hasVisibleChildren) {
         const QString noChildText =
             report.notFoundReasonDisplayName.isEmpty()
                 ? QStringLiteral("No child modules")
@@ -2653,6 +3526,8 @@ void RtlInsightsPanelCoordinator::renderModuleBlockDiagramScene(
         insightsGraphScene->itemsBoundingRect().adjusted(-80, -80, 80, 80);
     insightsGraphScene->setSceneRect(bounds);
     insightsGraphView->fitRect(bounds, Qt::KeepAspectRatio);
+    populateModuleBlockInstancesTable(report);
+    selectModuleBlockNode(report.root.nodeId, false, false);
     applyGraphSearchHighlight();
 }
 
@@ -3123,6 +3998,8 @@ void RtlInsightsPanelCoordinator::showModuleBlockDiagram()
         ModuleBlockDiagramQuery query;
         query.fileName = currentFileName;
         query.moduleName = currentModuleName;
+        if (moduleBlockDepthSpin)
+            query.maxDepth = moduleBlockDepthSpin->value();
         report = ModuleBlockDiagramService::getInstance()
             ->buildModuleBlockDiagram(query);
     } catch (const std::exception& error) {

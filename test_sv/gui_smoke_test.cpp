@@ -8298,7 +8298,7 @@ int main(int argc, char** argv)
                     && laneItem->toolTip(0).contains(
                         QStringLiteral("activity: assign 1/comb 1/seq 1"));
             }
-            if (name == QStringLiteral("Waveform Trace"))
+            if (name == QStringLiteral("Symbolic Waveform Preview"))
                 sawWaveformTrace = true;
             if (name == QStringLiteral("q")) {
                 waveQLaneItem = laneItem;
@@ -8364,7 +8364,7 @@ int main(int argc, char** argv)
     expectBool("wave preview renders activity mix summary",
                waveTree && sawWaveActivityMix,
                true);
-    expectBool("wave preview renders local waveform trace",
+    expectBool("wave preview renders symbolic waveform preview",
                waveTree && sawWaveformTrace,
                true);
     const QString waveQLaneTooltip =
@@ -8461,7 +8461,7 @@ int main(int argc, char** argv)
                    && waveSummary->text().contains(
                        QStringLiteral("always_comb lines"))
                    && waveSummary->text().contains(
-                       QStringLiteral("local waveform")),
+                       QStringLiteral("symbolic preview")),
                true);
     if (waveEditor) {
         QTextCursor clearScopeCursor(waveEditor->document());

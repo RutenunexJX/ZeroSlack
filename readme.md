@@ -189,7 +189,9 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
   when not in an `always` block, the selected/current module. The v2 panel shell
   uses the shared title/summary/canvas styling, shows explicit unsupported or
   empty-scope reasons, and keeps lane/event selection plus double-click source
-  navigation for recognized assignments.
+  navigation for recognized assignments. The current toolbar and summary copy
+  label these reports as preview-only / symbolic / no-testbench output; the
+  panel does not run Vivado, import waveform databases, or simulate RTL.
 - RTL Insights `FSM Graph` renders `FsmGraphService` reports as an interactive
   graph, not a tree table. FSM candidates must have states and parsed
   case-derived transitions, so ordinary enum/register declarations such as
@@ -203,8 +205,11 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
   requests into selected next-state graph reports by filtering existing
   `FsmGraphService` data, and RTL Insights renders those reports as a v2
   interactive graph on the shared canvas. State/register/signal nodes and
-  transition edges are selectable/search-highlightable, and double-clicking a
-  graph element follows its carried source link.
+  transition edges are selectable/search-highlightable, the top toolbar exposes
+  signal/current/next selectors plus reset/error/unreachable visibility
+  toggles, the right inspector shows selected graph metadata, the transition
+  table lists from/to/condition/source rows, and double-clicking a graph element
+  follows its carried source link.
 - Module Block Diagram renders in RTL Insights from the service-owned
   `ModuleBlockDiagramReport`. The current UI entry points are the RTL Insights
   `Module Block Diagram` action for the active module and the editor source
@@ -217,6 +222,12 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
   types remain visible as blackbox nodes with an explicit reason, and
   containment edges carry instance metadata. Module and instance graph elements
   are selectable; mouse wheel and `-` / `Fit` / `+` controls zoom the canvas.
+  The current toolbar exposes top selection, search, Set from selection, Fit,
+  depth, Collapse packages, Show unresolved, layout, and a small more menu.
+  The right inspector reports selected/type/definition/parent/children/status/
+  location data and only enables actions backed by existing navigation or
+  focus/re-root behavior. The instances table lists instance/module/parent/file/
+  status and selecting a row syncs the graph selection.
   Double-clicking a root module follows the module definition link; child
   modules jump to the instance declaration and then refresh the diagram around
   the jumped module so its children remain visible. Unresolved blackbox nodes
@@ -666,6 +677,17 @@ Do not add unlisted long-term goals without explicit user approval.
   `full_feature_audit_test`, and `jump_test` compile/link; focused CTest runs
   passed. Regression coverage should stay in compact fixtures and GUI smoke,
   not in a broad corpus audit.
+- Latest RTL Insight core-view modernization pass: Module Block Diagram now has
+  reference-aligned toolbar/inspector/instances-table structure and nested
+  module-only blocks; State Transition Graph keeps structural FSM role gating
+  and adds signal/current/next controls, inspector, and transition table; Wave
+  Preview labels its static output as symbolic preview-only/no-testbench and
+  adds scope/clock/reset/filter/lane controls. Debug verification passed:
+  `cmake --build build_verify2 --target completion_test relationship_test
+  gui_smoke_test insight_visual_style_test signal_usage_hotspot_panel_test`;
+  `ctest --test-dir build_verify2 -R
+  "^(completion_test|relationship_test|gui_smoke_test|insight_visual_style_test|signal_usage_hotspot_panel_test)$"
+  --output-on-failure`; `git diff --check`.
 - Latest acceptance baseline repair: `completion_test` source-symbol context
   menu assertions now cover all five actions including `ShowModuleBlockDiagram`.
   Release `ctest -R "^completion_test$" --output-on-failure` and

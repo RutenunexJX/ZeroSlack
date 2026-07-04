@@ -949,6 +949,9 @@ First milestones:
 - M9.3 UI polish for sketch readability
   (complete: canvas legend plus Scope/Legend overview rows make scoped
   sketches easier to interpret without adding simulator behavior)
+- M9.4 preview-only controls and wording
+  (complete: scope/clock/reset/filter/lane controls plus symbolic/no-testbench
+  labels make the boundary explicit without adding simulation)
 
 M9.1 implementation constraints:
 
@@ -1016,6 +1019,18 @@ M9.3 implementation status:
   "^completion_test$"` and `ctest -R "^relationship_test$"` passed.
   `gui_smoke_test` was not launched.
 
+M9.4 implementation status:
+
+- Complete: `WavePreviewPanelCoordinator` adds scope, clock, reset, lane filter,
+  assign/condition/state/source lane controls, and preview-only/no-testbench
+  wording in the summary, legend, and overview rows.
+- Complete: coverage verifies selected module/always static lane/event
+  generation and includes the larger `cpld_preproc.sv` fixture without
+  modifying user RTL files.
+- Verification: Debug `completion_test`, `relationship_test`,
+  `gui_smoke_test`, `insight_visual_style_test`, and
+  `signal_usage_hotspot_panel_test` targets compile/link; focused CTest passed.
+
 ### 10. State Transition Graph
 
 Goal: show state transition graph only for selected symbols that structural FSM
@@ -1043,6 +1058,10 @@ First milestones:
   (complete: RTL Insights renders the service-owned State Transition Graph
   report as an interactive graph; double-click navigation follows graph element
   source links)
+- M10.4 panel controls, inspector, and transition table
+  (complete: top signal/current/next controls, visibility toggles, selected
+  metadata inspector, and transitions table are rendered from existing report
+  data while structural role gating remains unchanged)
 
 M10.1 implementation constraints:
 
@@ -1115,6 +1134,20 @@ M10.3 implementation status:
   "^relationship_test$"` and `ctest -R "^completion_test$"` passed.
   `gui_smoke_test` was not launched.
 
+M10.4 implementation status:
+
+- Complete: State Transition Graph and FSM graph surfaces share the RTL
+  Insights graph toolbar/inspector/table structure where applicable.
+- Complete: State Transition Graph populates signal/current/next controls,
+  reset/error/unreachable toggles, selected graph metadata, and a transitions
+  table from the existing service report.
+- Complete: the new regression fixture rejects `cs`/`ns` names when no
+  structural state-register update exists, so names remain neither necessary
+  nor sufficient.
+- Verification: Debug `completion_test`, `relationship_test`,
+  `gui_smoke_test`, `insight_visual_style_test`, and
+  `signal_usage_hotspot_panel_test` targets compile/link; focused CTest passed.
+
 ### 11. Module Block Diagram
 
 Goal: show module containment as a block diagram from a selected module.
@@ -1144,6 +1177,10 @@ First milestones:
   (complete: root modules navigate to definitions, child instances navigate to
   instance declarations, and resolved children drill into their own module
   diagram)
+- M11.4 product-shape panel controls and inspector/table
+  (complete: toolbar controls, nested block rendering, right inspector, and
+  bottom instances table are connected to the service report and selection
+  model)
 
 M11.1 implementation constraints:
 
@@ -1234,6 +1271,23 @@ M11.3 implementation status:
   `gui_smoke_test`, `full_feature_audit_test`, and `jump_test` targets
   compile/link; focused CTest runs passed. Future Module Block Diagram issues
   should be captured as compact fixtures rather than broad corpus sweeps.
+
+M11.4 implementation status:
+
+- Complete: Module Block Diagram toolbar includes top selection, search, Set
+  from selection, Fit, depth, Collapse packages, Show unresolved, layout, and
+  more-menu controls.
+- Complete: the graph renders module/instance package relationships as nested
+  blocks and keeps unresolved children visible with a distinct blackbox state.
+- Complete: the right inspector shows selected/type/definition/parent/children/
+  unresolved/status/location/workspace/path/depth data and enables only wired
+  jump/focus/set-top actions.
+- Complete: the instances table lists instance/module/parent/file/status; row
+  selection syncs the graph node and double-click uses the existing navigation
+  path.
+- Verification: Debug `completion_test`, `relationship_test`,
+  `gui_smoke_test`, `insight_visual_style_test`, and
+  `signal_usage_hotspot_panel_test` targets compile/link; focused CTest passed.
 
 ### 12. Workspace Project Configuration And Diagnostics Workflow
 
@@ -1697,6 +1751,30 @@ Latest acceptance baseline repair:
 - Release verification passed: `ctest -R "^completion_test$"
   --output-on-failure` and `ctest -R "^relationship_test$"
   --output-on-failure`.
+
+Latest RTL Insight core view modernization:
+
+- Scope: Module Block Diagram, State Transition Graph, and Wave Preview panel
+  presentation/behavior only; no new simulator, Vivado integration, QML/WebView,
+  or broad FSM engine rewrite.
+- Module Block Diagram now exposes a reference-aligned toolbar with top
+  selection, Set from selection, Fit, depth, Collapse packages, Show unresolved,
+  layout, and more-menu actions. The canvas renders nested module-only blocks,
+  and the right inspector plus instances table sync selection and route only
+  real jump/focus/re-root actions.
+- State Transition Graph keeps structural FSM role gating. Regression coverage
+  verifies that `cs`/`ns` names alone do not create a graph, while the UI now
+  adds signal/current/next controls, visibility toggles, an inspector, and a
+  transitions table.
+- Wave Preview remains preview-only/static. The panel now labels output as
+  symbolic/no-testbench, adds scope/clock/reset/filter/lane controls, and keeps
+  coverage for selected module/always preview generation including
+  `test_sv/new/elec_phy_import/phy/cpld_preproc.sv`.
+- Debug verification passed: `cmake --build build_verify2 --target
+  completion_test relationship_test gui_smoke_test insight_visual_style_test
+  signal_usage_hotspot_panel_test`; `ctest --test-dir build_verify2 -R
+  "^(completion_test|relationship_test|gui_smoke_test|insight_visual_style_test|signal_usage_hotspot_panel_test)$"
+  --output-on-failure`; `git diff --check`.
 
 Latest RTL Insights FSM graph repair:
 

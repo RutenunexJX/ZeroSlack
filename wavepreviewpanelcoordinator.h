@@ -9,6 +9,9 @@
 #include <functional>
 
 class QLabel;
+class QCheckBox;
+class QComboBox;
+class QLineEdit;
 class QTimer;
 class QTreeWidget;
 class QTreeWidgetItem;
@@ -37,6 +40,14 @@ private:
     QDockWidget* previewDock = nullptr;
     QLabel* titleLabel = nullptr;
     QLabel* summaryLabel = nullptr;
+    QLabel* scopeLabel = nullptr;
+    QComboBox* clockCombo = nullptr;
+    QComboBox* resetCombo = nullptr;
+    QLineEdit* laneFilterEdit = nullptr;
+    QCheckBox* assignsCheck = nullptr;
+    QCheckBox* conditionsCheck = nullptr;
+    QCheckBox* stateLabelsCheck = nullptr;
+    QCheckBox* sourceLinesCheck = nullptr;
     QWidget* previewCanvas = nullptr;
     QTreeWidget* previewTree = nullptr;
     QTimer* refreshTimer = nullptr;
@@ -49,6 +60,9 @@ private:
     bool pendingDirty = false;
     bool pendingRefresh = false;
     QString currentSummaryText;
+    WavePreviewReport currentReport;
+    bool currentDirty = false;
+    QString laneFilterText;
 
     std::function<void(const QString&, int, int)> navigationHandler;
 

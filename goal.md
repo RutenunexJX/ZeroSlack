@@ -28,8 +28,8 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
 
 ## Current Goal State
 
-Current milestone: App Shell modernization is complete on top of the UI theme
-and graph foundation. The current UI route keeps Qt Widgets, uses
+Current milestone: RTL Insight core-view modernization is complete on top of
+the UI theme and graph foundation. The current UI route keeps Qt Widgets, uses
 `InsightVisualStyle` as the global theme layer, and uses `InsightGraphView` as
 the shared graph view interaction layer.
 
@@ -59,6 +59,12 @@ Current baseline highlights:
   shared title/toolbar/canvas styling, graph search highlighting, visible
   empty/failure reasons, hover/selected graph feedback, and retained source
   navigation callbacks.
+- Latest RTL Insight core-view modernization is complete: Module Block Diagram
+  now has reference-aligned toolbar controls, nested module-only blocks, a right
+  inspector, and an instances table; State Transition Graph keeps structural
+  role gating while exposing signal/current/next controls, an inspector, and a
+  transitions table; Wave Preview labels output as symbolic preview-only/no
+  testbench and adds scope/clock/reset/filter/lane controls without simulation.
 - Signal Usage Hotspot is available from the editor source-symbol context action
   `Signal Usage Hotspot` and the RTL Insights `Usage Hotspot` action. It renders
   Track lanes from report items, Matrix heat cells from report summaries, role
@@ -104,6 +110,14 @@ Current baseline highlights:
 
 Status history:
 
+- RTL Insight core-view modernization is complete. Module Block Diagram row
+  selection syncs graph and inspector state; State Transition regression
+  coverage rejects `cs`/`ns` names without a structural current<=next FSM pair;
+  Wave Preview coverage includes selected module/always static lane/event
+  generation and the larger `cpld_preproc.sv` fixture without modifying user
+  RTL files. Debug verification passed for `completion_test`,
+  `relationship_test`, `gui_smoke_test`, `insight_visual_style_test`,
+  `signal_usage_hotspot_panel_test`, plus `git diff --check`.
 - Package/import semantic visibility repair is complete. `PackageVisible`
   package parameters, localparams, typedefs, enums, and structs are no longer
   treated as globally visible for unqualified lookup. Completion, definition,

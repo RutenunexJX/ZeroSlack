@@ -3,14 +3,18 @@
 #include "insightvisualstyle.h"
 #include "semanticindex.h"
 
+#include <QCheckBox>
+#include <QComboBox>
 #include <QFileInfo>
 #include <QFont>
 #include <QFontMetrics>
 #include <QHeaderView>
 #include <QLabel>
+#include <QLineEdit>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QSizePolicy>
+#include <QSignalBlocker>
 #include <QTimer>
 #include <QToolTip>
 #include <QTreeWidget>
@@ -145,7 +149,7 @@ protected:
                 !report.warnings.isEmpty()
                     ? report.warnings.first()
                     : QStringLiteral(
-                          "No local waveform: no assign/always events were recognized for this scope.");
+                          "No symbolic preview: no assign/always events were recognized for this scope.");
             painter.drawText(canvasRect,
                              Qt::AlignCenter | Qt::TextWordWrap,
                              reason);
@@ -452,7 +456,7 @@ private:
                                qMax(40, canvasRect.right() - x - 8),
                                18),
                          Qt::AlignVCenter | Qt::AlignLeft,
-                         QStringLiteral("local waveform sketch"));
+                         QStringLiteral("symbolic preview only"));
         painter.restore();
     }
 
@@ -631,8 +635,8 @@ QColor colorForAssignmentKind(WavePreviewAssignmentKind kind)
 QString sketchLegendText(const WavePreviewReport& report)
 {
     if (report.trace.isValid())
-        return QStringLiteral("trace lanes show sampled local values");
-    return QStringLiteral("assign = continuous, blocking = '=', nonblocking = '<='");
+        return QStringLiteral("symbolic preview only - no testbench/simulator");
+    return QStringLiteral("code sketch only - assign, blocking, nonblocking");
 }
 
 QString blockKindText(WavePreviewBlockKind kind)
@@ -865,7 +869,7 @@ QString reportSummaryText(const WavePreviewReport& report, bool dirty)
             ? QStringLiteral("%1 scope, ").arg(report.scopeLabel)
             : QString();
     if (report.trace.isValid()) {
-        return QStringLiteral("%1local waveform: %2 signals, %3 cycles, %4 lanes, %5 events, activity %6%7%8%9")
+        return QStringLiteral("%1symbolic preview-only waveform, no testbench: %2 signals, %3 cycles, %4 lanes, %5 events, activity %6%7%8%9")
             .arg(scopeText)
             .arg(report.trace.traceSignals.size())
             .arg(report.trace.cycleCount)
@@ -876,7 +880,7 @@ QString reportSummaryText(const WavePreviewReport& report, bool dirty)
             .arg(warningText)
             .arg(dirty ? QStringLiteral(" - live dirty buffer") : QString());
     }
-    return QStringLiteral("%1code sketch, not simulated waveform: %2 lanes, %3 events, %4 blocks, %5 clock/reset groups, activity %6%7%8%9")
+    return QStringLiteral("%1symbolic code preview, not simulated waveform: %2 lanes, %3 events, %4 blocks, %5 clock/reset groups, activity %6%7%8%9")
         .arg(scopeText)
         .arg(report.lanes.size())
         .arg(report.assignmentCount)
@@ -1100,6 +1104,42 @@ void setItemBold(QTreeWidgetItem* item, int column = 0)
     item->setFont(column, font);
 }
 
+bool laneMatchesFilter(const WavePreviewLane& lane, const QString& filter)
+{
+    if (filter.trimmed().isEmpty())
+        return true;
+    const QString needle = filter.trimmed();
+    QStringList haystack{
+        lane.signalName,
+        lane.context.label(),
+        lane.context.declarationText,
+        laneSummaryText(lane.summary),
+        laneGuardText(lane.summary),
+        laneWarningText(lane.summary)
+    };
+    for (const WavePreviewAssignment& assignment : lane.assignments) {
+        haystack.append(assignment.expression);
+        haystack.append(assignment.guardText);
+        haystack.append(assignment.trigger);
+        haystack.append(assignment.sourceSignals);
+    }
+    return haystack.join(QLatin1Char(' '))
+        .contains(needle, Qt::CaseInsensitive);
+}
+
+bool traceSignalMatchesFilter(const WavePreviewTraceSignal& signal,
+                              const QString& filter)
+{
+    if (filter.trimmed().isEmpty())
+        return true;
+    const QString haystack =
+        QStringList{signal.signalName,
+                    signal.values.join(QStringLiteral(" ")),
+                    signal.clock ? QStringLiteral("clock") : QString()}
+            .join(QLatin1Char(' '));
+    return haystack.contains(filter.trimmed(), Qt::CaseInsensitive);
+}
+
 void addOverviewItems(QTreeWidget* tree,
                       const WavePreviewReport& report,
                       bool dirty)
@@ -1115,7 +1155,7 @@ void addOverviewItems(QTreeWidget* tree,
                            : QStringLiteral("full document"));
     scopeItem->setText(2,
                        report.trace.isValid()
-                           ? QStringLiteral("local waveform")
+                           ? QStringLiteral("symbolic preview")
                            : QStringLiteral("code sketch"));
     scopeItem->setText(3,
                        report.scoped
@@ -1144,7 +1184,7 @@ void addOverviewItems(QTreeWidget* tree,
     legendItem->setText(1, sketchLegendText(report));
     legendItem->setText(2, QStringLiteral("activity %1")
                               .arg(activitySummaryText(report.activitySummary)));
-    legendItem->setText(3, QStringLiteral("not simulation"));
+    legendItem->setText(3, QStringLiteral("preview only / no testbench"));
     legendItem->setText(4,
                         report.warnings.isEmpty()
                             ? QStringLiteral("-")
@@ -1181,6 +1221,48 @@ WavePreviewPanelCoordinator::WavePreviewPanelCoordinator(QWidget* parent)
         QStringLiteral("QLabel#wavePreviewSummary { color: %1; padding: 0 4px 3px 4px; }")
             .arg(InsightVisualStyle::theme().textSecondary.name()));
     layout->addWidget(summaryLabel);
+
+    auto* toolbarLayout = new QHBoxLayout;
+    toolbarLayout->setContentsMargins(0, 0, 0, 0);
+    toolbarLayout->setSpacing(6);
+    scopeLabel = new QLabel(QStringLiteral("Scope: full document"), panel);
+    scopeLabel->setObjectName(QStringLiteral("wavePreviewScopeLabel"));
+    scopeLabel->setStyleSheet(InsightVisualStyle::labelStyleSheet(
+        scopeLabel->objectName()));
+    clockCombo = new QComboBox(panel);
+    clockCombo->setObjectName(QStringLiteral("wavePreviewClockCombo"));
+    clockCombo->setMinimumWidth(116);
+    resetCombo = new QComboBox(panel);
+    resetCombo->setObjectName(QStringLiteral("wavePreviewResetCombo"));
+    resetCombo->setMinimumWidth(116);
+    laneFilterEdit = new QLineEdit(panel);
+    laneFilterEdit->setObjectName(QStringLiteral("wavePreviewLaneFilterEdit"));
+    laneFilterEdit->setPlaceholderText(QStringLiteral("Filter lanes"));
+    InsightVisualStyle::applySearchField(laneFilterEdit);
+    assignsCheck = new QCheckBox(QStringLiteral("Assigns"), panel);
+    assignsCheck->setObjectName(QStringLiteral("wavePreviewAssignsCheck"));
+    conditionsCheck = new QCheckBox(QStringLiteral("Conditions"), panel);
+    conditionsCheck->setObjectName(QStringLiteral("wavePreviewConditionsCheck"));
+    stateLabelsCheck = new QCheckBox(QStringLiteral("State labels"), panel);
+    stateLabelsCheck->setObjectName(QStringLiteral("wavePreviewStateLabelsCheck"));
+    sourceLinesCheck = new QCheckBox(QStringLiteral("Source lines"), panel);
+    sourceLinesCheck->setObjectName(QStringLiteral("wavePreviewSourceLinesCheck"));
+    for (QCheckBox* checkBox :
+         {assignsCheck, conditionsCheck, stateLabelsCheck, sourceLinesCheck}) {
+        checkBox->setChecked(true);
+        InsightVisualStyle::applySegmentedCheckBox(checkBox);
+    }
+    toolbarLayout->addWidget(scopeLabel);
+    toolbarLayout->addWidget(new QLabel(QStringLiteral("Clock:"), panel));
+    toolbarLayout->addWidget(clockCombo);
+    toolbarLayout->addWidget(new QLabel(QStringLiteral("Reset:"), panel));
+    toolbarLayout->addWidget(resetCombo);
+    toolbarLayout->addWidget(laneFilterEdit, 1);
+    toolbarLayout->addWidget(assignsCheck);
+    toolbarLayout->addWidget(conditionsCheck);
+    toolbarLayout->addWidget(stateLabelsCheck);
+    toolbarLayout->addWidget(sourceLinesCheck);
+    layout->addLayout(toolbarLayout);
 
     auto* canvas = new WavePreviewCanvas(panel);
     canvas->setNavigationHandler(
@@ -1256,6 +1338,15 @@ WavePreviewPanelCoordinator::WavePreviewPanelCoordinator(QWidget* parent)
                      previewTree,
                      [this](QTreeWidgetItem* item, int) {
                          navigateItem(item);
+                     });
+    QObject::connect(laneFilterEdit,
+                     &QLineEdit::textChanged,
+                     previewDock,
+                     [this](const QString& text) {
+                         laneFilterText = text.trimmed();
+                         renderReport(currentReport,
+                                      currentFileName,
+                                      currentDirty);
                      });
 }
 
@@ -1400,12 +1491,20 @@ void WavePreviewPanelCoordinator::renderDocumentNow(
 void WavePreviewPanelCoordinator::renderUnavailable(const QString& message)
 {
     clearQueuedRefresh();
+    currentReport = WavePreviewReport();
+    currentDirty = false;
     if (titleLabel)
         titleLabel->setText(QStringLiteral("Wave Preview"));
     if (summaryLabel) {
         currentSummaryText = message;
         summaryLabel->setText(message);
     }
+    if (scopeLabel)
+        scopeLabel->setText(QStringLiteral("Scope: unavailable"));
+    if (clockCombo)
+        clockCombo->clear();
+    if (resetCombo)
+        resetCombo->clear();
     if (auto* canvas = static_cast<WavePreviewCanvas*>(previewCanvas))
         canvas->clearReport();
     if (previewTree)
@@ -1420,6 +1519,8 @@ void WavePreviewPanelCoordinator::renderReport(
     if (!previewTree)
         return;
 
+    currentReport = report;
+    currentDirty = dirty;
     previewTree->clear();
     if (auto* canvas = static_cast<WavePreviewCanvas*>(previewCanvas))
         canvas->setReport(report, fileName);
@@ -1434,6 +1535,39 @@ void WavePreviewPanelCoordinator::renderReport(
     if (summaryLabel) {
         currentSummaryText = reportSummaryText(report, dirty);
         summaryLabel->setText(currentSummaryText);
+    }
+    if (scopeLabel) {
+        scopeLabel->setText(
+            QStringLiteral("Scope: %1")
+                .arg(report.scoped && !report.scopeLabel.isEmpty()
+                         ? report.scopeLabel
+                         : QStringLiteral("full document")));
+    }
+    if (clockCombo) {
+        QSignalBlocker blocker(clockCombo);
+        clockCombo->clear();
+        clockCombo->addItem(QStringLiteral("auto"));
+        for (const WavePreviewClockResetGroup& group :
+             report.clockResetGroups) {
+            for (const WavePreviewEdgeSignal& signal : group.clockEdgeSignals)
+                clockCombo->addItem(signal.label());
+            for (const QString& signal : group.clockSignals)
+                if (clockCombo->findText(signal) < 0)
+                    clockCombo->addItem(signal);
+        }
+    }
+    if (resetCombo) {
+        QSignalBlocker blocker(resetCombo);
+        resetCombo->clear();
+        resetCombo->addItem(QStringLiteral("auto"));
+        for (const WavePreviewClockResetGroup& group :
+             report.clockResetGroups) {
+            for (const WavePreviewEdgeSignal& signal : group.resetEdgeSignals)
+                resetCombo->addItem(signal.label());
+            for (const QString& signal : group.resetSignals)
+                if (resetCombo->findText(signal) < 0)
+                    resetCombo->addItem(signal);
+        }
     }
 
     addOverviewItems(previewTree, report, dirty);
@@ -1452,7 +1586,7 @@ void WavePreviewPanelCoordinator::renderReport(
 
     if (report.trace.isValid()) {
         auto* traceRoot = new QTreeWidgetItem(previewTree);
-        traceRoot->setText(0, QStringLiteral("Waveform Trace"));
+        traceRoot->setText(0, QStringLiteral("Symbolic Waveform Preview"));
         traceRoot->setText(1,
                            QStringLiteral("%1 cycles")
                                .arg(report.trace.cycleCount));
@@ -1461,16 +1595,18 @@ void WavePreviewPanelCoordinator::renderReport(
         traceRoot->setText(4,
                            QStringLiteral("%1 signals")
                                .arg(report.trace.traceSignals.size()));
-        traceRoot->setText(5, QStringLiteral("local waveform"));
+        traceRoot->setText(5, QStringLiteral("preview-only"));
         traceRoot->setText(6, QStringLiteral("-"));
         QFont traceFont = traceRoot->font(0);
         traceFont.setBold(true);
         traceRoot->setFont(0, traceFont);
         setItemTooltip(traceRoot,
-                       QStringLiteral("local waveform trace: %1 signals, %2 cycles")
+                       QStringLiteral("symbolic preview-only waveform: %1 signals, %2 cycles, no testbench")
                            .arg(report.trace.traceSignals.size())
                            .arg(report.trace.cycleCount));
         for (const WavePreviewTraceSignal& signal : report.trace.traceSignals) {
+            if (!traceSignalMatchesFilter(signal, laneFilterText))
+                continue;
             auto* signalItem = new QTreeWidgetItem(traceRoot);
             signalItem->setText(0, signal.signalName);
             signalItem->setText(1,
@@ -1481,7 +1617,7 @@ void WavePreviewPanelCoordinator::renderReport(
             signalItem->setText(3, QStringLiteral("-"));
             signalItem->setText(4,
                                 QStringLiteral("%1-bit").arg(signal.width));
-            signalItem->setText(5, QStringLiteral("trace"));
+            signalItem->setText(5, QStringLiteral("symbolic preview"));
             signalItem->setText(6, QStringLiteral("-"));
             setItemTooltip(
                 signalItem,
@@ -1584,6 +1720,8 @@ void WavePreviewPanelCoordinator::renderReport(
     }
 
     for (const WavePreviewLane& lane : report.lanes) {
+        if (!laneMatchesFilter(lane, laneFilterText))
+            continue;
         auto* laneItem = new QTreeWidgetItem(previewTree);
         laneItem->setText(0, lane.signalName);
         laneItem->setText(1, laneSummaryText(lane.summary));

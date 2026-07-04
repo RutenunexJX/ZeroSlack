@@ -2827,7 +2827,7 @@ int main(int argc, char** argv) {
                    && wavePreviewScopeItem->text(0) == QStringLiteral("Scope")
                    && wavePreviewScopeItem->text(1) == editorAlwaysScope.label
                    && (wavePreviewSketchType
-                           == QStringLiteral("local waveform")
+                           == QStringLiteral("symbolic preview")
                        || wavePreviewSketchType
                            == QStringLiteral("code sketch"))
                    && wavePreviewScopeItem->text(3)
@@ -2844,7 +2844,7 @@ int main(int argc, char** argv) {
                           == QStringLiteral("Legend")
                    && !wavePreviewLegendItem->text(1).isEmpty()
                    && wavePreviewLegendItem->text(3)
-                          == QStringLiteral("not simulation")
+                          == QStringLiteral("preview only / no testbench")
                    && wavePreviewLegendItem->text(5)
                           == QStringLiteral("readability"),
                true);
@@ -3510,6 +3510,30 @@ int main(int argc, char** argv) {
 
     const QString newProjectRoot =
         QFileInfo(path).dir().absoluteFilePath(QStringLiteral("new"));
+    const QString cpldPreprocPath =
+        QDir(newProjectRoot).absoluteFilePath(
+            QStringLiteral("elec_phy_import/phy/cpld_preproc.sv"));
+    QFile cpldPreprocFile(cpldPreprocPath);
+    const bool cpldPreprocOpened =
+        cpldPreprocFile.open(QIODevice::ReadOnly | QFile::Text);
+    expectBool("WavePreview cpld_preproc fixture opens",
+               cpldPreprocOpened,
+               true);
+    QString cpldPreprocInput;
+    if (cpldPreprocOpened) {
+        cpldPreprocInput = QTextStream(&cpldPreprocFile).readAll();
+        cpldPreprocFile.close();
+    }
+    const WavePreviewReport cpldPreprocReport =
+        WavePreviewService::getInstance()->previewForDocument(
+            {cpldPreprocPath, cpldPreprocInput});
+    expectBool("WavePreview cpld_preproc complex static preview",
+               cpldPreprocReport.available
+                   && cpldPreprocReport.blocks.size() >= 10
+                   && cpldPreprocReport.assignmentCount >= 20
+                   && cpldPreprocReport.lanes.size() >= 10,
+               true);
+
     QDirIterator waveProjectFiles(
         newProjectRoot,
         QStringList{QStringLiteral("*.v"),
