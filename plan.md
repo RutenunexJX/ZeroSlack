@@ -11,26 +11,32 @@ into an analyzer.
 
 ## Current Execution Baseline
 
-- Insight UI v2 convergence is complete for targeted regression coverage. The
-  accepted Signal Usage Hotspot v2 panel remains intact, and State Transition
-  Graph, Module Block Diagram, and Wave Preview now use the shared
-  `InsightVisualStyle` shell, canvas, empty/failure states, and selection
-  feedback without changing their service/report semantics.
+- Phase 1 and Phase 2 of the current UI route are complete for their first
+  consumers. `InsightVisualStyle` is the shared application theme layer, and
+  `InsightGraphView` is the reusable Qt Widgets graph view foundation for
+  canvas theme application, pan/drag, wheel zoom, fit, center, reset, optional
+  grid, and business-neutral mouse hooks.
 - Verification baseline for this repair is now focused regression plus GUI
   smoke: `completion_test`, `relationship_test`, `gui_smoke_test`,
   `jump_test`, and the lightweight `full_feature_audit_test` inventory.
 - Corpus audit is retired as an acceptance signal. GUI-found issues should be
   reduced to small fixtures in the focused tests instead of broad corpus
   sweeps.
-- No implementation milestone is active after the Insight UI v2 convergence
-  pass. Start the next milestone only from a new explicit scoped request.
-- Insight UI v2 visual foundation is established through shared
-  `InsightVisualStyle` Qt helpers. Signal Kernel Graph and Signal Usage Hotspot
-  consume these color, pen, font, panel, search, segmented-control, legend, and
-  heat helpers instead of adding panel-local palettes. State Transition Graph,
-  Module Block Diagram, and Wave Preview now also consume those helpers for
-  panel shell, canvas, toolbar/button, empty-state, hover, selected, and warning
-  feedback.
+- GraphCanvas connection status: Signal Kernel Graph uses `InsightGraphView`
+  for themed canvas, wheel zoom, pan, right-click preview, and double-click
+  navigation hooks. Signal Usage Hotspot uses it for Track and Matrix surfaces,
+  including track zoom/fitting/centering while preserving the existing layout
+  persistence. RTL Insights graph scenes and Wave Preview are not migrated yet.
+- The next scoped UI milestone should either migrate the remaining RTL
+  Insights graph surfaces to `InsightGraphView` or deepen the app shell using
+  the existing phase 1 tokens. Do not broaden either path into semantic
+  analysis, hotspot data, FSM discovery, module block extraction, or workspace
+  scanning.
+- Insight UI v2 visual foundation remains established through shared
+  `InsightVisualStyle` Qt helpers. Signal Kernel Graph, Signal Usage Hotspot,
+  State Transition Graph, Module Block Diagram, and Wave Preview consume these
+  color, pen, font, panel, search, segmented-control, legend, heat, shell, and
+  graph helpers instead of adding panel-local palettes.
 - Signal Usage Hotspot opens from the editor source-symbol context action
   `Signal Usage Hotspot` and from RTL Insights `Usage Hotspot`. Track mode uses
   report lanes/items with role-colored blocks; Matrix mode uses report matrix

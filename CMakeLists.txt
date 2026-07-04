@@ -158,6 +158,7 @@ set(ZEROSLACK_CORE_SOURCES
     globalcontrolservice.cpp
     hierarchyservice.cpp
     hierarchyservicetraversal.cpp
+    insightgraphview.cpp
     insightvisualstyle.cpp
     inlinecommandmode.cpp
     sourcenavigationservice.cpp
@@ -346,6 +347,7 @@ set(ZEROSLACK_CORE_SOURCES
     globalcontrolpanel.h
     globalcontrolservice.h
     hierarchyservice.h
+    insightgraphview.h
     insightvisualstyle.h
     inlinecommandmode.h
     sourcenavigationservice.h

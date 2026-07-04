@@ -10,7 +10,7 @@
 
 class QCheckBox;
 class QGraphicsScene;
-class QGraphicsView;
+class InsightGraphView;
 class QLabel;
 class QLineEdit;
 class QPushButton;
@@ -68,9 +68,9 @@ private:
     QSplitter* contentSplitter = nullptr;
     QStackedWidget* modeStack = nullptr;
     QGraphicsScene* trackScene = nullptr;
-    QGraphicsView* trackView = nullptr;
+    InsightGraphView* trackView = nullptr;
     QGraphicsScene* matrixScene = nullptr;
-    QGraphicsView* matrixView = nullptr;
+    InsightGraphView* matrixView = nullptr;
     QTreeWidget* matrixItemsTree = nullptr;
     QLabel* inspectorTitleLabel = nullptr;
     QLabel* inspectorDetailLabel = nullptr;

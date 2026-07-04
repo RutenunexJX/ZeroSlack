@@ -31,27 +31,26 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
 
 ## Current Product Baseline
 
-- Current audit milestone: Insight UI v2 convergence is complete for the
-  legacy State Transition Graph, Module Block Diagram, and Wave Preview panels.
-  Signal Usage Hotspot v2 remains the accepted baseline and still provides the
-  dual Track/Matrix panel with source reveal/flash from usage items.
+- Current UI route: keep Qt Widgets, evolve the existing `InsightVisualStyle`
+  into the application theme layer, and reuse a shared `InsightGraphView`
+  foundation for graph surfaces. Phase 1 theme foundation and Phase 2 graph
+  view foundation are complete for the first consumers.
 - Corpus audit is retired as an acceptance signal. The current strategy is
   targeted regression fixtures plus GUI smoke and feature-specific tests:
   `completion_test`, `relationship_test`, `gui_smoke_test`, `jump_test`, and
   the lightweight `full_feature_audit_test` inventory.
-- Current handoff state: no implementation milestone is active. The latest
-  completed work is Signal Usage Hotspot v2 integration on top of the service
-  and Insight UI v2 branches. The current baseline also includes import-aware
-  SystemVerilog package symbol visibility, user template JSON usage, explicit
-  header/include and package import commands, semantic `;m` module
-  instantiation Slot Mode, Macro / Define semantics, Package Tools phase 1,
-  References / Relationships workflow closure, and Fold Shelf
-  persistence/restore/management.
-- Insight UI v2 visual foundation is available through `InsightVisualStyle`.
-  Signal Kernel Graph, Signal Usage Hotspot, State Transition Graph, Module
-  Block Diagram, and Wave Preview now share the light canvas/panel palette,
-  title/toolbar treatment, empty/failure feedback, hover/selected graph states,
-  and source-navigation status behavior. Hotspot opens from the editor
+- Current handoff state: `InsightGraphView` now centralizes graph background
+  styling, pan/drag mode, wheel zoom, zoom range, fit, center, reset, optional
+  grid, empty-canvas selection clearing, zoom-change callbacks, and
+  press/double-click hooks. Signal Kernel Graph and Signal Usage Hotspot
+  track/matrix views are connected. RTL Insights shared graph scenes
+  (State Transition Graph, Module Block Diagram, signal journey/clock reset)
+  and Wave Preview remain future migration candidates.
+- Insight UI v2 remains the accepted panel baseline. Signal Kernel Graph,
+  Signal Usage Hotspot, State Transition Graph, Module Block Diagram, and Wave
+  Preview still share the light canvas/panel palette, title/toolbar treatment,
+  empty/failure feedback, hover/selected graph states, and source-navigation
+  status behavior through `InsightVisualStyle`. Hotspot opens from the editor
   source-symbol context action `Signal Usage Hotspot` or the RTL Insights
   `Usage Hotspot` action. Track mode groups usage blocks by module/file lane
   with role colors; Matrix mode summarizes module/file by role with heat cells

@@ -3,6 +3,7 @@
 #include "codepreviewservice.h"
 #include "documentmodel.h"
 #include "editorhoverpopup.h"
+#include "insightgraphview.h"
 #include "insightvisualstyle.h"
 
 #include <QBrush>
@@ -20,11 +21,9 @@
 #include <QGraphicsSceneMouseEvent>
 #include <QGraphicsSimpleTextItem>
 #include <QGraphicsTextItem>
-#include <QGraphicsView>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
-#include <QMouseEvent>
 #include <QPainter>
 #include <QPen>
 #include <QPoint>
@@ -32,7 +31,6 @@
 #include <QSignalBlocker>
 #include <QTimer>
 #include <QVBoxLayout>
-#include <QWheelEvent>
 #include <QWidget>
 
 #include <cmath>
@@ -46,55 +44,6 @@ constexpr qreal kVerticalSpacing = 92.0;
 constexpr qreal kFanoutGroupCardWidth = 244.0;
 constexpr qreal kFanoutGroupCardHeight = 58.0;
 constexpr double kPi = 3.14159265358979323846;
-
-class SignalKernelGraphView : public QGraphicsView
-{
-public:
-    using QGraphicsView::QGraphicsView;
-    std::function<bool(const QPoint&,
-                       Qt::MouseButton,
-                       Qt::KeyboardModifiers)> pressHandler;
-    std::function<bool(const QPoint&)> doubleClickHandler;
-
-protected:
-    void mousePressEvent(QMouseEvent* event) override
-    {
-        if (event
-            && pressHandler
-            && pressHandler(event->pos(), event->button(), event->modifiers())) {
-            event->accept();
-            return;
-        }
-        QGraphicsView::mousePressEvent(event);
-    }
-
-    void mouseDoubleClickEvent(QMouseEvent* event) override
-    {
-        if (event
-            && event->button() == Qt::LeftButton
-            && doubleClickHandler
-            && doubleClickHandler(event->pos())) {
-            event->accept();
-            return;
-        }
-        QGraphicsView::mouseDoubleClickEvent(event);
-    }
-
-    void wheelEvent(QWheelEvent* event) override
-    {
-        if (!event)
-            return;
-        const qreal currentScale = transform().m11();
-        const qreal factor = event->angleDelta().y() > 0 ? 1.15 : 1.0 / 1.15;
-        const qreal nextScale = currentScale * factor;
-        if (nextScale < 0.18 || nextScale > 4.5) {
-            event->accept();
-            return;
-        }
-        scale(factor, factor);
-        event->accept();
-    }
-};
 
 QString elidedText(const QString& text, const QFont& font, int width)
 {
@@ -789,27 +738,13 @@ SignalKernelGraphPanelCoordinator::SignalKernelGraphPanelCoordinator(
                      });
 
     graphScene = new QGraphicsScene(panel);
-    graphView = new SignalKernelGraphView(graphScene, panel);
+    graphView = new InsightGraphView(graphScene, panel);
     graphView->setObjectName(QStringLiteral("signalKernelGraphView"));
-    graphView->setRenderHint(QPainter::Antialiasing, true);
-    graphView->setDragMode(QGraphicsView::ScrollHandDrag);
-    graphView->setFocusPolicy(Qt::StrongFocus);
-    graphView->setTransformationAnchor(QGraphicsView::AnchorUnderMouse);
-    graphView->setResizeAnchor(QGraphicsView::AnchorViewCenter);
-    graphView->setBackgroundBrush(InsightVisualStyle::canvasBrush());
     graphView->setFrameShape(QFrame::StyledPanel);
-    graphView->setStyleSheet(QStringLiteral(
-        "QGraphicsView#signalKernelGraphView {"
-        "  background: %1;"
-        "  border: 1px solid %2;"
-        "  border-radius: 6px;"
-        "}")
-                                 .arg(InsightVisualStyle::theme()
-                                          .canvasBackground.name(),
-                                      InsightVisualStyle::theme().border.name()));
-    if (auto* signalGraphView =
-            dynamic_cast<SignalKernelGraphView*>(graphView)) {
-        signalGraphView->pressHandler =
+    if (auto* insightGraphView =
+            dynamic_cast<InsightGraphView*>(graphView)) {
+        insightGraphView->applyInsightGraphStyle();
+        insightGraphView->setPressHandler(
             [this](const QPoint& viewPosition,
                    Qt::MouseButton button,
                    Qt::KeyboardModifiers modifiers) {
@@ -834,8 +769,8 @@ SignalKernelGraphPanelCoordinator::SignalKernelGraphPanelCoordinator(
                     return true;
                 }
                 return false;
-            };
-        signalGraphView->doubleClickHandler =
+            });
+        insightGraphView->setDoubleClickHandler(
             [this](const QPoint& viewPosition) {
                 if (!graphView)
                     return false;
@@ -851,7 +786,7 @@ SignalKernelGraphPanelCoordinator::SignalKernelGraphPanelCoordinator(
                     return true;
                 }
                 return false;
-            };
+            });
     }
     layout->addWidget(graphView, 1);
 

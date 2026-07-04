@@ -1,5 +1,6 @@
 #include "signalusagehotspotpanel.h"
 
+#include "insightgraphview.h"
 #include "insightvisualstyle.h"
 
 #include <QApplication>
@@ -14,7 +15,6 @@
 #include <QGraphicsSceneMouseEvent>
 #include <QGraphicsPathItem>
 #include <QGraphicsSimpleTextItem>
-#include <QGraphicsView>
 #include <QGridLayout>
 #include <QHeaderView>
 #include <QHBoxLayout>
@@ -717,11 +717,14 @@ SignalUsageHotspotPanel::SignalUsageHotspotPanel(QWidget* parent)
 
     modeStack = new QStackedWidget(contentSplitter);
     trackScene = new QGraphicsScene(modeStack);
-    trackView = new QGraphicsView(trackScene, modeStack);
+    trackView = new InsightGraphView(trackScene, modeStack);
     trackView->setObjectName(QStringLiteral("signalUsageHotspotTrackView"));
-    trackView->setRenderHint(QPainter::Antialiasing, true);
-    trackView->setDragMode(QGraphicsView::ScrollHandDrag);
-    trackView->setBackgroundBrush(InsightVisualStyle::canvasBrush());
+    trackView->applyInsightGraphStyle();
+    trackView->setZoomRange(kMinTrackZoom, kMaxTrackZoom);
+    trackView->setZoomChangedHandler([this](qreal zoom) {
+        trackZoomFactor = std::clamp(zoom, kMinTrackZoom, kMaxTrackZoom);
+        saveLayout();
+    });
     trackView->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     trackView->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
     trackView->setAlignment(Qt::AlignLeft | Qt::AlignTop);
@@ -733,10 +736,9 @@ SignalUsageHotspotPanel::SignalUsageHotspotPanel(QWidget* parent)
     matrixLayout->setContentsMargins(0, 0, 0, 0);
     matrixLayout->setSpacing(0);
     matrixScene = new QGraphicsScene(matrixPage);
-    matrixView = new QGraphicsView(matrixScene, matrixPage);
+    matrixView = new InsightGraphView(matrixScene, matrixPage);
     matrixView->setObjectName(QStringLiteral("signalUsageHotspotMatrixView"));
-    matrixView->setRenderHint(QPainter::Antialiasing, true);
-    matrixView->setBackgroundBrush(InsightVisualStyle::canvasBrush());
+    matrixView->applyInsightGraphStyle();
     matrixView->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     matrixView->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
     matrixView->setAlignment(Qt::AlignLeft | Qt::AlignTop);
@@ -815,7 +817,7 @@ SignalUsageHotspotPanel::SignalUsageHotspotPanel(QWidget* parent)
     connect(contentSplitter, &QSplitter::splitterMoved, this, [this]() {
         saveLayout();
     });
-    connect(trackView, &QGraphicsView::customContextMenuRequested,
+    connect(trackView, &QWidget::customContextMenuRequested,
             this, [this](const QPoint& pos) {
                 QMenu menu(trackView);
                 QAction* fitAction = menu.addAction(QStringLiteral("Fit"));
@@ -2452,8 +2454,8 @@ void SignalUsageHotspotPanel::setTrackZoom(double zoomFactor)
     if (!trackView)
         return;
     trackZoomFactor = std::clamp(zoomFactor, kMinTrackZoom, kMaxTrackZoom);
-    trackView->resetTransform();
-    trackView->scale(trackZoomFactor, trackZoomFactor);
+    trackView->resetView();
+    trackView->zoomBy(trackZoomFactor);
     saveLayout();
 }
 
@@ -2466,8 +2468,8 @@ void SignalUsageHotspotPanel::fitTrackToView()
 {
     if (!trackView || !trackScene || trackScene->sceneRect().isEmpty())
         return;
-    trackView->fitInView(trackScene->sceneRect(), Qt::KeepAspectRatio);
-    trackZoomFactor = std::clamp(trackView->transform().m11(),
+    trackView->fitScene(Qt::KeepAspectRatio);
+    trackZoomFactor = std::clamp(trackView->currentZoom(),
                                  kMinTrackZoom,
                                  kMaxTrackZoom);
     saveLayout();
@@ -2499,7 +2501,7 @@ void SignalUsageHotspotPanel::centerCurrentUsage()
 
     const QRectF selectedRect = trackRectForItem(selectedItemIndex);
     if (!selectedRect.isEmpty())
-        trackView->centerOn(selectedRect.center());
+        trackView->centerOnRect(selectedRect);
 }
 
 void SignalUsageHotspotPanel::resetLayout()

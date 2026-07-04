@@ -1,7 +1,9 @@
+#include "insightgraphview.h"
 #include "insightvisualstyle.h"
 
 #include <QApplication>
 #include <QCheckBox>
+#include <QGraphicsScene>
 #include <QLabel>
 #include <QLineEdit>
 #include <QPushButton>
@@ -30,6 +32,21 @@ int main(int argc, char** argv)
     expectTrue("theme border valid", theme.border.isValid());
     expectTrue("theme accent distinct from warning",
                theme.accent != theme.warning);
+    expectTrue("shell menu tokens valid",
+               theme.menu.background.isValid()
+                   && theme.menu.itemHoverBackground.isValid());
+    expectTrue("tab tokens valid",
+               theme.tab.tabBackgroundSelected.isValid()
+                   && theme.tab.borderSelected.isValid());
+    expectTrue("side rail tokens valid",
+               theme.sideRail.background.isValid()
+                   && theme.sideRail.buttonCheckedBackground.isValid());
+    expectTrue("status tokens valid",
+               theme.statusBar.successBackground.isValid()
+                   && theme.statusBar.warningBorder.isValid());
+    expectTrue("graph tokens valid",
+               theme.graph.nodeSelectedBorder.isValid()
+                   && theme.graph.edgeSelected.isValid());
 
     expectTrue("write role maps to semantic color",
                InsightVisualStyle::roleColor(InsightVisualRole::Write)
@@ -70,6 +87,58 @@ int main(int argc, char** argv)
                toolbarButton.minimumHeight() >= 28);
     expectTrue("toolbar button helper styles checked state",
                toolbarButton.styleSheet().contains(QStringLiteral(":checked")));
+
+    expectTrue("application qss includes shell widgets",
+               InsightVisualStyle::applicationStyleSheet()
+                   .contains(QStringLiteral("QMenuBar"))
+                   && InsightVisualStyle::applicationStyleSheet()
+                          .contains(QStringLiteral("QDockWidget")));
+    expectTrue("workspace tab qss is scoped",
+               InsightVisualStyle::workspaceTabBarStyleSheet(
+                   QStringLiteral("workspaceTabBar"))
+                   .contains(QStringLiteral("QTabBar#workspaceTabBar")));
+    expectTrue("side rail qss is scoped",
+               InsightVisualStyle::sideRailStyleSheet(
+                   QStringLiteral("shellNavigationRail"))
+                   .contains(QStringLiteral("QWidget#shellNavigationRail")));
+    expectTrue("side rail button qss styles checked state",
+               InsightVisualStyle::sideRailButtonStyleSheet(
+                   QStringLiteral("shellRail_insights"))
+                   .contains(QStringLiteral(":checked")));
+    expectTrue("package tools qss is scoped",
+               InsightVisualStyle::packageToolsBarStyleSheet(
+                   QStringLiteral("packageToolsBar"))
+                   .contains(QStringLiteral("QWidget#packageToolsBar")));
+    expectTrue("status chip qss is scoped",
+               InsightVisualStyle::statusChipStyleSheet(
+                   InsightStatusTone::Warning,
+                   QStringLiteral("editorModeChip"))
+                   .contains(QStringLiteral("QLabel#editorModeChip")));
+    expectTrue("dock attention qss is scoped",
+               InsightVisualStyle::dockAttentionStyleSheet(
+                   QStringLiteral("FoldShelfDock"))
+                   .contains(QStringLiteral("QDockWidget#FoldShelfDock")));
+    expectTrue("graph view qss is scoped",
+               InsightVisualStyle::graphViewStyleSheet(
+                   QStringLiteral("signalKernelGraphView"))
+                   .contains(
+                       QStringLiteral("QGraphicsView#signalKernelGraphView")));
+
+    QGraphicsScene graphScene;
+    graphScene.setSceneRect(0, 0, 200, 120);
+    InsightGraphView graphView(&graphScene);
+    graphView.setObjectName(QStringLiteral("graphViewProbe"));
+    graphView.applyInsightGraphStyle();
+    graphView.setZoomRange(0.5, 2.0);
+    graphView.zoomBy(1.5);
+    expectTrue("graph view zoom helper changes transform",
+               graphView.currentZoom() > 1.0);
+    graphView.resetView();
+    expectTrue("graph view reset helper restores transform",
+               qAbs(graphView.currentZoom() - 1.0) < 0.001);
+    expectTrue("graph view uses theme qss",
+               graphView.styleSheet().contains(
+                   QStringLiteral("QGraphicsView#graphViewProbe")));
 
     QCheckBox segment;
     segment.setObjectName(QStringLiteral("segmentProbe"));
