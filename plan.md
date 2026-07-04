@@ -33,9 +33,11 @@ into an analyzer.
   Clock/Reset stay on tree/report surfaces; Wave Preview stays on its custom
   painted QWidget.
 - The next scoped UI milestone should be visual QA and small app-shell polish,
-  or return to a concrete product track. Do not broaden UI polish into semantic
-  analysis, hotspot data, FSM discovery, module block extraction, Wave Preview
-  business logic, or workspace scanning.
+  or return to a concrete product track. The first follow-up QA polish closed
+  the remaining hard-coded main editor tab bar style path by routing it through
+  `InsightVisualStyle`; live manual visual QA is still recommended. Do not
+  broaden UI polish into semantic analysis, hotspot data, FSM discovery, module
+  block extraction, Wave Preview business logic, or workspace scanning.
 - Insight UI v2 visual foundation remains established through shared
   `InsightVisualStyle` Qt helpers. Signal Kernel Graph, Signal Usage Hotspot,
   State Transition Graph, Module Block Diagram, and Wave Preview consume these

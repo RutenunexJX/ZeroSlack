@@ -443,8 +443,7 @@ QString InsightVisualStyle::applicationStyleSheet()
              t.panelSubtle.name());
 }
 
-QString InsightVisualStyle::workspaceTabBarStyleSheet(
-    const QString& objectName)
+QString InsightVisualStyle::tabBarStyleSheet(const QString& objectName)
 {
     const InsightTheme t = theme();
     const QString selector =
@@ -481,6 +480,12 @@ QString InsightVisualStyle::workspaceTabBarStyleSheet(
              t.tab.borderSelected.name(),
              t.tab.tabBackgroundHover.name(),
              t.tab.textHover.name());
+}
+
+QString InsightVisualStyle::workspaceTabBarStyleSheet(
+    const QString& objectName)
+{
+    return tabBarStyleSheet(objectName);
 }
 
 QString InsightVisualStyle::sideRailStyleSheet(const QString& objectName)

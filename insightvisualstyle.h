@@ -196,6 +196,7 @@ public:
 
     static QString panelStyleSheet(const QString& objectName = {});
     static QString applicationStyleSheet();
+    static QString tabBarStyleSheet(const QString& objectName = {});
     static QString workspaceTabBarStyleSheet(const QString& objectName = {});
     static QString sideRailStyleSheet(const QString& objectName = {});
     static QString sideRailButtonStyleSheet(const QString& objectName = {});

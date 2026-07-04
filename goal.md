@@ -65,11 +65,11 @@ Current baseline highlights:
   filters/search, item drill-down, inspector metadata, explicit empty/error
   states, and source reveal/flash navigation. Future polish can improve
   asynchronous progress and very-large-report virtualization.
-- Most recent completed milestone: App Shell modernization. Main window shell,
-  common Qt Widgets controls, Global Control, and Fold Shelf active shell state
-  now use `InsightVisualStyle` token/QSS paths instead of local hard-coded
-  shell palettes.
-- Next recommended milestone: visual QA and small app-shell polish, or a
+- Most recent completed milestone: App Shell visual QA polish. Main window
+  shell, common Qt Widgets controls, Global Control, and Fold Shelf active
+  shell state use `InsightVisualStyle` token/QSS paths, and the main editor tab
+  bar no longer carries a hard-coded `ModeManager` palette.
+- Next recommended milestone: manual visual QA and small app-shell polish, or a
   concrete product-track task. Do not change semantic analysis, hotspot report
   data, FSM discovery, module block diagram extraction, Wave Preview business
   logic, or workspace scanning in UI polish.

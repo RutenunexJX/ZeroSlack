@@ -100,6 +100,15 @@ int main(int argc, char** argv)
                           .contains(QStringLiteral("QTableWidget"))
                    && InsightVisualStyle::applicationStyleSheet()
                           .contains(QStringLiteral("QPlainTextEdit")));
+    expectTrue("tab bar qss is scoped",
+               InsightVisualStyle::tabBarStyleSheet(
+                   QStringLiteral("mainEditorTabBar"))
+                   .contains(QStringLiteral("QTabBar#mainEditorTabBar")));
+    expectTrue("workspace tab qss reuses tab builder",
+               InsightVisualStyle::workspaceTabBarStyleSheet(
+                   QStringLiteral("workspaceTabBar"))
+                   == InsightVisualStyle::tabBarStyleSheet(
+                       QStringLiteral("workspaceTabBar")));
     expectTrue("workspace tab qss is scoped",
                InsightVisualStyle::workspaceTabBarStyleSheet(
                    QStringLiteral("workspaceTabBar"))

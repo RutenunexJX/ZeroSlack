@@ -1,4 +1,5 @@
 #include "modemanager.h"
+#include "insightvisualstyle.h"
 #include <QTabWidget>
 #include <QTabBar>
 #include <QKeyEvent>
@@ -105,24 +106,13 @@ void ModeManager::applyModeStyles()
 {
     if (!tabWidget) return;
 
-    tabWidget->tabBar()->setStyleSheet(QStringLiteral(
-        "QTabBar::tab {"
-        "    background-color: #f3f4f6;"
-        "    color: #1f2937;"
-        "    padding: 8px 12px;"
-        "    margin-right: 2px;"
-        "    border: 1px solid #d1d5db;"
-        "    border-bottom: none;"
-        "}"
-        "QTabBar::tab:selected {"
-        "    background-color: #2563eb;"
-        "    color: #ffffff;"
-        "    border-color: #1d4ed8;"
-        "}"
-        "QTabBar::tab:hover {"
-        "    background-color: #dbeafe;"
-        "    color: #111827;"
-        "}"));
+    QTabBar* bar = tabWidget->tabBar();
+    if (!bar)
+        return;
+    if (bar->objectName().isEmpty())
+        bar->setObjectName(QStringLiteral("mainEditorTabBar"));
+    bar->setStyleSheet(InsightVisualStyle::tabBarStyleSheet(
+        bar->objectName()));
 
 }
 
