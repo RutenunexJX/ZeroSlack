@@ -83,6 +83,7 @@ private:
     std::unique_ptr<EditorAppearanceSettings> editorAppearanceSettings;
     std::unique_ptr<FormatterSettings> formatterSettings;
     QDockWidget* editorAppearanceDock = nullptr;
+    QDockWidget* shellNavigationRailDock = nullptr;
     QMenu* viewMenu = nullptr;
     QMenu* workspaceMenu = nullptr;
     QMenu* toolsMenu = nullptr;
@@ -101,6 +102,8 @@ private:
     static const int kFileChangeDebounceMs = 350;
 
     void setupNavigationPane();
+    void setupShellNavigationRail();
+    void applyModernShellStyle();
     void setupSemanticDocks();
     void setupNavigationCommandCoordinator();
     void setupFileCommandCoordinator();

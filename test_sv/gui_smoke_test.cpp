@@ -36,6 +36,7 @@
 #include <QMenu>
 #include <QMessageBox>
 #include <QPlainTextEdit>
+#include <QPixmap>
 #include <QScrollBar>
 #include <QSet>
 #include <QTemporaryDir>
@@ -172,6 +173,62 @@ static bool writeTextFile(const QString& fileName, const QString& text)
     QTextStream out(&file);
     out << text;
     return true;
+}
+
+static bool saveFullAppSignalUsageHotspotScreenshot(MainWindow& window,
+                                                    const QString& fixturePath)
+{
+    if (!window.semanticDocks
+        || !window.semanticDocks->rtlInsightsPanelCoordinator()) {
+        return false;
+    }
+
+    window.showPanelById(QStringLiteral("rtlInsights"));
+    for (const QString& panelId : {QStringLiteral("problems"),
+                                   QStringLiteral("activity"),
+                                   QStringLiteral("references"),
+                                   QStringLiteral("relationships"),
+                                   QStringLiteral("signalKernelGraph"),
+                                   QStringLiteral("wavePreview"),
+                                   QStringLiteral("foldShelf"),
+                                   QStringLiteral("editorAppearance")}) {
+        if (QDockWidget* dock = window.dockForPanelId(panelId))
+            dock->hide();
+    }
+    if (QDockWidget* navigationDock = window.dockForPanelId(QStringLiteral("navigation")))
+        navigationDock->show();
+    if (window.shellNavigationRailDock)
+        window.shellNavigationRailDock->show();
+    QDockWidget* rtlDock = window.dockForPanelId(QStringLiteral("rtlInsights"));
+    if (rtlDock)
+        rtlDock->show();
+    window.semanticDocks->rtlInsightsPanelCoordinator()->showModuleInsights(
+        fixturePath,
+        QStringLiteral("insight_top"),
+        QStringLiteral("data_q"));
+    window.semanticDocks->rtlInsightsPanelCoordinator()->showSignalUsageHotspot();
+    if (window.statusBar())
+        window.statusBar()->showMessage(QStringLiteral("Ready"));
+
+    window.resize(1900, 1040);
+    window.showNormal();
+    window.raise();
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
+    if (rtlDock)
+        window.resizeDocks(QList<QDockWidget*>{rtlDock},
+                           QList<int>{690},
+                           Qt::Vertical);
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
+
+    const QString outputPath =
+        QDir::current().absoluteFilePath(
+            QStringLiteral("current_app_signal_usage_hotspot_full_after.png"));
+    const bool saved = window.grab().save(outputPath);
+    if (!saved)
+        qWarning() << "Failed to save full app screenshot" << outputPath;
+    else
+        qInfo() << "Saved full app screenshot" << outputPath;
+    return saved;
 }
 
 static QString visibleEditorHoverPopupText(bool* visible = nullptr)
@@ -9525,6 +9582,10 @@ int main(int argc, char** argv)
 
     runReferenceDockRegression(window, normalizedSymbolFixturePath);
     runRtlInsightsPanelRegression(window, normalizedSymbolFixturePath);
+    expectBool("full app signal usage hotspot screenshot saved",
+               saveFullAppSignalUsageHotspotScreenshot(window,
+                                                       normalizedSymbolFixturePath),
+               true);
     runRtlInsightsSemanticDiffRegression(window, normalizedSymbolFixturePath);
 
     drainRelationshipWork(window);

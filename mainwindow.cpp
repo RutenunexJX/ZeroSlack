@@ -70,6 +70,7 @@
 #include <QPushButton>
 #include <QMessageBox>
 #include <QSignalBlocker>
+#include <QSize>
 #include <QStatusBar>
 #include <QTabBar>
 #include <QTimer>
@@ -146,6 +147,7 @@ MainWindow::MainWindow(QWidget *parent)
     setupComMode();
     setupEditorCoordinator();
     setupManagerConnections();
+    applyModernShellStyle();
 
     if (editorAppearanceDock)
         editorAppearanceDock->hide();
@@ -173,12 +175,154 @@ MainWindow::MainWindow(QWidget *parent)
                 .arg(QLatin1String(APP_VERSION), QLatin1String(APP_BUILD_TIME)));
         versionLabel->setStyleSheet(QStringLiteral("color:#888; margin-right:6px;"));
         statusBar()->addPermanentWidget(versionLabel);
+        statusBar()->showMessage(QStringLiteral("Ready"));
     }
 }
 
 MainWindow::~MainWindow()
 {
     delete ui;
+}
+
+void MainWindow::applyModernShellStyle()
+{
+    if (menuBar()) {
+        if (!findChild<QMenu*>(QStringLiteral("navigateMenu"))) {
+            QAction* beforeTools = toolsMenu ? toolsMenu->menuAction() : nullptr;
+            QMenu* navigateMenu = new QMenu(tr("&Navigate"), this);
+            navigateMenu->setObjectName(QStringLiteral("navigateMenu"));
+            menuBar()->insertMenu(beforeTools, navigateMenu);
+        }
+        if (!findChild<QMenu*>(QStringLiteral("searchMenu"))) {
+            QAction* beforeTools = toolsMenu ? toolsMenu->menuAction() : nullptr;
+            QMenu* searchMenu = new QMenu(tr("&Search"), this);
+            searchMenu->setObjectName(QStringLiteral("searchMenu"));
+            menuBar()->insertMenu(beforeTools, searchMenu);
+        }
+        if (!findChild<QMenu*>(QStringLiteral("helpMenu"))) {
+            QMenu* helpMenu = new QMenu(tr("&Help"), this);
+            helpMenu->setObjectName(QStringLiteral("helpMenu"));
+            menuBar()->addMenu(helpMenu);
+        }
+    }
+
+    setStyleSheet(QStringLiteral(
+        "QMainWindow { background:#f4f7fb; }"
+        "QMenuBar { background:#ffffff; border-bottom:1px solid #d8e1ec; "
+        "padding:3px 10px; spacing:18px; color:#111827; }"
+        "QMenuBar::item { padding:5px 10px; border-radius:4px; }"
+        "QMenuBar::item:selected { background:#eef4ff; color:#0f172a; }"
+        "QMenu { background:#ffffff; border:1px solid #d8e1ec; "
+        "padding:5px; color:#111827; }"
+        "QMenu::item { padding:5px 24px 5px 18px; border-radius:4px; }"
+        "QMenu::item:selected { background:#edf4ff; color:#1d4ed8; }"
+        "QStatusBar { background:#ffffff; border-top:1px solid #d8e1ec; "
+        "color:#334155; min-height:22px; }"
+        "QStatusBar QLabel { color:#475569; }"
+        "QTabWidget::pane { border:0; background:#ffffff; }"
+        "QTabBar::tab { background:#f3f6fa; color:#475569; "
+        "border:1px solid #d8e1ec; border-bottom-color:#d8e1ec; "
+        "padding:6px 13px; margin-right:2px; min-height:20px; }"
+        "QTabBar::tab:selected { background:#ffffff; color:#1d4ed8; "
+        "border-color:#b9cff4; border-bottom-color:#ffffff; }"
+        "QTabBar::tab:hover { background:#eef4ff; color:#1e40af; }"
+        "QDockWidget { background:#f4f7fb; color:#1f2937; "
+        "border:1px solid #d8e1ec; titlebar-close-icon:url(none); }"
+        "QDockWidget::title { background:#ffffff; padding:5px 8px; "
+        "border-bottom:1px solid #d8e1ec; font-weight:600; }"
+        "QLineEdit { background:#ffffff; border:1px solid #d8e1ec; "
+        "border-radius:4px; padding:5px 8px; selection-background-color:#bfdbfe; }"
+        "QTreeWidget, QTreeView { background:#ffffff; alternate-background-color:#f8fafc; "
+        "border:1px solid #e2e8f0; color:#1f2937; }"
+        "QHeaderView::section { background:#f8fafc; border:0; "
+        "border-bottom:1px solid #e2e8f0; padding:4px 6px; color:#475569; }"
+        "QPushButton, QToolButton { background:#ffffff; color:#334155; "
+        "border:1px solid #d8e1ec; border-radius:5px; padding:5px 9px; }"
+        "QPushButton:hover, QToolButton:hover { background:#eef4ff; "
+        "border-color:#bfdbfe; color:#1d4ed8; }"
+        "QPushButton:pressed, QToolButton:pressed { background:#dbeafe; }"));
+
+    if (ui && ui->tabWidget) {
+        ui->tabWidget->setDocumentMode(true);
+        ui->tabWidget->setIconSize(QSize(14, 14));
+    }
+    if (workspaceTabBar)
+        workspaceTabBar->setDrawBase(false);
+}
+
+void MainWindow::setupShellNavigationRail()
+{
+    if (shellNavigationRailDock)
+        return;
+
+    auto* rail = new QWidget(this);
+    rail->setObjectName(QStringLiteral("shellNavigationRail"));
+    auto* layout = new QVBoxLayout(rail);
+    layout->setContentsMargins(6, 8, 6, 8);
+    layout->setSpacing(6);
+
+    auto addRailButton = [this, layout, rail](const QString& id,
+                                              const QString& text,
+                                              const QString& targetPanel = {}) {
+        auto* button = new QToolButton(rail);
+        button->setObjectName(QStringLiteral("shellRail_%1").arg(id));
+        button->setText(text);
+        button->setToolButtonStyle(Qt::ToolButtonTextUnderIcon);
+        button->setAutoRaise(false);
+        button->setCheckable(id == QStringLiteral("insights"));
+        button->setChecked(id == QStringLiteral("insights"));
+        button->setFixedSize(56, 54);
+        button->setStyleSheet(QStringLiteral(
+            "QToolButton { background:transparent; border:1px solid transparent; "
+            "border-radius:6px; color:#475569; padding:3px 2px; font-size:10px; }"
+            "QToolButton:hover { background:#eef4ff; border-color:#dbeafe; color:#1d4ed8; }"
+            "QToolButton:checked { background:#e8f1ff; border-color:#bfdbfe; "
+            "color:#1d4ed8; font-weight:600; }"));
+        if (!targetPanel.isEmpty()) {
+            connect(button,
+                    &QToolButton::clicked,
+                    this,
+                    [this, targetPanel]() { showPanelById(targetPanel); });
+        } else if (id == QStringLiteral("explorer")
+                   || id == QStringLiteral("outline")
+                   || id == QStringLiteral("design")
+                   || id == QStringLiteral("search")) {
+            connect(button,
+                    &QToolButton::clicked,
+                    this,
+                    [this]() {
+                        if (navigationPane && navigationPane->dock())
+                            showDockWidget(navigationPane->dock());
+                    });
+        }
+        layout->addWidget(button);
+        return button;
+    };
+
+    addRailButton(QStringLiteral("explorer"), QStringLiteral("Explorer"));
+    addRailButton(QStringLiteral("outline"), QStringLiteral("Outline"));
+    addRailButton(QStringLiteral("design"), QStringLiteral("Design"));
+    addRailButton(QStringLiteral("problems"), QStringLiteral("Problems"),
+                  QStringLiteral("problems"));
+    addRailButton(QStringLiteral("search"), QStringLiteral("Search"));
+    addRailButton(QStringLiteral("insights"), QStringLiteral("Insights"),
+                  QStringLiteral("rtlInsights"));
+    layout->addStretch(1);
+    addRailButton(QStringLiteral("settings"), QStringLiteral("Settings"),
+                  QStringLiteral("editorAppearance"));
+
+    rail->setStyleSheet(QStringLiteral(
+        "QWidget#shellNavigationRail { background:#ffffff; "
+        "border-right:1px solid #d8e1ec; }"));
+
+    shellNavigationRailDock = new QDockWidget(this);
+    shellNavigationRailDock->setObjectName(QStringLiteral("shellNavigationRailDock"));
+    shellNavigationRailDock->setWidget(rail);
+    shellNavigationRailDock->setFeatures(QDockWidget::NoDockWidgetFeatures);
+    shellNavigationRailDock->setTitleBarWidget(new QWidget(shellNavigationRailDock));
+    shellNavigationRailDock->setMinimumWidth(68);
+    shellNavigationRailDock->setMaximumWidth(68);
+    rail->setMinimumWidth(66);
 }
 
 void MainWindow::setupWorkspaceBar()
@@ -196,21 +340,25 @@ void MainWindow::setupWorkspaceBar()
     workspaceTabBar->setContextMenuPolicy(Qt::CustomContextMenu);
     workspaceTabBar->hide();
     workspaceTabBar->setStyleSheet(QStringLiteral(
-        "QTabBar#workspaceTabBar { background: #eef2f7; }"
+        "QTabBar#workspaceTabBar { background: #f4f7fb; border-bottom:1px solid #d8e1ec; }"
         "QTabBar#workspaceTabBar::tab {"
-        "  background: #e5e7eb;"
-        "  color: #374151;"
-        "  padding: 5px 12px;"
-        "  border: 1px solid #cbd5e1;"
-        "  border-bottom: none;"
+        "  background: #f8fafc;"
+        "  color: #475569;"
+        "  padding: 6px 13px;"
+        "  border: 1px solid #d8e1ec;"
+        "  border-bottom-color: #d8e1ec;"
+        "  margin-right: 2px;"
+        "  min-height: 20px;"
         "}"
         "QTabBar#workspaceTabBar::tab:selected {"
-        "  background: #334155;"
-        "  color: #ffffff;"
+        "  background: #ffffff;"
+        "  color: #1d4ed8;"
+        "  border-color: #b9cff4;"
+        "  border-bottom-color: #ffffff;"
         "}"
         "QTabBar#workspaceTabBar::tab:hover {"
-        "  background: #cbd5e1;"
-        "  color: #111827;"
+        "  background: #eef4ff;"
+        "  color: #1e40af;"
         "}"));
     layout->addWidget(workspaceTabBar);
     setupPackageTools(layout, editorContainer);
@@ -857,7 +1005,12 @@ void MainWindow::setupNavigationPane()
     navigationPane->connectNavigationInputs(
         tabManager.get(),
         workspaceManager.get());
+    setupShellNavigationRail();
+    addDockWidget(Qt::LeftDockWidgetArea, shellNavigationRailDock);
     addDockWidget(Qt::LeftDockWidgetArea, navigationPane->dock());
+    splitDockWidget(shellNavigationRailDock,
+                    navigationPane->dock(),
+                    Qt::Horizontal);
 }
 
 void MainWindow::setupNavigationCommandCoordinator()
@@ -1758,8 +1911,12 @@ void MainWindow::resetPanelLayout()
         dockForPanelId(QStringLiteral("editorAppearance"));
     QDockWidget* foldShelfDockWidget = dockForPanelId(QStringLiteral("foldShelf"));
 
+    if (shellNavigationRailDock)
+        addDockWidget(Qt::LeftDockWidgetArea, shellNavigationRailDock);
     if (navigationDock)
         addDockWidget(Qt::LeftDockWidgetArea, navigationDock);
+    if (shellNavigationRailDock && navigationDock)
+        splitDockWidget(shellNavigationRailDock, navigationDock, Qt::Horizontal);
     if (editorAppearanceDockWidget)
         addDockWidget(Qt::RightDockWidgetArea, editorAppearanceDockWidget);
 
@@ -1784,6 +1941,7 @@ void MainWindow::resetPanelLayout()
         }
     }
 
+    showDockWidget(shellNavigationRailDock);
     showDockWidget(navigationDock);
     showDockWidget(editorAppearanceDockWidget);
     for (QDockWidget* dock : bottomDocks)

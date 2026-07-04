@@ -102,6 +102,139 @@ bool isEnumValueRecord(const SemanticSymbolRecord& record)
         == SymbolTaxonomy::CollectorKind::EnumValue;
 }
 
+bool sameSourceFile(const QString& lhs, const QString& rhs)
+{
+    if (lhs.isEmpty() || rhs.isEmpty())
+        return false;
+    QFileInfo lhsInfo(lhs);
+    QFileInfo rhsInfo(rhs);
+    const QString lhsCanonical = lhsInfo.canonicalFilePath();
+    const QString rhsCanonical = rhsInfo.canonicalFilePath();
+    if (!lhsCanonical.isEmpty() && !rhsCanonical.isEmpty())
+        return lhsCanonical.compare(rhsCanonical, Qt::CaseInsensitive) == 0;
+    if (lhs.compare(rhs, Qt::CaseInsensitive) == 0)
+        return true;
+    return lhsInfo.fileName().compare(rhsInfo.fileName(), Qt::CaseInsensitive)
+        == 0;
+}
+
+bool isScopeRecord(const SemanticSymbolRecord& record)
+{
+    return record.declarationKind == SymbolTaxonomy::DeclarationKind::Module
+        || record.declarationKind == SymbolTaxonomy::DeclarationKind::Interface
+        || record.declarationKind == SymbolTaxonomy::DeclarationKind::Package
+        || record.declarationKind == SymbolTaxonomy::DeclarationKind::Process
+        || record.declarationKind == SymbolTaxonomy::DeclarationKind::Generate;
+}
+
+bool isPrimaryLaneScopeRecord(const SemanticSymbolRecord& record)
+{
+    return record.declarationKind == SymbolTaxonomy::DeclarationKind::Module
+        || record.declarationKind == SymbolTaxonomy::DeclarationKind::Interface
+        || record.declarationKind == SymbolTaxonomy::DeclarationKind::Package;
+}
+
+bool recordHasLineRange(const SemanticSymbolRecord& record)
+{
+    return record.location.startLine > 0 && record.location.endLine > 0
+        && record.location.endLine >= record.location.startLine;
+}
+
+SemanticSymbolRecord scopeRecordForOwner(SemanticIndex* index,
+                                         const SemanticSymbolOwner& owner,
+                                         const QString& fileName)
+{
+    if (!index)
+        return {};
+    if (owner.stableKey.isValid()) {
+        const SemanticSymbolRecord record =
+            index->getSymbolRecordByStableKey(owner.stableKey);
+        if (record.isValid() && isScopeRecord(record)
+            && recordHasLineRange(record)
+            && sameSourceFile(record.location.fileName, fileName)) {
+            return record;
+        }
+    }
+    if (owner.name.isEmpty())
+        return {};
+    const QList<SemanticSymbolRecord> records =
+        index->getSymbolRecordsByName(owner.name);
+    for (const SemanticSymbolRecord& record : records) {
+        if (isScopeRecord(record) && recordHasLineRange(record)
+            && sameSourceFile(record.location.fileName, fileName)) {
+            return record;
+        }
+    }
+    return {};
+}
+
+SemanticSymbolRecord scopeRecordForUsageItem(
+    SemanticIndex* index,
+    const SignalUsageHotspotItem& item)
+{
+    const QList<SemanticSymbolRecord> candidates{
+        item.peerSymbolRecord,
+        item.fromSymbolRecord,
+        item.toSymbolRecord,
+        item.subjectSymbolRecord,
+    };
+
+    for (const SemanticSymbolRecord& candidate : candidates) {
+        const SemanticSymbolRecord ownerScope =
+            scopeRecordForOwner(index, candidate.owner, item.fileName);
+        if (ownerScope.isValid())
+            return ownerScope;
+        if (candidate.isValid() && isPrimaryLaneScopeRecord(candidate)
+            && recordHasLineRange(candidate)
+            && sameSourceFile(candidate.location.fileName, item.fileName)) {
+            return candidate;
+        }
+    }
+
+    if (!index)
+        return {};
+
+    if (!item.moduleName.isEmpty()) {
+        const QList<SemanticSymbolRecord> namedRecords =
+            index->getSymbolRecordsByName(item.moduleName);
+        for (const SemanticSymbolRecord& record : namedRecords) {
+            if (isScopeRecord(record) && recordHasLineRange(record)
+                && sameSourceFile(record.location.fileName, item.fileName)) {
+                return record;
+            }
+        }
+    }
+
+    const QList<SemanticSymbolRecord> fileRecords =
+        index->getSymbolRecords(item.fileName);
+    for (const SemanticSymbolRecord& record : fileRecords) {
+        if (!isScopeRecord(record) || !recordHasLineRange(record))
+            continue;
+        if (!sameSourceFile(record.location.fileName, item.fileName))
+            continue;
+        const bool containsUsage =
+            item.line <= 0
+            || (item.line >= record.location.startLine
+                && item.line <= record.location.endLine);
+        if (containsUsage && !item.moduleName.isEmpty()
+            && record.name == item.moduleName) {
+            return record;
+        }
+    }
+    for (const SemanticSymbolRecord& record : fileRecords) {
+        if (!isScopeRecord(record) || !recordHasLineRange(record))
+            continue;
+        if (!sameSourceFile(record.location.fileName, item.fileName))
+            continue;
+        if (item.line <= 0
+            || (item.line >= record.location.startLine
+                && item.line <= record.location.endLine)) {
+            return record;
+        }
+    }
+    return {};
+}
+
 SemanticSymbolRecord missingRecord()
 {
     return {};
@@ -460,7 +593,7 @@ QList<SignalUsageHotspotRoleSummary> roleSummariesFromCounts(
     return summaries;
 }
 
-void buildSummaries(SignalUsageHotspotReport& report)
+void buildSummaries(SignalUsageHotspotReport& report, SemanticIndex* index)
 {
     QHash<int, int> roleCounts;
     QHash<QString, int> moduleIndexes;
@@ -537,6 +670,12 @@ void buildSummaries(SignalUsageHotspotReport& report)
             SignalUsageHotspotTrackLane lane;
             lane.moduleName = moduleName;
             lane.fileName = fileName;
+            const SemanticSymbolRecord scope =
+                scopeRecordForUsageItem(index, item);
+            if (scope.isValid() && recordHasLineRange(scope)) {
+                lane.startLine = scope.location.startLine;
+                lane.endLine = scope.location.endLine;
+            }
             laneIndexes.insert(laneKey, report.trackLanes.size());
             report.trackLanes.append(lane);
         }
@@ -725,7 +864,7 @@ SignalUsageHotspotReport SignalUsageHotspotService::buildSignalUsageHotspot(
                   return roleSortIndex(lhs.role) < roleSortIndex(rhs.role);
               });
 
-    buildSummaries(report);
+    buildSummaries(report, semanticIndex());
     return report;
 }
 
