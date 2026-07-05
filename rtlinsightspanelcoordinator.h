@@ -2,6 +2,7 @@
 #define RTLINSIGHTSPANELCOORDINATOR_H
 
 #include <QDockWidget>
+#include <QRectF>
 #include <QString>
 #include <QStringList>
 #include <QTreeWidget>
@@ -68,6 +69,10 @@ public:
     int graphEdgeItemCountForTest() const;
     QStringList graphTextItemsForTest() const;
     QStringList graphElementSummariesForTest() const;
+    QStringList graphElementVisualSummariesForTest() const;
+    QStringList graphEdgeGeometrySummariesForTest() const;
+    QRectF graphLastFitRectForTest() const;
+    qreal graphCurrentZoomForTest() const;
     bool graphNodeRectsOverlapForTest() const;
     int graphSelectedItemCountForTest() const;
     QStringList graphInspectorRowsForTest() const;
@@ -78,6 +83,9 @@ public:
                                     const QString& primaryText,
                                     const QString& secondaryText,
                                     bool hovered);
+    bool selectGraphItemForTest(const QString& elementKind,
+                                const QString& primaryText,
+                                const QString& secondaryText = QString());
     bool selectGraphTableRowForTest(const QString& primaryText,
                                     const QString& secondaryText = QString());
     int graphElementLineForTest(const QString& elementKind,
@@ -129,6 +137,7 @@ private:
     QString currentSignalName;
     QString graphSearchText;
     QString currentGraphMode;
+    QRectF lastGraphFitRect;
     ModuleBlockDiagramReport currentModuleBlockReport;
     int currentModuleBlockSelectedNodeId = -1;
 

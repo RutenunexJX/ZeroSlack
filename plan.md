@@ -49,14 +49,16 @@ into an analyzer.
   cells and item drill-down. Known follow-up space: richer async progress and
   deeper virtualization for very large hotspot reports.
 - Current RTL readability repair: State Transition Graph remains structurally
-  gated by FSM discovery, but complex graphs now use compact `C#` transition
-  labels, full condition text in table/inspector details, orthogonal routing,
-  tighter self/back edges, and only near-source aliases for long awkward
-  returns. Module Block Diagram is module-only for UI/report consumption,
-  filters interface declarations/instances, wraps sibling child modules into
-  tighter containers, and preserves readable fill/border/text on hover and
-  selection. Design hierarchy defaults to hiding interface/interface-instance
-  nodes.
+  gated by FSM discovery, and FSM/State Transition graph bodies now draw only
+  states and state transitions. Compact `C#` transition labels are dark, bold,
+  and unboxed while full condition text stays in table/inspector details.
+  Self-loops are compact curved loops, initial fit targets state-body bounds,
+  aliases keep canonical-state colors while staying dashed, and pure self-loop
+  dead/end states get danger styling plus inspector/table notes. Module Block
+  Diagram is module-only for UI/report consumption, filters interface
+  declarations/instances, wraps sibling child modules into tighter containers,
+  and preserves readable fill/border/text on hover and selection. Design
+  hierarchy defaults to hiding interface/interface-instance nodes.
 - The current completed baseline includes import-aware package member
   visibility for unqualified completion, definition, and hover; user template
   JSON usage actions; explicit header/include and package import commands;

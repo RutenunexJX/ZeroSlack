@@ -44,6 +44,8 @@ struct FsmStateRow {
     QString typeDisplayName;
     QString sourceRoleDisplayName;
     QString moduleDisplayName;
+    QString statusDisplayName;
+    bool deadEndState = false;
 };
 
 struct FsmTransitionRow {
@@ -159,7 +161,8 @@ private:
                                  int line);
     static QString stripLineComment(const QString& line);
     static QList<FsmStateRow> stateRows(
-        const QList<SemanticSymbolRecord>& states);
+        const QList<SemanticSymbolRecord>& states,
+        const QList<FsmTransition>& transitions);
     static QList<FsmTransitionRow> transitionRows(
         const SemanticSymbolRecord& moduleRecord,
         const QList<FsmTransition>& transitions,

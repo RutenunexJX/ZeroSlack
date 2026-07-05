@@ -1132,10 +1132,25 @@ QString FsmGraphService::stripLineComment(const QString& line)
 }
 
 QList<FsmStateRow> FsmGraphService::stateRows(
-    const QList<SemanticSymbolRecord>& states)
+    const QList<SemanticSymbolRecord>& states,
+    const QList<FsmTransition>& transitions)
 {
     QList<FsmStateRow> rows;
     rows.reserve(states.size());
+    QSet<QString> selfLoopStates;
+    QSet<QString> statesWithExternalExit;
+    QSet<QString> knownStateNames;
+    for (const SemanticSymbolRecord& state : states)
+        knownStateNames.insert(state.name);
+    for (const FsmTransition& transition : transitions) {
+        if (!knownStateNames.contains(transition.fromState))
+            continue;
+        if (transition.fromState == transition.toState) {
+            selfLoopStates.insert(transition.fromState);
+        } else {
+            statesWithExternalExit.insert(transition.fromState);
+        }
+    }
     for (const SemanticSymbolRecord& state : states) {
         FsmStateRow row;
         row.stateRecord = state;
@@ -1149,6 +1164,11 @@ QList<FsmStateRow> FsmGraphService::stateRows(
         row.sourceRoleDisplayName =
             sourceRoleDisplayNameForRecord(row.stateRecord);
         row.moduleDisplayName = moduleDisplayNameForRecord(row.stateRecord);
+        row.deadEndState = selfLoopStates.contains(state.name)
+            && !statesWithExternalExit.contains(state.name);
+        row.statusDisplayName = row.deadEndState
+            ? QStringLiteral("dead/end state")
+            : QString();
         rows.append(row);
     }
     return rows;
@@ -1303,9 +1323,9 @@ void FsmGraphService::fillDisplayMetadata(
         : QString();
     graph.statesGroupDisplayName = QStringLiteral("States");
     graph.transitionsGroupDisplayName = QStringLiteral("Transitions");
-    graph.stateRows = stateRows(states);
     for (FsmTransition& transition : transitions)
         fillDisplayMetadata(transition);
+    graph.stateRows = stateRows(states, transitions);
     graph.transitionRows = transitionRows(
         moduleRecord,
         transitions,

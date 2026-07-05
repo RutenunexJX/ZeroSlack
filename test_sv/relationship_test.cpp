@@ -13,6 +13,7 @@
 #include "editorsourcenavigationquery.h"
 #include "fsmgraphservice.h"
 #include "hierarchyservice.h"
+#include "insightvisualstyle.h"
 #include "moduleblockdiagramservice.h"
 #include "modulebriefservice.h"
 #include "navigationservice.h"
@@ -7853,6 +7854,25 @@ static void runFsmGraphServiceFixture()
         "    endcase\n"
         "  end\n"
         "endmodule\n");
+    const QString deadFileName =
+        QStringLiteral("test_sv/state_transition_dead_fixture.sv");
+    const QString deadContent = QStringLiteral(
+        "module dead_fsm_top(input logic clk, input logic go, input logic err);\n"
+        "  typedef enum logic [1:0] {D_IDLE, D_BUSY, D_ERROR} dead_state_e;\n"
+        "  dead_state_e state_q;\n"
+        "  dead_state_e state_d;\n"
+        "  always_ff @(posedge clk) begin\n"
+        "    state_q <= state_d;\n"
+        "  end\n"
+        "  always_comb begin\n"
+        "    state_d = state_q;\n"
+        "    case (state_q)\n"
+        "      D_IDLE: state_d = go ? D_BUSY : D_IDLE;\n"
+        "      D_BUSY: state_d = err ? D_ERROR : D_IDLE;\n"
+        "      D_ERROR: state_d = D_ERROR;\n"
+        "    endcase\n"
+        "  end\n"
+        "endmodule\n");
     const SemanticSymbolRecord packageModule =
         SemanticFixtureRecordBuilder(QStringLiteral("pkg_fsm_top"),
                                      DeclarationKind::Module)
@@ -8229,6 +8249,60 @@ static void runFsmGraphServiceFixture()
             .withType(QStringLiteral("complex_state_e"))
             .record(),
     };
+    const SemanticSymbolRecord deadModule =
+        SemanticFixtureRecordBuilder(QStringLiteral("dead_fsm_top"),
+                                     DeclarationKind::Module)
+            .withFile(deadFileName)
+            .withLocalHandle(9370)
+            .withRange(1, 1, 17, 1)
+            .withCollectorKind(CollectorKind::Module)
+            .record();
+    const SemanticSymbolRecord deadStateQ =
+        SemanticFixtureRecordBuilder(QStringLiteral("state_q"),
+                                     DeclarationKind::Enum)
+            .withFile(deadFileName)
+            .withLocalHandle(9371)
+            .withLine(3)
+            .withCollectorKind(CollectorKind::EnumVariable)
+            .inModule(QStringLiteral("dead_fsm_top"))
+            .withType(QStringLiteral("dead_state_e"))
+            .record();
+    const SemanticSymbolRecord deadStateD =
+        SemanticFixtureRecordBuilder(QStringLiteral("state_d"),
+                                     DeclarationKind::Enum)
+            .withFile(deadFileName)
+            .withLocalHandle(9372)
+            .withLine(4)
+            .withCollectorKind(CollectorKind::EnumVariable)
+            .inModule(QStringLiteral("dead_fsm_top"))
+            .withType(QStringLiteral("dead_state_e"))
+            .record();
+    const QList<SemanticSymbolRecord> deadStates{
+        SemanticFixtureRecordBuilder(QStringLiteral("D_IDLE"), DeclarationKind::Enum)
+            .withFile(deadFileName)
+            .withLocalHandle(9373)
+            .withLine(2)
+            .withCollectorKind(CollectorKind::EnumValue)
+            .inModule(QStringLiteral("dead_fsm_top"))
+            .withType(QStringLiteral("dead_state_e"))
+            .record(),
+        SemanticFixtureRecordBuilder(QStringLiteral("D_BUSY"), DeclarationKind::Enum)
+            .withFile(deadFileName)
+            .withLocalHandle(9374)
+            .withLine(2)
+            .withCollectorKind(CollectorKind::EnumValue)
+            .inModule(QStringLiteral("dead_fsm_top"))
+            .withType(QStringLiteral("dead_state_e"))
+            .record(),
+        SemanticFixtureRecordBuilder(QStringLiteral("D_ERROR"), DeclarationKind::Enum)
+            .withFile(deadFileName)
+            .withLocalHandle(9375)
+            .withLine(2)
+            .withCollectorKind(CollectorKind::EnumValue)
+            .inModule(QStringLiteral("dead_fsm_top"))
+            .withType(QStringLiteral("dead_state_e"))
+            .record(),
+    };
     const SemanticSymbolRecord noFsmModule =
         SemanticFixtureRecordBuilder(QStringLiteral("no_fsm_top"),
                                      DeclarationKind::Module)
@@ -8285,6 +8359,12 @@ static void runFsmGraphServiceFixture()
         complexStates.at(4),
         complexStates.at(5),
         complexStates.at(6),
+        deadModule,
+        deadStateQ,
+        deadStateD,
+        deadStates.at(0),
+        deadStates.at(1),
+        deadStates.at(2),
         noFsmModule,
     };
 
@@ -8296,6 +8376,7 @@ static void runFsmGraphServiceFixture()
     fileContents.insert(oddFileName, oddContent);
     fileContents.insert(deceptiveFileName, deceptiveContent);
     fileContents.insert(complexFileName, complexContent);
+    fileContents.insert(deadFileName, deadContent);
     SemanticIndex index;
     index.setSnapshot(sharedSnapshotFromRecords(
         records,
@@ -8730,16 +8811,23 @@ static void runFsmGraphServiceFixture()
                true);
     expectInt("fsm graph panel node count",
               fsmPanel.graphNodeItemCountForTest(),
-              5);
+              3);
     expectInt("fsm graph panel edge count",
               fsmPanel.graphEdgeItemCountForTest(),
-              4);
+              3);
     expectBool("fsm graph panel renders interactive graph",
                fsmGraphButton
                    && fsmGraphView
                    && fsmGraphView->scene()
-                   && fsmPanel.graphNodeItemCountForTest() == 5
-                   && fsmPanel.graphEdgeItemCountForTest() == 4,
+                   && fsmPanel.graphNodeItemCountForTest() == 3
+                   && fsmPanel.graphEdgeItemCountForTest() == 3,
+               true);
+    const QString fsmGraphSummaries =
+        fsmPanel.graphElementSummariesForTest().join(QLatin1Char('\n'));
+    expectBool("fsm graph panel omits current and next signal nodes",
+               !fsmGraphSummaries.contains(QStringLiteral("state-register|"))
+                   && !fsmGraphSummaries.contains(
+                       QStringLiteral("next-state-signal|")),
                true);
     const QString fsmGraphText =
         fsmPanel.graphTextItemsForTest().join(QLatin1Char('\n'));
@@ -8747,6 +8835,23 @@ static void runFsmGraphServiceFixture()
                fsmGraphText.contains(QStringLiteral("C0"))
                    && fsmGraphText.contains(QStringLiteral("C1"))
                    && !fsmGraphText.contains(QStringLiteral("start")),
+               true);
+    bool sawStrongConditionLabel = false;
+    for (const QString& summary : fsmPanel.graphEdgeGeometrySummariesForTest()) {
+        const QStringList parts = summary.split(QLatin1Char('|'));
+        if (parts.size() < 12)
+            continue;
+        sawStrongConditionLabel = sawStrongConditionLabel
+            || (parts.at(0) == QStringLiteral("transition")
+                && parts.at(1) == QStringLiteral("IDLE")
+                && parts.at(2) == QStringLiteral("RUN")
+                && parts.at(4) == QStringLiteral("C0")
+                && parts.at(5) == QStringLiteral("bold")
+                && parts.at(6) == QStringLiteral("no-bg")
+                && parts.at(7) == InsightVisualStyle::theme().textPrimary.name());
+    }
+    expectBool("fsm graph condition ids are strong labels without background",
+               sawStrongConditionLabel,
                true);
     expectBool("fsm graph transition table maps ids to conditions",
                fsmPanel.graphTableRowsForTest().join(QLatin1Char('\n'))
@@ -8991,8 +9096,38 @@ static void runFsmGraphServiceFixture()
     expectBool("state transition panel renders service report",
                stateTransitionGraphView
                    && stateTransitionGraphView->scene()
-                   && stateTransitionPanel.graphNodeItemCountForTest() == 4
-                   && stateTransitionPanel.graphEdgeItemCountForTest() == 4,
+                   && stateTransitionPanel.graphNodeItemCountForTest() == 2
+                   && stateTransitionPanel.graphEdgeItemCountForTest() == 3,
+               true);
+    expectBool("state transition panel omits current and next signal nodes",
+               !stateTransitionPanel.graphElementSummariesForTest()
+                    .join(QLatin1Char('\n'))
+                    .contains(QStringLiteral("state-register|"))
+                   && !stateTransitionPanel.graphElementSummariesForTest()
+                           .join(QLatin1Char('\n'))
+                           .contains(QStringLiteral("next-state-signal|")),
+               true);
+    bool sawCurvedSelfLoop = false;
+    for (const QString& summary :
+         stateTransitionPanel.graphEdgeGeometrySummariesForTest()) {
+        const QStringList parts = summary.split(QLatin1Char('|'));
+        if (parts.size() < 12)
+            continue;
+        const int arrowDegrees = parts.at(9).toInt();
+        const int loopWidth = parts.at(10).toInt();
+        const int loopHeight = parts.at(11).toInt();
+        sawCurvedSelfLoop = sawCurvedSelfLoop
+            || (parts.at(0) == QStringLiteral("transition")
+                && parts.at(1) == QStringLiteral("B_IDLE")
+                && parts.at(2) == QStringLiteral("B_IDLE")
+                && parts.at(8) == QStringLiteral("curve")
+                && arrowDegrees >= 120
+                && arrowDegrees <= 150
+                && loopWidth < 320
+                && loopHeight < 150);
+    }
+    expectBool("state transition self-loop is compact curved arrow",
+               sawCurvedSelfLoop,
                true);
     QLineEdit* stateTransitionSearchEdit =
         stateTransitionPanel.dock()
@@ -9016,19 +9151,6 @@ static void runFsmGraphServiceFixture()
                invokedTransitionNavigation
                    && navigatedFileName == dualFileName
                    && navigatedLine == 18
-                   && navigatedColumn == 1,
-               true);
-    navigatedFileName.clear();
-    navigatedLine = 0;
-    navigatedColumn = 0;
-    const bool invokedNextStateNavigation =
-        stateTransitionPanel.triggerGraphNavigationForTest(
-            QStringLiteral("next-state-signal"),
-            QStringLiteral("next_state"));
-    expectBool("state transition panel next-state navigation",
-               invokedNextStateNavigation
-                   && navigatedFileName == dualFileName
-                   && navigatedLine == 7
                    && navigatedColumn == 1,
                true);
     stateTransitionPanel.showStateTransitionGraphForSignal(
@@ -9070,6 +9192,8 @@ static void runFsmGraphServiceFixture()
         QStringLiteral("state_d"));
     const QStringList complexSummaries =
         complexStatePanel.graphElementSummariesForTest();
+    const QStringList complexVisualSummaries =
+        complexStatePanel.graphElementVisualSummariesForTest();
     QGraphicsView* complexGraphView = complexStatePanel.graphView();
     const QRectF complexBounds =
         complexGraphView && complexGraphView->scene()
@@ -9092,6 +9216,26 @@ static void runFsmGraphServiceFixture()
                 && parts.at(2) == QStringLiteral("alias")
                 && parts.at(3).contains(QStringLiteral("canonical state C_IDLE")));
     }
+    QString complexIdleCanonicalFill;
+    QString complexIdleCanonicalStroke;
+    QString complexIdleAliasFill;
+    QString complexIdleAliasStroke;
+    bool complexIdleAliasDashed = false;
+    for (const QString& summary : complexVisualSummaries) {
+        const QStringList parts = summary.split(QLatin1Char('|'));
+        if (parts.size() < 7)
+            continue;
+        if (parts.at(0) == QStringLiteral("state")
+            && parts.at(1) == QStringLiteral("C_IDLE")) {
+            complexIdleCanonicalFill = parts.at(4);
+            complexIdleCanonicalStroke = parts.at(5);
+        } else if (parts.at(0) == QStringLiteral("state-alias")
+                   && parts.at(1) == QStringLiteral("C_IDLE")) {
+            complexIdleAliasFill = parts.at(4);
+            complexIdleAliasStroke = parts.at(5);
+            complexIdleAliasDashed = parts.at(6) == QStringLiteral("dash");
+        }
+    }
     const bool complexAliasNavigation =
         complexStatePanel.triggerGraphNavigationForTest(
             QStringLiteral("state-alias"),
@@ -9106,6 +9250,12 @@ static void runFsmGraphServiceFixture()
                    && complexStatePanel.graphTableRowsForTest().size()
                        == complexFsmReport.graphs.first().transitionRows.size(),
                true);
+    expectBool("complex fsm alias shares canonical color and stays dashed",
+               !complexIdleCanonicalFill.isEmpty()
+                   && complexIdleCanonicalFill == complexIdleAliasFill
+                   && complexIdleCanonicalStroke == complexIdleAliasStroke
+                   && complexIdleAliasDashed,
+               true);
     expectBool("complex fsm layout is path centric with lanes",
                complexCanonicalStateXs.size() >= 5
                    && complexCanonicalStateYs.size() >= 2,
@@ -9117,6 +9267,78 @@ static void runFsmGraphServiceFixture()
                    && complexBounds.width()
                           / qMax<qreal>(1.0, complexBounds.height())
                        < 5.5,
+               true);
+
+    FsmGraphQuery deadFsmQuery;
+    deadFsmQuery.moduleName = QStringLiteral("dead_fsm_top");
+    deadFsmQuery.fileName = deadFileName;
+    const FsmGraphReport deadFsmReport = service.buildFsmGraph(deadFsmQuery);
+    bool sawDeadErrorState = false;
+    bool sawIdleSelfLoopNotDead = false;
+    for (const FsmStateRow& row : deadFsmReport.graphs.isEmpty()
+             ? QList<FsmStateRow>()
+             : deadFsmReport.graphs.first().stateRows) {
+        sawDeadErrorState = sawDeadErrorState
+            || (row.stateDisplayName == QStringLiteral("D_ERROR")
+                && row.deadEndState
+                && row.statusDisplayName == QStringLiteral("dead/end state"));
+        sawIdleSelfLoopNotDead = sawIdleSelfLoopNotDead
+            || (row.stateDisplayName == QStringLiteral("D_IDLE")
+                && !row.deadEndState
+                && row.statusDisplayName.isEmpty());
+    }
+    expectBool("dead state service marks only pure self-loop state",
+               deadFsmReport.found
+                   && sawDeadErrorState
+                   && sawIdleSelfLoopNotDead,
+               true);
+
+    QWidget deadStatePanelHost;
+    RtlInsightsPanelCoordinator deadStatePanel(&deadStatePanelHost);
+    deadStatePanel.showStateTransitionGraphForSignal(
+        deadFileName,
+        QStringLiteral("dead_fsm_top"),
+        QStringLiteral("state_d"));
+    bool sawDeadStateDangerColor = false;
+    for (const QString& summary :
+         deadStatePanel.graphElementVisualSummariesForTest()) {
+        const QStringList parts = summary.split(QLatin1Char('|'));
+        if (parts.size() < 7)
+            continue;
+        sawDeadStateDangerColor = sawDeadStateDangerColor
+            || (parts.at(0) == QStringLiteral("state")
+                && parts.at(1) == QStringLiteral("D_ERROR")
+                && parts.at(4)
+                    == InsightVisualStyle::theme()
+                           .statusBar.errorBackground.name()
+                && parts.at(5)
+                    == InsightVisualStyle::theme().statusBar.errorText.name());
+    }
+    expectBool("dead state graph uses danger color",
+               sawDeadStateDangerColor,
+               true);
+    const bool selectedDeadState =
+        deadStatePanel.selectGraphItemForTest(QStringLiteral("state"),
+                                              QStringLiteral("D_ERROR"));
+    expectBool("dead state inspector notes dead state",
+               selectedDeadState
+                   && deadStatePanel.graphInspectorRowsForTest()
+                          .join(QLatin1Char('\n'))
+                          .contains(QStringLiteral("dead/end state")),
+               true);
+    const QStringList deadTableRows = deadStatePanel.graphTableRowsForTest();
+    bool sawDeadTableNote = false;
+    bool sawIdleSelfLoopTableNote = false;
+    for (const QString& row : deadTableRows) {
+        sawDeadTableNote = sawDeadTableNote
+            || (row.contains(QStringLiteral("D_ERROR|D_ERROR"))
+                && row.contains(QStringLiteral("dead/end state")));
+        sawIdleSelfLoopTableNote = sawIdleSelfLoopTableNote
+            || (row.contains(QStringLiteral("D_IDLE|D_IDLE"))
+                && row.contains(QStringLiteral("dead/end state")));
+    }
+    expectBool("dead state table notes only pure self-loop state",
+               sawDeadTableNote && !sawIdleSelfLoopTableNote,
                true);
     StateTransitionGraphService::getInstance()->setSemanticIndex(
         SemanticIndex::getInstance());
@@ -11247,6 +11469,13 @@ static void runRealWorkspaceIncludeFixture()
         realStateGraphView && realStateGraphView->scene()
             ? realStateGraphView->scene()->itemsBoundingRect()
             : QRectF();
+    const QRectF realStateFitRect = realStatePanel.graphLastFitRectForTest();
+    const QRectF realStateSceneRect =
+        realStateGraphView && realStateGraphView->scene()
+            ? realStateGraphView->scene()->sceneRect()
+            : QRectF();
+    const qreal realStateInitialZoom =
+        realStatePanel.graphCurrentZoomForTest();
     bool sawRealPhyPassAliasLayout = false;
     bool sawRealPhyPassAliasCanonicalDetail = false;
     bool sawRealPhyPassFarAlias = false;
@@ -11298,6 +11527,14 @@ static void runRealWorkspaceIncludeFixture()
                    && realStateBounds.width()
                           / qMax<qreal>(1.0, realStateBounds.height())
                        < 6.0,
+               true);
+    expectBool("real workspace fsm graph initial fit uses state body",
+               realStateFitRect.isValid()
+                   && realStateBounds.isValid()
+                   && realStateSceneRect.isValid()
+                   && realStateFitRect.height() < realStateSceneRect.height()
+                   && realStateFitRect.width() <= realStateSceneRect.width()
+                   && realStateInitialZoom > 0.08,
                true);
     expectBool("real workspace fsm graph chl_ctrl avoids far aliases",
                (!sawRealPhyPassAliasLayout

@@ -688,16 +688,15 @@ Do not add unlisted long-term goals without explicit user approval.
 - Avoid launching GUI smoke executables in this environment when they are known
   to produce external Windows error dialogs; compile/link targets instead unless
   the user explicitly asks to run them.
-- Latest FSM / Module Block readability repair: FSM/State Transition Graph
-  keeps structural FSM recognition while using compact `C#` transition labels
-  on edges, full condition text in the transitions table/inspector, tighter
-  orthogonal routing, compact self/back edges, and aliases that stay near the
-  source side instead of inflating the scene. Module Block Diagram still filters
-  interface declarations/instances and interface-typed unresolved children, but
-  now uses smaller wrapped containers and keeps nested nodes readable when a
-  container is hovered or selected. Verification in `build`: CTest passed for
-  `completion_test`, `relationship_test`, `gui_smoke_test`, and
-  `insight_visual_style_test`.
+- Latest FSM readability follow-up: FSM/State Transition Graph keeps structural
+  FSM recognition while rendering only state nodes and transition edges in the
+  graph body. `C#` edge labels are dark, bold, and unboxed; full conditions stay
+  in the table/inspector. Self-loops render as compact curved loops with angled
+  arrows, initial fit uses state-body bounds instead of title/scene padding,
+  alias states share their canonical state's color while staying dashed, and
+  pure self-loop dead/end states get danger styling plus inspector/table notes.
+  Verification in `build`: targets and CTest passed for `completion_test`,
+  `relationship_test`, `gui_smoke_test`, and `insight_visual_style_test`.
 - Latest Module Block Diagram real-usability pass: Debug targets
   `completion_test`, `relationship_test`, `gui_smoke_test`,
   `full_feature_audit_test`, and `jump_test` compile/link; focused CTest runs
