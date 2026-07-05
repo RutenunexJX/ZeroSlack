@@ -69,6 +69,21 @@ into an analyzer.
   separated arcs, and focused geometry hooks check labels, node avoidance, and
   pair spacing, including real `chl_ctrl.sv` `phy_pass_thrg_cfg_ns` and
   `phy_cfg_ns` regressions.
+- Current FSM visual polish follow-up: canvas-internal State Transition/FSM
+  title and current-to-next captions are removed, FSM layout spacing and outer
+  lanes are tighter, and the real `chl_ctrl.sv` `phy_cfg_ns` regression checks
+  badge-level sampled crossings for C1/C9 and C17/C7 plus direct normal routing
+  for C18. Remaining FSM risk is still layout-quality edge cases outside the
+  focused real fixture rather than a globally optimal graph layout.
+- Current Workspace Session State v1 follow-up: `.zs` versioned JSON save/load
+  is implemented through `WorkspaceSessionStateService`, explicit Global
+  Control commands `ow s save` / `ow s restore` / `ow s clean`, TabManager
+  cursor/scroll/active-tab restore, WorkspaceManager scanned-file restore, and
+  main-window geometry/dock state persistence. The active-workspace close path
+  now saves the session before closing that workspace's tabs, with GUI smoke
+  coverage proving `.zs` keeps the open tab. Remaining risk is v1 scope:
+  semantic index snapshots are intentionally not hard-restored, and layout
+  restore falls back to the default dock layout on Qt state mismatch.
 - The current completed baseline includes import-aware package member
   visibility for unqualified completion, definition, and hover; user template
   JSON usage actions; explicit header/include and package import commands;

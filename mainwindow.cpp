@@ -44,6 +44,7 @@
 #include "signalkernelgraphpanelcoordinator.h"
 #include "wavepreviewpanelcoordinator.h"
 #include "workspaceconfigurationdialog.h"
+#include "workspacesessionstateservice.h"
 #include "version.h"
 #include <QAction>
 #include <QAbstractItemView>
@@ -113,6 +114,18 @@ DiagnosticSeverityFilter diagnosticSeverityFromProblemsCombo(QComboBox* combo)
     default:
         return DiagnosticSeverityFilter::All;
     }
+}
+
+QString workspaceSessionRootKey(const QString& path)
+{
+    if (path.isEmpty())
+        return QString();
+    QString normalized = QDir::cleanPath(
+        QDir::fromNativeSeparators(QFileInfo(path).absoluteFilePath()));
+#ifdef Q_OS_WIN
+    normalized = normalized.toCaseFolded();
+#endif
+    return normalized;
 }
 }
 
@@ -315,8 +328,11 @@ void MainWindow::setupWorkspaceBar()
             &QTabBar::currentChanged,
             this,
             [this](int index) {
-                if (workspaceManager)
+                if (workspaceManager
+                    && index != workspaceManager->activeWorkspaceIndex()) {
+                    saveWorkspaceSession(false);
                     workspaceManager->switchWorkspace(index);
+                }
             });
     connect(workspaceTabBar,
             &QTabBar::tabCloseRequested,
@@ -339,6 +355,7 @@ void MainWindow::setupWorkspaceBar()
                 if (foldShelfModel)
                     foldShelfModel->setWorkspaceRoot(path);
                 refreshWorkspaceTabs();
+                noteWorkspaceSessionAvailability();
             });
     connect(workspaceManager.get(),
             &WorkspaceManager::workspaceClosed,
@@ -496,6 +513,11 @@ void MainWindow::closeWorkspaceTab(int index)
         workspaceManager->workspaceEntries();
     if (index < 0 || index >= entries.size())
         return;
+
+    const bool closingActive =
+        index == workspaceManager->activeWorkspaceIndex();
+    if (closingActive)
+        saveWorkspaceSession(false);
 
     if (!tabManager->closeTabsInWorkspace(entries.at(index).path))
         return;
@@ -1042,6 +1064,17 @@ void MainWindow::setupGlobalControl()
 
             if (item.id == QStringLiteral("ow r")) {
                 showRecentWorkspacesDialog();
+            } else if (item.id == QStringLiteral("ow s save")) {
+                saveWorkspaceSession(true);
+            } else if (item.id == QStringLiteral("ow s restore")) {
+                restoreWorkspaceSession();
+            } else if (item.id == QStringLiteral("ow s clean")) {
+                cleanWorkspaceSession();
+            } else if (item.id == QStringLiteral("ow s")) {
+                if (statusBar())
+                    statusBar()->showMessage(
+                        QStringLiteral("Use ow s save, ow s restore, or ow s clean"),
+                        4000);
             } else if (item.id.startsWith(QStringLiteral("ow "))) {
                 bool ok = false;
                 const int count = item.id.mid(3).trimmed().toInt(&ok);
@@ -1497,8 +1530,209 @@ void MainWindow::showWorkspaceConfigurationDialog()
             QStringLiteral("Workspace configuration saved; analysis queued"),
             4000);
     }
+    scheduleWorkspaceSessionSave();
     if (semanticDocks && semanticDocks->refreshCoordinator())
         semanticDocks->refreshCoordinator()->updateProblemsPanel();
+}
+
+WorkspaceSessionState MainWindow::captureWorkspaceSessionState() const
+{
+    WorkspaceSessionState state;
+    if (!workspaceManager || !workspaceManager->isWorkspaceOpen())
+        return state;
+
+    const QString workspaceRoot = workspaceManager->getWorkspacePath();
+    state.workspaceRoot = workspaceRoot;
+    state.configuration = workspaceManager->workspaceConfiguration();
+    if (tabManager)
+        state.tabs = tabManager->workspaceSessionTabs(workspaceRoot);
+    state.ui.mainWindowGeometry = saveGeometry();
+    state.ui.mainWindowState = saveState();
+
+    const QList<WorkspaceManager::WorkspaceEntry> entries =
+        workspaceManager->workspaceEntries();
+    const int activeIndex = workspaceManager->activeWorkspaceIndex();
+    if (activeIndex >= 0 && activeIndex < entries.size()) {
+        const WorkspaceManager::WorkspaceEntry& entry =
+            entries.at(activeIndex);
+        if (entry.path == workspaceRoot) {
+            state.scannedFiles = entry.scannedFiles;
+            state.scanComplete = entry.scanComplete;
+        }
+    }
+    if (state.scannedFiles.isEmpty()) {
+        const ProjectSnapshot snapshot = workspaceManager->projectSnapshot();
+        state.scannedFiles = snapshot.allFiles;
+    }
+    return state;
+}
+
+bool MainWindow::saveWorkspaceSession(bool showStatus)
+{
+    if (!workspaceManager || !workspaceManager->isWorkspaceOpen()) {
+        if (showStatus && statusBar())
+            statusBar()->showMessage(
+                QStringLiteral("Open a workspace before saving a session"),
+                3000);
+        return false;
+    }
+
+    WorkspaceSessionStateService service;
+    const WorkspaceSessionSaveResult result =
+        service.save(captureWorkspaceSessionState());
+    if (showStatus && statusBar()) {
+        statusBar()->showMessage(
+            result.saved
+                ? QStringLiteral("Workspace session saved to %1")
+                      .arg(QDir::toNativeSeparators(result.sessionFilePath))
+                : result.message,
+            result.saved ? 3000 : 5000);
+    }
+    return result.saved;
+}
+
+bool MainWindow::restoreWorkspaceSession()
+{
+    if (!workspaceManager || !workspaceManager->isWorkspaceOpen()) {
+        if (statusBar())
+            statusBar()->showMessage(
+                QStringLiteral("Open a workspace before restoring a session"),
+                3000);
+        return false;
+    }
+
+    const QString workspaceRoot = workspaceManager->getWorkspacePath();
+    const QString rootKey = workspaceSessionRootKey(workspaceRoot);
+    if (workspaceSessionCleanRoots.contains(rootKey)) {
+        if (statusBar())
+            statusBar()->showMessage(
+                QStringLiteral("Workspace session ignored for this activation"),
+                3000);
+        return false;
+    }
+
+    WorkspaceSessionStateService service;
+    const WorkspaceSessionRestoreResult result =
+        service.load(workspaceRoot);
+    if (!result.loaded) {
+        if (statusBar())
+            statusBar()->showMessage(result.message, 5000);
+        return false;
+    }
+
+    QString errorMessage;
+    WorkspaceConfiguration configuration = result.state.configuration;
+    configuration.workspaceRoot = workspaceRoot;
+    const bool configurationApplied =
+        workspaceManager->setWorkspaceConfiguration(configuration,
+                                                   &errorMessage);
+
+    const bool scanRestored =
+        workspaceManager->restoreSessionScanState(
+            result.state.scannedFiles,
+            result.state.scanComplete);
+
+    QStringList skippedTabs = result.skippedTabs;
+    QStringList tabRestoreSkips;
+    const QStringList restoredTabs =
+        tabManager
+            ? tabManager->restoreWorkspaceSessionTabs(workspaceRoot,
+                                                      result.state.tabs,
+                                                      &tabRestoreSkips)
+            : QStringList();
+    skippedTabs.append(tabRestoreSkips);
+    skippedTabs.removeDuplicates();
+
+    bool geometryRestored = true;
+    bool dockStateRestored = true;
+    if (!result.state.ui.mainWindowGeometry.isEmpty())
+        geometryRestored = restoreGeometry(result.state.ui.mainWindowGeometry);
+    if (!result.state.ui.mainWindowState.isEmpty())
+        dockStateRestored = restoreState(result.state.ui.mainWindowState);
+    if (!dockStateRestored)
+        resetPanelLayout();
+
+    QStringList notes;
+    if (!configurationApplied) {
+        notes.append(errorMessage.isEmpty()
+                         ? QStringLiteral("configuration skipped")
+                         : errorMessage);
+    }
+    if (!scanRestored)
+        notes.append(QStringLiteral("scan list skipped"));
+    if (!geometryRestored || !dockStateRestored)
+        notes.append(QStringLiteral("layout fallback used"));
+    if (!skippedTabs.isEmpty())
+        notes.append(QStringLiteral("%1 tab(s) skipped").arg(skippedTabs.size()));
+    if (!result.skippedScannedFiles.isEmpty()) {
+        notes.append(QStringLiteral("%1 scanned file(s) skipped")
+                         .arg(result.skippedScannedFiles.size()));
+    }
+    if (!result.externalPaths.isEmpty()) {
+        notes.append(QStringLiteral("%1 external path(s)")
+                         .arg(result.externalPaths.size()));
+    }
+
+    QString message =
+        QStringLiteral("Workspace session restored: %1 tab(s), %2 scanned file(s)")
+            .arg(restoredTabs.size())
+            .arg(result.state.scannedFiles.size());
+    if (!notes.isEmpty())
+        message += QStringLiteral(" (%1)").arg(notes.join(QStringLiteral("; ")));
+    if (statusBar())
+        statusBar()->showMessage(message, notes.isEmpty() ? 4000 : 7000);
+    scheduleWorkspaceSessionSave();
+    return configurationApplied && scanRestored && dockStateRestored;
+}
+
+void MainWindow::cleanWorkspaceSession()
+{
+    if (!workspaceManager || !workspaceManager->isWorkspaceOpen()) {
+        if (statusBar())
+            statusBar()->showMessage(
+                QStringLiteral("Open a workspace before ignoring a session"),
+                3000);
+        return;
+    }
+
+    workspaceSessionCleanRoots.insert(
+        workspaceSessionRootKey(workspaceManager->getWorkspacePath()));
+    if (statusBar())
+        statusBar()->showMessage(
+            QStringLiteral("Workspace session ignored for this activation"),
+            3000);
+}
+
+void MainWindow::scheduleWorkspaceSessionSave()
+{
+    if (!workspaceManager || !workspaceManager->isWorkspaceOpen())
+        return;
+
+    if (!workspaceSessionSaveTimer) {
+        workspaceSessionSaveTimer = new QTimer(this);
+        workspaceSessionSaveTimer->setSingleShot(true);
+        connect(workspaceSessionSaveTimer,
+                &QTimer::timeout,
+                this,
+                [this]() { saveWorkspaceSession(false); });
+    }
+    workspaceSessionSaveTimer->start(900);
+}
+
+void MainWindow::noteWorkspaceSessionAvailability()
+{
+    if (!workspaceManager || !workspaceManager->isWorkspaceOpen())
+        return;
+
+    const QString workspaceRoot = workspaceManager->getWorkspacePath();
+    if (workspaceSessionCleanRoots.contains(workspaceSessionRootKey(workspaceRoot)))
+        return;
+    if (WorkspaceSessionStateService::sessionFileExists(workspaceRoot)
+        && statusBar()) {
+        statusBar()->showMessage(
+            QStringLiteral("Workspace session available: use ow s restore"),
+            4000);
+    }
 }
 
 void MainWindow::navigateDiagnostic(bool previous)
@@ -1869,6 +2103,7 @@ void MainWindow::resetPanelLayout()
     if (problemsDock)
         problemsDock->raise();
 
+    scheduleWorkspaceSessionSave();
     if (statusBar())
         statusBar()->showMessage(tr("Panel layout reset"), 3000);
 }
@@ -2029,6 +2264,8 @@ void MainWindow::closeEvent(QCloseEvent *event)
         fileCommandCoordinator->handleCloseEvent(event, this);
     else
         event->accept();
+    if (event && event->isAccepted())
+        saveWorkspaceSession(false);
 }
 
 void MainWindow::keyPressEvent(QKeyEvent *event)

@@ -11,6 +11,7 @@
 #include "tabopencontroller.h"
 #include "tabsavecontroller.h"
 #include "tabtitlecontroller.h"
+#include "workspacesessionstateservice.h"
 
 class TabManager : public QObject
 {
@@ -46,6 +47,12 @@ public:
                            const QString& activeWorkspaceRoot);
     bool closeTabsInWorkspace(const QString& workspaceRoot);
     bool hasUnsavedChanges() const;
+    QList<WorkspaceSessionTabState> workspaceSessionTabs(
+        const QString& workspaceRoot) const;
+    QStringList restoreWorkspaceSessionTabs(
+        const QString& workspaceRoot,
+        const QList<WorkspaceSessionTabState>& tabs,
+        QStringList* skippedFiles = nullptr);
 
 signals:
     void tabCreated(MyCodeEditor* editor);

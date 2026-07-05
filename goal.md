@@ -85,6 +85,23 @@ Current baseline highlights:
   labels can be verified geometrically. Regression coverage includes label
   distance from paths, path samples avoiding state rects, mutual pair spacing,
   and real `chl_ctrl.sv` `phy_pass_thrg_cfg_ns` / `phy_cfg_ns` scenarios.
+- Current execution session Phase A is complete in the working tree: FSM/State
+  Transition graph bodies no longer draw duplicated canvas titles or
+  current-to-next captions, spacing and outer lanes are tighter, route metadata
+  now exposes sampled edge crossings, and the real `chl_ctrl.sv` `phy_cfg_ns`
+  regression verifies C1/C9 and C17/C7 avoid sampled crossings while C18 is a
+  direct normal line. Verification so far: Debug `relationship_test` passed.
+- Current execution session Phase B is complete in the working tree:
+  Workspace Session State v1 writes and reads workspace-root `.zs` JSON for
+  workspace configuration, relative workspace tabs with cursor/scroll/active
+  state, main-window geometry/dock state, and scanned-file metadata. Restore is
+  explicit through Global Control `ow s restore`; `ow s save` and `ow s clean`
+  are also exposed without changing `ow 1`, `ow 2`, or `ow r`. Missing files
+  are skipped, external config paths are reported, and full semantic cache
+  snapshots remain intentionally out of v1. Acceptance fix: closing the active
+  workspace saves `.zs` before closing its tabs so the saved tab list is not
+  overwritten empty. Verification so far: Debug `completion_test` and
+  `gui_smoke_test` passed.
 - Signal Usage Hotspot is available from the editor source-symbol context action
   `Signal Usage Hotspot` and the RTL Insights `Usage Hotspot` action. It renders
   Track lanes from report items, Matrix heat cells from report summaries, role

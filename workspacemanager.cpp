@@ -439,6 +439,62 @@ bool WorkspaceManager::setWorkspaceConfiguration(
     return applyWorkspaceConfiguration(configuration, true, errorMessage);
 }
 
+bool WorkspaceManager::restoreSessionScanState(const QStringList& scannedFiles,
+                                               bool scanComplete)
+{
+    if (!isWorkspaceOpen() || !projectModel)
+        return false;
+
+    cancelDirectoryScan();
+
+    QStringList existingFiles;
+    existingFiles.reserve(scannedFiles.size());
+    for (const QString& file : scannedFiles) {
+        const QString path = normalizeWorkspacePath(file);
+        if (path.isEmpty() || !QFileInfo(path).isFile())
+            continue;
+        const QString rootPrefix = workspacePath.endsWith(QLatin1Char('/'))
+            ? workspacePath
+            : workspacePath + QLatin1Char('/');
+#ifdef Q_OS_WIN
+        const QString comparePath = path.toCaseFolded();
+        const QString compareRoot = workspacePath.toCaseFolded();
+        const QString comparePrefix = rootPrefix.toCaseFolded();
+#else
+        const QString comparePath = path;
+        const QString compareRoot = workspacePath;
+        const QString comparePrefix = rootPrefix;
+#endif
+        if (comparePath == compareRoot
+            || comparePath.startsWith(comparePrefix)) {
+            existingFiles.append(path);
+        }
+    }
+    existingFiles.removeDuplicates();
+    existingFiles.sort(Qt::CaseInsensitive);
+
+    files.setScannedFiles(projectModel.get(), existingFiles);
+    if (activeIndex >= 0 && activeIndex < workspaces.size()
+        && workspaces.at(activeIndex).path == workspacePath) {
+        workspaces[activeIndex].scannedFiles = existingFiles;
+        workspaces[activeIndex].ignoredDirectories =
+            projectModel ? projectModel->ignoredPaths() : QStringList();
+        workspaces[activeIndex].scanComplete = scanComplete;
+    }
+
+    updateFileWatcher();
+    emit filesScanned(files.systemVerilogFiles);
+    emit workspaceListChanged();
+    if (scanComplete) {
+        emit workspaceScanFinished(workspacePath,
+                                   files.allFiles.size(),
+                                   files.systemVerilogFiles.size());
+    } else {
+        startDirectoryScan(workspacePath);
+    }
+    return true;
+}
+
 ProjectModel* WorkspaceManager::getProjectModel() const
 {
     return projectModel.get();

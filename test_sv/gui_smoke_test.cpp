@@ -899,6 +899,126 @@ static void runTabOpenDedupRegression()
                    && scopedTabs.editorCount() == 3
                    && scopedCloseSpy.size() == 1,
                true);
+
+    QTemporaryDir sessionTabsWorkspace;
+    expectBool("tab session temp dir valid",
+               sessionTabsWorkspace.isValid(),
+               true);
+    if (!sessionTabsWorkspace.isValid())
+        return;
+
+    const QString sessionTopFile =
+        QDir(sessionTabsWorkspace.path()).absoluteFilePath(
+            QStringLiteral("session_top.sv"));
+    const QString sessionHelperFile =
+        QDir(sessionTabsWorkspace.path()).absoluteFilePath(
+            QStringLiteral("session_helper.svh"));
+    const QString sessionMissingFile =
+        QDir(sessionTabsWorkspace.path()).absoluteFilePath(
+            QStringLiteral("missing.sv"));
+    QString longHelperText = QStringLiteral("`define SESSION_HELPER\n");
+    for (int i = 0; i < 80; ++i)
+        longHelperText += QStringLiteral("// helper line %1\n").arg(i);
+    expectBool("tab session files writable",
+               writeTextFile(sessionTopFile,
+                             QStringLiteral("module session_top;\n"
+                                            "  logic a;\n"
+                                            "endmodule\n"))
+                   && writeTextFile(sessionHelperFile, longHelperText),
+               true);
+
+    QTabWidget captureWidget;
+    captureWidget.resize(480, 160);
+    captureWidget.show();
+    TabManager captureTabs(&captureWidget);
+    expectBool("tab session opens top",
+               captureTabs.openFileInTab(sessionTopFile),
+               true);
+    MyCodeEditor* sessionTopEditor = captureTabs.getCurrentEditor();
+    if (sessionTopEditor) {
+        QTextBlock topBlock =
+            sessionTopEditor->document()->findBlockByNumber(1);
+        QTextCursor topCursor(topBlock);
+        topCursor.setPosition(topBlock.position() + 4);
+        sessionTopEditor->setTextCursor(topCursor);
+    }
+    expectBool("tab session opens helper",
+               captureTabs.openFileInTab(sessionHelperFile),
+               true);
+    MyCodeEditor* sessionHelperEditor = captureTabs.getCurrentEditor();
+    int capturedHelperScroll = 0;
+    if (sessionHelperEditor) {
+        sessionHelperEditor->resize(480, 120);
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+        QTextBlock helperBlock =
+            sessionHelperEditor->document()->findBlockByNumber(20);
+        QTextCursor helperCursor(helperBlock);
+        helperCursor.setPosition(helperBlock.position() + 3);
+        sessionHelperEditor->setTextCursor(helperCursor);
+        if (QScrollBar* bar = sessionHelperEditor->verticalScrollBar()) {
+            bar->setValue(qMin(7, bar->maximum()));
+            capturedHelperScroll = bar->value();
+        }
+    }
+    const QList<WorkspaceSessionTabState> capturedTabs =
+        captureTabs.workspaceSessionTabs(sessionTabsWorkspace.path());
+    bool capturedTop = false;
+    bool capturedActiveHelper = false;
+    for (const WorkspaceSessionTabState& state : capturedTabs) {
+        capturedTop =
+            capturedTop
+            || (QFileInfo(state.filePath).fileName()
+                    == QStringLiteral("session_top.sv")
+                && state.cursorLine == 2
+                && state.cursorColumn == 5
+                && !state.active);
+        capturedActiveHelper =
+            capturedActiveHelper
+            || (QFileInfo(state.filePath).fileName()
+                    == QStringLiteral("session_helper.svh")
+                && state.cursorLine == 21
+                && state.cursorColumn == 4
+                && state.verticalScrollValue == capturedHelperScroll
+                && state.active);
+    }
+    expectBool("tab session captures tabs cursor scroll active",
+               capturedTabs.size() == 2
+                   && capturedTop
+                   && capturedActiveHelper,
+               true);
+
+    QList<WorkspaceSessionTabState> restoreStates = capturedTabs;
+    WorkspaceSessionTabState missingState;
+    missingState.filePath = sessionMissingFile;
+    restoreStates.append(missingState);
+    QTabWidget restoreWidget;
+    restoreWidget.resize(480, 160);
+    restoreWidget.show();
+    TabManager restoreTabs(&restoreWidget);
+    QStringList skippedSessionTabs;
+    const QStringList restoredSessionTabs =
+        restoreTabs.restoreWorkspaceSessionTabs(sessionTabsWorkspace.path(),
+                                                restoreStates,
+                                                &skippedSessionTabs);
+    MyCodeEditor* restoredHelper = restoreTabs.getCurrentEditor();
+    const DocumentSnapshot restoredDocument =
+        restoreTabs.getCurrentDocument();
+    const QTextCursor restoredCursor =
+        restoredHelper ? restoredHelper->textCursor() : QTextCursor();
+    expectBool("tab session restores existing tabs skips missing",
+               restoredSessionTabs.size() == 2
+                   && skippedSessionTabs.size() == 1
+                   && QFileInfo(restoredDocument.fileName).fileName()
+                          == QStringLiteral("session_helper.svh"),
+               true);
+    expectBool("tab session restores active cursor scroll",
+               restoredHelper
+                   && restoredCursor.blockNumber() == 20
+                   && restoredCursor.positionInBlock() == 3
+                   && (!restoredHelper->verticalScrollBar()
+                       || restoredHelper->verticalScrollBar()->value()
+                              == capturedHelperScroll),
+               true);
 }
 
 static void runWorkspaceCloseRegression()
@@ -1140,6 +1260,69 @@ static void runWorkspaceAliasRenameRegression()
                true);
     expectBool("workspace rename emits list changes",
                listSpy.size() >= 4,
+               true);
+}
+
+static void runWorkspaceSessionCloseSaveOrderRegression()
+{
+    QTemporaryDir workspaceDir;
+    expectBool("workspace session close temp dir valid",
+               workspaceDir.isValid(),
+               true);
+    if (!workspaceDir.isValid())
+        return;
+
+    const QString sessionFile =
+        QDir(workspaceDir.path()).absoluteFilePath(
+            QStringLiteral("session_close_top.sv"));
+    expectBool("workspace session close file writable",
+               writeTextFile(sessionFile,
+                             QStringLiteral("module session_close_top;\n"
+                                            "endmodule\n")),
+               true);
+
+    MainWindow window;
+    expectBool("workspace session close opens workspace",
+               window.workspaceManager
+                   && window.workspaceManager->openWorkspace(
+                       workspaceDir.path()),
+               true);
+    expectBool("workspace session close scan completes",
+               waitUntil([&]() {
+                   return window.workspaceManager
+                       && window.workspaceManager->workspaceEntries().size() == 1
+                       && window.workspaceManager->workspaceEntries()
+                              .first()
+                              .scanComplete;
+               },
+                         3000),
+               true);
+    expectBool("workspace session close opens tab",
+               window.tabManager
+                   && window.tabManager->openFileInTab(sessionFile),
+               true);
+
+    const WorkspaceSessionState capturedBeforeClose =
+        window.captureWorkspaceSessionState();
+    expectBool("workspace session close pre-capture has tab",
+               capturedBeforeClose.tabs.size() == 1
+                   && QFileInfo(capturedBeforeClose.tabs.first().filePath)
+                          .fileName()
+                          == QStringLiteral("session_close_top.sv"),
+               true);
+
+    window.closeWorkspaceTab(0);
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+
+    WorkspaceSessionStateService service;
+    const WorkspaceSessionRestoreResult restored =
+        service.load(workspaceDir.path());
+    expectBool("workspace session close saved before tab close",
+               restored.loaded
+                   && restored.state.tabs.size() == 1
+                   && QFileInfo(restored.state.tabs.first().filePath)
+                          .fileName()
+                          == QStringLiteral("session_close_top.sv"),
                true);
 }
 
@@ -7598,6 +7781,7 @@ static void runGlobalControlRegression(MainWindow& window,
     bool foundOpenOneWorkspaceAction = false;
     bool foundOpenTwoWorkspacesAction = false;
     bool foundRecentWorkspaceAction = false;
+    bool foundSessionWorkspaceAction = false;
     bool foundDeprecatedWorkspaceAction = false;
     for (const GlobalControlItem& item : workspaceMatches) {
         if (item.id == QStringLiteral("ow 1")
@@ -7610,6 +7794,10 @@ static void runGlobalControlRegression(MainWindow& window,
             && item.kind == GlobalControlItemKind::Command
             && item.subtitle.contains(QStringLiteral("Recent Workspaces")))
             foundRecentWorkspaceAction = true;
+        if (item.id == QStringLiteral("ow s")
+            && item.kind == GlobalControlItemKind::Domain
+            && item.subtitle.contains(QStringLiteral("Workspace Session")))
+            foundSessionWorkspaceAction = true;
         if (item.id == QStringLiteral("ow"))
             foundDeprecatedWorkspaceAction = true;
     }
@@ -7621,6 +7809,9 @@ static void runGlobalControlRegression(MainWindow& window,
                true);
     expectBool("global control ow domain shows ow r",
                foundRecentWorkspaceAction,
+               true);
+    expectBool("global control ow domain shows ow s",
+               foundSessionWorkspaceAction,
                true);
     expectBool("global control ow domain hides deprecated commands",
                foundDeprecatedWorkspaceAction,
@@ -7661,6 +7852,61 @@ static void runGlobalControlRegression(MainWindow& window,
     expectBool("global control ow r query hides count hint",
                foundWorkspaceCountHint,
                false);
+
+    const QList<GlobalControlItem> sessionWorkspaceMatches =
+        service.query(QStringLiteral("ow s"),
+                      window.workspaceManager->getProjectModel(),
+                      SemanticIndex::getInstance());
+    bool foundSessionSave = false;
+    bool foundSessionRestore = false;
+    bool foundSessionClean = false;
+    for (const GlobalControlItem& item : sessionWorkspaceMatches) {
+        if (item.id == QStringLiteral("ow s save")
+            && item.subtitle.contains(QStringLiteral("save current workspace")))
+            foundSessionSave = true;
+        if (item.id == QStringLiteral("ow s restore")
+            && item.subtitle.contains(QStringLiteral("restore saved workspace")))
+            foundSessionRestore = true;
+        if (item.id == QStringLiteral("ow s clean")
+            && item.subtitle.contains(QStringLiteral("ignore saved state")))
+            foundSessionClean = true;
+    }
+    expectBool("global control ow s query finds session commands",
+               foundSessionSave && foundSessionRestore && foundSessionClean,
+               true);
+    expectBool("global control ow s w resolves save",
+               !service.query(QStringLiteral("ow s w"),
+                              window.workspaceManager->getProjectModel(),
+                              SemanticIndex::getInstance())
+                    .isEmpty()
+                   && service.query(QStringLiteral("ow s w"),
+                                    window.workspaceManager->getProjectModel(),
+                                    SemanticIndex::getInstance())
+                          .first()
+                          .id == QStringLiteral("ow s save"),
+               true);
+    expectBool("global control ow s r resolves restore",
+               !service.query(QStringLiteral("ow s r"),
+                              window.workspaceManager->getProjectModel(),
+                              SemanticIndex::getInstance())
+                    .isEmpty()
+                   && service.query(QStringLiteral("ow s r"),
+                                    window.workspaceManager->getProjectModel(),
+                                    SemanticIndex::getInstance())
+                          .first()
+                          .id == QStringLiteral("ow s restore"),
+               true);
+    expectBool("global control ow s c resolves clean",
+               !service.query(QStringLiteral("ow s c"),
+                              window.workspaceManager->getProjectModel(),
+                              SemanticIndex::getInstance())
+                    .isEmpty()
+                   && service.query(QStringLiteral("ow s c"),
+                                    window.workspaceManager->getProjectModel(),
+                                    SemanticIndex::getInstance())
+                          .first()
+                          .id == QStringLiteral("ow s clean"),
+               true);
 
     const QList<GlobalControlItem> foldActionMatches =
         service.query(QStringLiteral("fd"),
@@ -7897,6 +8143,7 @@ int main(int argc, char** argv)
     runWorkspaceCloseRegression();
     runWorkspaceCachedSwitchRegression();
     runWorkspaceAliasRenameRegression();
+    runWorkspaceSessionCloseSaveOrderRegression();
     runIncludeCompletionRegression();
     runTreeSitterFoldingProviderRegression();
     runNavigationDesignCacheWorkspaceActivationRegression();

@@ -95,6 +95,48 @@ QList<GlobalControlItem> foldDomainItems(const QString& filter)
     return result;
 }
 
+QList<GlobalControlItem> workspaceSessionDomainItems(const QString& query)
+{
+    const QList<GlobalControlItem> sessionItems = {
+        item(GlobalControlItemKind::Command,
+             QStringLiteral("ow s save"),
+             QStringLiteral("ow s save"),
+             QStringLiteral("Workspace Session - save current workspace state")),
+        item(GlobalControlItemKind::Command,
+             QStringLiteral("ow s restore"),
+             QStringLiteral("ow s restore"),
+             QStringLiteral("Workspace Session - restore saved workspace state")),
+        item(GlobalControlItemKind::Command,
+             QStringLiteral("ow s clean"),
+             QStringLiteral("ow s clean"),
+             QStringLiteral("Workspace Session - ignore saved state for this activation")),
+    };
+
+    const QStringList parts = query.split(QLatin1Char(' '),
+                                         Qt::SkipEmptyParts);
+    QString filter = query;
+    if (parts.size() >= 3) {
+        const QString action = parts.at(2);
+        if (QStringLiteral("w").startsWith(action, Qt::CaseInsensitive)
+            || QStringLiteral("save").startsWith(action, Qt::CaseInsensitive)) {
+            return {sessionItems.at(0)};
+        }
+        if (QStringLiteral("r").startsWith(action, Qt::CaseInsensitive)
+            || QStringLiteral("restore").startsWith(action, Qt::CaseInsensitive)) {
+            return {sessionItems.at(1)};
+        }
+        if (QStringLiteral("c").startsWith(action, Qt::CaseInsensitive)
+            || QStringLiteral("clean").startsWith(action, Qt::CaseInsensitive)) {
+            return {sessionItems.at(2)};
+        }
+        filter = action;
+    }
+
+    QList<GlobalControlItem> result;
+    appendFiltered(&result, sessionItems, filter);
+    return result;
+}
+
 QList<GlobalControlItem> workspaceDomainItems(const QString& query)
 {
     const QList<GlobalControlItem> baseItems = {
@@ -110,12 +152,21 @@ QList<GlobalControlItem> workspaceDomainItems(const QString& query)
              QStringLiteral("ow r"),
              QStringLiteral("ow r"),
              QStringLiteral("Recent Workspaces")),
+        item(GlobalControlItemKind::Domain,
+             QStringLiteral("ow s"),
+             QStringLiteral("ow s"),
+             QStringLiteral("Workspace Session - save, restore, or clean")),
     };
 
     const QStringList parts = query.split(QLatin1Char(' '),
                                          Qt::SkipEmptyParts);
     if (parts.size() >= 2) {
         const QString argument = parts.at(1);
+        if (QStringLiteral("s").startsWith(argument, Qt::CaseInsensitive)
+            || argument.compare(QStringLiteral("session"),
+                                Qt::CaseInsensitive) == 0) {
+            return workspaceSessionDomainItems(query);
+        }
         if (QStringLiteral("r").startsWith(argument, Qt::CaseInsensitive)) {
             QList<GlobalControlItem> result;
             appendFiltered(&result, baseItems, query);
@@ -176,10 +227,14 @@ QList<GlobalControlItem> GlobalControlService::commandItems() const
 {
     return {
         item(GlobalControlItemKind::Domain, QStringLiteral("ow"), QStringLiteral("ow"), QStringLiteral("Workspace")),
+        item(GlobalControlItemKind::Domain, QStringLiteral("ow s"), QStringLiteral("ow s"), QStringLiteral("Workspace Session - save, restore, or clean")),
         item(GlobalControlItemKind::Domain, QStringLiteral("fd"), QStringLiteral("fd"), QStringLiteral("Fold")),
         item(GlobalControlItemKind::Command, QStringLiteral("ow 1"), QStringLiteral("ow 1"), QStringLiteral("Open 1 workspace")),
         item(GlobalControlItemKind::Command, QStringLiteral("ow 2"), QStringLiteral("ow 2"), QStringLiteral("Open 2 workspaces")),
         item(GlobalControlItemKind::Command, QStringLiteral("ow r"), QStringLiteral("ow r"), QStringLiteral("Recent Workspaces")),
+        item(GlobalControlItemKind::Command, QStringLiteral("ow s save"), QStringLiteral("ow s save"), QStringLiteral("Workspace Session - save current workspace state")),
+        item(GlobalControlItemKind::Command, QStringLiteral("ow s restore"), QStringLiteral("ow s restore"), QStringLiteral("Workspace Session - restore saved workspace state")),
+        item(GlobalControlItemKind::Command, QStringLiteral("ow s clean"), QStringLiteral("ow s clean"), QStringLiteral("Workspace Session - ignore saved state for this activation")),
         item(GlobalControlItemKind::Command, QStringLiteral("fd r"), QStringLiteral("fd r"), QStringLiteral("Fold Region - mark a custom fold block in the active editor")),
         item(GlobalControlItemKind::Command, QStringLiteral("fd s"), QStringLiteral("fd s"), QStringLiteral("Fold Shelf - drag custom fold blocks to or from the shelf")),
     };

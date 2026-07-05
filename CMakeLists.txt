@@ -153,6 +153,7 @@ set(ZEROSLACK_CORE_SOURCES
     wavepreviewservice.cpp
     workspaceconfigurationdialog.cpp
     workspaceconfigurationservice.cpp
+    workspacesessionstateservice.cpp
     globalcontrolcoordinator.cpp
     globalcontrolpanel.cpp
     globalcontrolservice.cpp
@@ -343,6 +344,7 @@ set(ZEROSLACK_CORE_SOURCES
     wavepreviewservice.h
     workspaceconfigurationdialog.h
     workspaceconfigurationservice.h
+    workspacesessionstateservice.h
     globalcontrolcoordinator.h
     globalcontrolpanel.h
     globalcontrolservice.h

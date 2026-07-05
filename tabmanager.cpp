@@ -3,16 +3,26 @@
 
 #include <QDir>
 #include <QFileInfo>
+#include <QScrollBar>
 #include <QSignalBlocker>
+#include <QTextBlock>
+#include <QTextCursor>
 
 namespace {
+QString cleanTabWorkspacePath(const QString& path)
+{
+    if (path.isEmpty())
+        return QString();
+    return QDir::cleanPath(
+        QDir::fromNativeSeparators(QFileInfo(path).absoluteFilePath()));
+}
+
 QString normalizedTabWorkspacePath(const QString& path)
 {
     if (path.isEmpty())
         return QString();
 
-    QString normalized = QDir::cleanPath(
-        QDir::fromNativeSeparators(QFileInfo(path).absoluteFilePath()));
+    QString normalized = cleanTabWorkspacePath(path);
 #ifdef Q_OS_WIN
     normalized = normalized.toCaseFolded();
 #endif
@@ -288,6 +298,96 @@ bool TabManager::closeTabsInWorkspace(const QString& workspaceRoot)
 bool TabManager::hasUnsavedChanges() const
 {
     return documentQueries.hasUnsavedChanges();
+}
+
+QList<WorkspaceSessionTabState> TabManager::workspaceSessionTabs(
+    const QString& workspaceRoot) const
+{
+    QList<WorkspaceSessionTabState> states;
+    if (!tabWidget || workspaceRoot.isEmpty())
+        return states;
+
+    for (int i = 0; i < tabWidget->count(); ++i) {
+        MyCodeEditor* editor = getEditorAt(i);
+        if (!editor)
+            continue;
+
+        const DocumentSnapshot snapshot = getDocumentForEditor(editor);
+        const QString filePath = cleanTabWorkspacePath(snapshot.fileName);
+        if (!pathInsideWorkspaceRoot(filePath, workspaceRoot)
+            || !QFileInfo(filePath).isFile()
+            || !fileIo.isSystemVerilogFile(filePath)) {
+            continue;
+        }
+
+        const QTextCursor cursor = editor->textCursor();
+        WorkspaceSessionTabState state;
+        state.filePath = filePath;
+        state.cursorLine = cursor.blockNumber() + 1;
+        state.cursorColumn = cursor.positionInBlock() + 1;
+        state.verticalScrollValue = editor->verticalScrollBar()
+            ? editor->verticalScrollBar()->value()
+            : 0;
+        state.active = editor == getCurrentEditor();
+        states.append(state);
+    }
+    return states;
+}
+
+QStringList TabManager::restoreWorkspaceSessionTabs(
+    const QString& workspaceRoot,
+    const QList<WorkspaceSessionTabState>& tabs,
+    QStringList* skippedFiles)
+{
+    QStringList restoredFiles;
+    if (!tabWidget || workspaceRoot.isEmpty())
+        return restoredFiles;
+
+    QString activeFile;
+    for (const WorkspaceSessionTabState& tab : tabs) {
+        const QString filePath = cleanTabWorkspacePath(tab.filePath);
+        if (!pathInsideWorkspaceRoot(filePath, workspaceRoot)
+            || !QFileInfo(filePath).isFile()
+            || !fileIo.isSystemVerilogFile(filePath)) {
+            if (skippedFiles)
+                skippedFiles->append(filePath);
+            continue;
+        }
+
+        if (!openFileInTab(filePath)) {
+            if (skippedFiles)
+                skippedFiles->append(filePath);
+            continue;
+        }
+
+        MyCodeEditor* editor = documentQueries.editorForFile(filePath);
+        if (editor) {
+            QTextBlock block =
+                editor->document()->findBlockByNumber(
+                    qMax(0, tab.cursorLine - 1));
+            if (!block.isValid())
+                block = editor->document()->lastBlock();
+            if (block.isValid()) {
+                const int column =
+                    qBound(0,
+                           tab.cursorColumn - 1,
+                           qMax(0, block.text().size()));
+                QTextCursor cursor(block);
+                cursor.setPosition(block.position() + column);
+                editor->setTextCursor(cursor);
+            }
+            if (QScrollBar* bar = editor->verticalScrollBar())
+                bar->setValue(qMax(0, tab.verticalScrollValue));
+        }
+
+        restoredFiles.append(filePath);
+        if (tab.active)
+            activeFile = filePath;
+    }
+
+    if (!activeFile.isEmpty())
+        activateOpenFile(activeFile);
+    return restoredFiles;
 }
 
 void TabManager::applyWorkspaceScope()

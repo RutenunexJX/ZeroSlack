@@ -42,6 +42,7 @@
 #include "workspaceanalysisrequestqueue.h"
 #include "workspaceconfigurationservice.h"
 #include "workspaceignoreservice.h"
+#include "workspacesessionstateservice.h"
 #include "workspacemanager.h"
 #include "workspacesymbolanalysiscontroller.h"
 #include <QApplication>
@@ -462,6 +463,7 @@ int main(int argc, char** argv) {
     bool globalWorkspaceShowsOpenOne = false;
     bool globalWorkspaceShowsOpenTwo = false;
     bool globalWorkspaceShowsRecent = false;
+    bool globalWorkspaceShowsSession = false;
     bool globalWorkspaceShowsDeprecatedOw = false;
     for (const GlobalControlItem& item : globalWorkspaceItems) {
         if (item.kind == GlobalControlItemKind::Command
@@ -473,6 +475,9 @@ int main(int argc, char** argv) {
         if (item.kind == GlobalControlItemKind::Command
             && item.id == QStringLiteral("ow r"))
             globalWorkspaceShowsRecent = true;
+        if (item.kind == GlobalControlItemKind::Domain
+            && item.id == QStringLiteral("ow s"))
+            globalWorkspaceShowsSession = true;
         if (item.id == QStringLiteral("ow")
             && item.kind == GlobalControlItemKind::Command)
             globalWorkspaceShowsDeprecatedOw = true;
@@ -481,6 +486,7 @@ int main(int argc, char** argv) {
                globalWorkspaceShowsOpenOne
                    && globalWorkspaceShowsOpenTwo
                    && globalWorkspaceShowsRecent
+                   && globalWorkspaceShowsSession
                    && !globalWorkspaceShowsDeprecatedOw,
                true);
     const QList<GlobalControlItem> globalRecentItems =
@@ -499,6 +505,65 @@ int main(int argc, char** argv) {
     }
     expectBool("GlobalControl ow r query finds recent command",
                globalRecentCommandFound && !globalRecentCountHintFound,
+               true);
+    const QList<GlobalControlItem> globalSessionItems =
+        globalControlService.query(QStringLiteral("ow s"),
+                                   nullptr,
+                                   SemanticIndex::getInstance());
+    bool globalSessionSaveFound = false;
+    bool globalSessionRestoreFound = false;
+    bool globalSessionCleanFound = false;
+    for (const GlobalControlItem& item : globalSessionItems) {
+        globalSessionSaveFound =
+            globalSessionSaveFound
+            || (item.kind == GlobalControlItemKind::Command
+                && item.id == QStringLiteral("ow s save"));
+        globalSessionRestoreFound =
+            globalSessionRestoreFound
+            || (item.kind == GlobalControlItemKind::Command
+                && item.id == QStringLiteral("ow s restore"));
+        globalSessionCleanFound =
+            globalSessionCleanFound
+            || (item.kind == GlobalControlItemKind::Command
+                && item.id == QStringLiteral("ow s clean"));
+    }
+    expectBool("GlobalControl ow s query shows session commands",
+               globalSessionSaveFound
+                   && globalSessionRestoreFound
+                   && globalSessionCleanFound,
+               true);
+    expectBool("GlobalControl ow s w abbreviates save",
+               !globalControlService.query(QStringLiteral("ow s w"),
+                                           nullptr,
+                                           SemanticIndex::getInstance())
+                    .isEmpty()
+                   && globalControlService.query(QStringLiteral("ow s w"),
+                                                 nullptr,
+                                                 SemanticIndex::getInstance())
+                          .first()
+                          .id == QStringLiteral("ow s save"),
+               true);
+    expectBool("GlobalControl ow s r abbreviates restore",
+               !globalControlService.query(QStringLiteral("ow s r"),
+                                           nullptr,
+                                           SemanticIndex::getInstance())
+                    .isEmpty()
+                   && globalControlService.query(QStringLiteral("ow s r"),
+                                                 nullptr,
+                                                 SemanticIndex::getInstance())
+                          .first()
+                          .id == QStringLiteral("ow s restore"),
+               true);
+    expectBool("GlobalControl ow s c abbreviates clean",
+               !globalControlService.query(QStringLiteral("ow s c"),
+                                           nullptr,
+                                           SemanticIndex::getInstance())
+                    .isEmpty()
+                   && globalControlService.query(QStringLiteral("ow s c"),
+                                                 nullptr,
+                                                 SemanticIndex::getInstance())
+                          .first()
+                          .id == QStringLiteral("ow s clean"),
                true);
     const QList<SemanticSymbolRecord> modelScoringRecords{
         SemanticFixtureRecordBuilder(
@@ -9557,6 +9622,224 @@ int main(int argc, char** argv) {
                        && !persistedConfigWorkspaceManager
                                .getSystemVerilogFiles()
                                .contains(normalizedConfigSv),
+                   true);
+
+        QTemporaryDir sessionWorkspaceA;
+        QTemporaryDir sessionWorkspaceB;
+        QTemporaryDir sessionExternalDir;
+        expectBool("Workspace session temp dirs valid",
+                   sessionWorkspaceA.isValid()
+                       && sessionWorkspaceB.isValid()
+                       && sessionExternalDir.isValid(),
+                   true);
+        const QString sessionARtlDir =
+            QDir(sessionWorkspaceA.path()).absoluteFilePath(
+                QStringLiteral("rtl"));
+        const QString sessionBRtlDir =
+            QDir(sessionWorkspaceB.path()).absoluteFilePath(
+                QStringLiteral("rtl"));
+        const QString sessionAIncludeDir =
+            QDir(sessionWorkspaceA.path()).absoluteFilePath(
+                QStringLiteral("include"));
+        const QString sessionBIncludeDir =
+            QDir(sessionWorkspaceB.path()).absoluteFilePath(
+                QStringLiteral("include"));
+        const QString sessionAIgnoredDir =
+            QDir(sessionWorkspaceA.path()).absoluteFilePath(
+                QStringLiteral("generated"));
+        const QString sessionBIgnoredDir =
+            QDir(sessionWorkspaceB.path()).absoluteFilePath(
+                QStringLiteral("generated"));
+        const QString sessionExternalIncludeDir =
+            QDir(sessionExternalDir.path()).absoluteFilePath(
+                QStringLiteral("external_inc"));
+        expectBool("Workspace session dirs created",
+                   QDir().mkpath(sessionARtlDir)
+                       && QDir().mkpath(sessionBRtlDir)
+                       && QDir().mkpath(sessionAIncludeDir)
+                       && QDir().mkpath(sessionBIncludeDir)
+                       && QDir().mkpath(sessionAIgnoredDir)
+                       && QDir().mkpath(sessionBIgnoredDir)
+                       && QDir().mkpath(sessionExternalIncludeDir),
+                   true);
+        const QString sessionATopFile =
+            QDir(sessionARtlDir).absoluteFilePath(
+                QStringLiteral("top.sv"));
+        const QString sessionBTopFile =
+            QDir(sessionBRtlDir).absoluteFilePath(
+                QStringLiteral("top.sv"));
+        const QString sessionAHelperFile =
+            QDir(sessionARtlDir).absoluteFilePath(
+                QStringLiteral("helper.svh"));
+        const QString sessionBHelperFile =
+            QDir(sessionBRtlDir).absoluteFilePath(
+                QStringLiteral("helper.svh"));
+        const QString sessionAMissingFile =
+            QDir(sessionARtlDir).absoluteFilePath(
+                QStringLiteral("missing.sv"));
+        expectBool("Workspace session files created",
+                   writeTextFile(sessionATopFile,
+                                 QStringLiteral("module session_top; endmodule\n"))
+                       && writeTextFile(sessionBTopFile,
+                                        QStringLiteral("module session_top; endmodule\n"))
+                       && writeTextFile(sessionAHelperFile,
+                                        QStringLiteral("`define SESSION_OK\n"))
+                       && writeTextFile(sessionBHelperFile,
+                                        QStringLiteral("`define SESSION_OK\n")),
+                   true);
+
+        WorkspaceSessionState sessionState;
+        sessionState.workspaceRoot = sessionWorkspaceA.path();
+        sessionState.configuration.workspaceRoot = sessionWorkspaceA.path();
+        sessionState.configuration.includeDirs = {
+            sessionAIncludeDir,
+            sessionExternalIncludeDir,
+        };
+        sessionState.configuration.ignoredDirs = {sessionAIgnoredDir};
+        sessionState.configuration.fileExtensions = {
+            QStringLiteral(".sv"),
+            QStringLiteral(".svh"),
+        };
+        sessionState.configuration.defines.insert(QStringLiteral("WIDTH"),
+                                                  QStringLiteral("32"));
+        sessionState.configuration.defines.insert(QStringLiteral("FEATURE"),
+                                                  QString());
+        sessionState.configuration.topModule =
+            QStringLiteral("session_top");
+        sessionState.tabs = {
+            WorkspaceSessionTabState{sessionATopFile, 2, 5, 12, false},
+            WorkspaceSessionTabState{sessionAHelperFile, 1, 3, 4, true},
+            WorkspaceSessionTabState{sessionAMissingFile, 1, 1, 0, false},
+        };
+        sessionState.ui.mainWindowGeometry =
+            QByteArrayLiteral("geometry-bytes");
+        sessionState.ui.mainWindowState = QByteArrayLiteral("state-bytes");
+        sessionState.scannedFiles = {
+            sessionATopFile,
+            sessionAHelperFile,
+            sessionAMissingFile,
+            QDir(sessionExternalIncludeDir).absoluteFilePath(
+                QStringLiteral("outside.sv")),
+        };
+        sessionState.scanComplete = true;
+
+        WorkspaceSessionStateService sessionService;
+        const WorkspaceSessionSaveResult sessionSave =
+            sessionService.save(sessionState);
+        const QString movedSessionPath =
+            WorkspaceSessionStateService::sessionFilePath(
+                sessionWorkspaceB.path());
+        QFile::remove(movedSessionPath);
+        expectBool("Workspace session save writes .zs",
+                   sessionSave.saved
+                       && QFileInfo(sessionSave.sessionFilePath).isFile()
+                       && QFile::copy(sessionSave.sessionFilePath,
+                                      movedSessionPath),
+                   true);
+
+        const WorkspaceSessionRestoreResult restoredSession =
+            sessionService.load(sessionWorkspaceB.path());
+        const QString normalizedSessionBInclude =
+            normalizeTestPath(sessionBIncludeDir);
+        const QString normalizedSessionBIgnored =
+            normalizeTestPath(sessionBIgnoredDir);
+        const QString normalizedSessionExternal =
+            normalizeTestPath(sessionExternalIncludeDir);
+        const QString normalizedSessionBTop =
+            normalizeTestPath(sessionBTopFile);
+        const QString normalizedSessionBHelper =
+            normalizeTestPath(sessionBHelperFile);
+        expectBool("Workspace session load succeeds after move",
+                   restoredSession.loaded
+                       && restoredSession.state.workspaceRoot
+                              == normalizeTestPath(sessionWorkspaceB.path())
+                       && restoredSession.state.originalRoot
+                              == normalizeTestPath(sessionWorkspaceA.path())
+                       && !restoredSession.state.workspaceId.isEmpty(),
+                   true);
+        expectBool("Workspace session restores config paths",
+                   restoredSession.state.configuration.includeDirs.contains(
+                       normalizedSessionBInclude)
+                       && restoredSession.state.configuration.includeDirs
+                              .contains(normalizedSessionExternal)
+                       && restoredSession.state.configuration.ignoredDirs
+                              == QStringList{normalizedSessionBIgnored}
+                       && restoredSession.externalPaths.contains(
+                              normalizedSessionExternal),
+                   true);
+        expectBool("Workspace session restores config fields",
+                   restoredSession.state.configuration.fileExtensions
+                           == QStringList{QStringLiteral(".sv"),
+                                          QStringLiteral(".svh")}
+                       && restoredSession.state.configuration.defines.value(
+                              QStringLiteral("WIDTH")) == QStringLiteral("32")
+                       && restoredSession.state.configuration.defines
+                              .contains(QStringLiteral("FEATURE"))
+                       && restoredSession.state.configuration.topModule
+                              == QStringLiteral("session_top"),
+                   true);
+        bool restoredTopTab = false;
+        bool restoredActiveHelperTab = false;
+        for (const WorkspaceSessionTabState& tab :
+             restoredSession.state.tabs) {
+            restoredTopTab =
+                restoredTopTab
+                || (tab.filePath == normalizedSessionBTop
+                    && tab.cursorLine == 2
+                    && tab.cursorColumn == 5
+                    && tab.verticalScrollValue == 12
+                    && !tab.active);
+            restoredActiveHelperTab =
+                restoredActiveHelperTab
+                || (tab.filePath == normalizedSessionBHelper
+                    && tab.cursorLine == 1
+                    && tab.cursorColumn == 3
+                    && tab.verticalScrollValue == 4
+                    && tab.active);
+        }
+        expectBool("Workspace session restores tabs and skips missing",
+                   restoredSession.state.tabs.size() == 2
+                       && restoredTopTab
+                       && restoredActiveHelperTab
+                       && restoredSession.skippedTabs.size() == 1,
+                   true);
+        expectBool("Workspace session restores ui bytes",
+                   restoredSession.state.ui.mainWindowGeometry
+                           == QByteArrayLiteral("geometry-bytes")
+                       && restoredSession.state.ui.mainWindowState
+                              == QByteArrayLiteral("state-bytes"),
+                   true);
+        expectList("Workspace session restores scanned files",
+                   restoredSession.state.scannedFiles,
+                   QStringList{normalizedSessionBTop,
+                               normalizedSessionBHelper});
+        expectBool("Workspace session filters missing scanned files",
+                   restoredSession.state.scanComplete
+                       && restoredSession.skippedScannedFiles.size() == 1,
+                   true);
+        WorkspaceManager sessionScanManager;
+        expectBool("Workspace session scan manager opens moved root",
+                   sessionScanManager.openWorkspace(
+                       sessionWorkspaceB.path()),
+                   true);
+        expectBool("Workspace session scan manager restores list",
+                   sessionScanManager.restoreSessionScanState(
+                       QStringList{normalizedSessionBTop,
+                                   normalizedSessionBHelper,
+                                   QDir(sessionBRtlDir).absoluteFilePath(
+                                       QStringLiteral("missing.sv"))},
+                       true),
+                   true);
+        expectBool("Workspace session scan manager filters stale files",
+                   sessionScanManager.getAllFiles().size() == 2
+                       && sessionScanManager.getAllFiles().contains(
+                              normalizedSessionBTop)
+                       && sessionScanManager.getAllFiles().contains(
+                              normalizedSessionBHelper)
+                       && sessionScanManager.workspaceEntries().size() == 1
+                       && sessionScanManager.workspaceEntries()
+                              .first()
+                              .scanComplete,
                    true);
 
         QTemporaryDir slangConfigWorkspace;

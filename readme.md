@@ -91,13 +91,24 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
   failures use centralized registry-backed messages where practical. Active COM
   editors also paint a small `COM` badge and highlighted bottom edge.
 - Ctrl+Space opens Global Control as a domain-first surface. Current root
-  domains are `ow` and `fd`; displayed commands are `ow <num>`, `ow r`,
-  `fd r`, and `fd s`.
+  domains are `ow` and `fd`; displayed workspace commands include
+  `ow <num>`, `ow r`, and the `ow s` session subdomain with
+  `ow s save`, `ow s restore`, and `ow s clean`; Fold commands are `fd r`
+  and `fd s`.
 - Workspace Configuration is available from the app-level Workspace menu. It is
   scoped per workspace and persists include dirs, defines, ignored dirs, file
   extensions, and optional top module / active top. Applying configuration
   updates `ProjectModel`, refreshes workspace file filtering, and queues
   analysis through the existing project-change path.
+- Workspace Session State v1 stores a versioned JSON `.zs` file at the active
+  workspace root. It saves workspace configuration, open workspace SV tabs with
+  cursor/scroll/active tab, main-window geometry/dock state, and scanned-file
+  metadata using relative paths when files are inside the root. Restore is
+  explicit through Global Control `ow s restore`; missing tabs/scanned files
+  are skipped, root-external config paths stay absolute and are reported. When
+  the active workspace tab is closed, the session is saved before workspace
+  tabs are closed so open-tab state is not overwritten by an empty capture.
+  Full semantic cache snapshots remain out of v1.
 - Macro / define semantics are now first-class editor workflow data. Static
   `define` records appear in outline and semantic lookup, `` `MACRO`` uses can
   jump to current-file or workspace/include-visible definitions, hover shows
@@ -217,6 +228,12 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
   long awkward returns. Alias nodes remain visual duplicates only: table/stat
   counts stay on canonical states, and alias labels/details point back to the
   canonical state.
+- Latest State Transition Graph polish removes the duplicated canvas title and
+  current/next caption from FSM graph bodies; the toolbar/table/inspector now
+  carry that context. The real `chl_ctrl.sv` `phy_cfg_ns` regression also
+  keeps the graph tighter while verifying C1/C9 and C17/C7 do not produce
+  sampled transition crossings, C18 remains a direct normal line, labels stay
+  off-path, and transition paths stay clear of state nodes.
 - Module Block Diagram renders in RTL Insights from the service-owned
   `ModuleBlockDiagramReport`. The current UI entry points are the RTL Insights
   `Module Block Diagram` action for the active module and the editor source
@@ -331,10 +348,14 @@ engineering configuration / diagnostics lane.
   `WorkspaceManager::recentWorkspaceEntries()`.
 - Workspace alias rename updates matching recent-workspace metadata.
 - Global Control root shows only the `ow` and `fd` domains. The `ow` domain
-  displays `ow 1`, `ow 2`, `ow r`, and accepts numeric `ow <num>` queries.
+  displays `ow 1`, `ow 2`, `ow r`, and `ow s`, accepts numeric `ow <num>`
+  queries, and expands `ow s` to session save/restore/clean commands.
 - `ow r` is a displayed Global Control child command. It routes through the
   existing `MainWindow` recent-workspaces dialog and uses
   `WorkspaceManager::recentWorkspaceEntries()`.
+- `ow s save`, `ow s restore`, and `ow s clean` are displayed workspace
+  session commands. They operate on the active workspace-root `.zs` file and
+  do not auto-restore tabs/layout when a workspace is opened.
 - `ProjectModel` already has `ignoredPaths` and filters raw scanned files
   through `setIgnoredPaths()`.
 - `WorkspaceIgnoreService` normalizes and validates ignored-directory requests

@@ -54,6 +54,8 @@ public:
     bool setWorkspaceConfiguration(
         const WorkspaceConfiguration& configuration,
         QString* errorMessage = nullptr);
+    bool restoreSessionScanState(const QStringList& scannedFiles,
+                                 bool scanComplete);
     ProjectModel* getProjectModel() const;
     ProjectSnapshot projectSnapshot() const;
     bool switchWorkspace(int index);

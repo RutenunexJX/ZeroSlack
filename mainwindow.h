@@ -3,6 +3,7 @@
 
 #include <QMainWindow>
 #include <QList>
+#include <QSet>
 #include <QString>
 #include <memory>
 
@@ -38,6 +39,7 @@ class QTimer;
 class QToolButton;
 class QVBoxLayout;
 class QWidget;
+struct WorkspaceSessionState;
 struct UserTemplateLoadReport;
 
 QT_BEGIN_NAMESPACE
@@ -96,7 +98,9 @@ private:
     QProgressBar* workspaceProgressBar = nullptr;
     QTabBar* workspaceTabBar = nullptr;
     QTimer* activeEditorPassiveRefreshTimer = nullptr;
+    QTimer* workspaceSessionSaveTimer = nullptr;
     QString pendingActiveEditorPassiveRefreshFile;
+    QSet<QString> workspaceSessionCleanRoots;
     bool pendingActiveEditorPassiveRefreshAll = false;
 
     static const int kFileChangeDebounceMs = 350;
@@ -149,6 +153,12 @@ private:
     void restoreFoldShelfItemToActiveEditor(const QString& id);
     void setupEditorAppearanceSettings();
     void setupEditorCoordinator();
+    WorkspaceSessionState captureWorkspaceSessionState() const;
+    bool saveWorkspaceSession(bool showStatus = true);
+    bool restoreWorkspaceSession();
+    void cleanWorkspaceSession();
+    void scheduleWorkspaceSessionSave();
+    void noteWorkspaceSessionAvailability();
 
     void setupManagerConnections();
     void setupSemanticRuntime();

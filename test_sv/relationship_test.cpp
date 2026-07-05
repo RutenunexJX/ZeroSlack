@@ -9118,6 +9118,16 @@ static void runFsmGraphServiceFixture()
                    && stateTransitionPanel.graphNodeItemCountForTest() == 2
                    && stateTransitionPanel.graphEdgeItemCountForTest() == 3,
                true);
+    const QString stateTransitionCanvasText =
+        stateTransitionPanel.graphTextItemsForTest().join(QLatin1Char('\n'));
+    expectBool("state transition canvas omits title and cs ns caption",
+               !stateTransitionCanvasText.contains(
+                   QStringLiteral("State Transition Graph"))
+                   && !stateTransitionCanvasText.contains(
+                       QStringLiteral("current_state  ->  next_state"))
+                   && !stateTransitionCanvasText.contains(
+                       QStringLiteral("current_state -> next_state")),
+               true);
     expectBool("state transition panel omits current and next signal nodes",
                !stateTransitionPanel.graphElementSummariesForTest()
                     .join(QLatin1Char('\n'))
@@ -11682,8 +11692,15 @@ static void runRealWorkspaceIncludeFixture()
     bool realPhyCfgLabelsOffPath = true;
     bool realPhyCfgPathsClearNodes = true;
     bool sawRealPhyCfgOuterRoute = false;
+    bool realPhyCfgC1AvoidsC9 = false;
+    bool realPhyCfgC9AvoidsC1 = false;
+    bool realPhyCfgC17AvoidsC7 = false;
+    bool realPhyCfgC7AvoidsC17 = false;
+    bool sawRealPhyCfgC18Direct = false;
     int realPhyCfgLabelChecks = 0;
     int realPhyCfgClearChecks = 0;
+    const QString realPhyCfgCanvasText =
+        realPhyCfgPanel.graphTextItemsForTest().join(QLatin1Char('\n'));
     for (const QString& summary :
          realPhyCfgPanel.graphEdgeGeometrySummariesForTest()) {
         const QStringList parts = summary.split(QLatin1Char('|'));
@@ -11695,9 +11712,50 @@ static void runRealWorkspaceIncludeFixture()
             realPhyCfgPathsClearNodes && parts.at(15) == QStringLiteral("clear");
         sawRealPhyCfgOuterRoute = sawRealPhyCfgOuterRoute
             || parts.at(12) == QStringLiteral("outerBackEdge");
+        if (parts.size() >= 19) {
+            const QString badge = parts.at(3);
+            const QString crossingIds = parts.at(18);
+            realPhyCfgC1AvoidsC9 =
+                realPhyCfgC1AvoidsC9
+                || (badge == QStringLiteral("C1")
+                    && !crossingIds.split(QLatin1Char(','),
+                                          Qt::SkipEmptyParts)
+                            .contains(QStringLiteral("C9")));
+            realPhyCfgC9AvoidsC1 =
+                realPhyCfgC9AvoidsC1
+                || (badge == QStringLiteral("C9")
+                    && !crossingIds.split(QLatin1Char(','),
+                                          Qt::SkipEmptyParts)
+                            .contains(QStringLiteral("C1")));
+            realPhyCfgC17AvoidsC7 =
+                realPhyCfgC17AvoidsC7
+                || (badge == QStringLiteral("C17")
+                    && !crossingIds.split(QLatin1Char(','),
+                                          Qt::SkipEmptyParts)
+                            .contains(QStringLiteral("C7")));
+            realPhyCfgC7AvoidsC17 =
+                realPhyCfgC7AvoidsC17
+                || (badge == QStringLiteral("C7")
+                    && !crossingIds.split(QLatin1Char(','),
+                                          Qt::SkipEmptyParts)
+                            .contains(QStringLiteral("C17")));
+            sawRealPhyCfgC18Direct =
+                sawRealPhyCfgC18Direct
+                || (badge == QStringLiteral("C18")
+                    && parts.at(8) == QStringLiteral("line")
+                    && parts.at(12) == QStringLiteral("normal"));
+        }
         ++realPhyCfgLabelChecks;
         ++realPhyCfgClearChecks;
     }
+    expectBool("real workspace phy_cfg canvas omits duplicated title caption",
+               !realPhyCfgCanvasText.contains(
+                   QStringLiteral("State Transition Graph"))
+                   && !realPhyCfgCanvasText.contains(
+                       QStringLiteral("phy_cfg_cs  ->  phy_cfg_ns"))
+                   && !realPhyCfgCanvasText.contains(
+                       QStringLiteral("phy_cfg_cs -> phy_cfg_ns")),
+               true);
     expectBool("real workspace phy_cfg graph covers layer shield state",
                realPhyCfgPanel.graphNodeItemCountForTest() >= 8
                    && realPhyCfgSummaries.contains(
@@ -11709,6 +11767,15 @@ static void runRealWorkspaceIncludeFixture()
                    && realPhyCfgLabelsOffPath
                    && realPhyCfgPathsClearNodes
                    && sawRealPhyCfgOuterRoute,
+               true);
+    expectBool("real workspace phy_cfg C1 C9 avoid sampled crossing",
+               realPhyCfgC1AvoidsC9 && realPhyCfgC9AvoidsC1,
+               true);
+    expectBool("real workspace phy_cfg C17 C7 avoid sampled crossing",
+               realPhyCfgC17AvoidsC7 && realPhyCfgC7AvoidsC17,
+               true);
+    expectBool("real workspace phy_cfg C18 stays direct normal line",
+               sawRealPhyCfgC18Direct,
                true);
     StateTransitionGraphService::getInstance()->setSemanticIndex(
         SemanticIndex::getInstance());
