@@ -66,12 +66,14 @@ Current baseline highlights:
   transitions table; Wave Preview labels output as symbolic preview-only/no
   testbench and adds scope/clock/reset/filter/lane controls without simulation.
 - Latest RTL readability repair is complete in the working tree: State
-  Transition Graph keeps structural FSM recognition while adding a path-centric
-  complex layout, branch lanes, outside routing for awkward returns, and limited
-  dashed alias state nodes that point back to canonical states without changing
-  transition-table/stat counts. Module Block Diagram and Design hierarchy now
-  filter interface/interface-instance nodes for user-facing module views, and
-  Module Block Diagram wraps many siblings into multiple columns.
+  Transition Graph keeps structural FSM recognition while rendering transition
+  edges with compact `C#` condition IDs, keeping full condition text in the
+  transitions table/inspector, and using tighter orthogonal routing with compact
+  self/back edges and near-source aliases only for long awkward returns. Module
+  Block Diagram and Design hierarchy still filter interface/interface-instance
+  nodes for user-facing module views, and Module Block Diagram now wraps
+  siblings into tighter containers while keeping nested content readable during
+  hover/selection.
 - Signal Usage Hotspot is available from the editor source-symbol context action
   `Signal Usage Hotspot` and the RTL Insights `Usage Hotspot` action. It renders
   Track lanes from report items, Matrix heat cells from report summaries, role
@@ -117,13 +119,15 @@ Current baseline highlights:
 
 Status history:
 
-- FSM / Module Block / hierarchy readability repair is complete. Alias state
-  nodes are visual duplicates only, `chl_ctrl.sv` is covered by layout/alias
-  regression without modifying the RTL fixture, Module Block Diagram rejects
-  interface roots and hides interface child instances, and Design hierarchy
-  hides interface instance nodes while preserving module-instance navigation.
-  Verification passed for `completion_test`, `relationship_test`,
-  `gui_smoke_test`, and `insight_visual_style_test` in `build_verify3`.
+- FSM / Module Block readability repair follow-up is complete. FSM graph edges
+  now show only `C#` condition IDs while the transitions table maps each ID to
+  full condition/source metadata; `chl_ctrl.sv` remains covered by compact
+  layout and near-source alias regression without modifying the RTL fixture.
+  Module Block Diagram rejects interface roots, hides interface child
+  instances, uses tighter wrapped containers, and keeps container/child content
+  readable under hover/selection. Verification passed from `build` for
+  `completion_test`, `relationship_test`, `gui_smoke_test`, and
+  `insight_visual_style_test`.
 - RTL Insight core-view modernization is complete. Module Block Diagram row
   selection syncs graph and inspector state; State Transition regression
   coverage rejects `cs`/`ns` names without a structural current<=next FSM pair;

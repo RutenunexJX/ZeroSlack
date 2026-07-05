@@ -208,12 +208,15 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
   transition edges are selectable/search-highlightable, the top toolbar exposes
   signal/current/next selectors plus reset/error/unreachable visibility
   toggles, the right inspector shows selected graph metadata, the transition
-  table lists from/to/condition/source rows, and double-clicking a graph element
-  follows its carried source link. Complex state graphs use a path-centric
-  layout with the main flow left-to-right, branch lanes above/below, routed
-  self/back edges, and limited dashed alias state nodes for long or awkward
-  returns. Alias nodes remain visual duplicates only: table/stat counts stay on
-  canonical states, and alias labels/details point back to the canonical state.
+  table lists ID/from/to/condition/source rows, and double-clicking a graph
+  element follows its carried source link. Transition edges label conditions
+  with compact per-graph IDs such as `C0`/`C1`; full condition text stays in
+  the table, tooltip, and inspector details. Complex state graphs use a compact
+  orthogonal layout with the main flow left-to-right, branch lanes above/below,
+  tight self/back-edge routing, and limited dashed alias state nodes only for
+  long awkward returns. Alias nodes remain visual duplicates only: table/stat
+  counts stay on canonical states, and alias labels/details point back to the
+  canonical state.
 - Module Block Diagram renders in RTL Insights from the service-owned
   `ModuleBlockDiagramReport`. The current UI entry points are the RTL Insights
   `Module Block Diagram` action for the active module and the editor source
@@ -222,9 +225,10 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
   filtered before the report reaches the graph. Signals are still hidden. The
   v2 graph uses the shared light canvas, summary text, hover/selected feedback,
   graph search highlighting, and a visible no-child or blackbox reason when
-  containment cannot be resolved. The selected module remains a large container
-  with child module/instance nodes arranged inside it using a wrapped grid
-  instead of a one-column stack.
+  containment cannot be resolved. The selected module remains a container with
+  child module/instance nodes arranged inside it using a compact wrapped grid
+  instead of a one-column stack; hover/selection keeps container fills, borders,
+  and child text readable.
   Child nodes show both the module type and instance name, unresolved module
   types remain visible as blackbox nodes with an explicit reason, and
   containment edges carry instance metadata. Module and instance graph elements
@@ -684,16 +688,16 @@ Do not add unlisted long-term goals without explicit user approval.
 - Avoid launching GUI smoke executables in this environment when they are known
   to produce external Windows error dialogs; compile/link targets instead unless
   the user explicitly asks to run them.
-- Latest FSM / Module Block / hierarchy readability repair: State Transition
-  Graph keeps structural FSM recognition but now lays complex graphs out as
-  left-to-right paths with branch lanes, outside back-edge routing, and limited
-  dashed alias state nodes that point back to canonical states without changing
-  table/stat counts. Module Block Diagram filters interface declarations,
-  interface instances, and interface-typed unresolved children, and lays sibling
-  children out in a wrapped grid. Design hierarchy defaults to module-instance
-  trees and filters interface/interface-instance nodes. Verification passed in
-  `build_verify3`: `completion_test`, `relationship_test`, `gui_smoke_test`,
-  and `insight_visual_style_test`; `git diff --check` passed.
+- Latest FSM / Module Block readability repair: FSM/State Transition Graph
+  keeps structural FSM recognition while using compact `C#` transition labels
+  on edges, full condition text in the transitions table/inspector, tighter
+  orthogonal routing, compact self/back edges, and aliases that stay near the
+  source side instead of inflating the scene. Module Block Diagram still filters
+  interface declarations/instances and interface-typed unresolved children, but
+  now uses smaller wrapped containers and keeps nested nodes readable when a
+  container is hovered or selected. Verification in `build`: CTest passed for
+  `completion_test`, `relationship_test`, `gui_smoke_test`, and
+  `insight_visual_style_test`.
 - Latest Module Block Diagram real-usability pass: Debug targets
   `completion_test`, `relationship_test`, `gui_smoke_test`,
   `full_feature_audit_test`, and `jump_test` compile/link; focused CTest runs

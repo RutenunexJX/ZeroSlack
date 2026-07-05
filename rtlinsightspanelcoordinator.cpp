@@ -70,11 +70,12 @@ constexpr int kGraphNodeIdRole = Qt::UserRole + 1209;
 constexpr int kGraphTablePrimaryRole = Qt::UserRole + 1210;
 constexpr int kGraphTableSecondaryRole = Qt::UserRole + 1211;
 constexpr int kGraphTableKindRole = Qt::UserRole + 1212;
+constexpr int kGraphBadgeRole = Qt::UserRole + 1213;
 
-constexpr qreal kInsightNodeWidth = 190.0;
-constexpr qreal kInsightNodeHeight = 62.0;
-constexpr qreal kStateNodeWidth = 250.0;
-constexpr qreal kStateNodeHeight = 58.0;
+constexpr qreal kInsightNodeWidth = 170.0;
+constexpr qreal kInsightNodeHeight = 56.0;
+constexpr qreal kStateNodeWidth = 196.0;
+constexpr qreal kStateNodeHeight = 52.0;
 constexpr qreal kGraphMinScale = 0.05;
 constexpr qreal kGraphMaxScale = 6.0;
 constexpr double kPi = 3.14159265358979323846;
@@ -84,6 +85,7 @@ struct RtlInsightGraphElement {
     QString primary;
     QString secondary;
     QString detail;
+    QString badge;
     RtlInsightCodeLink codeLink;
     QString drillModuleName;
     QString drillFileName;
@@ -101,6 +103,8 @@ QString graphElementTooltip(const RtlInsightGraphElement& element)
         if (!line.trimmed().isEmpty())
             lines.append(line);
     };
+    if (!element.badge.trimmed().isEmpty())
+        appendLine(QStringLiteral("ID: %1").arg(element.badge));
     appendLine(element.primary);
     appendLine(element.secondary);
     appendLine(element.detail);
@@ -127,6 +131,7 @@ void applyGraphElementData(QGraphicsItem* item,
     item->setData(kGraphDrillModuleRole, element.drillModuleName);
     item->setData(kGraphDrillFileRole, element.drillFileName);
     item->setData(kGraphDetailRole, element.detail);
+    item->setData(kGraphBadgeRole, element.badge);
     item->setToolTip(graphElementTooltip(element));
 }
 
@@ -147,11 +152,12 @@ public:
         setFlag(QGraphicsItem::ItemIsSelectable, true);
         setAcceptHoverEvents(true);
         setAcceptedMouseButtons(Qt::LeftButton | Qt::RightButton);
-        setBrush(fill);
+        normalBrush = QBrush(fill);
+        setBrush(normalBrush);
         normalPen = QPen(stroke, 1.6);
         hoverPen = InsightVisualStyle::hoverPen();
         setPen(normalPen);
-        setZValue(10);
+        setBaseZValues(10.0, 40.0);
         applyGraphElementData(this, element);
 
         QFont titleFont = InsightVisualStyle::titleFont(font);
@@ -185,27 +191,38 @@ public:
     NavigateHandler navigateHandler;
     SelectHandler selectHandler;
 
+    void setBaseZValues(qreal normalZ, qreal hoverZ)
+    {
+        normalZValue = normalZ;
+        hoverZValue = hoverZ;
+        setZValue(hovered ? hoverZValue : normalZValue);
+    }
+
+    void setHoveredForTest(bool value)
+    {
+        hovered = value;
+        refreshVisual();
+    }
+
 protected:
     void hoverEnterEvent(QGraphicsSceneHoverEvent* event) override
     {
         hovered = true;
-        setZValue(40);
-        refreshPen();
+        refreshVisual();
         QGraphicsRectItem::hoverEnterEvent(event);
     }
 
     void hoverLeaveEvent(QGraphicsSceneHoverEvent* event) override
     {
         hovered = false;
-        setZValue(10);
-        refreshPen();
+        refreshVisual();
         QGraphicsRectItem::hoverLeaveEvent(event);
     }
 
     void mousePressEvent(QGraphicsSceneMouseEvent* event) override
     {
         setSelected(true);
-        refreshPen();
+        refreshVisual();
         if (selectHandler)
             selectHandler(element);
         QGraphicsRectItem::mousePressEvent(event);
@@ -227,13 +244,15 @@ protected:
     {
         const QVariant result = QGraphicsRectItem::itemChange(change, value);
         if (change == QGraphicsItem::ItemSelectedHasChanged)
-            refreshPen();
+            refreshVisual();
         return result;
     }
 
 private:
-    void refreshPen()
+    void refreshVisual()
     {
+        setBrush(normalBrush);
+        setZValue(hovered ? hoverZValue : normalZValue);
         if (isSelected()) {
             setPen(InsightVisualStyle::selectedPen());
         } else if (hovered) {
@@ -244,8 +263,11 @@ private:
     }
 
     RtlInsightGraphElement element;
+    QBrush normalBrush;
     QPen normalPen;
     QPen hoverPen;
+    qreal normalZValue = 10.0;
+    qreal hoverZValue = 40.0;
     bool hovered = false;
 };
 
@@ -267,13 +289,14 @@ public:
         setFlag(QGraphicsItem::ItemIsSelectable, true);
         setAcceptHoverEvents(true);
         setAcceptedMouseButtons(Qt::LeftButton | Qt::RightButton);
-        setBrush(fill);
+        normalBrush = QBrush(fill);
+        setBrush(normalBrush);
         normalPen = QPen(stroke, dashed ? 1.6 : 2.0);
         if (dashed)
             normalPen.setStyle(Qt::DashLine);
         hoverPen = InsightVisualStyle::hoverPen();
         setPen(normalPen);
-        setZValue(10);
+        setBaseZValues(10.0, 40.0);
         applyGraphElementData(this, element);
 
         QFont titleFont = InsightVisualStyle::titleFont(font);
@@ -311,27 +334,38 @@ public:
     NavigateHandler navigateHandler;
     SelectHandler selectHandler;
 
+    void setBaseZValues(qreal normalZ, qreal hoverZ)
+    {
+        normalZValue = normalZ;
+        hoverZValue = hoverZ;
+        setZValue(hovered ? hoverZValue : normalZValue);
+    }
+
+    void setHoveredForTest(bool value)
+    {
+        hovered = value;
+        refreshVisual();
+    }
+
 protected:
     void hoverEnterEvent(QGraphicsSceneHoverEvent* event) override
     {
         hovered = true;
-        setZValue(40);
-        refreshPen();
+        refreshVisual();
         QGraphicsEllipseItem::hoverEnterEvent(event);
     }
 
     void hoverLeaveEvent(QGraphicsSceneHoverEvent* event) override
     {
         hovered = false;
-        setZValue(10);
-        refreshPen();
+        refreshVisual();
         QGraphicsEllipseItem::hoverLeaveEvent(event);
     }
 
     void mousePressEvent(QGraphicsSceneMouseEvent* event) override
     {
         setSelected(true);
-        refreshPen();
+        refreshVisual();
         if (selectHandler)
             selectHandler(element);
         QGraphicsEllipseItem::mousePressEvent(event);
@@ -353,13 +387,15 @@ protected:
     {
         const QVariant result = QGraphicsEllipseItem::itemChange(change, value);
         if (change == QGraphicsItem::ItemSelectedHasChanged)
-            refreshPen();
+            refreshVisual();
         return result;
     }
 
 private:
-    void refreshPen()
+    void refreshVisual()
     {
+        setBrush(normalBrush);
+        setZValue(hovered ? hoverZValue : normalZValue);
         if (isSelected()) {
             setPen(InsightVisualStyle::selectedPen());
         } else if (hovered) {
@@ -370,8 +406,11 @@ private:
     }
 
     RtlInsightGraphElement element;
+    QBrush normalBrush;
     QPen normalPen;
     QPen hoverPen;
+    qreal normalZValue = 10.0;
+    qreal hoverZValue = 40.0;
     bool hovered = false;
 };
 
@@ -421,7 +460,11 @@ public:
             auto* labelItem = new QGraphicsTextItem(label, this);
             labelItem->setAcceptedMouseButtons(Qt::NoButton);
             labelItem->setFont(labelFont);
-            labelItem->setTextWidth(460.0);
+            const qreal labelTextWidth = qBound<qreal>(
+                28.0,
+                QFontMetrics(labelFont).horizontalAdvance(label) + 12.0,
+                220.0);
+            labelItem->setTextWidth(labelTextWidth);
             labelItem->setDefaultTextColor(
                 InsightVisualStyle::theme().textSecondary);
             const QRectF pathBounds = path.boundingRect();
@@ -443,6 +486,12 @@ public:
 
     NavigateHandler navigateHandler;
     SelectHandler selectHandler;
+
+    void setHoveredForTest(bool value)
+    {
+        hovered = value;
+        refreshPen();
+    }
 
 protected:
     void hoverEnterEvent(QGraphicsSceneHoverEvent* event) override
@@ -544,7 +593,7 @@ qreal stateNodeWidthForText(const QString& text, const QFont& font)
     titleFont.setBold(true);
     titleFont.setPointSize(qMax(8, titleFont.pointSize() + 1));
     const qreal textWidth = QFontMetrics(titleFont).horizontalAdvance(text);
-    return qMax(kStateNodeWidth, textWidth + 70.0);
+    return qMax(kStateNodeWidth, textWidth + 52.0);
 }
 
 QRectF stateNodeRectAt(qreal centerX, qreal centerY, qreal width = kStateNodeWidth)
@@ -614,6 +663,75 @@ QGraphicsItem* graphItemByData(QGraphicsScene* scene,
         return item;
     }
     return nullptr;
+}
+
+bool isGraphShapeItem(const QGraphicsItem* item)
+{
+    return dynamic_cast<const RtlInsightGraphNodeItem*>(item)
+        || dynamic_cast<const RtlInsightGraphStateNodeItem*>(item)
+        || dynamic_cast<const RtlInsightGraphEdgeItem*>(item);
+}
+
+bool isGraphNodeShapeItem(const QGraphicsItem* item)
+{
+    return dynamic_cast<const RtlInsightGraphNodeItem*>(item)
+        || dynamic_cast<const RtlInsightGraphStateNodeItem*>(item);
+}
+
+QColor graphItemFillColor(const QGraphicsItem* item)
+{
+    if (const auto* rect = dynamic_cast<const QGraphicsRectItem*>(item))
+        return rect->brush().color();
+    if (const auto* ellipse = dynamic_cast<const QGraphicsEllipseItem*>(item))
+        return ellipse->brush().color();
+    return InsightVisualStyle::theme().canvasBackground;
+}
+
+QColor graphItemPenColor(const QGraphicsItem* item)
+{
+    if (const auto* rect = dynamic_cast<const QGraphicsRectItem*>(item))
+        return rect->pen().color();
+    if (const auto* ellipse = dynamic_cast<const QGraphicsEllipseItem*>(item))
+        return ellipse->pen().color();
+    if (const auto* path = dynamic_cast<const QGraphicsPathItem*>(item))
+        return path->pen().color();
+    return QColor();
+}
+
+bool colorsTooSimilar(const QColor& lhs, const QColor& rhs)
+{
+    if (!lhs.isValid() || !rhs.isValid())
+        return false;
+    return std::abs(lhs.red() - rhs.red()) < 8
+        && std::abs(lhs.green() - rhs.green()) < 8
+        && std::abs(lhs.blue() - rhs.blue()) < 8;
+}
+
+bool graphItemReadable(const QGraphicsItem* item)
+{
+    const QColor fill = graphItemFillColor(item);
+    if (fill.isValid() && fill.alpha() == 0)
+        return false;
+    const QColor pen = graphItemPenColor(item);
+    if (pen.isValid() && pen.alpha() == 0)
+        return false;
+    for (const QGraphicsItem* child : item->childItems()) {
+        QColor textColor;
+        if (const auto* simpleText =
+                dynamic_cast<const QGraphicsSimpleTextItem*>(child)) {
+            textColor = simpleText->brush().color();
+        } else if (const auto* text =
+                       dynamic_cast<const QGraphicsTextItem*>(child)) {
+            textColor = text->defaultTextColor();
+        } else {
+            continue;
+        }
+        if (!textColor.isValid() || textColor.alpha() == 0
+            || colorsTooSimilar(textColor, fill)) {
+            return false;
+        }
+    }
+    return true;
 }
 
 int indexInList(const QList<QString>& values, const QString& value)
@@ -919,9 +1037,32 @@ FsmGraphLayout buildFsmGraphLayout(const FsmGraph& graph,
         minLane = qMin(minLane, stateLanes.value(stateName));
     }
 
-    const qreal horizontalGap = maxStateWidth + 170.0;
-    const qreal verticalGap = kStateNodeHeight + 120.0;
-    const qreal startX = origin.x() - maxColumn * horizontalGap / 2.0;
+    const qreal columnGap = 58.0;
+    const qreal verticalGap = kStateNodeHeight + 60.0;
+    QHash<int, qreal> columnWidths;
+    for (const QString& stateName : std::as_const(layout.orderedStates)) {
+        const int column = stateColumns.value(stateName);
+        columnWidths[column] =
+            qMax(columnWidths.value(column),
+                 stateWidths.value(stateName, kStateNodeWidth));
+    }
+    QList<qreal> columnCenters;
+    columnCenters.reserve(maxColumn + 1);
+    qreal cursorX = 0.0;
+    for (int column = 0; column <= maxColumn; ++column) {
+        const qreal width =
+            qMax<qreal>(kStateNodeWidth, columnWidths.value(column));
+        columnCenters.append(cursorX + width / 2.0);
+        cursorX += width + columnGap;
+    }
+    const qreal totalColumnWidth =
+        cursorX > 0.0 ? cursorX - columnGap : kStateNodeWidth;
+    const qreal startX = origin.x() - totalColumnWidth / 2.0;
+    auto columnCenterX = [&](int column) {
+        if (column >= 0 && column < columnCenters.size())
+            return startX + columnCenters.at(column);
+        return startX + totalColumnWidth / 2.0;
+    };
 
     auto addLayoutNode = [&](FsmLayoutNode node) {
         layout.nodeRects.insert(node.id, node.rect);
@@ -941,7 +1082,7 @@ FsmGraphLayout buildFsmGraphLayout(const FsmGraph& graph,
                           bool alias,
                           const QString& aliasDetail,
                           const QString& aliasId = QString()) {
-        const QPointF center(startX + column * horizontalGap,
+        const QPointF center(columnCenterX(column),
                              origin.y() + lane * verticalGap);
         const QRectF rect = stateNodeRectAt(
             center.x(),
@@ -979,7 +1120,7 @@ FsmGraphLayout buildFsmGraphLayout(const FsmGraph& graph,
         QList<QString> transitionKeys;
     };
     QHash<QString, AliasCandidate> aliasCandidatesByState;
-    if (stateCount >= 5) {
+    if (stateCount >= 7) {
         for (const FsmTransitionRow& row : graph.transitionRows) {
             if (row.fromStateDisplayName == row.toStateDisplayName)
                 continue;
@@ -990,9 +1131,9 @@ FsmGraphLayout buildFsmGraphLayout(const FsmGraph& graph,
             const int fromColumn = stateColumns.value(row.fromStateDisplayName);
             const int toColumn = stateColumns.value(row.toStateDisplayName);
             const int span = fromColumn - toColumn;
-            const bool longBackEdge = span >= 2;
+            const bool longBackEdge = span >= 4;
             const bool crossLaneBackEdge =
-                span >= 1
+                span >= 3
                 && stateLanes.value(row.fromStateDisplayName)
                        != stateLanes.value(row.toStateDisplayName);
             if (!longBackEdge && !crossLaneBackEdge)
@@ -1019,7 +1160,7 @@ FsmGraphLayout buildFsmGraphLayout(const FsmGraph& graph,
                       return lhs.farthestSourceColumn > rhs.farthestSourceColumn;
                   return lhs.canonicalState < rhs.canonicalState;
               });
-    const int aliasLimit = qMin(4, qMax(1, stateCount / 4));
+    const int aliasLimit = qMin(2, qMax(1, stateCount / 6));
     int aliasOrdinal = 0;
     for (const AliasCandidate& candidate : std::as_const(aliasCandidates)) {
         if (aliasOrdinal >= aliasLimit)
@@ -1027,12 +1168,10 @@ FsmGraphLayout buildFsmGraphLayout(const FsmGraph& graph,
         if (!layout.stateRowsByName.contains(candidate.canonicalState))
             continue;
 
-        int aliasColumn = qMin(maxColumn + aliasOrdinal + 1,
-                               candidate.farthestSourceColumn + 1);
-        aliasColumn = qMax(aliasColumn, maxColumn + 1);
-        int aliasLane = candidate.preferredLane >= 0
-            ? maxLane + 1 + aliasOrdinal
-            : minLane - 1 - aliasOrdinal;
+        int aliasColumn = candidate.farthestSourceColumn;
+        int aliasLane = candidate.preferredLane == 0
+            ? (aliasOrdinal % 2 == 0 ? -1 : 1)
+            : candidate.preferredLane + (candidate.preferredLane > 0 ? 1 : -1);
         QString slotKey =
             QStringLiteral("%1:%2").arg(aliasColumn).arg(aliasLane);
         while (occupiedSlots.contains(slotKey)) {
@@ -1061,13 +1200,9 @@ FsmGraphLayout buildFsmGraphLayout(const FsmGraph& graph,
     return layout;
 }
 
-QString fsmTransitionLabel(const QString& condition)
+QString fsmTransitionConditionId(int transitionIndex)
 {
-    if (condition.isEmpty()
-        || condition == QStringLiteral("unconditional")) {
-        return QString();
-    }
-    return condition;
+    return QStringLiteral("C%1").arg(transitionIndex);
 }
 
 RtlInsightCodeLink fsmStateTransitionCodeLink(const FsmGraph& graph,
@@ -1112,10 +1247,10 @@ QPainterPath fsmTransitionPath(const QRectF& fromRect,
     if (route == FsmTransitionRoute::BackwardOuter) {
         const bool routeBelow = lane < 0;
         const qreal outerY = routeBelow
-            ? qMax(fromRect.bottom(), toRect.bottom()) + 88.0
-                  + std::abs(lane) * 34.0
-            : qMin(fromRect.top(), toRect.top()) - 88.0
-                  - std::abs(lane) * 34.0;
+            ? qMax(fromRect.bottom(), toRect.bottom()) + 36.0
+                  + std::abs(lane) * 18.0
+            : qMin(fromRect.top(), toRect.top()) - 36.0
+                  - std::abs(lane) * 18.0;
         const QPointF start(fromRect.left(), fromRect.center().y());
         const QPointF end(toRect.right(), toRect.center().y());
         if (startOut)
@@ -1123,19 +1258,30 @@ QPainterPath fsmTransitionPath(const QRectF& fromRect,
         if (endOut)
             *endOut = end;
         QPainterPath path(start);
-        const qreal sidePad = 72.0 + std::abs(lane) * 18.0;
-        path.cubicTo(QPointF(start.x() - sidePad, start.y()),
-                     QPointF(start.x() - sidePad, outerY),
-                     QPointF(start.x() - sidePad, outerY));
+        const qreal sidePad = 28.0 + std::abs(lane) * 10.0;
+        path.lineTo(QPointF(start.x() - sidePad, start.y()));
+        path.lineTo(QPointF(start.x() - sidePad, outerY));
         path.lineTo(QPointF(end.x() + sidePad, outerY));
-        path.cubicTo(QPointF(end.x() + sidePad, outerY),
-                     QPointF(end.x() + sidePad, end.y()),
-                     end);
+        path.lineTo(QPointF(end.x() + sidePad, end.y()));
+        path.lineTo(end);
         return path;
     }
 
-    const QPointF start = ellipseAnchorToward(fromRect, toRect.center());
-    const QPointF end = ellipseAnchorToward(toRect, fromRect.center());
+    const qreal dx = toRect.center().x() - fromRect.center().x();
+    const qreal dy = toRect.center().y() - fromRect.center().y();
+    QPointF start;
+    QPointF end;
+    if (std::abs(dx) >= std::abs(dy)) {
+        start = QPointF(dx >= 0 ? fromRect.right() : fromRect.left(),
+                        fromRect.center().y());
+        end = QPointF(dx >= 0 ? toRect.left() : toRect.right(),
+                      toRect.center().y());
+    } else {
+        start = QPointF(fromRect.center().x(),
+                        dy >= 0 ? fromRect.bottom() : fromRect.top());
+        end = QPointF(toRect.center().x(),
+                      dy >= 0 ? toRect.top() : toRect.bottom());
+    }
     if (startOut)
         *startOut = start;
     if (endOut)
@@ -1144,18 +1290,32 @@ QPainterPath fsmTransitionPath(const QRectF& fromRect,
     QPainterPath path(start);
     const bool sameRow = std::abs(fromRect.center().y() - toRect.center().y()) < 1.0;
     const bool sameColumn = std::abs(fromRect.center().x() - toRect.center().x()) < 1.0;
-    if (sameColumn || sameRow) {
-        if (lane == 0)
-            return straightArrowPath(start, end);
-        return curvedArrowPath(start, end, lane * 42.0);
+    if (sameRow) {
+        if (lane == 0) {
+            path.lineTo(end);
+            return path;
+        }
+        const qreal detourY = start.y() + lane * 28.0;
+        path.lineTo(QPointF(start.x(), detourY));
+        path.lineTo(QPointF(end.x(), detourY));
+        path.lineTo(end);
+        return path;
     }
-    const qreal laneOffset = lane * 34.0;
-    const qreal direction = fromRect.center().x() <= toRect.center().x()
-        ? 1.0
-        : -1.0;
-    path.cubicTo(start + QPointF(105.0 * direction, laneOffset),
-                 end - QPointF(105.0 * direction, -laneOffset),
-                 end);
+    if (sameColumn) {
+        if (lane == 0) {
+            path.lineTo(end);
+            return path;
+        }
+        const qreal detourX = start.x() + lane * 36.0;
+        path.lineTo(QPointF(detourX, start.y()));
+        path.lineTo(QPointF(detourX, end.y()));
+        path.lineTo(end);
+        return path;
+    }
+    const qreal midX = (start.x() + end.x()) / 2.0 + lane * 18.0;
+    path.lineTo(QPointF(midX, start.y()));
+    path.lineTo(QPointF(midX, end.y()));
+    path.lineTo(end);
     return path;
 }
 
@@ -1375,6 +1535,7 @@ QRectF renderFsmStateMachineGraph(
     }
 
     auto addTransition = [&](const FsmTransitionRow& row,
+                             const QString& conditionId,
                              const QRectF& fromRect,
                              const QRectF& toRect,
                              int lane,
@@ -1384,16 +1545,19 @@ QRectF renderFsmStateMachineGraph(
         QPainterPath path;
         qreal angle = 0.0;
         if (row.fromStateDisplayName == row.toStateDisplayName) {
-            const qreal loopShift = lane * 18.0;
-            start = QPointF(fromRect.center().x() + fromRect.width() * 0.24,
-                            fromRect.top() + 6.0 + loopShift);
-            end = QPointF(fromRect.center().x() - fromRect.width() * 0.24,
-                          fromRect.top() + 6.0 + loopShift);
+            const qreal loopLift = 34.0 + std::abs(lane) * 12.0;
+            const qreal loopWidth =
+                qMin<qreal>(72.0, qMax<qreal>(48.0, fromRect.width() * 0.30));
+            start = QPointF(fromRect.center().x() + loopWidth / 2.0,
+                            fromRect.top() + 5.0);
+            end = QPointF(fromRect.center().x() - loopWidth / 2.0,
+                          fromRect.top() + 5.0);
             path.moveTo(start);
-            path.cubicTo(start + QPointF(48.0, -96.0 - lane * 22.0),
-                         end + QPointF(-48.0, -96.0 - lane * 22.0),
-                         end);
-            angle = kPi;
+            const qreal topY = fromRect.top() - loopLift;
+            path.lineTo(QPointF(start.x() + 18.0, topY));
+            path.lineTo(QPointF(end.x() - 18.0, topY));
+            path.lineTo(end);
+            angle = kPi / 2.0;
         } else {
             const bool backward =
                 fromRect.center().x() > toRect.center().x() + 1.0;
@@ -1416,16 +1580,17 @@ QRectF renderFsmStateMachineGraph(
         transition.primary = row.fromStateDisplayName;
         transition.secondary = row.toStateDisplayName;
         transition.detail = row.conditionDisplayName;
+        transition.badge = conditionId;
         transition.codeLink = row.codeLink;
         auto* item = new RtlInsightGraphEdgeItem(
             transition,
             path,
             end,
             angle,
-            fsmTransitionLabel(row.conditionDisplayName),
+            conditionId,
             font,
             InsightVisualStyle::theme().textPrimary,
-            lane * 26.0);
+            lane * 18.0);
         item->navigateHandler = navigate;
         item->selectHandler = select;
         scene->addItem(item);
@@ -1433,7 +1598,8 @@ QRectF renderFsmStateMachineGraph(
     };
 
     QHash<QString, int> edgeLaneCounts;
-    for (const FsmTransitionRow& row : graph.transitionRows) {
+    for (int rowIndex = 0; rowIndex < graph.transitionRows.size(); ++rowIndex) {
+        const FsmTransitionRow& row = graph.transitionRows.at(rowIndex);
         const QString aliasNodeId =
             layout.aliasNodeIdByTransitionKey.value(
                 fsmTransitionLayoutKey(row));
@@ -1454,10 +1620,15 @@ QRectF renderFsmStateMachineGraph(
         edgeLaneCounts.insert(edgeKey, ordinal + 1);
         const int lane = ordinal == 0 ? 0 : ((ordinal + 1) / 2)
             * (ordinal % 2 == 0 ? -1 : 1);
-        addTransition(row, fromRect, toRect, lane, !aliasNodeId.isEmpty());
+        addTransition(row,
+                      fsmTransitionConditionId(rowIndex),
+                      fromRect,
+                      toRect,
+                      lane,
+                      !aliasNodeId.isEmpty());
     }
 
-    return graphBounds.adjusted(-90.0, -110.0, 90.0, 90.0);
+    return graphBounds.adjusted(-38.0, -58.0, 38.0, 44.0);
 }
 
 QTreeWidgetItem* createGroupItem(QTreeWidget* tree,
@@ -2785,6 +2956,76 @@ QStringList RtlInsightsPanelCoordinator::graphTableRowsForTest() const
     return rows;
 }
 
+bool RtlInsightsPanelCoordinator::graphItemsReadableForTest() const
+{
+    if (!insightsGraphScene)
+        return true;
+    for (QGraphicsItem* item : insightsGraphScene->items()) {
+        if (!isGraphShapeItem(item))
+            continue;
+        if (!graphItemReadable(item))
+            return false;
+    }
+    return true;
+}
+
+bool RtlInsightsPanelCoordinator::graphNestedNodeStackingReadableForTest() const
+{
+    if (!insightsGraphScene)
+        return true;
+    QList<QGraphicsItem*> nodes;
+    for (QGraphicsItem* item : insightsGraphScene->items()) {
+        if (isGraphNodeShapeItem(item))
+            nodes.append(item);
+    }
+    for (QGraphicsItem* outer : std::as_const(nodes)) {
+        const QRectF outerRect = outer->sceneBoundingRect();
+        for (QGraphicsItem* inner : std::as_const(nodes)) {
+            if (outer == inner)
+                continue;
+            const QRectF innerRect = inner->sceneBoundingRect();
+            if (outerRect.width() <= innerRect.width() + 8.0
+                || outerRect.height() <= innerRect.height() + 8.0) {
+                continue;
+            }
+            if (!outerRect.adjusted(4.0, 4.0, -4.0, -4.0)
+                     .contains(innerRect.center())) {
+                continue;
+            }
+            if (outer->zValue() >= inner->zValue())
+                return false;
+        }
+    }
+    return true;
+}
+
+bool RtlInsightsPanelCoordinator::setGraphItemHoveredForTest(
+    const QString& elementKind,
+    const QString& primaryText,
+    const QString& secondaryText,
+    bool hovered)
+{
+    QGraphicsItem* item = graphItemByData(insightsGraphScene,
+                                          elementKind,
+                                          primaryText,
+                                          secondaryText);
+    if (!item)
+        return false;
+    if (auto* node = dynamic_cast<RtlInsightGraphNodeItem*>(item)) {
+        node->setHoveredForTest(hovered);
+        return true;
+    }
+    if (auto* state = dynamic_cast<RtlInsightGraphStateNodeItem*>(item)) {
+        state->setHoveredForTest(hovered);
+        return true;
+    }
+    if (auto* edge = dynamic_cast<RtlInsightGraphEdgeItem*>(item)) {
+        edge->setHoveredForTest(hovered);
+        return true;
+    }
+    return false;
+}
+
 bool RtlInsightsPanelCoordinator::selectGraphTableRowForTest(
     const QString& primaryText,
     const QString& secondaryText)
@@ -3125,8 +3366,9 @@ void RtlInsightsPanelCoordinator::populateFsmTransitionsTable(
     if (!graphTable)
         return;
     graphTable->clear();
-    graphTable->setColumnCount(5);
-    graphTable->setHorizontalHeaderLabels({QStringLiteral("From"),
+    graphTable->setColumnCount(6);
+    graphTable->setHorizontalHeaderLabels({QStringLiteral("ID"),
+                                           QStringLiteral("From"),
                                            QStringLiteral("To"),
                                            QStringLiteral("Condition"),
                                            QStringLiteral("Type"),
@@ -3135,6 +3377,7 @@ void RtlInsightsPanelCoordinator::populateFsmTransitionsTable(
     for (int row = 0; row < graph.transitionRows.size(); ++row) {
         const FsmTransitionRow& transition = graph.transitionRows.at(row);
         const QStringList values{
+            fsmTransitionConditionId(row),
             transition.fromStateDisplayName,
             transition.toStateDisplayName,
             transition.conditionDisplayName,
@@ -3289,7 +3532,8 @@ void RtlInsightsPanelCoordinator::applyGraphSearchHighlight()
             QStringList{item->data(kGraphKindRole).toString(),
                         item->data(kGraphPrimaryRole).toString(),
                         item->data(kGraphSecondaryRole).toString(),
-                        item->data(kGraphDetailRole).toString()}
+                        item->data(kGraphDetailRole).toString(),
+                        item->data(kGraphBadgeRole).toString()}
                 .join(QLatin1Char(' '));
         const bool match =
             active && haystack.contains(needle, Qt::CaseInsensitive);
@@ -3403,14 +3647,17 @@ void RtlInsightsPanelCoordinator::renderStateTransitionGraphScene(
         }
     };
     const auto select = [this](const RtlInsightGraphElement& element) {
+        QStringList rows{QStringLiteral("Kind=%1").arg(element.kind)};
+        if (!element.badge.isEmpty())
+            rows.append(QStringLiteral("ID=%1").arg(element.badge));
+        rows.append(QStringLiteral("To=%1").arg(element.secondary));
+        rows.append(QStringLiteral("Condition=%1").arg(element.detail));
+        rows.append(QStringLiteral("Location=%1:%2")
+                        .arg(element.codeLink.fileDisplayName,
+                             element.codeLink.lineDisplayName));
         renderGenericGraphInspector(
             element.primary,
-            {QStringLiteral("Kind=%1").arg(element.kind),
-             QStringLiteral("To=%1").arg(element.secondary),
-             QStringLiteral("Condition=%1").arg(element.detail),
-             QStringLiteral("Location=%1:%2")
-                 .arg(element.codeLink.fileDisplayName,
-                      element.codeLink.lineDisplayName)});
+            rows);
         if (statusMessageHandler)
             statusMessageHandler(QStringLiteral("%1: %2")
                                      .arg(element.kind, element.primary),
@@ -3466,14 +3713,17 @@ void RtlInsightsPanelCoordinator::renderFsmGraphScene(
         }
     };
     const auto select = [this](const RtlInsightGraphElement& element) {
+        QStringList rows{QStringLiteral("Kind=%1").arg(element.kind)};
+        if (!element.badge.isEmpty())
+            rows.append(QStringLiteral("ID=%1").arg(element.badge));
+        rows.append(QStringLiteral("To=%1").arg(element.secondary));
+        rows.append(QStringLiteral("Detail=%1").arg(element.detail));
+        rows.append(QStringLiteral("Location=%1:%2")
+                        .arg(element.codeLink.fileDisplayName,
+                             element.codeLink.lineDisplayName));
         renderGenericGraphInspector(
             element.primary,
-            {QStringLiteral("Kind=%1").arg(element.kind),
-             QStringLiteral("To=%1").arg(element.secondary),
-             QStringLiteral("Detail=%1").arg(element.detail),
-             QStringLiteral("Location=%1:%2")
-                 .arg(element.codeLink.fileDisplayName,
-                      element.codeLink.lineDisplayName)});
+            rows);
         if (statusMessageHandler)
             statusMessageHandler(QStringLiteral("%1: %2")
                                      .arg(element.kind, element.primary),
@@ -3499,7 +3749,7 @@ void RtlInsightsPanelCoordinator::renderFsmGraphScene(
                                        navigate,
                                        select);
         bounds = bounds.isNull() ? graphBounds : bounds.united(graphBounds);
-        nextOriginY = graphBounds.bottom() + 190.0;
+        nextOriginY = graphBounds.bottom() + 94.0;
     }
     insightsGraphScene->setSceneRect(bounds);
     insightsGraphView->fitRect(bounds, Qt::KeepAspectRatio);
@@ -3631,7 +3881,8 @@ void RtlInsightsPanelCoordinator::renderModuleBlockDiagramScene(
                         : InsightVisualStyle::roleColor(
                               InsightVisualRole::Port)),
             font);
-        item->setZValue(root ? 0.0 : 5.0 + node.depth * 10.0);
+        const qreal baseZ = root ? 0.0 : 6.0 + node.depth * 8.0;
+        item->setBaseZValues(baseZ, root ? 1.0 : baseZ + 3.0);
         item->setData(kGraphNodeIdRole, node.nodeId);
         item->navigateHandler = navigate;
         item->selectHandler = [this, node](const RtlInsightGraphElement&) {
@@ -3719,9 +3970,9 @@ void RtlInsightsPanelCoordinator::renderModuleBlockDiagramScene(
 
     QHash<int, QRectF> rectByNodeId;
     QHash<int, QSizeF> measuredSizeByNodeId;
-    constexpr qreal childGap = 18.0;
-    constexpr qreal childInset = 28.0;
-    constexpr qreal titleBand = 64.0;
+    constexpr qreal childGap = 12.0;
+    constexpr qreal childInset = 18.0;
+    constexpr qreal titleBand = 46.0;
     auto wrappedColumnCount = [](int childCount) {
         if (childCount <= 1)
             return 1;
@@ -3742,7 +3993,7 @@ void RtlInsightsPanelCoordinator::renderModuleBlockDiagramScene(
             return measuredSizeByNodeId.value(nodeId);
         const QList<ModuleBlockDiagramNode> children =
             childrenByParent.value(nodeId);
-        QSizeF size(kInsightNodeWidth + 44.0, kInsightNodeHeight + 18.0);
+        QSizeF size(kInsightNodeWidth + 20.0, kInsightNodeHeight + 10.0);
         if (!children.isEmpty()) {
             const int columns = wrappedColumnCount(children.size());
             const int rows = (children.size() + columns - 1) / columns;
@@ -3770,14 +4021,14 @@ void RtlInsightsPanelCoordinator::renderModuleBlockDiagramScene(
                 if (row + 1 < rowHeights.size())
                     childHeight += childGap;
             }
-            size.setWidth(qMax<qreal>(kInsightNodeWidth + 130.0,
+            size.setWidth(qMax<qreal>(kInsightNodeWidth + 72.0,
                                       childWidth + childInset * 2.0));
-            size.setHeight(qMax<qreal>(kInsightNodeHeight + 96.0,
+            size.setHeight(qMax<qreal>(kInsightNodeHeight + 62.0,
                                        titleBand + childHeight + childInset));
         }
         if (nodeId == report.root.nodeId) {
-            size.setWidth(qMax<qreal>(size.width(), 720.0));
-            size.setHeight(qMax<qreal>(size.height(), 360.0));
+            size.setWidth(qMax<qreal>(size.width(), 540.0));
+            size.setHeight(qMax<qreal>(size.height(), 240.0));
         }
         measuredSizeByNodeId.insert(nodeId, size);
         return size;
@@ -3860,7 +4111,7 @@ void RtlInsightsPanelCoordinator::renderModuleBlockDiagramScene(
             .arg(report.root.moduleDisplayName),
         titleFont);
     titleItem->setBrush(QBrush(InsightVisualStyle::theme().textPrimary));
-    titleItem->setPos(rootRect.left(), rootRect.top() - 72.0);
+    titleItem->setPos(rootRect.left(), rootRect.top() - 54.0);
 
     const QString summaryText =
         QStringLiteral("%1 module(s), %2 containment edge(s), %3 blackbox")
@@ -3871,7 +4122,7 @@ void RtlInsightsPanelCoordinator::renderModuleBlockDiagramScene(
         summaryText,
         InsightVisualStyle::compactFont(font));
     summaryItem->setBrush(QBrush(InsightVisualStyle::theme().textSecondary));
-    summaryItem->setPos(rootRect.left(), rootRect.top() - 42.0);
+    summaryItem->setPos(rootRect.left(), rootRect.top() - 30.0);
 
     addNode(report.root, rootRect, true);
 
@@ -3914,7 +4165,7 @@ void RtlInsightsPanelCoordinator::renderModuleBlockDiagramScene(
     }
 
     const QRectF bounds =
-        insightsGraphScene->itemsBoundingRect().adjusted(-80, -80, 80, 80);
+        insightsGraphScene->itemsBoundingRect().adjusted(-48, -48, 48, 44);
     insightsGraphScene->setSceneRect(bounds);
     insightsGraphView->fitRect(bounds, Qt::KeepAspectRatio);
     populateModuleBlockInstancesTable(report);

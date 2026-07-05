@@ -52,11 +52,13 @@
 #include <QString>
 #include <QTemporaryDir>
 #include <QTimer>
+#include <QGraphicsScene>
 #include <QGraphicsView>
 #include <QTreeWidget>
 #include <QTreeWidgetItem>
 #include <QWidget>
 #include <cstdio>
+#include <limits>
 #include <memory>
 
 static int g_checks = 0;
@@ -3920,6 +3922,11 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
         QStringLiteral("wrapped_top"));
     const QStringList wrappedSummaries =
         wrappedPanel.graphElementSummariesForTest();
+    QGraphicsView* wrappedGraphView = wrappedPanel.graphView();
+    const QRectF wrappedBounds =
+        wrappedGraphView && wrappedGraphView->scene()
+            ? wrappedGraphView->scene()->itemsBoundingRect()
+            : QRectF();
     QSet<int> wrappedChildXs;
     QSet<int> wrappedChildYs;
     bool wrappedPanelHasInterface = false;
@@ -3939,11 +3946,39 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                    && wrappedChildXs.size() > 1
                    && wrappedChildYs.size() > 1,
                true);
+    expectBool("module block diagram wrapped layout stays compact",
+               wrappedBounds.isValid()
+                   && wrappedBounds.width() < 760.0
+                   && wrappedBounds.height() < 420.0,
+               true);
     expectBool("module block diagram panel hides interface instance",
                !wrappedPanelHasInterface
                    && !wrappedPanel.graphTableRowsForTest()
                            .join(QLatin1Char('\n'))
                            .contains(QStringLiteral("wrapped_if")),
+               true);
+    const bool hoveredWrappedRoot =
+        wrappedPanel.setGraphItemHoveredForTest(QStringLiteral("module"),
+                                                QStringLiteral("wrapped_top"),
+                                                QString(),
+                                                true);
+    expectBool("module block diagram hover keeps nested nodes readable",
+               hoveredWrappedRoot
+                   && wrappedPanel.graphItemsReadableForTest()
+                   && wrappedPanel.graphNestedNodeStackingReadableForTest(),
+               true);
+    QLineEdit* wrappedSearchEdit =
+        wrappedPanel.dock()
+            ? wrappedPanel.dock()->findChild<QLineEdit*>(
+                  QStringLiteral("rtlGraphSearchEdit"))
+            : nullptr;
+    if (wrappedSearchEdit)
+        wrappedSearchEdit->setText(QStringLiteral("wrapped_top"));
+    expectBool("module block diagram selection keeps nodes readable",
+               wrappedSearchEdit
+                   && wrappedPanel.graphSelectedItemCountForTest() > 0
+                   && wrappedPanel.graphItemsReadableForTest()
+                   && wrappedPanel.graphNestedNodeStackingReadableForTest(),
                true);
 
     ModuleBlockDiagramService::getInstance()->setSemanticIndex(&index);
@@ -8706,6 +8741,17 @@ static void runFsmGraphServiceFixture()
                    && fsmPanel.graphNodeItemCountForTest() == 5
                    && fsmPanel.graphEdgeItemCountForTest() == 4,
                true);
+    const QString fsmGraphText =
+        fsmPanel.graphTextItemsForTest().join(QLatin1Char('\n'));
+    expectBool("fsm graph edge labels use condition ids",
+               fsmGraphText.contains(QStringLiteral("C0"))
+                   && fsmGraphText.contains(QStringLiteral("C1"))
+                   && !fsmGraphText.contains(QStringLiteral("start")),
+               true);
+    expectBool("fsm graph transition table maps ids to conditions",
+               fsmPanel.graphTableRowsForTest().join(QLatin1Char('\n'))
+                   .contains(QStringLiteral("C0|IDLE|RUN|start|state_d|line 15")),
+               true);
     FsmGraphService::getInstance()->setSemanticIndex(
         SemanticIndex::getInstance());
 
@@ -9024,6 +9070,11 @@ static void runFsmGraphServiceFixture()
         QStringLiteral("state_d"));
     const QStringList complexSummaries =
         complexStatePanel.graphElementSummariesForTest();
+    QGraphicsView* complexGraphView = complexStatePanel.graphView();
+    const QRectF complexBounds =
+        complexGraphView && complexGraphView->scene()
+            ? complexGraphView->scene()->itemsBoundingRect()
+            : QRectF();
     bool complexSawIdleAlias = false;
     QSet<int> complexCanonicalStateXs;
     QSet<int> complexCanonicalStateYs;
@@ -9058,6 +9109,14 @@ static void runFsmGraphServiceFixture()
     expectBool("complex fsm layout is path centric with lanes",
                complexCanonicalStateXs.size() >= 5
                    && complexCanonicalStateYs.size() >= 2,
+               true);
+    expectBool("complex fsm layout stays compact",
+               complexBounds.isValid()
+                   && complexBounds.width() < 2300.0
+                   && complexBounds.height() < 820.0
+                   && complexBounds.width()
+                          / qMax<qreal>(1.0, complexBounds.height())
+                       < 5.5,
                true);
     StateTransitionGraphService::getInstance()->setSemanticIndex(
         SemanticIndex::getInstance());
@@ -11183,32 +11242,67 @@ static void runRealWorkspaceIncludeFixture()
         QStringLiteral("phy_pass_thrg_cfg_ns"));
     const QStringList realStateLayoutSummaries =
         realStatePanel.graphElementSummariesForTest();
+    QGraphicsView* realStateGraphView = realStatePanel.graphView();
+    const QRectF realStateBounds =
+        realStateGraphView && realStateGraphView->scene()
+            ? realStateGraphView->scene()->itemsBoundingRect()
+            : QRectF();
     bool sawRealPhyPassAliasLayout = false;
     bool sawRealPhyPassAliasCanonicalDetail = false;
+    bool sawRealPhyPassFarAlias = false;
     QSet<int> realPhyPassStateXs;
     QSet<int> realPhyPassStateYs;
+    int realPhyPassMaxStateX = std::numeric_limits<int>::min();
+    int realPhyPassMinStateY = std::numeric_limits<int>::max();
+    int realPhyPassMaxStateY = std::numeric_limits<int>::min();
     for (const QString& summary : realStateLayoutSummaries) {
         const QStringList parts = summary.split(QLatin1Char('|'));
         if (parts.size() < 8)
             continue;
         if (parts.at(0) == QStringLiteral("state")) {
-            realPhyPassStateXs.insert(parts.at(4).toInt());
-            realPhyPassStateYs.insert(parts.at(5).toInt());
-        } else if (parts.at(0) == QStringLiteral("state-alias")) {
+            const int x = parts.at(4).toInt();
+            const int y = parts.at(5).toInt();
+            realPhyPassStateXs.insert(x);
+            realPhyPassStateYs.insert(y);
+            realPhyPassMaxStateX = qMax(realPhyPassMaxStateX, x);
+            realPhyPassMinStateY = qMin(realPhyPassMinStateY, y);
+            realPhyPassMaxStateY = qMax(realPhyPassMaxStateY, y);
+        }
+    }
+    for (const QString& summary : realStateLayoutSummaries) {
+        const QStringList parts = summary.split(QLatin1Char('|'));
+        if (parts.size() < 8)
+            continue;
+        if (parts.at(0) == QStringLiteral("state-alias")) {
             sawRealPhyPassAliasLayout = true;
             sawRealPhyPassAliasCanonicalDetail =
                 sawRealPhyPassAliasCanonicalDetail
                 || (parts.at(2) == QStringLiteral("alias")
                     && parts.at(3).contains(QStringLiteral("canonical state")));
+            const int aliasX = parts.at(4).toInt();
+            const int aliasY = parts.at(5).toInt();
+            sawRealPhyPassFarAlias = sawRealPhyPassFarAlias
+                || aliasX > realPhyPassMaxStateX + 320
+                || aliasY < realPhyPassMinStateY - 220
+                || aliasY > realPhyPassMaxStateY + 220;
         }
     }
     expectBool("real workspace fsm graph chl_ctrl layout spreads states",
                realPhyPassStateXs.size() >= 4
                    && realPhyPassStateYs.size() >= 2,
                true);
-    expectBool("real workspace fsm graph chl_ctrl alias semantics",
-               sawRealPhyPassAliasLayout
-                   && sawRealPhyPassAliasCanonicalDetail,
+    expectBool("real workspace fsm graph chl_ctrl layout stays compact",
+               realStateBounds.isValid()
+                   && realStateBounds.width() < 2700.0
+                   && realStateBounds.height() < 820.0
+                   && realStateBounds.width()
+                          / qMax<qreal>(1.0, realStateBounds.height())
+                       < 6.0,
+               true);
+    expectBool("real workspace fsm graph chl_ctrl avoids far aliases",
+               (!sawRealPhyPassAliasLayout
+                || (sawRealPhyPassAliasCanonicalDetail
+                    && !sawRealPhyPassFarAlias)),
                true);
     StateTransitionGraphService::getInstance()->setSemanticIndex(
         SemanticIndex::getInstance());

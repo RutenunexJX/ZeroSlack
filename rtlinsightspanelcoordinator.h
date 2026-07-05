@@ -72,6 +72,12 @@ public:
     int graphSelectedItemCountForTest() const;
     QStringList graphInspectorRowsForTest() const;
     QStringList graphTableRowsForTest() const;
+    bool graphItemsReadableForTest() const;
+    bool graphNestedNodeStackingReadableForTest() const;
+    bool setGraphItemHoveredForTest(const QString& elementKind,
+                                    const QString& primaryText,
+                                    const QString& secondaryText,
+                                    bool hovered);
     bool selectGraphTableRowForTest(const QString& primaryText,
                                     const QString& secondaryText = QString());
     int graphElementLineForTest(const QString& elementKind,
