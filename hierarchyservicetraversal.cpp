@@ -42,6 +42,13 @@ bool isDesignModuleDeclaration(const SemanticSymbolRecord& record)
         && SymbolTaxonomy::isModuleDeclaration(semanticMetadataForSymbolRecord(record));
 }
 
+bool isDesignInterfaceDeclaration(const SemanticSymbolRecord& record)
+{
+    return record.isValid()
+        && semanticMetadataForSymbolRecord(record).declarationKind
+               == SymbolTaxonomy::DeclarationKind::Interface;
+}
+
 bool isDesignInstanceDeclaration(const SemanticSymbolRecord& record)
 {
     return record.isValid()
@@ -121,6 +128,20 @@ void appendDesignModuleRecord(
     modules->append(record);
 }
 
+QSet<QString> designInterfaceNames(const QList<SemanticSymbolRecord>& records,
+                                   const QSet<QString>& fileScope = {})
+{
+    QSet<QString> names;
+    for (const SemanticSymbolRecord& record : records) {
+        if (!isDesignInterfaceDeclaration(record) || record.name.isEmpty())
+            continue;
+        if (!designFileScopeContains(fileScope, record.location.fileName))
+            continue;
+        names.insert(record.name.trimmed());
+    }
+    return names;
+}
+
 QString designModuleTypeForRelationship(
     const RelationshipResult& relationship)
 {
@@ -133,6 +154,32 @@ QString designModuleTypeForRelationship(
     if (moduleType.isEmpty())
         moduleType = targetRecord.name;
     return moduleType;
+}
+
+bool designRelationshipTargetsInterfaceLike(
+    const RelationshipResult& relationship,
+    const QSet<QString>& interfaceNames)
+{
+    const SemanticSymbolRecord targetRecord = relationship.toSymbolRecord;
+    if (isDesignInterfaceDeclaration(targetRecord))
+        return true;
+    const SemanticSymbolTypeReference type = targetRecord.type;
+    if (type.resolvedTypeKind == SymbolTaxonomy::DeclarationKind::Interface
+        || type.stableKey.declarationKind
+               == SymbolTaxonomy::DeclarationKind::Interface) {
+        return true;
+    }
+    const QString resolved = type.resolvedTypeName.trimmed();
+    if (!resolved.isEmpty() && interfaceNames.contains(resolved))
+        return true;
+    const QString rawInterface =
+        SymbolTaxonomy::interfaceTypeName(type.rawTypeText.trimmed());
+    if (!rawInterface.isEmpty() && interfaceNames.contains(rawInterface))
+        return true;
+    const QString moduleType =
+        SymbolTaxonomy::interfaceTypeName(
+            designModuleTypeForRelationship(relationship).trimmed());
+    return !moduleType.isEmpty() && interfaceNames.contains(moduleType);
 }
 
 QString designAccessPathDisplayName(const QString& accessPath)
@@ -403,6 +450,7 @@ QStringList HierarchyService::inferDesignTopModules(
     QHash<QString, SemanticSymbolRecord> modulesByName;
     QList<SemanticSymbolRecord> modules;
     const QList<SemanticSymbolRecord> records = semanticIndex()->getSymbolRecords();
+    const QSet<QString> interfaceNames = designInterfaceNames(records, fileScope);
     for (const SemanticSymbolRecord& record : records)
         appendDesignModuleRecord(&modulesByName, &modules, record, fileScope);
 
@@ -423,6 +471,10 @@ QStringList HierarchyService::inferDesignTopModules(
         const QList<RelationshipResult> relationships =
             relationshipService.findRelationships(relationshipQuery);
         for (const RelationshipResult& relationship : relationships) {
+            if (designRelationshipTargetsInterfaceLike(relationship,
+                                                       interfaceNames)) {
+                continue;
+            }
             const QString moduleType =
                 designModuleTypeForRelationship(relationship);
             if (moduleType.isEmpty() || !modulesByName.contains(moduleType))
@@ -560,6 +612,7 @@ DesignHierarchyReport HierarchyService::getDesignHierarchyReport(
     QHash<QString, SemanticSymbolRecord> modulesByName;
     QList<SemanticSymbolRecord> modules;
     const QList<SemanticSymbolRecord> records = semanticIndex()->getSymbolRecords();
+    const QSet<QString> interfaceNames = designInterfaceNames(records, fileScope);
     for (const SemanticSymbolRecord& record : records)
         appendDesignModuleRecord(&modulesByName, &modules, record, fileScope);
 
@@ -606,6 +659,10 @@ DesignHierarchyReport HierarchyService::getDesignHierarchyReport(
             const SemanticSymbolRecord targetRecord = relationship.toSymbolRecord;
             if (!targetRecord.isValid())
                 continue;
+            if (designRelationshipTargetsInterfaceLike(relationship,
+                                                       interfaceNames)) {
+                continue;
+            }
 
             const bool targetIsInstance = isDesignInstanceDeclaration(targetRecord);
             QString moduleType = designModuleTypeForRelationship(relationship);

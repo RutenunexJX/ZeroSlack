@@ -48,6 +48,12 @@ into an analyzer.
   report lanes/items with role-colored blocks; Matrix mode uses report matrix
   cells and item drill-down. Known follow-up space: richer async progress and
   deeper virtualization for very large hotspot reports.
+- Current RTL readability repair: State Transition Graph remains structurally
+  gated by FSM discovery, but complex graphs now use a path-centric layout with
+  branch lanes and limited dashed alias nodes for awkward long returns. Module
+  Block Diagram is module-only for UI/report consumption, filters interface
+  declarations/instances, and wraps sibling child modules into multiple columns.
+  Design hierarchy defaults to hiding interface/interface-instance nodes.
 - The current completed baseline includes import-aware package member
   visibility for unqualified completion, definition, and hover; user template
   JSON usage actions; explicit header/include and package import commands;
@@ -1044,6 +1050,8 @@ Allowed scope:
 - selected discovered current-state roles must not show the graph
 - names are compatibility/display hints, not semantic gates
 - service-owned transition extraction/report
+- complex graph layout from service-owned report data only; alias nodes must be
+  visual duplicates that preserve canonical state/table counts
 
 First milestones:
 
@@ -1062,6 +1070,11 @@ First milestones:
   (complete: top signal/current/next controls, visibility toggles, selected
   metadata inspector, and transitions table are rendered from existing report
   data while structural role gating remains unchanged)
+- M10.5 path-centric complex layout and alias-state semantics
+  (complete: RTL Insights lays selected state-transition reports out along a
+  left-to-right main path with branch lanes, routes long/back edges outside
+  where practical, and creates limited dashed alias nodes that navigate/inspect
+  as duplicates of canonical states without changing FSM statistics)
 
 M10.1 implementation constraints:
 
@@ -1148,6 +1161,20 @@ M10.4 implementation status:
   `gui_smoke_test`, `insight_visual_style_test`, and
   `signal_usage_hotspot_panel_test` targets compile/link; focused CTest passed.
 
+M10.5 implementation status:
+
+- Complete: `RtlInsightsPanelCoordinator` builds a path-centric layout for
+  State Transition Graph reports from existing `FsmGraphService` data.
+- Complete: complex layouts use branch lanes, self-loop handling, and outside
+  routes for long/back transitions where practical.
+- Complete: limited dashed `state-alias` graph nodes are created only for
+  long/back/cross-lane transitions; labels/details identify the canonical state,
+  selection/navigation uses the canonical source link, and transition tables
+  stay based on canonical report rows.
+- Verification: `relationship_test` covers alias/canonical semantics, a complex
+  synthetic FSM layout, and real `test_sv/new/.../chl_ctrl.sv` layout/alias
+  behavior without modifying the RTL fixture.
+
 ### 11. Module Block Diagram
 
 Goal: show module containment as a block diagram from a selected module.
@@ -1155,7 +1182,9 @@ Goal: show module containment as a block diagram from a selected module.
 Allowed scope:
 
 - selected module name as diagram top
-- module/interface instance wrapping relationship only
+- module instance wrapping relationship only
+- filter interface declarations, interface instances, and interface-typed
+  unresolved children from UI/report consumption
 - no signals
 - click root module block to jump to module definition
 - click child module/instance block to jump to instance declaration and drill
@@ -1181,13 +1210,17 @@ First milestones:
   (complete: toolbar controls, nested block rendering, right inspector, and
   bottom instances table are connected to the service report and selection
   model)
+- M11.5 module-only filtering and compact wrapped layout
+  (complete: Module Block Diagram rejects interface roots, filters interface
+  child instances, and wraps many siblings into multiple columns instead of a
+  pure vertical stack)
 
 M11.1 implementation constraints:
 
 - Report shaping must live in a service path, not in UI code.
 - Consume existing semantic/hierarchy/relationship data; do not scan workspace
   files or run Slang from UI.
-- Include only module/interface containment or wrapping relationships.
+- Include only module containment or wrapping relationships.
 - Carry module definition navigation links in report data.
 - Defer all visual rendering to M11.2.
 
@@ -1198,9 +1231,9 @@ M11.1 implementation status:
 - Complete: the report is built from indexed module/instance symbols plus
   `INSTANTIATES` filtering and returns module/instance nodes plus
   instantiation edges.
-- Complete: child records are normalized to module/interface definitions when
-  possible, while unresolved child module types stay in the report as blackbox
-  nodes instead of being dropped.
+- Complete: child records are normalized to module definitions when possible,
+  while unresolved child module types stay in the report as blackbox nodes
+  instead of being dropped.
 - Complete: report nodes and edges carry instance names, instance declaration
   links, module definition links, and unresolved reasons.
 - Complete: focused relationship coverage verifies root/child containment,
@@ -1214,7 +1247,7 @@ M11.2 implementation constraints:
 
 - UI must consume `ModuleBlockDiagramReport` only.
 - Selected module names must become the diagram root.
-- Render module/interface containment only; do not render signals.
+- Render module containment only; do not render interfaces or signals.
 - Do not add workspace scans, UI-side Slang work, or new relationship
   extraction.
 - Leave explicit click-navigation evidence to M11.3.
@@ -1288,6 +1321,19 @@ M11.4 implementation status:
 - Verification: Debug `completion_test`, `relationship_test`,
   `gui_smoke_test`, `insight_visual_style_test`, and
   `signal_usage_hotspot_panel_test` targets compile/link; focused CTest passed.
+
+M11.5 implementation status:
+
+- Complete: `ModuleBlockDiagramService` accepts only module definitions as
+  roots, filters interface declarations and interface instance targets from
+  child reports, and leaves interface data available to other semantic reports.
+- Complete: editor source-symbol and relationship-panel activation paths no
+  longer present Module Block Diagram as an interface action.
+- Complete: RTL Insights lays sibling child modules out in wrapped rows/columns
+  under the selected parent instead of a pure vertical stack.
+- Verification: `relationship_test` covers interface filtering, interface-root
+  rejection, wrapped sibling coordinates, blackbox preservation, and carried
+  source links.
 
 ### 12. Workspace Project Configuration And Diagnostics Workflow
 
@@ -1399,7 +1445,7 @@ Milestones:
   (complete: the symbol context menu always shows Go to Definition, Find
   References, Show Relationships, Signal Kernel Graph, State Transition Graph,
   and Module Block Diagram; disabled actions expose reasons; Module Block
-  Diagram is limited to existing module/interface definitions; current-state
+  Diagram is limited to existing module definitions; current-state
   names remain rejected)
 - M13.2 References Panel Workflow Closure
   (complete: query context, empty reasons, click/activated jump with flash,
@@ -1425,8 +1471,8 @@ M13.1 implementation status:
 - Complete: disabled source-symbol actions carry status/tooltip reasons such
   as no source file, no symbol under cursor, symbol not indexed, next-state
   gating, or module-block gating.
-- Complete: Module Block Diagram activation is UI-gated to existing
-  module/interface definition records, so ordinary signals remain disabled
+- Complete: Module Block Diagram activation is UI-gated to existing module
+  definition records, so ordinary signals and interfaces remain disabled
   without adding new semantic analysis.
 - Complete: this milestone is workflow/UI closure only. It does not implement
   package tools, Wave Preview expansion, new graph algorithms, or broader
@@ -1443,7 +1489,7 @@ M13.2-M13.4 implementation status:
   rows route through the shared navigation path and flash the target line.
 - Complete: Relationship rows store existing relationship data for driver,
   consumer, declaration, and instance navigation; instantiation rows prefer
-  existing module/interface definition records when available.
+  existing module definition records when available.
 - Complete: Relationship result context menus call only existing graphs:
   Signal Kernel Graph, Module Block Diagram, and State Transition Graph.
 - Complete: panel and graph jumps are validated for missing files, invalid

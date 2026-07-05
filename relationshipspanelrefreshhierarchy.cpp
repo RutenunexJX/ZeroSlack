@@ -24,8 +24,7 @@ bool isModuleBlockDefinition(const SemanticSymbolRecord& record)
         return false;
     const SymbolTaxonomy::SemanticMetadata metadata =
         semanticMetadataForSymbolRecord(record);
-    return metadata.declarationKind == SymbolTaxonomy::DeclarationKind::Module
-        || metadata.declarationKind == SymbolTaxonomy::DeclarationKind::Interface;
+    return metadata.declarationKind == SymbolTaxonomy::DeclarationKind::Module;
 }
 
 SemanticSymbolRecord moduleDefinitionForRecord(

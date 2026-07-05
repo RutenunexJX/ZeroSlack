@@ -285,7 +285,7 @@ RelationshipsPanelCoordinator::RelationshipsPanelCoordinator(QWidget* parent)
                          moduleBlockDiagram->setStatusTip(
                              moduleBlockDiagram->isEnabled()
                                  ? QString()
-                                 : QStringLiteral("Module Block Diagram requires a module/interface/program name"));
+                                 : QStringLiteral("Module Block Diagram requires a module name"));
                          stateTransitionGraph->setStatusTip(
                              stateTransitionGraph->isEnabled()
                                  ? QString()

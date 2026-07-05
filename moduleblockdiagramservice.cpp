@@ -3,6 +3,8 @@
 #include "semanticindex.h"
 #include "symboltaxonomy.h"
 
+#include <QDir>
+#include <QFileInfo>
 #include <QHash>
 #include <QRegularExpression>
 #include <QSet>
@@ -34,20 +36,46 @@ bool isModuleBlockDefinition(const SemanticSymbolRecord& record)
 
     const SymbolTaxonomy::SemanticMetadata metadata =
         semanticMetadataForSymbolRecord(record);
-    return metadata.declarationKind == SymbolTaxonomy::DeclarationKind::Module
-        || metadata.declarationKind == SymbolTaxonomy::DeclarationKind::Interface;
+    return metadata.declarationKind == SymbolTaxonomy::DeclarationKind::Module;
+}
+
+bool isModuleBlockInterfaceDefinition(const SemanticSymbolRecord& record)
+{
+    if (!record.isValid())
+        return false;
+    return semanticMetadataForSymbolRecord(record).declarationKind
+        == SymbolTaxonomy::DeclarationKind::Interface;
+}
+
+QSet<QString> moduleBlockInterfaceTypeNames(SemanticIndex* index)
+{
+    QSet<QString> names;
+    if (!index)
+        return names;
+    const QList<SemanticSymbolRecord> records = index->getSymbolRecords();
+    for (const SemanticSymbolRecord& record : records) {
+        if (isModuleBlockInterfaceDefinition(record)
+            && !record.name.trimmed().isEmpty()) {
+            names.insert(record.name.trimmed());
+        }
+    }
+    return names;
 }
 
 QString moduleBlockTypeNameForInstance(const SemanticSymbolRecord& record)
 {
+    if (!record.type.rawTypeText.isEmpty()) {
+        const QString rawType =
+            SymbolTaxonomy::interfaceTypeName(record.type.rawTypeText.trimmed());
+        if (!rawType.isEmpty())
+            return rawType;
+    }
     if (!record.type.resolvedTypeName.isEmpty())
         return record.type.resolvedTypeName;
     if (record.type.stableKey.isValid()
         && !record.type.stableKey.symbolName.isEmpty()) {
         return record.type.stableKey.symbolName;
     }
-    if (!record.type.rawTypeText.isEmpty())
-        return SymbolTaxonomy::interfaceTypeName(record.type.rawTypeText.trimmed());
     return QString();
 }
 
@@ -70,11 +98,26 @@ QString instanceNameFromEvidence(const QString& evidenceText)
 }
 
 RtlInsightCodeLink moduleBlockCodeLinkForRange(
-    const SemanticSourceRange& range)
+    const SemanticSourceRange& range,
+    const QString& fallbackFileName = QString())
 {
     if (range.fileName.isEmpty() || range.line <= 0)
         return {};
-    return RtlInsightLink::fromFileLine(range.fileName,
+    QString fileName = range.fileName;
+    const QFileInfo info(fileName);
+    const QFileInfo fallbackInfo(fallbackFileName);
+    if (info.isRelative()
+        && !fallbackFileName.isEmpty()
+        && !fallbackInfo.fileName().isEmpty()
+        && QString::compare(info.fileName(),
+                            fallbackInfo.fileName(),
+                            Qt::CaseInsensitive)
+            == 0) {
+        fileName = fallbackFileName;
+    } else if (!fileName.isEmpty()) {
+        fileName = QDir::cleanPath(info.absoluteFilePath());
+    }
+    return RtlInsightLink::fromFileLine(fileName,
                                         range.line,
                                         range.column);
 }
@@ -84,7 +127,11 @@ RtlInsightCodeLink moduleBlockCodeLinkForRecord(
 {
     if (!record.isValid())
         return {};
-    return RtlInsightLink::fromFileLine(record.location.fileName,
+    if (record.location.fileName.isEmpty())
+        return {};
+    const QString fileName =
+        QDir::cleanPath(QFileInfo(record.location.fileName).absoluteFilePath());
+    return RtlInsightLink::fromFileLine(fileName,
                                         record.location.startLine,
                                         record.location.startColumn);
 }
@@ -226,6 +273,31 @@ struct ModuleBlockChildInstance {
     QString dedupeKey;
 };
 
+bool moduleBlockChildIsInterfaceLike(const ModuleBlockChildInstance& child,
+                                     const QSet<QString>& interfaceNames)
+{
+    if (isModuleBlockInterfaceDefinition(child.definitionRecord)
+        || isModuleBlockInterfaceDefinition(child.instanceRecord)) {
+        return true;
+    }
+    const SemanticSymbolTypeReference type = child.instanceRecord.type;
+    if (type.resolvedTypeKind == SymbolTaxonomy::DeclarationKind::Interface
+        || type.stableKey.declarationKind
+               == SymbolTaxonomy::DeclarationKind::Interface) {
+        return true;
+    }
+    const QString resolved = type.resolvedTypeName.trimmed();
+    if (!resolved.isEmpty() && interfaceNames.contains(resolved))
+        return true;
+    const QString rawInterface =
+        SymbolTaxonomy::interfaceTypeName(type.rawTypeText.trimmed());
+    if (!rawInterface.isEmpty() && interfaceNames.contains(rawInterface))
+        return true;
+    const QString moduleType =
+        SymbolTaxonomy::interfaceTypeName(child.moduleTypeName.trimmed());
+    return !moduleType.isEmpty() && interfaceNames.contains(moduleType);
+}
+
 QString moduleBlockChildDedupeKey(const QString& moduleTypeName,
                                   const QString& instanceName,
                                   const RtlInsightCodeLink& instanceCodeLink)
@@ -313,7 +385,9 @@ RtlInsightCodeLink instanceCodeLinkForRelationship(
     const RelationshipResult& relationship)
 {
     RtlInsightCodeLink link =
-        moduleBlockCodeLinkForRange(relationship.evidenceRange);
+        moduleBlockCodeLinkForRange(
+            relationship.evidenceRange,
+            relationship.fromSymbolRecord.location.fileName);
     if (!link.fileName.isEmpty())
         return link;
     if (isModuleBlockInstanceDeclaration(relationship.toSymbolRecord))
@@ -373,6 +447,8 @@ ModuleBlockDiagramService::buildModuleBlockDiagram(
     report.found = true;
 
     RelationshipService relationshipService(semanticIndex());
+    const QSet<QString> interfaceNames =
+        moduleBlockInterfaceTypeNames(semanticIndex());
     const int maxDepth = query.maxDepth < 0 ? 0 : query.maxDepth;
     QSet<QString> emittedChildKeys;
     std::function<void(const SemanticSymbolRecord&, int, int, QSet<QString>)>
@@ -391,6 +467,8 @@ ModuleBlockDiagramService::buildModuleBlockDiagram(
         QList<ModuleBlockChildInstance> children;
         auto appendChild = [&](ModuleBlockChildInstance child) {
             if (child.moduleTypeName.trimmed().isEmpty())
+                return;
+            if (moduleBlockChildIsInterfaceLike(child, interfaceNames))
                 return;
             if (child.instanceName.trimmed().isEmpty())
                 child.instanceName = child.moduleTypeName;

@@ -286,8 +286,26 @@ public:
         title->setFont(titleFont);
         title->setBrush(QBrush(InsightVisualStyle::theme().textPrimary));
         const QRectF titleBounds = title->boundingRect();
+        const bool hasSecondary = !element.secondary.trimmed().isEmpty();
         title->setPos(rect.center().x() - titleBounds.width() / 2.0,
-                      rect.center().y() - titleBounds.height() / 2.0);
+                      rect.center().y() - titleBounds.height() / 2.0
+                          - (hasSecondary ? 8.0 : 0.0));
+
+        if (hasSecondary) {
+            QFont secondaryFont = InsightVisualStyle::compactFont(font);
+            secondaryFont.setPointSize(qMax(7, secondaryFont.pointSize() - 1));
+            auto* secondary = new QGraphicsSimpleTextItem(
+                graphElidedText(element.secondary,
+                                secondaryFont,
+                                static_cast<int>(rect.width() - 44)),
+                this);
+            secondary->setAcceptedMouseButtons(Qt::NoButton);
+            secondary->setFont(secondaryFont);
+            secondary->setBrush(QBrush(InsightVisualStyle::theme().textMuted));
+            const QRectF secondaryBounds = secondary->boundingRect();
+            secondary->setPos(rect.center().x() - secondaryBounds.width() / 2.0,
+                              rect.center().y() + 8.0);
+        }
     }
 
     NavigateHandler navigateHandler;
@@ -710,9 +728,39 @@ QList<QString> orderedFsmStateNames(const FsmGraph& graph)
     return ordered;
 }
 
+QString fsmTransitionLayoutKey(const FsmTransitionRow& row)
+{
+    return QStringLiteral("%1\n%2\n%3\n%4\n%5")
+        .arg(row.fromStateDisplayName,
+             row.toStateDisplayName,
+             row.codeLink.fileName,
+             QString::number(row.codeLink.line),
+             row.conditionDisplayName);
+}
+
+int alternatingLane(int index)
+{
+    const int lane = index / 2 + 1;
+    return index % 2 == 0 ? -lane : lane;
+}
+
+struct FsmLayoutNode {
+    QString id;
+    QString canonicalState;
+    QRectF rect;
+    bool alias = false;
+    QString aliasDetail;
+    int column = 0;
+    int lane = 0;
+};
+
 struct FsmGraphLayout {
     QList<QString> orderedStates;
+    QList<FsmLayoutNode> nodes;
     QHash<QString, QRectF> stateRects;
+    QHash<QString, QRectF> nodeRects;
+    QHash<QString, QString> canonicalNodeIds;
+    QHash<QString, QString> aliasNodeIdByTransitionKey;
     QHash<QString, int> stateIndexes;
     QHash<QString, FsmStateRow> stateRowsByName;
     QRectF bounds;
@@ -739,6 +787,8 @@ FsmGraphLayout buildFsmGraphLayout(const FsmGraph& graph,
     if (stateCount <= 0)
         return layout;
 
+    QHash<QString, QList<QString>> outgoingByState;
+    QHash<QString, int> incomingCountByState;
     auto uniqueOutgoingTargets = [&](const QString& source) {
         QList<QString> targets;
         QSet<QString> seen;
@@ -754,96 +804,259 @@ FsmGraphLayout buildFsmGraphLayout(const FsmGraph& graph,
         }
         return targets;
     };
-
-    QString hubState;
-    QList<QString> hubTargets;
     for (const QString& stateName : layout.orderedStates) {
-        const QList<QString> targets = uniqueOutgoingTargets(stateName);
-        const bool betterCount = targets.size() > hubTargets.size();
-        const bool betterIdleTie =
-            targets.size() == hubTargets.size()
-            && stateName.contains(QStringLiteral("idle"), Qt::CaseInsensitive)
-            && !hubState.contains(QStringLiteral("idle"), Qt::CaseInsensitive);
-        if (betterCount || betterIdleTie) {
-            hubState = stateName;
-            hubTargets = targets;
+        QList<QString> targets = uniqueOutgoingTargets(stateName);
+        const int sourceIndex = indexInList(layout.orderedStates, stateName);
+        std::sort(targets.begin(),
+                  targets.end(),
+                  [&](const QString& lhs, const QString& rhs) {
+                      const int lhsIndex = indexInList(layout.orderedStates, lhs);
+                      const int rhsIndex = indexInList(layout.orderedStates, rhs);
+                      const bool lhsForward = lhsIndex > sourceIndex;
+                      const bool rhsForward = rhsIndex > sourceIndex;
+                      if (lhsForward != rhsForward)
+                          return lhsForward;
+                      return lhsIndex < rhsIndex;
+                  });
+        outgoingByState.insert(stateName, targets);
+        for (const QString& target : std::as_const(targets))
+            incomingCountByState[target] = incomingCountByState.value(target) + 1;
+    }
+
+    QHash<QString, int> stateColumns;
+    QHash<QString, int> stateLanes;
+    for (int i = 0; i < layout.orderedStates.size(); ++i) {
+        stateColumns.insert(layout.orderedStates.at(i), i);
+        stateLanes.insert(layout.orderedStates.at(i), 0);
+    }
+
+    QList<QString> mainPath;
+    QSet<QString> mainPathStates;
+    if (!layout.orderedStates.isEmpty()) {
+        QString current = layout.orderedStates.first();
+        while (!current.isEmpty() && !mainPathStates.contains(current)) {
+            mainPath.append(current);
+            mainPathStates.insert(current);
+
+            const int sourceIndex = stateColumns.value(current);
+            QString next;
+            for (const QString& target : outgoingByState.value(current)) {
+                if (!mainPathStates.contains(target)
+                    && stateColumns.value(target) > sourceIndex) {
+                    next = target;
+                    break;
+                }
+            }
+            if (next.isEmpty()) {
+                for (const QString& target : outgoingByState.value(current)) {
+                    if (!mainPathStates.contains(target)) {
+                        next = target;
+                        break;
+                    }
+                }
+            }
+            current = next;
         }
     }
 
-    auto placeState = [&](const QString& stateName, const QPointF& center) {
+    int branchOrdinal = 0;
+    for (const QString& source : std::as_const(layout.orderedStates)) {
+        const QList<QString> targets = outgoingByState.value(source);
+        if (targets.size() <= 1)
+            continue;
+
+        QString primaryTarget;
+        const int sourceMainIndex = indexInList(mainPath, source);
+        if (sourceMainIndex >= 0 && sourceMainIndex + 1 < mainPath.size())
+            primaryTarget = mainPath.at(sourceMainIndex + 1);
+        if (primaryTarget.isEmpty() && !targets.isEmpty())
+            primaryTarget = targets.first();
+
+        for (const QString& target : targets) {
+            if (target == primaryTarget)
+                continue;
+            if (stateColumns.value(target) <= stateColumns.value(source))
+                continue;
+            if (mainPathStates.contains(target))
+                continue;
+            stateColumns[target] =
+                qMax(stateColumns.value(target), stateColumns.value(source) + 1);
+            stateLanes[target] = alternatingLane(branchOrdinal++);
+        }
+    }
+
+    for (const QString& stateName : std::as_const(layout.orderedStates)) {
+        if (mainPathStates.contains(stateName))
+            continue;
+        if (stateLanes.value(stateName) != 0)
+            continue;
+        if (incomingCountByState.value(stateName) > 1)
+            stateLanes[stateName] = alternatingLane(branchOrdinal++);
+    }
+
+    QSet<QString> occupiedSlots;
+    for (const QString& stateName : std::as_const(layout.orderedStates)) {
+        int lane = stateLanes.value(stateName);
+        const int column = stateColumns.value(stateName);
+        QString slotKey = QStringLiteral("%1:%2").arg(column).arg(lane);
+        int collisionOrdinal = 0;
+        while (occupiedSlots.contains(slotKey)) {
+            lane = lane == 0
+                ? alternatingLane(collisionOrdinal++)
+                : lane + (lane > 0 ? 1 : -1);
+            slotKey = QStringLiteral("%1:%2").arg(column).arg(lane);
+        }
+        occupiedSlots.insert(slotKey);
+        stateLanes[stateName] = lane;
+    }
+
+    int maxColumn = 0;
+    int maxLane = 0;
+    int minLane = 0;
+    for (const QString& stateName : std::as_const(layout.orderedStates)) {
+        maxColumn = qMax(maxColumn, stateColumns.value(stateName));
+        maxLane = qMax(maxLane, stateLanes.value(stateName));
+        minLane = qMin(minLane, stateLanes.value(stateName));
+    }
+
+    const qreal horizontalGap = maxStateWidth + 170.0;
+    const qreal verticalGap = kStateNodeHeight + 120.0;
+    const qreal startX = origin.x() - maxColumn * horizontalGap / 2.0;
+
+    auto addLayoutNode = [&](FsmLayoutNode node) {
+        layout.nodeRects.insert(node.id, node.rect);
+        if (!node.alias) {
+            layout.stateRects.insert(node.canonicalState, node.rect);
+            layout.canonicalNodeIds.insert(node.canonicalState, node.id);
+        }
+        layout.nodes.append(node);
+        layout.bounds = layout.bounds.isNull()
+            ? node.rect
+            : layout.bounds.united(node.rect);
+    };
+
+    auto placeState = [&](const QString& stateName,
+                          int column,
+                          int lane,
+                          bool alias,
+                          const QString& aliasDetail,
+                          const QString& aliasId = QString()) {
+        const QPointF center(startX + column * horizontalGap,
+                             origin.y() + lane * verticalGap);
         const QRectF rect = stateNodeRectAt(
             center.x(),
             center.y(),
             stateWidths.value(stateName, kStateNodeWidth));
-        layout.stateRects.insert(stateName, rect);
-        layout.bounds = layout.bounds.isNull() ? rect : layout.bounds.united(rect);
+        FsmLayoutNode node;
+        node.id = alias
+            ? aliasId
+            : QStringLiteral("state:%1").arg(stateName);
+        node.canonicalState = stateName;
+        node.rect = rect;
+        node.alias = alias;
+        node.aliasDetail = aliasDetail;
+        node.column = column;
+        node.lane = lane;
+        addLayoutNode(node);
     };
 
-    if (stateCount == 1) {
-        placeState(layout.orderedStates.constFirst(), origin);
-    } else if (!hubState.isEmpty() && !hubTargets.isEmpty()) {
-        placeState(hubState, origin);
-        QSet<QString> placed;
-        placed.insert(hubState);
-
-        const qreal horizontalGap = maxStateWidth + 210.0;
-        const qreal verticalGap = kStateNodeHeight + 185.0;
-        if (hubTargets.size() <= 4) {
-            const QList<QPointF> offsets = {
-                QPointF(0.0, -verticalGap),
-                QPointF(horizontalGap, 0.0),
-                QPointF(0.0, verticalGap),
-                QPointF(-horizontalGap, 0.0),
-            };
-            for (int i = 0; i < hubTargets.size(); ++i) {
-                placeState(hubTargets.at(i), origin + offsets.at(i));
-                placed.insert(hubTargets.at(i));
-            }
-        } else {
-            const qreal radius =
-                qMax<qreal>(360.0,
-                            hubTargets.size() * (maxStateWidth + 120.0)
-                                / (2.0 * kPi));
-            for (int i = 0; i < hubTargets.size(); ++i) {
-                placeState(hubTargets.at(i),
-                           origin + circularPosition(i, hubTargets.size(), radius));
-                placed.insert(hubTargets.at(i));
-            }
-        }
-
-        QList<QString> remainingStates;
-        for (const QString& stateName : layout.orderedStates) {
-            if (!placed.contains(stateName))
-                remainingStates.append(stateName);
-        }
-        if (!remainingStates.isEmpty()) {
-            const int columns = qMin(4, qMax(1, remainingStates.size()));
-            const qreal startX = origin.x()
-                - (columns - 1) * horizontalGap / 2.0;
-            const qreal startY = origin.y()
-                + (hubTargets.size() <= 4 ? verticalGap * 2.2
-                                           : verticalGap * 2.8);
-            for (int i = 0; i < remainingStates.size(); ++i) {
-                const int row = i / columns;
-                const int column = i % columns;
-                placeState(remainingStates.at(i),
-                           QPointF(startX + column * horizontalGap,
-                                   startY + row * verticalGap));
-            }
-        }
-    } else {
-        const qreal radius =
-            qMax<qreal>(360.0,
-                        stateCount * (maxStateWidth + 120.0)
-                            / (2.0 * kPi));
-        for (int i = 0; i < stateCount; ++i) {
-            placeState(layout.orderedStates.at(i),
-                       origin + circularPosition(i, stateCount, radius));
-        }
+    for (const QString& stateName : std::as_const(layout.orderedStates)) {
+        placeState(stateName,
+                   stateColumns.value(stateName),
+                   stateLanes.value(stateName),
+                   false,
+                   QString());
     }
 
     for (int i = 0; i < layout.orderedStates.size(); ++i) {
         layout.stateIndexes.insert(layout.orderedStates.at(i), i);
+    }
+
+    struct AliasCandidate {
+        QString canonicalState;
+        int farthestSourceColumn = -1;
+        int preferredLane = 0;
+        QList<QString> transitionKeys;
+    };
+    QHash<QString, AliasCandidate> aliasCandidatesByState;
+    if (stateCount >= 5) {
+        for (const FsmTransitionRow& row : graph.transitionRows) {
+            if (row.fromStateDisplayName == row.toStateDisplayName)
+                continue;
+            if (!knownStates.contains(row.fromStateDisplayName)
+                || !knownStates.contains(row.toStateDisplayName)) {
+                continue;
+            }
+            const int fromColumn = stateColumns.value(row.fromStateDisplayName);
+            const int toColumn = stateColumns.value(row.toStateDisplayName);
+            const int span = fromColumn - toColumn;
+            const bool longBackEdge = span >= 2;
+            const bool crossLaneBackEdge =
+                span >= 1
+                && stateLanes.value(row.fromStateDisplayName)
+                       != stateLanes.value(row.toStateDisplayName);
+            if (!longBackEdge && !crossLaneBackEdge)
+                continue;
+
+            AliasCandidate candidate =
+                aliasCandidatesByState.value(row.toStateDisplayName);
+            candidate.canonicalState = row.toStateDisplayName;
+            if (fromColumn > candidate.farthestSourceColumn) {
+                candidate.farthestSourceColumn = fromColumn;
+                candidate.preferredLane =
+                    stateLanes.value(row.fromStateDisplayName);
+            }
+            candidate.transitionKeys.append(fsmTransitionLayoutKey(row));
+            aliasCandidatesByState.insert(row.toStateDisplayName, candidate);
+        }
+    }
+
+    QList<AliasCandidate> aliasCandidates = aliasCandidatesByState.values();
+    std::sort(aliasCandidates.begin(),
+              aliasCandidates.end(),
+              [](const AliasCandidate& lhs, const AliasCandidate& rhs) {
+                  if (lhs.farthestSourceColumn != rhs.farthestSourceColumn)
+                      return lhs.farthestSourceColumn > rhs.farthestSourceColumn;
+                  return lhs.canonicalState < rhs.canonicalState;
+              });
+    const int aliasLimit = qMin(4, qMax(1, stateCount / 4));
+    int aliasOrdinal = 0;
+    for (const AliasCandidate& candidate : std::as_const(aliasCandidates)) {
+        if (aliasOrdinal >= aliasLimit)
+            break;
+        if (!layout.stateRowsByName.contains(candidate.canonicalState))
+            continue;
+
+        int aliasColumn = qMin(maxColumn + aliasOrdinal + 1,
+                               candidate.farthestSourceColumn + 1);
+        aliasColumn = qMax(aliasColumn, maxColumn + 1);
+        int aliasLane = candidate.preferredLane >= 0
+            ? maxLane + 1 + aliasOrdinal
+            : minLane - 1 - aliasOrdinal;
+        QString slotKey =
+            QStringLiteral("%1:%2").arg(aliasColumn).arg(aliasLane);
+        while (occupiedSlots.contains(slotKey)) {
+            aliasLane += aliasLane >= 0 ? 1 : -1;
+            slotKey = QStringLiteral("%1:%2").arg(aliasColumn).arg(aliasLane);
+        }
+        occupiedSlots.insert(slotKey);
+
+        const QString aliasId =
+            QStringLiteral("state-alias:%1:%2")
+                .arg(candidate.canonicalState)
+                .arg(aliasOrdinal);
+        const QString aliasDetail =
+            QStringLiteral("duplicate/alias of canonical state %1")
+                .arg(candidate.canonicalState);
+        placeState(candidate.canonicalState,
+                   aliasColumn,
+                   aliasLane,
+                   true,
+                   aliasDetail,
+                   aliasId);
+        for (const QString& key : candidate.transitionKeys)
+            layout.aliasNodeIdByTransitionKey.insert(key, aliasId);
+        ++aliasOrdinal;
     }
     return layout;
 }
@@ -883,12 +1096,44 @@ RtlInsightCodeLink fsmStateTransitionCodeLink(const FsmGraph& graph,
     return fallback;
 }
 
+enum class FsmTransitionRoute {
+    Normal,
+    BackwardOuter
+};
+
 QPainterPath fsmTransitionPath(const QRectF& fromRect,
                                const QRectF& toRect,
                                QPointF* startOut,
                                QPointF* endOut,
-                               int lane = 0)
+                               int lane = 0,
+                               FsmTransitionRoute route =
+                                   FsmTransitionRoute::Normal)
 {
+    if (route == FsmTransitionRoute::BackwardOuter) {
+        const bool routeBelow = lane < 0;
+        const qreal outerY = routeBelow
+            ? qMax(fromRect.bottom(), toRect.bottom()) + 88.0
+                  + std::abs(lane) * 34.0
+            : qMin(fromRect.top(), toRect.top()) - 88.0
+                  - std::abs(lane) * 34.0;
+        const QPointF start(fromRect.left(), fromRect.center().y());
+        const QPointF end(toRect.right(), toRect.center().y());
+        if (startOut)
+            *startOut = start;
+        if (endOut)
+            *endOut = end;
+        QPainterPath path(start);
+        const qreal sidePad = 72.0 + std::abs(lane) * 18.0;
+        path.cubicTo(QPointF(start.x() - sidePad, start.y()),
+                     QPointF(start.x() - sidePad, outerY),
+                     QPointF(start.x() - sidePad, outerY));
+        path.lineTo(QPointF(end.x() + sidePad, outerY));
+        path.cubicTo(QPointF(end.x() + sidePad, outerY),
+                     QPointF(end.x() + sidePad, end.y()),
+                     end);
+        return path;
+    }
+
     const QPointF start = ellipseAnchorToward(fromRect, toRect.center());
     const QPointF end = ellipseAnchorToward(toRect, fromRect.center());
     if (startOut)
@@ -1080,19 +1325,30 @@ QRectF renderFsmStateMachineGraph(
     auto addStateNode = [&](const FsmStateRow& row,
                             const QRectF& rect,
                             bool highlighted,
-                            bool dashed) {
+                            bool dashed,
+                            bool alias,
+                            const QString& aliasDetail) {
         RtlInsightGraphElement state;
-        state.kind = QStringLiteral("state");
+        state.kind = alias
+            ? QStringLiteral("state-alias")
+            : QStringLiteral("state");
         state.primary = row.stateDisplayName;
-        state.detail = row.detailDisplayName;
+        state.secondary = alias
+            ? QStringLiteral("alias")
+            : QString();
+        state.detail = alias ? aliasDetail : row.detailDisplayName;
         state.codeLink =
             fsmStateTransitionCodeLink(graph, row.stateDisplayName, row.codeLink);
         auto* item = new RtlInsightGraphStateNodeItem(
             state,
             rect,
-            highlighted ? InsightVisualStyle::roleFillColor(InsightVisualRole::Timing)
-                        : InsightVisualStyle::panelBrush().color(),
-            InsightVisualStyle::theme().borderStrong,
+            alias ? InsightVisualStyle::panelBrush().color()
+                  : (highlighted
+                         ? InsightVisualStyle::roleFillColor(
+                               InsightVisualRole::Timing)
+                         : InsightVisualStyle::panelBrush().color()),
+            alias ? InsightVisualStyle::theme().textMuted
+                  : InsightVisualStyle::theme().borderStrong,
             font,
             dashed);
         item->navigateHandler = navigate;
@@ -1101,19 +1357,28 @@ QRectF renderFsmStateMachineGraph(
         return item;
     };
 
-    for (int i = 0; i < layout.orderedStates.size(); ++i) {
-        const QString stateName = layout.orderedStates.at(i);
+    for (const FsmLayoutNode& node : std::as_const(layout.nodes)) {
+        const QString stateName = node.canonicalState;
         const FsmStateRow row = layout.stateRowsByName.value(stateName);
+        const int stateIndex = layout.stateIndexes.value(stateName, 0);
         const bool highlighted =
-            i == 0 || stateName.contains(QStringLiteral("idle"),
-                                         Qt::CaseInsensitive);
-        addStateNode(row, layout.stateRects.value(stateName), highlighted, false);
+            !node.alias
+            && (stateIndex == 0
+                || stateName.contains(QStringLiteral("idle"),
+                                      Qt::CaseInsensitive));
+        addStateNode(row,
+                     node.rect,
+                     highlighted,
+                     node.alias,
+                     node.alias,
+                     node.aliasDetail);
     }
 
     auto addTransition = [&](const FsmTransitionRow& row,
                              const QRectF& fromRect,
                              const QRectF& toRect,
-                             int lane) {
+                             int lane,
+                             bool toAlias) {
         QPointF start;
         QPointF end;
         QPainterPath path;
@@ -1130,7 +1395,19 @@ QRectF renderFsmStateMachineGraph(
                          end);
             angle = kPi;
         } else {
-            path = fsmTransitionPath(fromRect, toRect, &start, &end, lane);
+            const bool backward =
+                fromRect.center().x() > toRect.center().x() + 1.0;
+            int routeLane = lane;
+            if (backward && routeLane == 0)
+                routeLane = 1;
+            path = fsmTransitionPath(
+                fromRect,
+                toRect,
+                &start,
+                &end,
+                routeLane,
+                backward && !toAlias ? FsmTransitionRoute::BackwardOuter
+                                      : FsmTransitionRoute::Normal);
             angle = std::atan2(end.y() - start.y(), end.x() - start.x());
         }
 
@@ -1157,19 +1434,27 @@ QRectF renderFsmStateMachineGraph(
 
     QHash<QString, int> edgeLaneCounts;
     for (const FsmTransitionRow& row : graph.transitionRows) {
+        const QString aliasNodeId =
+            layout.aliasNodeIdByTransitionKey.value(
+                fsmTransitionLayoutKey(row));
         if (!layout.stateRects.contains(row.fromStateDisplayName)
-            || !layout.stateRects.contains(row.toStateDisplayName)) {
+            || (!aliasNodeId.isEmpty()
+                ? !layout.nodeRects.contains(aliasNodeId)
+                : !layout.stateRects.contains(row.toStateDisplayName))) {
             continue;
         }
         const QRectF fromRect = layout.stateRects.value(row.fromStateDisplayName);
-        const QRectF toRect = layout.stateRects.value(row.toStateDisplayName);
+        const QRectF toRect = aliasNodeId.isEmpty()
+            ? layout.stateRects.value(row.toStateDisplayName)
+            : layout.nodeRects.value(aliasNodeId);
         const QString edgeKey =
-            row.fromStateDisplayName + QLatin1Char('\n') + row.toStateDisplayName;
+            row.fromStateDisplayName + QLatin1Char('\n')
+            + (aliasNodeId.isEmpty() ? row.toStateDisplayName : aliasNodeId);
         const int ordinal = edgeLaneCounts.value(edgeKey);
         edgeLaneCounts.insert(edgeKey, ordinal + 1);
         const int lane = ordinal == 0 ? 0 : ((ordinal + 1) / 2)
             * (ordinal % 2 == 0 ? -1 : 1);
-        addTransition(row, fromRect, toRect, lane);
+        addTransition(row, fromRect, toRect, lane, !aliasNodeId.isEmpty());
     }
 
     return graphBounds.adjusted(-90.0, -110.0, 90.0, 90.0);
@@ -2404,6 +2689,33 @@ QStringList RtlInsightsPanelCoordinator::graphTextItemsForTest() const
     return texts;
 }
 
+QStringList RtlInsightsPanelCoordinator::graphElementSummariesForTest() const
+{
+    QStringList summaries;
+    if (!insightsGraphScene)
+        return summaries;
+    for (QGraphicsItem* item : insightsGraphScene->items()) {
+        if (!dynamic_cast<RtlInsightGraphNodeItem*>(item)
+            && !dynamic_cast<RtlInsightGraphStateNodeItem*>(item)
+            && !dynamic_cast<RtlInsightGraphEdgeItem*>(item)) {
+            continue;
+        }
+        const QRectF rect = item->sceneBoundingRect();
+        summaries.append(
+            QStringLiteral("%1|%2|%3|%4|%5|%6|%7|%8")
+                .arg(item->data(kGraphKindRole).toString(),
+                     item->data(kGraphPrimaryRole).toString(),
+                     item->data(kGraphSecondaryRole).toString(),
+                     item->data(kGraphDetailRole).toString(),
+                     QString::number(qRound(rect.center().x())),
+                     QString::number(qRound(rect.center().y())),
+                     QString::number(qRound(rect.width())),
+                     QString::number(qRound(rect.height()))));
+    }
+    summaries.sort(Qt::CaseInsensitive);
+    return summaries;
+}
+
 bool RtlInsightsPanelCoordinator::graphNodeRectsOverlapForTest() const
 {
     if (!insightsGraphScene)
@@ -3410,6 +3722,21 @@ void RtlInsightsPanelCoordinator::renderModuleBlockDiagramScene(
     constexpr qreal childGap = 18.0;
     constexpr qreal childInset = 28.0;
     constexpr qreal titleBand = 64.0;
+    auto wrappedColumnCount = [](int childCount) {
+        if (childCount <= 1)
+            return 1;
+        return qMin(4,
+                    qMax(1,
+                         static_cast<int>(
+                             std::ceil(std::sqrt(static_cast<double>(childCount))))));
+    };
+    auto zeroReals = [](int count) {
+        QList<qreal> values;
+        values.reserve(count);
+        for (int i = 0; i < count; ++i)
+            values.append(0.0);
+        return values;
+    };
     std::function<QSizeF(int)> measureNode = [&](int nodeId) -> QSizeF {
         if (measuredSizeByNodeId.contains(nodeId))
             return measuredSizeByNodeId.value(nodeId);
@@ -3417,13 +3744,30 @@ void RtlInsightsPanelCoordinator::renderModuleBlockDiagramScene(
             childrenByParent.value(nodeId);
         QSizeF size(kInsightNodeWidth + 44.0, kInsightNodeHeight + 18.0);
         if (!children.isEmpty()) {
-            qreal childWidth = 0.0;
-            qreal childHeight = 0.0;
-            for (const ModuleBlockDiagramNode& child : children) {
+            const int columns = wrappedColumnCount(children.size());
+            const int rows = (children.size() + columns - 1) / columns;
+            QList<qreal> columnWidths = zeroReals(columns);
+            QList<qreal> rowHeights = zeroReals(rows);
+            for (int i = 0; i < children.size(); ++i) {
+                const ModuleBlockDiagramNode& child = children.at(i);
                 const QSizeF measured = measureNode(child.nodeId);
-                childWidth = qMax(childWidth, measured.width());
-                childHeight += measured.height();
-                if (child.nodeId != children.last().nodeId)
+                const int row = i / columns;
+                const int column = i % columns;
+                columnWidths[column] =
+                    qMax(columnWidths.at(column), measured.width());
+                rowHeights[row] =
+                    qMax(rowHeights.at(row), measured.height());
+            }
+            qreal childWidth = 0.0;
+            for (int column = 0; column < columnWidths.size(); ++column) {
+                childWidth += columnWidths.at(column);
+                if (column + 1 < columnWidths.size())
+                    childWidth += childGap;
+            }
+            qreal childHeight = 0.0;
+            for (int row = 0; row < rowHeights.size(); ++row) {
+                childHeight += rowHeights.at(row);
+                if (row + 1 < rowHeights.size())
                     childHeight += childGap;
             }
             size.setWidth(qMax<qreal>(kInsightNodeWidth + 130.0,
@@ -3444,16 +3788,63 @@ void RtlInsightsPanelCoordinator::renderModuleBlockDiagramScene(
             const QSizeF size = measuredSizeByNodeId.value(nodeId);
             const QRectF rect(topLeft, size);
             rectByNodeId.insert(nodeId, rect);
-            qreal childY = rect.top() + titleBand;
-            for (const ModuleBlockDiagramNode& child :
-                 childrenByParent.value(nodeId)) {
+            const QList<ModuleBlockDiagramNode> children =
+                childrenByParent.value(nodeId);
+            if (children.isEmpty())
+                return;
+
+            const int columns = wrappedColumnCount(children.size());
+            const int rows = (children.size() + columns - 1) / columns;
+            QList<qreal> columnWidths = zeroReals(columns);
+            QList<qreal> rowHeights = zeroReals(rows);
+            for (int i = 0; i < children.size(); ++i) {
+                const QSizeF childSize =
+                    measuredSizeByNodeId.value(children.at(i).nodeId);
+                const int row = i / columns;
+                const int column = i % columns;
+                columnWidths[column] =
+                    qMax(columnWidths.at(column), childSize.width());
+                rowHeights[row] =
+                    qMax(rowHeights.at(row), childSize.height());
+            }
+            qreal gridWidth = 0.0;
+            for (int column = 0; column < columnWidths.size(); ++column) {
+                gridWidth += columnWidths.at(column);
+                if (column + 1 < columnWidths.size())
+                    gridWidth += childGap;
+            }
+            const qreal gridLeft =
+                rect.left() + childInset
+                + qMax<qreal>(0.0,
+                              (rect.width() - childInset * 2.0 - gridWidth)
+                                  / 2.0);
+            QList<qreal> columnLefts;
+            columnLefts.reserve(columns);
+            qreal cursorX = gridLeft;
+            for (int column = 0; column < columns; ++column) {
+                columnLefts.append(cursorX);
+                cursorX += columnWidths.at(column) + childGap;
+            }
+            QList<qreal> rowTops;
+            rowTops.reserve(rows);
+            qreal cursorY = rect.top() + titleBand;
+            for (int row = 0; row < rows; ++row) {
+                rowTops.append(cursorY);
+                cursorY += rowHeights.at(row) + childGap;
+            }
+
+            for (int i = 0; i < children.size(); ++i) {
+                const ModuleBlockDiagramNode& child = children.at(i);
                 const QSizeF childSize =
                     measuredSizeByNodeId.value(child.nodeId);
+                const int row = i / columns;
+                const int column = i % columns;
                 const QPointF childTopLeft(
-                    rect.left() + childInset,
-                    childY);
+                    columnLefts.at(column)
+                        + (columnWidths.at(column) - childSize.width()) / 2.0,
+                    rowTops.at(row)
+                        + (rowHeights.at(row) - childSize.height()) / 2.0);
                 placeNode(child.nodeId, childTopLeft);
-                childY += childSize.height() + childGap;
             }
         };
     const QPointF rootTopLeft(-rootSize.width() / 2.0,

@@ -29,19 +29,17 @@ bool moduleBlockDiagramAvailableForContext(
         SemanticIndex::getInstance()->findDefinitionRecords(
             actionContext.symbolName,
             context);
-    bool hasModuleLikeDefinition = false;
+    bool hasModuleDefinition = false;
     for (const SemanticSymbolRecord& record : definitions) {
         const SymbolTaxonomy::SemanticMetadata metadata =
             semanticMetadataForSymbolRecord(record);
         if (metadata.declarationKind
-                == SymbolTaxonomy::DeclarationKind::Module
-            || metadata.declarationKind
-                == SymbolTaxonomy::DeclarationKind::Interface) {
-            hasModuleLikeDefinition = true;
+                == SymbolTaxonomy::DeclarationKind::Module) {
+            hasModuleDefinition = true;
             break;
         }
     }
-    if (!hasModuleLikeDefinition)
+    if (!hasModuleDefinition)
         return false;
 
     ModuleBlockDiagramQuery query;
@@ -139,7 +137,7 @@ QString actionUnavailableReason(
     }
     case SourceSymbolAction::ShowModuleBlockDiagram:
         return QStringLiteral(
-            "Module Block Diagram requires a module/interface/program name");
+            "Module Block Diagram requires a module name");
     }
     return QStringLiteral("Action unavailable");
 }

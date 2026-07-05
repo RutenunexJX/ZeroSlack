@@ -3819,6 +3819,133 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                        == ModuleBlockDiagramNotFoundReason::None,
                true);
 
+    const QString wrappedTopPath =
+        normalizedPath(fixtureDir.filePath(QStringLiteral("wrapped_top.sv")));
+    const SemanticSymbolRecord wrappedTopRecord =
+        SemanticFixtureRecordBuilder(QStringLiteral("wrapped_top"),
+                                     SymbolTaxonomy::DeclarationKind::Module)
+            .withFile(wrappedTopPath)
+            .withLocalHandle(9650)
+            .withRange(1, 1, 12, 1)
+            .withCollectorKind(SymbolTaxonomy::CollectorKind::Module)
+            .record();
+    const SemanticSymbolRecord wrappedInterfaceRecord =
+        SemanticFixtureRecordBuilder(QStringLiteral("wrapped_if"),
+                                     SymbolTaxonomy::DeclarationKind::Interface)
+            .withFile(wrappedTopPath)
+            .withLocalHandle(9651)
+            .withLine(20)
+            .withCollectorKind(SymbolTaxonomy::CollectorKind::Interface)
+            .record();
+    QList<SemanticSymbolRecord> wrappedRecords{
+        wrappedTopRecord,
+        wrappedInterfaceRecord,
+    };
+    for (int i = 0; i < 6; ++i) {
+        const QString moduleName =
+            QStringLiteral("wrapped_child_%1").arg(i);
+        wrappedRecords.append(
+            SemanticFixtureRecordBuilder(moduleName,
+                                         SymbolTaxonomy::DeclarationKind::Module)
+                .withFile(wrappedTopPath)
+                .withLocalHandle(9660 + i)
+                .withLine(30 + i)
+                .withCollectorKind(SymbolTaxonomy::CollectorKind::Module)
+                .record());
+        wrappedRecords.append(
+            SemanticFixtureRecordBuilder(
+                QStringLiteral("u_wrapped_child_%1").arg(i),
+                SymbolTaxonomy::DeclarationKind::Instance)
+                .withFile(wrappedTopPath)
+                .withLocalHandle(9670 + i)
+                .withLine(3 + i)
+                .withCollectorKind(SymbolTaxonomy::CollectorKind::Inst)
+                .withOwner(SymbolTaxonomy::SymbolOwnerScope::Module,
+                           QStringLiteral("wrapped_top"),
+                           wrappedTopRecord.stableKey)
+                .withType(moduleName)
+                .record());
+    }
+    const SemanticSymbolRecord wrappedInterfaceInstance =
+        SemanticFixtureRecordBuilder(QStringLiteral("u_wrapped_if"),
+                                     SymbolTaxonomy::DeclarationKind::Instance)
+            .withFile(wrappedTopPath)
+            .withLocalHandle(9680)
+            .withLine(10)
+            .withCollectorKind(SymbolTaxonomy::CollectorKind::Inst)
+            .withOwner(SymbolTaxonomy::SymbolOwnerScope::Module,
+                       QStringLiteral("wrapped_top"),
+                       wrappedTopRecord.stableKey)
+            .withType(QStringLiteral("wrapped_if"),
+                      QStringLiteral("wrapped_if"),
+                      SymbolTaxonomy::DeclarationKind::Interface)
+            .record();
+    wrappedRecords.append(wrappedInterfaceInstance);
+    SemanticIndex wrappedIndex;
+    wrappedIndex.setSnapshot(sharedSnapshotFromRecords(wrappedRecords));
+    ModuleBlockDiagramService wrappedService(&wrappedIndex);
+    ModuleBlockDiagramQuery wrappedQuery;
+    wrappedQuery.moduleName = QStringLiteral("wrapped_top");
+    wrappedQuery.fileName = wrappedTopPath;
+    wrappedQuery.maxDepth = 1;
+    const ModuleBlockDiagramReport wrappedReport =
+        wrappedService.buildModuleBlockDiagram(wrappedQuery);
+    bool wrappedReportHasInterface = false;
+    for (const ModuleBlockDiagramNode& node : wrappedReport.nodes) {
+        wrappedReportHasInterface = wrappedReportHasInterface
+            || node.moduleDisplayName.contains(QStringLiteral("wrapped_if"))
+            || node.instanceDisplayName.contains(QStringLiteral("wrapped_if"));
+    }
+    expectBool("module block diagram filters interface report nodes",
+               wrappedReport.found
+                   && wrappedReport.moduleCount == 7
+                   && wrappedReport.edgeCount == 6
+                   && !wrappedReportHasInterface,
+               true);
+    ModuleBlockDiagramQuery interfaceRootQuery;
+    interfaceRootQuery.moduleName = QStringLiteral("wrapped_if");
+    interfaceRootQuery.fileName = wrappedTopPath;
+    const ModuleBlockDiagramReport interfaceRootReport =
+        wrappedService.buildModuleBlockDiagram(interfaceRootQuery);
+    expectBool("module block diagram rejects interface root",
+               !interfaceRootReport.found
+                   && interfaceRootReport.notFoundReason
+                       == ModuleBlockDiagramNotFoundReason::NoRootModule,
+               true);
+    ModuleBlockDiagramService::getInstance()->setSemanticIndex(&wrappedIndex);
+    QWidget wrappedPanelHost;
+    RtlInsightsPanelCoordinator wrappedPanel(&wrappedPanelHost);
+    wrappedPanel.showModuleBlockDiagramForModule(
+        wrappedTopPath,
+        QStringLiteral("wrapped_top"));
+    const QStringList wrappedSummaries =
+        wrappedPanel.graphElementSummariesForTest();
+    QSet<int> wrappedChildXs;
+    QSet<int> wrappedChildYs;
+    bool wrappedPanelHasInterface = false;
+    for (const QString& summary : wrappedSummaries) {
+        const QStringList parts = summary.split(QLatin1Char('|'));
+        if (parts.size() < 8 || parts.at(0) != QStringLiteral("module"))
+            continue;
+        wrappedPanelHasInterface = wrappedPanelHasInterface
+            || summary.contains(QStringLiteral("wrapped_if"));
+        if (parts.at(1).startsWith(QStringLiteral("wrapped_child_"))) {
+            wrappedChildXs.insert(parts.at(4).toInt());
+            wrappedChildYs.insert(parts.at(5).toInt());
+        }
+    }
+    expectBool("module block diagram wraps sibling child nodes",
+               wrappedPanel.graphNodeItemCountForTest() == 7
+                   && wrappedChildXs.size() > 1
+                   && wrappedChildYs.size() > 1,
+               true);
+    expectBool("module block diagram panel hides interface instance",
+               !wrappedPanelHasInterface
+                   && !wrappedPanel.graphTableRowsForTest()
+                           .join(QLatin1Char('\n'))
+                           .contains(QStringLiteral("wrapped_if")),
+               true);
+
     ModuleBlockDiagramService::getInstance()->setSemanticIndex(&index);
     QWidget moduleBlockPanelHost;
     RtlInsightsPanelCoordinator moduleBlockPanel(&moduleBlockPanelHost);
@@ -7668,6 +7795,29 @@ static void runFsmGraphServiceFixture()
         "    endcase\n"
         "  end\n"
         "endmodule\n");
+    const QString complexFileName =
+        QStringLiteral("test_sv/state_transition_complex_fixture.sv");
+    const QString complexContent = QStringLiteral(
+        "module complex_fsm_top(input logic clk, input logic start, input logic done, input logic retry, input logic err);\n"
+        "  typedef enum logic [2:0] {C_IDLE, C_LOAD, C_WAIT, C_RUN, C_RETRY, C_DONE, C_ERROR} complex_state_e;\n"
+        "  complex_state_e state_q;\n"
+        "  complex_state_e state_d;\n"
+        "  always_ff @(posedge clk) begin\n"
+        "    state_q <= state_d;\n"
+        "  end\n"
+        "  always_comb begin\n"
+        "    state_d = state_q;\n"
+        "    case (state_q)\n"
+        "      C_IDLE: state_d = start ? C_LOAD : C_IDLE;\n"
+        "      C_LOAD: state_d = err ? C_ERROR : C_WAIT;\n"
+        "      C_WAIT: state_d = done ? C_DONE : C_RUN;\n"
+        "      C_RUN: state_d = err ? C_ERROR : (retry ? C_RETRY : C_DONE);\n"
+        "      C_RETRY: state_d = C_LOAD;\n"
+        "      C_DONE: state_d = C_IDLE;\n"
+        "      C_ERROR: state_d = C_IDLE;\n"
+        "    endcase\n"
+        "  end\n"
+        "endmodule\n");
     const SemanticSymbolRecord packageModule =
         SemanticFixtureRecordBuilder(QStringLiteral("pkg_fsm_top"),
                                      DeclarationKind::Module)
@@ -7958,6 +8108,92 @@ static void runFsmGraphServiceFixture()
             .inModule(QStringLiteral("name_only_fsm_top"))
             .withType(QStringLiteral("name_state_e"))
             .record();
+    const SemanticSymbolRecord complexModule =
+        SemanticFixtureRecordBuilder(QStringLiteral("complex_fsm_top"),
+                                     DeclarationKind::Module)
+            .withFile(complexFileName)
+            .withLocalHandle(9360)
+            .withRange(1, 1, 20, 1)
+            .withCollectorKind(CollectorKind::Module)
+            .record();
+    const SemanticSymbolRecord complexStateQ =
+        SemanticFixtureRecordBuilder(QStringLiteral("state_q"),
+                                     DeclarationKind::Enum)
+            .withFile(complexFileName)
+            .withLocalHandle(9361)
+            .withLine(3)
+            .withCollectorKind(CollectorKind::EnumVariable)
+            .inModule(QStringLiteral("complex_fsm_top"))
+            .withType(QStringLiteral("complex_state_e"))
+            .record();
+    const SemanticSymbolRecord complexStateD =
+        SemanticFixtureRecordBuilder(QStringLiteral("state_d"),
+                                     DeclarationKind::Enum)
+            .withFile(complexFileName)
+            .withLocalHandle(9362)
+            .withLine(4)
+            .withCollectorKind(CollectorKind::EnumVariable)
+            .inModule(QStringLiteral("complex_fsm_top"))
+            .withType(QStringLiteral("complex_state_e"))
+            .record();
+    const QList<SemanticSymbolRecord> complexStates{
+        SemanticFixtureRecordBuilder(QStringLiteral("C_IDLE"), DeclarationKind::Enum)
+            .withFile(complexFileName)
+            .withLocalHandle(9363)
+            .withLine(2)
+            .withCollectorKind(CollectorKind::EnumValue)
+            .inModule(QStringLiteral("complex_fsm_top"))
+            .withType(QStringLiteral("complex_state_e"))
+            .record(),
+        SemanticFixtureRecordBuilder(QStringLiteral("C_LOAD"), DeclarationKind::Enum)
+            .withFile(complexFileName)
+            .withLocalHandle(9364)
+            .withLine(3)
+            .withCollectorKind(CollectorKind::EnumValue)
+            .inModule(QStringLiteral("complex_fsm_top"))
+            .withType(QStringLiteral("complex_state_e"))
+            .record(),
+        SemanticFixtureRecordBuilder(QStringLiteral("C_WAIT"), DeclarationKind::Enum)
+            .withFile(complexFileName)
+            .withLocalHandle(9365)
+            .withLine(4)
+            .withCollectorKind(CollectorKind::EnumValue)
+            .inModule(QStringLiteral("complex_fsm_top"))
+            .withType(QStringLiteral("complex_state_e"))
+            .record(),
+        SemanticFixtureRecordBuilder(QStringLiteral("C_RUN"), DeclarationKind::Enum)
+            .withFile(complexFileName)
+            .withLocalHandle(9366)
+            .withLine(5)
+            .withCollectorKind(CollectorKind::EnumValue)
+            .inModule(QStringLiteral("complex_fsm_top"))
+            .withType(QStringLiteral("complex_state_e"))
+            .record(),
+        SemanticFixtureRecordBuilder(QStringLiteral("C_RETRY"), DeclarationKind::Enum)
+            .withFile(complexFileName)
+            .withLocalHandle(9367)
+            .withLine(6)
+            .withCollectorKind(CollectorKind::EnumValue)
+            .inModule(QStringLiteral("complex_fsm_top"))
+            .withType(QStringLiteral("complex_state_e"))
+            .record(),
+        SemanticFixtureRecordBuilder(QStringLiteral("C_DONE"), DeclarationKind::Enum)
+            .withFile(complexFileName)
+            .withLocalHandle(9368)
+            .withLine(7)
+            .withCollectorKind(CollectorKind::EnumValue)
+            .inModule(QStringLiteral("complex_fsm_top"))
+            .withType(QStringLiteral("complex_state_e"))
+            .record(),
+        SemanticFixtureRecordBuilder(QStringLiteral("C_ERROR"), DeclarationKind::Enum)
+            .withFile(complexFileName)
+            .withLocalHandle(9369)
+            .withLine(8)
+            .withCollectorKind(CollectorKind::EnumValue)
+            .inModule(QStringLiteral("complex_fsm_top"))
+            .withType(QStringLiteral("complex_state_e"))
+            .record(),
+    };
     const SemanticSymbolRecord noFsmModule =
         SemanticFixtureRecordBuilder(QStringLiteral("no_fsm_top"),
                                      DeclarationKind::Module)
@@ -8004,6 +8240,16 @@ static void runFsmGraphServiceFixture()
         deceptiveNs,
         deceptiveS0,
         deceptiveS1,
+        complexModule,
+        complexStateQ,
+        complexStateD,
+        complexStates.at(0),
+        complexStates.at(1),
+        complexStates.at(2),
+        complexStates.at(3),
+        complexStates.at(4),
+        complexStates.at(5),
+        complexStates.at(6),
         noFsmModule,
     };
 
@@ -8014,6 +8260,7 @@ static void runFsmGraphServiceFixture()
     fileContents.insert(paramFileName, paramContent);
     fileContents.insert(oddFileName, oddContent);
     fileContents.insert(deceptiveFileName, deceptiveContent);
+    fileContents.insert(complexFileName, complexContent);
     SemanticIndex index;
     index.setSnapshot(sharedSnapshotFromRecords(
         records,
@@ -8747,6 +8994,70 @@ static void runFsmGraphServiceFixture()
                    && stateTransitionPanel.graphTextItemsForTest()
                           .join(QLatin1Char('\n'))
                           .contains(QStringLiteral("Please select the next-state signal")),
+               true);
+
+    FsmGraphQuery complexFsmQuery;
+    complexFsmQuery.moduleName = QStringLiteral("complex_fsm_top");
+    complexFsmQuery.fileName = complexFileName;
+    const FsmGraphReport complexFsmReport =
+        service.buildFsmGraph(complexFsmQuery);
+    expectBool("complex fsm graph canonical statistics",
+               complexFsmReport.found
+                   && complexFsmReport.graphs.size() == 1
+                   && complexFsmReport.graphs.first().stateCount == 7
+                   && complexFsmReport.graphs.first().stateRows.size() == 7
+                   && complexFsmReport.graphs.first().transitionRows.size()
+                       == complexFsmReport.graphs.first().transitionCount,
+               true);
+    StateTransitionGraphService::getInstance()->setSemanticIndex(&index);
+    QWidget complexStatePanelHost;
+    RtlInsightsPanelCoordinator complexStatePanel(&complexStatePanelHost);
+    QString complexAliasNavigatedFileName;
+    complexStatePanel.setNavigationHandler(
+        [&](const QString& fileName, int, int) {
+            complexAliasNavigatedFileName = fileName;
+            return true;
+        });
+    complexStatePanel.showStateTransitionGraphForSignal(
+        complexFileName,
+        QStringLiteral("complex_fsm_top"),
+        QStringLiteral("state_d"));
+    const QStringList complexSummaries =
+        complexStatePanel.graphElementSummariesForTest();
+    bool complexSawIdleAlias = false;
+    QSet<int> complexCanonicalStateXs;
+    QSet<int> complexCanonicalStateYs;
+    for (const QString& summary : complexSummaries) {
+        const QStringList parts = summary.split(QLatin1Char('|'));
+        if (parts.size() < 8)
+            continue;
+        if (parts.at(0) == QStringLiteral("state")) {
+            complexCanonicalStateXs.insert(parts.at(4).toInt());
+            complexCanonicalStateYs.insert(parts.at(5).toInt());
+        }
+        complexSawIdleAlias = complexSawIdleAlias
+            || (parts.at(0) == QStringLiteral("state-alias")
+                && parts.at(1) == QStringLiteral("C_IDLE")
+                && parts.at(2) == QStringLiteral("alias")
+                && parts.at(3).contains(QStringLiteral("canonical state C_IDLE")));
+    }
+    const bool complexAliasNavigation =
+        complexStatePanel.triggerGraphNavigationForTest(
+            QStringLiteral("state-alias"),
+            QStringLiteral("C_IDLE"));
+    expectBool("complex fsm layout creates canonical alias",
+               complexSawIdleAlias
+                   && complexAliasNavigation
+                   && complexAliasNavigatedFileName == complexFileName,
+               true);
+    expectBool("complex fsm alias does not inflate transition table",
+               !complexFsmReport.graphs.isEmpty()
+                   && complexStatePanel.graphTableRowsForTest().size()
+                       == complexFsmReport.graphs.first().transitionRows.size(),
+               true);
+    expectBool("complex fsm layout is path centric with lanes",
+               complexCanonicalStateXs.size() >= 5
+                   && complexCanonicalStateYs.size() >= 2,
                true);
     StateTransitionGraphService::getInstance()->setSemanticIndex(
         SemanticIndex::getInstance());
@@ -10862,6 +11173,45 @@ static void runRealWorkspaceIncludeFixture()
     expectBool("real workspace fsm graph ternary else evidence",
                sawRealPhyPassTernaryElseTransition,
                true);
+
+    StateTransitionGraphService::getInstance()->setSemanticIndex(&index);
+    QWidget realStatePanelHost;
+    RtlInsightsPanelCoordinator realStatePanel(&realStatePanelHost);
+    realStatePanel.showStateTransitionGraphForSignal(
+        chlCtrlPath,
+        QStringLiteral("chl_ctrl"),
+        QStringLiteral("phy_pass_thrg_cfg_ns"));
+    const QStringList realStateLayoutSummaries =
+        realStatePanel.graphElementSummariesForTest();
+    bool sawRealPhyPassAliasLayout = false;
+    bool sawRealPhyPassAliasCanonicalDetail = false;
+    QSet<int> realPhyPassStateXs;
+    QSet<int> realPhyPassStateYs;
+    for (const QString& summary : realStateLayoutSummaries) {
+        const QStringList parts = summary.split(QLatin1Char('|'));
+        if (parts.size() < 8)
+            continue;
+        if (parts.at(0) == QStringLiteral("state")) {
+            realPhyPassStateXs.insert(parts.at(4).toInt());
+            realPhyPassStateYs.insert(parts.at(5).toInt());
+        } else if (parts.at(0) == QStringLiteral("state-alias")) {
+            sawRealPhyPassAliasLayout = true;
+            sawRealPhyPassAliasCanonicalDetail =
+                sawRealPhyPassAliasCanonicalDetail
+                || (parts.at(2) == QStringLiteral("alias")
+                    && parts.at(3).contains(QStringLiteral("canonical state")));
+        }
+    }
+    expectBool("real workspace fsm graph chl_ctrl layout spreads states",
+               realPhyPassStateXs.size() >= 4
+                   && realPhyPassStateYs.size() >= 2,
+               true);
+    expectBool("real workspace fsm graph chl_ctrl alias semantics",
+               sawRealPhyPassAliasLayout
+                   && sawRealPhyPassAliasCanonicalDetail,
+               true);
+    StateTransitionGraphService::getInstance()->setSemanticIndex(
+        SemanticIndex::getInstance());
 
     QList<SemanticSymbolRecord> realBeforeDiffRecords;
     realBeforeDiffRecords.append(rtlTopRecord);

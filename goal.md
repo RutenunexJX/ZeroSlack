@@ -65,6 +65,13 @@ Current baseline highlights:
   role gating while exposing signal/current/next controls, an inspector, and a
   transitions table; Wave Preview labels output as symbolic preview-only/no
   testbench and adds scope/clock/reset/filter/lane controls without simulation.
+- Latest RTL readability repair is complete in the working tree: State
+  Transition Graph keeps structural FSM recognition while adding a path-centric
+  complex layout, branch lanes, outside routing for awkward returns, and limited
+  dashed alias state nodes that point back to canonical states without changing
+  transition-table/stat counts. Module Block Diagram and Design hierarchy now
+  filter interface/interface-instance nodes for user-facing module views, and
+  Module Block Diagram wraps many siblings into multiple columns.
 - Signal Usage Hotspot is available from the editor source-symbol context action
   `Signal Usage Hotspot` and the RTL Insights `Usage Hotspot` action. It renders
   Track lanes from report items, Matrix heat cells from report summaries, role
@@ -110,6 +117,13 @@ Current baseline highlights:
 
 Status history:
 
+- FSM / Module Block / hierarchy readability repair is complete. Alias state
+  nodes are visual duplicates only, `chl_ctrl.sv` is covered by layout/alias
+  regression without modifying the RTL fixture, Module Block Diagram rejects
+  interface roots and hides interface child instances, and Design hierarchy
+  hides interface instance nodes while preserving module-instance navigation.
+  Verification passed for `completion_test`, `relationship_test`,
+  `gui_smoke_test`, and `insight_visual_style_test` in `build_verify3`.
 - RTL Insight core-view modernization is complete. Module Block Diagram row
   selection syncs graph and inspector state; State Transition regression
   coverage rejects `cs`/`ns` names without a structural current<=next FSM pair;
@@ -754,10 +768,10 @@ Status history:
 - G11.1 Module Block Diagram Service Report is complete:
   `ModuleBlockDiagramService` owns selected-module containment report shaping
   from indexed module/instance symbols plus `INSTANTIATES` relationships. The
-  report returns module/interface definition nodes, child module type names,
+  report returns module definition nodes, child module type names,
   instance names, instantiation edges, module definition links, instance
-  declaration links, and unresolved/blackbox reasons; signal and non-instance
-  relationships are filtered before UI consumption.
+  declaration links, and unresolved/blackbox reasons; signal, interface, and
+  non-instance relationships are filtered before UI consumption.
 - Focused verification for G11.1: `git diff --check`; Release
   `relationship_test` target compile/link; `ctest -R "^relationship_test$"`
   passed.
@@ -767,7 +781,7 @@ Status history:
   graph scene. The panel action renders the active module, and editor
   source-symbol routing can render selected module names as the diagram root.
   The rendered nodes and edges come from the service report, show
-  module/interface containment only, include module type plus instance names,
+  module containment only, include module type plus instance names,
   keep unresolved module types visible as blackbox nodes with reasons, and do
   not show signal nodes. No UI workspace scan, UI-side Slang work, or new
   relationship extraction was added.
@@ -1058,6 +1072,8 @@ Rules:
   the next-state role.
 - Names such as `ns`, `next_state`, `cs`, and `current_state` are examples or
   display hints only.
+- Complex layout may add dashed alias state nodes, but aliases are visual
+  duplicates only and must not increase canonical state or transition counts.
 
 Milestones:
 
@@ -1069,6 +1085,9 @@ Milestones:
 - G10.3 Graph UI rendering and navigation evidence.
   (complete: RTL Insights interactive graph rendering and graph-element
   source-link navigation evidence)
+- G10.4 Complex path layout and alias-state semantics.
+  (complete: path-centric State Transition Graph layout, branch lanes, limited
+  dashed aliases, and canonical table/stat preservation)
 
 ## Track 11: Module Block Diagram
 
@@ -1077,7 +1096,9 @@ that module.
 
 Rules:
 
-- show module/interface instance and wrapping relationships only
+- show module instance and wrapping relationships only
+- filter interface declarations, interface instances, and interface-typed
+  unresolved children from user-facing module views
 - do not show signals
 - clicking the root module block jumps to the module definition
 - clicking a child module/instance block jumps to the instance declaration and
@@ -1102,6 +1123,10 @@ Milestones:
   (complete: Module Block Diagram behavior is covered by focused GUI/service
   regressions; future diagram issues should become compact fixtures rather than
   broad corpus sweeps)
+- G11.5 Interface filtering and compact wrapped layout.
+  (complete: module block reports reject interface roots/filter interface
+  children, Design hierarchy hides interface instances, and sibling module
+  blocks wrap across columns)
 
 ## Track 12: Workspace Project Configuration And Diagnostics Workflow
 
@@ -1167,7 +1192,7 @@ Milestones:
   (complete: Go to Definition, Find References, Show Relationships, Signal
   Kernel Graph, State Transition Graph, and Module Block Diagram are always
   present; disabled entries expose reasons; Module Block Diagram is limited to
-  existing module/interface definitions; discovered current-state roles remain
+  existing module definitions; discovered current-state roles remain
   rejected)
 - G13.2 References panel workflow closure.
   (complete: query context, empty reasons, click/activated jump with flash,

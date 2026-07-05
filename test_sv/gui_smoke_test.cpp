@@ -5999,15 +5999,44 @@ static void runNavigationHierarchyModelRegression()
                            SymbolTaxonomy::SymbolOwnerScope::Module,
                            QStringLiteral("design_top"),
                            QStringLiteral("design_stage"));
+    const SemanticSymbolRecord designInterface =
+        makeGuiSmokeRecord(1243,
+                           designTopFile,
+                           QStringLiteral("design_if"),
+                           SymbolTaxonomy::DeclarationKind::Interface,
+                           SymbolTaxonomy::CollectorKind::Interface,
+                           20);
+    const SemanticSymbolRecord designInterfaceInstance =
+        SemanticFixtureRecordBuilder(QStringLiteral("u_design_if"),
+                                     SymbolTaxonomy::DeclarationKind::Instance)
+            .withFile(designTopFile)
+            .withLocalHandle(1244)
+            .withLine(9)
+            .withCollectorKind(SymbolTaxonomy::CollectorKind::Inst)
+            .withOwner(SymbolTaxonomy::SymbolOwnerScope::Module,
+                       QStringLiteral("design_top"),
+                       designTop.stableKey)
+            .withType(QStringLiteral("design_if"),
+                      QStringLiteral("design_if"),
+                      SymbolTaxonomy::DeclarationKind::Interface)
+            .record();
 
     const SemanticRelationship instantiatesStage =
         semanticFixtureRelationship(designTop,
                                     designInstance,
                                     SymbolRelationshipEngine::INSTANTIATES);
+    const SemanticRelationship instantiatesInterface =
+        semanticFixtureRelationship(designTop,
+                                    designInterfaceInstance,
+                                    SymbolRelationshipEngine::INSTANTIATES);
     SemanticIndex designIndex;
     designIndex.setSnapshot(snapshotFromRecords(
-        {designTop, designStage, designInstance},
-        {instantiatesStage}));
+        {designTop,
+         designStage,
+         designInstance,
+         designInterface,
+         designInterfaceInstance},
+        {instantiatesStage, instantiatesInterface}));
     HierarchyService designHierarchyService(&designIndex);
     const DesignHierarchyReport designReport =
         designHierarchyService.getDesignHierarchyReport(QStringLiteral("design_top"));
@@ -6017,6 +6046,15 @@ static void runNavigationHierarchyModelRegression()
                true);
     expectBool("design hierarchy report has top and instance",
                designReport.nodes.size() == 2,
+               true);
+    bool designReportHasInterfaceNode = false;
+    for (const DesignHierarchyNode& node : designReport.nodes) {
+        designReportHasInterfaceNode = designReportHasInterfaceNode
+            || node.instanceName == QStringLiteral("u_design_if")
+            || node.moduleType == QStringLiteral("design_if");
+    }
+    expectBool("design hierarchy report filters interface instance",
+               !designReportHasInterfaceNode,
                true);
     expectBool("design hierarchy report keeps selected top",
                designReport.topModule == QStringLiteral("design_top"),
@@ -6140,6 +6178,15 @@ static void runNavigationHierarchyModelRegression()
                true);
     expectBool("design hierarchy renders instance text",
                designItem != nullptr,
+               true);
+    QTreeWidgetItem* designInterfaceItem = nullptr;
+    for (QTreeWidget* tree : widget.findChildren<QTreeWidget*>()) {
+        designInterfaceItem = findItemByText(tree, QStringLiteral("u_design_if"), 0);
+        if (designInterfaceItem)
+            break;
+    }
+    expectBool("design hierarchy tree filters interface instance",
+               designInterfaceItem == nullptr,
                true);
 
     bool designDoubleClicked = false;

@@ -67,6 +67,7 @@ public:
     int graphNodeItemCountForTest() const;
     int graphEdgeItemCountForTest() const;
     QStringList graphTextItemsForTest() const;
+    QStringList graphElementSummariesForTest() const;
     bool graphNodeRectsOverlapForTest() const;
     int graphSelectedItemCountForTest() const;
     QStringList graphInspectorRowsForTest() const;

@@ -209,15 +209,22 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
   signal/current/next selectors plus reset/error/unreachable visibility
   toggles, the right inspector shows selected graph metadata, the transition
   table lists from/to/condition/source rows, and double-clicking a graph element
-  follows its carried source link.
+  follows its carried source link. Complex state graphs use a path-centric
+  layout with the main flow left-to-right, branch lanes above/below, routed
+  self/back edges, and limited dashed alias state nodes for long or awkward
+  returns. Alias nodes remain visual duplicates only: table/stat counts stay on
+  canonical states, and alias labels/details point back to the canonical state.
 - Module Block Diagram renders in RTL Insights from the service-owned
   `ModuleBlockDiagramReport`. The current UI entry points are the RTL Insights
   `Module Block Diagram` action for the active module and the editor source
-  action for selected module names. Rendering is module/interface-only and does
-  not show signals. The v2 graph uses the shared light canvas, summary text,
-  hover/selected feedback, graph search highlighting, and a visible no-child or
-  blackbox reason when containment cannot be resolved. The selected module
-  remains a large container with child module/instance nodes arranged inside it.
+  action for selected module names. Rendering is module-only: interface
+  declarations, interface instances, and unresolved interface-typed children are
+  filtered before the report reaches the graph. Signals are still hidden. The
+  v2 graph uses the shared light canvas, summary text, hover/selected feedback,
+  graph search highlighting, and a visible no-child or blackbox reason when
+  containment cannot be resolved. The selected module remains a large container
+  with child module/instance nodes arranged inside it using a wrapped grid
+  instead of a one-column stack.
   Child nodes show both the module type and instance name, unresolved module
   types remain visible as blackbox nodes with an explicit reason, and
   containment edges carry instance metadata. Module and instance graph elements
@@ -434,19 +441,24 @@ engineering configuration / diagnostics lane.
   and `SemanticPanelRefreshCoordinator` only route accepted requests; RTL
   Insights consumes the service report, renders an interactive graph scene,
   and keeps navigation wired through source links carried by graph elements.
+  Complex layouts are path-centric with branch lanes and limited dashed alias
+  state nodes for long back/cross-lane transitions; aliases never add canonical
+  FSM states or transition-table rows.
 - FSM Graph baseline: `FsmGraphService` owns candidate selection and transition
   extraction. A report graph requires both state values and parsed case-derived
   transition evidence before the UI renders it. `RtlInsightsPanelCoordinator`
   consumes that report as selectable graph nodes/edges and does not scan
   workspace files or run Slang.
 - Module Block Diagram baseline: `ModuleBlockDiagramService` owns selected
-  module/interface containment report shaping from indexed symbols plus
-  `INSTANTIATES` relationships. The report carries root module definitions,
+  module-only containment report shaping from indexed symbols plus
+  `INSTANTIATES` relationships. Interface declarations, interface instances,
+  and interface-typed unresolved children are filtered out of module-block
+  reports and source-symbol activation. The report carries root module definitions,
   child module type names, instance names, module-definition links, instance
   declaration links, instantiation edges, and unresolved/blackbox reasons.
   Signal and non-instance relationships stay filtered in the service/report
   layer. `RtlInsightsPanelCoordinator` renders that report as a module-only
-  interactive graph with a root-module container, child module/instance blocks,
+  interactive graph with a root-module container, wrapped child module/instance blocks,
   visible zoom controls, graph-element drill-down for resolved modules, and
   instance-declaration navigation for child nodes and blackboxes. Source symbol
   requests still route through `SemanticPanelRefreshCoordinator`; UI code does
@@ -672,6 +684,16 @@ Do not add unlisted long-term goals without explicit user approval.
 - Avoid launching GUI smoke executables in this environment when they are known
   to produce external Windows error dialogs; compile/link targets instead unless
   the user explicitly asks to run them.
+- Latest FSM / Module Block / hierarchy readability repair: State Transition
+  Graph keeps structural FSM recognition but now lays complex graphs out as
+  left-to-right paths with branch lanes, outside back-edge routing, and limited
+  dashed alias state nodes that point back to canonical states without changing
+  table/stat counts. Module Block Diagram filters interface declarations,
+  interface instances, and interface-typed unresolved children, and lays sibling
+  children out in a wrapped grid. Design hierarchy defaults to module-instance
+  trees and filters interface/interface-instance nodes. Verification passed in
+  `build_verify3`: `completion_test`, `relationship_test`, `gui_smoke_test`,
+  and `insight_visual_style_test`; `git diff --check` passed.
 - Latest Module Block Diagram real-usability pass: Debug targets
   `completion_test`, `relationship_test`, `gui_smoke_test`,
   `full_feature_audit_test`, and `jump_test` compile/link; focused CTest runs
@@ -737,8 +759,8 @@ Do not add unlisted long-term goals without explicit user approval.
   right-click actions now present a stable six-action menu: Go to Definition,
   Find References, Show Relationships, Signal Kernel Graph, State Transition
   Graph, and Module Block Diagram. Disabled actions remain visible with
-  tooltip/status reasons. Module Block Diagram is gated to existing
-  module/interface definition records, ordinary signals remain disabled, and
+  tooltip/status reasons. Module Block Diagram is gated to existing module
+  definition records, ordinary signals and interfaces remain disabled, and
   State Transition Graph gating still rejects discovered current-state roles.
   This stage is workflow/UI closure only; it does not add semantic analysis, package
   tools, Wave Preview behavior, or new graph algorithms; Track 15 owns
