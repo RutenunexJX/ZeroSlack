@@ -697,6 +697,18 @@ Do not add unlisted long-term goals without explicit user approval.
   pure self-loop dead/end states get danger styling plus inspector/table notes.
   Verification in `build`: targets and CTest passed for `completion_test`,
   `relationship_test`, `gui_smoke_test`, and `insight_visual_style_test`.
+- Latest FSM transition routing follow-up: ordinary non-alias canonical states
+  now share one neutral graph-node color, while canonical states that receive
+  alias/duplicate nodes use a stable accent color shared with their aliases;
+  dead/end states still use danger styling. FSM transition routes now carry
+  route kind, lane, explicit label point, and terminal tangent metadata so
+  self-loops, mutual upper/lower arcs, long/cross-lane outside routes, labels,
+  and arrows are testable. `relationship_test` covers off-path `C#` labels,
+  node-avoiding path samples, mutual pair spacing, real `chl_ctrl.sv`
+  `phy_pass_thrg_cfg_ns` / `phy_cfg_ns` routing, and alias/dead color rules.
+  Debug verification passed: build and CTest for `completion_test`,
+  `relationship_test`, `gui_smoke_test`, and `insight_visual_style_test`, plus
+  `git diff --check`.
 - Latest Module Block Diagram real-usability pass: Debug targets
   `completion_test`, `relationship_test`, `gui_smoke_test`,
   `full_feature_audit_test`, and `jump_test` compile/link; focused CTest runs

@@ -59,6 +59,16 @@ into an analyzer.
   declarations/instances, wraps sibling child modules into tighter containers,
   and preserves readable fill/border/text on hover and selection. Design
   hierarchy defaults to hiding interface/interface-instance nodes.
+- Current FSM transition routing follow-up: ordinary canonical states use one
+  neutral node color; only canonical states with alias/duplicate nodes use a
+  stable accent shared with their aliases, while dead/end states keep danger
+  styling. FSM graph rendering now produces route metadata for normal,
+  reverse-pair upper/lower, outer-back-edge, and self-loop routes, including
+  explicit off-path `C#` label points and terminal tangent arrow angles. Long
+  back/cross-lane edges route outside the main chain, mutual transitions use
+  separated arcs, and focused geometry hooks check labels, node avoidance, and
+  pair spacing, including real `chl_ctrl.sv` `phy_pass_thrg_cfg_ns` and
+  `phy_cfg_ns` regressions.
 - The current completed baseline includes import-aware package member
   visibility for unqualified completion, definition, and hover; user template
   JSON usage actions; explicit header/include and package import commands;

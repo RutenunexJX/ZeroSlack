@@ -76,6 +76,15 @@ Current baseline highlights:
   filter interface/interface-instance nodes for user-facing module views, and
   Module Block Diagram now wraps siblings into tighter containers while keeping
   nested content readable during hover/selection.
+- Latest FSM transition routing follow-up is complete in the working tree:
+  non-alias canonical states share one neutral color, alias/duplicate groups
+  use stable accent colors shared by canonical and alias nodes, and dead/end
+  states keep danger styling. FSM transition rendering now owns explicit route
+  plans with route kind, lane, label point, and terminal tangent angle so
+  self-loops, mutual upper/lower arcs, long/cross-lane outside routes, and
+  labels can be verified geometrically. Regression coverage includes label
+  distance from paths, path samples avoiding state rects, mutual pair spacing,
+  and real `chl_ctrl.sv` `phy_pass_thrg_cfg_ns` / `phy_cfg_ns` scenarios.
 - Signal Usage Hotspot is available from the editor source-symbol context action
   `Signal Usage Hotspot` and the RTL Insights `Usage Hotspot` action. It renders
   Track lanes from report items, Matrix heat cells from report summaries, role

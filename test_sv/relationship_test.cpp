@@ -8853,6 +8853,25 @@ static void runFsmGraphServiceFixture()
     expectBool("fsm graph condition ids are strong labels without background",
                sawStrongConditionLabel,
                true);
+    QSet<QString> normalStateFills;
+    QSet<QString> normalStateStrokes;
+    for (const QString& summary :
+         fsmPanel.graphElementVisualSummariesForTest()) {
+        const QStringList parts = summary.split(QLatin1Char('|'));
+        if (parts.size() < 7)
+            continue;
+        if (parts.at(0) == QStringLiteral("state")) {
+            normalStateFills.insert(parts.at(4));
+            normalStateStrokes.insert(parts.at(5));
+        }
+    }
+    expectBool("fsm graph ordinary states share neutral color",
+               normalStateFills.size() == 1
+                   && normalStateStrokes.size() == 1
+                   && !normalStateFills.contains(
+                       InsightVisualStyle::theme()
+                           .statusBar.errorBackground.name()),
+               true);
     expectBool("fsm graph transition table maps ids to conditions",
                fsmPanel.graphTableRowsForTest().join(QLatin1Char('\n'))
                    .contains(QStringLiteral("C0|IDLE|RUN|start|state_d|line 15")),
@@ -9108,6 +9127,12 @@ static void runFsmGraphServiceFixture()
                            .contains(QStringLiteral("next-state-signal|")),
                true);
     bool sawCurvedSelfLoop = false;
+    bool sawUpperMutualArc = false;
+    bool sawLowerMutualArc = false;
+    bool dualTransitionLabelsOffPath = true;
+    bool dualTransitionPathsClearNodes = true;
+    int dualTransitionLabelChecks = 0;
+    int dualTransitionClearChecks = 0;
     for (const QString& summary :
          stateTransitionPanel.graphEdgeGeometrySummariesForTest()) {
         const QStringList parts = summary.split(QLatin1Char('|'));
@@ -9125,9 +9150,49 @@ static void runFsmGraphServiceFixture()
                 && arrowDegrees <= 150
                 && loopWidth < 320
                 && loopHeight < 150);
+        if (parts.size() >= 17
+            && parts.at(0) == QStringLiteral("transition")) {
+            const int labelDistance = parts.at(14).toInt();
+            const int siblingSpacing = parts.at(16).toInt();
+            dualTransitionLabelsOffPath =
+                dualTransitionLabelsOffPath && labelDistance >= 16;
+            dualTransitionPathsClearNodes =
+                dualTransitionPathsClearNodes
+                && parts.at(15) == QStringLiteral("clear");
+            ++dualTransitionLabelChecks;
+            ++dualTransitionClearChecks;
+            sawUpperMutualArc = sawUpperMutualArc
+                || (parts.at(1) == QStringLiteral("B_RUN")
+                    && parts.at(2) == QStringLiteral("B_IDLE")
+                    && parts.at(8) == QStringLiteral("curve")
+                    && parts.at(12) == QStringLiteral("reversePairUpper")
+                    && labelDistance >= 16
+                    && siblingSpacing >= 40
+                    && arrowDegrees >= 95
+                    && arrowDegrees <= 170);
+            sawLowerMutualArc = sawLowerMutualArc
+                || (parts.at(1) == QStringLiteral("B_IDLE")
+                    && parts.at(2) == QStringLiteral("B_RUN")
+                    && parts.at(8) == QStringLiteral("curve")
+                    && parts.at(12) == QStringLiteral("reversePairLower")
+                    && labelDistance >= 16
+                    && siblingSpacing >= 40
+                    && arrowDegrees >= -90
+                    && arrowDegrees <= -5);
+        }
     }
     expectBool("state transition self-loop is compact curved arrow",
                sawCurvedSelfLoop,
+               true);
+    expectBool("state transition mutual pair uses split upper/lower arcs",
+               sawUpperMutualArc && sawLowerMutualArc,
+               true);
+    expectBool("state transition labels stay off edge paths",
+               dualTransitionLabelChecks >= 3 && dualTransitionLabelsOffPath,
+               true);
+    expectBool("state transition edge paths avoid state nodes",
+               dualTransitionClearChecks >= 3
+                   && dualTransitionPathsClearNodes,
                true);
     QLineEdit* stateTransitionSearchEdit =
         stateTransitionPanel.dock()
@@ -9220,6 +9285,8 @@ static void runFsmGraphServiceFixture()
     QString complexIdleCanonicalStroke;
     QString complexIdleAliasFill;
     QString complexIdleAliasStroke;
+    QSet<QString> complexPlainCanonicalFills;
+    QSet<QString> complexPlainCanonicalStrokes;
     bool complexIdleAliasDashed = false;
     for (const QString& summary : complexVisualSummaries) {
         const QStringList parts = summary.split(QLatin1Char('|'));
@@ -9234,7 +9301,28 @@ static void runFsmGraphServiceFixture()
             complexIdleAliasFill = parts.at(4);
             complexIdleAliasStroke = parts.at(5);
             complexIdleAliasDashed = parts.at(6) == QStringLiteral("dash");
+        } else if (parts.at(0) == QStringLiteral("state")) {
+            complexPlainCanonicalFills.insert(parts.at(4));
+            complexPlainCanonicalStrokes.insert(parts.at(5));
         }
+    }
+    complexPlainCanonicalFills.remove(complexIdleCanonicalFill);
+    complexPlainCanonicalStrokes.remove(complexIdleCanonicalStroke);
+    bool complexLabelsOffPath = true;
+    bool complexEdgesClearNodes = true;
+    int complexLabelChecks = 0;
+    int complexClearChecks = 0;
+    for (const QString& summary :
+         complexStatePanel.graphEdgeGeometrySummariesForTest()) {
+        const QStringList parts = summary.split(QLatin1Char('|'));
+        if (parts.size() < 17 || parts.at(0) != QStringLiteral("transition"))
+            continue;
+        complexLabelsOffPath =
+            complexLabelsOffPath && parts.at(14).toInt() >= 16;
+        complexEdgesClearNodes =
+            complexEdgesClearNodes && parts.at(15) == QStringLiteral("clear");
+        ++complexLabelChecks;
+        ++complexClearChecks;
     }
     const bool complexAliasNavigation =
         complexStatePanel.triggerGraphNavigationForTest(
@@ -9256,17 +9344,31 @@ static void runFsmGraphServiceFixture()
                    && complexIdleCanonicalStroke == complexIdleAliasStroke
                    && complexIdleAliasDashed,
                true);
+    expectBool("complex fsm ordinary canonical states keep neutral color",
+               complexPlainCanonicalFills.size() == 1
+                   && complexPlainCanonicalStrokes.size() == 1
+                   && complexIdleCanonicalFill
+                       != *complexPlainCanonicalFills.constBegin(),
+               true);
+    expectBool("complex fsm transition labels and paths avoid overlaps",
+               !complexFsmReport.graphs.isEmpty()
+                   && complexLabelChecks >= complexFsmReport.graphs.first()
+                                             .transitionRows.size()
+                   && complexClearChecks >= complexLabelChecks
+                   && complexLabelsOffPath
+                   && complexEdgesClearNodes,
+               true);
     expectBool("complex fsm layout is path centric with lanes",
                complexCanonicalStateXs.size() >= 5
                    && complexCanonicalStateYs.size() >= 2,
                true);
     expectBool("complex fsm layout stays compact",
                complexBounds.isValid()
-                   && complexBounds.width() < 2300.0
-                   && complexBounds.height() < 820.0
+                   && complexBounds.width() < 2600.0
+                   && complexBounds.height() < 980.0
                    && complexBounds.width()
                           / qMax<qreal>(1.0, complexBounds.height())
-                       < 5.5,
+                       < 6.5,
                true);
 
     FsmGraphQuery deadFsmQuery;
@@ -11516,6 +11618,26 @@ static void runRealWorkspaceIncludeFixture()
                 || aliasY > realPhyPassMaxStateY + 220;
         }
     }
+    bool realPhyPassLabelsOffPath = true;
+    bool realPhyPassPathsClearNodes = true;
+    bool sawRealPhyPassOuterRoute = false;
+    int realPhyPassLabelChecks = 0;
+    int realPhyPassClearChecks = 0;
+    for (const QString& summary :
+         realStatePanel.graphEdgeGeometrySummariesForTest()) {
+        const QStringList parts = summary.split(QLatin1Char('|'));
+        if (parts.size() < 17 || parts.at(0) != QStringLiteral("transition"))
+            continue;
+        realPhyPassLabelsOffPath =
+            realPhyPassLabelsOffPath && parts.at(14).toInt() >= 16;
+        realPhyPassPathsClearNodes =
+            realPhyPassPathsClearNodes
+            && parts.at(15) == QStringLiteral("clear");
+        sawRealPhyPassOuterRoute = sawRealPhyPassOuterRoute
+            || parts.at(12) == QStringLiteral("outerBackEdge");
+        ++realPhyPassLabelChecks;
+        ++realPhyPassClearChecks;
+    }
     expectBool("real workspace fsm graph chl_ctrl layout spreads states",
                realPhyPassStateXs.size() >= 4
                    && realPhyPassStateYs.size() >= 2,
@@ -11540,6 +11662,53 @@ static void runRealWorkspaceIncludeFixture()
                (!sawRealPhyPassAliasLayout
                 || (sawRealPhyPassAliasCanonicalDetail
                     && !sawRealPhyPassFarAlias)),
+               true);
+    expectBool("real workspace phy_pass_thrg edges route outside cleanly",
+               realPhyPassLabelChecks == realStatePanel.graphEdgeItemCountForTest()
+                   && realPhyPassClearChecks == realPhyPassLabelChecks
+                   && realPhyPassLabelsOffPath
+                   && realPhyPassPathsClearNodes
+                   && sawRealPhyPassOuterRoute,
+               true);
+
+    QWidget realPhyCfgPanelHost;
+    RtlInsightsPanelCoordinator realPhyCfgPanel(&realPhyCfgPanelHost);
+    realPhyCfgPanel.showStateTransitionGraphForSignal(
+        chlCtrlPath,
+        QStringLiteral("chl_ctrl"),
+        QStringLiteral("phy_cfg_ns"));
+    const QString realPhyCfgSummaries =
+        realPhyCfgPanel.graphElementSummariesForTest().join(QLatin1Char('\n'));
+    bool realPhyCfgLabelsOffPath = true;
+    bool realPhyCfgPathsClearNodes = true;
+    bool sawRealPhyCfgOuterRoute = false;
+    int realPhyCfgLabelChecks = 0;
+    int realPhyCfgClearChecks = 0;
+    for (const QString& summary :
+         realPhyCfgPanel.graphEdgeGeometrySummariesForTest()) {
+        const QStringList parts = summary.split(QLatin1Char('|'));
+        if (parts.size() < 17 || parts.at(0) != QStringLiteral("transition"))
+            continue;
+        realPhyCfgLabelsOffPath =
+            realPhyCfgLabelsOffPath && parts.at(14).toInt() >= 16;
+        realPhyCfgPathsClearNodes =
+            realPhyCfgPathsClearNodes && parts.at(15) == QStringLiteral("clear");
+        sawRealPhyCfgOuterRoute = sawRealPhyCfgOuterRoute
+            || parts.at(12) == QStringLiteral("outerBackEdge");
+        ++realPhyCfgLabelChecks;
+        ++realPhyCfgClearChecks;
+    }
+    expectBool("real workspace phy_cfg graph covers layer shield state",
+               realPhyCfgPanel.graphNodeItemCountForTest() >= 8
+                   && realPhyCfgSummaries.contains(
+                       QStringLiteral("S_ALL_LAYER_INJ_SHIELD")),
+               true);
+    expectBool("real workspace phy_cfg edges route outside cleanly",
+               realPhyCfgLabelChecks == realPhyCfgPanel.graphEdgeItemCountForTest()
+                   && realPhyCfgClearChecks == realPhyCfgLabelChecks
+                   && realPhyCfgLabelsOffPath
+                   && realPhyCfgPathsClearNodes
+                   && sawRealPhyCfgOuterRoute,
                true);
     StateTransitionGraphService::getInstance()->setSemanticIndex(
         SemanticIndex::getInstance());

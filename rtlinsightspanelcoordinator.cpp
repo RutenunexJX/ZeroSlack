@@ -77,6 +77,10 @@ constexpr int kGraphEdgeLabelBackgroundRole = Qt::UserRole + 1216;
 constexpr int kGraphEdgeHasCurveRole = Qt::UserRole + 1217;
 constexpr int kGraphEdgeArrowAngleRole = Qt::UserRole + 1218;
 constexpr int kGraphEdgeLabelColorRole = Qt::UserRole + 1219;
+constexpr int kGraphEdgeRouteKindRole = Qt::UserRole + 1220;
+constexpr int kGraphEdgeRouteLaneRole = Qt::UserRole + 1221;
+constexpr int kGraphEdgeLabelXRole = Qt::UserRole + 1222;
+constexpr int kGraphEdgeLabelYRole = Qt::UserRole + 1223;
 
 constexpr qreal kInsightNodeWidth = 170.0;
 constexpr qreal kInsightNodeHeight = 56.0;
@@ -96,6 +100,13 @@ struct RtlInsightGraphElement {
     RtlInsightCodeLink codeLink;
     QString drillModuleName;
     QString drillFileName;
+};
+
+struct RtlInsightGraphEdgePresentation {
+    QPointF labelCenter;
+    bool hasLabelCenter = false;
+    QString routeKind;
+    int routeLane = 0;
 };
 
 QString graphElidedText(const QString& text, const QFont& font, int width)
@@ -152,6 +163,104 @@ bool painterPathHasCurve(const QPainterPath& path)
         }
     }
     return false;
+}
+
+qreal distanceBetweenPoints(const QPointF& lhs, const QPointF& rhs)
+{
+    return std::hypot(lhs.x() - rhs.x(), lhs.y() - rhs.y());
+}
+
+qreal distancePointToSegment(const QPointF& point,
+                             const QPointF& start,
+                             const QPointF& end)
+{
+    const qreal dx = end.x() - start.x();
+    const qreal dy = end.y() - start.y();
+    const qreal lengthSquared = dx * dx + dy * dy;
+    if (lengthSquared < 0.001)
+        return distanceBetweenPoints(point, start);
+    const qreal t =
+        std::clamp(((point.x() - start.x()) * dx
+                    + (point.y() - start.y()) * dy)
+                       / lengthSquared,
+                   0.0,
+                   1.0);
+    return distanceBetweenPoints(point,
+                                 QPointF(start.x() + t * dx,
+                                         start.y() + t * dy));
+}
+
+QList<QPointF> sampledPathPoints(const QPainterPath& path, int sampleCount = 80)
+{
+    QList<QPointF> points;
+    if (path.elementCount() <= 0)
+        return points;
+    const int count = qMax(2, sampleCount);
+    points.reserve(count + 1);
+    for (int i = 0; i <= count; ++i)
+        points.append(path.pointAtPercent(static_cast<qreal>(i) / count));
+    return points;
+}
+
+qreal distancePointToPath(const QPointF& point, const QPainterPath& path)
+{
+    const QList<QPointF> points = sampledPathPoints(path);
+    if (points.isEmpty())
+        return std::numeric_limits<qreal>::max();
+    qreal best = std::numeric_limits<qreal>::max();
+    for (int i = 1; i < points.size(); ++i)
+        best = qMin(best, distancePointToSegment(point,
+                                                 points.at(i - 1),
+                                                 points.at(i)));
+    return best;
+}
+
+qreal distanceBetweenPaths(const QPainterPath& lhs, const QPainterPath& rhs)
+{
+    const QList<QPointF> lhsPoints = sampledPathPoints(lhs, 56);
+    const QList<QPointF> rhsPoints = sampledPathPoints(rhs, 56);
+    if (lhsPoints.isEmpty() || rhsPoints.isEmpty())
+        return -1.0;
+    qreal best = std::numeric_limits<qreal>::max();
+    for (int i = 10; i + 10 < lhsPoints.size(); ++i) {
+        for (int j = 10; j + 10 < rhsPoints.size(); ++j)
+            best = qMin(best, distanceBetweenPoints(lhsPoints.at(i),
+                                                    rhsPoints.at(j)));
+    }
+    return best == std::numeric_limits<qreal>::max() ? -1.0 : best;
+}
+
+bool pathSamplesIntersectNodeRects(const QPainterPath& path,
+                                   const QList<QRectF>& nodeRects)
+{
+    if (nodeRects.isEmpty())
+        return false;
+    const int sampleCount = 90;
+    for (int i = 11; i <= sampleCount - 11; ++i) {
+        const QPointF point =
+            path.pointAtPercent(static_cast<qreal>(i) / sampleCount);
+        for (const QRectF& rect : nodeRects) {
+            if (rect.adjusted(2.0, 2.0, -2.0, -2.0).contains(point))
+                return true;
+        }
+    }
+    return false;
+}
+
+qreal painterPathTangentAngleAtEnd(const QPainterPath& path)
+{
+    if (path.elementCount() <= 1)
+        return 0.0;
+    const QPointF end = path.pointAtPercent(1.0);
+    for (qreal percent : {0.98, 0.95, 0.90, 0.80}) {
+        const QPointF previous = path.pointAtPercent(percent);
+        if (distanceBetweenPoints(previous, end) > 0.5)
+            return std::atan2(end.y() - previous.y(), end.x() - previous.x());
+    }
+    const QPainterPath::Element last = path.elementAt(path.elementCount() - 1);
+    const QPainterPath::Element previous =
+        path.elementAt(qMax(0, path.elementCount() - 2));
+    return std::atan2(last.y - previous.y, last.x - previous.x);
 }
 
 class RtlInsightGraphNodeItem : public QGraphicsRectItem
@@ -449,7 +558,9 @@ public:
                             qreal labelOffset = 0.0,
                             bool labelBold = false,
                             bool labelBackgroundVisible = true,
-                            const QColor& labelColor = QColor())
+                            const QColor& labelColor = QColor(),
+                            const RtlInsightGraphEdgePresentation& presentation =
+                                RtlInsightGraphEdgePresentation())
         : QGraphicsPathItem(path),
           element(graphElement)
     {
@@ -470,6 +581,12 @@ public:
             labelColor.isValid() ? labelColor
                                  : InsightVisualStyle::theme().textSecondary;
         setData(kGraphEdgeLabelColorRole, resolvedLabelColor.name());
+        setData(kGraphEdgeRouteKindRole, presentation.routeKind);
+        setData(kGraphEdgeRouteLaneRole, presentation.routeLane);
+        if (presentation.hasLabelCenter) {
+            setData(kGraphEdgeLabelXRole, presentation.labelCenter.x());
+            setData(kGraphEdgeLabelYRole, presentation.labelCenter.y());
+        }
 
         constexpr qreal arrowSize = 10.0;
         const QPointF p1 = arrowTip
@@ -511,9 +628,14 @@ public:
                 labelBackground->setBrush(labelFill);
                 labelBackground->setZValue(-1);
             }
-            labelItem->setPos(pathBounds.center().x() - labelBounds.width() / 2.0,
-                              pathBounds.center().y() - labelBounds.height() / 2.0
-                                  + labelOffset);
+            const QPointF labelCenter = presentation.hasLabelCenter
+                ? presentation.labelCenter
+                : QPointF(pathBounds.center().x(),
+                          pathBounds.center().y() + labelOffset);
+            labelItem->setPos(labelCenter.x() - labelBounds.width() / 2.0,
+                              labelCenter.y() - labelBounds.height() / 2.0);
+            setData(kGraphEdgeLabelXRole, labelCenter.x());
+            setData(kGraphEdgeLabelYRole, labelCenter.y());
         }
     }
 
@@ -648,22 +770,44 @@ QList<InsightVisualRole> fsmStatePalette()
             InsightVisualRole::Data};
 }
 
-QColor fsmStateFillColor(int stateIndex)
+uint stableStringHash(const QString& value)
 {
-    const QList<InsightVisualRole> palette = fsmStatePalette();
-    if (palette.isEmpty())
-        return InsightVisualStyle::panelBrush().color();
-    return InsightVisualStyle::roleFillColor(
-        palette.at(qAbs(stateIndex) % palette.size()));
+    uint hash = 2166136261u;
+    for (QChar ch : value) {
+        hash ^= static_cast<uint>(ch.unicode());
+        hash *= 16777619u;
+    }
+    return hash;
 }
 
-QColor fsmStateStrokeColor(int stateIndex)
+QColor fsmNeutralStateFillColor()
+{
+    return InsightVisualStyle::theme().graph.nodeFill;
+}
+
+QColor fsmNeutralStateStrokeColor()
+{
+    return InsightVisualStyle::theme().graph.nodeBorder;
+}
+
+InsightVisualRole fsmAliasAccentRole(const QString& stateName)
 {
     const QList<InsightVisualRole> palette = fsmStatePalette();
     if (palette.isEmpty())
-        return InsightVisualStyle::theme().borderStrong;
-    return InsightVisualStyle::roleColor(
-        palette.at(qAbs(stateIndex) % palette.size()));
+        return InsightVisualRole::Data;
+    return palette.at(static_cast<int>(stableStringHash(stateName)
+                                       % static_cast<uint>(palette.size())));
+}
+
+QColor fsmAliasStateFillColor(const QString& stateName)
+{
+    return InsightVisualStyle::roleFillColor(
+        fsmAliasAccentRole(stateName));
+}
+
+QColor fsmAliasStateStrokeColor(const QString& stateName)
+{
+    return InsightVisualStyle::roleColor(fsmAliasAccentRole(stateName));
 }
 
 QString fsmStateDetailText(const FsmStateRow& row)
@@ -968,6 +1112,10 @@ struct FsmGraphLayout {
     QHash<QString, QString> canonicalNodeIds;
     QHash<QString, QString> aliasNodeIdByTransitionKey;
     QHash<QString, int> stateIndexes;
+    QHash<QString, int> stateColumns;
+    QHash<QString, int> stateLanes;
+    QHash<QString, int> nodeColumns;
+    QHash<QString, int> nodeLanes;
     QHash<QString, FsmStateRow> stateRowsByName;
     QRectF bounds;
 };
@@ -1130,7 +1278,7 @@ FsmGraphLayout buildFsmGraphLayout(const FsmGraph& graph,
         minLane = qMin(minLane, stateLanes.value(stateName));
     }
 
-    const qreal columnGap = 58.0;
+    const qreal columnGap = 62.0;
     const qreal verticalGap = kStateNodeHeight + 60.0;
     QHash<int, qreal> columnWidths;
     for (const QString& stateName : std::as_const(layout.orderedStates)) {
@@ -1159,9 +1307,13 @@ FsmGraphLayout buildFsmGraphLayout(const FsmGraph& graph,
 
     auto addLayoutNode = [&](FsmLayoutNode node) {
         layout.nodeRects.insert(node.id, node.rect);
+        layout.nodeColumns.insert(node.id, node.column);
+        layout.nodeLanes.insert(node.id, node.lane);
         if (!node.alias) {
             layout.stateRects.insert(node.canonicalState, node.rect);
             layout.canonicalNodeIds.insert(node.canonicalState, node.id);
+            layout.stateColumns.insert(node.canonicalState, node.column);
+            layout.stateLanes.insert(node.canonicalState, node.lane);
         }
         layout.nodes.append(node);
         layout.bounds = layout.bounds.isNull()
@@ -1324,40 +1476,143 @@ RtlInsightCodeLink fsmStateTransitionCodeLink(const FsmGraph& graph,
     return fallback;
 }
 
-enum class FsmTransitionRoute {
+enum class FsmTransitionRouteKind {
     Normal,
-    BackwardOuter
+    ReversePairUpper,
+    ReversePairLower,
+    OuterBackEdge,
+    SelfLoop
 };
 
-QPainterPath fsmTransitionPath(const QRectF& fromRect,
-                               const QRectF& toRect,
-                               QPointF* startOut,
-                               QPointF* endOut,
-                               int lane = 0,
-                               FsmTransitionRoute route =
-                                   FsmTransitionRoute::Normal)
+QString fsmTransitionRouteKindName(FsmTransitionRouteKind kind)
 {
-    if (route == FsmTransitionRoute::BackwardOuter) {
-        const bool routeBelow = lane < 0;
-        const qreal outerY = routeBelow
-            ? qMax(fromRect.bottom(), toRect.bottom()) + 36.0
-                  + std::abs(lane) * 18.0
-            : qMin(fromRect.top(), toRect.top()) - 36.0
-                  - std::abs(lane) * 18.0;
-        const QPointF start(fromRect.left(), fromRect.center().y());
-        const QPointF end(toRect.right(), toRect.center().y());
-        if (startOut)
-            *startOut = start;
-        if (endOut)
-            *endOut = end;
-        QPainterPath path(start);
-        const qreal sidePad = 28.0 + std::abs(lane) * 10.0;
-        path.lineTo(QPointF(start.x() - sidePad, start.y()));
-        path.lineTo(QPointF(start.x() - sidePad, outerY));
-        path.lineTo(QPointF(end.x() + sidePad, outerY));
-        path.lineTo(QPointF(end.x() + sidePad, end.y()));
-        path.lineTo(end);
-        return path;
+    switch (kind) {
+    case FsmTransitionRouteKind::ReversePairUpper:
+        return QStringLiteral("reversePairUpper");
+    case FsmTransitionRouteKind::ReversePairLower:
+        return QStringLiteral("reversePairLower");
+    case FsmTransitionRouteKind::OuterBackEdge:
+        return QStringLiteral("outerBackEdge");
+    case FsmTransitionRouteKind::SelfLoop:
+        return QStringLiteral("selfLoop");
+    case FsmTransitionRouteKind::Normal:
+    default:
+        return QStringLiteral("normal");
+    }
+}
+
+struct FsmTransitionRoutePlan {
+    QPainterPath path;
+    QPointF arrowTip;
+    qreal arrowAngle = 0.0;
+    QPointF labelCenter;
+    FsmTransitionRouteKind kind = FsmTransitionRouteKind::Normal;
+    int lane = 0;
+};
+
+QPointF pathLabelPoint(const QPainterPath& path,
+                       qreal percent,
+                       qreal distance,
+                       int preferredVerticalSign)
+{
+    const qreal clampedPercent = std::clamp(percent, 0.02, 0.98);
+    const QPointF center = path.pointAtPercent(clampedPercent);
+    const QPointF before =
+        path.pointAtPercent(qMax<qreal>(0.0, clampedPercent - 0.025));
+    const QPointF after =
+        path.pointAtPercent(qMin<qreal>(1.0, clampedPercent + 0.025));
+    QPointF normal(-(after.y() - before.y()), after.x() - before.x());
+    qreal length = std::hypot(normal.x(), normal.y());
+    if (length < 0.1) {
+        normal = QPointF(0.0, preferredVerticalSign < 0 ? -1.0 : 1.0);
+        length = 1.0;
+    }
+    normal = QPointF(normal.x() / length, normal.y() / length);
+    if (preferredVerticalSign != 0
+        && normal.y() * preferredVerticalSign < 0.0) {
+        normal = QPointF(-normal.x(), -normal.y());
+    }
+    return center + QPointF(normal.x() * distance, normal.y() * distance);
+}
+
+FsmTransitionRoutePlan buildFsmTransitionRoutePlan(
+    const QRectF& fromRect,
+    const QRectF& toRect,
+    const QRectF& layoutBounds,
+    FsmTransitionRouteKind kind,
+    int lane)
+{
+    FsmTransitionRoutePlan plan;
+    plan.kind = kind;
+    plan.lane = lane;
+
+    if (kind == FsmTransitionRouteKind::SelfLoop) {
+        const int laneMagnitude = qMax(0, std::abs(lane));
+        const qreal loopLift = 38.0 + laneMagnitude * 12.0;
+        const qreal loopOutset = 28.0 + laneMagnitude * 8.0;
+        const QPointF start = ellipsePointAtAngle(fromRect, -3.0 * kPi / 4.0);
+        const QPointF end = ellipsePointAtAngle(fromRect, -kPi / 4.0);
+        plan.path.moveTo(start);
+        const QPointF control1(start.x() - loopOutset,
+                               fromRect.top() - loopLift);
+        const QPointF control2(end.x() + loopOutset,
+                               fromRect.top() - loopLift);
+        plan.path.cubicTo(control1, control2, end);
+        plan.arrowTip = end;
+        plan.arrowAngle = std::atan2(end.y() - control2.y(),
+                                     end.x() - control2.x());
+        plan.labelCenter = QPointF(fromRect.center().x(),
+                                   fromRect.top() - loopLift - 22.0);
+        return plan;
+    }
+
+    const bool routeAbove = lane >= 0;
+    if (kind == FsmTransitionRouteKind::OuterBackEdge) {
+        const int laneMagnitude = qMax(1, std::abs(lane));
+        const qreal outerY = routeAbove
+            ? layoutBounds.top() - 42.0 - laneMagnitude * 22.0
+            : layoutBounds.bottom() + 42.0 + laneMagnitude * 22.0;
+        const QPointF start(fromRect.center().x(),
+                            routeAbove ? fromRect.top() : fromRect.bottom());
+        const QPointF end(toRect.center().x(),
+                          routeAbove ? toRect.top() : toRect.bottom());
+        plan.path.moveTo(start);
+        plan.path.lineTo(QPointF(start.x(), outerY));
+        plan.path.lineTo(QPointF(end.x(), outerY));
+        plan.path.lineTo(end);
+        plan.arrowTip = end;
+        plan.arrowAngle = painterPathTangentAngleAtEnd(plan.path);
+        plan.labelCenter =
+            QPointF((start.x() + end.x()) / 2.0,
+                    outerY + (routeAbove ? -24.0 : 24.0));
+        return plan;
+    }
+
+    if (kind == FsmTransitionRouteKind::ReversePairUpper
+        || kind == FsmTransitionRouteKind::ReversePairLower) {
+        const bool upper = kind == FsmTransitionRouteKind::ReversePairUpper;
+        const qreal curveLift = 48.0 + std::abs(lane) * 16.0;
+        const QPointF start(fromRect.center().x() <= toRect.center().x()
+                                ? fromRect.right()
+                                : fromRect.left(),
+                            fromRect.center().y());
+        const QPointF end(fromRect.center().x() <= toRect.center().x()
+                              ? toRect.left()
+                              : toRect.right(),
+                          toRect.center().y());
+        const QPointF mid = (start + end) / 2.0;
+        const qreal controlY = upper
+            ? qMin(fromRect.top(), toRect.top()) - curveLift
+            : qMax(fromRect.bottom(), toRect.bottom()) + curveLift;
+        const QPointF control(mid.x(), controlY);
+        plan.path.moveTo(start);
+        plan.path.quadTo(control, end);
+        plan.arrowTip = end;
+        plan.arrowAngle = std::atan2(end.y() - control.y(),
+                                     end.x() - control.x());
+        plan.labelCenter =
+            QPointF(mid.x(), controlY + (upper ? -22.0 : 22.0));
+        return plan;
     }
 
     const qreal dx = toRect.center().x() - fromRect.center().x();
@@ -1375,41 +1630,41 @@ QPainterPath fsmTransitionPath(const QRectF& fromRect,
         end = QPointF(toRect.center().x(),
                       dy >= 0 ? toRect.top() : toRect.bottom());
     }
-    if (startOut)
-        *startOut = start;
-    if (endOut)
-        *endOut = end;
 
-    QPainterPath path(start);
-    const bool sameRow = std::abs(fromRect.center().y() - toRect.center().y()) < 1.0;
-    const bool sameColumn = std::abs(fromRect.center().x() - toRect.center().x()) < 1.0;
-    if (sameRow) {
-        if (lane == 0) {
-            path.lineTo(end);
-            return path;
-        }
-        const qreal detourY = start.y() + lane * 28.0;
-        path.lineTo(QPointF(start.x(), detourY));
-        path.lineTo(QPointF(end.x(), detourY));
-        path.lineTo(end);
-        return path;
+    plan.path.moveTo(start);
+    const bool sameRow =
+        std::abs(fromRect.center().y() - toRect.center().y()) < 1.0;
+    const bool sameColumn =
+        std::abs(fromRect.center().x() - toRect.center().x()) < 1.0;
+    if (sameRow && lane == 0) {
+        plan.path.lineTo(end);
+        plan.labelCenter = pathLabelPoint(plan.path, 0.5, 24.0, -1);
+    } else if (sameRow) {
+        const int side = lane > 0 ? -1 : 1;
+        const qreal bend = side * (32.0 + std::abs(lane) * 16.0);
+        const QPointF mid = (start + end) / 2.0;
+        plan.path.quadTo(QPointF(mid.x(), mid.y() + bend), end);
+        plan.labelCenter =
+            QPointF(mid.x(), mid.y() + bend + side * 22.0);
+    } else if (sameColumn) {
+        const int side = lane >= 0 ? 1 : -1;
+        const qreal detourX = start.x() + side * (54.0 + std::abs(lane) * 18.0);
+        plan.path.lineTo(QPointF(detourX, start.y()));
+        plan.path.lineTo(QPointF(detourX, end.y()));
+        plan.path.lineTo(end);
+        plan.labelCenter = pathLabelPoint(plan.path, 0.5, 24.0, side);
+    } else {
+        const qreal midX = (start.x() + end.x()) / 2.0
+            + lane * 24.0;
+        plan.path.lineTo(QPointF(midX, start.y()));
+        plan.path.lineTo(QPointF(midX, end.y()));
+        plan.path.lineTo(end);
+        plan.labelCenter =
+            pathLabelPoint(plan.path, 0.52, 24.0, dy >= 0.0 ? -1 : 1);
     }
-    if (sameColumn) {
-        if (lane == 0) {
-            path.lineTo(end);
-            return path;
-        }
-        const qreal detourX = start.x() + lane * 36.0;
-        path.lineTo(QPointF(detourX, start.y()));
-        path.lineTo(QPointF(detourX, end.y()));
-        path.lineTo(end);
-        return path;
-    }
-    const qreal midX = (start.x() + end.x()) / 2.0 + lane * 18.0;
-    path.lineTo(QPointF(midX, start.y()));
-    path.lineTo(QPointF(midX, end.y()));
-    path.lineTo(end);
-    return path;
+    plan.arrowTip = end;
+    plan.arrowAngle = painterPathTangentAngleAtEnd(plan.path);
+    return plan;
 }
 
 QRectF expandedToMinimum(const QRectF& rect, qreal minWidth, qreal minHeight)
@@ -1478,9 +1733,14 @@ FsmGraphRenderResult renderFsmStateMachineGraph(
     captionItem->setPos(layout.bounds.left(), captionTop);
     graphBounds = graphBounds.united(captionItem->sceneBoundingRect());
 
+    QSet<QString> aliasCanonicalStates;
+    for (const FsmLayoutNode& node : std::as_const(layout.nodes)) {
+        if (node.alias)
+            aliasCanonicalStates.insert(node.canonicalState);
+    }
+
     auto addStateNode = [&](const FsmStateRow& row,
                             const QRectF& rect,
-                            int stateIndex,
                             bool dashed,
                             bool alias,
                             const QString& aliasDetail) {
@@ -1504,10 +1764,14 @@ FsmGraphRenderResult renderFsmStateMachineGraph(
             fsmStateTransitionCodeLink(graph, row.stateDisplayName, row.codeLink);
         const QColor fill = row.deadEndState
             ? InsightVisualStyle::theme().statusBar.errorBackground
-            : fsmStateFillColor(stateIndex);
+            : (aliasCanonicalStates.contains(row.stateDisplayName)
+                   ? fsmAliasStateFillColor(row.stateDisplayName)
+                   : fsmNeutralStateFillColor());
         const QColor stroke = row.deadEndState
             ? InsightVisualStyle::theme().statusBar.errorText
-            : fsmStateStrokeColor(stateIndex);
+            : (aliasCanonicalStates.contains(row.stateDisplayName)
+                   ? fsmAliasStateStrokeColor(row.stateDisplayName)
+                   : fsmNeutralStateStrokeColor());
         auto* item = new RtlInsightGraphStateNodeItem(
             state,
             rect,
@@ -1524,53 +1788,73 @@ FsmGraphRenderResult renderFsmStateMachineGraph(
     for (const FsmLayoutNode& node : std::as_const(layout.nodes)) {
         const QString stateName = node.canonicalState;
         const FsmStateRow row = layout.stateRowsByName.value(stateName);
-        const int stateIndex = layout.stateIndexes.value(stateName, 0);
         addStateNode(row,
                      node.rect,
-                     stateIndex,
                      node.alias,
                      node.alias,
                      node.aliasDetail);
     }
+
+    auto directedPairKey = [](const QString& from, const QString& to) {
+        return from + QLatin1Char('\n') + to;
+    };
+    QSet<QString> directedPairs;
+    for (const FsmTransitionRow& row : graph.transitionRows) {
+        if (row.fromStateDisplayName == row.toStateDisplayName)
+            continue;
+        directedPairs.insert(directedPairKey(row.fromStateDisplayName,
+                                             row.toStateDisplayName));
+    }
+    QHash<int, int> outerLaneCountsBySide;
 
     auto addTransition = [&](const FsmTransitionRow& row,
                              const QString& conditionId,
                              const QRectF& fromRect,
                              const QRectF& toRect,
                              int lane,
-                             bool toAlias) {
-        QPointF start;
-        QPointF end;
-        QPainterPath path;
-        qreal angle = 0.0;
+                             bool toAlias,
+                             int fromColumn,
+                             int fromLane,
+                             int toColumn,
+                             int toLane) {
+        FsmTransitionRouteKind routeKind = FsmTransitionRouteKind::Normal;
+        int routeLane = lane;
         if (row.fromStateDisplayName == row.toStateDisplayName) {
-            const qreal loopLift = 30.0 + std::abs(lane) * 10.0;
-            const qreal loopOutset = 22.0 + std::abs(lane) * 7.0;
-            start = ellipsePointAtAngle(fromRect, -3.0 * kPi / 4.0);
-            end = ellipsePointAtAngle(fromRect, -kPi / 4.0);
-            path.moveTo(start);
-            path.cubicTo(QPointF(start.x() - loopOutset,
-                                 fromRect.top() - loopLift),
-                         QPointF(end.x() + loopOutset,
-                                 fromRect.top() - loopLift),
-                         end);
-            angle = 3.0 * kPi / 4.0;
+            routeKind = FsmTransitionRouteKind::SelfLoop;
         } else {
-            const bool backward =
-                fromRect.center().x() > toRect.center().x() + 1.0;
-            int routeLane = lane;
-            if (backward && routeLane == 0)
-                routeLane = 1;
-            path = fsmTransitionPath(
-                fromRect,
-                toRect,
-                &start,
-                &end,
-                routeLane,
-                backward && !toAlias ? FsmTransitionRoute::BackwardOuter
-                                      : FsmTransitionRoute::Normal);
-            angle = std::atan2(end.y() - start.y(), end.x() - start.x());
+            const bool mutualPair =
+                directedPairs.contains(directedPairKey(row.toStateDisplayName,
+                                                       row.fromStateDisplayName));
+            const int span = std::abs(toColumn - fromColumn);
+            const bool backward = toColumn < fromColumn;
+            const bool crossLane = fromLane != toLane;
+            if (mutualPair && !toAlias) {
+                routeKind = fromColumn > toColumn
+                    ? FsmTransitionRouteKind::ReversePairUpper
+                    : FsmTransitionRouteKind::ReversePairLower;
+                if (routeLane == 0)
+                    routeLane = routeKind
+                            == FsmTransitionRouteKind::ReversePairUpper
+                        ? 1
+                        : -1;
+            } else if (!toAlias
+                       && (backward || span >= 3
+                           || (span >= 2 && crossLane))) {
+                const int preferredSide =
+                    (fromLane < 0 || toLane < 0) ? -1 : 1;
+                const int sideCount =
+                    outerLaneCountsBySide.value(preferredSide) + 1;
+                outerLaneCountsBySide.insert(preferredSide, sideCount);
+                routeKind = FsmTransitionRouteKind::OuterBackEdge;
+                routeLane = preferredSide * sideCount;
+            }
         }
+        const FsmTransitionRoutePlan route =
+            buildFsmTransitionRoutePlan(fromRect,
+                                        toRect,
+                                        layout.bounds,
+                                        routeKind,
+                                        routeLane);
 
         RtlInsightGraphElement transition;
         transition.kind = QStringLiteral("transition");
@@ -1581,16 +1865,21 @@ FsmGraphRenderResult renderFsmStateMachineGraph(
         transition.codeLink = row.codeLink;
         auto* item = new RtlInsightGraphEdgeItem(
             transition,
-            path,
-            end,
-            angle,
+            route.path,
+            route.arrowTip,
+            route.arrowAngle,
             conditionId,
             font,
             InsightVisualStyle::theme().textPrimary,
-            lane * 18.0,
+            0.0,
             true,
             false,
-            InsightVisualStyle::theme().textPrimary);
+            InsightVisualStyle::theme().textPrimary,
+            RtlInsightGraphEdgePresentation{
+                route.labelCenter,
+                true,
+                fsmTransitionRouteKindName(route.kind),
+                route.lane});
         item->navigateHandler = navigate;
         item->selectHandler = select;
         scene->addItem(item);
@@ -1621,12 +1910,30 @@ FsmGraphRenderResult renderFsmStateMachineGraph(
         edgeLaneCounts.insert(edgeKey, ordinal + 1);
         const int lane = ordinal == 0 ? 0 : ((ordinal + 1) / 2)
             * (ordinal % 2 == 0 ? -1 : 1);
+        const QString fromNodeId =
+            layout.canonicalNodeIds.value(row.fromStateDisplayName);
+        const QString toNodeId =
+            aliasNodeId.isEmpty()
+            ? layout.canonicalNodeIds.value(row.toStateDisplayName)
+            : aliasNodeId;
         addTransition(row,
                       fsmTransitionConditionId(rowIndex),
                       fromRect,
                       toRect,
                       lane,
-                      !aliasNodeId.isEmpty());
+                      !aliasNodeId.isEmpty(),
+                      layout.nodeColumns.value(
+                          fromNodeId,
+                          layout.stateColumns.value(row.fromStateDisplayName)),
+                      layout.nodeLanes.value(
+                          fromNodeId,
+                          layout.stateLanes.value(row.fromStateDisplayName)),
+                      layout.nodeColumns.value(
+                          toNodeId,
+                          layout.stateColumns.value(row.toStateDisplayName)),
+                      layout.nodeLanes.value(
+                          toNodeId,
+                          layout.stateLanes.value(row.toStateDisplayName)));
     }
 
     return {graphBounds.adjusted(-38.0, -58.0, 38.0, 44.0),
@@ -2941,15 +3248,64 @@ QStringList RtlInsightsPanelCoordinator::graphEdgeGeometrySummariesForTest() con
     QStringList summaries;
     if (!insightsGraphScene)
         return summaries;
+    QList<QRectF> nodeRects;
+    QList<QGraphicsItem*> edgeItems;
     for (QGraphicsItem* item : insightsGraphScene->items()) {
-        if (!dynamic_cast<RtlInsightGraphEdgeItem*>(item))
+        if (dynamic_cast<RtlInsightGraphNodeItem*>(item)
+            || dynamic_cast<RtlInsightGraphStateNodeItem*>(item)) {
+            nodeRects.append(item->sceneBoundingRect());
+        } else if (dynamic_cast<RtlInsightGraphEdgeItem*>(item)) {
+            edgeItems.append(item);
+        }
+    }
+    for (QGraphicsItem* item : std::as_const(edgeItems)) {
+        const auto* edgeItem = dynamic_cast<QGraphicsPathItem*>(item);
+        if (!edgeItem)
             continue;
+        const QPainterPath path = edgeItem->path();
         const QRectF rect = item->sceneBoundingRect();
         const int angleDegrees =
             qRound(item->data(kGraphEdgeArrowAngleRole).toDouble()
                    * 180.0 / kPi);
+        const QVariant labelX = item->data(kGraphEdgeLabelXRole);
+        const QVariant labelY = item->data(kGraphEdgeLabelYRole);
+        const int labelDistance = labelX.isValid() && labelY.isValid()
+            ? qRound(distancePointToPath(QPointF(labelX.toDouble(),
+                                                 labelY.toDouble()),
+                                         path))
+            : -1;
+        const bool avoidsNodes =
+            !pathSamplesIntersectNodeRects(path, nodeRects);
+        qreal siblingSpacing = -1.0;
+        for (QGraphicsItem* other : std::as_const(edgeItems)) {
+            if (other == item)
+                continue;
+            const QString primary = item->data(kGraphPrimaryRole).toString();
+            const QString secondary =
+                item->data(kGraphSecondaryRole).toString();
+            const QString otherPrimary =
+                other->data(kGraphPrimaryRole).toString();
+            const QString otherSecondary =
+                other->data(kGraphSecondaryRole).toString();
+            const bool samePair =
+                (primary == otherPrimary && secondary == otherSecondary)
+                || (primary == otherSecondary && secondary == otherPrimary);
+            if (!samePair)
+                continue;
+            const auto* otherEdge =
+                dynamic_cast<QGraphicsPathItem*>(other);
+            if (!otherEdge)
+                continue;
+            const qreal spacing =
+                distanceBetweenPaths(path, otherEdge->path());
+            if (spacing >= 0.0) {
+                siblingSpacing = siblingSpacing < 0.0
+                    ? spacing
+                    : qMin(siblingSpacing, spacing);
+            }
+        }
         summaries.append(
-            QStringLiteral("%1|%2|%3|%4|%5|%6|%7|%8|%9|%10|%11|%12")
+            QStringLiteral("%1|%2|%3|%4|%5|%6|%7|%8|%9|%10|%11|%12|%13|%14|%15|%16|%17")
                 .arg(item->data(kGraphKindRole).toString(),
                      item->data(kGraphPrimaryRole).toString(),
                      item->data(kGraphSecondaryRole).toString(),
@@ -2967,7 +3323,13 @@ QStringList RtlInsightsPanelCoordinator::graphEdgeGeometrySummariesForTest() con
                          : QStringLiteral("line"),
                      QString::number(angleDegrees),
                      QString::number(qRound(rect.width())),
-                     QString::number(qRound(rect.height()))));
+                     QString::number(qRound(rect.height())),
+                     item->data(kGraphEdgeRouteKindRole).toString(),
+                     QString::number(item->data(kGraphEdgeRouteLaneRole).toInt()),
+                     QString::number(labelDistance),
+                     avoidsNodes ? QStringLiteral("clear")
+                                 : QStringLiteral("node-hit"),
+                     QString::number(qRound(siblingSpacing))));
     }
     summaries.sort(Qt::CaseInsensitive);
     return summaries;
