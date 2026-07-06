@@ -730,6 +730,21 @@ Do not add unlisted long-term goals without explicit user approval.
   Debug verification passed: build and CTest for `completion_test`,
   `relationship_test`, `gui_smoke_test`, and `insight_visual_style_test`, plus
   `git diff --check`.
+- Latest FSM graph interaction follow-up is partial in the working tree:
+  transition edge/path/label hit data now has higher selectable priority than
+  route/background graphics, clear direct normal routing is covered for real
+  `chl_ctrl.sv` `elec_cfg_ns` C14, and overlap bridge metadata/label offsets
+  are generated from geometry-only shared/near-path checks rather than
+  condition-number special cases. Final verification updated `LastTest.log`
+  from `2026-07-06 13:31:14.726` to `2026-07-06 13:47:00.774`;
+  `relationship_test` passed with `942 checks, 0 failed`, and
+  `completion_test`, `gui_smoke_test`, and `insight_visual_style_test` also
+  passed. Covered real workspace checks include `phy_pass_thrg` outside-clean
+  routing, `phy_cfg_ns` outside-clean routing and crossing checks,
+  `elec_cfg_ns` C4 local routing, C14 direct routing, C5/C6 bridge
+  metadata/readable labels, and label hit selection. The route geometry checks
+  parse edge summaries into named fields and include routeDecision diagnostics
+  for initial/local/direct candidates and final route choice.
 - Latest Module Block Diagram real-usability pass: Debug targets
   `completion_test`, `relationship_test`, `gui_smoke_test`,
   `full_feature_audit_test`, and `jump_test` compile/link; focused CTest runs

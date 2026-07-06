@@ -59,6 +59,7 @@
 #include <QTreeWidgetItem>
 #include <QWidget>
 #include <cstdio>
+#include <functional>
 #include <limits>
 #include <memory>
 
@@ -157,6 +158,147 @@ static void expectBool(const char* what, bool got, bool want)
         ++g_fails;
     printf("[%s] %-46s got=%s want=%s\n", ok ? "PASS" : "FAIL", what,
            got ? "true" : "false", want ? "true" : "false");
+}
+
+static void expectBoolDetails(const char* what,
+                              bool got,
+                              bool want,
+                              const QString& details)
+{
+    expectBool(what, got, want);
+    if (got == want || details.isEmpty())
+        return;
+    const QByteArray bytes = details.toLocal8Bit();
+    printf("  details:\n%s\n", bytes.constData());
+}
+
+struct EdgeGeometrySummary {
+    QString raw;
+    QString kind;
+    QString from;
+    QString to;
+    QString badge;
+    QString label;
+    QString curve;
+    QString routeKind;
+    int routeLane = 0;
+    int labelDistance = -1;
+    QString nodeClear;
+    int crossingCount = 0;
+    QStringList crossingIds;
+    int pathLength = -1;
+    int labelX = 0;
+    int labelY = 0;
+    int hitPriority = 0;
+    QString labelHit;
+    QString bridge;
+    QStringList overlapIds;
+    int labelOverlapDistance = -1;
+    int pathElementCount = 0;
+    QString routeDecision;
+    bool valid = false;
+};
+
+static EdgeGeometrySummary parseEdgeGeometrySummary(const QString& summary)
+{
+    EdgeGeometrySummary edge;
+    edge.raw = summary;
+    const QStringList parts = summary.split(QLatin1Char('|'));
+    if (parts.size() < 19 || parts.at(0) != QStringLiteral("transition"))
+        return edge;
+    edge.valid = true;
+    edge.kind = parts.at(0);
+    edge.from = parts.at(1);
+    edge.to = parts.at(2);
+    edge.badge = parts.at(3);
+    edge.label = parts.at(4);
+    edge.curve = parts.at(8);
+    edge.routeKind = parts.at(12);
+    edge.routeLane = parts.at(13).toInt();
+    edge.labelDistance = parts.at(14).toInt();
+    edge.nodeClear = parts.at(15);
+    edge.crossingCount = parts.at(17).toInt();
+    edge.crossingIds =
+        parts.at(18).split(QLatin1Char(','), Qt::SkipEmptyParts);
+    if (parts.size() >= 28) {
+        edge.pathLength = parts.at(19).toInt();
+        edge.labelX = parts.at(20).toInt();
+        edge.labelY = parts.at(21).toInt();
+        edge.hitPriority = parts.at(22).toInt();
+        edge.labelHit = parts.at(23);
+        edge.bridge = parts.at(24);
+        edge.overlapIds =
+            parts.at(25).split(QLatin1Char(','), Qt::SkipEmptyParts);
+        edge.labelOverlapDistance = parts.at(26).toInt();
+        edge.pathElementCount = parts.at(27).toInt();
+        if (parts.size() >= 29)
+            edge.routeDecision = parts.at(28);
+    }
+    return edge;
+}
+
+static QList<EdgeGeometrySummary> parseEdgeGeometrySummaries(
+    const QStringList& summaries)
+{
+    QList<EdgeGeometrySummary> edges;
+    for (const QString& summary : summaries) {
+        const EdgeGeometrySummary edge = parseEdgeGeometrySummary(summary);
+        if (edge.valid)
+            edges.append(edge);
+    }
+    return edges;
+}
+
+static QString edgeGeometryDebugLine(const EdgeGeometrySummary& edge)
+{
+    return QStringLiteral(
+               "%1 %2->%3 route=%4 lane=%5 len=%6 labelDist=%7 clear=%8 "
+               "bridge=%9 overlaps=%10 labelOverlap=%11 elems=%12 crossings=%13 "
+               "decision=%14")
+        .arg(edge.badge,
+             edge.from,
+             edge.to,
+             edge.routeKind,
+             QString::number(edge.routeLane),
+             QString::number(edge.pathLength),
+             QString::number(edge.labelDistance),
+             edge.nodeClear,
+             edge.bridge,
+             edge.overlapIds.join(QLatin1Char(',')),
+             QString::number(edge.labelOverlapDistance),
+             QString::number(edge.pathElementCount),
+             edge.crossingIds.join(QLatin1Char(',')),
+             edge.routeDecision);
+}
+
+static QString edgeGeometryDebugDump(const QList<EdgeGeometrySummary>& edges,
+                                     const QSet<QString>& badges = {})
+{
+    QStringList lines;
+    for (const EdgeGeometrySummary& edge : edges) {
+        if (!badges.isEmpty() && !badges.contains(edge.badge))
+            continue;
+        lines.append(edgeGeometryDebugLine(edge));
+    }
+    if (lines.isEmpty())
+        return QStringLiteral("(no matching transition edges)");
+    lines.sort(Qt::CaseInsensitive);
+    return lines.join(QLatin1Char('\n'));
+}
+
+static QString edgeGeometryFailureDump(
+    const QList<EdgeGeometrySummary>& edges,
+    const std::function<bool(const EdgeGeometrySummary&)>& predicate)
+{
+    QStringList lines;
+    for (const EdgeGeometrySummary& edge : edges) {
+        if (predicate(edge))
+            lines.append(edgeGeometryDebugLine(edge));
+    }
+    if (lines.isEmpty())
+        return QStringLiteral("(no failing transition edges)");
+    lines.sort(Qt::CaseInsensitive);
+    return lines.join(QLatin1Char('\n'));
 }
 
 static bool hasRel(const QVector<RelationshipToAdd>& rels,
@@ -9318,21 +9460,23 @@ static void runFsmGraphServiceFixture()
     }
     complexPlainCanonicalFills.remove(complexIdleCanonicalFill);
     complexPlainCanonicalStrokes.remove(complexIdleCanonicalStroke);
+    const QList<EdgeGeometrySummary> complexEdges =
+        parseEdgeGeometrySummaries(
+            complexStatePanel.graphEdgeGeometrySummariesForTest());
     bool complexLabelsOffPath = true;
     bool complexEdgesClearNodes = true;
-    int complexLabelChecks = 0;
-    int complexClearChecks = 0;
-    for (const QString& summary :
-         complexStatePanel.graphEdgeGeometrySummariesForTest()) {
-        const QStringList parts = summary.split(QLatin1Char('|'));
-        if (parts.size() < 17 || parts.at(0) != QStringLiteral("transition"))
-            continue;
+    bool complexSpecialRoutesUnbridged = true;
+    for (const EdgeGeometrySummary& edge : complexEdges) {
         complexLabelsOffPath =
-            complexLabelsOffPath && parts.at(14).toInt() >= 16;
+            complexLabelsOffPath && edge.labelDistance >= 16;
         complexEdgesClearNodes =
-            complexEdgesClearNodes && parts.at(15) == QStringLiteral("clear");
-        ++complexLabelChecks;
-        ++complexClearChecks;
+            complexEdgesClearNodes && edge.nodeClear == QStringLiteral("clear");
+        if (edge.routeKind != QStringLiteral("normal")) {
+            complexSpecialRoutesUnbridged =
+                complexSpecialRoutesUnbridged
+                && edge.bridge != QStringLiteral("bridge")
+                && edge.overlapIds.isEmpty();
+        }
     }
     const bool complexAliasNavigation =
         complexStatePanel.triggerGraphNavigationForTest(
@@ -9360,14 +9504,24 @@ static void runFsmGraphServiceFixture()
                    && complexIdleCanonicalFill
                        != *complexPlainCanonicalFills.constBegin(),
                true);
-    expectBool("complex fsm transition labels and paths avoid overlaps",
-               !complexFsmReport.graphs.isEmpty()
-                   && complexLabelChecks >= complexFsmReport.graphs.first()
-                                             .transitionRows.size()
-                   && complexClearChecks >= complexLabelChecks
-                   && complexLabelsOffPath
-                   && complexEdgesClearNodes,
-               true);
+    expectBoolDetails(
+        "complex fsm transition labels and paths avoid overlaps",
+        !complexFsmReport.graphs.isEmpty()
+            && complexEdges.size() >= complexFsmReport.graphs.first()
+                                      .transitionRows.size()
+            && complexLabelsOffPath
+            && complexEdgesClearNodes
+            && complexSpecialRoutesUnbridged,
+        true,
+        edgeGeometryFailureDump(
+            complexEdges,
+            [](const EdgeGeometrySummary& edge) {
+                return edge.labelDistance < 16
+                    || edge.nodeClear != QStringLiteral("clear")
+                    || (edge.routeKind != QStringLiteral("normal")
+                        && (edge.bridge == QStringLiteral("bridge")
+                            || !edge.overlapIds.isEmpty()));
+            }));
     expectBool("complex fsm layout is path centric with lanes",
                complexCanonicalStateXs.size() >= 5
                    && complexCanonicalStateYs.size() >= 2,
@@ -11628,25 +11782,20 @@ static void runRealWorkspaceIncludeFixture()
                 || aliasY > realPhyPassMaxStateY + 220;
         }
     }
+    const QList<EdgeGeometrySummary> realPhyPassEdges =
+        parseEdgeGeometrySummaries(
+            realStatePanel.graphEdgeGeometrySummariesForTest());
     bool realPhyPassLabelsOffPath = true;
     bool realPhyPassPathsClearNodes = true;
     bool sawRealPhyPassOuterRoute = false;
-    int realPhyPassLabelChecks = 0;
-    int realPhyPassClearChecks = 0;
-    for (const QString& summary :
-         realStatePanel.graphEdgeGeometrySummariesForTest()) {
-        const QStringList parts = summary.split(QLatin1Char('|'));
-        if (parts.size() < 17 || parts.at(0) != QStringLiteral("transition"))
-            continue;
+    for (const EdgeGeometrySummary& edge : realPhyPassEdges) {
         realPhyPassLabelsOffPath =
-            realPhyPassLabelsOffPath && parts.at(14).toInt() >= 16;
+            realPhyPassLabelsOffPath && edge.labelDistance >= 16;
         realPhyPassPathsClearNodes =
             realPhyPassPathsClearNodes
-            && parts.at(15) == QStringLiteral("clear");
+            && edge.nodeClear == QStringLiteral("clear");
         sawRealPhyPassOuterRoute = sawRealPhyPassOuterRoute
-            || parts.at(12) == QStringLiteral("outerBackEdge");
-        ++realPhyPassLabelChecks;
-        ++realPhyPassClearChecks;
+            || edge.routeKind == QStringLiteral("outerBackEdge");
     }
     expectBool("real workspace fsm graph chl_ctrl layout spreads states",
                realPhyPassStateXs.size() >= 4
@@ -11673,13 +11822,21 @@ static void runRealWorkspaceIncludeFixture()
                 || (sawRealPhyPassAliasCanonicalDetail
                     && !sawRealPhyPassFarAlias)),
                true);
-    expectBool("real workspace phy_pass_thrg edges route outside cleanly",
-               realPhyPassLabelChecks == realStatePanel.graphEdgeItemCountForTest()
-                   && realPhyPassClearChecks == realPhyPassLabelChecks
-                   && realPhyPassLabelsOffPath
-                   && realPhyPassPathsClearNodes
-                   && sawRealPhyPassOuterRoute,
-               true);
+    expectBoolDetails(
+        "real workspace phy_pass_thrg edges route outside cleanly",
+        realPhyPassEdges.size() == realStatePanel.graphEdgeItemCountForTest()
+            && realPhyPassLabelsOffPath
+            && realPhyPassPathsClearNodes
+            && sawRealPhyPassOuterRoute,
+        true,
+        sawRealPhyPassOuterRoute
+            ? edgeGeometryFailureDump(
+                  realPhyPassEdges,
+                  [](const EdgeGeometrySummary& edge) {
+                      return edge.labelDistance < 16
+                          || edge.nodeClear != QStringLiteral("clear");
+                  })
+            : edgeGeometryDebugDump(realPhyPassEdges));
 
     QWidget realPhyCfgPanelHost;
     RtlInsightsPanelCoordinator realPhyCfgPanel(&realPhyCfgPanelHost);
@@ -11689,6 +11846,9 @@ static void runRealWorkspaceIncludeFixture()
         QStringLiteral("phy_cfg_ns"));
     const QString realPhyCfgSummaries =
         realPhyCfgPanel.graphElementSummariesForTest().join(QLatin1Char('\n'));
+    const QList<EdgeGeometrySummary> realPhyCfgEdges =
+        parseEdgeGeometrySummaries(
+            realPhyCfgPanel.graphEdgeGeometrySummariesForTest());
     bool realPhyCfgLabelsOffPath = true;
     bool realPhyCfgPathsClearNodes = true;
     bool sawRealPhyCfgOuterRoute = false;
@@ -11697,56 +11857,41 @@ static void runRealWorkspaceIncludeFixture()
     bool realPhyCfgC17AvoidsC7 = false;
     bool realPhyCfgC7AvoidsC17 = false;
     bool sawRealPhyCfgC18Direct = false;
-    int realPhyCfgLabelChecks = 0;
-    int realPhyCfgClearChecks = 0;
     const QString realPhyCfgCanvasText =
         realPhyCfgPanel.graphTextItemsForTest().join(QLatin1Char('\n'));
-    for (const QString& summary :
-         realPhyCfgPanel.graphEdgeGeometrySummariesForTest()) {
-        const QStringList parts = summary.split(QLatin1Char('|'));
-        if (parts.size() < 17 || parts.at(0) != QStringLiteral("transition"))
-            continue;
+    for (const EdgeGeometrySummary& edge : realPhyCfgEdges) {
         realPhyCfgLabelsOffPath =
-            realPhyCfgLabelsOffPath && parts.at(14).toInt() >= 16;
+            realPhyCfgLabelsOffPath && edge.labelDistance >= 16;
         realPhyCfgPathsClearNodes =
-            realPhyCfgPathsClearNodes && parts.at(15) == QStringLiteral("clear");
+            realPhyCfgPathsClearNodes
+            && edge.nodeClear == QStringLiteral("clear");
         sawRealPhyCfgOuterRoute = sawRealPhyCfgOuterRoute
-            || parts.at(12) == QStringLiteral("outerBackEdge");
-        if (parts.size() >= 19) {
-            const QString badge = parts.at(3);
-            const QString crossingIds = parts.at(18);
+            || edge.routeKind == QStringLiteral("outerBackEdge");
+        {
+            const QString badge = edge.badge;
+            const QStringList crossingIds = edge.crossingIds;
             realPhyCfgC1AvoidsC9 =
                 realPhyCfgC1AvoidsC9
                 || (badge == QStringLiteral("C1")
-                    && !crossingIds.split(QLatin1Char(','),
-                                          Qt::SkipEmptyParts)
-                            .contains(QStringLiteral("C9")));
+                    && !crossingIds.contains(QStringLiteral("C9")));
             realPhyCfgC9AvoidsC1 =
                 realPhyCfgC9AvoidsC1
                 || (badge == QStringLiteral("C9")
-                    && !crossingIds.split(QLatin1Char(','),
-                                          Qt::SkipEmptyParts)
-                            .contains(QStringLiteral("C1")));
+                    && !crossingIds.contains(QStringLiteral("C1")));
             realPhyCfgC17AvoidsC7 =
                 realPhyCfgC17AvoidsC7
                 || (badge == QStringLiteral("C17")
-                    && !crossingIds.split(QLatin1Char(','),
-                                          Qt::SkipEmptyParts)
-                            .contains(QStringLiteral("C7")));
+                    && !crossingIds.contains(QStringLiteral("C7")));
             realPhyCfgC7AvoidsC17 =
                 realPhyCfgC7AvoidsC17
                 || (badge == QStringLiteral("C7")
-                    && !crossingIds.split(QLatin1Char(','),
-                                          Qt::SkipEmptyParts)
-                            .contains(QStringLiteral("C17")));
+                    && !crossingIds.contains(QStringLiteral("C17")));
             sawRealPhyCfgC18Direct =
                 sawRealPhyCfgC18Direct
                 || (badge == QStringLiteral("C18")
-                    && parts.at(8) == QStringLiteral("line")
-                    && parts.at(12) == QStringLiteral("normal"));
+                    && edge.curve == QStringLiteral("line")
+                    && edge.routeKind == QStringLiteral("normal"));
         }
-        ++realPhyCfgLabelChecks;
-        ++realPhyCfgClearChecks;
     }
     expectBool("real workspace phy_cfg canvas omits duplicated title caption",
                !realPhyCfgCanvasText.contains(
@@ -11761,13 +11906,21 @@ static void runRealWorkspaceIncludeFixture()
                    && realPhyCfgSummaries.contains(
                        QStringLiteral("S_ALL_LAYER_INJ_SHIELD")),
                true);
-    expectBool("real workspace phy_cfg edges route outside cleanly",
-               realPhyCfgLabelChecks == realPhyCfgPanel.graphEdgeItemCountForTest()
-                   && realPhyCfgClearChecks == realPhyCfgLabelChecks
-                   && realPhyCfgLabelsOffPath
-                   && realPhyCfgPathsClearNodes
-                   && sawRealPhyCfgOuterRoute,
-               true);
+    expectBoolDetails(
+        "real workspace phy_cfg edges route outside cleanly",
+        realPhyCfgEdges.size() == realPhyCfgPanel.graphEdgeItemCountForTest()
+            && realPhyCfgLabelsOffPath
+            && realPhyCfgPathsClearNodes
+            && sawRealPhyCfgOuterRoute,
+        true,
+        sawRealPhyCfgOuterRoute
+            ? edgeGeometryFailureDump(
+                  realPhyCfgEdges,
+                  [](const EdgeGeometrySummary& edge) {
+                      return edge.labelDistance < 16
+                          || edge.nodeClear != QStringLiteral("clear");
+                  })
+            : edgeGeometryDebugDump(realPhyCfgEdges));
     expectBool("real workspace phy_cfg C1 C9 avoid sampled crossing",
                realPhyCfgC1AvoidsC9 && realPhyCfgC9AvoidsC1,
                true);
@@ -11777,6 +11930,121 @@ static void runRealWorkspaceIncludeFixture()
     expectBool("real workspace phy_cfg C18 stays direct normal line",
                sawRealPhyCfgC18Direct,
                true);
+
+    QWidget realElecCfgPanelHost;
+    RtlInsightsPanelCoordinator realElecCfgPanel(&realElecCfgPanelHost);
+    realElecCfgPanel.showStateTransitionGraphForSignal(
+        chlCtrlPath,
+        QStringLiteral("chl_ctrl"),
+        QStringLiteral("elec_cfg_ns"));
+    bool sawRealElecCfgC4Local = false;
+    bool sawRealElecCfgC14Direct = false;
+    bool sawRealElecCfgC5C6OverlapMetadata = false;
+    bool sawRealElecCfgC5C6Bridge = false;
+    bool realElecCfgOverlapLabelsClear = true;
+    bool realElecCfgTransitionLabelsPickTransition = true;
+    int realElecCfgPickedOverlapLabels = 0;
+    const QList<EdgeGeometrySummary> realElecCfgEdges =
+        parseEdgeGeometrySummaries(
+            realElecCfgPanel.graphEdgeGeometrySummariesForTest());
+    const QSet<QString> realElecCfgTargetBadges{
+        QStringLiteral("C4"),
+        QStringLiteral("C5"),
+        QStringLiteral("C6"),
+        QStringLiteral("C14")};
+    for (const EdgeGeometrySummary& edge : realElecCfgEdges) {
+        const QString badge = edge.badge;
+        sawRealElecCfgC4Local =
+            sawRealElecCfgC4Local
+            || (badge == QStringLiteral("C4")
+                && edge.from == QStringLiteral("S_ALL_LAYER_INJ_SHIELD")
+                && edge.to
+                    == QStringLiteral("S_PHY_ELEC_IN_SWITCH_TO_PHY")
+                && edge.routeKind == QStringLiteral("normal")
+                && edge.pathLength > 0
+                && edge.pathLength < 650
+                && edge.nodeClear == QStringLiteral("clear"));
+        sawRealElecCfgC14Direct =
+            sawRealElecCfgC14Direct
+            || (badge == QStringLiteral("C14")
+                && edge.from == QStringLiteral("S_PRE_DEASSERT_DONE")
+                && edge.to == QStringLiteral("S_IDLE")
+                && edge.curve == QStringLiteral("line")
+                && edge.routeKind == QStringLiteral("normal")
+                && edge.pathElementCount == 2
+                && edge.nodeClear == QStringLiteral("clear"));
+        sawRealElecCfgC5C6OverlapMetadata =
+            sawRealElecCfgC5C6OverlapMetadata
+            || (badge == QStringLiteral("C5")
+                && edge.overlapIds.contains(QStringLiteral("C6")))
+            || (badge == QStringLiteral("C6")
+                && edge.overlapIds.contains(QStringLiteral("C5")));
+        sawRealElecCfgC5C6Bridge =
+            sawRealElecCfgC5C6Bridge
+            || ((badge == QStringLiteral("C5")
+                 || badge == QStringLiteral("C6"))
+                && edge.bridge == QStringLiteral("bridge"));
+        if ((badge == QStringLiteral("C5")
+             || badge == QStringLiteral("C6"))
+            && !edge.overlapIds.isEmpty()) {
+            realElecCfgOverlapLabelsClear =
+                realElecCfgOverlapLabelsClear
+                && edge.labelDistance >= 20
+                && (edge.labelOverlapDistance < 0
+                    || edge.labelOverlapDistance >= 20);
+        }
+        if (badge == QStringLiteral("C5")
+            || badge == QStringLiteral("C6")) {
+            const QString picked =
+                realElecCfgPanel.graphItemAtScenePointSummaryForTest(
+                    edge.labelX,
+                    edge.labelY);
+            const bool selected =
+                realElecCfgPanel.selectGraphItemAtScenePointForTest(
+                    edge.labelX,
+                    edge.labelY);
+            const QString inspector =
+                realElecCfgPanel.graphInspectorRowsForTest().join(
+                    QLatin1Char('\n'));
+            realElecCfgTransitionLabelsPickTransition =
+                realElecCfgTransitionLabelsPickTransition
+                && edge.hitPriority >= 200
+                && edge.labelHit == QStringLiteral("label-hit")
+                && picked.startsWith(QStringLiteral("transition|"))
+                && picked.endsWith(QStringLiteral("|%1").arg(badge))
+                && selected
+                && inspector.contains(QStringLiteral("Kind=transition"))
+                && inspector.contains(QStringLiteral("ID=%1").arg(badge));
+            ++realElecCfgPickedOverlapLabels;
+        }
+    }
+    expectBoolDetails("real workspace elec_cfg C4 uses local route",
+                      sawRealElecCfgC4Local,
+                      true,
+                      edgeGeometryDebugDump(realElecCfgEdges,
+                                            realElecCfgTargetBadges));
+    expectBoolDetails("real workspace elec_cfg C14 stays direct normal line",
+                      sawRealElecCfgC14Direct,
+                      true,
+                      edgeGeometryDebugDump(realElecCfgEdges,
+                                            realElecCfgTargetBadges));
+    expectBoolDetails(
+        "real workspace elec_cfg C5 C6 expose overlap bridge metadata",
+        sawRealElecCfgC5C6OverlapMetadata && sawRealElecCfgC5C6Bridge,
+        true,
+        edgeGeometryDebugDump(realElecCfgEdges, realElecCfgTargetBadges));
+    expectBoolDetails("real workspace elec_cfg overlap labels stay readable",
+                      sawRealElecCfgC5C6OverlapMetadata
+                          && realElecCfgOverlapLabelsClear,
+                      true,
+                      edgeGeometryDebugDump(realElecCfgEdges,
+                                            realElecCfgTargetBadges));
+    expectBoolDetails("real workspace elec_cfg label hit selects transition",
+                      realElecCfgPickedOverlapLabels >= 2
+                          && realElecCfgTransitionLabelsPickTransition,
+                      true,
+                      edgeGeometryDebugDump(realElecCfgEdges,
+                                            realElecCfgTargetBadges));
     StateTransitionGraphService::getInstance()->setSemanticIndex(
         SemanticIndex::getInstance());
 

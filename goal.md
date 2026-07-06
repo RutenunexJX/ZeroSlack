@@ -91,6 +91,19 @@ Current baseline highlights:
   now exposes sampled edge crossings, and the real `chl_ctrl.sv` `phy_cfg_ns`
   regression verifies C1/C9 and C17/C7 avoid sampled crossings while C18 is a
   direct normal line. Verification so far: Debug `relationship_test` passed.
+- Current execution session FSM interaction/routing follow-up is complete:
+  transition edge/path/label hit metadata now supports selecting the transition
+  ahead of route/background graphics, C14 is covered as a direct normal line in
+  real `chl_ctrl.sv` `elec_cfg_ns`, and bridge/overlap metadata is generated
+  by geometry-only route proximity/shared-segment checks without product code
+  hardcoding condition numbers. Final verification updated `LastTest.log` from
+  `2026-07-06 13:31:14.726` to `2026-07-06 13:47:00.774`; `relationship_test`
+  passed with `942 checks, 0 failed`, and `completion_test`, `gui_smoke_test`,
+  and `insight_visual_style_test` also passed. Covered real workspace checks
+  include `phy_pass_thrg` outside-clean routing, `phy_cfg_ns` outside-clean
+  routing and crossing checks, `elec_cfg_ns` C4 local routing, C14 direct
+  routing, C5/C6 bridge metadata/readable labels, and label hit selection. The
+  route geometry checks include per-edge routeDecision diagnostics.
 - Current execution session Phase B is complete in the working tree:
   Workspace Session State v1 writes and reads workspace-root `.zs` JSON for
   workspace configuration, relative workspace tabs with cursor/scroll/active

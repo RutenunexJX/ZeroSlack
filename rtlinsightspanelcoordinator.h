@@ -2,6 +2,7 @@
 #define RTLINSIGHTSPANELCOORDINATOR_H
 
 #include <QDockWidget>
+#include <QPointF>
 #include <QRectF>
 #include <QString>
 #include <QStringList>
@@ -86,6 +87,9 @@ public:
     bool selectGraphItemForTest(const QString& elementKind,
                                 const QString& primaryText,
                                 const QString& secondaryText = QString());
+    bool selectGraphItemAtScenePointForTest(qreal sceneX, qreal sceneY);
+    QString graphItemAtScenePointSummaryForTest(qreal sceneX,
+                                                qreal sceneY) const;
     bool selectGraphTableRowForTest(const QString& primaryText,
                                     const QString& secondaryText = QString());
     int graphElementLineForTest(const QString& elementKind,
@@ -167,6 +171,8 @@ private:
     void clearGraphDetails();
     void renderGenericGraphInspector(const QString& title,
                                      const QStringList& rows);
+    bool selectGraphItemForInspector(QGraphicsItem* item);
+    bool selectGraphItemAtScenePoint(const QPointF& scenePoint);
     void renderModuleBlockInspector(const ModuleBlockDiagramReport& report,
                                     const ModuleBlockDiagramNode& node);
     void populateModuleBlockInstancesTable(

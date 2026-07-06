@@ -75,6 +75,20 @@ into an analyzer.
   badge-level sampled crossings for C1/C9 and C17/C7 plus direct normal routing
   for C18. Remaining FSM risk is still layout-quality edge cases outside the
   focused real fixture rather than a globally optimal graph layout.
+- Current FSM interaction/routing follow-up is partial: transition labels and
+  edges now expose selectable high-priority hit metadata, C14 direct normal
+  routing is covered for real `chl_ctrl.sv` `elec_cfg_ns`, and overlap bridge
+  metadata/label offsets are produced from geometry-only route overlap checks.
+  Final verification updated `LastTest.log` from `2026-07-06 13:31:14.726` to
+  `2026-07-06 13:47:00.774`; `relationship_test` passed with `942 checks, 0
+  failed`, and `completion_test`, `gui_smoke_test`, and
+  `insight_visual_style_test` also passed. Covered real workspace checks
+  include `phy_pass_thrg` outside-clean routing, `phy_cfg_ns` outside-clean
+  routing and crossing checks, `elec_cfg_ns` C4 local routing, C14 direct
+  routing, C5/C6 bridge metadata/readable labels, and label hit selection. The
+  structured route geometry helper prints routeDecision fields with
+  initial/local/direct lane, length, interior clear, summary clear, and final
+  decision.
 - Current Workspace Session State v1 follow-up: `.zs` versioned JSON save/load
   is implemented through `WorkspaceSessionStateService`, explicit Global
   Control commands `ow s save` / `ow s restore` / `ow s clean`, TabManager
