@@ -145,6 +145,7 @@ set(ZEROSLACK_CORE_SOURCES
     foldblockshelfpanel.cpp
     foldshelfpersistenceservice.cpp
     foldshelfrestoreservice.cpp
+    fsmgraphlayout.cpp
     fsmgraphservice.cpp
     formattersettings.cpp
     formatterservice.cpp
@@ -336,6 +337,7 @@ set(ZEROSLACK_CORE_SOURCES
     foldblockshelfpanel.h
     foldshelfpersistenceservice.h
     foldshelfrestoreservice.h
+    fsmgraphlayout.h
     fsmgraphservice.h
     formattersettings.h
     formatterservice.h
@@ -518,6 +520,13 @@ if(BUILD_TESTING)
     add_executable(relationship_test test_sv/relationship_test.cpp)
     target_link_libraries(relationship_test PRIVATE zeroslack_core)
 
+    add_executable(fsm_ui_snapshot_test test_sv/fsm_ui_snapshot_test.cpp)
+    set_target_properties(fsm_ui_snapshot_test PROPERTIES
+        AUTOMOC OFF
+        AUTOUIC OFF
+    )
+    target_link_libraries(fsm_ui_snapshot_test PRIVATE zeroslack_core)
+
     add_executable(gui_smoke_test test_sv/gui_smoke_test.cpp)
     target_link_libraries(gui_smoke_test PRIVATE zeroslack_core Qt6::Test)
 
@@ -569,6 +578,14 @@ if(BUILD_TESTING)
             "QT_QPA_PLATFORM=offscreen"
             "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
             $<TARGET_FILE:relationship_test>
+    )
+    add_test(NAME fsm_ui_snapshot_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}"
+            "QT_QPA_PLATFORM=offscreen"
+            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
+            $<TARGET_FILE:fsm_ui_snapshot_test>
+            ${CMAKE_CURRENT_SOURCE_DIR}
     )
     add_test(NAME gui_smoke_test
         COMMAND ${CMAKE_COMMAND} -E env

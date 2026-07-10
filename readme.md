@@ -203,10 +203,51 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
   navigation for recognized assignments. The current toolbar and summary copy
   label these reports as preview-only / symbolic / no-testbench output; the
   panel does not run Vivado, import waveform databases, or simulate RTL.
-- RTL Insights `FSM Graph` renders `FsmGraphService` reports as an interactive
-  graph, not a tree table. FSM candidates must have states and parsed
+- RTL Insights `FSM Graph` renders from `FsmGraphService` analysis/report data
+  through the new pure `fsmgraphlayout` Sugiyama layout module. The layout
+  removes self-loops from ranking, reverses DFS back edges for acyclic ranking,
+  assigns longest-path layers, applies barycenter ordering, inserts dummy
+  vertices for long edges, and returns node rectangles, edge polylines, arrow
+  angles, and compact `C#` label anchors. The coordinator only maps that
+  geometry to `QGraphicsScene` items and keeps full condition text in the
+  transition table/inspector. FSM candidates must still have states and parsed
   case-derived transitions, so ordinary enum/register declarations such as
   non-case bookkeeping registers are not promoted to FSM graphs.
+  Latest compacting repair keeps this architecture and adds adaptive node
+  widths, smaller default spacing, subtitle-free alias nodes, transpose sorting,
+  layer-channel ordering, and a bounded fallback-alias pass for edges that still
+  cross multiple independent edges. Back edges spanning at least two ranks and
+  forward edges spanning at least three ranks render to a dashed alias node
+  placed next to the source instead of a long return channel; alias nodes carry
+  canonical ids and share canonical state color/selection. Non-self edges use
+  bottom-to-top ports in top-down mode, rounded orthogonal segments,
+  grid-snapped columns, fixed layer height, and labels attached near an owned
+  vertical segment. `relationship_test` now rejects over-budget rendered span,
+  invalid aliases, wrong ports, distant labels, collinear edge overlap over
+  2 px, label/edge intersection, shared channel-track overlap, cropped node
+  title/detail line boxes, and independent-edge crossings above 2. Current
+  snapshot metrics are 0 rendered crossings for `elec_cfg_ns`, `phy_cfg_ns`,
+  `phy_pass_thrg_cfg_ns`, and `vendor_ip_edma_ctx`; new scene areas are 0.556,
+  0.626, 0.538, and 0.518 of the old fixed-width baseline, with no fallback
+  aliases triggered. Verification passed for `relationship_test`,
+  `fsm_ui_snapshot_test`, `gui_smoke_test`, `insight_visual_style_test`, and
+  `completion_test`; `git diff --check` also passed.
+  FSM scene items now provide linked hover feedback: an edge or `C#` label
+  highlights the complete transition and exposes a wrapped
+  `C#: conditionDisplayName` tooltip; hovering a canonical or alias state
+  highlights the canonical node, every alias, and all incident transitions.
+  Selected visuals remain higher priority and survive hover enter/leave.
+  `relationship_test` also runs 100 deterministic generated FSMs (seeds
+  1327217885 through 2123353960, 5-50 states, 1-4 outgoing transitions,
+  back edges, self-loops, reciprocal pairs, long names, and unreachable
+  components) through the complete layout invariant suite. The fuzz run found
+  and fixed control-polygon/Bezier collision mismatches, reciprocal-curve
+  obstacle clearance, channel-track collisions, weak-component packing, and
+  self-loop/reciprocal label placement; the final 100-graph run passes in
+  5.874 seconds without seed exceptions. `renderedCrossingCount` and the test
+  budget now sample reciprocal curves as rendered, so the reported zero for
+  `phy_pass_thrg_cfg_ns` includes arc-to-track crossings rather than excluding
+  curved edges.
 - State Transition Graph entry gating exists for editor source-symbol actions:
   `StateTransitionTriggerService` now asks structural FSM discovery for the
   selected symbol's role. A discovered next-state role can open the graph, a
@@ -214,26 +255,11 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
   such as `ns`, `next_state`, `cs`, or `current_state` are examples/display
   hints rather than gates. `StateTransitionGraphService` shapes accepted
   requests into selected next-state graph reports by filtering existing
-  `FsmGraphService` data, and RTL Insights renders those reports as a v2
-  interactive graph on the shared canvas. State/register/signal nodes and
-  transition edges are selectable/search-highlightable, the top toolbar exposes
-  signal/current/next selectors plus reset/error/unreachable visibility
-  toggles, the right inspector shows selected graph metadata, the transition
-  table lists ID/from/to/condition/source rows, and double-clicking a graph
-  element follows its carried source link. Transition edges label conditions
-  with compact per-graph IDs such as `C0`/`C1`; full condition text stays in
-  the table, tooltip, and inspector details. Complex state graphs use a compact
-  orthogonal layout with the main flow left-to-right, branch lanes above/below,
-  tight self/back-edge routing, and limited dashed alias state nodes only for
-  long awkward returns. Alias nodes remain visual duplicates only: table/stat
-  counts stay on canonical states, and alias labels/details point back to the
-  canonical state.
-- Latest State Transition Graph polish removes the duplicated canvas title and
-  current/next caption from FSM graph bodies; the toolbar/table/inspector now
-  carry that context. The real `chl_ctrl.sv` `phy_cfg_ns` regression also
-  keeps the graph tighter while verifying C1/C9 and C17/C7 do not produce
-  sampled transition crossings, C18 remains a direct normal line, labels stay
-  off-path, and transition paths stay clear of state nodes.
+  `FsmGraphService` data. RTL Insights presents those reports through the same
+  Sugiyama FSM layout renderer plus signal/current/next controls and the
+  transition table. The transition table lists compact IDs, from/to states,
+  full condition text, assignment target, source line, and dead/end-state
+  notes.
 - Module Block Diagram renders in RTL Insights from the service-owned
   `ModuleBlockDiagramReport`. The current UI entry points are the RTL Insights
   `Module Block Diagram` action for the active module and the editor source
@@ -463,17 +489,15 @@ engineering configuration / diagnostics lane.
   asks that service before enabling or dispatching `Show State Transition Graph`.
   `StateTransitionGraphService` then owns accepted-request report shaping and
   exact next-state graph filtering on top of `FsmGraphService`. `EditorCoordinator`
-  and `SemanticPanelRefreshCoordinator` only route accepted requests; RTL
-  Insights consumes the service report, renders an interactive graph scene,
-  and keeps navigation wired through source links carried by graph elements.
-  Complex layouts are path-centric with branch lanes and limited dashed alias
-  state nodes for long back/cross-lane transitions; aliases never add canonical
-  FSM states or transition-table rows.
+  and `SemanticPanelRefreshCoordinator` only route accepted requests. RTL
+  Insights consumes the service report for controls, transition-table data, and
+  the shared Sugiyama FSM canvas renderer.
 - FSM Graph baseline: `FsmGraphService` owns candidate selection and transition
   extraction. A report graph requires both state values and parsed case-derived
-  transition evidence before the UI renders it. `RtlInsightsPanelCoordinator`
-  consumes that report as selectable graph nodes/edges and does not scan
-  workspace files or run Slang.
+  transition evidence before the UI exposes it. `RtlInsightsPanelCoordinator`
+  consumes that report for the FSM transition table and maps
+  `fsmgraphlayout` geometry to scene items; it does not scan workspace files or
+  run Slang.
 - Module Block Diagram baseline: `ModuleBlockDiagramService` owns selected
   module-only containment report shaping from indexed symbols plus
   `INSTANTIATES` relationships. Interface declarations, interface instances,
@@ -709,42 +733,30 @@ Do not add unlisted long-term goals without explicit user approval.
 - Avoid launching GUI smoke executables in this environment when they are known
   to produce external Windows error dialogs; compile/link targets instead unless
   the user explicitly asks to run them.
-- Latest FSM readability follow-up: FSM/State Transition Graph keeps structural
-  FSM recognition while rendering only state nodes and transition edges in the
-  graph body. `C#` edge labels are dark, bold, and unboxed; full conditions stay
-  in the table/inspector. Self-loops render as compact curved loops with angled
-  arrows, initial fit uses state-body bounds instead of title/scene padding,
-  alias states share their canonical state's color while staying dashed, and
-  pure self-loop dead/end states get danger styling plus inspector/table notes.
-  Verification in `build`: targets and CTest passed for `completion_test`,
-  `relationship_test`, `gui_smoke_test`, and `insight_visual_style_test`.
-- Latest FSM transition routing follow-up: ordinary non-alias canonical states
-  now share one neutral graph-node color, while canonical states that receive
-  alias/duplicate nodes use a stable accent color shared with their aliases;
-  dead/end states still use danger styling. FSM transition routes now carry
-  route kind, lane, explicit label point, and terminal tangent metadata so
-  self-loops, mutual upper/lower arcs, long/cross-lane outside routes, labels,
-  and arrows are testable. `relationship_test` covers off-path `C#` labels,
-  node-avoiding path samples, mutual pair spacing, real `chl_ctrl.sv`
-  `phy_pass_thrg_cfg_ns` / `phy_cfg_ns` routing, and alias/dead color rules.
-  Debug verification passed: build and CTest for `completion_test`,
-  `relationship_test`, `gui_smoke_test`, and `insight_visual_style_test`, plus
-  `git diff --check`.
-- Latest FSM graph interaction follow-up is partial in the working tree:
-  transition edge/path/label hit data now has higher selectable priority than
-  route/background graphics, clear direct normal routing is covered for real
-  `chl_ctrl.sv` `elec_cfg_ns` C14, and overlap bridge metadata/label offsets
-  are generated from geometry-only shared/near-path checks rather than
-  condition-number special cases. Final verification updated `LastTest.log`
-  from `2026-07-06 13:31:14.726` to `2026-07-06 13:47:00.774`;
-  `relationship_test` passed with `942 checks, 0 failed`, and
-  `completion_test`, `gui_smoke_test`, and `insight_visual_style_test` also
-  passed. Covered real workspace checks include `phy_pass_thrg` outside-clean
-  routing, `phy_cfg_ns` outside-clean routing and crossing checks,
-  `elec_cfg_ns` C4 local routing, C14 direct routing, C5/C6 bridge
-  metadata/readable labels, and label hit selection. The route geometry checks
-  parse edge summaries into named fields and include routeDecision diagnostics
-  for initial/local/direct candidates and final route choice.
+- Latest FSM drawing rewrite: RTL Insights renders FSM and State Transition
+  Graph drawings again through `fsmgraphlayout`, a pure Sugiyama layout module.
+  The deleted `fsmdiagram*` path remains removed; no coordinator-local layout
+  or router logic was restored. The `fsm_ui_snapshot_test` target generates
+  `artifacts/ui/fsm/fsm_elec_cfg_ns.png`,
+  `artifacts/ui/fsm/fsm_phy_cfg_ns.png`,
+  `artifacts/ui/fsm/fsm_phy_pass_thrg_cfg_ns.png`,
+  `artifacts/ui/fsm/fsm_selected_transition.png`, and
+  `artifacts/ui/fsm/fsm_vendor_ip_edma_ctx.png` for manual review. Current
+  invariant tests reject long rendered spans after alias insertion, invalid
+  alias/canonical metadata, wrong top-down ports, labels detached from their
+  edge, node crossings, node/label and label/label overlap, label/edge
+  intersections, collinear edge overlap longer than 2 px, shared horizontal
+  channel-track overlap, cropped node text line boxes, non-increasing forward
+  ranks, and independent-edge crossings above 2. The latest snapshot run
+  measured 0 crossings for all four review FSMs, reduced scene area to
+  48.3%-60.9% of the fixed-width baseline, and did not trigger fallback aliases.
+  Verification passed for the five focused targets:
+  `relationship_test`, `fsm_ui_snapshot_test`, `gui_smoke_test`,
+  `insight_visual_style_test`, and `completion_test`; `git diff --check`
+  passed.
+  Remaining visual risk: dense same-source fan-out can still occupy a wide top
+  channel, but current screenshots show no clipping, detached labels, or
+  geometry overlap.
 - Latest Module Block Diagram real-usability pass: Debug targets
   `completion_test`, `relationship_test`, `gui_smoke_test`,
   `full_feature_audit_test`, and `jump_test` compile/link; focused CTest runs
@@ -988,3 +1000,22 @@ Do not add unlisted long-term goals without explicit user approval.
   "^jump_test$" --output-on-failure`; `ctest -R "^gui_smoke_test$"
   --output-on-failure`; `ctest -R "^full_feature_audit_test$"
   --output-on-failure`.
+- Latest FSM drawing rewrite: `fsmgraphlayout.h/.cpp` now owns pure Sugiyama
+  layout data, and `test_sv/fsm_ui_snapshot_test.cpp` is restored as a new
+  snapshot harness for the rewritten renderer. The old coordinator-local FSM
+  drawing path is not restored; FSM/State Transition Graph surfaces render from
+  service-backed reports and keep service-backed transition tables. FSM
+  analysis, structural next-state gating, state/transition extraction,
+  condition/source metadata, and dead/end-state table notes remain available.
+  Current repair adds dashed canonical-linked alias nodes for long return/long
+  forward edges, top-down bottom-to-top orthogonal ports, rounded path drawing,
+  grid-snapped columns, fixed layer heights, edge-attached `C#` labels,
+  adaptive text-measured node widths, compact spacing, shorter alias nodes, and
+  transpose/channel-ordering passes. The snapshot harness reports 0 rendered
+  crossings for `elec_cfg_ns`, `phy_cfg_ns`, `phy_pass_thrg_cfg_ns`, and
+  `vendor_ip_edma_ctx`; scene areas are 0.556, 0.626, 0.538, and 0.518 of the
+  previous fixed-width baseline, with no fallback aliases required.
+  The harness additionally writes `fsm_hover_state.png` and
+  `fsm_hover_edge_tooltip.png`; panel assertions cover canonical/alias/incident
+  edge propagation, hover restoration, selected-state priority, and tooltip
+  text sourced from the layout edge condition.

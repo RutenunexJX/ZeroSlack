@@ -71,7 +71,10 @@ public:
     QStringList graphTextItemsForTest() const;
     QStringList graphElementSummariesForTest() const;
     QStringList graphElementVisualSummariesForTest() const;
-    QStringList graphEdgeGeometrySummariesForTest() const;
+    QStringList graphHoveredElementSummariesForTest() const;
+    QString graphItemToolTipForTest(const QString& elementKind,
+                                    const QString& primaryText,
+                                    const QString& secondaryText = QString()) const;
     QRectF graphLastFitRectForTest() const;
     qreal graphCurrentZoomForTest() const;
     bool graphNodeRectsOverlapForTest() const;
@@ -163,6 +166,9 @@ private:
         const StateTransitionGraphReport& report);
     void renderFsmGraphScene(const FsmGraphReport& report,
                              const QString& title);
+    void renderFsmGraphLayoutScene(const FsmGraph& graph,
+                                   const QString& title,
+                                   const QString& mode);
     void renderModuleBlockDiagramScene(
         const ModuleBlockDiagramReport& report);
     void renderGraphUnavailable(const QString& title,

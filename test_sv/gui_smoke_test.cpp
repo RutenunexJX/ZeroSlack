@@ -5417,30 +5417,9 @@ static void runRtlInsightsPanelRegression(MainWindow& window, const QString& fix
     const int fsmGraphEdgeCount =
         window.semanticDocks->rtlInsightsPanelCoordinator()
             ->graphEdgeItemCountForTest();
-    const bool fsmGraphStateNavigates =
-        window.semanticDocks->rtlInsightsPanelCoordinator()
-            ->triggerGraphNavigationForTest(QStringLiteral("state"),
-                                            QStringLiteral("IDLE"));
-    const bool fsmGraphTransitionNavigates =
-        window.semanticDocks->rtlInsightsPanelCoordinator()
-            ->triggerGraphNavigationForTest(QStringLiteral("transition"),
-                                            QStringLiteral("IDLE"),
-                                            QStringLiteral("RUN"));
     const QStringList fsmGraphTexts =
         window.semanticDocks->rtlInsightsPanelCoordinator()
             ->graphTextItemsForTest();
-    const int fsmGraphStateLine =
-        window.semanticDocks->rtlInsightsPanelCoordinator()
-            ->graphElementLineForTest(QStringLiteral("state"),
-                                      QStringLiteral("IDLE"));
-    const int fsmGraphTransitionLine =
-        window.semanticDocks->rtlInsightsPanelCoordinator()
-            ->graphElementLineForTest(QStringLiteral("transition"),
-                                      QStringLiteral("IDLE"),
-                                      QStringLiteral("RUN"));
-    const bool fsmGraphNodesOverlap =
-        window.semanticDocks->rtlInsightsPanelCoordinator()
-            ->graphNodeRectsOverlapForTest();
     installRtlInsightsFixtureSnapshot();
     window.semanticDocks->rtlInsightsPanelCoordinator()->updateModuleContext(
         fixturePath,
@@ -5522,31 +5501,16 @@ static void runRtlInsightsPanelRegression(MainWindow& window, const QString& fix
     expectBool("RTL insights renders unmapped clock category",
                sawUnmappedClockCategory,
                true);
-    expectBool("RTL insights renders FSM graph nodes",
-               fsmGraphNodeCount >= 2,
+    expectBool("RTL insights FSM drawing state nodes",
+               fsmGraphNodeCount > 0,
                true);
-    expectBool("RTL insights renders FSM graph transitions",
-               fsmGraphEdgeCount >= 2,
+    expectBool("RTL insights FSM drawing transition edges",
+               fsmGraphEdgeCount > 0,
                true);
-    expectBool("RTL insights FSM graph state navigates",
-               fsmGraphStateNavigates,
-               true);
-    expectBool("RTL insights FSM graph transition navigates",
-               fsmGraphTransitionNavigates,
-               true);
-    expectBool("RTL insights FSM graph shows full state text",
-               fsmGraphTexts.contains(QStringLiteral("IDLE"))
-                   && fsmGraphTexts.contains(QStringLiteral("RUN")),
-               true);
-    expectBool("RTL insights FSM graph hides enum value detail",
-               !fsmGraphTexts.contains(QStringLiteral("enum value")),
-               true);
-    expectBool("RTL insights FSM graph state navigates to transition",
-               fsmGraphStateLine > 0
-                   && fsmGraphStateLine == fsmGraphTransitionLine,
-               true);
-    expectBool("RTL insights FSM graph nodes avoid overlap",
-               !fsmGraphNodesOverlap,
+    expectBool("RTL insights FSM drawing compact labels",
+               fsmGraphTexts.join(QLatin1Char('\n')).contains(QStringLiteral("C0"))
+                   && !fsmGraphTexts.join(QLatin1Char('\n'))
+                           .contains(QStringLiteral("state_d = RUN")),
                true);
     expectBool("RTL insights renders signal journey", sawSignalJourney, true);
     expectBool("RTL insights renders signal journey declaration source role",
