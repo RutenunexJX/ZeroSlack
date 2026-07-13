@@ -226,9 +226,20 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
   invalid aliases, wrong ports, distant labels, collinear edge overlap over
   2 px, label/edge intersection, shared channel-track overlap, cropped node
   title/detail line boxes, and independent-edge crossings above 2. Current
+  alias validation also requires every visual alias to have exactly the same
+  state name as its canonical node. Transition-only endpoints such as
+  `default` are independent canonical nodes marked `implicitState`; they retain
+  a compact dashed presentation without sharing selection or hover identity
+  with an unrelated state.
+  Reciprocal-pair ordering now has a crossing-preserving layer-order
+  postprocess plus layer/node minor-coordinate alignment. Canonical adjacent
+  reciprocal pairs stay as separated arcs; long reciprocal edges that already
+  terminate at aliases use ordinary short orthogonal routes. Horizontal track
+  order follows the source/target movement direction, preventing same-source,
+  same-target parallel edges from crossing. Current
   snapshot metrics are 0 rendered crossings for `elec_cfg_ns`, `phy_cfg_ns`,
   `phy_pass_thrg_cfg_ns`, and `vendor_ip_edma_ctx`; new scene areas are 0.556,
-  0.626, 0.538, and 0.518 of the old fixed-width baseline, with no fallback
+  0.605, 0.516, and 0.525 of the old fixed-width baseline, with no fallback
   aliases triggered. Verification passed for `relationship_test`,
   `fsm_ui_snapshot_test`, `gui_smoke_test`, `insight_visual_style_test`, and
   `completion_test`; `git diff --check` also passed.
@@ -237,6 +248,10 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
   `C#: conditionDisplayName` tooltip; hovering a canonical or alias state
   highlights the canonical node, every alias, and all incident transitions.
   Selected visuals remain higher priority and survive hover enter/leave.
+  The state-hover review case selects `S_IDLE`, its two aliases, and six
+  incident transitions; the `default` node remains unhighlighted. Selecting
+  `default` selects only that node; hovering it highlights that node and its
+  actual incident transition.
   `relationship_test` also runs 100 deterministic generated FSMs (seeds
   1327217885 through 2123353960, 5-50 states, 1-4 outgoing transitions,
   back edges, self-loops, reciprocal pairs, long names, and unreachable
@@ -244,10 +259,13 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
   and fixed control-polygon/Bezier collision mismatches, reciprocal-curve
   obstacle clearance, channel-track collisions, weak-component packing, and
   self-loop/reciprocal label placement; the final 100-graph run passes in
-  5.874 seconds without seed exceptions. `renderedCrossingCount` and the test
-  budget now sample reciprocal curves as rendered, so the reported zero for
+  13.113 seconds without seed exceptions. `renderedCrossingCount` and the test
+  budget now sample quadratic/cubic curves at 96 steps, and only exempt
+  intersections inside a shared endpoint's 12 px port neighborhood. The
+  reported zero for
   `phy_pass_thrg_cfg_ns` includes arc-to-track crossings rather than excluding
-  curved edges.
+  curved edges. One quarter of the deterministic seeds also add a transition
+  endpoint outside `stateRows`, covering implicit canonical endpoint handling.
 - State Transition Graph entry gating exists for editor source-symbol actions:
   `StateTransitionTriggerService` now asks structural FSM discovery for the
   selected symbol's role. A discovered next-state role can open the graph, a
@@ -1013,7 +1031,7 @@ Do not add unlisted long-term goals without explicit user approval.
   adaptive text-measured node widths, compact spacing, shorter alias nodes, and
   transpose/channel-ordering passes. The snapshot harness reports 0 rendered
   crossings for `elec_cfg_ns`, `phy_cfg_ns`, `phy_pass_thrg_cfg_ns`, and
-  `vendor_ip_edma_ctx`; scene areas are 0.556, 0.626, 0.538, and 0.518 of the
+  `vendor_ip_edma_ctx`; scene areas are 0.556, 0.605, 0.516, and 0.525 of the
   previous fixed-width baseline, with no fallback aliases required.
   The harness additionally writes `fsm_hover_state.png` and
   `fsm_hover_edge_tooltip.png`; panel assertions cover canonical/alias/incident

@@ -85,14 +85,21 @@ Current baseline highlights:
   track-overlap, node text line-box bounds, and independent-edge crossings
   above 2. Snapshot metrics show 0 crossings for `elec_cfg_ns`, `phy_cfg_ns`,
   `phy_pass_thrg_cfg_ns`, and `vendor_ip_edma_ctx`; scene areas are 0.556,
-  0.626, 0.538, and 0.518 of the fixed-width baseline; fallback aliases were
+  0.605, 0.516, and 0.525 of the fixed-width baseline; fallback aliases were
   not triggered. Verification passed for `relationship_test`,
   `fsm_ui_snapshot_test`, `gui_smoke_test`, `insight_visual_style_test`,
   `completion_test`, and `git diff --check`. Transition/label hover now exposes
   wrapped full-condition tooltips, while state hover links canonical nodes,
   aliases, and incident transitions without changing selection. Deterministic
   fuzz coverage runs 100 fixed seeds through the unchanged full invariant
-  suite with no seed exceptions. Crossing counts sample rendered reciprocal
+  suite with no seed exceptions. Alias nodes are now constrained to exact
+  same-name canonical copies; implicit endpoints such as `default` are compact
+  dashed, self-canonical nodes and do not propagate selection/hover to unrelated
+  states. Twenty-five fuzz graphs exercise this implicit-endpoint path.
+  Reciprocal ordering uses a crossing-preserving order postprocess and
+  layer/node minor-coordinate alignment. Adjacent canonical pairs remain
+  separated arcs; aliased long reciprocal edges use short orthogonal routes.
+  Crossing counts sample rendered reciprocal
   curves, and disconnected/unreachable components are packed into separate
   column regions before routing. Remaining risk: dense same-source
   fan-out can still occupy a wide channel, but current snapshots show no
@@ -1122,8 +1129,9 @@ Milestones:
 - G10.5 FSM graph hover linkage and deterministic fuzz verification.
   (complete: edge/label condition tooltip and hover, canonical/alias/incident
   edge state hover, selected-over-hover priority, dedicated hover snapshots,
-  and 100 fixed-seed random FSMs running the unchanged global layout
-  invariants; all focused and integration suites pass)
+  implicit-state identity isolation, and 100 fixed-seed random FSMs including
+  25 implicit-endpoint cases running the unchanged global layout invariants;
+  all focused and integration suites pass)
 
 ## Track 11: Module Block Diagram
 

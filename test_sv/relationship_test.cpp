@@ -266,6 +266,44 @@ static bool testSegmentsIntersect(const QPointF& a,
         || testPointOnSegment(b, c, d);
 }
 
+static bool testIntersectionIsLocalToSharedEndpoint(
+    const QPointF& lhsStart,
+    const QPointF& lhsEnd,
+    const FsmLayoutEdge& lhs,
+    const QPointF& rhsStart,
+    const QPointF& rhsEnd,
+    const FsmLayoutEdge& rhs,
+    const QHash<int, FsmLayoutNode>& nodeById)
+{
+    constexpr qreal kSharedEndpointJunctionMargin = 12.0;
+    QPointF intersection;
+    if (QLineF(lhsStart, lhsEnd).intersects(
+            QLineF(rhsStart, rhsEnd),
+            &intersection)
+        != QLineF::BoundedIntersection) {
+        return false;
+    }
+    const int lhsNodes[]{lhs.fromNodeId, lhs.toNodeId};
+    const int rhsNodes[]{rhs.fromNodeId, rhs.toNodeId};
+    for (int lhsNodeId : lhsNodes) {
+        for (int rhsNodeId : rhsNodes) {
+            if (lhsNodeId < 0 || lhsNodeId != rhsNodeId
+                || !nodeById.contains(lhsNodeId)) {
+                continue;
+            }
+            if (nodeById.value(lhsNodeId).rect
+                    .adjusted(-kSharedEndpointJunctionMargin,
+                              -kSharedEndpointJunctionMargin,
+                              kSharedEndpointJunctionMargin,
+                              kSharedEndpointJunctionMargin)
+                    .contains(intersection)) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
 static bool testSegmentIntersectsRect(const QPointF& start,
                                       const QPointF& end,
                                       const QRectF& rect)
@@ -331,7 +369,7 @@ static QList<QPointF> testRenderedEdgePolyline(const FsmLayoutEdge& edge)
 {
     if (edge.selfLoop && edge.points.size() == 4) {
         QList<QPointF> sampled;
-        constexpr int kSamples = 32;
+        constexpr int kSamples = 96;
         const QPointF p0 = edge.points.at(0);
         const QPointF p1 = edge.points.at(1);
         const QPointF p2 = edge.points.at(2);
@@ -346,9 +384,58 @@ static QList<QPointF> testRenderedEdgePolyline(const FsmLayoutEdge& edge)
         }
         return sampled;
     }
+    if (edge.curved && edge.points.size() == 4) {
+        QList<QPointF> sampled;
+        constexpr int kSamples = 96;
+        const QPointF p0 = edge.points.at(0);
+        const QPointF p1 = edge.points.at(1);
+        const QPointF p2 = edge.points.at(2);
+        const QPointF p3 = edge.points.at(3);
+        for (int i = 0; i <= kSamples; ++i) {
+            const qreal t = static_cast<qreal>(i) / kSamples;
+            const qreal u = 1.0 - t;
+            sampled.append(p0 * (u * u * u)
+                           + p1 * (3.0 * u * u * t)
+                           + p2 * (3.0 * u * t * t)
+                           + p3 * (t * t * t));
+        }
+        return sampled;
+    }
+    if (edge.curved && edge.points.size() == 7) {
+        QList<QPointF> sampled;
+        constexpr int kSamplesPerSegment = 96;
+        const auto cubicPoint = [](const QPointF& p0,
+                                   const QPointF& p1,
+                                   const QPointF& p2,
+                                   const QPointF& p3,
+                                   qreal t) {
+            const qreal u = 1.0 - t;
+            return p0 * (u * u * u)
+                + p1 * (3.0 * u * u * t)
+                + p2 * (3.0 * u * t * t)
+                + p3 * (t * t * t);
+        };
+        for (int i = 0; i <= kSamplesPerSegment; ++i) {
+            sampled.append(cubicPoint(edge.points.at(0),
+                                      edge.points.at(1),
+                                      edge.points.at(2),
+                                      edge.points.at(3),
+                                      static_cast<qreal>(i)
+                                          / kSamplesPerSegment));
+        }
+        for (int i = 1; i <= kSamplesPerSegment; ++i) {
+            sampled.append(cubicPoint(edge.points.at(3),
+                                      edge.points.at(4),
+                                      edge.points.at(5),
+                                      edge.points.at(6),
+                                      static_cast<qreal>(i)
+                                          / kSamplesPerSegment));
+        }
+        return sampled;
+    }
     if (edge.curved && edge.points.size() == 3) {
         QList<QPointF> sampled;
-        constexpr int kSamples = 32;
+        constexpr int kSamples = 96;
         const QPointF p0 = edge.points.at(0);
         const QPointF p1 = edge.points.at(1);
         const QPointF p2 = edge.points.at(2);
@@ -438,6 +525,16 @@ static void expectFsmLayoutInvariants(const QString& label,
                  .arg(graph.transitionRows.size()));
     }
     int canonicalNodeCount = 0;
+    QSet<QString> expectedCanonicalStateNames;
+    QSet<QString> reportStateNames;
+    for (const FsmStateRow& row : graph.stateRows) {
+        expectedCanonicalStateNames.insert(row.stateDisplayName);
+        reportStateNames.insert(row.stateDisplayName);
+    }
+    for (const FsmTransitionRow& row : graph.transitionRows) {
+        expectedCanonicalStateNames.insert(row.fromStateDisplayName);
+        expectedCanonicalStateNames.insert(row.toStateDisplayName);
+    }
     QSet<int> nodeIds;
     QHash<int, FsmLayoutNode> nodeById;
     for (const FsmLayoutNode& node : layout.nodes) {
@@ -454,7 +551,7 @@ static void expectFsmLayoutInvariants(const QString& label,
             fail(QStringLiteral("alias node %1 still shows detail line")
                      .arg(node.displayName));
         }
-        if (!node.alias
+        if (!node.alias && !node.implicitState
             && (!node.rect.contains(node.detailTextRect)
                 || node.detailTextRect.height()
                     < options.detailLineHeight - 0.5)) {
@@ -469,16 +566,34 @@ static void expectFsmLayoutInvariants(const QString& label,
                      .arg(node.canonicalNodeId));
         }
     }
-    if (canonicalNodeCount != graph.stateRows.size()) {
-        fail(QStringLiteral("canonical node count %1 != state count %2")
+    if (canonicalNodeCount != expectedCanonicalStateNames.size()) {
+        fail(QStringLiteral("canonical node count %1 != endpoint state count %2")
                  .arg(canonicalNodeCount)
-                 .arg(graph.stateRows.size()));
+                 .arg(expectedCanonicalStateNames.size()));
     }
     for (const FsmLayoutNode& node : layout.nodes) {
         if (node.alias && !nodeById.contains(node.canonicalNodeId)) {
             fail(QStringLiteral("alias node %1 missing canonical node %2")
                      .arg(node.displayName)
                      .arg(node.canonicalNodeId));
+        }
+        if (node.alias && nodeById.contains(node.canonicalNodeId)
+            && node.stateName
+                != nodeById.value(node.canonicalNodeId).stateName) {
+            fail(QStringLiteral("alias node %1 differs from canonical state %2")
+                     .arg(node.stateName,
+                          nodeById.value(node.canonicalNodeId).stateName));
+        }
+        if (node.implicitState
+            && (node.alias || node.canonicalNodeId != node.nodeId)) {
+            fail(QStringLiteral("implicit state %1 is not self-canonical")
+                     .arg(node.stateName));
+        }
+        const bool expectedImplicit =
+            !reportStateNames.contains(node.stateName) && !node.alias;
+        if (node.implicitState != expectedImplicit) {
+            fail(QStringLiteral("implicit state marker mismatch for %1")
+                     .arg(node.stateName));
         }
     }
 
@@ -598,11 +713,13 @@ static void expectFsmLayoutInvariants(const QString& label,
         for (const FsmLayoutEdge& pathEdge : layout.edges) {
             if (pathEdge.edgeId == labelEdge.edgeId)
                 continue;
-            if (pathEdge.selfLoop || pathEdge.curved)
+            if (pathEdge.selfLoop)
                 continue;
-            for (int i = 1; i < pathEdge.points.size(); ++i) {
-                if (testSegmentIntersectsRect(pathEdge.points.at(i - 1),
-                                             pathEdge.points.at(i),
+            const QList<QPointF> pathPoints =
+                testRenderedEdgePolyline(pathEdge);
+            for (int i = 1; i < pathPoints.size(); ++i) {
+                if (testSegmentIntersectsRect(pathPoints.at(i - 1),
+                                             pathPoints.at(i),
                                              labelRect)) {
                     fail(QStringLiteral("label %1 intersects edge %2")
                              .arg(labelEdge.label, pathEdge.label));
@@ -613,23 +730,25 @@ static void expectFsmLayoutInvariants(const QString& label,
 
     for (int i = 0; i < layout.edges.size(); ++i) {
         const FsmLayoutEdge& lhs = layout.edges.at(i);
-        if (lhs.selfLoop || lhs.curved)
+        if (lhs.selfLoop)
             continue;
+        const QList<QPointF> lhsPoints = testRenderedEdgePolyline(lhs);
         for (int j = i + 1; j < layout.edges.size(); ++j) {
             const FsmLayoutEdge& rhs = layout.edges.at(j);
-            if (rhs.selfLoop || rhs.curved)
+            if (rhs.selfLoop)
                 continue;
             if (lhs.fromNodeId == rhs.fromNodeId
                 || lhs.toNodeId == rhs.toNodeId) {
                 continue;
             }
-            for (int a = 1; a < lhs.points.size(); ++a) {
-                for (int b = 1; b < rhs.points.size(); ++b) {
+            const QList<QPointF> rhsPoints = testRenderedEdgePolyline(rhs);
+            for (int a = 1; a < lhsPoints.size(); ++a) {
+                for (int b = 1; b < rhsPoints.size(); ++b) {
                     const qreal overlap =
-                        testCollinearOverlapLength(lhs.points.at(a - 1),
-                                                   lhs.points.at(a),
-                                                   rhs.points.at(b - 1),
-                                                   rhs.points.at(b));
+                        testCollinearOverlapLength(lhsPoints.at(a - 1),
+                                                   lhsPoints.at(a),
+                                                   rhsPoints.at(b - 1),
+                                                   rhsPoints.at(b));
                     if (overlap > 2.0) {
                         fail(QStringLiteral(
                                  "edge overlap %1/%2 length %3")
@@ -695,12 +814,6 @@ static void expectFsmLayoutInvariants(const QString& label,
             const FsmLayoutEdge& rhs = layout.edges.at(j);
             if (rhs.selfLoop)
                 continue;
-            if (lhs.fromNodeId == rhs.fromNodeId
-                || lhs.fromNodeId == rhs.toNodeId
-                || lhs.toNodeId == rhs.fromNodeId
-                || lhs.toNodeId == rhs.toNodeId) {
-                continue;
-            }
             const QList<QPointF> rhsPoints = testRenderedEdgePolyline(rhs);
             bool pairCrosses = false;
             for (int a = 1; a < lhsPoints.size() && !pairCrosses; ++a) {
@@ -718,12 +831,31 @@ static void expectFsmLayoutInvariants(const QString& label,
                         && testSegmentsIntersect(lhsStart,
                                                  lhsEnd,
                                                  rhsStart,
-                                                 rhsEnd)) {
+                                                 rhsEnd)
+                        && !testIntersectionIsLocalToSharedEndpoint(
+                            lhsStart,
+                            lhsEnd,
+                            lhs,
+                            rhsStart,
+                            rhsEnd,
+                            rhs,
+                            nodeById)) {
                         pairCrosses = true;
                         if (crossingPairs.size() < 8) {
-                            crossingPairs.append(QStringLiteral("%1/%2")
+                            crossingPairs.append(QStringLiteral(
+                                "%1[%2->%3,n%4->n%5,curve=%6]/%7[%8->%9,n%10->n%11,curve=%12]")
                                                      .arg(lhs.label,
-                                                          rhs.label));
+                                                          lhs.fromState,
+                                                          lhs.toState)
+                                                     .arg(lhs.fromNodeId)
+                                                     .arg(lhs.toNodeId)
+                                                     .arg(lhs.curved)
+                                                     .arg(rhs.label,
+                                                          rhs.fromState,
+                                                          rhs.toState)
+                                                     .arg(rhs.fromNodeId)
+                                                     .arg(rhs.toNodeId)
+                                                     .arg(rhs.curved));
                         }
                         break;
                     }
@@ -738,6 +870,11 @@ static void expectFsmLayoutInvariants(const QString& label,
                  .arg(crossingCount)
                  .arg(crossingBudget)
                  .arg(crossingPairs.join(QLatin1Char(','))));
+    }
+    if (!failures.isEmpty() && !layout.warnings.isEmpty()) {
+        failures.append(QStringLiteral("layout warnings: %1")
+                            .arg(layout.warnings.join(
+                                QStringLiteral(" | "))));
     }
 
     const QByteArray checkName =
@@ -909,6 +1046,29 @@ static FsmGraph makeFsmFuzzGraph(quint32 seed)
             ? componentStart + ((source - componentStart + 1) % componentSize)
             : source;
         addEdge(source, target);
+    }
+
+    if ((seed & 3u) == 0u) {
+        int source = random.bounded(qMax(1, reachableCount));
+        for (int offset = 0; offset < reachableCount; ++offset) {
+            const int candidate = (source + offset) % reachableCount;
+            if (outgoingCount.at(candidate) < 4) {
+                source = candidate;
+                break;
+            }
+        }
+        if (outgoingCount.at(source) < 4) {
+            ++outgoingCount[source];
+            FsmTransitionRow row;
+            row.fromStateDisplayName = stateNames.at(source);
+            row.toStateDisplayName =
+                QStringLiteral("S_IMPLICIT_ENDPOINT_%1")
+                    .arg(seed, 8, 16, QLatin1Char('0'));
+            row.conditionDisplayName =
+                QStringLiteral("implicit_endpoint_enable_%1").arg(seed);
+            row.detailDisplayName = row.conditionDisplayName;
+            graph.transitionRows.append(row);
+        }
     }
 
     for (int state = 0; state < stateCount; ++state) {

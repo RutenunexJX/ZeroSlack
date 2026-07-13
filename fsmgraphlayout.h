@@ -56,6 +56,7 @@ struct FsmLayoutNode {
     int rank = 0;
     int order = 0;
     bool alias = false;
+    bool implicitState = false;
     bool showDetail = true;
     int canonicalNodeId = -1;
     bool deadEndState = false;

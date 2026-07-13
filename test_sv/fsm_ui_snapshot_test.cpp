@@ -168,7 +168,8 @@ bool renderHoverSnapshot(SemanticIndex& index,
                          const QString& secondary,
                          int expectedStateItems,
                          int expectedEdgeItems,
-                         const QStringList& expectedConditions = {})
+                         const QStringList& expectedConditions = {},
+                         const QStringList& forbiddenStateNames = {})
 {
     FsmGraphService::getInstance()->setSemanticIndex(&index);
     StateTransitionGraphService::getInstance()->setSemanticIndex(&index);
@@ -188,6 +189,7 @@ bool renderHoverSnapshot(SemanticIndex& index,
     int stateItems = 0;
     int edgeItems = 0;
     for (const QString& summary : hovered) {
+        printf("hover_item %s\n", summary.toLocal8Bit().constData());
         stateItems += summary.startsWith(QStringLiteral("state|"));
         edgeItems += summary.startsWith(QStringLiteral("transition|"));
     }
@@ -195,6 +197,14 @@ bool renderHoverSnapshot(SemanticIndex& index,
            "hover state set matches canonical and aliases");
     expect(edgeItems == expectedEdgeItems,
            "hover edge set matches related transitions");
+    for (const QString& forbiddenStateName : forbiddenStateNames) {
+        const QString prefix = QStringLiteral("state|%1|")
+                                   .arg(forbiddenStateName);
+        bool found = false;
+        for (const QString& summary : hovered)
+            found = found || summary.startsWith(prefix);
+        expect(!found, "implicit state excluded from unrelated hover set");
+    }
 
     if (elementKind == QStringLiteral("transition")) {
         const QString tooltip = panel.graphItemToolTipForTest(elementKind,
@@ -219,6 +229,60 @@ bool renderHoverSnapshot(SemanticIndex& index,
     expect(panel.graphHoveredElementSummariesForTest().isEmpty(),
            "hover leave restores all graph items");
     return saved;
+}
+
+void verifyImplicitStateIsolation(SemanticIndex& index,
+                                  const QString& fileName,
+                                  const QString& moduleName,
+                                  const QString& signalName,
+                                  const QString& implicitState,
+                                  int expectedIncidentEdges,
+                                  const QString& unrelatedState)
+{
+    FsmGraphService::getInstance()->setSemanticIndex(&index);
+    StateTransitionGraphService::getInstance()->setSemanticIndex(&index);
+    QWidget host;
+    RtlInsightsPanelCoordinator panel(&host);
+    panel.showStateTransitionGraphForSignal(fileName,
+                                            moduleName,
+                                            signalName);
+    QCoreApplication::processEvents();
+    bool dashed = false;
+    const QString prefix = QStringLiteral("state|%1|").arg(implicitState);
+    for (const QString& summary : panel.graphElementVisualSummariesForTest()) {
+        if (summary.startsWith(prefix) && summary.endsWith(QStringLiteral("|dash")))
+            dashed = true;
+    }
+    expect(dashed, "implicit state keeps dashed visual style");
+    expect(panel.selectGraphItemForTest(QStringLiteral("state"),
+                                        implicitState),
+           "implicit state selection target found");
+    expect(panel.graphSelectedItemCountForTest() == 1,
+           "implicit state selects only itself");
+    expect(panel.setGraphItemHoveredForTest(QStringLiteral("state"),
+                                            implicitState,
+                                            QString(),
+                                            true),
+           "implicit state hover target found");
+    const QStringList hovered = panel.graphHoveredElementSummariesForTest();
+    int stateItems = 0;
+    int edgeItems = 0;
+    bool unrelatedFound = false;
+    for (const QString& summary : hovered) {
+        stateItems += summary.startsWith(QStringLiteral("state|"));
+        edgeItems += summary.startsWith(QStringLiteral("transition|"));
+        unrelatedFound = unrelatedFound
+            || summary.startsWith(QStringLiteral("state|%1|")
+                                      .arg(unrelatedState));
+    }
+    expect(stateItems == 1, "implicit hover highlights only its state node");
+    expect(edgeItems == expectedIncidentEdges,
+           "implicit hover highlights only incident transitions");
+    expect(!unrelatedFound, "implicit hover excludes unrelated canonical state");
+    panel.setGraphItemHoveredForTest(QStringLiteral("state"),
+                                     implicitState,
+                                     QString(),
+                                     false);
 }
 
 void verifyHoverDoesNotChangeSelection(SemanticIndex& index,
@@ -297,6 +361,60 @@ qreal rectArea(const QRectF& rect)
         * qMax<qreal>(0.0, rect.height());
 }
 
+QString directedStatePairKey(const QString& from, const QString& to)
+{
+    return from + QChar(0x1f) + to;
+}
+
+void printReciprocalMetrics(const QString& label,
+                            const FsmGraph& graph,
+                            const FsmGraphLayout& layout)
+{
+    QHash<QString, FsmLayoutNode> canonicalByState;
+    for (const FsmLayoutNode& node : layout.nodes) {
+        if (!node.alias)
+            canonicalByState.insert(node.stateName, node);
+    }
+    QSet<QString> directedPairs;
+    for (const FsmTransitionRow& edge : graph.transitionRows) {
+        if (edge.fromStateDisplayName != edge.toStateDisplayName) {
+            directedPairs.insert(directedStatePairKey(
+                edge.fromStateDisplayName,
+                edge.toStateDisplayName));
+        }
+    }
+    QSet<QString> reportedPairs;
+    for (const FsmTransitionRow& edge : graph.transitionRows) {
+        const QString& from = edge.fromStateDisplayName;
+        const QString& to = edge.toStateDisplayName;
+        if (from == to
+            || !directedPairs.contains(directedStatePairKey(to, from))
+            || !canonicalByState.contains(from)
+            || !canonicalByState.contains(to)) {
+            continue;
+        }
+        const QString pairKey = from < to
+            ? directedStatePairKey(from, to)
+            : directedStatePairKey(to, from);
+        if (reportedPairs.contains(pairKey))
+            continue;
+        reportedPairs.insert(pairKey);
+        const FsmLayoutNode fromNode = canonicalByState.value(from);
+        const FsmLayoutNode toNode = canonicalByState.value(to);
+        printf("reciprocal_metric %s %s[%d,%d,%.1f] <-> %s[%d,%d,%.1f] minorDistance=%.1f\n",
+               label.toLocal8Bit().constData(),
+               from.toLocal8Bit().constData(),
+               fromNode.rank,
+               fromNode.order,
+               fromNode.rect.center().x(),
+               to.toLocal8Bit().constData(),
+               toNode.rank,
+               toNode.order,
+               toNode.rect.center().x(),
+               qAbs(fromNode.rect.center().x() - toNode.rect.center().x()));
+    }
+}
+
 void printLayoutMetric(const QString& label, const FsmGraph& graph)
 {
     const FsmGraphLayout oldLayout =
@@ -313,6 +431,13 @@ void printLayoutMetric(const QString& label, const FsmGraph& graph)
            ratio,
            newLayout.fallbackAliasCount,
            newLayout.warnings.join(QLatin1Char('|')).toLocal8Bit().constData());
+    const QByteArray crossingCheck = QStringLiteral(
+        "%1 sampled rendered crossings are zero")
+                                         .arg(label)
+                                         .toLocal8Bit();
+    expect(newLayout.renderedCrossingCount == 0,
+           crossingCheck.constData());
+    printReciprocalMetrics(label, graph, newLayout);
 }
 
 bool printLayoutMetricForSignal(const FsmGraphReport& report,
@@ -452,19 +577,38 @@ int main(int argc, char** argv)
     QString hoverState;
     int hoverStateItemCount = 0;
     int hoverEdgeItemCount = 0;
+    QString implicitState;
+    QStringList implicitStateNames;
+    int implicitEdgeItemCount = 0;
     if (phyGraph) {
         const FsmGraphLayout hoverLayout =
             layoutFsmGraph(*phyGraph, FsmLayoutOptions{});
         int hoverCanonicalId = -1;
+        QHash<int, int> aliasCountByCanonicalId;
         for (const FsmLayoutNode& node : hoverLayout.nodes) {
-            if (node.alias) {
-                hoverCanonicalId = node.canonicalNodeId;
-                break;
+            if (node.alias)
+                ++aliasCountByCanonicalId[node.canonicalNodeId];
+            if (node.implicitState) {
+                implicitStateNames.append(node.displayName);
+                if (implicitState.isEmpty())
+                    implicitState = node.displayName;
+            }
+        }
+        int maximumAliasCount = 0;
+        for (auto it = aliasCountByCanonicalId.cbegin();
+             it != aliasCountByCanonicalId.cend();
+             ++it) {
+            if (it.value() > maximumAliasCount) {
+                maximumAliasCount = it.value();
+                hoverCanonicalId = it.key();
             }
         }
         QHash<int, int> canonicalByNodeId;
+        int implicitCanonicalId = -1;
         for (const FsmLayoutNode& node : hoverLayout.nodes) {
             canonicalByNodeId.insert(node.nodeId, node.canonicalNodeId);
+            if (node.displayName == implicitState)
+                implicitCanonicalId = node.canonicalNodeId;
             if (node.canonicalNodeId != hoverCanonicalId)
                 continue;
             ++hoverStateItemCount;
@@ -478,12 +622,27 @@ int main(int argc, char** argv)
                        == hoverCanonicalId) {
                 ++hoverEdgeItemCount;
             }
+            if (canonicalByNodeId.value(edge.fromNodeId, -1)
+                    == implicitCanonicalId
+                || canonicalByNodeId.value(edge.toNodeId, -1)
+                       == implicitCanonicalId) {
+                ++implicitEdgeItemCount;
+            }
         }
+        printf("hover_state canonical=%s aliases=%d related_edges=%d\n",
+               hoverState.toLocal8Bit().constData(),
+               qMax(0, hoverStateItemCount - 1),
+               hoverEdgeItemCount);
     }
     expect(!hoverState.isEmpty() && hoverStateItemCount >= 2,
            "hover fixture has canonical state and aliases");
+    expect(hoverState == QStringLiteral("S_IDLE")
+               && hoverStateItemCount == 3,
+           "hover fixture chooses S_IDLE with two aliases");
     expect(hoverEdgeItemCount > 0,
            "hover fixture canonical state has related transitions");
+    expect(implicitState == QStringLiteral("default"),
+           "hover fixture exposes default as implicit state");
 
     const QString outputDir =
         normalizedPath(QDir(sourceRoot).filePath(QStringLiteral("artifacts/ui/fsm")));
@@ -519,6 +678,13 @@ int main(int argc, char** argv)
                                           hoverState,
                                           selectedFrom,
                                           selectedTo);
+        verifyImplicitStateIsolation(index,
+                                     chlCtrlPath,
+                                     QStringLiteral("chl_ctrl"),
+                                     QStringLiteral("phy_cfg_ns"),
+                                     implicitState,
+                                     implicitEdgeItemCount,
+                                     hoverState);
         renderHoverSnapshot(
             index,
             chlCtrlPath,
@@ -529,7 +695,9 @@ int main(int argc, char** argv)
             hoverState,
             QString(),
             hoverStateItemCount,
-            hoverEdgeItemCount);
+            hoverEdgeItemCount,
+            {},
+            implicitStateNames);
     }
     renderHoverSnapshot(
         index,

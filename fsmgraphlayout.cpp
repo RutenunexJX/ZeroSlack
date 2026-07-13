@@ -2,6 +2,7 @@
 
 #include <QHash>
 #include <QLineF>
+#include <QPair>
 #include <QQueue>
 #include <QSet>
 #include <QSizeF>
@@ -15,6 +16,7 @@
 namespace {
 
 constexpr qreal kEpsilon = 0.001;
+constexpr qreal kSharedEndpointJunctionMargin = 12.0;
 
 struct WorkEdge {
     int edgeId = -1;
@@ -42,6 +44,7 @@ struct WorkVertex {
     qreal y = 0.0;
     bool dummy = false;
     bool alias = false;
+    bool implicitState = false;
 };
 
 struct EdgeSegment {
@@ -68,7 +71,9 @@ qreal itemHeight(const WorkVertex& vertex, const FsmLayoutOptions& options)
         return vertex.height;
     if (vertex.dummy)
         return options.dummyWidth;
-    return vertex.alias ? options.aliasNodeHeight : options.nodeHeight;
+    return vertex.alias || vertex.implicitState
+        ? options.aliasNodeHeight
+        : options.nodeHeight;
 }
 
 qreal textWidthEstimate(const QString& text, const FsmLayoutOptions& options)
@@ -109,7 +114,7 @@ void assignVertexSizes(QList<WorkVertex>& vertices,
             continue;
         }
         const FsmStateRow& row = stateRows.at(vertex.stateIndex);
-        const bool showDetail = !vertex.alias;
+        const bool showDetail = !vertex.alias && !vertex.implicitState;
         const QString detail = stateRegisterDisplayName.isEmpty()
             ? row.detailDisplayName
             : stateRegisterDisplayName;
@@ -260,6 +265,45 @@ bool segmentsIntersect(const QPointF& a,
         || pointOnSegment(d, a, b)
         || pointOnSegment(a, c, d)
         || pointOnSegment(b, c, d);
+}
+
+bool intersectionIsLocalToSharedEndpoint(
+    const QPointF& lhsStart,
+    const QPointF& lhsEnd,
+    int lhsFromNodeId,
+    int lhsToNodeId,
+    const QPointF& rhsStart,
+    const QPointF& rhsEnd,
+    int rhsFromNodeId,
+    int rhsToNodeId,
+    const QHash<int, QRectF>& rectByVertexId)
+{
+    QPointF intersection;
+    if (QLineF(lhsStart, lhsEnd).intersects(
+            QLineF(rhsStart, rhsEnd),
+            &intersection)
+        != QLineF::BoundedIntersection) {
+        return false;
+    }
+    const int lhsNodes[]{lhsFromNodeId, lhsToNodeId};
+    const int rhsNodes[]{rhsFromNodeId, rhsToNodeId};
+    for (int lhsNodeId : lhsNodes) {
+        for (int rhsNodeId : rhsNodes) {
+            if (lhsNodeId < 0 || lhsNodeId != rhsNodeId
+                || !rectByVertexId.contains(lhsNodeId)) {
+                continue;
+            }
+            if (rectByVertexId.value(lhsNodeId)
+                    .adjusted(-kSharedEndpointJunctionMargin,
+                              -kSharedEndpointJunctionMargin,
+                              kSharedEndpointJunctionMargin,
+                              kSharedEndpointJunctionMargin)
+                    .contains(intersection)) {
+                return true;
+            }
+        }
+    }
+    return false;
 }
 
 bool segmentIntersectsRect(const QPointF& start,
@@ -479,6 +523,12 @@ QPointF quadraticPoint(const QPointF& start,
                        const QPointF& control,
                        const QPointF& end,
                        qreal t);
+QPointF cubicPoint(const QPointF& start,
+                   const QPointF& control1,
+                   const QPointF& control2,
+                   const QPointF& end,
+                   qreal t);
+QPointF twoCubicPoint(const QList<QPointF>& points, qreal t);
 
 QPointF chooseSelfLoopLabelAnchor(
     const FsmLayoutEdge& edge,
@@ -554,10 +604,20 @@ QPointF chooseCurvedEdgeLabelAnchor(
     const FsmLayoutOptions& options)
 {
     const QPointF start = edge.points.at(0);
-    const QPointF control = edge.points.at(1);
-    const QPointF end = edge.points.at(2);
+    const QPointF end = edge.points.last();
     const QPointF chordMid = (start + end) / 2.0;
-    const QPointF curveMid = quadraticPoint(start, control, end, 0.5);
+    const auto pointAt = [&](qreal t) {
+        return edge.points.size() == 7
+            ? twoCubicPoint(edge.points, t)
+            : edge.points.size() == 4
+            ? cubicPoint(start,
+                         edge.points.at(1),
+                         edge.points.at(2),
+                         end,
+                         t)
+            : quadraticPoint(start, edge.points.at(1), end, t);
+    };
+    const QPointF curveMid = pointAt(0.5);
     QPointF outward = curveMid - chordMid;
     const qreal outwardLength = std::hypot(outward.x(), outward.y());
     if (outwardLength > 0.1) {
@@ -575,8 +635,7 @@ QPointF chooseCurvedEdgeLabelAnchor(
             + outwardStep
                 * qMax<qreal>(6.0, options.labelSlideStep / 2.0);
         for (qreal t : samples) {
-            const QPointF center = quadraticPoint(start, control, end, t)
-                + outward * offset;
+            const QPointF center = pointAt(t) + outward * offset;
             const QRectF rect = labelRectAt(center, labelSize);
             if (rectOverlapsAny(rect, blockedRects)
                 || rectOverlapsAny(rect, usedLabelRects)
@@ -832,8 +891,38 @@ int totalLayerCrossings(const QList<QList<int>>& layers,
     return crossings;
 }
 
+qreal totalAttractionDistance(
+    const QList<QList<int>>& layers,
+    const QHash<int, QList<int>>& attractionByVertex)
+{
+    QHash<int, qreal> normalizedPosition;
+    for (const QList<int>& layer : layers) {
+        const qreal count = qMax(1, layer.size());
+        for (int i = 0; i < layer.size(); ++i) {
+            normalizedPosition.insert(
+                layer.at(i),
+                (static_cast<qreal>(i) + 0.5) / count);
+        }
+    }
+    qreal distance = 0.0;
+    for (auto it = attractionByVertex.cbegin();
+         it != attractionByVertex.cend();
+         ++it) {
+        for (int partner : it.value()) {
+            if (it.key() >= partner
+                || !normalizedPosition.contains(partner)) {
+                continue;
+            }
+            distance += qAbs(normalizedPosition.value(it.key())
+                             - normalizedPosition.value(partner));
+        }
+    }
+    return distance;
+}
+
 void transposeLayerOrder(QList<QList<int>>& layers,
-                         const QHash<int, QList<int>>& successors)
+                         const QHash<int, QList<int>>& successors,
+                         const QHash<int, QList<int>>& attractionByVertex)
 {
     bool improved = true;
     while (improved) {
@@ -841,10 +930,18 @@ void transposeLayerOrder(QList<QList<int>>& layers,
         for (int rank = 0; rank < layers.size(); ++rank) {
             QList<int>& layer = layers[rank];
             for (int i = 0; i + 1 < layer.size(); ++i) {
-                const int before = totalLayerCrossings(layers, successors);
+                const int crossingsBefore =
+                    totalLayerCrossings(layers, successors);
+                const qreal attractionBefore =
+                    totalAttractionDistance(layers, attractionByVertex);
                 layer.swapItemsAt(i, i + 1);
-                const int after = totalLayerCrossings(layers, successors);
-                if (after < before) {
+                const int crossingsAfter =
+                    totalLayerCrossings(layers, successors);
+                const qreal attractionAfter =
+                    totalAttractionDistance(layers, attractionByVertex);
+                if (crossingsAfter < crossingsBefore
+                    || (crossingsAfter == crossingsBefore
+                        && attractionAfter + kEpsilon < attractionBefore)) {
                     improved = true;
                 } else {
                     layer.swapItemsAt(i, i + 1);
@@ -852,6 +949,104 @@ void transposeLayerOrder(QList<QList<int>>& layers,
             }
         }
     }
+}
+
+QHash<int, int> rankByVertex(const QList<QList<int>>& layers)
+{
+    QHash<int, int> result;
+    for (int rank = 0; rank < layers.size(); ++rank) {
+        for (int vertexId : layers.at(rank))
+            result.insert(vertexId, rank);
+    }
+    return result;
+}
+
+void assignLayerCoordinates(QList<WorkVertex>& vertices,
+                            const QList<QList<int>>& layers,
+                            const FsmLayoutOptions& options);
+
+void alignReciprocalPartners(QList<QList<int>>& layers,
+                             QList<WorkVertex>& vertices,
+                             const QHash<int, QList<int>>& successors,
+                             const QHash<int, QList<int>>& attractionByVertex,
+                             const FsmLayoutOptions& options)
+{
+    QList<QPair<int, int>> pairs;
+    for (auto it = attractionByVertex.cbegin();
+         it != attractionByVertex.cend();
+         ++it) {
+        for (int partner : it.value()) {
+            if (it.key() < partner)
+                pairs.append(qMakePair(it.key(), partner));
+        }
+    }
+    if (pairs.isEmpty())
+        return;
+
+    for (int pass = 0; pass < 4; ++pass) {
+        bool improved = false;
+        for (const QPair<int, int>& pair : std::as_const(pairs)) {
+            assignLayerCoordinates(vertices, layers, options);
+            const QHash<int, int> ranks = rankByVertex(layers);
+            if (!ranks.contains(pair.first)
+                || !ranks.contains(pair.second)) {
+                continue;
+            }
+            const qreal currentDistance = qAbs(
+                vertices.at(pair.first).x - vertices.at(pair.second).x);
+            const int crossingsBefore =
+                totalLayerCrossings(layers, successors);
+            QList<QList<int>> bestLayers = layers;
+            qreal bestDistance = currentDistance;
+            int bestCrossings = crossingsBefore;
+
+            const int endpoints[]{pair.first, pair.second};
+            for (int endpoint : endpoints) {
+                const int rank = ranks.value(endpoint);
+                const QList<int> originalLayer = layers.at(rank);
+                if (originalLayer.size() < 2)
+                    continue;
+                const int originalIndex = originalLayer.indexOf(endpoint);
+                for (int insertionIndex = 0;
+                     insertionIndex < originalLayer.size();
+                     ++insertionIndex) {
+                    if (insertionIndex == originalIndex)
+                        continue;
+                    QList<QList<int>> candidateLayers = layers;
+                    QList<int>& candidateLayer = candidateLayers[rank];
+                    candidateLayer.removeAt(originalIndex);
+                    candidateLayer.insert(insertionIndex, endpoint);
+                    const int candidateCrossings =
+                        totalLayerCrossings(candidateLayers, successors);
+                    if (candidateCrossings > crossingsBefore)
+                        continue;
+                    QList<WorkVertex> candidateVertices = vertices;
+                    assignLayerCoordinates(candidateVertices,
+                                           candidateLayers,
+                                           options);
+                    const qreal candidateDistance = qAbs(
+                        candidateVertices.at(pair.first).x
+                        - candidateVertices.at(pair.second).x);
+                    if (candidateDistance + kEpsilon < bestDistance
+                        || (qAbs(candidateDistance - bestDistance)
+                                <= kEpsilon
+                            && candidateCrossings < bestCrossings)) {
+                        bestLayers = candidateLayers;
+                        bestDistance = candidateDistance;
+                        bestCrossings = candidateCrossings;
+                    }
+                }
+            }
+            if (bestDistance + kEpsilon < currentDistance
+                || bestCrossings < crossingsBefore) {
+                layers = bestLayers;
+                improved = true;
+            }
+        }
+        if (!improved)
+            break;
+    }
+    assignLayerCoordinates(vertices, layers, options);
 }
 
 qint64 directedKey(int from, int to)
@@ -1034,6 +1229,95 @@ void snapCoordinatesToGrid(QList<WorkVertex>& vertices,
     }
 }
 
+void alignReciprocalLayerCoordinates(
+    QList<WorkVertex>& vertices,
+    const QList<QList<int>>& layers,
+    const QHash<int, QList<int>>& attractionByVertex,
+    const FsmLayoutOptions& options)
+{
+    const QHash<int, int> ranks = rankByVertex(layers);
+    const qreal grid = qMax<qreal>(1.0, options.gridStep);
+    for (int rank = 1; rank < layers.size(); ++rank) {
+        QList<qreal> deltas;
+        for (int vertexId : layers.at(rank)) {
+            for (int partner : attractionByVertex.value(vertexId)) {
+                if (ranks.value(partner, rank) >= rank)
+                    continue;
+                deltas.append(vertices.at(partner).x
+                              - vertices.at(vertexId).x);
+            }
+        }
+        if (deltas.isEmpty())
+            continue;
+        std::sort(deltas.begin(), deltas.end());
+        const int middle = deltas.size() / 2;
+        const qreal median = deltas.size() % 2 == 1
+            ? deltas.at(middle)
+            : (deltas.at(middle - 1) + deltas.at(middle)) / 2.0;
+        const qreal shift = std::round(median / grid) * grid;
+        for (int vertexId : layers.at(rank))
+            vertices[vertexId].x += shift;
+    }
+}
+
+void alignReciprocalNodeCoordinates(
+    QList<WorkVertex>& vertices,
+    const QList<QList<int>>& layers,
+    const QHash<int, QList<int>>& attractionByVertex,
+    const FsmLayoutOptions& options)
+{
+    const QHash<int, int> ranks = rankByVertex(layers);
+    const qreal grid = qMax<qreal>(1.0, options.gridStep);
+    for (int pass = 0; pass < 3; ++pass) {
+        for (int rank = 1; rank < layers.size(); ++rank) {
+            const QList<int>& layer = layers.at(rank);
+            for (int index = 0; index < layer.size(); ++index) {
+                const int vertexId = layer.at(index);
+                QList<qreal> partnerPositions;
+                for (int partner : attractionByVertex.value(vertexId)) {
+                    if (ranks.value(partner, rank) < rank)
+                        partnerPositions.append(vertices.at(partner).x);
+                }
+                if (partnerPositions.isEmpty())
+                    continue;
+                std::sort(partnerPositions.begin(), partnerPositions.end());
+                const int middle = partnerPositions.size() / 2;
+                const qreal desired = partnerPositions.size() % 2 == 1
+                    ? partnerPositions.at(middle)
+                    : (partnerPositions.at(middle - 1)
+                       + partnerPositions.at(middle)) / 2.0;
+                const qreal snappedDesired =
+                    std::round(desired / grid) * grid;
+                if (qAbs(vertices.at(vertexId).x - snappedDesired)
+                    <= kEpsilon) {
+                    continue;
+                }
+                vertices[vertexId].x = snappedDesired;
+                for (int left = index - 1; left >= 0; --left) {
+                    const int leftId = layer.at(left);
+                    const int rightId = layer.at(left + 1);
+                    const qreal maximum = vertices.at(rightId).x
+                        - minimumGap(vertices.at(leftId),
+                                     vertices.at(rightId),
+                                     options);
+                    if (vertices.at(leftId).x > maximum)
+                        vertices[leftId].x = maximum;
+                }
+                for (int right = index + 1; right < layer.size(); ++right) {
+                    const int leftId = layer.at(right - 1);
+                    const int rightId = layer.at(right);
+                    const qreal minimum = vertices.at(leftId).x
+                        + minimumGap(vertices.at(leftId),
+                                     vertices.at(rightId),
+                                     options);
+                    if (vertices.at(rightId).x < minimum)
+                        vertices[rightId].x = minimum;
+                }
+            }
+        }
+    }
+}
+
 void separateWeakComponents(QList<WorkVertex>& vertices,
                             const QList<WorkEdge>& workEdges,
                             int initialVertexId,
@@ -1152,6 +1436,37 @@ QPointF quadraticPoint(const QPointF& start,
         + end * (t * t);
 }
 
+QPointF cubicPoint(const QPointF& start,
+                   const QPointF& control1,
+                   const QPointF& control2,
+                   const QPointF& end,
+                   qreal t)
+{
+    const qreal u = 1.0 - t;
+    return start * (u * u * u)
+        + control1 * (3.0 * u * u * t)
+        + control2 * (3.0 * u * t * t)
+        + end * (t * t * t);
+}
+
+QPointF twoCubicPoint(const QList<QPointF>& points, qreal t)
+{
+    if (points.size() != 7)
+        return {};
+    if (t <= 0.5) {
+        return cubicPoint(points.at(0),
+                          points.at(1),
+                          points.at(2),
+                          points.at(3),
+                          t * 2.0);
+    }
+    return cubicPoint(points.at(3),
+                      points.at(4),
+                      points.at(5),
+                      points.at(6),
+                      (t - 0.5) * 2.0);
+}
+
 bool quadraticRouteCrossesNode(
     const QPointF& start,
     const QPointF& control,
@@ -1160,7 +1475,7 @@ bool quadraticRouteCrossesNode(
     int toNodeId,
     const QHash<int, QRectF>& rectByVertexId)
 {
-    constexpr int kSamples = 64;
+    constexpr int kSamples = 96;
     QPointF previous = start;
     for (int i = 1; i <= kSamples; ++i) {
         const QPointF point = quadraticPoint(
@@ -1193,9 +1508,10 @@ bool quadraticRouteCrossesIndependentEdge(
     const QPointF& end,
     int fromNodeId,
     int toNodeId,
-    const QList<FsmLayoutEdge>& existingEdges)
+    const QList<FsmLayoutEdge>& existingEdges,
+    const QHash<int, QRectF>& rectByVertexId)
 {
-    constexpr int kSamples = 64;
+    constexpr int kSamples = 96;
     QList<QPointF> candidatePoints;
     candidatePoints.reserve(kSamples + 1);
     for (int i = 0; i <= kSamples; ++i) {
@@ -1206,11 +1522,7 @@ bool quadraticRouteCrossesIndependentEdge(
             static_cast<qreal>(i) / kSamples));
     }
     for (const FsmLayoutEdge& edge : existingEdges) {
-        if (edge.selfLoop
-            || edge.fromNodeId == fromNodeId
-            || edge.fromNodeId == toNodeId
-            || edge.toNodeId == fromNodeId
-            || edge.toNodeId == toNodeId) {
+        if (edge.selfLoop) {
             continue;
         }
         const QList<QPointF> edgePoints = renderedEdgePolyline(edge);
@@ -1229,7 +1541,88 @@ bool quadraticRouteCrossesIndependentEdge(
                     && segmentsIntersect(lhsStart,
                                          lhsEnd,
                                          rhsStart,
-                                         rhsEnd)) {
+                                         rhsEnd)
+                    && !intersectionIsLocalToSharedEndpoint(
+                        lhsStart,
+                        lhsEnd,
+                        fromNodeId,
+                        toNodeId,
+                        rhsStart,
+                        rhsEnd,
+                        edge.fromNodeId,
+                        edge.toNodeId,
+                        rectByVertexId)) {
+                    return true;
+                }
+            }
+        }
+    }
+    return false;
+}
+
+bool segmentCrossesNonEndpointNode(
+    const QPointF& start,
+    const QPointF& end,
+    int fromNodeId,
+    int toNodeId,
+    const QHash<int, QRectF>& rectByStateIndex);
+
+bool sampledRouteCrossesNode(
+    const QList<QPointF>& candidatePoints,
+    int fromNodeId,
+    int toNodeId,
+    const QHash<int, QRectF>& rectByVertexId)
+{
+    for (int i = 1; i < candidatePoints.size(); ++i) {
+        if (segmentCrossesNonEndpointNode(candidatePoints.at(i - 1),
+                                          candidatePoints.at(i),
+                                          fromNodeId,
+                                          toNodeId,
+                                          rectByVertexId)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool sampledRouteCrossesIndependentEdge(
+    const QList<QPointF>& candidatePoints,
+    int fromNodeId,
+    int toNodeId,
+    const QList<FsmLayoutEdge>& existingEdges,
+    const QHash<int, QRectF>& rectByVertexId)
+{
+    for (const FsmLayoutEdge& edge : existingEdges) {
+        if (edge.selfLoop) {
+            continue;
+        }
+        const QList<QPointF> edgePoints = renderedEdgePolyline(edge);
+        for (int i = 1; i < candidatePoints.size(); ++i) {
+            for (int j = 1; j < edgePoints.size(); ++j) {
+                const QPointF lhsStart = candidatePoints.at(i - 1);
+                const QPointF lhsEnd = candidatePoints.at(i);
+                const QPointF rhsStart = edgePoints.at(j - 1);
+                const QPointF rhsEnd = edgePoints.at(j);
+                const bool sharedSamplePoint =
+                    QLineF(lhsStart, rhsStart).length() < 2.0
+                    || QLineF(lhsStart, rhsEnd).length() < 2.0
+                    || QLineF(lhsEnd, rhsStart).length() < 2.0
+                    || QLineF(lhsEnd, rhsEnd).length() < 2.0;
+                if (!sharedSamplePoint
+                    && segmentsIntersect(lhsStart,
+                                         lhsEnd,
+                                         rhsStart,
+                                         rhsEnd)
+                    && !intersectionIsLocalToSharedEndpoint(
+                        lhsStart,
+                        lhsEnd,
+                        fromNodeId,
+                        toNodeId,
+                        rhsStart,
+                        rhsEnd,
+                        edge.fromNodeId,
+                        edge.toNodeId,
+                        rectByVertexId)) {
                     return true;
                 }
             }
@@ -1240,7 +1633,7 @@ bool quadraticRouteCrossesIndependentEdge(
 
 QList<QPointF> renderedEdgePolyline(const FsmLayoutEdge& edge)
 {
-    constexpr int kSamples = 48;
+    constexpr int kSamples = 96;
     if (edge.selfLoop && edge.points.size() == 4) {
         QList<QPointF> sampled;
         const QPointF p0 = edge.points.at(0);
@@ -1265,6 +1658,27 @@ QList<QPointF> renderedEdgePolyline(const FsmLayoutEdge& edge)
                 edge.points.at(1),
                 edge.points.at(2),
                 static_cast<qreal>(i) / kSamples));
+        }
+        return sampled;
+    }
+    if (edge.curved && edge.points.size() == 4) {
+        QList<QPointF> sampled;
+        for (int i = 0; i <= kSamples; ++i) {
+            sampled.append(cubicPoint(
+                edge.points.at(0),
+                edge.points.at(1),
+                edge.points.at(2),
+                edge.points.at(3),
+                static_cast<qreal>(i) / kSamples));
+        }
+        return sampled;
+    }
+    if (edge.curved && edge.points.size() == 7) {
+        QList<QPointF> sampled;
+        for (int i = 0; i <= kSamples * 2; ++i) {
+            sampled.append(twoCubicPoint(
+                edge.points,
+                static_cast<qreal>(i) / (kSamples * 2)));
         }
         return sampled;
     }
@@ -1461,62 +1875,15 @@ bool pointListCrossesNonEndpointNode(const QList<QPointF>& points,
     return false;
 }
 
-int independentPolylineCrossingCount(const QList<FsmLayoutEdge>& edges,
-                                     QHash<int, int>* crossingsByTransition)
+int independentRenderedCrossingCount(
+    const QList<FsmLayoutEdge>& edges,
+    const QHash<int, QRectF>& rectByVertexId,
+    QStringList* crossingPairs = nullptr,
+    QHash<int, int>* crossingsByTransition = nullptr)
 {
     int crossingCount = 0;
     if (crossingsByTransition)
         crossingsByTransition->clear();
-    for (int i = 0; i < edges.size(); ++i) {
-        const FsmLayoutEdge& lhs = edges.at(i);
-        if (lhs.selfLoop || lhs.curved)
-            continue;
-        for (int j = i + 1; j < edges.size(); ++j) {
-            const FsmLayoutEdge& rhs = edges.at(j);
-            if (rhs.selfLoop || rhs.curved)
-                continue;
-            if (lhs.fromNodeId == rhs.fromNodeId
-                || lhs.toNodeId == rhs.toNodeId) {
-                continue;
-            }
-            for (int a = 1; a < lhs.points.size(); ++a) {
-                for (int b = 1; b < rhs.points.size(); ++b) {
-                    const QPointF lhsStart = lhs.points.at(a - 1);
-                    const QPointF lhsEnd = lhs.points.at(a);
-                    const QPointF rhsStart = rhs.points.at(b - 1);
-                    const QPointF rhsEnd = rhs.points.at(b);
-                    const bool sharedEndpoint =
-                        QLineF(lhsStart, rhsStart).length() < 4.0
-                        || QLineF(lhsStart, rhsEnd).length() < 4.0
-                        || QLineF(lhsEnd, rhsStart).length() < 4.0
-                        || QLineF(lhsEnd, rhsEnd).length() < 4.0;
-                    if (sharedEndpoint)
-                        continue;
-                    if (!segmentsIntersect(lhsStart,
-                                           lhsEnd,
-                                           rhsStart,
-                                           rhsEnd)) {
-                        continue;
-                    }
-                    ++crossingCount;
-                    if (crossingsByTransition) {
-                        (*crossingsByTransition)[lhs.transitionIndex] =
-                            crossingsByTransition->value(lhs.transitionIndex)
-                            + 1;
-                        (*crossingsByTransition)[rhs.transitionIndex] =
-                            crossingsByTransition->value(rhs.transitionIndex)
-                            + 1;
-                    }
-                }
-            }
-        }
-    }
-    return crossingCount;
-}
-
-int independentRenderedCrossingCount(const QList<FsmLayoutEdge>& edges)
-{
-    int crossingCount = 0;
     for (int i = 0; i < edges.size(); ++i) {
         const FsmLayoutEdge& lhs = edges.at(i);
         if (lhs.selfLoop)
@@ -1526,12 +1893,6 @@ int independentRenderedCrossingCount(const QList<FsmLayoutEdge>& edges)
             const FsmLayoutEdge& rhs = edges.at(j);
             if (rhs.selfLoop)
                 continue;
-            if (lhs.fromNodeId == rhs.fromNodeId
-                || lhs.fromNodeId == rhs.toNodeId
-                || lhs.toNodeId == rhs.fromNodeId
-                || lhs.toNodeId == rhs.toNodeId) {
-                continue;
-            }
             const QList<QPointF> rhsPoints = renderedEdgePolyline(rhs);
             bool pairCrosses = false;
             for (int a = 1; a < lhsPoints.size() && !pairCrosses; ++a) {
@@ -1549,8 +1910,31 @@ int independentRenderedCrossingCount(const QList<FsmLayoutEdge>& edges)
                         && segmentsIntersect(lhsStart,
                                              lhsEnd,
                                              rhsStart,
-                                             rhsEnd)) {
+                                             rhsEnd)
+                        && !intersectionIsLocalToSharedEndpoint(
+                            lhsStart,
+                            lhsEnd,
+                            lhs.fromNodeId,
+                            lhs.toNodeId,
+                            rhsStart,
+                            rhsEnd,
+                            rhs.fromNodeId,
+                            rhs.toNodeId,
+                            rectByVertexId)) {
                         pairCrosses = true;
+                        if (crossingPairs) {
+                            crossingPairs->append(
+                                QStringLiteral("%1/%2")
+                                    .arg(lhs.label, rhs.label));
+                        }
+                        if (crossingsByTransition) {
+                            (*crossingsByTransition)[lhs.transitionIndex] =
+                                crossingsByTransition->value(
+                                    lhs.transitionIndex) + 1;
+                            (*crossingsByTransition)[rhs.transitionIndex] =
+                                crossingsByTransition->value(
+                                    rhs.transitionIndex) + 1;
+                        }
                         break;
                     }
                 }
@@ -1712,12 +2096,11 @@ FsmGraphLayout layoutFsmGraphPass(const FsmGraph& graph,
         WorkVertex vertex;
         vertex.id = vertices.size();
         vertex.stateIndex = i;
-        vertex.canonicalStateIndex = i < reportStateCount
-            ? i
-            : qBound(0, initialState, qMax(0, reportStateCount - 1));
+        vertex.canonicalStateIndex = i;
         vertex.rank = ranks.at(i);
         vertex.dummy = false;
-        vertex.alias = i >= reportStateCount;
+        vertex.alias = false;
+        vertex.implicitState = i >= reportStateCount;
         stateVertexIds[i] = vertex.id;
         vertices.append(vertex);
     }
@@ -1810,7 +2193,7 @@ FsmGraphLayout layoutFsmGraphPass(const FsmGraph& graph,
 
     QHash<int, QList<int>> attractionByVertex;
     for (const WorkEdge& edge : workEdges) {
-        if (edge.selfLoop
+        if (edge.selfLoop || edge.usesAlias
             || !directedPairs.contains(directedKey(edge.to, edge.from))) {
             continue;
         }
@@ -1840,7 +2223,12 @@ FsmGraphLayout layoutFsmGraphPass(const FsmGraph& graph,
             updateOrders(layers, orderByVertex);
         }
     }
-    transposeLayerOrder(layers, successors);
+    transposeLayerOrder(layers, successors, attractionByVertex);
+    alignReciprocalPartners(layers,
+                            vertices,
+                            successors,
+                            attractionByVertex,
+                            options);
     updateOrders(layers, orderByVertex);
     assignLayerCoordinates(vertices, layers, options);
     straightenCoordinates(vertices,
@@ -1851,6 +2239,14 @@ FsmGraphLayout layoutFsmGraphPass(const FsmGraph& graph,
                           attractionByVertex,
                           options);
     snapCoordinatesToGrid(vertices, layers, options);
+    alignReciprocalLayerCoordinates(vertices,
+                                    layers,
+                                    attractionByVertex,
+                                    options);
+    alignReciprocalNodeCoordinates(vertices,
+                                   layers,
+                                   attractionByVertex,
+                                   options);
     separateWeakComponents(vertices,
                            workEdges,
                            stateVertexIds.value(initialState, -1),
@@ -1881,7 +2277,7 @@ FsmGraphLayout layoutFsmGraphPass(const FsmGraph& graph,
                                     rect.top() + 8.0,
                                     qMax<qreal>(0.0, rect.width() - 20.0),
                                     options.titleLineHeight);
-        node.showDetail = !vertex.alias;
+        node.showDetail = !vertex.alias && !vertex.implicitState;
         if (node.showDetail) {
             node.detailTextRect =
                 QRectF(rect.left() + 10.0,
@@ -1892,6 +2288,7 @@ FsmGraphLayout layoutFsmGraphPass(const FsmGraph& graph,
         node.rank = vertex.rank;
         node.order = orderByVertex.value(vertex.id);
         node.alias = vertex.alias;
+        node.implicitState = vertex.implicitState;
         node.canonicalNodeId = stateVertexIds.at(vertex.canonicalStateIndex);
         node.deadEndState = row.deadEndState;
         node.codeLink = row.codeLink;
@@ -1987,6 +2384,13 @@ FsmGraphLayout layoutFsmGraphPass(const FsmGraph& graph,
                 : (rhsDelta > options.orthogonalStraightThreshold ? 1 : 0);
             if (lhsDirection != rhsDirection)
                 return lhsDirection < rhsDirection;
+            if (lhsDirection != 0
+                && !qFuzzyCompare(lhsSourceMinor + 1.0,
+                                  rhsSourceMinor + 1.0)) {
+                return lhsDirection > 0
+                    ? lhsSourceMinor > rhsSourceMinor
+                    : lhsSourceMinor < rhsSourceMinor;
+            }
             const qreal lhsSpan = qAbs(lhsDelta);
             const qreal rhsSpan = qAbs(rhsDelta);
             if (!qFuzzyCompare(lhsSpan + 1.0, rhsSpan + 1.0))
@@ -2023,14 +2427,14 @@ FsmGraphLayout layoutFsmGraphPass(const FsmGraph& graph,
     routingOrder.reserve(workEdges.size());
     for (int i = 0; i < workEdges.size(); ++i) {
         const WorkEdge& edge = workEdges.at(i);
-        const bool reciprocal = !edge.selfLoop
+        const bool reciprocal = !edge.selfLoop && !edge.usesAlias
             && directedPairs.contains(directedKey(edge.to, edge.from));
         if (!reciprocal)
             routingOrder.append(i);
     }
     for (int i = 0; i < workEdges.size(); ++i) {
         const WorkEdge& edge = workEdges.at(i);
-        const bool reciprocal = !edge.selfLoop
+        const bool reciprocal = !edge.selfLoop && !edge.usesAlias
             && directedPairs.contains(directedKey(edge.to, edge.from));
         if (reciprocal)
             routingOrder.append(i);
@@ -2100,7 +2504,8 @@ FsmGraphLayout layoutFsmGraphPass(const FsmGraph& graph,
              - static_cast<qreal>(totalParallel - 1) / 2.0)
             * options.parallelEdgeSpacing;
         const bool reciprocalPair =
-            directedPairs.contains(directedKey(workEdge.to, workEdge.from));
+            !workEdge.usesAlias
+            && directedPairs.contains(directedKey(workEdge.to, workEdge.from));
 
         QList<QPointF> points;
         if (reciprocalPair) {
@@ -2109,7 +2514,8 @@ FsmGraphLayout layoutFsmGraphPass(const FsmGraph& graph,
             QPointF start;
             QPointF end;
             QPointF control;
-            const qreal bendSign = workEdge.from < workEdge.to ? -1.0 : 1.0;
+            const qreal preferredBendSign =
+                workEdge.from < workEdge.to ? -1.0 : 1.0;
             const qreal minimumBend = 72.0 + qAbs(laneOffset) * 1.35;
             const qreal minorExtent = options.direction
                     == FsmLayoutDirection::LeftRight
@@ -2118,58 +2524,279 @@ FsmGraphLayout layoutFsmGraphPass(const FsmGraph& graph,
             const qreal maximumBend = qMax<qreal>(
                 420.0,
                 minorExtent * 3.0 + options.maxNodeWidth);
-            const qreal sideSign = workEdge.from < workEdge.to ? -1.0 : 1.0;
             const QList<qreal> portMagnitudes{52.0, 36.0, 20.0, 0.0,
                                               -20.0, -36.0};
+            const QList<qreal> bendSigns{preferredBendSign,
+                                         -preferredBendSign};
             bool routeFound = false;
-            for (qreal portMagnitude : portMagnitudes) {
-                const qreal pairSide = sideSign * portMagnitude;
-                const qreal sourceOffset =
-                    sourcePortOffsetByEdgeId.value(workEdge.edgeId)
-                    + pairSide + laneOffset * 0.25;
-                const qreal targetOffset =
-                    targetPortOffsetByEdgeId.value(workEdge.edgeId)
-                    + pairSide + laneOffset * 0.25;
-                start = sourcePort(fromRect,
-                                   sourceOffset,
-                                   options.direction,
-                                   true);
-                end = targetPort(toRect,
-                                 targetOffset,
-                                 options.direction,
-                                 true);
-                for (qreal magnitude = minimumBend;
-                     magnitude <= maximumBend;
-                     magnitude += 24.0) {
-                    const QPointF candidate = quadraticControlPoint(
-                        start,
-                        end,
-                        bendSign * magnitude);
-                    control = candidate;
-                    if (quadraticRouteCrossesNode(start,
-                                                  candidate,
-                                                  end,
-                                                  sourceVertexId,
-                                                  targetVertexId,
-                                                  rectByVertexId)
-                        || quadraticRouteCrossesIndependentEdge(
+            QList<QPointF> nodeSafeFallback;
+            for (qreal bendSign : bendSigns) {
+                for (qreal portMagnitude : portMagnitudes) {
+                    const qreal pairSide = bendSign * portMagnitude;
+                    const qreal sourceOffset =
+                        sourcePortOffsetByEdgeId.value(workEdge.edgeId)
+                        + pairSide + laneOffset * 0.25;
+                    const qreal targetOffset =
+                        targetPortOffsetByEdgeId.value(workEdge.edgeId)
+                        + pairSide + laneOffset * 0.25;
+                    start = sourcePort(fromRect,
+                                       sourceOffset,
+                                       options.direction,
+                                       true);
+                    end = targetPort(toRect,
+                                     targetOffset,
+                                     options.direction,
+                                     true);
+                    for (qreal magnitude = minimumBend;
+                         magnitude <= maximumBend;
+                         magnitude += 24.0) {
+                        const QPointF candidate = quadraticControlPoint(
                             start,
-                            candidate,
                             end,
-                            sourceVertexId,
-                            targetVertexId,
-                            layout.edges)) {
-                        continue;
+                            bendSign * magnitude);
+                        if (quadraticRouteCrossesNode(start,
+                                                      candidate,
+                                                      end,
+                                                      sourceVertexId,
+                                                      targetVertexId,
+                                                      rectByVertexId)) {
+                            continue;
+                        }
+                        if (nodeSafeFallback.isEmpty())
+                            nodeSafeFallback = {start, candidate, end};
+                        if (quadraticRouteCrossesIndependentEdge(
+                                start,
+                                candidate,
+                                end,
+                                sourceVertexId,
+                                targetVertexId,
+                                layout.edges,
+                                rectByVertexId)) {
+                            continue;
+                        }
+                        control = candidate;
+                        routeFound = true;
+                        break;
                     }
-                    routeFound = true;
-                    break;
+                    if (routeFound)
+                        break;
                 }
                 if (routeFound)
                     break;
             }
-            appendPoint(points, start);
-            appendPoint(points, control);
-            appendPoint(points, end);
+            if (!routeFound) {
+                QPointF control1;
+                QPointF control2;
+                for (qreal bendSign : bendSigns) {
+                    for (qreal portMagnitude : portMagnitudes) {
+                        const qreal pairSide = bendSign * portMagnitude;
+                        start = sourcePort(
+                            fromRect,
+                            sourcePortOffsetByEdgeId.value(workEdge.edgeId)
+                                + pairSide + laneOffset * 0.25,
+                            options.direction,
+                            true);
+                        end = targetPort(
+                            toRect,
+                            targetPortOffsetByEdgeId.value(workEdge.edgeId)
+                                + pairSide + laneOffset * 0.25,
+                            options.direction,
+                            true);
+                        const qreal startMajor =
+                            majorCoord(start, options.direction);
+                        const qreal endMajor =
+                            majorCoord(end, options.direction);
+                        const qreal majorDelta = endMajor - startMajor;
+                        const qreal startMinor =
+                            minorCoord(start, options.direction);
+                        const qreal endMinor =
+                            minorCoord(end, options.direction);
+                        for (qreal magnitude = minimumBend;
+                             magnitude <= maximumBend;
+                             magnitude += 48.0) {
+                            const qreal outerMinor = bendSign < 0.0
+                                ? qMin(startMinor, endMinor) - magnitude
+                                : qMax(startMinor, endMinor) + magnitude;
+                            control1 = pointFromMajorMinor(
+                                startMajor + majorDelta * 0.28,
+                                outerMinor,
+                                options.direction);
+                            control2 = pointFromMajorMinor(
+                                endMajor - majorDelta * 0.28,
+                                outerMinor,
+                                options.direction);
+                            QList<QPointF> sampled;
+                            constexpr int kCubicRouteSamples = 96;
+                            sampled.reserve(kCubicRouteSamples + 1);
+                            for (int sample = 0;
+                                 sample <= kCubicRouteSamples;
+                                 ++sample) {
+                                sampled.append(cubicPoint(
+                                    start,
+                                    control1,
+                                    control2,
+                                    end,
+                                    static_cast<qreal>(sample)
+                                        / kCubicRouteSamples));
+                            }
+                            if (sampledRouteCrossesNode(sampled,
+                                                        sourceVertexId,
+                                                        targetVertexId,
+                                                        rectByVertexId)) {
+                                continue;
+                            }
+                            if (nodeSafeFallback.isEmpty()) {
+                                nodeSafeFallback = {start,
+                                                    control1,
+                                                    control2,
+                                                    end};
+                            }
+                            if (sampledRouteCrossesIndependentEdge(
+                                    sampled,
+                                    sourceVertexId,
+                                    targetVertexId,
+                                    layout.edges,
+                                    rectByVertexId)) {
+                                continue;
+                            }
+                            points = {start, control1, control2, end};
+                            routeFound = true;
+                            break;
+                        }
+                        if (routeFound)
+                            break;
+                    }
+                    if (routeFound)
+                        break;
+                }
+                if (!routeFound) {
+                    QList<QPointF> nodeSafeOuterArc;
+                    QList<QPointF> lastOuterArc;
+                    const qreal graphMinorMinimum = options.direction
+                            == FsmLayoutDirection::LeftRight
+                        ? layout.nodeBounds.top()
+                        : layout.nodeBounds.left();
+                    const qreal graphMinorMaximum = options.direction
+                            == FsmLayoutDirection::LeftRight
+                        ? layout.nodeBounds.bottom()
+                        : layout.nodeBounds.right();
+                    for (qreal bendSign : bendSigns) {
+                        const qreal extremeOffset = bendSign
+                            * options.maxNodeWidth;
+                        start = sourcePort(
+                            fromRect,
+                            sourcePortOffsetByEdgeId.value(workEdge.edgeId)
+                                + extremeOffset,
+                            options.direction,
+                            true);
+                        end = targetPort(
+                            toRect,
+                            targetPortOffsetByEdgeId.value(workEdge.edgeId)
+                                + extremeOffset,
+                            options.direction,
+                            true);
+                        const qreal startMajor =
+                            majorCoord(start, options.direction);
+                        const qreal endMajor =
+                            majorCoord(end, options.direction);
+                        const qreal majorDelta = endMajor - startMajor;
+                        const qreal nearStartMajor =
+                            startMajor + majorDelta * 0.20;
+                        const qreal nearEndMajor =
+                            endMajor - majorDelta * 0.20;
+                        const qreal middleMajor =
+                            (startMajor + endMajor) / 2.0;
+                        for (int outerStep = 0; outerStep < 12; ++outerStep) {
+                            const qreal padding = options.maxNodeWidth
+                                + outerStep * options.nodeSpacing;
+                            const qreal outerMinor = bendSign < 0.0
+                                ? graphMinorMinimum - padding
+                                : graphMinorMaximum + padding;
+                            const QList<QPointF> candidate{
+                                start,
+                                pointFromMajorMinor(nearStartMajor,
+                                                    minorCoord(start,
+                                                               options.direction),
+                                                    options.direction),
+                                pointFromMajorMinor(nearStartMajor,
+                                                    outerMinor,
+                                                    options.direction),
+                                pointFromMajorMinor(middleMajor,
+                                                    outerMinor,
+                                                    options.direction),
+                                pointFromMajorMinor(nearEndMajor,
+                                                    outerMinor,
+                                                    options.direction),
+                                pointFromMajorMinor(nearEndMajor,
+                                                    minorCoord(end,
+                                                               options.direction),
+                                                    options.direction),
+                                end};
+                            lastOuterArc = candidate;
+                            QList<QPointF> sampled;
+                            constexpr int kOuterArcSamples = 192;
+                            sampled.reserve(kOuterArcSamples + 1);
+                            for (int sample = 0;
+                                 sample <= kOuterArcSamples;
+                                 ++sample) {
+                                sampled.append(twoCubicPoint(
+                                    candidate,
+                                    static_cast<qreal>(sample)
+                                        / kOuterArcSamples));
+                            }
+                            if (sampledRouteCrossesNode(sampled,
+                                                        sourceVertexId,
+                                                        targetVertexId,
+                                                        rectByVertexId)) {
+                                continue;
+                            }
+                            if (nodeSafeOuterArc.isEmpty())
+                                nodeSafeOuterArc = candidate;
+                            if (sampledRouteCrossesIndependentEdge(
+                                    sampled,
+                                    sourceVertexId,
+                                    targetVertexId,
+                                    layout.edges,
+                                    rectByVertexId)) {
+                                continue;
+                            }
+                            points = candidate;
+                            routeFound = true;
+                            break;
+                        }
+                        if (routeFound)
+                            break;
+                    }
+                    if (!routeFound && !nodeSafeOuterArc.isEmpty()) {
+                        points = nodeSafeOuterArc;
+                        routeFound = true;
+                        layout.warnings.append(QStringLiteral(
+                            "reciprocal outer arc accepted edge-only conflict: %1")
+                                                   .arg(conditionId(
+                                                       workEdge.transitionIndex)));
+                    }
+                    if (!routeFound && !nodeSafeFallback.isEmpty()) {
+                        points = nodeSafeFallback;
+                        routeFound = true;
+                        layout.warnings.append(QStringLiteral(
+                            "reciprocal route accepted edge-only conflict: %1")
+                                                   .arg(conditionId(
+                                                       workEdge.transitionIndex)));
+                    }
+                    if (!routeFound) {
+                        points = lastOuterArc;
+                        layout.warnings.append(QStringLiteral(
+                            "reciprocal route has no node-safe arc: %1")
+                                                   .arg(conditionId(
+                                                       workEdge.transitionIndex)));
+                    }
+                }
+            }
+            if (points.isEmpty()) {
+                appendPoint(points, start);
+                appendPoint(points, control);
+                appendPoint(points, end);
+            }
             edge.curved = true;
         } else {
             QList<int> pathVertices = workEdge.vertexPath;
@@ -2225,8 +2852,15 @@ FsmGraphLayout layoutFsmGraphPass(const FsmGraph& graph,
                                             QRectF(point, QSizeF(1, 1)));
         layout.edges.append(edge);
     }
-    layout.renderedCrossingCount =
-        independentRenderedCrossingCount(layout.edges);
+    QStringList renderedCrossingPairs;
+    layout.renderedCrossingCount = independentRenderedCrossingCount(
+        layout.edges,
+        rectByVertexId,
+        &renderedCrossingPairs);
+    for (const QString& pair : std::as_const(renderedCrossingPairs)) {
+        layout.warnings.append(
+            QStringLiteral("rendered crossing: %1").arg(pair));
+    }
 
     QList<EdgeSegment> edgeSegments;
     for (const FsmLayoutEdge& edge : layout.edges) {
@@ -2249,7 +2883,7 @@ FsmGraphLayout layoutFsmGraphPass(const FsmGraph& graph,
                 usedLabelRects,
                 edgeSegments,
                 options);
-        } else if (edge.curved && edge.points.size() == 3) {
+        } else if (edge.curved && edge.points.size() >= 3) {
             edge.labelAnchor = chooseCurvedEdgeLabelAnchor(
                 edge,
                 labelSize,
@@ -2299,8 +2933,26 @@ FsmGraphLayout layoutFsmGraph(const FsmGraph& graph,
     const QSet<int> noForcedAliases;
     FsmGraphLayout initial =
         layoutFsmGraphPass(graph, options, noForcedAliases);
+    QHash<int, QRectF> rectByNodeId;
+    for (const FsmLayoutNode& node : initial.nodes)
+        rectByNodeId.insert(node.nodeId, node.rect);
     QHash<int, int> crossingsByTransition;
-    independentPolylineCrossingCount(initial.edges, &crossingsByTransition);
+    independentRenderedCrossingCount(initial.edges,
+                                     rectByNodeId,
+                                     nullptr,
+                                     &crossingsByTransition);
+    for (const FsmLayoutEdge& edge : initial.edges) {
+        if (edge.selfLoop)
+            continue;
+        if (pointListCrossesNonEndpointNode(renderedEdgePolyline(edge),
+                                            edge.fromNodeId,
+                                            edge.toNodeId,
+                                            rectByNodeId)) {
+            crossingsByTransition[edge.transitionIndex] = qMax(
+                2,
+                crossingsByTransition.value(edge.transitionIndex));
+        }
+    }
 
     QList<int> candidates;
     for (auto it = crossingsByTransition.cbegin();

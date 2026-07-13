@@ -66,7 +66,9 @@ into an analyzer.
   nodes, transpose refinement, layer-channel ordering, and a bounded
   fallback-alias rule for edges that still cross multiple independent edges.
   Alias nodes are dashed, canonical-linked, and do not change service-owned FSM
-  counts. Top-down non-self edges leave source bottoms, enter target tops, use
+  counts. Implicit transition endpoints are separate self-canonical nodes with
+  an `implicitState` style marker; alias identity is now restricted to exact
+  same-name visual copies. Top-down non-self edges leave source bottoms, enter target tops, use
   rounded orthogonal paths, snap columns to a grid, and keep `C#` labels next to
   owned vertical segments. `relationship_test` now rejects over-budget rendered
   span, invalid alias metadata, wrong ports, detached labels, collinear edge
@@ -74,20 +76,30 @@ into an analyzer.
   channel-track overlap, cropped node text line boxes, and independent-edge
   crossings above 2. Snapshot metrics currently show 0 crossings for
   `elec_cfg_ns`, `phy_cfg_ns`, `phy_pass_thrg_cfg_ns`, and
-  `vendor_ip_edma_ctx`; scene areas are 0.556, 0.626, 0.538, and 0.518 of the
+  `vendor_ip_edma_ctx`; scene areas are 0.556, 0.605, 0.516, and 0.525 of the
   previous fixed-width baseline, with no fallback aliases triggered.
   Current interaction work adds condition tooltips on transitions, linked
   edge/label hover, canonical-plus-alias state hover, incident-edge propagation,
   and selected-over-hover priority. The snapshot harness now emits dedicated
   state-hover and edge-hover review images.
+  The state-hover case selects the largest alias family (`S_IDLE`: one
+  canonical plus two aliases), verifies all six incident transitions, and
+  verifies that the independent `default` state is not highlighted. Direct
+  `default` selection selects only that node; direct hover highlights that node
+  and its actual incident transition.
   Current pure-layout verification includes 100 deterministic random FSMs with
   5-50 states and mixed back edges, self-loops, reciprocal pairs, long names,
   and unreachable components. All generated graphs pass the unchanged global
   invariants; failures exposed during implementation were repaired in generic
   Bezier collision sampling, reciprocal obstacle clearance, channel tracks,
   weak-component packing, and local label placement. The crossing metric now
-  samples rendered reciprocal curves; all four review fixtures report 0 under
-  that stricter definition, and the 100-graph fuzz pass completes in 5.874 s.
+  samples rendered quadratic/cubic curves at 96 steps and limits shared-endpoint
+  exemption to the 12 px port neighborhood; all four review fixtures report 0
+  under that stricter definition. Reciprocal ordering now uses a
+  crossing-preserving order postprocess followed by layer/node coordinate
+  alignment. Aliased long reciprocal edges use short orthogonal routes, while
+  adjacent canonical pairs remain separated arcs. Deterministic seeds divisible by four
+  also include an endpoint absent from `stateRows`.
   Verification passed for `relationship_test`, `fsm_ui_snapshot_test`,
   `gui_smoke_test`, `insight_visual_style_test`, `completion_test`, and
   `git diff --check`.
@@ -1222,7 +1234,8 @@ M10.5 implementation status:
   wrapped full-condition tooltips from layout output.
 - Complete: deterministic FSM fuzz coverage runs 100 fixed seeds through the
   full invariant suite in `relationship_test` without fixture/seed exceptions.
-  The final run passes and reports its seed range and elapsed time.
+  The final run passes, includes implicit endpoints in 25 seeds, and reports
+  its seed range and graph size on failure.
 
 ### 11. Module Block Diagram
 

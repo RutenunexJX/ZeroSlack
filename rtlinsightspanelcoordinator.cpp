@@ -973,6 +973,21 @@ QPainterPath fsmLayoutEdgePath(const FsmLayoutEdge& edge)
         path.cubicTo(edge.points.at(1), edge.points.at(2), edge.points.at(3));
         return path;
     }
+    if (edge.curved && edge.points.size() == 7) {
+        path.cubicTo(edge.points.at(1),
+                     edge.points.at(2),
+                     edge.points.at(3));
+        path.cubicTo(edge.points.at(4),
+                     edge.points.at(5),
+                     edge.points.at(6));
+        return path;
+    }
+    if (edge.curved && edge.points.size() == 4) {
+        path.cubicTo(edge.points.at(1),
+                     edge.points.at(2),
+                     edge.points.at(3));
+        return path;
+    }
     if (edge.curved && edge.points.size() >= 3) {
         path.quadTo(edge.points.at(1), edge.points.at(2));
         return path;
@@ -2694,7 +2709,25 @@ bool RtlInsightsPanelCoordinator::selectGraphItemForTest(
                                           secondaryText);
     if (!item)
         return false;
+    if (insightsGraphScene)
+        insightsGraphScene->clearSelection();
     item->setSelected(true);
+    if (dynamic_cast<RtlInsightGraphNodeItem*>(item)) {
+        const QVariant canonicalData =
+            item->data(kGraphFsmCanonicalNodeIdRole);
+        if (canonicalData.isValid() && insightsGraphScene) {
+            const int canonicalNodeId = canonicalData.toInt();
+            for (QGraphicsItem* candidate : insightsGraphScene->items()) {
+                const QVariant candidateCanonicalData =
+                    candidate->data(kGraphFsmCanonicalNodeIdRole);
+                if (dynamic_cast<RtlInsightGraphNodeItem*>(candidate)
+                    && candidateCanonicalData.isValid()
+                    && candidateCanonicalData.toInt() == canonicalNodeId) {
+                    candidate->setSelected(true);
+                }
+            }
+        }
+    }
     QStringList rows{
         QStringLiteral("Kind=%1").arg(item->data(kGraphKindRole).toString())};
     const QString badge = item->data(kGraphBadgeRole).toString();
@@ -3503,7 +3536,7 @@ void RtlInsightsPanelCoordinator::renderFsmGraphLayoutScene(
                                                 fill,
                                                 stroke,
                                                 font,
-                                                node.alias,
+                                                node.alias || node.implicitState,
                                                 node.canonicalNodeId,
                                                 node.showDetail);
         item->setData(kGraphFsmNodeIdRole, node.nodeId);
