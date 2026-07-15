@@ -234,6 +234,7 @@ struct InlineCommandMatch {
     bool helpRequested = false;
     InlineCommandIntent intent = InlineCommandIntent::SemanticCompletion;
     int prefixPosition = -1;
+    int endPosition = -1;
     QString commandToken;
     QString input;
     InlineCommandDescriptor descriptor;
@@ -278,6 +279,8 @@ struct CommandModeCompletionQuery {
     QString documentText;
     int cursorLine = -1;
     int cursorPosition = -1;
+    bool hasExplicitMatch = false;
+    InlineCommandMatch explicitMatch;
 };
 
 struct CommandModeCompletionState {

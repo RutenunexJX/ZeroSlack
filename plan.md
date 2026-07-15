@@ -11,6 +11,35 @@ into an analyzer.
 
 ## Current Execution Baseline
 
+- Version management baseline is now SemVer-based with root `VERSION` as the
+  only manually maintained product version source. Current baseline:
+  `v0.1.0`. CMake configures `generated/version.h`; version numbers are no
+  longer hand-maintained in a source-tree header or coupled to dependency
+  version labels.
+- Inline command matching is now Tab-only. Built-in `;cmd` and user/built-in
+  `;;cmd` abbreviations can appear at arbitrary editable code positions, but
+  typing them does not enter command mode or open command candidates. Plain
+  Tab parses only the registered suffix ending at the cursor, prefers `;;cmd`
+  over `;cmd`, preserves replacement range from the matched semicolon to the
+  cursor, rejects comments/strings including cross-line block comments, and
+  scopes semantic queries by the abbreviation anchor file/module/position.
+  Multi-candidate semantic sessions accept identifier input and Backspace after
+  the first Tab, update the abbreviation query and popup in place, and retain
+  the original semantic anchor. Filtering to one or zero candidates does not
+  auto-submit; zero matches remain recoverable through a non-selectable row and
+  do not expose a default declaration item. Active inline popup sessions cancel
+  on cursor movement away from the abbreviation end or on selection, preserving
+  source text and clearing popup / command highlight state. The comment/string
+  guard no longer treats `//` inside a closed string or closed block comment as
+  a live line comment.
+- Ordinary identifier input is no longer an implicit completion trigger.
+  Automatic popup entry remains for strong syntactic contexts (`.`, `::`, `` ` ``,
+  `$`). GUI regression verifies that `;l<Tab>` opens all anchor-module logic,
+  incremental filtering and Backspace keep the popup active, zero matches can
+  recover, and Tab/Enter replace only the complete abbreviation. Inline
+  semantic sessions suppress `[DEFAULT]` items entirely. Debug verification
+  passed for `completion_test`, `gui_smoke_test`, `relationship_test`, and
+  `insight_visual_style_test`.
 - Phase 1, GraphCanvas Phase 2, and the App Shell modernization pass of the
   current UI route are complete. `InsightVisualStyle` is the shared application
   theme layer for menu/status/tab/dock/sidebar, toolbar, splitter, common
@@ -563,6 +592,14 @@ First milestones:
 - M6.4 integrate user templates with slot mode
   (complete: service-owned user templates enter the `;;cmd` completion path and
   preserve slot metadata through activation)
+- M6.5 make inline commands explicit Tab abbreviations
+  (complete: typing `;cmd` / `;;cmd` no longer enters command mode; plain Tab
+  expands the nearest registered suffix at arbitrary code positions while
+  preserving Slot Mode, Column Mode, popup, and normal Tab priority)
+- M6.6 harden inline abbreviation cancellation and lexical context
+  (complete: cursor movement/selection cancels active inline sessions without
+  editing source; a single state-machine lexical scan handles strings, line
+  comments, and block comments)
 
 M6.1 audit status:
 
@@ -572,6 +609,10 @@ M6.1 audit status:
 - Complete: `;;cmd` is documented as inline template expansion owned by
   `CodeTemplateService`, with `EditorCompletionWorkflow` applying insertion and
   starting Slot Mode when template slot metadata exists.
+- Complete: inline commands are documented as Tab-only abbreviations rather
+  than input-time command mode triggers. The parser accepts arbitrary code
+  positions, resolves `;;cmd` before `;cmd`, rejects comments/strings, and uses
+  a saved anchor context for semantic scope.
 - Complete: the obsolete named-action layer is documented as removed;
   daily editor/app actions are owned by their normal shortcuts, context menus,
   COM Mode registrations, or direct editor/file APIs.

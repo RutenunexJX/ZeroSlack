@@ -60,6 +60,7 @@ struct EditorCommandModeCompletionRefreshState {
     bool highlightCommand = false;
     bool hidePopup = false;
     bool showCompletions = false;
+    bool suppressDefaultSymbolFallback = false;
     CommandModeCompletionState completion;
 };
 

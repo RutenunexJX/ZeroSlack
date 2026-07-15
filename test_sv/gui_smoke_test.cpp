@@ -50,6 +50,8 @@
 #include <QWheelEvent>
 #include <QtTest/QTest>
 
+#include "version.h"
+
 #include <algorithm>
 #include <cstdio>
 #include <functional>
@@ -1372,6 +1374,11 @@ static void runIncludeCompletionRegression()
     QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
 
     QCompleter* completer = editor.findChild<QCompleter*>();
+    expectBool(";h input does not auto-open completion",
+               completer && !completer->popup()->isVisible(),
+               true);
+    QTest::keyClick(&editor, Qt::Key_Tab);
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
     auto selectCompletionContaining =
         [](QCompleter* targetCompleter, const QString& needle) {
             if (!targetCompleter || !targetCompleter->model())
@@ -1434,6 +1441,11 @@ static void runIncludeCompletionRegression()
 
     QCompleter* newHeaderCompleter =
         newHeaderEditor.findChild<QCompleter*>();
+    expectBool(";h -n input does not auto-open completion",
+               newHeaderCompleter && !newHeaderCompleter->popup()->isVisible(),
+               true);
+    QTest::keyClick(&newHeaderEditor, Qt::Key_Tab);
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
     const QModelIndex createIndex =
         selectCompletionContaining(newHeaderCompleter,
                                    QStringLiteral("new_defs.svh - create header"));
@@ -8127,6 +8139,40 @@ int main(int argc, char** argv)
     runEditorHoverPreviewRegression(workspacePath);
 
     MainWindow window;
+    const QString productVersion = QLatin1String(APP_VERSION);
+    expectBool("product version baseline is v0.1.0",
+               productVersion == QStringLiteral("0.1.0"),
+               true);
+    expectBool("product version omits dependency marker",
+               !productVersion.contains(QStringLiteral("slang"), Qt::CaseInsensitive),
+               true);
+    expectBool("main window title shows product version",
+               window.windowTitle().contains(QStringLiteral("ZeroSlack"))
+                   && window.windowTitle().contains(QStringLiteral("v0.1.0"))
+                   && !window.windowTitle().contains(QStringLiteral("slang"),
+                                                     Qt::CaseInsensitive),
+               true);
+    bool statusVersionVisible = false;
+    bool statusVersionTooltipVisible = false;
+    if (window.statusBar()) {
+        const QList<QLabel*> labels = window.statusBar()->findChildren<QLabel*>();
+        for (const QLabel* label : labels) {
+            statusVersionVisible =
+                statusVersionVisible || label->text() == QStringLiteral("v0.1.0");
+            statusVersionTooltipVisible =
+                statusVersionTooltipVisible
+                || (label->toolTip().contains(QStringLiteral("ZeroSlack v0.1.0"))
+                    && !label->toolTip().contains(QStringLiteral("slang"),
+                                                  Qt::CaseInsensitive));
+        }
+    }
+    expectBool("status bar shows product version",
+               statusVersionVisible,
+               true);
+    expectBool("status bar version tooltip shows product version",
+               statusVersionTooltipVisible,
+               true);
+
     bool workspaceSymbolsDone = false;
     bool workspaceFilesScanned = false;
     QObject::connect(window.analysisScheduler.get(),
@@ -9501,10 +9547,10 @@ int main(int argc, char** argv)
 
         QCompleter* completer = editor->findChild<QCompleter*>();
         expectBool("completion object exists", completer != nullptr, true);
-        expectBool("completion popup/model becomes usable",
+        expectBool("plain identifier input does not auto-open completion",
                    waitUntil([&]() {
-                       return completer && completer->model() && completer->model()->rowCount() > 0;
-                   }, 3000),
+                       return completer && !completer->popup()->isVisible();
+                   }, 500),
                    true);
         if (completer)
             completer->popup()->hide();
@@ -9589,6 +9635,46 @@ int main(int argc, char** argv)
                 .withCollectorKind(SymbolTaxonomy::CollectorKind::PortInput)
                 .inModule(QStringLiteral("gui_target"))
                 .record(),
+            SemanticFixtureRecordBuilder(QStringLiteral("gui_en"),
+                                         SymbolTaxonomy::DeclarationKind::Signal)
+                .withFile(symbolFixturePath)
+                .withLocalHandle(9410)
+                .withLine(20)
+                .withCollectorKind(SymbolTaxonomy::CollectorKind::Logic)
+                .inModule(QStringLiteral("gui_top"))
+                .record(),
+            SemanticFixtureRecordBuilder(QStringLiteral("en_a"),
+                                         SymbolTaxonomy::DeclarationKind::Signal)
+                .withFile(symbolFixturePath)
+                .withLocalHandle(9411)
+                .withLine(21)
+                .withCollectorKind(SymbolTaxonomy::CollectorKind::Logic)
+                .inModule(QStringLiteral("gui_top"))
+                .record(),
+            SemanticFixtureRecordBuilder(QStringLiteral("en_b"),
+                                         SymbolTaxonomy::DeclarationKind::Signal)
+                .withFile(symbolFixturePath)
+                .withLocalHandle(9412)
+                .withLine(22)
+                .withCollectorKind(SymbolTaxonomy::CollectorKind::Logic)
+                .inModule(QStringLiteral("gui_top"))
+                .record(),
+            SemanticFixtureRecordBuilder(QStringLiteral("clock_logic"),
+                                         SymbolTaxonomy::DeclarationKind::Signal)
+                .withFile(symbolFixturePath)
+                .withLocalHandle(9413)
+                .withLine(23)
+                .withCollectorKind(SymbolTaxonomy::CollectorKind::Logic)
+                .inModule(QStringLiteral("gui_top"))
+                .record(),
+            SemanticFixtureRecordBuilder(QStringLiteral("foreign_en"),
+                                         SymbolTaxonomy::DeclarationKind::Signal)
+                .withFile(symbolFixturePath)
+                .withLocalHandle(9414)
+                .withLine(24)
+                .withCollectorKind(SymbolTaxonomy::CollectorKind::Logic)
+                .inModule(QStringLiteral("gui_other"))
+                .record(),
         };
         SemanticIndex guiInstantiationIndex;
         guiInstantiationIndex.setSnapshot(
@@ -9630,33 +9716,12 @@ int main(int argc, char** argv)
         QTest::keyClicks(editor, ";;guiut ");
 
         QCompleter* userTemplateCompleter = editor->findChild<QCompleter*>();
-        QModelIndex guiUserTemplateIndex;
-        expectBool("user template completion popup shows template",
-                   waitUntil([&]() {
-                       if (!userTemplateCompleter
-                           || !userTemplateCompleter->model()) {
-                           return false;
-                       }
-                       QAbstractItemModel* model =
-                           userTemplateCompleter->model();
-                       for (int row = 0; row < model->rowCount(); ++row) {
-                           const QModelIndex index = model->index(row, 0);
-                           const QString display =
-                               model->data(index, Qt::DisplayRole).toString();
-                           if (display.contains(QStringLiteral(";;guiut"))) {
-                               guiUserTemplateIndex = index;
-                               return true;
-                           }
-                       }
-                       return false;
-                   }, 3000),
+        expectBool("user template input does not auto-open popup",
+                   userTemplateCompleter
+                       && !userTemplateCompleter->popup()->isVisible(),
                    true);
-        if (userTemplateCompleter && guiUserTemplateIndex.isValid()) {
-            userTemplateCompleter->popup()->setCurrentIndex(
-                guiUserTemplateIndex);
-            QTest::keyClick(editor, Qt::Key_Return);
-            QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
-        }
+        QTest::keyClick(editor, Qt::Key_Tab);
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
         expectBool("user template GUI activation inserts text",
                    editor->toPlainText().contains(
                        QStringLiteral("logic gui_slot;")),
@@ -9682,36 +9747,455 @@ int main(int argc, char** argv)
         QTest::keyClicks(editor, ";pk gui");
 
         QCompleter* packageImportCompleter = editor->findChild<QCompleter*>();
-        QModelIndex guiPackageIndex;
-        expectBool("package import completion popup shows package",
-                   waitUntil([&]() {
-                       if (!packageImportCompleter
-                           || !packageImportCompleter->model()) {
-                           return false;
-                       }
-                       QAbstractItemModel* model =
-                           packageImportCompleter->model();
-                       for (int row = 0; row < model->rowCount(); ++row) {
-                           const QModelIndex index = model->index(row, 0);
-                           const QString display =
-                               model->data(index, Qt::DisplayRole).toString();
-                           if (display.contains(QStringLiteral("gui_pkg"))) {
-                               guiPackageIndex = index;
-                               return true;
-                           }
-                       }
-                       return false;
-                   }, 3000),
+        expectBool("package import input does not auto-open popup",
+                   packageImportCompleter
+                       && !packageImportCompleter->popup()->isVisible(),
                    true);
-        if (packageImportCompleter && guiPackageIndex.isValid()) {
-            packageImportCompleter->popup()->setCurrentIndex(guiPackageIndex);
-            QTest::keyClick(editor, Qt::Key_Return);
-            QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
-        }
+        QTest::keyClick(editor, Qt::Key_Tab);
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
         expectBool("package import completion inserts import",
                    editor->toPlainText().contains(
                        QStringLiteral("import gui_pkg::*;")),
                    true);
+
+        const QString inlineOriginal =
+            QStringLiteral("module gui_top;\n"
+                           "assign lhs=;l gui_en + rhs;\n"
+                           "endmodule\n");
+        editor->setPlainText(inlineOriginal);
+        QTextBlock inlineBlock =
+            editor->document()->findBlockByNumber(1);
+        QTextCursor inlineCursor(inlineBlock);
+        inlineCursor.setPosition(
+            inlineBlock.position()
+            + inlineBlock.text().indexOf(QStringLiteral("gui_en"))
+            + QStringLiteral("gui_en").size());
+        editor->setTextCursor(inlineCursor);
+        QTest::keyClick(editor, Qt::Key_Tab);
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
+        expectBool("inline command Tab replaces only abbreviation",
+                   editor->toPlainText()
+                       == QStringLiteral("module gui_top;\n"
+                                         "assign lhs=gui_en + rhs;\n"
+                                         "endmodule\n"),
+                   true);
+        editor->undo();
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+        expectBool("inline command undo restores abbreviation",
+                   editor->toPlainText() == inlineOriginal,
+                   true);
+
+        const QString filterOriginal =
+            QStringLiteral("module gui_top;\n"
+                           "assign lhs=;l + rhs;\n"
+                           "endmodule\n");
+        editor->setPlainText(filterOriginal);
+        QTextBlock filterBlock = editor->document()->findBlockByNumber(1);
+        QTextCursor filterCursor(filterBlock);
+        filterCursor.setPosition(
+            filterBlock.position()
+            + filterBlock.text().indexOf(QStringLiteral(";l"))
+            + QStringLiteral(";l").size());
+        editor->setTextCursor(filterCursor);
+        QTest::keyClick(editor, Qt::Key_Tab);
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
+        QCompleter* filterCompleter = editor->findChild<QCompleter*>();
+        const QStringList inlineLogicNames{
+            QStringLiteral("gui_en"),
+            QStringLiteral("en_a"),
+            QStringLiteral("en_b"),
+            QStringLiteral("clock_logic"),
+            QStringLiteral("foreign_en"),
+        };
+        auto visibleInlineLogicNames = [&]() {
+            QStringList names;
+            if (!filterCompleter || !filterCompleter->model())
+                return names;
+            for (int row = 0; row < filterCompleter->model()->rowCount(); ++row) {
+                const QString display = filterCompleter->model()
+                                            ->data(filterCompleter->model()->index(row, 0),
+                                                   Qt::DisplayRole)
+                                            .toString();
+                for (const QString& name : inlineLogicNames) {
+                    if (display == name
+                        || display.startsWith(name + QLatin1Char(' '))) {
+                        names.append(name);
+                    }
+                }
+            }
+            names.removeDuplicates();
+            names.sort();
+            return names;
+        };
+        auto popupContainsText = [&](const QString& needle) {
+            if (!filterCompleter || !filterCompleter->model())
+                return false;
+            for (int row = 0; row < filterCompleter->model()->rowCount(); ++row) {
+                if (filterCompleter->model()
+                        ->data(filterCompleter->model()->index(row, 0),
+                               Qt::DisplayRole)
+                        .toString()
+                        .contains(needle)) {
+                    return true;
+                }
+            }
+            return false;
+        };
+        expectBool("inline filter session opens all anchor logic",
+                   filterCompleter && filterCompleter->popup()->isVisible()
+                       && visibleInlineLogicNames()
+                              == QStringList({QStringLiteral("clock_logic"),
+                                              QStringLiteral("en_a"),
+                                              QStringLiteral("en_b"),
+                                              QStringLiteral("gui_en")})
+                       && !visibleInlineLogicNames().contains(
+                           QStringLiteral("foreign_en")),
+                   true);
+
+        QTest::keyClicks(editor, "e");
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+        expectBool("inline filter first character keeps popup",
+                   filterCompleter && filterCompleter->popup()->isVisible()
+                       && editor->toPlainText().contains(
+                           QStringLiteral("assign lhs=;l e + rhs;")),
+                   true);
+        QTest::keyClicks(editor, "n");
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+        expectBool("inline filter narrows candidates incrementally",
+                   filterCompleter && filterCompleter->popup()->isVisible()
+                       && visibleInlineLogicNames()
+                              == QStringList({QStringLiteral("en_a"),
+                                              QStringLiteral("en_b"),
+                                              QStringLiteral("gui_en")})
+                       && editor->toPlainText().contains(
+                           QStringLiteral("assign lhs=;l en + rhs;")),
+                   true);
+
+        QTest::keyClicks(editor, "_a");
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+        expectBool("inline filter unique candidate waits for commit",
+                   filterCompleter && filterCompleter->popup()->isVisible()
+                       && visibleInlineLogicNames()
+                              == QStringList({QStringLiteral("en_a")})
+                       && editor->toPlainText().contains(
+                           QStringLiteral("assign lhs=;l en_a + rhs;")),
+                   true);
+        QTest::keyClick(editor, Qt::Key_Backspace);
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+        expectBool("inline filter Backspace expands candidates",
+                   filterCompleter && filterCompleter->popup()->isVisible()
+                       && visibleInlineLogicNames()
+                              == QStringList({QStringLiteral("en_a"),
+                                              QStringLiteral("en_b")})
+                       && editor->toPlainText().contains(
+                           QStringLiteral("assign lhs=;l en_ + rhs;")),
+                   true);
+        QTest::keyClick(editor, Qt::Key_Backspace);
+        QTest::keyClick(editor, Qt::Key_Backspace);
+        QTest::keyClick(editor, Qt::Key_Backspace);
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+        expectBool("inline filter empty query restores all candidates",
+                   filterCompleter && filterCompleter->popup()->isVisible()
+                       && visibleInlineLogicNames()
+                              == QStringList({QStringLiteral("clock_logic"),
+                                              QStringLiteral("en_a"),
+                                              QStringLiteral("en_b"),
+                                              QStringLiteral("gui_en")})
+                       && editor->toPlainText().contains(
+                           QStringLiteral("assign lhs=;l  + rhs;")),
+                   true);
+
+        QTest::keyClicks(editor, "zzzz");
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+        expectBool("inline filter zero match remains recoverable",
+                   filterCompleter && filterCompleter->popup()->isVisible()
+                       && visibleInlineLogicNames().isEmpty()
+                       && popupContainsText(QStringLiteral("No matching symbols"))
+                       && !popupContainsText(QStringLiteral("[DEFAULT]"))
+                       && editor->toPlainText().contains(
+                           QStringLiteral("assign lhs=;l zzzz + rhs;")),
+                   true);
+        QTest::keyClick(editor, Qt::Key_Tab);
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+        expectBool("inline filter zero match does not commit",
+                   filterCompleter && filterCompleter->popup()->isVisible()
+                       && editor->toPlainText().contains(
+                           QStringLiteral("assign lhs=;l zzzz + rhs;")),
+                   true);
+        for (int i = 0; i < 4; ++i)
+            QTest::keyClick(editor, Qt::Key_Backspace);
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+        expectBool("inline filter recovers from zero match",
+                   filterCompleter && filterCompleter->popup()->isVisible()
+                       && visibleInlineLogicNames().size() == 4,
+                   true);
+
+        QTest::keyClicks(editor, "gui");
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+        expectBool("inline filter unique remains explicit",
+                   filterCompleter && filterCompleter->popup()->isVisible()
+                       && visibleInlineLogicNames()
+                              == QStringList({QStringLiteral("gui_en")})
+                       && editor->toPlainText().contains(
+                           QStringLiteral("assign lhs=;l gui + rhs;")),
+                   true);
+        QTest::keyClick(editor, Qt::Key_Tab);
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
+        expectBool("inline filter Tab commits full abbreviation",
+                   editor->toPlainText()
+                       == QStringLiteral("module gui_top;\n"
+                                         "assign lhs=gui_en + rhs;\n"
+                                         "endmodule\n"),
+                   true);
+
+        editor->setPlainText(filterOriginal);
+        filterBlock = editor->document()->findBlockByNumber(1);
+        filterCursor = QTextCursor(filterBlock);
+        filterCursor.setPosition(
+            filterBlock.position()
+            + filterBlock.text().indexOf(QStringLiteral(";l"))
+            + QStringLiteral(";l").size());
+        editor->setTextCursor(filterCursor);
+        QTest::keyClick(editor, Qt::Key_Tab);
+        QTest::keyClicks(editor, "gui");
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+        QTest::keyClick(editor, Qt::Key_Return);
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
+        expectBool("inline filter Enter commits full abbreviation",
+                   editor->toPlainText()
+                       == QStringLiteral("module gui_top;\n"
+                                         "assign lhs=gui_en + rhs;\n"
+                                         "endmodule\n"),
+                   true);
+
+        const QString multiOriginal =
+            QStringLiteral("module gui_top;\n"
+                           "assign lhs=;l en + rhs;\n"
+                           "endmodule\n");
+        editor->setPlainText(multiOriginal);
+        QTextBlock multiBlock =
+            editor->document()->findBlockByNumber(1);
+        QTextCursor multiCursor(multiBlock);
+        multiCursor.setPosition(
+            multiBlock.position()
+            + multiBlock.text().indexOf(QStringLiteral("en"))
+            + QStringLiteral("en").size());
+        editor->setTextCursor(multiCursor);
+        QTest::keyClick(editor, Qt::Key_Tab);
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
+        QCompleter* inlineCompleter = editor->findChild<QCompleter*>();
+        expectBool("inline command multi-candidate opens popup",
+                   inlineCompleter && inlineCompleter->popup()->isVisible(),
+                   true);
+        QTest::keyClick(editor, Qt::Key_Left);
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
+        expectBool("inline command cursor move cancels popup",
+                   inlineCompleter && !inlineCompleter->popup()->isVisible()
+                       && editor->toPlainText() == multiOriginal,
+                   true);
+        QTextCursor normalTabCursor(editor->document()->findBlockByNumber(0));
+        normalTabCursor.setPosition(
+            editor->document()->findBlockByNumber(0).position());
+        editor->setTextCursor(normalTabCursor);
+        QTest::keyClick(editor, Qt::Key_Tab);
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+        expectBool("inline command canceled session leaves normal Tab",
+                   (editor->toPlainText().startsWith(QStringLiteral("    module"))
+                    || editor->toPlainText().startsWith(QStringLiteral("\tmodule")))
+                       && editor->toPlainText().contains(
+                           QStringLiteral("assign lhs=;l en + rhs;")),
+                   true);
+
+        editor->setPlainText(multiOriginal);
+        multiBlock = editor->document()->findBlockByNumber(1);
+        multiCursor = QTextCursor(multiBlock);
+        multiCursor.setPosition(
+            multiBlock.position()
+            + multiBlock.text().indexOf(QStringLiteral("en"))
+            + QStringLiteral("en").size());
+        editor->setTextCursor(multiCursor);
+        QTest::keyClick(editor, Qt::Key_Tab);
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
+        inlineCompleter = editor->findChild<QCompleter*>();
+        expectBool("inline command multi-candidate reopens popup",
+                   inlineCompleter && inlineCompleter->popup()->isVisible(),
+                   true);
+        auto selectedInlineLogicName = [&]() -> QString {
+            if (!inlineCompleter || !inlineCompleter->popup())
+                return {};
+            const QModelIndex index = inlineCompleter->popup()->currentIndex();
+            if (!index.isValid())
+                return {};
+            const QString display =
+                inlineCompleter->model()
+                    ->data(index, Qt::DisplayRole)
+                    .toString();
+            const QStringList expectedNames{
+                QStringLiteral("en_a"),
+                QStringLiteral("en_b"),
+                QStringLiteral("gui_en"),
+            };
+            for (const QString& name : expectedNames) {
+                if (display.contains(name))
+                    return name;
+            }
+            return {};
+        };
+        QTest::keyClick(editor, Qt::Key_Down);
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+        const QString selectedByTab = selectedInlineLogicName();
+        expectBool("inline command arrow selects logic candidate",
+                   !selectedByTab.isEmpty(),
+                   true);
+        QTest::keyClick(editor, Qt::Key_Tab);
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
+        expectBool("inline command Tab activates selected logic",
+                   !selectedByTab.isEmpty()
+                       && editor->toPlainText()
+                           == QStringLiteral("module gui_top;\n"
+                                             "assign lhs=")
+                                  + selectedByTab
+                                  + QStringLiteral(" + rhs;\n"
+                                                   "endmodule\n"),
+                   true);
+
+        editor->setPlainText(multiOriginal);
+        multiBlock = editor->document()->findBlockByNumber(1);
+        multiCursor = QTextCursor(multiBlock);
+        multiCursor.setPosition(
+            multiBlock.position()
+            + multiBlock.text().indexOf(QStringLiteral("en"))
+            + QStringLiteral("en").size());
+        editor->setTextCursor(multiCursor);
+        QTest::keyClick(editor, Qt::Key_Tab);
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
+        inlineCompleter = editor->findChild<QCompleter*>();
+        expectBool("inline command multi-candidate opens for Enter",
+                   inlineCompleter && inlineCompleter->popup()->isVisible(),
+                   true);
+        QTest::keyClick(editor, Qt::Key_Down);
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+        const QString selectedByEnter = selectedInlineLogicName();
+        expectBool("inline command arrow selects Enter candidate",
+                   !selectedByEnter.isEmpty(),
+                   true);
+        QTest::keyClick(editor, Qt::Key_Return);
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
+        expectBool("inline command Enter activates selected logic",
+                   !selectedByEnter.isEmpty()
+                       && editor->toPlainText()
+                           == QStringLiteral("module gui_top;\n"
+                                             "assign lhs=")
+                                  + selectedByEnter
+                                  + QStringLiteral(" + rhs;\n"
+                                                   "endmodule\n"),
+                   true);
+
+        editor->setPlainText(multiOriginal);
+        multiBlock = editor->document()->findBlockByNumber(1);
+        multiCursor = QTextCursor(multiBlock);
+        multiCursor.setPosition(
+            multiBlock.position()
+            + multiBlock.text().indexOf(QStringLiteral("en"))
+            + QStringLiteral("en").size());
+        editor->setTextCursor(multiCursor);
+        QTest::keyClick(editor, Qt::Key_Tab);
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
+        inlineCompleter = editor->findChild<QCompleter*>();
+        expectBool("inline command multi-candidate reopens before Esc",
+                   inlineCompleter && inlineCompleter->popup()->isVisible(),
+                   true);
+        QTest::keyClick(editor, Qt::Key_Escape);
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+        expectBool("inline command Esc keeps abbreviation",
+                   editor->toPlainText() == multiOriginal,
+                   true);
+
+        editor->setPlainText(QStringLiteral("module gui_top;\n"
+                                            "  // ;l en\n"
+                                            "endmodule\n"));
+        QTextBlock commentBlock =
+            editor->document()->findBlockByNumber(1);
+        QTextCursor commentCursor(commentBlock);
+        commentCursor.setPosition(commentBlock.position()
+                                  + commentBlock.text().size());
+        editor->setTextCursor(commentCursor);
+        QTest::keyClick(editor, Qt::Key_Tab);
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+        expectBool("inline command ignores line comment",
+                   editor->toPlainText().contains(QStringLiteral("// ;l en")),
+                   true);
+
+        editor->setPlainText(QStringLiteral("module gui_top;\n"
+                                            "  /* open comment\n"
+                                            "  ;l en\n"
+                                            "endmodule\n"));
+        QTextBlock blockCommentBlock =
+            editor->document()->findBlockByNumber(2);
+        QTextCursor blockCommentCursor(blockCommentBlock);
+        blockCommentCursor.setPosition(blockCommentBlock.position()
+                                       + blockCommentBlock.text().size());
+        editor->setTextCursor(blockCommentCursor);
+        QTest::keyClick(editor, Qt::Key_Tab);
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+        expectBool("inline command ignores block comment",
+                   editor->toPlainText().contains(QStringLiteral("  ;l en")),
+                   true);
+
+        editor->setPlainText(QStringLiteral("module gui_top;\n"
+                                            "  string s = \";l en\";\n"
+                                            "endmodule\n"));
+        QTextBlock stringBlock =
+            editor->document()->findBlockByNumber(1);
+        QTextCursor stringCursor(stringBlock);
+        stringCursor.setPosition(
+            stringBlock.position()
+            + stringBlock.text().indexOf(QStringLiteral("en"))
+            + QStringLiteral("en").size());
+        editor->setTextCursor(stringCursor);
+        QTest::keyClick(editor, Qt::Key_Tab);
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+        expectBool("inline command ignores string",
+                   editor->toPlainText().contains(QStringLiteral("\";l en")),
+                   true);
+
+        const QString urlInlineOriginal =
+            QStringLiteral("module gui_top;\n"
+                           "string url = \"http://host\"; assign x = ;l gui_en + rhs;\n"
+                           "endmodule\n");
+        editor->setPlainText(urlInlineOriginal);
+        QTextBlock urlBlock = editor->document()->findBlockByNumber(1);
+        QTextCursor urlCursor(urlBlock);
+        urlCursor.setPosition(
+            urlBlock.position()
+            + urlBlock.text().indexOf(QStringLiteral("gui_en"))
+            + QStringLiteral("gui_en").size());
+        editor->setTextCursor(urlCursor);
+        QTest::keyClick(editor, Qt::Key_Tab);
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
+        expectBool("inline command after URL string expands",
+                   editor->toPlainText()
+                       == QStringLiteral("module gui_top;\n"
+                                         "string url = \"http://host\"; assign x = gui_en + rhs;\n"
+                                         "endmodule\n"),
+                   true);
+
+        editor->setPlainText(QStringLiteral("module gui_top;\n"
+                                            ";;l\n"
+                                            "endmodule\n"));
+        QTextBlock templateBlock =
+            editor->document()->findBlockByNumber(1);
+        QTextCursor templateCursor(templateBlock);
+        templateCursor.setPosition(templateBlock.position()
+                                   + templateBlock.text().size());
+        editor->setTextCursor(templateCursor);
+        QTest::keyClick(editor, Qt::Key_Tab);
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
+        expectBool("inline template Tab enters Slot Mode",
+                   editor->toPlainText().contains(QStringLiteral("logic"))
+                       && editor->templateSlotModeActive(),
+                   true);
+        sendWidgetKey(editor, Qt::Key_Escape);
 
         editor->setPlainText(QStringLiteral("module gui_top;\n"
                                             "\n"
@@ -9723,32 +10207,12 @@ int main(int argc, char** argv)
         QTest::keyClicks(editor, ";m gui_target");
 
         QCompleter* instantiationCompleter = editor->findChild<QCompleter*>();
-        QModelIndex guiTargetIndex;
-        expectBool("module instantiation completion popup shows target",
-                   waitUntil([&]() {
-                       if (!instantiationCompleter
-                           || !instantiationCompleter->model()) {
-                           return false;
-                       }
-                       QAbstractItemModel* model =
-                           instantiationCompleter->model();
-                       for (int row = 0; row < model->rowCount(); ++row) {
-                           const QModelIndex index = model->index(row, 0);
-                           const QString display =
-                               model->data(index, Qt::DisplayRole).toString();
-                           if (display.contains(QStringLiteral("gui_target"))) {
-                               guiTargetIndex = index;
-                               return true;
-                           }
-                       }
-                       return false;
-                   }, 3000),
+        expectBool("module instantiation input does not auto-open popup",
+                   instantiationCompleter
+                       && !instantiationCompleter->popup()->isVisible(),
                    true);
-        if (instantiationCompleter && guiTargetIndex.isValid()) {
-            instantiationCompleter->popup()->setCurrentIndex(guiTargetIndex);
-            QTest::keyClick(editor, Qt::Key_Return);
-            QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
-        }
+        QTest::keyClick(editor, Qt::Key_Tab);
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
         CompletionService::getInstance()->setSemanticIndex(SemanticIndex::getInstance());
         expectBool("module instantiation completion enters Slot Mode",
                    waitUntil([&]() {

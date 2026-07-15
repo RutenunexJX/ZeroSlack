@@ -1,24 +1,16 @@
 #include "inlinecommandmode.h"
 
 namespace {
-bool isCommandSafePrefix(const QString& text)
-{
-    for (const QChar ch : text) {
-        if (ch != QLatin1Char(' ') && ch != QLatin1Char('\t'))
-            return false;
-    }
-    return true;
-}
-
-bool isPositionInCommentOrString(const QString& line, int position)
+bool lexicalPositionInCommentOrString(const QString& text, int position)
 {
     bool inString = false;
     bool inBlockComment = false;
     bool escaped = false;
 
-    for (int i = 0; i < position && i < line.size(); ++i) {
-        const QChar ch = line.at(i);
-        const QChar next = (i + 1 < line.size()) ? line.at(i + 1) : QChar();
+    const int limit = qBound(0, position, text.size());
+    for (int i = 0; i < limit; ++i) {
+        const QChar ch = text.at(i);
+        const QChar next = (i + 1 < text.size()) ? text.at(i + 1) : QChar();
 
         if (inString) {
             if (escaped)
@@ -38,8 +30,15 @@ bool isPositionInCommentOrString(const QString& line, int position)
             continue;
         }
 
-        if (ch == QLatin1Char('/') && next == QLatin1Char('/'))
-            return true;
+        if (ch == QLatin1Char('\n') || ch == QLatin1Char('\r'))
+            continue;
+        if (ch == QLatin1Char('/') && next == QLatin1Char('/')) {
+            const int newline = text.indexOf(QLatin1Char('\n'), i + 2);
+            if (newline < 0 || newline >= limit)
+                return true;
+            i = newline;
+            continue;
+        }
         if (ch == QLatin1Char('/') && next == QLatin1Char('*')) {
             inBlockComment = true;
             ++i;
@@ -50,6 +49,104 @@ bool isPositionInCommentOrString(const QString& line, int position)
     }
 
     return inString || inBlockComment;
+}
+
+bool isSingleSemicolonToken(const QString& token)
+{
+    return token.startsWith(QLatin1Char(';'))
+        && !token.startsWith(QStringLiteral(";;"));
+}
+
+bool isProtectedSingleSemicolonSuffix(const QString& text,
+                                      int prefixPosition,
+                                      const QString& commandToken)
+{
+    return isSingleSemicolonToken(commandToken)
+        && prefixPosition > 0
+        && text.at(prefixPosition - 1) == QLatin1Char(';');
+}
+
+bool isBetterInlineMatch(const InlineCommandMatch& candidate,
+                         const InlineCommandMatch& best)
+{
+    if (!best.matched)
+        return true;
+    if (candidate.prefixPosition != best.prefixPosition)
+        return candidate.prefixPosition > best.prefixPosition;
+    if (candidate.commandToken.size() != best.commandToken.size())
+        return candidate.commandToken.size() > best.commandToken.size();
+    if (candidate.descriptor.prefix.size() != best.descriptor.prefix.size())
+        return candidate.descriptor.prefix.size() > best.descriptor.prefix.size();
+    if (candidate.intent != best.intent)
+        return candidate.intent == InlineCommandIntent::CodeTemplate;
+    return false;
+}
+
+QString descriptorCommandToken(const InlineCommandDescriptor& descriptor)
+{
+    if (!descriptor.label.isEmpty())
+        return descriptor.label;
+    return descriptor.prefix.trimmed();
+}
+
+void considerDescriptorMatch(InlineCommandMatch& best,
+                             const QString& textBeforeCursor,
+                             const InlineCommandDescriptor& descriptor)
+{
+    const QString commandToken = descriptorCommandToken(descriptor);
+    if (commandToken.isEmpty())
+        return;
+
+    const bool acceptsQuery = descriptor.prefix.endsWith(QLatin1Char(' '));
+    const int endPosition = textBeforeCursor.size();
+    QList<int> starts;
+
+    if (textBeforeCursor.endsWith(commandToken))
+        starts.append(endPosition - commandToken.size());
+
+    if (acceptsQuery) {
+        const QString queryPrefix = commandToken + QLatin1Char(' ');
+        int start = textBeforeCursor.indexOf(queryPrefix);
+        while (start >= 0) {
+            starts.append(start);
+            start = textBeforeCursor.indexOf(queryPrefix, start + 1);
+        }
+    }
+
+    for (const int start : starts) {
+        if (start < 0 || start >= endPosition)
+            continue;
+        if (isProtectedSingleSemicolonSuffix(textBeforeCursor,
+                                            start,
+                                            commandToken)) {
+            continue;
+        }
+        const int queryStart = start + commandToken.size();
+        if (queryStart < endPosition
+            && textBeforeCursor.at(queryStart) != QLatin1Char(' ')) {
+            continue;
+        }
+
+        InlineCommandMatch candidate;
+        candidate.matched = true;
+        candidate.intent = descriptor.intent;
+        candidate.prefixPosition = start;
+        candidate.endPosition = endPosition;
+        candidate.commandToken = commandToken;
+        candidate.descriptor = descriptor;
+        candidate.input = queryStart < endPosition
+            ? textBeforeCursor.mid(queryStart + 1)
+            : QString();
+        if (isBetterInlineMatch(candidate, best))
+            best = candidate;
+    }
+}
+
+void considerInlineMatch(InlineCommandMatch& best,
+                         const InlineCommandMatch& candidate)
+{
+    if (candidate.matched && isBetterInlineMatch(candidate, best))
+        best = candidate;
 }
 
 InlineCommandDescriptor descriptor(
@@ -185,78 +282,64 @@ QList<InlineCommandDescriptor> InlineCommandMode::descriptorsForIntent(
 
 InlineCommandMatch InlineCommandMode::match(const QString& lineUpToCursor)
 {
+    return matchAbbreviationBeforeCursor(lineUpToCursor);
+}
+
+InlineCommandMatch InlineCommandMode::matchAbbreviationBeforeCursor(
+    const QString& textBeforeCursor)
+{
+    return matchAbbreviationBeforeCursor(textBeforeCursor, descriptors());
+}
+
+InlineCommandMatch InlineCommandMode::matchAbbreviationBeforeCursor(
+    const QString& textBeforeCursor,
+    const QList<InlineCommandDescriptor>& registry)
+{
     InlineCommandMatch result;
 
     InlineCommandIntent helpIntent = InlineCommandIntent::SemanticCompletion;
     for (const QString& helpToken :
          {QStringLiteral(";;?"), QStringLiteral(";?")}) {
-        const int prefixPosition = lineUpToCursor.lastIndexOf(helpToken);
-        if (prefixPosition < 0 || prefixPosition + helpToken.size() != lineUpToCursor.size())
+        const int prefixPosition = textBeforeCursor.lastIndexOf(helpToken);
+        if (prefixPosition < 0
+            || prefixPosition + helpToken.size() != textBeforeCursor.size()) {
             continue;
-        if (!isCommandSafePrefix(lineUpToCursor.left(prefixPosition)))
+        }
+        if (isProtectedSingleSemicolonSuffix(textBeforeCursor,
+                                            prefixPosition,
+                                            helpToken)) {
             continue;
-        if (isPositionInCommentOrString(lineUpToCursor, prefixPosition))
-            continue;
+        }
         if (!isHelpToken(helpToken, &helpIntent))
             continue;
 
-        result.matched = true;
-        result.helpRequested = true;
-        result.intent = helpIntent;
-        result.prefixPosition = prefixPosition;
-        result.commandToken = helpToken;
-        result.input = QStringLiteral("?");
-        result.descriptor = descriptor(helpToken,
-                                       helpIntent,
-                                       CompletionCommandKind::User,
-                                       helpToken,
-                                       QStringLiteral("inline command help"),
-                                       helpToken);
-        return result;
+        InlineCommandMatch candidate;
+        candidate.matched = true;
+        candidate.helpRequested = true;
+        candidate.intent = helpIntent;
+        candidate.prefixPosition = prefixPosition;
+        candidate.endPosition = textBeforeCursor.size();
+        candidate.commandToken = helpToken;
+        candidate.input = QStringLiteral("?");
+        candidate.descriptor = descriptor(helpToken,
+                                          helpIntent,
+                                          CompletionCommandKind::User,
+                                          helpToken,
+                                          QStringLiteral("inline command help"),
+                                          helpToken);
+        considerInlineMatch(result, candidate);
     }
 
-    const QList<InlineCommandDescriptor> allDescriptors = descriptors();
-    for (const InlineCommandDescriptor& descriptor : allDescriptors) {
-        if (descriptor.prefix.endsWith(QLatin1Char(' ')))
-            continue;
-        const int prefixPosition = lineUpToCursor.lastIndexOf(descriptor.prefix);
-        if (prefixPosition < 0 || prefixPosition + descriptor.prefix.size() != lineUpToCursor.size())
-            continue;
-        if (!isCommandSafePrefix(lineUpToCursor.left(prefixPosition)))
-            continue;
-        if (isPositionInCommentOrString(lineUpToCursor, prefixPosition))
-            continue;
-
-        result.matched = true;
-        result.intent = descriptor.intent;
-        result.prefixPosition = prefixPosition;
-        result.commandToken = descriptor.label;
-        result.descriptor = descriptor;
-        result.input = QString();
-        return result;
-    }
-
-    for (const InlineCommandDescriptor& descriptor : allDescriptors) {
-        if (!descriptor.prefix.endsWith(QLatin1Char(' ')))
-            continue;
-        const int prefixPosition = lineUpToCursor.lastIndexOf(descriptor.prefix);
-        if (prefixPosition < 0)
-            continue;
-        if (!isCommandSafePrefix(lineUpToCursor.left(prefixPosition)))
-            continue;
-        if (isPositionInCommentOrString(lineUpToCursor, prefixPosition))
-            continue;
-
-        result.matched = true;
-        result.intent = descriptor.intent;
-        result.prefixPosition = prefixPosition;
-        result.commandToken = descriptor.label;
-        result.descriptor = descriptor;
-        result.input = lineUpToCursor.mid(prefixPosition + descriptor.prefix.length());
-        return result;
-    }
+    for (const InlineCommandDescriptor& descriptor : registry)
+        considerDescriptorMatch(result, textBeforeCursor, descriptor);
 
     return result;
+}
+
+bool InlineCommandMode::isPositionInCommentOrString(const QString& text,
+                                                    int position)
+{
+    return lexicalPositionInCommentOrString(text, position);
 }
 
 CommandModeCommand InlineCommandMode::toCommandModeCommand(

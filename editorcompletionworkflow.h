@@ -1,6 +1,7 @@
 #ifndef EDITORCOMPLETIONWORKFLOW_H
 #define EDITORCOMPLETIONWORKFLOW_H
 
+#include "completiontypes.h"
 #include "editorsemanticcontextservice.h"
 #include "includeheaderworkflowtypes.h"
 
@@ -44,6 +45,8 @@ public:
     void handleTextChanged();
     void handleCompletionActivated(const QModelIndex& index);
     void handleAutoCompleteTimer();
+    void handleCursorPositionChanged();
+    bool handleInlineAbbreviationTab(QKeyEvent* event);
     void setIncludeFileProvider(IncludeFileProvider provider);
     void setIncludeNewHeaderCreator(IncludeNewHeaderCreator creator);
 
@@ -61,6 +64,20 @@ private:
         int replacementEndPosition = -1;
     };
 
+    struct InlineAbbreviationSession {
+        bool active = false;
+        bool candidateFiltering = false;
+        int replacementStartPosition = -1;
+        int replacementEndPosition = -1;
+        int anchorPosition = -1;
+        int commandEndPosition = -1;
+        int filterStartPosition = -1;
+        QString abbreviationText;
+        QString filterText;
+        CommandModeCompletionQuery anchorQuery;
+        CommandModeCompletionState completion;
+    };
+
     EditorSemanticContextService* semanticService() const;
     EditorSemanticContext semanticContextForCursor(
         const QTextCursor& cursor,
@@ -68,6 +85,23 @@ private:
     void hideAutoComplete();
     void showAutoComplete(bool selectFirstCompletion = false);
     void executeEditorActionCommand(const QString& command);
+    void clearInlineAbbreviationSession();
+    void cancelInlineAbbreviationSession();
+    bool inlineAbbreviationSessionValid() const;
+    bool handleInlineCandidateFilterKey(QKeyEvent* event);
+    bool refreshInlineCandidateFilter();
+    bool showInlineAbbreviationCompletions(
+        const CommandModeCompletionState& state,
+        int replacementStartPosition,
+        int replacementEndPosition,
+        int anchorPosition,
+        int commandEndPosition,
+        int filterStartPosition,
+        const QString& abbreviationText,
+        const CommandModeCompletionQuery& anchorQuery);
+    bool applySingleInlineAbbreviationCandidate(
+        const CommandModeCompletionState& state);
+    int inlineCandidateCount(const CommandModeCompletionState& state) const;
     void updateCompletionTriggerForTextChange(const QTextCursor& cursor);
     void applyCompletionActivationState(
         const CompletionActivationState& activationState);
@@ -104,6 +138,8 @@ private:
     IncludeNewHeaderCreator includeNewHeaderCreator;
     bool includeCompletionActive = false;
     IncludeCompletionMode includeCompletionMode = IncludeCompletionMode::None;
+    InlineAbbreviationSession inlineSession;
+    bool applyingInlineReplacement = false;
 };
 
 #endif // EDITORCOMPLETIONWORKFLOW_H

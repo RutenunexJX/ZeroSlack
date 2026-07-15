@@ -427,7 +427,8 @@ void CompletionModel::updateInlineCommandCompletions(
 void CompletionModel::updateSymbolRecordCompletions(
     const QList<SemanticSymbolRecord> &records,
     const QString &prefix,
-    CompletionCommandKind requestedKind)
+    CompletionCommandKind requestedKind,
+    bool allowDefaultFallback)
 {
     beginResetModel();
     completions.clear();
@@ -445,17 +446,8 @@ void CompletionModel::updateSymbolRecordCompletions(
     fillDisplayMetadata(descItem);
     completions.append(descItem);
 
-    CompletionItem defaultItem;
-    defaultItem.text = QString("[DEFAULT] %1").arg(presentation.defaultValue);
-    defaultItem.type = SymbolCompletion;
-    defaultItem.description =
-        QString("Default %1 declaration").arg(presentation.typeDescription.split(' ').value(0));
-    defaultItem.defaultValue = presentation.defaultValue;
-    defaultItem.score = 999;
-    fillDisplayMetadata(defaultItem);
-    completions.append(defaultItem);
-
     QSet<QString> addedItems;
+    int realSymbolCount = 0;
 
     for (const SemanticSymbolRecord& record : records) {
         if (record.name == presentation.defaultValue) {
@@ -483,6 +475,31 @@ void CompletionModel::updateSymbolRecordCompletions(
 
         fillDisplayMetadata(item);
         completions.append(item);
+        ++realSymbolCount;
+    }
+
+    if (realSymbolCount == 0 && allowDefaultFallback) {
+        CompletionItem defaultItem;
+        defaultItem.text =
+            QString("[DEFAULT] %1").arg(presentation.defaultValue);
+        defaultItem.type = SymbolCompletion;
+        defaultItem.description =
+            QString("Default %1 declaration")
+                .arg(presentation.typeDescription.split(' ').value(0));
+        defaultItem.defaultValue = presentation.defaultValue;
+        defaultItem.score = 999;
+        fillDisplayMetadata(defaultItem);
+        completions.append(defaultItem);
+    } else if (realSymbolCount == 0) {
+        CompletionItem noMatchItem;
+        noMatchItem.text = QStringLiteral("No matching symbols");
+        noMatchItem.type = CommandCompletion;
+        noMatchItem.description = prefix.isEmpty()
+            ? QStringLiteral("No symbols are visible at the command anchor")
+            : QStringLiteral("No symbols match \"%1\"").arg(prefix);
+        noMatchItem.score = 999;
+        fillDisplayMetadata(noMatchItem);
+        completions.append(noMatchItem);
     }
 
     sortCompletionsByScore();

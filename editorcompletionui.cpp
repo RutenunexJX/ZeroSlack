@@ -144,7 +144,8 @@ void EditorCompletionUi::updateCommandModeCompletions(
     model->updateSymbolRecordCompletions(
         commandState.completion.symbolRecords,
         commandState.completion.completionPrefix,
-        commandState.completion.commandKind);
+        commandState.completion.commandKind,
+        !commandState.suppressDefaultSymbolFallback);
 }
 
 void EditorCompletionUi::updateIncludeFileCompletions(

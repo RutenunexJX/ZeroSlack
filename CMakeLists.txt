@@ -1,7 +1,32 @@
 cmake_minimum_required(VERSION 3.16)
 
+set(ZEROSLACK_VERSION_FILE "${CMAKE_CURRENT_SOURCE_DIR}/VERSION")
+if(NOT EXISTS "${ZEROSLACK_VERSION_FILE}")
+    message(FATAL_ERROR "Missing VERSION file")
+endif()
+file(STRINGS "${ZEROSLACK_VERSION_FILE}" ZEROSLACK_VERSION_LINES LIMIT_COUNT 1)
+list(GET ZEROSLACK_VERSION_LINES 0 ZEROSLACK_VERSION)
+string(STRIP "${ZEROSLACK_VERSION}" ZEROSLACK_VERSION)
+if(NOT ZEROSLACK_VERSION MATCHES "^[0-9]+\\.[0-9]+\\.[0-9]+$")
+    message(FATAL_ERROR "VERSION must use strict X.Y.Z numeric format")
+endif()
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+    "${ZEROSLACK_VERSION_FILE}")
+string(REPLACE "." ";" ZEROSLACK_VERSION_PARTS "${ZEROSLACK_VERSION}")
+list(GET ZEROSLACK_VERSION_PARTS 0 ZEROSLACK_VERSION_MAJOR)
+list(GET ZEROSLACK_VERSION_PARTS 1 ZEROSLACK_VERSION_MINOR)
+list(GET ZEROSLACK_VERSION_PARTS 2 ZEROSLACK_VERSION_PATCH)
+
 # Project target. C is enabled because tree-sitter includes .c sources.
-project(demo LANGUAGES C CXX)
+project(ZeroSlack VERSION ${ZEROSLACK_VERSION} LANGUAGES C CXX)
+
+string(TIMESTAMP ZEROSLACK_BUILD_TIME "%Y-%m-%dT%H:%M:%SZ" UTC)
+set(ZEROSLACK_GENERATED_INCLUDE_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
+configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/version.h.in"
+    "${ZEROSLACK_GENERATED_INCLUDE_DIR}/version.h"
+    @ONLY
+)
 
 # =========================================================
 # 1. Language Standards
@@ -291,7 +316,8 @@ set(ZEROSLACK_CORE_SOURCES
     completioncommandmode.h
     completioncommandkindadapter.h
     completionmanager.h
-    version.h
+    version.h.in
+    ${ZEROSLACK_GENERATED_INCLUDE_DIR}/version.h
     completionmodel.h
     completionmatcher.h
     completioncontexthelper.h
@@ -463,10 +489,17 @@ endif()
 # =========================================================
 # Project include paths.
 target_include_directories(zeroslack_core PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${ZEROSLACK_GENERATED_INCLUDE_DIR}
     thirdparty/tree_sitter/lib/include
     thirdparty/tree_sitter/lib/src
 )
+
+# Keep the repository root available for project-local "..." includes without
+# letting root VERSION shadow the C++20 <version> standard header on Windows.
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(zeroslack_core PUBLIC
+        "$<$<COMPILE_LANGUAGE:CXX>:-iquote${CMAKE_CURRENT_SOURCE_DIR}>")
+endif()
 
 # Link libraries: Qt6 and Slang.
 target_link_libraries(zeroslack_core PUBLIC

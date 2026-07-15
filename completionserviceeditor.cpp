@@ -176,10 +176,9 @@ CompletionTriggerState CompletionService::completionTriggerState(
         return state;
     }
 
-    const int prefixLength =
-        query.lineUpToCursor.size() - trailingIdentifierStart(query.lineUpToCursor);
-    state.continueCompletion = prefixLength >= 2;
-    state.hidePopup = !state.continueCompletion;
+    // Plain identifier typing is not an implicit completion trigger. Keep
+    // automatic completion limited to the strong contexts handled above.
+    state.hidePopup = true;
     return state;
 }
 

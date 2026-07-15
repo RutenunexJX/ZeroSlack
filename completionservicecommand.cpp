@@ -14,57 +14,6 @@
 #include <algorithm>
 
 namespace {
-bool isCommandSafePrefix(const QString& text)
-{
-    for (const QChar ch : text) {
-        if (ch != QLatin1Char(' ') && ch != QLatin1Char('\t'))
-            return false;
-    }
-    return true;
-}
-
-bool isPositionInCommentOrString(const QString& line, int position)
-{
-    bool inString = false;
-    bool inBlockComment = false;
-    bool escaped = false;
-
-    for (int i = 0; i < position && i < line.size(); ++i) {
-        const QChar ch = line.at(i);
-        const QChar next = (i + 1 < line.size()) ? line.at(i + 1) : QChar();
-
-        if (inString) {
-            if (escaped)
-                escaped = false;
-            else if (ch == QLatin1Char('\\'))
-                escaped = true;
-            else if (ch == QLatin1Char('"'))
-                inString = false;
-            continue;
-        }
-
-        if (inBlockComment) {
-            if (ch == QLatin1Char('*') && next == QLatin1Char('/')) {
-                inBlockComment = false;
-                ++i;
-            }
-            continue;
-        }
-
-        if (ch == QLatin1Char('/') && next == QLatin1Char('/'))
-            return true;
-        if (ch == QLatin1Char('/') && next == QLatin1Char('*')) {
-            inBlockComment = true;
-            ++i;
-            continue;
-        }
-        if (ch == QLatin1Char('"'))
-            inString = true;
-    }
-
-    return inString || inBlockComment;
-}
-
 QString editorActionToken(const InlineCommandDescriptor& descriptor)
 {
     return descriptor.label.startsWith(QStringLiteral(";:"))
@@ -117,10 +66,10 @@ InlineCommandMatch matchUserTemplateCommand(
     const QString& lineUpToCursor,
     UserTemplateService* service)
 {
-    InlineCommandMatch result;
     if (!service)
-        return result;
+        return {};
 
+    QList<InlineCommandDescriptor> descriptors;
     const QList<CodeTemplateItem> userTemplates = service->catalog();
     for (const CodeTemplateItem& item : userTemplates) {
         const QString commandToken = item.commandToken.trimmed();
@@ -129,25 +78,11 @@ InlineCommandMatch matchUserTemplateCommand(
             continue;
         }
 
-        const QString commandPrefix = commandToken + QLatin1Char(' ');
-        const int prefixPosition = lineUpToCursor.lastIndexOf(commandPrefix);
-        if (prefixPosition < 0)
-            continue;
-        if (!isCommandSafePrefix(lineUpToCursor.left(prefixPosition)))
-            continue;
-        if (isPositionInCommentOrString(lineUpToCursor, prefixPosition))
-            continue;
-
-        result.matched = true;
-        result.intent = InlineCommandIntent::CodeTemplate;
-        result.prefixPosition = prefixPosition;
-        result.commandToken = commandToken;
-        result.descriptor = userTemplateDescriptor(item);
-        result.input = lineUpToCursor.mid(prefixPosition + commandPrefix.size());
-        return result;
+        descriptors.append(userTemplateDescriptor(item));
     }
 
-    return result;
+    return InlineCommandMode::matchAbbreviationBeforeCursor(lineUpToCursor,
+                                                            descriptors);
 }
 
 CommandModeMatch commandModeMatchFromInlineMatch(
@@ -165,6 +100,24 @@ CommandModeMatch commandModeMatchFromInlineMatch(
     result.descriptor = match.descriptor;
     result.command = InlineCommandMode::toCommandModeCommand(match.descriptor);
     return result;
+}
+
+bool isBetterCommandModeMatch(const CommandModeMatch& candidate,
+                              const CommandModeMatch& best)
+{
+    if (!candidate.matched)
+        return false;
+    if (!best.matched)
+        return true;
+    if (candidate.prefixPosition != best.prefixPosition)
+        return candidate.prefixPosition > best.prefixPosition;
+    if (candidate.descriptor.label.size() != best.descriptor.label.size())
+        return candidate.descriptor.label.size() > best.descriptor.label.size();
+    if (candidate.descriptor.prefix.size() != best.descriptor.prefix.size())
+        return candidate.descriptor.prefix.size() > best.descriptor.prefix.size();
+    if (candidate.intent != best.intent)
+        return candidate.intent == InlineCommandIntent::CodeTemplate;
+    return false;
 }
 
 QList<CodeTemplateItem> matchingCodeTemplateItems(
@@ -393,13 +346,28 @@ QList<CommandModeCommand> CompletionService::commandModeCommands() const
 
 CommandModeMatch CompletionService::matchCommandMode(const QString& lineUpToCursor) const
 {
-    CommandModeMatch match =
+    CommandModeMatch result =
         CompletionCommandMode::matchCommandMode(lineUpToCursor);
-    if (match.matched)
-        return match;
+    if (result.matched
+        && InlineCommandMode::isPositionInCommentOrString(
+            lineUpToCursor,
+            result.prefixPosition)) {
+        result = {};
+    }
 
-    return commandModeMatchFromInlineMatch(
-        matchUserTemplateCommand(lineUpToCursor, userTemplateService()));
+    const CommandModeMatch userTemplateMatch =
+        commandModeMatchFromInlineMatch(
+            matchUserTemplateCommand(lineUpToCursor, userTemplateService()));
+    if (userTemplateMatch.matched
+        && InlineCommandMode::isPositionInCommentOrString(
+            lineUpToCursor,
+            userTemplateMatch.prefixPosition)) {
+        // The parser is intentionally lexical-context agnostic; the service
+        // applies the editability guard before a match can become active.
+    } else if (isBetterCommandModeMatch(userTemplateMatch, result)) {
+        result = userTemplateMatch;
+    }
+    return result;
 }
 
 CommandModeInputState CompletionService::commandModeInputState(
@@ -423,8 +391,20 @@ CommandModeInputState CompletionService::commandModeInputState(
 CommandModeCompletionState CompletionService::commandModeCompletionState(
     const CommandModeCompletionQuery& query) const
 {
-    const CommandModeInputState inputState =
-        commandModeInputState(query.lineUpToCursor);
+    CommandModeInputState inputState;
+    if (query.hasExplicitMatch && query.explicitMatch.matched) {
+        inputState.matched = true;
+        inputState.helpRequested = query.explicitMatch.helpRequested;
+        inputState.intent = query.explicitMatch.intent;
+        inputState.prefixPosition = query.explicitMatch.prefixPosition;
+        inputState.input = query.explicitMatch.input;
+        inputState.command =
+            InlineCommandMode::toCommandModeCommand(
+                query.explicitMatch.descriptor);
+        inputState.descriptor = query.explicitMatch.descriptor;
+    } else {
+        inputState = commandModeInputState(query.lineUpToCursor);
+    }
 
     CommandModeCompletionState state;
     if (!inputState.matched)

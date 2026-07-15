@@ -2459,6 +2459,7 @@ void MyCodeEditorState::attachEditorConnections(MyCodeEditor* editor)
         &QPlainTextEdit::cursorPositionChanged,
         editor,
         [this, editor]() {
+            completionWorkflow.handleCursorPositionChanged();
             QTimer::singleShot(0, editor, [this, editor]() {
                 handleTemplateSlotCursorChanged(editor);
             });
@@ -3576,7 +3577,13 @@ bool MyCodeEditorState::handleKeyPress(MyCodeEditor* editor, QKeyEvent* event)
     if (adjustSelectedRangeBound(editor, event))
         return true;
 
+    if (completionWorkflow.handleCompletionPopupKey(event))
+        return true;
+
     if (handleBracketRangeTab(editor, event))
+        return true;
+
+    if (completionWorkflow.handleInlineAbbreviationTab(event))
         return true;
 
     if (handleBracketPairInsertion(editor, event))

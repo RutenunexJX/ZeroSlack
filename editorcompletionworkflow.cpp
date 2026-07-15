@@ -10,6 +10,7 @@
 #include <QModelIndex>
 #include <QDir>
 #include <QFileInfo>
+#include <QKeyEvent>
 #include <QRegularExpression>
 #include <QStringList>
 #include <QTextBlock>
@@ -173,6 +174,100 @@ void EditorCompletionWorkflow::hideAutoComplete()
         selections->clearCommand(editor);
 }
 
+void EditorCompletionWorkflow::clearInlineAbbreviationSession()
+{
+    inlineSession = {};
+}
+
+void EditorCompletionWorkflow::cancelInlineAbbreviationSession()
+{
+    if (!inlineSession.active)
+        return;
+
+    clearInlineAbbreviationSession();
+    includeCompletionActive = false;
+    includeCompletionMode = IncludeCompletionMode::None;
+    completion->hidePopup();
+    modes->clearCommandMode();
+    selections->clearCommand(editor);
+}
+
+bool EditorCompletionWorkflow::inlineAbbreviationSessionValid() const
+{
+    if (!editor || !inlineSession.active)
+        return false;
+    const QTextCursor currentCursor = editor->textCursor();
+    if (currentCursor.hasSelection()
+        || currentCursor.position() != inlineSession.replacementEndPosition) {
+        return false;
+    }
+    if (inlineSession.replacementStartPosition < 0
+        || inlineSession.replacementEndPosition
+               < inlineSession.replacementStartPosition) {
+        return false;
+    }
+
+    const QString text = editor->document()->toPlainText();
+    if (inlineSession.replacementEndPosition > text.size())
+        return false;
+    return text.mid(inlineSession.replacementStartPosition,
+                    inlineSession.replacementEndPosition
+                        - inlineSession.replacementStartPosition)
+        == inlineSession.abbreviationText;
+}
+
+bool EditorCompletionWorkflow::refreshInlineCandidateFilter()
+{
+    if (!inlineAbbreviationSessionValid()
+        || !inlineSession.candidateFiltering) {
+        return false;
+    }
+
+    CommandModeCompletionQuery query = inlineSession.anchorQuery;
+    query.hasExplicitMatch = true;
+    query.explicitMatch.matched = true;
+    query.explicitMatch.input = inlineSession.filterText;
+    const CommandModeCompletionState state =
+        CompletionService::getInstance()->commandModeCompletionState(query);
+    if (!state.matched) {
+        cancelInlineAbbreviationSession();
+        return false;
+    }
+
+    inlineSession.completion = state;
+    EditorCommandModeCompletionRefreshState refreshState;
+    refreshState.matched = true;
+    refreshState.commandModeActive = true;
+    refreshState.highlightCommand = state.prefixPosition >= 0;
+    refreshState.showCompletions = true;
+    refreshState.suppressDefaultSymbolFallback = true;
+    refreshState.completion = state;
+    completion->updateCommandModeCompletions(refreshState);
+    if (state.prefixPosition >= 0)
+        selections->highlightCommand(editor, state.prefixPosition);
+    showAutoComplete(true);
+
+    if (inlineCandidateCount(state) == 0) {
+        emit editor->editorStatusMessageRequested(
+            QStringLiteral("No %1 candidates for \"%2\"")
+                .arg(state.descriptor.description,
+                     state.completionPrefix));
+    }
+    return true;
+}
+
+void EditorCompletionWorkflow::handleCursorPositionChanged()
+{
+    if (applyingInlineReplacement || !inlineSession.active)
+        return;
+
+    const QTextCursor cursor = editor->textCursor();
+    if (cursor.hasSelection()
+        || cursor.position() != inlineSession.replacementEndPosition) {
+        cancelInlineAbbreviationSession();
+    }
+}
+
 void EditorCompletionWorkflow::showAutoComplete(bool selectFirstCompletion)
 {
     completion->showForCursor(
@@ -187,9 +282,229 @@ void EditorCompletionWorkflow::executeEditorActionCommand(const QString& command
     editor->state->executeEditorActionCommand(editor, command);
 }
 
+int EditorCompletionWorkflow::inlineCandidateCount(
+    const CommandModeCompletionState& state) const
+{
+    if (state.helpRequested)
+        return state.helpCommands.size() + state.helpDescriptors.size();
+    if (state.intent == InlineCommandIntent::CodeTemplate
+        || state.intent == InlineCommandIntent::EditorAction) {
+        return state.templateItems.size();
+    }
+    if (state.intent == InlineCommandIntent::SemanticCompletion
+        || state.intent == InlineCommandIntent::PackageImport) {
+        return state.symbolRecords.size();
+    }
+    return 0;
+}
+
+bool EditorCompletionWorkflow::applySingleInlineAbbreviationCandidate(
+    const CommandModeCompletionState& state)
+{
+    CompletionActivationQuery activationQuery;
+    activationQuery.selectable = true;
+    activationQuery.mode = CompletionActivationMode::CommandMode;
+
+    if (state.intent == InlineCommandIntent::CodeTemplate
+        || state.intent == InlineCommandIntent::EditorAction) {
+        if (state.templateItems.size() != 1)
+            return false;
+        const CodeTemplateItem item = state.templateItems.constFirst();
+        activationQuery.itemText = item.label;
+        activationQuery.defaultValue =
+            item.insertText.isEmpty() ? item.defaultValue : item.insertText;
+        activationQuery.selectionStart = item.selectionStart;
+        activationQuery.selectionLength = item.selectionLength;
+        activationQuery.templateSlots = item.templateSlots;
+    } else if (state.intent == InlineCommandIntent::SemanticCompletion
+               || state.intent == InlineCommandIntent::PackageImport) {
+        if (state.symbolRecords.size() != 1)
+            return false;
+        const CommandSymbolCompletionItem item =
+            CompletionService::getInstance()->commandSymbolCompletionItem(
+                state.symbolRecords.constFirst(),
+                state.commandKind,
+                state.completionPrefix);
+        activationQuery.itemText = item.text;
+        activationQuery.defaultValue = item.defaultValue;
+        activationQuery.selectionStart = item.selectionStart;
+        activationQuery.selectionLength = item.selectionLength;
+        activationQuery.templateSlots = item.templateSlots;
+    } else {
+        return false;
+    }
+
+    const CompletionActivationState activationState =
+        semanticService()->completionActivationState(activationQuery);
+    applyCompletionActivationState(activationState);
+    return true;
+}
+
+bool EditorCompletionWorkflow::showInlineAbbreviationCompletions(
+    const CommandModeCompletionState& state,
+    int replacementStartPosition,
+    int replacementEndPosition,
+    int anchorPosition,
+    int commandEndPosition,
+    int filterStartPosition,
+    const QString& abbreviationText,
+    const CommandModeCompletionQuery& anchorQuery)
+{
+    inlineSession.active = true;
+    inlineSession.replacementStartPosition = replacementStartPosition;
+    inlineSession.replacementEndPosition = replacementEndPosition;
+    inlineSession.anchorPosition = anchorPosition;
+    inlineSession.commandEndPosition = commandEndPosition;
+    inlineSession.filterStartPosition = filterStartPosition;
+    inlineSession.abbreviationText = abbreviationText;
+    inlineSession.filterText = abbreviationText.mid(
+        filterStartPosition - replacementStartPosition);
+    inlineSession.anchorQuery = anchorQuery;
+    inlineSession.completion = state;
+
+    modes->setCommandModeActive(true);
+    selections->highlightCommand(
+        editor,
+        state.prefixPosition);
+
+    if (state.intent == InlineCommandIntent::HeaderInclude) {
+        if (!showIncludeCommandCompletions(state)) {
+            emit editor->editorStatusMessageRequested(
+                QStringLiteral("No include completion provider"));
+            clearInlineAbbreviationSession();
+            modes->clearCommandMode();
+            selections->clearCommand(editor);
+        }
+        return true;
+    }
+
+    const int candidateCount = inlineCandidateCount(state);
+    const bool supportsCandidateFiltering =
+        !state.helpRequested
+        && state.intent != InlineCommandIntent::HeaderInclude;
+    if (candidateCount == 0 && !supportsCandidateFiltering) {
+        emit editor->editorStatusMessageRequested(
+            QStringLiteral("No %1 candidates for \"%2\"")
+                .arg(state.descriptor.description,
+                     state.completionPrefix));
+        clearInlineAbbreviationSession();
+        modes->clearCommandMode();
+        selections->clearCommand(editor);
+        return true;
+    }
+
+    if (candidateCount == 1
+        && applySingleInlineAbbreviationCandidate(state)) {
+        return true;
+    }
+
+    inlineSession.candidateFiltering = supportsCandidateFiltering;
+
+    EditorCommandModeCompletionRefreshState refreshState;
+    refreshState.matched = true;
+    refreshState.commandModeActive = true;
+    refreshState.highlightCommand = state.prefixPosition >= 0;
+    refreshState.showCompletions = true;
+    refreshState.suppressDefaultSymbolFallback =
+        inlineSession.candidateFiltering;
+    refreshState.completion = state;
+    completion->updateCommandModeCompletions(refreshState);
+    showAutoComplete(true);
+    if (candidateCount == 0) {
+        emit editor->editorStatusMessageRequested(
+            QStringLiteral("No %1 candidates for \"%2\"")
+                .arg(state.descriptor.description,
+                     state.completionPrefix));
+    }
+    return true;
+}
+
+bool EditorCompletionWorkflow::handleInlineAbbreviationTab(QKeyEvent* event)
+{
+    if (!editor || !event || event->key() != Qt::Key_Tab
+        || event->modifiers() != Qt::NoModifier
+        || editor->textCursor().hasSelection()) {
+        return false;
+    }
+
+    QTextCursor cursor = editor->textCursor();
+    const QTextBlock block = cursor.block();
+    if (!block.isValid())
+        return false;
+
+    const int column = cursor.position() - block.position();
+    const QString textBeforeCursor = block.text().left(column);
+    const CommandModeMatch match =
+        CompletionService::getInstance()->matchCommandMode(textBeforeCursor);
+    if (!match.matched)
+        return false;
+
+    const int replacementStartPosition = block.position() + match.prefixPosition;
+    const int replacementEndPosition = cursor.position();
+    const QString abbreviationText =
+        editor->document()->toPlainText().mid(
+            replacementStartPosition,
+            replacementEndPosition - replacementStartPosition);
+    const QString commandToken = match.descriptor.label.isEmpty()
+        ? match.descriptor.prefix.trimmed()
+        : match.descriptor.label;
+    const int commandEndPosition =
+        replacementStartPosition + commandToken.size();
+    const int filterStartPosition =
+        commandEndPosition < replacementEndPosition
+            && editor->document()->characterAt(commandEndPosition)
+                   == QLatin1Char(' ')
+        ? commandEndPosition + 1
+        : commandEndPosition;
+
+    EditorSemanticContext anchorContext =
+        contextProvider(replacementStartPosition, true);
+    anchorContext.moduleName = moduleNameProvider(replacementStartPosition);
+    if (InlineCommandMode::isPositionInCommentOrString(
+            anchorContext.documentText,
+            replacementStartPosition)) {
+        return false;
+    }
+
+    CommandModeCompletionQuery query;
+    query.lineUpToCursor = textBeforeCursor;
+    query.fileName = anchorContext.fileName;
+    query.moduleName = anchorContext.moduleName;
+    query.documentText = anchorContext.documentText;
+    query.cursorLine = anchorContext.cursorLine;
+    query.cursorPosition = replacementStartPosition;
+    query.hasExplicitMatch = true;
+    query.explicitMatch.matched = true;
+    query.explicitMatch.helpRequested = match.helpRequested;
+    query.explicitMatch.intent = match.intent;
+    query.explicitMatch.prefixPosition = match.prefixPosition;
+    query.explicitMatch.endPosition = textBeforeCursor.size();
+    query.explicitMatch.commandToken = match.descriptor.label;
+    query.explicitMatch.input = match.input;
+    query.explicitMatch.descriptor = match.descriptor;
+
+    const CommandModeCompletionState state =
+        CompletionService::getInstance()->commandModeCompletionState(query);
+    if (!state.matched)
+        return false;
+
+    event->accept();
+    return showInlineAbbreviationCompletions(state,
+                                             replacementStartPosition,
+                                             replacementEndPosition,
+                                             replacementStartPosition,
+                                             commandEndPosition,
+                                             filterStartPosition,
+                                             abbreviationText,
+                                             query);
+}
+
 void EditorCompletionWorkflow::updateCompletionTriggerForTextChange(
     const QTextCursor& cursor)
 {
+    if (!applyingInlineReplacement)
+        clearInlineAbbreviationSession();
+
     EditorSemanticContext context = semanticContextForCursor(cursor, false);
     context.moduleName = moduleNameProvider(cursor.position() - 1);
     const EditorCompletionTextChangeState completionState =
@@ -206,6 +521,8 @@ void EditorCompletionWorkflow::updateCompletionTriggerForTextChange(
 void EditorCompletionWorkflow::handleTextChanged()
 {
     completion->stopTimer();
+    if (applyingInlineReplacement)
+        return;
     updateCompletionTriggerForTextChange(editor->textCursor());
 }
 
@@ -262,6 +579,37 @@ int EditorCompletionWorkflow::replaceCommandInputAtCursor(
     int selectionLength)
 {
     QTextCursor cursor = editor->textCursor();
+    if (inlineSession.active && !inlineAbbreviationSessionValid()) {
+        cancelInlineAbbreviationSession();
+        return -1;
+    }
+    if (inlineAbbreviationSessionValid()) {
+        const int commandStartPosition =
+            inlineSession.replacementStartPosition;
+        applyingInlineReplacement = true;
+        cursor.beginEditBlock();
+        cursor.setPosition(inlineSession.replacementStartPosition);
+        cursor.setPosition(inlineSession.replacementEndPosition,
+                           QTextCursor::KeepAnchor);
+        cursor.insertText(text);
+        cursor.endEditBlock();
+        applyingInlineReplacement = false;
+        clearInlineAbbreviationSession();
+
+        if (selectionStart >= 0 && selectionLength >= 0
+            && selectionStart + selectionLength <= text.size()) {
+            QTextCursor selectionCursor = editor->textCursor();
+            selectionCursor.setPosition(commandStartPosition + selectionStart);
+            if (selectionLength > 0) {
+                selectionCursor.setPosition(commandStartPosition + selectionStart
+                                                + selectionLength,
+                                            QTextCursor::KeepAnchor);
+            }
+            editor->setTextCursor(selectionCursor);
+        }
+        return commandStartPosition;
+    }
+
     const EditorSemanticContext context = semanticContextForCursor(
         cursor,
         false);
@@ -445,6 +793,17 @@ EditorCompletionWorkflow::includeCompletionContextAtCursor() const
     if (!editor || !includeFileProvider)
         return context;
 
+    if (inlineAbbreviationSessionValid()
+        && inlineSession.completion.intent
+               == InlineCommandIntent::HeaderInclude) {
+        context.active = true;
+        context.prefix = inlineSession.completion.input.trimmed();
+        context.replacementStartPosition =
+            inlineSession.replacementStartPosition;
+        context.replacementEndPosition = inlineSession.replacementEndPosition;
+        return context;
+    }
+
     const QTextCursor cursor = editor->textCursor();
     const EditorSemanticContext semanticContext =
         semanticContextForCursor(cursor, false);
@@ -566,13 +925,16 @@ void EditorCompletionWorkflow::applyIncludeCompletion(
         return;
 
     QTextCursor cursor = editor->textCursor();
+    applyingInlineReplacement = true;
     cursor.setPosition(context.replacementStartPosition);
     cursor.setPosition(context.replacementEndPosition,
                        QTextCursor::KeepAnchor);
     cursor.insertText(QStringLiteral("`include \"%1\"").arg(includePath));
+    applyingInlineReplacement = false;
     editor->setTextCursor(cursor);
 
     includeCompletionActive = false;
+    clearInlineAbbreviationSession();
     hideAutoComplete();
 }
 

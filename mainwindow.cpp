@@ -180,12 +180,12 @@ MainWindow::MainWindow(QWidget *parent)
             semanticDocks->wavePreviewPanelCoordinator()->dock()->hide();
     }
 
-    setWindowTitle(QStringLiteral("ZeroSlack  %1").arg(QLatin1String(APP_VERSION)));
+    setWindowTitle(QStringLiteral("ZeroSlack v%1").arg(QLatin1String(APP_VERSION)));
     if (statusBar()) {
         QLabel* versionLabel = new QLabel(
             QStringLiteral("v%1").arg(QLatin1String(APP_VERSION)), this);
         versionLabel->setToolTip(
-            QStringLiteral("ZeroSlack %1\nBuilt at %2")
+            QStringLiteral("ZeroSlack v%1\nBuilt at %2")
                 .arg(QLatin1String(APP_VERSION), QLatin1String(APP_BUILD_TIME)));
         versionLabel->setStyleSheet(
             InsightVisualStyle::labelStyleSheet(versionLabel->objectName()));

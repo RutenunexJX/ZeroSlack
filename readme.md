@@ -31,6 +31,36 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
 
 ## Current Product Baseline
 
+- Product versioning is controlled by the root `VERSION` file. The current
+  baseline is `v0.1.0`; CMake validates that file before `project()` and
+  generates `generated/version.h` from `version.h.in`. User-visible product
+  version strings no longer include dependency labels.
+- Inline `;cmd` and `;;cmd` are Tab-only abbreviations. Typing command text no
+  longer enters command mode or opens command candidates; plain Tab expands
+  the registered suffix immediately before the cursor. The parser supports
+  arbitrary code positions, gives `;;cmd` priority over `;cmd`, rejects
+  comments/strings including cross-line block comments, preserves only the
+  abbreviation range during replacement, and scopes semantic `;l`/`;w`/`;r`
+  queries to the abbreviation anchor module. When Tab opens multiple semantic
+  candidates, identifier input and Backspace update the query text in place and
+  filter the popup against that original anchor; unique and zero-match results
+  keep the session open until explicit Tab/Enter submission or cancellation.
+  Zero-match rows are non-selectable and inline semantic sessions never offer a
+  `[DEFAULT]` insertion. Active sessions are canceled as soon as the cursor
+  leaves the abbreviation end or gains a selection; cancellation keeps source
+  text intact, hides the popup, and clears command highlighting. The lexical
+  guard uses one state machine for strings, `//`, and `/* ... */`, so `//`
+  inside closed strings or closed block comments does not suppress a following
+  command.
+- Ordinary identifier typing no longer opens the completion popup after two
+  characters. Automatic popup entry is limited to strong contexts such as
+  member access `.`, package scope `::`, macro backtick, and system task `$`.
+  The semantic inline path is covered through real GUI filtering, direction-key
+  selection, and Tab/Enter activation; submission replaces only the complete
+  abbreviation and inserts the selected in-scope symbol. Ordinary completion
+  may retain its existing default fallback, but inline semantic sessions do not
+  expose it. Debug verification passed for `completion_test`, `gui_smoke_test`,
+  `relationship_test`, and `insight_visual_style_test`.
 - Current UI route: keep Qt Widgets, evolve the existing `InsightVisualStyle`
   into the application theme layer, and reuse a shared `InsightGraphView`
   foundation for graph surfaces. Phase 1 theme foundation and GraphCanvas
@@ -536,16 +566,17 @@ engineering configuration / diagnostics lane.
 
 Current command surfaces are intentionally separate:
 
-- `;cmd` is inline semantic command completion. `InlineCommandMode` owns the
-  built-in prefix descriptors and parsing guardrails, including safe-prefix and
-  comment/string rejection. `CompletionCommandMode` and `CompletionService`
-  shape command state, help, symbol presentation, activation state, and
-  `CompletionSemanticQuery` requests against `SemanticIndexSnapshot` data.
-- `;;cmd` is inline code template expansion. Its built-in command prefixes are
-  derived from the inline descriptor set, while built-in template text and
-  relative slot metadata come from `CodeTemplateService`.
+- `;cmd` is Tab-only inline semantic abbreviation expansion. `InlineCommandMode`
+  owns built-in descriptors and suffix parsing; `CompletionService` resolves
+  registered commands and semantic candidates; `EditorCompletionWorkflow`
+  owns the explicit Tab session, non-destructive Esc cancel, saved replacement
+  range, and anchor-position semantic context.
+- `;;cmd` is Tab-only inline code template expansion. Its built-in command
+  prefixes are derived from the inline descriptor set, while built-in template
+  text and relative slot metadata come from `CodeTemplateService`.
   `EditorCompletionWorkflow` applies the selected template and starts Slot Mode
-  through `MyCodeEditor` when slot metadata exists.
+  through `MyCodeEditor` when slot metadata exists. Input alone does not enter
+  command mode or open command candidates.
 - Package Tools is a package-scoped button surface, not a `;;cmd` alias. It
   reuses the Slot Mode editor machinery after insertion, but package templates,
   current-package validation, and insertion targets stay in the package tool

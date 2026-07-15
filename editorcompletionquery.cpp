@@ -34,11 +34,15 @@ EditorCompletionQueryHelper::completionTextChangeState(
     const EditorSemanticContext& context)
 {
     EditorCompletionTextChangeState state;
-    state.commandInput = commandModeInputState(context);
-    state.commandModeActive = state.commandInput.matched;
+    if (CompletionService::getInstance()
+            ->matchCommandMode(context.lineUpToCursor)
+            .matched) {
+        state.hidePopup = true;
+        return state;
+    }
 
     EditorSemanticContext triggerContext = context;
-    triggerContext.commandModeActive = state.commandModeActive;
+    triggerContext.commandModeActive = false;
     state.trigger = completionTriggerState(triggerContext);
     state.startCompletionTimer = state.trigger.continueCompletion;
     state.hidePopup = state.trigger.hidePopup;

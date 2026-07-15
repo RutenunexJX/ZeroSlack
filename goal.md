@@ -28,6 +28,38 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
 
 ## Current Goal State
 
+Current product version baseline: `v0.1.0`. The root `VERSION` file is now the
+single manual version source, CMake validates it as strict `X.Y.Z` before
+`project()`, and `generated/version.h` is produced from `version.h.in` for
+window title, status-bar, and tooltip display. Product versioning is decoupled
+from dependency labels.
+
+Inline command behavior has been updated to Tab-only abbreviation expansion:
+typing `;cmd` / `;;cmd` text no longer enters command mode, starts the command
+timer, or opens command candidates. Plain Tab parses only the registered suffix
+ending at the cursor, supports arbitrary editable code positions, prefers
+explicit `;;cmd` over `;cmd`, preserves only the abbreviation replacement
+range, rejects comments/strings including cross-line block comments, and keeps
+semantic completions scoped to the abbreviation anchor file/module/position.
+After the first Tab opens multiple semantic candidates, identifier input and
+Backspace update the abbreviation query and popup while retaining that saved
+anchor. Unique results require Tab/Enter submission; zero-match results remain
+open and recoverable with a non-selectable message, without an executable
+`[DEFAULT]` item. Active inline popup sessions fail closed when the cursor
+leaves the saved abbreviation end or a selection appears; cancellation hides
+the popup and clears command highlight/include state without editing source.
+Lexical context is checked by one state-machine scan, so closed URL strings and
+closed block comments containing `//` do not block a later command on the same
+line.
+Ordinary identifier typing no longer auto-opens completion after two
+characters; implicit popup entry remains limited to strong contexts (`.`,
+`::`, macro backtick, and `$`). The semantic inline GUI path verifies live
+filtering, Backspace expansion, zero-match recovery, anchor-module isolation,
+and explicit Tab/Enter activation while preserving surrounding code and
+replacing only the complete abbreviation. Inline semantic sessions suppress
+default declaration items. Debug verification passed for `completion_test`,
+`gui_smoke_test`, `relationship_test`, and `insight_visual_style_test`.
+
 Current milestone: RTL Insight core-view modernization is complete on top of
 the UI theme and graph foundation. The current UI route keeps Qt Widgets, uses
 `InsightVisualStyle` as the global theme layer, and uses `InsightGraphView` as
@@ -595,6 +627,30 @@ Status history:
   Control app/workspace/global.
 - Focused verification for G6.1: documentation inspection plus
   `git diff --check`.
+- G6.5 Tab-only inline abbreviation expansion is complete:
+  `inlinecommandmode` now exposes a suffix parser for registered abbreviations;
+  text-change completion suppresses inline command popups without entering
+  command mode; `EditorCompletionWorkflow` owns explicit Tab sessions with
+  saved absolute range and anchor context; popup Esc cancellation preserves the
+  original abbreviation; unique candidates replace directly; multi-candidate
+  results use the existing popup; Slot Mode, Column Mode, existing popup Tab,
+  bracket-range Tab, and normal Tab keep their priority.
+- Focused verification for G6.5 passed in the Debug build:
+  `completion_test`, `gui_smoke_test`, `relationship_test`, and
+  `insight_visual_style_test`.
+- G6.6 Inline abbreviation acceptance hardening is complete:
+  `EditorCompletionWorkflow::handleCursorPositionChanged()` cancels active
+  inline sessions when the cursor no longer equals the saved replacement end or
+  text is selected; `inlineAbbreviationSessionValid()` repeats the same check
+  before replacement. `InlineCommandMode` removed the raw `indexOf("//")`
+  guard and relies on a single lexical state machine for strings, line
+  comments, and block comments. Regression coverage includes multi-candidate
+  popup cursor movement, ordinary Tab after cancel, cross-line block comments,
+  URL strings, closed block comments containing `//`, real line comments, and
+  commands inside strings.
+- Focused verification for G6.6 passed in the Debug build:
+  `completion_test`, `gui_smoke_test`, `relationship_test`, and
+  `insight_visual_style_test`.
 - G6.2 User Template Storage/Query Model is complete:
   `UserTemplateService` now owns validation, persistence, reload, exact-token
   query, add/update, remove, and clear operations for compact `;;` user

@@ -8,6 +8,7 @@
 #include "completionsemanticquery.h"
 #include "completionservice.h"
 #include "codetemplateservice.h"
+#include "inlinecommandmode.h"
 #include "commodecommandregistry.h"
 #include "customabbreviationservice.h"
 #include "diagnosticsrefreshcontroller.h"
@@ -586,8 +587,10 @@ int main(int argc, char** argv) {
                                                QStringLiteral("af"),
                                                CompletionCommandKind::Logic);
     ++g_checks;
+    const QModelIndex modelScoringSymbolIndex =
+        modelScoring.firstSelectableIndex();
     const QString firstScoredModelSymbol =
-        modelScoring.getItem(modelScoring.index(2, 0)).text;
+        modelScoring.getItem(modelScoringSymbolIndex).text;
     const bool modelScoringOk =
         firstScoredModelSymbol == QStringLiteral("always_ff");
     if (!modelScoringOk)
@@ -602,48 +605,49 @@ int main(int argc, char** argv) {
                  .typeDescription,
              QStringLiteral("logic variables"));
     expectEq("CompletionModel symbol desc",
-             modelScoring.getItem(modelScoring.index(2, 0)).description,
+             modelScoring.getItem(modelScoringSymbolIndex).description,
              QStringLiteral("logic"));
     expectEq("CompletionModel symbol display",
-             modelScoring.getItem(modelScoring.index(2, 0)).displayText,
+             modelScoring.getItem(modelScoringSymbolIndex).displayText,
              QStringLiteral("always_ff (logic)"));
     expectBool("CompletionModel symbol stable key",
-               modelScoring.getItem(modelScoring.index(2, 0)).symbolStableKey
+               modelScoring.getItem(modelScoringSymbolIndex).symbolStableKey
                    == modelScoringRecords.at(1).stableKey,
                true);
     expectBool("CompletionModel symbol record",
-               modelScoring.getItem(modelScoring.index(2, 0)).symbolRecord.stableKey
-                   == modelScoring.getItem(modelScoring.index(2, 0)).symbolStableKey
-                   && modelScoring.getItem(modelScoring.index(2, 0))
+               modelScoring.getItem(modelScoringSymbolIndex).symbolRecord.stableKey
+                   == modelScoring.getItem(modelScoringSymbolIndex).symbolStableKey
+                   && modelScoring.getItem(modelScoringSymbolIndex)
                           .symbolRecord.localHandle == modelScoringRecords.at(1).localHandle,
                true);
     expectBool("CompletionModel symbol semantic metadata",
-               modelScoring.getItem(modelScoring.index(2, 0)).typeDisplayName
+               modelScoring.getItem(modelScoringSymbolIndex).typeDisplayName
                    == QStringLiteral("logic")
-                   && modelScoring.getItem(modelScoring.index(2, 0)).ownerScopeName
+                   && modelScoring.getItem(modelScoringSymbolIndex).ownerScopeName
                        == QStringLiteral("top")
-                   && modelScoring.getItem(modelScoring.index(2, 0))
+                   && modelScoring.getItem(modelScoringSymbolIndex)
                           .sourceRoleDisplayName == QStringLiteral("design source")
-                   && modelScoring.getItem(modelScoring.index(2, 0)).declarationKind
+                   && modelScoring.getItem(modelScoringSymbolIndex).declarationKind
                        == SymbolTaxonomy::DeclarationKind::Signal
-                   && modelScoring.getItem(modelScoring.index(2, 0)).ownerScope
+                   && modelScoring.getItem(modelScoringSymbolIndex).ownerScope
                        == SymbolTaxonomy::SymbolOwnerScope::Module
-                   && modelScoring.getItem(modelScoring.index(2, 0)).sourceRole
+                   && modelScoring.getItem(modelScoringSymbolIndex).sourceRole
                        == SymbolTaxonomy::SourceRole::DesignSource
-                   && modelScoring.getItem(modelScoring.index(2, 0))
+                   && modelScoring.getItem(modelScoringSymbolIndex)
                           .symbolRecord.collectorKind
                        == SymbolTaxonomy::CollectorKind::Logic,
                true);
     expectBool("CompletionModel header selectable",
                modelScoring.getItem(modelScoring.index(0, 0)).selectable,
                false);
-    expectBool("CompletionModel default metadata",
-               modelScoring.getItem(modelScoring.index(1, 0)).emphasized
-                   && modelScoring.getItem(modelScoring.index(1, 0))
-                          .toolTipText.contains(QStringLiteral("default value")),
+    expectBool("CompletionModel real symbols precede default fallback",
+               modelScoringSymbolIndex.row() == 1
+                   && !modelScoring.getItem(modelScoringSymbolIndex)
+                           .text
+                           .startsWith(QStringLiteral("[DEFAULT]")),
                true);
     expectEq("CompletionModel display role",
-             modelScoring.data(modelScoring.index(2, 0), Qt::DisplayRole).toString(),
+             modelScoring.data(modelScoringSymbolIndex, Qt::DisplayRole).toString(),
              QStringLiteral("always_ff (logic)"));
     SemanticSymbolRecord metadataModelRecord =
         SemanticFixtureRecordBuilder(
@@ -833,7 +837,7 @@ int main(int argc, char** argv) {
         QString(),
         CompletionCommandKind::Module);
     expectBool("CompletionModel renders command symbol band summary header",
-               commandSymbolBandSummaryModel.rowCount() == 5
+               commandSymbolBandSummaryModel.rowCount() == 4
                    && !commandSymbolBandSummaryModel.getItem(
                           commandSymbolBandSummaryModel.index(2, 0))
                           .selectable
@@ -4511,6 +4515,69 @@ int main(int argc, char** argv) {
            "CompletionModel selectable default",
            defaultSelectableIndex.row());
 
+    const QList<SemanticSymbolRecord> realLogicDefaultRecords{
+        SemanticFixtureRecordBuilder(
+            QStringLiteral("en_a"),
+            SymbolTaxonomy::DeclarationKind::Signal)
+            .inModule(QStringLiteral("top"))
+            .withLocalHandle(9051)
+            .withCollectorKind(SymbolTaxonomy::CollectorKind::Logic)
+            .record(),
+        SemanticFixtureRecordBuilder(
+            QStringLiteral("en_b"),
+            SymbolTaxonomy::DeclarationKind::Signal)
+            .inModule(QStringLiteral("top"))
+            .withLocalHandle(9052)
+            .withCollectorKind(SymbolTaxonomy::CollectorKind::Logic)
+            .record(),
+    };
+    CompletionModel realLogicSelectionModel;
+    realLogicSelectionModel.updateSymbolRecordCompletions(
+        realLogicDefaultRecords,
+        QStringLiteral("en"),
+        CompletionCommandKind::Logic);
+    bool defaultRowPresentWithRealLogic = false;
+    for (int row = 0; row < realLogicSelectionModel.rowCount(); ++row) {
+        defaultRowPresentWithRealLogic =
+            defaultRowPresentWithRealLogic
+            || realLogicSelectionModel
+                   .getItem(realLogicSelectionModel.index(row, 0))
+                   .text
+                   .startsWith(QStringLiteral("[DEFAULT]"));
+    }
+    const QModelIndex realLogicSelectableIndex =
+        realLogicSelectionModel.firstSelectableIndex();
+    expectBool("CompletionModel real logic beats default",
+               realLogicSelectableIndex.isValid()
+                   && realLogicSelectionModel
+                          .getItem(realLogicSelectableIndex)
+                          .text
+                          .startsWith(QStringLiteral("en_"))
+                   && !defaultRowPresentWithRealLogic,
+               true);
+
+    CompletionModel inlineNoMatchModel;
+    inlineNoMatchModel.updateSymbolRecordCompletions(
+        {},
+        QStringLiteral("missing"),
+        CompletionCommandKind::Logic,
+        false);
+    bool inlineNoMatchHasDefault = false;
+    bool inlineNoMatchHasMessage = false;
+    for (int row = 0; row < inlineNoMatchModel.rowCount(); ++row) {
+        const CompletionModel::CompletionItem item =
+            inlineNoMatchModel.getItem(inlineNoMatchModel.index(row, 0));
+        inlineNoMatchHasDefault = inlineNoMatchHasDefault
+            || item.text.startsWith(QStringLiteral("[DEFAULT]"));
+        inlineNoMatchHasMessage = inlineNoMatchHasMessage
+            || item.text == QStringLiteral("No matching symbols");
+    }
+    expectBool("CompletionModel inline no-match is non-executable",
+               inlineNoMatchHasMessage
+                   && !inlineNoMatchHasDefault
+                   && !inlineNoMatchModel.firstSelectableIndex().isValid(),
+               true);
+
     const CommandSymbolPresentation logicPresentation =
         CompletionService::getInstance()->commandSymbolPresentation(
             CompletionCommandKind::Logic);
@@ -4970,6 +5037,167 @@ int main(int argc, char** argv) {
            commandModeMatchOk ? "PASS" : "FAIL",
            "CompletionService command match",
            commandModeMatch.input.toLocal8Bit().constData());
+    const CommandModeMatch inlineCommandMatch =
+        CompletionService::getInstance()->matchCommandMode(
+            QStringLiteral("lhs = ;l sig"));
+    expectBool("CompletionService inline command match",
+               inlineCommandMatch.matched
+                   && inlineCommandMatch.prefixPosition
+                       == QStringLiteral("lhs = ").size()
+                   && inlineCommandMatch.input == QStringLiteral("sig")
+                   && inlineCommandMatch.command.kind
+                       == CompletionCommandKind::Logic,
+               true);
+    const InlineCommandMatch assignmentAbbreviation =
+        InlineCommandMode::matchAbbreviationBeforeCursor(
+            QStringLiteral("lhs=;l sig"));
+    expectBool("InlineCommandMode parses code-position command",
+               assignmentAbbreviation.matched
+                   && assignmentAbbreviation.prefixPosition
+                       == QStringLiteral("lhs=").size()
+                   && assignmentAbbreviation.input == QStringLiteral("sig")
+                   && assignmentAbbreviation.descriptor.semanticKind
+                       == CompletionCommandKind::Logic,
+               true);
+    const InlineCommandMatch portAbbreviation =
+        InlineCommandMode::matchAbbreviationBeforeCursor(
+            QStringLiteral(".clk(;l clk"));
+    expectBool("InlineCommandMode parses port-position command",
+               portAbbreviation.matched
+                   && portAbbreviation.prefixPosition
+                       == QStringLiteral(".clk(").size()
+                   && portAbbreviation.input == QStringLiteral("clk"),
+               true);
+    const InlineCommandMatch doubleSemicolonAbbreviation =
+        InlineCommandMode::matchAbbreviationBeforeCursor(
+            QStringLiteral(";;l"));
+    expectBool("InlineCommandMode prefers double semicolon",
+               doubleSemicolonAbbreviation.matched
+                   && doubleSemicolonAbbreviation.intent
+                       == InlineCommandIntent::CodeTemplate
+                   && doubleSemicolonAbbreviation.descriptor.label
+                       == QStringLiteral(";;l"),
+               true);
+    const InlineCommandMatch nearestAbbreviation =
+        InlineCommandMode::matchAbbreviationBeforeCursor(
+            QStringLiteral("lhs=;l old + ;w net"));
+    expectBool("InlineCommandMode chooses nearest suffix",
+               nearestAbbreviation.matched
+                   && nearestAbbreviation.prefixPosition
+                       == QStringLiteral("lhs=;l old + ").size()
+                   && nearestAbbreviation.descriptor.semanticKind
+                       == CompletionCommandKind::Wire
+                   && nearestAbbreviation.input == QStringLiteral("net"),
+               true);
+    expectBool("InlineCommandMode unknown command rejects",
+               !InlineCommandMode::matchAbbreviationBeforeCursor(
+                    QStringLiteral("lhs=;unknown sig"))
+                    .matched,
+               true);
+    const QString crossLineComment =
+        QStringLiteral("module top;\n"
+                       "  /* block ;l sig\n"
+                       "     still comment ;l sig");
+    expectBool("InlineCommandMode detects cross-line block comment",
+               InlineCommandMode::isPositionInCommentOrString(
+                   crossLineComment,
+                   crossLineComment.lastIndexOf(QStringLiteral(";l"))),
+               true);
+    const QString urlThenCommand =
+        QStringLiteral("string url = \"http://host\"; assign x = ;l sig");
+    const int urlCommandStart = urlThenCommand.lastIndexOf(QStringLiteral(";l"));
+    expectBool("InlineCommandMode allows command after URL string",
+               !InlineCommandMode::isPositionInCommentOrString(
+                   urlThenCommand,
+                   urlCommandStart)
+                   && InlineCommandMode::matchAbbreviationBeforeCursor(
+                          urlThenCommand)
+                          .matched,
+               true);
+    const QString closedBlockCommentThenCommand =
+        QStringLiteral("/* // */ assign x = ;l sig");
+    const int closedBlockCommandStart =
+        closedBlockCommentThenCommand.lastIndexOf(QStringLiteral(";l"));
+    expectBool("InlineCommandMode allows command after closed block comment",
+               !InlineCommandMode::isPositionInCommentOrString(
+                   closedBlockCommentThenCommand,
+                   closedBlockCommandStart)
+                   && InlineCommandMode::matchAbbreviationBeforeCursor(
+                          closedBlockCommentThenCommand)
+                          .matched,
+               true);
+    const QString realLineComment =
+        QStringLiteral("// ;l sig");
+    expectBool("InlineCommandMode rejects real line comment",
+               InlineCommandMode::isPositionInCommentOrString(
+                   realLineComment,
+                   realLineComment.indexOf(QStringLiteral(";l"))),
+               true);
+    const QString commandInsideString =
+        QStringLiteral("string s = \";l sig\"");
+    expectBool("InlineCommandMode rejects command inside string",
+               InlineCommandMode::isPositionInCommentOrString(
+                   commandInsideString,
+                   commandInsideString.indexOf(QStringLiteral(";l"))),
+               true);
+    const CommandModeInputState inlineInputState =
+        CompletionService::getInstance()->commandModeInputState(
+            QStringLiteral("assign lhs = ;l sig"));
+    const QString inlineSuffix = QStringLiteral(" + rhs;");
+    const QString inlineReplacement =
+        QStringLiteral("assign lhs = ;l sig").left(inlineInputState.prefixPosition)
+        + QStringLiteral("sig")
+        + inlineSuffix;
+    expectBool("CompletionService inline replacement range",
+               inlineInputState.matched
+                   && inlineInputState.prefixPosition > 0
+                   && inlineReplacement
+                       == QStringLiteral("assign lhs = sig + rhs;"),
+               true);
+    const CommandModeMatch rightmostCommandMatch =
+        CompletionService::getInstance()->matchCommandMode(
+            QStringLiteral("lhs = ;l old + ;w net"));
+    expectBool("CompletionService chooses rightmost command",
+               rightmostCommandMatch.matched
+                   && rightmostCommandMatch.prefixPosition
+                       == QStringLiteral("lhs = ;l old + ").size()
+                   && rightmostCommandMatch.command.kind
+                       == CompletionCommandKind::Wire
+                   && rightmostCommandMatch.input == QStringLiteral("net"),
+               true);
+    const CommandModeMatch inlineTemplateMatch =
+        CompletionService::getInstance()->matchCommandMode(
+            QStringLiteral("lhs = ;;l clk"));
+    expectBool("CompletionService template beats suffix command",
+               inlineTemplateMatch.matched
+                   && inlineTemplateMatch.prefixPosition
+                       == QStringLiteral("lhs = ").size()
+                   && inlineTemplateMatch.intent
+                       == InlineCommandIntent::CodeTemplate
+                   && inlineTemplateMatch.descriptor.label
+                       == QStringLiteral(";;l")
+                   && inlineTemplateMatch.input == QStringLiteral("clk"),
+               true);
+    const CommandModeMatch separatedStatementCommand =
+        CompletionService::getInstance()->matchCommandMode(
+            QStringLiteral("code; ;l sig"));
+    expectBool("CompletionService spaced command after semicolon",
+               separatedStatementCommand.matched
+                   && separatedStatementCommand.prefixPosition
+                       == QStringLiteral("code; ").size()
+                   && separatedStatementCommand.command.kind
+                       == CompletionCommandKind::Logic,
+               true);
+    const CommandModeMatch unspacedStatementCommand =
+        CompletionService::getInstance()->matchCommandMode(
+            QStringLiteral("code;l sig"));
+    expectBool("CompletionService unspaced command after code",
+               unspacedStatementCommand.matched
+                   && unspacedStatementCommand.prefixPosition
+                       == QStringLiteral("code").size()
+                   && unspacedStatementCommand.command.kind
+                       == CompletionCommandKind::Logic,
+               true);
     expectBool("CompletionService module command match",
                CompletionService::getInstance()
                        ->matchCommandMode(QStringLiteral(";m top"))
@@ -5194,18 +5422,18 @@ int main(int argc, char** argv) {
 
     CompletionTriggerQuery wordTriggerQuery;
     wordTriggerQuery.lineUpToCursor = QStringLiteral("assign en");
-    expectBool("CompletionService trigger word",
+    expectBool("CompletionService does not trigger plain word",
                CompletionService::getInstance()->shouldContinueCompletion(
                    wordTriggerQuery),
-               true);
+               false);
     const CompletionTriggerState wordTriggerState =
         CompletionService::getInstance()->completionTriggerState(wordTriggerQuery);
-    expectBool("CompletionService trigger word state",
+    expectBool("CompletionService plain word state",
                wordTriggerState.continueCompletion,
-               true);
-    expectBool("CompletionService trigger word hide",
-               wordTriggerState.hidePopup,
                false);
+    expectBool("CompletionService plain word hide",
+               wordTriggerState.hidePopup,
+               true);
     CompletionTriggerQuery shortWordTriggerQuery;
     shortWordTriggerQuery.lineUpToCursor = QStringLiteral("assign e");
     const CompletionTriggerState shortWordTriggerState =
@@ -5406,10 +5634,20 @@ int main(int argc, char** argv) {
                    && !actionPrefixState.showCompletions
                    && actionPrefixState.templateItems.isEmpty(),
                true);
-    expectBool("CompletionService template statement reject",
-               !CompletionService::getInstance()
-                    ->matchCommandMode(QStringLiteral("assign a = b;;l "))
-                    .matched,
+    expectBool("CompletionService inline template command match",
+               CompletionService::getInstance()
+                       ->matchCommandMode(QStringLiteral("assign lhs = ;;l clk"))
+                       .intent == InlineCommandIntent::CodeTemplate,
+               true);
+    const CommandModeMatch unspacedTemplateCommand =
+        CompletionService::getInstance()
+            ->matchCommandMode(QStringLiteral("assign a = b;;l "));
+    expectBool("CompletionService unspaced template command",
+               unspacedTemplateCommand.matched
+                   && unspacedTemplateCommand.prefixPosition
+                       == QStringLiteral("assign a = b").size()
+                   && unspacedTemplateCommand.intent
+                       == InlineCommandIntent::CodeTemplate,
                true);
     expectBool("CompletionService template comment reject",
                !CompletionService::getInstance()
@@ -5541,6 +5779,30 @@ int main(int argc, char** argv) {
                    && userTemplateInputState.descriptor.label
                        == QStringLiteral(";;pipe")
                    && userTemplateInputState.input == QStringLiteral("stage"),
+               true);
+    const CommandModeInputState inlineUserTemplateInputState =
+        userTemplateCompletionService.commandModeInputState(
+            QStringLiteral("assign q = ;;pipe stage"));
+    expectBool("CompletionService recognizes inline user template command",
+               inlineUserTemplateInputState.matched
+                   && inlineUserTemplateInputState.prefixPosition
+                       == QStringLiteral("assign q = ").size()
+                   && inlineUserTemplateInputState.intent
+                       == InlineCommandIntent::CodeTemplate
+                   && inlineUserTemplateInputState.descriptor.label
+                       == QStringLiteral(";;pipe")
+                   && inlineUserTemplateInputState.input
+                       == QStringLiteral("stage"),
+               true);
+    const CommandModeInputState rightmostMixedTemplateState =
+        userTemplateCompletionService.commandModeInputState(
+            QStringLiteral(";l earlier ;;pipe stage"));
+    expectBool("CompletionService chooses rightmost user template command",
+               rightmostMixedTemplateState.matched
+                   && rightmostMixedTemplateState.prefixPosition
+                       == QStringLiteral(";l earlier ").size()
+                   && rightmostMixedTemplateState.descriptor.label
+                       == QStringLiteral(";;pipe"),
                true);
     const CommandModeCompletionState userTemplateCompletionState =
         userTemplateCompletionService.commandModeCompletionState(
@@ -6901,10 +7163,13 @@ int main(int argc, char** argv) {
                           == QStringLiteral("No begin-end block"),
                true);
 
-    expectBool("CompletionService command statement reject",
-               !CompletionService::getInstance()
-                    ->matchCommandMode(QStringLiteral("assign a = b;l "))
-                    .matched,
+    const CommandModeMatch statementCommand =
+        CompletionService::getInstance()
+            ->matchCommandMode(QStringLiteral("assign a = b;l "));
+    expectBool("CompletionService command statement position",
+               statementCommand.matched
+                   && statementCommand.prefixPosition
+                       == QStringLiteral("assign a = b").size(),
                true);
     expectBool("CompletionService command comment reject",
                !CompletionService::getInstance()
@@ -7236,8 +7501,9 @@ int main(int argc, char** argv) {
     const CompletionTriggerState contextTriggerState =
         EditorSemanticContextService::getInstance()
             ->completionTriggerState(triggerContext);
-    expectBool("EditorSemanticContext trigger state",
-               contextTriggerState.continueCompletion,
+    expectBool("EditorSemanticContext plain word no trigger",
+               !contextTriggerState.continueCompletion
+                   && contextTriggerState.hidePopup,
                true);
 
     EditorSemanticContext commandContext;
@@ -7313,11 +7579,11 @@ int main(int argc, char** argv) {
     const EditorCompletionTextChangeState contextTextChangeState =
         EditorSemanticContextService::getInstance()
             ->completionTextChangeState(commandContext);
-    expectBool("EditorSemanticContext text-change command",
-               contextTextChangeState.commandModeActive
-                   && contextTextChangeState.commandInput.matched
-                   && contextTextChangeState.startCompletionTimer
-                   && !contextTextChangeState.hidePopup,
+    expectBool("EditorSemanticContext text-change leaves inline command idle",
+               !contextTextChangeState.commandModeActive
+                   && !contextTextChangeState.commandInput.matched
+                   && !contextTextChangeState.startCompletionTimer
+                   && contextTextChangeState.hidePopup,
                true);
     EditorSemanticContext plainTextChangeContext;
     plainTextChangeContext.lineUpToCursor = QStringLiteral("assign value ");
@@ -8194,6 +8460,161 @@ int main(int argc, char** argv) {
            commandLogicOk ? "PASS" : "FAIL",
            "CompletionService command symbols",
            commandLogicSymbols.size());
+
+    const QString inlineScopeFile = QStringLiteral("inline_scope_test.sv");
+    const QString inlineScopeContent =
+        QStringLiteral("module mod_a;\n"
+                       "  logic a_logic;\n"
+                       "  wire a_wire;\n"
+                       "  reg a_reg;\n"
+                       "endmodule\n"
+                       "module mod_b;\n"
+                       "  logic b_logic;\n"
+                       "  wire b_wire;\n"
+                       "  reg b_reg;\n"
+                       "endmodule\n");
+    QList<SemanticSymbolRecord> inlineScopeRecords;
+    inlineScopeRecords.append(makeSemanticFixtureRecord(
+        QStringLiteral("mod_a"),
+        SymbolTaxonomy::DeclarationKind::Module,
+        SymbolTaxonomy::CollectorKind::Module,
+        QString(),
+        QString(),
+        1,
+        inlineScopeFile));
+    inlineScopeRecords.append(makeSemanticFixtureRecord(
+        QStringLiteral("a_logic"),
+        SymbolTaxonomy::DeclarationKind::Signal,
+        SymbolTaxonomy::CollectorKind::Logic,
+        QStringLiteral("mod_a"),
+        QStringLiteral("logic"),
+        2,
+        inlineScopeFile));
+    inlineScopeRecords.append(makeSemanticFixtureRecord(
+        QStringLiteral("a_wire"),
+        SymbolTaxonomy::DeclarationKind::Signal,
+        SymbolTaxonomy::CollectorKind::Wire,
+        QStringLiteral("mod_a"),
+        QStringLiteral("wire"),
+        3,
+        inlineScopeFile));
+    inlineScopeRecords.append(makeSemanticFixtureRecord(
+        QStringLiteral("a_reg"),
+        SymbolTaxonomy::DeclarationKind::Signal,
+        SymbolTaxonomy::CollectorKind::Reg,
+        QStringLiteral("mod_a"),
+        QStringLiteral("reg"),
+        4,
+        inlineScopeFile));
+    inlineScopeRecords.append(makeSemanticFixtureRecord(
+        QStringLiteral("mod_b"),
+        SymbolTaxonomy::DeclarationKind::Module,
+        SymbolTaxonomy::CollectorKind::Module,
+        QString(),
+        QString(),
+        20,
+        inlineScopeFile));
+    inlineScopeRecords.append(makeSemanticFixtureRecord(
+        QStringLiteral("b_logic"),
+        SymbolTaxonomy::DeclarationKind::Signal,
+        SymbolTaxonomy::CollectorKind::Logic,
+        QStringLiteral("mod_b"),
+        QStringLiteral("logic"),
+        21,
+        inlineScopeFile));
+    inlineScopeRecords.append(makeSemanticFixtureRecord(
+        QStringLiteral("b_wire"),
+        SymbolTaxonomy::DeclarationKind::Signal,
+        SymbolTaxonomy::CollectorKind::Wire,
+        QStringLiteral("mod_b"),
+        QStringLiteral("wire"),
+        22,
+        inlineScopeFile));
+    inlineScopeRecords.append(makeSemanticFixtureRecord(
+        QStringLiteral("b_reg"),
+        SymbolTaxonomy::DeclarationKind::Signal,
+        SymbolTaxonomy::CollectorKind::Reg,
+        QStringLiteral("mod_b"),
+        QStringLiteral("reg"),
+        23,
+        inlineScopeFile));
+    SemanticIndex inlineScopeIndex;
+    inlineScopeIndex.updateSymbolRecordsForFile(
+        inlineScopeFile,
+        inlineScopeRecords,
+        inlineScopeContent);
+    CompletionService inlineScopeService(&inlineScopeIndex);
+    auto inlineScopeNames = [&](const QString& moduleName,
+                                const QString& lineUpToCursor,
+                                int cursorLine) {
+        CommandModeCompletionQuery query;
+        query.lineUpToCursor = lineUpToCursor;
+        query.fileName = inlineScopeFile;
+        query.moduleName = moduleName;
+        query.documentText = inlineScopeContent;
+        query.cursorLine = cursorLine;
+        query.cursorPosition = lineUpToCursor.size();
+        return recordNames(
+            inlineScopeService.commandModeCompletionState(query).symbolRecords);
+    };
+    expectList("inline command scope mod_a logic",
+               inlineScopeNames(QStringLiteral("mod_a"),
+                                QStringLiteral("assign lhs = ;l "),
+                                2),
+               {"a_logic"});
+    expectList("inline command scope mod_b logic",
+               inlineScopeNames(QStringLiteral("mod_b"),
+                                QStringLiteral("assign lhs = ;l "),
+                                7),
+               {"b_logic"});
+    expectList("inline command scope mod_a wire",
+               inlineScopeNames(QStringLiteral("mod_a"),
+                                QStringLiteral("assign lhs = ;w "),
+                                3),
+               {"a_wire"});
+    expectList("inline command scope mod_b wire",
+               inlineScopeNames(QStringLiteral("mod_b"),
+                                QStringLiteral("assign lhs = ;w "),
+                                8),
+               {"b_wire"});
+    expectList("inline command scope mod_a reg",
+               inlineScopeNames(QStringLiteral("mod_a"),
+                                QStringLiteral("assign lhs = ;r "),
+                                4),
+               {"a_reg"});
+    expectList("inline command scope mod_b reg",
+               inlineScopeNames(QStringLiteral("mod_b"),
+                                QStringLiteral("assign lhs = ;r "),
+                                9),
+               {"b_reg"});
+
+    CommandModeCompletionQuery anchoredInlineFilterQuery;
+    anchoredInlineFilterQuery.lineUpToCursor =
+        QStringLiteral("assign lhs = ;l");
+    anchoredInlineFilterQuery.fileName = inlineScopeFile;
+    anchoredInlineFilterQuery.moduleName = QStringLiteral("mod_a");
+    anchoredInlineFilterQuery.documentText = inlineScopeContent;
+    anchoredInlineFilterQuery.cursorLine = 2;
+    anchoredInlineFilterQuery.cursorPosition =
+        inlineScopeContent.indexOf(QStringLiteral("a_logic"));
+    anchoredInlineFilterQuery.hasExplicitMatch = true;
+    anchoredInlineFilterQuery.explicitMatch =
+        InlineCommandMode::matchAbbreviationBeforeCursor(
+            anchoredInlineFilterQuery.lineUpToCursor);
+    anchoredInlineFilterQuery.explicitMatch.input = QStringLiteral("a_");
+    expectList(
+        "inline filtering keeps anchor scope",
+        recordNames(inlineScopeService
+                        .commandModeCompletionState(anchoredInlineFilterQuery)
+                        .symbolRecords),
+        {"a_logic"});
+    anchoredInlineFilterQuery.explicitMatch.input = QStringLiteral("b_");
+    expectList(
+        "inline filtering excludes foreign module",
+        recordNames(inlineScopeService
+                        .commandModeCompletionState(anchoredInlineFilterQuery)
+                        .symbolRecords),
+        {});
 
     commandQuery.commandKind = CompletionCommandKind::Wire;
     commandQuery.prefix = "net";

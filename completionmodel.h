@@ -91,7 +91,8 @@ public:
     void updateSymbolRecordCompletions(
                                const QList<SemanticSymbolRecord> &records,
                                const QString &prefix,
-                               CompletionCommandKind requestedKind);
+                               CompletionCommandKind requestedKind,
+                               bool allowDefaultFallback = true);
 
 
 private:
