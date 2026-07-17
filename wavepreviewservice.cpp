@@ -2509,14 +2509,6 @@ void collectTraceInitialValues(const QList<Token>& tokens,
     }
 }
 
-int expressionEndBeforeSemicolon(const QList<Token>& tokens,
-                                 int expressionStart,
-                                 int limit)
-{
-    const int semicolon = nextSemicolon(tokens, expressionStart, limit);
-    return semicolon > expressionStart ? semicolon - 1 : -1;
-}
-
 void executeTraceStatementRange(const QList<Token>& tokens,
                                 int start,
                                 int end,

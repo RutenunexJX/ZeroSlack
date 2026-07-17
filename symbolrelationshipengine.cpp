@@ -80,38 +80,6 @@ void SymbolRelationshipEngine::emitRelationshipAddedQueued(int fromSymbolId, int
     emit relationshipAdded(fromSymbolId, toSymbolId, static_cast<RelationType>(typeAsInt));
 }
 
-void SymbolRelationshipEngine::removeRelationship(int fromSymbolId, int toSymbolId, RelationType type)
-{
-    if (!relationshipGraph.contains(fromSymbolId) || !relationshipGraph.contains(toSymbolId)) {
-        return;
-    }
-
-    RelationshipNode& fromNode = relationshipGraph[fromSymbolId];
-    fromNode.outgoingEdges.erase(
-        std::remove_if(fromNode.outgoingEdges.begin(), fromNode.outgoingEdges.end(),
-                      [toSymbolId, type](const RelationshipEdge& edge) {
-                          return edge.targetId == toSymbolId && edge.type == type;
-                      }),
-        fromNode.outgoingEdges.end()
-    );
-
-    RelationshipNode& toNode = relationshipGraph[toSymbolId];
-    toNode.incomingEdges.erase(
-        std::remove_if(toNode.incomingEdges.begin(), toNode.incomingEdges.end(),
-                      [fromSymbolId, type](const RelationshipEdge& edge) {
-                          return edge.targetId == fromSymbolId && edge.type == type;
-                      }),
-        toNode.incomingEdges.end()
-    );
-
-    removeFromTypeIndex(fromSymbolId, toSymbolId, type);
-
-    if (updateDepth == 0)
-        invalidateCacheForRelationship(fromSymbolId, toSymbolId, type);
-
-    emit relationshipRemoved(fromSymbolId, toSymbolId, type);
-}
-
 void SymbolRelationshipEngine::removeAllRelationships(int symbolId)
 {
     if (!relationshipGraph.contains(symbolId)) return;

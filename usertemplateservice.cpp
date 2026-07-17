@@ -711,13 +711,7 @@ UserTemplateLoadReport UserTemplateService::reload() const
                        workspaceTemplateFilePath,
                        UserTemplateScope::Workspace);
     report.valid = report.issues.isEmpty();
-    latestReport = report;
     return report;
-}
-
-UserTemplateLoadReport UserTemplateService::lastLoadReport() const
-{
-    return latestReport;
 }
 
 QList<UserTemplateRecord> UserTemplateService::records() const
@@ -780,7 +774,6 @@ UserTemplateSaveReport UserTemplateService::setRecords(
                     report.failureReason);
         return report;
     }
-    latestReport = report;
     return report;
 }
 
@@ -836,5 +829,4 @@ void UserTemplateService::clear() const
         QFile::remove(globalTemplateFilePath);
     if (!workspaceTemplateFilePath.isEmpty())
         QFile::remove(workspaceTemplateFilePath);
-    latestReport = UserTemplateLoadReport();
 }

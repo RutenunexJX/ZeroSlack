@@ -3,13 +3,6 @@
 #include <QFileInfo>
 #include <algorithm>
 
-bool SymbolAnalyzer::isAnalysisNeeded(const QString& fileName, const QString& content) const
-{
-    if (!lastAnalyzedContent.contains(fileName)) return true;
-
-    return lastAnalyzedContent[fileName] != content;
-}
-
 void SymbolAnalyzer::invalidateCache()
 {
     lastAnalyzedContent.clear();
@@ -20,12 +13,6 @@ void SymbolAnalyzer::invalidateCache()
 void SymbolAnalyzer::setWorkspaceProtectedFiles(const QStringList& fileNames)
 {
     workspaceProtectedFiles = fileNames;
-}
-
-void SymbolAnalyzer::setWorkspacePriorityFileCount(int fileCount)
-{
-    setWorkspacePriorityPublicationCheckpoints(
-        fileCount > 0 ? QList<int>{fileCount} : QList<int>{});
 }
 
 void SymbolAnalyzer::setWorkspacePriorityPublicationCheckpoints(

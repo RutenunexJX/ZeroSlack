@@ -35,7 +35,6 @@
 #include "semanticindexsnapshot.h"
 #include "symbolhoverservice.h"
 #include "symboltaxonomy.h"
-#include "scopebandservice.h"
 #include "mycodeeditor.h"
 #include "projectmodel.h"
 #include "symbolanalyzer.h"
@@ -6341,110 +6340,6 @@ static void runModuleBriefServiceFixture()
                        == ModuleBriefNotFoundReason::UnsupportedSymbolKind
                    && unsupportedModuleReport.notFoundReasonDisplayName
                        == QStringLiteral("unsupported symbol kind"),
-               true);
-}
-
-static void runScopeBandServiceFixture()
-{
-    printf("\n-- scope band service fixture --\n");
-
-    const QString fileName = QStringLiteral("scope_band_fixture.sv");
-    const SemanticSymbolRecord module =
-        SemanticFixtureRecordBuilder(QStringLiteral("scope_top"),
-                                     SymbolTaxonomy::DeclarationKind::Module)
-            .withFile(fileName)
-            .withLocalHandle(1)
-            .withRange(1, 1, 5, 1)
-            .withCollectorKind(SymbolTaxonomy::CollectorKind::Module)
-            .record();
-    const SemanticSymbolRecord logic =
-        SemanticFixtureRecordBuilder(QStringLiteral("enable"),
-                                     SymbolTaxonomy::DeclarationKind::Signal)
-            .withFile(fileName)
-            .withLocalHandle(2)
-            .withLine(2)
-            .withCollectorKind(SymbolTaxonomy::CollectorKind::Logic)
-            .inModule(QStringLiteral("scope_top"))
-            .record();
-    const SemanticSymbolRecord wire =
-        SemanticFixtureRecordBuilder(QStringLiteral("raw_wire"),
-                                     SymbolTaxonomy::DeclarationKind::Signal)
-            .withFile(fileName)
-            .withLocalHandle(3)
-            .withLine(3)
-            .withCollectorKind(SymbolTaxonomy::CollectorKind::Wire)
-            .inModule(QStringLiteral("scope_top"))
-            .record();
-    const QList<SemanticSymbolRecord> records{module, logic, wire};
-
-    QHash<QString, QString> fileContents;
-    fileContents.insert(
-        fileName,
-        QStringLiteral("module scope_top;\nlogic enable;\nwire raw_wire;\nendmodule\n"));
-    SemanticIndex index;
-    index.setSnapshot(sharedSnapshotFromRecords(
-        records,
-        QList<SemanticRelationship>(),
-        QList<SemanticDiagnostic>(),
-        fileContents));
-
-    ScopeBandService service(&index);
-    ScopeBandQuery query;
-    query.fileName = fileName;
-    const ScopeBandReport report = service.scopeBands(query);
-
-    expectInt("scope band module count", report.modules.size(), 1);
-    expectBool("scope band module metadata",
-               !report.modules.isEmpty()
-                   && report.modules.first().symbolRecord.isValid()
-                   && report.modules.first().symbolRecord.localHandle
-                       == module.localHandle
-                   && report.modules.first().symbolRecord.stableKey
-                       == report.modules.first().symbolStableKey
-                   && report.modules.first().symbolRecord.declarationKind
-                       == SymbolTaxonomy::DeclarationKind::Module
-                   && report.modules.first().symbolRecord.name
-                       == QStringLiteral("scope_top")
-                   && report.modules.first().symbolDisplayName
-                       == QStringLiteral("scope_top")
-                   && report.modules.first().symbolTypeDisplayName
-                       == QStringLiteral("module")
-                   && report.modules.first().sourceRoleDisplayName
-                       == QStringLiteral("design source")
-                   && report.modules.first().codeLink.fileName == fileName
-                   && report.modules.first().codeLink.line == 1
-                   && report.modules.first().codeLink.fileDisplayName
-                       == QStringLiteral("scope_band_fixture.sv")
-                   && report.modules.first().codeLink.lineDisplayName
-                       == QStringLiteral("1")
-                   && report.modules.first().endLine
-                       >= module.location.startLine,
-               true);
-    expectInt("scope band logic count", report.logics.size(), 1);
-    expectBool("scope band logic metadata",
-               !report.logics.isEmpty()
-                   && report.logics.first().symbolRecord.isValid()
-                   && report.logics.first().symbolRecord.localHandle
-                       == logic.localHandle
-                   && report.logics.first().symbolRecord.stableKey
-                       == report.logics.first().symbolStableKey
-                   && report.logics.first().symbolRecord.declarationKind
-                       == SymbolTaxonomy::DeclarationKind::Signal
-                   && report.logics.first().symbolRecord.name
-                       == QStringLiteral("enable")
-                   && report.logics.first().symbolDisplayName
-                       == QStringLiteral("enable")
-                   && report.logics.first().symbolTypeDisplayName
-                       == QStringLiteral("logic")
-                   && report.logics.first().sourceRoleDisplayName
-                       == QStringLiteral("design source")
-                   && report.logics.first().codeLink.fileName == fileName
-                   && report.logics.first().codeLink.line == 2
-                   && report.logics.first().codeLink.fileDisplayName
-                       == QStringLiteral("scope_band_fixture.sv")
-                   && report.logics.first().codeLink.lineDisplayName
-                       == QStringLiteral("2")
-                   && report.logics.first().endLine == 2,
                true);
 }
 
@@ -12873,7 +12768,6 @@ int main(int argc, char** argv)
     runInlineRelationshipRegression(slang, engine);
     runMultiFileRelationshipFixture(slang, engine);
     runModuleBriefServiceFixture();
-    runScopeBandServiceFixture();
     runSignalJourneyServiceFixture();
     runSignalUsageHotspotServiceFixture();
     runClockResetDomainServiceFixture();

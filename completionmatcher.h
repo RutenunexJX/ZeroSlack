@@ -12,7 +12,6 @@ class CompletionMatcher
 public:
     static bool matchesAbbreviation(const QString& text, const QString& abbreviation);
     static int calculateContextMatchScore(const QString& text, const QString& abbreviation);
-    static int calculateSymbolTypeScore(const QString& text, const QString& abbreviation);
     static int completionItemScore(const QString& text, const QString& prefix);
     static QList<int> abbreviationPositions(const QString& text, const QString& abbreviation);
     static QVector<QPair<QString, int>> scoredKeywordCompletions(const QString& prefix);

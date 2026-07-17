@@ -51,7 +51,6 @@ public:
     void setWorkspaceRoot(const QString& workspaceRoot);
     void setWorkspaceTemplateFilePath(const QString& filePath);
     UserTemplateLoadReport reload() const;
-    UserTemplateLoadReport lastLoadReport() const;
     QList<UserTemplateRecord> records() const;
     QList<CodeTemplateItem> catalog() const;
     QList<CodeTemplateItem> matchingTemplates(
@@ -70,7 +69,6 @@ public:
 private:
     QString globalTemplateFilePath;
     QString workspaceTemplateFilePath;
-    mutable UserTemplateLoadReport latestReport;
 
     static std::unique_ptr<UserTemplateService> instance;
 };

@@ -126,7 +126,6 @@ public:
 
     QList<RelationshipResult> findRelationships(const RelationshipQuery& query) const;
     QList<RelationshipResult> findOutgoingRelationships(const RelationshipQuery& query) const;
-    QList<RelationshipResult> findIncomingRelationships(const RelationshipQuery& query) const;
     RelationshipReport findRelationshipReport(const RelationshipBrowseQuery& query) const;
     QList<SymbolStableKey> findRelatedSymbolKeys(const RelationshipQuery& query) const;
     RelationshipBrowseQuery queryForPanel(

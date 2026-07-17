@@ -259,9 +259,6 @@ public:
     bool hasError() const;                   // tree contains ERROR / MISSING nodes (half-typed code)
     const QString& text() const { return m_text; }
 
-    // Type name of the smallest named node at the given char offset (debug / scope helpers).
-    const char* namedNodeTypeAt(int charOffset) const;
-
     // True if the char offset is inside a Tree-sitter comment node.
     bool isCommentAt(int charOffset) const;
 

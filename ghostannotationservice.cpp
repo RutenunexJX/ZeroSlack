@@ -220,35 +220,6 @@ bool valueForDigitsChecked(const QString& digits,
     return true;
 }
 
-QString binaryDigits(unsigned long long value, int width)
-{
-    const int bitCount = qMax(width, 1);
-    QString result;
-    result.reserve(bitCount + bitCount / 4);
-    for (int i = bitCount - 1; i >= 0; --i) {
-        const bool bitSet = i < 64 && (value & (1ULL << i));
-        result.append(bitSet ? QLatin1Char('1') : QLatin1Char('0'));
-        if (i > 0 && i % 4 == 0)
-            result.append(QLatin1Char('_'));
-    }
-    return result;
-}
-
-QString hexDigits(unsigned long long value, int width)
-{
-    const int nibbleCount = qMax((width + 3) / 4, 1);
-    QString result;
-    result.reserve(nibbleCount);
-    const char* chars = "0123456789ABCDEF";
-    for (int i = nibbleCount - 1; i >= 0; --i) {
-        const int shift = i * 4;
-        const int nibble =
-            shift < 64 ? static_cast<int>((value >> shift) & 0xFULL) : 0;
-        result.append(QLatin1Char(chars[nibble]));
-    }
-    return result;
-}
-
 int inferredWidth(const LiteralValue& literal)
 {
     if (literal.width > 0)
@@ -264,18 +235,6 @@ int inferredWidth(const LiteralValue& literal)
         ++width;
     }
     return width;
-}
-
-QString numericLiteralHoverText(const LiteralValue& literal)
-{
-    if (!literal.valid || !literal.exact)
-        return QString();
-
-    const int width = inferredWidth(literal);
-    return QStringLiteral("(D)%1 (B)%2 (H)%3")
-        .arg(QString::number(literal.value),
-             binaryDigits(literal.value, width),
-             hexDigits(literal.value, width));
 }
 
 bool parseUnsignedInt(const QString& text, int* value)
@@ -760,26 +719,6 @@ QList<SemanticSymbolRecord> matchingPortRecords(
             matches.append(record);
     }
     return matches;
-}
-
-bool rangeWidthFromText(const QString& text, int* width)
-{
-    const int left = text.indexOf(QLatin1Char('['));
-    const int colon = text.indexOf(QLatin1Char(':'), left + 1);
-    const int right = text.indexOf(QLatin1Char(']'), colon + 1);
-    if (left < 0 || colon < 0 || right < 0)
-        return false;
-
-    int msb = 0;
-    int lsb = 0;
-    if (!parseUnsignedInt(text.mid(left + 1, colon - left - 1), &msb))
-        return false;
-    if (!parseUnsignedInt(text.mid(colon + 1, right - colon - 1), &lsb))
-        return false;
-
-    if (width)
-        *width = qAbs(msb - lsb) + 1;
-    return true;
 }
 
 int numericArrayExtentAfterName(const QString& line,

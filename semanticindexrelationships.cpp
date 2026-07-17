@@ -71,16 +71,6 @@ SemanticSymbolRecord relationshipEndpointRecord(
 }
 }
 
-QList<SemanticRelationship> SemanticIndex::relationshipsForScopeName(
-    const QString& scopeName,
-    bool outgoing) const
-{
-    const QList<SemanticSymbolRecord> defs = findDefinitionRecords(scopeName);
-    if (defs.isEmpty())
-        return {};
-    return relationshipsForStableKey(defs.first().stableKey, outgoing);
-}
-
 QList<SemanticRelationship> SemanticIndex::relationshipsForStableKey(
     const SymbolStableKey& key,
     bool outgoing) const
@@ -173,16 +163,6 @@ QList<SemanticRelationshipResult> SemanticIndex::getRelationshipResults(
         result.append(item);
     }
     return result;
-}
-
-QList<SemanticRelationshipResult> SemanticIndex::getRelationshipResults(
-    const QString& scopeName,
-    bool outgoing) const
-{
-    const QList<SemanticSymbolRecord> defs = findDefinitionRecords(scopeName);
-    if (defs.isEmpty())
-        return {};
-    return getRelationshipResults(defs.first().stableKey, outgoing);
 }
 
 QList<SymbolRelationshipEngine::RelationType> SemanticIndex::relationshipTypes() const

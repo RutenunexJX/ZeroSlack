@@ -26,16 +26,6 @@ GlobalControlCoordinator::~GlobalControlCoordinator()
         qApp->removeEventFilter(this);
 }
 
-void GlobalControlCoordinator::setProjectModel(ProjectModel* nextProjectModel)
-{
-    projectModel = nextProjectModel;
-}
-
-void GlobalControlCoordinator::setSemanticIndex(SemanticIndex* nextSemanticIndex)
-{
-    semanticIndex = nextSemanticIndex;
-}
-
 void GlobalControlCoordinator::setActionHandler(
     std::function<void(const GlobalControlItem&)> handler)
 {
@@ -47,32 +37,16 @@ void GlobalControlCoordinator::install()
     if (installed || !qApp)
         return;
     qApp->installEventFilter(this);
-    installOnWidgetTree(anchor);
     installed = true;
 }
 
 bool GlobalControlCoordinator::eventFilter(QObject*, QEvent* event)
 {
-    if (event->type() == QEvent::ChildAdded)
-        installOnWidgetTree(anchor);
     return handleKeyEvent(event);
-}
-
-void GlobalControlCoordinator::installOnWidgetTree(QWidget* widget)
-{
-    if (!widget)
-        return;
-    widget->installEventFilter(this);
-    for (QWidget* child : widget->findChildren<QWidget*>())
-        child->installEventFilter(this);
 }
 
 bool GlobalControlCoordinator::handleKeyEvent(QEvent* event)
 {
-    if (event == lastProcessedEvent)
-        return false;
-    lastProcessedEvent = event;
-
     if (event->type() != QEvent::KeyPress)
         return false;
 
@@ -108,7 +82,7 @@ void GlobalControlCoordinator::refresh(const QString& queryText)
 {
     if (!panel)
         return;
-    panel->setItems(service.query(queryText, projectModel, semanticIndex));
+    panel->setItems(service.query(queryText));
 }
 
 void GlobalControlCoordinator::dispatch(const GlobalControlItem& item)

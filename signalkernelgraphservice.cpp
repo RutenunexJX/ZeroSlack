@@ -629,20 +629,6 @@ SemanticIndex* SignalKernelGraphService::semanticIndex() const
     return index ? index : SemanticIndex::getInstance();
 }
 
-QString SignalKernelGraphService::nodeRoleDisplayName(
-    SignalKernelGraphNodeRole role)
-{
-    switch (role) {
-    case SignalKernelGraphNodeRole::Kernel:
-        return QStringLiteral("kernel");
-    case SignalKernelGraphNodeRole::Input:
-        return QStringLiteral("input");
-    case SignalKernelGraphNodeRole::Output:
-        return QStringLiteral("output");
-    }
-    return QStringLiteral("node");
-}
-
 QString SignalKernelGraphService::inputLaneDisplayName(
     SignalKernelGraphInputLane lane)
 {

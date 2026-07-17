@@ -15,7 +15,6 @@ class FormatterSettings;
 class MyCodeEditor;
 class TabManager;
 class WorkspaceManager;
-class ModeManager;
 class NavigationCommandCoordinator;
 class NavigationManager;
 class NavigationPaneCoordinator;
@@ -27,7 +26,6 @@ class FileCommandCoordinator;
 class FoldBlockShelfModel;
 class FoldBlockShelfPanel;
 class GlobalControlCoordinator;
-class ModeCommandCoordinator;
 class SemanticDockCoordinator;
 class SemanticRuntimeCoordinator;
 class QDockWidget;
@@ -56,15 +54,12 @@ public:
 
     std::unique_ptr<TabManager> tabManager;
     std::unique_ptr<WorkspaceManager> workspaceManager;
-    std::unique_ptr<ModeManager> modeManager;
     std::unique_ptr<NavigationManager> navigationManager;
     std::unique_ptr<AnalysisScheduler> analysisScheduler;
     std::unique_ptr<AnalysisProgressCoordinator> analysisProgressCoordinator;
 
 protected:
     void closeEvent(QCloseEvent *event) override;
-    void keyPressEvent(QKeyEvent *event) override;
-    void keyReleaseEvent(QKeyEvent *event) override;
 
 private:
     Ui::MainWindow *ui;
@@ -79,7 +74,6 @@ private:
     FoldBlockShelfPanel* foldShelfPanel = nullptr;
     QDockWidget* foldShelfDock = nullptr;
     std::unique_ptr<GlobalControlCoordinator> globalControlCoordinator;
-    std::unique_ptr<ModeCommandCoordinator> modeCommandCoordinator;
     std::unique_ptr<NavigationCommandCoordinator> navigationCommandCoordinator;
     std::unique_ptr<SemanticDockCoordinator> semanticDocks;
     std::unique_ptr<EditorAppearanceSettings> editorAppearanceSettings;
@@ -111,7 +105,6 @@ private:
     void setupSemanticDocks();
     void setupNavigationCommandCoordinator();
     void setupFileCommandCoordinator();
-    void setupModeCommandCoordinator();
     void setupGlobalControl();
     void setupComMode();
     void setupPackageTools(QVBoxLayout* editorLayout, QWidget* parent);

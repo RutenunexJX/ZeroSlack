@@ -1,9 +1,8 @@
-// Headless completion-logic test. Populates semantic records from Slang, then drives CompletionManager's
-// public query methods and asserts the results. No GUI window is shown.
+// Headless completion-logic test. Populates semantic records from Slang, then
+// drives CompletionService query methods. No GUI window is shown.
 #include "slangmanager.h"
 #include "analysisscheduler.h"
 #include "completioncontexthelper.h"
-#include "completionmanager.h"
 #include "completionmodel.h"
 #include "completionsemanticquery.h"
 #include "completionservice.h"
@@ -373,8 +372,6 @@ int main(int argc, char** argv) {
         mgr.extractSymbolRecords(path, content),
         content);
 
-    CompletionManager* cm = CompletionManager::getInstance();
-
     expectList("CompletionService keyword names",
                CompletionService::getInstance()->findKeywordCompletions(
                    QStringLiteral("always_f")),
@@ -403,17 +400,6 @@ int main(int argc, char** argv) {
                QString::number(keywordPositions.value(1, -1))
            }).join(",").toLocal8Bit().constData());
     ++g_checks;
-    const bool managerKeywordScoreOk =
-        cm->calculateMatchScore(QStringLiteral("always_ff"),
-                                QStringLiteral("af"))
-        == CompletionService::getInstance()->calculateCompletionMatchScore(
-            QStringLiteral("always_ff"), QStringLiteral("af"));
-    if (!managerKeywordScoreOk)
-        ++g_fails;
-    printf("[%s] %-34s\n",
-           managerKeywordScoreOk ? "PASS" : "FAIL",
-           "CompletionManager score delegation");
-    ++g_checks;
     const bool serviceItemScoreOk =
         CompletionService::getInstance()->completionItemScore(QStringLiteral("save"),
                                                               QString())
@@ -423,22 +409,9 @@ int main(int argc, char** argv) {
     printf("[%s] %-34s\n",
            serviceItemScoreOk ? "PASS" : "FAIL",
            "CompletionService item score");
-    expectList("CompletionManager keyword names",
-               cm->getKeywordCompletions(QStringLiteral("always_f")),
-               {"always_ff"});
-    expectList("CompletionManager keyword scores",
-               scoredNames(cm->getScoredKeywordMatches(
-                   QStringLiteral("always_f"))),
-               {"always_ff"});
-    expectList("CompletionManager keyword abbrev",
-               cm->getAbbreviationMatches({"always_ff", "logic"},
-                                          QStringLiteral("af")),
-               {"always_ff"});
     GlobalControlService globalControlService;
     const QList<GlobalControlItem> globalRootItems =
-        globalControlService.query(QString(),
-                                   nullptr,
-                                   SemanticIndex::getInstance());
+        globalControlService.query(QString());
     bool globalRootHasWorkspaceDomain = false;
     bool globalRootHasFoldDomain = false;
     bool globalRootHasCommands = false;
@@ -458,9 +431,7 @@ int main(int argc, char** argv) {
                    && !globalRootHasCommands,
                true);
     const QList<GlobalControlItem> globalWorkspaceItems =
-        globalControlService.query(QStringLiteral("ow"),
-                                   nullptr,
-                                   SemanticIndex::getInstance());
+        globalControlService.query(QStringLiteral("ow"));
     bool globalWorkspaceShowsOpenOne = false;
     bool globalWorkspaceShowsOpenTwo = false;
     bool globalWorkspaceShowsRecent = false;
@@ -491,9 +462,7 @@ int main(int argc, char** argv) {
                    && !globalWorkspaceShowsDeprecatedOw,
                true);
     const QList<GlobalControlItem> globalRecentItems =
-        globalControlService.query(QStringLiteral("ow r"),
-                                   nullptr,
-                                   SemanticIndex::getInstance());
+        globalControlService.query(QStringLiteral("ow r"));
     bool globalRecentCommandFound = false;
     bool globalRecentCountHintFound = false;
     for (const GlobalControlItem& item : globalRecentItems) {
@@ -508,9 +477,7 @@ int main(int argc, char** argv) {
                globalRecentCommandFound && !globalRecentCountHintFound,
                true);
     const QList<GlobalControlItem> globalSessionItems =
-        globalControlService.query(QStringLiteral("ow s"),
-                                   nullptr,
-                                   SemanticIndex::getInstance());
+        globalControlService.query(QStringLiteral("ow s"));
     bool globalSessionSaveFound = false;
     bool globalSessionRestoreFound = false;
     bool globalSessionCleanFound = false;
@@ -534,35 +501,23 @@ int main(int argc, char** argv) {
                    && globalSessionCleanFound,
                true);
     expectBool("GlobalControl ow s w abbreviates save",
-               !globalControlService.query(QStringLiteral("ow s w"),
-                                           nullptr,
-                                           SemanticIndex::getInstance())
+               !globalControlService.query(QStringLiteral("ow s w"))
                     .isEmpty()
-                   && globalControlService.query(QStringLiteral("ow s w"),
-                                                 nullptr,
-                                                 SemanticIndex::getInstance())
+                   && globalControlService.query(QStringLiteral("ow s w"))
                           .first()
                           .id == QStringLiteral("ow s save"),
                true);
     expectBool("GlobalControl ow s r abbreviates restore",
-               !globalControlService.query(QStringLiteral("ow s r"),
-                                           nullptr,
-                                           SemanticIndex::getInstance())
+               !globalControlService.query(QStringLiteral("ow s r"))
                     .isEmpty()
-                   && globalControlService.query(QStringLiteral("ow s r"),
-                                                 nullptr,
-                                                 SemanticIndex::getInstance())
+                   && globalControlService.query(QStringLiteral("ow s r"))
                           .first()
                           .id == QStringLiteral("ow s restore"),
                true);
     expectBool("GlobalControl ow s c abbreviates clean",
-               !globalControlService.query(QStringLiteral("ow s c"),
-                                           nullptr,
-                                           SemanticIndex::getInstance())
+               !globalControlService.query(QStringLiteral("ow s c"))
                     .isEmpty()
-                   && globalControlService.query(QStringLiteral("ow s c"),
-                                                 nullptr,
-                                                 SemanticIndex::getInstance())
+                   && globalControlService.query(QStringLiteral("ow s c"))
                           .first()
                           .id == QStringLiteral("ow s clean"),
                true);
@@ -5263,7 +5218,6 @@ int main(int argc, char** argv) {
         CompletionService::getInstance()->commandModeInputState(QStringLiteral(";l ena"));
     ++g_checks;
     const bool commandInputStateOk = commandInputState.matched
-        && !commandInputState.exitRequested
         && commandInputState.prefixPosition == 0
         && commandInputState.input == QStringLiteral("ena")
         && commandInputState.command.kind == CompletionCommandKind::Logic;
@@ -5320,7 +5274,6 @@ int main(int argc, char** argv) {
                {"enable"});
     ++g_checks;
     const bool commandCompletionStateOk = commandCompletionState.matched
-        && !commandCompletionState.exitRequested
         && !commandCompletionState.hidePopup
         && commandCompletionState.showCompletions
         && commandCompletionState.completionPrefix == QStringLiteral("en")
@@ -5368,7 +5321,6 @@ int main(int argc, char** argv) {
             commandCompletionExitQuery);
     ++g_checks;
     const bool commandCompletionExitOk = !commandCompletionExitState.matched
-        && !commandCompletionExitState.exitRequested
         && !commandCompletionExitState.showCompletions
         && commandCompletionExitState.symbolRecords.isEmpty()
         && commandCompletionExitState.symbolStableKeys.isEmpty();
@@ -6004,15 +5956,10 @@ int main(int argc, char** argv) {
                    && findComModeCommandMetadata(QStringLiteral(";;pipe"))
                        == nullptr,
                true);
-    GlobalControlService userTemplateGlobalControl;
-    bool globalControlHasUserTemplate = false;
-    for (const GlobalControlItem& item :
-         userTemplateGlobalControl.templateItems()) {
-        if (item.id == QStringLiteral(";;pipe"))
-            globalControlHasUserTemplate = true;
-    }
-    expectBool("User templates do not enter Global Control templates",
-               !globalControlHasUserTemplate,
+    expectBool("User templates do not enter Global Control",
+               GlobalControlService()
+                   .query(QStringLiteral(";;pipe"))
+                   .isEmpty(),
                true);
 
     QTemporaryDir customAbbreviationSettingsDir;
@@ -7200,18 +7147,25 @@ int main(int argc, char** argv) {
              QStringLiteral("interface"));
 
     // --- struct member completion (typedef'd) ---
-    expectEq("getStructTypeForVariable(pixel)", cm->getStructTypeForVariable("pixel", "top"), "pixel_t");
-    expectList("members of pixel_t", cm->getStructMemberCompletions("", "pixel_t"),
+    expectEq("getStructTypeForVariable(pixel)",
+             CompletionService::getInstance()->getStructTypeForVariable("pixel", "top"),
+             "pixel_t");
+    expectList("members of pixel_t",
+               CompletionService::getInstance()->findStructMemberCompletions("", "pixel_t"),
                {"red", "green", "blue"});
 
     // --- struct member completion (inline anonymous) ---
-    expectEq("getStructTypeForVariable(byte_split)", cm->getStructTypeForVariable("byte_split", "top"), "byte_split");
-    expectList("members of byte_split", cm->getStructMemberCompletions("", "byte_split"),
+    expectEq("getStructTypeForVariable(byte_split)",
+             CompletionService::getInstance()->getStructTypeForVariable("byte_split", "top"),
+             "byte_split");
+    expectList("members of byte_split",
+               CompletionService::getInstance()->findStructMemberCompletions("", "byte_split"),
                {"hi", "lo"});
 
     // --- prefix filtering on members (note: matching is fuzzy/abbreviation, not strict prefix) ---
     // 'bl' is a subsequence only of "blue"; "green"/"red" don't contain b..l in order.
-    expectList("members of pixel_t prefix 'bl'", cm->getStructMemberCompletions("bl", "pixel_t"),
+    expectList("members of pixel_t prefix 'bl'",
+               CompletionService::getInstance()->findStructMemberCompletions("bl", "pixel_t"),
                {"blue"});
 
     // --- module-internal logic must NOT leak function locals (x, add_one return var) ---
@@ -7530,45 +7484,6 @@ int main(int argc, char** argv) {
                        == QStringLiteral("enable")
                    && contextCommandState.symbolStableKeys.first()
                        == contextCommandState.symbolRecords.first().stableKey,
-               true);
-    const EditorCommandModeCompletionRefreshState contextRefreshState =
-        EditorSemanticContextService::getInstance()
-            ->commandModeCompletionRefreshState(commandContext, false);
-    expectBool("EditorSemanticContext command refresh show",
-               contextRefreshState.matched
-                   && contextRefreshState.commandModeActive
-                   && contextRefreshState.highlightCommand
-                   && contextRefreshState.showCompletions
-                   && !contextRefreshState.hidePopup
-                   && contextRefreshState.completion.completionPrefix
-                       == QStringLiteral("ena"),
-               true);
-    const EditorCommandModeCompletionRefreshState suppressedRefreshState =
-        EditorSemanticContextService::getInstance()
-            ->commandModeCompletionRefreshState(commandContext, true);
-    expectBool("EditorSemanticContext command refresh no suppress",
-               suppressedRefreshState.matched
-                   && suppressedRefreshState.commandModeActive
-                   && !suppressedRefreshState.suppressAfterExit
-                   && suppressedRefreshState.showCompletions,
-               true);
-    EditorSemanticContext commandExitContext;
-    commandExitContext.lineUpToCursor = QStringLiteral(";");
-    const EditorCommandModeCompletionRefreshState contextExitRefreshState =
-        EditorSemanticContextService::getInstance()
-            ->commandModeCompletionRefreshState(commandExitContext, false);
-    expectBool("EditorSemanticContext command refresh exit",
-               !contextExitRefreshState.matched
-                   && contextExitRefreshState.resetExitedByDoubleSpace,
-               true);
-    EditorSemanticContext noCommandRefreshContext;
-    noCommandRefreshContext.lineUpToCursor = QStringLiteral("assign value");
-    const EditorCommandModeCompletionRefreshState noCommandRefreshState =
-        EditorSemanticContextService::getInstance()
-            ->commandModeCompletionRefreshState(noCommandRefreshContext, true);
-    expectBool("EditorSemanticContext command refresh reset",
-               !noCommandRefreshState.matched
-                   && noCommandRefreshState.resetExitedByDoubleSpace,
                true);
     const CommandModeInputState contextInputState =
         EditorSemanticContextService::getInstance()
@@ -9547,83 +9462,6 @@ int main(int argc, char** argv) {
                    snapshotScopeCursor,
                    true)),
                {"snap_signal"});
-    SemanticIndex::getInstance()->setSnapshot(
-        sharedSnapshotFromRecords(
-            snapshotRecords,
-            snapshotRelationships,
-            QList<SemanticDiagnostic>{},
-            snapshotFileContents));
-    expectList("CompletionManager child delegation",
-               cm->getModuleChildrenCompletions(QStringLiteral("snap_top"),
-                                                QStringLiteral("snap")),
-               {"snap_enable"});
-    expectList("CompletionManager related delegation",
-               cm->getRelatedSymbolCompletions(QStringLiteral("snap_enable"),
-                                               QStringLiteral("snap_other")),
-               {"snap_other_enable"});
-    expectList("CompletionManager reference delegation",
-               cm->getSymbolReferencesCompletions(QStringLiteral("snap_enable"),
-                                                  QStringLiteral("snap_other")),
-               {"snap_other_enable"});
-    expectList("CompletionManager clock delegation",
-               cm->getClockDomainCompletions(QStringLiteral("snap_c")),
-               {"snap_clk"});
-    expectList("CompletionManager reset delegation",
-               cm->getResetSignalCompletions(QStringLiteral("snap_r")),
-               {"snap_rst_n"});
-    expectList("CompletionManager module variable delegation",
-               cm->getModuleInternalVariables(QStringLiteral("snap_top"),
-                                              QStringLiteral("snap_e")),
-               {"snap_enable"});
-    expectList("CompletionManager global delegation",
-               cm->getGlobalSymbolCompletions(QStringLiteral("snap")),
-               {"snap_child", "snap_if", "snap_pkg", "snap_scope", "snap_task", "snap_top"});
-    expectList("CompletionManager metadata global delegation",
-               cm->getGlobalSymbolCompletions(QStringLiteral("semantic")),
-               {"semantic_scope"});
-    expectList("CompletionManager type delegation",
-               cm->getGlobalSymbolsByKind(
-                   CompletionCommandKind::Task,
-                   QStringLiteral("snap")),
-               {"snap_task"});
-    expectList("CompletionManager task/function delegation",
-               cm->getTaskFunctionCompletions(QStringLiteral("snap")),
-               {"snap_task"});
-    expectList("CompletionManager module delegation",
-               cm->getInstantiableModules(QStringLiteral("snap")),
-               {"snap_child", "snap_scope", "snap_top"});
-    expectList("CompletionManager context struct delegation",
-               cm->getContextAwareCompletions(QStringLiteral("bl"),
-                                              QStringLiteral("snap_top"),
-                                              QStringLiteral("snap_pixel.")),
-               {"blue"});
-    expectList("CompletionManager context enum delegation",
-               cm->getContextAwareCompletions(QStringLiteral("SNAP_"),
-                                              QStringLiteral("snap_top"),
-                                              QStringLiteral("case(snap_state)")),
-               {"SNAP_IDLE", "SNAP_RUN", "snap_enable"});
-    expectList("CompletionManager struct member delegation",
-               cm->getStructMemberCompletions(QStringLiteral("bl"),
-                                              QStringLiteral("snap_pixel_t")),
-               {"blue"});
-    expectList("CompletionManager all-symbol delegation",
-               cm->getAllSymbolCompletions(QStringLiteral("snap_clk")),
-               {"snap_clk"});
-    expectList("CompletionManager scored all-symbol delegation",
-               scoredNames(cm->getScoredAllSymbolMatches(QStringLiteral("snap_clk"))),
-               {"snap_clk"});
-    expectList("CompletionManager typed symbol delegation",
-               cm->getSymbolCompletions(
-                   CompletionCommandKind::Logic,
-                   QStringLiteral("snap_e")),
-               {"snap_enable", "snap_other_enable"});
-    expectList("CompletionManager smart delegation",
-               scoredNames(cm->getSmartCompletions(QStringLiteral("snap_sig"),
-                                                   snapshotScopeFile,
-                                                   snapshotScopeCursor)),
-               {"snap_signal"});
-    SemanticIndex::getInstance()->clearSnapshot();
-
     CommandCompletionQuery snapshotCommandQuery;
     snapshotCommandQuery.fileName = QStringLiteral("snapshot_only.sv");
     snapshotCommandQuery.moduleName = QStringLiteral("snap_top");

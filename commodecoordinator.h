@@ -44,7 +44,6 @@ public:
     void attachEditor(MyCodeEditor* editor);
     QLabel* commandStripWidget() const;
     ComModuleSelectorPanel* moduleSelectorPanel() const;
-    ColumnNumberToolPanel* columnNumberToolPanel() const;
 
 protected:
     bool eventFilter(QObject* watched, QEvent* event) override;
@@ -121,7 +120,6 @@ public:
     void setEmptyText(const QString& text);
     void showFor(QWidget* anchor);
     void focusSearch();
-    QString filterText() const;
     void setFilterChangedHandler(std::function<void(const QString&)> handler);
     void setItemActivatedHandler(
         std::function<void(const ComModePickerItem&)> handler);

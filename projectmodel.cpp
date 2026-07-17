@@ -128,39 +128,6 @@ void ProjectModel::applyScannedFiles(const QStringList& files)
             acceptedFiles);
 }
 
-void ProjectModel::setIncludeDirs(const QStringList& dirs)
-{
-    includeDirsExplicit = true;
-    current.includeDirs =
-        pathRules.uniquePreservingOrder(pathRules.normalizePathList(dirs));
-    publishChanged();
-}
-
-void ProjectModel::setDefines(const QHash<QString, QString>& newDefines)
-{
-    current.defines = pathRules.normalizeDefines(newDefines);
-    publishChanged();
-}
-
-void ProjectModel::setFileExtensions(const QStringList& extensions)
-{
-    current.fileExtensions = pathRules.normalizeFileExtensions(extensions);
-    applyScannedFiles(rawScannedFiles);
-    publishChanged();
-}
-
-void ProjectModel::setFilelistPath(const QString& path)
-{
-    current.filelistPath = pathRules.normalizePath(path);
-    publishChanged();
-}
-
-void ProjectModel::setTopModule(const QString& moduleName)
-{
-    current.topModule = moduleName.trimmed();
-    publishChanged();
-}
-
 void ProjectModel::setIgnoredPaths(const QStringList& paths)
 {
     current.ignoredPaths =
@@ -207,24 +174,9 @@ QStringList ProjectModel::systemVerilogFiles() const
     return current.systemVerilogFiles;
 }
 
-QStringList ProjectModel::includeDirs() const
-{
-    return current.includeDirs;
-}
-
-QHash<QString, QString> ProjectModel::defines() const
-{
-    return current.defines;
-}
-
 QStringList ProjectModel::fileExtensions() const
 {
     return current.fileExtensions;
-}
-
-QHash<QString, SymbolTaxonomy::SourceRole> ProjectModel::sourceRoles() const
-{
-    return current.sourceRoles;
 }
 
 SymbolTaxonomy::SourceRole ProjectModel::sourceRoleForFile(
@@ -235,12 +187,6 @@ SymbolTaxonomy::SourceRole ProjectModel::sourceRoleForFile(
         SymbolTaxonomy::SourceRole::Unknown);
 }
 
-QStringList ProjectModel::filesForSourceRole(
-    SymbolTaxonomy::SourceRole role) const
-{
-    return current.filesForSourceRole(role);
-}
-
 QStringList ProjectModel::designSourceFiles() const
 {
     return current.designSourceFiles();
@@ -249,16 +195,6 @@ QStringList ProjectModel::designSourceFiles() const
 QStringList ProjectModel::headerSourceFiles() const
 {
     return current.headerSourceFiles();
-}
-
-QString ProjectModel::filelistPath() const
-{
-    return current.filelistPath;
-}
-
-QString ProjectModel::topModule() const
-{
-    return current.topModule;
 }
 
 QStringList ProjectModel::ignoredPaths() const

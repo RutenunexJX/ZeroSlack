@@ -10,18 +10,7 @@ void EditorModeState::noteCompletionTimerLine(int lineNumber)
     if (completionTimerLineNumber == lineNumber)
         return;
 
-    commandModeExitedByDoubleSpace = false;
     completionTimerLineNumber = lineNumber;
-}
-
-void EditorModeState::markCommandModeExitedByDoubleSpace()
-{
-    commandModeExitedByDoubleSpace = true;
-}
-
-void EditorModeState::resetCommandModeExit()
-{
-    commandModeExitedByDoubleSpace = false;
 }
 
 void EditorModeState::clearCommandMode()

@@ -20,7 +20,6 @@ public:
     QList<FoldShelfItem> loadItems(const QString& workspaceRoot) const;
     bool saveItems(const QString& workspaceRoot,
                    const QList<FoldShelfItem>& items) const;
-    void clearWorkspace(const QString& workspaceRoot) const;
 
     static QString normalizedWorkspaceRoot(const QString& workspaceRoot);
     static QString normalizedSourceFile(const QString& sourceFile);

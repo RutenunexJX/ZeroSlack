@@ -111,7 +111,6 @@ set(ZEROSLACK_CORE_SOURCES
     completioncontextquery.cpp
     completioncontextrelationships.cpp
     completioncontextsmart.cpp
-    completionmanager.cpp
     completionmatcher.cpp
     completionmatcherkeywords.cpp
     completionmodel.cpp
@@ -192,8 +191,6 @@ set(ZEROSLACK_CORE_SOURCES
     statetransitiongraphservice.cpp
     statetransitiontriggerservice.cpp
     tsdocument.cpp
-    modecommandcoordinator.cpp
-    modemanager.cpp
     mycodeeditor.cpp
     myhighlighter.cpp
     opendocumentanalysiscontroller.cpp
@@ -219,10 +216,6 @@ set(ZEROSLACK_CORE_SOURCES
     relationshipspanelrefresh.cpp
     relationshipservice.cpp
     relationshipserviceordering.cpp
-    relationshipprogressdialog.cpp
-    relationshipprogressdialogpresentation.cpp
-    relationshipprogressdialogui.cpp
-    relationshipprogressdialogupdates.cpp
     relationshipanalysisqueue.cpp
     relationshipanalysisqueuelifecycle.cpp
     relationshipanalysiscontroller.cpp
@@ -233,7 +226,6 @@ set(ZEROSLACK_CORE_SOURCES
     rtlbatcheditservice.cpp
     saferenameservice.cpp
     searchservice.cpp
-    scopebandservice.cpp
     semanticdiffservice.cpp
     semanticdecorationservice.cpp
     svmacrosemantics.cpp
@@ -315,7 +307,6 @@ set(ZEROSLACK_CORE_SOURCES
     modulebriefservice.h
     completioncommandmode.h
     completioncommandkindadapter.h
-    completionmanager.h
     version.h.in
     ${ZEROSLACK_GENERATED_INCLUDE_DIR}/version.h
     completionmodel.h
@@ -384,8 +375,6 @@ set(ZEROSLACK_CORE_SOURCES
     statetransitiongraphservice.h
     statetransitiontriggerservice.h
     tsdocument.h
-    modecommandcoordinator.h
-    modemanager.h
     mycodeeditor.h
     myhighlighter.h
     opendocumentanalysiscontroller.h
@@ -403,7 +392,6 @@ set(ZEROSLACK_CORE_SOURCES
     relationshipspanelcoordinator.h
     relationshipservice.h
     relationshipserviceordering.h
-    relationshipprogressdialog.h
     relationshipanalysisqueue.h
     relationshipanalysiscontroller.h
     relationshipanalysisworker.h
@@ -412,7 +400,6 @@ set(ZEROSLACK_CORE_SOURCES
     rtlbatcheditservice.h
     saferenameservice.h
     searchservice.h
-    scopebandservice.h
     semanticdiffservice.h
     semanticdecorationservice.h
     svmacrosemantics.h
@@ -434,7 +421,6 @@ set(ZEROSLACK_CORE_SOURCES
     slangmanager.h
     slangparseoptions.h
     slangrelationshiphelpers.h
-    slangrelationshipparse.h
     slangsymbolcollector.h
     slangsymbolcollectorhelpers.h
     smartrelationshipbuilder.h
@@ -577,13 +563,6 @@ if(BUILD_TESTING)
     add_executable(relationship_perf_test test_sv/relationship_perf_test.cpp)
     target_link_libraries(relationship_perf_test PRIVATE zeroslack_core)
 
-    add_executable(full_feature_audit_test test_sv/full_feature_audit_test.cpp)
-    set_target_properties(full_feature_audit_test PROPERTIES
-        AUTOMOC OFF
-        AUTOUIC OFF
-    )
-    target_link_libraries(full_feature_audit_test PRIVATE zeroslack_core)
-
     add_test(NAME ts_doc_test
         COMMAND ${CMAKE_COMMAND} -E env
             "PATH=${ZEROSLACK_TEST_PATH}"
@@ -650,15 +629,6 @@ if(BUILD_TESTING)
             "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
             $<TARGET_FILE:large_file_perf_test>
             ${CMAKE_CURRENT_SOURCE_DIR}/test_sv/new
-    )
-    add_test(NAME full_feature_audit_test
-        COMMAND ${CMAKE_COMMAND} -E env
-            "PATH=${ZEROSLACK_TEST_PATH}"
-            "QT_QPA_PLATFORM=offscreen"
-            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
-            $<TARGET_FILE:full_feature_audit_test>
-            ${CMAKE_CURRENT_SOURCE_DIR}/test_sv/new
-            ${CMAKE_CURRENT_SOURCE_DIR}/test_sv/huge_prj
     )
     add_test(NAME legacy_field_policy_guard
         COMMAND ${CMAKE_COMMAND}

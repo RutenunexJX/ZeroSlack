@@ -17,7 +17,7 @@ class QKeyEvent;
 class QModelIndex;
 class QRect;
 class QTimer;
-struct EditorCommandModeCompletionRefreshState;
+struct CommandModeCompletionState;
 struct EditorCompletionActivationContext;
 struct EditorCompletionPopupKeyContext;
 struct EditorCompletionState;
@@ -49,7 +49,8 @@ public:
         QKeyEvent* event,
         const EditorModeState& modes) const;
     void updateCommandModeCompletions(
-        const EditorCommandModeCompletionRefreshState& commandState) const;
+        const CommandModeCompletionState& state,
+        bool allowSymbolFallback = true) const;
     void updateIncludeFileCompletions(const QStringList& filePaths,
                                       const QString& prefix) const;
     void updateIncludeNewHeaderCompletions(

@@ -79,7 +79,6 @@ public:
     void updateIncludeNewHeaderCompletions(
         const QList<IncludeNewHeaderChoice>& choices,
         const QString& title);
-    void updateCommandHelpCompletions(const QList<CommandModeCommand>& commands);
     void updateInlineCommandCompletions(
         const CommandModeCompletionState& state);
     void clear();

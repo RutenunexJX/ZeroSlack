@@ -248,14 +248,6 @@ bool WorkspaceConfigurationService::clear(const QString& workspaceRoot) const
     return settings->status() == QSettings::NoError;
 }
 
-QString WorkspaceConfigurationService::storageDescription() const
-{
-    if (!settingsFilePath.isEmpty())
-        return settingsFilePath;
-    return QStringLiteral(
-        "QSettings:ZeroSlack/ZeroSlack/workspaceConfiguration/v1");
-}
-
 WorkspaceConfiguration WorkspaceConfigurationService::normalized(
     const WorkspaceConfiguration& configuration) const
 {

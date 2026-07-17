@@ -21,7 +21,6 @@ SemanticRuntimeCoordinator::SemanticRuntimeCoordinator(QObject* parent)
     relationshipBuilderInstance = semanticIndex->createRelationshipBuilder(
         relationshipEngineInstance.get(), slangManagerInstance.get(), this);
 }
-
 SemanticRuntimeCoordinator::~SemanticRuntimeCoordinator()
 {
     if (relationshipEngineInstance)
@@ -36,9 +35,4 @@ SymbolRelationshipEngine* SemanticRuntimeCoordinator::relationshipEngine() const
 SmartRelationshipBuilder* SemanticRuntimeCoordinator::relationshipBuilder() const
 {
     return relationshipBuilderInstance.get();
-}
-
-SlangManager* SemanticRuntimeCoordinator::slangManager() const
-{
-    return slangManagerInstance.get();
 }

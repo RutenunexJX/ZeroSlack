@@ -18,7 +18,6 @@ class EditorAppearance
 {
 public:
     static QStringList recommendedFontFamilies();
-    static QStringList systemMonospaceFontFamilies();
     static bool isCjkFontFamily(const QString& family);
     static bool ensureApplicationFontsLoaded();
     static QString fallbackFontFamily();

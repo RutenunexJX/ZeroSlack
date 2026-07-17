@@ -109,7 +109,6 @@ public:
     SignalKernelGraphReport buildSignalKernelGraph(
         const SignalKernelGraphQuery& query) const;
 
-    static QString nodeRoleDisplayName(SignalKernelGraphNodeRole role);
     static QString inputLaneDisplayName(SignalKernelGraphInputLane lane);
 
 private:

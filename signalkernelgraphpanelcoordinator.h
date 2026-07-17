@@ -34,7 +34,6 @@ public:
                                         const QString& fileName,
                                         const QString& moduleName,
                                         const QString& signalAccessPath = {});
-    void showSignalKernelGraphForStableKey(const SymbolStableKey& stableKey);
     void refresh();
 
     QDockWidget* dock() const { return graphDock; }

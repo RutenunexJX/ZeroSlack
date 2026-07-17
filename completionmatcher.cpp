@@ -60,28 +60,6 @@ int CompletionMatcher::calculateContextMatchScore(
     return score;
 }
 
-int CompletionMatcher::calculateSymbolTypeScore(
-    const QString& text,
-    const QString& abbreviation)
-{
-    if (text.isEmpty())
-        return 0;
-    if (abbreviation.isEmpty())
-        return 100;
-
-    const QString lowerText = text.toLower();
-    const QString lowerAbbreviation = abbreviation.toLower();
-    if (lowerText == lowerAbbreviation)
-        return 1000;
-    if (lowerText.startsWith(lowerAbbreviation))
-        return 800 + (100 - abbreviation.length());
-    if (lowerText.contains(lowerAbbreviation))
-        return 400 + (100 - text.length());
-    if (isValidContextAbbreviationMatch(text, abbreviation))
-        return 200;
-    return 0;
-}
-
 int CompletionMatcher::completionItemScore(
     const QString& text,
     const QString& prefix)

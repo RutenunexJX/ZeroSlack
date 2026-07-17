@@ -49,7 +49,7 @@ into an analyzer.
   reset, optional grid, and business-neutral mouse hooks.
 - Verification baseline for this repair is now focused regression plus GUI
   smoke: `completion_test`, `relationship_test`, `gui_smoke_test`,
-  `jump_test`, and the lightweight `full_feature_audit_test` inventory.
+  `jump_test`, `insight_visual_style_test`, and feature-specific CTest guards.
 - Corpus audit is retired as an acceptance signal. GUI-found issues should be
   reduced to small fixtures in the focused tests instead of broad corpus
   sweeps.
@@ -184,8 +184,7 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
 - If unrelated dirty files exist, leave them alone and stage only the files for
   the current milestone.
 - Documentation cleanup may be committed separately from implementation changes.
-- Do not push unless explicitly asked or unless the active goal milestone rules
-  for the current milestone explicitly require it.
+- Do not push unless the current task owner explicitly asks for it.
 
 ## Active Long-Term Scope
 
@@ -1404,9 +1403,9 @@ M11.3 implementation status:
   nodes navigate to their instance declaration and do not drill into a missing
   definition.
 - Verification: Debug `completion_test`, `relationship_test`,
-  `gui_smoke_test`, `full_feature_audit_test`, and `jump_test` targets
-  compile/link; focused CTest runs passed. Future Module Block Diagram issues
-  should be captured as compact fixtures rather than broad corpus sweeps.
+  `gui_smoke_test`, and `jump_test` targets compile/link; focused CTest runs
+  passed. Future Module Block Diagram issues should be captured as compact
+  fixtures rather than broad corpus sweeps.
 
 M11.4 implementation status:
 
@@ -1821,18 +1820,14 @@ feature-specific tests for future coverage.
 
 ## Full Feature Audit
 
-Goal: inventory the current implemented feature surface, connect entries to
-services/tests, and keep a lightweight feature health report without mutating
-real corpus files.
+Goal: retired. Feature surface ownership now lives in focused regression
+targets, GUI smoke, and feature-specific guards rather than a generated
+inventory report.
 
 Milestones:
 
 - FFA.1 Feature inventory and matrix.
-  (complete: `full_feature_audit_test` writes
-  `test_sv/full_feature_audit_report.json` and
-  `test_sv/full_feature_audit_report.md` with 23 feature rows, 93 user entry
-  points, 75 service/test touchpoints, automation method, coverage ownership,
-  pollution risk, status, reason, and next action.)
+  (retired: the former generated inventory and report files have been removed.)
 - FFA.2 Full recursive corpus integration.
   (retired: full-feature no longer consumes `corpus_audit_test` output; it now
   records focused regression and GUI-smoke ownership.)
@@ -1842,9 +1837,8 @@ Milestones:
   expressed as deterministic case-level skipped reasons; other expensive RTL
   sweeps are likewise bounded and remain pass.)
 - FFA.4 Verification and documentation.
-  (complete: focused regression CTest runs cover
-  `completion_test`, `jump_test`, `relationship_test`, `gui_smoke_test`, and
-  `full_feature_audit_test`.)
+  (retired: focused regression CTest runs now cover current executable targets
+  and feature-specific guards.)
 - FFA.5 Acceptance repair after independent rerun.
   (complete: stale fast-regression fixtures were repaired instead of
   converting failures to known issues. FSM assertions now use structural
@@ -1852,8 +1846,8 @@ Milestones:
   `state_q <= state_d` update required by structural discovery, `jump_test`
   resolves `test_sv/new` from the source tree when launched from the build
   directory, and package member definition checks provide explicit
-  `import snap_pkg::*;` context. Individual `completion_test`, `jump_test`,
-  `gui_smoke_test`, and `full_feature_audit_test` CTest runs pass.)
+  `import snap_pkg::*;` context. The former generated inventory target has
+  since been removed.)
 
 ## Milestone Definition Of Done
 
@@ -1865,14 +1859,13 @@ Before a milestone is complete:
 - run verification appropriate to the change
 - keep UI semantic policy out of UI code
 - do not add functionality outside the allowed long-term scope
-- commit and push the milestone when the user has authorized that goal flow
+- commit only when requested, and push only when explicitly authorized
 
 Documentation-only milestones:
 
 - update the relevant docs
 - run `git diff --check`
-- commit/push only if the user explicitly asks or the active goal flow requires
-  this documentation milestone to be published
+- commit or push only if the user explicitly asks for publication
 
 ## Verification Guidance
 
@@ -2169,6 +2162,5 @@ Latest Verification Baseline Repair:
 
 - Keep commits coherent and architecture-oriented.
 - Do not mix unrelated dirty code into documentation commits.
-- Do not push unless explicitly asked or required by the active milestone goal
-  flow.
+- Do not push unless explicitly asked by the current task owner.
 - Prefer short commit messages that name the product/architecture change.

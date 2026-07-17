@@ -37,15 +37,6 @@ SymbolAnalyzer::~SymbolAnalyzer()
     }
 }
 
-void SymbolAnalyzer::startAnalyzeWorkspaceAsync(
-    WorkspaceManager* workspaceManager,
-    std::function<bool()> isCancelled)
-{
-    if (!workspaceManager || !workspaceManager->isWorkspaceOpen())
-        return;
-    startAnalyzeProjectAsync(workspaceManager->projectSnapshot(), std::move(isCancelled));
-}
-
 void SymbolAnalyzer::startAnalyzeProjectAsync(
     const ProjectSnapshot& project,
     std::function<bool()> isCancelled)

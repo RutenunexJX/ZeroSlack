@@ -18,7 +18,6 @@ public:
     void setItems(const QList<GlobalControlItem>& items);
     void showCentered(QWidget* anchor);
     void focusSearch();
-    QString queryText() const;
     void setQueryChangedHandler(std::function<void(const QString&)> handler);
     void setItemActivatedHandler(std::function<void(const GlobalControlItem&)> handler);
 

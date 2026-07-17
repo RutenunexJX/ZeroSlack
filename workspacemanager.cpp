@@ -61,21 +61,6 @@ void WorkspaceManager::WorkspaceFiles::setScannedFiles(
     systemVerilogFiles = projectModel->systemVerilogFiles();
 }
 
-QStringList WorkspaceManager::WorkspaceFiles::filesByExtension(
-    const QString& extension) const
-{
-    QStringList filteredFiles;
-    const QString lowerExt = extension.toLower();
-
-    filteredFiles.reserve(allFiles.size() / 10);
-
-    for (const QString& filePath : std::as_const(allFiles)) {
-        if (QFileInfo(filePath).suffix().toLower() == lowerExt)
-            filteredFiles.append(filePath);
-    }
-    return filteredFiles;
-}
-
 void WorkspaceManager::WorkspaceWatcher::ensure(WorkspaceManager* owner)
 {
     if (watcher)
@@ -530,11 +515,6 @@ QStringList WorkspaceManager::getAllFiles() const
 QStringList WorkspaceManager::getSystemVerilogFiles() const
 {
     return files.systemVerilogFiles;
-}
-
-QStringList WorkspaceManager::getFilesByExtension(const QString& extension) const
-{
-    return files.filesByExtension(extension);
 }
 
 QString WorkspaceManager::resolveIncludePath(const QString& includePath,

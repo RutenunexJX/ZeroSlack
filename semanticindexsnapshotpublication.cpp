@@ -139,12 +139,6 @@ SemanticSnapshotToken SemanticIndex::snapshotToken() const
     return {m_snapshot, m_snapshotRevision};
 }
 
-void SemanticIndex::publishCompleteSnapshot(QList<SemanticDiagnostic> diagnostics)
-{
-    setSnapshot(std::make_shared<const SemanticIndexSnapshot>(
-        publicationSnapshotFromSemanticRecords(this, std::move(diagnostics))));
-}
-
 void SemanticIndex::publishSnapshotReplacingDiagnostics(
     const QStringList& fileNames,
     const QList<SemanticDiagnostic>& diagnostics)

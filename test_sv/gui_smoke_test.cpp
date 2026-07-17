@@ -91,7 +91,6 @@
 #include "semantic_fixture_records.h"
 #include "sourcenavigationservice.h"
 #include "symbolhoverservice.h"
-#include "modemanager.h"
 #include "navigationmanager.h"
 #include "navigationservice.h"
 #include "navigationcommandcoordinator.h"
@@ -570,8 +569,7 @@ static void runEditorAppearanceCoordinatorRegression()
 
     QTabWidget tabsWidget;
     TabManager tabs(&tabsWidget);
-    ModeManager modes(&tabsWidget);
-    EditorCoordinator coordinator(&tabs, &modes);
+    EditorCoordinator coordinator(&tabs);
     EditorAppearanceSettings settings(
         makeTemporarySettings(
             settingsDir.filePath(QStringLiteral("appearance.ini"))));
@@ -705,8 +703,7 @@ static void runFormatterCoordinatorRegression()
 
     QTabWidget tabsWidget;
     TabManager tabs(&tabsWidget);
-    ModeManager modes(&tabsWidget);
-    EditorCoordinator coordinator(&tabs, &modes);
+    EditorCoordinator coordinator(&tabs);
     FormatterSettings settings(
         makeTemporarySettings(
             settingsDir.filePath(QStringLiteral("formatter.ini"))));
@@ -1474,9 +1471,8 @@ static void runIncludeCompletionRegression()
         return;
     QTabWidget tabsWidget;
     TabManager tabs(&tabsWidget);
-    ModeManager modes(&tabsWidget);
     WorkspaceManager workspace;
-    EditorCoordinator coordinator(&tabs, &modes);
+    EditorCoordinator coordinator(&tabs);
     coordinator.setWorkflowDependencies(&workspace, nullptr, nullptr, nullptr);
     coordinator.connectSignals();
     expectBool("include new header opens test workspace",
@@ -1911,8 +1907,7 @@ static void runSafeRenameCoordinatorRegression()
 
     QTabWidget tabsWidget;
     TabManager tabs(&tabsWidget);
-    ModeManager modes(&tabsWidget, &tabsWidget);
-    EditorCoordinator coordinator(&tabs, &modes);
+    EditorCoordinator coordinator(&tabs);
     coordinator.connectSignals();
 
     expectBool("safe rename coordinator opens use file",
@@ -1999,8 +1994,7 @@ static void runSafeRenameCreateDefinitionRegression()
 
     QTabWidget tabsWidget;
     TabManager tabs(&tabsWidget);
-    ModeManager modes(&tabsWidget, &tabsWidget);
-    EditorCoordinator coordinator(&tabs, &modes);
+    EditorCoordinator coordinator(&tabs);
     coordinator.connectSignals();
 
     expectBool("safe rename create definition opens file",
@@ -7729,9 +7723,7 @@ static void runGlobalControlRegression(MainWindow& window,
 
     GlobalControlService service;
     const QList<GlobalControlItem> rootMatches =
-        service.query(QString(),
-                      window.workspaceManager->getProjectModel(),
-                      SemanticIndex::getInstance());
+        service.query(QString());
     QSet<QString> rootDomainIds;
     QSet<QString> rootCommandIds;
     for (const GlobalControlItem& item : rootMatches) {
@@ -7751,9 +7743,7 @@ static void runGlobalControlRegression(MainWindow& window,
                true);
 
     const QList<GlobalControlItem> workspaceMatches =
-        service.query(QStringLiteral("ow"),
-                      window.workspaceManager->getProjectModel(),
-                      SemanticIndex::getInstance());
+        service.query(QStringLiteral("ow"));
     bool foundOpenOneWorkspaceAction = false;
     bool foundOpenTwoWorkspacesAction = false;
     bool foundRecentWorkspaceAction = false;
@@ -7794,9 +7784,7 @@ static void runGlobalControlRegression(MainWindow& window,
                false);
 
     const QList<GlobalControlItem> workspaceCountMatches =
-        service.query(QStringLiteral("ow 3"),
-                      window.workspaceManager->getProjectModel(),
-                      SemanticIndex::getInstance());
+        service.query(QStringLiteral("ow 3"));
     bool foundOpenThreeWorkspacesAction = false;
     for (const GlobalControlItem& item : workspaceCountMatches) {
         if (item.id == QStringLiteral("ow 3")
@@ -7810,9 +7798,7 @@ static void runGlobalControlRegression(MainWindow& window,
                true);
 
     const QList<GlobalControlItem> recentWorkspaceMatches =
-        service.query(QStringLiteral("ow r"),
-                      window.workspaceManager->getProjectModel(),
-                      SemanticIndex::getInstance());
+        service.query(QStringLiteral("ow r"));
     bool foundRecentByExactCommand = false;
     bool foundWorkspaceCountHint = false;
     for (const GlobalControlItem& item : recentWorkspaceMatches) {
@@ -7830,9 +7816,7 @@ static void runGlobalControlRegression(MainWindow& window,
                false);
 
     const QList<GlobalControlItem> sessionWorkspaceMatches =
-        service.query(QStringLiteral("ow s"),
-                      window.workspaceManager->getProjectModel(),
-                      SemanticIndex::getInstance());
+        service.query(QStringLiteral("ow s"));
     bool foundSessionSave = false;
     bool foundSessionRestore = false;
     bool foundSessionClean = false;
@@ -7851,43 +7835,29 @@ static void runGlobalControlRegression(MainWindow& window,
                foundSessionSave && foundSessionRestore && foundSessionClean,
                true);
     expectBool("global control ow s w resolves save",
-               !service.query(QStringLiteral("ow s w"),
-                              window.workspaceManager->getProjectModel(),
-                              SemanticIndex::getInstance())
+               !service.query(QStringLiteral("ow s w"))
                     .isEmpty()
-                   && service.query(QStringLiteral("ow s w"),
-                                    window.workspaceManager->getProjectModel(),
-                                    SemanticIndex::getInstance())
+                   && service.query(QStringLiteral("ow s w"))
                           .first()
                           .id == QStringLiteral("ow s save"),
                true);
     expectBool("global control ow s r resolves restore",
-               !service.query(QStringLiteral("ow s r"),
-                              window.workspaceManager->getProjectModel(),
-                              SemanticIndex::getInstance())
+               !service.query(QStringLiteral("ow s r"))
                     .isEmpty()
-                   && service.query(QStringLiteral("ow s r"),
-                                    window.workspaceManager->getProjectModel(),
-                                    SemanticIndex::getInstance())
+                   && service.query(QStringLiteral("ow s r"))
                           .first()
                           .id == QStringLiteral("ow s restore"),
                true);
     expectBool("global control ow s c resolves clean",
-               !service.query(QStringLiteral("ow s c"),
-                              window.workspaceManager->getProjectModel(),
-                              SemanticIndex::getInstance())
+               !service.query(QStringLiteral("ow s c"))
                     .isEmpty()
-                   && service.query(QStringLiteral("ow s c"),
-                                    window.workspaceManager->getProjectModel(),
-                                    SemanticIndex::getInstance())
+                   && service.query(QStringLiteral("ow s c"))
                           .first()
                           .id == QStringLiteral("ow s clean"),
                true);
 
     const QList<GlobalControlItem> foldActionMatches =
-        service.query(QStringLiteral("fd"),
-                      window.workspaceManager->getProjectModel(),
-                      SemanticIndex::getInstance());
+        service.query(QStringLiteral("fd"));
     bool foundFoldRegionAction = false;
     bool foundFoldShelfAction = false;
     bool foldActionsExplainBehavior = false;
@@ -7916,20 +7886,9 @@ static void runGlobalControlRegression(MainWindow& window,
                foundDeprecatedFoldAction,
                false);
 
-    const QList<GlobalControlItem> fileMatches =
-        service.query(QStringLiteral("SVH_interface"),
-                      window.workspaceManager->getProjectModel(),
-                      SemanticIndex::getInstance());
-    bool foundFixtureFile = false;
-    for (const GlobalControlItem& item : fileMatches) {
-        if (item.kind == GlobalControlItemKind::File
-            && item.title == QStringLiteral("SVH_interface.sv")) {
-            foundFixtureFile = true;
-        }
-    }
     expectBool("global control omits workspace files",
-               foundFixtureFile,
-               false);
+               service.query(QStringLiteral("SVH_interface")).isEmpty(),
+               true);
 
     bool dispatched = false;
     GlobalControlCoordinator dispatcherProbe(&window);
@@ -8041,23 +8000,6 @@ static void runGlobalControlRegression(MainWindow& window,
                    true);
         window.globalControlCoordinator->panel->hide();
     }
-
-    if (window.modeManager)
-        window.modeManager->setMode(ModeManager::NormalMode);
-    QKeyEvent shiftPressOne(QEvent::KeyPress, Qt::Key_Shift, Qt::NoModifier);
-    QKeyEvent shiftReleaseOne(QEvent::KeyRelease, Qt::Key_Shift, Qt::NoModifier);
-    QKeyEvent shiftPressTwo(QEvent::KeyPress, Qt::Key_Shift, Qt::NoModifier);
-    QKeyEvent shiftReleaseTwo(QEvent::KeyRelease, Qt::Key_Shift, Qt::NoModifier);
-    qApp->notify(&window, &shiftPressOne);
-    qApp->notify(&window, &shiftReleaseOne);
-    qApp->notify(&window, &shiftPressTwo);
-    qApp->notify(&window, &shiftReleaseTwo);
-    QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
-    expectBool("double shift no longer changes app mode",
-               window.modeManager
-                   && window.modeManager->getCurrentMode()
-                       == ModeManager::NormalMode,
-               true);
 
     MyCodeEditor* activeEditor = window.tabManager
         ? window.tabManager->getCurrentEditor()
@@ -8312,15 +8254,10 @@ int main(int argc, char** argv)
     expectBool("user template menu does not create COM command",
                findComModeCommandMetadata(QStringLiteral("menuut")) == nullptr,
                true);
-    bool globalControlHasMenuTemplate = false;
-    for (const GlobalControlItem& item :
-         GlobalControlService().templateItems()) {
-        globalControlHasMenuTemplate =
-            globalControlHasMenuTemplate
-            || item.id == QStringLiteral(";;menuut");
-    }
-    expectBool("user template menu does not change Global Control templates",
-               !globalControlHasMenuTemplate,
+    expectBool("user template menu does not change Global Control",
+               GlobalControlService()
+                   .query(QStringLiteral(";;menuut"))
+                   .isEmpty(),
                true);
 
     expectBool("write invalid-json user template file",

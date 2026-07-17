@@ -36,7 +36,6 @@ std::unique_ptr<QSettings> makeSettings(const QString& settingsFilePath)
     return std::make_unique<QSettings>(QStringLiteral("ZeroSlack"),
                                        QStringLiteral("ZeroSlack"));
 }
-
 QString originToString(FoldShelfOriginKind origin)
 {
     return origin == FoldShelfOriginKind::Moved
@@ -243,14 +242,4 @@ bool FoldShelfPersistenceService::saveItems(
     endWorkspaceGroup(settings.get());
     settings->sync();
     return settings->status() == QSettings::NoError;
-}
-
-void FoldShelfPersistenceService::clearWorkspace(
-    const QString& workspaceRoot) const
-{
-    std::unique_ptr<QSettings> settings = makeSettings(settingsFilePath);
-    beginWorkspaceGroup(settings.get(), workspaceRoot);
-    settings->remove(QString());
-    endWorkspaceGroup(settings.get());
-    settings->sync();
 }

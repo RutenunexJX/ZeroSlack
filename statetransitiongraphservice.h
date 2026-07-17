@@ -47,7 +47,6 @@ public:
     ~StateTransitionGraphService();
 
     void setSemanticIndex(SemanticIndex* semanticIndex);
-    void setTriggerService(StateTransitionTriggerService* triggerService);
 
     StateTransitionGraphReport buildStateTransitionGraph(
         const StateTransitionGraphQuery& query) const;

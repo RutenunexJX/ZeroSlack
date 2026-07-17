@@ -752,11 +752,6 @@ ComModuleSelectorPanel* ComModeCoordinator::moduleSelectorPanel() const
     return moduleSelector.get();
 }
 
-ColumnNumberToolPanel* ComModeCoordinator::columnNumberToolPanel() const
-{
-    return columnNumberTool.get();
-}
-
 void ComModeCoordinator::ensureCommandStrip()
 {
     if (commandStrip || !statusBar)
@@ -1419,11 +1414,6 @@ void ComModuleSelectorPanel::focusSearch()
         searchEdit->setFocus(Qt::ShortcutFocusReason);
         searchEdit->selectAll();
     }
-}
-
-QString ComModuleSelectorPanel::filterText() const
-{
-    return searchEdit ? searchEdit->text() : QString();
 }
 
 void ComModuleSelectorPanel::setFilterChangedHandler(

@@ -22,10 +22,6 @@ public:
         const EditorSemanticContext& context);
     static CommandModeCompletionState commandModeCompletionState(
         const EditorSemanticContext& context);
-    static EditorCommandModeCompletionRefreshState
-        commandModeCompletionRefreshState(
-            const EditorSemanticContext& context,
-            bool exitedByDoubleSpace);
     static CommandModeInputState commandModeInputState(
         const EditorSemanticContext& context);
     static CommandModeMatch commandModeMatch(

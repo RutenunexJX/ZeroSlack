@@ -235,14 +235,7 @@ bool EditorCompletionWorkflow::refreshInlineCandidateFilter()
     }
 
     inlineSession.completion = state;
-    EditorCommandModeCompletionRefreshState refreshState;
-    refreshState.matched = true;
-    refreshState.commandModeActive = true;
-    refreshState.highlightCommand = state.prefixPosition >= 0;
-    refreshState.showCompletions = true;
-    refreshState.suppressDefaultSymbolFallback = true;
-    refreshState.completion = state;
-    completion->updateCommandModeCompletions(refreshState);
+    completion->updateCommandModeCompletions(state, false);
     if (state.prefixPosition >= 0)
         selections->highlightCommand(editor, state.prefixPosition);
     showAutoComplete(true);
@@ -400,15 +393,9 @@ bool EditorCompletionWorkflow::showInlineAbbreviationCompletions(
 
     inlineSession.candidateFiltering = supportsCandidateFiltering;
 
-    EditorCommandModeCompletionRefreshState refreshState;
-    refreshState.matched = true;
-    refreshState.commandModeActive = true;
-    refreshState.highlightCommand = state.prefixPosition >= 0;
-    refreshState.showCompletions = true;
-    refreshState.suppressDefaultSymbolFallback =
-        inlineSession.candidateFiltering;
-    refreshState.completion = state;
-    completion->updateCommandModeCompletions(refreshState);
+    completion->updateCommandModeCompletions(
+        state,
+        !inlineSession.candidateFiltering);
     showAutoComplete(true);
     if (candidateCount == 0) {
         emit editor->editorStatusMessageRequested(
@@ -610,32 +597,7 @@ int EditorCompletionWorkflow::replaceCommandInputAtCursor(
         return commandStartPosition;
     }
 
-    const EditorSemanticContext context = semanticContextForCursor(
-        cursor,
-        false);
-    const CommandModeInputState inputState =
-        semanticService()->commandModeInputState(context);
-    if (!inputState.matched)
-        return -1;
-
-    const int commandStartPosition =
-        cursor.block().position() + inputState.prefixPosition;
-    cursor.setPosition(commandStartPosition);
-    cursor.setPosition(editor->textCursor().position(), QTextCursor::KeepAnchor);
-    cursor.insertText(text);
-
-    if (selectionStart >= 0 && selectionLength >= 0
-        && selectionStart + selectionLength <= text.size()) {
-        QTextCursor selectionCursor = editor->textCursor();
-        selectionCursor.setPosition(commandStartPosition + selectionStart);
-        if (selectionLength > 0) {
-            selectionCursor.setPosition(commandStartPosition + selectionStart
-                                            + selectionLength,
-                                        QTextCursor::KeepAnchor);
-        }
-        editor->setTextCursor(selectionCursor);
-    }
-    return commandStartPosition;
+    return -1;
 }
 
 void EditorCompletionWorkflow::clearCommandInputAtCursor()
@@ -680,81 +642,6 @@ void EditorCompletionWorkflow::setIncludeNewHeaderCreator(
     includeNewHeaderCreator = std::move(creator);
 }
 
-bool EditorCompletionWorkflow::refreshCommandModeCompletion(
-    const EditorSemanticContext& context)
-{
-    const EditorCommandModeCompletionRefreshState commandState =
-        semanticService()->commandModeCompletionRefreshState(
-            context,
-            modes->commandModeExitedByDoubleSpace);
-    if (commandState.matched) {
-        modes->setCommandModeActive(commandState.commandModeActive);
-        if (commandState.suppressAfterExit)
-            return true;
-
-        if (commandState.completion.intent == InlineCommandIntent::EditorAction
-            && !commandState.completion.helpRequested
-            && !commandState.completion.descriptor.prefix.endsWith(QLatin1Char(' '))
-            && !hasLongerExactEditorActionPrefix(commandState.completion.descriptor)) {
-            executeEditorActionCommand(commandState.completion.descriptor.label);
-            return true;
-        }
-        if (commandState.completion.intent == InlineCommandIntent::EditorAction
-            && !commandState.completion.helpRequested
-            && commandState.completion.descriptor.prefix.endsWith(QLatin1Char(' '))
-            && commandState.completion.input.isEmpty()) {
-            executeEditorActionCommand(commandState.completion.descriptor.label);
-            return true;
-        }
-
-        if (commandState.exitRequested) {
-            if (commandState.clearCommandHighlight)
-                selections->clearCommand(editor);
-            if (commandState.markExitedByDoubleSpace)
-                modes->markCommandModeExitedByDoubleSpace();
-            if (completion->popupVisible())
-                completion->hidePopup();
-            return true;
-        }
-
-        if (commandState.highlightCommand) {
-            selections->highlightCommand(
-                editor,
-                commandState.completion.prefixPosition);
-        }
-
-        if (commandState.hidePopup) {
-            if (completion->popupVisible())
-                completion->hidePopup();
-            return true;
-        }
-
-        if (commandState.completion.intent == InlineCommandIntent::HeaderInclude) {
-            if (commandState.showCompletions)
-                showIncludeCommandCompletions(commandState.completion);
-            return true;
-        }
-
-        includeCompletionActive = false;
-        includeCompletionMode = IncludeCompletionMode::None;
-        if (commandState.showCompletions) {
-            completion->updateCommandModeCompletions(commandState);
-            showAutoComplete();
-        }
-        return true;
-    }
-
-    if (commandState.resetExitedByDoubleSpace)
-        modes->resetCommandModeExit();
-
-    selections->clearCommand(editor);
-    modes->clearCommandMode();
-    includeCompletionActive = false;
-    includeCompletionMode = IncludeCompletionMode::None;
-
-    return false;
-}
-
 void EditorCompletionWorkflow::refreshSymbolCompletion(
     EditorSemanticContext context,
     const QTextBlock& currentBlock)
@@ -780,9 +667,6 @@ void EditorCompletionWorkflow::handleAutoCompleteTimer()
 
     EditorSemanticContext context = semanticContextForCursor(cursor, true);
 
-    if (refreshCommandModeCompletion(context))
-        return;
-
     refreshSymbolCompletion(context, currentBlock);
 }
 
@@ -804,22 +688,6 @@ EditorCompletionWorkflow::includeCompletionContextAtCursor() const
         return context;
     }
 
-    const QTextCursor cursor = editor->textCursor();
-    const EditorSemanticContext semanticContext =
-        semanticContextForCursor(cursor, false);
-    const CommandModeInputState inputState =
-        semanticService()->commandModeInputState(semanticContext);
-    if (!inputState.matched
-        || inputState.intent != InlineCommandIntent::HeaderInclude
-        || inputState.prefixPosition < 0) {
-        return context;
-    }
-
-    context.active = true;
-    context.prefix = inputState.input.trimmed();
-    context.replacementStartPosition =
-        cursor.block().position() + inputState.prefixPosition;
-    context.replacementEndPosition = cursor.position();
     return context;
 }
 

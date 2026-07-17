@@ -10,7 +10,6 @@
 #include "slangmanager.h"
 #include "symbolrelationshipengine.h"
 #include <QVector>
-#include <QSet>
 
 class SemanticIndexSnapshot;
 struct SemanticSymbolRecord;
@@ -40,8 +39,6 @@ public:
                                     QObject *parent = nullptr);
     ~SmartRelationshipBuilder();
 
-    void analyzeFile(const QString& fileName, const QString& content);
-
     QVector<RelationshipToAdd> computeRelationships(
         const QString& fileName,
         const QString& content,
@@ -59,29 +56,12 @@ public:
         const QStringList& filePaths,
         const QStringList& includeDirs,
         const QHash<QString, QString>& defines) const;
-    void analyzeFileIncremental(const QString& fileName, const QString& content,
-                               const QList<int>& changedLines);
-
-    void analyzeModuleRelationships(const QString& fileName, const QString& content);
-    void analyzeVariableRelationships(const QString& fileName, const QString& content);
-    void analyzeTaskFunctionRelationships(const QString& fileName, const QString& content);
-    void analyzeAssignmentRelationships(const QString& fileName, const QString& content);
-    void analyzeInstantiationRelationships(const QString& fileName, const QString& content);
-
-    void setAnalysisDepth(int depth) { analysisDepth = depth; }
-    void setEnableAdvancedAnalysis(bool enable) { enableAdvancedAnalysis = enable; }
-    void setConfidenceThreshold(int threshold) { confidenceThreshold = threshold; }
 
     void cancelAnalysis();
     void resetCancellation();
     bool isCancelled() const { return cancelled; }
 
-    void analyzeMultipleFiles(const QStringList& fileNames,
-                             const QHash<QString, QString>& fileContents);
-
-
 signals:
-    void analysisCompleted(const QString& fileName, int relationshipsFound);
     void analysisError(const QString& fileName, const QString& error);
     void analysisCancelled();
 
@@ -90,7 +70,6 @@ private:
     SlangManager* m_slangManager = nullptr;
     SymbolRecordProvider m_symbolRecordProvider;
 
-    int analysisDepth = 3;
     bool enableAdvancedAnalysis = true;
     int confidenceThreshold = 50;
 
@@ -116,7 +95,6 @@ private:
         QHash<QString, QString> defines;
     };
 
-    void setupAnalysisContext(const QString& fileName, AnalysisContext& context);
     void setupAnalysisContextFromRecords(
         const QString& fileName,
         const QList<SemanticSymbolRecord>& fileSymbolRecords,
@@ -140,9 +118,6 @@ private:
     QString findContainingModule(int lineNumber, const AnalysisContext& context);
     int getContainingModuleLocalHandle(int lineNumber,
                                        const AnalysisContext& context);
-    QSet<int> getAffectedSymbolLocalHandles(const QString& content,
-                                            const QList<int>& changedLines,
-                                            AnalysisContext& context);
 
     QVector<RelationshipToAdd>* collectResults = nullptr;
     void addRelationshipWithContext(int fromHandle, int toHandle,

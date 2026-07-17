@@ -624,39 +624,6 @@ void appendTextualControlAndCallFallback(RelationshipExtractionInfo& info,
 
 } // namespace
 
-void SmartRelationshipBuilder::setupAnalysisContext(const QString& fileName,
-                                                    AnalysisContext& context)
-{
-    context.currentFileName = fileName;
-    context.fileSymbolRecords = m_symbolRecordProvider
-        ? m_symbolRecordProvider(fileName)
-        : QList<SemanticSymbolRecord>();
-    context.localSymbolHandles.clear();
-    context.recordsByName.clear();
-    context.recordsByLocalHandle.clear();
-    context.symbolRecordLookupCache.clear();
-    context.containingModuleHandleByLine.clear();
-    context.moduleRecords.clear();
-    context.recordsByName.reserve(context.fileSymbolRecords.size());
-    context.recordsByLocalHandle.reserve(context.fileSymbolRecords.size());
-
-    for (const SemanticSymbolRecord& record : std::as_const(context.fileSymbolRecords)) {
-        context.localSymbolHandles[record.name] = record.localHandle;
-        context.recordsByName[record.name].append(record);
-        if (record.localHandle >= 0)
-            context.recordsByLocalHandle.insert(record.localHandle, record);
-
-        if (SymbolTaxonomy::isModuleDeclaration(
-                semanticMetadataForSymbolRecord(record))) {
-            context.moduleRecords.append(record);
-            if (context.currentModuleLocalHandle == -1) {
-                context.currentModuleName = record.name;
-                context.currentModuleLocalHandle = record.localHandle;
-            }
-        }
-    }
-}
-
 void SmartRelationshipBuilder::setupAnalysisContextFromRecords(
     const QString& fileName,
     const QList<SemanticSymbolRecord>& fileSymbolRecords,

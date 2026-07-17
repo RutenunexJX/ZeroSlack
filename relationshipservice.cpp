@@ -264,14 +264,6 @@ QList<RelationshipResult> RelationshipService::findOutgoingRelationships(
     return findRelationships(outgoingQuery);
 }
 
-QList<RelationshipResult> RelationshipService::findIncomingRelationships(
-    const RelationshipQuery& query) const
-{
-    RelationshipQuery incomingQuery = query;
-    incomingQuery.outgoing = false;
-    return findRelationships(incomingQuery);
-}
-
 RelationshipReport RelationshipService::findRelationshipReport(
     const RelationshipBrowseQuery& query) const
 {

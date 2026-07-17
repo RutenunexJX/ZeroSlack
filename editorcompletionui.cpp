@@ -131,21 +131,22 @@ EditorCompletionPopupKeyContext EditorCompletionUi::popupKeyContextForEvent(
 }
 
 void EditorCompletionUi::updateCommandModeCompletions(
-    const EditorCommandModeCompletionRefreshState& commandState) const
+    const CommandModeCompletionState& state,
+    bool allowSymbolFallback) const
 {
     const bool usesSymbolRecords =
-        commandState.completion.intent == InlineCommandIntent::SemanticCompletion
-        || commandState.completion.intent == InlineCommandIntent::PackageImport;
-    if (!usesSymbolRecords || commandState.completion.helpRequested) {
-        model->updateInlineCommandCompletions(commandState.completion);
+        state.intent == InlineCommandIntent::SemanticCompletion
+        || state.intent == InlineCommandIntent::PackageImport;
+    if (!usesSymbolRecords || state.helpRequested) {
+        model->updateInlineCommandCompletions(state);
         return;
     }
 
     model->updateSymbolRecordCompletions(
-        commandState.completion.symbolRecords,
-        commandState.completion.completionPrefix,
-        commandState.completion.commandKind,
-        !commandState.suppressDefaultSymbolFallback);
+        state.symbolRecords,
+        state.completionPrefix,
+        state.commandKind,
+        allowSymbolFallback);
 }
 
 void EditorCompletionUi::updateIncludeFileCompletions(

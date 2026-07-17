@@ -412,7 +412,6 @@ CommandModeCompletionState CompletionService::commandModeCompletionState(
 
     state.matched = true;
     state.helpRequested = inputState.helpRequested;
-    state.exitRequested = inputState.exitRequested;
     state.intent = inputState.intent;
     state.prefixPosition = inputState.prefixPosition;
     state.input = inputState.input;
@@ -430,9 +429,6 @@ CommandModeCompletionState CompletionService::commandModeCompletionState(
         state.showCompletions = true;
         return state;
     }
-
-    if (state.exitRequested)
-        return state;
 
     if (state.intent == InlineCommandIntent::CodeTemplate) {
         state.templateItems = matchingCodeTemplateItems(

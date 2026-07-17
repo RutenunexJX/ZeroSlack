@@ -112,8 +112,6 @@ private:
     bool applyCompletionPopupKeyState(
         QKeyEvent* event,
         const CompletionPopupKeyState& popupState);
-    bool refreshCommandModeCompletion(
-        const EditorSemanticContext& context);
     void refreshSymbolCompletion(
         EditorSemanticContext context,
         const QTextBlock& currentBlock);

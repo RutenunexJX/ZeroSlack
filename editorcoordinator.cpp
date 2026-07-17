@@ -6,7 +6,6 @@
 #include "editorsemanticcontextservice.h"
 #include "definitionpreviewservice.h"
 #include "filecommandcoordinator.h"
-#include "modemanager.h"
 #include "mycodeeditor.h"
 #include "navigationcommandcoordinator.h"
 #include "saferenameservice.h"
@@ -405,11 +404,9 @@ QList<int> wordPositionsInText(const QString& text, const QString& word)
 }
 
 EditorCoordinator::EditorCoordinator(TabManager* tabManager,
-                                     ModeManager* modeManager,
                                      QObject* parent)
     : QObject(parent)
     , tabManager(tabManager)
-    , modeManager(modeManager)
 {
     semanticRuntime.init();
 }
@@ -685,7 +682,7 @@ void EditorCoordinator::setFoldShelfItemConsumedHandler(
 
 void EditorCoordinator::connectSignals()
 {
-    if (signalsConnected || !tabManager || !modeManager)
+    if (signalsConnected || !tabManager)
         return;
 
     connect(tabManager, &TabManager::tabCreated,

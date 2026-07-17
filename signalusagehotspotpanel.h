@@ -48,7 +48,6 @@ public:
                                  const QString& moduleName,
                                  const QString& fileName);
     bool selectUsageForTest(int itemIndex);
-    void setMatrixModeForTest(bool matrixMode);
     bool triggerFirstUsageNavigationForTest();
 
 protected:

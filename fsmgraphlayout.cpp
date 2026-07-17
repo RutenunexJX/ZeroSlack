@@ -354,18 +354,6 @@ QPointF segmentNormal(const QPointF& a, const QPointF& b)
     return QPointF(-dy / length, dx / length);
 }
 
-QPointF labelCandidateOnSegment(const QPointF& a,
-                                const QPointF& b,
-                                qreal t,
-                                qreal offset)
-{
-    const QPointF base(a.x() + (b.x() - a.x()) * t,
-                       a.y() + (b.y() - a.y()) * t);
-    const QPointF normal = segmentNormal(a, b);
-    return QPointF(base.x() + normal.x() * offset,
-                   base.y() + normal.y() * offset);
-}
-
 QPointF chooseLabelAnchor(const QList<QPointF>& points,
                           const QSizeF& labelSize,
                           const QList<QRectF>& blockedRects,
@@ -653,15 +641,6 @@ QPointF chooseCurvedEdgeLabelAnchor(
     const QPointF fallback = curveMid + outward * (initialOffset + 512.0);
     usedLabelRects.append(labelRectAt(fallback, labelSize));
     return fallback;
-}
-
-int stableStateIndex(const QList<FsmStateRow>& rows, const QString& stateName)
-{
-    for (int i = 0; i < rows.size(); ++i) {
-        if (rows.at(i).stateDisplayName == stateName)
-            return i;
-    }
-    return -1;
 }
 
 int chooseInitialState(const QList<FsmStateRow>& rows,
@@ -1400,21 +1379,6 @@ void separateWeakComponents(QList<WorkVertex>& vertices,
         vertex.x -= centerShift;
 }
 
-qreal boundedPortOffset(const QRectF& rect,
-                        qreal desiredMinor,
-                        qreal laneOffset,
-                        FsmLayoutDirection direction)
-{
-    const qreal rectMinorCenter = minorCoord(rect.center(), direction);
-    const qreal halfSpan = (direction == FsmLayoutDirection::LeftRight
-            ? rect.height()
-            : rect.width()) / 2.0
-        - 18.0;
-    return qBound(-halfSpan,
-                  desiredMinor - rectMinorCenter + laneOffset,
-                  halfSpan);
-}
-
 QPointF quadraticControlPoint(const QPointF& start,
                               const QPointF& end,
                               qreal bend)
@@ -1943,76 +1907,6 @@ int independentRenderedCrossingCount(
         }
     }
     return crossingCount;
-}
-
-QList<QPointF> removeRedundantPolylinePoints(const QList<QPointF>& points)
-{
-    QList<QPointF> result;
-    for (const QPointF& point : points)
-        appendPoint(result, point);
-    bool changed = true;
-    while (changed && result.size() > 2) {
-        changed = false;
-        for (int i = 1; i + 1 < result.size(); ++i) {
-            const QPointF a = result.at(i - 1);
-            const QPointF b = result.at(i);
-            const QPointF c = result.at(i + 1);
-            const qreal direct = QLineF(a, c).length();
-            const qreal via = QLineF(a, b).length() + QLineF(b, c).length();
-            if (qAbs(via - direct) < 1.0
-                || qAbs(orientation(a, b, c)) < 1.0) {
-                result.removeAt(i);
-                changed = true;
-                break;
-            }
-        }
-    }
-    return result;
-}
-
-QList<QPointF> simplifyLongEdgePoints(
-    const QList<QPointF>& original,
-    int fromNodeId,
-    int toNodeId,
-    const QHash<int, QRectF>& rectByStateIndex)
-{
-    QList<QPointF> points = removeRedundantPolylinePoints(original);
-    if (points.size() <= 3)
-        return points;
-
-    const QList<QPointF> direct{points.first(), points.last()};
-    if (!pointListCrossesNonEndpointNode(direct,
-                                         fromNodeId,
-                                         toNodeId,
-                                         rectByStateIndex)) {
-        return direct;
-    }
-
-    int bestPivot = -1;
-    qreal bestLength = std::numeric_limits<qreal>::max();
-    for (int i = 1; i + 1 < points.size(); ++i) {
-        const QList<QPointF> candidate{points.first(),
-                                       points.at(i),
-                                       points.last()};
-        if (pointListCrossesNonEndpointNode(candidate,
-                                            fromNodeId,
-                                            toNodeId,
-                                            rectByStateIndex)) {
-            continue;
-        }
-        const qreal length = QLineF(candidate.at(0), candidate.at(1)).length()
-            + QLineF(candidate.at(1), candidate.at(2)).length();
-        if (length < bestLength) {
-            bestLength = length;
-            bestPivot = i;
-        }
-    }
-    if (bestPivot >= 0) {
-        return {points.first(),
-                points.at(bestPivot),
-                points.last()};
-    }
-    return points;
 }
 
 } // namespace

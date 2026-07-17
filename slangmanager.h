@@ -68,21 +68,6 @@ public:
     SlangManager() = default;
     ~SlangManager() = default;
 
-    /// Parses the file content with Slang, elaborates, and collects all module/interface/program
-    /// instantiations. Returns empty list on parse/elaboration failure (exceptions caught).
-    /// Line numbers in the result are 1-based.
-    QVector<ModuleInstantiationInfo> extractModuleInstantiations(const QString& fileName,
-                                                                  const QString& content,
-                                                                  const QStringList& includeDirs = {},
-                                                                  const QHash<QString, QString>& defines = {});
-
-    /// Parses file content once with Slang and returns all relationship facts used by the
-    /// relationship builder.
-    RelationshipExtractionInfo extractRelationshipInfo(const QString& fileName,
-                                                       const QString& content,
-                                                       const QStringList& includeDirs = {},
-                                                       const QHash<QString, QString>& defines = {});
-
     /// Parses all workspace files together and returns relationship facts grouped
     /// by normalized source file path. This preserves cross-compilation-unit
     /// typedefs/packages for relationship extraction.
@@ -91,30 +76,6 @@ public:
         const QStringList& includeDirs = {},
         const QHash<QString, QString>& defines = {},
         std::function<bool()> isCancelled = nullptr);
-
-    /// Parses file content with Slang and returns resolved task/function calls, excluding system calls.
-    QVector<SubroutineCallInfo> extractSubroutineCalls(const QString& fileName,
-                                                       const QString& content,
-                                                       const QStringList& includeDirs = {},
-                                                       const QHash<QString, QString>& defines = {});
-
-    /// Parses file content with Slang and returns assignment left/right symbol references.
-    QVector<AssignmentInfo> extractAssignments(const QString& fileName,
-                                               const QString& content,
-                                               const QStringList& includeDirs = {},
-                                               const QHash<QString, QString>& defines = {});
-
-    /// Parses file content with Slang and returns symbols read by condition/control expressions.
-    QVector<ConditionReferenceInfo> extractConditionReferences(const QString& fileName,
-                                                               const QString& content,
-                                                               const QStringList& includeDirs = {},
-                                                               const QHash<QString, QString>& defines = {});
-
-    /// Parses file content with Slang and returns signal references from event/timing controls.
-    QVector<TimingSignalInfo> extractTimingSignals(const QString& fileName,
-                                                   const QString& content,
-                                                   const QStringList& includeDirs = {},
-                                                   const QHash<QString, QString>& defines = {});
 
     /// Single-file / hot-edit: parse content and extract semantic-native symbol records.
     /// Returns empty list on parse/elaboration failure (exceptions caught).

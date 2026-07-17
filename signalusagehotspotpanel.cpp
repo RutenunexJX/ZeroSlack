@@ -68,27 +68,6 @@ QList<SignalUsageHotspotRole> hotspotRoles()
             SignalUsageHotspotRole::Unknown};
 }
 
-InsightVisualRole visualRoleForHotspotRole(SignalUsageHotspotRole role)
-{
-    switch (role) {
-    case SignalUsageHotspotRole::Write:
-        return InsightVisualRole::Write;
-    case SignalUsageHotspotRole::Read:
-        return InsightVisualRole::Read;
-    case SignalUsageHotspotRole::Port:
-        return InsightVisualRole::Port;
-    case SignalUsageHotspotRole::Condition:
-        return InsightVisualRole::Condition;
-    case SignalUsageHotspotRole::Case:
-        return InsightVisualRole::Case;
-    case SignalUsageHotspotRole::Timing:
-        return InsightVisualRole::Timing;
-    case SignalUsageHotspotRole::Unknown:
-        return InsightVisualRole::Unknown;
-    }
-    return InsightVisualRole::Unknown;
-}
-
 QString compactFileName(const QString& fileName)
 {
     const QString leaf = QFileInfo(fileName).fileName();
@@ -384,31 +363,6 @@ QColor heatColorForRole(SignalUsageHotspotRole role, double intensity)
 QPen hotspotSelectedPen(qreal width = 2.0)
 {
     return QPen(InsightVisualStyle::theme().accent, width);
-}
-
-QString inspectorTextForItem(const SignalUsageHotspotItem& item)
-{
-    QStringList lines;
-    lines.append(QStringLiteral("Role: %1")
-                     .arg(SignalUsageHotspotService::roleDisplayName(item.role)));
-    if (!item.moduleName.isEmpty())
-        lines.append(QStringLiteral("Module: %1").arg(item.moduleName));
-    if (!item.fileName.isEmpty()) {
-        lines.append(QStringLiteral("File: %1:%2")
-                         .arg(compactFileName(item.fileName))
-                         .arg(item.line));
-    }
-    if (!item.roleReasonDisplayName.isEmpty())
-        lines.append(QStringLiteral("Reason: %1")
-                         .arg(item.roleReasonDisplayName));
-    if (!item.evidenceKindDisplayName.isEmpty())
-        lines.append(QStringLiteral("Evidence: %1")
-                         .arg(item.evidenceKindDisplayName));
-    if (!item.evidenceText.isEmpty())
-        lines.append(item.evidenceText);
-    if (!item.snippet.isEmpty())
-        lines.append(QStringLiteral("Snippet: %1").arg(item.snippet.trimmed()));
-    return lines.join(QLatin1Char('\n'));
 }
 
 class HotspotUsageBlockItem : public QGraphicsRectItem
@@ -1043,11 +997,6 @@ bool SignalUsageHotspotPanel::selectUsageForTest(int itemIndex)
     renderTrack();
     showInspectorForItem(itemIndex);
     return true;
-}
-
-void SignalUsageHotspotPanel::setMatrixModeForTest(bool matrixMode)
-{
-    setMode(matrixMode);
 }
 
 bool SignalUsageHotspotPanel::triggerFirstUsageNavigationForTest()

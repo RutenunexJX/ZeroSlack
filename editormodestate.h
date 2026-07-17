@@ -9,12 +9,9 @@ public:
     bool commandModeActive = false;
     bool comModeActive = false;
     QString comBuffer;
-    bool commandModeExitedByDoubleSpace = false;
 
     void setCommandModeActive(bool active);
     void noteCompletionTimerLine(int lineNumber);
-    void markCommandModeExitedByDoubleSpace();
-    void resetCommandModeExit();
     void clearCommandMode();
     void setComModeActive(bool active);
     void setComBuffer(const QString& input);

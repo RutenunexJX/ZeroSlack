@@ -182,16 +182,6 @@ CommandModeCompletionState EditorSemanticContextService::commandModeCompletionSt
     return EditorCompletionQueryHelper::commandModeCompletionState(context);
 }
 
-EditorCommandModeCompletionRefreshState
-EditorSemanticContextService::commandModeCompletionRefreshState(
-    const EditorSemanticContext& context,
-    bool exitedByDoubleSpace) const
-{
-    return EditorCompletionQueryHelper::commandModeCompletionRefreshState(
-        context,
-        exitedByDoubleSpace);
-}
-
 CommandModeInputState EditorSemanticContextService::commandModeInputState(
     const EditorSemanticContext& context) const
 {

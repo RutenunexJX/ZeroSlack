@@ -59,12 +59,6 @@ void StateTransitionGraphService::setSemanticIndex(SemanticIndex* semanticIndex)
     triggerService()->setSemanticIndex(semanticIndex);
 }
 
-void StateTransitionGraphService::setTriggerService(
-    StateTransitionTriggerService* triggerService)
-{
-    trigger = triggerService;
-}
-
 StateTransitionGraphReport
 StateTransitionGraphService::buildStateTransitionGraph(
     const StateTransitionGraphQuery& query) const

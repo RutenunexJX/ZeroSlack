@@ -98,18 +98,6 @@ bool appendDiagnostics(const slang::SourceManager& sourceManager,
     return true;
 }
 
-QList<SemanticDiagnostic> collectDiagnostics(slang::ast::Compilation& compilation)
-{
-    QList<SemanticDiagnostic> result;
-    const slang::SourceManager* sm = compilation.getSourceManager();
-    if (!sm)
-        return result;
-
-    QSet<QString> seen;
-    appendDiagnostics(*sm, compilation.getAllDiagnostics(), &result, &seen);
-    return result;
-}
-
 QList<SemanticDiagnostic> workspaceUndefinedMacroDiagnostics(
     const QStringList& filePaths,
     const QHash<QString, QString>& defines,

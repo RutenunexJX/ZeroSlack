@@ -57,27 +57,15 @@ public:
     void addRelationship(int fromSymbolId, int toSymbolId, RelationType type,
                         const QString& context = "", int confidence = 100,
                         const SemanticSourceRange& evidenceRange = {});
-    void removeRelationship(int fromSymbolId, int toSymbolId, RelationType type);
     void removeAllRelationships(int symbolId);
     void clearAllRelationships();
 
     QList<int> getRelatedSymbols(int symbolId, RelationType type, bool outgoing = true) const;
-    QList<int> getAllRelatedSymbols(int symbolId, bool outgoing = true) const;
     RelationshipEdgeMetadata getRelationshipMetadata(
         int fromSymbolId,
         int toSymbolId,
         RelationType type) const;
     bool hasRelationship(int fromSymbolId, int toSymbolId, RelationType type) const;
-
-    QList<int> getModuleChildren(int moduleId) const;
-    QList<int> getSymbolReferences(int symbolId) const;
-    QList<int> getSymbolDependencies(int symbolId) const;
-    QList<int> getModuleInstances(int moduleId) const;
-    QList<int> getTaskCalls(int taskId) const;
-
-    QList<int> findRelationshipPath(int fromSymbolId, int toSymbolId, int maxDepth = 3) const;
-    QList<int> getInfluencedSymbols(int symbolId, int depth = 2) const;
-    QList<int> getSymbolHierarchy(int rootSymbolId) const;
 
     void beginUpdate();
     void endUpdate();
@@ -86,15 +74,9 @@ public:
     void rebuildAllRelationships();
 
     int getRelationshipCount() const;
-    int getRelationshipCount(RelationType type) const;
-    QStringList getRelationshipSummary() const;
-    void printRelationshipGraph(int symbolId, int depth = 2) const;
-
-    QString relationshipTypeToString(RelationType type) const;
 
 signals:
     void relationshipAdded(int fromSymbolId, int toSymbolId, RelationType type);
-    void relationshipRemoved(int fromSymbolId, int toSymbolId, RelationType type);
     void relationshipsCleared();
 
 private slots:
@@ -144,16 +126,7 @@ private:
     void addToTypeIndex(int fromId, int toId, RelationType type);
     void removeFromTypeIndex(int fromId, int toId, RelationType type);
     QList<SemanticSymbolRecord> symbolRecords(const QString& fileName = QString()) const;
-
-    void findPathRecursive(int currentId, int targetId, int currentDepth, int maxDepth,
-                          QSet<int>& visited, QList<int>& currentPath,
-                          QList<QList<int>>& allPaths) const;
-
-    void getInfluencedSymbolsRecursive(int symbolId, int currentDepth, int maxDepth,
-                                     QSet<int>& visited, QList<int>& result) const;
 };
-
-SymbolRelationshipEngine::RelationType stringToRelationshipType(const QString& typeStr);
 
 Q_DECLARE_METATYPE(SymbolRelationshipEngine::RelationType)
 

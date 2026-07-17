@@ -63,7 +63,6 @@ public:
     // File management
     QStringList getAllFiles() const;
     QStringList getSystemVerilogFiles() const;
-    QStringList getFilesByExtension(const QString& extension) const;
     QString resolveIncludePath(const QString& includePath,
                                const QString& currentFile = QString()) const;
 
@@ -100,7 +99,6 @@ private:
         void clear();
         void setScannedFiles(ProjectModel* projectModel,
                              const QStringList& scannedFiles);
-        QStringList filesByExtension(const QString& extension) const;
     };
 
     struct WorkspaceWatcher {

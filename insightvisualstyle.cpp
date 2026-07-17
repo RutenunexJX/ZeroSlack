@@ -240,11 +240,6 @@ QPen InsightVisualStyle::panelBorderPen()
     return hairlinePen(theme().border);
 }
 
-QPen InsightVisualStyle::rolePen(InsightVisualRole role, qreal width)
-{
-    return QPen(roleColor(role), width);
-}
-
 QPen InsightVisualStyle::selectedPen(qreal width)
 {
     return QPen(theme().selected, width);
@@ -844,36 +839,6 @@ QString InsightVisualStyle::toolbarButtonStyleSheet(const QString& objectName)
              t.accent.name(),
              t.panelSubtle.name(),
              t.textMuted.name());
-}
-
-QString InsightVisualStyle::inspectorCardStyleSheet(const QString& objectName)
-{
-    const InsightTheme t = theme();
-    return QStringLiteral(
-               "%1 {"
-               "  background: %2;"
-               "  border: 1px solid %3;"
-               "  border-radius: 8px;"
-               "  color: %4;"
-               "}")
-        .arg(objectSelector(QStringLiteral("QWidget"), objectName),
-             t.panelBackground.name(),
-             t.border.name(),
-             t.textPrimary.name());
-}
-
-QString InsightVisualStyle::legendSwatchStyleSheet(const QColor& color)
-{
-    const InsightTheme t = theme();
-    return QStringLiteral(
-               "background: %1;"
-               "border: 1px solid %2;"
-               "border-radius: 3px;"
-               "min-width: 10px;"
-               "max-width: 10px;"
-               "min-height: 10px;"
-               "max-height: 10px;")
-        .arg(color.name(), t.border.name());
 }
 
 void InsightVisualStyle::applyPanel(QWidget* widget)

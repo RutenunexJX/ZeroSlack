@@ -5,7 +5,6 @@
 #include <QFont>
 #include <QFontDatabase>
 #include <QPlainTextEdit>
-#include <QSet>
 #include <QSignalBlocker>
 #include <QTextBlock>
 #include <QTextBlockFormat>
@@ -176,24 +175,6 @@ bool EditorAppearance::ensureApplicationFontsLoaded()
             loaded = true;
     }
     return loaded;
-}
-
-QStringList EditorAppearance::systemMonospaceFontFamilies()
-{
-    ensureApplicationFontsLoaded();
-    const QFontDatabase database;
-    QStringList families;
-    QSet<QString> seen;
-    for (const QString& family : database.families()) {
-        if (!database.isFixedPitch(family)
-            || isCjkFontFamily(family)
-            || seen.contains(family.toCaseFolded())) {
-            continue;
-        }
-        seen.insert(family.toCaseFolded());
-        families.append(family);
-    }
-    return families;
 }
 
 QString EditorAppearance::fallbackFontFamily()

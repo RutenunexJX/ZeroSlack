@@ -18,7 +18,6 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
 - Each completed milestone must update `readme.md`, `plan.md`, and `goal.md`.
 - Each completed milestone must run verification appropriate to the changed
   scope.
-- Each completed milestone must be committed and pushed.
 - Do not add unlisted features to a milestone.
 - Do not put semantic policy, workspace scans, or Slang execution in UI code.
 - Do not restore qmake/pro/pri, SVLexer, old Tree-sitter symbol parsing, regex
@@ -173,8 +172,8 @@ Current baseline highlights:
   reason.
 - Verification for State Transition Graph real usability repair now rests on
   focused regression and GUI smoke coverage: `completion_test`,
-  `relationship_test`, `gui_smoke_test`, `jump_test`, and the lightweight
-  `full_feature_audit_test` inventory.
+  `relationship_test`, `gui_smoke_test`, `jump_test`,
+  `insight_visual_style_test`, and feature-specific CTest guards.
 - Corpus audit is retired as an acceptance signal. Future GUI-discovered
   defects should be reduced into small fixtures in the focused tests.
 - Most recent completed milestone: import-aware SystemVerilog package symbol
@@ -1416,18 +1415,13 @@ feature-specific tests for future coverage.
 
 ## Full Feature Audit
 
-Goal: inventory the current implemented feature surface, connect entries to
-services/tests, and keep a lightweight feature health report without mutating
-real corpus files.
+Goal: retired. Feature ownership coverage now belongs in focused regression
+targets, GUI smoke, and feature-specific guards.
 
 Milestones:
 
 - FFA.1 Feature inventory and matrix.
-  (complete: `full_feature_audit_test` writes
-  `test_sv/full_feature_audit_report.json` and
-  `test_sv/full_feature_audit_report.md` with 23 feature rows, 93 user entry
-  points, 75 service/test touchpoints, automation method, coverage ownership,
-  pollution risk, status, reason, and next action.)
+  (retired: the former generated inventory and report files have been removed.)
 - FFA.2 Full recursive corpus integration.
   (retired: full-feature no longer consumes `corpus_audit_test` output; it now
   records focused regression and GUI-smoke ownership.)
@@ -1437,9 +1431,8 @@ Milestones:
   expressed as deterministic case-level skipped reasons; other expensive RTL
   sweeps are likewise bounded and remain pass.)
 - FFA.4 Verification and documentation.
-  (complete: focused regression CTest runs cover
-  `completion_test`, `jump_test`, `relationship_test`, `gui_smoke_test`, and
-  `full_feature_audit_test`.)
+  (retired: focused regression CTest runs now cover current executable targets
+  and feature-specific guards.)
 - FFA.5 Acceptance repair after independent rerun.
   (complete: stale fast-regression fixtures were repaired instead of
   converting failures to known issues. FSM assertions now use structural
@@ -1447,8 +1440,8 @@ Milestones:
   `state_q <= state_d` update required by structural discovery, `jump_test`
   resolves `test_sv/new` from the source tree when launched from the build
   directory, and package member definition checks provide explicit
-  `import snap_pkg::*;` context. Individual `completion_test`, `jump_test`,
-  `gui_smoke_test`, and `full_feature_audit_test` CTest runs pass.)
+  `import snap_pkg::*;` context. The former generated inventory target has
+  since been removed.)
 
 ## Completion Order
 

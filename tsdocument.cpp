@@ -135,16 +135,6 @@ bool TSDocument::hasError() const
     return ts_node_has_error(ts_tree_root_node(m_tree));
 }
 
-const char* TSDocument::namedNodeTypeAt(int charOffset) const
-{
-    const uint32_t b = static_cast<uint32_t>(charOffset) * 2u;
-    TSNode node = ts_node_named_descendant_for_byte_range(ts_tree_root_node(m_tree), b, b);
-    if (ts_node_is_null(node))
-        return "";
-    const char* t = ts_node_type(node);
-    return t ? t : "";
-}
-
 bool TSDocument::isCommentAt(int charOffset) const
 {
     if (charOffset < 0)
@@ -689,12 +679,6 @@ bool isPackageToolSameKind(PackageToolKind kind, TSNode node)
         return nodeTypeIs(node, "function_declaration");
     }
     return false;
-}
-
-bool isModuleHeaderNode(TSNode node)
-{
-    return nodeTypeIs(node, "module_ansi_header")
-        || nodeTypeIs(node, "module_nonansi_header");
 }
 
 bool isModuleBodyBoundaryNode(TSNode node)

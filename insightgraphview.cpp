@@ -34,11 +34,6 @@ void InsightGraphView::applyInsightGraphStyle()
     setStyleSheet(InsightVisualStyle::graphViewStyleSheet(objectName()));
 }
 
-void InsightGraphView::setWheelZoomEnabled(bool enabled)
-{
-    wheelZoomEnabled = enabled;
-}
-
 void InsightGraphView::setZoomRange(qreal minimumScale, qreal maximumScale)
 {
     if (minimumScale <= 0.0 || maximumScale <= 0.0
@@ -49,27 +44,12 @@ void InsightGraphView::setZoomRange(qreal minimumScale, qreal maximumScale)
     maximumZoom = maximumScale;
 }
 
-void InsightGraphView::setZoomStep(qreal step)
-{
-    if (step > 1.0)
-        zoomStep = step;
-}
-
 void InsightGraphView::setGridVisible(bool visible)
 {
     if (gridVisible == visible)
         return;
     gridVisible = visible;
     viewport()->update();
-}
-
-void InsightGraphView::setGridSize(qreal size)
-{
-    if (size <= 0.0)
-        return;
-    gridSize = size;
-    if (gridVisible)
-        viewport()->update();
 }
 
 void InsightGraphView::setClearSelectionOnEmptyLeftClick(bool enabled)
@@ -175,7 +155,7 @@ void InsightGraphView::drawBackground(QPainter* painter, const QRectF& rect)
 
 void InsightGraphView::wheelEvent(QWheelEvent* event)
 {
-    if (!event || !wheelZoomEnabled) {
+    if (!event) {
         QGraphicsView::wheelEvent(event);
         return;
     }

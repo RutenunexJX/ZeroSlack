@@ -24,9 +24,7 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
 
 - Do not discard user changes. Do not touch dirty RTL fixtures unless the user
   asks for that exact change.
-- Do not push unless explicitly asked. The active long-term goal mode is an
-  explicit instruction that every completed milestone must be committed and
-  pushed.
+- Do not push unless explicitly asked by the current task owner.
 - Keep docs short, current, and useful for the next development turn.
 
 ## Current Product Baseline
@@ -73,8 +71,8 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
   QSS and into the shared tab builder.
 - Corpus audit is retired as an acceptance signal. The current strategy is
   targeted regression fixtures plus GUI smoke and feature-specific tests:
-  `completion_test`, `relationship_test`, `gui_smoke_test`, `jump_test`, and
-  the lightweight `full_feature_audit_test` inventory.
+  `completion_test`, `relationship_test`, `gui_smoke_test`, `jump_test`,
+  `insight_visual_style_test`, and feature-specific CTest guards.
 - Current handoff state: `InsightGraphView` now centralizes graph background
   styling, pan/drag mode, wheel zoom, zoom range, fit, center, reset, optional
   grid, empty-canvas selection clearing, zoom-change callbacks, and
@@ -807,10 +805,9 @@ Do not add unlisted long-term goals without explicit user approval.
   channel, but current screenshots show no clipping, detached labels, or
   geometry overlap.
 - Latest Module Block Diagram real-usability pass: Debug targets
-  `completion_test`, `relationship_test`, `gui_smoke_test`,
-  `full_feature_audit_test`, and `jump_test` compile/link; focused CTest runs
-  passed. Regression coverage should stay in compact fixtures and GUI smoke,
-  not in a broad corpus audit.
+  `completion_test`, `relationship_test`, `gui_smoke_test`, and `jump_test`
+  compile/link; focused CTest runs passed. Regression coverage should stay in
+  compact fixtures and GUI smoke, not in a broad corpus audit.
 - Latest RTL Insight core-view modernization pass: Module Block Diagram now has
   reference-aligned toolbar/inspector/instances-table structure and nested
   module-only blocks; State Transition Graph keeps structural FSM role gating
@@ -1032,23 +1029,10 @@ Do not add unlisted long-term goals without explicit user approval.
   issues should be reduced into small fixtures and added to
   `relationship_test`, `completion_test`, `gui_smoke_test`, `jump_test`, or a
   feature-specific regression target.
-- Full Feature Audit: `full_feature_audit_test` now inventories the
-  broader product surface and writes `test_sv/full_feature_audit_report.json`
-  plus `test_sv/full_feature_audit_report.md`. It is a lightweight feature
-  inventory and ownership check, not a corpus acceptance gate. Verification
-  should pair it with the focused regression targets and GUI smoke.
-- Full Feature Audit acceptance repair: fast regression failures after
-  `fbf7273` were traced to stale test context, not new product behavior. The
-  FSM assertions now use structural current<=next fixtures instead of
-  name-gated `ns`/`*_ns` assumptions; the GUI FSM graph fixture includes the
-  clocked `state_q <= state_d` update required by structural discovery; and
-  `jump_test` now resolves `test_sv/new` from the source tree when run from the
-  build directory while package-member definition assertions provide an
-  explicit `import snap_pkg::*;` context. Verification passed individually:
-  `ctest -R "^completion_test$" --output-on-failure`; `ctest -R
-  "^jump_test$" --output-on-failure`; `ctest -R "^gui_smoke_test$"
-  --output-on-failure`; `ctest -R "^full_feature_audit_test$"
-  --output-on-failure`.
+- Full Feature Audit: retired and removed. The former inventory test and its
+  generated reports are no longer current product health signals. Keep feature
+  ownership coverage in focused regression targets, GUI smoke, and
+  feature-specific guards.
 - Latest FSM drawing rewrite: `fsmgraphlayout.h/.cpp` now owns pure Sugiyama
   layout data, and `test_sv/fsm_ui_snapshot_test.cpp` is restored as a new
   snapshot harness for the rewritten renderer. The old coordinator-local FSM

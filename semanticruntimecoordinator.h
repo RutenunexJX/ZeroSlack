@@ -21,7 +21,6 @@ public:
 
     SymbolRelationshipEngine* relationshipEngine() const;
     SmartRelationshipBuilder* relationshipBuilder() const;
-    SlangManager* slangManager() const;
     void configureScheduler(AnalysisScheduler* scheduler) const;
 
 private:

@@ -2,8 +2,6 @@
 #include "semanticindexsnapshot.h"
 #include "symboltaxonomy.h"
 
-#include <algorithm>
-
 namespace {
 QString rootNameForAccessPath(const QString& accessPath)
 {
@@ -430,37 +428,6 @@ QString SmartRelationshipBuilder::findContainingModule(int lineNumber, const Ana
     return it == context.recordsByLocalHandle.constEnd()
         ? QString()
         : it.value().name;
-}
-
-QSet<int> SmartRelationshipBuilder::getAffectedSymbolLocalHandles(
-    const QString& content,
-    const QList<int>& changedLines,
-    AnalysisContext& context)
-{
-    QSet<int> affectedHandles;
-    if (changedLines.isEmpty())
-        return affectedHandles;
-
-    QStringList lines = content.split('\n');
-    int numLines = lines.size();
-    int minChanged = *std::min_element(changedLines.begin(), changedLines.end());
-    int maxChanged = *std::max_element(changedLines.begin(), changedLines.end());
-    int minLine = qMax(0, minChanged - 2);
-    int maxLine = qMin(numLines - 1, maxChanged + 2);
-
-    for (const SemanticSymbolRecord& record
-         : std::as_const(context.fileSymbolRecords)) {
-        if (record.location.startLine >= minLine
-            && record.location.startLine <= maxLine) {
-            affectedHandles.insert(record.localHandle);
-        }
-    }
-    for (int lineNum : changedLines) {
-        int moduleHandle = getContainingModuleLocalHandle(lineNum, context);
-        if (moduleHandle >= 0)
-            affectedHandles.insert(moduleHandle);
-    }
-    return affectedHandles;
 }
 
 void SmartRelationshipBuilder::analyzeParameterRelationships(const QString& content, AnalysisContext& context)

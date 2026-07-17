@@ -264,7 +264,6 @@ struct CommandModeMatch {
 struct CommandModeInputState {
     bool matched = false;
     bool helpRequested = false;
-    bool exitRequested = false;
     InlineCommandIntent intent = InlineCommandIntent::SemanticCompletion;
     int prefixPosition = -1;
     QString input;
@@ -286,7 +285,6 @@ struct CommandModeCompletionQuery {
 struct CommandModeCompletionState {
     bool matched = false;
     bool helpRequested = false;
-    bool exitRequested = false;
     bool hidePopup = false;
     bool showCompletions = false;
     InlineCommandIntent intent = InlineCommandIntent::SemanticCompletion;

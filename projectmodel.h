@@ -16,7 +16,6 @@ struct ProjectSnapshot {
     QHash<QString, QString> defines;
     QStringList fileExtensions;
     QHash<QString, SymbolTaxonomy::SourceRole> sourceRoles;
-    QString filelistPath;
     QString topModule;
     QStringList ignoredPaths;
 
@@ -40,11 +39,6 @@ public:
     void closeProject();
 
     void setScannedFiles(const QStringList& files);
-    void setIncludeDirs(const QStringList& dirs);
-    void setDefines(const QHash<QString, QString>& newDefines);
-    void setFileExtensions(const QStringList& extensions);
-    void setFilelistPath(const QString& path);
-    void setTopModule(const QString& moduleName);
     void setIgnoredPaths(const QStringList& paths);
     void setWorkspaceConfiguration(const QStringList& includeDirs,
                                    const QHash<QString, QString>& defines,
@@ -56,16 +50,10 @@ public:
     QString workspaceRoot() const;
     QStringList allFiles() const;
     QStringList systemVerilogFiles() const;
-    QStringList includeDirs() const;
-    QHash<QString, QString> defines() const;
     QStringList fileExtensions() const;
-    QHash<QString, SymbolTaxonomy::SourceRole> sourceRoles() const;
     SymbolTaxonomy::SourceRole sourceRoleForFile(const QString& filePath) const;
-    QStringList filesForSourceRole(SymbolTaxonomy::SourceRole role) const;
     QStringList designSourceFiles() const;
     QStringList headerSourceFiles() const;
-    QString filelistPath() const;
-    QString topModule() const;
     QStringList ignoredPaths() const;
 
     bool isOpen() const;

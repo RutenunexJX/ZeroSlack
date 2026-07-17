@@ -184,7 +184,6 @@ public:
 
     static QPen hairlinePen(const QColor& color);
     static QPen panelBorderPen();
-    static QPen rolePen(InsightVisualRole role, qreal width = 1.4);
     static QPen selectedPen(qreal width = 2.2);
     static QPen hoverPen(qreal width = 1.8);
     static QBrush panelBrush();
@@ -221,8 +220,6 @@ public:
         const QString& objectName = {});
     static QString segmentedCheckBoxStyleSheet(
         const QString& objectName = {});
-    static QString inspectorCardStyleSheet(const QString& objectName = {});
-    static QString legendSwatchStyleSheet(const QColor& color);
 
     static void applyPanel(QWidget* widget);
     static void applyTitleLabel(QLabel* label);

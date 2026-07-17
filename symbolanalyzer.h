@@ -83,13 +83,11 @@ public:
     void analyzeOpenDocuments(const QList<OpenDocumentContent>& documents);
     void analyzeWorkspace(WorkspaceManager* workspaceManager, std::function<bool()> isCancelled = nullptr);
     void analyzeProject(const ProjectSnapshot& project, std::function<bool()> isCancelled = nullptr);
-    void startAnalyzeWorkspaceAsync(WorkspaceManager* workspaceManager, std::function<bool()> isCancelled = nullptr);
     void startAnalyzeProjectAsync(const ProjectSnapshot& project, std::function<bool()> isCancelled = nullptr);
     void analyzeFile(const QString& filePath);
     void analyzeFileContent(const QString& fileName, const QString& content);
     void analyzeFileContentAsync(const QString& fileName, const QString& content);
     void setWorkspaceProtectedFiles(const QStringList& fileNames);
-    void setWorkspacePriorityFileCount(int fileCount);
     void setWorkspacePriorityPublicationCheckpoints(
         const QList<int>& checkpoints);
     void setWorkspaceFileAnalysisBands(
@@ -98,7 +96,6 @@ public:
     void cancelWorkspaceAnalysisAndInvalidate();
 
     // Utility
-    bool isAnalysisNeeded(const QString& fileName, const QString& content) const;
     bool hasSignificantChanges(const QString& oldContent, const QString& newContent) const;
     void invalidateCache();
 

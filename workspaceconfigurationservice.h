@@ -33,7 +33,6 @@ public:
     WorkspaceConfiguration load(const QString& workspaceRoot) const;
     bool save(const WorkspaceConfiguration& configuration) const;
     bool clear(const QString& workspaceRoot) const;
-    QString storageDescription() const;
 
     WorkspaceConfiguration normalized(
         const WorkspaceConfiguration& configuration) const;

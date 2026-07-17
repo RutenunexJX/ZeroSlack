@@ -76,8 +76,6 @@ public:
                                     const QString& primaryText,
                                     const QString& secondaryText = QString()) const;
     QRectF graphLastFitRectForTest() const;
-    qreal graphCurrentZoomForTest() const;
-    bool graphNodeRectsOverlapForTest() const;
     int graphSelectedItemCountForTest() const;
     QStringList graphInspectorRowsForTest() const;
     QStringList graphTableRowsForTest() const;
@@ -90,14 +88,8 @@ public:
     bool selectGraphItemForTest(const QString& elementKind,
                                 const QString& primaryText,
                                 const QString& secondaryText = QString());
-    bool selectGraphItemAtScenePointForTest(qreal sceneX, qreal sceneY);
-    QString graphItemAtScenePointSummaryForTest(qreal sceneX,
-                                                qreal sceneY) const;
     bool selectGraphTableRowForTest(const QString& primaryText,
                                     const QString& secondaryText = QString());
-    int graphElementLineForTest(const QString& elementKind,
-                                const QString& primaryText,
-                                const QString& secondaryText = QString()) const;
     bool triggerGraphNavigationForTest(const QString& elementKind,
                                        const QString& primaryText,
                                        const QString& secondaryText = QString());

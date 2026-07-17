@@ -95,11 +95,6 @@ void GlobalControlPanel::focusSearch()
     }
 }
 
-QString GlobalControlPanel::queryText() const
-{
-    return searchEdit ? searchEdit->text() : QString();
-}
-
 void GlobalControlPanel::setQueryChangedHandler(
     std::function<void(const QString&)> handler)
 {

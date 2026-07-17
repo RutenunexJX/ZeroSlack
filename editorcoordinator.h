@@ -18,7 +18,6 @@ enum class FormatterProfile;
 struct EditorSemanticContext;
 struct EditorSourceNavigationTarget;
 enum class SourceSymbolAction;
-class ModeManager;
 class MyCodeEditor;
 class NavigationCommandCoordinator;
 class QMenu;
@@ -32,7 +31,6 @@ class EditorCoordinator : public QObject
 
 public:
     explicit EditorCoordinator(TabManager* tabManager,
-                               ModeManager* modeManager,
                                QObject* parent = nullptr);
 
     void setWorkflowDependencies(
@@ -154,7 +152,6 @@ private:
         const EditorSemanticContext& context) const;
 
     TabManager* tabManager = nullptr;
-    ModeManager* modeManager = nullptr;
     EditorAppearanceSettings* appearanceSettings = nullptr;
     FormatterSettings* formatterSettings = nullptr;
     QMetaObject::Connection appearanceSettingsConnection;

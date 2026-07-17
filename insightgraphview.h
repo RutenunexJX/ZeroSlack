@@ -16,11 +16,8 @@ public:
     explicit InsightGraphView(QGraphicsScene* scene, QWidget* parent = nullptr);
 
     void applyInsightGraphStyle();
-    void setWheelZoomEnabled(bool enabled);
     void setZoomRange(qreal minimumScale, qreal maximumScale);
-    void setZoomStep(qreal step);
     void setGridVisible(bool visible);
-    void setGridSize(qreal size);
     void setClearSelectionOnEmptyLeftClick(bool enabled);
 
     void setPressHandler(
@@ -48,7 +45,6 @@ protected:
     void mouseDoubleClickEvent(QMouseEvent* event) override;
 
 private:
-    bool wheelZoomEnabled = true;
     bool gridVisible = false;
     bool clearSelectionOnEmptyLeftClick = false;
     qreal minimumZoom = 0.18;

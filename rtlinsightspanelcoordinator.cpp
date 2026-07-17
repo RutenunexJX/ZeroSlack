@@ -303,183 +303,6 @@ bool painterPathHasCurve(const QPainterPath& path)
     return false;
 }
 
-qreal distanceBetweenPoints(const QPointF& lhs, const QPointF& rhs)
-{
-    return std::hypot(lhs.x() - rhs.x(), lhs.y() - rhs.y());
-}
-
-qreal distancePointToSegment(const QPointF& point,
-                             const QPointF& start,
-                             const QPointF& end)
-{
-    const qreal dx = end.x() - start.x();
-    const qreal dy = end.y() - start.y();
-    const qreal lengthSquared = dx * dx + dy * dy;
-    if (lengthSquared < 0.001)
-        return distanceBetweenPoints(point, start);
-    const qreal t =
-        std::clamp(((point.x() - start.x()) * dx
-                    + (point.y() - start.y()) * dy)
-                       / lengthSquared,
-                   0.0,
-                   1.0);
-    return distanceBetweenPoints(point,
-                                 QPointF(start.x() + t * dx,
-                                         start.y() + t * dy));
-}
-
-QList<QPointF> sampledPathPoints(const QPainterPath& path, int sampleCount = 80)
-{
-    QList<QPointF> points;
-    if (path.elementCount() <= 0)
-        return points;
-    const int count = qMax(2, sampleCount);
-    points.reserve(count + 1);
-    for (int i = 0; i <= count; ++i)
-        points.append(path.pointAtPercent(static_cast<qreal>(i) / count));
-    return points;
-}
-
-qreal distancePointToPath(const QPointF& point, const QPainterPath& path)
-{
-    const QList<QPointF> points = sampledPathPoints(path);
-    if (points.isEmpty())
-        return std::numeric_limits<qreal>::max();
-    qreal best = std::numeric_limits<qreal>::max();
-    for (int i = 1; i < points.size(); ++i)
-        best = qMin(best, distancePointToSegment(point,
-                                                 points.at(i - 1),
-                                                 points.at(i)));
-    return best;
-}
-
-qreal distanceBetweenPaths(const QPainterPath& lhs, const QPainterPath& rhs)
-{
-    const QList<QPointF> lhsPoints = sampledPathPoints(lhs, 56);
-    const QList<QPointF> rhsPoints = sampledPathPoints(rhs, 56);
-    if (lhsPoints.isEmpty() || rhsPoints.isEmpty())
-        return -1.0;
-    qreal best = std::numeric_limits<qreal>::max();
-    for (int i = 10; i + 10 < lhsPoints.size(); ++i) {
-        for (int j = 10; j + 10 < rhsPoints.size(); ++j)
-            best = qMin(best, distanceBetweenPoints(lhsPoints.at(i),
-                                                    rhsPoints.at(j)));
-    }
-    return best == std::numeric_limits<qreal>::max() ? -1.0 : best;
-}
-
-qreal orientation(const QPointF& a, const QPointF& b, const QPointF& c)
-{
-    return (b.x() - a.x()) * (c.y() - a.y())
-        - (b.y() - a.y()) * (c.x() - a.x());
-}
-
-bool segmentBoxesOverlap(const QPointF& a,
-                         const QPointF& b,
-                         const QPointF& c,
-                         const QPointF& d)
-{
-    return qMax(qMin(a.x(), b.x()), qMin(c.x(), d.x()))
-            <= qMin(qMax(a.x(), b.x()), qMax(c.x(), d.x())) + 0.1
-        && qMax(qMin(a.y(), b.y()), qMin(c.y(), d.y()))
-            <= qMin(qMax(a.y(), b.y()), qMax(c.y(), d.y())) + 0.1;
-}
-
-bool pointOnSegment(const QPointF& point,
-                    const QPointF& start,
-                    const QPointF& end)
-{
-    return qAbs(orientation(start, end, point)) < 0.1
-        && point.x() >= qMin(start.x(), end.x()) - 0.1
-        && point.x() <= qMax(start.x(), end.x()) + 0.1
-        && point.y() >= qMin(start.y(), end.y()) - 0.1
-        && point.y() <= qMax(start.y(), end.y()) + 0.1;
-}
-
-bool lineSegmentsIntersect(const QPointF& a,
-                           const QPointF& b,
-                           const QPointF& c,
-                           const QPointF& d)
-{
-    if (!segmentBoxesOverlap(a, b, c, d))
-        return false;
-
-    const qreal o1 = orientation(a, b, c);
-    const qreal o2 = orientation(a, b, d);
-    const qreal o3 = orientation(c, d, a);
-    const qreal o4 = orientation(c, d, b);
-
-    if ((o1 > 0.0 && o2 < 0.0 || o1 < 0.0 && o2 > 0.0)
-        && (o3 > 0.0 && o4 < 0.0 || o3 < 0.0 && o4 > 0.0)) {
-        return true;
-    }
-
-    return pointOnSegment(c, a, b)
-        || pointOnSegment(d, a, b)
-        || pointOnSegment(a, c, d)
-        || pointOnSegment(b, c, d);
-}
-
-bool pathSamplesCross(const QPainterPath& lhs, const QPainterPath& rhs)
-{
-    const QList<QPointF> lhsPoints = sampledPathPoints(lhs, 96);
-    const QList<QPointF> rhsPoints = sampledPathPoints(rhs, 96);
-    if (lhsPoints.size() < 2 || rhsPoints.size() < 2)
-        return false;
-
-    for (int i = 1; i < lhsPoints.size(); ++i) {
-        const QPointF a = lhsPoints.at(i - 1);
-        const QPointF b = lhsPoints.at(i);
-        for (int j = 1; j < rhsPoints.size(); ++j) {
-            const QPointF c = rhsPoints.at(j - 1);
-            const QPointF d = rhsPoints.at(j);
-            const bool nearSharedEndpoint =
-                distanceBetweenPoints(a, c) < 5.0
-                || distanceBetweenPoints(a, d) < 5.0
-                || distanceBetweenPoints(b, c) < 5.0
-                || distanceBetweenPoints(b, d) < 5.0;
-            if (nearSharedEndpoint)
-                continue;
-            if (lineSegmentsIntersect(a, b, c, d))
-                return true;
-        }
-    }
-    return false;
-}
-
-bool pathSamplesIntersectNodeRects(const QPainterPath& path,
-                                   const QList<QRectF>& nodeRects)
-{
-    if (nodeRects.isEmpty())
-        return false;
-    const int sampleCount = 90;
-    for (int i = 11; i <= sampleCount - 11; ++i) {
-        const QPointF point =
-            path.pointAtPercent(static_cast<qreal>(i) / sampleCount);
-        for (const QRectF& rect : nodeRects) {
-            if (rect.adjusted(2.0, 2.0, -2.0, -2.0).contains(point))
-                return true;
-        }
-    }
-    return false;
-}
-
-qreal painterPathTangentAngleAtEnd(const QPainterPath& path)
-{
-    if (path.elementCount() <= 1)
-        return 0.0;
-    const QPointF end = path.pointAtPercent(1.0);
-    for (qreal percent : {0.98, 0.95, 0.90, 0.80}) {
-        const QPointF previous = path.pointAtPercent(percent);
-        if (distanceBetweenPoints(previous, end) > 0.5)
-            return std::atan2(end.y() - previous.y(), end.x() - previous.x());
-    }
-    const QPainterPath::Element last = path.elementAt(path.elementCount() - 1);
-    const QPainterPath::Element previous =
-        path.elementAt(qMax(0, path.elementCount() - 2));
-    return std::atan2(last.y - previous.y, last.x - previous.x);
-}
-
 class RtlInsightGraphNodeItem : public QGraphicsRectItem
 {
 public:
@@ -941,28 +764,6 @@ void applyFsmGraphHover(QGraphicsScene* scene,
     }
 }
 
-QPainterPath straightArrowPath(const QPointF& start, const QPointF& end)
-{
-    QPainterPath path(start);
-    path.lineTo(end);
-    return path;
-}
-
-QPainterPath curvedArrowPath(const QPointF& start,
-                             const QPointF& end,
-                             qreal bend)
-{
-    QPainterPath path(start);
-    const QPointF mid = (start + end) / 2.0;
-    const QPointF normal(-(end.y() - start.y()), end.x() - start.x());
-    const qreal length = std::hypot(normal.x(), normal.y());
-    const QPointF offset = length > 0.1
-        ? QPointF(normal.x() / length * bend, normal.y() / length * bend)
-        : QPointF(0, bend);
-    path.quadTo(mid + offset, end);
-    return path;
-}
-
 QPainterPath fsmLayoutEdgePath(const FsmLayoutEdge& edge)
 {
     QPainterPath path;
@@ -1021,14 +822,6 @@ QPainterPath fsmLayoutEdgePath(const FsmLayoutEdge& edge)
     return path;
 }
 
-QRectF insightNodeRectAt(qreal centerX, qreal centerY)
-{
-    return QRectF(centerX - kInsightNodeWidth / 2.0,
-                  centerY - kInsightNodeHeight / 2.0,
-                  kInsightNodeWidth,
-                  kInsightNodeHeight);
-}
-
 QSet<QString> deadFsmStateNames(const FsmGraph& graph)
 {
     QSet<QString> names;
@@ -1037,30 +830,6 @@ QSet<QString> deadFsmStateNames(const FsmGraph& graph)
             names.insert(row.stateDisplayName);
     }
     return names;
-}
-
-QPointF rectAnchorToward(const QRectF& rect, const QPointF& target)
-{
-    const QPointF center = rect.center();
-    const qreal dx = target.x() - center.x();
-    const qreal dy = target.y() - center.y();
-    if (std::abs(dx) > std::abs(dy)) {
-        return QPointF(dx >= 0 ? rect.right() : rect.left(),
-                       center.y() + dy / std::max<qreal>(1.0, std::abs(dx))
-                                      * rect.width() / 2.0);
-    }
-    return QPointF(center.x() + dx / std::max<qreal>(1.0, std::abs(dy))
-                              * rect.height() / 2.0,
-                   dy >= 0 ? rect.bottom() : rect.top());
-}
-
-QPointF circularPosition(int index, int count, qreal radius)
-{
-    if (count <= 1)
-        return QPointF(0, 100);
-    const qreal angle = -kPi / 2.0 + 2.0 * kPi * index / count;
-    return QPointF(std::cos(angle) * radius,
-                   120 + std::sin(angle) * radius);
 }
 
 QGraphicsItem* graphItemByData(QGraphicsScene* scene,
@@ -1200,15 +969,6 @@ bool graphItemReadable(const QGraphicsItem* item)
         }
     }
     return true;
-}
-
-int indexInList(const QList<QString>& values, const QString& value)
-{
-    for (int i = 0; i < values.size(); ++i) {
-        if (values.at(i) == value)
-            return i;
-    }
-    return -1;
 }
 
 QString fsmTransitionConditionId(int transitionIndex)
@@ -2565,32 +2325,6 @@ QRectF RtlInsightsPanelCoordinator::graphLastFitRectForTest() const
     return lastGraphFitRect;
 }
 
-qreal RtlInsightsPanelCoordinator::graphCurrentZoomForTest() const
-{
-    return insightsGraphView ? insightsGraphView->currentZoom() : 0.0;
-}
-
-bool RtlInsightsPanelCoordinator::graphNodeRectsOverlapForTest() const
-{
-    if (!insightsGraphScene)
-        return false;
-    QList<QRectF> rects;
-    for (QGraphicsItem* item : insightsGraphScene->items()) {
-        if (dynamic_cast<RtlInsightGraphNodeItem*>(item)) {
-            rects.append(item->sceneBoundingRect());
-        }
-    }
-    for (int i = 0; i < rects.size(); ++i) {
-        for (int j = i + 1; j < rects.size(); ++j) {
-            if (rects.at(i).adjusted(1.0, 1.0, -1.0, -1.0)
-                    .intersects(rects.at(j).adjusted(1.0, 1.0, -1.0, -1.0))) {
-                return true;
-            }
-        }
-    }
-    return false;
-}
-
 int RtlInsightsPanelCoordinator::graphSelectedItemCountForTest() const
 {
     if (!insightsGraphScene)
@@ -2787,28 +2521,6 @@ bool RtlInsightsPanelCoordinator::selectGraphItemAtScenePoint(
         graphItemAtScenePoint(insightsGraphScene, scenePoint));
 }
 
-bool RtlInsightsPanelCoordinator::selectGraphItemAtScenePointForTest(
-    qreal sceneX,
-    qreal sceneY)
-{
-    return selectGraphItemAtScenePoint(QPointF(sceneX, sceneY));
-}
-
-QString RtlInsightsPanelCoordinator::graphItemAtScenePointSummaryForTest(
-    qreal sceneX,
-    qreal sceneY) const
-{
-    QGraphicsItem* item =
-        graphItemAtScenePoint(insightsGraphScene, QPointF(sceneX, sceneY));
-    if (!item)
-        return QString();
-    return QStringLiteral("%1|%2|%3|%4")
-        .arg(item->data(kGraphKindRole).toString(),
-             item->data(kGraphPrimaryRole).toString(),
-             item->data(kGraphSecondaryRole).toString(),
-             item->data(kGraphBadgeRole).toString());
-}
-
 bool RtlInsightsPanelCoordinator::selectGraphTableRowForTest(
     const QString& primaryText,
     const QString& secondaryText)
@@ -2832,18 +2544,6 @@ bool RtlInsightsPanelCoordinator::selectGraphTableRowForTest(
         return true;
     }
     return false;
-}
-
-int RtlInsightsPanelCoordinator::graphElementLineForTest(
-    const QString& elementKind,
-    const QString& primaryText,
-    const QString& secondaryText) const
-{
-    QGraphicsItem* item = graphItemByData(insightsGraphScene,
-                                          elementKind,
-                                          primaryText,
-                                          secondaryText);
-    return item ? item->data(kGraphLineRole).toInt() : -1;
 }
 
 bool RtlInsightsPanelCoordinator::triggerGraphNavigationForTest(

@@ -280,7 +280,6 @@ public:
     void updateSymbolRecordsForFiles(
         const QList<SemanticFileSymbolUpdate>& updates,
         bool buildRelationships = true);
-    void publishCompleteSnapshot(QList<SemanticDiagnostic> diagnostics = {});
     void publishSnapshotReplacingDiagnostics(
         const QStringList& fileNames,
         const QList<SemanticDiagnostic>& diagnostics);
@@ -399,14 +398,8 @@ public:
     QList<SemanticRelationship> relationshipsForStableKey(
         const SymbolStableKey& key,
         bool outgoing = true) const;
-    QList<SemanticRelationship> relationshipsForScopeName(
-        const QString& scopeName,
-        bool outgoing = true) const;
     QList<SemanticRelationshipResult> getRelationshipResults(
         const SymbolStableKey& key,
-        bool outgoing = true) const;
-    QList<SemanticRelationshipResult> getRelationshipResults(
-        const QString& scopeName,
         bool outgoing = true) const;
 
     QList<SemanticDiagnostic> getDiagnostics(const QString& fileName = QString()) const;

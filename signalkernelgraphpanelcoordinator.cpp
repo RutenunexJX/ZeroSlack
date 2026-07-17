@@ -950,15 +950,6 @@ void SignalKernelGraphPanelCoordinator::showSignalKernelGraphForSymbol(
     showDock();
 }
 
-void SignalKernelGraphPanelCoordinator::showSignalKernelGraphForStableKey(
-    const SymbolStableKey& stableKey)
-{
-    currentQuery = {};
-    currentQuery.signalStableKey = stableKey;
-    refresh();
-    showDock();
-}
-
 void SignalKernelGraphPanelCoordinator::refresh()
 {
     if (!currentQuery.signalStableKey.isValid()

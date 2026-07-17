@@ -5,14 +5,12 @@
 #include "tabmanager.h"
 #include "workspacemanager.h"
 #include "projectmodel.h"
-#include "modemanager.h"
 #include "analysisscheduler.h"
 #include "analysiscoordinator.h"
 #include "analysisprogresscoordinator.h"
 #include "commodecoordinator.h"
 #include "editorcoordinator.h"
 #include "filecommandcoordinator.h"
-#include "modecommandcoordinator.h"
 #include "navigationcommandcoordinator.h"
 #include "navigationmanager.h"
 #include "navigationpanecoordinator.h"
@@ -72,6 +70,7 @@
 #include <QPushButton>
 #include <QMessageBox>
 #include <QSignalBlocker>
+#include <QShortcut>
 #include <QSize>
 #include <QStatusBar>
 #include <QTabBar>
@@ -139,7 +138,6 @@ MainWindow::MainWindow(QWidget *parent)
     workspaceManager = std::unique_ptr<WorkspaceManager>(new WorkspaceManager(this));
     setupWorkspaceBar();
     setupWorkspaceProgressIndicator();
-    modeManager = std::unique_ptr<ModeManager>(new ModeManager(ui->tabWidget, this));
     navigationManager = std::unique_ptr<NavigationManager>(new NavigationManager(this));  // NEW
     analysisScheduler = std::unique_ptr<AnalysisScheduler>(new AnalysisScheduler(this));
     analysisProgressCoordinator =
@@ -151,7 +149,6 @@ MainWindow::MainWindow(QWidget *parent)
     setupSemanticDocks();
     setupEditorAppearanceSettings();
     setupFileCommandCoordinator();
-    setupModeCommandCoordinator();
     setupFoldBlockShelf();
     setupWorkspaceMenu();
     setupViewMenu();
@@ -226,6 +223,13 @@ void MainWindow::applyModernShellStyle()
     if (ui && ui->tabWidget) {
         ui->tabWidget->setDocumentMode(true);
         ui->tabWidget->setIconSize(QSize(14, 14));
+        QTabBar* bar = ui->tabWidget->tabBar();
+        if (bar) {
+            if (bar->objectName().isEmpty())
+                bar->setObjectName(QStringLiteral("mainEditorTabBar"));
+            bar->setStyleSheet(
+                InsightVisualStyle::tabBarStyleSheet(bar->objectName()));
+        }
     }
     if (workspaceTabBar)
         workspaceTabBar->setDrawBase(false);
@@ -970,6 +974,14 @@ void MainWindow::setupNavigationPane()
     splitDockWidget(shellNavigationRailDock,
                     navigationPane->dock(),
                     Qt::Horizontal);
+    auto* navigationShortcut = new QShortcut(QKeySequence("Ctrl+1"), this);
+    connect(navigationShortcut,
+            &QShortcut::activated,
+            this,
+            [this]() {
+                if (navigationPane)
+                    navigationPane->toggleVisible();
+            });
 }
 
 void MainWindow::setupNavigationCommandCoordinator()
@@ -1036,32 +1048,12 @@ void MainWindow::setupFileCommandCoordinator()
         ui->open_direction_as_workspace);
 }
 
-void MainWindow::setupModeCommandCoordinator()
-{
-    modeCommandCoordinator = std::make_unique<ModeCommandCoordinator>(
-        modeManager.get(), navigationPane.get(), this);
-    modeCommandCoordinator->connectSignals();
-}
-
 void MainWindow::setupGlobalControl()
 {
     globalControlCoordinator =
         std::make_unique<GlobalControlCoordinator>(this, this);
-    globalControlCoordinator->setProjectModel(
-        workspaceManager ? workspaceManager->getProjectModel() : nullptr);
-    globalControlCoordinator->setSemanticIndex(SemanticIndex::getInstance());
     globalControlCoordinator->setActionHandler(
         [this](const GlobalControlItem& item) {
-            if (item.kind == GlobalControlItemKind::File
-                || item.kind == GlobalControlItemKind::Symbol) {
-                if (navigationCommandCoordinator)
-                    navigationCommandCoordinator->navigateToFileAndLine(
-                        item.filePath,
-                        item.line,
-                        item.column);
-                return;
-            }
-
             if (item.id == QStringLiteral("ow r")) {
                 showRecentWorkspacesDialog();
             } else if (item.id == QStringLiteral("ow s save")) {
@@ -1082,65 +1074,13 @@ void MainWindow::setupGlobalControl()
                     for (int i = 0; i < count; ++i)
                         fileCommandCoordinator->openDirectoryAsWorkspace();
                 }
-            } else if (item.id == QStringLiteral("ow")) {
-                if (statusBar())
-                    statusBar()->showMessage(
-                        QStringLiteral("Use ow <num>, for example ow 1"),
-                        3000);
-            } else if (item.id == QStringLiteral("openFile")) {
-                if (fileCommandCoordinator)
-                    fileCommandCoordinator->openFile();
-            } else if (item.id == QStringLiteral("saveFile")) {
-                if (fileCommandCoordinator)
-                    fileCommandCoordinator->saveFile();
-            } else if (item.id == QStringLiteral("saveAs")) {
-                if (fileCommandCoordinator)
-                    fileCommandCoordinator->saveFileAs();
-            } else if (item.id == QStringLiteral("find")) {
-                if (MyCodeEditor* editor = tabManager ? tabManager->getCurrentEditor() : nullptr) {
-                    QKeyEvent press(QEvent::KeyPress,
-                                    Qt::Key_F,
-                                    Qt::ControlModifier,
-                                    QStringLiteral("f"));
-                    QCoreApplication::sendEvent(editor, &press);
-                }
-            } else if (item.id == QStringLiteral("fd r")
-                       || item.id == QStringLiteral("fd")) {
+            } else if (item.id == QStringLiteral("fd r")) {
                 if (MyCodeEditor* editor = tabManager ? tabManager->getCurrentEditor() : nullptr)
                     editor->startFoldRegionMarkMode();
-            } else if (item.id == QStringLiteral("fd s")
-                       || item.id == QStringLiteral("fds")) {
+            } else if (item.id == QStringLiteral("fd s")) {
                 showFoldBlockShelf();
                 if (MyCodeEditor* editor = tabManager ? tabManager->getCurrentEditor() : nullptr)
                     editor->startFoldShelfMode();
-            } else if (item.id == QStringLiteral("showNavigation")) {
-                showPanelById(QStringLiteral("navigation"));
-            } else if (item.id == QStringLiteral("showProblems")) {
-                showPanelById(QStringLiteral("problems"));
-            } else if (item.id == QStringLiteral("showActivity")) {
-                showPanelById(QStringLiteral("activity"));
-            } else if (item.id == QStringLiteral("showReferences")) {
-                showPanelById(QStringLiteral("references"));
-            } else if (item.id == QStringLiteral("showRelationships")) {
-                showPanelById(QStringLiteral("relationships"));
-            } else if (item.id == QStringLiteral("showRtlInsights")
-                       || item.kind == GlobalControlItemKind::RtlInsight) {
-                showPanelById(QStringLiteral("rtlInsights"));
-            } else if (item.id == QStringLiteral("showFoldShelf")) {
-                showPanelById(QStringLiteral("foldShelf"));
-            } else if (item.id == QStringLiteral("showEditorAppearance")
-                       || item.id == QStringLiteral("editorAppearance")) {
-                showPanelById(QStringLiteral("editorAppearance"));
-            } else if (item.id == QStringLiteral("resetPanelLayout")) {
-                resetPanelLayout();
-            } else if (item.id == QStringLiteral("toggleNavigation")) {
-                togglePanelById(QStringLiteral("navigation"));
-            } else if (item.id == QStringLiteral("toggleProblems")) {
-                togglePanelById(QStringLiteral("problems"));
-            } else if (item.id == QStringLiteral("toggleActivity")) {
-                togglePanelById(QStringLiteral("activity"));
-            } else if (item.id == QStringLiteral("toggleRtlInsights")) {
-                togglePanelById(QStringLiteral("rtlInsights"));
             }
         });
     globalControlCoordinator->install();
@@ -2230,7 +2170,7 @@ void MainWindow::setupEditorAppearanceSettings()
 void MainWindow::setupEditorCoordinator()
 {
     editorCoordinator = std::make_unique<EditorCoordinator>(
-        tabManager.get(), modeManager.get(), this);
+        tabManager.get(), this);
     editorCoordinator->setWorkflowDependencies(
         workspaceManager.get(),
         fileCommandCoordinator.get(),
@@ -2267,21 +2207,6 @@ void MainWindow::closeEvent(QCloseEvent *event)
     if (event && event->isAccepted())
         saveWorkspaceSession(false);
 }
-
-void MainWindow::keyPressEvent(QKeyEvent *event)
-{
-    if (modeCommandCoordinator && modeCommandCoordinator->handleKeyPress(event))
-        return;
-    QMainWindow::keyPressEvent(event);
-}
-
-void MainWindow::keyReleaseEvent(QKeyEvent *event)
-{
-    if (modeCommandCoordinator && modeCommandCoordinator->handleKeyRelease(event))
-        return;
-    QMainWindow::keyReleaseEvent(event);
-}
-
 
 void MainWindow::setupSemanticRuntime()
 {

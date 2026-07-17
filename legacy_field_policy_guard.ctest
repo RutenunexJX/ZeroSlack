@@ -78,7 +78,6 @@ set(RECORD_FIRST_METADATA_FILES
     fsmgraphservice.cpp
     modulebriefservice.cpp
     semanticdiffservice.cpp
-    scopebandservice.cpp
     semanticindexcompletioncontext.cpp
     semanticindexcompletionqueries.cpp
     semanticindexcompletionrelationships.cpp
@@ -110,7 +109,6 @@ set(RECORD_METADATA_HELPER_FILES
     modulebriefservice.cpp
     navigationservice.cpp
     navigationservicehierarchy.cpp
-    scopebandservice.cpp
     searchservice.cpp
     semanticdiffservice.cpp
     semanticindexcompletionqueries.cpp
@@ -126,7 +124,6 @@ set(RECORD_NATIVE_SERVICE_FILES
     relationshipanalysisworker.cpp
     semanticdiffservice.cpp
     signaljourneyservice.cpp
-    scopebandservice.cpp
     smartrelationshipbuilder.cpp
     smartrelationshipbuilderanalysis.cpp
     smartrelationshipbuildercontext.cpp
@@ -290,6 +287,13 @@ set(PHASE_J_FIXTURE_CLEANUP_PATTERNS
 )
 
 set(PHASE_L_REGEX_CLEANUP_ALLOWLIST
+    editorcompletionworkflow.cpp
+    editorcoordinator.cpp
+    foldblockshelfmodel.cpp
+    ghostannotationservice.cpp
+    moduleblockdiagramservice.cpp
+    semanticindexlookup.cpp
+    smartrelationshipbuildercontext.cpp
 )
 
 set(PHASE_L_REGEX_CLEANUP_PATTERNS
@@ -331,14 +335,6 @@ set(F3_REMOVED_COMPATIBILITY_PATTERNS
     "completionservice.h|findCommandCompletionSymbols[ \t\r\n]*\\("
     "completionsemanticquery.h|commandSymbols[ \t\r\n]*\\("
     "completionsemanticquery.cpp|CompletionSemanticQuery::commandSymbols[ \t\r\n]*\\("
-    "completionmanager.h|getScoredSymbolMatches[ \t\r\n]*\\("
-    "completionmanager.cpp|CompletionManager::getScoredSymbolMatches[ \t\r\n]*\\("
-    "completionmanager.h|getModuleInternalSymbolsByType[ \t\r\n]*\\("
-    "completionmanager.cpp|CompletionManager::getModuleInternalSymbolsByType[ \t\r\n]*\\("
-    "completionmanager.h|getModuleContextSymbolsByType[ \t\r\n]*\\("
-    "completionmanager.cpp|CompletionManager::getModuleContextSymbolsByType[ \t\r\n]*\\("
-    "completionmanager.h|getGlobalSymbolsByType_Info[ \t\r\n]*\\("
-    "completionmanager.cpp|CompletionManager::getGlobalSymbolsByType_Info[ \t\r\n]*\\("
     "completionservice.h|findScoredSymbolCompletionsByType[ \t\r\n]*\\("
     "completionservice.cpp|CompletionService::findScoredSymbolCompletionsByType[ \t\r\n]*\\("
     "completionservice.h|findModuleInternalSymbolInfosByType[ \t\r\n]*\\("
@@ -384,14 +380,6 @@ set(F3_REMOVED_COMPATIBILITY_PATTERNS
     "completionservicesemantic.cpp|CompletionService::findGlobalSymbolsByType[ \t\r\n]*\\("
     "completionservice.h|findVariableCompletionsInScope[ \t\r\n]*\\([^\\)]*sym_list::sym_type_e"
     "completionservicesemantic.cpp|CompletionService::findVariableCompletionsInScope[ \t\r\n]*\\([^\\)]*sym_list::sym_type_e"
-    "completionmanager.h|getSymbolCompletions[ \t\r\n]*\\([^\\)]*sym_list::sym_type_e"
-    "completionmanager.cpp|CompletionManager::getSymbolCompletions[ \t\r\n]*\\([^\\)]*sym_list::sym_type_e"
-    "completionmanager.h|getVariableCompletionsInScope[ \t\r\n]*\\([^\\)]*sym_list::sym_type_e"
-    "completionmanager.cpp|CompletionManager::getVariableCompletionsInScope[ \t\r\n]*\\([^\\)]*sym_list::sym_type_e"
-    "completionmanager.h|getModuleInternalVariablesByType[ \t\r\n]*\\("
-    "completionmanager.cpp|CompletionManager::getModuleInternalVariablesByType[ \t\r\n]*\\("
-    "completionmanager.h|getGlobalSymbolsByType[ \t\r\n]*\\([^\\)]*sym_list::sym_type_e"
-    "completionmanager.cpp|CompletionManager::getGlobalSymbolsByType[ \t\r\n]*\\([^\\)]*sym_list::sym_type_e"
     "completionservice.h|symbolTypeDescription[ \t\r\n]*\\([^\\)]*sym_list::sym_type_e"
     "completionservicesemantic.cpp|CompletionService::symbolTypeDescription[ \t\r\n]*\\([^\\)]*sym_list::sym_type_e"
     "completionservice.h|symbolTypeDescription[ \t\r\n]*\\([^\\)]*sym_list::SymbolInfo"
@@ -637,7 +625,6 @@ set(F3_REMOVED_COMPATIBILITY_PATTERNS
     "modulebriefservice.cpp|getSymbols[ \t\r\n]*\\("
     "fsmgraphservice.cpp|getSymbols[ \t\r\n]*\\("
     "clockresetdomainservice.cpp|getSymbols[ \t\r\n]*\\("
-    "scopebandservice.cpp|getSymbols[ \t\r\n]*\\("
     "signaljourneyservice.cpp|getSymbols[ \t\r\n]*\\("
     "test_sv/relationship_test.cpp|getSymbols[ \t\r\n]*\\("
     "test_sv/gui_smoke_test.cpp|getSymbols[ \t\r\n]*\\("
@@ -652,8 +639,6 @@ set(F3_REMOVED_COMPATIBILITY_PATTERNS
     "semanticindexlookuphelpers.h|legacyTypes"
     "semanticindexlookuphelpers.cpp|legacyTypes"
     "signaljourneyservice.h|struct[ \t\r\n]+SignalJourneyItem[ \t\r\n]*\\{[^}]*SemanticRelationshipResult[ \t\r\n]+relationship"
-    "scopebandservice.h|struct[ \t\r\n]+ScopeBandSymbolRange[ \t\r\n]*\\{[^}]*sym_list::SymbolInfo[ \t\r\n]+symbol"
-    "scopebandwidget.cpp|ScopeBandSymbolRange[^;]*\\.symbol\\."
     "semanticindexrelationships.cpp|getRelationships[ \t\r\n]*\\([^\\)]*defs\\.first\\(\\)\\.symbolId|getRelationships[ \t\r\n]*\\([^\\)]*symbol\\.symbolId|getRelationshipResults[ \t\r\n]*\\([^\\)]*defs\\.first\\(\\)\\.symbolId"
     "semanticindexrelationships.cpp|relationshipStableKeyForSymbol[ \t\r\n]*\\([ \t\r\n]*getSymbolById"
     "semanticindexrelationships.cpp|getSymbolById[ \t\r\n]*\\([ \t\r\n]*relationship\\.fromId"
