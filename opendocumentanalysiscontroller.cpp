@@ -2,13 +2,41 @@
 
 #include "documentmodel.h"
 #include "semanticindex.h"
-#include "svtokenutils.h"
 #include "symbolanalyzer.h"
 
 #include <QTimer>
 
+#include <utility>
+
 namespace {
 constexpr int kAsyncOpenDocumentAnalysisCharacters = 2 * 1024 * 1024;
+
+bool hasNonWhitespaceChange(const QString& oldContent,
+                            const QString& newContent)
+{
+    qsizetype oldIndex = 0;
+    qsizetype newIndex = 0;
+    while (true) {
+        while (oldIndex < oldContent.size()
+               && oldContent.at(oldIndex).isSpace()) {
+            ++oldIndex;
+        }
+        while (newIndex < newContent.size()
+               && newContent.at(newIndex).isSpace()) {
+            ++newIndex;
+        }
+
+        const bool oldAtEnd = oldIndex == oldContent.size();
+        const bool newAtEnd = newIndex == newContent.size();
+        if (oldAtEnd || newAtEnd)
+            return oldAtEnd != newAtEnd;
+        if (oldContent.at(oldIndex) != newContent.at(newIndex))
+            return true;
+
+        ++oldIndex;
+        ++newIndex;
+    }
+}
 }
 
 OpenDocumentAnalysisController::OpenDocumentAnalysisController(QObject* parent)
@@ -18,199 +46,289 @@ OpenDocumentAnalysisController::OpenDocumentAnalysisController(QObject* parent)
 
 OpenDocumentAnalysisController::~OpenDocumentAnalysisController()
 {
-    for (QTimer* timer : openFileAnalysisTimers) {
-        if (timer)
-            timer->stop();
+    shutdown();
+}
+
+void OpenDocumentAnalysisController::shutdown()
+{
+    if (shuttingDown)
+        return;
+    shuttingDown = true;
+
+    const QList<QTimer*> openTimers = openFileAnalysisTimers.values();
+    openFileAnalysisTimers.clear();
+    const QList<QTimer*> changeTimers = fileChangeDebounceTimers.values();
+    fileChangeDebounceTimers.clear();
+    for (QTimer* timer : openTimers) {
+        if (!timer)
+            continue;
+        timer->stop();
+        disconnect(timer, nullptr, this, nullptr);
+        timer->deleteLater();
     }
-    for (QTimer* timer : fileChangeDebounceTimers) {
-        if (timer)
-            timer->stop();
+    for (QTimer* timer : changeTimers) {
+        if (!timer)
+            continue;
+        timer->stop();
+        disconnect(timer, nullptr, this, nullptr);
+        timer->deleteLater();
     }
+
+    symbolAnalyzer = nullptr;
+    documentModel = nullptr;
+    openFileContentProvider = {};
+    workspaceOpenProvider = {};
+    workspaceAnalysisActiveProvider = {};
 }
 
 void OpenDocumentAnalysisController::setDocumentModel(DocumentModel* model)
 {
-    documentModel = model;
+    documentModel = shuttingDown ? nullptr : model;
 }
 
 void OpenDocumentAnalysisController::setSymbolAnalyzer(SymbolAnalyzer* analyzer)
 {
-    symbolAnalyzer = analyzer;
+    if (symbolAnalyzer == analyzer)
+        return;
+    if (symbolAnalyzer)
+        disconnect(symbolAnalyzer, nullptr, this, nullptr);
+    symbolAnalyzer = shuttingDown ? nullptr : analyzer;
+    if (!symbolAnalyzer)
+        return;
+
+    connect(symbolAnalyzer,
+            &QObject::destroyed,
+            this,
+            [this]() {
+                symbolAnalyzer = nullptr;
+                for (QTimer* timer : std::as_const(openFileAnalysisTimers)) {
+                    if (timer) {
+                        timer->stop();
+                        timer->deleteLater();
+                    }
+                }
+                openFileAnalysisTimers.clear();
+                for (QTimer* timer : std::as_const(fileChangeDebounceTimers)) {
+                    if (timer) {
+                        timer->stop();
+                        timer->deleteLater();
+                    }
+                }
+                fileChangeDebounceTimers.clear();
+            });
 }
 
 void OpenDocumentAnalysisController::setOpenFileContentProvider(
     std::function<QString(const QString&)> provider)
 {
-    openFileContentProvider = std::move(provider);
+    openFileContentProvider = shuttingDown
+        ? std::function<QString(const QString&)>()
+        : std::move(provider);
 }
 
 void OpenDocumentAnalysisController::setWorkspaceOpenProvider(
     std::function<bool()> provider)
 {
-    workspaceOpenProvider = std::move(provider);
+    workspaceOpenProvider = shuttingDown
+        ? std::function<bool()>()
+        : std::move(provider);
+}
+
+void OpenDocumentAnalysisController::setWorkspaceAnalysisActiveProvider(
+    std::function<bool()> provider)
+{
+    workspaceAnalysisActiveProvider = shuttingDown
+        ? std::function<bool()>()
+        : std::move(provider);
 }
 
 void OpenDocumentAnalysisController::handleDocumentEdited(
     const DocumentSnapshot& snapshot,
     int relationshipDelayMs)
 {
-    if (snapshot.fileName.isEmpty())
+    if (shuttingDown || snapshot.fileName.isEmpty())
         return;
 
+    QPointer<OpenDocumentAnalysisController> self(this);
     const QString content = contentForOpenFile(snapshot.fileName);
-    if (content.isNull())
+    if (!self || content.isNull())
         return;
 
     if (content.size() > kAsyncOpenDocumentAnalysisCharacters) {
-        scheduleOpenFileAnalysis(snapshot.fileName, 1500);
+        scheduleOpenFileAnalysis(snapshot.fileName,
+                                 1500,
+                                 static_cast<std::uint64_t>(snapshot.textVersion));
         return;
     }
 
-    if (isWorkspaceOpen()) {
-        const QString cachedContent =
-            SemanticIndex::getInstance()->getCachedFileContent(snapshot.fileName);
-        if (!cachedContent.isEmpty()
-            && !hasNonWhitespaceChange(cachedContent, content)) {
+    const QString indexedContent =
+        SemanticIndex::getInstance()->getCachedFileContent(snapshot.fileName);
+    // Relationship analysis must react to every non-whitespace source edit,
+    // not only to the small structural-keyword subset used by
+    // SymbolAnalyzer::hasSignificantChanges. Compare the streams without
+    // allocating normalized copies so large-file whitespace edits remain
+    // cheap while ordinary identifiers, expressions, and macros still enter
+    // the debounce path.
+    if (indexedContent.isNull()
+        || hasNonWhitespaceChange(indexedContent, content)) {
+        emit relationshipAnalysisScheduled(snapshot.fileName,
+                                           content,
+                                           relationshipDelayMs);
+        if (!self)
             return;
-        }
     }
 
-    emit relationshipAnalysisScheduled(snapshot.fileName,
-                                       content,
-                                       relationshipDelayMs);
-
-    if (lineContainsStructuralKeyword(content, snapshot.cursorLine))
-        scheduleOpenFileAnalysis(snapshot.fileName, 1000);
+    // Any semantic edit can affect another open buffer through constants,
+    // types, dimensions, enums, or instance overrides. After the debounce,
+    // analyze one immutable snapshot of all open buffers; the analyzer cancels
+    // older computations and publishes only the latest complete revision set.
+    scheduleOpenFileAnalysis(snapshot.fileName,
+                             1000,
+                             static_cast<std::uint64_t>(snapshot.textVersion));
 }
 
 void OpenDocumentAnalysisController::analyzeOpenDocumentNow(
     const DocumentSnapshot& snapshot,
-    bool skipUnchanged,
     bool requestRelationships)
 {
-    if (snapshot.fileName.isEmpty() || !symbolAnalyzer)
+    if (shuttingDown || snapshot.fileName.isEmpty() || !symbolAnalyzer)
         return;
+
+    QPointer<OpenDocumentAnalysisController> self(this);
+    const QPointer<SymbolAnalyzer> analyzer = symbolAnalyzer;
 
     const QString content = contentForOpenFile(snapshot.fileName);
-    if (content.isEmpty())
+    if (!self || !analyzer || content.isNull())
         return;
 
-    if (isWorkspaceOpen()) {
-        const QString cachedContent =
-            SemanticIndex::getInstance()->getCachedFileContent(snapshot.fileName);
-        if (!cachedContent.isEmpty() && cachedContent == content) {
+    const bool workspaceOpen = isWorkspaceOpen();
+    if (!self || !analyzer)
+        return;
+    if (workspaceOpen) {
+        // The workspace controller has already queued a replacement atomic
+        // snapshot for open / edit / save events. Starting an overlay task
+        // here would invalidate that replacement and lose its completion.
+        const bool workspaceAnalysisActive = isWorkspaceAnalysisActive();
+        if (!self)
+            return;
+        if (workspaceAnalysisActive) {
             emit documentRefreshRequested(snapshot.fileName);
             return;
         }
-    }
-
-    if (skipUnchanged
-        && !SemanticIndex::getInstance()->contentAffectsSymbols(snapshot.fileName, content)) {
+        // Workspace semantic state is one overlay transaction. Re-submit every
+        // current buffer even when this file is byte-identical so cross-file
+        // dependencies and source-text revisions are captured together.
+        if (documentModel)
+            analyzeOpenDocumentsNow();
+        else if (analyzer)
+            analyzer->analyzeFileContentAsync(
+                snapshot.fileName,
+                content,
+                static_cast<std::uint64_t>(snapshot.textVersion));
+        if (!self)
+            return;
         emit documentRefreshRequested(snapshot.fileName);
         return;
     }
 
     if (content.size() > kAsyncOpenDocumentAnalysisCharacters) {
-        symbolAnalyzer->analyzeFileContentAsync(snapshot.fileName, content);
+        analyzer->analyzeFileContentAsync(
+            snapshot.fileName,
+            content,
+            static_cast<std::uint64_t>(snapshot.textVersion));
+        if (!self)
+            return;
         emit documentRefreshRequested(snapshot.fileName);
         return;
     }
 
-    symbolAnalyzer->analyzeFileContent(snapshot.fileName, content);
+    analyzer->analyzeFileContent(
+        snapshot.fileName,
+        content,
+        static_cast<std::uint64_t>(snapshot.textVersion));
+    if (!self)
+        return;
     emit documentRefreshRequested(snapshot.fileName);
-    if (requestRelationships && !isWorkspaceOpen())
+    if (!self)
+        return;
+    if (requestRelationships && !isWorkspaceOpen()) {
+        if (!self)
+            return;
         emit relationshipAnalysisRequested(snapshot.fileName, content);
+    }
 }
 
 void OpenDocumentAnalysisController::analyzeOpenDocumentsNow()
 {
-    if (!documentModel || !symbolAnalyzer)
+    if (shuttingDown || !documentModel || !symbolAnalyzer)
+        return;
+    QPointer<OpenDocumentAnalysisController> self(this);
+    const QPointer<DocumentModel> model = documentModel;
+    const QPointer<SymbolAnalyzer> analyzer = symbolAnalyzer;
+    const bool workspaceOpen = isWorkspaceOpen();
+    if (!self || !model || !analyzer)
+        return;
+    if (workspaceOpen) {
+        const bool workspaceAnalysisActive = isWorkspaceAnalysisActive();
+        if (!self || workspaceAnalysisActive)
+            return;
+    }
+    if (!self)
         return;
 
-    QList<OpenDocumentContent> documents;
-    for (const DocumentSnapshot& snapshot : documentModel->openDocuments()) {
+    QList<OpenDocumentContent> openDocuments;
+    for (const DocumentSnapshot& snapshot : model->openDocuments()) {
         if (snapshot.fileName.isEmpty())
             continue;
 
         const QString content = contentForOpenFile(snapshot.fileName);
+        if (!self)
+            return;
         if (content.isNull())
             continue;
-        documents.append({snapshot.fileName, content});
+        openDocuments.append(
+            {snapshot.fileName,
+             content,
+             static_cast<std::uint64_t>(snapshot.textVersion)});
     }
 
-    symbolAnalyzer->analyzeOpenDocuments(documents);
+    if (self && analyzer)
+        analyzer->analyzeOpenDocuments(openDocuments);
 }
 
 QString OpenDocumentAnalysisController::contentForOpenFile(
     const QString& fileName) const
 {
-    if (documentModel) {
-        const QString modelText = documentModel->documentTextForFile(fileName);
+    const QPointer<DocumentModel> documents = documentModel;
+    const std::function<QString(const QString&)> provider =
+        openFileContentProvider;
+    if (documents) {
+        const QString modelText = documents->documentTextForFile(fileName);
         if (!modelText.isNull())
             return modelText;
     }
 
-    if (openFileContentProvider)
-        return openFileContentProvider(fileName);
+    if (provider)
+        return provider(fileName);
     return QString();
 }
 
 bool OpenDocumentAnalysisController::isWorkspaceOpen() const
 {
-    return workspaceOpenProvider ? workspaceOpenProvider() : false;
+    const std::function<bool()> provider = workspaceOpenProvider;
+    return provider ? provider() : false;
 }
 
 bool OpenDocumentAnalysisController::isDirtyOpenDocument(const QString& fileName) const
 {
-    if (!documentModel || fileName.isEmpty())
+    const QPointer<DocumentModel> documents = documentModel;
+    if (!documents || fileName.isEmpty())
         return false;
-    return documentModel->documentForFile(fileName).dirty;
+    return documents->documentForFile(fileName).dirty;
 }
 
-bool OpenDocumentAnalysisController::lineContainsStructuralKeyword(
-    const QString& content,
-    int oneBasedLine) const
+bool OpenDocumentAnalysisController::isWorkspaceAnalysisActive() const
 {
-    if (content.isEmpty() || oneBasedLine <= 0)
-        return false;
-
-    const QStringList lines = content.split(QLatin1Char('\n'));
-    if (oneBasedLine > lines.size())
-        return false;
-
-    static const QStringList keywords = {
-        QLatin1String("module"),
-        QLatin1String("endmodule"),
-        QLatin1String("reg"),
-        QLatin1String("wire"),
-        QLatin1String("logic"),
-        QLatin1String("task"),
-        QLatin1String("endtask"),
-        QLatin1String("function"),
-        QLatin1String("endfunction"),
-    };
-
-    const QString line = lines[oneBasedLine - 1];
-    for (const QString& keyword : keywords) {
-        if (SvTokenUtils::containsWord(line, keyword))
-            return true;
-    }
-    return false;
-}
-
-bool OpenDocumentAnalysisController::hasNonWhitespaceChange(
-    const QString& oldContent,
-    const QString& newContent) const
-{
-    auto withoutWhitespace = [](const QString& text) {
-        QString result;
-        result.reserve(text.size());
-        for (const QChar ch : text) {
-            if (!ch.isSpace())
-                result.append(ch);
-        }
-        return result;
-    };
-
-    return withoutWhitespace(oldContent) != withoutWhitespace(newContent);
+    const std::function<bool()> provider = workspaceAnalysisActiveProvider;
+    return provider ? provider() : false;
 }

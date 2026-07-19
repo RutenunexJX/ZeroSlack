@@ -4,6 +4,7 @@
 #include "relationshipanalysisworker.h"
 
 #include <QObject>
+#include <QPointer>
 
 class QTimer;
 class SymbolRelationshipEngine;
@@ -26,7 +27,7 @@ signals:
     void relationshipDataRefreshRequested();
 
 private:
-    SymbolRelationshipEngine* relationshipEngine = nullptr;
+    QPointer<SymbolRelationshipEngine> relationshipEngine;
     QTimer* relationshipRefreshTimer = nullptr;
 
     void scheduleRelationshipDataRefresh();

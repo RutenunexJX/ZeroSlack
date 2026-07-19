@@ -14,6 +14,7 @@
 #include "semanticsourcerange.h"
 
 struct SemanticSymbolRecord;
+struct SemanticRelationship;
 
 class SymbolRelationshipEngine : public QObject
 {
@@ -72,12 +73,16 @@ public:
     void buildFileRelationships(const QString& fileName);
     void invalidateFileRelationships(const QString& fileName);
     void rebuildAllRelationships();
+    void replaceRelationshipsFromSnapshot(
+        const QList<SemanticSymbolRecord>& symbolRecords,
+        const QList<SemanticRelationship>& relationships);
 
     int getRelationshipCount() const;
 
 signals:
     void relationshipAdded(int fromSymbolId, int toSymbolId, RelationType type);
     void relationshipsCleared();
+    void relationshipsReplaced();
 
 private slots:
     void emitRelationshipAddedQueued(int fromSymbolId, int toSymbolId, int typeAsInt);

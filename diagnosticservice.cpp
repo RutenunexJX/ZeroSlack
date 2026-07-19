@@ -300,9 +300,7 @@ DiagnosticQuery DiagnosticService::queryForPanel(
     DiagnosticQuery query;
     switch (options.scope) {
     case DiagnosticPanelScope::CurrentFile:
-        query.fileName = options.requestedFileName.isEmpty()
-            ? options.currentFileName
-            : options.requestedFileName;
+        query.fileName = options.currentFileName;
         break;
     case DiagnosticPanelScope::WorkspaceFiles:
         query.workspaceFilesOnly = true;

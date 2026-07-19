@@ -17,7 +17,6 @@
 #include <QStringList>
 #include <QHash>
 #include "hierarchyservice.h"
-#include "modulehierarchymodel.h"
 #include "symboloutlinemodel.h"
 
 class NavigationWidget : public QWidget
@@ -27,37 +26,25 @@ class NavigationWidget : public QWidget
 public:
     enum NavigationTab {
         FileTab = 0,
-        DesignTab = 1,
-        ModuleTab = FileTab,
-        SymbolTab = FileTab
+        DesignTab = 1
     };
 
     explicit NavigationWidget(QWidget *parent = nullptr);
     ~NavigationWidget();
 
     void setActiveTab(NavigationTab tab);
-    NavigationTab getActiveTab() const;
+    void focusSearch();
 
     void updateFileHierarchy(const QStringList& files);
-    void updateModuleHierarchy(const QList<ModuleHierarchyGroup>& hierarchy);
-    void updateSymbolHierarchy(const QList<SymbolOutlineGroup>& symbolGroups);
     void updateDesignHierarchy(const DesignHierarchyReport& report);
     void clearDesignHierarchy();
     void setDesignParticipatingFiles(const QSet<QString>& fileNames);
 
     void highlightFile(const QString& filePath);
-    void highlightSymbol(const QString& symbolName);
-    void highlightModule(const QString& moduleName);
-
-    void setSearchText(const QString& text);
-    QString getSearchText() const;
 
 signals:
     void fileDoubleClicked(const QString& filePath);
-    void symbolRowDoubleClicked(const SymbolOutlineSymbolRow& row);
-    void moduleDoubleClicked(const QString& moduleName);
     void fileContextMenuRequested(const QString& filePath, const QPoint& globalPos);
-    void moduleContextMenuRequested(const QString& moduleName, const QPoint& globalPos);
     void designNodeContextMenuRequested(const DesignHierarchyNode& node,
                                         const QPoint& globalPos);
     void designNodeDoubleClicked(const DesignHierarchyNode& node);
@@ -71,11 +58,8 @@ private slots:
     void onSearchTextChanged(const QString& text);
     void processFileTreePopulationChunk();
     void onFileTreeDoubleClicked(QTreeWidgetItem* item, int column);
-    void onModuleTreeDoubleClicked(QTreeWidgetItem* item, int column);
-    void onSymbolTreeDoubleClicked(QTreeWidgetItem* item, int column);
     void onDesignTreeDoubleClicked(QTreeWidgetItem* item, int column);
     void onFileTreeContextMenuRequested(const QPoint& pos);
-    void onModuleTreeContextMenuRequested(const QPoint& pos);
     void onDesignTreeContextMenuRequested(const QPoint& pos);
 
 private:
@@ -88,14 +72,6 @@ private:
     QVBoxLayout* fileTabLayout = nullptr;
     QCheckBox* hideUnrelatedFilesCheckBox = nullptr;
 
-    QWidget* moduleTab = nullptr;
-    QTreeWidget* moduleTreeWidget = nullptr;
-    QVBoxLayout* moduleTabLayout = nullptr;
-
-    QWidget* symbolTab = nullptr;
-    QTreeWidget* symbolTreeWidget = nullptr;
-    QVBoxLayout* symbolTabLayout = nullptr;
-
     QWidget* designTab = nullptr;
     QTreeWidget* designTreeWidget = nullptr;
     QVBoxLayout* designTabLayout = nullptr;
@@ -104,13 +80,9 @@ private:
     QPushButton* designRefreshButton = nullptr;
 
     QStringList currentFileList;
-    QList<ModuleHierarchyGroup> currentModuleHierarchy;
-    QList<SymbolOutlineGroup> currentSymbolHierarchy;
     DesignHierarchyReport currentDesignHierarchy;
     QSet<QString> designParticipatingFiles;
-    QHash<int, SymbolOutlineSymbolRow> symbolItemPayloads;
     QHash<int, DesignHierarchyNode> designItemPayloads;
-    int nextSymbolItemPayloadId = 1;
     int nextDesignItemPayloadId = 1;
 
     QString currentSearchFilter;
@@ -128,8 +100,6 @@ private:
 
     void setupUI();
     void setupFileTab();
-    void setupModuleTab();
-    void setupSymbolTab();
     void setupDesignTab();
     void setupConnections();
 
@@ -140,13 +110,8 @@ private:
     void appendFileTreeItem(const QString& filePath,
                             QHash<QString, QTreeWidgetItem*>* dirItems);
     void refreshFileTreeDirectoryDimming();
-    void populateModuleTree();
-    void populateSymbolTree();
     void populateDesignTree();
-    void applySearchFilter();
     QTreeWidgetItem* createFileItem(const QString& filePath);
-    QTreeWidgetItem* createModuleItem(const QString& moduleName, const QString& fileName);
-    QTreeWidgetItem* createSymbolItem(const SymbolOutlineSymbolRow& row);
     QTreeWidgetItem* createDesignItem(const DesignHierarchyNode& node);
     QIcon getFileIcon(const QString& filePath);
     QIcon getSymbolIcon(SymbolOutlineIconKind iconKind);

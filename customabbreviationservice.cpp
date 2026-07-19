@@ -80,13 +80,6 @@ bool isSupportedCommandToken(const QString& token)
     return isSemanticCommandToken(token) || isTemplateCommandToken(token);
 }
 
-InlineCommandIntent intentForCommandToken(const QString& token)
-{
-    if (isTemplateCommandToken(token))
-        return InlineCommandIntent::CodeTemplate;
-    return InlineCommandIntent::SemanticCompletion;
-}
-
 bool tokenMatchesIntent(const QString& token, InlineCommandIntent intent)
 {
     switch (intent) {
@@ -189,39 +182,6 @@ QList<CustomAbbreviationRecord> CustomAbbreviationService::matchingRecords(
         }
     }
     return result;
-}
-
-QList<CustomAbbreviationRecord>
-CustomAbbreviationService::matchingRecordsForIntent(
-    const QString& prefix,
-    InlineCommandIntent intent) const
-{
-    QList<CustomAbbreviationRecord> result;
-    for (const CustomAbbreviationRecord& record : records()) {
-        if (abbreviationStartsWith(record.abbreviation, prefix)
-            && tokenMatchesIntent(record.commandToken, intent)) {
-            result.append(record);
-        }
-    }
-    return result;
-}
-
-CustomAbbreviationResolution CustomAbbreviationService::resolve(
-    const QString& abbreviation) const
-{
-    for (const CustomAbbreviationRecord& record : records()) {
-        if (!abbreviationMatches(record.abbreviation, abbreviation)
-            || !isSupportedCommandToken(record.commandToken)) {
-            continue;
-        }
-
-        CustomAbbreviationResolution resolution;
-        resolution.matched = true;
-        resolution.record = record;
-        resolution.intent = intentForCommandToken(record.commandToken);
-        return resolution;
-    }
-    return {};
 }
 
 CustomAbbreviationResolution CustomAbbreviationService::resolveForIntent(

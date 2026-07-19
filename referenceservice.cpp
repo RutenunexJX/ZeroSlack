@@ -134,6 +134,8 @@ SymbolStableKey macroReferenceStableKey(const SvMacroSemantics::MacroReference& 
     key.ownerScope = QStringLiteral("macro-reference:%1:%2")
                          .arg(reference.line)
                          .arg(reference.column);
+    key.sourcePosition = reference.position;
+    key.sourceLength = reference.length;
     return key;
 }
 

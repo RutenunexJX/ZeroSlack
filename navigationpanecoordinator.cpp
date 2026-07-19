@@ -47,6 +47,35 @@ void NavigationPaneCoordinator::toggleVisible()
         return;
     }
 
+    showDock();
+}
+
+void NavigationPaneCoordinator::showFiles()
+{
+    if (navigationWidget)
+        navigationWidget->setActiveTab(NavigationWidget::FileTab);
+    showDock();
+}
+
+void NavigationPaneCoordinator::showDesign()
+{
+    if (navigationWidget)
+        navigationWidget->setActiveTab(NavigationWidget::DesignTab);
+    showDock();
+}
+
+void NavigationPaneCoordinator::showSearch()
+{
+    showDock();
+    if (navigationWidget)
+        navigationWidget->focusSearch();
+}
+
+void NavigationPaneCoordinator::showDock()
+{
+    if (!navigationDock)
+        return;
+
     navigationDock->show();
     navigationDock->raise();
     navigationDock->activateWindow();

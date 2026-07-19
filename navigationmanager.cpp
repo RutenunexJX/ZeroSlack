@@ -12,10 +12,6 @@ QString navigationViewName(NavigationManager::NavigationView view)
     switch (view) {
     case NavigationManager::FileHierarchyView:
         return QStringLiteral("file hierarchy");
-    case NavigationManager::ModuleHierarchyView:
-        return QStringLiteral("module hierarchy");
-    case NavigationManager::SymbolHierarchyView:
-        return QStringLiteral("symbol outline");
     case NavigationManager::DesignHierarchyView:
         return QStringLiteral("design hierarchy");
     }
@@ -32,7 +28,6 @@ NavigationManager::NavigationManager(QObject *parent)
     : QObject(parent)
 {
     navigationService = NavigationService::getInstance();
-    caches.reserveDefaults();
 }
 
 NavigationManager::~NavigationManager()
@@ -53,8 +48,7 @@ void NavigationManager::setNavigationWidget(NavigationWidget* widget)
 void NavigationManager::setNavigationService(NavigationService* service)
 {
     navigationService = service ? service : NavigationService::getInstance();
-    caches.clearModuleHierarchy();
-    caches.clearSymbolOutline();
+    caches.clearDesignHierarchy();
     refreshCurrentView();
 }
 
@@ -84,46 +78,6 @@ void NavigationManager::refreshFileHierarchy()
         QStringLiteral("%1 %2")
             .arg(refreshWidget ? QStringLiteral("Rebuilt") : QStringLiteral("Kept cached"),
                  navigationViewName(FileHierarchyView)),
-        static_cast<int>(timer.elapsed()));
-}
-
-void NavigationManager::refreshModuleHierarchy()
-{
-    QElapsedTimer timer;
-    timer.start();
-    const bool changed = updateModuleHierarchyData();
-
-    if (navigationWidget && changed) {
-        navigationWidget->updateModuleHierarchy(caches.moduleHierarchy);
-    }
-
-    emit dataRefreshed(ModuleHierarchyView);
-    ActivityLogService::getInstance()->append(
-        QStringLiteral("Navigation"),
-        ActivityLogLevel::Info,
-        QStringLiteral("%1 %2")
-            .arg(changed ? QStringLiteral("Rebuilt") : QStringLiteral("Kept cached"),
-                 navigationViewName(ModuleHierarchyView)),
-        static_cast<int>(timer.elapsed()));
-}
-
-void NavigationManager::refreshSymbolHierarchy()
-{
-    QElapsedTimer timer;
-    timer.start();
-    const bool changed = updateSymbolHierarchyData();
-
-    if (navigationWidget && changed) {
-        navigationWidget->updateSymbolHierarchy(caches.symbolOutline);
-    }
-
-    emit dataRefreshed(SymbolHierarchyView);
-    ActivityLogService::getInstance()->append(
-        QStringLiteral("Navigation"),
-        ActivityLogLevel::Info,
-        QStringLiteral("%1 %2")
-            .arg(changed ? QStringLiteral("Rebuilt") : QStringLiteral("Kept cached"),
-                 navigationViewName(SymbolHierarchyView)),
         static_cast<int>(timer.elapsed()));
 }
 
@@ -166,12 +120,6 @@ void NavigationManager::refreshCurrentView()
     case FileHierarchyView:
         refreshFileHierarchy();
         break;
-    case ModuleHierarchyView:
-        refreshModuleHierarchy();
-        break;
-    case SymbolHierarchyView:
-        refreshSymbolHierarchy();
-        break;
     case DesignHierarchyView:
         refreshDesignHierarchy();
         break;
@@ -183,22 +131,6 @@ void NavigationManager::navigateToFile(const QString& filePath, int lineNumber)
     if (filePath.isEmpty()) return;
 
     emit navigationRequested(filePath, lineNumber);
-}
-
-void NavigationManager::navigateToSymbol(const SymbolOutlineSymbolRow& row)
-{
-    emit symbolRowNavigationRequested(row);
-}
-
-void NavigationManager::navigateToModule(const QString& moduleName)
-{
-    if (moduleName.isEmpty()) return;
-    if (!navigationService) return;
-
-    const NavigationModuleTarget target =
-        navigationService->resolveModuleTarget(moduleName);
-    if (target.found)
-        navigateToSymbol(target.symbolRow);
 }
 
 void NavigationManager::setDesignTop(const QString& moduleName)
@@ -237,12 +169,6 @@ void NavigationManager::setSearchFilter(const QString& filter)
     refreshCurrentView();
 }
 
-void NavigationManager::clearSearchFilter()
-{
-    context.clearSearchFilter();
-    refreshCurrentView();
-}
-
 void NavigationManager::highlightCurrentFileInTree()
 {
     if (!navigationWidget || context.currentFileName.isEmpty()) return;
@@ -253,12 +179,6 @@ void NavigationManager::highlightCurrentFileInTree()
 void NavigationManager::syncWithActiveEditor()
 {
     highlightCurrentFileInTree();
-
-    // Keep the symbol view aligned with the active editor.
-    if (currentView == SymbolHierarchyView
-        && !context.currentFileName.isEmpty()) {
-        refreshSymbolHierarchy();
-    }
 }
 
 void NavigationManager::onTabChanged(const QString& fileName)
@@ -272,11 +192,9 @@ void NavigationManager::onWorkspaceChanged(const QString& workspacePath)
     saveDesignHierarchyCache();
     context.setCurrentWorkspacePath(workspacePath);
 
-    // Workspace activation changes file/module/symbol scope, while Design
-    // hierarchy is cached per workspace to keep tab switching lightweight.
+    // Workspace activation changes file scope, while Design hierarchy is
+    // cached per workspace to keep tab switching lightweight.
     caches.clearFileList();
-    caches.clearModuleHierarchy();
-    caches.clearSymbolOutline();
     restoreDesignHierarchyCache();
 
     refreshCurrentView();
@@ -289,31 +207,13 @@ void NavigationManager::onViewChanged(int index)
                       : FileHierarchyView);
 }
 
-void NavigationManager::onSearchFilterChanged(const QString& filter)
-{
-    setSearchFilter(filter);
-}
-
 void NavigationManager::onSymbolAnalysisCompleted(const QString& fileName, int symbolCount)
 {
     Q_UNUSED(symbolCount)
 
-    // Symbol analysis can update either the full module graph or the current symbol outline.
     switch (currentView) {
     case FileHierarchyView:
         // The file list is unchanged.
-        break;
-    case ModuleHierarchyView: {
-        caches.clearModuleHierarchy();
-        refreshModuleHierarchy();
-        break;
-    }
-    case SymbolHierarchyView:
-        // The symbol view follows the current file.
-        if (context.currentFileName == fileName) {
-            caches.clearSymbolOutline();
-            refreshSymbolHierarchy();
-        }
         break;
     case DesignHierarchyView:
         if (isOpenTabsAnalysisFile(fileName)) {
@@ -338,16 +238,7 @@ void NavigationManager::onBatchSymbolAnalysisCompleted(
     Q_UNUSED(filesAnalyzed)
     Q_UNUSED(totalSymbols)
 
-    // Batch analysis can change module hierarchy and symbol outline data.
-    if (currentView == ModuleHierarchyView) {
-        caches.clearSymbolOutline();
-        caches.clearModuleHierarchy();
-        refreshCurrentView();
-    } else if (currentView == SymbolHierarchyView) {
-        caches.clearSymbolOutline();
-        caches.clearModuleHierarchy();
-        refreshSymbolHierarchy();
-    } else if (currentView == DesignHierarchyView) {
+    if (currentView == DesignHierarchyView) {
         invalidateCurrentDesignHierarchyCache();
         refreshDesignHierarchy();
     }
@@ -358,7 +249,6 @@ void NavigationManager::setActiveView(NavigationView view)
     if (currentView == view) return;
 
     currentView = view;
-    emit viewChanged(currentView);
 
     // Refresh the newly active view.
     refreshCurrentView();

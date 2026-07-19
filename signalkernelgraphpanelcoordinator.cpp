@@ -1397,12 +1397,6 @@ void SignalKernelGraphPanelCoordinator::showNodePreview(
     placeHoverPopupAvoidingNode(nodeGlobalRect.normalized());
 }
 
-void SignalKernelGraphPanelCoordinator::closeNodePreviewDelayed()
-{
-    if (hoverCloseTimer)
-        hoverCloseTimer->start(180);
-}
-
 void SignalKernelGraphPanelCoordinator::closeNodePreviewNow()
 {
     if (hoverCloseTimer)

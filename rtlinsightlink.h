@@ -41,12 +41,6 @@ inline RtlInsightCodeLink fromFileLine(
     return link;
 }
 
-template <typename Symbol>
-RtlInsightCodeLink fromSymbol(const Symbol& symbol)
-{
-    return fromFileLine(symbol.fileName, symbol.startLine, symbol.startColumn);
-}
-
 template <typename Diagnostic>
 RtlInsightCodeLink fromDiagnostic(const Diagnostic& diagnostic)
 {

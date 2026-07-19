@@ -30,6 +30,32 @@ bool isInlineFilterInput(const QKeyEvent* event)
     }
     return true;
 }
+
+QModelIndex previousSelectableIndex(EditorCompletionUi* completion)
+{
+    if (!completion || !completion->popup()
+        || !completion->popup()->model()) {
+        return {};
+    }
+
+    const int rowCount = completion->popup()->model()->rowCount();
+    if (rowCount <= 0)
+        return {};
+
+    const QModelIndex current = completion->currentIndex();
+    int row = current.isValid() ? current.row() - 1 : rowCount - 1;
+    if (row < 0)
+        row = rowCount - 1;
+
+    for (int visited = 0; visited < rowCount; ++visited) {
+        const QModelIndex candidate =
+            completion->popup()->model()->index(row, 0);
+        if (completion->activationContextForIndex(candidate).selectable)
+            return candidate;
+        row = row > 0 ? row - 1 : rowCount - 1;
+    }
+    return {};
+}
 }
 
 bool EditorCompletionWorkflow::handleInlineCandidateFilterKey(
@@ -100,7 +126,7 @@ bool EditorCompletionWorkflow::handleCompletionPopupKey(QKeyEvent* event)
 
     const CompletionPopupKeyState popupState =
         semanticService()->completionPopupKeyState(
-            completion->popupKeyContextForEvent(event, *modes));
+            completion->popupKeyContextForEvent(event));
     return applyCompletionPopupKeyState(event, popupState);
 }
 
@@ -111,6 +137,13 @@ bool EditorCompletionWorkflow::applyCompletionPopupKeyState(
     switch (popupState.action) {
     case CompletionPopupKeyAction::ForwardToPopup:
         QApplication::sendEvent(completion->popup(), event);
+        return true;
+    case CompletionPopupKeyAction::SelectPreviousSelectable:
+        {
+            const QModelIndex previous = previousSelectableIndex(completion);
+            if (previous.isValid())
+                completion->popup()->setCurrentIndex(previous);
+        }
         return true;
     case CompletionPopupKeyAction::ActivateCurrent:
         if (completion->currentIndex().isValid())
@@ -125,19 +158,15 @@ bool EditorCompletionWorkflow::applyCompletionPopupKeyState(
                 completion->activateIndex(currentIndex);
         }
         return true;
-    case CompletionPopupKeyAction::HidePopup:
-        clearInlineAbbreviationSession();
-        hideAutoComplete();
-        return true;
     case CompletionPopupKeyAction::HidePopupAndClearCommand:
         if (inlineSession.active) {
             clearInlineAbbreviationSession();
             modes->clearCommandMode();
-            hideAutoComplete();
+            hideCompletionPopup();
             return true;
         }
         clearCommandInputAtCursor();
-        hideAutoComplete();
+        hideCompletionPopup();
         return true;
     case CompletionPopupKeyAction::Consume:
         return true;

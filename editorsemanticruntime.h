@@ -19,7 +19,8 @@ public:
         const QString& fileName,
         const QString& moduleName,
         int cursorPosition,
-        bool includeDocumentText) const;
+        bool includeDocumentText,
+        std::uint64_t documentRevision) const;
 
 private:
     EditorSemanticContextService* service = nullptr;

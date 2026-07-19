@@ -132,7 +132,6 @@ private:
     void showDockWidget(QDockWidget* dock,
                         const QString& statusMessage = QString());
     void showPanelById(const QString& panelId);
-    void togglePanelById(const QString& panelId);
     void resetPanelLayout();
     void setupEditorModeChip();
     void updateEditorModeChip(const QString& message);

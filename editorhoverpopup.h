@@ -17,12 +17,21 @@ class EditorHoverPopup : public QFrame
 {
     Q_OBJECT
 public:
+    enum class PlacementMode {
+        TopLevelTool,
+        EmbeddedChild
+    };
+
     using NavigationHandler =
         std::function<void(const QString&, int, int)>;
 
-    explicit EditorHoverPopup(QWidget* parent = nullptr);
+    explicit EditorHoverPopup(
+        QWidget* parent = nullptr,
+        PlacementMode placementMode = PlacementMode::TopLevelTool);
+    ~EditorHoverPopup() override;
 
     void setNavigationHandler(NavigationHandler handler);
+    void setTransientPreview(bool transient);
     void showHover(const SymbolHoverReport& report,
                    const QPoint& globalPosition,
                    const QFont& editorFont);
@@ -39,6 +48,7 @@ public:
     bool hasNavigableTarget() const;
 
 protected:
+    bool eventFilter(QObject* watched, QEvent* event) override;
     void mouseDoubleClickEvent(QMouseEvent* event) override;
 
 private:
@@ -46,6 +56,8 @@ private:
     QString targetFile;
     int targetLine = -1;
     int targetColumn = -1;
+    PlacementMode placementMode = PlacementMode::TopLevelTool;
+    bool transientPreview = false;
     NavigationHandler navigationHandler;
 
     void resetContent();

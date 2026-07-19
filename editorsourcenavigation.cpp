@@ -341,6 +341,13 @@ void EditorSourceNavigationUi::handleEditorScrolled(
         clearHover(editor, selections);
 }
 
+void EditorSourceNavigationUi::closeForEditor(
+    MyCodeEditor* editor,
+    EditorSelection& selections)
+{
+    clearHover(editor, selections);
+}
+
 void EditorSourceNavigationUi::shutdown()
 {
     closePopup();
@@ -533,6 +540,7 @@ void EditorSourceNavigationUi::refreshPopupAt(
                 numericReport.displayText,
                 globalPosition,
                 editor->font());
+            hoverPopup->setTransientPreview(sourceHover.isCtrlPressed());
             popupNumericMode = true;
             popupPreviewMode = false;
             popupStartPos = numericReport.startPosition;
@@ -551,8 +559,9 @@ void EditorSourceNavigationUi::refreshPopupAt(
         return;
 
     const EditorSemanticContext context =
-        contextProvider(target.cursorPosition, false);
+        contextProvider(target.cursorPosition, !previewMode);
     EditorHoverPopup* hoverPopup = ensurePopup(editor);
+    hoverPopup->setTransientPreview(previewMode);
     const QPoint globalPosition = editor->viewport()->mapToGlobal(position);
     if (previewMode) {
         const DefinitionPreviewReport report =
@@ -645,7 +654,9 @@ bool EditorSourceNavigationUi::hasActiveHover() const
 EditorHoverPopup* EditorSourceNavigationUi::ensurePopup(MyCodeEditor* editor)
 {
     if (!popup)
-        popup = std::make_unique<EditorHoverPopup>();
+        popup = std::make_unique<EditorHoverPopup>(
+            editor,
+            EditorHoverPopup::PlacementMode::EmbeddedChild);
     popup->setNavigationHandler([editor](const QString& fileName,
                                          int line,
                                          int column) {

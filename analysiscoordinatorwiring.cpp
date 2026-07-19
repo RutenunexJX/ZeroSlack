@@ -56,6 +56,7 @@ void AnalysisCoordinator::connectSchedulerSignals()
                 dependencies.handleWorkspaceSymbolAnalysisFinished(
                     filesAnalyzed,
                     totalSymbols);
+                refreshActiveEditorForFile(QString());
             });
     connect(scheduler,
             &AnalysisScheduler::relationshipAnalysisFinished,

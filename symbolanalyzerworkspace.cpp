@@ -14,7 +14,12 @@ QString normalizedWorkspaceSymbolFileName(const QString& fileName)
 {
     if (fileName.isEmpty())
         return QString();
-    return QDir::cleanPath(QDir::fromNativeSeparators(QFileInfo(fileName).absoluteFilePath()));
+    QString result = QDir::cleanPath(
+        QDir::fromNativeSeparators(QFileInfo(fileName).absoluteFilePath()));
+#ifdef Q_OS_WIN
+    result = result.toCaseFolded();
+#endif
+    return result;
 }
 
 QHash<QString, QList<SemanticSymbolRecord>> groupRecordsByFile(
@@ -26,6 +31,19 @@ QHash<QString, QList<SemanticSymbolRecord>> groupRecordsByFile(
             normalizedWorkspaceSymbolFileName(record.location.fileName);
         if (!normalized.isEmpty())
             byFile[normalized].append(record);
+    }
+    return byFile;
+}
+
+QHash<QString, QList<EffectiveValueFact>> groupFactsByFile(
+    const QList<EffectiveValueFact>& facts)
+{
+    QHash<QString, QList<EffectiveValueFact>> byFile;
+    for (const EffectiveValueFact& fact : facts) {
+        const QString normalized =
+            normalizedWorkspaceSymbolFileName(fact.fileName);
+        if (!normalized.isEmpty())
+            byFile[normalized].append(fact);
     }
     return byFile;
 }
@@ -48,11 +66,22 @@ QString readTextFileIfSmall(const QString& filePath)
 WorkspaceAnalysisResult SymbolAnalyzerWorkspace::buildWorkspaceAnalysisResult(
     const QStringList& svFiles,
     const QList<SemanticSymbolRecord>& allRecords,
-    std::function<bool()> isCancelled)
+    const QList<EffectiveValueFact>& effectiveValueFacts,
+    std::function<bool()> isCancelled,
+    const QHash<QString, QString>& analyzedFileContents)
 {
     WorkspaceAnalysisResult result;
     QHash<QString, QList<SemanticSymbolRecord>> byFile =
         groupRecordsByFile(allRecords);
+    const QHash<QString, QList<EffectiveValueFact>> factsByFile =
+        groupFactsByFile(effectiveValueFacts);
+    QHash<QString, QString> contentsByFile;
+    for (auto it = analyzedFileContents.constBegin();
+         it != analyzedFileContents.constEnd();
+         ++it) {
+        contentsByFile.insert(
+            normalizedWorkspaceSymbolFileName(it.key()), it.value());
+    }
     result.files.reserve(svFiles.size());
 
     for (const QString& filePath : svFiles) {
@@ -62,9 +91,15 @@ WorkspaceAnalysisResult SymbolAnalyzerWorkspace::buildWorkspaceAnalysisResult(
         }
         WorkspaceFileAnalysis fileResult;
         fileResult.fileName = filePath;
-        fileResult.content = readTextFileIfSmall(filePath);
+        const QString normalized =
+            normalizedWorkspaceSymbolFileName(filePath);
+        fileResult.content = contentsByFile.contains(normalized)
+            ? contentsByFile.value(normalized)
+            : readTextFileIfSmall(filePath);
         fileResult.symbolRecords =
-            byFile.value(normalizedWorkspaceSymbolFileName(filePath));
+            byFile.value(normalized);
+        fileResult.effectiveValueFacts =
+            factsByFile.value(normalized);
         result.totalSymbols += fileResult.symbolRecords.size();
         result.files.append(std::move(fileResult));
     }

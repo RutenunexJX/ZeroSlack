@@ -11,6 +11,7 @@
 #include "workspacesymbolanalysiscontroller.h"
 
 #include <QObject>
+#include <QPointer>
 #include <QString>
 #include <functional>
 
@@ -27,6 +28,8 @@ public:
     explicit AnalysisScheduler(QObject* parent = nullptr);
     ~AnalysisScheduler() override;
 
+    void shutdown();
+
     void setDocumentModel(DocumentModel* model);
     void setProjectModel(ProjectModel* model);
     void setSymbolAnalyzer(SymbolAnalyzer* analyzer);
@@ -42,7 +45,6 @@ public:
     void scheduleRelationshipAnalysis(const QString& fileName,
                                       const QString& content,
                                       int delayMs);
-    void cancelScheduledRelationshipAnalysis(const QString& fileName);
     void cancelAllScheduledRelationshipAnalyses();
     bool hasScheduledRelationshipAnalysis(const QString& fileName) const;
     void requestRelationshipAnalysis(const QString& fileName, const QString& content);
@@ -90,14 +92,18 @@ signals:
     void workspaceRelationshipAnalysisCancelled();
 
 private:
-    DocumentModel* documentModel = nullptr;
-    SymbolAnalyzer* symbolAnalyzer = nullptr;
+    // These collaborators are externally owned. They can be declared after
+    // the scheduler and therefore be destroyed first; guarded handles make
+    // shutdown and queued callbacks observe that destruction immediately.
+    QPointer<DocumentModel> documentModel;
+    QPointer<SymbolAnalyzer> symbolAnalyzer;
     OpenDocumentAnalysisController* openDocumentAnalysis = nullptr;
     RelationshipAnalysisController* relationshipAnalysis = nullptr;
     RelationshipAnalysisQueue* relationshipAnalysisQueue = nullptr;
     RelationshipResultPublisher* relationshipResultPublisher = nullptr;
     WorkspaceSymbolAnalysisController* workspaceSymbolAnalysis = nullptr;
     DiagnosticsRefreshController* diagnosticsRefresh = nullptr;
+    bool shuttingDown = false;
 
     static constexpr int kOpenDocumentRelationshipAnalysisDebounceMs = 2000;
 
@@ -110,7 +116,6 @@ private:
     void setupRelationshipAnalysis();
     void setupWorkspaceSymbolAnalysis();
     void setupDiagnosticsRefreshAndWorkspaceRequests();
-    void refreshOpenDocumentsForForegroundAnalysis();
 };
 
 #endif // ANALYSISSCHEDULER_H

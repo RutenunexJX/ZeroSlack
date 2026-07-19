@@ -5,6 +5,10 @@
 void AnalysisScheduler::setupOpenDocumentAnalysis()
 {
     openDocumentAnalysis = new OpenDocumentAnalysisController(this);
+    openDocumentAnalysis->setWorkspaceAnalysisActiveProvider([this]() {
+        return workspaceSymbolAnalysis
+            && workspaceSymbolAnalysis->isWorkspaceAnalysisActive();
+    });
     connect(openDocumentAnalysis,
             &OpenDocumentAnalysisController::documentRefreshRequested,
             this,
@@ -17,12 +21,6 @@ void AnalysisScheduler::setupOpenDocumentAnalysis()
             &OpenDocumentAnalysisController::relationshipAnalysisScheduled,
             this,
             &AnalysisScheduler::scheduleRelationshipAnalysis);
-}
-
-void AnalysisScheduler::refreshOpenDocumentsForForegroundAnalysis()
-{
-    if (openDocumentAnalysis)
-        openDocumentAnalysis->analyzeOpenDocumentsNow();
 }
 
 void AnalysisScheduler::setupRelationshipAnalysis()
@@ -124,7 +122,6 @@ void AnalysisScheduler::setupWorkspaceSymbolAnalysis()
             &WorkspaceSymbolAnalysisController::workspaceSymbolAnalysisFinished,
             this,
             [this](const ProjectSnapshot& project, int filesAnalyzed, int totalSymbols) {
-                refreshOpenDocumentsForForegroundAnalysis();
                 emit workspaceSymbolAnalysisFinished(project, filesAnalyzed, totalSymbols);
             });
     connect(workspaceSymbolAnalysis,

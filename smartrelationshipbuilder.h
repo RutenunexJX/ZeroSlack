@@ -10,6 +10,8 @@
 #include "slangmanager.h"
 #include "symbolrelationshipengine.h"
 #include <QVector>
+#include <atomic>
+#include <memory>
 
 class SemanticIndexSnapshot;
 struct SemanticSymbolRecord;
@@ -30,6 +32,27 @@ class SmartRelationshipBuilder : public QObject
     Q_OBJECT
 
 public:
+    class WorkerLease
+    {
+    public:
+        ~WorkerLease();
+        WorkerLease(const WorkerLease&) = delete;
+        WorkerLease& operator=(const WorkerLease&) = delete;
+
+        SmartRelationshipBuilder* builder() const { return leasedBuilder; }
+
+    private:
+        struct State;
+        WorkerLease(SmartRelationshipBuilder* builder,
+                    std::shared_ptr<State> state);
+
+        SmartRelationshipBuilder* leasedBuilder = nullptr;
+        std::shared_ptr<State> lifetimeState;
+        bool acquired = false;
+
+        friend class SmartRelationshipBuilder;
+    };
+
     using SymbolRecordProvider =
         std::function<QList<SemanticSymbolRecord>(const QString& fileName)>;
 
@@ -56,10 +79,19 @@ public:
         const QStringList& filePaths,
         const QStringList& includeDirs,
         const QHash<QString, QString>& defines) const;
+    QHash<QString, RelationshipExtractionInfo>
+    extractOverlayWorkspaceRelationshipInfo(
+        const QHash<QString, QString>& fileContents,
+        const QStringList& includeDirs,
+        const QHash<QString, QString>& defines,
+        const QStringList& orderedFilePaths) const;
 
     void cancelAnalysis();
     void resetCancellation();
     bool isCancelled() const { return cancelled; }
+    // Async callers retain a lease for the whole worker. Destruction marks
+    // cancellation and waits for every lease before member storage is freed.
+    std::shared_ptr<WorkerLease> acquireWorkerLease();
 
 signals:
     void analysisError(const QString& fileName, const QString& error);
@@ -74,6 +106,7 @@ private:
     int confidenceThreshold = 50;
 
     std::atomic<bool> cancelled{false};
+    std::shared_ptr<WorkerLease::State> workerLifetimeState;
     bool checkCancellation(const QString& currentFile = "");
 
     struct AnalysisContext {
@@ -127,8 +160,6 @@ private:
                                   const QString& fromAccessPath = {},
                                   const QString& toAccessPath = {});
 
-    void analyzeParameterRelationships(const QString& content, AnalysisContext& context);
-    void analyzeConstraintRelationships(const QString& content, AnalysisContext& context);
     void analyzeClockResetRelationships(const QString& content, AnalysisContext& context, int lineMin = -1, int lineMax = -1);
 };
 

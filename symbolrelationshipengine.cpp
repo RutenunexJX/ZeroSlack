@@ -223,6 +223,63 @@ void SymbolRelationshipEngine::rebuildAllRelationships()
         buildFileRelationships(fileName);
 }
 
+void SymbolRelationshipEngine::replaceRelationshipsFromSnapshot(
+    const QList<SemanticSymbolRecord>& symbolRecords,
+    const QList<SemanticRelationship>& relationships)
+{
+    relationshipGraph.clear();
+    relationshipsByType.clear();
+    symbolsByFile.clear();
+
+    QSet<int> validHandles;
+    validHandles.reserve(symbolRecords.size());
+    for (const SemanticSymbolRecord& record : symbolRecords) {
+        if (record.localHandle < 0)
+            continue;
+        validHandles.insert(record.localHandle);
+        if (!record.location.fileName.isEmpty()) {
+            symbolsByFile[record.location.fileName].insert(record.localHandle);
+        }
+    }
+
+    QSet<QString> seenRelationships;
+    seenRelationships.reserve(relationships.size());
+    for (const SemanticRelationship& relationship : relationships) {
+        if (relationship.fromId < 0 || relationship.toId < 0
+            || relationship.fromId == relationship.toId
+            || !validHandles.contains(relationship.fromId)
+            || !validHandles.contains(relationship.toId)) {
+            continue;
+        }
+        const QString relationshipKey = QStringLiteral("%1:%2:%3")
+            .arg(relationship.fromId)
+            .arg(relationship.toId)
+            .arg(static_cast<int>(relationship.type));
+        if (seenRelationships.contains(relationshipKey))
+            continue;
+        seenRelationships.insert(relationshipKey);
+
+        relationshipGraph[relationship.fromId].outgoingEdges.append(
+            RelationshipEdge(relationship.toId,
+                             relationship.type,
+                             relationship.evidenceText,
+                             relationship.confidence,
+                             relationship.evidenceRange));
+        relationshipGraph[relationship.toId].incomingEdges.append(
+            RelationshipEdge(relationship.fromId,
+                             relationship.type,
+                             relationship.evidenceText,
+                             relationship.confidence,
+                             relationship.evidenceRange));
+        addToTypeIndex(relationship.fromId,
+                       relationship.toId,
+                       relationship.type);
+    }
+
+    invalidateCache();
+    emit relationshipsReplaced();
+}
+
 void SymbolRelationshipEngine::invalidateCache()
 {
     queryCache.clear();

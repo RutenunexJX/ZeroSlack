@@ -19,25 +19,6 @@
 #include <utility>
 
 namespace {
-bool hasLongerExactEditorActionPrefix(const InlineCommandDescriptor& descriptor)
-{
-    if (descriptor.prefix.endsWith(QLatin1Char(' ')))
-        return false;
-
-    for (const InlineCommandDescriptor& item :
-         InlineCommandMode::descriptorsForIntent(InlineCommandIntent::EditorAction)) {
-        if (item.label == descriptor.label)
-            continue;
-        if (item.prefix.endsWith(QLatin1Char(' ')))
-            continue;
-        if (item.prefix.size() > descriptor.prefix.size()
-            && item.prefix.startsWith(descriptor.prefix)) {
-            return true;
-        }
-    }
-    return false;
-}
-
 QString sanitizedIncludeHeaderStem(QString text)
 {
     text = text.trimmed();
@@ -157,14 +138,7 @@ EditorSemanticContextService* EditorCompletionWorkflow::semanticService() const
     return serviceProvider();
 }
 
-EditorSemanticContext EditorCompletionWorkflow::semanticContextForCursor(
-    const QTextCursor& cursor,
-    bool includeDocumentText) const
-{
-    return contextProvider(cursor.position(), includeDocumentText);
-}
-
-void EditorCompletionWorkflow::hideAutoComplete()
+void EditorCompletionWorkflow::hideCompletionPopup()
 {
     includeCompletionActive = false;
     includeCompletionMode = IncludeCompletionMode::None;
@@ -238,7 +212,7 @@ bool EditorCompletionWorkflow::refreshInlineCandidateFilter()
     completion->updateCommandModeCompletions(state, false);
     if (state.prefixPosition >= 0)
         selections->highlightCommand(editor, state.prefixPosition);
-    showAutoComplete(true);
+    showCompletionPopup(true);
 
     if (inlineCandidateCount(state) == 0) {
         emit editor->editorStatusMessageRequested(
@@ -261,7 +235,7 @@ void EditorCompletionWorkflow::handleCursorPositionChanged()
     }
 }
 
-void EditorCompletionWorkflow::showAutoComplete(bool selectFirstCompletion)
+void EditorCompletionWorkflow::showCompletionPopup(bool selectFirstCompletion)
 {
     completion->showForCursor(
         editor->cursorRect(editor->textCursor()),
@@ -271,7 +245,7 @@ void EditorCompletionWorkflow::showAutoComplete(bool selectFirstCompletion)
 void EditorCompletionWorkflow::executeEditorActionCommand(const QString& command)
 {
     clearCommandInputAtCursor();
-    hideAutoComplete();
+    hideCompletionPopup();
     editor->state->executeEditorActionCommand(editor, command);
 }
 
@@ -296,7 +270,6 @@ bool EditorCompletionWorkflow::applySingleInlineAbbreviationCandidate(
 {
     CompletionActivationQuery activationQuery;
     activationQuery.selectable = true;
-    activationQuery.mode = CompletionActivationMode::CommandMode;
 
     if (state.intent == InlineCommandIntent::CodeTemplate
         || state.intent == InlineCommandIntent::EditorAction) {
@@ -396,7 +369,7 @@ bool EditorCompletionWorkflow::showInlineAbbreviationCompletions(
     completion->updateCommandModeCompletions(
         state,
         !inlineSession.candidateFiltering);
-    showAutoComplete(true);
+    showCompletionPopup(true);
     if (candidateCount == 0) {
         emit editor->editorStatusMessageRequested(
             QStringLiteral("No %1 candidates for \"%2\"")
@@ -486,33 +459,6 @@ bool EditorCompletionWorkflow::handleInlineAbbreviationTab(QKeyEvent* event)
                                              query);
 }
 
-void EditorCompletionWorkflow::updateCompletionTriggerForTextChange(
-    const QTextCursor& cursor)
-{
-    if (!applyingInlineReplacement)
-        clearInlineAbbreviationSession();
-
-    EditorSemanticContext context = semanticContextForCursor(cursor, false);
-    context.moduleName = moduleNameProvider(cursor.position() - 1);
-    const EditorCompletionTextChangeState completionState =
-        semanticService()->completionTextChangeState(context);
-    modes->setCommandModeActive(completionState.commandModeActive);
-
-    if (completionState.startCompletionTimer) {
-        completion->startTimer();
-    } else if (completionState.hidePopup) {
-        hideAutoComplete();
-    }
-}
-
-void EditorCompletionWorkflow::handleTextChanged()
-{
-    completion->stopTimer();
-    if (applyingInlineReplacement)
-        return;
-    updateCompletionTriggerForTextChange(editor->textCursor());
-}
-
 void EditorCompletionWorkflow::applyCompletionActivationState(
     const CompletionActivationState& activationState)
 {
@@ -551,13 +497,10 @@ void EditorCompletionWorkflow::applyCompletionActivationState(
                                           activationState.text.size(),
                                           activationState.templateSlots);
         }
-    } else if (activationState.action
-               == CompletionActivationAction::ReplaceWord) {
-        completion->replaceWordAtCursor(editor, activationState.text);
     }
 
     if (activationState.hidePopup)
-        hideAutoComplete();
+        hideCompletionPopup();
 }
 
 int EditorCompletionWorkflow::replaceCommandInputAtCursor(
@@ -612,7 +555,7 @@ void EditorCompletionWorkflow::handleCompletionActivated(
 {
     if (includeCompletionActive) {
         const EditorCompletionActivationContext activationContext =
-            completion->activationContextForIndex(index, *modes);
+            completion->activationContextForIndex(index);
         if (activationContext.selectable) {
             if (includeCompletionMode == IncludeCompletionMode::NewHeader) {
                 applyIncludeNewHeaderChoice(activationContext.itemText);
@@ -624,7 +567,7 @@ void EditorCompletionWorkflow::handleCompletionActivated(
     }
 
     const EditorCompletionActivationContext activationContext =
-        completion->activationContextForIndex(index, *modes);
+        completion->activationContextForIndex(index);
     const CompletionActivationState activationState =
         semanticService()->completionActivationState(activationContext);
     applyCompletionActivationState(activationState);
@@ -640,34 +583,6 @@ void EditorCompletionWorkflow::setIncludeNewHeaderCreator(
     IncludeNewHeaderCreator creator)
 {
     includeNewHeaderCreator = std::move(creator);
-}
-
-void EditorCompletionWorkflow::refreshSymbolCompletion(
-    EditorSemanticContext context,
-    const QTextBlock& currentBlock)
-{
-    context.wordPrefix = completion->wordUnderCursor(editor);
-    const EditorCompletionState completionState =
-        semanticService()->editorCompletionState(context);
-    if (completionState.available) {
-        completion->updateSymbolCompletions(completionState);
-        completion->setReplacementStart(
-            currentBlock.position(),
-            completionState.replacementStartColumn);
-        showAutoComplete();
-    }
-}
-
-void EditorCompletionWorkflow::handleAutoCompleteTimer()
-{
-    const QTextCursor cursor = editor->textCursor();
-    const QTextBlock currentBlock = cursor.block();
-
-    modes->noteCompletionTimerLine(currentBlock.blockNumber());
-
-    EditorSemanticContext context = semanticContextForCursor(cursor, true);
-
-    refreshSymbolCompletion(context, currentBlock);
 }
 
 EditorCompletionWorkflow::IncludeCompletionContext
@@ -726,7 +641,7 @@ void EditorCompletionWorkflow::showIncludeFileCompletions(
     const QStringList candidates =
         includeFileProvider(editor ? editor->documentFileName() : QString());
     completion->updateIncludeFileCompletions(candidates, context.prefix);
-    showAutoComplete(true);
+    showCompletionPopup(true);
 }
 
 bool EditorCompletionWorkflow::showIncludeNewHeaderCompletions(
@@ -751,7 +666,7 @@ bool EditorCompletionWorkflow::showIncludeNewHeaderCompletions(
         completion->updateIncludeNewHeaderCompletions(
             choices,
             QStringLiteral("type -n name"));
-        showAutoComplete(true);
+        showCompletionPopup(true);
         return true;
     }
 
@@ -765,7 +680,7 @@ bool EditorCompletionWorkflow::showIncludeNewHeaderCompletions(
         completion->updateIncludeNewHeaderCompletions(
             choices,
             QStringLiteral("use .vh or .svh"));
-        showAutoComplete(true);
+        showCompletionPopup(true);
         return true;
     }
 
@@ -778,7 +693,7 @@ bool EditorCompletionWorkflow::showIncludeNewHeaderCompletions(
     completion->updateIncludeNewHeaderCompletions(
         choices,
         QStringLiteral("create %1").arg(fileName));
-    showAutoComplete(true);
+    showCompletionPopup(true);
     return true;
 }
 
@@ -803,7 +718,7 @@ void EditorCompletionWorkflow::applyIncludeCompletion(
 
     includeCompletionActive = false;
     clearInlineAbbreviationSession();
-    hideAutoComplete();
+    hideCompletionPopup();
 }
 
 void EditorCompletionWorkflow::applyIncludeNewHeaderChoice(const QString& choice)

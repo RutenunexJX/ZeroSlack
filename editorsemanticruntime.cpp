@@ -30,13 +30,15 @@ EditorSemanticContext EditorSemanticRuntime::contextForDocument(
     const QString& fileName,
     const QString& moduleName,
     int cursorPosition,
-    bool includeDocumentText) const
+    bool includeDocumentText,
+    std::uint64_t documentRevision) const
 {
     EditorSemanticContext context;
     context.fileName = fileName;
     context.moduleName = moduleName;
     if (includeDocumentText)
         context.documentText = document->toPlainText();
+    context.documentRevision = documentRevision;
     context.cursorPosition = cursorPosition;
 
     const QTextBlock block = document->findBlock(cursorPosition);

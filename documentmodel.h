@@ -40,7 +40,6 @@ signals:
     void documentEdited(const DocumentSnapshot& snapshot);
     void documentSaved(const DocumentSnapshot& snapshot);
     void documentClosed(const QString& documentId, const QString& fileName);
-    void cursorChanged(const DocumentSnapshot& snapshot);
 
 private:
     std::unique_ptr<DocumentSessionState> state;

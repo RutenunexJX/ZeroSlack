@@ -10,7 +10,12 @@ QString normalizedSnapshotFileName(const QString& fileName)
 {
     if (fileName.isEmpty())
         return QString();
-    return QDir::cleanPath(QDir::fromNativeSeparators(QFileInfo(fileName).absoluteFilePath()));
+    QString normalized = QDir::cleanPath(
+        QDir::fromNativeSeparators(QFileInfo(fileName).absoluteFilePath()));
+#ifdef Q_OS_WIN
+    normalized = normalized.toCaseFolded();
+#endif
+    return normalized;
 }
 
 struct SnapshotRecordLookup {
@@ -44,6 +49,11 @@ struct SnapshotRecordLookup {
         if (stableKey.isEmpty())
             return -1;
         return localHandleByStableKey.value(stableKey, -1);
+    }
+
+    bool containsStableKey(const SymbolStableKey& key) const
+    {
+        return localHandleForStableKey(key) >= 0;
     }
 
     QHash<int, SemanticSymbolRecord> recordByLocalHandle;
@@ -125,8 +135,24 @@ SemanticIndexSnapshot::SemanticIndexSnapshot(
 {
     rebuildSymbolIndexes();
     const SnapshotRecordLookup lookup(m_symbolRecords);
-    for (SemanticRelationship& relationship : m_relationships)
-        relationship = rebindRelationshipToSnapshot(relationship, lookup);
+    QList<SemanticRelationship> reboundRelationships;
+    reboundRelationships.reserve(m_relationships.size());
+    QSet<QString> seenRelationships;
+    seenRelationships.reserve(m_relationships.size());
+    for (const SemanticRelationship& relationship : std::as_const(m_relationships)) {
+        const SemanticRelationship rebound =
+            rebindRelationshipToSnapshot(relationship, lookup);
+        if (!lookup.containsStableKey(rebound.fromStableKey)
+            || !lookup.containsStableKey(rebound.toStableKey)) {
+            continue;
+        }
+        const QString key = snapshotRelationshipDedupeKey(rebound);
+        if (key.isEmpty() || seenRelationships.contains(key))
+            continue;
+        seenRelationships.insert(key);
+        reboundRelationships.append(rebound);
+    }
+    m_relationships = std::move(reboundRelationships);
     rebuildRelationshipIndexes();
 }
 

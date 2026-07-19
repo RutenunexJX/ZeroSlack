@@ -31,8 +31,7 @@ void DocumentModel::handleEditorTextChanged(MyCodeEditor* editor)
 void DocumentModel::handleEditorCursorChanged(MyCodeEditor* editor)
 {
     DocumentSnapshot snapshot;
-    if (state->refreshCursor(editor, &snapshot))
-        emit cursorChanged(snapshot);
+    state->refreshCursor(editor, &snapshot);
 }
 
 void DocumentModel::handleEditorFileNameChanged(MyCodeEditor* editor)

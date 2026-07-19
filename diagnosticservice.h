@@ -35,7 +35,6 @@ enum class DiagnosticSeverityFilter {
 struct DiagnosticPanelQueryOptions {
     DiagnosticPanelScope scope = DiagnosticPanelScope::CurrentFile;
     DiagnosticSeverityFilter severity = DiagnosticSeverityFilter::All;
-    QString requestedFileName;
     QString currentFileName;
     QStringList workspaceFiles;
     QString analysisBandLabel;

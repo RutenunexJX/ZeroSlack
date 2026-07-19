@@ -50,16 +50,123 @@ the popup and clears command highlight/include state without editing source.
 Lexical context is checked by one state-machine scan, so closed URL strings and
 closed block comments containing `//` do not block a later command on the same
 line.
-Ordinary identifier typing no longer auto-opens completion after two
-characters; implicit popup entry remains limited to strong contexts (`.`,
-`::`, macro backtick, and `$`). The semantic inline GUI path verifies live
-filtering, Backspace expansion, zero-match recovery, anchor-module isolation,
-and explicit Tab/Enter activation while preserving surrounding code and
-replacing only the complete abbreviation. Inline semantic sessions suppress
-default declaration items. Debug verification passed for `completion_test`,
-`gui_smoke_test`, `relationship_test`, and `insight_visual_style_test`.
+Ordinary code input never auto-opens completion: identifiers, `.`, `::`, macro
+backtick text, `$`, and arbitrary two-character input all remain popup-free.
+Only explicit command text followed by Tab enters a candidate session. The
+semantic inline GUI path verifies live filtering, Backspace expansion,
+zero-match recovery, anchor-module isolation, and explicit Tab/Enter activation
+while preserving surrounding code and replacing only the complete
+abbreviation. Inline semantic sessions suppress default declaration items. The
+negative and explicit-Tab GUI cases are owned by `gui_smoke_test`, with
+command/service cases in `completion_test`.
 
-Current milestone: RTL Insight core-view modernization is complete on top of
+Current corrective milestone: workspace-open lifecycle, completion cleanup,
+and effective-value unification are implemented in the working tree. The old
+ordinary identifier completion state/timer/query/replacement path is deleted;
+only explicit Tab command candidate sessions retain `QCompleter`.
+
+All compile-time SystemVerilog effective values now originate in Slang
+Compilation/AST/type data and flow through `SemanticSymbolPresentation`,
+`EffectiveValueFact`, `SemanticIndex`, and `EffectiveValueService` before Hover
+or Ghost consumes them. Package/compilation-unit values are static, real
+instance values are keyed by exact hierarchy path, detached defaults remain
+separate, and open unsaved documents participate through revisioned,
+debounced, cancellable overlays. Exact declaration ranges are part of stable
+identity. The service exposes unavailable/current/stale/error state, precise
+value/type/dimension/width data, scope or instance provenance, failure reason,
+and computation/document revisions. Ghost no longer contains a second
+arithmetic/concatenation/enum evaluator, and Wave Preview remains outside the
+compile-time value system.
+
+`test_sv/new/PKG_global.sv` is not a valid-value fixture for every declaration:
+`E_PRE_ASSERT` is used from line 550 and declared only at line 663. Slang
+correctly reports an undeclared identifier for those forward enum references.
+The unified value system publishes that error and never substitutes an
+implicit increment or hand-evaluated literal; dedicated valid fixtures own the
+package and general enum-expression value checks.
+
+Workspace symbol, effective-value, and diagnostic analysis captures one
+immutable source transaction: the project file set plus the exact text and
+revision of every open buffer. Any captured edit expires the worker and queues
+a restart from the newest complete `DocumentModel` snapshot. Workspace epoch,
+request generation, dependency/document revisions, and computation revision
+guard one atomic GUI-thread publication. Dirty buffers replace disk text; they
+are not skipped, and staged/checkpoint/chunked semantic publication is no
+longer part of the architecture.
+
+Automatic relationship analysis captures the semantic snapshot token emitted
+by that transaction, uses the same snapshot source contents and symbol records,
+and rejects stale request/project identities. It does not launch another
+per-open-tab Slang symbol/value/diagnostic refresh.
+
+Clean open-document publication is handle-churn safe: authoritative snapshot
+relationships are retained by stable source identity, rebound to replacement
+handles, filtered for removed or changed endpoints, and mirrored back into the
+relationship engine. Opening `rtl_top.sv` after workspace analysis therefore
+preserves the Design/Navigation instance hierarchy. Editor semantic revisions
+advance only for source-text changes, so formatting/highlighting cannot stale
+Slang facts or remove width/value Ghost annotations; completed publications,
+tab activation, file identity, and instance-context changes all re-query the
+same EffectiveValue service.
+
+Problems `Current File` always follows the active document. File-specific
+analysis notifications are invalidation hints only, and multiple different
+file hints coalesce to a full refresh instead of selecting the last background
+file.
+
+The real `GlobalControlCoordinator -> FileCommandCoordinator ->
+WorkspaceManager` `ow 1` route now has an integration regression covering
+cancel, repeat, scan, symbol and automatic relationship completion, semantic
+queries, and teardown with both worker families active. Shutdown broadcasts
+cancellation before joining and finishes while the semantic runtime is alive;
+Slang source-position cache destruction occurs before QtConcurrent worker exit.
+
+The primary captured crash stack was
+`SmartRelationshipBuilder::analysisCancelled -> cancelAnalysis ->
+RelationshipAnalysisController::cancelWorkspaceAnalysis ->
+AnalysisScheduler::~AnalysisScheduler -> MainWindow::~MainWindow`. Reverse
+member destruction had released the relationship builder / semantic runtime
+before scheduler teardown called it. A second captured failure ended in
+`SourcePositionCache::~SourcePositionCache` during Qt TLS cleanup with
+`0xfeeefeee`; explicit worker-scope cache destruction removes that late TLS
+lifetime dependency.
+
+Workspace scan callbacks are also treated as synchronous reentrancy boundaries.
+`WorkspaceManager` validates its `QPointer`, scan generation, active path, and
+workspace entry after start/progress/model/files/finish publication, preventing
+a close or switch callback from publishing stale scan state.
+
+Corrective coverage is split by ownership: `global_control_ow_test` exercises
+the real `ow 1` coordinator path for selector cancel/repeat, `test_sv/new`,
+`test_sv/huge_prj`, both analyses, semantic queries, and active-worker teardown;
+`effective_value_test` covers package/compilation-unit/default/per-instance
+facts, general enum expressions, wide/signed/X/Z/string/type/dimension values,
+same-name nested identity, Hover/Ghost, and unsaved overlay revision,
+cancellation, atomic values, and diagnostics; `gui_smoke_test` covers ordinary
+and backtick completion negatives, explicit Tab candidate behavior, scan
+reentrancy, embedded double-click popup lifetime, and complete port
+declarations; `relationship_test` retains real `PKG_global.sv` / `chl_ctrl.sv`
+integration. The `ow 1` regression additionally opens analyzed `rtl_top.sv`
+through the real TabManager and preserves stable relationships, package value,
+semantic Ghost, port presentation, Design/Navigation reports, and an actual
+nested NavigationWidget item. Final headless acceptance is complete: the full
+Debug build passed 29/29 steps in 3895.3 seconds, the final all-target build had
+no pending work, and complete CTest passed 12/12 in 181.66 seconds. No visible
+`demo.exe` was launched after the user prohibited GUI interference; the real
+coordinator route ran under Qt offscreen and remained alive for both projects.
+Final `.zs` hashes are `ED843650...BE292B7` (`new`) and
+`CD8A81F2...21CF425` (`huge_prj`). The `new/.zs` timestamp predates this
+headless validation, but its hash differs from the earlier recorded
+`A7942210...501F43`; the repair did not overwrite or restore it.
+
+Remaining scope is documented rather than hidden: dirty overlays invalidate
+old relationship edges but do not yet launch an overlay-matched relationship
+recompute; zero-symbol include/macro compilation inputs need complete
+fingerprints; full engine-mirror replacement still runs on the GUI thread; and
+the conservative source-text revision check copies a large editor buffer on
+each `textChanged` event.
+
+Previous milestone: RTL Insight core-view modernization is complete on top of
 the UI theme and graph foundation. The current UI route keeps Qt Widgets, uses
 `InsightVisualStyle` as the global theme layer, and uses `InsightGraphView` as
 the shared graph view interaction layer.
@@ -156,10 +263,16 @@ Current baseline highlights:
   shell, common Qt Widgets controls, Global Control, and Fold Shelf active
   shell state use `InsightVisualStyle` token/QSS paths, and the main editor tab
   bar no longer carries a hard-coded `ModeManager` palette.
-- Next recommended milestone: manual visual QA and small app-shell polish, or a
-  concrete product-track task. Do not change semantic analysis, hotspot report
-  data, FSM discovery, module block diagram extraction, Wave Preview business
-  logic, or workspace scanning in UI polish.
+- Current redundancy cleanup baseline: Navigation UI is the Files/Design pane
+  only; legacy Module/Symbol tab adapters, manager view branches, and
+  SymbolOutline-row UI navigation wiring are removed. Service-owned module
+  hierarchy and symbol outline queries remain semantic data APIs. Design child
+  activation binds the editor to the exact active-top/instance path, Files or
+  direct-open navigation returns it to an unbound default, and navigation
+  history restores the recorded instance context.
+- The prior recommendation to limit work to app-shell visual polish is
+  superseded by the current corrective milestone above. Future changes must
+  preserve the unified effective-value and analysis-lifecycle boundaries.
 - Previous completed milestone: Signal Usage Hotspot v2 integration. The
   A-branch service/report API is connected to the B-branch visual helpers in a
   dual-mode panel with real `chl_ctrl.sv` / `mcs` coverage and enum-value
@@ -177,10 +290,10 @@ Current baseline highlights:
 - Corpus audit is retired as an acceptance signal. Future GUI-discovered
   defects should be reduced into small fixtures in the focused tests.
 - Most recent completed milestone: import-aware SystemVerilog package symbol
-  visibility. Unqualified package members are available to completion, goto,
-  and hover only from active `import pkg::*;` context; local/module symbols win
-  over imports; ambiguous same-name imported package members do not produce a
-  random jump.
+  visibility. Unqualified package members are available to definition, hover,
+  and explicit command semantic queries only from active `import pkg::*;`
+  context; local/module symbols win over imports; ambiguous same-name imported
+  package members do not produce a random jump.
 - Recently completed workflow baselines also include user template JSON usage,
   user template JSON phase 1, explicit header/include and package import
   commands, semantic `;m` module instantiation Slot Mode, Macro / Define
@@ -210,13 +323,14 @@ Status history:
   `signal_usage_hotspot_panel_test`, plus `git diff --check`.
 - Package/import semantic visibility repair is complete. `PackageVisible`
   package parameters, localparams, typedefs, enums, and structs are no longer
-  treated as globally visible for unqualified lookup. Completion, definition,
-  and hover use the current file/scope import context, including
+  treated as globally visible for unqualified lookup. Definition, hover, and
+  explicit command semantic queries use the current file/scope import context,
+  including
   `import pkg::*;`; local/module declarations take priority over imported
-  package members; and conflicting same-name members from multiple imported
+  package members for definition, hover, and explicit command queries; and conflicting same-name members from multiple imported
   packages are reported as ambiguous rather than resolved randomly. `;pk`
   remains an import insertion command only, Package Tools behavior is
-  unchanged, and `pkg::symbol` completion was not added.
+  unchanged, and no ordinary `pkg::symbol` popup exists.
 - Verification for package/import semantic visibility repair passed in the
   Debug build: `cmake --build . --target completion_test relationship_test
   gui_smoke_test`; `ctest -R
@@ -628,8 +742,8 @@ Status history:
   `git diff --check`.
 - G6.5 Tab-only inline abbreviation expansion is complete:
   `inlinecommandmode` now exposes a suffix parser for registered abbreviations;
-  text-change completion suppresses inline command popups without entering
-  command mode; `EditorCompletionWorkflow` owns explicit Tab sessions with
+  ordinary text changes do not enter any completion path;
+  `EditorCompletionWorkflow` owns only explicit Tab sessions with
   saved absolute range and anchor context; popup Esc cancellation preserves the
   original abbreviation; unique candidates replace directly; multi-candidate
   results use the existing popup; Slot Mode, Column Mode, existing popup Tab,
@@ -897,18 +1011,13 @@ Status history:
   passed.
 
 - HWA.1 Huge Workspace Owner And Verification Inventory is complete:
-  `WorkspaceAnalysisPlanService` owns current/dirty-open/clean-open/background
-  priority planning, protected files, band metadata, and staged publication
-  checkpoints; `WorkspaceAnalysisRequestQueue` owns active/pending request
-  coalescing, stale pending replacement, cancellation state, and telemetry;
-  `WorkspaceSymbolAnalysisController` plus `SymbolAnalyzer` own workspace
-  expiration, cancellation, async extraction, and chunked/staged publication;
-  `SemanticIndex` / `SemanticIndexSnapshot` own band metadata and
-  priority-aware query ordering; `RelationshipAnalysisController`,
-  `RelationshipAnalysisWorker`, and `RelationshipResultPublisher` own
-  relationship cancellation and stale/cancelled result rejection; and
-  `AnalysisProgressCoordinator` plus `ActivityLogService` own visible Activity
-  telemetry.
+  the original audit established the planning, queue, analyzer, semantic-index,
+  relationship, and Activity owner boundaries. Its protected-file and staged
+  publication description is superseded by the current immutable all-open-buffer
+  transaction: `WorkspaceSymbolAnalysisController` captures text/revisions,
+  `SymbolAnalyzer` cancels/restarts and atomically publishes symbols, Slang
+  value facts, and diagnostics, and relationship analysis consumes that
+  published snapshot token. Analysis bands remain query/telemetry metadata.
 - Existing HWA verification anchors are documented as `completion_test`,
   `relationship_test`, `large_file_perf_test`, and `relationship_perf_test`.
   No Huge Workspace UX feature was added in HWA.1.
@@ -916,25 +1025,26 @@ Status history:
   `git diff --check`.
 
 - HWA.2 Huge Workspace Safe Verification is complete:
-  the safe verification path was Release compile/link of the HWA-related
+  the historical audit path was Release compile/link of the HWA-related
   test/harness targets rather than launching GUI executables in an environment
   that has recently shown external Windows application-error dialogs.
   `completion_test`, `relationship_test`, `large_file_perf_test`, and
   `relationship_perf_test` built successfully in the Release CMake build
   directory, and artifact inspection confirmed all four executables exist.
-  `ctest` was not run, so no stalled-CTest or external memory-read dialog check
-  was exercised in this milestone.
+  `ctest` was not run in that audit milestone. This is not the acceptance
+  status of the current corrective work.
 - Focused verification for HWA.2: Release build of `completion_test`,
   `relationship_test`, `large_file_perf_test`, and `relationship_perf_test`;
   documentation inspection plus `git diff --check`.
 
 - HWA.3 Huge Workspace Confirmed Status And Gaps is complete:
-  the Huge Workspace docs now state that owner boundaries exist for planning,
-  request coalescing, symbol cancellation/expiration, staged publication,
-  relationship cancellation, Activity telemetry, and semantic snapshot query
-  exposure. They also state the remaining audit gaps: HWA.2 did not run test
-  executables, full `ctest` was not run in the current dialog-prone
-  environment, `relationship_perf_test` was not freshly executed against
+  the Huge Workspace docs now state that owner boundaries exist for immutable
+  overlay capture, request coalescing, cancellation/restart, atomic
+  symbol/value/diagnostic publication, snapshot-consistent relationship work,
+  Activity telemetry, and semantic snapshot query exposure. They also state
+  the remaining audit gaps: HWA.2 did not run test
+  executables, full `ctest` was not run during that historical audit,
+  `relationship_perf_test` was not freshly executed against
   `test_sv/huge_prj`, Activity telemetry was not revalidated in a live GUI
   session, and the prior Release `huge_prj` timings remain reference points
   rather than refreshed HWA.3 measurements. No Huge Workspace UX or behavior
@@ -1389,11 +1499,11 @@ Only audit and document existing strategy status.
 
 Audit topics:
 
-- current/open/dirty-open priority
+- immutable project/open-buffer snapshot capture
 - analysis bands and query ordering
-- stale request coalescing and expiration
-- cancellation
-- staged publication
+- stale request coalescing, expiration, cancellation, and restart
+- atomic symbol/effective-value/diagnostic publication
+- relationship reuse of the published semantic snapshot token
 - Activity telemetry
 - Release `huge_prj` performance references
 

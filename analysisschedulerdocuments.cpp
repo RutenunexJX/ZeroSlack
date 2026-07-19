@@ -57,7 +57,8 @@ void AnalysisScheduler::handleExternalFileChanged(const QString& fileName, int d
 
 void AnalysisScheduler::handleDocumentClosed(const QString& fileName)
 {
-    const bool workspaceOpen = openDocumentAnalysis && openDocumentAnalysis->isWorkspaceOpen();
+    const bool workspaceOpen =
+        openDocumentAnalysis && openDocumentAnalysis->isWorkspaceOpen();
 
     if (openDocumentAnalysis)
         openDocumentAnalysis->handleDocumentClosed(fileName);
@@ -77,7 +78,7 @@ void AnalysisScheduler::onDocumentOpened(const DocumentSnapshot& snapshot)
         ActivityLogLevel::Info,
         QStringLiteral("Opened %1").arg(QFileInfo(snapshot.fileName).fileName()));
     if (openDocumentAnalysis)
-        openDocumentAnalysis->analyzeOpenDocumentNow(snapshot, false);
+        openDocumentAnalysis->analyzeOpenDocumentNow(snapshot);
 }
 
 void AnalysisScheduler::onDocumentEdited(const DocumentSnapshot& snapshot)
@@ -92,7 +93,7 @@ void AnalysisScheduler::onDocumentEdited(const DocumentSnapshot& snapshot)
 void AnalysisScheduler::onDocumentSaved(const DocumentSnapshot& snapshot)
 {
     if (openDocumentAnalysis)
-        openDocumentAnalysis->analyzeOpenDocumentNow(snapshot, true, false);
+        openDocumentAnalysis->analyzeOpenDocumentNow(snapshot, false);
 }
 
 QString AnalysisScheduler::contentForOpenFile(const QString& fileName) const

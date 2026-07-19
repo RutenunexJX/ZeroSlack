@@ -62,45 +62,6 @@ bool NavigationManager::updateFileHierarchyData()
     return changed;
 }
 
-bool NavigationManager::updateModuleHierarchyData()
-{
-    if (!navigationService)
-        return false;
-
-    if (caches.moduleHierarchyValid
-        && caches.moduleHierarchyFilter == context.searchFilter) {
-        return false;
-    }
-
-    NavigationModuleQuery query;
-    query.filter = context.searchFilter;
-    caches.moduleHierarchy = navigationService->findModuleHierarchy(query);
-    caches.moduleHierarchyFilter = context.searchFilter;
-    caches.moduleHierarchyValid = true;
-    return true;
-}
-
-bool NavigationManager::updateSymbolHierarchyData()
-{
-    if (!navigationService)
-        return false;
-
-    if (caches.symbolOutlineValid
-        && caches.symbolOutlineFileName == context.currentFileName
-        && caches.symbolOutlineFilter == context.searchFilter) {
-        return false;
-    }
-
-    NavigationSymbolOutlineQuery query;
-    query.fileName = context.currentFileName;
-    query.filter = context.searchFilter;
-    caches.symbolOutline = navigationService->findSymbolOutline(query);
-    caches.symbolOutlineFileName = context.currentFileName;
-    caches.symbolOutlineFilter = context.searchFilter;
-    caches.symbolOutlineValid = true;
-    return true;
-}
-
 bool NavigationManager::updateDesignHierarchyData(bool force)
 {
     if (!navigationService)

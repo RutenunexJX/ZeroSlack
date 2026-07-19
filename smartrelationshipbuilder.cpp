@@ -1,6 +1,37 @@
 #include "smartrelationshipbuilder.h"
 #include "semanticindex.h"
+#include <QMutex>
+#include <QMutexLocker>
+#include <QWaitCondition>
+#include <exception>
 #include <utility>
+
+struct SmartRelationshipBuilder::WorkerLease::State
+{
+    QMutex mutex;
+    QWaitCondition idle;
+    int activeWorkers = 0;
+    bool destroying = false;
+};
+
+SmartRelationshipBuilder::WorkerLease::WorkerLease(
+    SmartRelationshipBuilder* builder,
+    std::shared_ptr<State> state)
+    : leasedBuilder(builder)
+    , lifetimeState(std::move(state))
+{
+}
+
+SmartRelationshipBuilder::WorkerLease::~WorkerLease()
+{
+    if (!acquired || !lifetimeState)
+        return;
+
+    QMutexLocker locker(&lifetimeState->mutex);
+    --lifetimeState->activeWorkers;
+    if (lifetimeState->activeWorkers == 0)
+        lifetimeState->idle.wakeAll();
+}
 
 SmartRelationshipBuilder::SmartRelationshipBuilder(
     SymbolRelationshipEngine* engine,
@@ -10,10 +41,42 @@ SmartRelationshipBuilder::SmartRelationshipBuilder(
     : QObject(parent),
       relationshipEngine(engine),
       m_slangManager(slangManager),
-      m_symbolRecordProvider(std::move(symbolRecordProvider))
+      m_symbolRecordProvider(std::move(symbolRecordProvider)),
+      workerLifetimeState(std::make_shared<WorkerLease::State>())
 {
 }
-SmartRelationshipBuilder::~SmartRelationshipBuilder() = default;
+SmartRelationshipBuilder::~SmartRelationshipBuilder()
+{
+    const std::shared_ptr<WorkerLease::State> state = workerLifetimeState;
+    if (!state)
+        return;
+
+    {
+        QMutexLocker locker(&state->mutex);
+        state->destroying = true;
+    }
+    cancelled.store(true, std::memory_order_release);
+
+    QMutexLocker locker(&state->mutex);
+    while (state->activeWorkers > 0)
+        state->idle.wait(&state->mutex);
+}
+
+std::shared_ptr<SmartRelationshipBuilder::WorkerLease>
+SmartRelationshipBuilder::acquireWorkerLease()
+{
+    const std::shared_ptr<WorkerLease::State> state = workerLifetimeState;
+    if (!state)
+        return {};
+
+    auto lease = std::shared_ptr<WorkerLease>(new WorkerLease(this, state));
+    QMutexLocker locker(&state->mutex);
+    if (state->destroying)
+        return {};
+    ++state->activeWorkers;
+    lease->acquired = true;
+    return lease;
+}
 
 QVector<RelationshipToAdd> SmartRelationshipBuilder::computeRelationships(
     const QString& fileName,
@@ -80,8 +143,17 @@ QVector<RelationshipToAdd> SmartRelationshipBuilder::computeRelationships(
         }
 
         collectResults = nullptr;
+    } catch (const std::exception& error) {
+        collectResults = nullptr;
+        emit analysisError(
+            fileName,
+            QStringLiteral("Relationship analysis failed: %1")
+                .arg(QString::fromUtf8(error.what())));
     } catch (...) {
         collectResults = nullptr;
+        emit analysisError(
+            fileName,
+            QStringLiteral("Relationship analysis failed with an unknown exception."));
     }
     return result;
 }
@@ -100,6 +172,25 @@ SmartRelationshipBuilder::extractWorkspaceRelationshipInfo(
                                                             [this]() {
                                                                 return isCancelled();
                                                             });
+}
+
+QHash<QString, RelationshipExtractionInfo>
+SmartRelationshipBuilder::extractOverlayWorkspaceRelationshipInfo(
+    const QHash<QString, QString>& fileContents,
+    const QStringList& includeDirs,
+    const QHash<QString, QString>& defines,
+    const QStringList& orderedFilePaths) const
+{
+    if (!m_slangManager)
+        return {};
+    return m_slangManager->extractOverlayWorkspaceRelationshipInfo(
+        fileContents,
+        includeDirs,
+        defines,
+        [this]() {
+            return isCancelled();
+        },
+        orderedFilePaths);
 }
 
 void SmartRelationshipBuilder::cancelAnalysis()

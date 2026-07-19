@@ -91,7 +91,6 @@ private:
     void toggleFanoutGroup(const QString& groupKey);
     void showNodePreview(const SignalKernelGraphNode& node,
                          const QRectF& nodeSceneRect);
-    void closeNodePreviewDelayed();
     void closeNodePreviewNow();
     void placeHoverPopupAvoidingNode(const QRect& nodeGlobalRect) const;
     void navigateNode(const SignalKernelGraphNode& node) const;

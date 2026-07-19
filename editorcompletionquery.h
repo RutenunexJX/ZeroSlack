@@ -6,18 +6,6 @@
 class EditorCompletionQueryHelper
 {
 public:
-    static CompletionTriggerQuery completionTriggerQuery(
-        const EditorSemanticContext& context);
-    static CompletionTriggerState completionTriggerState(
-        const EditorSemanticContext& context);
-    static EditorCompletionTextChangeState completionTextChangeState(
-        const EditorSemanticContext& context);
-    static CompletionQuery completionQuery(
-        const QString& prefix,
-        const EditorSemanticContext& context);
-    static QStringList completionNames(
-        const QString& prefix,
-        const EditorSemanticContext& context);
     static CommandModeCompletionQuery commandModeCompletionQuery(
         const EditorSemanticContext& context);
     static CommandModeCompletionState commandModeCompletionState(
@@ -25,10 +13,6 @@ public:
     static CommandModeInputState commandModeInputState(
         const EditorSemanticContext& context);
     static CommandModeMatch commandModeMatch(
-        const EditorSemanticContext& context);
-    static EditorCompletionQuery editorCompletionQuery(
-        const EditorSemanticContext& context);
-    static EditorCompletionState editorCompletionState(
         const EditorSemanticContext& context);
     static CompletionActivationState completionActivationState(
         const EditorCompletionActivationContext& context);

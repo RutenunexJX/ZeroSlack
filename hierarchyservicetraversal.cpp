@@ -632,12 +632,14 @@ DesignHierarchyReport HierarchyService::getDesignHierarchyReport(
                        const QString&,
                        const QString&,
                        const QString&,
+                       const QString&,
                        bool,
                        QSet<QString>)> appendChildren;
     appendChildren = [&](const SemanticSymbolRecord& parentModule,
                          const QString& parentNodeId,
                          const QString& rootNodeId,
                          const QString& rootModule,
+                         const QString& parentInstancePath,
                          bool inSelectedTop,
                          QSet<QString> modulePath) {
         if (!parentModule.stableKey.isValid())
@@ -705,6 +707,10 @@ DesignHierarchyReport HierarchyService::getDesignHierarchyReport(
             node.rootId = rootNodeId;
             node.rootModule = rootModule;
             node.instanceName = instanceName;
+            node.instancePath = parentInstancePath.isEmpty()
+                ? instanceName
+                : QStringLiteral("%1.%2")
+                      .arg(parentInstancePath, instanceName);
             node.moduleType = moduleType;
             node.instanceFile = instanceFile;
             node.instanceLine = instanceLine;
@@ -741,6 +747,7 @@ DesignHierarchyReport HierarchyService::getDesignHierarchyReport(
                            node.id,
                            rootNodeId,
                            rootModule,
+                           node.instancePath,
                            inSelectedTop,
                            modulePath);
         }
@@ -757,6 +764,7 @@ DesignHierarchyReport HierarchyService::getDesignHierarchyReport(
         topNode.rootId = topNode.id;
         topNode.rootModule = topRecord.name;
         topNode.instanceName = topRecord.name;
+        topNode.instancePath = topRecord.name;
         topNode.moduleType = topRecord.name;
         topNode.definitionFile =
             normalizedDesignHierarchyFileName(topRecord.location.fileName);
@@ -771,6 +779,7 @@ DesignHierarchyReport HierarchyService::getDesignHierarchyReport(
                        topNode.id,
                        topNode.id,
                        topRecord.name,
+                       topNode.instancePath,
                        inSelectedTop,
                        {});
     }

@@ -118,13 +118,17 @@ static SymbolStableKey semanticFixtureStableKey(
     const QString& fileName,
     const QString& symbolName,
     SymbolTaxonomy::DeclarationKind declarationKind,
-    const QString& ownerName = QString())
+    const QString& ownerName = QString(),
+    int sourcePosition = -1,
+    int sourceLength = 0)
 {
     SymbolStableKey key;
     key.fileName = fileName;
     key.symbolName = symbolName;
     key.declarationKind = declarationKind;
     key.ownerScope = ownerName;
+    key.sourcePosition = sourcePosition;
+    key.sourceLength = sourceLength;
     return key;
 }
 
@@ -217,6 +221,7 @@ public:
     {
         m_record.location.position = position;
         m_record.location.length = length;
+        updateStableKey();
         return *this;
     }
 
@@ -245,13 +250,6 @@ public:
         SymbolTaxonomy::SymbolUsageRole usageRole)
     {
         m_record.usageRole = usageRole;
-        return *this;
-    }
-
-    SemanticFixtureRecordBuilder& withVisibility(
-        SymbolTaxonomy::SymbolVisibility visibility)
-    {
-        m_record.visibility = visibility;
         return *this;
     }
 
@@ -329,7 +327,9 @@ private:
             m_record.location.fileName,
             m_record.name,
             m_record.declarationKind,
-            m_record.owner.name);
+            m_record.owner.name,
+            m_record.location.position,
+            m_record.location.length);
     }
 
     SemanticSymbolRecord m_record;

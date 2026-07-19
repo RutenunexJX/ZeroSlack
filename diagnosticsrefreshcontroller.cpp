@@ -23,8 +23,11 @@ void DiagnosticsRefreshController::requestRefresh(const QString& fileName)
     if (fileName.isEmpty()) {
         pendingFullRefresh = true;
         pendingFileName.clear();
-    } else if (!pendingFullRefresh) {
+    } else if (!pendingFullRefresh && pendingFileName.isEmpty()) {
         pendingFileName = fileName;
+    } else if (!pendingFullRefresh && pendingFileName != fileName) {
+        pendingFullRefresh = true;
+        pendingFileName.clear();
     }
     refreshTimer->start();
 }

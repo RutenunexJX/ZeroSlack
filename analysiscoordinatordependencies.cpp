@@ -115,9 +115,11 @@ void AnalysisCoordinator::AnalysisDependencies::handleExternalFileChanged(
         scheduler->handleExternalFileChanged(filePath, debounceMs);
 }
 
-MyCodeEditor* AnalysisCoordinator::AnalysisDependencies::currentEditor() const
+void AnalysisCoordinator::AnalysisDependencies::refreshSemanticPresentations(
+    const QString& fileName) const
 {
-    return tabManager ? tabManager->getCurrentEditor() : nullptr;
+    if (tabManager)
+        tabManager->refreshSemanticPresentations(fileName);
 }
 
 DocumentSnapshot AnalysisCoordinator::AnalysisDependencies::currentDocument() const

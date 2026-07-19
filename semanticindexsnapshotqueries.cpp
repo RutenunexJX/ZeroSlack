@@ -12,7 +12,12 @@ QString normalizedSnapshotQueryFileName(const QString& fileName)
 {
     if (fileName.isEmpty())
         return QString();
-    return QDir::cleanPath(QDir::fromNativeSeparators(QFileInfo(fileName).absoluteFilePath()));
+    QString normalized = QDir::cleanPath(
+        QDir::fromNativeSeparators(QFileInfo(fileName).absoluteFilePath()));
+#ifdef Q_OS_WIN
+    normalized = normalized.toCaseFolded();
+#endif
+    return normalized;
 }
 
 SemanticSymbolRecord snapshotRecordByLocalHandle(

@@ -6,8 +6,12 @@
 
 #include <QAction>
 #include <QCloseEvent>
+#include <QFileDialog>
 #include <QMessageBox>
 #include <QString>
+#include <QWidget>
+
+#include <utility>
 
 FileCommandCoordinator::FileCommandCoordinator(TabManager* tabManager,
                                                WorkspaceManager* workspaceManager,
@@ -15,6 +19,17 @@ FileCommandCoordinator::FileCommandCoordinator(TabManager* tabManager,
     : QObject(parent)
 {
     targets.set(tabManager, workspaceManager);
+    workspaceDirectorySelector = [](QWidget* dialogParent) {
+        return QFileDialog::getExistingDirectory(
+            dialogParent,
+            QStringLiteral("Select Workspace Directory"));
+    };
+}
+
+void FileCommandCoordinator::setWorkspaceDirectorySelector(
+    WorkspaceDirectorySelector selector)
+{
+    workspaceDirectorySelector = std::move(selector);
 }
 
 void FileCommandCoordinator::CommandTargets::set(
@@ -49,10 +64,11 @@ void FileCommandCoordinator::CommandTargets::saveAsCurrentTab() const
         tabManager->saveAsCurrentTab();
 }
 
-void FileCommandCoordinator::CommandTargets::openWorkspace() const
+void FileCommandCoordinator::CommandTargets::openWorkspace(
+    const QString& folderPath) const
 {
-    if (workspaceManager)
-        workspaceManager->openWorkspace(QString());
+    if (workspaceManager && !folderPath.isEmpty())
+        workspaceManager->openWorkspaceFromUserSelection(folderPath);
 }
 
 bool FileCommandCoordinator::CommandTargets::hasUnsavedChanges() const
@@ -98,62 +114,6 @@ void FileCommandCoordinator::EditorCommandDispatcher::redo(
 {
     if (editor)
         editor->redo();
-}
-
-void FileCommandCoordinator::EditorCommandDispatcher::selectAll(
-    MyCodeEditor* editor) const
-{
-    if (editor)
-        editor->selectAll();
-}
-
-void FileCommandCoordinator::EditorCommandDispatcher::comment(
-    MyCodeEditor* editor) const
-{
-    if (editor)
-        editor->commentSelectionOrLine();
-}
-
-void FileCommandCoordinator::EditorCommandDispatcher::uncomment(
-    MyCodeEditor* editor) const
-{
-    if (editor)
-        editor->uncommentSelectionOrLine();
-}
-
-void FileCommandCoordinator::EditorCommandDispatcher::indent(
-    MyCodeEditor* editor) const
-{
-    if (editor)
-        editor->indentSelectionOrLine();
-}
-
-void FileCommandCoordinator::EditorCommandDispatcher::unindent(
-    MyCodeEditor* editor) const
-{
-    if (editor)
-        editor->unindentSelectionOrLine();
-}
-
-void FileCommandCoordinator::EditorCommandDispatcher::replace(
-    MyCodeEditor* editor) const
-{
-    if (editor)
-        editor->showReplaceDialog();
-}
-
-void FileCommandCoordinator::EditorCommandDispatcher::gotoLine(
-    MyCodeEditor* editor) const
-{
-    if (editor)
-        editor->showGotoLineDialog();
-}
-
-void FileCommandCoordinator::EditorCommandDispatcher::clearRhs(
-    MyCodeEditor* editor) const
-{
-    if (editor)
-        editor->clearSelectedAssignmentRhs();
 }
 
 void FileCommandCoordinator::newFile()
@@ -203,7 +163,14 @@ void FileCommandCoordinator::redo()
 
 void FileCommandCoordinator::openDirectoryAsWorkspace()
 {
-    targets.openWorkspace();
+    if (!workspaceDirectorySelector)
+        return;
+
+    const QString folderPath = workspaceDirectorySelector(
+        qobject_cast<QWidget*>(parent()));
+    if (folderPath.isEmpty())
+        return;
+    targets.openWorkspace(folderPath);
 }
 
 void FileCommandCoordinator::connectActions(

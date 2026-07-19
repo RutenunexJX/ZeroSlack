@@ -8,6 +8,9 @@
 
 #include <QFutureWatcher>
 #include <QObject>
+#include <QPointer>
+#include <cstdint>
+#include <functional>
 
 class SmartRelationshipBuilder;
 class SymbolAnalyzer;
@@ -17,6 +20,9 @@ class RelationshipAnalysisController : public QObject
     Q_OBJECT
 
 public:
+    using WorkspaceWorkerStartGateForTesting =
+        std::function<void(const std::function<bool()>& isCancelled)>;
+
     explicit RelationshipAnalysisController(QObject* parent = nullptr);
     ~RelationshipAnalysisController() override;
 
@@ -30,6 +36,12 @@ public:
     void cancelSingleFileAnalysis();
     void requestWorkspaceAnalysis(const ProjectSnapshot& project);
     void cancelWorkspaceAnalysis();
+    void requestCancelAllAnalyses();
+    void waitForAllAnalyses();
+    // Test-only gate. Runs on the worker thread and must return once the
+    // supplied cancellation predicate becomes true.
+    void setWorkspaceWorkerStartGateForTesting(
+        WorkspaceWorkerStartGateForTesting gate);
 
 signals:
     void relationshipAnalysisProgress(const QString& fileName, int relationshipsFound);
@@ -45,15 +57,32 @@ signals:
     void workspaceRelationshipAnalysisCancelled();
 
 private:
-    SymbolAnalyzer* symbolAnalyzer = nullptr;
-    SmartRelationshipBuilder* relationshipBuilder = nullptr;
-    RelationshipAnalysisQueue* relationshipQueue = nullptr;
-    RelationshipResultPublisher* resultPublisher = nullptr;
+    QPointer<SymbolAnalyzer> symbolAnalyzer;
+    // Workers still capture a raw pointer only after the controller has
+    // established a join-before-detach lifetime boundary. The controller-side
+    // handle is guarded so an externally owned builder that is destroyed
+    // first cannot leave shutdown dereferencing freed QObject storage.
+    QPointer<SmartRelationshipBuilder> relationshipBuilder;
+    QPointer<RelationshipAnalysisQueue> relationshipQueue;
+    QPointer<RelationshipResultPublisher> resultPublisher;
     QFutureWatcher<SingleFileRelationshipAnalysisResult>* singleFileWatcher = nullptr;
     QFutureWatcher<WorkspaceRelationshipAnalysisResult>* workspaceWatcher = nullptr;
+    WorkspaceWorkerStartGateForTesting workspaceWorkerStartGateForTesting;
+    std::uint64_t singleFileRequestGeneration = 0;
+    std::uint64_t activeSingleFileRequestGeneration = 0;
+    QString activeSingleFileKey;
+    std::uint64_t workspaceRequestGeneration = 0;
+    std::uint64_t activeWorkspaceRequestGeneration = 0;
+    QString activeWorkspaceProjectKey;
 
-    void handleSingleFileFinished();
-    void handleWorkspaceFinished();
+    void handleSingleFileFinished(
+        QFutureWatcher<SingleFileRelationshipAnalysisResult>* watcher,
+        std::uint64_t requestGeneration,
+        const QString& fileKey);
+    void handleWorkspaceFinished(
+        QFutureWatcher<WorkspaceRelationshipAnalysisResult>* watcher,
+        std::uint64_t requestGeneration,
+        const QString& projectKey);
 };
 
 #endif // RELATIONSHIPANALYSISCONTROLLER_H

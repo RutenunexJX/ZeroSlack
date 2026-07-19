@@ -3,10 +3,25 @@
 #include "activitylogservice.h"
 #include "semanticindexsnapshot.h"
 
+#include <QDir>
+#include <QFileInfo>
+#include <QHash>
 #include <QSet>
 #include <utility>
 
 namespace {
+QString normalizedPublicationFileName(const QString& fileName)
+{
+    if (fileName.isEmpty())
+        return QString();
+    QString normalized = QDir::cleanPath(
+        QDir::fromNativeSeparators(QFileInfo(fileName).absoluteFilePath()));
+#ifdef Q_OS_WIN
+    normalized = normalized.toCaseFolded();
+#endif
+    return normalized;
+}
+
 QList<SymbolRelationshipEngine::RelationType> snapshotPublicationRelationshipTypes()
 {
     return {
@@ -25,6 +40,79 @@ QList<SymbolRelationshipEngine::RelationType> snapshotPublicationRelationshipTyp
     };
 }
 
+QHash<QString, QString> normalizedFileContents(
+    const QHash<QString, QString>& fileContents)
+{
+    QHash<QString, QString> normalized;
+    normalized.reserve(fileContents.size());
+    for (auto it = fileContents.constBegin(); it != fileContents.constEnd(); ++it) {
+        const QString fileName = normalizedPublicationFileName(it.key());
+        if (fileName.isEmpty())
+            continue;
+        QString content = it.value();
+        if (!content.isEmpty() && content.front() == QChar(u'\ufeff'))
+            content.remove(0, 1);
+        content.replace(QStringLiteral("\r\n"), QStringLiteral("\n"));
+        content.replace(QLatin1Char('\r'), QLatin1Char('\n'));
+        normalized.insert(fileName, std::move(content));
+    }
+    return normalized;
+}
+
+QSet<QString> changedSnapshotFiles(
+    const SemanticIndexSnapshot* previousSnapshot,
+    const QHash<QString, QString>& currentFileContents)
+{
+    QSet<QString> changed;
+    if (!previousSnapshot)
+        return changed;
+
+    const QHash<QString, QString> previousContents =
+        normalizedFileContents(previousSnapshot->fileContents());
+    const QHash<QString, QString> currentContents =
+        normalizedFileContents(currentFileContents);
+    for (auto it = previousContents.constBegin();
+         it != previousContents.constEnd();
+         ++it) {
+        const auto current = currentContents.constFind(it.key());
+        // Missing content is unknown, not evidence of a dirty edit. Removed
+        // declarations are rejected separately by stable endpoint validation.
+        if (current != currentContents.constEnd() && current.value() != it.value())
+            changed.insert(it.key());
+    }
+    return changed;
+}
+
+bool relationshipTouchesChangedFile(
+    const SemanticRelationship& relationship,
+    const QSet<QString>& changedFiles)
+{
+    if (changedFiles.isEmpty())
+        return false;
+
+    const QString fromFile =
+        normalizedPublicationFileName(relationship.fromStableKey.fileName);
+    const QString toFile =
+        normalizedPublicationFileName(relationship.toStableKey.fileName);
+    const QString evidenceFile =
+        normalizedPublicationFileName(relationship.evidenceRange.fileName);
+    return (!fromFile.isEmpty() && changedFiles.contains(fromFile))
+        || (!toFile.isEmpty() && changedFiles.contains(toFile))
+        || (!evidenceFile.isEmpty() && changedFiles.contains(evidenceFile));
+}
+
+QString relationshipEndpointKey(const SemanticRelationship& relationship)
+{
+    const QString fromKey = symbolStableKeyText(relationship.fromStableKey);
+    const QString toKey = symbolStableKeyText(relationship.toStableKey);
+    if (fromKey.isEmpty() || toKey.isEmpty())
+        return QString();
+    return QStringLiteral("%1|%2|%3")
+        .arg(QString::number(static_cast<int>(relationship.type)),
+             fromKey,
+             toKey);
+}
+
 SemanticIndexSnapshot publicationSnapshotFromSemanticRecords(
     const SemanticIndex* index,
     QList<SemanticDiagnostic> diagnostics)
@@ -40,9 +128,84 @@ SemanticIndexSnapshot publicationSnapshotFromSemanticRecords(
     const QList<SemanticSymbolRecord> symbolRecords =
         index->getSymbolRecords();
 
+    QHash<QString, QString> fileContents;
+    QSet<QString> seenFiles;
+    for (const SemanticSymbolRecord& record : symbolRecords) {
+        const QString normalizedFile =
+            normalizedPublicationFileName(record.location.fileName);
+        if (normalizedFile.isEmpty() || seenFiles.contains(normalizedFile))
+            continue;
+        seenFiles.insert(normalizedFile);
+        fileContents.insert(
+            record.location.fileName,
+            index->getCachedFileContent(record.location.fileName));
+    }
+
+    const std::shared_ptr<const SemanticIndexSnapshot> previousSnapshot =
+        index->snapshot();
+    const QSet<QString> changedFiles =
+        changedSnapshotFiles(previousSnapshot.get(), fileContents);
+
+    QHash<int, SymbolStableKey> stableKeyByHandle;
+    QSet<QString> currentStableKeys;
+    stableKeyByHandle.reserve(symbolRecords.size());
+    currentStableKeys.reserve(symbolRecords.size());
+    for (const SemanticSymbolRecord& record : symbolRecords) {
+        if (record.localHandle >= 0)
+            stableKeyByHandle.insert(record.localHandle, record.stableKey);
+        const QString stableKey = symbolStableKeyText(record.stableKey);
+        if (!stableKey.isEmpty())
+            currentStableKeys.insert(stableKey);
+    }
+
     QList<SemanticRelationship> relationships;
+    QSet<QString> seenRelationships;
+    QSet<QString> authoritativeEndpoints;
+    auto appendRelationship =
+        [&relationships,
+         &seenRelationships,
+         &authoritativeEndpoints,
+         &currentStableKeys,
+         &changedFiles](SemanticRelationship relationship,
+                        bool derivedFromEngine) {
+            const QString fromKey =
+                symbolStableKeyText(relationship.fromStableKey);
+            const QString toKey =
+                symbolStableKeyText(relationship.toStableKey);
+            if (fromKey.isEmpty() || toKey.isEmpty()
+                || !currentStableKeys.contains(fromKey)
+                || !currentStableKeys.contains(toKey)
+                || relationshipTouchesChangedFile(relationship,
+                                                  changedFiles)) {
+                return;
+            }
+
+            const QString endpointKey = relationshipEndpointKey(relationship);
+            if (derivedFromEngine
+                && authoritativeEndpoints.contains(endpointKey)) {
+                return;
+            }
+            const QString key = semanticRelationshipStableKeyText(relationship);
+            if (key.isEmpty() || seenRelationships.contains(key))
+                return;
+            seenRelationships.insert(key);
+            authoritativeEndpoints.insert(endpointKey);
+            relationships.append(std::move(relationship));
+        };
+
+    // Published stable-key relationships are authoritative across symbol
+    // handle churn. A clean overlay therefore rebinds them to the new record
+    // handles instead of reconstructing them from a stale engine graph.
+    if (previousSnapshot) {
+        for (const SemanticRelationship& relationship
+             : previousSnapshot->relationships()) {
+            appendRelationship(relationship, false);
+        }
+    }
+
+    // The engine is a derived mirror and may contribute newly computed edges,
+    // but it is not allowed to erase or supersede the authoritative snapshot.
     if (SymbolRelationshipEngine* engine = index->relationshipEngine()) {
-        QSet<QString> seen;
         for (const SemanticSymbolRecord& record : symbolRecords) {
             const int symbolHandle = record.localHandle;
             if (symbolHandle < 0)
@@ -56,6 +219,9 @@ SemanticIndexSnapshot publicationSnapshotFromSemanticRecords(
                     relationship.fromId = symbolHandle;
                     relationship.toId = relatedHandle;
                     relationship.type = type;
+                    relationship.fromStableKey = record.stableKey;
+                    relationship.toStableKey =
+                        stableKeyByHandle.value(relatedHandle);
                     const SymbolRelationshipEngine::RelationshipEdgeMetadata metadata =
                         engine->getRelationshipMetadata(
                             relationship.fromId,
@@ -68,30 +234,10 @@ SemanticIndexSnapshot publicationSnapshotFromSemanticRecords(
                         relationship.evidenceText = metadata.context;
                         relationship.evidenceRange = metadata.evidenceRange;
                     }
-
-                    const QString key = QStringLiteral("%1:%2:%3")
-                                            .arg(relationship.fromId)
-                                            .arg(relationship.toId)
-                                            .arg(static_cast<int>(relationship.type));
-                    if (seen.contains(key))
-                        continue;
-                    seen.insert(key);
-                    relationships.append(relationship);
+                    appendRelationship(std::move(relationship), true);
                 }
             }
         }
-    }
-
-    QHash<QString, QString> fileContents;
-    QSet<QString> seenFiles;
-    for (const SemanticSymbolRecord& record : symbolRecords) {
-        const QString fileName = record.location.fileName;
-        if (fileName.isEmpty() || seenFiles.contains(fileName))
-            continue;
-        seenFiles.insert(fileName);
-        fileContents.insert(
-            fileName,
-            index->getCachedFileContent(fileName));
     }
 
     return SemanticIndexSnapshot::fromSymbolRecords(
@@ -107,6 +253,11 @@ void SemanticIndex::setSnapshot(std::shared_ptr<const SemanticIndexSnapshot> sna
     m_snapshot = std::move(snapshot);
     ++m_snapshotRevision;
     if (m_snapshot) {
+        if (m_relationshipEngine) {
+            m_relationshipEngine->replaceRelationshipsFromSnapshot(
+                m_snapshot->getSymbolRecords(),
+                m_snapshot->relationships());
+        }
         ActivityLogService::getInstance()->append(
             QStringLiteral("SemanticIndex"),
             ActivityLogLevel::Info,
@@ -120,8 +271,26 @@ void SemanticIndex::setSnapshot(std::shared_ptr<const SemanticIndexSnapshot> sna
 void SemanticIndex::clearSnapshot()
 {
     m_snapshot.reset();
-    clearWorkspaceFileAnalysisBands();
     ++m_snapshotRevision;
+}
+
+void SemanticIndex::clearSemanticState()
+{
+    clearSnapshot();
+    m_nativeSymbolRecords.clear();
+    m_nativeRecordIndexesByFile.clear();
+    m_nativeRecordIndexesByName.clear();
+    m_nativeRecordIndexesByOwner.clear();
+    m_nativeRecordIndexesByDeclarationKind.clear();
+    m_nativeFileContents.clear();
+    m_nativeFileStates.clear();
+    m_nativeStableKeyIndexes.clear();
+    m_nativeRecordHandlesByAnalysisFile.clear();
+    m_nativeCoveredFiles.clear();
+    m_workspaceFileAnalysisBands.clear();
+    m_nextNativeLocalHandle = 1;
+    if (m_relationshipEngine)
+        m_relationshipEngine->clearAllRelationships();
 }
 
 std::shared_ptr<const SemanticIndexSnapshot> SemanticIndex::snapshot() const

@@ -8,7 +8,7 @@ void AnalysisScheduler::setRelationshipEngine(SymbolRelationshipEngine* engine)
 
 void AnalysisScheduler::setRelationshipBuilder(SmartRelationshipBuilder* builder)
 {
-    if (relationshipAnalysis)
+    if (!shuttingDown && relationshipAnalysis)
         relationshipAnalysis->setRelationshipBuilder(builder);
 }
 
@@ -25,12 +25,6 @@ void AnalysisScheduler::scheduleRelationshipAnalysis(const QString& fileName,
 
     if (relationshipAnalysisQueue)
         relationshipAnalysisQueue->schedule(fileName, content, delayMs);
-}
-
-void AnalysisScheduler::cancelScheduledRelationshipAnalysis(const QString& fileName)
-{
-    if (relationshipAnalysisQueue)
-        relationshipAnalysisQueue->clearFile(fileName);
 }
 
 void AnalysisScheduler::cancelAllScheduledRelationshipAnalyses()
@@ -68,7 +62,6 @@ void AnalysisScheduler::requestWorkspaceRelationshipAnalysis(const ProjectSnapsh
         return;
     }
 
-    refreshOpenDocumentsForForegroundAnalysis();
     relationshipAnalysis->requestWorkspaceAnalysis(project);
 }
 

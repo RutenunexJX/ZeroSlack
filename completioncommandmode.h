@@ -8,7 +8,6 @@ class CompletionCommandMode
 public:
     static QList<CommandModeCommand> commands();
     static CommandModeMatch matchCommandMode(const QString& lineUpToCursor);
-    static CommandModeInputState inputState(const QString& lineUpToCursor);
     static CommandSymbolPresentation symbolPresentation(
         CompletionCommandKind kind);
     static CommandSymbolCompletionItem symbolCompletionItem(

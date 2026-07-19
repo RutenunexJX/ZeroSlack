@@ -2,17 +2,13 @@
 
 #include "completionmodel.h"
 #include "editorsemanticcontextservice.h"
-#include "editormodestate.h"
 #include "mycodeeditor.h"
 
 #include <QAbstractItemView>
 #include <QCompleter>
 #include <QKeyEvent>
 #include <QModelIndex>
-#include <QPlainTextEdit>
 #include <QRect>
-#include <QTextCursor>
-#include <QTimer>
 #include <algorithm>
 
 void EditorCompletionUi::init(MyCodeEditor* editor)
@@ -26,29 +22,18 @@ void EditorCompletionUi::init(MyCodeEditor* editor)
     completer->setMaxVisibleItems(15);
     popup()->setStyleSheet(QStringLiteral(
         "QListView::item { padding: 1px 4px; min-height: 18px; }"));
-    timer = new QTimer(editor);
-    timer->setSingleShot(true);
-    timer->setInterval(0);
 }
 
 void EditorCompletionUi::attachToEditor(
     MyCodeEditor* editor,
-    const std::function<void()>& handleTimer,
-    const std::function<void(const QModelIndex&)>& handleActivated,
-    const std::function<void()>& handleTextChanged)
+    const std::function<void(const QModelIndex&)>& handleActivated)
 {
     init(editor);
-    QObject::connect(timer, &QTimer::timeout, editor, handleTimer);
     QObject::connect(
         completer,
         QOverload<const QModelIndex&>::of(&QCompleter::activated),
         editor,
         handleActivated);
-    QObject::connect(
-        editor,
-        &QPlainTextEdit::textChanged,
-        editor,
-        handleTextChanged);
 }
 
 QAbstractItemView* EditorCompletionUi::popup() const
@@ -64,16 +49,6 @@ bool EditorCompletionUi::popupVisible() const
 void EditorCompletionUi::hidePopup() const
 {
     popup()->hide();
-}
-
-void EditorCompletionUi::startTimer() const
-{
-    timer->start();
-}
-
-void EditorCompletionUi::stopTimer() const
-{
-    timer->stop();
 }
 
 int EditorCompletionUi::rowCount() const
@@ -103,13 +78,11 @@ void EditorCompletionUi::activateIndex(const QModelIndex& index) const
 
 EditorCompletionActivationContext
 EditorCompletionUi::activationContextForIndex(
-    const QModelIndex& index,
-    const EditorModeState& modes) const
+    const QModelIndex& index) const
 {
     const CompletionModel::CompletionItem item = model->getItem(index);
     EditorCompletionActivationContext context;
     context.selectable = model->isSelectableIndex(index);
-    context.commandModeActive = modes.commandModeActive;
     context.itemText = item.text;
     context.defaultValue = item.defaultValue;
     context.selectionStart = item.selectionStart;
@@ -119,12 +92,10 @@ EditorCompletionUi::activationContextForIndex(
 }
 
 EditorCompletionPopupKeyContext EditorCompletionUi::popupKeyContextForEvent(
-    QKeyEvent* event,
-    const EditorModeState& modes) const
+    QKeyEvent* event) const
 {
     EditorCompletionPopupKeyContext context;
     context.key = event->key();
-    context.commandModeActive = modes.commandModeActive;
     context.currentIndexValid = currentIndex().isValid();
     context.hasRows = hasRows();
     return context;
@@ -161,44 +132,6 @@ void EditorCompletionUi::updateIncludeNewHeaderCompletions(
     const QString& title) const
 {
     model->updateIncludeNewHeaderCompletions(choices, title);
-}
-
-void EditorCompletionUi::updateSymbolCompletions(
-    const EditorCompletionState& completionState) const
-{
-    model->updateCompletions(completionState.completion, completionState.prefix);
-}
-
-void EditorCompletionUi::setReplacementStart(
-    int blockPosition,
-    int replacementStartColumn)
-{
-    wordStartPos = blockPosition + replacementStartColumn;
-}
-
-QString EditorCompletionUi::wordUnderCursor(MyCodeEditor* editor)
-{
-    QTextCursor cursor = editor->textCursor();
-    const int currentPosition = cursor.position();
-    cursor.movePosition(QTextCursor::StartOfWord);
-    wordStartPos = cursor.position();
-    cursor.setPosition(currentPosition);
-    cursor.movePosition(QTextCursor::EndOfWord);
-    cursor.setPosition(wordStartPos);
-    cursor.setPosition(currentPosition, QTextCursor::KeepAnchor);
-    return cursor.selectedText();
-}
-
-void EditorCompletionUi::replaceWordAtCursor(
-    MyCodeEditor* editor,
-    const QString& text) const
-{
-    QTextCursor cursor = editor->textCursor();
-    cursor.setPosition(wordStartPos);
-    cursor.setPosition(
-        editor->textCursor().position(),
-        QTextCursor::KeepAnchor);
-    cursor.insertText(text);
 }
 
 void EditorCompletionUi::showForCursor(

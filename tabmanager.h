@@ -40,6 +40,8 @@ public:
     QStringList getOpenSystemVerilogFiles() const;
     int editorCount() const;
     DocumentModel* getDocumentModel() const;
+    void refreshSemanticPresentations(
+        const QString& changedFileName = QString());
 
     // Tab state management
     void updateTabTitle(MyCodeEditor* editor);

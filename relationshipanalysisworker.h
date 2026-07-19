@@ -9,9 +9,12 @@
 #include <QString>
 #include <QtGlobal>
 #include <QVector>
+#include <cstdint>
 #include <memory>
 
 struct WorkspaceRelationshipAnalysisResult {
+    std::uint64_t requestGeneration = 0;
+    QString projectKey;
     QVector<QPair<QString, QVector<RelationshipToAdd>>> fileRelationships;
     SemanticSnapshotToken baseSnapshot;
     std::shared_ptr<const SemanticIndexSnapshot> semanticSnapshot;
@@ -46,7 +49,9 @@ public:
     static WorkspaceRelationshipAnalysisResult analyzeWorkspace(
         SmartRelationshipBuilder* relationshipBuilder,
         const ProjectSnapshot& project,
-        const SemanticSnapshotToken& baseSnapshot);
+        const SemanticSnapshotToken& baseSnapshot,
+        std::uint64_t requestGeneration = 0,
+        const QString& projectKey = QString());
 };
 
 #endif // RELATIONSHIPANALYSISWORKER_H

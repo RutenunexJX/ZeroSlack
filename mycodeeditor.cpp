@@ -330,6 +330,16 @@ void MyCodeEditor::refreshScopeAndCurrentLineHighlight()
     state->refreshScopeAndCurrentLineHighlight(this);
 }
 
+void MyCodeEditor::refreshSemanticPresentation()
+{
+    state->refreshSemanticPresentation(this);
+}
+
+std::uint64_t MyCodeEditor::semanticDocumentRevision() const
+{
+    return state->semanticDocumentRevision();
+}
+
 void MyCodeEditor::setIncludeFileCompletionProvider(
     std::function<QStringList(const QString& currentFile)> provider)
 {
@@ -346,6 +356,27 @@ void MyCodeEditor::setIncludeNewHeaderCreator(
 void MyCodeEditor::setSemanticContextService(EditorSemanticContextService* service)
 {
     state->setSemanticContextService(service);
+}
+
+void MyCodeEditor::setHierarchyInstanceContext(
+    const HierarchyInstanceContext& context)
+{
+    if (state->hierarchyInstanceContext() == context)
+        return;
+
+    state->closeSemanticPopup(this);
+    state->setHierarchyInstanceContext(context);
+    state->refreshGhostAnnotations(this);
+}
+
+HierarchyInstanceContext MyCodeEditor::hierarchyInstanceContext() const
+{
+    return state->hierarchyInstanceContext();
+}
+
+void MyCodeEditor::closeSemanticPopup()
+{
+    state->closeSemanticPopup(this);
 }
 
 EditorBlockGeometry MyCodeEditor::blockGeometry(int blockNumber) const

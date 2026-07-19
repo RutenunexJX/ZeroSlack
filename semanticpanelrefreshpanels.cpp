@@ -101,11 +101,10 @@ void SemanticPanelRefreshCoordinator::PanelSet::configureSignalKernelGraphPanel(
     signalKernelGraphPanel->setStatusMessageHandler(statusMessageHandler);
 }
 
-void SemanticPanelRefreshCoordinator::PanelSet::updateProblemsPanel(
-    const QString& fileName) const
+void SemanticPanelRefreshCoordinator::PanelSet::updateProblemsPanel() const
 {
     if (problemsPanel)
-        problemsPanel->update(fileName);
+        problemsPanel->update();
 }
 
 void SemanticPanelRefreshCoordinator::PanelSet::showReferencesForSymbol(

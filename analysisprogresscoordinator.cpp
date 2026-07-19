@@ -214,12 +214,12 @@ void AnalysisProgressCoordinator::handleWorkspaceAnalysisPlanPrepared(
         return;
 
     const QString message =
-        QStringLiteral("Workspace plan prepared: %1 files, %2 priority, %3 background, %4 open, %5 protected, %6%7")
+        QStringLiteral("Workspace plan prepared: %1 files, %2 priority, %3 background, %4 open, %5 dirty, %6%7")
             .arg(totalFiles)
             .arg(plan.priorityFileCount)
             .arg(plan.backgroundFileCount)
             .arg(plan.openFiles.size())
-            .arg(plan.protectedFiles.size())
+            .arg(plan.dirtyOpenFiles.size())
             .arg(priorityBandText(plan))
             .arg(currentFilePlanText(plan.currentFileInWorkspace));
     ActivityLogService::getInstance()->append(

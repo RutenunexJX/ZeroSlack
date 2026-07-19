@@ -21,6 +21,8 @@
 #include "ghostannotationservice.h"
 #include "sourcenavigationservice.h"
 
+#include <cstdint>
+
 class MyCodeEditor;
 class QContextMenuEvent;
 class QDragEnterEvent;
@@ -56,7 +58,13 @@ struct MyCodeEditorState
     EditorHighlightRefresh highlightRefresh;
     EditorSourceNavigationUi sourceNavigation;
     EditorSelection selections;
+    HierarchyInstanceContext hierarchyInstance;
     QList<GhostAnnotation> ghostAnnotations;
+    // Semantic publications are keyed to text content, not QTextDocument's
+    // formatting revision. Appearance and syntax highlighting can advance the
+    // latter without changing any source text.
+    std::uint64_t semanticTextRevision = 0;
+    QString semanticRevisionText;
     FormatterProfile currentFormatterProfile = FormatterProfile::Structured;
     bool currentFormatOnSaveEnabled = false;
     bool columnSelectionActive = false;
@@ -160,6 +168,8 @@ struct MyCodeEditorState
     void handleLeaveEvent(MyCodeEditor* editor);
 
     void refreshScopeAndCurrentLineHighlight(MyCodeEditor* editor);
+    void refreshSemanticPresentation(MyCodeEditor* editor);
+    std::uint64_t semanticDocumentRevision() const;
     void setIncludeFileProvider(
         EditorCompletionWorkflow::IncludeFileProvider provider);
     void setIncludeNewHeaderCreator(
@@ -196,6 +206,10 @@ struct MyCodeEditorState
                                    const FoldShelfItem& item,
                                    int line);
     void setSemanticContextService(EditorSemanticContextService* service);
+    void setHierarchyInstanceContext(
+        const HierarchyInstanceContext& context);
+    HierarchyInstanceContext hierarchyInstanceContext() const;
+    void closeSemanticPopup(MyCodeEditor* editor);
     EditorBlockGeometry blockGeometry(
         const MyCodeEditor* editor,
         int blockNumber) const;

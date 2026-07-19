@@ -322,14 +322,12 @@ QList<SemanticSymbolRecord> SemanticIndex::findDefinitionRecords(
     if (name.isEmpty())
         return {};
 
-    if (m_snapshot)
-        return m_snapshot->findDefinitionRecords(name, context);
-
-    QList<SemanticSymbolRecord> sorted;
-    for (const SemanticSymbolRecord& record : getSymbolRecords()) {
-        if (record.name == name)
-            sorted.append(record);
-    }
+    // getSymbolRecordsByName merges the immutable workspace snapshot with
+    // native per-document updates and removes snapshot records for files that
+    // have native coverage. Going directly to m_snapshot here made global
+    // definition lookup blind to the latest analyzed document records while
+    // local lookup already observed them.
+    QList<SemanticSymbolRecord> sorted = getSymbolRecordsByName(name);
     if (sorted.isEmpty())
         return {};
     const QString normalizedContextFile = normalizedLookupFileName(context.fileName);

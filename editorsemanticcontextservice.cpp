@@ -136,39 +136,6 @@ DefinitionPreviewReport EditorSemanticContextService::definitionPreviewReport(
     return DefinitionPreviewService::getInstance()->previewForContext(context);
 }
 
-CompletionTriggerQuery EditorSemanticContextService::completionTriggerQuery(
-    const EditorSemanticContext& context) const
-{
-    return EditorCompletionQueryHelper::completionTriggerQuery(context);
-}
-
-CompletionTriggerState EditorSemanticContextService::completionTriggerState(
-    const EditorSemanticContext& context) const
-{
-    return EditorCompletionQueryHelper::completionTriggerState(context);
-}
-
-EditorCompletionTextChangeState
-EditorSemanticContextService::completionTextChangeState(
-    const EditorSemanticContext& context) const
-{
-    return EditorCompletionQueryHelper::completionTextChangeState(context);
-}
-
-CompletionQuery EditorSemanticContextService::completionQuery(
-    const QString& prefix,
-    const EditorSemanticContext& context) const
-{
-    return EditorCompletionQueryHelper::completionQuery(prefix, context);
-}
-
-QStringList EditorSemanticContextService::completionNames(
-    const QString& prefix,
-    const EditorSemanticContext& context) const
-{
-    return EditorCompletionQueryHelper::completionNames(prefix, context);
-}
-
 CommandModeCompletionQuery
 EditorSemanticContextService::commandModeCompletionQuery(
     const EditorSemanticContext& context) const
@@ -192,18 +159,6 @@ CommandModeMatch EditorSemanticContextService::commandModeMatch(
     const EditorSemanticContext& context) const
 {
     return EditorCompletionQueryHelper::commandModeMatch(context);
-}
-
-EditorCompletionQuery EditorSemanticContextService::editorCompletionQuery(
-    const EditorSemanticContext& context) const
-{
-    return EditorCompletionQueryHelper::editorCompletionQuery(context);
-}
-
-EditorCompletionState EditorSemanticContextService::editorCompletionState(
-    const EditorSemanticContext& context) const
-{
-    return EditorCompletionQueryHelper::editorCompletionState(context);
 }
 
 CompletionActivationState EditorSemanticContextService::completionActivationState(

@@ -57,8 +57,6 @@ QVariant CompletionModel::data(const QModelIndex &index, int role) const
 
     case Qt::BackgroundRole:
         switch (item.visualKind) {
-        case KeywordVisual:
-            return QColor(255, 255, 255);
         case SymbolHeaderVisual:
             return QColor(100, 150, 200);
         case SymbolDefaultVisual:
@@ -86,7 +84,6 @@ QVariant CompletionModel::data(const QModelIndex &index, int role) const
             return QColor(100, 100, 100);
         case CommandVisual:
             return QColor(0, 0, 150);
-        case KeywordVisual:
         default:
             return QColor(0, 0, 0);
         }
@@ -135,9 +132,6 @@ void CompletionModel::fillDisplayMetadata(CompletionItem &item)
     item.emphasized = false;
 
     switch (item.type) {
-    case KeywordCompletion:
-        item.visualKind = KeywordVisual;
-        return;
     case SymbolCompletion:
         if (item.text.contains(QStringLiteral("::"))) {
             item.visualKind = SymbolHeaderVisual;

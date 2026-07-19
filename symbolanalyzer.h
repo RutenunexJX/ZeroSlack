@@ -9,8 +9,10 @@
 #include <QSet>
 #include <QVector>
 #include <cstdint>
+#include <atomic>
 #include <functional>
 #include <memory>
+#include "effectivevalueservice.h"
 #include "projectmodel.h"
 #include "semanticindex.h"
 
@@ -22,23 +24,26 @@ class QFutureWatcher;
 struct OpenDocumentContent {
     QString fileName;
     QString content;
+    std::uint64_t documentRevision = 0;
 };
 
 struct WorkspaceFileAnalysis {
     QString fileName;
     QString content;
     QList<SemanticSymbolRecord> symbolRecords;
+    QList<EffectiveValueFact> effectiveValueFacts;
 };
 
 struct WorkspaceAnalysisResult {
     QVector<WorkspaceFileAnalysis> files;
     QList<SemanticDiagnostic> diagnostics;
-    QStringList protectedFiles;
-    QList<int> priorityPublicationCheckpoints;
+    QHash<QString, std::uint64_t> documentRevisionsByFile;
     QHash<QString, SemanticAnalysisBandMetadata> fileAnalysisBands;
     bool cancelled = false;
     int totalSymbols = 0;
     std::uint64_t generation = 0;
+    std::uint64_t workspaceEpoch = 0;
+    std::uint64_t analysisRevision = 0;
     qint64 workerElapsedMs = 0;
     qint64 symbolExtractionMs = 0;
     qint64 resultAssemblyMs = 0;
@@ -57,7 +62,6 @@ struct WorkspaceAnalysisTelemetry {
     qint64 diagnosticsExtractionMs = 0;
     qint64 publicationMs = 0;
     qint64 publicationUpdateMs = 0;
-    qint64 checkpointSnapshotMs = 0;
     qint64 finalSnapshotMs = 0;
     qint64 totalElapsedMs = 0;
 };
@@ -68,7 +72,16 @@ struct FileAnalysisResult {
     QString contentHash;
     QList<SemanticSymbolRecord> symbolRecords;
     QList<SemanticDiagnostic> diagnostics;
+    QList<EffectiveValueFact> effectiveValueFacts;
+    QVector<WorkspaceFileAnalysis> workspaceFiles;
+    QHash<QString, std::uint64_t> dependencyGenerations;
+    QHash<QString, std::uint64_t> documentRevisionsByFile;
+    QStringList diagnosticFiles;
     std::uint64_t generation = 0;
+    std::uint64_t workspaceEpoch = 0;
+    std::uint64_t analysisRevision = 0;
+    std::uint64_t documentRevision = 0;
+    bool cancelled = false;
 };
 
 class SymbolAnalyzer : public QObject
@@ -76,6 +89,9 @@ class SymbolAnalyzer : public QObject
     Q_OBJECT
 
 public:
+    using WorkspaceWorkerStartGateForTesting =
+        std::function<void(const std::function<bool()>& isCancelled)>;
+
     explicit SymbolAnalyzer(QObject *parent = nullptr);
     ~SymbolAnalyzer();
 
@@ -83,17 +99,33 @@ public:
     void analyzeOpenDocuments(const QList<OpenDocumentContent>& documents);
     void analyzeWorkspace(WorkspaceManager* workspaceManager, std::function<bool()> isCancelled = nullptr);
     void analyzeProject(const ProjectSnapshot& project, std::function<bool()> isCancelled = nullptr);
-    void startAnalyzeProjectAsync(const ProjectSnapshot& project, std::function<bool()> isCancelled = nullptr);
+    void startAnalyzeProjectAsync(
+        const ProjectSnapshot& project,
+        std::function<bool()> isCancelled = nullptr,
+        const QList<OpenDocumentContent>& openDocuments = {});
     void analyzeFile(const QString& filePath);
-    void analyzeFileContent(const QString& fileName, const QString& content);
-    void analyzeFileContentAsync(const QString& fileName, const QString& content);
-    void setWorkspaceProtectedFiles(const QStringList& fileNames);
-    void setWorkspacePriorityPublicationCheckpoints(
-        const QList<int>& checkpoints);
+    void analyzeFileContent(
+        const QString& fileName,
+        const QString& content,
+        std::uint64_t documentRevision = 0);
+    void analyzeFileContentAsync(
+        const QString& fileName,
+        const QString& content,
+        std::uint64_t documentRevision = 0);
+    void cancelFileAnalysis(const QString& fileName);
     void setWorkspaceFileAnalysisBands(
         const QHash<QString, SemanticAnalysisBandMetadata>& bands);
     void expireWorkspaceAnalysis();
+    // Broadcast cancellation without joining worker threads. Shutdown callers
+    // use this before waiting on any analysis family so a saturated global
+    // QThreadPool cannot leave a queued worker behind a blocked one.
+    void requestCancelAllAnalyses();
+    void cancelAllAnalysesAndWait();
     void cancelWorkspaceAnalysisAndInvalidate();
+    // Test-only gate. Runs on the worker thread and must return once the
+    // supplied cancellation predicate becomes true.
+    void setWorkspaceWorkerStartGateForTesting(
+        WorkspaceWorkerStartGateForTesting gate);
 
     // Utility
     bool hasSignificantChanges(const QString& oldContent, const QString& newContent) const;
@@ -108,35 +140,33 @@ signals:
     void workspaceAnalysisTelemetry(const WorkspaceAnalysisTelemetry& telemetry);
 
 private slots:
-    void onWorkspaceAnalysisFinished();
-    void processWorkspacePublicationChunk();
+    void publishPendingWorkspaceAnalysis();
 
 private:
     // Analysis state tracking
     QHash<QString, QString> lastAnalyzedContent;
     QHash<QString, std::uint64_t> fileAnalysisGenerations;
-    QStringList workspaceProtectedFiles;
-    QList<int> workspacePriorityPublicationCheckpoints;
+    QHash<QString, std::shared_ptr<std::atomic_bool>>
+        fileAnalysisCancelFlags;
+    QSet<QFutureWatcher<FileAnalysisResult>*> fileAnalysisWatchers;
+    QStringList overlayWorkspaceFiles;
+    QStringList overlayWorkspaceIncludeDirs;
+    QHash<QString, QString> overlayWorkspaceDefines;
     QHash<QString, SemanticAnalysisBandMetadata> workspaceFileAnalysisBands;
     std::uint64_t workspaceAnalysisGeneration = 0;
+    std::uint64_t workspaceEpoch = 0;
 
     QFutureWatcher<WorkspaceAnalysisResult>* workspaceAnalysisWatcher = nullptr;
+    std::shared_ptr<std::atomic_bool> workspaceAnalysisCancelFlag;
+    WorkspaceWorkerStartGateForTesting workspaceWorkerStartGateForTesting;
     QTimer* workspacePublicationTimer = nullptr;
     std::unique_ptr<WorkspaceAnalysisResult> pendingWorkspacePublication;
     QString pendingWorkspacePublicationPath;
     int pendingWorkspacePublicationTotalFiles = 0;
-    int pendingWorkspacePublicationIndex = 0;
     int pendingWorkspacePublicationFilesAnalyzed = 0;
-    int pendingWorkspacePublicationPlannedVisited = 0;
-    int pendingWorkspacePublicationLastSnapshotFiles = 0;
-    int pendingWorkspacePublicationNextCheckpoint = 0;
     QElapsedTimer pendingWorkspacePublicationTimer;
     qint64 pendingWorkspacePublicationUpdateMs = 0;
-    qint64 pendingWorkspacePublicationCheckpointSnapshotMs = 0;
     qint64 pendingWorkspacePublicationFinalSnapshotMs = 0;
-    QSet<QString> pendingWorkspacePublicationProtectedFiles;
-    QList<int> pendingWorkspacePublicationCheckpoints;
-    QStringList pendingWorkspacePublicationAnalyzedFiles;
     QList<SemanticDiagnostic> pendingWorkspacePublicationDiagnostics;
 
     void publishOpenDocumentResults(
@@ -145,12 +175,18 @@ private:
     void updateFileSymbols(
         const QString& fileName,
         const QString& content,
-        const QList<SemanticSymbolRecord>& symbolRecords);
+        const QList<SemanticSymbolRecord>& symbolRecords,
+        const QList<EffectiveValueFact>& effectiveValueFacts = {},
+        std::uint64_t computationRevision = 0,
+        std::uint64_t documentRevision = 0);
     void publishFileAnalysisResult(
         const QString& fileName,
         const QString& content,
         const QList<SemanticSymbolRecord>& symbolRecords,
-        const QList<SemanticDiagnostic>& diagnostics);
+        const QList<SemanticDiagnostic>& diagnostics,
+        const QList<EffectiveValueFact>& effectiveValueFacts = {},
+        std::uint64_t computationRevision = 0,
+        std::uint64_t documentRevision = 0);
     int publishWorkspaceAnalysisResult(
         const WorkspaceAnalysisResult& result,
         int totalFiles,
@@ -166,11 +202,13 @@ private:
         int filesAnalyzed,
         qint64 publicationMs,
         qint64 publicationUpdateMs,
-        qint64 checkpointSnapshotMs,
         qint64 finalSnapshotMs);
     QString contentHash(const QString& content) const;
     void cancelWorkspaceAnalysisAndWait();
-    QStringList filterSystemVerilogFiles(const QStringList& files) const;
+    void cancelAllFileAnalysesAndWait();
+    void analyzeOverlayDocumentsAsync(
+        const QList<OpenDocumentContent>& documents);
+    void publishOverlayAnalysisResult(const FileAnalysisResult& result);
     bool isSystemVerilogFile(const QString &fileName) const;
 };
 

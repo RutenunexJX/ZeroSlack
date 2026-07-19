@@ -250,9 +250,9 @@ void SemanticPanelRefreshCoordinator::configurePanels()
     panels.markConfigured();
 }
 
-void SemanticPanelRefreshCoordinator::updateProblemsPanel(const QString& fileName)
+void SemanticPanelRefreshCoordinator::updateProblemsPanel()
 {
-    panels.updateProblemsPanel(fileName);
+    panels.updateProblemsPanel();
 }
 
 void SemanticPanelRefreshCoordinator::showReferencesForSymbol(

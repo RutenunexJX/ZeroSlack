@@ -4,6 +4,8 @@
 #include "definitionnavigationservice.h"
 #include "symbolhoverreports.h"
 
+#include <QPointer>
+
 #include <memory>
 
 class DocumentModel;
@@ -24,7 +26,7 @@ public:
 
 private:
     SemanticIndex* index = nullptr;
-    DocumentModel* documents = nullptr;
+    QPointer<DocumentModel> documents;
     std::unique_ptr<DefinitionNavigationService> definitionNavigation;
     static std::unique_ptr<DefinitionPreviewService> instance;
 

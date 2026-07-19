@@ -37,7 +37,7 @@ struct WorkspaceAnalysisPlan {
     ProjectSnapshot project;
     QString currentFileName;
     QStringList openFiles;
-    QStringList protectedFiles;
+    QStringList dirtyOpenFiles;
     QStringList currentFilePriorityFiles;
     QStringList dirtyOpenPriorityFiles;
     QStringList cleanOpenPriorityFiles;
@@ -46,7 +46,6 @@ struct WorkspaceAnalysisPlan {
     QHash<QString, WorkspaceAnalysisFileBandMetadata>
         fileBandMetadataByNormalizedPath;
     QList<WorkspaceAnalysisBandSummary> bandSummaries;
-    QList<int> priorityPublicationCheckpoints;
     int priorityFileCount = 0;
     int backgroundFileCount = 0;
     bool currentFileInWorkspace = false;

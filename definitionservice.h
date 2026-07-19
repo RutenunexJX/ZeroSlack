@@ -48,6 +48,8 @@ private:
     static std::unique_ptr<DefinitionService> instance;
 
     SemanticIndex* semanticIndex() const;
+    DefinitionResult resolveExactDeclarationDefinition(
+        const DefinitionQuery& query) const;
     DefinitionResult resolveInstancePinDefinition(const DefinitionQuery& query) const;
     DefinitionQuery withResolvedMemberContext(const DefinitionQuery& query) const;
 };

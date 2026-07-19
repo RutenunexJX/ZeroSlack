@@ -3,7 +3,6 @@
 #include "codetemplateservice.h"
 #include "completioncommandmode.h"
 #include "completionsemanticquery.h"
-#include "completionsymbolquery.h"
 #include "inlinecommandmode.h"
 #include "symboltaxonomy.h"
 #include "usertemplateservice.h"
@@ -511,12 +510,6 @@ CommandSymbolCompletionItem CompletionService::commandSymbolCompletionItem(
         }
     }
     return item;
-}
-
-QStringList CompletionService::findCommandCompletions(const CommandCompletionQuery& query) const
-{
-    return CompletionSymbolQuery::namesFromRecords(
-        findCommandCompletionSymbolRecords(query));
 }
 
 QList<SemanticSymbolRecord> CompletionService::findCommandCompletionSymbolRecords(

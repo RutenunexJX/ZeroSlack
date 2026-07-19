@@ -47,6 +47,15 @@ QString normalizedFileKey(const QString& fileName)
         QDir::fromNativeSeparators(QFileInfo(fileName).absoluteFilePath()));
 }
 
+QString fileContentLookupKey(const QString& fileName)
+{
+    QString key = normalizedFileKey(fileName);
+#ifdef Q_OS_WIN
+    key = key.toCaseFolded();
+#endif
+    return key;
+}
+
 void markCancelled(WorkspaceRelationshipAnalysisResult* result)
 {
     if (!result)
@@ -86,11 +95,15 @@ SingleFileRelationshipAnalysisResult RelationshipAnalysisWorker::analyzeSingleFi
 WorkspaceRelationshipAnalysisResult RelationshipAnalysisWorker::analyzeWorkspace(
     SmartRelationshipBuilder* relationshipBuilder,
     const ProjectSnapshot& project,
-    const SemanticSnapshotToken& baseSnapshot)
+    const SemanticSnapshotToken& baseSnapshot,
+    std::uint64_t requestGeneration,
+    const QString& projectKey)
 {
     QElapsedTimer elapsed;
     elapsed.start();
     WorkspaceRelationshipAnalysisResult result;
+    result.requestGeneration = requestGeneration;
+    result.projectKey = projectKey;
     result.baseSnapshot = baseSnapshot;
     result.semanticSnapshot = baseSnapshot.snapshot;
     result.totalFiles = project.systemVerilogFiles.size();
@@ -112,10 +125,57 @@ WorkspaceRelationshipAnalysisResult RelationshipAnalysisWorker::analyzeWorkspace
     const QStringList svFiles = project.systemVerilogFiles;
     QElapsedTimer stageTimer;
     stageTimer.start();
+    QHash<QString, QString> snapshotContentsByKey;
+    if (baseSnapshot.snapshot) {
+        const QHash<QString, QString> snapshotContents =
+            baseSnapshot.snapshot->fileContents();
+        for (auto it = snapshotContents.constBegin();
+             it != snapshotContents.constEnd();
+             ++it) {
+            if (relationshipBuilder->isCancelled())
+                return finishCancelled();
+            const QString lookupKey = fileContentLookupKey(it.key());
+            if (!lookupKey.isEmpty())
+                snapshotContentsByKey.insert(lookupKey, it.value());
+        }
+    }
+
+    // Materialize one immutable source set for both Slang extraction and the
+    // per-file relationship computation. A captured snapshot is authoritative
+    // for files it contains, including an intentionally empty unsaved buffer.
+    QHash<QString, QString> workspaceContents;
+    workspaceContents.reserve(svFiles.size());
+    for (const QString& filePath : svFiles) {
+        if (relationshipBuilder->isCancelled())
+            return finishCancelled();
+        const QString normalizedPath = normalizedFileKey(filePath);
+        const QString lookupKey = fileContentLookupKey(filePath);
+        if (normalizedPath.isEmpty() || lookupKey.isEmpty())
+            continue;
+
+        const auto snapshotIt = snapshotContentsByKey.constFind(lookupKey);
+        if (snapshotIt != snapshotContentsByKey.constEnd()) {
+            workspaceContents.insert(normalizedPath, snapshotIt.value());
+            continue;
+        }
+
+        stageTimer.restart();
+        QFile file(filePath);
+        if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+            result.fileReadMs += stageTimer.elapsed();
+            continue;
+        }
+        workspaceContents.insert(normalizedPath, QTextStream(&file).readAll());
+        result.fileReadMs += stageTimer.elapsed();
+    }
+
+    stageTimer.restart();
     const QHash<QString, RelationshipExtractionInfo> relationshipInfoByFile =
-        relationshipBuilder->extractWorkspaceRelationshipInfo(svFiles,
-                                                              project.includeDirs,
-                                                              project.defines);
+        relationshipBuilder->extractOverlayWorkspaceRelationshipInfo(
+            workspaceContents,
+            project.includeDirs,
+            project.defines,
+            svFiles);
     result.extractionMs = stageTimer.elapsed();
     if (relationshipBuilder->isCancelled())
         return finishCancelled();
@@ -124,16 +184,15 @@ WorkspaceRelationshipAnalysisResult RelationshipAnalysisWorker::analyzeWorkspace
     for (const QString& filePath : svFiles) {
         if (relationshipBuilder->isCancelled())
             return finishCancelled();
-        stageTimer.restart();
-        QFile file(filePath);
-        if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
+        const QString sourceKey = normalizedFileKey(filePath);
+        const auto contentIt = workspaceContents.constFind(sourceKey);
+        if (contentIt == workspaceContents.constEnd())
             continue;
-        const QString content = QTextStream(&file).readAll();
-        result.fileReadMs += stageTimer.elapsed();
+        const QString& content = contentIt.value();
         const QList<SemanticSymbolRecord> fileSymbols =
             fileSymbolRecords(baseSnapshot, filePath);
         const auto infoIt =
-            relationshipInfoByFile.constFind(normalizedFileKey(filePath));
+            relationshipInfoByFile.constFind(sourceKey);
         const RelationshipExtractionInfo* relationshipInfo =
             infoIt == relationshipInfoByFile.constEnd() ? nullptr : &infoIt.value();
         stageTimer.restart();

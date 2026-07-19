@@ -34,7 +34,7 @@ public:
     void setStatusMessageHandler(std::function<void(const QString&, int)> handler);
     void configurePanels();
 
-    void updateProblemsPanel(const QString& fileName = QString());
+    void updateProblemsPanel();
     void showReferencesForSymbol(const QString& symbolName,
                                  const QString& fileName,
                                  const QString& moduleName);
@@ -134,7 +134,7 @@ private:
             const NavigationHandler& navigationHandler,
             const NavigationHandler& revealHandler,
             const StatusMessageHandler& statusMessageHandler) const;
-        void updateProblemsPanel(const QString& fileName) const;
+        void updateProblemsPanel() const;
         void showReferencesForSymbol(const QString& symbolName,
                                      const QString& fileName,
                                      const QString& moduleName) const;

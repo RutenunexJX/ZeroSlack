@@ -2403,6 +2403,7 @@ void MyCodeEditorState::initializeCore(MyCodeEditor* editor)
     syntax.init();
     gutter.init(editor);
     identity.set(QString());
+    semanticRevisionText = editor ? editor->toPlainText() : QString();
     editor->setMouseTracking(true);
     editor->setAcceptDrops(true);
 }
@@ -2439,6 +2440,11 @@ void MyCodeEditorState::attachEditorConnections(MyCodeEditor* editor)
         &QPlainTextEdit::textChanged,
         editor,
         [this, editor]() {
+            const QString currentText = editor->toPlainText();
+            if (currentText != semanticRevisionText) {
+                semanticRevisionText = currentText;
+                ++semanticTextRevision;
+            }
             sourceNavigation.handleEditorContentChanged(editor, selections);
             folding.refresh(editor, syntax.tsDocument());
             refreshGhostAnnotations(editor);
@@ -2491,14 +2497,8 @@ void MyCodeEditorState::attachToEditor(MyCodeEditor* editor)
         });
     completion.attachToEditor(
         editor,
-        [this]() {
-            completionWorkflow.handleAutoCompleteTimer();
-        },
         [this](const QModelIndex& index) {
             completionWorkflow.handleCompletionActivated(index);
-        },
-        [this]() {
-            completionWorkflow.handleTextChanged();
         });
     selections.highlightCurrentLine(editor);
     folding.refresh(editor, syntax.tsDocument());
@@ -2980,12 +2980,15 @@ EditorSemanticContext MyCodeEditorState::semanticContextForPosition(
         ? cursorPosition
         : editor->textCursor().position();
 
-    return semantic.contextForDocument(
+    EditorSemanticContext context = semantic.contextForDocument(
         editor->document(),
         identity.current(),
         currentModuleNameAt(semanticPosition),
         semanticPosition,
-        includeDocumentText);
+        includeDocumentText,
+        semanticDocumentRevision());
+    context.hierarchyInstance = hierarchyInstance;
+    return context;
 }
 
 void MyCodeEditorState::handleControlKeyPress(
@@ -3923,6 +3926,20 @@ void MyCodeEditorState::refreshScopeAndCurrentLineHighlight(
     selections.highlightCurrentLine(editor);
 }
 
+void MyCodeEditorState::refreshSemanticPresentation(MyCodeEditor* editor)
+{
+    if (!editor)
+        return;
+
+    refreshScopeAndCurrentLineHighlight(editor);
+    refreshGhostAnnotations(editor);
+}
+
+std::uint64_t MyCodeEditorState::semanticDocumentRevision() const
+{
+    return semanticTextRevision;
+}
+
 void MyCodeEditorState::setIncludeFileProvider(
     EditorCompletionWorkflow::IncludeFileProvider provider)
 {
@@ -4406,6 +4423,22 @@ void MyCodeEditorState::setSemanticContextService(
     semantic.setService(service);
 }
 
+void MyCodeEditorState::setHierarchyInstanceContext(
+    const HierarchyInstanceContext& context)
+{
+    hierarchyInstance = context;
+}
+
+HierarchyInstanceContext MyCodeEditorState::hierarchyInstanceContext() const
+{
+    return hierarchyInstance;
+}
+
+void MyCodeEditorState::closeSemanticPopup(MyCodeEditor* editor)
+{
+    sourceNavigation.closeForEditor(editor, selections);
+}
+
 EditorBlockGeometry MyCodeEditorState::blockGeometry(
     const MyCodeEditor* editor,
     int blockNumber) const
@@ -4425,6 +4458,7 @@ void MyCodeEditorState::setDocumentFileName(
     if (!identity.set(fileName))
         return;
 
+    refreshGhostAnnotations(editor);
     emit editor->fileNameChanged(identity.current());
 }
 
@@ -4462,6 +4496,8 @@ void MyCodeEditorState::refreshGhostAnnotations(MyCodeEditor* editor)
     GhostAnnotationQuery query;
     query.fileName = identity.current();
     query.documentText = editor->toPlainText();
+    query.instanceContext = hierarchyInstance;
+    query.documentRevision = semanticDocumentRevision();
     setGhostAnnotations(
         editor,
         GhostAnnotationService::getInstance()

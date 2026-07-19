@@ -38,10 +38,6 @@ void NavigationManager::connectToTabManager(TabManager* tabManager)
                 this, [this](const QString&) {
                     if (connectedWorkspaceManager
                         && connectedWorkspaceManager->isWorkspaceOpen()) {
-                        if (currentView == SymbolHierarchyView) {
-                            caches.clearSymbolOutline();
-                            refreshSymbolHierarchy();
-                        }
                         return;
                     }
 
@@ -80,7 +76,6 @@ void NavigationManager::connectToWorkspaceManager(WorkspaceManager* workspaceMan
                     }
                     context.clearCurrentWorkspacePath();
                     caches.clearFileList();
-                    caches.clearModuleHierarchy();
                     caches.clearDesignHierarchy();
                     designHierarchyCacheByScope.clear();
                     caches.designTopModule.clear();
@@ -104,12 +99,8 @@ void NavigationManager::connectToWorkspaceManager(WorkspaceManager* workspaceMan
                 });
 
         connect(connectedWorkspaceManager, &WorkspaceManager::fileChanged,
-                this, [this](const QString& filePath) {
-                    if (currentView == SymbolHierarchyView
-                        && context.currentFileName == filePath) {
-                        caches.clearSymbolOutline();
-                        refreshSymbolHierarchy();
-                    } else if (currentView == DesignHierarchyView) {
+                this, [this](const QString&) {
+                    if (currentView == DesignHierarchyView) {
                         invalidateCurrentDesignHierarchyCache();
                         refreshDesignHierarchy();
                     }
@@ -120,17 +111,6 @@ void NavigationManager::connectToWorkspaceManager(WorkspaceManager* workspaceMan
 void NavigationManager::onFileTreeDoubleClicked(const QString& filePath)
 {
     navigateToFile(filePath);
-}
-
-void NavigationManager::onSymbolRowTreeDoubleClicked(
-    const SymbolOutlineSymbolRow& row)
-{
-    navigateToSymbol(row);
-}
-
-void NavigationManager::onModuleTreeDoubleClicked(const QString& moduleName)
-{
-    navigateToModule(moduleName);
 }
 
 void NavigationManager::onFileContextMenuRequested(
@@ -161,20 +141,6 @@ void NavigationManager::onFileContextMenuRequested(
     menu.exec(globalPos);
 }
 
-void NavigationManager::onModuleContextMenuRequested(
-    const QString& moduleName,
-    const QPoint& globalPos)
-{
-    if (moduleName.isEmpty())
-        return;
-    QMenu menu;
-    QAction* setTopAction = menu.addAction(QStringLiteral("Set as Design Top"));
-    connect(setTopAction, &QAction::triggered, this, [this, moduleName]() {
-        setDesignTop(moduleName);
-    });
-    menu.exec(globalPos);
-}
-
 void NavigationManager::onDesignNodeContextMenuRequested(
     const DesignHierarchyNode& node,
     const QPoint& globalPos)
@@ -184,14 +150,14 @@ void NavigationManager::onDesignNodeContextMenuRequested(
         menu.addAction(QStringLiteral("Go to Instantiation"));
     instantiationAction->setEnabled(!node.isTop && !node.instanceFile.isEmpty());
     connect(instantiationAction, &QAction::triggered, this, [this, node]() {
-        navigateToFile(node.instanceFile, node.instanceLine);
+        navigateToDesignNodeFile(node.instanceFile, node.instanceLine, node);
     });
 
     QAction* definitionAction =
         menu.addAction(QStringLiteral("Go to Module Definition"));
     definitionAction->setEnabled(!node.definitionFile.isEmpty());
     connect(definitionAction, &QAction::triggered, this, [this, node]() {
-        navigateToFile(node.definitionFile, node.definitionLine);
+        navigateToDesignNodeFile(node.definitionFile, node.definitionLine, node);
     });
 
     menu.addSeparator();
@@ -206,11 +172,32 @@ void NavigationManager::onDesignNodeContextMenuRequested(
 void NavigationManager::onDesignNodeDoubleClicked(const DesignHierarchyNode& node)
 {
     if (!node.definitionFile.isEmpty()) {
-        navigateToFile(node.definitionFile);
+        navigateToDesignNodeFile(node.definitionFile,
+                                 node.definitionLine,
+                                 node);
         return;
     }
     if (!node.instanceFile.isEmpty())
-        navigateToFile(node.instanceFile);
+        navigateToDesignNodeFile(node.instanceFile,
+                                 node.instanceLine,
+                                 node);
+}
+
+void NavigationManager::navigateToDesignNodeFile(
+    const QString& filePath,
+    int lineNumber,
+    const DesignHierarchyNode& node)
+{
+    if (filePath.isEmpty())
+        return;
+
+    HierarchyInstanceContext instanceContext;
+    instanceContext.workspacePath = context.currentWorkspacePath;
+    instanceContext.activeTopModule = node.rootModule;
+    instanceContext.instancePath = node.instancePath;
+    emit instanceNavigationRequested(filePath,
+                                     lineNumber,
+                                     instanceContext);
 }
 
 void NavigationManager::setupConnections()
@@ -222,22 +209,9 @@ void NavigationManager::setupConnections()
             this, SLOT(onFileTreeDoubleClicked(QString)));
 
     connect(navigationWidget,
-            &NavigationWidget::symbolRowDoubleClicked,
-            this,
-            &NavigationManager::onSymbolRowTreeDoubleClicked);
-
-    connect(navigationWidget, SIGNAL(moduleDoubleClicked(QString)),
-            this, SLOT(onModuleTreeDoubleClicked(QString)));
-
-    connect(navigationWidget,
             &NavigationWidget::fileContextMenuRequested,
             this,
             &NavigationManager::onFileContextMenuRequested);
-
-    connect(navigationWidget,
-            &NavigationWidget::moduleContextMenuRequested,
-            this,
-            &NavigationManager::onModuleContextMenuRequested);
 
     connect(navigationWidget,
             &NavigationWidget::designNodeContextMenuRequested,

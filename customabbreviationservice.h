@@ -47,11 +47,6 @@ public:
     QList<CustomAbbreviationRecord> records() const;
     QList<CustomAbbreviationRecord> matchingRecords(
         const QString& prefix) const;
-    QList<CustomAbbreviationRecord> matchingRecordsForIntent(
-        const QString& prefix,
-        InlineCommandIntent intent) const;
-    CustomAbbreviationResolution resolve(
-        const QString& abbreviation) const;
     CustomAbbreviationResolution resolveForIntent(
         const QString& abbreviation,
         InlineCommandIntent intent) const;

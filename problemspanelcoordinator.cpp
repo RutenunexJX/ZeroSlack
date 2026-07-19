@@ -320,7 +320,7 @@ void ProblemsPanelCoordinator::setAnalysisState(const QString& state)
     }
 }
 
-void ProblemsPanelCoordinator::update(const QString& fileName)
+void ProblemsPanelCoordinator::update()
 {
     if (!problemsTree)
         return;
@@ -332,7 +332,6 @@ void ProblemsPanelCoordinator::update(const QString& fileName)
         problemsSeverityCombo ? problemsSeverityCombo->currentData().toInt() : 0);
     if (problemsBandCombo)
         queryOptions.analysisBandLabel = problemsBandCombo->currentData().toString();
-    queryOptions.requestedFileName = fileName;
     if (currentFileProvider)
         queryOptions.currentFileName = currentFileProvider();
     if (workspaceFilesProvider)

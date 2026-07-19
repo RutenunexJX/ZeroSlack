@@ -429,15 +429,3 @@ QString SmartRelationshipBuilder::findContainingModule(int lineNumber, const Ana
         ? QString()
         : it.value().name;
 }
-
-void SmartRelationshipBuilder::analyzeParameterRelationships(const QString& content, AnalysisContext& context)
-{
-    Q_UNUSED(content)
-    Q_UNUSED(context)
-}
-
-void SmartRelationshipBuilder::analyzeConstraintRelationships(const QString& content, AnalysisContext& context)
-{
-    Q_UNUSED(content)
-    Q_UNUSED(context)
-}

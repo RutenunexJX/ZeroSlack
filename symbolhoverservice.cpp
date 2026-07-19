@@ -1,6 +1,7 @@
 #include "symbolhoverservice.h"
 
 #include "editorsemanticcontextservice.h"
+#include "effectivevalueservice.h"
 #include "sourcenavigationservice.h"
 #include "svmacrosemantics.h"
 #include "symboltaxonomy.h"
@@ -48,6 +49,37 @@ QString macroUnavailableReason(const QString& name)
 {
     return QStringLiteral("Macro `%1` was not found in the current file or indexed workspace/include files.")
         .arg(name);
+}
+
+bool isParameterLikeRecord(const SemanticSymbolRecord& record)
+{
+    using DeclarationKind = SymbolTaxonomy::DeclarationKind;
+    return record.declarationKind == DeclarationKind::Parameter
+        || record.declarationKind == DeclarationKind::Localparam;
+}
+
+bool isEnumMemberRecord(const SemanticSymbolRecord& record)
+{
+    return record.declarationKind
+               == SymbolTaxonomy::DeclarationKind::Enum
+        && record.collectorKind
+               == SymbolTaxonomy::CollectorKind::EnumValue;
+}
+
+bool isPortRecord(const SemanticSymbolRecord& record)
+{
+    using CollectorKind = SymbolTaxonomy::CollectorKind;
+    switch (record.collectorKind) {
+    case CollectorKind::PortInput:
+    case CollectorKind::PortOutput:
+    case CollectorKind::PortInout:
+    case CollectorKind::PortRef:
+    case CollectorKind::PortInterface:
+    case CollectorKind::PortInterfaceModport:
+        return true;
+    default:
+        return false;
+    }
 }
 }
 
@@ -129,7 +161,60 @@ SymbolHoverReport SymbolHoverService::hoverForContext(
         report.macroBodyText =
             SvMacroSemantics::truncatedMacroBody(definition);
     } else {
-        report.typeText = typeTextForRecord(target.symbolRecord);
+        const QString contextFile = normalizedHoverFileName(context.fileName);
+        const QString targetFile = normalizedHoverFileName(target.fileName);
+        const QString definitionContent =
+            (!context.documentText.isEmpty()
+             && !contextFile.isEmpty()
+             && contextFile == targetFile)
+                ? context.documentText
+                : (index ? index : SemanticIndex::getInstance())
+                      ->getCachedFileContent(target.fileName);
+        EffectiveValueQuery valueQuery;
+        valueQuery.symbol = target.symbolRecord;
+        valueQuery.instanceContext = context.hierarchyInstance;
+        valueQuery.documentText = definitionContent;
+        if (!contextFile.isEmpty() && contextFile == targetFile)
+            valueQuery.documentRevision = context.documentRevision;
+        SemanticIndex* const activeIndex =
+            index ? index : SemanticIndex::getInstance();
+        std::unique_ptr<EffectiveValueService> localEffectiveValues;
+        EffectiveValueService* effectiveValues =
+            EffectiveValueService::getInstance();
+        if (activeIndex != SemanticIndex::getInstance()) {
+            localEffectiveValues =
+                std::make_unique<EffectiveValueService>(activeIndex);
+            effectiveValues = localEffectiveValues.get();
+        }
+        const EffectiveValueResult effective =
+            effectiveValues->resolve(valueQuery);
+        report.parameterLike = isParameterLikeRecord(target.symbolRecord);
+        report.enumMember = isEnumMemberRecord(target.symbolRecord);
+        report.port = isPortRecord(target.symbolRecord);
+        report.effectiveValueStatus = effective.status;
+        report.instanceBound = effective.instanceBound;
+        report.defaultEvaluation = effective.defaultEvaluation;
+        report.declarationText = effective.declarationText;
+        report.valueText = effective.valueText;
+        report.expressionText = effective.expressionText;
+        report.valueSource = effective.provenance;
+        report.instancePath = effective.instancePath;
+        report.resolvedTypeText = effective.resolvedTypeText;
+        report.packedDimensionsText = effective.packedDimensionsText;
+        report.unpackedDimensionsText = effective.unpackedDimensionsText;
+        report.bitWidthText = effective.bitWidthText;
+        report.signednessText = effective.signednessText;
+        report.interfaceName = effective.interfaceName;
+        report.modportName = effective.modportName;
+        report.enumTypeName = effective.enumTypeName;
+        report.enumUnderlyingBitWidthText =
+            !effective.bitWidthText.isEmpty()
+                ? effective.bitWidthText
+                : effective.enumUnderlyingBitWidthText;
+        report.evaluationFailureReason = effective.failureReason;
+        report.typeText = report.resolvedTypeText.isEmpty()
+            ? typeTextForRecord(target.symbolRecord)
+            : report.resolvedTypeText;
     }
     return report;
 }

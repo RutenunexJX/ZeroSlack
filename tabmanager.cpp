@@ -54,6 +54,35 @@ QStringList normalizedTabWorkspaceRoots(const QStringList& roots)
     }
     return normalized;
 }
+
+QString workspaceRootForFile(const QString& fileName,
+                             const QStringList& workspaceRoots)
+{
+    for (const QString& root : workspaceRoots) {
+        if (pathInsideWorkspaceRoot(fileName, root))
+            return root;
+    }
+    return QString();
+}
+
+HierarchyInstanceContext unboundTabInstanceContext(
+    const QString& workspaceRoot)
+{
+    HierarchyInstanceContext context;
+    context.workspacePath = cleanTabWorkspacePath(workspaceRoot);
+    return context;
+}
+
+bool semanticRefreshMatchesDocument(const QString& changedFileName,
+                                    const QString& documentFileName)
+{
+    if (changedFileName.isEmpty()
+        || changedFileName == QStringLiteral("open_tabs")) {
+        return true;
+    }
+    return normalizedTabWorkspacePath(changedFileName)
+        == normalizedTabWorkspacePath(documentFileName);
+}
 }
 
 TabManager::TabManager(QTabWidget* tabWidget, QObject *parent)
@@ -95,6 +124,8 @@ void TabManager::createNewTab()
 {
     MyCodeEditor* editor = openController.createNewTab();
     if (editor) {
+        editor->setHierarchyInstanceContext(
+            unboundTabInstanceContext(activeWorkspaceRoot));
         applyWorkspaceScope();
         emit tabCreated(editor);
     }
@@ -102,13 +133,20 @@ void TabManager::createNewTab()
 
 bool TabManager::openFileInTab(const QString& fileName)
 {
-    if (!fileName.isEmpty() && activateOpenFile(fileName))
+    if (!fileName.isEmpty() && activateOpenFile(fileName)) {
+        if (MyCodeEditor* editor = getCurrentEditor()) {
+            editor->setHierarchyInstanceContext(
+                unboundTabInstanceContext(activeWorkspaceRoot));
+        }
         return true;
+    }
 
     MyCodeEditor* editor = openController.openFile(fileName);
     if (!editor)
         return false;
 
+    editor->setHierarchyInstanceContext(
+        unboundTabInstanceContext(activeWorkspaceRoot));
     applyWorkspaceScope();
     emit tabCreated(editor);
     return true;
@@ -161,6 +199,7 @@ void TabManager::closeTab(int index)
         emit fileSaved(savedFileName);
     }
 
+    codeEditor->closeSemanticPopup();
     documentModel->unregisterEditor(codeEditor);
     tabWidget->removeTab(index);
     applyWorkspaceScope();
@@ -232,6 +271,25 @@ DocumentModel* TabManager::getDocumentModel() const
     return documentModel.get();
 }
 
+void TabManager::refreshSemanticPresentations(
+    const QString& changedFileName)
+{
+    if (!tabWidget)
+        return;
+
+    for (int i = 0; i < tabWidget->count(); ++i) {
+        MyCodeEditor* editor = getEditorAt(i);
+        if (!editor)
+            continue;
+        const DocumentSnapshot document = getDocumentForEditor(editor);
+        if (!semanticRefreshMatchesDocument(changedFileName,
+                                            document.fileName)) {
+            continue;
+        }
+        editor->refreshSemanticPresentation();
+    }
+}
+
 void TabManager::updateTabTitle(MyCodeEditor* editor)
 {
     titleController.updateTitle(editor);
@@ -242,6 +300,27 @@ void TabManager::setWorkspaceScope(const QStringList& workspaceRoots,
 {
     scopedWorkspaceRoots = normalizedTabWorkspaceRoots(workspaceRoots);
     activeWorkspaceRoot = normalizedTabWorkspacePath(activeWorkspaceRootPath);
+    for (int i = 0; tabWidget && i < tabWidget->count(); ++i) {
+        MyCodeEditor* editor = getEditorAt(i);
+        if (!editor)
+            continue;
+        const HierarchyInstanceContext current =
+            editor->hierarchyInstanceContext();
+        const QString currentWorkspace =
+            normalizedTabWorkspacePath(current.workspacePath);
+        if (!currentWorkspace.isEmpty()
+            && scopedWorkspaceRoots.contains(currentWorkspace)) {
+            continue;
+        }
+
+        const DocumentSnapshot document = getDocumentForEditor(editor);
+        QString fallbackWorkspace = workspaceRootForFile(
+            document.fileName, scopedWorkspaceRoots);
+        if (fallbackWorkspace.isEmpty())
+            fallbackWorkspace = activeWorkspaceRoot;
+        editor->setHierarchyInstanceContext(
+            unboundTabInstanceContext(fallbackWorkspace));
+    }
     applyWorkspaceScope();
 }
 
@@ -286,6 +365,7 @@ bool TabManager::closeTabsInWorkspace(const QString& workspaceRoot)
         const int index = tabWidget->indexOf(close.editor);
         if (index < 0)
             continue;
+        close.editor->closeSemanticPopup();
         documentModel->unregisterEditor(close.editor);
         tabWidget->removeTab(index);
         emit tabClosed(close.originalFileName);
@@ -453,6 +533,7 @@ void TabManager::onCurrentTabChanged(int index)
 {
     MyCodeEditor* editor = getEditorAt(index);
     if (editor) {
+        editor->refreshSemanticPresentation();
         updateTabTitle(editor);
         const DocumentSnapshot snapshot = getDocumentForEditor(editor);
         emit activeTabChanged(editor);

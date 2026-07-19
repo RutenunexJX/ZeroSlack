@@ -1,34 +1,19 @@
 #include "symbolanalyzer.h"
 
+#include <QCryptographicHash>
+#include <QDir>
 #include <QFileInfo>
-#include <algorithm>
 
 void SymbolAnalyzer::invalidateCache()
 {
     lastAnalyzedContent.clear();
     fileAnalysisGenerations.clear();
+    overlayWorkspaceFiles.clear();
+    overlayWorkspaceIncludeDirs.clear();
+    overlayWorkspaceDefines.clear();
+    ++workspaceEpoch;
     ++workspaceAnalysisGeneration;
-}
-
-void SymbolAnalyzer::setWorkspaceProtectedFiles(const QStringList& fileNames)
-{
-    workspaceProtectedFiles = fileNames;
-}
-
-void SymbolAnalyzer::setWorkspacePriorityPublicationCheckpoints(
-    const QList<int>& checkpoints)
-{
-    QList<int> sortedCheckpoints = checkpoints;
-    std::sort(sortedCheckpoints.begin(), sortedCheckpoints.end());
-
-    workspacePriorityPublicationCheckpoints.clear();
-    int lastCheckpoint = 0;
-    for (int checkpoint : sortedCheckpoints) {
-        if (checkpoint <= 0 || checkpoint <= lastCheckpoint)
-            continue;
-        workspacePriorityPublicationCheckpoints.append(checkpoint);
-        lastCheckpoint = checkpoint;
-    }
+    EffectiveValueService::getInstance()->clearPublishedFacts();
 }
 
 void SymbolAnalyzer::setWorkspaceFileAnalysisBands(
@@ -39,20 +24,10 @@ void SymbolAnalyzer::setWorkspaceFileAnalysisBands(
 
 QString SymbolAnalyzer::contentHash(const QString& content) const
 {
-    return QString::number(qHash(content));
-}
-
-QStringList SymbolAnalyzer::filterSystemVerilogFiles(const QStringList& files) const
-{
-    QStringList svFiles;
-    svFiles.reserve(files.size());
-
-    for (const QString& fileName : files) {
-        if (isSystemVerilogFile(fileName)) {
-            svFiles.append(fileName);
-        }
-    }
-    return svFiles;
+    return QString::fromLatin1(
+        QCryptographicHash::hash(content.toUtf8(),
+                                 QCryptographicHash::Sha256)
+            .toHex());
 }
 
 static bool lineContainsKeywordAsWord(const QString& line, const QString& keyword)

@@ -40,6 +40,7 @@ bool NavigationCommandCoordinator::NavigationLocation::operator==(
 {
     return filePath == other.filePath
         && workspacePath == other.workspacePath
+        && instanceContext == other.instanceContext
         && lineNumber == other.lineNumber
         && columnNumber == other.columnNumber;
 }
@@ -95,6 +96,7 @@ NavigationCommandCoordinator::NavigationTargets::currentLocation() const
     const QTextCursor cursor = editor->textCursor();
     location.filePath = document.fileName;
     location.workspacePath = currentWorkspacePath();
+    location.instanceContext = editor->hierarchyInstanceContext();
     location.lineNumber = cursor.blockNumber() + 1;
     location.columnNumber = cursor.positionInBlock() + 1;
     return location;
@@ -138,10 +140,16 @@ void NavigationCommandCoordinator::connectSignals()
                 navigateToFileAndLine(filePath, lineNumber);
             });
     connect(targets.navigationManagerObject(),
-            &NavigationManager::symbolRowNavigationRequested,
+            &NavigationManager::instanceNavigationRequested,
             this,
-            qOverload<const SymbolOutlineSymbolRow&>(
-                &NavigationCommandCoordinator::navigateToSymbol));
+            [this](const QString& filePath,
+                   int lineNumber,
+                   const HierarchyInstanceContext& instanceContext) {
+                navigateToFileAndLineWithContext(filePath,
+                                                 lineNumber,
+                                                 -1,
+                                                 instanceContext);
+            });
 
     signalsConnected = true;
 }
@@ -151,10 +159,25 @@ void NavigationCommandCoordinator::navigateToFileAndLine(
     int lineNumber,
     int columnNumber)
 {
+    navigateToFileAndLineWithContext(filePath,
+                                     lineNumber,
+                                     columnNumber,
+                                     {});
+}
+
+void NavigationCommandCoordinator::navigateToFileAndLineWithContext(
+    const QString& filePath,
+    int lineNumber,
+    int columnNumber,
+    const HierarchyInstanceContext& instanceContext)
+{
     const NavigationLocation current = targets.currentLocation();
+    const HierarchyInstanceContext normalizedContext =
+        normalizedInstanceContext(instanceContext);
     const NavigationLocation destination{
         filePath,
         targets.currentWorkspacePath(),
+        normalizedContext,
         lineNumber,
         columnNumber};
 
@@ -162,6 +185,9 @@ void NavigationCommandCoordinator::navigateToFileAndLine(
         return;
 
     recordLocationBeforeNavigation(current, destination);
+
+    if (MyCodeEditor* editor = targets.currentEditor())
+        editor->setHierarchyInstanceContext(normalizedContext);
 
     if (lineNumber <= 0)
         return;
@@ -180,6 +206,7 @@ bool NavigationCommandCoordinator::navigateToFileAndLineAndFlash(
     const NavigationLocation destination{
         filePath,
         targets.currentWorkspacePath(),
+        normalizedInstanceContext({}),
         lineNumber,
         columnNumber};
 
@@ -187,6 +214,9 @@ bool NavigationCommandCoordinator::navigateToFileAndLineAndFlash(
         return false;
 
     recordLocationBeforeNavigation(current, destination);
+
+    if (MyCodeEditor* editor = targets.currentEditor())
+        editor->setHierarchyInstanceContext(destination.instanceContext);
 
     if (lineNumber <= 0)
         return false;
@@ -224,22 +254,11 @@ void NavigationCommandCoordinator::navigateEditorToLine(
     recordCurrentLocationBeforeNavigation(
         {document.fileName,
          targets.currentWorkspacePath(),
+         editor ? editor->hierarchyInstanceContext()
+                : normalizedInstanceContext({}),
          lineNumber,
          columnNumber});
     lineResolver.applyToEditor(editor, lineNumber, columnNumber);
-}
-
-void NavigationCommandCoordinator::navigateToSymbol(
-    const SymbolOutlineSymbolRow& row)
-{
-    if (!row.symbolRecord.isValid()
-        || row.symbolRecord.location.fileName.isEmpty()) {
-        return;
-    }
-
-    navigateToFileAndLine(row.symbolRecord.location.fileName,
-                          row.symbolRecord.location.startLine,
-                          row.symbolRecord.location.startColumn);
 }
 
 void NavigationCommandCoordinator::navigateBack()
@@ -303,6 +322,8 @@ bool NavigationCommandCoordinator::applyLocation(
         return false;
     if (!targets.activateOrOpenFile(location.filePath))
         return false;
+    if (MyCodeEditor* editor = targets.currentEditor())
+        editor->setHierarchyInstanceContext(location.instanceContext);
     return lineResolver.applyToEditor(targets.currentEditor(),
                                       location.lineNumber,
                                       location.columnNumber);
@@ -319,4 +340,21 @@ void NavigationCommandCoordinator::pruneHistoryForCurrentWorkspace()
     };
     prune(backStack);
     prune(forwardStack);
+}
+
+HierarchyInstanceContext
+NavigationCommandCoordinator::normalizedInstanceContext(
+    const HierarchyInstanceContext& context) const
+{
+    HierarchyInstanceContext result = context;
+    const QString workspacePath = targets.currentWorkspacePath();
+    if (result.workspacePath.isEmpty())
+        result.workspacePath = workspacePath;
+    if (!workspacePath.isEmpty()
+        && normalizedNavigationWorkspacePath(result.workspacePath)
+            != workspacePath) {
+        result = {};
+        result.workspacePath = workspacePath;
+    }
+    return result;
 }

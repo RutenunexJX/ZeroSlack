@@ -32,14 +32,120 @@ into an analyzer.
   source text and clearing popup / command highlight state. The comment/string
   guard no longer treats `//` inside a closed string or closed block comment as
   a live line comment.
-- Ordinary identifier input is no longer an implicit completion trigger.
-  Automatic popup entry remains for strong syntactic contexts (`.`, `::`, `` ` ``,
-  `$`). GUI regression verifies that `;l<Tab>` opens all anchor-module logic,
+- The ordinary identifier production-completion path is deleted. Member access
+  `.`, package scope `::`, backtick macro text, `$`, and arbitrary two-character
+  input never open a popup. GUI regression verifies that
+  explicit `;l<Tab>` opens all anchor-module logic,
   incremental filtering and Backspace keep the popup active, zero matches can
   recover, and Tab/Enter replace only the complete abbreviation. Inline
-  semantic sessions suppress `[DEFAULT]` items entirely. Debug verification
-  passed for `completion_test`, `gui_smoke_test`, `relationship_test`, and
-  `insight_visual_style_test`.
+  semantic sessions suppress `[DEFAULT]` items entirely. The negative and
+  explicit-Tab GUI cases live in `gui_smoke_test`; command/service cases remain
+  in `completion_test`.
+- Corrective completion cleanup is complete in the working tree: the former
+  `textChanged -> completion state -> 0 ms timer -> editor word query` chain,
+  its activation/replacement modes, ordinary completion model/service entry
+  points, and tests that existed only for that path are deleted. Explicit
+  `;cmd`, `;;cmd`, `;h`, package import, and user-template candidate sessions
+  remain Tab-only.
+- Unified effective-value architecture is now the execution baseline:
+
+```text
+ProjectSnapshot + immutable all-open-buffer text/revisions
+  -> cancellable SymbolAnalyzer symbol/value/diagnostic transaction
+  -> Slang AST ConstantValue / Type extraction
+  -> SemanticSymbolPresentation + EffectiveValueFact
+  -> one revision-checked SemanticIndex + EffectiveValueService publication
+  -> captured SemanticSnapshotToken
+  -> relationship worker over the same snapshot source and symbol records
+```
+
+  Package and compilation-unit traversal is independent of module instances;
+  actual instance maps and detached declaration defaults are stored separately.
+  Exact declaration ranges participate in stable keys and presentation merge
+  identity. `EffectiveValueService` exposes unavailable/current/stale/error
+  state, exact value/type/dimension/width data, scope/instance provenance,
+  failure reason, and computation/document revisions. Ghost only locates
+  display anchors and formats already-evaluated facts; Wave Preview keeps its
+  separate runtime trace evaluator.
+- Treat invalid source as an error, not as an invitation to synthesize a value.
+  In `test_sv/new/PKG_global.sv`, `E_PRE_ASSERT` is referenced from line 550
+  before its declaration at line 663. Slang's undeclared-identifier diagnostic
+  is the required result for those enum expressions; no implicit-increment or
+  hand-evaluated fallback may replace it. Dedicated valid fixtures cover
+  package constants and the general enum-expression categories.
+- Every workspace/open-document semantic worker owns one immutable overlay set.
+  Any captured document edit cancels/expires that worker and coalesces a restart
+  from the latest complete `DocumentModel` snapshot. Workspace epoch, request
+  generation, dependency/document revisions, and effective-value computation
+  revision gate one GUI-thread publication of symbols, value facts, and
+  diagnostics. Dirty open files replace disk content; they are neither skipped
+  nor preserved outside the transaction. Staged, checkpoint, and chunked
+  semantic snapshot publication are no longer current behavior.
+- Automatic relationship analysis consumes the semantic snapshot token
+  published by that transaction, reads source from the same captured snapshot,
+  and rejects stale request/project identities. It does not run a duplicate
+  per-open-tab Slang symbol/value/diagnostic refresh before relationship work.
+- Clean overlay publication must tolerate local-handle replacement. Preserve
+  the prior authoritative relationships by stable source key, rebind them to
+  current handles, invalidate missing/content-changed endpoints, and replace
+  the relationship engine with the published snapshot as its mirror. The
+  `global_control_ow_test` post-analysis `rtl_top.sv` case compares relationship
+  stable keys plus Design service and real NavigationManager hierarchy before
+  and after opening the tab.
+- Semantic document revision is source-content-only. Formatting and syntax
+  highlighting must not advance it; real text edits must. Document snapshots,
+  overlay analysis, Hover/Ghost queries, and published effective-value facts
+  use the same token. Semantic publication and tab/file/instance-context
+  changes refresh Ghost without weakening stale-result rejection.
+- Problems `Current File` is active-document state, never the most recently
+  analyzed file. Diagnostics refresh requests treat file names as invalidation
+  hints, promote multiple different files to full scope, and retain one-file
+  scope only for repeated requests for the same file.
+- The `ow 1` lifecycle repair is part of the current execution baseline. The
+  primary captured stack was `SmartRelationshipBuilder::analysisCancelled ->
+  cancelAnalysis -> RelationshipAnalysisController::cancelWorkspaceAnalysis ->
+  AnalysisScheduler::~AnalysisScheduler -> MainWindow::~MainWindow`: reverse
+  member destruction had released the semantic runtime / relationship builder
+  before scheduler teardown used it. The scheduler now broadcasts cancellation
+  to all worker families before joining any future and joins while the runtime
+  remains alive. A second captured stack ended in
+  `SourcePositionCache::~SourcePositionCache` during Qt TLS cleanup with
+  `0xfeeefeee`; Slang worker caches are now explicitly destroyed inside the
+  collector/presentation scope before thread exit.
+- `WorkspaceManager` also treats scan signals as synchronous reentrancy points.
+  Scan generation, manager `QPointer`, active path, and entry identity are
+  checked after start/progress/model/files/finish publication, so a callback
+  that closes or switches a workspace cannot resume and publish stale results.
+- `global_control_ow_test` drives the real Global Control coordinator with
+  injected directory and alias selectors through `FileCommandCoordinator` and
+  `WorkspaceManager`. It covers selector cancellation, repeat open, scan,
+  symbol analysis, automatic relationship analysis, semantic queryability, and
+  active-worker teardown for `test_sv/new` and `test_sv/huge_prj`.
+  `effective_value_test` covers package/compilation-unit/default/instance
+  values, general enum expressions, wide and four-state data, type dimensions,
+  exact-range identity, Hover/Ghost consumers, and unsaved overlay
+  revision/cancellation/atomic diagnostic publication. `gui_smoke_test` covers
+  completion negatives and explicit Tab sessions, scan reentrancy, embedded
+  double-click popup lifetime, and complete port declarations;
+  `relationship_test` retains real `PKG_global.sv` / `chl_ctrl.sv` coverage.
+  The real `ow 1` test also opens analyzed `rtl_top.sv` and compares stable
+  relationships, effective values, semantic Ghost, port presentation,
+  Design/Navigation reports, and an actual nested NavigationWidget item across
+  overlay publication. This corrective milestone passed final headless
+  acceptance: full Debug build 29/29 steps in 3895.3 seconds, final all-target
+  build with no pending work, and complete CTest 12/12 in 181.66 seconds. No
+  visible `demo.exe` was launched after the user prohibited GUI interference;
+  all Qt validation used offscreen mode. Final `.zs` hashes are
+  `ED843650...BE292B7` for `new` and `CD8A81F2...21CF425` for `huge_prj`.
+  `new/.zs` predates this headless validation but differs from the earlier
+  recorded `A7942210...501F43`; it was not overwritten or restored here.
+- Follow-up relationship work: schedule relationship recomputation from the
+  same dirty-overlay token after invalidation; fingerprint zero-symbol include,
+  macro, define, and include-order inputs; move or optimize full engine-mirror
+  construction so `huge_prj` publication has a measurable UI latency budget.
+- Follow-up revision performance: replace the current full-text comparison on
+  `textChanged` with a correct incremental source-text cache. Do not count raw
+  Qt `contentsChange` events because formatting emits them too.
 - Phase 1, GraphCanvas Phase 2, and the App Shell modernization pass of the
   current UI route are complete. `InsightVisualStyle` is the shared application
   theme layer for menu/status/tab/dock/sidebar, toolbar, splitter, common
@@ -47,6 +153,13 @@ into an analyzer.
   and graph tokens. `InsightGraphView` is the reusable Qt Widgets graph view
   foundation for canvas theme application, pan/drag, wheel zoom, fit, center,
   reset, optional grid, and business-neutral mouse hooks.
+- Navigation UI is now the current Files/Design surface only. Legacy
+  Module/Symbol tab widgets, manager view branches, tree adapters, and
+  SymbolOutline-row navigation wiring remain removed; service-level module
+  hierarchy and symbol outline queries are retained as semantic data APIs.
+  Design child activation records the exact active-top and instance path in the
+  editor context; Files/direct-open paths explicitly unbind it, and navigation
+  history restores the saved context.
 - Verification baseline for this repair is now focused regression plus GUI
   smoke: `completion_test`, `relationship_test`, `gui_smoke_test`,
   `jump_test`, `insight_visual_style_test`, and feature-specific CTest guards.
@@ -142,7 +255,7 @@ into an analyzer.
   semantic index snapshots are intentionally not hard-restored, and layout
   restore falls back to the default dock layout on Qt state mismatch.
 - The current completed baseline includes import-aware package member
-  visibility for unqualified completion, definition, and hover; user template
+  visibility for unqualified semantic lookup, definition, and hover; user template
   JSON usage actions; explicit header/include and package import commands;
   semantic `;m` module instantiation Slot Mode; Macro / Define semantics;
   Package Tools phase 1; References / Relationships workflow closure; and Fold
@@ -1732,11 +1845,11 @@ Milestones:
 Huge Workspace is not an active UX expansion track in this plan. Only audit and
 document whether existing low-level strategies still work:
 
-- current/open/dirty-open priority
+- immutable `ProjectSnapshot` plus all-open-buffer overlay capture
 - analysis-band metadata and query ordering
-- stale request coalescing/expiration
-- cancellation boundaries
-- staged publication
+- stale request coalescing, expiration, cancellation, and latest-snapshot restart
+- atomic symbol/effective-value/diagnostic publication
+- relationship reuse of the published semantic snapshot token
 - Activity/status telemetry
 - Release performance references for `huge_prj`
 
@@ -1753,18 +1866,26 @@ Audit milestones:
 
 HWA.1 inventory status:
 
-- Current/open/dirty-open/background planning is owned by
-  `WorkspaceAnalysisPlanService`; dirty-open files become protected files,
-  priority files get band metadata, and checkpoints drive staged publication.
+- Current/dirty-open/clean-open/background planning and band metadata are owned
+  by `WorkspaceAnalysisPlanService`. Bands remain query/telemetry metadata;
+  dirty buffers still replace disk input, and bands do not split semantic
+  publication.
 - Active/pending request coalescing, stale pending replacement, and request
   telemetry are owned by `WorkspaceAnalysisRequestQueue` and routed through
   `WorkspaceSymbolAnalysisController`.
-- Symbol analysis cancellation/expiration and staged publication are owned by
-  `WorkspaceSymbolAnalysisController` plus `SymbolAnalyzer`; `SemanticIndex`
-  stores band metadata and publishes snapshots for priority-aware queries.
+- `WorkspaceSymbolAnalysisController` captures all open document text and exact
+  revisions with the project request. An edit expires the captured worker and
+  coalesces a restart from the latest complete `DocumentModel` snapshot.
+- `SymbolAnalyzer` materializes one immutable overlay source set, extracts
+  symbols, Slang effective-value facts, and diagnostics from it, validates all
+  generation/revision gates, and publishes the complete result in one
+  GUI-thread transaction. Dirty buffers replace disk input; no dirty-file skip,
+  partial checkpoint, staged, or chunked snapshot publication remains.
 - Relationship cancellation and stale/cancelled result rejection are owned by
   `RelationshipAnalysisController`, `RelationshipAnalysisWorker`, and
-  `RelationshipResultPublisher`.
+  `RelationshipResultPublisher`. The relationship worker consumes the captured
+  semantic snapshot token and its source contents without refreshing open tabs
+  through a second Slang symbol analysis.
 - Activity visibility is owned by `AnalysisProgressCoordinator` and
   `ActivityLogService`.
 - Existing coverage anchors are `completion_test`, `relationship_test`,
@@ -1775,21 +1896,23 @@ HWA.1 inventory status:
 
 HWA.2 verification status:
 
-- Chosen safe verification path: compile/link relevant Release targets instead
+- Historical audit path: compile/link relevant Release targets instead
   of launching GUI executables, because this environment has recently shown
   external Windows application-error dialogs during GUI test runs.
 - Passed command: Release CMake build target set `completion_test`,
   `relationship_test`, `large_file_perf_test`, and `relationship_perf_test`.
 - Artifact check confirmed all four executables exist in the Release build
   directory.
-- `ctest` was not run for HWA.2, so no long-running CTest or external
-  memory-read dialog check was needed in this milestone.
+- `ctest` was not run for HWA.2. This historical audit record is not the
+  acceptance status of the current corrective milestone, which requires the
+  Debug full suite and visible-app validation described above.
 
 HWA.3 confirmed status:
 
-- Owner boundaries are documented for planning, request coalescing, symbol
-  cancellation/expiration, staged publication, relationship cancellation,
-  Activity telemetry, and `SemanticIndexSnapshot` query exposure.
+- Owner boundaries are documented for immutable overlay capture, request
+  coalescing, symbol/value/diagnostic cancellation and atomic publication,
+  snapshot-consistent relationship analysis, Activity telemetry, and
+  `SemanticIndexSnapshot` query exposure.
 - Existing verification anchors cover the intended strategy surfaces:
   `completion_test`, `relationship_test`, `large_file_perf_test`, and
   `relationship_perf_test`.
@@ -1801,8 +1924,8 @@ HWA.3 open audit gaps:
 
 - HWA.2 did not run the test executables, so runtime behavior is not newly
   confirmed by this audit.
-- Full `ctest` was not run because the current environment has recently shown
-  external Windows GUI/memory-read dialogs during test execution.
+- Full `ctest` was not run during that historical audit because the environment
+  had shown external Windows GUI/memory-read dialogs during test execution.
 - `relationship_perf_test` was compiled but not executed against
   `test_sv/huge_prj`; the listed Release `huge_prj` timings remain prior
   reference points, not freshly refreshed HWA.3 measurements.
@@ -1982,7 +2105,7 @@ Latest GUI smoke baseline repair:
   lane geometry.
 - RTL Insights GUI smoke fixture installation now refreshes both the native
   semantic store and snapshot before each panel action, isolating synthetic
-  RTL Insights checks from staged workspace publication.
+  RTL Insights checks from concurrent workspace publication.
 - Problems external-diagnostic preservation now uses an unopened external probe
   file and checks for the exact diagnostic row instead of depending on a fragile
   item count.
@@ -2119,15 +2242,15 @@ Latest package import explicit entry:
 
 Latest package/import semantic repair:
 
-- Scope: unqualified package member visibility for ordinary completion,
-  definition, and hover. Package members marked `PackageVisible` are not global;
+- Scope: unqualified package member visibility for semantic lookup, definition,
+  hover, and explicit command candidates. Package members marked `PackageVisible` are not global;
   they are visible only when the current file/scope has an active
   `import pkg::*;`.
 - Local/module declarations keep priority over imported package members.
   Same-name members imported from multiple packages are treated as ambiguous
   and are not used for random unqualified jumps.
 - `;pk` remains import insertion only, COM `gpk` remains package navigation,
-  Package Tools remain unchanged, and `pkg::symbol` completion was not added.
+  Package Tools remain unchanged, and no ordinary `pkg::symbol` popup exists.
 - Debug verification passed: `cmake --build . --target completion_test
   relationship_test gui_smoke_test`; `ctest -R
   "^(completion_test|relationship_test|gui_smoke_test)$"

@@ -165,17 +165,6 @@ QList<WorkspaceAnalysisBandSummary> bandSummaries(
     return summaries;
 }
 
-QList<int> priorityPublicationCheckpoints(
-    const QList<WorkspaceAnalysisBandSummary>& summaries)
-{
-    QList<int> checkpoints;
-    for (const WorkspaceAnalysisBandSummary& summary : summaries) {
-        if (summary.priority && summary.publicationCheckpoint > 0)
-            checkpoints.append(summary.publicationCheckpoint);
-    }
-    return checkpoints;
-}
-
 void rememberBand(QHash<QString, QString>* bands,
                   const QStringList& fileNames,
                   const QString& label)
@@ -244,14 +233,14 @@ WorkspaceAnalysisPlan WorkspaceAnalysisPlanService::planForWorkspace(
     const QHash<QString, QString> workspaceFiles =
         normalizedToOriginal(query.project.systemVerilogFiles);
     plan.currentFileName = normalizedPath(query.currentFileName);
-    plan.protectedFiles = dirtyWorkspaceFiles(query.openDocuments,
+    plan.dirtyOpenFiles = dirtyWorkspaceFiles(query.openDocuments,
                                               workspaceFiles);
     plan.openFiles = openWorkspaceFiles(query.openDocuments,
                                         workspaceFiles);
     const PrioritizedWorkspaceFiles prioritized =
         prioritizedSystemVerilogFiles(query.project,
                                       query.currentFileName,
-                                      plan.protectedFiles,
+                                      plan.dirtyOpenFiles,
                                       plan.openFiles);
     plan.project.systemVerilogFiles = prioritized.orderedFiles;
     plan.currentFilePriorityFiles = prioritized.currentFilePriorityFiles;
@@ -264,8 +253,6 @@ WorkspaceAnalysisPlan WorkspaceAnalysisPlanService::planForWorkspace(
         + plan.dirtyOpenPriorityFiles.size()
         + plan.cleanOpenPriorityFiles.size();
     plan.bandSummaries = bandSummaries(prioritized);
-    plan.priorityPublicationCheckpoints =
-        priorityPublicationCheckpoints(plan.bandSummaries);
     plan.backgroundFileCount = plan.backgroundFiles.size();
     rememberBand(&plan.fileBandsByNormalizedPath,
                  plan.currentFilePriorityFiles,

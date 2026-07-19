@@ -66,6 +66,8 @@ public:
                                     EditorSelection& selections);
     void handleEditorScrolled(MyCodeEditor* editor,
                               EditorSelection& selections);
+    void closeForEditor(MyCodeEditor* editor,
+                        EditorSelection& selections);
     void shutdown();
     void handleContextMenu(
         MyCodeEditor* editor,

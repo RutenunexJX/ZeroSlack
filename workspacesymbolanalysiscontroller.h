@@ -6,8 +6,10 @@
 #include "workspaceanalysisrequestqueue.h"
 
 #include <QObject>
+#include <QPointer>
 #include <QSet>
 #include <QString>
+#include <cstdint>
 #include <functional>
 
 class DocumentModel;
@@ -29,6 +31,10 @@ public:
     void requestWorkspaceAnalysis(const ProjectSnapshot& project);
     void cancelWorkspaceAnalysis();
     void clearProjectSemanticState();
+    bool isWorkspaceAnalysisActive() const
+    {
+        return workspaceAnalysisActive;
+    }
 
 signals:
     void fileSymbolAnalysisStarted(const QString& fileName);
@@ -57,23 +63,26 @@ signals:
         const WorkspaceAnalysisRequestTelemetry& telemetry);
 
 private:
-    ProjectModel* projectModel = nullptr;
-    DocumentModel* documentModel = nullptr;
-    SymbolAnalyzer* symbolAnalyzer = nullptr;
+    QPointer<ProjectModel> projectModel;
+    QPointer<DocumentModel> documentModel;
+    QPointer<SymbolAnalyzer> symbolAnalyzer;
     std::function<bool()> cancelProvider;
     std::function<QString()> currentFileProvider;
     WorkspaceAnalysisRequestQueue requestQueue;
+    ProjectSnapshot activeRequestedProject;
     ProjectSnapshot activeProject;
     QString activeWorkspaceRoot;
     QSet<QString> completedWorkspaceAnalysisKeys;
     bool workspaceAnalysisActive = false;
     bool activeWorkspaceAnalysisComplete = true;
     bool projectSemanticStateCleared = true;
+    std::uint64_t workspaceStartGeneration = 0;
 
     void onProjectChanged(const ProjectSnapshot& project);
     void onWorkspaceSymbolAnalysisCompleted(int filesAnalyzed, int totalSymbols);
     void onWorkspaceSymbolAnalysisExpired();
     void startWorkspaceAnalysis(const ProjectSnapshot& project);
+    void restartActiveWorkspaceAnalysisForDocumentChange();
 };
 
 #endif // WORKSPACESYMBOLANALYSISCONTROLLER_H

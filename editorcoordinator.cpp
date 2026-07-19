@@ -480,6 +480,21 @@ void EditorCoordinator::WorkflowDependencies::navigateToFileAndLine(
         navigationCommandCoordinator->navigateToFileAndLine(fileName, line, column);
 }
 
+void EditorCoordinator::WorkflowDependencies::navigateToFileAndLineWithContext(
+    const QString& fileName,
+    int line,
+    int column,
+    const HierarchyInstanceContext& instanceContext) const
+{
+    if (navigationCommandCoordinator) {
+        navigationCommandCoordinator->navigateToFileAndLineWithContext(
+            fileName,
+            line,
+            column,
+            instanceContext);
+    }
+}
+
 void EditorCoordinator::WorkflowDependencies::navigateBack() const
 {
     if (navigationCommandCoordinator)
@@ -669,11 +684,6 @@ void EditorCoordinator::setStatusMessageHandler(
     statusMessageHandler = std::move(handler);
 }
 
-void EditorCoordinator::setFoldShelfRequestedHandler(std::function<void()> handler)
-{
-    foldShelfRequestedHandler = std::move(handler);
-}
-
 void EditorCoordinator::setFoldShelfItemConsumedHandler(
     std::function<void(const QString&)> handler)
 {
@@ -730,11 +740,12 @@ void EditorCoordinator::attachEditor(MyCodeEditor* editor)
     connect(editor,
             &MyCodeEditor::definitionPreviewNavigationRequested,
             this,
-            [this](const QString& fileName, int line, int column) {
+            [this, editor](const QString& fileName, int line, int column) {
                 handleDefinitionPreviewNavigationRequested(
                     fileName,
                     line,
-                    column);
+                    column,
+                    editor->hierarchyInstanceContext());
             });
     connect(editor, &MyCodeEditor::navigationBackRequested,
             this, [this]() {
@@ -770,11 +781,6 @@ void EditorCoordinator::attachEditor(MyCodeEditor* editor)
                     appearanceSettings->options();
                 appearanceSettings->setFontSizePt(
                     options.fontSizePt + steps);
-            });
-    connect(editor, &MyCodeEditor::foldShelfRequested,
-            this, [this]() {
-                if (foldShelfRequestedHandler)
-                    foldShelfRequestedHandler();
             });
     connect(editor, &MyCodeEditor::foldShelfItemConsumed,
             this, [this](const QString& id) {
@@ -841,8 +847,14 @@ void EditorCoordinator::handleIncludeOpenRequested(
         return;
     }
 
-    if (dependencies.canNavigate())
-        dependencies.navigateToFileAndLine(targetPath, -1, -1);
+    if (dependencies.canNavigate()) {
+        dependencies.navigateToFileAndLineWithContext(
+            targetPath,
+            -1,
+            -1,
+            editor ? editor->hierarchyInstanceContext()
+                   : HierarchyInstanceContext());
+    }
     else if (tabManager)
         tabManager->openFileInTab(targetPath);
 }
@@ -951,18 +963,26 @@ void EditorCoordinator::handleDefinitionNavigationRequested(
 
     const QString targetFile =
         target.fileName.isEmpty() ? context.fileName : target.fileName;
-    dependencies.navigateToFileAndLine(targetFile, target.line, target.column);
+    dependencies.navigateToFileAndLineWithContext(
+        targetFile,
+        target.line,
+        target.column,
+        context.hierarchyInstance);
 }
 
 void EditorCoordinator::handleDefinitionPreviewNavigationRequested(
     const QString& fileName,
     int line,
-    int column) const
+    int column,
+    const HierarchyInstanceContext& instanceContext) const
 {
     if (!dependencies.canNavigate() || fileName.isEmpty() || line <= 0)
         return;
 
-    dependencies.navigateToFileAndLine(fileName, line, column);
+    dependencies.navigateToFileAndLineWithContext(fileName,
+                                                  line,
+                                                  column,
+                                                  instanceContext);
 }
 
 void EditorCoordinator::handleSourceNavigationRequested(
@@ -1025,9 +1045,11 @@ void EditorCoordinator::handleSourceSymbolActionRequested(
         }
         const QString targetFile =
             target.fileName.isEmpty() ? context.fileName : target.fileName;
-        dependencies.navigateToFileAndLine(targetFile,
-                                           target.line,
-                                           target.column);
+        dependencies.navigateToFileAndLineWithContext(
+            targetFile,
+            target.line,
+            target.column,
+            context.hierarchyInstance);
         break;
     }
     case SourceSymbolAction::FindReferences:

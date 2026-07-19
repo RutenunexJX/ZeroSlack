@@ -2,8 +2,7 @@
 
 #include "analysisscheduler.h"
 #include "documentsnapshot.h"
-#include "mycodeeditor.h"
-
+#include <QPointer>
 #include <QTimer>
 
 #include <utility>
@@ -63,26 +62,26 @@ void AnalysisCoordinator::configureScheduler()
 
     dependencies.configureScheduler();
     AnalysisScheduler* scheduler = dependencies.schedulerObject();
-    scheduler->setWorkspaceOpenProvider([this]() {
-        return dependencies.isWorkspaceOpen();
+    const QPointer<AnalysisCoordinator> self(this);
+    scheduler->setWorkspaceOpenProvider([self]() {
+        return self && self->dependencies.isWorkspaceOpen();
     });
-    scheduler->setWorkspaceSymbolCancelProvider([this]() {
-        return dependencies.isWorkspaceSymbolAnalysisCancelled();
+    scheduler->setWorkspaceSymbolCancelProvider([self]() {
+        return self
+            && self->dependencies.isWorkspaceSymbolAnalysisCancelled();
     });
-    scheduler->setCurrentFileProvider([this]() {
-        return dependencies.currentDocument().fileName;
+    scheduler->setCurrentFileProvider([self]() {
+        return self ? self->dependencies.currentDocument().fileName
+                    : QString();
     });
 }
 
 void AnalysisCoordinator::refreshActiveEditorForFile(const QString& fileName) const
 {
-    MyCodeEditor* editor = dependencies.currentEditor();
-    const DocumentSnapshot document = dependencies.currentDocument();
-    if (!editor || document.fileName != fileName)
-        return;
-
-    editor->refreshScopeAndCurrentLineHighlight();
-    QTimer::singleShot(0, editor, [editor]() {
-        editor->refreshScopeAndCurrentLineHighlight();
+    dependencies.refreshSemanticPresentations(fileName);
+    const QPointer<const AnalysisCoordinator> self(this);
+    QTimer::singleShot(0, this, [self, fileName]() {
+        if (self)
+            self->dependencies.refreshSemanticPresentations(fileName);
     });
 }

@@ -45,6 +45,13 @@ void RelationshipResultPublisher::setRelationshipEngine(
                 emit relationshipDataInvalidated();
                 emit relationshipDataRefreshRequested();
             });
+    connect(relationshipEngine,
+            &SymbolRelationshipEngine::relationshipsReplaced,
+            this,
+            [this]() {
+                emit relationshipDataInvalidated();
+                scheduleRelationshipDataRefresh();
+            });
 }
 
 bool RelationshipResultPublisher::applySingleFileResult(

@@ -13,6 +13,9 @@ struct TrackedDocument {
     DocumentSnapshot snapshot;
     MyCodeEditor* editor = nullptr;
     QString text;
+    // Bridges any number of cursor / query refreshes that Qt can emit before
+    // DocumentModel receives textChanged for the same content mutation.
+    bool contentChangePending = false;
 };
 
 struct DocumentIndexes {
@@ -50,7 +53,7 @@ struct DocumentSnapshotReader {
     void captureCursorState(MyCodeEditor* editor, DocumentSnapshot* snapshot) const;
     TrackedDocument capture(
         MyCodeEditor* editor,
-        const DocumentSnapshot* previous = nullptr) const;
+        const TrackedDocument* previous = nullptr) const;
 };
 
 struct DocumentRegistry {

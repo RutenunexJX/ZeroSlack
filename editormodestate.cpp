@@ -5,14 +5,6 @@ void EditorModeState::setCommandModeActive(bool active)
     commandModeActive = active;
 }
 
-void EditorModeState::noteCompletionTimerLine(int lineNumber)
-{
-    if (completionTimerLineNumber == lineNumber)
-        return;
-
-    completionTimerLineNumber = lineNumber;
-}
-
 void EditorModeState::clearCommandMode()
 {
     commandModeActive = false;

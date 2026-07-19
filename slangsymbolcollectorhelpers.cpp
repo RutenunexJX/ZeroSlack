@@ -10,11 +10,230 @@
 
 #include <QDir>
 #include <QFileInfo>
+#include <QHash>
 #include <QSet>
+#include <QVector>
+#include <algorithm>
+#include <cstdint>
+#include <filesystem>
+#include <iterator>
 #include <string>
 #include <utility>
 
 namespace slang_symbols::detail {
+
+namespace {
+struct SourcePositionMap {
+    QVector<size_t> adjustmentOffsets;
+    QVector<int> cumulativeAdjustments;
+    QVector<size_t> lineStartOffsets{0};
+    QVector<int> lineStartPositions{0};
+
+    int positionAt(size_t byteOffset) const
+    {
+        const auto adjustment = std::upper_bound(
+            adjustmentOffsets.cbegin(),
+            adjustmentOffsets.cend(),
+            byteOffset);
+        const qsizetype index = std::distance(
+            adjustmentOffsets.cbegin(), adjustment);
+        const int delta = index > 0
+            ? cumulativeAdjustments.at(index - 1) : 0;
+        return static_cast<int>(byteOffset) + delta;
+    }
+
+    int lineStartAt(size_t byteOffset) const
+    {
+        const auto line = std::upper_bound(
+            lineStartOffsets.cbegin(),
+            lineStartOffsets.cend(),
+            byteOffset);
+        const qsizetype index = std::distance(
+            lineStartOffsets.cbegin(), line);
+        return lineStartPositions.at(qMax<qsizetype>(0, index - 1));
+    }
+};
+
+struct SourcePositionCache {
+    const slang::SourceManager* sourceManager = nullptr;
+    QHash<uint32_t, SourcePositionMap> maps;
+};
+
+SourcePositionCache*& sourcePositionCacheSlot()
+{
+    // MinGW destroys C++ thread_local objects after Qt has already torn down
+    // parts of its TLS state. A thread_local QHash therefore dereferenced
+    // 0xfeeefeee when a QtConcurrent analysis thread exited. Keep only a
+    // trivially destructible pointer in TLS and destroy the Qt container while
+    // the worker function and Qt runtime are still alive.
+    thread_local SourcePositionCache* cache = nullptr;
+    return cache;
+}
+
+SourcePositionCache& sourcePositionCache()
+{
+    SourcePositionCache*& cache = sourcePositionCacheSlot();
+    if (!cache)
+        cache = new SourcePositionCache;
+    return *cache;
+}
+
+bool continuationByte(unsigned char byte)
+{
+    return (byte & 0xc0u) == 0x80u;
+}
+
+SourcePositionMap buildSourcePositionMap(std::string_view source)
+{
+    SourcePositionMap result;
+    size_t byte = 0;
+    int cumulativeAdjustment = 0;
+    while (byte < source.size()) {
+        const unsigned char lead =
+            static_cast<unsigned char>(source[byte]);
+
+        if (lead == '\r') {
+            if (byte + 1 < source.size() && source[byte + 1] == '\n') {
+                byte += 2;
+                --cumulativeAdjustment;
+                result.adjustmentOffsets.append(byte);
+                result.cumulativeAdjustments.append(
+                    cumulativeAdjustment);
+            } else {
+                ++byte;
+            }
+            result.lineStartOffsets.append(byte);
+            result.lineStartPositions.append(
+                static_cast<int>(byte) + cumulativeAdjustment);
+            continue;
+        }
+        if (lead == '\n') {
+            ++byte;
+            result.lineStartOffsets.append(byte);
+            result.lineStartPositions.append(
+                static_cast<int>(byte) + cumulativeAdjustment);
+            continue;
+        }
+
+        size_t byteCount = 1;
+        int utf16Units = 1;
+        if (lead >= 0xc2u && lead <= 0xdfu
+            && byte + 1 < source.size()
+            && continuationByte(
+                static_cast<unsigned char>(source[byte + 1]))) {
+            byteCount = 2;
+        } else if (lead >= 0xe0u && lead <= 0xefu
+                   && byte + 2 < source.size()
+                   && continuationByte(static_cast<unsigned char>(
+                       source[byte + 1]))
+                   && continuationByte(static_cast<unsigned char>(
+                       source[byte + 2]))) {
+            byteCount = 3;
+        } else if (lead >= 0xf0u && lead <= 0xf4u
+                   && byte + 3 < source.size()
+                   && continuationByte(static_cast<unsigned char>(
+                       source[byte + 1]))
+                   && continuationByte(static_cast<unsigned char>(
+                       source[byte + 2]))
+                   && continuationByte(static_cast<unsigned char>(
+                       source[byte + 3]))) {
+            byteCount = 4;
+            utf16Units = 2;
+        }
+
+        byte += byteCount;
+        const int adjustment = utf16Units
+            - static_cast<int>(byteCount);
+        if (adjustment != 0) {
+            cumulativeAdjustment += adjustment;
+            result.adjustmentOffsets.append(byte);
+            result.cumulativeAdjustments.append(cumulativeAdjustment);
+        }
+    }
+    return result;
+}
+}
+
+void resetQTextDocumentSourcePositionCache(
+    const slang::SourceManager* sourceManager)
+{
+    SourcePositionCache*& slot = sourcePositionCacheSlot();
+    if (!sourceManager) {
+        delete slot;
+        slot = nullptr;
+        return;
+    }
+
+    SourcePositionCache& cache = sourcePositionCache();
+    cache.sourceManager = sourceManager;
+    cache.maps.clear();
+}
+
+QString sourceIdentityFileName(
+    const slang::SourceManager* sourceManager,
+    slang::SourceLocation location)
+{
+    if (!sourceManager || !location.valid())
+        return QString();
+
+    const slang::SourceLocation fileLocation =
+        sourceManager->getFullyExpandedLoc(location);
+    if (!fileLocation.valid())
+        return QString();
+
+    const std::filesystem::path& physicalPath =
+        sourceManager->getFullPath(fileLocation.buffer());
+    QString fileName;
+    // assignText() gives synthetic buffers names such as
+    // <unnamed_buffer0>; these are not physical identities. In that case the
+    // logical name supplied to Slang (often the editor document path) is the
+    // only stable source identity.
+    if (!physicalPath.empty() && physicalPath.is_absolute()) {
+#ifdef Q_OS_WIN
+        fileName = QString::fromStdWString(physicalPath.wstring());
+#else
+        fileName = QString::fromStdString(physicalPath.string());
+#endif
+    } else {
+        fileName = QString::fromStdString(std::string(
+            sourceManager->getFileName(fileLocation)));
+    }
+    return QDir::cleanPath(QDir::fromNativeSeparators(fileName));
+}
+
+QTextDocumentSourcePosition qTextDocumentSourcePosition(
+    const slang::SourceManager* sourceManager,
+    slang::SourceLocation location)
+{
+    QTextDocumentSourcePosition result;
+    if (!sourceManager || !location.valid())
+        return result;
+
+    const slang::SourceLocation fileLocation =
+        sourceManager->getFullyExpandedLoc(location);
+    if (!fileLocation.valid())
+        return result;
+
+    SourcePositionCache& cache = sourcePositionCache();
+    if (cache.sourceManager != sourceManager)
+        resetQTextDocumentSourcePositionCache(sourceManager);
+    const std::string_view source =
+        sourceManager->getSourceText(fileLocation.buffer());
+    const size_t byteOffset = std::min(fileLocation.offset(), source.size());
+    const uint32_t bufferId = fileLocation.buffer().getId();
+    auto map = cache.maps.find(bufferId);
+    if (map == cache.maps.end()) {
+        map = cache.maps.insert(
+            bufferId, buildSourcePositionMap(source));
+    }
+
+    result.fileName = sourceIdentityFileName(sourceManager, fileLocation);
+    result.position = map->positionAt(byteOffset);
+    const size_t line = sourceManager->getLineNumber(fileLocation);
+    result.line = line == 0 ? 1 : static_cast<int>(line);
+    result.column = result.position - map->lineStartAt(byteOffset) + 1;
+    return result;
+}
 
 namespace {
 
@@ -208,6 +427,8 @@ void updateStableKey(SemanticSymbolRecord* record)
     record->stableKey.symbolName = record->name;
     record->stableKey.declarationKind = record->declarationKind;
     record->stableKey.ownerScope = record->owner.name;
+    record->stableKey.sourcePosition = record->location.position;
+    record->stableKey.sourceLength = record->location.length;
 }
 
 } // namespace
@@ -220,27 +441,33 @@ bool fillSymbolRecord(const slang::SourceManager* sm,
     if (!sm || !sym.location.valid())
         return false;
 
-    std::string nameStr(sym.name);
+    const std::string nameStr(sym.name);
     out.name = QString::fromStdString(nameStr);
-    out.location.fileName = QString::fromStdString(std::string(sm->getFileName(sym.location)));
-    size_t line = sm->getLineNumber(sym.location);
-    out.location.startLine = (line == 0) ? 1 : static_cast<int>(line);
-    size_t col = sm->getColumnNumber(sym.location);
-    out.location.startColumn = (col == 0) ? 1 : static_cast<int>(col);
-    out.location.position = static_cast<int>(sym.location.offset());
-    out.location.length = 0;
+    const QTextDocumentSourcePosition start =
+        qTextDocumentSourcePosition(sm, sym.location);
+    if (!start.isValid())
+        return false;
+    const QTextDocumentSourcePosition nameEnd =
+        qTextDocumentSourcePosition(sm, sym.location + nameStr.size());
+    out.location.fileName = start.fileName;
+    out.location.startLine = start.line;
+    out.location.startColumn = start.column;
+    out.location.position = start.position;
+    out.location.length = nameEnd.isValid()
+        ? qMax(0, nameEnd.position - start.position)
+        : out.name.size();
     out.localHandle = -1;
     out.type.rawTypeText.clear();
 
     if (const slang::syntax::SyntaxNode* syntax = sym.getSyntax()) {
         slang::SourceRange range = syntax->sourceRange();
         if (range.end().valid()) {
-            size_t endLine = sm->getLineNumber(range.end());
-            size_t endCol = sm->getColumnNumber(range.end());
-            out.location.endLine =
-                (endLine == 0) ? out.location.startLine : static_cast<int>(endLine);
-            out.location.endColumn =
-                (endCol == 0) ? out.location.startColumn : static_cast<int>(endCol);
+            const QTextDocumentSourcePosition end =
+                qTextDocumentSourcePosition(sm, range.end());
+            out.location.endLine = end.isValid()
+                ? end.line : out.location.startLine;
+            out.location.endColumn = end.isValid()
+                ? end.column : out.location.startColumn;
         } else {
             out.location.endLine = out.location.startLine;
             out.location.endColumn = out.location.startColumn;

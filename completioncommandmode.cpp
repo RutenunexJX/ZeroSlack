@@ -66,24 +66,6 @@ CommandModeMatch CompletionCommandMode::matchCommandMode(
     return result;
 }
 
-CommandModeInputState CompletionCommandMode::inputState(
-    const QString& lineUpToCursor)
-{
-    const CommandModeMatch match = matchCommandMode(lineUpToCursor);
-    CommandModeInputState state;
-    if (!match.matched)
-        return state;
-
-    state.matched = true;
-    state.helpRequested = match.helpRequested;
-    state.intent = match.intent;
-    state.prefixPosition = match.prefixPosition;
-    state.input = match.input;
-    state.command = match.command;
-    state.descriptor = match.descriptor;
-    return state;
-}
-
 CommandSymbolPresentation CompletionCommandMode::symbolPresentation(
     CompletionCommandKind kind)
 {
@@ -204,26 +186,16 @@ CompletionActivationState CompletionCommandMode::activationState(
     if (!query.selectable)
         return state;
 
-    switch (query.mode) {
-    case CompletionActivationMode::CommandMode:
-        state.action = CompletionActivationAction::ReplaceCommandInput;
-        state.text = query.defaultValue.isEmpty()
-            ? query.itemText
-            : query.defaultValue;
-        state.selectionStart = query.selectionStart;
-        state.selectionLength = query.selectionLength;
-        state.templateSlots = query.templateSlots;
-        state.clearCommandMode =
-            !state.text.startsWith(QLatin1Char(';'));
-        state.hidePopup = state.clearCommandMode;
-        return state;
-    case CompletionActivationMode::EditorWord:
-        state.action = CompletionActivationAction::ReplaceWord;
-        state.text = query.itemText;
-        state.hidePopup = true;
-        return state;
-    }
-
+    state.action = CompletionActivationAction::ReplaceCommandInput;
+    state.text = query.defaultValue.isEmpty()
+        ? query.itemText
+        : query.defaultValue;
+    state.selectionStart = query.selectionStart;
+    state.selectionLength = query.selectionLength;
+    state.templateSlots = query.templateSlots;
+    state.clearCommandMode =
+        !state.text.startsWith(QLatin1Char(';'));
+    state.hidePopup = state.clearCommandMode;
     return state;
 }
 
@@ -237,12 +209,12 @@ CompletionPopupKeyState CompletionCommandMode::popupKeyState(
     case Qt::Key_Up:
         state.action = CompletionPopupKeyAction::ForwardToPopup;
         return state;
+    case Qt::Key_Backtab:
+        state.action =
+            CompletionPopupKeyAction::SelectPreviousSelectable;
+        return state;
     case Qt::Key_Escape:
-        if (query.mode == CompletionActivationMode::CommandMode) {
-            state.action = CompletionPopupKeyAction::HidePopupAndClearCommand;
-        } else {
-            state.action = CompletionPopupKeyAction::HidePopup;
-        }
+        state.action = CompletionPopupKeyAction::HidePopupAndClearCommand;
         return state;
     case Qt::Key_Backspace:
         return state;

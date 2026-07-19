@@ -8,10 +8,17 @@ bool DocumentStore::markEdited(
     if (!snapshot)
         return false;
 
-    snapshot->textVersion = previous.textVersion + 1;
+    // DocumentSnapshotReader has already copied the authoritative source-text
+    // revision into this snapshot. A real edit must retain the preceding saved
+    // token until the document is saved again.
+    snapshot->savedTextVersion = previous.savedTextVersion;
     snapshot->dirty = true;
     snapshot->saved = false;
-    return updateSnapshot(editor, *snapshot);
+    if (!updateSnapshot(editor, *snapshot))
+        return false;
+    if (TrackedDocument* tracked = find(editor))
+        tracked->contentChangePending = false;
+    return true;
 }
 
 bool DocumentStore::markSaved(
@@ -24,6 +31,7 @@ bool DocumentStore::markSaved(
     tracked->snapshot.dirty = false;
     tracked->snapshot.saved = true;
     tracked->snapshot.savedTextVersion = tracked->snapshot.textVersion;
+    tracked->contentChangePending = false;
     insert(editor, *tracked);
     return true;
 }

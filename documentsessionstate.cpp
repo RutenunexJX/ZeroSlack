@@ -95,8 +95,7 @@ DocumentSnapshot DocumentSessionState::refreshTrackedDocument(
     if (!editor || !registry.contains(editor))
         return DocumentSnapshot();
 
-    TrackedDocument tracked = registry.value(editor);
-    const DocumentSnapshot previous = tracked.snapshot;
-    tracked = snapshotReader.capture(editor, &previous);
-    return registry.replace(editor, tracked, previous);
+    const TrackedDocument previous = registry.value(editor);
+    TrackedDocument tracked = snapshotReader.capture(editor, &previous);
+    return registry.replace(editor, tracked, previous.snapshot);
 }

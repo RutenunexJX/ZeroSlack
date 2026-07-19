@@ -1,5 +1,6 @@
 #include "slangmanager.h"
 #include "slangparseoptions.h"
+#include "slangsymbolcollectorhelpers.h"
 #include "svmacrosemantics.h"
 
 #include <slang/ast/Compilation.h>
@@ -9,6 +10,7 @@
 #include <slang/text/SourceManager.h>
 #include <slang/util/Bag.h>
 
+#include <QByteArray>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -16,7 +18,11 @@
 #include <QSet>
 #include <QTextStream>
 #include <functional>
+#include <memory>
 #include <string>
+#include <string_view>
+#include <utility>
+#include <vector>
 
 using namespace slang::ast;
 
@@ -31,12 +37,21 @@ QString readMacroDiagnosticTextFile(const QString& filePath)
     return stream.readAll();
 }
 
-QString normalizedSlangFileName(std::string_view fileName)
+QString normalizedDiagnosticSourcePath(const QString& fileName)
 {
-    const QString path = QString::fromStdString(std::string(fileName));
-    if (path.isEmpty())
+    if (fileName.isEmpty())
         return QString();
-    return QDir::cleanPath(QDir::fromNativeSeparators(QFileInfo(path).absoluteFilePath()));
+    return QDir::cleanPath(
+        QDir::fromNativeSeparators(QFileInfo(fileName).absoluteFilePath()));
+}
+
+QString diagnosticSourceLookupKey(const QString& fileName)
+{
+    QString key = normalizedDiagnosticSourcePath(fileName);
+#ifdef Q_OS_WIN
+    key = key.toCaseFolded();
+#endif
+    return key;
 }
 
 SemanticDiagnostic::Severity mapDiagnosticSeverity(slang::DiagnosticSeverity severity)
@@ -74,8 +89,9 @@ bool appendDiagnostics(const slang::SourceManager& sourceManager,
             continue;
 
         SemanticDiagnostic item;
-        item.fileName =
-            normalizedSlangFileName(sourceManager.getFileName(diagnostic.location));
+        item.fileName = normalizedDiagnosticSourcePath(
+            slang_symbols::detail::sourceIdentityFileName(
+                &sourceManager, diagnostic.location));
         const size_t line = sourceManager.getLineNumber(diagnostic.location);
         const size_t column = sourceManager.getColumnNumber(diagnostic.location);
         item.line = line == 0 ? 1 : static_cast<int>(line);
@@ -130,6 +146,41 @@ QList<SemanticDiagnostic> workspaceUndefinedMacroDiagnostics(
             SvMacroSemantics::undefinedMacroDiagnostics(it.key(),
                                                         it.value(),
                                                         visibleMacros));
+    }
+    return diagnostics;
+}
+
+QList<SemanticDiagnostic> overlayWorkspaceUndefinedMacroDiagnostics(
+    const QStringList& filePaths,
+    const QHash<QString, QString>& contentsByKey,
+    const QHash<QString, QString>& defines,
+    const std::function<bool()>& isCancelled)
+{
+    QList<SemanticDiagnostic> diagnostics;
+    QSet<QString> visibleMacros =
+        SvMacroSemantics::configuredDefineNames(defines);
+
+    for (const QString& filePath : filePaths) {
+        if (isCancelled && isCancelled())
+            return {};
+        const QString content = contentsByKey.value(
+            diagnosticSourceLookupKey(filePath));
+        for (const SemanticSymbolRecord& record :
+             SvMacroSemantics::collectMacroDefinitionRecords(filePath,
+                                                              content)) {
+            if (!record.name.isEmpty())
+                visibleMacros.insert(record.name);
+        }
+    }
+
+    for (const QString& filePath : filePaths) {
+        if (isCancelled && isCancelled())
+            return {};
+        diagnostics.append(
+            SvMacroSemantics::undefinedMacroDiagnostics(
+                filePath,
+                contentsByKey.value(diagnosticSourceLookupKey(filePath)),
+                visibleMacros));
     }
     return diagnostics;
 }
@@ -290,6 +341,149 @@ QList<SemanticDiagnostic> SlangManager::extractWorkspaceDiagnostics(
                                                         isCancelled));
         if (cancelled())
             result.clear();
+    } catch (const std::exception&) {
+        result.clear();
+    } catch (...) {
+        result.clear();
+    }
+    return result;
+}
+
+QList<SemanticDiagnostic> SlangManager::extractOverlayWorkspaceDiagnostics(
+    const QHash<QString, QString>& fileContents,
+    const QStringList& includeDirs,
+    const QHash<QString, QString>& defines,
+    std::function<bool()> isCancelled,
+    const QStringList& orderedFilePaths)
+{
+    QList<SemanticDiagnostic> result;
+    if (fileContents.isEmpty())
+        return result;
+    auto cancelled = [&]() {
+        return isCancelled && isCancelled();
+    };
+    if (cancelled())
+        return result;
+
+    try {
+        QHash<QString, QString> contentsByKey;
+        QHash<QString, QString> pathsByKey;
+        for (auto it = fileContents.constBegin();
+             it != fileContents.constEnd();
+             ++it) {
+            if (cancelled())
+                return {};
+            const QString path = normalizedDiagnosticSourcePath(it.key());
+            const QString key = diagnosticSourceLookupKey(path);
+            if (key.isEmpty())
+                continue;
+            pathsByKey.insert(key, path);
+            contentsByKey.insert(key, it.value());
+        }
+
+        QStringList fileNames;
+        QSet<QString> added;
+        for (const QString& requestedPath : orderedFilePaths) {
+            if (cancelled())
+                return {};
+            const QString key = diagnosticSourceLookupKey(requestedPath);
+            if (key.isEmpty() || added.contains(key)
+                || !contentsByKey.contains(key)) {
+                continue;
+            }
+            added.insert(key);
+            fileNames.append(normalizedDiagnosticSourcePath(requestedPath));
+        }
+        QStringList remainingKeys = contentsByKey.keys();
+        remainingKeys.sort(Qt::CaseInsensitive);
+        for (const QString& key : std::as_const(remainingKeys)) {
+            if (cancelled())
+                return {};
+            if (added.contains(key))
+                continue;
+            added.insert(key);
+            fileNames.append(pathsByKey.value(key));
+        }
+        if (fileNames.isEmpty() || cancelled())
+            return {};
+
+        const QStringList effectiveIncludeDirs =
+            slang_parse_options::effectiveIncludeDirsForFiles(fileNames,
+                                                              includeDirs);
+        const slang::Bag syntaxOptions =
+            slang_parse_options::makeSyntaxOptions(effectiveIncludeDirs,
+                                                   defines);
+        slang::SourceManager sourceManager;
+        sourceManager.setDisableProximatePaths(true);
+        std::vector<std::string> pathStrings;
+        std::vector<slang::SourceBuffer> sourceBuffers;
+        pathStrings.reserve(static_cast<std::size_t>(fileNames.size()));
+        sourceBuffers.reserve(static_cast<std::size_t>(fileNames.size()));
+        for (const QString& fileName : std::as_const(fileNames)) {
+            if (cancelled())
+                return {};
+            const QByteArray sourceBytes = contentsByKey.value(
+                diagnosticSourceLookupKey(fileName)).toUtf8();
+            pathStrings.push_back(fileName.toUtf8().toStdString());
+            slang::SourceBuffer sourceBuffer = sourceManager.assignText(
+                std::string_view(pathStrings.back()),
+                std::string_view(
+                    sourceBytes.constData(),
+                    static_cast<std::size_t>(sourceBytes.size())));
+            sourceManager.addLineDirective(
+                slang::SourceLocation(sourceBuffer.id, 0),
+                2,
+                std::string_view(pathStrings.back()),
+                0);
+            sourceBuffers.push_back(sourceBuffer);
+        }
+        if (sourceBuffers.empty() || cancelled())
+            return {};
+
+        std::shared_ptr<slang::syntax::SyntaxTree> tree =
+            slang::syntax::SyntaxTree::fromBuffers(sourceBuffers,
+                                                   sourceManager,
+                                                   syntaxOptions);
+        if (!tree || cancelled())
+            return {};
+
+        QSet<QString> seen;
+        if (!appendDiagnostics(tree->sourceManager(),
+                               tree->diagnostics(),
+                               &result,
+                               &seen,
+                               isCancelled)) {
+            return {};
+        }
+        if (cancelled())
+            return {};
+
+        slang::Bag compilationOptions =
+            slang_parse_options::makeCompilationOptions();
+        Compilation compilation(compilationOptions);
+        compilation.addSyntaxTree(tree);
+        (void)compilation.getRoot();
+        if (cancelled())
+            return {};
+        const slang::SourceManager* sm = compilation.getSourceManager();
+        if (sm
+            && !appendDiagnostics(*sm,
+                                  compilation.getAllDiagnostics(),
+                                  &result,
+                                  &seen,
+                                  isCancelled)) {
+            return {};
+        }
+        if (cancelled())
+            return {};
+
+        result.append(overlayWorkspaceUndefinedMacroDiagnostics(
+            fileNames,
+            contentsByKey,
+            defines,
+            isCancelled));
+        if (cancelled())
+            return {};
     } catch (const std::exception&) {
         result.clear();
     } catch (...) {

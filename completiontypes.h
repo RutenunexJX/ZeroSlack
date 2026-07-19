@@ -4,46 +4,7 @@
 #include "semanticindex.h"
 
 #include <QList>
-#include <QPair>
 #include <QString>
-#include <QStringList>
-#include <QVector>
-
-struct CompletionQuery {
-    QString prefix;
-    QString fileName;
-    QString moduleName;
-    QString structTypeNameForMember;
-    int cursorLine = -1;
-    int cursorPosition = -1;
-};
-
-struct CompletionResult {
-    QStringList names;
-    struct SemanticCompletionItem {
-        QString label;
-        QString insertText;
-        QString typeDisplayName;
-        QString ownerScopeName;
-        QString sourceRoleDisplayName;
-        QString analysisBandDisplayName;
-        SemanticAnalysisBandMetadata analysisBand;
-        SemanticSymbolRecord symbolRecord;
-        SymbolStableKey symbolStableKey;
-        SymbolTaxonomy::DeclarationKind declarationKind =
-            SymbolTaxonomy::DeclarationKind::Unknown;
-        SymbolTaxonomy::SymbolUsageRole usageRole =
-            SymbolTaxonomy::SymbolUsageRole::Unknown;
-        SymbolTaxonomy::SymbolOwnerScope ownerScope =
-            SymbolTaxonomy::SymbolOwnerScope::Unknown;
-        SymbolTaxonomy::SourceRole sourceRole =
-            SymbolTaxonomy::SourceRole::Unknown;
-    };
-    QList<SemanticCompletionItem> items;
-
-    int analysisBandGroupCount() const;
-    QString analysisBandSummaryText() const;
-};
 
 enum class CompletionCommandKind {
     User,
@@ -81,32 +42,8 @@ struct CommandCompletionQuery {
     CompletionCommandKind commandKind = CompletionCommandKind::User;
 };
 
-struct ContextCompletionQuery {
-    QString prefix;
-    QString currentModule;
-    QString context;
-    bool relationshipCompletionsEnabled = true;
-};
-
-struct CompletionTriggerQuery {
-    QString lineUpToCursor;
-    QString moduleName;
-    bool commandModeActive = false;
-};
-
-struct CompletionTriggerState {
-    bool continueCompletion = false;
-    bool hidePopup = false;
-};
-
-enum class CompletionActivationMode {
-    EditorWord,
-    CommandMode
-};
-
 enum class CompletionActivationAction {
     None,
-    ReplaceWord,
     ReplaceLine,
     ReplaceCommandInput,
     ExecuteEditorAction
@@ -122,7 +59,6 @@ using CodeTemplateSlotList = QList<CodeTemplateSlot>;
 
 struct CompletionActivationQuery {
     bool selectable = false;
-    CompletionActivationMode mode = CompletionActivationMode::EditorWord;
     QString itemText;
     QString defaultValue;
     int selectionStart = -1;
@@ -144,37 +80,20 @@ enum class CompletionPopupKeyAction {
     None,
     Consume,
     ForwardToPopup,
+    SelectPreviousSelectable,
     ActivateCurrent,
     ActivateCurrentOrFirstSelectable,
-    HidePopup,
     HidePopupAndClearCommand
 };
 
 struct CompletionPopupKeyQuery {
     int key = 0;
-    CompletionActivationMode mode = CompletionActivationMode::EditorWord;
     bool currentIndexValid = false;
     bool hasRows = false;
 };
 
 struct CompletionPopupKeyState {
     CompletionPopupKeyAction action = CompletionPopupKeyAction::None;
-};
-
-struct EditorCompletionQuery {
-    QString lineUpToCursor;
-    QString wordPrefix;
-    QString fileName;
-    QString moduleName;
-    int cursorLine = -1;
-    int cursorPosition = -1;
-};
-
-struct EditorCompletionState {
-    bool available = false;
-    QString prefix;
-    int replacementStartColumn = -1;
-    CompletionResult completion;
 };
 
 struct CommandSymbolPresentation {

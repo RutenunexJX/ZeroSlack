@@ -18,11 +18,15 @@ public:
     void connectNavigationInputs(TabManager* tabManager,
                                  WorkspaceManager* workspaceManager);
     void toggleVisible();
+    void showFiles();
+    void showDesign();
+    void showSearch();
 
     QDockWidget* dock() const { return navigationDock; }
-    NavigationWidget* widget() const { return navigationWidget; }
 
 private:
+    void showDock();
+
     QDockWidget* navigationDock = nullptr;
     NavigationWidget* navigationWidget = nullptr;
     NavigationManager* navigationManager = nullptr;

@@ -41,6 +41,8 @@ struct SymbolStableKey {
     SymbolTaxonomy::DeclarationKind declarationKind =
         SymbolTaxonomy::DeclarationKind::Unknown;
     QString ownerScope;
+    int sourcePosition = -1;
+    int sourceLength = 0;
 
     bool isValid() const;
     QString toString() const;
@@ -78,6 +80,48 @@ struct SemanticSymbolTypeReference {
     SymbolStableKey stableKey;
 
     bool isValid() const;
+};
+
+struct SemanticElaboratedSymbolInfo {
+    bool available = false;
+    QString valueText;
+    QString expressionText;
+    QString valueSourceText;
+    QString resolvedTypeText;
+    QString packedDimensionsText;
+    QString unpackedDimensionsText;
+    QString unpackedElementCountText;
+    QString bitWidthText;
+    QString signednessText;
+    QString interfaceName;
+    QString modportName;
+    QString failureReason;
+};
+
+// Describes the elaboration domain in which a compile-time value is valid.
+// This is intentionally independent of SemanticSymbolOwner: enum values owned
+// by a typedef, for example, can still be package-scoped effective values.
+enum class SemanticEffectiveScopeKind {
+    Unknown,
+    Instance,
+    Package,
+    CompilationUnit
+};
+
+struct SemanticSymbolPresentation {
+    QString declarationText;
+    QString expressionText;
+    QString enumTypeName;
+    QString enumUnderlyingBitWidthText;
+    QString packedDimensionsText;
+    QString unpackedDimensionsText;
+    SemanticEffectiveScopeKind effectiveScopeKind =
+        SemanticEffectiveScopeKind::Unknown;
+    QString qualifiedScopePath;
+    std::uint64_t computationRevision = 0;
+    std::uint64_t documentRevision = 0;
+    SemanticElaboratedSymbolInfo defaultInfo;
+    QHash<QString, SemanticElaboratedSymbolInfo> instanceInfoByPath;
 };
 
 struct SemanticAnalysisBandMetadata {
@@ -126,6 +170,7 @@ struct SemanticSymbolRecord {
         SymbolTaxonomy::CollectorKind::User;
     SemanticSymbolOwner owner;
     SemanticSymbolTypeReference type;
+    SemanticSymbolPresentation presentation;
     SemanticAnalysisBandMetadata analysisBand;
 
     bool isValid() const;
@@ -269,7 +314,11 @@ public:
     ~SemanticIndex();
 
     void setSnapshot(std::shared_ptr<const SemanticIndexSnapshot> snapshot);
+    // Clears only the published snapshot. Native/open-document records remain
+    // available to callers that intentionally fall back to the live store.
     void clearSnapshot();
+    // Clears all index-owned state for a closed or replaced workspace.
+    void clearSemanticState();
     std::shared_ptr<const SemanticIndexSnapshot> snapshot() const;
     std::uint64_t snapshotRevision() const;
     SemanticSnapshotToken snapshotToken() const;
@@ -312,13 +361,6 @@ public:
         SymbolTaxonomy::DeclarationKind declarationKind) const;
     QList<SemanticSymbolSearchResult> searchSymbols(
         const SemanticSymbolSearchQuery& query) const;
-    QList<SemanticSymbolRecord> getModuleCompletionSymbolRecords(
-        const QString& moduleName,
-        const QString& prefix = QString()) const;
-    QList<SemanticSymbolRecord> getModuleCompletionSymbolRecords(
-        const SemanticQueryContext& context) const;
-    QList<SemanticSymbolRecord> getGlobalCompletionSymbolRecords(
-        const QString& prefix = QString()) const;
     QList<SemanticSymbolRecord> getCommandCompletionSymbolRecords(
         const QString& moduleName,
         CompletionCommandKind commandKind,
@@ -326,28 +368,6 @@ public:
     QList<SemanticSymbolRecord> getCommandCompletionSymbolRecords(
         const SemanticQueryContext& context,
         CompletionCommandKind commandKind,
-        const QString& prefix = QString()) const;
-    QStringList getCompletionSymbolNames() const;
-    QStringList getEnumValueCompletionNames(
-        const QString& prefix = QString(),
-        const QString& enumTypeName = QString()) const;
-    QString enumTypeForVariable(
-        const QString& variableName,
-        const QString& moduleName = QString()) const;
-    QStringList getModulePortCompletionNames(
-        const QString& prefix,
-        const QString& moduleTypeName) const;
-    QStringList getRelationshipCompletionNames(
-        const QString& symbolName,
-        const QList<SymbolRelationshipEngine::RelationType>& types,
-        bool outgoing,
-        const QString& prefix = QString()) const;
-    QStringList getBidirectionalRelationshipCompletionNames(
-        const QString& symbolName,
-        const QList<SymbolRelationshipEngine::RelationType>& types,
-        const QString& prefix = QString()) const;
-    QStringList getSymbolsWithOutgoingRelationshipCompletionNames(
-        SymbolRelationshipEngine::RelationType type,
         const QString& prefix = QString()) const;
     SemanticSymbolRecord getSymbolRecordByStableKey(
         const SymbolStableKey& key) const;
@@ -378,9 +398,6 @@ public:
         CompletionCommandKind commandKind,
         const QString& prefix = QString()) const;
     QString currentModuleAt(const QString& fileName, int cursorPosition) const;
-    bool hasRelationshipFacts() const;
-    int scopeScoreForSymbol(const QString& symbolName,
-                            const QString& moduleName) const;
     bool isValidModuleName(const QString& name) const;
     int findEndModuleLine(const QString& fileName,
                           const SemanticSymbolRecord& moduleRecord) const;
@@ -392,8 +409,6 @@ public:
         SymbolRelationshipEngine* engine,
         SlangManager* slangManager,
         QObject* parent = nullptr) const;
-
-    QStringList findCompletions(const SemanticQueryContext& context) const;
 
     QList<SemanticRelationship> relationshipsForStableKey(
         const SymbolStableKey& key,
@@ -433,7 +448,8 @@ private:
         const QList<SemanticSymbolRecord>& records,
         const QString& content,
         bool rebuildIndexes = true,
-        bool updateIndexesIncrementally = true);
+        bool updateIndexesIncrementally = true,
+        bool preserveWorkspaceElaboration = false);
     void rebuildNativeStoreIndexes();
     void appendNativeStoreIndexForRecord(int index);
     QList<SemanticSymbolRecord> nativeSymbolRecords(

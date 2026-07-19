@@ -5,7 +5,6 @@
 #include "analysisscheduler.h"
 #include "clockresetdomainservice.h"
 #include "completionservice.h"
-#include "completionsymbolquery.h"
 #include "definitionservice.h"
 #include "semanticindex.h"
 #include "diagnosticservice.h"
@@ -54,12 +53,15 @@
 #include <QSet>
 #include <QString>
 #include <QTemporaryDir>
+#include <QThread>
 #include <QTimer>
 #include <QGraphicsScene>
 #include <QGraphicsView>
 #include <QTreeWidget>
 #include <QTreeWidgetItem>
 #include <QWidget>
+#include <algorithm>
+#include <atomic>
 #include <cstdio>
 #include <cmath>
 #include <functional>
@@ -68,6 +70,109 @@
 
 static int g_checks = 0;
 static int g_fails = 0;
+
+static void expectBool(const char* what, bool got, bool want);
+
+static void runAnalysisSchedulerDependencyLifetimeFixture()
+{
+    auto scheduler = std::make_unique<AnalysisScheduler>();
+    {
+        SymbolAnalyzer analyzer;
+        scheduler->setSymbolAnalyzer(&analyzer);
+    }
+
+    // AnalysisScheduler is intentionally destroyed after its externally
+    // owned analyzer. The guarded dependency must already be null, so
+    // shutdown cannot call through released QObject storage.
+    scheduler.reset();
+    expectBool("scheduler tolerates analyzer-first destruction", true, true);
+
+    QTemporaryDir analyzerLifetimeDir;
+    const QString analyzerLifetimeFile =
+        QDir(analyzerLifetimeDir.path()).filePath(
+            QStringLiteral("analyzer_lifetime_gate.sv"));
+    QFile analyzerLifetimeSource(analyzerLifetimeFile);
+    const bool analyzerLifetimeSourceWritten =
+        analyzerLifetimeDir.isValid()
+        && analyzerLifetimeSource.open(QIODevice::WriteOnly | QIODevice::Text)
+        && analyzerLifetimeSource.write(
+               "module analyzer_lifetime_gate; endmodule\n") > 0;
+    analyzerLifetimeSource.close();
+    expectBool("analyzer lifetime fixture source written",
+               analyzerLifetimeSourceWritten,
+               true);
+
+    auto activeScheduler = std::make_unique<AnalysisScheduler>();
+    auto activeAnalyzer = std::make_unique<SymbolAnalyzer>();
+    std::atomic_bool analyzerGateEntered{false};
+    activeAnalyzer->setWorkspaceWorkerStartGateForTesting(
+        [&analyzerGateEntered](const std::function<bool()>& isCancelled) {
+            analyzerGateEntered.store(true, std::memory_order_release);
+            while (!isCancelled())
+                QThread::yieldCurrentThread();
+        });
+    activeScheduler->setSymbolAnalyzer(activeAnalyzer.get());
+    ProjectSnapshot analyzerLifetimeProject;
+    analyzerLifetimeProject.workspaceRoot = analyzerLifetimeDir.path();
+    analyzerLifetimeProject.allFiles = {analyzerLifetimeFile};
+    analyzerLifetimeProject.systemVerilogFiles = {analyzerLifetimeFile};
+    activeScheduler->requestWorkspaceAnalysis(analyzerLifetimeProject);
+    QElapsedTimer analyzerGateWait;
+    analyzerGateWait.start();
+    while (!analyzerGateEntered.load(std::memory_order_acquire)
+           && analyzerGateWait.elapsed() < 5000) {
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 10);
+        QThread::yieldCurrentThread();
+    }
+    expectBool("workspace worker entered analyzer lifetime gate",
+               analyzerGateEntered.load(std::memory_order_acquire),
+               true);
+    activeAnalyzer.reset();
+    activeScheduler.reset();
+    expectBool("scheduler tolerates active analyzer-first destruction",
+               true,
+               true);
+
+    SlangManager slang;
+    auto relationshipController =
+        std::make_unique<RelationshipAnalysisController>();
+    auto relationshipBuilder =
+        std::make_unique<SmartRelationshipBuilder>(nullptr, &slang);
+    std::atomic_bool workerGateEntered{false};
+    relationshipController->setRelationshipBuilder(relationshipBuilder.get());
+    relationshipController->setWorkspaceWorkerStartGateForTesting(
+        [&workerGateEntered](const std::function<bool()>& isCancelled) {
+            workerGateEntered.store(true, std::memory_order_release);
+            while (!isCancelled())
+                QThread::yieldCurrentThread();
+        });
+
+    ProjectSnapshot gatedProject;
+    gatedProject.workspaceRoot = QDir::tempPath();
+    gatedProject.allFiles = {QDir(QDir::tempPath()).filePath(
+        QStringLiteral("builder_lifetime_gate.sv"))};
+    gatedProject.systemVerilogFiles = gatedProject.allFiles;
+    relationshipController->requestWorkspaceAnalysis(gatedProject);
+
+    QElapsedTimer gateWait;
+    gateWait.start();
+    while (!workerGateEntered.load(std::memory_order_acquire)
+           && gateWait.elapsed() < 5000) {
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 10);
+        QThread::yieldCurrentThread();
+    }
+    expectBool("relationship worker entered builder lifetime gate",
+               workerGateEntered.load(std::memory_order_acquire),
+               true);
+
+    // Direct external destruction must cancel and join the leased worker
+    // before the builder's derived members are released.
+    relationshipBuilder.reset();
+    relationshipController.reset();
+    expectBool("relationship builder waits for active worker lease",
+               true,
+               true);
+}
 
 static std::shared_ptr<SemanticIndexSnapshot> sharedSnapshotFromRecords(
     const QList<SemanticSymbolRecord>& records,
@@ -3291,6 +3396,30 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
         snapshotFromSemanticIndex(index, {}, &engine)));
     const auto capturedSnapshot =
         captureIndex.captureSnapshotPreservingDiagnostics();
+    expectInt("semantic index diagnostics capture keeps relationships",
+              capturedSnapshot->relationships().size(),
+              captureIndex.snapshot()->relationships().size());
+    const QList<SemanticRelationship> capturedInstantiationRelationships =
+        capturedSnapshot->relationshipsForStableKey(topStableKey, true);
+    expectBool("semantic index diagnostics capture keeps instantiates",
+               std::any_of(
+                   capturedInstantiationRelationships.constBegin(),
+                   capturedInstantiationRelationships.constEnd(),
+                   [&stageStableKey](const SemanticRelationship& relationship) {
+                       return relationship.type
+                                  == SymbolRelationshipEngine::INSTANTIATES
+                           && relationship.toStableKey == stageStableKey;
+                   }),
+               true);
+    SemanticIndex diagnosticReplacementCaptureIndex;
+    diagnosticReplacementCaptureIndex.setSnapshot(snapshot);
+    const auto diagnosticOnlyReplacementSnapshot =
+        diagnosticReplacementCaptureIndex.captureSnapshotReplacingDiagnostics(
+            {topPath},
+            {replacementDiagnostic});
+    expectInt("semantic index diagnostics-only replacement keeps relationships",
+              diagnosticOnlyReplacementSnapshot->relationships().size(),
+              snapshot->relationships().size());
     captureIndex.setSnapshot(sharedSnapshotFromRecords(
         capturedSnapshot->getSymbolRecords(),
         capturedSnapshot->relationships(),
@@ -3314,6 +3443,104 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                    && replacedCaptureSnapshot->getDiagnostics(stagePath).first().message
                        == errorDiagnostic.message,
                true);
+    expectInt("semantic index diagnostic replacement keeps relationships",
+              replacedCaptureSnapshot->relationships().size(),
+              captureIndex.snapshot()->relationships().size());
+
+    SymbolRelationshipEngine reboundCaptureEngine;
+    SemanticIndex reboundCaptureIndex;
+    reboundCaptureIndex.setSnapshot(snapshot);
+    reboundCaptureIndex.attachRelationshipEngine(&reboundCaptureEngine);
+    QList<SemanticFileSymbolUpdate> reboundUpdates;
+    QHash<QString, int> reboundHandleByStableKey;
+    for (const QString& path : paths) {
+        SemanticFileSymbolUpdate update;
+        update.fileName = path;
+        update.content = contents.value(path);
+        update.content.replace(QStringLiteral("\n"),
+                               QStringLiteral("\r\n"));
+        update.symbolRecords = snapshot->getSymbolRecords(path);
+        for (SemanticSymbolRecord& record : update.symbolRecords) {
+            record.localHandle += 200000;
+            reboundHandleByStableKey.insert(
+                symbolStableKeyText(record.stableKey),
+                record.localHandle);
+        }
+        reboundUpdates.append(update);
+    }
+    reboundCaptureIndex.updateSymbolRecordsForFiles(reboundUpdates, false);
+    const auto reboundCapturedSnapshot =
+        reboundCaptureIndex.captureSnapshotReplacingDiagnostics(
+            paths,
+            {replacementDiagnostic});
+    reboundCaptureIndex.setSnapshot(reboundCapturedSnapshot);
+    const QList<SemanticRelationship> reboundCapturedRelationships =
+        reboundCapturedSnapshot->relationshipsForStableKey(topStableKey, true);
+    const int reboundTopHandle =
+        reboundHandleByStableKey.value(symbolStableKeyText(topStableKey), -1);
+    const int reboundStageHandle =
+        reboundHandleByStableKey.value(symbolStableKeyText(stageStableKey), -1);
+    expectBool("semantic index full handle replacement keeps instantiates",
+               std::any_of(
+                   reboundCapturedRelationships.constBegin(),
+                   reboundCapturedRelationships.constEnd(),
+                   [reboundTopHandle,
+                    reboundStageHandle,
+                    &topStableKey,
+                    &stageStableKey](const SemanticRelationship& relationship) {
+                       return relationship.type
+                                  == SymbolRelationshipEngine::INSTANTIATES
+                           && relationship.fromId == reboundTopHandle
+                           && relationship.toId == reboundStageHandle
+                           && relationship.fromStableKey == topStableKey
+                           && relationship.toStableKey == stageStableKey;
+                   }),
+               true);
+    expectBool("semantic index handle replacement rebinds engine mirror",
+               reboundCaptureEngine.hasRelationship(
+                   reboundTopHandle,
+                   reboundStageHandle,
+                   SymbolRelationshipEngine::INSTANTIATES),
+               true);
+
+    SemanticRelationship dirtyEvidenceRelationship;
+    dirtyEvidenceRelationship.fromId = stageId;
+    dirtyEvidenceRelationship.toId = stageDataId;
+    dirtyEvidenceRelationship.type = SymbolRelationshipEngine::CONSTRAINS;
+    dirtyEvidenceRelationship.fromStableKey = stageStableKey;
+    dirtyEvidenceRelationship.toStableKey = stageDataRecord.stableKey;
+    dirtyEvidenceRelationship.evidenceText =
+        QStringLiteral("dirty evidence invalidation probe");
+    dirtyEvidenceRelationship.evidenceRange.fileName = topPath;
+    dirtyEvidenceRelationship.evidenceRange.line = 1;
+    dirtyEvidenceRelationship.evidenceRange.column = 1;
+    const auto dirtyAuthoritySnapshot = sharedSnapshotFromSymbols(
+        snapshot->withAdditionalRelationships({dirtyEvidenceRelationship}));
+    SemanticIndex dirtyCaptureIndex;
+    dirtyCaptureIndex.setSnapshot(dirtyAuthoritySnapshot);
+    SemanticFileSymbolUpdate dirtyTopUpdate;
+    dirtyTopUpdate.fileName = topPath;
+    dirtyTopUpdate.content = contents.value(topPath)
+        + QStringLiteral("\n// dirty relationship edit\n");
+    dirtyTopUpdate.symbolRecords = snapshot->getSymbolRecords(topPath);
+    dirtyCaptureIndex.updateSymbolRecordsForFiles({dirtyTopUpdate}, false);
+    const auto dirtyCapturedSnapshot =
+        dirtyCaptureIndex.captureSnapshotPreservingDiagnostics();
+    expectBool("semantic index dirty edit invalidates endpoint relationships",
+               dirtyCapturedSnapshot->relationshipsForStableKey(
+                   topStableKey,
+                   true).isEmpty(),
+               true);
+    bool dirtyEvidencePreserved = false;
+    for (const SemanticRelationship& relationship
+         : dirtyCapturedSnapshot->relationships()) {
+        dirtyEvidencePreserved = dirtyEvidencePreserved
+            || relationship.evidenceText
+                   == dirtyEvidenceRelationship.evidenceText;
+    }
+    expectBool("semantic index dirty edit invalidates evidence relationships",
+               dirtyEvidencePreserved,
+               false);
     SemanticIndex guardedIndex;
     const auto guardedBaseSnapshot =
         sharedSnapshotFromSymbols(
@@ -3557,8 +3784,8 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                 || record.name == QStringLiteral("disk_signal");
         }
     }
-    expectBool("workspace skips dirty open document publication",
-               dirtyWorkspaceFinished && dirtyWorkspaceFilesAnalyzed == 0,
+    expectBool("workspace publishes dirty open document overlay",
+               dirtyWorkspaceFinished && dirtyWorkspaceFilesAnalyzed == 1,
                true);
     expectBool("workspace preserves dirty open document symbols",
                dirtySnapshotHasOpen && !dirtySnapshotHasDisk,
@@ -10796,14 +11023,26 @@ static void runImportAwarePackageVisibilityFixture()
     DefinitionService definitionService(&index);
     SymbolHoverService hoverService(&index);
 
-    CompletionQuery noImportCompletion;
+    const auto hasCommandRecordNamed = [](
+        const QList<SemanticSymbolRecord>& records,
+        const QString& name) {
+        for (const SemanticSymbolRecord& record : records) {
+            if (record.name == name)
+                return true;
+        }
+        return false;
+    };
+    CommandCompletionQuery noImportCompletion;
     noImportCompletion.fileName = topFile;
     noImportCompletion.moduleName = QStringLiteral("no_import_top");
     noImportCompletion.prefix = QStringLiteral("DATA");
     noImportCompletion.cursorLine = 2;
+    noImportCompletion.commandKind = CompletionCommandKind::Parameter;
     expectBool("unimported package parameter hidden from completion",
-               !completionService.findCompletionResult(noImportCompletion)
-                    .names.contains(QStringLiteral("DATA_W")),
+               !hasCommandRecordNamed(
+                   completionService.findCommandCompletionSymbolRecords(
+                       noImportCompletion),
+                   QStringLiteral("DATA_W")),
                true);
     expectBool("unimported package parameter hidden from scope completion",
                !index.getScopeSymbolNames(topFile, 2)
@@ -10823,13 +11062,14 @@ static void runImportAwarePackageVisibilityFixture()
                        == SemanticDefinitionMissReason::NotVisibleInContext,
                true);
 
-    CompletionQuery importCompletion = noImportCompletion;
+    CommandCompletionQuery importCompletion = noImportCompletion;
     importCompletion.moduleName = QStringLiteral("import_top");
     importCompletion.cursorLine = 7;
-    const CompletionResult importedResult =
-        completionService.findCompletionResult(importCompletion);
+    const QList<SemanticSymbolRecord> importedResult =
+        completionService.findCommandCompletionSymbolRecords(importCompletion);
     expectBool("imported package parameter completes",
-               importedResult.names.contains(QStringLiteral("DATA_W")),
+               hasCommandRecordNamed(importedResult,
+                                     QStringLiteral("DATA_W")),
                true);
 
     CommandCompletionQuery typedefCompletion;
@@ -10839,8 +11079,10 @@ static void runImportAwarePackageVisibilityFixture()
     typedefCompletion.prefix = QStringLiteral("cfg");
     typedefCompletion.cursorLine = 7;
     expectBool("imported package typedef command completes",
-               completionService.findCommandCompletions(typedefCompletion)
-                   .contains(QStringLiteral("cfg_word_t")),
+               hasCommandRecordNamed(
+                   completionService.findCommandCompletionSymbolRecords(
+                       typedefCompletion),
+                   QStringLiteral("cfg_word_t")),
                true);
 
     DefinitionQuery importDefinition = noImportDefinition;
@@ -10868,16 +11110,16 @@ static void runImportAwarePackageVisibilityFixture()
                    && hoverReport.ownerName == QStringLiteral("cfg_pkg"),
                true);
 
-    CompletionQuery localCompletion = noImportCompletion;
+    CommandCompletionQuery localCompletion = noImportCompletion;
     localCompletion.moduleName = QStringLiteral("local_top");
     localCompletion.cursorLine = 13;
-    const CompletionResult localResult =
-        completionService.findCompletionResult(localCompletion);
+    const QList<SemanticSymbolRecord> localResult =
+        completionService.findCommandCompletionSymbolRecords(localCompletion);
     bool localCompletionPrefersLocal = false;
-    for (const CompletionResult::SemanticCompletionItem& item : localResult.items) {
-        if (item.label == QStringLiteral("DATA_W"))
+    for (const SemanticSymbolRecord& record : localResult) {
+        if (record.name == QStringLiteral("DATA_W"))
             localCompletionPrefersLocal =
-                item.symbolRecord.owner.name == QStringLiteral("local_top");
+                record.owner.name == QStringLiteral("local_top");
     }
     expectBool("local same-name completion wins over import",
                localCompletionPrefersLocal,
@@ -10893,12 +11135,14 @@ static void runImportAwarePackageVisibilityFixture()
                        == QStringLiteral("local_top"),
                true);
 
-    CompletionQuery conflictCompletion = noImportCompletion;
+    CommandCompletionQuery conflictCompletion = noImportCompletion;
     conflictCompletion.moduleName = QStringLiteral("conflict_top");
     conflictCompletion.cursorLine = 19;
     expectBool("conflicting imported packages hide unqualified completion",
-               !completionService.findCompletionResult(conflictCompletion)
-                    .names.contains(QStringLiteral("DATA_W")),
+               !hasCommandRecordNamed(
+                   completionService.findCommandCompletionSymbolRecords(
+                       conflictCompletion),
+                   QStringLiteral("DATA_W")),
                true);
     DefinitionQuery conflictDefinition = noImportDefinition;
     conflictDefinition.moduleName = QStringLiteral("conflict_top");
@@ -11030,6 +11274,19 @@ static void runRealWorkspaceIncludeFixture()
         }
         return SemanticSymbolRecord{};
     };
+    const auto recordByNameKindAndFile = [&](const QString& name,
+                                              CollectorKind collectorKind,
+                                              const QString& fileName) {
+        for (const SemanticSymbolRecord& record : records) {
+            if (record.name == name
+                && record.collectorKind == collectorKind
+                && normalizedPath(record.location.fileName)
+                       == normalizedPath(fileName)) {
+                return record;
+            }
+        }
+        return SemanticSymbolRecord{};
+    };
 
     const SemanticSymbolRecord rtlTopRecord =
         recordByNameAndKind(QStringLiteral("rtl_top"), CollectorKind::Module);
@@ -11084,6 +11341,44 @@ static void runRealWorkspaceIncludeFixture()
     const SemanticSymbolRecord mcsRecord =
         recordByNameAndOwner(QStringLiteral("mcs"),
                              QStringLiteral("chl_ctrl"));
+    const SemanticSymbolRecord packageConcatEnumRecord =
+        recordByNameKindAndFile(
+            QStringLiteral("M_PHY_PASS_THROUGH_PRE_ASSERT"),
+            CollectorKind::EnumValue,
+            normalizedPath(QDir(workspaceRoot).filePath(
+                QStringLiteral("PKG_global.sv"))));
+    const SemanticSymbolRecord chlCtrlImplicitEnumRecord =
+        recordByNameKindAndFile(
+            QStringLiteral("S_PRE_DEASSERT_DONE"),
+            CollectorKind::EnumValue,
+            chlCtrlPath);
+    const QString packagePath = normalizedPath(
+        QDir(workspaceRoot).filePath(QStringLiteral("PKG_global.sv")));
+    const QList<SemanticSymbolRecord> isolatedPackageRecords =
+        slang.extractSymbolRecords(packagePath,
+                                   loadTextFile(packagePath),
+                                   snapshot.includeDirs,
+                                   snapshot.defines);
+    SemanticSymbolRecord isolatedPackageConcatEnumRecord;
+    for (const SemanticSymbolRecord& record : isolatedPackageRecords) {
+        if (record.name == QStringLiteral("M_PHY_PASS_THROUGH_PRE_ASSERT")
+            && record.collectorKind == CollectorKind::EnumValue) {
+            isolatedPackageConcatEnumRecord = record;
+            break;
+        }
+    }
+    QStringList packageDiagnosticDetails;
+    for (const SemanticDiagnostic& diagnostic : diagnostics) {
+        if (normalizedPath(diagnostic.fileName) != packagePath)
+            continue;
+        if (diagnostic.line >= 540 && diagnostic.line <= 670) {
+            packageDiagnosticDetails.append(
+                QStringLiteral("%1:%2 %3")
+                    .arg(diagnostic.line)
+                    .arg(diagnostic.column)
+                    .arg(diagnostic.message));
+        }
+    }
 
     expectBool("real workspace extracts symbols", records.size() > 20, true);
     expectBool("real workspace has rtl_top module",
@@ -11114,6 +11409,53 @@ static void runRealWorkspaceIncludeFixture()
                phyPassNsRecord.isValid(), true);
     expectBool("real workspace has chl_ctrl mcs signal",
                mcsRecord.isValid(), true);
+    expectBool("real PKG_global package parameter has exact Slang value",
+               packageParamRecord.presentation.defaultInfo.available
+                   && packageParamRecord.presentation.defaultInfo.valueText
+                          == QStringLiteral("90")
+                   && packageParamRecord.presentation.instanceInfoByPath
+                          .isEmpty(),
+               true);
+    const SemanticElaboratedSymbolInfo packageConcatEnumInfo =
+        packageConcatEnumRecord.presentation.defaultInfo;
+    bool packageForwardReferenceDiagnostic = false;
+    for (const QString& diagnostic : packageDiagnosticDetails) {
+        packageForwardReferenceDiagnostic =
+            packageForwardReferenceDiagnostic
+            || (diagnostic.contains(QStringLiteral("550:"))
+                && diagnostic.contains(
+                    QStringLiteral("undeclared identifier 'E_PRE_ASSERT'")));
+    }
+    expectBoolDetails(
+        "real PKG_global invalid forward enum reports Slang error",
+        packageConcatEnumRecord.isValid()
+            && !packageConcatEnumInfo.available
+            && packageConcatEnumInfo.valueText.isEmpty()
+            && packageConcatEnumInfo.bitWidthText == QStringLiteral("4")
+            && !packageConcatEnumInfo.failureReason.isEmpty()
+            && isolatedPackageConcatEnumRecord.isValid()
+            && !isolatedPackageConcatEnumRecord.presentation.defaultInfo.available
+            && packageForwardReferenceDiagnostic
+            && packageConcatEnumRecord.presentation.instanceInfoByPath
+                   .isEmpty(),
+        true,
+        QStringLiteral("valid=%1 available=%2 value=%3 width=%4 type=%5 reason=%6 isolatedAvailable=%7 isolatedValue=%8 isolatedReason=%9 diagnostics=%10")
+            .arg(packageConcatEnumRecord.isValid())
+            .arg(packageConcatEnumInfo.available)
+            .arg(packageConcatEnumInfo.valueText,
+                 packageConcatEnumInfo.bitWidthText,
+                 packageConcatEnumInfo.resolvedTypeText,
+                 packageConcatEnumInfo.failureReason)
+            .arg(isolatedPackageConcatEnumRecord.presentation.defaultInfo.available)
+            .arg(isolatedPackageConcatEnumRecord.presentation.defaultInfo.valueText)
+            .arg(isolatedPackageConcatEnumRecord.presentation.defaultInfo.failureReason)
+            .arg(packageDiagnosticDetails.join(QStringLiteral(" | "))));
+    expectBool("real chl_ctrl implicit enum increment has exact Slang value",
+               chlCtrlImplicitEnumRecord.isValid()
+                   && chlCtrlImplicitEnumRecord.presentation.defaultInfo.available
+                   && chlCtrlImplicitEnumRecord.presentation.defaultInfo.valueText
+                          == QStringLiteral("4'b1101"),
+               true);
     expectBool("real workspace taxonomy marks global package",
                packageRecord.owner.kind
                    == SymbolTaxonomy::SymbolOwnerScope::Global,
@@ -11250,6 +11592,15 @@ static void runRealWorkspaceIncludeFixture()
                true);
 
     CompletionService completionService(&index);
+    const auto hasCommandRecordNamed = [](
+        const QList<SemanticSymbolRecord>& completionRecords,
+        const QString& name) {
+        for (const SemanticSymbolRecord& record : completionRecords) {
+            if (record.name == name)
+                return true;
+        }
+        return false;
+    };
     CommandCompletionQuery parameterCompletion;
     parameterCompletion.fileName = topPath;
     parameterCompletion.moduleName = QStringLiteral("rtl_top");
@@ -11257,10 +11608,10 @@ static void runRealWorkspaceIncludeFixture()
     parameterCompletion.prefix = QStringLiteral("P_SW");
     parameterCompletion.cursorLine = rtlTopRecord.location.startLine + 1;
     expectBool("real workspace completes package parameter",
-               CompletionSymbolQuery::namesFromRecords(
+               hasCommandRecordNamed(
                    completionService.findCommandCompletionSymbolRecords(
-                       parameterCompletion))
-                   .contains(QStringLiteral("P_SW_NUM")),
+                       parameterCompletion),
+                   QStringLiteral("P_SW_NUM")),
                true);
 
     CommandCompletionQuery typedefCompletion;
@@ -11270,10 +11621,10 @@ static void runRealWorkspaceIncludeFixture()
     typedefCompletion.prefix = QStringLiteral("cpld");
     typedefCompletion.cursorLine = rtlTopRecord.location.startLine + 1;
     expectBool("real workspace completes package typedef",
-               CompletionSymbolQuery::namesFromRecords(
+               hasCommandRecordNamed(
                    completionService.findCommandCompletionSymbolRecords(
-                       typedefCompletion))
-                   .contains(QStringLiteral("cpld_sw_sp")),
+                       typedefCompletion),
+                   QStringLiteral("cpld_sw_sp")),
                true);
 
     ModuleBriefService moduleBriefService(&index);
@@ -12757,6 +13108,590 @@ static void runWorkspaceRelationshipCancellationFixture()
     semanticIndex->setSnapshot(previousSnapshot);
 }
 
+static void runWorkspaceRelationshipOverlaySnapshotFixture()
+{
+    printf("\n-- workspace relationship overlay snapshot fixture --\n");
+
+    QTemporaryDir relationshipDir;
+    expectBool("workspace relationship overlay temp dir created",
+               relationshipDir.isValid(),
+               true);
+    if (!relationshipDir.isValid())
+        return;
+
+    const QString overlayPath = normalizedPath(
+        relationshipDir.filePath(QStringLiteral("overlay_rel.sv")));
+    const QString fallbackPath = normalizedPath(
+        relationshipDir.filePath(QStringLiteral("fallback_rel.sv")));
+    const QString diskContent = QStringLiteral(
+        "module overlay_rel(\n"
+        "  input logic source,\n"
+        "  output logic overlay_sink,\n"
+        "  output logic disk_sink\n"
+        ");\n"
+        "  assign disk_sink = source;\n"
+        "endmodule\n");
+    const QString overlayContent = QStringLiteral(
+        "module overlay_rel(\n"
+        "  input logic source,\n"
+        "  output logic overlay_sink,\n"
+        "  output logic disk_sink\n"
+        ");\n"
+        "  assign overlay_sink = source;\n"
+        "endmodule\n");
+    const QString fallbackContent = QStringLiteral(
+        "module fallback_rel(\n"
+        "  input logic fallback_in,\n"
+        "  output logic fallback_out\n"
+        ");\n"
+        "  assign fallback_out = fallback_in;\n"
+        "endmodule\n");
+    expectBool("workspace relationship overlay disk fixture written",
+               writeTextFile(overlayPath, diskContent),
+               true);
+    expectBool("workspace relationship fallback disk fixture written",
+               writeTextFile(fallbackPath, fallbackContent),
+               true);
+
+    const QStringList files{overlayPath, fallbackPath};
+    const QHash<QString, QString> compilationContents{
+        {overlayPath, overlayContent},
+        {fallbackPath, fallbackContent},
+    };
+    SlangManager slang;
+    const QList<SemanticSymbolRecord> records =
+        slang.extractOverlayWorkspaceSymbolRecords(
+            compilationContents,
+            {},
+            {},
+            std::function<bool()>{},
+            nullptr,
+            files);
+    expectBool("workspace relationship overlay symbol snapshot built",
+               !records.isEmpty(),
+               true);
+
+    SmartRelationshipBuilder builder(nullptr, &slang);
+    const QHash<QString, RelationshipExtractionInfo> overlayFacts =
+        builder.extractOverlayWorkspaceRelationshipInfo(compilationContents,
+                                                        {},
+                                                        {},
+                                                        files);
+    bool rawSawOverlay = false;
+    bool rawSawDisk = false;
+    bool rawSourceIdentityAbsolute = false;
+    for (const AssignmentInfo& assignment
+         : overlayFacts.value(overlayPath).assignments) {
+        rawSawOverlay = rawSawOverlay
+            || (assignment.leftAccessPath == QStringLiteral("overlay_sink")
+                && assignment.rightAccessPaths.contains(
+                    QStringLiteral("source")));
+        rawSawDisk = rawSawDisk
+            || assignment.leftAccessPath == QStringLiteral("disk_sink");
+        rawSourceIdentityAbsolute = rawSourceIdentityAbsolute
+            || normalizedPath(assignment.sourceRange.fileName) == overlayPath;
+    }
+    expectBool("in-memory relationship extraction follows overlay",
+               rawSawOverlay && !rawSawDisk,
+               true);
+    expectBool("in-memory relationship extraction keeps absolute source identity",
+               rawSourceIdentityAbsolute,
+               true);
+
+    int overlayCancelChecks = 0;
+    const QHash<QString, RelationshipExtractionInfo> cancelledOverlayFacts =
+        slang.extractOverlayWorkspaceRelationshipInfo(
+            compilationContents,
+            {},
+            {},
+            [&overlayCancelChecks]() {
+                ++overlayCancelChecks;
+                return overlayCancelChecks >= 5;
+            },
+            files);
+    bool cancelledOverlayFactsEmpty = true;
+    for (auto it = cancelledOverlayFacts.constBegin();
+         it != cancelledOverlayFacts.constEnd();
+         ++it) {
+        cancelledOverlayFactsEmpty =
+            cancelledOverlayFactsEmpty && relationshipInfoEmpty(it.value());
+    }
+    expectBool("in-memory relationship extraction cancellation is atomic",
+               overlayCancelChecks >= 5 && cancelledOverlayFactsEmpty,
+               true);
+
+    // Deliberately omit fallbackPath from fileContents. The worker must use
+    // the captured overlay for overlayPath and disk only for the absent file.
+    SemanticIndex assignedRecordIndex;
+    for (const QString& fileName : files) {
+        QList<SemanticSymbolRecord> fileRecords;
+        for (const SemanticSymbolRecord& record : records) {
+            if (normalizedPath(record.location.fileName)
+                == normalizedPath(fileName)) {
+                fileRecords.append(record);
+            }
+        }
+        assignedRecordIndex.updateSymbolRecordsForFile(
+            fileName,
+            fileRecords,
+            compilationContents.value(fileName));
+    }
+    const QList<SemanticSymbolRecord> assignedRecords =
+        assignedRecordIndex.getSymbolRecords();
+    const auto baseSnapshot = sharedSnapshotFromRecords(
+        assignedRecords,
+        {},
+        {},
+        {{overlayPath, overlayContent}});
+    SemanticSnapshotToken baseToken;
+    baseToken.snapshot = baseSnapshot;
+    baseToken.revision = 7001;
+    expectBool("relationship snapshot indexes overlay file symbols",
+               !baseSnapshot->getSymbolRecords(overlayPath).isEmpty(),
+               true);
+    expectBool("relationship snapshot indexes fallback file symbols",
+               !baseSnapshot->getSymbolRecords(fallbackPath).isEmpty(),
+               true);
+    ProjectSnapshot project;
+    project.workspaceRoot = relationshipDir.path();
+    project.allFiles = files;
+    project.systemVerilogFiles = files;
+    project.includeDirs = {relationshipDir.path()};
+
+    const WorkspaceRelationshipAnalysisResult result =
+        RelationshipAnalysisWorker::analyzeWorkspace(&builder,
+                                                     project,
+                                                     baseToken);
+    expectBool("relationship overlay worker is not cancelled",
+               result.cancelled,
+               false);
+    expectInt("relationship overlay worker processes all files",
+              result.processedFiles,
+              files.size());
+    bool computedSawOverlay = false;
+    bool computedSawDisk = false;
+    bool computedSawFallback = false;
+    bool computedEvidenceUsesAbsolutePath = false;
+    for (const auto& fileResult : result.fileRelationships) {
+        for (const RelationshipToAdd& relationship : fileResult.second) {
+            if (relationship.type != SymbolRelationshipEngine::ASSIGNS_TO)
+                continue;
+            computedSawOverlay = computedSawOverlay
+                || (relationship.fromAccessPath == QStringLiteral("source")
+                    && relationship.toAccessPath
+                        == QStringLiteral("overlay_sink"));
+            computedSawDisk = computedSawDisk
+                || relationship.toAccessPath == QStringLiteral("disk_sink");
+            computedSawFallback = computedSawFallback
+                || (relationship.fromAccessPath
+                        == QStringLiteral("fallback_in")
+                    && relationship.toAccessPath
+                        == QStringLiteral("fallback_out"));
+            computedEvidenceUsesAbsolutePath =
+                computedEvidenceUsesAbsolutePath
+                || normalizedPath(relationship.evidenceRange.fileName)
+                    == normalizedPath(fileResult.first);
+        }
+    }
+    expectBool("relationship worker uses immutable snapshot overlay",
+               !result.cancelled && computedSawOverlay && !computedSawDisk,
+               true);
+    expectBool("relationship worker falls back to disk only when snapshot absent",
+               computedSawFallback && result.processedFiles == files.size(),
+               true);
+    expectBool("relationship worker preserves absolute evidence identity",
+               computedEvidenceUsesAbsolutePath,
+               true);
+    expectBool("relationship worker does not mutate disk or base snapshot",
+               loadTextFile(overlayPath) == diskContent
+                   && baseSnapshot->getCachedFileContent(overlayPath)
+                       == overlayContent,
+               true);
+}
+
+static void runStaticElaborationPresentationFixture(SlangManager& slang)
+{
+    printf("\n-- static elaboration presentation fixture --\n");
+
+    const QString fileName = normalizedPath(
+        QStringLiteral("test_sv/static_elaboration_presentation_inline.sv"));
+    const QString content = QStringLiteral(
+        "localparam int CU_VALUE = 17;\n"
+        "package effective_pkg;\n"
+        "  parameter int PKG_BASE = 5;\n"
+        "  localparam logic [7:0] PKG_DERIVED = (PKG_BASE << 1) + 3;\n"
+        "endpackage\n"
+        "module nested_scope_values;\n"
+        "  if (1) begin : g_left\n"
+        "    localparam int DUP = 11;\n"
+        "  end\n"
+        "  if (1) begin : g_right\n"
+        "    localparam int DUP = 22;\n"
+        "  end\n"
+        "endmodule\n");
+
+    const QList<SemanticSymbolRecord> records =
+        slang.extractSymbolRecords(fileName, content);
+    const auto matchingRecords =
+        [&](const QString& name, const QString& ownerName) {
+            QList<SemanticSymbolRecord> result;
+            for (const SemanticSymbolRecord& record : records) {
+                if (record.name == name && record.owner.name == ownerName)
+                    result.append(record);
+            }
+            return result;
+        };
+
+    const QList<SemanticSymbolRecord> cuValues =
+        matchingRecords(QStringLiteral("CU_VALUE"), QString());
+    expectBool("compilation-unit localparam is collected",
+               cuValues.size() == 1,
+               true);
+    expectBool("compilation-unit localparam has Slang value",
+               cuValues.size() == 1
+                   && cuValues.first().presentation.defaultInfo.available
+                   && cuValues.first().presentation.defaultInfo.valueText
+                       == QStringLiteral("17"),
+               true);
+
+    const QList<SemanticSymbolRecord> packageBase =
+        matchingRecords(QStringLiteral("PKG_BASE"),
+                        QStringLiteral("effective_pkg"));
+    const QList<SemanticSymbolRecord> packageDerived =
+        matchingRecords(QStringLiteral("PKG_DERIVED"),
+                        QStringLiteral("effective_pkg"));
+    expectBool("package parameter is collected", packageBase.size() == 1, true);
+    expectBool("package parameter has Slang value",
+               packageBase.size() == 1
+                   && packageBase.first().presentation.defaultInfo.available
+                   && packageBase.first().presentation.defaultInfo.valueText
+                       == QStringLiteral("5")
+                   && packageBase.first()
+                          .presentation.instanceInfoByPath.isEmpty(),
+               true);
+    expectBool("package localparam is collected",
+               packageDerived.size() == 1,
+               true);
+    expectBool("package localparam has exact Slang value",
+               packageDerived.size() == 1
+                   && packageDerived.first().presentation.defaultInfo.available
+                   && packageDerived.first().presentation.defaultInfo.valueText
+                       == QStringLiteral("8'd13")
+                   && packageDerived.first()
+                          .presentation.instanceInfoByPath.isEmpty(),
+               true);
+
+    const QList<SemanticSymbolRecord> duplicateValues =
+        matchingRecords(QStringLiteral("DUP"),
+                        QStringLiteral("nested_scope_values"));
+    QSet<QString> duplicateValueTexts;
+    QSet<int> duplicatePositions;
+    for (const SemanticSymbolRecord& record : duplicateValues) {
+        duplicateValueTexts.insert(record.presentation.defaultInfo.valueText);
+        duplicatePositions.insert(record.location.position);
+    }
+    expectBool("same-owner nested localparams remain distinct",
+               duplicateValues.size() == 2
+                   && duplicatePositions.size() == 2
+                   && duplicateValueTexts == QSet<QString>{QStringLiteral("11"),
+                                                          QStringLiteral("22")},
+               true);
+}
+
+static void runPresentationSourceRangeIdentityFixture()
+{
+    printf("\n-- presentation source-range identity fixture --\n");
+
+    const QString fileName = normalizedPath(
+        QStringLiteral("test_sv/presentation_identity_inline.sv"));
+    const QString content = QStringLiteral(
+        "module identity_top;\n"
+        "  if (1) begin : g_left\n"
+        "    localparam int DUP = 11;\n"
+        "  end\n"
+        "  if (1) begin : g_right\n"
+        "    localparam int DUP = 22;\n"
+        "  end\n"
+        "endmodule\n");
+
+    SemanticSymbolRecord left =
+        SemanticFixtureRecordBuilder(QStringLiteral("DUP"),
+                                     SymbolTaxonomy::DeclarationKind::Localparam)
+            .withFile(fileName)
+            .withLocalHandle(15001)
+            .withRange(3, 20, 3, 23)
+            .withTextSpan(54, 3)
+            .withCollectorKind(SymbolTaxonomy::CollectorKind::Localparam)
+            .inModule(QStringLiteral("identity_top"))
+            .record();
+    SemanticSymbolRecord right =
+        SemanticFixtureRecordBuilder(QStringLiteral("DUP"),
+                                     SymbolTaxonomy::DeclarationKind::Localparam)
+            .withFile(fileName)
+            .withLocalHandle(15002)
+            .withRange(6, 20, 6, 23)
+            .withTextSpan(119, 3)
+            .withCollectorKind(SymbolTaxonomy::CollectorKind::Localparam)
+            .inModule(QStringLiteral("identity_top"))
+            .record();
+
+    SemanticElaboratedSymbolInfo leftInfo;
+    leftInfo.available = true;
+    leftInfo.valueText = QStringLiteral("11");
+    left.presentation.instanceInfoByPath.insert(QStringLiteral("identity_top"),
+                                                leftInfo);
+    SemanticElaboratedSymbolInfo rightInfo;
+    rightInfo.available = true;
+    rightInfo.valueText = QStringLiteral("22");
+    right.presentation.instanceInfoByPath.insert(QStringLiteral("identity_top"),
+                                                 rightInfo);
+
+    const QList<SemanticSymbolRecord> workspaceRecords{left, right};
+    const QHash<QString, QString> fileContents{{fileName, content}};
+    SemanticIndex index;
+    index.setSnapshot(sharedSnapshotFromRecords(workspaceRecords,
+                                                {},
+                                                {},
+                                                fileContents));
+
+    SemanticSymbolRecord editedLeft = left;
+    SemanticSymbolRecord editedRight = right;
+    editedLeft.localHandle = 16001;
+    editedRight.localHandle = 16002;
+    editedLeft.presentation.instanceInfoByPath.clear();
+    editedRight.presentation.instanceInfoByPath.clear();
+    index.updateSymbolRecordsForFile(fileName,
+                                     {editedLeft, editedRight},
+                                     content);
+
+    QHash<int, QString> valuesByPosition;
+    QHash<int, SymbolStableKey> stableKeysByPosition;
+    for (const SemanticSymbolRecord& record : index.getSymbolRecords(fileName)) {
+        const auto info = record.presentation.instanceInfoByPath.constFind(
+            QStringLiteral("identity_top"));
+        if (record.name == QStringLiteral("DUP")
+            && info != record.presentation.instanceInfoByPath.constEnd()) {
+            valuesByPosition.insert(record.location.position, info->valueText);
+            stableKeysByPosition.insert(record.location.position,
+                                        record.stableKey);
+        }
+    }
+    expectBool("presentation preservation keys exact declaration range",
+               valuesByPosition.size() == 2
+                   && valuesByPosition.value(54) == QStringLiteral("11")
+                   && valuesByPosition.value(119) == QStringLiteral("22"),
+               true);
+    const SymbolStableKey leftKey = stableKeysByPosition.value(54);
+    const SymbolStableKey rightKey = stableKeysByPosition.value(119);
+    const SemanticSymbolRecord leftLookup =
+        index.getSymbolRecordByStableKey(leftKey);
+    const SemanticSymbolRecord rightLookup =
+        index.getSymbolRecordByStableKey(rightKey);
+    expectBool("stable symbol keys include exact declaration range",
+               leftKey.isValid() && rightKey.isValid()
+                   && !(leftKey == rightKey)
+                   && leftKey.sourcePosition == 54
+                   && rightKey.sourcePosition == 119
+                   && leftLookup.location.position == 54
+                   && rightLookup.location.position == 119
+                   && leftLookup.presentation.instanceInfoByPath
+                              .value(QStringLiteral("identity_top"))
+                              .valueText
+                          == QStringLiteral("11")
+                   && rightLookup.presentation.instanceInfoByPath
+                              .value(QStringLiteral("identity_top"))
+                              .valueText
+                          == QStringLiteral("22"),
+               true);
+}
+
+static void runSemanticIndexStoreLifecycleFixture()
+{
+    printf("\n-- semantic index store lifecycle fixture --\n");
+
+    QTemporaryDir storeDir;
+    expectBool("semantic store temp dir created", storeDir.isValid(), true);
+    if (!storeDir.isValid())
+        return;
+
+    const QString nativeFile = QDir(storeDir.path()).absoluteFilePath(
+        QStringLiteral("NativeState.sv"));
+    const QString nativeContent = QStringLiteral(
+        "module native_state; logic native_value; endmodule\n");
+    const SemanticSymbolRecord nativeRecord =
+        SemanticFixtureRecordBuilder(QStringLiteral("native_value"),
+                                     SymbolTaxonomy::DeclarationKind::Signal)
+            .withFile(nativeFile)
+            .withLocalHandle(17001)
+            .withCollectorKind(SymbolTaxonomy::CollectorKind::Logic)
+            .inModule(QStringLiteral("native_state"))
+            .record();
+    const SemanticSymbolRecord snapshotRecord =
+        SemanticFixtureRecordBuilder(QStringLiteral("snapshot_value"),
+                                     SymbolTaxonomy::DeclarationKind::Signal)
+            .withFile(nativeFile)
+            .withLocalHandle(17002)
+            .withCollectorKind(SymbolTaxonomy::CollectorKind::Logic)
+            .inModule(QStringLiteral("native_state"))
+            .record();
+
+    SemanticIndex index;
+    index.updateSymbolRecordsForFile(nativeFile,
+                                     {nativeRecord},
+                                     nativeContent);
+    SemanticAnalysisBandMetadata band;
+    band.label = QStringLiteral("foreground");
+    band.displayName = QStringLiteral("Foreground");
+    QHash<QString, SemanticAnalysisBandMetadata> bands;
+    bands.insert(nativeFile, band);
+    index.setWorkspaceFileAnalysisBands(bands);
+    index.setSnapshot(sharedSnapshotFromRecords(
+        {snapshotRecord}, {}, {}, {{nativeFile, nativeContent}}));
+
+    index.clearSnapshot();
+    const QList<SemanticSymbolRecord> nativeAfterSnapshotClear =
+        index.getSymbolRecords(nativeFile);
+    expectBool("snapshot-only clear preserves native semantic state",
+               !index.snapshot()
+                   && nativeAfterSnapshotClear.size() == 1
+                   && nativeAfterSnapshotClear.first().name
+                          == QStringLiteral("native_value")
+                   && index.getCachedFileContent(nativeFile) == nativeContent
+                   && index.analysisBandForFile(nativeFile).isValid(),
+               true);
+
+    index.clearSemanticState();
+    expectBool("full semantic clear removes native records content and bands",
+               !index.snapshot()
+                   && index.getSymbolRecords(nativeFile).isEmpty()
+                   && index.getCachedFileContent(nativeFile).isEmpty()
+                   && index.contentAffectsSymbols(nativeFile, nativeContent)
+                   && !index.analysisBandForFile(nativeFile).isValid(),
+               true);
+
+    index.setSnapshot(sharedSnapshotFromRecords(
+        {snapshotRecord}, {}, {}, {{nativeFile, nativeContent}}));
+    const QList<SemanticSymbolRecord> snapshotAfterFullClear =
+        index.getSymbolRecords(nativeFile);
+    expectBool("full semantic clear removes native file coverage",
+               snapshotAfterFullClear.size() == 1
+                   && snapshotAfterFullClear.first().name
+                          == QStringLiteral("snapshot_value"),
+               true);
+    index.clearSemanticState();
+
+#ifdef Q_OS_WIN
+    const QString caseFile = QDir(storeDir.path()).absoluteFilePath(
+        QStringLiteral("CaseFoldStore.sv"));
+    const QString caseAlias =
+        QDir::toNativeSeparators(caseFile).toUpper();
+    const QString firstContent = QStringLiteral(
+        "module case_store; logic first_value; endmodule\n");
+    const QString secondContent = QStringLiteral(
+        "module case_store; logic second_value; endmodule\n");
+    const SemanticSymbolRecord firstRecord =
+        SemanticFixtureRecordBuilder(QStringLiteral("first_value"),
+                                     SymbolTaxonomy::DeclarationKind::Signal)
+            .withFile(caseFile)
+            .withLocalHandle(17101)
+            .withCollectorKind(SymbolTaxonomy::CollectorKind::Logic)
+            .inModule(QStringLiteral("case_store"))
+            .record();
+    const SemanticSymbolRecord secondRecord =
+        SemanticFixtureRecordBuilder(QStringLiteral("second_value"),
+                                     SymbolTaxonomy::DeclarationKind::Signal)
+            .withFile(caseAlias)
+            .withLocalHandle(17102)
+            .withCollectorKind(SymbolTaxonomy::CollectorKind::Logic)
+            .inModule(QStringLiteral("case_store"))
+            .record();
+    index.updateSymbolRecordsForFile(caseFile, {firstRecord}, firstContent);
+    index.updateSymbolRecordsForFile(caseAlias, {secondRecord}, secondContent);
+
+    const QList<SemanticSymbolRecord> caseFoldRecords =
+        index.getSymbolRecords(caseFile);
+    SymbolStableKey caseVariantKey;
+    if (!caseFoldRecords.isEmpty()) {
+        caseVariantKey = caseFoldRecords.first().stableKey;
+        caseVariantKey.fileName = caseFile;
+    }
+    expectBool("Windows semantic store keys are case-folded consistently",
+               caseFoldRecords.size() == 1
+                   && caseFoldRecords.first().name
+                          == QStringLiteral("second_value")
+                   && index.getCachedFileContent(caseFile) == secondContent
+                   && !index.contentAffectsSymbols(caseFile, secondContent)
+                   && index.getSymbolRecordByStableKey(caseVariantKey).name
+                          == QStringLiteral("second_value"),
+               true);
+    index.clearSemanticState();
+#endif
+
+    SemanticIndex* globalIndex = SemanticIndex::getInstance();
+    globalIndex->clearSemanticState();
+    AnalysisScheduler lifecycleScheduler;
+    ProjectModel lifecycleProject;
+    lifecycleScheduler.setProjectModel(&lifecycleProject);
+
+    const QString workspaceA = QDir(storeDir.path()).absoluteFilePath(
+        QStringLiteral("workspace_a"));
+    const QString workspaceB = QDir(storeDir.path()).absoluteFilePath(
+        QStringLiteral("workspace_b"));
+    const QString workspaceAFile = QDir(workspaceA).absoluteFilePath(
+        QStringLiteral("old_workspace.sv"));
+    const QString workspaceAContent = QStringLiteral(
+        "module old_workspace; logic old_value; endmodule\n");
+    const SemanticSymbolRecord workspaceARecord =
+        SemanticFixtureRecordBuilder(QStringLiteral("old_value"),
+                                     SymbolTaxonomy::DeclarationKind::Signal)
+            .withFile(workspaceAFile)
+            .withLocalHandle(17201)
+            .withCollectorKind(SymbolTaxonomy::CollectorKind::Logic)
+            .inModule(QStringLiteral("old_workspace"))
+            .record();
+
+    lifecycleProject.setWorkspaceRoot(workspaceA);
+    globalIndex->updateSymbolRecordsForFile(workspaceAFile,
+                                            {workspaceARecord},
+                                            workspaceAContent);
+    globalIndex->setSnapshot(sharedSnapshotFromRecords(
+        {workspaceARecord}, {}, {}, {{workspaceAFile, workspaceAContent}}));
+    lifecycleProject.setWorkspaceRoot(workspaceB);
+    expectBool("workspace switch clears complete semantic index state",
+               !globalIndex->snapshot()
+                   && globalIndex->getSymbolRecords(workspaceAFile).isEmpty()
+                   && globalIndex->getCachedFileContent(workspaceAFile).isEmpty()
+                   && globalIndex->contentAffectsSymbols(workspaceAFile,
+                                                         workspaceAContent),
+               true);
+
+    const QString workspaceBFile = QDir(workspaceB).absoluteFilePath(
+        QStringLiteral("closing_workspace.sv"));
+    const QString workspaceBContent = QStringLiteral(
+        "module closing_workspace; logic closing_value; endmodule\n");
+    const SemanticSymbolRecord workspaceBRecord =
+        SemanticFixtureRecordBuilder(QStringLiteral("closing_value"),
+                                     SymbolTaxonomy::DeclarationKind::Signal)
+            .withFile(workspaceBFile)
+            .withLocalHandle(17301)
+            .withCollectorKind(SymbolTaxonomy::CollectorKind::Logic)
+            .inModule(QStringLiteral("closing_workspace"))
+            .record();
+    globalIndex->updateSymbolRecordsForFile(workspaceBFile,
+                                            {workspaceBRecord},
+                                            workspaceBContent);
+    globalIndex->setSnapshot(sharedSnapshotFromRecords(
+        {workspaceBRecord}, {}, {}, {{workspaceBFile, workspaceBContent}}));
+    lifecycleProject.closeProject();
+    expectBool("workspace close clears complete semantic index state",
+               !globalIndex->snapshot()
+                   && globalIndex->getSymbolRecords(workspaceBFile).isEmpty()
+                   && globalIndex->getCachedFileContent(workspaceBFile).isEmpty()
+                   && globalIndex->contentAffectsSymbols(workspaceBFile,
+                                                         workspaceBContent),
+               true);
+}
+
 int main(int argc, char** argv)
 {
     QApplication app(argc, argv);
@@ -12765,6 +13700,7 @@ int main(int argc, char** argv)
 
     SymbolRelationshipEngine engine;
 
+    runAnalysisSchedulerDependencyLifetimeFixture();
     runInlineRelationshipRegression(slang, engine);
     runMultiFileRelationshipFixture(slang, engine);
     runModuleBriefServiceFixture();
@@ -12779,6 +13715,10 @@ int main(int argc, char** argv)
     runPostWorkspaceDiagnosticFixture();
     runMacroDefineSemanticFixture();
     runWorkspaceRelationshipCancellationFixture();
+    runWorkspaceRelationshipOverlaySnapshotFixture();
+    runStaticElaborationPresentationFixture(slang);
+    runPresentationSourceRangeIdentityFixture();
+    runSemanticIndexStoreLifecycleFixture();
 
     printf("\n%d checks, %d failed\n", g_checks, g_fails);
     return g_fails == 0 ? 0 : 1;

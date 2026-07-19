@@ -7,8 +7,7 @@
 #include <QHash>
 #include <memory>
 #include "hierarchyservice.h"
-#include "modulehierarchymodel.h"
-#include "symboloutlinemodel.h"
+#include "symbolpresentationservice.h"
 
 class NavigationWidget;
 class NavigationService;
@@ -22,8 +21,6 @@ class NavigationManager : public QObject
 public:
     enum NavigationView {
         FileHierarchyView,
-        ModuleHierarchyView,
-        SymbolHierarchyView,
         DesignHierarchyView
     };
 
@@ -35,7 +32,6 @@ public:
     void setNavigationService(NavigationService* service);
     void setActiveView(NavigationView view);
     void setSearchFilter(const QString &filter);
-    NavigationView getActiveView() const { return currentView; }
 
     // Manager connections
     void connectToTabManager(TabManager* tabManager);
@@ -43,21 +39,14 @@ public:
 
     // Data refresh operations
     void refreshFileHierarchy();
-    void refreshModuleHierarchy();
-    void refreshSymbolHierarchy();
     void refreshDesignHierarchy(bool force = false);
     void warmDesignHierarchyCache();
     void refreshCurrentView();
 
     // Navigation operations
     void navigateToFile(const QString& filePath, int lineNumber = -1);
-    void navigateToSymbol(const SymbolOutlineSymbolRow& row);
-    void navigateToModule(const QString& moduleName);
     void setDesignTop(const QString& moduleName);
     void clearDesignTop();
-
-    // Search and filter
-    void clearSearchFilter();
 
     // Context operations
     void highlightCurrentFileInTree();
@@ -65,8 +54,10 @@ public:
 
 signals:
     void navigationRequested(const QString& filePath, int lineNumber);
-    void symbolRowNavigationRequested(const SymbolOutlineSymbolRow& row);
-    void viewChanged(NavigationView newView);
+    void instanceNavigationRequested(
+        const QString& filePath,
+        int lineNumber,
+        const HierarchyInstanceContext& instanceContext);
     void dataRefreshed(NavigationView view);
 
 public slots:
@@ -77,16 +68,12 @@ public slots:
 
 private slots:
     void onFileTreeDoubleClicked(const QString& filePath);
-    void onSymbolRowTreeDoubleClicked(const SymbolOutlineSymbolRow& row);
-    void onModuleTreeDoubleClicked(const QString& moduleName);
     void onFileContextMenuRequested(const QString& filePath, const QPoint& globalPos);
-    void onModuleContextMenuRequested(const QString& moduleName, const QPoint& globalPos);
     void onDesignNodeContextMenuRequested(const DesignHierarchyNode& node,
                                           const QPoint& globalPos);
     void onDesignNodeDoubleClicked(const DesignHierarchyNode& node);
 
     void onViewChanged(int index);
-    void onSearchFilterChanged(const QString &filter);
 
 private:
     struct NavigationContext {
@@ -95,39 +82,26 @@ private:
         QString searchFilter;
 
         void setCurrentFileName(const QString& fileName);
-        void clearCurrentFileName();
         void setCurrentWorkspacePath(const QString& workspacePath);
         void clearCurrentWorkspacePath();
         void setSearchFilter(const QString& filter);
-        void clearSearchFilter();
     };
 
     struct NavigationCaches {
         QStringList fileList;
-        QList<ModuleHierarchyGroup> moduleHierarchy;
-        QList<SymbolOutlineGroup> symbolOutline;
         DesignHierarchyReport designHierarchy;
         QString fileHierarchyFilter;
-        QString moduleHierarchyFilter;
-        QString symbolOutlineFileName;
-        QString symbolOutlineFilter;
         QString designTopModule;
         QStringList designRootModules;
         QStringList designFileScope;
         std::uint64_t designSnapshotGeneration = 0;
         bool fileListValid = false;
         bool fileHierarchyValid = false;
-        bool moduleHierarchyValid = false;
-        bool symbolOutlineValid = false;
         bool designHierarchyValid = false;
         bool designTopInferred = true;
 
-        void reserveDefaults();
         void clearFileList();
-        void clearModuleHierarchy();
-        void clearSymbolOutline();
         void clearDesignHierarchy();
-        void clearAll();
     };
 
     struct DesignHierarchyCacheEntry {
@@ -154,8 +128,6 @@ private:
     // Helper methods
     void setupConnections();
     bool updateFileHierarchyData();
-    bool updateModuleHierarchyData();
-    bool updateSymbolHierarchyData();
     bool updateDesignHierarchyData(bool force = false);
     bool shouldRefreshCache() const;
     QStringList getSystemVerilogFiles() const;
@@ -164,6 +136,9 @@ private:
     void saveDesignHierarchyCache();
     void restoreDesignHierarchyCache();
     void invalidateCurrentDesignHierarchyCache();
+    void navigateToDesignNodeFile(const QString& filePath,
+                                  int lineNumber,
+                                  const DesignHierarchyNode& node);
 };
 
 #endif // NAVIGATIONMANAGER_H

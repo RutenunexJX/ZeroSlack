@@ -8,10 +8,12 @@
 #include "includeheaderworkflowtypes.h"
 #include "completiontypes.h"
 #include "packagetoolservice.h"
+#include "symbolpresentationservice.h"
 
 #include <QList>
 #include <QPlainTextEdit>
 #include <QStringList>
+#include <cstdint>
 #include <functional>
 #include <memory>
 
@@ -87,12 +89,18 @@ public:
     EditorBlockGeometry blockGeometry(int blockNumber) const;
     qreal documentHeightPx() const;
     void refreshScopeAndCurrentLineHighlight();
+    void refreshSemanticPresentation();
+    std::uint64_t semanticDocumentRevision() const;
     void setIncludeFileCompletionProvider(
         std::function<QStringList(const QString& currentFile)> provider);
     void setIncludeNewHeaderCreator(
         std::function<IncludeNewHeaderResult(
             const IncludeNewHeaderRequest& request)> creator);
     void setSemanticContextService(EditorSemanticContextService* service);
+    void setHierarchyInstanceContext(
+        const HierarchyInstanceContext& context);
+    HierarchyInstanceContext hierarchyInstanceContext() const;
+    void closeSemanticPopup();
     void setDocumentFileName(QString fileName);
     QString documentFileName() const;
     QString currentModuleName() const;
@@ -220,7 +228,6 @@ signals:
     void editorStatusMessageRequested(const QString& message);
     void formatterProfileChanged(FormatterProfile profile);
     void formatOnSaveChanged(bool enabled);
-    void foldShelfRequested();
     void foldShelfItemConsumed(const QString& id);
     void fontZoomRequested(int steps);
     void comModeStateChanged(bool active,

@@ -54,7 +54,6 @@ constexpr qreal kMatrixRowHeaderWidth = 160.0;
 constexpr qreal kMatrixColumnWidth = 70.0;
 constexpr qreal kMatrixHeaderHeight = 96.0;
 constexpr qreal kMatrixRowHeight = 72.0;
-constexpr qreal kMatrixCellInset = 5.0;
 const char* kSettingsGroup = "SignalUsageHotspotPanel";
 
 QList<SignalUsageHotspotRole> hotspotRoles()

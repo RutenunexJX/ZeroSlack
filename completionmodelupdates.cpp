@@ -74,123 +74,83 @@ bool isVisibleSymbolCompletionBandItem(
     return true;
 }
 
-CompletionResult completionBandSummaryForVisibleSymbolCompletions(
+struct CompletionAnalysisBandCount {
+    SemanticAnalysisBandMetadata metadata;
+    int count = 0;
+};
+
+SemanticAnalysisBandMetadata normalizedCompletionAnalysisBand(
+    const SemanticAnalysisBandMetadata& metadata)
+{
+    if (metadata.isValid())
+        return metadata;
+
+    SemanticAnalysisBandMetadata unbanded;
+    unbanded.label = QStringLiteral("unbanded");
+    unbanded.displayName = QStringLiteral("unbanded");
+    return unbanded;
+}
+
+QList<CompletionAnalysisBandCount> completionBandCountsForVisibleSymbols(
     const QList<CompletionModel::CompletionItem>& items)
 {
-    CompletionResult result;
+    QList<CompletionAnalysisBandCount> counts;
     for (const CompletionModel::CompletionItem& item : items) {
         if (!isVisibleSymbolCompletionBandItem(item))
             continue;
 
-        CompletionResult::SemanticCompletionItem summaryItem;
-        summaryItem.analysisBand = item.analysisBand;
-        result.items.append(summaryItem);
-    }
-    return result;
-}
-}
-
-void CompletionModel::updateCompletions(const CompletionResult &completion,
-                                        const QString &prefix)
-{
-    beginResetModel();
-    completions.clear();
-
-    CompletionService* completionService = CompletionService::getInstance();
-    for (const CompletionResult::SemanticCompletionItem &semanticItem : completion.items) {
-        CompletionItem item;
-        item.text = semanticItem.insertText.isEmpty()
-            ? semanticItem.label
-            : semanticItem.insertText;
-        item.type = SymbolCompletion;
-        item.symbolRecord = semanticItem.symbolRecord;
-        item.symbolStableKey = item.symbolRecord.stableKey.isValid()
-            ? item.symbolRecord.stableKey
-            : semanticItem.symbolStableKey;
-        item.score = completionService->completionItemScore(semanticItem.label, prefix);
-        item.description = semanticItem.typeDisplayName;
-        item.typeDisplayName = semanticItem.typeDisplayName;
-        item.ownerScopeName = semanticItem.ownerScopeName;
-        item.sourceRoleDisplayName = semanticItem.sourceRoleDisplayName;
-        item.analysisBand = semanticItem.analysisBand;
-        item.analysisBandDisplayName = semanticItem.analysisBandDisplayName;
-        item.declarationKind = semanticItem.declarationKind;
-        item.usageRole = semanticItem.usageRole;
-        item.ownerScope = semanticItem.ownerScope;
-        item.sourceRole = semanticItem.sourceRole;
-
-        fillDisplayMetadata(item);
-        completions.append(item);
-    }
-
-    sortCompletionsByScore();
-    if (completions.size() > MaxCompletionItems) {
-        completions = completions.mid(0, MaxCompletionItems);
-    }
-    if (completions.size() > 15) {
-        completions = completions.mid(0, 15);
-    }
-    const CompletionResult visibleBandSummary =
-        completionBandSummaryForVisibleSymbolCompletions(completions);
-    if (visibleBandSummary.analysisBandGroupCount() > 1) {
-        CompletionItem bandHeader;
-        bandHeader.text = QStringLiteral(":: COMPLETION BANDS - %1 ::")
-                              .arg(visibleBandSummary.analysisBandSummaryText());
-        bandHeader.type = SymbolCompletion;
-        bandHeader.description =
-            QStringLiteral("Completion analysis bands");
-        bandHeader.score = 1000;
-        fillDisplayMetadata(bandHeader);
-        completions.prepend(bandHeader);
-    }
-
-    endResetModel();
-}
-
-void CompletionModel::updateCommandCompletions(const QStringList &commands, const QString &prefix)
-{
-    beginResetModel();
-    completions.clear();
-
-    CompletionItem headerItem;
-    headerItem.text = prefix.isEmpty() ? ":: ALTERNATE MODE - COMMAND INTERFACE ::"
-                                      : QString(":: ALTERNATE MODE - Input: '%1' ::").arg(prefix);
-    headerItem.type = CommandCompletion;
-    headerItem.description = "Command Interface";
-    headerItem.score = 1000;
-    fillDisplayMetadata(headerItem);
-    completions.append(headerItem);
-
-    CompletionService* completionService = CompletionService::getInstance();
-    int matchCount = 0;
-    for (const QString &command : commands) {
-        if (prefix.isEmpty() || command.startsWith(prefix, Qt::CaseInsensitive)) {
-            CompletionItem item;
-            item.text = command;
-            item.type = CommandCompletion;
-            item.description = QString("Execute %1 command").arg(command);
-            item.score = completionService->completionItemScore(command, prefix);
-            fillDisplayMetadata(item);
-            completions.append(item);
-            matchCount++;
+        const SemanticAnalysisBandMetadata metadata =
+            normalizedCompletionAnalysisBand(item.analysisBand);
+        auto existing = std::find_if(
+            counts.begin(),
+            counts.end(),
+            [&](const CompletionAnalysisBandCount& count) {
+                return count.metadata.label == metadata.label;
+            });
+        if (existing == counts.end()) {
+            CompletionAnalysisBandCount next;
+            next.metadata = metadata;
+            next.count = 1;
+            counts.append(next);
+        } else {
+            ++existing->count;
         }
     }
 
-    if (matchCount == 0 && !prefix.isEmpty()) {
-        CompletionItem noMatchItem;
-        noMatchItem.text = "No matching commands";
-        noMatchItem.type = CommandCompletion;
-        noMatchItem.description = "No commands match your input";
-        noMatchItem.score = 0;
-        fillDisplayMetadata(noMatchItem);
-        completions.append(noMatchItem);
-    }
+    std::sort(counts.begin(),
+              counts.end(),
+              [](const CompletionAnalysisBandCount& left,
+                 const CompletionAnalysisBandCount& right) {
+                  const int leftPriority =
+                      semanticAnalysisBandSortPriority(left.metadata);
+                  const int rightPriority =
+                      semanticAnalysisBandSortPriority(right.metadata);
+                  if (leftPriority != rightPriority)
+                      return leftPriority < rightPriority;
+                  return QString::compare(left.metadata.label,
+                                          right.metadata.label,
+                                          Qt::CaseInsensitive) < 0;
+              });
+    return counts;
+}
 
-    sortCompletionsByScore();
-    if (completions.size() > MaxCompletionItems) {
-        completions = completions.mid(0, MaxCompletionItems);
+QString completionBandSummaryText(
+    const QList<CompletionAnalysisBandCount>& counts)
+{
+    QStringList parts;
+    for (const CompletionAnalysisBandCount& count : counts) {
+        const QString itemCount = QStringLiteral("%1 %2")
+            .arg(count.count)
+            .arg(count.count == 1
+                     ? QStringLiteral("item")
+                     : QStringLiteral("items"));
+        parts.append(QStringLiteral("%1 %2")
+                         .arg(semanticAnalysisBandDisplayName(count.metadata),
+                              itemCount));
     }
-    endResetModel();
+    return QStringLiteral("bands %1")
+        .arg(parts.join(QStringLiteral(", ")));
+}
 }
 
 void CompletionModel::updateIncludeFileCompletions(
@@ -476,12 +436,12 @@ void CompletionModel::updateSymbolRecordCompletions(
     if (completions.size() > 32) {
         completions = completions.mid(0, 32);
     }
-    const CompletionResult bandSummary =
-        completionBandSummaryForVisibleSymbolCompletions(completions);
-    if (bandSummary.analysisBandGroupCount() > 1) {
+    const QList<CompletionAnalysisBandCount> bandCounts =
+        completionBandCountsForVisibleSymbols(completions);
+    if (bandCounts.size() > 1) {
         CompletionItem bandHeader;
         bandHeader.text = QStringLiteral(":: COMMAND SYMBOL BANDS - %1 ::")
-                              .arg(bandSummary.analysisBandSummaryText());
+                              .arg(completionBandSummaryText(bandCounts));
         bandHeader.type = SymbolCompletion;
         bandHeader.description =
             QStringLiteral("Command symbol analysis bands");

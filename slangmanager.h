@@ -2,6 +2,7 @@
 #define SLANGMANAGER_H
 
 #include "semanticindex.h"
+#include "effectivevalueservice.h"
 #include <QString>
 #include <QStringList>
 #include <QVector>
@@ -77,13 +78,26 @@ public:
         const QHash<QString, QString>& defines = {},
         std::function<bool()> isCancelled = nullptr);
 
+    /// Workspace / hot-edit overlay: compile the supplied in-memory sources
+    /// together and return relationship facts grouped by absolute source path.
+    /// orderedFilePaths preserves the project's compilation order; any
+    /// remaining supplied sources are appended deterministically.
+    QHash<QString, RelationshipExtractionInfo>
+    extractOverlayWorkspaceRelationshipInfo(
+        const QHash<QString, QString>& fileContents,
+        const QStringList& includeDirs = {},
+        const QHash<QString, QString>& defines = {},
+        std::function<bool()> isCancelled = nullptr,
+        const QStringList& orderedFilePaths = {});
+
     /// Single-file / hot-edit: parse content and extract semantic-native symbol records.
     /// Returns empty list on parse/elaboration failure (exceptions caught).
     QList<SemanticSymbolRecord> extractSymbolRecords(
         const QString& fileName,
         const QString& content,
         const QStringList& includeDirs = {},
-        const QHash<QString, QString>& defines = {});
+        const QHash<QString, QString>& defines = {},
+        QList<EffectiveValueFact>* effectiveValueFacts = nullptr);
 
     /// Single-file / hot-edit: parse content and return Slang diagnostics as semantic data.
     QList<SemanticDiagnostic> extractDiagnostics(const QString& fileName,
@@ -96,7 +110,20 @@ public:
         const QStringList& filePaths,
         const QStringList& includeDirs = {},
         const QHash<QString, QString>& defines = {},
-        std::function<bool()> isCancelled = nullptr);
+        std::function<bool()> isCancelled = nullptr,
+        QList<EffectiveValueFact>* effectiveValueFacts = nullptr,
+        QHash<QString, QString>* analyzedFileContents = nullptr);
+
+    /// Workspace / hot-edit overlay: compile the supplied in-memory sources
+    /// together so unsaved text participates in package and instance
+    /// elaboration without writing it to disk.
+    QList<SemanticSymbolRecord> extractOverlayWorkspaceSymbolRecords(
+        const QHash<QString, QString>& fileContents,
+        const QStringList& includeDirs = {},
+        const QHash<QString, QString>& defines = {},
+        std::function<bool()> isCancelled = nullptr,
+        QList<EffectiveValueFact>* effectiveValueFacts = nullptr,
+        const QStringList& orderedFilePaths = {});
 
     /// Workspace-wide: load all SV files (by path), compile together, and return diagnostics.
     QList<SemanticDiagnostic> extractWorkspaceDiagnostics(
@@ -104,6 +131,15 @@ public:
         const QStringList& includeDirs = {},
         const QHash<QString, QString>& defines = {},
         std::function<bool()> isCancelled = nullptr);
+
+    /// Workspace / hot-edit overlay: parse and compile one immutable set of
+    /// in-memory sources, including cross-file and undefined-macro diagnostics.
+    QList<SemanticDiagnostic> extractOverlayWorkspaceDiagnostics(
+        const QHash<QString, QString>& fileContents,
+        const QStringList& includeDirs = {},
+        const QHash<QString, QString>& defines = {},
+        std::function<bool()> isCancelled = nullptr,
+        const QStringList& orderedFilePaths = {});
 };
 
 #endif // SLANGMANAGER_H

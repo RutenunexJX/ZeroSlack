@@ -108,22 +108,13 @@ set(ZEROSLACK_CORE_SOURCES
     modulebriefservice.cpp
     completioncommandmode.cpp
     completioncontexthelper.cpp
-    completioncontextquery.cpp
-    completioncontextrelationships.cpp
-    completioncontextsmart.cpp
     completionmatcher.cpp
-    completionmatcherkeywords.cpp
     completionmodel.cpp
     completionmodelupdates.cpp
     completionsemanticquery.cpp
     completionservicecommand.cpp
-    completionservicecontext.cpp
     completionservice.cpp
-    completionserviceeditor.cpp
     completionservicematcher.cpp
-    completionservicesemantic.cpp
-    completionsymbolquery.cpp
-    completionsymbolscoring.cpp
     definitionnavigationservice.cpp
     definitionpreviewservice.cpp
     definitionservice.cpp
@@ -147,6 +138,7 @@ set(ZEROSLACK_CORE_SOURCES
     editorcompletionquery.cpp
     editorcompletionui.cpp
     editorcompletionworkflow.cpp
+    effectivevalueservice.cpp
       editorcompletionworkflowkeys.cpp
       editorcoordinator.cpp
       editorcursornavigation.cpp
@@ -235,10 +227,8 @@ set(ZEROSLACK_CORE_SOURCES
     semanticdockcoordinator.cpp
     semanticindex.cpp
     semanticindexcompletion.cpp
-    semanticindexcompletionqueries.cpp
     semanticindexcompletiontypequeries.cpp
     semanticindexcompletioncontext.cpp
-    semanticindexcompletionrelationships.cpp
     semanticindexlookup.cpp
     semanticindexlookuphelpers.cpp
     semanticindexmodulecontext.cpp
@@ -267,11 +257,13 @@ set(ZEROSLACK_CORE_SOURCES
     symbolanalyzerslang.cpp
     symbolanalyzerworkspace.cpp
     symbolhoverservice.cpp
+    symbolpresentationservice.cpp
     symbolrelationshipqueries.cpp
     symbolrelationshipengine.cpp
     symboltaxonomy.cpp
     slangsymbolcollector.cpp
     slangsymbolcollectorhelpers.cpp
+    slangsymbolpresentation.cpp
     slangmanagerrelationships.cpp
     slangmanagersymbols.cpp
     tabdocumentqueries.cpp
@@ -312,10 +304,8 @@ set(ZEROSLACK_CORE_SOURCES
     completionmodel.h
     completionmatcher.h
     completioncontexthelper.h
-    completioncontextquery.h
     completionservice.h
     completionsemanticquery.h
-    completionsymbolquery.h
     completiontypes.h
     definitionnavigationservice.h
     definitionpreviewservice.h
@@ -333,6 +323,7 @@ set(ZEROSLACK_CORE_SOURCES
     editorcompletionquery.h
     editorcompletionui.h
     editorcompletionworkflow.h
+    effectivevalueservice.h
       editorcoordinator.h
       editorcursornavigation.h
       editorfileidentity.h
@@ -423,11 +414,13 @@ set(ZEROSLACK_CORE_SOURCES
     slangrelationshiphelpers.h
     slangsymbolcollector.h
     slangsymbolcollectorhelpers.h
+    slangsymbolpresentation.h
     smartrelationshipbuilder.h
     symbolanalyzer.h
     symbolanalyzerworkspace.h
     symbolhoverreports.h
     symbolhoverservice.h
+    symbolpresentationservice.h
     symbolrelationshipengine.h
     symboloutlinemodel.h
     symbolsemanticmetadata.h
@@ -533,6 +526,9 @@ if(BUILD_TESTING)
     add_executable(completion_test test_sv/completion_test.cpp)
     target_link_libraries(completion_test PRIVATE zeroslack_core)
 
+    add_executable(effective_value_test test_sv/effective_value_test.cpp)
+    target_link_libraries(effective_value_test PRIVATE zeroslack_core)
+
     add_executable(jump_test test_sv/jump_test.cpp)
     target_link_libraries(jump_test PRIVATE zeroslack_core)
 
@@ -548,6 +544,10 @@ if(BUILD_TESTING)
 
     add_executable(gui_smoke_test test_sv/gui_smoke_test.cpp)
     target_link_libraries(gui_smoke_test PRIVATE zeroslack_core Qt6::Test)
+
+    add_executable(global_control_ow_test
+        test_sv/global_control_ow_test.cpp)
+    target_link_libraries(global_control_ow_test PRIVATE zeroslack_core)
 
     add_executable(insight_visual_style_test
         test_sv/insight_visual_style_test.cpp)
@@ -591,6 +591,13 @@ if(BUILD_TESTING)
             "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
             $<TARGET_FILE:relationship_test>
     )
+    add_test(NAME effective_value_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}"
+            "QT_QPA_PLATFORM=offscreen"
+            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
+            $<TARGET_FILE:effective_value_test>
+    )
     add_test(NAME fsm_ui_snapshot_test
         COMMAND ${CMAKE_COMMAND} -E env
             "PATH=${ZEROSLACK_TEST_PATH}"
@@ -608,6 +615,16 @@ if(BUILD_TESTING)
             ${CMAKE_CURRENT_SOURCE_DIR}/test_sv/new
             ${CMAKE_CURRENT_SOURCE_DIR}/test_sv/test_symbols.sv
     )
+    add_test(NAME global_control_ow_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}"
+            "QT_QPA_PLATFORM=offscreen"
+            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
+            $<TARGET_FILE:global_control_ow_test>
+            ${CMAKE_CURRENT_SOURCE_DIR}/test_sv/new
+            ${CMAKE_CURRENT_SOURCE_DIR}/test_sv/huge_prj
+    )
+    set_tests_properties(global_control_ow_test PROPERTIES TIMEOUT 1200)
     add_test(NAME insight_visual_style_test
         COMMAND ${CMAKE_COMMAND} -E env
             "PATH=${ZEROSLACK_TEST_PATH}"

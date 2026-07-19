@@ -13,7 +13,7 @@ DocumentSaveResult DocumentSessionState::markSaved(MyCodeEditor* editor)
         return result;
     }
 
-    const DocumentSnapshot previous = registry.value(editor).snapshot;
+    const TrackedDocument previous = registry.value(editor);
     TrackedDocument tracked = snapshotReader.capture(editor, &previous);
     if (!registry.markSaved(editor, &tracked))
         return result;
@@ -34,9 +34,12 @@ bool DocumentSessionState::markEdited(
     if (!tracked)
         return false;
 
-    const DocumentSnapshot previous = tracked->snapshot;
+    const TrackedDocument previous = *tracked;
     DocumentSnapshot snapshot = refreshTrackedDocument(editor);
-    if (!registry.markEdited(editor, previous, &snapshot))
+    const TrackedDocument* refreshed = registry.find(editor);
+    if (!refreshed || !refreshed->contentChangePending)
+        return false;
+    if (!registry.markEdited(editor, previous.snapshot, &snapshot))
         return false;
 
     if (editedSnapshot)

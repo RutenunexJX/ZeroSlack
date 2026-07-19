@@ -20,7 +20,7 @@ public:
     void setStatusMessageHandler(std::function<void(const QString&, int)> handler);
     void setAnalysisState(const QString& state);
 
-    void update(const QString& fileName = QString());
+    void update();
 
     QDockWidget* dock() const { return problemsDock; }
     QTreeWidget* tree() const { return problemsTree; }

@@ -193,6 +193,12 @@ MainWindow::MainWindow(QWidget *parent)
 
 MainWindow::~MainWindow()
 {
+    // The semantic runtime owns the shared Slang relationship builder and is
+    // declared after the scheduler, so normal reverse member destruction would
+    // otherwise destroy the builder first. Join and detach every background
+    // analysis while the runtime-owned QObjects are still alive.
+    if (analysisScheduler)
+        analysisScheduler->shutdown();
     delete ui;
 }
 
@@ -265,16 +271,29 @@ void MainWindow::setupShellNavigationRail()
                     &QToolButton::clicked,
                     this,
                     [this, targetPanel]() { showPanelById(targetPanel); });
-        } else if (id == QStringLiteral("explorer")
-                   || id == QStringLiteral("outline")
-                   || id == QStringLiteral("design")
-                   || id == QStringLiteral("search")) {
+        } else if (id == QStringLiteral("explorer")) {
             connect(button,
                     &QToolButton::clicked,
                     this,
                     [this]() {
-                        if (navigationPane && navigationPane->dock())
-                            showDockWidget(navigationPane->dock());
+                        if (navigationPane)
+                            navigationPane->showFiles();
+                    });
+        } else if (id == QStringLiteral("design")) {
+            connect(button,
+                    &QToolButton::clicked,
+                    this,
+                    [this]() {
+                        if (navigationPane)
+                            navigationPane->showDesign();
+                    });
+        } else if (id == QStringLiteral("search")) {
+            connect(button,
+                    &QToolButton::clicked,
+                    this,
+                    [this]() {
+                        if (navigationPane)
+                            navigationPane->showSearch();
                     });
         }
         layout->addWidget(button);
@@ -282,7 +301,6 @@ void MainWindow::setupShellNavigationRail()
     };
 
     addRailButton(QStringLiteral("explorer"), QStringLiteral("Explorer"));
-    addRailButton(QStringLiteral("outline"), QStringLiteral("Outline"));
     addRailButton(QStringLiteral("design"), QStringLiteral("Design"));
     addRailButton(QStringLiteral("problems"), QStringLiteral("Problems"),
                   QStringLiteral("problems"));
@@ -646,7 +664,7 @@ void MainWindow::setupManagerConnections()
     analysisCoordinator->setProblemsRefreshHandler(
         [this](const QString& fileName) {
             if (semanticDocks && semanticDocks->refreshCoordinator())
-                semanticDocks->refreshCoordinator()->updateProblemsPanel(fileName);
+                semanticDocks->refreshCoordinator()->updateProblemsPanel();
             refreshActiveEditorDiagnosticHighlights(fileName);
             refreshActiveEditorSemanticDecorations(fileName);
             refreshActiveEditorGhostAnnotations(fileName);
@@ -792,6 +810,15 @@ void MainWindow::runActiveEditorPassiveRefresh()
     refreshActiveEditorDiagnosticHighlights(changedFileName);
     refreshActiveEditorSemanticDecorations(changedFileName);
     refreshActiveEditorGhostAnnotations(changedFileName);
+    if (semanticDocks) {
+        if (ProblemsPanelCoordinator* problemsPanel =
+                semanticDocks->problemsPanelCoordinator()) {
+            // Re-query after the analysis publication turn. The immediate
+            // analysis-state update can precede other queued active-document
+            // UI work, leaving Current File on an older diagnostic snapshot.
+            problemsPanel->update();
+        }
+    }
 }
 
 void MainWindow::refreshActiveEditorDiagnosticHighlights(
@@ -908,6 +935,8 @@ void MainWindow::refreshActiveEditorGhostAnnotations(
     GhostAnnotationQuery query;
     query.fileName = document.fileName;
     query.documentText = editor->toPlainText();
+    query.instanceContext = editor->hierarchyInstanceContext();
+    query.documentRevision = editor->semanticDocumentRevision();
     const GhostAnnotationReport report =
         GhostAnnotationService::getInstance()->annotationsForDocument(query);
     editor->setGhostAnnotations(report.annotations);
@@ -1896,18 +1925,6 @@ void MainWindow::showPanelById(const QString& panelId)
     showDockWidget(dock);
 }
 
-void MainWindow::togglePanelById(const QString& panelId)
-{
-    QDockWidget* dock = dockForPanelId(panelId);
-    if (!dock)
-        return;
-
-    if (dock->isVisible())
-        dock->hide();
-    else
-        showPanelById(panelId);
-}
-
 void MainWindow::showRecentWorkspacesDialog()
 {
     auto* dialog = new QDialog(this);
@@ -2188,9 +2205,6 @@ void MainWindow::setupEditorCoordinator()
                     statusBar()->showMessage(message, timeoutMs);
             }
         });
-    editorCoordinator->setFoldShelfRequestedHandler([this]() {
-        showFoldBlockShelf();
-    });
     editorCoordinator->setFoldShelfItemConsumedHandler([this](const QString& id) {
         if (foldShelfModel)
             foldShelfModel->consumeItem(id);

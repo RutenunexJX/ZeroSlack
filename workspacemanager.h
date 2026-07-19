@@ -9,16 +9,23 @@
 #include <QHash>
 #include <QList>
 #include <QStringList>
+#include <cstdint>
+#include <functional>
 #include <memory>
 
 class QDirIterator;
 class QTimer;
+class QWidget;
 
 class WorkspaceManager : public QObject
 {
     Q_OBJECT
 
 public:
+    using WorkspaceAliasSelector =
+        std::function<QString(QWidget* dialogParent,
+                              const QString& suggestedAlias)>;
+
     struct WorkspaceEntry {
         QString alias;
         QString path;
@@ -36,6 +43,10 @@ public:
 
     // Workspace operations
     bool openWorkspace(const QString& folderPath);
+    bool openWorkspaceFromUserSelection(const QString& folderPath);
+    void setWorkspaceAliasSelector(WorkspaceAliasSelector selector);
+    // Prevent integration tests from mutating the user's global recent list.
+    void setRecentWorkspacePersistenceEnabledForTesting(bool enabled);
     void closeWorkspace();
     bool closeWorkspace(int index);
     bool renameWorkspaceAlias(int index,
@@ -76,7 +87,6 @@ signals:
     void workspaceListChanged();
     void workspaceActivated(int index, const QString& alias, const QString& path);
     void fileChanged(const QString& filePath);
-    void directoryChanged(const QString& dirPath);
     void filesScanned(const QStringList& svFiles);
     void workspaceScanStarted(const QString& path);
     void workspaceScanProgress(const QString& path, int filesFound);
@@ -124,12 +134,18 @@ private:
     std::unique_ptr<QDirIterator> scanIterator;
     QStringList pendingScannedFiles;
     QString scanningPath;
+    std::uint64_t scanGeneration = 0;
     QTimer* scanTimer = nullptr;
+    WorkspaceAliasSelector workspaceAliasSelector;
+    bool recentWorkspacePersistenceEnabled = true;
 
     // Helper methods
     void startDirectoryScan(const QString& path);
-    void finishDirectoryScan();
+    void finishDirectoryScan(std::uint64_t generation,
+                             const QString& path);
     void cancelDirectoryScan();
+    bool directoryScanIsCurrent(std::uint64_t generation,
+                                const QString& path) const;
     void updateFileWatcher();
     bool activateWorkspacePath(const QString& path,
                                const QString& alias,
@@ -149,6 +165,8 @@ private:
     void saveRecentWorkspaces() const;
     void rememberRecentWorkspace(const WorkspaceEntry& entry);
     QString promptWorkspaceAlias(const QString& path) const;
+    bool openWorkspaceInternal(const QString& folderPath,
+                               bool promptForAlias);
     QString defaultWorkspaceAlias(const QString& path) const;
     int workspaceIndexForPath(const QString& path) const;
     QString normalizeWorkspacePath(const QString& path) const;

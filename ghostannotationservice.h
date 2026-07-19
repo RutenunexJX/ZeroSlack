@@ -1,7 +1,7 @@
 #ifndef GHOSTANNOTATIONSERVICE_H
 #define GHOSTANNOTATIONSERVICE_H
 
-#include "semanticindex.h"
+#include "effectivevalueservice.h"
 
 #include <QList>
 #include <QString>
@@ -42,6 +42,8 @@ struct GhostAnnotation {
 struct GhostAnnotationQuery {
     QString fileName;
     QString documentText;
+    HierarchyInstanceContext instanceContext;
+    std::uint64_t documentRevision = 0;
 };
 
 struct GhostAnnotationReport {
@@ -65,7 +67,9 @@ class GhostAnnotationService
 public:
     static GhostAnnotationService* getInstance();
 
-    explicit GhostAnnotationService(SemanticIndex* semanticIndex = nullptr);
+    explicit GhostAnnotationService(
+        SemanticIndex* semanticIndex = nullptr,
+        EffectiveValueService* effectiveValueService = nullptr);
     ~GhostAnnotationService();
 
     void setSemanticIndex(SemanticIndex* semanticIndex);
@@ -76,6 +80,7 @@ public:
 
 private:
     SemanticIndex* index = nullptr;
+    EffectiveValueService* values = nullptr;
     static std::unique_ptr<GhostAnnotationService> instance;
 
     SemanticIndex* semanticIndex() const;

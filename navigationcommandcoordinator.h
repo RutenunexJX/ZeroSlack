@@ -1,11 +1,11 @@
 #ifndef NAVIGATIONCOMMANDCOORDINATOR_H
 #define NAVIGATIONCOMMANDCOORDINATOR_H
 
-#include "symboloutlinemodel.h"
-
 #include <QObject>
 #include <QString>
 #include <QVector>
+
+#include "symbolpresentationservice.h"
 
 class NavigationManager;
 class MyCodeEditor;
@@ -26,6 +26,11 @@ public:
     void navigateToFileAndLine(const QString& filePath,
                                int lineNumber = -1,
                                int columnNumber = -1);
+    void navigateToFileAndLineWithContext(
+        const QString& filePath,
+        int lineNumber,
+        int columnNumber,
+        const HierarchyInstanceContext& instanceContext);
     bool navigateToFileAndLineAndFlash(const QString& filePath,
                                        int lineNumber,
                                        int columnNumber = -1);
@@ -34,7 +39,6 @@ public:
     void navigateEditorToLine(MyCodeEditor* editor,
                               int lineNumber,
                               int columnNumber = -1);
-    void navigateToSymbol(const SymbolOutlineSymbolRow& row);
     void navigateBack();
     void navigateForward();
 
@@ -42,6 +46,7 @@ private:
     struct NavigationLocation {
         QString filePath;
         QString workspacePath;
+        HierarchyInstanceContext instanceContext;
         int lineNumber = -1;
         int columnNumber = -1;
 
@@ -85,6 +90,8 @@ private:
         const NavigationLocation& destination);
     bool applyLocation(const NavigationLocation& location);
     void pruneHistoryForCurrentWorkspace();
+    HierarchyInstanceContext normalizedInstanceContext(
+        const HierarchyInstanceContext& context) const;
 };
 
 #endif // NAVIGATIONCOMMANDCOORDINATOR_H

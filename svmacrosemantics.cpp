@@ -318,12 +318,17 @@ QString macroBodyFromLines(const QList<LineInfo>& lines,
     return parts.join(QLatin1Char('\n')).trimmed();
 }
 
-SymbolStableKey macroStableKey(const QString& fileName, const QString& name)
+SymbolStableKey macroStableKey(const QString& fileName,
+                               const QString& name,
+                               int sourcePosition,
+                               int sourceLength)
 {
     SymbolStableKey key;
     key.fileName = normalizedMacroFileName(fileName);
     key.symbolName = name;
     key.declarationKind = SymbolTaxonomy::DeclarationKind::Macro;
+    key.sourcePosition = sourcePosition;
+    key.sourceLength = sourceLength;
     return key;
 }
 
@@ -348,7 +353,10 @@ SemanticSymbolRecord macroRecordFromDefinition(
     record.sourceRole = SymbolTaxonomy::sourceRoleForFileName(definition.fileName);
     record.collectorKind = SymbolTaxonomy::CollectorKind::DefDefine;
     record.owner.kind = SymbolTaxonomy::SymbolOwnerScope::Global;
-    record.stableKey = macroStableKey(definition.fileName, definition.name);
+    record.stableKey = macroStableKey(definition.fileName,
+                                      definition.name,
+                                      definition.position,
+                                      definition.length);
     record.type.rawTypeText = definition.body;
     record.type.modportName = definition.parameters.join(QStringLiteral(", "));
     return record;
@@ -612,16 +620,6 @@ QSet<QString> configuredDefineNames(const QHash<QString, QString>& defines)
     for (auto it = defines.constBegin(); it != defines.constEnd(); ++it) {
         if (!it.key().isEmpty())
             names.insert(it.key());
-    }
-    return names;
-}
-
-QSet<QString> macroDefinitionNames(const QList<SemanticSymbolRecord>& records)
-{
-    QSet<QString> names;
-    for (const SemanticSymbolRecord& record : records) {
-        if (isMacroDefinitionRecord(record) && !record.name.isEmpty())
-            names.insert(record.name);
     }
     return names;
 }

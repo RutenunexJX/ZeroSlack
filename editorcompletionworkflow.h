@@ -15,8 +15,6 @@ class EditorSelection;
 class MyCodeEditor;
 class QKeyEvent;
 class QModelIndex;
-class QTextBlock;
-class QTextCursor;
 
 class EditorCompletionWorkflow
 {
@@ -42,9 +40,7 @@ public:
         const SemanticServiceProvider& serviceProvider);
 
     bool handleCompletionPopupKey(QKeyEvent* event);
-    void handleTextChanged();
     void handleCompletionActivated(const QModelIndex& index);
-    void handleAutoCompleteTimer();
     void handleCursorPositionChanged();
     bool handleInlineAbbreviationTab(QKeyEvent* event);
     void setIncludeFileProvider(IncludeFileProvider provider);
@@ -79,11 +75,8 @@ private:
     };
 
     EditorSemanticContextService* semanticService() const;
-    EditorSemanticContext semanticContextForCursor(
-        const QTextCursor& cursor,
-        bool includeDocumentText) const;
-    void hideAutoComplete();
-    void showAutoComplete(bool selectFirstCompletion = false);
+    void hideCompletionPopup();
+    void showCompletionPopup(bool selectFirstCompletion = false);
     void executeEditorActionCommand(const QString& command);
     void clearInlineAbbreviationSession();
     void cancelInlineAbbreviationSession();
@@ -102,7 +95,6 @@ private:
     bool applySingleInlineAbbreviationCandidate(
         const CommandModeCompletionState& state);
     int inlineCandidateCount(const CommandModeCompletionState& state) const;
-    void updateCompletionTriggerForTextChange(const QTextCursor& cursor);
     void applyCompletionActivationState(
         const CompletionActivationState& activationState);
     int replaceCommandInputAtCursor(const QString& text,
@@ -112,9 +104,6 @@ private:
     bool applyCompletionPopupKeyState(
         QKeyEvent* event,
         const CompletionPopupKeyState& popupState);
-    void refreshSymbolCompletion(
-        EditorSemanticContext context,
-        const QTextBlock& currentBlock);
     IncludeCompletionContext includeCompletionContextAtCursor() const;
     bool showIncludeCommandCompletions(
         const CommandModeCompletionState& state);

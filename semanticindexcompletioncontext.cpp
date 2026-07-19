@@ -1,60 +1,9 @@
 #include "semanticindex.h"
 
 #include "completioncommandkindadapter.h"
-#include "completiontypes.h"
-
-#include <QSet>
 #include <algorithm>
 
 namespace {
-bool semanticCompletionContextNameMatches(const QString& name, const QString& prefix)
-{
-    if (prefix.isEmpty())
-        return true;
-    if (name.isEmpty())
-        return false;
-
-    const QString lowerName = name.toLower();
-    const QString lowerPrefix = prefix.toLower();
-    if (lowerName.startsWith(lowerPrefix))
-        return true;
-
-    int namePos = 0;
-    int prefixPos = 0;
-    while (prefixPos < lowerPrefix.length() && namePos < lowerName.length()) {
-        if (lowerPrefix.at(prefixPos) == lowerName.at(namePos))
-            ++prefixPos;
-        ++namePos;
-    }
-    return prefixPos == lowerPrefix.length();
-}
-
-QString displayNameForCompletionContextRecord(
-    const SemanticSymbolRecord& record)
-{
-    if (!record.name.isEmpty())
-        return record.name;
-    return QString();
-}
-
-QStringList uniqueSortedCompletionContextSymbolNames(
-    const QList<SemanticSymbolRecord>& records)
-{
-    QStringList result;
-    QSet<QString> seenNames;
-    for (const SemanticSymbolRecord& record : records) {
-        const QString displayName =
-            displayNameForCompletionContextRecord(record);
-        const QString key = displayName.toCaseFolded();
-        if (seenNames.contains(key))
-            continue;
-        seenNames.insert(key);
-        result.append(displayName);
-    }
-    result.sort(Qt::CaseInsensitive);
-    return result;
-}
-
 QString ownerNameForCompletionContextRecord(
     const SemanticSymbolRecord& record)
 {
@@ -79,89 +28,6 @@ QList<SemanticSymbolRecord> completionContextRecordsByKind(
     return result;
 }
 
-}
-
-QStringList SemanticIndex::getEnumValueCompletionNames(
-    const QString& prefix,
-    const QString& enumTypeName) const
-{
-    QList<SemanticSymbolRecord> result;
-    const QList<SemanticSymbolRecord> records =
-        completionContextRecordsByKind(
-            enumTypeName.isEmpty()
-                ? getSymbolRecordsByDeclarationKind(
-                    SymbolTaxonomy::DeclarationKind::Enum)
-                : getSymbolRecordsByOwner(enumTypeName),
-            CompletionCommandKind::EnumValue);
-    for (const SemanticSymbolRecord& record : records) {
-        if (!enumTypeName.isEmpty()
-            && ownerNameForCompletionContextRecord(record) != enumTypeName)
-            continue;
-        if (!semanticCompletionContextNameMatches(
-                displayNameForCompletionContextRecord(record), prefix))
-            continue;
-        result.append(record);
-    }
-    return uniqueSortedCompletionContextSymbolNames(result);
-}
-
-QString SemanticIndex::enumTypeForVariable(
-    const QString& variableName,
-    const QString& moduleName) const
-{
-    if (!moduleName.isEmpty()) {
-        const QList<SemanticSymbolRecord> moduleRecords =
-            getModuleInternalSymbolRecordsByType(
-                moduleName,
-                CompletionCommandKind::EnumVariable);
-        for (const SemanticSymbolRecord& record : moduleRecords) {
-            if (record.name == variableName)
-                return ownerNameForCompletionContextRecord(record);
-        }
-    }
-
-    const QList<SemanticSymbolRecord> records =
-        completionContextRecordsByKind(getSymbolRecordsByName(variableName),
-                                       CompletionCommandKind::EnumVariable);
-    for (const SemanticSymbolRecord& record : records) {
-        if (record.name == variableName)
-            return ownerNameForCompletionContextRecord(record);
-    }
-
-    return QString();
-}
-
-QStringList SemanticIndex::getModulePortCompletionNames(
-    const QString& prefix,
-    const QString& moduleTypeName) const
-{
-    if (moduleTypeName.isEmpty())
-        return {};
-
-    bool moduleExists = false;
-    for (const SemanticSymbolRecord& record : getSymbolRecordsByName(moduleTypeName)) {
-        if (record.declarationKind != SymbolTaxonomy::DeclarationKind::Module)
-            continue;
-        if (record.name == moduleTypeName) {
-            moduleExists = true;
-            break;
-        }
-    }
-    if (!moduleExists)
-        return {};
-
-    QList<SemanticSymbolRecord> portRecords;
-    portRecords.append(getCommandCompletionSymbolRecords(moduleTypeName,
-                                                         CompletionCommandKind::Wire,
-                                                         prefix));
-    portRecords.append(getCommandCompletionSymbolRecords(moduleTypeName,
-                                                         CompletionCommandKind::Reg,
-                                                         prefix));
-    portRecords.append(getCommandCompletionSymbolRecords(moduleTypeName,
-                                                         CompletionCommandKind::Logic,
-                                                         prefix));
-    return uniqueSortedCompletionContextSymbolNames(
-        portRecords);
 }
 
 QString SemanticIndex::getStructTypeForVariable(const QString& variableName,

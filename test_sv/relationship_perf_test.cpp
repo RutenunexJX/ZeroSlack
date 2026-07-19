@@ -233,8 +233,6 @@ int main(int argc, char** argv)
                 symbolTelemetry.publicationMs);
     printMetric(QStringLiteral("symbol_publication_update_ms"),
                 symbolTelemetry.publicationUpdateMs);
-    printMetric(QStringLiteral("symbol_checkpoint_snapshot_ms"),
-                symbolTelemetry.checkpointSnapshotMs);
     printMetric(QStringLiteral("symbol_final_snapshot_ms"),
                 symbolTelemetry.finalSnapshotMs);
     printMetric(QStringLiteral("symbol_total_telemetry_ms"),

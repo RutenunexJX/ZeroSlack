@@ -64,7 +64,6 @@ QString truncatedMacroBody(const MacroDefinition& definition,
                            int maxCharacters = 180);
 
 QSet<QString> configuredDefineNames(const QHash<QString, QString>& defines);
-QSet<QString> macroDefinitionNames(const QList<SemanticSymbolRecord>& records);
 
 QList<SemanticDiagnostic> undefinedMacroDiagnostics(
     const QString& fileName,

@@ -21,31 +21,16 @@ void NavigationWidget::setActiveTab(NavigationTab tab)
         tabWidget->setCurrentIndex(static_cast<int>(tab));
 }
 
-NavigationWidget::NavigationTab NavigationWidget::getActiveTab() const
+void NavigationWidget::focusSearch()
 {
-    if (!tabWidget)
-        return FileTab;
-    return static_cast<NavigationTab>(tabWidget->currentIndex());
+    if (searchLineEdit)
+        searchLineEdit->setFocus(Qt::ShortcutFocusReason);
 }
 
 void NavigationWidget::updateFileHierarchy(const QStringList& files)
 {
     currentFileList = files;
     populateFileTree();
-}
-
-void NavigationWidget::updateModuleHierarchy(const QList<ModuleHierarchyGroup>& hierarchy)
-{
-    currentModuleHierarchy = hierarchy;
-    if (moduleTreeWidget)
-        populateModuleTree();
-}
-
-void NavigationWidget::updateSymbolHierarchy(const QList<SymbolOutlineGroup>& symbolGroups)
-{
-    currentSymbolHierarchy = symbolGroups;
-    if (symbolTreeWidget)
-        populateSymbolTree();
 }
 
 void NavigationWidget::updateDesignHierarchy(const DesignHierarchyReport& report)
@@ -102,46 +87,6 @@ void NavigationWidget::highlightFile(const QString& filePath)
     }
 }
 
-void NavigationWidget::highlightSymbol(const QString& symbolName)
-{
-    if (!symbolTreeWidget)
-        return;
-    QTreeWidgetItem* item = findItemByText(symbolTreeWidget, symbolName);
-    if (item) {
-        symbolTreeWidget->setCurrentItem(item);
-        symbolTreeWidget->scrollToItem(item);
-
-        if (item->parent()) {
-            item->parent()->setExpanded(true);
-        }
-    }
-}
-
-void NavigationWidget::highlightModule(const QString& moduleName)
-{
-    if (!moduleTreeWidget)
-        return;
-    QTreeWidgetItem* item = findItemByText(moduleTreeWidget, moduleName);
-    if (item) {
-        moduleTreeWidget->setCurrentItem(item);
-        moduleTreeWidget->scrollToItem(item);
-
-        if (item->parent()) {
-            item->parent()->setExpanded(true);
-        }
-    }
-}
-
-void NavigationWidget::setSearchText(const QString& text)
-{
-    searchLineEdit->setText(text);
-}
-
-QString NavigationWidget::getSearchText() const
-{
-    return searchLineEdit->text();
-}
-
 void NavigationWidget::onTabChanged(int index)
 {
     emit viewChanged(index);
@@ -165,31 +110,6 @@ void NavigationWidget::onFileTreeDoubleClicked(QTreeWidgetItem* item, int column
     }
 }
 
-void NavigationWidget::onModuleTreeDoubleClicked(QTreeWidgetItem* item, int column)
-{
-    Q_UNUSED(column)
-
-    if (!item) return;
-
-    QString moduleName = item->text(0);
-    if (!moduleName.isEmpty() && !item->data(0, Qt::UserRole + 1).toBool()) {
-        emit moduleDoubleClicked(moduleName);
-    }
-}
-
-void NavigationWidget::onSymbolTreeDoubleClicked(QTreeWidgetItem* item, int column)
-{
-    Q_UNUSED(column)
-
-    if (!item || item->childCount() > 0) return;
-
-    const int payloadId = item->data(0, Qt::UserRole + 1).toInt();
-    if (symbolItemPayloads.contains(payloadId)) {
-        const SymbolOutlineSymbolRow row = symbolItemPayloads.value(payloadId);
-        emit symbolRowDoubleClicked(row);
-    }
-}
-
 void NavigationWidget::onDesignTreeDoubleClicked(QTreeWidgetItem* item, int column)
 {
     Q_UNUSED(column)
@@ -209,17 +129,6 @@ void NavigationWidget::onFileTreeContextMenuRequested(const QPoint& pos)
     const QString filePath = item->data(0, Qt::UserRole).toString();
     if (!filePath.isEmpty())
         emit fileContextMenuRequested(filePath, fileTreeWidget->viewport()->mapToGlobal(pos));
-}
-
-void NavigationWidget::onModuleTreeContextMenuRequested(const QPoint& pos)
-{
-    QTreeWidgetItem* item = moduleTreeWidget->itemAt(pos);
-    if (!item || item->data(0, Qt::UserRole + 1).toBool())
-        return;
-    const QString moduleName = item->text(0);
-    if (!moduleName.isEmpty())
-        emit moduleContextMenuRequested(moduleName,
-                                        moduleTreeWidget->viewport()->mapToGlobal(pos));
 }
 
 void NavigationWidget::onDesignTreeContextMenuRequested(const QPoint& pos)
@@ -283,46 +192,6 @@ void NavigationWidget::setupFileTab()
     fileTab->setLayout(fileTabLayout);
 
     tabWidget->addTab(fileTab, "Files");
-}
-
-void NavigationWidget::setupModuleTab()
-{
-    moduleTab = new QWidget();
-    moduleTabLayout = new QVBoxLayout(moduleTab);
-    moduleTabLayout->setContentsMargins(2, 2, 2, 2);
-    moduleTabLayout->setSpacing(2);
-
-    moduleTreeWidget = new QTreeWidget(moduleTab);
-    moduleTreeWidget->setHeaderLabel("Module Hierarchy");
-    moduleTreeWidget->setAlternatingRowColors(true);
-    moduleTreeWidget->setRootIsDecorated(true);
-    moduleTreeWidget->setSortingEnabled(true);
-    moduleTreeWidget->header()->hide();
-
-    moduleTabLayout->addWidget(moduleTreeWidget);
-    moduleTab->setLayout(moduleTabLayout);
-
-    tabWidget->addTab(moduleTab, "Module");
-}
-
-void NavigationWidget::setupSymbolTab()
-{
-    symbolTab = new QWidget();
-    symbolTabLayout = new QVBoxLayout(symbolTab);
-    symbolTabLayout->setContentsMargins(2, 2, 2, 2);
-    symbolTabLayout->setSpacing(2);
-
-    symbolTreeWidget = new QTreeWidget(symbolTab);
-    symbolTreeWidget->setHeaderLabel("Symbols");
-    symbolTreeWidget->setAlternatingRowColors(true);
-    symbolTreeWidget->setRootIsDecorated(true);
-    symbolTreeWidget->setSortingEnabled(true);
-    symbolTreeWidget->header()->hide();
-
-    symbolTabLayout->addWidget(symbolTreeWidget);
-    symbolTab->setLayout(symbolTabLayout);
-
-    tabWidget->addTab(symbolTab, "Symbols");
 }
 
 void NavigationWidget::setupDesignTab()

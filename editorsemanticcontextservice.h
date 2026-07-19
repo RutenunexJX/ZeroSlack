@@ -5,9 +5,11 @@
 #include "definitionnavigationservice.h"
 #include "sourcenavigationservice.h"
 #include "symbolhoverreports.h"
+#include "symbolpresentationservice.h"
 
 #include <QString>
 #include <QList>
+#include <cstdint>
 #include <memory>
 #include <functional>
 
@@ -17,16 +19,15 @@ struct EditorSemanticContext {
     QString documentText;
     QString lineText;
     QString lineUpToCursor;
-    QString wordPrefix;
     int cursorLine = -1;
     int cursorPosition = -1;
     int column = -1;
-    bool commandModeActive = false;
+    std::uint64_t documentRevision = 0;
+    HierarchyInstanceContext hierarchyInstance;
 };
 
 struct EditorCompletionActivationContext {
     bool selectable = false;
-    bool commandModeActive = false;
     QString itemText;
     QString defaultValue;
     int selectionStart = -1;
@@ -36,17 +37,8 @@ struct EditorCompletionActivationContext {
 
 struct EditorCompletionPopupKeyContext {
     int key = 0;
-    bool commandModeActive = false;
     bool currentIndexValid = false;
     bool hasRows = false;
-};
-
-struct EditorCompletionTextChangeState {
-    bool commandModeActive = false;
-    bool startCompletionTimer = false;
-    bool hidePopup = false;
-    CommandModeInputState commandInput;
-    CompletionTriggerState trigger;
 };
 
 struct EditorSourceNavigationTarget {
@@ -152,16 +144,6 @@ public:
         const EditorSemanticContext& context) const;
     DefinitionPreviewReport definitionPreviewReport(
         const EditorSemanticContext& context) const;
-    CompletionTriggerQuery completionTriggerQuery(
-        const EditorSemanticContext& context) const;
-    CompletionTriggerState completionTriggerState(
-        const EditorSemanticContext& context) const;
-    EditorCompletionTextChangeState completionTextChangeState(
-        const EditorSemanticContext& context) const;
-    CompletionQuery completionQuery(const QString& prefix,
-                                    const EditorSemanticContext& context) const;
-    QStringList completionNames(const QString& prefix,
-                                const EditorSemanticContext& context) const;
     CommandModeCompletionQuery commandModeCompletionQuery(
         const EditorSemanticContext& context) const;
     CommandModeCompletionState commandModeCompletionState(
@@ -169,10 +151,6 @@ public:
     CommandModeInputState commandModeInputState(
         const EditorSemanticContext& context) const;
     CommandModeMatch commandModeMatch(
-        const EditorSemanticContext& context) const;
-    EditorCompletionQuery editorCompletionQuery(
-        const EditorSemanticContext& context) const;
-    EditorCompletionState editorCompletionState(
         const EditorSemanticContext& context) const;
     CompletionActivationState completionActivationState(
         const EditorCompletionActivationContext& context) const;

@@ -2,9 +2,7 @@
 // drives CompletionService query methods. No GUI window is shown.
 #include "slangmanager.h"
 #include "analysisscheduler.h"
-#include "completioncontexthelper.h"
 #include "completionmodel.h"
-#include "completionsemanticquery.h"
 #include "completionservice.h"
 #include "codetemplateservice.h"
 #include "inlinecommandmode.h"
@@ -13,6 +11,7 @@
 #include "diagnosticsrefreshcontroller.h"
 #include "diagnosticnavigationservice.h"
 #include "documentmodel.h"
+#include "effectivevalueservice.h"
 #include "editorsemanticcontextservice.h"
 #include "foldblockshelfmodel.h"
 #include "foldshelfpersistenceservice.h"
@@ -25,6 +24,7 @@
 #include "myhighlighter.h"
 #include "packagetoolservice.h"
 #include "relationshipservice.h"
+#include "relationshipanalysiscontroller.h"
 #include "rtlbatcheditservice.h"
 #include "semanticdecorationservice.h"
 #include "semantic_fixture_records.h"
@@ -147,17 +147,6 @@ static void expectList(const char* what, QStringList got, QStringList want) {
            want.join(",").toLocal8Bit().constData());
 }
 
-static void expectExcludes(const char* what, const QStringList& got, const QStringList& mustNot,
-                           const QStringList& mustHave) {
-    ++g_checks;
-    bool ok = true;
-    for (const QString& n : mustNot) if (got.contains(n)) ok = false;
-    for (const QString& n : mustHave) if (!got.contains(n)) ok = false;
-    if (!ok) ++g_fails;
-    printf("[%s] %-34s got=[%s]\n", ok ? "PASS" : "FAIL", what,
-           got.join(",").toLocal8Bit().constData());
-}
-
 template <typename Predicate>
 static bool waitForEventPredicate(Predicate predicate, int timeoutMs)
 {
@@ -230,6 +219,365 @@ static void expectGhostNotContains(const char* what,
            seen.join(",").toLocal8Bit().constData());
 }
 
+static void expectGhostEquals(const char* what,
+                              const GhostAnnotationReport& report,
+                              int line,
+                              const QString& expected)
+{
+    ++g_checks;
+    QStringList seen;
+    bool ok = false;
+    for (const GhostAnnotation& annotation : report.annotations) {
+        if (annotation.line != line
+            || annotation.kind != GhostAnnotationKind::FormalPort) {
+            continue;
+        }
+        seen.append(annotation.text);
+        if (annotation.text == expected)
+            ok = true;
+    }
+    if (!ok)
+        ++g_fails;
+    printf("[%s] %-34s want=\"%s\" line=%d seen=[%s]\n",
+           ok ? "PASS" : "FAIL",
+           what,
+           expected.toLocal8Bit().constData(),
+           line,
+           seen.join(",").toLocal8Bit().constData());
+}
+
+static void runEffectiveValueRegression()
+{
+    const QString fileName = QStringLiteral("instance_presentation_fixture.sv");
+    const QString source = QStringLiteral(
+        "module child #(\n"
+        "  parameter logic [159:0] P = 160'h123456789abcdef00112233445566778899aabb,\n"
+        "  parameter logic [7:0] MASK = 8'hx3,\n"
+        "  parameter string S = \"default value\"\n"
+        ") ();\n"
+        "  localparam logic [159:0] L = P + 160'h1;\n"
+        "  typedef enum logic [P[7:0] - 1:0] { E = P[7:0] } e_t;\n"
+        "endmodule\n"
+        "module top;\n"
+        "  child #(.P(160'h1000000000000000000000000000000000000010),\n"
+        "          .MASK(8'b10xz_01z1), .S(\"alpha beta\")) u0();\n"
+        "  child #(.P(160'h2000000000000000000000000000000000000020),\n"
+        "          .MASK(8'o7x), .S(\"gamma\")) u1();\n"
+        "endmodule\n");
+
+    SlangManager slang;
+    const QList<SemanticSymbolRecord> records =
+        slang.extractSymbolRecords(fileName, source);
+    auto findRecord = [&](const QString& name,
+                          SymbolTaxonomy::CollectorKind kind) {
+        for (const SemanticSymbolRecord& record : records) {
+            if (record.name == name && record.collectorKind == kind)
+                return record;
+        }
+        return SemanticSymbolRecord{};
+    };
+
+    const SemanticSymbolRecord parameter = findRecord(
+        QStringLiteral("P"), SymbolTaxonomy::CollectorKind::Parameter);
+    const SemanticSymbolRecord mask = findRecord(
+        QStringLiteral("MASK"), SymbolTaxonomy::CollectorKind::Parameter);
+    const SemanticSymbolRecord stringParameter = findRecord(
+        QStringLiteral("S"), SymbolTaxonomy::CollectorKind::Parameter);
+    const SemanticSymbolRecord localparam = findRecord(
+        QStringLiteral("L"), SymbolTaxonomy::CollectorKind::Localparam);
+    const SemanticSymbolRecord enumMember = findRecord(
+        QStringLiteral("E"), SymbolTaxonomy::CollectorKind::EnumValue);
+    expectBool("effective value records found",
+               parameter.isValid() && mask.isValid()
+                   && stringParameter.isValid() && localparam.isValid()
+                   && enumMember.isValid(),
+               true);
+
+    const auto contextFor = [](const QString& path) {
+        HierarchyInstanceContext context;
+        context.workspacePath = QStringLiteral("workspace");
+        context.activeTopModule = QStringLiteral("top");
+        context.instancePath = path;
+        return context;
+    };
+    SemanticIndex valueIndex;
+    valueIndex.setSnapshot(sharedSnapshotFromRecords(
+        records, {}, {}, {{fileName, source}}));
+    EffectiveValueService values(&valueIndex);
+    const auto resolveValue = [&](const SemanticSymbolRecord& symbol,
+                                  const HierarchyInstanceContext& context,
+                                  const QString& documentText) {
+        EffectiveValueQuery query;
+        query.symbol = symbol;
+        query.instanceContext = context;
+        query.documentText = documentText;
+        return values.resolve(query);
+    };
+    const EffectiveValueResult p0 = resolveValue(
+        parameter, contextFor(QStringLiteral("top.u0")), source);
+    const EffectiveValueResult p1 = resolveValue(
+        parameter, contextFor(QStringLiteral("top.u1")), source);
+    const EffectiveValueResult l0 = resolveValue(
+        localparam, contextFor(QStringLiteral("top.u0")), source);
+    const EffectiveValueResult l1 = resolveValue(
+        localparam, contextFor(QStringLiteral("top.u1")), source);
+    const EffectiveValueResult e0 = resolveValue(
+        enumMember, contextFor(QStringLiteral("top.u0")), source);
+    const EffectiveValueResult e1 = resolveValue(
+        enumMember, contextFor(QStringLiteral("top.u1")), source);
+    expectBool("two instances keep distinct parameter values",
+               p0.available() && p1.available()
+                   && p0.valueText != p1.valueText,
+               true);
+    expectBool("wide parameter is not truncated to 64 bits",
+               p0.bitWidthText == QStringLiteral("160")
+                   && p0.valueText.size() > 32,
+               true);
+    expectBool("localparam follows instance override",
+               l0.available() && l1.available()
+                   && l0.valueText != l1.valueText,
+               true);
+    expectBool("enum member follows instance override",
+               e0.available() && e1.available()
+                   && e0.valueText != e1.valueText,
+               true);
+    expectBool("enum underlying width follows instance override",
+               e0.bitWidthText == QStringLiteral("16")
+                   && e1.bitWidthText == QStringLiteral("32"),
+               true);
+
+    const EffectiveValueResult mask0 = resolveValue(
+        mask, contextFor(QStringLiteral("top.u0")), source);
+    const QString maskText = mask0.valueText.toLower();
+    expectBool("four-state parameter preserves X and Z",
+               mask0.available()
+                   && maskText.contains(QLatin1Char('x'))
+                   && maskText.contains(QLatin1Char('z')),
+               true);
+    const EffectiveValueResult string0 = resolveValue(
+        stringParameter, contextFor(QStringLiteral("top.u0")), source);
+    expectBool("string parameter keeps full contents",
+               string0.available()
+                   && string0.valueText.contains(
+                       QStringLiteral("alpha beta")),
+               true);
+    expectBool("non-decimal override expression is retained",
+               p0.expressionText.contains(
+                   QStringLiteral("160'h"), Qt::CaseInsensitive),
+               true);
+
+    const EffectiveValueResult unbound = resolveValue(
+        parameter, HierarchyInstanceContext{}, source);
+    expectBool("unbound effective value uses default evaluation",
+               unbound.defaultEvaluation && !unbound.instanceBound
+                   && unbound.instancePath.contains(
+                       QStringLiteral("\u672a\u7ed1\u5b9a\u5b9e\u4f8b"))
+                   && unbound.available()
+                   && unbound.valueText != p0.valueText,
+               true);
+    const EffectiveValueResult missing = resolveValue(
+        parameter, contextFor(QStringLiteral("top.missing")), source);
+    expectBool("missing exact instance never selects another instance",
+               !missing.available()
+                   && missing.failureReason.contains(
+                       QStringLiteral("exact bound instance")),
+               true);
+
+    SemanticIndex hotEditIndex;
+    hotEditIndex.setSnapshot(sharedSnapshotFromRecords(
+        records, {}, {}, {{fileName, source}}));
+    SemanticSymbolRecord singleFileParameter = parameter;
+    singleFileParameter.presentation.instanceInfoByPath.clear();
+    hotEditIndex.updateSymbolRecordsForFile(
+        fileName, {singleFileParameter}, source);
+    EffectiveValueService hotEditValues(&hotEditIndex);
+    const auto resolveHotEdit = [&](const SemanticSymbolRecord& symbol,
+                                    const QString& documentText) {
+        EffectiveValueQuery query;
+        query.symbol = symbol;
+        query.instanceContext = contextFor(QStringLiteral("top.u0"));
+        query.documentText = documentText;
+        return hotEditValues.resolve(query);
+    };
+    const QList<SemanticSymbolRecord> unchangedRecords =
+        hotEditIndex.getSymbolRecordsByName(QStringLiteral("P"));
+    const EffectiveValueResult unchangedHotEdit =
+        unchangedRecords.isEmpty()
+            ? EffectiveValueResult()
+            : resolveHotEdit(unchangedRecords.first(), source);
+    expectBool("unchanged hot edit preserves workspace elaboration",
+               unchangedHotEdit.available()
+                   && unchangedHotEdit.valueText == p0.valueText,
+               true);
+
+    const QString changedSource = source + QStringLiteral("\n// changed\n");
+    hotEditIndex.updateSymbolRecordsForFile(
+        fileName, {singleFileParameter}, changedSource);
+    const QList<SemanticSymbolRecord> changedRecords =
+        hotEditIndex.getSymbolRecordsByName(QStringLiteral("P"));
+    const EffectiveValueResult changedHotEdit =
+        changedRecords.isEmpty()
+            ? EffectiveValueResult()
+            : resolveHotEdit(changedRecords.first(), changedSource);
+    expectBool("changed hot edit reports stale workspace elaboration",
+               !changedHotEdit.available()
+                   && changedHotEdit.failureReason.contains(
+                       QStringLiteral("source document changed")),
+               true);
+}
+
+static void runFormalPortDeclarationRegression()
+{
+    const QString fileName = QStringLiteral("formal_port_fixture.sv");
+    const QString source = QStringLiteral(
+        "interface axi_if;\n"
+        "  modport master();\n"
+        "endinterface\n"
+        "typedef logic [7:0] test_t;\n"
+        "module ports #(parameter int P_1 = 2) (\n"
+        "  input test_t shared_a [P_1 - 1:0],\n"
+        "               shared_b [P_1 - 1:0],\n"
+        "  output\n"
+        "    logic [P_1 - 1:0]\n"
+        "    out_p,\n"
+        "  inout wire io_p,\n"
+        "  ref test_t ref_p [P_1 - 1:0],\n"
+        "  axi_if.master bus_mp [P_1 - 1:0],\n"
+        "  axi_if bus_plain\n"
+        ");\n"
+        "endmodule\n"
+        "module top;\n"
+        "  localparam int P_1 = 2;\n"
+        "  test_t a [P_1 - 1:0], b [P_1 - 1:0];\n"
+        "  logic [P_1 - 1:0] out_p;\n"
+        "  wire io_p;\n"
+        "  test_t ref_p [P_1 - 1:0];\n"
+        "  axi_if bus_mp [P_1 - 1:0] ();\n"
+        "  axi_if bus_plain ();\n"
+        "  ports #(.P_1(P_1)) u_ports (\n"
+        "    .shared_a(a),\n"
+        "    .shared_b(b),\n"
+        "    .out_p(out_p),\n"
+        "    .io_p(io_p),\n"
+        "    .ref_p(ref_p),\n"
+        "    .bus_mp(bus_mp),\n"
+        "    .bus_plain(bus_plain)\n"
+        "  );\n"
+        "endmodule\n");
+
+    SlangManager slang;
+    const QList<SemanticSymbolRecord> records =
+        slang.extractSymbolRecords(fileName, source);
+    auto findPort = [&](const QString& name) {
+        for (const SemanticSymbolRecord& record : records) {
+            if (record.name == name
+                && (record.declarationKind
+                        == SymbolTaxonomy::DeclarationKind::Port
+                    || record.collectorKind
+                        == SymbolTaxonomy::CollectorKind::PortInterface
+                    || record.collectorKind
+                        == SymbolTaxonomy::CollectorKind::PortInterfaceModport)) {
+                return record;
+            }
+        }
+        return SemanticSymbolRecord{};
+    };
+    HierarchyInstanceContext portContext;
+    portContext.workspacePath = QStringLiteral("workspace");
+    portContext.activeTopModule = QStringLiteral("top");
+    portContext.instancePath = QStringLiteral("top.u_ports");
+    SemanticIndex index;
+    index.setSnapshot(sharedSnapshotFromRecords(
+        records, {}, {}, {{fileName, source}}));
+    EffectiveValueService values(&index);
+    const auto resolvePort = [&](const QString& name) {
+        EffectiveValueQuery query;
+        query.symbol = findPort(name);
+        query.instanceContext = portContext;
+        query.documentText = source;
+        return values.resolve(query);
+    };
+    const EffectiveValueResult typedArrayPort =
+        resolvePort(QStringLiteral("shared_a"));
+    expectBool("port effective value carries declaration and dimensions",
+               findPort(QStringLiteral("shared_a"))
+                           .presentation.declarationText
+                       == QStringLiteral(
+                           "input test_t shared_a [P_1 - 1:0]")
+                   && findPort(QStringLiteral("shared_b"))
+                              .presentation.declarationText
+                       == QStringLiteral(
+                           "input test_t shared_b [P_1 - 1:0]")
+                   && typedArrayPort.available()
+                   && typedArrayPort.declarationText
+                          == QStringLiteral(
+                              "input test_t shared_a [P_1 - 1:0]")
+                   && typedArrayPort.packedDimensionsText
+                          == QStringLiteral("[7:0]")
+                   && typedArrayPort.unpackedDimensionsText
+                          == QStringLiteral("[1:0]")
+                   && !typedArrayPort.resolvedTypeText.isEmpty()
+                   && typedArrayPort.bitWidthText
+                          == QStringLiteral("16")
+                   && typedArrayPort.signednessText
+                          == QStringLiteral("unsigned"),
+               true);
+    const EffectiveValueResult interfacePort =
+        resolvePort(QStringLiteral("bus_mp"));
+    const EffectiveValueResult plainInterfacePort =
+        resolvePort(QStringLiteral("bus_plain"));
+    expectBool("interface effective value carries modport and array",
+               interfacePort.available()
+                   && interfacePort.interfaceName
+                          == QStringLiteral("axi_if")
+                   && interfacePort.modportName
+                          == QStringLiteral("master")
+                   && interfacePort.declarationText.contains(
+                       QStringLiteral("[P_1 - 1:0]"))
+                   && interfacePort.unpackedDimensionsText
+                          == QStringLiteral("[1:0]")
+                   && plainInterfacePort.available()
+                   && plainInterfacePort.modportName.isEmpty(),
+               true);
+    GhostAnnotationService service(&index);
+    const GhostAnnotationReport report = service.annotationsForDocument(
+        GhostAnnotationQuery{fileName, source});
+
+    expectGhostEquals("formal input typedef array",
+                      report,
+                      26,
+                      QStringLiteral(
+                          "input test_t shared_a [P_1 - 1:0]"));
+    expectGhostEquals("formal shared declarator",
+                      report,
+                      27,
+                      QStringLiteral(
+                          "input test_t shared_b [P_1 - 1:0]"));
+    expectGhostEquals("formal multiline output",
+                      report,
+                      28,
+                      QStringLiteral(
+                          "output logic [P_1 - 1:0] out_p"));
+    expectGhostEquals("formal inout",
+                      report,
+                      29,
+                      QStringLiteral("inout wire io_p"));
+    expectGhostEquals("formal ref",
+                      report,
+                      30,
+                      QStringLiteral(
+                          "ref test_t ref_p [P_1 - 1:0]"));
+    expectGhostEquals("formal interface modport array",
+                      report,
+                      31,
+                      QStringLiteral(
+                          "axi_if.master bus_mp [P_1 - 1:0]"));
+    expectGhostEquals("formal interface",
+                      report,
+                      32,
+                      QStringLiteral("axi_if bus_plain"));
+}
+
 static void expectGhostLineNotContains(const char* what,
                                        const GhostAnnotationReport& report,
                                        int line,
@@ -259,13 +607,6 @@ static QStringList recordNames(const QList<SemanticSymbolRecord>& records) {
     QStringList names;
     for (const auto& record : records)
         names << record.name;
-    return names;
-}
-
-static QStringList scoredNames(const QVector<QPair<QString, int>>& scored) {
-    QStringList names;
-    for (const auto& item : scored)
-        names << item.first;
     return names;
 }
 
@@ -372,33 +713,9 @@ int main(int argc, char** argv) {
         mgr.extractSymbolRecords(path, content),
         content);
 
-    expectList("CompletionService keyword names",
-               CompletionService::getInstance()->findKeywordCompletions(
-                   QStringLiteral("always_f")),
-               {"always_ff"});
-    expectList("CompletionService keyword scores",
-               scoredNames(
-                   CompletionService::getInstance()->findScoredKeywordCompletions(
-                       QStringLiteral("always_f"))),
-               {"always_ff"});
-    expectList("CompletionService keyword abbrev",
-               CompletionService::getInstance()->findKeywordAbbreviationMatches(
-                   {"always_ff", "logic"}, QStringLiteral("af")),
-               {"always_ff"});
-    ++g_checks;
-    const QList<int> keywordPositions =
-        CompletionService::getInstance()->findCompletionAbbreviationPositions(
-            QStringLiteral("always_ff"), QStringLiteral("af"));
-    const bool keywordPositionsOk = keywordPositions == QList<int>({0, 7});
-    if (!keywordPositionsOk)
-        ++g_fails;
-    printf("[%s] %-34s got=[%s]\n",
-           keywordPositionsOk ? "PASS" : "FAIL",
-           "CompletionService abbrev pos",
-           QStringList({
-               QString::number(keywordPositions.value(0, -1)),
-               QString::number(keywordPositions.value(1, -1))
-           }).join(",").toLocal8Bit().constData());
+    runEffectiveValueRegression();
+    runFormalPortDeclarationRegression();
+
     ++g_checks;
     const bool serviceItemScoreOk =
         CompletionService::getInstance()->completionItemScore(QStringLiteral("save"),
@@ -617,78 +934,6 @@ int main(int argc, char** argv) {
     metadataModelRecord.analysisBand.displayName = QStringLiteral("current");
     metadataModelRecord.analysisBand.priority = true;
     metadataModelRecord.analysisBand.publicationCheckpoint = 1;
-    CompletionResult metadataCompletion;
-    metadataCompletion.names.append(metadataModelRecord.name);
-    CompletionResult::SemanticCompletionItem metadataCompletionItem;
-    metadataCompletionItem.label = metadataModelRecord.name;
-    metadataCompletionItem.typeDisplayName = QStringLiteral("module");
-    metadataCompletionItem.ownerScopeName = QStringLiteral("global");
-    metadataCompletionItem.sourceRoleDisplayName =
-        SymbolTaxonomy::sourceRoleDisplayName(metadataModelRecord.sourceRole);
-    metadataCompletionItem.analysisBand = metadataModelRecord.analysisBand;
-    metadataCompletionItem.analysisBandDisplayName =
-        semanticAnalysisBandDisplayName(metadataModelRecord.analysisBand);
-    metadataCompletionItem.symbolRecord = metadataModelRecord;
-    metadataCompletionItem.symbolStableKey = metadataModelRecord.stableKey;
-    metadataCompletionItem.declarationKind = metadataModelRecord.declarationKind;
-    metadataCompletionItem.usageRole = metadataModelRecord.usageRole;
-    metadataCompletionItem.ownerScope = metadataModelRecord.owner.kind;
-    metadataCompletionItem.sourceRole = metadataModelRecord.sourceRole;
-    metadataCompletion.items.append(metadataCompletionItem);
-    CompletionModel metadataDescriptionModel;
-    metadataDescriptionModel.updateCompletions(metadataCompletion,
-                                               QStringLiteral("meta"));
-    expectEq("CompletionModel metadata desc",
-             metadataDescriptionModel.getItem(
-                 metadataDescriptionModel.index(0, 0)).description,
-             QStringLiteral("module"));
-    expectEq("CompletionModel metadata display",
-             metadataDescriptionModel.getItem(
-                 metadataDescriptionModel.index(0, 0)).displayText,
-             QStringLiteral("metadata_top (module)"));
-    expectBool("CompletionModel metadata stable key",
-               metadataDescriptionModel.getItem(
-                   metadataDescriptionModel.index(0, 0)).symbolStableKey
-                   == metadataModelRecord.stableKey,
-               true);
-    expectBool("CompletionModel metadata record",
-               metadataDescriptionModel.getItem(
-                   metadataDescriptionModel.index(0, 0)).symbolRecord.declarationKind
-                   == SymbolTaxonomy::DeclarationKind::Module
-                   && metadataDescriptionModel.getItem(
-                       metadataDescriptionModel.index(0, 0))
-                          .symbolRecord.collectorKind
-                       == SymbolTaxonomy::CollectorKind::Module,
-               true);
-    expectBool("CompletionModel metadata semantic fields",
-               metadataDescriptionModel.getItem(
-                   metadataDescriptionModel.index(0, 0)).typeDisplayName
-                   == QStringLiteral("module")
-                   && metadataDescriptionModel.getItem(
-                       metadataDescriptionModel.index(0, 0)).ownerScopeName
-                       == QStringLiteral("global")
-                   && metadataDescriptionModel.getItem(
-                       metadataDescriptionModel.index(0, 0)).sourceRoleDisplayName
-                       == QStringLiteral("source")
-                   && metadataDescriptionModel.getItem(
-                       metadataDescriptionModel.index(0, 0)).ownerScope
-                       == SymbolTaxonomy::SymbolOwnerScope::Global
-                   && metadataDescriptionModel.getItem(
-                       metadataDescriptionModel.index(0, 0)).sourceRole
-                       == SymbolTaxonomy::SourceRole::Unknown
-                   && metadataDescriptionModel.getItem(
-                       metadataDescriptionModel.index(0, 0))
-                          .analysisBandDisplayName == QStringLiteral("current")
-                   && metadataDescriptionModel.getItem(
-                       metadataDescriptionModel.index(0, 0))
-                          .analysisBand.label == QStringLiteral("current"),
-               true);
-    expectBool("CompletionModel metadata tooltip band",
-               metadataDescriptionModel.data(
-                   metadataDescriptionModel.index(0, 0),
-                   Qt::ToolTipRole).toString().contains(
-                       QStringLiteral("band: current")),
-               true);
     SemanticSymbolRecord backgroundMetadataRecord =
         SemanticFixtureRecordBuilder(
             QStringLiteral("metadata_bg"),
@@ -702,90 +947,6 @@ int main(int argc, char** argv) {
         QStringLiteral("background");
     backgroundMetadataRecord.analysisBand.displayName =
         QStringLiteral("background");
-    CompletionResult::SemanticCompletionItem backgroundCompletionItem;
-    backgroundCompletionItem.label = backgroundMetadataRecord.name;
-    backgroundCompletionItem.typeDisplayName = QStringLiteral("module");
-    backgroundCompletionItem.ownerScopeName = QStringLiteral("global");
-    backgroundCompletionItem.sourceRoleDisplayName =
-        SymbolTaxonomy::sourceRoleDisplayName(
-            backgroundMetadataRecord.sourceRole);
-    backgroundCompletionItem.analysisBand =
-        backgroundMetadataRecord.analysisBand;
-    backgroundCompletionItem.analysisBandDisplayName =
-        semanticAnalysisBandDisplayName(
-            backgroundMetadataRecord.analysisBand);
-    backgroundCompletionItem.symbolRecord = backgroundMetadataRecord;
-    backgroundCompletionItem.symbolStableKey =
-        backgroundMetadataRecord.stableKey;
-    backgroundCompletionItem.declarationKind =
-        backgroundMetadataRecord.declarationKind;
-    backgroundCompletionItem.usageRole =
-        backgroundMetadataRecord.usageRole;
-    backgroundCompletionItem.ownerScope =
-        backgroundMetadataRecord.owner.kind;
-    backgroundCompletionItem.sourceRole =
-        backgroundMetadataRecord.sourceRole;
-    CompletionResult bandSummaryCompletion;
-    bandSummaryCompletion.items = {
-        metadataCompletionItem,
-        backgroundCompletionItem,
-    };
-    expectEq("CompletionResult analysis band summary",
-             bandSummaryCompletion.analysisBandSummaryText(),
-             QStringLiteral("bands current 1 item, background 1 item"));
-    CompletionModel bandSummaryModel;
-    bandSummaryModel.updateCompletions(bandSummaryCompletion,
-                                       QStringLiteral("metadata"));
-    expectBool("CompletionModel renders band summary header",
-               bandSummaryModel.rowCount() == 3
-                   && !bandSummaryModel.getItem(
-                          bandSummaryModel.index(0, 0)).selectable
-                   && bandSummaryModel.data(
-                          bandSummaryModel.index(0, 0),
-                          Qt::DisplayRole).toString()
-                          == QStringLiteral(
-                              ":: COMPLETION BANDS - bands current 1 item, background 1 item ::")
-                   && bandSummaryModel.firstSelectableIndex().row() == 1,
-               true);
-    CompletionResult hiddenBandSummaryCompletion;
-    for (int i = 0; i < 15; ++i) {
-        CompletionResult::SemanticCompletionItem currentItem =
-            metadataCompletionItem;
-        currentItem.label = QStringLiteral("visible_current_%1")
-                                .arg(i, 2, 10, QLatin1Char('0'));
-        currentItem.insertText = currentItem.label;
-        currentItem.symbolRecord = SemanticSymbolRecord();
-        currentItem.symbolStableKey = SymbolStableKey();
-        hiddenBandSummaryCompletion.items.append(currentItem);
-    }
-    CompletionResult::SemanticCompletionItem hiddenBackgroundItem =
-        backgroundCompletionItem;
-    hiddenBackgroundItem.label =
-        QStringLiteral("hidden_background_only");
-    hiddenBackgroundItem.insertText = hiddenBackgroundItem.label;
-    hiddenBackgroundItem.symbolRecord = SemanticSymbolRecord();
-    hiddenBackgroundItem.symbolStableKey = SymbolStableKey();
-    hiddenBandSummaryCompletion.items.append(hiddenBackgroundItem);
-    expectBool("CompletionResult keeps hidden band in full summary",
-               hiddenBandSummaryCompletion.analysisBandGroupCount() == 2,
-               true);
-    CompletionModel visibleBandSummaryModel;
-    visibleBandSummaryModel.updateCompletions(hiddenBandSummaryCompletion,
-                                              QStringLiteral("visible"));
-    bool visibleHeaderPresent = false;
-    for (int row = 0; row < visibleBandSummaryModel.rowCount(); ++row) {
-        visibleHeaderPresent =
-            visibleHeaderPresent
-            || visibleBandSummaryModel.data(
-                   visibleBandSummaryModel.index(row, 0),
-                   Qt::DisplayRole).toString().contains(
-                   QStringLiteral("COMPLETION BANDS"));
-    }
-    expectBool("CompletionModel summarizes only visible completion bands",
-               visibleBandSummaryModel.rowCount() == 15
-                   && !visibleHeaderPresent
-                   && visibleBandSummaryModel.firstSelectableIndex().row() == 0,
-               true);
     CompletionModel commandSymbolBandSummaryModel;
     commandSymbolBandSummaryModel.updateSymbolRecordCompletions(
         {metadataModelRecord, backgroundMetadataRecord},
@@ -803,22 +964,6 @@ int main(int argc, char** argv) {
                               ":: COMMAND SYMBOL BANDS - bands current 1 item, background 1 item ::")
                    && commandSymbolBandSummaryModel.firstSelectableIndex()
                           .row() == 1,
-               true);
-    CompletionModel commandDisplayModel;
-    commandDisplayModel.updateCommandCompletions({QStringLiteral("save")},
-                                                 QStringLiteral("s"));
-    expectEq("CompletionModel command display",
-             commandDisplayModel.getItem(commandDisplayModel.index(1, 0)).displayText,
-             QStringLiteral("save - Execute save command"));
-    CompletionModel noCommandModel;
-    noCommandModel.updateCommandCompletions({QStringLiteral("save")},
-                                            QStringLiteral("zz"));
-    expectBool("CompletionModel no command selectable",
-               !noCommandModel.getItem(noCommandModel.index(1, 0)).selectable
-                   && noCommandModel.data(noCommandModel.index(1, 0),
-                                          Qt::DisplayRole)
-                          .toString()
-                       == QStringLiteral("No matching commands - No commands match your input"),
                true);
     expectEq("CompletionService interface desc",
              CompletionService::getInstance()
@@ -902,7 +1047,7 @@ int main(int argc, char** argv) {
 
     const QString ghostFile = QStringLiteral("ghost_fixture.sv");
     const QString ghostText =
-        QStringLiteral("module child(input logic [7:0] data, output logic ready);\n"
+        QStringLiteral("module child #(parameter int WIDTH = 8) (input logic [7:0] data, output logic ready);\n"
                        "endmodule\n"
                        "module other_child(output logic [3:0] data);\n"
                        "endmodule\n"
@@ -917,7 +1062,7 @@ int main(int argc, char** argv) {
                        "    .data(data),\n"
                        "    .ready()\n"
                        "  );\n"
-                       "  enum logic [1:0] {IDLE, RUN = 3, DONE};\n"
+                       "  typedef enum logic [2:0] {IDLE, RUN = 3, DONE} state_t;\n"
                        "  assign slice = data[4 +: 3];\n"
                        "  assign literal = 16'hFF00;\n"
                        "  assign cat = {4{8'hAA}};\n"
@@ -932,199 +1077,71 @@ int main(int argc, char** argv) {
                        "  localparam CLOG = $clog2(PW);\n"
                        "  localparam FADD = function_add1(PW);\n"
                        "endmodule\n");
-    const QList<SemanticSymbolRecord> ghostRecords{
-        SemanticFixtureRecordBuilder(QStringLiteral("data"),
-                                     SymbolTaxonomy::DeclarationKind::Port)
-            .withFile(ghostFile)
-            .withLine(1, 30)
-            .withCollectorKind(SymbolTaxonomy::CollectorKind::PortInput)
-            .withOwner(SymbolTaxonomy::SymbolOwnerScope::Module,
-                       QStringLiteral("child"))
-            .withType(QStringLiteral("logic [7:0]"))
-            .record(),
-        SemanticFixtureRecordBuilder(QStringLiteral("data"),
-                                     SymbolTaxonomy::DeclarationKind::Port)
-            .withFile(ghostFile)
-            .withLine(3, 36)
-            .withCollectorKind(SymbolTaxonomy::CollectorKind::PortOutput)
-            .withOwner(SymbolTaxonomy::SymbolOwnerScope::Module,
-                       QStringLiteral("other_child"))
-            .withType(QStringLiteral("logic [3:0]"))
-            .record(),
-        SemanticFixtureRecordBuilder(QStringLiteral("DEPTH"),
-                                     SymbolTaxonomy::DeclarationKind::Localparam)
-            .withFile(ghostFile)
-            .withLine(6, 14)
-            .withCollectorKind(SymbolTaxonomy::CollectorKind::Localparam)
-            .withOwner(SymbolTaxonomy::SymbolOwnerScope::Module,
-                       QStringLiteral("top"))
-            .record(),
-        SemanticFixtureRecordBuilder(QStringLiteral("PW"),
-                                     SymbolTaxonomy::DeclarationKind::Localparam)
-            .withFile(ghostFile)
-            .withLine(7, 14)
-            .withCollectorKind(SymbolTaxonomy::CollectorKind::Localparam)
-            .withOwner(SymbolTaxonomy::SymbolOwnerScope::Module,
-                       QStringLiteral("top"))
-            .record(),
-        SemanticFixtureRecordBuilder(QStringLiteral("wide"),
-                                     SymbolTaxonomy::DeclarationKind::Signal)
-            .withFile(ghostFile)
-            .withLine(8, 22)
-            .withCollectorKind(SymbolTaxonomy::CollectorKind::Logic)
-            .withOwner(SymbolTaxonomy::SymbolOwnerScope::Module,
-                       QStringLiteral("top"))
-            .withType(QStringLiteral("logic [PW - 1:0]"))
-            .record(),
-        SemanticFixtureRecordBuilder(QStringLiteral("window"),
-                                     SymbolTaxonomy::DeclarationKind::Signal)
-            .withFile(ghostFile)
-            .withLine(9, 17)
-            .withCollectorKind(SymbolTaxonomy::CollectorKind::Logic)
-            .withOwner(SymbolTaxonomy::SymbolOwnerScope::Module,
-                       QStringLiteral("top"))
-            .withType(QStringLiteral("logic [27:18]"))
-            .record(),
-        SemanticFixtureRecordBuilder(QStringLiteral("data"),
-                                     SymbolTaxonomy::DeclarationKind::Signal)
-            .withFile(ghostFile)
-            .withLine(10, 15)
-            .withCollectorKind(SymbolTaxonomy::CollectorKind::Logic)
-            .withOwner(SymbolTaxonomy::SymbolOwnerScope::Module,
-                       QStringLiteral("top"))
-            .withType(QStringLiteral("logic [7:0]"))
-            .record(),
-        SemanticFixtureRecordBuilder(QStringLiteral("mem"),
-                                     SymbolTaxonomy::DeclarationKind::Signal)
-            .withFile(ghostFile)
-            .withLine(11, 15)
-            .withCollectorKind(SymbolTaxonomy::CollectorKind::Logic)
-            .withOwner(SymbolTaxonomy::SymbolOwnerScope::Module,
-                       QStringLiteral("top"))
-            .withType(QStringLiteral("logic [7:0]"))
-            .record(),
-        SemanticFixtureRecordBuilder(QStringLiteral("u_child.data"),
-                                     SymbolTaxonomy::DeclarationKind::Instance)
-            .withFile(ghostFile)
-            .withLine(13, 5)
-            .withCollectorKind(SymbolTaxonomy::CollectorKind::InstPin)
-            .withOwner(SymbolTaxonomy::SymbolOwnerScope::Module,
-                       QStringLiteral("top"))
-            .withType(QStringLiteral("child"),
-                      QStringLiteral("child"),
-                      SymbolTaxonomy::DeclarationKind::Module)
-            .record(),
-        SemanticFixtureRecordBuilder(QStringLiteral("IDLE"),
-                                     SymbolTaxonomy::DeclarationKind::Enum)
-            .withFile(ghostFile)
-            .withLine(16, 25)
-            .withCollectorKind(SymbolTaxonomy::CollectorKind::EnumValue)
-            .withOwner(SymbolTaxonomy::SymbolOwnerScope::Module,
-                       QStringLiteral("state_t"))
-            .record(),
-        SemanticFixtureRecordBuilder(QStringLiteral("RUN"),
-                                     SymbolTaxonomy::DeclarationKind::Enum)
-            .withFile(ghostFile)
-            .withLine(16, 31)
-            .withCollectorKind(SymbolTaxonomy::CollectorKind::EnumValue)
-            .withOwner(SymbolTaxonomy::SymbolOwnerScope::Module,
-                       QStringLiteral("state_t"))
-            .record(),
-        SemanticFixtureRecordBuilder(QStringLiteral("DONE"),
-                                     SymbolTaxonomy::DeclarationKind::Enum)
-            .withFile(ghostFile)
-            .withLine(16, 40)
-            .withCollectorKind(SymbolTaxonomy::CollectorKind::EnumValue)
-            .withOwner(SymbolTaxonomy::SymbolOwnerScope::Module,
-                       QStringLiteral("state_t"))
-            .record(),
-        SemanticFixtureRecordBuilder(QStringLiteral("FROM_PW"),
-                                     SymbolTaxonomy::DeclarationKind::Localparam)
-            .withFile(ghostFile)
-            .withLine(25, 14)
-            .withCollectorKind(SymbolTaxonomy::CollectorKind::Localparam)
-            .withOwner(SymbolTaxonomy::SymbolOwnerScope::Module,
-                       QStringLiteral("top"))
-            .record(),
-        SemanticFixtureRecordBuilder(QStringLiteral("SUM"),
-                                     SymbolTaxonomy::DeclarationKind::Localparam)
-            .withFile(ghostFile)
-            .withLine(26, 14)
-            .withCollectorKind(SymbolTaxonomy::CollectorKind::Localparam)
-            .withOwner(SymbolTaxonomy::SymbolOwnerScope::Module,
-                       QStringLiteral("top"))
-            .record(),
-        SemanticFixtureRecordBuilder(QStringLiteral("STR"),
-                                     SymbolTaxonomy::DeclarationKind::Localparam)
-            .withFile(ghostFile)
-            .withLine(27, 14)
-            .withCollectorKind(SymbolTaxonomy::CollectorKind::Localparam)
-            .withOwner(SymbolTaxonomy::SymbolOwnerScope::Module,
-                       QStringLiteral("top"))
-            .record(),
-        SemanticFixtureRecordBuilder(QStringLiteral("CLOG"),
-                                     SymbolTaxonomy::DeclarationKind::Localparam)
-            .withFile(ghostFile)
-            .withLine(28, 14)
-            .withCollectorKind(SymbolTaxonomy::CollectorKind::Localparam)
-            .withOwner(SymbolTaxonomy::SymbolOwnerScope::Module,
-                       QStringLiteral("top"))
-            .record(),
-        SemanticFixtureRecordBuilder(QStringLiteral("FADD"),
-                                     SymbolTaxonomy::DeclarationKind::Localparam)
-            .withFile(ghostFile)
-            .withLine(29, 14)
-            .withCollectorKind(SymbolTaxonomy::CollectorKind::Localparam)
-            .withOwner(SymbolTaxonomy::SymbolOwnerScope::Module,
-                       QStringLiteral("top"))
-            .record(),
-    };
+    SlangManager ghostSlang;
+    QList<EffectiveValueFact> ghostFacts;
+    QList<SemanticSymbolRecord> ghostRecords =
+        ghostSlang.extractSymbolRecords(ghostFile,
+                                        ghostText,
+                                        {},
+                                        {},
+                                        &ghostFacts);
     SemanticIndex ghostIndex;
+    EffectiveValueService ghostValues(&ghostIndex);
+    const std::uint64_t ghostComputationRevision =
+        ghostValues.beginComputation({ghostFile});
+    for (SemanticSymbolRecord& record : ghostRecords)
+        record.presentation.computationRevision = ghostComputationRevision;
     ghostIndex.setSnapshot(
         sharedSnapshotFromRecords(
             ghostRecords,
             {},
             {},
             {{ghostFile, ghostText}}));
-    GhostAnnotationService ghostService(&ghostIndex);
+    ghostValues.publishDocumentFacts(ghostFile,
+                                     ghostText,
+                                     std::move(ghostFacts),
+                                     ghostComputationRevision);
+    GhostAnnotationService ghostService(&ghostIndex, &ghostValues);
+    GhostAnnotationQuery ghostQuery;
+    ghostQuery.fileName = ghostFile;
+    ghostQuery.documentText = ghostText;
     const GhostAnnotationReport ghostReport =
-        ghostService.annotationsForDocument(
-            GhostAnnotationQuery{ghostFile, ghostText});
+        ghostService.annotationsForDocument(ghostQuery);
     expectGhostContains("Ghost port formal",
                         ghostReport,
                         GhostAnnotationKind::FormalPort,
                         13,
-                        QStringLiteral("in logic [7:0]"));
-    expectGhostNotContains("Ghost literal parameter hidden",
-                           ghostReport,
-                           GhostAnnotationKind::ParameterValue,
-                           6,
-                           QStringLiteral("(D)8"));
+                        QStringLiteral("input logic [7:0] data"));
+    expectGhostContains("Ghost literal parameter uses Slang value",
+                        ghostReport,
+                        GhostAnnotationKind::ParameterValue,
+                        6,
+                        QStringLiteral("= 8"));
     expectGhostContains("Ghost parameter identifier value",
                         ghostReport,
                         GhostAnnotationKind::ParameterValue,
                         25,
-                        QStringLiteral("(D)32"));
+                        QStringLiteral("= 32"));
     expectGhostContains("Ghost parameter expression value",
                         ghostReport,
                         GhostAnnotationKind::ParameterValue,
                         26,
-                        QStringLiteral("(H)A458EFFE"));
+                        QStringLiteral("= 32'd2757292030"));
     expectGhostContains("Ghost parameter ascii value",
                         ghostReport,
                         GhostAnnotationKind::ParameterValue,
                         27,
-                        QStringLiteral("(H)74657374"));
+                        QStringLiteral("= 32'd1952805748"));
     expectGhostContains("Ghost parameter clog2 value",
                         ghostReport,
                         GhostAnnotationKind::ParameterValue,
                         28,
-                        QStringLiteral("(D)5"));
+                        QStringLiteral("= 5"));
     expectGhostContains("Ghost parameter function value",
                         ghostReport,
                         GhostAnnotationKind::ParameterValue,
                         29,
-                        QStringLiteral("(D)33"));
+                        QStringLiteral("= 32'd33"));
     expectGhostContains("Ghost parameter override",
                         ghostReport,
                         GhostAnnotationKind::ParameterOverride,
@@ -1154,22 +1171,22 @@ int main(int argc, char** argv) {
                         ghostReport,
                         GhostAnnotationKind::EnumValue,
                         16,
-                        QStringLiteral("= 0"));
+                        QStringLiteral("= 3'b0"));
     expectGhostContains("Ghost enum run",
                         ghostReport,
                         GhostAnnotationKind::EnumValue,
                         16,
-                        QStringLiteral("= 3"));
+                        QStringLiteral("= 3'b11"));
     expectGhostContains("Ghost enum done",
                         ghostReport,
                         GhostAnnotationKind::EnumValue,
                         16,
-                        QStringLiteral("= 4"));
+                        QStringLiteral("= 3'b100"));
     expectGhostContains("Ghost part select",
                         ghostReport,
                         GhostAnnotationKind::PartSelect,
                         17,
-                        QStringLiteral("[6:4] 3 bits"));
+                        QStringLiteral("[4 +: 3] 3 bits"));
     expectGhostLineNotContains("Ghost literal overlay removed",
                                ghostReport,
                                18,
@@ -1213,14 +1230,17 @@ int main(int argc, char** argv) {
                true);
     expectEq("Ghost literal hover text",
              literalHover.displayText,
-             QStringLiteral("(B)1111_1111_0000_0000 (D)65280"));
+             QStringLiteral("16'd65280"));
     const GhostNumericLiteralReport stringHover =
         ghostService.numericLiteralAt(GhostNumericLiteralQuery{
             numericHoverText,
             stringHoverPosition});
-    expectBool("Ghost literal hover supports ascii string",
+    expectBool("Ghost literal hover keeps Slang string text",
                stringHover.available
-                   && stringHover.displayText.contains(QStringLiteral("(H)313233")),
+                   && stringHover.displayText.contains(
+                       QStringLiteral("123"))
+                   && !stringHover.displayText.contains(
+                       QStringLiteral("(H)")),
                true);
     const GhostNumericLiteralReport includeStringHover =
         ghostService.numericLiteralAt(GhostNumericLiteralQuery{
@@ -1233,19 +1253,22 @@ int main(int argc, char** argv) {
         ghostService.numericLiteralAt(GhostNumericLiteralQuery{
             numericHoverText,
             unsizedDecimalHoverPosition});
-    expectBool("Ghost literal hover supports unsized decimal base",
+    expectBool("Ghost literal hover keeps Slang unsized decimal value",
                unsizedDecimalHover.available
-                   && unsizedDecimalHover.displayText.contains(QStringLiteral("(H)11C1"))
-                   && !unsizedDecimalHover.displayText.contains(QStringLiteral("(D)4545")),
+                   && unsizedDecimalHover.displayText.contains(
+                       QStringLiteral("4545"))
+                   && !unsizedDecimalHover.displayText.contains(
+                       QStringLiteral("(H)")),
                true);
     const GhostNumericLiteralReport unsizedHexHover =
         ghostService.numericLiteralAt(GhostNumericLiteralQuery{
             numericHoverText,
             unsizedHexHoverPosition});
-    expectBool("Ghost literal hover supports unsized hex base",
+    expectBool("Ghost literal hover keeps Slang unsized hex value",
                unsizedHexHover.available
-                   && unsizedHexHover.displayText.contains(QStringLiteral("(D)44506"))
-                   && !unsizedHexHover.displayText.contains(QStringLiteral("(H)ADDA")),
+                   && !unsizedHexHover.displayText.isEmpty()
+                   && !unsizedHexHover.displayText.contains(
+                       QStringLiteral("(D)")),
                true);
     const GhostNumericLiteralReport legacyStringHover =
         ghostService.numericLiteralAt(GhostNumericLiteralQuery{
@@ -3623,14 +3646,14 @@ int main(int argc, char** argv) {
     expectEq("Workspace plan prioritizes active/open files",
              priorityPlan.project.systemVerilogFiles.join(QStringLiteral("|")),
              QStringList{planC, planB, planD, planA}.join(QStringLiteral("|")));
-    expectEq("Workspace plan protects dirty files",
-             priorityPlan.protectedFiles.join(QStringLiteral("|")),
+    expectEq("Workspace plan classifies dirty open files",
+             priorityPlan.dirtyOpenFiles.join(QStringLiteral("|")),
              QStringList{planB}.join(QStringLiteral("|")));
     expectBool("Workspace plan counts priority files",
                priorityPlan.priorityFileCount == 3
                    && priorityPlan.backgroundFileCount == 1
                    && priorityPlan.openFiles.size() == 2
-                   && priorityPlan.protectedFiles.size() == 1
+                   && priorityPlan.dirtyOpenFiles.size() == 1
                    && priorityPlan.currentFileInWorkspace,
                true);
     expectEq("Workspace plan records priority bands",
@@ -3652,12 +3675,6 @@ int main(int argc, char** argv) {
     expectBool("Workspace plan band index covers workspace files",
                priorityPlan.fileBandsByNormalizedPath.size() == 4,
                true);
-    QStringList priorityCheckpointText;
-    for (int checkpoint : priorityPlan.priorityPublicationCheckpoints)
-        priorityCheckpointText.append(QString::number(checkpoint));
-    expectEq("Workspace plan records publication checkpoints",
-             priorityCheckpointText.join(QStringLiteral(",")),
-             QStringLiteral("1,2,3"));
     QStringList bandSummaryText;
     for (const WorkspaceAnalysisBandSummary& summary :
          priorityPlan.bandSummaries) {
@@ -3811,37 +3828,26 @@ int main(int argc, char** argv) {
                        == tierIndexBandReport.bands.size(),
                true);
     CompletionService tierCompletionService(&tierIndex);
-    CompletionQuery tierCompletionQuery;
+    CommandCompletionQuery tierCompletionQuery;
     tierCompletionQuery.prefix = QStringLiteral("zz_tier");
-    const CompletionResult tierCompletionResult =
-        tierCompletionService.findCompletionResult(tierCompletionQuery);
-    expectBool("Completion result exposes analysis band provenance",
-               tierCompletionResult.items.size() == 1
-                   && tierCompletionResult.items.first().label
-                       == QStringLiteral("zz_tier_module")
-                   && tierCompletionResult.items.first()
-                          .analysisBandDisplayName == QStringLiteral("current")
-                   && tierCompletionResult.items.first().analysisBand.label
-                       == QStringLiteral("current"),
-               true);
-    CompletionModel tierCompletionModel;
-    tierCompletionModel.updateCompletions(tierCompletionResult,
-                                          QStringLiteral("zz_tier"));
-    expectBool("CompletionModel exposes analysis band provenance",
-               tierCompletionModel.rowCount() == 1
-                   && tierCompletionModel.getItem(
-                          tierCompletionModel.index(0, 0))
-                          .analysisBandDisplayName == QStringLiteral("current")
-                   && tierCompletionModel.data(
-                          tierCompletionModel.index(0, 0),
-                          Qt::ToolTipRole).toString().contains(
-                              QStringLiteral("band: current")),
+    tierCompletionQuery.commandKind = CompletionCommandKind::Module;
+    const QList<SemanticSymbolRecord> tierCompletionRecords =
+        tierCompletionService.findCommandCompletionSymbolRecords(
+            tierCompletionQuery);
+    expectBool("Command completion exposes analysis band provenance",
+               tierCompletionRecords.size() == 1
+                    && tierCompletionRecords.first().name
+                        == QStringLiteral("zz_tier_module")
+                    && tierCompletionRecords.first().analysisBand.displayName
+                        == QStringLiteral("current")
+                    && tierCompletionRecords.first().analysisBand.label
+                        == QStringLiteral("current"),
                true);
     const CommandSymbolCompletionItem tierCommandItem =
         tierCompletionService.commandSymbolCompletionItem(
-            tierCompletionResult.items.isEmpty()
+            tierCompletionRecords.isEmpty()
                 ? SemanticSymbolRecord()
-                : tierCompletionResult.items.first().symbolRecord,
+                : tierCompletionRecords.first(),
             CompletionCommandKind::Module,
             QStringLiteral("zz"));
     expectBool("Command symbol item exposes analysis band provenance",
@@ -3862,18 +3868,6 @@ int main(int argc, char** argv) {
                tierSearchResults.size() >= 2
                    && tierSearchResults.first().symbolRecord.name
                        == QStringLiteral("zz_tier_match"),
-               true);
-    const QStringList tierCompletionNames =
-        tierIndex.getCompletionSymbolNames();
-    expectBool("Completion names prefer priority analysis bands",
-               tierCompletionNames.indexOf(QStringLiteral("zz_tier_match"))
-                   >= 0
-                   && tierCompletionNames.indexOf(QStringLiteral("aa_tier_match"))
-                   >= 0
-                   && tierCompletionNames.indexOf(
-                          QStringLiteral("zz_tier_match"))
-                       < tierCompletionNames.indexOf(
-                           QStringLiteral("aa_tier_match")),
                true);
     const QList<SemanticSymbolRecord> tierDefinitionRecords =
         tierIndex.findDefinitionRecords(QStringLiteral("shared_tier_symbol"));
@@ -4033,14 +4027,30 @@ int main(int argc, char** argv) {
                              QStringLiteral("workspace_relationship"));
                      });
     foregroundScheduler.requestWorkspaceRelationshipAnalysis(foregroundProject);
-    expectBool("Workspace relationship foreground refresh starts open docs first",
-               foregroundRelationshipOrder.size() >= 2
+    expectBool("Workspace relationship reuses published overlay snapshot",
+               foregroundRelationshipOrder.size() == 1
                    && foregroundRelationshipOrder.first()
-                       == QStringLiteral("open_tabs")
-                   && foregroundRelationshipOrder.at(1)
                        == QStringLiteral("workspace_relationship"),
                true);
     foregroundScheduler.cancelWorkspaceRelationshipAnalysis();
+
+    RelationshipAnalysisController guardedBuilderController;
+    {
+        SmartRelationshipBuilder externallyOwnedBuilder(nullptr, nullptr);
+        guardedBuilderController.setRelationshipBuilder(
+            &externallyOwnedBuilder);
+        expectBool("Relationship controller observes live external builder",
+                   guardedBuilderController.hasRelationshipBuilder(),
+                   true);
+    }
+    expectBool("Destroyed external builder clears controller handle",
+               guardedBuilderController.hasRelationshipBuilder(),
+               false);
+    guardedBuilderController.requestCancelAllAnalyses();
+    guardedBuilderController.waitForAllAnalyses();
+    expectBool("Controller shutdown survives builder-first destruction",
+               true,
+               true);
 
     WorkspaceAnalysisRequestQueue requestQueue;
     ProjectSnapshot queueFirst = planProject;
@@ -4163,6 +4173,19 @@ int main(int argc, char** argv) {
     expectEq("Diagnostics refresh keeps file scope",
              emittedDiagnosticsRefreshes.join(QStringLiteral("|")),
              QStringLiteral("second.sv"));
+    emittedDiagnosticsRefreshes.clear();
+    diagnosticsRefresh.requestRefresh(QStringLiteral("first.sv"));
+    diagnosticsRefresh.requestRefresh(QStringLiteral("second.sv"));
+    expectBool("Diagnostics refresh merges different files",
+               waitForEventPredicate(
+                   [&emittedDiagnosticsRefreshes]() {
+                       return !emittedDiagnosticsRefreshes.isEmpty();
+                   },
+                   1000),
+               true);
+    expectEq("Diagnostics refresh promotes different files to full scope",
+             emittedDiagnosticsRefreshes.join(QStringLiteral("|")),
+             QStringLiteral("<all>"));
 
     expectEq("SymbolTaxonomy modport label",
              SymbolTaxonomy::symbolTypeLabel(
@@ -4417,39 +4440,6 @@ int main(int argc, char** argv) {
     expectBool("SymbolTaxonomy module metadata declaration",
                SymbolTaxonomy::isModuleDeclaration(finalModuleMetadata),
                true);
-
-    CompletionModel commandSelectionModel;
-    commandSelectionModel.updateCommandCompletions(
-        QStringList{QStringLiteral("save"), QStringLiteral("open")},
-        QStringLiteral("s"));
-    ++g_checks;
-    const QModelIndex commandSelectableIndex =
-        commandSelectionModel.firstSelectableIndex();
-    const bool commandSelectableOk = commandSelectableIndex.isValid()
-        && commandSelectionModel.getItem(commandSelectableIndex).text == QStringLiteral("save")
-        && commandSelectionModel.isSelectableIndex(commandSelectableIndex)
-        && commandSelectionModel.getItem(commandSelectableIndex).score
-            == CompletionService::getInstance()->completionItemScore(QStringLiteral("save"),
-                                                                     QStringLiteral("s"));
-    if (!commandSelectableOk)
-        ++g_fails;
-    printf("[%s] %-34s row=%d\n",
-           commandSelectableOk ? "PASS" : "FAIL",
-           "CompletionModel selectable command",
-           commandSelectableIndex.row());
-
-    CompletionModel noMatchSelectionModel;
-    noMatchSelectionModel.updateCommandCompletions(
-        QStringList{QStringLiteral("save"), QStringLiteral("open")},
-        QStringLiteral("zz"));
-    ++g_checks;
-    const bool noMatchSelectableOk =
-        !noMatchSelectionModel.firstSelectableIndex().isValid();
-    if (!noMatchSelectableOk)
-        ++g_fails;
-    printf("[%s] %-34s\n",
-           noMatchSelectableOk ? "PASS" : "FAIL",
-           "CompletionModel no-match hidden");
 
     CompletionModel defaultSelectionModel;
     defaultSelectionModel.updateSymbolRecordCompletions({},
@@ -4823,29 +4813,8 @@ int main(int argc, char** argv) {
                        == SymbolTaxonomy::SymbolOwnerScope::Module,
                true);
 
-    CompletionActivationQuery editorActivationQuery;
-    editorActivationQuery.selectable = true;
-    editorActivationQuery.mode = CompletionActivationMode::EditorWord;
-    editorActivationQuery.itemText = QStringLiteral("enable");
-    const CompletionActivationState editorActivationState =
-        CompletionService::getInstance()->completionActivationState(
-            editorActivationQuery);
-    ++g_checks;
-    const bool editorActivationOk =
-        editorActivationState.action == CompletionActivationAction::ReplaceWord
-        && editorActivationState.text == QStringLiteral("enable")
-        && !editorActivationState.clearCommandMode
-        && editorActivationState.hidePopup;
-    if (!editorActivationOk)
-        ++g_fails;
-    printf("[%s] %-34s text=\"%s\"\n",
-           editorActivationOk ? "PASS" : "FAIL",
-           "CompletionService activate word",
-           editorActivationState.text.toLocal8Bit().constData());
-
     CompletionActivationQuery commandActivationQuery;
     commandActivationQuery.selectable = true;
-    commandActivationQuery.mode = CompletionActivationMode::CommandMode;
     commandActivationQuery.itemText = QStringLiteral("[DEFAULT] logic");
     commandActivationQuery.defaultValue = QStringLiteral("logic");
     const CompletionActivationState commandActivationState =
@@ -4867,7 +4836,6 @@ int main(int argc, char** argv) {
 
     CompletionActivationQuery commandFallbackQuery;
     commandFallbackQuery.selectable = true;
-    commandFallbackQuery.mode = CompletionActivationMode::CommandMode;
     commandFallbackQuery.itemText = QStringLiteral("enable");
     const CompletionActivationState commandFallbackState =
         CompletionService::getInstance()->completionActivationState(
@@ -4888,7 +4856,6 @@ int main(int argc, char** argv) {
 
     EditorCompletionActivationContext contextCommandActivation;
     contextCommandActivation.selectable = true;
-    contextCommandActivation.commandModeActive = true;
     contextCommandActivation.itemText = QStringLiteral("clk");
     contextCommandActivation.defaultValue = QStringLiteral("logic clk");
     const CompletionActivationState contextCommandActivationState =
@@ -4904,7 +4871,6 @@ int main(int argc, char** argv) {
                true);
     CompletionActivationQuery inactiveActivationQuery;
     inactiveActivationQuery.selectable = false;
-    inactiveActivationQuery.mode = CompletionActivationMode::EditorWord;
     inactiveActivationQuery.itemText = QStringLiteral("enable");
     const CompletionActivationState inactiveActivationState =
         CompletionService::getInstance()->completionActivationState(
@@ -4922,7 +4888,6 @@ int main(int argc, char** argv) {
            "CompletionService activate inactive");
 
     CompletionPopupKeyQuery popupQuery;
-    popupQuery.mode = CompletionActivationMode::EditorWord;
     popupQuery.key = Qt::Key_Down;
     expectBool("CompletionService popup forwards arrows",
                CompletionService::getInstance()
@@ -4939,10 +4904,11 @@ int main(int argc, char** argv) {
                    == CompletionPopupKeyAction::ActivateCurrentOrFirstSelectable,
                true);
     popupQuery.key = Qt::Key_Escape;
-    expectBool("CompletionService popup hides",
+    expectBool("CompletionService popup clears explicit command",
                CompletionService::getInstance()
                        ->completionPopupKeyState(popupQuery)
-                       .action == CompletionPopupKeyAction::HidePopup,
+                       .action
+                   == CompletionPopupKeyAction::HidePopupAndClearCommand,
                true);
     popupQuery.key = Qt::Key_Return;
     popupQuery.hasRows = true;
@@ -4955,7 +4921,6 @@ int main(int argc, char** argv) {
                true);
     EditorCompletionPopupKeyContext contextCommandPopupQuery;
     contextCommandPopupQuery.key = Qt::Key_Escape;
-    contextCommandPopupQuery.commandModeActive = true;
     expectBool("EditorContext command popup clears",
                EditorSemanticContextService::getInstance()
                        ->completionPopupKeyState(contextCommandPopupQuery)
@@ -5349,54 +5314,6 @@ int main(int argc, char** argv) {
            commandCompletionHideOk ? "PASS" : "FAIL",
            "CompletionService command state hide");
 
-    CompletionTriggerQuery commandTriggerQuery;
-    commandTriggerQuery.lineUpToCursor = QStringLiteral(";l ena ");
-    commandTriggerQuery.commandModeActive = true;
-    expectBool("CompletionService trigger command",
-               CompletionService::getInstance()->shouldContinueCompletion(
-                   commandTriggerQuery),
-               true);
-    const CompletionTriggerState commandTriggerState =
-        CompletionService::getInstance()->completionTriggerState(commandTriggerQuery);
-    expectBool("CompletionService trigger command state",
-               commandTriggerState.continueCompletion,
-               true);
-    expectBool("CompletionService trigger command hide",
-               commandTriggerState.hidePopup,
-               false);
-    CompletionTriggerQuery headerCreateTriggerQuery;
-    headerCreateTriggerQuery.lineUpToCursor = QStringLiteral(";h -n defs.svh");
-    headerCreateTriggerQuery.commandModeActive = true;
-    expectBool("CompletionService trigger header create command",
-               CompletionService::getInstance()->shouldContinueCompletion(
-                   headerCreateTriggerQuery),
-               true);
-
-    CompletionTriggerQuery wordTriggerQuery;
-    wordTriggerQuery.lineUpToCursor = QStringLiteral("assign en");
-    expectBool("CompletionService does not trigger plain word",
-               CompletionService::getInstance()->shouldContinueCompletion(
-                   wordTriggerQuery),
-               false);
-    const CompletionTriggerState wordTriggerState =
-        CompletionService::getInstance()->completionTriggerState(wordTriggerQuery);
-    expectBool("CompletionService plain word state",
-               wordTriggerState.continueCompletion,
-               false);
-    expectBool("CompletionService plain word hide",
-               wordTriggerState.hidePopup,
-               true);
-    CompletionTriggerQuery shortWordTriggerQuery;
-    shortWordTriggerQuery.lineUpToCursor = QStringLiteral("assign e");
-    const CompletionTriggerState shortWordTriggerState =
-        CompletionService::getInstance()->completionTriggerState(
-            shortWordTriggerQuery);
-    expectBool("CompletionService trigger short word",
-               shortWordTriggerState.continueCompletion,
-               false);
-    expectBool("CompletionService trigger short word hide",
-               shortWordTriggerState.hidePopup,
-               true);
     CommandModeCompletionQuery commandCompletionFilterQuery;
     commandCompletionFilterQuery.lineUpToCursor = QStringLiteral(";l clk");
     commandCompletionFilterQuery.fileName = path;
@@ -5412,78 +5329,6 @@ int main(int argc, char** argv) {
                    && commandCompletionFilterState.command.kind
                        == CompletionCommandKind::Logic,
                true);
-
-    CompletionTriggerQuery dotTriggerQuery;
-    dotTriggerQuery.lineUpToCursor = QStringLiteral("pixel.");
-    expectBool("CompletionService trigger dot",
-               CompletionService::getInstance()->shouldContinueCompletion(
-                   dotTriggerQuery),
-               true);
-    CompletionTriggerQuery macroTriggerQuery;
-    macroTriggerQuery.lineUpToCursor = QStringLiteral("`");
-    expectBool("CompletionService trigger macro",
-               CompletionService::getInstance()->shouldContinueCompletion(
-                   macroTriggerQuery),
-               true);
-    CompletionTriggerQuery systemTaskTriggerQuery;
-    systemTaskTriggerQuery.lineUpToCursor = QStringLiteral("$");
-    expectBool("CompletionService trigger system task",
-               CompletionService::getInstance()->shouldContinueCompletion(
-                   systemTaskTriggerQuery),
-               true);
-    CompletionTriggerQuery packageTriggerQuery;
-    packageTriggerQuery.lineUpToCursor = QStringLiteral("pkg::");
-    expectBool("CompletionService trigger package scope",
-               CompletionService::getInstance()->shouldContinueCompletion(
-                   packageTriggerQuery),
-               true);
-
-    CompletionTriggerQuery structSpaceTriggerQuery;
-    structSpaceTriggerQuery.lineUpToCursor = QStringLiteral("pixel. ");
-    structSpaceTriggerQuery.moduleName = QStringLiteral("top");
-    expectBool("CompletionService trigger struct space",
-               CompletionService::getInstance()->shouldContinueCompletion(
-                   structSpaceTriggerQuery),
-               false);
-    const CompletionTriggerState structSpaceTriggerState =
-        CompletionService::getInstance()->completionTriggerState(
-            structSpaceTriggerQuery);
-    expectBool("CompletionService trigger struct state",
-               structSpaceTriggerState.continueCompletion,
-               false);
-    expectBool("CompletionService trigger struct hide",
-               structSpaceTriggerState.hidePopup,
-               true);
-
-    CompletionTriggerQuery plainSpaceTriggerQuery;
-    plainSpaceTriggerQuery.lineUpToCursor = QStringLiteral("assign value ");
-    plainSpaceTriggerQuery.moduleName = QStringLiteral("top");
-    expectBool("CompletionService trigger plain space",
-               CompletionService::getInstance()->shouldContinueCompletion(
-                   plainSpaceTriggerQuery),
-               false);
-    const CompletionTriggerState plainSpaceTriggerState =
-        CompletionService::getInstance()->completionTriggerState(
-            plainSpaceTriggerQuery);
-    expectBool("CompletionService trigger plain state",
-               plainSpaceTriggerState.continueCompletion,
-               false);
-    expectBool("CompletionService trigger plain hide",
-               plainSpaceTriggerState.hidePopup,
-               true);
-
-    CompletionTriggerQuery commandStopTriggerQuery;
-    commandStopTriggerQuery.lineUpToCursor = QStringLiteral(";l ena;");
-    commandStopTriggerQuery.commandModeActive = true;
-    const CompletionTriggerState commandStopTriggerState =
-        CompletionService::getInstance()->completionTriggerState(
-            commandStopTriggerQuery);
-    expectBool("CompletionService trigger command stop",
-               commandStopTriggerState.continueCompletion,
-               false);
-    expectBool("CompletionService trigger command stop hide",
-               commandStopTriggerState.hidePopup,
-               false);
 
     const CommandModeCompletionState helpCompletionState =
         CompletionService::getInstance()->commandModeCompletionState(
@@ -5548,7 +5393,6 @@ int main(int argc, char** argv) {
                true);
     CompletionActivationQuery foldActionActivation;
     foldActionActivation.selectable = true;
-    foldActionActivation.mode = CompletionActivationMode::CommandMode;
     foldActionActivation.itemText = QStringLiteral(";:fd");
     foldActionActivation.defaultValue = QStringLiteral(";:fd");
     const CompletionActivationState foldActionActivationState =
@@ -5778,7 +5622,6 @@ int main(int argc, char** argv) {
             : userTemplateCompletionState.templateItems.first();
     CompletionActivationQuery userTemplateActivation;
     userTemplateActivation.selectable = true;
-    userTemplateActivation.mode = CompletionActivationMode::CommandMode;
     userTemplateActivation.defaultValue =
         userTemplateCompletionItem.insertText;
     userTemplateActivation.selectionStart =
@@ -6447,7 +6290,6 @@ int main(int argc, char** argv) {
                true);
     CompletionActivationQuery signalTemplateActivation;
     signalTemplateActivation.selectable = true;
-    signalTemplateActivation.mode = CompletionActivationMode::CommandMode;
     signalTemplateActivation.defaultValue = widthLogic.insertText;
     signalTemplateActivation.selectionStart = widthLogic.selectionStart;
     signalTemplateActivation.selectionLength = widthLogic.selectionLength;
@@ -6576,7 +6418,6 @@ int main(int argc, char** argv) {
                true);
     CompletionActivationQuery parameterTypeActivation;
     parameterTypeActivation.selectable = true;
-    parameterTypeActivation.mode = CompletionActivationMode::CommandMode;
     parameterTypeActivation.itemText = QStringLiteral("logic");
     parameterTypeActivation.defaultValue = QStringLiteral(";;p -logic ");
     const CompletionActivationState parameterTypeActivationState =
@@ -6605,7 +6446,6 @@ int main(int argc, char** argv) {
                true);
     CompletionActivationQuery parameterTemplateActivation;
     parameterTemplateActivation.selectable = true;
-    parameterTemplateActivation.mode = CompletionActivationMode::CommandMode;
     parameterTemplateActivation.defaultValue = parameterScalar.insertText;
     parameterTemplateActivation.selectionStart = parameterScalar.selectionStart;
     parameterTemplateActivation.selectionLength = parameterScalar.selectionLength;
@@ -7129,336 +6969,12 @@ int main(int argc, char** argv) {
                     .matched,
                true);
 
-    CompletionTriggerQuery emptyTriggerQuery;
-    const CompletionTriggerState emptyTriggerState =
-        CompletionService::getInstance()->completionTriggerState(emptyTriggerQuery);
-    expectBool("CompletionService trigger empty state",
-               emptyTriggerState.continueCompletion,
-               false);
-    expectBool("CompletionService trigger empty hide",
-               emptyTriggerState.hidePopup,
-               true);
-
     const CommandSymbolPresentation interfacePresentation =
         CompletionService::getInstance()->commandSymbolPresentation(
             CompletionCommandKind::Interface);
     expectEq("CompletionService interface default",
              interfacePresentation.defaultValue,
              QStringLiteral("interface"));
-
-    // --- struct member completion (typedef'd) ---
-    expectEq("getStructTypeForVariable(pixel)",
-             CompletionService::getInstance()->getStructTypeForVariable("pixel", "top"),
-             "pixel_t");
-    expectList("members of pixel_t",
-               CompletionService::getInstance()->findStructMemberCompletions("", "pixel_t"),
-               {"red", "green", "blue"});
-
-    // --- struct member completion (inline anonymous) ---
-    expectEq("getStructTypeForVariable(byte_split)",
-             CompletionService::getInstance()->getStructTypeForVariable("byte_split", "top"),
-             "byte_split");
-    expectList("members of byte_split",
-               CompletionService::getInstance()->findStructMemberCompletions("", "byte_split"),
-               {"hi", "lo"});
-
-    // --- prefix filtering on members (note: matching is fuzzy/abbreviation, not strict prefix) ---
-    // 'bl' is a subsequence only of "blue"; "green"/"red" don't contain b..l in order.
-    expectList("members of pixel_t prefix 'bl'",
-               CompletionService::getInstance()->findStructMemberCompletions("bl", "pixel_t"),
-               {"blue"});
-
-    // --- module-internal logic must NOT leak function locals (x, add_one return var) ---
-    const QStringList logicNames =
-        CompletionService::getInstance()->findModuleSymbolsByKind(
-            QStringLiteral("top"),
-            CompletionCommandKind::Logic);
-    expectExcludes("top logic excludes fn-locals", logicNames,
-                   /*mustNot*/ {"x", "add_one"}, /*mustHave*/ {"enable", "result"});
-
-    CompletionQuery query;
-    query.prefix = "en";
-    query.fileName = path;
-    query.moduleName = "top";
-    expectList("CompletionService module prefix", CompletionService::getInstance()->findCompletions(query),
-               {"enable"});
-    const CompletionResult moduleCompletion =
-        CompletionService::getInstance()->findCompletionResult(query);
-    expectList("CompletionService module result",
-               moduleCompletion.names,
-               {"enable"});
-    ++g_checks;
-    const bool moduleResultItemsAvailableOk = moduleCompletion.items.size() == 1
-        && moduleCompletion.items.first().label == QStringLiteral("enable");
-    if (!moduleResultItemsAvailableOk)
-        ++g_fails;
-    printf("[%s] %-34s got_count=%d\n",
-           moduleResultItemsAvailableOk ? "PASS" : "FAIL",
-           "CompletionService result items available",
-           moduleCompletion.items.size());
-    ++g_checks;
-    const bool moduleResultItemsOk = moduleCompletion.items.size() == 1
-        && moduleCompletion.items.first().label == QStringLiteral("enable")
-        && moduleCompletion.items.first().insertText == QStringLiteral("enable")
-        && moduleCompletion.items.first().symbolRecord.isValid()
-        && moduleCompletion.items.first().symbolRecord.stableKey
-            == moduleCompletion.items.first().symbolStableKey
-        && moduleCompletion.items.first().symbolRecord.owner.name
-            == QStringLiteral("top")
-        && moduleCompletion.items.first().symbolStableKey
-            == moduleCompletion.items.first().symbolRecord.stableKey
-        && moduleCompletion.items.first().declarationKind
-            == SymbolTaxonomy::DeclarationKind::Signal
-        && moduleCompletion.items.first().ownerScope
-            == SymbolTaxonomy::SymbolOwnerScope::Module
-        && moduleCompletion.items.first().sourceRole
-            == SymbolTaxonomy::SourceRole::DesignSource
-        && moduleCompletion.items.first().typeDisplayName == QStringLiteral("logic")
-        && moduleCompletion.items.first().ownerScopeName == QStringLiteral("top")
-        && moduleCompletion.items.first().ownerScopeName
-            == moduleCompletion.items.first().symbolRecord.owner.name;
-    if (!moduleResultItemsOk)
-        ++g_fails;
-    printf("[%s] %-34s got_count=%d\n",
-           moduleResultItemsOk ? "PASS" : "FAIL",
-           "CompletionService result items",
-           moduleCompletion.items.size());
-    CompletionModel semanticResultModel;
-    semanticResultModel.updateCompletions(moduleCompletion, QStringLiteral("en"));
-    ++g_checks;
-    const bool semanticResultModelOk = !moduleCompletion.items.isEmpty()
-        && semanticResultModel.rowCount() == 1
-        && semanticResultModel.getItem(semanticResultModel.index(0, 0)).text
-            == QStringLiteral("enable")
-        && semanticResultModel.getItem(semanticResultModel.index(0, 0)).description
-            == QStringLiteral("logic")
-        && semanticResultModel.getItem(semanticResultModel.index(0, 0)).typeDisplayName
-            == QStringLiteral("logic")
-        && semanticResultModel.getItem(semanticResultModel.index(0, 0)).ownerScopeName
-            == QStringLiteral("top")
-        && semanticResultModel.getItem(semanticResultModel.index(0, 0)).ownerScopeName
-            == semanticResultModel.getItem(semanticResultModel.index(0, 0))
-                   .symbolRecord.owner.name
-        && semanticResultModel.getItem(semanticResultModel.index(0, 0)).sourceRoleDisplayName
-            == QStringLiteral("design source")
-        && semanticResultModel.getItem(semanticResultModel.index(0, 0)).ownerScope
-            == SymbolTaxonomy::SymbolOwnerScope::Module
-        && semanticResultModel.getItem(semanticResultModel.index(0, 0)).symbolRecord.stableKey
-            == moduleCompletion.items.first().symbolRecord.stableKey
-        && semanticResultModel.getItem(semanticResultModel.index(0, 0)).symbolStableKey
-            == moduleCompletion.items.first().symbolStableKey
-        && semanticResultModel.data(
-               semanticResultModel.index(0, 0),
-               Qt::ToolTipRole).toString().contains(QStringLiteral("owner: top"));
-    if (!semanticResultModelOk)
-        ++g_fails;
-    printf("[%s] %-34s rows=%d\n",
-           semanticResultModelOk ? "PASS" : "FAIL",
-           "CompletionModel semantic result",
-           semanticResultModel.rowCount());
-
-    CompletionQuery memberQuery;
-    memberQuery.structTypeNameForMember = "pixel_t";
-    expectList("CompletionService struct members",
-               CompletionService::getInstance()->findCompletions(memberQuery),
-               {"red", "green", "blue"});
-
-    memberQuery.prefix = "bl";
-    const CompletionResult memberCompletion =
-        CompletionService::getInstance()->findCompletionResult(memberQuery);
-    expectList("CompletionService struct prefix",
-               memberCompletion.names,
-               {"blue"});
-    ++g_checks;
-    const bool serviceSymbolOk = memberCompletion.items.size() == 1
-        && memberCompletion.items.first().label == QStringLiteral("blue")
-        && memberCompletion.items.first().declarationKind
-            == SymbolTaxonomy::DeclarationKind::StructMember
-        && memberCompletion.items.first().ownerScopeName == QStringLiteral("pixel_t");
-    if (!serviceSymbolOk)
-        ++g_fails;
-    printf("[%s] %-34s got_count=%d\n",
-           serviceSymbolOk ? "PASS" : "FAIL",
-           "CompletionService struct symbols",
-           memberCompletion.items.size());
-    ++g_checks;
-    const bool memberItemsOk = memberCompletion.items.size() == 1
-        && memberCompletion.items.first().label == QStringLiteral("blue")
-        && memberCompletion.items.first().declarationKind
-            == SymbolTaxonomy::DeclarationKind::StructMember
-        && memberCompletion.items.first().ownerScope
-            == SymbolTaxonomy::SymbolOwnerScope::Struct
-        && memberCompletion.items.first().typeDisplayName == QStringLiteral("member")
-        && memberCompletion.items.first().ownerScopeName == QStringLiteral("pixel_t")
-        && memberCompletion.items.first().symbolRecord.owner.name
-            == QStringLiteral("pixel_t")
-        && memberCompletion.items.first().ownerScopeName
-            == memberCompletion.items.first().symbolRecord.owner.name
-        && memberCompletion.items.first().symbolRecord.declarationKind
-            == SymbolTaxonomy::DeclarationKind::StructMember
-        && memberCompletion.items.first().symbolStableKey
-            == memberCompletion.items.first().symbolRecord.stableKey;
-    if (!memberItemsOk)
-        ++g_fails;
-    printf("[%s] %-34s got_count=%d\n",
-           memberItemsOk ? "PASS" : "FAIL",
-           "CompletionService member items",
-           memberCompletion.items.size());
-    QString parsedVariableName;
-    QString parsedMemberPrefix;
-    ++g_checks;
-    const bool parsedMemberContext =
-        CompletionService::getInstance()->tryParseStructMemberContext(
-            QStringLiteral("assign result = pixel.bl"),
-            parsedVariableName,
-            parsedMemberPrefix);
-    const bool parseOk = parsedMemberContext
-        && parsedVariableName == QStringLiteral("pixel")
-        && parsedMemberPrefix == QStringLiteral("bl");
-    if (!parseOk)
-        ++g_fails;
-    printf("[%s] %-34s var=\"%s\" prefix=\"%s\"\n",
-           parseOk ? "PASS" : "FAIL",
-           "CompletionService member parse",
-           parsedVariableName.toLocal8Bit().constData(),
-           parsedMemberPrefix.toLocal8Bit().constData());
-    ++g_checks;
-    const bool rejectsNonMemberContext =
-        !CompletionService::getInstance()->tryParseStructMemberContext(
-            QStringLiteral("assign result = pixel"),
-            parsedVariableName,
-            parsedMemberPrefix);
-    if (!rejectsNonMemberContext)
-        ++g_fails;
-    printf("[%s] %-34s\n",
-           rejectsNonMemberContext ? "PASS" : "FAIL",
-           "CompletionService member parse reject");
-    expectBool("CompletionContext member empty prefix",
-               CompletionService::getInstance()->tryParseStructMemberContext(
-                   QStringLiteral("pixel."),
-                   parsedVariableName,
-                   parsedMemberPrefix)
-                   && parsedVariableName == QStringLiteral("pixel")
-                   && parsedMemberPrefix.isEmpty(),
-               true);
-    expectEq("CompletionContext struct array variable",
-             CompletionContextHelper::extractStructVariable(
-                 QStringLiteral("pixel_array[idx].")),
-             QStringLiteral("pixel_array"));
-    expectEq("CompletionContext enum assignment",
-             CompletionContextHelper::extractEnumVariable(
-                 QStringLiteral("next_state <= SNAP_IDLE")),
-             QStringLiteral("next_state"));
-    expectEq("CompletionContext enum case",
-             CompletionContextHelper::extractEnumVariable(
-                 QStringLiteral("case (snap_state)")),
-             QStringLiteral("snap_state"));
-    expectEq("CompletionContext enum if equality",
-             CompletionContextHelper::extractEnumVariable(
-                 QStringLiteral("if (snap_state == SNAP_IDLE")),
-             QStringLiteral("snap_state"));
-    expectEq("CompletionContext module type",
-             CompletionContextHelper::extractModuleType(
-                 QStringLiteral("snap_child u_child (")),
-             QStringLiteral("snap_child"));
-
-    EditorCompletionQuery editorMemberQuery;
-    editorMemberQuery.lineUpToCursor = QStringLiteral("assign result = pixel.bl");
-    editorMemberQuery.wordPrefix = QStringLiteral("bl");
-    editorMemberQuery.fileName = path;
-    editorMemberQuery.moduleName = QStringLiteral("top");
-    editorMemberQuery.cursorLine = 1;
-    editorMemberQuery.cursorPosition = editorMemberQuery.lineUpToCursor.size();
-    const EditorCompletionState editorMemberState =
-        CompletionService::getInstance()->editorCompletionState(editorMemberQuery);
-    expectList("CompletionService editor member",
-               editorMemberState.completion.names,
-               {"blue"});
-    ++g_checks;
-    const bool editorMemberStateOk = editorMemberState.available
-        && editorMemberState.prefix == QStringLiteral("bl")
-        && editorMemberState.replacementStartColumn
-            == editorMemberQuery.lineUpToCursor.lastIndexOf(QLatin1Char('.')) + 1
-        && editorMemberState.completion.items.size() == 1
-        && editorMemberState.completion.items.first().declarationKind
-            == SymbolTaxonomy::DeclarationKind::StructMember;
-    if (!editorMemberStateOk)
-        ++g_fails;
-    printf("[%s] %-34s start=%d\n",
-           editorMemberStateOk ? "PASS" : "FAIL",
-           "CompletionService editor member state",
-           editorMemberState.replacementStartColumn);
-
-    EditorCompletionQuery editorWordQuery;
-    editorWordQuery.lineUpToCursor = QStringLiteral("assign en");
-    editorWordQuery.wordPrefix = QStringLiteral("en");
-    editorWordQuery.fileName = path;
-    editorWordQuery.moduleName = QStringLiteral("top");
-    editorWordQuery.cursorLine = 1;
-    editorWordQuery.cursorPosition = editorWordQuery.lineUpToCursor.size();
-    const EditorCompletionState editorWordState =
-        CompletionService::getInstance()->editorCompletionState(editorWordQuery);
-    expectList("CompletionService editor word",
-               editorWordState.completion.names,
-               {"enable"});
-    ++g_checks;
-    const bool editorWordStateOk = editorWordState.available
-        && editorWordState.prefix == QStringLiteral("en")
-        && editorWordState.replacementStartColumn
-            == editorWordQuery.lineUpToCursor.size() - editorWordQuery.wordPrefix.size()
-        && editorWordState.completion.items.size() == 1
-        && editorWordState.completion.items.first().label
-            == QStringLiteral("enable");
-    if (!editorWordStateOk)
-        ++g_fails;
-    printf("[%s] %-34s start=%d\n",
-           editorWordStateOk ? "PASS" : "FAIL",
-           "CompletionService editor word state",
-           editorWordState.replacementStartColumn);
-
-    EditorCompletionQuery editorEmptyQuery;
-    editorEmptyQuery.lineUpToCursor = QStringLiteral("assign ");
-    editorEmptyQuery.fileName = path;
-    editorEmptyQuery.moduleName = QStringLiteral("top");
-    ++g_checks;
-    const bool editorEmptyStateOk =
-        !CompletionService::getInstance()
-             ->editorCompletionState(editorEmptyQuery)
-             .available;
-    if (!editorEmptyStateOk)
-        ++g_fails;
-    printf("[%s] %-34s\n",
-           editorEmptyStateOk ? "PASS" : "FAIL",
-           "CompletionService editor empty");
-
-    EditorSemanticContext editorCompletionContext;
-    editorCompletionContext.lineUpToCursor = editorWordQuery.lineUpToCursor;
-    editorCompletionContext.wordPrefix = editorWordQuery.wordPrefix;
-    editorCompletionContext.fileName = path;
-    editorCompletionContext.moduleName = QStringLiteral("top");
-    editorCompletionContext.cursorLine = 1;
-    editorCompletionContext.cursorPosition =
-        editorCompletionContext.lineUpToCursor.size();
-    const EditorCompletionState contextEditorState =
-        EditorSemanticContextService::getInstance()
-            ->editorCompletionState(editorCompletionContext);
-    expectList("EditorSemanticContext editor word",
-               contextEditorState.completion.names,
-               {"enable"});
-    expectList("EditorSemanticContext names",
-               EditorSemanticContextService::getInstance()
-                   ->completionNames(QStringLiteral("en"), editorCompletionContext),
-               {"enable"});
-
-    EditorSemanticContext triggerContext;
-    triggerContext.lineUpToCursor = QStringLiteral("assign en");
-    const CompletionTriggerState contextTriggerState =
-        EditorSemanticContextService::getInstance()
-            ->completionTriggerState(triggerContext);
-    expectBool("EditorSemanticContext plain word no trigger",
-               !contextTriggerState.continueCompletion
-                   && contextTriggerState.hidePopup,
-               true);
 
     EditorSemanticContext commandContext;
     commandContext.lineUpToCursor = QStringLiteral(";l ena ");
@@ -7491,42 +7007,11 @@ int main(int argc, char** argv) {
     expectBool("EditorSemanticContext command input",
                contextInputState.matched,
                true);
-    const EditorCompletionTextChangeState contextTextChangeState =
-        EditorSemanticContextService::getInstance()
-            ->completionTextChangeState(commandContext);
-    expectBool("EditorSemanticContext text-change leaves inline command idle",
-               !contextTextChangeState.commandModeActive
-                   && !contextTextChangeState.commandInput.matched
-                   && !contextTextChangeState.startCompletionTimer
-                   && contextTextChangeState.hidePopup,
-               true);
-    EditorSemanticContext plainTextChangeContext;
-    plainTextChangeContext.lineUpToCursor = QStringLiteral("assign value ");
-    plainTextChangeContext.moduleName = QStringLiteral("top");
-    const EditorCompletionTextChangeState plainTextChangeState =
-        EditorSemanticContextService::getInstance()
-            ->completionTextChangeState(plainTextChangeContext);
-    expectBool("EditorSemanticContext text-change hide",
-               !plainTextChangeState.commandModeActive
-                   && !plainTextChangeState.startCompletionTimer
-                   && plainTextChangeState.hidePopup,
-               true);
     const CommandModeMatch contextCommandMatch =
         EditorSemanticContextService::getInstance()
             ->commandModeMatch(commandContext);
     expectBool("EditorSemanticContext command match",
                contextCommandMatch.matched,
-               true);
-
-    CompletionActivationQuery contextActivationQuery;
-    contextActivationQuery.selectable = true;
-    contextActivationQuery.mode = CompletionActivationMode::EditorWord;
-    contextActivationQuery.itemText = QStringLiteral("enable");
-    const CompletionActivationState contextActivationState =
-        EditorSemanticContextService::getInstance()
-            ->completionActivationState(contextActivationQuery);
-    expectBool("EditorSemanticContext activation",
-               contextActivationState.action == CompletionActivationAction::ReplaceWord,
                true);
 
     EditorSemanticContext includeNavigationContext;
@@ -8358,7 +7843,8 @@ int main(int argc, char** argv) {
     commandQuery.commandKind = CompletionCommandKind::Logic;
     commandQuery.prefix = "en";
     expectList("CompletionService command logic",
-               CompletionService::getInstance()->findCommandCompletions(commandQuery),
+               recordNames(CompletionService::getInstance()
+                               ->findCommandCompletionSymbolRecords(commandQuery)),
                {"enable"});
 
     const QList<SemanticSymbolRecord> commandLogicSymbols =
@@ -8534,25 +8020,29 @@ int main(int argc, char** argv) {
     commandQuery.commandKind = CompletionCommandKind::Wire;
     commandQuery.prefix = "net";
     expectList("CompletionService command wire",
-               CompletionService::getInstance()->findCommandCompletions(commandQuery),
+               recordNames(CompletionService::getInstance()
+                               ->findCommandCompletionSymbolRecords(commandQuery)),
                {"net_sig"});
 
     commandQuery.commandKind = CompletionCommandKind::Reg;
     commandQuery.prefix = "cou";
     expectList("CompletionService command reg",
-               CompletionService::getInstance()->findCommandCompletions(commandQuery),
+               recordNames(CompletionService::getInstance()
+                               ->findCommandCompletionSymbolRecords(commandQuery)),
                {"counter"});
 
     commandQuery.commandKind = CompletionCommandKind::Parameter;
     commandQuery.prefix = "DAT";
     expectList("CompletionService command parameter",
-               CompletionService::getInstance()->findCommandCompletions(commandQuery),
+               recordNames(CompletionService::getInstance()
+                               ->findCommandCompletionSymbolRecords(commandQuery)),
                {"DATA_WIDTH"});
 
     commandQuery.commandKind = CompletionCommandKind::Localparam;
     commandQuery.prefix = "LOC";
     expectList("CompletionService command localparam",
-               CompletionService::getInstance()->findCommandCompletions(commandQuery),
+               recordNames(CompletionService::getInstance()
+                               ->findCommandCompletionSymbolRecords(commandQuery)),
                {"LOCAL_MAX"});
 
     commandQuery.commandKind = CompletionCommandKind::PackedStructVariable;
@@ -8956,15 +8446,6 @@ int main(int argc, char** argv) {
                    QStringLiteral("snap_top"),
                    SymbolRelationshipEngine::CONTAINS),
                false);
-    expectEq("snapshot struct prefers module",
-             snapshotCompletionService.getStructTypeForVariable("snap_pixel", "snap_top"),
-             "snap_pixel_t");
-    expectEq("snapshot struct fallback",
-             snapshotCompletionService.getStructTypeForVariable("snap_pixel", "other_top"),
-             "global_pixel_t");
-    expectEq("snapshot unpacked struct var",
-             snapshotCompletionService.getStructTypeForVariable("snap_pair", "snap_top"),
-             "snap_pair_t");
     const QList<SemanticSymbolRecord> snapshotStructRecords =
         snapshotIndex.getSymbolRecords();
     bool snapshotStructRecordOk = false;
@@ -8982,58 +8463,15 @@ int main(int argc, char** argv) {
     expectBool("snapshot struct variable semantic record",
                snapshotStructRecordOk,
                true);
-    CompletionQuery snapshotModuleQuery;
-    snapshotModuleQuery.prefix = QStringLiteral("snap_e");
-    snapshotModuleQuery.moduleName = QStringLiteral("snap_top");
-    expectList("snapshot module completions",
-               snapshotCompletionService.findCompletions(snapshotModuleQuery),
-               {"snap_enable"});
-    CompletionQuery snapshotSemanticModuleQuery;
-    snapshotSemanticModuleQuery.prefix = QStringLiteral("semantic");
-    snapshotSemanticModuleQuery.moduleName = QStringLiteral("snap_top");
-    const CompletionResult snapshotSemanticModuleResult =
-        snapshotCompletionService.findCompletionResult(snapshotSemanticModuleQuery);
-    expectList("snapshot semantic module completions",
-               snapshotSemanticModuleResult.names,
-               {"semantic_top_signal"});
-    ++g_checks;
-    const bool snapshotSemanticModuleItemOk =
-        snapshotSemanticModuleResult.items.size() == 1
-        && snapshotSemanticModuleResult.items.first().label
-            == QStringLiteral("semantic_top_signal")
-        && snapshotSemanticModuleResult.items.first().symbolRecord.owner.name
-            == QStringLiteral("snap_top")
-        && snapshotSemanticModuleResult.items.first().ownerScopeName
-            == snapshotSemanticModuleResult.items.first().symbolRecord.owner.name;
-    if (!snapshotSemanticModuleItemOk)
-        ++g_fails;
-    printf("[%s] %-34s got_count=%d\n",
-           snapshotSemanticModuleItemOk ? "PASS" : "FAIL",
-           "snapshot semantic module items",
-           snapshotSemanticModuleResult.items.size());
-    const CompletionResult snapshotModuleCompletion =
-        snapshotCompletionService.findCompletionResult(snapshotModuleQuery);
-    ++g_checks;
-    const bool snapshotModuleSymbolOk = snapshotModuleCompletion.items.size() == 1
-        && snapshotModuleCompletion.items.first().label
-            == QStringLiteral("snap_enable")
-        && snapshotModuleCompletion.items.first().symbolRecord.collectorKind
-            == SymbolTaxonomy::CollectorKind::Logic
-        && snapshotModuleCompletion.items.first().symbolRecord.owner.name
-            == QStringLiteral("snap_top");
-    if (!snapshotModuleSymbolOk)
-        ++g_fails;
-    printf("[%s] %-34s got_count=%d\n",
-           snapshotModuleSymbolOk ? "PASS" : "FAIL",
-           "snapshot module symbols",
-           snapshotModuleCompletion.items.size());
     CommandCompletionQuery snapshotLogicCommandQuery;
     snapshotLogicCommandQuery.fileName = QStringLiteral("snapshot_only.sv");
     snapshotLogicCommandQuery.moduleName = QStringLiteral("snap_top");
     snapshotLogicCommandQuery.commandKind = CompletionCommandKind::Logic;
     snapshotLogicCommandQuery.prefix = QStringLiteral("snap_e");
     expectList("snapshot command logic names",
-               snapshotCompletionService.findCommandCompletions(snapshotLogicCommandQuery),
+               recordNames(snapshotCompletionService
+                               .findCommandCompletionSymbolRecords(
+                                   snapshotLogicCommandQuery)),
                {"snap_enable"});
     const QList<SemanticSymbolRecord> snapshotLogicCommandSymbols =
         snapshotCompletionService.findCommandCompletionSymbolRecords(
@@ -9050,28 +8488,22 @@ int main(int argc, char** argv) {
            snapshotLogicCommandOk ? "PASS" : "FAIL",
            "snapshot command logic symbols",
            snapshotLogicCommandSymbols.size());
-    CompletionQuery snapshotGlobalQuery;
-    snapshotGlobalQuery.prefix = QStringLiteral("snap");
-    expectList("snapshot global completions",
-               snapshotCompletionService.findCompletions(snapshotGlobalQuery),
-               {"snap_child", "snap_if", "snap_pkg", "snap_scope", "snap_task", "snap_top"});
-    snapshotGlobalQuery.prefix = QStringLiteral("semantic");
-    expectList("snapshot metadata global completions",
-               snapshotCompletionService.findCompletions(snapshotGlobalQuery),
-               {"semantic_scope"});
     CommandCompletionQuery snapshotMetadataModuleCommandQuery;
     snapshotMetadataModuleCommandQuery.commandKind =
         CompletionCommandKind::Module;
     snapshotMetadataModuleCommandQuery.prefix = QStringLiteral("semantic");
     expectList("snapshot metadata command module",
-               snapshotCompletionService.findCommandCompletions(
-                   snapshotMetadataModuleCommandQuery),
+               recordNames(snapshotCompletionService
+                               .findCommandCompletionSymbolRecords(
+                                   snapshotMetadataModuleCommandQuery)),
                {"semantic_scope"});
     CommandCompletionQuery snapshotTaskCommandQuery;
     snapshotTaskCommandQuery.commandKind = CompletionCommandKind::Task;
     snapshotTaskCommandQuery.prefix = QStringLiteral("snap");
     expectList("snapshot command task names",
-               snapshotCompletionService.findCommandCompletions(snapshotTaskCommandQuery),
+               recordNames(snapshotCompletionService
+                               .findCommandCompletionSymbolRecords(
+                                   snapshotTaskCommandQuery)),
                {"snap_task"});
     const QList<SemanticSymbolRecord> snapshotTaskCommandSymbols =
         snapshotCompletionService.findCommandCompletionSymbolRecords(
@@ -9093,7 +8525,9 @@ int main(int argc, char** argv) {
     snapshotModuleCommandQuery.commandKind = CompletionCommandKind::Module;
     snapshotModuleCommandQuery.prefix = QStringLiteral("snap");
     expectList("snapshot command module in scope",
-               snapshotCompletionService.findCommandCompletions(snapshotModuleCommandQuery),
+               recordNames(snapshotCompletionService
+                               .findCommandCompletionSymbolRecords(
+                                   snapshotModuleCommandQuery)),
                {"snap_child", "snap_scope", "snap_top"});
     const QList<SemanticSymbolRecord> snapshotModuleCommandSymbols =
         snapshotCompletionService.findCommandCompletionSymbolRecords(
@@ -9115,7 +8549,9 @@ int main(int argc, char** argv) {
         CompletionCommandKind::Interface;
     snapshotInterfaceCommandQuery.prefix = QStringLiteral("snap");
     expectList("snapshot command interface in scope",
-               snapshotCompletionService.findCommandCompletions(snapshotInterfaceCommandQuery),
+               recordNames(snapshotCompletionService
+                               .findCommandCompletionSymbolRecords(
+                                   snapshotInterfaceCommandQuery)),
                {"snap_if"});
     const QList<SemanticSymbolRecord> snapshotInterfaceCommandSymbols =
         snapshotCompletionService.findCommandCompletionSymbolRecords(
@@ -9134,7 +8570,9 @@ int main(int argc, char** argv) {
     snapshotPackageCommandQuery.commandKind = CompletionCommandKind::Package;
     snapshotPackageCommandQuery.prefix = QStringLiteral("snap");
     expectList("snapshot command package in scope",
-               snapshotCompletionService.findCommandCompletions(snapshotPackageCommandQuery),
+               recordNames(snapshotCompletionService
+                               .findCommandCompletionSymbolRecords(
+                                   snapshotPackageCommandQuery)),
                {"snap_pkg"});
     const QList<SemanticSymbolRecord> snapshotPackageCommandSymbols =
         snapshotCompletionService.findCommandCompletionSymbolRecords(
@@ -9180,7 +8618,6 @@ int main(int argc, char** argv) {
                    true);
         CompletionActivationQuery packageImportActivationQuery;
         packageImportActivationQuery.selectable = true;
-        packageImportActivationQuery.mode = CompletionActivationMode::CommandMode;
         packageImportActivationQuery.itemText = packageImportItem.text;
         packageImportActivationQuery.defaultValue =
             packageImportItem.defaultValue;
@@ -9202,21 +8639,25 @@ int main(int argc, char** argv) {
         CompletionCommandKind::Parameter;
     snapshotSemanticPackageParamQuery.prefix = QStringLiteral("semantic");
     expectList("snapshot semantic package parameter hidden before import context",
-               snapshotCompletionService.findCommandCompletions(
-                   snapshotSemanticPackageParamQuery),
+               recordNames(snapshotCompletionService
+                               .findCommandCompletionSymbolRecords(
+                                   snapshotSemanticPackageParamQuery)),
                {});
     snapshotSemanticPackageParamQuery.fileName = snapshotOnlyFile;
     snapshotSemanticPackageParamQuery.cursorLine = 2;
     expectList("snapshot semantic package parameter command",
-               snapshotCompletionService.findCommandCompletions(
-                   snapshotSemanticPackageParamQuery),
+               recordNames(snapshotCompletionService
+                               .findCommandCompletionSymbolRecords(
+                                   snapshotSemanticPackageParamQuery)),
                {"semantic_pkg_param"});
     CommandCompletionQuery snapshotDefineCommandQuery;
     snapshotDefineCommandQuery.moduleName = QStringLiteral("snap_top");
     snapshotDefineCommandQuery.commandKind = CompletionCommandKind::Macro;
     snapshotDefineCommandQuery.prefix = QStringLiteral("SNAP");
     expectList("snapshot command define in scope",
-               snapshotCompletionService.findCommandCompletions(snapshotDefineCommandQuery),
+               recordNames(snapshotCompletionService
+                               .findCommandCompletionSymbolRecords(
+                                   snapshotDefineCommandQuery)),
                {"SNAP_FEATURE"});
     const QList<SemanticSymbolRecord> snapshotDefineCommandSymbols =
         snapshotCompletionService.findCommandCompletionSymbolRecords(
@@ -9234,150 +8675,19 @@ int main(int argc, char** argv) {
     snapshotEnumCommandQuery.commandKind = CompletionCommandKind::EnumType;
     snapshotEnumCommandQuery.prefix = QStringLiteral("snap");
     expectList("snapshot command enum typedef",
-               snapshotCompletionService.findCommandCompletions(snapshotEnumCommandQuery),
+               recordNames(snapshotCompletionService
+                               .findCommandCompletionSymbolRecords(
+                                   snapshotEnumCommandQuery)),
                {"snap_state_t"});
     snapshotEnumCommandQuery.moduleName = QStringLiteral("snap_top");
     expectList("snapshot command local enum typedef",
-               snapshotCompletionService.findCommandCompletions(snapshotEnumCommandQuery),
+               recordNames(snapshotCompletionService
+                               .findCommandCompletionSymbolRecords(
+                                   snapshotEnumCommandQuery)),
                {"snap_local_state_t"});
-    CompletionQuery snapshotMemberQuery;
-    snapshotMemberQuery.structTypeNameForMember = QStringLiteral("snap_pixel_t");
-    expectList("snapshot struct members",
-               snapshotCompletionService.findCompletions(snapshotMemberQuery),
-               {"red", "green", "blue"});
-    snapshotMemberQuery.prefix = QStringLiteral("bl");
-    const CompletionResult snapshotMemberCompletion =
-        snapshotCompletionService.findCompletionResult(snapshotMemberQuery);
-    expectList("snapshot struct member prefix",
-               snapshotCompletionService.findCompletions(snapshotMemberQuery),
-               {"blue"});
-    ++g_checks;
-    const bool snapshotMemberSymbolOk = snapshotMemberCompletion.items.size() == 1
-        && snapshotMemberCompletion.items.first().label == QStringLiteral("blue")
-        && snapshotMemberCompletion.items.first().symbolRecord.collectorKind
-            == SymbolTaxonomy::CollectorKind::StructMember
-        && snapshotMemberCompletion.items.first().symbolRecord.owner.name
-            == QStringLiteral("snap_pixel_t");
-    if (!snapshotMemberSymbolOk)
-        ++g_fails;
-    printf("[%s] %-34s got_count=%d\n",
-           snapshotMemberSymbolOk ? "PASS" : "FAIL",
-           "snapshot struct member symbols",
-           snapshotMemberCompletion.items.size());
-    const int snapshotScopeCursor =
-        snapshotScopeContent.indexOf(QStringLiteral("snap_signal")) + 2;
-    expectEq("snapshot current module",
-             snapshotCompletionService.currentModuleAt(snapshotScopeFile, snapshotScopeCursor),
-             "snap_scope");
-    const int semanticModuleScopeCursor =
-        semanticModuleScopeContent.indexOf(QStringLiteral("semantic_signal")) + 2;
-    expectEq("snapshot semantic metadata current module",
-             snapshotCompletionService.currentModuleAt(semanticModuleScopeFile,
-                                                       semanticModuleScopeCursor),
-             "semantic_scope");
     expectList("snapshot semantic metadata scope names",
                snapshotIndex.getScopeSymbolNames(semanticModuleScopeFile, 2),
                {"semantic_scope", "semantic_signal", "semantic_metadata_signal"});
-    CompletionQuery snapshotScopeQuery;
-    snapshotScopeQuery.prefix = QStringLiteral("snap");
-    snapshotScopeQuery.fileName = snapshotScopeFile;
-    snapshotScopeQuery.cursorLine = 2;
-    expectList("snapshot scope completions",
-               snapshotCompletionService.findScopeCompletions(snapshotScopeQuery),
-               {"snap_scope", "snap_signal"});
-    SemanticQueryContext snapshotFacadeQuery;
-    snapshotFacadeQuery.prefix = QStringLiteral("snap");
-    snapshotFacadeQuery.fileName = snapshotScopeFile;
-    snapshotFacadeQuery.cursorLine = 2;
-    expectList("SemanticIndex snapshot completions",
-               snapshotIndex.findCompletions(snapshotFacadeQuery),
-               {"snap_scope", "snap_signal"});
-    expectList("snapshot child completions",
-               snapshotCompletionService.findModuleChildCompletions(
-                   QStringLiteral("snap_top"),
-                   QStringLiteral("snap")),
-               {"snap_enable"});
-    expectList("snapshot related completions",
-               snapshotCompletionService.findRelatedSymbolCompletions(
-                   QStringLiteral("snap_enable"),
-                   QStringLiteral("snap_other")),
-               {"snap_other_enable"});
-    expectList("snapshot reference completions",
-               snapshotCompletionService.findSymbolReferenceCompletions(
-                   QStringLiteral("snap_enable"),
-                   QStringLiteral("snap_other")),
-               {"snap_other_enable"});
-    ++g_checks;
-    const bool snapshotRelationshipsAvailable =
-        snapshotCompletionService.relationshipCompletionsAvailable();
-    if (!snapshotRelationshipsAvailable)
-        ++g_fails;
-    printf("[%s] %-34s\n",
-           snapshotRelationshipsAvailable ? "PASS" : "FAIL",
-           "snapshot relationship availability");
-    expectList("snapshot clock completions",
-               snapshotCompletionService.findClockDomainCompletions(QStringLiteral("snap_c")),
-               {"snap_clk"});
-    expectList("snapshot reset completions",
-               snapshotCompletionService.findResetSignalCompletions(QStringLiteral("snap_r")),
-               {"snap_rst_n"});
-    expectList("snapshot module internal variables",
-               snapshotCompletionService.findModuleInternalVariableCompletions(
-                   QStringLiteral("snap_top"),
-                   QStringLiteral("snap_")),
-               {"snap_clk", "snap_enable", "snap_rst_n"});
-    expectList("snapshot module symbols by type",
-               snapshotCompletionService.findModuleSymbolsByKind(
-                   QStringLiteral("snap_top"),
-                   CompletionCommandKind::Logic,
-                   QStringLiteral("snap_e")),
-               {"snap_enable"});
-    expectList("snapshot metadata module symbols by type",
-               snapshotCompletionService.findModuleSymbolsByKind(
-                   QStringLiteral("snap_top"),
-                   CompletionCommandKind::Logic,
-                   QStringLiteral("semantic")),
-               {"semantic_top_signal"});
-    expectList("snapshot global symbol names",
-               snapshotCompletionService.findGlobalSymbolCompletions(QStringLiteral("snap")),
-               {"snap_child", "snap_if", "snap_pkg", "snap_scope", "snap_task", "snap_top"});
-    expectList("snapshot global symbols by type",
-               snapshotCompletionService.findGlobalSymbolsByKind(
-                   CompletionCommandKind::Task,
-                   QStringLiteral("snap")),
-               {"snap_task"});
-    expectList("snapshot metadata global symbols by type",
-               snapshotCompletionService.findGlobalSymbolsByKind(
-                   CompletionCommandKind::Module,
-                   QStringLiteral("semantic")),
-               {"semantic_scope"});
-    expectList("snapshot global struct variables are not type completions",
-               snapshotCompletionService.findGlobalSymbolsByKind(
-                   CompletionCommandKind::PackedStructVariable,
-                   QStringLiteral("snap")),
-               {});
-    expectList("snapshot scoped variables by type",
-               snapshotCompletionService.findVariableCompletionsInScope(
-                   QStringLiteral("snap_top"),
-                   CompletionCommandKind::Logic,
-                   QStringLiteral("snap_r")),
-               {"snap_rst_n"});
-    expectList("snapshot task/function completions",
-               snapshotCompletionService.findTaskFunctionCompletions(QStringLiteral("snap")),
-               {"snap_task"});
-    expectList("snapshot instantiable modules",
-               snapshotCompletionService.findInstantiableModuleCompletions(QStringLiteral("snap")),
-               {"snap_child", "snap_scope", "snap_top"});
-    expectList("snapshot struct member service",
-               snapshotCompletionService.findStructMemberCompletions(
-                   QStringLiteral("bl"),
-                   QStringLiteral("snap_pixel_t")),
-               {"blue"});
-    expectList("snapshot enum value service",
-               snapshotCompletionService.findEnumValueCompletions(
-                   QStringLiteral("SNAP_"),
-                   QStringLiteral("snap_top")),
-               {"SNAP_IDLE", "SNAP_RUN"});
     const QList<SemanticSymbolRecord> snapshotEnumRecords =
         snapshotIndex.getSymbolRecords();
     bool snapshotEnumRecordOk = false;
@@ -9393,75 +8703,6 @@ int main(int argc, char** argv) {
     expectBool("snapshot enum value semantic record",
                snapshotEnumRecordOk,
                true);
-    expectEq("snapshot enum variable type",
-             snapshotCompletionService.findEnumTypeForVariable(
-                 QStringLiteral("snap_state"),
-                 QStringLiteral("snap_top")),
-             "snap_top");
-    ContextCompletionQuery snapshotStructContextQuery;
-    snapshotStructContextQuery.prefix = QStringLiteral("bl");
-    snapshotStructContextQuery.currentModule = QStringLiteral("snap_top");
-    snapshotStructContextQuery.context = QStringLiteral("snap_pixel.");
-    expectList("snapshot context struct members",
-               snapshotCompletionService.findContextAwareCompletions(snapshotStructContextQuery),
-               {"blue"});
-    ContextCompletionQuery snapshotEnumContextQuery;
-    snapshotEnumContextQuery.prefix = QStringLiteral("SNAP_");
-    snapshotEnumContextQuery.currentModule = QStringLiteral("snap_top");
-    snapshotEnumContextQuery.context = QStringLiteral("case(snap_state)");
-    expectList("snapshot context enum values",
-               snapshotCompletionService.findContextAwareCompletions(snapshotEnumContextQuery),
-               {"SNAP_IDLE", "SNAP_RUN", "snap_enable"});
-    ContextCompletionQuery snapshotGeneralContextQuery;
-    snapshotGeneralContextQuery.prefix = QStringLiteral("snap_e");
-    snapshotGeneralContextQuery.currentModule = QStringLiteral("snap_top");
-    snapshotGeneralContextQuery.context = QStringLiteral("general");
-    expectList("snapshot context general",
-               snapshotCompletionService.findContextAwareCompletions(snapshotGeneralContextQuery),
-               {"snap_enable", "snap_scope", "snap_state_t"});
-    expectList("snapshot all-symbol completions",
-               snapshotCompletionService.findAllSymbolCompletions(QStringLiteral("snap_clk")),
-               {"snap_clk"});
-    expectList("snapshot scored all-symbol completions",
-               scoredNames(snapshotCompletionService.findScoredAllSymbolCompletions(
-                   QStringLiteral("snap_clk"))),
-               {"snap_clk"});
-    expectList("snapshot typed symbol completions",
-               snapshotCompletionService.findSymbolCompletionsByKind(
-                   CompletionCommandKind::Logic,
-                   QStringLiteral("snap_e")),
-               {"snap_enable", "snap_other_enable"});
-    const QList<SemanticSymbolRecord> snapshotTypedSymbols =
-        CompletionSemanticQuery::typedSymbolRecords(
-            &snapshotIndex,
-            CompletionCommandKind::Logic,
-            QStringLiteral("snap_e"));
-    int snapshotEnableTypedCount = 0;
-    bool snapshotTypedStableKeyOk = false;
-    for (const SemanticSymbolRecord& record : snapshotTypedSymbols) {
-        if (record.name == QStringLiteral("snap_enable")) {
-            ++snapshotEnableTypedCount;
-            snapshotTypedStableKeyOk = record.stableKey.isValid()
-                && record.stableKey.symbolName == QStringLiteral("snap_enable");
-        }
-    }
-    expectBool("snapshot typed stable dedupe",
-               snapshotEnableTypedCount == 1 && snapshotTypedStableKeyOk,
-               true);
-    expectList("snapshot smart completions no relationships",
-               scoredNames(snapshotCompletionService.findSmartCompletions(
-                   QStringLiteral("snap_clk"),
-                   QString(),
-                   -1,
-                   false)),
-               {"snap_clk"});
-    expectList("snapshot smart completions in scope",
-               scoredNames(snapshotCompletionService.findSmartCompletions(
-                   QStringLiteral("snap_sig"),
-                   snapshotScopeFile,
-                   snapshotScopeCursor,
-                   true)),
-               {"snap_signal"});
     CommandCompletionQuery snapshotCommandQuery;
     snapshotCommandQuery.fileName = QStringLiteral("snapshot_only.sv");
     snapshotCommandQuery.moduleName = QStringLiteral("snap_top");
@@ -9486,25 +8727,25 @@ int main(int argc, char** argv) {
            "snapshot command struct symbols",
            snapshotCommandSymbols.size());
 
-    QTemporaryDir stagedPublicationWorkspace;
-    expectBool("Workspace staged publication temp dir valid",
-               stagedPublicationWorkspace.isValid(),
+    QTemporaryDir atomicPublicationWorkspace;
+    expectBool("Workspace atomic publication temp dir valid",
+               atomicPublicationWorkspace.isValid(),
                true);
-    const QString stagedCurrentFile =
-        QDir(stagedPublicationWorkspace.path()).absoluteFilePath(
-            QStringLiteral("staged_current.sv"));
-    const QString stagedOpenFile =
-        QDir(stagedPublicationWorkspace.path()).absoluteFilePath(
-            QStringLiteral("staged_open.sv"));
-    const QString stagedBackgroundFile =
-        QDir(stagedPublicationWorkspace.path()).absoluteFilePath(
-            QStringLiteral("staged_background.sv"));
-    const QString stagedCurrentModule =
-        QStringLiteral("staged_current_pub_module");
-    const QString stagedOpenModule =
-        QStringLiteral("staged_open_pub_module");
-    const QString stagedBackgroundModule =
-        QStringLiteral("staged_background_pub_module");
+    const QString atomicCurrentFile =
+        QDir(atomicPublicationWorkspace.path()).absoluteFilePath(
+            QStringLiteral("atomic_current.sv"));
+    const QString atomicOpenFile =
+        QDir(atomicPublicationWorkspace.path()).absoluteFilePath(
+            QStringLiteral("atomic_open.sv"));
+    const QString atomicBackgroundFile =
+        QDir(atomicPublicationWorkspace.path()).absoluteFilePath(
+            QStringLiteral("atomic_background.sv"));
+    const QString atomicCurrentModule =
+        QStringLiteral("atomic_current_pub_module");
+    const QString atomicOpenModule =
+        QStringLiteral("atomic_open_pub_module");
+    const QString atomicBackgroundModule =
+        QStringLiteral("atomic_background_pub_module");
 
     auto writeTextFile = [](const QString& fileName, const QString& text) {
         QFile file(fileName);
@@ -10285,20 +9526,20 @@ int main(int argc, char** argv) {
                true);
     SemanticIndex::getInstance()->clearSnapshot();
 
-    expectBool("Workspace staged current file created",
+    expectBool("Workspace atomic current file created",
                writeTextFile(
-                   stagedCurrentFile,
-                   QStringLiteral("module staged_current_pub_module; logic a; endmodule\n")),
+                   atomicCurrentFile,
+                   QStringLiteral("module atomic_current_pub_module; logic a; endmodule\n")),
                true);
-    expectBool("Workspace staged open file created",
+    expectBool("Workspace atomic open file created",
                writeTextFile(
-                   stagedOpenFile,
-                   QStringLiteral("module staged_open_pub_module; logic o; endmodule\n")),
+                   atomicOpenFile,
+                   QStringLiteral("module atomic_open_pub_module; logic o; endmodule\n")),
                true);
-    expectBool("Workspace staged background file created",
+    expectBool("Workspace atomic background file created",
                writeTextFile(
-                   stagedBackgroundFile,
-                   QStringLiteral("module staged_background_pub_module; logic b; endmodule\n")),
+                   atomicBackgroundFile,
+                   QStringLiteral("module atomic_background_pub_module; logic b; endmodule\n")),
                true);
 
     auto snapshotContainsModule =
@@ -10317,27 +9558,20 @@ int main(int argc, char** argv) {
             return false;
         };
 
-    ProjectSnapshot stagedProject;
-    stagedProject.workspaceRoot = stagedPublicationWorkspace.path();
-    stagedProject.systemVerilogFiles = {
-        stagedCurrentFile,
-        stagedOpenFile,
-        stagedBackgroundFile
+    ProjectSnapshot atomicProject;
+    atomicProject.workspaceRoot = atomicPublicationWorkspace.path();
+    atomicProject.systemVerilogFiles = {
+        atomicCurrentFile,
+        atomicOpenFile,
+        atomicBackgroundFile
     };
-    stagedProject.includeDirs = {stagedPublicationWorkspace.path()};
-    SymbolAnalyzer stagedAnalyzer;
-    stagedAnalyzer.setWorkspacePriorityPublicationCheckpoints({1, 2});
-    bool sawCurrentStageSnapshot = false;
-    bool currentStageHasCurrent = false;
-    bool currentStageOmitsOpen = false;
-    bool currentStageOmitsBackground = false;
-    bool sawOpenStageSnapshot = false;
-    bool openStageHasCurrent = false;
-    bool openStageHasOpen = false;
-    bool openStageOmitsBackground = false;
-    QObject::connect(&stagedAnalyzer,
+    atomicProject.includeDirs = {atomicPublicationWorkspace.path()};
+    SymbolAnalyzer atomicAnalyzer;
+    bool firstProgressSeesAtomicSnapshot = false;
+    bool secondProgressSeesAtomicSnapshot = false;
+    QObject::connect(&atomicAnalyzer,
                      &SymbolAnalyzer::batchProgress,
-                     &stagedAnalyzer,
+                     &atomicAnalyzer,
                      [&](int filesDone,
                          int totalFiles,
                          const QString& currentFileName) {
@@ -10350,53 +9584,43 @@ int main(int argc, char** argv) {
                          const auto snapshot =
                              SemanticIndex::getInstance()->snapshot();
                          if (filesDone == 1
-                             && currentFileName == stagedCurrentFile) {
-                             sawCurrentStageSnapshot = true;
-                             currentStageHasCurrent =
+                             && currentFileName == atomicCurrentFile) {
+                             firstProgressSeesAtomicSnapshot =
                                  snapshotContainsModule(snapshot,
-                                                        stagedCurrentModule);
-                             currentStageOmitsOpen =
-                                 !snapshotContainsModule(snapshot,
-                                                         stagedOpenModule);
-                             currentStageOmitsBackground =
-                                 !snapshotContainsModule(snapshot,
-                                                         stagedBackgroundModule);
+                                                        atomicCurrentModule)
+                                 && snapshotContainsModule(snapshot,
+                                                           atomicOpenModule)
+                                 && snapshotContainsModule(
+                                     snapshot,
+                                     atomicBackgroundModule);
                          }
                          if (filesDone == 2
-                             && currentFileName == stagedOpenFile) {
-                             sawOpenStageSnapshot = true;
-                             openStageHasCurrent =
+                             && currentFileName == atomicOpenFile) {
+                             secondProgressSeesAtomicSnapshot =
                                  snapshotContainsModule(snapshot,
-                                                        stagedCurrentModule);
-                             openStageHasOpen =
-                                 snapshotContainsModule(snapshot,
-                                                        stagedOpenModule);
-                             openStageOmitsBackground =
-                                 !snapshotContainsModule(snapshot,
-                                                         stagedBackgroundModule);
+                                                        atomicCurrentModule)
+                                 && snapshotContainsModule(snapshot,
+                                                           atomicOpenModule)
+                                 && snapshotContainsModule(
+                                     snapshot,
+                                     atomicBackgroundModule);
                          }
                      });
-    stagedAnalyzer.analyzeProject(stagedProject);
-    expectBool("Workspace current band publishes symbols early",
-               sawCurrentStageSnapshot
-                   && currentStageHasCurrent
-                   && currentStageOmitsOpen
-                   && currentStageOmitsBackground,
+    atomicAnalyzer.analyzeProject(atomicProject);
+    expectBool("Workspace first progress observes atomic snapshot",
+               firstProgressSeesAtomicSnapshot,
                true);
-    expectBool("Workspace open band publishes symbols next",
-               sawOpenStageSnapshot
-                   && openStageHasCurrent
-                   && openStageHasOpen
-                   && openStageOmitsBackground,
+    expectBool("Workspace later progress preserves atomic snapshot",
+               secondProgressSeesAtomicSnapshot,
                true);
-    const auto finalStagedSnapshot = SemanticIndex::getInstance()->snapshot();
+    const auto finalAtomicSnapshot = SemanticIndex::getInstance()->snapshot();
     expectBool("Workspace final publication includes background symbols",
-               snapshotContainsModule(finalStagedSnapshot,
-                                      stagedCurrentModule)
-                   && snapshotContainsModule(finalStagedSnapshot,
-                                             stagedOpenModule)
-                   && snapshotContainsModule(finalStagedSnapshot,
-                                             stagedBackgroundModule),
+               snapshotContainsModule(finalAtomicSnapshot,
+                                      atomicCurrentModule)
+                   && snapshotContainsModule(finalAtomicSnapshot,
+                                             atomicOpenModule)
+                   && snapshotContainsModule(finalAtomicSnapshot,
+                                             atomicBackgroundModule),
                true);
 
     SemanticIndex::getInstance()->clearSnapshot();

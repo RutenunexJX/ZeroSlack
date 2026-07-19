@@ -3,6 +3,7 @@
 
 #include <QObject>
 #include <QString>
+#include <functional>
 
 class QAction;
 class QCloseEvent;
@@ -16,9 +17,14 @@ class FileCommandCoordinator : public QObject
     Q_OBJECT
 
 public:
+    using WorkspaceDirectorySelector =
+        std::function<QString(QWidget* dialogParent)>;
+
     explicit FileCommandCoordinator(TabManager* tabManager,
                                     WorkspaceManager* workspaceManager,
                                     QObject* parent = nullptr);
+
+    void setWorkspaceDirectorySelector(WorkspaceDirectorySelector selector);
 
     void newFile();
     void openFile();
@@ -53,7 +59,7 @@ private:
         void openFile() const;
         void saveCurrentTab() const;
         void saveAsCurrentTab() const;
-        void openWorkspace() const;
+        void openWorkspace(const QString& folderPath) const;
         bool hasUnsavedChanges() const;
         MyCodeEditor* currentEditor() const;
     };
@@ -64,18 +70,11 @@ private:
         void cut(MyCodeEditor* editor) const;
         void undo(MyCodeEditor* editor) const;
         void redo(MyCodeEditor* editor) const;
-        void selectAll(MyCodeEditor* editor) const;
-        void comment(MyCodeEditor* editor) const;
-        void uncomment(MyCodeEditor* editor) const;
-        void indent(MyCodeEditor* editor) const;
-        void unindent(MyCodeEditor* editor) const;
-        void replace(MyCodeEditor* editor) const;
-        void gotoLine(MyCodeEditor* editor) const;
-        void clearRhs(MyCodeEditor* editor) const;
     };
 
     CommandTargets targets;
     EditorCommandDispatcher editorCommands;
+    WorkspaceDirectorySelector workspaceDirectorySelector;
 };
 
 #endif // FILECOMMANDCOORDINATOR_H

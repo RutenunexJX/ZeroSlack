@@ -10,6 +10,19 @@
 std::unique_ptr<SemanticIndex> SemanticIndex::instance = nullptr;
 
 namespace {
+QString normalizedStableKeyFileName(const QString& fileName)
+{
+    if (fileName.isEmpty())
+        return QString();
+
+    QString normalized = QDir::cleanPath(
+        QDir::fromNativeSeparators(fileName));
+#ifdef Q_OS_WIN
+    normalized = normalized.toCaseFolded();
+#endif
+    return normalized;
+}
+
 QString normalizedAnalysisBandReportFileName(const QString& fileName)
 {
     if (fileName.isEmpty())
@@ -54,10 +67,13 @@ QString SymbolStableKey::toString() const
 
 bool SymbolStableKey::operator==(const SymbolStableKey& other) const
 {
-    return fileName == other.fileName
+    return normalizedStableKeyFileName(fileName)
+            == normalizedStableKeyFileName(other.fileName)
         && symbolName == other.symbolName
         && declarationKind == other.declarationKind
-        && ownerScope == other.ownerScope;
+        && ownerScope == other.ownerScope
+        && sourcePosition == other.sourcePosition
+        && sourceLength == other.sourceLength;
 }
 
 bool SemanticSymbolLocation::isValid() const
@@ -252,11 +268,13 @@ QString symbolStableKeyText(const SymbolStableKey& key)
     if (!key.isValid())
         return QString();
 
-    return QStringLiteral("%1|%2|%3|%4")
-        .arg(key.fileName,
+    return QStringLiteral("%1|%2|%3|%4|%5|%6")
+        .arg(normalizedStableKeyFileName(key.fileName),
              QString::number(static_cast<int>(key.declarationKind)),
              key.ownerScope,
-             key.symbolName);
+             key.symbolName,
+             QString::number(key.sourcePosition),
+             QString::number(key.sourceLength));
 }
 
 QString semanticRelationshipStableKeyText(

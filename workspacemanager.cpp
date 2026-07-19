@@ -8,6 +8,7 @@
 #include <QElapsedTimer>
 #include <QInputDialog>
 #include <QLineEdit>
+#include <QPointer>
 #include <QSettings>
 #include <QTimer>
 #include <algorithm>
@@ -30,6 +31,20 @@ WorkspaceManager::WorkspaceManager(QObject *parent)
     qRegisterMetaType<WorkspaceManager::WorkspaceEntry>("WorkspaceManager::WorkspaceEntry");
     files.reserveDefaults();
     loadRecentWorkspaces();
+    workspaceAliasSelector = [](QWidget* dialogParent,
+                                const QString& suggested) {
+        bool accepted = false;
+        const QString alias = QInputDialog::getText(
+            dialogParent,
+            QStringLiteral("Workspace Alias"),
+            QStringLiteral("Alias"),
+            QLineEdit::Normal,
+            suggested,
+            &accepted).trimmed();
+        if (!accepted)
+            return QString();
+        return alias.isEmpty() ? suggested : alias;
+    };
 
     connect(projectModel.get(), &ProjectModel::projectChanged,
             this, &WorkspaceManager::projectChanged);
@@ -122,11 +137,38 @@ WorkspaceManager::~WorkspaceManager()
 
 bool WorkspaceManager::openWorkspace(const QString& folderPath)
 {
+    return openWorkspaceInternal(folderPath, false);
+}
+
+bool WorkspaceManager::openWorkspaceFromUserSelection(
+    const QString& folderPath)
+{
+    if (folderPath.isEmpty())
+        return false;
+    return openWorkspaceInternal(folderPath, true);
+}
+
+void WorkspaceManager::setWorkspaceAliasSelector(
+    WorkspaceAliasSelector selector)
+{
+    workspaceAliasSelector = std::move(selector);
+}
+
+void WorkspaceManager::setRecentWorkspacePersistenceEnabledForTesting(
+    bool enabled)
+{
+    recentWorkspacePersistenceEnabled = enabled;
+}
+
+bool WorkspaceManager::openWorkspaceInternal(
+    const QString& folderPath,
+    bool promptForAlias)
+{
     QElapsedTimer timer;
     timer.start();
 
     QString pathToOpen = folderPath;
-    const bool interactive = pathToOpen.isEmpty();
+    const bool selectDirectoryHere = pathToOpen.isEmpty();
     if (pathToOpen.isEmpty()) {
         pathToOpen = QFileDialog::getExistingDirectory(
             qobject_cast<QWidget*>(parent()),
@@ -142,7 +184,7 @@ bool WorkspaceManager::openWorkspace(const QString& folderPath)
         return switchWorkspace(existingIndex);
     }
 
-    const QString alias = interactive
+    const QString alias = (selectDirectoryHere || promptForAlias)
         ? promptWorkspaceAlias(pathToOpen)
         : defaultWorkspaceAlias(pathToOpen);
     if (alias.isEmpty())
@@ -162,7 +204,12 @@ bool WorkspaceManager::openWorkspace(const QString& folderPath)
     rememberRecentWorkspace(entry);
     emit workspaceListChanged();
 
-    activateWorkspacePath(entry.path, entry.alias, activeIndex, true);
+    if (!activateWorkspacePath(entry.path,
+                               entry.alias,
+                               activeIndex,
+                               true)) {
+        return false;
+    }
 
     ActivityLogService::getInstance()->append(
         QStringLiteral("Workspace"),
@@ -570,7 +617,6 @@ void WorkspaceManager::onDirectoryChanged(const QString& path)
     if (normalizeWorkspacePath(path) != workspacePath) return;
 
     startDirectoryScan(workspacePath);
-    emit directoryChanged(path);
 }
 
 void WorkspaceManager::startDirectoryScan(const QString& path)
@@ -579,8 +625,11 @@ void WorkspaceManager::startDirectoryScan(const QString& path)
     pendingScannedFiles.clear();
     pendingScannedFiles.reserve(qMax(500, files.allFiles.size()));
     scanningPath = normalizeWorkspacePath(path);
-    if (scanningPath.isEmpty())
+    if (scanningPath.isEmpty() || scanningPath != workspacePath)
         return;
+
+    const std::uint64_t generation = scanGeneration;
+    const QString requestedPath = scanningPath;
 
     scanIterator =
         std::make_unique<QDirIterator>(scanningPath,
@@ -595,13 +644,18 @@ void WorkspaceManager::startDirectoryScan(const QString& path)
                 &WorkspaceManager::processDirectoryScanChunk);
     }
 
-    emit workspaceScanStarted(scanningPath);
+    QPointer<WorkspaceManager> self(this);
+    emit workspaceScanStarted(requestedPath);
+    if (!self || !directoryScanIsCurrent(generation, requestedPath))
+        return;
     scanTimer->start(0);
 }
 
 void WorkspaceManager::processDirectoryScanChunk()
 {
-    if (!scanIterator)
+    const std::uint64_t generation = scanGeneration;
+    const QString requestedPath = scanningPath;
+    if (!directoryScanIsCurrent(generation, requestedPath))
         return;
 
     QElapsedTimer chunkTimer;
@@ -618,54 +672,99 @@ void WorkspaceManager::processDirectoryScanChunk()
         }
     }
 
-    if (filesThisChunk > 0)
-        emit workspaceScanProgress(scanningPath, pendingScannedFiles.size());
+    if (filesThisChunk > 0) {
+        QPointer<WorkspaceManager> self(this);
+        emit workspaceScanProgress(requestedPath,
+                                   pendingScannedFiles.size());
+        if (!self || !directoryScanIsCurrent(generation, requestedPath))
+            return;
+    }
 
     if (!scanIterator->hasNext())
-        finishDirectoryScan();
+        finishDirectoryScan(generation, requestedPath);
 }
 
-void WorkspaceManager::finishDirectoryScan()
+void WorkspaceManager::finishDirectoryScan(std::uint64_t generation,
+                                           const QString& path)
 {
+    if (!directoryScanIsCurrent(generation, path))
+        return;
+
     if (scanTimer)
         scanTimer->stop();
     scanIterator.reset();
-
-    const QString finishedPath = scanningPath;
     scanningPath.clear();
+    const QString finishedPath = path;
+    const QStringList scannedFiles = pendingScannedFiles;
+    pendingScannedFiles.clear();
+    const std::uint64_t completionGeneration = ++scanGeneration;
     const QStringList oldFiles = files.allFiles;
-    files.setScannedFiles(projectModel.get(), pendingScannedFiles);
+
+    QPointer<WorkspaceManager> self(this);
+    QPointer<ProjectModel> expectedProject(projectModel.get());
+    if (!expectedProject)
+        return;
+    expectedProject->setScannedFiles(scannedFiles);
+    if (!self || !expectedProject
+        || scanGeneration != completionGeneration
+        || workspacePath != finishedPath) {
+        return;
+    }
+    files.allFiles = expectedProject->allFiles();
+    files.systemVerilogFiles = expectedProject->systemVerilogFiles();
     if (activeIndex >= 0 && activeIndex < workspaces.size()
         && workspaces.at(activeIndex).path == finishedPath) {
-        workspaces[activeIndex].scannedFiles = pendingScannedFiles;
+        workspaces[activeIndex].scannedFiles = scannedFiles;
         workspaces[activeIndex].ignoredDirectories =
             projectModel ? projectModel->ignoredPaths() : QStringList();
         workspaces[activeIndex].scanComplete = true;
     }
-    pendingScannedFiles.clear();
     updateFileWatcher();
 
-    if (files.allFiles != oldFiles)
+    if (files.allFiles != oldFiles) {
         emit filesScanned(files.systemVerilogFiles);
+        if (!self || scanGeneration != completionGeneration
+            || workspacePath != finishedPath) {
+            return;
+        }
+    }
 
+    const int totalFiles = files.allFiles.size();
+    const int systemVerilogFiles = files.systemVerilogFiles.size();
     emit workspaceScanFinished(finishedPath,
-                               files.allFiles.size(),
-                               files.systemVerilogFiles.size());
+                               totalFiles,
+                               systemVerilogFiles);
+    if (!self || scanGeneration != completionGeneration
+        || workspacePath != finishedPath) {
+        return;
+    }
     ActivityLogService::getInstance()->append(
         QStringLiteral("Workspace"),
         ActivityLogLevel::Info,
         QStringLiteral("Scanned %1 files, %2 SystemVerilog files")
-            .arg(files.allFiles.size())
-            .arg(files.systemVerilogFiles.size()));
+            .arg(totalFiles)
+            .arg(systemVerilogFiles));
 }
 
 void WorkspaceManager::cancelDirectoryScan()
 {
+    ++scanGeneration;
     if (scanTimer)
         scanTimer->stop();
     scanIterator.reset();
     pendingScannedFiles.clear();
     scanningPath.clear();
+}
+
+bool WorkspaceManager::directoryScanIsCurrent(
+    std::uint64_t generation,
+    const QString& path) const
+{
+    return generation == scanGeneration
+        && scanIterator
+        && !path.isEmpty()
+        && scanningPath == path
+        && workspacePath == path;
 }
 
 void WorkspaceManager::updateFileWatcher()
@@ -819,14 +918,30 @@ bool WorkspaceManager::activateWorkspacePath(const QString& path,
     workspacePath = projectModel ? projectModel->workspaceRoot() : normalizedPath;
     startFileWatching();
 
-    emit workspaceActivated(activeIndex, workspaceAlias, workspacePath);
-    if (openedNewWorkspace)
-        emit workspaceOpened(workspacePath);
-    if (openedNewWorkspace
+    const QString activatedPath = workspacePath;
+    const std::uint64_t activationGeneration = scanGeneration;
+    const bool requiresScan = openedNewWorkspace
         || index < 0
         || index >= workspaces.size()
-        || !workspaces.at(index).scanComplete) {
+        || !workspaces.at(index).scanComplete;
+    QPointer<WorkspaceManager> self(this);
+
+    emit workspaceActivated(activeIndex, workspaceAlias, workspacePath);
+    if (!self || scanGeneration != activationGeneration
+        || workspacePath != activatedPath || activeIndex != index) {
+        return false;
+    }
+    if (openedNewWorkspace) {
+        emit workspaceOpened(workspacePath);
+        if (!self || scanGeneration != activationGeneration
+            || workspacePath != activatedPath || activeIndex != index) {
+            return false;
+        }
+    }
+    if (requiresScan) {
         startDirectoryScan(workspacePath);
+        if (!self || workspacePath != activatedPath || activeIndex != index)
+            return false;
     }
     return true;
 }
@@ -870,6 +985,9 @@ void WorkspaceManager::loadRecentWorkspaces()
 
 void WorkspaceManager::saveRecentWorkspaces() const
 {
+    if (!recentWorkspacePersistenceEnabled)
+        return;
+
     QSettings settings(QStringLiteral("ZeroSlack"), QStringLiteral("ZeroSlack"));
     settings.beginGroup(QString::fromLatin1(kRecentWorkspaceGroup));
     settings.remove(QString());
@@ -911,17 +1029,10 @@ void WorkspaceManager::rememberRecentWorkspace(const WorkspaceEntry& entry)
 QString WorkspaceManager::promptWorkspaceAlias(const QString& path) const
 {
     const QString suggested = defaultWorkspaceAlias(path);
-    bool accepted = false;
-    const QString alias = QInputDialog::getText(
-        qobject_cast<QWidget*>(parent()),
-        QStringLiteral("Workspace Alias"),
-        QStringLiteral("Alias"),
-        QLineEdit::Normal,
-        suggested,
-        &accepted).trimmed();
-    if (!accepted)
+    if (!workspaceAliasSelector)
         return QString();
-    return alias.isEmpty() ? suggested : alias;
+    return workspaceAliasSelector(qobject_cast<QWidget*>(parent()),
+                                  suggested).trimmed();
 }
 
 QString WorkspaceManager::defaultWorkspaceAlias(const QString& path) const

@@ -14,13 +14,11 @@ class CompletionModel : public QAbstractItemModel
 
 public:
     enum CompletionType {
-        KeywordCompletion,
         SymbolCompletion,
         CommandCompletion
     };
 
     enum CompletionVisualKind {
-        KeywordVisual,
         SymbolVisual,
         SymbolHeaderVisual,
         SymbolDefaultVisual,
@@ -39,8 +37,8 @@ public:
         QString sourceRoleDisplayName;
         QString analysisBandDisplayName;
         SemanticAnalysisBandMetadata analysisBand;
-        CompletionType type = KeywordCompletion;
-        CompletionVisualKind visualKind = KeywordVisual;
+        CompletionType type = CommandCompletion;
+        CompletionVisualKind visualKind = CommandVisual;
         SemanticSymbolRecord symbolRecord;
         SymbolStableKey symbolStableKey;
         SymbolTaxonomy::DeclarationKind declarationKind =
@@ -71,9 +69,6 @@ public:
     QVariant data(const QModelIndex &index, int role = Qt::DisplayRole) const override;
 
     // Custom methods
-    void updateCompletions(const CompletionResult &completion,
-                           const QString &prefix);
-    void updateCommandCompletions(const QStringList &commands, const QString &prefix);
     void updateIncludeFileCompletions(const QStringList& filePaths,
                                       const QString& prefix);
     void updateIncludeNewHeaderCompletions(

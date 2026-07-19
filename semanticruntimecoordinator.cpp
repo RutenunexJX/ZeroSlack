@@ -23,8 +23,14 @@ SemanticRuntimeCoordinator::SemanticRuntimeCoordinator(QObject* parent)
 }
 SemanticRuntimeCoordinator::~SemanticRuntimeCoordinator()
 {
-    if (relationshipEngineInstance)
+    if (relationshipEngineInstance) {
         relationshipEngineInstance->clearAllRelationships();
+        SemanticIndex* semanticIndex = SemanticIndex::getInstance();
+        if (semanticIndex->relationshipEngine()
+            == relationshipEngineInstance.get()) {
+            semanticIndex->attachRelationshipEngine(nullptr);
+        }
+    }
 }
 
 SymbolRelationshipEngine* SemanticRuntimeCoordinator::relationshipEngine() const

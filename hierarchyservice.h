@@ -94,6 +94,7 @@ struct DesignHierarchyNode {
     QString rootId;
     QString rootModule;
     QString instanceName;
+    QString instancePath;
     QString moduleType;
     QString instanceFile;
     int instanceLine = -1;

@@ -1,4 +1,5 @@
 #include "slangrelationshiphelpers.h"
+#include "slangsymbolcollectorhelpers.h"
 
 #include <slang/ast/ASTVisitor.h>
 #include <slang/ast/expressions/ConversionExpression.h>
@@ -160,11 +161,13 @@ SemanticSourceRange relationshipEvidenceRange(
     if (!start)
         return evidence;
 
-    evidence.fileName =
-        QString::fromStdString(std::string(sm->getFileName(start)));
+    evidence.fileName = slang_symbols::detail::sourceIdentityFileName(
+        sm, start);
     evidence.line = static_cast<int>(sm->getLineNumber(start));
     evidence.column = static_cast<int>(sm->getColumnNumber(start));
-    if (end && sm->getFileName(end) == sm->getFileName(start)) {
+    if (end
+        && slang_symbols::detail::sourceIdentityFileName(sm, end)
+               == evidence.fileName) {
         evidence.endLine = static_cast<int>(sm->getLineNumber(end));
         evidence.endColumn = static_cast<int>(sm->getColumnNumber(end));
     } else {

@@ -55,16 +55,24 @@ void DocumentModel::refreshEditorState(MyCodeEditor* editor)
 
 QList<DocumentSnapshot> DocumentModel::openDocuments() const
 {
+    const QList<DocumentSnapshot> snapshots = state->openDocuments();
+    for (const DocumentSnapshot& snapshot : snapshots) {
+        if (MyCodeEditor* editor = state->editorForFile(snapshot.fileName))
+            state->refreshEditorState(editor);
+    }
     return state->openDocuments();
 }
 
 DocumentSnapshot DocumentModel::documentForEditor(MyCodeEditor* editor) const
 {
+    state->refreshEditorState(editor);
     return state->documentForEditor(editor);
 }
 
 DocumentSnapshot DocumentModel::documentForFile(const QString& fileName) const
 {
+    if (MyCodeEditor* editor = state->editorForFile(fileName))
+        state->refreshEditorState(editor);
     return state->documentForFile(fileName);
 }
 

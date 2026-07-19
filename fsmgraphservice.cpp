@@ -729,6 +729,8 @@ SemanticSymbolRecord syntheticStateRecord(const SemanticSymbolRecord& moduleReco
     record.stableKey.symbolName = record.name;
     record.stableKey.declarationKind = record.declarationKind;
     record.stableKey.ownerScope = moduleRecord.name;
+    record.stableKey.sourcePosition = record.location.position;
+    record.stableKey.sourceLength = record.location.length;
     return record;
 }
 

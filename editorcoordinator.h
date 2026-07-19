@@ -17,6 +17,7 @@ class EditorSemanticContextService;
 enum class FormatterProfile;
 struct EditorSemanticContext;
 struct EditorSourceNavigationTarget;
+struct HierarchyInstanceContext;
 enum class SourceSymbolAction;
 class MyCodeEditor;
 class NavigationCommandCoordinator;
@@ -42,7 +43,6 @@ public:
     void setFormatterSettings(FormatterSettings* settings);
     void setStatusMessageHandler(
         std::function<void(const QString&, int)> handler);
-    void setFoldShelfRequestedHandler(std::function<void()> handler);
     void setFoldShelfItemConsumedHandler(std::function<void(const QString&)> handler);
 
     void connectSignals();
@@ -69,6 +69,11 @@ private:
         void navigateToFileAndLine(const QString& fileName,
                                    int line,
                                    int column) const;
+        void navigateToFileAndLineWithContext(
+            const QString& fileName,
+            int line,
+            int column,
+            const HierarchyInstanceContext& instanceContext) const;
         void navigateBack() const;
         void navigateForward() const;
         void showReferencesForSymbol(const QString& symbolName,
@@ -120,7 +125,8 @@ private:
     void handleDefinitionPreviewNavigationRequested(
         const QString& fileName,
         int line,
-        int column) const;
+        int column,
+        const HierarchyInstanceContext& instanceContext) const;
     void handleSourceNavigationRequested(
         MyCodeEditor* editor,
         const EditorSourceNavigationTarget& target,
@@ -160,7 +166,6 @@ private:
     WorkflowDependencies dependencies;
     SemanticRuntime semanticRuntime;
     std::function<void(const QString&, int)> statusMessageHandler;
-    std::function<void()> foldShelfRequestedHandler;
     std::function<void(const QString&)> foldShelfItemConsumedHandler;
     bool signalsConnected = false;
     mutable bool applyingFormatterSettings = false;

@@ -66,7 +66,8 @@ private:
                                                    int totalSymbols) const;
         void handleExternalFileChanged(const QString& filePath,
                                        int debounceMs) const;
-        MyCodeEditor* currentEditor() const;
+        void refreshSemanticPresentations(
+            const QString& fileName) const;
         DocumentSnapshot currentDocument() const;
         AnalysisScheduler* schedulerObject() const;
         AnalysisProgressCoordinator* progressCoordinatorObject() const;

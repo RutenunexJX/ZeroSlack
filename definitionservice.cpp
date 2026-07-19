@@ -1,7 +1,9 @@
 #include "definitionservice.h"
 
-#include "completionservice.h"
+#include "completioncontexthelper.h"
 #include "symboltaxonomy.h"
+
+#include <limits>
 
 std::unique_ptr<DefinitionService> DefinitionService::instance = nullptr;
 
@@ -77,6 +79,14 @@ DefinitionResult DefinitionService::resolveDefinition(const DefinitionQuery& que
         return empty;
     }
 
+    // A declaration is always resolvable at its own source token. Package
+    // visibility and import rules still apply to every use outside that
+    // declaration token.
+    const DefinitionResult exactDeclaration =
+        resolveExactDeclarationDefinition(query);
+    if (exactDeclaration.found)
+        return exactDeclaration;
+
     const DefinitionResult instancePinResult =
         resolveInstancePinDefinition(query);
     if (instancePinResult.found)
@@ -95,6 +105,56 @@ bool DefinitionService::canResolveDefinition(const DefinitionQuery& query) const
 SemanticIndex* DefinitionService::semanticIndex() const
 {
     return index ? index : SemanticIndex::getInstance();
+}
+
+DefinitionResult DefinitionService::resolveExactDeclarationDefinition(
+    const DefinitionQuery& query) const
+{
+    DefinitionResult result;
+    if (query.fileName.isEmpty()
+        || query.symbolName.isEmpty()
+        || query.cursorLine <= 0
+        || query.cursorColumn < 0) {
+        return result;
+    }
+
+    const int oneBasedColumn = query.cursorColumn + 1;
+    int bestPriority = std::numeric_limits<int>::max();
+    for (const SemanticSymbolRecord& record :
+         semanticIndex()->getSymbolRecords(query.fileName)) {
+        ++result.inspectedCandidateCount;
+        if (record.name != query.symbolName)
+            continue;
+        ++result.matchingNameCandidateCount;
+        const SymbolTaxonomy::SemanticMetadata metadata =
+            semanticMetadataForSymbolRecord(record);
+        if (!SymbolTaxonomy::isDefinitionCandidate(metadata))
+            continue;
+        ++result.typeCompatibleCandidateCount;
+        if (record.location.startLine != query.cursorLine
+            || record.location.startColumn <= 0) {
+            continue;
+        }
+
+        const int declarationNameEnd =
+            record.location.startColumn + qMax(1, record.name.size()) - 1;
+        if (oneBasedColumn < record.location.startColumn
+            || oneBasedColumn > declarationNameEnd) {
+            continue;
+        }
+        ++result.visibleCandidateCount;
+
+        const int priority = SymbolTaxonomy::definitionPriority(metadata);
+        if (!result.found || priority < bestPriority) {
+            result.found = true;
+            result.localFile = true;
+            result.symbolRecord = record;
+            result.symbolStableKey = record.stableKey;
+            result.missReason = SemanticDefinitionMissReason::None;
+            bestPriority = priority;
+        }
+    }
+    return result;
 }
 
 DefinitionResult DefinitionService::resolveInstancePinDefinition(
@@ -153,7 +213,7 @@ DefinitionQuery DefinitionService::withResolvedMemberContext(const DefinitionQue
     DefinitionQuery resolved = query;
     QString variableName;
     QString memberPrefix;
-    if (!CompletionService::getInstance()->tryParseStructMemberContext(
+    if (!CompletionContextHelper::tryParseStructMember(
             query.linePrefixBeforeCursor.trimmed(),
             variableName,
             memberPrefix)) {

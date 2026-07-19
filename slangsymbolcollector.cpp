@@ -1,4 +1,5 @@
 #include "slangsymbolcollector.h"
+#include "slangsymbolpresentation.h"
 #include "slangsymbolcollectorhelpers.h"
 
 #include <slang/ast/ASTVisitor.h>
@@ -28,6 +29,22 @@ using CollectorKind = SymbolTaxonomy::CollectorKind;
 
 namespace {
 
+bool isDeclaredLocalparam(const ParameterSymbol& parameter)
+{
+    const slang::syntax::SyntaxNode* syntax = parameter.getSyntax();
+    if (syntax
+        && syntax->kind == slang::syntax::SyntaxKind::Declarator
+        && syntax->parent
+        && syntax->parent->kind
+            == slang::syntax::SyntaxKind::ParameterDeclaration) {
+        const auto& declaration =
+            syntax->parent->as<slang::syntax::ParameterDeclarationSyntax>();
+        return declaration.keyword.kind
+            == slang::parsing::TokenKind::LocalParamKeyword;
+    }
+    return parameter.isLocalParam();
+}
+
 bool fillLocationFromSource(
     const slang::SourceManager* sm,
     slang::SourceLocation location,
@@ -37,17 +54,22 @@ bool fillLocationFromSource(
     if (!sm || !location.valid() || name.isEmpty())
         return false;
 
+    const QTextDocumentSourcePosition start =
+        qTextDocumentSourcePosition(sm, location);
+    const QTextDocumentSourcePosition end =
+        qTextDocumentSourcePosition(sm, location + name.toUtf8().size());
+    if (!start.isValid())
+        return false;
     record.name = name;
-    record.location.fileName =
-        QString::fromStdString(std::string(sm->getFileName(location)));
-    size_t line = sm->getLineNumber(location);
-    record.location.startLine = (line == 0) ? 1 : static_cast<int>(line);
-    size_t column = sm->getColumnNumber(location);
-    record.location.startColumn = (column == 0) ? 1 : static_cast<int>(column);
-    record.location.endLine = record.location.startLine;
-    record.location.endColumn = record.location.startColumn + name.size();
-    record.location.position = static_cast<int>(location.offset());
-    record.location.length = name.size();
+    record.location.fileName = start.fileName;
+    record.location.startLine = start.line;
+    record.location.startColumn = start.column;
+    record.location.endLine = end.isValid() ? end.line : start.line;
+    record.location.endColumn = end.isValid()
+        ? end.column : start.column + name.size();
+    record.location.position = start.position;
+    record.location.length = end.isValid()
+        ? qMax(0, end.position - start.position) : name.size();
     record.localHandle = -1;
     return true;
 }
@@ -113,10 +135,13 @@ void emitInstancePinRecords(const slang::SourceManager* sm,
 
 void collectNativeRecords(slang::ast::Compilation& compilation,
                           QList<SemanticSymbolRecord>& outList,
-                          const std::function<bool()>& isCancelled)
+                          const std::function<bool()>& isCancelled,
+                          QList<EffectiveValueFact>* effectiveValueFacts)
 {
     bool cancellationReached = false;
     auto cancelled = [&]() {
+        if (cancellationReached)
+            return true;
         if (isCancelled && isCancelled()) {
             cancellationReached = true;
             return true;
@@ -131,6 +156,13 @@ void collectNativeRecords(slang::ast::Compilation& compilation,
     const slang::SourceManager* sm = compilation.getSourceManager();
     if (!sm)
         return;
+    resetQTextDocumentSourcePositionCache(sm);
+    struct SourcePositionCacheReset {
+        ~SourcePositionCacheReset()
+        {
+            resetQTextDocumentSourcePositionCache(nullptr);
+        }
+    } sourcePositionCacheReset;
     const slang::ast::RootSymbol& root = compilation.getRoot();
 
     // (1) Module / interface / program definitions. root.visit() walks the elaborated instance
@@ -358,7 +390,7 @@ void collectNativeRecords(slang::ast::Compilation& compilation,
             if (!fillSymbolRecord(sm, param, record, &moduleScope))
                 return;
             applyCollectorKind(&record,
-                param.isLocalParam()
+                isDeclaredLocalparam(param)
                     ? CollectorKind::Localparam
                     : CollectorKind::Parameter);
             record.owner.name = moduleScope;
@@ -445,13 +477,26 @@ void collectNativeRecords(slang::ast::Compilation& compilation,
         return;
     }
     finalizeCollectedSymbolRecords(&outList);
+    slang_symbols::populateSymbolPresentations(compilation,
+                                               outList,
+                                               effectiveValueFacts,
+                                               cancelled);
+    if (cancellationReached || cancelled()) {
+        outList.clear();
+        if (effectiveValueFacts)
+            effectiveValueFacts->clear();
+    }
 }
 
 }
 
 void slang_symbols::collectSymbolRecords(slang::ast::Compilation& compilation,
                                          QList<SemanticSymbolRecord>& outList,
-                                         std::function<bool()> isCancelled)
+                                         std::function<bool()> isCancelled,
+                                         QList<EffectiveValueFact>* effectiveValueFacts)
 {
-    collectNativeRecords(compilation, outList, isCancelled);
+    collectNativeRecords(compilation,
+                         outList,
+                         isCancelled,
+                         effectiveValueFacts);
 }

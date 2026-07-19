@@ -1,6 +1,5 @@
 #include "semanticindex.h"
 
-#include "completionservice.h"
 #include "svtokenutils.h"
 #include "symboltaxonomy.h"
 
@@ -98,22 +97,6 @@ QString moduleNameAtPositionInContent(const QList<SemanticSymbolRecord>& modules
 
     return QString();
 }
-}
-
-QStringList SemanticIndex::findCompletions(const SemanticQueryContext& context) const
-{
-    CompletionQuery query;
-    query.prefix = context.prefix;
-    query.fileName = context.fileName;
-    query.moduleName = context.moduleName;
-    query.cursorLine = context.cursorLine;
-    query.cursorPosition = context.cursorPosition;
-
-    CompletionService completions(const_cast<SemanticIndex*>(this));
-    if (!context.fileName.isEmpty() && context.cursorLine > 0) {
-        return completions.findScopeCompletions(query);
-    }
-    return completions.findCompletions(query);
 }
 
 QString SemanticIndex::currentModuleAt(const QString& fileName, int cursorPosition) const

@@ -41,6 +41,7 @@
 #include <QSet>
 #include <QTemporaryDir>
 #include <QTextBlock>
+#include <QTextCharFormat>
 #include <QTextCursor>
 #include <QTextEdit>
 #include <QTextStream>
@@ -60,11 +61,13 @@
 
 #define private public
 #include "mainwindow.h"
+#include "analysiscoordinator.h"
 #include "analysisprogresscoordinator.h"
 #include "analysisscheduler.h"
 #include "activitylogservice.h"
 #include "documentmodel.h"
 #include "definitionpreviewservice.h"
+#include "diagnosticservice.h"
 #include "editorappearance.h"
 #include "editorappearancepanel.h"
 #include "editorappearancesettings.h"
@@ -72,6 +75,7 @@
 #include "editorhoverpopup.h"
 #include "editorruntime.h"
 #include "editorsemanticcontextservice.h"
+#include "effectivevalueservice.h"
 #include "filecommandcoordinator.h"
 #include "foldblockshelfmodel.h"
 #include "foldblockshelfpanel.h"
@@ -90,6 +94,7 @@
 #include "navigationpanecoordinator.h"
 #include "semantic_fixture_records.h"
 #include "sourcenavigationservice.h"
+#include "symbolanalyzer.h"
 #include "symbolhoverservice.h"
 #include "navigationmanager.h"
 #include "navigationservice.h"
@@ -107,6 +112,7 @@
 #include "semanticpanelrefreshcoordinator.h"
 #include "semanticruntimecoordinator.h"
 #include "signalkernelgraphpanelcoordinator.h"
+#include "slangmanager.h"
 #include "smartrelationshipbuilder.h"
 #include "tabmanager.h"
 #include "tsdocument.h"
@@ -236,7 +242,7 @@ static QString visibleEditorHoverPopupText(bool* visible = nullptr)
 {
     bool found = false;
     QString text;
-    for (QWidget* widget : QApplication::topLevelWidgets()) {
+    for (QWidget* widget : QApplication::allWidgets()) {
         if (!widget || widget->objectName() != QStringLiteral("editorHoverPopup")
             || !widget->isVisible()) {
             continue;
@@ -253,10 +259,22 @@ static QString visibleEditorHoverPopupText(bool* visible = nullptr)
 
 static void hideEditorHoverPopups()
 {
-    for (QWidget* widget : QApplication::topLevelWidgets()) {
+    for (QWidget* widget : QApplication::allWidgets()) {
         if (widget && widget->objectName() == QStringLiteral("editorHoverPopup"))
             widget->hide();
     }
+}
+
+static QWidget* visibleEditorHoverPopupWidget()
+{
+    for (QWidget* widget : QApplication::allWidgets()) {
+        if (widget
+            && widget->objectName() == QStringLiteral("editorHoverPopup")
+            && widget->isVisible()) {
+            return widget;
+        }
+    }
+    return nullptr;
 }
 
 static bool sendEditorWheel(MyCodeEditor* editor,
@@ -803,6 +821,41 @@ static void runTabOpenDedupRegression()
                    && tabs.getCurrentEditor() == firstEditor,
                true);
 
+    tabs.setWorkspaceScope({dir.path()}, dir.path());
+    HierarchyInstanceContext boundTabContext;
+    boundTabContext.workspacePath = dir.path();
+    boundTabContext.activeTopModule = QStringLiteral("top");
+    boundTabContext.instancePath = QStringLiteral("top.u0");
+    firstEditor->setHierarchyInstanceContext(boundTabContext);
+    const int firstEditorIndex = tabsWidget.indexOf(firstEditor);
+    const int otherEditorIndex = firstEditorIndex == 0 ? 1 : 0;
+    tabsWidget.setCurrentIndex(otherEditorIndex);
+    tabs.activateOpenFile(filePath);
+    expectBool("tab switch preserves hierarchy instance context",
+               firstEditor->hierarchyInstanceContext() == boundTabContext,
+               true);
+    tabs.openFileInTab(filePath);
+    expectBool("Files-style direct open clears instance binding",
+               !firstEditor->hierarchyInstanceContext().isBound()
+                   && !firstEditor->hierarchyInstanceContext()
+                           .workspacePath.isEmpty(),
+               true);
+    firstEditor->setHierarchyInstanceContext(boundTabContext);
+    HierarchyInstanceContext secondInstanceContext = boundTabContext;
+    secondInstanceContext.instancePath = QStringLiteral("top.u1");
+    NavigationCommandCoordinator contextHistory(&tabs, nullptr);
+    contextHistory.navigateToFileAndLineWithContext(
+        filePath, 1, 1, secondInstanceContext);
+    expectBool("source navigation applies requested instance context",
+               firstEditor->hierarchyInstanceContext()
+                   == secondInstanceContext,
+               true);
+    contextHistory.navigateBack();
+    expectBool("navigation history restores instance context",
+               firstEditor->hierarchyInstanceContext()
+                   == boundTabContext,
+               true);
+
     QTemporaryDir workspaceA;
     QTemporaryDir workspaceB;
     QTemporaryDir externalDir;
@@ -868,6 +921,17 @@ static void runTabOpenDedupRegression()
                    && tabVisible(scratchEditor),
                true);
 
+    HierarchyInstanceContext workspaceAContext;
+    workspaceAContext.workspacePath = workspaceA.path();
+    workspaceAContext.activeTopModule = QStringLiteral("a");
+    workspaceAContext.instancePath = QStringLiteral("a.u_a");
+    editorA->setHierarchyInstanceContext(workspaceAContext);
+    HierarchyInstanceContext workspaceBContext;
+    workspaceBContext.workspacePath = workspaceB.path();
+    workspaceBContext.activeTopModule = QStringLiteral("b");
+    workspaceBContext.instancePath = QStringLiteral("b.u_b");
+    editorB->setHierarchyInstanceContext(workspaceBContext);
+
     scopedTabs.setWorkspaceScope(
         {workspaceA.path(), workspaceB.path()},
         workspaceB.path());
@@ -877,6 +941,11 @@ static void runTabOpenDedupRegression()
                    && tabVisible(externalEditor)
                    && tabVisible(scratchEditor),
                true);
+    expectBool("workspace switch preserves per-tab instance contexts",
+               editorA->hierarchyInstanceContext() == workspaceAContext
+                   && editorB->hierarchyInstanceContext()
+                          == workspaceBContext,
+               true);
 
     scopedTabs.setWorkspaceScope({}, {});
     expectBool("workspace scope cleared shows all tabs",
@@ -884,6 +953,10 @@ static void runTabOpenDedupRegression()
                    && tabVisible(editorB)
                    && tabVisible(externalEditor)
                    && tabVisible(scratchEditor),
+               true);
+    expectBool("closed workspaces clear stale instance bindings",
+               !editorA->hierarchyInstanceContext().isBound()
+                   && !editorB->hierarchyInstanceContext().isBound(),
                true);
 
     QSignalSpy scopedCloseSpy(&scopedTabs, &TabManager::tabClosed);
@@ -1086,6 +1159,304 @@ static void runWorkspaceCloseRegression()
                true);
 }
 
+static bool editorGhostCacheContains(
+    const MyCodeEditor* editor,
+    GhostAnnotationKind kind,
+    const QString& text = QString())
+{
+    if (!editor || !editor->state)
+        return false;
+    for (const GhostAnnotation& annotation : editor->state->ghostAnnotations) {
+        if (annotation.kind == kind
+            && (text.isEmpty() || annotation.text == text)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static void runTabOpenGhostLifecycleRegression()
+{
+    QTemporaryDir dir;
+    expectBool("tab Ghost lifecycle temp dir valid", dir.isValid(), true);
+    if (!dir.isValid())
+        return;
+
+    const QString filePath =
+        dir.filePath(QStringLiteral("ghost_lifecycle.sv"));
+    const QString source = QStringLiteral(
+        "module leaf #(parameter int P = 1) (\n"
+        "  input logic [P-1:0] data_i\n"
+        ");\n"
+        "endmodule\n"
+        "module parent #(parameter int BASE = 4);\n"
+        "  logic [BASE:0] bus;\n"
+        "  leaf #(.P(BASE + 1)) u_leaf (\n"
+        "    .data_i(bus)\n"
+        "  );\n"
+        "endmodule\n"
+        "module top;\n"
+        "  parent #(.BASE(8)) p0();\n"
+        "  parent #(.BASE(11)) p1();\n"
+        "endmodule\n");
+    expectBool("tab Ghost lifecycle fixture writable",
+               writeTextFile(filePath, source),
+               true);
+
+    SlangManager slang;
+    QList<EffectiveValueFact> initialFacts;
+    QList<SemanticSymbolRecord> initialRecords =
+        slang.extractSymbolRecords(filePath, source, {}, {}, &initialFacts);
+    expectBool("tab Ghost lifecycle Slang records available",
+               !initialRecords.isEmpty(),
+               true);
+    expectBool("tab Ghost lifecycle Slang facts available",
+               !initialFacts.isEmpty(),
+               true);
+    if (initialRecords.isEmpty())
+        return;
+
+    SemanticIndex* semanticIndex = SemanticIndex::getInstance();
+    EffectiveValueService* values = EffectiveValueService::getInstance();
+    const auto previousSnapshot = semanticIndex->snapshot();
+    values->clearPublishedFacts();
+    const std::uint64_t initialComputation =
+        values->beginComputation({filePath});
+    for (SemanticSymbolRecord& record : initialRecords) {
+        record.presentation.computationRevision = initialComputation;
+        record.presentation.documentRevision = 0;
+    }
+    semanticIndex->setSnapshot(snapshotFromRecords(
+        initialRecords, {}, {}, {{filePath, source}}));
+    values->publishDocumentFacts(filePath,
+                                 source,
+                                 initialFacts,
+                                 initialComputation,
+                                 0);
+
+    QTabWidget tabWidget;
+    TabManager tabs(&tabWidget);
+    AnalysisScheduler scheduler;
+    AnalysisCoordinator coordinator(&scheduler,
+                                    nullptr,
+                                    nullptr,
+                                    &tabs,
+                                    nullptr,
+                                    nullptr);
+    coordinator.connectSignals();
+    tabs.setWorkspaceScope({dir.path()}, dir.path());
+    expectBool("real tab open succeeds for Ghost lifecycle",
+               tabs.openFileInTab(filePath),
+               true);
+    MyCodeEditor* editor = tabs.getCurrentEditor();
+    expectBool("real tab open assigns file identity",
+               editor && editor->documentFileName() == filePath,
+               true);
+    expectBool("file identity assignment refreshes FormalPort Ghost",
+               editorGhostCacheContains(editor,
+                                        GhostAnnotationKind::FormalPort),
+               true);
+    if (!editor) {
+        values->clearPublishedFacts();
+        semanticIndex->setSnapshot(previousSnapshot);
+        return;
+    }
+
+    HierarchyInstanceContext p0Context;
+    p0Context.workspacePath = dir.path();
+    p0Context.activeTopModule = QStringLiteral("top");
+    p0Context.instancePath = QStringLiteral("top.p0");
+    editor->setHierarchyInstanceContext(p0Context);
+
+    QList<EffectiveValueFact> currentFacts;
+    QList<SemanticSymbolRecord> currentRecords =
+        slang.extractSymbolRecords(filePath, source, {}, {}, &currentFacts);
+    const std::uint64_t currentComputation =
+        values->beginComputation({filePath});
+    const std::uint64_t documentRevision =
+        editor->semanticDocumentRevision();
+    for (SemanticSymbolRecord& record : currentRecords) {
+        record.presentation.computationRevision = currentComputation;
+        record.presentation.documentRevision = documentRevision;
+    }
+    semanticIndex->setSnapshot(snapshotFromRecords(
+        currentRecords, {}, {}, {{filePath, source}}));
+    values->publishDocumentFacts(filePath,
+                                 source,
+                                 currentFacts,
+                                 currentComputation,
+                                 documentRevision);
+
+    editor->setGhostAnnotations({});
+    emit scheduler.documentRefreshRequested(filePath);
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    expectBool("document refresh repopulates FormalPort Ghost",
+               editorGhostCacheContains(editor,
+                                        GhostAnnotationKind::FormalPort),
+               true);
+    expectBool("document refresh publishes bound override Ghost",
+               editorGhostCacheContains(editor,
+                                        GhostAnnotationKind::ParameterOverride,
+                                        QStringLiteral("= 9")),
+               true);
+    expectBool("document refresh publishes effective width Ghost",
+               editorGhostCacheContains(editor,
+                                        GhostAnnotationKind::SignalWidth),
+               true);
+
+    editor->setGhostAnnotations({});
+    emit scheduler.fileSymbolAnalysisFinished(filePath,
+                                              currentRecords.size());
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    expectBool("analysis completion repopulates all Ghost annotations",
+               editorGhostCacheContains(editor,
+                                        GhostAnnotationKind::FormalPort)
+                   && editorGhostCacheContains(
+                       editor,
+                       GhostAnnotationKind::ParameterOverride,
+                       QStringLiteral("= 9"))
+                   && editorGhostCacheContains(
+                       editor,
+                       GhostAnnotationKind::SignalWidth),
+               true);
+
+    HierarchyInstanceContext p1Context = p0Context;
+    p1Context.instancePath = QStringLiteral("top.p1");
+    editor->setHierarchyInstanceContext(p1Context);
+    expectBool("instance context change refreshes effective Ghost",
+               editorGhostCacheContains(editor,
+                                        GhostAnnotationKind::ParameterOverride,
+                                        QStringLiteral("= 12"))
+                   && !editorGhostCacheContains(
+                       editor,
+                       GhostAnnotationKind::ParameterOverride,
+                       QStringLiteral("= 9")),
+               true);
+
+    scheduler.shutdown();
+    values->clearPublishedFacts();
+    semanticIndex->setSnapshot(previousSnapshot);
+}
+
+static bool workspaceManagerHasActiveScanTimer(WorkspaceManager* workspace)
+{
+    if (!workspace)
+        return false;
+    const QList<QTimer*> timers =
+        workspace->findChildren<QTimer*>(QString(),
+                                         Qt::FindDirectChildrenOnly);
+    return std::any_of(timers.cbegin(),
+                       timers.cend(),
+                       [](QTimer* timer) {
+                           return timer && timer->isActive();
+                       });
+}
+
+static void runWorkspaceScanReentrancyRegression()
+{
+    QTemporaryDir startedWorkspace;
+    QTemporaryDir progressWorkspace;
+    QTemporaryDir finishWorkspace;
+    expectBool("workspace scan reentrancy temp dirs valid",
+               startedWorkspace.isValid()
+                   && progressWorkspace.isValid()
+                   && finishWorkspace.isValid(),
+               true);
+    if (!startedWorkspace.isValid()
+        || !progressWorkspace.isValid()
+        || !finishWorkspace.isValid()) {
+        return;
+    }
+
+    auto writeModule = [](const QString& root, const QString& name) {
+        QFile file(QDir(root).absoluteFilePath(name + QStringLiteral(".sv")));
+        return file.open(QIODevice::WriteOnly | QIODevice::Text)
+            && file.write(
+                   QStringLiteral("module %1; endmodule\n").arg(name)
+                       .toUtf8()) > 0;
+    };
+    expectBool("workspace scan reentrancy fixtures written",
+               writeModule(progressWorkspace.path(),
+                           QStringLiteral("progress_top"))
+                   && writeModule(finishWorkspace.path(),
+                                  QStringLiteral("finish_top")),
+               true);
+
+    WorkspaceManager startedManager;
+    bool closedFromStarted = false;
+    QObject::connect(
+        &startedManager,
+        &WorkspaceManager::workspaceScanStarted,
+        &startedManager,
+        [&](const QString&) {
+            closedFromStarted = true;
+            startedManager.closeWorkspace();
+        });
+    startedManager.openWorkspace(startedWorkspace.path());
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    expectBool("scan-started synchronous close does not restart old timer",
+               closedFromStarted
+                   && !startedManager.isWorkspaceOpen()
+                   && !workspaceManagerHasActiveScanTimer(&startedManager),
+               true);
+
+    WorkspaceManager progressManager;
+    bool closedFromProgress = false;
+    QSignalSpy progressFinishedSpy(
+        &progressManager,
+        &WorkspaceManager::workspaceScanFinished);
+    QObject::connect(
+        &progressManager,
+        &WorkspaceManager::workspaceScanProgress,
+        &progressManager,
+        [&](const QString&, int) {
+            closedFromProgress = true;
+            progressManager.closeWorkspace();
+        });
+    progressManager.openWorkspace(progressWorkspace.path());
+    const bool progressSignalHandled = waitUntil(
+        [&]() { return closedFromProgress; }, 2000);
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    expectBool("scan-progress synchronous close invalidates iterator safely",
+               progressSignalHandled
+                   && !progressManager.isWorkspaceOpen()
+                   && progressFinishedSpy.isEmpty()
+                   && !workspaceManagerHasActiveScanTimer(&progressManager),
+               true);
+
+    WorkspaceManager finishManager;
+    bool closedFromProjectPublication = false;
+    QSignalSpy finishSignalSpy(
+        &finishManager,
+        &WorkspaceManager::workspaceScanFinished);
+    QMetaObject::Connection finishProjectConnection;
+    QObject::connect(
+        &finishManager,
+        &WorkspaceManager::workspaceScanStarted,
+        &finishManager,
+        [&](const QString&) {
+            finishProjectConnection = QObject::connect(
+                finishManager.getProjectModel(),
+                &ProjectModel::projectChanged,
+                &finishManager,
+                [&](const ProjectSnapshot&) {
+                    QObject::disconnect(finishProjectConnection);
+                    closedFromProjectPublication = true;
+                    finishManager.closeWorkspace();
+                });
+        });
+    finishManager.openWorkspace(finishWorkspace.path());
+    const bool projectPublicationHandled = waitUntil(
+        [&]() { return closedFromProjectPublication; }, 2000);
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    expectBool("scan-finish project publication cannot commit after close",
+               projectPublicationHandled
+                   && !finishManager.isWorkspaceOpen()
+                   && finishSignalSpy.isEmpty()
+                   && !workspaceManagerHasActiveScanTimer(&finishManager),
+               true);
+}
+
 static void runWorkspaceCachedSwitchRegression()
 {
     QTemporaryDir workspaceA;
@@ -1176,6 +1547,203 @@ static void runWorkspaceCachedSwitchRegression()
                    && filesScannedSpy.count() == filesScannedBeforeSwitch
                    && scanStartedSpy.count() == scanStartedBeforeSwitch,
                true);
+}
+
+static void runWorkspaceScanSignalReentrancyRegression()
+{
+    const auto normalizedPath = [](const QString& path) {
+        return QDir::cleanPath(QDir::fromNativeSeparators(
+            QFileInfo(path).absoluteFilePath()));
+    };
+    const auto createSource = [](QTemporaryDir& directory,
+                                 const QString& fileName) {
+        const QString path =
+            QDir(directory.path()).absoluteFilePath(fileName);
+        return writeTextFile(path,
+                             QStringLiteral("module scan_probe; endmodule\n"))
+            ? path
+            : QString();
+    };
+
+    {
+        QTemporaryDir directory;
+        const QString source = createSource(directory,
+                                            QStringLiteral("started_close.sv"));
+        expectBool("workspace scan-start close fixture valid",
+                   directory.isValid() && !source.isEmpty(),
+                   true);
+        if (!directory.isValid() || source.isEmpty())
+            return;
+
+        WorkspaceManager workspace;
+        workspace.setRecentWorkspacePersistenceEnabledForTesting(false);
+        const QString expectedPath = normalizedPath(directory.path());
+        bool closedFromStarted = false;
+        QObject::connect(&workspace,
+                         &WorkspaceManager::workspaceScanStarted,
+                         &workspace,
+                         [&](const QString& path) {
+                             if (normalizedPath(path) != expectedPath)
+                                 return;
+                             closedFromStarted = true;
+                             workspace.closeWorkspace();
+                         });
+
+        expectBool("workspace scan-start close reports synchronous override",
+                   workspace.openWorkspace(directory.path()),
+                   false);
+        expectBool("workspace scan-start close cancels synchronously",
+                   closedFromStarted
+                       && !workspace.isWorkspaceOpen()
+                       && !workspace.scanIterator
+                       && workspace.scanningPath.isEmpty()
+                       && workspace.scanTimer
+                       && !workspace.scanTimer->isActive(),
+                   true);
+    }
+
+    {
+        QTemporaryDir cachedDirectory;
+        QTemporaryDir scanningDirectory;
+        const QString cachedSource =
+            createSource(cachedDirectory, QStringLiteral("cached_started.sv"));
+        const QString scanningSource =
+            createSource(scanningDirectory, QStringLiteral("switch_started.sv"));
+        expectBool("workspace scan-start switch fixtures valid",
+                   cachedDirectory.isValid()
+                       && scanningDirectory.isValid()
+                       && !cachedSource.isEmpty()
+                       && !scanningSource.isEmpty(),
+                   true);
+        if (!cachedDirectory.isValid()
+            || !scanningDirectory.isValid()
+            || cachedSource.isEmpty()
+            || scanningSource.isEmpty()) {
+            return;
+        }
+
+        WorkspaceManager workspace;
+        workspace.setRecentWorkspacePersistenceEnabledForTesting(false);
+        expectBool("workspace scan-start switch opens cached workspace",
+                   workspace.openWorkspace(cachedDirectory.path())
+                       && workspace.restoreSessionScanState(
+                           QStringList{cachedSource}, true),
+                   true);
+        const QString cachedPath = normalizedPath(cachedDirectory.path());
+        const QString scanningPath = normalizedPath(scanningDirectory.path());
+        bool switchedFromStarted = false;
+        QObject::connect(&workspace,
+                         &WorkspaceManager::workspaceScanStarted,
+                         &workspace,
+                         [&](const QString& path) {
+                             if (normalizedPath(path) != scanningPath)
+                                 return;
+                             switchedFromStarted = workspace.switchWorkspace(0);
+                         });
+
+        expectBool("workspace scan-start switch reports synchronous override",
+                   workspace.openWorkspace(scanningDirectory.path()),
+                   false);
+        expectBool("workspace scan-start switch leaves cached workspace idle",
+                   switchedFromStarted
+                       && workspace.getWorkspacePath() == cachedPath
+                       && !workspace.scanIterator
+                       && workspace.scanningPath.isEmpty()
+                       && workspace.scanTimer
+                       && !workspace.scanTimer->isActive(),
+                   true);
+    }
+
+    {
+        QTemporaryDir directory;
+        const QString source = createSource(directory,
+                                            QStringLiteral("progress_close.sv"));
+        expectBool("workspace scan-progress close fixture valid",
+                   directory.isValid() && !source.isEmpty(),
+                   true);
+        if (!directory.isValid() || source.isEmpty())
+            return;
+
+        WorkspaceManager workspace;
+        workspace.setRecentWorkspacePersistenceEnabledForTesting(false);
+        const QString expectedPath = normalizedPath(directory.path());
+        bool closedFromProgress = false;
+        QObject::connect(&workspace,
+                         &WorkspaceManager::workspaceScanProgress,
+                         &workspace,
+                         [&](const QString& path, int) {
+                             if (normalizedPath(path) != expectedPath)
+                                 return;
+                             closedFromProgress = true;
+                             workspace.closeWorkspace();
+                         });
+
+        expectBool("workspace scan-progress close starts scan",
+                   workspace.openWorkspace(directory.path()),
+                   true);
+        expectBool("workspace scan-progress close survives callback",
+                   waitUntil([&]() { return closedFromProgress; }, 2000)
+                       && !workspace.isWorkspaceOpen()
+                       && !workspace.scanIterator
+                       && workspace.scanningPath.isEmpty()
+                       && workspace.scanTimer
+                       && !workspace.scanTimer->isActive(),
+                   true);
+    }
+
+    {
+        QTemporaryDir cachedDirectory;
+        QTemporaryDir scanningDirectory;
+        const QString cachedSource =
+            createSource(cachedDirectory, QStringLiteral("cached_progress.sv"));
+        const QString scanningSource =
+            createSource(scanningDirectory, QStringLiteral("switch_progress.sv"));
+        expectBool("workspace scan-progress switch fixtures valid",
+                   cachedDirectory.isValid()
+                       && scanningDirectory.isValid()
+                       && !cachedSource.isEmpty()
+                       && !scanningSource.isEmpty(),
+                   true);
+        if (!cachedDirectory.isValid()
+            || !scanningDirectory.isValid()
+            || cachedSource.isEmpty()
+            || scanningSource.isEmpty()) {
+            return;
+        }
+
+        WorkspaceManager workspace;
+        workspace.setRecentWorkspacePersistenceEnabledForTesting(false);
+        expectBool("workspace scan-progress switch opens cached workspace",
+                   workspace.openWorkspace(cachedDirectory.path())
+                       && workspace.restoreSessionScanState(
+                           QStringList{cachedSource}, true),
+                   true);
+        const QString cachedPath = normalizedPath(cachedDirectory.path());
+        const QString scanningPath = normalizedPath(scanningDirectory.path());
+        bool switchedFromProgress = false;
+        QObject::connect(&workspace,
+                         &WorkspaceManager::workspaceScanProgress,
+                         &workspace,
+                         [&](const QString& path, int) {
+                             if (normalizedPath(path) != scanningPath)
+                                 return;
+                             switchedFromProgress = workspace.switchWorkspace(0);
+                         });
+
+        expectBool("workspace scan-progress switch opens second workspace",
+                   workspace.openWorkspace(scanningDirectory.path()),
+                   true);
+        expectBool("workspace scan-progress switch survives callback",
+                   waitUntil([&]() { return switchedFromProgress; }, 2000)
+                       && workspace.getWorkspacePath() == cachedPath
+                       && workspace.getSystemVerilogFiles()
+                              == QStringList{normalizedPath(cachedSource)}
+                       && !workspace.scanIterator
+                       && workspace.scanningPath.isEmpty()
+                       && workspace.scanTimer
+                       && !workspace.scanTimer->isActive(),
+                   true);
+    }
 }
 
 static void runWorkspaceAliasRenameRegression()
@@ -1325,6 +1893,136 @@ static void runWorkspaceSessionCloseSaveOrderRegression()
                true);
 }
 
+static void runNoImplicitCompletionRegression()
+{
+    const SemanticSymbolRecord macroPrefixCandidate =
+        SemanticFixtureRecordBuilder(
+            QStringLiteral("FOO_BAR"),
+            SymbolTaxonomy::DeclarationKind::Module)
+            .withFile(QStringLiteral("C:/fixture/no_implicit_completion.sv"))
+            .withLocalHandle(91001)
+            .withLine(1)
+            .withCollectorKind(SymbolTaxonomy::CollectorKind::Module)
+            .record();
+    const SemanticSymbolRecord memberPrefixCandidate =
+        SemanticFixtureRecordBuilder(
+            QStringLiteral("member_item"),
+            SymbolTaxonomy::DeclarationKind::Module)
+            .withFile(QStringLiteral("C:/fixture/no_implicit_completion.sv"))
+            .withLocalHandle(91002)
+            .withLine(2)
+            .withCollectorKind(SymbolTaxonomy::CollectorKind::Module)
+            .record();
+    SemanticIndex completionIndex;
+    completionIndex.setSnapshot(
+        snapshotFromRecords(
+            {macroPrefixCandidate, memberPrefixCandidate}));
+    CompletionService::getInstance()->setSemanticIndex(&completionIndex);
+
+    CommandCompletionQuery macroQuery;
+    macroQuery.prefix = QStringLiteral("FOO");
+    macroQuery.commandKind = CompletionCommandKind::Module;
+    CommandCompletionQuery memberQuery;
+    memberQuery.prefix = QStringLiteral("member");
+    memberQuery.commandKind = CompletionCommandKind::Module;
+    const auto hasExplicitCandidate = [](const CommandCompletionQuery& query,
+                                         const QString& name) {
+        const QList<SemanticSymbolRecord> records =
+            CompletionService::getInstance()
+                ->findCommandCompletionSymbolRecords(query);
+        return std::any_of(
+            records.cbegin(),
+            records.cend(),
+            [&](const SemanticSymbolRecord& record) {
+                return record.name == name;
+            });
+    };
+    expectBool("negative completion fixture has macro candidate",
+               hasExplicitCandidate(macroQuery,
+                                    QStringLiteral("FOO_BAR")),
+               true);
+    expectBool("negative completion fixture has member candidate",
+               hasExplicitCandidate(memberQuery,
+                                    QStringLiteral("member_item")),
+               true);
+
+    MyCodeEditor editor;
+    editor.resize(560, 160);
+    editor.show();
+    editor.setFocus();
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    QCompleter* completer = editor.findChild<QCompleter*>();
+    expectBool("explicit-command completer remains attached",
+               completer != nullptr,
+               true);
+
+    auto expectNeverAutoOpens = [&](const char* what, const QString& text) {
+        editor.clear();
+        if (completer)
+            completer->popup()->hide();
+        QTest::keyClicks(&editor, text);
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 200);
+        expectBool(what,
+                   completer && !completer->popup()->isVisible(),
+                   true);
+    };
+
+    expectNeverAutoOpens("two ordinary characters never auto-open completion",
+                         QStringLiteral("ab"));
+    expectNeverAutoOpens("ordinary identifier never auto-opens completion",
+                         QStringLiteral("FOO"));
+    expectNeverAutoOpens("macro text never auto-opens completion",
+                         QStringLiteral("`FOO"));
+    expectNeverAutoOpens("long macro text never auto-opens completion",
+                         QStringLiteral("`FOO_BAR"));
+    expectNeverAutoOpens("member access never auto-opens completion",
+                         QStringLiteral("obj.member"));
+    expectNeverAutoOpens("package access never auto-opens completion",
+                         QStringLiteral("pkg::member"));
+
+    editor.clear();
+    if (completer)
+        completer->popup()->hide();
+    QTest::keyClicks(&editor, ";;m smoke_module");
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
+    expectBool(";;m remains dormant until explicit Tab",
+               completer && !completer->popup()->isVisible()
+                   && editor.toPlainText()
+                          == QStringLiteral(";;m smoke_module"),
+               true);
+    QTest::keyClick(&editor, Qt::Key_Tab);
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
+    expectBool(";;m explicit Tab activates module template",
+               editor.toPlainText().contains(
+                   QStringLiteral("module smoke_module("))
+                   && !editor.toPlainText().contains(QStringLiteral(";;m")),
+               true);
+
+    editor.clear();
+    QTest::keyClicks(&editor, ";;p TEST_P");
+    QTest::keyClick(&editor, Qt::Key_Tab);
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
+    expectBool("explicit template activation enters Slot Mode",
+               editor.templateSlotModeActive()
+                   && editor.templateSlotModeSlotCount() == 2
+                   && editor.templateSlotModeActiveIndex() == 0,
+               true);
+    QTest::keyClick(&editor, Qt::Key_Tab);
+    QTest::keyClick(&editor,
+                    Qt::Key_Backtab,
+                    Qt::ShiftModifier);
+    expectBool("explicit template Tab and Shift+Tab navigate slots",
+               editor.templateSlotModeActive()
+                   && editor.templateSlotModeActiveIndex() == 0
+                   && editor.textCursor().selectedText()
+                          == QStringLiteral("TEST_P"),
+               true);
+    QTest::keyClick(&editor, Qt::Key_Escape);
+
+    CompletionService::getInstance()->setSemanticIndex(
+        SemanticIndex::getInstance());
+}
+
 static void runIncludeCompletionRegression()
 {
     auto includeProvider = [](const QString&) {
@@ -1407,6 +2105,39 @@ static void runIncludeCompletionRegression()
     }
     expectBool("include completion shows workspace file candidate",
                completer && completer->popup()->isVisible() && hasDefsCandidate,
+               true);
+
+    auto currentCompletionText = [](QCompleter* targetCompleter) {
+        if (!targetCompleter || !targetCompleter->popup()
+            || !targetCompleter->model()) {
+            return QString();
+        }
+        const QModelIndex index =
+            targetCompleter->popup()->currentIndex();
+        return index.isValid()
+            ? targetCompleter->model()
+                  ->data(index, Qt::DisplayRole)
+                  .toString()
+            : QString();
+    };
+    const QString initialIncludeSelection = currentCompletionText(completer);
+    QTest::keyClick(&editor, Qt::Key_Down);
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    expectBool(";h Down traverses explicit include candidates",
+               !initialIncludeSelection.isEmpty()
+                   && !currentCompletionText(completer).isEmpty()
+                   && currentCompletionText(completer)
+                          != initialIncludeSelection,
+               true);
+    QTest::keyClick(&editor,
+                    Qt::Key_Backtab,
+                    Qt::ShiftModifier);
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    expectBool(";h Shift+Tab traverses include candidates backward",
+               completer && completer->popup()->isVisible()
+                   && currentCompletionText(completer)
+                          == initialIncludeSelection
+                   && editor.toPlainText() == QStringLiteral(";h de"),
                true);
 
     QTest::keyClick(&editor, Qt::Key_Tab);
@@ -3185,6 +3916,16 @@ static void runEditorHoverPreviewRegression(const QString& workspacePath)
 
     const QRect signalRect = hoverEditor.cursorRect(hoverCursor);
     const QPoint signalPoint(signalRect.left() + 3, signalRect.center().y());
+    hideEditorHoverPopups();
+    QTest::mouseMove(hoverEditor.viewport(), signalPoint);
+    QApplication::processEvents();
+    QTest::qWait(20);
+    bool ordinaryHoverVisible = false;
+    visibleEditorHoverPopupText(&ordinaryHoverVisible);
+    expectBool("ordinary mouse hover never shows semantic popup",
+               ordinaryHoverVisible,
+               false);
+
     QTest::mouseDClick(hoverEditor.viewport(),
                        Qt::LeftButton,
                        Qt::NoModifier,
@@ -3200,6 +3941,12 @@ static void runEditorHoverPreviewRegression(const QString& workspacePath)
                    && doubleClickHoverText.contains(QStringLiteral("clk_main"))
                    && doubleClickHoverText.contains(QStringLiteral("owner: rtl_top")),
                true);
+    QWidget* embeddedPopup = visibleEditorHoverPopupWidget();
+    expectBool("editor semantic popup is an embedded child",
+               embeddedPopup
+                   && !embeddedPopup->isWindow()
+                   && embeddedPopup->parentWidget() == &hoverEditor,
+               true);
     QTest::mouseMove(hoverEditor.viewport(), signalPoint + QPoint(2, 0));
     QApplication::processEvents();
     QTest::qWait(20);
@@ -3208,6 +3955,87 @@ static void runEditorHoverPreviewRegression(const QString& workspacePath)
     expectBool("editor double-click hover survives tiny mouse move",
                movedDoubleClickHoverVisible,
                true);
+    QTest::mouseClick(hoverEditor.viewport(),
+                      Qt::LeftButton,
+                      Qt::NoModifier,
+                      QPoint(hoverEditor.viewport()->width() - 8,
+                             hoverEditor.viewport()->height() - 8));
+    QApplication::processEvents();
+    bool outsideClickPopupVisible = false;
+    visibleEditorHoverPopupText(&outsideClickPopupVisible);
+    expectBool("outside click closes semantic popup",
+               outsideClickPopupVisible,
+               false);
+
+    QTest::mouseDClick(hoverEditor.viewport(),
+                       Qt::LeftButton,
+                       Qt::NoModifier,
+                       signalPoint);
+    QApplication::processEvents();
+    const QPoint nonClientGlobal = hoverEditor.mapToGlobal(
+        QPoint(hoverEditor.width() - 1, hoverEditor.height() - 1));
+    QMouseEvent nonClientPress(
+        QEvent::NonClientAreaMouseButtonPress,
+        QPointF(hoverEditor.width() - 1, hoverEditor.height() - 1),
+        QPointF(hoverEditor.width() - 1, hoverEditor.height() - 1),
+        QPointF(nonClientGlobal),
+        Qt::LeftButton,
+        Qt::LeftButton,
+        Qt::NoModifier);
+    QApplication::sendEvent(&hoverEditor, &nonClientPress);
+    QApplication::processEvents();
+    bool nonClientClickPopupVisible = false;
+    visibleEditorHoverPopupText(&nonClientClickPopupVisible);
+    expectBool("non-client outside click closes semantic popup",
+               nonClientClickPopupVisible,
+               false);
+
+    QTest::mouseDClick(hoverEditor.viewport(),
+                       Qt::LeftButton,
+                       Qt::NoModifier,
+                       signalPoint);
+    QApplication::processEvents();
+    QTest::keyClick(&hoverEditor, Qt::Key_Escape);
+    QApplication::processEvents();
+    bool escapePopupVisible = false;
+    visibleEditorHoverPopupText(&escapePopupVisible);
+    expectBool("Escape closes semantic popup",
+               escapePopupVisible,
+               false);
+
+    QTextBlock useBlock =
+        hoverEditor.document()->findBlockByNumber(useLine - 1);
+    QTextCursor useCursor(useBlock);
+    useCursor.setPosition(useBlock.position() + useColumn);
+    hoverEditor.setTextCursor(useCursor);
+    hoverEditor.ensureCursorVisible();
+    QApplication::processEvents();
+    const QPoint usePoint = hoverEditor.cursorRect(useCursor).center();
+    QTest::mouseMove(hoverEditor.viewport(), usePoint);
+    QKeyEvent controlPress(QEvent::KeyPress,
+                           Qt::Key_Control,
+                           Qt::ControlModifier);
+    QApplication::sendEvent(&hoverEditor, &controlPress);
+    QApplication::processEvents();
+    bool modifierPreviewVisible = false;
+    visibleEditorHoverPopupText(&modifierPreviewVisible);
+    expectBool("explicit modifier preview remains available",
+               modifierPreviewVisible,
+               true);
+    QEvent applicationDeactivate(QEvent::ApplicationDeactivate);
+    QApplication::sendEvent(&hoverEditor, &applicationDeactivate);
+    QApplication::processEvents();
+    bool deactivatedPreviewVisible = false;
+    visibleEditorHoverPopupText(&deactivatedPreviewVisible);
+    expectBool("application focus loss hides modifier preview",
+               deactivatedPreviewVisible,
+               false);
+    QKeyEvent controlRelease(QEvent::KeyRelease,
+                             Qt::Key_Control,
+                             Qt::NoModifier);
+    QApplication::sendEvent(&hoverEditor, &controlRelease);
+    QEvent applicationActivate(QEvent::ApplicationActivate);
+    QApplication::sendEvent(&hoverEditor, &applicationActivate);
     hideEditorHoverPopups();
 
     MyCodeEditor numericEditor;
@@ -3215,7 +4043,7 @@ static void runEditorHoverPreviewRegression(const QString& workspacePath)
     numericEditor.resize(500, 160);
     numericEditor.setPlainText(
         QStringLiteral("module radix_hover;\n"
-                       "initial a <= 'haaaa;\n"
+                       "initial a <= 16'haaaa;\n"
                        "endmodule\n"));
     numericEditor.show();
     QApplication::processEvents();
@@ -3246,10 +4074,11 @@ static void runEditorHoverPreviewRegression(const QString& workspacePath)
     bool numericHoverVisible = false;
     const QString numericHoverText =
         visibleEditorHoverPopupText(&numericHoverVisible);
-    expectBool("numeric double-click shows other base conversions",
+    expectBool("numeric double-click shows exact Slang value",
                numericHoverVisible
-                   && numericHoverText.contains(QStringLiteral("(B)"))
-                   && numericHoverText.contains(QStringLiteral("(D)"))
+                   && numericHoverText.contains(
+                       QStringLiteral("16'd43690"))
+                   && !numericHoverText.contains(QStringLiteral("(B)"))
                    && !numericHoverText.contains(QStringLiteral("(H)")),
                true);
     QTest::mouseMove(numericEditor.viewport(), numericPoint + QPoint(2, 0));
@@ -3261,6 +4090,312 @@ static void runEditorHoverPreviewRegression(const QString& workspacePath)
                movedNumericHoverVisible,
                true);
     hideEditorHoverPopups();
+
+    QTabWidget popupTabs;
+    TabManager popupTabManager(&popupTabs, &popupTabs);
+    popupTabManager.createNewTab();
+    MyCodeEditor* tabPopupEditor = popupTabManager.getCurrentEditor();
+    expectBool("tab popup fixture creates editor",
+               tabPopupEditor != nullptr,
+               true);
+    if (tabPopupEditor) {
+        tabPopupEditor->setPlainText(QStringLiteral("initial q = 8'h2a;\n"));
+        tabPopupEditor->document()->setModified(false);
+        popupTabManager.getDocumentModel()->markSaved(tabPopupEditor);
+        popupTabs.resize(480, 180);
+        popupTabs.show();
+        QApplication::processEvents();
+        QTextCursor tabLiteralCursor(tabPopupEditor->document());
+        tabLiteralCursor.setPosition(
+            tabPopupEditor->toPlainText().indexOf(QStringLiteral("h2a")));
+        tabPopupEditor->setTextCursor(tabLiteralCursor);
+        const QPoint tabLiteralPoint =
+            tabPopupEditor->cursorRect(tabLiteralCursor).center();
+        QTest::mouseDClick(tabPopupEditor->viewport(),
+                           Qt::LeftButton,
+                           Qt::NoModifier,
+                           tabLiteralPoint);
+        QApplication::processEvents();
+        bool tabPopupVisible = false;
+        visibleEditorHoverPopupText(&tabPopupVisible);
+        expectBool("tab popup fixture opens popup",
+                   tabPopupVisible,
+                   true);
+        popupTabManager.closeTab(0);
+        QApplication::processEvents();
+        bool closedTabPopupVisible = false;
+        visibleEditorHoverPopupText(&closedTabPopupVisible);
+        expectBool("closing corresponding tab closes popup",
+                   popupTabs.count() == 0 && !closedTabPopupVisible,
+                   true);
+    }
+
+    hideEditorHoverPopups();
+    const QString parameterHoverFile = QStringLiteral(
+        "C:/fixture/parameter_hover.sv");
+    const QString parameterHoverText = QStringLiteral(
+        "module parameter_hover #(parameter int P = 8);\n"
+        "endmodule\n");
+    SemanticSymbolRecord parameterHoverRecord =
+        SemanticFixtureRecordBuilder(
+            QStringLiteral("P"),
+            SymbolTaxonomy::DeclarationKind::Parameter)
+            .withFile(parameterHoverFile)
+            .withLocalHandle(103)
+            .withLine(1, 39)
+            .withCollectorKind(SymbolTaxonomy::CollectorKind::Parameter)
+            .inModule(QStringLiteral("parameter_hover"))
+            .withType(QStringLiteral("int"))
+            .record();
+    parameterHoverRecord.presentation.declarationText =
+        QStringLiteral("parameter int P = 8");
+    parameterHoverRecord.presentation.expressionText = QStringLiteral("8");
+    parameterHoverRecord.presentation.defaultInfo.available = true;
+    parameterHoverRecord.presentation.defaultInfo.valueText =
+        QStringLiteral("8");
+    parameterHoverRecord.presentation.defaultInfo.resolvedTypeText =
+        QStringLiteral("int");
+    parameterHoverRecord.presentation.defaultInfo.bitWidthText =
+        QStringLiteral("32");
+    parameterHoverRecord.presentation.defaultInfo.valueSourceText =
+        QStringLiteral("slang elaborated parameter default");
+    SemanticElaboratedSymbolInfo u0Info =
+        parameterHoverRecord.presentation.defaultInfo;
+    u0Info.valueText = QStringLiteral("11");
+    u0Info.valueSourceText =
+        QStringLiteral("slang elaborated parameter override");
+    SemanticElaboratedSymbolInfo u1Info = u0Info;
+    u1Info.valueText = QStringLiteral("22");
+    parameterHoverRecord.presentation.instanceInfoByPath.insert(
+        QStringLiteral("top.u0"), u0Info);
+    parameterHoverRecord.presentation.instanceInfoByPath.insert(
+        QStringLiteral("top.u1"), u1Info);
+    SemanticIndex parameterHoverIndex;
+    parameterHoverIndex.setSnapshot(snapshotFromRecords(
+        {parameterHoverRecord},
+        {},
+        {},
+        {{parameterHoverFile, parameterHoverText}}));
+    SemanticIndex::getInstance()->setSnapshot(parameterHoverIndex.snapshot());
+    SymbolHoverService::getInstance()->setSemanticIndex(
+        SemanticIndex::getInstance());
+
+    MyCodeEditor parameterHoverEditor;
+    parameterHoverEditor.setDocumentFileName(parameterHoverFile);
+    parameterHoverEditor.setPlainText(parameterHoverText);
+    parameterHoverEditor.resize(680, 180);
+    HierarchyInstanceContext u1Context;
+    u1Context.workspacePath = QStringLiteral("C:/fixture");
+    u1Context.activeTopModule = QStringLiteral("top");
+    u1Context.instancePath = QStringLiteral("top.u1");
+    parameterHoverEditor.setHierarchyInstanceContext(u1Context);
+    parameterHoverEditor.show();
+    QApplication::processEvents();
+    parameterHoverRecord.presentation.documentRevision =
+        parameterHoverEditor.semanticDocumentRevision();
+    parameterHoverIndex.setSnapshot(snapshotFromRecords(
+        {parameterHoverRecord},
+        {},
+        {},
+        {{parameterHoverFile, parameterHoverText}}));
+    SemanticIndex::getInstance()->setSnapshot(parameterHoverIndex.snapshot());
+    QTextCursor parameterCursor(parameterHoverEditor.document());
+    parameterCursor.setPosition(
+        parameterHoverText.indexOf(QStringLiteral("P =")));
+    parameterHoverEditor.setTextCursor(parameterCursor);
+    EditorSemanticContext exactTextUnknownRevisionContext;
+    exactTextUnknownRevisionContext.fileName = parameterHoverFile;
+    exactTextUnknownRevisionContext.moduleName =
+        QStringLiteral("parameter_hover");
+    exactTextUnknownRevisionContext.documentText = parameterHoverText;
+    exactTextUnknownRevisionContext.lineText =
+        parameterHoverText.section(QLatin1Char('\n'), 0, 0);
+    exactTextUnknownRevisionContext.cursorLine = 1;
+    exactTextUnknownRevisionContext.column =
+        exactTextUnknownRevisionContext.lineText.indexOf(
+            QStringLiteral("P ="));
+    exactTextUnknownRevisionContext.documentRevision =
+        parameterHoverEditor.semanticDocumentRevision();
+    exactTextUnknownRevisionContext.hierarchyInstance = u1Context;
+    SymbolHoverService exactTextUnknownRevisionHover(&parameterHoverIndex);
+    const SymbolHoverReport exactTextUnknownRevisionReport =
+        exactTextUnknownRevisionHover.hoverForContext(
+            exactTextUnknownRevisionContext);
+    expectBool("matching published editor revision is current",
+               exactTextUnknownRevisionReport.effectiveValueStatus
+                       == EffectiveValueStatus::Current
+                   && exactTextUnknownRevisionReport.valueText
+                          == QStringLiteral("22"),
+               true);
+    const QPoint parameterPoint =
+        parameterHoverEditor.cursorRect(parameterCursor).center();
+    QTest::mouseDClick(parameterHoverEditor.viewport(),
+                       Qt::LeftButton,
+                       Qt::NoModifier,
+                       parameterPoint);
+    QApplication::processEvents();
+    bool boundValuePopupVisible = false;
+    const QString boundValuePopup =
+        visibleEditorHoverPopupText(&boundValuePopupVisible);
+    expectBool("double-click popup shows bound instance value",
+               boundValuePopupVisible
+                   && boundValuePopup.contains(
+                       QStringLiteral("effective value: 22"))
+                   && boundValuePopup.contains(
+                       QStringLiteral("instance path: top.u1"))
+                   && !boundValuePopup.contains(
+                       QStringLiteral("effective value: 11")),
+               true);
+
+    HierarchyInstanceContext unboundContext;
+    unboundContext.workspacePath = QStringLiteral("C:/fixture");
+    parameterHoverEditor.setHierarchyInstanceContext(unboundContext);
+    QTest::mouseDClick(parameterHoverEditor.viewport(),
+                       Qt::LeftButton,
+                       Qt::NoModifier,
+                       parameterPoint);
+    QApplication::processEvents();
+    bool defaultValuePopupVisible = false;
+    const QString defaultValuePopup =
+        visibleEditorHoverPopupText(&defaultValuePopupVisible);
+    expectBool("unbound double-click popup labels default value",
+               defaultValuePopupVisible
+                   && defaultValuePopup.contains(
+                       QStringLiteral("\u672a\u7ed1\u5b9a\u5b9e\u4f8b"))
+                   && defaultValuePopup.contains(QStringLiteral(": 8"))
+                   && !defaultValuePopup.contains(
+                       QStringLiteral("effective value")),
+               true);
+    parameterHoverEditor.closeSemanticPopup();
+
+    EditorSemanticContext staleParameterContext;
+    staleParameterContext.fileName = parameterHoverFile;
+    staleParameterContext.moduleName = QStringLiteral("parameter_hover");
+    staleParameterContext.documentText =
+        parameterHoverText + QStringLiteral("// unsaved edit\n");
+    staleParameterContext.lineText =
+        parameterHoverText.section(QLatin1Char('\n'), 0, 0);
+    staleParameterContext.cursorLine = 1;
+    staleParameterContext.column =
+        staleParameterContext.lineText.indexOf(QStringLiteral("P ="));
+    SymbolHoverService parameterHoverService(&parameterHoverIndex);
+    const SymbolHoverReport staleParameterHover =
+        parameterHoverService.hoverForContext(staleParameterContext);
+    expectBool("hover propagates stale effective value status",
+               staleParameterHover.effectiveValueStatus
+                   == EffectiveValueStatus::Stale,
+               true);
+    EditorHoverPopup staleParameterPopup;
+    staleParameterPopup.showHover(staleParameterHover,
+                                  QPoint(20, 20),
+                                  parameterHoverEditor.font());
+    QApplication::processEvents();
+    QStringList staleParameterLabels;
+    for (QLabel* label : staleParameterPopup.findChildren<QLabel*>())
+        staleParameterLabels.append(label->text());
+    const QString staleParameterPopupText =
+        staleParameterLabels.join(QLatin1Char('\n'));
+    expectBool("stale hover suppresses old current/default value",
+               staleParameterPopupText.contains(
+                   QStringLiteral("effective value stale"))
+                   && !staleParameterPopupText.contains(
+                       QStringLiteral("effective value: 8"))
+                   && !staleParameterPopupText.contains(
+                       QStringLiteral("default value")),
+               true);
+    staleParameterPopup.close();
+
+    const QString packageHoverFile = QStringLiteral(
+        "C:/fixture/package_hover.sv");
+    const QString packageHoverText = QStringLiteral(
+        "package cfg_pkg;\n"
+        "  parameter int PKG_P = 12;\n"
+        "endpackage\n"
+        "module package_user;\n"
+        "  localparam int SHOULD_NOT_RESOLVE = PKG_P;\n"
+        "endmodule\n");
+    const QString packageParameterLine =
+        packageHoverText.section(QLatin1Char('\n'), 1, 1);
+    const int packageParameterColumn =
+        packageParameterLine.indexOf(QStringLiteral("PKG_P"));
+    SemanticSymbolRecord packageHoverRecord =
+        SemanticFixtureRecordBuilder(
+            QStringLiteral("PKG_P"),
+            SymbolTaxonomy::DeclarationKind::Parameter)
+            .withFile(packageHoverFile)
+            .withLocalHandle(104)
+            .withLine(2, packageParameterColumn + 1)
+            .withCollectorKind(SymbolTaxonomy::CollectorKind::Parameter)
+            .inPackage(QStringLiteral("cfg_pkg"))
+            .withType(QStringLiteral("int"))
+            .record();
+    packageHoverRecord.presentation.declarationText =
+        QStringLiteral("parameter int PKG_P = 12");
+    packageHoverRecord.presentation.expressionText = QStringLiteral("12");
+    packageHoverRecord.presentation.defaultInfo.available = true;
+    packageHoverRecord.presentation.defaultInfo.valueText =
+        QStringLiteral("12");
+    packageHoverRecord.presentation.defaultInfo.resolvedTypeText =
+        QStringLiteral("int");
+    packageHoverRecord.presentation.defaultInfo.valueSourceText =
+        QStringLiteral("Slang package elaboration");
+    SemanticIndex packageHoverIndex;
+    packageHoverIndex.setSnapshot(snapshotFromRecords(
+        {packageHoverRecord},
+        {},
+        {},
+        {{packageHoverFile, packageHoverText}}));
+    EditorSemanticContext packageHoverContext;
+    packageHoverContext.fileName = packageHoverFile;
+    packageHoverContext.documentText = packageHoverText;
+    packageHoverContext.lineText = packageParameterLine;
+    packageHoverContext.cursorLine = 2;
+    packageHoverContext.column = packageParameterColumn;
+    SymbolHoverService packageHoverService(&packageHoverIndex);
+    const SymbolHoverReport packageHover =
+        packageHoverService.hoverForContext(packageHoverContext);
+    expectBool("package hover is current and instance-independent",
+               packageHover.effectiveValueStatus
+                       == EffectiveValueStatus::Current
+                   && !packageHover.instanceBound
+                   && !packageHover.defaultEvaluation,
+               true);
+    EditorHoverPopup packagePopup;
+    packagePopup.showHover(packageHover,
+                           QPoint(20, 20),
+                           parameterHoverEditor.font());
+    QApplication::processEvents();
+    QStringList packageLabels;
+    for (QLabel* label : packagePopup.findChildren<QLabel*>())
+        packageLabels.append(label->text());
+    const QString packagePopupText = packageLabels.join(QLatin1Char('\n'));
+    expectBool("package hover never labels value as unbound default",
+               packagePopupText.contains(
+                   QStringLiteral("effective value: 12"))
+                   && !packagePopupText.contains(
+                       QStringLiteral("default value"))
+                   && !packagePopupText.contains(
+                       QStringLiteral("\u672a\u7ed1\u5b9a\u5b9e\u4f8b")),
+               true);
+    packagePopup.close();
+
+    const QString unimportedPackageUseLine =
+        packageHoverText.section(QLatin1Char('\n'), 4, 4);
+    EditorSemanticContext unimportedPackageUseContext;
+    unimportedPackageUseContext.fileName = packageHoverFile;
+    unimportedPackageUseContext.moduleName = QStringLiteral("package_user");
+    unimportedPackageUseContext.documentText = packageHoverText;
+    unimportedPackageUseContext.lineText = unimportedPackageUseLine;
+    unimportedPackageUseContext.cursorLine = 5;
+    unimportedPackageUseContext.column =
+        unimportedPackageUseLine.lastIndexOf(QStringLiteral("PKG_P"));
+    const SymbolHoverReport unimportedPackageUse =
+        packageHoverService.hoverForContext(unimportedPackageUseContext);
+    expectBool("package self declaration does not widen package visibility",
+               !unimportedPackageUse.unavailableReason.isEmpty()
+                   && unimportedPackageUse.effectiveValueStatus
+                          == EffectiveValueStatus::Unavailable,
+               true);
 
     if (previousGlobalSnapshot)
         SemanticIndex::getInstance()->setSnapshot(previousGlobalSnapshot);
@@ -3374,7 +4509,7 @@ static void runActivityLogServiceRegression()
         QStringLiteral("E:/workspace/dirty.sv"),
         QStringLiteral("E:/workspace/open.sv")
     };
-    planSummary.protectedFiles = {
+    planSummary.dirtyOpenFiles = {
         QStringLiteral("E:/workspace/dirty.sv")
     };
     planSummary.currentFilePriorityFiles = {
@@ -3406,7 +4541,7 @@ static void runActivityLogServiceRegression()
                 && event.message.contains(QStringLiteral("Workspace plan prepared"))
                 && event.message.contains(QStringLiteral("3 priority"))
                 && event.message.contains(QStringLiteral("1 background"))
-                && event.message.contains(QStringLiteral("1 protected"))
+                && event.message.contains(QStringLiteral("1 dirty"))
                 && event.message.contains(
                     QStringLiteral("bands current 1, dirty 1, open 1, background 1")));
     }
@@ -6200,6 +7335,13 @@ static void runNavigationHierarchyModelRegression()
     expectBool("design hierarchy report has top and instance",
                designReport.nodes.size() == 2,
                true);
+    expectBool("design hierarchy stores exact instance paths",
+               designReport.nodes.size() == 2
+                   && designReport.nodes.first().instancePath
+                          == QStringLiteral("design_top")
+                   && designReport.nodes.last().instancePath
+                          == QStringLiteral("design_top.u_stage"),
+               true);
     bool designReportHasInterfaceNode = false;
     for (const DesignHierarchyNode& node : designReport.nodes) {
         designReportHasInterfaceNode = designReportHasInterfaceNode
@@ -6356,7 +7498,47 @@ static void runNavigationHierarchyModelRegression()
                true);
     expectBool("design hierarchy double-click preserves instance site",
                clickedDesignNode.instanceName == QStringLiteral("u_stage")
-                   && clickedDesignNode.instanceLine == 8,
+                   && clickedDesignNode.instanceLine == 8
+                   && clickedDesignNode.instancePath
+                          == QStringLiteral("design_top.u_stage"),
+               true);
+
+    NavigationWidget contextualNavigationWidget;
+    NavigationManager contextualNavigationManager;
+    contextualNavigationManager.setNavigationWidget(
+        &contextualNavigationWidget);
+    contextualNavigationManager.onWorkspaceChanged(
+        QStringLiteral("C:/fixture"));
+    bool instanceNavigationEmitted = false;
+    HierarchyInstanceContext emittedInstanceContext;
+    QObject::connect(
+        &contextualNavigationManager,
+        &NavigationManager::instanceNavigationRequested,
+        &contextualNavigationWidget,
+        [&](const QString&, int, const HierarchyInstanceContext& context) {
+            instanceNavigationEmitted = true;
+            emittedInstanceContext = context;
+        });
+    contextualNavigationWidget.designNodeDoubleClicked(clickedDesignNode);
+    expectBool("Design navigation binds exact hierarchy context",
+               instanceNavigationEmitted
+                   && emittedInstanceContext.isBound()
+                   && emittedInstanceContext.activeTopModule
+                          == QStringLiteral("design_top")
+                   && emittedInstanceContext.instancePath
+                          == QStringLiteral("design_top.u_stage"),
+               true);
+
+    bool fileNavigationEmitted = false;
+    QObject::connect(&contextualNavigationManager,
+                     &NavigationManager::navigationRequested,
+                     &contextualNavigationWidget,
+                     [&](const QString&, int) {
+                         fileNavigationEmitted = true;
+                     });
+    contextualNavigationWidget.fileDoubleClicked(fileTabPath);
+    expectBool("Files navigation uses unbound navigation path",
+               fileNavigationEmitted,
                true);
 
     QTreeWidgetItem* topFileItem = widget.findFileItemByPath(designTopFile);
@@ -8058,10 +9240,14 @@ int main(int argc, char** argv)
     runEditorAppearanceCoordinatorRegression();
     runFormatterCoordinatorRegression();
     runTabOpenDedupRegression();
+    runTabOpenGhostLifecycleRegression();
     runWorkspaceCloseRegression();
+    runWorkspaceScanReentrancyRegression();
     runWorkspaceCachedSwitchRegression();
+    runWorkspaceScanSignalReentrancyRegression();
     runWorkspaceAliasRenameRegression();
     runWorkspaceSessionCloseSaveOrderRegression();
+    runNoImplicitCompletionRegression();
     runIncludeCompletionRegression();
     runTreeSitterFoldingProviderRegression();
     runNavigationDesignCacheWorkspaceActivationRegression();
@@ -8153,6 +9339,64 @@ int main(int argc, char** argv)
     expectBool("fold shelf dock starts hidden",
                foldShelfDock && !foldShelfDock->isVisible(),
                true);
+    QToolButton* explorerRailButton =
+        window.findChild<QToolButton*>(QStringLiteral("shellRail_explorer"));
+    QToolButton* outlineRailButton =
+        window.findChild<QToolButton*>(
+            QStringLiteral("shellRail_") + QStringLiteral("outline"));
+    QToolButton* designRailButton =
+        window.findChild<QToolButton*>(QStringLiteral("shellRail_design"));
+    QToolButton* searchRailButton =
+        window.findChild<QToolButton*>(QStringLiteral("shellRail_search"));
+    NavigationWidget* railNavigationWidget =
+        window.navigationPane ? window.navigationPane->navigationWidget : nullptr;
+    QDockWidget* navigationDock =
+        window.navigationPane ? window.navigationPane->dock() : nullptr;
+    expectBool("navigation rail has explorer design search only",
+               explorerRailButton
+                   && !outlineRailButton
+                   && designRailButton
+                   && searchRailButton,
+               true);
+    expectBool("navigation rail widget exists",
+               railNavigationWidget
+                   && railNavigationWidget->tabWidget
+                   && railNavigationWidget->searchLineEdit,
+               true);
+    if (railNavigationWidget && navigationDock) {
+        navigationDock->hide();
+        railNavigationWidget->setActiveTab(NavigationWidget::DesignTab);
+        if (explorerRailButton)
+            explorerRailButton->click();
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+        expectBool("explorer rail opens files tab",
+                   navigationDock->isVisible()
+                       && railNavigationWidget->tabWidget->currentIndex()
+                              == NavigationWidget::FileTab,
+                   true);
+
+        navigationDock->hide();
+        railNavigationWidget->setActiveTab(NavigationWidget::FileTab);
+        if (designRailButton)
+            designRailButton->click();
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+        expectBool("design rail opens design tab",
+                   navigationDock->isVisible()
+                       && railNavigationWidget->tabWidget->currentIndex()
+                              == NavigationWidget::DesignTab,
+                   true);
+
+        navigationDock->hide();
+        railNavigationWidget->searchLineEdit->clearFocus();
+        if (searchRailButton)
+            searchRailButton->click();
+        expectBool("search rail focuses navigation search",
+                   waitUntil([&]() {
+                       return navigationDock->isVisible()
+                           && railNavigationWidget->searchLineEdit->hasFocus();
+                   }, 1000),
+                   true);
+    }
     QMenu* viewMenu = window.findChild<QMenu*>(QStringLiteral("viewMenu"));
     expectBool("view menu exists", viewMenu != nullptr, true);
     QToolButton* panelsStatusButton =
@@ -9191,6 +10435,11 @@ int main(int argc, char** argv)
         expectBool("opened document saved version matches text version",
                    beforeEditDoc.savedTextVersion == beforeEditDoc.textVersion,
                    true);
+        expectBool("opened document snapshot mirrors semantic text revision",
+                   beforeEditDoc.textVersion
+                       == static_cast<int>(
+                           largeEditor->semanticDocumentRevision()),
+                   true);
         expectBool("document model caches opened text",
                    documents
                        && documents->documentTextForFile(largeFile)
@@ -9203,6 +10452,35 @@ int main(int argc, char** argv)
         expectBool("tab manager reads model current-tab text",
                    window.tabManager->getPlainTextFromCurrentTab()
                        == largeEditor->toPlainText(),
+                   true);
+
+        const std::uint64_t semanticRevisionBeforeFormat =
+            largeEditor->semanticDocumentRevision();
+        const int qtRevisionBeforeFormat =
+            largeEditor->document()->revision();
+        QTextCursor formatCursor(largeEditor->document());
+        formatCursor.setPosition(0);
+        formatCursor.movePosition(QTextCursor::NextCharacter,
+                                  QTextCursor::KeepAnchor);
+        QTextCharFormat formatOnlyChange;
+        formatOnlyChange.setFontUnderline(true);
+        formatCursor.mergeCharFormat(formatOnlyChange);
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+        const DocumentSnapshot afterFormatDoc = documents
+            ? documents->documentForEditor(largeEditor)
+            : DocumentSnapshot();
+        expectBool("format-only change advances raw Qt revision",
+                   largeEditor->document()->revision()
+                       > qtRevisionBeforeFormat,
+                   true);
+        expectBool("format-only change keeps semantic text revision",
+                   largeEditor->semanticDocumentRevision()
+                       == semanticRevisionBeforeFormat
+                       && afterFormatDoc.textVersion
+                              == beforeEditDoc.textVersion,
+                   true);
+        expectBool("format-only change keeps source document saved",
+                   afterFormatDoc.saved && !afterFormatDoc.dirty,
                    true);
 
         largeEditor->setFocus();
@@ -9225,11 +10503,21 @@ int main(int argc, char** argv)
         expectBool("document model marks edit dirty", afterEditDoc.dirty, true);
         expectBool("document model increments version",
                    afterEditDoc.textVersion > beforeEditDoc.textVersion, true);
+        expectBool("edited document snapshot mirrors semantic text revision",
+                   afterEditDoc.textVersion
+                       == static_cast<int>(
+                           largeEditor->semanticDocumentRevision()),
+                   true);
         expectBool("document model keeps saved version across edit",
                    afterEditDoc.savedTextVersion == beforeEditDoc.savedTextVersion
                        && afterEditDoc.savedTextVersion < afterEditDoc.textVersion,
                    true);
-        expectBool("document model tracks cursor line", afterEditDoc.cursorLine > 0, true);
+        const QTextCursor afterEditCursor = largeEditor->textCursor();
+        expectBool("document model refreshes cursor snapshot",
+                   afterEditDoc.cursorLine == afterEditCursor.blockNumber() + 1
+                       && afterEditDoc.cursorColumn
+                              == afterEditCursor.positionInBlock() + 1,
+                   true);
         expectBool("tab manager active snapshot tracks edit",
                    window.tabManager->getCurrentDocument().textVersion
                        == afterEditDoc.textVersion
@@ -9389,15 +10677,21 @@ int main(int argc, char** argv)
     expectBool("diagnostic fixture snapshot updates",
                waitUntil([&]() {
                    const auto snapshot = SemanticIndex::getInstance()->snapshot();
-                   return snapshot && !snapshot->getDiagnostics(diagnosticPath).isEmpty();
-               }, 5000),
+                   return snapshot
+                       && !snapshot->getDiagnostics(diagnosticPath).isEmpty()
+                       && window.analysisScheduler
+                       && window.analysisScheduler->symbolAnalyzer
+                       && window.analysisScheduler->symbolAnalyzer
+                              ->fileAnalysisWatchers.isEmpty();
+               }, 15000),
                true);
     expectBool("problems tree exists", problemsTree(window) != nullptr, true);
+    const bool problemsShowsDiagnostic = waitUntil([&]() {
+        return problemsTree(window)
+            && navigableItemCount(problemsTree(window)) > 0;
+    }, 10000);
     expectBool("problems tree shows diagnostic",
-               waitUntil([&]() {
-                   return problemsTree(window)
-                          && navigableItemCount(problemsTree(window)) > 0;
-               }, 2000),
+               problemsShowsDiagnostic,
                true);
     if (problemsScopeCombo(window)) {
         problemsScopeCombo(window)->setCurrentIndex(
@@ -9978,12 +11272,29 @@ int main(int argc, char** argv)
             }
             return {};
         };
+        const QString initialInlineSelection = selectedInlineLogicName();
+        QTest::keyClick(editor, Qt::Key_Down);
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+        expectBool("inline command arrow selects logic candidate",
+                   !initialInlineSelection.isEmpty()
+                       && !selectedInlineLogicName().isEmpty()
+                       && selectedInlineLogicName()
+                              != initialInlineSelection,
+                   true);
+        QTest::keyClick(editor,
+                        Qt::Key_Backtab,
+                        Qt::ShiftModifier);
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+        expectBool("inline command Shift+Tab traverses candidates backward",
+                   inlineCompleter
+                       && inlineCompleter->popup()->isVisible()
+                       && selectedInlineLogicName()
+                              == initialInlineSelection
+                       && editor->toPlainText() == multiOriginal,
+                   true);
         QTest::keyClick(editor, Qt::Key_Down);
         QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
         const QString selectedByTab = selectedInlineLogicName();
-        expectBool("inline command arrow selects logic candidate",
-                   !selectedByTab.isEmpty(),
-                   true);
         QTest::keyClick(editor, Qt::Key_Tab);
         QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
         expectBool("inline command Tab activates selected logic",
@@ -10178,8 +11489,8 @@ int main(int argc, char** argv)
     runPackageToolsRegression(window);
     runGlobalControlRegression(window, navWidget);
     if (navWidget && editor) {
-        navWidget->setActiveTab(NavigationWidget::FileTab);
-        window.navigationManager->setActiveView(NavigationManager::ModuleHierarchyView);
+        navWidget->setActiveTab(NavigationWidget::DesignTab);
+        window.navigationManager->setActiveView(NavigationManager::DesignHierarchyView);
         window.navigationManager->refreshCurrentView();
         QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
         QSignalSpy analysisNavigationRefreshSpy(
@@ -10187,12 +11498,12 @@ int main(int argc, char** argv)
             &NavigationManager::dataRefreshed);
         window.analysisScheduler->fileSymbolAnalysisFinished(
             normalizedSymbolFixturePath, 0);
-        expectBool("analysis routes navigation refresh",
+        expectBool("analysis routes design navigation refresh",
                    waitUntil([&]() { return analysisNavigationRefreshSpy.count() > 0; }, 1000),
                    true);
         analysisNavigationRefreshSpy.clear();
         window.analysisScheduler->workspaceSymbolAnalysisFinished(ProjectSnapshot(), 1, 0);
-        expectBool("batch analysis routes navigation refresh",
+        expectBool("batch analysis routes design navigation refresh",
                    waitUntil([&]() { return analysisNavigationRefreshSpy.count() > 0; }, 1000),
                    true);
 

@@ -13,7 +13,6 @@ public:
     explicit ActivityLogPanelCoordinator(QWidget* parent);
 
     QDockWidget* dock() const { return activityDock; }
-    QPlainTextEdit* output() const { return outputText; }
 
 private:
     QDockWidget* activityDock = nullptr;
