@@ -66,11 +66,26 @@ ProjectSnapshot + immutable all-open-buffer text/revisions
   state, exact value/type/dimension/width data, scope/instance provenance,
   failure reason, and computation/document revisions. Ghost only locates
   display anchors and formats already-evaluated facts; Wave Preview keeps its
-  separate runtime trace evaluator. FormalPort declarations use a reserved
-  viewport lane; Slang-provided source/effective-value equivalence suppresses
-  only redundant direct parameter values; derived/coerced/instance-different
-  values remain visible. Known enum values display Slang decimal text while
-  lossless binary `valueText` and X/Z rendering remain authoritative.
+  separate runtime trace evaluator. FormalPort declarations are viewport
+  overlays anchored eight logical pixels after the last visible source
+  character. `EditorDocumentGeometry` derives the tail and baseline from the
+  live `QTextBlock::layout()` / `QTextLine`, so tabs, proportional fonts,
+  wrapping, DPI, line-tail edits, and horizontal scrolling share Qt's real
+  layout geometry; no right-side lane or viewport margin remains. Long Ghost
+  text is clipped normally by the viewport instead of being relocated or
+  discarded. Slang port source presentation prints only the structured port
+  header/declarator children (or the explicit-ANSI core fields), excluding
+  `AttributeInstanceSyntax`, comments, disabled text, and preprocessor
+  directives without regex cleanup. Slang-provided source/effective-value
+  equivalence suppresses only redundant direct parameter values;
+  derived/coerced/instance-different values remain visible. Known enum values
+  display Slang decimal text while lossless binary `valueText` and X/Z
+  rendering remain authoritative.
+- The pinned double-click symbol popup is an embedded editor child and every
+  text label inherits the active editor font family, size, style hint, and
+  pitch request. Title emphasis changes weight only. Popup content remains
+  plain text, ordinary mouse hover remains disabled, and no tooltip or
+  global-always-on-top window flag is introduced.
 - Treat invalid source as an error, not as an invitation to synthesize a value.
   In `test_sv/new/PKG_global.sv`, `E_PRE_ASSERT` is referenced from line 550
   before its declaration at line 663. Slang's undeclared-identifier diagnostic
@@ -132,15 +147,18 @@ ProjectSnapshot + immutable all-open-buffer text/revisions
   identity, Hover/Ghost consumers, and unsaved overlay
   revision/cancellation/atomic diagnostic publication. `gui_smoke_test` covers
   completion negatives and explicit Tab sessions, scan reentrancy, embedded
-  double-click popup lifetime, complete port declarations, actual FormalPort
-  lane rendering, and Design structural refresh coalescing;
+  double-click popup lifetime and uniform text font, structured attribute-free
+  port declarations, actual FormalPort line-tail geometry/rendering across
+  tabs, proportional and fixed fonts, horizontal scrolling, line edits, long
+  declarations, trailing whitespace and wrapping, and Design structural
+  refresh coalescing;
   `relationship_test` retains real `PKG_global.sv` / `chl_ctrl.sv` coverage.
   The real `ow 1` test also opens analyzed `rtl_top.sv` at semantic revision
   zero and verifies no file analysis, snapshot publication, or Design refresh
   while relationships, values, Ghost, port presentation, and nested Navigation
   data remain queryable. This corrective milestone passed final headless
-  acceptance: final Debug all-target incremental build 12/12 steps in 1044.1
-  seconds and complete CTest 12/12 in 144.18 seconds. No
+  acceptance: final Debug all-target incremental build 17/17 steps in 1099.2
+  seconds and complete CTest 12/12 in 130.60 seconds. No
   visible `demo.exe` was launched after the user prohibited GUI interference;
   all Qt validation used offscreen mode. The final static audit left both user
   `.zs` files untouched: `new/.zs` is the user's 18:31:51 reproduction-session

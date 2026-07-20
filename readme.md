@@ -178,8 +178,14 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
   rendering, and Slang parameter source-value equivalence; `gui_smoke_test` owns
   ordinary-input and backtick negative completion cases, explicit Tab-command
   filtering/activation, synchronous scan reentrancy, embedded double-click
-  popup lifetime, complete port-declaration presentation, actual long-line
-  FormalPort lane rendering, and Design refresh coalescing. Real
+  popup lifetime/non-global window flags and uniform editor-font inheritance,
+  structured attribute-free ANSI/non-ANSI/interface port declarations, actual
+  QTextLine-anchored FormalPort rendering across tabs, fixed/proportional
+  fonts, horizontal scrolling, line-tail edits, long declarations, trailing
+  whitespace and wrapping, and Design refresh coalescing. FormalPort is now
+  drawn eight logical pixels after the live source-line tail inside the normal
+  viewport; the former fixed right-side lane and right viewport margin are
+  removed. Real
   `PKG_global.sv` / `chl_ctrl.sv` integration remains in `relationship_test`.
   `global_control_ow_test` also opens the real analyzed `rtl_top.sv` through
   `TabManager` and verifies semantic revision zero, no open-tabs symbol analysis,
@@ -187,8 +193,8 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
   stable relationships, package values, semantic Ghost, port presentation,
   Design/Navigation data, and a nested `NavigationWidget` item.
   Final headless acceptance is complete: the final Debug all-target incremental
-  build passed 12/12 Ninja steps in 1044.1 seconds; complete CTest passed 12/12
-  in 144.18 seconds. At the user's
+  build passed 17/17 Ninja steps in 1099.2 seconds; complete CTest passed 12/12
+  in 130.60 seconds. At the user's
   request, this final repair/verification did not launch `demo.exe`; Qt GUI
   coverage used `QT_QPA_PLATFORM=offscreen` and non-interactive CTest.
   `global_control_ow_test` passed in 92.57 seconds with both real projects and

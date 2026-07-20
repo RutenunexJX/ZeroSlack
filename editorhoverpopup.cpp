@@ -86,6 +86,7 @@ void EditorHoverPopup::showHover(const SymbolHoverReport& report,
                                  const QFont& editorFont)
 {
     resetContent();
+    setFont(editorFont);
     targetFile.clear();
     targetLine = -1;
     targetColumn = -1;
@@ -119,8 +120,6 @@ void EditorHoverPopup::showHover(const SymbolHoverReport& report,
         addField(QStringLiteral("owner"), report.ownerName);
 
         QFont codeFont = editorFont;
-        codeFont.setStyleHint(QFont::Monospace);
-        codeFont.setFixedPitch(true);
         addField(QStringLiteral("declaration"),
                  report.declarationText,
                  codeFont,
@@ -231,6 +230,7 @@ void EditorHoverPopup::showPreview(const DefinitionPreviewReport& report,
                                    const QFont& editorFont)
 {
     resetContent();
+    setFont(editorFont);
     targetFile = report.targetFile;
     targetLine = report.targetLine;
     targetColumn = report.targetColumn;
@@ -248,8 +248,6 @@ void EditorHoverPopup::showPreview(const DefinitionPreviewReport& report,
         addLabel(location, QStringLiteral("color: palette(mid);"), editorFont);
 
     QFont codeFont = editorFont;
-    codeFont.setStyleHint(QFont::Monospace);
-    codeFont.setFixedPitch(true);
     if (report.available) {
         for (int i = 0; i < report.codeLines.size(); ++i) {
             const int lineNumber = report.firstLineNumber + i;
@@ -285,6 +283,7 @@ void EditorHoverPopup::showCodePreview(const CodePreviewReport& report,
                                        const QFont& editorFont)
 {
     resetContent();
+    setFont(editorFont);
     targetFile = report.fileName;
     targetLine = report.targetLine;
     targetColumn = report.targetColumn;
@@ -307,8 +306,6 @@ void EditorHoverPopup::showCodePreview(const CodePreviewReport& report,
     }
 
     QFont codeFont = editorFont;
-    codeFont.setStyleHint(QFont::Monospace);
-    codeFont.setFixedPitch(true);
     if (report.available) {
         for (int i = 0; i < report.codeLines.size(); ++i) {
             const int lineNumber = report.firstLineNumber + i;
@@ -349,13 +346,12 @@ void EditorHoverPopup::showNumericLiteral(const QString& displayText,
                                           const QFont& editorFont)
 {
     resetContent();
+    setFont(editorFont);
     targetFile.clear();
     targetLine = -1;
     targetColumn = -1;
 
     QFont codeFont = editorFont;
-    codeFont.setStyleHint(QFont::Monospace);
-    codeFont.setFixedPitch(true);
     addLabel(displayText, QStringLiteral("font-weight:600;"), codeFont);
 
     adjustSize();
@@ -438,8 +434,14 @@ QLabel* EditorHoverPopup::addLabel(const QString& text,
     label->setTextFormat(Qt::PlainText);
     label->setTextInteractionFlags(Qt::NoTextInteraction);
     label->setWordWrap(false);
-    if (!font.family().isEmpty())
-        label->setFont(font);
+    QFont labelFont = this->font();
+    if (!font.family().isEmpty()) {
+        labelFont.setWeight(font.weight());
+        labelFont.setItalic(font.italic());
+        labelFont.setUnderline(font.underline());
+        labelFont.setStrikeOut(font.strikeOut());
+    }
+    label->setFont(labelFont);
     if (!style.isEmpty())
         label->setStyleSheet(style);
     layout->addWidget(label);

@@ -150,16 +150,22 @@ the real `ow 1` coordinator path for selector cancel/repeat, `test_sv/new`,
   same-name nested identity, Hover/Ghost, and unsaved overlay revision,
 cancellation, atomic values, and diagnostics; `gui_smoke_test` covers ordinary
 and backtick completion negatives, explicit Tab candidate behavior, scan
-  reentrancy, embedded double-click popup lifetime, complete port declarations,
-  actual FormalPort lane rendering, and Design refresh coalescing;
+  reentrancy, embedded double-click popup lifetime/non-global flags and uniform
+  editor-font inheritance, structured attribute-free ANSI/non-ANSI/interface
+  port declarations, actual QTextLine-anchored FormalPort rendering across
+  tabs, fixed/proportional fonts, horizontal scrolling, line-tail edits, long
+  declarations, trailing whitespace and wrapping, and Design refresh
+  coalescing. FormalPort now renders eight logical pixels after the live source
+  line tail in the normal viewport; the fixed right-side lane and its viewport
+  margin are removed;
   `relationship_test` retains real `PKG_global.sv` / `chl_ctrl.sv`
 integration. The `ow 1` regression additionally opens analyzed `rtl_top.sv`
   through the real TabManager at semantic revision zero and verifies no
   open-tabs analysis, snapshot publication, or Design refresh while stable
   relationships, package values, semantic Ghost, port presentation, and nested
   Navigation data remain available. Final headless acceptance is complete: the
-  final Debug all-target incremental build passed 12/12 steps in 1044.1 seconds,
-  and complete CTest passed 12/12 in 144.18 seconds. No visible
+  final Debug all-target incremental build passed 17/17 steps in 1099.2 seconds,
+  and complete CTest passed 12/12 in 130.60 seconds. No visible
 `demo.exe` was launched after the user prohibited GUI interference; the real
 coordinator route ran under Qt offscreen and remained alive for both projects.
 The final static audit left both user `.zs` files untouched. `new/.zs` is the

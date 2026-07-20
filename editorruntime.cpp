@@ -3728,20 +3728,11 @@ void MyCodeEditorState::paintGhostAnnotations(
     const int documentEnd = qMax(0, textDocument->characterCount() - 1);
     const int viewportWidth = editor->viewport()->width();
     const int viewportHeight = editor->viewport()->height();
-    QHash<int, int> rightLineEndX;
-
-    auto lineEndX = [editor, textDocument, documentEnd](const QTextBlock& block) {
-        const int blockTextEnd =
-            qBound(0, block.position() + block.text().size(), documentEnd);
-        QTextCursor endCursor(textDocument);
-        endCursor.setPosition(blockTextEnd);
-        return editor->cursorRect(endCursor).right() + 12;
-    };
+    QHash<int, qreal> rightLineEndX;
+    constexpr qreal kLineTailSpacing = 8.0;
 
     for (const GhostAnnotation& annotation : ghostAnnotations) {
         if (!annotation.isValid())
-            continue;
-        if (annotation.kind == GhostAnnotationKind::FormalPort)
             continue;
 
         const int anchorPosition =
@@ -3753,35 +3744,51 @@ void MyCodeEditorState::paintGhostAnnotations(
         QTextCursor cursor(textDocument);
         cursor.setPosition(anchorPosition);
         const QRect anchorRect = editor->cursorRect(cursor);
-        if (anchorRect.bottom() < 0 || anchorRect.top() > viewportHeight)
-            continue;
 
         const int textWidth = metrics.horizontalAdvance(annotation.text);
-        int x = -1;
+        qreal x = -1;
+        qreal baseline = 0;
+        qreal visualTop = anchorRect.top();
+        qreal visualBottom = anchorRect.bottom();
         const int line =
             annotation.line > 0 ? annotation.line : block.blockNumber() + 1;
         if (annotation.placement == GhostAnnotationPlacement::LeftOfAnchor) {
             x = anchorRect.left() - textWidth - 8;
             if (x < 2)
                 continue;
+            baseline = anchorRect.top()
+                + (anchorRect.height() + metrics.ascent()
+                   - metrics.descent()) / 2.0;
         } else {
-            x = lineEndX(block);
-            const int previousEnd = rightLineEndX.value(line, x);
-            if (x < previousEnd + 12)
-                x = previousEnd + 12;
+            const EditorCodeLineTailGeometry tail =
+                geometry.codeLineTailGeometry(editor, block.blockNumber());
+            if (!tail.valid)
+                continue;
+            x = tail.textRight + kLineTailSpacing;
+            const qreal previousEnd = rightLineEndX.value(line, x);
+            if (x < previousEnd + kLineTailSpacing)
+                x = previousEnd + kLineTailSpacing;
+            baseline = tail.baseline;
+            visualTop = tail.top;
+            visualBottom = tail.top + tail.height;
         }
 
-        if (x < 2 || x >= viewportWidth - 4)
+        if (visualBottom < 0 || visualTop > viewportHeight)
             continue;
-        if (x + textWidth > viewportWidth - 4)
+        if (x >= viewportWidth - 4 || x + textWidth <= 2)
             continue;
+        if (annotation.kind != GhostAnnotationKind::FormalPort
+            && (x < 2 || x + textWidth > viewportWidth - 4)) {
+            continue;
+        }
         if (annotation.placement != GhostAnnotationPlacement::LeftOfAnchor)
             rightLineEndX.insert(line, x + textWidth);
 
-        const int baseline =
-            anchorRect.top()
-            + (anchorRect.height() + metrics.ascent() - metrics.descent()) / 2;
-        painter.drawText(x, baseline, annotation.text);
+        QColor annotationColor = color;
+        if (annotation.kind == GhostAnnotationKind::FormalPort)
+            annotationColor.setAlpha(96);
+        painter.setPen(annotationColor);
+        painter.drawText(QPointF(x, baseline), annotation.text);
     }
 }
 

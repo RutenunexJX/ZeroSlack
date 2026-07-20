@@ -430,11 +430,18 @@ static void runFormalPortDeclarationRegression()
 {
     const QString fileName = QStringLiteral("formal_port_fixture.sv");
     const QString source = QStringLiteral(
+        "`define PORT_ATTR (* mark_debug = \"true\" *)\n"
         "interface axi_if;\n"
         "  modport master();\n"
         "endinterface\n"
         "typedef logic [7:0] test_t;\n"
         "module ports #(parameter int P_1 = 2) (\n"
+        "  `PORT_ATTR input var logic signed [P_1 * 2 - 1:0] marked [0:P_1 - 1],\n"
+        "`ifdef UNUSED_PORT_BRANCH\n"
+        "  input logic unused_branch,\n"
+        "`else\n"
+        "  (* keep = \"true\" *) /* semantic comment */ input test_t conditioned [P_1 - 1:0],\n"
+        "`endif\n"
         "  input test_t shared_a [P_1 - 1:0],\n"
         "               shared_b [P_1 - 1:0],\n"
         "  output\n"
@@ -446,15 +453,29 @@ static void runFormalPortDeclarationRegression()
         "  axi_if bus_plain\n"
         ");\n"
         "endmodule\n"
+        "module legacy_ports #(parameter int W = 2) (legacy);\n"
+        "  (* mark_debug = \"true\" *) input wire signed [W - 1:0] legacy [0:1];\n"
+        "endmodule\n"
+        "module explicit_ports (\n"
+        "  (* mark_debug = \"true\" *) input .external(internal)\n"
+        ");\n"
+        "  logic internal;\n"
+        "endmodule\n"
         "module top;\n"
         "  localparam int P_1 = 2;\n"
+        "  logic signed [P_1 * 2 - 1:0] marked [0:P_1 - 1];\n"
+        "  test_t conditioned [P_1 - 1:0];\n"
         "  test_t a [P_1 - 1:0], b [P_1 - 1:0];\n"
         "  logic [P_1 - 1:0] out_p;\n"
         "  wire io_p;\n"
         "  test_t ref_p [P_1 - 1:0];\n"
         "  axi_if bus_mp [P_1 - 1:0] ();\n"
         "  axi_if bus_plain ();\n"
+        "  wire signed [P_1 - 1:0] legacy [0:1];\n"
+        "  logic explicit_signal;\n"
         "  ports #(.P_1(P_1)) u_ports (\n"
+        "    .marked(marked),\n"
+        "    .conditioned(conditioned),\n"
         "    .shared_a(a),\n"
         "    .shared_b(b),\n"
         "    .out_p(out_p),\n"
@@ -463,7 +484,16 @@ static void runFormalPortDeclarationRegression()
         "    .bus_mp(bus_mp),\n"
         "    .bus_plain(bus_plain)\n"
         "  );\n"
+        "  legacy_ports #(.W(P_1)) u_legacy (.legacy(legacy));\n"
+        "  explicit_ports u_explicit (.external(explicit_signal));\n"
         "endmodule\n");
+
+    const auto lineOf = [&](const QString& needle) {
+        const int position = source.indexOf(needle);
+        return position < 0
+            ? 0
+            : source.left(position).count(QLatin1Char('\n')) + 1;
+    };
 
     SlangManager slang;
     const QList<SemanticSymbolRecord> records =
@@ -522,6 +552,29 @@ static void runFormalPortDeclarationRegression()
                    && typedArrayPort.signednessText
                           == QStringLiteral("unsigned"),
                true);
+    const EffectiveValueResult markedPort =
+        resolvePort(QStringLiteral("marked"));
+    expectBool("attributed ANSI presentation excludes attributes",
+               findPort(QStringLiteral("marked"))
+                           .presentation.declarationText
+                       == QStringLiteral(
+                           "input var logic signed [P_1 * 2 - 1:0] marked [0:P_1 - 1]")
+                   && markedPort.available()
+                   && markedPort.declarationText
+                          == QStringLiteral(
+                              "input var logic signed [P_1 * 2 - 1:0] marked [0:P_1 - 1]"),
+               true);
+    expectBool("attributed non-ANSI presentation excludes attributes",
+               findPort(QStringLiteral("legacy"))
+                       .presentation.declarationText
+                   == QStringLiteral(
+                       "input wire signed [W - 1:0] legacy [0:1]"),
+               true);
+    expectBool("attributed explicit ANSI presentation excludes attributes",
+               findPort(QStringLiteral("external"))
+                       .presentation.declarationText
+                   == QStringLiteral("input .external(internal)"),
+               true);
     const EffectiveValueResult interfacePort =
         resolvePort(QStringLiteral("bus_mp"));
     const EffectiveValueResult plainInterfacePort =
@@ -543,39 +596,73 @@ static void runFormalPortDeclarationRegression()
     const GhostAnnotationReport report = service.annotationsForDocument(
         GhostAnnotationQuery{fileName, source});
 
+    expectGhostEquals("formal attributed variable port",
+                      report,
+                      lineOf(QStringLiteral(".marked(marked)")),
+                      QStringLiteral(
+                          "input var logic signed [P_1 * 2 - 1:0] marked [0:P_1 - 1]"));
+    expectGhostEquals("formal preprocessor wrapped port",
+                      report,
+                      lineOf(QStringLiteral(".conditioned(conditioned)")),
+                      QStringLiteral(
+                          "input test_t conditioned [P_1 - 1:0]"));
+    expectGhostNotContains("formal port excludes attribute",
+                           report,
+                           GhostAnnotationKind::FormalPort,
+                           lineOf(QStringLiteral(".marked(marked)")),
+                           QStringLiteral("mark_debug"));
+    expectGhostNotContains("formal port excludes conditional trivia",
+                           report,
+                           GhostAnnotationKind::FormalPort,
+                           lineOf(QStringLiteral(".conditioned(conditioned)")),
+                           QStringLiteral("`"));
+    expectGhostNotContains("formal port excludes comments",
+                           report,
+                           GhostAnnotationKind::FormalPort,
+                           lineOf(QStringLiteral(".conditioned(conditioned)")),
+                           QStringLiteral("semantic comment"));
     expectGhostEquals("formal input typedef array",
                       report,
-                      26,
+                      lineOf(QStringLiteral(".shared_a(a)")),
                       QStringLiteral(
                           "input test_t shared_a [P_1 - 1:0]"));
     expectGhostEquals("formal shared declarator",
                       report,
-                      27,
+                      lineOf(QStringLiteral(".shared_b(b)")),
                       QStringLiteral(
                           "input test_t shared_b [P_1 - 1:0]"));
     expectGhostEquals("formal multiline output",
                       report,
-                      28,
+                      lineOf(QStringLiteral(".out_p(out_p)")),
                       QStringLiteral(
                           "output logic [P_1 - 1:0] out_p"));
     expectGhostEquals("formal inout",
                       report,
-                      29,
+                      lineOf(QStringLiteral(".io_p(io_p)")),
                       QStringLiteral("inout wire io_p"));
     expectGhostEquals("formal ref",
                       report,
-                      30,
+                      lineOf(QStringLiteral(".ref_p(ref_p)")),
                       QStringLiteral(
                           "ref test_t ref_p [P_1 - 1:0]"));
     expectGhostEquals("formal interface modport array",
                       report,
-                      31,
+                      lineOf(QStringLiteral(".bus_mp(bus_mp)")),
                       QStringLiteral(
                           "axi_if.master bus_mp [P_1 - 1:0]"));
     expectGhostEquals("formal interface",
                       report,
-                      32,
+                      lineOf(QStringLiteral(".bus_plain(bus_plain)")),
                       QStringLiteral("axi_if bus_plain"));
+    expectGhostEquals("formal attributed non-ANSI port",
+                      report,
+                      lineOf(QStringLiteral(".legacy(legacy)")),
+                      QStringLiteral(
+                          "input wire signed [W - 1:0] legacy [0:1]"));
+    expectGhostEquals("formal attributed explicit ANSI port",
+                      report,
+                      lineOf(QStringLiteral(".external(explicit_signal)")),
+                      QStringLiteral("input .external(internal)"));
 }
 
 static void expectGhostLineNotContains(const char* what,

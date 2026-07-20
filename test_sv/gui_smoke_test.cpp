@@ -18,6 +18,8 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QFont>
+#include <QFontDatabase>
+#include <QFontInfo>
 #include <QGraphicsItem>
 #include <QGraphicsRectItem>
 #include <QGraphicsView>
@@ -43,7 +45,9 @@
 #include <QTextBlock>
 #include <QTextCharFormat>
 #include <QTextCursor>
+#include <QTextDocument>
 #include <QTextEdit>
+#include <QTextFragment>
 #include <QTextStream>
 #include <QTimer>
 #include <QToolButton>
@@ -72,6 +76,7 @@
 #include "editorappearancepanel.h"
 #include "editorappearancesettings.h"
 #include "editorcoordinator.h"
+#include "editorgeometry.h"
 #include "editorhoverpopup.h"
 #include "editorruntime.h"
 #include "editorsemanticcontextservice.h"
@@ -275,6 +280,110 @@ static QWidget* visibleEditorHoverPopupWidget()
         }
     }
     return nullptr;
+}
+
+static bool fontMatchesEditor(const QFont& candidate,
+                              const QFont& editorFont)
+{
+    const QFontInfo candidateInfo(candidate);
+    const QFontInfo editorInfo(editorFont);
+    if (candidate.families() != editorFont.families()
+        || candidateInfo.family() != editorInfo.family()
+        || candidate.styleHint() != editorFont.styleHint()
+        || candidate.fixedPitch() != editorFont.fixedPitch()) {
+        return false;
+    }
+    if (editorInfo.pointSizeF() > 0.0
+        && !qFuzzyCompare(candidateInfo.pointSizeF(),
+                          editorInfo.pointSizeF())) {
+        return false;
+    }
+    return true;
+}
+
+static bool popupTextUsesEditorFont(QWidget* popup,
+                                    const QFont& editorFont)
+{
+    if (!popup)
+        return false;
+    popup->ensurePolished();
+
+    const QList<QLabel*> labels = popup->findChildren<QLabel*>();
+    if (labels.isEmpty())
+        return false;
+    for (QLabel* label : labels) {
+        if (!label || label->textFormat() != Qt::PlainText
+            || !fontMatchesEditor(label->font(), editorFont)) {
+            return false;
+        }
+    }
+
+    for (QAbstractButton* button :
+         popup->findChildren<QAbstractButton*>()) {
+        if (!fontMatchesEditor(button->font(), editorFont))
+            return false;
+    }
+    for (QLineEdit* lineEdit : popup->findChildren<QLineEdit*>()) {
+        if (!fontMatchesEditor(lineEdit->font(), editorFont))
+            return false;
+    }
+
+    const auto documentUsesEditorFont = [&](QTextDocument* document) {
+        if (!document
+            || !fontMatchesEditor(document->defaultFont(), editorFont)) {
+            return false;
+        }
+        for (QTextBlock block = document->begin(); block.isValid();
+             block = block.next()) {
+            for (QTextBlock::Iterator it = block.begin(); !it.atEnd(); ++it) {
+                const QTextFragment fragment = it.fragment();
+                if (!fragment.isValid())
+                    continue;
+                const QFont resolved = fragment.charFormat().font().resolve(
+                    document->defaultFont());
+                if (!fontMatchesEditor(resolved, editorFont))
+                    return false;
+            }
+        }
+        return true;
+    };
+    for (QTextEdit* textEdit : popup->findChildren<QTextEdit*>()) {
+        if (!documentUsesEditorFont(textEdit->document()))
+            return false;
+    }
+    for (QPlainTextEdit* textEdit :
+         popup->findChildren<QPlainTextEdit*>()) {
+        if (!documentUsesEditorFont(textEdit->document()))
+            return false;
+    }
+    return true;
+}
+
+static QRect differentPixelBounds(const QImage& before,
+                                  const QImage& after)
+{
+    if (before.size() != after.size() || before.isNull() || after.isNull())
+        return {};
+    QRect bounds;
+    for (int y = 0; y < before.height(); ++y) {
+        for (int x = 0; x < before.width(); ++x) {
+            if (before.pixel(x, y) == after.pixel(x, y))
+                continue;
+            const QRect pixel(x, y, 1, 1);
+            bounds = bounds.isNull() ? pixel : bounds.united(pixel);
+        }
+    }
+    return bounds;
+}
+
+static QImage renderWidgetImage(QWidget* widget)
+{
+    if (!widget || widget->size().isEmpty())
+        return {};
+    QImage image(widget->size(), QImage::Format_ARGB32_Premultiplied);
+    image.fill(Qt::transparent);
+    widget->render(&image);
+    return image;
 }
 
 static bool sendEditorWheel(MyCodeEditor* editor,
@@ -1266,6 +1375,7 @@ static void runTabOpenGhostLifecycleRegression()
     bool formalPortUsesVisiblePlacement = false;
     bool formalPortKeepsCompleteDeclaration = false;
     int formalPortLine = 0;
+    GhostAnnotation formalPortAnnotation;
     bool sawDirectLiteralParameterValue = false;
     bool sawDerivedParameterValue = false;
     bool sawDirectLiteralOverride = false;
@@ -1285,6 +1395,8 @@ static void runTabOpenGhostLifecycleRegression()
                         QStringLiteral("data_i")));
             if (annotation.text.contains(QStringLiteral("data_i")))
                 formalPortLine = annotation.line;
+            if (annotation.text.contains(QStringLiteral("data_i")))
+                formalPortAnnotation = annotation;
         }
         if (annotation.kind == GhostAnnotationKind::ParameterOverride) {
             sawDirectLiteralOverride =
@@ -1384,51 +1496,159 @@ static void runTabOpenGhostLifecycleRegression()
                    && editor->viewport()->rect().intersects(
                        editor->cursorRect(formalPortCursor)),
                true);
-    QWidget* formalPortLane = editor->findChild<QWidget*>(
-        QStringLiteral("FormalPortGhostLane"));
-    expectBool("FormalPort Ghost reserves a visible annotation lane",
-               formalPortLane && formalPortLane->isVisible()
-                   && formalPortLane->width() > 0,
+    expectBool("FormalPort fixed annotation lane is removed",
+               editor->findChild<QWidget*>(
+                   QStringLiteral("FormalPortGhostLane")) == nullptr,
                true);
-    expectBool("FormalPort annotation lane never overlaps source viewport",
-               formalPortLane
-                   && !formalPortLane->geometry().intersects(
-                       editor->viewport()->geometry()),
-               true);
-    const QRect formalPortLaneGeometry = formalPortLane
-        ? formalPortLane->geometry()
-        : QRect();
-    expectBool("FormalPort visibility fixture extends beyond source viewport",
-               editor->horizontalScrollBar()->maximum() > 0,
-               true);
-    editor->horizontalScrollBar()->setValue(
-        editor->horizontalScrollBar()->maximum());
+
+    MyCodeEditor geometryEditor;
+    geometryEditor.setLineWrapMode(QPlainTextEdit::NoWrap);
+    geometryEditor.setTabStopDistance(53.5);
+    geometryEditor.resize(1100, 180);
+    geometryEditor.setPlainText(QStringLiteral(
+        "\tleaf u_geometry (\t.data_i\t\t\t\t(bus));   \t  \n"));
+    geometryEditor.setReadOnly(true);
+    geometryEditor.show();
+    geometryEditor.clearFocus();
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+
+    GhostAnnotation geometryAnnotation = formalPortAnnotation;
+    geometryAnnotation.kind = GhostAnnotationKind::FormalPort;
+    geometryAnnotation.placement = GhostAnnotationPlacement::RightOfLine;
+    geometryAnnotation.line = 1;
+    geometryAnnotation.anchorPosition = geometryEditor.toPlainText().indexOf(
+        QStringLiteral("data_i"));
+    geometryAnnotation.anchorLength = QStringLiteral("data_i").size();
+    geometryAnnotation.text = QStringLiteral(
+        "input var logic signed [P_1 * 2 - 1:0] data_i "
+        "[0:P_1 - 1] /* deliberately long declaration */");
+
+    EditorDocumentGeometry documentGeometry;
+    auto renderFormalPortDifference = [&]() {
+        geometryEditor.setGhostAnnotations({});
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+        const QImage withoutGhost = renderWidgetImage(
+            geometryEditor.viewport());
+        geometryEditor.setGhostAnnotations({geometryAnnotation});
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+        const QImage withGhost = renderWidgetImage(
+            geometryEditor.viewport());
+        return differentPixelBounds(withoutGhost, withGhost);
+    };
+    auto expectRenderedAfterTail = [&](const char* label) {
+        const EditorCodeLineTailGeometry tail =
+            documentGeometry.codeLineTailGeometry(&geometryEditor, 0);
+        const QRect difference = renderFormalPortDifference();
+        const bool followsTail = tail.valid && !difference.isNull()
+            && difference.left() >= qFloor(tail.textRight + 4.0)
+            && difference.left() <= qCeil(tail.textRight + 20.0)
+            && difference.right() > difference.left()
+            && difference.bottom() >= qFloor(tail.top)
+            && difference.top() <= qCeil(tail.top + tail.height);
+        expectBool(label, followsTail, true);
+        return qMakePair(tail, difference);
+    };
+
+    const int viewportWidthWithoutGhost = geometryEditor.viewport()->width();
+    geometryEditor.setGhostAnnotations({geometryAnnotation});
     QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
-    expectBool("FormalPort annotation lane is stable across horizontal scroll",
-               formalPortLane
-                   && formalPortLane->geometry()
-                          == formalPortLaneGeometry,
+    expectBool("FormalPort does not reserve a right viewport margin",
+               geometryEditor.viewport()->width()
+                   == viewportWidthWithoutGhost,
                true);
-    bool formalPortLaneRendered = false;
-    if (formalPortLane && !formalPortLane->size().isEmpty()) {
-        QImage laneImage(formalPortLane->size(),
-                         QImage::Format_ARGB32_Premultiplied);
-        laneImage.fill(Qt::transparent);
-        formalPortLane->render(&laneImage);
-        const QRgb backgroundPixel = laneImage.pixel(
-            laneImage.width() - 1, laneImage.height() - 1);
-        for (int y = 0; y < laneImage.height()
-             && !formalPortLaneRendered; ++y) {
-            for (int x = 4; x < laneImage.width(); ++x) {
-                if (laneImage.pixel(x, y) != backgroundPixel) {
-                    formalPortLaneRendered = true;
-                    break;
-                }
-            }
-        }
+
+    QFont fixedFont = QFontDatabase::systemFont(QFontDatabase::FixedFont);
+    fixedFont.setPointSize(11);
+    geometryEditor.setFont(fixedFont);
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+    const auto fixedGeometry = expectRenderedAfterTail(
+        "FormalPort pixels follow tab-expanded monospace line tail");
+
+    QTextBlock geometryBlock = geometryEditor.document()->firstBlock();
+    QString geometryText = geometryBlock.text();
+    int visibleEnd = geometryText.size();
+    while (visibleEnd > 0
+           && (geometryText.at(visibleEnd - 1) == QLatin1Char(' ')
+               || geometryText.at(visibleEnd - 1) == QLatin1Char('\t'))) {
+        --visibleEnd;
     }
-    expectBool("FormalPort annotation lane renders declaration content",
-               formalPortLaneRendered,
+    QTextCursor visibleEndCursor(geometryEditor.document());
+    visibleEndCursor.setPosition(geometryBlock.position() + visibleEnd);
+    expectBool("FormalPort tail excludes trailing invisible whitespace",
+               fixedGeometry.first.valid
+                   && qAbs(fixedGeometry.first.textRight
+                           - geometryEditor.cursorRect(visibleEndCursor).left())
+                          <= 2.0,
+               true);
+
+    QFont proportionalFont = QFontDatabase::systemFont(
+        QFontDatabase::GeneralFont);
+    proportionalFont.setPointSize(13);
+    proportionalFont.setFixedPitch(false);
+    geometryEditor.setFont(proportionalFont);
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+    const auto proportionalGeometry = expectRenderedAfterTail(
+        "FormalPort pixels follow proportional-font line tail");
+    expectBool("FormalPort geometry reacts to real font layout",
+               proportionalGeometry.first.valid
+                   && fixedGeometry.first.valid
+                   && qAbs(proportionalGeometry.first.textRight
+                           - fixedGeometry.first.textRight) > 2.0,
+               true);
+
+    const qreal tailBeforeEdit = proportionalGeometry.first.textRight;
+    QTextCursor lineEndCursor(geometryEditor.document());
+    lineEndCursor.setPosition(geometryBlock.position() + visibleEnd);
+    lineEndCursor.insertText(QStringLiteral(" visible_tail"));
+    geometryEditor.setGhostAnnotations({geometryAnnotation});
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+    const auto editedGeometry = expectRenderedAfterTail(
+        "FormalPort moves immediately after a line-tail edit");
+    expectBool("FormalPort edited tail moves right",
+               editedGeometry.first.valid
+                   && editedGeometry.first.textRight > tailBeforeEdit,
+               true);
+
+    geometryEditor.setLineWrapMode(QPlainTextEdit::NoWrap);
+    geometryEditor.resize(360, 180);
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+    geometryEditor.horizontalScrollBar()->setValue(0);
+    const EditorCodeLineTailGeometry unscrolledTail =
+        documentGeometry.codeLineTailGeometry(&geometryEditor, 0);
+    const int horizontalMaximum =
+        geometryEditor.horizontalScrollBar()->maximum();
+    const int scrollValue = qMin(horizontalMaximum,
+                                 qMax(1, horizontalMaximum / 2));
+    geometryEditor.horizontalScrollBar()->setValue(scrollValue);
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+    const EditorCodeLineTailGeometry scrolledTail =
+        documentGeometry.codeLineTailGeometry(&geometryEditor, 0);
+    expectBool("FormalPort line tail follows normal horizontal scrolling",
+               horizontalMaximum > 0 && unscrolledTail.valid
+                   && scrolledTail.valid
+                   && qAbs((unscrolledTail.textRight
+                            - scrolledTail.textRight)
+                           - scrollValue) <= 2.0,
+               true);
+
+    geometryEditor.horizontalScrollBar()->setValue(0);
+    geometryEditor.setLineWrapMode(QPlainTextEdit::WidgetWidth);
+    geometryEditor.resize(280, 240);
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    const EditorCodeLineTailGeometry wrappedTail =
+        documentGeometry.codeLineTailGeometry(&geometryEditor, 0);
+    const EditorBlockGeometry wrappedBlock = geometryEditor.blockGeometry(0);
+    const QRect wrappedDifference = renderFormalPortDifference();
+    expectBool("FormalPort follows the final QTextLine when wrapping",
+               wrappedTail.valid
+                   && wrappedTail.top > wrappedBlock.top + 1.0
+                   && !wrappedDifference.isNull()
+                   && wrappedDifference.left()
+                          >= qFloor(wrappedTail.textRight + 4.0)
+                   && wrappedDifference.top()
+                          <= qCeil(wrappedTail.top + wrappedTail.height)
+                   && wrappedDifference.bottom()
+                          >= qFloor(wrappedTail.top),
                true);
 
     HierarchyInstanceContext p0Context;
@@ -4078,6 +4298,10 @@ static void runEditorHoverPreviewRegression(const QString& workspacePath)
     MyCodeEditor hoverEditor;
     hoverEditor.setDocumentFileName(rtlTopPath);
     hoverEditor.setLineWrapMode(QPlainTextEdit::NoWrap);
+    QFont hoverCodeFont = QFontDatabase::systemFont(
+        QFontDatabase::GeneralFont);
+    hoverCodeFont.setPointSize(13);
+    hoverEditor.setFont(hoverCodeFont);
     hoverEditor.resize(800, 320);
     hoverEditor.setPlainText(rtlTopText);
     QTextBlock signalBlock =
@@ -4122,6 +4346,17 @@ static void runEditorHoverPreviewRegression(const QString& workspacePath)
                    && !embeddedPopup->isWindow()
                    && embeddedPopup->parentWidget() == &hoverEditor,
                true);
+    expectBool("double-click popup uses one editor font",
+               popupTextUsesEditorFont(embeddedPopup,
+                                       hoverEditor.font()),
+               true);
+    expectBool("double-click popup has no global top-level flags",
+               embeddedPopup
+                   && embeddedPopup->windowType() == Qt::Widget
+                   && !embeddedPopup->windowFlags().testFlag(
+                       Qt::WindowStaysOnTopHint)
+                   && embeddedPopup->window() == hoverEditor.window(),
+               true);
     QTest::mouseMove(hoverEditor.viewport(), signalPoint + QPoint(2, 0));
     QApplication::processEvents();
     QTest::qWait(20);
@@ -4141,6 +4376,85 @@ static void runEditorHoverPreviewRegression(const QString& workspacePath)
     expectBool("outside click closes semantic popup",
                outsideClickPopupVisible,
                false);
+
+    EditorHoverPopup fontAuditPopup(
+        &hoverEditor,
+        EditorHoverPopup::PlacementMode::EmbeddedChild);
+    SymbolHoverReport parameterFontReport;
+    parameterFontReport.available = true;
+    parameterFontReport.symbolName = QStringLiteral("P_WIDTH");
+    parameterFontReport.displayKind = QStringLiteral("parameter");
+    parameterFontReport.sourceRole = QStringLiteral("definition");
+    parameterFontReport.ownerName = QStringLiteral("rtl_top");
+    parameterFontReport.declarationText = QStringLiteral(
+        "parameter logic [31:0] P_WIDTH = BASE + 1");
+    parameterFontReport.definitionFile = rtlTopPath;
+    parameterFontReport.definitionLine = signalLine;
+    parameterFontReport.parameterLike = true;
+    parameterFontReport.effectiveValueStatus =
+        EffectiveValueStatus::Current;
+    parameterFontReport.valueText = QStringLiteral("32'd17");
+    parameterFontReport.valueSource = QStringLiteral("slang elaboration");
+    parameterFontReport.instanceBound = true;
+    parameterFontReport.instancePath = QStringLiteral("top.u0");
+    parameterFontReport.resolvedTypeText = QStringLiteral(
+        "logic [31:0]");
+    parameterFontReport.bitWidthText = QStringLiteral("32");
+    parameterFontReport.expressionText = QStringLiteral("BASE + 1");
+    parameterFontReport.evaluationFailureReason = QStringLiteral(
+        "representative status text");
+    parameterFontReport.macroSignatureText = QStringLiteral("`WIDTH(x)");
+    parameterFontReport.macroBodyText = QStringLiteral("((x) + 1)");
+    fontAuditPopup.showHover(parameterFontReport,
+                             hoverEditor.mapToGlobal(QPoint(40, 40)),
+                             hoverEditor.font());
+    QApplication::processEvents();
+    const int parameterFontLabelCount =
+        fontAuditPopup.findChildren<QLabel*>().size();
+    const bool parameterFontsUnified =
+        parameterFontLabelCount >= 12
+        && popupTextUsesEditorFont(&fontAuditPopup,
+                                  hoverEditor.font());
+
+    SymbolHoverReport portFontReport = parameterFontReport;
+    portFontReport.symbolName = QStringLiteral("data_i");
+    portFontReport.displayKind = QStringLiteral("input port");
+    portFontReport.parameterLike = false;
+    portFontReport.port = true;
+    portFontReport.evaluationFailureReason.clear();
+    portFontReport.resolvedTypeText = QStringLiteral("test_t");
+    portFontReport.packedDimensionsText = QStringLiteral("[7:0]");
+    portFontReport.unpackedDimensionsText = QStringLiteral("[0:1]");
+    portFontReport.signednessText = QStringLiteral("unsigned");
+    portFontReport.interfaceName = QStringLiteral("axi_if");
+    portFontReport.modportName = QStringLiteral("master");
+    fontAuditPopup.showHover(portFontReport,
+                             hoverEditor.mapToGlobal(QPoint(40, 40)),
+                             hoverEditor.font());
+    QApplication::processEvents();
+    const bool portFontsUnified =
+        fontAuditPopup.findChildren<QLabel*>().size() >= 12
+        && popupTextUsesEditorFont(&fontAuditPopup,
+                                  hoverEditor.font());
+
+    SymbolHoverReport staleFontReport = portFontReport;
+    staleFontReport.effectiveValueStatus = EffectiveValueStatus::Stale;
+    staleFontReport.evaluationFailureReason = QStringLiteral("stale");
+    fontAuditPopup.showHover(staleFontReport,
+                             hoverEditor.mapToGlobal(QPoint(40, 40)),
+                             hoverEditor.font());
+    QApplication::processEvents();
+    const bool staleFontsUnified =
+        visibleEditorHoverPopupText().contains(
+            QStringLiteral("waiting for the current document revision"))
+        && popupTextUsesEditorFont(&fontAuditPopup,
+                                  hoverEditor.font());
+    expectBool("all double-click popup text paths share editor font",
+               parameterFontsUnified
+                   && portFontsUnified
+                   && staleFontsUnified,
+               true);
+    fontAuditPopup.closePopup();
 
     QTest::mouseDClick(hoverEditor.viewport(),
                        Qt::LeftButton,

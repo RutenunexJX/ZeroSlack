@@ -83,6 +83,10 @@ QString printedSyntax(const SyntaxNode& syntax)
 {
     SyntaxPrinter printer;
     printer.setIncludeComments(false);
+    printer.setIncludeDirectives(false);
+    printer.setIncludeSkipped(false);
+    printer.setExpandIncludes(false);
+    printer.setExpandMacros(false);
     printer.setSquashNewlines(true);
     printer.printExcludingLeadingComments(syntax);
     return flattenSyntaxText(
@@ -95,6 +99,10 @@ QString printedToken(slang::parsing::Token token)
         return QString();
     SyntaxPrinter printer;
     printer.setIncludeComments(false);
+    printer.setIncludeDirectives(false);
+    printer.setIncludeSkipped(false);
+    printer.setExpandIncludes(false);
+    printer.setExpandMacros(false);
     printer.setSquashNewlines(true);
     printer.print(token);
     return flattenSyntaxText(
@@ -112,14 +120,26 @@ QString joinedParts(const QStringList& parts)
     return result.join(QLatin1Char(' '));
 }
 
-QString attributesText(const SyntaxList<AttributeInstanceSyntax>& attributes)
+QString explicitAnsiPortDeclarationText(
+    const ExplicitAnsiPortSyntax& port)
 {
-    QStringList parts;
-    for (const AttributeInstanceSyntax* attribute : attributes) {
-        if (attribute)
-            parts.append(printedSyntax(*attribute));
-    }
-    return joinedParts(parts);
+    SyntaxPrinter printer;
+    printer.setIncludeComments(false);
+    printer.setIncludeDirectives(false);
+    printer.setIncludeSkipped(false);
+    printer.setExpandIncludes(false);
+    printer.setExpandMacros(false);
+    printer.setSquashNewlines(true);
+    if (port.direction)
+        printer.print(port.direction);
+    printer.print(port.dot);
+    printer.print(port.name);
+    printer.print(port.openParen);
+    if (port.expr)
+        printer.print(*port.expr);
+    printer.print(port.closeParen);
+    return flattenSyntaxText(
+        QString::fromStdString(std::string(printer.str())));
 }
 
 QString dimensionsText(
@@ -200,7 +220,8 @@ void appendAnsiPortPresentations(
                 sourceManager, port.name.location(), name);
             if (!key.isEmpty()) {
                 SemanticSymbolPresentation presentation;
-                presentation.declarationText = printedSyntax(port);
+                presentation.declarationText =
+                    explicitAnsiPortDeclarationText(port);
                 result->insert(key, std::move(presentation));
             }
             continue;
@@ -228,8 +249,7 @@ void appendAnsiPortPresentations(
 
         SemanticSymbolPresentation presentation;
         presentation.declarationText = joinedParts(
-            {attributesText(port.attributes),
-             header,
+            {header,
              printedSyntax(*port.declarator)});
         presentation.packedDimensionsText = packed;
         presentation.unpackedDimensionsText =
@@ -252,7 +272,6 @@ void appendNonAnsiPortPresentations(
 
         const auto& declaration = member->as<PortDeclarationSyntax>();
         const QString header = printedSyntax(*declaration.header);
-        const QString attributes = attributesText(declaration.attributes);
         const QString packed =
             sourcePackedDimensionsText(*declaration.header);
         for (const DeclaratorSyntax* declarator : declaration.declarators) {
@@ -267,7 +286,7 @@ void appendNonAnsiPortPresentations(
 
             SemanticSymbolPresentation presentation;
             presentation.declarationText = joinedParts(
-                {attributes, header, printedSyntax(*declarator)});
+                {header, printedSyntax(*declarator)});
             presentation.packedDimensionsText = packed;
             presentation.unpackedDimensionsText =
                 dimensionsText(declarator->dimensions);
