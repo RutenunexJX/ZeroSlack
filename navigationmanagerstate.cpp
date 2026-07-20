@@ -72,6 +72,7 @@ void NavigationManager::NavigationCaches::clearDesignHierarchy()
     designHierarchy = {};
     designRootModules.clear();
     designFileScope.clear();
+    designStructureFingerprint.clear();
     designSnapshotGeneration = 0;
     designHierarchyValid = false;
 }
@@ -106,6 +107,7 @@ void NavigationManager::saveDesignHierarchyCache()
     entry.topModule = caches.designTopModule;
     entry.rootModules = caches.designRootModules;
     entry.fileScope = caches.designFileScope;
+    entry.structureFingerprint = caches.designStructureFingerprint;
     entry.snapshotGeneration = caches.designSnapshotGeneration;
     entry.hierarchyValid = caches.designHierarchyValid;
     entry.topInferred = caches.designTopInferred;
@@ -131,16 +133,10 @@ void NavigationManager::restoreDesignHierarchyCache()
     caches.designTopModule = entry.topModule;
     caches.designRootModules = entry.rootModules;
     caches.designFileScope = entry.fileScope;
+    caches.designStructureFingerprint = entry.structureFingerprint;
     caches.designSnapshotGeneration = entry.snapshotGeneration;
     caches.designHierarchyValid = entry.hierarchyValid;
     caches.designTopInferred = entry.topInferred;
-
-    if (navigationService && caches.designHierarchyValid) {
-        const std::uint64_t snapshotRevision =
-            navigationService->semanticSnapshotRevision();
-        caches.designSnapshotGeneration = snapshotRevision;
-        caches.designHierarchy.snapshotGeneration = snapshotRevision;
-    }
 }
 
 void NavigationManager::invalidateCurrentDesignHierarchyCache()
@@ -148,5 +144,9 @@ void NavigationManager::invalidateCurrentDesignHierarchyCache()
     const QString key = designHierarchyCacheKey();
     if (!key.isEmpty())
         designHierarchyCacheByScope.remove(key);
-    caches.clearDesignHierarchy();
+    // Keep the last report and its structural fingerprint available until the
+    // next authoritative snapshot arrives. A symbol/presentation publication
+    // can invalidate the transaction without changing the module-instance
+    // graph; discarding the report here forced an unnecessary tree rebuild.
+    caches.designHierarchyValid = false;
 }

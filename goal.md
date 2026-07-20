@@ -73,10 +73,15 @@ instance values are keyed by exact hierarchy path, detached defaults remain
 separate, and open unsaved documents participate through revisioned,
 debounced, cancellable overlays. Exact declaration ranges are part of stable
 identity. The service exposes unavailable/current/stale/error state, precise
-value/type/dimension/width data, scope or instance provenance, failure reason,
-and computation/document revisions. Ghost no longer contains a second
-arithmetic/concatenation/enum evaluator, and Wave Preview remains outside the
-compile-time value system.
+  value/type/dimension/width data, scope or instance provenance, failure reason,
+  and computation/document revisions. Ghost no longer contains a second
+  arithmetic/concatenation/enum evaluator, and Wave Preview remains outside the
+  compile-time value system. Formal-port annotations remain visible in a
+  dedicated right-side lane and are deduplicated by declaration identity.
+  Redundant direct parameter values are omitted only after Slang proves source
+  and effective values equivalent; derived, coerced, and instance-different
+  values remain. Known enum values display Slang decimal text while exact
+  width/signed/X/Z binary semantics remain available.
 
 `test_sv/new/PKG_global.sv` is not a valid-value fixture for every declaration:
 `E_PRE_ASSERT` is used from line 550 and declared only at line 663. Slang
@@ -85,29 +90,29 @@ The unified value system publishes that error and never substitutes an
 implicit increment or hand-evaluated literal; dedicated valid fixtures own the
 package and general enum-expression value checks.
 
-Workspace symbol, effective-value, and diagnostic analysis captures one
-immutable source transaction: the project file set plus the exact text and
-revision of every open buffer. Any captured edit expires the worker and queues
-a restart from the newest complete `DocumentModel` snapshot. Workspace epoch,
-request generation, dependency/document revisions, and computation revision
-guard one atomic GUI-thread publication. Dirty buffers replace disk text; they
-are not skipped, and staged/checkpoint/chunked semantic publication is no
-longer part of the architecture.
+Dirty or cache-mismatched workspace symbol, effective-value, and diagnostic
+analysis captures one immutable source transaction: the project file set plus
+the exact text and revision of every open buffer. Clean indexed workspace files
+open at semantic revision zero and do not launch an overlay or publish a new
+snapshot. Any captured edit expires the worker and queues a restart from the
+newest complete `DocumentModel` snapshot. Workspace epoch, request generation,
+dependency/document revisions, and computation revision guard one atomic
+GUI-thread publication. Staged/checkpoint/chunked publication is not part of
+the architecture.
 
 Automatic relationship analysis captures the semantic snapshot token emitted
 by that transaction, uses the same snapshot source contents and symbol records,
 and rejects stale request/project identities. It does not launch another
 per-open-tab Slang symbol/value/diagnostic refresh.
 
-Clean open-document publication is handle-churn safe: authoritative snapshot
-relationships are retained by stable source identity, rebound to replacement
-handles, filtered for removed or changed endpoints, and mirrored back into the
-relationship engine. Opening `rtl_top.sv` after workspace analysis therefore
-preserves the Design/Navigation instance hierarchy. Editor semantic revisions
-advance only for source-text changes, so formatting/highlighting cannot stale
-Slang facts or remove width/value Ghost annotations; completed publications,
-tab activation, file identity, and instance-context changes all re-query the
-same EffectiveValue service.
+Clean indexed files do not publish an overlay or rebuild Design. Dirty or
+cache-mismatched publications remain handle-churn safe: authoritative
+relationships are retained by stable identity, rebound to replacement handles,
+and filtered for removed or changed endpoints. Navigation coalesces file/batch
+completion by snapshot generation and rebuilds only when its stable Design
+structural fingerprint changes; presentation-only publications merely advance
+the cached generation. Editor revisions advance only for source-text changes,
+so formatting/highlighting cannot stale Slang facts or remove Ghost annotations.
 
 Problems `Current File` always follows the active document. File-specific
 analysis notifications are invalidation hints only, and multiple different
@@ -140,24 +145,27 @@ Corrective coverage is split by ownership: `global_control_ow_test` exercises
 the real `ow 1` coordinator path for selector cancel/repeat, `test_sv/new`,
 `test_sv/huge_prj`, both analyses, semantic queries, and active-worker teardown;
 `effective_value_test` covers package/compilation-unit/default/per-instance
-facts, general enum expressions, wide/signed/X/Z/string/type/dimension values,
-same-name nested identity, Hover/Ghost, and unsaved overlay revision,
+  facts, general enum expressions, decimal/X/Z enum rendering, parameter
+  source-value equivalence, wide/signed/X/Z/string/type/dimension values,
+  same-name nested identity, Hover/Ghost, and unsaved overlay revision,
 cancellation, atomic values, and diagnostics; `gui_smoke_test` covers ordinary
 and backtick completion negatives, explicit Tab candidate behavior, scan
-reentrancy, embedded double-click popup lifetime, and complete port
-declarations; `relationship_test` retains real `PKG_global.sv` / `chl_ctrl.sv`
+  reentrancy, embedded double-click popup lifetime, complete port declarations,
+  actual FormalPort lane rendering, and Design refresh coalescing;
+  `relationship_test` retains real `PKG_global.sv` / `chl_ctrl.sv`
 integration. The `ow 1` regression additionally opens analyzed `rtl_top.sv`
-through the real TabManager and preserves stable relationships, package value,
-semantic Ghost, port presentation, Design/Navigation reports, and an actual
-nested NavigationWidget item. Final headless acceptance is complete: the full
-Debug build passed 29/29 steps in 3895.3 seconds, the final all-target build had
-no pending work, and complete CTest passed 12/12 in 181.66 seconds. No visible
+  through the real TabManager at semantic revision zero and verifies no
+  open-tabs analysis, snapshot publication, or Design refresh while stable
+  relationships, package values, semantic Ghost, port presentation, and nested
+  Navigation data remain available. Final headless acceptance is complete: the
+  final Debug all-target incremental build passed 12/12 steps in 1044.1 seconds,
+  and complete CTest passed 12/12 in 144.18 seconds. No visible
 `demo.exe` was launched after the user prohibited GUI interference; the real
 coordinator route ran under Qt offscreen and remained alive for both projects.
-Final `.zs` hashes are `ED843650...BE292B7` (`new`) and
-`CD8A81F2...21CF425` (`huge_prj`). The `new/.zs` timestamp predates this
-headless validation, but its hash differs from the earlier recorded
-`A7942210...501F43`; the repair did not overwrite or restore it.
+The final static audit left both user `.zs` files untouched. `new/.zs` is the
+user's 18:31:51 reproduction-session save (`9F0341AC...ACBC10`), while
+`huge_prj/.zs` remains `CD8A81F2...21CF425`; headless validation did not
+overwrite or restore either file.
 
 Remaining scope is documented rather than hidden: dirty overlays invalidate
 old relationship edges but do not yet launch an overlay-matched relationship

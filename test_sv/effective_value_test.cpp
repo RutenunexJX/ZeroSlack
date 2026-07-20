@@ -146,6 +146,11 @@ void runSlangEffectiveValueRegression()
         "    E_COND = P[0] ? 16'h1111 : 16'h2222,\n"
         "    E_NEXT\n"
         "  } e_t;\n"
+        "  typedef enum logic signed [15:0] { E_NEG = -16'sd7 } signed_e;\n"
+        "  typedef enum logic [79:0] {\n"
+        "    E_WIDE_ENUM = 80'h1234_5678_9abc_def0_1234\n"
+        "  } wide_e;\n"
+        "  typedef enum logic [7:0] { E_XZ = 8'b10xz_01z1 } xz_e;\n"
         "  logic [P * 2 - 1:0] packed_value;\n"
         "  logic [7:0] unpacked_value [P:0];\n"
         "  constants_pkg::pkg_e pkg_state;\n"
@@ -212,7 +217,9 @@ void runSlangEffectiveValueRegression()
                && packageEnumValue.qualifiedScopePath.startsWith(
                    QStringLiteral("constants_pkg"))
                && packageEnumValue.valueText
-                   == QStringLiteral("5'b10101"));
+                   == QStringLiteral("5'b10101")
+               && packageEnumValue.displayValueText
+                   == QStringLiteral("21"));
 
     const SemanticSymbolRecord compilationUnitValue = findRecord(
         records,
@@ -250,7 +257,9 @@ void runSlangEffectiveValueRegression()
                && compilationUnitEnumResult.qualifiedScopePath.startsWith(
                    QStringLiteral("$unit"))
                && compilationUnitEnumResult.valueText
-                   == QStringLiteral("8'b10010"));
+                   == QStringLiteral("8'b10010")
+               && compilationUnitEnumResult.displayValueText
+                   == QStringLiteral("18"));
 
     const QList<SemanticSymbolRecord> duplicateLocalparams = findRecords(
         records,
@@ -309,6 +318,12 @@ void runSlangEffectiveValueRegression()
         QStringLiteral("E_NEXT"), QStringLiteral("top.u0"));
     const EffectiveValueResult nextU1 = enumValue(
         QStringLiteral("E_NEXT"), QStringLiteral("top.u1"));
+    const EffectiveValueResult negativeEnum = enumValue(
+        QStringLiteral("E_NEG"), QStringLiteral("top.u0"));
+    const EffectiveValueResult wideEnum = enumValue(
+        QStringLiteral("E_WIDE_ENUM"), QStringLiteral("top.u0"));
+    const EffectiveValueResult unknownEnum = enumValue(
+        QStringLiteral("E_XZ"), QStringLiteral("top.u0"));
     expect("enum concat and package references have exact Slang values",
            concatU0.current() && concatU1.current()
                && concatU0.valueText
@@ -318,6 +333,8 @@ void runSlangEffectiveValueRegression()
            enumU0.current() && enumU1.current()
                && enumU0.valueText == QStringLiteral("16'b1000000011")
                && enumU1.valueText == QStringLiteral("16'b1100000011")
+               && enumU0.displayValueText == QStringLiteral("515")
+               && enumU1.displayValueText == QStringLiteral("771")
                && enumU0.bitWidthText == QStringLiteral("16"));
     expect("enum cast and shift have exact per-instance values",
            shiftU0.current() && shiftU1.current()
@@ -335,6 +352,23 @@ void runSlangEffectiveValueRegression()
                    == QStringLiteral("16'b10001000100011")
                && nextU1.valueText
                    == QStringLiteral("16'b1000100010010"));
+    expect("signed and wide enum display values are exact decimal",
+           negativeEnum.current() && wideEnum.current()
+               && negativeEnum.valueText
+                   == QStringLiteral("-16'sb111")
+               && negativeEnum.displayValueText
+                   == QStringLiteral("-7")
+               && wideEnum.valueText
+                   == QStringLiteral(
+                       "80'b10010001101000101011001111000100110101011110011011110111100000001001000110100")
+               && wideEnum.displayValueText
+                   == QStringLiteral("85968058283706962416180"));
+    expect("enum display preserves exact X and Z positions when decimal is impossible",
+           unknownEnum.current()
+               && unknownEnum.valueText.toLower()
+                   == QStringLiteral("8'b10xz01z1")
+               && unknownEnum.displayValueText
+                   == unknownEnum.valueText);
 
     const SemanticSymbolRecord parameter = findRecord(
         records,
@@ -347,7 +381,9 @@ void runSlangEffectiveValueRegression()
     expect("module parameter uses the exact bound instance value",
            parameterU0.current() && parameterU1.current()
                && parameterU0.valueText == QStringLiteral("4'b10")
-               && parameterU1.valueText == QStringLiteral("4'b11"));
+               && parameterU1.valueText == QStringLiteral("4'b11")
+               && parameterU0.displayValueText.isEmpty()
+               && parameterU1.displayValueText.isEmpty());
     const EffectiveValueResult parameterDefault = resolve(
         service, parameter, source);
     expect("unbound module parameter is explicitly the Slang default",
@@ -426,11 +462,11 @@ void runSlangEffectiveValueRegression()
         }
         return QString();
     };
-    expect("bound enum Ghost displays the exact u0 and u1 Slang values",
+    expect("bound enum Ghost displays decimal u0 and u1 Slang values",
            boundEnumGhostText(QStringLiteral("top.u0"))
-                   == QStringLiteral("= %1").arg(enumU0.valueText)
+                   == QStringLiteral("= 515")
                && boundEnumGhostText(QStringLiteral("top.u1"))
-                   == QStringLiteral("= %1").arg(enumU1.valueText)
+                   == QStringLiteral("= 771")
                && enumU0.valueText != enumU1.valueText);
 
     const SemanticSymbolRecord wide = findRecord(
@@ -1372,17 +1408,216 @@ void runGhostUsesSlangRegression()
         if (annotation.kind == GhostAnnotationKind::EnumValue)
             enumTexts.append(annotation.text.toLower());
     }
-    if (!enumTexts.contains(QStringLiteral("= 8'b10100101"))
+    if (!enumTexts.contains(QStringLiteral("= 165"))
         || enumTexts.size() < 3) {
         std::printf("enum ghost annotations: %s\n",
                     qPrintable(enumTexts.join(QStringLiteral(" | "))));
     }
-    expect("enum ghost uses Slang concatenation value",
-           enumTexts.contains(QStringLiteral("= 8'b10100101")));
+    expect("enum ghost displays Slang concatenation value in decimal",
+           enumTexts.contains(QStringLiteral("= 165")));
     expect("enum ghost uses Slang expression and implicit increment",
            enumTexts.size() >= 3
-               && enumTexts.contains(QStringLiteral("= 8'b1001011"))
-               && enumTexts.contains(QStringLiteral("= 8'b1001100")));
+               && enumTexts.contains(QStringLiteral("= 75"))
+               && enumTexts.contains(QStringLiteral("= 76")));
+}
+
+void runParameterSourceDisplayEquivalenceRegression()
+{
+    const QString fileName = QDir::current().absoluteFilePath(
+        QStringLiteral("effective_parameter_display_fixture.sv"));
+    const QString source = QStringLiteral(
+        "module child #(\n"
+        "  parameter logic [3:0] TRUNC = 8'h1f,\n"
+        "  parameter logic signed [7:0] SIGNED_VALUE = 8'hff,\n"
+        "  parameter logic [15:0] SAME = 8'd7,\n"
+        "  parameter int EXPRESSION = 3 + 4\n"
+        ");\n"
+        "endmodule\n"
+        "module parent #(\n"
+        "  parameter logic [7:0] TRUNC_SOURCE = 8'h1e,\n"
+        "  parameter logic [7:0] SIGNED_SOURCE = 8'h70\n"
+        ");\n"
+        "  child #(\n"
+        "    .TRUNC(TRUNC_SOURCE + 0),\n"
+        "    .SIGNED_VALUE(SIGNED_SOURCE + 0),\n"
+        "    .SAME(8'd9)\n"
+        "  ) u_child();\n"
+        "endmodule\n"
+        "module top;\n"
+        "  parent #(\n"
+        "    .TRUNC_SOURCE(8'h2e),\n"
+        "    .SIGNED_SOURCE(8'h80)\n"
+        "  ) p0();\n"
+        "endmodule\n");
+    const auto lineOf = [&](const QString& needle) {
+        const int position = source.indexOf(needle);
+        return position < 0
+            ? -1
+            : source.left(position).count(QLatin1Char('\n')) + 1;
+    };
+    const int truncDeclarationLine = lineOf(
+        QStringLiteral("parameter logic [3:0] TRUNC"));
+    const int signedDeclarationLine = lineOf(
+        QStringLiteral("parameter logic signed [7:0] SIGNED_VALUE"));
+    const int sameDeclarationLine = lineOf(
+        QStringLiteral("parameter logic [15:0] SAME"));
+    const int expressionDeclarationLine = lineOf(
+        QStringLiteral("parameter int EXPRESSION"));
+    SlangManager slang;
+    QList<EffectiveValueFact> facts;
+    QList<SemanticSymbolRecord> records = slang.extractSymbolRecords(
+        fileName, source, {}, {}, &facts);
+    const SemanticSymbolRecord truncRecord = findRecord(
+        records,
+        QStringLiteral("TRUNC"),
+        SymbolTaxonomy::CollectorKind::Parameter);
+    const SemanticSymbolRecord signedRecord = findRecord(
+        records,
+        QStringLiteral("SIGNED_VALUE"),
+        SymbolTaxonomy::CollectorKind::Parameter);
+    const SemanticSymbolRecord sameRecord = findRecord(
+        records,
+        QStringLiteral("SAME"),
+        SymbolTaxonomy::CollectorKind::Parameter);
+    const SemanticSymbolRecord expressionRecord = findRecord(
+        records,
+        QStringLiteral("EXPRESSION"),
+        SymbolTaxonomy::CollectorKind::Parameter);
+    expect("Slang marks only equivalent direct declaration values redundant",
+           truncRecord.isValid() && signedRecord.isValid()
+               && sameRecord.isValid() && expressionRecord.isValid()
+               && !truncRecord.presentation.defaultInfo
+                       .sourceTextDisplaysEffectiveValue
+               && !signedRecord.presentation.defaultInfo
+                       .sourceTextDisplaysEffectiveValue
+               && sameRecord.presentation.defaultInfo
+                      .sourceTextDisplaysEffectiveValue
+               && !expressionRecord.presentation.defaultInfo
+                       .sourceTextDisplaysEffectiveValue);
+    SemanticIndex index;
+    EffectiveValueService values(&index);
+    const std::uint64_t computationRevision =
+        values.beginComputation({fileName});
+    for (SemanticSymbolRecord& record : records)
+        record.presentation.computationRevision = computationRevision;
+    index.setSnapshot(snapshot(records, fileName, source));
+    values.publishDocumentFacts(fileName,
+                                source,
+                                std::move(facts),
+                                computationRevision);
+    GhostAnnotationService ghost(&index, &values);
+
+    const auto reportFor = [&](const HierarchyInstanceContext& context) {
+        GhostAnnotationQuery query;
+        query.fileName = fileName;
+        query.documentText = source;
+        query.instanceContext = context;
+        return ghost.annotationsForDocument(query);
+    };
+    const auto hasAnnotation = [](const GhostAnnotationReport& report,
+                                  GhostAnnotationKind kind,
+                                  int line,
+                                  const QString& text) {
+        return std::any_of(
+            report.annotations.cbegin(),
+            report.annotations.cend(),
+            [&](const GhostAnnotation& annotation) {
+                return annotation.kind == kind
+                    && annotation.line == line
+                    && annotation.text == text;
+            });
+    };
+    const auto hasKindOnLine = [](const GhostAnnotationReport& report,
+                                  GhostAnnotationKind kind,
+                                  int line) {
+        return std::any_of(
+            report.annotations.cbegin(),
+            report.annotations.cend(),
+            [&](const GhostAnnotation& annotation) {
+                return annotation.kind == kind
+                    && annotation.line == line;
+            });
+    };
+
+    const GhostAnnotationReport unbound = reportFor({});
+    const QList<SemanticSymbolRecord> indexedRecords =
+        index.getSymbolRecords(fileName);
+    const SemanticSymbolRecord indexedTrunc = findRecord(
+        indexedRecords,
+        QStringLiteral("TRUNC"),
+        SymbolTaxonomy::CollectorKind::Parameter);
+    const SemanticSymbolRecord indexedSame = findRecord(
+        indexedRecords,
+        QStringLiteral("SAME"),
+        SymbolTaxonomy::CollectorKind::Parameter);
+    const EffectiveValueResult unboundTrunc = resolve(
+        values, indexedTrunc, source);
+    const EffectiveValueResult unboundSame = resolve(
+        values, indexedSame, source);
+    const EffectiveValueResult boundSame = resolve(
+        values,
+        indexedSame,
+        source,
+        instance(QStringLiteral("top.p0.u_child")));
+    const bool serviceMetadataCorrect =
+        unboundTrunc.current() && unboundSame.current()
+        && boundSame.current()
+        && !unboundTrunc.sourceTextDisplaysEffectiveValue
+        && unboundSame.sourceTextDisplaysEffectiveValue
+        && !boundSame.sourceTextDisplaysEffectiveValue;
+    if (!serviceMetadataCorrect) {
+        std::printf(
+            "parameter service metadata: trunc status=%d equivalent=%d value=%s; "
+            "same status=%d equivalent=%d value=%s; bound status=%d equivalent=%d value=%s reason=%s\n",
+            static_cast<int>(unboundTrunc.status),
+            unboundTrunc.sourceTextDisplaysEffectiveValue,
+            qPrintable(unboundTrunc.valueText),
+            static_cast<int>(unboundSame.status),
+            unboundSame.sourceTextDisplaysEffectiveValue,
+            qPrintable(unboundSame.valueText),
+            static_cast<int>(boundSame.status),
+            boundSame.sourceTextDisplaysEffectiveValue,
+            qPrintable(boundSame.valueText),
+            qPrintable(boundSame.failureReason));
+    }
+    expect("EffectiveValueService propagates declaration-anchor equivalence",
+           serviceMetadataCorrect);
+    expect("narrow direct literal still shows the truncated effective value",
+           hasAnnotation(unbound,
+                         GhostAnnotationKind::ParameterValue,
+                         truncDeclarationLine,
+                         QStringLiteral("= 4'b1111")));
+    expect("unsigned literal assigned to signed parameter shows coercion",
+           hasAnnotation(unbound,
+                         GhostAnnotationKind::ParameterValue,
+                         signedDeclarationLine,
+                         QStringLiteral("= -8'sd1")));
+    expect("numerically equivalent direct literal remains suppressed",
+           !hasKindOnLine(unbound,
+                          GhostAnnotationKind::ParameterValue,
+                          sameDeclarationLine));
+    expect("nonliteral parameter expression still shows its effective value",
+           hasAnnotation(unbound,
+                         GhostAnnotationKind::ParameterValue,
+                         expressionDeclarationLine,
+                         QStringLiteral("= 7")));
+    const GhostAnnotationReport bound = reportFor(
+        instance(QStringLiteral("top.p0.u_child")));
+    expect("bound declaration shows truncated override value",
+           hasAnnotation(bound,
+                         GhostAnnotationKind::ParameterValue,
+                         truncDeclarationLine,
+                         QStringLiteral("= 4'b1110")));
+    expect("bound declaration shows signed override value",
+           hasAnnotation(bound,
+                         GhostAnnotationKind::ParameterValue,
+                         signedDeclarationLine,
+                         QStringLiteral("= -8'sd128")));
+    expect("bound declaration shows a direct override absent from declaration text",
+           hasAnnotation(bound,
+                         GhostAnnotationKind::ParameterValue,
+                         sameDeclarationLine,
+                         QStringLiteral("= 16'd9")));
 }
 
 void runInvalidEnumIsolationRegression()
@@ -1416,7 +1651,9 @@ void runInvalidEnumIsolationRegression()
            valid.isValid()
                && valid.presentation.defaultInfo.available
                && valid.presentation.defaultInfo.valueText
-                   == QStringLiteral("8'b10100101"));
+                   == QStringLiteral("8'b10100101")
+               && valid.presentation.defaultInfo.displayValueText
+                   == QStringLiteral("165"));
     expect("invalid implicit enum successor is published as unavailable",
            invalidSuccessor.isValid()
                && !invalidSuccessor.presentation.defaultInfo.available
@@ -1796,6 +2033,7 @@ int main(int argc, char** argv)
     runUtf16AndCrLfOffsetRegression();
     runHoverRevisionRegression();
     runGhostUsesSlangRegression();
+    runParameterSourceDisplayEquivalenceRegression();
     runInvalidEnumIsolationRegression();
     runTopOverrideDefaultRegression();
     runParameterOverrideAnchorRegression();

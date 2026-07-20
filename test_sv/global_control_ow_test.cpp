@@ -14,6 +14,7 @@
 #include <QTreeWidget>
 
 #include <cstdio>
+#include <algorithm>
 #include <atomic>
 #include <cstdint>
 #include <functional>
@@ -315,6 +316,15 @@ bool hasSemanticGhostAnnotation(const QList<GhostAnnotation>& annotations)
         }
     }
     return false;
+}
+
+bool hasGhostAnnotationKind(const QList<GhostAnnotation>& annotations,
+                            GhostAnnotationKind kind)
+{
+    return std::any_of(annotations.cbegin(), annotations.cend(),
+                       [kind](const GhostAnnotation& annotation) {
+                           return annotation.kind == kind;
+                       });
 }
 
 bool hasRevisionBoundGhostAnnotation(
@@ -663,10 +673,9 @@ int main(int argc, char** argv)
 
     // Regression for the exact post-analysis user sequence: workspace symbol
     // and automatic relationship analysis are already stable, then an
-    // existing workspace member is opened without editing it. The open-tab
-    // overlay may advance revisions, but it must not discard the semantic
-    // relationships, elaborated presentations, effective values, Design
-    // hierarchy, or Ghost annotations published by the workspace pipeline.
+    // existing workspace member is opened without editing it. Disk content
+    // already represented by the workspace snapshot must remain revision zero
+    // and must not launch an equivalent all-open-tabs Slang transaction.
     const QString rtlTopPath = QDir(newWorkspace).absoluteFilePath(
         QStringLiteral("elec_phy_import/top/rtl_top.sv"));
     const QString packagePath = QDir(newWorkspace).absoluteFilePath(
@@ -753,6 +762,9 @@ int main(int argc, char** argv)
           !beforeGhostKeys.isEmpty()
               && hasSemanticGhostAnnotation(
                   beforeGhostReport.annotations));
+    check("post-analysis baseline includes formal port Ghost declarations",
+          hasGhostAnnotationKind(beforeGhostReport.annotations,
+                                 GhostAnnotationKind::FormalPort));
     check("post-analysis baseline Design hierarchy has expected instances",
           !designKeysBefore.isEmpty()
               && designContainsModuleType(designBefore,
@@ -775,16 +787,20 @@ int main(int argc, char** argv)
               && designTreeContainsNestedModule(
                   designTree, QStringLiteral("top_ctrl")));
 
-    bool rtlTopOverlayCompleted = false;
+    int openFileAnalysisStarts = 0;
+    int openFileAnalysisFinishes = 0;
     int designRefreshesAfterOpen = 0;
+    QObject::connect(window.analysisScheduler.get(),
+                     &AnalysisScheduler::fileSymbolAnalysisStarted,
+                     &window,
+                     [&](const QString&) {
+                         ++openFileAnalysisStarts;
+                     });
     QObject::connect(window.analysisScheduler.get(),
                      &AnalysisScheduler::fileSymbolAnalysisFinished,
                      &window,
-                     [&](const QString& fileName, int) {
-                         if (normalizedPath(fileName)
-                             == normalizedPath(rtlTopPath)) {
-                             rtlTopOverlayCompleted = true;
-                         }
+                     [&](const QString&, int) {
+                         ++openFileAnalysisFinishes;
                      });
     QObject::connect(window.navigationManager.get(),
                      &NavigationManager::dataRefreshed,
@@ -803,51 +819,19 @@ int main(int argc, char** argv)
           rtlTopEditor
               && normalizedPath(rtlTopDocument.fileName)
                      == normalizedPath(rtlTopPath));
-    const bool rtlTopOverlayPublished = waitUntil(
-        [&]() {
-            const SemanticSymbolRecord current =
-                semanticRecordInFile(
-                    rtlTopPath,
-                    QStringLiteral("rtl_top"),
-                    SymbolTaxonomy::DeclarationKind::Module);
-            return rtlTopOverlayCompleted
-                && semanticIndex->snapshotRevision()
-                       > beforeOpenSnapshotRevision
-                && current.isValid()
-                && current.presentation.documentRevision
-                       == static_cast<std::uint64_t>(
-                           rtlTopDocument.textVersion);
-        },
-        60000);
-    check("post-analysis rtl_top overlay publishes current revision",
-          rtlTopOverlayPublished);
-    if (!rtlTopOverlayPublished) {
-        const SemanticSymbolRecord current = semanticRecordInFile(
-            rtlTopPath,
-            QStringLiteral("rtl_top"),
-            SymbolTaxonomy::DeclarationKind::Module);
-        std::printf(
-            "[DIAG] rtl overlay completed=%d snapshot=%llu baseline=%llu document=%d presentation=%llu computation=%llu workspaceActive=%d fileWatchers=%lld\n",
-            rtlTopOverlayCompleted,
-            static_cast<unsigned long long>(
-                semanticIndex->snapshotRevision()),
-            static_cast<unsigned long long>(
-                beforeOpenSnapshotRevision),
-            rtlTopDocument.textVersion,
-            static_cast<unsigned long long>(
-                current.presentation.documentRevision),
-            static_cast<unsigned long long>(
-                current.presentation.computationRevision),
-            window.analysisScheduler->workspaceSymbolAnalysis
-                && window.analysisScheduler->workspaceSymbolAnalysis
-                       ->isWorkspaceAnalysisActive(),
-            static_cast<long long>(
-                window.analysisScheduler->symbolAnalyzer
-                    ? window.analysisScheduler->symbolAnalyzer
-                          ->fileAnalysisWatchers.size()
-                    : 0));
-        std::fflush(stdout);
-    }
+    check("clean workspace file opens at semantic revision zero",
+          rtlTopDocument.textVersion == 0
+              && rtlTopEditor
+              && rtlTopEditor->semanticDocumentRevision() == 0);
+    check("clean workspace file open skips all-open-tabs analysis",
+          remainsTrueFor(
+              [&]() {
+                  return openFileAnalysisStarts == 0
+                      && openFileAnalysisFinishes == 0
+                      && semanticIndex->snapshotRevision()
+                             == beforeOpenSnapshotRevision;
+              },
+              800));
     check("window survives post-analysis rtl_top open",
           windowGuard && window.isVisible());
 
@@ -932,6 +916,9 @@ int main(int argc, char** argv)
               && afterGhostKeys == beforeGhostKeys
               && hasSemanticGhostAnnotation(
                   afterGhostReport.annotations));
+    check("post-analysis rtl_top open preserves formal port Ghost declarations",
+          hasGhostAnnotationKind(afterGhostReport.annotations,
+                                 GhostAnnotationKind::FormalPort));
     check("post-analysis rtl_top open refreshes actual editor Ghost",
           waitUntil(
               [&]() {
@@ -946,8 +933,8 @@ int main(int argc, char** argv)
     check("post-analysis rtl_top open preserves Design hierarchy instances",
           !designKeysAfter.isEmpty()
               && designKeysAfter == designKeysBefore);
-    check("post-analysis rtl_top open refreshes real Navigation Design",
-          designRefreshesAfterOpen > 0
+    check("post-analysis rtl_top open keeps cached Navigation Design",
+          designRefreshesAfterOpen == 0
               && !managerDesignKeysAfter.isEmpty()
               && managerDesignKeysAfter == managerDesignKeysBefore
               && window.navigationManager->caches.designSnapshotGeneration

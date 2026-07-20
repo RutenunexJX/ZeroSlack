@@ -8,6 +8,7 @@
 #include "symboloutlinemodel.h"
 
 #include <QList>
+#include <QByteArray>
 #include <QSet>
 #include <QString>
 #include <cstdint>
@@ -56,6 +57,8 @@ public:
         const QStringList& topModules,
         const QString& selectedTopModule,
         const QSet<QString>& fileScope) const;
+    QByteArray designStructureFingerprint(
+        const QSet<QString>& fileScope = {}) const;
     std::uint64_t semanticSnapshotRevision() const;
     QStringList modulesDefinedInFile(const QString& fileName) const;
     NavigationModuleTarget resolveModuleTarget(const QString& moduleName) const;

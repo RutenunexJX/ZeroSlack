@@ -72,25 +72,35 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
   parameterized ports/types, and compile-time Ghost facts use that path.
   `SymbolHoverService` and `GhostAnnotationService` are consumers only; Ghost
   retains anchor/layout logic but no arithmetic or string expression evaluator.
-  Wave Preview remains a separate runtime-trace sketch.
+  Formal-port annotations are deduplicated by stable declaration identity and
+  rendered in a reserved right-side lane, so long or tab-expanded instance
+  lines cannot push them outside the viewport. Slang also marks whether a
+  direct parameter value already displays the final converted value: redundant
+  numeric/string values are omitted, while derived, truncated, signed-coerced,
+  or instance-different values remain visible. Enum semantic `valueText` stays
+  lossless and width-aware; known enum Ghost values use Slang-produced decimal
+  `displayValueText`, while X/Z values retain the exact binary rendering. Wave
+  Preview remains a separate runtime-trace sketch.
 - The real `test_sv/new/PKG_global.sv` fixture contains an invalid forward enum
   reference: `E_PRE_ASSERT` is used from line 550 but is not declared until
   line 663. Slang therefore reports an undeclared identifier for those enum
   expressions. The effective-value path preserves that error and never invents
   an implicit-increment or literal fallback; valid package and enum-expression
   coverage is provided by dedicated fixtures.
-- Open-document values use all current `DocumentModel` buffers as an overlay.
-  An editor-owned source-text revision advances only when `toPlainText()`
-  changes; syntax highlighting and other format-only changes cannot make a
-  current Slang publication stale. A debounce, per-analysis cancellation
-  flags, a monotonic computation revision, and GUI-thread publication prevent
-  older results from replacing current values. Unbound instance queries report
-  the Slang declaration default; Design-bound queries require the exact active-
-  top instance path. Stable symbol and presentation identities include the
-  exact declaration source range, preventing same-owner nested declarations
-  from sharing values. File identity, tab activation, instance binding, and
-  completed semantic publication all refresh Ghost from the same revisioned
-  service result.
+- Dirty or cache-mismatched open-document analysis uses all current
+  `DocumentModel` buffers as one immutable overlay. A persisted workspace file
+  whose loaded text exactly matches indexed content is accepted as semantic
+  revision zero; opening it refreshes editor presentation only and does not
+  start all-open-document Slang analysis or publish an equivalent snapshot. An
+  editor-owned source-text revision advances only when `toPlainText()` changes;
+  syntax highlighting and other format-only changes cannot make a current
+  Slang publication stale. Debounce, cancellation, computation revision, and
+  GUI-thread publication gates prevent older results from replacing current
+  values. Unbound queries report the declaration default; Design-bound queries
+  require the exact active-top instance path. Stable identities include the
+  exact declaration source range. File identity, tab activation, instance
+  binding, and completed semantic publication refresh Ghost from the same
+  revisioned service result.
 - Workspace symbols, effective-value facts, and diagnostics are derived from
   one immutable source snapshot: the `ProjectSnapshot` file set with every
   captured open `DocumentModel` buffer replacing its disk text and carrying its
@@ -106,13 +116,15 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
   against the same symbol records, and publishes only if its base token,
   request generation, and complete project identity remain current. It does
   not trigger a second per-open-tab Slang symbol/value/diagnostic refresh.
-- A clean open-document overlay can replace every local symbol handle without
-  changing source identity. Snapshot publication therefore preserves the
-  previous stable-key relationship set, rebinds it to the new handles, rejects
-  missing or content-changed endpoints, and then synchronizes the mutable
-  relationship engine as a mirror. Opening an already analyzed file no longer
-  publishes a zero-relationship snapshot, so Design and Navigation hierarchy
-  remain hierarchical instead of falling back to a flat file list.
+- Clean indexed workspace files bypass overlay publication: opening one keeps
+  semantic revision zero, leaves the snapshot and relationships unchanged, and
+  does not refresh Design. Dirty or cache-mismatched overlay publications remain
+  handle-churn safe: stable-key relationships are rebound to current handles and
+  missing or changed endpoints are rejected. Navigation coalesces per-file and
+  batch completion events by snapshot generation and compares a
+  module/interface/instance plus `INSTANTIATES` structural fingerprint before
+  rebuilding the Design tree. Presentation-only publications advance the cached
+  generation without clearing or repopulating the widget.
 - Problems `Current File` is always queried from the active-document provider;
   an analysis-completion file name is only an invalidation key. The diagnostics
   debounce keeps repeated requests for one file scoped, but promotes different
@@ -162,26 +174,30 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
   defaults, per-instance parameter/localparam and enum values, general Slang
   constant expressions, signed/wide/X/Z/string/type/dimension facts, stable
   same-name nested identities, Hover/Ghost consumption, and unsaved overlay
-  revision/cancellation/atomic diagnostic publication; `gui_smoke_test` owns
+  revision/cancellation/atomic diagnostic publication, enum decimal/X/Z
+  rendering, and Slang parameter source-value equivalence; `gui_smoke_test` owns
   ordinary-input and backtick negative completion cases, explicit Tab-command
   filtering/activation, synchronous scan reentrancy, embedded double-click
-  popup lifetime, and complete port-declaration presentation. Real
+  popup lifetime, complete port-declaration presentation, actual long-line
+  FormalPort lane rendering, and Design refresh coalescing. Real
   `PKG_global.sv` / `chl_ctrl.sv` integration remains in `relationship_test`.
   `global_control_ow_test` also opens the real analyzed `rtl_top.sv` through
-  `TabManager` and compares stable relationships, package effective values,
-  semantic Ghost, port presentation, Design/Navigation data, and an actual
-  nested `NavigationWidget` item before and after the overlay publication.
-  Final headless acceptance is complete: the full Debug build passed 29/29
-  Ninja steps in 3895.3 seconds and the final all-target check reported no
-  pending work; complete CTest passed 12/12 in 181.66 seconds. At the user's
+  `TabManager` and verifies semantic revision zero, no open-tabs symbol analysis,
+  no snapshot publication or Design refresh, and continued availability of
+  stable relationships, package values, semantic Ghost, port presentation,
+  Design/Navigation data, and a nested `NavigationWidget` item.
+  Final headless acceptance is complete: the final Debug all-target incremental
+  build passed 12/12 Ninja steps in 1044.1 seconds; complete CTest passed 12/12
+  in 144.18 seconds. At the user's
   request, this final repair/verification did not launch `demo.exe`; Qt GUI
   coverage used `QT_QPA_PLATFORM=offscreen` and non-interactive CTest.
-  `global_control_ow_test` passed in 108.42 seconds with both real projects and
+  `global_control_ow_test` passed in 92.57 seconds with both real projects and
   the main-window object remained alive through all stabilized analyses.
-  The final `.zs` hashes are `ED843650...BE292B7` for `new` and
-  `CD8A81F2...21CF425` for `huge_prj`. `new/.zs` retains a 10:21 timestamp that
-  predates this headless validation but differs from the earlier recorded
-  `A7942210...501F43`; this repair did not overwrite or restore that user file.
+  The final static audit left both user `.zs` files untouched. `new/.zs` is the
+  user's 18:31:51 session save (`9F0341AC...ACBC10`), containing the tabs opened
+  during the reported reproduction; `huge_prj/.zs` remains
+  `CD8A81F2...21CF425`. Headless validation did not overwrite or restore either
+  file.
 - Known relationship follow-up remains explicit: a dirty open-buffer overlay
   invalidates affected old edges but does not yet schedule an overlay-matched
   relationship recomputation, and zero-symbol include/macro inputs are absent

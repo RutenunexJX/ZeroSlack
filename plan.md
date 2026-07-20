@@ -66,32 +66,37 @@ ProjectSnapshot + immutable all-open-buffer text/revisions
   state, exact value/type/dimension/width data, scope/instance provenance,
   failure reason, and computation/document revisions. Ghost only locates
   display anchors and formats already-evaluated facts; Wave Preview keeps its
-  separate runtime trace evaluator.
+  separate runtime trace evaluator. FormalPort declarations use a reserved
+  viewport lane; Slang-provided source/effective-value equivalence suppresses
+  only redundant direct parameter values; derived/coerced/instance-different
+  values remain visible. Known enum values display Slang decimal text while
+  lossless binary `valueText` and X/Z rendering remain authoritative.
 - Treat invalid source as an error, not as an invitation to synthesize a value.
   In `test_sv/new/PKG_global.sv`, `E_PRE_ASSERT` is referenced from line 550
   before its declaration at line 663. Slang's undeclared-identifier diagnostic
   is the required result for those enum expressions; no implicit-increment or
   hand-evaluated fallback may replace it. Dedicated valid fixtures cover
   package constants and the general enum-expression categories.
-- Every workspace/open-document semantic worker owns one immutable overlay set.
-  Any captured document edit cancels/expires that worker and coalesces a restart
-  from the latest complete `DocumentModel` snapshot. Workspace epoch, request
+- Every dirty or cache-mismatched workspace/open-document semantic worker owns
+  one immutable overlay set. A clean workspace file whose loaded text equals
+  indexed content establishes revision zero and requests presentation refresh
+  only. Any captured edit cancels/expires its worker and coalesces a restart from
+  the latest complete `DocumentModel` snapshot. Workspace epoch, request
   generation, dependency/document revisions, and effective-value computation
-  revision gate one GUI-thread publication of symbols, value facts, and
-  diagnostics. Dirty open files replace disk content; they are neither skipped
-  nor preserved outside the transaction. Staged, checkpoint, and chunked
-  semantic snapshot publication are no longer current behavior.
+  revision gate one GUI-thread publication. Dirty files replace disk content;
+  staged, checkpoint, and chunked publication are no longer current behavior.
 - Automatic relationship analysis consumes the semantic snapshot token
   published by that transaction, reads source from the same captured snapshot,
   and rejects stale request/project identities. It does not run a duplicate
   per-open-tab Slang symbol/value/diagnostic refresh before relationship work.
-- Clean overlay publication must tolerate local-handle replacement. Preserve
-  the prior authoritative relationships by stable source key, rebind them to
-  current handles, invalidate missing/content-changed endpoints, and replace
-  the relationship engine with the published snapshot as its mirror. The
-  `global_control_ow_test` post-analysis `rtl_top.sv` case compares relationship
-  stable keys plus Design service and real NavigationManager hierarchy before
-  and after opening the tab.
+- Clean indexed opens must not publish an overlay: preserve revision zero, the
+  current snapshot, relationships, and Design cache. Dirty or cache-mismatched
+  publications preserve authoritative relationships by stable source key and
+  rebind them to current handles. Navigation processes at most one refresh per
+  snapshot generation and rebuilds its widget only when the Design structural
+  fingerprint changes. The real `rtl_top.sv` regression asserts zero file
+  analysis start/finish events, unchanged snapshot generation, zero Design
+  refreshes, and preserved Ghost/relationship/hierarchy results.
 - Semantic document revision is source-content-only. Formatting and syntax
   highlighting must not advance it; real text edits must. Document snapshots,
   overlay analysis, Hover/Ghost queries, and published effective-value facts
@@ -122,23 +127,25 @@ ProjectSnapshot + immutable all-open-buffer text/revisions
   symbol analysis, automatic relationship analysis, semantic queryability, and
   active-worker teardown for `test_sv/new` and `test_sv/huge_prj`.
   `effective_value_test` covers package/compilation-unit/default/instance
-  values, general enum expressions, wide and four-state data, type dimensions,
-  exact-range identity, Hover/Ghost consumers, and unsaved overlay
+  values, general enum expressions, decimal/X/Z enum rendering, parameter
+  source-value equivalence, wide/four-state data, type dimensions, exact-range
+  identity, Hover/Ghost consumers, and unsaved overlay
   revision/cancellation/atomic diagnostic publication. `gui_smoke_test` covers
   completion negatives and explicit Tab sessions, scan reentrancy, embedded
-  double-click popup lifetime, and complete port declarations;
+  double-click popup lifetime, complete port declarations, actual FormalPort
+  lane rendering, and Design structural refresh coalescing;
   `relationship_test` retains real `PKG_global.sv` / `chl_ctrl.sv` coverage.
-  The real `ow 1` test also opens analyzed `rtl_top.sv` and compares stable
-  relationships, effective values, semantic Ghost, port presentation,
-  Design/Navigation reports, and an actual nested NavigationWidget item across
-  overlay publication. This corrective milestone passed final headless
-  acceptance: full Debug build 29/29 steps in 3895.3 seconds, final all-target
-  build with no pending work, and complete CTest 12/12 in 181.66 seconds. No
+  The real `ow 1` test also opens analyzed `rtl_top.sv` at semantic revision
+  zero and verifies no file analysis, snapshot publication, or Design refresh
+  while relationships, values, Ghost, port presentation, and nested Navigation
+  data remain queryable. This corrective milestone passed final headless
+  acceptance: final Debug all-target incremental build 12/12 steps in 1044.1
+  seconds and complete CTest 12/12 in 144.18 seconds. No
   visible `demo.exe` was launched after the user prohibited GUI interference;
-  all Qt validation used offscreen mode. Final `.zs` hashes are
-  `ED843650...BE292B7` for `new` and `CD8A81F2...21CF425` for `huge_prj`.
-  `new/.zs` predates this headless validation but differs from the earlier
-  recorded `A7942210...501F43`; it was not overwritten or restored here.
+  all Qt validation used offscreen mode. The final static audit left both user
+  `.zs` files untouched: `new/.zs` is the user's 18:31:51 reproduction-session
+  save (`9F0341AC...ACBC10`) and `huge_prj/.zs` remains
+  `CD8A81F2...21CF425`; neither was overwritten or restored here.
 - Follow-up relationship work: schedule relationship recomputation from the
   same dirty-overlay token after invalidation; fingerprint zero-symbol include,
   macro, define, and include-order inputs; move or optimize full engine-mirror

@@ -72,6 +72,30 @@ bool NavigationManager::updateDesignHierarchyData(bool force)
     const QStringList fileScope = normalizedDesignScopeFiles(getSystemVerilogFiles());
     const QString selectedTop =
         caches.designTopInferred ? QString() : caches.designTopModule;
+    const QSet<QString> fileScopeSet = designScopeSet(fileScope);
+
+    if (!force && caches.designHierarchyValid
+        && caches.designSnapshotGeneration == snapshotRevision
+        && caches.designFileScope == fileScope
+        && caches.designHierarchy.selectedTopModule == selectedTop
+        && caches.designHierarchy.rootModules == caches.designRootModules) {
+        return false;
+    }
+
+    const QByteArray structureFingerprint =
+        navigationService->designStructureFingerprint(fileScopeSet);
+
+    if (!force
+        && !caches.designStructureFingerprint.isEmpty()
+        && caches.designStructureFingerprint == structureFingerprint
+        && caches.designFileScope == fileScope
+        && caches.designHierarchy.selectedTopModule == selectedTop) {
+        caches.designSnapshotGeneration = snapshotRevision;
+        caches.designHierarchy.snapshotGeneration = snapshotRevision;
+        caches.designHierarchyValid = true;
+        saveDesignHierarchyCache();
+        return false;
+    }
 
     if (fileScope.isEmpty()) {
         const bool changed =
@@ -85,21 +109,13 @@ bool NavigationManager::updateDesignHierarchyData(bool force)
         caches.designHierarchy.snapshotGeneration = snapshotRevision;
         caches.designRootModules.clear();
         caches.designFileScope = fileScope;
+        caches.designStructureFingerprint = structureFingerprint;
         caches.designSnapshotGeneration = snapshotRevision;
         caches.designHierarchyValid = true;
         saveDesignHierarchyCache();
         return changed;
     }
 
-    if (!force && caches.designHierarchyValid
-        && caches.designSnapshotGeneration == snapshotRevision
-        && caches.designFileScope == fileScope
-        && caches.designHierarchy.selectedTopModule == selectedTop
-        && caches.designHierarchy.rootModules == caches.designRootModules) {
-        return false;
-    }
-
-    const QSet<QString> fileScopeSet = designScopeSet(fileScope);
     QStringList rootModules = navigationService->inferDesignTopModules(fileScopeSet);
     if (!caches.designTopInferred && !caches.designTopModule.isEmpty()
         && !rootModules.contains(caches.designTopModule)) {
@@ -119,6 +135,7 @@ bool NavigationManager::updateDesignHierarchyData(bool force)
         caches.designHierarchy.snapshotGeneration = snapshotRevision;
         caches.designSnapshotGeneration = snapshotRevision;
         caches.designFileScope = fileScope;
+        caches.designStructureFingerprint = structureFingerprint;
         caches.designHierarchyValid = true;
         saveDesignHierarchyCache();
         return changed;
@@ -128,6 +145,7 @@ bool NavigationManager::updateDesignHierarchyData(bool force)
         navigationService->findDesignHierarchy(rootModules, selectedTop, fileScopeSet);
     caches.designSnapshotGeneration = snapshotRevision;
     caches.designFileScope = fileScope;
+    caches.designStructureFingerprint = structureFingerprint;
     if (caches.designHierarchy.snapshotGeneration == 0)
         caches.designHierarchy.snapshotGeneration = snapshotRevision;
     caches.designHierarchyValid = true;

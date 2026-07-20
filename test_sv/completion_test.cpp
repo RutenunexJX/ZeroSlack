@@ -1112,11 +1112,11 @@ int main(int argc, char** argv) {
                         GhostAnnotationKind::FormalPort,
                         13,
                         QStringLiteral("input logic [7:0] data"));
-    expectGhostContains("Ghost literal parameter uses Slang value",
-                        ghostReport,
-                        GhostAnnotationKind::ParameterValue,
-                        6,
-                        QStringLiteral("= 8"));
+    expectGhostNotContains("Ghost literal parameter value hidden",
+                           ghostReport,
+                           GhostAnnotationKind::ParameterValue,
+                           6,
+                           QStringLiteral("="));
     expectGhostContains("Ghost parameter identifier value",
                         ghostReport,
                         GhostAnnotationKind::ParameterValue,
@@ -1127,11 +1127,11 @@ int main(int argc, char** argv) {
                         GhostAnnotationKind::ParameterValue,
                         26,
                         QStringLiteral("= 32'd2757292030"));
-    expectGhostContains("Ghost parameter ascii value",
-                        ghostReport,
-                        GhostAnnotationKind::ParameterValue,
-                        27,
-                        QStringLiteral("= 32'd1952805748"));
+    expectGhostNotContains("Ghost string parameter value hidden",
+                           ghostReport,
+                           GhostAnnotationKind::ParameterValue,
+                           27,
+                           QStringLiteral("="));
     expectGhostContains("Ghost parameter clog2 value",
                         ghostReport,
                         GhostAnnotationKind::ParameterValue,
@@ -1142,11 +1142,11 @@ int main(int argc, char** argv) {
                         GhostAnnotationKind::ParameterValue,
                         29,
                         QStringLiteral("= 32'd33"));
-    expectGhostContains("Ghost parameter override",
-                        ghostReport,
-                        GhostAnnotationKind::ParameterOverride,
-                        12,
-                        QStringLiteral("= 16"));
+    expectGhostNotContains("Ghost literal parameter override hidden",
+                           ghostReport,
+                           GhostAnnotationKind::ParameterOverride,
+                           12,
+                           QStringLiteral("="));
     expectGhostContains("Ghost signal width",
                         ghostReport,
                         GhostAnnotationKind::SignalWidth,
@@ -1171,17 +1171,17 @@ int main(int argc, char** argv) {
                         ghostReport,
                         GhostAnnotationKind::EnumValue,
                         16,
-                        QStringLiteral("= 3'b0"));
+                        QStringLiteral("= 0"));
     expectGhostContains("Ghost enum run",
                         ghostReport,
                         GhostAnnotationKind::EnumValue,
                         16,
-                        QStringLiteral("= 3'b11"));
+                        QStringLiteral("= 3"));
     expectGhostContains("Ghost enum done",
                         ghostReport,
                         GhostAnnotationKind::EnumValue,
                         16,
-                        QStringLiteral("= 3'b100"));
+                        QStringLiteral("= 4"));
     expectGhostContains("Ghost part select",
                         ghostReport,
                         GhostAnnotationKind::PartSelect,

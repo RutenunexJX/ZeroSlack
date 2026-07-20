@@ -205,6 +205,21 @@ void OpenDocumentAnalysisController::analyzeOpenDocumentNow(
     if (!self || !analyzer)
         return;
     if (workspaceOpen) {
+        const QString indexedContent =
+            SemanticIndex::getInstance()->getCachedFileContent(
+                snapshot.fileName);
+        if (snapshot.saved
+            && !snapshot.dirty
+            && !indexedContent.isNull()
+            && indexedContent == content) {
+            // A persisted workspace file is already represented by the
+            // authoritative workspace snapshot. Opening it changes only the
+            // active presentation; re-elaborating every open buffer would
+            // publish an equivalent snapshot and churn Design / Ghost state.
+            emit documentRefreshRequested(snapshot.fileName);
+            return;
+        }
+
         // The workspace controller has already queued a replacement atomic
         // snapshot for open / edit / save events. Starting an overlay task
         // here would invalidate that replacement and lose its completion.

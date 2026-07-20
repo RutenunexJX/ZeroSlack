@@ -3,6 +3,8 @@
 
 #include <slang/ast/ASTVisitor.h>
 #include <slang/ast/Compilation.h>
+#include <slang/ast/expressions/LiteralExpressions.h>
+#include <slang/ast/expressions/OperatorExpressions.h>
 #include <slang/ast/symbols/CompilationUnitSymbols.h>
 #include <slang/ast/symbols/InstanceSymbols.h>
 #include <slang/ast/symbols/ParameterSymbols.h>
@@ -545,13 +547,170 @@ SemanticElaboratedSymbolInfo enumConstantInfo(
     if (!result.available || !value.isInteger())
         return result;
 
-    // This formats Slang's SVInt result; it does not interpret the source
-    // expression. Binary preserves width, signedness, and every X/Z bit.
-    result.valueText = QString::fromStdString(value.integer().toString(
+    // Both renderings come from Slang's elaborated SVInt; neither interprets
+    // the source expression. Keep the lossless binary value as the semantic
+    // result, while offering plain decimal for enum UI when every bit is
+    // known. Decimal cannot preserve partial X / Z positions, so unknown
+    // values deliberately fall back to the exact binary representation.
+    const slang::SVInt& integer = value.integer();
+    result.valueText = QString::fromStdString(integer.toString(
         slang::LiteralBase::Binary,
         true,
         std::numeric_limits<slang::bitwidth_t>::max()));
+    result.displayValueText = integer.hasUnknown()
+        ? result.valueText
+        : QString::fromStdString(integer.toString(
+              slang::LiteralBase::Decimal,
+              false,
+              std::numeric_limits<slang::bitwidth_t>::max()));
     return result;
+}
+
+bool isDirectValueLiteralKind(ExpressionKind kind)
+{
+    switch (kind) {
+    case ExpressionKind::IntegerLiteral:
+    case ExpressionKind::RealLiteral:
+    case ExpressionKind::TimeLiteral:
+    case ExpressionKind::UnbasedUnsizedIntegerLiteral:
+    case ExpressionKind::StringLiteral:
+        return true;
+    default:
+        return false;
+    }
+}
+
+const Expression* directSourceValueExpression(
+    const Expression& initializer)
+{
+    const Expression& expression =
+        initializer.unwrapImplicitConversions();
+    if (expression.isParenthesized())
+        return nullptr;
+    if (isDirectValueLiteralKind(expression.kind))
+        return &expression;
+    if (expression.kind != ExpressionKind::UnaryOp)
+        return nullptr;
+
+    const auto& unary = expression.as<UnaryExpression>();
+    if (unary.op != UnaryOperator::Plus
+        && unary.op != UnaryOperator::Minus) {
+        return nullptr;
+    }
+    const Expression& operand =
+        unary.operand().unwrapImplicitConversions();
+    if (operand.isParenthesized()
+        || !isDirectValueLiteralKind(operand.kind)) {
+        return nullptr;
+    }
+    // Use the unary expression's Slang value so the sign operation remains
+    // part of the source value being compared.
+    return &expression;
+}
+
+bool sameDisplayedConstantValue(const slang::ConstantValue& source,
+                                const slang::ConstantValue& effective)
+{
+    if (!source || !effective)
+        return false;
+    if (!source.isInteger() || !effective.isInteger())
+        return source == effective;
+
+    const slang::SVInt& sourceInteger = source.integer();
+    const slang::SVInt& effectiveInteger = effective.integer();
+    if (sourceInteger.hasUnknown() || effectiveInteger.hasUnknown()) {
+        // Decimal cannot represent individual X / Z positions. Be
+        // conservative: suppress only if width, signedness, and all four-
+        // state bits are identical according to Slang.
+        return sourceInteger.getBitWidth() == effectiveInteger.getBitWidth()
+            && sourceInteger.isSigned() == effectiveInteger.isSigned()
+            && exactlyEqual(sourceInteger, effectiveInteger);
+    }
+
+    // Ask Slang for the mathematical decimal interpretation on both sides.
+    // This detects truncation and signed coercion while allowing harmless
+    // width extension of a value the source already displays.
+    const auto decimalText = [](const slang::SVInt& integer) {
+        return integer.toString(
+            slang::LiteralBase::Decimal,
+            false,
+            std::numeric_limits<slang::bitwidth_t>::max());
+    };
+    return decimalText(sourceInteger) == decimalText(effectiveInteger);
+}
+
+slang::ConstantValue sourceDisplayedConstantValue(
+    const Expression& expression)
+{
+    switch (expression.kind) {
+    case ExpressionKind::IntegerLiteral:
+        // getConstant() can reflect the assignment target's contextual
+        // conversion. IntegerLiteral::getValue() is the value encoded by the
+        // source token before truncation or signed coercion.
+        return expression.as<IntegerLiteral>().getValue();
+    case ExpressionKind::UnbasedUnsizedIntegerLiteral:
+        // '0 / '1 / 'x / 'z are context-sized by definition; Slang's node
+        // value is therefore the source-displayed value in that context.
+        return expression.as<UnbasedUnsizedIntegerLiteral>().getValue();
+    case ExpressionKind::RealLiteral:
+        return slang::ConstantValue(
+            slang::real_t(expression.as<RealLiteral>().getValue()));
+    case ExpressionKind::StringLiteral:
+        return slang::ConstantValue(std::string(
+            expression.as<StringLiteral>().getValue()));
+    case ExpressionKind::TimeLiteral:
+        // Time scaling is itself Slang semantics. The unwrapped expression
+        // was evaluated while ParameterSymbol produced its final value, so
+        // its cached constant is the correct source-side result.
+        return expression.getConstant()
+            ? *expression.getConstant()
+            : slang::ConstantValue();
+    case ExpressionKind::UnaryOp: {
+        const auto& unary = expression.as<UnaryExpression>();
+        const slang::ConstantValue operand =
+            sourceDisplayedConstantValue(
+                unary.operand().unwrapImplicitConversions());
+        if (!operand || unary.op == UnaryOperator::Plus)
+            return operand;
+        if (unary.op != UnaryOperator::Minus)
+            return slang::ConstantValue();
+        if (operand.isInteger())
+            return slang::ConstantValue(-operand.integer());
+        if (operand.isReal())
+            return slang::ConstantValue(
+                slang::real_t(-static_cast<double>(operand.real())));
+        if (operand.isShortReal())
+            return slang::ConstantValue(
+                slang::shortreal_t(
+                    -static_cast<float>(operand.shortReal())));
+        return slang::ConstantValue();
+    }
+    default:
+        return slang::ConstantValue();
+    }
+}
+
+bool sourceValueDisplaysEffectiveParameterValue(
+    const ParameterSymbol& parameter,
+    const slang::ConstantValue& effectiveValue)
+{
+    const Expression* initializer = parameter.getInitializer();
+    if (!initializer)
+        return false;
+    const Expression* source = directSourceValueExpression(*initializer);
+    if (!source)
+        return false;
+    slang::ConstantValue sourceValue =
+        sourceDisplayedConstantValue(*source);
+    if (source->kind == ExpressionKind::StringLiteral
+        && effectiveValue.isInteger()) {
+        // Slang represents an implicitly typed string parameter as the
+        // literal's packed integer value. Compare against that Slang-owned
+        // representation so `parameter STR = "text"` is recognized as
+        // already displaying its effective value.
+        sourceValue = source->as<StringLiteral>().getIntValue();
+    }
+    return sameDisplayedConstantValue(sourceValue, effectiveValue);
 }
 
 QString parameterDefaultExpressionText(const ParameterSymbol& parameter)
@@ -934,8 +1093,18 @@ void gatherScopePresentations(
                 nestedVisitor.visitDefault(parameter);
                 return;
             }
+            const slang::ConstantValue& parameterValue =
+                parameter.getValue();
+            const bool sourceDisplaysValue =
+                sourceValueDisplaysEffectiveParameterValue(
+                    parameter, parameterValue);
             SemanticElaboratedSymbolInfo info = constantInfo(
-                parameter.getValue(), parameter.getType());
+                parameterValue, parameter.getType());
+            // Symbol value Ghosts are anchored at the declaration. An
+            // instance override is written elsewhere and therefore cannot
+            // make the declaration text redundant.
+            info.sourceTextDisplaysEffectiveValue =
+                !parameter.isOverridden() && sourceDisplaysValue;
             info.expressionText = parameterExpressionText(parameter);
             info.valueSourceText = parameterValueSourceText(parameter);
             storeInfo(parameter, info,
@@ -972,6 +1141,8 @@ void gatherScopePresentations(
                             ? EffectiveValueStatus::Current
                             : EffectiveValueStatus::Error;
                         fact.failureReason = info.failureReason;
+                        fact.sourceTextDisplaysEffectiveValue =
+                            sourceDisplaysValue;
                         effectiveValueFacts->append(std::move(fact));
                     }
                 }

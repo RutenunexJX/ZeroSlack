@@ -1,8 +1,14 @@
 #include "navigationservice.h"
 
+#include "semanticindexsnapshot.h"
 #include "symboltaxonomy.h"
 
+#include <QCryptographicHash>
+#include <QDir>
+#include <QFileInfo>
 #include <QSet>
+
+#include <algorithm>
 
 namespace {
 SemanticSymbolRecord outlineSymbolRecord(const SearchResult& result)
@@ -124,6 +130,77 @@ QList<SymbolOutlineSymbolRow> outlineRows(
         rows.append(row);
     }
     return rows;
+}
+
+QString normalizedDesignFingerprintFileName(const QString& fileName)
+{
+    if (fileName.isEmpty())
+        return QString();
+    return QDir::cleanPath(
+        QDir::fromNativeSeparators(QFileInfo(fileName).absoluteFilePath()))
+        .toCaseFolded();
+}
+
+bool designFingerprintScopeContains(const QSet<QString>& fileScope,
+                                    const QString& fileName)
+{
+    if (fileScope.isEmpty())
+        return true;
+    return fileScope.contains(normalizedDesignFingerprintFileName(fileName));
+}
+
+QString fingerprintToken(const QStringList& fields)
+{
+    QString token;
+    for (const QString& field : fields) {
+        token += QString::number(field.size());
+        token += QLatin1Char(':');
+        token += field;
+    }
+    return token;
+}
+
+QString designRecordFingerprintToken(const SemanticSymbolRecord& record)
+{
+    return fingerprintToken({
+        QStringLiteral("record"),
+        symbolStableKeyText(record.stableKey),
+        record.name,
+        QString::number(static_cast<int>(record.declarationKind)),
+        QString::number(static_cast<int>(record.collectorKind)),
+        normalizedDesignFingerprintFileName(record.location.fileName),
+        QString::number(record.location.startLine),
+        QString::number(record.location.startColumn),
+        QString::number(record.location.endLine),
+        QString::number(record.location.endColumn),
+        QString::number(record.location.position),
+        QString::number(record.location.length),
+        QString::number(static_cast<int>(record.owner.kind)),
+        record.owner.name,
+        symbolStableKeyText(record.owner.stableKey),
+        record.type.rawTypeText,
+        record.type.resolvedTypeName,
+        QString::number(static_cast<int>(record.type.resolvedTypeKind)),
+        symbolStableKeyText(record.type.stableKey),
+    });
+}
+
+QString designRelationshipFingerprintToken(
+    const SemanticRelationship& relationship)
+{
+    return fingerprintToken({
+        QStringLiteral("relationship"),
+        symbolStableKeyText(relationship.fromStableKey),
+        symbolStableKeyText(relationship.toStableKey),
+        relationship.fromAccessPath,
+        relationship.toAccessPath,
+        normalizedDesignFingerprintFileName(
+            relationship.evidenceRange.fileName),
+        QString::number(relationship.evidenceRange.line),
+        QString::number(relationship.evidenceRange.column),
+        QString::number(relationship.evidenceRange.endLine),
+        QString::number(relationship.evidenceRange.endColumn),
+    });
 }
 
 }
@@ -278,6 +355,81 @@ DesignHierarchyReport NavigationService::findDesignHierarchy(
     return hierarchyService.getDesignHierarchyReport(topModules,
                                                      selectedTopModule,
                                                      fileScope);
+}
+
+QByteArray NavigationService::designStructureFingerprint(
+    const QSet<QString>& fileScope) const
+{
+    if (!index)
+        return {};
+
+    QSet<QString> normalizedFileScope;
+    normalizedFileScope.reserve(fileScope.size());
+    for (const QString& fileName : fileScope) {
+        const QString normalized =
+            normalizedDesignFingerprintFileName(fileName);
+        if (!normalized.isEmpty())
+            normalizedFileScope.insert(normalized);
+    }
+
+    QStringList tokens;
+    QSet<QString> moduleStableKeys;
+    const QList<SemanticSymbolRecord> records = index->getSymbolRecords();
+    tokens.reserve(records.size());
+    for (const SemanticSymbolRecord& record : records) {
+        if (!designFingerprintScopeContains(normalizedFileScope,
+                                            record.location.fileName)) {
+            continue;
+        }
+
+        const SymbolTaxonomy::SemanticMetadata metadata =
+            semanticMetadataForSymbolRecord(record);
+        const bool module = SymbolTaxonomy::isModuleDeclaration(metadata);
+        const bool interfaceLike =
+            metadata.declarationKind
+                == SymbolTaxonomy::DeclarationKind::Interface;
+        const bool instance = SymbolTaxonomy::isInstanceDeclaration(metadata);
+        if (!module && !interfaceLike && !instance)
+            continue;
+
+        tokens.append(designRecordFingerprintToken(record));
+        if (module && record.stableKey.isValid())
+            moduleStableKeys.insert(symbolStableKeyText(record.stableKey));
+    }
+
+    QList<SemanticRelationship> relationships;
+    const std::shared_ptr<const SemanticIndexSnapshot> snapshot =
+        index->snapshot();
+    if (snapshot) {
+        relationships = snapshot->relationships();
+    } else {
+        for (const SemanticSymbolRecord& record : records) {
+            const SymbolTaxonomy::SemanticMetadata metadata =
+                semanticMetadataForSymbolRecord(record);
+            if (!SymbolTaxonomy::isModuleDeclaration(metadata)
+                || !record.stableKey.isValid()
+                || !moduleStableKeys.contains(
+                    symbolStableKeyText(record.stableKey))) {
+                continue;
+            }
+            relationships.append(
+                index->relationshipsForStableKey(record.stableKey, true));
+        }
+    }
+
+    for (const SemanticRelationship& relationship : relationships) {
+        if (relationship.type != SymbolRelationshipEngine::INSTANTIATES)
+            continue;
+        if (!moduleStableKeys.contains(
+                symbolStableKeyText(relationship.fromStableKey))) {
+            continue;
+        }
+        tokens.append(designRelationshipFingerprintToken(relationship));
+    }
+
+    std::sort(tokens.begin(), tokens.end());
+    return QCryptographicHash::hash(tokens.join(QLatin1Char('\n')).toUtf8(),
+                                    QCryptographicHash::Sha256);
 }
 
 std::uint64_t NavigationService::semanticSnapshotRevision() const

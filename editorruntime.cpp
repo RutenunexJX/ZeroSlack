@@ -3625,6 +3625,7 @@ bool MyCodeEditorState::handleDrop(MyCodeEditor* editor, QDropEvent* event)
 
 void MyCodeEditorState::handleResize(MyCodeEditor* editor) const
 {
+    gutter.updateViewportMargins(editor);
     gutter.resizeTo(editor, editor->contentsRect());
 }
 
@@ -3739,6 +3740,8 @@ void MyCodeEditorState::paintGhostAnnotations(
 
     for (const GhostAnnotation& annotation : ghostAnnotations) {
         if (!annotation.isValid())
+            continue;
+        if (annotation.kind == GhostAnnotationKind::FormalPort)
             continue;
 
         const int anchorPosition =
@@ -3938,6 +3941,13 @@ void MyCodeEditorState::refreshSemanticPresentation(MyCodeEditor* editor)
 std::uint64_t MyCodeEditorState::semanticDocumentRevision() const
 {
     return semanticTextRevision;
+}
+
+void MyCodeEditorState::acceptLoadedTextAsSemanticBaseline(
+    const MyCodeEditor* editor)
+{
+    semanticRevisionText = editor ? editor->toPlainText() : QString();
+    semanticTextRevision = 0;
 }
 
 void MyCodeEditorState::setIncludeFileProvider(
@@ -4510,8 +4520,14 @@ void MyCodeEditorState::setGhostAnnotations(
     const QList<GhostAnnotation>& annotations)
 {
     ghostAnnotations = annotations;
-    if (editor)
+    if (editor) {
+        gutter.updateViewportMargins(editor);
+        handleResize(editor);
+        gutter.handleUpdateRequest(editor,
+                                   editor->viewport()->rect(),
+                                   0);
         editor->viewport()->update();
+    }
 }
 
 void MyCodeEditorState::highlightSearchMatches(

@@ -67,7 +67,10 @@ void copyElaboratedInfo(const SemanticElaboratedSymbolInfo& info,
 {
     if (!result)
         return;
+    result->sourceTextDisplaysEffectiveValue =
+        info.sourceTextDisplaysEffectiveValue;
     result->valueText = info.valueText;
+    result->displayValueText = info.displayValueText;
     result->expressionText = info.expressionText;
     result->resolvedTypeText = info.resolvedTypeText;
     result->packedDimensionsText = info.packedDimensionsText;
@@ -84,6 +87,8 @@ bool sameEffectiveFactValue(const EffectiveValueFact& left,
                             const EffectiveValueFact& right)
 {
     return left.status == right.status
+        && left.sourceTextDisplaysEffectiveValue
+            == right.sourceTextDisplaysEffectiveValue
         && left.expressionText == right.expressionText
         && left.valueText == right.valueText
         && left.resolvedTypeText == right.resolvedTypeText

@@ -28,6 +28,9 @@ struct EffectiveValueQuery {
 
 struct EffectiveValueResult {
     EffectiveValueStatus status = EffectiveValueStatus::Unavailable;
+    // Slang-provided declaration-anchor equivalence. Consumers may suppress
+    // a redundant value only when this is true.
+    bool sourceTextDisplaysEffectiveValue = false;
     QString symbolIdentity;
     SymbolStableKey semanticSymbolKey;
     SemanticSymbolLocation sourceRange;
@@ -35,7 +38,12 @@ struct EffectiveValueResult {
     QString symbolName;
     QString declarationText;
     QString expressionText;
+    // Lossless semantic value from Slang.
     QString valueText;
+    // Optional consumer-facing rendering from the same Slang value. For
+    // enum members this is plain decimal when fully known, otherwise the
+    // exact X / Z-preserving representation.
+    QString displayValueText;
     QString resolvedTypeText;
     QString packedDimensionsText;
     QString unpackedDimensionsText;
@@ -108,6 +116,9 @@ struct EffectiveValueFact {
     QString provenance;
     QString failureReason;
     QString stableSourceIdentity;
+    // Slang-provided equivalence for the expression at this fact's own
+    // source anchor (for example a parameter override expression).
+    bool sourceTextDisplaysEffectiveValue = false;
     bool defaultEvaluation = false;
     std::uint64_t computationRevision = 0;
     std::uint64_t documentRevision = 0;

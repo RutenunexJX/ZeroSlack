@@ -3,6 +3,7 @@
 
 #include <QObject>
 #include <QPoint>
+#include <QByteArray>
 #include <QStringList>
 #include <QHash>
 #include <memory>
@@ -94,6 +95,7 @@ private:
         QString designTopModule;
         QStringList designRootModules;
         QStringList designFileScope;
+        QByteArray designStructureFingerprint;
         std::uint64_t designSnapshotGeneration = 0;
         bool fileListValid = false;
         bool fileHierarchyValid = false;
@@ -109,6 +111,7 @@ private:
         QString topModule;
         QStringList rootModules;
         QStringList fileScope;
+        QByteArray structureFingerprint;
         std::uint64_t snapshotGeneration = 0;
         bool hierarchyValid = false;
         bool topInferred = true;
@@ -124,6 +127,7 @@ private:
     NavigationContext context;
     NavigationCaches caches;
     QHash<QString, DesignHierarchyCacheEntry> designHierarchyCacheByScope;
+    bool designHierarchyWidgetValid = false;
 
     // Helper methods
     void setupConnections();

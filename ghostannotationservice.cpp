@@ -1,6 +1,7 @@
 #include "ghostannotationservice.h"
 
 #include "effectivevalueservice.h"
+#include <QSet>
 #include <QStringList>
 
 #include <algorithm>
@@ -155,11 +156,27 @@ QList<SemanticSymbolRecord> matchingPortRecords(
     const QString& formalName)
 {
     QList<SemanticSymbolRecord> result;
+    QSet<QString> seenDeclarations;
     for (const SemanticSymbolRecord& record : records) {
         if (!isPortRecord(record) || record.name != formalName)
             continue;
         if (!moduleName.isEmpty() && record.owner.name != moduleName)
             continue;
+        QString declarationIdentity =
+            symbolStableKeyText(record.stableKey);
+        if (declarationIdentity.isEmpty()) {
+            declarationIdentity =
+                QStringLiteral("%1|%2|%3|%4|%5|%6|%7")
+                    .arg(record.location.fileName)
+                    .arg(record.location.position)
+                    .arg(record.location.length)
+                    .arg(record.location.startLine)
+                    .arg(record.location.startColumn)
+                    .arg(record.owner.name, record.name);
+        }
+        if (seenDeclarations.contains(declarationIdentity))
+            continue;
+        seenDeclarations.insert(declarationIdentity);
         result.append(record);
     }
     return result;
@@ -205,7 +222,7 @@ void appendFormalPortAnnotations(
             continue;
         output->append(makeAnnotation(
             GhostAnnotationKind::FormalPort,
-            GhostAnnotationPlacement::LeftOfAnchor,
+            GhostAnnotationPlacement::RightOfLine,
             text,
             instPin.location.startLine,
             line.startPosition + nameStart,
@@ -218,6 +235,18 @@ QString effectiveValueGhostText(const EffectiveValueResult& value)
     if (!value.current() || value.valueText.isEmpty())
         return QString();
     return QStringLiteral("= %1").arg(value.valueText);
+}
+
+QString enumValueGhostText(const EffectiveValueResult& value)
+{
+    if (!value.current())
+        return QString();
+    const QString display = value.displayValueText.isEmpty()
+        ? value.valueText
+        : value.displayValueText;
+    return display.isEmpty()
+        ? QString()
+        : QStringLiteral("= %1").arg(display);
 }
 
 QString widthGhostText(const EffectiveValueResult& value,
@@ -288,7 +317,9 @@ void appendSymbolEffectiveValueAnnotations(
             continue;
 
         if (isParameterRecord(record)) {
-            const QString text = effectiveValueGhostText(value);
+            const QString text = value.sourceTextDisplaysEffectiveValue
+                ? QString()
+                : effectiveValueGhostText(value);
             if (!text.isEmpty()) {
                 output->append(makeAnnotation(
                     GhostAnnotationKind::ParameterValue,
@@ -299,7 +330,7 @@ void appendSymbolEffectiveValueAnnotations(
             }
         }
         if (isEnumValueRecord(record)) {
-            const QString text = effectiveValueGhostText(value);
+            const QString text = enumValueGhostText(value);
             if (!text.isEmpty()) {
                 output->append(makeAnnotation(
                     GhostAnnotationKind::EnumValue,
@@ -355,7 +386,8 @@ void appendExpressionFactAnnotations(
         }
         switch (fact.kind) {
         case EffectiveValueFactKind::ParameterOverride:
-            if (!fact.valueText.isEmpty()) {
+            if (!fact.valueText.isEmpty()
+                && !fact.sourceTextDisplaysEffectiveValue) {
                 output->append(makeAnnotation(
                     GhostAnnotationKind::ParameterOverride,
                     GhostAnnotationPlacement::RightOfAnchor,

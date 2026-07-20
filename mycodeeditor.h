@@ -91,6 +91,7 @@ public:
     void refreshScopeAndCurrentLineHighlight();
     void refreshSemanticPresentation();
     std::uint64_t semanticDocumentRevision() const;
+    void acceptLoadedTextAsSemanticBaseline();
     void setIncludeFileCompletionProvider(
         std::function<QStringList(const QString& currentFile)> provider);
     void setIncludeNewHeaderCreator(

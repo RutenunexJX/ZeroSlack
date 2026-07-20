@@ -340,6 +340,11 @@ std::uint64_t MyCodeEditor::semanticDocumentRevision() const
     return state->semanticDocumentRevision();
 }
 
+void MyCodeEditor::acceptLoadedTextAsSemanticBaseline()
+{
+    state->acceptLoadedTextAsSemanticBaseline(this);
+}
+
 void MyCodeEditor::setIncludeFileCompletionProvider(
     std::function<QStringList(const QString& currentFile)> provider)
 {

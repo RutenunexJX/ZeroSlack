@@ -1,6 +1,7 @@
 #include "workspacesymbolanalysiscontroller.h"
 
 #include "documentmodel.h"
+#include "semanticindex.h"
 #include "symbolanalyzer.h"
 
 WorkspaceSymbolAnalysisController::WorkspaceSymbolAnalysisController(QObject* parent)
@@ -27,7 +28,22 @@ void WorkspaceSymbolAnalysisController::setDocumentModel(DocumentModel* model)
     connect(documentModel,
             &DocumentModel::documentOpened,
             this,
-            [this](const DocumentSnapshot&) {
+            [this](const DocumentSnapshot& snapshot) {
+                if (snapshot.saved && !snapshot.dirty) {
+                    const QString openText =
+                        documentModel
+                            ? documentModel->documentTextForFile(
+                                  snapshot.fileName)
+                            : QString();
+                    const QString indexedText =
+                        SemanticIndex::getInstance()
+                            ->getCachedFileContent(snapshot.fileName);
+                    if (!openText.isNull()
+                        && !indexedText.isNull()
+                        && openText == indexedText) {
+                        return;
+                    }
+                }
                 restartActiveWorkspaceAnalysisForDocumentChange();
             });
     connect(documentModel,

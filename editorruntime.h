@@ -170,6 +170,7 @@ struct MyCodeEditorState
     void refreshScopeAndCurrentLineHighlight(MyCodeEditor* editor);
     void refreshSemanticPresentation(MyCodeEditor* editor);
     std::uint64_t semanticDocumentRevision() const;
+    void acceptLoadedTextAsSemanticBaseline(const MyCodeEditor* editor);
     void setIncludeFileProvider(
         EditorCompletionWorkflow::IncludeFileProvider provider);
     void setIncludeNewHeaderCreator(

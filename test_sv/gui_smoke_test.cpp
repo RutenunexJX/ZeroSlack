@@ -1190,14 +1190,19 @@ static void runTabOpenGhostLifecycleRegression()
         ");\n"
         "endmodule\n"
         "module parent #(parameter int BASE = 4);\n"
+        "  parameter logic [7:0] HEX = 8'h2a;\n"
+        "  localparam int EXPANDED = BASE + 2;\n"
         "  logic [BASE:0] bus;\n"
         "  leaf #(.P(BASE + 1)) u_leaf (\n"
-        "    .data_i(bus)\n"
+        "    .data_i                                             (bus)\n"
         "  );\n"
+        "endmodule\n"
+        "module text_leaf #(parameter string S = \"default\");\n"
         "endmodule\n"
         "module top;\n"
         "  parent #(.BASE(8)) p0();\n"
         "  parent #(.BASE(11)) p1();\n"
+        "  text_leaf #(.S(\"bound\")) text0();\n"
         "endmodule\n");
     expectBool("tab Ghost lifecycle fixture writable",
                writeTextFile(filePath, source),
@@ -1216,6 +1221,24 @@ static void runTabOpenGhostLifecycleRegression()
     if (initialRecords.isEmpty())
         return;
 
+    auto appendDuplicateFormalPort = [](QList<SemanticSymbolRecord>* records) {
+        if (!records)
+            return;
+        SemanticSymbolRecord duplicate;
+        for (const SemanticSymbolRecord& record :
+             std::as_const(*records)) {
+            if (record.name == QStringLiteral("data_i")
+                && record.collectorKind
+                       == SymbolTaxonomy::CollectorKind::PortInput) {
+                duplicate = record;
+                break;
+            }
+        }
+        if (duplicate.isValid())
+            records->append(std::move(duplicate));
+    };
+    appendDuplicateFormalPort(&initialRecords);
+
     SemanticIndex* semanticIndex = SemanticIndex::getInstance();
     EffectiveValueService* values = EffectiveValueService::getInstance();
     const auto previousSnapshot = semanticIndex->snapshot();
@@ -1233,6 +1256,90 @@ static void runTabOpenGhostLifecycleRegression()
                                  initialFacts,
                                  initialComputation,
                                  0);
+
+    GhostAnnotationQuery initialGhostQuery;
+    initialGhostQuery.fileName = filePath;
+    initialGhostQuery.documentText = source;
+    const GhostAnnotationReport initialGhostReport =
+        GhostAnnotationService::getInstance()->annotationsForDocument(
+            initialGhostQuery);
+    bool formalPortUsesVisiblePlacement = false;
+    bool formalPortKeepsCompleteDeclaration = false;
+    int formalPortLine = 0;
+    bool sawDirectLiteralParameterValue = false;
+    bool sawDerivedParameterValue = false;
+    bool sawDirectLiteralOverride = false;
+    for (const GhostAnnotation& annotation :
+         initialGhostReport.annotations) {
+        if (annotation.kind == GhostAnnotationKind::FormalPort) {
+            formalPortUsesVisiblePlacement =
+                formalPortUsesVisiblePlacement
+                || annotation.placement
+                       == GhostAnnotationPlacement::RightOfLine;
+            formalPortKeepsCompleteDeclaration =
+                formalPortKeepsCompleteDeclaration
+                || (annotation.text.contains(QStringLiteral("input"))
+                    && annotation.text.contains(
+                        QStringLiteral("logic"))
+                    && annotation.text.contains(
+                        QStringLiteral("data_i")));
+            if (annotation.text.contains(QStringLiteral("data_i")))
+                formalPortLine = annotation.line;
+        }
+        if (annotation.kind == GhostAnnotationKind::ParameterOverride) {
+            sawDirectLiteralOverride =
+                sawDirectLiteralOverride
+                || annotation.line == 16
+                || annotation.line == 17
+                || annotation.line == 18;
+        }
+        if (annotation.kind != GhostAnnotationKind::ParameterValue) {
+            continue;
+        }
+        sawDirectLiteralParameterValue =
+            sawDirectLiteralParameterValue
+            || annotation.line == 1 || annotation.line == 5
+            || annotation.line == 6 || annotation.line == 13;
+        sawDerivedParameterValue =
+            sawDerivedParameterValue || annotation.line == 7;
+    }
+    expectBool("FormalPort Ghost uses visible line-tail placement",
+               formalPortUsesVisiblePlacement,
+               true);
+    expectBool("FormalPort Ghost keeps complete declaration in service",
+               formalPortKeepsCompleteDeclaration,
+               true);
+    expectBool("direct literal parameter omits redundant Ghost",
+               sawDirectLiteralParameterValue,
+               false);
+    expectBool("derived parameter keeps computed Ghost",
+               sawDerivedParameterValue,
+               true);
+    expectBool("direct literal parameter override omits redundant Ghost",
+               sawDirectLiteralOverride,
+               false);
+
+    GhostAnnotationQuery boundOverrideQuery = initialGhostQuery;
+    boundOverrideQuery.instanceContext.workspacePath = dir.path();
+    boundOverrideQuery.instanceContext.activeTopModule =
+        QStringLiteral("top");
+    boundOverrideQuery.instanceContext.instancePath =
+        QStringLiteral("top.p0");
+    const GhostAnnotationReport boundOverrideReport =
+        GhostAnnotationService::getInstance()->annotationsForDocument(
+            boundOverrideQuery);
+    const bool sawDerivedOverride = std::any_of(
+        boundOverrideReport.annotations.cbegin(),
+        boundOverrideReport.annotations.cend(),
+        [](const GhostAnnotation& annotation) {
+            return annotation.kind
+                       == GhostAnnotationKind::ParameterOverride
+                && annotation.line == 9
+                && annotation.text == QStringLiteral("= 9");
+        });
+    expectBool("expression parameter override keeps computed Ghost",
+               sawDerivedOverride,
+               true);
 
     QTabWidget tabWidget;
     TabManager tabs(&tabWidget);
@@ -1262,6 +1369,68 @@ static void runTabOpenGhostLifecycleRegression()
         return;
     }
 
+    tabWidget.resize(360, 220);
+    tabWidget.show();
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    QTextBlock formalPortBlock = editor->document()->findBlockByNumber(
+        qMax(0, formalPortLine - 1));
+    QTextCursor formalPortCursor(formalPortBlock);
+    editor->setTextCursor(formalPortCursor);
+    editor->centerCursor();
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    expectBool("FormalPort render fixture scrolls anchor into viewport",
+               formalPortLine > 0
+                   && formalPortBlock.isValid()
+                   && editor->viewport()->rect().intersects(
+                       editor->cursorRect(formalPortCursor)),
+               true);
+    QWidget* formalPortLane = editor->findChild<QWidget*>(
+        QStringLiteral("FormalPortGhostLane"));
+    expectBool("FormalPort Ghost reserves a visible annotation lane",
+               formalPortLane && formalPortLane->isVisible()
+                   && formalPortLane->width() > 0,
+               true);
+    expectBool("FormalPort annotation lane never overlaps source viewport",
+               formalPortLane
+                   && !formalPortLane->geometry().intersects(
+                       editor->viewport()->geometry()),
+               true);
+    const QRect formalPortLaneGeometry = formalPortLane
+        ? formalPortLane->geometry()
+        : QRect();
+    expectBool("FormalPort visibility fixture extends beyond source viewport",
+               editor->horizontalScrollBar()->maximum() > 0,
+               true);
+    editor->horizontalScrollBar()->setValue(
+        editor->horizontalScrollBar()->maximum());
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+    expectBool("FormalPort annotation lane is stable across horizontal scroll",
+               formalPortLane
+                   && formalPortLane->geometry()
+                          == formalPortLaneGeometry,
+               true);
+    bool formalPortLaneRendered = false;
+    if (formalPortLane && !formalPortLane->size().isEmpty()) {
+        QImage laneImage(formalPortLane->size(),
+                         QImage::Format_ARGB32_Premultiplied);
+        laneImage.fill(Qt::transparent);
+        formalPortLane->render(&laneImage);
+        const QRgb backgroundPixel = laneImage.pixel(
+            laneImage.width() - 1, laneImage.height() - 1);
+        for (int y = 0; y < laneImage.height()
+             && !formalPortLaneRendered; ++y) {
+            for (int x = 4; x < laneImage.width(); ++x) {
+                if (laneImage.pixel(x, y) != backgroundPixel) {
+                    formalPortLaneRendered = true;
+                    break;
+                }
+            }
+        }
+    }
+    expectBool("FormalPort annotation lane renders declaration content",
+               formalPortLaneRendered,
+               true);
+
     HierarchyInstanceContext p0Context;
     p0Context.workspacePath = dir.path();
     p0Context.activeTopModule = QStringLiteral("top");
@@ -1271,6 +1440,7 @@ static void runTabOpenGhostLifecycleRegression()
     QList<EffectiveValueFact> currentFacts;
     QList<SemanticSymbolRecord> currentRecords =
         slang.extractSymbolRecords(filePath, source, {}, {}, &currentFacts);
+    appendDuplicateFormalPort(&currentRecords);
     const std::uint64_t currentComputation =
         values->beginComputation({filePath});
     const std::uint64_t documentRevision =
@@ -1298,6 +1468,11 @@ static void runTabOpenGhostLifecycleRegression()
                editorGhostCacheContains(editor,
                                         GhostAnnotationKind::ParameterOverride,
                                         QStringLiteral("= 9")),
+               true);
+    expectBool("bound parameter differing from source literal keeps Ghost",
+               editorGhostCacheContains(editor,
+                                        GhostAnnotationKind::ParameterValue,
+                                        QStringLiteral("= 8")),
                true);
     expectBool("document refresh publishes effective width Ghost",
                editorGhostCacheContains(editor,
@@ -6008,6 +6183,94 @@ static void runNavigationDesignCacheWorkspaceActivationRegression()
                    && manager.caches.designHierarchy.topModule
                           == QStringLiteral("b_top")
                    && !manager.updateDesignHierarchyData(false),
+               true);
+
+    manager.setActiveView(NavigationManager::DesignHierarchyView);
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    QAbstractItemModel* designTreeModel = widget.designTreeWidget
+        ? widget.designTreeWidget->model()
+        : nullptr;
+    expectBool("navigation design refresh tree model exists",
+               designTreeModel != nullptr,
+               true);
+    if (!designTreeModel)
+        return;
+
+    QSignalSpy presentationRowsInsertedSpy(
+        designTreeModel,
+        &QAbstractItemModel::rowsInserted);
+    QSignalSpy presentationRowsRemovedSpy(
+        designTreeModel,
+        &QAbstractItemModel::rowsRemoved);
+    QSignalSpy presentationRefreshSpy(
+        &manager,
+        &NavigationManager::dataRefreshed);
+
+    SemanticSymbolRecord bTopWithPresentation = bTop;
+    bTopWithPresentation.presentation.declarationText =
+        QStringLiteral("module b_top;");
+    bTopWithPresentation.presentation.defaultInfo.available = true;
+    bTopWithPresentation.presentation.defaultInfo.valueText =
+        QStringLiteral("presentation-only");
+    index.setSnapshot(snapshotFromRecords({aTop, bTopWithPresentation}));
+
+    manager.onSymbolAnalysisCompleted(fileB, 1);
+    manager.onSymbolAnalysisCompleted(fileA, 1);
+    manager.onSymbolAnalysisCompleted(fileB, 1);
+    expectBool("presentation-only snapshot does not rebuild Design tree",
+               presentationRowsInsertedSpy.isEmpty()
+                   && presentationRowsRemovedSpy.isEmpty(),
+               true);
+    expectBool("one snapshot coalesces per-file Design refreshes",
+               presentationRefreshSpy.count() == 1,
+               true);
+    expectBool("presentation-only snapshot advances Design generation",
+               manager.caches.designSnapshotGeneration
+                   == service.semanticSnapshotRevision(),
+               true);
+
+    const SemanticSymbolRecord bChild =
+        makeGuiSmokeRecord(1302,
+                           fileB,
+                           QStringLiteral("b_child"),
+                           SymbolTaxonomy::DeclarationKind::Module,
+                           SymbolTaxonomy::CollectorKind::Module,
+                           4);
+    const SemanticSymbolRecord bChildInstance =
+        SemanticFixtureRecordBuilder(QStringLiteral("u_child"),
+                                     SymbolTaxonomy::DeclarationKind::Instance)
+            .withFile(fileB)
+            .withLocalHandle(1303)
+            .withLine(2)
+            .withCollectorKind(SymbolTaxonomy::CollectorKind::Inst)
+            .withOwner(SymbolTaxonomy::SymbolOwnerScope::Module,
+                       QStringLiteral("b_top"),
+                       bTopWithPresentation.stableKey)
+            .withType(QStringLiteral("b_child"),
+                      QStringLiteral("b_child"),
+                      SymbolTaxonomy::DeclarationKind::Module)
+            .record();
+    const SemanticRelationship bInstantiatesChild =
+        semanticFixtureRelationship(bTopWithPresentation,
+                                    bChildInstance,
+                                    SymbolRelationshipEngine::INSTANTIATES);
+    index.setSnapshot(snapshotFromRecords(
+        {aTop, bTopWithPresentation, bChild, bChildInstance},
+        {bInstantiatesChild}));
+
+    QSignalSpy structureRefreshSpy(
+        &manager,
+        &NavigationManager::dataRefreshed);
+    manager.onSymbolAnalysisCompleted(fileB, 4);
+    manager.onSymbolAnalysisCompleted(fileA, 1);
+    manager.onBatchSymbolAnalysisCompleted(2, 4);
+    expectBool("changed Design structure rebuilds once per snapshot",
+               structureRefreshSpy.count() == 1,
+               true);
+    expectBool("changed Design structure publishes child hierarchy",
+               manager.caches.designHierarchy.nodes.size() == 2
+                   && manager.caches.designHierarchy.nodes.last().moduleType
+                          == QStringLiteral("b_child"),
                true);
 }
 
@@ -11498,13 +11761,15 @@ int main(int argc, char** argv)
             &NavigationManager::dataRefreshed);
         window.analysisScheduler->fileSymbolAnalysisFinished(
             normalizedSymbolFixturePath, 0);
-        expectBool("analysis routes design navigation refresh",
-                   waitUntil([&]() { return analysisNavigationRefreshSpy.count() > 0; }, 1000),
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+        expectBool("same snapshot file completion keeps Design cache",
+                   analysisNavigationRefreshSpy.isEmpty(),
                    true);
         analysisNavigationRefreshSpy.clear();
         window.analysisScheduler->workspaceSymbolAnalysisFinished(ProjectSnapshot(), 1, 0);
-        expectBool("batch analysis routes design navigation refresh",
-                   waitUntil([&]() { return analysisNavigationRefreshSpy.count() > 0; }, 1000),
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+        expectBool("same snapshot batch completion keeps Design cache",
+                   analysisNavigationRefreshSpy.isEmpty(),
                    true);
 
         navWidget->setActiveTab(NavigationWidget::FileTab);

@@ -4,7 +4,6 @@
 #include "navigationwidget.h"
 
 #include <QElapsedTimer>
-#include <QFileInfo>
 
 namespace {
 QString navigationViewName(NavigationManager::NavigationView view)
@@ -18,10 +17,6 @@ QString navigationViewName(NavigationManager::NavigationView view)
     return QStringLiteral("navigation");
 }
 
-bool isOpenTabsAnalysisFile(const QString& fileName)
-{
-    return QFileInfo(fileName).fileName() == QStringLiteral("open_tabs");
-}
 }
 
 NavigationManager::NavigationManager(QObject *parent)
@@ -39,6 +34,7 @@ void NavigationManager::setNavigationWidget(NavigationWidget* widget)
     if (navigationWidget == widget) return;
 
     navigationWidget = widget;
+    designHierarchyWidgetValid = false;
     if (navigationWidget) {
         setupConnections();
         refreshCurrentView();
@@ -49,6 +45,7 @@ void NavigationManager::setNavigationService(NavigationService* service)
 {
     navigationService = service ? service : NavigationService::getInstance();
     caches.clearDesignHierarchy();
+    designHierarchyWidgetValid = false;
     refreshCurrentView();
 }
 
@@ -88,8 +85,9 @@ void NavigationManager::refreshDesignHierarchy(bool force)
     const bool changed = updateDesignHierarchyData(force);
 
     if (navigationWidget
-        && (changed || force || currentView == DesignHierarchyView)) {
+        && (changed || force || !designHierarchyWidgetValid)) {
         navigationWidget->updateDesignHierarchy(caches.designHierarchy);
+        designHierarchyWidgetValid = true;
     }
 
     emit dataRefreshed(DesignHierarchyView);
@@ -109,6 +107,7 @@ void NavigationManager::warmDesignHierarchyCache()
 
     const bool changed = updateDesignHierarchyData(false);
     if (changed && navigationWidget) {
+        designHierarchyWidgetValid = false;
         navigationWidget->setDesignParticipatingFiles(
             caches.designHierarchy.participatingFiles);
     }
@@ -196,6 +195,7 @@ void NavigationManager::onWorkspaceChanged(const QString& workspacePath)
     // cached per workspace to keep tab switching lightweight.
     caches.clearFileList();
     restoreDesignHierarchyCache();
+    designHierarchyWidgetValid = false;
 
     refreshCurrentView();
 }
@@ -209,6 +209,7 @@ void NavigationManager::onViewChanged(int index)
 
 void NavigationManager::onSymbolAnalysisCompleted(const QString& fileName, int symbolCount)
 {
+    Q_UNUSED(fileName)
     Q_UNUSED(symbolCount)
 
     switch (currentView) {
@@ -216,16 +217,12 @@ void NavigationManager::onSymbolAnalysisCompleted(const QString& fileName, int s
         // The file list is unchanged.
         break;
     case DesignHierarchyView:
-        if (isOpenTabsAnalysisFile(fileName)) {
-            if (navigationService && caches.designHierarchyValid) {
-                const std::uint64_t snapshotRevision =
-                    navigationService->semanticSnapshotRevision();
-                caches.designSnapshotGeneration = snapshotRevision;
-                caches.designHierarchy.snapshotGeneration = snapshotRevision;
-            }
+        if (navigationService
+            && caches.designHierarchyValid
+            && caches.designSnapshotGeneration
+                   == navigationService->semanticSnapshotRevision()) {
             break;
         }
-        invalidateCurrentDesignHierarchyCache();
         refreshDesignHierarchy();
         break;
     }
@@ -239,7 +236,12 @@ void NavigationManager::onBatchSymbolAnalysisCompleted(
     Q_UNUSED(totalSymbols)
 
     if (currentView == DesignHierarchyView) {
-        invalidateCurrentDesignHierarchyCache();
+        if (navigationService
+            && caches.designHierarchyValid
+            && caches.designSnapshotGeneration
+                   == navigationService->semanticSnapshotRevision()) {
+            return;
+        }
         refreshDesignHierarchy();
     }
 }

@@ -52,6 +52,10 @@ MyCodeEditor* TabOpenController::openFile(const QString& fileName) const
     std::unique_ptr<MyCodeEditor> editor(new MyCodeEditor(tabWidget));
     MyCodeEditor* editorPtr = editor.get();
     editorPtr->setPlainText(text);
+    // Loading persisted text establishes revision zero. Treating setPlainText
+    // as an edit made clean workspace symbols look stale and unnecessarily
+    // launched a full open-document Slang overlay on every navigation.
+    editorPtr->acceptLoadedTextAsSemanticBaseline();
     tabWidget->addTab(editor.release(), fileIo->displayName(fileToOpen));
     documentModel->registerEditor(editorPtr, fileToOpen);
     tabWidget->setCurrentIndex(tabWidget->count() - 1);

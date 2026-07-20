@@ -84,7 +84,17 @@ struct SemanticSymbolTypeReference {
 
 struct SemanticElaboratedSymbolInfo {
     bool available = false;
+    // True only when Slang proved that the direct value written at this
+    // symbol's declaration anchor is numerically identical to the final
+    // elaborated value. An override written elsewhere never sets this flag.
+    bool sourceTextDisplaysEffectiveValue = false;
+    // Lossless Slang value text used for semantic queries. Integral enum
+    // values retain their bit width, signedness, and every X / Z bit here.
     QString valueText;
+    // Optional UI-oriented rendering produced from the same Slang
+    // ConstantValue. This never replaces valueText; enum Ghost annotations
+    // use it to show known integral values as plain decimal.
+    QString displayValueText;
     QString expressionText;
     QString valueSourceText;
     QString resolvedTypeText;
