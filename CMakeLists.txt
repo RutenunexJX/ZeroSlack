@@ -37,20 +37,152 @@ set(CMAKE_C_STANDARD 99)            # Used by tree-sitter
 
 include(CTest)
 
+set(ZEROSLACK_DEBUG_LINKER "AUTO" CACHE STRING
+    "Debug linker selection: AUTO, GNU, or LLD")
+set_property(CACHE ZEROSLACK_DEBUG_LINKER PROPERTY STRINGS AUTO GNU LLD)
+set(ZEROSLACK_LLD_EXECUTABLE "" CACHE FILEPATH
+    "Optional path to a MinGW-compatible ld.lld executable")
+string(TOUPPER "${ZEROSLACK_DEBUG_LINKER}" ZEROSLACK_DEBUG_LINKER)
+if(NOT ZEROSLACK_DEBUG_LINKER MATCHES "^(AUTO|GNU|LLD)$")
+    message(FATAL_ERROR
+        "ZEROSLACK_DEBUG_LINKER must be AUTO, GNU, or LLD")
+endif()
+
 # MinGW helper tools load runtime DLLs from the compiler bin directory. Make
 # generated build rules self-contained so `cmake --build` works from a plain
 # shell without the caller manually preparing PATH.
 if(WIN32 AND CMAKE_CXX_COMPILER)
     get_filename_component(ZEROSLACK_COMPILER_BIN_DIR
         "${CMAKE_CXX_COMPILER}" DIRECTORY)
-    set(ZEROSLACK_BUILD_TOOL_PATH
-        "${ZEROSLACK_COMPILER_BIN_DIR};$ENV{PATH}")
-    string(REPLACE ";" "\\;" ZEROSLACK_BUILD_TOOL_PATH
-        "${ZEROSLACK_BUILD_TOOL_PATH}")
+    if(CMAKE_VERSION VERSION_GREATER_EQUAL "3.25")
+        # Read the inherited PATH when the rule runs. Embedding the complete
+        # configure-time PATH makes harmless IDE/session PATH changes alter
+        # every Ninja command and forces a full rebuild after reconfigure.
+        set(ZEROSLACK_BUILD_TOOL_LAUNCHER
+            "${CMAKE_COMMAND} -E env --modify \"PATH=path_list_prepend:${ZEROSLACK_COMPILER_BIN_DIR}\" --")
+    else()
+        set(ZEROSLACK_BUILD_TOOL_PATH
+            "${ZEROSLACK_COMPILER_BIN_DIR};$ENV{PATH}")
+        string(REPLACE ";" "\\;" ZEROSLACK_BUILD_TOOL_PATH
+            "${ZEROSLACK_BUILD_TOOL_PATH}")
+        set(ZEROSLACK_BUILD_TOOL_LAUNCHER
+            "${CMAKE_COMMAND} -E env \"PATH=${ZEROSLACK_BUILD_TOOL_PATH}\"")
+    endif()
     set_property(GLOBAL PROPERTY RULE_LAUNCH_COMPILE
-        "${CMAKE_COMMAND} -E env \"PATH=${ZEROSLACK_BUILD_TOOL_PATH}\"")
+        "${ZEROSLACK_BUILD_TOOL_LAUNCHER}")
     set_property(GLOBAL PROPERTY RULE_LAUNCH_LINK
-        "${CMAKE_COMMAND} -E env \"PATH=${ZEROSLACK_BUILD_TOOL_PATH}\"")
+        "${ZEROSLACK_BUILD_TOOL_LAUNCHER}")
+    set_property(GLOBAL PROPERTY RULE_LAUNCH_CUSTOM
+        "${ZEROSLACK_BUILD_TOOL_LAUNCHER}")
+endif()
+
+# Use LLD only for Debug links and only after a compiler-driver link probe.
+# Release/package links therefore retain the existing MinGW GNU ld path.
+set(ZEROSLACK_USE_LLD OFF)
+set(ZEROSLACK_LLD_STATUS "not requested")
+if(MINGW AND NOT ZEROSLACK_DEBUG_LINKER STREQUAL "GNU")
+    set(ZEROSLACK_LLD_CANDIDATE "")
+    if(ZEROSLACK_LLD_EXECUTABLE)
+        if(EXISTS "${ZEROSLACK_LLD_EXECUTABLE}")
+            get_filename_component(ZEROSLACK_LLD_CANDIDATE
+                "${ZEROSLACK_LLD_EXECUTABLE}" REALPATH)
+        else()
+            set(ZEROSLACK_LLD_STATUS
+                "configured path does not exist: ${ZEROSLACK_LLD_EXECUTABLE}")
+        endif()
+    else()
+        unset(ZEROSLACK_LLD_CANDIDATE)
+        unset(ZEROSLACK_LLD_CANDIDATE CACHE)
+        find_program(ZEROSLACK_LLD_CANDIDATE NAMES ld.lld ld.lld.exe)
+        if(NOT ZEROSLACK_LLD_CANDIDATE)
+            set(ZEROSLACK_LLD_STATUS "ld.lld not found")
+        endif()
+    endif()
+
+    if(ZEROSLACK_LLD_CANDIDATE)
+        execute_process(
+            COMMAND "${ZEROSLACK_LLD_CANDIDATE}" --version
+            RESULT_VARIABLE ZEROSLACK_LLD_VERSION_RESULT
+            OUTPUT_VARIABLE ZEROSLACK_LLD_VERSION_TEXT
+            ERROR_VARIABLE ZEROSLACK_LLD_VERSION_ERROR
+            OUTPUT_STRIP_TRAILING_WHITESPACE)
+        string(REGEX MATCH "LLD[ \t]+([0-9]+)"
+            ZEROSLACK_LLD_VERSION_MATCH "${ZEROSLACK_LLD_VERSION_TEXT}")
+        if(NOT ZEROSLACK_LLD_VERSION_RESULT EQUAL 0
+           OR NOT ZEROSLACK_LLD_VERSION_MATCH)
+            set(ZEROSLACK_LLD_STATUS "unable to identify LLD version")
+        else()
+            get_filename_component(ZEROSLACK_LLD_BIN_DIR
+                "${ZEROSLACK_LLD_CANDIDATE}" DIRECTORY)
+            string(MD5 ZEROSLACK_LLD_PROBE_HASH
+                "${ZEROSLACK_LLD_CANDIDATE};${ZEROSLACK_LLD_VERSION_TEXT};${CMAKE_CXX_COMPILER};${CMAKE_CXX_COMPILER_VERSION};path-ready-v1")
+            set(ZEROSLACK_LLD_PROBE_VAR
+                "ZEROSLACK_LLD_LINKS_${ZEROSLACK_LLD_PROBE_HASH}")
+            include(CheckCXXSourceCompiles)
+            set(ZEROSLACK_SAVED_REQUIRED_LINK_OPTIONS
+                "${CMAKE_REQUIRED_LINK_OPTIONS}")
+            set(CMAKE_REQUIRED_LINK_OPTIONS
+                "-fuse-ld=lld"
+                "-B${ZEROSLACK_LLD_BIN_DIR}/")
+            # try_compile does not inherit RULE_LAUNCH_COMPILE. Temporarily
+            # expose the MinGW runtime DLLs so this checks the linker rather
+            # than failing before the compiler front-end can start.
+            set(ZEROSLACK_SAVED_CONFIGURE_PATH "$ENV{PATH}")
+            set(ENV{PATH}
+                "${ZEROSLACK_COMPILER_BIN_DIR};$ENV{PATH}")
+            check_cxx_source_compiles([=[
+#include <string>
+struct B {
+    virtual ~B() = default;
+    virtual int f() const = 0;
+};
+struct D final : B {
+    int f() const override { return int(std::string("lld").size()); }
+};
+int main() {
+    D d;
+    return d.f() == 3 ? 0 : 1;
+}
+]=] ${ZEROSLACK_LLD_PROBE_VAR})
+            set(ENV{PATH} "${ZEROSLACK_SAVED_CONFIGURE_PATH}")
+            set(CMAKE_REQUIRED_LINK_OPTIONS
+                "${ZEROSLACK_SAVED_REQUIRED_LINK_OPTIONS}")
+            if(${ZEROSLACK_LLD_PROBE_VAR})
+                set(ZEROSLACK_USE_LLD ON)
+                set(ZEROSLACK_LLD_STATUS "${ZEROSLACK_LLD_VERSION_TEXT}")
+                add_link_options(
+                    "$<$<CONFIG:Debug>:-fuse-ld=lld>"
+                    "$<$<CONFIG:Debug>:-B${ZEROSLACK_LLD_BIN_DIR}/>")
+            else()
+                set(ZEROSLACK_LLD_STATUS
+                    "compiler-driver link probe failed for ${ZEROSLACK_LLD_VERSION_TEXT}")
+            endif()
+        endif()
+    endif()
+endif()
+
+if(ZEROSLACK_USE_LLD)
+    message(STATUS
+        "ZeroSlack Debug linker: LLD (${ZEROSLACK_LLD_CANDIDATE})")
+else()
+    if(MINGW)
+        execute_process(
+            COMMAND "${CMAKE_CXX_COMPILER}" -print-prog-name=ld
+            OUTPUT_VARIABLE ZEROSLACK_GNU_LD_PATH
+            OUTPUT_STRIP_TRAILING_WHITESPACE)
+        message(STATUS
+            "ZeroSlack Debug linker: GNU ld (${ZEROSLACK_GNU_LD_PATH}); ${ZEROSLACK_LLD_STATUS}")
+    else()
+        message(STATUS "ZeroSlack linker: compiler default")
+    endif()
+    if(MINGW AND ZEROSLACK_DEBUG_LINKER STREQUAL "LLD")
+        message(WARNING
+            "Requested LLD is unavailable or incompatible; using GNU ld safely")
+    elseif(ZEROSLACK_DEBUG_LINKER STREQUAL "LLD")
+        message(WARNING
+            "ZEROSLACK_DEBUG_LINKER=LLD is supported only for MinGW Debug; "
+            "using the compiler default")
+    endif()
 endif()
 
 # =========================================================

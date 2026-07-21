@@ -25,6 +25,24 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
 - Huge Workspace work is status audit only unless the user explicitly changes
   the scope.
 
+## Current Build Performance Goal Status (2026-07-20)
+
+The local MinGW Debug link goal is measured but not complete. A representative
+core mtime update rebuilt two core objects, one static archive, and all thirteen
+dependent executables in 431.890 seconds. The observed ratios against the
+818.9/1099.2-second GNU-ld baselines are 1.90x/2.54x, below the required 3x,
+and the local linker remained GNU ld.
+
+The accepted build-system scope is limited to stable inherited-PATH Ninja
+launchers and a probed, Debug-only `ZEROSLACK_DEBUG_LINKER` LLD option with safe
+GNU fallback. The only installed LLD is incompatible LLVM 7.0.1. Shared-core
+and aggregated-test prototypes were rejected because their Qt DLL boundary or
+test-initialization risks could not be proven safe without product/fixture
+changes. Release configuration and ABI remain unchanged; Debug CTest passes
+12/12 and demo passes hidden offscreen startup. Achieving and claiming 3x now
+requires a compatible LLD host followed by a full Qt/Slang link benchmark and
+the same regression suite.
+
 ## Current Goal State
 
 Current product version baseline: `v0.1.0`. The root `VERSION` file is now the

@@ -9,6 +9,43 @@ ZeroSlack is a SystemVerilog code editor and workspace browser. It should help
 users read, navigate, edit, and understand RTL projects without turning UI code
 into an analyzer.
 
+## Build-System Performance Milestone (2026-07-20)
+
+The MinGW Debug link audit is complete. `libzeroslack_core.a` feeds thirteen
+independent executable links, so a core update necessarily relinks demo plus
+twelve tests in the present static graph. The final local GNU-ld measurement
+was 431.890 seconds for two core compilations, one archive update, and thirteen
+links. That is 1.90x/2.54x against the recorded 818.9/1099.2-second baselines,
+not the required 3x; the linker was unchanged, so no causal speedup is claimed.
+
+- Retained: stable run-time PATH launchers for compile/link/custom Ninja rules,
+  plus `ZEROSLACK_DEBUG_LINKER=AUTO|GNU|LLD`, an optional LLD path, a real
+  GCC-driver link probe, explicit linker logging, safe GNU fallback, and
+  Debug-only LLD flags. Release remains on the existing MinGW ABI and GNU ld.
+- LLD: expected high benefit and low source maintenance, but the host's only
+  LLVM 7.0.1 linker is incompatible with GCC 13/Qt/Slang. The option remains
+  available for a compatible host, where a full link and CTest are still
+  required before adoption is considered measured.
+- Shared core: demonstrated very small downstream test links, but failed at a
+  Qt meta-object/data boundary at runtime. Required product export annotations,
+  DLL deployment, and ABI ownership exceed this build-only milestone.
+- Shared/aggregated test runtime: rejected because renamed entry points,
+  COFF/COMDAT coalescing, and all-test global initialization add maintenance and
+  fixture-isolation risk. Combining tests in one process was not attempted.
+- Smaller test-specific core libraries: rejected because roughly 180 core
+  sources are tightly coupled and most heavy tests span semantic and UI layers;
+  maintaining per-test partitions would be costly and fragile.
+- Debug/link flags: split DWARF produced invalid PE images with this toolchain,
+  `-gz` is unsupported, removing Debug information is out of scope, and a
+  single representative GNU link already took 250.436 seconds, so job-pool
+  tuning alone cannot meet the threshold.
+
+Verification completed with a Debug no-op, all thirteen executable links,
+final CTest 12/12 in 143.40 seconds, an offscreen demo startup, unchanged demo DLL
+imports, and successful Release regeneration with no LLD flags. The project has
+no CPack/install/package target. The performance goal remains constrained by
+the absence of a compatible local LLD; no high-risk DLL conversion was retained.
+
 ## Current Execution Baseline
 
 - Version management baseline is now SemVer-based with root `VERSION` as the

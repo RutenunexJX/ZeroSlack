@@ -27,6 +27,69 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
 - Do not push unless explicitly asked by the current task owner.
 - Keep docs short, current, and useful for the next development turn.
 
+## Local Debug Link Policy (2026-07-20)
+
+- `zeroslack_core` remains a static library. Its archive is a direct input of
+  `demo` and twelve independent test executables, so any core object update
+  changes `libzeroslack_core.a` and invalidates all thirteen PE/COFF link
+  edges. In the audited Debug build the core archive is 426,178,552 bytes,
+  Slang's static archive is 906,937,806 bytes, and most resulting executables
+  are about 740-746 MB because `.debug_*` sections dominate them.
+- `ZEROSLACK_DEBUG_LINKER` controls the linker policy and accepts `AUTO`
+  (default), `GNU`, or `LLD`. `AUTO` looks for `ld.lld`; `LLD` may also use an
+  explicit `ZEROSLACK_LLD_EXECUTABLE`. CMake identifies the candidate and runs
+  a GCC-driver C++ link probe before adding `-fuse-ld=lld` and its `-B` search
+  path. Failure is non-fatal and reports the resolved GNU ld path. These flags
+  are Debug-only, so Release and distribution ABI remain on the existing
+  MinGW/GNU path.
+
+```powershell
+cmake -S . -B <debug-build> `
+  -DZEROSLACK_DEBUG_LINKER=LLD `
+  -DZEROSLACK_LLD_EXECUTABLE=C:/tools/llvm/bin/ld.lld.exe
+
+# Explicit safe fallback
+cmake -S . -B <debug-build> -DZEROSLACK_DEBUG_LINKER=GNU
+```
+
+- Generated compile, link, and custom rules prepend the MinGW compiler `bin`
+  directory to the inherited run-time `PATH` with `cmake -E env --modify` on
+  CMake 3.25 or newer. They no longer embed the complete configure-session
+  `PATH`, whose volatile IDE/Codex entries previously changed every Ninja
+  command and caused a spurious full rebuild after reconfiguration. Older
+  CMake versions retain the compatible former launcher form.
+- The local host has no compatible LLD. Its only `ld.lld` is LLVM 7.0.1 from
+  Vivado: the normal GCC-driver probe rejects its unsupported plugin arguments,
+  while bypassing the plugin made a project link fail on duplicate GCC
+  weak/COMDAT symbols. Qt's MinGW `ld.gold.exe` supports ELF rather than Windows
+  PE/COFF. Both paths therefore fall back to GNU ld.
+- The retained GNU-ld benchmark touched only the mtime of
+  `editorgeometry.cpp`; its SHA-256 stayed unchanged. Ninja ran AutoMoc/UIC,
+  compiled two core objects (the touched source plus the generated-header
+  dependent `mainwindow.cpp`), rebuilt one archive, and relinked all thirteen
+  executables in 431.890 seconds. Against the two real GNU-ld baselines of
+  818.9 and 1099.2 seconds this is an observed 1.90x and 2.54x respectively,
+  below the required 3x. Because the actual linker did not change, this
+  run-to-run improvement is not attributed to the CMake change.
+- A test-facing shared core prototype reduced one test link to 1.558 seconds,
+  but a headless runtime check crashed in Qt `QMetaObject::static_metacall`
+  while connecting `SymbolAnalyzer::analysisCompleted`. Correcting that DLL
+  boundary requires product-wide import/export annotations and ABI work. A
+  combined test-runtime variant would additionally require twelve renamed
+  entry points and couple all test translation-unit initializers. Shared core,
+  shared test runtime, and single-process test aggregation are therefore not
+  enabled. Splitting roughly 180 coupled core sources by test, removing Debug
+  information, or relying only on link-job throttling were also rejected for
+  maintenance, coverage, or insufficient-benefit reasons.
+- Verification for the retained low-risk change: Debug no-op reports no work;
+  demo and all twelve test executables link; final CTest passes 12/12 in 143.40
+  seconds; demo stays alive in a hidden offscreen startup smoke test and its
+  import table has no new core/test DLL; Release configuration generation
+  succeeds and its demo link command remains static GNU ld. This repository
+  currently defines no CPack, `install`, or `package` target. A host with a
+  compatible modern LLD must still perform one full Qt/Slang link and CTest run
+  before a 3x link-speed result can be claimed.
+
 ## Current Product Baseline
 
 - Product versioning is controlled by the root `VERSION` file. The current
