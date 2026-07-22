@@ -246,11 +246,15 @@ SemanticIndexSnapshot publicationSnapshotFromSemanticRecords(
         std::move(diagnostics),
         fileContents);
 }
+
 }
 
 void SemanticIndex::setSnapshot(std::shared_ptr<const SemanticIndexSnapshot> snapshot)
 {
     m_snapshot = std::move(snapshot);
+    m_snapshotAuthoritative = false;
+    m_preparedAnalysisBandReport = {};
+    m_preparedAnalysisBandReportValid = false;
     ++m_snapshotRevision;
     if (m_snapshot) {
         if (m_relationshipEngine) {
@@ -263,14 +267,66 @@ void SemanticIndex::setSnapshot(std::shared_ptr<const SemanticIndexSnapshot> sna
             ActivityLogLevel::Info,
             QStringLiteral("Published snapshot gen=%1 symbols=%2 relationships=%3")
                 .arg(m_snapshotRevision)
-                .arg(m_snapshot->getSymbolRecords().size())
-                .arg(m_snapshot->relationships().size()));
+                .arg(m_snapshot->symbolRecordCount())
+                .arg(m_snapshot->relationshipCount()));
     }
+}
+
+SemanticIndexRetirementPayload SemanticIndex::installPreparedSnapshot(
+    std::shared_ptr<const SemanticIndexSnapshot> snapshot,
+    const QStringList& changedFiles,
+    const QHash<QString, QSet<int>>& relationshipHandlesByFile,
+    const QList<SemanticRelationship>& relationships,
+    bool relationshipDeltaPrepared,
+    std::shared_ptr<
+        SymbolRelationshipEngine::PreparedRelationshipState>
+        relationshipState,
+    const SemanticAnalysisBandReport& analysisBandReport)
+{
+    if (!snapshot)
+        return {};
+
+    SemanticIndexRetirementPayload retired;
+    retired.snapshot = std::exchange(m_snapshot, std::move(snapshot));
+    m_snapshotAuthoritative = true;
+    m_preparedAnalysisBandReport = analysisBandReport;
+    m_preparedAnalysisBandReportValid = true;
+    ++m_snapshotRevision;
+    if (m_relationshipEngine) {
+        if (relationshipState) {
+            retired.relationshipState =
+                m_relationshipEngine->installPreparedRelationshipState(
+                    std::move(relationshipState));
+        } else if (relationshipDeltaPrepared) {
+            m_relationshipEngine->replacePreparedRelationshipsForFiles(
+                relationshipHandlesByFile,
+                relationships,
+                changedFiles);
+        } else {
+            m_relationshipEngine->replaceRelationshipsForFilesFromSnapshot(
+                m_snapshot->getSymbolRecords(),
+                m_snapshot->relationships(),
+                changedFiles);
+        }
+    }
+    ActivityLogService::getInstance()->append(
+        QStringLiteral("SemanticIndex"),
+        ActivityLogLevel::Info,
+        QStringLiteral(
+            "Published prepared snapshot gen=%1 symbols=%2 relationships=%3 changedFiles=%4")
+            .arg(m_snapshotRevision)
+            .arg(m_snapshot->symbolRecordCount())
+            .arg(m_snapshot->relationshipCount())
+            .arg(changedFiles.join(QLatin1Char(','))));
+    return retired;
 }
 
 void SemanticIndex::clearSnapshot()
 {
     m_snapshot.reset();
+    m_snapshotAuthoritative = false;
+    m_preparedAnalysisBandReport = {};
+    m_preparedAnalysisBandReportValid = false;
     ++m_snapshotRevision;
 }
 

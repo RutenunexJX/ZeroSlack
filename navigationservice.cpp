@@ -162,44 +162,36 @@ QString fingerprintToken(const QStringList& fields)
 
 QString designRecordFingerprintToken(const SemanticSymbolRecord& record)
 {
+    const SymbolTaxonomy::SemanticMetadata metadata =
+        semanticMetadataForSymbolRecord(record);
+    const bool instance = SymbolTaxonomy::isInstanceDeclaration(metadata);
     return fingerprintToken({
-        QStringLiteral("record"),
-        symbolStableKeyText(record.stableKey),
-        record.name,
-        QString::number(static_cast<int>(record.declarationKind)),
-        QString::number(static_cast<int>(record.collectorKind)),
+        instance ? QStringLiteral("instance") : QStringLiteral("design-unit"),
         normalizedDesignFingerprintFileName(record.location.fileName),
-        QString::number(record.location.startLine),
-        QString::number(record.location.startColumn),
-        QString::number(record.location.endLine),
-        QString::number(record.location.endColumn),
-        QString::number(record.location.position),
-        QString::number(record.location.length),
+        QString::number(static_cast<int>(record.declarationKind)),
+        record.name,
         QString::number(static_cast<int>(record.owner.kind)),
         record.owner.name,
-        symbolStableKeyText(record.owner.stableKey),
-        record.type.rawTypeText,
-        record.type.resolvedTypeName,
-        QString::number(static_cast<int>(record.type.resolvedTypeKind)),
-        symbolStableKeyText(record.type.stableKey),
+        instance ? record.type.resolvedTypeName : QString(),
+        instance && record.type.resolvedTypeName.isEmpty()
+            ? record.type.rawTypeText
+            : QString(),
+        instance ? record.type.modportName : QString(),
     });
 }
 
 QString designRelationshipFingerprintToken(
-    const SemanticRelationship& relationship)
+    const SemanticRelationship& relationship,
+    const QHash<QString, QString>& identitiesByStableKey)
 {
     return fingerprintToken({
-        QStringLiteral("relationship"),
-        symbolStableKeyText(relationship.fromStableKey),
-        symbolStableKeyText(relationship.toStableKey),
+        QStringLiteral("instantiates"),
+        identitiesByStableKey.value(
+            symbolStableKeyText(relationship.fromStableKey)),
+        identitiesByStableKey.value(
+            symbolStableKeyText(relationship.toStableKey)),
         relationship.fromAccessPath,
         relationship.toAccessPath,
-        normalizedDesignFingerprintFileName(
-            relationship.evidenceRange.fileName),
-        QString::number(relationship.evidenceRange.line),
-        QString::number(relationship.evidenceRange.column),
-        QString::number(relationship.evidenceRange.endLine),
-        QString::number(relationship.evidenceRange.endColumn),
     });
 }
 
@@ -358,7 +350,8 @@ DesignHierarchyReport NavigationService::findDesignHierarchy(
 }
 
 QByteArray NavigationService::designStructureFingerprint(
-    const QSet<QString>& fileScope) const
+    const QSet<QString>& fileScope,
+    const QString& activeTop) const
 {
     if (!index)
         return {};
@@ -373,7 +366,13 @@ QByteArray NavigationService::designStructureFingerprint(
     }
 
     QStringList tokens;
+    QStringList orderedScope = normalizedFileScope.values();
+    std::sort(orderedScope.begin(), orderedScope.end());
+    tokens.append(fingerprintToken({QStringLiteral("workspace-scope"),
+                                    orderedScope.join(QLatin1Char('\n')),
+                                    activeTop}));
     QSet<QString> moduleStableKeys;
+    QHash<QString, QString> identitiesByStableKey;
     const QList<SemanticSymbolRecord> records = index->getSymbolRecords();
     tokens.reserve(records.size());
     for (const SemanticSymbolRecord& record : records) {
@@ -392,7 +391,12 @@ QByteArray NavigationService::designStructureFingerprint(
         if (!module && !interfaceLike && !instance)
             continue;
 
-        tokens.append(designRecordFingerprintToken(record));
+        const QString identity = designRecordFingerprintToken(record);
+        tokens.append(identity);
+        if (record.stableKey.isValid()) {
+            identitiesByStableKey.insert(symbolStableKeyText(record.stableKey),
+                                         identity);
+        }
         if (module && record.stableKey.isValid())
             moduleStableKeys.insert(symbolStableKeyText(record.stableKey));
     }
@@ -424,7 +428,8 @@ QByteArray NavigationService::designStructureFingerprint(
                 symbolStableKeyText(relationship.fromStableKey))) {
             continue;
         }
-        tokens.append(designRelationshipFingerprintToken(relationship));
+        tokens.append(designRelationshipFingerprintToken(
+            relationship, identitiesByStableKey));
     }
 
     std::sort(tokens.begin(), tokens.end());

@@ -30,6 +30,11 @@ public:
     QList<DocumentSnapshot> openDocuments() const;
     DocumentSnapshot documentForEditor(MyCodeEditor* editor) const;
     DocumentSnapshot documentForFile(const QString& fileName) const;
+    // Event handlers keep these snapshots current. Semantic scheduling uses
+    // the cached views so a save never re-materializes a multi-megabyte
+    // QPlainTextEdit buffer on the GUI thread.
+    QList<DocumentSnapshot> cachedOpenDocuments() const;
+    DocumentSnapshot cachedDocumentForFile(const QString& fileName) const;
     MyCodeEditor* editorForFile(const QString& fileName) const;
     QString documentText(const QString& documentId) const;
     QString documentTextForFile(const QString& fileName) const;

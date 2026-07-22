@@ -1,398 +1,293 @@
 #include "workspacesymbolanalysiscontroller.h"
 
-#include "documentmodel.h"
+#include "effectivevalueservice.h"
 #include "semanticindex.h"
 #include "symbolanalyzer.h"
 
-#include <QDir>
 #include <QFileInfo>
 
-#include <utility>
-
 namespace {
-struct WorkspaceSizeProfile {
-    int totalFiles = 0;
-    qint64 totalBytes = 0;
-    qint64 largestFileBytes = 0;
-};
-
-WorkspaceSizeProfile sizeProfileForProject(const ProjectSnapshot& project)
+bool sameSemanticFile(const QString& first, const QString& second)
 {
-    WorkspaceSizeProfile profile;
-    profile.totalFiles = project.systemVerilogFiles.size();
-    for (const QString& fileName : project.systemVerilogFiles) {
-        const qint64 size = QFileInfo(fileName).size();
-        if (size <= 0)
-            continue;
-        profile.totalBytes += size;
-        profile.largestFileBytes = qMax(profile.largestFileBytes, size);
+    if (first.isEmpty() || second.isEmpty())
+        return false;
+    return QFileInfo(first).absoluteFilePath().compare(
+               QFileInfo(second).absoluteFilePath(),
+               Qt::CaseInsensitive)
+        == 0;
+}
+
+bool requestChangesFile(const SemanticAnalysisRequest& request,
+                        const QString& fileName)
+{
+    for (const QString& changedFile : request.changedFiles) {
+        if (sameSemanticFile(changedFile, fileName))
+            return true;
     }
-    return profile;
+    return false;
 }
 
-struct WorkspaceAutomaticAnalysisBudget {
-    ProjectSnapshot project;
-    WorkspaceSizeProfile profile;
-    int automaticFileCount = 0;
+void removeFileEntry(QHash<QString, QString>* values,
+                     const QString& fileName)
+{
+    if (!values)
+        return;
+    for (auto it = values->begin(); it != values->end();) {
+        if (sameSemanticFile(it.key(), fileName))
+            it = values->erase(it);
+        else
+            ++it;
+    }
+}
 
-    int deferredFileCount() const
-    {
-        return qMax(0, profile.totalFiles - automaticFileCount);
+void removeFileEntry(QHash<QString, std::uint64_t>* values,
+                     const QString& fileName)
+{
+    if (!values)
+        return;
+    for (auto it = values->begin(); it != values->end();) {
+        if (sameSemanticFile(it.key(), fileName))
+            it = values->erase(it);
+        else
+            ++it;
+    }
+}
+}
+
+std::uint64_t
+WorkspaceSymbolAnalysisController::activeSemanticGenerationForFile(
+    const QString& fileName) const
+{
+    if (!workspaceAnalysisActive || !activeSemanticRequest.isValid()
+        || fileName.isEmpty()) {
+        return 0;
+    }
+    const QString target = QFileInfo(fileName).absoluteFilePath();
+    for (const QString& candidate
+         : activeSemanticRequest.project.systemVerilogFiles) {
+        if (QFileInfo(candidate).absoluteFilePath().compare(
+                target, Qt::CaseInsensitive)
+            == 0) {
+            return activeSemanticRequest.generation;
+        }
+    }
+    return 0;
+}
+
+void WorkspaceSymbolAnalysisController::notifyActiveRequestDropped(
+    SemanticAnalysisRequestDisposition disposition)
+{
+    if (activeSemanticRequestDropNotified
+        || !activeSemanticRequest.isValid()) {
+        return;
+    }
+    activeSemanticRequestDropNotified = true;
+    emit semanticAnalysisRequestDropped(activeSemanticRequest, disposition);
+}
+
+void WorkspaceSymbolAnalysisController::dropPendingRequest(
+    SemanticAnalysisRequestDisposition disposition)
+{
+    if (!hasPendingSemanticRequest)
+        return;
+    const SemanticAnalysisRequest dropped = pendingSemanticRequest;
+    pendingSemanticRequest = SemanticAnalysisRequest();
+    hasPendingSemanticRequest = false;
+    if (dropped.isValid())
+        emit semanticAnalysisRequestDropped(dropped, disposition);
+}
+
+void WorkspaceSymbolAnalysisController::requestSemanticAnalysis(
+    const SemanticAnalysisRequest& request)
+{
+    if (!request.isValid() || !symbolAnalyzer)
+        return;
+
+    if (workspaceAnalysisActive) {
+        dropPendingRequest(
+            SemanticAnalysisRequestDisposition::Superseded);
+        pendingSemanticRequest = request;
+        hasPendingSemanticRequest = true;
+        if (request.project.isOpen())
+            requestQueue.queueLatest(request.project);
+        emit workspaceAnalysisRequestQueued(requestQueue.telemetry());
+        notifyActiveRequestDropped(
+            SemanticAnalysisRequestDisposition::Superseded);
+        symbolAnalyzer->expireWorkspaceAnalysis();
+        return;
     }
 
-    bool hasDeferredFiles() const
-    {
-        return deferredFileCount() > 0;
+    startSemanticAnalysis(request);
+}
+
+void WorkspaceSymbolAnalysisController::invalidateSemanticAnalysis(
+    const QString& fileName,
+    std::uint64_t documentRevision)
+{
+    Q_UNUSED(documentRevision)
+
+    const bool activeTouchesFile = workspaceAnalysisActive
+        && requestChangesFile(activeSemanticRequest, fileName);
+    const bool pendingTouchesFile = hasPendingSemanticRequest
+        && requestChangesFile(pendingSemanticRequest, fileName);
+    if (!activeTouchesFile && !pendingTouchesFile)
+        return;
+
+    if (pendingTouchesFile) {
+        if (pendingSemanticRequest.impactHint
+            == SemanticChangeImpact::WorkspaceConfig) {
+            dropPendingRequest(
+                SemanticAnalysisRequestDisposition::Invalidated);
+        } else {
+            pendingSemanticRequest.changedFiles.removeIf(
+                [&fileName](const QString& candidate) {
+                    return sameSemanticFile(candidate, fileName);
+                });
+            removeFileEntry(&pendingSemanticRequest.sourceOverrides,
+                            fileName);
+            removeFileEntry(&pendingSemanticRequest.documentRevisions,
+                            fileName);
+            if (sameSemanticFile(pendingSemanticRequest.triggerFile,
+                                 fileName)) {
+                pendingSemanticRequest.triggerFile =
+                    pendingSemanticRequest.changedFiles.isEmpty()
+                    ? QString()
+                    : pendingSemanticRequest.changedFiles.constLast();
+            }
+            if (pendingSemanticRequest.changedFiles.isEmpty()) {
+                dropPendingRequest(
+                    SemanticAnalysisRequestDisposition::Invalidated);
+            }
+        }
     }
 
-    bool hasAutomaticFiles() const
-    {
-        return automaticFileCount > 0;
+    if (!activeTouchesFile || !symbolAnalyzer)
+        return;
+    SemanticAnalysisRequest continuation;
+    if (!hasPendingSemanticRequest
+        && activeSemanticRequest.impactHint
+            != SemanticChangeImpact::WorkspaceConfig) {
+        continuation = activeSemanticRequest;
+        continuation.changedFiles.removeIf(
+            [&fileName](const QString& candidate) {
+                return sameSemanticFile(candidate, fileName);
+            });
+        removeFileEntry(&continuation.sourceOverrides, fileName);
+        removeFileEntry(&continuation.documentRevisions, fileName);
+        if (sameSemanticFile(continuation.triggerFile, fileName)) {
+            continuation.triggerFile = continuation.changedFiles.isEmpty()
+                ? QString()
+                : continuation.changedFiles.constLast();
+        }
     }
-};
-
-WorkspaceAutomaticAnalysisBudget automaticAnalysisBudgetForPlan(
-    const ProjectSnapshot& originalProject,
-    const WorkspaceAnalysisPlan& plan)
-{
-    WorkspaceAutomaticAnalysisBudget budget;
-    budget.profile = sizeProfileForProject(originalProject);
-    budget.project = plan.project;
-    budget.automaticFileCount = budget.project.systemVerilogFiles.size();
-    return budget;
-}
-
-QHash<QString, SemanticAnalysisBandMetadata> semanticBandMetadataForPlan(
-    const WorkspaceAnalysisPlan& plan)
-{
-    QHash<QString, SemanticAnalysisBandMetadata> bands;
-    for (auto it = plan.fileBandMetadataByNormalizedPath.constBegin();
-         it != plan.fileBandMetadataByNormalizedPath.constEnd();
-         ++it) {
-        const WorkspaceAnalysisFileBandMetadata planMetadata = it.value();
-        if (!planMetadata.isValid())
-            continue;
-        SemanticAnalysisBandMetadata metadata;
-        metadata.label = planMetadata.label;
-        metadata.displayName = planMetadata.displayName;
-        metadata.priority = planMetadata.priority;
-        metadata.publicationCheckpoint = planMetadata.publicationCheckpoint;
-        bands.insert(it.key(), metadata);
-    }
-    return bands;
-}
-
-QString workspaceAnalysisKey(const ProjectSnapshot& project)
-{
-    QStringList files = project.systemVerilogFiles;
-    files.sort(Qt::CaseInsensitive);
-    QStringList includeDirs = project.includeDirs;
-    includeDirs.sort(Qt::CaseInsensitive);
-    QStringList fileExtensions = project.fileExtensions;
-    fileExtensions.sort(Qt::CaseInsensitive);
-    QStringList defineKeys = project.defines.keys();
-    defineKeys.sort(Qt::CaseInsensitive);
-    QStringList defineParts;
-    defineParts.reserve(defineKeys.size());
-    for (const QString& key : defineKeys) {
-        defineParts.append(QStringLiteral("%1=%2")
-                               .arg(key, project.defines.value(key)));
-    }
-    return QStringLiteral("%1\nfiles:%2\nincludes:%3\ndefines:%4\next:%5\ntop:%6")
-        .arg(project.workspaceRoot,
-             files.join(QLatin1Char('\n')),
-             includeDirs.join(QLatin1Char('\n')),
-             defineParts.join(QLatin1Char('\n')),
-             fileExtensions.join(QLatin1Char('\n')),
-             project.topModule);
-}
-
-QString workspaceRootIdentity(const QString& workspaceRoot)
-{
-#ifdef Q_OS_WIN
-    return workspaceRoot.toCaseFolded();
-#else
-    return workspaceRoot;
-#endif
-}
-
-QString workspaceAnalysisFileIdentity(const QString& fileName)
-{
-    if (fileName.isEmpty())
-        return QString();
-    QString identity = QDir::cleanPath(
-        QDir::fromNativeSeparators(QFileInfo(fileName).absoluteFilePath()));
-#ifdef Q_OS_WIN
-    identity = identity.toCaseFolded();
-#endif
-    return identity;
-}
-
-bool isExternalSystemVerilogOverlay(const QString& fileName)
-{
-    const QString suffix = QFileInfo(fileName).suffix();
-    return suffix.compare(QStringLiteral("sv"), Qt::CaseInsensitive) == 0
-        || suffix.compare(QStringLiteral("svh"), Qt::CaseInsensitive) == 0;
-}
+    notifyActiveRequestDropped(
+        SemanticAnalysisRequestDisposition::Invalidated);
+    if (!continuation.changedFiles.isEmpty())
+        emit semanticAnalysisContinuationRequired(continuation);
+    ++workspaceStartGeneration;
+    symbolAnalyzer->expireWorkspaceAnalysis();
 }
 
 void WorkspaceSymbolAnalysisController::requestWorkspaceAnalysis(
     const ProjectSnapshot& project)
 {
-    if (!project.isOpen() || !symbolAnalyzer)
+    if (!project.isOpen() || project.systemVerilogFiles.isEmpty())
         return;
 
-    QPointer<WorkspaceSymbolAnalysisController> self(this);
-    const QPointer<SymbolAnalyzer> analyzer = symbolAnalyzer;
-
-    if (project.systemVerilogFiles.isEmpty()) {
-        workspaceAnalysisActive = false;
-        activeRequestedProject = ProjectSnapshot();
-        activeProject = ProjectSnapshot();
-        ++workspaceStartGeneration;
-        analyzer->setWorkspaceFileAnalysisBands({});
-        if (self && analyzer)
-            analyzer->cancelWorkspaceAnalysisAndInvalidate();
-        return;
-    }
-
-    const QString projectKey = workspaceAnalysisKey(project);
-    if (completedWorkspaceAnalysisKeys.contains(projectKey)) {
-        workspaceAnalysisActive = false;
-        activeRequestedProject = ProjectSnapshot();
-        activeProject = ProjectSnapshot();
-        activeWorkspaceAnalysisComplete = true;
-        requestQueue.clear();
-        ++workspaceStartGeneration;
-        if (analyzer)
-            analyzer->expireWorkspaceAnalysis();
-        if (!self)
-            return;
-        emit workspaceRelationshipAnalysisCancelRequested();
-        if (!self)
-            return;
-        emit diagnosticsRefreshRequested(QString());
-        return;
-    }
-
-    if (requestQueue.active()) {
-        requestQueue.queueLatest(project);
-        ++workspaceStartGeneration;
-        const WorkspaceAnalysisRequestTelemetry telemetry =
-            requestQueue.telemetry();
-        emit workspaceAnalysisRequestQueued(telemetry);
-        if (!self || !analyzer || symbolAnalyzer != analyzer)
-            return;
-        analyzer->expireWorkspaceAnalysis();
-        return;
-    }
-
-    startWorkspaceAnalysis(project);
+    SemanticAnalysisRequest request;
+    request.generation = ++compatibilityRequestGeneration;
+    request.reason = SemanticAnalysisReason::ExplicitRequest;
+    request.impactHint = SemanticChangeImpact::WorkspaceConfig;
+    request.project = project;
+    request.changedFiles = project.systemVerilogFiles;
+    requestSemanticAnalysis(request);
 }
 
-void WorkspaceSymbolAnalysisController::startWorkspaceAnalysis(
-    const ProjectSnapshot& project)
+void WorkspaceSymbolAnalysisController::startSemanticAnalysis(
+    const SemanticAnalysisRequest& request)
 {
-    const std::uint64_t startGeneration = ++workspaceStartGeneration;
-    QPointer<WorkspaceSymbolAnalysisController> self(this);
-    const QPointer<SymbolAnalyzer> analyzer = symbolAnalyzer;
-    const QPointer<DocumentModel> documents = documentModel;
-    if (!analyzer)
+    if (!symbolAnalyzer || !request.isValid())
         return;
 
-    WorkspaceAnalysisPlanQuery query;
-    query.project = project;
-    query.currentFileName = currentFileProvider ? currentFileProvider() : QString();
-    if (!self || workspaceStartGeneration != startGeneration)
-        return;
-    query.openDocuments = documents
-        ? documents->openDocuments()
-        : QList<DocumentSnapshot>();
-    if (!self || !analyzer || workspaceStartGeneration != startGeneration)
-        return;
-    const WorkspaceAnalysisPlan plan =
-        WorkspaceAnalysisPlanService::getInstance()->planForWorkspace(query);
-    const WorkspaceAutomaticAnalysisBudget budget =
-        automaticAnalysisBudgetForPlan(project, plan);
-
-    QList<OpenDocumentContent> openDocumentContents;
-    if (documents) {
-        openDocumentContents.reserve(query.openDocuments.size());
-        for (const DocumentSnapshot& snapshot : query.openDocuments) {
-            if (snapshot.fileName.isEmpty())
-                continue;
-            const QString content =
-                documents->documentTextForFile(snapshot.fileName);
-            if (!self || !documents
-                || workspaceStartGeneration != startGeneration) {
-                return;
-            }
-            if (content.isNull())
-                continue;
-            openDocumentContents.append(
-                {snapshot.fileName,
-                 content,
-                 static_cast<std::uint64_t>(snapshot.textVersion)});
-        }
-    }
-
-    // Open SV documents outside the automatic budget still participate in
-    // this one immutable Slang transaction. They are deliberately not added
-    // to activeProject: workspace completion keys, automatic budgeting, and
-    // relationship analysis continue to describe only the real project.
-    ProjectSnapshot analysisProject = budget.project;
-    QSet<QString> analysisFileIdentities;
-    for (const QString& fileName :
-         std::as_const(analysisProject.systemVerilogFiles)) {
-        analysisFileIdentities.insert(
-            workspaceAnalysisFileIdentity(fileName));
-    }
-    for (const OpenDocumentContent& document :
-         std::as_const(openDocumentContents)) {
-        if (document.fileName.isEmpty()
-            || document.content.isNull()
-            || !isExternalSystemVerilogOverlay(document.fileName)) {
-            continue;
-        }
-        const QString identity =
-            workspaceAnalysisFileIdentity(document.fileName);
-        if (identity.isEmpty() || analysisFileIdentities.contains(identity))
-            continue;
-        analysisFileIdentities.insert(identity);
-        analysisProject.systemVerilogFiles.append(document.fileName);
-    }
-
-    analyzer->setWorkspaceFileAnalysisBands(
-        semanticBandMetadataForPlan(plan));
-    emit workspaceAnalysisPlanPrepared(plan);
-    if (!self || !analyzer || symbolAnalyzer != analyzer
-        || workspaceStartGeneration != startGeneration) {
-        return;
-    }
-
-    if (budget.hasDeferredFiles()) {
-        emit workspaceSymbolAnalysisDeferred(project,
-                                             budget.profile.totalFiles,
-                                             budget.profile.totalBytes,
-                                             budget.profile.largestFileBytes);
-        if (!self || !analyzer || symbolAnalyzer != analyzer
-            || workspaceStartGeneration != startGeneration) {
-            return;
-        }
-    }
-
-    if (!budget.hasAutomaticFiles()) {
-        requestQueue.clear();
-        activeRequestedProject = ProjectSnapshot();
-        activeProject = ProjectSnapshot();
-        workspaceAnalysisActive = false;
-        activeWorkspaceAnalysisComplete = false;
-        emit diagnosticsRefreshRequested(QString());
-        return;
-    }
-
-    requestQueue.start(project);
-    activeRequestedProject = project;
-    activeProject = budget.project;
+    ++workspaceStartGeneration;
+    activeSemanticRequest = request;
+    activeSemanticRequestDropNotified = false;
+    activeRequestedProject = request.project;
+    activeProject = request.project;
+    activeIncrementalPlan = IncrementalAnalysisPlan();
     workspaceAnalysisActive = true;
-    activeWorkspaceAnalysisComplete = !budget.hasDeferredFiles();
-    emit diagnosticsRefreshRequested(QString());
-    if (!self || !analyzer || symbolAnalyzer != analyzer
-        || workspaceStartGeneration != startGeneration
-        || !workspaceAnalysisActive
-        || workspaceAnalysisKey(activeRequestedProject)
-               != workspaceAnalysisKey(project)) {
+    activeWorkspaceAnalysisComplete = true;
+    projectSemanticStateCleared = false;
+    if (request.project.isOpen())
+        requestQueue.start(request.project);
+
+    emit semanticAnalysisRequestStarted(request);
+    emit workspaceSymbolAnalysisStarted(
+        request.project,
+        request.project.systemVerilogFiles.size());
+    symbolAnalyzer->startSemanticAnalysisAsync(request);
+}
+
+void WorkspaceSymbolAnalysisController::startPendingSemanticAnalysis()
+{
+    if (!hasPendingSemanticRequest)
         return;
-    }
-    emit workspaceSymbolAnalysisStarted(budget.project,
-                                        budget.project.systemVerilogFiles.size());
-    if (!self || !analyzer || symbolAnalyzer != analyzer
-        || workspaceStartGeneration != startGeneration
-        || !workspaceAnalysisActive
-        || workspaceAnalysisKey(activeRequestedProject)
-               != workspaceAnalysisKey(project)) {
-        return;
-    }
-    // Worker cancellation is owned by SymbolAnalyzer's shared atomic token.
-    // The UI provider remains a GUI-thread completion policy and is never
-    // copied into QtConcurrent where its QObject owner could expire.
-    analyzer->startAnalyzeProjectAsync(analysisProject,
-                                       {},
-                                       openDocumentContents);
+    const SemanticAnalysisRequest request = pendingSemanticRequest;
+    pendingSemanticRequest = SemanticAnalysisRequest();
+    hasPendingSemanticRequest = false;
+    startSemanticAnalysis(request);
 }
 
 void WorkspaceSymbolAnalysisController::cancelWorkspaceAnalysis()
 {
-    if (!workspaceAnalysisActive
-        && !requestQueue.active()
-        && !requestQueue.hasPending()) {
+    if (!workspaceAnalysisActive && !hasPendingSemanticRequest)
         return;
-    }
 
-    QPointer<WorkspaceSymbolAnalysisController> self(this);
-    const QPointer<SymbolAnalyzer> analyzer = symbolAnalyzer;
+    notifyActiveRequestDropped(
+        SemanticAnalysisRequestDisposition::Cancelled);
+    dropPendingRequest(
+        SemanticAnalysisRequestDisposition::Cancelled);
     const WorkspaceAnalysisRequestTelemetry telemetry = requestQueue.cancel();
     ++workspaceStartGeneration;
     workspaceAnalysisActive = false;
     activeRequestedProject = ProjectSnapshot();
     activeProject = ProjectSnapshot();
+    activeSemanticRequest = SemanticAnalysisRequest();
+    activeSemanticRequestDropNotified = false;
     activeWorkspaceAnalysisComplete = true;
     emit workspaceSymbolAnalysisCancelled(telemetry);
-    if (self && analyzer)
-        analyzer->expireWorkspaceAnalysis();
+    if (symbolAnalyzer)
+        symbolAnalyzer->expireWorkspaceAnalysis();
 }
 
 void WorkspaceSymbolAnalysisController::clearProjectSemanticState()
 {
-    if (projectSemanticStateCleared)
-        return;
-
-    QPointer<WorkspaceSymbolAnalysisController> self(this);
-    const QPointer<SymbolAnalyzer> analyzer = symbolAnalyzer;
-
-    projectSemanticStateCleared = true;
+    notifyActiveRequestDropped(
+        SemanticAnalysisRequestDisposition::Cancelled);
+    dropPendingRequest(
+        SemanticAnalysisRequestDisposition::Cancelled);
     ++workspaceStartGeneration;
+    projectSemanticStateCleared = true;
     workspaceAnalysisActive = false;
     activeWorkspaceAnalysisComplete = true;
     requestQueue.clear();
     activeRequestedProject = ProjectSnapshot();
     activeProject = ProjectSnapshot();
+    activeSemanticRequest = SemanticAnalysisRequest();
+    activeSemanticRequestDropNotified = false;
+    activeIncrementalPlan = IncrementalAnalysisPlan();
+    hasPendingSemanticRequest = false;
     activeWorkspaceRoot.clear();
     completedWorkspaceAnalysisKeys.clear();
-    if (analyzer) {
-        analyzer->setWorkspaceFileAnalysisBands({});
-        analyzer->cancelWorkspaceAnalysisAndInvalidate();
+    if (symbolAnalyzer) {
+        symbolAnalyzer->setWorkspaceFileAnalysisBands({});
+        symbolAnalyzer->expireWorkspaceAnalysis();
     }
-    if (!self)
-        return;
+    EffectiveValueService::getInstance()->clearPublishedFacts();
     emit workspaceRelationshipAnalysisCancelRequested();
-    if (!self)
-        return;
     SemanticIndex::getInstance()->clearSemanticState();
     emit relationshipDataClearRequested();
-    if (!self)
-        return;
     emit diagnosticsRefreshRequested(QString());
-}
-
-void WorkspaceSymbolAnalysisController::onProjectChanged(
-    const ProjectSnapshot& project)
-{
-    if (!project.isOpen()) {
-        clearProjectSemanticState();
-        return;
-    }
-
-    const bool replacingWorkspace =
-        !activeWorkspaceRoot.isEmpty()
-        && workspaceRootIdentity(activeWorkspaceRoot)
-               != workspaceRootIdentity(project.workspaceRoot);
-    if (replacingWorkspace)
-        clearProjectSemanticState();
-
-    projectSemanticStateCleared = false;
-    activeWorkspaceRoot = project.workspaceRoot;
-    requestWorkspaceAnalysis(project);
 }
 
 void WorkspaceSymbolAnalysisController::onWorkspaceSymbolAnalysisCompleted(
@@ -402,36 +297,27 @@ void WorkspaceSymbolAnalysisController::onWorkspaceSymbolAnalysisCompleted(
     if (!workspaceAnalysisActive)
         return;
 
+    const SemanticAnalysisRequest request = activeSemanticRequest;
     const ProjectSnapshot project = activeProject;
-    ProjectSnapshot pendingProject;
-    const bool hasPending =
-        requestQueue.finishAndTakePending(&pendingProject);
+    const IncrementalAnalysisPlan plan = activeIncrementalPlan;
+    ProjectSnapshot ignoredPendingProject;
+    requestQueue.finishAndTakePending(&ignoredPendingProject);
     const WorkspaceAnalysisRequestTelemetry telemetry =
         requestQueue.telemetry();
     workspaceAnalysisActive = false;
     activeRequestedProject = ProjectSnapshot();
     activeProject = ProjectSnapshot();
-    QPointer<WorkspaceSymbolAnalysisController> self(this);
-    emit workspaceAnalysisRequestResolved(telemetry);
-    if (!self)
-        return;
-    if (hasPending) {
-        requestWorkspaceAnalysis(pendingProject);
-        return;
-    }
-    const bool cancelled = cancelProvider && cancelProvider();
-    if (!self || cancelled)
-        return;
+    activeSemanticRequest = SemanticAnalysisRequest();
+    activeSemanticRequestDropNotified = false;
+    activeIncrementalPlan = IncrementalAnalysisPlan();
 
-    const bool completeWorkspaceAnalysis = activeWorkspaceAnalysisComplete;
-    activeWorkspaceAnalysisComplete = true;
-    if (completeWorkspaceAnalysis)
-        completedWorkspaceAnalysisKeys.insert(workspaceAnalysisKey(project));
-    emit workspaceSymbolAnalysisFinished(project, filesAnalyzed, totalSymbols);
-    if (!self)
-        return;
-    if (completeWorkspaceAnalysis)
-        emit workspaceRelationshipAnalysisRequested(project);
+    emit workspaceAnalysisRequestResolved(telemetry);
+    emit diagnosticsRefreshRequested(QString());
+    emit semanticAnalysisRequestFinished(request, plan);
+    emit workspaceSymbolAnalysisFinished(project,
+                                         filesAnalyzed,
+                                         totalSymbols);
+    startPendingSemanticAnalysis();
 }
 
 void WorkspaceSymbolAnalysisController::onWorkspaceSymbolAnalysisExpired()
@@ -439,19 +325,39 @@ void WorkspaceSymbolAnalysisController::onWorkspaceSymbolAnalysisExpired()
     if (!workspaceAnalysisActive)
         return;
 
-    ProjectSnapshot pendingProject;
-    const bool hasPending =
-        requestQueue.finishAndTakePending(&pendingProject);
+    notifyActiveRequestDropped(
+        SemanticAnalysisRequestDisposition::Expired);
+    ProjectSnapshot ignoredPendingProject;
+    requestQueue.finishAndTakePending(&ignoredPendingProject);
     const WorkspaceAnalysisRequestTelemetry telemetry =
         requestQueue.telemetry();
     workspaceAnalysisActive = false;
     activeRequestedProject = ProjectSnapshot();
     activeProject = ProjectSnapshot();
-    activeWorkspaceAnalysisComplete = true;
-    QPointer<WorkspaceSymbolAnalysisController> self(this);
+    activeSemanticRequest = SemanticAnalysisRequest();
+    activeSemanticRequestDropNotified = false;
+    activeIncrementalPlan = IncrementalAnalysisPlan();
     emit workspaceAnalysisRequestResolved(telemetry);
-    if (!self)
+    startPendingSemanticAnalysis();
+}
+
+void WorkspaceSymbolAnalysisController::onSemanticAnalysisFailed(
+    const SemanticAnalysisRequest& request,
+    const QString& error)
+{
+    if (!workspaceAnalysisActive
+        || activeSemanticRequest.generation != request.generation) {
         return;
-    if (hasPending)
-        requestWorkspaceAnalysis(pendingProject);
+    }
+
+    ProjectSnapshot ignoredPendingProject;
+    requestQueue.finishAndTakePending(&ignoredPendingProject);
+    workspaceAnalysisActive = false;
+    activeRequestedProject = ProjectSnapshot();
+    activeProject = ProjectSnapshot();
+    activeSemanticRequest = SemanticAnalysisRequest();
+    activeSemanticRequestDropNotified = false;
+    activeIncrementalPlan = IncrementalAnalysisPlan();
+    emit semanticAnalysisRequestFailed(request, error);
+    startPendingSemanticAnalysis();
 }

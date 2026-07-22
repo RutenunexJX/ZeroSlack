@@ -83,14 +83,23 @@ void NavigationManager::refreshDesignHierarchy(bool force)
     QElapsedTimer timer;
     timer.start();
     const bool changed = updateDesignHierarchyData(force);
+    const bool refreshWidget = navigationWidget
+        && (changed || force || !designHierarchyWidgetValid);
 
-    if (navigationWidget
-        && (changed || force || !designHierarchyWidgetValid)) {
+    if (refreshWidget) {
         navigationWidget->updateDesignHierarchy(caches.designHierarchy);
         designHierarchyWidgetValid = true;
     }
 
     emit dataRefreshed(DesignHierarchyView);
+    SemanticAnalysisTelemetry telemetry = semanticAnalysisContext;
+    telemetry.stage = SemanticAnalysisStage::Navigation;
+    telemetry.uiRefreshMs = timer.elapsed();
+    telemetry.detail = QStringLiteral(
+        "hierarchyRebuild=%1 widgetRefresh=%2")
+        .arg(changed || force ? 1 : 0)
+        .arg(refreshWidget ? 1 : 0);
+    emit navigationTelemetry(telemetry);
     ActivityLogService::getInstance()->append(
         QStringLiteral("Navigation"),
         ActivityLogLevel::Info,
@@ -98,6 +107,12 @@ void NavigationManager::refreshDesignHierarchy(bool force)
             .arg(changed || force ? QStringLiteral("Rebuilt") : QStringLiteral("Kept cached"),
                  navigationViewName(DesignHierarchyView)),
         static_cast<int>(timer.elapsed()));
+}
+
+void NavigationManager::setSemanticAnalysisContext(
+    const SemanticAnalysisTelemetry& telemetry)
+{
+    semanticAnalysisContext = telemetry;
 }
 
 void NavigationManager::warmDesignHierarchyCache()

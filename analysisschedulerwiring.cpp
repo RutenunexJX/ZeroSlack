@@ -128,6 +128,44 @@ void AnalysisScheduler::setupWorkspaceSymbolAnalysis()
             &WorkspaceSymbolAnalysisController::workspaceSymbolAnalysisDeferred,
             this,
             &AnalysisScheduler::workspaceSymbolAnalysisDeferred);
+    connect(workspaceSymbolAnalysis,
+            &WorkspaceSymbolAnalysisController::semanticAnalysisRequestStarted,
+            this,
+            &AnalysisScheduler::onSemanticAnalysisStarted);
+    connect(workspaceSymbolAnalysis,
+            &WorkspaceSymbolAnalysisController::semanticAnalysisRequestFinished,
+            this,
+            &AnalysisScheduler::onSemanticAnalysisFinished);
+    connect(workspaceSymbolAnalysis,
+            &WorkspaceSymbolAnalysisController::semanticAnalysisRequestFailed,
+            this,
+            &AnalysisScheduler::onSemanticAnalysisFailed);
+    connect(workspaceSymbolAnalysis,
+            &WorkspaceSymbolAnalysisController::semanticAnalysisRequestDropped,
+            this,
+            &AnalysisScheduler::onSemanticAnalysisDropped);
+    connect(workspaceSymbolAnalysis,
+            &WorkspaceSymbolAnalysisController::
+                semanticAnalysisContinuationRequired,
+            this,
+            [this](const SemanticAnalysisRequest& remaining) {
+                if (remaining.changedFiles.isEmpty())
+                    return;
+                requestSemanticAnalysis(
+                    remaining.reason,
+                    SemanticChangeImpact::Unknown,
+                    remaining.triggerFile,
+                    remaining.changedFiles,
+                    remaining.project);
+            });
+    connect(workspaceSymbolAnalysis,
+            &WorkspaceSymbolAnalysisController::semanticAnalysisPlanPrepared,
+            this,
+            &AnalysisScheduler::semanticAnalysisPlanPrepared);
+    connect(workspaceSymbolAnalysis,
+            &WorkspaceSymbolAnalysisController::semanticAnalysisTelemetry,
+            this,
+            &AnalysisScheduler::semanticAnalysisTelemetry);
 }
 
 void AnalysisScheduler::setupDiagnosticsRefreshAndWorkspaceRequests()
@@ -141,10 +179,9 @@ void AnalysisScheduler::setupDiagnosticsRefreshAndWorkspaceRequests()
             &WorkspaceSymbolAnalysisController::diagnosticsRefreshRequested,
             diagnosticsRefresh,
             &DiagnosticsRefreshController::requestRefresh);
-    connect(workspaceSymbolAnalysis,
-            &WorkspaceSymbolAnalysisController::workspaceRelationshipAnalysisRequested,
-            this,
-            &AnalysisScheduler::requestWorkspaceRelationshipAnalysis);
+    // Relationships are part of the same worker transaction and publication
+    // diff. A second post-symbol workspace pass would duplicate both Slang
+    // work and UI refreshes.
     connect(workspaceSymbolAnalysis,
             &WorkspaceSymbolAnalysisController::workspaceRelationshipAnalysisCancelRequested,
             this,

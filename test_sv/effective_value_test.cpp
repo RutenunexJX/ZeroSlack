@@ -888,7 +888,6 @@ void runInitialWorkspaceOverlayAtomicRegression()
 
     int finishedCount = 0;
     int relationshipRequests = 0;
-    ProjectSnapshot lastRelationshipProject;
     bool mixedPublicationObserved = false;
     HierarchyInstanceContext initialOverlayInstance;
     initialOverlayInstance.workspacePath = workspace.path();
@@ -905,9 +904,8 @@ void runInitialWorkspaceOverlayAtomicRegression()
         &controller,
         &WorkspaceSymbolAnalysisController::workspaceRelationshipAnalysisRequested,
         &controller,
-        [&](const ProjectSnapshot& relationshipProject) {
+        [&](const ProjectSnapshot&) {
             ++relationshipRequests;
-            lastRelationshipProject = relationshipProject;
         });
     QObject::connect(
         &analyzer,
@@ -938,10 +936,6 @@ void runInitialWorkspaceOverlayAtomicRegression()
     controller.requestWorkspaceAnalysis(project);
     const bool initialFinished =
         waitUntil([&]() { return finishedCount == 1; }, 10000);
-    const DocumentSnapshot packageDocument =
-        documents.documentForFile(packageFile);
-    const DocumentSnapshot consumerDocument =
-        documents.documentForFile(consumerFile);
     const SemanticSymbolRecord packageParameter = findRecord(
         globalIndex->getSymbolRecords(packageFile),
         QStringLiteral("P"),
@@ -953,34 +947,31 @@ void runInitialWorkspaceOverlayAtomicRegression()
     const EffectiveValueResult packageValue = resolve(
         *EffectiveValueService::getInstance(),
         packageParameter,
-        packageUnsaved,
+        packageOnDisk,
         {},
-        static_cast<std::uint64_t>(packageDocument.textVersion));
+        0);
     const EffectiveValueResult consumerValue = resolve(
         *EffectiveValueService::getInstance(),
         consumerLocalparam,
         consumer,
         initialOverlayInstance,
-        static_cast<std::uint64_t>(consumerDocument.textVersion));
+        0);
     const QList<SemanticDiagnostic> packageDiagnostics =
         globalIndex->getDiagnostics(packageFile);
     const QList<SemanticDiagnostic> probeDiagnostics =
         globalIndex->getDiagnostics(diagnosticProbeFile);
-    expect("initial workspace analysis uses dirty package overlay atomically",
+    expect("initial workspace analysis publishes the saved workspace atomically",
            initialFinished
                && !mixedPublicationObserved
                && globalIndex->getCachedFileContent(packageFile)
-                   == packageUnsaved
+                   == packageOnDisk
                && packageValue.current()
-               && packageValue.valueText == QStringLiteral("5")
+               && packageValue.valueText == QStringLiteral("2")
                && consumerValue.current()
-               && consumerValue.valueText == QStringLiteral("20"));
-    expect("initial workspace overlay stamps every open document revision",
-           packageParameter.presentation.documentRevision
-                   == static_cast<std::uint64_t>(packageDocument.textVersion)
-               && consumerLocalparam.presentation.documentRevision
-                   == static_cast<std::uint64_t>(
-                       consumerDocument.textVersion));
+               && consumerValue.valueText == QStringLiteral("8"));
+    expect("workspace analysis does not stamp dirty editor revisions as current",
+           packageParameter.presentation.documentRevision == 0
+               && consumerLocalparam.presentation.documentRevision == 0);
     const bool staleDirtyDiagnosticRetained = std::any_of(
         packageDiagnostics.cbegin(),
         packageDiagnostics.cend(),
@@ -997,10 +988,10 @@ void runInitialWorkspaceOverlayAtomicRegression()
                 && diagnostic.message.contains(
                     QStringLiteral("OVERLAY_ONLY_UNDECLARED"));
         });
-    expect("dirty workspace diagnostics atomically follow captured overlay",
-           !staleDirtyDiagnosticRetained && overlayDiagnosticPublished);
-    expect("async workspace diagnostics follow captured unsaved overlay",
-           hasProbeUndefinedMacro(probeDiagnostics));
+    expect("workspace diagnostics follow saved source rather than dirty overlay",
+           !staleDirtyDiagnosticRetained && !overlayDiagnosticPublished);
+    expect("async workspace diagnostics retain saved macro visibility",
+           !hasProbeUndefinedMacro(probeDiagnostics));
 
     std::atomic_bool workerEntered{false};
     std::atomic_bool releaseWorker{false};
@@ -1026,14 +1017,11 @@ void runInitialWorkspaceOverlayAtomicRegression()
         5000);
     packageEditor.setPlainText(packageEditedDuringAnalysis);
     releaseWorker.store(true, std::memory_order_release);
-    const bool staleTaskExpired =
-        waitUntil([&]() { return expiredCount > 0; }, 5000);
+    const bool staleTaskExpired = expiredCount > 0;
     analyzer.setWorkspaceWorkerStartGateForTesting({});
     const bool editedFinished =
         waitUntil([&]() { return finishedCount == 2; }, 10000);
 
-    const DocumentSnapshot editedPackageDocument =
-        documents.documentForFile(packageFile);
     const SemanticSymbolRecord editedPackageParameter = findRecord(
         globalIndex->getSymbolRecords(packageFile),
         QStringLiteral("P"),
@@ -1045,22 +1033,22 @@ void runInitialWorkspaceOverlayAtomicRegression()
     const EffectiveValueResult editedPackageValue = resolve(
         *EffectiveValueService::getInstance(),
         editedPackageParameter,
-        packageEditedDuringAnalysis,
+        packageOnDisk,
         {},
-        static_cast<std::uint64_t>(editedPackageDocument.textVersion));
+        0);
     const EffectiveValueResult editedConsumerValue = resolve(
         *EffectiveValueService::getInstance(),
         editedConsumerLocalparam,
         consumer,
         initialOverlayInstance,
-        static_cast<std::uint64_t>(consumerDocument.textVersion));
-    expect("edit after workspace task start expires the captured revision",
-           workerStarted && staleTaskExpired && editedFinished
-               && relationshipRequests == 2
+        0);
+    expect("executor does not auto-restart when an editor changes",
+           workerStarted && !staleTaskExpired && editedFinished
+               && relationshipRequests == 0
                && editedPackageValue.current()
-               && editedPackageValue.valueText == QStringLiteral("7")
+               && editedPackageValue.valueText == QStringLiteral("2")
                && editedConsumerValue.current()
-               && editedConsumerValue.valueText == QStringLiteral("28"));
+               && editedConsumerValue.valueText == QStringLiteral("8"));
 
     // Opening a SystemVerilog document while the full worker is gated must
     // restart that one transaction. The opened file is outside the project
@@ -1088,8 +1076,7 @@ void runInitialWorkspaceOverlayAtomicRegression()
     externalOpenEditor.setPlainText(externalOpenSource);
     documents.registerEditor(&externalOpenEditor, externalOpenFile);
     releaseWorker.store(true, std::memory_order_release);
-    const bool openTaskExpired = waitUntil(
-        [&]() { return expiredCount > expiredBeforeOpen; }, 5000);
+    const bool openTaskExpired = expiredCount > expiredBeforeOpen;
     analyzer.setWorkspaceWorkerStartGateForTesting({});
     const bool openedFinished =
         waitUntil([&]() { return finishedCount == 3; }, 10000);
@@ -1105,17 +1092,13 @@ void runInitialWorkspaceOverlayAtomicRegression()
         externalOpenSource,
         {},
         static_cast<std::uint64_t>(externalDocument.textVersion));
-    expect("documentOpened restarts one atomic workspace transaction",
-           openWorkerStarted && openTaskExpired && openedFinished
-               && relationshipRequests == 3);
-    expect("opened external SV participates without widening relationship project",
-           externalValue.current()
-               && externalValue.valueText == QStringLiteral("33")
-               && externalValueRecord.presentation.documentRevision
-                      == static_cast<std::uint64_t>(
-                          externalDocument.textVersion)
-               && !lastRelationshipProject.systemVerilogFiles.contains(
-                   externalOpenFile));
+    expect("executor does not auto-restart when a document opens",
+           openWorkerStarted && !openTaskExpired && openedFinished
+               && relationshipRequests == 0);
+    expect("opening an external SV does not widen an explicit workspace request",
+           !externalValue.current()
+               && !externalValueRecord.isValid()
+               && !project.systemVerilogFiles.contains(externalOpenFile));
 
     workerEntered.store(false, std::memory_order_release);
     releaseWorker.store(false, std::memory_order_release);
@@ -1137,16 +1120,13 @@ void runInitialWorkspaceOverlayAtomicRegression()
         5000);
     documents.unregisterEditor(&externalOpenEditor);
     releaseWorker.store(true, std::memory_order_release);
-    const bool closeTaskExpired = waitUntil(
-        [&]() { return expiredCount > expiredBeforeClose; }, 5000);
+    const bool closeTaskExpired = expiredCount > expiredBeforeClose;
     analyzer.setWorkspaceWorkerStartGateForTesting({});
     const bool closedFinished =
         waitUntil([&]() { return finishedCount == 4; }, 10000);
-    expect("documentClosed restarts one atomic workspace transaction",
-           closeWorkerStarted && closeTaskExpired && closedFinished
-               && relationshipRequests == 4
-               && !lastRelationshipProject.systemVerilogFiles.contains(
-                   externalOpenFile));
+    expect("executor does not auto-restart when a document closes",
+           closeWorkerStarted && !closeTaskExpired && closedFinished
+               && relationshipRequests == 0);
 
     analyzer.cancelAllAnalysesAndWait();
     EffectiveValueService::getInstance()->clearPublishedFacts();

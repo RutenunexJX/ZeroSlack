@@ -314,6 +314,17 @@ QString symbolStableKeyText(const SymbolStableKey& key);
 QString semanticRelationshipStableKeyText(
     const SemanticRelationship& relationship);
 
+struct SemanticIndexRetirementPayload {
+    std::shared_ptr<const SemanticIndexSnapshot> snapshot;
+    std::shared_ptr<SymbolRelationshipEngine::PreparedRelationshipState>
+        relationshipState;
+
+    bool isEmpty() const
+    {
+        return !snapshot && !relationshipState;
+    }
+};
+
 // Thin facade over the semantic-native store and published snapshots.
 class SemanticIndex
 {
@@ -324,6 +335,16 @@ public:
     ~SemanticIndex();
 
     void setSnapshot(std::shared_ptr<const SemanticIndexSnapshot> snapshot);
+    SemanticIndexRetirementPayload installPreparedSnapshot(
+        std::shared_ptr<const SemanticIndexSnapshot> snapshot,
+        const QStringList& changedFiles,
+        const QHash<QString, QSet<int>>& relationshipHandlesByFile = {},
+        const QList<SemanticRelationship>& relationships = {},
+        bool relationshipDeltaPrepared = false,
+        std::shared_ptr<
+            SymbolRelationshipEngine::PreparedRelationshipState>
+            relationshipState = {},
+        const SemanticAnalysisBandReport& analysisBandReport = {});
     // Clears only the published snapshot. Native/open-document records remain
     // available to callers that intentionally fall back to the live store.
     void clearSnapshot();
@@ -360,6 +381,7 @@ public:
         const QString& fileName) const;
     SemanticAnalysisBandReport analysisBandReport(
         const QString& fileName = QString()) const;
+    bool hasPreparedAnalysisBandReport() const;
 
     QList<SemanticSymbolRecord> getSymbolRecords(
         const QString& fileName = QString()) const;
@@ -432,6 +454,9 @@ public:
 private:
     SymbolRelationshipEngine* m_relationshipEngine = nullptr;
     std::shared_ptr<const SemanticIndexSnapshot> m_snapshot;
+    bool m_snapshotAuthoritative = false;
+    bool m_preparedAnalysisBandReportValid = false;
+    SemanticAnalysisBandReport m_preparedAnalysisBandReport;
     std::uint64_t m_snapshotRevision = 0;
     struct NativeFileState {
         QString contentHash;

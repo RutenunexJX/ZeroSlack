@@ -102,6 +102,15 @@ bool sameEffectiveFactValue(const EffectiveValueFact& left,
 }
 }
 
+struct EffectiveValueService::PreparedFactsState {
+    QHash<QString, PublishedFacts> factsByFile;
+    std::uint64_t computationRevision = 0;
+};
+
+struct EffectiveValueService::RetiredFactsState {
+    QHash<QString, PublishedFacts> factsByFile;
+};
+
 EffectiveValueService* EffectiveValueService::getInstance()
 {
     if (!instance)
@@ -201,7 +210,8 @@ QString EffectiveValueService::stableSourceIdentity(
         .arg(static_cast<int>(symbol.collectorKind));
 }
 
-QString EffectiveValueService::contentFingerprint(const QString& text)
+QString EffectiveValueService::documentContentFingerprint(
+    const QString& text)
 {
     return QString::fromLatin1(
         QCryptographicHash::hash(text.toUtf8(),
@@ -214,7 +224,8 @@ void EffectiveValueService::publishDocumentFacts(
     const QString& documentText,
     QList<EffectiveValueFact> facts,
     std::uint64_t computationRevision,
-    std::uint64_t documentRevision)
+    std::uint64_t documentRevision,
+    const QString& preparedContentFingerprint)
 {
     const QString normalized = normalizedFileName(fileName);
     if (normalized.isEmpty())
@@ -227,7 +238,9 @@ void EffectiveValueService::publishDocumentFacts(
     }
 
     PublishedFacts publication;
-    publication.contentFingerprint = contentFingerprint(documentText);
+    publication.contentFingerprint = preparedContentFingerprint.isEmpty()
+        ? documentContentFingerprint(documentText)
+        : preparedContentFingerprint;
     publication.facts = std::move(facts);
     publication.computationRevision = computationRevision;
     publication.documentRevision = documentRevision;
@@ -246,6 +259,103 @@ void EffectiveValueService::publishDocumentFacts(
     requestedRevisionByFile[normalized] = computationRevision;
 }
 
+std::shared_ptr<EffectiveValueService::PreparedFactsState>
+EffectiveValueService::prepareDocumentFactsState(
+    QHash<QString, QList<EffectiveValueFact>> factsByFile,
+    const QHash<QString, QString>& contentsByFile,
+    const QHash<QString, QString>& contentFingerprintsByFile,
+    const QHash<QString, std::uint64_t>& documentRevisionsByFile,
+    std::uint64_t computationRevision)
+{
+    auto state = std::make_shared<PreparedFactsState>();
+    state->computationRevision = computationRevision;
+
+    QHash<QString, QString> normalizedContents;
+    normalizedContents.reserve(contentsByFile.size());
+    for (auto it = contentsByFile.constBegin();
+         it != contentsByFile.constEnd(); ++it) {
+        normalizedContents.insert(normalizedFileName(it.key()), it.value());
+    }
+    QHash<QString, QString> normalizedFingerprints;
+    normalizedFingerprints.reserve(contentFingerprintsByFile.size());
+    for (auto it = contentFingerprintsByFile.constBegin();
+         it != contentFingerprintsByFile.constEnd(); ++it) {
+        normalizedFingerprints.insert(normalizedFileName(it.key()),
+                                      it.value());
+    }
+
+    state->factsByFile.reserve(factsByFile.size());
+    for (auto it = factsByFile.begin(); it != factsByFile.end(); ++it) {
+        const QString normalized = normalizedFileName(it.key());
+        if (normalized.isEmpty())
+            continue;
+
+        PublishedFacts publication;
+        publication.facts = std::move(it.value());
+        publication.computationRevision = computationRevision;
+        publication.documentRevision =
+            documentRevisionsByFile.value(normalized, 0);
+        publication.contentFingerprint =
+            normalizedFingerprints.value(normalized);
+        if (publication.contentFingerprint.isEmpty()) {
+            publication.contentFingerprint = documentContentFingerprint(
+                normalizedContents.value(normalized));
+        }
+        state->factsByFile.insert(normalized, std::move(publication));
+    }
+    return state;
+}
+
+std::shared_ptr<EffectiveValueService::RetiredFactsState>
+EffectiveValueService::installPreparedDocumentFacts(
+    std::shared_ptr<PreparedFactsState> state,
+    bool replaceAll)
+{
+    if (!state || state->computationRevision == 0)
+        return {};
+
+    auto retired = std::make_shared<RetiredFactsState>();
+    QWriteLocker locker(&factsLock);
+    for (auto it = state->factsByFile.constBegin();
+         it != state->factsByFile.constEnd(); ++it) {
+        if (requestedRevisionByFile.value(it.key(), 0)
+            > state->computationRevision) {
+            return {};
+        }
+    }
+
+    if (replaceAll) {
+        retired->factsByFile = std::move(factsByFile);
+        factsByFile = std::move(state->factsByFile);
+        for (auto it = factsByFile.constBegin();
+             it != factsByFile.constEnd(); ++it) {
+            requestedRevisionByFile[it.key()] =
+                state->computationRevision;
+        }
+        return retired;
+    }
+
+    for (auto it = state->factsByFile.begin();
+         it != state->factsByFile.end(); ++it) {
+        const auto existing = factsByFile.constFind(it.key());
+        if (existing != factsByFile.constEnd()
+            && existing->computationRevision
+                   > state->computationRevision) {
+            continue;
+        }
+        auto existingMutable = factsByFile.find(it.key());
+        if (existingMutable != factsByFile.end()) {
+            retired->factsByFile.insert(
+                it.key(), std::move(existingMutable.value()));
+            existingMutable.value() = std::move(it.value());
+        } else {
+            factsByFile.insert(it.key(), std::move(it.value()));
+        }
+        requestedRevisionByFile[it.key()] = state->computationRevision;
+    }
+    return retired;
+}
+
 QList<EffectiveValueFact> EffectiveValueService::factsForDocument(
     const QString& fileName,
     const QString& documentText,
@@ -259,7 +369,8 @@ QList<EffectiveValueFact> EffectiveValueService::factsForDocument(
     QReadLocker locker(&factsLock);
     const auto publication = factsByFile.constFind(normalized);
     if (publication == factsByFile.constEnd()
-        || publication->contentFingerprint != contentFingerprint(documentText)
+        || publication->contentFingerprint
+               != documentContentFingerprint(documentText)
         || (documentRevision != 0
             && publication->documentRevision != documentRevision)
         || publication->computationRevision

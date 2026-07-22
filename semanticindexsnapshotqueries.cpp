@@ -299,6 +299,11 @@ QHash<QString, QString> SemanticIndexSnapshot::fileContents() const
     return m_fileContents;
 }
 
+const QHash<QString, QString>& SemanticIndexSnapshot::fileContentsView() const
+{
+    return m_fileContents;
+}
+
 QList<SemanticSymbolRecord> SemanticIndexSnapshot::sortedDefinitionRecords(
     const QList<SemanticSymbolRecord>& records,
     const SemanticQueryContext& context) const

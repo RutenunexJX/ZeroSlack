@@ -43,6 +43,15 @@ public:
     SemanticIndexSnapshot withReplacedDiagnostics(
         const QStringList& fileNames,
         const QList<SemanticDiagnostic>& diagnostics) const;
+    SemanticIndexSnapshot withReplacedFiles(
+        const QList<SemanticFileSymbolUpdate>& updates,
+        const QStringList& diagnosticFiles,
+        const QList<SemanticDiagnostic>& diagnostics,
+        const QStringList& relationshipFiles = {},
+        const QList<SemanticRelationship>& relationships = {}) const;
+    SemanticIndexSnapshot withRelationshipsReplacingFiles(
+        const QStringList& fileNames,
+        const QList<SemanticRelationship>& relationships) const;
 
     QList<SemanticRelationship> relationshipsForStableKey(
         const SymbolStableKey& key,
@@ -51,6 +60,17 @@ public:
     QList<SemanticRelationship> relationships() const;
     QList<SemanticDiagnostic> diagnostics() const;
     QHash<QString, QString> fileContents() const;
+    const QHash<QString, QString>& fileContentsView() const;
+    const QList<SemanticSymbolRecord>& symbolRecordsView() const
+    {
+        return m_symbolRecords;
+    }
+    const QList<SemanticRelationship>& relationshipsView() const
+    {
+        return m_relationships;
+    }
+    int symbolRecordCount() const { return m_symbolRecords.size(); }
+    int relationshipCount() const { return m_relationships.size(); }
 
 private:
     struct FromRecordsTag {};

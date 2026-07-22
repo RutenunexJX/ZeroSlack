@@ -12,6 +12,8 @@
 void SymbolAnalyzer::analyzeOpenDocuments(
     const QList<OpenDocumentContent>& documents)
 {
+    if (shutdownStarted)
+        return;
     emit analysisStarted("open_tabs");
 
     // Multiple open buffers can depend on one another (for example, a dirty
@@ -72,7 +74,8 @@ void SymbolAnalyzer::analyzeWorkspace(
     WorkspaceManager* workspaceManager,
     std::function<bool()> isCancelled)
 {
-    if (!workspaceManager || !workspaceManager->isWorkspaceOpen())
+    if (shutdownStarted || !workspaceManager
+        || !workspaceManager->isWorkspaceOpen())
         return;
     analyzeProject(workspaceManager->projectSnapshot(), std::move(isCancelled));
 }
@@ -81,7 +84,7 @@ void SymbolAnalyzer::analyzeProject(
     const ProjectSnapshot& project,
     std::function<bool()> isCancelled)
 {
-    if (!project.isOpen())
+    if (shutdownStarted || !project.isOpen())
         return;
 
     cancelWorkspacePublication();
@@ -182,7 +185,7 @@ void SymbolAnalyzer::analyzeProject(
 
 void SymbolAnalyzer::analyzeFile(const QString& filePath)
 {
-    if (!isSystemVerilogFile(filePath))
+    if (shutdownStarted || !isSystemVerilogFile(filePath))
         return;
 
     emit analysisStarted(filePath);
@@ -224,7 +227,8 @@ void SymbolAnalyzer::analyzeFileContent(
     const QString& content,
     std::uint64_t documentRevision)
 {
-    if (fileName.isEmpty() || !isSystemVerilogFile(fileName))
+    if (shutdownStarted || fileName.isEmpty()
+        || !isSystemVerilogFile(fileName))
         return;
     if (!overlayWorkspaceFiles.isEmpty()) {
         analyzeFileContentAsync(fileName, content, documentRevision);

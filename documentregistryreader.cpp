@@ -27,6 +27,7 @@ TrackedDocument DocumentSnapshotReader::capture(
                             static_cast<std::uint64_t>(
                                 std::numeric_limits<int>::max())));
     const QString currentText = editor->toPlainText();
+    tracked.snapshot.text = currentText;
     const bool contentChanged = previous && previous->text != currentText;
     tracked.contentChangePending = previous
         && (previous->contentChangePending || contentChanged);

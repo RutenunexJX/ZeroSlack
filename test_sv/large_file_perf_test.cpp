@@ -4,10 +4,12 @@
 #include <QApplication>
 #include <QDir>
 #include <QElapsedTimer>
+#include <QFile>
 #include <QFileInfo>
 #include <QSignalSpy>
 #include <QScrollBar>
 #include <QTextCursor>
+#include <QTextStream>
 #include <QTimer>
 #include <QtTest/QTest>
 
@@ -18,7 +20,11 @@
 #define private public
 #include "mainwindow.h"
 #include "analysisscheduler.h"
+#include "documentmodel.h"
 #include "mycodeeditor.h"
+#include "navigationmanager.h"
+#include "semanticchangeclassifier.h"
+#include "semanticindex.h"
 #include "semanticruntimecoordinator.h"
 #include "smartrelationshipbuilder.h"
 #include "symbolanalyzer.h"
@@ -28,6 +34,16 @@
 
 static int g_checks = 0;
 static int g_fails = 0;
+
+static void printMetric(const char* name, qint64 value)
+{
+    std::printf("perf.%s=%lld\n", name, static_cast<long long>(value));
+}
+
+static void printTextMetric(const char* name, const QString& value)
+{
+    std::printf("perf.%s=%s\n", name, value.toLocal8Bit().constData());
+}
 
 static void expectBool(const char* what, bool got, bool want)
 {
@@ -69,6 +85,27 @@ static QString largestFile(const QStringList& files)
         return QFileInfo(a).size() > QFileInfo(b).size();
     });
     return sorted.isEmpty() ? QString() : sorted.first();
+}
+
+static QString largestIndexedFile(const QStringList& files)
+{
+    const auto snapshot = SemanticIndex::getInstance()->snapshot();
+    if (!snapshot)
+        return largestFile(files);
+    QStringList indexed;
+    for (const QString& fileName : files) {
+        if (!snapshot->getSymbolRecords(fileName).isEmpty())
+            indexed.append(fileName);
+    }
+    return indexed.isEmpty() ? largestFile(files) : largestFile(indexed);
+}
+
+static QString readTextFile(const QString& fileName)
+{
+    QFile file(fileName);
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
+        return QString();
+    return QTextStream(&file).readAll();
 }
 
 static qint64 totalFileBytes(const QStringList& files)
@@ -116,13 +153,34 @@ static bool hasActiveRelationshipDebounce(MainWindow& window, const QString& fil
         normalizedPath(fileName));
 }
 
+static bool containsFile(const QStringList& files, const QString& fileName)
+{
+    const QString expected = normalizedPath(fileName);
+    for (const QString& candidate : files) {
+        if (normalizedPath(candidate).compare(expected, Qt::CaseInsensitive) == 0)
+            return true;
+    }
+    return false;
+}
+
 int main(int argc, char** argv)
 {
     QApplication app(argc, argv);
 
-    const QString workspacePath = (argc > 1)
-        ? QString::fromLocal8Bit(argv[1])
-        : QDir::current().absoluteFilePath(QStringLiteral("test_sv/new"));
+    QString workspacePath;
+    bool waitForFullAnalysis = false;
+    for (int i = 1; i < argc; ++i) {
+        const QString argument = QString::fromLocal8Bit(argv[i]);
+        if (argument == QStringLiteral("--wait-for-analysis")) {
+            waitForFullAnalysis = true;
+        } else if (workspacePath.isEmpty()) {
+            workspacePath = argument;
+        }
+    }
+    if (workspacePath.isEmpty()) {
+        workspacePath = QDir::current().absoluteFilePath(
+            QStringLiteral("test_sv/new"));
+    }
 
     expectBool("workspace fixture exists", QFileInfo(workspacePath).isDir(), true);
 
@@ -131,6 +189,75 @@ int main(int argc, char** argv)
     bool workspaceSymbolsStarted = false;
     bool workspaceSymbolsDeferred = false;
     bool workspaceFilesScanned = false;
+    SemanticAnalysisTelemetry workerTelemetry;
+    SemanticAnalysisTelemetry publicationTelemetry;
+    SemanticAnalysisTelemetry navigationTelemetry;
+    IncrementalAnalysisPlan latestSavePlan;
+    SemanticAnalysisTelemetry saveWorkerTelemetry;
+    SemanticAnalysisTelemetry savePublicationTelemetry;
+    SemanticAnalysisTelemetry saveNavigationTelemetry;
+    int savePlanCount = 0;
+    bool sawSaveWorkerTelemetry = false;
+    bool sawSavePublicationTelemetry = false;
+    bool sawSaveNavigationTelemetry = false;
+    bool sawWorkerTelemetry = false;
+    bool sawPublicationTelemetry = false;
+    bool sawNavigationTelemetry = false;
+    QObject::connect(window.analysisScheduler.get(),
+                     &AnalysisScheduler::semanticAnalysisTelemetry,
+                     &window,
+                     [&](const SemanticAnalysisTelemetry& telemetry) {
+                         if (telemetry.stage == SemanticAnalysisStage::Worker) {
+                             workerTelemetry = telemetry;
+                             sawWorkerTelemetry = true;
+                         } else if (telemetry.stage
+                                    == SemanticAnalysisStage::Publication) {
+                             publicationTelemetry = telemetry;
+                             sawPublicationTelemetry = true;
+                         } else if (telemetry.stage
+                                        == SemanticAnalysisStage::Navigation
+                                    && telemetry.generation > 0) {
+                             navigationTelemetry = telemetry;
+                             sawNavigationTelemetry = true;
+                         }
+                         if (telemetry.reason == SemanticAnalysisReason::Save) {
+                             if (telemetry.stage
+                                 == SemanticAnalysisStage::Worker) {
+                                 saveWorkerTelemetry = telemetry;
+                                 sawSaveWorkerTelemetry = true;
+                             } else if (telemetry.stage
+                                        == SemanticAnalysisStage::Publication) {
+                                 savePublicationTelemetry = telemetry;
+                                 sawSavePublicationTelemetry = true;
+                             } else if (telemetry.stage
+                                        == SemanticAnalysisStage::Navigation) {
+                                 saveNavigationTelemetry = telemetry;
+                                 sawSaveNavigationTelemetry = true;
+                             }
+                         }
+                     });
+    QObject::connect(window.navigationManager.get(),
+                     &NavigationManager::navigationTelemetry,
+                     &window,
+                     [&](const SemanticAnalysisTelemetry& telemetry) {
+                         if (telemetry.generation > 0) {
+                             navigationTelemetry = telemetry;
+                             sawNavigationTelemetry = true;
+                         }
+                         if (telemetry.reason == SemanticAnalysisReason::Save) {
+                             saveNavigationTelemetry = telemetry;
+                             sawSaveNavigationTelemetry = true;
+                         }
+                     });
+    QObject::connect(window.analysisScheduler.get(),
+                     &AnalysisScheduler::semanticAnalysisPlanPrepared,
+                     &window,
+                     [&](const IncrementalAnalysisPlan& plan) {
+                         if (plan.reason == SemanticAnalysisReason::Save) {
+                             latestSavePlan = plan;
+                             ++savePlanCount;
+                         }
+                     });
     QObject::connect(window.analysisScheduler.get(),
                      &AnalysisScheduler::workspaceSymbolAnalysisStarted,
                      &window,
@@ -167,6 +294,21 @@ int main(int argc, char** argv)
     window.show();
     expectBool("main window visible", waitUntil([&]() { return window.isVisible(); }, 2000), true);
 
+    int workspaceEventTicks = 0;
+    qint64 workspaceMaxEventGapMs = 0;
+    QElapsedTimer workspaceHeartbeatClock;
+    workspaceHeartbeatClock.start();
+    qint64 lastHeartbeatMs = workspaceHeartbeatClock.elapsed();
+    QTimer workspaceHeartbeat;
+    QObject::connect(&workspaceHeartbeat, &QTimer::timeout, &window, [&]() {
+        const qint64 now = workspaceHeartbeatClock.elapsed();
+        workspaceMaxEventGapMs = qMax(workspaceMaxEventGapMs,
+                                      now - lastHeartbeatMs);
+        lastHeartbeatMs = now;
+        ++workspaceEventTicks;
+    });
+    workspaceHeartbeat.start(10);
+
     QElapsedTimer openTimer;
     openTimer.start();
     expectBool("open workspace", window.workspaceManager->openWorkspace(workspacePath), true);
@@ -180,6 +322,10 @@ int main(int argc, char** argv)
 
     const QStringList workspaceFiles =
         window.workspaceManager->getSystemVerilogFiles();
+    printTextMetric("workspace", normalizedPath(workspacePath));
+    printMetric("workspace_files", workspaceFiles.size());
+    printMetric("workspace_bytes", totalFileBytes(workspaceFiles));
+    printMetric("workspace_open_ms", openElapsedMs);
     const bool budgetedWorkspace =
         exceedsAutomaticWorkspaceBudget(workspaceFiles);
     if (budgetedWorkspace) {
@@ -197,21 +343,14 @@ int main(int argc, char** argv)
                    waitUntil([&]() { return workspaceSymbolsStarted; }, 3000),
                    true);
 
-        int eventTicks = 0;
-        QTimer heartbeat;
-        QObject::connect(&heartbeat, &QTimer::timeout, &window, [&]() {
-            ++eventTicks;
-        });
-        heartbeat.start(10);
         QElapsedTimer responsivenessTimer;
         responsivenessTimer.start();
         expectBool("budgeted workspace keeps event loop responsive",
                    waitUntil([&]() {
                        return responsivenessTimer.elapsed() >= 400
-                           && eventTicks >= 10;
+                           && workspaceEventTicks >= 10;
                    }, 2000),
                    true);
-        heartbeat.stop();
 
         const QString largeFile = largestFile(workspaceFiles);
         expectBool("budgeted workspace largest file selected",
@@ -224,9 +363,16 @@ int main(int argc, char** argv)
                    window.tabManager->openFileInTab(largeFile),
                    true);
         const qint64 openLargeElapsedMs = openLargeTimer.elapsed();
+        printMetric("largest_file_open_ms", openLargeElapsedMs);
         expectBool("largest file open remains bounded",
                    openLargeElapsedMs < 6000,
                    true);
+
+        // Loading a multi-megabyte editor is a separate synchronous path.
+        // Measure semantic worker/publication responsiveness from this point.
+        workspaceEventTicks = 0;
+        workspaceMaxEventGapMs = 0;
+        lastHeartbeatMs = workspaceHeartbeatClock.elapsed();
 
         MyCodeEditor* editor = window.tabManager->getCurrentEditor();
         expectBool("budgeted workspace large editor exists",
@@ -256,18 +402,94 @@ int main(int argc, char** argv)
             scrollHeartbeat.stop();
         }
 
-        if (window.analysisScheduler)
+        if (waitForFullAnalysis) {
+            expectBool("budgeted workspace full analysis completes",
+                       waitUntil([&]() { return workspaceSymbolsDone; },
+                                 600000),
+                       true);
+            waitUntil([&]() { return sawNavigationTelemetry; }, 2000);
+        } else if (window.analysisScheduler) {
             window.analysisScheduler->cancelWorkspaceAnalysis();
+        }
+        workspaceHeartbeat.stop();
+        printMetric("workspace_event_ticks", workspaceEventTicks);
+        printMetric("workspace_max_event_gap_ms", workspaceMaxEventGapMs);
+        printMetric("analysis_phase_max_event_gap_ms",
+                    workspaceMaxEventGapMs);
+        expectBool("background analysis avoids multi-second UI stalls",
+                   workspaceMaxEventGapMs < 1500,
+                   true);
+        if (sawWorkerTelemetry) {
+            printMetric("analysis_generation",
+                        static_cast<qint64>(workerTelemetry.generation));
+            printTextMetric("analysis_reason",
+                            semanticAnalysisReasonName(workerTelemetry.reason));
+            printTextMetric("analysis_impact",
+                            semanticChangeImpactName(workerTelemetry.impact));
+            printMetric("analysis_files", workerTelemetry.files.size());
+            printMetric("analysis_changed_files",
+                        workerTelemetry.changedFiles.size());
+            printMetric("analysis_worker_ms", workerTelemetry.workerMs);
+            printMetric("analysis_slang_invoked",
+                        workerTelemetry.slangInvoked ? 1 : 0);
+        }
+        if (sawPublicationTelemetry) {
+            printMetric("analysis_publication_ms",
+                        publicationTelemetry.publicationMs);
+            printMetric("analysis_effective_facts_ms",
+                        publicationTelemetry.effectiveFactsMs);
+            printMetric("analysis_snapshot_install_ms",
+                        publicationTelemetry.snapshotInstallMs);
+        }
+        printMetric("analysis_ui_refresh_ms",
+                    sawNavigationTelemetry
+                        ? navigationTelemetry.uiRefreshMs
+                        : 0);
+        printMetric("analysis_navigation_refresh_observed",
+                    sawNavigationTelemetry ? 1 : 0);
         drainRelationshipWork(window);
-
-        printf("\n%d checks, %d failed\n", g_checks, g_fails);
-        return g_fails == 0 ? 0 : 1;
+        if (!waitForFullAnalysis) {
+            printf("\n%d checks, %d failed\n", g_checks, g_fails);
+            return g_fails == 0 ? 0 : 1;
+        }
     }
 
-    expectBool("workspace symbol analysis completes",
-               waitUntil([&]() { return workspaceSymbolsDone; }, 60000), true);
+    if (!budgetedWorkspace) {
+        expectBool("workspace symbol analysis completes",
+                   waitUntil([&]() { return workspaceSymbolsDone; }, 60000), true);
+        waitUntil([&]() { return sawNavigationTelemetry; }, 2000);
+        workspaceHeartbeat.stop();
+        printMetric("workspace_event_ticks", workspaceEventTicks);
+        printMetric("workspace_max_event_gap_ms", workspaceMaxEventGapMs);
+        if (sawWorkerTelemetry) {
+            printMetric("analysis_generation",
+                        static_cast<qint64>(workerTelemetry.generation));
+            printTextMetric("analysis_reason",
+                            semanticAnalysisReasonName(workerTelemetry.reason));
+            printTextMetric("analysis_impact",
+                            semanticChangeImpactName(workerTelemetry.impact));
+            printMetric("analysis_files", workerTelemetry.files.size());
+            printMetric("analysis_changed_files", workerTelemetry.changedFiles.size());
+            printMetric("analysis_worker_ms", workerTelemetry.workerMs);
+            printMetric("analysis_slang_invoked",
+                        workerTelemetry.slangInvoked ? 1 : 0);
+        }
+        if (sawPublicationTelemetry) {
+            printMetric("analysis_publication_ms", publicationTelemetry.publicationMs);
+            printMetric("analysis_effective_facts_ms",
+                        publicationTelemetry.effectiveFactsMs);
+            printMetric("analysis_snapshot_install_ms",
+                        publicationTelemetry.snapshotInstallMs);
+        }
+        printMetric("analysis_ui_refresh_ms",
+                    sawNavigationTelemetry ? navigationTelemetry.uiRefreshMs : 0);
+        printMetric("analysis_navigation_refresh_observed",
+                    sawNavigationTelemetry ? 1 : 0);
+    }
 
-    const QString largeFile = largestFile(window.workspaceManager->getSystemVerilogFiles());
+    const qint64 baselineFullWorkerMs = workerTelemetry.workerMs;
+    const QString largeFile = largestIndexedFile(
+        window.workspaceManager->getSystemVerilogFiles());
     expectBool("large file selected", QFileInfo(largeFile).size() > 20000, true);
 
     int largeFileAnalysisCount = 0;
@@ -311,31 +533,387 @@ int main(int argc, char** argv)
 
         QSignalSpy symbolAnalysisStarted(window.analysisScheduler.get(),
                                          &AnalysisScheduler::fileSymbolAnalysisStarted);
+        QSignalSpy workspaceAnalysisRestarted(
+            window.analysisScheduler.get(),
+            &AnalysisScheduler::workspaceSymbolAnalysisStarted);
+        int semanticWorkerStages = 0;
+        int semanticPublications = 0;
+        int hierarchyRebuilds = 0;
+        QObject::connect(
+            window.analysisScheduler.get(),
+            &AnalysisScheduler::semanticAnalysisTelemetry,
+            &window,
+            [&](const SemanticAnalysisTelemetry& telemetry) {
+                if (telemetry.stage == SemanticAnalysisStage::Worker)
+                    ++semanticWorkerStages;
+                else if (telemetry.stage == SemanticAnalysisStage::Publication)
+                    ++semanticPublications;
+            });
+        QObject::connect(
+            window.navigationManager.get(),
+            &NavigationManager::navigationTelemetry,
+            &window,
+            [&](const SemanticAnalysisTelemetry& telemetry) {
+                if (telemetry.detail.contains(
+                        QStringLiteral("hierarchyRebuild=1"))) {
+                    ++hierarchyRebuilds;
+                }
+            });
         drainRelationshipWork(window);
 
         const int beforeLength = editor->toPlainText().size();
-        QTest::keyClick(editor, Qt::Key_Return);
-        QTest::keyClicks(editor, "  ");
+        QString triviaBurst;
+        for (int index = 0; index < 100; ++index) {
+            triviaBurst += QStringLiteral("\n  // perf trivia %1  ")
+                               .arg(index);
+        }
+        editor->insertPlainText(triviaBurst);
         for (int i = 0; i < 20; ++i) {
             QTest::keyClick(editor, Qt::Key_Down);
             QTest::keyClick(editor, Qt::Key_Up);
         }
-        QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
+        // The historical edit debounce was 1000 / 1500 ms. Keep pumping the
+        // event loop beyond both deadlines so this assertion observes queued
+        // work instead of passing before the timer fires.
+        waitUntil([]() { return false; }, 2200);
 
-        expectBool("whitespace edit applied", editor->toPlainText().size() >= beforeLength + 3, true);
+        expectBool("100 whitespace/comment edits applied",
+                   editor->toPlainText().size()
+                       >= beforeLength + triviaBurst.size(),
+                   true);
         expectBool("whitespace edit does not start relationship debounce",
                    hasActiveRelationshipDebounce(window, largeFile),
                    false);
         expectInt("whitespace edit queues no symbol analysis",
                   symbolAnalysisStarted.count(), 0);
 
-        // Sanity check the guard: a semantic-looking edit should still enter the delayed
-        // relationship path, so this test is not merely proving all analysis is disabled.
+        // Ordinary source edits become stale only. Save is the semantic
+        // trigger, so neither symbols nor relationships may start here.
         QTest::keyClicks(editor, "x");
-        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-        expectBool("non-whitespace edit still starts relationship debounce",
-                   hasActiveRelationshipDebounce(window, largeFile),
+        waitUntil([]() { return false; }, 2200);
+        expectBool("ordinary edit does not start relationship debounce",
+                    hasActiveRelationshipDebounce(window, largeFile),
+                    false);
+        expectInt("ordinary edit queues no symbol analysis",
+                  symbolAnalysisStarted.count(), 0);
+        expectInt("ordinary edits run no semantic worker stage",
+                  semanticWorkerStages, 0);
+        expectInt("ordinary edits publish no semantic snapshot",
+                  semanticPublications, 0);
+        expectInt("ordinary edits restart no workspace analysis",
+                  workspaceAnalysisRestarted.count(), 0);
+        expectInt("ordinary edits rebuild no Design hierarchy",
+                  hierarchyRebuilds, 0);
+        drainRelationshipWork(window);
+
+        DocumentModel* documents = window.tabManager->getDocumentModel();
+        expectBool("document model is available for save regression",
+                   documents != nullptr,
                    true);
+        const auto baselineSnapshot = SemanticIndex::getInstance()->snapshot();
+        SemanticSymbolRecord locationAnchor;
+        bool locationAnchorFound = false;
+        if (baselineSnapshot) {
+            const QList<SemanticSymbolRecord> baselineRecords =
+                baselineSnapshot->getSymbolRecords(largeFile);
+            for (const SemanticSymbolRecord& record : baselineRecords) {
+                if (record.localHandle >= 0 && record.location.isValid()) {
+                    locationAnchor = record;
+                    locationAnchorFound = true;
+                    break;
+                }
+            }
+        }
+        expectBool("trivia save has an indexed source-location anchor",
+                   locationAnchorFound,
+                   true);
+
+        if (documents && locationAnchorFound) {
+            const QString savedTriviaPrefix =
+                QStringLiteral("\n// ZeroSlack saved trivia perf probe\n");
+            const QString savedTriviaText = savedTriviaPrefix + originalContent;
+            editor->setPlainText(savedTriviaText);
+            const int planCountBeforeTrivia = savePlanCount;
+            latestSavePlan = {};
+            saveWorkerTelemetry = {};
+            savePublicationTelemetry = {};
+            saveNavigationTelemetry = {};
+            sawSaveWorkerTelemetry = false;
+            sawSavePublicationTelemetry = false;
+            sawSaveNavigationTelemetry = false;
+            hierarchyRebuilds = 0;
+            QSignalSpy triviaFinished(
+                window.analysisScheduler.get(),
+                &AnalysisScheduler::workspaceSymbolAnalysisFinished);
+
+            QElapsedTimer triviaSaveHandlerTimer;
+            triviaSaveHandlerTimer.start();
+            documents->markSaved(editor);
+            const qint64 triviaSaveHandlerMs =
+                triviaSaveHandlerTimer.elapsed();
+            expectBool("TriviaOnly save handler returns without worker wait",
+                       triviaSaveHandlerMs < 100,
+                       true);
+            expectBool(
+                "TriviaOnly save completes through scheduler publication",
+                waitUntil([&]() {
+                    return !triviaFinished.isEmpty()
+                        && savePlanCount > planCountBeforeTrivia
+                        && sawSaveWorkerTelemetry
+                        && sawSavePublicationTelemetry;
+                }, budgetedWorkspace ? 120000 : 30000),
+                true);
+            if (sawSaveWorkerTelemetry) {
+                waitUntil([&]() {
+                    return sawSaveNavigationTelemetry
+                        && saveNavigationTelemetry.generation
+                               == saveWorkerTelemetry.generation;
+                }, 5000);
+            }
+
+            expectBool("saved trivia is classified TriviaOnly",
+                       latestSavePlan.impact
+                           == SemanticChangeImpact::TriviaOnly,
+                       true);
+            expectInt("TriviaOnly save affects only saved file",
+                      latestSavePlan.affectedFiles.size(),
+                      1);
+            expectBool("TriviaOnly affected scope contains saved file",
+                       containsFile(latestSavePlan.affectedFiles, largeFile),
+                       true);
+            expectInt("TriviaOnly save requires no compilation files",
+                      latestSavePlan.compilationFiles.size(),
+                      0);
+            expectBool("TriviaOnly save does not invoke Slang",
+                       sawSaveWorkerTelemetry
+                           && !saveWorkerTelemetry.slangInvoked,
+                       true);
+            expectBool("TriviaOnly save publishes current document text",
+                       SemanticIndex::getInstance()
+                               ->snapshot()
+                               ->getCachedFileContent(largeFile)
+                           == savedTriviaText,
+                       true);
+            expectBool("TriviaOnly save converges document state Current",
+                       window.analysisScheduler->semanticStatus(largeFile).state
+                           == DocumentSemanticState::Current,
+                       true);
+            expectBool("TriviaOnly save emits navigation/UI telemetry",
+                       sawSaveNavigationTelemetry,
+                       true);
+            if (budgetedWorkspace && sawWorkerTelemetry) {
+                expectBool("TriviaOnly remap is significantly faster than full Slang",
+                           saveWorkerTelemetry.workerMs * 2
+                               < baselineFullWorkerMs,
+                           true);
+            }
+            expectInt("TriviaOnly save rebuilds no Design hierarchy",
+                      hierarchyRebuilds,
+                      0);
+
+            const auto triviaSnapshot = SemanticIndex::getInstance()->snapshot();
+            bool anchorRemapped = false;
+            if (triviaSnapshot) {
+                const QList<SemanticSymbolRecord> remappedRecords =
+                    triviaSnapshot->getSymbolRecords(largeFile);
+                for (const SemanticSymbolRecord& record : remappedRecords) {
+                    if (record.localHandle == locationAnchor.localHandle) {
+                        anchorRemapped =
+                            record.location.position
+                                == locationAnchor.location.position
+                                       + savedTriviaPrefix.size()
+                            && record.location.startLine
+                                   == locationAnchor.location.startLine
+                                          + savedTriviaPrefix.count(
+                                              QLatin1Char('\n'));
+                        break;
+                    }
+                }
+            }
+            expectBool("TriviaOnly save remaps indexed source locations",
+                       anchorRemapped,
+                       true);
+
+            printTextMetric("save_trivia_file", normalizedPath(largeFile));
+            printTextMetric(
+                "save_trivia_impact",
+                semanticChangeImpactName(latestSavePlan.impact));
+            printMetric("save_trivia_generation",
+                        static_cast<qint64>(saveWorkerTelemetry.generation));
+            printMetric("save_trivia_affected_files",
+                        latestSavePlan.affectedFiles.size());
+            printMetric("save_trivia_compilation_files",
+                        latestSavePlan.compilationFiles.size());
+            printMetric("save_trivia_changed_files",
+                        latestSavePlan.changedFiles.size());
+            printMetric("save_trivia_slang_invoked",
+                        saveWorkerTelemetry.slangInvoked ? 1 : 0);
+            printMetric("save_trivia_save_handler_ms",
+                        triviaSaveHandlerMs);
+            printMetric("save_trivia_worker_ms",
+                        saveWorkerTelemetry.workerMs);
+            printMetric("save_trivia_publication_ms",
+                        savePublicationTelemetry.publicationMs);
+            printMetric("save_trivia_effective_facts_ms",
+                        savePublicationTelemetry.effectiveFactsMs);
+            printMetric("save_trivia_snapshot_install_ms",
+                        savePublicationTelemetry.snapshotInstallMs);
+            printMetric("save_trivia_ui_refresh_ms",
+                        sawSaveNavigationTelemetry
+                            ? saveNavigationTelemetry.uiRefreshMs
+                            : 0);
+
+            // Restore only the editor overlay. No fixture file is written.
+            editor->setPlainText(originalContent);
+        }
+
+        if (documents && !budgetedWorkspace) {
+            const QString localBodyFile = QDir(workspacePath).absoluteFilePath(
+                QStringLiteral("elec_phy_import/top/rtl_top.sv"));
+            const QString localBodyOriginal = readTextFile(localBodyFile);
+            const QString oldAssignment = QStringLiteral(
+                "assign chl0_prot_out_ss_OUT_side = 'd1;");
+            const QString newAssignment = QStringLiteral(
+                "assign chl0_prot_out_ss_OUT_side = 'd0;");
+            QString localBodySavedText = localBodyOriginal;
+            const bool localBodyEditApplied =
+                localBodySavedText.replace(oldAssignment, newAssignment)
+                    != localBodyOriginal;
+            expectBool("LocalBody perf fixture statement is present",
+                       localBodyEditApplied,
+                       true);
+            const SemanticChangeClassification localClassification =
+                SemanticChangeClassifier().classify(
+                    localBodyFile,
+                    localBodyOriginal,
+                    localBodySavedText);
+            expectBool("LocalBody perf edit classifies before save",
+                       localClassification.impact
+                           == SemanticChangeImpact::LocalBody,
+                       true);
+            expectBool("open LocalBody save file",
+                       window.tabManager->openFileInTab(localBodyFile),
+                       true);
+            MyCodeEditor* localBodyEditor =
+                window.tabManager->getCurrentEditor();
+            expectBool("LocalBody editor exists",
+                       localBodyEditor != nullptr,
+                       true);
+            if (localBodyEditor && localBodyEditApplied) {
+                localBodyEditor->setPlainText(localBodySavedText);
+                const int planCountBeforeLocal = savePlanCount;
+                latestSavePlan = {};
+                saveWorkerTelemetry = {};
+                savePublicationTelemetry = {};
+                saveNavigationTelemetry = {};
+                sawSaveWorkerTelemetry = false;
+                sawSavePublicationTelemetry = false;
+                sawSaveNavigationTelemetry = false;
+                hierarchyRebuilds = 0;
+                QSignalSpy localBodyFinished(
+                    window.analysisScheduler.get(),
+                    &AnalysisScheduler::workspaceSymbolAnalysisFinished);
+
+                QElapsedTimer localSaveHandlerTimer;
+                localSaveHandlerTimer.start();
+                documents->markSaved(localBodyEditor);
+                const qint64 localSaveHandlerMs =
+                    localSaveHandlerTimer.elapsed();
+                expectBool("LocalBody save handler returns without worker wait",
+                           localSaveHandlerMs < 100,
+                           true);
+                expectBool(
+                    "LocalBody save completes through scheduler publication",
+                    waitUntil([&]() {
+                        return !localBodyFinished.isEmpty()
+                            && savePlanCount > planCountBeforeLocal
+                            && sawSaveWorkerTelemetry
+                            && sawSavePublicationTelemetry;
+                    }, 120000),
+                    true);
+                if (sawSaveWorkerTelemetry) {
+                    waitUntil([&]() {
+                        return sawSaveNavigationTelemetry
+                            && saveNavigationTelemetry.generation
+                                   == saveWorkerTelemetry.generation;
+                    }, 5000);
+                }
+
+                expectBool("real save path plans LocalBody incrementally",
+                           latestSavePlan.impact
+                                   == SemanticChangeImpact::LocalBody
+                               && latestSavePlan.impact
+                                      != SemanticChangeImpact::FullFallback,
+                           true);
+                expectInt("LocalBody save publishes only edited file",
+                          latestSavePlan.affectedFiles.size(),
+                          1);
+                expectBool("LocalBody affected scope contains edited file",
+                           containsFile(latestSavePlan.affectedFiles,
+                                        localBodyFile),
+                           true);
+                expectBool("LocalBody compilation includes edited file",
+                           containsFile(latestSavePlan.compilationFiles,
+                                        localBodyFile),
+                           true);
+                expectBool("LocalBody save invokes Slang",
+                           sawSaveWorkerTelemetry
+                               && saveWorkerTelemetry.slangInvoked,
+                           true);
+                expectBool("LocalBody save converges document state Current",
+                           window.analysisScheduler
+                                   ->semanticStatus(localBodyFile)
+                                   .state
+                               == DocumentSemanticState::Current,
+                           true);
+                expectBool("LocalBody save publishes edited overlay text",
+                           SemanticIndex::getInstance()
+                                   ->snapshot()
+                                   ->getCachedFileContent(localBodyFile)
+                               == localBodySavedText,
+                           true);
+                expectBool("LocalBody save emits navigation/UI telemetry",
+                           sawSaveNavigationTelemetry,
+                           true);
+                expectInt("LocalBody body-only save rebuilds no hierarchy",
+                          hierarchyRebuilds,
+                          0);
+
+                printTextMetric("save_local_body_file",
+                                normalizedPath(localBodyFile));
+                printTextMetric(
+                    "save_local_body_impact",
+                    semanticChangeImpactName(latestSavePlan.impact));
+                printMetric(
+                    "save_local_body_generation",
+                    static_cast<qint64>(saveWorkerTelemetry.generation));
+                printMetric("save_local_body_affected_files",
+                            latestSavePlan.affectedFiles.size());
+                printMetric("save_local_body_compilation_files",
+                            latestSavePlan.compilationFiles.size());
+                printMetric("save_local_body_changed_files",
+                            latestSavePlan.changedFiles.size());
+                printMetric("save_local_body_slang_invoked",
+                            saveWorkerTelemetry.slangInvoked ? 1 : 0);
+                printMetric("save_local_body_save_handler_ms",
+                            localSaveHandlerMs);
+                printMetric("save_local_body_worker_ms",
+                            saveWorkerTelemetry.workerMs);
+                printMetric("save_local_body_publication_ms",
+                            savePublicationTelemetry.publicationMs);
+                printMetric("save_local_body_effective_facts_ms",
+                            savePublicationTelemetry.effectiveFactsMs);
+                printMetric("save_local_body_snapshot_install_ms",
+                            savePublicationTelemetry.snapshotInstallMs);
+                printMetric("save_local_body_ui_refresh_ms",
+                            sawSaveNavigationTelemetry
+                                ? saveNavigationTelemetry.uiRefreshMs
+                                : 0);
+
+                // Restore only the editor overlay. No fixture file is written.
+                localBodyEditor->setPlainText(localBodyOriginal);
+            }
+        }
         drainRelationshipWork(window);
     }
 

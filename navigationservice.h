@@ -58,7 +58,8 @@ public:
         const QString& selectedTopModule,
         const QSet<QString>& fileScope) const;
     QByteArray designStructureFingerprint(
-        const QSet<QString>& fileScope = {}) const;
+        const QSet<QString>& fileScope = {},
+        const QString& activeTop = {}) const;
     std::uint64_t semanticSnapshotRevision() const;
     QStringList modulesDefinedInFile(const QString& fileName) const;
     NavigationModuleTarget resolveModuleTarget(const QString& moduleName) const;

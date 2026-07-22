@@ -43,6 +43,10 @@ constexpr int kMaxPassiveGhostAnnotationCharacters = 2 * 1024 * 1024;
 constexpr int kColumnSelectionProperty = QTextFormat::UserProperty + 20;
 constexpr int kColumnSelectionMarker = 1020;
 constexpr int kManualIndentWidth = 4;
+constexpr const char* kDiagnosticsEmptyProperty =
+    "zeroslackDiagnosticsSelectionsEmpty";
+constexpr const char* kSemanticDecorationsEmptyProperty =
+    "zeroslackSemanticDecorationsEmpty";
 
 struct TextSpan {
     int start = -1;
@@ -2369,6 +2373,8 @@ void MyCodeEditorState::initializeCore(MyCodeEditor* editor)
     gutter.init(editor);
     identity.set(QString());
     semanticRevisionText = editor ? editor->toPlainText() : QString();
+    editor->setProperty(kDiagnosticsEmptyProperty, true);
+    editor->setProperty(kSemanticDecorationsEmptyProperty, true);
     editor->setMouseTracking(true);
     editor->setAcceptDrops(true);
 }
@@ -4208,14 +4214,29 @@ void MyCodeEditorState::setDiagnosticHighlights(
     MyCodeEditor* editor,
     const QList<SemanticDiagnostic>& diagnostics)
 {
+    if (!editor)
+        return;
+    if (diagnostics.isEmpty()
+        && editor->property(kDiagnosticsEmptyProperty).toBool()) {
+        return;
+    }
     selections.highlightDiagnostics(editor, diagnostics);
+    editor->setProperty(kDiagnosticsEmptyProperty, diagnostics.isEmpty());
 }
 
 void MyCodeEditorState::setSemanticDecorations(
     MyCodeEditor* editor,
     const QList<SemanticDecoration>& decorations)
 {
+    if (!editor)
+        return;
+    if (decorations.isEmpty()
+        && editor->property(kSemanticDecorationsEmptyProperty).toBool()) {
+        return;
+    }
     selections.highlightSemanticDecorations(editor, decorations);
+    editor->setProperty(kSemanticDecorationsEmptyProperty,
+                        decorations.isEmpty());
 }
 
 void MyCodeEditorState::refreshGhostAnnotations(MyCodeEditor* editor)

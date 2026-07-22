@@ -3976,11 +3976,11 @@ int main(int argc, char** argv) {
     cachedWorkspaceController.requestWorkspaceAnalysis(foregroundProject);
     cachedWorkspaceAnalyzer.batchAnalysisCompleted(1, 1);
     cachedWorkspaceController.requestWorkspaceAnalysis(foregroundProject);
-    expectBool("Workspace cached activation skips completed symbol analysis",
-               cachedWorkspaceStarts == 1,
+    expectBool("Workspace executor accepts only explicit scheduler requests",
+               cachedWorkspaceStarts == 2,
                true);
-    expectBool("Workspace cached activation cancels stale relationship analysis",
-               cachedRelationshipCancels == 1,
+    expectBool("Workspace executor does not launch legacy relationship pass",
+               cachedRelationshipCancels == 0,
                true);
     cachedWorkspaceController.cancelWorkspaceAnalysis();
     cachedWorkspaceAnalyzer.cancelWorkspaceAnalysisAndInvalidate();

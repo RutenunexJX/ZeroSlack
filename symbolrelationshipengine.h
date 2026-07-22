@@ -47,6 +47,42 @@ public:
         SemanticSourceRange evidenceRange;
     };
 
+    struct RelationshipEdge {
+        int targetId;
+        RelationType type;
+        QString context;
+        int confidence;
+        SemanticSourceRange evidenceRange;
+
+        RelationshipEdge(int target,
+                         RelationType t,
+                         const QString& ctx = "",
+                         int conf = 100,
+                         const SemanticSourceRange& range = {})
+            : targetId(target),
+              type(t),
+              context(ctx),
+              confidence(conf),
+              evidenceRange(range) {}
+
+        bool operator==(const RelationshipEdge& other) const
+        {
+            return targetId == other.targetId && type == other.type;
+        }
+    };
+
+    struct RelationshipNode {
+        QList<RelationshipEdge> outgoingEdges;
+        QList<RelationshipEdge> incomingEdges;
+    };
+
+    struct PreparedRelationshipState {
+        QHash<int, RelationshipNode> relationshipGraph;
+        QHash<RelationType, QList<QPair<int, int>>> relationshipsByType;
+        QHash<QString, QSet<int>> symbolsByFile;
+        QHash<QString, QList<int>> queryCache;
+    };
+
     explicit SymbolRelationshipEngine(QObject *parent = nullptr);
     explicit SymbolRelationshipEngine(
         SymbolRecordProvider symbolRecordProvider,
@@ -76,6 +112,20 @@ public:
     void replaceRelationshipsFromSnapshot(
         const QList<SemanticSymbolRecord>& symbolRecords,
         const QList<SemanticRelationship>& relationships);
+    void replaceRelationshipsForFilesFromSnapshot(
+        const QList<SemanticSymbolRecord>& symbolRecords,
+        const QList<SemanticRelationship>& relationships,
+        const QStringList& changedFiles);
+    void replacePreparedRelationshipsForFiles(
+        const QHash<QString, QSet<int>>& symbolHandlesByFile,
+        const QList<SemanticRelationship>& relationships,
+        const QStringList& changedFiles);
+    static std::shared_ptr<PreparedRelationshipState>
+    prepareRelationshipState(
+        const QList<SemanticSymbolRecord>& symbolRecords,
+        const QList<SemanticRelationship>& relationships);
+    std::shared_ptr<PreparedRelationshipState> installPreparedRelationshipState(
+        std::shared_ptr<PreparedRelationshipState> state);
 
     int getRelationshipCount() const;
 
@@ -88,34 +138,6 @@ private slots:
     void emitRelationshipAddedQueued(int fromSymbolId, int toSymbolId, int typeAsInt);
 
 private:
-    struct RelationshipEdge {
-        int targetId;
-        RelationType type;
-        QString context;
-        int confidence;
-        SemanticSourceRange evidenceRange;
-
-        RelationshipEdge(int target,
-                         RelationType t,
-                         const QString& ctx = "",
-                         int conf = 100,
-                         const SemanticSourceRange& range = {})
-            : targetId(target),
-              type(t),
-              context(ctx),
-              confidence(conf),
-              evidenceRange(range) {}
-
-        bool operator==(const RelationshipEdge& other) const {
-            return targetId == other.targetId && type == other.type;
-        }
-    };
-
-    struct RelationshipNode {
-        QList<RelationshipEdge> outgoingEdges;
-        QList<RelationshipEdge> incomingEdges;
-    };
-
     QHash<int, RelationshipNode> relationshipGraph;
     QHash<RelationType, QList<QPair<int, int>>> relationshipsByType;
     QHash<QString, QSet<int>> symbolsByFile;

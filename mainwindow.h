@@ -39,6 +39,7 @@ class QVBoxLayout;
 class QWidget;
 struct WorkspaceSessionState;
 struct UserTemplateLoadReport;
+struct SemanticAnalysisTelemetry;
 
 QT_BEGIN_NAMESPACE
 namespace Ui { class MainWindow; }
@@ -60,6 +61,10 @@ public:
 
 protected:
     void closeEvent(QCloseEvent *event) override;
+
+signals:
+    void semanticUiRefreshTelemetry(
+        const SemanticAnalysisTelemetry& telemetry);
 
 private:
     Ui::MainWindow *ui;
@@ -94,6 +99,7 @@ private:
     QTimer* activeEditorPassiveRefreshTimer = nullptr;
     QTimer* workspaceSessionSaveTimer = nullptr;
     QString pendingActiveEditorPassiveRefreshFile;
+    QString diagnosticsAnalysisState;
     QSet<QString> workspaceSessionCleanRoots;
     bool pendingActiveEditorPassiveRefreshAll = false;
 
@@ -140,6 +146,7 @@ private:
     void showWorkspaceConfigurationDialog();
     void navigateDiagnostic(bool previous);
     void setDiagnosticsAnalysisState(const QString& state);
+    void refreshDiagnosticsAnalysisState();
     void showFoldBlockShelf();
     void restoreFoldShelfItem(const QString& id);
     void restoreFoldShelfItemToActiveEditor(const QString& id);

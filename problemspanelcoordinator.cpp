@@ -322,6 +322,7 @@ void ProblemsPanelCoordinator::setAnalysisState(const QString& state)
 
 void ProblemsPanelCoordinator::update()
 {
+    ++updateInvocations;
     if (!problemsTree)
         return;
 

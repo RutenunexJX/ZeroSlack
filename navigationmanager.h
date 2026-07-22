@@ -8,6 +8,7 @@
 #include <QHash>
 #include <memory>
 #include "hierarchyservice.h"
+#include "semanticanalysisrequest.h"
 #include "symbolpresentationservice.h"
 
 class NavigationWidget;
@@ -43,6 +44,8 @@ public:
     void refreshDesignHierarchy(bool force = false);
     void warmDesignHierarchyCache();
     void refreshCurrentView();
+    void setSemanticAnalysisContext(
+        const SemanticAnalysisTelemetry& telemetry);
 
     // Navigation operations
     void navigateToFile(const QString& filePath, int lineNumber = -1);
@@ -60,6 +63,7 @@ signals:
         int lineNumber,
         const HierarchyInstanceContext& instanceContext);
     void dataRefreshed(NavigationView view);
+    void navigationTelemetry(const SemanticAnalysisTelemetry& telemetry);
 
 public slots:
     void onTabChanged(const QString& fileName);
@@ -128,6 +132,7 @@ private:
     NavigationCaches caches;
     QHash<QString, DesignHierarchyCacheEntry> designHierarchyCacheByScope;
     bool designHierarchyWidgetValid = false;
+    SemanticAnalysisTelemetry semanticAnalysisContext;
 
     // Helper methods
     void setupConnections();

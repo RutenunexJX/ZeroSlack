@@ -47,8 +47,11 @@ QString bandSuffix(const QString& band)
 SemanticAnalysisBandReport analysisBandReportForProject(
     const ProjectSnapshot& project)
 {
-    QList<SemanticSymbolRecord> records;
     SemanticIndex* semanticIndex = SemanticIndex::getInstance();
+    if (semanticIndex->hasPreparedAnalysisBandReport())
+        return semanticIndex->analysisBandReport();
+
+    QList<SemanticSymbolRecord> records;
     for (const QString& fileName : project.systemVerilogFiles) {
         const QList<SemanticSymbolRecord> fileRecords =
             semanticIndex->getSymbolRecords(fileName);

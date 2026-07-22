@@ -53,6 +53,8 @@
 #include <QDialogButtonBox>
 #include <QDockWidget>
 #include <QDir>
+#include <QElapsedTimer>
+#include <QVariant>
 #include <QFile>
 #include <QFileInfo>
 #include <QHeaderView>
@@ -663,11 +665,7 @@ void MainWindow::setupManagerConnections()
     analysisCoordinator->setFileChangeDebounceMs(kFileChangeDebounceMs);
     analysisCoordinator->setProblemsRefreshHandler(
         [this](const QString& fileName) {
-            if (semanticDocks && semanticDocks->refreshCoordinator())
-                semanticDocks->refreshCoordinator()->updateProblemsPanel();
-            refreshActiveEditorDiagnosticHighlights(fileName);
-            refreshActiveEditorSemanticDecorations(fileName);
-            refreshActiveEditorGhostAnnotations(fileName);
+            scheduleActiveEditorPassiveRefresh(fileName);
         });
     analysisCoordinator->setStatusMessageHandler(
         [this](const QString& message, int timeoutMs) {
@@ -675,6 +673,20 @@ void MainWindow::setupManagerConnections()
                 statusBar()->showMessage(message, timeoutMs);
         });
     analysisCoordinator->connectSignals();
+    connect(analysisScheduler.get(),
+            &AnalysisScheduler::semanticAnalysisTelemetry,
+            this,
+            [this](const SemanticAnalysisTelemetry& telemetry) {
+                if (telemetry.stage == SemanticAnalysisStage::Publication) {
+                    setProperty(
+                        "pendingSemanticPublicationTelemetry",
+                        QVariant::fromValue(telemetry));
+                }
+            });
+    connect(this,
+            &MainWindow::semanticUiRefreshTelemetry,
+            analysisScheduler.get(),
+            &AnalysisScheduler::semanticAnalysisTelemetry);
     connect(workspaceManager.get(),
             &WorkspaceManager::workspaceOpened,
             this,
@@ -684,9 +696,12 @@ void MainWindow::setupManagerConnections()
     connect(tabManager.get(),
             &TabManager::activeDocumentChanged,
             this,
-            [this](const DocumentSnapshot&) {
+            [this](const DocumentSnapshot& snapshot) {
                 scheduleActiveEditorPassiveRefresh();
                 updatePackageTools();
+                if (analysisScheduler && !snapshot.fileName.isEmpty()) {
+                    refreshDiagnosticsAnalysisState();
+                }
                 QDockWidget* waveDock = dockForPanelId(QStringLiteral("wavePreview"));
                 if (waveDock && waveDock->isVisible())
                     refreshActiveEditorWavePreview();
@@ -736,39 +751,59 @@ void MainWindow::setupManagerConnections()
             &AnalysisScheduler::fileSymbolAnalysisFinished,
             this,
             [this](const QString& fileName, int) {
-                setDiagnosticsAnalysisState(QStringLiteral("current"));
                 scheduleActiveEditorPassiveRefresh(fileName);
-            });
-    connect(analysisScheduler.get(),
-            &AnalysisScheduler::fileSymbolAnalysisStarted,
-            this,
-            [this](const QString&) {
-                setDiagnosticsAnalysisState(QStringLiteral("analyzing"));
             });
     connect(analysisScheduler.get(),
             &AnalysisScheduler::workspaceSymbolAnalysisStarted,
             this,
             [this](const ProjectSnapshot&, int) {
-                setDiagnosticsAnalysisState(QStringLiteral("analyzing"));
+                refreshDiagnosticsAnalysisState();
             });
     connect(analysisScheduler.get(),
             &AnalysisScheduler::workspaceSymbolAnalysisFinished,
             this,
             [this](const ProjectSnapshot&, int, int) {
-                setDiagnosticsAnalysisState(QStringLiteral("current"));
+                refreshDiagnosticsAnalysisState();
                 scheduleActiveEditorPassiveRefresh();
             });
     connect(analysisScheduler.get(),
             &AnalysisScheduler::workspaceSymbolAnalysisDeferred,
             this,
             [this](const ProjectSnapshot&, int, qint64, qint64) {
-                setDiagnosticsAnalysisState(QStringLiteral("background"));
+                refreshDiagnosticsAnalysisState();
+            });
+    connect(analysisScheduler.get(),
+            &AnalysisScheduler::workspaceAnalysisRequestResolved,
+            this,
+            [this](const WorkspaceAnalysisRequestTelemetry&) {
+                refreshDiagnosticsAnalysisState();
             });
     connect(analysisScheduler.get(),
             &AnalysisScheduler::workspaceSymbolAnalysisCancelled,
             this,
             [this](const WorkspaceAnalysisRequestTelemetry&) {
-                setDiagnosticsAnalysisState(QStringLiteral("stale"));
+                refreshDiagnosticsAnalysisState();
+            });
+    connect(analysisScheduler.get(),
+            &AnalysisScheduler::documentSemanticStateChanged,
+            this,
+            [this](const DocumentSemanticStatus& status) {
+                if (!tabManager)
+                    return;
+                MyCodeEditor* currentEditor =
+                    tabManager->getCurrentEditor();
+                const QString currentFileName = currentEditor
+                    ? currentEditor->documentFileName()
+                    : QString();
+                if (currentFileName.isEmpty()
+                    || QFileInfo(currentFileName).absoluteFilePath()
+                           .compare(QFileInfo(status.fileName)
+                                        .absoluteFilePath(),
+                                    Qt::CaseInsensitive)
+                           != 0) {
+                    return;
+                }
+                refreshDiagnosticsAnalysisState();
             });
 
 }
@@ -802,14 +837,25 @@ void MainWindow::scheduleActiveEditorPassiveRefresh(
 
 void MainWindow::runActiveEditorPassiveRefresh()
 {
+    QElapsedTimer totalTimer;
+    totalTimer.start();
     const QString changedFileName = pendingActiveEditorPassiveRefreshAll
         ? QString()
         : pendingActiveEditorPassiveRefreshFile;
     pendingActiveEditorPassiveRefreshFile.clear();
     pendingActiveEditorPassiveRefreshAll = false;
+
+    QElapsedTimer stageTimer;
+    stageTimer.start();
     refreshActiveEditorDiagnosticHighlights(changedFileName);
+    const qint64 diagnosticsMs = stageTimer.elapsed();
+    stageTimer.restart();
     refreshActiveEditorSemanticDecorations(changedFileName);
+    const qint64 decorationsMs = stageTimer.elapsed();
+    stageTimer.restart();
     refreshActiveEditorGhostAnnotations(changedFileName);
+    const qint64 ghostMs = stageTimer.elapsed();
+    stageTimer.restart();
     if (semanticDocks) {
         if (ProblemsPanelCoordinator* problemsPanel =
                 semanticDocks->problemsPanelCoordinator()) {
@@ -818,6 +864,33 @@ void MainWindow::runActiveEditorPassiveRefresh()
             // UI work, leaving Current File on an older diagnostic snapshot.
             problemsPanel->update();
         }
+    }
+    const qint64 panelsMs = stageTimer.elapsed();
+    const qint64 totalMs = totalTimer.elapsed();
+
+    const QVariant pending =
+        property("pendingSemanticPublicationTelemetry");
+    if (pending.isValid()) {
+        SemanticAnalysisTelemetry telemetry =
+            pending.value<SemanticAnalysisTelemetry>();
+        telemetry.stage = SemanticAnalysisStage::Navigation;
+        telemetry.uiRefreshMs = totalMs;
+        telemetry.detail = QStringLiteral(
+            "passiveEditorRefresh=1 hierarchyRebuild=0 diagnosticsMs=%1 decorationsMs=%2 ghostMs=%3 panelsMs=%4")
+                               .arg(diagnosticsMs)
+                               .arg(decorationsMs)
+                               .arg(ghostMs)
+                               .arg(panelsMs);
+        setProperty("pendingSemanticPublicationTelemetry", QVariant());
+        ActivityLogService::getInstance()->append(
+            QStringLiteral("SemanticUI"),
+            ActivityLogLevel::Info,
+            QStringLiteral(
+                "Refresh gen=%1 ui=%2 ms (%3)")
+                .arg(telemetry.generation)
+                .arg(totalMs)
+                .arg(telemetry.detail));
+        emit semanticUiRefreshTelemetry(telemetry);
     }
 }
 
@@ -1769,8 +1842,38 @@ void MainWindow::setDiagnosticsAnalysisState(const QString& state)
     if (!problemsPanel)
         return;
 
-    problemsPanel->setAnalysisState(state);
+    const QString normalizedState = state.trimmed();
+    if (diagnosticsAnalysisState == normalizedState)
+        return;
+    diagnosticsAnalysisState = normalizedState;
+
+    problemsPanel->setAnalysisState(normalizedState);
     problemsPanel->update();
+}
+
+void MainWindow::refreshDiagnosticsAnalysisState()
+{
+    const bool workspaceActive = analysisScheduler
+        && analysisScheduler->isSemanticAnalysisActive();
+    QString visibleState = workspaceActive
+        ? QStringLiteral("analyzing")
+        : QStringLiteral("current");
+    if (analysisScheduler && tabManager) {
+        MyCodeEditor* currentEditor = tabManager->getCurrentEditor();
+        const QString currentFileName = currentEditor
+            ? currentEditor->documentFileName()
+            : QString();
+        if (!currentFileName.isEmpty()) {
+            const DocumentSemanticStatus status =
+                analysisScheduler->semanticStatus(currentFileName);
+            visibleState = documentSemanticStateName(status.state).toLower();
+            if (status.state == DocumentSemanticState::Current
+                && workspaceActive) {
+                visibleState = QStringLiteral("analyzing");
+            }
+        }
+    }
+    setDiagnosticsAnalysisState(visibleState);
 }
 
 void MainWindow::setupEditorModeChip()

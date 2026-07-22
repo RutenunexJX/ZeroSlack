@@ -351,6 +351,12 @@ set(ZEROSLACK_CORE_SOURCES
     saferenameservice.cpp
     searchservice.cpp
     semanticdiffservice.cpp
+    semanticanalysisrequest.cpp
+    semanticchangeclassifier.cpp
+    semanticdependencygraph.cpp
+    incrementalanalysisplanservice.cpp
+    incrementalsemanticanalysisworker.cpp
+    semanticsourceremap.cpp
     semanticdecorationservice.cpp
     svmacrosemantics.cpp
     semanticpanelutils.cpp
@@ -385,6 +391,7 @@ set(ZEROSLACK_CORE_SOURCES
     smartrelationshipbuildertiming.cpp
     symbolanalyzer.cpp
     symbolanalyzerasync.cpp
+    symbolanalyzerincremental.cpp
     symbolanalyzerpublication.cpp
     symbolanalyzerslang.cpp
     symbolanalyzerworkspace.cpp
@@ -524,6 +531,12 @@ set(ZEROSLACK_CORE_SOURCES
     saferenameservice.h
     searchservice.h
     semanticdiffservice.h
+    semanticanalysisrequest.h
+    semanticchangeclassifier.h
+    semanticdependencygraph.h
+    incrementalanalysisplanservice.h
+    incrementalsemanticanalysisworker.h
+    semanticsourceremap.h
     semanticdecorationservice.h
     svmacrosemantics.h
     semanticpanelutils.h
@@ -692,6 +705,10 @@ if(BUILD_TESTING)
     add_executable(large_file_perf_test test_sv/large_file_perf_test.cpp)
     target_link_libraries(large_file_perf_test PRIVATE zeroslack_core Qt6::Test)
 
+    add_executable(analysis_scheduler_test
+        test_sv/analysis_scheduler_test.cpp)
+    target_link_libraries(analysis_scheduler_test PRIVATE zeroslack_core Qt6::Test)
+
     add_executable(relationship_perf_test test_sv/relationship_perf_test.cpp)
     target_link_libraries(relationship_perf_test PRIVATE zeroslack_core)
 
@@ -778,6 +795,13 @@ if(BUILD_TESTING)
             "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
             $<TARGET_FILE:large_file_perf_test>
             ${CMAKE_CURRENT_SOURCE_DIR}/test_sv/new
+    )
+    add_test(NAME analysis_scheduler_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}"
+            "QT_QPA_PLATFORM=offscreen"
+            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
+            $<TARGET_FILE:analysis_scheduler_test>
     )
     add_test(NAME legacy_field_policy_guard
         COMMAND ${CMAKE_COMMAND}

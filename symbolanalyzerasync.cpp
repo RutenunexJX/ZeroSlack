@@ -13,6 +13,7 @@
 #include <QFuture>
 #include <QFutureWatcher>
 #include <QTextStream>
+#include <QThread>
 #include <QTimer>
 #include <algorithm>
 #include <utility>
@@ -46,6 +47,14 @@ bool readAsyncAnalysisFile(const QString& fileName, QString* content)
 SymbolAnalyzer::SymbolAnalyzer(QObject *parent)
     : QObject(parent)
 {
+    semanticAnalysisThreadPool.setMaxThreadCount(1);
+    semanticAnalysisThreadPool.setThreadPriority(QThread::LowPriority);
+    semanticAnalysisThreadPool.setObjectName(
+        QStringLiteral("ZeroSlackSemanticAnalysis"));
+    semanticRetirementThreadPool.setMaxThreadCount(1);
+    semanticRetirementThreadPool.setThreadPriority(QThread::LowestPriority);
+    semanticRetirementThreadPool.setObjectName(
+        QStringLiteral("ZeroSlackSemanticRetirement"));
     workspacePublicationTimer = new QTimer(this);
     workspacePublicationTimer->setSingleShot(true);
     connect(workspacePublicationTimer,
@@ -56,9 +65,7 @@ SymbolAnalyzer::SymbolAnalyzer(QObject *parent)
 
 SymbolAnalyzer::~SymbolAnalyzer()
 {
-    cancelWorkspacePublication();
-    cancelAllFileAnalysesAndWait();
-    cancelWorkspaceAnalysisAndWait();
+    shutdown();
 }
 
 void SymbolAnalyzer::setWorkspaceWorkerStartGateForTesting(
@@ -67,12 +74,33 @@ void SymbolAnalyzer::setWorkspaceWorkerStartGateForTesting(
     workspaceWorkerStartGateForTesting = std::move(gate);
 }
 
+void SymbolAnalyzer::setPublicationRetirementGateForTesting(
+    PublicationRetirementGateForTesting gate)
+{
+    publicationRetirementGateForTesting = std::move(gate);
+}
+
+int SymbolAnalyzer::pendingPublicationRetirementsForTesting() const
+{
+    return pendingPublicationRetirements->load(std::memory_order_acquire);
+}
+
+int SymbolAnalyzer::publicationRetirementEnqueueCountForTesting() const
+{
+    return publicationRetirementEnqueueCount.load(std::memory_order_acquire);
+}
+
+int SymbolAnalyzer::rejectedPublicationRetirementsForTesting() const
+{
+    return rejectedPublicationRetirements.load(std::memory_order_acquire);
+}
+
 void SymbolAnalyzer::startAnalyzeProjectAsync(
     const ProjectSnapshot& project,
     std::function<bool()> isCancelled,
     const QList<OpenDocumentContent>& openDocuments)
 {
-    if (!project.isOpen())
+    if (shutdownStarted || !project.isOpen())
         return;
     cancelWorkspacePublication();
     cancelAllFileAnalysesAndWait();
@@ -344,6 +372,27 @@ void SymbolAnalyzer::cancelAllAnalysesAndWait()
     requestCancelAllAnalyses();
     cancelAllFileAnalysesAndWait();
     cancelWorkspaceAnalysisAndWait();
+    waitForPublicationRetirements();
+}
+
+void SymbolAnalyzer::shutdown()
+{
+    if (shutdownStarted)
+        return;
+
+    // Closing this gate precedes every wait. No caller can start a new worker
+    // or publication while teardown drains already-owned work.
+    shutdownStarted = true;
+    requestCancelAllAnalyses();
+    cancelAllFileAnalysesAndWait();
+    cancelWorkspaceAnalysisAndWait();
+
+    // Worker watchers and the zero-delay publication timer have now been
+    // detached or cancelled. A retirement submitted after this point would
+    // indicate a real teardown ordering defect.
+    publicationRetirementQueueOpen = false;
+    waitForPublicationRetirements();
+    publicationRetirementGateForTesting = {};
 }
 
 void SymbolAnalyzer::analyzeFileContentAsync(
@@ -351,6 +400,8 @@ void SymbolAnalyzer::analyzeFileContentAsync(
     const QString& content,
     std::uint64_t documentRevision)
 {
+    if (shutdownStarted)
+        return;
     analyzeOverlayDocumentsAsync(
         {{fileName, content, documentRevision}});
 }
@@ -358,6 +409,8 @@ void SymbolAnalyzer::analyzeFileContentAsync(
 void SymbolAnalyzer::analyzeOverlayDocumentsAsync(
     const QList<OpenDocumentContent>& documents)
 {
+    if (shutdownStarted)
+        return;
     QList<OpenDocumentContent> overlays;
     for (const OpenDocumentContent& document : documents) {
         if (!document.fileName.isEmpty()

@@ -2,6 +2,7 @@
 
 #include <QDir>
 #include <QHash>
+#include <QQueue>
 #include <QSet>
 #include <utility>
 
@@ -77,6 +78,39 @@ void fillRelationshipStableKeys(
     }
 }
 
+bool sameStableIdentityIgnoringPosition(const SymbolStableKey& previous,
+                                        const SymbolStableKey& current)
+{
+    return previous.isValid() && current.isValid()
+        && normalizedSnapshotFileName(previous.fileName)
+            == normalizedSnapshotFileName(current.fileName)
+        && previous.symbolName == current.symbolName
+        && previous.declarationKind == current.declarationKind
+        && previous.ownerScope == current.ownerScope
+        && previous.sourceLength == current.sourceLength;
+}
+
+void rebindRelationshipEndpoint(SymbolStableKey* stableKey,
+                                int* localHandle,
+                                const SnapshotRecordLookup& lookup)
+{
+    if (!stableKey || !localHandle)
+        return;
+    const int stableHandle = lookup.localHandleForStableKey(*stableKey);
+    if (stableHandle >= 0) {
+        *localHandle = stableHandle;
+        return;
+    }
+    const SymbolStableKey handleKey =
+        lookup.stableKeyForLocalHandle(*localHandle);
+    if (!handleKey.isValid())
+        return;
+    if (!stableKey->isValid()
+        || sameStableIdentityIgnoringPosition(*stableKey, handleKey)) {
+        *stableKey = handleKey;
+    }
+}
+
 SemanticRelationship rebindRelationshipToSnapshot(
     const SemanticRelationship& relationship,
     const SnapshotRecordLookup& lookup)
@@ -84,15 +118,12 @@ SemanticRelationship rebindRelationshipToSnapshot(
     SemanticRelationship rebound = relationship;
     fillRelationshipStableKeys(&rebound, lookup);
 
-    const int reboundFromHandle =
-        lookup.localHandleForStableKey(rebound.fromStableKey);
-    if (reboundFromHandle >= 0)
-        rebound.fromId = reboundFromHandle;
-
-    const int reboundToHandle =
-        lookup.localHandleForStableKey(rebound.toStableKey);
-    if (reboundToHandle >= 0)
-        rebound.toId = reboundToHandle;
+    rebindRelationshipEndpoint(&rebound.fromStableKey,
+                               &rebound.fromId,
+                               lookup);
+    rebindRelationshipEndpoint(&rebound.toStableKey,
+                               &rebound.toId,
+                               lookup);
 
     fillRelationshipStableKeys(&rebound, lookup);
     return rebound;
@@ -154,6 +185,51 @@ SemanticIndexSnapshot::SemanticIndexSnapshot(
     }
     m_relationships = std::move(reboundRelationships);
     rebuildRelationshipIndexes();
+}
+
+QString snapshotRecordIdentity(const SemanticSymbolRecord& record)
+{
+    return QStringLiteral("%1|%2|%3|%4|%5")
+        .arg(normalizedSnapshotFileName(record.location.fileName),
+             record.name,
+             QString::number(static_cast<int>(record.declarationKind)),
+             record.owner.name,
+             record.type.resolvedTypeName);
+}
+
+QString relationshipOwnerFile(const SemanticRelationship& relationship)
+{
+    QString owner = normalizedSnapshotFileName(
+        relationship.evidenceRange.fileName);
+    if (!owner.isEmpty())
+        return owner;
+
+    // Evidence-free legacy relationships are owned by their source endpoint.
+    // The target endpoint is only a fallback when source provenance is absent.
+    owner = normalizedSnapshotFileName(
+        relationship.fromStableKey.fileName);
+    if (!owner.isEmpty())
+        return owner;
+    return normalizedSnapshotFileName(relationship.toStableKey.fileName);
+}
+
+bool relationshipOwnedByFiles(const SemanticRelationship& relationship,
+                              const QSet<QString>& files)
+{
+    if (files.isEmpty())
+        return false;
+    return files.contains(relationshipOwnerFile(relationship));
+}
+
+QSet<QString> normalizedSnapshotFiles(const QStringList& fileNames)
+{
+    QSet<QString> result;
+    for (const QString& fileName : fileNames) {
+        const QString normalized = normalizedSnapshotFileName(fileName);
+        if (!normalized.isEmpty())
+            result.insert(normalized);
+    }
+    return result;
 }
 
 SemanticIndexSnapshot SemanticIndexSnapshot::fromSymbolRecords(
@@ -305,5 +381,124 @@ SemanticIndexSnapshot SemanticIndexSnapshot::withReplacedDiagnostics(
                                  m_symbolRecords,
                                  m_relationships,
                                  merged,
+                                 m_fileContents);
+}
+
+SemanticIndexSnapshot SemanticIndexSnapshot::withReplacedFiles(
+    const QList<SemanticFileSymbolUpdate>& updates,
+    const QStringList& diagnosticFiles,
+    const QList<SemanticDiagnostic>& diagnostics,
+    const QStringList& relationshipFiles,
+    const QList<SemanticRelationship>& relationships) const
+{
+    QStringList updatedFileNames;
+    updatedFileNames.reserve(updates.size());
+    for (const SemanticFileSymbolUpdate& update : updates)
+        updatedFileNames.append(update.fileName);
+    const QSet<QString> updatedFiles =
+        normalizedSnapshotFiles(updatedFileNames);
+
+    QHash<QString, QQueue<int>> reusableHandles;
+    int nextHandle = 1;
+    for (const SemanticSymbolRecord& record : m_symbolRecords) {
+        nextHandle = qMax(nextHandle, record.localHandle + 1);
+        if (updatedFiles.contains(
+                normalizedSnapshotFileName(record.location.fileName))) {
+            reusableHandles[snapshotRecordIdentity(record)].enqueue(
+                record.localHandle);
+        }
+    }
+
+    QList<SemanticSymbolRecord> mergedRecords;
+    QSet<int> usedHandles;
+    mergedRecords.reserve(m_symbolRecords.size());
+    for (const SemanticSymbolRecord& record : m_symbolRecords) {
+        if (updatedFiles.contains(
+                normalizedSnapshotFileName(record.location.fileName))) {
+            continue;
+        }
+        mergedRecords.append(record);
+        if (record.localHandle >= 0)
+            usedHandles.insert(record.localHandle);
+    }
+
+    for (const SemanticFileSymbolUpdate& update : updates) {
+        for (SemanticSymbolRecord record : update.symbolRecords) {
+            QQueue<int>& candidates =
+                reusableHandles[snapshotRecordIdentity(record)];
+            int handle = -1;
+            while (!candidates.isEmpty() && handle < 0) {
+                const int candidate = candidates.dequeue();
+                if (candidate >= 0 && !usedHandles.contains(candidate))
+                    handle = candidate;
+            }
+            while (handle < 0 && usedHandles.contains(nextHandle))
+                ++nextHandle;
+            if (handle < 0)
+                handle = nextHandle++;
+            record.localHandle = handle;
+            usedHandles.insert(handle);
+            mergedRecords.append(std::move(record));
+        }
+    }
+
+    QHash<QString, QString> mergedContents = m_fileContents;
+    for (const SemanticFileSymbolUpdate& update : updates) {
+        bool replaced = false;
+        for (auto it = mergedContents.begin(); it != mergedContents.end(); ++it) {
+            if (normalizedSnapshotFileName(it.key())
+                == normalizedSnapshotFileName(update.fileName)) {
+                it.value() = update.content;
+                replaced = true;
+            }
+        }
+        if (!replaced)
+            mergedContents.insert(update.fileName, update.content);
+    }
+
+    const QSet<QString> diagnosticTargets =
+        normalizedSnapshotFiles(diagnosticFiles);
+    QList<SemanticDiagnostic> mergedDiagnostics;
+    for (const SemanticDiagnostic& diagnostic : m_diagnostics) {
+        if (!diagnosticTargets.contains(
+                normalizedSnapshotFileName(diagnostic.fileName))) {
+            mergedDiagnostics.append(diagnostic);
+        }
+    }
+    mergedDiagnostics.append(diagnostics);
+
+    const QSet<QString> relationshipTargets =
+        normalizedSnapshotFiles(relationshipFiles);
+    QList<SemanticRelationship> mergedRelationships;
+    for (const SemanticRelationship& relationship : m_relationships) {
+        if (!relationshipOwnedByFiles(relationship, relationshipTargets))
+            mergedRelationships.append(relationship);
+    }
+    mergedRelationships.append(relationships);
+
+    return SemanticIndexSnapshot(FromRecordsTag{},
+                                 std::move(mergedRecords),
+                                 std::move(mergedRelationships),
+                                 std::move(mergedDiagnostics),
+                                 std::move(mergedContents));
+}
+
+SemanticIndexSnapshot
+SemanticIndexSnapshot::withRelationshipsReplacingFiles(
+    const QStringList& fileNames,
+    const QList<SemanticRelationship>& relationships) const
+{
+    const QSet<QString> targets = normalizedSnapshotFiles(fileNames);
+    QList<SemanticRelationship> merged;
+    merged.reserve(m_relationships.size() + relationships.size());
+    for (const SemanticRelationship& relationship : m_relationships) {
+        if (!relationshipOwnedByFiles(relationship, targets))
+            merged.append(relationship);
+    }
+    merged.append(relationships);
+    return SemanticIndexSnapshot(FromRecordsTag{},
+                                 m_symbolRecords,
+                                 std::move(merged),
+                                 m_diagnostics,
                                  m_fileContents);
 }

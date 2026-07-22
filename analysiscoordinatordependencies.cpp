@@ -144,3 +144,18 @@ AnalysisCoordinator::AnalysisDependencies::workspaceManagerObject() const
 {
     return workspaceManager;
 }
+
+NavigationManager*
+AnalysisCoordinator::AnalysisDependencies::navigationManagerObject() const
+{
+    return navigationManager;
+}
+
+void AnalysisCoordinator::AnalysisDependencies::setSemanticAnalysisContext(
+    const SemanticAnalysisTelemetry& telemetry) const
+{
+    if (navigationManager
+        && telemetry.stage == SemanticAnalysisStage::Publication) {
+        navigationManager->setSemanticAnalysisContext(telemetry);
+    }
+}

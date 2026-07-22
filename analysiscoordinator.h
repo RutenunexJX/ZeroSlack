@@ -14,6 +14,7 @@ class SemanticRuntimeCoordinator;
 class TabManager;
 class WorkspaceManager;
 struct DocumentSnapshot;
+struct SemanticAnalysisTelemetry;
 
 class AnalysisCoordinator : public QObject
 {
@@ -72,6 +73,9 @@ private:
         AnalysisScheduler* schedulerObject() const;
         AnalysisProgressCoordinator* progressCoordinatorObject() const;
         WorkspaceManager* workspaceManagerObject() const;
+        NavigationManager* navigationManagerObject() const;
+        void setSemanticAnalysisContext(
+            const SemanticAnalysisTelemetry& telemetry) const;
     };
 
     AnalysisDependencies dependencies;

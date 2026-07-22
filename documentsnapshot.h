@@ -7,6 +7,7 @@
 struct DocumentSnapshot {
     QString documentId;
     QString fileName;
+    QString text;
     int textVersion = 0;
     int savedTextVersion = 0;
     bool dirty = false;

@@ -4,6 +4,7 @@
 #include "documentmodel.h"
 #include "opendocumentanalysiscontroller.h"
 #include "projectmodel.h"
+#include "semanticanalysisrequest.h"
 #include "relationshipanalysiscontroller.h"
 #include "relationshipanalysisqueue.h"
 #include "relationshipresultpublisher.h"
@@ -11,8 +12,10 @@
 #include "workspacesymbolanalysiscontroller.h"
 
 #include <QObject>
+#include <QHash>
 #include <QPointer>
 #include <QString>
+#include <QTimer>
 #include <functional>
 
 class SymbolAnalyzer;
@@ -55,6 +58,8 @@ public:
     void cancelWorkspaceRelationshipAnalysis();
     void handleExternalFileChanged(const QString& fileName, int debounceMs);
     void handleDocumentClosed(const QString& fileName);
+    DocumentSemanticStatus semanticStatus(const QString& fileName) const;
+    bool isSemanticAnalysisActive() const;
 
 signals:
     void documentRefreshRequested(const QString& fileName);
@@ -79,6 +84,9 @@ signals:
         const WorkspaceAnalysisRequestTelemetry& telemetry);
     void workspaceSymbolAnalysisCancelled(
         const WorkspaceAnalysisRequestTelemetry& telemetry);
+    void semanticAnalysisPlanPrepared(const IncrementalAnalysisPlan& plan);
+    void semanticAnalysisTelemetry(const SemanticAnalysisTelemetry& telemetry);
+    void documentSemanticStateChanged(const DocumentSemanticStatus& status);
     void relationshipAnalysisProgress(const QString& fileName, int relationshipsFound);
     void relationshipAnalysisError(const QString& fileName, const QString& error);
     void relationshipAnalysisCancelled();
@@ -96,6 +104,7 @@ private:
     // the scheduler and therefore be destroyed first; guarded handles make
     // shutdown and queued callbacks observe that destruction immediately.
     QPointer<DocumentModel> documentModel;
+    QPointer<ProjectModel> projectModel;
     QPointer<SymbolAnalyzer> symbolAnalyzer;
     OpenDocumentAnalysisController* openDocumentAnalysis = nullptr;
     RelationshipAnalysisController* relationshipAnalysis = nullptr;
@@ -103,6 +112,28 @@ private:
     RelationshipResultPublisher* relationshipResultPublisher = nullptr;
     WorkspaceSymbolAnalysisController* workspaceSymbolAnalysis = nullptr;
     DiagnosticsRefreshController* diagnosticsRefresh = nullptr;
+    std::function<QString(const QString&)> openFileContentProvider;
+    std::function<bool()> workspaceOpenProvider;
+    std::function<QString()> currentFileProvider;
+    QHash<QString, DocumentSemanticStatus> semanticStatuses;
+    QHash<QString, QTimer*> externalFileTimers;
+    struct SelfWriteStamp {
+        qint64 size = -1;
+        qint64 modifiedMs = -1;
+        qint64 recordedMs = -1;
+    };
+    QHash<QString, SelfWriteStamp> selfWriteStamps;
+    struct PendingCleanSemanticChange {
+        QString fileName;
+        QString text;
+        std::uint64_t documentRevision = 0;
+        SemanticAnalysisReason reason = SemanticAnalysisReason::Unknown;
+    };
+    QHash<QString, PendingCleanSemanticChange> pendingCleanSemanticChanges;
+    ProjectSnapshot lastScheduledProject;
+    QString lastProjectSignature;
+    bool workspaceInitialAnalysisScheduled = false;
+    std::uint64_t nextSemanticGeneration = 0;
     bool shuttingDown = false;
 
     static constexpr int kOpenDocumentRelationshipAnalysisDebounceMs = 2000;
@@ -110,6 +141,38 @@ private:
     void onDocumentOpened(const DocumentSnapshot& snapshot);
     void onDocumentEdited(const DocumentSnapshot& snapshot);
     void onDocumentSaved(const DocumentSnapshot& snapshot);
+    void onProjectChanged(const ProjectSnapshot& project);
+    void onProjectClosed();
+    void requestSemanticAnalysis(SemanticAnalysisReason reason,
+                                 SemanticChangeImpact impactHint,
+                                 const QString& triggerFile,
+                                 const QStringList& changedFiles,
+                                 const ProjectSnapshot& project = {});
+    void setDocumentSemanticState(const QString& fileName,
+                                  DocumentSemanticState state,
+                                  std::uint64_t documentRevision,
+                                  std::uint64_t analysisGeneration = 0,
+                                  const QString& error = {});
+    void onSemanticAnalysisStarted(const SemanticAnalysisRequest& request);
+    void onSemanticAnalysisFinished(const SemanticAnalysisRequest& request,
+                                    const IncrementalAnalysisPlan& plan);
+    void onSemanticAnalysisFailed(const SemanticAnalysisRequest& request,
+                                  const QString& error);
+    void onSemanticAnalysisDropped(
+        const SemanticAnalysisRequest& request,
+        SemanticAnalysisRequestDisposition disposition);
+    ProjectSnapshot projectForAnalysis(const QString& triggerFile) const;
+    QString normalizedFileName(const QString& fileName) const;
+    bool isSelfWriteWatcherEvent(const QString& fileName) const;
+    void scheduleExternalFileAnalysis(const QString& fileName,
+                                      int debounceMs);
+    void rememberPendingCleanSemanticChange(
+        const QString& fileName,
+        const QString& text,
+        std::uint64_t documentRevision,
+        SemanticAnalysisReason reason);
+    void acknowledgePublishedCleanSemanticChanges(
+        const SemanticAnalysisRequest& request);
 
     QString contentForOpenFile(const QString& fileName) const;
     void setupOpenDocumentAnalysis();

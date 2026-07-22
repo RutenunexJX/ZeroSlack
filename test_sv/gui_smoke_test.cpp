@@ -49,6 +49,7 @@
 #include <QTextEdit>
 #include <QTextFragment>
 #include <QTextStream>
+#include <QThread>
 #include <QTimer>
 #include <QToolButton>
 #include <QTreeWidget>
@@ -58,6 +59,7 @@
 #include "version.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cstdio>
 #include <functional>
 #include <memory>
@@ -5991,6 +5993,191 @@ static void drainRelationshipWork(MainWindow& window)
     }
 }
 
+static void runSemanticStateUiRegression()
+{
+    printf("\n-- semantic state UI regression --\n");
+    QTemporaryDir directory;
+    expectBool("semantic state UI temp dir valid", directory.isValid(), true);
+    if (!directory.isValid())
+        return;
+    const QString currentFile =
+        directory.filePath(QStringLiteral("current_dirty.sv"));
+    const QString backgroundFile =
+        directory.filePath(QStringLiteral("background.sv"));
+    const QString currentText =
+        QStringLiteral("module current_dirty; endmodule\n");
+    const QString backgroundText =
+        QStringLiteral("module background; endmodule\n");
+    expectBool("semantic state UI current source writable",
+               writeTextFile(currentFile, currentText),
+               true);
+    expectBool("semantic state UI background source writable",
+               writeTextFile(backgroundFile, backgroundText),
+               true);
+
+    MainWindow window;
+    SemanticIndex::getInstance()->setSnapshot(snapshotFromRecords(
+        {SemanticFixtureRecordBuilder(
+             QStringLiteral("current_dirty"),
+             SymbolTaxonomy::DeclarationKind::Module)
+             .withFile(currentFile)
+             .withLocalHandle(40101)
+             .withTextSpan(7, 13)
+             .record(),
+         SemanticFixtureRecordBuilder(
+             QStringLiteral("background"),
+             SymbolTaxonomy::DeclarationKind::Module)
+             .withFile(backgroundFile)
+             .withLocalHandle(40102)
+             .withTextSpan(7, 10)
+             .record()},
+        {},
+        {},
+        {{currentFile, currentText}, {backgroundFile, backgroundText}}));
+    expectBool("semantic state UI opens current source",
+               window.tabManager
+                   && window.tabManager->openFileInTab(currentFile),
+               true);
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    ProblemsPanelCoordinator* problems = window.semanticDocks
+        ? window.semanticDocks->problemsPanelCoordinator()
+        : nullptr;
+    MyCodeEditor* editor = window.tabManager
+        ? window.tabManager->getCurrentEditor()
+        : nullptr;
+    expectBool("semantic state UI has Problems coordinator and editor",
+               problems && editor,
+               true);
+    if (!problems || !editor || !window.analysisScheduler) {
+        drainRelationshipWork(window);
+        return;
+    }
+
+    int semanticSchedulingCount = 0;
+    QObject::connect(
+        window.analysisScheduler.get(),
+        &AnalysisScheduler::semanticAnalysisTelemetry,
+        &window,
+        [&](const SemanticAnalysisTelemetry& telemetry) {
+            if (telemetry.stage == SemanticAnalysisStage::Scheduling)
+                ++semanticSchedulingCount;
+        });
+    const int updatesBeforeTyping = problems->updateInvocationCount();
+    QTextCursor cursor = editor->textCursor();
+    cursor.movePosition(QTextCursor::End);
+    editor->setTextCursor(cursor);
+    for (int index = 0; index < 100; ++index)
+        editor->insertPlainText(QStringLiteral(" "));
+    expectBool("100 edits cause only the first Dirty visible-state refresh",
+               problems->updateInvocationCount() == updatesBeforeTyping + 1,
+               true);
+    expectBool("100 edits schedule zero semantic requests",
+               semanticSchedulingCount == 0,
+               true);
+    expectBool("Problems shows current document Dirty",
+               problems->stateLabel()
+                   && problems->stateLabel()->text()
+                          == QStringLiteral("Diagnostics: dirty"),
+               true);
+
+    SymbolAnalyzer* analyzer = window.analysisScheduler->symbolAnalyzer;
+    expectBool("semantic state UI has symbol analyzer", analyzer != nullptr, true);
+    if (!analyzer) {
+        drainRelationshipWork(window);
+        return;
+    }
+    ProjectSnapshot backgroundProject;
+    backgroundProject.workspaceRoot = directory.path();
+    backgroundProject.systemVerilogFiles = {backgroundFile};
+    backgroundProject.allFiles = backgroundProject.systemVerilogFiles;
+    backgroundProject.includeDirs = {directory.path()};
+    std::atomic_bool releaseWorker{false};
+    analyzer->setWorkspaceWorkerStartGateForTesting(
+        [&releaseWorker](const std::function<bool()>& isCancelled) {
+            while (!releaseWorker.load(std::memory_order_relaxed)
+                   && !isCancelled()) {
+                QThread::msleep(2);
+            }
+        });
+    QSignalSpy finishedSpy(
+        window.analysisScheduler.get(),
+        &AnalysisScheduler::workspaceSymbolAnalysisFinished);
+    window.analysisScheduler->requestWorkspaceAnalysis(backgroundProject);
+    expectBool("background analysis starts while current document is Dirty",
+               waitUntil(
+                   [&]() {
+                       return window.analysisScheduler
+                           ->isSemanticAnalysisActive();
+                   },
+                   3000),
+               true);
+    expectBool("background start does not replace Dirty with Analyzing",
+               problems->stateLabel()
+                   && problems->stateLabel()->text()
+                          == QStringLiteral("Diagnostics: dirty"),
+               true);
+    releaseWorker.store(true, std::memory_order_relaxed);
+    expectBool("background analysis finishes",
+               waitUntil([&]() { return !finishedSpy.isEmpty(); }, 10000),
+               true);
+    expectBool("background finish does not replace Dirty with Current",
+               problems->stateLabel()
+                   && problems->stateLabel()->text()
+                          == QStringLiteral("Diagnostics: dirty"),
+               true);
+
+    std::atomic_bool releaseCancelledWorker{false};
+    analyzer->setWorkspaceWorkerStartGateForTesting(
+        [&releaseCancelledWorker](const std::function<bool()>& isCancelled) {
+            while (!releaseCancelledWorker.load(std::memory_order_relaxed)
+                   && !isCancelled()) {
+                QThread::msleep(2);
+            }
+        });
+    window.analysisScheduler->requestWorkspaceAnalysis(backgroundProject);
+    expectBool("cancellable background analysis starts",
+               waitUntil(
+                   [&]() {
+                       return window.analysisScheduler
+                           ->isSemanticAnalysisActive();
+                   },
+                   3000),
+               true);
+    QSignalSpy expiredSpy(analyzer, &SymbolAnalyzer::workspaceAnalysisExpired);
+    window.analysisScheduler->cancelWorkspaceAnalysis();
+    releaseCancelledWorker.store(true, std::memory_order_relaxed);
+    expectBool("cancelled background worker reaches its terminal expired signal",
+               waitUntil([&]() { return !expiredSpy.isEmpty(); }, 5000),
+               true);
+    expectBool("background cancel leaves current document Dirty",
+               problems->stateLabel()
+                   && problems->stateLabel()->text()
+                          == QStringLiteral("Diagnostics: dirty"),
+               true);
+
+    analyzer->setWorkspaceWorkerStartGateForTesting({});
+    expectBool("current Dirty source saves",
+               window.tabManager->saveCurrentTab(),
+               true);
+    expectBool("current clean save converges to Current",
+               waitUntil(
+                   [&]() {
+                       return window.analysisScheduler
+                                      ->semanticStatus(currentFile)
+                                      .state
+                                  == DocumentSemanticState::Current
+                           && problems->stateLabel()
+                                  && problems->stateLabel()->text()
+                                      == QStringLiteral(
+                                          "Diagnostics: current");
+                   },
+                   10000),
+               true);
+    drainRelationshipWork(window);
+    window.analysisScheduler->shutdown();
+    SemanticIndex::getInstance()->clearSemanticState();
+}
+
 static void runReferenceDockRegression(MainWindow& window, const QString& fixturePath)
 {
     printf("\n-- reference dock regression --\n");
@@ -9392,6 +9579,7 @@ int main(int argc, char** argv)
     runTreeSitterFoldingProviderRegression();
     runNavigationDesignCacheWorkspaceActivationRegression();
     runNavigationHierarchyModelRegression();
+    runSemanticStateUiRegression();
 
     const QString workspacePath = (argc > 1)
         ? QString::fromLocal8Bit(argv[1])
@@ -11636,15 +11824,13 @@ int main(int argc, char** argv)
         QSignalSpy analysisNavigationRefreshSpy(
             window.navigationManager.get(),
             &NavigationManager::dataRefreshed);
-        window.analysisScheduler->fileSymbolAnalysisFinished(
+        window.navigationManager->onSymbolAnalysisCompleted(
             normalizedSymbolFixturePath, 0);
-        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
         expectBool("same snapshot file completion keeps Design cache",
                    analysisNavigationRefreshSpy.isEmpty(),
                    true);
         analysisNavigationRefreshSpy.clear();
-        window.analysisScheduler->workspaceSymbolAnalysisFinished(ProjectSnapshot(), 1, 0);
-        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+        window.navigationManager->onBatchSymbolAnalysisCompleted(1, 0);
         expectBool("same snapshot batch completion keeps Design cache",
                    analysisNavigationRefreshSpy.isEmpty(),
                    true);
@@ -11765,21 +11951,22 @@ int main(int argc, char** argv)
         expectBool("reopened workspace analysis completes",
                    waitUntil([&]() { return workspaceSymbolsDone; }, 60000),
                    true);
-        expectBool("problems snapshot keeps external diagnostic after workspace analysis",
+        expectBool("workspace config rebuild removes out-of-scope external diagnostic",
                    waitUntil([&]() {
                        const auto snapshot = SemanticIndex::getInstance()->snapshot();
                        return snapshot
-                              && !snapshot->getDiagnostics(closeDiagnostic.fileName).isEmpty();
+                              && snapshot->getDiagnostics(
+                                     closeDiagnostic.fileName).isEmpty();
                    }, 2000),
                    true);
         problemsScopeCombo(window)->setCurrentIndex(
             problemsScopeCombo(window)->findText(QStringLiteral("All Files")));
         semanticPanelRefresh(window)->updateProblemsPanel();
-        expectBool("problems keep external diagnostic after workspace analysis",
+        expectBool("Problems drops external diagnostic after workspace rebuild",
                    waitUntil([&]() {
                        if (semanticPanelRefresh(window))
                            semanticPanelRefresh(window)->updateProblemsPanel();
-                       return hasDiagnosticTreeItem(
+                       return !hasDiagnosticTreeItem(
                            problemsTree(window),
                            closeDiagnostic.fileName,
                            closeDiagnostic.message);

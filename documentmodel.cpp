@@ -76,6 +76,17 @@ DocumentSnapshot DocumentModel::documentForFile(const QString& fileName) const
     return state->documentForFile(fileName);
 }
 
+QList<DocumentSnapshot> DocumentModel::cachedOpenDocuments() const
+{
+    return state->openDocuments();
+}
+
+DocumentSnapshot DocumentModel::cachedDocumentForFile(
+    const QString& fileName) const
+{
+    return state->documentForFile(fileName);
+}
+
 MyCodeEditor* DocumentModel::editorForFile(const QString& fileName) const
 {
     return state->editorForFile(fileName);

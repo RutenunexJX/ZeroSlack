@@ -28,6 +28,15 @@ void AnalysisScheduler::shutdown()
     if (documentModel)
         disconnect(documentModel, nullptr, this, nullptr);
     documentModel = nullptr;
+    if (projectModel)
+        disconnect(projectModel, nullptr, this, nullptr);
+    projectModel = nullptr;
+    for (QTimer* timer : std::as_const(externalFileTimers)) {
+        if (timer)
+            timer->stop();
+    }
+    externalFileTimers.clear();
+    SymbolAnalyzer* analyzer = symbolAnalyzer.data();
     if (openDocumentAnalysis)
         openDocumentAnalysis->shutdown();
     if (workspaceSymbolAnalysis) {
@@ -43,16 +52,21 @@ void AnalysisScheduler::shutdown()
     // QThreadPool, one gated task can otherwise keep another task queued and
     // make the first wait permanent.
     cancelWorkspaceAnalysis();
-    if (symbolAnalyzer)
-        symbolAnalyzer->requestCancelAllAnalyses();
+    if (analyzer)
+        analyzer->requestCancelAllAnalyses();
     if (relationshipAnalysis)
         relationshipAnalysis->requestCancelAllAnalyses();
+
+    // Detach every controller before the terminal analyzer wait. Queued
+    // controller callbacks can no longer start a replacement publication.
+    if (workspaceSymbolAnalysis)
+        workspaceSymbolAnalysis->setSymbolAnalyzer(nullptr);
 
     // Phase two joins only after cancellation has been broadcast globally.
     if (relationshipAnalysis)
         relationshipAnalysis->waitForAllAnalyses();
-    if (symbolAnalyzer)
-        symbolAnalyzer->cancelAllAnalysesAndWait();
+    if (analyzer)
+        analyzer->shutdown();
 
     if (relationshipAnalysis) {
         relationshipAnalysis->setRelationshipBuilder(nullptr);
@@ -60,15 +74,30 @@ void AnalysisScheduler::shutdown()
     }
     if (relationshipResultPublisher)
         relationshipResultPublisher->setRelationshipEngine(nullptr);
-    if (workspaceSymbolAnalysis)
-        workspaceSymbolAnalysis->setSymbolAnalyzer(nullptr);
     symbolAnalyzer = nullptr;
 }
 
 void AnalysisScheduler::setProjectModel(ProjectModel* model)
 {
-    if (!shuttingDown && workspaceSymbolAnalysis)
+    if (shuttingDown || projectModel == model)
+        return;
+    if (projectModel)
+        disconnect(projectModel, nullptr, this, nullptr);
+    projectModel = model;
+    if (workspaceSymbolAnalysis)
         workspaceSymbolAnalysis->setProjectModel(model);
+    if (!projectModel)
+        return;
+    connect(projectModel,
+            &ProjectModel::projectChanged,
+            this,
+            &AnalysisScheduler::onProjectChanged);
+    connect(projectModel,
+            &ProjectModel::projectClosed,
+            this,
+            &AnalysisScheduler::onProjectClosed);
+    if (projectModel->isOpen())
+        onProjectChanged(projectModel->snapshot());
 }
 
 void AnalysisScheduler::setSymbolAnalyzer(SymbolAnalyzer* analyzer)
@@ -89,12 +118,14 @@ void AnalysisScheduler::setSymbolAnalyzer(SymbolAnalyzer* analyzer)
 
 void AnalysisScheduler::setOpenFileContentProvider(std::function<QString(const QString&)> provider)
 {
+    openFileContentProvider = provider;
     if (openDocumentAnalysis)
         openDocumentAnalysis->setOpenFileContentProvider(std::move(provider));
 }
 
 void AnalysisScheduler::setWorkspaceOpenProvider(std::function<bool()> provider)
 {
+    workspaceOpenProvider = provider;
     if (openDocumentAnalysis)
         openDocumentAnalysis->setWorkspaceOpenProvider(std::move(provider));
 }
@@ -107,18 +138,28 @@ void AnalysisScheduler::setWorkspaceSymbolCancelProvider(std::function<bool()> p
 
 void AnalysisScheduler::setCurrentFileProvider(std::function<QString()> provider)
 {
+    currentFileProvider = provider;
     if (workspaceSymbolAnalysis)
         workspaceSymbolAnalysis->setCurrentFileProvider(std::move(provider));
 }
 
 void AnalysisScheduler::requestWorkspaceAnalysis(const ProjectSnapshot& project)
 {
-    if (workspaceSymbolAnalysis)
-        workspaceSymbolAnalysis->requestWorkspaceAnalysis(project);
+    requestSemanticAnalysis(SemanticAnalysisReason::ExplicitRequest,
+                            SemanticChangeImpact::WorkspaceConfig,
+                            QString(),
+                            project.systemVerilogFiles,
+                            project);
 }
 
 void AnalysisScheduler::cancelWorkspaceAnalysis()
 {
     if (workspaceSymbolAnalysis)
         workspaceSymbolAnalysis->cancelWorkspaceAnalysis();
+}
+
+bool AnalysisScheduler::isSemanticAnalysisActive() const
+{
+    return workspaceSymbolAnalysis
+        && workspaceSymbolAnalysis->isWorkspaceAnalysisActive();
 }

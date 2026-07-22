@@ -11,6 +11,7 @@
 #include <QStringList>
 #include <atomic>
 #include <cstdint>
+#include <memory>
 
 enum class EffectiveValueStatus {
     Unavailable,
@@ -142,6 +143,9 @@ struct EffectiveLiteralResult {
 class EffectiveValueService
 {
 public:
+    struct PreparedFactsState;
+    struct RetiredFactsState;
+
     static EffectiveValueService* getInstance();
 
     explicit EffectiveValueService(SemanticIndex* semanticIndex = nullptr);
@@ -161,7 +165,17 @@ public:
         const QString& documentText,
         QList<EffectiveValueFact> facts,
         std::uint64_t computationRevision,
-        std::uint64_t documentRevision = 0);
+        std::uint64_t documentRevision = 0,
+        const QString& preparedContentFingerprint = QString());
+    static std::shared_ptr<PreparedFactsState> prepareDocumentFactsState(
+        QHash<QString, QList<EffectiveValueFact>> factsByFile,
+        const QHash<QString, QString>& contentsByFile,
+        const QHash<QString, QString>& contentFingerprintsByFile,
+        const QHash<QString, std::uint64_t>& documentRevisionsByFile,
+        std::uint64_t computationRevision);
+    std::shared_ptr<RetiredFactsState> installPreparedDocumentFacts(
+        std::shared_ptr<PreparedFactsState> state,
+        bool replaceAll);
     QList<EffectiveValueFact> factsForDocument(
         const QString& fileName,
         const QString& documentText,
@@ -172,6 +186,7 @@ public:
     static EffectiveLiteralResult evaluateLiteral(
         const QString& expressionText,
         bool stringLiteral = false);
+    static QString documentContentFingerprint(const QString& text);
 
     static QString stableSourceIdentity(
         const SemanticSymbolRecord& symbol);
@@ -196,7 +211,6 @@ private:
         const QStringList& affectedFiles);
     std::uint64_t requestedRevisionForDocument(
         const QString& fileName) const;
-    static QString contentFingerprint(const QString& text);
 };
 
 #endif // EFFECTIVEVALUESERVICE_H

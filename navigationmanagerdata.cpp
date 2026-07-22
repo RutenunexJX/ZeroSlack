@@ -83,7 +83,8 @@ bool NavigationManager::updateDesignHierarchyData(bool force)
     }
 
     const QByteArray structureFingerprint =
-        navigationService->designStructureFingerprint(fileScopeSet);
+        navigationService->designStructureFingerprint(fileScopeSet,
+                                                      selectedTop);
 
     if (!force
         && !caches.designStructureFingerprint.isEmpty()

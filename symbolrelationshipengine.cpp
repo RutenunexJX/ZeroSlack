@@ -2,6 +2,8 @@
 #include "semanticindex.h"
 #include "symboltaxonomy.h"
 #include <QCoreApplication>
+#include <QDir>
+#include <QFileInfo>
 #include <QThread>
 #include <QMetaObject>
 #include <algorithm>
@@ -13,6 +15,18 @@ bool recordIsInModule(const SemanticSymbolRecord& record,
 {
     return record.location.fileName == moduleRecord.location.fileName
         && record.location.startLine > moduleRecord.location.startLine;
+}
+
+QString normalizedRelationshipFileName(const QString& fileName)
+{
+    if (fileName.isEmpty())
+        return QString();
+    QString path = QDir::cleanPath(
+        QDir::fromNativeSeparators(QFileInfo(fileName).absoluteFilePath()));
+#ifdef Q_OS_WIN
+    path = path.toCaseFolded();
+#endif
+    return path;
 }
 }
 
@@ -227,9 +241,16 @@ void SymbolRelationshipEngine::replaceRelationshipsFromSnapshot(
     const QList<SemanticSymbolRecord>& symbolRecords,
     const QList<SemanticRelationship>& relationships)
 {
-    relationshipGraph.clear();
-    relationshipsByType.clear();
-    symbolsByFile.clear();
+    installPreparedRelationshipState(
+        prepareRelationshipState(symbolRecords, relationships));
+}
+
+std::shared_ptr<SymbolRelationshipEngine::PreparedRelationshipState>
+SymbolRelationshipEngine::prepareRelationshipState(
+    const QList<SemanticSymbolRecord>& symbolRecords,
+    const QList<SemanticRelationship>& relationships)
+{
+    auto state = std::make_shared<PreparedRelationshipState>();
 
     QSet<int> validHandles;
     validHandles.reserve(symbolRecords.size());
@@ -238,7 +259,8 @@ void SymbolRelationshipEngine::replaceRelationshipsFromSnapshot(
             continue;
         validHandles.insert(record.localHandle);
         if (!record.location.fileName.isEmpty()) {
-            symbolsByFile[record.location.fileName].insert(record.localHandle);
+            state->symbolsByFile[record.location.fileName].insert(
+                record.localHandle);
         }
     }
 
@@ -259,6 +281,109 @@ void SymbolRelationshipEngine::replaceRelationshipsFromSnapshot(
             continue;
         seenRelationships.insert(relationshipKey);
 
+        state->relationshipGraph[relationship.fromId].outgoingEdges.append(
+            RelationshipEdge(relationship.toId,
+                             relationship.type,
+                             relationship.evidenceText,
+                             relationship.confidence,
+                             relationship.evidenceRange));
+        state->relationshipGraph[relationship.toId].incomingEdges.append(
+            RelationshipEdge(relationship.fromId,
+                             relationship.type,
+                             relationship.evidenceText,
+                             relationship.confidence,
+                             relationship.evidenceRange));
+        state->relationshipsByType[relationship.type].append(
+            qMakePair(relationship.fromId, relationship.toId));
+    }
+
+    return state;
+}
+
+std::shared_ptr<SymbolRelationshipEngine::PreparedRelationshipState>
+SymbolRelationshipEngine::installPreparedRelationshipState(
+    std::shared_ptr<PreparedRelationshipState> state)
+{
+    if (!state)
+        return {};
+
+    auto retiredState = std::make_shared<PreparedRelationshipState>();
+    retiredState->relationshipGraph = std::move(relationshipGraph);
+    retiredState->relationshipsByType = std::move(relationshipsByType);
+    retiredState->symbolsByFile = std::move(symbolsByFile);
+    retiredState->queryCache = std::move(queryCache);
+    relationshipGraph = std::move(state->relationshipGraph);
+    relationshipsByType = std::move(state->relationshipsByType);
+    symbolsByFile = std::move(state->symbolsByFile);
+    queryCache = std::move(state->queryCache);
+    cacheValid = true;
+    emit relationshipsReplaced();
+    return retiredState;
+}
+
+void SymbolRelationshipEngine::replaceRelationshipsForFilesFromSnapshot(
+    const QList<SemanticSymbolRecord>& symbolRecords,
+    const QList<SemanticRelationship>& relationships,
+    const QStringList& changedFiles)
+{
+    QSet<QString> targets;
+    for (const QString& fileName : changedFiles) {
+        const QString normalized = normalizedRelationshipFileName(fileName);
+        if (!normalized.isEmpty())
+            targets.insert(normalized);
+    }
+    if (targets.isEmpty())
+        return;
+
+    beginUpdate();
+    QStringList oldFileKeys;
+    for (auto it = symbolsByFile.constBegin(); it != symbolsByFile.constEnd(); ++it) {
+        if (targets.contains(normalizedRelationshipFileName(it.key())))
+            oldFileKeys.append(it.key());
+    }
+    for (const QString& fileKey : oldFileKeys)
+        invalidateFileRelationships(fileKey);
+
+    QHash<int, QString> fileByHandle;
+    QSet<int> validHandles;
+    for (const SemanticSymbolRecord& record : symbolRecords) {
+        if (record.localHandle < 0)
+            continue;
+        validHandles.insert(record.localHandle);
+        const QString normalized =
+            normalizedRelationshipFileName(record.location.fileName);
+        fileByHandle.insert(record.localHandle, normalized);
+        if (targets.contains(normalized)) {
+            symbolsByFile[record.location.fileName].insert(record.localHandle);
+        }
+    }
+
+    QSet<QString> seen;
+    for (const SemanticRelationship& relationship : relationships) {
+        if (relationship.fromId < 0 || relationship.toId < 0
+            || relationship.fromId == relationship.toId
+            || !validHandles.contains(relationship.fromId)
+            || !validHandles.contains(relationship.toId)) {
+            continue;
+        }
+        const bool touchesTarget =
+            targets.contains(fileByHandle.value(relationship.fromId))
+            || targets.contains(fileByHandle.value(relationship.toId))
+            || targets.contains(normalizedRelationshipFileName(
+                relationship.evidenceRange.fileName));
+        if (!touchesTarget)
+            continue;
+        const QString key = QStringLiteral("%1:%2:%3")
+            .arg(relationship.fromId)
+            .arg(relationship.toId)
+            .arg(static_cast<int>(relationship.type));
+        if (seen.contains(key)
+            || hasRelationship(relationship.fromId,
+                               relationship.toId,
+                               relationship.type)) {
+            continue;
+        }
+        seen.insert(key);
         relationshipGraph[relationship.fromId].outgoingEdges.append(
             RelationshipEdge(relationship.toId,
                              relationship.type,
@@ -275,8 +400,74 @@ void SymbolRelationshipEngine::replaceRelationshipsFromSnapshot(
                        relationship.toId,
                        relationship.type);
     }
+    endUpdate();
+    emit relationshipsReplaced();
+}
 
-    invalidateCache();
+void SymbolRelationshipEngine::replacePreparedRelationshipsForFiles(
+    const QHash<QString, QSet<int>>& symbolHandlesByFile,
+    const QList<SemanticRelationship>& relationships,
+    const QStringList& changedFiles)
+{
+    QSet<QString> targets;
+    for (const QString& fileName : changedFiles) {
+        const QString normalized = normalizedRelationshipFileName(fileName);
+        if (!normalized.isEmpty())
+            targets.insert(normalized);
+    }
+    if (targets.isEmpty())
+        return;
+
+    beginUpdate();
+    QStringList oldFileKeys;
+    for (auto it = symbolsByFile.constBegin(); it != symbolsByFile.constEnd(); ++it) {
+        if (targets.contains(normalizedRelationshipFileName(it.key())))
+            oldFileKeys.append(it.key());
+    }
+    for (const QString& fileKey : std::as_const(oldFileKeys))
+        invalidateFileRelationships(fileKey);
+
+    for (auto it = symbolHandlesByFile.constBegin();
+         it != symbolHandlesByFile.constEnd(); ++it) {
+        if (targets.contains(normalizedRelationshipFileName(it.key())))
+            symbolsByFile.insert(it.key(), it.value());
+    }
+
+    QSet<QString> seen;
+    seen.reserve(relationships.size());
+    for (const SemanticRelationship& relationship : relationships) {
+        if (relationship.fromId < 0 || relationship.toId < 0
+            || relationship.fromId == relationship.toId) {
+            continue;
+        }
+        const QString key = QStringLiteral("%1:%2:%3")
+            .arg(relationship.fromId)
+            .arg(relationship.toId)
+            .arg(static_cast<int>(relationship.type));
+        if (seen.contains(key)
+            || hasRelationship(relationship.fromId,
+                               relationship.toId,
+                               relationship.type)) {
+            continue;
+        }
+        seen.insert(key);
+        relationshipGraph[relationship.fromId].outgoingEdges.append(
+            RelationshipEdge(relationship.toId,
+                             relationship.type,
+                             relationship.evidenceText,
+                             relationship.confidence,
+                             relationship.evidenceRange));
+        relationshipGraph[relationship.toId].incomingEdges.append(
+            RelationshipEdge(relationship.fromId,
+                             relationship.type,
+                             relationship.evidenceText,
+                             relationship.confidence,
+                             relationship.evidenceRange));
+        addToTypeIndex(relationship.fromId,
+                       relationship.toId,
+                       relationship.type);
+    }
+    endUpdate();
     emit relationshipsReplaced();
 }
 

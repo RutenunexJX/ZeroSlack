@@ -3,6 +3,7 @@
 #include "activitylogservice.h"
 #include "analysisprogresscoordinator.h"
 #include "analysisscheduler.h"
+#include "navigationmanager.h"
 #include "workspacemanager.h"
 
 #include <QFileInfo>
@@ -73,6 +74,49 @@ void AnalysisCoordinator::connectSchedulerSignals()
                 if (problemsRefreshHandler)
                     problemsRefreshHandler(fileName);
             });
+    connect(scheduler,
+            &AnalysisScheduler::semanticAnalysisTelemetry,
+            this,
+            [this](const SemanticAnalysisTelemetry& telemetry) {
+                dependencies.setSemanticAnalysisContext(telemetry);
+                ActivityLogService::getInstance()->append(
+                    QStringLiteral("Semantic analysis"),
+                    ActivityLogLevel::Info,
+                    QStringLiteral(
+                        "stage=%1 reason=%2 impact=%3 files=%4 changedFiles=%5 "
+                        "workerMs=%6 publicationMs=%7 uiRefreshMs=%8 slang=%9 %10")
+                        .arg(semanticAnalysisStageName(telemetry.stage),
+                             semanticAnalysisReasonName(telemetry.reason),
+                             semanticChangeImpactName(telemetry.impact))
+                        .arg(telemetry.files.size())
+                        .arg(telemetry.changedFiles.join(','))
+                        .arg(telemetry.workerMs)
+                        .arg(telemetry.publicationMs)
+                        .arg(telemetry.uiRefreshMs)
+                        .arg(telemetry.slangInvoked
+                                 ? QStringLiteral("yes")
+                                 : QStringLiteral("no"))
+                        .arg(telemetry.detail));
+            });
+    if (NavigationManager* navigation =
+            dependencies.navigationManagerObject()) {
+        connect(navigation,
+                &NavigationManager::navigationTelemetry,
+                this,
+                [](const SemanticAnalysisTelemetry& telemetry) {
+                    ActivityLogService::getInstance()->append(
+                        QStringLiteral("Semantic analysis"),
+                        ActivityLogLevel::Info,
+                        QStringLiteral(
+                            "stage=navigation reason=%1 impact=%2 files=%3 "
+                            "uiRefreshMs=%4 %5")
+                            .arg(semanticAnalysisReasonName(telemetry.reason),
+                                 semanticChangeImpactName(telemetry.impact))
+                            .arg(telemetry.files.size())
+                            .arg(telemetry.uiRefreshMs)
+                            .arg(telemetry.detail));
+                });
+    }
 }
 
 void AnalysisCoordinator::connectProgressSignals()

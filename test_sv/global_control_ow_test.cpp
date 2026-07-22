@@ -430,18 +430,14 @@ int main(int argc, char** argv)
     if (failures != 0)
         return failures;
 
-    // The teardown regression intentionally holds both workspace workers in
-    // cancellation gates. Reserve two global-pool slots for this test only,
-    // then restore the process-wide setting after every worker has joined.
+    // The teardown regression intentionally holds the unified semantic worker
+    // in a cancellation gate, then restores the process-wide setting after
+    // the worker has joined.
     ScopedThreadPoolMinimum threadPoolMinimum(2);
 
     const auto symbolGateEntered =
         std::make_shared<std::atomic_bool>(false);
     const auto symbolGateExited =
-        std::make_shared<std::atomic_bool>(false);
-    const auto relationshipGateEntered =
-        std::make_shared<std::atomic_bool>(false);
-    const auto relationshipGateExited =
         std::make_shared<std::atomic_bool>(false);
 
     {
@@ -490,13 +486,7 @@ int main(int argc, char** argv)
     int scanFinishedAttempt = -1;
     int symbolStartedAttempt = -1;
     int symbolFinishedAttempt = -1;
-    int relationshipStartedAttempt = -1;
-    int relationshipFinishedAttempt = -1;
-    std::uint64_t relationshipStartedGeneration = 0;
-    std::uint64_t relationshipFinishedGeneration = 0;
-    QString relationshipStartedProjectKey;
     int symbolFinishCount = 0;
-    int relationshipFinishCount = 0;
 
     QObject::connect(window.workspaceManager.get(),
                      &WorkspaceManager::workspaceScanStarted,
@@ -531,47 +521,6 @@ int main(int argc, char** argv)
                              symbolFinishedAttempt = workspaceAttempt;
                          }
                      });
-    QObject::connect(window.analysisScheduler.get(),
-                     &AnalysisScheduler::workspaceRelationshipAnalysisStarted,
-                     &window,
-                     [&](const ProjectSnapshot& project, int) {
-                          if (normalizedPath(project.workspaceRoot)
-                              == expectedWorkspaceRoot) {
-                              relationshipStartedAttempt = workspaceAttempt;
-                              RelationshipAnalysisController* controller =
-                                  window.analysisScheduler
-                                      ? window.analysisScheduler
-                                            ->relationshipAnalysis
-                                      : nullptr;
-                              relationshipStartedGeneration =
-                                  controller
-                                      ? controller
-                                            ->activeWorkspaceRequestGeneration
-                                      : 0;
-                              relationshipStartedProjectKey =
-                                  controller
-                                      ? controller->activeWorkspaceProjectKey
-                                      : QString();
-                          }
-                      });
-    QObject::connect(
-        window.analysisScheduler.get(),
-        &AnalysisScheduler::workspaceRelationshipAnalysisFinished,
-        &window,
-        [&](const WorkspaceRelationshipAnalysisResult& result) {
-            ++relationshipFinishCount;
-            if (relationshipStartedAttempt == workspaceAttempt
-                && result.requestGeneration == relationshipStartedGeneration
-                && result.requestGeneration > relationshipFinishedGeneration
-                && !result.projectKey.isEmpty()
-                && result.projectKey == relationshipStartedProjectKey
-                && normalizedPath(window.workspaceManager->getWorkspacePath())
-                       == expectedWorkspaceRoot) {
-                relationshipFinishedAttempt = workspaceAttempt;
-                relationshipFinishedGeneration = result.requestGeneration;
-            }
-        });
-
     const GlobalControlItem owOne = openOneWorkspaceItem();
 
     window.globalControlCoordinator->dispatch(owOne);
@@ -603,10 +552,6 @@ int main(int argc, char** argv)
         scanFinishedAttempt = -1;
         symbolStartedAttempt = -1;
         symbolFinishedAttempt = -1;
-        relationshipStartedAttempt = -1;
-        relationshipFinishedAttempt = -1;
-        relationshipStartedGeneration = 0;
-        relationshipStartedProjectKey.clear();
 
         window.globalControlCoordinator->dispatch(owOne);
         check(QString::fromLatin1(label) + QStringLiteral(" selector called"),
@@ -634,23 +579,13 @@ int main(int argc, char** argv)
               waitStage(
                   [&]() { return symbolFinishedAttempt == workspaceAttempt; },
                   600000));
-        check(QString::fromLatin1(label)
-                  + QStringLiteral(" relationship analysis starts"),
-              waitStage([&]() {
-                  return relationshipStartedAttempt == workspaceAttempt;
-              }, 10000));
-        check(QString::fromLatin1(label)
-                  + QStringLiteral(" relationship analysis completes"),
-              waitStage([&]() {
-                  return relationshipFinishedAttempt == workspaceAttempt;
-              }, 600000));
         const SemanticSymbolRecord knownRecord =
             semanticRecordNamed(workspace, knownSymbolName);
         check(QString::fromLatin1(label)
                   + QStringLiteral(" known semantic record is queryable"),
               knownRecord.isValid());
         check(QString::fromLatin1(label)
-                  + QStringLiteral(" relationship results are queryable"),
+                  + QStringLiteral(" integrated relationship results are queryable"),
               relationshipResultsQueryableFor(workspace, knownRecord));
         check(QString::fromLatin1(label) + QStringLiteral(" window survives"),
               windowGuard && window.isVisible());
@@ -947,7 +882,6 @@ int main(int argc, char** argv)
     const int workspaceCountBeforeRepeat =
         window.workspaceManager->workspaceEntries().size();
     const int symbolFinishCountBeforeRepeat = symbolFinishCount;
-    const int relationshipFinishCountBeforeRepeat = relationshipFinishCount;
     window.globalControlCoordinator->dispatch(owOne);
     QCoreApplication::processEvents(QEventLoop::AllEvents, 500);
     check("repeated ow 1 calls injected selector", selectorCalls == 3);
@@ -959,8 +893,8 @@ int main(int argc, char** argv)
               == normalizedPath(newWorkspace));
     check("repeated ow 1 does not restart completed symbol analysis",
           symbolFinishCount == symbolFinishCountBeforeRepeat);
-    check("repeated ow 1 does not restart completed relationship analysis",
-          relationshipFinishCount == relationshipFinishCountBeforeRepeat);
+    check("repeated ow 1 does not launch a second semantic transaction",
+          symbolFinishCount == symbolFinishCountBeforeRepeat);
     check("window survives repeated ow 1",
           windowGuard && window.isVisible());
     check("semantic records remain queryable after repeated ow 1",
@@ -974,8 +908,6 @@ int main(int argc, char** argv)
     ++workspaceAttempt;
     expectedWorkspaceRoot = normalizedPath(hugeWorkspace);
     symbolStartedAttempt = -1;
-    relationshipStartedAttempt = -1;
-    relationshipFinishedAttempt = -1;
     window.analysisScheduler->symbolAnalyzer
         ->setWorkspaceWorkerStartGateForTesting(
             [symbolGateEntered, symbolGateExited](
@@ -984,17 +916,6 @@ int main(int argc, char** argv)
                 while (!isCancelled())
                     QThread::msleep(1);
                 symbolGateExited->store(true, std::memory_order_release);
-            });
-    window.analysisScheduler->relationshipAnalysis
-        ->setWorkspaceWorkerStartGateForTesting(
-            [relationshipGateEntered, relationshipGateExited](
-                const std::function<bool()>& isCancelled) {
-                relationshipGateEntered->store(true,
-                                                std::memory_order_release);
-                while (!isCancelled())
-                    QThread::msleep(1);
-                relationshipGateExited->store(true,
-                                               std::memory_order_release);
             });
     if (window.analysisScheduler->workspaceSymbolAnalysis) {
         window.analysisScheduler->workspaceSymbolAnalysis
@@ -1017,24 +938,6 @@ int main(int argc, char** argv)
                          ->workspaceAnalysisWatcher
                   && window.analysisScheduler->symbolAnalyzer
                          ->workspaceAnalysisWatcher->isRunning());
-    window.analysisScheduler->requestWorkspaceRelationshipAnalysis(
-        window.workspaceManager->projectSnapshot());
-    check("teardown stress relationship analysis restarts",
-          waitUntil([&]() {
-              return relationshipStartedAttempt == workspaceAttempt;
-           }, 3000));
-    check("teardown stress relationship worker enters deterministic gate",
-          waitUntil([&]() {
-              return relationshipGateEntered->load(
-                  std::memory_order_acquire);
-          }, 10000));
-    check("relationship worker remains active at MainWindow teardown",
-          relationshipGateEntered->load(std::memory_order_acquire)
-              && window.analysisScheduler->relationshipAnalysis
-              && window.analysisScheduler->relationshipAnalysis
-                     ->workspaceWatcher
-              && window.analysisScheduler->relationshipAnalysis
-                     ->workspaceWatcher->isRunning());
     check("window is alive immediately before teardown",
           windowGuard && window.isVisible());
 
@@ -1048,8 +951,6 @@ int main(int argc, char** argv)
 
     check("MainWindow shutdown cancels deterministic symbol gate",
           symbolGateExited->load(std::memory_order_acquire));
-    check("MainWindow shutdown cancels deterministic relationship gate",
-          relationshipGateExited->load(std::memory_order_acquire));
     check("semantic runtime detaches relationship engine at teardown",
           SemanticIndex::getInstance()->relationshipEngine() == nullptr);
 

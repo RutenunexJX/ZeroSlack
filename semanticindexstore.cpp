@@ -553,7 +553,14 @@ SemanticAnalysisBandMetadata SemanticIndex::analysisBandForFile(
 SemanticAnalysisBandReport SemanticIndex::analysisBandReport(
     const QString& fileName) const
 {
+    if (fileName.isEmpty() && m_preparedAnalysisBandReportValid)
+        return m_preparedAnalysisBandReport;
     return semanticAnalysisBandReportForRecords(getSymbolRecords(fileName));
+}
+
+bool SemanticIndex::hasPreparedAnalysisBandReport() const
+{
+    return m_preparedAnalysisBandReportValid;
 }
 
 SemanticSymbolRecord SemanticIndex::recordWithAnalysisBand(
@@ -576,6 +583,7 @@ void SemanticIndex::updateSymbolRecordsForFile(
     const QList<SemanticSymbolRecord>& records,
     const QString& content)
 {
+    m_snapshotAuthoritative = false;
     replaceNativeSymbolRecordsForFile(fileName,
                                       records,
                                       content,
@@ -593,6 +601,7 @@ void SemanticIndex::updateSymbolRecordsForFiles(
 {
     if (updates.isEmpty())
         return;
+    m_snapshotAuthoritative = false;
 
     bool requiresIndexRebuild = false;
     for (const SemanticFileSymbolUpdate& update : updates) {
@@ -626,6 +635,10 @@ void SemanticIndex::updateSymbolRecordsForFiles(
 QList<SemanticSymbolRecord> SemanticIndex::getSymbolRecords(
     const QString& fileName) const
 {
+    if (m_snapshotAuthoritative && m_snapshot) {
+        return recordsWithAnalysisBands(
+            m_snapshot->getSymbolRecords(fileName));
+    }
     const QList<SemanticSymbolRecord> nativeRecords = nativeSymbolRecords(fileName);
     if (!fileName.isEmpty() && hasNativeFileCoverage(fileName))
         return recordsWithAnalysisBands(nativeRecords);
@@ -665,6 +678,10 @@ QList<SemanticSymbolRecord> SemanticIndex::getSymbolRecordsByName(
 {
     if (name.isEmpty())
         return {};
+    if (m_snapshotAuthoritative && m_snapshot) {
+        return recordsWithAnalysisBands(
+            m_snapshot->getSymbolRecordsByName(name));
+    }
 
     QList<SemanticSymbolRecord> records;
     if (m_snapshot) {
@@ -683,6 +700,10 @@ QList<SemanticSymbolRecord> SemanticIndex::getSymbolRecordsByName(
 QList<SemanticSymbolRecord> SemanticIndex::getSymbolRecordsByOwner(
     const QString& ownerName) const
 {
+    if (m_snapshotAuthoritative && m_snapshot) {
+        return recordsWithAnalysisBands(
+            m_snapshot->getSymbolRecordsByOwner(ownerName));
+    }
     QList<SemanticSymbolRecord> records;
     if (m_snapshot) {
         records = recordsWithAnalysisBands(
@@ -700,6 +721,10 @@ QList<SemanticSymbolRecord> SemanticIndex::getSymbolRecordsByOwner(
 QList<SemanticSymbolRecord> SemanticIndex::getSymbolRecordsByDeclarationKind(
     SymbolTaxonomy::DeclarationKind declarationKind) const
 {
+    if (m_snapshotAuthoritative && m_snapshot) {
+        return recordsWithAnalysisBands(
+            m_snapshot->getSymbolRecordsByDeclarationKind(declarationKind));
+    }
     QList<SemanticSymbolRecord> records;
     if (m_snapshot) {
         records = recordsWithAnalysisBands(
@@ -720,6 +745,10 @@ SemanticSymbolRecord SemanticIndex::getSymbolRecordByStableKey(
 {
     if (!key.isValid())
         return {};
+    if (m_snapshotAuthoritative && m_snapshot) {
+        return recordWithAnalysisBand(
+            m_snapshot->getSymbolRecordByStableKey(key));
+    }
 
     const SemanticSymbolRecord nativeRecord =
         nativeSymbolRecordByStableKey(key);
@@ -744,6 +773,8 @@ SemanticSymbolRecord SemanticIndex::getSymbolRecordByStableKey(
 
 QString SemanticIndex::getCachedFileContent(const QString& fileName) const
 {
+    if (m_snapshotAuthoritative && m_snapshot)
+        return m_snapshot->getCachedFileContent(fileName);
     if (hasNativeCachedFileContent(fileName))
         return nativeCachedFileContent(fileName);
 

@@ -3787,8 +3787,12 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     expectBool("workspace publishes dirty open document overlay",
                dirtyWorkspaceFinished && dirtyWorkspaceFilesAnalyzed == 1,
                true);
-    expectBool("workspace preserves dirty open document symbols",
-               dirtySnapshotHasOpen && !dirtySnapshotHasDisk,
+    expectBool("workspace analysis keeps unsaved overlay stale and publishes disk revision",
+               !dirtySnapshotHasOpen
+                   && dirtySnapshotHasDisk
+                   && dirtyWorkspaceScheduler
+                          .semanticStatus(dirtyWorkspaceFilePath)
+                          .state == DocumentSemanticState::Dirty,
                true);
     if (workspaceMergePreviousSnapshot)
         SemanticIndex::getInstance()->setSnapshot(workspaceMergePreviousSnapshot);
@@ -3827,13 +3831,17 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     dirtyExternalAnalyzer.analyzeFileContent(
         dirtyExternalPath,
         dirtyExternalEditor.toPlainText());
-    int dirtyExternalAnalysisCount = 0;
-    QObject::connect(&dirtyExternalAnalyzer,
-                     &SymbolAnalyzer::analysisCompleted,
-                     [&](const QString& fileName, int) {
-                         if (fileName == dirtyExternalPath)
-                             ++dirtyExternalAnalysisCount;
-                     });
+    int dirtyExternalRequestCount = 0;
+    QObject::connect(
+        &dirtyExternalScheduler,
+        &AnalysisScheduler::semanticAnalysisTelemetry,
+        [&](const SemanticAnalysisTelemetry& telemetry) {
+            if (telemetry.stage == SemanticAnalysisStage::Scheduling
+                && telemetry.reason
+                       == SemanticAnalysisReason::ExternalFileChange) {
+                ++dirtyExternalRequestCount;
+            }
+        });
     dirtyExternalScheduler.handleExternalFileChanged(dirtyExternalPath, 10);
     QEventLoop dirtyExternalLoop;
     QTimer::singleShot(250, &dirtyExternalLoop, &QEventLoop::quit);
@@ -3853,7 +3861,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
         }
     }
     expectBool("external change skips dirty open document analysis",
-               dirtyExternalAnalysisCount == 0,
+               dirtyExternalRequestCount == 0,
                true);
     expectBool("external change preserves dirty open document symbols",
                dirtyExternalSnapshotHasOpen && !dirtyExternalSnapshotHasDisk,
@@ -3992,10 +4000,10 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                requestedRemainingDocumentContent, false);
     expectBool("scheduler skips closed document fallback content on close",
                requestedClosedDocumentContent, false);
-    expectBool("scheduler reanalyzes open documents on close",
-               documentCloseAnalysisName == QStringLiteral("open_tabs"), true);
-    expectBool("scheduler reanalyzes remaining document symbols on close",
-               documentCloseSymbols > 0, true);
+    expectBool("scheduler close creates no semantic analysis request",
+               documentCloseAnalysisName.isEmpty(), true);
+    expectBool("scheduler close leaves remaining document snapshot unchanged",
+               documentCloseSymbols < 0, true);
     if (documentClosePreviousSnapshot)
         SemanticIndex::getInstance()->setSnapshot(documentClosePreviousSnapshot);
     else
@@ -4048,7 +4056,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                              documentSaveRelationshipFinished = true;
                      });
     documentSaveModel.markSaved(&documentSaveEditor);
-    QTimer::singleShot(500, &documentSaveLoop, &QEventLoop::quit);
+    QTimer::singleShot(5000, &documentSaveLoop, &QEventLoop::quit);
     documentSaveLoop.exec();
     QApplication::processEvents();
     expectBool("scheduler save refreshes symbols",
@@ -4250,6 +4258,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
             &automaticRelationshipBuilder);
 
         bool automaticRelationshipStarted = false;
+        bool automaticSemanticFinished = false;
         QEventLoop automaticRelationshipLoop;
         QObject::connect(
             &automaticRelationshipScheduler,
@@ -4257,6 +4266,14 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
             &automaticRelationshipLoop,
             [&](const ProjectSnapshot&, int) {
                 automaticRelationshipStarted = true;
+                automaticRelationshipLoop.quit();
+            });
+        QObject::connect(
+            &automaticRelationshipScheduler,
+            &AnalysisScheduler::workspaceSymbolAnalysisFinished,
+            &automaticRelationshipLoop,
+            [&](const ProjectSnapshot&, int, int) {
+                automaticSemanticFinished = true;
                 automaticRelationshipLoop.quit();
             });
 
@@ -4267,14 +4284,17 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
         automaticRelationshipProject.systemVerilogFiles = warmupFiles;
         automaticRelationshipProject.includeDirs = {
             automaticRelationshipProject.workspaceRoot};
-        QTimer::singleShot(10000,
+        QTimer::singleShot(30000,
                            &automaticRelationshipLoop,
                            &QEventLoop::quit);
         automaticRelationshipScheduler.requestWorkspaceAnalysis(
             automaticRelationshipProject);
         automaticRelationshipLoop.exec();
-        expectBool("large workspace starts automatic relationship analysis",
-                   automaticRelationshipStarted,
+        expectBool("large workspace completes integrated semantic transaction",
+                   automaticSemanticFinished,
+                   true);
+        expectBool("large workspace starts no duplicate relationship pass",
+                   !automaticRelationshipStarted,
                    true);
         automaticRelationshipScheduler.cancelWorkspaceAnalysis();
         automaticRelationshipScheduler.cancelWorkspaceRelationshipAnalysis();

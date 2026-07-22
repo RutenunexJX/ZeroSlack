@@ -1,6 +1,7 @@
 #include "symbolanalyzer.h"
 
 #include "semanticindex.h"
+#include "semanticindexsnapshot.h"
 #include "effectivevalueservice.h"
 
 #include <QDir>
@@ -37,6 +38,45 @@ QList<SemanticSymbolRecord> recordsWithRevisions(
 }
 
 } // namespace
+
+void SymbolAnalyzer::retirePublicationState(
+    SemanticPublicationRetirementPayload payload)
+{
+    if (payload.isEmpty())
+        return;
+    if (!publicationRetirementQueueOpen) {
+        rejectedPublicationRetirements.fetch_add(1,
+                                                 std::memory_order_acq_rel);
+        Q_ASSERT_X(false,
+                   "SymbolAnalyzer::retirePublicationState",
+                   "publication retirement submitted after shutdown seal");
+        return;
+    }
+    const PublicationRetirementGateForTesting gate =
+        publicationRetirementGateForTesting;
+    const std::shared_ptr<std::atomic<int>> pending =
+        pendingPublicationRetirements;
+    publicationRetirementEnqueueCount.fetch_add(1,
+                                                std::memory_order_acq_rel);
+    pending->fetch_add(1, std::memory_order_acq_rel);
+    semanticRetirementThreadPool.start(
+        [payload = std::move(payload),
+         gate,
+         pending]() mutable {
+            if (gate)
+                gate();
+            payload.effectiveFacts.reset();
+            payload.semanticIndex.relationshipState.reset();
+            payload.semanticIndex.snapshot.reset();
+            pending->fetch_sub(1, std::memory_order_acq_rel);
+        },
+        -1);
+}
+
+void SymbolAnalyzer::waitForPublicationRetirements()
+{
+    semanticRetirementThreadPool.waitForDone();
+}
 
 void SymbolAnalyzer::publishOpenDocumentResults(
     const QStringList& fileNames,
@@ -230,12 +270,18 @@ void SymbolAnalyzer::startWorkspacePublication(
     int totalFiles,
     const QString& workspacePath)
 {
+    if (shutdownStarted)
+        return;
     cancelWorkspacePublication();
 
-    QStringList publicationFiles;
-    publicationFiles.reserve(result.files.size());
-    for (const WorkspaceFileAnalysis& fileResult : result.files)
-        publicationFiles.append(fileResult.fileName);
+    QStringList publicationFiles = result.preparedSnapshot
+        ? result.incrementalPlan.affectedFiles
+        : QStringList{};
+    if (!result.preparedSnapshot) {
+        publicationFiles.reserve(result.files.size());
+        for (const WorkspaceFileAnalysis& fileResult : result.files)
+            publicationFiles.append(fileResult.fileName);
+    }
     if (!EffectiveValueService::getInstance()->isComputationCurrent(
             publicationFiles, result.analysisRevision)) {
         emit workspaceAnalysisExpired();
@@ -274,17 +320,25 @@ void SymbolAnalyzer::cancelWorkspacePublication()
 
 void SymbolAnalyzer::publishPendingWorkspaceAnalysis()
 {
+    if (shutdownStarted) {
+        cancelWorkspacePublication();
+        return;
+    }
     if (!pendingWorkspacePublication) {
         if (workspacePublicationTimer)
             workspacePublicationTimer->stop();
         return;
     }
 
-    QStringList publicationFiles;
-    publicationFiles.reserve(pendingWorkspacePublication->files.size());
-    for (const WorkspaceFileAnalysis& fileResult :
-         std::as_const(pendingWorkspacePublication->files)) {
-        publicationFiles.append(fileResult.fileName);
+    QStringList publicationFiles = pendingWorkspacePublication->preparedSnapshot
+        ? pendingWorkspacePublication->incrementalPlan.affectedFiles
+        : QStringList{};
+    if (!pendingWorkspacePublication->preparedSnapshot) {
+        publicationFiles.reserve(pendingWorkspacePublication->files.size());
+        for (const WorkspaceFileAnalysis& fileResult :
+             std::as_const(pendingWorkspacePublication->files)) {
+            publicationFiles.append(fileResult.fileName);
+        }
     }
     if (!EffectiveValueService::getInstance()->isComputationCurrent(
             publicationFiles,
@@ -293,6 +347,84 @@ void SymbolAnalyzer::publishPendingWorkspaceAnalysis()
         emit workspaceAnalysisExpired();
         return;
     }
+
+    if (pendingWorkspacePublication->preparedSnapshot) {
+        const WorkspaceAnalysisResult& result =
+            *pendingWorkspacePublication;
+        const QStringList affectedFiles = result.incrementalPlan.affectedFiles;
+        const auto snapshot = result.preparedSnapshot;
+        QElapsedTimer publicationTimer;
+        publicationTimer.start();
+        QElapsedTimer stageTimer;
+        stageTimer.start();
+        EffectiveValueService* values = EffectiveValueService::getInstance();
+        std::shared_ptr<EffectiveValueService::RetiredFactsState>
+            retiredFacts = values->installPreparedDocumentFacts(
+            result.preparedEffectiveFactsState,
+            result.incrementalPlan.authoritativeWorkspaceReplace);
+        const qint64 effectiveFactsMs = stageTimer.elapsed();
+        stageTimer.restart();
+        SemanticIndexRetirementPayload retiredIndex =
+            SemanticIndex::getInstance()->installPreparedSnapshot(
+            snapshot,
+            affectedFiles,
+            result.preparedRelationshipHandlesByFile,
+            result.preparedRelationships,
+            result.relationshipDeltaPrepared,
+            result.preparedRelationshipState,
+            result.preparedAnalysisBandReport);
+        SemanticPublicationRetirementPayload retirement;
+        retirement.semanticIndex = std::move(retiredIndex);
+        retirement.effectiveFacts = std::move(retiredFacts);
+        retirePublicationState(std::move(retirement));
+        if (result.dependencyGraph.isValidFor(result.request.project))
+            semanticDependencyGraph = result.dependencyGraph;
+        const qint64 snapshotInstallMs = stageTimer.elapsed();
+        const qint64 publicationMs = publicationTimer.elapsed();
+        const int totalSymbols = result.totalSymbols;
+        const int totalFiles = pendingWorkspacePublicationTotalFiles;
+        const QString workspacePath = pendingWorkspacePublicationPath;
+        const QString completionFile = result.request.triggerFile.isEmpty()
+            ? workspacePath
+            : result.request.triggerFile;
+
+        SemanticAnalysisTelemetry stageTelemetry;
+        stageTelemetry.generation = result.request.generation;
+        stageTelemetry.stage = SemanticAnalysisStage::Publication;
+        stageTelemetry.reason = result.request.reason;
+        stageTelemetry.impact = result.incrementalPlan.impact;
+        stageTelemetry.files = affectedFiles;
+        stageTelemetry.changedFiles = result.incrementalPlan.changedFiles;
+        stageTelemetry.workerMs = result.workerElapsedMs;
+        stageTelemetry.publicationMs = publicationMs;
+        stageTelemetry.effectiveFactsMs = effectiveFactsMs;
+        stageTelemetry.snapshotInstallMs = snapshotInstallMs;
+        stageTelemetry.slangInvoked = result.slangInvoked;
+        stageTelemetry.detail = QStringLiteral(
+            "publish changedFiles=%1 effectiveFactsMs=%2 snapshotInstallMs=%3")
+                                    .arg(affectedFiles.join(','))
+                                    .arg(effectiveFactsMs)
+                                    .arg(snapshotInstallMs);
+        emit semanticAnalysisTelemetry(stageTelemetry);
+        emitWorkspaceAnalysisTelemetry(workspacePath,
+                                       result,
+                                       totalFiles,
+                                       affectedFiles.size(),
+                                       publicationMs,
+                                       publicationMs,
+                                       0);
+        cancelWorkspacePublication();
+
+        if (!affectedFiles.isEmpty()) {
+            emit batchProgress(affectedFiles.size(),
+                               totalFiles,
+                               affectedFiles.constLast());
+        }
+        emit batchAnalysisCompleted(affectedFiles.size(), totalSymbols);
+        emit analysisCompleted(completionFile, totalSymbols);
+        return;
+    }
+
     SemanticIndex* semanticIndex = SemanticIndex::getInstance();
     QList<SemanticFileSymbolUpdate> updates;
     updates.reserve(pendingWorkspacePublication->files.size());

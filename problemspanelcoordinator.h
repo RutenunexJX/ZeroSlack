@@ -30,6 +30,7 @@ public:
     QLabel* summaryLabel() const { return diagnosticSummaryLabel; }
     QLabel* stateLabel() const { return diagnosticStateLabel; }
     bool showsCurrentFileScope() const;
+    int updateInvocationCount() const { return updateInvocations; }
 
 private:
     QDockWidget* problemsDock = nullptr;
@@ -41,6 +42,7 @@ private:
     QLabel* diagnosticStateLabel = nullptr;
     QString lastDiagnosticActivityMessage;
     QString externalAnalysisState;
+    int updateInvocations = 0;
 
     std::function<QString()> currentFileProvider;
     std::function<QStringList()> workspaceFilesProvider;

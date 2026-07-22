@@ -7,16 +7,20 @@
 #include <QHash>
 #include <QList>
 #include <QSet>
+#include <QThreadPool>
 #include <QVector>
 #include <cstdint>
 #include <atomic>
 #include <functional>
 #include <memory>
 #include "effectivevalueservice.h"
+#include "semanticanalysisrequest.h"
+#include "semanticdependencygraph.h"
 #include "projectmodel.h"
 #include "semanticindex.h"
 
 class WorkspaceManager;
+class SemanticIndexSnapshot;
 class QTimer;
 template <typename T>
 class QFutureWatcher;
@@ -48,6 +52,26 @@ struct WorkspaceAnalysisResult {
     qint64 symbolExtractionMs = 0;
     qint64 resultAssemblyMs = 0;
     qint64 diagnosticsExtractionMs = 0;
+    qint64 relationshipExtractionMs = 0;
+    qint64 relationshipBuildMs = 0;
+    qint64 relationshipStateBuildMs = 0;
+    SemanticAnalysisRequest request;
+    IncrementalAnalysisPlan incrementalPlan;
+    SemanticDependencyGraph dependencyGraph;
+    std::shared_ptr<const SemanticIndexSnapshot> preparedSnapshot;
+    QHash<QString, QList<EffectiveValueFact>> effectiveFactsByFile;
+    QHash<QString, QString> effectiveContentFingerprintsByFile;
+    std::shared_ptr<EffectiveValueService::PreparedFactsState>
+        preparedEffectiveFactsState;
+    SemanticAnalysisBandReport preparedAnalysisBandReport;
+    QHash<QString, QSet<int>> preparedRelationshipHandlesByFile;
+    QList<SemanticRelationship> preparedRelationships;
+    std::shared_ptr<
+        SymbolRelationshipEngine::PreparedRelationshipState>
+        preparedRelationshipState;
+    bool relationshipDeltaPrepared = false;
+    QString error;
+    bool slangInvoked = false;
 };
 
 struct WorkspaceAnalysisTelemetry {
@@ -84,6 +108,16 @@ struct FileAnalysisResult {
     bool cancelled = false;
 };
 
+struct SemanticPublicationRetirementPayload {
+    SemanticIndexRetirementPayload semanticIndex;
+    std::shared_ptr<EffectiveValueService::RetiredFactsState> effectiveFacts;
+
+    bool isEmpty() const
+    {
+        return semanticIndex.isEmpty() && !effectiveFacts;
+    }
+};
+
 class SymbolAnalyzer : public QObject
 {
     Q_OBJECT
@@ -91,6 +125,7 @@ class SymbolAnalyzer : public QObject
 public:
     using WorkspaceWorkerStartGateForTesting =
         std::function<void(const std::function<bool()>& isCancelled)>;
+    using PublicationRetirementGateForTesting = std::function<void()>;
 
     explicit SymbolAnalyzer(QObject *parent = nullptr);
     ~SymbolAnalyzer();
@@ -103,6 +138,7 @@ public:
         const ProjectSnapshot& project,
         std::function<bool()> isCancelled = nullptr,
         const QList<OpenDocumentContent>& openDocuments = {});
+    void startSemanticAnalysisAsync(const SemanticAnalysisRequest& request);
     void analyzeFile(const QString& filePath);
     void analyzeFileContent(
         const QString& fileName,
@@ -121,11 +157,19 @@ public:
     // QThreadPool cannot leave a queued worker behind a blocked one.
     void requestCancelAllAnalyses();
     void cancelAllAnalysesAndWait();
+    // Terminal shutdown. Closes every analysis / publication entry before
+    // joining workers and the retirement pool; the analyzer cannot be reused.
+    void shutdown();
     void cancelWorkspaceAnalysisAndInvalidate();
     // Test-only gate. Runs on the worker thread and must return once the
     // supplied cancellation predicate becomes true.
     void setWorkspaceWorkerStartGateForTesting(
         WorkspaceWorkerStartGateForTesting gate);
+    void setPublicationRetirementGateForTesting(
+        PublicationRetirementGateForTesting gate);
+    int pendingPublicationRetirementsForTesting() const;
+    int publicationRetirementEnqueueCountForTesting() const;
+    int rejectedPublicationRetirementsForTesting() const;
 
     // Utility
     bool hasSignificantChanges(const QString& oldContent, const QString& newContent) const;
@@ -138,6 +182,10 @@ signals:
     void batchProgress(int filesDone, int totalFiles, const QString& currentFileName);
     void workspaceAnalysisExpired();
     void workspaceAnalysisTelemetry(const WorkspaceAnalysisTelemetry& telemetry);
+    void semanticAnalysisPlanPrepared(const IncrementalAnalysisPlan& plan);
+    void semanticAnalysisTelemetry(const SemanticAnalysisTelemetry& telemetry);
+    void semanticAnalysisFailed(const SemanticAnalysisRequest& request,
+                                const QString& error);
 
 private slots:
     void publishPendingWorkspaceAnalysis();
@@ -153,6 +201,16 @@ private:
     QStringList overlayWorkspaceIncludeDirs;
     QHash<QString, QString> overlayWorkspaceDefines;
     QHash<QString, SemanticAnalysisBandMetadata> workspaceFileAnalysisBands;
+    SemanticDependencyGraph semanticDependencyGraph;
+    QThreadPool semanticAnalysisThreadPool;
+    QThreadPool semanticRetirementThreadPool;
+    PublicationRetirementGateForTesting publicationRetirementGateForTesting;
+    std::shared_ptr<std::atomic<int>> pendingPublicationRetirements =
+        std::make_shared<std::atomic<int>>(0);
+    std::atomic<int> publicationRetirementEnqueueCount{0};
+    std::atomic<int> rejectedPublicationRetirements{0};
+    bool publicationRetirementQueueOpen = true;
+    bool shutdownStarted = false;
     std::uint64_t workspaceAnalysisGeneration = 0;
     std::uint64_t workspaceEpoch = 0;
 
@@ -203,6 +261,9 @@ private:
         qint64 publicationMs,
         qint64 publicationUpdateMs,
         qint64 finalSnapshotMs);
+    void retirePublicationState(
+        SemanticPublicationRetirementPayload payload);
+    void waitForPublicationRetirements();
     QString contentHash(const QString& content) const;
     void cancelWorkspaceAnalysisAndWait();
     void cancelAllFileAnalysesAndWait();

@@ -2,6 +2,7 @@
 #define WORKSPACESYMBOLANALYSISCONTROLLER_H
 
 #include "projectmodel.h"
+#include "semanticanalysisrequest.h"
 #include "workspaceanalysisplanservice.h"
 #include "workspaceanalysisrequestqueue.h"
 
@@ -28,6 +29,9 @@ public:
     void setCancelProvider(std::function<bool()> provider);
     void setCurrentFileProvider(std::function<QString()> provider);
 
+    void requestSemanticAnalysis(const SemanticAnalysisRequest& request);
+    void invalidateSemanticAnalysis(const QString& fileName,
+                                    std::uint64_t documentRevision);
     void requestWorkspaceAnalysis(const ProjectSnapshot& project);
     void cancelWorkspaceAnalysis();
     void clearProjectSemanticState();
@@ -35,6 +39,8 @@ public:
     {
         return workspaceAnalysisActive;
     }
+    std::uint64_t activeSemanticGenerationForFile(
+        const QString& fileName) const;
 
 signals:
     void fileSymbolAnalysisStarted(const QString& fileName);
@@ -61,6 +67,18 @@ signals:
         const WorkspaceAnalysisRequestTelemetry& telemetry);
     void workspaceSymbolAnalysisCancelled(
         const WorkspaceAnalysisRequestTelemetry& telemetry);
+    void semanticAnalysisRequestStarted(const SemanticAnalysisRequest& request);
+    void semanticAnalysisRequestFinished(const SemanticAnalysisRequest& request,
+                                         const IncrementalAnalysisPlan& plan);
+    void semanticAnalysisRequestFailed(const SemanticAnalysisRequest& request,
+                                       const QString& error);
+    void semanticAnalysisRequestDropped(
+        const SemanticAnalysisRequest& request,
+        SemanticAnalysisRequestDisposition disposition);
+    void semanticAnalysisContinuationRequired(
+        const SemanticAnalysisRequest& remainingRequest);
+    void semanticAnalysisPlanPrepared(const IncrementalAnalysisPlan& plan);
+    void semanticAnalysisTelemetry(const SemanticAnalysisTelemetry& telemetry);
 
 private:
     QPointer<ProjectModel> projectModel;
@@ -71,18 +89,29 @@ private:
     WorkspaceAnalysisRequestQueue requestQueue;
     ProjectSnapshot activeRequestedProject;
     ProjectSnapshot activeProject;
+    SemanticAnalysisRequest activeSemanticRequest;
+    SemanticAnalysisRequest pendingSemanticRequest;
+    IncrementalAnalysisPlan activeIncrementalPlan;
+    bool hasPendingSemanticRequest = false;
+    bool activeSemanticRequestDropNotified = false;
     QString activeWorkspaceRoot;
     QSet<QString> completedWorkspaceAnalysisKeys;
     bool workspaceAnalysisActive = false;
     bool activeWorkspaceAnalysisComplete = true;
     bool projectSemanticStateCleared = true;
     std::uint64_t workspaceStartGeneration = 0;
+    std::uint64_t compatibilityRequestGeneration = 0;
 
-    void onProjectChanged(const ProjectSnapshot& project);
     void onWorkspaceSymbolAnalysisCompleted(int filesAnalyzed, int totalSymbols);
     void onWorkspaceSymbolAnalysisExpired();
-    void startWorkspaceAnalysis(const ProjectSnapshot& project);
-    void restartActiveWorkspaceAnalysisForDocumentChange();
+    void onSemanticAnalysisFailed(const SemanticAnalysisRequest& request,
+                                  const QString& error);
+    void startSemanticAnalysis(const SemanticAnalysisRequest& request);
+    void startPendingSemanticAnalysis();
+    void notifyActiveRequestDropped(
+        SemanticAnalysisRequestDisposition disposition);
+    void dropPendingRequest(
+        SemanticAnalysisRequestDisposition disposition);
 };
 
 #endif // WORKSPACESYMBOLANALYSISCONTROLLER_H
