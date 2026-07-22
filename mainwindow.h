@@ -20,7 +20,7 @@ class NavigationManager;
 class NavigationPaneCoordinator;
 class AnalysisCoordinator;
 class AnalysisScheduler;
-class ComModeCoordinator;
+class CommandLayerCoordinator;
 class EditorCoordinator;
 class FileCommandCoordinator;
 class FoldBlockShelfModel;
@@ -67,7 +67,7 @@ private:
     std::unique_ptr<NavigationPaneCoordinator> navigationPane;
     std::unique_ptr<SemanticRuntimeCoordinator> semanticRuntime;
     std::unique_ptr<AnalysisCoordinator> analysisCoordinator;
-    std::unique_ptr<ComModeCoordinator> comModeCoordinator;
+    std::unique_ptr<CommandLayerCoordinator> commandLayerCoordinator;
     std::unique_ptr<EditorCoordinator> editorCoordinator;
     std::unique_ptr<FileCommandCoordinator> fileCommandCoordinator;
     std::unique_ptr<FoldBlockShelfModel> foldShelfModel;
@@ -106,7 +106,7 @@ private:
     void setupNavigationCommandCoordinator();
     void setupFileCommandCoordinator();
     void setupGlobalControl();
-    void setupComMode();
+    void setupCommandLayer();
     void setupPackageTools(QVBoxLayout* editorLayout, QWidget* parent);
     void updatePackageTools();
     void insertPackageTool(PackageToolKind kind);

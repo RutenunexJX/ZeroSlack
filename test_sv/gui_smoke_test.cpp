@@ -86,9 +86,9 @@
 #include "foldblockshelfpanel.h"
 #include "formattersettings.h"
 #include "columnnumbertool.h"
-#include "commodecommandregistry.h"
-#include "commodecoordinator.h"
-#include "commodeservice.h"
+#include "commandlayercommandregistry.h"
+#include "commandlayercoordinator.h"
+#include "commandlayerservice.h"
 #include "completionservice.h"
 #include "codetemplateservice.h"
 #include "globalcontrolcoordinator.h"
@@ -8154,28 +8154,25 @@ static void sendWidgetKey(QWidget* widget,
     QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
 }
 
-static void runComModeRegression(MainWindow& window)
+static void runCommandLayerRegression(MainWindow& window)
 {
-    printf("\n-- com mode regression --\n");
+    printf("\n-- command layer regression --\n");
 
-    const Qt::KeyboardModifiers comToggleModifiers =
-        Qt::ControlModifier | Qt::ShiftModifier | Qt::AltModifier;
     QTemporaryDir tempDir;
-    expectBool("com mode temp workspace valid", tempDir.isValid(), true);
+    expectBool("command layer temp workspace valid", tempDir.isValid(), true);
     const QString root = QDir::cleanPath(tempDir.path());
     QDir(root).mkpath(QStringLiteral("rtl"));
     const QString topFile =
-        QDir::cleanPath(QDir(root).filePath(QStringLiteral("rtl/top.sv")));
+        QDir(root).filePath(QStringLiteral("rtl/top.sv"));
     const QString childFile =
-        QDir::cleanPath(QDir(root).filePath(QStringLiteral("rtl/child.sv")));
+        QDir(root).filePath(QStringLiteral("rtl/child.sv"));
     const QString packageFile =
-        QDir::cleanPath(QDir(root).filePath(QStringLiteral("rtl/cfg_pkg.sv")));
+        QDir(root).filePath(QStringLiteral("rtl/cfg_pkg.sv"));
     const QString outsideFile =
-        QDir::cleanPath(QDir(root).filePath(QStringLiteral("../outside.sv")));
+        QDir(root).filePath(QStringLiteral("../outside.sv"));
 
     ProjectModel project;
     project.setWorkspaceState(root, {topFile, childFile, packageFile});
-
     const SemanticSymbolRecord topModule =
         SemanticFixtureRecordBuilder(QStringLiteral("top"),
                                      SymbolTaxonomy::DeclarationKind::Module)
@@ -8197,1182 +8194,750 @@ static void runComModeRegression(MainWindow& window)
             .withLocalHandle(87003)
             .withRange(1, 1, 4, 10)
             .record();
-    const SemanticSymbolRecord topParameter =
-        SemanticFixtureRecordBuilder(QStringLiteral("TOP_P"),
-                                     SymbolTaxonomy::DeclarationKind::Parameter)
-            .withFile(topFile)
-            .withLocalHandle(87004)
-            .withRange(11, 15, 11, 20)
-            .inModule(QStringLiteral("top"))
-            .record();
-    const SemanticSymbolRecord topLocalparam =
-        SemanticFixtureRecordBuilder(QStringLiteral("TOP_LP"),
-                                     SymbolTaxonomy::DeclarationKind::Localparam)
-            .withFile(topFile)
-            .withLocalHandle(87005)
-            .withRange(12, 15, 12, 21)
-            .inModule(QStringLiteral("top"))
-            .record();
-    const SemanticSymbolRecord topLogicSignal =
-        SemanticFixtureRecordBuilder(QStringLiteral("data_bus"),
-                                     SymbolTaxonomy::DeclarationKind::Signal)
-            .withFile(topFile)
-            .withLocalHandle(87009)
-            .withRange(13, 17, 13, 25)
-            .withCollectorKind(SymbolTaxonomy::CollectorKind::Logic)
-            .inModule(QStringLiteral("top"))
-            .withType(QStringLiteral("logic [7:0]"))
-            .record();
-    const SemanticSymbolRecord topWireSignal =
-        SemanticFixtureRecordBuilder(QStringLiteral("ready_w"),
-                                     SymbolTaxonomy::DeclarationKind::Signal)
-            .withFile(topFile)
-            .withLocalHandle(87010)
-            .withRange(14, 14, 14, 21)
-            .withCollectorKind(SymbolTaxonomy::CollectorKind::Wire)
-            .inModule(QStringLiteral("top"))
-            .record();
-    const SemanticSymbolRecord childRegSignal =
-        SemanticFixtureRecordBuilder(QStringLiteral("child_state"),
-                                     SymbolTaxonomy::DeclarationKind::Signal)
-            .withFile(childFile)
-            .withLocalHandle(87011)
-            .withRange(31, 10, 31, 21)
-            .withCollectorKind(SymbolTaxonomy::CollectorKind::Reg)
-            .inModule(QStringLiteral("child"))
-            .withType(QStringLiteral("reg [3:0]"))
-            .record();
-    const SemanticSymbolRecord topPortRecord =
-        SemanticFixtureRecordBuilder(QStringLiteral("clk"),
-                                     SymbolTaxonomy::DeclarationKind::Port)
-            .withFile(topFile)
-            .withLocalHandle(87012)
-            .withRange(11, 15, 11, 18)
-            .withCollectorKind(SymbolTaxonomy::CollectorKind::PortInput)
-            .inModule(QStringLiteral("top"))
-            .record();
     const SemanticSymbolRecord packageRecord =
         SemanticFixtureRecordBuilder(QStringLiteral("cfg_pkg"),
                                      SymbolTaxonomy::DeclarationKind::Package)
             .withFile(packageFile)
-            .withLocalHandle(87006)
+            .withLocalHandle(87004)
             .withRange(5, 1, 10, 11)
-            .record();
-    const SemanticSymbolRecord packageParameter =
-        SemanticFixtureRecordBuilder(QStringLiteral("PKG_P"),
-                                     SymbolTaxonomy::DeclarationKind::Parameter)
-            .withFile(packageFile)
-            .withLocalHandle(87007)
-            .withRange(6, 15, 6, 20)
-            .inPackage(QStringLiteral("cfg_pkg"))
             .record();
     const SemanticSymbolRecord outsidePackage =
         SemanticFixtureRecordBuilder(QStringLiteral("outside_pkg"),
                                      SymbolTaxonomy::DeclarationKind::Package)
             .withFile(outsideFile)
-            .withLocalHandle(87008)
+            .withLocalHandle(87005)
             .withRange(10, 1, 14, 11)
             .record();
     QHash<QString, QString> contents;
-    contents.insert(topFile,
-                    QStringLiteral("// 1\n"
-                                   "// 2\n"
-                                   "// 3\n"
-                                   "// 4\n"
-                                   "// 5\n"
-                                   "// 6\n"
-                                   "// 7\n"
-                                   "// 8\n"
-                                   "// 9\n"
-                                   "module top;\n"
-                                   "  input logic clk;\n"
-                                   "  parameter TOP_P = 1;\n"
-                                   "  logic [7:0] data_bus;\n"
-                                   "  wire ready_w;\n"
-                                   "endmodule\n"));
+    contents.insert(
+        topFile,
+        QStringLiteral("// 1\n"
+                       "// 2\n"
+                       "// 3\n"
+                       "// 4\n"
+                       "// 5\n"
+                       "// 6\n"
+                       "// 7\n"
+                       "// 8\n"
+                       "// 9\n"
+                       "module top;\n"
+                       "  logic a;\n"
+                       "  assign y = a;\n"
+                       "  logic b;\n"
+                       "  logic c;\n"
+                       "endmodule\n"));
     contents.insert(childFile,
-                    QStringLiteral("module child;\n"
-                                   "endmodule\n"));
+                    QStringLiteral("module child;\nendmodule\n"));
     contents.insert(packageFile,
-                    QStringLiteral("package cfg_pkg;\n"
-                                   "  parameter PKG_P = 1;\n"
-                                   "endpackage\n"));
-
+                    QStringLiteral("package cfg_pkg;\nendpackage\n"));
     const auto snapshot =
         snapshotFromRecords({topModule,
                              childModule,
                              outsideModule,
-                             topParameter,
-                             topLocalparam,
-                             topLogicSignal,
-                             topWireSignal,
-                             childRegSignal,
-                             topPortRecord,
                              packageRecord,
-                             packageParameter,
                              outsidePackage},
                             {},
                             {},
                             contents);
-    ComModeService service;
-    ComModePickerQuery moduleQuery;
-    moduleQuery.snapshot = snapshot;
-    moduleQuery.project = project.snapshot();
-    const QList<ComModePickerItem> moduleItems =
-        service.moduleItems(moduleQuery);
-    bool sawTopModule = false;
-    bool sawChildModule = false;
-    bool sawOutsideModule = false;
-    bool topPathIsRelative = false;
-    for (const ComModePickerItem& item : moduleItems) {
-        if (item.name == QStringLiteral("top")) {
-            sawTopModule = true;
-            topPathIsRelative = item.displayPath.endsWith(
-                QDir::toNativeSeparators(QStringLiteral("rtl/top.sv")));
-        }
-        if (item.name == QStringLiteral("child"))
-            sawChildModule = true;
-        if (item.name == QStringLiteral("outside"))
-            sawOutsideModule = true;
+
+    CommandLayerService service;
+    CommandLayerPickerQuery pickerQuery;
+    pickerQuery.snapshot = snapshot;
+    pickerQuery.project = project.snapshot();
+    const QList<CommandLayerPickerItem> moduleItems =
+        service.moduleItems(pickerQuery);
+    bool sawTop = false;
+    bool sawChild = false;
+    bool sawOutside = false;
+    for (const CommandLayerPickerItem& item : moduleItems) {
+        sawTop |= item.name == QStringLiteral("top");
+        sawChild |= item.name == QStringLiteral("child");
+        sawOutside |= item.name == QStringLiteral("outside");
     }
-    expectBool("com gm lists workspace modules from snapshot",
-               sawTopModule && sawChildModule && !sawOutsideModule,
+    expectBool("go module service stays workspace scoped",
+               sawTop && sawChild && !sawOutside,
                true);
-    expectBool("com gm displays relative module path",
-               topPathIsRelative,
-               true);
-
-    moduleQuery.filter = QStringLiteral("chd");
-    const QList<ComModePickerItem> filteredModuleItems =
-        service.moduleItems(moduleQuery);
-    expectBool("com gm supports fuzzy module matching",
-               !filteredModuleItems.isEmpty()
-                   && filteredModuleItems.first().name
-                          == QStringLiteral("child"),
+    pickerQuery.filter = QStringLiteral("chd");
+    const QList<CommandLayerPickerItem> fuzzyModules =
+        service.moduleItems(pickerQuery);
+    expectBool("go module service keeps fuzzy picker matching",
+               !fuzzyModules.isEmpty()
+                   && fuzzyModules.first().name == QStringLiteral("child"),
                true);
 
-    ComModePickerQuery packageQuery;
-    packageQuery.snapshot = snapshot;
-    packageQuery.project = project.snapshot();
-    const QList<ComModePickerItem> packageItems =
-        service.packageItems(packageQuery);
-    bool sawPackage = false;
-    bool sawOutsidePackage = false;
-    bool packagePathIsRelative = false;
-    for (const ComModePickerItem& item : packageItems) {
-        if (item.name == QStringLiteral("cfg_pkg")) {
-            sawPackage = true;
-            packagePathIsRelative = item.displayPath.endsWith(
-                QDir::toNativeSeparators(QStringLiteral("rtl/cfg_pkg.sv")));
-        }
-        if (item.name == QStringLiteral("outside_pkg"))
-            sawOutsidePackage = true;
-    }
-    expectBool("com gpk lists workspace packages from snapshot",
-               sawPackage && !sawOutsidePackage,
-               true);
-    expectBool("com gpk displays relative package path",
-               packagePathIsRelative,
-               true);
-
-    packageQuery.filter = QStringLiteral("cfg");
-    const QList<ComModePickerItem> filteredPackageItems =
-        service.packageItems(packageQuery);
-    expectBool("com gpk supports fuzzy package matching",
-               !filteredPackageItems.isEmpty()
-                   && filteredPackageItems.first().name
+    pickerQuery.filter.clear();
+    const QList<CommandLayerPickerItem> packageItems =
+        service.packageItems(pickerQuery);
+    expectBool("go package service stays workspace scoped",
+               packageItems.size() == 1
+                   && packageItems.first().name
                           == QStringLiteral("cfg_pkg"),
                true);
 
-    ComModeScopedPickerQuery parameterQuery;
-    parameterQuery.snapshot = snapshot;
-    parameterQuery.project = project.snapshot();
-    parameterQuery.fileName = topFile;
-    parameterQuery.currentModuleName = QStringLiteral("top");
-    parameterQuery.currentLine = 12;
-    const ComModeScopedPickerResult moduleParameterResult =
-        service.parameterItems(parameterQuery);
-    bool sawTopParameter = false;
-    bool sawTopLocalparam = false;
-    bool sawPackageParameterInModule = false;
-    bool moduleParameterHasScope = false;
-    for (const ComModePickerItem& item : moduleParameterResult.items) {
-        if (item.name == QStringLiteral("TOP_P")) {
-            sawTopParameter = true;
-            moduleParameterHasScope =
-                item.scopeName == QStringLiteral("top");
-        }
-        if (item.name == QStringLiteral("TOP_LP"))
-            sawTopLocalparam = true;
-        if (item.name == QStringLiteral("PKG_P"))
-            sawPackageParameterInModule = true;
-    }
-    expectBool("com gpa lists current module parameters",
-               moduleParameterResult.hasScope
-                   && sawTopParameter
-                   && sawTopLocalparam
-                   && !sawPackageParameterInModule,
+    CommandLayerRelativeLineQuery lineTargetQuery;
+    lineTargetQuery.snapshot = snapshot;
+    lineTargetQuery.fileName = topFile;
+    lineTargetQuery.currentModuleName = QStringLiteral("top");
+    lineTargetQuery.currentLine = 12;
+    lineTargetQuery.requestedModuleLine = 3;
+    const CommandLayerRelativeLineResult lineTarget =
+        service.relativeLineTarget(lineTargetQuery);
+    expectBool("go number service resolves module-relative line",
+               lineTarget.ok
+                   && lineTarget.line == 12
+                   && lineTarget.column == 1,
                true);
-    expectBool("com gpa parameter item shows scope",
-               moduleParameterHasScope,
+    lineTargetQuery.requestedModuleLine = 0;
+    expectBool("go number service rejects zero",
+               service.relativeLineTarget(lineTargetQuery).message
+                   == QStringLiteral("Line number must be >= 1"),
                true);
-
-    parameterQuery.filter = QStringLiteral("lp");
-    const ComModeScopedPickerResult filteredParameterResult =
-        service.parameterItems(parameterQuery);
-    expectBool("com gpa supports fuzzy parameter matching",
-               filteredParameterResult.hasScope
-                   && !filteredParameterResult.items.isEmpty()
-                   && filteredParameterResult.items.first().name
-                          == QStringLiteral("TOP_LP"),
-               true);
-
-    parameterQuery.filter.clear();
-    parameterQuery.fileName = packageFile;
-    parameterQuery.currentModuleName.clear();
-    parameterQuery.currentLine = 6;
-    const ComModeScopedPickerResult packageParameterResult =
-        service.parameterItems(parameterQuery);
-    bool sawPackageParameter = false;
-    for (const ComModePickerItem& item : packageParameterResult.items) {
-        if (item.name == QStringLiteral("PKG_P")
-            && item.scopeName == QStringLiteral("cfg_pkg"))
-            sawPackageParameter = true;
-    }
-    expectBool("com gpa lists current package parameters",
-               packageParameterResult.hasScope && sawPackageParameter,
-               true);
-
-    parameterQuery.fileName = childFile;
-    parameterQuery.currentLine = 20;
-    const ComModeScopedPickerResult missingParameterScope =
-        service.parameterItems(parameterQuery);
-    expectBool("com gpa reports missing parameter scope",
-               !missingParameterScope.hasScope
-                   && missingParameterScope.message
-                          == QStringLiteral("No current parameter scope"),
-               true);
-
-    ComModeScopedPickerQuery signalQuery;
-    signalQuery.snapshot = snapshot;
-    signalQuery.project = project.snapshot();
-    signalQuery.fileName = topFile;
-    signalQuery.currentModuleName = QStringLiteral("top");
-    signalQuery.currentLine = 13;
-    const ComModeScopedPickerResult signalResult =
-        service.signalItems(signalQuery);
-    bool sawDataBus = false;
-    bool sawReadyWire = false;
-    bool sawChildState = false;
-    bool sawPortAsSignal = false;
-    bool dataBusHasDetail = false;
-    for (const ComModePickerItem& item : signalResult.items) {
-        if (item.name == QStringLiteral("data_bus")) {
-            sawDataBus = true;
-            dataBusHasDetail =
-                item.kind == ComModePickerItemKind::Signal
-                && item.kindLabel == QStringLiteral("logic")
-                && item.detailLabel == QStringLiteral("[7:0]");
-        }
-        if (item.name == QStringLiteral("ready_w")) {
-            sawReadyWire =
-                item.kindLabel == QStringLiteral("wire")
-                && item.detailLabel == QStringLiteral("scalar");
-        }
-        if (item.name == QStringLiteral("child_state"))
-            sawChildState = true;
-        if (item.name == QStringLiteral("clk"))
-            sawPortAsSignal = true;
-    }
-    expectBool("com gsd lists current module signals",
-               signalResult.hasScope
-                   && sawDataBus
-                   && sawReadyWire
-                   && !sawChildState
-                   && !sawPortAsSignal,
-               true);
-    expectBool("com gsd signal item shows kind and width",
-               dataBusHasDetail,
-               true);
-
-    signalQuery.filter = QStringLiteral("db");
-    const ComModeScopedPickerResult filteredSignalResult =
-        service.signalItems(signalQuery);
-    expectBool("com gsd supports fuzzy signal matching",
-               filteredSignalResult.hasScope
-                   && !filteredSignalResult.items.isEmpty()
-                   && filteredSignalResult.items.first().name
-                          == QStringLiteral("data_bus"),
-               true);
-
-    signalQuery.fileName = packageFile;
-    signalQuery.currentModuleName.clear();
-    signalQuery.currentLine = 6;
-    const ComModeScopedPickerResult missingSignalScope =
-        service.signalItems(signalQuery);
-    expectBool("com gsd reports missing current module",
-               !missingSignalScope.hasScope
-                   && missingSignalScope.message
-                          == QStringLiteral("No current module"),
-               true);
-
-    signalQuery.fileName = childFile;
-    signalQuery.currentModuleName = QStringLiteral("child");
-    signalQuery.currentLine = 31;
-    signalQuery.filter = QStringLiteral("no_match_signal");
-    const ComModeScopedPickerResult emptySignalResult =
-        service.signalItems(signalQuery);
-    expectBool("com gsd keeps scope for empty signal results",
-               emptySignalResult.hasScope && emptySignalResult.items.isEmpty(),
-               true);
-
-    ComModeRelativeLineQuery lineQuery;
-    lineQuery.snapshot = snapshot;
-    lineQuery.fileName = topFile;
-    lineQuery.currentModuleName = QStringLiteral("top");
-    lineQuery.currentLine = 12;
-    lineQuery.requestedModuleLine = 3;
-    ComModeRelativeLineResult lineResult =
-        service.relativeLineTarget(lineQuery);
-    expectBool("com g<num> resolves module-relative line",
-               lineResult.ok
-                   && lineResult.filePath == topFile
-                   && lineResult.line == 12,
-               true);
-
-    lineQuery.requestedModuleLine = 1;
-    lineResult = service.relativeLineTarget(lineQuery);
-    expectBool("com g1 resolves module declaration line",
-               lineResult.ok
-                   && lineResult.line == 10
-                   && lineResult.column == 1,
-               true);
-
-    lineQuery.requestedModuleLine = 6;
-    lineResult = service.relativeLineTarget(lineQuery);
-    expectBool("com g<num> rejects out of range module line",
-               !lineResult.ok
-                   && lineResult.message
-                          == QStringLiteral("Module has only 5 lines"),
-               true);
-
-    lineQuery.requestedModuleLine = 0;
-    lineResult = service.relativeLineTarget(lineQuery);
-    expectBool("com g0 is invalid",
-               !lineResult.ok
-                   && lineResult.message
-                          == QStringLiteral("Line number must be >= 1"),
-               true);
-
-    lineQuery.currentModuleName.clear();
-    lineQuery.requestedModuleLine = 1;
-    lineResult = service.relativeLineTarget(lineQuery);
-    expectBool("com g<num> reports missing current module",
-               !lineResult.ok
-                   && lineResult.message == QStringLiteral("No current module"),
+    lineTargetQuery.requestedModuleLine = 99;
+    expectBool("go number service rejects out-of-range line",
+               service.relativeLineTarget(lineTargetQuery).message
+                   == QStringLiteral("Module has only 5 lines"),
                true);
 
     QString registryError;
-    expectBool("COM registry metadata is valid",
-               comModeCommandRegistryIsValid(&registryError),
+    expectBool("Command Layer registry is valid",
+               commandLayerCommandRegistryIsValid(&registryError),
                true);
-    const QStringList executableCommands = {
-        QStringLiteral("gm"),
-        QStringLiteral("gpk"),
-        QStringLiteral("gpa"),
-        QStringLiteral("gpo"),
-        QStringLiteral("gpi"),
-        QStringLiteral("gsd"),
-        QStringLiteral("gsi"),
-        QStringLiteral("gii"),
-        QStringLiteral("gac"),
-        QStringLiteral("gef"),
+    const QStringList canonicalNames = {
+        QStringLiteral("go <number>"),
+        QStringLiteral("go module"),
+        QStringLiteral("go package"),
+        QStringLiteral("go endmodule"),
+        QStringLiteral("add signal"),
+        QStringLiteral("add parameter"),
+        QStringLiteral("add port"),
+        QStringLiteral("clear right"),
+        QStringLiteral("select begin end"),
+        QStringLiteral("help"),
     };
-    bool allExecutableCommandsRegistered = true;
-    for (const QString& command : executableCommands) {
-        const ComModeCommandMetadata* metadata =
-            findComModeCommandMetadata(command);
-        allExecutableCommandsRegistered =
-            allExecutableCommandsRegistered
-            && metadata
-            && metadata->executable
-            && metadata->inputKind == ComModeCommandInputKind::Fixed
-            && executableComModeCommand(command) == command;
+    bool canonicalRegistryOk =
+        commandLayerCommandRegistry().size() == canonicalNames.size();
+    for (const QString& name : canonicalNames) {
+        const CommandLayerCommandMetadata* command =
+            findCommandLayerCommand(name);
+        const QList<CommandLayerCommandMatch> exactMatches =
+            commandLayerCommandMatches(name);
+        canonicalRegistryOk =
+            canonicalRegistryOk
+            && command
+            && !command->description.isEmpty()
+            && !exactMatches.isEmpty()
+            && exactMatches.first().command.name == name
+            && exactMatches.first().rank == CommandLayerMatchRank::Exact;
     }
-    expectBool("COM registry lists existing executable commands",
-               allExecutableCommandsRegistered,
+    expectBool("Command Layer exposes exactly ten canonical commands",
+               canonicalRegistryOk,
                true);
-    const QStringList prefixCommands = {
-        QStringLiteral("gp"),
-        QStringLiteral("gs"),
-        QStringLiteral("gi"),
+
+    const QList<QPair<QString, QString>> requiredAbbreviations = {
+        {QStringLiteral("gm"), QStringLiteral("go module")},
+        {QStringLiteral("gpk"), QStringLiteral("go package")},
+        {QStringLiteral("gopack"), QStringLiteral("go package")},
+        {QStringLiteral("goendm"), QStringLiteral("go endmodule")},
+        {QStringLiteral("as"), QStringLiteral("add signal")},
+        {QStringLiteral("addsig"), QStringLiteral("add signal")},
+        {QStringLiteral("apar"), QStringLiteral("add parameter")},
+        {QStringLiteral("addparam"), QStringLiteral("add parameter")},
+        {QStringLiteral("aport"), QStringLiteral("add port")},
+        {QStringLiteral("addport"), QStringLiteral("add port")},
+        {QStringLiteral("cr"), QStringLiteral("clear right")},
+        {QStringLiteral("clearr"), QStringLiteral("clear right")},
+        {QStringLiteral("sbe"), QStringLiteral("select begin end")},
+        {QStringLiteral("selectbe"), QStringLiteral("select begin end")},
+    };
+    bool abbreviationMatchesOk = true;
+    for (const auto& abbreviation : requiredAbbreviations) {
+        const QList<CommandLayerCommandMatch> commandMatches =
+            commandLayerCommandMatches(abbreviation.first);
+        abbreviationMatchesOk =
+            abbreviationMatchesOk
+            && !commandMatches.isEmpty()
+            && commandMatches.first().command.name == abbreviation.second;
+    }
+    expectBool("Command Layer supports required abbreviations",
+               abbreviationMatchesOk,
+               true);
+
+    const QList<CommandLayerCommandMatch> exactRanking =
+        commandLayerCommandMatches(QStringLiteral("GO PACKAGE"));
+    const QList<CommandLayerCommandMatch> prefixRanking =
+        commandLayerCommandMatches(QStringLiteral("go pack"));
+    const QList<CommandLayerCommandMatch> wordRanking =
+        commandLayerCommandMatches(QStringLiteral("gpk"));
+    const QList<CommandLayerCommandMatch> subsequenceRanking =
+        commandLayerCommandMatches(QStringLiteral("gdl"));
+    expectBool("Command Layer ranking tiers are explainable",
+               !exactRanking.isEmpty()
+                   && exactRanking.first().rank
+                          == CommandLayerMatchRank::Exact
+                   && !prefixRanking.isEmpty()
+                   && prefixRanking.first().rank
+                          == CommandLayerMatchRank::Prefix
+                   && !wordRanking.isEmpty()
+                   && wordRanking.first().rank
+                          == CommandLayerMatchRank::WordPrefix
+                   && !subsequenceRanking.isEmpty()
+                   && subsequenceRanking.first().rank
+                          == CommandLayerMatchRank::Subsequence,
+               true);
+    const QList<CommandLayerCommandMatch> ambiguousGo =
+        commandLayerCommandMatches(QStringLiteral("go"));
+    expectBool("Command Layer preserves visible stable ambiguity",
+               ambiguousGo.size() == 4
+                   && ambiguousGo.at(0).command.name
+                          == QStringLiteral("go <number>")
+                   && ambiguousGo.at(1).command.name
+                          == QStringLiteral("go module"),
+               true);
+
+    const QStringList retiredNames = {
+        QStringLiteral("c"),
         QStringLiteral("ga"),
         QStringLiteral("ge"),
+        QStringLiteral("gp"),
+        QStringLiteral("gi"),
+        QStringLiteral("gs"),
+        QStringLiteral("gpa"),
+        QStringLiteral("gsd"),
+        QStringLiteral("gii"),
+        QStringLiteral("gac"),
+        QStringLiteral("cn"),
     };
-    bool allPrefixesRegistered = true;
-    for (const QString& command : prefixCommands) {
-        const ComModeCommandMetadata* metadata =
-            findComModeCommandMetadata(command);
-        allPrefixesRegistered =
-            allPrefixesRegistered
-            && metadata
-            && !metadata->executable
-            && metadata->inputKind == ComModeCommandInputKind::Fixed
-            && executableComModeCommand(command).isEmpty()
-            && isComModeBufferPrefix(command);
+    bool retiredNamesAbsent = true;
+    for (const QString& name : retiredNames) {
+        retiredNamesAbsent =
+            retiredNamesAbsent && findCommandLayerCommand(name) == nullptr;
     }
-    expectBool("COM registry lists non-executable prefixes",
-               allPrefixesRegistered,
-               true);
-    const ComModeCommandMetadata* relativeLineMetadata =
-        findComModeCommandMetadata(QStringLiteral("g<num>"));
-    expectBool("COM registry lists module-relative line command",
-               relativeLineMetadata
-                   && relativeLineMetadata->executable
-                   && relativeLineMetadata->inputKind
-                          == ComModeCommandInputKind::ModuleRelativeLine
-                   && isComModeLineBuffer(QStringLiteral("g20"))
-                   && isComModeBufferPrefix(QStringLiteral("g20")),
-               true);
-    expectBool("COM registry exposes executable command hint",
-               comModeCommandHint(QStringLiteral("gm"))
-                   .contains(QStringLiteral("module picker")),
-               true);
-    expectBool("COM registry exposes prefix child hints",
-               comModeCommandHint(QStringLiteral("gp"))
-                       .contains(QStringLiteral("gpa"))
-                   && comModeCommandHint(QStringLiteral("gp"))
-                          .contains(QStringLiteral("gpi"))
-                   && comModeCommandHint(QStringLiteral("gp"))
-                          .contains(QStringLiteral("gpk"))
-                   && comModeCommandHint(QStringLiteral("gp"))
-                          .contains(QStringLiteral("gpo")),
-               true);
-    expectBool("COM registry exposes relative line hint",
-               comModeCommandHint(QStringLiteral("g20"))
-                   .contains(QStringLiteral("Go module line")),
-               true);
-    QString registryValidationError;
-    const QList<ComModeCommandMetadata> duplicateRegistry = {
-        {QStringLiteral("gm"),
-         true,
-         ComModeCommandInputKind::Fixed,
-         QStringLiteral("navigation"),
-         QStringLiteral("Go module"),
-         QStringLiteral("Open the module picker.")},
-        {QStringLiteral("gm"),
-         true,
-         ComModeCommandInputKind::Fixed,
-         QStringLiteral("navigation"),
-         QStringLiteral("Go module duplicate"),
-         QStringLiteral("Duplicate command.")},
-    };
-    expectBool("COM registry validation reports duplicate commands",
-               !validateComModeCommandRegistry(duplicateRegistry,
-                                               &registryValidationError)
-                   && registryValidationError
-                          .contains(QStringLiteral("duplicate COM command"))
-                   && registryValidationError.contains(QStringLiteral("gm")),
-               true);
-    const QList<ComModeCommandMetadata> prefixConflictRegistry = {
-        {QStringLiteral("g"),
-         true,
-         ComModeCommandInputKind::Fixed,
-         QStringLiteral("navigation"),
-         QStringLiteral("Go"),
-         QStringLiteral("Executable short command.")},
-        {QStringLiteral("gm"),
-         true,
-         ComModeCommandInputKind::Fixed,
-         QStringLiteral("navigation"),
-         QStringLiteral("Go module"),
-         QStringLiteral("Open the module picker.")},
-    };
-    expectBool("COM registry validation reports executable prefix conflicts",
-               !validateComModeCommandRegistry(prefixConflictRegistry,
-                                               &registryValidationError)
-                   && registryValidationError
-                          .contains(QStringLiteral("prefix conflict"))
-                   && registryValidationError.contains(QStringLiteral("g"))
-                   && registryValidationError.contains(QStringLiteral("gm")),
-               true);
-    const QList<ComModeCommandMetadata> malformedPrefixRegistry = {
-        {QStringLiteral("gp"),
-         false,
-         ComModeCommandInputKind::Fixed,
-         QStringLiteral("package-parameter-port"),
-         QStringLiteral("P-family prefix"),
-         QStringLiteral("Prefix without a child.")},
-    };
-    expectBool("COM registry validation reports malformed prefixes",
-               !validateComModeCommandRegistry(malformedPrefixRegistry,
-                                               &registryValidationError)
-                   && registryValidationError
-                          .contains(QStringLiteral("no registered child"))
-                   && registryValidationError.contains(QStringLiteral("gp")),
-               true);
-    expectBool("COM failure message names incomplete prefixes",
-               comModeCommandFailureMessage(QStringLiteral("gp"))
-                       .contains(QStringLiteral("Incomplete COM command"))
-                   && comModeCommandFailureMessage(QStringLiteral("gp"))
-                          .contains(QStringLiteral("gpk")),
-               true);
-    expectBool("COM failure message names unknown buffers",
-               comModeCommandFailureMessage(QStringLiteral("gx"))
-                   .contains(QStringLiteral("gx")),
-               true);
-    const ComModeCommandMetadata* clearRhsMetadata =
-        findComModeCommandMetadata(QStringLiteral("cr"));
-    expectBool("COM registry exposes clear RHS command",
-               clearRhsMetadata
-                   && clearRhsMetadata->executable
-                   && clearRhsMetadata->description.contains(
-                       QStringLiteral("RHS"))
-                   && executableComModeCommand(QStringLiteral("cr"))
-                       == QStringLiteral("cr"),
-               true);
-    const ComModeCommandMetadata* columnNumberMetadata =
-        findComModeCommandMetadata(QStringLiteral("cn"));
-    expectBool("COM registry exposes column number command",
-               columnNumberMetadata
-                   && columnNumberMetadata->executable
-                   && columnNumberMetadata->description.contains(
-                       QStringLiteral("column number"))
-                   && executableComModeCommand(QStringLiteral("cn"))
-                       == QStringLiteral("cn"),
-               true);
-    ColumnNumberConfig svHexConfig =
-        inferColumnNumberConfig(QStringLiteral("8'h0A"));
-    expectBool("Column number inference recognizes SV sized hex",
-               svHexConfig.base == ColumnNumberBase::Hex
-                   && svHexConfig.style == ColumnNumberStyle::SvSized
-                   && svHexConfig.bitWidth == 8
-                   && svHexConfig.start == 10
-                   && svHexConfig.fixedDigitWidth
-                   && svHexConfig.digitWidth == 2
-                   && svHexConfig.pad == ColumnNumberPad::Zero
-                   && svHexConfig.uppercaseHex,
-               true);
-    ColumnNumberConfig svLowerConfig =
-        inferColumnNumberConfig(QStringLiteral("'h0a"));
-    expectBool("Column number inference recognizes SV unsized lower hex",
-               svLowerConfig.base == ColumnNumberBase::Hex
-                   && svLowerConfig.style == ColumnNumberStyle::SvUnsized
-                   && svLowerConfig.start == 10
-                   && !svLowerConfig.uppercaseHex,
-               true);
-    ColumnNumberConfig cHexConfig =
-        inferColumnNumberConfig(QStringLiteral("0x0A"));
-    expectBool("Column number inference recognizes C-like hex",
-               cHexConfig.base == ColumnNumberBase::Hex
-                   && cHexConfig.style == ColumnNumberStyle::CLike
-                   && cHexConfig.start == 10
-                   && cHexConfig.fixedDigitWidth
-                   && cHexConfig.digitWidth == 2,
-               true);
-    ColumnNumberConfig paddedDecConfig =
-        inferColumnNumberConfig(QStringLiteral("0010"));
-    expectBool("Column number inference recognizes padded decimal",
-               paddedDecConfig.base == ColumnNumberBase::Dec
-                   && paddedDecConfig.style == ColumnNumberStyle::Plain
-                   && paddedDecConfig.start == 10
-                   && paddedDecConfig.fixedDigitWidth
-                   && paddedDecConfig.digitWidth == 4,
-               true);
-    ColumnNumberConfig generatedConfig;
-    generatedConfig.base = ColumnNumberBase::Bin;
-    generatedConfig.style = ColumnNumberStyle::SvSized;
-    generatedConfig.bitWidth = 8;
-    generatedConfig.start = 2;
-    generatedConfig.step = 2;
-    generatedConfig.repeat = 2;
-    generatedConfig.direction = ColumnNumberDirection::Up;
-    generatedConfig.fixedDigitWidth = true;
-    generatedConfig.digitWidth = 4;
-    generatedConfig.pad = ColumnNumberPad::Zero;
-    expectBool("Column number preview handles binary SV repeat step",
-               previewColumnNumbers(generatedConfig, 4)
-                   == QStringList({QStringLiteral("8'b0010"),
-                                   QStringLiteral("8'b0010"),
-                                   QStringLiteral("8'b0100"),
-                                   QStringLiteral("8'b0100")}),
-               true);
-    const ComModeCommandMetadata* selectInsideMetadata =
-        findComModeCommandMetadata(QStringLiteral("si"));
-    expectBool("COM registry exposes select-inside command",
-               selectInsideMetadata
-                   && selectInsideMetadata->executable
-                   && selectInsideMetadata->description.contains(
-                       QStringLiteral("begin-end"))
-                   && executableComModeCommand(QStringLiteral("si"))
-                       == QStringLiteral("si"),
+    expectBool("retired commands and prefix records are absent",
+               retiredNamesAbsent,
                true);
 
-    MyCodeEditor insertEditor;
-    insertEditor.resize(360, 120);
-    insertEditor.show();
-    insertEditor.setFocus();
-    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-    sendWidgetKey(&insertEditor, Qt::Key_QuoteLeft, QStringLiteral("`"));
-    expectBool("insert mode backtick inserts text",
-               insertEditor.toPlainText() == QStringLiteral("`")
-                   && !insertEditor.comModeActive(),
+    const CommandLayerLineParseResult g100 =
+        parseCommandLayerLineQuery(QStringLiteral("g100"));
+    const CommandLayerLineParseResult go100 =
+        parseCommandLayerLineQuery(QStringLiteral("Go100"));
+    const CommandLayerLineParseResult goSpace100 =
+        parseCommandLayerLineQuery(QStringLiteral("go 100"));
+    const CommandLayerLineParseResult zeroLine =
+        parseCommandLayerLineQuery(QStringLiteral("go 0"));
+    const CommandLayerLineParseResult negativeLine =
+        parseCommandLayerLineQuery(QStringLiteral("g-1"));
+    expectBool("go number parser accepts all three forms",
+               g100.state == CommandLayerLineParseState::Valid
+                   && g100.line == 100
+                   && go100.state == CommandLayerLineParseState::Valid
+                   && go100.line == 100
+                   && goSpace100.state
+                          == CommandLayerLineParseState::Valid
+                   && goSpace100.line == 100,
                true);
-    insertEditor.close();
+    expectBool("go number parser reports invalid and zero lines",
+               zeroLine.state == CommandLayerLineParseState::Invalid
+                   && zeroLine.failureReason
+                          == QStringLiteral("Line number must be >= 1")
+                   && negativeLine.state
+                          == CommandLayerLineParseState::Invalid,
+               true);
 
-    MyCodeEditor modeEditor;
-    modeEditor.setPlainText(QStringLiteral("module top;\nendmodule\n"));
-    modeEditor.resize(360, 120);
-    modeEditor.show();
-    modeEditor.setFocus();
-    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-    sendWidgetKey(&modeEditor, Qt::Key_Escape);
-    expectBool("Esc no longer enters COM mode from editor focus",
-               !modeEditor.comModeActive(),
-               true);
-    sendWidgetKey(&modeEditor,
-                  Qt::Key_QuoteLeft,
-                  QStringLiteral("`"),
-                  comToggleModifiers);
-    expectBool("Ctrl+Shift+Alt+backtick enters COM mode from editor focus",
-               modeEditor.comModeActive()
-                   && modeEditor.comModeBuffer().isEmpty(),
-               true);
-    sendWidgetKey(&modeEditor, Qt::Key_G, QStringLiteral("g"));
-    sendWidgetKey(&modeEditor, Qt::Key_2, QStringLiteral("2"));
-    sendWidgetKey(&modeEditor, Qt::Key_0, QStringLiteral("0"));
-    expectBool("COM shows g<num> buffer",
-               modeEditor.comModeActive()
-                   && modeEditor.comModeBuffer() == QStringLiteral("g20"),
-               true);
-    sendWidgetKey(&modeEditor, Qt::Key_Escape);
-    expectBool("Esc clears COM buffer without exiting",
-               modeEditor.comModeActive()
-                   && modeEditor.comModeBuffer().isEmpty(),
-               true);
-    QSignalSpy comStatusSpy(&modeEditor,
-                            &MyCodeEditor::editorStatusMessageRequested);
-    sendWidgetKey(&modeEditor, Qt::Key_G, QStringLiteral("g"));
-    sendWidgetKey(&modeEditor, Qt::Key_X, QStringLiteral("x"));
-    expectBool("COM unknown input reports centralized failure message",
-               modeEditor.comModeActive()
-                   && modeEditor.comModeBuffer().isEmpty()
-                   && comStatusSpy.count() == 1
-                   && comStatusSpy.takeFirst().at(0).toString()
-                          == comModeCommandFailureMessage(
-                              QStringLiteral("gx")),
-               true);
-    QSignalSpy comCommandSpy(&modeEditor,
-                             &MyCodeEditor::comCommandRequested);
-    sendWidgetKey(&modeEditor, Qt::Key_G, QStringLiteral("g"));
-    sendWidgetKey(&modeEditor, Qt::Key_P, QStringLiteral("p"));
-    expectBool("COM gp stays a non-executable prefix",
-               modeEditor.comModeActive()
-                   && modeEditor.comModeBuffer() == QStringLiteral("gp")
-                   && comCommandSpy.count() == 0,
-               true);
-    sendWidgetKey(&modeEditor, Qt::Key_K, QStringLiteral("k"));
-    expectBool("COM gpk executes package picker command",
-               modeEditor.comModeActive()
-                   && modeEditor.comModeBuffer().isEmpty()
-                   && comCommandSpy.count() == 1
-                   && comCommandSpy.takeFirst().at(0).toString()
-                          == QStringLiteral("gpk"),
-               true);
-    sendWidgetKey(&modeEditor, Qt::Key_G, QStringLiteral("g"));
-    sendWidgetKey(&modeEditor, Qt::Key_P, QStringLiteral("p"));
-    sendWidgetKey(&modeEditor, Qt::Key_A, QStringLiteral("a"));
-    expectBool("COM gpa executes parameter picker command",
-               modeEditor.comModeActive()
-                   && modeEditor.comModeBuffer().isEmpty()
-                   && comCommandSpy.count() == 1
-                   && comCommandSpy.takeFirst().at(0).toString()
-                          == QStringLiteral("gpa"),
-               true);
-    sendWidgetKey(&modeEditor, Qt::Key_G, QStringLiteral("g"));
-    sendWidgetKey(&modeEditor, Qt::Key_P, QStringLiteral("p"));
-    sendWidgetKey(&modeEditor, Qt::Key_O, QStringLiteral("o"));
-    expectBool("COM gpo executes port append command",
-               modeEditor.comModeActive()
-                   && modeEditor.comModeBuffer().isEmpty()
-                   && comCommandSpy.count() == 1
-                   && comCommandSpy.takeFirst().at(0).toString()
-                          == QStringLiteral("gpo"),
-               true);
-    sendWidgetKey(&modeEditor, Qt::Key_G, QStringLiteral("g"));
-    sendWidgetKey(&modeEditor, Qt::Key_P, QStringLiteral("p"));
-    sendWidgetKey(&modeEditor, Qt::Key_I, QStringLiteral("i"));
-    expectBool("COM gpi executes parameter insert command",
-               modeEditor.comModeActive()
-                   && modeEditor.comModeBuffer().isEmpty()
-                   && comCommandSpy.count() == 1
-                   && comCommandSpy.takeFirst().at(0).toString()
-                          == QStringLiteral("gpi"),
-               true);
-    sendWidgetKey(&modeEditor, Qt::Key_G, QStringLiteral("g"));
-    sendWidgetKey(&modeEditor, Qt::Key_S, QStringLiteral("s"));
-    expectBool("COM gs stays a non-executable prefix",
-               modeEditor.comModeActive()
-                   && modeEditor.comModeBuffer() == QStringLiteral("gs")
-                   && comCommandSpy.count() == 0,
-               true);
-    sendWidgetKey(&modeEditor, Qt::Key_D, QStringLiteral("d"));
-    expectBool("COM gsd executes signal declaration picker command",
-               modeEditor.comModeActive()
-                   && modeEditor.comModeBuffer().isEmpty()
-                   && comCommandSpy.count() == 1
-                   && comCommandSpy.takeFirst().at(0).toString()
-                          == QStringLiteral("gsd"),
-               true);
-    sendWidgetKey(&modeEditor, Qt::Key_G, QStringLiteral("g"));
-    sendWidgetKey(&modeEditor, Qt::Key_S, QStringLiteral("s"));
-    expectBool("COM gs stays a prefix before signal insert",
-               modeEditor.comModeActive()
-                   && modeEditor.comModeBuffer() == QStringLiteral("gs")
-                   && comCommandSpy.count() == 0,
-               true);
-    sendWidgetKey(&modeEditor, Qt::Key_I, QStringLiteral("i"));
-    expectBool("COM gsi executes signal insert command",
-               modeEditor.comModeActive()
-                   && modeEditor.comModeBuffer().isEmpty()
-                   && comCommandSpy.count() == 1
-                   && comCommandSpy.takeFirst().at(0).toString()
-                          == QStringLiteral("gsi"),
-               true);
-    sendWidgetKey(&modeEditor, Qt::Key_G, QStringLiteral("g"));
-    sendWidgetKey(&modeEditor, Qt::Key_I, QStringLiteral("i"));
-    expectBool("COM gi stays a non-executable prefix",
-               modeEditor.comModeActive()
-                   && modeEditor.comModeBuffer() == QStringLiteral("gi")
-                   && comCommandSpy.count() == 0,
-               true);
-    sendWidgetKey(&modeEditor, Qt::Key_I, QStringLiteral("i"));
-    expectBool("COM gii executes instance insert command",
-               modeEditor.comModeActive()
-                   && modeEditor.comModeBuffer().isEmpty()
-                   && comCommandSpy.count() == 1
-                   && comCommandSpy.takeFirst().at(0).toString()
-                          == QStringLiteral("gii"),
-               true);
-    sendWidgetKey(&modeEditor, Qt::Key_G, QStringLiteral("g"));
-    sendWidgetKey(&modeEditor, Qt::Key_A, QStringLiteral("a"));
-    expectBool("COM ga stays a non-executable prefix",
-               modeEditor.comModeActive()
-                   && modeEditor.comModeBuffer() == QStringLiteral("ga")
-                   && comCommandSpy.count() == 0,
-               true);
-    sendWidgetKey(&modeEditor, Qt::Key_C, QStringLiteral("c"));
-    expectBool("COM gac executes assign insert command",
-               modeEditor.comModeActive()
-                   && modeEditor.comModeBuffer().isEmpty()
-                   && comCommandSpy.count() == 1
-                   && comCommandSpy.takeFirst().at(0).toString()
-                          == QStringLiteral("gac"),
-               true);
-    sendWidgetKey(&modeEditor, Qt::Key_G, QStringLiteral("g"));
-    sendWidgetKey(&modeEditor, Qt::Key_E, QStringLiteral("e"));
-    expectBool("COM ge stays a non-executable prefix",
-               modeEditor.comModeActive()
-                   && modeEditor.comModeBuffer() == QStringLiteral("ge")
-                   && comCommandSpy.count() == 0,
-               true);
-    sendWidgetKey(&modeEditor, Qt::Key_F, QStringLiteral("f"));
-    expectBool("COM gef executes module end insert command",
-               modeEditor.comModeActive()
-                   && modeEditor.comModeBuffer().isEmpty()
-                   && comCommandSpy.count() == 1
-                   && comCommandSpy.takeFirst().at(0).toString()
-                          == QStringLiteral("gef"),
-               true);
-    sendWidgetKey(&modeEditor, Qt::Key_C, QStringLiteral("c"));
-    expectBool("COM c stays a prefix before column or clear commands",
-               modeEditor.comModeActive()
-                   && modeEditor.comModeBuffer() == QStringLiteral("c")
-                   && comCommandSpy.count() == 0,
-               true);
-    sendWidgetKey(&modeEditor, Qt::Key_N, QStringLiteral("n"));
-    expectBool("COM cn executes column number command",
-               modeEditor.comModeActive()
-                   && modeEditor.comModeBuffer().isEmpty()
-                   && comCommandSpy.count() == 1
-                   && comCommandSpy.takeFirst().at(0).toString()
-                          == QStringLiteral("cn"),
-               true);
-    sendWidgetKey(&modeEditor, Qt::Key_C, QStringLiteral("c"));
-    expectBool("COM c stays a prefix before clear RHS",
-               modeEditor.comModeActive()
-                   && modeEditor.comModeBuffer() == QStringLiteral("c")
-                   && comCommandSpy.count() == 0,
-               true);
-    sendWidgetKey(&modeEditor, Qt::Key_R, QStringLiteral("r"));
-    expectBool("COM cr executes clear RHS command",
-               modeEditor.comModeActive()
-                   && modeEditor.comModeBuffer().isEmpty()
-                   && comCommandSpy.count() == 1
-                   && comCommandSpy.takeFirst().at(0).toString()
-                          == QStringLiteral("cr"),
-               true);
-    sendWidgetKey(&modeEditor, Qt::Key_S, QStringLiteral("s"));
-    expectBool("COM s stays a prefix before select inside",
-               modeEditor.comModeActive()
-                   && modeEditor.comModeBuffer() == QStringLiteral("s")
-                   && comCommandSpy.count() == 0,
-               true);
-    sendWidgetKey(&modeEditor, Qt::Key_I, QStringLiteral("i"));
-    expectBool("COM si executes select inside command",
-               modeEditor.comModeActive()
-                   && modeEditor.comModeBuffer().isEmpty()
-                   && comCommandSpy.count() == 1
-                   && comCommandSpy.takeFirst().at(0).toString()
-                          == QStringLiteral("si"),
-               true);
-    sendWidgetKey(&modeEditor, Qt::Key_QuoteLeft, QStringLiteral("`"));
-    expectBool("backtick exits COM mode",
-               !modeEditor.comModeActive(),
-               true);
-    modeEditor.close();
-
-    MyCodeEditor* activeEditor =
+    CommandLayerCoordinator* coordinator =
+        window.commandLayerCoordinator.get();
+    MyCodeEditor* editor =
         window.tabManager ? window.tabManager->getCurrentEditor() : nullptr;
-    if (activeEditor && window.comModeCoordinator) {
-        if (QCompleter* completer = activeEditor->findChild<QCompleter*>())
-            completer->popup()->hide();
-        activeEditor->cancelFoldRegionMarkMode();
-        activeEditor->cancelFoldShelfMode();
-        if (activeEditor->comModeActive())
-            activeEditor->exitComMode();
-        QTextCursor cursor = activeEditor->textCursor();
-        cursor.clearSelection();
-        activeEditor->setTextCursor(cursor);
-        activeEditor->setFocus();
-        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    expectBool("Command Layer coordinator and active editor exist",
+               coordinator && editor,
+               true);
+    if (!coordinator || !editor)
+        return;
 
-        sendWidgetKey(activeEditor,
-                      Qt::Key_QuoteLeft,
-                      QStringLiteral("`"),
-                      comToggleModifiers);
-        QLabel* strip = window.comModeCoordinator->commandStripWidget();
-        expectBool("COM mode shows app command strip",
-                   activeEditor->comModeActive()
-                       && strip
-                       && strip->isVisible()
-                       && strip->text() == QStringLiteral("COM"),
-                   true);
+    const auto sendKeyEvent =
+        [](QWidget* target,
+           QEvent::Type type,
+           int key,
+           Qt::KeyboardModifiers modifiers = Qt::NoModifier,
+           const QString& text = QString(),
+           bool autoRepeat = false) {
+        if (!target)
+            return;
+        QKeyEvent event(type,
+                        key,
+                        modifiers,
+                        text,
+                        autoRepeat,
+                        autoRepeat ? 2 : 1);
+        QApplication::sendEvent(target, &event);
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+    };
+    const auto typeQuery =
+        [&](QWidget* target, const QString& text) {
+        for (const QChar ch : text) {
+            int key = 0;
+            if (ch.isLetter()) {
+                key = Qt::Key_A
+                    + ch.toLower().unicode() - QLatin1Char('a').unicode();
+            } else if (ch.isDigit()) {
+                key = Qt::Key_0
+                    + ch.unicode() - QLatin1Char('0').unicode();
+            } else if (ch == QLatin1Char(' ')) {
+                key = Qt::Key_Space;
+            } else if (ch == QLatin1Char('-')) {
+                key = Qt::Key_Minus;
+            }
+            if (key != 0)
+                sendKeyEvent(target, QEvent::KeyPress, key);
+        }
+    };
+    const auto pressF24 = [&](QWidget* target) {
+        sendKeyEvent(target, QEvent::KeyPress, Qt::Key_F24);
+    };
+    const auto releaseF24 = [&](QWidget* target) {
+        sendKeyEvent(target, QEvent::KeyRelease, Qt::Key_F24);
+    };
 
-        sendWidgetKey(activeEditor, Qt::Key_G, QStringLiteral("g"));
-        sendWidgetKey(activeEditor, Qt::Key_P, QStringLiteral("p"));
-        expectBool("COM strip shows prefix child hints",
-                   strip
-                       && strip->text().contains(QStringLiteral("COM  gp"))
-                       && strip->text().contains(QStringLiteral("gpa"))
-                       && strip->text().contains(QStringLiteral("gpo"))
-                       && strip->styleSheet().contains(QStringLiteral("#111827"))
-                       && strip->styleSheet().contains(QStringLiteral("#D1FAE5")),
-                   true);
-        sendWidgetKey(activeEditor, Qt::Key_Escape);
-        expectBool("COM prefix hint clears with Esc",
-                   activeEditor->comModeActive()
-                       && strip
-                       && strip->text() == QStringLiteral("COM"),
-                   true);
+    editor->cancelFoldRegionMarkMode();
+    editor->cancelFoldShelfMode();
+    if (QCompleter* completer = editor->findChild<QCompleter*>())
+        completer->popup()->hide();
+    editor->setFocus();
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 30);
 
-        sendWidgetKey(activeEditor, Qt::Key_S, QStringLiteral("s"));
-        expectBool("COM strip shows select-inside hint",
-                   strip
-                       && strip->text().contains(QStringLiteral("COM  s"))
-                       && strip->text().contains(QStringLiteral("si"))
-                       && strip->text().contains(
-                           QStringLiteral("Select inside begin-end")),
-                   true);
-        sendWidgetKey(activeEditor, Qt::Key_Escape);
-        expectBool("COM select prefix clears with Esc",
-                   activeEditor->comModeActive()
-                       && strip
-                       && strip->text() == QStringLiteral("COM"),
-                   true);
+    pressF24(editor);
+    CommandLayerPanel* commandPanel = coordinator->panelWidget();
+    expectBool("F24 press enters application Command Layer",
+               coordinator->isActive()
+                   && coordinator->isF24Held()
+                   && commandPanel
+                   && commandPanel->isVisible()
+                   && commandPanel->candidateListWidget()->count() == 10,
+               true);
+    typeQuery(editor, QStringLiteral("gm"));
+    sendKeyEvent(editor,
+                 QEvent::KeyPress,
+                 Qt::Key_F24,
+                 Qt::NoModifier,
+                 QString(),
+                 true);
+    sendKeyEvent(editor,
+                 QEvent::KeyRelease,
+                 Qt::Key_F24,
+                 Qt::NoModifier,
+                 QString(),
+                 true);
+    expectBool("F24 auto-repeat press and release are ignored",
+               coordinator->isActive()
+                   && coordinator->isF24Held()
+                   && coordinator->query() == QStringLiteral("gm"),
+               true);
+    releaseF24(editor);
+    expectBool("F24 release exits unfinished search",
+               !coordinator->isActive()
+                   && !coordinator->isF24Held()
+                   && !commandPanel->isVisible(),
+               true);
 
-        sendWidgetKey(activeEditor, Qt::Key_G, QStringLiteral("g"));
-        sendWidgetKey(activeEditor, Qt::Key_0, QStringLiteral("0"));
-        sendWidgetKey(activeEditor, Qt::Key_Return);
-        expectBool("COM error uses dark alert strip",
-                   activeEditor->comModeActive()
-                       && strip
-                       && strip->text().contains(
-                           QStringLiteral("Line number must be >= 1"))
-                       && strip->styleSheet().contains(QStringLiteral("#1F1115"))
-                       && strip->styleSheet().contains(QStringLiteral("#FCA5A5"))
-                       && strip->styleSheet().contains(QStringLiteral("#F43F5E")),
-                   true);
-        sendWidgetKey(activeEditor, Qt::Key_Escape);
-        expectBool("COM error strip resets after Esc",
-                   activeEditor->comModeActive()
-                       && strip
-                       && strip->text() == QStringLiteral("COM")
-                       && strip->styleSheet().contains(QStringLiteral("#111827"))
-                       && strip->styleSheet().contains(QStringLiteral("#D1FAE5")),
-                   true);
+    pressF24(editor);
+    sendKeyEvent(editor,
+                 QEvent::KeyPress,
+                 Qt::Key_G,
+                 Qt::ControlModifier
+                     | Qt::ShiftModifier
+                     | Qt::AltModifier,
+                 QString());
+    expectBool("Command Layer query uses key codes with modifiers",
+               coordinator->query() == QStringLiteral("g"),
+               true);
+    releaseF24(editor);
 
-        const QString comSelectClearRhsOriginal =
-            QStringLiteral("module com_select_clear_rhs;\n"
-                           "  always_comb begin\n"
-                           "    a <= foo;\n"
-                           "    b = bar;\n"
-                           "  end\n"
-                           "endmodule\n");
-        activeEditor->setPlainText(comSelectClearRhsOriginal);
-        QTextCursor comSelectClearCursor(activeEditor->document());
-        comSelectClearCursor.setPosition(
-            comSelectClearRhsOriginal.indexOf(QStringLiteral("foo")));
-        activeEditor->setTextCursor(comSelectClearCursor);
-        sendWidgetKey(activeEditor, Qt::Key_S, QStringLiteral("s"));
-        sendWidgetKey(activeEditor, Qt::Key_I, QStringLiteral("i"));
-        expectBool("COM si selects begin-end interior and stays COM",
-                   activeEditor->comModeActive()
-                       && activeEditor->textCursor().hasSelection()
-                       && activeEditor->textCursor().selectedText().contains(
-                           QStringLiteral("a <= foo"))
-                       && activeEditor->textCursor().selectedText().contains(
-                           QStringLiteral("b = bar"))
-                       && !activeEditor->textCursor().selectedText().contains(
-                           QStringLiteral("begin"))
-                       && !activeEditor->textCursor().selectedText().contains(
-                           QStringLiteral("end")),
+    const QString commandLineFile = editor->documentFileName();
+    const QString commandLineText =
+        QStringLiteral("module command_line;\n"
+                       "  logic a;\n"
+                       "  logic b;\n"
+                       "  assign b = a;\n"
+                       "endmodule\n");
+    expectBool("go number command has current file identity",
+               !commandLineFile.isEmpty(),
+               true);
+    if (!commandLineFile.isEmpty()) {
+        const SemanticSymbolRecord commandLineModule =
+            SemanticFixtureRecordBuilder(
+                QStringLiteral("command_line"),
+                SymbolTaxonomy::DeclarationKind::Module)
+                .withFile(commandLineFile)
+                .withLocalHandle(87006)
+                .withRange(1, 1, 6, 1)
+                .record();
+        SemanticIndex commandLineSemanticIndex;
+        commandLineSemanticIndex.setSnapshot(
+            snapshotFromRecords(
+                {commandLineModule},
+                {},
+                {},
+                {{commandLineFile, commandLineText}}));
+        SemanticIndex* previousCoordinatorIndex = coordinator->semanticIndex;
+        coordinator->semanticIndex = &commandLineSemanticIndex;
+        editor->setPlainText(commandLineText);
+        QTextCursor commandLineCursor(editor->document());
+        commandLineCursor.setPosition(0);
+        editor->setTextCursor(commandLineCursor);
+        pressF24(editor);
+        typeQuery(editor, QStringLiteral("go 3"));
+        sendKeyEvent(editor, QEvent::KeyPress, Qt::Key_Return);
+        expectBool("go number command navigates module-relative line",
+                   coordinator->isActive()
+                       && coordinator->query().isEmpty()
+                       && editor->textCursor().blockNumber() == 2,
                    true);
-        sendWidgetKey(activeEditor, Qt::Key_C, QStringLiteral("c"));
-        sendWidgetKey(activeEditor, Qt::Key_R, QStringLiteral("r"));
-        expectBool("COM si then cr clears selected assignment RHS",
-                   !activeEditor->comModeActive()
-                       && activeEditor->templateSlotModeActive()
-                       && activeEditor->templateSlotModeActiveIndex() == 0
-                       && activeEditor->templateSlotModeSlotCount() == 2
-                       && activeEditor->toPlainText()
-                           == QStringLiteral("module com_select_clear_rhs;\n"
-                                             "  always_comb begin\n"
-                                             "    a <= ;\n"
-                                             "    b = ;\n"
-                                             "  end\n"
-                                             "endmodule\n"),
-                   true);
-        sendWidgetKey(activeEditor, Qt::Key_Tab);
-        expectBool("COM cr Slot Mode Tab cycles without exiting",
-                   activeEditor->templateSlotModeActive()
-                       && activeEditor->templateSlotModeActiveIndex() == 1,
-                   true);
-        sendWidgetKey(activeEditor, Qt::Key_Escape);
-        expectBool("COM cr Slot Mode exits with Esc",
-                   !activeEditor->templateSlotModeActive(),
-                   true);
-        sendWidgetKey(activeEditor,
-                      Qt::Key_QuoteLeft,
-                      QStringLiteral("`"),
-                      comToggleModifiers);
-        expectBool("COM toggle re-enters after cr Slot Mode Esc",
-                   activeEditor->comModeActive()
-                       && strip
-                       && strip->isVisible()
-                       && strip->text() == QStringLiteral("COM"),
-                   true);
+        releaseF24(editor);
+        coordinator->semanticIndex = previousCoordinatorIndex;
+    }
 
-        const QString comClearRhsOriginal =
-            QStringLiteral("module com_clear_rhs;\n"
-                           "  assign a = rhs_value;\n"
-                           "endmodule\n");
-        activeEditor->setPlainText(comClearRhsOriginal);
-        QTextCursor comClearRhsCursor(activeEditor->document());
-        comClearRhsCursor.setPosition(
-            comClearRhsOriginal.indexOf(QStringLiteral("rhs_value")) + 2);
-        activeEditor->setTextCursor(comClearRhsCursor);
-        sendWidgetKey(activeEditor, Qt::Key_C, QStringLiteral("c"));
-        sendWidgetKey(activeEditor, Qt::Key_R, QStringLiteral("r"));
-        expectBool("COM cr clears current assignment RHS",
-                   !activeEditor->comModeActive()
-                       && activeEditor->templateSlotModeActive()
-                       && activeEditor->templateSlotModeActiveIndex() == 0
-                       && activeEditor->toPlainText()
-                           == QStringLiteral("module com_clear_rhs;\n"
-                                             "  assign a = ;\n"
-                                             "endmodule\n"),
-                   true);
-        sendWidgetKey(activeEditor, Qt::Key_Escape);
-        sendWidgetKey(activeEditor,
-                      Qt::Key_QuoteLeft,
-                      QStringLiteral("`"),
-                      comToggleModifiers);
+    editor->setPlainText(QString());
+    sendWidgetKey(editor, Qt::Key_QuoteLeft, QStringLiteral("`"));
+    expectBool("ordinary backtick remains SystemVerilog input",
+               editor->toPlainText() == QStringLiteral("`")
+                   && !coordinator->isActive(),
+               true);
 
-        const QString comClearRhsNoAssignment =
-            QStringLiteral("module com_no_rhs;\nendmodule\n");
-        activeEditor->setPlainText(comClearRhsNoAssignment);
-        QTextCursor comNoAssignmentCursor(activeEditor->document());
-        comNoAssignmentCursor.setPosition(
-            comClearRhsNoAssignment.indexOf(QStringLiteral("com_no_rhs")));
-        activeEditor->setTextCursor(comNoAssignmentCursor);
-        sendWidgetKey(activeEditor, Qt::Key_C, QStringLiteral("c"));
-        sendWidgetKey(activeEditor, Qt::Key_R, QStringLiteral("r"));
-        expectBool("COM cr failure leaves text and reports reason",
-                   activeEditor->comModeActive()
-                       && activeEditor->toPlainText() == comClearRhsNoAssignment
-                       && strip
-                       && strip->text().contains(
-                           QStringLiteral("No assignment RHS found"))
-                       && strip->styleSheet().contains(QStringLiteral("#1F1115")),
-                   true);
-        sendWidgetKey(activeEditor, Qt::Key_Escape);
-        expectBool("COM cr failure clears with Esc",
-                   activeEditor->comModeActive()
-                       && strip
-                       && strip->text() == QStringLiteral("COM"),
-                   true);
+    editor->setPlainText(QStringLiteral(
+        "module no_auto;\n"
+        "  logic a;\n"
+        "  assign y = a;\n"
+        "endmodule\n"));
+    QTextCursor noAutoCursor = editor->textCursor();
+    noAutoCursor.setPosition(
+        editor->toPlainText().indexOf(QStringLiteral("assign")));
+    editor->setTextCursor(noAutoCursor);
+    const QString beforeUniqueMatch = editor->toPlainText();
+    pressF24(editor);
+    typeQuery(editor, QStringLiteral("addsig"));
+    expectBool("unique match waits for Enter",
+               coordinator->isActive()
+                   && coordinator->query() == QStringLiteral("addsig")
+                   && editor->toPlainText() == beforeUniqueMatch
+                   && !coordinator->pickerPanel()->isVisible(),
+               true);
+    releaseF24(editor);
 
-        sendWidgetKey(activeEditor, Qt::Key_C, QStringLiteral("c"));
-        sendWidgetKey(activeEditor, Qt::Key_N, QStringLiteral("n"));
-        expectBool("COM cn failure reports missing column selection",
-                   activeEditor->comModeActive()
-                       && strip
-                       && strip->text().contains(
-                           QStringLiteral("No column selection"))
-                       && strip->styleSheet().contains(QStringLiteral("#1F1115")),
-                   true);
-        sendWidgetKey(activeEditor, Qt::Key_Escape);
-        sendWidgetKey(activeEditor, Qt::Key_QuoteLeft, QStringLiteral("`"));
+    pressF24(editor);
+    typeQuery(editor, QStringLiteral("go"));
+    QListWidget* candidates = commandPanel->candidateListWidget();
+    const int initialRow = candidates->currentRow();
+    sendKeyEvent(editor, QEvent::KeyPress, Qt::Key_Down);
+    const int downRow = candidates->currentRow();
+    sendKeyEvent(editor, QEvent::KeyPress, Qt::Key_Up);
+    expectBool("ambiguous candidates allow up and down selection",
+               candidates->count() == 4
+                   && initialRow == 0
+                   && downRow == 1
+                   && candidates->currentRow() == 0,
+               true);
+    releaseF24(editor);
 
-        activeEditor->setPlainText(QStringLiteral("0010\n9999\n"));
-        activeEditor->setFocus();
-        QTextBlock numberFirst =
-            activeEditor->document()->findBlockByNumber(0);
-        QTextBlock numberSecond =
-            activeEditor->document()->findBlockByNumber(1);
-        QTextCursor numberStart(numberFirst);
-        numberStart.setPosition(numberFirst.position());
-        QTextCursor numberEnd(numberSecond);
-        numberEnd.setPosition(numberSecond.position() + 4);
-        activeEditor->setTextCursor(numberStart);
-        QTest::mouseClick(activeEditor->viewport(),
+    editor->setPlainText(QStringLiteral(
+        "module lifecycle;\n"
+        "  logic a;\n"
+        "endmodule\n"));
+    QTextCursor lifecycleCursor = editor->textCursor();
+    lifecycleCursor.setPosition(
+        editor->toPlainText().indexOf(QStringLiteral("logic")));
+    editor->setTextCursor(lifecycleCursor);
+    const QString lifecycleText = editor->toPlainText();
+    pressF24(editor);
+    typeQuery(editor, QStringLiteral("goendm"));
+    sendKeyEvent(editor, QEvent::KeyPress, Qt::Key_Return);
+    expectBool("command completion clears query and continues while F24 held",
+               coordinator->isActive()
+                   && coordinator->isF24Held()
+                   && coordinator->query().isEmpty()
+                   && editor->toPlainText() == lifecycleText
+                   && editor->textCursor().position()
+                      == lifecycleText.indexOf(
+                          QStringLiteral("endmodule")),
+               true);
+    typeQuery(editor, QStringLiteral("help"));
+    sendKeyEvent(editor, QEvent::KeyPress, Qt::Key_Return);
+    expectBool("help lists all ten canonical commands",
+               coordinator->isActive()
+                   && commandPanel->isVisible()
+                   && commandPanel->candidateListWidget()->count() == 10
+                   && commandPanel->candidateListWidget()->item(0)->text()
+                          .contains(QStringLiteral("go <number>"))
+                   && commandPanel->candidateListWidget()->item(9)->text()
+                          .contains(QStringLiteral("help")),
+               true);
+    typeQuery(editor, QStringLiteral("g"));
+    expectBool("help returns to search while F24 remains held",
+               coordinator->isActive()
+                   && coordinator->query() == QStringLiteral("g"),
+               true);
+    releaseF24(editor);
+
+    pressF24(editor);
+    typeQuery(editor, QStringLiteral("zz"));
+    expectBool("Command Layer displays no-match failure reason",
+               commandPanel->failureLabelWidget()->isVisible()
+                   && commandPanel->failureLabelWidget()->text()
+                          .contains(QStringLiteral("No command matches")),
+               true);
+    sendKeyEvent(editor, QEvent::KeyPress, Qt::Key_Escape);
+    typeQuery(editor, QStringLiteral("g0"));
+    expectBool("Command Layer displays invalid line reason",
+               commandPanel->failureLabelWidget()->isVisible()
+                   && commandPanel->failureLabelWidget()->text()
+                          == QStringLiteral("Line number must be >= 1"),
+               true);
+    releaseF24(editor);
+
+    editor->setPlainText(QStringLiteral(
+        "module edits;\n"
+        "  logic a;\n"
+        "  assign y = a;\n"
+        "endmodule\n"));
+    QTextCursor editCursor = editor->textCursor();
+    editCursor.setPosition(
+        editor->toPlainText().indexOf(QStringLiteral("assign")));
+    editor->setTextCursor(editCursor);
+    pressF24(editor);
+    typeQuery(editor, QStringLiteral("as"));
+    sendKeyEvent(editor, QEvent::KeyPress, Qt::Key_Return);
+    expectBool("add signal executes through Command Layer",
+               coordinator->isActive()
+                   && coordinator->query().isEmpty()
+                   && editor->toPlainText().contains(
+                       QStringLiteral("logic a;\n  \n  assign")),
+               true);
+    releaseF24(editor);
+
+    const QString parameterCommandInput =
+        QStringLiteral("module add_parameter_command #(\n"
+                       "  parameter int WIDTH = 8\n"
+                       ") (\n"
+                       "  input logic clk\n"
+                       ");\n"
+                       "endmodule\n");
+    editor->setPlainText(parameterCommandInput);
+    QTextCursor parameterCommandCursor = editor->textCursor();
+    parameterCommandCursor.setPosition(
+        parameterCommandInput.indexOf(QStringLiteral("clk")));
+    editor->setTextCursor(parameterCommandCursor);
+    pressF24(editor);
+    typeQuery(editor, QStringLiteral("add parameter"));
+    sendKeyEvent(editor, QEvent::KeyPress, Qt::Key_Return);
+    expectBool("add parameter executes through Command Layer",
+               coordinator->isActive()
+                   && coordinator->query().isEmpty()
+                   && editor->toPlainText().contains(
+                       QStringLiteral("parameter int WIDTH = 8,\n  \n)")),
+               true);
+    releaseF24(editor);
+
+    const QString portCommandInput =
+        QStringLiteral("module add_port_command (\n"
+                       "  input logic clk,\n"
+                       "  output logic done\n"
+                       ");\n"
+                       "endmodule\n");
+    editor->setPlainText(portCommandInput);
+    QTextCursor portCommandCursor = editor->textCursor();
+    portCommandCursor.setPosition(
+        portCommandInput.indexOf(QStringLiteral("done")));
+    editor->setTextCursor(portCommandCursor);
+    pressF24(editor);
+    typeQuery(editor, QStringLiteral("add port"));
+    sendKeyEvent(editor, QEvent::KeyPress, Qt::Key_Return);
+    expectBool("add port executes through Command Layer",
+               coordinator->isActive()
+                   && coordinator->query().isEmpty()
+                   && editor->toPlainText().contains(
+                       QStringLiteral("output logic done,\n  \n);")),
+               true);
+    releaseF24(editor);
+
+    const QString selectClearInput =
+        QStringLiteral("module select_clear;\n"
+                       "  always_comb begin\n"
+                       "    a <= foo;\n"
+                       "    b = bar;\n"
+                       "  end\n"
+                       "endmodule\n");
+    editor->setPlainText(selectClearInput);
+    QTextCursor selectCursor = editor->textCursor();
+    selectCursor.setPosition(
+        selectClearInput.indexOf(QStringLiteral("foo")));
+    editor->setTextCursor(selectCursor);
+    pressF24(editor);
+    typeQuery(editor, QStringLiteral("sbe"));
+    sendKeyEvent(editor, QEvent::KeyPress, Qt::Key_Return);
+    const bool selectedInterior =
+        editor->textCursor().hasSelection()
+        && editor->textCursor().selectedText().contains(
+            QStringLiteral("a <= foo"));
+    typeQuery(editor, QStringLiteral("cr"));
+    sendKeyEvent(editor, QEvent::KeyPress, Qt::Key_Return);
+    expectBool("select begin end then clear right executes continuously",
+               selectedInterior
+                   && coordinator->isActive()
+                   && editor->templateSlotModeActive()
+                   && editor->templateSlotModeSlotCount() == 2
+                   && editor->toPlainText().contains(
+                       QStringLiteral("a <= ;"))
+                   && editor->toPlainText().contains(
+                       QStringLiteral("b = ;")),
+               true);
+    releaseF24(editor);
+    sendWidgetKey(editor, Qt::Key_Escape);
+
+    editor->setPlainText(QStringLiteral(
+        "module clear_failure;\nendmodule\n"));
+    pressF24(editor);
+    typeQuery(editor, QStringLiteral("cr"));
+    sendKeyEvent(editor, QEvent::KeyPress, Qt::Key_Return);
+    expectBool("editing failure remains visible without leaving held layer",
+               coordinator->isActive()
+                   && coordinator->query().isEmpty()
+                   && commandPanel->failureLabelWidget()->isVisible()
+                   && commandPanel->failureLabelWidget()->text()
+                          .contains(QStringLiteral("No assignment RHS")),
+               true);
+    releaseF24(editor);
+
+    pressF24(editor);
+    typeQuery(editor, QStringLiteral("gm"));
+    sendKeyEvent(editor, QEvent::KeyPress, Qt::Key_Return);
+    CommandLayerPickerPanel* modulePicker = coordinator->pickerPanel();
+    expectBool("go module opens secondary picker",
+               coordinator->isActive()
+                   && coordinator->isF24Held()
+                   && modulePicker
+                   && modulePicker->isVisible()
+                   && !commandPanel->isVisible(),
+               true);
+    releaseF24(modulePicker);
+    expectBool("F24 release does not cancel open module picker",
+               coordinator->isActive()
+                   && !coordinator->isF24Held()
+                   && modulePicker->isVisible(),
+               true);
+    sendWidgetKey(modulePicker, Qt::Key_Escape);
+    expectBool("module picker completion returns to editor after release",
+               !coordinator->isActive()
+                   && !modulePicker->isVisible(),
+               true);
+
+    pressF24(editor);
+    typeQuery(editor, QStringLiteral("gm"));
+    sendKeyEvent(editor, QEvent::KeyPress, Qt::Key_Return);
+    CommandLayerPickerItem activatedModule;
+    activatedModule.kind = CommandLayerPickerItemKind::Module;
+    activatedModule.name = QStringLiteral("lifecycle");
+    coordinator->activatePickerItem(activatedModule);
+    expectBool("module picker activation returns to search while F24 is held",
+               coordinator->isActive()
+                   && coordinator->isF24Held()
+                   && commandPanel->isVisible()
+                   && coordinator->query().isEmpty(),
+               true);
+    releaseF24(editor);
+
+    pressF24(editor);
+    typeQuery(editor, QStringLiteral("gpk"));
+    sendKeyEvent(editor, QEvent::KeyPress, Qt::Key_Return);
+    expectBool("go package opens secondary picker",
+               coordinator->isActive()
+                   && coordinator->pickerPanel()->isVisible(),
+               true);
+    releaseF24(coordinator->pickerPanel());
+    expectBool("F24 release does not cancel open package picker",
+               coordinator->isActive()
+                   && coordinator->pickerPanel()->isVisible(),
+               true);
+    sendWidgetKey(coordinator->pickerPanel(), Qt::Key_Escape);
+
+    QLineEdit offEditorFocus(&window);
+    offEditorFocus.setObjectName(
+        QStringLiteral("commandLayerOffEditorFocus"));
+    offEditorFocus.setGeometry(10, 10, 100, 24);
+    offEditorFocus.show();
+    offEditorFocus.setFocus();
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+    pressF24(&offEditorFocus);
+    typeQuery(&offEditorFocus, QStringLiteral("help"));
+    expectBool("application-level input survives focus changes",
+               coordinator->isActive()
+                   && coordinator->query() == QStringLiteral("help"),
+               true);
+    releaseF24(&offEditorFocus);
+    offEditorFocus.hide();
+
+    QTabWidget* tabs =
+        window.findChild<QTabWidget*>(QStringLiteral("tabWidget"));
+    if (tabs && window.tabManager) {
+        const int originalIndex = tabs->currentIndex();
+        const int previousCount = window.tabManager->editorCount();
+        window.tabManager->createNewTab();
+        const int newIndex = tabs->currentIndex();
+        MyCodeEditor* newEditor = window.tabManager->getCurrentEditor();
+        tabs->setCurrentIndex(originalIndex);
+        MyCodeEditor* originalEditor =
+            window.tabManager->getCurrentEditor();
+        if (originalEditor)
+            originalEditor->setFocus();
+        pressF24(originalEditor);
+        typeQuery(originalEditor, QStringLiteral("g"));
+        tabs->setCurrentIndex(newIndex);
+        if (newEditor)
+            newEditor->setFocus();
+        typeQuery(newEditor, QStringLiteral("m"));
+        expectBool("Command Layer survives tab switching",
+                   previousCount + 1 == window.tabManager->editorCount()
+                       && coordinator->isActive()
+                       && coordinator->query() == QStringLiteral("gm")
+                       && window.tabManager->getCurrentEditor() == newEditor,
+                   true);
+        releaseF24(newEditor);
+        window.tabManager->closeTab(newIndex);
+        if (tabs->count() > 0)
+            tabs->setCurrentIndex(qBound(0,
+                                         originalIndex,
+                                         tabs->count() - 1));
+        editor = window.tabManager->getCurrentEditor();
+    }
+
+    if (editor) {
+        editor->setPlainText(QStringLiteral("0010\n9999\n"));
+        editor->setFocus();
+        const QTextBlock first =
+            editor->document()->findBlockByNumber(0);
+        const QTextBlock second =
+            editor->document()->findBlockByNumber(1);
+        QTextCursor start(first);
+        start.setPosition(first.position());
+        QTextCursor end(second);
+        end.setPosition(second.position() + 4);
+        editor->setTextCursor(start);
+        QTest::mouseClick(editor->viewport(),
                           Qt::LeftButton,
                           Qt::ShiftModifier | Qt::AltModifier,
-                          activeEditor->cursorRect(numberEnd).center());
-        expectBool("COM toggle preserves column selection before cn",
-                   activeEditor->columnSelectionActive(),
+                          editor->cursorRect(end).center());
+        expectBool("column selection fixture is active",
+                   editor->columnSelectionActive(),
                    true);
-        sendWidgetKey(activeEditor,
-                      Qt::Key_QuoteLeft,
-                      QStringLiteral("`"),
-                      comToggleModifiers);
-        expectBool("COM toggle enters without clearing column selection",
-                   activeEditor->comModeActive()
-                       && activeEditor->columnSelectionActive(),
-                   true);
-        sendWidgetKey(activeEditor, Qt::Key_C, QStringLiteral("c"));
-        sendWidgetKey(activeEditor, Qt::Key_N, QStringLiteral("n"));
+        QTest::keyClick(editor, Qt::Key_C, Qt::AltModifier);
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 30);
         QWidget* numberTool =
-            window.findChild<QWidget*>(QStringLiteral("columnNumberToolPanel"));
-        expectBool("COM cn opens column number tool without editing",
+            window.findChild<QWidget*>(
+                QStringLiteral("columnNumberToolPanel"));
+        expectBool("Alt+C still opens Column Number Tool",
                    numberTool
                        && numberTool->isVisible()
-                              && activeEditor->toPlainText()
-                              == QStringLiteral("0010\n9999\n"),
+                       && !coordinator->isActive(),
                    true);
         sendWidgetKey(numberTool, Qt::Key_Escape);
-        expectBool("Column number tool Esc closes and returns to COM",
-                   numberTool
-                       && !numberTool->isVisible()
-                       && activeEditor->comModeActive(),
-                   true);
-        sendWidgetKey(activeEditor, Qt::Key_QuoteLeft, QStringLiteral("`"));
-        QTest::keyClick(activeEditor, Qt::Key_C, Qt::AltModifier);
-        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-        expectBool("Alt+C opens column number tool",
-                   numberTool
-                       && numberTool->isVisible()
-                       && !activeEditor->comModeActive(),
-                   true);
-        sendWidgetKey(numberTool, Qt::Key_Return);
-        expectBool("Column number tool Enter applies numbering",
-                   numberTool
-                       && !numberTool->isVisible()
-                       && activeEditor->toPlainText()
-                              == QStringLiteral("0010\n0011\n"),
-                   true);
-        activeEditor->undo();
-        expectBool("Column number tool applies as one undo block",
-                   activeEditor->toPlainText()
-                       == QStringLiteral("0010\n9999\n"),
-                   true);
-        activeEditor->enterComMode();
-
-        sendWidgetKey(activeEditor, Qt::Key_G, QStringLiteral("g"));
-        sendWidgetKey(activeEditor, Qt::Key_M, QStringLiteral("m"));
-        ComModuleSelectorPanel* selector =
-            window.comModeCoordinator->moduleSelectorPanel();
-        expectBool("gm opens module selector",
-                   selector && selector->isVisible(),
-                   true);
-        sendWidgetKey(selector, Qt::Key_Escape);
-        expectBool("gm selector Esc returns to COM mode",
-                   selector
-                       && !selector->isVisible()
-                       && activeEditor->comModeActive(),
-                   true);
-
-        sendWidgetKey(activeEditor, Qt::Key_G, QStringLiteral("g"));
-        sendWidgetKey(activeEditor, Qt::Key_P, QStringLiteral("p"));
-        sendWidgetKey(activeEditor, Qt::Key_K, QStringLiteral("k"));
-        expectBool("gpk opens package selector",
-                   selector && selector->isVisible(),
-                   true);
-        sendWidgetKey(selector && selector->searchEdit
-                          ? static_cast<QWidget*>(selector->searchEdit)
-                          : static_cast<QWidget*>(selector),
-                      Qt::Key_QuoteLeft,
-                      QStringLiteral("`"));
-        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-        expectBool("picker backtick exits COM mode",
-                   selector
-                       && !selector->isVisible()
-                       && !activeEditor->comModeActive(),
-                   true);
-
-        sendWidgetKey(activeEditor,
-                      Qt::Key_QuoteLeft,
-                      QStringLiteral("`"),
-                      comToggleModifiers);
-        expectBool("COM toggle re-enters after picker backtick exit",
-                   activeEditor->comModeActive(),
-                   true);
-        sendWidgetKey(activeEditor, Qt::Key_QuoteLeft, QStringLiteral("`"));
-        expectBool("COM strip hides after backtick exit",
-                   !activeEditor->comModeActive()
-                       && strip
-                       && !strip->isVisible(),
-                   true);
-
-        QLineEdit offEditorFocus(&window);
-        offEditorFocus.setObjectName(QStringLiteral("comModeOffEditorFocus"));
-        offEditorFocus.resize(120, 24);
-        offEditorFocus.show();
-        offEditorFocus.setFocus(Qt::ShortcutFocusReason);
-        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-        sendWidgetKey(&offEditorFocus, Qt::Key_Escape);
-        QWidget* focusedAfterOffEditorEsc = QApplication::focusWidget();
-        const bool focusReturnedToEditor =
-            focusedAfterOffEditorEsc == activeEditor
-            || activeEditor->isAncestorOf(focusedAfterOffEditorEsc);
-        expectBool("Esc does not enter COM mode from non-editor focus",
-                   !activeEditor->comModeActive()
-                       && !focusReturnedToEditor,
-                   true);
-        window.comModeCoordinator->toggleCurrentEditorComMode();
-        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-        MyCodeEditor* toggledEditor =
-            window.comModeCoordinator->activeComEditor;
-        expectBool("COM toggle enters from non-editor focus",
-                   toggledEditor
-                       && toggledEditor->comModeActive()
-                       && strip
-                       && strip->isVisible()
-                       && strip->text() == QStringLiteral("COM"),
-                   true);
-        sendWidgetKey(toggledEditor, Qt::Key_QuoteLeft, QStringLiteral("`"));
-        offEditorFocus.close();
+        sendWidgetKey(editor, Qt::Key_Escape);
     }
 }
 
@@ -9386,8 +8951,6 @@ static void runPackageToolsRegression(MainWindow& window)
     if (!editor)
         return;
 
-    if (editor->comModeActive())
-        editor->exitComMode();
     editor->setPlainText(QStringLiteral("module package_tools_hidden;\n"
                                         "endmodule\n"));
     QTextCursor hiddenCursor(editor->document());
@@ -10072,8 +9635,8 @@ int main(int argc, char** argv)
                     ->matchCommandMode(QStringLiteral(";menuut "))
                     .matched,
                true);
-    expectBool("user template menu does not create COM command",
-               findComModeCommandMetadata(QStringLiteral("menuut")) == nullptr,
+    expectBool("user template menu does not create Command Layer command",
+               findCommandLayerCommand(QStringLiteral("menuut")) == nullptr,
                true);
     expectBool("user template menu does not change Global Control",
                GlobalControlService()
@@ -12062,7 +11625,7 @@ int main(int argc, char** argv)
 
     NavigationWidget* navWidget = window.findChild<NavigationWidget*>();
     expectBool("navigation widget exists", navWidget != nullptr, true);
-    runComModeRegression(window);
+    runCommandLayerRegression(window);
     runPackageToolsRegression(window);
     runGlobalControlRegression(window, navWidget);
     if (navWidget && editor) {

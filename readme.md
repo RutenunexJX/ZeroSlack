@@ -305,24 +305,24 @@ cmake -S . -B <debug-build> -DZEROSLACK_DEBUG_LINKER=GNU
   jump-to-definition, references/relationships, and focused RTL visual helpers.
 - Tree-sitter owns low-latency editor syntax and live editor structure. Slang
   owns semantic facts. `SemanticIndexSnapshot` is the UI-facing query truth.
-- COM Mode is an editor-local command layer, not a Vim clone. It has INSERT and
-  COM states, toggles with `Ctrl+Shift+Alt+backtick` whenever an editor tab is open,
-  exits with plain backtick while active, and shows an app-level command strip.
-  Esc is cancellation-only: it clears/cancels the highest-priority temporary
-  editor state or COM buffer, but no longer enters COM Mode. Current g-domain
-  commands are `gm`,
-  `g<num><Enter>`, `gp`, `gpk`, `gpa`, `gpo`, `gsi`, `gsd`, `gii`, `gac`,
-  `gpi`, `ge`, and `gef`; current c-domain commands are `cn` for the Column
-  Number Tool and `cr` for clearing assignment RHS fill points; the current
-  select-domain command is `si` for selecting complete lines inside the nearest
-  `begin ... end`. Existing fixed commands, prefixes, and the
-  module-relative line command are described by shared `commodecommandregistry`
-  metadata. The command strip renders registry-backed hints for prefixes and
-  module-relative line buffers, with a normal dark palette and a distinct dark
-  alert palette for command failures. Registry validation owns duplicate,
-  executable prefix conflict, and malformed prefix reasons, and COM command
-  failures use centralized registry-backed messages where practical. Active COM
-  editors also paint a small `COM` badge and highlighted bottom edge.
+- Command Layer is an application-level, hold-to-use command surface. Pressing
+  F24 enters search and releasing F24 exits any unfinished search; F24
+  auto-repeat is ignored. Plain backtick is ordinary SystemVerilog input.
+  Search input is derived from key codes rather than modifier-dependent event
+  text, so focus changes and tab switches do not strand editor-local state.
+  Candidates are ranked as exact match, full prefix, ordered word abbreviation,
+  then ordered character subsequence. Enter explicitly executes the selected
+  candidate; a unique match never executes automatically. The visible panel
+  continuously shows the query, ranked canonical names, selection, and failure
+  reason.
+- The ten canonical commands are `go <number>`, `go module`, `go package`,
+  `go endmodule`, `add signal`, `add parameter`, `add port`, `clear right`,
+  `select begin end`, and `help`. Module-relative navigation accepts `g100`,
+  `go100`, and `go 100`, case-insensitively, with line numbers starting at 1.
+  Module and package pickers own keyboard input after opening. Releasing F24
+  does not cancel an open picker; completion returns to search only when F24 is
+  still held. Successful non-picker commands clear the query and permit another
+  command while F24 remains held.
 - Ctrl+Space opens Global Control as a domain-first surface. Current root
   domains are `ow` and `fd`; displayed workspace commands include
   `ow <num>`, `ow r`, and the `ow s` session subdomain with
@@ -366,7 +366,7 @@ cmake -S . -B <debug-build> -DZEROSLACK_DEBUG_LINKER=GNU
   and `;;h` is intentionally unassigned.
 - Package imports are explicit through `;pk`: `;pk <query>` searches indexed
   package symbols and inserts `import pkg_name::*;`. `;p` remains parameter
-  semantic completion, COM `gpk` remains package navigation, and `;;pk` is
+  semantic completion, Command Layer `go package` remains package navigation, and `;;pk` is
   intentionally unassigned.
 - Package members are import-aware for unqualified semantic lookup. Package
   parameters, localparams, typedefs, enums, and structs marked
@@ -393,7 +393,7 @@ cmake -S . -B <debug-build> -DZEROSLACK_DEBUG_LINKER=GNU
   next/previous diagnostics using the current Problems scope and severity
   filters, then reveal and flash the target editor line.
 - `;cmd` remains semantic command completion. `;;cmd` remains template
-  expansion. COM Mode is for editor-local command actions. Slot Mode is the
+  expansion. Command Layer owns the explicit F24 command surface. Slot Mode is the
   post-template editor-local fill flow; it is active for `;;p` / `;;lp`
   parameter templates and `;;l` / `;;w` / `;;r` signal declaration templates,
   for `;m` semantic module instantiation completions, and for user templates
@@ -414,8 +414,8 @@ cmake -S . -B <debug-build> -DZEROSLACK_DEBUG_LINKER=GNU
   `MyCodeEditor::clearSelectedAssignmentRhs` clears RHS expressions in the
   complete line range touched by the current selection, or the current
   assignment when there is no selection, for supported assignment statements,
-  then starts Slot Mode on the cleared RHS fill points. COM Mode command `cr`
-  invokes this editor-local action. The obsolete named-action entry layer has
+  then starts Slot Mode on the cleared RHS fill points. Command Layer command
+  `clear right` invokes this editor-local action. The obsolete named-action entry layer has
   been removed.
 - Column Selection is visual-column based. Internal column state converts
   through the editor tab width so selections, copy/cut/paste, delete/backspace,
@@ -423,12 +423,12 @@ cmake -S . -B <debug-build> -DZEROSLACK_DEBUG_LINKER=GNU
   on lines that contain `\t`. In column mode, Tab inserts spaces to the next
   tab stop and Shift+Tab performs visual outdent instead of leaking to normal
   editor indentation.
-- COM Mode command `cn` opens the Column Number Tool when a column selection is
-  active. The tool previews and applies Dec/Hex/Bin numbering with Plain,
+- Alt+C opens the Column Number Tool when a column selection is active. The
+  tool previews and applies Dec/Hex/Bin numbering with Plain,
   C-like, SystemVerilog unsized, and SystemVerilog sized styles, plus step,
   repeat, direction, digit width, padding, hex case, and replace/insert modes.
-  Number formatting and first-row inference live in `columnnumbertool`, while
-  the COM popup only consumes that model and applies one undoable column edit.
+  Number formatting and first-row inference live in `columnnumbertool`; the
+  popup consumes that model and applies one undoable column edit.
 - Fold Region and Fold Shelf are available through Global Control. Fold Shelf
   now has a service/model-owned persistence baseline and explicit cross-file
   restore flow plus basic rename, search, and stale/consumed cleanup
@@ -690,14 +690,17 @@ engineering configuration / diagnostics lane.
   shaping, failure reasons, and navigation payloads.
 - UI panels and editor widgets render models, route commands, and apply returned
   edit operations. They do not scan workspaces or run Slang.
-- `ComModeCoordinator` owns COM state, command strip, and picker presentation.
-  `ComModeService` owns COM picker query/report shaping.
+- `CommandLayerCoordinator` owns application-level F24 state, query/selection,
+  the Command Layer panel, picker lifecycle, and command dispatch.
+  `CommandLayerService` owns module/package picker shaping and module-relative
+  line resolution. `commandlayercommandregistry` owns the ten canonical
+  commands and deterministic matching tiers.
 - `GlobalControlService` owns Global Control command/domain shaping.
 - Slot Mode baseline: `CodeTemplateService` produces template
   text plus relative editable slot metadata; `EditorCompletionWorkflow` applies
   the insertion and starts an editor-local slot session; `MyCodeEditor` state
   owns active slot ranges, highlighting, navigation, and invalidation.
-  Slot state must not live in UI panels or semantic services. COM Mode toggle
+  Slot state must not live in UI panels or semantic services. F24 entry/release
   does not clear an active Slot Mode session; explicit Esc and stale-session
   events own slot exit.
 - Package Tools baseline: `PackageToolService` owns the package-only template
@@ -823,14 +826,16 @@ Current command surfaces are intentionally separate:
   `;;cmd` template command tokens, exposes prefix and intent-scoped exact
   queries, and does not own UI rendering or semantic lookup policy.
 - The obsolete named-action layer has been removed. Editor actions stay
-  available through normal shortcuts, context menus, COM Mode where explicitly
+  available through normal shortcuts, context menus, Command Layer where explicitly
   registered, or direct editor APIs; no legacy alternate-action service or
   dispatcher remains.
-- COM Mode is editor-local and registry-backed. `commodecommandregistry` owns
-  command metadata and conflict validation; `ComModeService` owns picker/query
-  reports; `ComModeCoordinator` owns mode state, strip text, picker UI, and
-  navigation dispatch. Column-number formatting and inference are owned by
-  `columnnumbertool`; the `cn` popup is only a COM/editor-local UI consumer.
+- Command Layer is application-level and registry-backed.
+  `commandlayercommandregistry` stores only canonical names, descriptions,
+  input kinds, and execution ids. `CommandLayerService` owns module/package
+  picker reports and relative-line resolution; `CommandLayerCoordinator` owns
+  F24 press/release state, ranked selection, UI, secondary-interaction
+  handoff, and dispatch. Column-number formatting and inference remain owned by
+  `columnnumbertool` and are entered independently through Alt+C.
 - Global Control is app/workspace/global command discovery. `GlobalControlService`
   owns root domains and domain child command shaping; `MainWindow` dispatches
   selected items through existing coordinators and dialogs.
@@ -844,14 +849,14 @@ Conflict boundaries:
 - `;;cmd` must stay template insertion; template storage/query work belongs in
   a service layer, not in UI widgets.
 - User template records must use compact `;;` command tokens. `;:` remains
-  reserved/inactive, and user template storage must not alter `;cmd`, COM Mode,
+  reserved/inactive, and user template storage must not alter `;cmd`, Command Layer,
   or Global Control namespaces.
 - Custom abbreviations may only resolve to existing compact `;cmd` or `;;cmd`
-  tokens. They must not revive `;:cmd`, define COM Mode commands, or define
+  tokens. They must not revive `;:cmd`, define Command Layer commands, or define
   Global Control commands.
-- COM Mode must not become a Vim clone or share syntax with `;cmd` / `;;cmd`.
+- Command Layer must not become a Vim clone or share syntax with `;cmd` / `;;cmd`.
 - Global Control must stay Ctrl+Space app/workspace control and must not become
-  editor-local COM Mode.
+  the F24 Command Layer.
 
 ## Slot Mode Contract
 
@@ -874,7 +879,7 @@ explicitly enables slots for that family.
   slot highlights clear, and normal editor input resumes.
 - Cursor movement outside the active slot/session, document edits that make slot
   ranges stale, tab switch/close, or Global Control entry exits Slot Mode
-  without rollback. COM Mode toggle does not clear Slot Mode by itself.
+  without rollback. F24 entry or release does not clear Slot Mode by itself.
 - While active, Slot Mode paints all slots with a weak blinking highlight,
   emphasizes the active slot, and reports status as `SLOT n/m`.
 - Slot Mode is editor-local text state. It must not run Slang, scan the
@@ -958,15 +963,15 @@ assignment statements and producing fill slots for the future Slot Mode flow.
   `MyCodeEditor::clearSelectedAssignmentRhs`. The action applies the report in
   one undoable edit block and preserves failure reasons in editor status
   feedback.
-- COM Mode command `cr` invokes the same editor-local clear-RHS path. It expands
+- Command Layer command `clear right` invokes the same editor-local clear-RHS path. It expands
   any text selection to the touched complete line range, clears assignments
   found on those lines, or clears the current assignment when there is no
   selection. It enters Slot Mode on the cleared RHS positions and reports `No
   assignment RHS found` in the command strip/status path without opening a
   modal dialog.
-- COM Mode command `si` selects the complete interior lines of the nearest
-  Tree-sitter `seq_block` (`begin ... end`) and stays in COM Mode so users can
-  immediately run `cr`.
+- Command Layer command `select begin end` selects the complete interior lines
+  of the nearest Tree-sitter `seq_block` (`begin ... end`). While F24 remains
+  held, the cleared query permits an immediate `clear right` command.
 - Slot Mode entry is active for this report. The first RHS slot is selected
   after replacement; Tab and Shift+Tab wrap between slots, while Esc exits Slot
   Mode.
@@ -978,7 +983,7 @@ Only these long-term goals are active:
 1. Editor daily operations completion.
 2. Slot mode after template insertion.
 3. Batch RTL edit actions.
-4. COM Mode framework completion.
+4. Command Layer framework completion.
 5. Limited workspace workflow additions.
 6. Completion / `;cmd` / `;;cmd` cleanup and user customization.
 7. Fold / Fold Shelf persistence and management.
@@ -1049,24 +1054,13 @@ Do not add unlisted long-term goals without explicit user approval.
   menu assertions now cover all five actions including `ShowModuleBlockDiagram`.
   Release `ctest -R "^completion_test$" --output-on-failure` and
   `ctest -R "^relationship_test$" --output-on-failure` both passed.
-- Latest COM clear-RHS command repair: Release `completion_test` and
-  `relationship_test` passed; Release `completion_test` and `gui_smoke_test`
-  targets compile/link. `gui_smoke_test` was launched with Windows fault-dialog
-  suppression and its new COM `cr` checks passed, but the monolithic smoke test
-  still fails on existing non-`cr` baseline checks.
-- Latest COM/Slot interaction repair: Release `completion_test` and
-  `relationship_test` passed; Release `completion_test` and `gui_smoke_test`
-  targets compile/link. `gui_smoke_test` was launched with Windows fault-dialog
-  suppression and all new `si`, partial-selection `cr`, and Slot Mode cycling
-  checks passed; the monolithic smoke test still fails on existing non-current
-  baseline checks.
-- Latest COM/Column Selection repair: Release `completion_test` passed through
-  `ctest`; Release `gui_smoke_test` target compile/link passed. The launched
-  smoke output shows all new COM toggle, visual-column column selection,
-  column-mode Tab/Shift+Tab, `cn`, Column Number Tool, and number inference
-  checks passing. The full monolithic GUI smoke baseline still fails on
-  existing non-current checks: one VENDOR ctrl-click fixture check and the Wave
-  Preview rendering group.
+- Latest Command Layer refactor: the former persistent short-code mode is
+  removed. F24 now owns hold-to-use application-level search; the registry has
+  ten canonical commands, explicit Enter execution, deterministic fuzzy
+  ranking, full help, visible failures, and module/package picker handoff.
+  `clear right` and `select begin end` retain Slot Mode interaction, while the
+  Column Number Tool remains independent on Alt+C. Debug `completion_test`,
+  `ts_doc_test`, and `gui_smoke_test` pass through CTest.
 - Latest workspace configuration / diagnostics workflow: Release
   `completion_test` passed through `ctest`; Release `completion_test` and
   `gui_smoke_test` targets compile/link. A Release `relationship_test` run was
@@ -1160,7 +1154,7 @@ Do not add unlisted long-term goals without explicit user approval.
   definition order. If semantic parameter/port records are insufficient, `;m`
   falls back to the previous simple `module u_module (\n);` text. `;;m` still
   owns module definition skeletons, and this does not add Package Tools phase
-  2, include/package/import workflows, new commands, or COM Mode behavior.
+  2, include/package/import workflows, new commands, or Command Layer behavior.
   Release verification passed: `cmake --build . --target completion_test
   relationship_test gui_smoke_test`; `ctest -R
   "^(completion_test|relationship_test|gui_smoke_test)$"
@@ -1172,7 +1166,7 @@ Do not add unlisted long-term goals without explicit user approval.
   when no suffix is supplied and preferring the current file directory; existing
   files are not overwritten and report an explicit already-exists failure.
   `;;h` remains intentionally absent, and this does not add package/import
-  completion, COM Mode commands, or Global Control entries. Release
+  completion, Command Layer commands, or Global Control entries. Release
   verification passed: `cmake --build . --target completion_test
   gui_smoke_test`; `cmake --build . --target relationship_test`; `ctest -R
   "^(completion_test|relationship_test|gui_smoke_test)$"
@@ -1181,10 +1175,10 @@ Do not add unlisted long-term goals without explicit user approval.
 - Latest package import explicit entry: use `;pk <query>` to search existing
   SystemVerilog package records from the semantic index and insert
   `import pkg_name::*;`. This is import insertion only, not jump/navigation:
-  COM `gpk` still owns package picker navigation, `;p` still owns parameter
+  Command Layer `go package` still owns package picker navigation, `;p` still owns parameter
   completion, Package Tools still only edit package files, and `;;pk` remains
   intentionally absent. No `pkg::symbol` completion, cross-file package
-  management, COM Mode command, or Global Control entry was added. Release
+  management, Command Layer command, or Global Control entry was added. Release
   verification passed: `cmake --build . --target completion_test
   gui_smoke_test relationship_test`; `ctest -R
   "^(completion_test|relationship_test|gui_smoke_test)$"
@@ -1209,7 +1203,7 @@ Do not add unlisted long-term goals without explicit user approval.
   override global user templates with the same token, but built-in templates
   and reserved `;;h` / `;;pk` holes are reported and ignored instead of being
   overridden. Valid templates use the existing `;;cmd` completion and Slot Mode
-  insertion path; this adds no `;cmd`, COM Mode, Global Control, Package Tools,
+  insertion path; this adds no `;cmd`, Command Layer, Global Control, Package Tools,
   import/export, macro recorder, or variable system. Release verification
   passed: `cmake --build . --target completion_test gui_smoke_test
   relationship_test`; `ctest -R
@@ -1225,7 +1219,7 @@ Do not add unlisted long-term goals without explicit user approval.
   bar; invalid JSON, invalid commands, invalid slots, reserved tokens, and
   conflicts are listed in a lightweight warning report with file, command,
   field, and reason. This is still direct JSON editing only: no template GUI
-  editor, import/export, variable system, macro recorder, `;cmd`, COM Mode,
+  editor, import/export, variable system, macro recorder, `;cmd`, Command Layer,
   Global Control, or Package Tools feature was added. Release verification
   passed: `cmake --build . --target completion_test gui_smoke_test
   relationship_test`; `ctest -R

@@ -97,23 +97,16 @@ struct MyCodeEditorState
         const MyCodeEditor* editor) const;
     EditorModuleScopeTarget currentModuleScopeTarget(
         const MyCodeEditor* editor) const;
-    bool executeComPortAppend(MyCodeEditor* editor, QString* message);
-    bool executeComSignalInsert(MyCodeEditor* editor, QString* message);
-    bool executeComInstanceInsert(MyCodeEditor* editor, QString* message);
-    bool executeComAssignInsert(MyCodeEditor* editor, QString* message);
-    bool executeComParameterInsert(MyCodeEditor* editor, QString* message);
-    bool executeComModuleEndInsert(MyCodeEditor* editor, QString* message);
+    bool addPortRow(MyCodeEditor* editor, QString* message);
+    bool addSignalRow(MyCodeEditor* editor, QString* message);
+    bool addParameterRow(MyCodeEditor* editor, QString* message);
+    bool goToFinalEndmodule(MyCodeEditor* editor, QString* message);
     EditorPackageToolAvailability currentPackageToolAvailability(
         const MyCodeEditor* editor) const;
     bool executePackageToolInsert(MyCodeEditor* editor,
                                   PackageToolKind kind,
                                   QString* message);
     bool selectInsideBeginEnd(MyCodeEditor* editor, QString* message);
-    bool comModeActive() const;
-    QString comModeBuffer() const;
-    void enterComMode(MyCodeEditor* editor, const QString& message = QString());
-    void exitComMode(MyCodeEditor* editor);
-    void showComModeMessage(MyCodeEditor* editor, const QString& message);
     void startTemplateSlotMode(MyCodeEditor* editor,
                                int insertionStart,
                                int insertedLength,
@@ -136,8 +129,6 @@ struct MyCodeEditorState
                                           int charsRemoved,
                                           int charsAdded);
     void handleTemplateSlotCursorChanged(MyCodeEditor* editor);
-    void publishComModeState(MyCodeEditor* editor,
-                             const QString& message = QString()) const;
     EditorSemanticContext semanticContextForPosition(
         const MyCodeEditor* editor,
         int cursorPosition,
@@ -159,7 +150,6 @@ struct MyCodeEditorState
     void paintFoldPlaceholders(MyCodeEditor* editor, QPaintEvent* event) const;
     void paintGhostAnnotations(MyCodeEditor* editor, QPaintEvent* event) const;
     void paintColumnSelection(MyCodeEditor* editor, QPaintEvent* event) const;
-    void paintComModeOverlay(MyCodeEditor* editor, QPaintEvent* event) const;
     void handleContextMenu(MyCodeEditor* editor, QContextMenuEvent* event);
     bool handleMousePress(MyCodeEditor* editor, QMouseEvent* event);
     bool handleMouseDoubleClick(MyCodeEditor* editor, QMouseEvent* event);

@@ -74,38 +74,6 @@ struct TSSignalInsertTarget {
     bool ok() const { return status == TSSignalInsertStatus::Ok; }
 };
 
-enum class TSInstanceInsertStatus {
-    Ok,
-    NoCurrentModule,
-    NoClearInstanceInsertPoint
-};
-
-struct TSInstanceInsertTarget {
-    TSInstanceInsertStatus status =
-        TSInstanceInsertStatus::NoClearInstanceInsertPoint;
-    int insertChar = -1;
-    QString insertText;
-    int caretCharAfterEdit = -1;
-
-    bool ok() const { return status == TSInstanceInsertStatus::Ok; }
-};
-
-enum class TSAssignInsertStatus {
-    Ok,
-    NoCurrentModule,
-    NoClearAssignInsertPoint
-};
-
-struct TSAssignInsertTarget {
-    TSAssignInsertStatus status =
-        TSAssignInsertStatus::NoClearAssignInsertPoint;
-    int insertChar = -1;
-    QString insertText;
-    int caretCharAfterEdit = -1;
-
-    bool ok() const { return status == TSAssignInsertStatus::Ok; }
-};
-
 enum class TSParameterInsertStatus {
     Ok,
     NoCurrentParameterScope,
@@ -144,21 +112,22 @@ struct TSPackageToolInsertTarget {
     bool ok() const { return status == TSPackageToolInsertStatus::Ok; }
 };
 
-enum class TSModuleEndInsertStatus {
+enum class TSModuleEndNavigationStatus {
     Ok,
     NoCurrentModule,
-    NoClearModuleEndPoint
+    NoEndmodule
 };
 
-struct TSModuleEndInsertTarget {
-    TSModuleEndInsertStatus status =
-        TSModuleEndInsertStatus::NoClearModuleEndPoint;
-    int replaceStartChar = -1;
-    int replaceEndChar = -1;
-    QString replacementText;
-    int caretCharAfterEdit = -1;
+struct TSModuleEndNavigationTarget {
+    TSModuleEndNavigationStatus status =
+        TSModuleEndNavigationStatus::NoEndmodule;
+    int caretChar = -1;
 
-    bool ok() const { return status == TSModuleEndInsertStatus::Ok; }
+    bool ok() const
+    {
+        return status == TSModuleEndNavigationStatus::Ok
+            && caretChar >= 0;
+    }
 };
 
 enum class TSAlwaysScopeStatus {
@@ -267,17 +236,11 @@ public:
     // Replaces the Slang+regex getCurrentModuleScope for cursor-scope decisions.
     QString enclosingModuleName(int charOffset) const;
 
-    // Clear ANSI module port-list append point for editor-local COM commands.
+    // Clear ANSI module port-list append point.
     TSPortAppendTarget portAppendTarget(int charOffset) const;
 
     // Clear module-member insert point for adding an internal signal declaration.
     TSSignalInsertTarget signalInsertTarget(int charOffset) const;
-
-    // Clear module-member insert point for adding a module/interface instance.
-    TSInstanceInsertTarget instanceInsertTarget(int charOffset) const;
-
-    // Clear module-member insert point for adding a continuous assign.
-    TSAssignInsertTarget assignInsertTarget(int charOffset) const;
 
     // Clear module/package-scope insert point for adding a parameter/localparam.
     TSParameterInsertTarget parameterInsertTarget(int charOffset) const;
@@ -287,8 +250,9 @@ public:
         int charOffset,
         PackageToolKind kind) const;
 
-    // Clear insert point immediately before the current module's final endmodule.
-    TSModuleEndInsertTarget moduleEndInsertTarget(int charOffset) const;
+    // Start of the current module's final endmodule.
+    TSModuleEndNavigationTarget moduleEndNavigationTarget(
+        int charOffset) const;
 
     // Current/selected always block range for scoped Wave Preview.
     TSAlwaysScopeTarget alwaysScopeTarget(int cursorChar,
@@ -300,7 +264,7 @@ public:
                                           int selectionStartChar = -1,
                                           int selectionEndChar = -1) const;
 
-    // Nearest begin/end block interior as complete lines for editor-local COM
+    // Nearest begin/end block interior as complete lines for structural
     // selection commands.
     TSBeginEndInsideTarget beginEndInsideTarget(int cursorChar) const;
 

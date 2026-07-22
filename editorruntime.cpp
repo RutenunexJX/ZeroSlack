@@ -2,7 +2,6 @@
 
 #include "mycodeeditor.h"
 
-#include "commodecommandregistry.h"
 #include "rtlbatcheditservice.h"
 
 #include <QApplication>
@@ -70,40 +69,6 @@ bool hasCommandModifier(QKeyEvent* event)
     return modifiers.testFlag(Qt::ControlModifier)
         || modifiers.testFlag(Qt::AltModifier)
         || modifiers.testFlag(Qt::MetaModifier);
-}
-
-bool isBacktickKey(QKeyEvent* event)
-{
-    return event
-        && (event->key() == Qt::Key_QuoteLeft
-            || event->text() == QStringLiteral("`"));
-}
-
-bool isComModeToggleKey(QKeyEvent* event)
-{
-    if (!isBacktickKey(event))
-        return false;
-    const Qt::KeyboardModifiers modifiers =
-        event->modifiers()
-        & (Qt::ShiftModifier
-           | Qt::ControlModifier
-           | Qt::AltModifier
-           | Qt::MetaModifier);
-    return modifiers
-        == (Qt::ShiftModifier | Qt::ControlModifier | Qt::AltModifier);
-}
-
-bool isColumnNumberShortcutKey(QKeyEvent* event)
-{
-    if (!event || event->key() != Qt::Key_C)
-        return false;
-    const Qt::KeyboardModifiers modifiers =
-        event->modifiers()
-        & (Qt::ShiftModifier
-           | Qt::ControlModifier
-           | Qt::AltModifier
-           | Qt::MetaModifier);
-    return modifiers == Qt::AltModifier;
 }
 
 bool isUnsignedIntegerText(const QString& text)
@@ -2611,8 +2576,8 @@ EditorModuleScopeTarget MyCodeEditorState::currentModuleScopeTarget(
     return result;
 }
 
-bool MyCodeEditorState::executeComPortAppend(MyCodeEditor* editor,
-                                             QString* message)
+bool MyCodeEditorState::addPortRow(MyCodeEditor* editor,
+                                   QString* message)
 {
     if (!editor)
         return false;
@@ -2645,8 +2610,8 @@ bool MyCodeEditorState::executeComPortAppend(MyCodeEditor* editor,
     return true;
 }
 
-bool MyCodeEditorState::executeComSignalInsert(MyCodeEditor* editor,
-                                               QString* message)
+bool MyCodeEditorState::addSignalRow(MyCodeEditor* editor,
+                                     QString* message)
 {
     if (!editor)
         return false;
@@ -2674,66 +2639,8 @@ bool MyCodeEditorState::executeComSignalInsert(MyCodeEditor* editor,
     return true;
 }
 
-bool MyCodeEditorState::executeComInstanceInsert(MyCodeEditor* editor,
-                                                 QString* message)
-{
-    if (!editor)
-        return false;
-
-    const TSInstanceInsertTarget target =
-        syntax.instanceInsertTargetAt(editor->textCursor().position());
-    if (!target.ok()) {
-        if (message) {
-            *message = target.status == TSInstanceInsertStatus::NoCurrentModule
-                ? QStringLiteral("No current module")
-                : QStringLiteral("No clear instance insert point");
-        }
-        return false;
-    }
-
-    QTextCursor cursor = editor->textCursor();
-    cursor.beginEditBlock();
-    cursor.setPosition(target.insertChar);
-    cursor.insertText(target.insertText);
-    cursor.endEditBlock();
-
-    QTextCursor caret = editor->textCursor();
-    caret.setPosition(target.caretCharAfterEdit);
-    editor->setTextCursor(caret);
-    return true;
-}
-
-bool MyCodeEditorState::executeComAssignInsert(MyCodeEditor* editor,
-                                               QString* message)
-{
-    if (!editor)
-        return false;
-
-    const TSAssignInsertTarget target =
-        syntax.assignInsertTargetAt(editor->textCursor().position());
-    if (!target.ok()) {
-        if (message) {
-            *message = target.status == TSAssignInsertStatus::NoCurrentModule
-                ? QStringLiteral("No current module")
-                : QStringLiteral("No clear assign insert point");
-        }
-        return false;
-    }
-
-    QTextCursor cursor = editor->textCursor();
-    cursor.beginEditBlock();
-    cursor.setPosition(target.insertChar);
-    cursor.insertText(target.insertText);
-    cursor.endEditBlock();
-
-    QTextCursor caret = editor->textCursor();
-    caret.setPosition(target.caretCharAfterEdit);
-    editor->setTextCursor(caret);
-    return true;
-}
-
-bool MyCodeEditorState::executeComParameterInsert(MyCodeEditor* editor,
-                                                  QString* message)
+bool MyCodeEditorState::addParameterRow(MyCodeEditor* editor,
+                                        QString* message)
 {
     if (!editor)
         return false;
@@ -2861,36 +2768,33 @@ bool MyCodeEditorState::executePackageToolInsert(MyCodeEditor* editor,
     return true;
 }
 
-bool MyCodeEditorState::executeComModuleEndInsert(MyCodeEditor* editor,
+bool MyCodeEditorState::goToFinalEndmodule(MyCodeEditor* editor,
                                                   QString* message)
 {
     if (!editor)
         return false;
 
-    const TSModuleEndInsertTarget target =
-        syntax.moduleEndInsertTargetAt(editor->textCursor().position());
+    const TSModuleEndNavigationTarget target =
+        syntax.moduleEndNavigationTargetAt(editor->textCursor().position());
     if (!target.ok()) {
         if (message) {
-            *message = target.status == TSModuleEndInsertStatus::NoCurrentModule
+            *message =
+                target.status
+                    == TSModuleEndNavigationStatus::NoCurrentModule
                 ? QStringLiteral("No current module")
-                : QStringLiteral("No clear module end point");
+                : QStringLiteral("No endmodule found");
         }
         return false;
     }
 
     QTextCursor cursor = editor->textCursor();
-    cursor.beginEditBlock();
-    cursor.setPosition(target.replaceStartChar);
-    cursor.setPosition(target.replaceEndChar, QTextCursor::KeepAnchor);
-    cursor.insertText(target.replacementText);
-    cursor.endEditBlock();
-
-    QTextCursor caret = editor->textCursor();
-    caret.setPosition(target.caretCharAfterEdit);
-    editor->setTextCursor(caret);
+    cursor.setPosition(target.caretChar);
+    editor->setTextCursor(cursor);
+    editor->ensureCursorVisible();
+    if (message)
+        *message = QStringLiteral("Moved to final endmodule");
     return true;
 }
-
 bool MyCodeEditorState::selectInsideBeginEnd(MyCodeEditor* editor,
                                              QString* message)
 {
@@ -2921,54 +2825,6 @@ bool MyCodeEditorState::selectInsideBeginEnd(MyCodeEditor* editor,
             .arg(target.startLine + 1)
             .arg(target.endLine + 1));
     return true;
-}
-
-bool MyCodeEditorState::comModeActive() const
-{
-    return modes.comModeActive;
-}
-
-QString MyCodeEditorState::comModeBuffer() const
-{
-    return modes.comBuffer;
-}
-
-void MyCodeEditorState::publishComModeState(
-    MyCodeEditor* editor,
-    const QString& message) const
-{
-    if (!editor)
-        return;
-    emit editor->comModeStateChanged(modes.comModeActive,
-                                     modes.comBuffer,
-                                     message);
-}
-
-void MyCodeEditorState::enterComMode(MyCodeEditor* editor,
-                                     const QString& message)
-{
-    modes.setComModeActive(true);
-    modes.clearComBuffer();
-    publishComModeState(editor, message);
-    if (editor)
-        editor->viewport()->update();
-}
-
-void MyCodeEditorState::exitComMode(MyCodeEditor* editor)
-{
-    modes.setComModeActive(false);
-    publishComModeState(editor);
-    if (editor)
-        editor->viewport()->update();
-}
-
-void MyCodeEditorState::showComModeMessage(MyCodeEditor* editor,
-                                           const QString& message)
-{
-    if (!modes.comModeActive)
-        return;
-    modes.clearComBuffer();
-    publishComModeState(editor, message);
 }
 
 EditorSemanticContext MyCodeEditorState::semanticContextForPosition(
@@ -3016,94 +2872,6 @@ void MyCodeEditorState::handleControlKeyRelease(
 }
 
 namespace {
-bool handleComModeKeyPress(MyCodeEditor* editor,
-                           QKeyEvent* event,
-                           MyCodeEditorState& state)
-{
-    if (!editor || !event || !state.modes.comModeActive)
-        return false;
-
-    auto accept = [event]() {
-        event->accept();
-        return true;
-    };
-
-    if (isBacktickKey(event)) {
-        state.exitComMode(editor);
-        return accept();
-    }
-
-    if (event->key() == Qt::Key_Escape) {
-        state.modes.clearComBuffer();
-        state.publishComModeState(editor);
-        return accept();
-    }
-
-    if (event->key() == Qt::Key_Backspace) {
-        if (!state.modes.comBuffer.isEmpty())
-            state.modes.setComBuffer(
-                state.modes.comBuffer.left(state.modes.comBuffer.size() - 1));
-        state.publishComModeState(editor);
-        return accept();
-    }
-
-    if (event->key() == Qt::Key_Return || event->key() == Qt::Key_Enter) {
-        const QString buffer = state.modes.comBuffer;
-        state.modes.clearComBuffer();
-        if (isComModeLineBuffer(buffer)) {
-            const int moduleLine = buffer.mid(1).toInt();
-            if (moduleLine <= 0) {
-                const QString message =
-                    QStringLiteral("Line number must be >= 1");
-                state.publishComModeState(editor, message);
-                emit editor->editorStatusMessageRequested(message);
-            } else {
-                state.publishComModeState(editor);
-                emit editor->comRelativeLineRequested(moduleLine);
-            }
-        } else if (!buffer.isEmpty()) {
-            const QString message = comModeCommandFailureMessage(buffer);
-            state.publishComModeState(editor, message);
-            emit editor->editorStatusMessageRequested(message);
-        } else {
-            state.publishComModeState(editor);
-        }
-        return accept();
-    }
-
-    if (hasCommandModifier(event))
-        return accept();
-
-    const QString text = event->text();
-    if (text.isEmpty())
-        return accept();
-
-    const QChar ch = text.at(0);
-    if (!ch.isPrint())
-        return accept();
-
-    const QString nextBuffer = state.modes.comBuffer + text;
-    const QString executableCommand = executableComModeCommand(nextBuffer);
-    if (!executableCommand.isEmpty()) {
-        state.modes.clearComBuffer();
-        state.publishComModeState(editor);
-        emit editor->comCommandRequested(executableCommand);
-        return accept();
-    }
-
-    if (isComModeBufferPrefix(nextBuffer)) {
-        state.modes.setComBuffer(nextBuffer);
-        state.publishComModeState(editor);
-        return accept();
-    }
-
-    state.modes.clearComBuffer();
-    const QString message = comModeCommandFailureMessage(nextBuffer);
-    state.publishComModeState(editor, message);
-    emit editor->editorStatusMessageRequested(message);
-    return accept();
-}
-
 QList<QPair<int, int>> templateSlotHighlightRanges(
     const MyCodeEditorState& state)
 {
@@ -3486,25 +3254,7 @@ bool MyCodeEditorState::handleKeyPress(MyCodeEditor* editor, QKeyEvent* event)
         return true;
     }
 
-    if (isComModeToggleKey(event)) {
-        if (modes.comModeActive)
-            exitComMode(editor);
-        else
-            enterComMode(editor);
-        event->accept();
-        return true;
-    }
-
-    if (isColumnNumberShortcutKey(event)) {
-        emit editor->columnNumberToolRequested();
-        event->accept();
-        return true;
-    }
-
     if (handleTemplateSlotKeyPress(editor, event))
-        return true;
-
-    if (handleComModeKeyPress(editor, event, *this))
         return true;
 
     if (event->key() == Qt::Key_Escape
@@ -3797,36 +3547,6 @@ void MyCodeEditorState::paintColumnSelection(
     QPaintEvent* event) const
 {
     paintColumnSelectionOverlay(editor, *this, event);
-}
-
-void MyCodeEditorState::paintComModeOverlay(
-    MyCodeEditor* editor,
-    QPaintEvent* event) const
-{
-    Q_UNUSED(event)
-    if (!editor || !modes.comModeActive)
-        return;
-
-    QPainter painter(editor->viewport());
-    painter.setRenderHint(QPainter::Antialiasing, true);
-
-    const QRect viewportRect = editor->viewport()->rect();
-    QPen borderPen(QColor("#38BDF8"));
-    borderPen.setWidth(3);
-    painter.setPen(borderPen);
-    painter.drawLine(viewportRect.bottomLeft() + QPoint(0, -1),
-                     viewportRect.bottomRight() + QPoint(0, -1));
-
-    const QRect badgeRect(8, 6, 44, 20);
-    painter.setPen(Qt::NoPen);
-    painter.setBrush(QColor(17, 24, 39, 230));
-    painter.drawRoundedRect(badgeRect, 4, 4);
-    painter.setPen(QColor("#D1FAE5"));
-    QFont badgeFont = editor->font();
-    badgeFont.setBold(true);
-    badgeFont.setPointSize(qMax(8, badgeFont.pointSize() - 2));
-    painter.setFont(badgeFont);
-    painter.drawText(badgeRect, Qt::AlignCenter, QStringLiteral("COM"));
 }
 
 void MyCodeEditorState::handleContextMenu(

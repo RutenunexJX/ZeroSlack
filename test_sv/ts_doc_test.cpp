@@ -59,20 +59,6 @@ static QString applySignalInsertEdit(const QString& src,
     return result;
 }
 
-static QString applyInstanceInsertEdit(const QString& src,
-                                       const TSInstanceInsertTarget& target) {
-    QString result = src;
-    result.insert(target.insertChar, target.insertText);
-    return result;
-}
-
-static QString applyAssignInsertEdit(const QString& src,
-                                     const TSAssignInsertTarget& target) {
-    QString result = src;
-    result.insert(target.insertChar, target.insertText);
-    return result;
-}
-
 static QString applyParameterInsertEdit(const QString& src,
                                         const TSParameterInsertTarget& target) {
     QString result = src;
@@ -81,17 +67,6 @@ static QString applyParameterInsertEdit(const QString& src,
         result.insert(target.trailingCommaInsertChar, QStringLiteral(","));
     return result;
 }
-
-static QString applyModuleEndInsertEdit(const QString& src,
-                                        const TSModuleEndInsertTarget& target) {
-    QString result = src;
-    result.replace(target.replaceStartChar,
-                   target.replaceEndChar - target.replaceStartChar,
-                   target.replacementText);
-    return result;
-}
-
-
 
 int main() {
     TSDocument doc;
@@ -202,7 +177,7 @@ int main() {
               d2.enclosingModuleName(lineStartChar(partial, 1) + 2) == QStringLiteral("fsm"));
     }
 
-    // 7) COM gpo foundation: clear multi-line ANSI module port append points.
+    // 7) add port: clear multi-line ANSI module port append points.
     {
         QString src =
             QStringLiteral("module demo (\n")
@@ -222,11 +197,11 @@ int main() {
             + QStringLiteral("    \n")
             + QStringLiteral(");\n")
             + QStringLiteral("endmodule\n");
-        check("gpo target: multi-line ANSI ok", target.ok());
-        check("gpo target: adds missing comma", target.needsTrailingComma);
-        check("gpo target: applies expected edit",
+        check("add port target: multi-line ANSI ok", target.ok());
+        check("add port target: adds missing comma", target.needsTrailingComma);
+        check("add port target: applies expected edit",
               target.ok() && applyPortAppendEdit(src, target) == expected);
-        check("gpo target: caret after inserted indent",
+        check("add port target: caret after inserted indent",
               target.caretCharAfterEdit
                   == expected.indexOf(QStringLiteral("    \n);")) + 4);
     }
@@ -242,9 +217,9 @@ int main() {
         const TSPortAppendTarget target =
             d.portAppendTarget(src.indexOf(QStringLiteral("done")));
         const QString edited = applyPortAppendEdit(src, target);
-        check("gpo target: existing comma ok",
+        check("add port target: existing comma ok",
               target.ok() && !target.needsTrailingComma);
-        check("gpo target: does not duplicate comma",
+        check("add port target: does not duplicate comma",
               edited.contains(QStringLiteral("done,\n    \n);"))
                   && !edited.contains(QStringLiteral("done,,"))
         );
@@ -263,8 +238,8 @@ int main() {
             + QStringLiteral("    \n")
             + QStringLiteral(");\n")
             + QStringLiteral("endmodule\n");
-        check("gpo target: empty ANSI list ok", target.ok());
-        check("gpo target: empty ANSI list edit",
+        check("add port target: empty ANSI list ok", target.ok());
+        check("add port target: empty ANSI list edit",
               target.ok() && applyPortAppendEdit(src, target) == expected);
     }
 
@@ -273,7 +248,7 @@ int main() {
         singleLine.setText(QStringLiteral("module demo (input logic clk);\nendmodule\n"));
         const TSPortAppendTarget singleLineTarget =
             singleLine.portAppendTarget(12);
-        check("gpo target: rejects single-line ANSI list",
+        check("add port target: rejects single-line ANSI list",
               singleLineTarget.status
                   == TSPortAppendStatus::NoClearPortAppendPoint);
 
@@ -283,7 +258,7 @@ int main() {
                                        "endmodule\n"));
         const TSPortAppendTarget nonAnsiTarget =
             nonAnsi.portAppendTarget(nonAnsi.text().indexOf(QStringLiteral("input")));
-        check("gpo target: rejects non-ANSI list",
+        check("add port target: rejects non-ANSI list",
               nonAnsiTarget.status
                   == TSPortAppendStatus::NoClearPortAppendPoint);
 
@@ -291,11 +266,11 @@ int main() {
         noModule.setText(QStringLiteral("logic clk;\n"));
         const TSPortAppendTarget noModuleTarget =
             noModule.portAppendTarget(0);
-        check("gpo target: reports no current module",
+        check("add port target: reports no current module",
               noModuleTarget.status == TSPortAppendStatus::NoCurrentModule);
     }
 
-    // 8) COM gsi foundation: signal declaration insert points stay before module body logic.
+    // 8) add signal: declaration insert points stay before module body logic.
     {
         QString src =
             QStringLiteral("module sig_demo;\n")
@@ -317,10 +292,10 @@ int main() {
             + QStringLiteral("  \n")
             + QStringLiteral("  assign y = c;\n")
             + QStringLiteral("endmodule\n");
-        check("gsi target: after last signal declaration", target.ok());
-        check("gsi target: signal edit",
+        check("add signal target: after last signal declaration", target.ok());
+        check("add signal target: signal edit",
               target.ok() && applySignalInsertEdit(src, target) == expected);
-        check("gsi target: signal caret at indent",
+        check("add signal target: signal caret at indent",
               target.caretCharAfterEdit
                   == expected.indexOf(QStringLiteral("  \n  assign")) + 2);
     }
@@ -342,7 +317,7 @@ int main() {
             + QStringLiteral("  \n")
             + QStringLiteral("  always_comb y = a;\n")
             + QStringLiteral("endmodule\n");
-        check("gsi target: falls back after parameters",
+        check("add signal target: falls back after parameters",
               target.ok() && applySignalInsertEdit(src, target) == expected);
     }
 
@@ -359,7 +334,7 @@ int main() {
             + QStringLiteral("  \n")
             + QStringLiteral("  assign y = a;\n")
             + QStringLiteral("endmodule\n");
-        check("gsi target: inserts before first body item",
+        check("add signal target: inserts before first body item",
               target.ok() && applySignalInsertEdit(src, target) == expected);
     }
 
@@ -378,202 +353,18 @@ int main() {
             + QStringLiteral("  assign y = a;\n")
             + QStringLiteral("  logic late_sig;\n")
             + QStringLiteral("endmodule\n");
-        check("gsi target: does not cross body logic",
+        check("add signal target: does not cross body logic",
               target.ok() && applySignalInsertEdit(src, target) == expected);
 
         TSDocument noModule;
         noModule.setText(QStringLiteral("logic stray;\n"));
         const TSSignalInsertTarget noModuleTarget =
             noModule.signalInsertTarget(0);
-        check("gsi target: reports no current module",
+        check("add signal target: reports no current module",
               noModuleTarget.status == TSSignalInsertStatus::NoCurrentModule);
     }
 
-    // 9) COM gii foundation: instance insert points stay before procedural body logic.
-    {
-        QString src =
-            QStringLiteral("module inst_demo;\n")
-            + QStringLiteral("  logic a;\n")
-            + QStringLiteral("  child u_child0();\n")
-            + QStringLiteral("  child u_child1();\n")
-            + QStringLiteral("  assign y = a;\n")
-            + QStringLiteral("endmodule\n");
-        TSDocument d; d.setText(src);
-        const TSInstanceInsertTarget target =
-            d.instanceInsertTarget(src.indexOf(QStringLiteral("assign")));
-        const QString expected =
-            QStringLiteral("module inst_demo;\n")
-            + QStringLiteral("  logic a;\n")
-            + QStringLiteral("  child u_child0();\n")
-            + QStringLiteral("  child u_child1();\n")
-            + QStringLiteral("  \n")
-            + QStringLiteral("  assign y = a;\n")
-            + QStringLiteral("endmodule\n");
-        check("gii target: after last instance", target.ok());
-        check("gii target: instance edit",
-              target.ok() && applyInstanceInsertEdit(src, target) == expected);
-        check("gii target: instance caret at indent",
-              target.caretCharAfterEdit
-                  == expected.indexOf(QStringLiteral("  \n  assign")) + 2);
-    }
-
-    {
-        QString src =
-            QStringLiteral("module decl_inst_demo;\n")
-            + QStringLiteral("  parameter int W = 8;\n")
-            + QStringLiteral("  logic a;\n")
-            + QStringLiteral("  assign y = a;\n")
-            + QStringLiteral("endmodule\n");
-        TSDocument d; d.setText(src);
-        const TSInstanceInsertTarget target =
-            d.instanceInsertTarget(src.indexOf(QStringLiteral("assign")));
-        const QString expected =
-            QStringLiteral("module decl_inst_demo;\n")
-            + QStringLiteral("  parameter int W = 8;\n")
-            + QStringLiteral("  logic a;\n")
-            + QStringLiteral("  \n")
-            + QStringLiteral("  assign y = a;\n")
-            + QStringLiteral("endmodule\n");
-        check("gii target: falls back after declarations",
-              target.ok() && applyInstanceInsertEdit(src, target) == expected);
-    }
-
-    {
-        QString src =
-            QStringLiteral("module body_inst_demo;\n")
-            + QStringLiteral("  assign y = a;\n")
-            + QStringLiteral("endmodule\n");
-        TSDocument d; d.setText(src);
-        const TSInstanceInsertTarget target =
-            d.instanceInsertTarget(src.indexOf(QStringLiteral("assign")));
-        const QString expected =
-            QStringLiteral("module body_inst_demo;\n")
-            + QStringLiteral("  \n")
-            + QStringLiteral("  assign y = a;\n")
-            + QStringLiteral("endmodule\n");
-        check("gii target: inserts before first body item",
-              target.ok() && applyInstanceInsertEdit(src, target) == expected);
-    }
-
-    {
-        QString src =
-            QStringLiteral("module late_inst_demo;\n")
-            + QStringLiteral("  assign y = a;\n")
-            + QStringLiteral("  child u_late();\n")
-            + QStringLiteral("endmodule\n");
-        TSDocument d; d.setText(src);
-        const TSInstanceInsertTarget target =
-            d.instanceInsertTarget(src.indexOf(QStringLiteral("u_late")));
-        const QString expected =
-            QStringLiteral("module late_inst_demo;\n")
-            + QStringLiteral("  \n")
-            + QStringLiteral("  assign y = a;\n")
-            + QStringLiteral("  child u_late();\n")
-            + QStringLiteral("endmodule\n");
-        check("gii target: does not cross body logic",
-              target.ok() && applyInstanceInsertEdit(src, target) == expected);
-
-        TSDocument noModule;
-        noModule.setText(QStringLiteral("child u0();\n"));
-        const TSInstanceInsertTarget noModuleTarget =
-            noModule.instanceInsertTarget(0);
-        check("gii target: reports no current module",
-              noModuleTarget.status == TSInstanceInsertStatus::NoCurrentModule);
-    }
-
-    // 10) COM gac foundation: continuous assign insert points stay before procedural body logic.
-    {
-        QString src =
-            QStringLiteral("module assign_demo;\n")
-            + QStringLiteral("  logic a;\n")
-            + QStringLiteral("  assign y0 = a;\n")
-            + QStringLiteral("  assign y1 = a;\n")
-            + QStringLiteral("  always_comb y2 = a;\n")
-            + QStringLiteral("endmodule\n");
-        TSDocument d; d.setText(src);
-        const TSAssignInsertTarget target =
-            d.assignInsertTarget(src.indexOf(QStringLiteral("always")));
-        const QString expected =
-            QStringLiteral("module assign_demo;\n")
-            + QStringLiteral("  logic a;\n")
-            + QStringLiteral("  assign y0 = a;\n")
-            + QStringLiteral("  assign y1 = a;\n")
-            + QStringLiteral("  \n")
-            + QStringLiteral("  always_comb y2 = a;\n")
-            + QStringLiteral("endmodule\n");
-        check("gac target: after last assign", target.ok());
-        check("gac target: assign edit",
-              target.ok() && applyAssignInsertEdit(src, target) == expected);
-        check("gac target: assign caret at indent",
-              target.caretCharAfterEdit
-                  == expected.indexOf(QStringLiteral("  \n  always")) + 2);
-    }
-
-    {
-        QString src =
-            QStringLiteral("module assign_fallback_demo;\n")
-            + QStringLiteral("  logic a;\n")
-            + QStringLiteral("  child u_child();\n")
-            + QStringLiteral("  always_comb y = a;\n")
-            + QStringLiteral("endmodule\n");
-        TSDocument d; d.setText(src);
-        const TSAssignInsertTarget target =
-            d.assignInsertTarget(src.indexOf(QStringLiteral("always")));
-        const QString expected =
-            QStringLiteral("module assign_fallback_demo;\n")
-            + QStringLiteral("  logic a;\n")
-            + QStringLiteral("  child u_child();\n")
-            + QStringLiteral("  \n")
-            + QStringLiteral("  always_comb y = a;\n")
-            + QStringLiteral("endmodule\n");
-        check("gac target: falls back after declarations and instances",
-              target.ok() && applyAssignInsertEdit(src, target) == expected);
-    }
-
-    {
-        QString src =
-            QStringLiteral("module assign_body_demo;\n")
-            + QStringLiteral("  always_comb y = a;\n")
-            + QStringLiteral("endmodule\n");
-        TSDocument d; d.setText(src);
-        const TSAssignInsertTarget target =
-            d.assignInsertTarget(src.indexOf(QStringLiteral("always")));
-        const QString expected =
-            QStringLiteral("module assign_body_demo;\n")
-            + QStringLiteral("  \n")
-            + QStringLiteral("  always_comb y = a;\n")
-            + QStringLiteral("endmodule\n");
-        check("gac target: inserts before first body item",
-              target.ok() && applyAssignInsertEdit(src, target) == expected);
-    }
-
-    {
-        QString src =
-            QStringLiteral("module assign_late_demo;\n")
-            + QStringLiteral("  always_comb y = a;\n")
-            + QStringLiteral("  assign late_y = a;\n")
-            + QStringLiteral("endmodule\n");
-        TSDocument d; d.setText(src);
-        const TSAssignInsertTarget target =
-            d.assignInsertTarget(src.indexOf(QStringLiteral("late_y")));
-        const QString expected =
-            QStringLiteral("module assign_late_demo;\n")
-            + QStringLiteral("  \n")
-            + QStringLiteral("  always_comb y = a;\n")
-            + QStringLiteral("  assign late_y = a;\n")
-            + QStringLiteral("endmodule\n");
-        check("gac target: does not cross procedural body logic",
-              target.ok() && applyAssignInsertEdit(src, target) == expected);
-
-        TSDocument noModule;
-        noModule.setText(QStringLiteral("assign y = a;\n"));
-        const TSAssignInsertTarget noModuleTarget =
-            noModule.assignInsertTarget(0);
-        check("gac target: reports no current module",
-              noModuleTarget.status == TSAssignInsertStatus::NoCurrentModule);
-    }
-
-    // 11) COM gpi foundation: parameter insert points prefer #(...) before body declarations.
+    // 9) add parameter: parameter lists precede body declarations.
     {
         QString src =
             QStringLiteral("module param_port_demo #(\n")
@@ -595,11 +386,11 @@ int main() {
             + QStringLiteral("  input logic clk\n")
             + QStringLiteral(");\n")
             + QStringLiteral("endmodule\n");
-        check("gpi target: parameter port list wins", target.ok());
-        check("gpi target: parameter port edit",
+        check("add parameter target: parameter port list wins", target.ok());
+        check("add parameter target: parameter port edit",
               target.ok()
                   && applyParameterInsertEdit(src, target) == expected);
-        check("gpi target: parameter port caret at indent",
+        check("add parameter target: parameter port caret at indent",
               target.caretCharAfterEdit
                   == expected.indexOf(QStringLiteral("  \n)")) + 2);
     }
@@ -617,7 +408,7 @@ int main() {
             + QStringLiteral("    \n")
             + QStringLiteral(") ();\n")
             + QStringLiteral("endmodule\n");
-        check("gpi target: empty parameter port list",
+        check("add parameter target: empty parameter port list",
               target.ok()
                   && applyParameterInsertEdit(src, target) == expected);
     }
@@ -639,7 +430,7 @@ int main() {
             + QStringLiteral("  \n")
             + QStringLiteral("  logic data;\n")
             + QStringLiteral("endmodule\n");
-        check("gpi target: internal parameter declaration section",
+        check("add parameter target: internal declaration section",
               target.ok()
                   && applyParameterInsertEdit(src, target) == expected);
     }
@@ -661,7 +452,7 @@ int main() {
             + QStringLiteral("  \n")
             + QStringLiteral("  typedef int data_t;\n")
             + QStringLiteral("endpackage\n");
-        check("gpi target: package parameter declaration section",
+        check("add parameter target: package declaration section",
               target.ok()
                   && applyParameterInsertEdit(src, target) == expected);
     }
@@ -671,7 +462,7 @@ int main() {
         noScope.setText(QStringLiteral("parameter int WIDTH = 8;\n"));
         const TSParameterInsertTarget noScopeTarget =
             noScope.parameterInsertTarget(0);
-        check("gpi target: reports no current parameter scope",
+        check("add parameter target: reports no current parameter scope",
               noScopeTarget.status
                   == TSParameterInsertStatus::NoCurrentParameterScope);
 
@@ -682,79 +473,55 @@ int main() {
         const TSParameterInsertTarget noClearTarget =
             noParameter.parameterInsertTarget(
                 noParameter.text().indexOf(QStringLiteral("data")));
-        check("gpi target: reports no clear parameter insert point",
+        check("add parameter target: reports no clear insert point",
               noClearTarget.status
                   == TSParameterInsertStatus::NoClearParameterInsertPoint);
     }
 
-    // 12) COM gef foundation: final module-body insertion point sits before endmodule.
+    // 10) go endmodule resolves navigation without editing the document.
     {
-        QString src =
+        const QString src =
             QStringLiteral("module end_demo;\n")
             + QStringLiteral("  logic a;\n")
             + QStringLiteral("endmodule\n");
-        TSDocument d; d.setText(src);
-        const TSModuleEndInsertTarget target =
-            d.moduleEndInsertTarget(src.indexOf(QStringLiteral("logic")));
-        const QString expected =
-            QStringLiteral("module end_demo;\n")
-            + QStringLiteral("  logic a;\n")
-            + QStringLiteral("  \n")
-            + QStringLiteral("endmodule\n");
-        check("gef target: inserts blank before endmodule", target.ok());
-        check("gef target: module end edit",
-              target.ok()
-                  && applyModuleEndInsertEdit(src, target) == expected);
-        check("gef target: caret at body indent",
-              target.caretCharAfterEdit
-                  == expected.indexOf(QStringLiteral("  \nendmodule")) + 2);
+        TSDocument d;
+        d.setText(src);
+        const TSModuleEndNavigationTarget target =
+            d.moduleEndNavigationTarget(
+                src.indexOf(QStringLiteral("logic")));
+        check("go endmodule target resolves", target.ok());
+        check("go endmodule target is before final endmodule",
+              target.caretChar
+                  == src.indexOf(QStringLiteral("endmodule")));
+        check("go endmodule query does not change source", d.text() == src);
     }
 
     {
-        QString src =
-            QStringLiteral("module end_blank_demo;\n")
-            + QStringLiteral("  logic a;\n")
-            + QStringLiteral("\n")
+        const QString src =
+            QStringLiteral("module first;\n")
+            + QStringLiteral("endmodule\n")
+            + QStringLiteral("module second;\n")
+            + QStringLiteral("  logic b;\n")
             + QStringLiteral("endmodule\n");
-        TSDocument d; d.setText(src);
-        const TSModuleEndInsertTarget target =
-            d.moduleEndInsertTarget(src.indexOf(QStringLiteral("logic")));
-        const QString expected =
-            QStringLiteral("module end_blank_demo;\n")
-            + QStringLiteral("  logic a;\n")
-            + QStringLiteral("  \n")
-            + QStringLiteral("endmodule\n");
-        check("gef target: reuses existing blank before endmodule",
+        TSDocument d;
+        d.setText(src);
+        const TSModuleEndNavigationTarget target =
+            d.moduleEndNavigationTarget(
+                src.indexOf(QStringLiteral("logic b")));
+        check("go endmodule selects current module final token",
               target.ok()
-                  && applyModuleEndInsertEdit(src, target) == expected);
-        check("gef target: existing blank caret at body indent",
-              target.caretCharAfterEdit
-                  == expected.indexOf(QStringLiteral("  \nendmodule")) + 2);
-    }
-
-    {
-        QString src =
-            QStringLiteral("module end_empty_demo;\n")
-            + QStringLiteral("endmodule\n");
-        TSDocument d; d.setText(src);
-        const TSModuleEndInsertTarget target =
-            d.moduleEndInsertTarget(src.indexOf(QStringLiteral("module")));
-        const QString expected =
-            QStringLiteral("module end_empty_demo;\n")
-            + QStringLiteral("    \n")
-            + QStringLiteral("endmodule\n");
-        check("gef target: empty module uses body indent fallback",
-              target.ok()
-                  && applyModuleEndInsertEdit(src, target) == expected);
+                  && target.caretChar
+                      == src.lastIndexOf(QStringLiteral("endmodule")));
     }
 
     {
         TSDocument noModule;
         noModule.setText(QStringLiteral("logic a;\n"));
-        const TSModuleEndInsertTarget noModuleTarget =
-            noModule.moduleEndInsertTarget(0);
-        check("gef target: reports no current module",
-              noModuleTarget.status == TSModuleEndInsertStatus::NoCurrentModule);
+        const TSModuleEndNavigationTarget target =
+            noModule.moduleEndNavigationTarget(0);
+        check("go endmodule reports no current module",
+              target.status
+                  == TSModuleEndNavigationStatus::NoCurrentModule);
     }
 
     printf("\n%d checks, %d failed\n", checks, fails);

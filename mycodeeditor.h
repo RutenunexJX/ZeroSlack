@@ -107,21 +107,14 @@ public:
     QString currentModuleName() const;
     EditorAlwaysScopeTarget currentAlwaysScopeTarget() const;
     EditorModuleScopeTarget currentModuleScopeTarget() const;
-    bool executeComPortAppend(QString* message = nullptr);
-    bool executeComSignalInsert(QString* message = nullptr);
-    bool executeComInstanceInsert(QString* message = nullptr);
-    bool executeComAssignInsert(QString* message = nullptr);
-    bool executeComParameterInsert(QString* message = nullptr);
-    bool executeComModuleEndInsert(QString* message = nullptr);
+    bool addPortRow(QString* message = nullptr);
+    bool addSignalRow(QString* message = nullptr);
+    bool addParameterRow(QString* message = nullptr);
+    bool goToFinalEndmodule(QString* message = nullptr);
     EditorPackageToolAvailability currentPackageToolAvailability() const;
     bool executePackageToolInsert(PackageToolKind kind,
                                   QString* message = nullptr);
     bool selectInsideBeginEnd(QString* message = nullptr);
-    bool comModeActive() const;
-    QString comModeBuffer() const;
-    void enterComMode(const QString& message = QString());
-    void exitComMode();
-    void showComModeMessage(const QString& message);
     void startTemplateSlotMode(int insertionStart,
                                int insertedLength,
                                const CodeTemplateSlotList& slotMetadata);
@@ -231,12 +224,6 @@ signals:
     void formatOnSaveChanged(bool enabled);
     void foldShelfItemConsumed(const QString& id);
     void fontZoomRequested(int steps);
-    void comModeStateChanged(bool active,
-                             const QString& buffer,
-                             const QString& message);
-    void comCommandRequested(const QString& command);
-    void comRelativeLineRequested(int moduleLine);
-    void columnNumberToolRequested();
 };
 
 #endif // MYCODEEDITOR_H

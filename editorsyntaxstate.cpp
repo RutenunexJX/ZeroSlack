@@ -120,22 +120,6 @@ TSSignalInsertTarget EditorSyntaxState::signalInsertTargetAt(int charPos) const
     return document->signalInsertTarget(charPos < 0 ? 0 : charPos);
 }
 
-TSInstanceInsertTarget EditorSyntaxState::instanceInsertTargetAt(int charPos) const
-{
-    TSInstanceInsertTarget target;
-    if (!interactiveSyntaxEnabled)
-        return target;
-    return document->instanceInsertTarget(charPos < 0 ? 0 : charPos);
-}
-
-TSAssignInsertTarget EditorSyntaxState::assignInsertTargetAt(int charPos) const
-{
-    TSAssignInsertTarget target;
-    if (!interactiveSyntaxEnabled)
-        return target;
-    return document->assignInsertTarget(charPos < 0 ? 0 : charPos);
-}
-
 TSParameterInsertTarget EditorSyntaxState::parameterInsertTargetAt(
     int charPos) const
 {
@@ -155,13 +139,13 @@ TSPackageToolInsertTarget EditorSyntaxState::packageToolInsertTargetAt(
     return document->packageToolInsertTarget(charPos < 0 ? 0 : charPos, kind);
 }
 
-TSModuleEndInsertTarget EditorSyntaxState::moduleEndInsertTargetAt(
+TSModuleEndNavigationTarget EditorSyntaxState::moduleEndNavigationTargetAt(
     int charPos) const
 {
-    TSModuleEndInsertTarget target;
+    TSModuleEndNavigationTarget target;
     if (!interactiveSyntaxEnabled)
         return target;
-    return document->moduleEndInsertTarget(charPos < 0 ? 0 : charPos);
+    return document->moduleEndNavigationTarget(charPos < 0 ? 0 : charPos);
 }
 
 TSAlwaysScopeTarget EditorSyntaxState::alwaysScopeTargetAt(

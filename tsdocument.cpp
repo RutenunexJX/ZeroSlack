@@ -698,47 +698,6 @@ bool isModuleBodyBoundaryNode(TSNode node)
         || nodeTypeIs(node, "task_declaration");
 }
 
-bool isInstanceDeclaration(TSNode node)
-{
-    return nodeTypeIs(node, "module_instantiation")
-        || nodeTypeIs(node, "interface_instantiation");
-}
-
-bool isInstanceBodyBoundaryNode(TSNode node)
-{
-    return nodeTypeIs(node, "always_construct")
-        || nodeTypeIs(node, "initial_construct")
-        || nodeTypeIs(node, "final_construct")
-        || nodeTypeIs(node, "continuous_assign")
-        || nodeTypeIs(node, "generate_region")
-        || nodeTypeIs(node, "conditional_generate_construct")
-        || nodeTypeIs(node, "loop_generate_construct")
-        || nodeTypeIs(node, "case_generate_construct")
-        || nodeTypeIs(node, "function_declaration")
-        || nodeTypeIs(node, "task_declaration");
-}
-
-bool isAssignBodyBoundaryNode(TSNode node)
-{
-    return nodeTypeIs(node, "always_construct")
-        || nodeTypeIs(node, "initial_construct")
-        || nodeTypeIs(node, "final_construct")
-        || nodeTypeIs(node, "generate_region")
-        || nodeTypeIs(node, "conditional_generate_construct")
-        || nodeTypeIs(node, "loop_generate_construct")
-        || nodeTypeIs(node, "case_generate_construct")
-        || nodeTypeIs(node, "function_declaration")
-        || nodeTypeIs(node, "task_declaration");
-}
-
-bool isDeclarationSectionNode(TSNode node)
-{
-    return isInternalSignalDeclaration(node)
-        || isParameterLikeDeclaration(node)
-        || nodeTypeIs(node, "genvar_declaration")
-        || nodeTypeIs(node, "package_import_declaration");
-}
-
 TSNode directModuleHeader(TSNode module)
 {
     TSNode header = directNamedChildOfType(module, "module_ansi_header");
@@ -1136,226 +1095,6 @@ TSSignalInsertTarget TSDocument::signalInsertTarget(int charOffset) const
     return target;
 }
 
-TSInstanceInsertTarget TSDocument::instanceInsertTarget(int charOffset) const
-{
-    TSInstanceInsertTarget target;
-
-    const int boundedCharOffset = qBound(0, charOffset, m_text.size());
-    const uint32_t byte =
-        static_cast<uint32_t>(boundedCharOffset) * 2u;
-    TSNode node =
-        ts_node_named_descendant_for_byte_range(ts_tree_root_node(m_tree),
-                                                byte,
-                                                byte);
-    TSNode module = ancestorOfType(node, "module_declaration");
-    if (ts_node_is_null(module)) {
-        target.status = TSInstanceInsertStatus::NoCurrentModule;
-        return target;
-    }
-    if (ts_node_has_error(module))
-        return target;
-
-    TSNode header = directModuleHeader(module);
-    if (ts_node_is_null(header))
-        return target;
-
-    TSNode lastInstance{};
-    TSNode lastDeclaration{};
-    TSNode firstBodyNode{};
-    bool seenHeader = false;
-
-    const uint32_t childCount = ts_node_named_child_count(module);
-    for (uint32_t i = 0; i < childCount; ++i) {
-        TSNode rawChild = ts_node_named_child(module, i);
-        TSNode child = effectiveModuleMemberNode(rawChild);
-        if (ts_node_eq(child, header)) {
-            seenHeader = true;
-            continue;
-        }
-        if (!seenHeader)
-            continue;
-
-        if (isInstanceBodyBoundaryNode(child)) {
-            firstBodyNode = child;
-            break;
-        }
-        if (isInstanceDeclaration(child)) {
-            lastInstance = child;
-            continue;
-        }
-        if (isDeclarationSectionNode(child)) {
-            lastDeclaration = child;
-            continue;
-        }
-        if (nodeTypeIs(child, "attribute_instance")
-            || nodeTypeIs(child, "include_compiler_directive")
-            || nodeTypeIs(child, "line_compiler_directive")
-            || nodeTypeIs(child, "file_or_line_compiler_directive")
-            || nodeTypeIs(child, "default_nettype_compiler_directive")
-            || nodeTypeIs(child, "pragma")) {
-            continue;
-        }
-        if (nodeStartChar(child) >= nodeEndChar(header)) {
-            firstBodyNode = child;
-            break;
-        }
-    }
-
-    SignalInsertAnchor anchor;
-    if (!ts_node_is_null(lastInstance)) {
-        anchor = anchorAfterNode(m_text, lastInstance);
-    } else if (!ts_node_is_null(lastDeclaration)) {
-        anchor = anchorAfterNode(m_text, lastDeclaration);
-    } else {
-        const int headerLastLine = nodeLastLine(header);
-        int insertLine = -1;
-        QString indent;
-        if (!ts_node_is_null(firstBodyNode)) {
-            insertLine =
-                static_cast<int>(ts_node_start_point(firstBodyNode).row);
-            indent = lineIndentAt(m_text, insertLine);
-        } else {
-            insertLine = endmoduleLine(module, m_text);
-            if (insertLine < 0)
-                return target;
-            indent = lineIndentAt(m_text, insertLine)
-                + QStringLiteral("    ");
-        }
-        if (insertLine <= headerLastLine)
-            return target;
-        anchor = anchorBeforeLine(m_text, insertLine, indent);
-    }
-
-    if (!anchor.valid || anchor.line < 0)
-        return target;
-
-    if (anchor.insertAfterLine) {
-        const int insertChar = lineEndChar(m_text, anchor.line);
-        target.status = TSInstanceInsertStatus::Ok;
-        target.insertChar = insertChar;
-        target.insertText = QLatin1Char('\n') + anchor.indent;
-        target.caretCharAfterEdit = insertChar + 1 + anchor.indent.size();
-        return target;
-    }
-
-    const int insertChar = lineStartChar(m_text, anchor.line);
-    target.status = TSInstanceInsertStatus::Ok;
-    target.insertChar = insertChar;
-    target.insertText = anchor.indent + QLatin1Char('\n');
-    target.caretCharAfterEdit = insertChar + anchor.indent.size();
-    return target;
-}
-
-TSAssignInsertTarget TSDocument::assignInsertTarget(int charOffset) const
-{
-    TSAssignInsertTarget target;
-
-    const int boundedCharOffset = qBound(0, charOffset, m_text.size());
-    const uint32_t byte =
-        static_cast<uint32_t>(boundedCharOffset) * 2u;
-    TSNode node =
-        ts_node_named_descendant_for_byte_range(ts_tree_root_node(m_tree),
-                                                byte,
-                                                byte);
-    TSNode module = ancestorOfType(node, "module_declaration");
-    if (ts_node_is_null(module)) {
-        target.status = TSAssignInsertStatus::NoCurrentModule;
-        return target;
-    }
-    if (ts_node_has_error(module))
-        return target;
-
-    TSNode header = directModuleHeader(module);
-    if (ts_node_is_null(header))
-        return target;
-
-    TSNode lastAssign{};
-    TSNode lastDeclarationOrInstance{};
-    TSNode firstBodyNode{};
-    bool seenHeader = false;
-
-    const uint32_t childCount = ts_node_named_child_count(module);
-    for (uint32_t i = 0; i < childCount; ++i) {
-        TSNode rawChild = ts_node_named_child(module, i);
-        TSNode child = effectiveModuleMemberNode(rawChild);
-        if (ts_node_eq(child, header)) {
-            seenHeader = true;
-            continue;
-        }
-        if (!seenHeader)
-            continue;
-
-        if (isAssignBodyBoundaryNode(child)) {
-            firstBodyNode = child;
-            break;
-        }
-        if (nodeTypeIs(child, "continuous_assign")) {
-            lastAssign = child;
-            continue;
-        }
-        if (isDeclarationSectionNode(child) || isInstanceDeclaration(child)) {
-            lastDeclarationOrInstance = child;
-            continue;
-        }
-        if (nodeTypeIs(child, "attribute_instance")
-            || nodeTypeIs(child, "include_compiler_directive")
-            || nodeTypeIs(child, "line_compiler_directive")
-            || nodeTypeIs(child, "file_or_line_compiler_directive")
-            || nodeTypeIs(child, "default_nettype_compiler_directive")
-            || nodeTypeIs(child, "pragma")) {
-            continue;
-        }
-        if (nodeStartChar(child) >= nodeEndChar(header)) {
-            firstBodyNode = child;
-            break;
-        }
-    }
-
-    SignalInsertAnchor anchor;
-    if (!ts_node_is_null(lastAssign)) {
-        anchor = anchorAfterNode(m_text, lastAssign);
-    } else if (!ts_node_is_null(lastDeclarationOrInstance)) {
-        anchor = anchorAfterNode(m_text, lastDeclarationOrInstance);
-    } else {
-        const int headerLastLine = nodeLastLine(header);
-        int insertLine = -1;
-        QString indent;
-        if (!ts_node_is_null(firstBodyNode)) {
-            insertLine =
-                static_cast<int>(ts_node_start_point(firstBodyNode).row);
-            indent = lineIndentAt(m_text, insertLine);
-        } else {
-            insertLine = endmoduleLine(module, m_text);
-            if (insertLine < 0)
-                return target;
-            indent = lineIndentAt(m_text, insertLine)
-                + QStringLiteral("    ");
-        }
-        if (insertLine <= headerLastLine)
-            return target;
-        anchor = anchorBeforeLine(m_text, insertLine, indent);
-    }
-
-    if (!anchor.valid || anchor.line < 0)
-        return target;
-
-    if (anchor.insertAfterLine) {
-        const int insertChar = lineEndChar(m_text, anchor.line);
-        target.status = TSAssignInsertStatus::Ok;
-        target.insertChar = insertChar;
-        target.insertText = QLatin1Char('\n') + anchor.indent;
-        target.caretCharAfterEdit = insertChar + 1 + anchor.indent.size();
-        return target;
-    }
-
-    const int insertChar = lineStartChar(m_text, anchor.line);
-    target.status = TSAssignInsertStatus::Ok;
-    target.insertChar = insertChar;
-    target.insertText = anchor.indent + QLatin1Char('\n');
-    target.caretCharAfterEdit = insertChar + anchor.indent.size();
-    return target;
-}
-
 TSParameterInsertTarget TSDocument::parameterInsertTarget(int charOffset) const
 {
     TSParameterInsertTarget target;
@@ -1630,9 +1369,10 @@ TSPackageToolInsertTarget TSDocument::packageToolInsertTarget(
     return target;
 }
 
-TSModuleEndInsertTarget TSDocument::moduleEndInsertTarget(int charOffset) const
+TSModuleEndNavigationTarget TSDocument::moduleEndNavigationTarget(
+    int charOffset) const
 {
-    TSModuleEndInsertTarget target;
+    TSModuleEndNavigationTarget target;
 
     const int boundedCharOffset = qBound(0, charOffset, m_text.size());
     const uint32_t byte =
@@ -1643,49 +1383,21 @@ TSModuleEndInsertTarget TSDocument::moduleEndInsertTarget(int charOffset) const
                                                 byte);
     TSNode module = ancestorOfType(node, "module_declaration");
     if (ts_node_is_null(module)) {
-        target.status = TSModuleEndInsertStatus::NoCurrentModule;
+        target.status = TSModuleEndNavigationStatus::NoCurrentModule;
         return target;
     }
     if (ts_node_has_error(module))
-        return target;
-
-    TSNode header = directModuleHeader(module);
-    if (ts_node_is_null(header))
         return target;
 
     const int endLine = endmoduleLine(module, m_text);
     if (endLine < 0)
         return target;
 
-    const int headerLastLine = nodeLastLine(header);
-    if (endLine <= headerLastLine)
-        return target;
-
-    const int previousLine = previousNonBlankLine(m_text, endLine - 1);
-    const QString bodyIndent =
-        previousLine > headerLastLine
-            ? lineIndentAt(m_text, previousLine)
-            : lineIndentAt(m_text, endLine) + QStringLiteral("    ");
-
-    const int blankLine = endLine - 1;
-    if (blankLine > headerLastLine && lineIsBlank(m_text, blankLine)) {
-        target.status = TSModuleEndInsertStatus::Ok;
-        target.replaceStartChar = lineStartChar(m_text, blankLine);
-        target.replaceEndChar = lineEndChar(m_text, blankLine);
-        target.replacementText = bodyIndent;
-        target.caretCharAfterEdit =
-            target.replaceStartChar + bodyIndent.size();
-        return target;
-    }
-
-    target.status = TSModuleEndInsertStatus::Ok;
-    target.replaceStartChar = lineStartChar(m_text, endLine);
-    target.replaceEndChar = target.replaceStartChar;
-    target.replacementText = bodyIndent + QLatin1Char('\n');
-    target.caretCharAfterEdit = target.replaceStartChar + bodyIndent.size();
+    target.status = TSModuleEndNavigationStatus::Ok;
+    target.caretChar =
+        lineStartChar(m_text, endLine) + lineIndentAt(m_text, endLine).size();
     return target;
 }
-
 TSAlwaysScopeTarget TSDocument::alwaysScopeTarget(
     int cursorChar,
     int selectionStartChar,

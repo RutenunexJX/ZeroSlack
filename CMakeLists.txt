@@ -230,9 +230,9 @@ set(ZEROSLACK_CORE_SOURCES
     clockresetdomainservice.cpp
     codepreviewservice.cpp
     columnnumbertool.cpp
-    commodecommandregistry.cpp
-    commodecoordinator.cpp
-    commodeservice.cpp
+    commandlayercommandregistry.cpp
+    commandlayercoordinator.cpp
+    commandlayerservice.cpp
     codetemplateservice.cpp
     customabbreviationservice.cpp
     mainwindow.cpp
@@ -421,9 +421,9 @@ set(ZEROSLACK_CORE_SOURCES
     clockresetdomainservice.h
     codepreviewservice.h
     columnnumbertool.h
-    commodecommandregistry.h
-    commodecoordinator.h
-    commodeservice.h
+    commandlayercommandregistry.h
+    commandlayercoordinator.h
+    commandlayerservice.h
     codetemplateservice.h
     customabbreviationservice.h
     mainwindow.h

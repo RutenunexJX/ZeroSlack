@@ -12,11 +12,9 @@ class TSDocument;
 enum class PackageToolKind;
 struct TSPortAppendTarget;
 struct TSSignalInsertTarget;
-struct TSInstanceInsertTarget;
-struct TSAssignInsertTarget;
 struct TSParameterInsertTarget;
 struct TSPackageToolInsertTarget;
-struct TSModuleEndInsertTarget;
+struct TSModuleEndNavigationTarget;
 struct TSAlwaysScopeTarget;
 struct TSModuleScopeTarget;
 struct TSBeginEndInsideTarget;
@@ -42,13 +40,12 @@ public:
     QString moduleNameAt(int charPos) const;
     TSPortAppendTarget portAppendTargetAt(int charPos) const;
     TSSignalInsertTarget signalInsertTargetAt(int charPos) const;
-    TSInstanceInsertTarget instanceInsertTargetAt(int charPos) const;
-    TSAssignInsertTarget assignInsertTargetAt(int charPos) const;
     TSParameterInsertTarget parameterInsertTargetAt(int charPos) const;
     TSPackageToolInsertTarget packageToolInsertTargetAt(
         int charPos,
         PackageToolKind kind) const;
-    TSModuleEndInsertTarget moduleEndInsertTargetAt(int charPos) const;
+    TSModuleEndNavigationTarget moduleEndNavigationTargetAt(
+        int charPos) const;
     TSAlwaysScopeTarget alwaysScopeTargetAt(int cursorChar,
                                             int selectionStartChar = -1,
                                             int selectionEndChar = -1) const;

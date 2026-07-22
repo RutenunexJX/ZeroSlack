@@ -406,7 +406,6 @@ void MyCodeEditor::paintEvent(QPaintEvent *event)
     state->paintFoldPlaceholders(this, event);
     state->paintGhostAnnotations(this, event);
     state->paintColumnSelection(this, event);
-    state->paintComModeOverlay(this, event);
 }
 
 void MyCodeEditor::contextMenuEvent(QContextMenuEvent *event)
@@ -449,34 +448,24 @@ EditorModuleScopeTarget MyCodeEditor::currentModuleScopeTarget() const
     return state->currentModuleScopeTarget(this);
 }
 
-bool MyCodeEditor::executeComPortAppend(QString* message)
+bool MyCodeEditor::addPortRow(QString* message)
 {
-    return state->executeComPortAppend(this, message);
+    return state->addPortRow(this, message);
 }
 
-bool MyCodeEditor::executeComSignalInsert(QString* message)
+bool MyCodeEditor::addSignalRow(QString* message)
 {
-    return state->executeComSignalInsert(this, message);
+    return state->addSignalRow(this, message);
 }
 
-bool MyCodeEditor::executeComInstanceInsert(QString* message)
+bool MyCodeEditor::addParameterRow(QString* message)
 {
-    return state->executeComInstanceInsert(this, message);
+    return state->addParameterRow(this, message);
 }
 
-bool MyCodeEditor::executeComAssignInsert(QString* message)
+bool MyCodeEditor::goToFinalEndmodule(QString* message)
 {
-    return state->executeComAssignInsert(this, message);
-}
-
-bool MyCodeEditor::executeComParameterInsert(QString* message)
-{
-    return state->executeComParameterInsert(this, message);
-}
-
-bool MyCodeEditor::executeComModuleEndInsert(QString* message)
-{
-    return state->executeComModuleEndInsert(this, message);
+    return state->goToFinalEndmodule(this, message);
 }
 
 EditorPackageToolAvailability MyCodeEditor::currentPackageToolAvailability()
@@ -494,31 +483,6 @@ bool MyCodeEditor::executePackageToolInsert(PackageToolKind kind,
 bool MyCodeEditor::selectInsideBeginEnd(QString* message)
 {
     return state->selectInsideBeginEnd(this, message);
-}
-
-bool MyCodeEditor::comModeActive() const
-{
-    return state->comModeActive();
-}
-
-QString MyCodeEditor::comModeBuffer() const
-{
-    return state->comModeBuffer();
-}
-
-void MyCodeEditor::enterComMode(const QString& message)
-{
-    state->enterComMode(this, message);
-}
-
-void MyCodeEditor::exitComMode()
-{
-    state->exitComMode(this);
-}
-
-void MyCodeEditor::showComModeMessage(const QString& message)
-{
-    state->showComModeMessage(this, message);
 }
 
 void MyCodeEditor::startTemplateSlotMode(

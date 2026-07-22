@@ -8,7 +8,7 @@
 #include "analysisscheduler.h"
 #include "analysiscoordinator.h"
 #include "analysisprogresscoordinator.h"
-#include "commodecoordinator.h"
+#include "commandlayercoordinator.h"
 #include "editorcoordinator.h"
 #include "filecommandcoordinator.h"
 #include "navigationcommandcoordinator.h"
@@ -155,7 +155,7 @@ MainWindow::MainWindow(QWidget *parent)
     setupToolsMenu();
     setupEditorModeChip();
     setupGlobalControl();
-    setupComMode();
+    setupCommandLayer();
     setupEditorCoordinator();
     setupManagerConnections();
     applyModernShellStyle();
@@ -1115,17 +1115,16 @@ void MainWindow::setupGlobalControl()
     globalControlCoordinator->install();
 }
 
-void MainWindow::setupComMode()
+void MainWindow::setupCommandLayer()
 {
-    comModeCoordinator = std::make_unique<ComModeCoordinator>(
-        statusBar(),
+    commandLayerCoordinator = std::make_unique<CommandLayerCoordinator>(
         this,
         tabManager.get(),
         workspaceManager ? workspaceManager->getProjectModel() : nullptr,
         SemanticIndex::getInstance(),
         navigationCommandCoordinator.get(),
         this);
-    comModeCoordinator->connectSignals();
+    commandLayerCoordinator->connectSignals();
 }
 
 void MainWindow::setupFoldBlockShelf()
