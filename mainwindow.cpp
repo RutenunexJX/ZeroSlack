@@ -459,6 +459,24 @@ void MainWindow::updatePackageTools()
     const EditorPackageToolAvailability availability =
         editor ? editor->currentPackageToolAvailability()
                : EditorPackageToolAvailability();
+    updatePackageToolsForEditor(editor, availability);
+}
+
+void MainWindow::updatePackageToolsForEditor(
+    MyCodeEditor* editor,
+    const EditorPackageToolAvailability& availability)
+{
+    if (!packageToolsBar)
+        return;
+    if (packageToolsStateValid && packageToolsStateEditor == editor
+        && packageToolsState.available == availability.available
+        && packageToolsState.packageName == availability.packageName
+        && packageToolsState.failureMessage == availability.failureMessage) {
+        return;
+    }
+    packageToolsStateEditor = editor;
+    packageToolsState = availability;
+    packageToolsStateValid = true;
     packageToolsBar->setVisible(availability.available);
 
     const QString packageText =
@@ -713,13 +731,20 @@ void MainWindow::setupManagerConnections()
                 if (!editor)
                     return;
                 connect(editor,
-                        &MyCodeEditor::textChanged,
+                        &MyCodeEditor::packageToolAvailabilityChanged,
                         this,
-                        [this, editor]() {
+                        [this, editor](
+                            const EditorPackageToolAvailability& availability) {
                             if (tabManager
                                 && tabManager->getCurrentEditor() == editor) {
-                                updatePackageTools();
+                                updatePackageToolsForEditor(editor,
+                                                            availability);
                             }
+                        });
+                connect(editor,
+                        &MyCodeEditor::wavePreviewScopeChanged,
+                        this,
+                        [this, editor]() {
                             QDockWidget* waveDock =
                                 dockForPanelId(QStringLiteral("wavePreview"));
                             if (tabManager
@@ -730,21 +755,10 @@ void MainWindow::setupManagerConnections()
                             }
                         });
                 connect(editor,
-                        &MyCodeEditor::cursorPositionChanged,
+                        &MyCodeEditor::documentChangeApplied,
                         this,
-                        [this, editor]() {
-                            if (tabManager
-                                && tabManager->getCurrentEditor() == editor) {
-                                updatePackageTools();
-                            }
-                            QDockWidget* waveDock =
-                                dockForPanelId(QStringLiteral("wavePreview"));
-                            if (tabManager
-                                && tabManager->getCurrentEditor() == editor
-                                && waveDock
-                                && waveDock->isVisible()) {
-                                refreshActiveEditorWavePreview();
-                            }
+                        [this, editor](const DocumentChange& change) {
+                            applyActiveEditorWavePreviewChange(editor, change);
                         });
             });
     connect(analysisScheduler.get(),
@@ -904,7 +918,7 @@ void MainWindow::refreshActiveEditorDiagnosticHighlights(
     if (!editor)
         return;
 
-    const DocumentSnapshot document = tabManager->getCurrentDocument();
+    const DocumentSnapshot document = tabManager->getCurrentDocumentMetadata();
     if (document.fileName.isEmpty()) {
         editor->setDiagnosticHighlights({});
         return;
@@ -941,7 +955,7 @@ void MainWindow::refreshActiveEditorSemanticDecorations(
     if (!editor)
         return;
 
-    const DocumentSnapshot document = tabManager->getCurrentDocument();
+    const DocumentSnapshot document = tabManager->getCurrentDocumentMetadata();
     if (document.fileName.isEmpty()) {
         editor->setSemanticDecorations({});
         return;
@@ -965,7 +979,7 @@ void MainWindow::refreshActiveEditorSemanticDecorations(
 
     SemanticDecorationQuery query;
     query.fileName = document.fileName;
-    query.documentText = editor->toPlainText();
+    query.documentText = editor->cachedDocumentText();
     if (workspaceManager)
         query.configuredDefines = workspaceManager->workspaceConfiguration().defines;
     const SemanticDecorationReport report =
@@ -983,7 +997,7 @@ void MainWindow::refreshActiveEditorGhostAnnotations(
     if (!editor)
         return;
 
-    const DocumentSnapshot document = tabManager->getCurrentDocument();
+    const DocumentSnapshot document = tabManager->getCurrentDocumentMetadata();
     if (document.fileName.isEmpty()) {
         editor->setGhostAnnotations({});
         return;
@@ -1007,7 +1021,7 @@ void MainWindow::refreshActiveEditorGhostAnnotations(
 
     GhostAnnotationQuery query;
     query.fileName = document.fileName;
-    query.documentText = editor->toPlainText();
+    query.documentText = editor->cachedDocumentText();
     query.instanceContext = editor->hierarchyInstanceContext();
     query.documentRevision = editor->semanticDocumentRevision();
     const GhostAnnotationReport report =
@@ -1029,17 +1043,18 @@ void MainWindow::refreshActiveEditorWavePreview()
         return;
     }
 
-    const DocumentSnapshot document = tabManager->getCurrentDocument();
+    const DocumentSnapshot document = tabManager->getCurrentDocumentMetadata();
     const EditorAlwaysScopeTarget alwaysScope =
         editor->currentAlwaysScopeTarget();
     if (alwaysScope.ok()) {
         semanticDocks->wavePreviewPanelCoordinator()->refreshFromDocument(
             document.fileName,
-            editor->toPlainText(),
+            editor->cachedDocumentText(),
             document.dirty,
             alwaysScope.startPosition,
             alwaysScope.endPosition,
-            alwaysScope.label);
+            alwaysScope.label,
+            alwaysScope.startLine);
         return;
     }
 
@@ -1055,11 +1070,63 @@ void MainWindow::refreshActiveEditorWavePreview()
 
     semanticDocks->wavePreviewPanelCoordinator()->refreshFromDocument(
         document.fileName,
-        editor->toPlainText(),
+        editor->cachedDocumentText(),
         document.dirty,
         moduleScope.startPosition,
         moduleScope.endPosition,
-        moduleScope.label);
+        moduleScope.label,
+        moduleScope.startLine);
+}
+
+void MainWindow::applyActiveEditorWavePreviewChange(
+    MyCodeEditor* editor,
+    const DocumentChange& change)
+{
+    if (!editor || !tabManager || !semanticDocks
+        || tabManager->getCurrentEditor() != editor
+        || !semanticDocks->wavePreviewPanelCoordinator()) {
+        return;
+    }
+
+    QDockWidget* waveDock = dockForPanelId(QStringLiteral("wavePreview"));
+    if (!waveDock || !waveDock->isVisible())
+        return;
+
+    const DocumentSnapshot document = tabManager->getCurrentDocumentMetadata();
+    const EditorAlwaysScopeTarget alwaysScope =
+        editor->currentAlwaysScopeTarget();
+    if (alwaysScope.ok()) {
+        semanticDocks->wavePreviewPanelCoordinator()->applyDocumentChange(
+            document.fileName,
+            change,
+            editor->cachedDocumentText(),
+            document.dirty,
+            alwaysScope.startPosition,
+            alwaysScope.endPosition,
+            alwaysScope.label,
+            alwaysScope.startLine);
+        return;
+    }
+
+    const EditorModuleScopeTarget moduleScope =
+        editor->currentModuleScopeTarget();
+    if (moduleScope.ok()) {
+        semanticDocks->wavePreviewPanelCoordinator()->applyDocumentChange(
+            document.fileName,
+            change,
+            editor->cachedDocumentText(),
+            document.dirty,
+            moduleScope.startPosition,
+            moduleScope.endPosition,
+            moduleScope.label,
+            moduleScope.startLine);
+        return;
+    }
+
+    semanticDocks->wavePreviewPanelCoordinator()->renderUnavailable(
+        moduleScope.failureMessage.isEmpty()
+            ? QStringLiteral("Place the cursor in a module or always block to preview.")
+            : moduleScope.failureMessage);
 }
 
 

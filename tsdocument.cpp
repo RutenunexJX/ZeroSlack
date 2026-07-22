@@ -1,6 +1,7 @@
 #include "tsdocument.h"
 #include <cstring>
 #include <algorithm>
+#include <cstdlib>
 #include <QSet>
 
 extern "C" TSLanguage *tree_sitter_systemverilog();
@@ -69,60 +70,78 @@ void TSDocument::reparse(TSTree* oldTree)
 
 void TSDocument::setText(const QString& text)
 {
-    m_text = text;
+    m_text = QString(text.constData(), text.size());
     reparse(nullptr);
 }
 
-void TSDocument::applyEdit(uint32_t startByte, uint32_t oldEndByte, uint32_t newEndByte,
-                           TSPoint startPoint, TSPoint oldEndPoint, TSPoint newEndPoint,
-                           const QString& newFullText)
-{
-    TSInputEdit edit;
-    edit.start_byte    = startByte;
-    edit.old_end_byte  = oldEndByte;
-    edit.new_end_byte  = newEndByte;
-    edit.start_point   = startPoint;
-    edit.old_end_point = oldEndPoint;
-    edit.new_end_point = newEndPoint;
-
-    if (m_tree)
-        ts_tree_edit(m_tree, &edit);
-
-    m_text = newFullText;
-    reparse(m_tree);
-}
-
 namespace {
-// Tree-sitter point (row, column-in-bytes) at a char index. Columns are UTF-16 bytes (= 2*char).
-TSPoint pointAtChar(const QString& text, int charIndex)
+TSPoint endPointForText(int startLine,
+                        int startColumn,
+                        const QString& text)
 {
-    const int n = charIndex < text.size() ? charIndex : static_cast<int>(text.size());
-    uint32_t row = 0;
-    int lineStart = 0;
-    for (int i = 0; i < n; ++i) {
-        if (text.at(i) == QLatin1Char('\n')) {
-            ++row;
-            lineStart = i + 1;
-        }
-    }
-    TSPoint p;
-    p.row = row;
-    p.column = static_cast<uint32_t>(charIndex - lineStart) * 2u;
-    return p;
+    const int lastNewline = text.lastIndexOf(QLatin1Char('\n'));
+    const int newlineCount = text.count(QLatin1Char('\n'));
+    TSPoint point;
+    point.row = static_cast<uint32_t>(startLine + newlineCount);
+    const int column = newlineCount == 0
+        ? startColumn + text.size()
+        : text.size() - lastNewline - 1;
+    point.column = static_cast<uint32_t>(qMax(0, column)) * 2u;
+    return point;
 }
 } // namespace
 
-void TSDocument::applyEditChars(int startChar, int oldEndChar, int newEndChar,
-                                const QString& newFullText)
+QList<TSChangedRange> TSDocument::applyEdit(const DocumentChange& change)
 {
-    // m_text is still the pre-edit text here -> use it for the start / old-end points.
-    const TSPoint sp  = pointAtChar(m_text, startChar);
-    const TSPoint oep = pointAtChar(m_text, oldEndChar);
-    const TSPoint nep = pointAtChar(newFullText, newEndChar);
-    applyEdit(static_cast<uint32_t>(startChar) * 2u,
-              static_cast<uint32_t>(oldEndChar) * 2u,
-              static_cast<uint32_t>(newEndChar) * 2u,
-              sp, oep, nep, newFullText);
+    QList<TSChangedRange> changedRanges;
+    const int position = qBound(0, change.position, m_text.size());
+    const int removedLength = qBound(
+        0, change.removedLength, m_text.size() - position);
+
+    TSInputEdit edit{};
+    edit.start_byte = static_cast<uint32_t>(position) * 2u;
+    edit.old_end_byte = static_cast<uint32_t>(position + removedLength) * 2u;
+    edit.new_end_byte = static_cast<uint32_t>(
+        position + change.insertedText.size()) * 2u;
+    edit.start_point.row = static_cast<uint32_t>(qMax(0, change.startLine));
+    edit.start_point.column = static_cast<uint32_t>(
+        qMax(0, change.startColumn)) * 2u;
+    edit.old_end_point = endPointForText(change.startLine,
+                                         change.startColumn,
+                                         change.removedText);
+    edit.new_end_point = endPointForText(change.startLine,
+                                         change.startColumn,
+                                         change.insertedText);
+
+    if (m_tree)
+        ts_tree_edit(m_tree, &edit);
+    m_text.replace(position, removedLength, change.insertedText);
+
+    const char* data = reinterpret_cast<const char*>(m_text.utf16());
+    const uint32_t lengthBytes = static_cast<uint32_t>(m_text.size()) * 2u;
+    TSTree* newTree = ts_parser_parse_string_encoding(
+        m_parser, m_tree, data, lengthBytes, TSInputEncodingUTF16LE);
+
+    if (m_tree && newTree) {
+        uint32_t rangeCount = 0;
+        TSRange* ranges = ts_tree_get_changed_ranges(
+            m_tree, newTree, &rangeCount);
+        changedRanges.reserve(static_cast<int>(rangeCount));
+        for (uint32_t index = 0; index < rangeCount; ++index) {
+            TSChangedRange range;
+            range.startChar = static_cast<int>(ranges[index].start_byte / 2u);
+            range.endChar = static_cast<int>(ranges[index].end_byte / 2u);
+            range.startLine = static_cast<int>(ranges[index].start_point.row);
+            range.endLine = static_cast<int>(ranges[index].end_point.row);
+            changedRanges.append(range);
+        }
+        std::free(ranges);
+    }
+
+    if (m_tree)
+        ts_tree_delete(m_tree);
+    m_tree = newTree;
+    return changedRanges;
 }
 
 TSNode TSDocument::rootNode() const
@@ -300,12 +319,12 @@ int nodeEndChar(TSNode node)
 
 int nodeStartLine(TSNode node)
 {
-    return static_cast<int>(ts_node_start_point(node).row) + 1;
+    return static_cast<int>(ts_node_start_point(node).row);
 }
 
 int nodeEndLine(TSNode node)
 {
-    return static_cast<int>(ts_node_end_point(node).row) + 1;
+    return static_cast<int>(ts_node_end_point(node).row);
 }
 
 QString leadingIdentifierAt(const QString& text, int start, int end)
@@ -793,6 +812,54 @@ QString firstToken(const QString& payload, int* tokenEnd)
     return payload.left(end);
 }
 
+bool customFoldMarkerForNode(const QString& text,
+                             TSNode node,
+                             TSCustomFoldMarker* marker)
+{
+    if (!marker)
+        return false;
+    const char* type = ts_node_type(node);
+    if (!type || (std::strcmp(type, "one_line_comment") != 0
+                  && std::strcmp(type, "block_comment") != 0)) {
+        return false;
+    }
+
+    const QString payload = commentPayload(nodeText(text, node));
+    int tokenEnd = 0;
+    const QString token = firstToken(payload, &tokenEnd);
+    if (token != QStringLiteral("fold")
+        && token != QStringLiteral("endfold")) {
+        return false;
+    }
+
+    const TSPoint point = ts_node_start_point(node);
+    marker->line = static_cast<int>(point.row);
+    marker->column = static_cast<int>(point.column / 2u);
+    marker->startsRange = token == QStringLiteral("fold");
+    marker->label = marker->startsRange
+        ? payload.mid(tokenEnd).trimmed()
+        : QString();
+    return true;
+}
+
+void collectCustomFoldMarkers(const QString& text,
+                              TSNode node,
+                              QList<TSCustomFoldMarker>& markers)
+{
+    if (ts_node_is_null(node))
+        return;
+    TSCustomFoldMarker marker;
+    if (customFoldMarkerForNode(text, node, &marker))
+        markers.append(marker);
+
+    const uint32_t childCount = ts_node_child_count(node);
+    for (uint32_t index = 0; index < childCount; ++index) {
+        collectCustomFoldMarkers(text,
+                                 ts_node_child(node, index),
+                                 markers);
+    }
+}
+
 void collectFoldNodes(const QString& text,
                       TSNode node,
                       QList<TSFoldRange>& syntaxRanges,
@@ -800,18 +867,14 @@ void collectFoldNodes(const QString& text,
                       QList<QPair<int, QString>>& customStack)
 {
     const char* type = ts_node_type(node);
-    if (type && (std::strcmp(type, "one_line_comment") == 0
-                 || std::strcmp(type, "block_comment") == 0)) {
-        const QString payload = commentPayload(nodeText(text, node));
-        int tokenEnd = 0;
-        const QString token = firstToken(payload, &tokenEnd);
-        if (token == QStringLiteral("fold")) {
-            const QString alias = payload.mid(tokenEnd).trimmed();
-            customStack.append({static_cast<int>(ts_node_start_point(node).row), alias});
-        } else if (token == QStringLiteral("endfold")) {
+    TSCustomFoldMarker marker;
+    if (customFoldMarkerForNode(text, node, &marker)) {
+        if (marker.startsRange) {
+            customStack.append({marker.line, marker.label});
+        } else {
             if (!customStack.isEmpty()) {
                 const QPair<int, QString> start = customStack.takeLast();
-                const int endLine = static_cast<int>(ts_node_start_point(node).row);
+                const int endLine = marker.line;
                 if (endLine > start.first) {
                     TSFoldRange range;
                     range.startLine = start.first;
@@ -844,6 +907,56 @@ void collectFoldNodes(const QString& text,
                          syntaxRanges,
                          customRanges,
                          customStack);
+}
+
+void appendSyntaxFoldNode(TSNode node,
+                          QList<TSFoldRange>& ranges,
+                          QSet<QString>& seen)
+{
+    if (ts_node_is_null(node))
+        return;
+    const int nodeStart = static_cast<int>(ts_node_start_point(node).row);
+    const int nodeEnd = static_cast<int>(ts_node_end_point(node).row);
+    const char* type = ts_node_type(node);
+    if (isFoldableSyntaxNode(type) && nodeEnd > nodeStart) {
+        const QString key = QStringLiteral("%1:%2:%3")
+            .arg(nodeStart)
+            .arg(nodeEnd)
+            .arg(QString::fromLatin1(type));
+        if (seen.contains(key))
+            return;
+        seen.insert(key);
+        TSFoldRange range;
+        range.startLine = nodeStart;
+        range.endLine = nodeEnd;
+        range.kind = TSFoldRangeKind::Syntax;
+        range.label = foldSyntaxLabel(type);
+        ranges.append(range);
+    }
+}
+
+void collectSyntaxFoldSubtree(TSNode node,
+                              QList<TSFoldRange>& ranges,
+                              QSet<QString>& seen)
+{
+    if (ts_node_is_null(node))
+        return;
+    appendSyntaxFoldNode(node, ranges, seen);
+
+    const uint32_t childCount = ts_node_child_count(node);
+    for (uint32_t index = 0; index < childCount; ++index) {
+        collectSyntaxFoldSubtree(ts_node_child(node, index), ranges, seen);
+    }
+}
+
+void collectSyntaxFoldAncestors(TSNode node,
+                                QList<TSFoldRange>& ranges,
+                                QSet<QString>& seen)
+{
+    while (!ts_node_is_null(node)) {
+        appendSyntaxFoldNode(node, ranges, seen);
+        node = ts_node_parent(node);
+    }
 }
 } // namespace
 
@@ -1453,8 +1566,8 @@ TSAlwaysScopeTarget TSDocument::alwaysScopeTarget(
         target.kindText = QStringLiteral("always");
     target.label = QStringLiteral("%1 lines %2-%3")
                        .arg(target.kindText)
-                       .arg(target.startLine)
-                       .arg(target.endLine);
+                       .arg(target.startLine + 1)
+                       .arg(target.endLine + 1);
     return target;
 }
 
@@ -1514,8 +1627,8 @@ TSModuleScopeTarget TSDocument::moduleScopeTarget(
                                     : target.moduleName;
     target.label = QStringLiteral("%1 %2 lines %3-%4")
                        .arg(target.kindText, displayName)
-                       .arg(target.startLine)
-                       .arg(target.endLine);
+                       .arg(target.startLine + 1)
+                       .arg(target.endLine + 1);
     return target;
 }
 
@@ -1656,5 +1769,107 @@ QList<TSFoldRange> TSDocument::foldingRanges() const
             return lhs.kind == TSFoldRangeKind::Custom;
         return lhs.endLine < rhs.endLine;
     });
+    return result;
+}
+
+QList<TSFoldRange> TSDocument::syntaxFoldingRangesForChanges(
+    const QList<TSChangedRange>& changedRanges) const
+{
+    QList<TSFoldRange> result;
+    if (!m_tree)
+        return result;
+    QSet<QString> seen;
+    const TSNode root = ts_tree_root_node(m_tree);
+    const uint32_t documentBytes = static_cast<uint32_t>(m_text.size()) * 2u;
+    for (const TSChangedRange& range : changedRanges) {
+        uint32_t startByte = static_cast<uint32_t>(
+            qBound(0, range.startChar, m_text.size())) * 2u;
+        uint32_t endByte = static_cast<uint32_t>(
+            qBound(0, range.endChar, m_text.size())) * 2u;
+        if (documentBytes > 0) {
+            startByte = qMin(startByte, documentBytes - 1u);
+            endByte = qMin(qMax(startByte, endByte), documentBytes - 1u);
+        }
+        TSNode scope = ts_node_named_descendant_for_byte_range(
+            root, startByte, endByte);
+        if (ts_node_is_null(scope))
+            scope = ts_node_descendant_for_byte_range(root,
+                                                      startByte,
+                                                      endByte);
+        collectSyntaxFoldSubtree(scope, result, seen);
+        collectSyntaxFoldAncestors(ts_node_parent(scope), result, seen);
+    }
+    std::sort(result.begin(), result.end(), [](const TSFoldRange& left,
+                                               const TSFoldRange& right) {
+        if (left.startLine != right.startLine)
+            return left.startLine < right.startLine;
+        return left.endLine < right.endLine;
+    });
+    return result;
+}
+
+QList<TSCustomFoldMarker> TSDocument::customFoldMarkers() const
+{
+    QList<TSCustomFoldMarker> result;
+    if (!m_tree)
+        return result;
+    collectCustomFoldMarkers(m_text, ts_tree_root_node(m_tree), result);
+    std::sort(result.begin(), result.end(),
+              [](const TSCustomFoldMarker& left,
+                 const TSCustomFoldMarker& right) {
+                  if (left.line != right.line)
+                      return left.line < right.line;
+                  return left.column < right.column;
+              });
+    return result;
+}
+
+QList<TSCustomFoldMarker> TSDocument::customFoldMarkersForChanges(
+    const QList<TSChangedRange>& changedRanges) const
+{
+    QList<TSCustomFoldMarker> result;
+    if (!m_tree || changedRanges.isEmpty())
+        return result;
+
+    QSet<QString> seen;
+    const TSNode root = ts_tree_root_node(m_tree);
+    const uint32_t documentBytes = static_cast<uint32_t>(m_text.size()) * 2u;
+    for (const TSChangedRange& range : changedRanges) {
+        uint32_t startByte = static_cast<uint32_t>(
+            qBound(0, range.startChar, m_text.size())) * 2u;
+        uint32_t endByte = static_cast<uint32_t>(
+            qBound(0, range.endChar, m_text.size())) * 2u;
+        if (documentBytes > 0) {
+            startByte = qMin(startByte, documentBytes - 1u);
+            endByte = qMin(qMax(startByte, endByte), documentBytes - 1u);
+        }
+        TSNode scope = ts_node_named_descendant_for_byte_range(
+            root, startByte, endByte);
+        if (ts_node_is_null(scope)) {
+            scope = ts_node_descendant_for_byte_range(root,
+                                                      startByte,
+                                                      endByte);
+        }
+
+        QList<TSCustomFoldMarker> local;
+        collectCustomFoldMarkers(m_text, scope, local);
+        for (const TSCustomFoldMarker& marker : std::as_const(local)) {
+            const QString key = QStringLiteral("%1:%2:%3")
+                .arg(marker.line)
+                .arg(marker.column)
+                .arg(marker.startsRange ? 1 : 0);
+            if (!seen.contains(key)) {
+                seen.insert(key);
+                result.append(marker);
+            }
+        }
+    }
+    std::sort(result.begin(), result.end(),
+              [](const TSCustomFoldMarker& left,
+                 const TSCustomFoldMarker& right) {
+                  if (left.line != right.line)
+                      return left.line < right.line;
+                  return left.column < right.column;
+              });
     return result;
 }

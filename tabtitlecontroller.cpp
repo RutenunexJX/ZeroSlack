@@ -28,7 +28,9 @@ void TabTitleController::updateTitle(MyCodeEditor* editor) const
         if (tabWidget->widget(i) != editor)
             continue;
 
-        const QString fileName = documentModel->documentForEditor(editor).fileName;
+        QString fileName = documentModel->documentForEditor(editor).fileName;
+        if (fileName.isEmpty())
+            fileName = editor->documentFileName();
         tabWidget->setTabText(i, fileIo->displayName(fileName));
         if (tabWidget->currentIndex() == i && parentWidget)
             parentWidget->setWindowTitle(fileName.isEmpty() ? "untitled" : fileName);

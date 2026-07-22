@@ -18,6 +18,7 @@ public:
         const TabFileIo* fileIo);
 
     DocumentSnapshot currentDocument(MyCodeEditor* currentEditor) const;
+    DocumentSnapshot currentDocumentMetadata(MyCodeEditor* currentEditor) const;
     DocumentSnapshot documentForEditor(MyCodeEditor* editor) const;
     MyCodeEditor* editorForFile(const QString& fileName) const;
     QString plainTextFromCurrent(MyCodeEditor* currentEditor) const;

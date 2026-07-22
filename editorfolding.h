@@ -2,6 +2,7 @@
 #define EDITORFOLDING_H
 
 #include "foldblockshelfmodel.h"
+#include "documentchange.h"
 #include "tsdocument.h"
 
 #include <QList>
@@ -21,6 +22,10 @@ class EditorFoldingController
 {
 public:
     void refresh(MyCodeEditor* editor, const TSDocument* document);
+    bool applyDocumentChange(MyCodeEditor* editor,
+                             const TSDocument* document,
+                             const DocumentChange& change,
+                             const QList<TSChangedRange>& changedRanges);
     bool toggleFoldAtLine(MyCodeEditor* editor, int line);
     void startFoldRegionMarkMode(MyCodeEditor* editor);
     void cancelFoldRegionMarkMode(MyCodeEditor* editor);
@@ -62,6 +67,7 @@ private:
     };
 
     QList<TSFoldRange> ranges;
+    QList<TSCustomFoldMarker> customMarkers;
     QSet<int> collapsedStartLines;
     FoldRegionMarkMode markMode = FoldRegionMarkMode::Inactive;
     int pendingStartLine = -1;
@@ -73,6 +79,9 @@ private:
     QPoint dragStartPosition;
 
     void applyVisibility(MyCodeEditor* editor);
+    void applyVisibilityForLines(MyCodeEditor* editor,
+                                 int startLine,
+                                 int endLine);
     void updateStatus(MyCodeEditor* editor, const QString& message) const;
     QString defaultAlias();
     TSFoldRange customFoldContainingLine(int line) const;

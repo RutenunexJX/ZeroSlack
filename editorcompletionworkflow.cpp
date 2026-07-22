@@ -181,12 +181,14 @@ bool EditorCompletionWorkflow::inlineAbbreviationSessionValid() const
         return false;
     }
 
-    const QString text = editor->document()->toPlainText();
-    if (inlineSession.replacementEndPosition > text.size())
+    if (inlineSession.replacementEndPosition
+        > editor->cachedDocumentText().size()) {
         return false;
-    return text.mid(inlineSession.replacementStartPosition,
-                    inlineSession.replacementEndPosition
-                        - inlineSession.replacementStartPosition)
+    }
+    return editor->cachedDocumentSlice(
+               inlineSession.replacementStartPosition,
+               inlineSession.replacementEndPosition
+                   - inlineSession.replacementStartPosition)
         == inlineSession.abbreviationText;
 }
 
@@ -401,10 +403,9 @@ bool EditorCompletionWorkflow::handleInlineAbbreviationTab(QKeyEvent* event)
 
     const int replacementStartPosition = block.position() + match.prefixPosition;
     const int replacementEndPosition = cursor.position();
-    const QString abbreviationText =
-        editor->document()->toPlainText().mid(
-            replacementStartPosition,
-            replacementEndPosition - replacementStartPosition);
+    const QString abbreviationText = editor->cachedDocumentSlice(
+        replacementStartPosition,
+        replacementEndPosition - replacementStartPosition);
     const QString commandToken = match.descriptor.label.isEmpty()
         ? match.descriptor.prefix.trimmed()
         : match.descriptor.label;

@@ -5,6 +5,7 @@
 #include <QList>
 #include <QVector>
 
+#include "documentchange.h"
 #include "packagetoolservice.h"
 
 extern "C" {
@@ -38,6 +39,13 @@ struct TSFoldRange {
     int startLine = -1; // 0-based QTextBlock line
     int endLine = -1;   // 0-based inclusive
     TSFoldRangeKind kind = TSFoldRangeKind::Syntax;
+    QString label;
+};
+
+struct TSCustomFoldMarker {
+    int line = -1;
+    int column = 0;
+    bool startsRange = false;
     QString label;
 };
 
@@ -118,6 +126,13 @@ enum class TSModuleEndNavigationStatus {
     NoEndmodule
 };
 
+struct TSChangedRange {
+    int startChar = 0;
+    int endChar = 0;
+    int startLine = 0;
+    int endLine = 0;
+};
+
 struct TSModuleEndNavigationTarget {
     TSModuleEndNavigationStatus status =
         TSModuleEndNavigationStatus::NoEndmodule;
@@ -140,8 +155,8 @@ struct TSAlwaysScopeTarget {
     TSAlwaysScopeStatus status = TSAlwaysScopeStatus::NoCurrentAlways;
     int startChar = -1;
     int endChar = -1;
-    int startLine = 0;
-    int endLine = 0;
+    int startLine = 0; // 0-based source line
+    int endLine = 0;   // 0-based source line
     QString kindText;
     QString label;
 
@@ -158,8 +173,8 @@ struct TSModuleScopeTarget {
     TSModuleScopeStatus status = TSModuleScopeStatus::NoCurrentModule;
     int startChar = -1;
     int endChar = -1;
-    int startLine = 0;
-    int endLine = 0;
+    int startLine = 0; // 0-based source line
+    int endLine = 0;   // 0-based source line
     QString moduleName;
     QString kindText;
     QString label;
@@ -211,18 +226,9 @@ public:
     // Full (re)parse of the entire text from scratch.
     void setText(const QString& text);
 
-    // Incremental edit. Byte/point fields are tree-sitter native (UTF-16 bytes; point columns in
-    // bytes, i.e. 2*charColumn). Caller supplies the span being replaced (in the CURRENT buffer
-    // before the edit) and the full new text. Uses ts_tree_edit + incremental parse.
-    void applyEdit(uint32_t startByte, uint32_t oldEndByte, uint32_t newEndByte,
-                   TSPoint startPoint, TSPoint oldEndPoint, TSPoint newEndPoint,
-                   const QString& newFullText);
-
-    // Convenience for editor integration: edit described in CHAR positions (QTextDocument coords).
-    // [startChar, oldEndChar) in the CURRENT text is replaced; newFullText is the whole new text.
-    // Byte offsets and TSPoints (row/col) are derived internally (current text held by this object
-    // provides the pre-edit coordinates), so callers don't track the old text themselves.
-    void applyEditChars(int startChar, int oldEndChar, int newEndChar, const QString& newFullText);
+    // Applies one UTF-16 delta to the owned QString, edits the previous tree,
+    // reparses incrementally, and returns Tree-sitter's changed ranges.
+    QList<TSChangedRange> applyEdit(const DocumentChange& change);
 
     TSNode rootNode() const;                 // always valid (empty doc parses to an empty tree)
     bool hasError() const;                   // tree contains ERROR / MISSING nodes (half-typed code)
@@ -280,6 +286,11 @@ public:
     // Tree-sitter based folding ranges. Custom fold markers are extracted from
     // Tree-sitter comment nodes rather than regular expressions.
     QList<TSFoldRange> foldingRanges() const;
+    QList<TSFoldRange> syntaxFoldingRangesForChanges(
+        const QList<TSChangedRange>& changedRanges) const;
+    QList<TSCustomFoldMarker> customFoldMarkers() const;
+    QList<TSCustomFoldMarker> customFoldMarkersForChanges(
+        const QList<TSChangedRange>& changedRanges) const;
 
 private:
     void reparse(TSTree* oldTree);

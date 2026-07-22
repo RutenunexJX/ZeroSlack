@@ -2,6 +2,7 @@
 #define DOCUMENTSESSIONSTATE_H
 
 #include "documentregistry.h"
+#include "documentchange.h"
 #include "documentsnapshot.h"
 
 #include <QList>
@@ -42,13 +43,16 @@ public:
     DocumentSaveResult markSaved(MyCodeEditor* editor);
     void refreshEditorState(MyCodeEditor* editor);
 
-    bool markEdited(MyCodeEditor* editor, DocumentSnapshot* editedSnapshot);
+    bool applyChange(MyCodeEditor* editor,
+                     const DocumentChange& change,
+                     DocumentSnapshot* editedSnapshot);
     bool refreshCursor(MyCodeEditor* editor, DocumentSnapshot* snapshot);
     void refreshFileName(MyCodeEditor* editor);
 
     QList<DocumentSnapshot> openDocuments() const;
     DocumentSnapshot documentForEditor(MyCodeEditor* editor) const;
     DocumentSnapshot documentForFile(const QString& fileName) const;
+    DocumentSnapshot documentMetadataForEditor(MyCodeEditor* editor) const;
     MyCodeEditor* editorForFile(const QString& fileName) const;
     QString documentText(const QString& documentId) const;
     QString documentTextForFile(const QString& fileName) const;

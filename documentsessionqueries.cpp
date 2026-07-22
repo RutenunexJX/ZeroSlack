@@ -18,6 +18,12 @@ DocumentSnapshot DocumentSessionState::documentForFile(
     return registry.snapshotForFile(normalized);
 }
 
+DocumentSnapshot DocumentSessionState::documentMetadataForEditor(
+    MyCodeEditor* editor) const
+{
+    return registry.metadataForEditor(editor);
+}
+
 MyCodeEditor* DocumentSessionState::editorForFile(
     const QString& fileName) const
 {

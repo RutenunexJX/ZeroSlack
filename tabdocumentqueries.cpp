@@ -17,6 +17,14 @@ DocumentSnapshot TabDocumentQueries::currentDocument(
     return documentForEditor(currentEditor);
 }
 
+DocumentSnapshot TabDocumentQueries::currentDocumentMetadata(
+    MyCodeEditor* currentEditor) const
+{
+    return documentModel
+        ? documentModel->documentMetadataForEditor(currentEditor)
+        : DocumentSnapshot();
+}
+
 DocumentSnapshot TabDocumentQueries::documentForEditor(
     MyCodeEditor* editor) const
 {

@@ -10,9 +10,12 @@ void DocumentModel::connectEditorSignals(MyCodeEditor* editor)
     connect(editor, &QObject::destroyed, this, [this, editor]() {
         unregisterEditor(editor);
     });
-    connect(editor, &QPlainTextEdit::textChanged, this, [this, editor]() {
-        handleEditorTextChanged(editor);
-    });
+    connect(editor,
+            &MyCodeEditor::documentChangeApplied,
+            this,
+            [this, editor](const DocumentChange& change) {
+                handleEditorDocumentChange(editor, change);
+            });
     connect(editor, &QPlainTextEdit::cursorPositionChanged, this, [this, editor]() {
         handleEditorCursorChanged(editor);
     });
@@ -21,10 +24,12 @@ void DocumentModel::connectEditorSignals(MyCodeEditor* editor)
     });
 }
 
-void DocumentModel::handleEditorTextChanged(MyCodeEditor* editor)
+void DocumentModel::handleEditorDocumentChange(
+    MyCodeEditor* editor,
+    const DocumentChange& change)
 {
     DocumentSnapshot snapshot;
-    if (state->markEdited(editor, &snapshot))
+    if (state->applyChange(editor, change, &snapshot))
         emit documentEdited(snapshot);
 }
 

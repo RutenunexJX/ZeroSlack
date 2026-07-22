@@ -6,6 +6,7 @@
 #include "editorcompletionui.h"
 #include "editorcompletionworkflow.h"
 #include "editorcursornavigation.h"
+#include "documentchange.h"
 #include "editorfileidentity.h"
 #include "editorfolding.h"
 #include "formatterservice.h"
@@ -35,6 +36,7 @@ class QPaintEvent;
 class QTimer;
 struct EditorAlwaysScopeTarget;
 struct EditorModuleScopeTarget;
+struct EditorSynchronousEditState;
 
 struct MyCodeEditorState
 {
@@ -65,6 +67,7 @@ struct MyCodeEditorState
     // latter without changing any source text.
     std::uint64_t semanticTextRevision = 0;
     QString semanticRevisionText;
+    EditorHotPathMetrics hotPathMetrics;
     FormatterProfile currentFormatterProfile = FormatterProfile::Structured;
     bool currentFormatOnSaveEnabled = false;
     bool columnSelectionActive = false;
@@ -82,6 +85,15 @@ struct MyCodeEditorState
     QTimer* templateSlotBlinkTimer = nullptr;
     bool templateSlotBlinkOn = true;
     bool templateSlotIgnoreNextCursorCheck = false;
+    EditorPackageToolAvailability lastPackageToolAvailability;
+    bool packageToolAvailabilityInitialized = false;
+    QString lastWavePreviewScopeKey;
+    bool suppressNextCursorPresentation = false;
+    bool editorPresentationPending = false;
+    bool templateSlotPresentationPending = false;
+    bool ghostPresentationPending = false;
+    int synchronousEditTransactionDepth = 0;
+    std::uint64_t completedSynchronousEditTransactions = 0;
 
     void initializeCore(MyCodeEditor* editor);
     void shutdown();
@@ -94,9 +106,11 @@ struct MyCodeEditorState
     QString currentModuleNameAt(int charPos) const;
     QString currentModuleName(const MyCodeEditor* editor) const;
     EditorAlwaysScopeTarget currentAlwaysScopeTarget(
-        const MyCodeEditor* editor) const;
+        const MyCodeEditor* editor,
+        bool allowLargeFileScopeBuild = true) const;
     EditorModuleScopeTarget currentModuleScopeTarget(
-        const MyCodeEditor* editor) const;
+        const MyCodeEditor* editor,
+        bool allowLargeFileScopeBuild = true) const;
     bool addPortRow(MyCodeEditor* editor, QString* message);
     bool addSignalRow(MyCodeEditor* editor, QString* message);
     bool addParameterRow(MyCodeEditor* editor, QString* message);
@@ -122,12 +136,14 @@ struct MyCodeEditorState
                                       bool replaceSelection,
                                       QString* message = nullptr);
     void clearTemplateSlotMode(MyCodeEditor* editor,
-                               const QString& message = QString());
+                               const QString& message = QString(),
+                               bool updatePresentation = true);
     bool handleTemplateSlotKeyPress(MyCodeEditor* editor, QKeyEvent* event);
     void handleTemplateSlotContentsChange(MyCodeEditor* editor,
                                           int position,
                                           int charsRemoved,
-                                          int charsAdded);
+                                          int charsAdded,
+                                          bool updatePresentation = true);
     void handleTemplateSlotCursorChanged(MyCodeEditor* editor);
     EditorSemanticContext semanticContextForPosition(
         const MyCodeEditor* editor,
@@ -137,6 +153,10 @@ struct MyCodeEditorState
     void handleControlKeyPress(MyCodeEditor* editor, QKeyEvent* event);
     void handleControlKeyRelease(MyCodeEditor* editor, QKeyEvent* event);
     bool handleKeyPress(MyCodeEditor* editor, QKeyEvent* event);
+    void beginSynchronousEditTransaction();
+    void endSynchronousEditTransaction(MyCodeEditor* editor);
+    EditorSynchronousEditState synchronousEditStateForTest() const;
+    void finishEditorInput(MyCodeEditor* editor);
     bool handleKeyRelease(MyCodeEditor* editor, QKeyEvent* event);
     bool handleDragEnter(MyCodeEditor* editor, QDragEnterEvent* event);
     bool handleDragMove(MyCodeEditor* editor, QDragMoveEvent* event);
@@ -160,7 +180,13 @@ struct MyCodeEditorState
     void refreshScopeAndCurrentLineHighlight(MyCodeEditor* editor);
     void refreshSemanticPresentation(MyCodeEditor* editor);
     std::uint64_t semanticDocumentRevision() const;
+    QString materializeDocumentText(const MyCodeEditor* editor);
+    const QString& cachedDocumentText() const;
+    QString cachedDocumentSlice(int position, int length);
     void acceptLoadedTextAsSemanticBaseline(const MyCodeEditor* editor);
+    EditorHotPathMetrics hotPathMetricsForTest() const;
+    EditorOccurrenceIndexStats occurrenceIndexStatsForTest() const;
+    void resetHotPathMetricsForTest();
     void setIncludeFileProvider(
         EditorCompletionWorkflow::IncludeFileProvider provider);
     void setIncludeNewHeaderCreator(
@@ -189,6 +215,10 @@ struct MyCodeEditorState
                                  int startLine,
                                  int endLine,
                                  const QString& alias);
+    bool toggleFoldAtLineForTest(MyCodeEditor* editor, int line);
+    bool foldCollapsedAtLineForTest(int line) const;
+    QList<GhostAnnotation> ghostAnnotationsForTest() const;
+    QString syntaxTextForTest() const;
     FoldShelfItem foldShelfItemAtLine(MyCodeEditor* editor,
                                       int line,
                                       FoldShelfOriginKind origin) const;
@@ -217,6 +247,14 @@ struct MyCodeEditorState
     void setGhostAnnotations(
         MyCodeEditor* editor,
         const QList<GhostAnnotation>& annotations);
+    void handleDocumentContentsChange(MyCodeEditor* editor,
+                                      int position,
+                                      int charsRemoved,
+                                      int charsAdded);
+    void remapGhostAnnotations(MyCodeEditor* editor,
+                               const DocumentChange& change);
+    void refreshDerivedEditorState(MyCodeEditor* editor,
+                                   bool allowWavePreviewSignal);
     void highlightSearchMatches(MyCodeEditor* editor,
                                 const QString& text,
                                 bool caseSensitive);

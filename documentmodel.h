@@ -2,6 +2,7 @@
 #define DOCUMENTMODEL_H
 
 #include "documentsnapshot.h"
+#include "documentchange.h"
 
 #include <QObject>
 #include <QList>
@@ -30,9 +31,12 @@ public:
     QList<DocumentSnapshot> openDocuments() const;
     DocumentSnapshot documentForEditor(MyCodeEditor* editor) const;
     DocumentSnapshot documentForFile(const QString& fileName) const;
-    // Event handlers keep these snapshots current. Semantic scheduling uses
-    // the cached views so a save never re-materializes a multi-megabyte
-    // QPlainTextEdit buffer on the GUI thread.
+    // Returns identity/version/dirty/cursor metadata only. text is guaranteed
+    // empty and the editor's cached text is never read.
+    DocumentSnapshot documentMetadataForEditor(MyCodeEditor* editor) const;
+    // Event handlers keep metadata current. Text is materialized only by
+    // explicit queries from the editor's incremental cache, never by asking
+    // QPlainTextEdit to rebuild the whole document.
     QList<DocumentSnapshot> cachedOpenDocuments() const;
     DocumentSnapshot cachedDocumentForFile(const QString& fileName) const;
     MyCodeEditor* editorForFile(const QString& fileName) const;
@@ -50,7 +54,8 @@ private:
     std::unique_ptr<DocumentSessionState> state;
 
     void connectEditorSignals(MyCodeEditor* editor);
-    void handleEditorTextChanged(MyCodeEditor* editor);
+    void handleEditorDocumentChange(MyCodeEditor* editor,
+                                    const DocumentChange& change);
     void handleEditorCursorChanged(MyCodeEditor* editor);
     void handleEditorFileNameChanged(MyCodeEditor* editor);
 };

@@ -101,12 +101,11 @@ bool EditorCompletionWorkflow::handleInlineCandidateFilterKey(
     editor->setTextCursor(cursor);
 
     inlineSession.replacementEndPosition = cursor.position();
-    const QString documentText = editor->document()->toPlainText();
-    inlineSession.abbreviationText = documentText.mid(
+    inlineSession.abbreviationText = editor->cachedDocumentSlice(
         inlineSession.replacementStartPosition,
         inlineSession.replacementEndPosition
             - inlineSession.replacementStartPosition);
-    inlineSession.filterText = documentText.mid(
+    inlineSession.filterText = editor->cachedDocumentSlice(
         inlineSession.filterStartPosition,
         inlineSession.replacementEndPosition
             - inlineSession.filterStartPosition);

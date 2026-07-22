@@ -78,7 +78,11 @@ bool DocumentSessionState::refreshCursor(
     if (!registry.contains(editor))
         return false;
 
-    const DocumentSnapshot refreshed = refreshTrackedDocument(editor);
+    TrackedDocument* tracked = registry.find(editor);
+    if (!tracked)
+        return false;
+    snapshotReader.captureCursorState(editor, &tracked->snapshot);
+    const DocumentSnapshot refreshed = tracked->snapshot;
     if (snapshot)
         *snapshot = refreshed;
     return true;
@@ -97,5 +101,6 @@ DocumentSnapshot DocumentSessionState::refreshTrackedDocument(
 
     const TrackedDocument previous = registry.value(editor);
     TrackedDocument tracked = snapshotReader.capture(editor, &previous);
-    return registry.replace(editor, tracked, previous.snapshot);
+    registry.replace(editor, tracked, previous.snapshot);
+    return registry.snapshotForEditor(editor);
 }

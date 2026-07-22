@@ -3026,6 +3026,13 @@ WavePreviewReport WavePreviewService::previewForDocument(
     const QList<Token> tokens = tokenize(query.documentText);
     SignalContextCollection signalContextCollection =
         collectSignalContexts(query.documentText, tokens);
+    if (query.sourceLineOffset != 0) {
+        for (WavePreviewSignalContext& context :
+             signalContextCollection.contexts) {
+            if (context.line > 0)
+                context.line += query.sourceLineOffset;
+        }
+    }
     QHash<QString, WavePreviewSignalContext> contextsByName;
     for (const WavePreviewSignalContext& context : signalContextCollection.contexts)
         contextsByName.insert(context.signalName, context);
@@ -3119,6 +3126,40 @@ WavePreviewReport WavePreviewService::previewForDocument(
         && report.warnings.isEmpty()
         && queryLooksLikeProcessScope(query, scope)) {
         appendUnique(&report.warnings, emptyProcessScopeWarning(report));
+    }
+    if (query.sourceLineOffset != 0) {
+        if (report.scopeStartLine > 0)
+            report.scopeStartLine += query.sourceLineOffset;
+        if (report.scopeEndLine > 0)
+            report.scopeEndLine += query.sourceLineOffset;
+        for (WavePreviewBlock& block : report.blocks) {
+            if (block.startLine > 0)
+                block.startLine += query.sourceLineOffset;
+            if (block.endLine > 0)
+                block.endLine += query.sourceLineOffset;
+        }
+        for (WavePreviewLane& lane : report.lanes) {
+            for (WavePreviewAssignment& assignment : lane.assignments) {
+                if (assignment.line > 0)
+                    assignment.line += query.sourceLineOffset;
+            }
+        }
+    }
+    if (query.sourcePositionOffset != 0) {
+        for (WavePreviewBlock& block : report.blocks) {
+            if (block.startPosition >= 0)
+                block.startPosition += query.sourcePositionOffset;
+            if (block.endPosition >= 0)
+                block.endPosition += query.sourcePositionOffset;
+        }
+        for (WavePreviewLane& lane : report.lanes) {
+            for (WavePreviewAssignment& assignment : lane.assignments) {
+                if (assignment.startPosition >= 0)
+                    assignment.startPosition += query.sourcePositionOffset;
+                if (assignment.endPosition >= 0)
+                    assignment.endPosition += query.sourcePositionOffset;
+            }
+        }
     }
     report.available = report.assignmentCount > 0;
     return report;

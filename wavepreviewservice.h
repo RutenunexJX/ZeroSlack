@@ -198,6 +198,8 @@ struct WavePreviewQuery {
     int scopeStartPosition = -1;
     int scopeEndPosition = -1;
     QString scopeLabel;
+    int sourcePositionOffset = 0;
+    int sourceLineOffset = 0;
 
     bool hasScope() const
     {

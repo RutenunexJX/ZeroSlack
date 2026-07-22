@@ -222,6 +222,11 @@ DocumentSnapshot TabManager::getCurrentDocument() const
     return documentQueries.currentDocument(getCurrentEditor());
 }
 
+DocumentSnapshot TabManager::getCurrentDocumentMetadata() const
+{
+    return documentQueries.currentDocumentMetadata(getCurrentEditor());
+}
+
 DocumentSnapshot TabManager::getDocumentForEditor(MyCodeEditor* editor) const
 {
     return documentQueries.documentForEditor(editor);

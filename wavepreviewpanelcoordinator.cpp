@@ -15,7 +15,6 @@
 #include <QPainter>
 #include <QSizePolicy>
 #include <QSignalBlocker>
-#include <QTimer>
 #include <QToolTip>
 #include <QTreeWidget>
 #include <QTreeWidgetItem>
@@ -31,8 +30,6 @@ namespace {
 constexpr int kRoleFileName = Qt::UserRole + 1;
 constexpr int kRoleLine = Qt::UserRole + 2;
 constexpr int kRoleColumn = Qt::UserRole + 3;
-constexpr qsizetype kLargeDirtyRefreshCharacterThreshold = 64 * 1024;
-constexpr int kLargeDirtyRefreshDelayMs = 180;
 
 QString canvasEventLabel(const WavePreviewAssignment& assignment);
 QString canvasEventSelectionText(const WavePreviewAssignment& assignment,
@@ -46,11 +43,6 @@ QString laneWarningText(const WavePreviewLaneSummary& summary);
 QString reportSummaryText(const WavePreviewReport& report, bool dirty);
 QString sketchLegendText(const WavePreviewReport& report);
 QColor colorForAssignmentKind(WavePreviewAssignmentKind kind);
-
-bool shouldQueueRefresh(const QString& documentText, bool)
-{
-    return documentText.size() >= kLargeDirtyRefreshCharacterThreshold;
-}
 
 struct CanvasEventHit {
     QRect rect;
@@ -1316,23 +1308,6 @@ WavePreviewPanelCoordinator::WavePreviewPanelCoordinator(QWidget* parent)
                              QDockWidget::DockWidgetClosable);
     previewDock->hide();
 
-    refreshTimer = new QTimer(previewDock);
-    refreshTimer->setSingleShot(true);
-    refreshTimer->setInterval(kLargeDirtyRefreshDelayMs);
-    QObject::connect(refreshTimer,
-                     &QTimer::timeout,
-                     previewDock,
-                     [this]() {
-                         flushQueuedRefresh();
-                     });
-    QObject::connect(previewDock,
-                     &QDockWidget::visibilityChanged,
-                     previewDock,
-                     [this](bool visible) {
-                         if (!visible)
-                             clearQueuedRefresh();
-                     });
-
     QObject::connect(previewTree,
                      &QTreeWidget::itemDoubleClicked,
                      previewTree,
@@ -1364,25 +1339,47 @@ void WavePreviewPanelCoordinator::refreshFromDocument(
     bool dirty,
     int scopeStartPosition,
     int scopeEndPosition,
-    const QString& scopeLabel)
+    const QString& scopeLabel,
+    int scopeStartLineZeroBased)
 {
     currentFileName = fileName;
+    const bool validScope = scopeStartPosition >= 0
+        && scopeEndPosition > scopeStartPosition
+        && scopeEndPosition <= documentText.size();
+    if (validScope) {
+        currentSourceIsScoped = true;
+        currentScopeStartPosition = scopeStartPosition;
+        currentScopeEndPosition = scopeEndPosition;
+        currentScopeStartLineZeroBased = qMax(0, scopeStartLineZeroBased);
+        currentScopeLabel = scopeLabel;
+        currentScopeText = documentText.mid(
+            scopeStartPosition, scopeEndPosition - scopeStartPosition);
+        ++refreshMetrics.scopeRebuildCount;
+        if (currentScopeText.trimmed().isEmpty()) {
+            renderUnavailable(QStringLiteral("No SystemVerilog text to preview."));
+            return;
+        }
+        renderDocumentNow(fileName,
+                          currentScopeText,
+                          dirty,
+                          0,
+                          currentScopeText.size(),
+                          scopeLabel,
+                          scopeStartPosition,
+                          currentScopeStartLineZeroBased);
+        return;
+    }
+
+    currentSourceIsScoped = false;
+    currentScopeText.clear();
+    currentScopeLabel.clear();
+    currentScopeStartPosition = -1;
+    currentScopeEndPosition = -1;
+    currentScopeStartLineZeroBased = 0;
     if (documentText.trimmed().isEmpty()) {
         renderUnavailable(QStringLiteral("No SystemVerilog text to preview."));
         return;
     }
-
-    if (shouldQueueRefresh(documentText, dirty)) {
-        queueRefresh(fileName,
-                     documentText,
-                     dirty,
-                     scopeStartPosition,
-                     scopeEndPosition,
-                     scopeLabel);
-        return;
-    }
-
-    clearQueuedRefresh();
     renderDocumentNow(fileName,
                       documentText,
                       dirty,
@@ -1391,82 +1388,90 @@ void WavePreviewPanelCoordinator::refreshFromDocument(
                       scopeLabel);
 }
 
-void WavePreviewPanelCoordinator::queueRefresh(
+void WavePreviewPanelCoordinator::applyDocumentChange(
     const QString& fileName,
-    const QString& documentText,
+    const DocumentChange& change,
+    const QString& latestDocumentText,
     bool dirty,
     int scopeStartPosition,
     int scopeEndPosition,
-    const QString& scopeLabel)
+    const QString& scopeLabel,
+    int scopeStartLineZeroBased)
 {
-    pendingFileName = fileName;
-    pendingDocumentText = documentText;
-    pendingScopeStartPosition = scopeStartPosition;
-    pendingScopeEndPosition = scopeEndPosition;
-    pendingScopeLabel = scopeLabel;
-    pendingDirty = dirty;
-    pendingRefresh = true;
+    const bool validScope = scopeStartPosition >= 0
+        && scopeEndPosition > scopeStartPosition
+        && scopeEndPosition <= latestDocumentText.size();
+    if (!validScope) {
+        renderUnavailable(
+            QStringLiteral("Place the cursor in a module or always block to preview."));
+        return;
+    }
+
+    bool updatedCachedScope = false;
+    if (currentSourceIsScoped && currentFileName == fileName) {
+        const int delta = change.characterDelta();
+        const bool editWithinScope =
+            change.position >= currentScopeStartPosition
+            && change.oldEnd() <= currentScopeEndPosition
+            && scopeStartPosition == currentScopeStartPosition
+            && scopeEndPosition == currentScopeEndPosition + delta
+            && scopeStartLineZeroBased
+                   == currentScopeStartLineZeroBased;
+        if (editWithinScope) {
+            const int relativePosition =
+                change.position - currentScopeStartPosition;
+            const bool cachedFragmentMatches = relativePosition >= 0
+                && relativePosition + change.removedLength
+                       <= currentScopeText.size()
+                && currentScopeText.mid(relativePosition,
+                                        change.removedLength)
+                       == change.removedText;
+            if (cachedFragmentMatches) {
+                currentScopeText.replace(relativePosition,
+                                         change.removedLength,
+                                         change.insertedText);
+                updatedCachedScope = true;
+            }
+        } else {
+            const bool editBeforeScope =
+                change.oldEnd() <= currentScopeStartPosition
+                && scopeStartPosition == currentScopeStartPosition + delta
+                && scopeEndPosition == currentScopeEndPosition + delta
+                && scopeStartLineZeroBased
+                       == currentScopeStartLineZeroBased + change.lineDelta;
+            const bool editAfterScope =
+                change.position >= currentScopeEndPosition
+                && scopeStartPosition == currentScopeStartPosition
+                && scopeEndPosition == currentScopeEndPosition
+                && scopeStartLineZeroBased
+                       == currentScopeStartLineZeroBased;
+            updatedCachedScope = editBeforeScope || editAfterScope;
+        }
+    }
+
+    if (updatedCachedScope) {
+        ++refreshMetrics.scopeDeltaUpdateCount;
+    } else {
+        currentScopeText = latestDocumentText.mid(
+            scopeStartPosition, scopeEndPosition - scopeStartPosition);
+        ++refreshMetrics.scopeRebuildCount;
+    }
+
     currentFileName = fileName;
-
-    if (titleLabel) {
-        const QString titleScope =
-            scopeLabel.isEmpty()
-                ? QString()
-                : QStringLiteral(" - %1").arg(scopeLabel);
-        titleLabel->setText(QStringLiteral("Wave Preview - %1%2")
-                                .arg(displayFileName(fileName), titleScope));
-    }
-    if (summaryLabel) {
-        currentSummaryText = QStringLiteral("Refresh queued for large buffer");
-        summaryLabel->setText(currentSummaryText);
-    }
-
-    if (refreshTimer)
-        refreshTimer->start();
-}
-
-void WavePreviewPanelCoordinator::flushQueuedRefresh()
-{
-    if (!pendingRefresh)
-        return;
-
-    const QString fileName = pendingFileName;
-    const QString documentText = pendingDocumentText;
-    const int scopeStartPosition = pendingScopeStartPosition;
-    const int scopeEndPosition = pendingScopeEndPosition;
-    const QString scopeLabel = pendingScopeLabel;
-    const bool dirty = pendingDirty;
-    pendingFileName.clear();
-    pendingDocumentText.clear();
-    pendingScopeStartPosition = -1;
-    pendingScopeEndPosition = -1;
-    pendingScopeLabel.clear();
-    pendingDirty = false;
-    pendingRefresh = false;
-
-    if (documentText.trimmed().isEmpty()) {
-        renderUnavailable(QStringLiteral("No SystemVerilog text to preview."));
-        return;
-    }
+    currentSourceIsScoped = true;
+    currentScopeStartPosition = scopeStartPosition;
+    currentScopeEndPosition = scopeEndPosition;
+    currentScopeStartLineZeroBased = qMax(0, scopeStartLineZeroBased);
+    currentScopeLabel = scopeLabel;
+    ++refreshMetrics.documentChangeRenderCount;
     renderDocumentNow(fileName,
-                      documentText,
+                      currentScopeText,
                       dirty,
+                      0,
+                      currentScopeText.size(),
+                      scopeLabel,
                       scopeStartPosition,
-                      scopeEndPosition,
-                      scopeLabel);
-}
-
-void WavePreviewPanelCoordinator::clearQueuedRefresh()
-{
-    pendingFileName.clear();
-    pendingDocumentText.clear();
-    pendingScopeStartPosition = -1;
-    pendingScopeEndPosition = -1;
-    pendingScopeLabel.clear();
-    pendingDirty = false;
-    pendingRefresh = false;
-    if (refreshTimer)
-        refreshTimer->stop();
+                      currentScopeStartLineZeroBased);
 }
 
 void WavePreviewPanelCoordinator::renderDocumentNow(
@@ -1475,22 +1480,34 @@ void WavePreviewPanelCoordinator::renderDocumentNow(
     bool dirty,
     int scopeStartPosition,
     int scopeEndPosition,
-    const QString& scopeLabel)
+    const QString& scopeLabel,
+    int sourcePositionOffset,
+    int sourceLineOffset)
 {
+    WavePreviewQuery query;
+    query.fileName = fileName;
+    query.documentText = documentText;
+    query.semanticSnapshot = SemanticIndex::getInstance()->snapshot();
+    query.scopeStartPosition = scopeStartPosition;
+    query.scopeEndPosition = scopeEndPosition;
+    query.scopeLabel = scopeLabel;
+    query.sourcePositionOffset = sourcePositionOffset;
+    query.sourceLineOffset = sourceLineOffset;
     const WavePreviewReport report =
-        WavePreviewService::getInstance()->previewForDocument(
-            {fileName,
-             documentText,
-             SemanticIndex::getInstance()->snapshot(),
-             scopeStartPosition,
-             scopeEndPosition,
-             scopeLabel});
+        WavePreviewService::getInstance()->previewForDocument(query);
+    ++refreshMetrics.renderCount;
+    refreshMetrics.lastParsedCharacterCount = documentText.size();
     renderReport(report, fileName, dirty);
 }
 
 void WavePreviewPanelCoordinator::renderUnavailable(const QString& message)
 {
-    clearQueuedRefresh();
+    currentScopeText.clear();
+    currentScopeLabel.clear();
+    currentScopeStartPosition = -1;
+    currentScopeEndPosition = -1;
+    currentScopeStartLineZeroBased = 0;
+    currentSourceIsScoped = false;
     currentReport = WavePreviewReport();
     currentDirty = false;
     if (titleLabel)

@@ -18,6 +18,18 @@
 #include <QTimer>
 #include <QPointer>
 
+struct EditorOccurrenceNode {
+    QString word;
+    int position = 0;
+    int length = 0;
+    int lazyShift = 0;
+    std::uint32_t priority = 0;
+    EditorOccurrenceNode* left = nullptr;
+    EditorOccurrenceNode* right = nullptr;
+    EditorOccurrenceNode* parent = nullptr;
+    bool active = true;
+};
+
 namespace {
 constexpr int kPrimarySelectionProperty = QTextFormat::UserProperty;
 constexpr int kScopeBackgroundSelectionMarker = 997;
@@ -39,7 +51,181 @@ constexpr int kTemplateSlotSelectionMarker = 1007;
 constexpr int kFlashSelectionProperty = QTextFormat::UserProperty + 6;
 constexpr int kFlashSelectionMarker = 1006;
 constexpr int kMaxPassiveMatchHighlights = 500;
-constexpr int kMaxPassiveSymbolHighlightCharacters = 1024 * 1024;
+
+bool isOccurrenceIdentifierStart(QChar ch)
+{
+    return ch.isLetter() || ch == QLatin1Char('_');
+}
+
+bool isOccurrenceIdentifierPart(QChar ch)
+{
+    return ch.isLetterOrNumber() || ch == QLatin1Char('_')
+        || ch == QLatin1Char('$');
+}
+
+int lineStartAt(const QString& text, int position)
+{
+    const int bounded = qBound(0, position, text.size());
+    if (bounded == 0)
+        return 0;
+    const int newline = text.lastIndexOf(QLatin1Char('\n'), bounded - 1);
+    return newline < 0 ? 0 : newline + 1;
+}
+
+int lineEndAfter(const QString& text, int position)
+{
+    const int bounded = qBound(0, position, text.size());
+    const int newline = text.indexOf(QLatin1Char('\n'), bounded);
+    return newline < 0 ? text.size() : newline;
+}
+
+void shiftOccurrenceTree(EditorOccurrenceNode* node, int delta)
+{
+    if (!node || delta == 0)
+        return;
+    node->position += delta;
+    node->lazyShift += delta;
+}
+
+void pushOccurrenceShift(EditorOccurrenceNode* node)
+{
+    if (!node || node->lazyShift == 0)
+        return;
+    shiftOccurrenceTree(node->left, node->lazyShift);
+    shiftOccurrenceTree(node->right, node->lazyShift);
+    node->lazyShift = 0;
+}
+
+EditorOccurrenceNode* mergeOccurrenceTrees(EditorOccurrenceNode* left,
+                                           EditorOccurrenceNode* right)
+{
+    if (!left) {
+        if (right)
+            right->parent = nullptr;
+        return right;
+    }
+    if (!right) {
+        left->parent = nullptr;
+        return left;
+    }
+
+    if (left->priority < right->priority) {
+        pushOccurrenceShift(left);
+        left->right = mergeOccurrenceTrees(left->right, right);
+        if (left->right)
+            left->right->parent = left;
+        left->parent = nullptr;
+        return left;
+    }
+
+    pushOccurrenceShift(right);
+    right->left = mergeOccurrenceTrees(left, right->left);
+    if (right->left)
+        right->left->parent = right;
+    right->parent = nullptr;
+    return right;
+}
+
+void splitOccurrenceTree(EditorOccurrenceNode* root,
+                         int position,
+                         EditorOccurrenceNode** left,
+                         EditorOccurrenceNode** right)
+{
+    if (!root) {
+        *left = nullptr;
+        *right = nullptr;
+        return;
+    }
+
+    pushOccurrenceShift(root);
+    if (root->position < position) {
+        splitOccurrenceTree(root->right,
+                            position,
+                            &root->right,
+                            right);
+        if (root->right)
+            root->right->parent = root;
+        root->parent = nullptr;
+        *left = root;
+        if (*right)
+            (*right)->parent = nullptr;
+        return;
+    }
+
+    splitOccurrenceTree(root->left,
+                        position,
+                        left,
+                        &root->left);
+    if (root->left)
+        root->left->parent = root;
+    root->parent = nullptr;
+    *right = root;
+    if (*left)
+        (*left)->parent = nullptr;
+}
+
+EditorOccurrenceNode* insertOccurrenceNode(EditorOccurrenceNode* root,
+                                           EditorOccurrenceNode* node)
+{
+    EditorOccurrenceNode* left = nullptr;
+    EditorOccurrenceNode* right = nullptr;
+    splitOccurrenceTree(root, node->position, &left, &right);
+    return mergeOccurrenceTrees(
+        mergeOccurrenceTrees(left, node), right);
+}
+
+void deactivateOccurrenceTree(
+    EditorOccurrenceNode* node,
+    QHash<QString, QSet<EditorOccurrenceNode*>>* index,
+    std::vector<EditorOccurrenceNode*>* freeNodes,
+    qsizetype* activeCount)
+{
+    if (!node)
+        return;
+    deactivateOccurrenceTree(node->left, index, freeNodes, activeCount);
+    deactivateOccurrenceTree(node->right, index, freeNodes, activeCount);
+    if (index) {
+        auto wordIt = index->find(node->word);
+        if (wordIt != index->end()) {
+            wordIt.value().remove(node);
+            if (wordIt.value().isEmpty())
+                index->erase(wordIt);
+        }
+    }
+    node->active = false;
+    node->left = nullptr;
+    node->right = nullptr;
+    node->parent = nullptr;
+    node->lazyShift = 0;
+    if (activeCount && *activeCount > 0)
+        --(*activeCount);
+    if (freeNodes)
+        freeNodes->push_back(node);
+}
+
+int currentOccurrencePosition(const EditorOccurrenceNode* node)
+{
+    if (!node)
+        return -1;
+    int position = node->position;
+    for (const EditorOccurrenceNode* parent = node->parent;
+         parent;
+         parent = parent->parent) {
+        position += parent->lazyShift;
+    }
+    return position;
+}
+
+std::uint32_t nextOccurrencePriority(std::uint32_t* state)
+{
+    std::uint32_t value = (*state += 0x9e3779b9u);
+    value ^= value >> 16;
+    value *= 0x7feb352du;
+    value ^= value >> 15;
+    value *= 0x846ca68bu;
+    value ^= value >> 16;
+    return value;
+}
 
 void removeSelectionsByProperty(
     QList<QTextEdit::ExtraSelection>& selections,
@@ -145,6 +331,9 @@ QTextCharFormat semanticFormatForRole(
     return format;
 }
 }
+
+EditorSelection::EditorSelection() = default;
+EditorSelection::~EditorSelection() = default;
 
 void EditorSelection::highlightCurrentLine(MyCodeEditor* editor)
 {
@@ -390,13 +579,6 @@ void EditorSelection::highlightCurrentSymbolReferences(MyCodeEditor* editor)
             kCurrentSymbolSelectionProperty,
             kCurrentSymbolSelectionMarker);
 
-    if (editor->document()->characterCount()
-        > kMaxPassiveSymbolHighlightCharacters) {
-        if (selections.size() != editor->extraSelections().size())
-            editor->setExtraSelections(selections);
-        return;
-    }
-
     QTextCursor wordCursor = editor->textCursor();
     wordCursor.select(QTextCursor::WordUnderCursor);
     const QString word = wordCursor.selectedText().trimmed();
@@ -406,15 +588,38 @@ void EditorSelection::highlightCurrentSymbolReferences(MyCodeEditor* editor)
         return;
     }
 
-    QTextCursor cursor(editor->document());
+    auto occurrenceIt = occurrenceIndex.find(word);
+    if (!occurrenceIndexInitialized
+        || occurrenceIt == occurrenceIndex.end()) {
+        editor->setExtraSelections(selections);
+        return;
+    }
+
+    const QSet<EditorOccurrenceNode*>& occurrences = occurrenceIt.value();
     int matchCount = 0;
-    while (!cursor.isNull() && matchCount < kMaxPassiveMatchHighlights) {
-        cursor = editor->document()->find(word, cursor, QTextDocument::FindWholeWords);
-        if (cursor.isNull())
+    for (EditorOccurrenceNode* occurrence : occurrences) {
+        if (matchCount >= kMaxPassiveMatchHighlights)
             break;
+        const int position = currentOccurrencePosition(occurrence);
+        const bool valid = occurrence && occurrence->active
+            && occurrence->word == word
+            && occurrence->length == word.size()
+            && position >= 0
+            && position + occurrence->length
+                   <= editor->cachedDocumentText().size()
+            && editor->cachedDocumentText().mid(
+                   position, occurrence->length) == word;
+        Q_ASSERT_X(valid,
+                   "EditorSelection::highlightCurrentSymbolReferences",
+                   "occurrence index contains a stale node");
+        if (!valid)
+            continue;
 
         QTextEdit::ExtraSelection match;
-        match.cursor = cursor;
+        match.cursor = QTextCursor(editor->document());
+        match.cursor.setPosition(position);
+        match.cursor.setPosition(position + occurrence->length,
+                                 QTextCursor::KeepAnchor);
         match.format.setBackground(QColor(59, 130, 246, 28));
         match.format.setProperty(
             kCurrentSymbolSelectionProperty,
@@ -424,6 +629,130 @@ void EditorSelection::highlightCurrentSymbolReferences(MyCodeEditor* editor)
     }
 
     editor->setExtraSelections(selections);
+}
+
+void EditorSelection::rebuildOccurrenceIndex(MyCodeEditor* editor,
+                                             const QString& text)
+{
+    Q_UNUSED(editor)
+    occurrenceIndex.clear();
+    freeOccurrenceNodes.clear();
+    occurrenceNodes.clear();
+    occurrenceRoot = nullptr;
+    occurrencePrioritySeed = 0x9e3779b9u;
+    activeOccurrenceCount = 0;
+    occurrenceIndexInitialized = true;
+    appendOccurrenceRange(text, 0, text.size());
+}
+
+void EditorSelection::appendOccurrenceRange(const QString& text,
+                                            int start,
+                                            int end)
+{
+    int position = qBound(0, start, text.size());
+    const int limit = qBound(position, end, text.size());
+    while (position < limit) {
+        if (!isOccurrenceIdentifierStart(text.at(position))) {
+            ++position;
+            continue;
+        }
+        const int wordStart = position++;
+        while (position < limit
+               && isOccurrenceIdentifierPart(text.at(position))) {
+            ++position;
+        }
+        if (position - wordStart < 2)
+            continue;
+
+        EditorOccurrenceNode* occurrencePtr = nullptr;
+        if (!freeOccurrenceNodes.empty()) {
+            occurrencePtr = freeOccurrenceNodes.back();
+            freeOccurrenceNodes.pop_back();
+        } else {
+            auto occurrence = std::make_unique<EditorOccurrenceNode>();
+            occurrencePtr = occurrence.get();
+            occurrenceNodes.push_back(std::move(occurrence));
+        }
+        occurrencePtr->word = text.mid(wordStart, position - wordStart);
+        occurrencePtr->position = wordStart;
+        occurrencePtr->length = position - wordStart;
+        occurrencePtr->lazyShift = 0;
+        occurrencePtr->priority = nextOccurrencePriority(
+            &occurrencePrioritySeed);
+        occurrencePtr->left = nullptr;
+        occurrencePtr->right = nullptr;
+        occurrencePtr->parent = nullptr;
+        occurrencePtr->active = true;
+        occurrenceIndex[occurrencePtr->word].insert(occurrencePtr);
+        ++activeOccurrenceCount;
+        occurrenceRoot = insertOccurrenceNode(occurrenceRoot,
+                                              occurrencePtr);
+    }
+}
+
+OccurrenceChangeContext EditorSelection::prepareDocumentChange(
+    const DocumentChange& change,
+    const QString& oldText) const
+{
+    OccurrenceChangeContext context;
+    context.rebuild = !occurrenceIndexInitialized
+        || (change.position == 0
+            && change.removedLength == change.oldLength);
+    if (context.rebuild)
+        return context;
+
+    context.oldStart = lineStartAt(oldText, change.position);
+    context.oldEnd = lineEndAfter(oldText, change.oldEnd());
+    return context;
+}
+
+OccurrenceIndexUpdate EditorSelection::applyDocumentChange(
+    MyCodeEditor* editor,
+    const DocumentChange& change,
+    const OccurrenceChangeContext& context,
+    const QString& newText)
+{
+    if (context.rebuild) {
+        rebuildOccurrenceIndex(editor, newText);
+        return OccurrenceIndexUpdate::Full;
+    }
+
+    EditorOccurrenceNode* before = nullptr;
+    EditorOccurrenceNode* affectedAndAfter = nullptr;
+    splitOccurrenceTree(occurrenceRoot,
+                        context.oldStart,
+                        &before,
+                        &affectedAndAfter);
+    EditorOccurrenceNode* affected = nullptr;
+    EditorOccurrenceNode* after = nullptr;
+    splitOccurrenceTree(affectedAndAfter,
+                        context.oldEnd,
+                        &affected,
+                        &after);
+    deactivateOccurrenceTree(affected,
+                             &occurrenceIndex,
+                             &freeOccurrenceNodes,
+                             &activeOccurrenceCount);
+    shiftOccurrenceTree(after, change.characterDelta());
+    occurrenceRoot = mergeOccurrenceTrees(before, after);
+
+    const int newStart = lineStartAt(newText, change.position);
+    const int newEnd = lineEndAfter(newText, change.newEnd());
+    appendOccurrenceRange(newText, newStart, newEnd);
+    return OccurrenceIndexUpdate::Incremental;
+}
+
+EditorOccurrenceIndexStats EditorSelection::occurrenceIndexStatsForTest() const
+{
+    EditorOccurrenceIndexStats stats;
+    for (auto it = occurrenceIndex.cbegin(); it != occurrenceIndex.cend(); ++it)
+        stats.handleCount += it.value().size();
+    stats.allocatedNodeCount =
+        static_cast<qsizetype>(occurrenceNodes.size());
+    stats.activeNodeCount = activeOccurrenceCount;
+    stats.freeNodeCount =
+        static_cast<qsizetype>(freeOccurrenceNodes.size());
+    return stats;
 }
 
 void EditorSelection::highlightSearchMatches(
@@ -578,24 +907,16 @@ void EditorHighlightRefresh::attachToEditor(
     MyCodeEditor* editor,
     const std::function<void()>& refresh)
 {
-    timer = new QTimer(editor);
-    timer->setSingleShot(true);
-    QObject::connect(timer, &QTimer::timeout, editor, refresh);
-
-    auto scheduleHighlightRefresh = [this]() { schedule(); };
+    refreshHandler = refresh;
     QObject::connect(
         editor,
         &QPlainTextEdit::cursorPositionChanged,
         editor,
-        scheduleHighlightRefresh);
-    QObject::connect(
-        editor,
-        &QPlainTextEdit::textChanged,
-        editor,
-        scheduleHighlightRefresh);
+        [this]() { schedule(); });
 }
 
 void EditorHighlightRefresh::schedule() const
 {
-    timer->start(0);
+    if (refreshHandler)
+        refreshHandler();
 }

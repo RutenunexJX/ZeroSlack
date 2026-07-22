@@ -64,6 +64,169 @@ QPixmap foldDragPixmap(const FoldShelfItem& item, const QFont& font)
                      QStringLiteral("%1 lines").arg(item.lineCount));
     return pixmap;
 }
+
+struct FoldLineMapping {
+    int line = -1;
+    bool survives = false;
+};
+
+FoldLineMapping remappedFoldLine(int line, const DocumentChange& change)
+{
+    if (change.removedLength > 0
+        && line > change.startLine
+        && line < change.oldEndLine) {
+        return {};
+    }
+    if (line > change.oldEndLine)
+        return {qMax(0, line + change.lineDelta), true};
+    if (line == change.oldEndLine && change.oldEndLine > change.startLine) {
+        return {qMax(change.startLine, line + change.lineDelta), true};
+    }
+    if (line == change.startLine && change.startColumn == 0
+        && change.removedLength == 0 && change.lineDelta > 0) {
+        return {line + change.lineDelta, true};
+    }
+    return {line, true};
+}
+
+int fragmentEndColumn(const QString& text, int startColumn)
+{
+    const int lastNewline = text.lastIndexOf(QLatin1Char('\n'));
+    return lastNewline < 0 ? startColumn + text.size()
+                           : text.size() - lastNewline - 1;
+}
+
+int compareLineColumn(int leftLine,
+                      int leftColumn,
+                      int rightLine,
+                      int rightColumn)
+{
+    if (leftLine != rightLine)
+        return leftLine < rightLine ? -1 : 1;
+    if (leftColumn == rightColumn)
+        return 0;
+    return leftColumn < rightColumn ? -1 : 1;
+}
+
+bool remapCustomMarker(TSCustomFoldMarker* marker,
+                       const DocumentChange& change)
+{
+    if (!marker)
+        return false;
+
+    const int oldEndColumn = fragmentEndColumn(change.removedText,
+                                               change.startColumn);
+    const int newEndColumn = fragmentEndColumn(change.insertedText,
+                                               change.startColumn);
+    const int relativeToStart = compareLineColumn(marker->line,
+                                                  marker->column,
+                                                  change.startLine,
+                                                  change.startColumn);
+    if (relativeToStart < 0)
+        return true;
+
+    if (change.removedLength == 0) {
+        if (marker->line == change.startLine) {
+            marker->line = change.newEndLine;
+            marker->column = newEndColumn
+                + qMax(0, marker->column - change.startColumn);
+        } else {
+            marker->line = qMax(0, marker->line + change.lineDelta);
+        }
+        return true;
+    }
+
+    const int relativeToOldEnd = compareLineColumn(marker->line,
+                                                   marker->column,
+                                                   change.oldEndLine,
+                                                   oldEndColumn);
+    if (relativeToOldEnd < 0)
+        return false;
+    if (marker->line == change.oldEndLine) {
+        marker->line = change.newEndLine;
+        marker->column = newEndColumn
+            + qMax(0, marker->column - oldEndColumn);
+    } else {
+        marker->line = qMax(0, marker->line + change.lineDelta);
+    }
+    return true;
+}
+
+bool foldRangeFullyDeleted(const TSFoldRange& range,
+                           const DocumentChange& change)
+{
+    if (change.removedLength <= 0
+        || change.oldEndLine <= change.startLine) {
+        return false;
+    }
+    const bool startsInsideDeletedLines =
+        range.startLine > change.startLine
+        || (range.startLine == change.startLine
+            && change.startColumn == 0);
+    return startsInsideDeletedLines
+        && range.endLine < change.oldEndLine;
+}
+
+bool rangeIsAfterOldChange(const TSFoldRange& range,
+                           const DocumentChange& change)
+{
+    if (change.oldEndLine > change.startLine)
+        return range.startLine >= change.oldEndLine;
+    return range.startLine > change.startLine;
+}
+
+TSFoldRange remapRangeAfterOldChange(TSFoldRange range,
+                                     const DocumentChange& change)
+{
+    range.startLine = qMax(0, range.startLine + change.lineDelta);
+    range.endLine = qMax(range.startLine,
+                         range.endLine + change.lineDelta);
+    return range;
+}
+
+bool rangeTouchesLines(const TSFoldRange& range, int firstLine, int lastLine)
+{
+    return range.endLine >= firstLine && range.startLine <= lastLine;
+}
+
+QString foldExtentKey(const TSFoldRange& range)
+{
+    return QStringLiteral("%1:%2")
+        .arg(range.startLine)
+        .arg(range.endLine);
+}
+
+QList<TSFoldRange> customFoldRanges(
+    QList<TSCustomFoldMarker> markers)
+{
+    std::sort(markers.begin(), markers.end(),
+              [](const TSCustomFoldMarker& left,
+                 const TSCustomFoldMarker& right) {
+                  if (left.line != right.line)
+                      return left.line < right.line;
+                  return left.column < right.column;
+              });
+    QList<TSCustomFoldMarker> stack;
+    QList<TSFoldRange> ranges;
+    for (const TSCustomFoldMarker& marker : std::as_const(markers)) {
+        if (marker.startsRange) {
+            stack.append(marker);
+            continue;
+        }
+        if (stack.isEmpty())
+            continue;
+        const TSCustomFoldMarker start = stack.takeLast();
+        if (marker.line <= start.line)
+            continue;
+        TSFoldRange range;
+        range.startLine = start.line;
+        range.endLine = marker.line;
+        range.kind = TSFoldRangeKind::Custom;
+        range.label = start.label;
+        ranges.append(range);
+    }
+    return ranges;
+}
 }
 
 void EditorFoldingController::refresh(MyCodeEditor* editor, const TSDocument* document)
@@ -72,6 +235,7 @@ void EditorFoldingController::refresh(MyCodeEditor* editor, const TSDocument* do
         return;
 
     ranges = document->foldingRanges();
+    customMarkers = document->customFoldMarkers();
     QSet<int> validStarts;
     for (const TSFoldRange& range : std::as_const(ranges))
         validStarts.insert(range.startLine);
@@ -81,7 +245,140 @@ void EditorFoldingController::refresh(MyCodeEditor* editor, const TSDocument* do
         else
             ++it;
     }
-    applyVisibility(editor);
+    if (!collapsedStartLines.isEmpty())
+        applyVisibility(editor);
+}
+
+bool EditorFoldingController::applyDocumentChange(
+    MyCodeEditor* editor,
+    const TSDocument* document,
+    const DocumentChange& change,
+    const QList<TSChangedRange>& changedRanges)
+{
+    if (!editor || !document)
+        return false;
+
+    int replacementFirstLine = qMin(change.startLine, change.newEndLine);
+    int replacementLastLine = qMax(change.startLine, change.newEndLine);
+    for (const TSChangedRange& range : changedRanges) {
+        replacementFirstLine = qMin(replacementFirstLine, range.startLine);
+        replacementLastLine = qMax(replacementLastLine, range.endLine);
+    }
+    int firstLine = replacementFirstLine;
+    int lastLine = replacementLastLine;
+    QSet<int> collapsedCandidates;
+    QList<TSFoldRange> retainedSyntaxRanges;
+    retainedSyntaxRanges.reserve(ranges.size());
+    for (const TSFoldRange& oldRange : std::as_const(ranges)) {
+        const bool wasCollapsed =
+            collapsedStartLines.contains(oldRange.startLine);
+        const bool fullyDeleted = foldRangeFullyDeleted(oldRange, change);
+        if (wasCollapsed) {
+            const FoldLineMapping mappedStart =
+                remappedFoldLine(oldRange.startLine, change);
+            const FoldLineMapping mappedEnd =
+                remappedFoldLine(oldRange.endLine, change);
+            firstLine = qMin(firstLine,
+                             mappedStart.survives
+                                 ? mappedStart.line
+                                 : change.startLine);
+            lastLine = qMax(lastLine,
+                            mappedEnd.survives
+                                ? mappedEnd.line
+                                : change.newEndLine);
+            if (!fullyDeleted && mappedStart.survives)
+                collapsedCandidates.insert(mappedStart.line);
+        }
+
+        if (oldRange.kind == TSFoldRangeKind::Custom)
+            continue;
+        if (oldRange.endLine < change.startLine) {
+            retainedSyntaxRanges.append(oldRange);
+        } else if (rangeIsAfterOldChange(oldRange, change)) {
+            retainedSyntaxRanges.append(
+                remapRangeAfterOldChange(oldRange, change));
+        }
+    }
+
+    QList<TSCustomFoldMarker> remappedMarkers;
+    remappedMarkers.reserve(customMarkers.size());
+    for (TSCustomFoldMarker marker : std::as_const(customMarkers)) {
+        if (remapCustomMarker(&marker, change))
+            remappedMarkers.append(marker);
+    }
+    customMarkers = remappedMarkers;
+
+    customMarkers.erase(
+        std::remove_if(customMarkers.begin(), customMarkers.end(),
+                       [replacementFirstLine, replacementLastLine](
+                           const TSCustomFoldMarker& marker) {
+                           return marker.line >= replacementFirstLine
+                               && marker.line <= replacementLastLine;
+                       }),
+        customMarkers.end());
+    customMarkers.append(
+        document->customFoldMarkersForChanges(changedRanges));
+
+    retainedSyntaxRanges.erase(
+        std::remove_if(retainedSyntaxRanges.begin(),
+                       retainedSyntaxRanges.end(),
+                       [replacementFirstLine,
+                        replacementLastLine](const TSFoldRange& range) {
+                           return rangeTouchesLines(range,
+                                                    replacementFirstLine,
+                                                    replacementLastLine);
+                       }),
+        retainedSyntaxRanges.end());
+    ranges = retainedSyntaxRanges;
+    ranges.append(document->syntaxFoldingRangesForChanges(changedRanges));
+    ranges.append(customFoldRanges(customMarkers));
+
+    QSet<QString> customExtents;
+    for (const TSFoldRange& range : std::as_const(ranges)) {
+        if (range.kind == TSFoldRangeKind::Custom)
+            customExtents.insert(foldExtentKey(range));
+    }
+    ranges.erase(
+        std::remove_if(ranges.begin(), ranges.end(),
+                       [&customExtents](const TSFoldRange& range) {
+                           return range.kind == TSFoldRangeKind::Syntax
+                               && customExtents.contains(foldExtentKey(range));
+                       }),
+        ranges.end());
+    std::sort(ranges.begin(), ranges.end(), [](const TSFoldRange& left,
+                                               const TSFoldRange& right) {
+        if (left.startLine != right.startLine)
+            return left.startLine < right.startLine;
+        if (left.kind != right.kind)
+            return left.kind == TSFoldRangeKind::Custom;
+        return left.endLine < right.endLine;
+    });
+    ranges.erase(std::unique(ranges.begin(), ranges.end(),
+                             [](const TSFoldRange& left,
+                                const TSFoldRange& right) {
+                                 return left.startLine == right.startLine
+                                     && left.endLine == right.endLine
+                                     && left.kind == right.kind;
+                             }),
+                 ranges.end());
+
+    QSet<int> validStarts;
+    for (const TSFoldRange& range : std::as_const(ranges))
+        validStarts.insert(range.startLine);
+    collapsedCandidates.intersect(validStarts);
+    collapsedStartLines = collapsedCandidates;
+    for (const TSFoldRange& range : std::as_const(ranges)) {
+        if (!collapsedStartLines.contains(range.startLine))
+            continue;
+        firstLine = qMin(firstLine, range.startLine);
+        lastLine = qMax(lastLine, range.endLine);
+    }
+    applyVisibilityForLines(
+        editor,
+        qMax(0, firstLine - 1),
+        qMin(qMax(0, editor->document()->blockCount() - 1),
+             lastLine + 1));
+    return false;
 }
 
 bool EditorFoldingController::hasFoldAtLine(int line) const
@@ -114,7 +411,7 @@ bool EditorFoldingController::toggleFoldAtLine(MyCodeEditor* editor, int line)
         collapsedStartLines.remove(range.startLine);
     else
         collapsedStartLines.insert(range.startLine);
-    applyVisibility(editor);
+    applyVisibilityForLines(editor, range.startLine, range.endLine);
     return true;
 }
 
@@ -476,25 +773,53 @@ void EditorFoldingController::applyVisibility(MyCodeEditor* editor)
     if (!editor)
         return;
 
+    applyVisibilityForLines(editor,
+                            0,
+                            qMax(0, editor->document()->blockCount() - 1));
+}
+
+void EditorFoldingController::applyVisibilityForLines(
+    MyCodeEditor* editor,
+    int startLine,
+    int endLine)
+{
+    if (!editor)
+        return;
+
     QTextDocument* doc = editor->document();
-    for (QTextBlock block = doc->begin(); block.isValid(); block = block.next()) {
-        block.setVisible(true);
-        block.setLineCount(1);
-    }
+    const int firstLine = qBound(0,
+                                 qMin(startLine, endLine),
+                                 qMax(0, doc->blockCount() - 1));
+    const int lastLine = qBound(firstLine,
+                                qMax(startLine, endLine),
+                                qMax(firstLine, doc->blockCount() - 1));
+    QTextBlock firstBlock = doc->findBlockByNumber(firstLine);
+    QTextBlock lastBlock = doc->findBlockByNumber(lastLine);
+    if (!firstBlock.isValid() || !lastBlock.isValid())
+        return;
 
-    for (const TSFoldRange& range : std::as_const(ranges)) {
-        if (!collapsedStartLines.contains(range.startLine))
-            continue;
-        for (int line = range.startLine + 1; line <= range.endLine; ++line) {
-            QTextBlock block = doc->findBlockByNumber(line);
-            if (!block.isValid())
+    for (QTextBlock block = firstBlock; block.isValid(); block = block.next()) {
+        const int line = block.blockNumber();
+        bool visible = true;
+        for (const TSFoldRange& range : std::as_const(ranges)) {
+            if (!collapsedStartLines.contains(range.startLine))
                 continue;
-            block.setVisible(false);
-            block.setLineCount(0);
+            if (line > range.startLine && line <= range.endLine) {
+                visible = false;
+                break;
+            }
         }
+        if (block.isVisible() != visible)
+            block.setVisible(visible);
+        if (block.lineCount() != (visible ? 1 : 0))
+            block.setLineCount(visible ? 1 : 0);
+        if (line >= lastLine)
+            break;
     }
 
-    doc->markContentsDirty(0, doc->characterCount());
+    const int dirtyStart = firstBlock.position();
+    const int dirtyEnd = lastBlock.position() + lastBlock.length();
+    doc->markContentsDirty(dirtyStart, qMax(0, dirtyEnd - dirtyStart));
     editor->viewport()->update();
 }
 

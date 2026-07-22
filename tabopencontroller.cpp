@@ -27,9 +27,9 @@ MyCodeEditor* TabOpenController::createNewTab() const
 
     std::unique_ptr<MyCodeEditor> editor(new MyCodeEditor(tabWidget));
     MyCodeEditor* editorPtr = editor.get();
-    tabWidget->addTab(editor.release(), "untitled");
     documentModel->registerEditor(editorPtr);
-    tabWidget->setCurrentIndex(tabWidget->count() - 1);
+    const int index = tabWidget->addTab(editor.release(), "untitled");
+    tabWidget->setCurrentIndex(index);
     return editorPtr;
 }
 
@@ -56,8 +56,9 @@ MyCodeEditor* TabOpenController::openFile(const QString& fileName) const
     // as an edit made clean workspace symbols look stale and unnecessarily
     // launched a full open-document Slang overlay on every navigation.
     editorPtr->acceptLoadedTextAsSemanticBaseline();
-    tabWidget->addTab(editor.release(), fileIo->displayName(fileToOpen));
     documentModel->registerEditor(editorPtr, fileToOpen);
-    tabWidget->setCurrentIndex(tabWidget->count() - 1);
+    const int index = tabWidget->addTab(
+        editor.release(), fileIo->displayName(fileToOpen));
+    tabWidget->setCurrentIndex(index);
     return editorPtr;
 }

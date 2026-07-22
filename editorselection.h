@@ -1,21 +1,50 @@
 #ifndef EDITORSELECTION_H
 #define EDITORSELECTION_H
 
+#include "documentchange.h"
 #include "semanticindex.h"
 #include "semanticdecorationservice.h"
 
+#include <QHash>
 #include <QList>
 #include <QPair>
+#include <QSet>
+#include <cstdint>
 #include <functional>
+#include <memory>
+#include <vector>
 
 class MyCodeEditor;
 class QPlainTextEdit;
 class QTimer;
 struct EditorSourceNavigationTarget;
+struct EditorOccurrenceNode;
+
+struct EditorOccurrenceIndexStats {
+    qsizetype handleCount = 0;
+    qsizetype allocatedNodeCount = 0;
+    qsizetype activeNodeCount = 0;
+    qsizetype freeNodeCount = 0;
+};
+
+enum class OccurrenceIndexUpdate {
+    None,
+    Full,
+    Incremental
+};
+
+struct OccurrenceChangeContext {
+    int oldStart = 0;
+    int oldEnd = 0;
+    bool rebuild = false;
+};
 
 class EditorSelection
 {
 public:
+    EditorSelection();
+    ~EditorSelection();
+
     void highlightCurrentLine(MyCodeEditor* editor);
     void highlightCommand(MyCodeEditor* editor, int prefixPosition);
     void clearCommand(QPlainTextEdit* editor);
@@ -30,6 +59,15 @@ public:
         MyCodeEditor* editor,
         const QList<SemanticDecoration>& decorations);
     void highlightCurrentSymbolReferences(MyCodeEditor* editor);
+    OccurrenceChangeContext prepareDocumentChange(
+        const DocumentChange& change,
+        const QString& oldText) const;
+    OccurrenceIndexUpdate applyDocumentChange(
+        MyCodeEditor* editor,
+        const DocumentChange& change,
+        const OccurrenceChangeContext& context,
+        const QString& newText);
+    EditorOccurrenceIndexStats occurrenceIndexStatsForTest() const;
     void highlightSearchMatches(MyCodeEditor* editor,
                                 const QString& text,
                                 bool caseSensitive);
@@ -44,6 +82,17 @@ public:
 
 private:
     void removeByProperty(QPlainTextEdit* editor, int property, int value);
+    void rebuildOccurrenceIndex(MyCodeEditor* editor,
+                                const QString& text);
+    void appendOccurrenceRange(const QString& text, int start, int end);
+
+    QHash<QString, QSet<EditorOccurrenceNode*>> occurrenceIndex;
+    std::vector<std::unique_ptr<EditorOccurrenceNode>> occurrenceNodes;
+    std::vector<EditorOccurrenceNode*> freeOccurrenceNodes;
+    EditorOccurrenceNode* occurrenceRoot = nullptr;
+    std::uint32_t occurrencePrioritySeed = 0x9e3779b9u;
+    qsizetype activeOccurrenceCount = 0;
+    bool occurrenceIndexInitialized = false;
 };
 
 class EditorHighlightRefresh
@@ -53,7 +102,7 @@ public:
     void schedule() const;
 
 private:
-    QTimer* timer = nullptr;
+    std::function<void()> refreshHandler;
 };
 
 #endif // EDITORSELECTION_H

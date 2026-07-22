@@ -3069,6 +3069,47 @@ static void runSafeRenameCoordinatorRegression()
                                      "endmodule\n"),
                true);
 
+    MyCodeEditor* definitionEditor = tabs.getDocumentModel()
+        ? tabs.getDocumentModel()->editorForFile(defFile)
+        : nullptr;
+    MyCodeEditor* useEditor = tabs.getDocumentModel()
+        ? tabs.getDocumentModel()->editorForFile(useFile)
+        : nullptr;
+    MyCodeEditor* nonCurrentEditor =
+        tabs.getCurrentEditor() == definitionEditor ? useEditor
+                                                    : definitionEditor;
+    const EditorSynchronousEditState nonCurrentRenameState =
+        nonCurrentEditor
+            ? nonCurrentEditor->synchronousEditStateForTest()
+            : EditorSynchronousEditState();
+    expectBool("safe rename commits non-current editor transaction",
+               nonCurrentEditor
+                   && nonCurrentRenameState.completedTransactionCount > 0
+                   && nonCurrentRenameState.transactionDepth == 0
+                   && !nonCurrentRenameState.presentationPending
+                   && !nonCurrentRenameState.cursorPresentationSuppressed,
+               true);
+
+    bool nonCurrentLineMoved = false;
+    if (nonCurrentEditor) {
+        QTextCursor realMove(
+            nonCurrentEditor->document()->findBlockByNumber(2));
+        nonCurrentEditor->QPlainTextEdit::setTextCursor(realMove);
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+        for (const QTextEdit::ExtraSelection& selection :
+             nonCurrentEditor->extraSelections()) {
+            nonCurrentLineMoved = nonCurrentLineMoved
+                || (selection.format
+                            .property(QTextFormat::UserProperty)
+                            .toInt()
+                        == 998
+                    && selection.cursor.blockNumber() == 2);
+        }
+    }
+    expectBool("first cursor move after non-current safe rename is not swallowed",
+               nonCurrentLineMoved,
+               true);
+
     if (previousSnapshot)
         SemanticIndex::getInstance()->setSnapshot(previousSnapshot);
     else
@@ -10361,6 +10402,9 @@ int main(int argc, char** argv)
                            "always_ff @(posedge clk) begin\n"
                            "    q <= z;\n"
                            "end\n"
+                           "always_comb begin\n"
+                           "    z = q;\n"
+                           "end\n"
                            "endmodule\n"));
     }
     QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
@@ -10372,6 +10416,174 @@ int main(int argc, char** argv)
     }
     expectBool("wave preview refreshes dirty editor text",
                waveTree && sawWaveZ,
+               true);
+    WavePreviewPanelCoordinator* waveCoordinator =
+        window.semanticDocks
+            ? window.semanticDocks->wavePreviewPanelCoordinator()
+            : nullptr;
+    auto currentWaveAssignmentExpression = [waveEditor]() {
+        if (!waveEditor)
+            return QString();
+        const QString text = waveEditor->cachedDocumentText();
+        const int prefix = text.indexOf(QStringLiteral("q <= "));
+        if (prefix < 0)
+            return QString();
+        const int start = prefix + QStringLiteral("q <= ").size();
+        const int end = text.indexOf(QLatin1Char(';'), start);
+        return end > start ? text.mid(start, end - start).trimmed()
+                           : QString();
+    };
+    if (waveEditor) {
+        const QString waveText = waveEditor->cachedDocumentText();
+        const int assignment = waveText.indexOf(QStringLiteral("q <= z"));
+        if (assignment >= 0) {
+            QTextCursor editCursor(waveEditor->document());
+            editCursor.setPosition(
+                assignment + QStringLiteral("q <= ").size());
+            waveEditor->setTextCursor(editCursor);
+        }
+    }
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+    if (waveCoordinator)
+        waveCoordinator->resetRefreshMetricsForTest();
+    if (waveEditor)
+        QTest::keyClick(waveEditor, Qt::Key_X);
+    const QString visibleExpectedExpression =
+        currentWaveAssignmentExpression();
+    const WavePreviewRefreshMetrics visibleWaveMetrics =
+        waveCoordinator
+            ? waveCoordinator->refreshMetricsForTest()
+            : WavePreviewRefreshMetrics();
+    bool visibleWaveConsumedLatestText = false;
+    if (waveCoordinator) {
+        for (const WavePreviewLane& lane :
+             waveCoordinator->reportForTest().lanes) {
+            for (const WavePreviewAssignment& assignment : lane.assignments) {
+                visibleWaveConsumedLatestText =
+                    visibleWaveConsumedLatestText
+                    || (lane.signalName == QStringLiteral("q")
+                        && assignment.expression.trimmed()
+                               == visibleExpectedExpression);
+            }
+        }
+    }
+    expectBool("visible wave preview renders one synchronous document delta",
+               waveEditor && waveCoordinator
+                   && visibleWaveMetrics.documentChangeRenderCount == 1
+                   && visibleWaveMetrics.renderCount == 1
+                   && visibleWaveMetrics.scopeDeltaUpdateCount == 1
+                   && visibleWaveMetrics.scopeRebuildCount == 0,
+               true);
+    expectBool("visible wave preview consumes latest scoped text",
+               waveEditor && visibleWaveConsumedLatestText
+                   && visibleWaveMetrics.lastParsedCharacterCount
+                          < waveEditor->cachedDocumentText().size(),
+               true);
+
+    if (waveCoordinator)
+        waveCoordinator->resetRefreshMetricsForTest();
+    if (waveEditor) {
+        const int sameScopePosition =
+            waveEditor->cachedDocumentText().indexOf(
+                QStringLiteral("q <="));
+        if (sameScopePosition >= 0) {
+            QTextCursor sameScopeCursor(waveEditor->document());
+            sameScopeCursor.setPosition(sameScopePosition + 1);
+            waveEditor->setTextCursor(sameScopeCursor);
+        }
+    }
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+    const WavePreviewRefreshMetrics sameScopeCursorMetrics =
+        waveCoordinator
+            ? waveCoordinator->refreshMetricsForTest()
+            : WavePreviewRefreshMetrics();
+    expectBool("cursor move after edit in same Wave scope does not rerender",
+               sameScopeCursorMetrics.renderCount == 0
+                   && sameScopeCursorMetrics.documentChangeRenderCount == 0,
+               true);
+
+    if (waveCoordinator)
+        waveCoordinator->resetRefreshMetricsForTest();
+    if (waveEditor) {
+        const int otherScopePosition =
+            waveEditor->cachedDocumentText().indexOf(
+                QStringLiteral("z = q"));
+        if (otherScopePosition >= 0) {
+            QTextCursor otherScopeCursor(waveEditor->document());
+            otherScopeCursor.setPosition(otherScopePosition);
+            waveEditor->setTextCursor(otherScopeCursor);
+        }
+    }
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+    const WavePreviewRefreshMetrics crossScopeCursorMetrics =
+        waveCoordinator
+            ? waveCoordinator->refreshMetricsForTest()
+            : WavePreviewRefreshMetrics();
+    bool crossScopeConsumedLatestText = false;
+    if (waveCoordinator) {
+        for (const WavePreviewLane& lane :
+             waveCoordinator->reportForTest().lanes) {
+            crossScopeConsumedLatestText =
+                crossScopeConsumedLatestText
+                || (lane.signalName == QStringLiteral("z")
+                    && !lane.assignments.isEmpty()
+                    && lane.assignments.first().expression.trimmed()
+                           == QStringLiteral("q"));
+        }
+    }
+    expectBool("cursor crossing Wave scopes refreshes exactly once",
+               crossScopeCursorMetrics.renderCount == 1
+                   && crossScopeCursorMetrics.documentChangeRenderCount == 0
+                   && crossScopeCursorMetrics.scopeRebuildCount == 1
+                   && crossScopeConsumedLatestText,
+               true);
+
+    if (waveEditor) {
+        const int originalScopePosition =
+            waveEditor->cachedDocumentText().indexOf(
+                QStringLiteral("q <="));
+        if (originalScopePosition >= 0) {
+            QTextCursor originalScopeCursor(waveEditor->document());
+            originalScopeCursor.setPosition(
+                originalScopePosition + QStringLiteral("q <= ").size());
+            waveEditor->setTextCursor(originalScopeCursor);
+        }
+    }
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+
+    if (wavePreviewDock)
+        wavePreviewDock->hide();
+    if (waveCoordinator)
+        waveCoordinator->resetRefreshMetricsForTest();
+    if (waveEditor)
+        QTest::keyClick(waveEditor, Qt::Key_Y);
+    const WavePreviewRefreshMetrics hiddenWaveMetrics =
+        waveCoordinator
+            ? waveCoordinator->refreshMetricsForTest()
+            : WavePreviewRefreshMetrics();
+    expectBool("hidden wave preview skips expensive document rendering",
+               hiddenWaveMetrics.documentChangeRenderCount == 0
+                   && hiddenWaveMetrics.renderCount == 0,
+               true);
+    window.showPanelById(QStringLiteral("wavePreview"));
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+    const QString reopenedExpectedExpression =
+        currentWaveAssignmentExpression();
+    bool reopenedWaveConsumedLatestText = false;
+    if (waveCoordinator) {
+        for (const WavePreviewLane& lane :
+             waveCoordinator->reportForTest().lanes) {
+            for (const WavePreviewAssignment& assignment : lane.assignments) {
+                reopenedWaveConsumedLatestText =
+                    reopenedWaveConsumedLatestText
+                    || (lane.signalName == QStringLiteral("q")
+                        && assignment.expression.trimmed()
+                               == reopenedExpectedExpression);
+            }
+        }
+    }
+    expectBool("reopened wave preview catches up synchronously",
+               reopenedWaveConsumedLatestText,
                true);
     if (waveEditor) {
         QString largeWaveText;
@@ -10388,14 +10600,7 @@ int main(int argc, char** argv)
                                         "endmodule\n");
         waveEditor->setPlainText(largeWaveText);
     }
-    expectBool("wave preview queues large dirty refresh",
-               waveTree && findItemByText(waveTree,
-                                           QStringLiteral("huge_delayed"))
-                               == nullptr,
-               true);
-    QTest::qWait(260);
-    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-    expectBool("wave preview flushes latest large dirty refresh",
+    expectBool("wave preview refreshes large dirty scope synchronously",
                waveTree && findItemByText(waveTree,
                                            QStringLiteral("huge_delayed"))
                                != nullptr,
@@ -11665,6 +11870,72 @@ int main(int argc, char** argv)
                                   + selectedByEnter
                                   + QStringLiteral(" + rhs;\n"
                                                    "endmodule\n"),
+                   true);
+
+        editor->setPlainText(multiOriginal);
+        multiBlock = editor->document()->findBlockByNumber(1);
+        multiCursor = QTextCursor(multiBlock);
+        multiCursor.setPosition(
+            multiBlock.position()
+            + multiBlock.text().indexOf(QStringLiteral("en"))
+            + QStringLiteral("en").size());
+        editor->setTextCursor(multiCursor);
+        QTest::keyClick(editor, Qt::Key_Tab);
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
+        inlineCompleter = editor->findChild<QCompleter*>();
+        const QString selectedByMouse = selectedInlineLogicName();
+        const EditorSynchronousEditState beforeMouseActivation =
+            editor->synchronousEditStateForTest();
+        bool activatedInlineCompletion = false;
+        if (inlineCompleter && inlineCompleter->popup()
+            && inlineCompleter->popup()->currentIndex().isValid()) {
+            const QModelIndex index =
+                inlineCompleter->popup()->currentIndex();
+            // QCompleter emits this exact signal after popup mouse activation;
+            // drive it directly so the offscreen platform cannot substitute a
+            // focus-only click for activation.
+            inlineCompleter->activated(index);
+            activatedInlineCompletion = true;
+        }
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+        const EditorSynchronousEditState afterMouseActivation =
+            editor->synchronousEditStateForTest();
+        expectBool("completion popup mouse activation commits synchronously",
+                   activatedInlineCompletion && !selectedByMouse.isEmpty()
+                       && editor->toPlainText()
+                              == QStringLiteral("module gui_top;\n"
+                                                "assign lhs=")
+                                     + selectedByMouse
+                                     + QStringLiteral(" + rhs;\n"
+                                                      "endmodule\n")
+                       && afterMouseActivation.completedTransactionCount
+                              == beforeMouseActivation
+                                     .completedTransactionCount
+                                     + 1
+                       && afterMouseActivation.transactionDepth == 0
+                       && !afterMouseActivation.presentationPending
+                       && !afterMouseActivation
+                               .cursorPresentationSuppressed,
+                   true);
+
+        QTextCursor firstRealMove(
+            editor->document()->findBlockByNumber(2));
+        editor->QPlainTextEdit::setTextCursor(firstRealMove);
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+        bool currentLineMoved = false;
+        for (const QTextEdit::ExtraSelection& selection :
+             editor->extraSelections()) {
+            currentLineMoved = currentLineMoved
+                || (selection.format
+                            .property(QTextFormat::UserProperty)
+                            .toInt()
+                        == 998
+                    && selection.cursor.blockNumber() == 2);
+        }
+        expectBool("first cursor move after mouse completion is not swallowed",
+                   currentLineMoved
+                       && !editor->synchronousEditStateForTest()
+                               .cursorPresentationSuppressed,
                    true);
 
         editor->setPlainText(multiOriginal);

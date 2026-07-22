@@ -1,5 +1,49 @@
 #include "documentregistry.h"
 
+#include "mycodeeditor.h"
+
+#include <atomic>
+
+namespace {
+std::atomic<std::uint64_t> fullTextCopyCount{0};
+std::atomic<std::uint64_t> copiedCharacterCount{0};
+
+DocumentSnapshot materializedSnapshot(const TrackedDocument& tracked)
+{
+    DocumentSnapshot snapshot = tracked.snapshot;
+    if (tracked.editor) {
+        const QString& text = tracked.editor->cachedDocumentText();
+        recordDocumentTextCopy(text.size());
+        snapshot.text = QString(text.constData(), text.size());
+    }
+    return snapshot;
+}
+}
+
+void recordDocumentTextCopy(qsizetype characterCount)
+{
+    fullTextCopyCount.fetch_add(1, std::memory_order_relaxed);
+    copiedCharacterCount.fetch_add(
+        static_cast<std::uint64_t>(qMax<qsizetype>(0, characterCount)),
+        std::memory_order_relaxed);
+}
+
+DocumentTextCopyMetrics documentTextCopyMetricsForTest()
+{
+    DocumentTextCopyMetrics metrics;
+    metrics.fullTextCopyCount =
+        fullTextCopyCount.load(std::memory_order_relaxed);
+    metrics.copiedCharacterCount =
+        copiedCharacterCount.load(std::memory_order_relaxed);
+    return metrics;
+}
+
+void resetDocumentTextCopyMetricsForTest()
+{
+    fullTextCopyCount.store(0, std::memory_order_relaxed);
+    copiedCharacterCount.store(0, std::memory_order_relaxed);
+}
+
 void DocumentIndexes::add(
     MyCodeEditor* editor,
     const DocumentSnapshot& snapshot)
@@ -48,7 +92,9 @@ void DocumentStore::insert(
     MyCodeEditor* editor,
     const TrackedDocument& tracked)
 {
-    byEditor.insert(editor, tracked);
+    TrackedDocument stored = tracked;
+    stored.snapshot.text.clear();
+    byEditor.insert(editor, stored);
 }
 
 TrackedDocument DocumentStore::take(MyCodeEditor* editor)
@@ -90,14 +136,18 @@ QList<DocumentSnapshot> DocumentStore::snapshots() const
     QList<DocumentSnapshot> result;
     result.reserve(byEditor.size());
     for (const TrackedDocument& tracked : byEditor)
-        result.append(tracked.snapshot);
+        result.append(materializedSnapshot(tracked));
     return result;
 }
 
 QString DocumentStore::textForEditor(MyCodeEditor* editor) const
 {
     const TrackedDocument* tracked = find(editor);
-    return tracked ? tracked->text : QString();
+    if (!tracked || !tracked->editor)
+        return QString();
+    const QString& text = tracked->editor->cachedDocumentText();
+    recordDocumentTextCopy(text.size());
+    return QString(text.constData(), text.size());
 }
 
 bool DocumentRegistry::contains(MyCodeEditor* editor) const

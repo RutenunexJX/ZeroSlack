@@ -320,9 +320,62 @@ MyCodeEditor::MyCodeEditor(QWidget *parent)
     state->attachToEditor(this);
 }
 
+MyCodeEditor::SynchronousEditTransaction::SynchronousEditTransaction(
+    MyCodeEditor* targetEditor)
+    : editor(targetEditor)
+{
+    if (editor)
+        editor->state->beginSynchronousEditTransaction();
+}
+
+MyCodeEditor::SynchronousEditTransaction::~SynchronousEditTransaction()
+{
+    if (editor)
+        editor->state->endSynchronousEditTransaction(editor);
+}
+
 MyCodeEditor::~MyCodeEditor()
 {
     state->shutdown();
+}
+
+void MyCodeEditor::setPlainText(const QString& text)
+{
+    {
+        auto edit = beginSynchronousEditTransaction();
+        QPlainTextEdit::setPlainText(text);
+    }
+    emit wavePreviewScopeChanged();
+}
+
+void MyCodeEditor::insertPlainText(const QString& text)
+{
+    auto edit = beginSynchronousEditTransaction();
+    QPlainTextEdit::insertPlainText(text);
+}
+
+void MyCodeEditor::clear()
+{
+    auto edit = beginSynchronousEditTransaction();
+    QPlainTextEdit::clear();
+}
+
+void MyCodeEditor::undo()
+{
+    auto edit = beginSynchronousEditTransaction();
+    QPlainTextEdit::undo();
+}
+
+void MyCodeEditor::redo()
+{
+    auto edit = beginSynchronousEditTransaction();
+    QPlainTextEdit::redo();
+}
+
+void MyCodeEditor::setTextCursor(const QTextCursor& cursor)
+{
+    auto edit = beginSynchronousEditTransaction();
+    QPlainTextEdit::setTextCursor(cursor);
 }
 
 void MyCodeEditor::refreshScopeAndCurrentLineHighlight()
@@ -340,9 +393,50 @@ std::uint64_t MyCodeEditor::semanticDocumentRevision() const
     return state->semanticDocumentRevision();
 }
 
+QString MyCodeEditor::toPlainText() const
+{
+    return state->materializeDocumentText(this);
+}
+
+const QString& MyCodeEditor::cachedDocumentText() const
+{
+    return state->cachedDocumentText();
+}
+
+QString MyCodeEditor::cachedDocumentSlice(int position, int length) const
+{
+    return state->cachedDocumentSlice(position, length);
+}
+
+MyCodeEditor::SynchronousEditTransaction
+MyCodeEditor::beginSynchronousEditTransaction()
+{
+    return SynchronousEditTransaction(this);
+}
+
+EditorSynchronousEditState MyCodeEditor::synchronousEditStateForTest() const
+{
+    return state->synchronousEditStateForTest();
+}
+
 void MyCodeEditor::acceptLoadedTextAsSemanticBaseline()
 {
     state->acceptLoadedTextAsSemanticBaseline(this);
+}
+
+EditorHotPathMetrics MyCodeEditor::hotPathMetricsForTest() const
+{
+    return state->hotPathMetricsForTest();
+}
+
+EditorOccurrenceIndexStats MyCodeEditor::occurrenceIndexStatsForTest() const
+{
+    return state->occurrenceIndexStatsForTest();
+}
+
+void MyCodeEditor::resetHotPathMetricsForTest()
+{
+    state->resetHotPathMetricsForTest();
 }
 
 void MyCodeEditor::setIncludeFileCompletionProvider(
@@ -410,6 +504,7 @@ void MyCodeEditor::paintEvent(QPaintEvent *event)
 
 void MyCodeEditor::contextMenuEvent(QContextMenuEvent *event)
 {
+    auto edit = beginSynchronousEditTransaction();
     state->handleContextMenu(this, event);
 }
 
@@ -450,16 +545,19 @@ EditorModuleScopeTarget MyCodeEditor::currentModuleScopeTarget() const
 
 bool MyCodeEditor::addPortRow(QString* message)
 {
+    auto edit = beginSynchronousEditTransaction();
     return state->addPortRow(this, message);
 }
 
 bool MyCodeEditor::addSignalRow(QString* message)
 {
+    auto edit = beginSynchronousEditTransaction();
     return state->addSignalRow(this, message);
 }
 
 bool MyCodeEditor::addParameterRow(QString* message)
 {
+    auto edit = beginSynchronousEditTransaction();
     return state->addParameterRow(this, message);
 }
 
@@ -477,6 +575,7 @@ EditorPackageToolAvailability MyCodeEditor::currentPackageToolAvailability()
 bool MyCodeEditor::executePackageToolInsert(PackageToolKind kind,
                                             QString* message)
 {
+    auto edit = beginSynchronousEditTransaction();
     return state->executePackageToolInsert(this, kind, message);
 }
 
@@ -530,6 +629,7 @@ bool MyCodeEditor::applyColumnSelectionTexts(const QStringList& rows,
                                              bool replaceSelection,
                                              QString* message)
 {
+    auto edit = beginSynchronousEditTransaction();
     return state->applyColumnSelectionRowTexts(this,
                                                rows,
                                                replaceSelection,
@@ -582,16 +682,19 @@ bool MyCodeEditor::formatOnSaveEnabled() const
 
 bool MyCodeEditor::formatDocumentForSave()
 {
+    auto edit = beginSynchronousEditTransaction();
     return state->formatDocumentForSave(this);
 }
 
 void MyCodeEditor::formatDocument()
 {
+    auto edit = beginSynchronousEditTransaction();
     state->formatDocument(this);
 }
 
 void MyCodeEditor::formatSelection()
 {
+    auto edit = beginSynchronousEditTransaction();
     state->formatSelection(this);
 }
 
@@ -624,6 +727,7 @@ bool MyCodeEditor::replaceNextText(const QString& needle,
                                    const QString& replacement,
                                    bool caseSensitive)
 {
+    auto edit = beginSynchronousEditTransaction();
     if (needle.isEmpty()) {
         emit editorStatusMessageRequested(tr("Find text is empty"));
         return false;
@@ -661,6 +765,7 @@ int MyCodeEditor::replaceAllText(const QString& needle,
                                  const QString& replacement,
                                  bool caseSensitive)
 {
+    auto edit = beginSynchronousEditTransaction();
     if (needle.isEmpty()) {
         emit editorStatusMessageRequested(tr("Find text is empty"));
         return 0;
@@ -720,26 +825,31 @@ void MyCodeEditor::showReplaceDialog()
 
 void MyCodeEditor::commentSelectionOrLine()
 {
+    auto edit = beginSynchronousEditTransaction();
     state->commentSelectionOrLine(this);
 }
 
 void MyCodeEditor::uncommentSelectionOrLine()
 {
+    auto edit = beginSynchronousEditTransaction();
     state->uncommentSelectionOrLine(this);
 }
 
 void MyCodeEditor::indentSelectionOrLine()
 {
+    auto edit = beginSynchronousEditTransaction();
     state->indentSelectionOrLine(this);
 }
 
 void MyCodeEditor::unindentSelectionOrLine()
 {
+    auto edit = beginSynchronousEditTransaction();
     state->unindentSelectionOrLine(this);
 }
 
 bool MyCodeEditor::clearSelectedAssignmentRhs(QString* message)
 {
+    auto edit = beginSynchronousEditTransaction();
     return state->clearSelectedAssignmentRhs(this, message);
 }
 
@@ -768,6 +878,7 @@ void MyCodeEditor::applyAppearanceSettings(
 
 void MyCodeEditor::keyPressEvent(QKeyEvent *event)
 {
+    auto edit = beginSynchronousEditTransaction();
     if (event->matches(QKeySequence::Find)) {
         showFindDialog(this);
         event->accept();
@@ -790,6 +901,12 @@ void MyCodeEditor::keyPressEvent(QKeyEvent *event)
         return;
 
     QPlainTextEdit::keyPressEvent(event);
+}
+
+void MyCodeEditor::inputMethodEvent(QInputMethodEvent* event)
+{
+    auto edit = beginSynchronousEditTransaction();
+    QPlainTextEdit::inputMethodEvent(event);
 }
 
 void MyCodeEditor::startFoldRegionMarkMode()
@@ -827,7 +944,28 @@ bool MyCodeEditor::insertCustomFoldMarkersForTest(
     int endLine,
     const QString& alias)
 {
+    auto edit = beginSynchronousEditTransaction();
     return state->insertCustomFoldMarkers(this, startLine, endLine, alias);
+}
+
+bool MyCodeEditor::toggleFoldAtLineForTest(int line)
+{
+    return state->toggleFoldAtLineForTest(this, line);
+}
+
+bool MyCodeEditor::foldCollapsedAtLineForTest(int line) const
+{
+    return state->foldCollapsedAtLineForTest(line);
+}
+
+QList<GhostAnnotation> MyCodeEditor::ghostAnnotationsForTest() const
+{
+    return state->ghostAnnotationsForTest();
+}
+
+QString MyCodeEditor::syntaxTextForTest() const
+{
+    return state->syntaxTextForTest();
 }
 
 FoldShelfItem MyCodeEditor::foldShelfItemAtLineForTest(
@@ -839,6 +977,7 @@ FoldShelfItem MyCodeEditor::foldShelfItemAtLineForTest(
 
 bool MyCodeEditor::deleteCustomFoldAtLineForTest(int line)
 {
+    auto edit = beginSynchronousEditTransaction();
     return state->deleteCustomFoldAtLine(this, line);
 }
 
@@ -846,6 +985,7 @@ bool MyCodeEditor::insertFoldShelfItemAtLineForTest(
     const FoldShelfItem& item,
     int line)
 {
+    auto edit = beginSynchronousEditTransaction();
     return state->insertFoldShelfItemAtLine(this, item, line);
 }
 
@@ -875,6 +1015,7 @@ void MyCodeEditor::dragMoveEvent(QDragMoveEvent* event)
 
 void MyCodeEditor::dropEvent(QDropEvent* event)
 {
+    auto edit = beginSynchronousEditTransaction();
     if (state->handleDrop(this, event))
         return;
 
@@ -883,6 +1024,7 @@ void MyCodeEditor::dropEvent(QDropEvent* event)
 
 void MyCodeEditor::mousePressEvent(QMouseEvent *event)
 {
+    auto edit = beginSynchronousEditTransaction();
     if (event->button() == Qt::BackButton) {
         emit navigationBackRequested();
         event->accept();
@@ -910,6 +1052,7 @@ void MyCodeEditor::mouseDoubleClickEvent(QMouseEvent *event)
 
 void MyCodeEditor::mouseMoveEvent(QMouseEvent *event)
 {
+    auto edit = beginSynchronousEditTransaction();
     if (state->handleMouseMove(this, event))
         return;
 
@@ -918,6 +1061,7 @@ void MyCodeEditor::mouseMoveEvent(QMouseEvent *event)
 
 void MyCodeEditor::mouseReleaseEvent(QMouseEvent *event)
 {
+    auto edit = beginSynchronousEditTransaction();
     if (state->handleMouseRelease(this, event))
         return;
 
@@ -955,5 +1099,6 @@ void MyCodeEditor::leaveEvent(QEvent *event)
 void MyCodeEditor::applyLineNavigationTarget(
     const SourceLineNavigationTarget& target)
 {
+    auto edit = beginSynchronousEditTransaction();
     state->applyLineNavigationTarget(this, target);
 }

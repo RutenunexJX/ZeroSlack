@@ -123,16 +123,25 @@ int main() {
         check("comment query: trailing comment true", doc.isCommentAt(s + 5));
     }
 
-    // 5) Incremental applyEditChars must produce the same highlight as a full re-parse (validates
-    //    the editor's edit path: byte/point derivation from char positions).
+    // 5) A fragment delta must produce the same highlight as a full re-parse.
     {
         QString A = QStringLiteral("module m;\nendmodule\n");
         QString ins = QStringLiteral("  logic x;\n");
         int pos = 10;  // char offset just after "module m;\n"
         QString B = A.left(pos) + ins + A.mid(pos);
 
+        DocumentChange change;
+        change.position = pos;
+        change.insertedText = ins;
+        change.oldLength = A.size();
+        change.newLength = B.size();
+        change.startLine = 1;
+        change.startColumn = 0;
+        change.oldEndLine = 1;
+        change.newEndLine = 2;
+        change.lineDelta = 1;
         TSDocument inc; inc.setText(A);
-        inc.applyEditChars(pos, pos, pos + ins.length(), B);
+        inc.applyEdit(change);
         TSDocument full; full.setText(B);
 
         QStringList bl = B.split('\n');
@@ -147,7 +156,43 @@ int main() {
                     same = false; break;
                 }
         }
-        check("incremental applyEditChars == full parse (highlight spans)", same);
+        check("incremental fragment delta == full parse (highlight spans)", same);
+    }
+
+    // 6) Live enclosing-module scope (A3): cursor inside which module, derived from the tree.
+    {
+        TSDocument repeated;
+        QString current;
+        const QStringList replacements{
+            QStringLiteral("ab"),
+            QStringLiteral("FOO"),
+            QStringLiteral("`FOO"),
+            QStringLiteral("`FOO_BAR"),
+            QStringLiteral("obj.member"),
+            QStringLiteral("pkg::member")
+        };
+        for (const QString& replacement : replacements) {
+            if (!current.isEmpty()) {
+                DocumentChange clear;
+                clear.removedLength = current.size();
+                clear.removedText = current;
+                clear.oldLength = current.size();
+                repeated.applyEdit(clear);
+                current.clear();
+            }
+            for (QChar ch : replacement) {
+                DocumentChange insert;
+                insert.position = current.size();
+                insert.insertedText = ch;
+                insert.oldLength = current.size();
+                insert.newLength = current.size() + 1;
+                insert.startColumn = current.size();
+                repeated.applyEdit(insert);
+                current.append(ch);
+            }
+            check("repeated fragment replacement keeps TS cache exact",
+                  repeated.text() == current);
+        }
     }
 
     // 6) Live enclosing-module scope (A3): cursor inside which module, derived from the tree.

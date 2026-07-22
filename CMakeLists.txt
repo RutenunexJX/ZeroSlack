@@ -705,6 +705,10 @@ if(BUILD_TESTING)
     add_executable(large_file_perf_test test_sv/large_file_perf_test.cpp)
     target_link_libraries(large_file_perf_test PRIVATE zeroslack_core Qt6::Test)
 
+    add_executable(editor_incremental_test
+        test_sv/editor_incremental_test.cpp)
+    target_link_libraries(editor_incremental_test PRIVATE zeroslack_core Qt6::Test)
+
     add_executable(analysis_scheduler_test
         test_sv/analysis_scheduler_test.cpp)
     target_link_libraries(analysis_scheduler_test PRIVATE zeroslack_core Qt6::Test)
@@ -795,6 +799,15 @@ if(BUILD_TESTING)
             "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
             $<TARGET_FILE:large_file_perf_test>
             ${CMAKE_CURRENT_SOURCE_DIR}/test_sv/new
+    )
+    add_test(NAME editor_incremental_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}"
+            "QT_QPA_PLATFORM=offscreen"
+            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
+            $<TARGET_FILE:editor_incremental_test>
+            ${CMAKE_CURRENT_SOURCE_DIR}/test_sv/new/elec_phy_import/top/rtl_top.sv
+            ${CMAKE_CURRENT_SOURCE_DIR}/test_sv/huge_prj
     )
     add_test(NAME analysis_scheduler_test
         COMMAND ${CMAKE_COMMAND} -E env

@@ -7,6 +7,7 @@
 #include "foldblockshelfmodel.h"
 #include "includeheaderworkflowtypes.h"
 #include "completiontypes.h"
+#include "documentchange.h"
 #include "packagetoolservice.h"
 #include "symbolpresentationservice.h"
 
@@ -26,6 +27,7 @@ class QPaintEvent;
 class QRect;
 class QContextMenuEvent;
 class QKeyEvent;
+class QInputMethodEvent;
 class QResizeEvent;
 class QWheelEvent;
 class EditorDocumentGeometry;
@@ -35,6 +37,7 @@ class EditorFoldingController;
 class EditorCompletionWorkflow;
 class EditorSourceNavigationUi;
 struct EditorAppearanceOptions;
+struct EditorOccurrenceIndexStats;
 struct EditorSemanticContext;
 struct EditorSourceNavigationTarget;
 struct SourceLineNavigationTarget;
@@ -78,20 +81,56 @@ struct EditorBlockGeometry {
     qreal height = 0;
 };
 
+struct EditorSynchronousEditState {
+    int transactionDepth = 0;
+    bool presentationPending = false;
+    bool cursorPresentationSuppressed = false;
+    std::uint64_t completedTransactionCount = 0;
+};
+
 class MyCodeEditor : public QPlainTextEdit
 {
     Q_OBJECT
 public:
+    class SynchronousEditTransaction
+    {
+    public:
+        SynchronousEditTransaction(const SynchronousEditTransaction&) = delete;
+        SynchronousEditTransaction& operator=(
+            const SynchronousEditTransaction&) = delete;
+        ~SynchronousEditTransaction();
+
+    private:
+        friend class MyCodeEditor;
+        explicit SynchronousEditTransaction(MyCodeEditor* editor);
+        MyCodeEditor* editor = nullptr;
+    };
+
     explicit MyCodeEditor(QWidget *parent = nullptr);
     ~MyCodeEditor();
 
+    void setPlainText(const QString& text);
+    void insertPlainText(const QString& text);
+    void clear();
+    void undo();
+    void redo();
+    void setTextCursor(const QTextCursor& cursor);
     void applyLineNavigationTarget(const SourceLineNavigationTarget& target);
     EditorBlockGeometry blockGeometry(int blockNumber) const;
     qreal documentHeightPx() const;
     void refreshScopeAndCurrentLineHighlight();
     void refreshSemanticPresentation();
     std::uint64_t semanticDocumentRevision() const;
+    QString toPlainText() const;
+    const QString& cachedDocumentText() const;
+    QString cachedDocumentSlice(int position, int length) const;
+    [[nodiscard]] SynchronousEditTransaction
+    beginSynchronousEditTransaction();
+    EditorSynchronousEditState synchronousEditStateForTest() const;
     void acceptLoadedTextAsSemanticBaseline();
+    EditorHotPathMetrics hotPathMetricsForTest() const;
+    EditorOccurrenceIndexStats occurrenceIndexStatsForTest() const;
+    void resetHotPathMetricsForTest();
     void setIncludeFileCompletionProvider(
         std::function<QStringList(const QString& currentFile)> provider);
     void setIncludeNewHeaderCreator(
@@ -167,6 +206,10 @@ public:
     bool insertCustomFoldMarkersForTest(int startLine,
                                         int endLine,
                                         const QString& alias = QString());
+    bool toggleFoldAtLineForTest(int line);
+    bool foldCollapsedAtLineForTest(int line) const;
+    QList<GhostAnnotation> ghostAnnotationsForTest() const;
+    QString syntaxTextForTest() const;
     FoldShelfItem foldShelfItemAtLineForTest(
         int line,
         FoldShelfOriginKind origin = FoldShelfOriginKind::Copied) const;
@@ -178,6 +221,7 @@ public:
 
 protected:
     void keyPressEvent(QKeyEvent *event) override;
+    void inputMethodEvent(QInputMethodEvent* event) override;
     void paintEvent(QPaintEvent *event) override;
     void resizeEvent(QResizeEvent *event) override;
     void contextMenuEvent(QContextMenuEvent *event) override;
@@ -224,6 +268,10 @@ signals:
     void formatOnSaveChanged(bool enabled);
     void foldShelfItemConsumed(const QString& id);
     void fontZoomRequested(int steps);
+    void documentChangeApplied(const DocumentChange& change);
+    void packageToolAvailabilityChanged(
+        const EditorPackageToolAvailability& availability);
+    void wavePreviewScopeChanged();
 };
 
 #endif // MYCODEEDITOR_H

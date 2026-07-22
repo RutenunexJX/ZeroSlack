@@ -6,16 +6,22 @@
 #include <QHash>
 #include <QList>
 #include <QString>
+#include <cstdint>
 
 class MyCodeEditor;
+
+struct DocumentTextCopyMetrics {
+    std::uint64_t fullTextCopyCount = 0;
+    std::uint64_t copiedCharacterCount = 0;
+};
+
+void recordDocumentTextCopy(qsizetype characterCount);
+DocumentTextCopyMetrics documentTextCopyMetricsForTest();
+void resetDocumentTextCopyMetricsForTest();
 
 struct TrackedDocument {
     DocumentSnapshot snapshot;
     MyCodeEditor* editor = nullptr;
-    QString text;
-    // Bridges any number of cursor / query refreshes that Qt can emit before
-    // DocumentModel receives textChanged for the same content mutation.
-    bool contentChangePending = false;
 };
 
 struct DocumentIndexes {
@@ -38,9 +44,6 @@ struct DocumentStore {
     TrackedDocument* find(MyCodeEditor* editor);
     const TrackedDocument* find(MyCodeEditor* editor) const;
     bool updateSnapshot(MyCodeEditor* editor, const DocumentSnapshot& snapshot);
-    bool markEdited(MyCodeEditor* editor,
-                    const DocumentSnapshot& previous,
-                    DocumentSnapshot* snapshot);
     bool markSaved(MyCodeEditor* editor, TrackedDocument* tracked);
     QList<DocumentSnapshot> snapshots() const;
     QString textForEditor(MyCodeEditor* editor) const;
@@ -66,9 +69,6 @@ struct DocumentRegistry {
     TrackedDocument value(MyCodeEditor* editor) const;
     TrackedDocument* find(MyCodeEditor* editor);
     const TrackedDocument* find(MyCodeEditor* editor) const;
-    bool markEdited(MyCodeEditor* editor,
-                    const DocumentSnapshot& previous,
-                    DocumentSnapshot* snapshot);
     bool markSaved(MyCodeEditor* editor, TrackedDocument* tracked);
     DocumentSnapshot replace(MyCodeEditor* editor,
                              const TrackedDocument& tracked,
@@ -76,6 +76,9 @@ struct DocumentRegistry {
     QList<DocumentSnapshot> snapshots() const;
     DocumentSnapshot snapshotForEditor(MyCodeEditor* editor) const;
     DocumentSnapshot snapshotForFile(const QString& fileName) const;
+    // Metadata-only queries never read editor text. The returned snapshot's
+    // text field is always empty.
+    DocumentSnapshot metadataForEditor(MyCodeEditor* editor) const;
     MyCodeEditor* editorForFile(const QString& fileName) const;
     QString textForDocumentId(const QString& documentId) const;
     QString textForFile(const QString& fileName) const;

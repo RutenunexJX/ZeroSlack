@@ -2875,6 +2875,156 @@ int main(int argc, char** argv) {
                wavePreviewPanel.canvas()
                    && wavePreviewPanel.canvas()->sizeHint().height() >= 144,
                true);
+
+    const QString mappedScopeInput = QStringLiteral(
+        "// leading line one\n"
+        "// leading line two\n"
+        "\n"
+        "module mapped_wave;\n"
+        "logic clk;\n"
+        "logic q;\n"
+        "always_ff @(posedge clk) begin\n"
+        "    q <= 1'b1;\n"
+        "end\n"
+        "endmodule\n");
+    TSDocument mappedScopeDocument;
+    mappedScopeDocument.setText(mappedScopeInput);
+    const TSModuleScopeTarget mappedModuleScope =
+        mappedScopeDocument.moduleScopeTarget(
+            mappedScopeInput.indexOf(QStringLiteral("q <=")));
+    QWidget mappedWavePanelHost;
+    WavePreviewPanelCoordinator mappedWavePanel(&mappedWavePanelHost);
+    int mappedNavigationCount = 0;
+    int mappedNavigationLine = -1;
+    int mappedNavigationColumn = -1;
+    QString mappedNavigationFile;
+    mappedWavePanel.setNavigationHandler(
+        [&](const QString& fileName, int line, int column) {
+            ++mappedNavigationCount;
+            mappedNavigationFile = fileName;
+            mappedNavigationLine = line;
+            mappedNavigationColumn = column;
+        });
+    mappedWavePanel.refreshFromDocument(
+        QStringLiteral("mapped_wave.sv"),
+        mappedScopeInput,
+        false,
+        mappedModuleScope.startChar,
+        mappedModuleScope.endChar,
+        mappedModuleScope.label,
+        mappedModuleScope.startLine);
+    const WavePreviewReport mappedInitialReport =
+        mappedWavePanel.reportForTest();
+    const WavePreviewLane* mappedInitialLane =
+        waveLaneNamed(mappedInitialReport, QStringLiteral("q"));
+    const bool mappedInitialAssignmentLine = mappedInitialLane
+        && mappedInitialLane->assignments.size() == 1
+        && mappedInitialLane->assignments.first().line == 8;
+    const bool mappedInitialBlockLines =
+        mappedInitialReport.blocks.size() == 1
+        && mappedInitialReport.blocks.first().startLine == 7
+        && mappedInitialReport.blocks.first().endLine == 9;
+    std::printf("wave.mapping.initial.scope_target_line=%d report_scope=%d assignment=%d block_start=%d block_end=%d\n",
+                mappedModuleScope.startLine,
+                mappedInitialReport.scopeStartLine,
+                mappedInitialLane && !mappedInitialLane->assignments.isEmpty()
+                    ? mappedInitialLane->assignments.first().line
+                    : -1,
+                !mappedInitialReport.blocks.isEmpty()
+                    ? mappedInitialReport.blocks.first().startLine
+                    : -1,
+                !mappedInitialReport.blocks.isEmpty()
+                    ? mappedInitialReport.blocks.first().endLine
+                    : -1);
+    expectBool("scoped WavePreview maps report lines after leading text",
+               mappedModuleScope.ok()
+                   && mappedModuleScope.startLine == 3
+                   && mappedInitialReport.scopeStartLine == 4
+                   && mappedInitialAssignmentLine
+                   && mappedInitialBlockLines,
+               true);
+
+    const QString insertedLeadingLine = QStringLiteral("// inserted lead\n");
+    const QString mappedEditedInput = insertedLeadingLine + mappedScopeInput;
+    DocumentChange mappedLeadingChange;
+    mappedLeadingChange.position = 0;
+    mappedLeadingChange.insertedText = insertedLeadingLine;
+    mappedLeadingChange.oldLength = mappedScopeInput.size();
+    mappedLeadingChange.newLength = mappedEditedInput.size();
+    mappedLeadingChange.startLine = 0;
+    mappedLeadingChange.startColumn = 0;
+    mappedLeadingChange.oldEndLine = 0;
+    mappedLeadingChange.newEndLine = 1;
+    mappedLeadingChange.lineDelta = 1;
+    mappedWavePanel.resetRefreshMetricsForTest();
+    mappedWavePanel.applyDocumentChange(
+        QStringLiteral("mapped_wave.sv"),
+        mappedLeadingChange,
+        mappedEditedInput,
+        true,
+        mappedModuleScope.startChar + insertedLeadingLine.size(),
+        mappedModuleScope.endChar + insertedLeadingLine.size(),
+        mappedModuleScope.label,
+        mappedModuleScope.startLine + 1);
+    const WavePreviewReport mappedEditedReport =
+        mappedWavePanel.reportForTest();
+    const WavePreviewLane* mappedEditedLane =
+        waveLaneNamed(mappedEditedReport, QStringLiteral("q"));
+    const WavePreviewAssignment* mappedEditedAssignment =
+        mappedEditedLane && mappedEditedLane->assignments.size() == 1
+            ? &mappedEditedLane->assignments.first()
+            : nullptr;
+    const bool mappedEditedBlockLines =
+        mappedEditedReport.blocks.size() == 1
+        && mappedEditedReport.blocks.first().startLine == 8
+        && mappedEditedReport.blocks.first().endLine == 10;
+    std::printf("wave.mapping.edited.report_scope=%d assignment=%d block_start=%d block_end=%d delta_updates=%d rebuilds=%d\n",
+                mappedEditedReport.scopeStartLine,
+                mappedEditedAssignment ? mappedEditedAssignment->line : -1,
+                !mappedEditedReport.blocks.isEmpty()
+                    ? mappedEditedReport.blocks.first().startLine
+                    : -1,
+                !mappedEditedReport.blocks.isEmpty()
+                    ? mappedEditedReport.blocks.first().endLine
+                    : -1,
+                mappedWavePanel.refreshMetricsForTest().scopeDeltaUpdateCount,
+                mappedWavePanel.refreshMetricsForTest().scopeRebuildCount);
+    expectBool("edit before scoped WavePreview remaps global lines exactly",
+               mappedEditedReport.scopeStartLine == 5
+                   && mappedEditedAssignment
+                   && mappedEditedAssignment->line == 9
+                   && mappedEditedBlockLines
+                   && mappedWavePanel.refreshMetricsForTest()
+                          .scopeDeltaUpdateCount == 1
+                   && mappedWavePanel.refreshMetricsForTest()
+                          .scopeRebuildCount == 0,
+               true);
+    QTreeWidgetItem* mappedEventItem = nullptr;
+    if (QTreeWidget* mappedTree = mappedWavePanel.tree()) {
+        for (int index = 0; index < mappedTree->topLevelItemCount(); ++index) {
+            QTreeWidgetItem* item = mappedTree->topLevelItem(index);
+            if (item && item->text(0) == QStringLiteral("q")
+                && item->childCount() == 1) {
+                mappedEventItem = item->child(0);
+                break;
+            }
+        }
+        if (mappedEventItem)
+            mappedTree->itemDoubleClicked(mappedEventItem, 0);
+    }
+    expectBool("scoped WavePreview navigation uses global one-based line",
+               mappedEditedAssignment
+                   && mappedNavigationCount == 1
+                   && mappedNavigationFile == QStringLiteral("mapped_wave.sv")
+                   && mappedNavigationLine == 9
+                   && mappedNavigationColumn
+                          == mappedEditedAssignment->column,
+               true);
+    std::printf("wave.mapping.navigation.count=%d line=%d column=%d\n",
+                mappedNavigationCount,
+                mappedNavigationLine,
+                mappedNavigationColumn);
+
     QWidget unavailableWavePreviewHost;
     WavePreviewPanelCoordinator unavailableWavePreviewPanel(
         &unavailableWavePreviewHost);

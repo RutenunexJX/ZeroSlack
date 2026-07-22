@@ -37,6 +37,7 @@ class QTimer;
 class QToolButton;
 class QVBoxLayout;
 class QWidget;
+struct DocumentChange;
 struct WorkspaceSessionState;
 struct UserTemplateLoadReport;
 struct SemanticAnalysisTelemetry;
@@ -94,6 +95,9 @@ private:
     QWidget* packageToolsBar = nullptr;
     QLabel* packageToolsPackageLabel = nullptr;
     QList<QToolButton*> packageToolButtons;
+    MyCodeEditor* packageToolsStateEditor = nullptr;
+    EditorPackageToolAvailability packageToolsState;
+    bool packageToolsStateValid = false;
     QProgressBar* workspaceProgressBar = nullptr;
     QTabBar* workspaceTabBar = nullptr;
     QTimer* activeEditorPassiveRefreshTimer = nullptr;
@@ -115,6 +119,9 @@ private:
     void setupCommandLayer();
     void setupPackageTools(QVBoxLayout* editorLayout, QWidget* parent);
     void updatePackageTools();
+    void updatePackageToolsForEditor(
+        MyCodeEditor* editor,
+        const EditorPackageToolAvailability& availability);
     void insertPackageTool(PackageToolKind kind);
     void setupFoldBlockShelf();
     void setupViewMenu();
@@ -177,6 +184,9 @@ private:
         const QString& changedFileName = QString());
     void runActiveEditorPassiveRefresh();
     void refreshActiveEditorWavePreview();
+    void applyActiveEditorWavePreviewChange(
+        MyCodeEditor* editor,
+        const DocumentChange& change);
 
 };
 

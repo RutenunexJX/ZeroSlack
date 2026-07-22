@@ -9,12 +9,12 @@ TrackedDocument DocumentSnapshotReader::capture(
     const TrackedDocument* previous) const
 {
     TrackedDocument tracked;
-    tracked.editor = editor;
     if (!editor)
         return tracked;
 
     if (previous)
-        tracked.snapshot = previous->snapshot;
+        tracked = *previous;
+    tracked.editor = editor;
 
     captureFileIdentity(editor, &tracked.snapshot);
     captureCursorState(editor, &tracked.snapshot);
@@ -26,23 +26,12 @@ TrackedDocument DocumentSnapshotReader::capture(
         qMin<std::uint64_t>(editor->semanticDocumentRevision(),
                             static_cast<std::uint64_t>(
                                 std::numeric_limits<int>::max())));
-    const QString currentText = editor->toPlainText();
-    tracked.snapshot.text = currentText;
-    const bool contentChanged = previous && previous->text != currentText;
-    tracked.contentChangePending = previous
-        && (previous->contentChangePending || contentChanged);
-    // A cursorPositionChanged notification can precede textChanged for the
-    // same edit. Compare the authoritative cached text instead of relying on
-    // Qt's modified flag or signal order. Pure setup / highlighting revisions
-    // may advance a clean baseline; any content change must preserve it until
-    // DocumentStore::markEdited records the dirty transition.
-    if (!previous
-        || (!tracked.contentChangePending
-            && previous->snapshot.saved
-            && !previous->snapshot.dirty)) {
+    if (!previous) {
+        const QString& currentText = editor->cachedDocumentText();
+        recordDocumentTextCopy(currentText.size());
+        tracked.snapshot.text = QString(currentText.constData(),
+                                        currentText.size());
         tracked.snapshot.savedTextVersion = tracked.snapshot.textVersion;
     }
-
-    tracked.text = currentText;
     return tracked;
 }

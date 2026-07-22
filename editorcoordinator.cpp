@@ -1182,9 +1182,11 @@ bool EditorCoordinator::applySafeRenamePlan(
                   edits.end(),
                   [](const SafeRenameTextEdit& lhs,
                      const SafeRenameTextEdit& rhs) {
-            return lhs.startPosition > rhs.startPosition;
-        });
+                     return lhs.startPosition > rhs.startPosition;
+                  });
 
+        auto editTransaction =
+            editor->beginSynchronousEditTransaction();
         QTextCursor cursor(editor->document());
         cursor.beginEditBlock();
         for (const SafeRenameTextEdit& edit : edits) {
@@ -1252,6 +1254,7 @@ bool EditorCoordinator::createDefinitionAndRenameCurrentFile(
     const QString insertionText =
         indentedDefinitionText(definitionText, indentation);
 
+    auto editTransaction = editor->beginSynchronousEditTransaction();
     QTextCursor cursor(editor->document());
     cursor.beginEditBlock();
     cursor.setPosition(insertionPosition);

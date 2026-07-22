@@ -9,6 +9,7 @@
 
 namespace {
 constexpr int kMaxInteractiveSyntaxCharacters = 2 * 1024 * 1024;
+constexpr int kLargeFileScopeRadiusCharacters = 32 * 1024;
 }
 
 EditorSyntaxState::EditorSyntaxState() = default;
@@ -18,10 +19,22 @@ EditorSyntaxState::~EditorSyntaxState() = default;
 void EditorSyntaxState::init()
 {
     document = std::make_unique<TSDocument>();
+    largeFileScopeDocument = std::make_unique<TSDocument>();
+}
+
+void EditorSyntaxState::invalidateLargeFileScope()
+{
+    if (largeFileScopeDocument)
+        largeFileScopeDocument->setText(QString());
+    largeFileScopeStartPosition = -1;
+    largeFileScopeEndPosition = -1;
+    largeFileScopeStartLine = 0;
+    largeFileDocumentLength = 0;
 }
 
 void EditorSyntaxState::syncText(const QString& text)
 {
+    invalidateLargeFileScope();
     if (text.size() > kMaxInteractiveSyntaxCharacters) {
         interactiveSyntaxEnabled = false;
         document->setText(QString());
@@ -39,62 +52,140 @@ void EditorSyntaxState::createHighlighter(QTextDocument* textDocument)
 
 void EditorSyntaxState::attachToEditor(MyCodeEditor* editor)
 {
-    syncText(editor->document()->toPlainText());
-    QObject::connect(
-        editor->document(),
-        &QTextDocument::contentsChange,
-        editor,
-        [this, editor](int position, int charsRemoved, int charsAdded) {
-            applyDocumentChange(
-                position,
-                charsRemoved,
-                charsAdded,
-                editor->document());
-        });
     createHighlighter(editor->document());
 }
 
-void EditorSyntaxState::applyDocumentChange(
-    int position,
-    int charsRemoved,
-    int charsAdded,
-    QTextDocument* textDocument)
+QList<TSChangedRange> EditorSyntaxState::applyDocumentChange(
+    const DocumentChange& change,
+    const QString& currentText)
 {
-    if (!textDocument)
-        return;
-
-    if (textDocument->characterCount() > kMaxInteractiveSyntaxCharacters) {
+    if (change.newLength > kMaxInteractiveSyntaxCharacters) {
         if (interactiveSyntaxEnabled)
             syncText(QString());
         interactiveSyntaxEnabled = false;
-        return;
+        applyLargeFileScopeChange(change);
+        return {};
     }
 
-    const QString text = textDocument->toPlainText();
     if (!interactiveSyntaxEnabled) {
-        syncText(text);
-        return;
+        syncText(currentText);
+        TSChangedRange range;
+        range.endChar = currentText.size();
+        range.endLine = currentText.count(QLatin1Char('\n'));
+        return {range};
     }
 
-    applyEdit(position, charsRemoved, charsAdded, text);
+    if (document->text().size() != change.oldLength
+        || document->text().mid(change.position, change.removedLength)
+               != change.removedText) {
+        syncText(currentText);
+        TSChangedRange range;
+        range.endChar = currentText.size();
+        range.endLine = currentText.count(QLatin1Char('\n'));
+        return {range};
+    }
+
+    QList<TSChangedRange> ranges = document->applyEdit(change);
+    if (ranges.isEmpty()) {
+        TSChangedRange range;
+        range.startChar = change.position;
+        range.endChar = change.newEnd();
+        range.startLine = change.startLine;
+        range.endLine = qMax(change.startLine, change.newEndLine);
+        ranges.append(range);
+    }
+    return ranges;
 }
 
-void EditorSyntaxState::applyEdit(
-    int position,
-    int charsRemoved,
-    int charsAdded,
-    const QString& text)
+void EditorSyntaxState::applyLargeFileScopeChange(
+    const DocumentChange& change)
 {
-    if (!interactiveSyntaxEnabled) {
-        syncText(text);
+    if (!largeFileScopeDocument || largeFileScopeStartPosition < 0)
+        return;
+    if (change.oldLength != largeFileDocumentLength) {
+        invalidateLargeFileScope();
         return;
     }
 
-    document->applyEditChars(
-        position,
-        position + charsRemoved,
-        position + charsAdded,
-        text);
+    if (change.oldEnd() <= largeFileScopeStartPosition) {
+        largeFileScopeStartPosition += change.characterDelta();
+        largeFileScopeEndPosition += change.characterDelta();
+        largeFileScopeStartLine += change.lineDelta;
+        largeFileDocumentLength = change.newLength;
+        return;
+    }
+    if (change.position >= largeFileScopeEndPosition) {
+        largeFileDocumentLength = change.newLength;
+        return;
+    }
+    if (change.position < largeFileScopeStartPosition
+        || change.oldEnd() > largeFileScopeEndPosition) {
+        invalidateLargeFileScope();
+        return;
+    }
+
+    DocumentChange localChange = change;
+    localChange.position -= largeFileScopeStartPosition;
+    localChange.oldLength = largeFileScopeEndPosition
+        - largeFileScopeStartPosition;
+    localChange.newLength = localChange.oldLength
+        - localChange.removedLength + localChange.insertedText.size();
+    localChange.startLine -= largeFileScopeStartLine;
+    localChange.oldEndLine -= largeFileScopeStartLine;
+    localChange.newEndLine -= largeFileScopeStartLine;
+    largeFileScopeDocument->applyEdit(localChange);
+    largeFileScopeEndPosition += change.characterDelta();
+    largeFileDocumentLength = change.newLength;
+}
+
+bool EditorSyntaxState::ensureLargeFileScope(
+    const QString& currentText,
+    int cursorChar,
+    bool allowBuild) const
+{
+    const int boundedCursor = qBound(0, cursorChar, currentText.size());
+    if (largeFileScopeDocument
+        && largeFileScopeStartPosition >= 0
+        && largeFileDocumentLength == currentText.size()
+        && boundedCursor >= largeFileScopeStartPosition
+        && boundedCursor < largeFileScopeEndPosition) {
+        return true;
+    }
+    if (!allowBuild || !largeFileScopeDocument || currentText.isEmpty())
+        return false;
+
+    int windowStart = qMax(0,
+                           boundedCursor
+                               - kLargeFileScopeRadiusCharacters);
+    if (windowStart > 0) {
+        const int precedingNewline =
+            currentText.lastIndexOf(QLatin1Char('\n'), windowStart - 1);
+        windowStart = precedingNewline >= 0 ? precedingNewline + 1 : 0;
+    }
+    int windowEnd = qMin(currentText.size(),
+                         boundedCursor
+                             + kLargeFileScopeRadiusCharacters);
+    if (windowEnd < currentText.size()) {
+        const int followingNewline =
+            currentText.indexOf(QLatin1Char('\n'), windowEnd);
+        windowEnd = followingNewline >= 0 ? followingNewline + 1
+                                          : currentText.size();
+    }
+    if (windowEnd <= windowStart)
+        return false;
+
+    int startLine = 0;
+    for (int index = 0; index < windowStart; ++index) {
+        if (currentText.at(index) == QLatin1Char('\n'))
+            ++startLine;
+    }
+    largeFileScopeDocument->setText(
+        currentText.mid(windowStart, windowEnd - windowStart));
+    largeFileScopeStartPosition = windowStart;
+    largeFileScopeEndPosition = windowEnd;
+    largeFileScopeStartLine = startLine;
+    largeFileDocumentLength = currentText.size();
+    return true;
 }
 
 QString EditorSyntaxState::moduleNameAt(int charPos) const
@@ -151,27 +242,83 @@ TSModuleEndNavigationTarget EditorSyntaxState::moduleEndNavigationTargetAt(
 TSAlwaysScopeTarget EditorSyntaxState::alwaysScopeTargetAt(
     int cursorChar,
     int selectionStartChar,
-    int selectionEndChar) const
+    int selectionEndChar,
+    const QString& currentText,
+    bool allowLargeFileScopeBuild) const
 {
     TSAlwaysScopeTarget target;
-    if (!interactiveSyntaxEnabled)
+    if (interactiveSyntaxEnabled) {
+        return document->alwaysScopeTarget(cursorChar < 0 ? 0 : cursorChar,
+                                           selectionStartChar,
+                                           selectionEndChar);
+    }
+    if (!ensureLargeFileScope(currentText,
+                              cursorChar,
+                              allowLargeFileScopeBuild)) {
         return target;
-    return document->alwaysScopeTarget(cursorChar < 0 ? 0 : cursorChar,
-                                       selectionStartChar,
-                                       selectionEndChar);
+    }
+
+    const int relativeCursor = qMax(0,
+                                    cursorChar
+                                        - largeFileScopeStartPosition);
+    const int relativeSelectionStart = selectionStartChar >= 0
+        ? selectionStartChar - largeFileScopeStartPosition
+        : -1;
+    const int relativeSelectionEnd = selectionEndChar >= 0
+        ? selectionEndChar - largeFileScopeStartPosition
+        : -1;
+    target = largeFileScopeDocument->alwaysScopeTarget(
+        relativeCursor,
+        relativeSelectionStart,
+        relativeSelectionEnd);
+    if (target.ok()) {
+        target.startChar += largeFileScopeStartPosition;
+        target.endChar += largeFileScopeStartPosition;
+        target.startLine += largeFileScopeStartLine;
+        target.endLine += largeFileScopeStartLine;
+    }
+    return target;
 }
 
 TSModuleScopeTarget EditorSyntaxState::moduleScopeTargetAt(
     int cursorChar,
     int selectionStartChar,
-    int selectionEndChar) const
+    int selectionEndChar,
+    const QString& currentText,
+    bool allowLargeFileScopeBuild) const
 {
     TSModuleScopeTarget target;
-    if (!interactiveSyntaxEnabled)
+    if (interactiveSyntaxEnabled) {
+        return document->moduleScopeTarget(cursorChar < 0 ? 0 : cursorChar,
+                                           selectionStartChar,
+                                           selectionEndChar);
+    }
+    if (!ensureLargeFileScope(currentText,
+                              cursorChar,
+                              allowLargeFileScopeBuild)) {
         return target;
-    return document->moduleScopeTarget(cursorChar < 0 ? 0 : cursorChar,
-                                       selectionStartChar,
-                                       selectionEndChar);
+    }
+
+    const int relativeCursor = qMax(0,
+                                    cursorChar
+                                        - largeFileScopeStartPosition);
+    const int relativeSelectionStart = selectionStartChar >= 0
+        ? selectionStartChar - largeFileScopeStartPosition
+        : -1;
+    const int relativeSelectionEnd = selectionEndChar >= 0
+        ? selectionEndChar - largeFileScopeStartPosition
+        : -1;
+    target = largeFileScopeDocument->moduleScopeTarget(
+        relativeCursor,
+        relativeSelectionStart,
+        relativeSelectionEnd);
+    if (target.ok()) {
+        target.startChar += largeFileScopeStartPosition;
+        target.endChar += largeFileScopeStartPosition;
+        target.startLine += largeFileScopeStartLine;
+        target.endLine += largeFileScopeStartLine;
+    }
+    return target;
 }
 
 TSBeginEndInsideTarget EditorSyntaxState::beginEndInsideTargetAt(

@@ -32,6 +32,8 @@ public:
     MyCodeEditor* getCurrentEditor() const;
     MyCodeEditor* getEditorAt(int index) const;
     DocumentSnapshot getCurrentDocument() const;
+    // Metadata-only: text is empty and no cached editor text is copied.
+    DocumentSnapshot getCurrentDocumentMetadata() const;
     DocumentSnapshot getDocumentForEditor(MyCodeEditor* editor) const;
     bool activateOpenFile(const QString& fileName);
     QString getPlainTextFromCurrentTab() const;

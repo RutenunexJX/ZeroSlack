@@ -1,5 +1,7 @@
 #include "documentregistry.h"
 
+#include "mycodeeditor.h"
+
 QList<DocumentSnapshot> DocumentRegistry::snapshots() const
 {
     return documents.snapshots();
@@ -8,7 +10,26 @@ QList<DocumentSnapshot> DocumentRegistry::snapshots() const
 DocumentSnapshot DocumentRegistry::snapshotForEditor(MyCodeEditor* editor) const
 {
     const TrackedDocument* tracked = documents.find(editor);
-    return tracked ? tracked->snapshot : DocumentSnapshot();
+    if (!tracked)
+        return DocumentSnapshot();
+    DocumentSnapshot snapshot = tracked->snapshot;
+    if (tracked->editor) {
+        const QString& text = tracked->editor->cachedDocumentText();
+        recordDocumentTextCopy(text.size());
+        snapshot.text = QString(text.constData(), text.size());
+    }
+    return snapshot;
+}
+
+DocumentSnapshot DocumentRegistry::metadataForEditor(
+    MyCodeEditor* editor) const
+{
+    const TrackedDocument* tracked = documents.find(editor);
+    if (!tracked)
+        return DocumentSnapshot();
+    DocumentSnapshot metadata = tracked->snapshot;
+    metadata.text.clear();
+    return metadata;
 }
 
 DocumentSnapshot DocumentRegistry::snapshotForFile(
