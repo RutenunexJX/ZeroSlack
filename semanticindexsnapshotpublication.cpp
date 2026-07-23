@@ -354,6 +354,12 @@ std::shared_ptr<const SemanticIndexSnapshot> SemanticIndex::snapshot() const
     return m_snapshot;
 }
 
+bool SemanticIndex::hasSymbolRecords() const
+{
+    const std::shared_ptr<const SemanticIndexSnapshot> current = snapshot();
+    return current && current->symbolRecordCount() > 0;
+}
+
 std::uint64_t SemanticIndex::snapshotRevision() const
 {
     return m_snapshotRevision;

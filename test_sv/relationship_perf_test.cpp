@@ -15,6 +15,7 @@
 #include <QEventLoop>
 #include <QFile>
 #include <QFileInfo>
+#include <QSet>
 #include <QStringList>
 #include <QTextStream>
 #include <QTimer>
@@ -22,6 +23,8 @@
 #include <cstdio>
 
 namespace {
+int relationship_validation_failures = 0;
+
 QString normalizedPath(const QString& path)
 {
     return QDir::cleanPath(
@@ -80,6 +83,92 @@ QString normalizedFileKey(const QString& fileName)
         return QString();
     return QDir::cleanPath(
         QDir::fromNativeSeparators(QFileInfo(fileName).absoluteFilePath()));
+}
+
+void requirePositiveMetric(const char* name, qint64 actual)
+{
+    if (actual > 0)
+        return;
+    ++relationship_validation_failures;
+    std::fprintf(stderr,
+                 "relationship validation failed: %s actual=%lld expected=>0\n",
+                 name,
+                 static_cast<long long>(actual));
+}
+
+void requireEqualMetric(const char* name,
+                        qint64 actual,
+                        qint64 expected)
+{
+    if (actual == expected)
+        return;
+    ++relationship_validation_failures;
+    std::fprintf(stderr,
+                 "relationship validation failed: %s actual=%lld expected=%lld\n",
+                 name,
+                 static_cast<long long>(actual),
+                 static_cast<long long>(expected));
+}
+
+void requireExtractionCoverage(
+    const QStringList& expectedFiles,
+    const QHash<QString, RelationshipExtractionInfo>& infoByFile)
+{
+    QSet<QString> expectedKeys;
+    expectedKeys.reserve(expectedFiles.size());
+    for (const QString& fileName : expectedFiles)
+        expectedKeys.insert(normalizedFileKey(fileName));
+
+    QSet<QString> actualKeys;
+    actualKeys.reserve(infoByFile.size());
+    for (auto it = infoByFile.constBegin(); it != infoByFile.constEnd(); ++it)
+        actualKeys.insert(normalizedFileKey(it.key()));
+
+    const QSet<QString> missing = expectedKeys - actualKeys;
+    const QSet<QString> unexpected = actualKeys - expectedKeys;
+    if (missing.isEmpty() && unexpected.isEmpty()
+        && infoByFile.size() == expectedKeys.size()) {
+        return;
+    }
+
+    ++relationship_validation_failures;
+    const QString firstMissing = missing.isEmpty()
+        ? QStringLiteral("<none>") : *missing.constBegin();
+    const QString firstUnexpected = unexpected.isEmpty()
+        ? QStringLiteral("<none>") : *unexpected.constBegin();
+    std::fprintf(
+        stderr,
+        "relationship validation failed: extraction coverage expected=%d actual=%d missing=%d unexpected=%d first_missing=%s first_unexpected=%s\n",
+        expectedKeys.size(),
+        infoByFile.size(),
+        missing.size(),
+        unexpected.size(),
+        firstMissing.toLocal8Bit().constData(),
+        firstUnexpected.toLocal8Bit().constData());
+}
+
+int canonicalPublishedEngineRelationshipCount(
+    const WorkspaceRelationshipAnalysisResult& result)
+{
+    // RelationshipResultPublisher feeds fileRelationships to the engine.
+    // The engine's documented identity is (from handle, to handle, type),
+    // while the semantic snapshot may retain distinct access paths for the
+    // same endpoints. Reproduce the engine identity exactly and verify that
+    // every canonical edge supplied for publication is present.
+    QSet<QString> keys;
+    for (const auto& fileResult : result.fileRelationships) {
+        for (const RelationshipToAdd& relationship : fileResult.second) {
+            if (relationship.fromId < 0 || relationship.toId < 0
+                || relationship.fromId == relationship.toId) {
+                continue;
+            }
+            keys.insert(QStringLiteral("%1:%2:%3")
+                            .arg(relationship.fromId)
+                            .arg(relationship.toId)
+                            .arg(static_cast<int>(relationship.type)));
+        }
+    }
+    return keys.size();
 }
 
 QList<SemanticSymbolRecord> fileSymbolRecords(
@@ -151,12 +240,16 @@ int main(int argc, char** argv)
     projectModel.setWorkspaceRoot(workspaceRoot);
     projectModel.setScannedFiles(allFiles);
     const ProjectSnapshot project = projectModel.snapshot();
-    if (!project.isOpen() || project.systemVerilogFiles.isEmpty()) {
+    if (!project.isOpen()) {
         std::fprintf(stderr,
-                     "workspace has no HDL files: %s\n",
+                     "workspace is not open: %s\n",
                      workspaceRoot.toLocal8Bit().constData());
         return 3;
     }
+    requirePositiveMetric("project.systemVerilogFiles",
+                          project.systemVerilogFiles.size());
+    if (relationship_validation_failures != 0)
+        return 3;
     printMetric(QStringLiteral("all_files"), allFiles.size());
     printMetric(QStringLiteral("hdl_files"), project.systemVerilogFiles.size());
     printMetric(QStringLiteral("hdl_bytes"), totalBytes(project.systemVerilogFiles));
@@ -240,6 +333,7 @@ int main(int argc, char** argv)
     printMetric(QStringLiteral("diagnostics"),
                 symbolTelemetry.diagnostics);
     printMetric(QStringLiteral("symbols"), symbolCount);
+    requirePositiveMetric("symbolCount", symbolCount);
 
     SlangManager slangManager;
     SymbolRelationshipEngine relationshipEngine;
@@ -266,6 +360,8 @@ int main(int argc, char** argv)
                 result.extractionMs);
     printMetric(QStringLiteral("relationship_extraction_buckets"),
                 relationshipInfoByFile.size());
+    requireExtractionCoverage(project.systemVerilogFiles,
+                              relationshipInfoByFile);
 
     printEvent(QStringLiteral("relationship_compute_start"));
     result.fileRelationships.reserve(project.systemVerilogFiles.size());
@@ -378,10 +474,32 @@ int main(int argc, char** argv)
     printMetric(QStringLiteral("relationships"), result.relationshipCount);
     printMetric(QStringLiteral("engine_relationships"),
                 relationshipEngine.getRelationshipCount());
+    requireEqualMetric("processedFiles",
+                       result.processedFiles,
+                       result.totalFiles);
+    requirePositiveMetric("relationshipCount", result.relationshipCount);
+    const std::shared_ptr<const SemanticIndexSnapshot> publishedSnapshot =
+        semanticIndex->snapshot();
+    const int publishedRelationshipCount = publishedSnapshot
+        ? publishedSnapshot->relationshipCount() : 0;
+    const int publishedEngineRelationshipCount =
+        canonicalPublishedEngineRelationshipCount(result);
+    printMetric(QStringLiteral("published_relationships"),
+                publishedRelationshipCount);
+    printMetric(QStringLiteral("published_engine_relationships"),
+                publishedEngineRelationshipCount);
+    requirePositiveMetric("publishedRelationshipCount",
+                          publishedRelationshipCount);
+    requirePositiveMetric("publishedEngineRelationshipCount",
+                          publishedEngineRelationshipCount);
+    requireEqualMetric("relationshipEngine.getRelationshipCount",
+                       relationshipEngine.getRelationshipCount(),
+                       publishedEngineRelationshipCount);
 
     RelationshipService relationshipService(semanticIndex);
     const QList<SemanticSymbolRecord> ctlDefs =
         semanticIndex->findDefinitionRecords(QStringLiteral("vendor_ip_ctl"));
+    requirePositiveMetric("vendor_ip_ctl definitions", ctlDefs.size());
     if (!ctlDefs.isEmpty()) {
         RelationshipQuery ctlIncomingQuery;
         ctlIncomingQuery.symbolStableKey = ctlDefs.first().stableKey;
@@ -409,6 +527,7 @@ int main(int argc, char** argv)
     printMetric(QStringLiteral("design_top_count"), designTops.size());
     printTextMetric(QStringLiteral("design_top_roots"),
                     designTops.mid(0, 12).join(QLatin1Char(',')));
+    requirePositiveMetric("inferred design tops", designTops.size());
 
     printEvent(QStringLiteral("design_hierarchy_start"));
     timer.restart();
@@ -430,6 +549,32 @@ int main(int argc, char** argv)
         navigationService.findDesignHierarchy(QStringLiteral("vendor_ip_gphy"));
     printMetric(QStringLiteral("design_gphy_nodes"), gphyReport.nodes.size());
     printMetric(QStringLiteral("design_gphy_files"), gphyReport.participatingFiles.size());
+
+    requirePositiveMetric("inferred design hierarchy nodes",
+                          designReport.nodes.size());
+    requirePositiveMetric("inferred design hierarchy files",
+                          designReport.participatingFiles.size());
+    requirePositiveMetric("vendor_ip_ctl hierarchy nodes",
+                          ctlReport.nodes.size());
+    requirePositiveMetric("vendor_ip_ctl hierarchy files",
+                          ctlReport.participatingFiles.size());
+
+    if (relationship_validation_failures != 0) {
+        std::fprintf(stderr,
+                     "relationship validation failed: failures=%d files=%d processed=%d extraction_buckets=%d symbols=%d raw_relationships=%d snapshot_relationships=%d published_engine_relationships=%d engine_relationships=%d ctl_definitions=%d ctl_nodes=%d\n",
+                     relationship_validation_failures,
+                     result.totalFiles,
+                     result.processedFiles,
+                     relationshipInfoByFile.size(),
+                     symbolCount,
+                     result.relationshipCount,
+                     publishedRelationshipCount,
+                     publishedEngineRelationshipCount,
+                     relationshipEngine.getRelationshipCount(),
+                     ctlDefs.size(),
+                     ctlReport.nodes.size());
+        return 7;
+    }
 
     return 0;
 }

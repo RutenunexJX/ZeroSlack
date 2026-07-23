@@ -2,7 +2,6 @@
 #define ANALYSISSCHEDULER_H
 
 #include "documentmodel.h"
-#include "opendocumentanalysiscontroller.h"
 #include "projectmodel.h"
 #include "semanticanalysisrequest.h"
 #include "relationshipanalysiscontroller.h"
@@ -43,8 +42,6 @@ public:
     void setRelationshipEngine(SymbolRelationshipEngine* engine);
     void setRelationshipBuilder(SmartRelationshipBuilder* builder);
 
-    void scheduleOpenFileAnalysis(const QString& fileName, int delayMs);
-    void cancelScheduledOpenFileAnalysis(const QString& fileName);
     void scheduleRelationshipAnalysis(const QString& fileName,
                                       const QString& content,
                                       int delayMs);
@@ -106,7 +103,6 @@ private:
     QPointer<DocumentModel> documentModel;
     QPointer<ProjectModel> projectModel;
     QPointer<SymbolAnalyzer> symbolAnalyzer;
-    OpenDocumentAnalysisController* openDocumentAnalysis = nullptr;
     RelationshipAnalysisController* relationshipAnalysis = nullptr;
     RelationshipAnalysisQueue* relationshipAnalysisQueue = nullptr;
     RelationshipResultPublisher* relationshipResultPublisher = nullptr;
@@ -175,7 +171,6 @@ private:
         const SemanticAnalysisRequest& request);
 
     QString contentForOpenFile(const QString& fileName) const;
-    void setupOpenDocumentAnalysis();
     void setupRelationshipAnalysis();
     void setupWorkspaceSymbolAnalysis();
     void setupDiagnosticsRefreshAndWorkspaceRequests();

@@ -5,14 +5,33 @@
 #include <QApplication>
 #include <QDebug>
 #include <QDir>
+#include <QElapsedTimer>
 #include <QFont>
 #include <QFontDatabase>
 #include <QHBoxLayout>
 #include <QPixmap>
+#include <QThread>
+#include <QTimer>
 
+#include <atomic>
+#include <functional>
 #include <memory>
 
 namespace {
+bool waitUntil(const std::function<bool()>& predicate, int timeoutMs)
+{
+    QElapsedTimer timer;
+    timer.start();
+    while (timer.elapsed() < timeoutMs) {
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+        if (predicate())
+            return true;
+        QThread::msleep(1);
+    }
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+    return predicate();
+}
+
 SignalUsageHotspotItem item(SignalUsageHotspotRole role,
                             const QString& moduleName,
                             const QString& fileName,
@@ -381,11 +400,69 @@ bool verifyControlledTrackGeometry(SignalUsageHotspotPanel& panel,
     }
     return true;
 }
+
+bool verifyReportBuildIsAsyncAndLatestWins()
+{
+    SignalUsageHotspotPanel panel;
+    std::atomic<bool> slowStarted{false};
+    panel.setReportBuilderForTest(
+        [&](const SignalUsageHotspotQuery& query,
+            std::shared_ptr<const SemanticIndexSnapshot>) {
+            if (query.signalName == QStringLiteral("slow")) {
+                slowStarted.store(true, std::memory_order_release);
+                QThread::msleep(200);
+            }
+            SignalUsageHotspotReport report;
+            report.found = true;
+            report.declarationDisplayName = query.signalName;
+            return report;
+        });
+
+    bool eventLoopResponsive = false;
+    QTimer::singleShot(0, &panel, [&]() { eventLoopResponsive = true; });
+    QElapsedTimer callTimer;
+    callTimer.start();
+    panel.showHotspotForSymbol(QStringLiteral("slow"),
+                               QStringLiteral("slow.sv"),
+                               QStringLiteral("slow_module"));
+    const qint64 callElapsedMs = callTimer.elapsed();
+    const bool slowRanOffThread = waitUntil(
+        [&]() {
+            return slowStarted.load(std::memory_order_acquire)
+                && eventLoopResponsive;
+        },
+        1000);
+
+    panel.showHotspotForSymbol(QStringLiteral("latest"),
+                               QStringLiteral("latest.sv"),
+                               QStringLiteral("latest_module"));
+    const bool latestPublished = waitUntil(
+        [&]() {
+            return panel.currentDeclarationDisplayNameForTest()
+                == QStringLiteral("latest");
+        },
+        1000);
+
+    const bool allFinished = waitUntil(
+        [&]() { return !panel.reportBuildInFlightForTest(); },
+        1000);
+    qInfo() << "Hotspot async dispatch latency ms" << callElapsedMs;
+    return callElapsedMs < 50
+        && slowRanOffThread
+        && latestPublished
+        && allFinished
+        && panel.currentDeclarationDisplayNameForTest()
+               == QStringLiteral("latest");
+}
 }
 
 int main(int argc, char** argv)
 {
     QApplication app(argc, argv);
+    if (!verifyReportBuildIsAsyncAndLatestWins()) {
+        qWarning() << "Hotspot report build blocked UI or published a stale result";
+        return 1;
+    }
     SignalUsageHotspotPanel panel;
     QString navigatedFile;
     int navigatedLine = -1;

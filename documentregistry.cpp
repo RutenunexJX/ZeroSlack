@@ -1,5 +1,6 @@
 #include "documentregistry.h"
 
+#include "editorfileidentity.h"
 #include "mycodeeditor.h"
 
 #include <atomic>
@@ -51,9 +52,9 @@ void DocumentIndexes::add(
     if (!editor)
         return;
 
-    byDocumentId[snapshot.documentId] = editor;
+    byDocumentId[EditorFileIdentity::lookupKey(snapshot.documentId)] = editor;
     if (!snapshot.fileName.isEmpty())
-        byFileName[snapshot.fileName] = editor;
+        byFileName[EditorFileIdentity::lookupKey(snapshot.fileName)] = editor;
 }
 
 void DocumentIndexes::remove(
@@ -63,24 +64,28 @@ void DocumentIndexes::remove(
     if (!editor)
         return;
 
-    if (byDocumentId.value(snapshot.documentId, nullptr) == editor)
-        byDocumentId.remove(snapshot.documentId);
+    const QString documentKey =
+        EditorFileIdentity::lookupKey(snapshot.documentId);
+    const QString fileKey = EditorFileIdentity::lookupKey(snapshot.fileName);
+    if (byDocumentId.value(documentKey, nullptr) == editor)
+        byDocumentId.remove(documentKey);
     if (!snapshot.fileName.isEmpty()
-        && byFileName.value(snapshot.fileName, nullptr) == editor) {
-        byFileName.remove(snapshot.fileName);
+        && byFileName.value(fileKey, nullptr) == editor) {
+        byFileName.remove(fileKey);
     }
 }
 
 MyCodeEditor* DocumentIndexes::editorForDocumentId(
     const QString& documentId) const
 {
-    return byDocumentId.value(documentId, nullptr);
+    return byDocumentId.value(EditorFileIdentity::lookupKey(documentId),
+                              nullptr);
 }
 
 MyCodeEditor* DocumentIndexes::editorForFileName(
     const QString& fileName) const
 {
-    return byFileName.value(fileName, nullptr);
+    return byFileName.value(EditorFileIdentity::lookupKey(fileName), nullptr);
 }
 
 bool DocumentStore::contains(MyCodeEditor* editor) const

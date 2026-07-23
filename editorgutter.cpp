@@ -36,6 +36,7 @@ LineNumberWidget::LineNumberWidget(
     , codeEditor(editor)
     , gutter(gutterUi)
 {
+    setObjectName(QStringLiteral("editorLineNumberGutter"));
     setMouseTracking(true);
 }
 

@@ -146,8 +146,13 @@ QList<SemanticSymbolRecord> SemanticIndexSnapshot::findDefinitionRecords(
     const QList<int> indexes = m_symbolRecordIndexesByName.value(name);
     result.reserve(indexes.size());
     for (int index : indexes) {
-        if (index >= 0 && index < m_symbolRecords.size())
-            result.append(m_symbolRecords.at(index));
+        if (index < 0 || index >= m_symbolRecords.size())
+            continue;
+        const SemanticSymbolRecord& record = m_symbolRecords.at(index);
+        if (SymbolTaxonomy::isDefinitionCandidate(
+                semanticMetadataForSymbolRecord(record))) {
+            result.append(record);
+        }
     }
     return sortedDefinitionRecords(result, context);
 }

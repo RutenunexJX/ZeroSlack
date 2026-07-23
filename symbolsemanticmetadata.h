@@ -99,6 +99,8 @@ enum class CollectorKind {
     DefElsif,
     DefEndif,
     DefDefine,
+    MacroReference,
+    InactivePreprocessorBranch,
     DefParameter,
     Case,
     Casex,
@@ -123,7 +125,8 @@ enum class CollectorKind {
     PortRef,
     PortInterface,
     PortInterfaceModport,
-    Package
+    Package,
+    PackageImport
 };
 
 } // namespace SymbolSemanticMetadata

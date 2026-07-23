@@ -10,6 +10,7 @@
 #include "analysisprogresscoordinator.h"
 #include "commandlayercoordinator.h"
 #include "editorcoordinator.h"
+#include "editorfileidentity.h"
 #include "filecommandcoordinator.h"
 #include "navigationcommandcoordinator.h"
 #include "navigationmanager.h"
@@ -57,6 +58,7 @@
 #include <QVariant>
 #include <QFile>
 #include <QFileInfo>
+#include <QFutureWatcher>
 #include <QHeaderView>
 #include <QHBoxLayout>
 #include <QInputDialog>
@@ -69,6 +71,7 @@
 #include <QMenu>
 #include <QMenuBar>
 #include <QProgressBar>
+#include <QPointer>
 #include <QPushButton>
 #include <QMessageBox>
 #include <QSignalBlocker>
@@ -81,10 +84,17 @@
 #include <QTreeWidget>
 #include <QVBoxLayout>
 #include <QWidget>
+#include <QtConcurrent/QtConcurrentRun>
 
+#include <atomic>
 #include <utility>
 
 namespace {
+struct SemanticDecorationBuildResult {
+    SemanticDecorationReport report;
+    qint64 elapsedMs = 0;
+};
+
 DiagnosticPanelScope diagnosticScopeFromProblemsCombo(QComboBox* combo)
 {
     if (!combo)
@@ -195,6 +205,9 @@ MainWindow::MainWindow(QWidget *parent)
 
 MainWindow::~MainWindow()
 {
+    ++semanticDecorationGeneration;
+    if (semanticDecorationCancellation)
+        semanticDecorationCancellation->store(true);
     // The semantic runtime owns the shared Slang relationship builder and is
     // declared after the scheduler, so normal reverse member destruction would
     // otherwise destroy the builder first. Join and detach every background
@@ -825,15 +838,6 @@ void MainWindow::setupManagerConnections()
 void MainWindow::scheduleActiveEditorPassiveRefresh(
     const QString& changedFileName)
 {
-    if (!activeEditorPassiveRefreshTimer) {
-        activeEditorPassiveRefreshTimer = new QTimer(this);
-        activeEditorPassiveRefreshTimer->setSingleShot(true);
-        connect(activeEditorPassiveRefreshTimer,
-                &QTimer::timeout,
-                this,
-                &MainWindow::runActiveEditorPassiveRefresh);
-    }
-
     if (changedFileName.isEmpty()) {
         pendingActiveEditorPassiveRefreshAll = true;
         pendingActiveEditorPassiveRefreshFile.clear();
@@ -846,7 +850,16 @@ void MainWindow::scheduleActiveEditorPassiveRefresh(
         pendingActiveEditorPassiveRefreshFile.clear();
     }
 
-    activeEditorPassiveRefreshTimer->start(50);
+    if (activeEditorPassiveRefreshQueued)
+        return;
+    activeEditorPassiveRefreshQueued = true;
+    QMetaObject::invokeMethod(
+        this,
+        [this]() {
+            activeEditorPassiveRefreshQueued = false;
+            runActiveEditorPassiveRefresh();
+        },
+        Qt::QueuedConnection);
 }
 
 void MainWindow::runActiveEditorPassiveRefresh()
@@ -865,10 +878,7 @@ void MainWindow::runActiveEditorPassiveRefresh()
     const qint64 diagnosticsMs = stageTimer.elapsed();
     stageTimer.restart();
     refreshActiveEditorSemanticDecorations(changedFileName);
-    const qint64 decorationsMs = stageTimer.elapsed();
-    stageTimer.restart();
-    refreshActiveEditorGhostAnnotations(changedFileName);
-    const qint64 ghostMs = stageTimer.elapsed();
+    const qint64 decorationScheduleMs = stageTimer.elapsed();
     stageTimer.restart();
     if (semanticDocks) {
         if (ProblemsPanelCoordinator* problemsPanel =
@@ -890,10 +900,9 @@ void MainWindow::runActiveEditorPassiveRefresh()
         telemetry.stage = SemanticAnalysisStage::Navigation;
         telemetry.uiRefreshMs = totalMs;
         telemetry.detail = QStringLiteral(
-            "passiveEditorRefresh=1 hierarchyRebuild=0 diagnosticsMs=%1 decorationsMs=%2 ghostMs=%3 panelsMs=%4")
+            "passiveEditorRefresh=1 hierarchyRebuild=0 diagnosticsMs=%1 decorationScheduleMs=%2 ghostWorker=editor panelsMs=%3")
                                .arg(diagnosticsMs)
-                               .arg(decorationsMs)
-                               .arg(ghostMs)
+                               .arg(decorationScheduleMs)
                                .arg(panelsMs);
         setProperty("pendingSemanticPublicationTelemetry", QVariant());
         ActivityLogService::getInstance()->append(
@@ -925,11 +934,7 @@ void MainWindow::refreshActiveEditorDiagnosticHighlights(
     }
 
     if (!changedFileName.isEmpty()) {
-        const QString changed =
-            QDir::cleanPath(QDir::fromNativeSeparators(QFileInfo(changedFileName).absoluteFilePath()));
-        const QString current =
-            QDir::cleanPath(QDir::fromNativeSeparators(QFileInfo(document.fileName).absoluteFilePath()));
-        if (changed != current)
+        if (!EditorFileIdentity::same(changedFileName, document.fileName))
             return;
     }
 
@@ -952,81 +957,97 @@ void MainWindow::refreshActiveEditorSemanticDecorations(
         return;
 
     MyCodeEditor* editor = tabManager->getCurrentEditor();
-    if (!editor)
+    if (!editor) {
+        ++semanticDecorationGeneration;
+        if (semanticDecorationCancellation)
+            semanticDecorationCancellation->store(true);
         return;
+    }
 
     const DocumentSnapshot document = tabManager->getCurrentDocumentMetadata();
     if (document.fileName.isEmpty()) {
+        ++semanticDecorationGeneration;
+        if (semanticDecorationCancellation)
+            semanticDecorationCancellation->store(true);
         editor->setSemanticDecorations({});
         return;
     }
 
     if (!changedFileName.isEmpty()) {
-        const QString changed =
-            QDir::cleanPath(QDir::fromNativeSeparators(QFileInfo(changedFileName).absoluteFilePath()));
-        const QString current =
-            QDir::cleanPath(QDir::fromNativeSeparators(QFileInfo(document.fileName).absoluteFilePath()));
-        if (changed != current)
+        if (!EditorFileIdentity::same(changedFileName, document.fileName))
             return;
-    }
-
-    constexpr int kMaxPassiveSemanticDecorationCharacters = 2 * 1024 * 1024;
-    if (editor->document()->characterCount()
-        > kMaxPassiveSemanticDecorationCharacters) {
-        editor->setSemanticDecorations({});
-        return;
     }
 
     SemanticDecorationQuery query;
     query.fileName = document.fileName;
     query.documentText = editor->cachedDocumentText();
-    if (workspaceManager)
-        query.configuredDefines = workspaceManager->workspaceConfiguration().defines;
-    const SemanticDecorationReport report =
-        SemanticDecorationService::getInstance()->decorationsForDocument(query);
-    editor->setSemanticDecorations(report.decorations);
-}
+    const std::uint64_t documentRevision = editor->semanticDocumentRevision();
+    const std::uint64_t generation = ++semanticDecorationGeneration;
+    if (semanticDecorationCancellation)
+        semanticDecorationCancellation->store(true);
+    const std::shared_ptr<std::atomic_bool> cancellation =
+        std::make_shared<std::atomic_bool>(false);
+    semanticDecorationCancellation = cancellation;
+    query.isCancelled = [cancellation]() {
+        return cancellation->load();
+    };
 
-void MainWindow::refreshActiveEditorGhostAnnotations(
-    const QString& changedFileName)
-{
-    if (!tabManager)
-        return;
-
-    MyCodeEditor* editor = tabManager->getCurrentEditor();
-    if (!editor)
-        return;
-
-    const DocumentSnapshot document = tabManager->getCurrentDocumentMetadata();
-    if (document.fileName.isEmpty()) {
-        editor->setGhostAnnotations({});
-        return;
-    }
-
-    if (!changedFileName.isEmpty()) {
-        const QString changed =
-            QDir::cleanPath(QDir::fromNativeSeparators(QFileInfo(changedFileName).absoluteFilePath()));
-        const QString current =
-            QDir::cleanPath(QDir::fromNativeSeparators(QFileInfo(document.fileName).absoluteFilePath()));
-        if (changed != current)
-            return;
-    }
-
-    constexpr int kMaxPassiveGhostAnnotationCharacters = 2 * 1024 * 1024;
-    if (editor->document()->characterCount()
-        > kMaxPassiveGhostAnnotationCharacters) {
-        editor->setGhostAnnotations({});
-        return;
-    }
-
-    GhostAnnotationQuery query;
-    query.fileName = document.fileName;
-    query.documentText = editor->cachedDocumentText();
-    query.instanceContext = editor->hierarchyInstanceContext();
-    query.documentRevision = editor->semanticDocumentRevision();
-    const GhostAnnotationReport report =
-        GhostAnnotationService::getInstance()->annotationsForDocument(query);
-    editor->setGhostAnnotations(report.annotations);
+    const std::shared_ptr<const SemanticIndexSnapshot> snapshot =
+        SemanticIndex::getInstance()->snapshot();
+    const QPointer<MyCodeEditor> guardedEditor(editor);
+    auto* watcher =
+        new QFutureWatcher<SemanticDecorationBuildResult>(this);
+    connect(
+        watcher,
+        &QFutureWatcher<SemanticDecorationBuildResult>::finished,
+        this,
+        [this,
+         watcher,
+         guardedEditor,
+         generation,
+         cancellation,
+         documentRevision,
+         fileName = query.fileName]() {
+            const SemanticDecorationBuildResult result = watcher->result();
+            watcher->deleteLater();
+            if (cancellation->load()
+                || generation != semanticDecorationGeneration
+                || !guardedEditor
+                || !tabManager
+                || tabManager->getCurrentEditor() != guardedEditor
+                || !EditorFileIdentity::same(
+                    guardedEditor->documentFileName(), fileName)
+                || guardedEditor->semanticDocumentRevision()
+                    != documentRevision) {
+                return;
+            }
+            guardedEditor->setSemanticDecorations(
+                result.report.decorations);
+            ActivityLogService::getInstance()->append(
+                QStringLiteral("SemanticUI"),
+                ActivityLogLevel::Info,
+                QStringLiteral(
+                    "Decoration worker gen=%1 build=%2 ms items=%3")
+                    .arg(generation)
+                    .arg(result.elapsedMs)
+                    .arg(result.report.decorations.size()));
+        });
+    watcher->setFuture(QtConcurrent::run(
+        [query, snapshot, cancellation]() {
+            SemanticDecorationBuildResult result;
+            if (cancellation->load() || !snapshot)
+                return result;
+            QElapsedTimer timer;
+            timer.start();
+            SemanticIndex localIndex;
+            localIndex.setSnapshot(snapshot);
+            SemanticDecorationService service(&localIndex);
+            result.report = service.decorationsForDocument(query);
+            result.elapsedMs = timer.elapsed();
+            if (cancellation->load())
+                result.report.decorations.clear();
+            return result;
+        }));
 }
 
 void MainWindow::refreshActiveEditorWavePreview()

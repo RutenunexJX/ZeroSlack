@@ -1474,8 +1474,11 @@ static void runTabOpenGhostLifecycleRegression()
                editor && editor->documentFileName() == filePath,
                true);
     expectBool("file identity assignment refreshes FormalPort Ghost",
-               editorGhostCacheContains(editor,
-                                        GhostAnnotationKind::FormalPort),
+               waitUntil([&]() {
+                   return editorGhostCacheContains(
+                       editor,
+                       GhostAnnotationKind::FormalPort);
+               }, 5000),
                true);
     if (!editor) {
         values->clearPublishedFacts();
@@ -1681,10 +1684,27 @@ static void runTabOpenGhostLifecycleRegression()
 
     editor->setGhostAnnotations({});
     emit scheduler.documentRefreshRequested(filePath);
-    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    const bool documentGhostRefreshFinished = waitUntil([&]() {
+        return editorGhostCacheContains(
+                   editor,
+                   GhostAnnotationKind::FormalPort)
+            && editorGhostCacheContains(
+                   editor,
+                   GhostAnnotationKind::ParameterOverride,
+                   QStringLiteral("= 9"))
+            && editorGhostCacheContains(
+                   editor,
+                   GhostAnnotationKind::ParameterValue,
+                   QStringLiteral("= 8"))
+            && editorGhostCacheContains(
+                   editor,
+                   GhostAnnotationKind::SignalWidth);
+    }, 5000);
     expectBool("document refresh repopulates FormalPort Ghost",
-               editorGhostCacheContains(editor,
-                                        GhostAnnotationKind::FormalPort),
+               documentGhostRefreshFinished
+                   && editorGhostCacheContains(
+                       editor,
+                       GhostAnnotationKind::FormalPort),
                true);
     expectBool("document refresh publishes bound override Ghost",
                editorGhostCacheContains(editor,
@@ -1704,30 +1724,35 @@ static void runTabOpenGhostLifecycleRegression()
     editor->setGhostAnnotations({});
     emit scheduler.fileSymbolAnalysisFinished(filePath,
                                               currentRecords.size());
-    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
     expectBool("analysis completion repopulates all Ghost annotations",
-               editorGhostCacheContains(editor,
-                                        GhostAnnotationKind::FormalPort)
-                   && editorGhostCacheContains(
-                       editor,
-                       GhostAnnotationKind::ParameterOverride,
-                       QStringLiteral("= 9"))
-                   && editorGhostCacheContains(
-                       editor,
-                       GhostAnnotationKind::SignalWidth),
+               waitUntil([&]() {
+                   return editorGhostCacheContains(
+                              editor,
+                              GhostAnnotationKind::FormalPort)
+                       && editorGhostCacheContains(
+                              editor,
+                              GhostAnnotationKind::ParameterOverride,
+                              QStringLiteral("= 9"))
+                       && editorGhostCacheContains(
+                              editor,
+                              GhostAnnotationKind::SignalWidth);
+               }, 5000),
                true);
 
     HierarchyInstanceContext p1Context = p0Context;
     p1Context.instancePath = QStringLiteral("top.p1");
     editor->setHierarchyInstanceContext(p1Context);
     expectBool("instance context change refreshes effective Ghost",
-               editorGhostCacheContains(editor,
-                                        GhostAnnotationKind::ParameterOverride,
-                                        QStringLiteral("= 12"))
-                   && !editorGhostCacheContains(
-                       editor,
-                       GhostAnnotationKind::ParameterOverride,
-                       QStringLiteral("= 9")),
+               waitUntil([&]() {
+                   return editorGhostCacheContains(
+                              editor,
+                              GhostAnnotationKind::ParameterOverride,
+                              QStringLiteral("= 12"))
+                       && !editorGhostCacheContains(
+                              editor,
+                              GhostAnnotationKind::ParameterOverride,
+                              QStringLiteral("= 9"));
+               }, 5000),
                true);
 
     scheduler.shutdown();

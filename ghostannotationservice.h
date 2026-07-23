@@ -51,7 +51,8 @@ struct GhostAnnotationReport {
 };
 
 struct GhostNumericLiteralQuery {
-    QString documentText;
+    QString lineText;
+    int lineStartPosition = 0;
     int cursorPosition = -1;
 };
 

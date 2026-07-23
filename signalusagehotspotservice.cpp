@@ -1,5 +1,6 @@
 #include "signalusagehotspotservice.h"
 
+#include "editorfileidentity.h"
 #include "symboltaxonomy.h"
 
 #include <QFileInfo>
@@ -102,22 +103,6 @@ bool isEnumValueRecord(const SemanticSymbolRecord& record)
         == SymbolTaxonomy::CollectorKind::EnumValue;
 }
 
-bool sameSourceFile(const QString& lhs, const QString& rhs)
-{
-    if (lhs.isEmpty() || rhs.isEmpty())
-        return false;
-    QFileInfo lhsInfo(lhs);
-    QFileInfo rhsInfo(rhs);
-    const QString lhsCanonical = lhsInfo.canonicalFilePath();
-    const QString rhsCanonical = rhsInfo.canonicalFilePath();
-    if (!lhsCanonical.isEmpty() && !rhsCanonical.isEmpty())
-        return lhsCanonical.compare(rhsCanonical, Qt::CaseInsensitive) == 0;
-    if (lhs.compare(rhs, Qt::CaseInsensitive) == 0)
-        return true;
-    return lhsInfo.fileName().compare(rhsInfo.fileName(), Qt::CaseInsensitive)
-        == 0;
-}
-
 bool isScopeRecord(const SemanticSymbolRecord& record)
 {
     return record.declarationKind == SymbolTaxonomy::DeclarationKind::Module
@@ -151,7 +136,7 @@ SemanticSymbolRecord scopeRecordForOwner(SemanticIndex* index,
             index->getSymbolRecordByStableKey(owner.stableKey);
         if (record.isValid() && isScopeRecord(record)
             && recordHasLineRange(record)
-            && sameSourceFile(record.location.fileName, fileName)) {
+            && EditorFileIdentity::same(record.location.fileName, fileName)) {
             return record;
         }
     }
@@ -161,7 +146,7 @@ SemanticSymbolRecord scopeRecordForOwner(SemanticIndex* index,
         index->getSymbolRecordsByName(owner.name);
     for (const SemanticSymbolRecord& record : records) {
         if (isScopeRecord(record) && recordHasLineRange(record)
-            && sameSourceFile(record.location.fileName, fileName)) {
+            && EditorFileIdentity::same(record.location.fileName, fileName)) {
             return record;
         }
     }
@@ -186,7 +171,8 @@ SemanticSymbolRecord scopeRecordForUsageItem(
             return ownerScope;
         if (candidate.isValid() && isPrimaryLaneScopeRecord(candidate)
             && recordHasLineRange(candidate)
-            && sameSourceFile(candidate.location.fileName, item.fileName)) {
+            && EditorFileIdentity::same(candidate.location.fileName,
+                                        item.fileName)) {
             return candidate;
         }
     }
@@ -199,7 +185,8 @@ SemanticSymbolRecord scopeRecordForUsageItem(
             index->getSymbolRecordsByName(item.moduleName);
         for (const SemanticSymbolRecord& record : namedRecords) {
             if (isScopeRecord(record) && recordHasLineRange(record)
-                && sameSourceFile(record.location.fileName, item.fileName)) {
+                && EditorFileIdentity::same(record.location.fileName,
+                                            item.fileName)) {
                 return record;
             }
         }
@@ -210,7 +197,7 @@ SemanticSymbolRecord scopeRecordForUsageItem(
     for (const SemanticSymbolRecord& record : fileRecords) {
         if (!isScopeRecord(record) || !recordHasLineRange(record))
             continue;
-        if (!sameSourceFile(record.location.fileName, item.fileName))
+        if (!EditorFileIdentity::same(record.location.fileName, item.fileName))
             continue;
         const bool containsUsage =
             item.line <= 0
@@ -224,7 +211,7 @@ SemanticSymbolRecord scopeRecordForUsageItem(
     for (const SemanticSymbolRecord& record : fileRecords) {
         if (!isScopeRecord(record) || !recordHasLineRange(record))
             continue;
-        if (!sameSourceFile(record.location.fileName, item.fileName))
+        if (!EditorFileIdentity::same(record.location.fileName, item.fileName))
             continue;
         if (item.line <= 0
             || (item.line >= record.location.startLine

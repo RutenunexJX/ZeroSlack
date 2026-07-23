@@ -5,6 +5,8 @@
 #include <QList>
 #include <QSet>
 #include <QString>
+#include <atomic>
+#include <cstdint>
 #include <memory>
 
 #include "packagetoolservice.h"
@@ -100,12 +102,14 @@ private:
     bool packageToolsStateValid = false;
     QProgressBar* workspaceProgressBar = nullptr;
     QTabBar* workspaceTabBar = nullptr;
-    QTimer* activeEditorPassiveRefreshTimer = nullptr;
     QTimer* workspaceSessionSaveTimer = nullptr;
     QString pendingActiveEditorPassiveRefreshFile;
     QString diagnosticsAnalysisState;
     QSet<QString> workspaceSessionCleanRoots;
     bool pendingActiveEditorPassiveRefreshAll = false;
+    bool activeEditorPassiveRefreshQueued = false;
+    std::uint64_t semanticDecorationGeneration = 0;
+    std::shared_ptr<std::atomic_bool> semanticDecorationCancellation;
 
     static const int kFileChangeDebounceMs = 350;
 
@@ -177,8 +181,6 @@ private:
     void refreshActiveEditorDiagnosticHighlights(
         const QString& changedFileName = QString());
     void refreshActiveEditorSemanticDecorations(
-        const QString& changedFileName = QString());
-    void refreshActiveEditorGhostAnnotations(
         const QString& changedFileName = QString());
     void scheduleActiveEditorPassiveRefresh(
         const QString& changedFileName = QString());

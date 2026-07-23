@@ -1,103 +1,10 @@
 #include "semanticindex.h"
 
-#include "svtokenutils.h"
 #include "symboltaxonomy.h"
 
 #include <QFile>
-#include <algorithm>
-
-namespace {
-int nextModuleStartPosition(const QString& fileContent, int from)
-{
-    int position = from;
-    while ((position = SvTokenUtils::indexOfWord(
-                fileContent,
-                QStringLiteral("module"),
-                position)) >= 0) {
-        const int afterKeyword = position + QStringLiteral("module").size();
-        if (afterKeyword < fileContent.size()
-            && fileContent.at(afterKeyword).isSpace()) {
-            return position;
-        }
-        ++position;
-    }
-    return -1;
-}
-
-int endModulePositionInContent(const QString& fileContent,
-                               const SemanticSymbolRecord& moduleRecord)
-{
-    int searchStart = moduleRecord.location.position;
-    int moduleDepth = 0;
-    bool foundModule = false;
-
-    int pos = searchStart;
-    while (pos < fileContent.length()) {
-        const int nextModuleStart = nextModuleStartPosition(fileContent, pos);
-        const int nextModuleEnd = SvTokenUtils::indexOfWord(
-            fileContent,
-            QStringLiteral("endmodule"),
-            pos);
-
-        if (nextModuleStart != -1
-            && (nextModuleEnd == -1 || nextModuleStart < nextModuleEnd)) {
-            if (foundModule || nextModuleStart == moduleRecord.location.position) {
-                ++moduleDepth;
-                foundModule = true;
-            }
-            pos = nextModuleStart + QStringLiteral("module").size();
-        } else if (nextModuleEnd != -1) {
-            if (foundModule) {
-                --moduleDepth;
-                if (moduleDepth == 0)
-                    return nextModuleEnd + QStringLiteral("endmodule").size();
-            }
-            pos = nextModuleEnd + QStringLiteral("endmodule").size();
-        } else {
-            break;
-        }
-    }
-
-    return -1;
-}
-
-QString moduleNameAtPositionInContent(const QList<SemanticSymbolRecord>& modules,
-                                      int cursorPosition,
-                                      const QString& fileContent,
-                                      const SemanticIndex& semanticIndex)
-{
-    if (fileContent.isEmpty())
-        return QString();
-
-    int cursorLine = 0;
-    int pos = 0;
-    while (pos < cursorPosition && pos < fileContent.length()) {
-        if (fileContent.at(pos) == QLatin1Char('\n'))
-            ++cursorLine;
-        ++pos;
-    }
-
-    for (const SemanticSymbolRecord& module : modules) {
-        if (cursorPosition < module.location.position)
-            continue;
-        if (!semanticIndex.isValidModuleName(module.name))
-            continue;
-
-        if (module.location.endLine > 0) {
-            if (cursorLine >= module.location.startLine
-                && cursorLine <= module.location.endLine)
-                return module.name;
-            continue;
-        }
-
-        const int moduleEndPosition = endModulePositionInContent(fileContent, module);
-        if (moduleEndPosition >= 0 && cursorPosition < moduleEndPosition)
-            return module.name;
-    }
-
-    return QString();
-}
-}
+#include <QTextBlock>
+#include <QTextDocument>
 
 QString SemanticIndex::currentModuleAt(const QString& fileName, int cursorPosition) const
 {
@@ -114,18 +21,39 @@ QString SemanticIndex::currentModuleAt(const QString& fileName, int cursorPositi
     if (modules.isEmpty())
         return QString();
 
-    std::sort(modules.begin(), modules.end(),
-              [](const SemanticSymbolRecord& left,
-                 const SemanticSymbolRecord& right) {
-                  return left.location.position < right.location.position;
-              });
-
     QString content = getCachedFileContent(fileName);
     if (content.isEmpty()) {
         QFile file(fileName);
         if (file.open(QIODevice::ReadOnly | QIODevice::Text))
             content = QString::fromUtf8(file.readAll());
     }
+    if (content.isEmpty())
+        return QString();
 
-    return moduleNameAtPositionInContent(modules, cursorPosition, content, *this);
+    QTextDocument document(content);
+    const int boundedPosition = qBound(
+        0,
+        cursorPosition,
+        qMax(0, document.characterCount() - 1));
+    const QTextBlock block = document.findBlock(boundedPosition);
+    if (!block.isValid())
+        return QString();
+    const int cursorLine = block.blockNumber() + 1;
+
+    const SemanticSymbolRecord* containingModule = nullptr;
+    for (const SemanticSymbolRecord& module : modules) {
+        if (!isValidModuleName(module.name)
+            || module.location.startLine <= 0
+            || module.location.endLine < module.location.startLine
+            || cursorLine < module.location.startLine
+            || cursorLine > module.location.endLine) {
+            continue;
+        }
+        if (!containingModule
+            || module.location.startLine
+                > containingModule->location.startLine) {
+            containingModule = &module;
+        }
+    }
+    return containingModule ? containingModule->name : QString();
 }

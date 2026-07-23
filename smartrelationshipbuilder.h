@@ -122,7 +122,6 @@ private:
         QList<SemanticSymbolRecord> fileSymbolRecords;
         RelationshipExtractionInfo relationshipInfo;
         bool relationshipInfoLoaded = false;
-        bool textualAssignmentFallbackLoaded = false;
         const SemanticIndexSnapshot* snapshot = nullptr;
         QStringList includeDirs;
         QHash<QString, QString> defines;

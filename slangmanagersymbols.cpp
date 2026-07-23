@@ -1,7 +1,7 @@
 #include "slangmanager.h"
 #include "slangparseoptions.h"
+#include "slangpreprocessorfacts.h"
 #include "slangsymbolcollector.h"
-#include "svmacrosemantics.h"
 
 #include <slang/ast/Compilation.h>
 #include <slang/syntax/SyntaxTree.h>
@@ -97,8 +97,11 @@ QList<SemanticSymbolRecord> SlangManager::extractSymbolRecords(
                                             result,
                                             nullptr,
                                             effectiveValueFacts);
-        result.append(
-            SvMacroSemantics::collectMacroDefinitionRecords(fileName, content));
+        const QString compilationUnitIdentity =
+            absoluteSourcePath(fileName);
+        for (SemanticSymbolRecord& record : result)
+            record.compilationUnitFileName = compilationUnitIdentity;
+        result.append(slang_preprocessor_facts::collect(*tree));
     } catch (const std::exception& error) {
         qWarning().noquote()
             << QStringLiteral("Slang symbol extraction failed for %1: %2")
@@ -292,19 +295,15 @@ SlangManager::extractOverlayWorkspaceSymbolRecords(
                                             effectiveValueFacts
                                                 ? &collectedFacts
                                                 : nullptr);
+        const QString compilationUnitIdentity = fileNames.first();
+        for (SemanticSymbolRecord& record : result)
+            record.compilationUnitFileName = compilationUnitIdentity;
         if (cancelled()) {
             result.clear();
             return {};
         }
 
-        for (const QString& fileName : std::as_const(fileNames)) {
-            if (cancelled())
-                return {};
-            const QString key = sourceLookupKey(fileName);
-            result.append(SvMacroSemantics::collectMacroDefinitionRecords(
-                fileName,
-                contentsByKey.value(key)));
-        }
+        result.append(slang_preprocessor_facts::collect(*tree));
         if (effectiveValueFacts)
             *effectiveValueFacts = std::move(collectedFacts);
     } catch (const std::exception& error) {

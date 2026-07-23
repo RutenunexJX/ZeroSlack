@@ -12,6 +12,7 @@
 #include <QDragMoveEvent>
 #include <QDropEvent>
 #include <QFontMetrics>
+#include <QFutureWatcher>
 #include <QInputDialog>
 #include <QHash>
 #include <QKeyEvent>
@@ -32,6 +33,7 @@
 #include <QTextEdit>
 #include <QTimer>
 #include <QStringList>
+#include <QtConcurrent/QtConcurrentRun>
 
 #include <utility>
 
@@ -39,7 +41,6 @@
 #include "tsdocument.h"
 
 namespace {
-constexpr int kMaxPassiveGhostAnnotationCharacters = 2 * 1024 * 1024;
 constexpr int kColumnSelectionProperty = QTextFormat::UserProperty + 20;
 constexpr int kColumnSelectionMarker = 1020;
 constexpr int kManualIndentWidth = 4;
@@ -2430,6 +2431,9 @@ void MyCodeEditorState::initializeCore(MyCodeEditor* editor)
 
 void MyCodeEditorState::shutdown()
 {
+    ++ghostQueryGeneration;
+    if (ghostQueryCancellation)
+        ghostQueryCancellation->store(true);
     sourceNavigation.shutdown();
     gutter.destroy();
 }
@@ -2527,6 +2531,10 @@ void MyCodeEditorState::handleDocumentContentsChange(
 {
     if (!editor || !editor->document())
         return;
+
+    ++ghostQueryGeneration;
+    if (ghostQueryCancellation)
+        ghostQueryCancellation->store(true);
 
     const int oldLength = semanticRevisionText.size();
     const int newLength = qMax(0, editor->document()->characterCount() - 1);
@@ -3657,28 +3665,28 @@ bool MyCodeEditorState::handleGutterMousePress(
     MyCodeEditor* editor,
     QMouseEvent* event)
 {
-    if (!event)
+    if (!editor || !event)
         return false;
 
-    QTextBlock block = editor->firstVisibleBlock();
-    int top = static_cast<int>(editor->blockBoundingGeometry(block)
-                                   .translated(editor->contentOffset())
-                                   .top());
-    int bottom = top + static_cast<int>(editor->blockBoundingRect(block).height());
     const int y = static_cast<int>(event->position().y());
-    while (block.isValid()) {
-        if (y >= top && y <= bottom) {
-            if (folding.foldRegionMarkModeActive())
-                return folding.handleFoldRegionGutterLine(editor, block.blockNumber());
-            if (event->position().x() > 14)
-                return false;
-            return folding.toggleFoldAtLine(editor, block.blockNumber());
-        }
-        block = block.next();
-        top = bottom;
-        bottom = top + static_cast<int>(editor->blockBoundingRect(block).height());
-    }
-    return false;
+    if (y < 0 || y >= editor->viewport()->height())
+        return false;
+
+    ++hotPathMetrics.gutterBlockProbes;
+    const QTextBlock block = editor->cursorForPosition(QPoint(0, y)).block();
+    if (!block.isValid() || !block.isVisible())
+        return false;
+    const EditorBlockGeometry geometry = editor->blockGeometry(
+        block.blockNumber());
+    if (y < geometry.top || y > geometry.top + geometry.height)
+        return false;
+
+    if (folding.foldRegionMarkModeActive())
+        return folding.handleFoldRegionGutterLine(editor,
+                                                  block.blockNumber());
+    if (event->position().x() > 14)
+        return false;
+    return folding.toggleFoldAtLine(editor, block.blockNumber());
 }
 
 bool MyCodeEditorState::handleGutterMouseMove(
@@ -3688,25 +3696,24 @@ bool MyCodeEditorState::handleGutterMouseMove(
     if (!editor || !event)
         return false;
 
-    QTextBlock block = editor->firstVisibleBlock();
-    int top = static_cast<int>(editor->blockBoundingGeometry(block)
-                                   .translated(editor->contentOffset())
-                                   .top());
-    int bottom = top + static_cast<int>(editor->blockBoundingRect(block).height());
     const int y = static_cast<int>(event->position().y());
-    while (block.isValid()) {
-        if (y >= top && y <= bottom) {
-            const bool handled =
-                folding.handleFoldRegionHoverLine(editor, block.blockNumber());
-            if (handled)
-                gutter.handleUpdateRequest(editor, editor->viewport()->rect(), 0);
-            return handled;
-        }
-        block = block.next();
-        top = bottom;
-        bottom = top + static_cast<int>(editor->blockBoundingRect(block).height());
-    }
-    return false;
+    if (y < 0 || y >= editor->viewport()->height())
+        return false;
+
+    ++hotPathMetrics.gutterBlockProbes;
+    const QTextBlock block = editor->cursorForPosition(QPoint(0, y)).block();
+    if (!block.isValid() || !block.isVisible())
+        return false;
+    const EditorBlockGeometry geometry = editor->blockGeometry(
+        block.blockNumber());
+    if (y < geometry.top || y > geometry.top + geometry.height)
+        return false;
+
+    const bool handled =
+        folding.handleFoldRegionHoverLine(editor, block.blockNumber());
+    if (handled)
+        gutter.handleUpdateRequest(editor, editor->viewport()->rect(), 0);
+    return handled;
 }
 
 void MyCodeEditorState::paintGutterDecorations(
@@ -4573,12 +4580,10 @@ void MyCodeEditorState::setSemanticDecorations(
 
 void MyCodeEditorState::refreshGhostAnnotations(MyCodeEditor* editor)
 {
+    ++ghostQueryGeneration;
+    if (ghostQueryCancellation)
+        ghostQueryCancellation->store(true);
     if (!editor || identity.current().isEmpty()) {
-        setGhostAnnotations(editor, {});
-        return;
-    }
-    if (editor->document()->characterCount()
-        > kMaxPassiveGhostAnnotationCharacters) {
         setGhostAnnotations(editor, {});
         return;
     }
@@ -4589,11 +4594,47 @@ void MyCodeEditorState::refreshGhostAnnotations(MyCodeEditor* editor)
     query.instanceContext = hierarchyInstance;
     query.documentRevision = semanticDocumentRevision();
     ++hotPathMetrics.fullGhostQueries;
-    setGhostAnnotations(
+
+    const std::uint64_t generation = ghostQueryGeneration;
+    const std::shared_ptr<std::atomic_bool> cancellation =
+        std::make_shared<std::atomic_bool>(false);
+    ghostQueryCancellation = cancellation;
+    const std::shared_ptr<const SemanticIndexSnapshot> snapshot =
+        SemanticIndex::getInstance()->snapshot();
+    const std::shared_ptr<const EffectiveValueService::DocumentSnapshot>
+        valueSnapshot = EffectiveValueService::getInstance()
+                            ->snapshotForDocument(query.fileName);
+
+    auto* watcher = new QFutureWatcher<GhostAnnotationReport>(editor);
+    QObject::connect(
+        watcher,
+        &QFutureWatcher<GhostAnnotationReport>::finished,
         editor,
-        GhostAnnotationService::getInstance()
-            ->annotationsForDocument(query)
-            .annotations);
+        [this, editor, watcher, generation, cancellation, query]() {
+            const GhostAnnotationReport report = watcher->result();
+            watcher->deleteLater();
+            if (cancellation->load()
+                || generation != ghostQueryGeneration
+                || identity.current() != query.fileName
+                || semanticDocumentRevision() != query.documentRevision) {
+                return;
+            }
+            setGhostAnnotations(editor, report.annotations);
+        });
+    watcher->setFuture(QtConcurrent::run(
+        [query, snapshot, valueSnapshot, cancellation]() {
+            GhostAnnotationReport report;
+            if (cancellation->load() || !snapshot)
+                return report;
+            SemanticIndex localIndex;
+            localIndex.setSnapshot(snapshot);
+            EffectiveValueService localValues(&localIndex, valueSnapshot);
+            GhostAnnotationService service(&localIndex, &localValues);
+            report = service.annotationsForDocument(query);
+            if (cancellation->load())
+                report.annotations.clear();
+            return report;
+        }));
 }
 
 void MyCodeEditorState::setGhostAnnotations(

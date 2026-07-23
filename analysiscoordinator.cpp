@@ -3,7 +3,6 @@
 #include "analysisscheduler.h"
 #include "documentsnapshot.h"
 #include <QPointer>
-#include <QTimer>
 
 #include <utility>
 
@@ -79,9 +78,4 @@ void AnalysisCoordinator::configureScheduler()
 void AnalysisCoordinator::refreshActiveEditorForFile(const QString& fileName) const
 {
     dependencies.refreshSemanticPresentations(fileName);
-    const QPointer<const AnalysisCoordinator> self(this);
-    QTimer::singleShot(0, this, [self, fileName]() {
-        if (self)
-            self->dependencies.refreshSemanticPresentations(fileName);
-    });
 }

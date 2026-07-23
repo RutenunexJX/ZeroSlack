@@ -12,8 +12,7 @@ namespace {
 bool commandCompletionScopeVisibleForRecord(
     const SemanticSymbolRecord& record,
     CompletionCommandKind requestedKind,
-    const SemanticQueryContext& context,
-    const SemanticIndex* index)
+    const SemanticQueryContext& context)
 {
     const bool useGlobalScope = context.moduleName.isEmpty()
         || completionCommandKindIsAlwaysGlobalCommand(requestedKind);
@@ -23,9 +22,7 @@ bool commandCompletionScopeVisibleForRecord(
     if (record.owner.name == context.moduleName)
         return true;
     return completionCommandKindIsPackageVisibleCommand(requestedKind)
-        && record.visibility == SymbolTaxonomy::SymbolVisibility::PackageVisible
-        && index
-        && index->packageVisibleRecordImported(record, context);
+        && record.visibility == SymbolTaxonomy::SymbolVisibility::PackageVisible;
 }
 
 }
@@ -54,19 +51,19 @@ QList<SemanticSymbolRecord> SemanticIndex::getCommandCompletionSymbolRecords(
 
     const bool useGlobalScope = context.moduleName.isEmpty()
         || completionCommandKindIsAlwaysGlobalCommand(commandKind);
-    const QList<SemanticSymbolRecord> records =
-        useGlobalScope
-            ? getSymbolRecordsByOwner(QString())
-            : (completionCommandKindIsPackageVisibleCommand(commandKind)
-                   ? getSymbolRecords()
-                   : getSymbolRecordsByOwner(context.moduleName));
+    QList<SemanticSymbolRecord> records = useGlobalScope
+        ? getSymbolRecordsByOwner(QString())
+        : getSymbolRecordsByOwner(context.moduleName);
+    if (!useGlobalScope
+        && completionCommandKindIsPackageVisibleCommand(commandKind)) {
+        records.append(getVisibleImportedPackageRecords(context));
+    }
     QHash<QString, QList<SemanticSymbolRecord>> importedRecordsByName;
     for (const SemanticSymbolRecord& record : records) {
         if (!commandCompletionScopeVisibleForRecord(
                 record,
                 commandKind,
-                context,
-                this)
+                context)
             || !completionCommandKindMatchesCommandRecord(record, commandKind)
             || !semanticCompletionNameMatches(record.name, prefix)) {
             continue;

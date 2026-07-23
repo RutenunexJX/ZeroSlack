@@ -70,6 +70,7 @@ bool fillLocationFromSource(
     record.location.position = start.position;
     record.location.length = end.isValid()
         ? qMax(0, end.position - start.position) : name.size();
+    fillCompilationUnitSourcePosition(sm, location, &record);
     record.localHandle = -1;
     return true;
 }
@@ -106,6 +107,8 @@ void emitInstancePinRecords(const slang::SourceManager* sm,
 
     const QString instantiatedModule =
         QString::fromStdString(std::string(inst.getDefinition().name));
+    const bool interfaceInstance =
+        inst.getDefinition().definitionKind == DefinitionKind::Interface;
     for (const PortConnection* connection : inst.getPortConnections()) {
         if (!connection)
             continue;
@@ -128,7 +131,9 @@ void emitInstancePinRecords(const slang::SourceManager* sm,
         record.type.rawTypeText = instantiatedModule;
         record.type.resolvedTypeName = instantiatedModule;
         record.type.resolvedTypeKind =
-            SymbolTaxonomy::DeclarationKind::Module;
+            interfaceInstance
+                ? SymbolTaxonomy::DeclarationKind::Interface
+                : SymbolTaxonomy::DeclarationKind::Module;
         outList.append(record);
     }
 }
@@ -235,8 +240,14 @@ void collectNativeRecords(slang::ast::Compilation& compilation,
                     record.type.rawTypeText =
                         QString::fromStdString(std::string(inst.getDefinition().name));
                     record.type.resolvedTypeName = record.type.rawTypeText;
+                    const bool interfaceInstance =
+                        inst.getDefinition().definitionKind
+                        == DefinitionKind::Interface;
                     record.type.resolvedTypeKind =
-                        SymbolTaxonomy::DeclarationKind::Module;
+                        interfaceInstance
+                            ? SymbolTaxonomy::DeclarationKind::Interface
+                            : SymbolTaxonomy::DeclarationKind::Module;
+                    record.owner.interfaceLike = interfaceInstance;
                     record.owner.name = moduleScope;
                     outList.append(record);
                     emitInstancePinRecords(sm, inst, moduleScope, outList);
@@ -454,6 +465,63 @@ void collectNativeRecords(slang::ast::Compilation& compilation,
             if (cancelled())
                 return;
             v.visitDefault(enumType);
+        },
+        [&](auto& v, const ExplicitImportSymbol& import) {
+            if (cancelled() || import.isFromExport)
+                return;
+            const auto* syntax = import.getSyntax();
+            if (!syntax
+                || syntax->kind
+                    != slang::syntax::SyntaxKind::PackageImportItem) {
+                return;
+            }
+            const auto& item =
+                syntax->as<slang::syntax::PackageImportItemSyntax>();
+            const QString packageName = QString::fromStdString(
+                std::string(import.packageName));
+            SemanticSymbolRecord record;
+            QString moduleScope;
+            if (!fillSymbolRecord(sm, import, record, &moduleScope)
+                || !fillLocationFromSource(sm,
+                                           item.package.location(),
+                                           packageName,
+                                           record)) {
+                return;
+            }
+            applyCollectorKind(&record, CollectorKind::PackageImport);
+            record.owner.name = moduleScope;
+            record.type.rawTypeText = QString::fromStdString(
+                std::string(import.importName));
+            outList.append(record);
+            v.visitDefault(import);
+        },
+        [&](auto& v, const WildcardImportSymbol& import) {
+            if (cancelled() || import.isFromExport)
+                return;
+            const auto* syntax = import.getSyntax();
+            if (!syntax
+                || syntax->kind
+                    != slang::syntax::SyntaxKind::PackageImportItem) {
+                return;
+            }
+            const auto& item =
+                syntax->as<slang::syntax::PackageImportItemSyntax>();
+            const QString packageName = QString::fromStdString(
+                std::string(import.packageName));
+            SemanticSymbolRecord record;
+            QString moduleScope;
+            if (!fillSymbolRecord(sm, import, record, &moduleScope)
+                || !fillLocationFromSource(sm,
+                                           item.package.location(),
+                                           packageName,
+                                           record)) {
+                return;
+            }
+            applyCollectorKind(&record, CollectorKind::PackageImport);
+            record.owner.name = moduleScope;
+            record.type.rawTypeText = QStringLiteral("*");
+            outList.append(record);
+            v.visitDefault(import);
         },
         [&](auto& v, const PackageSymbol& pkg) {
             if (cancelled())

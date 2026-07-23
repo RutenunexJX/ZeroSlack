@@ -1,7 +1,6 @@
 #include "slangmanager.h"
 #include "slangparseoptions.h"
 #include "slangsymbolcollectorhelpers.h"
-#include "svmacrosemantics.h"
 
 #include <slang/ast/Compilation.h>
 #include <slang/diagnostics/DiagnosticEngine.h>
@@ -12,11 +11,9 @@
 
 #include <QByteArray>
 #include <QDir>
-#include <QFile>
 #include <QFileInfo>
 #include <QHash>
 #include <QSet>
-#include <QTextStream>
 #include <functional>
 #include <memory>
 #include <string>
@@ -27,15 +24,6 @@
 using namespace slang::ast;
 
 namespace {
-
-QString readMacroDiagnosticTextFile(const QString& filePath)
-{
-    QFile file(filePath);
-    if (!file.open(QIODevice::ReadOnly | QFile::Text))
-        return QString();
-    QTextStream stream(&file);
-    return stream.readAll();
-}
 
 QString normalizedDiagnosticSourcePath(const QString& fileName)
 {
@@ -114,77 +102,6 @@ bool appendDiagnostics(const slang::SourceManager& sourceManager,
     return true;
 }
 
-QList<SemanticDiagnostic> workspaceUndefinedMacroDiagnostics(
-    const QStringList& filePaths,
-    const QHash<QString, QString>& defines,
-    const std::function<bool()>& isCancelled)
-{
-    QList<SemanticDiagnostic> diagnostics;
-    QHash<QString, QString> contentsByFile;
-    QSet<QString> visibleMacros = SvMacroSemantics::configuredDefineNames(defines);
-
-    for (const QString& filePath : filePaths) {
-        if (isCancelled && isCancelled())
-            return {};
-        const QString content = readMacroDiagnosticTextFile(filePath);
-        if (content.isEmpty())
-            continue;
-        contentsByFile.insert(filePath, content);
-        for (const SemanticSymbolRecord& record :
-             SvMacroSemantics::collectMacroDefinitionRecords(filePath, content)) {
-            if (!record.name.isEmpty())
-                visibleMacros.insert(record.name);
-        }
-    }
-
-    for (auto it = contentsByFile.constBegin();
-         it != contentsByFile.constEnd();
-         ++it) {
-        if (isCancelled && isCancelled())
-            return {};
-        diagnostics.append(
-            SvMacroSemantics::undefinedMacroDiagnostics(it.key(),
-                                                        it.value(),
-                                                        visibleMacros));
-    }
-    return diagnostics;
-}
-
-QList<SemanticDiagnostic> overlayWorkspaceUndefinedMacroDiagnostics(
-    const QStringList& filePaths,
-    const QHash<QString, QString>& contentsByKey,
-    const QHash<QString, QString>& defines,
-    const std::function<bool()>& isCancelled)
-{
-    QList<SemanticDiagnostic> diagnostics;
-    QSet<QString> visibleMacros =
-        SvMacroSemantics::configuredDefineNames(defines);
-
-    for (const QString& filePath : filePaths) {
-        if (isCancelled && isCancelled())
-            return {};
-        const QString content = contentsByKey.value(
-            diagnosticSourceLookupKey(filePath));
-        for (const SemanticSymbolRecord& record :
-             SvMacroSemantics::collectMacroDefinitionRecords(filePath,
-                                                              content)) {
-            if (!record.name.isEmpty())
-                visibleMacros.insert(record.name);
-        }
-    }
-
-    for (const QString& filePath : filePaths) {
-        if (isCancelled && isCancelled())
-            return {};
-        diagnostics.append(
-            SvMacroSemantics::undefinedMacroDiagnostics(
-                filePath,
-                contentsByKey.value(diagnosticSourceLookupKey(filePath)),
-                visibleMacros));
-    }
-    return diagnostics;
-}
-
 } // namespace
 
 QList<SemanticDiagnostic> SlangManager::extractDiagnostics(const QString& fileName,
@@ -231,10 +148,6 @@ QList<SemanticDiagnostic> SlangManager::extractDiagnostics(const QString& fileNa
         const slang::SourceManager* sm = compilation.getSourceManager();
         if (sm)
             appendDiagnostics(*sm, compilation.getAllDiagnostics(), &result, &seen);
-        result.append(SvMacroSemantics::undefinedMacroDiagnostics(
-            fileName,
-            content,
-            SvMacroSemantics::configuredDefineNames(defines)));
     } catch (const std::exception&) {
         result.clear();
     } catch (...) {
@@ -336,11 +249,6 @@ QList<SemanticDiagnostic> SlangManager::extractWorkspaceDiagnostics(
             result.clear();
             return result;
         }
-        result.append(workspaceUndefinedMacroDiagnostics(filePaths,
-                                                        defines,
-                                                        isCancelled));
-        if (cancelled())
-            result.clear();
     } catch (const std::exception&) {
         result.clear();
     } catch (...) {
@@ -477,13 +385,6 @@ QList<SemanticDiagnostic> SlangManager::extractOverlayWorkspaceDiagnostics(
         if (cancelled())
             return {};
 
-        result.append(overlayWorkspaceUndefinedMacroDiagnostics(
-            fileNames,
-            contentsByKey,
-            defines,
-            isCancelled));
-        if (cancelled())
-            return {};
     } catch (const std::exception&) {
         result.clear();
     } catch (...) {

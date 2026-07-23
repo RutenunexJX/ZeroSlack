@@ -47,6 +47,11 @@ QTextDocumentSourcePosition qTextDocumentSourcePosition(
     const slang::SourceManager* sourceManager,
     slang::SourceLocation location);
 
+void fillCompilationUnitSourcePosition(
+    const slang::SourceManager* sourceManager,
+    slang::SourceLocation location,
+    SemanticSymbolRecord* record);
+
 void resetQTextDocumentSourcePositionCache(
     const slang::SourceManager* sourceManager);
 

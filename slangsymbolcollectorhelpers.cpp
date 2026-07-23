@@ -257,6 +257,9 @@ SymbolTaxonomy::DeclarationKind declarationKindForRawKind(
         return DeclarationKind::Interface;
     case CollectorKind::Package:
         return DeclarationKind::Package;
+    case CollectorKind::PackageImport:
+    case CollectorKind::InactivePreprocessorBranch:
+        return DeclarationKind::Unknown;
     case CollectorKind::Typedef:
         return DeclarationKind::Typedef;
     case CollectorKind::Enum:
@@ -299,6 +302,7 @@ SymbolTaxonomy::DeclarationKind declarationKindForRawKind(
     case CollectorKind::Function:
         return DeclarationKind::Function;
     case CollectorKind::DefDefine:
+    case CollectorKind::MacroReference:
     case CollectorKind::DefIfdef:
     case CollectorKind::DefIfndef:
     case CollectorKind::DefElse:
@@ -346,6 +350,10 @@ SymbolTaxonomy::SymbolUsageRole usageRoleForRawKind(
         && rawKind == CollectorKind::InstPin) {
         return SymbolUsageRole::Reference;
     }
+    if (rawKind == CollectorKind::PackageImport)
+        return SymbolUsageRole::Reference;
+    if (rawKind == CollectorKind::MacroReference)
+        return SymbolUsageRole::Reference;
     if (declarationKind == DeclarationKind::Unknown)
         return SymbolUsageRole::Unknown;
     return SymbolUsageRole::Declaration;
@@ -371,7 +379,6 @@ bool hasInterfaceLikeOwner(SymbolTaxonomy::CollectorKind rawKind)
 {
     using CollectorKind = SymbolTaxonomy::CollectorKind;
     return rawKind == CollectorKind::Interface
-        || rawKind == CollectorKind::Inst
         || rawKind == CollectorKind::PortInterface
         || rawKind == CollectorKind::PortInterfaceModport;
 }
@@ -456,6 +463,7 @@ bool fillSymbolRecord(const slang::SourceManager* sm,
     out.location.length = nameEnd.isValid()
         ? qMax(0, nameEnd.position - start.position)
         : out.name.size();
+    fillCompilationUnitSourcePosition(sm, sym.location, &out);
     out.localHandle = -1;
     out.type.rawTypeText.clear();
 
@@ -500,6 +508,33 @@ bool fillSymbolRecord(const slang::SourceManager* sm,
     return true;
 }
 
+void fillCompilationUnitSourcePosition(
+    const slang::SourceManager* sourceManager,
+    slang::SourceLocation location,
+    SemanticSymbolRecord* record)
+{
+    if (!sourceManager || !record || !location.valid())
+        return;
+
+    slang::SourceLocation anchor =
+        sourceManager->getFullyExpandedLoc(location);
+    if (!anchor.valid())
+        return;
+    while (true) {
+        const slang::SourceLocation includedFrom =
+            sourceManager->getIncludedFrom(anchor.buffer());
+        if (!includedFrom.valid())
+            break;
+        anchor = sourceManager->getFullyExpandedLoc(includedFrom);
+        if (!anchor.valid())
+            return;
+    }
+
+    record->compilationUnitSourceOrder =
+        sourceManager->getSortKey(anchor.buffer());
+    record->compilationUnitSourceOffset = anchor.offset();
+}
+
 void applyCollectorKind(
     SemanticSymbolRecord* record,
     SymbolTaxonomy::CollectorKind rawKind)
@@ -530,16 +565,19 @@ void finalizeCollectedSymbolRecords(QList<SemanticSymbolRecord>* records)
     for (SemanticSymbolRecord& record : *records) {
         record.owner.kind = ownerScopeForRecord(record, packageScopes);
         record.visibility = visibilityForOwnerScope(record.owner.kind);
+        const bool interfaceTyped =
+            record.declarationKind
+                == SymbolTaxonomy::DeclarationKind::Interface
+            || record.owner.interfaceLike;
         if (record.declarationKind == SymbolTaxonomy::DeclarationKind::Interface) {
             record.type.resolvedTypeName = record.name;
-        } else if (record.owner.interfaceLike
-                   || record.declarationKind == SymbolTaxonomy::DeclarationKind::Instance) {
+        } else if (interfaceTyped) {
             record.type.resolvedTypeName =
                 SymbolTaxonomy::interfaceTypeName(record.type.rawTypeText);
         }
         record.type.modportName =
             SymbolTaxonomy::interfaceModportName(record.type.rawTypeText);
-        if (!record.type.resolvedTypeName.isEmpty()) {
+        if (interfaceTyped && !record.type.resolvedTypeName.isEmpty()) {
             record.type.resolvedTypeKind =
                 SymbolTaxonomy::DeclarationKind::Interface;
         }

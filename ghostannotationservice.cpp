@@ -151,13 +151,16 @@ QString stripFormalDeclarationSeparator(QString text)
 }
 
 QList<SemanticSymbolRecord> matchingPortRecords(
-    const QList<SemanticSymbolRecord>& records,
+    SemanticIndex* index,
     const QString& moduleName,
     const QString& formalName)
 {
     QList<SemanticSymbolRecord> result;
+    if (!index || formalName.isEmpty())
+        return result;
     QSet<QString> seenDeclarations;
-    for (const SemanticSymbolRecord& record : records) {
+    for (const SemanticSymbolRecord& record :
+         index->getSymbolRecordsByName(formalName)) {
         if (!isPortRecord(record) || record.name != formalName)
             continue;
         if (!moduleName.isEmpty() && record.owner.name != moduleName)
@@ -185,7 +188,7 @@ QList<SemanticSymbolRecord> matchingPortRecords(
 void appendFormalPortAnnotations(
     const QList<LineInfo>& lines,
     const QList<SemanticSymbolRecord>& fileRecords,
-    const QList<SemanticSymbolRecord>& allRecords,
+    SemanticIndex* index,
     QList<GhostAnnotation>* output)
 {
     if (!output)
@@ -204,7 +207,7 @@ void appendFormalPortAnnotations(
             ? instPin.type.resolvedTypeName
             : instPin.type.rawTypeText;
         const QList<SemanticSymbolRecord> ports = matchingPortRecords(
-            allRecords, moduleName, formalName);
+            index, moduleName, formalName);
         if (ports.size() != 1)
             continue;
         const SemanticSymbolRecord& port = ports.first();
@@ -589,7 +592,6 @@ GhostAnnotationReport GhostAnnotationService::annotationsForDocument(
     SemanticIndex* activeIndex = semanticIndex();
     QList<SemanticSymbolRecord> fileRecords =
         activeIndex->getSymbolRecords(query.fileName);
-    QList<SemanticSymbolRecord> allRecords = activeIndex->getSymbolRecords();
     std::unique_ptr<EffectiveValueService> indexedValues;
     EffectiveValueService* valueReader = values;
     if (!valueReader && activeIndex == SemanticIndex::getInstance()) {
@@ -607,7 +609,7 @@ GhostAnnotationReport GhostAnnotationService::annotationsForDocument(
 
     appendFormalPortAnnotations(lines,
                                 fileRecords,
-                                allRecords,
+                                activeIndex,
                                 &report.annotations);
     appendSymbolEffectiveValueAnnotations(lines,
                                           fileRecords,
@@ -632,29 +634,19 @@ GhostNumericLiteralReport GhostAnnotationService::numericLiteralAt(
     const GhostNumericLiteralQuery& query) const
 {
     GhostNumericLiteralReport report;
-    if (query.documentText.isEmpty() || query.cursorPosition < 0)
+    if (query.lineText.isEmpty() || query.cursorPosition < 0
+        || query.lineStartPosition < 0) {
         return report;
-
-    const QList<LineInfo> lines = documentLines(query.documentText);
-    int lineIndex = -1;
-    for (int i = 0; i < lines.size(); ++i) {
-        const int start = lines.at(i).startPosition;
-        const int end = start + lines.at(i).text.size();
-        if (query.cursorPosition >= start
-            && query.cursorPosition <= end) {
-            lineIndex = i;
-            break;
-        }
     }
-    if (lineIndex < 0)
+
+    const int relativePosition =
+        query.cursorPosition - query.lineStartPosition;
+    if (relativePosition < 0 || relativePosition > query.lineText.size())
         return report;
 
-    const LineInfo& line = lines.at(lineIndex);
-    const int column = qBound(0,
-                              query.cursorPosition - line.startPosition,
-                              line.text.size());
-    const int comment = lineCommentStart(line.text);
-    const int limit = comment >= 0 ? comment : line.text.size();
+    const int column = qBound(0, relativePosition, query.lineText.size());
+    const int comment = lineCommentStart(query.lineText);
+    const int limit = comment >= 0 ? comment : query.lineText.size();
     if (column >= limit)
         return report;
 
@@ -662,21 +654,21 @@ GhostNumericLiteralReport GhostAnnotationService::numericLiteralAt(
     int end = -1;
     QString expression;
     bool stringLiteral = false;
-    if (stringRangeAt(line.text, column, &start, &end)) {
-        const QString before = line.text.left(start).trimmed();
+    if (stringRangeAt(query.lineText, column, &start, &end)) {
+        const QString before = query.lineText.left(start).trimmed();
         if (before.startsWith(QStringLiteral("`include")))
             return report;
-        expression = line.text.mid(start, end - start);
+        expression = query.lineText.mid(start, end - start);
         stringLiteral = true;
     } else {
-        if (!literalTokenRangeAt(line.text,
+        if (!literalTokenRangeAt(query.lineText,
                                  column,
                                  limit,
                                  &start,
                                  &end)) {
             return report;
         }
-        expression = line.text.mid(start, end - start);
+        expression = query.lineText.mid(start, end - start);
     }
 
     const EffectiveLiteralResult literal =
@@ -685,7 +677,7 @@ GhostNumericLiteralReport GhostAnnotationService::numericLiteralAt(
         return report;
     report.available = true;
     report.displayText = literal.valueText;
-    report.startPosition = line.startPosition + start;
-    report.endPosition = line.startPosition + end;
+    report.startPosition = query.lineStartPosition + start;
+    report.endPosition = query.lineStartPosition + end;
     return report;
 }

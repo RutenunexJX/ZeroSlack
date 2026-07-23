@@ -65,6 +65,9 @@ bool isDefinitionCollectorKind(CollectorKind kind)
     case CollectorKind::User:
     case CollectorKind::ModuleParameter:
     case CollectorKind::InstPin:
+    case CollectorKind::PackageImport:
+    case CollectorKind::MacroReference:
+    case CollectorKind::InactivePreprocessorBranch:
         return false;
     }
     return false;
@@ -128,6 +131,9 @@ int collectorKindDefinitionPriority(CollectorKind kind)
     case CollectorKind::ModuleParameter:
     case CollectorKind::Inst:
     case CollectorKind::InstPin:
+    case CollectorKind::PackageImport:
+    case CollectorKind::MacroReference:
+    case CollectorKind::InactivePreprocessorBranch:
         return 10;
     }
     return 10;
@@ -143,6 +149,8 @@ QString collectorKindLabel(CollectorKind kind)
         return QStringLiteral("interface");
     case CollectorKind::Package:
         return QStringLiteral("package");
+    case CollectorKind::PackageImport:
+        return QStringLiteral("package import");
     case CollectorKind::Typedef:
         return QStringLiteral("typedef");
     case CollectorKind::EnumValue:
@@ -193,12 +201,15 @@ QString collectorKindLabel(CollectorKind kind)
     case CollectorKind::Function:
         return QStringLiteral("function");
     case CollectorKind::DefDefine:
+    case CollectorKind::MacroReference:
     case CollectorKind::DefIfdef:
     case CollectorKind::DefIfndef:
     case CollectorKind::DefElse:
     case CollectorKind::DefElsif:
     case CollectorKind::DefEndif:
         return QStringLiteral("macro");
+    case CollectorKind::InactivePreprocessorBranch:
+        return QStringLiteral("inactive preprocessor branch");
     case CollectorKind::Always:
     case CollectorKind::AlwaysFf:
     case CollectorKind::AlwaysComb:
@@ -355,6 +366,9 @@ bool isOutlineCollectorKind(CollectorKind kind)
     case CollectorKind::Initial:
     case CollectorKind::XilinxConstraint:
     case CollectorKind::ModuleParameter:
+    case CollectorKind::PackageImport:
+    case CollectorKind::MacroReference:
+    case CollectorKind::InactivePreprocessorBranch:
         return false;
     }
     return false;

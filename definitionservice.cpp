@@ -229,9 +229,9 @@ DefinitionQuery DefinitionService::withResolvedMemberContext(const DefinitionQue
         return resolved;
 
     const QList<SemanticSymbolRecord> candidates =
-        semanticIndex()->getSymbolRecords();
+        semanticIndex()->getSymbolRecordsByName(variableName);
     for (const SemanticSymbolRecord& record : candidates) {
-        if (record.name != variableName || !record.owner.interfaceLike)
+        if (!record.owner.interfaceLike)
             continue;
 
         if (!query.moduleName.isEmpty()

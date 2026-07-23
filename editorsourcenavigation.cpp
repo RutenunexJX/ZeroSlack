@@ -57,17 +57,13 @@ bool definitionPreviewTargetIsCurrentLocation(
         && oneBasedColumn <= report.targetColumn + symbolWidth;
 }
 
-int numericPopupSelectionStart(const QString& text,
-                               int startPosition,
-                               int endPosition)
+int numericPopupSelectionStart(const QString& literal,
+                               int startPosition)
 {
-    if (startPosition < 0 || endPosition <= startPosition
-        || startPosition >= text.size()) {
+    if (startPosition < 0 || literal.isEmpty()) {
         return startPosition;
     }
 
-    const QString literal =
-        text.mid(startPosition, endPosition - startPosition);
     const int quote = literal.indexOf(QLatin1Char('\''));
     if (quote < 0 || quote + 1 >= literal.size())
         return startPosition;
@@ -524,10 +520,12 @@ void EditorSourceNavigationUi::refreshPopupAt(
     const EditorSourceNavigationTarget& target)
 {
     const QTextCursor cursor = editor->cursorForPosition(position);
+    const QTextBlock block = cursor.block();
     const GhostNumericLiteralReport numericReport =
         GhostAnnotationService::getInstance()->numericLiteralAt(
             GhostNumericLiteralQuery{
-                editor->toPlainText(),
+                block.text(),
+                block.position(),
                 cursor.position()
             });
     if (numericReport.available) {
@@ -705,9 +703,10 @@ bool EditorSourceNavigationUi::popupSelectionStillActive(
         return false;
 
     const int selectionStart = popupNumericMode
-        ? numericPopupSelectionStart(editor->toPlainText(),
-                                     popupStartPos,
-                                     popupEndPos)
+        ? numericPopupSelectionStart(
+              editor->cachedDocumentSlice(popupStartPos,
+                                          popupEndPos - popupStartPos),
+              popupStartPos)
         : popupStartPos;
 
     return cursor.selectionStart() <= selectionStart

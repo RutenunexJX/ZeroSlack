@@ -150,6 +150,165 @@ set(PHASE_I2_NATIVE_STORE_PUBLICATION_FILES
 set(PHASE_I2_REMOVED_LEGACY_REFRESH_FILES
 )
 
+set(FULL_AUDIT_REMOVED_OPEN_DOCUMENT_ANALYSIS_FILES
+    opendocumentanalysiscontroller.cpp
+    opendocumentanalysiscontrollerlifecycle.cpp
+    opendocumentanalysiscontroller.h
+)
+
+set(full_audit_open_document_analysis_violations)
+foreach(relative_path IN LISTS FULL_AUDIT_REMOVED_OPEN_DOCUMENT_ANALYSIS_FILES)
+    if(EXISTS "${ZEROSLACK_SOURCE_DIR}/${relative_path}")
+        list(APPEND full_audit_open_document_analysis_violations
+             "${relative_path}")
+    endif()
+endforeach()
+
+if(full_audit_open_document_analysis_violations)
+    list(JOIN full_audit_open_document_analysis_violations
+         "\n  "
+         full_audit_open_document_analysis_text)
+    message(FATAL_ERROR
+        "Removed duplicate open-document analysis controller must not return:\n  ${full_audit_open_document_analysis_text}")
+endif()
+
+set(FULL_AUDIT_REMOVED_SV_MACRO_SCANNER_FILES
+    svmacrosemantics.cpp
+    svmacrosemantics.h
+)
+
+set(full_audit_sv_macro_scanner_violations)
+foreach(relative_path IN LISTS FULL_AUDIT_REMOVED_SV_MACRO_SCANNER_FILES)
+    if(EXISTS "${ZEROSLACK_SOURCE_DIR}/${relative_path}")
+        list(APPEND full_audit_sv_macro_scanner_violations
+             "${relative_path}")
+    endif()
+endforeach()
+
+if(full_audit_sv_macro_scanner_violations)
+    list(JOIN full_audit_sv_macro_scanner_violations
+         "\n  "
+         full_audit_sv_macro_scanner_text)
+    message(FATAL_ERROR
+        "Removed parallel SystemVerilog macro scanner must not return:\n  ${full_audit_sv_macro_scanner_text}")
+endif()
+
+set(FULL_AUDIT_PASSIVE_FULL_SCAN_PATTERNS
+    "semanticindexcompletiontypequeries.cpp|getSymbolRecords[ 	\r\n]*\\([ 	\r\n]*\\)"
+    "mainwindow.cpp|activeEditorPassiveRefreshTimer->start"
+    "mainwindow.cpp|kMaxPassiveSemanticDecorationCharacters"
+    "mainwindow.cpp|kMaxPassiveGhostAnnotationCharacters"
+    "editorruntime.cpp|kMaxPassiveGhostAnnotationCharacters"
+)
+
+set(full_audit_passive_full_scan_violations)
+foreach(entry IN LISTS FULL_AUDIT_PASSIVE_FULL_SCAN_PATTERNS)
+    string(REPLACE "|" ";" parts "${entry}")
+    list(GET parts 0 relative_path)
+    list(GET parts 1 pattern)
+    set(path "${ZEROSLACK_SOURCE_DIR}/${relative_path}")
+    if(NOT EXISTS "${path}")
+        message(FATAL_ERROR
+            "Passive full-scan guard references missing file: ${relative_path}")
+    endif()
+    file(READ "${path}" content)
+    string(REGEX MATCH "${pattern}" match "${content}")
+    if(match)
+        list(APPEND full_audit_passive_full_scan_violations
+             "${relative_path}: ${pattern}")
+    endif()
+endforeach()
+
+if(full_audit_passive_full_scan_violations)
+    list(JOIN full_audit_passive_full_scan_violations
+         "\n  "
+         full_audit_passive_full_scan_text)
+    message(FATAL_ERROR
+        "Passive UI paths must not use unbounded queries, debounce, or size-based feature shutdown:\n  ${full_audit_passive_full_scan_text}")
+endif()
+
+set(FULL_AUDIT_REMOVED_TEST_ONLY_SCHEDULER_PATTERNS
+    "analysisscheduler.h|scheduleOpenFileAnalysis"
+    "analysisscheduler.h|cancelScheduledOpenFileAnalysis"
+    "analysisscheduler.h|openFileAnalysisTimers"
+    "analysisscheduler.cpp|openFileAnalysisTimers"
+    "analysisschedulerdocuments.cpp|scheduleOpenFileAnalysis"
+    "analysisschedulerdocuments.cpp|cancelScheduledOpenFileAnalysis"
+    "analysisschedulerdocuments.cpp|openFileAnalysisTimers"
+    "test_sv/analysis_scheduler_test.cpp|runCancelledOpenFileAnalysisDoesNotFire"
+)
+
+set(FULL_AUDIT_REMOVED_BROAD_COMPILATION_UNIT_PATTERNS
+    "semanticindex.h|compilationUnitCoversWorkspace"
+    "semanticindexlookup.cpp|compilationUnitCoversWorkspace"
+    "slangmanagersymbols.cpp|compilationUnitCoversWorkspace"
+)
+
+foreach(entry IN LISTS FULL_AUDIT_REMOVED_BROAD_COMPILATION_UNIT_PATTERNS)
+    string(REPLACE "|" ";" parts "${entry}")
+    list(GET parts 0 relative_path)
+    list(GET parts 1 pattern)
+    file(READ "${ZEROSLACK_SOURCE_DIR}/${relative_path}" content)
+    string(REGEX MATCH "${pattern}" match "${content}")
+    if(match)
+        message(FATAL_ERROR
+            "Broad workspace compilation-unit import visibility must not return: ${relative_path}: ${pattern}")
+    endif()
+endforeach()
+
+set(full_audit_test_only_scheduler_violations)
+foreach(entry IN LISTS FULL_AUDIT_REMOVED_TEST_ONLY_SCHEDULER_PATTERNS)
+    string(REPLACE "|" ";" parts "${entry}")
+    list(GET parts 0 relative_path)
+    list(GET parts 1 pattern)
+    set(path "${ZEROSLACK_SOURCE_DIR}/${relative_path}")
+    if(NOT EXISTS "${path}")
+        message(FATAL_ERROR
+            "Test-only scheduler API guard references missing file: ${relative_path}")
+    endif()
+    file(READ "${path}" content)
+    string(REGEX MATCH "${pattern}" match "${content}")
+    if(match)
+        list(APPEND full_audit_test_only_scheduler_violations
+             "${relative_path}: ${pattern}")
+    endif()
+endforeach()
+
+if(full_audit_test_only_scheduler_violations)
+    list(JOIN full_audit_test_only_scheduler_violations
+         "\n  "
+         full_audit_test_only_scheduler_text)
+    message(FATAL_ERROR
+        "Test-only open-file scheduler API and state must be deleted:\n  ${full_audit_test_only_scheduler_text}")
+endif()
+
+set(FULL_AUDIT_RELATIONSHIP_PERF_REQUIRED_PATTERNS
+    "requirePositiveMetric"
+    "requireEqualMetric"
+    "requireExtractionCoverage"
+    "canonicalPublishedEngineRelationshipCount"
+    "relationship_validation_failures"
+)
+
+set(relationship_perf_path
+    "${ZEROSLACK_SOURCE_DIR}/test_sv/relationship_perf_test.cpp")
+file(READ "${relationship_perf_path}" relationship_perf_content)
+set(full_audit_relationship_perf_missing)
+foreach(pattern IN LISTS FULL_AUDIT_RELATIONSHIP_PERF_REQUIRED_PATTERNS)
+    string(REGEX MATCH "${pattern}" match "${relationship_perf_content}")
+    if(NOT match)
+        list(APPEND full_audit_relationship_perf_missing "${pattern}")
+    endif()
+endforeach()
+
+if(full_audit_relationship_perf_missing)
+    list(JOIN full_audit_relationship_perf_missing
+         "\n  "
+         full_audit_relationship_perf_text)
+    message(FATAL_ERROR
+        "relationship_perf_test must reject empty, partial, or unpublished results; missing runtime validation:\n  ${full_audit_relationship_perf_text}")
+endif()
+
 set(PHASE_I2_NATIVE_STORE_BRIDGE_FILES
     semanticindexstore.cpp
 )
@@ -286,10 +445,6 @@ set(PHASE_L_REGEX_CLEANUP_ALLOWLIST
     editorcompletionworkflow.cpp
     editorcoordinator.cpp
     foldblockshelfmodel.cpp
-    ghostannotationservice.cpp
-    moduleblockdiagramservice.cpp
-    semanticindexlookup.cpp
-    smartrelationshipbuildercontext.cpp
 )
 
 set(PHASE_L_REGEX_CLEANUP_PATTERNS

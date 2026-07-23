@@ -1,5 +1,7 @@
 #include "diagnosticservice.h"
 
+#include "editorfileidentity.h"
+
 #include <QDir>
 #include <QFileInfo>
 #include <QSet>
@@ -167,7 +169,8 @@ QList<DiagnosticResult> DiagnosticService::findDiagnostics(
     QSet<QString> normalizedWorkspaceFiles;
     if (normalized.workspaceFilesOnly) {
         for (const QString& fileName : normalized.workspaceFiles)
-            normalizedWorkspaceFiles.insert(fileName);
+            normalizedWorkspaceFiles.insert(
+                EditorFileIdentity::lookupKey(fileName));
     }
 
     const QList<SemanticDiagnostic> diagnostics =
@@ -176,7 +179,8 @@ QList<DiagnosticResult> DiagnosticService::findDiagnostics(
         if (!severityMatches(diagnostic.severity, normalized))
             continue;
         if (normalized.workspaceFilesOnly
-            && !normalizedWorkspaceFiles.contains(normalizedFileName(diagnostic.fileName))) {
+            && !normalizedWorkspaceFiles.contains(
+                EditorFileIdentity::lookupKey(diagnostic.fileName))) {
             continue;
         }
 
@@ -362,9 +366,10 @@ QStringList DiagnosticService::normalizedFileNames(const QStringList& fileNames)
     QSet<QString> seen;
     for (const QString& fileName : fileNames) {
         const QString path = normalizedFileName(fileName);
-        if (path.isEmpty() || seen.contains(path))
+        const QString key = EditorFileIdentity::lookupKey(path);
+        if (path.isEmpty() || seen.contains(key))
             continue;
-        seen.insert(path);
+        seen.insert(key);
         normalized.append(path);
     }
     return normalized;

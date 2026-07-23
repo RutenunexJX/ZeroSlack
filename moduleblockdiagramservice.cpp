@@ -6,7 +6,6 @@
 #include <QDir>
 #include <QFileInfo>
 #include <QHash>
-#include <QRegularExpression>
 #include <QSet>
 #include <algorithm>
 #include <functional>
@@ -86,15 +85,6 @@ QString normalizedModuleBlockAccessName(QString accessPath)
     if (suffix > 0)
         accessPath.truncate(suffix);
     return accessPath.trimmed();
-}
-
-QString instanceNameFromEvidence(const QString& evidenceText)
-{
-    static const QRegularExpression expression(
-        QStringLiteral("^\\s*Instance:\\s*([^\\s]+)\\s+at\\s+line\\s+\\d+"),
-        QRegularExpression::CaseInsensitiveOption);
-    const QRegularExpressionMatch match = expression.match(evidenceText);
-    return match.hasMatch() ? match.captured(1).trimmed() : QString();
 }
 
 RtlInsightCodeLink moduleBlockCodeLinkForRange(
@@ -372,8 +362,6 @@ QString instanceNameForRelationship(const RelationshipResult& relationship,
 {
     QString instanceName =
         normalizedModuleBlockAccessName(relationship.toAccessPath);
-    if (instanceName.isEmpty())
-        instanceName = instanceNameFromEvidence(relationship.evidenceText);
     if (instanceName.isEmpty()
         && isModuleBlockInstanceDeclaration(relationship.toSymbolRecord)) {
         instanceName = relationship.toSymbolRecord.name;

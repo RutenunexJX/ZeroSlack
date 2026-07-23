@@ -74,7 +74,7 @@ QString referenceEmptyReason(const ReferenceReport& report,
     case ReferenceReportNotFoundReason::None:
         break;
     case ReferenceReportNotFoundReason::NoSubjectSymbol:
-        if (SemanticIndex::getInstance()->getSymbolRecords().isEmpty())
+        if (!SemanticIndex::getInstance()->hasSymbolRecords())
             return QStringLiteral("workspace analysis stale / not ready");
         return QStringLiteral("symbol not indexed");
     case ReferenceReportNotFoundReason::NoReferences:

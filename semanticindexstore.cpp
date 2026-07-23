@@ -88,54 +88,6 @@ bool isSemanticModuleName(const QString& name)
     return SvTokenUtils::isIdentifier(name);
 }
 
-QString stripCommentsFromLine(const QString& line, bool& inBlockComment)
-{
-    QString result;
-    result.reserve(line.size());
-    for (int i = 0; i < line.size(); ++i) {
-        if (inBlockComment) {
-            if (line.mid(i, 2) == QStringLiteral("*/")) {
-                inBlockComment = false;
-                ++i;
-            }
-            continue;
-        }
-
-        if (line.mid(i, 2) == QStringLiteral("//"))
-            break;
-        if (line.mid(i, 2) == QStringLiteral("/*")) {
-            inBlockComment = true;
-            ++i;
-            continue;
-        }
-        result.append(line.at(i));
-    }
-    return result;
-}
-
-int findEndModuleLineInContent(const QString& content,
-                               const SemanticSymbolRecord& moduleRecord)
-{
-    const QStringList lines = content.split('\n');
-    int moduleDepth = 0;
-    int scanStart = moduleRecord.location.startLine - 1;
-    if (scanStart < 0)
-        scanStart = 0;
-
-    bool inBlockComment = false;
-    for (int i = scanStart; i < lines.size(); ++i) {
-        const QString code = stripCommentsFromLine(lines.at(i), inBlockComment);
-        if (SvTokenUtils::containsWord(code, QStringLiteral("module")))
-            ++moduleDepth;
-        if (SvTokenUtils::containsWord(code, QStringLiteral("endmodule"))) {
-            --moduleDepth;
-            if (moduleDepth == 0)
-                return i;
-        }
-    }
-    return -1;
-}
-
 QStringList scopeSymbolNamesForRecords(
     const QList<SemanticSymbolRecord>& records,
     int cursorLine)
@@ -805,17 +757,13 @@ QStringList SemanticIndex::getScopeSymbolNames(const QString& fileName, int curs
     context.moduleName = containingModuleNameForRecords(fileRecords, cursorLine);
 
     QHash<QString, QList<SemanticSymbolRecord>> importedRecordsByName;
-    for (const QString& packageName : activeImportedPackageNames(context)) {
-        for (const SemanticSymbolRecord& record :
-             getSymbolRecordsByOwner(packageName)) {
-            if (!packageVisibleRecordImported(record, context))
-                continue;
-            if (!SymbolTaxonomy::isPackageVisibleDefinition(
-                    semanticMetadataForSymbolRecord(record))) {
-                continue;
-            }
-            importedRecordsByName[record.name.toCaseFolded()].append(record);
+    for (const SemanticSymbolRecord& record :
+         getVisibleImportedPackageRecords(context)) {
+        if (!SymbolTaxonomy::isPackageVisibleDefinition(
+                semanticMetadataForSymbolRecord(record))) {
+            continue;
         }
+        importedRecordsByName[record.name.toCaseFolded()].append(record);
     }
 
     for (auto it = importedRecordsByName.constBegin();
@@ -838,24 +786,6 @@ QStringList SemanticIndex::getScopeSymbolNames(const QString& fileName, int curs
 bool SemanticIndex::isValidModuleName(const QString& name) const
 {
     return isSemanticModuleName(name);
-}
-
-int SemanticIndex::findEndModuleLine(const QString& fileName,
-                                     const SemanticSymbolRecord& moduleRecord) const
-{
-    if (moduleRecord.declarationKind != SymbolTaxonomy::DeclarationKind::Module)
-        return -1;
-
-    if (moduleRecord.location.endLine >= moduleRecord.location.startLine
-        && moduleRecord.location.endLine > 0) {
-        return moduleRecord.location.endLine - 1;
-    }
-
-    const QString content = getCachedFileContent(fileName);
-    if (!content.isEmpty())
-        return findEndModuleLineInContent(content, moduleRecord);
-
-    return -1;
 }
 
 bool SemanticIndex::contentAffectsSymbols(const QString& fileName,

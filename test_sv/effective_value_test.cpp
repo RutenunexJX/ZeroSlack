@@ -2,7 +2,6 @@
 #include "ghostannotationservice.h"
 #include "documentmodel.h"
 #include "mycodeeditor.h"
-#include "opendocumentanalysiscontroller.h"
 #include "semanticindexsnapshot.h"
 #include "slangmanager.h"
 #include "slangsymbolpresentation.h"
@@ -648,21 +647,24 @@ void runDocumentModelWorkspaceOverlayRegression()
         documents.documentForFile(consumerFile);
 
     SymbolAnalyzer analyzer;
-    OpenDocumentAnalysisController controller;
-    controller.setDocumentModel(&documents);
-    controller.setSymbolAnalyzer(&analyzer);
-    controller.setWorkspaceOpenProvider([]() { return true; });
     int completions = 0;
     QSet<QString> completedOverlayFiles;
     QObject::connect(&analyzer,
                      &SymbolAnalyzer::analysisCompleted,
-                     &controller,
+                     &analyzer,
                      [&](const QString& fileName, int) {
                          ++completions;
                          completedOverlayFiles.insert(
                              QFileInfo(fileName).absoluteFilePath());
                      });
-    controller.analyzeOpenDocumentsNow();
+    analyzer.analyzeOpenDocuments({
+        {packageFile,
+         packageUnsaved,
+         static_cast<std::uint64_t>(packageDocument.textVersion)},
+        {consumerFile,
+         consumer,
+         static_cast<std::uint64_t>(consumerDocument.textVersion)},
+    });
 
     const bool published = waitUntil(
         [&]() {
@@ -729,7 +731,6 @@ void runDocumentModelWorkspaceOverlayRegression()
                && completedOverlayFiles.contains(
                    QFileInfo(consumerFile).absoluteFilePath()));
 
-    controller.shutdown();
     analyzer.cancelAllAnalysesAndWait();
     EffectiveValueService::getInstance()->clearPublishedFacts();
     if (previous)
@@ -1157,27 +1158,17 @@ void runLargeDocumentRevisionRegression()
     globalIndex->setSnapshot(snapshot(baselineRecords, fileName, source));
 
     SymbolAnalyzer analyzer;
-    OpenDocumentAnalysisController controller;
-    controller.setSymbolAnalyzer(&analyzer);
-    controller.setWorkspaceOpenProvider([]() { return false; });
-    controller.setOpenFileContentProvider(
-        [&](const QString& requested) {
-            return requested == fileName ? source : QString();
-        });
     int completions = 0;
     QObject::connect(&analyzer,
                      &SymbolAnalyzer::analysisCompleted,
-                     &controller,
+                     &analyzer,
                      [&](const QString& completedFile, int) {
                          if (QFileInfo(completedFile).absoluteFilePath()
                              == QFileInfo(fileName).absoluteFilePath()) {
                              ++completions;
                          }
                      });
-    DocumentSnapshot document;
-    document.fileName = fileName;
-    document.textVersion = 77;
-    controller.analyzeOpenDocumentNow(document, false);
+    analyzer.analyzeFileContentAsync(fileName, source, 77);
 
     const bool published = waitUntil(
         [&]() {
@@ -1203,7 +1194,6 @@ void runLargeDocumentRevisionRegression()
                && value.computedDocumentRevision == 77
                && value.valueText == QStringLiteral("5"));
 
-    controller.shutdown();
     analyzer.cancelAllAnalysesAndWait();
     EffectiveValueService::getInstance()->clearPublishedFacts();
     if (previous)
@@ -1906,20 +1896,12 @@ void runDebouncedOverlayPublicationRegression()
 
     QString overlayText = firstEdit;
     SymbolAnalyzer analyzer;
-    OpenDocumentAnalysisController controller;
-    controller.setSymbolAnalyzer(&analyzer);
-    controller.setWorkspaceOpenProvider([]() { return true; });
-    controller.setOpenFileContentProvider(
-        [&](const QString& fileName) {
-            return fileName == childFile ? overlayText : QString();
-        });
-
     int completions = 0;
     bool latestRequested = false;
     QStringList publicationsAfterLatestRequest;
     QObject::connect(&analyzer,
                      &SymbolAnalyzer::analysisCompleted,
-                     &controller,
+                     &analyzer,
                      [&](const QString& fileName, int) {
                          if (QFileInfo(fileName).absoluteFilePath()
                              == QFileInfo(childFile).absoluteFilePath()) {
@@ -1934,11 +1916,11 @@ void runDebouncedOverlayPublicationRegression()
 
     constexpr std::uint64_t firstRevision = 31;
     constexpr std::uint64_t latestRevision = 32;
-    controller.scheduleOpenFileAnalysis(childFile, 0, firstRevision);
+    analyzer.analyzeFileContentAsync(childFile, overlayText, firstRevision);
     QCoreApplication::processEvents(QEventLoop::AllEvents, 10);
     overlayText = latestEdit;
     latestRequested = true;
-    controller.scheduleOpenFileAnalysis(childFile, 0, latestRevision);
+    analyzer.analyzeFileContentAsync(childFile, overlayText, latestRevision);
 
     const bool publishedLatest = waitUntil(
         [&]() {

@@ -23,6 +23,8 @@
 #include "sourcenavigationservice.h"
 
 #include <cstdint>
+#include <atomic>
+#include <memory>
 
 class MyCodeEditor;
 class QContextMenuEvent;
@@ -66,7 +68,9 @@ struct MyCodeEditorState
     // formatting revision. Appearance and syntax highlighting can advance the
     // latter without changing any source text.
     std::uint64_t semanticTextRevision = 0;
+    std::uint64_t ghostQueryGeneration = 0;
     QString semanticRevisionText;
+    std::shared_ptr<std::atomic_bool> ghostQueryCancellation;
     EditorHotPathMetrics hotPathMetrics;
     FormatterProfile currentFormatterProfile = FormatterProfile::Structured;
     bool currentFormatOnSaveEnabled = false;

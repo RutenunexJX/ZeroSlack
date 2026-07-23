@@ -8,7 +8,6 @@
 AnalysisScheduler::AnalysisScheduler(QObject* parent)
     : QObject(parent)
 {
-    setupOpenDocumentAnalysis();
     setupRelationshipAnalysis();
     setupWorkspaceSymbolAnalysis();
     setupDiagnosticsRefreshAndWorkspaceRequests();
@@ -37,8 +36,6 @@ void AnalysisScheduler::shutdown()
     }
     externalFileTimers.clear();
     SymbolAnalyzer* analyzer = symbolAnalyzer.data();
-    if (openDocumentAnalysis)
-        openDocumentAnalysis->shutdown();
     if (workspaceSymbolAnalysis) {
         workspaceSymbolAnalysis->setDocumentModel(nullptr);
         workspaceSymbolAnalysis->setProjectModel(nullptr);
@@ -108,8 +105,6 @@ void AnalysisScheduler::setSymbolAnalyzer(SymbolAnalyzer* analyzer)
         return;
 
     symbolAnalyzer = analyzer;
-    if (openDocumentAnalysis)
-        openDocumentAnalysis->setSymbolAnalyzer(analyzer);
     if (workspaceSymbolAnalysis)
         workspaceSymbolAnalysis->setSymbolAnalyzer(analyzer);
     if (relationshipAnalysis)
@@ -118,16 +113,12 @@ void AnalysisScheduler::setSymbolAnalyzer(SymbolAnalyzer* analyzer)
 
 void AnalysisScheduler::setOpenFileContentProvider(std::function<QString(const QString&)> provider)
 {
-    openFileContentProvider = provider;
-    if (openDocumentAnalysis)
-        openDocumentAnalysis->setOpenFileContentProvider(std::move(provider));
+    openFileContentProvider = std::move(provider);
 }
 
 void AnalysisScheduler::setWorkspaceOpenProvider(std::function<bool()> provider)
 {
-    workspaceOpenProvider = provider;
-    if (openDocumentAnalysis)
-        openDocumentAnalysis->setWorkspaceOpenProvider(std::move(provider));
+    workspaceOpenProvider = std::move(provider);
 }
 
 void AnalysisScheduler::setWorkspaceSymbolCancelProvider(std::function<bool()> provider)

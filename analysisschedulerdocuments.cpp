@@ -73,10 +73,6 @@ void AnalysisScheduler::setDocumentModel(DocumentModel* model)
         disconnect(documentModel, nullptr, this, nullptr);
 
     documentModel = model;
-    // OpenDocumentAnalysisController remains available for explicit legacy
-    // commands, but it no longer observes editor events.
-    if (openDocumentAnalysis)
-        openDocumentAnalysis->setDocumentModel(nullptr);
     if (workspaceSymbolAnalysis)
         workspaceSymbolAnalysis->setDocumentModel(model);
     if (!documentModel)
@@ -305,23 +301,6 @@ void AnalysisScheduler::requestSemanticAnalysis(
     workspaceSymbolAnalysis->requestSemanticAnalysis(request);
 }
 
-void AnalysisScheduler::scheduleOpenFileAnalysis(const QString& fileName,
-                                                 int delayMs)
-{
-    QTimer::singleShot(qMax(0, delayMs), this, [this, fileName]() {
-        requestSemanticAnalysis(SemanticAnalysisReason::ExplicitRequest,
-                                SemanticChangeImpact::Unknown,
-                                fileName,
-                                {fileName});
-    });
-}
-
-void AnalysisScheduler::cancelScheduledOpenFileAnalysis(
-    const QString& fileName)
-{
-    Q_UNUSED(fileName)
-}
-
 bool AnalysisScheduler::isSelfWriteWatcherEvent(const QString& fileName) const
 {
     const SelfWriteStamp stamp =
@@ -458,7 +437,6 @@ void AnalysisScheduler::onDocumentOpened(const DocumentSnapshot& snapshot)
 void AnalysisScheduler::onDocumentEdited(const DocumentSnapshot& snapshot)
 {
     pendingCleanSemanticChanges.remove(normalizedFileName(snapshot.fileName));
-    cancelScheduledOpenFileAnalysis(snapshot.fileName);
     if (relationshipAnalysisQueue)
         relationshipAnalysisQueue->clearFile(snapshot.fileName);
     if (workspaceSymbolAnalysis) {

@@ -2,27 +2,6 @@
 
 #include "diagnosticsrefreshcontroller.h"
 
-void AnalysisScheduler::setupOpenDocumentAnalysis()
-{
-    openDocumentAnalysis = new OpenDocumentAnalysisController(this);
-    openDocumentAnalysis->setWorkspaceAnalysisActiveProvider([this]() {
-        return workspaceSymbolAnalysis
-            && workspaceSymbolAnalysis->isWorkspaceAnalysisActive();
-    });
-    connect(openDocumentAnalysis,
-            &OpenDocumentAnalysisController::documentRefreshRequested,
-            this,
-            &AnalysisScheduler::documentRefreshRequested);
-    connect(openDocumentAnalysis,
-            &OpenDocumentAnalysisController::relationshipAnalysisRequested,
-            this,
-            &AnalysisScheduler::requestRelationshipAnalysis);
-    connect(openDocumentAnalysis,
-            &OpenDocumentAnalysisController::relationshipAnalysisScheduled,
-            this,
-            &AnalysisScheduler::scheduleRelationshipAnalysis);
-}
-
 void AnalysisScheduler::setupRelationshipAnalysis()
 {
     relationshipAnalysisQueue = new RelationshipAnalysisQueue(this);

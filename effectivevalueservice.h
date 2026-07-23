@@ -145,10 +145,13 @@ class EffectiveValueService
 public:
     struct PreparedFactsState;
     struct RetiredFactsState;
+    struct DocumentSnapshot;
 
     static EffectiveValueService* getInstance();
 
-    explicit EffectiveValueService(SemanticIndex* semanticIndex = nullptr);
+    explicit EffectiveValueService(
+        SemanticIndex* semanticIndex = nullptr,
+        std::shared_ptr<const DocumentSnapshot> documentSnapshot = {});
 
     void setSemanticIndex(SemanticIndex* semanticIndex);
     std::uint64_t beginComputation(
@@ -181,6 +184,8 @@ public:
         const QString& documentText,
         const HierarchyInstanceContext& instanceContext = {},
         std::uint64_t documentRevision = 0) const;
+    std::shared_ptr<const DocumentSnapshot> snapshotForDocument(
+        const QString& fileName) const;
     void invalidateDocumentFacts(const QString& fileName);
     void clearPublishedFacts();
     static EffectiveLiteralResult evaluateLiteral(
@@ -204,6 +209,7 @@ private:
     QHash<QString, PublishedFacts> factsByFile;
     QHash<QString, std::uint64_t> requestedRevisionByFile;
     std::atomic<std::uint64_t> nextComputationRevision{0};
+    std::shared_ptr<const DocumentSnapshot> readSnapshot;
 
     SemanticIndex* semanticIndex() const;
     void registerComputation(

@@ -731,10 +731,10 @@ engineering configuration / diagnostics lane.
 - `DiagnosticNavigationService` owns next/previous diagnostic selection using
   existing `DiagnosticService` filters. Problems panel and main-window actions
   consume its result and navigate through `NavigationCommandCoordinator`.
-- `SvMacroSemantics` owns the conservative macro scanner used by symbol
-  extraction, hover/reference helpers, undefined-macro diagnostics, and
-  inactive-branch decorations. UI code consumes records/reports/decorations
-  only; it does not run its own preprocessor.
+- `SlangPreprocessorFacts` projects Slang's parsed macro definitions, active
+  macro usages, and disabled conditional branches into semantic records.
+  Hover, references, diagnostics, and inactive-branch decoration consume the
+  same Slang-backed index; no parallel source-text preprocessor is used.
 - Fold Shelf baseline: `FoldBlockShelfModel` owns the shelf item list and
   mutation lifecycle including rename, query/filter, and stale/consumed
   cleanup, `FoldShelfPersistenceService` owns versioned QSettings-backed

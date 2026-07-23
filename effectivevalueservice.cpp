@@ -111,6 +111,13 @@ struct EffectiveValueService::RetiredFactsState {
     QHash<QString, PublishedFacts> factsByFile;
 };
 
+struct EffectiveValueService::DocumentSnapshot {
+    QString normalizedFileName;
+    PublishedFacts publication;
+    std::uint64_t requestedRevision = 0;
+    bool hasPublication = false;
+};
+
 EffectiveValueService* EffectiveValueService::getInstance()
 {
     if (!instance)
@@ -118,8 +125,11 @@ EffectiveValueService* EffectiveValueService::getInstance()
     return instance.get();
 }
 
-EffectiveValueService::EffectiveValueService(SemanticIndex* semanticIndex)
+EffectiveValueService::EffectiveValueService(
+    SemanticIndex* semanticIndex,
+    std::shared_ptr<const DocumentSnapshot> documentSnapshot)
     : index(semanticIndex ? semanticIndex : SemanticIndex::getInstance())
+    , readSnapshot(std::move(documentSnapshot))
 {
 }
 
@@ -189,6 +199,10 @@ std::uint64_t EffectiveValueService::requestedRevisionForDocument(
     const QString normalized = normalizedFileName(fileName);
     if (normalized.isEmpty())
         return 0;
+    if (readSnapshot) {
+        return readSnapshot->normalizedFileName == normalized
+            ? readSnapshot->requestedRevision : 0;
+    }
     QReadLocker locker(&factsLock);
     return requestedRevisionByFile.value(normalized, 0);
 }
@@ -366,15 +380,28 @@ QList<EffectiveValueFact> EffectiveValueService::factsForDocument(
     if (normalized.isEmpty())
         return {};
 
-    QReadLocker locker(&factsLock);
-    const auto publication = factsByFile.constFind(normalized);
-    if (publication == factsByFile.constEnd()
+    QReadLocker locker(readSnapshot ? nullptr : &factsLock);
+    const PublishedFacts* publication = nullptr;
+    std::uint64_t requestedRevision = 0;
+    if (readSnapshot) {
+        if (readSnapshot->normalizedFileName == normalized
+            && readSnapshot->hasPublication) {
+            publication = &readSnapshot->publication;
+            requestedRevision = readSnapshot->requestedRevision;
+        }
+    } else {
+        const auto found = factsByFile.constFind(normalized);
+        if (found != factsByFile.constEnd())
+            publication = &found.value();
+        requestedRevision = requestedRevisionByFile.value(normalized, 0);
+    }
+    if (!publication
         || publication->contentFingerprint
                != documentContentFingerprint(documentText)
         || (documentRevision != 0
             && publication->documentRevision != documentRevision)
         || publication->computationRevision
-               < requestedRevisionByFile.value(normalized, 0)) {
+               < requestedRevision) {
         return {};
     }
 
@@ -470,6 +497,25 @@ QList<EffectiveValueFact> EffectiveValueService::factsForDocument(
         result.append(std::move(selected));
     }
     return result;
+}
+
+std::shared_ptr<const EffectiveValueService::DocumentSnapshot>
+EffectiveValueService::snapshotForDocument(const QString& fileName) const
+{
+    const QString normalized = normalizedFileName(fileName);
+    if (normalized.isEmpty())
+        return {};
+
+    auto snapshot = std::make_shared<DocumentSnapshot>();
+    snapshot->normalizedFileName = normalized;
+    QReadLocker locker(&factsLock);
+    const auto publication = factsByFile.constFind(normalized);
+    if (publication != factsByFile.constEnd()) {
+        snapshot->publication = publication.value();
+        snapshot->hasPublication = true;
+    }
+    snapshot->requestedRevision = requestedRevisionByFile.value(normalized, 0);
+    return snapshot;
 }
 
 void EffectiveValueService::invalidateDocumentFacts(const QString& fileName)

@@ -5,7 +5,9 @@
 
 #include <QWidget>
 
+#include <cstdint>
 #include <functional>
+#include <memory>
 #include <QSet>
 
 class QCheckBox;
@@ -22,6 +24,10 @@ class QTreeWidget;
 class SignalUsageHotspotPanel : public QWidget
 {
 public:
+    using ReportBuilder = std::function<SignalUsageHotspotReport(
+        const SignalUsageHotspotQuery&,
+        std::shared_ptr<const SemanticIndexSnapshot>)>;
+
     explicit SignalUsageHotspotPanel(QWidget* parent = nullptr);
 
     void setNavigationHandler(
@@ -49,6 +55,9 @@ public:
                                  const QString& fileName);
     bool selectUsageForTest(int itemIndex);
     bool triggerFirstUsageNavigationForTest();
+    void setReportBuilderForTest(ReportBuilder builder);
+    bool reportBuildInFlightForTest() const;
+    QString currentDeclarationDisplayNameForTest() const;
 
 protected:
     void resizeEvent(QResizeEvent* event) override;
@@ -91,6 +100,9 @@ private:
     qreal lastTrackRailWidth = 0.0;
     qreal lastTrackSceneWidth = 0.0;
     double trackZoomFactor = 1.0;
+    ReportBuilder reportBuilder;
+    std::uint64_t reportGeneration = 0;
+    int activeReportBuilds = 0;
 
     std::function<bool(const QString&, int, int)> navigationHandler;
     std::function<void(const QString&, int)> statusMessageHandler;

@@ -317,8 +317,6 @@ set(ZEROSLACK_CORE_SOURCES
     tsdocument.cpp
     mycodeeditor.cpp
     myhighlighter.cpp
-    opendocumentanalysiscontroller.cpp
-    opendocumentanalysiscontrollerlifecycle.cpp
     navigationcommandcoordinator.cpp
     navigationmanager.cpp
     navigationmanagerconnections.cpp
@@ -358,7 +356,6 @@ set(ZEROSLACK_CORE_SOURCES
     incrementalsemanticanalysisworker.cpp
     semanticsourceremap.cpp
     semanticdecorationservice.cpp
-    svmacrosemantics.cpp
     semanticpanelutils.cpp
     semanticpanelrefreshpanels.cpp
     semanticpanelrefreshcoordinator.cpp
@@ -405,6 +402,7 @@ set(ZEROSLACK_CORE_SOURCES
     slangsymbolpresentation.cpp
     slangmanagerrelationships.cpp
     slangmanagersymbols.cpp
+    slangpreprocessorfacts.cpp
     tabdocumentqueries.cpp
     tabfileio.cpp
     tabmanager.cpp
@@ -507,7 +505,6 @@ set(ZEROSLACK_CORE_SOURCES
     tsdocument.h
     mycodeeditor.h
     myhighlighter.h
-    opendocumentanalysiscontroller.h
     modulehierarchymodel.h
     navigationcommandcoordinator.h
     navigationmanager.h
@@ -538,7 +535,6 @@ set(ZEROSLACK_CORE_SOURCES
     incrementalsemanticanalysisworker.h
     semanticsourceremap.h
     semanticdecorationservice.h
-    svmacrosemantics.h
     semanticpanelutils.h
     semanticpanelrefreshcoordinator.h
     semanticdockcoordinator.h
@@ -555,6 +551,7 @@ set(ZEROSLACK_CORE_SOURCES
     signalusagehotspotservice.h
     signalkernelgraphpanelcoordinator.h
     slangmanager.h
+    slangpreprocessorfacts.h
     slangparseoptions.h
     slangrelationshiphelpers.h
     slangsymbolcollector.h
@@ -816,6 +813,13 @@ if(BUILD_TESTING)
             "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
             $<TARGET_FILE:analysis_scheduler_test>
     )
+    add_test(NAME relationship_perf_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}"
+            $<TARGET_FILE:relationship_perf_test>
+            ${CMAKE_CURRENT_SOURCE_DIR}/test_sv/huge_prj
+    )
+    set_tests_properties(relationship_perf_test PROPERTIES TIMEOUT 1200)
     add_test(NAME legacy_field_policy_guard
         COMMAND ${CMAKE_COMMAND}
             -DZEROSLACK_SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}

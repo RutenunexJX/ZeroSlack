@@ -15,6 +15,7 @@
 #include <QElapsedTimer>
 #include <QFile>
 #include <QFileInfo>
+#include <QMouseEvent>
 #include <QSignalSpy>
 #include <QTabWidget>
 #include <QTextBlock>
@@ -712,6 +713,19 @@ void exerciseFoldGhostAndSlotState()
     expect("explicit semantic refresh performs one full ghost query",
            ghostEditor.hotPathMetricsForTest().fullGhostQueries == 1);
 
+    MyCodeEditor largeGhostEditor;
+    largeGhostEditor.setDocumentFileName(QStringLiteral("large_ghost.sv"));
+    QString largeGhostText = QStringLiteral(
+        "module large_ghost;\nlogic data;\nendmodule\n");
+    largeGhostText.append(
+        QString(2 * 1024 * 1024 + 64, QLatin1Char(' ')));
+    largeGhostEditor.setPlainText(largeGhostText);
+    largeGhostEditor.acceptLoadedTextAsSemanticBaseline();
+    largeGhostEditor.resetHotPathMetricsForTest();
+    largeGhostEditor.refreshSemanticPresentation();
+    expect("large documents keep ghost analysis enabled",
+           largeGhostEditor.hotPathMetricsForTest().fullGhostQueries == 1);
+
     MyCodeEditor slotEditor;
     slotEditor.setPlainText(QStringLiteral("foo bar"));
     slotEditor.acceptLoadedTextAsSemanticBaseline();
@@ -1008,6 +1022,89 @@ void exerciseOccurrenceIndexStorageBound()
            finalStats.handleCount < 32
                && finalStats.allocatedNodeCount < 48);
 }
+
+void exerciseGutterHitTestingBound()
+{
+    constexpr int lineCount = 5000;
+    QString text;
+    text.reserve(lineCount * 12);
+    text.append(QStringLiteral("module gutter_probe;\n"));
+    for (int line = 1; line < lineCount - 1; ++line)
+        text.append(QStringLiteral("logic l%1;\n").arg(line));
+    text.append(QStringLiteral("endmodule\n"));
+
+    MyCodeEditor editor;
+    editor.resize(320, 160);
+    editor.setPlainText(text);
+    editor.show();
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+
+    expect("large syntax fold collapses for gutter probe",
+           editor.toggleFoldAtLineForTest(0));
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+
+    QWidget* gutter = editor.findChild<QWidget*>(
+        QStringLiteral("editorLineNumberGutter"));
+    expect("editor gutter test surface is available", gutter != nullptr);
+    if (!gutter)
+        return;
+
+    editor.resetHotPathMetricsForTest();
+    const EditorBlockGeometry firstLineGeometry = editor.blockGeometry(0);
+    const qreal secondVisibleLineY = firstLineGeometry.top
+        + firstLineGeometry.height + 5;
+    QMouseEvent move(QEvent::MouseMove,
+                     QPointF(4, secondVisibleLineY),
+                     QPointF(4, secondVisibleLineY),
+                     QPointF(4, secondVisibleLineY),
+                     Qt::NoButton,
+                     Qt::NoButton,
+                     Qt::NoModifier);
+    QApplication::sendEvent(gutter, &move);
+
+    std::printf("perf.gutter.hidden_block_probes=%llu\n",
+                static_cast<unsigned long long>(
+                    editor.hotPathMetricsForTest().gutterBlockProbes));
+    expect("gutter hover does not walk hidden document blocks",
+           editor.hotPathMetricsForTest().gutterBlockProbes <= 2);
+}
+
+void exerciseNumericHoverDoesNotMaterializeDocument()
+{
+    const QString text = QStringLiteral(
+        "module hover_probe;\n"
+        "initial q = 16'h2a;\n"
+        "endmodule\n");
+    MyCodeEditor editor;
+    editor.resize(480, 160);
+    editor.setPlainText(text);
+    editor.show();
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+
+    QTextCursor cursor(editor.document());
+    cursor.setPosition(text.indexOf(QStringLiteral("h2a")) + 1);
+    editor.setTextCursor(cursor);
+    editor.ensureCursorVisible();
+    const QPoint point = editor.cursorRect(cursor).center();
+
+    editor.resetHotPathMetricsForTest();
+    QMouseEvent move(QEvent::MouseMove,
+                     QPointF(point),
+                     QPointF(point),
+                     QPointF(editor.viewport()->mapToGlobal(point)),
+                     Qt::NoButton,
+                     Qt::NoButton,
+                     Qt::ControlModifier);
+    QApplication::sendEvent(editor.viewport(), &move);
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+
+    const EditorHotPathMetrics metrics = editor.hotPathMetricsForTest();
+    std::printf("perf.numeric_hover.full_text_materializations=%llu\n",
+                static_cast<unsigned long long>(
+                    metrics.fullTextMaterializations));
+    expect("numeric hover does not materialize the full document",
+           metrics.fullTextMaterializations == 0);
+}
 }
 
 int main(int argc, char** argv)
@@ -1049,6 +1146,18 @@ int main(int argc, char** argv)
                && opened.text == manager.getCurrentEditor()
                                      ->cachedDocumentText());
 
+#ifdef Q_OS_WIN
+    MyCodeEditor* const firstEditor = manager.getCurrentEditor();
+    const QString alternateCasePath = rtlTop.toUpper();
+    expect("Windows file lookup treats path casing as identity-insensitive",
+           manager.getDocumentModel()->editorForFile(alternateCasePath)
+               == firstEditor);
+    expect("Windows alternate-case open reuses the existing editor",
+           manager.openFileInTab(alternateCasePath)
+               && manager.editorCount() == 1
+               && manager.getCurrentEditor() == firstEditor);
+#endif
+
     exerciseDeltaCorrectness();
     exerciseFoldGhostAndSlotState();
     exerciseRepeatedReplacementStability();
@@ -1056,6 +1165,8 @@ int main(int argc, char** argv)
     exerciseSynchronousEditTransactions();
     exerciseOccurrenceIndexRemap();
     exerciseOccurrenceIndexStorageBound();
+    exerciseGutterHitTestingBound();
+    exerciseNumericHoverDoesNotMaterializeDocument();
 
     if (QFileInfo(rtlTop).isFile()) {
         const TypingReport report = measureTyping(rtlTop);

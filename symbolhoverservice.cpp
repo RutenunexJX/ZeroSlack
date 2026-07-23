@@ -3,7 +3,6 @@
 #include "editorsemanticcontextservice.h"
 #include "effectivevalueservice.h"
 #include "sourcenavigationservice.h"
-#include "svmacrosemantics.h"
 #include "symboltaxonomy.h"
 
 #include <QDir>
@@ -49,6 +48,30 @@ QString macroUnavailableReason(const QString& name)
 {
     return QStringLiteral("Macro `%1` was not found in the current file or indexed workspace/include files.")
         .arg(name);
+}
+
+QString macroSignatureText(const SemanticSymbolRecord& record)
+{
+    if (record.name.isEmpty())
+        return QString();
+    if (record.type.modportName.isEmpty())
+        return record.name;
+    return QStringLiteral("%1(%2)")
+        .arg(record.name, record.type.modportName);
+}
+
+QString macroBodyText(const SemanticSymbolRecord& record)
+{
+    constexpr int maxCharacters = 180;
+    QString body = record.type.rawTypeText.trimmed();
+    if (body.isEmpty())
+        return QStringLiteral("<empty>");
+    body.replace(QStringLiteral("\r\n"), QStringLiteral("\\n"));
+    body.replace(QLatin1Char('\r'), QStringLiteral("\\n"));
+    body.replace(QLatin1Char('\n'), QStringLiteral("\\n"));
+    if (body.size() <= maxCharacters)
+        return body;
+    return body.left(maxCharacters - 3) + QStringLiteral("...");
 }
 
 bool isParameterLikeRecord(const SemanticSymbolRecord& record)
@@ -144,22 +167,8 @@ SymbolHoverReport SymbolHoverService::hoverForContext(
     report.definitionLine = target.line;
     if (target.symbolRecord.declarationKind
         == SymbolTaxonomy::DeclarationKind::Macro) {
-        const QString contextFile = normalizedHoverFileName(context.fileName);
-        const QString targetFile = normalizedHoverFileName(target.fileName);
-        const QString definitionContent =
-            (!context.documentText.isEmpty()
-             && !contextFile.isEmpty()
-             && contextFile == targetFile)
-                ? context.documentText
-                : (index ? index : SemanticIndex::getInstance())
-                      ->getCachedFileContent(target.fileName);
-        const SvMacroSemantics::MacroDefinition definition =
-            SvMacroSemantics::macroDefinitionFromRecord(target.symbolRecord,
-                                                        definitionContent);
-        report.macroSignatureText =
-            SvMacroSemantics::macroSignatureText(definition);
-        report.macroBodyText =
-            SvMacroSemantics::truncatedMacroBody(definition);
+        report.macroSignatureText = macroSignatureText(target.symbolRecord);
+        report.macroBodyText = macroBodyText(target.symbolRecord);
     } else {
         const QString contextFile = normalizedHoverFileName(context.fileName);
         const QString targetFile = normalizedHoverFileName(target.fileName);

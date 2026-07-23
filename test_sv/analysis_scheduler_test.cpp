@@ -17,8 +17,10 @@
 #include <functional>
 #include <thread>
 
+#include "analysiscoordinator.h"
 #include "analysisscheduler.h"
 #include "documentmodel.h"
+#include "editorfileidentity.h"
 #include "effectivevalueservice.h"
 #include "incrementalanalysisplanservice.h"
 #include "mycodeeditor.h"
@@ -31,6 +33,7 @@
 #include "symbolanalyzer.h"
 #include "symbolrelationshipengine.h"
 #include "tabmanager.h"
+#include "workspacemanager.h"
 #include "semantic_fixture_records.h"
 
 namespace {
@@ -125,6 +128,101 @@ void runEditDoesNotScheduleSemanticWork()
            SemanticIndex::getInstance()->snapshotRevision()
                == snapshotRevisionBefore);
     scheduler.shutdown();
+}
+
+void runPublicationRefreshesEditorOnce()
+{
+    QTemporaryDir directory;
+    expect("single-refresh fixture directory is valid", directory.isValid());
+    if (!directory.isValid())
+        return;
+
+    const QString fileName =
+        directory.filePath(QStringLiteral("single_refresh.sv"));
+    QFile file(fileName);
+    expect("single-refresh fixture opens",
+           file.open(QIODevice::WriteOnly | QIODevice::Text));
+    if (!file.isOpen())
+        return;
+    file.write("module single_refresh; endmodule\n");
+    file.close();
+
+    QTabWidget tabWidget;
+    TabManager tabs(&tabWidget);
+    expect("single-refresh fixture opens in tab",
+           tabs.openFileInTab(fileName));
+    MyCodeEditor* editor = tabs.getCurrentEditor();
+    expect("single-refresh fixture has editor", editor != nullptr);
+    if (!editor)
+        return;
+
+    AnalysisScheduler scheduler;
+    AnalysisCoordinator coordinator(&scheduler,
+                                    nullptr,
+                                    nullptr,
+                                    &tabs,
+                                    nullptr,
+                                    nullptr);
+    coordinator.connectSignals();
+    editor->resetHotPathMetricsForTest();
+
+    scheduler.documentRefreshRequested(fileName);
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
+    expect("one semantic publication performs one full ghost query",
+           editor->hotPathMetricsForTest().fullGhostQueries == 1);
+    scheduler.shutdown();
+}
+
+void runIncludeResolutionUsesConfiguredSearchOrder()
+{
+    QTemporaryDir directory;
+    expect("include-resolution fixture directory is valid",
+           directory.isValid());
+    if (!directory.isValid())
+        return;
+
+    QDir root(directory.path());
+    expect("include-resolution fixture directories are created",
+           root.mkpath(QStringLiteral("inc_a"))
+               && root.mkpath(QStringLiteral("inc_b"))
+               && root.mkpath(QStringLiteral("src")));
+    const QString decoyHeader =
+        root.filePath(QStringLiteral("inc_a/common.svh"));
+    const QString expectedHeader =
+        root.filePath(QStringLiteral("inc_b/common.svh"));
+    const QString currentFile =
+        root.filePath(QStringLiteral("src/top.sv"));
+    const auto writeSource = [](const QString& fileName,
+                                const QByteArray& content) {
+        QFile file(fileName);
+        if (!file.open(QIODevice::WriteOnly | QIODevice::Text))
+            return false;
+        return file.write(content) == content.size();
+    };
+    expect("include-resolution fixture files are written",
+           writeSource(decoyHeader, "`define WHICH_A 1\n")
+               && writeSource(expectedHeader, "`define WHICH_B 1\n")
+               && writeSource(currentFile,
+                              "`include \"common.svh\"\nmodule top; endmodule\n"));
+
+    WorkspaceManager workspace;
+    workspace.setRecentWorkspacePersistenceEnabledForTesting(false);
+    expect("include-resolution workspace opens",
+           workspace.openWorkspace(directory.path()));
+    WorkspaceConfiguration configuration = workspace.workspaceConfiguration();
+    configuration.includeDirs = {QFileInfo(expectedHeader).absolutePath()};
+    expect("include-resolution configuration applies",
+           workspace.setWorkspaceConfiguration(configuration));
+    expect("include-resolution scan state restores",
+           workspace.restoreSessionScanState(
+               {decoyHeader, expectedHeader, currentFile}, true));
+
+    expect("configured include directory wins over basename fallback",
+           EditorFileIdentity::same(
+               workspace.resolveIncludePath(QStringLiteral("common.svh"),
+                                            currentFile),
+               expectedHeader));
+    workspace.closeWorkspace();
 }
 
 void runDocumentOpenRequiresMatchingIndexedText()
@@ -2862,6 +2960,8 @@ int main(int argc, char** argv)
 {
     QApplication app(argc, argv);
     runEditDoesNotScheduleSemanticWork();
+    runPublicationRefreshesEditorOnce();
+    runIncludeResolutionUsesConfiguredSearchOrder();
     runDocumentOpenRequiresMatchingIndexedText();
     runWorkspaceEditDoesNotRestartWorker();
     runSupersededRequestsConvergeDocumentStates();

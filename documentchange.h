@@ -40,6 +40,7 @@ struct EditorHotPathMetrics {
     std::uint64_t occurrenceIncrementalUpdates = 0;
     std::uint64_t cachedTextSliceReads = 0;
     std::uint64_t cachedTextSliceCharacters = 0;
+    std::uint64_t gutterBlockProbes = 0;
 };
 
 Q_DECLARE_METATYPE(DocumentChange)

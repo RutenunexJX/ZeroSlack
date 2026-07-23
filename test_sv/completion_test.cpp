@@ -55,6 +55,7 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QTextDocument>
+#include <QTextBlock>
 #include <QTextLayout>
 #include <QTextStream>
 #include <QTimer>
@@ -1058,6 +1059,56 @@ int main(int argc, char** argv) {
                  .typeDescription,
              QStringLiteral("interfaces"));
 
+    const QString moduleContextFile =
+        QStringLiteral("semantic_module_context.sv");
+    const QString moduleContextText =
+        QStringLiteral("module first;\n"
+                       "  logic a;\n"
+                       "endmodule\n"
+                       "module second;\n"
+                       "  logic b;\n"
+                       "endmodule\n");
+    const int firstModuleNamePosition =
+        moduleContextText.indexOf(QStringLiteral("first"));
+    const int secondModuleNamePosition =
+        moduleContextText.indexOf(QStringLiteral("second"));
+    const QList<SemanticSymbolRecord> moduleContextRecords{
+        SemanticFixtureRecordBuilder(
+            QStringLiteral("first"),
+            SymbolTaxonomy::DeclarationKind::Module)
+            .withFile(moduleContextFile)
+            .withRange(1, 8, 3, 10)
+            .withTextSpan(firstModuleNamePosition,
+                          QStringLiteral("first").size())
+            .withCollectorKind(SymbolTaxonomy::CollectorKind::Module)
+            .record(),
+        SemanticFixtureRecordBuilder(
+            QStringLiteral("second"),
+            SymbolTaxonomy::DeclarationKind::Module)
+            .withFile(moduleContextFile)
+            .withRange(4, 8, 6, 10)
+            .withTextSpan(secondModuleNamePosition,
+                          QStringLiteral("second").size())
+            .withCollectorKind(SymbolTaxonomy::CollectorKind::Module)
+            .record(),
+    };
+    SemanticIndex moduleContextIndex;
+    moduleContextIndex.setSnapshot(sharedSnapshotFromRecords(
+        moduleContextRecords,
+        {},
+        {},
+        {{moduleContextFile, moduleContextText}}));
+    expectEq("SemanticIndex module on declaration line",
+             moduleContextIndex.currentModuleAt(
+                 moduleContextFile,
+                 firstModuleNamePosition),
+             QStringLiteral("first"));
+    expectEq("SemanticIndex module range selects second",
+             moduleContextIndex.currentModuleAt(
+                 moduleContextFile,
+                 moduleContextText.indexOf(QStringLiteral("logic b"))),
+             QStringLiteral("second"));
+
     const QString decorationFile = QStringLiteral("decor_fixture.sv");
     const QString decorationText =
         QStringLiteral("module rtl_top(\n"
@@ -1308,10 +1359,19 @@ int main(int argc, char** argv) {
         static_cast<int>(numericHoverText.indexOf(QStringLiteral("'hadda"))) + 2;
     const int includeStringHoverPosition =
         static_cast<int>(numericHoverText.indexOf(QStringLiteral("test.sv")));
+    auto numericLiteralQueryAt = [](const QString& documentText,
+                                    int cursorPosition) {
+        QTextDocument document(documentText);
+        const QTextBlock block = document.findBlock(cursorPosition);
+        return GhostNumericLiteralQuery{
+            block.text(),
+            block.position(),
+            cursorPosition};
+    };
     const GhostNumericLiteralReport literalHover =
-        ghostService.numericLiteralAt(GhostNumericLiteralQuery{
-            numericHoverText,
-            literalHoverPosition});
+        ghostService.numericLiteralAt(
+            numericLiteralQueryAt(numericHoverText,
+                                  literalHoverPosition));
     expectBool("Ghost literal hover available",
                literalHover.available,
                true);
@@ -1319,9 +1379,9 @@ int main(int argc, char** argv) {
              literalHover.displayText,
              QStringLiteral("16'd65280"));
     const GhostNumericLiteralReport stringHover =
-        ghostService.numericLiteralAt(GhostNumericLiteralQuery{
-            numericHoverText,
-            stringHoverPosition});
+        ghostService.numericLiteralAt(
+            numericLiteralQueryAt(numericHoverText,
+                                  stringHoverPosition));
     expectBool("Ghost literal hover keeps Slang string text",
                stringHover.available
                    && stringHover.displayText.contains(
@@ -1330,16 +1390,16 @@ int main(int argc, char** argv) {
                        QStringLiteral("(H)")),
                true);
     const GhostNumericLiteralReport includeStringHover =
-        ghostService.numericLiteralAt(GhostNumericLiteralQuery{
-            numericHoverText,
-            includeStringHoverPosition});
+        ghostService.numericLiteralAt(
+            numericLiteralQueryAt(numericHoverText,
+                                  includeStringHoverPosition));
     expectBool("Ghost literal hover skips include string",
                includeStringHover.available,
                false);
     const GhostNumericLiteralReport unsizedDecimalHover =
-        ghostService.numericLiteralAt(GhostNumericLiteralQuery{
-            numericHoverText,
-            unsizedDecimalHoverPosition});
+        ghostService.numericLiteralAt(
+            numericLiteralQueryAt(numericHoverText,
+                                  unsizedDecimalHoverPosition));
     expectBool("Ghost literal hover keeps Slang unsized decimal value",
                unsizedDecimalHover.available
                    && unsizedDecimalHover.displayText.contains(
@@ -1348,9 +1408,9 @@ int main(int argc, char** argv) {
                        QStringLiteral("(H)")),
                true);
     const GhostNumericLiteralReport unsizedHexHover =
-        ghostService.numericLiteralAt(GhostNumericLiteralQuery{
-            numericHoverText,
-            unsizedHexHoverPosition});
+        ghostService.numericLiteralAt(
+            numericLiteralQueryAt(numericHoverText,
+                                  unsizedHexHoverPosition));
     expectBool("Ghost literal hover keeps Slang unsized hex value",
                unsizedHexHover.available
                    && !unsizedHexHover.displayText.isEmpty()
@@ -1358,16 +1418,17 @@ int main(int argc, char** argv) {
                        QStringLiteral("(D)")),
                true);
     const GhostNumericLiteralReport legacyStringHover =
-        ghostService.numericLiteralAt(GhostNumericLiteralQuery{
-            QStringLiteral("`include \"123.sv\"\n"),
-            10});
+        ghostService.numericLiteralAt(
+            numericLiteralQueryAt(
+                QStringLiteral("`include \"123.sv\"\n"),
+                10));
     expectBool("Ghost literal hover skips include legacy string",
                legacyStringHover.available,
                false);
     const GhostNumericLiteralReport commentHover =
-        ghostService.numericLiteralAt(GhostNumericLiteralQuery{
-            numericHoverText,
-            commentHoverPosition});
+        ghostService.numericLiteralAt(
+            numericLiteralQueryAt(numericHoverText,
+                                  commentHoverPosition));
     expectBool("Ghost literal hover skips comment",
                commentHover.available,
                false);
@@ -3854,23 +3915,27 @@ int main(int argc, char** argv) {
     }
     SemanticIndex tierIndex;
     tierIndex.setWorkspaceFileAnalysisBands(semanticBandMetadata);
-    SemanticSymbolRecord tierRecord;
-    tierRecord.name = QStringLiteral("tier_sig");
-    tierRecord.location.fileName = planC;
-    tierRecord.location.startLine = 1;
-    tierRecord.declarationKind = SymbolTaxonomy::DeclarationKind::Signal;
-    SemanticSymbolRecord currentTierQueryRecord;
-    currentTierQueryRecord.name = QStringLiteral("zz_tier_match");
-    currentTierQueryRecord.location.fileName = planC;
-    currentTierQueryRecord.location.startLine = 2;
-    currentTierQueryRecord.declarationKind =
-        SymbolTaxonomy::DeclarationKind::Signal;
-    SemanticSymbolRecord currentTierDuplicateRecord;
-    currentTierDuplicateRecord.name = QStringLiteral("shared_tier_symbol");
-    currentTierDuplicateRecord.location.fileName = planC;
-    currentTierDuplicateRecord.location.startLine = 3;
-    currentTierDuplicateRecord.declarationKind =
-        SymbolTaxonomy::DeclarationKind::Signal;
+    const SemanticSymbolRecord tierRecord =
+        SemanticFixtureRecordBuilder(
+            QStringLiteral("tier_sig"),
+            SymbolTaxonomy::DeclarationKind::Signal)
+            .withFile(planC)
+            .withLine(1)
+            .record();
+    const SemanticSymbolRecord currentTierQueryRecord =
+        SemanticFixtureRecordBuilder(
+            QStringLiteral("zz_tier_match"),
+            SymbolTaxonomy::DeclarationKind::Signal)
+            .withFile(planC)
+            .withLine(2)
+            .record();
+    const SemanticSymbolRecord currentTierDuplicateRecord =
+        SemanticFixtureRecordBuilder(
+            QStringLiteral("shared_tier_symbol"),
+            SymbolTaxonomy::DeclarationKind::Signal)
+            .withFile(planC)
+            .withLine(3)
+            .record();
     const SemanticSymbolRecord currentTierModuleRecord =
         SemanticFixtureRecordBuilder(
             QStringLiteral("zz_tier_module"),
@@ -3885,18 +3950,20 @@ int main(int argc, char** argv) {
          currentTierDuplicateRecord,
          currentTierModuleRecord},
         QStringLiteral("module tier_top; logic tier_sig; logic zz_tier_match; logic shared_tier_symbol; endmodule\nmodule zz_tier_module; endmodule\n"));
-    SemanticSymbolRecord backgroundTierQueryRecord;
-    backgroundTierQueryRecord.name = QStringLiteral("aa_tier_match");
-    backgroundTierQueryRecord.location.fileName = planA;
-    backgroundTierQueryRecord.location.startLine = 1;
-    backgroundTierQueryRecord.declarationKind =
-        SymbolTaxonomy::DeclarationKind::Signal;
-    SemanticSymbolRecord backgroundTierDuplicateRecord;
-    backgroundTierDuplicateRecord.name = QStringLiteral("shared_tier_symbol");
-    backgroundTierDuplicateRecord.location.fileName = planA;
-    backgroundTierDuplicateRecord.location.startLine = 2;
-    backgroundTierDuplicateRecord.declarationKind =
-        SymbolTaxonomy::DeclarationKind::Signal;
+    const SemanticSymbolRecord backgroundTierQueryRecord =
+        SemanticFixtureRecordBuilder(
+            QStringLiteral("aa_tier_match"),
+            SymbolTaxonomy::DeclarationKind::Signal)
+            .withFile(planA)
+            .withLine(1)
+            .record();
+    const SemanticSymbolRecord backgroundTierDuplicateRecord =
+        SemanticFixtureRecordBuilder(
+            QStringLiteral("shared_tier_symbol"),
+            SymbolTaxonomy::DeclarationKind::Signal)
+            .withFile(planA)
+            .withLine(2)
+            .record();
     const SemanticSymbolRecord backgroundTierModuleRecord =
         SemanticFixtureRecordBuilder(
             QStringLiteral("aa_tier_module"),
@@ -8251,6 +8318,15 @@ int main(int argc, char** argv) {
                                                   CollectorKind::User,
                                                   SourceRole::DesignSource))
             .withOwner(SymbolOwnerScope::Package, QStringLiteral("snap_pkg"))
+            .record());
+    snapshotRecords.append(
+        SemanticFixtureRecordBuilder(QStringLiteral("snap_pkg"))
+            .withFile(snapshotOnlyFile)
+            .withLocalHandle(4006)
+            .withLine(1)
+            .withCollectorKind(CollectorKind::PackageImport)
+            .withUsageRole(SymbolTaxonomy::SymbolUsageRole::Reference)
+            .withType(QStringLiteral("*"))
             .record());
     snapshotRecords.append(makeSemanticFixtureRecord(
         QStringLiteral("SNAP_FEATURE"),

@@ -1,9 +1,10 @@
 #include "signalusagehotspotpanel.h"
 
+#include "editorfileidentity.h"
 #include "insightgraphview.h"
 #include "insightvisualstyle.h"
+#include "semanticindexsnapshot.h"
 
-#include <QApplication>
 #include <QAction>
 #include <QBrush>
 #include <QCheckBox>
@@ -30,6 +31,8 @@
 #include <QTimer>
 #include <QTreeWidget>
 #include <QVBoxLayout>
+#include <QFutureWatcher>
+#include <QtConcurrent/QtConcurrentRun>
 
 #include <algorithm>
 #include <utility>
@@ -56,6 +59,25 @@ constexpr qreal kMatrixHeaderHeight = 96.0;
 constexpr qreal kMatrixRowHeight = 72.0;
 const char* kSettingsGroup = "SignalUsageHotspotPanel";
 
+SignalUsageHotspotReport buildReportFromSnapshot(
+    const SignalUsageHotspotQuery& query,
+    const std::shared_ptr<const SemanticIndexSnapshot>& snapshot)
+{
+    if (!snapshot) {
+        SignalUsageHotspotReport report;
+        report.notFoundReason = SignalUsageHotspotNotFoundReason::NoMatchingSignal;
+        report.notFoundReasonDisplayName =
+            SignalUsageHotspotService::notFoundReasonDisplayName(
+                report.notFoundReason);
+        return report;
+    }
+
+    SemanticIndex immutableIndex;
+    immutableIndex.setSnapshot(snapshot);
+    SignalUsageHotspotService service(&immutableIndex);
+    return service.buildSignalUsageHotspot(query);
+}
+
 QList<SignalUsageHotspotRole> hotspotRoles()
 {
     return {SignalUsageHotspotRole::Write,
@@ -71,22 +93,6 @@ QString compactFileName(const QString& fileName)
 {
     const QString leaf = QFileInfo(fileName).fileName();
     return leaf.isEmpty() ? fileName : leaf;
-}
-
-bool sameSourceFile(const QString& lhs, const QString& rhs)
-{
-    if (lhs.isEmpty() || rhs.isEmpty())
-        return false;
-    QFileInfo lhsInfo(lhs);
-    QFileInfo rhsInfo(rhs);
-    const QString lhsCanonical = lhsInfo.canonicalFilePath();
-    const QString rhsCanonical = rhsInfo.canonicalFilePath();
-    if (!lhsCanonical.isEmpty() && !rhsCanonical.isEmpty())
-        return lhsCanonical.compare(rhsCanonical, Qt::CaseInsensitive) == 0;
-    if (lhs.compare(rhs, Qt::CaseInsensitive) == 0)
-        return true;
-    return lhsInfo.fileName().compare(rhsInfo.fileName(), Qt::CaseInsensitive)
-        == 0;
 }
 
 QString itemSearchText(const SignalUsageHotspotItem& item)
@@ -896,12 +902,34 @@ void SignalUsageHotspotPanel::showHotspotForSymbol(
                                      : signalAccessPath));
     showInspectorMessage(QStringLiteral("Analyzing"),
                          QStringLiteral("Building usage hotspot report..."));
-    QApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
+    currentReport = {};
 
-    currentReport =
-        SignalUsageHotspotService::getInstance()->buildSignalUsageHotspot(
-            currentQuery);
-    rebuild();
+    const SignalUsageHotspotQuery query = currentQuery;
+    const std::shared_ptr<const SemanticIndexSnapshot> snapshot =
+        SemanticIndex::getInstance()->snapshot();
+    const ReportBuilder builder = reportBuilder
+        ? reportBuilder
+        : ReportBuilder(buildReportFromSnapshot);
+    const std::uint64_t generation = ++reportGeneration;
+    ++activeReportBuilds;
+
+    auto* watcher = new QFutureWatcher<SignalUsageHotspotReport>(this);
+    connect(watcher,
+            &QFutureWatcher<SignalUsageHotspotReport>::finished,
+            this,
+            [this, watcher, generation]() {
+                SignalUsageHotspotReport report = watcher->result();
+                watcher->deleteLater();
+                activeReportBuilds = qMax(0, activeReportBuilds - 1);
+                if (generation != reportGeneration)
+                    return;
+                currentReport = std::move(report);
+                rebuild();
+            });
+    watcher->setFuture(QtConcurrent::run(
+        [builder, query, snapshot]() {
+            return builder(query, snapshot);
+        }));
 }
 
 void SignalUsageHotspotPanel::setCurrentEditorLocation(const QString& fileName,
@@ -915,6 +943,7 @@ void SignalUsageHotspotPanel::setCurrentEditorLocation(const QString& fileName,
 void SignalUsageHotspotPanel::renderReportForTest(
     const SignalUsageHotspotReport& report)
 {
+    ++reportGeneration;
     currentReport = report;
     selectedItemIndex = -1;
     clearMatrixFocus();
@@ -1005,6 +1034,21 @@ bool SignalUsageHotspotPanel::triggerFirstUsageNavigationForTest()
         return false;
     navigateItem(indexes.first());
     return true;
+}
+
+void SignalUsageHotspotPanel::setReportBuilderForTest(ReportBuilder builder)
+{
+    reportBuilder = std::move(builder);
+}
+
+bool SignalUsageHotspotPanel::reportBuildInFlightForTest() const
+{
+    return activeReportBuilds > 0;
+}
+
+QString SignalUsageHotspotPanel::currentDeclarationDisplayNameForTest() const
+{
+    return currentReport.declarationDisplayName;
 }
 
 void SignalUsageHotspotPanel::setMode(bool matrixMode)
@@ -1235,7 +1279,7 @@ void SignalUsageHotspotPanel::renderTrack()
         const QRectF endBounds = endLabel->boundingRect();
         endLabel->setPos(rail.right() - endBounds.width(), laneY + 15);
 
-        if (sameSourceFile(lane.fileName, currentEditorFileName)
+        if (EditorFileIdentity::same(lane.fileName, currentEditorFileName)
             && currentEditorLine >= lane.startLine
             && currentEditorLine <= lane.endLine) {
             const double currentRatio =
@@ -1439,7 +1483,8 @@ void SignalUsageHotspotPanel::renderTrack()
     if (selectedItem) {
         QList<int> sameLaneIndexes;
         for (const SignalUsageHotspotTrackLane& lane : currentReport.trackLanes) {
-            if (!sameSourceFile(lane.fileName, selectedItem->fileName)
+            if (!EditorFileIdentity::same(lane.fileName,
+                                          selectedItem->fileName)
                 || (!lane.moduleName.isEmpty()
                     && !selectedItem->moduleName.isEmpty()
                     && lane.moduleName != selectedItem->moduleName)) {
@@ -2428,7 +2473,8 @@ void SignalUsageHotspotPanel::centerCurrentUsage()
     if (!trackView || !trackScene)
         return;
     for (const SignalUsageHotspotTrackLane& lane : currentReport.trackLanes) {
-        if (!sameSourceFile(lane.fileName, currentEditorFileName)
+        if (!EditorFileIdentity::same(lane.fileName,
+                                      currentEditorFileName)
             || currentEditorLine < lane.startLine
             || currentEditorLine > lane.endLine) {
             continue;

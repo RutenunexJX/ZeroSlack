@@ -491,7 +491,7 @@ int main(int argc, char** argv) {
         SemanticFixtureRecordBuilder(QStringLiteral("top"),
                                      SymbolTaxonomy::DeclarationKind::Module)
             .withFile(decorationFile)
-            .withLine(1, 8)
+            .withRange(1, 8, 12, 10)
             .withCollectorKind(SymbolTaxonomy::CollectorKind::Module)
             .record());
     decorationRecords.append(
@@ -732,6 +732,16 @@ int main(int argc, char** argv) {
             .withCollectorKind(SymbolTaxonomy::CollectorKind::Localparam)
             .inModule(QStringLiteral("uses_pkg"))
             .record());
+    packageUseRecords.append(
+        SemanticFixtureRecordBuilder(QStringLiteral("pkg_states"))
+            .withFile(packageUseFile)
+            .withLine(2, 10)
+            .withCollectorKind(
+                SymbolTaxonomy::CollectorKind::PackageImport)
+            .withUsageRole(SymbolTaxonomy::SymbolUsageRole::Reference)
+            .withType(QStringLiteral("*"))
+            .inModule(QStringLiteral("uses_pkg"))
+            .record());
     SemanticIndex::getInstance()->updateSymbolRecordsForFile(
         packageUseFile,
         packageUseRecords,
@@ -810,9 +820,19 @@ int main(int argc, char** argv) {
         realLikePackageFile,
         realLikePackageRecords,
         realLikePackageContent);
+    SemanticSymbolRecord realLikeImportFact =
+        SemanticFixtureRecordBuilder(QStringLiteral("gl_pkg"))
+            .withFile(realLikeIncludeFile)
+            .withLine(1, 8)
+            .withCollectorKind(
+                SymbolTaxonomy::CollectorKind::PackageImport)
+            .withUsageRole(SymbolTaxonomy::SymbolUsageRole::Reference)
+            .withType(QStringLiteral("*"))
+            .record();
+    realLikeImportFact.compilationUnitFileName = realLikeUseFile;
     SemanticIndex::getInstance()->updateSymbolRecordsForFile(
         realLikeIncludeFile,
-        {},
+        {realLikeImportFact},
         realLikeIncludeContent);
     SemanticIndex::getInstance()->updateSymbolRecordsForFile(
         realLikeUseFile,
@@ -1214,6 +1234,18 @@ int main(int argc, char** argv) {
             .inPackage(QStringLiteral("snap_pkg"))
             .record();
     snapshotDefinitionRecords.append(snapshotPackageTypedef);
+
+    const SemanticSymbolRecord snapshotPackageImport =
+        SemanticFixtureRecordBuilder(QStringLiteral("snap_pkg"))
+            .withFile(snapshotOnlyFile)
+            .withLocalHandle(6115)
+            .withLine(2, 10)
+            .withCollectorKind(CollectorKind::PackageImport)
+            .withUsageRole(SymbolTaxonomy::SymbolUsageRole::Reference)
+            .withType(QStringLiteral("*"))
+            .inModule(QStringLiteral("snap_top"))
+            .record();
+    snapshotDefinitionRecords.append(snapshotPackageImport);
 
     const SemanticSymbolRecord snapshotInterfaceModport =
         SemanticFixtureRecordBuilder(QStringLiteral("slave"),

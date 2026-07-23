@@ -55,6 +55,8 @@
 #include <QTemporaryDir>
 #include <QThread>
 #include <QTimer>
+#include <QTextBlock>
+#include <QTextDocument>
 #include <QGraphicsScene>
 #include <QGraphicsView>
 #include <QTreeWidget>
@@ -1309,6 +1311,8 @@ static void runInlineRelationshipRegression(SlangManager& slang,
         "module beta(input logic clk, input logic rst_n, input logic cond, input logic src, output logic dst);\n"
         "  task do_beta; endtask\n"
         "  leaf u_leaf();\n"
+        "  logic decoy_src, decoy_dst;\n"
+        "  assign decoy_dst = \"decoy_src\";\n"
         "  always @(posedge clk or negedge rst_n) begin\n"
         "    if (cond) begin\n"
         "      do_beta;\n"
@@ -1375,6 +1379,14 @@ static void runInlineRelationshipRegression(SlangManager& slang,
         recordByNameKindAndOwner(QStringLiteral("dst"),
                                  SymbolTaxonomy::CollectorKind::PortOutput,
                                  QStringLiteral("beta")).localHandle;
+    const int decoySrcId =
+        recordByNameKindAndOwner(QStringLiteral("decoy_src"),
+                                 SymbolTaxonomy::CollectorKind::Logic,
+                                 QStringLiteral("beta")).localHandle;
+    const int decoyDstId =
+        recordByNameKindAndOwner(QStringLiteral("decoy_dst"),
+                                 SymbolTaxonomy::CollectorKind::Logic,
+                                 QStringLiteral("beta")).localHandle;
     const int betaClkId =
         recordByNameKindAndOwner(QStringLiteral("clk"),
                                  SymbolTaxonomy::CollectorKind::PortInput,
@@ -1427,6 +1439,12 @@ static void runInlineRelationshipRegression(SlangManager& slang,
 
     expectBool("src assigns to dst",
                hasRel(rels, srcId, dstId, SymbolRelationshipEngine::ASSIGNS_TO), true);
+    expectBool("string literal does not create signal assignment",
+               hasRel(rels,
+                      decoySrcId,
+                      decoyDstId,
+                      SymbolRelationshipEngine::ASSIGNS_TO),
+               false);
     expectBool("commented cond assignment ignored",
                hasRel(rels, condId, dstId, SymbolRelationshipEngine::ASSIGNS_TO), false);
     expectBool("beta clocked by clk",
@@ -1613,6 +1631,11 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     expectBool("top clock extracted", topClkId > 0, true);
     expectBool("top reset extracted", topRstId > 0, true);
     expectBool("top stage instance extracted", stageInstanceId > 0, true);
+    expectBool("Slang module instance keeps module type",
+               stageInstanceRecord.type.resolvedTypeKind
+                       == SymbolTaxonomy::DeclarationKind::Module
+                   && !stageInstanceRecord.owner.interfaceLike,
+               true);
 
     SmartRelationshipBuilder fixtureBuilder(
         &engine,
@@ -1669,18 +1692,6 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     const QStringList scopeNames = index.getScopeSymbolNames(topPath, 20);
     expectBool("semantic facade returns scope symbols",
                scopeNames.contains(QStringLiteral("stage_data")), true);
-    const QStringList topLines = contents.value(topPath).split('\n');
-    int topEndModuleLine = -1;
-    for (int i = 0; i < topLines.size(); ++i) {
-        if (topLines.at(i).trimmed() == QStringLiteral("endmodule")) {
-            topEndModuleLine = i;
-            break;
-        }
-    }
-    expectBool("fixture top endmodule located", topEndModuleLine >= 0, true);
-    expectInt("semantic facade finds module end line",
-              index.findEndModuleLine(topPath, topRecord), topEndModuleLine);
-
     DiagnosticService diagnosticService(&index);
     DiagnosticQuery diagnosticQuery;
     diagnosticQuery.fileName = topPath;
@@ -1902,6 +1913,18 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                            .diagnostics.last()
                            .diagnostic.fileName == topPath,
                true);
+#ifdef Q_OS_WIN
+    DiagnosticQuery alternateCaseWorkspaceDiagnosticQuery;
+    alternateCaseWorkspaceDiagnosticQuery.workspaceFilesOnly = true;
+    alternateCaseWorkspaceDiagnosticQuery.workspaceFiles = {
+        topPath.toUpper()
+    };
+    expectInt("Windows diagnostic workspace filter uses file identity",
+              diagnosticReportService
+                  .findDiagnosticReport(alternateCaseWorkspaceDiagnosticQuery)
+                  .totalCount,
+              2);
+#endif
 
     DiagnosticQuery errorOnlyDiagnosticQuery;
     errorOnlyDiagnosticQuery.includeInfo = false;
@@ -2501,11 +2524,6 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     expectBool("semantic snapshot returns scope symbols",
                snapshotIndex.getScopeSymbolNames(topPath, 20).contains(QStringLiteral("stage_data")),
                true);
-    SemanticSymbolRecord snapshotTopRecordWithoutEnd = topRecord;
-    snapshotTopRecordWithoutEnd.location.endLine = 0;
-    expectInt("semantic snapshot finds module end line from cached content",
-              snapshotIndex.findEndModuleLine(topPath, snapshotTopRecordWithoutEnd),
-              topEndModuleLine);
     const SymbolStableKey topStableKey = topRecord.stableKey;
     const SymbolStableKey stageStableKey = stageRecord.stableKey;
     const QList<SemanticRelationship> snapshotTopRelationships =
@@ -2988,6 +3006,20 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
               snapshotReferenceService.findReferenceReport(snapshotWorkspaceReferenceQuery)
                   .totalCount,
               1);
+#ifdef Q_OS_WIN
+    snapshotCurrentFileReferenceQuery.fileName = topPath.toUpper();
+    expectInt("Windows reference current-file filter uses file identity",
+              snapshotReferenceService
+                  .findReferenceReport(snapshotCurrentFileReferenceQuery)
+                  .totalCount,
+              1);
+    snapshotWorkspaceReferenceQuery.workspaceFiles = {topPath.toUpper()};
+    expectInt("Windows reference workspace filter uses file identity",
+              snapshotReferenceService
+                  .findReferenceReport(snapshotWorkspaceReferenceQuery)
+                  .totalCount,
+              1);
+#endif
     snapshotWorkspaceReferenceQuery.workspaceFiles = {stagePath};
     expectInt("snapshot reference report workspace hides other file",
               snapshotReferenceService.findReferenceReport(snapshotWorkspaceReferenceQuery)
@@ -4925,6 +4957,37 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                !missingModuleBlockReport.found
                    && missingModuleBlockReport.notFoundReason
                        == ModuleBlockDiagramNotFoundReason::NoRootModule,
+               true);
+
+    SemanticRelationship evidenceOnlyInstantiation;
+    evidenceOnlyInstantiation.fromId = topRecord.localHandle;
+    evidenceOnlyInstantiation.toId = stageRecord.localHandle;
+    evidenceOnlyInstantiation.fromStableKey = topRecord.stableKey;
+    evidenceOnlyInstantiation.toStableKey = stageRecord.stableKey;
+    evidenceOnlyInstantiation.type =
+        SymbolRelationshipEngine::INSTANTIATES;
+    evidenceOnlyInstantiation.provenance =
+        RelationshipProvenance::SlangExtracted;
+    evidenceOnlyInstantiation.evidenceText =
+        QStringLiteral("Instance: forged_name at line 2");
+    evidenceOnlyInstantiation.evidenceRange.fileName = topPath;
+    evidenceOnlyInstantiation.evidenceRange.line = 2;
+    evidenceOnlyInstantiation.evidenceRange.column = 1;
+    SemanticIndex evidenceOnlyIndex;
+    evidenceOnlyIndex.setSnapshot(sharedSnapshotFromRecords(
+        {topRecord, stageRecord},
+        {evidenceOnlyInstantiation}));
+    ModuleBlockDiagramService evidenceOnlyService(&evidenceOnlyIndex);
+    ModuleBlockDiagramQuery evidenceOnlyQuery;
+    evidenceOnlyQuery.moduleStableKey = topRecord.stableKey;
+    evidenceOnlyQuery.maxDepth = 1;
+    const ModuleBlockDiagramReport evidenceOnlyReport =
+        evidenceOnlyService.buildModuleBlockDiagram(evidenceOnlyQuery);
+    expectBool("module block ignores presentation text as instance identity",
+               evidenceOnlyReport.found
+                   && evidenceOnlyReport.nodes.size() == 2
+                   && evidenceOnlyReport.nodes.at(1).instanceDisplayName
+                       == stageRecord.name,
                true);
 
     const QString blackboxTopPath =
@@ -7696,6 +7759,8 @@ static void runSignalUsageHotspotServiceFixture()
     const QString fileName = QStringLiteral("test_sv/signal_hotspot_fixture.sv");
     const QString auxFileName =
         QStringLiteral("test_sv/signal_hotspot_aux_fixture.sv");
+    const QString decoyAuxFileName =
+        QStringLiteral("test_sv/decoy/signal_hotspot_aux_fixture.sv");
     using CollectorKind = SymbolTaxonomy::CollectorKind;
     using DeclarationKind = SymbolTaxonomy::DeclarationKind;
 
@@ -7726,6 +7791,14 @@ static void runSignalUsageHotspotServiceFixture()
             .withFile(auxFileName)
             .withLocalHandle(9501)
             .withRange(1, 1, 30, 1)
+            .withCollectorKind(CollectorKind::Module)
+            .record();
+    const SemanticSymbolRecord decoyAuxModule =
+        SemanticFixtureRecordBuilder(QStringLiteral("hotspot_aux"),
+                                     DeclarationKind::Module)
+            .withFile(decoyAuxFileName)
+            .withLocalHandle(9510)
+            .withRange(100, 1, 200, 1)
             .withCollectorKind(CollectorKind::Module)
             .record();
     const SemanticSymbolRecord hotSig =
@@ -7870,6 +7943,7 @@ static void runSignalUsageHotspotServiceFixture()
     SemanticIndex index;
     index.setSnapshot(sharedSnapshotFromRecords(
         {module,
+         decoyAuxModule,
          auxModule,
          hotSig,
          writer,
@@ -7962,11 +8036,15 @@ static void runSignalUsageHotspotServiceFixture()
                true);
 
     const SignalUsageHotspotTrackLane* topLane = nullptr;
+    const SignalUsageHotspotTrackLane* auxLane = nullptr;
     for (const SignalUsageHotspotTrackLane& lane : report.trackLanes) {
         if (lane.moduleName == QStringLiteral("hotspot_top")
             && lane.fileName == fileName) {
             topLane = &lane;
-            break;
+        }
+        if (lane.moduleName == QStringLiteral("hotspot_aux")
+            && lane.fileName == auxFileName) {
+            auxLane = &lane;
         }
     }
     expectBool("signal usage hotspot track lane stable range",
@@ -7977,6 +8055,11 @@ static void runSignalUsageHotspotServiceFixture()
                    && topLane->positions.size() == 7
                    && topLane->positions.first().line == 12
                    && topLane->positions.last().line == 70,
+               true);
+    expectBool("signal usage hotspot does not merge same-basename files",
+               auxLane
+                   && auxLane->startLine == 1
+                   && auxLane->endLine == 30,
                true);
 
     bool sawUnknownEvidence = false;
@@ -10894,6 +10977,347 @@ static void runSemanticDiffServiceFixture()
                true);
 }
 
+static void runSlangPackageImportFactFixture()
+{
+    printf("\n-- Slang package import facts --\n");
+
+    const QString fileName = QStringLiteral("multiline_package_imports.sv");
+    const QString content =
+        QStringLiteral("package cfg_pkg;\n"
+                       "  parameter int DATA_W = 16;\n"
+                       "  parameter int OTHER = 2;\n"
+                       "endpackage\n"
+                       "module wildcard_user;\n"
+                       "  import\n"
+                       "    cfg_pkg\n"
+                       "    ::\n"
+                       "    *;\n"
+                       "  logic [DATA_W-1:0] data;\n"
+                       "endmodule\n"
+                       "module explicit_user;\n"
+                       "  import cfg_pkg ::\n"
+                       "    DATA_W;\n"
+                       "  logic [DATA_W-1:0] data;\n"
+                       "endmodule\n");
+
+    SlangManager slang;
+    SemanticIndex index;
+    index.updateSymbolRecordsForFile(
+        fileName,
+        slang.extractSymbolRecords(fileName, content),
+        content);
+
+    SemanticQueryContext wildcardContext;
+    wildcardContext.fileName = fileName;
+    wildcardContext.moduleName = QStringLiteral("wildcard_user");
+    wildcardContext.cursorLine = 10;
+    expectBool("Slang multiline wildcard import is authoritative",
+               index.activeImportedPackageNames(wildcardContext)
+                   .contains(QStringLiteral("cfg_pkg")),
+               true);
+
+    SemanticSymbolRecord dataWidth;
+    SemanticSymbolRecord other;
+    for (const SemanticSymbolRecord& record :
+         index.getSymbolRecordsByOwner(QStringLiteral("cfg_pkg"))) {
+        if (record.name == QStringLiteral("DATA_W"))
+            dataWidth = record;
+        else if (record.name == QStringLiteral("OTHER"))
+            other = record;
+    }
+    SemanticQueryContext explicitContext;
+    explicitContext.fileName = fileName;
+    explicitContext.moduleName = QStringLiteral("explicit_user");
+    explicitContext.cursorLine = 15;
+    expectBool("Slang multiline explicit import exposes selected symbol",
+               dataWidth.isValid()
+                   && index.packageVisibleRecordImported(dataWidth,
+                                                         explicitContext),
+               true);
+    expectBool("Slang explicit import does not expose sibling symbols",
+               other.isValid()
+                   && !index.packageVisibleRecordImported(other,
+                                                          explicitContext),
+               true);
+
+    const QString decorationPackageFile =
+        QStringLiteral("decoration_cfg_pkg.sv");
+    const QString decorationUseFile =
+        QStringLiteral("decoration_multiline_imports.sv");
+    const QString decorationPackageContent =
+        QStringLiteral("package decoration_cfg_pkg;\n"
+                       "  parameter int DATA_W = 16;\n"
+                       "endpackage\n");
+    const QString decorationUseContent =
+        QStringLiteral("module wildcard_decorated;\n"
+                       "  import\n"
+                       "    decoration_cfg_pkg\n"
+                       "    ::\n"
+                       "    *;\n"
+                       "  logic [DATA_W-1:0] data;\n"
+                       "endmodule\n"
+                       "module explicit_decorated;\n"
+                       "  import decoration_cfg_pkg ::\n"
+                       "    DATA_W;\n"
+                       "  logic [DATA_W-1:0] data;\n"
+                       "endmodule\n");
+    const QHash<QString, QString> decorationContents{
+        {decorationPackageFile, decorationPackageContent},
+        {decorationUseFile, decorationUseContent},
+    };
+    const QList<SemanticSymbolRecord> decorationRecords =
+        slang.extractOverlayWorkspaceSymbolRecords(
+            decorationContents,
+            {},
+            {},
+            nullptr,
+            nullptr,
+            {decorationPackageFile, decorationUseFile});
+    SemanticIndex decorationIndex;
+    decorationIndex.setSnapshot(sharedSnapshotFromRecords(
+        decorationRecords,
+        {},
+        {},
+        decorationContents));
+    SemanticDecorationService decorationService(&decorationIndex);
+    SemanticDecorationQuery decorationQuery;
+    decorationQuery.fileName = decorationUseFile;
+    decorationQuery.documentText = decorationUseContent;
+    const SemanticDecorationReport decorationReport =
+        decorationService.decorationsForDocument(decorationQuery);
+    QTextDocument decorationDocument(decorationUseContent);
+    bool wildcardUseDecorated = false;
+    bool explicitUseDecorated = false;
+    for (const SemanticDecoration& decoration : decorationReport.decorations) {
+        if (decoration.text != QStringLiteral("DATA_W"))
+            continue;
+        const int line = decorationDocument
+                             .findBlock(decoration.startPosition)
+                             .blockNumber()
+            + 1;
+        wildcardUseDecorated |= line == 6;
+        explicitUseDecorated |= line == 11;
+    }
+    expectBool("semantic decoration consumes Slang wildcard import fact",
+               wildcardUseDecorated,
+               true);
+    expectBool("semantic decoration consumes Slang explicit import fact",
+               explicitUseDecorated,
+               true);
+
+    SemanticIndex overlayIndex;
+    const QString importedOverlayFile = QStringLiteral("overlay_imported.sv");
+    const QString plainOverlayFile = QStringLiteral("overlay_plain.sv");
+    const QString importedOverlayContent =
+        QStringLiteral("package overlay_pkg; parameter int WIDTH = 4; endpackage\n"
+                       "import overlay_pkg::*;\n"
+                       "module imported_overlay; logic [WIDTH-1:0] data; endmodule\n");
+    const QString plainOverlayContent =
+        QStringLiteral("module plain_overlay; logic data; endmodule\n");
+    overlayIndex.updateSymbolRecordsForFile(
+        importedOverlayFile,
+        slang.extractSymbolRecords(importedOverlayFile,
+                                   importedOverlayContent),
+        importedOverlayContent);
+    overlayIndex.updateSymbolRecordsForFile(
+        plainOverlayFile,
+        slang.extractSymbolRecords(plainOverlayFile, plainOverlayContent),
+        plainOverlayContent);
+    SemanticQueryContext importedOverlayContext;
+    importedOverlayContext.fileName = importedOverlayFile;
+    importedOverlayContext.moduleName = QStringLiteral("imported_overlay");
+    importedOverlayContext.cursorLine = 3;
+    SemanticQueryContext plainOverlayContext;
+    plainOverlayContext.fileName = plainOverlayFile;
+    plainOverlayContext.moduleName = QStringLiteral("plain_overlay");
+    plainOverlayContext.cursorLine = 1;
+    expectBool("single-file Slang import remains in its compilation unit",
+               overlayIndex.activeImportedPackageNames(importedOverlayContext)
+                       .contains(QStringLiteral("overlay_pkg"))
+                   && !overlayIndex.activeImportedPackageNames(
+                           plainOverlayContext)
+                           .contains(QStringLiteral("overlay_pkg")),
+               true);
+
+    QTemporaryDir orderedUnitDirectory;
+    expectBool("ordered compilation-unit fixture directory is valid",
+               orderedUnitDirectory.isValid(),
+               true);
+    if (!orderedUnitDirectory.isValid())
+        return;
+
+    const QString orderedPackageFile = orderedUnitDirectory.filePath(
+        QStringLiteral("00_ordered_pkg.sv"));
+    const QString beforeImportFile = orderedUnitDirectory.filePath(
+        QStringLiteral("10_before_import.sv"));
+    const QString importFile = orderedUnitDirectory.filePath(
+        QStringLiteral("20_import_and_consumer.sv"));
+    const QString afterImportFile = orderedUnitDirectory.filePath(
+        QStringLiteral("30_after_import.sv"));
+    const QString orderedPackageContent = QStringLiteral(
+        "package ordered_pkg;\n"
+        "  parameter int ORDERED_WIDTH = 13;\n"
+        "endpackage\n");
+    const QString beforeImportContent = QStringLiteral(
+        "module before_import_consumer;\n"
+        "  logic [ORDERED_WIDTH-1:0] data;\n"
+        "endmodule\n");
+    const QString importContent = QStringLiteral(
+        "import ordered_pkg::*;\n"
+        "module inline_after_import_consumer;\n"
+        "  logic [ORDERED_WIDTH-1:0] data;\n"
+        "endmodule\n");
+    const QString afterImportContent = QStringLiteral(
+        "module later_after_import_consumer;\n"
+        "  logic [ORDERED_WIDTH-1:0] data;\n"
+        "endmodule\n");
+    const QHash<QString, QString> orderedContents{
+        {orderedPackageFile, orderedPackageContent},
+        {beforeImportFile, beforeImportContent},
+        {importFile, importContent},
+        {afterImportFile, afterImportContent},
+    };
+    const QStringList orderedPaths{
+        orderedPackageFile,
+        beforeImportFile,
+        importFile,
+        afterImportFile,
+    };
+    const QList<SemanticSymbolRecord> orderedRecords =
+        slang.extractOverlayWorkspaceSymbolRecords(
+            orderedContents,
+            {},
+            {},
+            nullptr,
+            nullptr,
+            orderedPaths);
+    SemanticIndex orderedIndex;
+    orderedIndex.setSnapshot(sharedSnapshotFromRecords(
+        orderedRecords,
+        {},
+        {},
+        orderedContents));
+
+    SemanticSymbolRecord orderedWidth;
+    for (const SemanticSymbolRecord& record :
+         orderedIndex.getSymbolRecordsByOwner(QStringLiteral("ordered_pkg"))) {
+        if (record.name == QStringLiteral("ORDERED_WIDTH")) {
+            orderedWidth = record;
+            break;
+        }
+    }
+    SemanticQueryContext beforeImportContext;
+    beforeImportContext.fileName = beforeImportFile;
+    beforeImportContext.moduleName = QStringLiteral("before_import_consumer");
+    beforeImportContext.cursorLine = 2;
+    SemanticQueryContext inlineAfterImportContext;
+    inlineAfterImportContext.fileName = importFile;
+    inlineAfterImportContext.moduleName =
+        QStringLiteral("inline_after_import_consumer");
+    inlineAfterImportContext.cursorLine = 3;
+    SemanticQueryContext laterAfterImportContext;
+    laterAfterImportContext.fileName = afterImportFile;
+    laterAfterImportContext.moduleName =
+        QStringLiteral("later_after_import_consumer");
+    laterAfterImportContext.cursorLine = 2;
+    expectBool("workspace import does not flow backward in source order",
+               orderedWidth.isValid()
+                   && !orderedIndex.packageVisibleRecordImported(
+                       orderedWidth,
+                       beforeImportContext),
+               true);
+    expectBool("workspace import applies later in the same source file",
+               orderedWidth.isValid()
+                   && orderedIndex.packageVisibleRecordImported(
+                       orderedWidth,
+                       inlineAfterImportContext),
+               true);
+    expectBool("workspace import flows to later source files",
+               orderedWidth.isValid()
+                   && orderedIndex.packageVisibleRecordImported(
+                       orderedWidth,
+                       laterAfterImportContext),
+               true);
+
+    const QString includePackageFile = orderedUnitDirectory.filePath(
+        QStringLiteral("40_include_pkg.sv"));
+    const QString includeImportFile = orderedUnitDirectory.filePath(
+        QStringLiteral("41_ordered_imports.svh"));
+    const QString includeConsumerFile = orderedUnitDirectory.filePath(
+        QStringLiteral("42_include_consumer.sv"));
+    const QString includePackageContent = QStringLiteral(
+        "package include_order_pkg;\n"
+        "  parameter int INCLUDE_WIDTH = 7;\n"
+        "endpackage\n");
+    const QString includeImportContent = QStringLiteral(
+        "import include_order_pkg::*;\n");
+    const QString includeConsumerContent = QStringLiteral(
+        "module before_include_consumer;\n"
+        "  logic [INCLUDE_WIDTH-1:0] before_data;\n"
+        "endmodule\n"
+        "`include \"41_ordered_imports.svh\"\n"
+        "module after_include_consumer;\n"
+        "  logic [INCLUDE_WIDTH-1:0] after_data;\n"
+        "endmodule\n");
+    const QHash<QString, QString> includeContents{
+        {includePackageFile, includePackageContent},
+        {includeImportFile, includeImportContent},
+        {includeConsumerFile, includeConsumerContent},
+    };
+    expectBool("include expansion package fixture written",
+               writeTextFile(includePackageFile, includePackageContent),
+               true);
+    expectBool("include expansion header fixture written",
+               writeTextFile(includeImportFile, includeImportContent),
+               true);
+    expectBool("include expansion consumer fixture written",
+               writeTextFile(includeConsumerFile, includeConsumerContent),
+               true);
+    const QList<SemanticSymbolRecord> includeRecords =
+        slang.extractOverlayWorkspaceSymbolRecords(
+            includeContents,
+            {orderedUnitDirectory.path()},
+            {},
+            nullptr,
+            nullptr,
+            {includePackageFile, includeConsumerFile, includeImportFile});
+    SemanticIndex includeIndex;
+    includeIndex.setSnapshot(sharedSnapshotFromRecords(
+        includeRecords,
+        {},
+        {},
+        includeContents));
+    SemanticSymbolRecord includeWidth;
+    for (const SemanticSymbolRecord& record :
+         includeIndex.getSymbolRecordsByOwner(
+             QStringLiteral("include_order_pkg"))) {
+        if (record.name == QStringLiteral("INCLUDE_WIDTH")) {
+            includeWidth = record;
+            break;
+        }
+    }
+    SemanticQueryContext beforeIncludeContext;
+    beforeIncludeContext.fileName = includeConsumerFile;
+    beforeIncludeContext.moduleName = QStringLiteral("before_include_consumer");
+    beforeIncludeContext.cursorLine = 2;
+    SemanticQueryContext afterIncludeContext;
+    afterIncludeContext.fileName = includeConsumerFile;
+    afterIncludeContext.moduleName = QStringLiteral("after_include_consumer");
+    afterIncludeContext.cursorLine = 6;
+    expectBool("included import does not flow before its expansion point",
+               includeWidth.isValid()
+                   && !includeIndex.packageVisibleRecordImported(
+                       includeWidth,
+                       beforeIncludeContext),
+               true);
+    expectBool("included import applies after its expansion point",
+               includeWidth.isValid()
+                   && includeIndex.packageVisibleRecordImported(
+                       includeWidth,
+                       afterIncludeContext),
+               true);
+}
+
 static void runImportAwarePackageVisibilityFixture()
 {
     printf("\n-- import-aware package visibility --\n");
@@ -11010,6 +11434,46 @@ static void runImportAwarePackageVisibilityFixture()
             .withCollectorKind(CollectorKind::Localparam)
             .inModule(QStringLiteral("local_top"))
             .record();
+    const SemanticSymbolRecord importTopCfgImport =
+        SemanticFixtureRecordBuilder(QStringLiteral("cfg_pkg"))
+            .withFile(topFile)
+            .withLocalHandle(10140)
+            .withLine(6)
+            .withCollectorKind(CollectorKind::PackageImport)
+            .withUsageRole(SymbolTaxonomy::SymbolUsageRole::Reference)
+            .withType(QStringLiteral("*"))
+            .inModule(QStringLiteral("import_top"))
+            .record();
+    const SemanticSymbolRecord localTopCfgImport =
+        SemanticFixtureRecordBuilder(QStringLiteral("cfg_pkg"))
+            .withFile(topFile)
+            .withLocalHandle(10141)
+            .withLine(11)
+            .withCollectorKind(CollectorKind::PackageImport)
+            .withUsageRole(SymbolTaxonomy::SymbolUsageRole::Reference)
+            .withType(QStringLiteral("*"))
+            .inModule(QStringLiteral("local_top"))
+            .record();
+    const SemanticSymbolRecord conflictTopCfgImport =
+        SemanticFixtureRecordBuilder(QStringLiteral("cfg_pkg"))
+            .withFile(topFile)
+            .withLocalHandle(10142)
+            .withLine(17)
+            .withCollectorKind(CollectorKind::PackageImport)
+            .withUsageRole(SymbolTaxonomy::SymbolUsageRole::Reference)
+            .withType(QStringLiteral("*"))
+            .inModule(QStringLiteral("conflict_top"))
+            .record();
+    const SemanticSymbolRecord conflictTopAltImport =
+        SemanticFixtureRecordBuilder(QStringLiteral("alt_pkg"))
+            .withFile(topFile)
+            .withLocalHandle(10143)
+            .withLine(18)
+            .withCollectorKind(CollectorKind::PackageImport)
+            .withUsageRole(SymbolTaxonomy::SymbolUsageRole::Reference)
+            .withType(QStringLiteral("*"))
+            .inModule(QStringLiteral("conflict_top"))
+            .record();
 
     QHash<QString, QString> fileContents;
     fileContents.insert(topFile, topContent);
@@ -11034,7 +11498,11 @@ static void runImportAwarePackageVisibilityFixture()
          cfgType,
          altPkg,
          altDataW,
-         localDataW},
+         localDataW,
+         importTopCfgImport,
+         localTopCfgImport,
+         conflictTopCfgImport,
+         conflictTopAltImport},
         {},
         {},
         fileContents));
@@ -11415,6 +11883,11 @@ static void runRealWorkspaceIncludeFixture()
                interfaceModportRecord.isValid(), true);
     expectBool("real workspace has interface instance",
                interfaceInstRecord.isValid(), true);
+    expectBool("Slang interface instance keeps interface type",
+               interfaceInstRecord.type.resolvedTypeKind
+                       == SymbolTaxonomy::DeclarationKind::Interface
+                   && interfaceInstRecord.owner.interfaceLike,
+               true);
     expectBool("real workspace has top clock",
                realClockRecord.isValid(), true);
     expectBool("real workspace has top reset",
@@ -12726,6 +13199,9 @@ static void runMacroDefineSemanticFixture()
         "  localparam int A = `LOCAL_MACRO;\n"
         "  localparam int B = `FUNC_MACRO(1, 2);\n"
         "  localparam int C = `SHARED_MACRO;\n"
+        "`ifdef NEVER_ACTIVE\n"
+        "  localparam int D = `FUNC_MACRO(9, 9);\n"
+        "`endif\n"
         "`ifdef LOCAL_SWITCH\n"
         "  wire active_local;\n"
         "`else\n"
@@ -12938,6 +13414,25 @@ static void runMacroDefineSemanticFixture()
                    && sawMacroUseReference,
                true);
 
+    SemanticQueryContext macroDefinitionContext;
+    macroDefinitionContext.fileName = sourcePath;
+    macroDefinitionContext.moduleName = QStringLiteral("macro_top");
+    const QList<SemanticSymbolRecord> macroDefinitions =
+        index.findDefinitionRecords(QStringLiteral("FUNC_MACRO"),
+                                    macroDefinitionContext);
+    const bool definitionsExcludeReferences =
+        !macroDefinitions.isEmpty()
+        && std::all_of(
+            macroDefinitions.cbegin(),
+            macroDefinitions.cend(),
+            [](const SemanticSymbolRecord& record) {
+                return record.usageRole
+                    == SymbolTaxonomy::SymbolUsageRole::Declaration;
+            });
+    expectBool("definition query excludes macro reference records",
+               definitionsExcludeReferences,
+               true);
+
     const QString badMacroContent = QStringLiteral("module bad_macro;\n"
                                                    "  `UNDEFINED_MACRO\n"
                                                    "endmodule\n");
@@ -12948,21 +13443,45 @@ static void runMacroDefineSemanticFixture()
     bool sawUndefinedMacroDiagnostic = false;
     for (const SemanticDiagnostic& diagnostic : macroDiagnostics) {
         sawUndefinedMacroDiagnostic = sawUndefinedMacroDiagnostic
-            || (diagnostic.owner == SemanticDiagnostic::SemanticIndexOwner
+            || (diagnostic.owner == SemanticDiagnostic::SlangCompiler
                 && diagnostic.line == 2
-                && diagnostic.column == 4
+                && diagnostic.column == 3
                 && diagnostic.message.contains(
-                    QStringLiteral("Undefined macro `UNDEFINED_MACRO`")));
+                    QStringLiteral("unknown macro"),
+                    Qt::CaseInsensitive)
+                && diagnostic.message.contains(
+                    QStringLiteral("UNDEFINED_MACRO")));
     }
     expectBool("undefined macro diagnostic is explicit",
                sawUndefinedMacroDiagnostic,
                true);
 
+    const QString inactiveUnknownMacroContent = QStringLiteral(
+        "module inactive_bad_macro;\n"
+        "`ifdef NEVER_ACTIVE\n"
+        "  `UNDEFINED_INACTIVE_MACRO\n"
+        "`endif\n"
+        "endmodule\n");
+    const QList<SemanticDiagnostic> inactiveMacroDiagnostics =
+        slang.extractDiagnostics(
+            normalizedPath(
+                macroDir.filePath(QStringLiteral("inactive_bad_macro.sv"))),
+            inactiveUnknownMacroContent);
+    const bool sawInactiveUnknownMacroDiagnostic = std::any_of(
+        inactiveMacroDiagnostics.cbegin(),
+        inactiveMacroDiagnostics.cend(),
+        [](const SemanticDiagnostic& diagnostic) {
+            return diagnostic.message.contains(
+                QStringLiteral("UNDEFINED_INACTIVE_MACRO"));
+        });
+    expectBool("inactive macro use does not produce a diagnostic",
+               sawInactiveUnknownMacroDiagnostic,
+               false);
+
     SemanticDecorationService decorationService(&index);
     SemanticDecorationQuery decorationQuery;
     decorationQuery.fileName = sourcePath;
     decorationQuery.documentText = sourceContent;
-    decorationQuery.configuredDefines = defines;
     const SemanticDecorationReport decorationReport =
         decorationService.decorationsForDocument(decorationQuery);
     bool sawInactiveWorkspaceElse = false;
@@ -13712,6 +14231,25 @@ static void runSemanticIndexStoreLifecycleFixture()
                true);
 }
 
+static void runSemanticIndexPresenceFixture()
+{
+    SemanticIndex index;
+    expectBool("semantic index reports an empty unpublished snapshot",
+               index.hasSymbolRecords(),
+               false);
+
+    const SemanticSymbolRecord record =
+        SemanticFixtureRecordBuilder(QStringLiteral("presence_probe"),
+                                     SymbolTaxonomy::DeclarationKind::Signal)
+            .withFile(QStringLiteral("presence_probe.sv"))
+            .withLocalHandle(18001)
+            .record();
+    index.setSnapshot(sharedSnapshotFromRecords({record}));
+    expectBool("semantic index reports records without materializing the list",
+               index.hasSymbolRecords(),
+               true);
+}
+
 int main(int argc, char** argv)
 {
     QApplication app(argc, argv);
@@ -13730,6 +14268,7 @@ int main(int argc, char** argv)
     runFsmGraphServiceFixture();
     runFsmLayoutFuzzFixture();
     runSemanticDiffServiceFixture();
+    runSlangPackageImportFactFixture();
     runImportAwarePackageVisibilityFixture();
     runRealWorkspaceIncludeFixture();
     runPostWorkspaceDiagnosticFixture();
@@ -13739,6 +14278,7 @@ int main(int argc, char** argv)
     runStaticElaborationPresentationFixture(slang);
     runPresentationSourceRangeIdentityFixture();
     runSemanticIndexStoreLifecycleFixture();
+    runSemanticIndexPresenceFixture();
 
     printf("\n%d checks, %d failed\n", g_checks, g_fails);
     return g_fails == 0 ? 0 : 1;

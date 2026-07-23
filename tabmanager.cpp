@@ -282,17 +282,12 @@ void TabManager::refreshSemanticPresentations(
     if (!tabWidget)
         return;
 
-    for (int i = 0; i < tabWidget->count(); ++i) {
-        MyCodeEditor* editor = getEditorAt(i);
-        if (!editor)
-            continue;
-        const DocumentSnapshot document = getDocumentForEditor(editor);
-        if (!semanticRefreshMatchesDocument(changedFileName,
-                                            document.fileName)) {
-            continue;
-        }
+    MyCodeEditor* editor = getCurrentEditor();
+    if (!editor)
+        return;
+    const DocumentSnapshot document = getDocumentForEditor(editor);
+    if (semanticRefreshMatchesDocument(changedFileName, document.fileName))
         editor->refreshSemanticPresentation();
-    }
 }
 
 void TabManager::updateTabTitle(MyCodeEditor* editor)

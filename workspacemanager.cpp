@@ -1,4 +1,6 @@
 #include "workspacemanager.h"
+
+#include "slangparseoptions.h"
 #include "activitylogservice.h"
 #include "workspaceignoreservice.h"
 #include <QFileDialog>
@@ -570,24 +572,20 @@ QString WorkspaceManager::resolveIncludePath(const QString& includePath,
     if (includePath.isEmpty())
         return QString();
 
-    if (!currentFile.isEmpty()) {
-        const QString currentFileCandidate =
-            QFileInfo(currentFile).dir().absoluteFilePath(includePath);
-        if (QFileInfo::exists(currentFileCandidate))
-            return currentFileCandidate;
-    }
+    const QFileInfo direct(includePath);
+    if (direct.isAbsolute() && direct.isFile())
+        return normalizeWorkspacePath(direct.absoluteFilePath());
 
-    if (!isWorkspaceOpen())
-        return QString();
-
-    const QString candidate = QDir(workspacePath).absoluteFilePath(includePath);
-    if (QFileInfo::exists(candidate))
-        return candidate;
-
-    const QString includeFileName = QFileInfo(includePath).fileName();
-    for (const QString& filePath : files.allFiles) {
-        if (QFileInfo(filePath).fileName() == includeFileName)
-            return filePath;
+    const QStringList configuredIncludeDirs =
+        projectModel ? projectModel->snapshot().includeDirs : QStringList();
+    const QStringList effectiveIncludeDirs =
+        slang_parse_options::effectiveIncludeDirsForFile(
+            currentFile, configuredIncludeDirs);
+    for (const QString& includeDir : effectiveIncludeDirs) {
+        const QString candidate =
+            QDir(includeDir).absoluteFilePath(includePath);
+        if (QFileInfo(candidate).isFile())
+            return normalizeWorkspacePath(candidate);
     }
     return QString();
 }

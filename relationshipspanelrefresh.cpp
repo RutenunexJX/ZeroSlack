@@ -116,7 +116,7 @@ QString relationshipEmptyReason(const RelationshipReport& report,
     case RelationshipReportNotFoundReason::None:
         break;
     case RelationshipReportNotFoundReason::NoSubjectSymbol:
-        if (SemanticIndex::getInstance()->getSymbolRecords().isEmpty())
+        if (!SemanticIndex::getInstance()->hasSymbolRecords())
             return QStringLiteral("workspace analysis stale / not ready");
         return QStringLiteral("symbol not indexed");
     case RelationshipReportNotFoundReason::NoRelationships:

@@ -182,6 +182,13 @@ struct SemanticSymbolRecord {
     SemanticSymbolTypeReference type;
     SemanticSymbolPresentation presentation;
     SemanticAnalysisBandMetadata analysisBand;
+    // Slang import facts can originate in an included header. The identity
+    // separates independent compilation units; source order and offset are
+    // taken from Slang's root buffer / include expansion anchor so ownerless
+    // imports flow forward through a workspace compilation unit, never back.
+    QString compilationUnitFileName;
+    std::uint64_t compilationUnitSourceOrder = 0;
+    std::uint64_t compilationUnitSourceOffset = 0;
 
     bool isValid() const;
 };
@@ -351,6 +358,7 @@ public:
     // Clears all index-owned state for a closed or replaced workspace.
     void clearSemanticState();
     std::shared_ptr<const SemanticIndexSnapshot> snapshot() const;
+    bool hasSymbolRecords() const;
     std::uint64_t snapshotRevision() const;
     SemanticSnapshotToken snapshotToken() const;
     void updateSymbolRecordsForFile(
@@ -412,6 +420,8 @@ public:
     QStringList getScopeSymbolNames(const QString& fileName, int cursorLine) const;
     QSet<QString> activeImportedPackageNames(
         const SemanticQueryContext& context) const;
+    QList<SemanticSymbolRecord> getVisibleImportedPackageRecords(
+        const SemanticQueryContext& context) const;
     bool packageVisibleRecordImported(
         const SemanticSymbolRecord& record,
         const SemanticQueryContext& context) const;
@@ -419,11 +429,6 @@ public:
                                      const QString& moduleName = QString()) const;
     QList<SemanticSymbolRecord> getStructMemberRecords(
         const QString& structTypeName = QString()) const;
-    QList<SemanticSymbolRecord> getModuleInternalSymbolRecordsByType(
-        const QString& moduleName,
-        CompletionCommandKind commandKind,
-        const QString& prefix = QString(),
-        bool useRelationshipFallback = true) const;
     QList<SemanticSymbolRecord> getModuleContextSymbolRecordsByType(
         const QString& moduleName,
         const QString& fileName,
@@ -431,8 +436,6 @@ public:
         const QString& prefix = QString()) const;
     QString currentModuleAt(const QString& fileName, int cursorPosition) const;
     bool isValidModuleName(const QString& name) const;
-    int findEndModuleLine(const QString& fileName,
-                          const SemanticSymbolRecord& moduleRecord) const;
     bool contentAffectsSymbols(const QString& fileName, const QString& content) const;
     void refreshStructTypedefEnumForFile(const QString& fileName, const QString& content);
     void attachRelationshipEngine(SymbolRelationshipEngine* engine);
