@@ -5,6 +5,7 @@
 #include <QList>
 #include <QSet>
 #include <QStringView>
+#include <QVector>
 #include <algorithm>
 #include <cstring>
 
@@ -53,6 +54,81 @@ int nodeStart(TSNode node)
 {
     return static_cast<int>(ts_node_start_byte(node) / 2u);
 }
+
+int nodeEnd(TSNode node);
+bool isCommentNode(TSNode node);
+bool isStringNode(TSNode node)
+{
+    return typeIs(node, "string_literal")
+        || typeIs(node, "quoted_string")
+        || typeIs(node, "triple_quoted_string");
+}
+
+struct ProtectedTextRange {
+    int start = -1;
+    int end = -1;
+};
+
+void collectTabProtectedRanges(TSNode node,
+                               QList<ProtectedTextRange>* ranges)
+{
+    if (!ranges || ts_node_is_null(node))
+        return;
+    if (isCommentNode(node) || isStringNode(node)) {
+        const int start = nodeStart(node);
+        const int end = nodeEnd(node);
+        if (start >= 0 && end > start)
+            ranges->append({start, end});
+        return;
+    }
+    const uint32_t count = ts_node_child_count(node);
+    if (count == 0) {
+        const int start = nodeStart(node);
+        const int end = nodeEnd(node);
+        if (start >= 0 && end > start)
+            ranges->append({start, end});
+        return;
+    }
+    for (uint32_t index = 0; index < count; ++index) {
+        collectTabProtectedRanges(
+            ts_node_child(node, index), ranges);
+    }
+}
+
+const char* designUnitClosingKeyword(TSNode node)
+{
+    if (typeIs(node, "module_declaration"))
+        return "endmodule";
+    if (typeIs(node, "interface_declaration"))
+        return "endinterface";
+    if (typeIs(node, "package_declaration"))
+        return "endpackage";
+    if (typeIs(node, "program_declaration"))
+        return "endprogram";
+    if (typeIs(node, "checker_declaration"))
+        return "endchecker";
+    if (typeIs(node, "udp_declaration"))
+        return "endprimitive";
+    if (typeIs(node, "config_declaration"))
+        return "endconfig";
+    return nullptr;
+}
+
+void collectDesignUnits(TSNode node, QList<TSNode>* units)
+{
+    if (!units || ts_node_is_null(node))
+        return;
+    if (designUnitClosingKeyword(node)) {
+        units->append(node);
+        return;
+    }
+    const uint32_t count = ts_node_named_child_count(node);
+    for (uint32_t index = 0; index < count; ++index) {
+        collectDesignUnits(
+            ts_node_named_child(node, index), units);
+    }
+}
+
 
 int nodeEnd(TSNode node)
 {
@@ -359,30 +435,16 @@ public:
 
         collectConservativeErrors(m_document.rootNode());
 
-        if (!m_valid)
-            return m_source;
-        std::sort(m_edits.begin(),
-                  m_edits.end(),
-                  [](const WhitespaceEdit& left,
-                     const WhitespaceEdit& right) {
-            if (left.start != right.start)
-                return left.start > right.start;
-            return left.end > right.end;
-        });
+        return applyEdits();
+    }
 
-        QString result = m_source;
-        int previousStart = m_source.size() + 1;
-        for (const WhitespaceEdit& edit : m_edits) {
-            if (edit.end > previousStart) {
-                m_valid = false;
-                return m_source;
-            }
-            result.replace(edit.start,
-                           edit.end - edit.start,
-                           edit.replacement);
-            previousStart = edit.start;
-        }
-        return result;
+    QString runDesignUnitIndentation()
+    {
+        QList<TSNode> units;
+        collectDesignUnits(m_document.rootNode(), &units);
+        for (const TSNode unit : units)
+            formatDesignUnitIndentation(unit);
+        return applyEdits();
     }
 
     QList<LineRange> conservativeRanges() const
@@ -422,6 +484,143 @@ private:
         bool hasActual = false;
         bool multiline = false;
     };
+
+    QString applyEdits()
+    {
+        if (!m_valid)
+            return m_source;
+        std::sort(m_edits.begin(),
+                  m_edits.end(),
+                  [](const WhitespaceEdit& left,
+                     const WhitespaceEdit& right) {
+            if (left.start != right.start)
+                return left.start > right.start;
+            return left.end > right.end;
+        });
+
+        QString result = m_source;
+        int previousStart = m_source.size() + 1;
+        for (const WhitespaceEdit& edit : m_edits) {
+            if (edit.end > previousStart) {
+                m_valid = false;
+                return m_source;
+            }
+            result.replace(edit.start,
+                           edit.end - edit.start,
+                           edit.replacement);
+            previousStart = edit.start;
+        }
+        return result;
+    }
+
+    bool setLineLeading(const LeafToken& leaf, int indent)
+    {
+        const int startOfLine =
+            lineStart(m_source, leaf.start);
+        const QStringView gap =
+            QStringView(m_source).mid(
+                startOfLine,
+                leaf.start - startOfLine);
+        if (!allWhitespace(gap))
+            return true;
+        return addEdit(
+            startOfLine,
+            leaf.start,
+            QString(std::max(0, indent),
+                    QLatin1Char(' ')));
+    }
+
+    void shiftDirectMemberToColumnZero(TSNode member)
+    {
+        const QList<LeafToken> leaves =
+            leavesOf(member, m_source);
+        if (leaves.isEmpty())
+            return;
+
+        const LeafToken anchor = leaves.first();
+        const int anchorLineStart =
+            lineStart(m_source, anchor.start);
+        const QStringView anchorGap =
+            QStringView(m_source).mid(
+                anchorLineStart,
+                anchor.start - anchorLineStart);
+        if (!allWhitespace(anchorGap))
+            return;
+
+        const int baseIndent =
+            anchor.start - anchorLineStart;
+        const int firstLine = nodeStartLine(member);
+        const int lastLine = nodeEndLine(member);
+        if (lastLine < firstLine)
+            return;
+
+        QVector<LeafToken> firstLeaves(lastLine - firstLine + 1);
+        for (const LeafToken& leaf : leaves) {
+            const int relative =
+                nodeStartLine(leaf.node) - firstLine;
+            if (relative < 0 || relative >= firstLeaves.size())
+                continue;
+            LeafToken& first = firstLeaves[relative];
+            if (first.start < 0 || leaf.start < first.start)
+                first = leaf;
+        }
+
+        for (const LeafToken& first : firstLeaves) {
+            if (first.start < 0)
+                continue;
+            const int startOfLine =
+                lineStart(m_source, first.start);
+            const QStringView gap =
+                QStringView(m_source).mid(
+                    startOfLine,
+                    first.start - startOfLine);
+            if (!allWhitespace(gap))
+                continue;
+            const int currentIndent =
+                first.start - startOfLine;
+            setLineLeading(
+                first,
+                std::max(0, currentIndent - baseIndent));
+        }
+    }
+
+    void formatDesignUnitIndentation(TSNode unit)
+    {
+        const char* closingKeyword =
+            designUnitClosingKeyword(unit);
+        if (!closingKeyword)
+            return;
+
+        const QList<LeafToken> leaves =
+            leavesOf(unit, m_source);
+        if (leaves.isEmpty())
+            return;
+
+        LeafToken headerSemicolon;
+        LeafToken closing;
+        for (const LeafToken& leaf : leaves) {
+            if (headerSemicolon.start < 0
+                && leaf.text == QStringLiteral(";")) {
+                headerSemicolon = leaf;
+            }
+            if (leaf.text == QString::fromLatin1(closingKeyword))
+                closing = leaf;
+        }
+        if (headerSemicolon.start < 0 || closing.start < 0
+            || headerSemicolon.end > closing.start) {
+            return;
+        }
+
+        setLineLeading(leaves.first(), 0);
+        for (const TSNode child : directNamedChildren(unit)) {
+            if (nodeEnd(child) <= headerSemicolon.end
+                || nodeStart(child) >= closing.start) {
+                continue;
+            }
+            shiftDirectMemberToColumnZero(child);
+        }
+        setLineLeading(closing, 0);
+    }
 
     bool addEdit(int start, int end, const QString& replacement)
     {
@@ -1799,6 +1998,70 @@ bool hasIdenticalImmutableLeafTokens(const QString& before,
 }
 
 } // namespace
+
+QString normalizeLexicalWhitespaceTabs(const QString& text,
+                                       int spacesPerTab)
+{
+    if (text.isEmpty()
+        || !text.contains(QLatin1Char('\t')))
+        return text;
+
+    TSDocument document;
+    document.setText(text);
+    QList<ProtectedTextRange> protectedRanges;
+    collectTabProtectedRanges(
+        document.rootNode(), &protectedRanges);
+    std::sort(
+        protectedRanges.begin(),
+        protectedRanges.end(),
+        [](const ProtectedTextRange& left,
+           const ProtectedTextRange& right) {
+            if (left.start != right.start)
+                return left.start < right.start;
+            return left.end < right.end;
+        });
+
+    QString result;
+    result.reserve(text.size());
+    int protectedIndex = 0;
+    const int replacementWidth =
+        std::max(1, spacesPerTab);
+    for (int position = 0; position < text.size(); ++position) {
+        while (protectedIndex < protectedRanges.size()
+               && position
+                      >= protectedRanges.at(protectedIndex).end) {
+            ++protectedIndex;
+        }
+        const bool protectedPosition =
+            protectedIndex < protectedRanges.size()
+            && position
+                   >= protectedRanges.at(protectedIndex).start
+            && position
+                   < protectedRanges.at(protectedIndex).end;
+        if (text.at(position) == QLatin1Char('\t')
+            && !protectedPosition) {
+            result.append(
+                QString(replacementWidth, QLatin1Char(' ')));
+        } else {
+            result.append(text.at(position));
+        }
+    }
+    if (!hasIdenticalNonWhitespaceStream(text, result))
+        return text;
+    return result;
+}
+
+QString formatDesignUnitIndentation(const QString& text,
+                                    int indentWidth)
+{
+    if (text.isEmpty())
+        return text;
+    TreeWhitespaceFormatter formatter(text, indentWidth);
+    const QString candidate = formatter.runDesignUnitIndentation();
+    if (!hasIdenticalNonWhitespaceStream(text, candidate))
+        return text;
+    return candidate;
+}
 
 bool hasIdenticalNonWhitespaceStream(const QString& before,
                                      const QString& after)

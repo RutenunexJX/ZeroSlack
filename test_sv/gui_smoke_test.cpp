@@ -4511,10 +4511,10 @@ static void runEditorFormatterRegression()
     expectBool("editor formatter indents document",
                editor.toPlainText()
                    == QStringLiteral("module top;\n"
-                                     "    logic a;\n"
-                                     "    always_comb begin\n"
-                                     "        a = \"end\";\n"
-                                     "    end\n"
+                                     "logic a;\n"
+                                     "always_comb begin\n"
+                                     "    a = \"end\";\n"
+                                     "end\n"
                                      "endmodule\n"),
                true);
     expectBool("editor formatter emits status",
@@ -4531,16 +4531,16 @@ static void runEditorFormatterRegression()
                                      "endmodule\n"),
                true);
     editor.setPlainText(QStringLiteral("module profile_demo;\n"
-                                       "logic [7:0] data;\n"
-                                       "logic valid;\n"
+                                       "            logic [7:0] data;\n"
+                                       "    logic valid;\n"
                                        "endmodule\n"));
     editor.setFormatterProfile(FormatterProfile::IndentOnly);
     editor.formatDocument();
     expectBool("editor formatter indent-only profile skips alignment",
                editor.toPlainText()
                    == QStringLiteral("module profile_demo;\n"
-                                     "    logic [7:0] data;\n"
-                                     "    logic valid;\n"
+                                     "logic [7:0] data;\n"
+                                     "logic valid;\n"
                                      "endmodule\n"),
                true);
     expectBool("editor formatter status names profile",
@@ -4579,7 +4579,7 @@ static void runEditorFormatterRegression()
     expectBool("editor formatter selection preserves base indent",
                selectionEditor.toPlainText()
                    == QStringLiteral("module top;\n"
-                                     "    logic       a;     // flag\n"
+                                     "    logic       a   ;  // flag\n"
                                      "    logic [7:0] data;  // byte\n"
                                      "    always_comb begin\n"
                                      "        data = '0;\n"
@@ -12138,8 +12138,8 @@ int main(int argc, char** argv)
                            "endmodule\n");
         const QString formattedOnSaveText =
             QStringLiteral("module format_save;\n"
-                           "    logic [7:0] data;\n"
-                           "    logic       valid;\n"
+                           "logic [7:0] data ;\n"
+                           "logic       valid;\n"
                            "endmodule\n");
         if (window.formatterSettings) {
             window.formatterSettings->setProfile(

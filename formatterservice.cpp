@@ -1051,7 +1051,8 @@ QString buildAlignedDeclarationCodeLine(const DeclarationAlignmentLine& line,
                                         int maxPrefixWidth,
                                         int maxNameWidth,
                                         int maxBeforeAssignmentWidth,
-                                        bool alignAssignment)
+                                        bool alignAssignment,
+                                        int semicolonColumn)
 {
     QString content = line.prefix
         + repeatSpaces(maxPrefixWidth - line.prefix.size() + 1)
@@ -1068,11 +1069,17 @@ QString buildAlignedDeclarationCodeLine(const DeclarationAlignmentLine& line,
                 : 1;
         content += repeatSpaces(spacesBeforeAssignment)
             + QStringLiteral("= ")
-            + line.assignmentRhs
-            + line.terminator;
-    } else {
-        content += line.terminator;
+            + line.assignmentRhs;
     }
+
+    const int contentEndColumn =
+        line.indent.size() + content.size();
+    if (line.terminator == QStringLiteral(";")
+        && semicolonColumn > contentEndColumn) {
+        content += repeatSpaces(
+            semicolonColumn - contentEndColumn);
+    }
+    content += line.terminator;
 
     return line.indent + content;
 }
@@ -1111,6 +1118,22 @@ void flushDeclarationAlignmentBlock(QStringList* lines,
     }
 
     const bool alignAssignment = assignmentCount >= 2;
+    int semicolonColumn = 0;
+    for (const DeclarationAlignmentLine& line : block) {
+        if (line.terminator != QStringLiteral(";"))
+            continue;
+        const QString preliminary =
+            buildAlignedDeclarationCodeLine(
+                line,
+                maxPrefixWidth,
+                maxNameWidth,
+                maxBeforeAssignmentWidth,
+                alignAssignment,
+                0);
+        semicolonColumn = std::max(
+            semicolonColumn,
+            static_cast<int>(preliminary.size()) - 1);
+    }
     QStringList codeLines;
     codeLines.reserve(block.size());
     int maxCodeLineWidth = 0;
@@ -1121,7 +1144,8 @@ void flushDeclarationAlignmentBlock(QStringList* lines,
                                             maxPrefixWidth,
                                             maxNameWidth,
                                             maxBeforeAssignmentWidth,
-                                            alignAssignment);
+                                            alignAssignment,
+                                            semicolonColumn);
         codeLines.append(codeLine);
         maxCodeLineWidth =
             std::max(maxCodeLineWidth, static_cast<int>(codeLine.size()));
@@ -1162,7 +1186,8 @@ void alignDeclarationBlocks(QStringList* lines)
 
         if (!block.isEmpty()
             && (block.last().indentWidth != parsed.indentWidth
-                || block.last().family != parsed.family)) {
+                || block.last().family != parsed.family
+                || block.last().terminator != parsed.terminator)) {
             flush();
         }
 
@@ -1759,15 +1784,21 @@ AssignmentAlignmentLine parseAssignmentAlignmentLine(const QString& line)
 }
 
 QString buildAlignedAssignmentCodeLine(const AssignmentAlignmentLine& line,
-                                       int maxLeftWidth)
+                                       int maxLeftWidth,
+                                       int semicolonColumn)
 {
-    return line.indent
+    QString codeLine = line.indent
         + line.left
         + repeatSpaces(maxLeftWidth - line.left.size() + 1)
         + line.op
         + QLatin1Char(' ')
-        + line.right
-        + QLatin1Char(';');
+        + line.right;
+    if (semicolonColumn > codeLine.size()) {
+        codeLine += repeatSpaces(
+            semicolonColumn - codeLine.size());
+    }
+    codeLine += QLatin1Char(';');
+    return codeLine;
 }
 
 void flushAssignmentAlignmentBlock(QStringList* lines,
@@ -1784,13 +1815,26 @@ void flushAssignmentAlignmentBlock(QStringList* lines,
                      static_cast<int>(line.left.size()));
     }
 
+    int semicolonColumn = 0;
+    for (const AssignmentAlignmentLine& line : block) {
+        const QString preliminary =
+            buildAlignedAssignmentCodeLine(
+                line, maxLeftWidth, 0);
+        semicolonColumn = std::max(
+            semicolonColumn,
+            static_cast<int>(preliminary.size()) - 1);
+    }
+
     QStringList codeLines;
     codeLines.reserve(block.size());
     int maxCodeLineWidth = 0;
     bool hasTrailingComment = false;
     for (const AssignmentAlignmentLine& line : block) {
         const QString codeLine =
-            buildAlignedAssignmentCodeLine(line, maxLeftWidth);
+            buildAlignedAssignmentCodeLine(
+                line,
+                maxLeftWidth,
+                semicolonColumn);
         codeLines.append(codeLine);
         maxCodeLineWidth =
             std::max(maxCodeLineWidth, static_cast<int>(codeLine.size()));
@@ -1998,8 +2042,12 @@ FormatterReport FormatterService::formatDocument(
     if (text.isEmpty())
         return report;
 
-    const bool hadFinalNewline = text.endsWith(QLatin1Char('\n'));
-    QStringList lines = splitLines(text);
+    const QString normalizedText =
+        StructuredWhitespaceFormatter::
+            normalizeLexicalWhitespaceTabs(text, 4);
+    const bool hadFinalNewline =
+        normalizedText.endsWith(QLatin1Char('\n'));
+    QStringList lines = splitLines(normalizedText);
     if (hadFinalNewline && !lines.isEmpty() && lines.last().isEmpty())
         lines.removeLast();
 
@@ -2092,10 +2140,10 @@ FormatterReport FormatterService::formatDocument(
             conservativeRanges =
                 StructuredWhitespaceFormatter::
                     conservativeLineRanges(
-                        text, options.indentWidth);
+                        normalizedText, options.indentWidth);
         if (formatted.size() != lines.size()) {
-            report.formattedText = text;
-            report.changed = false;
+            report.formattedText = normalizedText;
+            report.changed = report.formattedText != text;
             report.formattedLines = lines.size();
             return report;
         }
@@ -2113,6 +2161,10 @@ FormatterReport FormatterService::formatDocument(
 
     report.formattedText =
         joinLinesPreservingFinalNewline(formatted, hadFinalNewline);
+    report.formattedText =
+        StructuredWhitespaceFormatter::
+            formatDesignUnitIndentation(
+                report.formattedText, options.indentWidth);
     if (options.alignPortLists || options.alignInstanceMaps) {
         report.formattedText = StructuredWhitespaceFormatter::format(
             report.formattedText,
@@ -2121,7 +2173,7 @@ FormatterReport FormatterService::formatDocument(
     if (!StructuredWhitespaceFormatter::hasIdenticalNonWhitespaceStream(
             text,
             report.formattedText)) {
-        report.formattedText = text;
+        report.formattedText = normalizedText;
     }
     report.changed = report.formattedText != text;
     report.formattedLines = formatted.size();
@@ -2143,8 +2195,12 @@ FormatterReport FormatterService::formatSelection(
     if (text.isEmpty())
         return report;
 
-    const bool hadFinalNewline = text.endsWith(QLatin1Char('\n'));
-    QStringList lines = splitLines(text);
+    const QString normalizedText =
+        StructuredWhitespaceFormatter::
+            normalizeLexicalWhitespaceTabs(text, 4);
+    const bool hadFinalNewline =
+        normalizedText.endsWith(QLatin1Char('\n'));
+    QStringList lines = splitLines(normalizedText);
     if (hadFinalNewline && !lines.isEmpty() && lines.last().isEmpty())
         lines.removeLast();
 
@@ -2175,6 +2231,11 @@ FormatterReport FormatterService::formatSelection(
 
     report.formattedText =
         joinLinesPreservingFinalNewline(formatted, hadFinalNewline);
+    if (!StructuredWhitespaceFormatter::hasIdenticalNonWhitespaceStream(
+            text,
+            report.formattedText)) {
+        report.formattedText = normalizedText;
+    }
     report.changed = report.formattedText != text;
     report.formattedLines = formatted.size();
     return report;

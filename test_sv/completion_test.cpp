@@ -1778,23 +1778,23 @@ int main(int argc, char** argv) {
     expectEq("Formatter conservative indentation",
              formatterReport.formattedText,
              QStringLiteral("module top;\n"
-                            "    logic a;\n"
-                            "  // comment-only lines stay where the user put them\n"
-                            "    always_ff @(posedge clk) begin\n"
-                            "        if (rst) begin\n"
-                            "            a <= 1'b0;\n"
-                            "        end else begin\n"
-                            "            a <= ~a;\n"
-                            "        end\n"
+                            "logic a;\n"
+                            "// comment-only lines stay where the user put them\n"
+                            "always_ff @(posedge clk) begin\n"
+                            "    if (rst) begin\n"
+                            "        a <= 1'b0;\n"
+                            "    end else begin\n"
+                            "        a <= ~a;\n"
                             "    end\n"
-                            "    always_comb begin\n"
-                            "        case (sel)\n"
-                            "            2'b00  : y = \"begin\";\n"
-                            "            default: y = a;        // endcase\n"
-                            "        endcase\n"
-                            "    end\n"
+                            "end\n"
+                            "always_comb begin\n"
+                            "    case (sel)\n"
+                            "        2'b00  : y = \"begin\";\n"
+                            "        default: y = a;        // endcase\n"
+                            "    endcase\n"
+                            "end\n"
                             "`ifdef KEEP_COLUMN\n"
-                            "    assign macro_guarded = a;\n"
+                            "assign macro_guarded = a;\n"
                             "`endif\n"
                             "endmodule\n"));
     const FormatterReport unchangedFormatterReport =
@@ -1825,16 +1825,16 @@ int main(int argc, char** argv) {
     expectEq("Formatter indents single statement bodies",
              formatterSingleStatementReport.formattedText,
              QStringLiteral("module single_stmt_demo;\n"
-                            "    always_comb begin\n"
-                            "        if (en)\n"
-                            "            y = a;\n"
-                            "        else if (sel)\n"
-                            "            y = b;\n"
-                            "        else\n"
-                            "            y = c;\n"
-                            "        for (int i = 0; i < 2; i++)\n"
-                            "            data[i] = value;\n"
-                            "    end\n"
+                            "always_comb begin\n"
+                            "    if (en)\n"
+                            "        y = a;\n"
+                            "    else if (sel)\n"
+                            "        y = b;\n"
+                            "    else\n"
+                            "        y = c;\n"
+                            "    for (int i = 0; i < 2; i++)\n"
+                            "        data[i] = value;\n"
+                            "end\n"
                             "endmodule\n"));
     const FormatterReport unchangedSingleStatementReport =
         FormatterService::getInstance()->formatDocument(
@@ -1874,18 +1874,18 @@ int main(int argc, char** argv) {
     expectEq("Formatter indents procedural single statement bodies",
              formatterProceduralBodyReport.formattedText,
              QStringLiteral("module procedural_stmt_demo;\n"
-                            "    always_ff @(posedge clk)\n"
-                            "        q <= d;\n"
-                            "    always_comb\n"
-                            "        y = a & b;\n"
-                            "    initial\n"
-                            "        ready = 1'b0;\n"
-                            "    final\n"
-                            "        $display(\"done\");\n"
-                            "    initial begin\n"
-                            "        forever\n"
-                            "            tick = ~tick;\n"
-                            "    end\n"
+                            "always_ff @(posedge clk)\n"
+                            "    q <= d;\n"
+                            "always_comb\n"
+                            "    y = a & b;\n"
+                            "initial\n"
+                            "    ready = 1'b0;\n"
+                            "final\n"
+                            "    $display(\"done\");\n"
+                            "initial begin\n"
+                            "    forever\n"
+                            "        tick = ~tick;\n"
+                            "end\n"
                             "endmodule\n"));
     const FormatterReport unchangedProceduralBodyReport =
         FormatterService::getInstance()->formatDocument(
@@ -1924,17 +1924,17 @@ int main(int argc, char** argv) {
     expectEq("Formatter indents multiline header single statement bodies",
              formatterMultilineHeaderBodyReport.formattedText,
              QStringLiteral("module multiline_header_demo;\n"
-                            "    always_ff @(posedge clk or\n"
-                            "        negedge rst_n)\n"
-                            "        q <= d;\n"
-                            "    always @(a or\n"
-                            "        b)\n"
-                            "        y = a & b;\n"
-                            "    always_comb begin\n"
-                            "        if (sel &&\n"
-                            "            ready)\n"
-                            "            z = a;\n"
-                            "    end\n"
+                            "always_ff @(posedge clk or\n"
+                            "    negedge rst_n)\n"
+                            "    q <= d;\n"
+                            "always @(a or\n"
+                            "    b)\n"
+                            "    y = a & b;\n"
+                            "always_comb begin\n"
+                            "    if (sel &&\n"
+                            "        ready)\n"
+                            "        z = a;\n"
+                            "end\n"
                             "endmodule\n"));
     const FormatterReport unchangedMultilineHeaderBodyReport =
         FormatterService::getInstance()->formatDocument(
@@ -1977,22 +1977,22 @@ int main(int argc, char** argv) {
     expectEq("Formatter indents SystemVerilog block boundaries",
              formatterSvBlockReport.formattedText,
              QStringLiteral("program tb;\n"
-                            "    default clocking cb @(posedge clk);\n"
-                            "        input  req;\n"
-                            "        output grant;\n"
-                            "    endclocking\n"
-                            "    property req_grant;\n"
-                            "        req |=> grant;\n"
-                            "    endproperty\n"
-                            "    sequence two_req;\n"
-                            "        req ##1 req;\n"
-                            "    endsequence\n"
-                            "    covergroup cg @(posedge clk);\n"
-                            "        coverpoint req;\n"
-                            "    endgroup\n"
-                            "    checker chk;\n"
-                            "        assert property (req_grant);\n"
-                            "    endchecker\n"
+                            "default clocking cb @(posedge clk);\n"
+                            "    input  req  ;\n"
+                            "    output grant;\n"
+                            "endclocking\n"
+                            "property req_grant;\n"
+                            "    req |=> grant;\n"
+                            "endproperty\n"
+                            "sequence two_req;\n"
+                            "    req ##1 req;\n"
+                            "endsequence\n"
+                            "covergroup cg @(posedge clk);\n"
+                            "    coverpoint req;\n"
+                            "endgroup\n"
+                            "checker chk;\n"
+                            "    assert property (req_grant);\n"
+                            "endchecker\n"
                             "endprogram\n"));
     const FormatterReport unchangedSvBlockReport =
         FormatterService::getInstance()->formatDocument(
@@ -2007,22 +2007,22 @@ int main(int argc, char** argv) {
     expectEq("Formatter indent-only keeps SystemVerilog block boundary indentation",
              indentOnlySvBlockReport.formattedText,
              QStringLiteral("program tb;\n"
-                            "    default clocking cb @(posedge clk);\n"
-                            "        input req;\n"
-                            "        output grant;\n"
-                            "    endclocking\n"
-                            "    property req_grant;\n"
-                            "        req |=> grant;\n"
-                            "    endproperty\n"
-                            "    sequence two_req;\n"
-                            "        req ##1 req;\n"
-                            "    endsequence\n"
-                            "    covergroup cg @(posedge clk);\n"
-                            "        coverpoint req;\n"
-                            "    endgroup\n"
-                            "    checker chk;\n"
-                            "        assert property (req_grant);\n"
-                            "    endchecker\n"
+                            "default clocking cb @(posedge clk);\n"
+                            "    input req;\n"
+                            "    output grant;\n"
+                            "endclocking\n"
+                            "property req_grant;\n"
+                            "    req |=> grant;\n"
+                            "endproperty\n"
+                            "sequence two_req;\n"
+                            "    req ##1 req;\n"
+                            "endsequence\n"
+                            "covergroup cg @(posedge clk);\n"
+                            "    coverpoint req;\n"
+                            "endgroup\n"
+                            "checker chk;\n"
+                            "    assert property (req_grant);\n"
+                            "endchecker\n"
                             "endprogram\n"));
     const QString formatterForkInput =
         QStringLiteral("module fork_demo;\n"
@@ -2044,15 +2044,15 @@ int main(int argc, char** argv) {
     expectEq("Formatter indents fork statements without disable/wait drift",
              formatterForkReport.formattedText,
              QStringLiteral("module fork_demo;\n"
-                            "    initial begin\n"
-                            "        fork\n"
-                            "            a = 1'b1;\n"
-                            "            b = 1'b0;\n"
-                            "        join_any\n"
-                            "        disable fork;\n"
-                            "        wait fork;\n"
-                            "        done = 1'b1;\n"
-                            "    end\n"
+                            "initial begin\n"
+                            "    fork\n"
+                            "        a = 1'b1;\n"
+                            "        b = 1'b0;\n"
+                            "    join_any\n"
+                            "    disable fork;\n"
+                            "    wait fork;\n"
+                            "    done = 1'b1;\n"
+                            "end\n"
                             "endmodule\n"));
     const FormatterReport unchangedForkReport =
         FormatterService::getInstance()->formatDocument(
@@ -2083,10 +2083,10 @@ int main(int argc, char** argv) {
     expectEq("Formatter aligns declaration blocks",
              formatterAlignmentReport.formattedText,
              QStringLiteral("module align_demo;\n"
-                            "    logic [7:0] data;\n"
-                            "    logic       valid;\n"
-                            "    parameter int P         = 8;\n"
-                            "    parameter int LONG_NAME = P + 1;\n"
+                            "logic [7:0] data ;\n"
+                            "logic       valid;\n"
+                            "parameter int P         = 8    ;\n"
+                            "parameter int LONG_NAME = P + 1;\n"
                             "endmodule\n"));
     const FormatterReport unchangedAlignmentReport =
         FormatterService::getInstance()->formatDocument(
@@ -2110,10 +2110,10 @@ int main(int argc, char** argv) {
     expectEq("Formatter aligns declaration array dimensions",
              formatterArrayDeclReport.formattedText,
              QStringLiteral("module array_decl_demo;\n"
-                            "    logic       flag     [3:0];\n"
-                            "    logic [7:0] data_bus [DEPTH-1:0];\n"
-                            "    parameter int LUT      [4]     = '{0, 1, 2, 3};\n"
-                            "    parameter int LONG_LUT [DEPTH] = DEFAULT_LUT;\n"
+                            "logic       flag     [3:0]      ;\n"
+                            "logic [7:0] data_bus [DEPTH-1:0];\n"
+                            "parameter int LUT      [4]     = '{0, 1, 2, 3};\n"
+                            "parameter int LONG_LUT [DEPTH] = DEFAULT_LUT  ;\n"
                             "endmodule\n"));
     const FormatterReport unchangedArrayDeclReport =
         FormatterService::getInstance()->formatDocument(
@@ -2172,10 +2172,10 @@ int main(int argc, char** argv) {
     expectEq("Formatter indent-only profile skips declaration alignment",
              indentOnlyReport.formattedText,
              QStringLiteral("module align_demo;\n"
-                            "    logic [7:0] data;\n"
-                            "    logic valid;\n"
-                            "    parameter int P = 8;\n"
-                            "    parameter int LONG_NAME = P + 1;\n"
+                            "logic [7:0] data;\n"
+                            "logic valid;\n"
+                            "parameter int P = 8;\n"
+                            "parameter int LONG_NAME = P + 1;\n"
                             "endmodule\n"));
     const FormatterReport indentOnlyArrayDeclReport =
         FormatterService::getInstance()->formatDocument(
@@ -2184,10 +2184,10 @@ int main(int argc, char** argv) {
     expectEq("Formatter indent-only skips declaration array dimension alignment",
              indentOnlyArrayDeclReport.formattedText,
              QStringLiteral("module array_decl_demo;\n"
-                            "    logic flag [3:0];\n"
-                            "    logic [7:0] data_bus [DEPTH-1:0];\n"
-                            "    parameter int LUT [4] = '{0, 1, 2, 3};\n"
-                            "    parameter int LONG_LUT [DEPTH] = DEFAULT_LUT;\n"
+                            "logic flag [3:0];\n"
+                            "logic [7:0] data_bus [DEPTH-1:0];\n"
+                            "parameter int LUT [4] = '{0, 1, 2, 3};\n"
+                            "parameter int LONG_LUT [DEPTH] = DEFAULT_LUT;\n"
                             "endmodule\n"));
     const FormatterReport indentOnlyParameterPortReport =
         FormatterService::getInstance()->formatDocument(
@@ -2252,15 +2252,15 @@ int main(int argc, char** argv) {
     expectEq("Formatter aligns instance maps",
              formatterInstanceMapReport.formattedText,
              QStringLiteral("module inst_demo;\n"
-                            "    child #(\n"
-                            "        .PARAM      ( 8     ),\n"
-                            "        .LONG_PARAM ( WIDTH )\n"
-                            "    ) u_child(\n"
-                            "        .clk     ( clk      ),\n"
-                            "        .rst_n   ( rst_n    ),\n"
-                            "        .data_in ( data_bus ),\n"
-                            "        .ready   ( ready    )\n"
-                            "    );\n"
+                            "child #(\n"
+                            "    .PARAM      ( 8     ),\n"
+                            "    .LONG_PARAM ( WIDTH )\n"
+                            ") u_child(\n"
+                            "    .clk     ( clk      ),\n"
+                            "    .rst_n   ( rst_n    ),\n"
+                            "    .data_in ( data_bus ),\n"
+                            "    .ready   ( ready    )\n"
+                            ");\n"
                             "endmodule\n"));
     const FormatterReport unchangedInstanceMapReport =
         FormatterService::getInstance()->formatDocument(
@@ -2296,12 +2296,12 @@ int main(int argc, char** argv) {
                             "    input  logic clk   , // clock\n"
                             "    output logic ready   // done\n"
                             ");\n"
-                            "    logic       a;     // flag\n"
-                            "    logic [7:0] data;  // byte\n"
-                            "    child u_child(\n"
-                            "        .clk     ( clk  ), // clock\n"
-                            "        .data_in ( data )  // bus\n"
-                            "    );\n"
+                            "logic       a   ;  // flag\n"
+                            "logic [7:0] data;  // byte\n"
+                            "child u_child(\n"
+                            "    .clk     ( clk  ), // clock\n"
+                            "    .data_in ( data )  // bus\n"
+                            ");\n"
                             "endmodule\n"));
     const FormatterReport unchangedTrailingCommentReport =
         FormatterService::getInstance()->formatDocument(
@@ -2522,9 +2522,32 @@ int main(int argc, char** argv) {
     const FormatterReport formatterIncompleteHeaderReport =
         FormatterService::getInstance()->formatDocument(
             formatterIncompleteHeaderInput);
+    const QString formatterIncompleteHeaderExpected =
+        QStringLiteral(
+            "  module incomplete #(\n"
+            "    parameter int WIDTH=8\n"
+            ")(\n"
+            "    input logic clk,\n"
+            "    output logic ready\n"
+            "  // missing closing delimiter and semicolon\n"
+            "endmodule\n");
     expectEq("Formatter incomplete header is atomic",
              formatterIncompleteHeaderReport.formattedText,
-             formatterIncompleteHeaderInput);
+             formatterIncompleteHeaderExpected);
+    expectBool("Formatter incomplete header only normalizes safe whitespace",
+               !formatterIncompleteHeaderReport.formattedText.contains(
+                   QLatin1Char('\t'))
+                   && StructuredWhitespaceFormatter::
+                          hasIdenticalNonWhitespaceStream(
+                              formatterIncompleteHeaderInput,
+                              formatterIncompleteHeaderReport.formattedText),
+               true);
+    expectBool("Formatter incomplete header normalization is idempotent",
+               !FormatterService::getInstance()
+                    ->formatDocument(
+                        formatterIncompleteHeaderReport.formattedText)
+                    .changed,
+               true);
 
     QDir formatterFixtureRoot(
         QCoreApplication::applicationDirPath());
@@ -2751,17 +2774,17 @@ int main(int argc, char** argv) {
     expectEq("Formatter aligns case items",
              formatterCaseItemReport.formattedText,
              QStringLiteral("module case_demo;\n"
-                            "    always_comb begin\n"
-                            "        case (sel)\n"
-                            "            1'b0      : y = a;  // zero\n"
-                            "            STATE_LONG: y = b;  // long\n"
-                            "            default   : y = c;\n"
-                            "        endcase\n"
-                            "        unique casez (mode)\n"
-                            "            2'b0?  : y = a;\n"
-                            "            default: y = b;\n"
-                            "        endcase\n"
-                            "    end\n"
+                            "always_comb begin\n"
+                            "    case (sel)\n"
+                            "        1'b0      : y = a;  // zero\n"
+                            "        STATE_LONG: y = b;  // long\n"
+                            "        default   : y = c;\n"
+                            "    endcase\n"
+                            "    unique casez (mode)\n"
+                            "        2'b0?  : y = a;\n"
+                            "        default: y = b;\n"
+                            "    endcase\n"
+                            "end\n"
                             "endmodule\n"));
     const FormatterReport unchangedCaseItemReport =
         FormatterService::getInstance()->formatDocument(
@@ -2791,16 +2814,16 @@ int main(int argc, char** argv) {
     expectEq("Formatter indents case item bodies",
              formatterCaseBodyReport.formattedText,
              QStringLiteral("module case_body_demo;\n"
-                            "    always_comb begin\n"
-                            "        case (state)\n"
-                            "            IDLE:\n"
-                            "                next = RUN;\n"
-                            "            LONG_STATE:\n"
-                            "                next = DONE;\n"
-                            "            default:\n"
-                            "                next = IDLE;\n"
-                            "        endcase\n"
-                            "    end\n"
+                            "always_comb begin\n"
+                            "    case (state)\n"
+                            "        IDLE:\n"
+                            "            next = RUN;\n"
+                            "        LONG_STATE:\n"
+                            "            next = DONE;\n"
+                            "        default:\n"
+                            "            next = IDLE;\n"
+                            "    endcase\n"
+                            "end\n"
                             "endmodule\n"));
     const FormatterReport unchangedCaseBodyReport =
         FormatterService::getInstance()->formatDocument(
@@ -2815,16 +2838,16 @@ int main(int argc, char** argv) {
     expectEq("Formatter indent-only keeps case item body indentation",
              indentOnlyCaseBodyReport.formattedText,
              QStringLiteral("module case_body_demo;\n"
-                            "    always_comb begin\n"
-                            "        case (state)\n"
-                            "            IDLE:\n"
-                            "                next = RUN;\n"
-                            "            LONG_STATE:\n"
-                            "                next = DONE;\n"
-                            "            default:\n"
-                            "                next = IDLE;\n"
-                            "        endcase\n"
-                            "    end\n"
+                            "always_comb begin\n"
+                            "    case (state)\n"
+                            "        IDLE:\n"
+                            "            next = RUN;\n"
+                            "        LONG_STATE:\n"
+                            "            next = DONE;\n"
+                            "        default:\n"
+                            "            next = IDLE;\n"
+                            "    endcase\n"
+                            "end\n"
                             "endmodule\n"));
 
     const QString formatterEnumInput =
@@ -2844,11 +2867,11 @@ int main(int argc, char** argv) {
     expectEq("Formatter aligns enum items",
              formatterEnumReport.formattedText,
              QStringLiteral("module enum_demo;\n"
-                            "    typedef enum logic [1:0] {\n"
-                            "        IDLE       = 2'd0,\n"
-                            "        LONG_STATE = 2'd1,  // active\n"
-                            "        DONE\n"
-                            "    } state_e;\n"
+                            "typedef enum logic [1:0] {\n"
+                            "    IDLE       = 2'd0,\n"
+                            "    LONG_STATE = 2'd1,  // active\n"
+                            "    DONE\n"
+                            "} state_e;\n"
                             "endmodule\n"));
     const FormatterReport unchangedEnumReport =
         FormatterService::getInstance()->formatDocument(
@@ -2863,11 +2886,11 @@ int main(int argc, char** argv) {
     expectEq("Formatter indent-only skips enum item alignment",
              indentOnlyEnumReport.formattedText,
              QStringLiteral("module enum_demo;\n"
-                            "    typedef enum logic [1:0] {\n"
-                            "        IDLE = 2'd0,\n"
-                            "        LONG_STATE = 2'd1, // active\n"
-                            "        DONE\n"
-                            "    } state_e;\n"
+                            "typedef enum logic [1:0] {\n"
+                            "    IDLE = 2'd0,\n"
+                            "    LONG_STATE = 2'd1, // active\n"
+                            "    DONE\n"
+                            "} state_e;\n"
                             "endmodule\n"));
 
     const QString formatterAssignmentInput =
@@ -2893,17 +2916,17 @@ int main(int argc, char** argv) {
     expectEq("Formatter aligns assignment blocks",
              formatterAssignmentReport.formattedText,
              QStringLiteral("module assign_demo;\n"
-                            "    assign short          = a;\n"
-                            "    assign very_long_name = b;  // output\n"
-                            "    always_ff @(posedge clk) begin\n"
-                            "        q              <= d;\n"
-                            "        wide_data[3:0] <= next_data[3:0];  // sample\n"
-                            "    end\n"
-                            "    always_comb begin\n"
-                            "        temp      = a == b;\n"
-                            "        long_temp = temp ? c : d;  // combo\n"
-                            "        if (temp) keep = d;\n"
-                            "    end\n"
+                            "assign short          = a;\n"
+                            "assign very_long_name = b;  // output\n"
+                            "always_ff @(posedge clk) begin\n"
+                            "    q              <= d             ;\n"
+                            "    wide_data[3:0] <= next_data[3:0];  // sample\n"
+                            "end\n"
+                            "always_comb begin\n"
+                            "    temp      = a == b      ;\n"
+                            "    long_temp = temp ? c : d;  // combo\n"
+                            "    if (temp) keep = d;\n"
+                            "end\n"
                             "endmodule\n"));
     const FormatterReport unchangedAssignmentReport =
         FormatterService::getInstance()->formatDocument(
@@ -2918,17 +2941,17 @@ int main(int argc, char** argv) {
     expectEq("Formatter indent-only profile skips assignment alignment",
              indentOnlyAssignmentReport.formattedText,
              QStringLiteral("module assign_demo;\n"
-                            "    assign short = a;\n"
-                            "    assign very_long_name = b; // output\n"
-                            "    always_ff @(posedge clk) begin\n"
-                            "        q <= d;\n"
-                            "        wide_data[3:0] <= next_data[3:0]; // sample\n"
-                            "    end\n"
-                            "    always_comb begin\n"
-                            "        temp = a == b;\n"
-                            "        long_temp = temp ? c : d; // combo\n"
-                            "        if (temp) keep = d;\n"
-                            "    end\n"
+                            "assign short = a;\n"
+                            "assign very_long_name = b; // output\n"
+                            "always_ff @(posedge clk) begin\n"
+                            "    q <= d;\n"
+                            "    wide_data[3:0] <= next_data[3:0]; // sample\n"
+                            "end\n"
+                            "always_comb begin\n"
+                            "    temp = a == b;\n"
+                            "    long_temp = temp ? c : d; // combo\n"
+                            "    if (temp) keep = d;\n"
+                            "end\n"
                             "endmodule\n"));
 
     const QString formatterContinuationInput =
@@ -2954,16 +2977,16 @@ int main(int argc, char** argv) {
     expectEq("Formatter indents continuation lines",
              formatterContinuationReport.formattedText,
              QStringLiteral("module continuation_demo;\n"
-                            "    assign out = {\n"
+                            "assign out = {\n"
+                            "    a,\n"
+                            "    b\n"
+                            "};\n"
+                            "always_comb begin\n"
+                            "    result = func(\n"
                             "        a,\n"
                             "        b\n"
-                            "    };\n"
-                            "    always_comb begin\n"
-                            "        result = func(\n"
-                            "            a,\n"
-                            "            b\n"
-                            "        );\n"
-                            "    end\n"
+                            "    );\n"
+                            "end\n"
                             "endmodule\n"));
     const FormatterReport unchangedContinuationReport =
         FormatterService::getInstance()->formatDocument(
@@ -2995,16 +3018,16 @@ int main(int argc, char** argv) {
     expectEq("Formatter indents assignment RHS continuations",
              formatterRhsContinuationReport.formattedText,
              QStringLiteral("module rhs_demo;\n"
-                            "    always_comb begin\n"
-                            "        result =\n"
-                            "            lhs\n"
-                            "            + rhs;\n"
-                            "        call_result =\n"
-                            "            func(\n"
-                            "                 a,\n"
-                            "                 b\n"
-                            "            );\n"
-                            "    end\n"
+                            "always_comb begin\n"
+                            "    result =\n"
+                            "        lhs\n"
+                            "        + rhs;\n"
+                            "    call_result =\n"
+                            "        func(\n"
+                            "             a,\n"
+                            "             b\n"
+                            "        );\n"
+                            "end\n"
                             "endmodule\n"));
     const FormatterReport unchangedRhsContinuationReport =
         FormatterService::getInstance()->formatDocument(
@@ -3019,16 +3042,16 @@ int main(int argc, char** argv) {
     expectEq("Formatter indent-only keeps RHS continuation indentation",
              indentOnlyRhsContinuationReport.formattedText,
              QStringLiteral("module rhs_demo;\n"
-                            "    always_comb begin\n"
-                            "        result =\n"
-                            "            lhs\n"
-                            "            + rhs;\n"
-                            "        call_result =\n"
-                            "            func(\n"
-                            "                a,\n"
-                            "                b\n"
-                            "            );\n"
-                            "    end\n"
+                            "always_comb begin\n"
+                            "    result =\n"
+                            "        lhs\n"
+                            "        + rhs;\n"
+                            "    call_result =\n"
+                            "        func(\n"
+                            "            a,\n"
+                            "            b\n"
+                            "        );\n"
+                            "end\n"
                             "endmodule\n"));
 
     const QString formatterCallArgumentInput =
@@ -3049,14 +3072,14 @@ int main(int argc, char** argv) {
     expectEq("Formatter aligns call argument continuations",
              formatterCallArgumentReport.formattedText,
              QStringLiteral("module call_arg_demo;\n"
-                            "    always_comb begin\n"
-                            "        result = func(\n")
-                 + QString(22, QLatin1Char(' '))
+                            "always_comb begin\n"
+                            "    result = func(\n")
+                 + QString(18, QLatin1Char(' '))
                  + QStringLiteral("a,\n")
-                 + QString(22, QLatin1Char(' '))
+                 + QString(18, QLatin1Char(' '))
                  + QStringLiteral("long_arg\n"
-                                  "        );\n"
-                                  "    end\n"
+                                  "    );\n"
+                                  "end\n"
                                   "endmodule\n"));
     const FormatterReport unchangedCallArgumentReport =
         FormatterService::getInstance()->formatDocument(
@@ -3071,12 +3094,12 @@ int main(int argc, char** argv) {
     expectEq("Formatter indent-only skips call argument continuation alignment",
              indentOnlyCallArgumentReport.formattedText,
              QStringLiteral("module call_arg_demo;\n"
-                            "    always_comb begin\n"
-                            "        result = func(\n"
-                            "            a,\n"
-                            "            long_arg\n"
-                            "        );\n"
-                            "    end\n"
+                            "always_comb begin\n"
+                            "    result = func(\n"
+                            "        a,\n"
+                            "        long_arg\n"
+                            "    );\n"
+                            "end\n"
                             "endmodule\n"));
 
     const QString formatterOperatorInput =
@@ -3099,18 +3122,18 @@ int main(int argc, char** argv) {
     expectEq("Formatter aligns continuation operators",
              formatterOperatorReport.formattedText,
              QStringLiteral("module op_demo;\n"
-                            "    always_comb begin\n"
-                            "        result = lhs\n")
-                 + QString(17, QLatin1Char(' '))
+                            "always_comb begin\n"
+                            "    result = lhs\n")
+                 + QString(13, QLatin1Char(' '))
                  + QStringLiteral("+ short\n")
-                 + QString(17, QLatin1Char(' '))
+                 + QString(13, QLatin1Char(' '))
                  + QStringLiteral("- very_long_term\n")
-                 + QString(17, QLatin1Char(' '))
+                 + QString(13, QLatin1Char(' '))
                  + QStringLiteral("| mask;\n"
-                                  "        assign out = lhs\n")
-                 + QString(21, QLatin1Char(' '))
+                                  "    assign out = lhs\n")
+                 + QString(17, QLatin1Char(' '))
                  + QStringLiteral("^ rhs;\n"
-                                  "    end\n"
+                                  "end\n"
                                   "endmodule\n"));
     const FormatterReport unchangedOperatorReport =
         FormatterService::getInstance()->formatDocument(
@@ -3125,14 +3148,14 @@ int main(int argc, char** argv) {
     expectEq("Formatter indent-only skips continuation operator alignment",
              indentOnlyOperatorReport.formattedText,
              QStringLiteral("module op_demo;\n"
-                            "    always_comb begin\n"
-                            "        result = lhs\n"
-                            "        + short\n"
-                            "        - very_long_term\n"
-                            "        | mask;\n"
-                            "        assign out = lhs\n"
-                            "        ^ rhs;\n"
-                            "    end\n"
+                            "always_comb begin\n"
+                            "    result = lhs\n"
+                            "    + short\n"
+                            "    - very_long_term\n"
+                            "    | mask;\n"
+                            "    assign out = lhs\n"
+                            "    ^ rhs;\n"
+                            "end\n"
                             "endmodule\n"));
 
     const QString formatterTernaryInput =
@@ -3155,18 +3178,18 @@ int main(int argc, char** argv) {
     expectEq("Formatter aligns ternary continuations",
              formatterTernaryReport.formattedText,
              QStringLiteral("module ternary_demo;\n"
-                            "    assign mux = sel\n")
-                 + QString(17, QLatin1Char(' '))
+                            "assign mux = sel\n")
+                 + QString(13, QLatin1Char(' '))
                  + QStringLiteral("? data_a\n")
-                 + QString(17, QLatin1Char(' '))
+                 + QString(13, QLatin1Char(' '))
                  + QStringLiteral(": data_b;\n"
-                                  "    always_comb begin\n"
-                                  "        next = enable\n")
-                 + QString(15, QLatin1Char(' '))
+                                  "always_comb begin\n"
+                                  "    next = enable\n")
+                 + QString(11, QLatin1Char(' '))
                  + QStringLiteral("? value_a\n")
-                 + QString(15, QLatin1Char(' '))
+                 + QString(11, QLatin1Char(' '))
                  + QStringLiteral(": value_b;\n"
-                                  "    end\n"
+                                  "end\n"
                                   "endmodule\n"));
     const FormatterReport unchangedTernaryReport =
         FormatterService::getInstance()->formatDocument(
@@ -3181,14 +3204,14 @@ int main(int argc, char** argv) {
     expectEq("Formatter indent-only skips ternary continuation alignment",
              indentOnlyTernaryReport.formattedText,
              QStringLiteral("module ternary_demo;\n"
-                            "    assign mux = sel\n"
-                            "    ? data_a\n"
-                            "    : data_b;\n"
-                            "    always_comb begin\n"
-                            "        next = enable\n"
-                            "        ? value_a\n"
-                            "        : value_b;\n"
-                            "    end\n"
+                            "assign mux = sel\n"
+                            "? data_a\n"
+                            ": data_b;\n"
+                            "always_comb begin\n"
+                            "    next = enable\n"
+                            "    ? value_a\n"
+                            "    : value_b;\n"
+                            "end\n"
                             "endmodule\n"));
 
     const QString formatterSelectionInput =
@@ -3202,7 +3225,7 @@ int main(int argc, char** argv) {
                true);
     expectEq("Formatter selection preserves base indentation",
              formatterSelectionReport.formattedText,
-             QStringLiteral("    logic       a;     // flag\n"
+             QStringLiteral("    logic       a   ;  // flag\n"
                             "    logic [7:0] data;  // byte\n"));
     const FormatterReport unchangedSelectionReport =
         FormatterService::getInstance()->formatSelection(
@@ -3210,6 +3233,445 @@ int main(int argc, char** argv) {
     expectBool("Formatter selection idempotent",
                unchangedSelectionReport.changed,
                false);
+
+    const QString formatterDesignUnitInput =
+        QStringLiteral(
+            "    module unit_top #(\n"
+            "            parameter int P=1\n"
+            "        )(\n"
+            "          input logic clk\n"
+            "      );\n"
+            "            logic q;\n"
+            "            child u_child();\n"
+            "        assign q = d;\n"
+            "    always_ff @(posedge clk) begin\n"
+            "            if (enable) begin\n"
+            "                    case (sel)\n"
+            "                            default: q <= d;\n"
+            "                    endcase\n"
+            "            end\n"
+            "    end\n"
+            "    endmodule\n"
+            "    package unit_pkg;\n"
+            "            parameter int WIDTH = 8;\n"
+            "    typedef logic [WIDTH - 1:0] word_t;\n"
+            "        function automatic logic pick(input logic value);\n"
+            "                pick = value;\n"
+            "        endfunction\n"
+            "    endpackage\n"
+            "    interface unit_if;\n"
+            "            logic req;\n"
+            "    modport master(output req);\n"
+            "    endinterface\n"
+            "    program unit_program;\n"
+            "        initial begin\n"
+            "                q = '0;\n"
+            "        end\n"
+            "    endprogram\n");
+    const QString formatterDesignUnitExpected =
+        QStringLiteral(
+            "module unit_top #(\n"
+            "    parameter int P = 1\n"
+            ")(\n"
+            "    input logic clk\n"
+            ");\n"
+            "logic q;\n"
+            "child u_child();\n"
+            "assign q = d;\n"
+            "always_ff @(posedge clk) begin\n"
+            "    if (enable) begin\n"
+            "        case (sel)\n"
+            "            default: q <= d;\n"
+            "        endcase\n"
+            "    end\n"
+            "end\n"
+            "endmodule\n"
+            "package unit_pkg;\n"
+            "parameter int WIDTH = 8;\n"
+            "typedef logic [WIDTH - 1:0] word_t;\n"
+            "function automatic logic pick(input logic value);\n"
+            "    pick = value;\n"
+            "endfunction\n"
+            "endpackage\n"
+            "interface unit_if;\n"
+            "logic req;\n"
+            "modport master(output req);\n"
+            "endinterface\n"
+            "program unit_program;\n"
+            "initial begin\n"
+            "    q = '0;\n"
+            "end\n"
+            "endprogram\n");
+    const FormatterReport formatterDesignUnitReport =
+        FormatterService::getInstance()->formatDocument(
+            formatterDesignUnitInput);
+    expectEq("Formatter design-unit members start at column zero",
+             formatterDesignUnitReport.formattedText,
+             formatterDesignUnitExpected);
+    expectBool("Formatter design-unit token stream invariant",
+               StructuredWhitespaceFormatter::
+                   hasIdenticalNonWhitespaceStream(
+                       formatterDesignUnitInput,
+                       formatterDesignUnitReport.formattedText),
+               true);
+    const QStringList formatterDesignUnitLines =
+        formatterDesignUnitReport.formattedText.split(
+            QLatin1Char('\n'));
+    auto designUnitLineColumn =
+        [&](const QString& prefix) -> int {
+            for (const QString& line : formatterDesignUnitLines) {
+                if (line.trimmed().startsWith(prefix))
+                    return static_cast<int>(
+                        line.indexOf(prefix));
+            }
+            return -1;
+        };
+    expectBool(
+        "Formatter direct members ignore arbitrary original indentation",
+        designUnitLineColumn(QStringLiteral("logic q")) == 0
+            && designUnitLineColumn(QStringLiteral("child u_child")) == 0
+            && designUnitLineColumn(QStringLiteral("assign q")) == 0
+            && designUnitLineColumn(QStringLiteral("always_ff")) == 0
+            && designUnitLineColumn(QStringLiteral("function automatic")) == 0,
+        true);
+    expectBool(
+        "Formatter parameter and port items keep four-space indentation",
+        designUnitLineColumn(QStringLiteral("parameter int P")) == 4
+            && designUnitLineColumn(QStringLiteral("input logic clk")) == 4,
+        true);
+    const FormatterReport formatterDesignUnitIndentOnlyReport =
+        FormatterService::getInstance()->formatDocument(
+            formatterDesignUnitInput,
+            FormatterProfile::IndentOnly);
+    const QStringList formatterDesignUnitIndentOnlyLines =
+        formatterDesignUnitIndentOnlyReport.formattedText.split(
+            QLatin1Char('\n'));
+    auto indentOnlyDesignUnitLineColumn =
+        [&](const QString& prefix) -> int {
+            for (const QString& line :
+                 formatterDesignUnitIndentOnlyLines) {
+                if (line.trimmed().startsWith(prefix))
+                    return static_cast<int>(
+                        line.indexOf(prefix));
+            }
+            return -1;
+        };
+    expectBool(
+        "Formatter indent-only direct members ignore arbitrary indentation",
+        indentOnlyDesignUnitLineColumn(QStringLiteral("logic q")) == 0
+            && indentOnlyDesignUnitLineColumn(
+                   QStringLiteral("child u_child"))
+                   == 0
+            && indentOnlyDesignUnitLineColumn(
+                   QStringLiteral("assign q"))
+                   == 0
+            && indentOnlyDesignUnitLineColumn(
+                   QStringLiteral("always_ff"))
+                   == 0
+            && indentOnlyDesignUnitLineColumn(
+                   QStringLiteral("function automatic"))
+                   == 0,
+        true);
+    expectBool(
+        "Formatter indent-only parameter and port indentation",
+        indentOnlyDesignUnitLineColumn(
+            QStringLiteral("parameter int P"))
+                == 4
+            && indentOnlyDesignUnitLineColumn(
+                   QStringLiteral("input logic clk"))
+                   == 4,
+        true);
+    expectBool("Formatter design-unit formatting idempotent",
+               FormatterService::getInstance()
+                   ->formatDocument(
+                       formatterDesignUnitReport.formattedText)
+                   .changed,
+               false);
+
+    const QString formatterLexicalTabInput =
+        QStringLiteral(
+            "\tmodule tab_demo;\t\n"
+            "\t\tlogic\tdata;\t\n"
+            "\t\tstring\tmessage\t=\t\"left\tright\";\t"
+            "// keep\tcomment\n"
+            "\tendmodule\t\n");
+    const QString formatterLexicalTabIndentOnlySelectionExpected =
+        QStringLiteral(
+            "    module tab_demo;    \n"
+            "    logic    data;    \n"
+            "    string    message    =    \"left\tright\";    "
+            "// keep\tcomment\n"
+            "    endmodule    \n");
+    const FormatterReport formatterLexicalTabIndentOnlySelection =
+        FormatterService::getInstance()->formatSelection(
+            formatterLexicalTabInput,
+            FormatterProfile::IndentOnly);
+    expectEq("Formatter selection expands lexical Tabs by four",
+             formatterLexicalTabIndentOnlySelection.formattedText,
+             formatterLexicalTabIndentOnlySelectionExpected);
+    const QList<FormatterReport> formatterLexicalTabReports{
+        FormatterService::getInstance()->formatDocument(
+            formatterLexicalTabInput),
+        FormatterService::getInstance()->formatDocument(
+            formatterLexicalTabInput,
+            FormatterProfile::IndentOnly),
+        FormatterService::getInstance()->formatSelection(
+            formatterLexicalTabInput),
+        formatterLexicalTabIndentOnlySelection,
+    };
+    bool formatterLexicalTabBoundaryOk = true;
+    bool formatterLexicalTabInvariantOk = true;
+    for (const FormatterReport& report : formatterLexicalTabReports) {
+        formatterLexicalTabBoundaryOk =
+            formatterLexicalTabBoundaryOk
+            && report.formattedText.count(QLatin1Char('\t')) == 2
+            && report.formattedText.contains(
+                QStringLiteral("\"left\tright\""))
+            && report.formattedText.contains(
+                QStringLiteral("// keep\tcomment"));
+        formatterLexicalTabInvariantOk =
+            formatterLexicalTabInvariantOk
+            && StructuredWhitespaceFormatter::
+                   hasIdenticalNonWhitespaceStream(
+                       formatterLexicalTabInput,
+                       report.formattedText);
+    }
+    expectBool("Formatter preserves only string/comment Tabs",
+               formatterLexicalTabBoundaryOk,
+               true);
+    expectBool("Formatter lexical Tab token stream invariant",
+               formatterLexicalTabInvariantOk,
+               true);
+    expectBool("Formatter lexical Tab output idempotent",
+               FormatterService::getInstance()
+                   ->formatDocument(
+                       formatterLexicalTabReports.first().formattedText)
+                   .changed,
+               false);
+
+    const QString formatterMalformedTabInput =
+        QStringLiteral(
+            "\tmodule malformed_tabs;\n"
+            "logic\tvisible;\n"
+            "string message = \"left\tright\n"
+            "endmodule\n");
+    const QString formatterMalformedTabNormalized =
+        StructuredWhitespaceFormatter::
+            normalizeLexicalWhitespaceTabs(
+                formatterMalformedTabInput, 4);
+    expectBool(
+        "Formatter malformed syntax converts confirmed lexical Tab",
+        formatterMalformedTabNormalized.startsWith(
+            QStringLiteral("    module malformed_tabs;")),
+        true);
+    expectBool("Formatter malformed syntax fallback keeps token stream",
+               StructuredWhitespaceFormatter::hasIdenticalNonWhitespaceStream(
+                   formatterMalformedTabInput,
+                   formatterMalformedTabNormalized),
+               true);
+    expectBool(
+        "Formatter malformed string token Tab is conservative",
+        formatterMalformedTabNormalized.contains(
+            QStringLiteral("\"left\tright")),
+        true);
+    const QList<FormatterReport> formatterMalformedTabReports{
+        FormatterService::getInstance()->formatDocument(
+            formatterMalformedTabInput),
+        FormatterService::getInstance()->formatDocument(
+            formatterMalformedTabInput,
+            FormatterProfile::IndentOnly),
+        FormatterService::getInstance()->formatSelection(
+            formatterMalformedTabInput),
+        FormatterService::getInstance()->formatSelection(
+            formatterMalformedTabInput,
+            FormatterProfile::IndentOnly),
+    };
+    bool formatterMalformedTabPathsSafe = true;
+    for (const FormatterReport& report : formatterMalformedTabReports) {
+        formatterMalformedTabPathsSafe =
+            formatterMalformedTabPathsSafe
+            && report.formattedText.contains(
+                QStringLiteral("\"left\tright"))
+            && StructuredWhitespaceFormatter::hasIdenticalNonWhitespaceStream(
+                   formatterMalformedTabInput,
+                   report.formattedText);
+    }
+    expectBool("Formatter malformed Tab safety covers document and selection",
+               formatterMalformedTabPathsSafe,
+               true);
+
+    const QString formatterSemicolonInput =
+        QStringLiteral(
+            "module semicolon_demo;\n"
+            "logic short_flag;\n"
+            "logic [7:0] very_long_name = source;\n"
+            "logic mid [1:0];\n"
+            "assign short = a;\n"
+            "assign much_longer = a & b;\n"
+            "\n"
+            "assign isolated_with_a_much_longer_rhs = a & b & c;\n"
+            "// independent barrier\n"
+            "assign after_comment = c;\n"
+            "`ifdef FEATURE\n"
+            "assign branch_short = a;\n"
+            "`else\n"
+            "assign branch_name_that_is_long = b;\n"
+            "`endif\n"
+            "always_comb begin\n"
+            "    local_value = a;\n"
+            "    nested_long_name = b & c;\n"
+            "    for (int i = 0; i < 4; i++) begin\n"
+            "        local_value = local_value + i;\n"
+            "    end\n"
+            "end\n"
+            "assign multi =\n"
+            "    a +\n"
+            "    b;\n"
+            "endmodule\n");
+    const FormatterReport formatterSemicolonReport =
+        FormatterService::getInstance()->formatDocument(
+            formatterSemicolonInput);
+    const QStringList formatterSemicolonLines =
+        formatterSemicolonReport.formattedText.split(
+            QLatin1Char('\n'));
+    auto semicolonColumnForNeedle =
+        [&](const QString& needle) -> int {
+            for (const QString& line : formatterSemicolonLines) {
+                if (line.contains(needle))
+                    return static_cast<int>(
+                        line.indexOf(QLatin1Char(';')));
+            }
+            return -1;
+        };
+    const int declarationSemicolonColumn =
+        semicolonColumnForNeedle(QStringLiteral("short_flag"));
+    expectBool(
+        "Formatter aligns declaration semicolon column",
+        declarationSemicolonColumn >= 0
+            && declarationSemicolonColumn
+                == semicolonColumnForNeedle(
+                    QStringLiteral("very_long_name"))
+            && declarationSemicolonColumn
+                == semicolonColumnForNeedle(
+                    QStringLiteral("mid")),
+        true);
+    const int assignSemicolonColumn =
+        semicolonColumnForNeedle(QStringLiteral("assign short"));
+    expectBool(
+        "Formatter aligns assign semicolon column",
+        assignSemicolonColumn >= 0
+            && assignSemicolonColumn
+                == semicolonColumnForNeedle(
+                    QStringLiteral("assign much_longer")),
+        true);
+    expectBool(
+        "Formatter does not align semicolons across barriers",
+        assignSemicolonColumn
+                < semicolonColumnForNeedle(
+                    QStringLiteral(
+                        "assign isolated_with_a_much_longer_rhs"))
+            && semicolonColumnForNeedle(
+                   QStringLiteral("assign after_comment"))
+                != semicolonColumnForNeedle(
+                    QStringLiteral(
+                        "assign branch_name_that_is_long")),
+        true);
+    expectBool(
+        "Formatter leaves for-header semicolons in place",
+        formatterSemicolonReport.formattedText.contains(
+            QStringLiteral(
+                "for (int i = 0; i < 4; i++) begin")),
+        true);
+    expectBool("Formatter semicolon count preserved",
+               formatterSemicolonReport.formattedText.count(
+                   QLatin1Char(';'))
+                   == formatterSemicolonInput.count(
+                       QLatin1Char(';')),
+               true);
+    expectBool("Formatter semicolon token stream invariant",
+               StructuredWhitespaceFormatter::
+                   hasIdenticalNonWhitespaceStream(
+                       formatterSemicolonInput,
+                       formatterSemicolonReport.formattedText),
+               true);
+    const FormatterReport formatterSemicolonSecondReport =
+        FormatterService::getInstance()->formatDocument(
+            formatterSemicolonReport.formattedText);
+    expectEq("Formatter semicolon formatting stable text",
+             formatterSemicolonSecondReport.formattedText,
+             formatterSemicolonReport.formattedText);
+    expectBool("Formatter semicolon formatting idempotent",
+               formatterSemicolonSecondReport.changed,
+               false);
+
+    MyCodeEditor ordinaryTabEditor;
+    ordinaryTabEditor.setPlainText(QStringLiteral("logic ordinary;\n"));
+    QTextCursor ordinaryTabCursor(
+        ordinaryTabEditor.document()->findBlockByNumber(0));
+    ordinaryTabCursor.setPosition(
+        ordinaryTabEditor.document()
+            ->findBlockByNumber(0)
+            .position());
+    ordinaryTabEditor.setTextCursor(ordinaryTabCursor);
+    expectBool("Editor ordinary Tab is consumed",
+               sendEditorKey(ordinaryTabEditor, Qt::Key_Tab),
+               true);
+    expectEq("Editor ordinary Tab inserts exactly four spaces",
+             ordinaryTabEditor.toPlainText(),
+             QStringLiteral("    logic ordinary;\n"));
+
+    MyCodeEditor semanticCommandTabEditor;
+    semanticCommandTabEditor.setDocumentFileName(path);
+    semanticCommandTabEditor.setPlainText(
+        QStringLiteral(
+            "module top;\n"
+            "assign lhs = ;l enable;\n"
+            "endmodule\n"));
+    QTextBlock semanticCommandBlock =
+        semanticCommandTabEditor.document()->findBlockByNumber(1);
+    QTextCursor semanticCommandCursor(semanticCommandBlock);
+    semanticCommandCursor.setPosition(
+        semanticCommandBlock.position()
+        + semanticCommandBlock.text().indexOf(
+              QStringLiteral("enable"))
+        + QStringLiteral("enable").size());
+    semanticCommandTabEditor.setTextCursor(semanticCommandCursor);
+    expectBool("Editor ;cmd Tab is consumed",
+               sendEditorKey(
+                   semanticCommandTabEditor,
+                   Qt::Key_Tab),
+               true);
+    expectEq("Editor ;cmd Tab does not append four spaces",
+             semanticCommandTabEditor.toPlainText(),
+             QStringLiteral(
+                 "module top;\n"
+                 "assign lhs = enable;\n"
+                 "endmodule\n"));
+
+    MyCodeEditor templateCommandTabEditor;
+    templateCommandTabEditor.setPlainText(
+        QStringLiteral(
+            "module template_tab;\n"
+            ";;l 8 tab_signal\n"
+            "endmodule\n"));
+    QTextBlock templateCommandBlock =
+        templateCommandTabEditor.document()->findBlockByNumber(1);
+    QTextCursor templateCommandCursor(templateCommandBlock);
+    templateCommandCursor.movePosition(QTextCursor::EndOfBlock);
+    templateCommandTabEditor.setTextCursor(templateCommandCursor);
+    expectBool("Editor ;;cmd Tab is consumed",
+               sendEditorKey(
+                   templateCommandTabEditor,
+                   Qt::Key_Tab),
+               true);
+    expectBool(
+        "Editor ;;cmd Tab activates without four-space insertion",
+        templateCommandTabEditor.toPlainText().contains(
+            QStringLiteral("logic [7:0] tab_signal;"))
+            && !templateCommandTabEditor.toPlainText().contains(
+                QStringLiteral(";;l 8 tab_signal    ")),
+        true);
+    sendEditorKey(templateCommandTabEditor, Qt::Key_Escape);
 
     const QString wavePreviewInput =
         QStringLiteral("module wave_probe(\n"

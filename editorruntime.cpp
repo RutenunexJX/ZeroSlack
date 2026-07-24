@@ -4189,7 +4189,19 @@ bool MyCodeEditorState::handleKeyPress(MyCodeEditor* editor, QKeyEvent* event)
     if (handleBracketPairInsertion(editor, event))
         return true;
 
-    return completionWorkflow.handleCompletionPopupKey(event);
+    if (completionWorkflow.handleCompletionPopupKey(event))
+        return true;
+
+    if (event->key() == Qt::Key_Tab
+        && event->modifiers() == Qt::NoModifier) {
+        QTextCursor cursor = editor->textCursor();
+        cursor.insertText(QStringLiteral("    "));
+        editor->setTextCursor(cursor);
+        event->accept();
+        return true;
+    }
+
+    return false;
 }
 
 void MyCodeEditorState::beginSynchronousEditTransaction()

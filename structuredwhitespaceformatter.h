@@ -16,6 +16,16 @@ struct LineRange {
     }
 };
 
+// Replaces lexical-whitespace Tab characters with a fixed number of spaces.
+// Tree-sitter comment and string ranges are immutable and remain byte-exact.
+QString normalizeLexicalWhitespaceTabs(const QString& text,
+                                       int spacesPerTab);
+
+// Removes the synthetic design-unit indentation level while preserving the
+// relative indentation of procedural and structural bodies.
+QString formatDesignUnitIndentation(const QString& text,
+                                    int indentWidth);
+
 // Formats module headers, ANSI parameter / port declarations, and module
 // instantiation associations from Tree-sitter spans. Every produced edit is
 // confined to a whitespace gap between immutable syntax tokens.
