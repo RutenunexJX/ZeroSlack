@@ -9,6 +9,8 @@ struct SemanticSourceRange {
     int column = 0;
     int endLine = 0;
     int endColumn = 0;
+    int position = -1;
+    int length = 0;
 
     bool isValid() const
     {

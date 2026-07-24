@@ -7,6 +7,8 @@
 #include <QString>
 #include <memory>
 
+class TSDocument;
+
 enum class GhostAnnotationPlacement {
     LeftOfAnchor,
     RightOfAnchor,
@@ -51,14 +53,15 @@ struct GhostAnnotationReport {
 };
 
 struct GhostNumericLiteralQuery {
-    QString lineText;
-    int lineStartPosition = 0;
+    const TSDocument* syntaxDocument = nullptr;
     int cursorPosition = -1;
 };
 
 struct GhostNumericLiteralReport {
     bool available = false;
     QString displayText;
+    QString valueText;
+    QStringList radixRepresentations;
     int startPosition = -1;
     int endPosition = -1;
 };

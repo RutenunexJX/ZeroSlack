@@ -297,6 +297,7 @@ set(ZEROSLACK_CORE_SOURCES
     fsmgraphservice.cpp
     formattersettings.cpp
     formatterservice.cpp
+    structuredwhitespaceformatter.cpp
     ghostannotationservice.cpp
     wavepreviewpanelcoordinator.cpp
     wavepreviewservice.cpp

@@ -248,8 +248,12 @@ struct SemanticDiagnostic {
     int line = 0;
     int column = 0;
     QString message;
+    QString codeName;
+    QList<SemanticSourceRange> ranges;
     Severity severity = Info;
     Owner owner = UnknownOwner;
+    std::uint64_t computationRevision = 0;
+    std::uint64_t documentRevision = 0;
 };
 
 struct SemanticFileSymbolUpdate {

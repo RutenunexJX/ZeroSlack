@@ -19,6 +19,7 @@ enum class CommandLayerCommandId {
     AddPort,
     ClearRight,
     SelectBeginEnd,
+    SelectSignals,
     Help
 };
 

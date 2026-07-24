@@ -1,6 +1,8 @@
 #include "documentmodel.h"
+#include "completionmodel.h"
 #include "documentregistry.h"
 #include "editorselection.h"
+#include "editorsyntaxstate.h"
 #include "mycodeeditor.h"
 #include "tabmanager.h"
 #include "wavepreviewpanelcoordinator.h"
@@ -134,9 +136,11 @@ TypingReport measureTyping(const QString& fileName)
 struct InlineFilterReport {
     LatencySummary latency;
     EditorHotPathMetrics metrics;
+    EditorHotPathMetrics postCancelMetrics;
     int initialCandidateCount = 0;
     int filteredCandidateCount = 0;
     bool sessionStayedActive = false;
+    bool cancelSynchronizesCachedText = false;
 };
 
 struct VisibleWaveTypingReport {
@@ -197,9 +201,344 @@ InlineFilterReport measureInlineCandidateFiltering(const QString& fileName)
     report.filteredCandidateCount =
         completer && completer->model() ? completer->model()->rowCount() : 0;
     report.sessionStayedActive = completer && completer->popup()->isVisible()
-        && editor.cachedDocumentText().startsWith(QStringLiteral(";;p -\n"));
+        && editor.inlineFilterTextOverlayActiveForTest()
+        && editor.cachedDocumentSlice(0, 6)
+               == QStringLiteral(";;p -\n");
     report.metrics = editor.hotPathMetricsForTest();
+    QTest::keyClick(&editor, Qt::Key_L);
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 5);
+    QTest::keyClick(&editor, Qt::Key_Escape);
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 5);
+    report.cancelSynchronizesCachedText =
+        editor.cachedDocumentText() == editor.toPlainText();
+    report.postCancelMetrics = editor.hotPathMetricsForTest();
     return report;
+}
+
+bool isOccurrenceIdentifierStartForTest(QChar ch)
+{
+    return ch.isLetter() || ch == QLatin1Char('_');
+}
+
+bool isOccurrenceIdentifierPartForTest(QChar ch)
+{
+    return ch.isLetterOrNumber() || ch == QLatin1Char('_')
+        || ch == QLatin1Char('$');
+}
+
+qsizetype documentOccurrenceHandleCount(QTextDocument* document)
+{
+    qsizetype count = 0;
+    if (!document)
+        return count;
+
+    for (QTextBlock block = document->begin();
+         block.isValid();
+         block = block.next()) {
+        const QString text = block.text();
+        int position = 0;
+        while (position < text.size()) {
+            if (!isOccurrenceIdentifierStartForTest(text.at(position))) {
+                ++position;
+                continue;
+            }
+            const int start = position++;
+            while (position < text.size()
+                   && isOccurrenceIdentifierPartForTest(text.at(position))) {
+                ++position;
+            }
+            if (position - start >= 2)
+                ++count;
+        }
+    }
+    return count;
+}
+
+QList<int> documentWordPositions(QTextDocument* document,
+                                 const QString& word)
+{
+    QList<int> positions;
+    if (!document || word.isEmpty())
+        return positions;
+
+    QTextCursor search(document);
+    while (true) {
+        search = document->find(word, search);
+        if (search.isNull())
+            break;
+        const int start = search.selectionStart();
+        const int end = search.selectionEnd();
+        const bool leftBoundary = start == 0
+            || !isOccurrenceIdentifierPartForTest(
+                document->characterAt(start - 1));
+        const bool rightBoundary = end >= document->characterCount() - 1
+            || !isOccurrenceIdentifierPartForTest(
+                document->characterAt(end));
+        if (leftBoundary && rightBoundary)
+            positions.append(start);
+    }
+    return positions;
+}
+
+void expectOccurrenceIndexMatchesDocument(
+    const QString& label,
+    MyCodeEditor& editor,
+    const QStringList& probeWords,
+    bool compareAllHandles)
+{
+    bool positionsMatch = true;
+    for (const QString& word : probeWords) {
+        positionsMatch = positionsMatch
+            && editor.occurrencePositionsForTest(word)
+                   == documentWordPositions(editor.document(), word);
+    }
+    expect(label + QStringLiteral(" occurrence positions are live"),
+           positionsMatch);
+
+    const EditorOccurrenceIndexStats stats =
+        editor.occurrenceIndexStatsForTest();
+    expect(label + QStringLiteral(" occurrence handles are internally exact"),
+           stats.handleCount == stats.activeNodeCount
+               && stats.allocatedNodeCount
+                      == stats.activeNodeCount + stats.freeNodeCount);
+    if (compareAllHandles) {
+        expect(label + QStringLiteral(" occurrence handle count matches QTextDocument"),
+               stats.handleCount
+                   == documentOccurrenceHandleCount(editor.document()));
+    }
+}
+
+QString documentTextSliceForTest(QTextDocument* document,
+                                 int position,
+                                 int length)
+{
+    if (!document || position < 0 || length < 0)
+        return QString();
+    QTextCursor cursor(document);
+    cursor.setPosition(position);
+    cursor.setPosition(position + length, QTextCursor::KeepAnchor);
+    QString text = cursor.selectedText();
+    text.replace(QChar::ParagraphSeparator, QLatin1Char('\n'));
+    text.replace(QChar::LineSeparator, QLatin1Char('\n'));
+    return text;
+}
+
+void expectLargeFileSyntaxScopeMatchesDocument(
+    const QString& label,
+    MyCodeEditor& editor)
+{
+    const EditorLargeFileSyntaxScopeSnapshot scope =
+        editor.largeFileSyntaxScopeForTest();
+    const int documentLength = qMax(
+        0, editor.document()->characterCount() - 1);
+    expect(label + QStringLiteral(" Tree-sitter scoped text is current"),
+           scope.valid()
+               && scope.documentLength == documentLength
+               && scope.text
+                      == documentTextSliceForTest(
+                          editor.document(),
+                          scope.startPosition,
+                          scope.text.size()));
+}
+
+void expectHugeIncrementalCaches(const QString& label,
+                                 MyCodeEditor& editor,
+                                 DocumentModel& documents,
+                                 const QStringList& probeWords)
+{
+    const QString& cached = editor.cachedDocumentText();
+    const QString documentText =
+        editor.QPlainTextEdit::toPlainText();
+    expect(label + QStringLiteral(" editor cache matches QTextDocument"),
+           cached == documentText);
+    expect(label + QStringLiteral(" DocumentModel text matches editor"),
+           documents.documentTextForEditor(&editor) == documentText);
+    const DocumentSnapshot snapshot = documents.documentForEditor(&editor);
+    expect(label + QStringLiteral(" DocumentModel revision stays current"),
+           snapshot.textVersion
+                   == static_cast<int>(editor.semanticDocumentRevision())
+               && snapshot.dirty && !snapshot.saved);
+    expectLargeFileSyntaxScopeMatchesDocument(label, editor);
+    expectOccurrenceIndexMatchesDocument(label,
+                                         editor,
+                                         probeWords,
+                                         true);
+}
+
+void exerciseInlineFilterOverlayConsistency(const QString& fileName)
+{
+    const QString initial =
+        QStringLiteral(";;p -\n") + readText(fileName);
+    const QString nearWord = QStringLiteral(
+        "__GUARD__VENDOR_IP_CTL_CC_CONSTANTS__SVH__");
+    const QString suffixWord = QStringLiteral("CX_LTSSM_EMU_WD");
+    const QStringList probeWords({nearWord, suffixWord});
+
+    auto prepareEditor = [&](MyCodeEditor& editor,
+                             DocumentModel& documents) {
+        editor.resize(960, 640);
+        editor.setDocumentFileName(fileName);
+        editor.setPlainText(initial);
+        editor.acceptLoadedTextAsSemanticBaseline();
+        documents.registerEditor(&editor, fileName);
+        QTextCursor cursor(editor.document());
+        const QList<int> suffixPositions =
+            documentWordPositions(editor.document(), suffixWord);
+        expect("overlay fixture exposes a suffix syntax probe",
+               !suffixPositions.isEmpty());
+        if (!suffixPositions.isEmpty()) {
+            cursor.setPosition(suffixPositions.constLast());
+            editor.setTextCursor(cursor);
+            editor.currentModuleScopeTarget();
+        }
+        cursor.setPosition(QStringLiteral(";;p -").size());
+        editor.setTextCursor(cursor);
+        editor.show();
+        editor.setFocus();
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
+        editor.resetHotPathMetricsForTest();
+        QTest::keyClick(&editor, Qt::Key_Tab);
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+    };
+
+    {
+        MyCodeEditor editor;
+        DocumentModel documents;
+        prepareEditor(editor, documents);
+        QCompleter* completer = editor.findChild<QCompleter*>();
+        expect("overlay regression opens parameter candidate filtering",
+               completer && completer->popup()->isVisible()
+                   && completer->model()
+                   && completer->model()->rowCount() >= 4);
+
+        const QList<int> initialSuffixPositions =
+            editor.occurrencePositionsForTest(suffixWord);
+        const EditorLargeFileSyntaxScopeSnapshot initialSyntaxScope =
+            editor.largeFileSyntaxScopeForTest();
+        int accumulatedDelta = 0;
+        const QList<Qt::Key> keys({Qt::Key_L, Qt::Key_O});
+        for (int index = 0; index < keys.size(); ++index) {
+            QTest::keyClick(&editor, keys.at(index));
+            QCoreApplication::processEvents(QEventLoop::AllEvents, 5);
+            ++accumulatedDelta;
+
+            QList<int> shiftedSuffixPositions = initialSuffixPositions;
+            for (int& position : shiftedSuffixPositions)
+                position += accumulatedDelta;
+            const EditorHotPathMetrics metrics =
+                editor.hotPathMetricsForTest();
+            expect(QStringLiteral("overlay key %1 keeps session active")
+                       .arg(index + 1),
+                   editor.inlineFilterTextOverlayActiveForTest());
+            expect(QStringLiteral("overlay key %1 records one filter event")
+                       .arg(index + 1),
+                   metrics.inlineFilterKeyEvents
+                       == static_cast<std::uint64_t>(index + 1));
+            expect(QStringLiteral("overlay key %1 records one local overlay edit")
+                       .arg(index + 1),
+                   metrics.inlineFilterOverlayEdits
+                       == static_cast<std::uint64_t>(index + 1));
+            expect(QStringLiteral("overlay key %1 avoids overlay materialization")
+                       .arg(index + 1),
+                   metrics.inlineFilterOverlayMaterializations == 0);
+            expect(QStringLiteral("overlay key %1 avoids forced full-text reads")
+                       .arg(index + 1),
+                   metrics.inlineFilterOverlayForcedTextReads == 0);
+            expect(QStringLiteral("overlay key %1 shifts suffix occurrences once")
+                       .arg(index + 1),
+                   editor.occurrencePositionsForTest(suffixWord)
+                       == shiftedSuffixPositions);
+            expectOccurrenceIndexMatchesDocument(
+                QStringLiteral("overlay key %1").arg(index + 1),
+                editor,
+                probeWords,
+                index + 1 == keys.size());
+            const EditorLargeFileSyntaxScopeSnapshot currentSyntaxScope =
+                editor.largeFileSyntaxScopeForTest();
+            expect(QStringLiteral("overlay key %1 shifts syntax scope once")
+                       .arg(index + 1),
+                   initialSyntaxScope.valid()
+                       && currentSyntaxScope.valid()
+                       && currentSyntaxScope.startPosition
+                              == initialSyntaxScope.startPosition
+                                     + accumulatedDelta
+                       && currentSyntaxScope.endPosition
+                              == initialSyntaxScope.endPosition
+                                     + accumulatedDelta
+                       && currentSyntaxScope.documentLength
+                              == initialSyntaxScope.documentLength
+                                     + accumulatedDelta
+                       && currentSyntaxScope.text == initialSyntaxScope.text);
+            expectLargeFileSyntaxScopeMatchesDocument(
+                QStringLiteral("overlay key %1").arg(index + 1),
+                editor);
+        }
+
+        QTest::keyClick(&editor, Qt::Key_Escape);
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 5);
+        expectHugeIncrementalCaches(QStringLiteral("overlay cancel"),
+                                    editor,
+                                    documents,
+                                    probeWords);
+        editor.undo();
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 5);
+        expectHugeIncrementalCaches(QStringLiteral("overlay cancel undo"),
+                                    editor,
+                                    documents,
+                                    probeWords);
+        editor.redo();
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 5);
+        expectHugeIncrementalCaches(QStringLiteral("overlay cancel redo"),
+                                    editor,
+                                    documents,
+                                    probeWords);
+    }
+
+    {
+        MyCodeEditor editor;
+        DocumentModel documents;
+        prepareEditor(editor, documents);
+        QCompleter* completer = editor.findChild<QCompleter*>();
+        QTest::keyClick(&editor, Qt::Key_L);
+        QTest::keyClick(&editor, Qt::Key_O);
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 5);
+        expect("overlay confirmation session remains active",
+               editor.inlineFilterTextOverlayActiveForTest());
+        expect("overlay confirmation popup remains visible",
+               completer && completer->popup()->isVisible());
+        expect("overlay confirmation model has header plus two candidates",
+               completer && completer->model()
+                   && completer->model()->rowCount() == 3);
+        expect("overlay confirmation keeps a current candidate",
+               completer && completer->popup()->currentIndex().isValid());
+        const CompletionModel::CompletionItem selectedCandidate =
+            completer->popup()->currentIndex()
+                .data(Qt::UserRole)
+                .value<CompletionModel::CompletionItem>();
+        expect("overlay confirmation selects logic metadata",
+               selectedCandidate.text == QStringLiteral("logic"));
+        QTest::keyClick(&editor, Qt::Key_Return);
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 5);
+        expect("overlay candidate confirmation replaces command input",
+               editor.cachedDocumentSlice(0, 12)
+                   .startsWith(QStringLiteral(";;p -logic ")));
+        expectHugeIncrementalCaches(QStringLiteral("overlay confirmation"),
+                                    editor,
+                                    documents,
+                                    probeWords);
+        editor.undo();
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 5);
+        expectHugeIncrementalCaches(QStringLiteral("overlay confirmation undo"),
+                                    editor,
+                                    documents,
+                                    probeWords);
+        editor.redo();
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 5);
+        expectHugeIncrementalCaches(QStringLiteral("overlay confirmation redo"),
+                                    editor,
+                                    documents,
+                                    probeWords);
+    }
 }
 
 VisibleWaveTypingReport measureVisibleWaveTyping(const QString& fileName)
@@ -323,6 +662,46 @@ void printInlineFilterLatency(const LatencySummary& summary)
                 static_cast<long long>(summary.p95Us));
     std::printf("perf.inline_filter.huge_after.max_us=%lld\n",
                 static_cast<long long>(summary.maxUs));
+}
+
+void printInlineFilterMetrics(const EditorHotPathMetrics& metrics)
+{
+    std::printf("perf.inline_filter.metrics.key_events=%llu\n",
+                static_cast<unsigned long long>(
+                    metrics.inlineFilterKeyEvents));
+    std::printf("perf.inline_filter.metrics.document_changes=%llu\n",
+                static_cast<unsigned long long>(
+                    metrics.documentChanges));
+    std::printf("perf.inline_filter.metrics.retained_document_chars=%llu\n",
+                static_cast<unsigned long long>(
+                    metrics.inlineFilterRetainedDocumentCharactersPeak));
+    std::printf("perf.inline_filter.metrics.overlay_sessions=%llu\n",
+                static_cast<unsigned long long>(
+                    metrics.inlineFilterOverlaySessions));
+    std::printf("perf.inline_filter.metrics.overlay_edits=%llu\n",
+                static_cast<unsigned long long>(
+                    metrics.inlineFilterOverlayEdits));
+    std::printf("perf.inline_filter.metrics.overlay_materializations=%llu\n",
+                static_cast<unsigned long long>(
+                    metrics.inlineFilterOverlayMaterializations));
+    std::printf("perf.inline_filter.metrics.overlay_forced_text_reads=%llu\n",
+                static_cast<unsigned long long>(
+                    metrics.inlineFilterOverlayForcedTextReads));
+    std::printf("perf.inline_filter.metrics.refreshes=%llu\n",
+                static_cast<unsigned long long>(
+                    metrics.inlineFilterRefreshes));
+    std::printf("perf.inline_filter.metrics.service_queries=%llu\n",
+                static_cast<unsigned long long>(
+                    metrics.inlineFilterServiceQueries));
+    std::printf("perf.inline_filter.metrics.model_updates=%llu\n",
+                static_cast<unsigned long long>(
+                    metrics.inlineFilterModelUpdates));
+    std::printf("perf.inline_filter.metrics.highlight_updates=%llu\n",
+                static_cast<unsigned long long>(
+                    metrics.inlineFilterHighlightUpdates));
+    std::printf("perf.inline_filter.metrics.popup_completes=%llu\n",
+                static_cast<unsigned long long>(
+                    metrics.inlineFilterPopupCompletes));
 }
 
 void printVisibleWaveLatency(const LatencySummary& summary)
@@ -1227,12 +1606,47 @@ int main(int argc, char** argv)
         const InlineFilterReport inlineReport =
             measureInlineCandidateFiltering(hugeFile);
         printInlineFilterLatency(inlineReport.latency);
+        printInlineFilterMetrics(inlineReport.metrics);
         expect("huge inline Tab opens and preserves a filter session",
                inlineReport.initialCandidateCount >= 4
                    && inlineReport.sessionStayedActive);
         expect("huge inline candidate filter returns to the full set",
                inlineReport.filteredCandidateCount
                    == inlineReport.initialCandidateCount);
+        expect("huge inline filtering performs one delta and one refresh per key",
+               inlineReport.metrics.inlineFilterKeyEvents == 44
+                   && inlineReport.metrics.documentChanges == 44
+                   && inlineReport.metrics.inlineFilterRefreshes == 44
+                   && inlineReport.metrics.inlineFilterServiceQueries == 44);
+        expect("huge inline filtering updates the model without popup rebuilds",
+               inlineReport.metrics.inlineFilterModelUpdates == 45
+                   && inlineReport.metrics.inlineFilterPopupCompletes == 1
+                   && inlineReport.metrics.inlineFilterHighlightUpdates == 1);
+        expect("huge inline session retains no full document buffer",
+               inlineReport.metrics
+                       .inlineFilterRetainedDocumentCharactersPeak
+                       == 0
+                   && inlineReport.metrics.inlineFilterOverlaySessions
+                       == 1
+                   && inlineReport.metrics.inlineFilterOverlayEdits
+                       == 44
+                   && inlineReport.metrics
+                          .inlineFilterOverlayMaterializations
+                       == 0);
+        expect("huge inline cancel materializes one pending overlay",
+               inlineReport.cancelSynchronizesCachedText
+                   && inlineReport.metrics
+                          .inlineFilterOverlayForcedTextReads
+                       == 0
+                   && inlineReport.postCancelMetrics
+                          .inlineFilterOverlaySessions
+                       == 1
+                   && inlineReport.postCancelMetrics
+                          .inlineFilterOverlayEdits
+                       == 45
+                   && inlineReport.postCancelMetrics
+                          .inlineFilterOverlayMaterializations
+                       == 1);
         expect("huge inline candidate filtering p95 stays below 4 ms",
                inlineReport.latency.p95Us < 4000);
         expect("huge inline candidate filtering max stays below 8 ms",
@@ -1241,6 +1655,7 @@ int main(int argc, char** argv)
                inlineReport.metrics.fullTextMaterializations == 0
                    && inlineReport.metrics.cachedTextSliceReads >= 80
                    && inlineReport.metrics.cachedTextSliceCharacters < 4096);
+        exerciseInlineFilterOverlayConsistency(hugeFile);
     }
 
     std::printf("checks=%d failures=%d\n", checks, failures);

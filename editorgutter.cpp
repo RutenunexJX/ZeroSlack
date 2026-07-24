@@ -87,7 +87,7 @@ void EditorGutter::destroy()
 
 int EditorGutter::widthFor(MyCodeEditor* editor) const
 {
-    return 22
+    return 36
         + QString::number(editor->blockCount() + 1).length()
             * editor->fontMetrics().horizontalAdvance(QChar('0'));
 }
@@ -148,9 +148,9 @@ void EditorGutter::paint(MyCodeEditor* editor, QPaintEvent* event) const
     while (block.isValid() && top <= event->rect().bottom()) {
         painter.setPen(cursorTop == top ? Qt::black : Qt::gray);
         painter.drawText(
-            14,
+            28,
             top,
-            widthFor(editor) - 17,
+            widthFor(editor) - 31,
             bottom - top,
             Qt::AlignRight,
             QString::number(blockNumber + 1));

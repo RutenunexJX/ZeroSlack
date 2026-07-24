@@ -1,6 +1,7 @@
 #include "ghostannotationservice.h"
 
 #include "effectivevalueservice.h"
+#include "tsdocument.h"
 #include <QSet>
 #include <QStringList>
 
@@ -445,113 +446,6 @@ QList<GhostAnnotation> mergeLineTailAnnotations(
     return annotations;
 }
 
-int lineCommentStart(const QString& line)
-{
-    bool inString = false;
-    bool escaped = false;
-    for (int i = 0; i + 1 < line.size(); ++i) {
-        const QChar ch = line.at(i);
-        if (inString) {
-            if (escaped)
-                escaped = false;
-            else if (ch == QLatin1Char('\\'))
-                escaped = true;
-            else if (ch == QLatin1Char('"'))
-                inString = false;
-            continue;
-        }
-        if (ch == QLatin1Char('"')) {
-            inString = true;
-            continue;
-        }
-        if (ch == QLatin1Char('/')
-            && line.at(i + 1) == QLatin1Char('/')) {
-            return i;
-        }
-    }
-    return -1;
-}
-
-bool stringRangeAt(const QString& line,
-                   int column,
-                   int* start,
-                   int* end)
-{
-    bool inString = false;
-    bool escaped = false;
-    int open = -1;
-    for (int i = 0; i < line.size(); ++i) {
-        const QChar ch = line.at(i);
-        if (!inString) {
-            if (ch == QLatin1Char('"')) {
-                inString = true;
-                open = i;
-            }
-            continue;
-        }
-        if (escaped) {
-            escaped = false;
-            continue;
-        }
-        if (ch == QLatin1Char('\\')) {
-            escaped = true;
-            continue;
-        }
-        if (ch != QLatin1Char('"'))
-            continue;
-        if (column >= open && column <= i) {
-            if (start)
-                *start = open;
-            if (end)
-                *end = i + 1;
-            return true;
-        }
-        inString = false;
-        open = -1;
-    }
-    return false;
-}
-
-bool literalTokenRangeAt(const QString& line,
-                         int column,
-                         int limit,
-                         int* start,
-                         int* end)
-{
-    if (column < 0 || column > limit)
-        return false;
-    auto literalChar = [](QChar ch) {
-        return ch.isLetterOrNumber() || ch == QLatin1Char('_')
-            || ch == QLatin1Char('\'');
-    };
-
-    int probe = qMin(column, limit - 1);
-    if (probe < 0)
-        return false;
-    if (!literalChar(line.at(probe)) && probe > 0
-        && literalChar(line.at(probe - 1))) {
-        --probe;
-    }
-    if (!literalChar(line.at(probe)))
-        return false;
-    int left = probe;
-    while (left > 0 && literalChar(line.at(left - 1)))
-        --left;
-    int right = probe + 1;
-    while (right < limit && literalChar(line.at(right)))
-        ++right;
-    const QString token = line.mid(left, right - left);
-    if (token.isEmpty()
-        || (!token.at(0).isDigit()
-            && token.at(0) != QLatin1Char('\''))) {
-        return false;
-    }
-    if (start)
-        *start = left;
-    if (end)
-        *end = right;
-    return true;
-}
 }
 
 GhostAnnotationService* GhostAnnotationService::getInstance()
@@ -634,50 +528,30 @@ GhostNumericLiteralReport GhostAnnotationService::numericLiteralAt(
     const GhostNumericLiteralQuery& query) const
 {
     GhostNumericLiteralReport report;
-    if (query.lineText.isEmpty() || query.cursorPosition < 0
-        || query.lineStartPosition < 0) {
+    if (!query.syntaxDocument || query.cursorPosition < 0) {
         return report;
     }
 
-    const int relativePosition =
-        query.cursorPosition - query.lineStartPosition;
-    if (relativePosition < 0 || relativePosition > query.lineText.size())
+    const TSNumericLiteralTarget target =
+        query.syntaxDocument->numericLiteralAt(query.cursorPosition);
+    if (!target.ok())
         return report;
-
-    const int column = qBound(0, relativePosition, query.lineText.size());
-    const int comment = lineCommentStart(query.lineText);
-    const int limit = comment >= 0 ? comment : query.lineText.size();
-    if (column >= limit)
-        return report;
-
-    int start = -1;
-    int end = -1;
-    QString expression;
-    bool stringLiteral = false;
-    if (stringRangeAt(query.lineText, column, &start, &end)) {
-        const QString before = query.lineText.left(start).trimmed();
-        if (before.startsWith(QStringLiteral("`include")))
-            return report;
-        expression = query.lineText.mid(start, end - start);
-        stringLiteral = true;
-    } else {
-        if (!literalTokenRangeAt(query.lineText,
-                                 column,
-                                 limit,
-                                 &start,
-                                 &end)) {
-            return report;
-        }
-        expression = query.lineText.mid(start, end - start);
-    }
 
     const EffectiveLiteralResult literal =
-        EffectiveValueService::evaluateLiteral(expression, stringLiteral);
-    if (!literal.available || literal.valueText.isEmpty())
+        EffectiveValueService::evaluateLiteral(
+            target.evaluationText.isEmpty()
+                ? target.text
+                : target.evaluationText);
+    if (!literal.available
+        || literal.valueText.isEmpty()
+        || literal.radixRepresentations.isEmpty()) {
         return report;
+    }
     report.available = true;
-    report.displayText = literal.valueText;
-    report.startPosition = query.lineStartPosition + start;
-    report.endPosition = query.lineStartPosition + end;
+    report.valueText = literal.valueText;
+    report.radixRepresentations = literal.radixRepresentations;
+    report.displayText = literal.radixRepresentations.join(QLatin1Char('\n'));
+    report.startPosition = target.startChar;
+    report.endPosition = target.endChar;
     return report;
 }

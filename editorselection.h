@@ -62,12 +62,23 @@ public:
     OccurrenceChangeContext prepareDocumentChange(
         const DocumentChange& change,
         const QString& oldText) const;
+    OccurrenceChangeContext prepareDocumentLineChange(
+        const DocumentChange& change,
+        int oldLineStart,
+        int oldLineEnd) const;
     OccurrenceIndexUpdate applyDocumentChange(
         MyCodeEditor* editor,
         const DocumentChange& change,
         const OccurrenceChangeContext& context,
         const QString& newText);
+    OccurrenceIndexUpdate applyDocumentLineChange(
+        MyCodeEditor* editor,
+        const DocumentChange& change,
+        const OccurrenceChangeContext& context,
+        int newLineStart,
+        const QString& newLineText);
     EditorOccurrenceIndexStats occurrenceIndexStatsForTest() const;
+    QList<int> occurrencePositionsForTest(const QString& word) const;
     void highlightSearchMatches(MyCodeEditor* editor,
                                 const QString& text,
                                 bool caseSensitive);
@@ -77,6 +88,10 @@ public:
                                 int activeIndex,
                                 bool pulseOn = true);
     void clearTemplateSlots(QPlainTextEdit* editor);
+    void highlightSignalSelections(
+        MyCodeEditor* editor,
+        const QList<QPair<int, int>>& ranges);
+    void clearSignalSelections(QPlainTextEdit* editor);
     void flashLine(MyCodeEditor* editor);
     void flashLine(MyCodeEditor* editor, int lineNumber);
 
@@ -84,7 +99,13 @@ private:
     void removeByProperty(QPlainTextEdit* editor, int property, int value);
     void rebuildOccurrenceIndex(MyCodeEditor* editor,
                                 const QString& text);
-    void appendOccurrenceRange(const QString& text, int start, int end);
+    void appendOccurrenceRange(const QString& text,
+                               int start,
+                               int end,
+                               int absoluteOffset = 0);
+    void removeOccurrenceRangeAndShift(
+        const OccurrenceChangeContext& context,
+        int characterDelta);
 
     QHash<QString, QSet<EditorOccurrenceNode*>> occurrenceIndex;
     std::vector<std::unique_ptr<EditorOccurrenceNode>> occurrenceNodes;

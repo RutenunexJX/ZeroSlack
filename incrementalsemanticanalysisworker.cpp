@@ -520,7 +520,11 @@ WorkspaceAnalysisResult IncrementalSemanticAnalysisWorker::analyze(
     for (const SemanticDiagnostic& diagnostic : allDiagnostics) {
         if (containsFile(result.incrementalPlan.affectedFiles,
                          diagnostic.fileName)) {
-            affectedDiagnostics.append(diagnostic);
+            SemanticDiagnostic current = diagnostic;
+            current.computationRevision = computationRevision;
+            current.documentRevision =
+                documentRevisionForFile(request, diagnostic.fileName);
+            affectedDiagnostics.append(std::move(current));
         }
     }
     result.diagnostics = affectedDiagnostics;

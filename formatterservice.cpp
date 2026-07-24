@@ -1,4 +1,5 @@
 #include "formatterservice.h"
+#include "structuredwhitespaceformatter.h"
 
 #include <QStringList>
 #include <algorithm>
@@ -17,28 +18,6 @@ struct DeclarationAlignmentLine {
     QString assignmentRhs;
     QString terminator = QStringLiteral(";");
     bool hasAssignment = false;
-    QString trailingComment;
-};
-
-struct PortAlignmentLine {
-    bool valid = false;
-    int indentWidth = 0;
-    QString indent;
-    QString direction;
-    QString prefix;
-    QString name;
-    QString suffix;
-    bool trailingComma = false;
-    QString trailingComment;
-};
-
-struct InstanceMapAlignmentLine {
-    bool valid = false;
-    int indentWidth = 0;
-    QString indent;
-    QString name;
-    QString expression;
-    bool trailingComma = false;
     QString trailingComment;
 };
 
@@ -1241,326 +1220,6 @@ void indentSingleStatementBodyLines(QStringList* lines, int indentWidth)
     }
 }
 
-bool startsWithWholeWord(const QString& text, const QString& word)
-{
-    if (!text.startsWith(word))
-        return false;
-    if (text.size() == word.size())
-        return true;
-    return !isIdentifierPart(text.at(word.size()));
-}
-
-PortAlignmentLine parsePortAlignmentLine(const QString& line)
-{
-    PortAlignmentLine parsed;
-    if (!lineHasCode(line) || startsWithPreprocessor(line))
-        return parsed;
-    const CodeCommentParts parts = splitTrailingLineComment(line);
-    if (parts.hasBlockCommentToken || !lineHasCode(parts.code))
-        return parsed;
-
-    const int indentWidth = leadingWhitespaceWidth(parts.code);
-    const QString indent = parts.code.left(indentWidth);
-    QString code = parts.code.mid(indentWidth).trimmed();
-    if (code.isEmpty()
-        || code.endsWith(QLatin1Char(';'))
-        || code.contains(QLatin1Char(')'))
-        || hasTopLevelChar(code, QLatin1Char('='))) {
-        return parsed;
-    }
-
-    bool trailingComma = false;
-    if (code.endsWith(QLatin1Char(','))) {
-        trailingComma = true;
-        code.chop(1);
-        code = code.trimmed();
-    }
-    if (code.isEmpty() || hasTopLevelChar(code, QLatin1Char(',')))
-        return parsed;
-
-    const QStringList tokens = codeTokens(code);
-    if (tokens.isEmpty() || !isPortDirectionKeyword(tokens.first()))
-        return parsed;
-    const QString direction = tokens.first();
-    if (!startsWithWholeWord(code, direction))
-        return parsed;
-
-    const QString left = code.mid(direction.size()).trimmed();
-    if (left.isEmpty())
-        return parsed;
-
-    int leftEnd = left.size() - 1;
-    while (leftEnd >= 0 && left.at(leftEnd).isSpace())
-        --leftEnd;
-
-    int suffixStart = leftEnd + 1;
-    while (leftEnd >= 0 && left.at(leftEnd) == QLatin1Char(']')) {
-        const int bracketStart = matchingOpeningBracket(left, leftEnd);
-        if (bracketStart < 0)
-            return parsed;
-        suffixStart = bracketStart;
-        leftEnd = bracketStart - 1;
-        while (leftEnd >= 0 && left.at(leftEnd).isSpace())
-            --leftEnd;
-    }
-
-    if (leftEnd < 0 || !isIdentifierPart(left.at(leftEnd)))
-        return parsed;
-
-    int nameStart = leftEnd;
-    while (nameStart >= 0 && isIdentifierPart(left.at(nameStart)))
-        --nameStart;
-    ++nameStart;
-
-    const QString name = left.mid(nameStart, leftEnd - nameStart + 1);
-    if (name.isEmpty() || isForbiddenDeclarationName(name))
-        return parsed;
-
-    parsed.valid = true;
-    parsed.indentWidth = indentWidth;
-    parsed.indent = indent;
-    parsed.direction = direction;
-    parsed.prefix = left.left(nameStart).trimmed();
-    parsed.name = name;
-    parsed.suffix = left.mid(suffixStart).trimmed();
-    parsed.trailingComma = trailingComma;
-    parsed.trailingComment = parts.trailingComment;
-    return parsed;
-}
-
-QString buildAlignedPortCodeLine(const PortAlignmentLine& line,
-                                 int maxDirectionWidth,
-                                 int maxPrefixWidth)
-{
-    QString content = line.direction
-        + repeatSpaces(maxDirectionWidth - line.direction.size() + 1);
-    if (maxPrefixWidth > 0) {
-        if (!line.prefix.isEmpty()) {
-            content += line.prefix;
-            content += repeatSpaces(maxPrefixWidth - line.prefix.size() + 1);
-        } else {
-            content += repeatSpaces(maxPrefixWidth + 1);
-        }
-    }
-    content += line.name;
-    if (!line.suffix.isEmpty()) {
-        content += QLatin1Char(' ');
-        content += line.suffix;
-    }
-    if (line.trailingComma)
-        content += QLatin1Char(',');
-    return line.indent + content;
-}
-
-void flushPortAlignmentBlock(QStringList* lines,
-                             const QList<int>& blockIndexes,
-                             const QList<PortAlignmentLine>& block)
-{
-    if (!lines || block.size() < 2)
-        return;
-
-    int maxDirectionWidth = 0;
-    int maxPrefixWidth = 0;
-    for (const PortAlignmentLine& line : block) {
-        maxDirectionWidth =
-            std::max(maxDirectionWidth,
-                     static_cast<int>(line.direction.size()));
-        maxPrefixWidth =
-            std::max(maxPrefixWidth,
-                     static_cast<int>(line.prefix.size()));
-    }
-
-    QStringList codeLines;
-    codeLines.reserve(block.size());
-    int maxCodeLineWidth = 0;
-    bool hasTrailingComment = false;
-    for (int i = 0; i < block.size(); ++i) {
-        const QString codeLine =
-            buildAlignedPortCodeLine(block.at(i),
-                                     maxDirectionWidth,
-                                     maxPrefixWidth);
-        codeLines.append(codeLine);
-        maxCodeLineWidth =
-            std::max(maxCodeLineWidth, static_cast<int>(codeLine.size()));
-        if (!block.at(i).trailingComment.isEmpty())
-            hasTrailingComment = true;
-    }
-
-    const int commentColumn = hasTrailingComment ? maxCodeLineWidth + 2 : 0;
-    for (int i = 0; i < block.size(); ++i) {
-        (*lines)[blockIndexes.at(i)] =
-            appendTrailingComment(codeLines.at(i),
-                                  block.at(i).trailingComment,
-                                  commentColumn);
-    }
-}
-
-void alignPortListBlocks(QStringList* lines)
-{
-    if (!lines)
-        return;
-
-    QList<int> blockIndexes;
-    QList<PortAlignmentLine> block;
-
-    auto flush = [&]() {
-        flushPortAlignmentBlock(lines, blockIndexes, block);
-        blockIndexes.clear();
-        block.clear();
-    };
-
-    for (int i = 0; i < lines->size(); ++i) {
-        const PortAlignmentLine parsed = parsePortAlignmentLine(lines->at(i));
-        if (!parsed.valid) {
-            flush();
-            continue;
-        }
-        if (!block.isEmpty()
-            && block.last().indentWidth != parsed.indentWidth) {
-            flush();
-        }
-        blockIndexes.append(i);
-        block.append(parsed);
-    }
-
-    flush();
-}
-
-InstanceMapAlignmentLine parseInstanceMapAlignmentLine(const QString& line)
-{
-    InstanceMapAlignmentLine parsed;
-    if (!lineHasCode(line) || startsWithPreprocessor(line))
-        return parsed;
-    const CodeCommentParts parts = splitTrailingLineComment(line);
-    if (parts.hasBlockCommentToken || !lineHasCode(parts.code))
-        return parsed;
-
-    const int indentWidth = leadingWhitespaceWidth(parts.code);
-    const QString indent = parts.code.left(indentWidth);
-    QString code = parts.code.mid(indentWidth).trimmed();
-    if (code.size() < 4 || !code.startsWith(QLatin1Char('.')))
-        return parsed;
-
-    bool trailingComma = false;
-    if (code.endsWith(QLatin1Char(','))) {
-        trailingComma = true;
-        code.chop(1);
-        code = code.trimmed();
-    }
-
-    if (code.size() < 3 || code.endsWith(QLatin1Char(';')))
-        return parsed;
-
-    int nameStart = 1;
-    if (!isIdentifierStart(code.at(nameStart)))
-        return parsed;
-    int nameEnd = nameStart + 1;
-    while (nameEnd < code.size() && isIdentifierPart(code.at(nameEnd)))
-        ++nameEnd;
-
-    int openParen = nameEnd;
-    while (openParen < code.size() && code.at(openParen).isSpace())
-        ++openParen;
-    if (openParen >= code.size() || code.at(openParen) != QLatin1Char('('))
-        return parsed;
-
-    const int closeParen = matchingClosingParen(code, openParen);
-    if (closeParen < 0 || closeParen != code.size() - 1)
-        return parsed;
-
-    parsed.valid = true;
-    parsed.indentWidth = indentWidth;
-    parsed.indent = indent;
-    parsed.name = code.mid(nameStart, nameEnd - nameStart);
-    parsed.expression = code.mid(openParen + 1, closeParen - openParen - 1);
-    parsed.trailingComma = trailingComma;
-    parsed.trailingComment = parts.trailingComment;
-    return parsed;
-}
-
-QString buildAlignedInstanceMapCodeLine(const InstanceMapAlignmentLine& line,
-                                        int maxNameWidth)
-{
-    QString content = QLatin1Char('.')
-        + line.name
-        + repeatSpaces(maxNameWidth - line.name.size() + 1)
-        + QLatin1Char('(')
-        + line.expression
-        + QLatin1Char(')');
-    if (line.trailingComma)
-        content += QLatin1Char(',');
-    return line.indent + content;
-}
-
-void flushInstanceMapAlignmentBlock(QStringList* lines,
-                                    const QList<int>& blockIndexes,
-                                    const QList<InstanceMapAlignmentLine>& block)
-{
-    if (!lines || block.size() < 2)
-        return;
-
-    int maxNameWidth = 0;
-    for (const InstanceMapAlignmentLine& line : block) {
-        maxNameWidth =
-            std::max(maxNameWidth,
-                     static_cast<int>(line.name.size()));
-    }
-
-    QStringList codeLines;
-    codeLines.reserve(block.size());
-    int maxCodeLineWidth = 0;
-    bool hasTrailingComment = false;
-    for (int i = 0; i < block.size(); ++i) {
-        const QString codeLine =
-            buildAlignedInstanceMapCodeLine(block.at(i), maxNameWidth);
-        codeLines.append(codeLine);
-        maxCodeLineWidth =
-            std::max(maxCodeLineWidth, static_cast<int>(codeLine.size()));
-        if (!block.at(i).trailingComment.isEmpty())
-            hasTrailingComment = true;
-    }
-
-    const int commentColumn = hasTrailingComment ? maxCodeLineWidth + 2 : 0;
-    for (int i = 0; i < block.size(); ++i) {
-        (*lines)[blockIndexes.at(i)] =
-            appendTrailingComment(codeLines.at(i),
-                                  block.at(i).trailingComment,
-                                  commentColumn);
-    }
-}
-
-void alignInstanceMapBlocks(QStringList* lines)
-{
-    if (!lines)
-        return;
-
-    QList<int> blockIndexes;
-    QList<InstanceMapAlignmentLine> block;
-
-    auto flush = [&]() {
-        flushInstanceMapAlignmentBlock(lines, blockIndexes, block);
-        blockIndexes.clear();
-        block.clear();
-    };
-
-    for (int i = 0; i < lines->size(); ++i) {
-        const InstanceMapAlignmentLine parsed =
-            parseInstanceMapAlignmentLine(lines->at(i));
-        if (!parsed.valid) {
-            flush();
-            continue;
-        }
-        if (!block.isEmpty()
-            && block.last().indentWidth != parsed.indentWidth) {
-            flush();
-        }
-        blockIndexes.append(i);
-        block.append(parsed);
-    }
-
-    flush();
-}
-
 bool isCaseOpeningLine(const QStringList& tokens)
 {
     for (const QString& token : tokens) {
@@ -2417,10 +2076,6 @@ FormatterReport FormatterService::formatDocument(
 
     if (options.alignDeclarationBlocks)
         alignDeclarationBlocks(&formatted);
-    if (options.alignPortLists)
-        alignPortListBlocks(&formatted);
-    if (options.alignInstanceMaps)
-        alignInstanceMapBlocks(&formatted);
     if (options.alignCaseItems)
         alignCaseItemBlocks(&formatted, options.indentWidth);
     if (options.alignEnumItems)
@@ -2432,8 +2087,42 @@ FormatterReport FormatterService::formatDocument(
     if (options.alignCallArgumentContinuations)
         alignCallArgumentContinuationLines(&formatted);
 
+    if (options.alignPortLists || options.alignInstanceMaps) {
+        const QList<StructuredWhitespaceFormatter::LineRange>
+            conservativeRanges =
+                StructuredWhitespaceFormatter::
+                    conservativeLineRanges(
+                        text, options.indentWidth);
+        if (formatted.size() != lines.size()) {
+            report.formattedText = text;
+            report.changed = false;
+            report.formattedLines = lines.size();
+            return report;
+        }
+        for (const auto& range : conservativeRanges) {
+            if (!range.valid())
+                continue;
+            const int first =
+                qBound(0, range.firstLine, lines.size() - 1);
+            const int last =
+                qBound(first, range.lastLine, lines.size() - 1);
+            for (int line = first; line <= last; ++line)
+                formatted[line] = lines.at(line);
+        }
+    }
+
     report.formattedText =
         joinLinesPreservingFinalNewline(formatted, hadFinalNewline);
+    if (options.alignPortLists || options.alignInstanceMaps) {
+        report.formattedText = StructuredWhitespaceFormatter::format(
+            report.formattedText,
+            options.indentWidth);
+    }
+    if (!StructuredWhitespaceFormatter::hasIdenticalNonWhitespaceStream(
+            text,
+            report.formattedText)) {
+        report.formattedText = text;
+    }
     report.changed = report.formattedText != text;
     report.formattedLines = formatted.size();
     return report;

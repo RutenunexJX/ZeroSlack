@@ -34,6 +34,7 @@ class EditorDocumentGeometry;
 class EditorSemanticContextService;
 class EditorGutter;
 class EditorFoldingController;
+struct EditorLargeFileSyntaxScopeSnapshot;
 class EditorCompletionWorkflow;
 class EditorSourceNavigationUi;
 struct EditorAppearanceOptions;
@@ -129,7 +130,9 @@ public:
     EditorSynchronousEditState synchronousEditStateForTest() const;
     void acceptLoadedTextAsSemanticBaseline();
     EditorHotPathMetrics hotPathMetricsForTest() const;
+    bool inlineFilterTextOverlayActiveForTest() const;
     EditorOccurrenceIndexStats occurrenceIndexStatsForTest() const;
+    QList<int> occurrencePositionsForTest(const QString& word) const;
     void resetHotPathMetricsForTest();
     void setIncludeFileCompletionProvider(
         std::function<QStringList(const QString& currentFile)> provider);
@@ -162,12 +165,20 @@ public:
     int templateSlotModeSlotCount() const;
     bool templateSlotModeBlinkOnForTest() const;
     bool columnSelectionActive() const;
+    bool virtualCursorActiveForTest() const;
+    int virtualCursorLineForTest() const;
+    int virtualCursorColumnForTest() const;
     QStringList columnSelectionTexts() const;
     bool applyColumnSelectionTexts(const QStringList& rows,
                                    bool replaceSelection,
                                    QString* message = nullptr);
     void setDiagnosticHighlights(
         const QList<SemanticDiagnostic>& diagnostics);
+    QString diagnosticTooltipForLineForTest(int zeroBasedLine) const;
+    QList<int> diagnosticOverviewLinesForTest() const;
+    SemanticDiagnostic::Severity diagnosticSeverityForLineForTest(
+        int zeroBasedLine,
+        bool* available = nullptr) const;
     void setSemanticDecorations(
         const QList<SemanticDecoration>& decorations);
     void setGhostAnnotations(
@@ -193,6 +204,28 @@ public:
     void indentSelectionOrLine();
     void unindentSelectionOrLine();
     bool clearSelectedAssignmentRhs(QString* message = nullptr);
+    void addStructuralContextMenuActions(QMenu* menu,
+                                         int cursorPosition);
+    bool editInstanceSlotsAtForTest(int cursorPosition,
+                                    QString* message = nullptr);
+    QStringList structuralContextMenuActionsForTest(
+        int cursorPosition);
+    QString signalDefinitionCandidateForTest(
+        int cursorPosition,
+        QString* failureReason = nullptr) const;
+    bool beginSignalDefinitionEditorForTest(
+        int cursorPosition,
+        QString* failureReason = nullptr);
+    bool confirmSignalDefinitionForTest(
+        const QString& declaration,
+        QString* failureReason = nullptr);
+    bool startSignalSelectionMode(QString* message = nullptr);
+    bool signalSelectionModeActiveForTest() const;
+    QStringList selectedSignalNamesForTest() const;
+    bool toggleSignalSelectionAtForTest(int cursorPosition);
+    bool createAssignmentQueueAtForTest(
+        int cursorPosition,
+        QString* message = nullptr);
     void highlightSearchMatches(const QString& text, bool caseSensitive);
     void clearSearchMatches();
     void flashLine(int lineNumber);
@@ -210,6 +243,7 @@ public:
     bool foldCollapsedAtLineForTest(int line) const;
     QList<GhostAnnotation> ghostAnnotationsForTest() const;
     QString syntaxTextForTest() const;
+    EditorLargeFileSyntaxScopeSnapshot largeFileSyntaxScopeForTest() const;
     FoldShelfItem foldShelfItemAtLineForTest(
         int line,
         FoldShelfOriginKind origin = FoldShelfOriginKind::Copied) const;
@@ -218,6 +252,9 @@ public:
     EditorSemanticContext editorSemanticContextForPosition(
         int cursorPosition = -1,
         bool includeDocumentText = false) const;
+    bool syntaxCommentAt(int cursorPosition) const;
+    GhostNumericLiteralReport numericLiteralAt(
+        int cursorPosition) const;
 
 protected:
     void keyPressEvent(QKeyEvent *event) override;

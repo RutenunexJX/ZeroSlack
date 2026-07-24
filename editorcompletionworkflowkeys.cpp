@@ -2,6 +2,7 @@
 
 #include "editorcompletionui.h"
 #include "editormodestate.h"
+#include "editorruntime.h"
 #include "mycodeeditor.h"
 
 #include <QAbstractItemView>
@@ -79,6 +80,10 @@ bool EditorCompletionWorkflow::handleInlineCandidateFilterKey(
     if (!plainBackspace && !isInlineFilterInput(event))
         return false;
 
+    editor->state->beginInlineFilterTextOverlay(
+        inlineSession.replacementStartPosition,
+        inlineSession.replacementEndPosition);
+    ++editor->state->hotPathMetrics.inlineFilterKeyEvents;
     QTextCursor cursor = editor->textCursor();
     applyingInlineReplacement = true;
     cursor.beginEditBlock();

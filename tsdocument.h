@@ -133,6 +133,82 @@ struct TSChangedRange {
     int endLine = 0;
 };
 
+struct TSNumericLiteralTarget {
+    int startChar = -1;
+    int endChar = -1;
+    QString text;
+    QString evaluationText;
+
+    bool ok() const
+    {
+        return startChar >= 0
+            && endChar > startChar
+            && !text.isEmpty();
+    }
+};
+
+struct TSIdentifierTarget {
+    int startChar = -1;
+    int endChar = -1;
+    QString text;
+
+    bool ok() const
+    {
+        return startChar >= 0
+            && endChar > startChar
+            && !text.isEmpty();
+    }
+};
+
+struct TSExpressionSlot {
+    QString name;
+    int startChar = -1;
+    int endChar = -1;
+
+    bool ok() const
+    {
+        return startChar >= 0 && endChar >= startChar;
+    }
+};
+
+struct TSInstantiationTarget {
+    int startChar = -1;
+    int endChar = -1;
+    QString moduleType;
+    QString instanceName;
+    QList<TSExpressionSlot> parameterActuals;
+    QList<TSExpressionSlot> portActuals;
+
+    bool ok() const
+    {
+        return startChar >= 0
+            && endChar > startChar
+            && !moduleType.isEmpty()
+            && !instanceName.isEmpty();
+    }
+};
+
+enum class TSUndefinedSignalContextKind {
+    None,
+    NamedPortActual,
+    ProceduralAssignmentLhs
+};
+
+struct TSUndefinedSignalContext {
+    TSUndefinedSignalContextKind kind =
+        TSUndefinedSignalContextKind::None;
+    TSIdentifierTarget identifier;
+    QString formalName;
+    int formalStartChar = -1;
+    TSInstantiationTarget instantiation;
+
+    bool ok() const
+    {
+        return kind != TSUndefinedSignalContextKind::None
+            && identifier.ok();
+    }
+};
+
 struct TSModuleEndNavigationTarget {
     TSModuleEndNavigationStatus status =
         TSModuleEndNavigationStatus::NoEndmodule;
@@ -236,6 +312,25 @@ public:
 
     // True if the char offset is inside a Tree-sitter comment node.
     bool isCommentAt(int charOffset) const;
+
+    // Exact numeric token under the cursor. Comments and strings are excluded
+    // by construction because only Tree-sitter numeric literal nodes match.
+    TSNumericLiteralTarget numericLiteralAt(int charOffset) const;
+
+    // Exact SystemVerilog identifier under the cursor. Comment and string
+    // nodes are never returned.
+    TSIdentifierTarget identifierAt(int charOffset) const;
+
+    // Complete module instantiation at the cursor and its editable parameter /
+    // port actual expression spans. Incomplete or ambiguous instantiations are
+    // rejected conservatively.
+    TSInstantiationTarget instantiationAt(int charOffset) const;
+
+    // Syntactic contexts in which an undeclared identifier can safely be
+    // offered as a local signal: a named instance-port actual or a procedural
+    // assignment left-hand side.
+    TSUndefinedSignalContext undefinedSignalContextAt(
+        int charOffset) const;
 
     // Name of the nearest enclosing module / interface / program at the given char offset, derived
     // live from the parse tree (instant, error-tolerant). Empty if the offset is not inside one.

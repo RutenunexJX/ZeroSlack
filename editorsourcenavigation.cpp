@@ -358,6 +358,8 @@ void EditorSourceNavigationUi::handleContextMenu(
     std::unique_ptr<QMenu> menu(
         editor->createStandardContextMenu(event->pos()));
     const QTextCursor cursorAtPos = editor->cursorForPosition(event->pos());
+    editor->addStructuralContextMenuActions(
+        menu.get(), cursorAtPos.position());
     emit editor->sourceSymbolContextMenuRequested(
         menu.get(),
         contextProvider(sourceSymbolContextPositionForMenu(editor, cursorAtPos),
@@ -464,6 +466,8 @@ EditorSourceNavigationTarget EditorSourceNavigationUi::targetAtPosition(
     QTextBlock block = cursor.block();
     if (!block.isValid())
         return {};
+    if (editor->syntaxCommentAt(cursor.position()))
+        return {};
 
     return service->editorSourceNavigationTarget(
         contextProvider(cursor.position(), false),
@@ -520,14 +524,8 @@ void EditorSourceNavigationUi::refreshPopupAt(
     const EditorSourceNavigationTarget& target)
 {
     const QTextCursor cursor = editor->cursorForPosition(position);
-    const QTextBlock block = cursor.block();
     const GhostNumericLiteralReport numericReport =
-        GhostAnnotationService::getInstance()->numericLiteralAt(
-            GhostNumericLiteralQuery{
-                block.text(),
-                block.position(),
-                cursor.position()
-            });
+        editor->numericLiteralAt(cursor.position());
     if (numericReport.available) {
         if (!numericPopupMatches(numericReport.startPosition,
                                  numericReport.endPosition)) {

@@ -17,6 +17,7 @@
 #include "foldshelfpersistenceservice.h"
 #include "foldshelfrestoreservice.h"
 #include "formatterservice.h"
+#include "structuredwhitespaceformatter.h"
 #include "fsmgraphservice.h"
 #include "ghostannotationservice.h"
 #include "globalcontrolservice.h"
@@ -257,7 +258,11 @@ static void runEffectiveValueRegression()
         "  parameter string S = \"default value\"\n"
         ") ();\n"
         "  localparam logic [159:0] L = P + 160'h1;\n"
-        "  typedef enum logic [P[7:0] - 1:0] { E = P[7:0] } e_t;\n"
+        "  typedef enum logic signed [P[7:0] - 1:0] {\n"
+        "    E = P[7:0],\n"
+        "    E_CONCAT = {P[7:0], 8'ha5},\n"
+        "    E_ARITH = E + 3\n"
+        "  } e_t;\n"
         "endmodule\n"
         "module top;\n"
         "  child #(.P(160'h1000000000000000000000000000000000000010),\n"
@@ -288,10 +293,18 @@ static void runEffectiveValueRegression()
         QStringLiteral("L"), SymbolTaxonomy::CollectorKind::Localparam);
     const SemanticSymbolRecord enumMember = findRecord(
         QStringLiteral("E"), SymbolTaxonomy::CollectorKind::EnumValue);
+    const SemanticSymbolRecord enumConcat = findRecord(
+        QStringLiteral("E_CONCAT"),
+        SymbolTaxonomy::CollectorKind::EnumValue);
+    const SemanticSymbolRecord enumArithmetic = findRecord(
+        QStringLiteral("E_ARITH"),
+        SymbolTaxonomy::CollectorKind::EnumValue);
     expectBool("effective value records found",
                parameter.isValid() && mask.isValid()
                    && stringParameter.isValid() && localparam.isValid()
-                   && enumMember.isValid(),
+                   && enumMember.isValid()
+                   && enumConcat.isValid()
+                   && enumArithmetic.isValid(),
                true);
 
     const auto contextFor = [](const QString& path) {
@@ -326,6 +339,14 @@ static void runEffectiveValueRegression()
         enumMember, contextFor(QStringLiteral("top.u0")), source);
     const EffectiveValueResult e1 = resolveValue(
         enumMember, contextFor(QStringLiteral("top.u1")), source);
+    const EffectiveValueResult concat0 = resolveValue(
+        enumConcat, contextFor(QStringLiteral("top.u0")), source);
+    const EffectiveValueResult concat1 = resolveValue(
+        enumConcat, contextFor(QStringLiteral("top.u1")), source);
+    const EffectiveValueResult arithmetic0 = resolveValue(
+        enumArithmetic, contextFor(QStringLiteral("top.u0")), source);
+    const EffectiveValueResult arithmetic1 = resolveValue(
+        enumArithmetic, contextFor(QStringLiteral("top.u1")), source);
     expectBool("two instances keep distinct parameter values",
                p0.available() && p1.available()
                    && p0.valueText != p1.valueText,
@@ -345,6 +366,24 @@ static void runEffectiveValueRegression()
     expectBool("enum underlying width follows instance override",
                e0.bitWidthText == QStringLiteral("16")
                    && e1.bitWidthText == QStringLiteral("32"),
+               true);
+    expectBool("enum concatenation keeps authoritative instance values",
+               concat0.available() && concat1.available()
+                   && concat0.valueText != concat1.valueText
+                   && concat0.expressionText.contains(
+                       QLatin1Char('{'))
+                   && concat0.bitWidthText == QStringLiteral("16")
+                   && concat1.bitWidthText == QStringLiteral("32"),
+               true);
+    expectBool("enum arithmetic keeps authoritative signed instance values",
+               arithmetic0.available() && arithmetic1.available()
+                   && arithmetic0.valueText != arithmetic1.valueText
+                   && arithmetic0.expressionText.contains(
+                       QLatin1Char('+'))
+                   && arithmetic0.signednessText
+                      == QStringLiteral("signed")
+                   && arithmetic1.signednessText
+                      == QStringLiteral("signed"),
                true);
 
     const EffectiveValueResult mask0 = resolveValue(
@@ -1345,6 +1384,10 @@ int main(int argc, char** argv) {
                        "assign b = \"123\"; // 456\n"
                        "assign c = 'd4545;\n"
                        "assign d = 'hadda;\n"
+                       "assign e = -8'sd1;\n"
+                       "assign f = 4'h1f;\n"
+                       "assign g = 8'b10xz_01z1;\n"
+                       "localparam logic [7:0] H = {4'ha, 4'h5};\n"
                        "`include \"test.sv\"\n");
     const int literalHoverPosition =
         static_cast<int>(numericHoverText.indexOf(QStringLiteral("16'hFF00")))
@@ -1357,78 +1400,136 @@ int main(int argc, char** argv) {
         static_cast<int>(numericHoverText.indexOf(QStringLiteral("'d4545"))) + 2;
     const int unsizedHexHoverPosition =
         static_cast<int>(numericHoverText.indexOf(QStringLiteral("'hadda"))) + 2;
+    const int negativeHoverPosition =
+        static_cast<int>(
+            numericHoverText.indexOf(QStringLiteral("8'sd1"))) + 3;
+    const int truncatedHoverPosition =
+        static_cast<int>(
+            numericHoverText.indexOf(QStringLiteral("4'h1f"))) + 3;
+    const int unknownHoverPosition =
+        static_cast<int>(
+            numericHoverText.indexOf(QStringLiteral("8'b10xz_01z1"))) + 4;
+    const int concatHoverPosition =
+        static_cast<int>(
+            numericHoverText.indexOf(QStringLiteral("4'ha"))) + 2;
     const int includeStringHoverPosition =
         static_cast<int>(numericHoverText.indexOf(QStringLiteral("test.sv")));
-    auto numericLiteralQueryAt = [](const QString& documentText,
-                                    int cursorPosition) {
-        QTextDocument document(documentText);
-        const QTextBlock block = document.findBlock(cursorPosition);
-        return GhostNumericLiteralQuery{
-            block.text(),
-            block.position(),
-            cursorPosition};
+    auto numericLiteralAt = [&ghostService](const QString& documentText,
+                                            int cursorPosition) {
+        TSDocument syntaxDocument;
+        syntaxDocument.setText(documentText);
+        return ghostService.numericLiteralAt(
+            GhostNumericLiteralQuery{&syntaxDocument, cursorPosition});
     };
     const GhostNumericLiteralReport literalHover =
-        ghostService.numericLiteralAt(
-            numericLiteralQueryAt(numericHoverText,
-                                  literalHoverPosition));
+        numericLiteralAt(numericHoverText, literalHoverPosition);
     expectBool("Ghost literal hover available",
                literalHover.available,
                true);
-    expectEq("Ghost literal hover text",
-             literalHover.displayText,
-             QStringLiteral("16'd65280"));
-    const GhostNumericLiteralReport stringHover =
-        ghostService.numericLiteralAt(
-            numericLiteralQueryAt(numericHoverText,
-                                  stringHoverPosition));
-    expectBool("Ghost literal hover keeps Slang string text",
-               stringHover.available
-                   && stringHover.displayText.contains(
-                       QStringLiteral("123"))
-                   && !stringHover.displayText.contains(
-                       QStringLiteral("(H)")),
+    expectBool("Ghost literal hover shows authoritative alternate bases",
+               literalHover.valueText == QStringLiteral("16'd65280")
+                   && literalHover.displayText.contains(
+                       QStringLiteral("binary: 16'b1111111100000000"))
+                   && literalHover.displayText.contains(
+                       QStringLiteral("octal: 16'o177400"))
+                   && literalHover.displayText.contains(
+                       QStringLiteral("decimal: 16'd65280"))
+                   && literalHover.displayText.contains(
+                       QStringLiteral("hex: 16'hff00")),
                true);
+    const GhostNumericLiteralReport stringHover =
+        numericLiteralAt(numericHoverText, stringHoverPosition);
+    expectBool("Ghost numeric hover excludes strings",
+               stringHover.available,
+               false);
     const GhostNumericLiteralReport includeStringHover =
-        ghostService.numericLiteralAt(
-            numericLiteralQueryAt(numericHoverText,
-                                  includeStringHoverPosition));
+        numericLiteralAt(numericHoverText, includeStringHoverPosition);
     expectBool("Ghost literal hover skips include string",
                includeStringHover.available,
                false);
     const GhostNumericLiteralReport unsizedDecimalHover =
-        ghostService.numericLiteralAt(
-            numericLiteralQueryAt(numericHoverText,
-                                  unsizedDecimalHoverPosition));
-    expectBool("Ghost literal hover keeps Slang unsized decimal value",
+        numericLiteralAt(numericHoverText,
+                         unsizedDecimalHoverPosition);
+    expectBool("Ghost literal hover shows Slang unsized decimal in all bases",
                unsizedDecimalHover.available
+                   && unsizedDecimalHover.radixRepresentations.size() == 4
+                   && unsizedDecimalHover.displayText.contains(
+                       QStringLiteral("binary:"))
+                   && unsizedDecimalHover.displayText.contains(
+                       QStringLiteral("octal:"))
+                   && unsizedDecimalHover.displayText.contains(
+                       QStringLiteral("decimal:"))
                    && unsizedDecimalHover.displayText.contains(
                        QStringLiteral("4545"))
-                   && !unsizedDecimalHover.displayText.contains(
-                       QStringLiteral("(H)")),
+                   && unsizedDecimalHover.displayText.contains(
+                       QStringLiteral("hex:"))
+                   && unsizedDecimalHover.displayText.contains(
+                       QStringLiteral("11c1")),
                true);
     const GhostNumericLiteralReport unsizedHexHover =
-        ghostService.numericLiteralAt(
-            numericLiteralQueryAt(numericHoverText,
-                                  unsizedHexHoverPosition));
-    expectBool("Ghost literal hover keeps Slang unsized hex value",
+        numericLiteralAt(numericHoverText,
+                         unsizedHexHoverPosition);
+    expectBool("Ghost literal hover shows Slang unsized hex value in other bases",
                unsizedHexHover.available
-                   && !unsizedHexHover.displayText.isEmpty()
-                   && !unsizedHexHover.displayText.contains(
-                       QStringLiteral("(D)")),
+                   && unsizedHexHover.displayText.contains(
+                       QStringLiteral("binary:"))
+                   && unsizedHexHover.displayText.contains(
+                       QStringLiteral("decimal:"))
+                   && unsizedHexHover.displayText.contains(
+                       QStringLiteral("hex:")),
+               true);
+    const GhostNumericLiteralReport negativeHover =
+        numericLiteralAt(numericHoverText, negativeHoverPosition);
+    expectBool("Ghost numeric hover preserves unary signed negative value",
+               negativeHover.available
+                   && negativeHover.displayText.contains(
+                       QStringLiteral("binary: -8'sb1"))
+                   && negativeHover.displayText.contains(
+                       QStringLiteral("decimal: -8'sd1"))
+                   && negativeHover.displayText.contains(
+                       QStringLiteral("hex: -8'sh1")),
+               true);
+    const GhostNumericLiteralReport truncatedHover =
+        numericLiteralAt(numericHoverText, truncatedHoverPosition);
+    expectBool("Ghost numeric hover applies sized literal truncation",
+               truncatedHover.available
+                   && truncatedHover.displayText.contains(
+                       QStringLiteral("binary: 4'b1111"))
+                   && truncatedHover.displayText.contains(
+                       QStringLiteral("decimal: 4'd15"))
+                   && truncatedHover.displayText.contains(
+                       QStringLiteral("hex: 4'hf")),
+               true);
+    const GhostNumericLiteralReport unknownHover =
+        numericLiteralAt(numericHoverText, unknownHoverPosition);
+    expectBool("Ghost numeric hover preserves X Z without guessed decimal",
+               unknownHover.available
+                   && unknownHover.radixRepresentations.size() == 3
+                   && unknownHover.displayText.contains(
+                       QStringLiteral("binary: 8'b10xz01z1"))
+                   && unknownHover.displayText.contains(
+                       QStringLiteral("hex:"))
+                   && !unknownHover.displayText.contains(
+                       QStringLiteral("decimal:")),
+               true);
+    const GhostNumericLiteralReport concatHover =
+        numericLiteralAt(numericHoverText, concatHoverPosition);
+    expectBool("Ghost numeric hover remains authoritative in concat parameter context",
+               concatHover.available
+                   && concatHover.displayText.contains(
+                       QStringLiteral("binary: 4'b1010"))
+                   && concatHover.displayText.contains(
+                       QStringLiteral("decimal: 4'd10"))
+                   && concatHover.displayText.contains(
+                       QStringLiteral("hex: 4'ha")),
                true);
     const GhostNumericLiteralReport legacyStringHover =
-        ghostService.numericLiteralAt(
-            numericLiteralQueryAt(
-                QStringLiteral("`include \"123.sv\"\n"),
-                10));
+        numericLiteralAt(QStringLiteral("`include \"123.sv\"\n"), 10);
     expectBool("Ghost literal hover skips include legacy string",
                legacyStringHover.available,
                false);
     const GhostNumericLiteralReport commentHover =
-        ghostService.numericLiteralAt(
-            numericLiteralQueryAt(numericHoverText,
-                                  commentHoverPosition));
+        numericLiteralAt(numericHoverText, commentHoverPosition);
     expectBool("Ghost literal hover skips comment",
                commentHover.available,
                false);
@@ -2035,22 +2136,13 @@ int main(int argc, char** argv) {
                true);
     expectEq("Formatter aligns parameter port lists",
              formatterParameterPortReport.formattedText,
-             QStringLiteral("module param_port_demo #(\n")
-                 + QStringLiteral("    parameter int")
-                 + QString(10, QLatin1Char(' '))
-                 + QStringLiteral("P")
-                 + QString(14, QLatin1Char(' '))
-                 + QStringLiteral("= 8,\n")
-                 + QStringLiteral("    parameter int")
-                 + QString(10, QLatin1Char(' '))
-                 + QStringLiteral("LONG_PARAM")
-                 + QString(5, QLatin1Char(' '))
-                 + QStringLiteral("= P + 1,\n")
-                 + QStringLiteral("    localparam logic [7:0] MASK")
-                 + QString(7, QLatin1Char(' '))
-                 + QStringLiteral("[2] = '{default: 1'b0}\n"
-                                  "    )();\n"
-                                  "endmodule\n"));
+             QStringLiteral(
+                 "module param_port_demo #(\n"
+                 "    parameter  int         P              = 8               ,\n"
+                 "    parameter  int         LONG_PARAM     = P + 1           ,\n"
+                 "    localparam logic [7:0] MASK       [2] = '{default:1'b0}\n"
+                 ")();\n"
+                 "endmodule\n"));
     const FormatterReport unchangedParameterPortReport =
         FormatterService::getInstance()->formatDocument(
             formatterParameterPortReport.formattedText);
@@ -2126,11 +2218,11 @@ int main(int argc, char** argv) {
     expectEq("Formatter aligns port lists",
              formatterPortListReport.formattedText,
              QStringLiteral("module port_demo(\n"
-                            "    input  logic       clk,\n"
-                            "    input  logic [7:0] data,\n"
-                            "    output logic       ready,\n"
+                            "    input  logic       clk   ,\n"
+                            "    input  logic [7:0] data  ,\n"
+                            "    output logic       ready ,\n"
                             "    inout  wire        pad\n"
-                            "    );\n"
+                            ");\n"
                             "endmodule\n"));
     const FormatterReport unchangedPortListReport =
         FormatterService::getInstance()->formatDocument(
@@ -2161,13 +2253,13 @@ int main(int argc, char** argv) {
              formatterInstanceMapReport.formattedText,
              QStringLiteral("module inst_demo;\n"
                             "    child #(\n"
-                            "        .PARAM      (8),\n"
-                            "        .LONG_PARAM (WIDTH)\n"
-                            "    ) u_child (\n"
-                            "        .clk     (clk),\n"
-                            "        .rst_n   (rst_n),\n"
-                            "        .data_in (data_bus),\n"
-                            "        .ready   (ready)\n"
+                            "        .PARAM      ( 8     ),\n"
+                            "        .LONG_PARAM ( WIDTH )\n"
+                            "    ) u_child(\n"
+                            "        .clk     ( clk      ),\n"
+                            "        .rst_n   ( rst_n    ),\n"
+                            "        .data_in ( data_bus ),\n"
+                            "        .ready   ( ready    )\n"
                             "    );\n"
                             "endmodule\n"));
     const FormatterReport unchangedInstanceMapReport =
@@ -2176,6 +2268,9 @@ int main(int argc, char** argv) {
     expectBool("Formatter instance map idempotent",
                unchangedInstanceMapReport.changed,
                false);
+    expectEq("Formatter instance map stable text",
+             unchangedInstanceMapReport.formattedText,
+             formatterInstanceMapReport.formattedText);
 
     const QString formatterTrailingCommentInput =
         QStringLiteral("module comment_demo(\n"
@@ -2198,14 +2293,14 @@ int main(int argc, char** argv) {
     expectEq("Formatter preserves aligned trailing comments",
              formatterTrailingCommentReport.formattedText,
              QStringLiteral("module comment_demo(\n"
-                            "    input  logic clk,   // clock\n"
-                            "    output logic ready  // done\n"
-                            "    );\n"
+                            "    input  logic clk   , // clock\n"
+                            "    output logic ready   // done\n"
+                            ");\n"
                             "    logic       a;     // flag\n"
                             "    logic [7:0] data;  // byte\n"
-                            "    child u_child (\n"
-                            "        .clk     (clk),  // clock\n"
-                            "        .data_in (data)  // bus\n"
+                            "    child u_child(\n"
+                            "        .clk     ( clk  ), // clock\n"
+                            "        .data_in ( data )  // bus\n"
                             "    );\n"
                             "endmodule\n"));
     const FormatterReport unchangedTrailingCommentReport =
@@ -2214,6 +2309,424 @@ int main(int argc, char** argv) {
     expectBool("Formatter trailing comment idempotent",
                unchangedTrailingCommentReport.changed,
                false);
+    expectEq("Formatter trailing comment stable text",
+             unchangedTrailingCommentReport.formattedText,
+             formatterTrailingCommentReport.formattedText);
+
+    const QString formatterStructuredModuleInput =
+        QStringLiteral(
+            "  module test#(\n"
+            " parameter int P_TEST=1'd1,// 1\n"
+            " parameter int P_TEST1=1'd0,// 2\n"
+            " parameter logic P_TEST2=P_TEST*P_TEST1 // 3\n"
+            " ) (\n"
+            " input logic [P_TEST-1:0][2:0] port0 [1:0],// 0\n"
+            " axi_if.master bus [P_TEST:P_TEST1], // bus\n"
+            " output custom_t [((P_TEST*P_TEST1)-1):0] port333 // 3\n"
+            " );\n"
+            "endmodule\n");
+    const FormatterReport formatterStructuredModuleReport =
+        FormatterService::getInstance()->formatDocument(
+            formatterStructuredModuleInput);
+    const QStringList structuredModuleLines =
+        formatterStructuredModuleReport.formattedText.split(
+            QLatin1Char('\n'));
+    expectBool("Formatter structured module line count",
+               structuredModuleLines.size() >= 10,
+               true);
+    expectEq("Formatter module header spacing",
+             structuredModuleLines.value(0),
+             QStringLiteral("module test #("));
+    expectEq("Formatter parameter to port close",
+             structuredModuleLines.value(4),
+             QStringLiteral(")("));
+    expectEq("Formatter module closing delimiter",
+             structuredModuleLines.value(8),
+             QStringLiteral(");"));
+    expectBool("Formatter canonical packed dimensions",
+               structuredModuleLines.value(5).contains(
+                   QStringLiteral("[P_TEST - 1:0][2:0]"))
+                   && structuredModuleLines.value(7).contains(
+                       QStringLiteral(
+                           "[((P_TEST * P_TEST1) - 1):0]")),
+               true);
+    expectBool("Formatter parameter expressions use necessary spaces",
+               structuredModuleLines.value(3).contains(
+                   QStringLiteral("P_TEST * P_TEST1")),
+               true);
+    const int parameterEqualColumn =
+        structuredModuleLines.value(1).indexOf(QLatin1Char('='));
+    const int parameterCommaColumn =
+        structuredModuleLines.value(1).indexOf(QLatin1Char(','));
+    const int parameterCommentColumn =
+        structuredModuleLines.value(1).indexOf(QStringLiteral("//"));
+    expectBool("Formatter parameter columns align",
+               parameterEqualColumn > 0
+                   && structuredModuleLines.value(2).indexOf(
+                          QLatin1Char('='))
+                       == parameterEqualColumn
+                   && structuredModuleLines.value(3).indexOf(
+                          QLatin1Char('='))
+                       == parameterEqualColumn
+                   && structuredModuleLines.value(2).indexOf(
+                          QLatin1Char(','))
+                       == parameterCommaColumn
+                   && structuredModuleLines.value(2).indexOf(
+                          QStringLiteral("//"))
+                       == parameterCommentColumn
+                   && structuredModuleLines.value(3).indexOf(
+                          QStringLiteral("//"))
+                       == parameterCommentColumn,
+               true);
+    const int portNameColumn =
+        structuredModuleLines.value(5).indexOf(
+            QStringLiteral("port0"));
+    const int portCommaColumn =
+        structuredModuleLines.value(5).indexOf(QLatin1Char(','));
+    const int portCommentColumn =
+        structuredModuleLines.value(5).indexOf(QStringLiteral("//"));
+    expectBool("Formatter ANSI/interface port columns align",
+               structuredModuleLines.value(5).startsWith(
+                   QStringLiteral("    input"))
+                   && structuredModuleLines.value(6).startsWith(
+                       QStringLiteral("    axi_if.master"))
+                   && structuredModuleLines.value(7).startsWith(
+                       QStringLiteral("    output"))
+                   && structuredModuleLines.value(6).indexOf(
+                          QStringLiteral("bus"))
+                       == portNameColumn
+                   && structuredModuleLines.value(7).indexOf(
+                          QStringLiteral("port333"))
+                       == portNameColumn
+                   && structuredModuleLines.value(6).indexOf(
+                          QLatin1Char(','))
+                       == portCommaColumn
+                   && structuredModuleLines.value(6).indexOf(
+                          QStringLiteral("//"))
+                       == portCommentColumn
+                   && structuredModuleLines.value(7).indexOf(
+                          QStringLiteral("//"))
+                       == portCommentColumn,
+               true);
+    expectBool("Formatter module token stream invariant",
+               StructuredWhitespaceFormatter::
+                   hasIdenticalNonWhitespaceStream(
+                       formatterStructuredModuleInput,
+                       formatterStructuredModuleReport.formattedText),
+               true);
+    const FormatterReport formatterStructuredModuleStable =
+        FormatterService::getInstance()->formatDocument(
+            formatterStructuredModuleReport.formattedText);
+    expectBool("Formatter structured module idempotent",
+               !formatterStructuredModuleStable.changed
+                   && formatterStructuredModuleStable.formattedText
+                       == formatterStructuredModuleReport.formattedText,
+               true);
+
+    const QString formatterRecoverableHeaderInput =
+        QStringLiteral(
+            "\tmodule cpld_like#(\n"
+            "\tparameter int WIDTH=8,// width\n"
+            "\tparameter logic ENABLE=1'b1 // enable\n"
+            "\t)(\n"
+            "\tinput\tlogic\tclk,\n"
+            "\tinput logic [WIDTH-1:0] data,\n"
+            "\tbus_if.master bus,// fabric\n"
+            "\toutput logic ready // ready\n"
+            "\t);\n"
+            "`ifdef BODY_ERROR\n"
+            "\t`BODY_MACRO\n"
+            "\tassign broken = ;\n"
+            "`endif\n"
+            "endmodule\n");
+    const FormatterReport formatterRecoverableHeaderReport =
+        FormatterService::getInstance()->formatDocument(
+            formatterRecoverableHeaderInput);
+    const QStringList recoverableHeaderLines =
+        formatterRecoverableHeaderReport.formattedText.split(
+            QLatin1Char('\n'));
+    expectBool("Formatter formats reliable header despite body error",
+               formatterRecoverableHeaderReport.changed
+                   && recoverableHeaderLines.value(0)
+                      == QStringLiteral("module cpld_like #(")
+                   && recoverableHeaderLines.value(3)
+                      == QStringLiteral(")(")
+                   && recoverableHeaderLines.value(8)
+                      == QStringLiteral(");"),
+               true);
+    const int recoverablePortNameColumn =
+        recoverableHeaderLines.value(4).indexOf(
+            QStringLiteral("clk"));
+    const int recoverablePortCommaColumn =
+        recoverableHeaderLines.value(4).indexOf(
+            QLatin1Char(','));
+    const int recoverablePortCommentColumn =
+        recoverableHeaderLines.value(6).indexOf(
+            QStringLiteral("//"));
+    expectBool("Formatter recoverable header aligns interface ports",
+               recoverablePortNameColumn > 0
+                   && recoverableHeaderLines.value(5).indexOf(
+                          QStringLiteral("data"))
+                      == recoverablePortNameColumn
+                   && recoverableHeaderLines.value(6).lastIndexOf(
+                          QStringLiteral("bus"))
+                      == recoverablePortNameColumn
+                   && recoverableHeaderLines.value(7).indexOf(
+                          QStringLiteral("ready"))
+                      == recoverablePortNameColumn
+                   && recoverableHeaderLines.value(5).indexOf(
+                          QLatin1Char(','))
+                      == recoverablePortCommaColumn
+                   && recoverableHeaderLines.value(6).indexOf(
+                          QLatin1Char(','))
+                      == recoverablePortCommaColumn
+                   && recoverableHeaderLines.value(7).indexOf(
+                          QStringLiteral("//"))
+                      == recoverablePortCommentColumn,
+               true);
+    bool recoverableHeaderWhitespaceClean = true;
+    for (int line = 0; line <= 8; ++line) {
+        const QString headerLine = recoverableHeaderLines.value(line);
+        recoverableHeaderWhitespaceClean =
+            recoverableHeaderWhitespaceClean
+            && !headerLine.contains(QLatin1Char('\t'))
+            && !headerLine.endsWith(QLatin1Char(' '));
+    }
+    expectBool("Formatter recoverable header has clean whitespace",
+               recoverableHeaderWhitespaceClean,
+               true);
+    expectBool("Formatter recoverable header token stream invariant",
+               StructuredWhitespaceFormatter::
+                   hasIdenticalNonWhitespaceStream(
+                       formatterRecoverableHeaderInput,
+                       formatterRecoverableHeaderReport.formattedText),
+               true);
+    const FormatterReport formatterRecoverableHeaderStable =
+        FormatterService::getInstance()->formatDocument(
+            formatterRecoverableHeaderReport.formattedText);
+    expectBool("Formatter recoverable header idempotent",
+               !formatterRecoverableHeaderStable.changed
+                   && formatterRecoverableHeaderStable.formattedText
+                      == formatterRecoverableHeaderReport.formattedText,
+               true);
+
+    const QString formatterIncompleteHeaderInput =
+        QStringLiteral(
+            "  module incomplete #(\n"
+            "\tparameter int WIDTH=8\n"
+            ")(\n"
+            "\tinput logic clk,\n"
+            "\toutput logic ready\n"
+            "  // missing closing delimiter and semicolon\n"
+            "endmodule\n");
+    const FormatterReport formatterIncompleteHeaderReport =
+        FormatterService::getInstance()->formatDocument(
+            formatterIncompleteHeaderInput);
+    expectEq("Formatter incomplete header is atomic",
+             formatterIncompleteHeaderReport.formattedText,
+             formatterIncompleteHeaderInput);
+
+    QDir formatterFixtureRoot(
+        QCoreApplication::applicationDirPath());
+    QString cpldTopFixture;
+    for (int depth = 0;
+         depth < 8 && cpldTopFixture.isEmpty();
+         ++depth) {
+        const QString candidate =
+            formatterFixtureRoot.absoluteFilePath(
+                QStringLiteral(
+                    "test_sv/new/elec_phy_import/phy/cpld_top.sv"));
+        if (QFileInfo::exists(candidate))
+            cpldTopFixture = candidate;
+        else if (!formatterFixtureRoot.cdUp())
+            break;
+    }
+    QFile cpldTopFile(cpldTopFixture);
+    const bool cpldTopOpened =
+        !cpldTopFixture.isEmpty()
+        && cpldTopFile.open(
+            QIODevice::ReadOnly | QFile::Text);
+    expectBool("Formatter real cpld_top fixture opens",
+               cpldTopOpened,
+               true);
+    const QString cpldTopInput =
+        cpldTopOpened
+            ? QString::fromUtf8(cpldTopFile.readAll())
+            : QString();
+    const FormatterReport cpldTopReport =
+        FormatterService::getInstance()->formatDocument(
+            cpldTopInput);
+    const int cpldHeaderStart =
+        cpldTopReport.formattedText.indexOf(
+            QStringLiteral("module cpld_top("));
+    const int cpldHeaderEnd =
+        cpldTopReport.formattedText.indexOf(
+            QStringLiteral(");"),
+            cpldHeaderStart);
+    const QString cpldHeader =
+        cpldHeaderStart >= 0 && cpldHeaderEnd >= cpldHeaderStart
+            ? cpldTopReport.formattedText.mid(
+                  cpldHeaderStart,
+                  cpldHeaderEnd - cpldHeaderStart + 2)
+            : QString();
+    const QStringList cpldHeaderLines =
+        cpldHeader.split(QLatin1Char('\n'));
+    bool cpldHeaderWhitespaceClean =
+        !cpldHeader.isEmpty()
+        && !cpldHeader.contains(QLatin1Char('\t'))
+        && cpldHeaderLines.first()
+               == QStringLiteral("module cpld_top(")
+        && cpldHeaderLines.last()
+               == QStringLiteral(");");
+    for (const QString& line : cpldHeaderLines) {
+        cpldHeaderWhitespaceClean =
+            cpldHeaderWhitespaceClean
+            && !line.endsWith(QLatin1Char(' '));
+    }
+    expectBool("Formatter real cpld_top header whitespace clean",
+               cpldHeaderWhitespaceClean,
+               true);
+    const auto cpldHeaderLineContaining =
+        [&cpldHeaderLines](const QString& text) {
+        for (const QString& line : cpldHeaderLines) {
+            if (line.contains(text))
+                return line;
+        }
+        return QString();
+    };
+    const QString cpldClockLine =
+        cpldHeaderLineContaining(
+            QStringLiteral("clk_main"));
+    const QString cpldTypedLine =
+        cpldHeaderLineContaining(
+            QStringLiteral("chl0_active_inj_layer"));
+    const QString cpldInterfaceLine =
+        cpldHeaderLineContaining(
+            QStringLiteral("s0_oc_ctrl_if"));
+    const int cpldNameColumn =
+        cpldClockLine.lastIndexOf(
+            QStringLiteral("clk_main"));
+    expectBool("Formatter real cpld_top port columns align",
+               cpldNameColumn > 0
+                   && cpldTypedLine.lastIndexOf(
+                          QStringLiteral(
+                              "chl0_active_inj_layer"))
+                      == cpldNameColumn
+                   && cpldInterfaceLine.lastIndexOf(
+                          QStringLiteral("s0_oc_ctrl_if"))
+                      == cpldNameColumn
+                   && cpldClockLine.indexOf(
+                          QLatin1Char(','))
+                      == cpldTypedLine.indexOf(
+                          QLatin1Char(','))
+                   && cpldClockLine.indexOf(
+                          QStringLiteral("//"))
+                      == cpldInterfaceLine.indexOf(
+                          QStringLiteral("//")),
+               true);
+    expectBool("Formatter real cpld_top token stream invariant",
+               StructuredWhitespaceFormatter::
+                   hasIdenticalNonWhitespaceStream(
+                       cpldTopInput,
+                       cpldTopReport.formattedText),
+               true);
+    const FormatterReport cpldTopStable =
+        FormatterService::getInstance()->formatDocument(
+            cpldTopReport.formattedText);
+    expectBool("Formatter real cpld_top idempotent",
+               !cpldTopStable.changed
+                   && cpldTopStable.formattedText
+                      == cpldTopReport.formattedText,
+               true);
+
+    const QString formatterStructuredInstanceInput =
+        QStringLiteral(
+            "test_module#(\n"
+            ".P_TEST(LP_TEST),// 1\n"
+            ".P_TEST1(LP_TEST1),// 2\n"
+            ".P_TEST2(LP_TEST2),// 3\n"
+            ".P_TEST3333(LP_TEST3333),// 4\n"
+            ".P_TEST4()//\n"
+            ")U_test_module (\n"
+            ".port0(port0),// 0\n"
+            ".port1(port1),// 1\n"
+            ".port22(port22),\n"
+            ".port333(port444),\n"
+            ".port444(port444),\n"
+            ".port5555(port5555),\n"
+            ".port66666(port66666)// 6\n"
+            ");\n");
+    const QString formatterStructuredInstanceExpected =
+        QStringLiteral(
+            "test_module #(\n"
+            "    .P_TEST     ( LP_TEST     ), // 1\n"
+            "    .P_TEST1    ( LP_TEST1    ), // 2\n"
+            "    .P_TEST2    ( LP_TEST2    ), // 3\n"
+            "    .P_TEST3333 ( LP_TEST3333 ), // 4\n"
+            "    .P_TEST4    (             )  //\n"
+            ") U_test_module(\n"
+            "    .port0     ( port0     ), // 0\n"
+            "    .port1     ( port1     ), // 1\n"
+            "    .port22    ( port22    ),\n"
+            "    .port333   ( port444   ),\n"
+            "    .port444   ( port444   ),\n"
+            "    .port5555  ( port5555  ),\n"
+            "    .port66666 ( port66666 )  // 6\n"
+            ");\n");
+    const FormatterReport formatterStructuredInstanceReport =
+        FormatterService::getInstance()->formatDocument(
+            formatterStructuredInstanceInput);
+    expectEq("Formatter structured instance target",
+             formatterStructuredInstanceReport.formattedText,
+             formatterStructuredInstanceExpected);
+    expectBool("Formatter instance token stream invariant",
+               StructuredWhitespaceFormatter::
+                   hasIdenticalNonWhitespaceStream(
+                       formatterStructuredInstanceInput,
+                       formatterStructuredInstanceReport.formattedText),
+               true);
+    const FormatterReport formatterStructuredInstanceStable =
+        FormatterService::getInstance()->formatDocument(
+            formatterStructuredInstanceReport.formattedText);
+    expectBool("Formatter structured instance idempotent",
+               !formatterStructuredInstanceStable.changed
+                   && formatterStructuredInstanceStable.formattedText
+                       == formatterStructuredInstanceReport.formattedText,
+               true);
+
+    const QString formatterConservativeInput =
+        QStringLiteral(
+            "module legacy(a,b);\n"
+            "input logic a;\n"
+            "`ifdef OPTIONAL\n"
+            "output logic b;\n"
+            "`endif\n"
+            "child u_child(\n"
+            "  .a(func(\n"
+            "      a,\n"
+            "      {b, 1'b0}\n"
+            "  )),\n"
+            "  .b(`OPTIONAL_CONN)\n"
+            ");\n"
+            "broken child_half(\n"
+            "endmodule\n");
+    const FormatterReport formatterConservativeReport =
+        FormatterService::getInstance()->formatDocument(
+            formatterConservativeInput);
+    expectBool("Formatter conservative token stream invariant",
+               StructuredWhitespaceFormatter::
+                   hasIdenticalNonWhitespaceStream(
+                       formatterConservativeInput,
+                       formatterConservativeReport.formattedText),
+               true);
+    const FormatterReport formatterConservativeStable =
+        FormatterService::getInstance()->formatDocument(
+            formatterConservativeReport.formattedText);
+    expectBool("Formatter conservative input idempotent",
+               !formatterConservativeStable.changed
+                   && formatterConservativeStable.formattedText
+                       == formatterConservativeReport.formattedText,
+               true);
 
     const QString formatterCaseItemInput =
         QStringLiteral("module case_demo;\n"

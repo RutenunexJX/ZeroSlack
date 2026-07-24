@@ -123,6 +123,114 @@ int main() {
         check("comment query: trailing comment true", doc.isCommentAt(s + 5));
     }
 
+    {
+        const QString commentSource =
+            QStringLiteral("module unicode_comment;\r\n"
+                           "  logic before; /* 嵌套样式 // 文本\r\n"
+                           "  signal_in_comment = 16'hff;\r\n"
+                           "  end marker */ logic after = 8'h2a;\r\n"
+                           "endmodule\r\n");
+        TSDocument comments;
+        comments.setText(commentSource);
+        const int middle =
+            commentSource.indexOf(QStringLiteral("signal_in_comment"));
+        const int after =
+            commentSource.indexOf(QStringLiteral("after"));
+        const int commentedNumber =
+            commentSource.indexOf(QStringLiteral("16'hff")) + 3;
+        const int liveNumber =
+            commentSource.indexOf(QStringLiteral("8'h2a")) + 3;
+        check("block comment query covers Unicode CRLF middle line",
+              comments.isCommentAt(middle));
+        check("block comment query stops before code on closing line",
+              !comments.isCommentAt(after));
+        check("numeric query excludes block-comment number",
+              !comments.numericLiteralAt(commentedNumber).ok());
+        const TSNumericLiteralTarget numeric =
+            comments.numericLiteralAt(liveNumber);
+        check("numeric query returns exact live token after block comment",
+              numeric.ok()
+                  && numeric.text == QStringLiteral("8'h2a")
+                  && numeric.evaluationText
+                      == QStringLiteral("8'h2a")
+                  && numeric.startChar
+                      == commentSource.indexOf(QStringLiteral("8'h2a")));
+    }
+
+    {
+        const QString numericSource =
+            QStringLiteral(
+                "module numeric_context;\n"
+                "  localparam logic signed [7:0] NEG = -8'sd1;\n"
+                "  localparam logic [7:0] CAT = {4'ha, 4'h5};\n"
+                "endmodule\n");
+        TSDocument numericDocument;
+        numericDocument.setText(numericSource);
+        const TSNumericLiteralTarget negative =
+            numericDocument.numericLiteralAt(
+                numericSource.indexOf(
+                    QStringLiteral("8'sd1")) + 3);
+        check("numeric query includes structural unary sign for evaluation",
+              negative.ok()
+                  && negative.text == QStringLiteral("8'sd1")
+                  && negative.evaluationText
+                      == QStringLiteral("-8'sd1"));
+        const TSNumericLiteralTarget concatenated =
+            numericDocument.numericLiteralAt(
+                numericSource.indexOf(
+                    QStringLiteral("4'ha")) + 2);
+        check("numeric query remains exact inside concatenation",
+              concatenated.ok()
+                  && concatenated.text == QStringLiteral("4'ha")
+                  && concatenated.evaluationText
+                      == QStringLiteral("4'ha"));
+    }
+
+    {
+        QString current =
+            QStringLiteral("module incremental_comment;\n"
+                           "  logic sig = 8'h2a;\n"
+                           "endmodule\n");
+        TSDocument incremental;
+        incremental.setText(current);
+        const int signalStart = current.indexOf(QStringLiteral("sig"));
+        const QString signalText = QStringLiteral("sig = 8'h2a;");
+
+        DocumentChange open;
+        open.position = signalStart;
+        open.removedLength = signalText.size();
+        open.removedText = signalText;
+        open.insertedText = QStringLiteral("/*sig = 8'h2a;*/");
+        open.oldLength = current.size();
+        open.newLength = current.size() - signalText.size()
+            + open.insertedText.size();
+        open.startLine = 1;
+        open.startColumn = 8;
+        incremental.applyEdit(open);
+        current.replace(open.position, open.removedLength, open.insertedText);
+        check("incremental open comment boundary suppresses signal",
+              incremental.text() == current
+                  && incremental.isCommentAt(signalStart + 2));
+
+        DocumentChange close;
+        close.position = signalStart;
+        close.removedLength = open.insertedText.size();
+        close.removedText = open.insertedText;
+        close.insertedText = signalText;
+        close.oldLength = current.size();
+        close.newLength = current.size() - close.removedLength
+            + close.insertedText.size();
+        close.startLine = 1;
+        close.startColumn = 8;
+        incremental.applyEdit(close);
+        current.replace(close.position,
+                        close.removedLength,
+                        close.insertedText);
+        check("incremental close comment boundary restores following code",
+              incremental.text() == current
+                  && !incremental.isCommentAt(signalStart + 2));
+    }
+
     // 5) A fragment delta must produce the same highlight as a full re-parse.
     {
         QString A = QStringLiteral("module m;\nendmodule\n");
@@ -565,8 +673,125 @@ int main() {
         const TSModuleEndNavigationTarget target =
             noModule.moduleEndNavigationTarget(0);
         check("go endmodule reports no current module",
-              target.status
-                  == TSModuleEndNavigationStatus::NoCurrentModule);
+                  target.status
+                      == TSModuleEndNavigationStatus::NoCurrentModule);
+    }
+
+    // Structural identifier, undefined-signal context, and instance-slot
+    // queries share the same live Tree-sitter document.
+    {
+        const QString src =
+            QStringLiteral("module slot_demo;\n")
+            + QStringLiteral("  always_ff @(posedge clk) begin\n")
+            + QStringLiteral("    missing_q <= source_q;\n")
+            + QStringLiteral("  end\n")
+            + QStringLiteral("  child #(\n")
+            + QStringLiteral("    .WIDTH(P + fn(a, {b, c})),\n")
+            + QStringLiteral("    .DEPTH(4)\n")
+            + QStringLiteral("  ) u_child(\n")
+            + QStringLiteral("    .clk(clk),\n")
+            + QStringLiteral("    .data(missing_data),\n")
+            + QStringLiteral("    .ready()\n")
+            + QStringLiteral("  );\n")
+            + QStringLiteral("endmodule\n");
+        TSDocument d;
+        d.setText(src);
+
+        const int dataPos =
+            src.indexOf(QStringLiteral("missing_data")) + 2;
+        const TSIdentifierTarget identifier = d.identifierAt(dataPos);
+        check("structural identifier exact span",
+              identifier.ok()
+                  && identifier.text == QStringLiteral("missing_data")
+                  && src.mid(identifier.startChar,
+                             identifier.endChar - identifier.startChar)
+                      == identifier.text);
+
+        const TSInstantiationTarget instance =
+            d.instantiationAt(dataPos);
+        check("instance slot query resolves type and instance",
+              instance.ok()
+                  && instance.moduleType == QStringLiteral("child")
+                  && instance.instanceName == QStringLiteral("u_child"));
+        check("instance slot query orders parameters before ports",
+              instance.parameterActuals.size() == 2
+                  && instance.portActuals.size() == 3
+                  && src.mid(
+                         instance.parameterActuals.at(0).startChar,
+                         instance.parameterActuals.at(0).endChar
+                             - instance.parameterActuals.at(0).startChar)
+                      == QStringLiteral("P + fn(a, {b, c})")
+                  && src.mid(
+                         instance.portActuals.at(1).startChar,
+                         instance.portActuals.at(1).endChar
+                             - instance.portActuals.at(1).startChar)
+                      == QStringLiteral("missing_data"));
+        check("instance slot query preserves empty named actual",
+              instance.portActuals.at(2).startChar
+                      == instance.portActuals.at(2).endChar
+                  && instance.portActuals.at(2).name
+                      == QStringLiteral("ready"));
+
+        const TSUndefinedSignalContext portContext =
+            d.undefinedSignalContextAt(dataPos);
+        check("undefined named-port actual carries exact formal context",
+              portContext.ok()
+                  && portContext.kind
+                      == TSUndefinedSignalContextKind::NamedPortActual
+                  && portContext.formalName == QStringLiteral("data")
+                  && src.mid(portContext.formalStartChar, 4)
+                      == QStringLiteral("data")
+                  && portContext.instantiation.instanceName
+                      == QStringLiteral("u_child"));
+
+        const TSUndefinedSignalContext lhsContext =
+            d.undefinedSignalContextAt(
+                src.indexOf(QStringLiteral("missing_q")) + 2);
+        check("undefined procedural assignment lhs is recognized",
+              lhsContext.ok()
+                  && lhsContext.kind
+                      == TSUndefinedSignalContextKind::
+                          ProceduralAssignmentLhs);
+        check("assignment rhs is not a creation context",
+              !d.undefinedSignalContextAt(
+                    src.indexOf(QStringLiteral("source_q")) + 2)
+                   .ok());
+        check("formal, comment, and string identifiers are excluded",
+              !d.undefinedSignalContextAt(
+                    src.indexOf(QStringLiteral(".data")) + 2)
+                   .ok());
+    }
+
+    {
+        const QString positional =
+            QStringLiteral("module positional_demo;\n")
+            + QStringLiteral("  child #(P, fn(a, b)) u0(\n")
+            + QStringLiteral("    clk,\n")
+            + QStringLiteral("    {left, right}\n")
+            + QStringLiteral("  );\n")
+            + QStringLiteral("endmodule\n");
+        TSDocument d;
+        d.setText(positional);
+        const TSInstantiationTarget target =
+            d.instantiationAt(
+                positional.indexOf(QStringLiteral("u0")));
+        check("positional instance slots preserve complex expressions",
+              target.ok()
+                  && target.parameterActuals.size() == 2
+                  && target.portActuals.size() == 2
+                  && positional.mid(
+                         target.portActuals.at(1).startChar,
+                         target.portActuals.at(1).endChar
+                             - target.portActuals.at(1).startChar)
+                      == QStringLiteral("{left, right}"));
+
+        TSDocument incomplete;
+        incomplete.setText(
+            QStringLiteral("module bad; child #(.P(1) u0(.a(x); endmodule\n"));
+        check("incomplete instantiation is rejected conservatively",
+              !incomplete.instantiationAt(
+                   incomplete.text().indexOf(QStringLiteral("u0")))
+                   .ok());
     }
 
     printf("\n%d checks, %d failed\n", checks, fails);

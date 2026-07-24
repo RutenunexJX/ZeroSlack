@@ -557,11 +557,30 @@ EffectiveLiteralResult EffectiveValueService::evaluateLiteral(
             std::numeric_limits<slang::bitwidth_t>::max(),
             true));
         if (value.isInteger()) {
-            result.bitWidthText = QString::number(
-                value.integer().getBitWidth());
-            result.signednessText = value.integer().isSigned()
+            const slang::SVInt& integer = value.integer();
+            result.bitWidthText = QString::number(integer.getBitWidth());
+            result.signednessText = integer.isSigned()
                 ? QStringLiteral("signed")
                 : QStringLiteral("unsigned");
+            const auto radixText = [&integer](slang::LiteralBase base) {
+                return QString::fromStdString(integer.toString(
+                    base,
+                    std::numeric_limits<slang::bitwidth_t>::max()));
+            };
+            result.radixRepresentations = {
+                QStringLiteral("binary: %1")
+                    .arg(radixText(slang::LiteralBase::Binary)),
+                QStringLiteral("octal: %1")
+                    .arg(radixText(slang::LiteralBase::Octal))
+            };
+            if (!integer.hasUnknown()) {
+                result.radixRepresentations.append(
+                    QStringLiteral("decimal: %1")
+                        .arg(radixText(slang::LiteralBase::Decimal)));
+            }
+            result.radixRepresentations.append(
+                QStringLiteral("hex: %1")
+                    .arg(radixText(slang::LiteralBase::Hex)));
         } else if (value.isString()) {
             result.bitWidthText = QString::number(
                 value.str().size() * 8);

@@ -25,6 +25,8 @@
 #include <cstdint>
 #include <atomic>
 #include <memory>
+#include <QPoint>
+#include <QPointer>
 
 class MyCodeEditor;
 class QContextMenuEvent;
@@ -32,6 +34,8 @@ class QDragEnterEvent;
 class QDragMoveEvent;
 class QDropEvent;
 class QKeyEvent;
+class QLineEdit;
+class QMenu;
 class QMouseEvent;
 class QPainter;
 class QPaintEvent;
@@ -46,6 +50,13 @@ struct MyCodeEditorState
         QString name;
         int start = -1;
         int end = -1;
+    };
+
+    struct SelectedSignal {
+        QString identity;
+        QString name;
+        int start = -1;
+        int length = 0;
     };
 
     EditorAppearance appearance;
@@ -63,13 +74,23 @@ struct MyCodeEditorState
     EditorSourceNavigationUi sourceNavigation;
     EditorSelection selections;
     HierarchyInstanceContext hierarchyInstance;
+    QList<SemanticDiagnostic> diagnostics;
+    QHash<int, QList<int>> diagnosticIndexesByLine;
+    QHash<int, SemanticDiagnostic::Severity> diagnosticSeverityByLine;
+    std::uint64_t diagnosticComputationRevision = 0;
     QList<GhostAnnotation> ghostAnnotations;
+    QList<SemanticDecoration> semanticDecorations;
     // Semantic publications are keyed to text content, not QTextDocument's
     // formatting revision. Appearance and syntax highlighting can advance the
     // latter without changing any source text.
     std::uint64_t semanticTextRevision = 0;
     std::uint64_t ghostQueryGeneration = 0;
     QString semanticRevisionText;
+    bool inlineFilterTextOverlayActive = false;
+    int inlineFilterTextOverlayStart = -1;
+    int inlineFilterTextOverlayOriginalLength = 0;
+    QString inlineFilterTextOverlayOriginalText;
+    QString inlineFilterTextOverlayCurrentText;
     std::shared_ptr<std::atomic_bool> ghostQueryCancellation;
     EditorHotPathMetrics hotPathMetrics;
     FormatterProfile currentFormatterProfile = FormatterProfile::Structured;
@@ -82,6 +103,10 @@ struct MyCodeEditorState
     int columnAnchorColumn = -1;
     int columnCurrentLine = -1;
     int columnCurrentColumn = -1;
+    bool virtualCursorActive = false;
+    int virtualCursorLine = -1;
+    int virtualCursorColumn = -1;
+    int virtualCursorSavedWidth = 1;
     QList<TemplateSlotRange> templateSlotRanges;
     int templateSlotActiveIndex = -1;
     int templateSlotSessionStart = -1;
@@ -98,6 +123,16 @@ struct MyCodeEditorState
     bool ghostPresentationPending = false;
     int synchronousEditTransactionDepth = 0;
     std::uint64_t completedSynchronousEditTransactions = 0;
+    QPointer<QLineEdit> signalDefinitionEditor;
+    int signalDefinitionIdentifierStart = -1;
+    std::uint64_t signalDefinitionDocumentRevision = 0;
+    QString signalDefinitionFileName;
+    QHash<QString, SelectedSignal> selectedSignals;
+    bool signalSelectionActive = false;
+    bool signalSelectionDragging = false;
+    bool signalSelectionDragSelect = false;
+    QString signalSelectionLastDragIdentity;
+    QPoint signalSelectionLastDragPoint{-1, -1};
 
     void initializeCore(MyCodeEditor* editor);
     void shutdown();
@@ -134,6 +169,9 @@ struct MyCodeEditorState
     int templateSlotModeSlotCount() const;
     bool templateSlotModeBlinkOn() const;
     bool columnSelectionActiveForCommand() const;
+    bool virtualCursorActiveForTest() const;
+    int virtualCursorLineForTest() const;
+    int virtualCursorColumnForTest() const;
     QStringList columnSelectionRowTexts(MyCodeEditor* editor) const;
     bool applyColumnSelectionRowTexts(MyCodeEditor* editor,
                                       const QStringList& rows,
@@ -143,6 +181,11 @@ struct MyCodeEditorState
                                const QString& message = QString(),
                                bool updatePresentation = true);
     bool handleTemplateSlotKeyPress(MyCodeEditor* editor, QKeyEvent* event);
+    bool handleVirtualCursorKeyPress(MyCodeEditor* editor,
+                                     QKeyEvent* event);
+    void prepareVirtualCursorInput(MyCodeEditor* editor);
+    void clearVirtualCursor(MyCodeEditor* editor);
+    void handleVirtualCursorChanged(MyCodeEditor* editor);
     void handleTemplateSlotContentsChange(MyCodeEditor* editor,
                                           int position,
                                           int charsRemoved,
@@ -171,10 +214,44 @@ struct MyCodeEditorState
     void paintGutterDecorations(MyCodeEditor* editor,
                                 QPainter& painter,
                                 const QRect& rect) const;
+    void paintDiagnosticOverview(MyCodeEditor* editor,
+                                 QPaintEvent* event) const;
     void paintFoldPlaceholders(MyCodeEditor* editor, QPaintEvent* event) const;
     void paintGhostAnnotations(MyCodeEditor* editor, QPaintEvent* event) const;
     void paintColumnSelection(MyCodeEditor* editor, QPaintEvent* event) const;
     void handleContextMenu(MyCodeEditor* editor, QContextMenuEvent* event);
+    void addStructuralContextMenuActions(MyCodeEditor* editor,
+                                         QMenu* menu,
+                                         int cursorPosition);
+    bool editInstanceSlotsAt(MyCodeEditor* editor,
+                             int cursorPosition,
+                             QString* message = nullptr);
+    QString signalDefinitionCandidateAt(
+        const MyCodeEditor* editor,
+        int cursorPosition,
+        QString* failureReason = nullptr) const;
+    bool beginSignalDefinitionEditor(
+        MyCodeEditor* editor,
+        int cursorPosition,
+        QString* failureReason = nullptr);
+    bool confirmSignalDefinition(
+        MyCodeEditor* editor,
+        const QString& declaration,
+        QString* failureReason = nullptr);
+    void cancelSignalDefinitionEditor();
+    bool startSignalSelectionMode(MyCodeEditor* editor,
+                                  QString* message = nullptr);
+    void cancelSignalSelectionMode(MyCodeEditor* editor);
+    bool signalSelectionModeActive() const;
+    QStringList selectedSignalNames() const;
+    bool toggleSignalSelectionAt(MyCodeEditor* editor,
+                                 int cursorPosition,
+                                 bool toggle,
+                                 bool desiredState = true);
+    bool createAssignmentQueueAt(MyCodeEditor* editor,
+                                 int cursorPosition,
+                                 QString* message = nullptr);
+    void refreshSignalSelectionOverlay(MyCodeEditor* editor);
     bool handleMousePress(MyCodeEditor* editor, QMouseEvent* event);
     bool handleMouseDoubleClick(MyCodeEditor* editor, QMouseEvent* event);
     bool handleMouseMove(MyCodeEditor* editor, QMouseEvent* event);
@@ -185,11 +262,17 @@ struct MyCodeEditorState
     void refreshSemanticPresentation(MyCodeEditor* editor);
     std::uint64_t semanticDocumentRevision() const;
     QString materializeDocumentText(const MyCodeEditor* editor);
-    const QString& cachedDocumentText() const;
+    const QString& cachedDocumentText();
+    int cachedDocumentLength() const;
     QString cachedDocumentSlice(int position, int length);
+    bool beginInlineFilterTextOverlay(int startPosition,
+                                      int endPosition);
+    void finishInlineFilterTextOverlay();
     void acceptLoadedTextAsSemanticBaseline(const MyCodeEditor* editor);
     EditorHotPathMetrics hotPathMetricsForTest() const;
+    bool inlineFilterTextOverlayActiveForTest() const;
     EditorOccurrenceIndexStats occurrenceIndexStatsForTest() const;
+    QList<int> occurrencePositionsForTest(const QString& word) const;
     void resetHotPathMetricsForTest();
     void setIncludeFileProvider(
         EditorCompletionWorkflow::IncludeFileProvider provider);
@@ -223,6 +306,7 @@ struct MyCodeEditorState
     bool foldCollapsedAtLineForTest(int line) const;
     QList<GhostAnnotation> ghostAnnotationsForTest() const;
     QString syntaxTextForTest() const;
+    EditorLargeFileSyntaxScopeSnapshot largeFileSyntaxScopeForTest() const;
     FoldShelfItem foldShelfItemAtLine(MyCodeEditor* editor,
                                       int line,
                                       FoldShelfOriginKind origin) const;
@@ -244,6 +328,12 @@ struct MyCodeEditorState
     void setDiagnosticHighlights(
         MyCodeEditor* editor,
         const QList<SemanticDiagnostic>& diagnostics);
+    void clearDiagnosticHighlights(MyCodeEditor* editor);
+    QString diagnosticTooltipForLine(int zeroBasedLine) const;
+    QList<int> diagnosticOverviewLinesForTest() const;
+    SemanticDiagnostic::Severity diagnosticSeverityForLineForTest(
+        int zeroBasedLine,
+        bool* available = nullptr) const;
     void refreshGhostAnnotations(MyCodeEditor* editor);
     void setSemanticDecorations(
         MyCodeEditor* editor,
@@ -257,6 +347,9 @@ struct MyCodeEditorState
                                       int charsAdded);
     void remapGhostAnnotations(MyCodeEditor* editor,
                                const DocumentChange& change);
+    void remapSemanticDecorations(MyCodeEditor* editor,
+                                  const DocumentChange& change);
+    void refreshSemanticDecorationPresentation(MyCodeEditor* editor);
     void refreshDerivedEditorState(MyCodeEditor* editor,
                                    bool allowWavePreviewSignal);
     void highlightSearchMatches(MyCodeEditor* editor,

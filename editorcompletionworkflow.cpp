@@ -7,6 +7,7 @@
 #include "inlinecommandmode.h"
 #include "mycodeeditor.h"
 
+#include <QAbstractItemView>
 #include <QModelIndex>
 #include <QDir>
 #include <QFileInfo>
@@ -150,6 +151,8 @@ void EditorCompletionWorkflow::hideCompletionPopup()
 
 void EditorCompletionWorkflow::clearInlineAbbreviationSession()
 {
+    if (editor)
+        editor->state->finishInlineFilterTextOverlay();
     inlineSession = {};
 }
 
@@ -182,7 +185,7 @@ bool EditorCompletionWorkflow::inlineAbbreviationSessionValid() const
     }
 
     if (inlineSession.replacementEndPosition
-        > editor->cachedDocumentText().size()) {
+        > editor->state->cachedDocumentLength()) {
         return false;
     }
     return editor->cachedDocumentSlice(
@@ -203,6 +206,8 @@ bool EditorCompletionWorkflow::refreshInlineCandidateFilter()
     query.hasExplicitMatch = true;
     query.explicitMatch.matched = true;
     query.explicitMatch.input = inlineSession.filterText;
+    ++editor->state->hotPathMetrics.inlineFilterRefreshes;
+    ++editor->state->hotPathMetrics.inlineFilterServiceQueries;
     const CommandModeCompletionState state =
         CompletionService::getInstance()->commandModeCompletionState(query);
     if (!state.matched) {
@@ -211,10 +216,16 @@ bool EditorCompletionWorkflow::refreshInlineCandidateFilter()
     }
 
     inlineSession.completion = state;
+    ++editor->state->hotPathMetrics.inlineFilterModelUpdates;
     completion->updateCommandModeCompletions(state, false);
-    if (state.prefixPosition >= 0)
-        selections->highlightCommand(editor, state.prefixPosition);
-    showCompletionPopup(true);
+    if (completion->popupVisible()) {
+        const QModelIndex selectable =
+            completion->firstSelectableIndex();
+        if (selectable.isValid())
+            completion->popup()->setCurrentIndex(selectable);
+    } else {
+        showCompletionPopup(true);
+    }
 
     if (inlineCandidateCount(state) == 0) {
         emit editor->editorStatusMessageRequested(
@@ -239,6 +250,8 @@ void EditorCompletionWorkflow::handleCursorPositionChanged()
 
 void EditorCompletionWorkflow::showCompletionPopup(bool selectFirstCompletion)
 {
+    if (editor && inlineSession.active)
+        ++editor->state->hotPathMetrics.inlineFilterPopupCompletes;
     completion->showForCursor(
         editor->cursorRect(editor->textCursor()),
         selectFirstCompletion || modes->commandModeActive);
@@ -328,9 +341,17 @@ bool EditorCompletionWorkflow::showInlineAbbreviationCompletions(
     inlineSession.filterText = abbreviationText.mid(
         filterStartPosition - replacementStartPosition);
     inlineSession.anchorQuery = anchorQuery;
+    inlineSession.anchorQuery.documentText.clear();
     inlineSession.completion = state;
+    editor->state->hotPathMetrics
+        .inlineFilterRetainedDocumentCharactersPeak =
+        qMax(editor->state->hotPathMetrics
+                 .inlineFilterRetainedDocumentCharactersPeak,
+             static_cast<std::uint64_t>(
+                 inlineSession.anchorQuery.documentText.size()));
 
     modes->setCommandModeActive(true);
+    ++editor->state->hotPathMetrics.inlineFilterHighlightUpdates;
     selections->highlightCommand(
         editor,
         state.prefixPosition);
@@ -367,7 +388,13 @@ bool EditorCompletionWorkflow::showInlineAbbreviationCompletions(
     }
 
     inlineSession.candidateFiltering = supportsCandidateFiltering;
+    if (inlineSession.candidateFiltering) {
+        editor->state->beginInlineFilterTextOverlay(
+            replacementStartPosition,
+            replacementEndPosition);
+    }
 
+    ++editor->state->hotPathMetrics.inlineFilterModelUpdates;
     completion->updateCommandModeCompletions(
         state,
         !inlineSession.candidateFiltering);

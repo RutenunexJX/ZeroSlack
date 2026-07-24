@@ -200,11 +200,21 @@ SymbolHoverReport SymbolHoverService::hoverForContext(
         report.parameterLike = isParameterLikeRecord(target.symbolRecord);
         report.enumMember = isEnumMemberRecord(target.symbolRecord);
         report.port = isPortRecord(target.symbolRecord);
-        report.effectiveValueStatus = effective.status;
+        const bool unboundInstanceValue =
+            (report.parameterLike || report.enumMember)
+            && effective.status == EffectiveValueStatus::Current
+            && effective.defaultEvaluation;
+        report.effectiveValueStatus =
+            unboundInstanceValue
+                ? EffectiveValueStatus::Unavailable
+                : effective.status;
         report.instanceBound = effective.instanceBound;
         report.defaultEvaluation = effective.defaultEvaluation;
         report.declarationText = effective.declarationText;
-        report.valueText = effective.valueText;
+        report.valueText =
+            unboundInstanceValue
+                ? QString()
+                : effective.valueText;
         report.expressionText = effective.expressionText;
         report.valueSource = effective.provenance;
         report.instancePath = effective.instancePath;
@@ -220,7 +230,11 @@ SymbolHoverReport SymbolHoverService::hoverForContext(
             !effective.bitWidthText.isEmpty()
                 ? effective.bitWidthText
                 : effective.enumUnderlyingBitWidthText;
-        report.evaluationFailureReason = effective.failureReason;
+        report.evaluationFailureReason =
+            unboundInstanceValue
+                ? QStringLiteral(
+                      "No current instance context is bound; the Slang default is not shown as an effective value.")
+                : effective.failureReason;
         report.typeText = report.resolvedTypeText.isEmpty()
             ? typeTextForRecord(target.symbolRecord)
             : report.resolvedTypeText;

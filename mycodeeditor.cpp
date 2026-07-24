@@ -2,6 +2,7 @@
 #include "editorruntime.h"
 #include "editorsemanticcontextservice.h"
 #include "sourcenavigationservice.h"
+#include "tsdocument.h"
 
 #include <QCheckBox>
 #include <QDialog>
@@ -14,6 +15,7 @@
 #include <QKeySequence>
 #include <QLabel>
 #include <QLineEdit>
+#include <QMenu>
 #include <QMouseEvent>
 #include <QPaintEvent>
 #include <QPushButton>
@@ -363,12 +365,14 @@ void MyCodeEditor::clear()
 void MyCodeEditor::undo()
 {
     auto edit = beginSynchronousEditTransaction();
+    state->clearVirtualCursor(this);
     QPlainTextEdit::undo();
 }
 
 void MyCodeEditor::redo()
 {
     auto edit = beginSynchronousEditTransaction();
+    state->clearVirtualCursor(this);
     QPlainTextEdit::redo();
 }
 
@@ -428,10 +432,21 @@ EditorHotPathMetrics MyCodeEditor::hotPathMetricsForTest() const
 {
     return state->hotPathMetricsForTest();
 }
+bool MyCodeEditor::inlineFilterTextOverlayActiveForTest() const
+{
+    return state->inlineFilterTextOverlayActiveForTest();
+}
+
 
 EditorOccurrenceIndexStats MyCodeEditor::occurrenceIndexStatsForTest() const
 {
     return state->occurrenceIndexStatsForTest();
+}
+
+QList<int> MyCodeEditor::occurrencePositionsForTest(
+    const QString& word) const
+{
+    return state->occurrencePositionsForTest(word);
 }
 
 void MyCodeEditor::resetHotPathMetricsForTest()
@@ -500,6 +515,7 @@ void MyCodeEditor::paintEvent(QPaintEvent *event)
     state->paintFoldPlaceholders(this, event);
     state->paintGhostAnnotations(this, event);
     state->paintColumnSelection(this, event);
+    state->paintDiagnosticOverview(this, event);
 }
 
 void MyCodeEditor::contextMenuEvent(QContextMenuEvent *event)
@@ -516,6 +532,22 @@ EditorSemanticContext MyCodeEditor::editorSemanticContextForPosition(
         this,
         cursorPosition,
         includeDocumentText);
+}
+
+bool MyCodeEditor::syntaxCommentAt(int cursorPosition) const
+{
+    const TSDocument* document = state->syntax.tsDocument();
+    return document && document->isCommentAt(cursorPosition);
+}
+
+GhostNumericLiteralReport MyCodeEditor::numericLiteralAt(
+    int cursorPosition) const
+{
+    return GhostAnnotationService::getInstance()->numericLiteralAt(
+        GhostNumericLiteralQuery{
+            state->syntax.tsDocument(),
+            cursorPosition
+        });
 }
 
 void MyCodeEditor::setDocumentFileName(QString fileName)
@@ -620,6 +652,21 @@ bool MyCodeEditor::columnSelectionActive() const
     return state->columnSelectionActiveForCommand();
 }
 
+bool MyCodeEditor::virtualCursorActiveForTest() const
+{
+    return state->virtualCursorActiveForTest();
+}
+
+int MyCodeEditor::virtualCursorLineForTest() const
+{
+    return state->virtualCursorLineForTest();
+}
+
+int MyCodeEditor::virtualCursorColumnForTest() const
+{
+    return state->virtualCursorColumnForTest();
+}
+
 QStringList MyCodeEditor::columnSelectionTexts() const
 {
     return state->columnSelectionRowTexts(const_cast<MyCodeEditor*>(this));
@@ -640,6 +687,26 @@ void MyCodeEditor::setDiagnosticHighlights(
     const QList<SemanticDiagnostic>& diagnostics)
 {
     state->setDiagnosticHighlights(this, diagnostics);
+}
+
+QString MyCodeEditor::diagnosticTooltipForLineForTest(
+    int zeroBasedLine) const
+{
+    return state->diagnosticTooltipForLine(zeroBasedLine);
+}
+
+QList<int> MyCodeEditor::diagnosticOverviewLinesForTest() const
+{
+    return state->diagnosticOverviewLinesForTest();
+}
+
+SemanticDiagnostic::Severity
+MyCodeEditor::diagnosticSeverityForLineForTest(
+    int zeroBasedLine,
+    bool* available) const
+{
+    return state->diagnosticSeverityForLineForTest(
+        zeroBasedLine, available);
 }
 
 void MyCodeEditor::setSemanticDecorations(
@@ -853,6 +920,93 @@ bool MyCodeEditor::clearSelectedAssignmentRhs(QString* message)
     return state->clearSelectedAssignmentRhs(this, message);
 }
 
+void MyCodeEditor::addStructuralContextMenuActions(
+    QMenu* menu,
+    int cursorPosition)
+{
+    state->addStructuralContextMenuActions(
+        this, menu, cursorPosition);
+}
+
+bool MyCodeEditor::editInstanceSlotsAtForTest(
+    int cursorPosition,
+    QString* message)
+{
+    return state->editInstanceSlotsAt(
+        this, cursorPosition, message);
+}
+
+QStringList MyCodeEditor::structuralContextMenuActionsForTest(
+    int cursorPosition)
+{
+    QMenu menu(this);
+    state->addStructuralContextMenuActions(
+        this, &menu, cursorPosition);
+    QStringList actions;
+    for (const QAction* action : menu.actions()) {
+        actions.append(action->isSeparator()
+                           ? QStringLiteral("<separator>")
+                           : action->text());
+    }
+    return actions;
+}
+
+QString MyCodeEditor::signalDefinitionCandidateForTest(
+    int cursorPosition,
+    QString* failureReason) const
+{
+    return state->signalDefinitionCandidateAt(
+        this, cursorPosition, failureReason);
+}
+
+bool MyCodeEditor::beginSignalDefinitionEditorForTest(
+    int cursorPosition,
+    QString* failureReason)
+{
+    return state->beginSignalDefinitionEditor(
+        this, cursorPosition, failureReason);
+}
+
+bool MyCodeEditor::confirmSignalDefinitionForTest(
+    const QString& declaration,
+    QString* failureReason)
+{
+    auto edit = beginSynchronousEditTransaction();
+    return state->confirmSignalDefinition(
+        this, declaration, failureReason);
+}
+
+bool MyCodeEditor::startSignalSelectionMode(QString* message)
+{
+    return state->startSignalSelectionMode(this, message);
+}
+
+bool MyCodeEditor::signalSelectionModeActiveForTest() const
+{
+    return state->signalSelectionModeActive();
+}
+
+QStringList MyCodeEditor::selectedSignalNamesForTest() const
+{
+    return state->selectedSignalNames();
+}
+
+bool MyCodeEditor::toggleSignalSelectionAtForTest(
+    int cursorPosition)
+{
+    return state->toggleSignalSelectionAt(
+        this, cursorPosition, true);
+}
+
+bool MyCodeEditor::createAssignmentQueueAtForTest(
+    int cursorPosition,
+    QString* message)
+{
+    auto edit = beginSynchronousEditTransaction();
+    return state->createAssignmentQueueAt(
+        this, cursorPosition, message);
+}
+
 void MyCodeEditor::highlightSearchMatches(
     const QString& text,
     bool caseSensitive)
@@ -906,6 +1060,11 @@ void MyCodeEditor::keyPressEvent(QKeyEvent *event)
 void MyCodeEditor::inputMethodEvent(QInputMethodEvent* event)
 {
     auto edit = beginSynchronousEditTransaction();
+    if (event
+        && (!event->commitString().isEmpty()
+            || !event->preeditString().isEmpty())) {
+        state->prepareVirtualCursorInput(this);
+    }
     QPlainTextEdit::inputMethodEvent(event);
 }
 
@@ -966,6 +1125,12 @@ QList<GhostAnnotation> MyCodeEditor::ghostAnnotationsForTest() const
 QString MyCodeEditor::syntaxTextForTest() const
 {
     return state->syntaxTextForTest();
+}
+
+EditorLargeFileSyntaxScopeSnapshot
+MyCodeEditor::largeFileSyntaxScopeForTest() const
+{
+    return state->largeFileSyntaxScopeForTest();
 }
 
 FoldShelfItem MyCodeEditor::foldShelfItemAtLineForTest(

@@ -116,7 +116,6 @@ void EditorHoverPopup::showHover(const SymbolHoverReport& report,
         };
 
         addField(QStringLiteral("kind"), report.displayKind);
-        addField(QStringLiteral("source"), report.sourceRole);
         addField(QStringLiteral("owner"), report.ownerName);
 
         QFont codeFont = editorFont;
@@ -136,7 +135,16 @@ void EditorHoverPopup::showHover(const SymbolHoverReport& report,
         if (staleEffectiveValue
             && (report.parameterLike || report.enumMember || report.port)) {
             addLabel(QStringLiteral(
-                         "effective value stale; waiting for the current document revision"),
+                         "effective value: stale (waiting for the current document revision)"),
+                     QStringLiteral("color: palette(mid);"),
+                     editorFont);
+        }
+        const bool unavailableEffectiveValue =
+            report.effectiveValueStatus == EffectiveValueStatus::Unavailable
+            || report.effectiveValueStatus == EffectiveValueStatus::Error;
+        if (unavailableEffectiveValue
+            && (report.parameterLike || report.enumMember || report.port)) {
+            addLabel(QStringLiteral("effective value: unavailable"),
                      QStringLiteral("color: palette(mid);"),
                      editorFont);
         }

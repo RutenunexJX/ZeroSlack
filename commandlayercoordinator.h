@@ -111,6 +111,7 @@ private:
     void handleGoEndmodule(MyCodeEditor* editor);
     void handleClearRight(MyCodeEditor* editor);
     void handleSelectBeginEnd(MyCodeEditor* editor);
+    void handleSelectSignals(MyCodeEditor* editor);
 
     void openColumnNumberToolForCurrentEditor();
     void handleColumnNumberTool(MyCodeEditor* editor);

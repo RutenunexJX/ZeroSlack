@@ -22,6 +22,24 @@ struct TSModuleEndNavigationTarget;
 struct TSAlwaysScopeTarget;
 struct TSModuleScopeTarget;
 struct TSBeginEndInsideTarget;
+struct TSIdentifierTarget;
+struct EditorLargeFileSyntaxScopeSnapshot {
+    int startPosition = -1;
+    int endPosition = -1;
+    int startLine = 0;
+    int documentLength = 0;
+    QString text;
+
+    bool valid() const
+    {
+        return startPosition >= 0
+            && endPosition == startPosition + text.size()
+            && documentLength >= endPosition;
+    }
+};
+
+struct TSInstantiationTarget;
+struct TSUndefinedSignalContext;
 
 class EditorSyntaxState
 {
@@ -50,15 +68,23 @@ public:
         int selectionStartChar,
         int selectionEndChar,
         const QString& currentText,
+        int currentTextLength,
         bool allowLargeFileScopeBuild) const;
     TSModuleScopeTarget moduleScopeTargetAt(
         int cursorChar,
         int selectionStartChar,
         int selectionEndChar,
         const QString& currentText,
+        int currentTextLength,
         bool allowLargeFileScopeBuild) const;
     TSBeginEndInsideTarget beginEndInsideTargetAt(int cursorChar) const;
+    TSIdentifierTarget identifierAt(int cursorChar) const;
+    TSInstantiationTarget instantiationAt(int cursorChar) const;
+    TSUndefinedSignalContext undefinedSignalContextAt(
+        int cursorChar) const;
     const TSDocument* tsDocument() const;
+    EditorLargeFileSyntaxScopeSnapshot largeFileScopeSnapshotForTest() const;
+    bool usesLargeFileScopedSyntax() const;
 
 private:
     std::unique_ptr<TSDocument> document;
@@ -73,6 +99,7 @@ private:
     void invalidateLargeFileScope();
     void applyLargeFileScopeChange(const DocumentChange& change);
     bool ensureLargeFileScope(const QString& currentText,
+                              int currentTextLength,
                               int cursorChar,
                               bool allowBuild) const;
 };

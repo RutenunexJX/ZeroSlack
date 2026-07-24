@@ -77,22 +77,85 @@ bool appendDiagnostics(const slang::SourceManager& sourceManager,
             continue;
 
         SemanticDiagnostic item;
-        item.fileName = normalizedDiagnosticSourcePath(
-            slang_symbols::detail::sourceIdentityFileName(
-                &sourceManager, diagnostic.location));
-        const size_t line = sourceManager.getLineNumber(diagnostic.location);
-        const size_t column = sourceManager.getColumnNumber(diagnostic.location);
-        item.line = line == 0 ? 1 : static_cast<int>(line);
-        item.column = column == 0 ? 1 : static_cast<int>(column);
+        const slang_symbols::detail::QTextDocumentSourcePosition location =
+            slang_symbols::detail::qTextDocumentSourcePosition(
+                &sourceManager, diagnostic.location);
+        item.fileName = normalizedDiagnosticSourcePath(location.fileName);
+        item.line = location.line > 0 ? location.line : 1;
+        item.column = location.column > 0 ? location.column : 1;
         item.message = QString::fromStdString(engine.formatMessage(diagnostic));
+        item.codeName = QString::fromStdString(
+            std::string(slang::toString(diagnostic.code)));
         item.severity = mapDiagnosticSeverity(severity);
         item.owner = SemanticDiagnostic::SlangCompiler;
 
-        const QString key = QStringLiteral("%1:%2:%3:%4:%5")
+        slang::SmallVector<slang::SourceRange> mappedRanges;
+        engine.mapSourceRanges(diagnostic.location,
+                               diagnostic.ranges,
+                               mappedRanges);
+        for (const slang::SourceRange& mappedRange : mappedRanges) {
+            if (!mappedRange.start().valid()
+                || !mappedRange.end().valid()) {
+                continue;
+            }
+            const auto start =
+                slang_symbols::detail::qTextDocumentSourcePosition(
+                    &sourceManager, mappedRange.start());
+            const auto end =
+                slang_symbols::detail::qTextDocumentSourcePosition(
+                    &sourceManager, mappedRange.end());
+            if (!start.isValid()
+                || !end.isValid()
+                || end.position <= start.position) {
+                continue;
+            }
+            const QString rangeFile =
+                normalizedDiagnosticSourcePath(start.fileName);
+            if (diagnosticSourceLookupKey(rangeFile)
+                != diagnosticSourceLookupKey(item.fileName)) {
+                continue;
+            }
+
+            SemanticSourceRange range;
+            range.fileName = rangeFile;
+            range.line = start.line;
+            range.column = start.column;
+            range.endLine = end.line;
+            range.endColumn = end.column;
+            range.position = start.position;
+            range.length = end.position - start.position;
+            item.ranges.append(range);
+        }
+
+        if (!item.ranges.isEmpty()) {
+            const SemanticSourceRange* primary = &item.ranges.first();
+            for (const SemanticSourceRange& range : item.ranges) {
+                if (location.position >= range.position
+                    && location.position
+                        < range.position + range.length) {
+                    primary = &range;
+                    break;
+                }
+            }
+            item.line = primary->line;
+            item.column = primary->column;
+        }
+
+        QStringList rangeKeys;
+        rangeKeys.reserve(item.ranges.size());
+        for (const SemanticSourceRange& range : item.ranges) {
+            rangeKeys.append(
+                QStringLiteral("%1+%2")
+                    .arg(range.position)
+                    .arg(range.length));
+        }
+        const QString key = QStringLiteral("%1:%2:%3:%4:%5:%6:%7")
                                 .arg(item.fileName)
                                 .arg(item.line)
                                 .arg(item.column)
                                 .arg(static_cast<int>(item.severity))
+                                .arg(item.codeName)
+                                .arg(rangeKeys.join(QLatin1Char(',')))
                                 .arg(item.message);
         if (seen->contains(key))
             continue;

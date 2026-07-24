@@ -41,6 +41,17 @@ struct EditorHotPathMetrics {
     std::uint64_t cachedTextSliceReads = 0;
     std::uint64_t cachedTextSliceCharacters = 0;
     std::uint64_t gutterBlockProbes = 0;
+    std::uint64_t inlineFilterKeyEvents = 0;
+    std::uint64_t inlineFilterRefreshes = 0;
+    std::uint64_t inlineFilterServiceQueries = 0;
+    std::uint64_t inlineFilterModelUpdates = 0;
+    std::uint64_t inlineFilterHighlightUpdates = 0;
+    std::uint64_t inlineFilterPopupCompletes = 0;
+    std::uint64_t inlineFilterRetainedDocumentCharactersPeak = 0;
+    std::uint64_t inlineFilterOverlaySessions = 0;
+    std::uint64_t inlineFilterOverlayEdits = 0;
+    std::uint64_t inlineFilterOverlayMaterializations = 0;
+    std::uint64_t inlineFilterOverlayForcedTextReads = 0;
 };
 
 Q_DECLARE_METATYPE(DocumentChange)

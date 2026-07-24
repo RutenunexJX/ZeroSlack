@@ -1136,6 +1136,9 @@ void CommandLayerCoordinator::executeCommand(
     case CommandLayerCommandId::SelectBeginEnd:
         handleSelectBeginEnd(editor);
         return;
+    case CommandLayerCommandId::SelectSignals:
+        handleSelectSignals(editor);
+        return;
     case CommandLayerCommandId::Help:
         showHelp();
         return;
@@ -1270,6 +1273,19 @@ void CommandLayerCoordinator::handleSelectBeginEnd(MyCodeEditor* editor)
     if (!editor || !editor->selectInsideBeginEnd(&message)) {
         if (message.isEmpty())
             message = QStringLiteral("No begin-end block");
+        reportFailure(editor, message);
+        completeCommand(message);
+        return;
+    }
+    completeCommand();
+}
+
+void CommandLayerCoordinator::handleSelectSignals(MyCodeEditor* editor)
+{
+    QString message;
+    if (!editor || !editor->startSignalSelectionMode(&message)) {
+        if (message.isEmpty())
+            message = QStringLiteral("Signal selection is unavailable");
         reportFailure(editor, message);
         completeCommand(message);
         return;

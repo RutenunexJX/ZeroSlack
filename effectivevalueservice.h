@@ -135,6 +135,7 @@ struct EffectiveValueFact {
 struct EffectiveLiteralResult {
     bool available = false;
     QString valueText;
+    QStringList radixRepresentations;
     QString bitWidthText;
     QString signednessText;
     QString failureReason;

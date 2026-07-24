@@ -2,6 +2,8 @@
 
 #include "mycodeeditor.h"
 
+#include "definitionservice.h"
+#include "effectivevalueservice.h"
 #include "rtlbatcheditservice.h"
 
 #include <QApplication>
@@ -16,7 +18,9 @@
 #include <QInputDialog>
 #include <QHash>
 #include <QKeyEvent>
+#include <QKeySequence>
 #include <QLineEdit>
+#include <QMenu>
 #include <QMessageBox>
 #include <QMouseEvent>
 #include <QPainter>
@@ -24,14 +28,19 @@
 #include <QPalette>
 #include <QPlainTextEdit>
 #include <QPoint>
+#include <QPolygon>
 #include <QPushButton>
 #include <QRect>
+#include <QScrollBar>
+#include <QShortcut>
 #include <QTextBlock>
 #include <QTextCharFormat>
 #include <QTextCursor>
 #include <QTextDocument>
 #include <QTextEdit>
+#include <QTextLayout>
 #include <QTimer>
+#include <QToolTip>
 #include <QStringList>
 #include <QtConcurrent/QtConcurrentRun>
 
@@ -41,13 +50,44 @@
 #include "tsdocument.h"
 
 namespace {
-constexpr int kColumnSelectionProperty = QTextFormat::UserProperty + 20;
-constexpr int kColumnSelectionMarker = 1020;
 constexpr int kManualIndentWidth = 4;
 constexpr const char* kDiagnosticsEmptyProperty =
     "zeroslackDiagnosticsSelectionsEmpty";
 constexpr const char* kSemanticDecorationsEmptyProperty =
     "zeroslackSemanticDecorationsEmpty";
+
+int diagnosticSeverityRank(SemanticDiagnostic::Severity severity)
+{
+    switch (severity) {
+    case SemanticDiagnostic::Error:
+        return 2;
+    case SemanticDiagnostic::Warning:
+        return 1;
+    case SemanticDiagnostic::Info:
+    default:
+        return 0;
+    }
+}
+
+QColor diagnosticSeverityColor(SemanticDiagnostic::Severity severity)
+{
+    return severity == SemanticDiagnostic::Error
+        ? QColor(QStringLiteral("#EF4444"))
+        : QColor(QStringLiteral("#FBBF24"));
+}
+
+QString diagnosticSeverityLabel(SemanticDiagnostic::Severity severity)
+{
+    switch (severity) {
+    case SemanticDiagnostic::Error:
+        return QStringLiteral("Error");
+    case SemanticDiagnostic::Warning:
+        return QStringLiteral("Warning");
+    case SemanticDiagnostic::Info:
+    default:
+        return QStringLiteral("Info");
+    }
+}
 
 QString insertedDocumentText(QTextDocument* document,
                              int position,
@@ -1676,44 +1716,114 @@ int offsetForVisualColumn(const QString& text,
     return text.size();
 }
 
-QString visualSlice(const QString& text,
-                    int leftVisual,
-                    int rightVisual,
-                    int tabWidth)
+qreal editorSpaceAdvance(const MyCodeEditor* editor)
 {
-    const int left = qMax(0, leftVisual);
-    const int right = qMax(left, rightVisual);
-    if (right <= left)
-        return QString();
+    if (!editor)
+        return 1.0;
+    const QFontMetricsF metrics(editor->font());
+    return qMax<qreal>(
+        1.0, metrics.horizontalAdvance(QLatin1Char(' ')));
+}
 
-    QString result;
-    int visual = 0;
-    for (const QChar ch : text) {
-        const int next = visual + visualAdvanceForChar(ch, visual, tabWidth);
-        if (next <= left) {
-            visual = next;
-            continue;
-        }
-        if (visual >= right)
-            break;
+QTextLine blockTextLine(const QTextBlock& block)
+{
+    QTextLayout* layout =
+        block.isValid() ? block.layout() : nullptr;
+    if (!layout || layout->lineCount() <= 0)
+        return {};
+    return layout->lineAt(0);
+}
 
-        const int segmentStart = qMax(left, visual);
-        const int segmentEnd = qMin(right, next);
-        if (segmentEnd > segmentStart) {
-            if (ch == QLatin1Char('\t')
-                || segmentStart != visual
-                || segmentEnd != next) {
-                result += QString(segmentEnd - segmentStart,
-                                  QLatin1Char(' '));
-            } else {
-                result += ch;
-            }
-        }
-        visual = next;
+qreal blockTextXForOffset(const QTextBlock& block,
+                          int offset)
+{
+    const QTextLine line = blockTextLine(block);
+    if (!line.isValid())
+        return -1.0;
+    int bounded = qBound(0, offset, block.text().size());
+    int zero = 0;
+    return line.cursorToX(&bounded, QTextLine::Leading)
+        - line.cursorToX(&zero, QTextLine::Leading);
+}
+
+int layoutVisualColumnForOffset(
+    const MyCodeEditor* editor,
+    const QTextBlock& block,
+    int offset)
+{
+    const qreal x = blockTextXForOffset(block, offset);
+    if (x < 0.0) {
+        return visualColumnForOffset(
+            block.text(),
+            offset,
+            editorTabStopColumns(editor));
     }
-    if (right > visual && right > left)
-        result += QString(right - qMax(left, visual), QLatin1Char(' '));
-    return result;
+    return qMax(0, qRound(x / editorSpaceAdvance(editor)));
+}
+
+int layoutOffsetForVisualColumn(
+    const MyCodeEditor* editor,
+    const QTextBlock& block,
+    int visualColumn,
+    VisualBoundary boundary)
+{
+    const QTextLine line = blockTextLine(block);
+    if (!line.isValid()) {
+        return offsetForVisualColumn(
+            block.text(),
+            visualColumn,
+            editorTabStopColumns(editor),
+            boundary);
+    }
+
+    int zero = 0;
+    const qreal zeroX =
+        line.cursorToX(&zero, QTextLine::Leading);
+    const qreal targetX =
+        zeroX
+        + qMax(0, visualColumn)
+              * editorSpaceAdvance(editor);
+    int offset = line.xToCursor(
+        targetX,
+        QTextLine::CursorBetweenCharacters);
+    offset = qBound(0, offset, block.text().size());
+    int probe = offset;
+    const qreal offsetX =
+        line.cursorToX(&probe, QTextLine::Leading);
+    if (boundary == VisualBoundary::Start
+        && offsetX > targetX
+        && offset > 0) {
+        --offset;
+    } else if (boundary == VisualBoundary::End
+               && offsetX < targetX
+               && offset < block.text().size()) {
+        ++offset;
+    }
+    return qBound(0, offset, block.text().size());
+}
+
+QString layoutVisualSlice(const MyCodeEditor* editor,
+                          const QTextBlock& block,
+                          int leftVisual,
+                          int rightVisual)
+{
+    if (!block.isValid() || rightVisual <= leftVisual)
+        return QString();
+    const int lineEndVisual =
+        layoutVisualColumnForOffset(
+            editor, block, block.text().size());
+    const int boundedLeft =
+        qMin(qMax(0, leftVisual), lineEndVisual);
+    const int boundedRight =
+        qMin(qMax(boundedLeft, rightVisual),
+             lineEndVisual);
+    if (boundedRight <= boundedLeft)
+        return QString();
+    const int start = layoutOffsetForVisualColumn(
+        editor, block, boundedLeft, VisualBoundary::Start);
+    const int end = layoutOffsetForVisualColumn(
+        editor, block, boundedRight, VisualBoundary::End);
+    return block.text().mid(start, qMax(0, end - start));
 }
 
 int visualWidthOfText(const QString& text, int startVisual, int tabWidth)
@@ -1749,11 +1859,11 @@ void setCaretToVisualColumn(MyCodeEditor* editor, int line, int visualColumn)
     const QTextBlock block = editor->document()->findBlockByNumber(line);
     if (!block.isValid())
         return;
-    const int tabWidth = editorTabStopColumns(editor);
-    const int offset = offsetForVisualColumn(block.text(),
-                                             visualColumn,
-                                             tabWidth,
-                                             VisualBoundary::Start);
+    const int offset = layoutOffsetForVisualColumn(
+        editor,
+        block,
+        visualColumn,
+        VisualBoundary::Start);
     QTextCursor caret(editor->document());
     caret.setPosition(block.position() + offset);
     editor->setTextCursor(caret);
@@ -1768,17 +1878,16 @@ QString columnSelectionClipboardText(MyCodeEditor* editor,
     QStringList rows;
     const auto [firstLine, lastLine] = lineSpan(state);
     const auto [leftColumn, rightColumn] = columnSpan(state);
-    const int tabWidth = editorTabStopColumns(editor);
     for (int line = firstLine; line <= lastLine; ++line) {
         const QTextBlock block = editor->document()->findBlockByNumber(line);
         if (!block.isValid()) {
             rows.append(QString());
             continue;
         }
-        rows.append(visualSlice(block.text(),
-                                leftColumn,
-                                rightColumn,
-                                tabWidth));
+        rows.append(layoutVisualSlice(editor,
+                                      block,
+                                      leftColumn,
+                                      rightColumn));
     }
     return rows.join(QLatin1Char('\n'));
 }
@@ -1792,15 +1901,14 @@ QStringList columnSelectionRowTexts(MyCodeEditor* editor,
     QStringList rows;
     const auto [firstLine, lastLine] = lineSpan(state);
     const auto [leftColumn, rightColumn] = columnSpan(state);
-    const int tabWidth = editorTabStopColumns(editor);
     rows.reserve(lastLine - firstLine + 1);
     for (int line = firstLine; line <= lastLine; ++line) {
         const QTextBlock block = editor->document()->findBlockByNumber(line);
         rows.append(block.isValid()
-                        ? visualSlice(block.text(),
-                                      leftColumn,
-                                      rightColumn,
-                                      tabWidth)
+                        ? layoutVisualSlice(editor,
+                                            block,
+                                            leftColumn,
+                                            rightColumn)
                         : QString());
     }
     return rows;
@@ -1846,17 +1954,14 @@ void replaceColumnSelectionRows(MyCodeEditor* editor,
 
         const QString lineText = block.text();
         const int lineEndVisual =
-            visualColumnForOffset(lineText, lineText.size(), tabWidth);
-        const int startColumn = offsetForVisualColumn(lineText,
-                                                      leftColumn,
-                                                      tabWidth,
-                                                      VisualBoundary::Start);
+            layoutVisualColumnForOffset(
+                editor, block, lineText.size());
+        const int startColumn = layoutOffsetForVisualColumn(
+            editor, block, leftColumn, VisualBoundary::Start);
         int endColumn = startColumn;
         if (hasWidth)
-            endColumn = offsetForVisualColumn(lineText,
-                                              rightColumn,
-                                              tabWidth,
-                                              VisualBoundary::End);
+            endColumn = layoutOffsetForVisualColumn(
+                editor, block, rightColumn, VisualBoundary::End);
 
         cursor.setPosition(block.position() + startColumn);
         cursor.setPosition(block.position() + qMax(startColumn, endColumn),
@@ -1893,25 +1998,6 @@ void replaceColumnSelectionRows(MyCodeEditor* editor,
     editor->viewport()->update();
 }
 
-void removeColumnSelections(MyCodeEditor* editor)
-{
-    if (!editor)
-        return;
-
-    QList<QTextEdit::ExtraSelection> selections = editor->extraSelections();
-    selections.erase(
-        std::remove_if(selections.begin(),
-                       selections.end(),
-                       [](const QTextEdit::ExtraSelection& selection) {
-                           return selection.format
-                                      .property(kColumnSelectionProperty)
-                                      .toInt()
-                                  == kColumnSelectionMarker;
-                       }),
-        selections.end());
-    editor->setExtraSelections(selections);
-}
-
 void clearColumnSelection(MyCodeEditor* editor, MyCodeEditorState& state)
 {
     state.columnSelectionActive = false;
@@ -1922,9 +2008,10 @@ void clearColumnSelection(MyCodeEditor* editor, MyCodeEditorState& state)
     state.columnAnchorColumn = -1;
     state.columnCurrentLine = -1;
     state.columnCurrentColumn = -1;
-    removeColumnSelections(editor);
-    if (editor)
+    if (editor) {
         editor->viewport()->setCursor(Qt::IBeamCursor);
+        editor->viewport()->update();
+    }
 }
 
 void updateColumnSelectionHighlight(MyCodeEditor* editor,
@@ -1933,47 +2020,7 @@ void updateColumnSelectionHighlight(MyCodeEditor* editor,
     if (!editor)
         return;
 
-    removeColumnSelections(editor);
-    if (!hasColumnSelection(state))
-        return;
-
-    const auto [firstLine, lastLine] = lineSpan(state);
-    const auto [leftColumn, rightColumn] = columnSpan(state);
-    if (leftColumn == rightColumn)
-        return;
-
-    const int tabWidth = editorTabStopColumns(editor);
-    QList<QTextEdit::ExtraSelection> selections = editor->extraSelections();
-    for (int line = firstLine; line <= lastLine; ++line) {
-        const QTextBlock block = editor->document()->findBlockByNumber(line);
-        if (!block.isValid())
-            continue;
-
-        const QString lineText = block.text();
-        const int startColumn = offsetForVisualColumn(lineText,
-                                                      leftColumn,
-                                                      tabWidth,
-                                                      VisualBoundary::Start);
-        const int visibleEndColumn = offsetForVisualColumn(lineText,
-                                                           rightColumn,
-                                                           tabWidth,
-                                                           VisualBoundary::End);
-        if (visibleEndColumn <= startColumn)
-            continue;
-
-        QTextCursor cursor(block);
-        cursor.setPosition(block.position() + startColumn);
-        cursor.setPosition(block.position() + visibleEndColumn,
-                           QTextCursor::KeepAnchor);
-
-        QTextEdit::ExtraSelection selection;
-        selection.cursor = cursor;
-        selection.format.setBackground(QColor(37, 99, 235, 80));
-        selection.format.setProperty(kColumnSelectionProperty,
-                                     kColumnSelectionMarker);
-        selections.append(selection);
-    }
-    editor->setExtraSelections(selections);
+    editor->viewport()->update();
 }
 
 void setColumnPointFromCursor(const MyCodeEditor* editor,
@@ -1986,11 +2033,112 @@ void setColumnPointFromCursor(const MyCodeEditor* editor,
     if (line)
         *line = cursor.block().blockNumber();
     if (column) {
-        *column = visualColumnForOffset(
-            cursor.block().text(),
-            qMax(0, cursor.position() - cursor.block().position()),
-            editorTabStopColumns(editor));
+        *column = layoutVisualColumnForOffset(
+            editor,
+            cursor.block(),
+            qMax(0,
+                 cursor.position()
+                     - cursor.block().position()));
     }
+}
+
+bool columnPointFromMouse(MyCodeEditor* editor,
+                          const QPoint& position,
+                          int* line,
+                          int* column,
+                          bool* beyondLineEnd = nullptr)
+{
+    if (!editor || !editor->document())
+        return false;
+    const QTextCursor rowCursor =
+        editor->cursorForPosition(QPoint(0, position.y()));
+    const QTextBlock block = rowCursor.block();
+    if (!block.isValid() || !block.isVisible())
+        return false;
+    const EditorBlockGeometry geometry =
+        editor->blockGeometry(block.blockNumber());
+    if (position.y() < geometry.top
+        || position.y() > geometry.top + geometry.height) {
+        return false;
+    }
+
+    QTextCursor startCursor(block);
+    startCursor.setPosition(block.position());
+    QTextCursor endCursor(block);
+    endCursor.setPosition(
+        block.position() + block.text().size());
+    const qreal startX =
+        editor->cursorRect(startCursor).left();
+    const qreal endX =
+        editor->cursorRect(endCursor).left();
+    const qreal space = editorSpaceAdvance(editor);
+    const int targetColumn = qMax(
+        0, qRound((position.x() - startX) / space));
+    if (line)
+        *line = block.blockNumber();
+    if (column)
+        *column = targetColumn;
+    if (beyondLineEnd) {
+        *beyondLineEnd =
+            position.x() > endX + space * 0.25;
+    }
+    return true;
+}
+
+bool handlePlainVirtualCursorClick(
+    MyCodeEditor* editor,
+    QMouseEvent* event,
+    MyCodeEditorState& state)
+{
+    if (!editor || !event
+        || event->button() != Qt::LeftButton
+        || event->modifiers() != Qt::NoModifier) {
+        return false;
+    }
+
+    int line = -1;
+    int column = -1;
+    bool beyond = false;
+    if (!columnPointFromMouse(
+            editor,
+            event->position().toPoint(),
+            &line,
+            &column,
+            &beyond)) {
+        state.clearVirtualCursor(editor);
+        return false;
+    }
+    if (!beyond) {
+        state.clearVirtualCursor(editor);
+        return false;
+    }
+
+    const QTextBlock block =
+        editor->document()->findBlockByNumber(line);
+    if (!block.isValid())
+        return false;
+    const int lineEndColumn =
+        layoutVisualColumnForOffset(
+            editor, block, block.text().size());
+    if (column <= lineEndColumn)
+        column = lineEndColumn + 1;
+
+    if (state.columnSelectionActive)
+        clearColumnSelection(editor, state);
+    state.clearVirtualCursor(editor);
+    QTextCursor cursor(block);
+    cursor.setPosition(
+        block.position() + block.text().size());
+    editor->setTextCursor(cursor);
+    state.virtualCursorSavedWidth =
+        qMax(1, editor->cursorWidth());
+    state.virtualCursorActive = true;
+    state.virtualCursorLine = line;
+    state.virtualCursorColumn = column;
+    editor->setCursorWidth(0);
+    editor->viewport()->update();
+    event->accept();
+    return true;
 }
 
 bool beginColumnSelection(MyCodeEditor* editor,
@@ -2004,13 +2152,18 @@ bool beginColumnSelection(MyCodeEditor* editor,
         return false;
     }
 
-    const QTextCursor cursor =
-        editor->cursorForPosition(event->position().toPoint());
+    int currentLine = -1;
+    int currentColumn = -1;
+    if (!columnPointFromMouse(
+            editor,
+            event->position().toPoint(),
+            &currentLine,
+            &currentColumn)) {
+        return false;
+    }
     if (state.columnSelectionActive) {
-        setColumnPointFromCursor(editor,
-                                 cursor,
-                                 &state.columnCurrentLine,
-                                 &state.columnCurrentColumn);
+        state.columnCurrentLine = currentLine;
+        state.columnCurrentColumn = currentColumn;
         state.columnSelectionAwaitingEndpoint = false;
         state.columnSelectionDragging = false;
         state.columnSelectionDragMoved = false;
@@ -2021,19 +2174,26 @@ bool beginColumnSelection(MyCodeEditor* editor,
         return true;
     }
 
+    const bool virtualAnchor = state.virtualCursorActive;
+    const int virtualAnchorLine = state.virtualCursorLine;
+    const int virtualAnchorColumn = state.virtualCursorColumn;
     const QTextCursor anchor = editor->textCursor();
     state.columnSelectionActive = true;
     state.columnSelectionDragging = false;
     state.columnSelectionAwaitingEndpoint = false;
     state.columnSelectionDragMoved = false;
-    setColumnPointFromCursor(editor,
-                             anchor,
-                             &state.columnAnchorLine,
-                             &state.columnAnchorColumn);
-    setColumnPointFromCursor(editor,
-                             cursor,
-                             &state.columnCurrentLine,
-                             &state.columnCurrentColumn);
+    if (virtualAnchor) {
+        state.columnAnchorLine = virtualAnchorLine;
+        state.columnAnchorColumn = virtualAnchorColumn;
+    } else {
+        setColumnPointFromCursor(editor,
+                                 anchor,
+                                 &state.columnAnchorLine,
+                                 &state.columnAnchorColumn);
+    }
+    state.columnCurrentLine = currentLine;
+    state.columnCurrentColumn = currentColumn;
+    state.clearVirtualCursor(editor);
     updateColumnSelectionHighlight(editor, state);
     editor->viewport()->setCursor(Qt::CrossCursor);
     editor->viewport()->update();
@@ -2097,14 +2257,13 @@ bool updateColumnSelectionDrag(MyCodeEditor* editor,
     if (!event->buttons().testFlag(Qt::LeftButton))
         return false;
 
-    const QTextCursor cursor =
-        editor->cursorForPosition(event->position().toPoint());
     state.columnSelectionDragMoved = true;
     state.columnSelectionAwaitingEndpoint = false;
-    setColumnPointFromCursor(editor,
-                             cursor,
-                             &state.columnCurrentLine,
-                             &state.columnCurrentColumn);
+    columnPointFromMouse(
+        editor,
+        event->position().toPoint(),
+        &state.columnCurrentLine,
+        &state.columnCurrentColumn);
     updateColumnSelectionHighlight(editor, state);
     editor->viewport()->update();
     event->accept();
@@ -2119,12 +2278,11 @@ bool endColumnSelectionDrag(MyCodeEditor* editor,
         return false;
 
     if (state.columnSelectionDragMoved) {
-        const QTextCursor cursor =
-            editor->cursorForPosition(event->position().toPoint());
-        setColumnPointFromCursor(editor,
-                                 cursor,
-                                 &state.columnCurrentLine,
-                                 &state.columnCurrentColumn);
+        columnPointFromMouse(
+            editor,
+            event->position().toPoint(),
+            &state.columnCurrentLine,
+            &state.columnCurrentColumn);
         state.columnSelectionAwaitingEndpoint = false;
         updateColumnSelectionHighlight(editor, state);
     }
@@ -2198,48 +2356,34 @@ bool handleColumnSelectionKeyInput(MyCodeEditor* editor,
 
         const QString lineText = block.text();
         const int lineEndVisual =
-            visualColumnForOffset(lineText, lineText.size(), tabWidth);
-        int startColumn = offsetForVisualColumn(lineText,
-                                                editColumn,
-                                                tabWidth,
-                                                VisualBoundary::Start);
+            layoutVisualColumnForOffset(
+                editor, block, lineText.size());
+        int startColumn = layoutOffsetForVisualColumn(
+            editor, block, editColumn, VisualBoundary::Start);
         int endColumn = startColumn;
         if (hasWidth) {
-            startColumn = offsetForVisualColumn(lineText,
-                                                leftColumn,
-                                                tabWidth,
-                                                VisualBoundary::Start);
-            endColumn = offsetForVisualColumn(lineText,
-                                              rightColumn,
-                                              tabWidth,
-                                              VisualBoundary::End);
+            startColumn = layoutOffsetForVisualColumn(
+                editor, block, leftColumn, VisualBoundary::Start);
+            endColumn = layoutOffsetForVisualColumn(
+                editor, block, rightColumn, VisualBoundary::End);
         } else if (deleteKey && leftColumn < lineEndVisual) {
-            startColumn = offsetForVisualColumn(lineText,
-                                                leftColumn,
-                                                tabWidth,
-                                                VisualBoundary::Start);
-            endColumn = offsetForVisualColumn(lineText,
-                                              leftColumn + 1,
-                                              tabWidth,
-                                              VisualBoundary::End);
+            startColumn = layoutOffsetForVisualColumn(
+                editor, block, leftColumn, VisualBoundary::Start);
+            endColumn = layoutOffsetForVisualColumn(
+                editor, block, leftColumn + 1, VisualBoundary::End);
         } else if (backspace && leftColumn > 0 && editColumn < lineEndVisual) {
-            startColumn = offsetForVisualColumn(lineText,
-                                                editColumn,
-                                                tabWidth,
-                                                VisualBoundary::Start);
-            endColumn = offsetForVisualColumn(lineText,
-                                              leftColumn,
-                                              tabWidth,
-                                              VisualBoundary::End);
+            startColumn = layoutOffsetForVisualColumn(
+                editor, block, editColumn, VisualBoundary::Start);
+            endColumn = layoutOffsetForVisualColumn(
+                editor, block, leftColumn, VisualBoundary::End);
         } else if (backwardTab && leftColumn > backwardTargetColumn) {
-            startColumn = offsetForVisualColumn(lineText,
-                                                backwardTargetColumn,
-                                                tabWidth,
-                                                VisualBoundary::Start);
-            endColumn = offsetForVisualColumn(lineText,
-                                              leftColumn,
-                                              tabWidth,
-                                              VisualBoundary::End);
+            startColumn = layoutOffsetForVisualColumn(
+                editor,
+                block,
+                backwardTargetColumn,
+                VisualBoundary::Start);
+            endColumn = layoutOffsetForVisualColumn(
+                editor, block, leftColumn, VisualBoundary::End);
         }
 
         cursor.setPosition(block.position() + startColumn);
@@ -2358,59 +2502,167 @@ int xForVisualColumn(MyCodeEditor* editor,
     if (!editor || !block.isValid())
         return 0;
 
-    const int tabWidth = editorTabStopColumns(editor);
-    const QString text = block.text();
-    const int offset = offsetForVisualColumn(text,
-                                             visualColumn,
-                                             tabWidth,
-                                             VisualBoundary::Start);
     QTextCursor cursor(block);
-    cursor.setPosition(block.position() + offset);
-    QRect rect = editor->cursorRect(cursor);
-    const int offsetVisual = visualColumnForOffset(text, offset, tabWidth);
-    if (visualColumn > offsetVisual) {
-        const QFontMetrics metrics(editor->font());
-        rect.translate(metrics.horizontalAdvance(QLatin1Char(' '))
-                           * (visualColumn - offsetVisual),
-                       0);
-    }
-    return rect.left();
+    cursor.setPosition(block.position());
+    const QRect rect = editor->cursorRect(cursor);
+    return qRound(
+        rect.left()
+        + qMax(0, visualColumn)
+              * editorSpaceAdvance(editor));
 }
 
 void paintColumnSelectionOverlay(MyCodeEditor* editor,
                                  const MyCodeEditorState& state,
                                  QPaintEvent* event)
 {
-    if (!editor || !event || !hasColumnSelection(state))
+    if (!editor || !event)
         return;
 
-    const auto [leftColumn, rightColumn] = columnSpan(state);
-    if (leftColumn != rightColumn)
+    const bool columnMode = hasColumnSelection(state);
+    if (!columnMode && !state.virtualCursorActive)
         return;
 
-    const auto [firstLine, lastLine] = lineSpan(state);
+    int firstLine = state.virtualCursorLine;
+    int lastLine = state.virtualCursorLine;
+    int targetColumn = state.virtualCursorColumn;
+    int activeLine = state.virtualCursorLine;
+    if (columnMode) {
+        const auto lines = lineSpan(state);
+        firstLine = lines.first;
+        lastLine = lines.second;
+        targetColumn = state.columnCurrentColumn;
+        activeLine = state.columnCurrentLine;
+    }
+
+    const QTextCursor visibleTop =
+        editor->cursorForPosition(
+            QPoint(0, qMax(0, event->rect().top())));
+    const QTextCursor visibleBottom =
+        editor->cursorForPosition(
+            QPoint(0,
+                   qMin(editor->viewport()->height() - 1,
+                        event->rect().bottom())));
+    firstLine = qMax(
+        firstLine,
+        visibleTop.block().isValid()
+            ? visibleTop.block().blockNumber()
+            : firstLine);
+    lastLine = qMin(
+        lastLine,
+        visibleBottom.block().isValid()
+            ? visibleBottom.block().blockNumber()
+            : lastLine);
+    if (firstLine > lastLine)
+        return;
+
+    int selectionLeft = targetColumn;
+    int selectionRight = targetColumn;
+    if (columnMode) {
+        const auto columns = columnSpan(state);
+        selectionLeft = columns.first;
+        selectionRight = columns.second;
+    }
+
     QPainter painter(editor->viewport());
     painter.setRenderHint(QPainter::Antialiasing, false);
-    QPen pen(QColor(255, 87, 34));
-    pen.setWidth(2);
-    painter.setPen(pen);
+    const QColor accent =
+        editor->palette().color(QPalette::Highlight);
 
     for (int line = firstLine; line <= lastLine; ++line) {
         const QTextBlock block = editor->document()->findBlockByNumber(line);
         if (!block.isValid() || !block.isVisible())
             continue;
 
-        QTextCursor cursor(block);
-        cursor.setPosition(block.position());
-        QRect rect = editor->cursorRect(cursor);
-        rect.moveLeft(xForVisualColumn(editor, block, leftColumn));
-        if (!event->rect().intersects(rect.adjusted(-4, -2, 4, 2)))
+        QTextCursor endCursor(block);
+        endCursor.setPosition(
+            block.position() + block.text().size());
+        const QRect endRect =
+            editor->cursorRect(endCursor);
+        const int lineEndColumn =
+            layoutVisualColumnForOffset(
+                editor, block, block.text().size());
+        const int targetX =
+            xForVisualColumn(editor, block, targetColumn);
+        const int selectionLeftX =
+            xForVisualColumn(
+                editor, block, selectionLeft);
+        const int selectionRightX =
+            xForVisualColumn(
+                editor, block, selectionRight);
+        const int affectedLeft =
+            std::min({endRect.left(),
+                      targetX,
+                      selectionLeftX});
+        const int affectedRight =
+            std::max({endRect.left(),
+                      targetX,
+                      selectionRightX});
+        const QRect affected(
+            affectedLeft - 3,
+            endRect.top(),
+            affectedRight - affectedLeft + 7,
+            endRect.height());
+        if (!event->rect().intersects(affected))
             continue;
 
-        painter.drawLine(rect.left(),
-                         rect.top() + 1,
-                         rect.left(),
-                         rect.bottom() - 1);
+        if (columnMode
+            && selectionRight > selectionLeft) {
+            const int actualRight =
+                qMin(selectionRight, lineEndColumn);
+            if (actualRight > selectionLeft) {
+                QColor selected = accent;
+                selected.setAlpha(
+                    line == activeLine ? 86 : 68);
+                const int actualRightX =
+                    xForVisualColumn(
+                        editor, block, actualRight);
+                painter.fillRect(
+                    QRect(selectionLeftX,
+                          endRect.top() + 1,
+                          qMax(1,
+                               actualRightX
+                                   - selectionLeftX),
+                          qMax(1,
+                               endRect.height() - 2)),
+                    selected);
+            }
+        }
+
+        const int virtualEndColumn =
+            columnMode ? selectionRight : targetColumn;
+        const int virtualEndX =
+            xForVisualColumn(
+                editor, block, virtualEndColumn);
+        if (virtualEndColumn > lineEndColumn) {
+            QColor fill = accent;
+            fill.setAlpha(line == activeLine ? 40 : 24);
+            painter.fillRect(
+                QRect(endRect.left(),
+                      endRect.top() + 2,
+                      virtualEndX - endRect.left(),
+                      qMax(1, endRect.height() - 4)),
+                fill);
+            QColor guide = accent;
+            guide.setAlpha(line == activeLine ? 95 : 54);
+            QPen guidePen(guide);
+            guidePen.setStyle(Qt::DotLine);
+            guidePen.setWidth(1);
+            painter.setPen(guidePen);
+            painter.drawLine(endRect.left(),
+                             endRect.bottom() - 2,
+                             virtualEndX,
+                             endRect.bottom() - 2);
+        }
+
+        QColor caret = accent;
+        caret.setAlpha(line == activeLine ? 230 : 115);
+        QPen caretPen(caret);
+        caretPen.setWidth(line == activeLine ? 2 : 1);
+        painter.setPen(caretPen);
+        painter.drawLine(targetX,
+                         endRect.top() + 1,
+                         targetX,
+                         endRect.bottom() - 1);
     }
 }
 }
@@ -2422,6 +2674,11 @@ void MyCodeEditorState::initializeCore(MyCodeEditor* editor)
     gutter.init(editor);
     identity.set(QString());
     semanticRevisionText.clear();
+    inlineFilterTextOverlayActive = false;
+    inlineFilterTextOverlayStart = -1;
+    inlineFilterTextOverlayOriginalLength = 0;
+    inlineFilterTextOverlayOriginalText.clear();
+    inlineFilterTextOverlayCurrentText.clear();
     qRegisterMetaType<DocumentChange>("DocumentChange");
     editor->setProperty(kDiagnosticsEmptyProperty, true);
     editor->setProperty(kSemanticDecorationsEmptyProperty, true);
@@ -2434,6 +2691,15 @@ void MyCodeEditorState::shutdown()
     ++ghostQueryGeneration;
     if (ghostQueryCancellation)
         ghostQueryCancellation->store(true);
+    cancelSignalDefinitionEditor();
+    selectedSignals.clear();
+    signalSelectionActive = false;
+    signalSelectionDragging = false;
+    signalSelectionLastDragIdentity.clear();
+    signalSelectionLastDragPoint = QPoint(-1, -1);
+    virtualCursorActive = false;
+    virtualCursorLine = -1;
+    virtualCursorColumn = -1;
     sourceNavigation.shutdown();
     gutter.destroy();
 }
@@ -2477,6 +2743,7 @@ void MyCodeEditorState::attachEditorConnections(MyCodeEditor* editor)
         &QPlainTextEdit::cursorPositionChanged,
         editor,
         [this, editor]() {
+            handleVirtualCursorChanged(editor);
             if (suppressNextCursorPresentation) {
                 suppressNextCursorPresentation = false;
                 return;
@@ -2532,11 +2799,19 @@ void MyCodeEditorState::handleDocumentContentsChange(
     if (!editor || !editor->document())
         return;
 
+    if (signalDefinitionEditor)
+        cancelSignalDefinitionEditor();
+    if (virtualCursorActive)
+        clearVirtualCursor(editor);
+    if (signalSelectionActive
+        || !selectedSignals.isEmpty()) {
+        cancelSignalSelectionMode(editor);
+    }
     ++ghostQueryGeneration;
     if (ghostQueryCancellation)
         ghostQueryCancellation->store(true);
 
-    const int oldLength = semanticRevisionText.size();
+    const int oldLength = cachedDocumentLength();
     const int newLength = qMax(0, editor->document()->characterCount() - 1);
     const int boundedPosition = qBound(0, position, oldLength);
     const int removedLength = qBound(0,
@@ -2554,8 +2829,8 @@ void MyCodeEditorState::handleDocumentContentsChange(
     DocumentChange change;
     change.position = boundedPosition;
     change.removedLength = removedLength;
-    change.removedText = semanticRevisionText.mid(boundedPosition,
-                                                  removedLength);
+    change.removedText = cachedDocumentSlice(
+        boundedPosition, removedLength);
     change.insertedText = insertedDocumentText(editor->document(),
                                                boundedPosition,
                                                insertedLength);
@@ -2576,13 +2851,69 @@ void MyCodeEditorState::handleDocumentContentsChange(
         + change.insertedText.count(QLatin1Char('\n'));
     change.lineDelta = change.newEndLine - change.oldEndLine;
 
-    const OccurrenceChangeContext occurrenceContext =
-        selections.prepareDocumentChange(change, semanticRevisionText);
-    semanticRevisionText.replace(change.position,
-                                 change.removedLength,
-                                 change.insertedText);
+    OccurrenceChangeContext occurrenceContext;
+    bool useInlineOccurrenceLine = false;
+    int occurrenceNewLineStart = -1;
+    QString occurrenceNewLineText;
+    bool appliedToInlineOverlay = false;
+    if (inlineFilterTextOverlayActive) {
+        const int overlayEnd =
+            inlineFilterTextOverlayStart
+            + inlineFilterTextOverlayCurrentText.size();
+        const QTextBlock changedBlock = editor->document()->findBlock(
+            qBound(0, change.position, newLength));
+        const int newLineStart = changedBlock.isValid()
+            ? changedBlock.position()
+            : -1;
+        const int newLineEnd = changedBlock.isValid()
+            ? changedBlock.position() + changedBlock.text().size()
+            : -1;
+        const bool singleLineChange = changedBlock.isValid()
+            && !change.removedText.contains(QLatin1Char('\n'))
+            && !change.insertedText.contains(QLatin1Char('\n'))
+            && change.position >= newLineStart
+            && change.newEnd() <= newLineEnd;
+        if (change.position >= inlineFilterTextOverlayStart
+            && change.oldEnd() <= overlayEnd
+            && singleLineChange) {
+            QString nextOverlay =
+                inlineFilterTextOverlayCurrentText;
+            nextOverlay.replace(
+                change.position - inlineFilterTextOverlayStart,
+                change.removedLength,
+                change.insertedText);
+            const int nextLength =
+                semanticRevisionText.size()
+                - inlineFilterTextOverlayOriginalLength
+                + nextOverlay.size();
+            if (nextLength == change.newLength) {
+                inlineFilterTextOverlayCurrentText =
+                    std::move(nextOverlay);
+                appliedToInlineOverlay = true;
+                ++hotPathMetrics.inlineFilterOverlayEdits;
+                occurrenceNewLineStart = newLineStart;
+                occurrenceNewLineText = changedBlock.text();
+                occurrenceContext =
+                    selections.prepareDocumentLineChange(
+                        change,
+                        newLineStart,
+                        newLineEnd - change.characterDelta());
+                useInlineOccurrenceLine = true;
+            }
+        }
+    }
+    if (!appliedToInlineOverlay) {
+        finishInlineFilterTextOverlay();
+        occurrenceContext = selections.prepareDocumentChange(
+            change, semanticRevisionText);
+        semanticRevisionText.replace(change.position,
+                                     change.removedLength,
+                                     change.insertedText);
+    }
     ++semanticTextRevision;
     change.revision = semanticTextRevision;
+    if (!diagnostics.isEmpty())
+        clearDiagnosticHighlights(editor);
     ++hotPathMetrics.documentChanges;
     suppressNextCursorPresentation = true;
     editorPresentationPending = true;
@@ -2597,12 +2928,20 @@ void MyCodeEditorState::handleDocumentContentsChange(
         else
             ++hotPathMetrics.incrementalFoldingUpdates;
     }
+    remapSemanticDecorations(editor, change);
 
     const OccurrenceIndexUpdate occurrenceUpdate =
-        selections.applyDocumentChange(editor,
-                                       change,
-                                       occurrenceContext,
-                                       semanticRevisionText);
+        useInlineOccurrenceLine
+        ? selections.applyDocumentLineChange(
+              editor,
+              change,
+              occurrenceContext,
+              occurrenceNewLineStart,
+              occurrenceNewLineText)
+        : selections.applyDocumentChange(editor,
+                                         change,
+                                         occurrenceContext,
+                                         semanticRevisionText);
     if (occurrenceUpdate == OccurrenceIndexUpdate::Full)
         ++hotPathMetrics.occurrenceFullBuilds;
     else if (occurrenceUpdate == OccurrenceIndexUpdate::Incremental)
@@ -2635,10 +2974,8 @@ void MyCodeEditorState::remapGhostAnnotations(
         const int anchorStart = annotation.anchorPosition;
         const int anchorEnd = anchorStart + annotation.anchorLength;
         const bool insertionIntersects = change.removedLength == 0
-            && change.position >= anchorStart
-            && (change.position < anchorEnd
-                || (annotation.anchorLength == 0
-                    && change.position == anchorStart));
+            && change.position > anchorStart
+            && change.position < anchorEnd;
         const bool replacementIntersects = change.removedLength > 0
             && change.position < qMax(anchorStart + 1, anchorEnd)
             && change.oldEnd() > anchorStart;
@@ -2659,6 +2996,63 @@ void MyCodeEditorState::remapGhostAnnotations(
         ghostAnnotations = remapped;
         ghostPresentationPending = true;
     }
+}
+
+void MyCodeEditorState::remapSemanticDecorations(
+    MyCodeEditor* editor,
+    const DocumentChange& change)
+{
+    if (semanticDecorations.isEmpty())
+        return;
+
+    QList<SemanticDecoration> remapped;
+    remapped.reserve(semanticDecorations.size());
+    for (SemanticDecoration decoration : std::as_const(semanticDecorations)) {
+        const int start = decoration.startPosition;
+        const int end = start + decoration.length;
+        const bool insertionIntersects =
+            change.removedLength == 0
+            && change.position > start
+            && change.position < end;
+        const bool replacementIntersects =
+            change.removedLength > 0
+            && change.position < end
+            && change.oldEnd() > start;
+        if (insertionIntersects || replacementIntersects)
+            continue;
+        if (change.oldEnd() <= start)
+            decoration.startPosition += change.characterDelta();
+        if (decoration.isValid())
+            remapped.append(std::move(decoration));
+    }
+    semanticDecorations = std::move(remapped);
+    refreshSemanticDecorationPresentation(editor);
+}
+
+void MyCodeEditorState::refreshSemanticDecorationPresentation(
+    MyCodeEditor* editor)
+{
+    if (!editor)
+        return;
+
+    QList<SemanticDecoration> visible;
+    visible.reserve(semanticDecorations.size());
+    const TSDocument* document = syntax.tsDocument();
+    for (const SemanticDecoration& decoration :
+         std::as_const(semanticDecorations)) {
+        if (!decoration.isValid())
+            continue;
+        if (document
+            && (document->isCommentAt(decoration.startPosition)
+                || document->isCommentAt(
+                    decoration.startPosition + decoration.length - 1))) {
+            continue;
+        }
+        visible.append(decoration);
+    }
+    selections.highlightSemanticDecorations(editor, visible);
+    editor->setProperty(kSemanticDecorationsEmptyProperty,
+                        visible.isEmpty());
 }
 
 void MyCodeEditorState::refreshDerivedEditorState(
@@ -2739,6 +3133,11 @@ EditorAlwaysScopeTarget MyCodeEditorState::currentAlwaysScopeTarget(
     }
 
     const QTextCursor cursor = editor->textCursor();
+    const QString& syntaxText =
+        allowLargeFileScopeBuild && inlineFilterTextOverlayActive
+        ? editor->cachedDocumentText()
+        : semanticRevisionText;
+    const int syntaxTextLength = cachedDocumentLength();
     const TSAlwaysScopeTarget target =
         syntax.alwaysScopeTargetAt(cursor.position(),
                                    cursor.hasSelection()
@@ -2747,7 +3146,8 @@ EditorAlwaysScopeTarget MyCodeEditorState::currentAlwaysScopeTarget(
                                    cursor.hasSelection()
                                        ? cursor.selectionEnd()
                                        : -1,
-                                   semanticRevisionText,
+                                   syntaxText,
+                                   syntaxTextLength,
                                    allowLargeFileScopeBuild);
     if (!target.ok()) {
         result.failureMessage =
@@ -2777,6 +3177,11 @@ EditorModuleScopeTarget MyCodeEditorState::currentModuleScopeTarget(
     }
 
     const QTextCursor cursor = editor->textCursor();
+    const QString& syntaxText =
+        allowLargeFileScopeBuild && inlineFilterTextOverlayActive
+        ? editor->cachedDocumentText()
+        : semanticRevisionText;
+    const int syntaxTextLength = cachedDocumentLength();
     const TSModuleScopeTarget target =
         syntax.moduleScopeTargetAt(cursor.position(),
                                    cursor.hasSelection()
@@ -2785,7 +3190,8 @@ EditorModuleScopeTarget MyCodeEditorState::currentModuleScopeTarget(
                                    cursor.hasSelection()
                                        ? cursor.selectionEnd()
                                        : -1,
-                                   semanticRevisionText,
+                                   syntaxText,
+                                   syntaxTextLength,
                                    allowLargeFileScopeBuild);
     if (!target.ok()) {
         result.failureMessage =
@@ -3073,7 +3479,7 @@ EditorSemanticContext MyCodeEditorState::semanticContextForPosition(
         false,
         semanticDocumentRevision());
     if (includeDocumentText)
-        context.documentText = semanticRevisionText;
+        context.documentText = editor->cachedDocumentText();
     context.hierarchyInstance = hierarchyInstance;
     return context;
 }
@@ -3298,6 +3704,200 @@ bool MyCodeEditorState::columnSelectionActiveForCommand() const
     return hasColumnSelection(*this);
 }
 
+bool MyCodeEditorState::virtualCursorActiveForTest() const
+{
+    return virtualCursorActive;
+}
+
+int MyCodeEditorState::virtualCursorLineForTest() const
+{
+    return virtualCursorLine;
+}
+
+int MyCodeEditorState::virtualCursorColumnForTest() const
+{
+    return virtualCursorColumn;
+}
+
+void MyCodeEditorState::clearVirtualCursor(
+    MyCodeEditor* editor)
+{
+    const bool wasActive = virtualCursorActive;
+    virtualCursorActive = false;
+    virtualCursorLine = -1;
+    virtualCursorColumn = -1;
+    if (editor && wasActive) {
+        editor->setCursorWidth(
+            qMax(1, virtualCursorSavedWidth));
+        editor->viewport()->update();
+    }
+    virtualCursorSavedWidth = 1;
+}
+
+void MyCodeEditorState::handleVirtualCursorChanged(
+    MyCodeEditor* editor)
+{
+    if (!virtualCursorActive || !editor)
+        return;
+    const QTextCursor cursor = editor->textCursor();
+    const QTextBlock block = cursor.block();
+    const bool stillAtLineEnd =
+        !cursor.hasSelection()
+        && block.isValid()
+        && block.blockNumber() == virtualCursorLine
+        && cursor.position()
+            == block.position() + block.text().size();
+    if (!stillAtLineEnd)
+        clearVirtualCursor(editor);
+}
+
+void MyCodeEditorState::prepareVirtualCursorInput(
+    MyCodeEditor* editor)
+{
+    if (!virtualCursorActive || !editor
+        || !editor->document()) {
+        return;
+    }
+    const QTextBlock block =
+        editor->document()->findBlockByNumber(
+            virtualCursorLine);
+    if (!block.isValid()) {
+        clearVirtualCursor(editor);
+        return;
+    }
+    const int lineEndColumn =
+        layoutVisualColumnForOffset(
+            editor, block, block.text().size());
+    const int paddingLength =
+        qMax(0, virtualCursorColumn - lineEndColumn);
+    const int insertionPosition =
+        block.position() + block.text().size();
+    clearVirtualCursor(editor);
+    QTextCursor cursor(editor->document());
+    cursor.setPosition(insertionPosition);
+    if (paddingLength > 0)
+        cursor.insertText(
+            QString(paddingLength, QLatin1Char(' ')));
+    editor->setTextCursor(cursor);
+}
+
+bool MyCodeEditorState::handleVirtualCursorKeyPress(
+    MyCodeEditor* editor,
+    QKeyEvent* event)
+{
+    if (!editor || !event || !editor->document())
+        return false;
+
+    const Qt::KeyboardModifiers relevantModifiers =
+        event->modifiers()
+        & (Qt::ShiftModifier
+           | Qt::ControlModifier
+           | Qt::AltModifier
+           | Qt::MetaModifier);
+    if (!virtualCursorActive) {
+        if (columnSelectionActive
+            || templateSlotModeActive()) {
+            return false;
+        }
+        if (event->key() != Qt::Key_Right
+            || relevantModifiers != Qt::NoModifier) {
+            return false;
+        }
+        const QTextCursor cursor = editor->textCursor();
+        const QTextBlock block = cursor.block();
+        if (cursor.hasSelection()
+            || !block.isValid()
+            || cursor.position()
+                != block.position() + block.text().size()) {
+            return false;
+        }
+        virtualCursorSavedWidth =
+            qMax(1, editor->cursorWidth());
+        virtualCursorActive = true;
+        virtualCursorLine = block.blockNumber();
+        virtualCursorColumn =
+            layoutVisualColumnForOffset(
+                editor, block, block.text().size()) + 1;
+        editor->setCursorWidth(0);
+        editor->viewport()->update();
+        event->accept();
+        return true;
+    }
+
+    const QTextBlock block =
+        editor->document()->findBlockByNumber(
+            virtualCursorLine);
+    if (!block.isValid()) {
+        clearVirtualCursor(editor);
+        return false;
+    }
+    const int lineEndColumn =
+        layoutVisualColumnForOffset(
+            editor, block, block.text().size());
+
+    if (relevantModifiers == Qt::NoModifier
+        && (event->key() == Qt::Key_Left
+            || event->key() == Qt::Key_Backspace)) {
+        --virtualCursorColumn;
+        if (virtualCursorColumn <= lineEndColumn)
+            clearVirtualCursor(editor);
+        else
+            editor->viewport()->update();
+        event->accept();
+        return true;
+    }
+    if (relevantModifiers == Qt::NoModifier
+        && event->key() == Qt::Key_Right) {
+        ++virtualCursorColumn;
+        editor->viewport()->update();
+        event->accept();
+        return true;
+    }
+    if (relevantModifiers == Qt::NoModifier
+        && event->key() == Qt::Key_Delete) {
+        event->accept();
+        return true;
+    }
+
+    const bool plainControlShortcut =
+        relevantModifiers == Qt::ControlModifier;
+    const bool paste =
+        event->matches(QKeySequence::Paste)
+        || (plainControlShortcut
+            && event->key() == Qt::Key_V);
+    const bool printable =
+        relevantModifiers == Qt::NoModifier
+        && !event->text().isEmpty();
+    const bool textControl =
+        relevantModifiers == Qt::NoModifier
+        && (event->key() == Qt::Key_Tab
+            || event->key() == Qt::Key_Return
+            || event->key() == Qt::Key_Enter);
+    if (paste || printable || textControl) {
+        prepareVirtualCursorInput(editor);
+        return false;
+    }
+
+    const bool copy =
+        event->matches(QKeySequence::Copy)
+        || (plainControlShortcut
+            && event->key() == Qt::Key_C);
+    if (copy) {
+        event->accept();
+        return true;
+    }
+
+    if (event->key() == Qt::Key_Control
+        || event->key() == Qt::Key_Shift
+        || event->key() == Qt::Key_Alt
+        || event->key() == Qt::Key_Meta) {
+        return false;
+    }
+
+    clearVirtualCursor(editor);
+    return false;
+}
+
 QStringList MyCodeEditorState::columnSelectionRowTexts(
     MyCodeEditor* editor) const
 {
@@ -3467,6 +4067,16 @@ void MyCodeEditorState::handleTemplateSlotCursorChanged(MyCodeEditor* editor)
 
 bool MyCodeEditorState::handleKeyPress(MyCodeEditor* editor, QKeyEvent* event)
 {
+    if (signalSelectionActive) {
+        if (event->key() == Qt::Key_Escape) {
+            cancelSignalSelectionMode(editor);
+            emit editor->editorStatusMessageRequested(
+                QStringLiteral("Signal selection canceled"));
+        }
+        event->accept();
+        return true;
+    }
+
     if (folding.foldRegionMarkModeActive()) {
         if (event->key() == Qt::Key_Escape)
             folding.cancelFoldRegionMarkMode(editor);
@@ -3489,6 +4099,9 @@ bool MyCodeEditorState::handleKeyPress(MyCodeEditor* editor, QKeyEvent* event)
     }
 
     if (handleTemplateSlotKeyPress(editor, event))
+        return true;
+
+    if (handleVirtualCursorKeyPress(editor, event))
         return true;
 
     if (event->key() == Qt::Key_Escape
@@ -3709,6 +4322,27 @@ bool MyCodeEditorState::handleGutterMouseMove(
     if (y < geometry.top || y > geometry.top + geometry.height)
         return false;
 
+    const qreal x = event->position().x();
+    if (x >= 14.0 && x <= 28.0
+        && diagnosticSeverityByLine.contains(block.blockNumber())) {
+        const QString tooltip =
+            diagnosticTooltipForLine(block.blockNumber());
+        if (!tooltip.isEmpty()) {
+            QStringList richRows;
+            const QStringList rows = tooltip.split(QLatin1Char('\n'));
+            richRows.reserve(rows.size());
+            for (const QString& row : rows)
+                richRows.append(row.toHtmlEscaped());
+            QToolTip::showText(
+                event->globalPosition().toPoint(),
+                richRows.join(QStringLiteral("<br>")),
+                editor);
+        }
+        return true;
+    }
+    if (x >= 14.0 && x <= 28.0)
+        QToolTip::hideText();
+
     const bool handled =
         folding.handleFoldRegionHoverLine(editor, block.blockNumber());
     if (handled)
@@ -3722,6 +4356,83 @@ void MyCodeEditorState::paintGutterDecorations(
     const QRect& rect) const
 {
     folding.paintGutter(editor, painter, rect);
+    if (!editor || diagnosticSeverityByLine.isEmpty())
+        return;
+
+    QTextBlock block = editor->firstVisibleBlock();
+    int top = static_cast<int>(
+        editor->blockBoundingGeometry(block)
+            .translated(editor->contentOffset())
+            .top());
+    int bottom =
+        top + static_cast<int>(editor->blockBoundingRect(block).height());
+    while (block.isValid() && top <= rect.bottom()) {
+        const auto severity =
+            diagnosticSeverityByLine.constFind(block.blockNumber());
+        if (severity != diagnosticSeverityByLine.constEnd()) {
+            const int middle = top + (bottom - top) / 2;
+            const QPolygon triangle{
+                QPoint(21, middle - 6),
+                QPoint(15, middle + 5),
+                QPoint(27, middle + 5)
+            };
+            painter.save();
+            painter.setRenderHint(QPainter::Antialiasing, true);
+            painter.setPen(Qt::NoPen);
+            painter.setBrush(diagnosticSeverityColor(severity.value()));
+            painter.drawPolygon(triangle);
+            painter.setPen(Qt::white);
+            QFont iconFont = painter.font();
+            iconFont.setBold(true);
+            iconFont.setPixelSize(9);
+            painter.setFont(iconFont);
+            painter.drawText(
+                QRect(15, middle - 5, 12, 10),
+                Qt::AlignCenter,
+                QStringLiteral("!"));
+            painter.restore();
+        }
+
+        block = block.next();
+        top = bottom;
+        bottom =
+            top + static_cast<int>(editor->blockBoundingRect(block).height());
+    }
+}
+
+void MyCodeEditorState::paintDiagnosticOverview(
+    MyCodeEditor* editor,
+    QPaintEvent* event) const
+{
+    if (!editor
+        || !event
+        || diagnosticSeverityByLine.isEmpty()
+        || editor->blockCount() <= 0) {
+        return;
+    }
+
+    QPainter painter(editor->viewport());
+    const int markerWidth = 5;
+    const int markerHeight = 4;
+    const int x = qMax(0, editor->viewport()->width() - markerWidth);
+    const int availableHeight =
+        qMax(1, editor->viewport()->height() - markerHeight);
+    const int denominator = qMax(1, editor->blockCount() - 1);
+    for (auto iterator = diagnosticSeverityByLine.constBegin();
+         iterator != diagnosticSeverityByLine.constEnd();
+         ++iterator) {
+        const int y = qRound(
+            static_cast<qreal>(qBound(0,
+                                     iterator.key(),
+                                     editor->blockCount() - 1))
+            / denominator
+            * availableHeight);
+        const QRect marker(x, y, markerWidth, markerHeight);
+        if (!event->rect().intersects(marker))
+            continue;
+        painter.fillRect(marker,
+                         diagnosticSeverityColor(iterator.value()));
+    }
 }
 
 void MyCodeEditorState::paintFoldPlaceholders(
@@ -3768,6 +4479,16 @@ void MyCodeEditorState::paintGhostAnnotations(
 
         const int anchorPosition =
             qBound(0, annotation.anchorPosition, documentEnd);
+        const TSDocument* syntaxDocument = syntax.tsDocument();
+        if (syntaxDocument
+            && (syntaxDocument->isCommentAt(anchorPosition)
+                || (annotation.anchorLength > 0
+                    && syntaxDocument->isCommentAt(
+                        qMin(documentEnd,
+                             anchorPosition
+                                 + annotation.anchorLength - 1))))) {
+            continue;
+        }
         QTextBlock block = textDocument->findBlock(anchorPosition);
         if (!block.isValid() || !block.isVisible())
             continue;
@@ -3834,16 +4555,852 @@ void MyCodeEditorState::handleContextMenu(
     MyCodeEditor* editor,
     QContextMenuEvent* event)
 {
+    if (signalSelectionActive && editor && event) {
+        signalSelectionActive = false;
+        signalSelectionDragging = false;
+        signalSelectionLastDragIdentity.clear();
+        signalSelectionLastDragPoint = QPoint(-1, -1);
+        const QTextCursor contextCursor =
+            editor->cursorForPosition(event->pos());
+        QMenu menu(editor);
+        QAction* createQueue = menu.addAction(
+            QStringLiteral("Create assignment queue"));
+        createQueue->setEnabled(!selectedSignals.isEmpty());
+        bool actionTriggered = false;
+        QObject::connect(
+            createQueue,
+            &QAction::triggered,
+            editor,
+            [this,
+             editor,
+             position = contextCursor.position(),
+             &actionTriggered]() {
+                actionTriggered = true;
+                QString message;
+                if (!createAssignmentQueueAt(
+                        editor, position, &message)
+                    && !message.isEmpty()) {
+                    emit editor->editorStatusMessageRequested(message);
+                }
+            });
+        menu.exec(event->globalPos());
+        if (!actionTriggered)
+            cancelSignalSelectionMode(editor);
+        event->accept();
+        return;
+    }
     sourceNavigation.handleContextMenu(
         editor,
         event,
         sourceContextProvider(editor));
 }
 
+bool MyCodeEditorState::editInstanceSlotsAt(
+    MyCodeEditor* editor,
+    int cursorPosition,
+    QString* message)
+{
+    if (!editor || !editor->document()) {
+        if (message)
+            *message = QStringLiteral("No editor document");
+        return false;
+    }
+
+    const TSInstantiationTarget target =
+        syntax.instantiationAt(cursorPosition);
+    if (!target.ok()) {
+        if (message)
+            *message = QStringLiteral("No complete module instantiation");
+        return false;
+    }
+
+    CodeTemplateSlotList metadata;
+    const auto appendSlots =
+        [&metadata, &target](const QList<TSExpressionSlot>& source,
+                             const QString& prefix) {
+            for (int index = 0; index < source.size(); ++index) {
+                const TSExpressionSlot& expression = source.at(index);
+                if (!expression.ok())
+                    continue;
+                CodeTemplateSlot slot;
+                slot.name = expression.name.isEmpty()
+                    ? QStringLiteral("%1 %2")
+                          .arg(prefix)
+                          .arg(index + 1)
+                    : expression.name;
+                slot.start = expression.startChar - target.startChar;
+                slot.length =
+                    expression.endChar - expression.startChar;
+                metadata.append(slot);
+            }
+        };
+    appendSlots(target.parameterActuals,
+                QStringLiteral("parameter"));
+    appendSlots(target.portActuals,
+                QStringLiteral("port"));
+    if (metadata.isEmpty()) {
+        if (message)
+            *message = QStringLiteral("Instance has no editable actuals");
+        return false;
+    }
+
+    startTemplateSlotMode(editor,
+                          target.startChar,
+                          target.endChar - target.startChar,
+                          metadata);
+    if (!templateSlotModeActive()) {
+        if (message)
+            *message = QStringLiteral("Instance slot ranges are invalid");
+        return false;
+    }
+    if (message)
+        *message = QStringLiteral("Editing instance slots");
+    return true;
+}
+
+QString MyCodeEditorState::signalDefinitionCandidateAt(
+    const MyCodeEditor* editor,
+    int cursorPosition,
+    QString* failureReason) const
+{
+    const auto fail = [failureReason](const QString& reason) {
+        if (failureReason)
+            *failureReason = reason;
+        return QString();
+    };
+    if (!editor || !editor->document())
+        return fail(QStringLiteral("No editor document"));
+
+    const TSUndefinedSignalContext context =
+        syntax.undefinedSignalContextAt(cursorPosition);
+    if (!context.ok())
+        return fail(QStringLiteral("Identifier is not an undeclared signal context"));
+
+    SemanticIndex* semanticIndex =
+        SemanticIndex::getInstance();
+    const QString analyzedText =
+        semanticIndex
+            ? semanticIndex->getCachedFileContent(
+                  identity.current())
+            : QString();
+    const QString moduleName =
+        currentModuleNameAt(
+            context.identifier.startChar);
+    if (analyzedText.isEmpty()
+        || moduleName.isEmpty()) {
+        return fail(QStringLiteral(
+            "No analyzed module baseline is available"));
+    }
+
+    bool analyzedModuleFound = false;
+    const QList<SemanticSymbolRecord> moduleRecords =
+        semanticIndex->getSymbolRecordsByName(moduleName);
+    for (const SemanticSymbolRecord& record : moduleRecords) {
+        if (!EditorFileIdentity::same(
+                record.location.fileName,
+                identity.current())) {
+            continue;
+        }
+        if (SymbolTaxonomy::isModuleDeclaration(
+                semanticMetadataForSymbolRecord(record))) {
+            analyzedModuleFound = true;
+            break;
+        }
+    }
+    if (!analyzedModuleFound) {
+        return fail(QStringLiteral(
+            "The current module has no analyzed semantic baseline"));
+    }
+
+    const EditorSemanticContext identifierContext =
+        semanticContextForPosition(
+            editor,
+            context.identifier.startChar,
+            false);
+    DefinitionQuery existingQuery;
+    existingQuery.symbolName =
+        context.identifier.text;
+    existingQuery.fileName =
+        identifierContext.fileName;
+    existingQuery.moduleName =
+        identifierContext.moduleName;
+    existingQuery.linePrefixBeforeCursor =
+        identifierContext.lineUpToCursor;
+    existingQuery.cursorLine =
+        identifierContext.cursorLine;
+    existingQuery.cursorColumn =
+        identifierContext.column;
+    const DefinitionResult existingDefinition =
+        DefinitionService::getInstance()->resolveDefinition(
+            existingQuery);
+    if (existingDefinition.found) {
+        return fail(QStringLiteral(
+            "Identifier already resolves to an analyzed declaration"));
+    }
+
+    if (context.kind
+        == TSUndefinedSignalContextKind::
+            ProceduralAssignmentLhs) {
+        if (failureReason)
+            failureReason->clear();
+        return QStringLiteral("logic %1;")
+            .arg(context.identifier.text);
+    }
+
+    if (context.kind
+        != TSUndefinedSignalContextKind::NamedPortActual
+        || context.formalName.isEmpty()
+        || !context.instantiation.ok()) {
+        return fail(QStringLiteral(
+            "No exact instance-port context"));
+    }
+    if (!hierarchyInstance.isBound()) {
+        return fail(QStringLiteral(
+            "No current hierarchy instance context is bound"));
+    }
+
+    const EditorSemanticContext formalContext =
+        semanticContextForPosition(
+            editor, context.formalStartChar, false);
+    DefinitionQuery definitionQuery;
+    definitionQuery.symbolName = context.formalName;
+    definitionQuery.fileName = formalContext.fileName;
+    definitionQuery.moduleName = formalContext.moduleName;
+    definitionQuery.linePrefixBeforeCursor =
+        formalContext.lineUpToCursor;
+    definitionQuery.cursorLine = formalContext.cursorLine;
+    definitionQuery.cursorColumn = formalContext.column;
+    const DefinitionResult definition =
+        DefinitionService::getInstance()->resolveDefinition(
+            definitionQuery);
+    if (!definition.found
+        || !SymbolTaxonomy::isPortDeclaration(
+            semanticMetadataForSymbolRecord(
+                definition.symbolRecord))) {
+        return fail(QStringLiteral(
+            "Slang did not resolve the exact formal port"));
+    }
+
+    HierarchyInstanceContext childContext = hierarchyInstance;
+    if (childContext.isBound()) {
+        if (!childContext.instancePath.endsWith(
+                QLatin1Char('.'))) {
+            childContext.instancePath += QLatin1Char('.');
+        }
+        childContext.instancePath +=
+            context.instantiation.instanceName;
+    }
+
+    EffectiveValueQuery valueQuery;
+    valueQuery.symbol = definition.symbolRecord;
+    valueQuery.instanceContext = childContext;
+    if (EditorFileIdentity::same(
+            definition.symbolRecord.location.fileName,
+            identity.current())) {
+        const SemanticSymbolLocation& location =
+            definition.symbolRecord.location;
+        const bool unchangedDeclarationAnchor =
+            location.position >= 0
+            && location.length > 0
+            && location.position + location.length
+                <= analyzedText.size()
+            && location.position + location.length
+                <= semanticRevisionText.size()
+            && analyzedText.mid(
+                   location.position,
+                   location.length)
+               == semanticRevisionText.mid(
+                   location.position,
+                   location.length);
+        if (analyzedText != semanticRevisionText
+            && !unchangedDeclarationAnchor) {
+            return fail(QStringLiteral(
+                "The formal declaration changed since analysis"));
+        }
+        if (analyzedText == semanticRevisionText) {
+            valueQuery.documentText =
+                semanticRevisionText;
+            valueQuery.documentRevision =
+                semanticDocumentRevision();
+        }
+    }
+    const EffectiveValueResult effective =
+        EffectiveValueService::getInstance()->resolve(
+            valueQuery);
+    if (!effective.current()) {
+        return fail(
+            effective.failureReason.isEmpty()
+                ? QStringLiteral(
+                      "Current Slang formal-port type is unavailable")
+                : effective.failureReason);
+    }
+
+    QString typeText = effective.resolvedTypeText.trimmed();
+    QString unpacked =
+        effective.unpackedDimensionsText.trimmed();
+    if (typeText.isEmpty()) {
+        return fail(QStringLiteral(
+            "Current Slang formal-port type is unavailable"));
+    }
+    if (!unpacked.isEmpty()
+        && typeText.endsWith(unpacked)) {
+        typeText.chop(unpacked.size());
+        typeText = typeText.trimmed();
+    }
+    const QString packed =
+        effective.packedDimensionsText.trimmed();
+    if (!packed.isEmpty() && !typeText.contains(packed)) {
+        if (!typeText.isEmpty())
+            typeText += QLatin1Char(' ');
+        typeText += packed;
+    }
+
+    QString declaration = typeText;
+    if (!declaration.isEmpty())
+        declaration += QLatin1Char(' ');
+    declaration += context.identifier.text;
+    if (!unpacked.isEmpty()) {
+        declaration += QLatin1Char(' ');
+        declaration += unpacked;
+    }
+    declaration += QLatin1Char(';');
+    if (failureReason)
+        failureReason->clear();
+    return declaration;
+}
+
+void MyCodeEditorState::cancelSignalDefinitionEditor()
+{
+    if (signalDefinitionEditor)
+        signalDefinitionEditor->deleteLater();
+    signalDefinitionEditor.clear();
+    signalDefinitionIdentifierStart = -1;
+    signalDefinitionDocumentRevision = 0;
+    signalDefinitionFileName.clear();
+}
+
+bool MyCodeEditorState::beginSignalDefinitionEditor(
+    MyCodeEditor* editor,
+    int cursorPosition,
+    QString* failureReason)
+{
+    const QString candidate =
+        signalDefinitionCandidateAt(
+            editor, cursorPosition, failureReason);
+    if (candidate.isEmpty())
+        return false;
+
+    const TSUndefinedSignalContext context =
+        syntax.undefinedSignalContextAt(cursorPosition);
+    if (!context.ok())
+        return false;
+
+    cancelSignalDefinitionEditor();
+    QLineEdit* lineEdit = new QLineEdit(editor->viewport());
+    signalDefinitionEditor = lineEdit;
+    signalDefinitionIdentifierStart =
+        context.identifier.startChar;
+    signalDefinitionDocumentRevision =
+        semanticDocumentRevision();
+    signalDefinitionFileName = identity.current();
+    lineEdit->setObjectName(
+        QStringLiteral("signalDefinitionInlineEditor"));
+    lineEdit->setText(candidate);
+    lineEdit->setToolTip(
+        QStringLiteral("Enter: create signal definition; Esc: cancel"));
+    lineEdit->setStyleSheet(
+        QStringLiteral(
+            "QLineEdit {"
+            " border: 1px solid palette(highlight);"
+            " border-radius: 3px;"
+            " padding: 3px 6px;"
+            " background: palette(base);"
+            " color: palette(text);"
+            "}"));
+
+    QTextCursor anchor(editor->document());
+    anchor.setPosition(context.identifier.startChar);
+    const QRect anchorRect = editor->cursorRect(anchor);
+    const int desiredWidth = qBound(
+        220,
+        lineEdit->fontMetrics().horizontalAdvance(candidate)
+            + 32,
+        qMax(220, editor->viewport()->width() - 12));
+    const int height = lineEdit->sizeHint().height();
+    int x = qBound(4,
+                   anchorRect.left(),
+                   qMax(4,
+                        editor->viewport()->width()
+                            - desiredWidth - 4));
+    int y = anchorRect.bottom() + 3;
+    if (y + height > editor->viewport()->height() - 4)
+        y = qMax(4, anchorRect.top() - height - 3);
+    lineEdit->setGeometry(x, y, desiredWidth, height);
+
+    QObject::connect(
+        lineEdit,
+        &QLineEdit::returnPressed,
+        editor,
+        [this, editor, lineEdit]() {
+            QString reason;
+            if (!confirmSignalDefinition(
+                    editor, lineEdit->text(), &reason)
+                && !reason.isEmpty()) {
+                emit editor->editorStatusMessageRequested(reason);
+            }
+        });
+    QShortcut* escape = new QShortcut(
+        QKeySequence(Qt::Key_Escape), lineEdit);
+    QObject::connect(escape,
+                     &QShortcut::activated,
+                     lineEdit,
+                     [this]() {
+        cancelSignalDefinitionEditor();
+    });
+    lineEdit->show();
+    lineEdit->setFocus(Qt::PopupFocusReason);
+    lineEdit->selectAll();
+    return true;
+}
+
+bool MyCodeEditorState::confirmSignalDefinition(
+    MyCodeEditor* editor,
+    const QString& declaration,
+    QString* failureReason)
+{
+    const auto fail = [failureReason](const QString& reason) {
+        if (failureReason)
+            *failureReason = reason;
+        return false;
+    };
+    if (!editor || !editor->document())
+        return fail(QStringLiteral("No editor document"));
+    if (signalDefinitionIdentifierStart < 0) {
+        return fail(QStringLiteral(
+            "No pending signal definition"));
+    }
+    if (signalDefinitionDocumentRevision
+            != semanticDocumentRevision()
+        || !EditorFileIdentity::same(
+            signalDefinitionFileName, identity.current())) {
+        cancelSignalDefinitionEditor();
+        return fail(QStringLiteral(
+            "Signal definition context is stale"));
+    }
+
+    const TSUndefinedSignalContext context =
+        syntax.undefinedSignalContextAt(
+            signalDefinitionIdentifierStart);
+    if (!context.ok()
+        || context.identifier.startChar
+            != signalDefinitionIdentifierStart) {
+        cancelSignalDefinitionEditor();
+        return fail(QStringLiteral(
+            "Signal definition context is stale"));
+    }
+
+    const QString declarationText = declaration.trimmed();
+    if (declarationText.isEmpty())
+        return fail(QStringLiteral("Signal declaration is empty"));
+    const TSSignalInsertTarget target =
+        syntax.signalInsertTargetAt(
+            signalDefinitionIdentifierStart);
+    if (!target.ok()) {
+        cancelSignalDefinitionEditor();
+        return fail(QStringLiteral(
+            "No clear signal declaration section"));
+    }
+
+    QString insertionText;
+    if (target.insertText.startsWith(
+            QLatin1Char('\n'))) {
+        insertionText =
+            target.insertText + declarationText;
+    } else if (target.insertText.endsWith(
+                   QLatin1Char('\n'))) {
+        insertionText =
+            target.insertText.left(
+                target.insertText.size() - 1)
+            + declarationText
+            + QLatin1Char('\n');
+    } else {
+        cancelSignalDefinitionEditor();
+        return fail(QStringLiteral(
+            "Invalid signal declaration anchor"));
+    }
+
+    const QTextCursor original = editor->textCursor();
+    const int originalPosition = original.position();
+    const int originalAnchor = original.anchor();
+    const int verticalScroll =
+        editor->verticalScrollBar()->value();
+    const int horizontalScroll =
+        editor->horizontalScrollBar()->value();
+    const int insertPosition = target.insertChar;
+    cancelSignalDefinitionEditor();
+
+    QTextCursor insertion(editor->document());
+    insertion.beginEditBlock();
+    insertion.setPosition(insertPosition);
+    insertion.insertText(insertionText);
+    insertion.endEditBlock();
+
+    const auto adjustedPosition =
+        [insertPosition,
+         delta = insertionText.size()](int position) {
+            return position >= insertPosition
+                ? position + delta : position;
+        };
+    QTextCursor restored(editor->document());
+    restored.setPosition(
+        adjustedPosition(originalAnchor));
+    restored.setPosition(
+        adjustedPosition(originalPosition),
+        QTextCursor::KeepAnchor);
+    editor->setTextCursor(restored);
+    editor->verticalScrollBar()->setValue(verticalScroll);
+    editor->horizontalScrollBar()->setValue(horizontalScroll);
+
+    if (failureReason)
+        failureReason->clear();
+    emit editor->editorStatusMessageRequested(
+        QStringLiteral("Created signal definition for %1")
+            .arg(context.identifier.text));
+    return true;
+}
+
+void MyCodeEditorState::refreshSignalSelectionOverlay(
+    MyCodeEditor* editor)
+{
+    if (!editor)
+        return;
+    QList<QPair<int, int>> ranges;
+    ranges.reserve(selectedSignals.size());
+    for (const SelectedSignal& signal :
+         std::as_const(selectedSignals)) {
+        if (signal.start >= 0 && signal.length > 0)
+            ranges.append(qMakePair(signal.start,
+                                    signal.length));
+    }
+    std::sort(ranges.begin(),
+              ranges.end(),
+              [](const auto& left, const auto& right) {
+        return left.first < right.first;
+    });
+    selections.highlightSignalSelections(editor, ranges);
+}
+
+bool MyCodeEditorState::startSignalSelectionMode(
+    MyCodeEditor* editor,
+    QString* message)
+{
+    if (!editor || !editor->document()) {
+        if (message)
+            *message = QStringLiteral("No editor document");
+        return false;
+    }
+    cancelSignalDefinitionEditor();
+    selectedSignals.clear();
+    signalSelectionActive = true;
+    signalSelectionDragging = false;
+    signalSelectionDragSelect = false;
+    signalSelectionLastDragIdentity.clear();
+    signalSelectionLastDragPoint = QPoint(-1, -1);
+    selections.clearSignalSelections(editor);
+    if (message)
+        *message = QStringLiteral("Select signals");
+    emit editor->editorStatusMessageRequested(
+        QStringLiteral(
+            "Select signals: left-drag to check signals, right-click for actions, Esc to cancel"));
+    return true;
+}
+
+void MyCodeEditorState::cancelSignalSelectionMode(
+    MyCodeEditor* editor)
+{
+    signalSelectionActive = false;
+    signalSelectionDragging = false;
+    signalSelectionDragSelect = false;
+    signalSelectionLastDragIdentity.clear();
+    signalSelectionLastDragPoint = QPoint(-1, -1);
+    selectedSignals.clear();
+    if (editor)
+        selections.clearSignalSelections(editor);
+}
+
+bool MyCodeEditorState::signalSelectionModeActive() const
+{
+    return signalSelectionActive;
+}
+
+QStringList MyCodeEditorState::selectedSignalNames() const
+{
+    QList<SelectedSignal> ordered =
+        selectedSignals.values();
+    std::sort(ordered.begin(),
+              ordered.end(),
+              [](const SelectedSignal& left,
+                 const SelectedSignal& right) {
+        if (left.start != right.start)
+            return left.start < right.start;
+        return left.name < right.name;
+    });
+    QStringList names;
+    names.reserve(ordered.size());
+    for (const SelectedSignal& signal : ordered)
+        names.append(signal.name);
+    return names;
+}
+
+bool MyCodeEditorState::toggleSignalSelectionAt(
+    MyCodeEditor* editor,
+    int cursorPosition,
+    bool toggle,
+    bool desiredState)
+{
+    if (!signalSelectionActive || !editor)
+        return false;
+    const TSIdentifierTarget identifier =
+        syntax.identifierAt(cursorPosition);
+    if (!identifier.ok())
+        return false;
+
+    const EditorSemanticContext context =
+        semanticContextForPosition(
+            editor, identifier.startChar, false);
+    DefinitionQuery query;
+    query.symbolName = identifier.text;
+    query.fileName = context.fileName;
+    query.moduleName = context.moduleName;
+    query.linePrefixBeforeCursor =
+        context.lineUpToCursor;
+    query.cursorLine = context.cursorLine;
+    query.cursorColumn = context.column;
+    const DefinitionResult definition =
+        DefinitionService::getInstance()->resolveDefinition(query);
+    if (!definition.found)
+        return false;
+
+    const SymbolTaxonomy::SemanticMetadata metadata =
+        semanticMetadataForSymbolRecord(
+            definition.symbolRecord);
+    if (!SymbolTaxonomy::isSignalDeclaration(metadata)
+        && !SymbolTaxonomy::isPortDeclaration(metadata)) {
+        return false;
+    }
+    if (EditorFileIdentity::same(
+            definition.symbolRecord.location.fileName,
+            identity.current())) {
+        const std::uint64_t recordRevision =
+            definition.symbolRecord.presentation.documentRevision;
+        if (recordRevision != 0
+            && recordRevision
+                != semanticDocumentRevision()) {
+            return false;
+        }
+        if (recordRevision == 0
+            && editor->document()->isModified()) {
+            return false;
+        }
+    }
+
+    QString stableIdentity =
+        definition.symbolRecord.stableKey.isValid()
+        ? definition.symbolRecord.stableKey.toString()
+        : EffectiveValueService::stableSourceIdentity(
+              definition.symbolRecord);
+    if (stableIdentity.isEmpty())
+        return false;
+
+    const bool currentlySelected =
+        selectedSignals.contains(stableIdentity);
+    const bool select = toggle
+        ? !currentlySelected : desiredState;
+    if (select) {
+        SelectedSignal signal;
+        signal.identity = stableIdentity;
+        signal.name = identifier.text;
+        signal.start = identifier.startChar;
+        signal.length =
+            identifier.endChar - identifier.startChar;
+        selectedSignals.insert(stableIdentity, signal);
+    } else {
+        selectedSignals.remove(stableIdentity);
+    }
+    signalSelectionLastDragIdentity = stableIdentity;
+    refreshSignalSelectionOverlay(editor);
+    return true;
+}
+
+bool MyCodeEditorState::createAssignmentQueueAt(
+    MyCodeEditor* editor,
+    int cursorPosition,
+    QString* message)
+{
+    if (!editor || !editor->document()) {
+        if (message)
+            *message = QStringLiteral("No editor document");
+        return false;
+    }
+    QList<SelectedSignal> ordered =
+        selectedSignals.values();
+    std::sort(ordered.begin(),
+              ordered.end(),
+              [](const SelectedSignal& left,
+                 const SelectedSignal& right) {
+        if (left.start != right.start)
+            return left.start < right.start;
+        return left.name < right.name;
+    });
+    if (ordered.isEmpty()) {
+        if (message)
+            *message = QStringLiteral("No signals selected");
+        cancelSignalSelectionMode(editor);
+        return false;
+    }
+
+    const int documentEnd =
+        qMax(0, editor->document()->characterCount() - 1);
+    QTextBlock block = editor->document()->findBlock(
+        qBound(0, cursorPosition, documentEnd));
+    if (!block.isValid()) {
+        if (message)
+            *message = QStringLiteral("Invalid insertion context");
+        cancelSignalSelectionMode(editor);
+        return false;
+    }
+    const QString blockText = block.text();
+    int indentLength = 0;
+    while (indentLength < blockText.size()
+           && (blockText.at(indentLength)
+                   == QLatin1Char(' ')
+               || blockText.at(indentLength)
+                   == QLatin1Char('\t'))) {
+        ++indentLength;
+    }
+    const QString indent =
+        blockText.left(indentLength);
+
+    QString insertionText;
+    CodeTemplateSlotList metadata;
+    for (int index = 0; index < ordered.size(); ++index) {
+        insertionText += indent;
+        insertionText += ordered.at(index).name;
+        insertionText += QStringLiteral(" <= ");
+        CodeTemplateSlot slot;
+        slot.name = QStringLiteral("rhs %1").arg(index + 1);
+        slot.start = insertionText.size();
+        slot.length = 0;
+        metadata.append(slot);
+        insertionText += QStringLiteral(";\n");
+    }
+    const int insertionStart = block.position();
+
+    cancelSignalSelectionMode(editor);
+    clearTemplateSlotMode(editor);
+    QTextCursor insertion(editor->document());
+    insertion.beginEditBlock();
+    insertion.setPosition(insertionStart);
+    insertion.insertText(insertionText);
+    insertion.endEditBlock();
+    startTemplateSlotMode(editor,
+                          insertionStart,
+                          insertionText.size(),
+                          metadata);
+    if (message) {
+        *message = QStringLiteral(
+            "Created assignment queue for %1 signals")
+            .arg(ordered.size());
+    }
+    emit editor->editorStatusMessageRequested(
+        QStringLiteral(
+            "Created assignment queue for %1 signals")
+            .arg(ordered.size()));
+    return templateSlotModeActive();
+}
+
+void MyCodeEditorState::addStructuralContextMenuActions(
+    MyCodeEditor* editor,
+    QMenu* menu,
+    int cursorPosition)
+{
+    if (!editor || !menu)
+        return;
+
+    QString signalFailure;
+    const QString signalCandidate =
+        signalDefinitionCandidateAt(
+            editor, cursorPosition, &signalFailure);
+    const TSInstantiationTarget target =
+        syntax.instantiationAt(cursorPosition);
+    const bool hasInstanceSlots =
+        target.ok()
+        && (!target.parameterActuals.isEmpty()
+            || !target.portActuals.isEmpty());
+    if (signalCandidate.isEmpty()
+        && !hasInstanceSlots) {
+        return;
+    }
+
+    if (!signalCandidate.isEmpty()) {
+        QAction* createAction = menu->addAction(
+            QStringLiteral("Create signal definition..."));
+        QObject::connect(
+            createAction,
+            &QAction::triggered,
+            editor,
+            [this, editor, cursorPosition]() {
+                QString reason;
+                if (!beginSignalDefinitionEditor(
+                        editor, cursorPosition, &reason)
+                    && !reason.isEmpty()) {
+                    emit editor->editorStatusMessageRequested(reason);
+                }
+            });
+    }
+    if (!signalCandidate.isEmpty() && hasInstanceSlots)
+        menu->addSeparator();
+    if (hasInstanceSlots) {
+        QAction* action =
+            menu->addAction(QStringLiteral("Edit instance slots"));
+        QObject::connect(action,
+                         &QAction::triggered,
+                         editor,
+                         [this, editor, cursorPosition]() {
+            QString message;
+            if (!editInstanceSlotsAt(
+                    editor, cursorPosition, &message)
+                && !message.isEmpty()) {
+                emit editor->editorStatusMessageRequested(message);
+            }
+        });
+    }
+}
+
 bool MyCodeEditorState::handleMousePress(
     MyCodeEditor* editor,
     QMouseEvent* event)
 {
+    if (signalSelectionActive && editor && event
+        && event->button() == Qt::LeftButton) {
+        const QTextCursor target =
+            editor->cursorForPosition(
+                event->position().toPoint());
+        signalSelectionLastDragPoint =
+            event->position().toPoint();
+        signalSelectionLastDragIdentity.clear();
+        const bool resolved =
+            toggleSignalSelectionAt(
+                editor, target.position(), true);
+        signalSelectionDragging = true;
+        signalSelectionDragSelect =
+            !resolved
+            || selectedSignals.contains(
+                   signalSelectionLastDragIdentity);
+        event->accept();
+        return true;
+    }
+
     if (templateSlotModeActive() && editor && event) {
         const QTextCursor targetCursor =
             editor->cursorForPosition(event->position().toPoint());
@@ -3865,6 +5422,16 @@ bool MyCodeEditorState::handleMousePress(
         && !(event->modifiers().testFlag(Qt::ShiftModifier)
              && event->modifiers().testFlag(Qt::AltModifier))) {
         clearColumnSelection(editor, *this);
+    }
+
+    if (handlePlainVirtualCursorClick(
+            editor, event, *this)) {
+        return true;
+    }
+    if (virtualCursorActive
+        && event
+        && event->button() == Qt::LeftButton) {
+        clearVirtualCursor(editor);
     }
 
     if (handleBracketRangeAltClick(editor, event))
@@ -3894,6 +5461,68 @@ bool MyCodeEditorState::handleMouseMove(
     MyCodeEditor* editor,
     QMouseEvent* event)
 {
+    if (signalSelectionActive
+        && signalSelectionDragging
+        && editor
+        && event
+        && event->buttons().testFlag(
+            Qt::LeftButton)) {
+        const QPoint currentPoint =
+            event->position().toPoint();
+        const QPoint previousPoint =
+            signalSelectionLastDragPoint.x() >= 0
+                ? signalSelectionLastDragPoint
+                : currentPoint;
+        const int previousLine =
+            editor->cursorForPosition(
+                QPoint(0, previousPoint.y()))
+                .block()
+                .blockNumber();
+        const int currentLine =
+            editor->cursorForPosition(
+                QPoint(0, currentPoint.y()))
+                .block()
+                .blockNumber();
+        const int lineStep =
+            currentLine >= previousLine ? 1 : -1;
+        for (int line = previousLine;; line += lineStep) {
+            const EditorBlockGeometry geometry =
+                editor->blockGeometry(line);
+            const int y = qRound(
+                geometry.top + geometry.height / 2.0);
+            qreal progress = 1.0;
+            if (currentPoint.y() != previousPoint.y()) {
+                progress =
+                    static_cast<qreal>(
+                        y - previousPoint.y())
+                    / static_cast<qreal>(
+                        currentPoint.y()
+                        - previousPoint.y());
+            }
+            progress = qBound<qreal>(
+                0.0, progress, 1.0);
+            const int x = qRound(
+                previousPoint.x()
+                + (currentPoint.x()
+                   - previousPoint.x())
+                      * progress);
+            const QTextCursor target =
+                editor->cursorForPosition(
+                    QPoint(x, y));
+            toggleSignalSelectionAt(
+                editor,
+                target.position(),
+                false,
+                signalSelectionDragSelect);
+            if (line == currentLine)
+                break;
+        }
+        signalSelectionLastDragPoint =
+            currentPoint;
+        event->accept();
+        return true;
+    }
+
     if (updateColumnSelectionDrag(editor, event, *this))
         return true;
 
@@ -3919,6 +5548,17 @@ bool MyCodeEditorState::handleMouseRelease(
     MyCodeEditor* editor,
     QMouseEvent* event)
 {
+    if (signalSelectionDragging
+        && event
+        && event->button() == Qt::LeftButton) {
+        signalSelectionDragging = false;
+        signalSelectionLastDragIdentity.clear();
+        signalSelectionLastDragPoint =
+            QPoint(-1, -1);
+        event->accept();
+        return true;
+    }
+
     if (sourceNavigation.handleMouseRelease(editor, event))
         return true;
 
@@ -3958,22 +5598,116 @@ QString MyCodeEditorState::materializeDocumentText(
     return editor ? editor->QPlainTextEdit::toPlainText() : QString();
 }
 
-const QString& MyCodeEditorState::cachedDocumentText() const
+const QString& MyCodeEditorState::cachedDocumentText()
 {
+    if (inlineFilterTextOverlayActive)
+        ++hotPathMetrics.inlineFilterOverlayForcedTextReads;
+    finishInlineFilterTextOverlay();
     return semanticRevisionText;
+}
+
+int MyCodeEditorState::cachedDocumentLength() const
+{
+    if (!inlineFilterTextOverlayActive)
+        return semanticRevisionText.size();
+    return semanticRevisionText.size()
+        - inlineFilterTextOverlayOriginalLength
+        + inlineFilterTextOverlayCurrentText.size();
 }
 
 QString MyCodeEditorState::cachedDocumentSlice(int position, int length)
 {
-    const int boundedPosition = qBound(0, position, semanticRevisionText.size());
+    const int documentLength = cachedDocumentLength();
+    const int boundedPosition = qBound(0, position, documentLength);
     const int boundedLength = qBound(0,
                                      length,
-                                     semanticRevisionText.size()
-                                         - boundedPosition);
+                                     documentLength - boundedPosition);
     ++hotPathMetrics.cachedTextSliceReads;
     hotPathMetrics.cachedTextSliceCharacters +=
         static_cast<std::uint64_t>(boundedLength);
-    return semanticRevisionText.mid(boundedPosition, boundedLength);
+    if (!inlineFilterTextOverlayActive)
+        return semanticRevisionText.mid(boundedPosition, boundedLength);
+
+    const int requestEnd = boundedPosition + boundedLength;
+    const int overlayStart = inlineFilterTextOverlayStart;
+    const int overlayEnd =
+        overlayStart + inlineFilterTextOverlayCurrentText.size();
+    QString result;
+    result.reserve(boundedLength);
+    int cursor = boundedPosition;
+    if (cursor < overlayStart) {
+        const int beforeEnd = qMin(requestEnd, overlayStart);
+        result += semanticRevisionText.mid(
+            cursor, beforeEnd - cursor);
+        cursor = beforeEnd;
+    }
+    if (cursor < requestEnd && cursor < overlayEnd) {
+        const int currentStart = qMax(cursor, overlayStart);
+        const int currentEnd = qMin(requestEnd, overlayEnd);
+        result += inlineFilterTextOverlayCurrentText.mid(
+            currentStart - overlayStart,
+            currentEnd - currentStart);
+        cursor = currentEnd;
+    }
+    if (cursor < requestEnd) {
+        const int baseStart =
+            cursor
+            - inlineFilterTextOverlayCurrentText.size()
+            + inlineFilterTextOverlayOriginalLength;
+        result += semanticRevisionText.mid(
+            baseStart, requestEnd - cursor);
+    }
+    return result;
+}
+
+bool MyCodeEditorState::beginInlineFilterTextOverlay(
+    int startPosition,
+    int endPosition)
+{
+    if (inlineFilterTextOverlayActive) {
+        return startPosition == inlineFilterTextOverlayStart
+            && endPosition
+                   == inlineFilterTextOverlayStart
+                       + inlineFilterTextOverlayCurrentText.size();
+    }
+    if (!syntax.usesLargeFileScopedSyntax()
+        || startPosition < 0
+        || endPosition < startPosition
+        || endPosition > semanticRevisionText.size()) {
+        return false;
+    }
+
+    inlineFilterTextOverlayActive = true;
+    inlineFilterTextOverlayStart = startPosition;
+    inlineFilterTextOverlayOriginalLength =
+        endPosition - startPosition;
+    inlineFilterTextOverlayOriginalText =
+        semanticRevisionText.mid(
+            startPosition,
+            inlineFilterTextOverlayOriginalLength);
+    inlineFilterTextOverlayCurrentText =
+        inlineFilterTextOverlayOriginalText;
+    ++hotPathMetrics.inlineFilterOverlaySessions;
+    return true;
+}
+
+void MyCodeEditorState::finishInlineFilterTextOverlay()
+{
+    if (!inlineFilterTextOverlayActive)
+        return;
+    if (inlineFilterTextOverlayCurrentText
+        != inlineFilterTextOverlayOriginalText) {
+        semanticRevisionText.replace(
+            inlineFilterTextOverlayStart,
+            inlineFilterTextOverlayOriginalLength,
+            inlineFilterTextOverlayCurrentText);
+        ++hotPathMetrics.inlineFilterOverlayMaterializations;
+    }
+    inlineFilterTextOverlayActive = false;
+    inlineFilterTextOverlayStart = -1;
+    inlineFilterTextOverlayOriginalLength = 0;
+    inlineFilterTextOverlayOriginalText.clear();
+    inlineFilterTextOverlayCurrentText.clear();
 }
 
 void MyCodeEditorState::acceptLoadedTextAsSemanticBaseline(
@@ -3987,11 +5721,22 @@ EditorHotPathMetrics MyCodeEditorState::hotPathMetricsForTest() const
 {
     return hotPathMetrics;
 }
+bool MyCodeEditorState::inlineFilterTextOverlayActiveForTest() const
+{
+    return inlineFilterTextOverlayActive;
+}
+
 
 EditorOccurrenceIndexStats
 MyCodeEditorState::occurrenceIndexStatsForTest() const
 {
     return selections.occurrenceIndexStatsForTest();
+}
+
+QList<int> MyCodeEditorState::occurrencePositionsForTest(
+    const QString& word) const
+{
+    return selections.occurrencePositionsForTest(word);
 }
 
 void MyCodeEditorState::resetHotPathMetricsForTest()
@@ -4477,6 +6222,12 @@ QString MyCodeEditorState::syntaxTextForTest() const
     const TSDocument* document = syntax.tsDocument();
     return document ? document->text() : QString();
 }
+EditorLargeFileSyntaxScopeSnapshot
+MyCodeEditorState::largeFileSyntaxScopeForTest() const
+{
+    return syntax.largeFileScopeSnapshotForTest();
+}
+
 
 FoldShelfItem MyCodeEditorState::foldShelfItemAtLine(
     MyCodeEditor* editor,
@@ -4540,6 +6291,11 @@ void MyCodeEditorState::setDocumentFileName(
     if (!identity.set(fileName))
         return;
 
+    cancelSignalDefinitionEditor();
+    cancelSignalSelectionMode(editor);
+    clearVirtualCursor(editor);
+    diagnosticComputationRevision = 0;
+    clearDiagnosticHighlights(editor);
     refreshGhostAnnotations(editor);
     emit editor->fileNameChanged(identity.current());
 }
@@ -4551,16 +6307,157 @@ QString MyCodeEditorState::documentFileName() const
 
 void MyCodeEditorState::setDiagnosticHighlights(
     MyCodeEditor* editor,
-    const QList<SemanticDiagnostic>& diagnostics)
+    const QList<SemanticDiagnostic>& incomingDiagnostics)
 {
     if (!editor)
         return;
-    if (diagnostics.isEmpty()
+
+    std::uint64_t incomingComputationRevision = 0;
+    for (const SemanticDiagnostic& diagnostic : incomingDiagnostics) {
+        incomingComputationRevision =
+            std::max(incomingComputationRevision,
+                     diagnostic.computationRevision);
+    }
+    if (incomingComputationRevision != 0
+        && incomingComputationRevision
+            < diagnosticComputationRevision) {
+        return;
+    }
+    if (incomingComputationRevision != 0) {
+        diagnosticComputationRevision =
+            incomingComputationRevision;
+    }
+
+    QList<SemanticDiagnostic> currentDiagnostics;
+    currentDiagnostics.reserve(incomingDiagnostics.size());
+    for (const SemanticDiagnostic& diagnostic : incomingDiagnostics) {
+        if (diagnostic.documentRevision != 0
+            && diagnostic.documentRevision
+                != semanticDocumentRevision()) {
+            continue;
+        }
+        currentDiagnostics.append(diagnostic);
+    }
+
+    if (currentDiagnostics.isEmpty()
+        && diagnostics.isEmpty()
         && editor->property(kDiagnosticsEmptyProperty).toBool()) {
         return;
     }
+
+    diagnostics = std::move(currentDiagnostics);
+    diagnosticIndexesByLine.clear();
+    diagnosticSeverityByLine.clear();
+    const int documentEnd =
+        qMax(0, editor->document()->characterCount() - 1);
+    for (int index = 0; index < diagnostics.size(); ++index) {
+        const SemanticDiagnostic& diagnostic = diagnostics.at(index);
+        QSet<int> lines;
+        for (const SemanticSourceRange& range : diagnostic.ranges) {
+            if (range.position < 0 || range.length <= 0)
+                continue;
+            const int start = qBound(0, range.position, documentEnd);
+            const int finalCharacter = qBound(
+                start,
+                range.position + range.length - 1,
+                documentEnd);
+            const QTextBlock startBlock =
+                editor->document()->findBlock(start);
+            const QTextBlock endBlock =
+                editor->document()->findBlock(finalCharacter);
+            if (!startBlock.isValid() || !endBlock.isValid())
+                continue;
+            for (int line = startBlock.blockNumber();
+                 line <= endBlock.blockNumber();
+                 ++line) {
+                lines.insert(line);
+            }
+        }
+        if (lines.isEmpty() && diagnostic.line > 0)
+            lines.insert(diagnostic.line - 1);
+
+        for (const int line : std::as_const(lines)) {
+            diagnosticIndexesByLine[line].append(index);
+            const auto existing =
+                diagnosticSeverityByLine.constFind(line);
+            if (existing == diagnosticSeverityByLine.constEnd()
+                || diagnosticSeverityRank(diagnostic.severity)
+                    > diagnosticSeverityRank(existing.value())) {
+                diagnosticSeverityByLine.insert(
+                    line, diagnostic.severity);
+            }
+        }
+    }
+
     selections.highlightDiagnostics(editor, diagnostics);
     editor->setProperty(kDiagnosticsEmptyProperty, diagnostics.isEmpty());
+    gutter.handleUpdateRequest(editor, editor->viewport()->rect(), 0);
+    editor->viewport()->update();
+}
+
+void MyCodeEditorState::clearDiagnosticHighlights(MyCodeEditor* editor)
+{
+    if (!editor)
+        return;
+    diagnostics.clear();
+    diagnosticIndexesByLine.clear();
+    diagnosticSeverityByLine.clear();
+    selections.highlightDiagnostics(editor, {});
+    editor->setProperty(kDiagnosticsEmptyProperty, true);
+    gutter.handleUpdateRequest(editor, editor->viewport()->rect(), 0);
+    editor->viewport()->update();
+}
+
+QString MyCodeEditorState::diagnosticTooltipForLine(
+    int zeroBasedLine) const
+{
+    const QList<int> indexes =
+        diagnosticIndexesByLine.value(zeroBasedLine);
+    QList<const SemanticDiagnostic*> ordered;
+    ordered.reserve(indexes.size());
+    for (const int index : indexes) {
+        if (index >= 0 && index < diagnostics.size())
+            ordered.append(&diagnostics.at(index));
+    }
+    std::stable_sort(
+        ordered.begin(),
+        ordered.end(),
+        [](const SemanticDiagnostic* left,
+           const SemanticDiagnostic* right) {
+            return diagnosticSeverityRank(left->severity)
+                > diagnosticSeverityRank(right->severity);
+        });
+
+    QStringList rows;
+    rows.reserve(ordered.size());
+    for (const SemanticDiagnostic* diagnostic : std::as_const(ordered)) {
+        rows.append(
+            QStringLiteral("%1: %2")
+                .arg(diagnosticSeverityLabel(diagnostic->severity),
+                     diagnostic->message));
+    }
+    return rows.join(QLatin1Char('\n'));
+}
+
+QList<int> MyCodeEditorState::diagnosticOverviewLinesForTest() const
+{
+    QList<int> lines = diagnosticSeverityByLine.keys();
+    std::sort(lines.begin(), lines.end());
+    return lines;
+}
+
+SemanticDiagnostic::Severity
+MyCodeEditorState::diagnosticSeverityForLineForTest(
+    int zeroBasedLine,
+    bool* available) const
+{
+    const auto found =
+        diagnosticSeverityByLine.constFind(zeroBasedLine);
+    if (available)
+        *available = found != diagnosticSeverityByLine.constEnd();
+    return found == diagnosticSeverityByLine.constEnd()
+        ? SemanticDiagnostic::Info
+        : found.value();
 }
 
 void MyCodeEditorState::setSemanticDecorations(
@@ -4570,12 +6467,12 @@ void MyCodeEditorState::setSemanticDecorations(
     if (!editor)
         return;
     if (decorations.isEmpty()
+        && semanticDecorations.isEmpty()
         && editor->property(kSemanticDecorationsEmptyProperty).toBool()) {
         return;
     }
-    selections.highlightSemanticDecorations(editor, decorations);
-    editor->setProperty(kSemanticDecorationsEmptyProperty,
-                        decorations.isEmpty());
+    semanticDecorations = decorations;
+    refreshSemanticDecorationPresentation(editor);
 }
 
 void MyCodeEditorState::refreshGhostAnnotations(MyCodeEditor* editor)
@@ -4590,7 +6487,7 @@ void MyCodeEditorState::refreshGhostAnnotations(MyCodeEditor* editor)
 
     GhostAnnotationQuery query;
     query.fileName = identity.current();
-    query.documentText = semanticRevisionText;
+    query.documentText = editor->cachedDocumentText();
     query.instanceContext = hierarchyInstance;
     query.documentRevision = semanticDocumentRevision();
     ++hotPathMetrics.fullGhostQueries;

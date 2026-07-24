@@ -6,8 +6,11 @@
 #include <QElapsedTimer>
 #include <QFile>
 #include <QFileInfo>
+#include <QFontDatabase>
+#include <QFontMetricsF>
 #include <QSignalSpy>
 #include <QScrollBar>
+#include <QTextBlock>
 #include <QTextCursor>
 #include <QTextStream>
 #include <QTimer>
@@ -29,6 +32,7 @@
 #include "smartrelationshipbuilder.h"
 #include "symbolanalyzer.h"
 #include "tabmanager.h"
+#include "tsdocument.h"
 #include "workspacemanager.h"
 #undef private
 
@@ -106,6 +110,145 @@ static QString readTextFile(const QString& fileName)
     if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
         return QString();
     return QTextStream(&file).readAll();
+}
+
+static void runRealSourceColumnProbe(const QString& fileName)
+{
+    const QString source = readTextFile(fileName);
+    QString longest;
+    QString shortest;
+    const QStringList lines = source.split(QLatin1Char('\n'));
+    for (QString line : lines) {
+        if (line.endsWith(QLatin1Char('\r')))
+            line.chop(1);
+        if (line.trimmed().isEmpty()
+            || line.size() > 72) {
+            continue;
+        }
+        if (longest.isEmpty()
+            || line.size() > longest.size()) {
+            longest = line;
+        }
+        if (shortest.isEmpty()
+            || line.size() < shortest.size()) {
+            shortest = line;
+        }
+    }
+    expectBool("real source provides distinct long and short lines",
+               !longest.isEmpty()
+                   && !shortest.isEmpty()
+                   && longest != shortest,
+               true);
+    if (longest.isEmpty()
+        || shortest.isEmpty()
+        || longest == shortest) {
+        return;
+    }
+
+    MyCodeEditor editor;
+    editor.resize(900, 150);
+    editor.setLineWrapMode(QPlainTextEdit::NoWrap);
+    editor.setFont(
+        QFontDatabase::systemFont(
+            QFontDatabase::FixedFont));
+    editor.setPlainText(
+        longest + QLatin1Char('\n')
+        + shortest + QLatin1Char('\n'));
+    editor.document()->setModified(false);
+    editor.show();
+    editor.setFocus();
+    QCoreApplication::processEvents(
+        QEventLoop::AllEvents, 30);
+
+    const qreal space = qMax<qreal>(
+        1.0,
+        QFontMetricsF(editor.font())
+            .horizontalAdvance(QLatin1Char(' ')));
+    const auto endVisual = [&](int line) {
+        const QTextBlock block =
+            editor.document()->findBlockByNumber(line);
+        QTextCursor start(block);
+        start.setPosition(block.position());
+        QTextCursor end(block);
+        end.setPosition(
+            block.position() + block.text().size());
+        return qMax(
+            0,
+            qRound((editor.cursorRect(end).left()
+                    - editor.cursorRect(start).left())
+                   / space));
+    };
+    const auto pointAt = [&](int line, int column) {
+        const QTextBlock block =
+            editor.document()->findBlockByNumber(line);
+        QTextCursor start(block);
+        start.setPosition(block.position());
+        const QRect rect = editor.cursorRect(start);
+        return QPoint(
+            qRound(rect.left() + column * space),
+            rect.center().y());
+    };
+
+    const int firstEnd = endVisual(0);
+    const int secondEnd = endVisual(1);
+    const int targetColumn =
+        qMax(firstEnd, secondEnd) + 3;
+    const QString before = editor.toPlainText();
+    QTest::mouseClick(
+        editor.viewport(),
+        Qt::LeftButton,
+        Qt::NoModifier,
+        pointAt(0, targetColumn));
+    QTest::mouseClick(
+        editor.viewport(),
+        Qt::LeftButton,
+        Qt::ShiftModifier | Qt::AltModifier,
+        pointAt(1, targetColumn));
+    expectBool("real long-short column endpoints stay virtual",
+               editor.columnSelectionActive()
+                   && editor.toPlainText() == before
+                   && !editor.document()->isModified(),
+               true);
+
+    QTest::keyClicks(&editor, "X");
+    const QString expected =
+        longest
+        + QString(targetColumn - firstEnd,
+                  QLatin1Char(' '))
+        + QStringLiteral("X\n")
+        + shortest
+        + QString(targetColumn - secondEnd,
+                  QLatin1Char(' '))
+        + QStringLiteral("X\n");
+    expectBool("real long-short column edit materializes only final padding",
+               editor.toPlainText() == expected,
+               true);
+}
+
+static bool sourceHasTreeSitterComment(const QString& source)
+{
+    if (source.isEmpty())
+        return false;
+    TSDocument syntax;
+    syntax.setText(source);
+    int probe = 0;
+    while (probe < source.size()) {
+        const int line = source.indexOf(
+            QStringLiteral("//"), probe);
+        const int block = source.indexOf(
+            QStringLiteral("/*"), probe);
+        int candidate = -1;
+        if (line >= 0 && block >= 0)
+            candidate = qMin(line, block);
+        else
+            candidate = qMax(line, block);
+        if (candidate < 0)
+            break;
+        if (syntax.isCommentAt(candidate + 1))
+            return true;
+        probe = candidate + 2;
+    }
+    return false;
 }
 
 static qint64 totalFileBytes(const QStringList& files)
@@ -488,9 +631,59 @@ int main(int argc, char** argv)
     }
 
     const qint64 baselineFullWorkerMs = workerTelemetry.workerMs;
+    const auto realSnapshot =
+        SemanticIndex::getInstance()->snapshot();
+    bool hasRealModule = false;
+    bool hasRealInstance = false;
+    bool hasRealParameter = false;
+    bool hasRealBoundInstanceValue = false;
+    if (realSnapshot) {
+        for (const QString& fileName : workspaceFiles) {
+            const QList<SemanticSymbolRecord> records =
+                realSnapshot->getSymbolRecords(fileName);
+            for (const SemanticSymbolRecord& record : records) {
+                const SymbolTaxonomy::SemanticMetadata metadata =
+                    semanticMetadataForSymbolRecord(record);
+                hasRealModule = hasRealModule
+                    || SymbolTaxonomy::isModuleDeclaration(
+                        metadata);
+                hasRealInstance = hasRealInstance
+                    || SymbolTaxonomy::isInstanceDeclaration(
+                        metadata);
+                hasRealParameter = hasRealParameter
+                    || record.declarationKind
+                           == SymbolTaxonomy::DeclarationKind::Parameter
+                    || record.declarationKind
+                           == SymbolTaxonomy::DeclarationKind::Localparam;
+                hasRealBoundInstanceValue =
+                    hasRealBoundInstanceValue
+                    || !record.presentation
+                            .instanceInfoByPath.isEmpty();
+            }
+        }
+    }
+    expectBool("real workspace publishes module declarations",
+               hasRealModule,
+               true);
+    expectBool("real workspace publishes module instances",
+               hasRealInstance,
+               true);
+    expectBool("real workspace publishes parameter declarations",
+               hasRealParameter,
+               true);
+    expectBool("real workspace publishes bound instance values",
+               hasRealBoundInstanceValue,
+               true);
+
     const QString largeFile = largestIndexedFile(
         window.workspaceManager->getSystemVerilogFiles());
     expectBool("large file selected", QFileInfo(largeFile).size() > 20000, true);
+    const QString realLargeSource =
+        readTextFile(largeFile);
+    expectBool("real workspace comments are Tree-sitter classified",
+               sourceHasTreeSitterComment(realLargeSource),
+               true);
+    runRealSourceColumnProbe(largeFile);
 
     int largeFileAnalysisCount = 0;
     QObject::connect(window.analysisScheduler.get(), &AnalysisScheduler::fileSymbolAnalysisFinished,

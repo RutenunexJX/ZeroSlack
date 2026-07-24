@@ -20,6 +20,7 @@
 #include <QFont>
 #include <QFontDatabase>
 #include <QFontInfo>
+#include <QFontMetricsF>
 #include <QGraphicsItem>
 #include <QGraphicsRectItem>
 #include <QGraphicsView>
@@ -3441,6 +3442,424 @@ static void runEditorColumnEditRegression()
                tabKeyEditor.toPlainText()
                    == QStringLiteral("\tfoo\n    foo\n"),
                true);
+
+    const QFont fixedFont =
+        QFontDatabase::systemFont(QFontDatabase::FixedFont);
+    const auto spaceAdvance = [](const MyCodeEditor& target) {
+        return qMax<qreal>(
+            1.0,
+            QFontMetricsF(target.font())
+                .horizontalAdvance(QLatin1Char(' ')));
+    };
+    const auto visualColumnAtLineEnd =
+        [&](const MyCodeEditor& target, int line) {
+            const QTextBlock block =
+                target.document()->findBlockByNumber(line);
+            QTextCursor start(block);
+            start.setPosition(block.position());
+            QTextCursor end(block);
+            end.setPosition(
+                block.position() + block.text().size());
+            return qMax(
+                0,
+                qRound((target.cursorRect(end).left()
+                        - target.cursorRect(start).left())
+                       / spaceAdvance(target)));
+        };
+    const auto pointAtVisualColumn =
+        [&](const MyCodeEditor& target, int line, int column) {
+            const QTextBlock block =
+                target.document()->findBlockByNumber(line);
+            QTextCursor start(block);
+            start.setPosition(block.position());
+            const QRect rowRect = target.cursorRect(start);
+            return QPoint(
+                qRound(rowRect.left()
+                       + qMax(0, column)
+                             * spaceAdvance(target)),
+                rowRect.center().y());
+        };
+
+    MyCodeEditor ordinaryVirtualEditor;
+    ordinaryVirtualEditor.resize(520, 180);
+    ordinaryVirtualEditor.setLineWrapMode(QPlainTextEdit::NoWrap);
+    ordinaryVirtualEditor.setFont(fixedFont);
+    ordinaryVirtualEditor.setPlainText(
+        QStringLiteral("123456\n12345\n"));
+    ordinaryVirtualEditor.document()->setModified(false);
+    ordinaryVirtualEditor.show();
+    ordinaryVirtualEditor.setFocus();
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+
+    const int firstEndVisual =
+        visualColumnAtLineEnd(ordinaryVirtualEditor, 0);
+    const int firstTargetVisual = firstEndVisual + 3;
+    QTextBlock ordinaryFirstBlock =
+        ordinaryVirtualEditor.document()->findBlockByNumber(0);
+    QTextCursor ordinaryFirstEnd(ordinaryFirstBlock);
+    ordinaryFirstEnd.setPosition(
+        ordinaryFirstBlock.position()
+        + ordinaryFirstBlock.text().size());
+    ordinaryVirtualEditor.setTextCursor(ordinaryFirstEnd);
+    ordinaryVirtualEditor.viewport()->repaint();
+    const QImage beforeVirtualClick =
+        renderWidgetImage(ordinaryVirtualEditor.viewport());
+    const QPoint firstVirtualPoint =
+        pointAtVisualColumn(
+            ordinaryVirtualEditor, 0, firstTargetVisual);
+    QTest::mouseClick(ordinaryVirtualEditor.viewport(),
+                      Qt::LeftButton,
+                      Qt::NoModifier,
+                      firstVirtualPoint);
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    const QImage afterVirtualClick =
+        renderWidgetImage(ordinaryVirtualEditor.viewport());
+    const QRect virtualOverlayDiff =
+        differentPixelBounds(beforeVirtualClick, afterVirtualClick);
+    const QRect firstVirtualBand(
+        ordinaryVirtualEditor.cursorRect(ordinaryFirstEnd).left(),
+        ordinaryVirtualEditor.cursorRect(ordinaryFirstEnd).top(),
+        qMax(1,
+             firstVirtualPoint.x()
+                 - ordinaryVirtualEditor.cursorRect(
+                       ordinaryFirstEnd).left() + 3),
+        ordinaryVirtualEditor.cursorRect(ordinaryFirstEnd).height());
+
+    expectBool("ordinary click beyond EOL records a virtual cursor",
+               ordinaryVirtualEditor.virtualCursorActiveForTest()
+                   && ordinaryVirtualEditor.virtualCursorLineForTest() == 0
+                   && ordinaryVirtualEditor.virtualCursorColumnForTest()
+                          == firstTargetVisual,
+               true);
+    expectBool("ordinary virtual click does not modify the document",
+               ordinaryVirtualEditor.toPlainText()
+                       == QStringLiteral("123456\n12345\n")
+                   && !ordinaryVirtualEditor.document()->isModified()
+                   && ordinaryVirtualEditor.textCursor().position()
+                          == ordinaryFirstBlock.position()
+                                 + ordinaryFirstBlock.text().size(),
+               true);
+    expectBool("ordinary virtual cursor paints only an overlay",
+               !virtualOverlayDiff.isNull()
+                   && virtualOverlayDiff.intersects(firstVirtualBand),
+               true);
+
+    QTest::keyClick(&ordinaryVirtualEditor, Qt::Key_Backspace);
+    expectBool("Backspace moves left inside the virtual region",
+               ordinaryVirtualEditor.virtualCursorActiveForTest()
+                   && ordinaryVirtualEditor.virtualCursorColumnForTest()
+                          == firstTargetVisual - 1
+                   && ordinaryVirtualEditor.toPlainText()
+                          == QStringLiteral("123456\n12345\n")
+                   && !ordinaryVirtualEditor.document()->isModified(),
+               true);
+    QTest::keyClick(&ordinaryVirtualEditor, Qt::Key_Right);
+    expectBool("Right moves right inside the virtual region",
+               ordinaryVirtualEditor.virtualCursorActiveForTest()
+                   && ordinaryVirtualEditor.virtualCursorColumnForTest()
+                          == firstTargetVisual,
+               true);
+    QApplication::clipboard()->setText(
+        QStringLiteral("virtual-copy-sentinel"));
+    QTest::keyClick(&ordinaryVirtualEditor,
+                    Qt::Key_C,
+                    Qt::ControlModifier);
+    expectBool("copy excludes a standalone virtual region",
+               ordinaryVirtualEditor.virtualCursorActiveForTest()
+                   && ordinaryVirtualEditor.toPlainText()
+                          == QStringLiteral("123456\n12345\n")
+                   && !ordinaryVirtualEditor.document()->isModified(),
+               true);
+
+    QTest::keyClicks(&ordinaryVirtualEditor, "X");
+    expectBool("typing materializes spaces only at the virtual cursor",
+               ordinaryVirtualEditor.toPlainText()
+                   == QStringLiteral("123456")
+                          + QString(firstTargetVisual - firstEndVisual,
+                                    QLatin1Char(' '))
+                          + QStringLiteral("X\n12345\n")
+                   && !ordinaryVirtualEditor.virtualCursorActiveForTest(),
+               true);
+
+    ordinaryVirtualEditor.setPlainText(
+        QStringLiteral("123456\n12345\n"));
+    ordinaryVirtualEditor.document()->setModified(false);
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+    const int secondEndVisual =
+        visualColumnAtLineEnd(ordinaryVirtualEditor, 1);
+    const int secondTargetVisual = secondEndVisual + 4;
+    QTest::mouseClick(
+        ordinaryVirtualEditor.viewport(),
+        Qt::LeftButton,
+        Qt::NoModifier,
+        pointAtVisualColumn(
+            ordinaryVirtualEditor, 1, secondTargetVisual));
+    QApplication::clipboard()->setText(QStringLiteral("YZ"));
+    QTest::keyClick(&ordinaryVirtualEditor,
+                    Qt::Key_V,
+                    Qt::ControlModifier);
+    expectBool("paste materializes virtual padding before clipboard text",
+               ordinaryVirtualEditor.toPlainText()
+                   == QStringLiteral("123456\n12345")
+                          + QString(secondTargetVisual - secondEndVisual,
+                                    QLatin1Char(' '))
+                          + QStringLiteral("YZ\n"),
+               true);
+
+    ordinaryVirtualEditor.setPlainText(
+        QStringLiteral("123456\n12345\n"));
+    ordinaryVirtualEditor.document()->setModified(false);
+    QTextBlock resetFirst =
+        ordinaryVirtualEditor.document()->findBlockByNumber(0);
+    QTextCursor resetEnd(resetFirst);
+    resetEnd.setPosition(
+        resetFirst.position() + resetFirst.text().size());
+    ordinaryVirtualEditor.setTextCursor(resetEnd);
+    QTest::keyClick(&ordinaryVirtualEditor, Qt::Key_Right);
+    expectBool("Right at a real EOL enters one virtual column",
+               ordinaryVirtualEditor.virtualCursorActiveForTest()
+                   && ordinaryVirtualEditor.virtualCursorColumnForTest()
+                          == visualColumnAtLineEnd(
+                                 ordinaryVirtualEditor, 0) + 1,
+               true);
+    QTest::keyClick(&ordinaryVirtualEditor, Qt::Key_Left);
+    expectBool("Left returns from the first virtual column to real EOL",
+               !ordinaryVirtualEditor.virtualCursorActiveForTest()
+                   && ordinaryVirtualEditor.toPlainText()
+                          == QStringLiteral("123456\n12345\n"),
+               true);
+
+    QTest::mouseClick(
+        ordinaryVirtualEditor.viewport(),
+        Qt::LeftButton,
+        Qt::NoModifier,
+        pointAtVisualColumn(
+            ordinaryVirtualEditor, 0, firstTargetVisual));
+    ordinaryVirtualEditor.undo();
+    expectBool("undo clears a pending virtual offset without editing",
+               !ordinaryVirtualEditor.virtualCursorActiveForTest()
+                   && ordinaryVirtualEditor.toPlainText()
+                          == QStringLiteral("123456\n12345\n"),
+               true);
+    QTest::mouseClick(
+        ordinaryVirtualEditor.viewport(),
+        Qt::LeftButton,
+        Qt::NoModifier,
+        pointAtVisualColumn(
+            ordinaryVirtualEditor, 0, firstTargetVisual));
+    ordinaryVirtualEditor.setDocumentFileName(
+        QDir::temp().filePath(
+            QStringLiteral("zeroslack_virtual_switch.sv")));
+    expectBool("file identity change clears a pending virtual offset",
+               !ordinaryVirtualEditor.virtualCursorActiveForTest(),
+               true);
+    QTest::mouseClick(
+        ordinaryVirtualEditor.viewport(),
+        Qt::LeftButton,
+        Qt::NoModifier,
+        pointAtVisualColumn(
+            ordinaryVirtualEditor, 0, firstTargetVisual));
+    QTextCursor realJump(
+        ordinaryVirtualEditor.document()
+            ->findBlockByNumber(0));
+    realJump.setPosition(realJump.block().position() + 2);
+    ordinaryVirtualEditor.setTextCursor(realJump);
+    expectBool("real cursor jump clears a pending virtual offset",
+               !ordinaryVirtualEditor.virtualCursorActiveForTest(),
+               true);
+
+    MyCodeEditor layoutVirtualEditor;
+    layoutVirtualEditor.resize(520, 140);
+    layoutVirtualEditor.setLineWrapMode(QPlainTextEdit::NoWrap);
+    QFont zoomedFixedFont = fixedFont;
+    zoomedFixedFont.setPointSize(
+        qMax(12, zoomedFixedFont.pointSize() + 4));
+    layoutVirtualEditor.setFont(zoomedFixedFont);
+    layoutVirtualEditor.setTabStopDistance(
+        spaceAdvance(layoutVirtualEditor) * 4.0);
+    layoutVirtualEditor.setPlainText(
+        QStringLiteral("\t中x\n"));
+    layoutVirtualEditor.document()->setModified(false);
+    layoutVirtualEditor.show();
+    layoutVirtualEditor.setFocus();
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    const int layoutEndVisual =
+        visualColumnAtLineEnd(layoutVirtualEditor, 0);
+    QTest::mouseClick(
+        layoutVirtualEditor.viewport(),
+        Qt::LeftButton,
+        Qt::NoModifier,
+        pointAtVisualColumn(
+            layoutVirtualEditor, 0, layoutEndVisual + 2));
+    expectBool("virtual columns use Qt layout for Tab Unicode and zoom",
+               layoutVirtualEditor.virtualCursorActiveForTest()
+                   && layoutVirtualEditor.virtualCursorColumnForTest()
+                          == layoutEndVisual + 2
+                   && layoutVirtualEditor.toPlainText()
+                          == QStringLiteral("\t中x\n"),
+               true);
+    QTest::keyClicks(&layoutVirtualEditor, "K");
+    expectBool("Unicode line materializes only layout-derived padding",
+               layoutVirtualEditor.toPlainText()
+                   == QStringLiteral("\t中x  K\n"),
+               true);
+
+    MyCodeEditor scrolledVirtualEditor;
+    scrolledVirtualEditor.resize(360, 140);
+    scrolledVirtualEditor.setLineWrapMode(QPlainTextEdit::NoWrap);
+    scrolledVirtualEditor.setFont(fixedFont);
+    scrolledVirtualEditor.setPlainText(
+        QString(100, QLatin1Char('a'))
+        + QStringLiteral("\n123456789012345678901234\n"));
+    scrolledVirtualEditor.show();
+    scrolledVirtualEditor.setFocus();
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    scrolledVirtualEditor.horizontalScrollBar()->setValue(
+        qMin(scrolledVirtualEditor.horizontalScrollBar()->maximum(),
+             qRound(spaceAdvance(scrolledVirtualEditor) * 7.0)));
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+    const int scrolledEndVisual =
+        visualColumnAtLineEnd(scrolledVirtualEditor, 1);
+    const QPoint scrolledTarget =
+        pointAtVisualColumn(
+            scrolledVirtualEditor, 1, scrolledEndVisual + 2);
+    QTest::mouseClick(scrolledVirtualEditor.viewport(),
+                      Qt::LeftButton,
+                      Qt::NoModifier,
+                      scrolledTarget);
+    expectBool("virtual click remains layout-correct when horizontally scrolled",
+               scrolledVirtualEditor.horizontalScrollBar()->value() > 0
+                   && scrolledVirtualEditor.virtualCursorActiveForTest()
+                   && scrolledVirtualEditor.virtualCursorColumnForTest()
+                          == scrolledEndVisual + 2,
+               true);
+
+    MyCodeEditor virtualColumnClickEditor;
+    virtualColumnClickEditor.resize(520, 160);
+    virtualColumnClickEditor.setLineWrapMode(QPlainTextEdit::NoWrap);
+    virtualColumnClickEditor.setFont(fixedFont);
+    virtualColumnClickEditor.setPlainText(
+        QStringLiteral("123456\n12345\n"));
+    virtualColumnClickEditor.document()->setModified(false);
+    virtualColumnClickEditor.show();
+    virtualColumnClickEditor.setFocus();
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    const int sharedVirtualColumn = 9;
+    const QImage beforeVirtualColumn =
+        renderWidgetImage(virtualColumnClickEditor.viewport());
+    QTest::mouseClick(
+        virtualColumnClickEditor.viewport(),
+        Qt::LeftButton,
+        Qt::NoModifier,
+        pointAtVisualColumn(
+            virtualColumnClickEditor, 0, sharedVirtualColumn));
+    QTest::mouseClick(
+        virtualColumnClickEditor.viewport(),
+        Qt::LeftButton,
+        columnModifiers,
+        pointAtVisualColumn(
+            virtualColumnClickEditor, 1, sharedVirtualColumn));
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    const QImage afterVirtualColumn =
+        renderWidgetImage(virtualColumnClickEditor.viewport());
+    const QRect virtualColumnOverlayDiff =
+        differentPixelBounds(
+            beforeVirtualColumn, afterVirtualColumn);
+    const QRect firstRowRect =
+        virtualColumnClickEditor.cursorRect(
+            QTextCursor(
+                virtualColumnClickEditor.document()
+                    ->findBlockByNumber(0)));
+    const QRect secondRowRect =
+        virtualColumnClickEditor.cursorRect(
+            QTextCursor(
+                virtualColumnClickEditor.document()
+                    ->findBlockByNumber(1)));
+    expectBool("ordinary virtual start plus Shift+Alt click forms column mode",
+               virtualColumnClickEditor.columnSelectionActive()
+                   && virtualColumnClickEditor.state->columnAnchorLine == 0
+                   && virtualColumnClickEditor.state->columnCurrentLine == 1
+                   && virtualColumnClickEditor.state->columnAnchorColumn
+                          == sharedVirtualColumn
+                   && virtualColumnClickEditor.state->columnCurrentColumn
+                          == sharedVirtualColumn
+                   && virtualColumnClickEditor.toPlainText()
+                          == QStringLiteral("123456\n12345\n"),
+               true);
+    expectBool("column virtual overlay covers every selected row",
+               !virtualColumnOverlayDiff.isNull()
+                   && virtualColumnOverlayDiff.intersects(firstRowRect)
+                   && virtualColumnOverlayDiff.intersects(secondRowRect),
+               true);
+    QTest::mouseClick(
+        virtualColumnClickEditor.viewport(),
+        Qt::LeftButton,
+        columnModifiers,
+        pointAtVisualColumn(
+            virtualColumnClickEditor, 1, sharedVirtualColumn - 1));
+    expectBool("subsequent Shift+Alt click adjusts only the endpoint",
+               virtualColumnClickEditor.state->columnAnchorLine == 0
+                   && virtualColumnClickEditor.state->columnAnchorColumn
+                          == sharedVirtualColumn
+                   && virtualColumnClickEditor.state->columnCurrentLine == 1
+                   && virtualColumnClickEditor.state->columnCurrentColumn
+                          == sharedVirtualColumn - 1,
+               true);
+    QTest::mouseClick(
+        virtualColumnClickEditor.viewport(),
+        Qt::LeftButton,
+        columnModifiers,
+        pointAtVisualColumn(
+            virtualColumnClickEditor, 1, sharedVirtualColumn));
+    QApplication::clipboard()->setText(
+        QStringLiteral("column-virtual-sentinel"));
+    QTest::keyClick(&virtualColumnClickEditor,
+                    Qt::Key_C,
+                    Qt::ControlModifier);
+    expectBool("zero-width virtual column copy contains no padding",
+               QApplication::clipboard()->text()
+                       == QStringLiteral("\n")
+                   && virtualColumnClickEditor.toPlainText()
+                          == QStringLiteral("123456\n12345\n"),
+               true);
+    QTest::keyClicks(&virtualColumnClickEditor, "X");
+    expectBool("column editing materializes each row to the shared endpoint",
+               virtualColumnClickEditor.toPlainText()
+                   == QStringLiteral("123456   X\n12345    X\n"),
+               true);
+
+    MyCodeEditor virtualCopyEditor;
+    virtualCopyEditor.resize(520, 140);
+    virtualCopyEditor.setLineWrapMode(QPlainTextEdit::NoWrap);
+    virtualCopyEditor.setFont(fixedFont);
+    virtualCopyEditor.setPlainText(
+        QStringLiteral("123456\n12345\n"));
+    virtualCopyEditor.show();
+    virtualCopyEditor.setFocus();
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    QTextBlock copyFirst =
+        virtualCopyEditor.document()->findBlockByNumber(0);
+    QTextCursor copyStart(copyFirst);
+    copyStart.setPosition(copyFirst.position() + 5);
+    QTest::mouseClick(virtualCopyEditor.viewport(),
+                      Qt::LeftButton,
+                      Qt::NoModifier,
+                      virtualCopyEditor.cursorRect(copyStart).center());
+    QTest::mouseClick(
+        virtualCopyEditor.viewport(),
+        Qt::LeftButton,
+        columnModifiers,
+        pointAtVisualColumn(
+            virtualCopyEditor, 1, sharedVirtualColumn));
+    QTest::keyClick(&virtualCopyEditor,
+                    Qt::Key_C,
+                    Qt::ControlModifier);
+    expectBool("rectangular copy omits trailing virtual cells",
+               QApplication::clipboard()->text()
+                       == QStringLiteral("6\n")
+                   && virtualCopyEditor.toPlainText()
+                          == QStringLiteral("123456\n12345\n"),
+               true);
 }
 
 static void runEditorLineActionRegression()
@@ -4631,12 +5050,16 @@ static void runEditorHoverPreviewRegression(const QString& workspacePath)
     bool numericHoverVisible = false;
     const QString numericHoverText =
         visibleEditorHoverPopupText(&numericHoverVisible);
-    expectBool("numeric double-click shows exact Slang value",
+    expectBool("numeric double-click shows Slang alternate-base values",
                numericHoverVisible
                    && numericHoverText.contains(
-                       QStringLiteral("16'd43690"))
-                   && !numericHoverText.contains(QStringLiteral("(B)"))
-                   && !numericHoverText.contains(QStringLiteral("(H)")),
+                       QStringLiteral("binary: 16'b1010101010101010"))
+                   && numericHoverText.contains(
+                       QStringLiteral("octal: 16'o125252"))
+                   && numericHoverText.contains(
+                       QStringLiteral("decimal: 16'd43690"))
+                   && numericHoverText.contains(
+                       QStringLiteral("hex: 16'haaaa")),
                true);
     QTest::mouseMove(numericEditor.viewport(), numericPoint + QPoint(2, 0));
     QApplication::processEvents();
@@ -4798,11 +5221,13 @@ static void runEditorHoverPreviewRegression(const QString& workspacePath)
                boundValuePopupVisible
                    && boundValuePopup.contains(
                        QStringLiteral("effective value: 22"))
-                   && boundValuePopup.contains(
-                       QStringLiteral("instance path: top.u1"))
-                   && !boundValuePopup.contains(
-                       QStringLiteral("effective value: 11")),
-               true);
+                    && boundValuePopup.contains(
+                        QStringLiteral("instance path: top.u1"))
+                    && !boundValuePopup.contains(
+                        QStringLiteral("effective value: 11"))
+                    && !boundValuePopup.contains(
+                        QStringLiteral("\nsource:")),
+                true);
 
     HierarchyInstanceContext unboundContext;
     unboundContext.workspacePath = QStringLiteral("C:/fixture");
@@ -4815,13 +5240,15 @@ static void runEditorHoverPreviewRegression(const QString& workspacePath)
     bool defaultValuePopupVisible = false;
     const QString defaultValuePopup =
         visibleEditorHoverPopupText(&defaultValuePopupVisible);
-    expectBool("unbound double-click popup labels default value",
+    expectBool("unbound double-click popup suppresses non-current default",
                defaultValuePopupVisible
                    && defaultValuePopup.contains(
-                       QStringLiteral("\u672a\u7ed1\u5b9a\u5b9e\u4f8b"))
-                   && defaultValuePopup.contains(QStringLiteral(": 8"))
+                       QStringLiteral(
+                           "effective value: unavailable"))
                    && !defaultValuePopup.contains(
-                       QStringLiteral("effective value")),
+                       QStringLiteral("default value"))
+                   && !defaultValuePopup.contains(
+                       QStringLiteral("effective value: 8")),
                true);
     parameterHoverEditor.closeSemanticPopup();
 
@@ -4854,7 +5281,7 @@ static void runEditorHoverPreviewRegression(const QString& workspacePath)
         staleParameterLabels.join(QLatin1Char('\n'));
     expectBool("stale hover suppresses old current/default value",
                staleParameterPopupText.contains(
-                   QStringLiteral("effective value stale"))
+                    QStringLiteral("effective value: stale"))
                    && !staleParameterPopupText.contains(
                        QStringLiteral("effective value: 8"))
                    && !staleParameterPopupText.contains(
@@ -8565,6 +8992,7 @@ static void runCommandLayerRegression(MainWindow& window)
         QStringLiteral("add port"),
         QStringLiteral("clear right"),
         QStringLiteral("select begin end"),
+        QStringLiteral("select signals"),
         QStringLiteral("help"),
     };
     bool canonicalRegistryOk =
@@ -8582,7 +9010,7 @@ static void runCommandLayerRegression(MainWindow& window)
             && exactMatches.first().command.name == name
             && exactMatches.first().rank == CommandLayerMatchRank::Exact;
     }
-    expectBool("Command Layer exposes exactly ten canonical commands",
+    expectBool("Command Layer exposes exactly eleven canonical commands",
                canonicalRegistryOk,
                true);
 
@@ -8601,6 +9029,8 @@ static void runCommandLayerRegression(MainWindow& window)
         {QStringLiteral("clearr"), QStringLiteral("clear right")},
         {QStringLiteral("sbe"), QStringLiteral("select begin end")},
         {QStringLiteral("selectbe"), QStringLiteral("select begin end")},
+        {QStringLiteral("ss"), QStringLiteral("select signals")},
+        {QStringLiteral("selectsig"), QStringLiteral("select signals")},
     };
     bool abbreviationMatchesOk = true;
     for (const auto& abbreviation : requiredAbbreviations) {
@@ -8764,7 +9194,7 @@ static void runCommandLayerRegression(MainWindow& window)
                    && coordinator->isF24Held()
                    && commandPanel
                    && commandPanel->isVisible()
-                   && commandPanel->candidateListWidget()->count() == 10,
+                   && commandPanel->candidateListWidget()->count() == 11,
                true);
     typeQuery(editor, QStringLiteral("gm"));
     sendKeyEvent(editor,
@@ -8913,13 +9343,13 @@ static void runCommandLayerRegression(MainWindow& window)
                true);
     typeQuery(editor, QStringLiteral("help"));
     sendKeyEvent(editor, QEvent::KeyPress, Qt::Key_Return);
-    expectBool("help lists all ten canonical commands",
+    expectBool("help lists all eleven canonical commands",
                coordinator->isActive()
                    && commandPanel->isVisible()
-                   && commandPanel->candidateListWidget()->count() == 10
+                   && commandPanel->candidateListWidget()->count() == 11
                    && commandPanel->candidateListWidget()->item(0)->text()
                           .contains(QStringLiteral("go <number>"))
-                   && commandPanel->candidateListWidget()->item(9)->text()
+                   && commandPanel->candidateListWidget()->item(10)->text()
                           .contains(QStringLiteral("help")),
                true);
     typeQuery(editor, QStringLiteral("g"));
@@ -9009,6 +9439,20 @@ static void runCommandLayerRegression(MainWindow& window)
                        QStringLiteral("output logic done,\n  \n);")),
                true);
     releaseF24(editor);
+
+    pressF24(editor);
+    typeQuery(editor, QStringLiteral("select signals"));
+    sendKeyEvent(editor, QEvent::KeyPress, Qt::Key_Return);
+    expectBool("select signals executes through Command Layer",
+               coordinator->isActive()
+                   && coordinator->query().isEmpty()
+                   && editor->signalSelectionModeActiveForTest(),
+               true);
+    releaseF24(editor);
+    sendWidgetKey(editor, Qt::Key_Escape);
+    expectBool("select signals Esc returns to normal editor mode",
+               !editor->signalSelectionModeActiveForTest(),
+               true);
 
     const QString selectClearInput =
         QStringLiteral("module select_clear;\n"
@@ -9611,6 +10055,957 @@ static void runGlobalControlRegression(MainWindow& window,
         foldShelfDock->hide();
 }
 
+static void runStructuralEditingRegression()
+{
+    const auto proceduralPreviousSnapshot =
+        SemanticIndex::getInstance()->snapshot();
+    const QString proceduralFile =
+        QDir::current().absoluteFilePath(
+            QStringLiteral("procedural_undefined_test.sv"));
+    const QString proceduralBaselineSource = QStringLiteral(
+        "`define BASE_MACRO clk\n"
+        "module child_type;\n"
+        "endmodule\n"
+        "package base_pkg;\n"
+        "endpackage\n"
+        "module procedural_top;\n"
+        "  typedef logic local_t;\n"
+        "  parameter int PARAM = 1;\n"
+        "  typedef enum logic { ENUM_VALUE } state_t;\n"
+        "  logic clk;\n"
+        "  logic sink;\n"
+        "  logic existing_q;\n"
+        "  assign sink = baseline_missing;\n"
+        "  always_ff @(posedge clk) begin\n"
+        "    \n"
+        "  end\n"
+        "endmodule\n");
+    SlangManager proceduralSlang;
+    QList<EffectiveValueFact> proceduralFacts;
+    QList<SemanticSymbolRecord> proceduralRecords =
+        proceduralSlang.extractSymbolRecords(
+            proceduralFile,
+            proceduralBaselineSource,
+            {},
+            {},
+            &proceduralFacts);
+    QList<SemanticDiagnostic> proceduralBaselineDiagnostics =
+        proceduralSlang.extractDiagnostics(
+            proceduralFile,
+            proceduralBaselineSource);
+    SemanticIndex::getInstance()->setSnapshot(
+        snapshotFromRecords(
+            proceduralRecords,
+            {},
+            proceduralBaselineDiagnostics,
+            {{proceduralFile, proceduralBaselineSource}}));
+    MyCodeEditor proceduralEditor;
+    proceduralEditor.resize(520, 180);
+    proceduralEditor.setPlainText(proceduralBaselineSource);
+    proceduralEditor.setDocumentFileName(proceduralFile);
+    proceduralEditor.show();
+    for (SemanticDiagnostic& diagnostic :
+         proceduralBaselineDiagnostics) {
+        diagnostic.documentRevision =
+            proceduralEditor.semanticDocumentRevision();
+    }
+    proceduralEditor.setDiagnosticHighlights(
+        proceduralBaselineDiagnostics);
+    expectBool("undefined input baseline has real Slang diagnostics",
+               !proceduralBaselineDiagnostics.isEmpty()
+                   && !proceduralEditor
+                           .diagnosticOverviewLinesForTest()
+                           .isEmpty(),
+               true);
+    QTextCursor typedMissingCursor(
+        proceduralEditor.document());
+    const int typedMissingInsert =
+        proceduralBaselineSource.indexOf(
+            QStringLiteral("    \n  end\n"));
+    typedMissingCursor.setPosition(
+        typedMissingInsert + 4);
+    proceduralEditor.setTextCursor(typedMissingCursor);
+    proceduralEditor.setFocus();
+    QTest::keyClicks(
+        &proceduralEditor,
+        QStringLiteral("missing_q <= clk;"));
+    QCoreApplication::processEvents(
+        QEventLoop::AllEvents, 20);
+    const QString proceduralSource =
+        proceduralEditor.toPlainText();
+    const int missingPosition =
+        proceduralSource.indexOf(QStringLiteral("missing_q")) + 2;
+    expectBool("undefined input invalidates baseline diagnostics",
+               proceduralEditor
+                   .diagnosticOverviewLinesForTest()
+                   .isEmpty(),
+               true);
+    QString reason;
+    expectBool("unsaved undefined procedural lhs offers logic declaration",
+               proceduralEditor.signalDefinitionCandidateForTest(
+                   missingPosition, &reason)
+                   == QStringLiteral("logic missing_q;"),
+               true);
+    expectBool("undefined procedural lhs menu excludes unrelated instance action",
+               proceduralEditor.structuralContextMenuActionsForTest(
+                   missingPosition)
+                   == QStringList{
+                       QStringLiteral(
+                           "Create signal definition...")},
+               true);
+
+    MyCodeEditor analyzedCategoryEditor;
+    analyzedCategoryEditor.setPlainText(
+        proceduralBaselineSource);
+    analyzedCategoryEditor.setDocumentFileName(
+        proceduralFile);
+    QTextCursor analyzedCategoryCursor(
+        analyzedCategoryEditor.document());
+    const int analyzedCategoryInsert =
+        proceduralBaselineSource.indexOf(
+            QStringLiteral("    \n  end\n"));
+    analyzedCategoryCursor.setPosition(
+        analyzedCategoryInsert + 4);
+    analyzedCategoryCursor.insertText(
+        QStringLiteral(
+            "existing_q <= clk;\n"
+            "    PARAM <= clk;\n"
+            "    ENUM_VALUE <= clk;\n"
+            "    child_type <= clk;\n"
+            "    base_pkg <= clk;\n"
+            "    local_t <= clk;\n"
+            "    `BASE_MACRO <= clk;"));
+    analyzedCategoryEditor.setTextCursor(
+        analyzedCategoryCursor);
+    const QString analyzedCategorySource =
+        analyzedCategoryEditor.toPlainText();
+    const auto hasNoSignalCreation =
+        [&analyzedCategoryEditor,
+         &analyzedCategorySource](const QString& name) {
+        const int position =
+            analyzedCategorySource.lastIndexOf(name);
+        return position >= 0
+            && analyzedCategoryEditor
+                   .structuralContextMenuActionsForTest(
+                       position)
+                   .isEmpty();
+    };
+    expectBool("analyzed declarations and macro expose no create action",
+               hasNoSignalCreation(
+                   QStringLiteral("existing_q"))
+                   && hasNoSignalCreation(
+                       QStringLiteral("PARAM"))
+                   && hasNoSignalCreation(
+                       QStringLiteral("ENUM_VALUE"))
+                   && hasNoSignalCreation(
+                       QStringLiteral("child_type"))
+                   && hasNoSignalCreation(
+                       QStringLiteral("base_pkg"))
+                   && hasNoSignalCreation(
+                       QStringLiteral("local_t"))
+                   && hasNoSignalCreation(
+                       QStringLiteral("BASE_MACRO")),
+               true);
+
+    const QString beforePopup = proceduralEditor.toPlainText();
+    expectBool("undefined signal opens inline editable declaration",
+               proceduralEditor.beginSignalDefinitionEditorForTest(
+                   missingPosition, &reason)
+                   && proceduralEditor.findChild<QLineEdit*>(
+                       QStringLiteral(
+                           "signalDefinitionInlineEditor")),
+               true);
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+    expectBool("undefined signal inline editor does not insert eagerly",
+               proceduralEditor.toPlainText() == beforePopup,
+               true);
+    if (QLineEdit* inlineEditor =
+            proceduralEditor.findChild<QLineEdit*>(
+                QStringLiteral(
+                    "signalDefinitionInlineEditor"))) {
+        QTest::keyClick(inlineEditor, Qt::Key_Escape);
+    }
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+    expectBool("undefined signal Esc cancels without text change",
+               proceduralEditor.toPlainText() == beforePopup
+                   && !proceduralEditor.findChild<QLineEdit*>(
+                       QStringLiteral(
+                           "signalDefinitionInlineEditor")),
+               true);
+
+    QTextCursor originalCursor(proceduralEditor.document());
+    originalCursor.setPosition(
+        proceduralSource.indexOf(
+            QStringLiteral("missing_q")) + 4);
+    proceduralEditor.setTextCursor(originalCursor);
+    const int oldCursorPosition =
+        proceduralEditor.textCursor().position();
+    const int oldVerticalScroll =
+        proceduralEditor.verticalScrollBar()->value();
+    expectBool("undefined signal editor reopens after cancel",
+               proceduralEditor.beginSignalDefinitionEditorForTest(
+                   missingPosition, &reason),
+               true);
+    expectBool("undefined signal confirmation inserts edited declaration",
+               proceduralEditor.confirmSignalDefinitionForTest(
+                   QStringLiteral(
+                       "logic signed [3:0] missing_q;"),
+                   &reason)
+                   && proceduralEditor.toPlainText().contains(
+                       QStringLiteral(
+                           "  logic signed [3:0] missing_q;\n"))
+                   && proceduralEditor.toPlainText().indexOf(
+                          QStringLiteral(
+                              "logic signed [3:0] missing_q;"))
+                      < proceduralEditor.toPlainText().indexOf(
+                          QStringLiteral("always_ff")),
+               true);
+    const int insertionDelta =
+        proceduralEditor.toPlainText().size()
+        - proceduralSource.size();
+    expectBool("undefined signal confirmation preserves source cursor context",
+               proceduralEditor.textCursor().position()
+                       == oldCursorPosition + insertionDelta
+                   && proceduralEditor.toPlainText().mid(
+                          proceduralEditor.textCursor().position() - 4,
+                          QStringLiteral("missing_q").size())
+                      == QStringLiteral("missing_q")
+                   && proceduralEditor.verticalScrollBar()->value()
+                       == oldVerticalScroll,
+               true);
+    SemanticIndex::getInstance()->setSnapshot(
+        proceduralPreviousSnapshot);
+
+    const QString categoryFile =
+        QDir::current().absoluteFilePath(
+            QStringLiteral("undefined_category_test.sv"));
+    const QString categorySource = QStringLiteral(
+        "module category_top;\n"
+        "  missing_module u_missing();\n"
+        "  missing_pkg::missing_type typed_value;\n"
+        "  `MISSING_MACRO\n"
+        "endmodule\n");
+    const auto categoryPreviousSnapshot =
+        SemanticIndex::getInstance()->snapshot();
+    SlangManager categorySlang;
+    QList<EffectiveValueFact> categoryFacts;
+    const QList<SemanticSymbolRecord> categoryRecords =
+        categorySlang.extractSymbolRecords(
+            categoryFile,
+            categorySource,
+            {},
+            {},
+            &categoryFacts);
+    const QList<SemanticDiagnostic> categoryDiagnostics =
+        categorySlang.extractDiagnostics(
+            categoryFile,
+            categorySource);
+    SemanticIndex::getInstance()->setSnapshot(
+        snapshotFromRecords(
+            categoryRecords,
+            {},
+            categoryDiagnostics,
+            {{categoryFile, categorySource}}));
+    MyCodeEditor categoryEditor;
+    categoryEditor.setPlainText(categorySource);
+    categoryEditor.setDocumentFileName(categoryFile);
+    expectBool("undefined category baseline has real Slang diagnostics",
+               !categoryDiagnostics.isEmpty(),
+               true);
+    expectBool("undefined module package type and macro expose no signal action",
+               categoryEditor.structuralContextMenuActionsForTest(
+                   categorySource.indexOf(
+                       QStringLiteral("missing_module")))
+                       .isEmpty()
+                   && categoryEditor.structuralContextMenuActionsForTest(
+                       categorySource.indexOf(
+                           QStringLiteral("missing_pkg")))
+                          .isEmpty()
+                   && categoryEditor.structuralContextMenuActionsForTest(
+                       categorySource.indexOf(
+                           QStringLiteral("missing_type")))
+                          .isEmpty()
+                   && categoryEditor.structuralContextMenuActionsForTest(
+                       categorySource.indexOf(
+                           QStringLiteral("MISSING_MACRO")))
+                           .isEmpty(),
+               true);
+    SemanticIndex::getInstance()->setSnapshot(
+        categoryPreviousSnapshot);
+
+    const QString instanceSource = QStringLiteral(
+        "module slot_top;\n"
+        "  child #(\n"
+        "    .WIDTH(P + fn(a, {b, c})),\n"
+        "    .DEPTH(4)\n"
+        "  ) u_child(\n"
+        "    .clk(clk),\n"
+        "    .data(data),\n"
+        "    .ready()\n"
+        "  );\n"
+        "endmodule\n");
+    MyCodeEditor slotEditor;
+    slotEditor.resize(640, 260);
+    slotEditor.setPlainText(instanceSource);
+    slotEditor.show();
+    slotEditor.setFocus();
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+    const int slotPosition =
+        instanceSource.indexOf(QStringLiteral("u_child"));
+    expectBool("instance context menu is available on instance name",
+               slotEditor.structuralContextMenuActionsForTest(
+                   slotPosition)
+                   == QStringList{
+                       QStringLiteral("Edit instance slots")},
+               true);
+    const QString beforeSlotMode = slotEditor.toPlainText();
+    expectBool("existing instance enters Slot Mode without editing",
+               slotEditor.editInstanceSlotsAtForTest(
+                   slotPosition, &reason)
+                   && slotEditor.toPlainText() == beforeSlotMode
+                   && slotEditor.templateSlotModeActive()
+                   && slotEditor.templateSlotModeSlotCount() == 5
+                   && slotEditor.textCursor().selectedText()
+                      == QStringLiteral("P + fn(a, {b, c})"),
+               true);
+    QTest::keyClick(&slotEditor, Qt::Key_Tab);
+    expectBool("instance Slot Mode follows source parameter order",
+               slotEditor.templateSlotModeActiveIndex() == 1
+                   && slotEditor.textCursor().selectedText()
+                      == QStringLiteral("4"),
+               true);
+    QTest::keyClick(&slotEditor, Qt::Key_Tab);
+    QTest::keyClick(&slotEditor, Qt::Key_Tab);
+    QTest::keyClick(&slotEditor, Qt::Key_Tab);
+    expectBool("instance Slot Mode includes empty named actual",
+               slotEditor.templateSlotModeActiveIndex() == 4
+                   && !slotEditor.textCursor().hasSelection()
+                   && slotEditor.toPlainText() == beforeSlotMode,
+               true);
+    QTest::keyClick(&slotEditor, Qt::Key_Backtab);
+    expectBool("instance Slot Mode Shift+Tab cycles backward",
+               slotEditor.templateSlotModeActiveIndex() == 3
+                   && slotEditor.textCursor().selectedText()
+                      == QStringLiteral("data"),
+               true);
+    QTest::keyClick(&slotEditor, Qt::Key_Escape);
+    expectBool("instance Slot Mode Esc exits without editing",
+               !slotEditor.templateSlotModeActive()
+                   && slotEditor.toPlainText() == beforeSlotMode,
+               true);
+
+    const QString incompleteSource =
+        QStringLiteral(
+            "module bad; child #(.P(1) u0(.a(x); endmodule\n");
+    slotEditor.setPlainText(incompleteSource);
+    expectBool("incomplete instance exposes no slot action",
+               slotEditor.structuralContextMenuActionsForTest(
+                   incompleteSource.indexOf(
+                       QStringLiteral("u0")))
+                   .isEmpty(),
+               true);
+
+    const QString semanticFile =
+        QDir::current().absoluteFilePath(
+            QStringLiteral("undefined_instance_test.sv"));
+    const QString semanticBaselineSource = QStringLiteral(
+        "package type_pkg;\n"
+        "  typedef logic signed [5:0] payload_t;\n"
+        "endpackage\n"
+        "interface bus_if;\n"
+        "  logic [3:0] data;\n"
+        "  modport master(input data);\n"
+        "endinterface\n"
+        "module metadata_child(\n"
+        "  input type_pkg::payload_t typed [0:1],\n"
+        "  bus_if.master bus\n"
+        ");\n"
+        "endmodule\n"
+        "module typed_child #(\n"
+        "  parameter int P = 4\n"
+        ") (\n"
+        "  input logic signed [P-1:0] test [0:1]\n"
+        ");\n"
+        "endmodule\n"
+        "module typed_top;\n"
+        "  logic sig0;\n"
+        "  logic sig1;\n"
+        "  logic sig2;\n"
+        "  logic sink;\n"
+        "  parameter int NOT_SIGNAL = 1;\n"
+        "  typedef enum logic { ENUM_VALUE } state_t;\n"
+        "  /* block comment keeps sig0 non-semantic\n"
+        "     sig0 nested-style /* text\n"
+        "  */ assign sink = sig0;\n"
+        "  always_comb begin\n"
+        "    // queue_here sig1\n"
+        "  end\n"
+        "  initial $display(\"sig2\");\n"
+        "  typed_child #(.P(8)) u0(.test());\n"
+        "  typed_child #(.P(12)) u1(.test());\n"
+        "  metadata_child u_meta(\n"
+        "    .typed(),\n"
+        "    .bus()\n"
+        "  );\n"
+        "endmodule\n");
+    SlangManager slang;
+    QList<EffectiveValueFact> facts;
+    QList<SemanticSymbolRecord> records =
+        slang.extractSymbolRecords(
+            semanticFile,
+            semanticBaselineSource,
+            {},
+            {},
+            &facts);
+    SemanticIndex* semanticIndex =
+        SemanticIndex::getInstance();
+    EffectiveValueService* values =
+        EffectiveValueService::getInstance();
+    const auto previousSnapshot = semanticIndex->snapshot();
+    values->clearPublishedFacts();
+
+    MyCodeEditor semanticEditor;
+    semanticEditor.setPlainText(
+        semanticBaselineSource);
+    semanticEditor.setDocumentFileName(semanticFile);
+    const std::uint64_t computation =
+        values->beginComputation({semanticFile});
+    const std::uint64_t revision =
+        semanticEditor.semanticDocumentRevision();
+    for (SemanticSymbolRecord& record : records) {
+        record.presentation.computationRevision =
+            computation;
+        record.presentation.documentRevision = revision;
+    }
+    semanticIndex->setSnapshot(snapshotFromRecords(
+        records,
+        {},
+        {},
+        {{semanticFile, semanticBaselineSource}}));
+    values->publishDocumentFacts(semanticFile,
+                                 semanticBaselineSource,
+                                 facts,
+                                 computation,
+                                 revision);
+    semanticEditor.show();
+    semanticEditor.setFocus();
+    const auto typeNamedActual =
+        [&semanticEditor](const QString& emptyAssociation,
+                          const QString& identifier) {
+        const QString current =
+            semanticEditor.toPlainText();
+        const int association =
+            current.indexOf(emptyAssociation);
+        if (association < 0)
+            return false;
+        QTextCursor cursor(
+            semanticEditor.document());
+        cursor.setPosition(
+            association
+            + emptyAssociation.indexOf(
+                QLatin1Char('('))
+            + 1);
+        semanticEditor.setTextCursor(cursor);
+        QTest::keyClicks(
+            &semanticEditor, identifier);
+        QCoreApplication::processEvents(
+            QEventLoop::AllEvents, 10);
+        return true;
+    };
+    expectBool("undefined named-port actuals are typed after baseline analysis",
+               typeNamedActual(
+                   QStringLiteral(".test()"),
+                   QStringLiteral("signal_u0"))
+                   && typeNamedActual(
+                       QStringLiteral(".test()"),
+                       QStringLiteral("signal_u1"))
+                   && typeNamedActual(
+                       QStringLiteral(".typed()"),
+                       QStringLiteral("undefined_typed"))
+                   && typeNamedActual(
+                       QStringLiteral(".bus()"),
+                       QStringLiteral("undefined_bus"))
+                   && semanticEditor
+                          .diagnosticOverviewLinesForTest()
+                          .isEmpty(),
+               true);
+    const QString semanticSource =
+        semanticEditor.toPlainText();
+    HierarchyInstanceContext topContext;
+    topContext.workspacePath = QDir::currentPath();
+    topContext.activeTopModule =
+        QStringLiteral("typed_top");
+    topContext.instancePath =
+        QStringLiteral("typed_top");
+    semanticEditor.setHierarchyInstanceContext(topContext);
+    const int u0Signal =
+        semanticSource.indexOf(QStringLiteral("signal_u0")) + 2;
+    const int u1Signal =
+        semanticSource.indexOf(QStringLiteral("signal_u1")) + 2;
+    const QString u0Candidate =
+        semanticEditor.signalDefinitionCandidateForTest(
+            u0Signal, &reason);
+    const QString u1Candidate =
+        semanticEditor.signalDefinitionCandidateForTest(
+            u1Signal, &reason);
+    expectBool("undefined named-port copies exact bound formal type",
+               u0Candidate.contains(QStringLiteral("logic"))
+                   && u0Candidate.contains(QStringLiteral("signed"))
+                   && u0Candidate.contains(QStringLiteral("[7:0]"))
+                   && u0Candidate.contains(QStringLiteral("signal_u0"))
+                   && u0Candidate.contains(QStringLiteral("[0:1]"))
+                   && !u0Candidate.contains(QStringLiteral("input")),
+               true);
+    expectBool("undefined named-port keeps instance-specific width",
+               u1Candidate.contains(QStringLiteral("[11:0]"))
+                   && !u1Candidate.contains(QStringLiteral("[7:0]"))
+                   && u1Candidate.contains(QStringLiteral("signal_u1")),
+               true);
+    const int typedUndefined =
+        semanticSource.indexOf(
+            QStringLiteral("undefined_typed")) + 2;
+    const int interfaceUndefined =
+        semanticSource.indexOf(
+            QStringLiteral("undefined_bus")) + 2;
+    const QString typedefCandidate =
+        semanticEditor.signalDefinitionCandidateForTest(
+            typedUndefined, &reason);
+    const QString interfaceCandidate =
+        semanticEditor.signalDefinitionCandidateForTest(
+            interfaceUndefined, &reason);
+    expectBool("undefined named-port preserves typedef and unpacked array type",
+               typedefCandidate.contains(
+                   QStringLiteral("payload_t"))
+                   && typedefCandidate.contains(
+                       QStringLiteral("undefined_typed"))
+                   && typedefCandidate.contains(
+                       QStringLiteral("[0:1]"))
+                   && !typedefCandidate.contains(
+                       QStringLiteral("input")),
+               true);
+    expectBool("undefined named-port preserves interface modport type",
+               interfaceCandidate
+                       == QStringLiteral(
+                           "bus_if.master undefined_bus;"),
+               true);
+    expectBool("undefined named-port accepts current unsaved buffer identity",
+               !QFileInfo::exists(semanticFile)
+                   && !typedefCandidate.isEmpty()
+                   && !interfaceCandidate.isEmpty(),
+               true);
+    expectBool("undefined actual menu orders create then instance slots",
+               semanticEditor.structuralContextMenuActionsForTest(
+                   u0Signal)
+                   == QStringList{
+                       QStringLiteral(
+                           "Create signal definition..."),
+                       QStringLiteral("<separator>"),
+                       QStringLiteral("Edit instance slots")},
+               true);
+    semanticEditor.setHierarchyInstanceContext(
+        HierarchyInstanceContext{});
+    expectBool("undefined named-port refuses an unbound instance guess",
+               semanticEditor.signalDefinitionCandidateForTest(
+                   u0Signal, &reason)
+                       .isEmpty()
+                   && reason.contains(
+                       QStringLiteral(
+                           "hierarchy instance context")),
+               true);
+    semanticEditor.setHierarchyInstanceContext(topContext);
+    const int moduleTypePosition =
+        semanticSource.indexOf(
+            QStringLiteral("typed_child #(.P(8)"));
+    expectBool("undefined module type is not treated as a signal",
+               semanticEditor.signalDefinitionCandidateForTest(
+                   moduleTypePosition, &reason)
+                   .isEmpty(),
+               true);
+
+    QList<EffectiveValueFact> refreshedFacts;
+    QList<SemanticSymbolRecord> refreshedRecords =
+        slang.extractSymbolRecords(
+            semanticFile,
+            semanticSource,
+            {},
+            {},
+            &refreshedFacts);
+    const std::uint64_t refreshedComputation =
+        values->beginComputation({semanticFile});
+    const std::uint64_t refreshedRevision =
+        semanticEditor.semanticDocumentRevision();
+    for (SemanticSymbolRecord& record : refreshedRecords) {
+        record.presentation.computationRevision =
+            refreshedComputation;
+        record.presentation.documentRevision =
+            refreshedRevision;
+    }
+    semanticIndex->setSnapshot(snapshotFromRecords(
+        refreshedRecords,
+        {},
+        {},
+        {{semanticFile, semanticSource}}));
+    values->publishDocumentFacts(
+        semanticFile,
+        semanticSource,
+        refreshedFacts,
+        refreshedComputation,
+        refreshedRevision);
+
+    semanticEditor.resize(720, 460);
+    semanticEditor.show();
+    semanticEditor.setFocus();
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+    const int blockCommentSig =
+        semanticSource.indexOf(
+            QStringLiteral("sig0"),
+            semanticSource.indexOf(
+                QStringLiteral("/* block comment")));
+    const int codeSigAfterComment =
+        semanticSource.indexOf(
+            QStringLiteral("sig0"),
+            semanticSource.indexOf(
+                QStringLiteral("*/ assign sink")));
+    SemanticDecoration commentDecoration;
+    commentDecoration.role =
+        SemanticDecorationRole::ActualSignal;
+    commentDecoration.text = QStringLiteral("sig0");
+    commentDecoration.startPosition =
+        blockCommentSig;
+    commentDecoration.length = 4;
+    SemanticDecoration codeDecoration =
+        commentDecoration;
+    codeDecoration.startPosition =
+        codeSigAfterComment;
+    const int lineCommentSig =
+        semanticSource.indexOf(
+            QStringLiteral("sig1"),
+            semanticSource.indexOf(
+                QStringLiteral("// queue_here")));
+    SemanticDecoration lineCommentDecoration =
+        commentDecoration;
+    lineCommentDecoration.startPosition =
+        lineCommentSig;
+    semanticEditor.setSemanticDecorations(
+        {commentDecoration,
+         lineCommentDecoration,
+         codeDecoration});
+    bool commentSemanticDecorationVisible = false;
+    bool lineCommentSemanticDecorationVisible = false;
+    bool codeSemanticDecorationVisible = false;
+    for (const QTextEdit::ExtraSelection& selection :
+         semanticEditor.extraSelections()) {
+        if (!selection.cursor.hasSelection())
+            continue;
+        commentSemanticDecorationVisible =
+            commentSemanticDecorationVisible
+            || (selection.cursor.selectionStart()
+                    == blockCommentSig
+                && selection.cursor.selectionEnd()
+                    == blockCommentSig + 4);
+        codeSemanticDecorationVisible =
+            codeSemanticDecorationVisible
+            || (selection.cursor.selectionStart()
+                    == codeSigAfterComment
+                && selection.cursor.selectionEnd()
+                    == codeSigAfterComment + 4);
+        lineCommentSemanticDecorationVisible =
+            lineCommentSemanticDecorationVisible
+            || (selection.cursor.selectionStart()
+                    == lineCommentSig
+                && selection.cursor.selectionEnd()
+                    == lineCommentSig + 4);
+    }
+    expectBool("line and block comment signals have no semantic decoration",
+               !commentSemanticDecorationVisible
+                   && !lineCommentSemanticDecorationVisible
+                   && codeSemanticDecorationVisible,
+               true);
+    hideEditorHoverPopups();
+    QTextCursor blockCommentCursor(
+        semanticEditor.document());
+    blockCommentCursor.setPosition(blockCommentSig);
+    semanticEditor.setTextCursor(blockCommentCursor);
+    semanticEditor.ensureCursorVisible();
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+    QTest::mouseDClick(
+        semanticEditor.viewport(),
+        Qt::LeftButton,
+        Qt::NoModifier,
+        semanticEditor.cursorRect(
+            blockCommentCursor).center());
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+    bool blockCommentPopupVisible = false;
+    visibleEditorHoverPopupText(
+        &blockCommentPopupVisible);
+    expectBool("block-comment signal has no double-click popup",
+               !blockCommentPopupVisible,
+               true);
+    QTextCursor lineCommentCursor(
+        semanticEditor.document());
+    lineCommentCursor.setPosition(
+        lineCommentSig);
+    semanticEditor.setTextCursor(
+        lineCommentCursor);
+    semanticEditor.ensureCursorVisible();
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+    QTest::mouseDClick(
+        semanticEditor.viewport(),
+        Qt::LeftButton,
+        Qt::NoModifier,
+        semanticEditor.cursorRect(
+            lineCommentCursor).center());
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+    bool lineCommentPopupVisible = false;
+    visibleEditorHoverPopupText(
+        &lineCommentPopupVisible);
+    expectBool("line-comment signal has no double-click popup",
+               !lineCommentPopupVisible,
+               true);
+    QTextCursor codeAfterCommentCursor(
+        semanticEditor.document());
+    codeAfterCommentCursor.setPosition(
+        codeSigAfterComment);
+    semanticEditor.setTextCursor(
+        codeAfterCommentCursor);
+    semanticEditor.ensureCursorVisible();
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+    QTest::mouseDClick(
+        semanticEditor.viewport(),
+        Qt::LeftButton,
+        Qt::NoModifier,
+        semanticEditor.cursorRect(
+            codeAfterCommentCursor).center());
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+    bool codeAfterCommentPopupVisible = false;
+    const QString codeAfterCommentPopup =
+        visibleEditorHoverPopupText(
+            &codeAfterCommentPopupVisible);
+    expectBool("code after block-comment close keeps semantic popup",
+               codeAfterCommentPopupVisible
+                   && codeAfterCommentPopup.contains(
+                       QStringLiteral("sig0")),
+               true);
+    semanticEditor.closeSemanticPopup();
+
+    MyCodeEditor commentGhostEditor;
+    commentGhostEditor.resize(520, 150);
+    const QString commentGhostSource =
+        QStringLiteral(
+            "module ghost_comment;\n"
+            "  // line_signal_in_comment\n"
+            "  /* signal_in_comment */\n"
+            "  logic live_signal;\n"
+            "endmodule\n");
+    commentGhostEditor.setPlainText(
+        commentGhostSource);
+    commentGhostEditor.show();
+    commentGhostEditor.clearFocus();
+    QCoreApplication::processEvents(
+        QEventLoop::AllEvents, 30);
+    const QImage ghostBaseline =
+        renderWidgetImage(
+            commentGhostEditor.viewport());
+    GhostAnnotation commentGhost;
+    commentGhost.kind =
+        GhostAnnotationKind::SignalWidth;
+    commentGhost.placement =
+        GhostAnnotationPlacement::RightOfLine;
+    commentGhost.text =
+        QStringLiteral("comment ghost");
+    commentGhost.line = 2;
+    commentGhost.anchorPosition =
+        commentGhostSource.indexOf(
+            QStringLiteral("line_signal_in_comment"));
+    commentGhost.anchorLength =
+        QStringLiteral("line_signal_in_comment").size();
+    GhostAnnotation blockCommentGhost =
+        commentGhost;
+    blockCommentGhost.line = 3;
+    blockCommentGhost.anchorPosition =
+        commentGhostSource.lastIndexOf(
+            QStringLiteral("signal_in_comment"));
+    blockCommentGhost.anchorLength =
+        QStringLiteral("signal_in_comment").size();
+    commentGhostEditor.setGhostAnnotations(
+        {commentGhost, blockCommentGhost});
+    QCoreApplication::processEvents(
+        QEventLoop::AllEvents, 30);
+    const QImage commentGhostImage =
+        renderWidgetImage(
+            commentGhostEditor.viewport());
+    GhostAnnotation liveGhost = commentGhost;
+    liveGhost.text = QStringLiteral("16 bits");
+    liveGhost.line = 4;
+    liveGhost.anchorPosition =
+        commentGhostSource.indexOf(
+            QStringLiteral("live_signal"));
+    liveGhost.anchorLength =
+        QStringLiteral("live_signal").size();
+    commentGhostEditor.setGhostAnnotations(
+        {liveGhost});
+    QCoreApplication::processEvents(
+        QEventLoop::AllEvents, 30);
+    const QImage liveGhostImage =
+        renderWidgetImage(
+            commentGhostEditor.viewport());
+    expectBool("comment ghost is not painted while code ghost is painted",
+               differentPixelBounds(
+                   ghostBaseline,
+                   commentGhostImage).isNull()
+                   && !differentPixelBounds(
+                           ghostBaseline,
+                           liveGhostImage).isNull(),
+               true);
+
+    const int originalSelectionCursor =
+        semanticSource.indexOf(
+            QStringLiteral("NOT_SIGNAL"));
+    QTextCursor selectionCursor(
+        semanticEditor.document());
+    selectionCursor.setPosition(originalSelectionCursor);
+    semanticEditor.setTextCursor(selectionCursor);
+    expectBool("signal selection mode starts without moving cursor",
+               semanticEditor.startSignalSelectionMode(&reason)
+                   && semanticEditor.signalSelectionModeActiveForTest()
+                   && semanticEditor.textCursor().position()
+                      == originalSelectionCursor,
+               true);
+
+    const int sig0Declaration =
+        semanticSource.indexOf(
+            QStringLiteral("sig0;"));
+    const int sig1Declaration =
+        semanticSource.indexOf(
+            QStringLiteral("sig1;"));
+    const int sig2Declaration =
+        semanticSource.indexOf(
+            QStringLiteral("sig2;"));
+    expectBool("signal selection accepts semantic signals in click order",
+               semanticEditor.toggleSignalSelectionAtForTest(
+                   sig2Declaration)
+                   && semanticEditor.toggleSignalSelectionAtForTest(
+                       sig0Declaration)
+                   && semanticEditor.toggleSignalSelectionAtForTest(
+                       sig1Declaration)
+                   && semanticEditor.selectedSignalNamesForTest()
+                      == QStringList{
+                          QStringLiteral("sig0"),
+                          QStringLiteral("sig1"),
+                          QStringLiteral("sig2")},
+               true);
+    const int sig0Use =
+        semanticSource.indexOf(
+            QStringLiteral("sig0"),
+            codeSigAfterComment);
+    expectBool("signal selection deduplicates by semantic identity",
+               semanticEditor.toggleSignalSelectionAtForTest(sig0Use)
+                   && semanticEditor.selectedSignalNamesForTest()
+                      == QStringList{
+                          QStringLiteral("sig1"),
+                          QStringLiteral("sig2")}
+                   && semanticEditor.toggleSignalSelectionAtForTest(
+                       sig0Declaration)
+                   && semanticEditor.selectedSignalNamesForTest()
+                      == QStringList{
+                          QStringLiteral("sig0"),
+                          QStringLiteral("sig1"),
+                          QStringLiteral("sig2")},
+               true);
+    expectBool("signal selection rejects parameter enum module comment and string",
+               !semanticEditor.toggleSignalSelectionAtForTest(
+                    semanticSource.indexOf(
+                        QStringLiteral("NOT_SIGNAL")))
+                   && !semanticEditor.toggleSignalSelectionAtForTest(
+                       semanticSource.indexOf(
+                           QStringLiteral("ENUM_VALUE")))
+                   && !semanticEditor.toggleSignalSelectionAtForTest(
+                       semanticSource.indexOf(
+                           QStringLiteral("typed_top")))
+                   && !semanticEditor.toggleSignalSelectionAtForTest(
+                       semanticSource.indexOf(
+                           QStringLiteral("sig1"),
+                           semanticSource.indexOf(
+                               QStringLiteral("// queue_here"))))
+                   && !semanticEditor.toggleSignalSelectionAtForTest(
+                       semanticSource.lastIndexOf(
+                           QStringLiteral("sig2")))
+                   && semanticEditor.selectedSignalNamesForTest().size()
+                      == 3,
+               true);
+
+    QTest::keyClick(&semanticEditor, Qt::Key_Escape);
+    expectBool("signal selection Esc cancels without editing",
+               !semanticEditor.signalSelectionModeActiveForTest()
+                   && semanticEditor.selectedSignalNamesForTest().isEmpty()
+                   && semanticEditor.toPlainText() == semanticSource,
+               true);
+
+    semanticEditor.startSignalSelectionMode(&reason);
+    QTextCursor sig0Cursor(semanticEditor.document());
+    sig0Cursor.setPosition(sig0Declaration);
+    QTextCursor sig1Cursor(semanticEditor.document());
+    sig1Cursor.setPosition(sig1Declaration);
+    QTextCursor sig2Cursor(semanticEditor.document());
+    sig2Cursor.setPosition(sig2Declaration);
+    const QPoint sig0Point =
+        semanticEditor.cursorRect(sig0Cursor).center();
+    const QPoint sig1Point =
+        semanticEditor.cursorRect(sig1Cursor).center();
+    const QPoint sig2Point =
+        semanticEditor.cursorRect(sig2Cursor).center();
+    QTest::mousePress(semanticEditor.viewport(),
+                      Qt::LeftButton,
+                      Qt::NoModifier,
+                      sig0Point);
+    QMouseEvent moveToSig2(
+        QEvent::MouseMove,
+        sig2Point,
+        semanticEditor.viewport()->mapToGlobal(sig2Point),
+        Qt::NoButton,
+        Qt::LeftButton,
+        Qt::NoModifier);
+    QCoreApplication::sendEvent(
+        semanticEditor.viewport(), &moveToSig2);
+    QTest::mouseRelease(semanticEditor.viewport(),
+                        Qt::LeftButton,
+                        Qt::NoModifier,
+                        sig2Point);
+    expectBool("signal selection interpolates coalesced drag across lines",
+               semanticEditor.selectedSignalNamesForTest()
+                   == QStringList{
+                       QStringLiteral("sig0"),
+                       QStringLiteral("sig1"),
+                       QStringLiteral("sig2")}
+                   && semanticEditor.textCursor().position()
+                      == originalSelectionCursor,
+               true);
+
+    const int queueContext =
+        semanticSource.indexOf(
+            QStringLiteral("// queue_here"));
+    expectBool("signal assignment queue inserts at right-click indentation",
+               semanticEditor.createAssignmentQueueAtForTest(
+                   queueContext, &reason)
+                   && semanticEditor.toPlainText().contains(
+                       QStringLiteral(
+                           "    sig0 <= ;\n"
+                           "    sig1 <= ;\n"
+                           "    sig2 <= ;\n"
+                           "    // queue_here"))
+                   && semanticEditor.templateSlotModeActive()
+                   && semanticEditor.templateSlotModeSlotCount() == 3
+                   && !semanticEditor.textCursor().hasSelection(),
+               true);
+    QTest::keyClick(&semanticEditor, Qt::Key_Tab);
+    expectBool("signal assignment queue uses existing Slot Mode cycling",
+               semanticEditor.templateSlotModeActiveIndex() == 1,
+               true);
+    QTest::keyClick(&semanticEditor, Qt::Key_Escape);
+    values->clearPublishedFacts();
+    semanticIndex->setSnapshot(previousSnapshot);
+}
+
 int main(int argc, char** argv)
 {
     QApplication app(argc, argv);
@@ -9625,6 +11020,7 @@ int main(int argc, char** argv)
     runEditorSafeRenameRegression();
     runSafeRenameCoordinatorRegression();
     runSafeRenameCreateDefinitionRegression();
+    runStructuralEditingRegression();
     runEditorColumnEditRegression();
     runEditorLineActionRegression();
     runEditorCtrlClickNavigationRegression();

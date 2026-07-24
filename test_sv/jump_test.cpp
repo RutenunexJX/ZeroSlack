@@ -16,6 +16,9 @@
 #include <QTimer>
 #include <QMouseEvent>
 #include <QTextEdit>
+#include <QImage>
+#include <QToolTip>
+#include <QWidget>
 #include <cstdio>
 #include <memory>
 #include "slangmanager.h"
@@ -861,30 +864,252 @@ int main(int argc, char** argv) {
                realLikeEnumUseCount >= 1,
                true);
 
+    const QString diagnosticText =
+        QStringLiteral("module bad;\n  broken\nendmodule\n");
     MyCodeEditor diagnosticEditor;
-    diagnosticEditor.setPlainText(QStringLiteral("module bad;\n  broken\nendmodule\n"));
+    diagnosticEditor.resize(360, 160);
+    diagnosticEditor.setPlainText(diagnosticText);
     SemanticDiagnostic diagnostic;
     diagnostic.fileName = decorationFile;
     diagnostic.line = 2;
     diagnostic.column = 3;
     diagnostic.severity = SemanticDiagnostic::Error;
     diagnostic.message = QStringLiteral("expected ';'");
-    diagnosticEditor.setDiagnosticHighlights({diagnostic});
+    SemanticSourceRange diagnosticRange;
+    diagnosticRange.fileName = decorationFile;
+    diagnosticRange.line = 2;
+    diagnosticRange.column = 3;
+    diagnosticRange.endLine = 2;
+    diagnosticRange.endColumn = 9;
+    diagnosticRange.position =
+        diagnosticText.indexOf(QStringLiteral("broken"));
+    diagnosticRange.length = QStringLiteral("broken").size();
+    diagnostic.ranges = {diagnosticRange};
+
+    SemanticDiagnostic warning = diagnostic;
+    warning.severity = SemanticDiagnostic::Warning;
+    warning.message = QStringLiteral("suspicious identifier");
+    warning.ranges.first().position += 2;
+    warning.ranges.first().length = 3;
+    warning.ranges.first().column += 2;
+    warning.ranges.first().endColumn =
+        warning.ranges.first().column + warning.ranges.first().length;
+
+    SemanticDiagnostic multiline = warning;
+    multiline.message = QStringLiteral("cross-line diagnostic");
+    multiline.ranges.first().position =
+        diagnosticText.indexOf(QStringLiteral("broken"));
+    multiline.ranges.first().length =
+        diagnosticText.indexOf(QStringLiteral("module"),
+                               multiline.ranges.first().position)
+        + QStringLiteral("module").size()
+        - multiline.ranges.first().position;
+    multiline.ranges.first().column = 3;
+    multiline.ranges.first().endLine = 3;
+    multiline.ranges.first().endColumn = 10;
+
+    diagnosticEditor.setDiagnosticHighlights(
+        {warning, diagnostic, multiline});
     bool diagnosticLineBackground = false;
-    bool diagnosticWaveUnderline = false;
+    bool diagnosticExactErrorUnderline = false;
+    bool diagnosticExactWarningUnderline = false;
+    bool diagnosticMultilineUnderline = false;
     for (const QTextEdit::ExtraSelection& selection :
          diagnosticEditor.extraSelections()) {
+        const QColor background = selection.format.background().color();
         diagnosticLineBackground = diagnosticLineBackground
-            || selection.format.hasProperty(QTextFormat::FullWidthSelection);
-        diagnosticWaveUnderline = diagnosticWaveUnderline
-            || selection.format.underlineStyle()
-                == QTextCharFormat::WaveUnderline;
+            || background == QColor(180, 40, 40, 55)
+            || background == QColor(200, 160, 35, 55);
+        if (selection.format.underlineStyle()
+            != QTextCharFormat::WaveUnderline) {
+            continue;
+        }
+        const int start = selection.cursor.selectionStart();
+        const int end = selection.cursor.selectionEnd();
+        const QColor underline = selection.format.underlineColor();
+        diagnosticExactErrorUnderline =
+            diagnosticExactErrorUnderline
+            || (start == diagnosticRange.position
+                && end == diagnosticRange.position
+                    + diagnosticRange.length
+                && underline == QColor(QStringLiteral("#EF4444")));
+        diagnosticExactWarningUnderline =
+            diagnosticExactWarningUnderline
+            || (start == warning.ranges.first().position
+                && end == warning.ranges.first().position
+                    + warning.ranges.first().length
+                && underline == QColor(QStringLiteral("#FBBF24")));
+        diagnosticMultilineUnderline =
+            diagnosticMultilineUnderline
+            || (start == multiline.ranges.first().position
+                && end == multiline.ranges.first().position
+                    + multiline.ranges.first().length
+                && underline == QColor(QStringLiteral("#FBBF24")));
     }
-    expectBool("Diagnostic decoration has line background",
+    expectBool("Diagnostic decoration removes line background",
                diagnosticLineBackground,
+               false);
+    expectBool("Diagnostic error uses exact red source range",
+               diagnosticExactErrorUnderline,
                true);
-    expectBool("Diagnostic decoration has wave underline",
-               diagnosticWaveUnderline,
+    expectBool("Diagnostic warning uses exact yellow source range",
+               diagnosticExactWarningUnderline,
+               true);
+    expectBool("Diagnostic cross-line range remains exact",
+               diagnosticMultilineUnderline,
+               true);
+    bool diagnosticLineSeverityAvailable = false;
+    expectBool("Diagnostic same-line icon uses highest severity",
+               diagnosticEditor.diagnosticSeverityForLineForTest(
+                   1, &diagnosticLineSeverityAvailable)
+                       == SemanticDiagnostic::Error
+                   && diagnosticLineSeverityAvailable,
+               true);
+    const QString diagnosticTooltip =
+        diagnosticEditor.diagnosticTooltipForLineForTest(1);
+    expectBool("Diagnostic gutter tooltip lists all reasons",
+               diagnosticTooltip.contains(QStringLiteral("expected ';'"))
+                   && diagnosticTooltip.contains(
+                       QStringLiteral("suspicious identifier"))
+                   && diagnosticTooltip.contains(
+                       QStringLiteral("cross-line diagnostic")),
+               true);
+    expectBool("Diagnostic overview includes cross-line rows",
+               diagnosticEditor.diagnosticOverviewLinesForTest()
+                   == QList<int>({1, 2}),
+               true);
+
+    diagnosticEditor.show();
+    QCoreApplication::processEvents();
+    const QImage diagnosticViewport =
+        diagnosticEditor.viewport()->grab().toImage();
+    bool overviewHasRedMarker = false;
+    for (int y = 0; y < diagnosticViewport.height(); ++y) {
+        for (int x = qMax(0, diagnosticViewport.width() - 7);
+             x < diagnosticViewport.width();
+             ++x) {
+            const QColor pixel = diagnosticViewport.pixelColor(x, y);
+            overviewHasRedMarker = overviewHasRedMarker
+                || (pixel.red() > 210
+                    && pixel.green() < 100
+                    && pixel.blue() < 110);
+        }
+    }
+    expectBool("Diagnostic overview paints red marker",
+               overviewHasRedMarker,
+               true);
+    QWidget* diagnosticGutter =
+        diagnosticEditor.findChild<QWidget*>(
+            QStringLiteral("editorLineNumberGutter"));
+    bool gutterHasRedIcon = false;
+    bool gutterShowsCompleteTooltip = false;
+    if (diagnosticGutter) {
+        const QImage gutterImage = diagnosticGutter->grab().toImage();
+        for (int y = 0; y < gutterImage.height(); ++y) {
+            for (int x = 14; x < qMin(29, gutterImage.width()); ++x) {
+                const QColor pixel = gutterImage.pixelColor(x, y);
+                gutterHasRedIcon = gutterHasRedIcon
+                    || (pixel.red() > 210
+                        && pixel.green() < 100
+                        && pixel.blue() < 110);
+            }
+        }
+        const EditorBlockGeometry diagnosticGeometry =
+            diagnosticEditor.blockGeometry(1);
+        const QPointF localPoint(
+            21,
+            diagnosticGeometry.top
+                + diagnosticGeometry.height / 2.0);
+        const QPointF globalPoint(
+            diagnosticGutter->mapToGlobal(
+                localPoint.toPoint()));
+        QMouseEvent tooltipMove(
+            QEvent::MouseMove,
+            localPoint,
+            localPoint,
+            globalPoint,
+            Qt::NoButton,
+            Qt::NoButton,
+            Qt::NoModifier);
+        QCoreApplication::sendEvent(
+            diagnosticGutter, &tooltipMove);
+        QCoreApplication::processEvents();
+        gutterShowsCompleteTooltip =
+            QToolTip::text().contains(QStringLiteral("expected ';'"))
+            && QToolTip::text().contains(
+                QStringLiteral("suspicious identifier"))
+            && QToolTip::text().contains(
+                QStringLiteral("cross-line diagnostic"));
+    }
+    expectBool("Diagnostic gutter paints highest severity icon",
+               diagnosticGutter && gutterHasRedIcon,
+               true);
+    expectBool("Diagnostic gutter hover shows complete tooltip",
+               gutterShowsCompleteTooltip,
+               true);
+
+    SemanticDiagnostic staleDiagnostic = diagnostic;
+    staleDiagnostic.computationRevision = 20;
+    staleDiagnostic.documentRevision = 999;
+    diagnosticEditor.setDiagnosticHighlights({staleDiagnostic});
+    expectBool("Diagnostic stale document generation is rejected",
+               diagnosticEditor.diagnosticOverviewLinesForTest().isEmpty(),
+               true);
+    SemanticDiagnostic currentDiagnostic = diagnostic;
+    currentDiagnostic.computationRevision = 21;
+    currentDiagnostic.documentRevision = 0;
+    diagnosticEditor.setDiagnosticHighlights({currentDiagnostic});
+    SemanticDiagnostic olderDiagnostic = warning;
+    olderDiagnostic.computationRevision = 19;
+    olderDiagnostic.documentRevision = 0;
+    diagnosticEditor.setDiagnosticHighlights({olderDiagnostic});
+    expectBool("Diagnostic older computation cannot overwrite current",
+               diagnosticEditor.diagnosticTooltipForLineForTest(1)
+                   .contains(QStringLiteral("expected ';'"))
+                   && !diagnosticEditor.diagnosticTooltipForLineForTest(1)
+                           .contains(
+                               QStringLiteral("suspicious identifier")),
+               true);
+    diagnosticEditor.moveCursor(QTextCursor::End);
+    diagnosticEditor.insertPlainText(QStringLiteral(" "));
+    expectBool("Diagnostic edit clears stale ranges",
+               diagnosticEditor.diagnosticOverviewLinesForTest().isEmpty(),
+               true);
+
+    const QString unicodeDiagnosticText =
+        QStringLiteral(
+            "module unicode_diag;\r\n"
+            "  // Unicode 注释用于验证 UTF-8 到 UTF-16 坐标\r\n"
+            "  logic [7:0] data;\r\n"
+            "  assign data = missing_signal;\r\n"
+            "endmodule\r\n");
+    const QString unicodeDiagnosticFile =
+        QFileInfo(path).dir().filePath(
+            QStringLiteral("unicode_diagnostic_range.sv"));
+    SlangManager diagnosticSlang;
+    const QList<SemanticDiagnostic> extractedDiagnostics =
+        diagnosticSlang.extractDiagnostics(
+            unicodeDiagnosticFile,
+            unicodeDiagnosticText);
+    const int missingPosition =
+        QString(unicodeDiagnosticText)
+            .replace(QStringLiteral("\r\n"), QStringLiteral("\n"))
+            .indexOf(QStringLiteral("missing_signal"));
+    bool exactUndefinedRange = false;
+    for (const SemanticDiagnostic& extracted : extractedDiagnostics) {
+        if (extracted.codeName
+                != QStringLiteral("UndeclaredIdentifier")) {
+            continue;
+        }
+        for (const SemanticSourceRange& range : extracted.ranges) {
+            exactUndefinedRange = exactUndefinedRange
+                || (range.position == missingPosition
+                    && range.length
+                        == QStringLiteral("missing_signal").size());
+        }
+    }
+    expectBool("Slang diagnostic maps Unicode CRLF exact range",
+               exactUndefinedRange,
                true);
     MyCodeEditor semanticStyleEditor;
     semanticStyleEditor.setPlainText(QStringLiteral("    .clk(clk)\n"));

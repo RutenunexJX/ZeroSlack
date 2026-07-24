@@ -48,6 +48,8 @@ constexpr int kSearchSelectionProperty = QTextFormat::UserProperty + 5;
 constexpr int kSearchSelectionMarker = 1005;
 constexpr int kTemplateSlotSelectionProperty = QTextFormat::UserProperty + 7;
 constexpr int kTemplateSlotSelectionMarker = 1007;
+constexpr int kSignalSelectionProperty = QTextFormat::UserProperty + 8;
+constexpr int kSignalSelectionMarker = 1008;
 constexpr int kFlashSelectionProperty = QTextFormat::UserProperty + 6;
 constexpr int kFlashSelectionMarker = 1006;
 constexpr int kMaxPassiveMatchHighlights = 500;
@@ -466,76 +468,63 @@ void EditorSelection::highlightDiagnostics(
             kDiagnosticSelectionProperty,
             kDiagnosticSelectionMarker);
 
-    QMap<int, SemanticDiagnostic::Severity> severityByLine;
-    for (const SemanticDiagnostic& diagnostic : diagnostics) {
-        if (diagnostic.line <= 0)
-            continue;
+    QList<SemanticDiagnostic> ordered = diagnostics;
+    std::stable_sort(
+        ordered.begin(),
+        ordered.end(),
+        [](const SemanticDiagnostic& left,
+           const SemanticDiagnostic& right) {
+            // Later extra selections win when exact warning/error ranges
+            // overlap, so errors are deliberately appended last.
+            return left.severity < right.severity;
+        });
+
+    QSet<QString> seenRanges;
+    const int documentEnd =
+        qMax(0, editor->document()->characterCount() - 1);
+    for (const SemanticDiagnostic& diagnostic : std::as_const(ordered)) {
         if (diagnostic.severity != SemanticDiagnostic::Error
             && diagnostic.severity != SemanticDiagnostic::Warning) {
             continue;
         }
 
-        const auto existing = severityByLine.constFind(diagnostic.line);
-        if (existing == severityByLine.constEnd()
-            || diagnostic.severity == SemanticDiagnostic::Error) {
-            severityByLine.insert(diagnostic.line, diagnostic.severity);
+        for (const SemanticSourceRange& range : diagnostic.ranges) {
+            if (range.position < 0 || range.length <= 0)
+                continue;
+            const int start = qBound(0, range.position, documentEnd);
+            const int end = qBound(
+                start,
+                range.position + range.length,
+                documentEnd);
+            if (end <= start)
+                continue;
+
+            const QString key = QStringLiteral("%1:%2:%3")
+                                    .arg(start)
+                                    .arg(end)
+                                    .arg(static_cast<int>(
+                                        diagnostic.severity));
+            if (seenRanges.contains(key))
+                continue;
+            seenRanges.insert(key);
+
+            QTextCursor underlineCursor(editor->document());
+            underlineCursor.setPosition(start);
+            underlineCursor.setPosition(end, QTextCursor::KeepAnchor);
+
+            QTextEdit::ExtraSelection underlineSelection;
+            underlineSelection.cursor = underlineCursor;
+            underlineSelection.format.setUnderlineStyle(
+                QTextCharFormat::WaveUnderline);
+            underlineSelection.format.setUnderlineColor(
+                diagnostic.severity == SemanticDiagnostic::Error
+                    ? QColor(QStringLiteral("#EF4444"))
+                    : QColor(QStringLiteral("#FBBF24")));
+            underlineSelection.format.setProperty(
+                kDiagnosticSelectionProperty,
+                kDiagnosticSelectionMarker);
+            selections.append(underlineSelection);
         }
-    }
-
-    for (auto it = severityByLine.constBegin(); it != severityByLine.constEnd(); ++it) {
-        const QTextBlock block =
-            editor->document()->findBlockByNumber(it.key() - 1);
-        if (!block.isValid())
-            continue;
-
-        QTextEdit::ExtraSelection diagnosticSelection;
-        diagnosticSelection.cursor = QTextCursor(block);
-        diagnosticSelection.format.setProperty(
-            QTextFormat::FullWidthSelection,
-            true);
-        diagnosticSelection.format.setProperty(
-            kDiagnosticSelectionProperty,
-            kDiagnosticSelectionMarker);
-        diagnosticSelection.format.setBackground(
-            it.value() == SemanticDiagnostic::Error
-                ? QColor(180, 40, 40, 55)
-                : QColor(200, 160, 35, 55));
-        selections.append(diagnosticSelection);
-    }
-
-    for (const SemanticDiagnostic& diagnostic : diagnostics) {
-        if (diagnostic.line <= 0)
-            continue;
-        if (diagnostic.severity != SemanticDiagnostic::Error
-            && diagnostic.severity != SemanticDiagnostic::Warning) {
-            continue;
-        }
-
-        const QTextBlock block =
-            editor->document()->findBlockByNumber(diagnostic.line - 1);
-        if (!block.isValid())
-            continue;
-
-        const int column = qBound(1, diagnostic.column, block.length());
-        QTextCursor underlineCursor(block);
-        underlineCursor.setPosition(block.position() + column - 1);
-        underlineCursor.setPosition(
-            qMin(block.position() + block.length() - 1,
-                 block.position() + column),
-            QTextCursor::KeepAnchor);
-
-        QTextEdit::ExtraSelection underlineSelection;
-        underlineSelection.cursor = underlineCursor;
-        underlineSelection.format.setUnderlineStyle(
-            QTextCharFormat::WaveUnderline);
-        underlineSelection.format.setUnderlineColor(
-            diagnostic.severity == SemanticDiagnostic::Error
-                ? QColor("#EF4444")
-                : QColor("#FBBF24"));
-        underlineSelection.format.setProperty(
-            kDiagnosticSelectionProperty,
-            kDiagnosticSelectionMarker);
-        selections.append(underlineSelection);
     }
 
     clampSelectionsToDocument(editor->document(), selections);
@@ -605,9 +594,7 @@ void EditorSelection::highlightCurrentSymbolReferences(MyCodeEditor* editor)
             && occurrence->word == word
             && occurrence->length == word.size()
             && position >= 0
-            && position + occurrence->length
-                   <= editor->cachedDocumentText().size()
-            && editor->cachedDocumentText().mid(
+            && editor->cachedDocumentSlice(
                    position, occurrence->length) == word;
         Q_ASSERT_X(valid,
                    "EditorSelection::highlightCurrentSymbolReferences",
@@ -647,7 +634,8 @@ void EditorSelection::rebuildOccurrenceIndex(MyCodeEditor* editor,
 
 void EditorSelection::appendOccurrenceRange(const QString& text,
                                             int start,
-                                            int end)
+                                            int end,
+                                            int absoluteOffset)
 {
     int position = qBound(0, start, text.size());
     const int limit = qBound(position, end, text.size());
@@ -674,7 +662,7 @@ void EditorSelection::appendOccurrenceRange(const QString& text,
             occurrenceNodes.push_back(std::move(occurrence));
         }
         occurrencePtr->word = text.mid(wordStart, position - wordStart);
-        occurrencePtr->position = wordStart;
+        occurrencePtr->position = absoluteOffset + wordStart;
         occurrencePtr->length = position - wordStart;
         occurrencePtr->lazyShift = 0;
         occurrencePtr->priority = nextOccurrencePriority(
@@ -706,17 +694,27 @@ OccurrenceChangeContext EditorSelection::prepareDocumentChange(
     return context;
 }
 
-OccurrenceIndexUpdate EditorSelection::applyDocumentChange(
-    MyCodeEditor* editor,
+OccurrenceChangeContext EditorSelection::prepareDocumentLineChange(
     const DocumentChange& change,
-    const OccurrenceChangeContext& context,
-    const QString& newText)
+    int oldLineStart,
+    int oldLineEnd) const
 {
-    if (context.rebuild) {
-        rebuildOccurrenceIndex(editor, newText);
-        return OccurrenceIndexUpdate::Full;
-    }
+    OccurrenceChangeContext context;
+    context.rebuild = !occurrenceIndexInitialized
+        || (change.position == 0
+            && change.removedLength == change.oldLength);
+    if (context.rebuild)
+        return context;
 
+    context.oldStart = qMax(0, oldLineStart);
+    context.oldEnd = qMax(context.oldStart, oldLineEnd);
+    return context;
+}
+
+void EditorSelection::removeOccurrenceRangeAndShift(
+    const OccurrenceChangeContext& context,
+    int characterDelta)
+{
     EditorOccurrenceNode* before = nullptr;
     EditorOccurrenceNode* affectedAndAfter = nullptr;
     splitOccurrenceTree(occurrenceRoot,
@@ -733,12 +731,51 @@ OccurrenceIndexUpdate EditorSelection::applyDocumentChange(
                              &occurrenceIndex,
                              &freeOccurrenceNodes,
                              &activeOccurrenceCount);
-    shiftOccurrenceTree(after, change.characterDelta());
+    shiftOccurrenceTree(after, characterDelta);
     occurrenceRoot = mergeOccurrenceTrees(before, after);
+}
+
+OccurrenceIndexUpdate EditorSelection::applyDocumentChange(
+    MyCodeEditor* editor,
+    const DocumentChange& change,
+    const OccurrenceChangeContext& context,
+    const QString& newText)
+{
+    if (context.rebuild) {
+        rebuildOccurrenceIndex(editor, newText);
+        return OccurrenceIndexUpdate::Full;
+    }
+
+    removeOccurrenceRangeAndShift(context,
+                                  change.characterDelta());
 
     const int newStart = lineStartAt(newText, change.position);
     const int newEnd = lineEndAfter(newText, change.newEnd());
     appendOccurrenceRange(newText, newStart, newEnd);
+    return OccurrenceIndexUpdate::Incremental;
+}
+
+OccurrenceIndexUpdate EditorSelection::applyDocumentLineChange(
+    MyCodeEditor* editor,
+    const DocumentChange& change,
+    const OccurrenceChangeContext& context,
+    int newLineStart,
+    const QString& newLineText)
+{
+    if (context.rebuild || !editor || newLineStart < 0
+        || newLineStart + newLineText.size() > change.newLength) {
+        if (!editor)
+            return OccurrenceIndexUpdate::None;
+        rebuildOccurrenceIndex(editor, editor->cachedDocumentText());
+        return OccurrenceIndexUpdate::Full;
+    }
+
+    removeOccurrenceRangeAndShift(context,
+                                  change.characterDelta());
+    appendOccurrenceRange(newLineText,
+                          0,
+                          newLineText.size(),
+                          newLineStart);
     return OccurrenceIndexUpdate::Incremental;
 }
 
@@ -753,6 +790,23 @@ EditorOccurrenceIndexStats EditorSelection::occurrenceIndexStatsForTest() const
     stats.freeNodeCount =
         static_cast<qsizetype>(freeOccurrenceNodes.size());
     return stats;
+}
+
+QList<int> EditorSelection::occurrencePositionsForTest(
+    const QString& word) const
+{
+    QList<int> positions;
+    const auto found = occurrenceIndex.constFind(word);
+    if (found == occurrenceIndex.constEnd())
+        return positions;
+
+    positions.reserve(found.value().size());
+    for (const EditorOccurrenceNode* occurrence : found.value()) {
+        if (occurrence && occurrence->active)
+            positions.append(currentOccurrencePosition(occurrence));
+    }
+    std::sort(positions.begin(), positions.end());
+    return positions;
 }
 
 void EditorSelection::highlightSearchMatches(
@@ -867,6 +921,53 @@ void EditorSelection::clearTemplateSlots(QPlainTextEdit* editor)
         editor,
         kTemplateSlotSelectionProperty,
         kTemplateSlotSelectionMarker);
+}
+
+void EditorSelection::highlightSignalSelections(
+    MyCodeEditor* editor,
+    const QList<QPair<int, int>>& ranges)
+{
+    if (!editor)
+        return;
+    QList<QTextEdit::ExtraSelection> selections =
+        editorSelectionsWithout(
+            editor,
+            kSignalSelectionProperty,
+            kSignalSelectionMarker);
+    const QColor accent =
+        editor->palette().color(QPalette::Highlight);
+    QColor background = accent;
+    background.setAlpha(46);
+    QColor underline = accent;
+    underline.setAlpha(150);
+    for (const QPair<int, int>& range : ranges) {
+        if (range.first < 0 || range.second <= 0)
+            continue;
+        QTextEdit::ExtraSelection selection;
+        selection.cursor = QTextCursor(editor->document());
+        selection.cursor.setPosition(range.first);
+        selection.cursor.setPosition(
+            range.first + range.second,
+            QTextCursor::KeepAnchor);
+        selection.format.setBackground(background);
+        selection.format.setUnderlineStyle(
+            QTextCharFormat::DotLine);
+        selection.format.setUnderlineColor(underline);
+        selection.format.setProperty(
+            kSignalSelectionProperty,
+            kSignalSelectionMarker);
+        selections.append(selection);
+    }
+    clampSelectionsToDocument(editor->document(), selections);
+    editor->setExtraSelections(selections);
+}
+
+void EditorSelection::clearSignalSelections(
+    QPlainTextEdit* editor)
+{
+    removeByProperty(editor,
+                     kSignalSelectionProperty,
+                     kSignalSelectionMarker);
 }
 
 void EditorSelection::flashLine(MyCodeEditor* editor)
