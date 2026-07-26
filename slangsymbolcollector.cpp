@@ -549,6 +549,10 @@ void collectNativeRecords(slang::ast::Compilation& compilation,
                                                outList,
                                                effectiveValueFacts,
                                                cancelled);
+    if (!cancellationReached && !cancelled()) {
+        slang_symbols::populateSymbolDriverSummaries(
+            compilation, outList, cancelled);
+    }
     if (cancellationReached || cancelled()) {
         outList.clear();
         if (effectiveValueFacts)

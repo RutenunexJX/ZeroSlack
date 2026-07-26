@@ -93,6 +93,7 @@ struct MyCodeEditorState
     QString inlineFilterTextOverlayCurrentText;
     std::shared_ptr<std::atomic_bool> ghostQueryCancellation;
     EditorHotPathMetrics hotPathMetrics;
+    bool hotPathTimingEnabled = false;
     FormatterProfile currentFormatterProfile = FormatterProfile::Structured;
     bool currentFormatOnSaveEnabled = false;
     bool columnSelectionActive = false;

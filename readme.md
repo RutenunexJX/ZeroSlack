@@ -27,6 +27,34 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
 - Do not push unless explicitly asked by the current task owner.
 - Keep docs short, current, and useful for the next development turn.
 
+## Embedded Structured Action Core
+
+- `components/rtleditcore` is the single authoritative source for ZeroSlack's
+  typed structured Action transaction core. The root build adds that directory
+  directly and links `rtledit::core`; it does not probe a sibling source tree,
+  an installed package, `CMAKE_PREFIX_PATH`, or an environment variable.
+- The component owns the minimal semantic identity, document manager, text
+  edit, patch transaction, edit plan/diff/provenance, and typed
+  `signal.exposeToTop` APIs. Slang remains authoritative for elaborated
+  semantics, while Tree-sitter remains authoritative for live-buffer
+  structural anchors.
+- A fresh single-config build needs only the normal ZeroSlack Qt/compiler
+  configuration:
+
+```powershell
+cmake -S . -B <fresh-debug-build> -G Ninja -DCMAKE_BUILD_TYPE=Debug
+cmake --build <fresh-debug-build>
+ctest --test-dir <fresh-debug-build> --output-on-failure
+
+cmake -S . -B <fresh-release-build> -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build <fresh-release-build>
+```
+
+- `BUILD_TESTING=ON` registers the component's six tests. The sixth is an
+  embedded consumer boundary test: it verifies the exact minimal public header
+  set, rejects legacy and mock headers, and consumes only `rtledit::core`.
+  Test-only mocks remain under `components/rtleditcore/tests/support`.
+
 ## Local Debug Link Policy (2026-07-20)
 
 - `zeroslack_core` remains a static library. Its archive is a direct input of

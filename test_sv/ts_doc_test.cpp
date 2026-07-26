@@ -361,6 +361,32 @@ int main() {
 
     {
         QString src =
+            QStringLiteral("module demo #(\n")
+            + QStringLiteral("    parameter int W = 8\n")
+            + QStringLiteral(") (\n")
+            + QStringLiteral("    // clock group\n")
+            + QStringLiteral("    input logic clk, // source clock\n")
+            + QStringLiteral("    output logic done // result\n")
+            + QStringLiteral(");\n")
+            + QStringLiteral("endmodule\n");
+        TSDocument d;
+        d.setText(src);
+        const TSPortAppendTarget target =
+            d.portAppendTarget(src.indexOf(QStringLiteral("done")));
+        const QString edited = applyPortAppendEdit(src, target);
+        check("add port target: parameterized ANSI comments ok",
+              target.ok());
+        check("add port target: comment-aware comma anchor",
+              target.ok()
+                  && target.needsTrailingComma
+                  && edited.contains(
+                      QStringLiteral(
+                          "output logic done, // result\n"
+                          "    \n);")));
+    }
+
+    {
+        QString src =
             QStringLiteral("module demo (\n")
             + QStringLiteral("    input logic clk,\n")
             + QStringLiteral("    output logic done,\n")
@@ -492,6 +518,27 @@ int main() {
     }
 
     {
+        const QString src =
+            QStringLiteral("module directive_demo(\n")
+            + QStringLiteral("  input logic clk\n")
+            + QStringLiteral(");\n")
+            + QStringLiteral("`define DEBUG_MARK\n")
+            + QStringLiteral("logic payload;\n")
+            + QStringLiteral("endmodule\n");
+        TSDocument d;
+        d.setText(src);
+        const TSSignalInsertTarget target =
+            d.signalInsertTarget(
+                src.indexOf(QStringLiteral("payload")));
+        check("add signal target: directive boundary is structural",
+              target.ok()
+                  && target.insertChar
+                      == src.indexOf(QStringLiteral("`define"))
+                  && target.insertText == QStringLiteral("\n")
+                  && target.caretCharAfterEdit == target.insertChar);
+    }
+
+    {
         QString src =
             QStringLiteral("module late_demo;\n")
             + QStringLiteral("  assign y = a;\n")
@@ -508,6 +555,25 @@ int main() {
             + QStringLiteral("endmodule\n");
         check("add signal target: does not cross body logic",
               target.ok() && applySignalInsertEdit(src, target) == expected);
+
+        const TSSignalInsertTarget bridgeTarget =
+            d.sourceBridgeInsertTarget(
+                src.indexOf(QStringLiteral("late_sig")));
+        QString bridged = src;
+        if (bridgeTarget.ok()) {
+            const int caret =
+                bridgeTarget.caretCharAfterEdit
+                - bridgeTarget.insertChar;
+            const QString edit =
+                bridgeTarget.insertText.left(caret)
+                + QStringLiteral("assign late_out = late_sig;")
+                + bridgeTarget.insertText.mid(caret);
+            bridged.insert(bridgeTarget.insertChar, edit);
+        }
+        check("source bridge target: after selected declaration",
+              bridgeTarget.ok()
+                  && bridged.contains(QStringLiteral(
+                      "  logic late_sig;\n  assign late_out = late_sig;\n")));
 
         TSDocument noModule;
         noModule.setText(QStringLiteral("logic stray;\n"));
@@ -792,6 +858,94 @@ int main() {
               !incomplete.instantiationAt(
                    incomplete.text().indexOf(QStringLiteral("u0")))
                    .ok());
+    }
+
+    // signal.exposeToTop relies exclusively on Tree-sitter for named
+    // instance-connection insertion anchors. The query must distinguish
+    // compatible reuse, conflicts, positional instances, and CRLF/Unicode
+    // source coordinates without scanning SystemVerilog text.
+    {
+        const QString named =
+            QStringLiteral("module parent;\n")
+            + QStringLiteral("  child u_child(\n")
+            + QStringLiteral("    .clk(clk)\n")
+            + QStringLiteral("  );\n")
+            + QStringLiteral("endmodule\n");
+        TSDocument d;
+        d.setText(named);
+        const TSNamedPortConnectionTarget target =
+            d.namedPortConnectionTarget(
+                named.indexOf(QStringLiteral("u_child")),
+                QStringLiteral("trace_out"));
+        check("named connection target resolves exact multiline insertion",
+              target.status == TSNamedPortConnectionStatus::Ok
+                  && target.instanceName == QStringLiteral("u_child")
+                  && target.moduleType == QStringLiteral("child")
+                  && target.needsTrailingComma
+                  && target.trailingCommaInsertChar
+                      == named.indexOf(QStringLiteral(".clk"))
+                          + QStringLiteral(".clk(clk)").size()
+                  && target.insertChar
+                      == named.indexOf(QStringLiteral("  );"))
+                  && target.prefix == QStringLiteral("    ")
+                  && target.suffix == QStringLiteral("\n"));
+    }
+
+    {
+        const QString existing =
+            QStringLiteral("module parent;\n")
+            + QStringLiteral("  child u_child(\n")
+            + QStringLiteral("    .trace_out(parent_trace)\n")
+            + QStringLiteral("  );\n")
+            + QStringLiteral("endmodule\n");
+        TSDocument d;
+        d.setText(existing);
+        const TSNamedPortConnectionTarget target =
+            d.namedPortConnectionTarget(
+                existing.indexOf(QStringLiteral("u_child")),
+                QStringLiteral("trace_out"));
+        check("named connection target exposes structural existing actual",
+              target.status
+                      == TSNamedPortConnectionStatus::AlreadyConnected
+                  && target.existingActual
+                      == QStringLiteral("parent_trace"));
+    }
+
+    {
+        const QString positional =
+            QStringLiteral("module parent;\n"
+                           "  child u_child(clk, data);\n"
+                           "endmodule\n");
+        TSDocument d;
+        d.setText(positional);
+        check("named connection target rejects positional instance",
+              d.namedPortConnectionTarget(
+                   positional.indexOf(QStringLiteral("u_child")),
+                   QStringLiteral("trace_out"))
+                      .status
+                  == TSNamedPortConnectionStatus::PositionalConnections);
+    }
+
+    {
+        const QString crlfUnicode =
+            QStringLiteral("module parent;\r\n"
+                           "  // 中文注释\r\n"
+                           "  child u_child(\r\n"
+                           "    .clk(clk)\r\n"
+                           "  );\r\n"
+                           "endmodule\r\n");
+        TSDocument d;
+        d.setText(crlfUnicode);
+        const TSNamedPortConnectionTarget target =
+            d.namedPortConnectionTarget(
+                crlfUnicode.indexOf(QStringLiteral("u_child")),
+                QStringLiteral("trace_out"));
+        check("named connection target preserves Unicode CRLF coordinates",
+              target.status == TSNamedPortConnectionStatus::Ok
+                  && target.insertChar
+                      == crlfUnicode.indexOf(QStringLiteral("  );"))
+                  && target.prefix == QStringLiteral("    ")
+                  && target.suffix == QStringLiteral("\r\n"));
     }
 
     printf("\n%d checks, %d failed\n", checks, fails);

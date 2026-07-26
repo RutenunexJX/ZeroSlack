@@ -285,12 +285,14 @@ QString semanticRelationshipStableKeyText(
     if (fromKey.isEmpty() || toKey.isEmpty())
         return QString();
 
-    return QStringLiteral("%1|%2|%3|%4|%5")
+    return QStringLiteral("%1|%2|%3|%4|%5|%6")
         .arg(QString::number(static_cast<int>(relationship.type)),
               fromKey,
               toKey,
               relationship.fromAccessPath,
-              relationship.toAccessPath);
+              relationship.toAccessPath,
+              relationship.exactValueForward ? QStringLiteral("exact")
+                                             : QStringLiteral("derived"));
 }
 
 SemanticIndex* SemanticIndex::getInstance()

@@ -175,7 +175,7 @@ struct InsightTheme {
 class InsightVisualStyle
 {
 public:
-    static InsightTheme theme();
+    static const InsightTheme& theme();
 
     static QColor roleColor(InsightVisualRole role);
     static QColor roleColor(const QString& roleName);

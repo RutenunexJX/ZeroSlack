@@ -100,6 +100,10 @@ static QString normalizedTestPath(const QString& fileName)
     }
 
     QStringList roots;
+    const QString sourceRoot =
+        qEnvironmentVariable("ZEROSLACK_SOURCE_DIR");
+    if (!sourceRoot.isEmpty())
+        roots << sourceRoot;
     roots << QDir::currentPath() << QCoreApplication::applicationDirPath();
     for (const QString& root : std::as_const(roots)) {
         QDir dir(root);

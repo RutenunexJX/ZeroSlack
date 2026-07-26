@@ -42,6 +42,10 @@ AssignmentInfo assignmentInfoFromExpression(const AssignmentExpression& assignme
         info.leftAccessPath = info.leftName;
     info.rightNames = collectValueNames(assignment.right());
     info.rightAccessPaths = collectValueAccessPaths(assignment.right());
+    info.exactValueForward =
+        isDirectValueForwardExpression(assignment.right())
+        && info.rightNames.size() == 1
+        && info.rightAccessPaths.size() == 1;
     size_t line = sm ? sm->getLineNumber(assignment.sourceRange.start()) : 0;
     info.lineNumber = (line == 0) ? 1 : static_cast<int>(line);
     info.sourceRange = relationshipEvidenceRange(sm, assignment.sourceRange);

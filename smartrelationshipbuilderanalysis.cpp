@@ -183,7 +183,8 @@ void SmartRelationshipBuilder::analyzeVariableAssignments(const QString& content
                     85,
                     assignment.sourceRange,
                     rightAccessPath,
-                    assignment.leftAccessPath
+                    assignment.leftAccessPath,
+                    assignment.exactValueForward
                 );
             }
         }
@@ -375,7 +376,8 @@ void SmartRelationshipBuilder::addRelationshipWithContext(int fromHandle, int to
                                                         int confidence,
                                                         const SemanticSourceRange& evidenceRange,
                                                         const QString& fromAccessPath,
-                                                        const QString& toAccessPath)
+                                                        const QString& toAccessPath,
+                                                        bool exactValueForward)
 {
     if (confidence < confidenceThreshold)
         return;
@@ -388,7 +390,8 @@ void SmartRelationshipBuilder::addRelationshipWithContext(int fromHandle, int to
              confidence,
              evidenceRange,
              fromAccessPath,
-             toAccessPath});
+             toAccessPath,
+             exactValueForward});
         return;
     }
     if (relationshipEngine)

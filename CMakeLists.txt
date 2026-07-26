@@ -587,16 +587,29 @@ set(ZEROSLACK_CORE_SOURCES
     # --- Resource files ---
     code.qrc
     images.qrc
-
-    # --- Third-party C sources (tree-sitter) ---
-    thirdparty/tree_sitter/lib/src/lib.c
-    thirdparty/tree_sitter_systemverilog/src/parser.c
 )
+
+set(ZEROSLACK_TREE_SITTER_SOURCES
+    "${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/tree_sitter/lib/src/lib.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/tree_sitter_systemverilog/src/parser.c"
+)
+set(ZEROSLACK_TREE_SITTER_ROOT
+    "${CMAKE_CURRENT_SOURCE_DIR}")
+add_subdirectory(cmake/tree_sitter_runtime)
 
 # =========================================================
 # 5. Core Library and Executable
 # =========================================================
-add_library(zeroslack_core STATIC ${ZEROSLACK_CORE_SOURCES})
+add_library(zeroslack_core STATIC
+    ${ZEROSLACK_CORE_SOURCES}
+    $<TARGET_OBJECTS:zeroslack_tree_sitter>)
+
+add_subdirectory(components/rtleditcore)
+
+target_sources(zeroslack_core PRIVATE
+    exposesignaltotopservice.cpp
+    exposesignaltotopdialog.cpp
+)
 
 # Main application target.
 add_executable(demo main.cpp)
@@ -630,6 +643,7 @@ target_link_libraries(zeroslack_core PUBLIC
     Qt6::Widgets
     Qt6::Concurrent
     slang::slang
+    rtledit::core
 )
 
 target_link_libraries(demo PRIVATE zeroslack_core)
@@ -638,12 +652,9 @@ target_link_libraries(demo PRIVATE zeroslack_core)
 # 7. Compiler Flags and Definitions
 # =========================================================
 
-# Suppress selected warnings for tree-sitter C sources.
-set_source_files_properties(
-    thirdparty/tree_sitter/lib/src/lib.c
-    thirdparty/tree_sitter_systemverilog/src/parser.c
-    PROPERTIES COMPILE_OPTIONS "-Wno-unused-parameter"
-)
+# The synchronous Tree-sitter C translation units are isolated in their own
+# object target. Its subdirectory applies extra optimization only in Debug and
+# leaves every other source and configuration on the toolchain defaults.
 
 # MinGW-specific definitions.
 if(MINGW)
@@ -688,6 +699,17 @@ if(BUILD_TESTING)
     add_executable(gui_smoke_test test_sv/gui_smoke_test.cpp)
     target_link_libraries(gui_smoke_test PRIVATE zeroslack_core Qt6::Test)
 
+    add_executable(expose_signal_to_top_test test_sv/expose_signal_to_top_test.cpp)
+    target_link_libraries(expose_signal_to_top_test PRIVATE zeroslack_core)
+
+    add_executable(expose_signal_to_top_gui_test
+        test_sv/expose_signal_to_top_gui_test.cpp)
+    target_link_libraries(expose_signal_to_top_gui_test PRIVATE zeroslack_core Qt6::Test)
+
+    add_executable(expose_signal_to_top_fixture_test
+        test_sv/expose_signal_to_top_fixture_test.cpp)
+    target_link_libraries(expose_signal_to_top_fixture_test PRIVATE zeroslack_core)
+
     add_executable(global_control_ow_test
         test_sv/global_control_ow_test.cpp)
     target_link_libraries(global_control_ow_test PRIVATE zeroslack_core)
@@ -724,6 +746,7 @@ if(BUILD_TESTING)
             "PATH=${ZEROSLACK_TEST_PATH}"
             "QT_QPA_PLATFORM=offscreen"
             "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
+            "ZEROSLACK_SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}"
             $<TARGET_FILE:completion_test>
             ${CMAKE_CURRENT_SOURCE_DIR}/test_sv/test_symbols.sv
     )
@@ -732,6 +755,7 @@ if(BUILD_TESTING)
             "PATH=${ZEROSLACK_TEST_PATH}"
             "QT_QPA_PLATFORM=offscreen"
             "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
+            "ZEROSLACK_SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}"
             $<TARGET_FILE:jump_test>
             ${CMAKE_CURRENT_SOURCE_DIR}/test_sv/test_symbols.sv
     )
@@ -762,10 +786,38 @@ if(BUILD_TESTING)
             "PATH=${ZEROSLACK_TEST_PATH}"
             "QT_QPA_PLATFORM=offscreen"
             "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
+            "ZEROSLACK_SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}"
             $<TARGET_FILE:gui_smoke_test>
             ${CMAKE_CURRENT_SOURCE_DIR}/test_sv/new
             ${CMAKE_CURRENT_SOURCE_DIR}/test_sv/test_symbols.sv
     )
+    add_test(NAME expose_signal_to_top_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}"
+            $<TARGET_FILE:expose_signal_to_top_test>
+    )
+    set_tests_properties(expose_signal_to_top_test PROPERTIES TIMEOUT 120)
+
+    add_test(NAME expose_signal_to_top_gui_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}"
+            "QT_QPA_PLATFORM=offscreen"
+            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
+            $<TARGET_FILE:expose_signal_to_top_gui_test>
+    )
+    set_tests_properties(expose_signal_to_top_gui_test PROPERTIES
+        TIMEOUT 120)
+
+    add_test(NAME expose_signal_to_top_fixture_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}"
+            $<TARGET_FILE:expose_signal_to_top_fixture_test>
+            ${CMAKE_CURRENT_SOURCE_DIR}/test_sv/new
+            ${CMAKE_CURRENT_SOURCE_DIR}/test_sv/huge_prj
+    )
+    set_tests_properties(expose_signal_to_top_fixture_test PROPERTIES
+        TIMEOUT 1200)
+
     add_test(NAME global_control_ow_test
         COMMAND ${CMAKE_COMMAND} -E env
             "PATH=${ZEROSLACK_TEST_PATH}"
@@ -825,5 +877,21 @@ if(BUILD_TESTING)
         COMMAND ${CMAKE_COMMAND}
             -DZEROSLACK_SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}
             -P ${CMAKE_CURRENT_SOURCE_DIR}/legacy_field_policy_guard.ctest
+    )
+    add_test(NAME tree_sitter_compile_options_guard
+        COMMAND ${CMAKE_COMMAND}
+            -DZEROSLACK_SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}
+            -DZEROSLACK_PROBE_SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/cmake/tree_sitter_compile_options_probe
+            -DZEROSLACK_TEST_BINARY_DIR=${CMAKE_CURRENT_BINARY_DIR}/tree_sitter_compile_options_guard
+            -DZEROSLACK_C_COMPILER=${CMAKE_C_COMPILER}
+            -DZEROSLACK_C_COMPILER_ID=${CMAKE_C_COMPILER_ID}
+            -DZEROSLACK_GENERATOR=${CMAKE_GENERATOR}
+            -DZEROSLACK_GENERATOR_PLATFORM=${CMAKE_GENERATOR_PLATFORM}
+            -DZEROSLACK_GENERATOR_TOOLSET=${CMAKE_GENERATOR_TOOLSET}
+            -DZEROSLACK_MAKE_PROGRAM=${CMAKE_MAKE_PROGRAM}
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/tree_sitter_compile_options_guard.ctest
+    )
+    set_tests_properties(tree_sitter_compile_options_guard PROPERTIES
+        TIMEOUT 120
     )
 endif()

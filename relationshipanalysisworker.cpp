@@ -24,6 +24,7 @@ QList<SemanticRelationship> toSemanticRelationships(
         item.evidenceRange = relationship.evidenceRange;
         item.fromAccessPath = relationship.fromAccessPath;
         item.toAccessPath = relationship.toAccessPath;
+        item.exactValueForward = relationship.exactValueForward;
         item.provenance = RelationshipProvenance::Inferred;
         result.append(item);
     }

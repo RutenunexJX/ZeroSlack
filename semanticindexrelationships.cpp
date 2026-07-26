@@ -160,6 +160,7 @@ QList<SemanticRelationshipResult> SemanticIndex::getRelationshipResults(
         item.confidence = item.relationship.confidence;
         item.evidenceText = item.relationship.evidenceText;
         item.evidenceRange = item.relationship.evidenceRange;
+        item.exactValueForward = item.relationship.exactValueForward;
         result.append(item);
     }
     return result;

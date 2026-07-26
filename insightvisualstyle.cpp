@@ -30,7 +30,8 @@ QString objectSelector(const QString& typeName, const QString& objectName)
 }
 }
 
-InsightTheme InsightVisualStyle::theme()
+namespace {
+InsightTheme buildTheme()
 {
     InsightTheme theme;
     theme.appBackground = color("#eef1f5");
@@ -141,6 +142,13 @@ InsightTheme InsightVisualStyle::theme()
     theme.graph.selectionFill = color("#dbeafe");
     theme.graph.selectionBorder = theme.accent;
     return theme;
+}
+}
+
+const InsightTheme& InsightVisualStyle::theme()
+{
+    static const InsightTheme cachedTheme = buildTheme();
+    return cachedTheme;
 }
 
 QColor InsightVisualStyle::roleColor(InsightVisualRole role)

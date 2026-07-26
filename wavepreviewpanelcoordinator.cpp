@@ -6,6 +6,7 @@
 #include <QCheckBox>
 #include <QComboBox>
 #include <QFileInfo>
+#include <QElapsedTimer>
 #include <QFont>
 #include <QFontMetrics>
 #include <QHeaderView>
@@ -30,6 +31,7 @@ namespace {
 constexpr int kRoleFileName = Qt::UserRole + 1;
 constexpr int kRoleLine = Qt::UserRole + 2;
 constexpr int kRoleColumn = Qt::UserRole + 3;
+constexpr int kRoleDefaultExpanded = Qt::UserRole + 4;
 
 QString canvasEventLabel(const WavePreviewAssignment& assignment);
 QString canvasEventSelectionText(const WavePreviewAssignment& assignment,
@@ -73,15 +75,25 @@ public:
 
     QSize sizeHint() const override
     {
-        const int laneCount = report.trace.isValid()
-            ? report.trace.traceSignals.size()
-            : (report.available ? report.lanes.size() : 2);
-        return QSize(460, qBound(144, 66 + laneCount * 34, 280));
+        return QSize(460,
+                     qBound(144,
+                            66 + sizeHintLaneCapacity * 34,
+                            280));
     }
 
     void setReport(const WavePreviewReport& nextReport,
                    const QString& fileName)
     {
+        const QSize previousSizeHint = sizeHint();
+        const int nextLaneCount = nextReport.trace.isValid()
+            ? nextReport.trace.traceSignals.size()
+            : (nextReport.available ? nextReport.lanes.size() : 2);
+        const bool sameFileSession =
+            reportSessionActive && currentFileName == fileName;
+        sizeHintLaneCapacity = sameFileSession
+            ? qMax(sizeHintLaneCapacity, nextLaneCount)
+            : nextLaneCount;
+        reportSessionActive = true;
         report = nextReport;
         currentFileName = fileName;
         eventHits.clear();
@@ -91,14 +103,27 @@ public:
         selectedSignalName.clear();
         setToolTip(QString());
         unsetCursor();
-        updateGeometry();
+        if (sizeHint() != previousSizeHint)
+            updateGeometry();
         update();
     }
 
+    void resetPaintMetricsForTest()
+    {
+        paintTimingEnabled = true;
+        paintNanoseconds = 0;
+        paintCount = 0;
+    }
+    std::uint64_t paintNanosecondsForTest() const { return paintNanoseconds; }
+    int paintCountForTest() const { return paintCount; }
+
     void clearReport()
     {
+        const QSize previousSizeHint = sizeHint();
         report = WavePreviewReport();
         currentFileName.clear();
+        reportSessionActive = false;
+        sizeHintLaneCapacity = 2;
         eventHits.clear();
         laneHits.clear();
         selectedLine = 0;
@@ -106,7 +131,8 @@ public:
         selectedSignalName.clear();
         setToolTip(QString());
         unsetCursor();
-        updateGeometry();
+        if (sizeHint() != previousSizeHint)
+            updateGeometry();
         update();
     }
 
@@ -124,6 +150,16 @@ public:
 protected:
     void paintEvent(QPaintEvent*) override
     {
+        QElapsedTimer paintTimer;
+        if (paintTimingEnabled)
+            paintTimer.start();
+        const auto recordPaint = [this, &paintTimer]() {
+            if (!paintTimingEnabled)
+                return;
+            paintNanoseconds += static_cast<std::uint64_t>(
+                paintTimer.nsecsElapsed());
+            ++paintCount;
+        };
         eventHits.clear();
         laneHits.clear();
         QPainter painter(this);
@@ -145,11 +181,13 @@ protected:
             painter.drawText(canvasRect,
                              Qt::AlignCenter | Qt::TextWordWrap,
                              reason);
+            recordPaint();
             return;
         }
 
         if (report.trace.isValid()) {
             paintTrace(painter, canvasRect);
+            recordPaint();
             return;
         }
 
@@ -266,6 +304,7 @@ protected:
                                   assignment.column});
             }
         }
+        recordPaint();
     }
 
     void mousePressEvent(QMouseEvent* event) override
@@ -584,9 +623,14 @@ private:
     QVector<CanvasEventHit> eventHits;
     QVector<CanvasLaneHit> laneHits;
     QString currentFileName;
+    bool reportSessionActive = false;
+    int sizeHintLaneCapacity = 2;
     int selectedLine = 0;
     int selectedColumn = 0;
     QString selectedSignalName;
+    bool paintTimingEnabled = false;
+    std::uint64_t paintNanoseconds = 0;
+    int paintCount = 0;
     std::function<void(const QString&, int, int)> navigationHandler;
     std::function<void(const QString&)> selectionHandler;
 };
@@ -596,6 +640,38 @@ QString displayFileName(const QString& fileName)
     if (fileName.isEmpty())
         return QStringLiteral("Untitled");
     return QFileInfo(fileName).fileName();
+}
+
+void setLabelTextIfChanged(QLabel* label, const QString& text)
+{
+    if (label && label->text() != text)
+        label->setText(text);
+}
+
+void replaceComboItemsIfChanged(QComboBox* combo,
+                                const QStringList& items)
+{
+    if (!combo)
+        return;
+    bool matches = combo->count() == items.size();
+    for (int index = 0; matches && index < items.size(); ++index)
+        matches = combo->itemText(index) == items.at(index);
+    if (matches)
+        return;
+
+    const QString previousSelection = combo->currentText();
+    QSignalBlocker blocker(combo);
+    combo->clear();
+    combo->addItems(items);
+    const int previousIndex = combo->findText(previousSelection);
+    if (previousIndex >= 0)
+        combo->setCurrentIndex(previousIndex);
+}
+
+void appendUnique(QStringList* items, const QString& value)
+{
+    if (!value.isEmpty() && !items->contains(value))
+        items->append(value);
 }
 
 QString assignmentKindText(WavePreviewAssignmentKind kind)
@@ -1087,6 +1163,15 @@ void setItemTooltip(QTreeWidgetItem* item, const QString& tooltip)
         item->setToolTip(column, tooltip);
 }
 
+void setItemDefaultExpanded(QTreeWidgetItem* item, bool expanded)
+{
+    if (!item)
+        return;
+    item->setData(0, kRoleDefaultExpanded, expanded);
+    if (item->treeWidget())
+        item->setExpanded(expanded);
+}
+
 void setItemBold(QTreeWidgetItem* item, int column = 0)
 {
     if (!item)
@@ -1132,14 +1217,177 @@ bool traceSignalMatchesFilter(const WavePreviewTraceSignal& signal,
     return haystack.contains(filter.trimmed(), Qt::CaseInsensitive);
 }
 
-void addOverviewItems(QTreeWidget* tree,
+bool copyTreeItemRoleIfChanged(QTreeWidgetItem* target,
+                               const QTreeWidgetItem* source,
+                               int column,
+                               int role)
+{
+    const QVariant value = source->data(column, role);
+    if (target->data(column, role) == value)
+        return false;
+    target->setData(column, role, value);
+    return true;
+}
+
+void recordTreeColumnWidth(const QTreeWidgetItem* item,
+                           int column,
+                           QVector<int>* desiredColumnWidths)
+{
+    if (!item || column <= 0 || !desiredColumnWidths)
+        return;
+    if (desiredColumnWidths->size() <= column)
+        desiredColumnWidths->resize(column + 1);
+    const int desiredWidth =
+        QFontMetrics(item->font(column))
+            .horizontalAdvance(item->text(column))
+        + 28;
+    (*desiredColumnWidths)[column] =
+        qMax((*desiredColumnWidths)[column], desiredWidth);
+}
+
+bool treeItemsHaveSameIdentity(const QTreeWidgetItem* left,
+                               const QTreeWidgetItem* right)
+{
+    return left && right
+        && left->data(0, Qt::DisplayRole)
+               == right->data(0, Qt::DisplayRole);
+}
+
+void synchronizeTreeItem(QTreeWidget* tree,
+                         QTreeWidgetItem* target,
+                         const QTreeWidgetItem* source,
+                         bool isNew,
+                         QVector<int>* desiredColumnWidths)
+{
+    const int columnCount =
+        qMax(target->columnCount(), source->columnCount());
+    for (int column = 0; column < columnCount; ++column) {
+        const bool displayChanged = copyTreeItemRoleIfChanged(
+            target, source, column, Qt::DisplayRole);
+        copyTreeItemRoleIfChanged(
+            target, source, column, Qt::ToolTipRole);
+        const bool fontChanged = copyTreeItemRoleIfChanged(
+            target, source, column, Qt::FontRole);
+        if (displayChanged || fontChanged)
+            recordTreeColumnWidth(
+                source, column, desiredColumnWidths);
+    }
+    copyTreeItemRoleIfChanged(target, source, 0, kRoleFileName);
+    copyTreeItemRoleIfChanged(target, source, 0, kRoleLine);
+    copyTreeItemRoleIfChanged(target, source, 0, kRoleColumn);
+    copyTreeItemRoleIfChanged(
+        target, source, 0, kRoleDefaultExpanded);
+
+    for (int index = 0; index < source->childCount(); ++index) {
+        const QTreeWidgetItem* sourceChild = source->child(index);
+        int matchingIndex = -1;
+        for (int candidate = index;
+             candidate < target->childCount();
+             ++candidate) {
+            if (treeItemsHaveSameIdentity(target->child(candidate),
+                                          sourceChild)) {
+                matchingIndex = candidate;
+                break;
+            }
+        }
+
+        bool childIsNew = matchingIndex < 0;
+        QTreeWidgetItem* targetChild = nullptr;
+        if (childIsNew) {
+            targetChild = new QTreeWidgetItem;
+            target->insertChild(index, targetChild);
+        } else if (matchingIndex == index) {
+            targetChild = target->child(index);
+        } else {
+            targetChild = target->takeChild(matchingIndex);
+            target->insertChild(index, targetChild);
+        }
+        synchronizeTreeItem(tree,
+                            targetChild,
+                            sourceChild,
+                            childIsNew,
+                            desiredColumnWidths);
+    }
+    while (target->childCount() > source->childCount())
+        delete target->takeChild(target->childCount() - 1);
+
+    if (isNew) {
+        const bool defaultExpanded =
+            source->data(0, kRoleDefaultExpanded).toBool();
+        if (target->isExpanded() != defaultExpanded)
+            target->setExpanded(defaultExpanded);
+    }
+}
+
+void synchronizeTree(QTreeWidget* target,
+                     const QTreeWidgetItem& sourceRoot)
+{
+    if (!target)
+        return;
+
+    QVector<int> desiredColumnWidths;
+    const bool restoreUpdates = target->updatesEnabled();
+    if (restoreUpdates)
+        target->setUpdatesEnabled(false);
+    const QSignalBlocker signalBlocker(target);
+
+    for (int index = 0; index < sourceRoot.childCount(); ++index) {
+        const QTreeWidgetItem* sourceItem = sourceRoot.child(index);
+        int matchingIndex = -1;
+        for (int candidate = index;
+             candidate < target->topLevelItemCount();
+             ++candidate) {
+            if (treeItemsHaveSameIdentity(target->topLevelItem(candidate),
+                                          sourceItem)) {
+                matchingIndex = candidate;
+                break;
+            }
+        }
+
+        bool itemIsNew = matchingIndex < 0;
+        QTreeWidgetItem* targetItem = nullptr;
+        if (itemIsNew) {
+            targetItem = new QTreeWidgetItem;
+            target->insertTopLevelItem(index, targetItem);
+        } else if (matchingIndex == index) {
+            targetItem = target->topLevelItem(index);
+        } else {
+            targetItem = target->takeTopLevelItem(matchingIndex);
+            target->insertTopLevelItem(index, targetItem);
+        }
+        synchronizeTreeItem(target,
+                            targetItem,
+                            sourceItem,
+                            itemIsNew,
+                            &desiredColumnWidths);
+    }
+    while (target->topLevelItemCount() > sourceRoot.childCount()) {
+        delete target->takeTopLevelItem(
+            target->topLevelItemCount() - 1);
+    }
+
+    QHeaderView* const header = target->header();
+    if (header) {
+        for (int column = 1;
+             column < desiredColumnWidths.size();
+             ++column) {
+            const int desiredWidth = desiredColumnWidths.at(column);
+            if (desiredWidth > header->sectionSize(column))
+                header->resizeSection(column, desiredWidth);
+        }
+    }
+    if (restoreUpdates)
+        target->setUpdatesEnabled(true);
+}
+
+void addOverviewItems(QTreeWidgetItem* root,
                       const WavePreviewReport& report,
                       bool dirty)
 {
-    if (!tree)
+    if (!root)
         return;
 
-    auto* scopeItem = new QTreeWidgetItem(tree);
+    auto* scopeItem = new QTreeWidgetItem(root);
     scopeItem->setText(0, QStringLiteral("Scope"));
     scopeItem->setText(1,
                        report.scoped && !report.scopeLabel.isEmpty()
@@ -1171,7 +1419,7 @@ void addOverviewItems(QTreeWidget* tree,
         scopeItem,
         QStringLiteral("Wave Preview report scope. UI consumes a scoped report; it does not simulate or scan the workspace."));
 
-    auto* legendItem = new QTreeWidgetItem(tree);
+    auto* legendItem = new QTreeWidgetItem(root);
     legendItem->setText(0, QStringLiteral("Legend"));
     legendItem->setText(1, sketchLegendText(report));
     legendItem->setText(2, QStringLiteral("activity %1")
@@ -1292,12 +1540,20 @@ WavePreviewPanelCoordinator::WavePreviewPanelCoordinator(QWidget* parent)
     previewTree->setRootIsDecorated(true);
     previewTree->header()->setStretchLastSection(false);
     previewTree->header()->setSectionResizeMode(0, QHeaderView::Stretch);
-    previewTree->header()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
-    previewTree->header()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
-    previewTree->header()->setSectionResizeMode(3, QHeaderView::ResizeToContents);
-    previewTree->header()->setSectionResizeMode(4, QHeaderView::ResizeToContents);
-    previewTree->header()->setSectionResizeMode(5, QHeaderView::ResizeToContents);
-    previewTree->header()->setSectionResizeMode(6, QHeaderView::ResizeToContents);
+    previewTree->header()->setSectionResizeMode(1, QHeaderView::Interactive);
+    previewTree->header()->setSectionResizeMode(2, QHeaderView::Interactive);
+    previewTree->header()->setSectionResizeMode(3, QHeaderView::Interactive);
+    previewTree->header()->setSectionResizeMode(4, QHeaderView::Interactive);
+    previewTree->header()->setSectionResizeMode(5, QHeaderView::Interactive);
+    previewTree->header()->setSectionResizeMode(6, QHeaderView::Interactive);
+    for (int column = 1; column < previewTree->columnCount(); ++column) {
+        const int headerWidth =
+            QFontMetrics(previewTree->headerItem()->font(column))
+                .horizontalAdvance(
+                    previewTree->headerItem()->text(column))
+            + 28;
+        previewTree->header()->resizeSection(column, headerWidth);
+    }
     layout->addWidget(previewTree, 1);
 
     previewDock = new QDockWidget(QStringLiteral("Wave Preview"), parent);
@@ -1326,6 +1582,26 @@ WavePreviewPanelCoordinator::WavePreviewPanelCoordinator(QWidget* parent)
 }
 
 WavePreviewPanelCoordinator::~WavePreviewPanelCoordinator() = default;
+
+WavePreviewRefreshMetrics
+WavePreviewPanelCoordinator::refreshMetricsForTest() const
+{
+    WavePreviewRefreshMetrics result = refreshMetrics;
+    if (const auto* canvas =
+            static_cast<const WavePreviewCanvas*>(previewCanvas)) {
+        result.canvasPaintNanoseconds = canvas->paintNanosecondsForTest();
+        result.canvasPaintCount = canvas->paintCountForTest();
+    }
+    return result;
+}
+
+void WavePreviewPanelCoordinator::resetRefreshMetricsForTest()
+{
+    refreshMetrics = {};
+    refreshTimingEnabled = true;
+    if (auto* canvas = static_cast<WavePreviewCanvas*>(previewCanvas))
+        canvas->resetPaintMetricsForTest();
+}
 
 void WavePreviewPanelCoordinator::setNavigationHandler(
     std::function<void(const QString&, int, int)> handler)
@@ -1398,10 +1674,18 @@ void WavePreviewPanelCoordinator::applyDocumentChange(
     const QString& scopeLabel,
     int scopeStartLineZeroBased)
 {
+    QElapsedTimer scopeCacheTimer;
+    if (refreshTimingEnabled)
+        scopeCacheTimer.start();
+
     const bool validScope = scopeStartPosition >= 0
         && scopeEndPosition > scopeStartPosition
         && scopeEndPosition <= latestDocumentText.size();
     if (!validScope) {
+        if (refreshTimingEnabled) {
+            refreshMetrics.scopeCacheUpdateNanoseconds +=
+                static_cast<std::uint64_t>(scopeCacheTimer.nsecsElapsed());
+        }
         renderUnavailable(
             QStringLiteral("Place the cursor in a module or always block to preview."));
         return;
@@ -1463,6 +1747,10 @@ void WavePreviewPanelCoordinator::applyDocumentChange(
     currentScopeEndPosition = scopeEndPosition;
     currentScopeStartLineZeroBased = qMax(0, scopeStartLineZeroBased);
     currentScopeLabel = scopeLabel;
+    if (refreshTimingEnabled) {
+        refreshMetrics.scopeCacheUpdateNanoseconds +=
+            static_cast<std::uint64_t>(scopeCacheTimer.nsecsElapsed());
+    }
     ++refreshMetrics.documentChangeRenderCount;
     renderDocumentNow(fileName,
                       currentScopeText,
@@ -1484,6 +1772,10 @@ void WavePreviewPanelCoordinator::renderDocumentNow(
     int sourcePositionOffset,
     int sourceLineOffset)
 {
+    QElapsedTimer waveServiceTimer;
+    if (refreshTimingEnabled)
+        waveServiceTimer.start();
+
     WavePreviewQuery query;
     query.fileName = fileName;
     query.documentText = documentText;
@@ -1495,6 +1787,10 @@ void WavePreviewPanelCoordinator::renderDocumentNow(
     query.sourceLineOffset = sourceLineOffset;
     const WavePreviewReport report =
         WavePreviewService::getInstance()->previewForDocument(query);
+    if (refreshTimingEnabled) {
+        refreshMetrics.waveServiceNanoseconds +=
+            static_cast<std::uint64_t>(waveServiceTimer.nsecsElapsed());
+    }
     ++refreshMetrics.renderCount;
     refreshMetrics.lastParsedCharacterCount = documentText.size();
     renderReport(report, fileName, dirty);
@@ -1536,61 +1832,68 @@ void WavePreviewPanelCoordinator::renderReport(
     if (!previewTree)
         return;
 
+    QElapsedTimer modelSceneTimer;
+    if (refreshTimingEnabled)
+        modelSceneTimer.start();
+    qint64 canvasUpdateElapsed = 0;
+
     currentReport = report;
     currentDirty = dirty;
-    previewTree->clear();
-    if (auto* canvas = static_cast<WavePreviewCanvas*>(previewCanvas))
+    QTreeWidgetItem stagingRoot;
+    if (auto* canvas = static_cast<WavePreviewCanvas*>(previewCanvas)) {
+        QElapsedTimer canvasUpdateTimer;
+        if (refreshTimingEnabled)
+            canvasUpdateTimer.start();
         canvas->setReport(report, fileName);
+        if (refreshTimingEnabled) {
+            canvasUpdateElapsed = canvasUpdateTimer.nsecsElapsed();
+            refreshMetrics.canvasUpdateNanoseconds +=
+                static_cast<std::uint64_t>(canvasUpdateElapsed);
+        }
+    }
     if (titleLabel) {
         const QString titleScope =
             report.scoped && !report.scopeLabel.isEmpty()
                 ? QStringLiteral(" - %1").arg(report.scopeLabel)
                 : QString();
-        titleLabel->setText(QStringLiteral("Wave Preview - %1%2")
-                                .arg(displayFileName(fileName), titleScope));
+        setLabelTextIfChanged(
+            titleLabel,
+            QStringLiteral("Wave Preview - %1%2")
+                .arg(displayFileName(fileName), titleScope));
     }
     if (summaryLabel) {
         currentSummaryText = reportSummaryText(report, dirty);
-        summaryLabel->setText(currentSummaryText);
+        setLabelTextIfChanged(summaryLabel, currentSummaryText);
     }
     if (scopeLabel) {
-        scopeLabel->setText(
+        setLabelTextIfChanged(
+            scopeLabel,
             QStringLiteral("Scope: %1")
                 .arg(report.scoped && !report.scopeLabel.isEmpty()
                          ? report.scopeLabel
                          : QStringLiteral("full document")));
     }
-    if (clockCombo) {
-        QSignalBlocker blocker(clockCombo);
-        clockCombo->clear();
-        clockCombo->addItem(QStringLiteral("auto"));
-        for (const WavePreviewClockResetGroup& group :
-             report.clockResetGroups) {
-            for (const WavePreviewEdgeSignal& signal : group.clockEdgeSignals)
-                clockCombo->addItem(signal.label());
-            for (const QString& signal : group.clockSignals)
-                if (clockCombo->findText(signal) < 0)
-                    clockCombo->addItem(signal);
-        }
-    }
-    if (resetCombo) {
-        QSignalBlocker blocker(resetCombo);
-        resetCombo->clear();
-        resetCombo->addItem(QStringLiteral("auto"));
-        for (const WavePreviewClockResetGroup& group :
-             report.clockResetGroups) {
-            for (const WavePreviewEdgeSignal& signal : group.resetEdgeSignals)
-                resetCombo->addItem(signal.label());
-            for (const QString& signal : group.resetSignals)
-                if (resetCombo->findText(signal) < 0)
-                    resetCombo->addItem(signal);
-        }
-    }
 
-    addOverviewItems(previewTree, report, dirty);
+    QStringList clockItems{QStringLiteral("auto")};
+    QStringList resetItems{QStringLiteral("auto")};
+    for (const WavePreviewClockResetGroup& group :
+         report.clockResetGroups) {
+        for (const WavePreviewEdgeSignal& signal : group.clockEdgeSignals)
+            appendUnique(&clockItems, signal.label());
+        for (const QString& signal : group.clockSignals)
+            appendUnique(&clockItems, signal);
+        for (const WavePreviewEdgeSignal& signal : group.resetEdgeSignals)
+            appendUnique(&resetItems, signal.label());
+        for (const QString& signal : group.resetSignals)
+            appendUnique(&resetItems, signal);
+    }
+    replaceComboItemsIfChanged(clockCombo, clockItems);
+    replaceComboItemsIfChanged(resetCombo, resetItems);
+
+    addOverviewItems(&stagingRoot, report, dirty);
 
     if (!report.available) {
-        auto* item = new QTreeWidgetItem(previewTree);
+        auto* item = new QTreeWidgetItem(&stagingRoot);
         item->setText(0, QStringLiteral("No assign/always code-sketch events found"));
         item->setText(1, QStringLiteral("-"));
         item->setText(2, QStringLiteral("-"));
@@ -1598,11 +1901,19 @@ void WavePreviewPanelCoordinator::renderReport(
         item->setText(4, QStringLiteral("-"));
         item->setText(5, QStringLiteral("-"));
         item->setText(6, QStringLiteral("-"));
+        synchronizeTree(previewTree, stagingRoot);
+        if (refreshTimingEnabled) {
+            const qint64 modelSceneElapsed =
+                modelSceneTimer.nsecsElapsed() - canvasUpdateElapsed;
+            refreshMetrics.modelSceneRebuildNanoseconds +=
+                static_cast<std::uint64_t>(
+                    qMax<qint64>(0, modelSceneElapsed));
+        }
         return;
     }
 
     if (report.trace.isValid()) {
-        auto* traceRoot = new QTreeWidgetItem(previewTree);
+        auto* traceRoot = new QTreeWidgetItem(&stagingRoot);
         traceRoot->setText(0, QStringLiteral("Symbolic Waveform Preview"));
         traceRoot->setText(1,
                            QStringLiteral("%1 cycles")
@@ -1642,11 +1953,11 @@ void WavePreviewPanelCoordinator::renderReport(
                     .arg(signal.signalName,
                          signal.values.join(QStringLiteral(" -> "))));
         }
-        traceRoot->setExpanded(true);
+        setItemDefaultExpanded(traceRoot, true);
     }
 
     if (!report.warnings.isEmpty()) {
-        auto* warningRoot = new QTreeWidgetItem(previewTree);
+        auto* warningRoot = new QTreeWidgetItem(&stagingRoot);
         warningRoot->setText(0, QStringLiteral("Warnings"));
         warningRoot->setText(1,
                              countText(report.warnings.size(),
@@ -1674,11 +1985,11 @@ void WavePreviewPanelCoordinator::renderReport(
             warningItem->setText(6, QStringLiteral("-"));
             setItemTooltip(warningItem, warning);
         }
-        warningRoot->setExpanded(true);
+        setItemDefaultExpanded(warningRoot, true);
     }
 
     if (!report.clockResetGroups.isEmpty()) {
-        auto* groupRoot = new QTreeWidgetItem(previewTree);
+        auto* groupRoot = new QTreeWidgetItem(&stagingRoot);
         groupRoot->setText(0, QStringLiteral("Clock/Reset Groups"));
         groupRoot->setText(1,
                            QStringLiteral("%1 groups")
@@ -1708,11 +2019,11 @@ void WavePreviewPanelCoordinator::renderReport(
             groupItem->setText(5, QStringLiteral("-"));
             groupItem->setText(6, QStringLiteral("-"));
         }
-        groupRoot->setExpanded(true);
+        setItemDefaultExpanded(groupRoot, true);
     }
 
     if (report.activitySummary.isValid()) {
-        auto* activityRoot = new QTreeWidgetItem(previewTree);
+        auto* activityRoot = new QTreeWidgetItem(&stagingRoot);
         activityRoot->setText(0, QStringLiteral("Activity Mix"));
         activityRoot->setText(1,
                               countText(report.activitySummary.eventCount,
@@ -1739,7 +2050,7 @@ void WavePreviewPanelCoordinator::renderReport(
     for (const WavePreviewLane& lane : report.lanes) {
         if (!laneMatchesFilter(lane, laneFilterText))
             continue;
-        auto* laneItem = new QTreeWidgetItem(previewTree);
+        auto* laneItem = new QTreeWidgetItem(&stagingRoot);
         laneItem->setText(0, lane.signalName);
         laneItem->setText(1, laneSummaryText(lane.summary));
         laneItem->setText(2, QStringLiteral("-"));
@@ -1774,7 +2085,16 @@ void WavePreviewPanelCoordinator::renderReport(
                               assignment.line,
                               assignment.column);
         }
-        laneItem->setExpanded(true);
+        setItemDefaultExpanded(laneItem, true);
+    }
+
+    synchronizeTree(previewTree, stagingRoot);
+    if (refreshTimingEnabled) {
+        const qint64 modelSceneElapsed =
+            modelSceneTimer.nsecsElapsed() - canvasUpdateElapsed;
+        refreshMetrics.modelSceneRebuildNanoseconds +=
+            static_cast<std::uint64_t>(
+                qMax<qint64>(0, modelSceneElapsed));
     }
 }
 

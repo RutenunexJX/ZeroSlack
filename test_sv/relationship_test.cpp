@@ -13674,9 +13674,11 @@ static void runWorkspaceRelationshipOverlaySnapshotFixture()
         "module overlay_rel(\n"
         "  input logic source,\n"
         "  output logic overlay_sink,\n"
+        "  output logic derived_sink,\n"
         "  output logic disk_sink\n"
         ");\n"
         "  assign overlay_sink = source;\n"
+        "  assign derived_sink = source & 1'b1;\n"
         "endmodule\n");
     const QString fallbackContent = QStringLiteral(
         "module fallback_rel(\n"
@@ -13719,6 +13721,8 @@ static void runWorkspaceRelationshipOverlaySnapshotFixture()
     bool rawSawOverlay = false;
     bool rawSawDisk = false;
     bool rawSourceIdentityAbsolute = false;
+    bool rawExactForward = false;
+    bool rawDerivedNotExact = false;
     for (const AssignmentInfo& assignment
          : overlayFacts.value(overlayPath).assignments) {
         rawSawOverlay = rawSawOverlay
@@ -13729,12 +13733,23 @@ static void runWorkspaceRelationshipOverlaySnapshotFixture()
             || assignment.leftAccessPath == QStringLiteral("disk_sink");
         rawSourceIdentityAbsolute = rawSourceIdentityAbsolute
             || normalizedPath(assignment.sourceRange.fileName) == overlayPath;
+        rawExactForward = rawExactForward
+            || (assignment.leftAccessPath
+                    == QStringLiteral("overlay_sink")
+                && assignment.exactValueForward);
+        rawDerivedNotExact = rawDerivedNotExact
+            || (assignment.leftAccessPath
+                    == QStringLiteral("derived_sink")
+                && !assignment.exactValueForward);
     }
     expectBool("in-memory relationship extraction follows overlay",
                rawSawOverlay && !rawSawDisk,
                true);
     expectBool("in-memory relationship extraction keeps absolute source identity",
                rawSourceIdentityAbsolute,
+               true);
+    expectBool("Slang distinguishes exact and derived assignment drivers",
+               rawExactForward && rawDerivedNotExact,
                true);
 
     int overlayCancelChecks = 0;
@@ -13811,6 +13826,8 @@ static void runWorkspaceRelationshipOverlaySnapshotFixture()
     bool computedSawDisk = false;
     bool computedSawFallback = false;
     bool computedEvidenceUsesAbsolutePath = false;
+    bool computedExactForward = false;
+    bool computedDerivedNotExact = false;
     for (const auto& fileResult : result.fileRelationships) {
         for (const RelationshipToAdd& relationship : fileResult.second) {
             if (relationship.type != SymbolRelationshipEngine::ASSIGNS_TO)
@@ -13821,6 +13838,16 @@ static void runWorkspaceRelationshipOverlaySnapshotFixture()
                         == QStringLiteral("overlay_sink"));
             computedSawDisk = computedSawDisk
                 || relationship.toAccessPath == QStringLiteral("disk_sink");
+            computedExactForward = computedExactForward
+                || (relationship.toAccessPath
+                        == QStringLiteral("overlay_sink")
+                    && relationship.exactValueForward);
+            computedDerivedNotExact = computedDerivedNotExact
+                || (relationship.toAccessPath
+                        == QStringLiteral("derived_sink")
+                    && relationship.fromAccessPath
+                        == QStringLiteral("source")
+                    && !relationship.exactValueForward);
             computedSawFallback = computedSawFallback
                 || (relationship.fromAccessPath
                         == QStringLiteral("fallback_in")
@@ -13840,6 +13867,9 @@ static void runWorkspaceRelationshipOverlaySnapshotFixture()
                true);
     expectBool("relationship worker preserves absolute evidence identity",
                computedEvidenceUsesAbsolutePath,
+               true);
+    expectBool("relationship worker preserves exact-driver machine fact",
+               computedExactForward && computedDerivedNotExact,
                true);
     expectBool("relationship worker does not mutate disk or base snapshot",
                loadTextFile(overlayPath) == diskContent

@@ -1,0 +1,67 @@
+if(NOT IS_DIRECTORY "${RTLEDITCORE_PUBLIC_INCLUDE_DIR}")
+    message(FATAL_ERROR
+        "rtleditcore public include directory is missing: "
+        "${RTLEDITCORE_PUBLIC_INCLUDE_DIR}")
+endif()
+
+set(expected_public_headers
+    core_types.h
+    edit_plan.h
+    expose_signal_to_top.h
+    patch_engine.h
+    provenance.h
+    rtledit.h
+    semantic_edit_intent.h
+    semantic_object.h
+    text_edit.h
+    workspace_document_manager.h
+)
+
+file(GLOB_RECURSE actual_public_headers
+    LIST_DIRECTORIES FALSE
+    RELATIVE "${RTLEDITCORE_PUBLIC_INCLUDE_DIR}"
+    "${RTLEDITCORE_PUBLIC_INCLUDE_DIR}/*.h"
+)
+list(SORT expected_public_headers)
+list(SORT actual_public_headers)
+
+if(NOT actual_public_headers STREQUAL expected_public_headers)
+    message(FATAL_ERROR
+        "rtleditcore public header boundary changed.\n"
+        "Expected: ${expected_public_headers}\n"
+        "Actual:   ${actual_public_headers}")
+endif()
+
+foreach(forbidden_header IN ITEMS
+        action_registry.h
+        anchor_resolver.h
+        context_style.h
+        edit_plan_builder.h
+        low_risk_lowering.h
+        lowering.h
+        mock_anchor_resolver.h
+        mock_semantic_index_provider.h
+        mock_workspace_document_manager.h
+        module_lowering.h
+        semantic_index.h
+        text_anchor_resolver.h)
+    if(EXISTS "${RTLEDITCORE_PUBLIC_INCLUDE_DIR}/${forbidden_header}")
+        message(FATAL_ERROR
+            "legacy or test-only header is public: ${forbidden_header}")
+    endif()
+endforeach()
+
+if(NOT EXISTS "${RTLEDITCORE_CONSUMER_EXECUTABLE}")
+    message(FATAL_ERROR
+        "embedded consumer executable is missing: "
+        "${RTLEDITCORE_CONSUMER_EXECUTABLE}")
+endif()
+
+execute_process(
+    COMMAND "${RTLEDITCORE_CONSUMER_EXECUTABLE}"
+    RESULT_VARIABLE consumer_result
+)
+if(NOT consumer_result EQUAL 0)
+    message(FATAL_ERROR
+        "embedded rtledit::core consumer failed: ${consumer_result}")
+endif()

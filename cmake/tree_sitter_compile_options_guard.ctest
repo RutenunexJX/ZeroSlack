@@ -1,0 +1,239 @@
+cmake_minimum_required(VERSION 3.16)
+
+foreach(_required
+        ZEROSLACK_SOURCE_DIR
+        ZEROSLACK_PROBE_SOURCE_DIR
+        ZEROSLACK_TEST_BINARY_DIR
+        ZEROSLACK_C_COMPILER
+        ZEROSLACK_C_COMPILER_ID
+        ZEROSLACK_GENERATOR)
+    if(NOT DEFINED ${_required} OR "${${_required}}" STREQUAL "")
+        message(FATAL_ERROR "${_required} is required")
+    endif()
+endforeach()
+
+file(REMOVE_RECURSE "${ZEROSLACK_TEST_BINARY_DIR}")
+file(MAKE_DIRECTORY "${ZEROSLACK_TEST_BINARY_DIR}")
+
+function(_read_compile_commands _configuration
+                                  _runtime_out
+                                  _parser_out
+                                  _control_out)
+    string(TOLOWER "${_configuration}" _configuration_lower)
+    set(_build_dir
+        "${ZEROSLACK_TEST_BINARY_DIR}/${_configuration_lower}")
+    set(_configure_command
+        "${CMAKE_COMMAND}"
+        -S "${ZEROSLACK_PROBE_SOURCE_DIR}"
+        -B "${_build_dir}"
+        -G "${ZEROSLACK_GENERATOR}"
+        "-DCMAKE_BUILD_TYPE:STRING=${_configuration}"
+        "-DCMAKE_C_COMPILER:FILEPATH=${ZEROSLACK_C_COMPILER}"
+        "-DCMAKE_EXPORT_COMPILE_COMMANDS:BOOL=ON"
+        "-DZEROSLACK_SOURCE_DIR:PATH=${ZEROSLACK_SOURCE_DIR}")
+    if(DEFINED ZEROSLACK_GENERATOR_PLATFORM
+       AND NOT "${ZEROSLACK_GENERATOR_PLATFORM}" STREQUAL "")
+        list(APPEND _configure_command
+            -A "${ZEROSLACK_GENERATOR_PLATFORM}")
+    endif()
+    if(DEFINED ZEROSLACK_GENERATOR_TOOLSET
+       AND NOT "${ZEROSLACK_GENERATOR_TOOLSET}" STREQUAL "")
+        list(APPEND _configure_command
+            -T "${ZEROSLACK_GENERATOR_TOOLSET}")
+    endif()
+    if(DEFINED ZEROSLACK_MAKE_PROGRAM
+       AND NOT "${ZEROSLACK_MAKE_PROGRAM}" STREQUAL "")
+        list(APPEND _configure_command
+            "-DCMAKE_MAKE_PROGRAM:FILEPATH=${ZEROSLACK_MAKE_PROGRAM}")
+    endif()
+
+    get_filename_component(
+        _compiler_directory "${ZEROSLACK_C_COMPILER}" DIRECTORY)
+    if(WIN32)
+        set(_probe_path "${_compiler_directory};$ENV{PATH}")
+    else()
+        set(_probe_path "${_compiler_directory}:$ENV{PATH}")
+    endif()
+    execute_process(
+        COMMAND "${CMAKE_COMMAND}" -E env
+            "PATH=${_probe_path}"
+            ${_configure_command}
+        RESULT_VARIABLE _configure_result
+        OUTPUT_VARIABLE _configure_stdout
+        ERROR_VARIABLE _configure_stderr)
+    if(NOT _configure_result EQUAL 0)
+        message(FATAL_ERROR
+            "${_configuration} probe configure failed:\n"
+            "${_configure_stdout}\n${_configure_stderr}")
+    endif()
+
+    set(_tree_options_file
+        "${_build_dir}/tree-options-${_configuration}.txt")
+    foreach(_manifest
+            tree-debug-flags.txt
+            control-debug-flags.txt
+            tree-release-flags.txt
+            control-release-flags.txt)
+        if(NOT EXISTS "${_build_dir}/${_manifest}")
+            message(FATAL_ERROR
+                "${_configuration} probe is missing ${_manifest}")
+        endif()
+    endforeach()
+    if(NOT EXISTS "${_tree_options_file}")
+        message(FATAL_ERROR
+            "${_configuration} probe is missing its evaluated options")
+    endif()
+    file(READ "${_tree_options_file}" _tree_options)
+    file(READ "${_build_dir}/tree-debug-flags.txt"
+        _tree_debug_flags)
+    file(READ "${_build_dir}/control-debug-flags.txt"
+        _control_debug_flags)
+    file(READ "${_build_dir}/tree-release-flags.txt"
+        _tree_release_flags)
+    file(READ "${_build_dir}/control-release-flags.txt"
+        _control_release_flags)
+
+    if(_configuration STREQUAL "Debug")
+        if(ZEROSLACK_C_COMPILER_ID STREQUAL "MSVC")
+            _require_match("Debug Tree-sitter manifest"
+                "${_tree_options}" "(^|[ \t])/O2([ \t]|$)")
+            _reject_match("scoped MSVC Debug flags"
+                "${_tree_debug_flags}"
+                "(^|[ \t])/RTC(1|c|s|u)([ \t]|$)")
+            _reject_match("scoped MSVC Debug flags"
+                "${_tree_debug_flags}"
+                "(^|[ \t])/(Od|Ob0)([ \t]|$)")
+        else()
+            _require_match("Debug Tree-sitter manifest"
+                "${_tree_options}" "(^|[ \t])-O2([ \t]|$)")
+        endif()
+    elseif(_configuration STREQUAL "Release")
+        if(NOT _tree_release_flags STREQUAL _control_release_flags)
+            message(FATAL_ERROR
+                "Tree-sitter Release flags differ from the control target")
+        endif()
+        if(ZEROSLACK_C_COMPILER_ID STREQUAL "MSVC")
+            _reject_match("Release Tree-sitter manifest"
+                "${_tree_options}" "(^|[ \t])/O2([ \t]|$)")
+            _require_match("native MSVC Release flags"
+                "${_tree_release_flags}" "(^|[ \t])/O2([ \t]|$)")
+        else()
+            _reject_match("Release Tree-sitter manifest"
+                "${_tree_options}" "(^|[ \t])-O2([ \t]|$)")
+            _require_match("native GNU/Clang Release flags"
+                "${_tree_release_flags}" "(^|[ \t])-O3([ \t]|$)")
+        endif()
+    endif()
+
+    set(_commands_file "${_build_dir}/compile_commands.json")
+    if(NOT EXISTS "${_commands_file}")
+        set(${_runtime_out} "" PARENT_SCOPE)
+        set(${_parser_out} "" PARENT_SCOPE)
+        set(${_control_out} "" PARENT_SCOPE)
+        return()
+    endif()
+
+    file(READ "${_commands_file}" _commands_text)
+    string(REGEX REPLACE "^[ \r\n]*\\[" "" _commands_text
+        "${_commands_text}")
+    string(REGEX REPLACE "\\][ \r\n]*$" "" _commands_text
+        "${_commands_text}")
+    string(REPLACE "\r\n" "\n" _commands_text "${_commands_text}")
+    string(REPLACE "\n" ";" _command_lines "${_commands_text}")
+    set(_pending_command "")
+    set(_runtime_command "")
+    set(_parser_command "")
+    set(_control_command "")
+    foreach(_line IN LISTS _command_lines)
+        if(_line MATCHES
+           "^[ \t]*\"command\"[ \t]*:[ \t]*\"(.*)\"[,]?$")
+            set(_pending_command "${CMAKE_MATCH_1}")
+        elseif(_line MATCHES
+               "^[ \t]*\"file\"[ \t]*:[ \t]*\"(.*)\"[,]?$")
+            if(_line MATCHES "tree_sitter.*lib.*src.*lib.c")
+                set(_runtime_command "${_pending_command}")
+            elseif(_line MATCHES
+                   "tree_sitter_systemverilog.*src.*parser.c")
+                set(_parser_command "${_pending_command}")
+            elseif(_line MATCHES
+                   "tree_sitter_compile_options_probe.*control.c")
+                set(_control_command "${_pending_command}")
+            endif()
+        endif()
+    endforeach()
+    foreach(_command runtime parser control)
+        if("${_${_command}_command}" STREQUAL "")
+            message(FATAL_ERROR
+                "${_configuration} probe is missing ${_command} command")
+        endif()
+    endforeach()
+
+    set(${_runtime_out} "${_runtime_command}" PARENT_SCOPE)
+    set(${_parser_out} "${_parser_command}" PARENT_SCOPE)
+    set(${_control_out} "${_control_command}" PARENT_SCOPE)
+endfunction()
+
+function(_require_match _label _command _pattern)
+    if(NOT "${_command}" MATCHES "${_pattern}")
+        message(FATAL_ERROR
+            "${_label} is missing '${_pattern}':\n${_command}")
+    endif()
+endfunction()
+
+function(_reject_match _label _command _pattern)
+    if("${_command}" MATCHES "${_pattern}")
+        message(FATAL_ERROR
+            "${_label} unexpectedly contains '${_pattern}':\n${_command}")
+    endif()
+endfunction()
+
+_read_compile_commands(
+    Debug _debug_runtime _debug_parser _debug_control)
+_read_compile_commands(
+    Release _release_runtime _release_parser _release_control)
+
+if(_debug_runtime STREQUAL "" OR _release_runtime STREQUAL "")
+    file(REMOVE_RECURSE "${ZEROSLACK_TEST_BINARY_DIR}")
+    message(STATUS
+        "Tree-sitter Debug-only option manifests verified for "
+        "${ZEROSLACK_C_COMPILER_ID}")
+    return()
+endif()
+
+if(ZEROSLACK_C_COMPILER_ID STREQUAL "MSVC")
+    foreach(_tree_command _debug_runtime _debug_parser)
+        _require_match("Debug Tree-sitter" "${${_tree_command}}"
+            "(^|[ \t])/O2([ \t]|$)")
+        _reject_match("Debug Tree-sitter" "${${_tree_command}}"
+            "(^|[ \t])/RTC(1|c|s|u)([ \t]|$)")
+    endforeach()
+    _reject_match("Debug control" "${_debug_control}"
+        "(^|[ \t])/O2([ \t]|$)")
+    foreach(_release_command
+            _release_runtime _release_parser _release_control)
+        _require_match("Release native flags" "${${_release_command}}"
+            "(^|[ \t])/O2([ \t]|$)")
+    endforeach()
+elseif(ZEROSLACK_C_COMPILER_ID MATCHES "GNU|Clang")
+    foreach(_tree_command _debug_runtime _debug_parser)
+        _require_match("Debug Tree-sitter" "${${_tree_command}}"
+            "(^|[ \t])-O2([ \t]|$)")
+    endforeach()
+    _reject_match("Debug control" "${_debug_control}"
+        "(^|[ \t])-O2([ \t]|$)")
+    foreach(_release_command
+            _release_runtime _release_parser _release_control)
+        _require_match("Release native flags" "${${_release_command}}"
+            "(^|[ \t])-O3([ \t]|$)")
+        _reject_match("Release native flags" "${${_release_command}}"
+            "(^|[ \t])-O2([ \t]|$)")
+    endforeach()
+else()
+    message(FATAL_ERROR
+        "Unsupported C compiler for guard: ${ZEROSLACK_C_COMPILER_ID}")
+endif()
+
+file(REMOVE_RECURSE "${ZEROSLACK_TEST_BINARY_DIR}")
+message(STATUS
+    "Tree-sitter Debug-only compile option scope verified for "
+    "${ZEROSLACK_C_COMPILER_ID}")

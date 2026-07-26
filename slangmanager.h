@@ -33,6 +33,9 @@ struct AssignmentInfo {
     QStringList rightAccessPaths;
     int lineNumber;  // 1-based for Qt/UI
     SemanticSourceRange sourceRange;
+    // Slang proved the RHS is one whole value symbol, possibly through only
+    // an implicit conversion, rather than an expression that merely reads it.
+    bool exactValueForward = false;
 };
 
 /// Result of one condition/control expression and the value symbols it reads.

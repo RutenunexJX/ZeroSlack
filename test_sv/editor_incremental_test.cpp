@@ -87,6 +87,17 @@ struct LatencySummary {
     qint64 maxUs = 0;
 };
 
+LatencySummary summarizeLatency(QList<qint64> samples)
+{
+    std::sort(samples.begin(), samples.end());
+    LatencySummary summary;
+    summary.p50Us = samples.at(samples.size() / 2);
+    summary.p95Us =
+        samples.at((samples.size() * 95 + 99) / 100 - 1);
+    summary.maxUs = samples.constLast();
+    return summary;
+}
+
 struct TypingReport {
     LatencySummary latency;
     EditorHotPathMetrics metrics;
@@ -145,9 +156,14 @@ struct InlineFilterReport {
 
 struct VisibleWaveTypingReport {
     LatencySummary latency;
+    LatencySummary synchronousKeyLatency;
+    LatencySummary eventProcessingLatency;
     EditorHotPathMetrics editorMetrics;
     DocumentTextCopyMetrics textCopyMetrics;
     WavePreviewRefreshMetrics waveMetrics;
+    std::uint64_t metadataNanoseconds = 0;
+    std::uint64_t scopeRegistryNanoseconds = 0;
+    std::uint64_t coordinatorNanoseconds = 0;
     qsizetype documentCharacterCount = 0;
     bool metadataTextStayedEmpty = false;
     bool initialScopeValid = false;
@@ -584,18 +600,29 @@ VisibleWaveTypingReport measureVisibleWaveTyping(const QString& fileName)
                                     initialScope.label,
                                     initialScope.startLine);
 
+    std::uint64_t metadataNanoseconds = 0;
+    std::uint64_t scopeRegistryNanoseconds = 0;
+    std::uint64_t coordinatorNanoseconds = 0;
     bool metadataTextStayedEmpty = initialMetadata.text.isEmpty();
     QObject::connect(
         &editor,
         &MyCodeEditor::documentChangeApplied,
         &waveHost,
         [&](const DocumentChange& change) {
+            QElapsedTimer stageTimer;
+            stageTimer.start();
             const DocumentSnapshot metadata =
                 documents.documentMetadataForEditor(&editor);
+            metadataNanoseconds +=
+                static_cast<std::uint64_t>(stageTimer.nsecsElapsed());
             metadataTextStayedEmpty = metadataTextStayedEmpty
                 && metadata.text.isEmpty() && metadata.dirty;
+            stageTimer.restart();
             const EditorAlwaysScopeTarget scope =
                 editor.currentAlwaysScopeTarget();
+            scopeRegistryNanoseconds +=
+                static_cast<std::uint64_t>(stageTimer.nsecsElapsed());
+            stageTimer.restart();
             coordinator.applyDocumentChange(metadata.fileName,
                                             change,
                                             editor.cachedDocumentText(),
@@ -604,6 +631,8 @@ VisibleWaveTypingReport measureVisibleWaveTyping(const QString& fileName)
                                             scope.endPosition,
                                             scope.label,
                                             scope.startLine);
+            coordinatorNanoseconds +=
+                static_cast<std::uint64_t>(stageTimer.nsecsElapsed());
         });
 
     editor.resetHotPathMetricsForTest();
@@ -611,30 +640,48 @@ VisibleWaveTypingReport measureVisibleWaveTyping(const QString& fileName)
     coordinator.resetRefreshMetricsForTest();
 
     QList<qint64> samples;
+    QList<qint64> synchronousKeySamples;
+    QList<qint64> eventProcessingSamples;
     constexpr int warmupCount = 4;
     constexpr int sampleCount = 40;
     samples.reserve(sampleCount);
+    synchronousKeySamples.reserve(sampleCount);
+    eventProcessingSamples.reserve(sampleCount);
     for (int index = 0; index < warmupCount + sampleCount; ++index) {
         QElapsedTimer timer;
         timer.start();
+        QElapsedTimer synchronousKeyTimer;
+        synchronousKeyTimer.start();
         QTest::keyClick(&editor,
                         index % 2 == 0 ? Qt::Key_X
                                        : Qt::Key_Backspace);
+        const qint64 synchronousKeyUs =
+            synchronousKeyTimer.nsecsElapsed() / 1000;
+        QElapsedTimer eventProcessingTimer;
+        eventProcessingTimer.start();
         QCoreApplication::processEvents(QEventLoop::AllEvents, 5);
+        const qint64 eventProcessingUs =
+            eventProcessingTimer.nsecsElapsed() / 1000;
         const qint64 elapsedUs = timer.nsecsElapsed() / 1000;
-        if (index >= warmupCount)
+        if (index >= warmupCount) {
             samples.append(elapsedUs);
+            synchronousKeySamples.append(synchronousKeyUs);
+            eventProcessingSamples.append(eventProcessingUs);
+        }
     }
 
-    std::sort(samples.begin(), samples.end());
     VisibleWaveTypingReport report;
-    report.latency.p50Us = samples.at(samples.size() / 2);
-    report.latency.p95Us =
-        samples.at((samples.size() * 95 + 99) / 100 - 1);
-    report.latency.maxUs = samples.constLast();
+    report.latency = summarizeLatency(samples);
+    report.synchronousKeyLatency =
+        summarizeLatency(synchronousKeySamples);
+    report.eventProcessingLatency =
+        summarizeLatency(eventProcessingSamples);
     report.editorMetrics = editor.hotPathMetricsForTest();
     report.textCopyMetrics = documentTextCopyMetricsForTest();
     report.waveMetrics = coordinator.refreshMetricsForTest();
+    report.metadataNanoseconds = metadataNanoseconds;
+    report.scopeRegistryNanoseconds = scopeRegistryNanoseconds;
+    report.coordinatorNanoseconds = coordinatorNanoseconds;
     report.documentCharacterCount = editor.cachedDocumentText().size();
     report.metadataTextStayedEmpty = metadataTextStayedEmpty;
     report.initialScopeValid = initialScope.ok();
@@ -652,6 +699,61 @@ void printLatency(const char* fixture, const LatencySummary& summary)
     std::printf("perf.typing.%s.max_us=%lld\n",
                 fixture,
                 static_cast<long long>(summary.maxUs));
+}
+
+void printTypingCoreMetrics(const char* fixture,
+                            const EditorHotPathMetrics& metrics)
+{
+    const std::uint64_t count = metrics.documentChanges;
+    const auto meanMicroseconds = [count](std::uint64_t nanoseconds) {
+        return count == 0 ? std::uint64_t{0}
+                          : nanoseconds / count / 1000;
+    };
+    std::printf("perf.typing.%s.editor_core.mean_us=%llu\n",
+                fixture,
+                static_cast<unsigned long long>(
+                    meanMicroseconds(
+                        metrics.documentChangeCoreNanoseconds)));
+    std::printf("perf.typing.%s.editor_prepare.mean_us=%llu\n",
+                fixture,
+                static_cast<unsigned long long>(
+                    meanMicroseconds(
+                        metrics.documentChangePrepareNanoseconds)));
+    std::printf("perf.typing.%s.syntax.mean_us=%llu\n",
+                fixture,
+                static_cast<unsigned long long>(
+                    meanMicroseconds(
+                        metrics.documentChangeSyntaxNanoseconds)));
+    std::printf("perf.typing.%s.folding.mean_us=%llu\n",
+                fixture,
+                static_cast<unsigned long long>(
+                    meanMicroseconds(
+                        metrics.documentChangeFoldingNanoseconds)));
+    std::printf("perf.typing.%s.decoration.mean_us=%llu\n",
+                fixture,
+                static_cast<unsigned long long>(
+                    meanMicroseconds(
+                        metrics.documentChangeDecorationNanoseconds)));
+    std::printf("perf.typing.%s.occurrence.mean_us=%llu\n",
+                fixture,
+                static_cast<unsigned long long>(
+                    meanMicroseconds(
+                        metrics.documentChangeOccurrenceNanoseconds)));
+    std::printf("perf.typing.%s.presentation.mean_us=%llu\n",
+                fixture,
+                static_cast<unsigned long long>(
+                    meanMicroseconds(
+                        metrics.documentChangePresentationNanoseconds)));
+    std::printf("perf.typing.%s.derived_state.mean_us=%llu\n",
+                fixture,
+                static_cast<unsigned long long>(
+                    meanMicroseconds(
+                        metrics.documentChangeDerivedStateNanoseconds)));
+    std::printf("perf.typing.%s.delta_dispatch.mean_us=%llu\n",
+                fixture,
+                static_cast<unsigned long long>(
+                    meanMicroseconds(
+                        metrics.documentChangeDispatchNanoseconds)));
 }
 
 void printInlineFilterLatency(const LatencySummary& summary)
@@ -714,8 +816,34 @@ void printVisibleWaveLatency(const LatencySummary& summary)
                 static_cast<long long>(summary.maxUs));
 }
 
+void printLatencySegment(const char* name,
+                         const LatencySummary& summary)
+{
+    std::printf("perf.visible_wave.%s.p50_us=%lld\n",
+                name,
+                static_cast<long long>(summary.p50Us));
+    std::printf("perf.visible_wave.%s.p95_us=%lld\n",
+                name,
+                static_cast<long long>(summary.p95Us));
+    std::printf("perf.visible_wave.%s.max_us=%lld\n",
+                name,
+                static_cast<long long>(summary.maxUs));
+}
+
 void printVisibleWaveMetrics(const VisibleWaveTypingReport& report)
 {
+    printLatencySegment("synchronous_key",
+                        report.synchronousKeyLatency);
+    printLatencySegment("event_processing",
+                        report.eventProcessingLatency);
+    const auto meanMicroseconds = [](std::uint64_t nanoseconds,
+                                    std::uint64_t count) {
+        return count == 0
+            ? std::uint64_t{0}
+            : nanoseconds / count / 1000;
+    };
+    const std::uint64_t changeCount =
+        report.editorMetrics.documentChanges;
     std::printf("perf.visible_wave.document_changes=%llu\n",
                 static_cast<unsigned long long>(
                     report.editorMetrics.documentChanges));
@@ -730,6 +858,52 @@ void printVisibleWaveMetrics(const VisibleWaveTypingReport& report)
     std::printf("perf.visible_wave.last_parsed_chars=%lld\n",
                 static_cast<long long>(
                     report.waveMetrics.lastParsedCharacterCount));
+    std::printf("perf.visible_wave.segment.editor_core.mean_us=%llu\n",
+                static_cast<unsigned long long>(
+                    meanMicroseconds(
+                        report.editorMetrics.documentChangeCoreNanoseconds,
+                        changeCount)));
+    std::printf("perf.visible_wave.segment.delta_dispatch.mean_us=%llu\n",
+                static_cast<unsigned long long>(
+                    meanMicroseconds(
+                        report.editorMetrics.documentChangeDispatchNanoseconds,
+                        changeCount)));
+    std::printf("perf.visible_wave.segment.metadata.mean_us=%llu\n",
+                static_cast<unsigned long long>(
+                    meanMicroseconds(report.metadataNanoseconds,
+                                     changeCount)));
+    std::printf("perf.visible_wave.segment.scope_registry.mean_us=%llu\n",
+                static_cast<unsigned long long>(
+                    meanMicroseconds(report.scopeRegistryNanoseconds,
+                                     changeCount)));
+    std::printf("perf.visible_wave.segment.coordinator.mean_us=%llu\n",
+                static_cast<unsigned long long>(
+                    meanMicroseconds(report.coordinatorNanoseconds,
+                                     changeCount)));
+    std::printf("perf.visible_wave.segment.scope_cache.mean_us=%llu\n",
+                static_cast<unsigned long long>(
+                    meanMicroseconds(
+                        report.waveMetrics.scopeCacheUpdateNanoseconds,
+                        changeCount)));
+    std::printf("perf.visible_wave.segment.wave_service.mean_us=%llu\n",
+                static_cast<unsigned long long>(
+                    meanMicroseconds(report.waveMetrics.waveServiceNanoseconds,
+                                     changeCount)));
+    std::printf("perf.visible_wave.segment.model_scene.mean_us=%llu\n",
+                static_cast<unsigned long long>(
+                    meanMicroseconds(
+                        report.waveMetrics.modelSceneRebuildNanoseconds,
+                        changeCount)));
+    std::printf("perf.visible_wave.segment.canvas_update.mean_us=%llu\n",
+                static_cast<unsigned long long>(
+                    meanMicroseconds(report.waveMetrics.canvasUpdateNanoseconds,
+                                     changeCount)));
+    std::printf("perf.visible_wave.segment.canvas_paint.mean_us=%llu\n",
+                static_cast<unsigned long long>(
+                    meanMicroseconds(report.waveMetrics.canvasPaintNanoseconds,
+                                     report.waveMetrics.canvasPaintCount)));
+    std::printf("perf.visible_wave.segment.canvas_paint.count=%d\n",
+                report.waveMetrics.canvasPaintCount);
 }
 
 void verifyIncrementalCaches(const QString& label,
@@ -1550,6 +1724,7 @@ int main(int argc, char** argv)
     if (QFileInfo(rtlTop).isFile()) {
         const TypingReport report = measureTyping(rtlTop);
         printLatency("rtl_top_after", report.latency);
+        printTypingCoreMetrics("rtl_top_after", report.metrics);
         // A keystroke receives less than one quarter of a 60 Hz frame at p95;
         // max remains below half a frame. These are fixed interaction budgets.
         expect("rtl_top typing p95 stays below 4 ms",
@@ -1565,6 +1740,7 @@ int main(int argc, char** argv)
     if (QFileInfo(hugeFile).isFile()) {
         const TypingReport report = measureTyping(hugeFile);
         printLatency("huge_after", report.latency);
+        printTypingCoreMetrics("huge_after", report.metrics);
         // The 4.5 MB fixture receives a stricter-than-frame p95 budget and a
         // max budget below one 60 Hz frame; no size-based threshold expansion.
         expect("huge-file typing p95 stays below 5 ms",

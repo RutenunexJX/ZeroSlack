@@ -188,6 +188,41 @@ struct TSInstantiationTarget {
     }
 };
 
+enum class TSNamedPortConnectionStatus {
+    Ok,
+    AlreadyConnected,
+    NoInstantiation,
+    PositionalConnections,
+    NoClearConnectionPoint
+};
+
+// Exact insertion/reuse result for one named port connection. All offsets are
+// UTF-16 QString coordinates obtained from the live Tree-sitter document.
+struct TSNamedPortConnectionTarget {
+    TSNamedPortConnectionStatus status =
+        TSNamedPortConnectionStatus::NoClearConnectionPoint;
+    QString moduleType;
+    QString instanceName;
+    QString existingActual;
+    bool needsTrailingComma = false;
+    int trailingCommaInsertChar = -1;
+    int insertChar = -1;
+    QString prefix;
+    QString suffix;
+
+    bool canInsert() const
+    {
+        return status == TSNamedPortConnectionStatus::Ok
+            && insertChar >= 0;
+    }
+
+    bool canReuse() const
+    {
+        return status
+            == TSNamedPortConnectionStatus::AlreadyConnected;
+    }
+};
+
 enum class TSUndefinedSignalContextKind {
     None,
     NamedPortActual,
@@ -326,6 +361,14 @@ public:
     // rejected conservatively.
     TSInstantiationTarget instantiationAt(int charOffset) const;
 
+    // Exact append point for a named port connection in the selected
+    // hierarchical instance. Positional/mixed/error-containing connections
+    // are rejected; an existing formal is returned for semantic compatibility
+    // checking by the Action planner.
+    TSNamedPortConnectionTarget namedPortConnectionTarget(
+        int charOffset,
+        const QString& formalName) const;
+
     // Syntactic contexts in which an undeclared identifier can safely be
     // offered as a local signal: a named instance-port actual or a procedural
     // assignment left-hand side.
@@ -342,6 +385,11 @@ public:
 
     // Clear module-member insert point for adding an internal signal declaration.
     TSSignalInsertTarget signalInsertTarget(int charOffset) const;
+
+    // Clear module-item insert point immediately after the selected internal
+    // signal declaration. This keeps a generated bridge after the declaration
+    // that Slang resolved, including multi-declarator declarations.
+    TSSignalInsertTarget sourceBridgeInsertTarget(int charOffset) const;
 
     // Clear module/package-scope insert point for adding a parameter/localparam.
     TSParameterInsertTarget parameterInsertTarget(int charOffset) const;

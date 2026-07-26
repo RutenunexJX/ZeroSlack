@@ -1,6 +1,8 @@
 #include "slangsymbolpresentation.h"
 #include "slangsymbolcollectorhelpers.h"
 
+#include <slang/analysis/AnalysisManager.h>
+#include <slang/analysis/ValueDriver.h>
 #include <slang/ast/ASTVisitor.h>
 #include <slang/ast/Compilation.h>
 #include <slang/ast/expressions/LiteralExpressions.h>
@@ -20,8 +22,10 @@
 #include <QDir>
 #include <QFileInfo>
 #include <QHash>
+#include <QSet>
 #include <QStringList>
 
+#include <exception>
 #include <limits>
 #include <utility>
 
@@ -475,11 +479,22 @@ SemanticElaboratedSymbolInfo typeInfo(const Type& type)
     result.available = !type.isError();
     if (type.isError()) {
         result.resolvedTypeText = QString::fromStdString(type.toString());
+        result.fixedSize = false;
+        result.integral = false;
+        result.unpackedArray = false;
+        result.interfaceType = false;
+        result.signedIntegral = false;
+        result.bitWidth = 0;
         result.failureReason = QStringLiteral(
             "slang resolved the symbol to an error type.");
         return result;
     }
     const Type& canonicalType = type.getCanonicalType();
+    result.fixedSize = type.isFixedSize();
+    result.integral = type.isIntegral();
+    result.unpackedArray = canonicalType.isUnpackedArray();
+    result.interfaceType = false;
+    result.signedIntegral = result.integral && type.isSigned();
     if (canonicalType.kind == SymbolKind::EnumType) {
         // Slang's full enum TypePrinter evaluates every member. Presentation
         // collection needs the resolved type, not a second enum evaluation
@@ -494,6 +509,7 @@ SemanticElaboratedSymbolInfo typeInfo(const Type& type)
     const uint64_t bitWidth = type.isFixedSize()
         ? type.getBitstreamWidth()
         : uint64_t(type.getBitWidth());
+    result.bitWidth = bitWidth;
     result.bitWidthText = bitWidth > 0
         ? QString::number(bitWidth)
         : QStringLiteral("not statically known");
@@ -1221,6 +1237,12 @@ void gatherScopePresentations(
                 return;
             SemanticElaboratedSymbolInfo info;
             info.available = !port.isInvalid();
+            info.fixedSize = false;
+            info.integral = false;
+            info.unpackedArray = false;
+            info.interfaceType = true;
+            info.signedIntegral = false;
+            info.bitWidth = 0;
             info.interfaceName = port.interfaceDef
                 ? QString::fromStdString(
                       std::string(port.interfaceDef->name))
@@ -1529,4 +1551,232 @@ void slang_symbols::populateSymbolPresentations(
     records = std::move(updatedRecords);
     if (effectiveValueFacts)
         *effectiveValueFacts = std::move(collectedFacts);
+}
+
+namespace {
+
+struct SlangDriverSummary {
+    SemanticDriverPresenceState presence =
+        SemanticDriverPresenceState::Unknown;
+    std::uint64_t total = 0;
+    std::uint64_t continuous = 0;
+    std::uint64_t procedural = 0;
+    std::uint64_t portConnections = 0;
+};
+
+SlangDriverSummary driverSummary(
+    const slang::analysis::AnalysisManager& analysis,
+    const ValueSymbol* value,
+    bool absenceIsProven)
+{
+    SlangDriverSummary result;
+    if (!value)
+        return result;
+
+    QSet<const slang::analysis::ValueDriver*> unique;
+    for (const auto& item : analysis.getDrivers(*value)) {
+        const slang::analysis::ValueDriver* driver = item.first;
+        if (!driver || unique.contains(driver))
+            continue;
+        unique.insert(driver);
+        ++result.total;
+        if (driver->kind == slang::analysis::DriverKind::Continuous)
+            ++result.continuous;
+        else if (driver->kind == slang::analysis::DriverKind::Procedural)
+            ++result.procedural;
+        if (driver->flags.has(
+                slang::analysis::DriverFlags::OutputPort)) {
+            ++result.portConnections;
+        }
+    }
+    if (result.total > 0) {
+        result.presence = SemanticDriverPresenceState::Present;
+    } else if (absenceIsProven) {
+        result.presence = SemanticDriverPresenceState::ProvenZero;
+    }
+    return result;
+}
+
+void storePortDriverSummary(
+    const PortSymbol& port,
+    const QString& instancePath,
+    const slang::SourceManager* sourceManager,
+    const slang::analysis::AnalysisManager& analysis,
+    bool absenceIsProven,
+    QHash<QString, SemanticSymbolPresentation>* presentations)
+{
+    if (!presentations || instancePath.isEmpty()
+        || port.direction != ArgumentDirection::Out) {
+        return;
+    }
+    const QString key = identityKey(sourceManager, port);
+    auto presentation = presentations->find(key);
+    if (key.isEmpty() || presentation == presentations->end())
+        return;
+    auto instance =
+        presentation->instanceInfoByPath.find(instancePath);
+    if (instance
+        == presentation->instanceInfoByPath.end()) {
+        return;
+    }
+
+    const ValueSymbol* value = nullptr;
+    if (port.internalSymbol && port.internalSymbol->isValue())
+        value = &port.internalSymbol->as<ValueSymbol>();
+    const SlangDriverSummary summary =
+        driverSummary(analysis, value, absenceIsProven);
+    instance->driverPresence = summary.presence;
+    instance->driverCount = summary.total;
+    instance->continuousDriverCount = summary.continuous;
+    instance->proceduralDriverCount = summary.procedural;
+    instance->portConnectionDriverCount =
+        summary.portConnections;
+}
+
+void gatherScopeDriverSummaries(
+    const Scope& scope,
+    const QString& instancePath,
+    const slang::SourceManager* sourceManager,
+    const slang::analysis::AnalysisManager& analysis,
+    bool absenceIsProven,
+    QHash<QString, SemanticSymbolPresentation>* presentations,
+    const std::function<bool()>& isCancelled)
+{
+    auto cancelled = [&]() {
+        return isCancelled && isCancelled();
+    };
+    auto visitor = makeVisitor(
+        [&](auto&, const InstanceSymbol&) {
+            // Nested instances are handled with their own elaborated path.
+        },
+        [&](auto& nestedVisitor, const PortSymbol& port) {
+            if (cancelled())
+                return;
+            storePortDriverSummary(port,
+                                   instancePath,
+                                   sourceManager,
+                                   analysis,
+                                   absenceIsProven,
+                                   presentations);
+            nestedVisitor.visitDefault(port);
+        });
+    for (const Symbol& member : scope.members()) {
+        if (cancelled())
+            return;
+        member.visit(visitor);
+    }
+}
+
+void gatherInstanceDriverSummaries(
+    const InstanceSymbol& root,
+    const slang::SourceManager* sourceManager,
+    const slang::analysis::AnalysisManager& analysis,
+    bool absenceIsProven,
+    QHash<QString, SemanticSymbolPresentation>* presentations,
+    const std::function<bool()>& isCancelled)
+{
+    auto visitor = makeVisitor(
+        [&](auto& nestedVisitor, const InstanceSymbol& instance) {
+            if (isCancelled && isCancelled())
+                return;
+            const QString path = QString::fromStdString(
+                instance.getHierarchicalPath());
+            gatherScopeDriverSummaries(instance.body,
+                                       path,
+                                       sourceManager,
+                                       analysis,
+                                       absenceIsProven,
+                                       presentations,
+                                       isCancelled);
+            if (isCancelled && isCancelled())
+                return;
+            nestedVisitor.visitDefault(instance);
+        });
+    root.visit(visitor);
+}
+
+} // namespace
+
+void slang_symbols::populateSymbolDriverSummaries(
+    Compilation& compilation,
+    QList<SemanticSymbolRecord>& records,
+    const std::function<bool()>& isCancelled)
+{
+    auto cancelled = [&]() {
+        return isCancelled && isCancelled();
+    };
+    const slang::SourceManager* sourceManager =
+        compilation.getSourceManager();
+    if (!sourceManager || records.isEmpty() || cancelled())
+        return;
+
+    QHash<QString, SemanticSymbolPresentation> presentations;
+    for (const SemanticSymbolRecord& record : std::as_const(records)) {
+        if (identityKind(record) != QLatin1Char('o'))
+            continue;
+        const QString key = identityKey(record);
+        if (!key.isEmpty())
+            presentations.insert(key, record.presentation);
+    }
+    if (presentations.isEmpty())
+        return;
+
+    try {
+        if (!compilation.isFrozen()) {
+            compilation.getAllDiagnostics();
+            compilation.freeze();
+        }
+        if (!compilation.isElaborated()
+            || compilation.hasFatalErrors()) {
+            return;
+        }
+
+        slang::analysis::AnalysisManager analysis;
+        analysis.analyze(compilation);
+        const bool absenceIsProven =
+            !compilation.hasIssuedErrors();
+
+        slang_symbols::detail::resetQTextDocumentSourcePositionCache(
+            sourceManager);
+        struct SourcePositionCacheReset {
+            ~SourcePositionCacheReset()
+            {
+                slang_symbols::detail::
+                    resetQTextDocumentSourcePositionCache(nullptr);
+            }
+        } sourcePositionCacheReset;
+
+        const RootSymbol& root = compilation.getRootNoFinalize();
+        for (const InstanceSymbol* top : root.topInstances) {
+            if (cancelled())
+                return;
+            if (!top)
+                continue;
+            gatherInstanceDriverSummaries(
+                *top,
+                sourceManager,
+                analysis,
+                absenceIsProven,
+                &presentations,
+                isCancelled);
+        }
+    } catch (const std::exception&) {
+        // Preserve Unknown. A failed Slang analysis must never be published
+        // as proof that an endpoint has no drivers.
+        return;
+    } catch (...) {
+        return;
+    }
+
+    QList<SemanticSymbolRecord> updatedRecords = records;
+    for (SemanticSymbolRecord& record : updatedRecords) {
+        if (cancelled())
+            return;
+        const QString key = identityKey(record);
+        const auto presentation = presentations.constFind(key);
+        if (presentation != presentations.constEnd())
+            record.presentation = presentation.value();
+    }
+    if (!cancelled())
+        records = std::move(updatedRecords);
 }

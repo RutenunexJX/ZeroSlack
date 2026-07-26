@@ -78,6 +78,16 @@ QString expressionAccessPath(const Expression& expr)
     return QString();
 }
 
+bool isDirectValueForwardExpression(const Expression& expr)
+{
+    if (const auto* conversion = expr.as_if<ConversionExpression>())
+        return isDirectValueForwardExpression(conversion->operand());
+    // Selects, member access, unary/binary operators, concatenations, calls,
+    // and casts are deliberately rejected. Only one whole Slang value symbol
+    // can prove an identity bridge.
+    return expr.as_if<ValueExpressionBase>() != nullptr;
+}
+
 QStringList collectValueNames(const Expression& expr)
 {
     QStringList names;

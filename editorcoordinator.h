@@ -47,6 +47,9 @@ public:
 
     void connectSignals();
     void attachEditor(MyCodeEditor* editor);
+    void populateSourceSymbolContextMenuForTest(
+        QMenu* menu,
+        const EditorSemanticContext& context) const;
 
 private:
     struct WorkflowDependencies {
@@ -141,6 +144,8 @@ private:
         bool* handled);
     void handleSourceSymbolContextMenuRequested(
         QMenu* menu,
+        const EditorSemanticContext& context) const;
+    void handleExposeSignalToTopRequested(
         const EditorSemanticContext& context) const;
     void handleActiveEditorChanged(MyCodeEditor* editor);
     QHash<QString, QString> openFileContents() const;

@@ -286,6 +286,7 @@ QString nodeText(const QString& text, TSNode node);
 TSNode ancestorOfType(TSNode node, const char* expected);
 int nodeStartChar(TSNode node);
 int nodeEndChar(TSNode node);
+QList<TSNode> directNamedChildrenOf(TSNode node);
 QList<TSNode> directNamedChildrenOfType(TSNode node,
                                         const char* expected);
 TSNode firstDirectNamedChildOfType(TSNode node,
@@ -299,6 +300,10 @@ bool collectAssociationSlots(TSNode container,
                              const char* orderedType,
                              QList<TSExpressionSlot>* outputSlots);
 TSNode firstLvalueChild(TSNode assignment);
+int closingParenStart(TSNode node, const QString& text);
+int lineStartChar(const QString& text, int line);
+QString lineIndentAt(const QString& text, int line);
+int nodeLastLine(TSNode node);
 } // namespace
 
 TSIdentifierTarget TSDocument::identifierAt(int charOffset) const
@@ -428,6 +433,203 @@ TSInstantiationTarget TSDocument::instantiationAt(int charOffset) const
     }
 
     return target.ok() ? target : TSInstantiationTarget{};
+}
+
+TSNamedPortConnectionTarget TSDocument::namedPortConnectionTarget(
+    int charOffset,
+    const QString& formalName) const
+{
+    TSNamedPortConnectionTarget target;
+    if (m_text.isEmpty() || formalName.isEmpty()
+        || charOffset < 0 || charOffset > m_text.size()) {
+        target.status = TSNamedPortConnectionStatus::NoInstantiation;
+        return target;
+    }
+
+    const int probe = qMin(charOffset, m_text.size() - 1);
+    TSNode node = namedNodeAt(m_tree, probe, m_text.size());
+    TSNode instantiation = ancestorOfType(node, "module_instantiation");
+    if (ts_node_is_null(instantiation) && charOffset > 0) {
+        node = namedNodeAt(m_tree, charOffset - 1, m_text.size());
+        instantiation = ancestorOfType(node, "module_instantiation");
+    }
+    if (ts_node_is_null(instantiation)
+        || ts_node_has_error(instantiation)) {
+        target.status = TSNamedPortConnectionStatus::NoInstantiation;
+        return target;
+    }
+
+    const TSNode typeNode = childByField(instantiation, "instance_type");
+    const QList<TSNode> hierarchies =
+        directNamedChildrenOfType(instantiation,
+                                  "hierarchical_instance");
+    if (ts_node_is_null(typeNode) || hierarchies.isEmpty()) {
+        target.status = TSNamedPortConnectionStatus::NoInstantiation;
+        return target;
+    }
+
+    TSNode hierarchy{};
+    for (const TSNode candidate : hierarchies) {
+        if (!nodeContainsChar(candidate, probe))
+            continue;
+        if (!ts_node_is_null(hierarchy)) {
+            target.status =
+                TSNamedPortConnectionStatus::NoClearConnectionPoint;
+            return target;
+        }
+        hierarchy = candidate;
+    }
+    if (ts_node_is_null(hierarchy)) {
+        if (hierarchies.size() != 1) {
+            target.status =
+                TSNamedPortConnectionStatus::NoClearConnectionPoint;
+            return target;
+        }
+        hierarchy = hierarchies.constFirst();
+    }
+    if (ts_node_has_error(hierarchy)) {
+        target.status =
+            TSNamedPortConnectionStatus::NoClearConnectionPoint;
+        return target;
+    }
+
+    const TSNode nameOfInstance =
+        firstDirectNamedChildOfType(hierarchy, "name_of_instance");
+    const TSNode nameNode = firstIdentifierChild(nameOfInstance);
+    const TSNode connections =
+        firstDirectNamedChildOfType(hierarchy,
+                                    "list_of_port_connections");
+    if (ts_node_is_null(nameNode) || ts_node_is_null(connections)
+        || ts_node_has_error(connections)) {
+        target.status =
+            TSNamedPortConnectionStatus::NoClearConnectionPoint;
+        return target;
+    }
+
+    target.moduleType = nodeText(m_text, typeNode);
+    target.instanceName = nodeText(m_text, nameNode);
+
+    QList<TSExpressionSlot> connectionSlots;
+    if (!collectAssociationSlots(connections,
+                                 m_text,
+                                 "named_port_connection",
+                                 "ordered_port_connection",
+                                 &connectionSlots)) {
+        target.status =
+            TSNamedPortConnectionStatus::NoClearConnectionPoint;
+        return target;
+    }
+    for (const TSExpressionSlot& slot : connectionSlots) {
+        if (slot.name.isEmpty()) {
+            target.status =
+                TSNamedPortConnectionStatus::PositionalConnections;
+            return target;
+        }
+        if (slot.name != formalName)
+            continue;
+        target.status =
+            TSNamedPortConnectionStatus::AlreadyConnected;
+        target.existingActual =
+            m_text.mid(slot.startChar,
+                       slot.endChar - slot.startChar);
+        return target;
+    }
+
+    const int closeParen = closingParenStart(hierarchy, m_text);
+    if (closeParen < 0) {
+        target.status =
+            TSNamedPortConnectionStatus::NoClearConnectionPoint;
+        return target;
+    }
+
+    QList<TSNode> associations;
+    for (const TSNode child : directNamedChildrenOf(connections)) {
+        if (nodeTypeIs(child, "named_port_connection")) {
+            associations.append(child);
+            continue;
+        }
+        if (commentOrStringNode(child))
+            continue;
+        target.status =
+            TSNamedPortConnectionStatus::NoClearConnectionPoint;
+        return target;
+    }
+
+    const int closeLine =
+        static_cast<int>(ts_node_start_point(
+            [&]() {
+                const uint32_t count = ts_node_child_count(hierarchy);
+                for (uint32_t index = 0; index < count; ++index) {
+                    const TSNode child = ts_node_child(hierarchy, index);
+                    if (nodeStartChar(child) == closeParen)
+                        return child;
+                }
+                return TSNode{};
+            }()).row);
+    if (closeLine < 0) {
+        target.status =
+            TSNamedPortConnectionStatus::NoClearConnectionPoint;
+        return target;
+    }
+
+    if (!associations.isEmpty()) {
+        const TSNode last = associations.constLast();
+        bool hasComma = false;
+        const uint32_t count = ts_node_child_count(connections);
+        for (uint32_t index = 0; index < count; ++index) {
+            const TSNode child = ts_node_child(connections, index);
+            if (nodeStartChar(child) < nodeEndChar(last)
+                || nodeStartChar(child) >= closeParen) {
+                continue;
+            }
+            if (nodeText(m_text, child) == QStringLiteral(",")) {
+                hasComma = true;
+                break;
+            }
+        }
+
+        const int lastLine = nodeLastLine(last);
+        if (lastLine < closeLine) {
+            target.needsTrailingComma = !hasComma;
+            target.trailingCommaInsertChar =
+                target.needsTrailingComma ? nodeEndChar(last) : -1;
+            target.insertChar = lineStartChar(m_text, closeLine);
+            target.prefix = lineIndentAt(m_text, lastLine);
+            target.suffix =
+                target.insertChar >= 2
+                        && m_text.mid(target.insertChar - 2, 2)
+                               == QStringLiteral("\r\n")
+                    ? QStringLiteral("\r\n")
+                    : QStringLiteral("\n");
+        } else {
+            target.insertChar = closeParen;
+            target.prefix =
+                hasComma ? QStringLiteral(" ")
+                         : QStringLiteral(", ");
+        }
+    } else {
+        const int openLine =
+            static_cast<int>(ts_node_start_point(connections).row);
+        if (openLine < closeLine) {
+            target.insertChar = lineStartChar(m_text, closeLine);
+            target.prefix =
+                lineIndentAt(m_text, closeLine)
+                + QStringLiteral("    ");
+            target.suffix =
+                target.insertChar >= 2
+                        && m_text.mid(target.insertChar - 2, 2)
+                               == QStringLiteral("\r\n")
+                    ? QStringLiteral("\r\n")
+                    : QStringLiteral("\n");
+        } else {
+            target.insertChar = closeParen;
+        }
+    }
+
+    target.status = target.insertChar >= 0
+        ? TSNamedPortConnectionStatus::Ok
+        : TSNamedPortConnectionStatus::NoClearConnectionPoint;
+    return target;
 }
 
 TSUndefinedSignalContext TSDocument::undefinedSignalContextAt(
@@ -993,7 +1195,9 @@ bool portListContainsOnlyClearChildren(TSNode portList)
     for (uint32_t i = 0; i < childCount; ++i) {
         TSNode child = ts_node_named_child(portList, i);
         if (nodeTypeIs(child, "ansi_port_declaration")
-            || nodeTypeIs(child, "attribute_instance")) {
+            || nodeTypeIs(child, "attribute_instance")
+            || nodeTypeIs(child, "one_line_comment")
+            || nodeTypeIs(child, "block_comment")) {
             continue;
         }
         return false;
@@ -1059,8 +1263,26 @@ bool trailingCommaStateOnPortLine(const QString& text,
         return false;
 
     const int lineEnd = lineEndChar(text, portLine);
+    int structuralEnd = lineEnd;
+    for (TSNode sibling = ts_node_next_named_sibling(portDecl);
+         !ts_node_is_null(sibling);
+         sibling = ts_node_next_named_sibling(sibling)) {
+        if (!nodeTypeIs(sibling, "one_line_comment")
+            && !nodeTypeIs(sibling, "block_comment")) {
+            break;
+        }
+        const int commentLine =
+            static_cast<int>(ts_node_start_point(sibling).row);
+        if (commentLine > portLine)
+            break;
+        if (commentLine == portLine)
+            structuralEnd =
+                std::min(structuralEnd, nodeStartChar(sibling));
+    }
+
     const int lineStart = lineStartChar(text, portLine);
-    int scanStart = qBound(lineStart, nodeEndChar(portDecl), lineEnd);
+    int scanStart =
+        qBound(lineStart, nodeEndChar(portDecl), structuralEnd);
     int nodeTrimmedEnd = scanStart;
     while (nodeTrimmedEnd > lineStart
            && text.at(nodeTrimmedEnd - 1).isSpace()) {
@@ -1069,9 +1291,9 @@ bool trailingCommaStateOnPortLine(const QString& text,
     if (nodeTrimmedEnd > lineStart
         && text.at(nodeTrimmedEnd - 1) == QLatin1Char(',')) {
         int pos = scanStart;
-        while (pos < lineEnd && text.at(pos).isSpace())
+        while (pos < structuralEnd && text.at(pos).isSpace())
             ++pos;
-        if (pos != lineEnd)
+        if (pos != structuralEnd)
             return false;
         *hasComma = true;
         *commaInsertChar = -1;
@@ -1079,11 +1301,11 @@ bool trailingCommaStateOnPortLine(const QString& text,
     }
 
     int pos = scanStart;
-    while (pos < lineEnd && text.at(pos).isSpace())
+    while (pos < structuralEnd && text.at(pos).isSpace())
         ++pos;
 
-    if (pos >= lineEnd) {
-        int trimmedEnd = lineEnd;
+    if (pos >= structuralEnd) {
+        int trimmedEnd = structuralEnd;
         while (trimmedEnd > scanStart && text.at(trimmedEnd - 1).isSpace())
             --trimmedEnd;
         *hasComma = false;
@@ -1095,9 +1317,9 @@ bool trailingCommaStateOnPortLine(const QString& text,
         return false;
 
     ++pos;
-    while (pos < lineEnd && text.at(pos).isSpace())
+    while (pos < structuralEnd && text.at(pos).isSpace())
         ++pos;
-    if (pos != lineEnd)
+    if (pos != structuralEnd)
         return false;
 
     *hasComma = true;
@@ -1713,6 +1935,62 @@ TSSignalInsertTarget TSDocument::signalInsertTarget(int charOffset) const
     return target;
 }
 
+TSSignalInsertTarget TSDocument::sourceBridgeInsertTarget(
+    int charOffset) const
+{
+    TSSignalInsertTarget target;
+
+    const int boundedCharOffset =
+        qBound(0, charOffset, m_text.size());
+    const uint32_t byte =
+        static_cast<uint32_t>(boundedCharOffset) * 2u;
+    TSNode node =
+        ts_node_named_descendant_for_byte_range(
+            ts_tree_root_node(m_tree), byte, byte);
+    TSNode module = ancestorOfType(node, "module_declaration");
+    if (ts_node_is_null(module)) {
+        target.status = TSSignalInsertStatus::NoCurrentModule;
+        return target;
+    }
+    if (ts_node_has_error(module))
+        return target;
+
+    TSNode declaration{};
+    const uint32_t childCount =
+        ts_node_named_child_count(module);
+    for (uint32_t i = 0; i < childCount; ++i) {
+        TSNode child =
+            effectiveModuleMemberNode(
+                ts_node_named_child(module, i));
+        if (!isInternalSignalDeclaration(child))
+            continue;
+        if (boundedCharOffset >= nodeStartChar(child)
+            && boundedCharOffset < nodeEndChar(child)) {
+            declaration = child;
+            break;
+        }
+    }
+    if (ts_node_is_null(declaration))
+        return target;
+
+    const SignalInsertAnchor anchor =
+        anchorAfterNode(m_text, declaration);
+    const int moduleEndLine = endmoduleLine(module, m_text);
+    if (!anchor.valid || anchor.line < 0
+        || moduleEndLine < 0
+        || anchor.line >= moduleEndLine) {
+        return target;
+    }
+
+    const int insertChar = lineEndChar(m_text, anchor.line);
+    target.status = TSSignalInsertStatus::Ok;
+    target.insertChar = insertChar;
+    target.insertText = QLatin1Char('\n') + anchor.indent;
+    target.caretCharAfterEdit =
+        insertChar + 1 + anchor.indent.size();
+    return target;
+}
+
 TSParameterInsertTarget TSDocument::parameterInsertTarget(int charOffset) const
 {
     TSParameterInsertTarget target;
@@ -2199,8 +2477,27 @@ void collectSpans(TSNode node, uint32_t startByte, uint32_t endByte,
     }
 
     const uint32_t childCount = ts_node_child_count(node);
-    for (uint32_t i = 0; i < childCount; ++i)
-        collectSpans(ts_node_child(node, i), startByte, endByte, blockStartChar, out);
+    uint32_t low = 0;
+    uint32_t high = childCount;
+    while (low < high) {
+        const uint32_t middle = low + (high - low) / 2;
+        const TSNode child = ts_node_child(node, middle);
+        if (ts_node_end_byte(child) <= startByte)
+            low = middle + 1;
+        else
+            high = middle;
+    }
+
+    for (uint32_t index = low; index < childCount; ++index) {
+        const TSNode child = ts_node_child(node, index);
+        if (ts_node_start_byte(child) >= endByte)
+            break;
+        collectSpans(child,
+                     startByte,
+                     endByte,
+                     blockStartChar,
+                     out);
+    }
 }
 } // namespace
 

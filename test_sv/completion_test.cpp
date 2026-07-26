@@ -2549,8 +2549,12 @@ int main(int argc, char** argv) {
                     .changed,
                true);
 
+    const QString sourceRoot =
+        qEnvironmentVariable("ZEROSLACK_SOURCE_DIR");
     QDir formatterFixtureRoot(
-        QCoreApplication::applicationDirPath());
+        sourceRoot.isEmpty()
+            ? QCoreApplication::applicationDirPath()
+            : sourceRoot);
     QString cpldTopFixture;
     for (int depth = 0;
          depth < 8 && cpldTopFixture.isEmpty();
@@ -3910,6 +3914,173 @@ int main(int argc, char** argv) {
     expectBool("WavePreview canvas leaves legend room",
                wavePreviewPanel.canvas()
                    && wavePreviewPanel.canvas()->sizeHint().height() >= 144,
+               true);
+
+    const QString laneCapacityPrefix = QStringLiteral(
+        "module lane_capacity;\n"
+        "logic clk;\n"
+        "logic a, b, c, d, e, f, g, h;\n"
+        "always_ff @(posedge clk) begin\n"
+        "    a <= b;\n");
+    const QString laneCapacityExtra = QStringLiteral(
+        "    c <= d;\n"
+        "    e <= f;\n"
+        "    g <= h;\n");
+    const QString laneCapacitySuffix = QStringLiteral(
+        "end\n"
+        "endmodule\n");
+    const QString laneCapacityExpandedText =
+        laneCapacityPrefix + laneCapacityExtra + laneCapacitySuffix;
+    const QString laneCapacityCompactText =
+        laneCapacityPrefix + laneCapacitySuffix;
+    QWidget laneCapacityHost;
+    WavePreviewPanelCoordinator laneCapacityPanel(&laneCapacityHost);
+    laneCapacityPanel.refreshFromDocument(
+        QStringLiteral("lane_capacity.sv"),
+        laneCapacityExpandedText,
+        false,
+        0,
+        laneCapacityExpandedText.size(),
+        QStringLiteral("module lane_capacity"),
+        0);
+    const int laneCapacityExpandedHeight =
+        laneCapacityPanel.canvas()->sizeHint().height();
+
+    DocumentChange laneCapacityShrink;
+    laneCapacityShrink.position = laneCapacityPrefix.size();
+    laneCapacityShrink.removedLength = laneCapacityExtra.size();
+    laneCapacityShrink.removedText = laneCapacityExtra;
+    laneCapacityShrink.oldLength = laneCapacityExpandedText.size();
+    laneCapacityShrink.newLength = laneCapacityCompactText.size();
+    laneCapacityShrink.startLine =
+        laneCapacityPrefix.count(QLatin1Char('\n'));
+    laneCapacityShrink.startColumn = 0;
+    laneCapacityShrink.oldEndLine =
+        laneCapacityShrink.startLine
+        + laneCapacityExtra.count(QLatin1Char('\n'));
+    laneCapacityShrink.newEndLine = laneCapacityShrink.startLine;
+    laneCapacityShrink.lineDelta =
+        laneCapacityShrink.newEndLine
+        - laneCapacityShrink.oldEndLine;
+    laneCapacityPanel.applyDocumentChange(
+        QStringLiteral("lane_capacity.sv"),
+        laneCapacityShrink,
+        laneCapacityCompactText,
+        true,
+        0,
+        laneCapacityCompactText.size(),
+        QStringLiteral("module lane_capacity"),
+        0);
+    const int laneCapacityShrunkHeight =
+        laneCapacityPanel.canvas()->sizeHint().height();
+    const int laneCapacityShrunkAssignments =
+        laneCapacityPanel.reportForTest().assignmentCount;
+    QTreeWidget* const laneCapacityTree = laneCapacityPanel.tree();
+    const bool laneCapacityCompactTreeUpdated =
+        laneCapacityTree
+        && !laneCapacityTree->findItems(
+                QStringLiteral("a"),
+                Qt::MatchExactly | Qt::MatchRecursive,
+                0).isEmpty()
+        && laneCapacityTree->findItems(
+                QStringLiteral("c"),
+                Qt::MatchExactly | Qt::MatchRecursive,
+                0).isEmpty();
+
+    DocumentChange laneCapacityExpand;
+    laneCapacityExpand.position = laneCapacityPrefix.size();
+    laneCapacityExpand.insertedText = laneCapacityExtra;
+    laneCapacityExpand.oldLength = laneCapacityCompactText.size();
+    laneCapacityExpand.newLength = laneCapacityExpandedText.size();
+    laneCapacityExpand.startLine = laneCapacityShrink.startLine;
+    laneCapacityExpand.startColumn = 0;
+    laneCapacityExpand.oldEndLine = laneCapacityExpand.startLine;
+    laneCapacityExpand.newEndLine =
+        laneCapacityExpand.startLine
+        + laneCapacityExtra.count(QLatin1Char('\n'));
+    laneCapacityExpand.lineDelta =
+        laneCapacityExpand.newEndLine
+        - laneCapacityExpand.oldEndLine;
+    laneCapacityPanel.applyDocumentChange(
+        QStringLiteral("lane_capacity.sv"),
+        laneCapacityExpand,
+        laneCapacityExpandedText,
+        true,
+        0,
+        laneCapacityExpandedText.size(),
+        QStringLiteral("module lane_capacity"),
+        0);
+    const int laneCapacityRestoredHeight =
+        laneCapacityPanel.canvas()->sizeHint().height();
+    const int laneCapacityRestoredAssignments =
+        laneCapacityPanel.reportForTest().assignmentCount;
+    const bool laneCapacityExpandedTreeUpdated =
+        laneCapacityTree
+        && !laneCapacityTree->findItems(
+                QStringLiteral("c"),
+                Qt::MatchExactly | Qt::MatchRecursive,
+                0).isEmpty();
+    expectBool("WavePreview canvas/tree same-file edits update atomically",
+               laneCapacityExpandedHeight > 144
+                   && laneCapacityShrunkAssignments == 1
+                   && laneCapacityRestoredAssignments == 4
+                   && laneCapacityCompactTreeUpdated
+                   && laneCapacityExpandedTreeUpdated
+                   && laneCapacityShrunkHeight
+                          == laneCapacityExpandedHeight
+                   && laneCapacityRestoredHeight
+                          == laneCapacityExpandedHeight,
+               true);
+
+    laneCapacityPanel.refreshFromDocument(
+        QStringLiteral("lane_capacity_other.sv"),
+        laneCapacityCompactText,
+        false,
+        0,
+        laneCapacityCompactText.size(),
+        QStringLiteral("module lane_capacity"),
+        0);
+    const int laneCapacityOtherFileHeight =
+        laneCapacityPanel.canvas()->sizeHint().height();
+    laneCapacityPanel.refreshFromDocument(
+        QStringLiteral("lane_capacity.sv"),
+        laneCapacityExpandedText,
+        false,
+        0,
+        laneCapacityExpandedText.size(),
+        QStringLiteral("module lane_capacity"),
+        0);
+    const int laneCapacityReloadedHeight =
+        laneCapacityPanel.canvas()->sizeHint().height();
+    laneCapacityPanel.renderUnavailable(
+        QStringLiteral("lane capacity reset"));
+    const int laneCapacityClearedHeight =
+        laneCapacityPanel.canvas()->sizeHint().height();
+    laneCapacityPanel.refreshFromDocument(
+        QStringLiteral("lane_capacity.sv"),
+        laneCapacityCompactText,
+        false,
+        0,
+        laneCapacityCompactText.size(),
+        QStringLiteral("module lane_capacity"),
+        0);
+    const int laneCapacityAfterClearHeight =
+        laneCapacityPanel.canvas()->sizeHint().height();
+    std::printf("wave.canvas_lane_capacity.expanded=%d shrunk=%d restored=%d other_file=%d cleared=%d after_clear=%d\n",
+                laneCapacityExpandedHeight,
+                laneCapacityShrunkHeight,
+                laneCapacityRestoredHeight,
+                laneCapacityOtherFileHeight,
+                laneCapacityClearedHeight,
+                laneCapacityAfterClearHeight);
+    expectBool("WavePreview canvas lane capacity resets at session boundaries",
+               laneCapacityOtherFileHeight < laneCapacityExpandedHeight
+                   && laneCapacityReloadedHeight
+                          == laneCapacityExpandedHeight
+                   && laneCapacityClearedHeight
+                          < laneCapacityExpandedHeight
+                   && laneCapacityAfterClearHeight
+                          == laneCapacityOtherFileHeight,
                true);
 
     const QString mappedScopeInput = QStringLiteral(

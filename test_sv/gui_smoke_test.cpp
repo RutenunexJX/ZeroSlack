@@ -141,6 +141,10 @@ static QString sourceFixturePath(const QString& relativePath)
     const QString normalizedRelative =
         QDir::fromNativeSeparators(relativePath);
     QStringList roots;
+    const QString sourceRoot =
+        qEnvironmentVariable("ZEROSLACK_SOURCE_DIR");
+    if (!sourceRoot.isEmpty())
+        roots << sourceRoot;
     roots << QDir::currentPath() << QCoreApplication::applicationDirPath();
     for (const QString& root : std::as_const(roots)) {
         QDir dir(root);
@@ -6169,6 +6173,163 @@ static QTreeWidgetItem* findItemByText(
     return nullptr;
 }
 
+static void runWavePersistentTreeStateRegression()
+{
+    QWidget owner;
+    WavePreviewPanelCoordinator coordinator(&owner);
+    QTreeWidget* tree = coordinator.tree();
+    const QString fileName =
+        QDir::cleanPath(QStringLiteral("C:/fixtures/wave_tree_state.sv"));
+    const QString scopeLabel = QStringLiteral("module wave_tree_state");
+    const QString initialText =
+        QStringLiteral("module wave_tree_state;\n"
+                       "logic a;\n"
+                       "logic stale;\n"
+                       "logic q;\n"
+                       "logic fresh;\n"
+                       "always_comb begin\n"
+                       "    stale = a;\n"
+                       "    q = a;\n"
+                       "end\n"
+                       "endmodule\n");
+
+    auto laneItem = [tree](const QString& signalName) {
+        if (!tree)
+            return static_cast<QTreeWidgetItem*>(nullptr);
+        for (int index = 0;
+             index < tree->topLevelItemCount();
+             ++index) {
+            QTreeWidgetItem* item = tree->topLevelItem(index);
+            if (item && item->text(0) == signalName
+                && item->childCount() > 0) {
+                return item;
+            }
+        }
+        return static_cast<QTreeWidgetItem*>(nullptr);
+    };
+    auto documentChange = [](const QString& before,
+                             int position,
+                             const QString& removed,
+                             const QString& inserted,
+                             std::uint64_t revision) {
+        DocumentChange change;
+        change.position = position;
+        change.removedLength = removed.size();
+        change.removedText = removed;
+        change.insertedText = inserted;
+        change.oldLength = before.size();
+        change.newLength =
+            before.size() - removed.size() + inserted.size();
+        change.startLine =
+            before.left(position).count(QLatin1Char('\n'));
+        change.startColumn =
+            position
+            - before.lastIndexOf(QLatin1Char('\n'), position - 1)
+            - 1;
+        change.oldEndLine =
+            change.startLine + removed.count(QLatin1Char('\n'));
+        change.newEndLine =
+            change.startLine + inserted.count(QLatin1Char('\n'));
+        change.lineDelta =
+            inserted.count(QLatin1Char('\n'))
+            - removed.count(QLatin1Char('\n'));
+        change.revision = revision;
+        return change;
+    };
+
+    coordinator.refreshFromDocument(fileName,
+                                    initialText,
+                                    true,
+                                    0,
+                                    initialText.size(),
+                                    scopeLabel,
+                                    0);
+    QTreeWidgetItem* originalQ = laneItem(QStringLiteral("q"));
+    QTreeWidgetItem* originalStale = laneItem(QStringLiteral("stale"));
+    expectBool("Wave persistent tree fixture exposes lane nodes",
+               originalQ && originalStale
+                   && originalQ->isExpanded(),
+               true);
+    if (originalQ)
+        originalQ->setExpanded(false);
+
+    const QString staleLine = QStringLiteral("    stale = a;\n");
+    const int stalePosition = initialText.indexOf(staleLine);
+    QString textWithoutStale = initialText;
+    if (stalePosition >= 0)
+        textWithoutStale.remove(stalePosition, staleLine.size());
+    const DocumentChange removeStale =
+        documentChange(initialText,
+                       stalePosition,
+                       staleLine,
+                       QString(),
+                       1);
+    coordinator.applyDocumentChange(fileName,
+                                    removeStale,
+                                    textWithoutStale,
+                                    true,
+                                    0,
+                                    textWithoutStale.size(),
+                                    scopeLabel,
+                                    0);
+
+    QTreeWidgetItem* updatedQ = laneItem(QStringLiteral("q"));
+    QString navigatedFile;
+    int navigatedLine = 0;
+    int navigatedColumn = 0;
+    coordinator.setNavigationHandler(
+        [&](const QString& file, int line, int column) {
+            navigatedFile = file;
+            navigatedLine = line;
+            navigatedColumn = column;
+        });
+    if (updatedQ && updatedQ->childCount() > 0)
+        coordinator.navigateItem(updatedQ->child(0));
+    const int expectedQLine =
+        textWithoutStale
+            .left(textWithoutStale.indexOf(QStringLiteral("q = a")))
+            .count(QLatin1Char('\n'))
+        + 1;
+    expectBool("Wave document delta preserves collapsed existing lane",
+               updatedQ == originalQ && updatedQ
+                   && !updatedQ->isExpanded(),
+               true);
+    expectBool("Wave document delta removes stale lane",
+               laneItem(QStringLiteral("stale")) == nullptr,
+               true);
+    expectBool("Wave document delta refreshes navigation data",
+               navigatedFile == fileName
+                   && navigatedLine == expectedQLine
+                   && navigatedColumn > 0,
+               true);
+
+    const QString freshLine = QStringLiteral("    fresh = a;\n");
+    const int freshPosition =
+        textWithoutStale.indexOf(QStringLiteral("end\nendmodule"));
+    QString textWithFresh = textWithoutStale;
+    if (freshPosition >= 0)
+        textWithFresh.insert(freshPosition, freshLine);
+    const DocumentChange addFresh =
+        documentChange(textWithoutStale,
+                       freshPosition,
+                       QString(),
+                       freshLine,
+                       2);
+    coordinator.applyDocumentChange(fileName,
+                                    addFresh,
+                                    textWithFresh,
+                                    true,
+                                    0,
+                                    textWithFresh.size(),
+                                    scopeLabel,
+                                    0);
+    QTreeWidgetItem* fresh = laneItem(QStringLiteral("fresh"));
+    expectBool("Wave new lane uses staging expanded default",
+               fresh && fresh->isExpanded()
+                   && updatedQ && !updatedQ->isExpanded(),
+               true);
+}
+
 static int navigableItemCount(QTreeWidgetItem* item)
 {
     if (!item)
@@ -11042,6 +11203,7 @@ int main(int argc, char** argv)
     runNavigationDesignCacheWorkspaceActivationRegression();
     runNavigationHierarchyModelRegression();
     runSemanticStateUiRegression();
+    runWavePersistentTreeStateRegression();
 
     const QString workspacePath = (argc > 1)
         ? QString::fromLocal8Bit(argv[1])
@@ -11269,16 +11431,32 @@ int main(int argc, char** argv)
                                  "\"description\":\"menu template\","
                                  "\"body\":\"logic menu_user;\"}]\n")),
                true);
+    QStringList userTemplateReloadMessages;
+    QMetaObject::Connection userTemplateReloadStatusConnection;
+    if (window.statusBar()) {
+        userTemplateReloadStatusConnection = QObject::connect(
+            window.statusBar(),
+            &QStatusBar::messageChanged,
+            &window,
+            [&](const QString& message) {
+                userTemplateReloadMessages.append(message);
+            });
+    }
     if (reloadUserTemplatesAction) {
         reloadUserTemplatesAction->trigger();
         QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
     }
+    if (userTemplateReloadStatusConnection)
+        QObject::disconnect(userTemplateReloadStatusConnection);
+    const bool sawSuccessfulTemplateReload = std::any_of(
+        userTemplateReloadMessages.cbegin(),
+        userTemplateReloadMessages.cend(),
+        [](const QString& message) {
+            return message.contains(QStringLiteral("loaded: 1"))
+                && message.contains(QStringLiteral("ignored: 0"));
+        });
     expectBool("reload user templates status has loaded count",
-               window.statusBar()
-                   && window.statusBar()->currentMessage().contains(
-                       QStringLiteral("loaded: 1"))
-                   && window.statusBar()->currentMessage().contains(
-                       QStringLiteral("ignored: 0")),
+               sawSuccessfulTemplateReload,
                true);
     expectBool("user template menu does not create ;cmd",
                !CompletionService::getInstance()

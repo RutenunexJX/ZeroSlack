@@ -25,6 +25,7 @@ struct RelationshipToAdd {
     SemanticSourceRange evidenceRange;
     QString fromAccessPath;
     QString toAccessPath;
+    bool exactValueForward = false;
 };
 
 class SmartRelationshipBuilder : public QObject
@@ -157,7 +158,8 @@ private:
                                   const QString& context, int confidence = 100,
                                   const SemanticSourceRange& evidenceRange = {},
                                   const QString& fromAccessPath = {},
-                                  const QString& toAccessPath = {});
+                                  const QString& toAccessPath = {},
+                                  bool exactValueForward = false);
 
     void analyzeClockResetRelationships(const QString& content, AnalysisContext& context, int lineMin = -1, int lineMax = -1);
 };

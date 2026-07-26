@@ -258,6 +258,7 @@ bool EditorFoldingController::applyDocumentChange(
     if (!editor || !document)
         return false;
 
+    const bool hadCollapsedRanges = !collapsedStartLines.isEmpty();
     int replacementFirstLine = qMin(change.startLine, change.newEndLine);
     int replacementLastLine = qMax(change.startLine, change.newEndLine);
     for (const TSChangedRange& range : changedRanges) {
@@ -373,6 +374,8 @@ bool EditorFoldingController::applyDocumentChange(
         firstLine = qMin(firstLine, range.startLine);
         lastLine = qMax(lastLine, range.endLine);
     }
+    if (!hadCollapsedRanges)
+        return false;
     applyVisibilityForLines(
         editor,
         qMax(0, firstLine - 1),

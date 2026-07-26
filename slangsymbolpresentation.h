@@ -19,6 +19,11 @@ void populateSymbolPresentations(
     QList<EffectiveValueFact>* effectiveValueFacts = nullptr,
     const std::function<bool()>& isCancelled = nullptr);
 
+void populateSymbolDriverSummaries(
+    slang::ast::Compilation& compilation,
+    QList<SemanticSymbolRecord>& records,
+    const std::function<bool()>& isCancelled = nullptr);
+
 } // namespace slang_symbols
 
 #endif // SLANGSYMBOLPRESENTATION_H

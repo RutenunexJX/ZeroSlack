@@ -82,8 +82,31 @@ struct SemanticSymbolTypeReference {
     bool isValid() const;
 };
 
+enum class SemanticDriverPresenceState : std::uint8_t {
+    Unknown,
+    ProvenZero,
+    Present
+};
+
 struct SemanticElaboratedSymbolInfo {
     bool available = false;
+    // Machine-readable Slang type facts. Action planners consume these
+    // directly and never infer propagatability from presentation strings.
+    bool fixedSize = false;
+    bool integral = false;
+    bool unpackedArray = false;
+    bool interfaceType = false;
+    bool signedIntegral = false;
+    std::uint64_t bitWidth = 0;
+    // Unified Slang driver facts for this exact elaborated instance.
+    // Unknown is deliberately distinct from ProvenZero: action planners
+    // may reuse an existing endpoint only after Slang proved absence.
+    SemanticDriverPresenceState driverPresence =
+        SemanticDriverPresenceState::Unknown;
+    std::uint64_t driverCount = 0;
+    std::uint64_t continuousDriverCount = 0;
+    std::uint64_t proceduralDriverCount = 0;
+    std::uint64_t portConnectionDriverCount = 0;
     // True only when Slang proved that the direct value written at this
     // symbol's declaration anchor is numerically identical to the final
     // elaborated value. An override written elsewhere never sets this flag.
@@ -215,6 +238,7 @@ struct SemanticRelationship {
     int confidence = 0;
     QString evidenceText;
     SemanticSourceRange evidenceRange;
+    bool exactValueForward = false;
 };
 
 struct SemanticRelationshipResult {
@@ -229,6 +253,7 @@ struct SemanticRelationshipResult {
     int confidence = 0;
     QString evidenceText;
     SemanticSourceRange evidenceRange;
+    bool exactValueForward = false;
 };
 
 struct SemanticDiagnostic {

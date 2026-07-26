@@ -13,6 +13,7 @@
 #include <QDragEnterEvent>
 #include <QDragMoveEvent>
 #include <QDropEvent>
+#include <QElapsedTimer>
 #include <QFontMetrics>
 #include <QFutureWatcher>
 #include <QInputDialog>
@@ -2798,6 +2799,20 @@ void MyCodeEditorState::handleDocumentContentsChange(
 {
     if (!editor || !editor->document())
         return;
+    QElapsedTimer documentChangeCoreTimer;
+    QElapsedTimer documentChangePhaseTimer;
+    if (hotPathTimingEnabled) {
+        documentChangeCoreTimer.start();
+        documentChangePhaseTimer.start();
+    }
+    const auto finishDocumentChangePhase =
+        [this, &documentChangePhaseTimer](std::uint64_t& destination) {
+        if (!hotPathTimingEnabled)
+            return;
+        destination += static_cast<std::uint64_t>(
+            documentChangePhaseTimer.nsecsElapsed());
+        documentChangePhaseTimer.restart();
+    };
 
     if (signalDefinitionEditor)
         cancelSignalDefinitionEditor();
@@ -2917,9 +2932,13 @@ void MyCodeEditorState::handleDocumentContentsChange(
     ++hotPathMetrics.documentChanges;
     suppressNextCursorPresentation = true;
     editorPresentationPending = true;
+    finishDocumentChangePhase(
+        hotPathMetrics.documentChangePrepareNanoseconds);
 
     const QList<TSChangedRange> changedRanges =
         syntax.applyDocumentChange(change, semanticRevisionText);
+    finishDocumentChangePhase(
+        hotPathMetrics.documentChangeSyntaxNanoseconds);
     if (const TSDocument* syntaxDocument = syntax.tsDocument()) {
         const bool fullFoldRebuild = folding.applyDocumentChange(
             editor, syntaxDocument, change, changedRanges);
@@ -2928,7 +2947,11 @@ void MyCodeEditorState::handleDocumentContentsChange(
         else
             ++hotPathMetrics.incrementalFoldingUpdates;
     }
+    finishDocumentChangePhase(
+        hotPathMetrics.documentChangeFoldingNanoseconds);
     remapSemanticDecorations(editor, change);
+    finishDocumentChangePhase(
+        hotPathMetrics.documentChangeDecorationNanoseconds);
 
     const OccurrenceIndexUpdate occurrenceUpdate =
         useInlineOccurrenceLine
@@ -2946,6 +2969,8 @@ void MyCodeEditorState::handleDocumentContentsChange(
         ++hotPathMetrics.occurrenceFullBuilds;
     else if (occurrenceUpdate == OccurrenceIndexUpdate::Incremental)
         ++hotPathMetrics.occurrenceIncrementalUpdates;
+    finishDocumentChangePhase(
+        hotPathMetrics.documentChangeOccurrenceNanoseconds);
 
     if (templateSlotModeActive())
         templateSlotPresentationPending = true;
@@ -2955,8 +2980,24 @@ void MyCodeEditorState::handleDocumentContentsChange(
                                      change.insertedText.size(),
                                      false);
     remapGhostAnnotations(editor, change);
+    finishDocumentChangePhase(
+        hotPathMetrics.documentChangePresentationNanoseconds);
     refreshDerivedEditorState(editor, false);
+    finishDocumentChangePhase(
+        hotPathMetrics.documentChangeDerivedStateNanoseconds);
+    if (hotPathTimingEnabled) {
+        hotPathMetrics.documentChangeCoreNanoseconds +=
+            static_cast<std::uint64_t>(
+                documentChangeCoreTimer.nsecsElapsed());
+    }
+    QElapsedTimer dispatchTimer;
+    if (hotPathTimingEnabled)
+        dispatchTimer.start();
     emit editor->documentChangeApplied(change);
+    if (hotPathTimingEnabled) {
+        hotPathMetrics.documentChangeDispatchNanoseconds +=
+            static_cast<std::uint64_t>(dispatchTimer.nsecsElapsed());
+    }
 }
 
 void MyCodeEditorState::remapGhostAnnotations(
@@ -5754,6 +5795,7 @@ QList<int> MyCodeEditorState::occurrencePositionsForTest(
 void MyCodeEditorState::resetHotPathMetricsForTest()
 {
     hotPathMetrics = {};
+    hotPathTimingEnabled = true;
 }
 
 void MyCodeEditorState::setIncludeFileProvider(

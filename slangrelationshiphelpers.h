@@ -16,6 +16,8 @@ namespace slang_relationship::detail {
 QString assignmentRootName(const slang::ast::Expression& expr);
 
 QString expressionAccessPath(const slang::ast::Expression& expr);
+bool isDirectValueForwardExpression(
+    const slang::ast::Expression& expr);
 
 QStringList collectValueNames(const slang::ast::Expression& expr);
 

@@ -169,6 +169,7 @@ QList<SemanticRelationship> semanticRelationships(
         item.evidenceRange = relationship.evidenceRange;
         item.fromAccessPath = relationship.fromAccessPath;
         item.toAccessPath = relationship.toAccessPath;
+        item.exactValueForward = relationship.exactValueForward;
         item.provenance = RelationshipProvenance::SlangExtracted;
         result.append(std::move(item));
     }

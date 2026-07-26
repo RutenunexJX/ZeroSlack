@@ -7,6 +7,7 @@
 #include <QDockWidget>
 #include <QString>
 
+#include <cstdint>
 #include <functional>
 
 class QLabel;
@@ -23,6 +24,12 @@ struct WavePreviewRefreshMetrics {
     int scopeDeltaUpdateCount = 0;
     int scopeRebuildCount = 0;
     qsizetype lastParsedCharacterCount = 0;
+    std::uint64_t scopeCacheUpdateNanoseconds = 0;
+    std::uint64_t waveServiceNanoseconds = 0;
+    std::uint64_t modelSceneRebuildNanoseconds = 0;
+    std::uint64_t canvasUpdateNanoseconds = 0;
+    std::uint64_t canvasPaintNanoseconds = 0;
+    int canvasPaintCount = 0;
 };
 
 class WavePreviewPanelCoordinator
@@ -53,11 +60,8 @@ public:
     QTreeWidget* tree() const { return previewTree; }
     QWidget* canvas() const { return previewCanvas; }
     const WavePreviewReport& reportForTest() const { return currentReport; }
-    WavePreviewRefreshMetrics refreshMetricsForTest() const
-    {
-        return refreshMetrics;
-    }
-    void resetRefreshMetricsForTest() { refreshMetrics = {}; }
+    WavePreviewRefreshMetrics refreshMetricsForTest() const;
+    void resetRefreshMetricsForTest();
 
 private:
     QDockWidget* previewDock = nullptr;
@@ -85,6 +89,7 @@ private:
     bool currentDirty = false;
     QString laneFilterText;
     WavePreviewRefreshMetrics refreshMetrics;
+    bool refreshTimingEnabled = false;
 
     std::function<void(const QString&, int, int)> navigationHandler;
 

@@ -4,6 +4,8 @@
 #include "formattersettings.h"
 #include "codetemplateservice.h"
 #include "editorsemanticcontextservice.h"
+#include "exposesignaltotopdialog.h"
+#include "exposesignaltotopservice.h"
 #include "definitionpreviewservice.h"
 #include "filecommandcoordinator.h"
 #include "mycodeeditor.h"
@@ -11,6 +13,7 @@
 #include "saferenameservice.h"
 #include "semanticpanelrefreshcoordinator.h"
 #include "tabmanager.h"
+#include "tsdocument.h"
 #include "workspacemanager.h"
 
 #include <QAbstractButton>
@@ -1419,6 +1422,104 @@ void EditorCoordinator::handleSourceSymbolContextMenuRequested(
         connect(action, &QAction::triggered, this, [this, context, item]() {
             handleSourceSymbolActionRequested(item.action, context);
         });
+    }
+
+    menu->addSeparator();
+    ExposeSignalToTopService exposeService;
+    QString unavailableReason;
+    const bool exposeAvailable =
+        exposeService.canOffer(context, &unavailableReason);
+    QAction* exposeAction =
+        menu->addAction(QStringLiteral("Expose signal to top..."));
+    exposeAction->setObjectName(
+        QStringLiteral("exposeSignalToTopAction"));
+    exposeAction->setEnabled(exposeAvailable);
+    if (!unavailableReason.isEmpty()) {
+        exposeAction->setToolTip(unavailableReason);
+        exposeAction->setStatusTip(unavailableReason);
+    }
+    connect(exposeAction, &QAction::triggered,
+            this, [this, context]() {
+                handleExposeSignalToTopRequested(context);
+            });
+}
+
+void EditorCoordinator::populateSourceSymbolContextMenuForTest(
+    QMenu* menu,
+    const EditorSemanticContext& context) const
+{
+    handleSourceSymbolContextMenuRequested(menu, context);
+}
+
+void EditorCoordinator::handleExposeSignalToTopRequested(
+    const EditorSemanticContext& context) const
+{
+    if (!tabManager)
+        return;
+    MyCodeEditor* parentEditor = tabManager->getCurrentEditor();
+    if (!parentEditor)
+        return;
+
+    TSDocument syntax;
+    syntax.setText(context.documentText);
+    const TSIdentifierTarget identifier =
+        syntax.identifierAt(context.cursorPosition);
+    if (!identifier.ok())
+        return;
+
+    ExposeSignalToTopQuery query;
+    query.context = context;
+    query.exportedPortName =
+        ExposeSignalToTopService::defaultExportedPortName(
+            identifier.text);
+    if (dependencies.workspaceManager) {
+        for (const QString& file
+             : dependencies.workspaceManager->getSystemVerilogFiles()) {
+            query.workspaceFiles.insert(file);
+        }
+    }
+
+    ExposeSignalToTopService service;
+    ZeroSlackWorkspaceDocumentManager documents(tabManager);
+    ExposeSignalToTopReport initial =
+        service.plan(query, documents);
+    if (initial.exportedPortName.isEmpty())
+        initial.exportedPortName = query.exportedPortName;
+
+    ExposeSignalToTopDialog dialog(
+        initial,
+        [&](const QString& portName) {
+            ExposeSignalToTopQuery replanned = query;
+            replanned.exportedPortName = portName;
+            ExposeSignalToTopReport report =
+                service.plan(replanned, documents);
+            if (report.exportedPortName.isEmpty())
+                report.exportedPortName = portName;
+            return report;
+        },
+        parentEditor);
+    if (dialog.exec() != QDialog::Accepted)
+        return;
+
+    const ExposeSignalToTopApplyReport applied =
+        service.apply(dialog.reportForApply(), documents);
+    if (!applied.applied()) {
+        QMessageBox::warning(
+            parentEditor,
+            QStringLiteral("Expose signal to top"),
+            applied.message.isEmpty()
+                ? QStringLiteral(
+                      "The workspace changed before Apply; no files were committed.")
+                : applied.message);
+        return;
+    }
+    if (statusMessageHandler) {
+        statusMessageHandler(
+            QStringLiteral("Exposed %1 to %2 as %3")
+                .arg(identifier.text,
+                     context.hierarchyInstance.activeTopModule,
+                     dialog.reportForApply().exportedPortName),
+            5000);
     }
 }
 
