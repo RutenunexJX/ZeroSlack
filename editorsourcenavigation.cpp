@@ -363,7 +363,7 @@ void EditorSourceNavigationUi::handleContextMenu(
     emit editor->sourceSymbolContextMenuRequested(
         menu.get(),
         contextProvider(sourceSymbolContextPositionForMenu(editor, cursorAtPos),
-                        false));
+                        true));
     menu->addSeparator();
 
     QAction* gotoLineAction = menu->addAction(QStringLiteral("Go to Line..."));

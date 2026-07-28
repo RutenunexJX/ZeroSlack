@@ -126,6 +126,8 @@ struct FixtureSpec {
     QString sourceModule;
     QStringList compilationFiles;
     QStringList editableFiles;
+    QString menuProbeModule;
+    QString menuProbeSignal;
 };
 
 struct FixtureWorkspace {
@@ -328,6 +330,82 @@ EditorSemanticContext contextFor(
         spec.activeTop,
         instancePath};
     return context;
+}
+
+void runMenuAvailabilityProbe(
+    const FixtureSpec& spec,
+    FixtureWorkspace& workspace,
+    const QList<SemanticSymbolRecord>& records,
+    const DesignHierarchyReport& design,
+    SemanticIndex* index,
+    HierarchyService* hierarchy)
+{
+    if (spec.menuProbeModule.isEmpty()
+        || spec.menuProbeSignal.isEmpty()) {
+        return;
+    }
+
+    QList<DesignHierarchyNode> matchingNodes;
+    for (const DesignHierarchyNode& node : design.nodes) {
+        if (node.inSelectedTop
+            && node.moduleType == spec.menuProbeModule) {
+            matchingNodes.append(node);
+        }
+    }
+    check(spec.label + QStringLiteral(" menu probe has concrete instance"),
+          matchingNodes.size() == 1);
+    if (matchingNodes.size() != 1)
+        return;
+
+    const DesignHierarchyNode node = matchingNodes.constFirst();
+    QList<SemanticSymbolRecord> matchingSignals;
+    for (const SemanticSymbolRecord& record : records) {
+        if (record.name == spec.menuProbeSignal
+            && record.owner.kind
+                == SymbolTaxonomy::SymbolOwnerScope::Module
+            && record.owner.name == spec.menuProbeModule
+            && norm(record.location.fileName)
+                == norm(node.definitionFile)
+            && propagatableInternal(record.collectorKind)) {
+            matchingSignals.append(record);
+        }
+    }
+    check(spec.label + QStringLiteral(" menu probe finds target signal"),
+          matchingSignals.size() == 1);
+    if (matchingSignals.size() != 1)
+        return;
+
+    const EditorSemanticContext context =
+        contextFor(spec,
+                   workspace,
+                   matchingSignals.constFirst(),
+                   node.instancePath);
+    ExposeSignalToTopService service(index, hierarchy);
+    QString unavailableReason;
+    const bool menuEnabled =
+        service.canOffer(context, &unavailableReason);
+    check(spec.label
+              + QStringLiteral(" CPLD_PREPROC target enables menu action"),
+          menuEnabled);
+
+    const ExposeSignalToTopQuery query{
+        context,
+        ExposeSignalToTopService::defaultExportedPortName(
+            spec.menuProbeSignal),
+        workspace.workspaceFiles};
+    const ExposeSignalToTopReport preview =
+        service.plan(query, workspace.documents);
+    const QByteArray previewState = preview.ready()
+        ? QByteArrayLiteral("ready")
+        : QByteArrayLiteral("blocked");
+    std::printf(
+        "[INFO] %s menu=%s preview=%s path=%s reason=%s\n",
+        spec.menuProbeSignal.toUtf8().constData(),
+        menuEnabled ? "enabled" : "disabled",
+        previewState.constData(),
+        node.instancePath.toUtf8().constData(),
+        (preview.ready() ? QStringLiteral("none")
+                         : preview.message).toUtf8().constData());
 }
 
 QString errorKey(const SemanticDiagnostic& diagnostic)
@@ -590,6 +668,12 @@ void runFixture(const FixtureSpec& spec,
     const DesignHierarchyReport design =
         hierarchy.getDesignHierarchyReport(
             spec.activeTop, workspace.workspaceFiles);
+    runMenuAvailabilityProbe(spec,
+                             workspace,
+                             records,
+                             design,
+                             &index,
+                             &hierarchy);
     QList<DesignHierarchyNode> sourceNodes;
     for (const DesignHierarchyNode& node : design.nodes) {
         if (node.inSelectedTop
@@ -843,6 +927,8 @@ int main(int argc, char** argv)
             QStringLiteral(
                 "elec_phy_import/phy/cpld_board_id_rx.sv"),
             QStringLiteral(
+                "elec_phy_import/phy/cpld_preproc.sv"),
+            QStringLiteral(
                 "elec_phy_import/phy/cpld_top.sv"),
             QStringLiteral(
                 "elec_phy_import/phy/phy_top.sv"),
@@ -853,12 +939,16 @@ int main(int argc, char** argv)
             QStringLiteral(
                 "elec_phy_import/phy/cpld_board_id_rx.sv"),
             QStringLiteral(
+                "elec_phy_import/phy/cpld_preproc.sv"),
+            QStringLiteral(
                 "elec_phy_import/phy/cpld_top.sv"),
             QStringLiteral(
                 "elec_phy_import/phy/phy_top.sv"),
             QStringLiteral(
                 "elec_phy_import/top/rtl_top.sv")
-        }};
+        },
+        QStringLiteral("cpld_preproc"),
+        QStringLiteral("c0_oc_event_st_cnt")};
     runFixture(newFixture,
                QDir(temp.path()).filePath(QStringLiteral("new")));
 

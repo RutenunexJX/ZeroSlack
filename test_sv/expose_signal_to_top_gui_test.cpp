@@ -1,6 +1,7 @@
 #include "editorcoordinator.h"
 #include "exposesignaltotopdialog.h"
 #include "exposesignaltotopservice.h"
+#include "mycodeeditor.h"
 #include "semantic_fixture_records.h"
 #include "semanticindexsnapshot.h"
 #include "tabmanager.h"
@@ -8,6 +9,7 @@
 #include <rtledit/edit_plan.h>
 
 #include <QApplication>
+#include <QContextMenuEvent>
 #include <QDialog>
 #include <QFile>
 #include <QLineEdit>
@@ -18,6 +20,8 @@
 #include <QTabWidget>
 #include <QTemporaryDir>
 #include <QTest>
+#include <QTextCursor>
+#include <QTimer>
 
 #include <cstdio>
 #include <memory>
@@ -40,6 +44,75 @@ std::shared_ptr<const SemanticIndexSnapshot> snapshot(
     return std::make_shared<const SemanticIndexSnapshot>(
         SemanticIndexSnapshot::fromSymbolRecords(
             records, {}, {}, contents));
+}
+
+struct MenuActionState {
+    bool menuShown = false;
+    bool found = false;
+    bool enabled = false;
+};
+
+int positionInside(const QString& text, const QString& needle)
+{
+    const int start = text.indexOf(needle);
+    return start < 0 ? -1 : start + qMax(0, needle.size() / 2);
+}
+
+MenuActionState contextMenuState(
+    MyCodeEditor* editor,
+    const QString& clickNeedle,
+    const QString& oldCursorNeedle)
+{
+    if (!editor)
+        return {};
+
+    const QString text = editor->cachedDocumentText();
+    const int oldCursorPosition =
+        positionInside(text, oldCursorNeedle);
+    const int clickPosition =
+        positionInside(text, clickNeedle);
+    if (oldCursorPosition < 0 || clickPosition < 0)
+        return {};
+
+    QTextCursor oldCursor(editor->document());
+    oldCursor.setPosition(oldCursorPosition);
+    editor->setTextCursor(oldCursor);
+
+    QTextCursor clickCursor(editor->document());
+    clickCursor.setPosition(clickPosition);
+    const QPoint clickPoint = editor->cursorRect(clickCursor).center();
+
+    MenuActionState state;
+    const QMetaObject::Connection menuObserved = QObject::connect(
+        editor,
+        &MyCodeEditor::sourceSymbolContextMenuRequested,
+        editor,
+        [&state](QMenu* menu, const EditorSemanticContext&) {
+            state.menuShown = menu != nullptr;
+            if (!menu)
+                return;
+            QTimer::singleShot(0, menu, [&state, menu]() {
+                QAction* expose = nullptr;
+                for (QAction* action : menu->actions()) {
+                    if (action->objectName()
+                        == QStringLiteral("exposeSignalToTopAction")) {
+                        expose = action;
+                        break;
+                    }
+                }
+                state.found = expose != nullptr;
+                state.enabled = expose && expose->isEnabled();
+                menu->close();
+            });
+        });
+    QContextMenuEvent event(
+        QContextMenuEvent::Mouse,
+        clickPoint,
+        editor->viewport()->mapToGlobal(clickPoint));
+    QApplication::sendEvent(editor->viewport(), &event);
+    QObject::disconnect(menuObserved);
+    QCoreApplication::processEvents();
+    return state;
 }
 
 ExposeSignalToTopReport readyDialogReport(
@@ -134,50 +207,108 @@ void runDialogRegression()
 
 void runMenuAvailabilityRegression()
 {
+    QTemporaryDir temp;
+    check("context menu fixture root is available", temp.isValid());
+    if (!temp.isValid())
+        return;
+
     const QString fileName =
-        QStringLiteral("C:/fixture/expose_menu.sv");
+        temp.filePath(QStringLiteral("expose_menu.sv"));
     const QString text =
-        QStringLiteral("module leaf;\n  logic payload;\nendmodule\n");
+        QStringLiteral(
+            "module leaf(\n"
+            "  input logic clk\n"
+            ");\n"
+            "  logic [7:0] payload;\n"
+            "endmodule\n");
+    QFile file(fileName);
+    const bool fileWritten =
+        file.open(QIODevice::WriteOnly | QIODevice::Text)
+        && file.write(text.toUtf8()) == text.toUtf8().size();
+    file.close();
+    check("context menu fixture source is written", fileWritten);
+    if (!fileWritten)
+        return;
+
     SemanticSymbolRecord signal =
         SemanticFixtureRecordBuilder(
             QStringLiteral("payload"),
             SymbolTaxonomy::DeclarationKind::Signal)
             .withFile(fileName)
             .withLocalHandle(301)
-            .withLine(2, 9)
+            .withLine(4, 15)
             .withTextSpan(text.indexOf(QStringLiteral("payload")), 7)
             .withCollectorKind(SymbolTaxonomy::CollectorKind::Logic)
             .inModule(QStringLiteral("leaf"))
             .record();
+    SemanticSymbolRecord input =
+        SemanticFixtureRecordBuilder(
+            QStringLiteral("clk"),
+            SymbolTaxonomy::DeclarationKind::Port)
+            .withFile(fileName)
+            .withLocalHandle(302)
+            .withLine(2, 15)
+            .withTextSpan(text.indexOf(QStringLiteral("clk")), 3)
+            .withCollectorKind(SymbolTaxonomy::CollectorKind::PortInput)
+            .inModule(QStringLiteral("leaf"))
+            .record();
     SemanticIndex::getInstance()->setSnapshot(
-        snapshot({signal}, {{fileName, text}}));
+        snapshot({signal, input}, {{fileName, text}}));
 
-    EditorSemanticContext context;
-    context.fileName = fileName;
-    context.moduleName = QStringLiteral("leaf");
-    context.documentText = text;
-    context.cursorPosition =
-        text.indexOf(QStringLiteral("payload")) + 2;
-    context.cursorLine = 2;
-    context.column = 11;
-    context.lineText = QStringLiteral("  logic payload;");
-    context.lineUpToCursor = QStringLiteral("  logic pa");
-    context.hierarchyInstance = {
-        QStringLiteral("C:/fixture"),
+    QTabWidget tabs;
+    tabs.resize(640, 360);
+    TabManager manager(&tabs);
+    EditorCoordinator coordinator(&manager);
+    check("context menu fixture opens in real TabManager",
+          manager.openFileInTab(fileName));
+    MyCodeEditor* editor = manager.getCurrentEditor();
+    check("context menu fixture creates MyCodeEditor",
+          editor != nullptr);
+    if (!editor)
+        return;
+    coordinator.attachEditor(editor);
+    tabs.show();
+    QCoreApplication::processEvents();
+
+    editor->setHierarchyInstanceContext({
+        temp.path(),
         QStringLiteral("top"),
-        QStringLiteral("top.u_leaf")};
+        QStringLiteral("top.u_leaf")});
+    const MenuActionState bound =
+        contextMenuState(editor,
+                         QStringLiteral("payload"),
+                         QStringLiteral("payload"));
+    check("real context menu exposes Action entry",
+          bound.menuShown && bound.found);
+    check("bound module signal enables real context menu Action",
+          bound.enabled);
 
-    EditorCoordinator coordinator(nullptr);
-    QMenu menu;
-    coordinator.populateSourceSymbolContextMenuForTest(
-        &menu, context);
-    QAction* expose = menu.findChild<QAction*>(
-        QStringLiteral("exposeSignalToTopAction"));
-    check("context menu exposes visible Action entry",
-          expose && expose->text()
-              == QStringLiteral("Expose signal to top..."));
-    check("Action entry is enabled for bound module signal",
-          expose && expose->isEnabled());
+    editor->setHierarchyInstanceContext({
+        temp.path(), QString(), QString()});
+    const MenuActionState unbound =
+        contextMenuState(editor,
+                         QStringLiteral("payload"),
+                         QStringLiteral("payload"));
+    check("unbound instance disables real context menu Action",
+          unbound.found && !unbound.enabled);
+
+    editor->setHierarchyInstanceContext({
+        temp.path(),
+        QStringLiteral("top"),
+        QStringLiteral("top.u_leaf")});
+    const MenuActionState nonPropagatable =
+        contextMenuState(editor,
+                         QStringLiteral("clk"),
+                         QStringLiteral("payload"));
+    check("non-propagatable object disables real context menu Action",
+          nonPropagatable.found && !nonPropagatable.enabled);
+
+    const MenuActionState clickWins =
+        contextMenuState(editor,
+                         QStringLiteral("payload"),
+                         QStringLiteral("clk"));
+    check("right-click position, not old cursor, selects target",
+          clickWins.found && clickWins.enabled);
 }
 
 void runQtApplyChainRegression()
