@@ -380,6 +380,10 @@ public:
     // Replaces the Slang+regex getCurrentModuleScope for cursor-scope decisions.
     QString enclosingModuleName(int charOffset) const;
 
+    // Name of the nearest enclosing package at the given char offset, derived
+    // from the current Tree-sitter buffer snapshot.
+    QString enclosingPackageName(int charOffset) const;
+
     // Clear ANSI module port-list append point.
     TSPortAppendTarget portAppendTarget(int charOffset) const;
 

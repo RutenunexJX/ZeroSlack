@@ -14,6 +14,7 @@
 #include <QDialogButtonBox>
 #include <QDockWidget>
 #include <QDir>
+#include <QDirIterator>
 #include <QElapsedTimer>
 #include <QFile>
 #include <QFileInfo>
@@ -23,12 +24,14 @@
 #include <QFontMetricsF>
 #include <QGraphicsItem>
 #include <QGraphicsRectItem>
+#include <QGraphicsScene>
 #include <QGraphicsView>
 #include <QImage>
 #include <QIODevice>
 #include <QSettings>
 #include <QSignalSpy>
 #include <QStatusBar>
+#include <QStackedWidget>
 #include <QTabBar>
 #include <QTabWidget>
 #include <QLineEdit>
@@ -98,6 +101,7 @@
 #include "globalcontrolpanel.h"
 #include "globalcontrolservice.h"
 #include "hierarchyservice.h"
+#include "insightfocuscontroller.h"
 #include "navigationwidget.h"
 #include "navigationpanecoordinator.h"
 #include "semantic_fixture_records.h"
@@ -120,6 +124,7 @@
 #include "semanticpanelrefreshcoordinator.h"
 #include "semanticruntimecoordinator.h"
 #include "signalkernelgraphpanelcoordinator.h"
+#include "signalusagehotspotpanel.h"
 #include "slangmanager.h"
 #include "smartrelationshipbuilder.h"
 #include "tabmanager.h"
@@ -194,6 +199,46 @@ static bool writeTextFile(const QString& fileName, const QString& text)
     return true;
 }
 
+static bool copyFixtureTree(const QString& sourceRoot,
+                            const QString& destinationRoot)
+{
+    const QDir source(sourceRoot);
+    if (!source.exists()
+        || !QDir().mkpath(destinationRoot)) {
+        return false;
+    }
+
+    QDirIterator iterator(
+        sourceRoot,
+        QDir::AllEntries
+            | QDir::Hidden
+            | QDir::System
+            | QDir::NoDotAndDotDot,
+        QDirIterator::Subdirectories);
+    while (iterator.hasNext()) {
+        const QString sourcePath = iterator.next();
+        const QFileInfo sourceInfo(sourcePath);
+        const QString relativePath =
+            source.relativeFilePath(sourcePath);
+        const QString destinationPath =
+            QDir(destinationRoot)
+                .absoluteFilePath(relativePath);
+        if (sourceInfo.isDir()) {
+            if (!QDir().mkpath(destinationPath))
+                return false;
+            continue;
+        }
+        if (!QDir().mkpath(
+                QFileInfo(destinationPath)
+                    .absolutePath())
+            || !QFile::copy(sourcePath,
+                            destinationPath)) {
+            return false;
+        }
+    }
+    return true;
+}
+
 static bool saveFullAppSignalUsageHotspotScreenshot(MainWindow& window,
                                                     const QString& fixturePath)
 {
@@ -239,9 +284,18 @@ static bool saveFullAppSignalUsageHotspotScreenshot(MainWindow& window,
                            Qt::Vertical);
     QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
 
+    QString artifactRoot =
+        qEnvironmentVariable("ZEROSLACK_TEST_ARTIFACT_DIR");
+    if (artifactRoot.isEmpty()) {
+        artifactRoot = QDir::temp().absoluteFilePath(
+            QStringLiteral("zeroslack-gui-smoke"));
+    }
+    if (!QDir().mkpath(artifactRoot))
+        return false;
     const QString outputPath =
-        QDir::current().absoluteFilePath(
-            QStringLiteral("current_app_signal_usage_hotspot_full_after.png"));
+        QDir(artifactRoot).absoluteFilePath(
+            QStringLiteral(
+                "current_app_signal_usage_hotspot_full_after.png"));
     const bool saved = window.grab().save(outputPath);
     if (!saved)
         qWarning() << "Failed to save full app screenshot" << outputPath;
@@ -2260,11 +2314,26 @@ static void runWorkspaceAliasRenameRegression()
 static void runWorkspaceSessionCloseSaveOrderRegression()
 {
     QTemporaryDir workspaceDir;
+    QTemporaryDir localStateDir;
     expectBool("workspace session close temp dir valid",
-               workspaceDir.isValid(),
+               workspaceDir.isValid()
+                   && localStateDir.isValid(),
                true);
-    if (!workspaceDir.isValid())
+    if (!workspaceDir.isValid()
+        || !localStateDir.isValid())
         return;
+
+    const QByteArray previousSessionStorage =
+        qgetenv(
+            "ZEROSLACK_SESSION_STORAGE_PATH");
+    const QString localSessionStorage =
+        QDir(localStateDir.path())
+            .absoluteFilePath(
+                QStringLiteral(
+                    "workspace-sessions.ini"));
+    qputenv(
+        "ZEROSLACK_SESSION_STORAGE_PATH",
+        localSessionStorage.toUtf8());
 
     const QString sessionFile =
         QDir(workspaceDir.path()).absoluteFilePath(
@@ -2275,58 +2344,78 @@ static void runWorkspaceSessionCloseSaveOrderRegression()
                                             "endmodule\n")),
                true);
 
-    MainWindow window;
-    expectBool("workspace session close opens workspace",
-               window.workspaceManager
-                   && window.workspaceManager->openWorkspace(
-                       workspaceDir.path()),
-               true);
-    expectBool("workspace session close scan completes",
-               waitUntil([&]() {
-                   return window.workspaceManager
-                       && window.workspaceManager->workspaceEntries().size() == 1
-                       && window.workspaceManager->workspaceEntries()
-                              .first()
-                              .scanComplete;
-               },
-                         3000),
-               true);
-    expectBool("workspace session close opens tab",
-               window.tabManager
-                   && window.tabManager->openFileInTab(sessionFile),
-               true);
+    {
+        MainWindow window;
+        expectBool("workspace session close opens workspace",
+                   window.workspaceManager
+                       && window.workspaceManager->openWorkspace(
+                           workspaceDir.path()),
+                   true);
+        expectBool("workspace session close scan completes",
+                   waitUntil([&]() {
+                       return window.workspaceManager
+                           && window.workspaceManager->workspaceEntries().size()
+                                  == 1
+                           && window.workspaceManager->workspaceEntries()
+                                  .first()
+                                  .scanComplete;
+                   },
+                             3000),
+                   true);
+        expectBool("workspace session close opens tab",
+                   window.tabManager
+                       && window.tabManager->openFileInTab(sessionFile),
+                   true);
 
-    const WorkspaceSessionState capturedBeforeClose =
-        window.captureWorkspaceSessionState();
-    expectBool("workspace session close pre-capture has tab",
-               capturedBeforeClose.tabs.size() == 1
-                   && QFileInfo(capturedBeforeClose.tabs.first().filePath)
-                          .fileName()
-                          == QStringLiteral("session_close_top.sv"),
-               true);
+        const WorkspaceSessionState capturedBeforeClose =
+            window.captureWorkspaceSessionState();
+        expectBool("workspace session close pre-capture has tab",
+                   capturedBeforeClose.tabs.size() == 1
+                       && QFileInfo(capturedBeforeClose.tabs.first().filePath)
+                              .fileName()
+                              == QStringLiteral("session_close_top.sv"),
+                   true);
 
-    window.closeWorkspaceTab(0);
-    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+        window.closeWorkspaceTab(0);
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
 
-    WorkspaceSessionStateService service;
-    const WorkspaceSessionRestoreResult restored =
-        service.load(workspaceDir.path());
-    expectBool("workspace session close saved before tab close",
-               restored.loaded
-                   && restored.state.tabs.size() == 1
-                   && QFileInfo(restored.state.tabs.first().filePath)
-                          .fileName()
-                          == QStringLiteral("session_close_top.sv"),
-               true);
+        WorkspaceSessionStateService service;
+        const WorkspaceSessionRestoreResult restored =
+            service.load(workspaceDir.path());
+        expectBool("workspace session close saved before tab close",
+                   restored.loaded
+                       && restored.state.tabs.size() == 1
+                       && QFileInfo(restored.state.tabs.first().filePath)
+                              .fileName()
+                              == QStringLiteral("session_close_top.sv")
+                       && QFileInfo(localSessionStorage).isFile()
+                       && !QFileInfo(
+                               QDir(workspaceDir.path())
+                                   .absoluteFilePath(
+                                       QStringLiteral(".zs")))
+                               .exists(),
+                   true);
+    }
+
+    if (previousSessionStorage.isEmpty()) {
+        qunsetenv(
+            "ZEROSLACK_SESSION_STORAGE_PATH");
+    } else {
+        qputenv(
+            "ZEROSLACK_SESSION_STORAGE_PATH",
+            previousSessionStorage);
+    }
 }
 
 static void runNoImplicitCompletionRegression()
 {
+    const QString completionFile =
+        QStringLiteral("C:/fixture/no_implicit_completion.sv");
     const SemanticSymbolRecord macroPrefixCandidate =
         SemanticFixtureRecordBuilder(
             QStringLiteral("FOO_BAR"),
             SymbolTaxonomy::DeclarationKind::Module)
-            .withFile(QStringLiteral("C:/fixture/no_implicit_completion.sv"))
+            .withFile(completionFile)
             .withLocalHandle(91001)
             .withLine(1)
             .withCollectorKind(SymbolTaxonomy::CollectorKind::Module)
@@ -2335,15 +2424,38 @@ static void runNoImplicitCompletionRegression()
         SemanticFixtureRecordBuilder(
             QStringLiteral("member_item"),
             SymbolTaxonomy::DeclarationKind::Module)
-            .withFile(QStringLiteral("C:/fixture/no_implicit_completion.sv"))
+            .withFile(completionFile)
             .withLocalHandle(91002)
             .withLine(2)
             .withCollectorKind(SymbolTaxonomy::CollectorKind::Module)
             .record();
+    const SemanticSymbolRecord visibleModule =
+        SemanticFixtureRecordBuilder(
+            QStringLiteral("visible_top"),
+            SymbolTaxonomy::DeclarationKind::Module)
+            .withFile(completionFile)
+            .withLocalHandle(91003)
+            .withLine(3)
+            .withCollectorKind(SymbolTaxonomy::CollectorKind::Module)
+            .record();
+    const SemanticSymbolRecord visibleCandidate =
+        SemanticFixtureRecordBuilder(
+            QStringLiteral("local_signal"),
+            SymbolTaxonomy::DeclarationKind::Signal)
+            .withFile(completionFile)
+            .withLocalHandle(91004)
+            .withLine(4)
+            .withCollectorKind(SymbolTaxonomy::CollectorKind::Logic)
+            .inModule(QStringLiteral("visible_top"))
+            .withType(QStringLiteral("logic"))
+            .record();
     SemanticIndex completionIndex;
     completionIndex.setSnapshot(
         snapshotFromRecords(
-            {macroPrefixCandidate, memberPrefixCandidate}));
+            {macroPrefixCandidate,
+             memberPrefixCandidate,
+             visibleModule,
+             visibleCandidate}));
     CompletionService::getInstance()->setSemanticIndex(&completionIndex);
 
     CommandCompletionQuery macroQuery;
@@ -2406,6 +2518,40 @@ static void runNoImplicitCompletionRegression()
                          QStringLiteral("obj.member"));
     expectNeverAutoOpens("package access never auto-opens completion",
                          QStringLiteral("pkg::member"));
+
+    MyCodeEditor visibleEditor;
+    visibleEditor.setDocumentFileName(completionFile);
+    visibleEditor.resize(560, 160);
+    visibleEditor.show();
+    visibleEditor.setFocus();
+    visibleEditor.setPlainText(
+        QStringLiteral("module visible_top;\n"
+                       "  assign use = \n"
+                       "endmodule\n"));
+    QTextCursor visibleCursor = visibleEditor.textCursor();
+    visibleCursor.setPosition(
+        visibleEditor.toPlainText().indexOf(
+            QStringLiteral("\nendmodule")));
+    visibleEditor.setTextCursor(visibleCursor);
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    QCompleter* visibleCompleter =
+        visibleEditor.findChild<QCompleter*>();
+    QTest::keyClicks(&visibleEditor, ";v local_s");
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
+    expectBool(";v remains dormant until explicit Tab",
+               visibleCompleter
+                   && !visibleCompleter->popup()->isVisible()
+                   && visibleEditor.toPlainText().contains(
+                       QStringLiteral(";v local_s")),
+               true);
+    QTest::keyClick(&visibleEditor, Qt::Key_Tab);
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
+    expectBool(";v explicit Tab inserts the visible symbol",
+               visibleEditor.toPlainText().contains(
+                   QStringLiteral("assign use = local_signal"))
+                   && !visibleEditor.toPlainText().contains(
+                       QStringLiteral(";v")),
+               true);
 
     editor.clear();
     if (completer)
@@ -3779,13 +3925,17 @@ static void runEditorColumnEditRegression()
             QTextCursor(
                 virtualColumnClickEditor.document()
                     ->findBlockByNumber(1)));
+    const EditorColumnModeSnapshot
+        virtualColumnSelection =
+            virtualColumnClickEditor.state
+                ->columnMode.snapshotForTest();
     expectBool("ordinary virtual start plus Shift+Alt click forms column mode",
                virtualColumnClickEditor.columnSelectionActive()
-                   && virtualColumnClickEditor.state->columnAnchorLine == 0
-                   && virtualColumnClickEditor.state->columnCurrentLine == 1
-                   && virtualColumnClickEditor.state->columnAnchorColumn
+                   && virtualColumnSelection.anchorLine == 0
+                   && virtualColumnSelection.currentLine == 1
+                   && virtualColumnSelection.anchorColumn
                           == sharedVirtualColumn
-                   && virtualColumnClickEditor.state->columnCurrentColumn
+                   && virtualColumnSelection.currentColumn
                           == sharedVirtualColumn
                    && virtualColumnClickEditor.toPlainText()
                           == QStringLiteral("123456\n12345\n"),
@@ -3801,12 +3951,16 @@ static void runEditorColumnEditRegression()
         columnModifiers,
         pointAtVisualColumn(
             virtualColumnClickEditor, 1, sharedVirtualColumn - 1));
+    const EditorColumnModeSnapshot
+        adjustedVirtualColumnSelection =
+            virtualColumnClickEditor.state
+                ->columnMode.snapshotForTest();
     expectBool("subsequent Shift+Alt click adjusts only the endpoint",
-               virtualColumnClickEditor.state->columnAnchorLine == 0
-                   && virtualColumnClickEditor.state->columnAnchorColumn
+               adjustedVirtualColumnSelection.anchorLine == 0
+                   && adjustedVirtualColumnSelection.anchorColumn
                           == sharedVirtualColumn
-                   && virtualColumnClickEditor.state->columnCurrentLine == 1
-                   && virtualColumnClickEditor.state->columnCurrentColumn
+                   && adjustedVirtualColumnSelection.currentLine == 1
+                   && adjustedVirtualColumnSelection.currentColumn
                           == sharedVirtualColumn - 1,
                true);
     QTest::mouseClick(
@@ -9504,14 +9658,51 @@ static void runCommandLayerRegression(MainWindow& window)
                true);
     typeQuery(editor, QStringLiteral("help"));
     sendKeyEvent(editor, QEvent::KeyPress, Qt::Key_Return);
-    expectBool("help lists all eleven canonical commands",
+    bool helpHasInlineSemanticAlias = false;
+    bool helpHasVisibleSymbolAlias = false;
+    bool helpHasInlineTemplateAlias = false;
+    bool helpHasGlobalControlAlias = false;
+    bool helpHasExposeAction = false;
+    for (int row = 0;
+         row < commandPanel->candidateListWidget()->count();
+         ++row) {
+        const QString text =
+            commandPanel->candidateListWidget()->item(row)->text();
+        helpHasInlineSemanticAlias =
+            helpHasInlineSemanticAlias
+            || text.contains(
+                QStringLiteral(
+                    "Inline semantic command: ;l"));
+        helpHasVisibleSymbolAlias =
+            helpHasVisibleSymbolAlias
+            || text.contains(
+                QStringLiteral(
+                    "Inline semantic command: ;v"));
+        helpHasInlineTemplateAlias =
+            helpHasInlineTemplateAlias
+            || text.contains(
+                QStringLiteral(
+                    "Inline template command: ;;l"));
+        helpHasGlobalControlAlias =
+            helpHasGlobalControlAlias
+            || text.contains(
+                QStringLiteral(
+                    "Global Control: ow s save"));
+        helpHasExposeAction =
+            helpHasExposeAction
+            || text.contains(
+                QStringLiteral("Expose Signal to Top"));
+    }
+    expectBool("help renders the unified action catalog",
                coordinator->isActive()
                    && commandPanel->isVisible()
-                   && commandPanel->candidateListWidget()->count() == 11
-                   && commandPanel->candidateListWidget()->item(0)->text()
-                          .contains(QStringLiteral("go <number>"))
-                   && commandPanel->candidateListWidget()->item(10)->text()
-                          .contains(QStringLiteral("help")),
+                   && commandPanel->candidateListWidget()->count()
+                          == actionRegistry().size()
+                   && helpHasInlineSemanticAlias
+                   && helpHasVisibleSymbolAlias
+                   && helpHasInlineTemplateAlias
+                   && helpHasGlobalControlAlias
+                   && helpHasExposeAction,
                true);
     typeQuery(editor, QStringLiteral("g"));
     expectBool("help returns to search while F24 remains held",
@@ -9942,7 +10133,10 @@ static void runGlobalControlRegression(MainWindow& window,
             foundRecentWorkspaceAction = true;
         if (item.id == QStringLiteral("ow s")
             && item.kind == GlobalControlItemKind::Domain
-            && item.subtitle.contains(QStringLiteral("Workspace Session")))
+            && item.subtitle.contains(
+                QStringLiteral("Local Workspace Session"))
+            && item.subtitle.contains(
+                QStringLiteral(".zeroslack/project.json")))
             foundSessionWorkspaceAction = true;
         if (item.id == QStringLiteral("ow"))
             foundDeprecatedWorkspaceAction = true;
@@ -10002,13 +10196,18 @@ static void runGlobalControlRegression(MainWindow& window,
     bool foundSessionClean = false;
     for (const GlobalControlItem& item : sessionWorkspaceMatches) {
         if (item.id == QStringLiteral("ow s save")
-            && item.subtitle.contains(QStringLiteral("save current workspace")))
+            && item.subtitle.contains(QStringLiteral("local AppData"))
+            && item.subtitle.contains(
+                QStringLiteral("project configuration is unchanged")))
             foundSessionSave = true;
         if (item.id == QStringLiteral("ow s restore")
-            && item.subtitle.contains(QStringLiteral("restore saved workspace")))
+            && item.subtitle.contains(QStringLiteral("local tabs"))
+            && item.subtitle.contains(QStringLiteral("read-only")))
             foundSessionRestore = true;
         if (item.id == QStringLiteral("ow s clean")
-            && item.subtitle.contains(QStringLiteral("ignore saved state")))
+            && item.subtitle.contains(
+                QStringLiteral("local UI/session partition"))
+            && item.subtitle.contains(QStringLiteral("project.json")))
             foundSessionClean = true;
     }
     expectBool("global control ow s query finds session commands",
@@ -10312,7 +10511,7 @@ static void runStructuralEditingRegression()
                    missingPosition)
                    == QStringList{
                        QStringLiteral(
-                           "Create signal definition...")},
+                           "Create Signal Definition...")},
                true);
 
     MyCodeEditor analyzedCategoryEditor;
@@ -10517,7 +10716,7 @@ static void runStructuralEditingRegression()
                slotEditor.structuralContextMenuActionsForTest(
                    slotPosition)
                    == QStringList{
-                       QStringLiteral("Edit instance slots")},
+                       QStringLiteral("Edit Instance Slots")},
                true);
     const QString beforeSlotMode = slotEditor.toPlainText();
     expectBool("existing instance enters Slot Mode without editing",
@@ -10759,9 +10958,9 @@ static void runStructuralEditingRegression()
                    u0Signal)
                    == QStringList{
                        QStringLiteral(
-                           "Create signal definition..."),
+                           "Create Signal Definition..."),
                        QStringLiteral("<separator>"),
-                       QStringLiteral("Edit instance slots")},
+                       QStringLiteral("Edit Instance Slots")},
                true);
     semanticEditor.setHierarchyInstanceContext(
         HierarchyInstanceContext{});
@@ -11167,6 +11366,700 @@ static void runStructuralEditingRegression()
     semanticIndex->setSnapshot(previousSnapshot);
 }
 
+QAction* editorContextMenuActionById(
+    QMenu* menu,
+    const QString& actionId)
+{
+    if (!menu)
+        return nullptr;
+    for (QAction* action : menu->actions()) {
+        if (action->property("actionId").toString()
+            == actionId) {
+            return action;
+        }
+        if (QMenu* child = action->menu()) {
+            if (QAction* found =
+                    editorContextMenuActionById(
+                        child, actionId)) {
+                return found;
+            }
+        }
+    }
+    return nullptr;
+}
+
+void runEditorContextMenuGroupingRegression()
+{
+    QTemporaryDir temp;
+    expectBool("context menu temp dir valid",
+               temp.isValid(),
+               true);
+    if (!temp.isValid())
+        return;
+
+    const QString fileName =
+        temp.filePath(QStringLiteral("menu.sv"));
+    const QString text =
+        QStringLiteral(
+            "module menu;\n"
+            "  logic payload;\n"
+            "  assign payload = 1'b0;\n"
+            "endmodule\n");
+    expectBool("write context menu fixture",
+               writeTextFile(fileName, text),
+               true);
+
+    QTabWidget tabs;
+    TabManager manager(&tabs);
+    EditorCoordinator coordinator(&manager);
+    expectBool("open context menu fixture",
+               manager.openFileInTab(fileName),
+               true);
+    MyCodeEditor* editor = manager.getCurrentEditor();
+    expectBool("context menu fixture has editor",
+               editor != nullptr,
+               true);
+    if (!editor)
+        return;
+    coordinator.attachEditor(editor);
+
+    const int payloadPosition =
+        text.indexOf(QStringLiteral("payload"));
+    const EditorSemanticContext context =
+        editor->editorSemanticContextForPosition(
+            payloadPosition, true);
+    QMenu menu;
+    coordinator.populateSourceSymbolContextMenuForTest(
+        &menu, context);
+
+    QStringList groupTitles;
+    QStringList leadingStandardIds;
+    for (QAction* action : menu.actions()) {
+        if (action->menu()) {
+            groupTitles.append(action->menu()->title());
+        } else if (!action->isSeparator()) {
+            leadingStandardIds.append(
+                action->property("actionId").toString());
+        }
+    }
+    expectBool("context menu has stable grouped order",
+               groupTitles
+                   == QStringList{
+                       QStringLiteral("Navigate"),
+                       QStringLiteral("Inspect"),
+                       QStringLiteral("Refactor"),
+                       QStringLiteral("Format")},
+               true);
+    expectBool("context menu keeps familiar standard leading order",
+               leadingStandardIds.mid(0, 5)
+                   == QStringList{
+                       QStringLiteral("edit.undo"),
+                       QStringLiteral("edit.redo"),
+                       QStringLiteral("edit.cut"),
+                       QStringLiteral("edit.copy"),
+                       QStringLiteral("edit.paste")},
+               true);
+
+    QAction* undo = editorContextMenuActionById(
+        &menu, QStringLiteral("edit.undo"));
+    expectBool("disabled standard action has visible reason",
+               undo
+                   && !undo->isEnabled()
+                   && undo->text().contains(
+                       QStringLiteral("Nothing to undo")),
+               true);
+    QAction* definition = editorContextMenuActionById(
+        &menu, QStringLiteral("source.goToDefinition"));
+    expectBool("recoverable source action remains clickable with reason",
+               definition
+                   && definition->isEnabled()
+                   && !definition->property("visibleReason")
+                           .toString()
+                           .isEmpty()
+                   && definition->text().contains(
+                       definition->property("visibleReason")
+                           .toString()),
+               true);
+    expectBool("irrelevant FSM action is absent",
+               editorContextMenuActionById(
+                   &menu,
+                   QStringLiteral(
+                       "insight.stateTransitionGraph"))
+                   == nullptr,
+               true);
+    expectBool("selection-only format action is absent",
+               editorContextMenuActionById(
+                   &menu,
+                   QStringLiteral("format.selection"))
+                   == nullptr,
+               true);
+}
+
+void runInsightFocusIntegrationRegression(
+    MainWindow& window,
+    const QString& fixturePath,
+    const QString& expectedWorkspacePath)
+{
+    InsightFocusController* controller =
+        window.insightFocusController.get();
+    RtlInsightsPanelCoordinator* rtl =
+        window.semanticDocks
+        ? window.semanticDocks->rtlInsightsPanelCoordinator()
+        : nullptr;
+    SignalKernelGraphPanelCoordinator* kernel =
+        window.semanticDocks
+        ? window.semanticDocks
+              ->signalKernelGraphPanelCoordinator()
+        : nullptr;
+    WavePreviewPanelCoordinator* wave =
+        window.semanticDocks
+        ? window.semanticDocks->wavePreviewPanelCoordinator()
+        : nullptr;
+
+    QMenu* focusMenu =
+        window.findChild<QMenu*>(
+            QStringLiteral("insightFocusMenu"));
+    QAction* focusRtlAction =
+        window.findChild<QAction*>(
+            QStringLiteral("focusRtlInsightsAction"));
+    QAction* focusKernelAction =
+        window.findChild<QAction*>(
+            QStringLiteral(
+                "focusSignalKernelGraphAction"));
+    QAction* focusWaveAction =
+        window.findChild<QAction*>(
+            QStringLiteral("focusWavePreviewAction"));
+    QAction* leaveFocusAction =
+        window.findChild<QAction*>(
+            QStringLiteral("leaveInsightFocusAction"));
+    QAction* viewWaveAction =
+        window.findChild<QAction*>(
+            QStringLiteral("viewWavePreviewAction"));
+    QAction* resetLayoutAction =
+        window.findChild<QAction*>(
+            QStringLiteral("resetPanelLayoutAction"));
+
+    expectBool("Focus View integration services exist",
+               controller && rtl && kernel && wave,
+               true);
+    expectBool("View menu exposes every Insight Focus entry",
+               focusMenu
+                   && focusRtlAction
+                   && focusKernelAction
+                   && focusWaveAction
+                   && leaveFocusAction,
+               true);
+    const QString activeWorkspacePath =
+        window.workspaceManager
+        ? QDir::cleanPath(
+              QDir::fromNativeSeparators(
+                  QFileInfo(
+                      window.workspaceManager
+                          ->getWorkspacePath())
+                      .absoluteFilePath()))
+        : QString();
+    const QString normalizedExpectedWorkspacePath =
+        QDir::cleanPath(
+            QDir::fromNativeSeparators(
+                QFileInfo(expectedWorkspacePath)
+                    .absoluteFilePath()));
+    expectBool("Focus View regression uses active fixture workspace",
+               !activeWorkspacePath.isEmpty()
+                   && activeWorkspacePath
+                          == normalizedExpectedWorkspacePath,
+               true);
+    if (!controller || !rtl || !kernel || !wave
+        || !focusRtlAction || !focusKernelAction
+        || !focusWaveAction) {
+        return;
+    }
+
+    QWidget* focusPage = controller->focusPage();
+    QPushButton* backButton =
+        focusPage
+        ? focusPage->findChild<QPushButton*>(
+              QStringLiteral(
+                  "insightFocusBackButton"))
+        : nullptr;
+    QPushButton* returnDockButton =
+        focusPage
+        ? focusPage->findChild<QPushButton*>(
+              QStringLiteral(
+                  "insightFocusReturnDockButton"))
+        : nullptr;
+    QPushButton* fitButton =
+        focusPage
+        ? focusPage->findChild<QPushButton*>(
+              QStringLiteral(
+                  "insightFocusFitButton"))
+        : nullptr;
+    QPushButton* zoomInButton =
+        focusPage
+        ? focusPage->findChild<QPushButton*>(
+              QStringLiteral(
+                  "insightFocusZoomInButton"))
+        : nullptr;
+    QPushButton* zoomOutButton =
+        focusPage
+        ? focusPage->findChild<QPushButton*>(
+              QStringLiteral(
+                  "insightFocusZoomOutButton"))
+        : nullptr;
+    QPushButton* inspectorButton =
+        focusPage
+        ? focusPage->findChild<QPushButton*>(
+              QStringLiteral(
+                  "insightFocusInspectorButton"))
+        : nullptr;
+    QLineEdit* searchEdit =
+        focusPage
+        ? focusPage->findChild<QLineEdit*>(
+              QStringLiteral(
+                  "insightFocusSearchEdit"))
+        : nullptr;
+    expectBool("Focus View shell has complete controls",
+               focusPage
+                   && backButton
+                   && returnDockButton
+                   && fitButton
+                   && zoomInButton
+                   && zoomOutButton
+                   && inspectorButton
+                   && searchEdit,
+               true);
+    if (!focusPage || !backButton || !returnDockButton
+        || !fitButton || !zoomInButton || !zoomOutButton
+        || !inspectorButton || !searchEdit) {
+        return;
+    }
+
+    const auto focusedGeometryReadable =
+        [controller]() {
+            QWidget* panel =
+                controller->focusedPanelWidget();
+            return panel
+                && panel->width() >= 640
+                && panel->height() >= 360;
+        };
+
+    QDockWidget* rtlDock = rtl->dock();
+    QWidget* rtlPanel =
+        rtlDock ? rtlDock->widget() : nullptr;
+    QPushButton* rtlEnterButton =
+        rtlPanel
+        ? rtlPanel->findChild<QPushButton*>(
+              QStringLiteral(
+                  "insightFocusEnter.rtlInsights"))
+        : nullptr;
+    expectBool("RTL Insights exposes panel-local Focus View",
+               rtlDock && rtlPanel && rtlEnterButton,
+               true);
+
+    rtl->showModuleInsights(
+        fixturePath,
+        QStringLiteral("insight_top"),
+        QStringLiteral("state_q"));
+    rtl->showFsmGraph();
+    QCoreApplication::processEvents(
+        QEventLoop::AllEvents, 50);
+    expectBool("FSM graph is populated before Focus View",
+               rtl->graphNodeItemCountForTest() > 0
+                   && rtl->graphEdgeItemCountForTest() > 0,
+               true);
+    focusRtlAction->trigger();
+    QCoreApplication::processEvents(
+        QEventLoop::AllEvents, 50);
+    expectBool("RTL Focus View moves the exact panel",
+               controller->isFocused()
+                   && controller->focusedPanelId()
+                          == QStringLiteral(
+                              "rtlInsights")
+                   && controller->focusedPanelWidget()
+                          == rtlPanel
+                   && rtlDock
+                   && rtlDock->widget() == nullptr
+                   && window.centralContentStack
+                   && window.centralContentStack
+                          ->currentWidget()
+                          == focusPage,
+               true);
+    expectBool("FSM Focus View is readable at 1100x760",
+               focusedGeometryReadable(),
+               true);
+
+    fitButton->click();
+    searchEdit->setText(QStringLiteral("IDLE"));
+    zoomInButton->click();
+    inspectorButton->click();
+    QCoreApplication::processEvents(
+        QEventLoop::AllEvents, 50);
+    const bool fsmSelectionMade =
+        rtl->selectGraphItemForTest(
+            QStringLiteral("state"),
+            QStringLiteral("IDLE"));
+    const qreal fsmScaleBeforeReturn =
+        rtl->graphView()
+        ? rtl->graphView()->transform().m11()
+        : 0.0;
+    const int fsmSelectionBeforeReturn =
+        rtl->graphSelectedItemCountForTest();
+    backButton->click();
+    QCoreApplication::processEvents(
+        QEventLoop::AllEvents, 50);
+    expectBool("Back to Editor restores the FSM panel",
+               !controller->isFocused()
+                   && rtlDock
+                   && rtlDock->widget() == rtlPanel
+                   && !rtlDock->isVisible()
+                   && window.centralContentStack
+                   && window.centralContentStack
+                          ->currentWidget()
+                          == window.editorCentralPage,
+               true);
+    expectBool("FSM search zoom and selection survive Back",
+               fsmSelectionMade
+                   && fsmSelectionBeforeReturn > 0
+                   && rtl->focusSearchText()
+                          == QStringLiteral("IDLE")
+                   && rtl->graphView()
+                   && qAbs(
+                          rtl->graphView()
+                                  ->transform()
+                                  .m11()
+                              - fsmScaleBeforeReturn)
+                          < 0.0001
+                   && rtl->graphSelectedItemCountForTest()
+                          == fsmSelectionBeforeReturn,
+               true);
+    focusRtlAction->trigger();
+    QCoreApplication::processEvents(
+        QEventLoop::AllEvents, 50);
+    expectBool("FSM re-entry restores shared Focus state",
+               controller->focusedPanelWidget()
+                       == rtlPanel
+                   && searchEdit->text()
+                          == QStringLiteral("IDLE")
+                   && rtl->graphSelectedItemCountForTest()
+                          == fsmSelectionBeforeReturn,
+               true);
+    returnDockButton->click();
+    QCoreApplication::processEvents(
+        QEventLoop::AllEvents, 50);
+
+    rtl->setFocusSearchText(QString());
+    rtl->showModuleBlockDiagramForModule(
+        fixturePath,
+        QStringLiteral("insight_top"));
+    QCoreApplication::processEvents(
+        QEventLoop::AllEvents, 50);
+    expectBool("module block diagram is populated",
+               rtl->graphNodeItemCountForTest() > 0
+                   && rtl->graphItemsReadableForTest(),
+               true);
+    if (rtlEnterButton)
+        rtlEnterButton->click();
+    QCoreApplication::processEvents(
+        QEventLoop::AllEvents, 50);
+    expectBool("module block Focus View uses same readable panel",
+               controller->focusedPanelWidget()
+                       == rtlPanel
+                   && focusedGeometryReadable()
+                   && rtl->graphNodeItemCountForTest()
+                          > 0,
+               true);
+    returnDockButton->click();
+    QCoreApplication::processEvents(
+        QEventLoop::AllEvents, 50);
+
+    rtl->showSignalUsageHotspotForSignal(
+        fixturePath,
+        QStringLiteral("insight_top"),
+        QStringLiteral("data_q"));
+    SignalUsageHotspotPanel* hotspot =
+        rtl->signalUsageHotspotPanelForTest();
+    expectBool("usage hotspot finishes its fixture report",
+               hotspot
+                   && waitUntil(
+                          [hotspot]() {
+                              return !hotspot
+                                          ->reportBuildInFlightForTest();
+                          },
+                          2000),
+               true);
+    focusRtlAction->trigger();
+    QCoreApplication::processEvents(
+        QEventLoop::AllEvents, 50);
+    expectBool("usage hotspot Focus View is readable",
+               hotspot
+                   && rtl->stackForTest()
+                   && rtl->stackForTest()
+                          ->currentWidget()
+                          == hotspot
+                   && controller->focusedPanelWidget()
+                          == rtlPanel
+                   && focusedGeometryReadable(),
+               true);
+    searchEdit->setText(QStringLiteral("data_q"));
+    zoomInButton->click();
+    inspectorButton->click();
+    QCoreApplication::processEvents(
+        QEventLoop::AllEvents, 50);
+    const double hotspotZoomBeforeReturn =
+        hotspot ? hotspot->trackZoomFactor : 0.0;
+    backButton->click();
+    QCoreApplication::processEvents(
+        QEventLoop::AllEvents, 50);
+    expectBool("usage hotspot state survives Back",
+               hotspot
+                   && hotspot->focusSearchText()
+                          == QStringLiteral("data_q")
+                   && qAbs(
+                          hotspot->trackZoomFactor
+                              - hotspotZoomBeforeReturn)
+                          < 0.0001,
+               true);
+    focusRtlAction->trigger();
+    QCoreApplication::processEvents(
+        QEventLoop::AllEvents, 50);
+    expectBool("usage hotspot re-entry restores search",
+               searchEdit->text()
+                       == QStringLiteral("data_q")
+                   && controller->focusedPanelWidget()
+                          == rtlPanel,
+               true);
+    returnDockButton->click();
+    if (hotspot) {
+        hotspot->setFocusSearchText(QString());
+        hotspot->focusFit();
+    }
+
+    SignalKernelGraphReport kernelReport;
+    kernelReport.found = true;
+    kernelReport.kernelModuleName =
+        QStringLiteral("focus_top");
+    kernelReport.kernel.id = 40;
+    kernelReport.kernel.role =
+        SignalKernelGraphNodeRole::Kernel;
+    kernelReport.kernel.displayName =
+        QStringLiteral("kernel_q");
+    kernelReport.kernel.moduleDisplayName =
+        QStringLiteral("focus_top");
+    kernelReport.kernel.typeDisplayName =
+        QStringLiteral("logic");
+    SignalKernelGraphNode kernelInput;
+    kernelInput.id = 41;
+    kernelInput.role =
+        SignalKernelGraphNodeRole::Input;
+    kernelInput.inputLane =
+        SignalKernelGraphInputLane::Data;
+    kernelInput.displayName =
+        QStringLiteral("kernel_in");
+    kernelInput.moduleDisplayName =
+        QStringLiteral("focus_top");
+    kernelInput.typeDisplayName =
+        QStringLiteral("logic");
+    kernelReport.inputs.append(kernelInput);
+    SignalKernelGraphNode kernelOutput;
+    kernelOutput.id = 42;
+    kernelOutput.role =
+        SignalKernelGraphNodeRole::Output;
+    kernelOutput.displayName =
+        QStringLiteral("kernel_out");
+    kernelOutput.moduleDisplayName =
+        QStringLiteral("focus_top");
+    kernelOutput.typeDisplayName =
+        QStringLiteral("logic");
+    kernelReport.outputs.append(kernelOutput);
+    kernelReport.edges.append(
+        {kernelInput.id,
+         kernelReport.kernel.id,
+         QString()});
+    kernelReport.edges.append(
+        {kernelReport.kernel.id,
+         kernelOutput.id,
+         QString()});
+    kernel->renderReportForTest(kernelReport);
+    QDockWidget* kernelDock = kernel->dock();
+    QWidget* kernelPanel =
+        kernelDock ? kernelDock->widget() : nullptr;
+    QPushButton* kernelEnterButton =
+        kernelPanel
+        ? kernelPanel->findChild<QPushButton*>(
+              QStringLiteral(
+                  "insightFocusEnter.signalKernelGraph"))
+        : nullptr;
+    expectBool("Signal Kernel exposes panel-local Focus View",
+               kernelDock
+                   && kernelPanel
+                   && kernelEnterButton,
+               true);
+    focusKernelAction->trigger();
+    QCoreApplication::processEvents(
+        QEventLoop::AllEvents, 50);
+    expectBool("Signal Kernel Focus View moves exact panel",
+               controller->focusedPanelWidget()
+                       == kernelPanel
+                   && kernelDock
+                   && kernelDock->widget() == nullptr
+                   && focusedGeometryReadable(),
+               true);
+    searchEdit->setText(
+        QStringLiteral("kernel_out"));
+    fitButton->click();
+    zoomInButton->click();
+    inspectorButton->click();
+    QCoreApplication::processEvents(
+        QEventLoop::AllEvents, 50);
+    const qreal kernelScaleBeforeReturn =
+        kernel->view()
+        ? kernel->view()->transform().m11()
+        : 0.0;
+    const int kernelFocusedNodeBeforeReturn =
+        kernel->focusedSearchNodeIdForTest();
+    window.showPanelById(
+        QStringLiteral("signalKernelGraph"));
+    QCoreApplication::processEvents(
+        QEventLoop::AllEvents, 50);
+    expectBool("opening an already focused panel keeps Focus View",
+               controller->focusedPanelWidget()
+                       == kernelPanel
+                   && kernelDock
+                   && !kernelDock->isVisible()
+                   && kernelDock->widget() == nullptr
+                   && window.centralContentStack
+                   && window.centralContentStack
+                          ->currentWidget()
+                          == focusPage,
+               true);
+    backButton->click();
+    QCoreApplication::processEvents(
+        QEventLoop::AllEvents, 50);
+    expectBool("Signal Kernel state survives Back",
+               kernelDock
+                   && kernelDock->widget()
+                          == kernelPanel
+                   && kernel->focusSearchText()
+                          == QStringLiteral(
+                              "kernel_out")
+                   && kernel->searchMatchCountForTest()
+                          == 1
+                   && kernelFocusedNodeBeforeReturn
+                          == kernelOutput.id
+                   && kernel->view()
+                   && qAbs(
+                          kernel->view()
+                                  ->transform()
+                                  .m11()
+                              - kernelScaleBeforeReturn)
+                          < 0.0001,
+               true);
+    focusKernelAction->trigger();
+    QCoreApplication::processEvents(
+        QEventLoop::AllEvents, 50);
+    expectBool("Signal Kernel re-entry restores search",
+               searchEdit->text()
+                       == QStringLiteral("kernel_out")
+                   && controller->focusedPanelWidget()
+                          == kernelPanel,
+               true);
+    returnDockButton->click();
+    kernel->setFocusSearchText(QString());
+    kernel->focusFit();
+
+    wave->refreshFromDocument(
+        fixturePath,
+        QStringLiteral(
+            "module wave_focus(input logic clk, input logic a);\n"
+            "  logic q;\n"
+            "  always_ff @(posedge clk) q <= a;\n"
+            "endmodule\n"),
+        true);
+    QDockWidget* waveDock = wave->dock();
+    QWidget* wavePanel =
+        waveDock ? waveDock->widget() : nullptr;
+    QPushButton* waveEnterButton =
+        wavePanel
+        ? wavePanel->findChild<QPushButton*>(
+              QStringLiteral(
+                  "insightFocusEnter.wavePreview"))
+        : nullptr;
+    expectBool("Wave Preview exposes panel-local Focus View",
+               waveDock
+                   && wavePanel
+                   && waveEnterButton,
+               true);
+    focusWaveAction->trigger();
+    QCoreApplication::processEvents(
+        QEventLoop::AllEvents, 50);
+    expectBool("Wave Focus View moves exact readable panel",
+               controller->focusedPanelWidget()
+                       == wavePanel
+                   && waveDock
+                   && waveDock->widget() == nullptr
+                   && focusedGeometryReadable(),
+               true);
+    searchEdit->setText(QStringLiteral("q"));
+    zoomInButton->click();
+    inspectorButton->click();
+    QCoreApplication::processEvents(
+        QEventLoop::AllEvents, 50);
+    const qreal waveZoomBeforeReturn =
+        wave->focusZoomFactorForTest();
+    backButton->click();
+    QCoreApplication::processEvents(
+        QEventLoop::AllEvents, 50);
+    expectBool("Wave search zoom and Inspector state survive Back",
+               waveDock
+                   && waveDock->widget() == wavePanel
+                   && wave->focusSearchText()
+                          == QStringLiteral("q")
+                   && qAbs(
+                          wave->focusZoomFactorForTest()
+                              - waveZoomBeforeReturn)
+                          < 0.0001
+                   && wave->tree()
+                   && wave->tree()->currentItem(),
+               true);
+    if (waveEnterButton)
+        waveEnterButton->click();
+    QCoreApplication::processEvents(
+        QEventLoop::AllEvents, 50);
+    expectBool("Wave panel-local entry restores shared state",
+               controller->focusedPanelWidget()
+                       == wavePanel
+                   && searchEdit->text()
+                          == QStringLiteral("q"),
+               true);
+    if (viewWaveAction)
+        viewWaveAction->trigger();
+    QCoreApplication::processEvents(
+        QEventLoop::AllEvents, 50);
+    expectBool("Dock toggle cannot reveal an empty focused Dock",
+               controller->focusedPanelWidget()
+                       == wavePanel
+                   && waveDock
+                   && !waveDock->isVisible()
+                   && waveDock->widget() == nullptr,
+               true);
+    if (resetLayoutAction)
+        resetLayoutAction->trigger();
+    QCoreApplication::processEvents(
+        QEventLoop::AllEvents, 50);
+    expectBool("Reset layout safely returns Focus panel to Dock",
+               resetLayoutAction
+                   && !controller->isFocused()
+                   && waveDock
+                   && waveDock->widget() == wavePanel
+                   && waveDock->isVisible()
+                   && window.centralContentStack
+                   && window.centralContentStack
+                          ->currentWidget()
+                          == window.editorCentralPage,
+               true);
+    wave->setFocusSearchText(QString());
+    wave->focusFit();
+}
+
 int main(int argc, char** argv)
 {
     QApplication app(argc, argv);
@@ -11204,8 +12097,9 @@ int main(int argc, char** argv)
     runNavigationHierarchyModelRegression();
     runSemanticStateUiRegression();
     runWavePersistentTreeStateRegression();
+    runEditorContextMenuGroupingRegression();
 
-    const QString workspacePath = (argc > 1)
+    const QString workspaceFixturePath = (argc > 1)
         ? QString::fromLocal8Bit(argv[1])
         : QDir::current().absoluteFilePath(QStringLiteral("test_sv/new"));
     const QString symbolFixturePath = (argc > 2)
@@ -11214,8 +12108,25 @@ int main(int argc, char** argv)
     const QString normalizedSymbolFixturePath =
         QDir::cleanPath(QDir::fromNativeSeparators(QFileInfo(symbolFixturePath).absoluteFilePath()));
 
-    expectBool("workspace fixture exists", QFileInfo(workspacePath).isDir(), true);
+    expectBool("workspace fixture exists",
+               QFileInfo(workspaceFixturePath).isDir(),
+               true);
     expectBool("symbol fixture exists", QFileInfo(symbolFixturePath).isFile(), true);
+    QTemporaryDir isolatedWorkspaceRoot;
+    const QString workspacePath =
+        isolatedWorkspaceRoot.isValid()
+        ? isolatedWorkspaceRoot.filePath(
+              QStringLiteral("new"))
+        : QString();
+    expectBool("GUI workspace isolation temp dir valid",
+               isolatedWorkspaceRoot.isValid(),
+               true);
+    expectBool("GUI workspace fixture copied for writable isolation",
+               !workspacePath.isEmpty()
+                   && copyFixtureTree(
+                       workspaceFixturePath,
+                       workspacePath),
+               true);
     runEditorHoverPreviewRegression(workspacePath);
 
     MainWindow window;
@@ -12227,6 +13138,99 @@ int main(int argc, char** argv)
     expectBool("fold shelf mode hides status chip on cancel",
                editorModeChip && !editorModeChip->isVisible(),
                true);
+
+    if (modeChipEditor) {
+        modeChipEditor->setPlainText(QStringLiteral("slot"));
+        QString modeReason;
+        expectBool("signal selection exposes a persistent mode snapshot",
+                   modeChipEditor->startSignalSelectionMode(&modeReason)
+                       && modeChipEditor->editorModeSnapshot().primaryMode
+                              == EditorModeId::SignalSelection,
+                   true);
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+        expectBool("signal selection remains visible in the shared mode chip",
+                   editorModeChip
+                       && editorModeChip->isVisible()
+                       && editorModeChip->text().contains(
+                              QStringLiteral("Signal selection")),
+                   true);
+
+        CodeTemplateSlot slot;
+        slot.name = QStringLiteral("value");
+        slot.start = 0;
+        slot.length = 4;
+        modeChipEditor->startTemplateSlotMode(
+            0, 4, CodeTemplateSlotList{slot});
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+        expectBool("mode conflict replaces signal selection with Slot Mode",
+                   !modeChipEditor->signalSelectionModeActiveForTest()
+                       && modeChipEditor->templateSlotModeActive()
+                       && modeChipEditor->editorModeSnapshot().primaryMode
+                              == EditorModeId::TemplateSlots
+                       && modeChipEditor->state->modes.lastExitReason(
+                              EditorModeId::SignalSelection)
+                              == EditorModeExitReason::Conflict,
+                   true);
+        expectBool("shared mode chip follows the conflict winner",
+                   editorModeChip
+                       && editorModeChip->isVisible()
+                       && editorModeChip->text().contains(
+                              QStringLiteral("Slot")),
+                   true);
+        QTest::keyClick(modeChipEditor, Qt::Key_Escape);
+
+        modeChipEditor->startFoldRegionMarkMode();
+        modeChipEditor->startFoldShelfMode();
+        expectBool("Fold Shelf conflicts through the same mode matrix",
+                   !modeChipEditor->foldRegionMarkModeActive()
+                       && modeChipEditor->foldShelfModeActive()
+                       && modeChipEditor->state->modes.lastExitReason(
+                              EditorModeId::FoldRegion)
+                              == EditorModeExitReason::Conflict,
+                   true);
+        modeChipEditor->cancelFoldShelfMode();
+
+        modeChipEditor->startFoldShelfMode();
+        MyCodeEditor* priorTabEditor = modeChipEditor;
+        window.tabManager->createNewTab();
+        MyCodeEditor* replacementEditor =
+            window.tabManager->getCurrentEditor();
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+        expectBool("tab switch exits every stale editor mode",
+                   replacementEditor
+                       && replacementEditor != priorTabEditor
+                       && !priorTabEditor->foldShelfModeActive()
+                       && priorTabEditor->state->modes.lastExitReason(
+                              EditorModeId::FoldShelf)
+                              == EditorModeExitReason::TabChanged
+                       && editorModeChip
+                       && !editorModeChip->isVisible(),
+                   true);
+        if (replacementEditor) {
+            const int replacementIndex =
+                window.tabManager->tabWidget->indexOf(
+                    replacementEditor);
+            window.tabManager->closeTab(replacementIndex);
+        }
+        modeChipEditor = window.tabManager->getCurrentEditor();
+
+        if (modeChipEditor && window.globalControlCoordinator) {
+            modeChipEditor->startFoldShelfMode();
+            window.globalControlCoordinator->open();
+            QCoreApplication::processEvents(
+                QEventLoop::AllEvents, 50);
+            expectBool("Global Control exits the active editor mode",
+                       !modeChipEditor->foldShelfModeActive()
+                           && modeChipEditor->state->modes
+                                  .lastExitReason(
+                                      EditorModeId::FoldShelf)
+                                  == EditorModeExitReason::ExternalControl,
+                       true);
+            if (window.globalControlCoordinator->panel)
+                window.globalControlCoordinator->panel->hide();
+        }
+    }
+
     QTemporaryDir saveDir;
     expectBool("save temp dir valid", saveDir.isValid(), true);
     MyCodeEditor* saveEditor = window.tabManager->getCurrentEditor();
@@ -13750,6 +14754,9 @@ int main(int argc, char** argv)
 
     runReferenceDockRegression(window, normalizedSymbolFixturePath);
     runRtlInsightsPanelRegression(window, normalizedSymbolFixturePath);
+    runInsightFocusIntegrationRegression(window,
+                                         normalizedSymbolFixturePath,
+                                         workspacePath);
     expectBool("full app signal usage hotspot screenshot saved",
                saveFullAppSignalUsageHotspotScreenshot(window,
                                                        normalizedSymbolFixturePath),

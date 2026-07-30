@@ -2,6 +2,7 @@
 #define EDITORCOMPLETIONWORKFLOW_H
 
 #include "completiontypes.h"
+#include "editormodecontroller.h"
 #include "editorsemanticcontextservice.h"
 #include "includeheaderworkflowtypes.h"
 
@@ -10,7 +11,6 @@
 #include <QStringList>
 
 class EditorCompletionUi;
-class EditorModeState;
 class EditorSelection;
 class MyCodeEditor;
 class QKeyEvent;
@@ -33,7 +33,7 @@ public:
     void bind(
         MyCodeEditor* editor,
         EditorCompletionUi* completion,
-        EditorModeState* modes,
+        EditorModeController* modes,
         EditorSelection* selections,
         const ContextProvider& contextProvider,
         const ModuleNameProvider& moduleNameProvider,
@@ -61,7 +61,6 @@ private:
     };
 
     struct InlineAbbreviationSession {
-        bool active = false;
         bool candidateFiltering = false;
         int replacementStartPosition = -1;
         int replacementEndPosition = -1;
@@ -80,6 +79,8 @@ private:
     void executeEditorActionCommand(const QString& command);
     void clearInlineAbbreviationSession();
     void cancelInlineAbbreviationSession();
+    void resetInlineAbbreviationSession();
+    bool inlineAbbreviationSessionActive() const;
     bool inlineAbbreviationSessionValid() const;
     bool handleInlineCandidateFilterKey(QKeyEvent* event);
     bool refreshInlineCandidateFilter();
@@ -116,7 +117,7 @@ private:
 
     MyCodeEditor* editor = nullptr;
     EditorCompletionUi* completion = nullptr;
-    EditorModeState* modes = nullptr;
+    EditorModeController* modes = nullptr;
     EditorSelection* selections = nullptr;
     ContextProvider contextProvider;
     ModuleNameProvider moduleNameProvider;

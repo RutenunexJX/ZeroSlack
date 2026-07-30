@@ -1,45 +1,68 @@
 #include "workspaceconfigurationservice.h"
 
 #include <QDir>
+#include <QFile>
 #include <QFileInfo>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QJsonValue>
+#include <QSaveFile>
 #include <QSet>
-#include <QSettings>
 
 namespace {
-constexpr const char* kWorkspaceConfigGroup = "workspaceConfiguration";
-constexpr const char* kWorkspaceConfigVersion = "v1";
-constexpr const char* kWorkspaceConfigWorkspaces = "workspaces";
-constexpr const char* kWorkspaceConfigRoot = "workspaceRoot";
-constexpr const char* kWorkspaceConfigIncludeDirs = "includeDirs";
-constexpr const char* kWorkspaceConfigIgnoredDirs = "ignoredDirs";
-constexpr const char* kWorkspaceConfigFileExtensions = "fileExtensions";
-constexpr const char* kWorkspaceConfigTopModule = "topModule";
-constexpr const char* kWorkspaceConfigDefines = "defines";
-constexpr const char* kWorkspaceConfigDefineKey = "key";
-constexpr const char* kWorkspaceConfigDefineValue = "value";
+constexpr const char* kProjectSchema =
+    "ZeroSlack.ProjectConfiguration";
+constexpr const char* kLegacySchema =
+    "ZeroSlack.WorkspaceSessionState";
+constexpr const char* kProjectDirectory =
+    ".zeroslack";
+constexpr const char* kProjectFile =
+    "project.json";
+constexpr const char* kLegacyFile = ".zs";
+
+QString pathKey(const QString& path)
+{
+#ifdef Q_OS_WIN
+    return path.toCaseFolded();
+#else
+    return path;
+#endif
+}
 
 QString normalizePath(const QString& path)
 {
-    if (path.isEmpty())
+    if (path.trimmed().isEmpty())
         return QString();
     return QDir::cleanPath(
-        QDir::fromNativeSeparators(QFileInfo(path).absoluteFilePath()));
+        QDir::fromNativeSeparators(
+            QFileInfo(path).absoluteFilePath()));
 }
 
-QString workspaceScopeKey(const QString& workspaceRoot)
+bool isInsideRoot(const QString& root,
+                  const QString& path)
 {
-    const QByteArray bytes = normalizePath(workspaceRoot).toUtf8().toBase64(
-        QByteArray::Base64UrlEncoding | QByteArray::OmitTrailingEquals);
-    return QString::fromLatin1(bytes);
+    const QString cleanRoot = normalizePath(root);
+    const QString cleanPath = normalizePath(path);
+    if (cleanRoot.isEmpty() || cleanPath.isEmpty())
+        return false;
+    const QString prefix =
+        cleanRoot.endsWith(QLatin1Char('/'))
+        ? cleanRoot
+        : cleanRoot + QLatin1Char('/');
+    return pathKey(cleanPath) == pathKey(cleanRoot)
+        || pathKey(cleanPath).startsWith(
+            pathKey(prefix));
 }
 
-QStringList uniquePreservingOrder(const QStringList& values)
+QStringList uniquePreservingOrder(
+    const QStringList& values)
 {
     QStringList result;
     QSet<QString> seen;
     result.reserve(values.size());
     for (const QString& value : values) {
-        const QString key = value.toCaseFolded();
+        const QString key = pathKey(value);
         if (value.isEmpty() || seen.contains(key))
             continue;
         seen.insert(key);
@@ -60,7 +83,8 @@ QStringList normalizePaths(const QStringList& paths)
     return uniquePreservingOrder(normalized);
 }
 
-QStringList normalizeFileExtensions(const QStringList& extensions)
+QStringList normalizeFileExtensions(
+    const QStringList& extensions)
 {
     QStringList normalized;
     normalized.reserve(extensions.size());
@@ -68,62 +92,191 @@ QStringList normalizeFileExtensions(const QStringList& extensions)
         extension = extension.trimmed().toLower();
         if (extension.isEmpty())
             continue;
-        if (!extension.startsWith(QLatin1Char('.')))
+        if (!extension.startsWith(
+                QLatin1Char('.'))) {
             extension.prepend(QLatin1Char('.'));
+        }
         normalized.append(extension);
     }
     normalized = uniquePreservingOrder(normalized);
     return normalized.isEmpty()
-        ? WorkspaceConfigurationService::defaultFileExtensions()
+        ? WorkspaceConfigurationService::
+              defaultFileExtensions()
         : normalized;
 }
 
-QHash<QString, QString> normalizeDefines(const QHash<QString, QString>& defines)
+QHash<QString, QString> normalizeDefines(
+    const QHash<QString, QString>& defines)
 {
     QHash<QString, QString> normalized;
-    for (auto it = defines.cbegin(); it != defines.cend(); ++it) {
+    for (auto it = defines.cbegin();
+         it != defines.cend();
+         ++it) {
         const QString key = it.key().trimmed();
-        if (key.isEmpty())
-            continue;
-        normalized.insert(key, it.value().trimmed());
+        if (!key.isEmpty()) {
+            normalized.insert(
+                key, it.value().trimmed());
+        }
     }
     return normalized;
 }
 
-void beginWorkspaceGroup(QSettings* settings, const QString& workspaceRoot)
+QJsonObject definesObject(
+    const QHash<QString, QString>& defines)
 {
-    settings->beginGroup(QString::fromLatin1(kWorkspaceConfigGroup));
-    settings->beginGroup(QString::fromLatin1(kWorkspaceConfigVersion));
-    settings->beginGroup(QString::fromLatin1(kWorkspaceConfigWorkspaces));
-    settings->beginGroup(workspaceScopeKey(workspaceRoot));
+    QJsonObject object;
+    QStringList keys = defines.keys();
+    keys.sort(Qt::CaseInsensitive);
+    for (const QString& key : keys)
+        object.insert(key, defines.value(key));
+    return object;
 }
 
-void endWorkspaceGroup(QSettings* settings)
+QHash<QString, QString> definesFromObject(
+    const QJsonObject& object)
 {
-    settings->endGroup();
-    settings->endGroup();
-    settings->endGroup();
-    settings->endGroup();
+    QHash<QString, QString> defines;
+    for (auto it = object.begin();
+         it != object.end();
+         ++it) {
+        const QString key = it.key().trimmed();
+        if (!key.isEmpty()) {
+            defines.insert(
+                key,
+                it.value().toString().trimmed());
+        }
+    }
+    return normalizeDefines(defines);
+}
+
+QString relativeProjectPath(const QString& root,
+                            const QString& path)
+{
+    const QString cleanRoot = normalizePath(root);
+    const QString cleanPath = normalizePath(path);
+    if (cleanRoot.isEmpty() || cleanPath.isEmpty())
+        return QString();
+    QString relative =
+        QDir(cleanRoot).relativeFilePath(cleanPath);
+    relative =
+        QDir::cleanPath(
+            QDir::fromNativeSeparators(relative));
+    return relative.isEmpty()
+        ? QStringLiteral(".")
+        : relative;
+}
+
+QJsonArray relativePathArray(
+    const QString& root,
+    const QStringList& paths)
+{
+    QJsonArray array;
+    for (const QString& path : paths) {
+        const QString relative =
+            relativeProjectPath(root, path);
+        if (!relative.isEmpty())
+            array.append(relative);
+    }
+    return array;
+}
+
+QString resolveRelativePath(const QString& root,
+                            const QString& stored)
+{
+    if (stored.trimmed().isEmpty())
+        return QString();
+    return normalizePath(
+        QDir(root).absoluteFilePath(stored));
+}
+
+QStringList pathsFromPortableArray(
+    const QString& root,
+    const QJsonArray& array)
+{
+    QStringList paths;
+    for (const QJsonValue& value : array) {
+        const QString path =
+            resolveRelativePath(root,
+                                value.toString());
+        if (!path.isEmpty())
+            paths.append(path);
+    }
+    return uniquePreservingOrder(paths);
+}
+
+QString resolveLegacyPath(
+    const QString& root,
+    const QJsonValue& value,
+    QStringList* externalPaths)
+{
+    QString path;
+    bool relative = true;
+    if (value.isObject()) {
+        const QJsonObject object =
+            value.toObject();
+        path = object.value(
+            QStringLiteral("path")).toString();
+        relative = object.value(
+            QStringLiteral("relative"))
+                       .toBool(true);
+    } else {
+        path = value.toString();
+        relative = !QFileInfo(path).isAbsolute();
+    }
+    if (path.trimmed().isEmpty())
+        return QString();
+    const QString clean = normalizePath(
+        relative
+            ? QDir(root).absoluteFilePath(path)
+            : path);
+    if (!relative
+        && externalPaths
+        && !isInsideRoot(root, clean)) {
+        externalPaths->append(clean);
+    }
+    return clean;
+}
+
+QStringList pathsFromLegacyArray(
+    const QString& root,
+    const QJsonArray& array,
+    QStringList* externalPaths)
+{
+    QStringList paths;
+    for (const QJsonValue& value : array) {
+        const QString path =
+            resolveLegacyPath(
+                root, value, externalPaths);
+        if (!path.isEmpty())
+            paths.append(path);
+    }
+    return uniquePreservingOrder(paths);
 }
 }
 
 std::unique_ptr<WorkspaceConfigurationService>
     WorkspaceConfigurationService::instance = nullptr;
 
-WorkspaceConfigurationService::WorkspaceConfigurationService(
-    const QString& path)
-    : settingsFilePath(path)
+WorkspaceConfigurationService::
+    WorkspaceConfigurationService(
+        const QString& pathOverride)
+    : projectFilePathOverride(pathOverride)
 {
 }
 
-WorkspaceConfigurationService* WorkspaceConfigurationService::getInstance()
+WorkspaceConfigurationService*
+WorkspaceConfigurationService::getInstance()
 {
-    if (!instance)
-        instance = std::make_unique<WorkspaceConfigurationService>();
+    if (!instance) {
+        instance = std::make_unique<
+            WorkspaceConfigurationService>();
+    }
     return instance.get();
 }
 
-QStringList WorkspaceConfigurationService::defaultFileExtensions()
+QStringList
+WorkspaceConfigurationService::
+    defaultFileExtensions()
 {
     return {QStringLiteral(".sv"),
             QStringLiteral(".svh"),
@@ -131,144 +284,340 @@ QStringList WorkspaceConfigurationService::defaultFileExtensions()
             QStringLiteral(".vh")};
 }
 
-WorkspaceConfiguration WorkspaceConfigurationService::defaultConfiguration(
-    const QString& workspaceRoot) const
+QString WorkspaceConfigurationService::
+    projectDirectoryPath(
+        const QString& workspaceRoot)
+{
+    const QString root = normalizePath(workspaceRoot);
+    return root.isEmpty()
+        ? QString()
+        : QDir(root).absoluteFilePath(
+              QString::fromLatin1(
+                  kProjectDirectory));
+}
+
+QString WorkspaceConfigurationService::
+    projectFilePath(
+        const QString& workspaceRoot)
+{
+    const QString directory =
+        projectDirectoryPath(workspaceRoot);
+    return directory.isEmpty()
+        ? QString()
+        : QDir(directory).absoluteFilePath(
+              QString::fromLatin1(kProjectFile));
+}
+
+QString WorkspaceConfigurationService::
+    legacyFilePath(
+        const QString& workspaceRoot)
+{
+    const QString root = normalizePath(workspaceRoot);
+    return root.isEmpty()
+        ? QString()
+        : QDir(root).absoluteFilePath(
+              QString::fromLatin1(kLegacyFile));
+}
+
+WorkspaceConfiguration
+WorkspaceConfigurationService::
+    defaultConfiguration(
+        const QString& workspaceRoot) const
 {
     WorkspaceConfiguration configuration;
-    configuration.workspaceRoot = normalizePath(workspaceRoot);
-    if (!configuration.workspaceRoot.isEmpty())
-        configuration.includeDirs = {configuration.workspaceRoot};
-    configuration.fileExtensions = defaultFileExtensions();
+    configuration.workspaceRoot =
+        normalizePath(workspaceRoot);
+    if (!configuration.workspaceRoot.isEmpty()) {
+        configuration.includeDirs = {
+            configuration.workspaceRoot};
+    }
+    configuration.fileExtensions =
+        defaultFileExtensions();
     return configuration;
 }
 
-WorkspaceConfiguration WorkspaceConfigurationService::load(
+WorkspaceConfigurationLoadResult
+WorkspaceConfigurationService::loadWithResult(
     const QString& workspaceRoot) const
 {
-    WorkspaceConfiguration configuration = defaultConfiguration(workspaceRoot);
-    if (!configuration.isValid())
-        return configuration;
-
-    std::unique_ptr<QSettings> settings = makeSettings();
-    beginWorkspaceGroup(settings.get(), configuration.workspaceRoot);
-    const QString storedRoot =
-        normalizePath(settings->value(
-                           QString::fromLatin1(kWorkspaceConfigRoot))
-                          .toString());
-    if (storedRoot.isEmpty()) {
-        endWorkspaceGroup(settings.get());
-        return configuration;
+    WorkspaceConfigurationLoadResult result;
+    result.configuration =
+        defaultConfiguration(workspaceRoot);
+    result.projectFilePath =
+        effectiveProjectFilePath(workspaceRoot);
+    result.legacyFilePath =
+        legacyFilePath(workspaceRoot);
+    if (!result.configuration.isValid()) {
+        result.message =
+            QStringLiteral(
+                "No workspace is open.");
+        return result;
     }
 
+    QFile project(result.projectFilePath);
+    if (project.open(QIODevice::ReadOnly
+                     | QIODevice::Text)) {
+        const QJsonDocument document =
+            QJsonDocument::fromJson(
+                project.readAll());
+        project.close();
+        const QJsonObject object =
+            document.object();
+        if (document.isObject()
+            && object.value(
+                   QStringLiteral("schema"))
+                       .toString()
+                   == QString::fromLatin1(
+                       kProjectSchema)
+            && object.value(
+                   QStringLiteral("version"))
+                       .toInt()
+                   == kVersion) {
+            WorkspaceConfiguration configuration;
+            configuration.workspaceRoot =
+                result.configuration.workspaceRoot;
+            configuration.includeDirs =
+                pathsFromPortableArray(
+                    configuration.workspaceRoot,
+                    object.value(
+                        QStringLiteral(
+                            "includeDirs"))
+                        .toArray());
+            configuration.ignoredDirs =
+                pathsFromPortableArray(
+                    configuration.workspaceRoot,
+                    object.value(
+                        QStringLiteral(
+                            "ignoredDirs"))
+                        .toArray());
+            configuration.fileExtensions =
+                object.value(
+                    QStringLiteral(
+                        "fileExtensions"))
+                    .toVariant()
+                    .toStringList();
+            configuration.defines =
+                definesFromObject(
+                    object.value(
+                        QStringLiteral("defines"))
+                        .toObject());
+            configuration.topModule =
+                object.value(
+                    QStringLiteral("topModule"))
+                    .toString()
+                    .trimmed();
+            result.configuration =
+                normalized(configuration);
+            result.loaded = true;
+            result.source =
+                WorkspaceConfigurationSource::
+                    ProjectFile;
+            result.message =
+                QStringLiteral(
+                    "Portable project configuration loaded.");
+            return result;
+        }
+        result.message =
+            QStringLiteral(
+                "Portable project configuration is invalid.");
+        return result;
+    }
+
+    QFile legacy(result.legacyFilePath);
+    if (!legacy.open(QIODevice::ReadOnly
+                     | QIODevice::Text)) {
+        result.message =
+            QStringLiteral(
+                "Using default workspace configuration.");
+        return result;
+    }
+    const QJsonDocument legacyDocument =
+        QJsonDocument::fromJson(
+            legacy.readAll());
+    legacy.close();
+    const QJsonObject legacyObject =
+        legacyDocument.object();
+    if (!legacyDocument.isObject()
+        || legacyObject.value(
+               QStringLiteral("schema"))
+                   .toString()
+               != QString::fromLatin1(
+                   kLegacySchema)
+        || legacyObject.value(
+               QStringLiteral("version"))
+                   .toInt()
+               != 1) {
+        result.message =
+            QStringLiteral(
+                "Legacy .zs configuration is unsupported.");
+        return result;
+    }
+
+    const QJsonObject object =
+        legacyObject.value(
+            QStringLiteral(
+                "workspaceConfiguration"))
+            .toObject();
+    WorkspaceConfiguration configuration;
+    configuration.workspaceRoot =
+        result.configuration.workspaceRoot;
     configuration.includeDirs =
-        normalizePaths(settings->value(
-                            QString::fromLatin1(kWorkspaceConfigIncludeDirs),
-                            configuration.includeDirs)
-                           .toStringList());
+        pathsFromLegacyArray(
+            configuration.workspaceRoot,
+            object.value(
+                QStringLiteral("includeDirs"))
+                .toArray(),
+            &result.externalPaths);
     configuration.ignoredDirs =
-        normalizePaths(settings->value(
-                            QString::fromLatin1(kWorkspaceConfigIgnoredDirs))
-                           .toStringList());
+        pathsFromLegacyArray(
+            configuration.workspaceRoot,
+            object.value(
+                QStringLiteral("ignoredDirs"))
+                .toArray(),
+            &result.externalPaths);
     configuration.fileExtensions =
-        normalizeFileExtensions(settings->value(
-                                     QString::fromLatin1(
-                                         kWorkspaceConfigFileExtensions),
-                                     configuration.fileExtensions)
-                                    .toStringList());
+        object.value(
+            QStringLiteral("fileExtensions"))
+            .toVariant()
+            .toStringList();
+    configuration.defines =
+        definesFromObject(
+            object.value(
+                QStringLiteral("defines"))
+                .toObject());
     configuration.topModule =
-        settings->value(QString::fromLatin1(kWorkspaceConfigTopModule))
+        object.value(
+            QStringLiteral("topModule"))
             .toString()
             .trimmed();
+    result.configuration =
+        normalized(configuration);
+    result.loaded = true;
+    result.source =
+        WorkspaceConfigurationSource::
+            LegacySession;
+    result.message =
+        QStringLiteral(
+            "Legacy .zs project configuration imported read-only.");
+    return result;
+}
 
-    QHash<QString, QString> defines;
-    const int defineCount =
-        settings->beginReadArray(QString::fromLatin1(kWorkspaceConfigDefines));
-    for (int i = 0; i < defineCount; ++i) {
-        settings->setArrayIndex(i);
-        defines.insert(
-            settings->value(QString::fromLatin1(kWorkspaceConfigDefineKey))
-                .toString(),
-            settings->value(QString::fromLatin1(kWorkspaceConfigDefineValue))
-                .toString());
-    }
-    settings->endArray();
-    configuration.defines = normalizeDefines(defines);
-    endWorkspaceGroup(settings.get());
-    return normalized(configuration);
+WorkspaceConfiguration
+WorkspaceConfigurationService::load(
+    const QString& workspaceRoot) const
+{
+    return loadWithResult(workspaceRoot)
+        .configuration;
 }
 
 bool WorkspaceConfigurationService::save(
     const WorkspaceConfiguration& configuration) const
 {
-    const WorkspaceConfiguration clean = normalized(configuration);
+    const WorkspaceConfiguration clean =
+        normalized(configuration);
     if (!clean.isValid())
         return false;
 
-    std::unique_ptr<QSettings> settings = makeSettings();
-    beginWorkspaceGroup(settings.get(), clean.workspaceRoot);
-    settings->remove(QString());
-    settings->setValue(QString::fromLatin1(kWorkspaceConfigRoot),
-                       clean.workspaceRoot);
-    settings->setValue(QString::fromLatin1(kWorkspaceConfigIncludeDirs),
-                       clean.includeDirs);
-    settings->setValue(QString::fromLatin1(kWorkspaceConfigIgnoredDirs),
-                       clean.ignoredDirs);
-    settings->setValue(QString::fromLatin1(kWorkspaceConfigFileExtensions),
-                       clean.fileExtensions);
-    settings->setValue(QString::fromLatin1(kWorkspaceConfigTopModule),
-                       clean.topModule);
-
-    QStringList defineKeys = clean.defines.keys();
-    defineKeys.sort(Qt::CaseInsensitive);
-    settings->beginWriteArray(QString::fromLatin1(kWorkspaceConfigDefines));
-    for (int i = 0; i < defineKeys.size(); ++i) {
-        const QString& key = defineKeys.at(i);
-        settings->setArrayIndex(i);
-        settings->setValue(QString::fromLatin1(kWorkspaceConfigDefineKey),
-                           key);
-        settings->setValue(QString::fromLatin1(kWorkspaceConfigDefineValue),
-                           clean.defines.value(key));
-    }
-    settings->endArray();
-    endWorkspaceGroup(settings.get());
-    settings->sync();
-    return settings->status() == QSettings::NoError;
-}
-
-bool WorkspaceConfigurationService::clear(const QString& workspaceRoot) const
-{
-    const QString normalizedRoot = normalizePath(workspaceRoot);
-    if (normalizedRoot.isEmpty())
+    const QString filePath =
+        effectiveProjectFilePath(
+            clean.workspaceRoot);
+    if (filePath.isEmpty()
+        || !QDir().mkpath(
+            QFileInfo(filePath)
+                .absolutePath())) {
         return false;
-    std::unique_ptr<QSettings> settings = makeSettings();
-    beginWorkspaceGroup(settings.get(), normalizedRoot);
-    settings->remove(QString());
-    endWorkspaceGroup(settings.get());
-    settings->sync();
-    return settings->status() == QSettings::NoError;
+    }
+
+    QJsonObject object;
+    object.insert(
+        QStringLiteral("schema"),
+        QString::fromLatin1(kProjectSchema));
+    object.insert(
+        QStringLiteral("version"),
+        kVersion);
+    object.insert(
+        QStringLiteral("includeDirs"),
+        relativePathArray(
+            clean.workspaceRoot,
+            clean.includeDirs));
+    object.insert(
+        QStringLiteral("ignoredDirs"),
+        relativePathArray(
+            clean.workspaceRoot,
+            clean.ignoredDirs));
+    object.insert(
+        QStringLiteral("fileExtensions"),
+        QJsonArray::fromStringList(
+            clean.fileExtensions));
+    object.insert(
+        QStringLiteral("topModule"),
+        clean.topModule);
+    object.insert(
+        QStringLiteral("defines"),
+        definesObject(clean.defines));
+
+    QSaveFile file(filePath);
+    if (!file.open(QIODevice::WriteOnly
+                   | QIODevice::Text)) {
+        return false;
+    }
+    if (file.write(
+            QJsonDocument(object).toJson(
+                QJsonDocument::Indented))
+        < 0) {
+        file.cancelWriting();
+        return false;
+    }
+    return file.commit();
 }
 
-WorkspaceConfiguration WorkspaceConfigurationService::normalized(
+bool WorkspaceConfigurationService::clear(
+    const QString& workspaceRoot) const
+{
+    const QString path =
+        effectiveProjectFilePath(workspaceRoot);
+    return !path.isEmpty()
+        && (!QFileInfo(path).exists()
+            || QFile::remove(path));
+}
+
+WorkspaceConfiguration
+WorkspaceConfigurationService::normalized(
     const WorkspaceConfiguration& configuration) const
 {
-    WorkspaceConfiguration clean = configuration;
-    clean.workspaceRoot = normalizePath(configuration.workspaceRoot);
-    clean.includeDirs = normalizePaths(configuration.includeDirs);
-    clean.ignoredDirs = normalizePaths(configuration.ignoredDirs);
+    WorkspaceConfiguration clean =
+        configuration;
+    clean.workspaceRoot =
+        normalizePath(
+            configuration.workspaceRoot);
+    clean.includeDirs =
+        normalizePaths(
+            configuration.includeDirs);
+    clean.ignoredDirs =
+        normalizePaths(
+            configuration.ignoredDirs);
     clean.fileExtensions =
-        normalizeFileExtensions(configuration.fileExtensions);
-    clean.defines = normalizeDefines(configuration.defines);
-    clean.topModule = configuration.topModule.trimmed();
-    if (clean.includeDirs.isEmpty() && !clean.workspaceRoot.isEmpty())
-        clean.includeDirs = {clean.workspaceRoot};
+        normalizeFileExtensions(
+            configuration.fileExtensions);
+    clean.defines =
+        normalizeDefines(configuration.defines);
+    clean.topModule =
+        configuration.topModule.trimmed();
+    if (clean.includeDirs.isEmpty()
+        && !clean.workspaceRoot.isEmpty()) {
+        clean.includeDirs = {
+            clean.workspaceRoot};
+    }
     return clean;
 }
 
-std::unique_ptr<QSettings> WorkspaceConfigurationService::makeSettings() const
+QString WorkspaceConfigurationService::
+    effectiveProjectFilePath(
+        const QString& workspaceRoot) const
 {
-    if (!settingsFilePath.isEmpty())
-        return std::make_unique<QSettings>(settingsFilePath,
-                                           QSettings::IniFormat);
-    return std::make_unique<QSettings>(QStringLiteral("ZeroSlack"),
-                                       QStringLiteral("ZeroSlack"));
+    if (!projectFilePathOverride.isEmpty()) {
+        return normalizePath(
+            projectFilePathOverride);
+    }
+    return projectFilePath(workspaceRoot);
 }

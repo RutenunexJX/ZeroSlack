@@ -40,6 +40,12 @@ public:
                               const QString& moduleName,
                               const QString& signalAccessPath = {});
     void setCurrentEditorLocation(const QString& fileName, int line);
+    void focusFit();
+    void focusZoomIn();
+    void focusZoomOut();
+    void setFocusSearchText(const QString& text);
+    QString focusSearchText() const;
+    void focusInspector();
     void renderReportForTest(const SignalUsageHotspotReport& report);
     int trackBlockCountForTest() const;
     int trackLaneCountForTest() const;

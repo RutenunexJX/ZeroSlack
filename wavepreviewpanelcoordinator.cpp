@@ -1555,6 +1555,10 @@ WavePreviewPanelCoordinator::WavePreviewPanelCoordinator(QWidget* parent)
         previewTree->header()->resizeSection(column, headerWidth);
     }
     layout->addWidget(previewTree, 1);
+    focusBaseTreePointSize =
+        previewTree->font().pointSizeF();
+    if (focusBaseTreePointSize <= 0.0)
+        focusBaseTreePointSize = 9.0;
 
     previewDock = new QDockWidget(QStringLiteral("Wave Preview"), parent);
     previewDock->setObjectName(QStringLiteral("wavePreviewDock"));
@@ -1607,6 +1611,78 @@ void WavePreviewPanelCoordinator::setNavigationHandler(
     std::function<void(const QString&, int, int)> handler)
 {
     navigationHandler = std::move(handler);
+}
+
+void WavePreviewPanelCoordinator::focusFit()
+{
+    focusZoomFactor = 1.0;
+    applyFocusZoom();
+    if (!previewTree)
+        return;
+    for (int column = 1;
+         column < previewTree->columnCount();
+         ++column) {
+        previewTree->resizeColumnToContents(column);
+    }
+}
+
+void WavePreviewPanelCoordinator::focusZoomIn()
+{
+    focusZoomFactor =
+        qMin<qreal>(1.75, focusZoomFactor * 1.12);
+    applyFocusZoom();
+}
+
+void WavePreviewPanelCoordinator::focusZoomOut()
+{
+    focusZoomFactor =
+        qMax<qreal>(0.75, focusZoomFactor / 1.12);
+    applyFocusZoom();
+}
+
+void WavePreviewPanelCoordinator::setFocusSearchText(
+    const QString& text)
+{
+    if (laneFilterEdit)
+        laneFilterEdit->setText(text);
+}
+
+QString WavePreviewPanelCoordinator::focusSearchText() const
+{
+    return laneFilterEdit
+        ? laneFilterEdit->text() : laneFilterText;
+}
+
+void WavePreviewPanelCoordinator::focusInspector()
+{
+    if (!previewTree)
+        return;
+    QTreeWidgetItem* item = previewTree->currentItem();
+    if (!item && previewTree->topLevelItemCount() > 0) {
+        item = previewTree->topLevelItem(0);
+        previewTree->setCurrentItem(item);
+    }
+    if (item)
+        previewTree->scrollToItem(item);
+    previewTree->setFocus();
+}
+
+void WavePreviewPanelCoordinator::applyFocusZoom()
+{
+    if (previewTree) {
+        QFont font = previewTree->font();
+        font.setPointSizeF(
+            focusBaseTreePointSize * focusZoomFactor);
+        previewTree->setFont(font);
+        previewTree->setIndentation(
+            qRound(20.0 * focusZoomFactor));
+    }
+    if (previewCanvas) {
+        previewCanvas->setMinimumHeight(
+            qRound(132.0 * focusZoomFactor));
+        previewCanvas->updateGeometry();
+        previewCanvas->update();
+    }
 }
 
 void WavePreviewPanelCoordinator::refreshFromDocument(

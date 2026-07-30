@@ -4,6 +4,7 @@
 
 #include "definitionservice.h"
 #include "effectivevalueservice.h"
+#include "editorcontextmenumodel.h"
 #include "rtlbatcheditservice.h"
 
 #include <QApplication>
@@ -40,7 +41,6 @@
 #include <QTextDocument>
 #include <QTextEdit>
 #include <QTextLayout>
-#include <QTimer>
 #include <QToolTip>
 #include <QStringList>
 #include <QtConcurrent/QtConcurrentRun>
@@ -1633,1040 +1633,7 @@ bool adjustSelectedRangeBound(MyCodeEditor* editor,
     return true;
 }
 
-bool hasColumnSelection(const MyCodeEditorState& state)
-{
-    return state.columnSelectionActive
-        && state.columnAnchorLine >= 0
-        && state.columnCurrentLine >= 0
-        && state.columnAnchorColumn >= 0
-        && state.columnCurrentColumn >= 0;
-}
-
-QPair<int, int> lineSpan(const MyCodeEditorState& state)
-{
-    return {qMin(state.columnAnchorLine, state.columnCurrentLine),
-            qMax(state.columnAnchorLine, state.columnCurrentLine)};
-}
-
-QPair<int, int> columnSpan(const MyCodeEditorState& state)
-{
-    return {qMin(state.columnAnchorColumn, state.columnCurrentColumn),
-            qMax(state.columnAnchorColumn, state.columnCurrentColumn)};
-}
-
-QStringList normalizedClipboardRows(QString text)
-{
-    text.replace(QStringLiteral("\r\n"), QStringLiteral("\n"));
-    text.replace(QLatin1Char('\r'), QLatin1Char('\n'));
-    QStringList rows = text.split(QLatin1Char('\n'));
-    if (rows.size() > 1 && rows.last().isEmpty())
-        rows.removeLast();
-    return rows;
-}
-
-int editorTabStopColumns(const MyCodeEditor* editor)
-{
-    if (!editor)
-        return kManualIndentWidth;
-    const QFontMetrics metrics(editor->font());
-    const int spaceWidth = qMax(1, metrics.horizontalAdvance(QLatin1Char(' ')));
-    return qMax(1, qRound(editor->tabStopDistance() / spaceWidth));
-}
-
-int visualAdvanceForChar(QChar ch, int visualColumn, int tabWidth)
-{
-    if (ch == QLatin1Char('\t')) {
-        const int remainder = visualColumn % qMax(1, tabWidth);
-        return remainder == 0 ? qMax(1, tabWidth) : qMax(1, tabWidth) - remainder;
-    }
-    return 1;
-}
-
-int visualColumnForOffset(const QString& text, int offset, int tabWidth)
-{
-    int visual = 0;
-    const int boundedOffset = qBound(0, offset, text.size());
-    for (int i = 0; i < boundedOffset; ++i)
-        visual += visualAdvanceForChar(text.at(i), visual, tabWidth);
-    return visual;
-}
-
-enum class VisualBoundary {
-    Start,
-    End
-};
-
-int offsetForVisualColumn(const QString& text,
-                          int visualColumn,
-                          int tabWidth,
-                          VisualBoundary boundary)
-{
-    const int target = qMax(0, visualColumn);
-    int visual = 0;
-    for (int i = 0; i < text.size(); ++i) {
-        const int next =
-            visual + visualAdvanceForChar(text.at(i), visual, tabWidth);
-        if (target == visual)
-            return i;
-        if (target > visual && target < next)
-            return boundary == VisualBoundary::End ? i + 1 : i;
-        if (target == next)
-            return i + 1;
-        visual = next;
-    }
-    return text.size();
-}
-
-qreal editorSpaceAdvance(const MyCodeEditor* editor)
-{
-    if (!editor)
-        return 1.0;
-    const QFontMetricsF metrics(editor->font());
-    return qMax<qreal>(
-        1.0, metrics.horizontalAdvance(QLatin1Char(' ')));
-}
-
-QTextLine blockTextLine(const QTextBlock& block)
-{
-    QTextLayout* layout =
-        block.isValid() ? block.layout() : nullptr;
-    if (!layout || layout->lineCount() <= 0)
-        return {};
-    return layout->lineAt(0);
-}
-
-qreal blockTextXForOffset(const QTextBlock& block,
-                          int offset)
-{
-    const QTextLine line = blockTextLine(block);
-    if (!line.isValid())
-        return -1.0;
-    int bounded = qBound(0, offset, block.text().size());
-    int zero = 0;
-    return line.cursorToX(&bounded, QTextLine::Leading)
-        - line.cursorToX(&zero, QTextLine::Leading);
-}
-
-int layoutVisualColumnForOffset(
-    const MyCodeEditor* editor,
-    const QTextBlock& block,
-    int offset)
-{
-    const qreal x = blockTextXForOffset(block, offset);
-    if (x < 0.0) {
-        return visualColumnForOffset(
-            block.text(),
-            offset,
-            editorTabStopColumns(editor));
-    }
-    return qMax(0, qRound(x / editorSpaceAdvance(editor)));
-}
-
-int layoutOffsetForVisualColumn(
-    const MyCodeEditor* editor,
-    const QTextBlock& block,
-    int visualColumn,
-    VisualBoundary boundary)
-{
-    const QTextLine line = blockTextLine(block);
-    if (!line.isValid()) {
-        return offsetForVisualColumn(
-            block.text(),
-            visualColumn,
-            editorTabStopColumns(editor),
-            boundary);
-    }
-
-    int zero = 0;
-    const qreal zeroX =
-        line.cursorToX(&zero, QTextLine::Leading);
-    const qreal targetX =
-        zeroX
-        + qMax(0, visualColumn)
-              * editorSpaceAdvance(editor);
-    int offset = line.xToCursor(
-        targetX,
-        QTextLine::CursorBetweenCharacters);
-    offset = qBound(0, offset, block.text().size());
-    int probe = offset;
-    const qreal offsetX =
-        line.cursorToX(&probe, QTextLine::Leading);
-    if (boundary == VisualBoundary::Start
-        && offsetX > targetX
-        && offset > 0) {
-        --offset;
-    } else if (boundary == VisualBoundary::End
-               && offsetX < targetX
-               && offset < block.text().size()) {
-        ++offset;
-    }
-    return qBound(0, offset, block.text().size());
-}
-
-QString layoutVisualSlice(const MyCodeEditor* editor,
-                          const QTextBlock& block,
-                          int leftVisual,
-                          int rightVisual)
-{
-    if (!block.isValid() || rightVisual <= leftVisual)
-        return QString();
-    const int lineEndVisual =
-        layoutVisualColumnForOffset(
-            editor, block, block.text().size());
-    const int boundedLeft =
-        qMin(qMax(0, leftVisual), lineEndVisual);
-    const int boundedRight =
-        qMin(qMax(boundedLeft, rightVisual),
-             lineEndVisual);
-    if (boundedRight <= boundedLeft)
-        return QString();
-    const int start = layoutOffsetForVisualColumn(
-        editor, block, boundedLeft, VisualBoundary::Start);
-    const int end = layoutOffsetForVisualColumn(
-        editor, block, boundedRight, VisualBoundary::End);
-    return block.text().mid(start, qMax(0, end - start));
-}
-
-int visualWidthOfText(const QString& text, int startVisual, int tabWidth)
-{
-    int visual = qMax(0, startVisual);
-    for (const QChar ch : text)
-        visual += visualAdvanceForChar(ch, visual, tabWidth);
-    return visual - qMax(0, startVisual);
-}
-
-int nextTabStopVisual(int visualColumn, int tabWidth)
-{
-    const int width = qMax(1, tabWidth);
-    const int visual = qMax(0, visualColumn);
-    const int remainder = visual % width;
-    return visual + (remainder == 0 ? width : width - remainder);
-}
-
-int previousTabStopVisual(int visualColumn, int tabWidth)
-{
-    const int width = qMax(1, tabWidth);
-    const int visual = qMax(0, visualColumn);
-    if (visual <= 0)
-        return 0;
-    const int remainder = visual % width;
-    return remainder == 0 ? visual - width : visual - remainder;
-}
-
-void setCaretToVisualColumn(MyCodeEditor* editor, int line, int visualColumn)
-{
-    if (!editor)
-        return;
-    const QTextBlock block = editor->document()->findBlockByNumber(line);
-    if (!block.isValid())
-        return;
-    const int offset = layoutOffsetForVisualColumn(
-        editor,
-        block,
-        visualColumn,
-        VisualBoundary::Start);
-    QTextCursor caret(editor->document());
-    caret.setPosition(block.position() + offset);
-    editor->setTextCursor(caret);
-}
-
-QString columnSelectionClipboardText(MyCodeEditor* editor,
-                                     const MyCodeEditorState& state)
-{
-    if (!editor || !hasColumnSelection(state))
-        return QString();
-
-    QStringList rows;
-    const auto [firstLine, lastLine] = lineSpan(state);
-    const auto [leftColumn, rightColumn] = columnSpan(state);
-    for (int line = firstLine; line <= lastLine; ++line) {
-        const QTextBlock block = editor->document()->findBlockByNumber(line);
-        if (!block.isValid()) {
-            rows.append(QString());
-            continue;
-        }
-        rows.append(layoutVisualSlice(editor,
-                                      block,
-                                      leftColumn,
-                                      rightColumn));
-    }
-    return rows.join(QLatin1Char('\n'));
-}
-
-QStringList columnSelectionRowTexts(MyCodeEditor* editor,
-                                    const MyCodeEditorState& state)
-{
-    if (!editor || !hasColumnSelection(state))
-        return {};
-
-    QStringList rows;
-    const auto [firstLine, lastLine] = lineSpan(state);
-    const auto [leftColumn, rightColumn] = columnSpan(state);
-    rows.reserve(lastLine - firstLine + 1);
-    for (int line = firstLine; line <= lastLine; ++line) {
-        const QTextBlock block = editor->document()->findBlockByNumber(line);
-        rows.append(block.isValid()
-                        ? layoutVisualSlice(editor,
-                                            block,
-                                            leftColumn,
-                                            rightColumn)
-                        : QString());
-    }
-    return rows;
-}
-
-void updateColumnSelectionHighlight(MyCodeEditor* editor,
-                                    const MyCodeEditorState& state);
-
-void replaceColumnSelectionRows(MyCodeEditor* editor,
-                                MyCodeEditorState& state,
-                                const QStringList& rows,
-                                bool pasteMode,
-                                bool replaceSelectionArea = true)
-{
-    if (!editor || !hasColumnSelection(state))
-        return;
-
-    const auto [firstLine, lastLine] = lineSpan(state);
-    const auto [leftColumn, rightColumn] = columnSpan(state);
-    const bool hasWidth = replaceSelectionArea && rightColumn > leftColumn;
-    const bool repeatSingleRow = pasteMode && rows.size() == 1;
-    const int tabWidth = editorTabStopColumns(editor);
-    int maxInsertedColumns = 0;
-
-    QTextCursor cursor(editor->document());
-    cursor.beginEditBlock();
-    for (int line = lastLine; line >= firstLine; --line) {
-        const QTextBlock block = editor->document()->findBlockByNumber(line);
-        if (!block.isValid())
-            continue;
-
-        const int rowIndex = line - firstLine;
-        const QString rowText =
-            rows.isEmpty()
-                ? QString()
-                : (repeatSingleRow
-                       ? rows.constFirst()
-                       : (rowIndex < rows.size() ? rows.at(rowIndex)
-                                                 : QString()));
-        maxInsertedColumns =
-            qMax(maxInsertedColumns,
-                 visualWidthOfText(rowText, leftColumn, tabWidth));
-
-        const QString lineText = block.text();
-        const int lineEndVisual =
-            layoutVisualColumnForOffset(
-                editor, block, lineText.size());
-        const int startColumn = layoutOffsetForVisualColumn(
-            editor, block, leftColumn, VisualBoundary::Start);
-        int endColumn = startColumn;
-        if (hasWidth)
-            endColumn = layoutOffsetForVisualColumn(
-                editor, block, rightColumn, VisualBoundary::End);
-
-        cursor.setPosition(block.position() + startColumn);
-        cursor.setPosition(block.position() + qMax(startColumn, endColumn),
-                           QTextCursor::KeepAnchor);
-
-        if (pasteMode) {
-            const QString padding =
-                leftColumn > lineEndVisual
-                    ? QString(leftColumn - lineEndVisual, QLatin1Char(' '))
-                    : QString();
-            cursor.insertText(padding + rowText);
-        } else if (endColumn > startColumn) {
-            cursor.removeSelectedText();
-        }
-    }
-    cursor.endEditBlock();
-
-    const int collapsedColumn =
-        pasteMode ? leftColumn + maxInsertedColumns : leftColumn;
-    state.columnAnchorLine = firstLine;
-    state.columnCurrentLine = lastLine;
-    state.columnAnchorColumn = collapsedColumn;
-    state.columnCurrentColumn = collapsedColumn;
-    state.columnSelectionAwaitingEndpoint = false;
-    state.columnSelectionDragging = false;
-    state.columnSelectionDragMoved = false;
-
-    const QTextBlock currentBlock =
-        editor->document()->findBlockByNumber(lastLine);
-    if (currentBlock.isValid()) {
-        setCaretToVisualColumn(editor, lastLine, collapsedColumn);
-    }
-    updateColumnSelectionHighlight(editor, state);
-    editor->viewport()->update();
-}
-
-void clearColumnSelection(MyCodeEditor* editor, MyCodeEditorState& state)
-{
-    state.columnSelectionActive = false;
-    state.columnSelectionDragging = false;
-    state.columnSelectionAwaitingEndpoint = false;
-    state.columnSelectionDragMoved = false;
-    state.columnAnchorLine = -1;
-    state.columnAnchorColumn = -1;
-    state.columnCurrentLine = -1;
-    state.columnCurrentColumn = -1;
-    if (editor) {
-        editor->viewport()->setCursor(Qt::IBeamCursor);
-        editor->viewport()->update();
-    }
-}
-
-void updateColumnSelectionHighlight(MyCodeEditor* editor,
-                                    const MyCodeEditorState& state)
-{
-    if (!editor)
-        return;
-
-    editor->viewport()->update();
-}
-
-void setColumnPointFromCursor(const MyCodeEditor* editor,
-                              const QTextCursor& cursor,
-                              int* line,
-                              int* column)
-{
-    if (!cursor.block().isValid())
-        return;
-    if (line)
-        *line = cursor.block().blockNumber();
-    if (column) {
-        *column = layoutVisualColumnForOffset(
-            editor,
-            cursor.block(),
-            qMax(0,
-                 cursor.position()
-                     - cursor.block().position()));
-    }
-}
-
-bool columnPointFromMouse(MyCodeEditor* editor,
-                          const QPoint& position,
-                          int* line,
-                          int* column,
-                          bool* beyondLineEnd = nullptr)
-{
-    if (!editor || !editor->document())
-        return false;
-    const QTextCursor rowCursor =
-        editor->cursorForPosition(QPoint(0, position.y()));
-    const QTextBlock block = rowCursor.block();
-    if (!block.isValid() || !block.isVisible())
-        return false;
-    const EditorBlockGeometry geometry =
-        editor->blockGeometry(block.blockNumber());
-    if (position.y() < geometry.top
-        || position.y() > geometry.top + geometry.height) {
-        return false;
-    }
-
-    QTextCursor startCursor(block);
-    startCursor.setPosition(block.position());
-    QTextCursor endCursor(block);
-    endCursor.setPosition(
-        block.position() + block.text().size());
-    const qreal startX =
-        editor->cursorRect(startCursor).left();
-    const qreal endX =
-        editor->cursorRect(endCursor).left();
-    const qreal space = editorSpaceAdvance(editor);
-    const int targetColumn = qMax(
-        0, qRound((position.x() - startX) / space));
-    if (line)
-        *line = block.blockNumber();
-    if (column)
-        *column = targetColumn;
-    if (beyondLineEnd) {
-        *beyondLineEnd =
-            position.x() > endX + space * 0.25;
-    }
-    return true;
-}
-
-bool handlePlainVirtualCursorClick(
-    MyCodeEditor* editor,
-    QMouseEvent* event,
-    MyCodeEditorState& state)
-{
-    if (!editor || !event
-        || event->button() != Qt::LeftButton
-        || event->modifiers() != Qt::NoModifier) {
-        return false;
-    }
-
-    int line = -1;
-    int column = -1;
-    bool beyond = false;
-    if (!columnPointFromMouse(
-            editor,
-            event->position().toPoint(),
-            &line,
-            &column,
-            &beyond)) {
-        state.clearVirtualCursor(editor);
-        return false;
-    }
-    if (!beyond) {
-        state.clearVirtualCursor(editor);
-        return false;
-    }
-
-    const QTextBlock block =
-        editor->document()->findBlockByNumber(line);
-    if (!block.isValid())
-        return false;
-    const int lineEndColumn =
-        layoutVisualColumnForOffset(
-            editor, block, block.text().size());
-    if (column <= lineEndColumn)
-        column = lineEndColumn + 1;
-
-    if (state.columnSelectionActive)
-        clearColumnSelection(editor, state);
-    state.clearVirtualCursor(editor);
-    QTextCursor cursor(block);
-    cursor.setPosition(
-        block.position() + block.text().size());
-    editor->setTextCursor(cursor);
-    state.virtualCursorSavedWidth =
-        qMax(1, editor->cursorWidth());
-    state.virtualCursorActive = true;
-    state.virtualCursorLine = line;
-    state.virtualCursorColumn = column;
-    editor->setCursorWidth(0);
-    editor->viewport()->update();
-    event->accept();
-    return true;
-}
-
-bool beginColumnSelection(MyCodeEditor* editor,
-                          QMouseEvent* event,
-                          MyCodeEditorState& state)
-{
-    if (!editor || !event
-        || event->button() != Qt::LeftButton
-        || !event->modifiers().testFlag(Qt::ShiftModifier)
-        || !event->modifiers().testFlag(Qt::AltModifier)) {
-        return false;
-    }
-
-    int currentLine = -1;
-    int currentColumn = -1;
-    if (!columnPointFromMouse(
-            editor,
-            event->position().toPoint(),
-            &currentLine,
-            &currentColumn)) {
-        return false;
-    }
-    if (state.columnSelectionActive) {
-        state.columnCurrentLine = currentLine;
-        state.columnCurrentColumn = currentColumn;
-        state.columnSelectionAwaitingEndpoint = false;
-        state.columnSelectionDragging = false;
-        state.columnSelectionDragMoved = false;
-        updateColumnSelectionHighlight(editor, state);
-        editor->viewport()->setCursor(Qt::CrossCursor);
-        editor->viewport()->update();
-        event->accept();
-        return true;
-    }
-
-    const bool virtualAnchor = state.virtualCursorActive;
-    const int virtualAnchorLine = state.virtualCursorLine;
-    const int virtualAnchorColumn = state.virtualCursorColumn;
-    const QTextCursor anchor = editor->textCursor();
-    state.columnSelectionActive = true;
-    state.columnSelectionDragging = false;
-    state.columnSelectionAwaitingEndpoint = false;
-    state.columnSelectionDragMoved = false;
-    if (virtualAnchor) {
-        state.columnAnchorLine = virtualAnchorLine;
-        state.columnAnchorColumn = virtualAnchorColumn;
-    } else {
-        setColumnPointFromCursor(editor,
-                                 anchor,
-                                 &state.columnAnchorLine,
-                                 &state.columnAnchorColumn);
-    }
-    state.columnCurrentLine = currentLine;
-    state.columnCurrentColumn = currentColumn;
-    state.clearVirtualCursor(editor);
-    updateColumnSelectionHighlight(editor, state);
-    editor->viewport()->setCursor(Qt::CrossCursor);
-    editor->viewport()->update();
-    event->accept();
-    return true;
-}
-
-bool handleColumnSelectionClipboard(MyCodeEditor* editor,
-                                    QKeyEvent* event,
-                                    MyCodeEditorState& state)
-{
-    if (!editor || !event || !hasColumnSelection(state))
-        return false;
-    const Qt::KeyboardModifiers modifiers = event->modifiers();
-    if (!modifiers.testFlag(Qt::ControlModifier)
-        || modifiers.testFlag(Qt::ShiftModifier)
-        || modifiers.testFlag(Qt::AltModifier)
-        || modifiers.testFlag(Qt::MetaModifier)) {
-        return false;
-    }
-
-    const bool copy = event->key() == Qt::Key_C;
-    const bool cut = event->key() == Qt::Key_X;
-    const bool paste = event->key() == Qt::Key_V;
-    if (!copy && !cut && !paste)
-        return false;
-
-    QClipboard* clipboard = QApplication::clipboard();
-    if (!clipboard)
-        return false;
-
-    if (copy || cut) {
-        clipboard->setText(columnSelectionClipboardText(editor, state));
-        if (cut) {
-            const auto [firstLine, lastLine] = lineSpan(state);
-            replaceColumnSelectionRows(
-                editor,
-                state,
-                QStringList(lastLine - firstLine + 1, QString()),
-                false);
-        }
-        event->accept();
-        return true;
-    }
-
-    replaceColumnSelectionRows(
-        editor,
-        state,
-        normalizedClipboardRows(clipboard->text()),
-        true);
-    event->accept();
-    return true;
-}
-
-bool updateColumnSelectionDrag(MyCodeEditor* editor,
-                               QMouseEvent* event,
-                               MyCodeEditorState& state)
-{
-    if (!editor || !event || !state.columnSelectionDragging)
-        return false;
-    if (!event->buttons().testFlag(Qt::LeftButton))
-        return false;
-
-    state.columnSelectionDragMoved = true;
-    state.columnSelectionAwaitingEndpoint = false;
-    columnPointFromMouse(
-        editor,
-        event->position().toPoint(),
-        &state.columnCurrentLine,
-        &state.columnCurrentColumn);
-    updateColumnSelectionHighlight(editor, state);
-    editor->viewport()->update();
-    event->accept();
-    return true;
-}
-
-bool endColumnSelectionDrag(MyCodeEditor* editor,
-                            QMouseEvent* event,
-                            MyCodeEditorState& state)
-{
-    if (!editor || !event || !state.columnSelectionDragging)
-        return false;
-
-    if (state.columnSelectionDragMoved) {
-        columnPointFromMouse(
-            editor,
-            event->position().toPoint(),
-            &state.columnCurrentLine,
-            &state.columnCurrentColumn);
-        state.columnSelectionAwaitingEndpoint = false;
-        updateColumnSelectionHighlight(editor, state);
-    }
-    state.columnSelectionDragging = false;
-    state.columnSelectionDragMoved = false;
-    editor->viewport()->update();
-    event->accept();
-    return true;
-}
-
-bool handleColumnSelectionKeyInput(MyCodeEditor* editor,
-                                   QKeyEvent* event,
-                                   MyCodeEditorState& state)
-{
-    if (!editor || !event || !hasColumnSelection(state))
-        return false;
-    if (event->modifiers().testFlag(Qt::ControlModifier)
-        || event->modifiers().testFlag(Qt::MetaModifier)
-        || event->modifiers().testFlag(Qt::AltModifier)) {
-        return false;
-    }
-    const Qt::KeyboardModifiers textModifiers =
-        event->modifiers()
-        & (Qt::ShiftModifier
-           | Qt::ControlModifier
-           | Qt::AltModifier
-           | Qt::MetaModifier);
-    const bool forwardTab = event->key() == Qt::Key_Tab
-        && textModifiers == Qt::NoModifier;
-    const bool backwardTab = event->key() == Qt::Key_Backtab
-        || (event->key() == Qt::Key_Tab
-            && textModifiers == Qt::ShiftModifier);
-    if (event->key() == Qt::Key_Return
-        || event->key() == Qt::Key_Enter
-        || event->key() == Qt::Key_Escape) {
-        return false;
-    }
-
-    const bool backspace = event->key() == Qt::Key_Backspace;
-    const bool deleteKey = event->key() == Qt::Key_Delete;
-    const bool printable = !event->text().isEmpty()
-        && !backspace
-        && !deleteKey
-        && !forwardTab
-        && !backwardTab;
-    if (!printable && !backspace && !deleteKey && !forwardTab && !backwardTab)
-        return false;
-
-    const int tabWidth = editorTabStopColumns(editor);
-    const auto [firstLine, lastLine] = lineSpan(state);
-    const auto [leftColumn, rightColumn] = columnSpan(state);
-    const bool hasWidth = rightColumn > leftColumn;
-    const int backwardTargetColumn =
-        backwardTab ? previousTabStopVisual(leftColumn, tabWidth) : leftColumn;
-    const int editColumn =
-        backwardTab
-            ? backwardTargetColumn
-            : (backspace && !hasWidth ? qMax(0, leftColumn - 1) : leftColumn);
-    QString text;
-    if (printable)
-        text = event->text();
-    else if (forwardTab)
-        text = QString(nextTabStopVisual(leftColumn, tabWidth) - leftColumn,
-                       QLatin1Char(' '));
-    QTextCursor cursor(editor->document());
-    cursor.beginEditBlock();
-    for (int line = lastLine; line >= firstLine; --line) {
-        const QTextBlock block = editor->document()->findBlockByNumber(line);
-        if (!block.isValid())
-            continue;
-
-        const QString lineText = block.text();
-        const int lineEndVisual =
-            layoutVisualColumnForOffset(
-                editor, block, lineText.size());
-        int startColumn = layoutOffsetForVisualColumn(
-            editor, block, editColumn, VisualBoundary::Start);
-        int endColumn = startColumn;
-        if (hasWidth) {
-            startColumn = layoutOffsetForVisualColumn(
-                editor, block, leftColumn, VisualBoundary::Start);
-            endColumn = layoutOffsetForVisualColumn(
-                editor, block, rightColumn, VisualBoundary::End);
-        } else if (deleteKey && leftColumn < lineEndVisual) {
-            startColumn = layoutOffsetForVisualColumn(
-                editor, block, leftColumn, VisualBoundary::Start);
-            endColumn = layoutOffsetForVisualColumn(
-                editor, block, leftColumn + 1, VisualBoundary::End);
-        } else if (backspace && leftColumn > 0 && editColumn < lineEndVisual) {
-            startColumn = layoutOffsetForVisualColumn(
-                editor, block, editColumn, VisualBoundary::Start);
-            endColumn = layoutOffsetForVisualColumn(
-                editor, block, leftColumn, VisualBoundary::End);
-        } else if (backwardTab && leftColumn > backwardTargetColumn) {
-            startColumn = layoutOffsetForVisualColumn(
-                editor,
-                block,
-                backwardTargetColumn,
-                VisualBoundary::Start);
-            endColumn = layoutOffsetForVisualColumn(
-                editor, block, leftColumn, VisualBoundary::End);
-        }
-
-        cursor.setPosition(block.position() + startColumn);
-        cursor.setPosition(block.position() + qMax(startColumn, endColumn),
-                           QTextCursor::KeepAnchor);
-        if (printable || forwardTab) {
-            const QString padding =
-                leftColumn > lineEndVisual
-                    ? QString(leftColumn - lineEndVisual, QLatin1Char(' '))
-                    : QString();
-            cursor.insertText(padding + text);
-        } else if (endColumn > startColumn) {
-            cursor.removeSelectedText();
-        }
-    }
-    cursor.endEditBlock();
-
-    const bool wasRectangularSelection = leftColumn != rightColumn;
-    const int collapsedColumn = wasRectangularSelection
-        ? leftColumn
-        : ((printable || forwardTab)
-               ? leftColumn + visualWidthOfText(text, leftColumn, tabWidth)
-               : editColumn);
-    state.columnAnchorColumn = collapsedColumn;
-    state.columnCurrentColumn = state.columnAnchorColumn;
-    state.columnSelectionAwaitingEndpoint = false;
-    state.columnSelectionDragging = false;
-    state.columnSelectionDragMoved = false;
-    const QTextBlock currentBlock =
-        editor->document()->findBlockByNumber(lastLine);
-    if (currentBlock.isValid()) {
-        setCaretToVisualColumn(editor, lastLine, state.columnCurrentColumn);
-    }
-    updateColumnSelectionHighlight(editor, state);
-    editor->viewport()->update();
-    event->accept();
-    return true;
-}
-
-bool handleColumnSelectionNavigation(MyCodeEditor* editor,
-                                     QKeyEvent* event,
-                                     MyCodeEditorState& state)
-{
-    if (!editor || !event || !hasColumnSelection(state))
-        return false;
-
-    const int key = event->key();
-    const bool vertical =
-        key == Qt::Key_Up || key == Qt::Key_Down;
-    const bool horizontal =
-        key == Qt::Key_Left || key == Qt::Key_Right;
-    if (!vertical && !horizontal)
-        return false;
-
-    const Qt::KeyboardModifiers modifiers = event->modifiers();
-    const bool adjustSelection =
-        modifiers.testFlag(Qt::ShiftModifier)
-        && modifiers.testFlag(Qt::AltModifier)
-        && !modifiers.testFlag(Qt::ControlModifier)
-        && !modifiers.testFlag(Qt::MetaModifier);
-    const bool moveSelection =
-        !modifiers.testFlag(Qt::ShiftModifier)
-        && !modifiers.testFlag(Qt::AltModifier)
-        && !modifiers.testFlag(Qt::ControlModifier)
-        && !modifiers.testFlag(Qt::MetaModifier);
-    if (!adjustSelection && !moveSelection)
-        return false;
-
-    const int lastLine = qMax(0, editor->document()->blockCount() - 1);
-    const int lineDelta =
-        key == Qt::Key_Up ? -1 : key == Qt::Key_Down ? 1 : 0;
-    const int columnDelta =
-        key == Qt::Key_Left ? -1 : key == Qt::Key_Right ? 1 : 0;
-
-    if (adjustSelection) {
-        state.columnCurrentLine =
-            qBound(0, state.columnCurrentLine + lineDelta, lastLine);
-        state.columnCurrentColumn =
-            qMax(0, state.columnCurrentColumn + columnDelta);
-    } else {
-        const auto [firstLine, lastSelectedLine] = lineSpan(state);
-        if ((lineDelta < 0 && firstLine <= 0)
-            || (lineDelta > 0 && lastSelectedLine >= lastLine)) {
-            event->accept();
-            return true;
-        }
-        const auto [leftColumn, rightColumn] = columnSpan(state);
-        if (columnDelta < 0 && leftColumn <= 0) {
-            event->accept();
-            return true;
-        }
-
-        state.columnAnchorLine += lineDelta;
-        state.columnCurrentLine += lineDelta;
-        state.columnAnchorColumn = qMax(0, state.columnAnchorColumn + columnDelta);
-        state.columnCurrentColumn = qMax(0, state.columnCurrentColumn + columnDelta);
-        Q_UNUSED(rightColumn)
-    }
-
-    state.columnSelectionAwaitingEndpoint = false;
-    state.columnSelectionDragging = false;
-    state.columnSelectionDragMoved = false;
-    updateColumnSelectionHighlight(editor, state);
-    setCaretToVisualColumn(editor,
-                           state.columnCurrentLine,
-                           state.columnCurrentColumn);
-    editor->viewport()->update();
-    event->accept();
-    return true;
-}
-
-int xForVisualColumn(MyCodeEditor* editor,
-                     const QTextBlock& block,
-                     int visualColumn)
-{
-    if (!editor || !block.isValid())
-        return 0;
-
-    QTextCursor cursor(block);
-    cursor.setPosition(block.position());
-    const QRect rect = editor->cursorRect(cursor);
-    return qRound(
-        rect.left()
-        + qMax(0, visualColumn)
-              * editorSpaceAdvance(editor));
-}
-
-void paintColumnSelectionOverlay(MyCodeEditor* editor,
-                                 const MyCodeEditorState& state,
-                                 QPaintEvent* event)
-{
-    if (!editor || !event)
-        return;
-
-    const bool columnMode = hasColumnSelection(state);
-    if (!columnMode && !state.virtualCursorActive)
-        return;
-
-    int firstLine = state.virtualCursorLine;
-    int lastLine = state.virtualCursorLine;
-    int targetColumn = state.virtualCursorColumn;
-    int activeLine = state.virtualCursorLine;
-    if (columnMode) {
-        const auto lines = lineSpan(state);
-        firstLine = lines.first;
-        lastLine = lines.second;
-        targetColumn = state.columnCurrentColumn;
-        activeLine = state.columnCurrentLine;
-    }
-
-    const QTextCursor visibleTop =
-        editor->cursorForPosition(
-            QPoint(0, qMax(0, event->rect().top())));
-    const QTextCursor visibleBottom =
-        editor->cursorForPosition(
-            QPoint(0,
-                   qMin(editor->viewport()->height() - 1,
-                        event->rect().bottom())));
-    firstLine = qMax(
-        firstLine,
-        visibleTop.block().isValid()
-            ? visibleTop.block().blockNumber()
-            : firstLine);
-    lastLine = qMin(
-        lastLine,
-        visibleBottom.block().isValid()
-            ? visibleBottom.block().blockNumber()
-            : lastLine);
-    if (firstLine > lastLine)
-        return;
-
-    int selectionLeft = targetColumn;
-    int selectionRight = targetColumn;
-    if (columnMode) {
-        const auto columns = columnSpan(state);
-        selectionLeft = columns.first;
-        selectionRight = columns.second;
-    }
-
-    QPainter painter(editor->viewport());
-    painter.setRenderHint(QPainter::Antialiasing, false);
-    const QColor accent =
-        editor->palette().color(QPalette::Highlight);
-
-    for (int line = firstLine; line <= lastLine; ++line) {
-        const QTextBlock block = editor->document()->findBlockByNumber(line);
-        if (!block.isValid() || !block.isVisible())
-            continue;
-
-        QTextCursor endCursor(block);
-        endCursor.setPosition(
-            block.position() + block.text().size());
-        const QRect endRect =
-            editor->cursorRect(endCursor);
-        const int lineEndColumn =
-            layoutVisualColumnForOffset(
-                editor, block, block.text().size());
-        const int targetX =
-            xForVisualColumn(editor, block, targetColumn);
-        const int selectionLeftX =
-            xForVisualColumn(
-                editor, block, selectionLeft);
-        const int selectionRightX =
-            xForVisualColumn(
-                editor, block, selectionRight);
-        const int affectedLeft =
-            std::min({endRect.left(),
-                      targetX,
-                      selectionLeftX});
-        const int affectedRight =
-            std::max({endRect.left(),
-                      targetX,
-                      selectionRightX});
-        const QRect affected(
-            affectedLeft - 3,
-            endRect.top(),
-            affectedRight - affectedLeft + 7,
-            endRect.height());
-        if (!event->rect().intersects(affected))
-            continue;
-
-        if (columnMode
-            && selectionRight > selectionLeft) {
-            const int actualRight =
-                qMin(selectionRight, lineEndColumn);
-            if (actualRight > selectionLeft) {
-                QColor selected = accent;
-                selected.setAlpha(
-                    line == activeLine ? 86 : 68);
-                const int actualRightX =
-                    xForVisualColumn(
-                        editor, block, actualRight);
-                painter.fillRect(
-                    QRect(selectionLeftX,
-                          endRect.top() + 1,
-                          qMax(1,
-                               actualRightX
-                                   - selectionLeftX),
-                          qMax(1,
-                               endRect.height() - 2)),
-                    selected);
-            }
-        }
-
-        const int virtualEndColumn =
-            columnMode ? selectionRight : targetColumn;
-        const int virtualEndX =
-            xForVisualColumn(
-                editor, block, virtualEndColumn);
-        if (virtualEndColumn > lineEndColumn) {
-            QColor fill = accent;
-            fill.setAlpha(line == activeLine ? 40 : 24);
-            painter.fillRect(
-                QRect(endRect.left(),
-                      endRect.top() + 2,
-                      virtualEndX - endRect.left(),
-                      qMax(1, endRect.height() - 4)),
-                fill);
-            QColor guide = accent;
-            guide.setAlpha(line == activeLine ? 95 : 54);
-            QPen guidePen(guide);
-            guidePen.setStyle(Qt::DotLine);
-            guidePen.setWidth(1);
-            painter.setPen(guidePen);
-            painter.drawLine(endRect.left(),
-                             endRect.bottom() - 2,
-                             virtualEndX,
-                             endRect.bottom() - 2);
-        }
-
-        QColor caret = accent;
-        caret.setAlpha(line == activeLine ? 230 : 115);
-        QPen caretPen(caret);
-        caretPen.setWidth(line == activeLine ? 2 : 1);
-        painter.setPen(caretPen);
-        painter.drawLine(targetX,
-                         endRect.top() + 1,
-                         targetX,
-                         endRect.bottom() - 1);
-    }
-}
-}
+} // namespace
 
 void MyCodeEditorState::initializeCore(MyCodeEditor* editor)
 {
@@ -2681,6 +1648,7 @@ void MyCodeEditorState::initializeCore(MyCodeEditor* editor)
     inlineFilterTextOverlayOriginalText.clear();
     inlineFilterTextOverlayCurrentText.clear();
     qRegisterMetaType<DocumentChange>("DocumentChange");
+    qRegisterMetaType<EditorModeSnapshot>("EditorModeSnapshot");
     editor->setProperty(kDiagnosticsEmptyProperty, true);
     editor->setProperty(kSemanticDecorationsEmptyProperty, true);
     editor->setMouseTracking(true);
@@ -2689,21 +1657,55 @@ void MyCodeEditorState::initializeCore(MyCodeEditor* editor)
 
 void MyCodeEditorState::shutdown()
 {
+    modes.exitAll(EditorModeExitReason::DocumentClosed);
+    templateSlots.shutdown(nullptr);
     ++ghostQueryGeneration;
     if (ghostQueryCancellation)
         ghostQueryCancellation->store(true);
     cancelSignalDefinitionEditor();
-    selectedSignals.clear();
-    signalSelectionActive = false;
-    signalSelectionDragging = false;
-    signalSelectionLastDragIdentity.clear();
-    signalSelectionLastDragPoint = QPoint(-1, -1);
-    virtualCursorActive = false;
-    virtualCursorLine = -1;
-    virtualCursorColumn = -1;
+    signalSelection.shutdown(nullptr);
+    columnMode.shutdown(nullptr);
     sourceNavigation.shutdown();
     gutter.destroy();
 }
+
+void MyCodeEditorState::bindEditorModes(MyCodeEditor* editor)
+{
+    const QPointer<MyCodeEditor> target(editor);
+    modes.setChangeHandler(
+        [target](const EditorModeSnapshot& snapshot) {
+            if (target)
+                emit target->editorModeStateChanged(snapshot);
+        });
+    templateSlots.bind(&modes, &selections, editor);
+    signalSelection.bind(
+        &modes,
+        &selections,
+        editor,
+        [this, target](int cursorPosition) {
+            return resolveSignalSelectionCandidate(
+                target,
+                cursorPosition);
+        });
+    columnMode.bind(&modes, editor);
+    sourceNavigation.bindModeController(
+        &modes,
+        editor,
+        &selections);
+    folding.bindModeController(&modes, editor);
+}
+
+EditorModeSnapshot MyCodeEditorState::modeSnapshot() const
+{
+    return modes.snapshot();
+}
+
+void MyCodeEditorState::exitInteractionModes(
+    EditorModeExitReason reason)
+{
+    modes.exitAll(reason);
+}
+
 
 void MyCodeEditorState::attachEditorConnections(MyCodeEditor* editor)
 {
@@ -2726,8 +1728,10 @@ void MyCodeEditorState::attachEditorConnections(MyCodeEditor* editor)
         editor,
         [this, editor](const QRect& rect, int dy) {
             gutter.handleUpdateRequest(editor, rect, dy);
-            if (dy != 0)
+            if (dy != 0) {
                 sourceNavigation.handleEditorScrolled(editor, selections);
+                sourceNavigation.syncMode();
+            }
         });
     QObject::connect(
         editor->document(),
@@ -2758,6 +1762,7 @@ void MyCodeEditorState::attachEditorConnections(MyCodeEditor* editor)
 void MyCodeEditorState::attachToEditor(MyCodeEditor* editor)
 {
     initializeCore(editor);
+    bindEditorModes(editor);
     attachEditorConnections(editor);
     appearance.apply(editor);
     syntax.attachToEditor(editor);
@@ -2816,10 +1821,10 @@ void MyCodeEditorState::handleDocumentContentsChange(
 
     if (signalDefinitionEditor)
         cancelSignalDefinitionEditor();
-    if (virtualCursorActive)
+    if (modes.isActive(EditorModeId::VirtualCursor))
         clearVirtualCursor(editor);
-    if (signalSelectionActive
-        || !selectedSignals.isEmpty()) {
+    if (signalSelection.active()
+        || signalSelection.hasSelection()) {
         cancelSignalSelectionMode(editor);
     }
     ++ghostQueryGeneration;
@@ -2972,8 +1977,7 @@ void MyCodeEditorState::handleDocumentContentsChange(
     finishDocumentChangePhase(
         hotPathMetrics.documentChangeOccurrenceNanoseconds);
 
-    if (templateSlotModeActive())
-        templateSlotPresentationPending = true;
+    templateSlots.markPresentationPending();
     handleTemplateSlotContentsChange(editor,
                                      change.position,
                                      change.removedLength,
@@ -3519,6 +2523,7 @@ EditorSemanticContext MyCodeEditorState::semanticContextForPosition(
         semanticPosition,
         false,
         semanticDocumentRevision());
+    context.packageName = syntax.packageNameAt(semanticPosition);
     if (includeDocumentText)
         context.documentText = editor->cachedDocumentText();
     context.hierarchyInstance = hierarchyInstance;
@@ -3535,6 +2540,7 @@ void MyCodeEditorState::handleControlKeyPress(
         semanticService(),
         sourceContextProvider(editor),
         selections);
+    sourceNavigation.syncMode();
 }
 
 void MyCodeEditorState::handleControlKeyRelease(
@@ -3547,136 +2553,9 @@ void MyCodeEditorState::handleControlKeyRelease(
         semanticService(),
         sourceContextProvider(editor),
         selections);
+    sourceNavigation.syncMode();
 }
 
-namespace {
-QList<QPair<int, int>> templateSlotHighlightRanges(
-    const MyCodeEditorState& state)
-{
-    QList<QPair<int, int>> ranges;
-    ranges.reserve(state.templateSlotRanges.size());
-    for (const MyCodeEditorState::TemplateSlotRange& slot :
-         state.templateSlotRanges) {
-        ranges.append(qMakePair(slot.start, qMax(0, slot.end - slot.start)));
-    }
-    return ranges;
-}
-
-int templateSlotIndexForCursor(
-    MyCodeEditor* editor,
-    const MyCodeEditorState& state)
-{
-    if (!editor || !state.templateSlotModeActive())
-        return -1;
-
-    QTextCursor cursor = editor->textCursor();
-    const int selectionStart = cursor.hasSelection()
-        ? cursor.selectionStart()
-        : cursor.position();
-    const int selectionEnd = cursor.hasSelection()
-        ? cursor.selectionEnd()
-        : cursor.position();
-    for (int i = 0; i < state.templateSlotRanges.size(); ++i) {
-        const MyCodeEditorState::TemplateSlotRange slot =
-            state.templateSlotRanges.at(i);
-        if (selectionStart >= slot.start && selectionEnd <= slot.end)
-            return i;
-    }
-    return -1;
-}
-
-bool templateSlotCursorInsideActiveRange(
-    MyCodeEditor* editor,
-    const MyCodeEditorState& state)
-{
-    return templateSlotIndexForCursor(editor, state)
-        == state.templateSlotActiveIndex;
-}
-
-bool templateSlotPositionInsideAnyRange(
-    const MyCodeEditorState& state,
-    int position)
-{
-    if (!state.templateSlotModeActive())
-        return false;
-    for (const MyCodeEditorState::TemplateSlotRange& slot :
-         state.templateSlotRanges) {
-        if (position >= slot.start && position <= slot.end)
-            return true;
-    }
-    return false;
-}
-
-void refreshTemplateSlotHighlights(MyCodeEditor* editor,
-                                   MyCodeEditorState& state)
-{
-    if (!editor)
-        return;
-    state.selections.highlightTemplateSlots(
-        editor,
-        templateSlotHighlightRanges(state),
-        state.templateSlotActiveIndex,
-        state.templateSlotBlinkOn);
-}
-
-void stopTemplateSlotBlinkTimer(MyCodeEditor* editor,
-                                MyCodeEditorState& state)
-{
-    Q_UNUSED(editor)
-    if (!state.templateSlotBlinkTimer)
-        return;
-    state.templateSlotBlinkTimer->stop();
-    state.templateSlotBlinkTimer->deleteLater();
-    state.templateSlotBlinkTimer = nullptr;
-}
-
-void ensureTemplateSlotBlinkTimer(MyCodeEditor* editor,
-                                  MyCodeEditorState& state)
-{
-    if (!editor || state.templateSlotBlinkTimer)
-        return;
-
-    state.templateSlotBlinkOn = true;
-    state.templateSlotBlinkTimer = new QTimer(editor);
-    state.templateSlotBlinkTimer->setInterval(500);
-    QObject::connect(
-        state.templateSlotBlinkTimer,
-        &QTimer::timeout,
-        editor,
-        [&state, editor]() {
-            if (!state.templateSlotModeActive()) {
-                stopTemplateSlotBlinkTimer(editor, state);
-                return;
-            }
-            state.templateSlotBlinkOn = !state.templateSlotBlinkOn;
-            refreshTemplateSlotHighlights(editor, state);
-        });
-    state.templateSlotBlinkTimer->start();
-}
-
-void selectTemplateSlot(MyCodeEditor* editor,
-                        MyCodeEditorState& state,
-                        int index)
-{
-    if (!editor || index < 0 || index >= state.templateSlotRanges.size())
-        return;
-
-    state.templateSlotActiveIndex = index;
-    const MyCodeEditorState::TemplateSlotRange slot =
-        state.templateSlotRanges.at(index);
-    QTextCursor cursor(editor->document());
-    cursor.setPosition(slot.start);
-    if (slot.end > slot.start)
-        cursor.setPosition(slot.end, QTextCursor::KeepAnchor);
-    state.templateSlotIgnoreNextCursorCheck = true;
-    editor->setTextCursor(cursor);
-    refreshTemplateSlotHighlights(editor, state);
-    emit editor->editorStatusMessageRequested(
-        QStringLiteral("SLOT %1/%2")
-            .arg(index + 1)
-            .arg(state.templateSlotRanges.size()));
-}
-} // namespace
 
 void MyCodeEditorState::startTemplateSlotMode(
     MyCodeEditor* editor,
@@ -3684,265 +2563,85 @@ void MyCodeEditorState::startTemplateSlotMode(
     int insertedLength,
     const CodeTemplateSlotList& slotMetadata)
 {
-    clearTemplateSlotMode(editor);
-    if (!editor || !editor->document() || insertedLength < 0
-        || slotMetadata.isEmpty())
-        return;
-
-    const int docEnd = qMax(0, editor->document()->characterCount() - 1);
-    if (insertionStart < 0 || insertionStart + insertedLength > docEnd)
-        return;
-
-    for (const CodeTemplateSlot& slotInfo : slotMetadata) {
-        if (slotInfo.start < 0 || slotInfo.length < 0
-            || slotInfo.start + slotInfo.length > insertedLength) {
-            continue;
-        }
-
-        TemplateSlotRange range;
-        range.name = slotInfo.name;
-        range.start = insertionStart + slotInfo.start;
-        range.end = range.start + slotInfo.length;
-        if (range.start < 0 || range.end < range.start || range.end > docEnd)
-            continue;
-        templateSlotRanges.append(range);
-    }
-
-    if (templateSlotRanges.isEmpty()) {
-        clearTemplateSlotMode(editor);
-        return;
-    }
-
-    templateSlotSessionStart = insertionStart;
-    templateSlotSessionEnd = insertionStart + insertedLength;
-    selectTemplateSlot(editor, *this, 0);
-    ensureTemplateSlotBlinkTimer(editor, *this);
+    templateSlots.start(editor,
+                        insertionStart,
+                        insertedLength,
+                        slotMetadata);
 }
 
 bool MyCodeEditorState::templateSlotModeActive() const
 {
-    return templateSlotActiveIndex >= 0
-        && templateSlotActiveIndex < templateSlotRanges.size();
+    return templateSlots.active();
 }
 
 int MyCodeEditorState::templateSlotModeActiveIndex() const
 {
-    return templateSlotActiveIndex;
+    return templateSlots.activeIndex();
 }
 
 int MyCodeEditorState::templateSlotModeSlotCount() const
 {
-    return templateSlotRanges.size();
+    return templateSlots.slotCount();
 }
 
 bool MyCodeEditorState::templateSlotModeBlinkOn() const
 {
-    return templateSlotBlinkOn;
+    return templateSlots.blinkOn();
 }
 
 bool MyCodeEditorState::columnSelectionActiveForCommand() const
 {
-    return hasColumnSelection(*this);
+    return columnMode.selectionActive();
 }
 
 bool MyCodeEditorState::virtualCursorActiveForTest() const
 {
-    return virtualCursorActive;
+    return columnMode.virtualCursorActive();
 }
 
 int MyCodeEditorState::virtualCursorLineForTest() const
 {
-    return virtualCursorLine;
+    return columnMode.virtualCursorLine();
 }
 
 int MyCodeEditorState::virtualCursorColumnForTest() const
 {
-    return virtualCursorColumn;
+    return columnMode.virtualCursorColumn();
 }
 
 void MyCodeEditorState::clearVirtualCursor(
     MyCodeEditor* editor)
 {
-    const bool wasActive = virtualCursorActive;
-    virtualCursorActive = false;
-    virtualCursorLine = -1;
-    virtualCursorColumn = -1;
-    if (editor && wasActive) {
-        editor->setCursorWidth(
-            qMax(1, virtualCursorSavedWidth));
-        editor->viewport()->update();
-    }
-    virtualCursorSavedWidth = 1;
+    columnMode.clearVirtualCursor(editor);
 }
 
 void MyCodeEditorState::handleVirtualCursorChanged(
     MyCodeEditor* editor)
 {
-    if (!virtualCursorActive || !editor)
-        return;
-    const QTextCursor cursor = editor->textCursor();
-    const QTextBlock block = cursor.block();
-    const bool stillAtLineEnd =
-        !cursor.hasSelection()
-        && block.isValid()
-        && block.blockNumber() == virtualCursorLine
-        && cursor.position()
-            == block.position() + block.text().size();
-    if (!stillAtLineEnd)
-        clearVirtualCursor(editor);
+    columnMode.handleVirtualCursorChanged(editor);
 }
 
 void MyCodeEditorState::prepareVirtualCursorInput(
     MyCodeEditor* editor)
 {
-    if (!virtualCursorActive || !editor
-        || !editor->document()) {
-        return;
-    }
-    const QTextBlock block =
-        editor->document()->findBlockByNumber(
-            virtualCursorLine);
-    if (!block.isValid()) {
-        clearVirtualCursor(editor);
-        return;
-    }
-    const int lineEndColumn =
-        layoutVisualColumnForOffset(
-            editor, block, block.text().size());
-    const int paddingLength =
-        qMax(0, virtualCursorColumn - lineEndColumn);
-    const int insertionPosition =
-        block.position() + block.text().size();
-    clearVirtualCursor(editor);
-    QTextCursor cursor(editor->document());
-    cursor.setPosition(insertionPosition);
-    if (paddingLength > 0)
-        cursor.insertText(
-            QString(paddingLength, QLatin1Char(' ')));
-    editor->setTextCursor(cursor);
+    columnMode.prepareVirtualCursorInput(editor);
 }
 
 bool MyCodeEditorState::handleVirtualCursorKeyPress(
     MyCodeEditor* editor,
     QKeyEvent* event)
 {
-    if (!editor || !event || !editor->document())
+    if (templateSlotModeActive())
         return false;
-
-    const Qt::KeyboardModifiers relevantModifiers =
-        event->modifiers()
-        & (Qt::ShiftModifier
-           | Qt::ControlModifier
-           | Qt::AltModifier
-           | Qt::MetaModifier);
-    if (!virtualCursorActive) {
-        if (columnSelectionActive
-            || templateSlotModeActive()) {
-            return false;
-        }
-        if (event->key() != Qt::Key_Right
-            || relevantModifiers != Qt::NoModifier) {
-            return false;
-        }
-        const QTextCursor cursor = editor->textCursor();
-        const QTextBlock block = cursor.block();
-        if (cursor.hasSelection()
-            || !block.isValid()
-            || cursor.position()
-                != block.position() + block.text().size()) {
-            return false;
-        }
-        virtualCursorSavedWidth =
-            qMax(1, editor->cursorWidth());
-        virtualCursorActive = true;
-        virtualCursorLine = block.blockNumber();
-        virtualCursorColumn =
-            layoutVisualColumnForOffset(
-                editor, block, block.text().size()) + 1;
-        editor->setCursorWidth(0);
-        editor->viewport()->update();
-        event->accept();
-        return true;
-    }
-
-    const QTextBlock block =
-        editor->document()->findBlockByNumber(
-            virtualCursorLine);
-    if (!block.isValid()) {
-        clearVirtualCursor(editor);
-        return false;
-    }
-    const int lineEndColumn =
-        layoutVisualColumnForOffset(
-            editor, block, block.text().size());
-
-    if (relevantModifiers == Qt::NoModifier
-        && (event->key() == Qt::Key_Left
-            || event->key() == Qt::Key_Backspace)) {
-        --virtualCursorColumn;
-        if (virtualCursorColumn <= lineEndColumn)
-            clearVirtualCursor(editor);
-        else
-            editor->viewport()->update();
-        event->accept();
-        return true;
-    }
-    if (relevantModifiers == Qt::NoModifier
-        && event->key() == Qt::Key_Right) {
-        ++virtualCursorColumn;
-        editor->viewport()->update();
-        event->accept();
-        return true;
-    }
-    if (relevantModifiers == Qt::NoModifier
-        && event->key() == Qt::Key_Delete) {
-        event->accept();
-        return true;
-    }
-
-    const bool plainControlShortcut =
-        relevantModifiers == Qt::ControlModifier;
-    const bool paste =
-        event->matches(QKeySequence::Paste)
-        || (plainControlShortcut
-            && event->key() == Qt::Key_V);
-    const bool printable =
-        relevantModifiers == Qt::NoModifier
-        && !event->text().isEmpty();
-    const bool textControl =
-        relevantModifiers == Qt::NoModifier
-        && (event->key() == Qt::Key_Tab
-            || event->key() == Qt::Key_Return
-            || event->key() == Qt::Key_Enter);
-    if (paste || printable || textControl) {
-        prepareVirtualCursorInput(editor);
-        return false;
-    }
-
-    const bool copy =
-        event->matches(QKeySequence::Copy)
-        || (plainControlShortcut
-            && event->key() == Qt::Key_C);
-    if (copy) {
-        event->accept();
-        return true;
-    }
-
-    if (event->key() == Qt::Key_Control
-        || event->key() == Qt::Key_Shift
-        || event->key() == Qt::Key_Alt
-        || event->key() == Qt::Key_Meta) {
-        return false;
-    }
-
-    clearVirtualCursor(editor);
-    return false;
+    return columnMode.handleVirtualCursorKeyPress(
+        editor,
+        event);
 }
 
 QStringList MyCodeEditorState::columnSelectionRowTexts(
     MyCodeEditor* editor) const
 {
-    return ::columnSelectionRowTexts(editor, *this);
+    return columnMode.selectedRows(editor);
 }
 
 bool MyCodeEditorState::applyColumnSelectionRowTexts(
@@ -3951,91 +2650,28 @@ bool MyCodeEditorState::applyColumnSelectionRowTexts(
     bool replaceSelection,
     QString* message)
 {
-    if (!editor || !hasColumnSelection(*this)) {
-        if (message)
-            *message = QStringLiteral("No column selection");
-        return false;
-    }
-    replaceColumnSelectionRows(editor, *this, rows, true, replaceSelection);
-    if (message)
-        message->clear();
-    return true;
+    return columnMode.applyRows(
+        editor,
+        rows,
+        replaceSelection,
+        message);
 }
 
-void MyCodeEditorState::clearTemplateSlotMode(MyCodeEditor* editor,
-                                              const QString& message,
-                                              bool updatePresentation)
+void MyCodeEditorState::clearTemplateSlotMode(
+    MyCodeEditor* editor,
+    const QString& message,
+    bool updatePresentation)
 {
-    const bool wasActive = templateSlotModeActive()
-        || !templateSlotRanges.isEmpty();
-    stopTemplateSlotBlinkTimer(editor, *this);
-    templateSlotRanges.clear();
-    templateSlotActiveIndex = -1;
-    templateSlotSessionStart = -1;
-    templateSlotSessionEnd = -1;
-    templateSlotBlinkOn = true;
-    templateSlotIgnoreNextCursorCheck = false;
-    if (editor && updatePresentation)
-        selections.clearTemplateSlots(editor);
-    if (wasActive && editor && !message.isEmpty())
-        emit editor->editorStatusMessageRequested(message);
+    templateSlots.clear(editor,
+                        message,
+                        updatePresentation);
 }
 
-bool MyCodeEditorState::handleTemplateSlotKeyPress(MyCodeEditor* editor,
-                                                   QKeyEvent* event)
+bool MyCodeEditorState::handleTemplateSlotKeyPress(
+    MyCodeEditor* editor,
+    QKeyEvent* event)
 {
-    if (!editor || !event || !templateSlotModeActive())
-        return false;
-
-    const int cursorSlotIndex = templateSlotIndexForCursor(editor, *this);
-    if (cursorSlotIndex >= 0 && cursorSlotIndex != templateSlotActiveIndex) {
-        templateSlotActiveIndex = cursorSlotIndex;
-        refreshTemplateSlotHighlights(editor, *this);
-    }
-    if (!templateSlotCursorInsideActiveRange(editor, *this)) {
-        clearTemplateSlotMode(editor);
-        return false;
-    }
-
-    if (event->key() == Qt::Key_Escape) {
-        clearTemplateSlotMode(editor, QStringLiteral("Slot Mode canceled"));
-        event->accept();
-        return true;
-    }
-
-    const Qt::KeyboardModifiers modifiers =
-        event->modifiers()
-        & (Qt::ShiftModifier
-           | Qt::ControlModifier
-           | Qt::AltModifier
-           | Qt::MetaModifier);
-    const bool isForwardTab = event->key() == Qt::Key_Tab
-        && modifiers == Qt::NoModifier;
-    const bool isBackwardTab =
-        event->key() == Qt::Key_Backtab
-        || (event->key() == Qt::Key_Tab
-            && modifiers == Qt::ShiftModifier);
-    if ((!isForwardTab && !isBackwardTab)
-        || (modifiers != Qt::NoModifier
-            && modifiers != Qt::ShiftModifier)) {
-        return false;
-    }
-
-    if (isBackwardTab) {
-        const int count = templateSlotRanges.size();
-        selectTemplateSlot(editor,
-                           *this,
-                           (templateSlotActiveIndex - 1 + count) % count);
-        event->accept();
-        return true;
-    }
-
-    selectTemplateSlot(editor,
-                       *this,
-                       (templateSlotActiveIndex + 1)
-                           % templateSlotRanges.size());
-    event->accept();
-    return true;
+    return templateSlots.handleKeyPress(editor, event);
 }
 
 void MyCodeEditorState::handleTemplateSlotContentsChange(
@@ -4045,92 +2681,79 @@ void MyCodeEditorState::handleTemplateSlotContentsChange(
     int charsAdded,
     bool updatePresentation)
 {
-    if (!editor || !templateSlotModeActive())
-        return;
-
-    const int changeStart = position;
-    const int changeEnd = position + charsRemoved;
-    if (changeStart < templateSlotSessionStart
-        || changeStart > templateSlotSessionEnd) {
-        clearTemplateSlotMode(editor, QString(), updatePresentation);
-        return;
-    }
-
-    TemplateSlotRange& activeSlot =
-        templateSlotRanges[templateSlotActiveIndex];
-    if (changeStart < activeSlot.start || changeEnd > activeSlot.end) {
-        clearTemplateSlotMode(editor, QString(), updatePresentation);
-        return;
-    }
-
-    const int delta = charsAdded - charsRemoved;
-    activeSlot.end += delta;
-    if (activeSlot.end < activeSlot.start) {
-        clearTemplateSlotMode(editor, QString(), updatePresentation);
-        return;
-    }
-    for (int i = 0; i < templateSlotRanges.size(); ++i) {
-        if (i == templateSlotActiveIndex)
-            continue;
-        if (templateSlotRanges.at(i).start < changeEnd)
-            continue;
-        templateSlotRanges[i].start += delta;
-        templateSlotRanges[i].end += delta;
-    }
-    templateSlotSessionEnd += delta;
-    if (updatePresentation)
-        refreshTemplateSlotHighlights(editor, *this);
+    templateSlots.handleContentsChange(
+        editor,
+        position,
+        charsRemoved,
+        charsAdded,
+        updatePresentation);
 }
 
-void MyCodeEditorState::handleTemplateSlotCursorChanged(MyCodeEditor* editor)
+void MyCodeEditorState::handleTemplateSlotCursorChanged(
+    MyCodeEditor* editor)
 {
-    if (!templateSlotModeActive())
-        return;
-    if (templateSlotIgnoreNextCursorCheck) {
-        templateSlotIgnoreNextCursorCheck = false;
-        return;
-    }
-    const int cursorSlotIndex = templateSlotIndexForCursor(editor, *this);
-    if (cursorSlotIndex >= 0) {
-        if (cursorSlotIndex != templateSlotActiveIndex) {
-            templateSlotActiveIndex = cursorSlotIndex;
-            refreshTemplateSlotHighlights(editor, *this);
-            emit editor->editorStatusMessageRequested(
-                QStringLiteral("SLOT %1/%2")
-                    .arg(templateSlotActiveIndex + 1)
-                    .arg(templateSlotRanges.size()));
-        }
-        return;
-    }
-    if (!templateSlotCursorInsideActiveRange(editor, *this))
-        clearTemplateSlotMode(editor);
+    templateSlots.handleCursorChanged(editor);
 }
 
 bool MyCodeEditorState::handleKeyPress(MyCodeEditor* editor, QKeyEvent* event)
 {
-    if (signalSelectionActive) {
-        if (event->key() == Qt::Key_Escape) {
+    if (!editor || !event)
+        return false;
+
+    if (event->key() == Qt::Key_Escape) {
+        const EditorModeId escapeMode = modes.escapeTarget();
+        switch (escapeMode) {
+        case EditorModeId::SignalSelection:
             cancelSignalSelectionMode(editor);
             emit editor->editorStatusMessageRequested(
                 QStringLiteral("Signal selection canceled"));
-        }
-        event->accept();
-        return true;
-    }
-
-    if (folding.foldRegionMarkModeActive()) {
-        if (event->key() == Qt::Key_Escape)
+            break;
+        case EditorModeId::FoldRegion:
             folding.cancelFoldRegionMarkMode(editor);
-        event->accept();
-        return true;
+            break;
+        case EditorModeId::FoldShelf:
+            folding.cancelFoldShelfMode(editor);
+            break;
+        case EditorModeId::TemplateSlots:
+            handleTemplateSlotKeyPress(editor, event);
+            return true;
+        case EditorModeId::VirtualCursor:
+            clearVirtualCursor(editor);
+            break;
+        case EditorModeId::InlineCandidates:
+        case EditorModeId::CompletionCandidates:
+            if (!completionWorkflow.handleCompletionPopupKey(event)) {
+                modes.exit(escapeMode,
+                           EditorModeExitReason::Canceled);
+            }
+            break;
+        case EditorModeId::ColumnSelection:
+            columnMode.clearSelection(editor);
+            break;
+        case EditorModeId::SourceNavigation:
+            sourceNavigation.handleEscape(editor, selections);
+            modes.exit(EditorModeId::SourceNavigation,
+                       EditorModeExitReason::Canceled);
+            break;
+        case EditorModeId::None:
+            break;
+        }
+        if (escapeMode != EditorModeId::None) {
+            event->accept();
+            return true;
+        }
     }
 
-    if (folding.foldShelfModeActive() && event->key() == Qt::Key_Escape) {
-        folding.cancelFoldShelfMode(editor);
+    const EditorModeId primaryMode = modes.primaryMode();
+    if (primaryMode == EditorModeId::SignalSelection) {
         event->accept();
         return true;
     }
-    if (folding.foldShelfModeActive()
+    if (primaryMode == EditorModeId::FoldRegion) {
+        event->accept();
+        return true;
+    }
+    if (primaryMode == EditorModeId::FoldShelf
         && !event->text().isEmpty()
         && !event->modifiers().testFlag(Qt::ControlModifier)) {
         emit editor->editorStatusMessageRequested(
@@ -4139,25 +2762,19 @@ bool MyCodeEditorState::handleKeyPress(MyCodeEditor* editor, QKeyEvent* event)
         return true;
     }
 
-    if (handleTemplateSlotKeyPress(editor, event))
+    if (primaryMode == EditorModeId::TemplateSlots
+        && handleTemplateSlotKeyPress(editor, event)) {
         return true;
+    }
 
-    if (handleVirtualCursorKeyPress(editor, event))
-        return true;
-
-    if (event->key() == Qt::Key_Escape
-        && completionWorkflow.handleCompletionPopupKey(event)) {
+    if ((primaryMode == EditorModeId::VirtualCursor
+         || primaryMode == EditorModeId::None)
+        && handleVirtualCursorKeyPress(editor, event)) {
         return true;
     }
 
     if (event->key() == Qt::Key_Escape
         && sourceNavigation.handleEscape(editor, selections)) {
-        event->accept();
-        return true;
-    }
-
-    if (event->key() == Qt::Key_Escape && columnSelectionActive) {
-        clearColumnSelection(editor, *this);
         event->accept();
         return true;
     }
@@ -4182,8 +2799,12 @@ bool MyCodeEditorState::handleKeyPress(MyCodeEditor* editor, QKeyEvent* event)
     if (handleDuplicateSelectionOrLine(editor, event))
         return true;
 
-    if (handleMoveLineBlock(editor, event, columnSelectionActive))
+    if (handleMoveLineBlock(
+            editor,
+            event,
+            modes.isActive(EditorModeId::ColumnSelection))) {
         return true;
+    }
 
     handleControlKeyPress(editor, event);
 
@@ -4198,6 +2819,7 @@ bool MyCodeEditorState::handleKeyPress(MyCodeEditor* editor, QKeyEvent* event)
             event,
             semanticService(),
             sourceContextProvider(editor))) {
+        sourceNavigation.syncMode();
         return true;
     }
 
@@ -4206,14 +2828,20 @@ bool MyCodeEditorState::handleKeyPress(MyCodeEditor* editor, QKeyEvent* event)
         return true;
     }
 
-    if (handleColumnSelectionClipboard(editor, event, *this))
+    if (columnMode.handleClipboard(editor, event))
         return true;
 
-    if (handleColumnSelectionNavigation(editor, event, *this))
+    if (columnMode.handleSelectionNavigation(
+            editor,
+            event)) {
         return true;
+    }
 
-    if (handleColumnSelectionKeyInput(editor, event, *this))
+    if (columnMode.handleSelectionKeyInput(
+            editor,
+            event)) {
         return true;
+    }
 
     if (adjustSelectedRangeBound(editor, event))
         return true;
@@ -4278,13 +2906,8 @@ void MyCodeEditorState::finishEditorInput(MyCodeEditor* editor)
     if (!editorPresentationPending)
         return;
     sourceNavigation.handleEditorContentChanged(editor, selections);
-    if (templateSlotPresentationPending) {
-        if (templateSlotModeActive())
-            refreshTemplateSlotHighlights(editor, *this);
-        else
-            selections.clearTemplateSlots(editor);
-        templateSlotPresentationPending = false;
-    }
+    sourceNavigation.syncMode();
+    templateSlots.flushPendingPresentation(editor);
     if (ghostPresentationPending) {
         setGhostAnnotations(editor, ghostAnnotations);
         ghostPresentationPending = false;
@@ -4601,24 +3224,61 @@ void MyCodeEditorState::paintColumnSelection(
     MyCodeEditor* editor,
     QPaintEvent* event) const
 {
-    paintColumnSelectionOverlay(editor, *this, event);
+    columnMode.paint(editor, event);
 }
 
 void MyCodeEditorState::handleContextMenu(
     MyCodeEditor* editor,
     QContextMenuEvent* event)
 {
-    if (signalSelectionActive && editor && event) {
-        signalSelectionActive = false;
-        signalSelectionDragging = false;
-        signalSelectionLastDragIdentity.clear();
-        signalSelectionLastDragPoint = QPoint(-1, -1);
+    if (signalSelection.active()
+        && editor && event) {
+        signalSelection.completeForContextMenu();
         const QTextCursor contextCursor =
             editor->cursorForPosition(event->pos());
         QMenu menu(editor);
-        QAction* createQueue = menu.addAction(
-            QStringLiteral("Create assignment queue"));
-        createQueue->setEnabled(!selectedSignals.isEmpty());
+        EditorContextMenuRequest request;
+        request.actionContext.workspacePath =
+            hierarchyInstance.workspacePath;
+        request.actionContext.fileName = identity.current();
+        request.actionContext.moduleName =
+            currentModuleName(editor);
+        request.actionContext.semanticState =
+            !semanticRevisionText.isEmpty()
+                && semanticRevisionText
+                       == editor->toPlainText()
+                ? EditorActionSemanticState::Current
+                : EditorActionSemanticState::Stale;
+        request.actionContext.resolvedHierarchy =
+            hierarchyInstance;
+        EditorContextMenuCapability capability;
+        capability.actionId =
+            QStringLiteral("refactor.createAssignmentQueue");
+        capability.executable =
+            signalSelection.hasSelection();
+        capability.unavailableReason =
+            QStringLiteral("Select at least one signal.");
+        request.capabilities.append(capability);
+        const EditorContextMenuModel model =
+            buildEditorContextMenuModel(request);
+        QMenu* refactorMenu =
+            menu.addMenu(QStringLiteral("Refactor"));
+        refactorMenu->setObjectName(
+            QStringLiteral("editorContextMenu.refactor"));
+        const EditorContextMenuItem item =
+            !model.sections.isEmpty()
+                && !model.sections.first().items.isEmpty()
+                ? model.sections.first().items.first()
+                : EditorContextMenuItem();
+        QAction* createQueue =
+            refactorMenu->addAction(item.text);
+        createQueue->setObjectName(
+            QStringLiteral("refactor.createAssignmentQueue"));
+        createQueue->setEnabled(item.enabled);
+        createQueue->setProperty(
+            "visibleReason", item.visibleReason);
+        if (!item.visibleReason.isEmpty())
+            createQueue->setStatusTip(item.visibleReason);
         bool actionTriggered = false;
         QObject::connect(
             createQueue,
@@ -5122,88 +3782,30 @@ bool MyCodeEditorState::confirmSignalDefinition(
     return true;
 }
 
-void MyCodeEditorState::refreshSignalSelectionOverlay(
-    MyCodeEditor* editor)
-{
-    if (!editor)
-        return;
-    QList<QPair<int, int>> ranges;
-    ranges.reserve(selectedSignals.size());
-    for (const SelectedSignal& signal :
-         std::as_const(selectedSignals)) {
-        if (signal.start >= 0 && signal.length > 0)
-            ranges.append(qMakePair(signal.start,
-                                    signal.length));
-    }
-    std::sort(ranges.begin(),
-              ranges.end(),
-              [](const auto& left, const auto& right) {
-        return left.first < right.first;
-    });
-    selections.highlightSignalSelections(editor, ranges);
-}
-
 bool MyCodeEditorState::startSignalSelectionMode(
     MyCodeEditor* editor,
     QString* message)
 {
-    if (!editor || !editor->document()) {
-        if (message)
-            *message = QStringLiteral("No editor document");
-        return false;
-    }
     cancelSignalDefinitionEditor();
-    selectedSignals.clear();
-    signalSelectionActive = true;
-    signalSelectionDragging = false;
-    signalSelectionDragSelect = false;
-    signalSelectionLastDragIdentity.clear();
-    signalSelectionLastDragPoint = QPoint(-1, -1);
-    selections.clearSignalSelections(editor);
-    if (message)
-        *message = QStringLiteral("Select signals");
-    emit editor->editorStatusMessageRequested(
-        QStringLiteral(
-            "Select signals: left-drag to check signals, right-click for actions, Esc to cancel"));
-    return true;
+    return signalSelection.start(editor, message);
 }
 
 void MyCodeEditorState::cancelSignalSelectionMode(
     MyCodeEditor* editor)
 {
-    signalSelectionActive = false;
-    signalSelectionDragging = false;
-    signalSelectionDragSelect = false;
-    signalSelectionLastDragIdentity.clear();
-    signalSelectionLastDragPoint = QPoint(-1, -1);
-    selectedSignals.clear();
-    if (editor)
-        selections.clearSignalSelections(editor);
+    signalSelection.cancel(editor);
 }
 
 bool MyCodeEditorState::signalSelectionModeActive() const
 {
-    return signalSelectionActive;
+    return signalSelection.active();
 }
 
 QStringList MyCodeEditorState::selectedSignalNames() const
 {
-    QList<SelectedSignal> ordered =
-        selectedSignals.values();
-    std::sort(ordered.begin(),
-              ordered.end(),
-              [](const SelectedSignal& left,
-                 const SelectedSignal& right) {
-        if (left.start != right.start)
-            return left.start < right.start;
-        return left.name < right.name;
-    });
-    QStringList names;
-    names.reserve(ordered.size());
-    for (const SelectedSignal& signal : ordered)
-        names.append(signal.name);
-    return names;
+    return signalSelection.selectedNames();
 }
+
 
 bool MyCodeEditorState::toggleSignalSelectionAt(
     MyCodeEditor* editor,
@@ -5211,78 +3813,11 @@ bool MyCodeEditorState::toggleSignalSelectionAt(
     bool toggle,
     bool desiredState)
 {
-    if (!signalSelectionActive || !editor)
-        return false;
-    const TSIdentifierTarget identifier =
-        syntax.identifierAt(cursorPosition);
-    if (!identifier.ok())
-        return false;
-
-    const EditorSemanticContext context =
-        semanticContextForPosition(
-            editor, identifier.startChar, false);
-    DefinitionQuery query;
-    query.symbolName = identifier.text;
-    query.fileName = context.fileName;
-    query.moduleName = context.moduleName;
-    query.linePrefixBeforeCursor =
-        context.lineUpToCursor;
-    query.cursorLine = context.cursorLine;
-    query.cursorColumn = context.column;
-    const DefinitionResult definition =
-        DefinitionService::getInstance()->resolveDefinition(query);
-    if (!definition.found)
-        return false;
-
-    const SymbolTaxonomy::SemanticMetadata metadata =
-        semanticMetadataForSymbolRecord(
-            definition.symbolRecord);
-    if (!SymbolTaxonomy::isSignalDeclaration(metadata)
-        && !SymbolTaxonomy::isPortDeclaration(metadata)) {
-        return false;
-    }
-    if (EditorFileIdentity::same(
-            definition.symbolRecord.location.fileName,
-            identity.current())) {
-        const std::uint64_t recordRevision =
-            definition.symbolRecord.presentation.documentRevision;
-        if (recordRevision != 0
-            && recordRevision
-                != semanticDocumentRevision()) {
-            return false;
-        }
-        if (recordRevision == 0
-            && editor->document()->isModified()) {
-            return false;
-        }
-    }
-
-    QString stableIdentity =
-        definition.symbolRecord.stableKey.isValid()
-        ? definition.symbolRecord.stableKey.toString()
-        : EffectiveValueService::stableSourceIdentity(
-              definition.symbolRecord);
-    if (stableIdentity.isEmpty())
-        return false;
-
-    const bool currentlySelected =
-        selectedSignals.contains(stableIdentity);
-    const bool select = toggle
-        ? !currentlySelected : desiredState;
-    if (select) {
-        SelectedSignal signal;
-        signal.identity = stableIdentity;
-        signal.name = identifier.text;
-        signal.start = identifier.startChar;
-        signal.length =
-            identifier.endChar - identifier.startChar;
-        selectedSignals.insert(stableIdentity, signal);
-    } else {
-        selectedSignals.remove(stableIdentity);
-    }
-    signalSelectionLastDragIdentity = stableIdentity;
-    refreshSignalSelectionOverlay(editor);
-    return true;
+    return signalSelection.toggleAt(
+        editor,
+        cursorPosition,
+        toggle,
+        desiredState);
 }
 
 bool MyCodeEditorState::createAssignmentQueueAt(
@@ -5295,16 +3830,8 @@ bool MyCodeEditorState::createAssignmentQueueAt(
             *message = QStringLiteral("No editor document");
         return false;
     }
-    QList<SelectedSignal> ordered =
-        selectedSignals.values();
-    std::sort(ordered.begin(),
-              ordered.end(),
-              [](const SelectedSignal& left,
-                 const SelectedSignal& right) {
-        if (left.start != right.start)
-            return left.start < right.start;
-        return left.name < right.name;
-    });
+    const QStringList ordered =
+        signalSelection.selectedNames();
     if (ordered.isEmpty()) {
         if (message)
             *message = QStringLiteral("No signals selected");
@@ -5338,7 +3865,7 @@ bool MyCodeEditorState::createAssignmentQueueAt(
     CodeTemplateSlotList metadata;
     for (int index = 0; index < ordered.size(); ++index) {
         insertionText += indent;
-        insertionText += ordered.at(index).name;
+        insertionText += ordered.at(index);
         insertionText += QStringLiteral(" <= ");
         CodeTemplateSlot slot;
         slot.name = QStringLiteral("rhs %1").arg(index + 1);
@@ -5372,13 +3899,14 @@ bool MyCodeEditorState::createAssignmentQueueAt(
     return templateSlotModeActive();
 }
 
-void MyCodeEditorState::addStructuralContextMenuActions(
-    MyCodeEditor* editor,
-    QMenu* menu,
-    int cursorPosition)
+EditorStructuralContextMenuState
+MyCodeEditorState::structuralContextMenuState(
+    const MyCodeEditor* editor,
+    int cursorPosition) const
 {
-    if (!editor || !menu)
-        return;
+    EditorStructuralContextMenuState state;
+    if (!editor)
+        return state;
 
     QString signalFailure;
     const QString signalCandidate =
@@ -5390,75 +3918,27 @@ void MyCodeEditorState::addStructuralContextMenuActions(
         target.ok()
         && (!target.parameterActuals.isEmpty()
             || !target.portActuals.isEmpty());
-    if (signalCandidate.isEmpty()
-        && !hasInstanceSlots) {
-        return;
-    }
-
-    if (!signalCandidate.isEmpty()) {
-        QAction* createAction = menu->addAction(
-            QStringLiteral("Create signal definition..."));
-        QObject::connect(
-            createAction,
-            &QAction::triggered,
-            editor,
-            [this, editor, cursorPosition]() {
-                QString reason;
-                if (!beginSignalDefinitionEditor(
-                        editor, cursorPosition, &reason)
-                    && !reason.isEmpty()) {
-                    emit editor->editorStatusMessageRequested(reason);
-                }
-            });
-    }
-    if (!signalCandidate.isEmpty() && hasInstanceSlots)
-        menu->addSeparator();
-    if (hasInstanceSlots) {
-        QAction* action =
-            menu->addAction(QStringLiteral("Edit instance slots"));
-        QObject::connect(action,
-                         &QAction::triggered,
-                         editor,
-                         [this, editor, cursorPosition]() {
-            QString message;
-            if (!editInstanceSlotsAt(
-                    editor, cursorPosition, &message)
-                && !message.isEmpty()) {
-                emit editor->editorStatusMessageRequested(message);
-            }
-        });
-    }
+    state.signalDefinitionAvailable =
+        !signalCandidate.isEmpty();
+    state.instanceSlotsAvailable = hasInstanceSlots;
+    return state;
 }
 
 bool MyCodeEditorState::handleMousePress(
     MyCodeEditor* editor,
     QMouseEvent* event)
 {
-    if (signalSelectionActive && editor && event
-        && event->button() == Qt::LeftButton) {
-        const QTextCursor target =
-            editor->cursorForPosition(
-                event->position().toPoint());
-        signalSelectionLastDragPoint =
-            event->position().toPoint();
-        signalSelectionLastDragIdentity.clear();
-        const bool resolved =
-            toggleSignalSelectionAt(
-                editor, target.position(), true);
-        signalSelectionDragging = true;
-        signalSelectionDragSelect =
-            !resolved
-            || selectedSignals.contains(
-                   signalSelectionLastDragIdentity);
-        event->accept();
+    if (signalSelection.handleMousePress(
+            editor,
+            event)) {
         return true;
     }
 
     if (templateSlotModeActive() && editor && event) {
         const QTextCursor targetCursor =
             editor->cursorForPosition(event->position().toPoint());
-        if (!templateSlotPositionInsideAnyRange(*this,
-                                                targetCursor.position())) {
+        if (!templateSlots.containsPosition(
+                targetCursor.position())) {
             clearTemplateSlotMode(editor);
         }
     }
@@ -5466,22 +3946,23 @@ bool MyCodeEditorState::handleMousePress(
     if (folding.handleFoldShelfMousePress(editor, event))
         return true;
 
-    if (beginColumnSelection(editor, event, *this))
+    if (columnMode.beginSelection(editor, event))
         return true;
 
-    if (columnSelectionActive
+    if (modes.isActive(EditorModeId::ColumnSelection)
         && event
         && event->button() == Qt::LeftButton
         && !(event->modifiers().testFlag(Qt::ShiftModifier)
              && event->modifiers().testFlag(Qt::AltModifier))) {
-        clearColumnSelection(editor, *this);
+        columnMode.clearSelection(editor);
     }
 
-    if (handlePlainVirtualCursorClick(
-            editor, event, *this)) {
+    if (columnMode.handlePlainVirtualCursorClick(
+            editor,
+            event)) {
         return true;
     }
-    if (virtualCursorActive
+    if (modes.isActive(EditorModeId::VirtualCursor)
         && event
         && event->button() == Qt::LeftButton) {
         clearVirtualCursor(editor);
@@ -5490,93 +3971,41 @@ bool MyCodeEditorState::handleMousePress(
     if (handleBracketRangeAltClick(editor, event))
         return true;
 
-    return sourceNavigation.handleMousePress(
+    const bool handled = sourceNavigation.handleMousePress(
         editor,
         event,
         semanticService(),
         sourceContextProvider(editor),
         selections);
+    sourceNavigation.syncMode();
+    return handled;
 }
 
 bool MyCodeEditorState::handleMouseDoubleClick(
     MyCodeEditor* editor,
     QMouseEvent* event)
 {
-    return sourceNavigation.handleMouseDoubleClick(
+    const bool handled = sourceNavigation.handleMouseDoubleClick(
         editor,
         event,
         semanticService(),
         sourceContextProvider(editor),
         selections);
+    sourceNavigation.syncMode();
+    return handled;
 }
 
 bool MyCodeEditorState::handleMouseMove(
     MyCodeEditor* editor,
     QMouseEvent* event)
 {
-    if (signalSelectionActive
-        && signalSelectionDragging
-        && editor
-        && event
-        && event->buttons().testFlag(
-            Qt::LeftButton)) {
-        const QPoint currentPoint =
-            event->position().toPoint();
-        const QPoint previousPoint =
-            signalSelectionLastDragPoint.x() >= 0
-                ? signalSelectionLastDragPoint
-                : currentPoint;
-        const int previousLine =
-            editor->cursorForPosition(
-                QPoint(0, previousPoint.y()))
-                .block()
-                .blockNumber();
-        const int currentLine =
-            editor->cursorForPosition(
-                QPoint(0, currentPoint.y()))
-                .block()
-                .blockNumber();
-        const int lineStep =
-            currentLine >= previousLine ? 1 : -1;
-        for (int line = previousLine;; line += lineStep) {
-            const EditorBlockGeometry geometry =
-                editor->blockGeometry(line);
-            const int y = qRound(
-                geometry.top + geometry.height / 2.0);
-            qreal progress = 1.0;
-            if (currentPoint.y() != previousPoint.y()) {
-                progress =
-                    static_cast<qreal>(
-                        y - previousPoint.y())
-                    / static_cast<qreal>(
-                        currentPoint.y()
-                        - previousPoint.y());
-            }
-            progress = qBound<qreal>(
-                0.0, progress, 1.0);
-            const int x = qRound(
-                previousPoint.x()
-                + (currentPoint.x()
-                   - previousPoint.x())
-                      * progress);
-            const QTextCursor target =
-                editor->cursorForPosition(
-                    QPoint(x, y));
-            toggleSignalSelectionAt(
-                editor,
-                target.position(),
-                false,
-                signalSelectionDragSelect);
-            if (line == currentLine)
-                break;
-        }
-        signalSelectionLastDragPoint =
-            currentPoint;
-        event->accept();
+    if (signalSelection.handleMouseMove(
+            editor,
+            event)) {
         return true;
     }
 
-    if (updateColumnSelectionDrag(editor, event, *this))
+    if (columnMode.updateSelectionDrag(editor, event))
         return true;
 
     if (folding.handleFoldRegionMouseMove(editor, event))
@@ -5592,8 +4021,10 @@ bool MyCodeEditorState::handleMouseMove(
         semanticService(),
         sourceContextProvider(editor),
         selections)) {
+        sourceNavigation.syncMode();
         return true;
     }
+    sourceNavigation.syncMode();
     return false;
 }
 
@@ -5601,26 +4032,25 @@ bool MyCodeEditorState::handleMouseRelease(
     MyCodeEditor* editor,
     QMouseEvent* event)
 {
-    if (signalSelectionDragging
-        && event
-        && event->button() == Qt::LeftButton) {
-        signalSelectionDragging = false;
-        signalSelectionLastDragIdentity.clear();
-        signalSelectionLastDragPoint =
-            QPoint(-1, -1);
-        event->accept();
+    if (signalSelection.handleMouseRelease(
+            editor,
+            event)) {
         return true;
     }
 
-    if (sourceNavigation.handleMouseRelease(editor, event))
+    if (sourceNavigation.handleMouseRelease(editor, event)) {
+        sourceNavigation.syncMode();
         return true;
+    }
+    sourceNavigation.syncMode();
 
-    return endColumnSelectionDrag(editor, event, *this);
+    return columnMode.endSelectionDrag(editor, event);
 }
 
 void MyCodeEditorState::handleLeaveEvent(MyCodeEditor* editor)
 {
     sourceNavigation.handleLeave(editor, selections);
+    sourceNavigation.syncMode();
 }
 
 void MyCodeEditorState::refreshScopeAndCurrentLineHighlight(
@@ -6207,65 +4637,6 @@ bool MyCodeEditorState::clearSelectedAssignmentRhs(MyCodeEditor* editor,
     return true;
 }
 
-void MyCodeEditorState::startFoldRegionMarkMode(MyCodeEditor* editor)
-{
-    folding.startFoldRegionMarkMode(editor);
-    if (editor)
-        gutter.handleUpdateRequest(editor, editor->viewport()->rect(), 0);
-}
-
-void MyCodeEditorState::cancelFoldRegionMarkMode(MyCodeEditor* editor)
-{
-    folding.cancelFoldRegionMarkMode(editor);
-    if (editor)
-        gutter.handleUpdateRequest(editor, editor->viewport()->rect(), 0);
-}
-
-bool MyCodeEditorState::foldRegionMarkModeActive() const
-{
-    return folding.foldRegionMarkModeActive();
-}
-
-void MyCodeEditorState::startFoldShelfMode(MyCodeEditor* editor)
-{
-    folding.startFoldShelfMode(editor);
-    if (editor)
-        gutter.handleUpdateRequest(editor, editor->viewport()->rect(), 0);
-}
-
-void MyCodeEditorState::cancelFoldShelfMode(MyCodeEditor* editor)
-{
-    folding.cancelFoldShelfMode(editor);
-    if (editor)
-        gutter.handleUpdateRequest(editor, editor->viewport()->rect(), 0);
-}
-
-bool MyCodeEditorState::foldShelfModeActive() const
-{
-    return folding.foldShelfModeActive();
-}
-
-bool MyCodeEditorState::insertCustomFoldMarkers(
-    MyCodeEditor* editor,
-    int startLine,
-    int endLine,
-    const QString& alias)
-{
-    return folding.insertCustomFoldMarkers(editor, startLine, endLine, alias);
-}
-
-bool MyCodeEditorState::toggleFoldAtLineForTest(
-    MyCodeEditor* editor,
-    int line)
-{
-    return folding.toggleFoldAtLine(editor, line);
-}
-
-bool MyCodeEditorState::foldCollapsedAtLineForTest(int line) const
-{
-    return folding.isCollapsedAtLine(line);
-}
-
 QList<GhostAnnotation> MyCodeEditorState::ghostAnnotationsForTest() const
 {
     return ghostAnnotations;
@@ -6282,27 +4653,6 @@ MyCodeEditorState::largeFileSyntaxScopeForTest() const
     return syntax.largeFileScopeSnapshotForTest();
 }
 
-
-FoldShelfItem MyCodeEditorState::foldShelfItemAtLine(
-    MyCodeEditor* editor,
-    int line,
-    FoldShelfOriginKind origin) const
-{
-    return folding.foldShelfItemAtLine(editor, line, origin);
-}
-
-bool MyCodeEditorState::deleteCustomFoldAtLine(MyCodeEditor* editor, int line)
-{
-    return folding.deleteCustomFoldAtLine(editor, line);
-}
-
-bool MyCodeEditorState::insertFoldShelfItemAtLine(
-    MyCodeEditor* editor,
-    const FoldShelfItem& item,
-    int line)
-{
-    return folding.insertShelfItemAtLine(editor, item, line);
-}
 
 void MyCodeEditorState::setSemanticContextService(
     EditorSemanticContextService* service)
@@ -6323,7 +4673,14 @@ HierarchyInstanceContext MyCodeEditorState::hierarchyInstanceContext() const
 
 void MyCodeEditorState::closeSemanticPopup(MyCodeEditor* editor)
 {
-    sourceNavigation.closeForEditor(editor, selections);
+    modes.exit(EditorModeId::InlineCandidates,
+               EditorModeExitReason::Canceled);
+    modes.exit(EditorModeId::CompletionCandidates,
+               EditorModeExitReason::Canceled);
+    if (!modes.exit(EditorModeId::SourceNavigation,
+                    EditorModeExitReason::Canceled)) {
+        sourceNavigation.closeForEditor(editor, selections);
+    }
 }
 
 EditorBlockGeometry MyCodeEditorState::blockGeometry(
@@ -6345,9 +4702,8 @@ void MyCodeEditorState::setDocumentFileName(
     if (!identity.set(fileName))
         return;
 
+    modes.exitAll(EditorModeExitReason::FileIdentityChanged);
     cancelSignalDefinitionEditor();
-    cancelSignalSelectionMode(editor);
-    clearVirtualCursor(editor);
     diagnosticComputationRevision = 0;
     clearDiagnosticHighlights(editor);
     refreshGhostAnnotations(editor);

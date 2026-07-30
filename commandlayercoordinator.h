@@ -1,6 +1,7 @@
 #ifndef COMMANDLAYERCOORDINATOR_H
 #define COMMANDLAYERCOORDINATOR_H
 
+#include "actionregistry.h"
 #include "commandlayercommandregistry.h"
 #include "commandlayerservice.h"
 
@@ -137,7 +138,7 @@ public:
                     const QString& failureReason,
                     QWidget* anchor);
     void showHelp(
-        const QList<CommandLayerCommandMetadata>& commands,
+        const QList<ActionCatalogEntry>& entries,
         QWidget* anchor);
     QListWidget* candidateListWidget() const;
     QLabel* queryLabelWidget() const;

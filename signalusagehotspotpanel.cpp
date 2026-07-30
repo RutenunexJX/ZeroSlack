@@ -940,6 +940,48 @@ void SignalUsageHotspotPanel::setCurrentEditorLocation(const QString& fileName,
     renderTrack();
 }
 
+void SignalUsageHotspotPanel::focusFit()
+{
+    fitTrackToView();
+}
+
+void SignalUsageHotspotPanel::focusZoomIn()
+{
+    zoomTrack(1.15);
+}
+
+void SignalUsageHotspotPanel::focusZoomOut()
+{
+    zoomTrack(1.0 / 1.15);
+}
+
+void SignalUsageHotspotPanel::setFocusSearchText(
+    const QString& text)
+{
+    if (searchEdit)
+        searchEdit->setText(text);
+}
+
+QString SignalUsageHotspotPanel::focusSearchText() const
+{
+    return searchEdit ? searchEdit->text() : searchText;
+}
+
+void SignalUsageHotspotPanel::focusInspector()
+{
+    if (selectedItemIndex >= 0)
+        showInspectorForItem(selectedItemIndex);
+    else if (activeMatrixCellValid)
+        showMatrixCellDetails();
+    else
+        showInspectorMessage(
+            QStringLiteral("Inspector"),
+            QStringLiteral(
+                "Select a usage block or matrix cell to inspect it."));
+    if (contentSplitter)
+        contentSplitter->setFocus();
+}
+
 void SignalUsageHotspotPanel::renderReportForTest(
     const SignalUsageHotspotReport& report)
 {

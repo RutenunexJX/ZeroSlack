@@ -1,8 +1,11 @@
 #include "editorcoordinator.h"
 
+#include "actionregistry.h"
 #include "editorappearancesettings.h"
 #include "formattersettings.h"
 #include "codetemplateservice.h"
+#include "editoractioncontextservice.h"
+#include "editorcontextmenumodel.h"
 #include "editorsemanticcontextservice.h"
 #include "exposesignaltotopdialog.h"
 #include "exposesignaltotopservice.h"
@@ -17,10 +20,12 @@
 #include "workspacemanager.h"
 
 #include <QAbstractButton>
+#include <QActionGroup>
 #include <QDir>
 #include <QFileInfo>
 #include <QInputDialog>
 #include <QIODevice>
+#include <QKeySequence>
 #include <QLineEdit>
 #include <QMessageBox>
 #include <QMenu>
@@ -41,25 +46,35 @@ enum class SafeRenameConflictChoice {
     RenameConflictFirst
 };
 
-QString sourceSymbolActionText(SourceSymbolAction action)
+QString sourceSymbolActionId(SourceSymbolAction action)
 {
     switch (action) {
     case SourceSymbolAction::GoToDefinition:
-        return QStringLiteral("Go to Definition");
+        return QStringLiteral("source.goToDefinition");
     case SourceSymbolAction::FindReferences:
-        return QStringLiteral("Find References");
+        return QStringLiteral("source.findReferences");
     case SourceSymbolAction::ShowRelationships:
-        return QStringLiteral("Show Relationships");
+        return QStringLiteral("source.showRelationships");
     case SourceSymbolAction::ShowSignalKernelGraph:
-        return QStringLiteral("Signal Kernel Graph");
+        return QStringLiteral("insight.signalKernelGraph");
     case SourceSymbolAction::ShowSignalUsageHotspot:
-        return QStringLiteral("Signal Usage Hotspot");
+        return QStringLiteral("insight.signalUsageHotspot");
     case SourceSymbolAction::ShowStateTransitionGraph:
-        return QStringLiteral("State Transition Graph");
+        return QStringLiteral("insight.stateTransitionGraph");
     case SourceSymbolAction::ShowModuleBlockDiagram:
-        return QStringLiteral("Module Block Diagram");
+        return QStringLiteral("insight.moduleBlockDiagram");
     }
     return QString();
+}
+
+QString exposeSignalToTopActionText()
+{
+    const ActionDescriptor* descriptor =
+        findActionById(
+            QStringLiteral("refactor.exposeSignalToTop"));
+    return descriptor
+        ? descriptor->canonicalName
+        : QStringLiteral("Expose Signal to Top");
 }
 
 QString normalizedEditorCoordinatorFileName(const QString& fileName)
@@ -410,6 +425,9 @@ EditorCoordinator::EditorCoordinator(TabManager* tabManager,
                                      QObject* parent)
     : QObject(parent)
     , tabManager(tabManager)
+    , ownedActionContextService(
+          std::make_unique<EditorActionContextService>())
+    , actionContextService(ownedActionContextService.get())
 {
     semanticRuntime.init();
 }
@@ -687,6 +705,26 @@ void EditorCoordinator::setStatusMessageHandler(
     statusMessageHandler = std::move(handler);
 }
 
+void EditorCoordinator::setModeStateHandler(
+    std::function<void(const EditorModeSnapshot&)> handler)
+{
+    modeStateHandler = std::move(handler);
+}
+
+void EditorCoordinator::setActionContextService(
+    EditorActionContextService* service)
+{
+    actionContextService =
+        service ? service : ownedActionContextService.get();
+}
+
+void EditorCoordinator::setActionContextQueryProvider(
+    std::function<EditorActionContextQuery(
+        const EditorSemanticContext&)> provider)
+{
+    actionContextQueryProvider = std::move(provider);
+}
+
 void EditorCoordinator::setFoldShelfItemConsumedHandler(
     std::function<void(const QString&)> handler)
 {
@@ -737,8 +775,10 @@ void EditorCoordinator::attachEditor(MyCodeEditor* editor)
                 handleSafeRenameRequested(editor, symbolName, context, handled);
             });
     connect(editor, &MyCodeEditor::sourceSymbolContextMenuRequested,
-            this, [this](QMenu* menu, const EditorSemanticContext& context) {
-                handleSourceSymbolContextMenuRequested(menu, context);
+            this, [this, editor](QMenu* menu,
+                                const EditorSemanticContext& context) {
+                handleSourceSymbolContextMenuRequested(
+                    menu, editor, context);
             });
     connect(editor,
             &MyCodeEditor::definitionPreviewNavigationRequested,
@@ -762,6 +802,16 @@ void EditorCoordinator::attachEditor(MyCodeEditor* editor)
             this, [this](const QString& message) {
                 if (statusMessageHandler)
                     statusMessageHandler(message, message.isEmpty() ? 0 : 5000);
+            });
+    connect(editor,
+            &MyCodeEditor::editorModeStateChanged,
+            this,
+            [this, editor](const EditorModeSnapshot& snapshot) {
+                if (modeStateHandler
+                    && tabManager
+                    && tabManager->getCurrentEditor() == editor) {
+                    modeStateHandler(snapshot);
+                }
             });
     connect(editor, &MyCodeEditor::formatterProfileChanged,
             this, [this](FormatterProfile profile) {
@@ -1401,54 +1451,369 @@ void EditorCoordinator::handleSafeRenameRequested(
     }
 }
 
-void EditorCoordinator::handleSourceSymbolContextMenuRequested(
-    QMenu* menu,
+EditorActionContext EditorCoordinator::actionContextFor(
     const EditorSemanticContext& context) const
 {
-    if (!menu)
+    EditorActionContextQuery query;
+    if (actionContextQueryProvider)
+        query = actionContextQueryProvider(context);
+    else
+        query.editorContext = context;
+    return actionContextService
+        ? actionContextService->resolve(query)
+        : EditorActionContext();
+}
+
+void EditorCoordinator::handleSourceSymbolContextMenuRequested(
+    QMenu* menu,
+    MyCodeEditor* editor,
+    const EditorSemanticContext& context) const
+{
+    if (!menu || !editor)
         return;
 
     const EditorSourceSymbolContextMenuState menuState =
         contextService()->sourceSymbolContextMenuState(context);
-
-    menu->addSeparator();
-    for (const EditorSourceSymbolMenuItemState& item : menuState.items) {
-        QAction* action = menu->addAction(sourceSymbolActionText(item.action));
-        action->setEnabled(item.enabled);
-        if (!item.disabledReason.isEmpty()) {
-            action->setToolTip(item.disabledReason);
-            action->setStatusTip(item.disabledReason);
-        }
-        connect(action, &QAction::triggered, this, [this, context, item]() {
-            handleSourceSymbolActionRequested(item.action, context);
-        });
-    }
-
-    menu->addSeparator();
+    const SourceSymbolActionContext sourceContext =
+        contextService()->sourceSymbolActionContext(context);
+    const bool symbolAvailable =
+        sourceContext.available
+        && !sourceContext.symbolName.trimmed().isEmpty();
     ExposeSignalToTopService exposeService;
-    QString unavailableReason;
-    const bool exposeAvailable =
-        exposeService.canOffer(context, &unavailableReason);
-    QAction* exposeAction =
-        menu->addAction(QStringLiteral("Expose signal to top..."));
-    exposeAction->setObjectName(
-        QStringLiteral("exposeSignalToTopAction"));
-    exposeAction->setEnabled(exposeAvailable);
-    if (!unavailableReason.isEmpty()) {
-        exposeAction->setToolTip(unavailableReason);
-        exposeAction->setStatusTip(unavailableReason);
+    const EditorActionContext actionContext =
+        actionContextFor(context);
+    EditorSemanticContext resolvedContext = context;
+    if (actionContext.hierarchyBound()) {
+        resolvedContext.hierarchyInstance =
+            actionContext.resolvedHierarchy;
     }
-    connect(exposeAction, &QAction::triggered,
-            this, [this, context]() {
+    QString unavailableReason;
+    const bool exposeReady = actionContext.hierarchyBound()
+        && exposeService.canOffer(
+            resolvedContext, &unavailableReason);
+    if (!actionContext.hierarchyBound())
+        unavailableReason = actionContext.hierarchyResolutionReason;
+
+    EditorContextMenuRequest request;
+    request.actionContext = actionContext;
+    request.symbolAvailable = symbolAvailable;
+    const bool editable = !editor->isReadOnly();
+    const bool hasSelection =
+        editor->textCursor().hasSelection();
+    const int cursorPosition =
+        context.cursorPosition >= 0
+            ? context.cursorPosition
+            : editor->textCursor().position();
+
+    const auto append =
+        [&request](const QString& actionId,
+                   bool relevant = true,
+                   bool executable = true,
+                   const QString& reason = QString(),
+                   bool standard = false,
+                   bool enterableWhenUnavailable = false) {
+            EditorContextMenuCapability capability;
+            capability.actionId = actionId;
+            capability.relevant = relevant;
+            capability.executable = executable;
+            capability.unavailableReason = reason;
+            capability.standard = standard;
+            capability.enterableWhenUnavailable =
+                enterableWhenUnavailable;
+            request.capabilities.append(capability);
+        };
+
+    append(QStringLiteral("edit.undo"),
+           true,
+           editor->document()->isUndoAvailable(),
+           QStringLiteral("Nothing to undo."),
+           true);
+    append(QStringLiteral("edit.redo"),
+           true,
+           editor->document()->isRedoAvailable(),
+           QStringLiteral("Nothing to redo."),
+           true);
+    append(QStringLiteral("edit.cut"),
+           true,
+           editable && hasSelection,
+           editable
+               ? QStringLiteral("Select text to cut.")
+               : QStringLiteral("The editor is read-only."),
+           true);
+    append(QStringLiteral("edit.copy"),
+           true,
+           hasSelection,
+           QStringLiteral("Select text to copy."),
+           true);
+    append(QStringLiteral("edit.paste"),
+           true,
+           editable && editor->canPaste(),
+           editable
+               ? QStringLiteral(
+                     "The clipboard has no text that can be pasted.")
+               : QStringLiteral("The editor is read-only."),
+           true);
+    append(QStringLiteral("select.all"),
+           true,
+           editor->document()->characterCount() > 1,
+           QStringLiteral("The document is empty."),
+           true);
+
+    for (const EditorSourceSymbolMenuItemState& item :
+         menuState.items) {
+        bool relevant = symbolAvailable;
+        switch (item.action) {
+        case SourceSymbolAction::ShowSignalUsageHotspot:
+        case SourceSymbolAction::ShowStateTransitionGraph:
+        case SourceSymbolAction::ShowModuleBlockDiagram:
+            relevant = symbolAvailable && item.enabled;
+            break;
+        case SourceSymbolAction::GoToDefinition:
+        case SourceSymbolAction::FindReferences:
+        case SourceSymbolAction::ShowRelationships:
+        case SourceSymbolAction::ShowSignalKernelGraph:
+            break;
+        }
+        append(sourceSymbolActionId(item.action),
+               relevant,
+               item.enabled,
+               item.disabledReason);
+    }
+    append(QStringLiteral("navigation.goLine"));
+    append(QStringLiteral("edit.replace"),
+           true,
+           editable,
+           QStringLiteral("The editor is read-only."));
+
+    const EditorStructuralContextMenuState structural =
+        editor->structuralContextMenuState(cursorPosition);
+    append(QStringLiteral("refactor.createSignalDefinition"),
+           structural.signalDefinitionAvailable);
+    append(QStringLiteral("refactor.editInstanceSlots"),
+           structural.instanceSlotsAvailable);
+    append(QStringLiteral("refactor.exposeSignalToTop"),
+           symbolAvailable,
+           exposeReady,
+           unavailableReason,
+           false,
+           true);
+
+    append(QStringLiteral("format.commentLines"),
+           true,
+           editable,
+           QStringLiteral("The editor is read-only."));
+    append(QStringLiteral("format.uncommentLines"),
+           true,
+           editable,
+           QStringLiteral("The editor is read-only."));
+    append(QStringLiteral("format.indentLines"),
+           true,
+           editable,
+           QStringLiteral("The editor is read-only."));
+    append(QStringLiteral("format.unindentLines"),
+           true,
+           editable,
+           QStringLiteral("The editor is read-only."));
+    append(QStringLiteral("format.profile.structured"));
+    append(QStringLiteral("format.profile.indentOnly"));
+    append(QStringLiteral("format.onSave"));
+    append(QStringLiteral("format.selection"),
+           hasSelection,
+           editable,
+           QStringLiteral("The editor is read-only."));
+    append(QStringLiteral("format.document"),
+           true,
+           editable,
+           QStringLiteral("The editor is read-only."));
+
+    const EditorContextMenuModel model =
+        buildEditorContextMenuModel(request);
+    menu->clear();
+    QActionGroup* profileGroup = new QActionGroup(menu);
+    profileGroup->setExclusive(true);
+
+    const auto execute =
+        [this, editor, context, cursorPosition, menuState](
+            const QString& actionId) {
+            if (actionId == QStringLiteral("edit.undo")) {
+                editor->undo();
+            } else if (actionId == QStringLiteral("edit.redo")) {
+                editor->redo();
+            } else if (actionId == QStringLiteral("edit.cut")) {
+                editor->cut();
+            } else if (actionId == QStringLiteral("edit.copy")) {
+                editor->copy();
+            } else if (actionId == QStringLiteral("edit.paste")) {
+                editor->paste();
+            } else if (actionId == QStringLiteral("select.all")) {
+                editor->selectAll();
+            } else if (actionId
+                       == QStringLiteral("navigation.goLine")) {
+                editor->showGotoLineDialog();
+            } else if (actionId == QStringLiteral("edit.replace")) {
+                editor->showReplaceDialog();
+            } else if (actionId
+                       == QStringLiteral(
+                           "refactor.createSignalDefinition")) {
+                QString reason;
+                if (!editor->beginSignalDefinitionEditorAt(
+                        cursorPosition, &reason)
+                    && !reason.isEmpty()
+                    && statusMessageHandler) {
+                    statusMessageHandler(reason, 5000);
+                }
+            } else if (actionId
+                       == QStringLiteral(
+                           "refactor.editInstanceSlots")) {
+                QString reason;
+                if (!editor->editInstanceSlotsAt(
+                        cursorPosition, &reason)
+                    && !reason.isEmpty()
+                    && statusMessageHandler) {
+                    statusMessageHandler(reason, 5000);
+                }
+            } else if (actionId
+                       == QStringLiteral(
+                           "refactor.exposeSignalToTop")) {
                 handleExposeSignalToTopRequested(context);
-            });
+            } else if (actionId
+                       == QStringLiteral("format.commentLines")) {
+                editor->commentSelectionOrLine();
+            } else if (actionId
+                       == QStringLiteral("format.uncommentLines")) {
+                editor->uncommentSelectionOrLine();
+            } else if (actionId
+                       == QStringLiteral("format.indentLines")) {
+                editor->indentSelectionOrLine();
+            } else if (actionId
+                       == QStringLiteral("format.unindentLines")) {
+                editor->unindentSelectionOrLine();
+            } else if (actionId
+                       == QStringLiteral(
+                           "format.profile.structured")) {
+                editor->setFormatterProfile(
+                    FormatterProfile::Structured);
+            } else if (actionId
+                       == QStringLiteral(
+                           "format.profile.indentOnly")) {
+                editor->setFormatterProfile(
+                    FormatterProfile::IndentOnly);
+            } else if (actionId
+                       == QStringLiteral("format.onSave")) {
+                editor->setFormatOnSaveEnabled(
+                    !editor->formatOnSaveEnabled());
+            } else if (actionId
+                       == QStringLiteral("format.selection")) {
+                editor->formatSelection();
+            } else if (actionId
+                       == QStringLiteral("format.document")) {
+                editor->formatDocument();
+            } else {
+                for (const EditorSourceSymbolMenuItemState& item :
+                     menuState.items) {
+                    if (sourceSymbolActionId(item.action)
+                        == actionId) {
+                        handleSourceSymbolActionRequested(
+                            item.action, context);
+                        break;
+                    }
+                }
+            }
+        };
+
+    for (const EditorContextMenuSectionModel& section :
+         model.sections) {
+        QMenu* targetMenu = menu;
+        if (section.section != EditorContextMenuSection::Standard) {
+            targetMenu = menu->addMenu(section.title);
+            targetMenu->setObjectName(
+                QStringLiteral("editorContextMenu.%1")
+                    .arg(section.title.toCaseFolded()));
+        }
+        for (const EditorContextMenuItem& item :
+             section.items) {
+            if (section.section
+                    == EditorContextMenuSection::Standard
+                && (item.actionId == QStringLiteral("edit.cut")
+                    || item.actionId
+                           == QStringLiteral("select.all"))) {
+                targetMenu->addSeparator();
+            }
+
+            QAction* action = targetMenu->addAction(item.text);
+            action->setObjectName(item.actionId);
+            action->setProperty("actionId", item.actionId);
+            action->setProperty("executable", item.executable);
+            action->setProperty("visibleReason",
+                                item.visibleReason);
+            action->setEnabled(item.enabled);
+            if (!item.visibleReason.isEmpty()) {
+                action->setStatusTip(item.visibleReason);
+                action->setToolTip(item.visibleReason);
+            }
+            if (item.actionId
+                == QStringLiteral("refactor.exposeSignalToTop")) {
+                action->setObjectName(
+                    QStringLiteral("exposeSignalToTopAction"));
+                action->setProperty(
+                    "actionId",
+                    QStringLiteral(
+                        "refactor.exposeSignalToTop"));
+            }
+            if (item.actionId
+                == QStringLiteral(
+                    "format.profile.structured")) {
+                action->setCheckable(true);
+                action->setActionGroup(profileGroup);
+                action->setChecked(
+                    editor->formatterProfile()
+                    == FormatterProfile::Structured);
+            } else if (item.actionId
+                       == QStringLiteral(
+                           "format.profile.indentOnly")) {
+                action->setCheckable(true);
+                action->setActionGroup(profileGroup);
+                action->setChecked(
+                    editor->formatterProfile()
+                    == FormatterProfile::IndentOnly);
+            } else if (item.actionId
+                       == QStringLiteral("format.onSave")) {
+                action->setCheckable(true);
+                action->setChecked(
+                    editor->formatOnSaveEnabled());
+            }
+
+            if (item.actionId == QStringLiteral("edit.undo"))
+                action->setShortcut(QKeySequence::Undo);
+            else if (item.actionId == QStringLiteral("edit.redo"))
+                action->setShortcut(QKeySequence::Redo);
+            else if (item.actionId == QStringLiteral("edit.cut"))
+                action->setShortcut(QKeySequence::Cut);
+            else if (item.actionId == QStringLiteral("edit.copy"))
+                action->setShortcut(QKeySequence::Copy);
+            else if (item.actionId == QStringLiteral("edit.paste"))
+                action->setShortcut(QKeySequence::Paste);
+            else if (item.actionId == QStringLiteral("select.all"))
+                action->setShortcut(QKeySequence::SelectAll);
+
+            connect(action,
+                    &QAction::triggered,
+                    this,
+                    [execute, actionId = item.actionId]() {
+                        execute(actionId);
+                    });
+        }
+    }
 }
 
 void EditorCoordinator::populateSourceSymbolContextMenuForTest(
     QMenu* menu,
     const EditorSemanticContext& context) const
 {
-    handleSourceSymbolContextMenuRequested(menu, context);
+    handleSourceSymbolContextMenuRequested(
+        menu,
+        tabManager ? tabManager->getCurrentEditor() : nullptr,
+        context);
 }
 
 void EditorCoordinator::handleExposeSignalToTopRequested(
@@ -1460,15 +1825,81 @@ void EditorCoordinator::handleExposeSignalToTopRequested(
     if (!parentEditor)
         return;
 
-    TSDocument syntax;
-    syntax.setText(context.documentText);
-    const TSIdentifierTarget identifier =
-        syntax.identifierAt(context.cursorPosition);
-    if (!identifier.ok())
+    EditorSemanticContext effectiveContext = context;
+    const EditorActionContext actionContext =
+        actionContextFor(context);
+    if (actionContext.hierarchyBound()) {
+        effectiveContext.hierarchyInstance =
+            actionContext.resolvedHierarchy;
+    } else if (!actionContext.hierarchyCandidates.isEmpty()) {
+        QStringList choices;
+        choices.reserve(actionContext.hierarchyCandidates.size());
+        for (const EditorHierarchyBindingCandidate& candidate :
+             actionContext.hierarchyCandidates) {
+            choices.append(candidate.displayText());
+        }
+        bool accepted = false;
+        const QString selected = QInputDialog::getItem(
+            parentEditor,
+            QStringLiteral("Select hierarchy instance"),
+            QStringLiteral("Active top / instance:"),
+            choices,
+            0,
+            false,
+            &accepted);
+        if (!accepted)
+            return;
+        const int selectedIndex = choices.indexOf(selected);
+        if (selectedIndex < 0
+            || selectedIndex
+                   >= actionContext.hierarchyCandidates.size()) {
+            return;
+        }
+        effectiveContext.hierarchyInstance =
+            actionContext.hierarchyCandidates.at(
+                selectedIndex).binding();
+        parentEditor->setHierarchyInstanceContext(
+            effectiveContext.hierarchyInstance);
+    } else {
+        QMessageBox::information(
+            parentEditor,
+            exposeSignalToTopActionText(),
+            actionContext.hierarchyResolutionReason.isEmpty()
+                ? QStringLiteral(
+                      "No active top / instance can be resolved for the current module.")
+                : actionContext.hierarchyResolutionReason);
         return;
+    }
+
+    ExposeSignalToTopService service;
+    QString unavailableReason;
+    if (!service.canOffer(
+            effectiveContext, &unavailableReason)) {
+        QMessageBox::information(
+            parentEditor,
+            exposeSignalToTopActionText(),
+            unavailableReason.isEmpty()
+                ? QStringLiteral(
+                      "The selected object cannot be exposed to the active top.")
+                : unavailableReason);
+        return;
+    }
+
+    TSDocument syntax;
+    syntax.setText(effectiveContext.documentText);
+    const TSIdentifierTarget identifier =
+        syntax.identifierAt(effectiveContext.cursorPosition);
+    if (!identifier.ok()) {
+        QMessageBox::information(
+            parentEditor,
+            exposeSignalToTopActionText(),
+            QStringLiteral(
+                "Select a SystemVerilog signal identifier."));
+        return;
+    }
 
     ExposeSignalToTopQuery query;
-    query.context = context;
+    query.context = effectiveContext;
     query.exportedPortName =
         ExposeSignalToTopService::defaultExportedPortName(
             identifier.text);
@@ -1479,7 +1910,6 @@ void EditorCoordinator::handleExposeSignalToTopRequested(
         }
     }
 
-    ExposeSignalToTopService service;
     ZeroSlackWorkspaceDocumentManager documents(tabManager);
     ExposeSignalToTopReport initial =
         service.plan(query, documents);
@@ -1506,7 +1936,7 @@ void EditorCoordinator::handleExposeSignalToTopRequested(
     if (!applied.applied()) {
         QMessageBox::warning(
             parentEditor,
-            QStringLiteral("Expose signal to top"),
+            exposeSignalToTopActionText(),
             applied.message.isEmpty()
                 ? QStringLiteral(
                       "The workspace changed before Apply; no files were committed.")
@@ -1517,7 +1947,7 @@ void EditorCoordinator::handleExposeSignalToTopRequested(
         statusMessageHandler(
             QStringLiteral("Exposed %1 to %2 as %3")
                 .arg(identifier.text,
-                     context.hierarchyInstance.activeTopModule,
+                     effectiveContext.hierarchyInstance.activeTopModule,
                      dialog.reportForApply().exportedPortName),
             5000);
     }
@@ -1528,10 +1958,17 @@ void EditorCoordinator::handleActiveEditorChanged(MyCodeEditor* editor)
     if (tabManager) {
         for (int i = 0; i < tabManager->editorCount(); ++i) {
             if (MyCodeEditor* openEditor = tabManager->getEditorAt(i)) {
-                openEditor->cancelFoldRegionMarkMode();
-                openEditor->cancelFoldShelfMode();
+                if (openEditor != editor) {
+                    openEditor->exitInteractionModes(
+                        EditorModeExitReason::TabChanged);
+                }
             }
         }
+    }
+    if (modeStateHandler) {
+        modeStateHandler(editor
+                             ? editor->editorModeSnapshot()
+                             : EditorModeSnapshot{});
     }
     dependencies.handleActiveEditorChanged(editor);
 }

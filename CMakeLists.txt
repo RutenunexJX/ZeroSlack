@@ -217,6 +217,7 @@ find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets Concurrent)
 # =========================================================
 set(ZEROSLACK_CORE_SOURCES
     # --- C++ sources ---
+    actionregistry.cpp
     activitylogpanelcoordinator.cpp
     activitylogservice.cpp
     analysiscoordinator.cpp
@@ -273,6 +274,7 @@ set(ZEROSLACK_CORE_SOURCES
     effectivevalueservice.cpp
       editorcompletionworkflowkeys.cpp
       editorcoordinator.cpp
+      editorcolumnmodecontroller.cpp
       editorcursornavigation.cpp
       editorfileidentity.cpp
       editorfolding.cpp
@@ -281,13 +283,17 @@ set(ZEROSLACK_CORE_SOURCES
     editorhoverpopup.cpp
     editorruntime.cpp
     editorselection.cpp
+    editorsignalselectioncontroller.cpp
+    editortemplateslotcontroller.cpp
+    editoractioncontextservice.cpp
+    editorcontextmenumodel.cpp
     editorsemanticcontextservice.cpp
     editorsemanticruntime.cpp
     editorsourcenavigationquery.cpp
     editorsourcenavigation.cpp
     editorsourcehover.cpp
     editorsyntaxstate.cpp
-    editormodestate.cpp
+    editormodecontroller.cpp
     filecommandcoordinator.cpp
     foldblockshelfmodel.cpp
     foldblockshelfpanel.cpp
@@ -310,6 +316,7 @@ set(ZEROSLACK_CORE_SOURCES
     hierarchyservice.cpp
     hierarchyservicetraversal.cpp
     insightgraphview.cpp
+    insightfocuscontroller.cpp
     insightvisualstyle.cpp
     inlinecommandmode.cpp
     sourcenavigationservice.cpp
@@ -346,6 +353,10 @@ set(ZEROSLACK_CORE_SOURCES
     relationshipanalysisworker.cpp
     relationshipresultpublisher.cpp
     rtlinsightspanelcoordinator.cpp
+    rtlinsightspanelviewstate.cpp
+    rtlinsightsgraphcontroller.cpp
+    rtlinsightsgraphscenemapper.cpp
+    rtlinsightspresenter.cpp
     rtlbatcheditservice.cpp
     saferenameservice.cpp
     searchservice.cpp
@@ -471,13 +482,15 @@ set(ZEROSLACK_CORE_SOURCES
     editorhoverpopup.h
     editorruntime.h
     editorselection.h
+    editoractioncontextservice.h
+    editorcontextmenumodel.h
     editorsemanticcontextservice.h
     editorsemanticruntime.h
     editorsourcenavigationquery.h
     editorsourcenavigation.h
     editorsourcehover.h
     editorsyntaxstate.h
-    editormodestate.h
+    editormodecontroller.h
     filecommandcoordinator.h
     foldblockshelfmodel.h
     foldblockshelfpanel.h
@@ -498,6 +511,7 @@ set(ZEROSLACK_CORE_SOURCES
     globalcontrolservice.h
     hierarchyservice.h
     insightgraphview.h
+    insightfocuscontroller.h
     insightvisualstyle.h
     inlinecommandmode.h
     sourcenavigationservice.h
@@ -680,6 +694,65 @@ if(BUILD_TESTING)
     add_executable(completion_test test_sv/completion_test.cpp)
     target_link_libraries(completion_test PRIVATE zeroslack_core)
 
+    add_executable(action_registry_test
+        test_sv/action_registry_test.cpp
+        actionregistry.cpp
+        codetemplateservice.cpp
+        commandlayercommandregistry.cpp
+        globalcontrolservice.cpp
+        inlinecommandmode.cpp
+        packagetoolservice.cpp)
+    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        target_compile_options(action_registry_test PRIVATE
+            "$<$<COMPILE_LANGUAGE:CXX>:-iquote${CMAKE_CURRENT_SOURCE_DIR}>")
+    endif()
+    target_link_libraries(action_registry_test PRIVATE Qt6::Core)
+
+    add_executable(editor_mode_controller_test
+        test_sv/editor_mode_controller_test.cpp
+        editormodecontroller.cpp)
+    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        target_compile_options(editor_mode_controller_test PRIVATE
+            "$<$<COMPILE_LANGUAGE:CXX>:-iquote${CMAKE_CURRENT_SOURCE_DIR}>")
+    endif()
+    target_link_libraries(editor_mode_controller_test PRIVATE Qt6::Core)
+
+    add_executable(editor_context_menu_test
+        test_sv/editor_context_menu_test.cpp
+        actionregistry.cpp
+        editorcontextmenumodel.cpp)
+    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        target_compile_options(editor_context_menu_test PRIVATE
+            "$<$<COMPILE_LANGUAGE:CXX>:-iquote${CMAKE_CURRENT_SOURCE_DIR}>")
+    endif()
+    target_link_libraries(editor_context_menu_test PRIVATE Qt6::Core)
+
+    add_executable(insight_focus_controller_test
+        test_sv/insight_focus_controller_test.cpp
+        insightfocuscontroller.cpp)
+    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        target_compile_options(insight_focus_controller_test PRIVATE
+            "$<$<COMPILE_LANGUAGE:CXX>:-iquote${CMAKE_CURRENT_SOURCE_DIR}>")
+    endif()
+    target_link_libraries(insight_focus_controller_test
+        PRIVATE Qt6::Widgets)
+
+    add_executable(workspace_persistence_test
+        test_sv/workspace_persistence_test.cpp
+        workspaceconfigurationservice.cpp
+        workspacesessionstateservice.cpp)
+    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        target_compile_options(workspace_persistence_test PRIVATE
+            "$<$<COMPILE_LANGUAGE:CXX>:-iquote${CMAKE_CURRENT_SOURCE_DIR}>")
+    endif()
+    target_link_libraries(workspace_persistence_test
+        PRIVATE Qt6::Core)
+
+    add_executable(controller_boundary_test
+        test_sv/controller_boundary_test.cpp)
+    target_link_libraries(controller_boundary_test
+        PRIVATE Qt6::Core)
+
     add_executable(effective_value_test test_sv/effective_value_test.cpp)
     target_link_libraries(effective_value_test PRIVATE zeroslack_core)
 
@@ -749,6 +822,41 @@ if(BUILD_TESTING)
             "ZEROSLACK_SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}"
             $<TARGET_FILE:completion_test>
             ${CMAKE_CURRENT_SOURCE_DIR}/test_sv/test_symbols.sv
+    )
+    add_test(NAME action_registry_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}"
+            $<TARGET_FILE:action_registry_test>
+    )
+    add_test(NAME editor_mode_controller_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}"
+            $<TARGET_FILE:editor_mode_controller_test>
+    )
+    add_test(NAME editor_context_menu_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}"
+            $<TARGET_FILE:editor_context_menu_test>
+    )
+    add_test(NAME insight_focus_controller_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}"
+            "QT_QPA_PLATFORM=offscreen"
+            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
+            $<TARGET_FILE:insight_focus_controller_test>
+    )
+    add_test(NAME workspace_persistence_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}"
+            $<TARGET_FILE:workspace_persistence_test>
+            ${CMAKE_CURRENT_SOURCE_DIR}/test_sv/new
+            ${CMAKE_CURRENT_SOURCE_DIR}/test_sv/huge_prj
+    )
+    add_test(NAME controller_boundary_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}"
+            $<TARGET_FILE:controller_boundary_test>
+            ${CMAKE_CURRENT_SOURCE_DIR}
     )
     add_test(NAME jump_test
         COMMAND ${CMAKE_COMMAND} -E env

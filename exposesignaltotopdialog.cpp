@@ -1,5 +1,7 @@
 #include "exposesignaltotopdialog.h"
 
+#include "actionregistry.h"
+
 #include <QDialogButtonBox>
 #include <QFormLayout>
 #include <QLabel>
@@ -18,7 +20,12 @@ ExposeSignalToTopDialog::ExposeSignalToTopDialog(
     , replanFunction(std::move(replan))
 {
     setObjectName(QStringLiteral("exposeSignalToTopDialog"));
-    setWindowTitle(QStringLiteral("Expose signal to top"));
+    const ActionDescriptor* descriptor =
+        findActionById(
+            QStringLiteral("refactor.exposeSignalToTop"));
+    setWindowTitle(
+        descriptor ? descriptor->canonicalName
+                   : QStringLiteral("Expose Signal to Top"));
     resize(880, 680);
 
     auto* layout = new QVBoxLayout(this);

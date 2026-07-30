@@ -1,5 +1,7 @@
 #include "commandlayercommandregistry.h"
 
+#include "actionregistry.h"
+
 #include <QStringList>
 #include <algorithm>
 #include <functional>
@@ -111,56 +113,63 @@ void setReason(QString* reason, const QString& message)
     if (reason)
         *reason = message;
 }
+
+CommandLayerCommandId commandLayerIdForActionId(const QString& actionId)
+{
+    if (actionId == QStringLiteral("navigation.goLine"))
+        return CommandLayerCommandId::GoLine;
+    if (actionId == QStringLiteral("navigation.goModule"))
+        return CommandLayerCommandId::GoModule;
+    if (actionId == QStringLiteral("navigation.goPackage"))
+        return CommandLayerCommandId::GoPackage;
+    if (actionId == QStringLiteral("navigation.goEndmodule"))
+        return CommandLayerCommandId::GoEndmodule;
+    if (actionId == QStringLiteral("edit.addSignalRow"))
+        return CommandLayerCommandId::AddSignal;
+    if (actionId == QStringLiteral("edit.addParameterRow"))
+        return CommandLayerCommandId::AddParameter;
+    if (actionId == QStringLiteral("edit.addPortRow"))
+        return CommandLayerCommandId::AddPort;
+    if (actionId == QStringLiteral("edit.clearAssignmentRhs"))
+        return CommandLayerCommandId::ClearRight;
+    if (actionId == QStringLiteral("select.beginEnd"))
+        return CommandLayerCommandId::SelectBeginEnd;
+    if (actionId == QStringLiteral("select.signals"))
+        return CommandLayerCommandId::SelectSignals;
+    return CommandLayerCommandId::Help;
+}
 } // namespace
 
 const QList<CommandLayerCommandMetadata>& commandLayerCommandRegistry()
 {
-    static const QList<CommandLayerCommandMetadata> registry = {
-        {QStringLiteral("go <number>"),
-         QStringLiteral("Jump to a 1-based line in the current module."),
-         CommandLayerCommandInputKind::PositiveInteger,
-         CommandLayerCommandId::GoLine},
-        {QStringLiteral("go module"),
-         QStringLiteral("Open the module picker."),
-         CommandLayerCommandInputKind::Fixed,
-         CommandLayerCommandId::GoModule},
-        {QStringLiteral("go package"),
-         QStringLiteral("Open the package picker."),
-         CommandLayerCommandInputKind::Fixed,
-         CommandLayerCommandId::GoPackage},
-        {QStringLiteral("go endmodule"),
-         QStringLiteral("Move to the final endmodule of the current module."),
-         CommandLayerCommandInputKind::Fixed,
-         CommandLayerCommandId::GoEndmodule},
-        {QStringLiteral("add signal"),
-         QStringLiteral("Create a signal declaration row in the current module."),
-         CommandLayerCommandInputKind::Fixed,
-         CommandLayerCommandId::AddSignal},
-        {QStringLiteral("add parameter"),
-         QStringLiteral("Create a parameter row in the current module or package."),
-         CommandLayerCommandInputKind::Fixed,
-         CommandLayerCommandId::AddParameter},
-        {QStringLiteral("add port"),
-         QStringLiteral("Append a row to a multiline module port list."),
-         CommandLayerCommandInputKind::Fixed,
-         CommandLayerCommandId::AddPort},
-        {QStringLiteral("clear right"),
-         QStringLiteral("Clear selected assignment right-hand sides and create slots."),
-         CommandLayerCommandInputKind::Fixed,
-         CommandLayerCommandId::ClearRight},
-        {QStringLiteral("select begin end"),
-         QStringLiteral("Select complete lines inside the nearest begin-end block."),
-         CommandLayerCommandInputKind::Fixed,
-         CommandLayerCommandId::SelectBeginEnd},
-        {QStringLiteral("select signals"),
-         QStringLiteral("Enter semantic signal check-selection mode."),
-         CommandLayerCommandInputKind::Fixed,
-         CommandLayerCommandId::SelectSignals},
-        {QStringLiteral("help"),
-         QStringLiteral("Show all Command Layer commands."),
-         CommandLayerCommandInputKind::Fixed,
-         CommandLayerCommandId::Help},
-    };
+    static const QList<CommandLayerCommandMetadata> registry = [] {
+        QList<CommandLayerCommandMetadata> result;
+        for (const ActionDescriptor* descriptor :
+             actionDescriptorsForSurface(ActionSurface::CommandLayer)) {
+            if (!descriptor)
+                continue;
+            const ActionAliasDescriptor* commandAlias =
+                findActionAlias(*descriptor,
+                                ActionSurface::CommandLayer);
+            if (!commandAlias || !commandAlias->triggerAdapter)
+                continue;
+            CommandLayerCommandMetadata metadata;
+            metadata.name = commandAlias->token;
+            metadata.description = descriptor->description;
+            metadata.inputKind =
+                descriptor->parameterModel.kind
+                        == ActionParameterKind::PositiveInteger
+                ? CommandLayerCommandInputKind::PositiveInteger
+                : CommandLayerCommandInputKind::Fixed;
+            metadata.id =
+                commandLayerIdForActionId(descriptor->id);
+            metadata.actionId = descriptor->id;
+            metadata.executionRoute =
+                descriptor->executionRoute;
+            result.append(metadata);
+        }
+        return result;
+    }();
     return registry;
 }
 
@@ -196,6 +205,19 @@ bool validateCommandLayerCommandRegistry(
         if (left.description.trimmed().isEmpty()) {
             setReason(reason,
                       QStringLiteral("Command Layer command has no description: %1")
+                          .arg(left.name));
+            return false;
+        }
+        const ActionDescriptor* descriptor =
+            findActionById(left.actionId);
+        if (!descriptor
+            || left.executionRoute != descriptor->executionRoute
+            || !findActionAlias(*descriptor,
+                                ActionSurface::CommandLayer,
+                                left.name)) {
+            setReason(reason,
+                      QStringLiteral(
+                          "Command Layer adapter is not registered: %1")
                           .arg(left.name));
             return false;
         }

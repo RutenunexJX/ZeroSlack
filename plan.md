@@ -9,6 +9,185 @@ ZeroSlack is a SystemVerilog code editor and workspace browser. It should help
 users read, navigate, edit, and understand RTL projects without turning UI code
 into an analyzer.
 
+## Active Interaction Convergence Plan (2026-07-29)
+
+Stages 0 through 8 are complete on `main` at
+`7cb1f214022d7b4bd2ce20cdeb39a1aad4f873ce`. The Debug baseline passed all
+25 CTest targets in 348.82 seconds. The four pre-existing untracked/protected
+paths recorded in `readme.md` currently match their baseline metadata.
+
+Stage 1 delivered the shared `EditorActionContextService`, persistent context
+chip, Tree-sitter package context, history-independent unique hierarchy
+resolution, explicit multiple-instance/top selection, and visible/actionable
+Expose failure paths while retaining the existing `rtleditcore`
+plan/preview/apply transaction. Its test-first regression now passes 1/1 in
+0.50 seconds.
+
+Stage 2 replaced the F24-owned metadata table with a 76-descriptor
+`ActionRegistry`. F24, built-in inline semantic/template commands, templates,
+Global Control, Package Tools, source-symbol actions, and Expose now consume
+registry ids, names, aliases, availability metadata, and execution routes.
+F24 help renders the unified catalog. The test-first registry and catalog
+regressions plus completion/GUI/Expose integration pass 4/4 in 11.95 seconds.
+
+Stage 3 added the registry-backed semantic-only `;v` action without creating
+`;;v`. The saved explicit Tab anchor now carries module and package identity;
+the existing semantic index returns current-owner definitions plus
+unambiguous active-import members and excludes foreign-module internals.
+Package variables/functions/tasks are correctly marked package-visible by the
+Slang record taxonomy. Test-first coverage passes
+`action_registry_test` 12/12, `completion_test` 842/842, and
+`gui_smoke_test`.
+
+Stage 4 replaced `EditorModeState` and the migrated active booleans with an
+authoritative `EditorModeController`. Nine runtime modes now declare
+co-existence, input ownership, priority, Esc behavior, stale-exit reasons, and
+persistent presentation. Slot, signal, column/virtual, fold, candidate, and
+source-navigation runtimes consume this state directly; tab/document/control
+transitions exit through the same controller. A structured snapshot drives
+the persistent Mode Chip. The test-first controller and GUI regressions pass
+2/2 in 10.89 seconds after fixing source-navigation ownership and virtual
+caret cleanup.
+
+A direct GUI diagnostic invocation temporarily wrote the protected root
+screenshot. The deterministic 141996-byte historical artifact and original
+timestamp were restored, all four protected entries now match the baseline,
+and smoke-test artifacts were redirected to `%TEMP%/zeroslack-gui-smoke`.
+
+Stage 5 added `EditorContextMenuModel` and expanded the Registry from 77 to
+96 descriptors so every editor-menu leaf has one id, canonical label,
+availability/recovery policy, execution route, and ContextMenu alias. The
+normal menu is now built once by `EditorCoordinator` from the same
+`EditorActionContext` as the status chip. Standard actions lead; Navigate,
+Inspect, Refactor, and Format follow in stable groups. Irrelevant specialized
+actions are omitted, recoverable actions stay clickable with visible reasons,
+and shown hard failures include visible reasons. The test-first menu model and
+focused integration pass 5/5 in 15.21 seconds.
+
+Stage 6 added one `InsightFocusController` and central Focus shell. It moves
+the exact RTL Insights, Signal Kernel, or Wave Preview widget out of its Dock,
+hides/restores surrounding Docks for readable 1100x760 geometry, and routes
+Fit, zoom, search, Inspector, Back, Return to Dock, menu aliases, and
+panel-local entry through the existing presenter state. GUI tests verify FSM,
+module block, hotspot, kernel, and wave widget identity and state retention.
+The focused suite passes 6/6 in 32.85 seconds. A legacy `.zs` write observed
+before test isolation was restored exactly from checkpoint blob
+`38aa7c46a6cc62df3a9d0dc337ea76b6c128e5dc`; GUI smoke now runs on a temporary
+mirror of `test_sv/new`, and all protected metadata matches baseline. Stage 7
+then separated portable project semantics from local session state.
+
+Stage 7 writes only relative include/ignore paths, extensions, defines, and top
+module to atomic `.zeroslack/project.json`. Tabs, cursor/scroll positions,
+window/Dock state, and scan cache live in a SHA-256 workspace-identity
+`QSettings` partition. Save/Restore/Clear and `ow s` now explicitly describe
+local state, while project configuration has separate storage and wording.
+Legacy `.zs` is imported read-only into the two destinations without deleting
+or overwriting it. The test-first target failed before the split APIs existed;
+the final five-target suite passes 5/5 in 105.59 seconds, and its 23/23
+persistence checks preserve the exact bytes and timestamps of both protected
+real `.zs` fixtures.
+
+Stage 8 introduced dedicated Slot, Column/Virtual Cursor, and Signal Selection
+controllers and bound Source Navigation directly to the unified mode
+controller; Fold already owns its feature state and is now called directly.
+`MyCodeEditorState` contains composition/shared services rather than migrated
+mode state. RTL Insights now composes a passive single view state, graph
+controller, scene mapper, and presenter; its coordinator retains only shell
+construction, wiring, Focus adapters, and compatibility delegates. Source
+ceilings decreased from 6874/4397 to 4987/849 lines. The test-first boundary
+guard moved from 5/27 to 27/27, and eight behavior targets pass 8/8 in 33.47
+seconds.
+
+Final acceptance is complete. The first full run passed 30/31 and identified
+one forbidden production `QRegularExpression` in Action Registry validation.
+It was replaced by an explicit ASCII scanner, invalid-id coverage was added,
+and the unchanged policy guard then passed. A serial MinGW Debug all-target
+build completed with exit code 0, followed by 31/31 CTest targets in 230.07
+seconds, including all `components/rtleditcore` tests. GUI tests used Qt
+offscreen and a temporary `test_sv/new` mirror; Expose, persistence, Global
+Control, and performance tests consumed both real sample roots through
+read-only or copied paths. Files/Design parity, unique/multiple Expose,
+`;cmd`/`;;cmd`/`;v`, F24, Global Control, all editor modes, the grouped context
+menu, all five Focus views, legacy import, and workspace relocation have
+direct regression coverage. The actual protected `.zs` files retained their
+byte digest, size, and timestamp. All four protected path metadata baselines
+match, `git diff --check` succeeds, the index is empty, and no commit or push
+was performed.
+
+Implementation order and ownership:
+
+1. Complete: add a revisioned `EditorActionContext` service and persistent context strip;
+   resolve Expose hierarchy candidates from the current semantic snapshot,
+   using the tab's binding only as an explicit choice rather than navigation
+   history. Unique candidates bind automatically; multiple candidates enter a
+   picker/preview flow.
+2. Complete: replace the F24-only metadata table with one `ActionRegistry`. Migrate
+   F24, source-symbol actions, Expose, Package Tools, overlapping templates and
+   edit actions to descriptors/adapters without retaining parallel metadata.
+3. Complete: register `;v` as the audited free token for visible symbols. It is Tab-only,
+   uses the saved abbreviation anchor, and queries only the current
+   module/package plus unambiguous imports; instance declarations remain
+   visible without exposing foreign-module internals.
+4. Complete: replace `EditorModeState` with the authoritative
+   `EditorModeController`; migrate Slot, signal selection, column/virtual
+   cursor, fold, candidate, and source-navigation lifecycle/input policy.
+   Highest-priority Esc and tab/document/global-control stale exits now come
+   from controller declarations and a structured snapshot drives the Mode
+   Chip.
+5. Complete: build the context menu from registry categories: standard edit actions stay
+   in the familiar leading block; dynamic actions are grouped into Navigate,
+   Inspect, Refactor, and Format. A context-resolvable action stays clickable
+   and opens its resolution flow; a shown hard failure includes visible reason
+   text.
+6. Complete: add a central Insight Focus host that temporarily owns the same Dock panel
+   widget. Return-to-editor, Fit, zoom, search, and Inspector reuse existing
+   controls and state. No cloned scenes or reports are permitted.
+7. Complete: persist portable semantics to `.zeroslack/project.json` with relative paths.
+   Persist local session state under stable workspace identity in `QSettings`.
+   Import legacy `.zs` read-only, preserving the source file.
+8. Complete: split editor and RTL Insight coordination into controller/presenter/view
+   state modules, delete migrated duplicate state/helpers, and enforce the
+   boundaries through CMake dependencies and focused tests.
+9. Complete: build all Debug targets serially, pass the complete 31-target
+   CTest suite, audit both sample workspaces and all GUI interaction groups,
+   verify protected paths and Git state, and record the final handoff in all
+   three project documents.
+
+Test-first matrix:
+
+| Stage | Failing regression added before implementation | Acceptance |
+| --- | --- | --- |
+| 1 | unbound unique Expose; ambiguous candidate flow; context strip states | same visible code/selection gives the same candidate set from Files and Design |
+| 2 | descriptor uniqueness, alias parity, canonical failure text, handler id | one stable id and one handler/plan path per intent |
+| 3 | `;v` audit, local/port/import candidates, cross-module negative, filtering | explicit Tab only; Backspace and input retain anchor |
+| 4 | pairwise mode conflict matrix, priority Esc, tab/close/control stale exits | controller owns all input decisions and Mode Chip text |
+| 5 | menu group/object names, relevant-action filtering, clickable resolution | no disabled-tooltip-only recovery path |
+| 6 | panel widget identity across Dock/Focus, transform/selection/search retention | first-open geometry is readable at typical desktop size |
+| 7 | project move, local-state isolation, legacy `.zs` preservation/import | no local UI/cache data enters the workspace project file |
+| 8 | module ownership/source guards plus focused runtime behavior | large files shrink and duplicate state/helpers are removed |
+
+No behavior assertion or performance threshold may be weakened. Each behavior
+change starts with a regression that fails for the intended missing behavior,
+then the affected targets are built and run before the next stage. Full Ninja,
+full CTest including `components/rtleditcore`, `test_sv/new`, and
+`test_sv/huge_prj` acceptance were completed at the end.
+
+Final command/results:
+
+```text
+cmake --build build/Desktop_Qt_6_10_2_MinGW_64_bit-Debug --parallel 1
+  exit 0
+ctest --test-dir build/Desktop_Qt_6_10_2_MinGW_64_bit-Debug --output-on-failure
+  31/31 passed, 0 failed, 230.07 sec
+git diff --check
+  exit 0; Windows line-ending and sandbox user-ignore access advisories only
+```
+
+The current host cannot safely run simultaneous large GNU ld links: a
+parallel relink exhausted memory, while serial linking completed without a
+compiler or linker error. This remains an environment/resource limitation;
+it does not alter product behavior or the acceptance result.
+
 ## Build-System Performance Milestone (2026-07-20)
 
 The MinGW Debug link audit is complete. `libzeroslack_core.a` feeds thirteen
@@ -2298,6 +2477,44 @@ Latest Verification Baseline Repair:
   relationship_test gui_smoke_test`; `ctest -R
   "^(completion_test|relationship_test|gui_smoke_test)$" --output-on-failure`;
   `git diff --check -- . ':!test_sv/new/elec_phy_import/ctrl/chl_ctrl.sv'`.
+
+## Control-Side Acceptance Remediation: Editor Context Hot Path
+
+Status: complete. This is a narrow P1 acceptance repair, not a new roadmap
+track or feature goal.
+
+- Added a failing production-path regression to
+  `expose_signal_to_top_gui_test` before changing the cache architecture. It
+  drives the real `MainWindow` cursor/document connections against 2,049
+  workspace files and counts snapshot materialization, workspace-file
+  normalization/sorting, hierarchy cache rebuilds, and chip property writes.
+- Added authoritative monotonic `ProjectSnapshot::revision` publication in
+  `ProjectModel`.
+- Added one revision-guarded, deterministic-identity
+  `EditorActionWorkspaceContext` cache to `EditorActionContextService`.
+  Workspace root, top, and normalized file scope update from
+  `projectChanged`; unchanged revisions return before inspecting `allFiles`.
+- Replaced hierarchy keys derived from normalized/sorted/joined file lists
+  with semantic revision plus cached workspace revision/identity and
+  module/file identity.
+- Changed `MainWindow` refresh queries to carry only editor/semantic dynamic
+  state. `EditorCoordinator` uses the same service instance and lightweight
+  query provider for right-click actions.
+- Changed the status chip to per-field differential writes for compact/detail
+  text, accessibility, semantic/binding properties, tone style sheet, and
+  visibility.
+- Before: 128 unchanged refreshes caused
+  `128 snapshot / 128 normalize / 128 sort / 0 hierarchy rebuild / 896 chip
+  writes`. After: `0 / 0 / 0 / 0 / 0`.
+- Before: one project change plus 64 unchanged refreshes caused
+  `65 snapshot / 66 normalize / 65 sort / 1 hierarchy rebuild / 455 chip
+  writes`. After: one new revision plus a duplicate same-revision notification
+  and 64 refreshes caused `0 / 1 / 1 / 1 / 0`.
+- Release verification: affected tests 4/4, `editor_incremental_test` passed,
+  `gui_smoke_test` passed, and full CTest passed 31/31 in 148.87 seconds.
+- Protection audit: `current_app_signal_usage_hotspot_full_after.png`,
+  `dist/`, `test_sv/huge_prj/.zs`, and `test_sv/new/.zs` remained
+  byte-identical and untracked.
 
 ## Commit Policy
 

@@ -48,6 +48,7 @@ public:
     ~EditorSyntaxState();
 
     void init();
+    QString packageNameAt(int charPos) const;
     void syncText(const QString& text);
     void createHighlighter(QTextDocument* textDocument);
     void attachToEditor(MyCodeEditor* editor);

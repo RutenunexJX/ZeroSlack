@@ -69,6 +69,8 @@ public:
                                  bool scanComplete);
     ProjectModel* getProjectModel() const;
     ProjectSnapshot projectSnapshot() const;
+    std::uint64_t projectSnapshotMaterializationCountForTesting() const;
+    void resetProjectSnapshotMaterializationCountForTesting();
     bool switchWorkspace(int index);
 
     // File management
@@ -135,6 +137,7 @@ private:
     QStringList pendingScannedFiles;
     QString scanningPath;
     std::uint64_t scanGeneration = 0;
+    mutable std::uint64_t projectSnapshotMaterializationCount = 0;
     QTimer* scanTimer = nullptr;
     WorkspaceAliasSelector workspaceAliasSelector;
     bool recentWorkspacePersistenceEnabled = true;

@@ -29,6 +29,8 @@ struct CommandLayerCommandMetadata {
     CommandLayerCommandInputKind inputKind =
         CommandLayerCommandInputKind::Fixed;
     CommandLayerCommandId id = CommandLayerCommandId::Help;
+    QString actionId;
+    QString executionRoute;
 };
 
 enum class CommandLayerMatchRank {

@@ -32,6 +32,12 @@ void GlobalControlCoordinator::setActionHandler(
     actionHandler = std::move(handler);
 }
 
+void GlobalControlCoordinator::setOpeningHandler(
+    std::function<void()> handler)
+{
+    openingHandler = std::move(handler);
+}
+
 void GlobalControlCoordinator::install()
 {
     if (installed || !qApp)
@@ -70,6 +76,8 @@ void GlobalControlCoordinator::open()
 {
     if (!panel)
         return;
+    if (openingHandler)
+        openingHandler();
     if (panel->isVisible()) {
         panel->focusSearch();
         return;

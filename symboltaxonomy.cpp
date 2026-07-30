@@ -467,7 +467,11 @@ bool isPackageVisibleDefinition(const SemanticMetadata& metadata)
         || metadata.declarationKind == DeclarationKind::Localparam
         || metadata.declarationKind == DeclarationKind::Typedef
         || metadata.declarationKind == DeclarationKind::Enum
-        || metadata.declarationKind == DeclarationKind::Struct;
+        || metadata.declarationKind == DeclarationKind::Signal
+        || metadata.declarationKind == DeclarationKind::Struct
+        || metadata.declarationKind == DeclarationKind::StructVariable
+        || metadata.declarationKind == DeclarationKind::Task
+        || metadata.declarationKind == DeclarationKind::Function;
 }
 
 QString interfaceTypeName(const QString& dataType)
@@ -788,6 +792,36 @@ bool semanticCompletionKindMatches(const SemanticMetadata& metadata,
 {
     const bool semanticOnly = !hasCollectorKind(metadata);
     switch (kind) {
+    case SemanticCompletionKind::VisibleSymbol:
+        if (!isDefinitionCandidate(metadata))
+            return false;
+        switch (metadata.declarationKind) {
+        case DeclarationKind::Parameter:
+        case DeclarationKind::Localparam:
+        case DeclarationKind::Port:
+        case DeclarationKind::Signal:
+        case DeclarationKind::Typedef:
+        case DeclarationKind::Enum:
+        case DeclarationKind::Struct:
+        case DeclarationKind::StructVariable:
+        case DeclarationKind::Instance:
+        case DeclarationKind::Task:
+        case DeclarationKind::Function:
+            return true;
+        case DeclarationKind::Unknown:
+        case DeclarationKind::Module:
+        case DeclarationKind::Interface:
+        case DeclarationKind::Package:
+        case DeclarationKind::StructMember:
+        case DeclarationKind::Modport:
+        case DeclarationKind::Macro:
+        case DeclarationKind::Process:
+        case DeclarationKind::Generate:
+        case DeclarationKind::Constraint:
+        case DeclarationKind::User:
+            return false;
+        }
+        return false;
     case SemanticCompletionKind::Reg:
         return collectorKindIs(metadata, CollectorKind::Reg)
             || (semanticOnly

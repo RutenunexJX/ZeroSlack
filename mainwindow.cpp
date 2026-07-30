@@ -1,4 +1,6 @@
 #include "mainwindow.h"
+
+#include "actionregistry.h"
 #include "ui_mainwindow.h"
 
 #include "mycodeeditor.h"
@@ -10,6 +12,7 @@
 #include "analysisprogresscoordinator.h"
 #include "commandlayercoordinator.h"
 #include "editorcoordinator.h"
+#include "editoractioncontextservice.h"
 #include "editorfileidentity.h"
 #include "filecommandcoordinator.h"
 #include "navigationcommandcoordinator.h"
@@ -28,6 +31,7 @@
 #include "semanticdecorationservice.h"
 #include "globalcontrolcoordinator.h"
 #include "globalcontrolservice.h"
+#include "insightfocuscontroller.h"
 #include "insightvisualstyle.h"
 #include "semanticdockcoordinator.h"
 #include "semanticindex.h"
@@ -78,6 +82,7 @@
 #include <QShortcut>
 #include <QSize>
 #include <QStatusBar>
+#include <QStackedWidget>
 #include <QTabBar>
 #include <QTimer>
 #include <QToolButton>
@@ -159,6 +164,7 @@ MainWindow::MainWindow(QWidget *parent)
     setupNavigationPane();
     setupNavigationCommandCoordinator();
     setupSemanticDocks();
+    setupInsightFocusView();
     setupEditorAppearanceSettings();
     setupFileCommandCoordinator();
     setupFoldBlockShelf();
@@ -166,6 +172,7 @@ MainWindow::MainWindow(QWidget *parent)
     setupViewMenu();
     setupToolsMenu();
     setupEditorModeChip();
+    setupEditorActionContextChip();
     setupGlobalControl();
     setupCommandLayer();
     setupEditorCoordinator();
@@ -342,6 +349,8 @@ void MainWindow::setupShellNavigationRail()
 void MainWindow::setupWorkspaceBar()
 {
     QWidget* editorContainer = new QWidget(this);
+    editorContainer->setObjectName(
+        QStringLiteral("editorCentralPage"));
     auto* layout = new QVBoxLayout(editorContainer);
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(0);
@@ -359,7 +368,17 @@ void MainWindow::setupWorkspaceBar()
     layout->addWidget(workspaceTabBar);
     setupPackageTools(layout, editorContainer);
     layout->addWidget(ui->tabWidget, 1);
-    setCentralWidget(editorContainer);
+    editorCentralPage = editorContainer;
+    centralContentStack = new QStackedWidget(this);
+    centralContentStack->setObjectName(
+        QStringLiteral("centralContentStack"));
+    centralContentStack->addWidget(editorCentralPage);
+    setCentralWidget(centralContentStack);
+    insightFocusController =
+        std::make_unique<InsightFocusController>(
+            centralContentStack,
+            editorCentralPage,
+            this);
 
     connect(workspaceTabBar,
             &QTabBar::currentChanged,
@@ -723,6 +742,26 @@ void MainWindow::setupManagerConnections()
             this,
             [this](const QString&) {
                 showPanelById(QStringLiteral("activity"));
+                refreshEditorActionContextChip();
+            });
+    connect(workspaceManager.get(),
+            &WorkspaceManager::workspaceClosed,
+            this,
+            [this]() {
+                if (editorActionContextService)
+                    editorActionContextService->clearWorkspaceContext();
+                refreshEditorActionContextChip();
+            });
+    connect(workspaceManager.get(),
+            &WorkspaceManager::projectChanged,
+            this,
+            [this](const ProjectSnapshot& project) {
+                if (!editorActionContextService) {
+                    editorActionContextService =
+                        std::make_unique<EditorActionContextService>();
+                }
+                editorActionContextService->updateWorkspaceContext(project);
+                refreshEditorActionContextChip();
             });
     connect(tabManager.get(),
             &TabManager::activeDocumentChanged,
@@ -730,12 +769,14 @@ void MainWindow::setupManagerConnections()
             [this](const DocumentSnapshot& snapshot) {
                 scheduleActiveEditorPassiveRefresh();
                 updatePackageTools();
+                refreshEditorActionContextChip();
                 if (analysisScheduler && !snapshot.fileName.isEmpty()) {
                     refreshDiagnosticsAnalysisState();
                 }
-                QDockWidget* waveDock = dockForPanelId(QStringLiteral("wavePreview"));
-                if (waveDock && waveDock->isVisible())
+                if (insightPanelVisibleOrFocused(
+                        QStringLiteral("wavePreview"))) {
                     refreshActiveEditorWavePreview();
+                }
             });
     connect(tabManager.get(),
             &TabManager::tabCreated,
@@ -743,6 +784,24 @@ void MainWindow::setupManagerConnections()
             [this](MyCodeEditor* editor) {
                 if (!editor)
                     return;
+                connect(editor,
+                        &QPlainTextEdit::cursorPositionChanged,
+                        this,
+                        [this, editor]() {
+                            if (tabManager
+                                && tabManager->getCurrentEditor() == editor) {
+                                refreshEditorActionContextChip();
+                            }
+                        });
+                connect(editor,
+                        &MyCodeEditor::hierarchyInstanceContextChanged,
+                        this,
+                        [this, editor](const HierarchyInstanceContext&) {
+                            if (tabManager
+                                && tabManager->getCurrentEditor() == editor) {
+                                refreshEditorActionContextChip();
+                            }
+                        });
                 connect(editor,
                         &MyCodeEditor::packageToolAvailabilityChanged,
                         this,
@@ -758,12 +817,10 @@ void MainWindow::setupManagerConnections()
                         &MyCodeEditor::wavePreviewScopeChanged,
                         this,
                         [this, editor]() {
-                            QDockWidget* waveDock =
-                                dockForPanelId(QStringLiteral("wavePreview"));
                             if (tabManager
                                 && tabManager->getCurrentEditor() == editor
-                                && waveDock
-                                && waveDock->isVisible()) {
+                                && insightPanelVisibleOrFocused(
+                                    QStringLiteral("wavePreview"))) {
                                 refreshActiveEditorWavePreview();
                             }
                         });
@@ -772,6 +829,10 @@ void MainWindow::setupManagerConnections()
                         this,
                         [this, editor](const DocumentChange& change) {
                             applyActiveEditorWavePreviewChange(editor, change);
+                            if (tabManager
+                                && tabManager->getCurrentEditor() == editor) {
+                                refreshEditorActionContextChip();
+                            }
                         });
             });
     connect(analysisScheduler.get(),
@@ -779,12 +840,14 @@ void MainWindow::setupManagerConnections()
             this,
             [this](const QString& fileName, int) {
                 scheduleActiveEditorPassiveRefresh(fileName);
+                refreshEditorActionContextChip();
             });
     connect(analysisScheduler.get(),
             &AnalysisScheduler::workspaceSymbolAnalysisStarted,
             this,
             [this](const ProjectSnapshot&, int) {
                 refreshDiagnosticsAnalysisState();
+                refreshEditorActionContextChip();
             });
     connect(analysisScheduler.get(),
             &AnalysisScheduler::workspaceSymbolAnalysisFinished,
@@ -792,24 +855,28 @@ void MainWindow::setupManagerConnections()
             [this](const ProjectSnapshot&, int, int) {
                 refreshDiagnosticsAnalysisState();
                 scheduleActiveEditorPassiveRefresh();
+                refreshEditorActionContextChip();
             });
     connect(analysisScheduler.get(),
             &AnalysisScheduler::workspaceSymbolAnalysisDeferred,
             this,
             [this](const ProjectSnapshot&, int, qint64, qint64) {
                 refreshDiagnosticsAnalysisState();
+                refreshEditorActionContextChip();
             });
     connect(analysisScheduler.get(),
             &AnalysisScheduler::workspaceAnalysisRequestResolved,
             this,
             [this](const WorkspaceAnalysisRequestTelemetry&) {
                 refreshDiagnosticsAnalysisState();
+                refreshEditorActionContextChip();
             });
     connect(analysisScheduler.get(),
             &AnalysisScheduler::workspaceSymbolAnalysisCancelled,
             this,
             [this](const WorkspaceAnalysisRequestTelemetry&) {
                 refreshDiagnosticsAnalysisState();
+                refreshEditorActionContextChip();
             });
     connect(analysisScheduler.get(),
             &AnalysisScheduler::documentSemanticStateChanged,
@@ -831,6 +898,7 @@ void MainWindow::setupManagerConnections()
                     return;
                 }
                 refreshDiagnosticsAnalysisState();
+                refreshEditorActionContextChip();
             });
 
 }
@@ -1109,9 +1177,10 @@ void MainWindow::applyActiveEditorWavePreviewChange(
         return;
     }
 
-    QDockWidget* waveDock = dockForPanelId(QStringLiteral("wavePreview"));
-    if (!waveDock || !waveDock->isVisible())
+    if (!insightPanelVisibleOrFocused(
+            QStringLiteral("wavePreview"))) {
         return;
+    }
 
     const DocumentSnapshot document = tabManager->getCurrentDocumentMetadata();
     const EditorAlwaysScopeTarget alwaysScope =
@@ -1217,6 +1286,81 @@ void MainWindow::setupSemanticDocks()
     }
 }
 
+void MainWindow::setupInsightFocusView()
+{
+    if (!insightFocusController || !semanticDocks)
+        return;
+
+    if (RtlInsightsPanelCoordinator* panel =
+            semanticDocks->rtlInsightsPanelCoordinator()) {
+        InsightFocusPanelRegistration registration;
+        registration.id = QStringLiteral("rtlInsights");
+        registration.title = QStringLiteral("RTL Insights");
+        registration.dock = panel->dock();
+        registration.fit = [panel]() { panel->focusFit(); };
+        registration.zoomIn =
+            [panel]() { panel->focusZoomIn(); };
+        registration.zoomOut =
+            [panel]() { panel->focusZoomOut(); };
+        registration.setSearchText =
+            [panel](const QString& text) {
+                panel->setFocusSearchText(text);
+            };
+        registration.searchText =
+            [panel]() { return panel->focusSearchText(); };
+        registration.showInspector =
+            [panel]() { panel->focusInspector(); };
+        insightFocusController->registerPanel(registration);
+    }
+
+    if (SignalKernelGraphPanelCoordinator* panel =
+            semanticDocks
+                ->signalKernelGraphPanelCoordinator()) {
+        InsightFocusPanelRegistration registration;
+        registration.id =
+            QStringLiteral("signalKernelGraph");
+        registration.title =
+            QStringLiteral("Signal Kernel Graph");
+        registration.dock = panel->dock();
+        registration.fit = [panel]() { panel->focusFit(); };
+        registration.zoomIn =
+            [panel]() { panel->focusZoomIn(); };
+        registration.zoomOut =
+            [panel]() { panel->focusZoomOut(); };
+        registration.setSearchText =
+            [panel](const QString& text) {
+                panel->setFocusSearchText(text);
+            };
+        registration.searchText =
+            [panel]() { return panel->focusSearchText(); };
+        registration.showInspector =
+            [panel]() { panel->focusInspector(); };
+        insightFocusController->registerPanel(registration);
+    }
+
+    if (WavePreviewPanelCoordinator* panel =
+            semanticDocks->wavePreviewPanelCoordinator()) {
+        InsightFocusPanelRegistration registration;
+        registration.id = QStringLiteral("wavePreview");
+        registration.title = QStringLiteral("Wave Preview");
+        registration.dock = panel->dock();
+        registration.fit = [panel]() { panel->focusFit(); };
+        registration.zoomIn =
+            [panel]() { panel->focusZoomIn(); };
+        registration.zoomOut =
+            [panel]() { panel->focusZoomOut(); };
+        registration.setSearchText =
+            [panel](const QString& text) {
+                panel->setFocusSearchText(text);
+            };
+        registration.searchText =
+            [panel]() { return panel->focusSearchText(); };
+        registration.showInspector =
+            [panel]() { panel->focusInspector(); };
+        insightFocusController->registerPanel(registration);
+    }
+}
+
 void MainWindow::setupFileCommandCoordinator()
 {
     fileCommandCoordinator = std::make_unique<FileCommandCoordinator>(
@@ -1242,32 +1386,65 @@ void MainWindow::setupGlobalControl()
 {
     globalControlCoordinator =
         std::make_unique<GlobalControlCoordinator>(this, this);
+    globalControlCoordinator->setOpeningHandler([this]() {
+        if (MyCodeEditor* editor =
+                tabManager ? tabManager->getCurrentEditor() : nullptr) {
+            editor->exitInteractionModes(
+                EditorModeExitReason::ExternalControl);
+        }
+    });
     globalControlCoordinator->setActionHandler(
         [this](const GlobalControlItem& item) {
-            if (item.id == QStringLiteral("ow r")) {
+            QString executionRoute = item.executionRoute;
+            if (executionRoute.isEmpty()) {
+                const ActionDescriptor* descriptor =
+                    findActionByAlias(
+                        ActionSurface::GlobalControl,
+                        item.id);
+                if (descriptor)
+                    executionRoute = descriptor->executionRoute;
+            }
+            if (executionRoute
+                == QStringLiteral(
+                    "globalControl.recentWorkspaces")) {
                 showRecentWorkspacesDialog();
-            } else if (item.id == QStringLiteral("ow s save")) {
+            } else if (executionRoute
+                       == QStringLiteral(
+                           "globalControl.workspaceSession.save")) {
                 saveWorkspaceSession(true);
-            } else if (item.id == QStringLiteral("ow s restore")) {
+            } else if (executionRoute
+                       == QStringLiteral(
+                           "globalControl.workspaceSession.restore")) {
                 restoreWorkspaceSession();
-            } else if (item.id == QStringLiteral("ow s clean")) {
+            } else if (executionRoute
+                       == QStringLiteral(
+                           "globalControl.workspaceSession.clean")) {
                 cleanWorkspaceSession();
             } else if (item.id == QStringLiteral("ow s")) {
                 if (statusBar())
                     statusBar()->showMessage(
-                        QStringLiteral("Use ow s save, ow s restore, or ow s clean"),
+                        QStringLiteral(
+                            "ow s manages local UI/session state only; "
+                            "portable project settings use "
+                            ".zeroslack/project.json"),
                         4000);
-            } else if (item.id.startsWith(QStringLiteral("ow "))) {
+            } else if (executionRoute
+                       == QStringLiteral(
+                           "globalControl.openWorkspaces")) {
                 bool ok = false;
                 const int count = item.id.mid(3).trimmed().toInt(&ok);
                 if (ok && count > 0 && fileCommandCoordinator) {
                     for (int i = 0; i < count; ++i)
                         fileCommandCoordinator->openDirectoryAsWorkspace();
                 }
-            } else if (item.id == QStringLiteral("fd r")) {
+            } else if (executionRoute
+                       == QStringLiteral(
+                           "globalControl.foldRegion")) {
                 if (MyCodeEditor* editor = tabManager ? tabManager->getCurrentEditor() : nullptr)
                     editor->startFoldRegionMarkMode();
-            } else if (item.id == QStringLiteral("fd s")) {
+            } else if (executionRoute
+                       == QStringLiteral(
+                           "globalControl.foldShelf")) {
                 showFoldBlockShelf();
                 if (MyCodeEditor* editor = tabManager ? tabManager->getCurrentEditor() : nullptr)
                     editor->startFoldShelfMode();
@@ -1369,6 +1546,55 @@ void MainWindow::setupViewMenu()
                            : nullptr,
                        tr("Wave Preview"),
                        QStringLiteral("viewWavePreviewAction"));
+    if (insightFocusController) {
+        QMenu* focusMenu =
+            viewMenu->addMenu(tr("Focus View"));
+        focusMenu->setObjectName(
+            QStringLiteral("insightFocusMenu"));
+        const auto addFocusAction =
+            [this, focusMenu](const QString& id,
+                              const QString& text,
+                              const QString& objectName) {
+                QAction* action =
+                    focusMenu->addAction(text);
+                action->setObjectName(objectName);
+                connect(action,
+                        &QAction::triggered,
+                        this,
+                        [this, id]() {
+                            if (id
+                                == QStringLiteral(
+                                    "wavePreview")) {
+                                refreshActiveEditorWavePreview();
+                            }
+                            insightFocusController->enter(id);
+                        });
+            };
+        addFocusAction(
+            QStringLiteral("rtlInsights"),
+            tr("RTL Insights"),
+            QStringLiteral("focusRtlInsightsAction"));
+        addFocusAction(
+            QStringLiteral("signalKernelGraph"),
+            tr("Signal Kernel Graph"),
+            QStringLiteral(
+                "focusSignalKernelGraphAction"));
+        addFocusAction(
+            QStringLiteral("wavePreview"),
+            tr("Wave Preview"),
+            QStringLiteral("focusWavePreviewAction"));
+        focusMenu->addSeparator();
+        QAction* backAction =
+            focusMenu->addAction(tr("Back to Editor"));
+        backAction->setObjectName(
+            QStringLiteral("leaveInsightFocusAction"));
+        connect(backAction,
+                &QAction::triggered,
+                this,
+                [this]() {
+                    insightFocusController->leaveToEditor();
+                });
+    }
     addPanelViewAction(foldShelfDock,
                        tr("Fold Shelf"),
                        QStringLiteral("viewFoldShelfAction"));
@@ -1656,7 +1882,14 @@ void MainWindow::showWorkspaceConfigurationDialog()
 
     if (statusBar()) {
         statusBar()->showMessage(
-            QStringLiteral("Workspace configuration saved; analysis queued"),
+            QStringLiteral(
+                "Portable project configuration saved to %1; "
+                "analysis queued")
+                .arg(QDir::toNativeSeparators(
+                    WorkspaceConfigurationService::
+                        projectFilePath(
+                            workspaceManager
+                                ->getWorkspacePath()))),
             4000);
     }
     scheduleWorkspaceSessionSave();
@@ -1672,7 +1905,6 @@ WorkspaceSessionState MainWindow::captureWorkspaceSessionState() const
 
     const QString workspaceRoot = workspaceManager->getWorkspacePath();
     state.workspaceRoot = workspaceRoot;
-    state.configuration = workspaceManager->workspaceConfiguration();
     if (tabManager)
         state.tabs = tabManager->workspaceSessionTabs(workspaceRoot);
     state.ui.mainWindowGeometry = saveGeometry();
@@ -1706,14 +1938,27 @@ bool MainWindow::saveWorkspaceSession(bool showStatus)
         return false;
     }
 
+    const QString workspaceRoot =
+        workspaceManager->getWorkspacePath();
+    const QString rootKey =
+        workspaceSessionRootKey(workspaceRoot);
+    if (workspaceSessionCleanRoots.contains(rootKey)) {
+        if (!showStatus)
+            return false;
+        workspaceSessionCleanRoots.remove(rootKey);
+    }
+
     WorkspaceSessionStateService service;
     const WorkspaceSessionSaveResult result =
         service.save(captureWorkspaceSessionState());
     if (showStatus && statusBar()) {
         statusBar()->showMessage(
             result.saved
-                ? QStringLiteral("Workspace session saved to %1")
-                      .arg(QDir::toNativeSeparators(result.sessionFilePath))
+                ? QStringLiteral(
+                      "Local workspace session saved to %1; "
+                      ".zeroslack/project.json is unchanged")
+                      .arg(QDir::toNativeSeparators(
+                          result.storagePath))
                 : result.message,
             result.saved ? 3000 : 5000);
     }
@@ -1741,20 +1986,32 @@ bool MainWindow::restoreWorkspaceSession()
     }
 
     WorkspaceSessionStateService service;
-    const WorkspaceSessionRestoreResult result =
+    WorkspaceSessionRestoreResult result =
         service.load(workspaceRoot);
+    bool importedLegacy = false;
+    if (!result.loaded
+        && WorkspaceSessionStateService::
+               legacySessionFileExists(workspaceRoot)) {
+        const WorkspaceLegacyImportResult legacy =
+            service.loadLegacy(workspaceRoot);
+        if (legacy.loaded) {
+            result.loaded = true;
+            result.state = legacy.state;
+            result.skippedTabs = legacy.skippedTabs;
+            result.skippedScannedFiles =
+                legacy.skippedScannedFiles;
+            result.message = legacy.message;
+            importedLegacy = true;
+            service.save(legacy.state);
+        } else {
+            result.message = legacy.message;
+        }
+    }
     if (!result.loaded) {
         if (statusBar())
             statusBar()->showMessage(result.message, 5000);
         return false;
     }
-
-    QString errorMessage;
-    WorkspaceConfiguration configuration = result.state.configuration;
-    configuration.workspaceRoot = workspaceRoot;
-    const bool configurationApplied =
-        workspaceManager->setWorkspaceConfiguration(configuration,
-                                                   &errorMessage);
 
     const bool scanRestored =
         workspaceManager->restoreSessionScanState(
@@ -1782,11 +2039,6 @@ bool MainWindow::restoreWorkspaceSession()
         resetPanelLayout();
 
     QStringList notes;
-    if (!configurationApplied) {
-        notes.append(errorMessage.isEmpty()
-                         ? QStringLiteral("configuration skipped")
-                         : errorMessage);
-    }
     if (!scanRestored)
         notes.append(QStringLiteral("scan list skipped"));
     if (!geometryRestored || !dockStateRestored)
@@ -1797,13 +2049,16 @@ bool MainWindow::restoreWorkspaceSession()
         notes.append(QStringLiteral("%1 scanned file(s) skipped")
                          .arg(result.skippedScannedFiles.size()));
     }
-    if (!result.externalPaths.isEmpty()) {
-        notes.append(QStringLiteral("%1 external path(s)")
-                         .arg(result.externalPaths.size()));
-    }
+    if (importedLegacy)
+        notes.append(
+            QStringLiteral(
+                "legacy .zs imported read-only"));
 
     QString message =
-        QStringLiteral("Workspace session restored: %1 tab(s), %2 scanned file(s)")
+        QStringLiteral(
+            "Local workspace session restored: "
+            "%1 tab(s), %2 scanned file(s); "
+            "portable project configuration unchanged")
             .arg(restoredTabs.size())
             .arg(result.state.scannedFiles.size());
     if (!notes.isEmpty())
@@ -1811,7 +2066,7 @@ bool MainWindow::restoreWorkspaceSession()
     if (statusBar())
         statusBar()->showMessage(message, notes.isEmpty() ? 4000 : 7000);
     scheduleWorkspaceSessionSave();
-    return configurationApplied && scanRestored && dockStateRestored;
+    return scanRestored && dockStateRestored;
 }
 
 void MainWindow::cleanWorkspaceSession()
@@ -1824,18 +2079,35 @@ void MainWindow::cleanWorkspaceSession()
         return;
     }
 
+    const QString workspaceRoot =
+        workspaceManager->getWorkspacePath();
+    WorkspaceSessionStateService service;
+    const bool cleared = service.clear(workspaceRoot);
     workspaceSessionCleanRoots.insert(
-        workspaceSessionRootKey(workspaceManager->getWorkspacePath()));
+        workspaceSessionRootKey(workspaceRoot));
     if (statusBar())
         statusBar()->showMessage(
-            QStringLiteral("Workspace session ignored for this activation"),
-            3000);
+            cleared
+                ? QStringLiteral(
+                      "Local workspace session cleared; "
+                      "portable project configuration and "
+                      "legacy .zs are unchanged")
+                : QStringLiteral(
+                      "Failed to clear local workspace session; "
+                      "portable project configuration is unchanged"),
+            cleared ? 4000 : 5000);
 }
 
 void MainWindow::scheduleWorkspaceSessionSave()
 {
     if (!workspaceManager || !workspaceManager->isWorkspaceOpen())
         return;
+    if (workspaceSessionCleanRoots.contains(
+            workspaceSessionRootKey(
+                workspaceManager
+                    ->getWorkspacePath()))) {
+        return;
+    }
 
     if (!workspaceSessionSaveTimer) {
         workspaceSessionSaveTimer = new QTimer(this);
@@ -1856,11 +2128,25 @@ void MainWindow::noteWorkspaceSessionAvailability()
     const QString workspaceRoot = workspaceManager->getWorkspacePath();
     if (workspaceSessionCleanRoots.contains(workspaceSessionRootKey(workspaceRoot)))
         return;
-    if (WorkspaceSessionStateService::sessionFileExists(workspaceRoot)
-        && statusBar()) {
+    WorkspaceSessionStateService service;
+    if (statusBar()
+        && service.sessionExists(workspaceRoot)) {
         statusBar()->showMessage(
-            QStringLiteral("Workspace session available: use ow s restore"),
-            4000);
+            QStringLiteral(
+                "Local workspace session available: "
+                "use ow s restore; project configuration "
+                "loads separately"),
+            5000);
+    } else if (statusBar()
+               && WorkspaceSessionStateService::
+                      legacySessionFileExists(
+                          workspaceRoot)) {
+        statusBar()->showMessage(
+            QStringLiteral(
+                "Legacy .zs detected: ow s restore imports "
+                "local state read-only; project settings "
+                "load separately"),
+            6000);
     }
 }
 
@@ -1964,6 +2250,136 @@ void MainWindow::refreshDiagnosticsAnalysisState()
     setDiagnosticsAnalysisState(visibleState);
 }
 
+void MainWindow::setupEditorActionContextChip()
+{
+    if (!statusBar() || editorActionContextChip)
+        return;
+    if (!editorActionContextService) {
+        editorActionContextService =
+            std::make_unique<EditorActionContextService>();
+    }
+
+    editorActionContextChip = new QLabel(this);
+    editorActionContextChip->setObjectName(
+        QStringLiteral("editorActionContextChip"));
+    editorActionContextChip->setTextInteractionFlags(Qt::NoTextInteraction);
+    editorActionContextChip->setContentsMargins(8, 2, 8, 2);
+    editorActionContextChip->setAccessibleName(
+        tr("Editor action context"));
+    statusBar()->addPermanentWidget(editorActionContextChip);
+    refreshEditorActionContextChip();
+}
+
+void MainWindow::refreshEditorActionContextChip()
+{
+    if (!editorActionContextChip || !editorActionContextService)
+        return;
+
+    const EditorActionContext context =
+        resolveEditorActionContext(EditorSemanticContext());
+    const QString compactText = context.compactText();
+    const QString detailText = context.detailText();
+    const QString semanticState = context.semanticStateText();
+    const bool hierarchyBound = context.hierarchyBound();
+
+    InsightStatusTone tone = InsightStatusTone::Info;
+    if (context.semanticState == EditorActionSemanticState::Failed) {
+        tone = InsightStatusTone::Error;
+    } else if (context.semanticState == EditorActionSemanticState::Stale
+               || (context.hasEditor() && !context.hierarchyBound())) {
+        tone = InsightStatusTone::Warning;
+    } else if (context.semanticState == EditorActionSemanticState::Current
+               && hierarchyBound) {
+        tone = InsightStatusTone::Success;
+    }
+    const QString styleSheet =
+        InsightVisualStyle::statusChipStyleSheet(
+            tone, editorActionContextChip->objectName());
+
+    if (editorActionContextChip->text() != compactText) {
+        ++editorActionContextChipWriteCounts.text;
+        editorActionContextChip->setText(compactText);
+    }
+    if (editorActionContextChip->toolTip() != detailText) {
+        ++editorActionContextChipWriteCounts.toolTip;
+        editorActionContextChip->setToolTip(detailText);
+    }
+    if (editorActionContextChip->accessibleDescription()
+        != detailText) {
+        ++editorActionContextChipWriteCounts.accessibleDescription;
+        editorActionContextChip->setAccessibleDescription(detailText);
+    }
+    const QVariant semanticStateProperty =
+        editorActionContextChip->property("semanticState");
+    if (!semanticStateProperty.isValid()
+        || semanticStateProperty.toString() != semanticState) {
+        ++editorActionContextChipWriteCounts.semanticStateProperty;
+        editorActionContextChip->setProperty(
+            "semanticState", semanticState);
+    }
+    const QVariant hierarchyBoundProperty =
+        editorActionContextChip->property("hierarchyBound");
+    if (!hierarchyBoundProperty.isValid()
+        || hierarchyBoundProperty.toBool() != hierarchyBound) {
+        ++editorActionContextChipWriteCounts.hierarchyBoundProperty;
+        editorActionContextChip->setProperty(
+            "hierarchyBound", hierarchyBound);
+    }
+    if (editorActionContextChip->styleSheet() != styleSheet) {
+        ++editorActionContextChipWriteCounts.styleSheet;
+        editorActionContextChip->setStyleSheet(styleSheet);
+    }
+    if (editorActionContextChip->isHidden()) {
+        ++editorActionContextChipWriteCounts.visible;
+        editorActionContextChip->setVisible(true);
+    }
+}
+
+EditorActionContextChipWriteCounts
+MainWindow::editorActionContextChipWriteCountsForTesting() const
+{
+    return editorActionContextChipWriteCounts;
+}
+
+void MainWindow::resetEditorActionContextChipWriteCountsForTesting()
+{
+    editorActionContextChipWriteCounts = {};
+}
+
+EditorActionContextQuery MainWindow::editorActionContextQuery(
+    const EditorSemanticContext& editorContext)
+{
+    EditorActionContextQuery query;
+    query.editorContext = editorContext;
+    MyCodeEditor* editor = tabManager
+        ? tabManager->getCurrentEditor() : nullptr;
+    if (query.editorContext.fileName.isEmpty() && editor) {
+        query.editorContext =
+            editor->editorSemanticContextForPosition(-1, false);
+    }
+    if (analysisScheduler
+        && !query.editorContext.fileName.isEmpty()) {
+        query.semanticStatus = analysisScheduler->semanticStatus(
+            query.editorContext.fileName);
+        query.semanticAnalysisActive =
+            analysisScheduler->isSemanticAnalysisActive();
+    }
+
+    return query;
+}
+
+EditorActionContext MainWindow::resolveEditorActionContext(
+    const EditorSemanticContext& editorContext)
+{
+    if (!editorActionContextService) {
+        editorActionContextService =
+            std::make_unique<EditorActionContextService>();
+    }
+
+    const EditorActionContextQuery query =
+        editorActionContextQuery(editorContext);
+    return editorActionContextService->resolve(query);
+}
 void MainWindow::setupEditorModeChip()
 {
     if (!statusBar() || editorModeChip)
@@ -1977,49 +2393,52 @@ void MainWindow::setupEditorModeChip()
     statusBar()->addPermanentWidget(editorModeChip);
 }
 
-void MainWindow::updateEditorModeChip(const QString& message)
+void MainWindow::updateEditorModeChip(
+    const EditorModeSnapshot& snapshot)
 {
     if (!editorModeChip)
         return;
 
-    if (message.startsWith(QStringLiteral("Fold region: click start line"))) {
-        editorModeChip->setText(tr("Fold Region - click start line - Esc cancel"));
-        editorModeChip->setStyleSheet(
-            InsightVisualStyle::statusChipStyleSheet(
-                InsightStatusTone::Success,
-                editorModeChip->objectName()));
-        setFoldShelfModeVisualActive(false);
-        editorModeChip->setVisible(true);
-        return;
-    }
-
-    if (message.startsWith(QStringLiteral("Fold region: click end line"))) {
-        editorModeChip->setText(tr("Fold Region - click end line - Esc cancel"));
-        editorModeChip->setStyleSheet(
-            InsightVisualStyle::statusChipStyleSheet(
-                InsightStatusTone::Success,
-                editorModeChip->objectName()));
-        setFoldShelfModeVisualActive(false);
-        editorModeChip->setVisible(true);
-        return;
-    }
-
-    if (message.startsWith(QStringLiteral("Fold Shelf"))) {
-        editorModeChip->setText(tr("Fold Shelf - drag custom fold blocks - Esc cancel"));
-        editorModeChip->setStyleSheet(
-            InsightVisualStyle::statusChipStyleSheet(
-                InsightStatusTone::Warning,
-                editorModeChip->objectName()));
-        setFoldShelfModeVisualActive(true);
-        editorModeChip->setVisible(true);
-        return;
-    }
-
-    if (message.isEmpty()) {
+    if (!snapshot.hasActiveMode()) {
         editorModeChip->clear();
+        editorModeChip->setToolTip(QString());
         editorModeChip->setVisible(false);
         setFoldShelfModeVisualActive(false);
+        return;
     }
+
+    const EditorModeDescriptor* descriptor =
+        findEditorModeDescriptor(snapshot.primaryMode);
+    QString text = snapshot.displayText;
+    if (text.isEmpty() && descriptor)
+        text = descriptor->displayName;
+    QString detail = snapshot.detailText;
+    if (detail.isEmpty() && descriptor)
+        detail = descriptor->guidance;
+
+    editorModeChip->setText(
+        detail.isEmpty()
+            ? text
+            : QStringLiteral("%1 — %2").arg(text, detail));
+    editorModeChip->setToolTip(
+        descriptor
+            ? QStringLiteral("Mode: %1\nOwner: %2\n%3")
+                  .arg(descriptor->stableId)
+                  .arg(editorModeOwnerText(descriptor->owner))
+                  .arg(detail)
+            : detail);
+    const InsightStatusTone tone =
+        snapshot.primaryMode == EditorModeId::FoldShelf
+            || snapshot.primaryMode == EditorModeId::SignalSelection
+        ? InsightStatusTone::Warning
+        : InsightStatusTone::Success;
+    editorModeChip->setStyleSheet(
+        InsightVisualStyle::statusChipStyleSheet(
+            tone,
+            editorModeChip->objectName()));
+    setFoldShelfModeVisualActive(
+        snapshot.primaryMode == EditorModeId::FoldShelf);
+    editorModeChip->setVisible(true);
 }
 
 void MainWindow::setFoldShelfModeVisualActive(bool active)
@@ -2047,6 +2466,22 @@ void MainWindow::addPanelViewAction(QDockWidget* dock,
     QAction* action = dock->toggleViewAction();
     action->setText(text);
     action->setObjectName(objectName);
+    connect(action,
+            &QAction::triggered,
+            this,
+            [this, dock]() {
+                if (!dock->property(
+                         "insightFocusActive").toBool()) {
+                    return;
+                }
+                dock->hide();
+                if (centralContentStack
+                    && insightFocusController
+                    && insightFocusController->focusPage()) {
+                    centralContentStack->setCurrentWidget(
+                        insightFocusController->focusPage());
+                }
+            });
     viewMenu->addAction(action);
 }
 
@@ -2089,11 +2524,34 @@ QDockWidget* MainWindow::dockForPanelId(const QString& panelId) const
     return nullptr;
 }
 
+bool MainWindow::insightPanelVisibleOrFocused(
+    const QString& panelId) const
+{
+    const QDockWidget* dock = dockForPanelId(panelId);
+    return (dock && dock->isVisible())
+        || (insightFocusController
+            && insightFocusController->isFocused()
+            && insightFocusController->focusedPanelId()
+                   == panelId);
+}
+
 void MainWindow::showDockWidget(QDockWidget* dock,
                                 const QString& statusMessage)
 {
     if (!dock)
         return;
+
+    if (insightFocusController
+        && dock->property("insightFocusActive").toBool()) {
+        if (centralContentStack
+            && insightFocusController->focusPage()) {
+            centralContentStack->setCurrentWidget(
+                insightFocusController->focusPage());
+        }
+        if (!statusMessage.isEmpty() && statusBar())
+            statusBar()->showMessage(statusMessage, 3000);
+        return;
+    }
 
     dock->show();
     dock->raise();
@@ -2107,6 +2565,12 @@ void MainWindow::showPanelById(const QString& panelId)
     if (panelId == QStringLiteral("foldShelf")) {
         showFoldBlockShelf();
         return;
+    }
+    if (insightFocusController
+        && insightFocusController->isFocused()
+        && insightFocusController->focusedPanelId()
+               != panelId) {
+        insightFocusController->leaveToEditor();
     }
     if (panelId == QStringLiteral("wavePreview"))
         refreshActiveEditorWavePreview();
@@ -2199,6 +2663,11 @@ void MainWindow::showRecentWorkspacesDialog()
 
 void MainWindow::resetPanelLayout()
 {
+    if (insightFocusController
+        && insightFocusController->isFocused()) {
+        insightFocusController->returnToDock();
+    }
+
     QDockWidget* navigationDock = dockForPanelId(QStringLiteral("navigation"));
     QDockWidget* problemsDock = dockForPanelId(QStringLiteral("problems"));
     QDockWidget* activityDock = dockForPanelId(QStringLiteral("activity"));
@@ -2387,13 +2856,22 @@ void MainWindow::setupEditorCoordinator()
     editorCoordinator->setFormatterSettings(formatterSettings.get());
     editorCoordinator->setStatusMessageHandler(
         [this](const QString& message, int timeoutMs) {
-            updateEditorModeChip(message);
             if (statusBar()) {
                 if (message.isEmpty())
                     statusBar()->clearMessage();
                 else
                     statusBar()->showMessage(message, timeoutMs);
             }
+        });
+    editorCoordinator->setModeStateHandler(
+        [this](const EditorModeSnapshot& snapshot) {
+            updateEditorModeChip(snapshot);
+        });
+    editorCoordinator->setActionContextService(
+        editorActionContextService.get());
+    editorCoordinator->setActionContextQueryProvider(
+        [this](const EditorSemanticContext& context) {
+            return editorActionContextQuery(context);
         });
     editorCoordinator->setFoldShelfItemConsumedHandler([this](const QString& id) {
         if (foldShelfModel)

@@ -114,6 +114,10 @@ CommandSymbolCompletionItem CompletionCommandMode::symbolCompletionItem(
         .typeDescription
         .split(' ')
         .value(0);
+    if (requestedKind == CompletionCommandKind::VisibleSymbol) {
+        item.description = SymbolTaxonomy::symbolTypeLabel(
+            semanticMetadataForSymbolRecord(item.symbolRecord));
+    }
 
     if (requestedKind == CompletionCommandKind::Module) {
         item.defaultValue = moduleInstantiationText(symbolName);
@@ -150,6 +154,7 @@ CommandSymbolCompletionItem CompletionCommandMode::symbolCompletionItem(
 bool CompletionCommandMode::requiresModuleContext(CompletionCommandKind kind)
 {
     switch (kind) {
+    case CompletionCommandKind::VisibleSymbol:
     case CompletionCommandKind::Reg:
     case CompletionCommandKind::Wire:
     case CompletionCommandKind::Logic:

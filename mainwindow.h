@@ -24,6 +24,8 @@ class AnalysisCoordinator;
 class AnalysisScheduler;
 class CommandLayerCoordinator;
 class EditorCoordinator;
+class EditorActionContextService;
+class InsightFocusController;
 class FileCommandCoordinator;
 class FoldBlockShelfModel;
 class FoldBlockShelfPanel;
@@ -34,15 +36,37 @@ class QDockWidget;
 class QLabel;
 class QMenu;
 class QProgressBar;
+class QStackedWidget;
 class QTabBar;
 class QTimer;
 class QToolButton;
 class QVBoxLayout;
 class QWidget;
 struct DocumentChange;
+struct EditorActionContext;
+struct EditorActionContextQuery;
+struct EditorSemanticContext;
+struct EditorModeSnapshot;
 struct WorkspaceSessionState;
 struct UserTemplateLoadReport;
 struct SemanticAnalysisTelemetry;
+
+struct EditorActionContextChipWriteCounts {
+    std::uint64_t text = 0;
+    std::uint64_t toolTip = 0;
+    std::uint64_t accessibleDescription = 0;
+    std::uint64_t semanticStateProperty = 0;
+    std::uint64_t hierarchyBoundProperty = 0;
+    std::uint64_t styleSheet = 0;
+    std::uint64_t visible = 0;
+
+    std::uint64_t total() const
+    {
+        return text + toolTip + accessibleDescription
+            + semanticStateProperty + hierarchyBoundProperty
+            + styleSheet + visible;
+    }
+};
 
 QT_BEGIN_NAMESPACE
 namespace Ui { class MainWindow; }
@@ -61,6 +85,9 @@ public:
     std::unique_ptr<NavigationManager> navigationManager;
     std::unique_ptr<AnalysisScheduler> analysisScheduler;
     std::unique_ptr<AnalysisProgressCoordinator> analysisProgressCoordinator;
+    EditorActionContextChipWriteCounts
+    editorActionContextChipWriteCountsForTesting() const;
+    void resetEditorActionContextChipWriteCountsForTesting();
 
 protected:
     void closeEvent(QCloseEvent *event) override;
@@ -77,6 +104,8 @@ private:
     std::unique_ptr<AnalysisCoordinator> analysisCoordinator;
     std::unique_ptr<CommandLayerCoordinator> commandLayerCoordinator;
     std::unique_ptr<EditorCoordinator> editorCoordinator;
+    std::unique_ptr<EditorActionContextService> editorActionContextService;
+    std::unique_ptr<InsightFocusController> insightFocusController;
     std::unique_ptr<FileCommandCoordinator> fileCommandCoordinator;
     std::unique_ptr<FoldBlockShelfModel> foldShelfModel;
     FoldBlockShelfPanel* foldShelfPanel = nullptr;
@@ -93,7 +122,10 @@ private:
     QMenu* toolsMenu = nullptr;
     QMenu* userTemplatesMenu = nullptr;
     QToolButton* panelsStatusButton = nullptr;
+    QStackedWidget* centralContentStack = nullptr;
+    QWidget* editorCentralPage = nullptr;
     QLabel* editorModeChip = nullptr;
+    QLabel* editorActionContextChip = nullptr;
     QWidget* packageToolsBar = nullptr;
     QLabel* packageToolsPackageLabel = nullptr;
     QList<QToolButton*> packageToolButtons;
@@ -110,6 +142,7 @@ private:
     bool activeEditorPassiveRefreshQueued = false;
     std::uint64_t semanticDecorationGeneration = 0;
     std::shared_ptr<std::atomic_bool> semanticDecorationCancellation;
+    EditorActionContextChipWriteCounts editorActionContextChipWriteCounts;
 
     static const int kFileChangeDebounceMs = 350;
 
@@ -117,6 +150,9 @@ private:
     void setupShellNavigationRail();
     void applyModernShellStyle();
     void setupSemanticDocks();
+    void setupInsightFocusView();
+    bool insightPanelVisibleOrFocused(
+        const QString& panelId) const;
     void setupNavigationCommandCoordinator();
     void setupFileCommandCoordinator();
     void setupGlobalControl();
@@ -151,7 +187,13 @@ private:
     void showPanelById(const QString& panelId);
     void resetPanelLayout();
     void setupEditorModeChip();
-    void updateEditorModeChip(const QString& message);
+    void setupEditorActionContextChip();
+    void refreshEditorActionContextChip();
+    EditorActionContextQuery editorActionContextQuery(
+        const EditorSemanticContext& editorContext);
+    EditorActionContext resolveEditorActionContext(
+        const EditorSemanticContext& editorContext);
+    void updateEditorModeChip(const EditorModeSnapshot& snapshot);
     void setFoldShelfModeVisualActive(bool active);
     void showRecentWorkspacesDialog();
     void showWorkspaceConfigurationDialog();

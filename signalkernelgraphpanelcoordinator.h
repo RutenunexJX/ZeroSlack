@@ -35,6 +35,12 @@ public:
                                         const QString& moduleName,
                                         const QString& signalAccessPath = {});
     void refresh();
+    void focusFit();
+    void focusZoomIn();
+    void focusZoomOut();
+    void setFocusSearchText(const QString& text);
+    QString focusSearchText() const;
+    void focusInspector();
 
     QDockWidget* dock() const { return graphDock; }
     QGraphicsView* view() const { return graphView; }

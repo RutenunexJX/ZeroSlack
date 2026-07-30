@@ -536,7 +536,19 @@ ProjectModel* WorkspaceManager::getProjectModel() const
 
 ProjectSnapshot WorkspaceManager::projectSnapshot() const
 {
+    ++projectSnapshotMaterializationCount;
     return projectModel ? projectModel->snapshot() : ProjectSnapshot();
+}
+
+std::uint64_t
+WorkspaceManager::projectSnapshotMaterializationCountForTesting() const
+{
+    return projectSnapshotMaterializationCount;
+}
+
+void WorkspaceManager::resetProjectSnapshotMaterializationCountForTesting()
+{
+    projectSnapshotMaterializationCount = 0;
 }
 
 bool WorkspaceManager::switchWorkspace(int index)

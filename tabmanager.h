@@ -2,6 +2,7 @@
 #define TABMANAGER_H
 
 #include <QObject>
+#include <QPointer>
 #include <QTabWidget>
 #include <memory>
 #include "documentmodel.h"
@@ -79,6 +80,7 @@ private:
     TabTitleController titleController;
     QStringList scopedWorkspaceRoots;
     QString activeWorkspaceRoot;
+    QPointer<MyCodeEditor> previousActiveEditor;
 
     void applyWorkspaceScope();
     bool editorVisibleInWorkspaceScope(MyCodeEditor* editor) const;

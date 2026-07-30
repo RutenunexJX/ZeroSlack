@@ -29,6 +29,7 @@ enum class SymbolSearchIntent {
 
 enum class SemanticCompletionKind {
     User,
+    VisibleSymbol,
     Reg,
     Wire,
     Logic,

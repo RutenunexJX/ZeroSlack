@@ -9,17 +9,25 @@
 using namespace semantic_index_completion;
 
 namespace {
+QString commandCompletionOwnerName(const SemanticQueryContext& context)
+{
+    return !context.moduleName.isEmpty()
+        ? context.moduleName
+        : context.packageName;
+}
+
 bool commandCompletionScopeVisibleForRecord(
     const SemanticSymbolRecord& record,
     CompletionCommandKind requestedKind,
     const SemanticQueryContext& context)
 {
-    const bool useGlobalScope = context.moduleName.isEmpty()
+    const QString ownerName = commandCompletionOwnerName(context);
+    const bool useGlobalScope = ownerName.isEmpty()
         || completionCommandKindIsAlwaysGlobalCommand(requestedKind);
     if (useGlobalScope)
         return record.owner.name.isEmpty();
 
-    if (record.owner.name == context.moduleName)
+    if (record.owner.name == ownerName)
         return true;
     return completionCommandKindIsPackageVisibleCommand(requestedKind)
         && record.visibility == SymbolTaxonomy::SymbolVisibility::PackageVisible;
@@ -45,15 +53,16 @@ QList<SemanticSymbolRecord> SemanticIndex::getCommandCompletionSymbolRecords(
 {
     QList<SemanticSymbolRecord> result;
     QSet<QString> seenNames;
-    if (context.moduleName.isEmpty()
+    const QString ownerName = commandCompletionOwnerName(context);
+    if (ownerName.isEmpty()
         && !completionCommandKindIsGlobalCommand(commandKind))
         return result;
 
-    const bool useGlobalScope = context.moduleName.isEmpty()
+    const bool useGlobalScope = ownerName.isEmpty()
         || completionCommandKindIsAlwaysGlobalCommand(commandKind);
     QList<SemanticSymbolRecord> records = useGlobalScope
         ? getSymbolRecordsByOwner(QString())
-        : getSymbolRecordsByOwner(context.moduleName);
+        : getSymbolRecordsByOwner(ownerName);
     if (!useGlobalScope
         && completionCommandKindIsPackageVisibleCommand(commandKind)) {
         records.append(getVisibleImportedPackageRecords(context));

@@ -1,7 +1,7 @@
 #include "editorcompletionworkflow.h"
 
 #include "editorcompletionui.h"
-#include "editormodestate.h"
+#include "editormodecontroller.h"
 #include "editorselection.h"
 #include "editorruntime.h"
 #include "inlinecommandmode.h"
@@ -119,7 +119,7 @@ QStringList splitIncludeNewCommand(const QString& prefix)
 void EditorCompletionWorkflow::bind(
     MyCodeEditor* nextEditor,
     EditorCompletionUi* nextCompletion,
-    EditorModeState* nextModes,
+    EditorModeController* nextModes,
     EditorSelection* nextSelections,
     const ContextProvider& nextContextProvider,
     const ModuleNameProvider& nextModuleNameProvider,
@@ -132,6 +132,22 @@ void EditorCompletionWorkflow::bind(
     contextProvider = nextContextProvider;
     moduleNameProvider = nextModuleNameProvider;
     serviceProvider = nextServiceProvider;
+
+    if (modes) {
+        modes->setExitHandler(
+            EditorModeId::InlineCandidates,
+            [this](EditorModeExitReason) {
+                resetInlineAbbreviationSession();
+            });
+        modes->setExitHandler(
+            EditorModeId::CompletionCandidates,
+            [this](EditorModeExitReason) {
+                includeCompletionActive = false;
+                includeCompletionMode = IncludeCompletionMode::None;
+                if (completion)
+                    completion->hidePopup();
+            });
+    }
 }
 
 EditorSemanticContextService* EditorCompletionWorkflow::semanticService() const
@@ -141,37 +157,72 @@ EditorSemanticContextService* EditorCompletionWorkflow::semanticService() const
 
 void EditorCompletionWorkflow::hideCompletionPopup()
 {
+    if (modes
+        && modes->isActive(EditorModeId::InlineCandidates)) {
+        modes->exit(EditorModeId::InlineCandidates,
+                    EditorModeExitReason::Canceled);
+        return;
+    }
+    if (modes
+        && modes->isActive(EditorModeId::CompletionCandidates)) {
+        modes->exit(EditorModeId::CompletionCandidates,
+                    EditorModeExitReason::Canceled);
+        return;
+    }
+
     includeCompletionActive = false;
     includeCompletionMode = IncludeCompletionMode::None;
     completion->hidePopup();
-
-    if (modes->commandModeActive)
+    if (selections && editor)
         selections->clearCommand(editor);
 }
 
 void EditorCompletionWorkflow::clearInlineAbbreviationSession()
 {
+    if (modes
+        && modes->isActive(EditorModeId::InlineCandidates)) {
+        modes->exit(EditorModeId::InlineCandidates,
+                    EditorModeExitReason::Completed);
+        return;
+    }
+    resetInlineAbbreviationSession();
+}
+
+void EditorCompletionWorkflow::resetInlineAbbreviationSession()
+{
     if (editor)
         editor->state->finishInlineFilterTextOverlay();
     inlineSession = {};
+    includeCompletionActive = false;
+    includeCompletionMode = IncludeCompletionMode::None;
+    if (completion)
+        completion->hidePopup();
+    if (selections && editor)
+        selections->clearCommand(editor);
 }
 
 void EditorCompletionWorkflow::cancelInlineAbbreviationSession()
 {
-    if (!inlineSession.active)
+    if (!inlineAbbreviationSessionActive())
         return;
 
-    clearInlineAbbreviationSession();
-    includeCompletionActive = false;
-    includeCompletionMode = IncludeCompletionMode::None;
-    completion->hidePopup();
-    modes->clearCommandMode();
-    selections->clearCommand(editor);
+    if (modes) {
+        modes->exit(EditorModeId::InlineCandidates,
+                    EditorModeExitReason::Canceled);
+    } else {
+        resetInlineAbbreviationSession();
+    }
+}
+
+bool EditorCompletionWorkflow::inlineAbbreviationSessionActive() const
+{
+    return modes
+        && modes->isActive(EditorModeId::InlineCandidates);
 }
 
 bool EditorCompletionWorkflow::inlineAbbreviationSessionValid() const
 {
-    if (!editor || !inlineSession.active)
+    if (!editor || !inlineAbbreviationSessionActive())
         return false;
     const QTextCursor currentCursor = editor->textCursor();
     if (currentCursor.hasSelection()
@@ -216,6 +267,16 @@ bool EditorCompletionWorkflow::refreshInlineCandidateFilter()
     }
 
     inlineSession.completion = state;
+    if (modes) {
+        modes->updatePresentation(
+            EditorModeId::InlineCandidates,
+            QStringLiteral("Inline candidates: %1")
+                .arg(inlineCandidateCount(state)),
+            QStringLiteral("%1; filter \"%2\"; "
+                           "Tab/Enter accepts; Esc cancels")
+                .arg(state.descriptor.description,
+                     inlineSession.filterText));
+    }
     ++editor->state->hotPathMetrics.inlineFilterModelUpdates;
     completion->updateCommandModeCompletions(state, false);
     if (completion->popupVisible()) {
@@ -238,8 +299,10 @@ bool EditorCompletionWorkflow::refreshInlineCandidateFilter()
 
 void EditorCompletionWorkflow::handleCursorPositionChanged()
 {
-    if (applyingInlineReplacement || !inlineSession.active)
+    if (applyingInlineReplacement
+        || !inlineAbbreviationSessionActive()) {
         return;
+    }
 
     const QTextCursor cursor = editor->textCursor();
     if (cursor.hasSelection()
@@ -250,11 +313,16 @@ void EditorCompletionWorkflow::handleCursorPositionChanged()
 
 void EditorCompletionWorkflow::showCompletionPopup(bool selectFirstCompletion)
 {
-    if (editor && inlineSession.active)
+    const bool inlineActive = inlineAbbreviationSessionActive();
+    if (editor && inlineActive)
         ++editor->state->hotPathMetrics.inlineFilterPopupCompletes;
+    if (modes && !inlineActive) {
+        modes->enter(EditorModeId::CompletionCandidates,
+                     EditorModeEntryReason::UserAction);
+    }
     completion->showForCursor(
         editor->cursorRect(editor->textCursor()),
-        selectFirstCompletion || modes->commandModeActive);
+        selectFirstCompletion || inlineActive);
 }
 
 void EditorCompletionWorkflow::executeEditorActionCommand(const QString& command)
@@ -331,7 +399,6 @@ bool EditorCompletionWorkflow::showInlineAbbreviationCompletions(
     const QString& abbreviationText,
     const CommandModeCompletionQuery& anchorQuery)
 {
-    inlineSession.active = true;
     inlineSession.replacementStartPosition = replacementStartPosition;
     inlineSession.replacementEndPosition = replacementEndPosition;
     inlineSession.anchorPosition = anchorPosition;
@@ -350,7 +417,10 @@ bool EditorCompletionWorkflow::showInlineAbbreviationCompletions(
              static_cast<std::uint64_t>(
                  inlineSession.anchorQuery.documentText.size()));
 
-    modes->setCommandModeActive(true);
+    if (modes) {
+        modes->enter(EditorModeId::InlineCandidates,
+                     EditorModeEntryReason::InlineCommand);
+    }
     ++editor->state->hotPathMetrics.inlineFilterHighlightUpdates;
     selections->highlightCommand(
         editor,
@@ -361,8 +431,6 @@ bool EditorCompletionWorkflow::showInlineAbbreviationCompletions(
             emit editor->editorStatusMessageRequested(
                 QStringLiteral("No include completion provider"));
             clearInlineAbbreviationSession();
-            modes->clearCommandMode();
-            selections->clearCommand(editor);
         }
         return true;
     }
@@ -377,8 +445,6 @@ bool EditorCompletionWorkflow::showInlineAbbreviationCompletions(
                 .arg(state.descriptor.description,
                      state.completionPrefix));
         clearInlineAbbreviationSession();
-        modes->clearCommandMode();
-        selections->clearCommand(editor);
         return true;
     }
 
@@ -398,6 +464,15 @@ bool EditorCompletionWorkflow::showInlineAbbreviationCompletions(
     completion->updateCommandModeCompletions(
         state,
         !inlineSession.candidateFiltering);
+    if (modes) {
+        modes->updatePresentation(
+            EditorModeId::InlineCandidates,
+            QStringLiteral("Inline candidates: %1")
+                .arg(candidateCount),
+            QStringLiteral("%1; type or Backspace to filter; "
+                           "Tab/Enter accepts; Esc cancels")
+                .arg(state.descriptor.description));
+    }
     showCompletionPopup(true);
     if (candidateCount == 0) {
         emit editor->editorStatusMessageRequested(
@@ -458,6 +533,7 @@ bool EditorCompletionWorkflow::handleInlineAbbreviationTab(QKeyEvent* event)
     query.lineUpToCursor = textBeforeCursor;
     query.fileName = anchorContext.fileName;
     query.moduleName = anchorContext.moduleName;
+    query.packageName = anchorContext.packageName;
     query.documentText = anchorContext.documentText;
     query.cursorLine = anchorContext.cursorLine;
     query.cursorPosition = replacementStartPosition;
@@ -507,8 +583,7 @@ void EditorCompletionWorkflow::applyCompletionActivationState(
         cursor.insertText(activationState.text);
 
         if (activationState.clearCommandMode) {
-            modes->clearCommandMode();
-            selections->clearCommand(editor);
+            clearInlineAbbreviationSession();
         }
     } else if (activationState.action
                == CompletionActivationAction::ReplaceCommandInput) {
@@ -517,8 +592,7 @@ void EditorCompletionWorkflow::applyCompletionActivationState(
                                         activationState.selectionStart,
                                         activationState.selectionLength);
         if (activationState.clearCommandMode) {
-            modes->clearCommandMode();
-            selections->clearCommand(editor);
+            clearInlineAbbreviationSession();
         }
         if (insertionStart >= 0 && !activationState.templateSlots.isEmpty()) {
             editor->startTemplateSlotMode(insertionStart,
@@ -537,7 +611,8 @@ int EditorCompletionWorkflow::replaceCommandInputAtCursor(
     int selectionLength)
 {
     QTextCursor cursor = editor->textCursor();
-    if (inlineSession.active && !inlineAbbreviationSessionValid()) {
+    if (inlineAbbreviationSessionActive()
+        && !inlineAbbreviationSessionValid()) {
         cancelInlineAbbreviationSession();
         return -1;
     }
@@ -574,8 +649,7 @@ int EditorCompletionWorkflow::replaceCommandInputAtCursor(
 void EditorCompletionWorkflow::clearCommandInputAtCursor()
 {
     replaceCommandInputAtCursor(QString());
-    modes->clearCommandMode();
-    selections->clearCommand(editor);
+    clearInlineAbbreviationSession();
 }
 
 void EditorCompletionWorkflow::handleCompletionActivated(

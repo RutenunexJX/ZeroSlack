@@ -8,6 +8,7 @@
 
 enum class CompletionCommandKind {
     User,
+    VisibleSymbol,
     Reg,
     Wire,
     Logic,
@@ -36,6 +37,7 @@ struct CommandCompletionQuery {
     QString prefix;
     QString fileName;
     QString moduleName;
+    QString packageName;
     QString documentText;
     int cursorLine = -1;
     int cursorPosition = -1;
@@ -146,6 +148,8 @@ struct InlineCommandDescriptor {
     QString label;
     QString description;
     QString defaultValue;
+    QString actionId;
+    QString executionRoute;
 };
 
 struct InlineCommandMatch {
@@ -168,6 +172,8 @@ struct CodeTemplateItem {
     int selectionStart = -1;
     int selectionLength = 0;
     CodeTemplateSlotList templateSlots;
+    QString actionId;
+    QString executionRoute;
 };
 
 struct CommandModeMatch {
@@ -194,6 +200,7 @@ struct CommandModeCompletionQuery {
     QString lineUpToCursor;
     QString fileName;
     QString moduleName;
+    QString packageName;
     QString documentText;
     int cursorLine = -1;
     int cursorPosition = -1;

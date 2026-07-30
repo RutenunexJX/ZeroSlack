@@ -6472,6 +6472,23 @@ int main(int argc, char** argv) {
                        ->matchCommandMode(QStringLiteral(";w net"))
                        .command.kind == CompletionCommandKind::Wire,
                true);
+    const CommandModeMatch visibleSymbolMatch =
+        CompletionService::getInstance()
+            ->matchCommandMode(QStringLiteral(";v local"));
+    expectBool("CompletionService visible-symbol command match",
+               visibleSymbolMatch.matched
+                   && visibleSymbolMatch.intent
+                       == InlineCommandIntent::SemanticCompletion
+                   && visibleSymbolMatch.command.kind
+                       == CompletionCommandKind::VisibleSymbol
+                   && visibleSymbolMatch.input
+                       == QStringLiteral("local"),
+               true);
+    expectBool("CompletionService visible-symbol template absent",
+               !CompletionService::getInstance()
+                    ->matchCommandMode(QStringLiteral(";;v local"))
+                    .matched,
+               true);
     expectBool("CompletionService parameter command match",
                CompletionService::getInstance()
                        ->matchCommandMode(QStringLiteral(";p WIDTH"))
@@ -9201,6 +9218,68 @@ int main(int argc, char** argv) {
            "CompletionService command symbols",
            commandLogicSymbols.size());
 
+    const QString slangVisibleFile =
+        QStringLiteral("visible_package_scope.sv");
+    const QString slangVisibleContent =
+        QStringLiteral("package visible_pkg;\n"
+                       "  int visible_var;\n"
+                       "  function automatic int visible_fn();\n"
+                       "    return visible_var;\n"
+                       "  endfunction\n"
+                       "endpackage\n"
+                       "module visible_user;\n"
+                       "  import visible_pkg::*;\n"
+                       "endmodule\n");
+    SlangManager slangVisibleManager;
+    const QList<SemanticSymbolRecord> slangVisibleRecords =
+        slangVisibleManager.extractSymbolRecords(
+            slangVisibleFile,
+            slangVisibleContent);
+    bool slangPackageFunctionVisible = false;
+    bool slangPackageVariableVisible = false;
+    for (const SemanticSymbolRecord& record : slangVisibleRecords) {
+        if (record.owner.name != QStringLiteral("visible_pkg")
+            || record.visibility
+                   != SymbolTaxonomy::SymbolVisibility::PackageVisible) {
+            continue;
+        }
+        slangPackageFunctionVisible =
+            slangPackageFunctionVisible
+            || (record.name == QStringLiteral("visible_fn")
+                && record.declarationKind
+                       == SymbolTaxonomy::DeclarationKind::Function);
+        slangPackageVariableVisible =
+            slangPackageVariableVisible
+            || (record.name == QStringLiteral("visible_var")
+                && record.declarationKind
+                       == SymbolTaxonomy::DeclarationKind::Signal);
+    }
+    expectBool("Slang package function is import-visible",
+               slangPackageFunctionVisible,
+               true);
+    expectBool("Slang package variable is import-visible",
+               slangPackageVariableVisible,
+               true);
+    SemanticIndex slangVisibleIndex;
+    slangVisibleIndex.updateSymbolRecordsForFile(
+        slangVisibleFile,
+        slangVisibleRecords,
+        slangVisibleContent);
+    CompletionService slangVisibleService(&slangVisibleIndex);
+    CommandCompletionQuery slangVisibleQuery;
+    slangVisibleQuery.fileName = slangVisibleFile;
+    slangVisibleQuery.moduleName = QStringLiteral("visible_user");
+    slangVisibleQuery.prefix = QStringLiteral("visible_");
+    slangVisibleQuery.cursorLine = 9;
+    slangVisibleQuery.commandKind =
+        CompletionCommandKind::VisibleSymbol;
+    expectList(
+        "visible-symbol query uses Slang package visibility",
+        recordNames(slangVisibleService
+                        .findCommandCompletionSymbolRecords(
+                            slangVisibleQuery)),
+        {"visible_fn", "visible_var"});
+
     const QString inlineScopeFile = QStringLiteral("inline_scope_test.sv");
     const QString inlineScopeContent =
         QStringLiteral("module mod_a;\n"
@@ -9247,6 +9326,46 @@ int main(int argc, char** argv) {
         4,
         inlineScopeFile));
     inlineScopeRecords.append(makeSemanticFixtureRecord(
+        QStringLiteral("a_port"),
+        SymbolTaxonomy::DeclarationKind::Port,
+        SymbolTaxonomy::CollectorKind::PortInput,
+        QStringLiteral("mod_a"),
+        QStringLiteral("logic"),
+        5,
+        inlineScopeFile));
+    inlineScopeRecords.append(makeSemanticFixtureRecord(
+        QStringLiteral("A_WIDTH"),
+        SymbolTaxonomy::DeclarationKind::Parameter,
+        SymbolTaxonomy::CollectorKind::Parameter,
+        QStringLiteral("mod_a"),
+        QStringLiteral("int"),
+        6,
+        inlineScopeFile));
+    inlineScopeRecords.append(makeSemanticFixtureRecord(
+        QStringLiteral("a_type_t"),
+        SymbolTaxonomy::DeclarationKind::Typedef,
+        SymbolTaxonomy::CollectorKind::Typedef,
+        QStringLiteral("mod_a"),
+        QStringLiteral("logic"),
+        7,
+        inlineScopeFile));
+    inlineScopeRecords.append(makeSemanticFixtureRecord(
+        QStringLiteral("u_child"),
+        SymbolTaxonomy::DeclarationKind::Instance,
+        SymbolTaxonomy::CollectorKind::Inst,
+        QStringLiteral("mod_a"),
+        QStringLiteral("child"),
+        8,
+        inlineScopeFile));
+    inlineScopeRecords.append(makeSemanticFixtureRecord(
+        QStringLiteral("a_fn"),
+        SymbolTaxonomy::DeclarationKind::Function,
+        SymbolTaxonomy::CollectorKind::Function,
+        QStringLiteral("mod_a"),
+        QStringLiteral("function"),
+        9,
+        inlineScopeFile));
+    inlineScopeRecords.append(makeSemanticFixtureRecord(
         QStringLiteral("mod_b"),
         SymbolTaxonomy::DeclarationKind::Module,
         SymbolTaxonomy::CollectorKind::Module,
@@ -9278,6 +9397,93 @@ int main(int argc, char** argv) {
         QStringLiteral("reg"),
         23,
         inlineScopeFile));
+    inlineScopeRecords.append(
+        SemanticFixtureRecordBuilder(QStringLiteral("shared_pkg"))
+            .withFile(inlineScopeFile)
+            .withLocalHandle(30)
+            .withLine(1)
+            .withCollectorKind(
+                SymbolTaxonomy::CollectorKind::PackageImport)
+            .withUsageRole(
+                SymbolTaxonomy::SymbolUsageRole::Reference)
+            .withOwner(SymbolTaxonomy::SymbolOwnerScope::Module,
+                       QStringLiteral("mod_a"))
+            .withType(QStringLiteral("*"))
+            .record());
+    inlineScopeRecords.append(
+        SemanticFixtureRecordBuilder(QStringLiteral("SHARED_DEPTH"),
+                                     SymbolTaxonomy::DeclarationKind::Parameter)
+            .withFile(inlineScopeFile)
+            .withLocalHandle(31)
+            .withLine(30)
+            .withCollectorKind(
+                SymbolTaxonomy::CollectorKind::Parameter)
+            .inPackage(QStringLiteral("shared_pkg"))
+            .withType(QStringLiteral("int"))
+            .record());
+    inlineScopeRecords.append(
+        SemanticFixtureRecordBuilder(QStringLiteral("shared_t"),
+                                     SymbolTaxonomy::DeclarationKind::Typedef)
+            .withFile(inlineScopeFile)
+            .withLocalHandle(32)
+            .withLine(31)
+            .withCollectorKind(
+                SymbolTaxonomy::CollectorKind::Typedef)
+            .inPackage(QStringLiteral("shared_pkg"))
+            .withType(QStringLiteral("logic"))
+            .record());
+    inlineScopeRecords.append(
+        SemanticFixtureRecordBuilder(QStringLiteral("HIDDEN_DEPTH"),
+                                     SymbolTaxonomy::DeclarationKind::Parameter)
+            .withFile(inlineScopeFile)
+            .withLocalHandle(33)
+            .withLine(32)
+            .withCollectorKind(
+                SymbolTaxonomy::CollectorKind::Parameter)
+            .inPackage(QStringLiteral("hidden_pkg"))
+            .withType(QStringLiteral("int"))
+            .record());
+    for (int packageOffset = 0; packageOffset < 2; ++packageOffset) {
+        const QString packageName = packageOffset == 0
+            ? QStringLiteral("duplicate_pkg_a")
+            : QStringLiteral("duplicate_pkg_b");
+        inlineScopeRecords.append(
+            SemanticFixtureRecordBuilder(packageName)
+                .withFile(inlineScopeFile)
+                .withLocalHandle(34 + packageOffset)
+                .withLine(1)
+                .withCollectorKind(
+                    SymbolTaxonomy::CollectorKind::PackageImport)
+                .withUsageRole(
+                    SymbolTaxonomy::SymbolUsageRole::Reference)
+                .withOwner(SymbolTaxonomy::SymbolOwnerScope::Module,
+                           QStringLiteral("mod_a"))
+                .withType(QStringLiteral("*"))
+                .record());
+        inlineScopeRecords.append(
+            SemanticFixtureRecordBuilder(
+                QStringLiteral("DUPLICATE"),
+                SymbolTaxonomy::DeclarationKind::Parameter)
+                .withFile(inlineScopeFile)
+                .withLocalHandle(36 + packageOffset)
+                .withLine(33 + packageOffset)
+                .withCollectorKind(
+                    SymbolTaxonomy::CollectorKind::Parameter)
+                .inPackage(packageName)
+                .withType(QStringLiteral("int"))
+                .record());
+    }
+    inlineScopeRecords.append(
+        SemanticFixtureRecordBuilder(QStringLiteral("PKG_LOCAL"),
+                                     SymbolTaxonomy::DeclarationKind::Localparam)
+            .withFile(inlineScopeFile)
+            .withLocalHandle(38)
+            .withLine(35)
+            .withCollectorKind(
+                SymbolTaxonomy::CollectorKind::Localparam)
+            .inPackage(QStringLiteral("local_pkg"))
+            .withType(QStringLiteral("int"))
+            .record());
     SemanticIndex inlineScopeIndex;
     inlineScopeIndex.updateSymbolRecordsForFile(
         inlineScopeFile,
@@ -9327,6 +9533,39 @@ int main(int argc, char** argv) {
                                 QStringLiteral("assign lhs = ;r "),
                                 9),
                {"b_reg"});
+    expectList("visible-symbol command respects module and imports",
+               inlineScopeNames(QStringLiteral("mod_a"),
+                                QStringLiteral("assign lhs = ;v "),
+                                10),
+               {"A_WIDTH",
+                "a_fn",
+                "a_logic",
+                "a_port",
+                "a_reg",
+                "a_type_t",
+                "a_wire",
+                "SHARED_DEPTH",
+                "shared_t",
+                "u_child"});
+    expectList("visible-symbol command excludes foreign module internals",
+               inlineScopeNames(QStringLiteral("mod_b"),
+                                QStringLiteral("assign lhs = ;v "),
+                                24),
+               {"b_logic", "b_reg", "b_wire"});
+
+    CommandModeCompletionQuery packageVisibleQuery;
+    packageVisibleQuery.lineUpToCursor = QStringLiteral(";v ");
+    packageVisibleQuery.fileName = inlineScopeFile;
+    packageVisibleQuery.packageName = QStringLiteral("local_pkg");
+    packageVisibleQuery.documentText = inlineScopeContent;
+    packageVisibleQuery.cursorLine = 35;
+    packageVisibleQuery.cursorPosition = inlineScopeContent.size();
+    expectList(
+        "visible-symbol command supports package scope",
+        recordNames(inlineScopeService
+                        .commandModeCompletionState(packageVisibleQuery)
+                        .symbolRecords),
+        {"PKG_LOCAL"});
 
     CommandModeCompletionQuery anchoredInlineFilterQuery;
     anchoredInlineFilterQuery.lineUpToCursor =
@@ -9355,6 +9594,34 @@ int main(int argc, char** argv) {
                         .commandModeCompletionState(anchoredInlineFilterQuery)
                         .symbolRecords),
         {});
+
+    CommandModeCompletionQuery visibleFilterQuery;
+    visibleFilterQuery.lineUpToCursor =
+        QStringLiteral("assign lhs = ;v");
+    visibleFilterQuery.fileName = inlineScopeFile;
+    visibleFilterQuery.moduleName = QStringLiteral("mod_a");
+    visibleFilterQuery.documentText = inlineScopeContent;
+    visibleFilterQuery.cursorLine = 10;
+    visibleFilterQuery.cursorPosition =
+        inlineScopeContent.indexOf(QStringLiteral("endmodule"));
+    visibleFilterQuery.hasExplicitMatch = true;
+    visibleFilterQuery.explicitMatch =
+        InlineCommandMode::matchAbbreviationBeforeCursor(
+            visibleFilterQuery.lineUpToCursor);
+    visibleFilterQuery.explicitMatch.input = QStringLiteral("a_por");
+    expectList(
+        "visible-symbol typing filters the explicit session",
+        recordNames(inlineScopeService
+                        .commandModeCompletionState(visibleFilterQuery)
+                        .symbolRecords),
+        {"a_port"});
+    visibleFilterQuery.explicitMatch.input = QStringLiteral("a_p");
+    expectList(
+        "visible-symbol Backspace broadens the explicit session",
+        recordNames(inlineScopeService
+                        .commandModeCompletionState(visibleFilterQuery)
+                        .symbolRecords),
+        {"SHARED_DEPTH", "a_port", "a_type_t"});
 
     commandQuery.commandKind = CompletionCommandKind::Wire;
     commandQuery.prefix = "net";
@@ -10402,10 +10669,20 @@ int main(int argc, char** argv) {
         managerConfig.ignoredDirs = {configGeneratedDir};
         managerConfig.topModule = QStringLiteral("config_extra");
         QString workspaceConfigError;
+        const bool managerConfigurationApplied =
+            configWorkspaceManager.setWorkspaceConfiguration(
+                managerConfig,
+                &workspaceConfigError);
+        if (!managerConfigurationApplied) {
+            std::fprintf(
+                stderr,
+                "Workspace configuration diagnostic: error=\"%s\" root=\"%s\" ignored=\"%s\"\n",
+                qPrintable(workspaceConfigError),
+                qPrintable(managerConfig.workspaceRoot),
+                qPrintable(configGeneratedDir));
+        }
         expectBool("Workspace configuration manager applies config",
-                   configWorkspaceManager.setWorkspaceConfiguration(
-                       managerConfig,
-                       &workspaceConfigError),
+                   managerConfigurationApplied,
                    true);
         const QString normalizedConfigSvx =
             normalizeTestPath(configSvxFile);
@@ -10538,22 +10815,6 @@ int main(int argc, char** argv) {
 
         WorkspaceSessionState sessionState;
         sessionState.workspaceRoot = sessionWorkspaceA.path();
-        sessionState.configuration.workspaceRoot = sessionWorkspaceA.path();
-        sessionState.configuration.includeDirs = {
-            sessionAIncludeDir,
-            sessionExternalIncludeDir,
-        };
-        sessionState.configuration.ignoredDirs = {sessionAIgnoredDir};
-        sessionState.configuration.fileExtensions = {
-            QStringLiteral(".sv"),
-            QStringLiteral(".svh"),
-        };
-        sessionState.configuration.defines.insert(QStringLiteral("WIDTH"),
-                                                  QStringLiteral("32"));
-        sessionState.configuration.defines.insert(QStringLiteral("FEATURE"),
-                                                  QString());
-        sessionState.configuration.topModule =
-            QStringLiteral("session_top");
         sessionState.tabs = {
             WorkspaceSessionTabState{sessionATopFile, 2, 5, 12, false},
             WorkspaceSessionTabState{sessionAHelperFile, 1, 3, 4, true},
@@ -10571,60 +10832,41 @@ int main(int argc, char** argv) {
         };
         sessionState.scanComplete = true;
 
-        WorkspaceSessionStateService sessionService;
+        const QString localSessionStore =
+            QDir(sessionExternalDir.path()).absoluteFilePath(
+                QStringLiteral("local-workspace-sessions.ini"));
+        WorkspaceSessionStateService sessionService(localSessionStore);
         const WorkspaceSessionSaveResult sessionSave =
             sessionService.save(sessionState);
-        const QString movedSessionPath =
-            WorkspaceSessionStateService::sessionFilePath(
-                sessionWorkspaceB.path());
-        QFile::remove(movedSessionPath);
-        expectBool("Workspace session save writes .zs",
+        expectBool("Workspace session save writes only local AppData",
                    sessionSave.saved
-                       && QFileInfo(sessionSave.sessionFilePath).isFile()
-                       && QFile::copy(sessionSave.sessionFilePath,
-                                      movedSessionPath),
+                       && QFileInfo(sessionSave.storagePath).isFile()
+                       && !QFileInfo(
+                               QDir(sessionWorkspaceA.path())
+                                   .absoluteFilePath(
+                                       QStringLiteral(".zs")))
+                               .exists()
+                       && !QFileInfo(
+                               QDir(sessionWorkspaceB.path())
+                                   .absoluteFilePath(
+                                       QStringLiteral(".zs")))
+                               .exists(),
+                   true);
+        expectBool("Workspace local session does not follow a moved root",
+                   !sessionService.load(sessionWorkspaceB.path()).loaded,
                    true);
 
         const WorkspaceSessionRestoreResult restoredSession =
-            sessionService.load(sessionWorkspaceB.path());
-        const QString normalizedSessionBInclude =
-            normalizeTestPath(sessionBIncludeDir);
-        const QString normalizedSessionBIgnored =
-            normalizeTestPath(sessionBIgnoredDir);
-        const QString normalizedSessionExternal =
-            normalizeTestPath(sessionExternalIncludeDir);
-        const QString normalizedSessionBTop =
-            normalizeTestPath(sessionBTopFile);
-        const QString normalizedSessionBHelper =
-            normalizeTestPath(sessionBHelperFile);
-        expectBool("Workspace session load succeeds after move",
+            sessionService.load(sessionWorkspaceA.path());
+        const QString normalizedSessionATop =
+            normalizeTestPath(sessionATopFile);
+        const QString normalizedSessionAHelper =
+            normalizeTestPath(sessionAHelperFile);
+        expectBool("Workspace local session load succeeds",
                    restoredSession.loaded
                        && restoredSession.state.workspaceRoot
-                              == normalizeTestPath(sessionWorkspaceB.path())
-                       && restoredSession.state.originalRoot
                               == normalizeTestPath(sessionWorkspaceA.path())
                        && !restoredSession.state.workspaceId.isEmpty(),
-                   true);
-        expectBool("Workspace session restores config paths",
-                   restoredSession.state.configuration.includeDirs.contains(
-                       normalizedSessionBInclude)
-                       && restoredSession.state.configuration.includeDirs
-                              .contains(normalizedSessionExternal)
-                       && restoredSession.state.configuration.ignoredDirs
-                              == QStringList{normalizedSessionBIgnored}
-                       && restoredSession.externalPaths.contains(
-                              normalizedSessionExternal),
-                   true);
-        expectBool("Workspace session restores config fields",
-                   restoredSession.state.configuration.fileExtensions
-                           == QStringList{QStringLiteral(".sv"),
-                                          QStringLiteral(".svh")}
-                       && restoredSession.state.configuration.defines.value(
-                              QStringLiteral("WIDTH")) == QStringLiteral("32")
-                       && restoredSession.state.configuration.defines
-                              .contains(QStringLiteral("FEATURE"))
-                       && restoredSession.state.configuration.topModule
-                              == QStringLiteral("session_top"),
                    true);
         bool restoredTopTab = false;
         bool restoredActiveHelperTab = false;
@@ -10632,14 +10874,14 @@ int main(int argc, char** argv) {
              restoredSession.state.tabs) {
             restoredTopTab =
                 restoredTopTab
-                || (tab.filePath == normalizedSessionBTop
+                || (tab.filePath == normalizedSessionATop
                     && tab.cursorLine == 2
                     && tab.cursorColumn == 5
                     && tab.verticalScrollValue == 12
                     && !tab.active);
             restoredActiveHelperTab =
                 restoredActiveHelperTab
-                || (tab.filePath == normalizedSessionBHelper
+                || (tab.filePath == normalizedSessionAHelper
                     && tab.cursorLine == 1
                     && tab.cursorColumn == 3
                     && tab.verticalScrollValue == 4
@@ -10659,8 +10901,8 @@ int main(int argc, char** argv) {
                    true);
         expectList("Workspace session restores scanned files",
                    restoredSession.state.scannedFiles,
-                   QStringList{normalizedSessionBTop,
-                               normalizedSessionBHelper});
+                   QStringList{normalizedSessionAHelper,
+                               normalizedSessionATop});
         expectBool("Workspace session filters missing scanned files",
                    restoredSession.state.scanComplete
                        && restoredSession.skippedScannedFiles.size() == 1,
@@ -10672,8 +10914,8 @@ int main(int argc, char** argv) {
                    true);
         expectBool("Workspace session scan manager restores list",
                    sessionScanManager.restoreSessionScanState(
-                       QStringList{normalizedSessionBTop,
-                                   normalizedSessionBHelper,
+                       QStringList{normalizeTestPath(sessionBTopFile),
+                                   normalizeTestPath(sessionBHelperFile),
                                    QDir(sessionBRtlDir).absoluteFilePath(
                                        QStringLiteral("missing.sv"))},
                        true),
@@ -10681,9 +10923,9 @@ int main(int argc, char** argv) {
         expectBool("Workspace session scan manager filters stale files",
                    sessionScanManager.getAllFiles().size() == 2
                        && sessionScanManager.getAllFiles().contains(
-                              normalizedSessionBTop)
+                              normalizeTestPath(sessionBTopFile))
                        && sessionScanManager.getAllFiles().contains(
-                              normalizedSessionBHelper)
+                              normalizeTestPath(sessionBHelperFile))
                        && sessionScanManager.workspaceEntries().size() == 1
                        && sessionScanManager.workspaceEntries()
                               .first()

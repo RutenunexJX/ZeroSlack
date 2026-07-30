@@ -10,6 +10,8 @@ inline SymbolTaxonomy::SemanticCompletionKind semanticCompletionKindForCommand(
     CompletionCommandKind kind)
 {
     switch (kind) {
+    case CompletionCommandKind::VisibleSymbol:
+        return SymbolTaxonomy::SemanticCompletionKind::VisibleSymbol;
     case CompletionCommandKind::Reg:
         return SymbolTaxonomy::SemanticCompletionKind::Reg;
     case CompletionCommandKind::Wire:
@@ -84,6 +86,7 @@ inline bool completionCommandKindRequiresModuleContext(
     case CompletionCommandKind::PackedStructVariable:
     case CompletionCommandKind::UnpackedStructVariable:
         return true;
+    case CompletionCommandKind::VisibleSymbol:
     case CompletionCommandKind::User:
     case CompletionCommandKind::Module:
     case CompletionCommandKind::Reg:
@@ -151,6 +154,7 @@ inline bool completionCommandKindIsGlobalCommand(CompletionCommandKind kind)
     case CompletionCommandKind::UnpackedStructType:
     case CompletionCommandKind::EnumType:
         return true;
+    case CompletionCommandKind::VisibleSymbol:
     case CompletionCommandKind::User:
     case CompletionCommandKind::Reg:
     case CompletionCommandKind::Wire:
@@ -177,6 +181,7 @@ inline bool completionCommandKindIsAlwaysGlobalCommand(CompletionCommandKind kin
     case CompletionCommandKind::Package:
     case CompletionCommandKind::Macro:
         return true;
+    case CompletionCommandKind::VisibleSymbol:
     case CompletionCommandKind::User:
     case CompletionCommandKind::Reg:
     case CompletionCommandKind::Wire:
@@ -211,6 +216,8 @@ inline bool completionCommandKindIsPackageVisibleCommand(CompletionCommandKind k
     case CompletionCommandKind::PackedStructType:
     case CompletionCommandKind::UnpackedStructType:
         return true;
+    case CompletionCommandKind::VisibleSymbol:
+        return true;
     case CompletionCommandKind::User:
     case CompletionCommandKind::Reg:
     case CompletionCommandKind::Wire:
@@ -241,6 +248,7 @@ inline bool completionCommandKindIsModuleRange(CompletionCommandKind kind)
     case CompletionCommandKind::PackedStructVariable:
     case CompletionCommandKind::UnpackedStructVariable:
         return true;
+    case CompletionCommandKind::VisibleSymbol:
     case CompletionCommandKind::User:
     case CompletionCommandKind::Reg:
     case CompletionCommandKind::Wire:

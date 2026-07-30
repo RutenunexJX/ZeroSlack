@@ -8,6 +8,7 @@ EditorCompletionQueryHelper::commandModeCompletionQuery(
     query.lineUpToCursor = context.lineUpToCursor;
     query.fileName = context.fileName;
     query.moduleName = context.moduleName;
+    query.packageName = context.packageName;
     query.documentText = context.documentText;
     query.cursorLine = context.cursorLine;
     query.cursorPosition = context.cursorPosition;

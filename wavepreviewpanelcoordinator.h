@@ -55,6 +55,15 @@ public:
                              const QString& scopeLabel,
                              int scopeStartLineZeroBased);
     void renderUnavailable(const QString& message);
+    void focusFit();
+    void focusZoomIn();
+    void focusZoomOut();
+    void setFocusSearchText(const QString& text);
+    QString focusSearchText() const;
+    void focusInspector();
+    qreal focusZoomFactorForTest() const {
+        return focusZoomFactor;
+    }
 
     QDockWidget* dock() const { return previewDock; }
     QTreeWidget* tree() const { return previewTree; }
@@ -90,6 +99,8 @@ private:
     QString laneFilterText;
     WavePreviewRefreshMetrics refreshMetrics;
     bool refreshTimingEnabled = false;
+    qreal focusZoomFactor = 1.0;
+    qreal focusBaseTreePointSize = 0.0;
 
     std::function<void(const QString&, int, int)> navigationHandler;
 
@@ -105,6 +116,7 @@ private:
                       const QString& fileName,
                       bool dirty);
     void navigateItem(QTreeWidgetItem* item) const;
+    void applyFocusZoom();
 };
 
 #endif // WAVEPREVIEWPANELCOORDINATOR_H

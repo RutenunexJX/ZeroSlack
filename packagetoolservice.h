@@ -27,6 +27,7 @@ class PackageToolService
 {
 public:
     static QList<PackageToolKind> toolOrder();
+    static QString actionIdForKind(PackageToolKind kind);
     static QString idForKind(PackageToolKind kind);
     static QString labelForKind(PackageToolKind kind);
 

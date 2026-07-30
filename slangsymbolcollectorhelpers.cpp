@@ -372,7 +372,12 @@ bool isPackageVisibleDefinition(const SemanticSymbolRecord& record)
         || record.declarationKind == SymbolTaxonomy::DeclarationKind::Localparam
         || record.declarationKind == SymbolTaxonomy::DeclarationKind::Typedef
         || record.declarationKind == SymbolTaxonomy::DeclarationKind::Enum
-        || record.declarationKind == SymbolTaxonomy::DeclarationKind::Struct;
+        || record.declarationKind == SymbolTaxonomy::DeclarationKind::Signal
+        || record.declarationKind == SymbolTaxonomy::DeclarationKind::Struct
+        || record.declarationKind
+               == SymbolTaxonomy::DeclarationKind::StructVariable
+        || record.declarationKind == SymbolTaxonomy::DeclarationKind::Task
+        || record.declarationKind == SymbolTaxonomy::DeclarationKind::Function;
 }
 
 bool hasInterfaceLikeOwner(SymbolTaxonomy::CollectorKind rawKind)

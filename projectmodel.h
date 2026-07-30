@@ -7,8 +7,10 @@
 #include <QObject>
 #include <QString>
 #include <QStringList>
+#include <cstdint>
 
 struct ProjectSnapshot {
+    std::uint64_t revision = 0;
     QString workspaceRoot;
     QStringList allFiles;
     QStringList systemVerilogFiles;
@@ -86,6 +88,7 @@ private:
     };
 
     ProjectSnapshot current;
+    std::uint64_t revisionCounter = 0;
     QStringList rawScannedFiles;
     bool includeDirsExplicit = false;
     ProjectPathRules pathRules;

@@ -4,10 +4,13 @@
 #include "workspaceconfigurationservice.h"
 
 #include <QByteArray>
-#include <QJsonValue>
 #include <QList>
 #include <QString>
 #include <QStringList>
+
+#include <memory>
+
+class QSettings;
 
 struct WorkspaceSessionTabState {
     QString filePath;
@@ -27,7 +30,6 @@ struct WorkspaceSessionState {
     QString originalRoot;
     QString workspaceId;
     QString savedAtUtc;
-    WorkspaceConfiguration configuration;
     QList<WorkspaceSessionTabState> tabs;
     WorkspaceSessionUiState ui;
     QStringList scannedFiles;
@@ -36,40 +38,70 @@ struct WorkspaceSessionState {
 
 struct WorkspaceSessionSaveResult {
     bool saved = false;
-    QString sessionFilePath;
+    QString storagePath;
+    QString workspaceIdentity;
     QString message;
 };
 
 struct WorkspaceSessionRestoreResult {
     bool loaded = false;
-    QString sessionFilePath;
+    QString storagePath;
     WorkspaceSessionState state;
     QStringList skippedTabs;
     QStringList skippedScannedFiles;
-    QStringList externalPaths;
+    QString message;
+};
+
+struct WorkspaceLegacyImportResult {
+    bool loaded = false;
+    QString legacyFilePath;
+    WorkspaceSessionState state;
+    QStringList skippedTabs;
+    QStringList skippedScannedFiles;
     QString message;
 };
 
 class WorkspaceSessionStateService
 {
 public:
-    static constexpr int kVersion = 1;
+    static constexpr int kVersion = 2;
 
-    static QString sessionFilePath(const QString& workspaceRoot);
-    static bool sessionFileExists(const QString& workspaceRoot);
+    explicit WorkspaceSessionStateService(
+        const QString& settingsFilePath =
+            QString());
 
+    static QString workspaceIdentity(
+        const QString& workspaceRoot);
+    static QString legacySessionFilePath(
+        const QString& workspaceRoot);
+    static bool legacySessionFileExists(
+        const QString& workspaceRoot);
+
+    QString localStoragePath() const;
+    bool sessionExists(
+        const QString& workspaceRoot) const;
     WorkspaceSessionSaveResult save(
         const WorkspaceSessionState& state) const;
     WorkspaceSessionRestoreResult load(
         const QString& workspaceRoot) const;
+    bool clear(const QString& workspaceRoot) const;
+    WorkspaceLegacyImportResult loadLegacy(
+        const QString& workspaceRoot) const;
 
 private:
-    static QString normalizePath(const QString& path);
-    static bool isInsideRoot(const QString& root, const QString& path);
-    static QString relativePath(const QString& root, const QString& path);
-    static QString resolveStoredPath(const QString& root,
-                                     const QJsonValue& value,
-                                     QStringList* externalPaths);
+    QString settingsFilePath;
+
+    static QString normalizePath(
+        const QString& path);
+    static bool isInsideRoot(
+        const QString& root,
+        const QString& path);
+    static QString relativePath(
+        const QString& root,
+        const QString& path);
+    static QString settingsGroup(
+        const QString& workspaceRoot);
+    std::unique_ptr<QSettings> makeSettings() const;
 };
 
 #endif // WORKSPACESESSIONSTATESERVICE_H

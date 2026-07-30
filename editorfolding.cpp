@@ -10,6 +10,7 @@
 #include <QDropEvent>
 #include <QMimeData>
 #include <QPainter>
+#include <QPointer>
 #include <QInputDialog>
 #include <QLineEdit>
 #include <QFontMetrics>
@@ -418,11 +419,35 @@ bool EditorFoldingController::toggleFoldAtLine(MyCodeEditor* editor, int line)
     return true;
 }
 
+void EditorFoldingController::bindModeController(
+    EditorModeController* controller,
+    MyCodeEditor* editor)
+{
+    modeController = controller;
+    if (!modeController)
+        return;
+
+    const QPointer<MyCodeEditor> target(editor);
+    modeController->setExitHandler(
+        EditorModeId::FoldRegion,
+        [this, target](EditorModeExitReason) {
+            resetFoldRegionMode(target);
+        });
+    modeController->setExitHandler(
+        EditorModeId::FoldShelf,
+        [this, target](EditorModeExitReason) {
+            resetFoldShelfMode(target);
+        });
+}
+
 void EditorFoldingController::startFoldRegionMarkMode(MyCodeEditor* editor)
 {
-    shelfMode = false;
-    hoveredShelfRange = {};
-    dragShelfRange = {};
+    if (modeController
+        && !modeController->enter(
+            EditorModeId::FoldRegion,
+            EditorModeEntryReason::UserAction)) {
+        return;
+    }
     markMode = FoldRegionMarkMode::WaitingForStart;
     pendingStartLine = -1;
     foldRegionHoverLine = -1;
@@ -432,6 +457,17 @@ void EditorFoldingController::startFoldRegionMarkMode(MyCodeEditor* editor)
 }
 
 void EditorFoldingController::cancelFoldRegionMarkMode(MyCodeEditor* editor)
+{
+    if (modeController
+        && modeController->isActive(EditorModeId::FoldRegion)) {
+        modeController->exit(EditorModeId::FoldRegion,
+                             EditorModeExitReason::Canceled);
+        return;
+    }
+    resetFoldRegionMode(editor);
+}
+
+void EditorFoldingController::resetFoldRegionMode(MyCodeEditor* editor)
 {
     markMode = FoldRegionMarkMode::Inactive;
     pendingStartLine = -1;
@@ -443,15 +479,19 @@ void EditorFoldingController::cancelFoldRegionMarkMode(MyCodeEditor* editor)
 
 bool EditorFoldingController::foldRegionMarkModeActive() const
 {
-    return markMode != FoldRegionMarkMode::Inactive;
+    return modeController
+        ? modeController->isActive(EditorModeId::FoldRegion)
+        : markMode != FoldRegionMarkMode::Inactive;
 }
 
 void EditorFoldingController::startFoldShelfMode(MyCodeEditor* editor)
 {
-    markMode = FoldRegionMarkMode::Inactive;
-    pendingStartLine = -1;
-    foldRegionHoverLine = -1;
-    shelfMode = true;
+    if (modeController
+        && !modeController->enter(
+            EditorModeId::FoldShelf,
+            EditorModeEntryReason::UserAction)) {
+        return;
+    }
     hoveredShelfRange = {};
     dragShelfRange = {};
     updateStatus(editor, QStringLiteral("Fold Shelf: drag custom fold blocks"));
@@ -461,9 +501,17 @@ void EditorFoldingController::startFoldShelfMode(MyCodeEditor* editor)
 
 void EditorFoldingController::cancelFoldShelfMode(MyCodeEditor* editor)
 {
-    if (!shelfMode)
+    if (modeController
+        && modeController->isActive(EditorModeId::FoldShelf)) {
+        modeController->exit(EditorModeId::FoldShelf,
+                             EditorModeExitReason::Canceled);
         return;
-    shelfMode = false;
+    }
+    resetFoldShelfMode(editor);
+}
+
+void EditorFoldingController::resetFoldShelfMode(MyCodeEditor* editor)
+{
     hoveredShelfRange = {};
     dragShelfRange = {};
     updateStatus(editor, QString());
@@ -473,7 +521,9 @@ void EditorFoldingController::cancelFoldShelfMode(MyCodeEditor* editor)
 
 bool EditorFoldingController::foldShelfModeActive() const
 {
-    return shelfMode;
+    return modeController
+        ? modeController->isActive(EditorModeId::FoldShelf)
+        : false;
 }
 
 bool EditorFoldingController::handleFoldRegionHoverLine(
@@ -508,7 +558,7 @@ void EditorFoldingController::handleFoldShelfHover(
     MyCodeEditor* editor,
     QMouseEvent* event)
 {
-    if (!shelfMode || !editor || !event)
+    if (!foldShelfModeActive() || !editor || !event)
         return;
 
     const int line =
@@ -526,7 +576,8 @@ bool EditorFoldingController::handleFoldShelfMousePress(
     MyCodeEditor* editor,
     QMouseEvent* event)
 {
-    if (!shelfMode || !editor || !event || event->button() != Qt::LeftButton)
+    if (!foldShelfModeActive() || !editor || !event
+        || event->button() != Qt::LeftButton)
         return false;
 
     const int line =
@@ -540,7 +591,8 @@ bool EditorFoldingController::handleFoldShelfMouseMove(
     MyCodeEditor* editor,
     QMouseEvent* event)
 {
-    if (!shelfMode || !editor || !event || dragShelfRange.startLine < 0)
+    if (!foldShelfModeActive() || !editor || !event
+        || dragShelfRange.startLine < 0)
         return false;
     if (!(event->buttons() & Qt::LeftButton))
         return false;
@@ -679,8 +731,17 @@ bool EditorFoldingController::handleFoldRegionGutterLine(
         return true;
     }
 
-    insertCustomFoldMarkers(editor, startLine, endLine, alias.isEmpty() ? suggestedAlias : alias);
-    cancelFoldRegionMarkMode(editor);
+    insertCustomFoldMarkers(editor,
+                            startLine,
+                            endLine,
+                            alias.isEmpty() ? suggestedAlias : alias);
+    if (modeController
+        && modeController->isActive(EditorModeId::FoldRegion)) {
+        modeController->exit(EditorModeId::FoldRegion,
+                             EditorModeExitReason::Completed);
+    } else {
+        resetFoldRegionMode(editor);
+    }
     return true;
 }
 
@@ -874,7 +935,7 @@ void EditorFoldingController::paintGutter(
             painter.drawText(badgeRect, Qt::AlignCenter, badge);
             painter.restore();
         }
-        if (shelfMode
+        if (foldShelfModeActive()
             && hoveredShelfRange.startLine >= 0
             && (line == hoveredShelfRange.startLine
                 || line == hoveredShelfRange.endLine)) {
@@ -1067,6 +1128,22 @@ void EditorFoldingController::updateStatus(
     MyCodeEditor* editor,
     const QString& message) const
 {
+    if (modeController
+        && modeController->isActive(EditorModeId::FoldRegion)
+        && !message.isEmpty()) {
+        modeController->updatePresentation(
+            EditorModeId::FoldRegion,
+            message,
+            QStringLiteral("Click gutter lines to define the region; "
+                           "Esc cancels"));
+    } else if (modeController
+               && modeController->isActive(EditorModeId::FoldShelf)
+               && !message.isEmpty()) {
+        modeController->updatePresentation(
+            EditorModeId::FoldShelf,
+            message,
+            QStringLiteral("Drag custom fold blocks; Esc closes"));
+    }
     if (editor)
         emit editor->editorStatusMessageRequested(message);
 }
@@ -1149,7 +1226,8 @@ void EditorFoldingController::paintFoldShelfHighlight(
     MyCodeEditor* editor,
     QPainter& painter) const
 {
-    if (!editor || !shelfMode || hoveredShelfRange.startLine < 0)
+    if (!editor || !foldShelfModeActive()
+        || hoveredShelfRange.startLine < 0)
         return;
 
     painter.save();

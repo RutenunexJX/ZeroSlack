@@ -18,6 +18,7 @@ public:
     ~GlobalControlCoordinator() override;
 
     void setActionHandler(std::function<void(const GlobalControlItem&)> handler);
+    void setOpeningHandler(std::function<void()> handler);
     void install();
     bool handleKeyEvent(QEvent* event);
     void open();
@@ -30,6 +31,7 @@ private:
     std::unique_ptr<GlobalControlPanel> panel;
     GlobalControlService service;
     std::function<void(const GlobalControlItem&)> actionHandler;
+    std::function<void()> openingHandler;
     bool installed = false;
 
     void refresh(const QString& queryText = QString());

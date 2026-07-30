@@ -3,6 +3,7 @@
 
 #include "foldblockshelfmodel.h"
 #include "documentchange.h"
+#include "editormodecontroller.h"
 #include "tsdocument.h"
 
 #include <QList>
@@ -21,6 +22,8 @@ class QRect;
 class EditorFoldingController
 {
 public:
+    void bindModeController(EditorModeController* controller,
+                            MyCodeEditor* editor);
     void refresh(MyCodeEditor* editor, const TSDocument* document);
     bool applyDocumentChange(MyCodeEditor* editor,
                              const TSDocument* document,
@@ -73,11 +76,13 @@ private:
     int pendingStartLine = -1;
     int foldRegionHoverLine = -1;
     int defaultAliasCounter = 0;
-    bool shelfMode = false;
     TSFoldRange hoveredShelfRange;
     TSFoldRange dragShelfRange;
     QPoint dragStartPosition;
+    EditorModeController* modeController = nullptr;
 
+    void resetFoldRegionMode(MyCodeEditor* editor);
+    void resetFoldShelfMode(MyCodeEditor* editor);
     void applyVisibility(MyCodeEditor* editor);
     void applyVisibilityForLines(MyCodeEditor* editor,
                                  int startLine,

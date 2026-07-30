@@ -6,7 +6,10 @@
 #include <QString>
 #include <QStringList>
 #include <functional>
+#include <memory>
 
+#include "editoractioncontextservice.h"
+#include "editormodecontroller.h"
 #include "includeheaderworkflowtypes.h"
 #include "saferenameservice.h"
 
@@ -43,6 +46,13 @@ public:
     void setFormatterSettings(FormatterSettings* settings);
     void setStatusMessageHandler(
         std::function<void(const QString&, int)> handler);
+    void setModeStateHandler(
+        std::function<void(const EditorModeSnapshot&)> handler);
+    void setActionContextService(
+        EditorActionContextService* service);
+    void setActionContextQueryProvider(
+        std::function<EditorActionContextQuery(
+            const EditorSemanticContext&)> provider);
     void setFoldShelfItemConsumedHandler(std::function<void(const QString&)> handler);
 
     void connectSignals();
@@ -144,6 +154,9 @@ private:
         bool* handled);
     void handleSourceSymbolContextMenuRequested(
         QMenu* menu,
+        MyCodeEditor* editor,
+        const EditorSemanticContext& context) const;
+    EditorActionContext actionContextFor(
         const EditorSemanticContext& context) const;
     void handleExposeSignalToTopRequested(
         const EditorSemanticContext& context) const;
@@ -170,7 +183,13 @@ private:
     QMetaObject::Connection formatterFormatOnSaveConnection;
     WorkflowDependencies dependencies;
     SemanticRuntime semanticRuntime;
+    std::unique_ptr<EditorActionContextService>
+        ownedActionContextService;
+    EditorActionContextService* actionContextService = nullptr;
     std::function<void(const QString&, int)> statusMessageHandler;
+    std::function<void(const EditorModeSnapshot&)> modeStateHandler;
+    std::function<EditorActionContextQuery(
+        const EditorSemanticContext&)> actionContextQueryProvider;
     std::function<void(const QString&)> foldShelfItemConsumedHandler;
     bool signalsConnected = false;
     mutable bool applyingFormatterSettings = false;

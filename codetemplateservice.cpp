@@ -1,5 +1,7 @@
 #include "codetemplateservice.h"
 
+#include "actionregistry.h"
+
 #include <Qt>
 #include <memory>
 
@@ -9,13 +11,17 @@ std::unique_ptr<CodeTemplateService> s_instance;
 CodeTemplateItem makeItem(const QString& token,
                           const QString& label,
                           const QString& description,
-                          const QString& defaultValue)
+                          const QString& defaultValue,
+                          const QString& actionId = QString(),
+                          const QString& executionRoute = QString())
 {
     CodeTemplateItem item;
     item.commandToken = token;
     item.label = label;
     item.description = description;
     item.defaultValue = defaultValue;
+    item.actionId = actionId;
+    item.executionRoute = executionRoute;
     return item;
 }
 
@@ -405,23 +411,31 @@ CodeTemplateService* CodeTemplateService::getInstance()
 
 QList<CodeTemplateItem> CodeTemplateService::catalog() const
 {
-    return {
-        makeItem(QStringLiteral(";;l"), QStringLiteral("logic"), QStringLiteral("logic declaration"), QStringLiteral("logic signal;")),
-        makeItem(QStringLiteral(";;w"), QStringLiteral("wire"), QStringLiteral("wire declaration"), QStringLiteral("wire signal;")),
-        makeItem(QStringLiteral(";;r"), QStringLiteral("reg"), QStringLiteral("reg declaration"), QStringLiteral("reg signal;")),
-        makeItem(QStringLiteral(";;p"), QStringLiteral("parameter"), QStringLiteral("parameter declaration"), QStringLiteral("parameter NAME = ;")),
-        makeItem(QStringLiteral(";;lp"), QStringLiteral("localparam"), QStringLiteral("localparam declaration"), QStringLiteral("localparam NAME = ;")),
-        makeItem(QStringLiteral(";;c"), QStringLiteral("assign"), QStringLiteral("continuous assignment"), QStringLiteral("assign lhs = rhs;")),
-        makeItem(QStringLiteral(";;a"), QStringLiteral("always"), QStringLiteral("always process"), QStringLiteral("always_comb begin\nend")),
-        makeItem(QStringLiteral(";;m"), QStringLiteral("module"), QStringLiteral("module template"), QStringLiteral("`timescale 1ns / 1ps\nmodule name(\n);\nendmodule")),
-        makeItem(QStringLiteral(";;i"), QStringLiteral("interface"), QStringLiteral("interface skeleton"), QStringLiteral("interface name();\nendinterface")),
-        makeItem(QStringLiteral(";;t"), QStringLiteral("task"), QStringLiteral("task skeleton"), QStringLiteral("task automatic name();\nendtask")),
-        makeItem(QStringLiteral(";;f"), QStringLiteral("function"), QStringLiteral("function skeleton"), QStringLiteral("function automatic void name();\nendfunction")),
-        makeItem(QStringLiteral(";;ne"), QStringLiteral("enum type"), QStringLiteral("typedef enum"), QStringLiteral("typedef enum logic [0:0] {\n} name_e;")),
-        makeItem(QStringLiteral(";;nsp"), QStringLiteral("packed struct"), QStringLiteral("packed struct type"), QStringLiteral("typedef struct packed {\n} name_t;")),
-        makeItem(QStringLiteral(";;ns"), QStringLiteral("unpacked struct"), QStringLiteral("unpacked struct type"), QStringLiteral("typedef struct {\n} name_t;")),
-        makeItem(QStringLiteral(";;d"), QStringLiteral("define"), QStringLiteral("define / ifdef block"), QStringLiteral("`define NAME\n`ifdef NAME\n`endif")),
-    };
+    QList<CodeTemplateItem> result;
+    for (const ActionDescriptor* descriptor :
+         actionDescriptorsForSurface(
+             ActionSurface::InlineTemplate)) {
+        if (!descriptor)
+            continue;
+        for (const ActionAliasDescriptor& templateAlias :
+             descriptor->aliases) {
+            if (templateAlias.surface
+                    != ActionSurface::InlineTemplate
+                || !templateAlias.catalogued) {
+                continue;
+            }
+            result.append(
+                makeItem(templateAlias.token,
+                         templateAlias.label,
+                         templateAlias.description.isEmpty()
+                             ? descriptor->description
+                             : templateAlias.description,
+                         templateAlias.defaultValue,
+                         descriptor->id,
+                         descriptor->executionRoute));
+        }
+    }
+    return result;
 }
 
 QList<CodeTemplateItem> CodeTemplateService::matchingTemplates(

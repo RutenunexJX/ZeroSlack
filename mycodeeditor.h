@@ -8,6 +8,7 @@
 #include "includeheaderworkflowtypes.h"
 #include "completiontypes.h"
 #include "documentchange.h"
+#include "editormodecontroller.h"
 #include "packagetoolservice.h"
 #include "symbolpresentationservice.h"
 
@@ -75,6 +76,11 @@ struct EditorModuleScopeTarget {
     {
         return available && startPosition >= 0 && endPosition > startPosition;
     }
+};
+
+struct EditorStructuralContextMenuState {
+    bool signalDefinitionAvailable = false;
+    bool instanceSlotsAvailable = false;
 };
 
 struct EditorBlockGeometry {
@@ -204,8 +210,13 @@ public:
     void indentSelectionOrLine();
     void unindentSelectionOrLine();
     bool clearSelectedAssignmentRhs(QString* message = nullptr);
-    void addStructuralContextMenuActions(QMenu* menu,
-                                         int cursorPosition);
+    EditorStructuralContextMenuState structuralContextMenuState(
+        int cursorPosition) const;
+    bool editInstanceSlotsAt(int cursorPosition,
+                             QString* message = nullptr);
+    bool beginSignalDefinitionEditorAt(
+        int cursorPosition,
+        QString* failureReason = nullptr);
     bool editInstanceSlotsAtForTest(int cursorPosition,
                                     QString* message = nullptr);
     QStringList structuralContextMenuActionsForTest(
@@ -226,6 +237,9 @@ public:
     bool createAssignmentQueueAtForTest(
         int cursorPosition,
         QString* message = nullptr);
+    EditorModeSnapshot editorModeSnapshot() const;
+    bool editorModeActiveForTest(EditorModeId id) const;
+    void exitInteractionModes(EditorModeExitReason reason);
     void highlightSearchMatches(const QString& text, bool caseSensitive);
     void clearSearchMatches();
     void flashLine(int lineNumber);
@@ -286,6 +300,8 @@ private:
 
 signals:
     void fileNameChanged(const QString& fileName);
+    void hierarchyInstanceContextChanged(
+        const HierarchyInstanceContext& context);
     void sourceNavigationRequested(const EditorSourceNavigationTarget& target,
                                    const EditorSemanticContext& context);
     void sourceSymbolActionRequested(SourceSymbolAction action,
@@ -301,6 +317,7 @@ signals:
     void navigationBackRequested();
     void navigationForwardRequested();
     void editorStatusMessageRequested(const QString& message);
+    void editorModeStateChanged(const EditorModeSnapshot& snapshot);
     void formatterProfileChanged(FormatterProfile profile);
     void formatOnSaveChanged(bool enabled);
     void foldShelfItemConsumed(const QString& id);

@@ -453,6 +453,7 @@ CommandModeCompletionState CompletionService::commandModeCompletionState(
     completionQuery.prefix = state.completionPrefix;
     completionQuery.fileName = query.fileName;
     completionQuery.moduleName = query.moduleName;
+    completionQuery.packageName = query.packageName;
     completionQuery.documentText = query.documentText;
     completionQuery.cursorLine = query.cursorLine;
     completionQuery.cursorPosition = query.cursorPosition;
@@ -461,7 +462,8 @@ CommandModeCompletionState CompletionService::commandModeCompletionState(
     state.symbolRecords = findCommandCompletionSymbolRecords(completionQuery);
     if (state.symbolRecords.isEmpty()
         && CompletionCommandMode::requiresModuleContext(state.command.kind)
-        && completionQuery.moduleName.isEmpty()) {
+        && completionQuery.moduleName.isEmpty()
+        && completionQuery.packageName.isEmpty()) {
         state.hidePopup = true;
         return state;
     }

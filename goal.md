@@ -45,6 +45,245 @@ the same regression suite.
 
 ## Current Goal State
 
+Completed goal (2026-07-29): the eight requested product interaction and
+architecture convergence items, full regression, and GUI/sample-workspace
+acceptance are complete. The working tree is intentionally left uncommitted
+and unpushed for independent control-side review.
+
+Stage 0 is complete:
+
+- verified `main` and `origin/main` at
+  `7cb1f214022d7b4bd2ce20cdeb39a1aad4f873ce`
+- verified the exact four protected untracked paths and excluded them from all
+  writes and cleanup
+- reviewed the current handoff, execution plan, goal model, and owners for
+  Expose, action metadata, inline completion, editor modes, context menus,
+  Insight panels, workspace persistence, and the two oversized coordinators
+- passed the pre-change Debug CTest baseline: 25/25, 0 failed, 348.82 seconds
+- established the migration ownership and test matrix in `readme.md` and
+  `plan.md`
+
+Stage 1 is complete:
+
+- added the shared, revisioned `EditorActionContextService` without introducing
+  a semantic fact store
+- exposed workspace, active top/instance, module/package, syntax revision, and
+  semantic current/stale/analyzing/unavailable state through a persistent main
+  window context chip
+- made unique Expose hierarchy binding independent of Files/Design navigation
+  history and retained explicit candidate sets for multiple top/instance cases
+- kept resolvable and hard-failure actions enterable, with visible selection or
+  explanatory flows instead of disabled-action tooltip-only feedback
+- retained `rtleditcore` as the sole Expose plan/preview/apply transaction path
+- passed the test-first `expose_signal_to_top_gui_test`: 1/1, 0 failed,
+  0.50 seconds
+
+Stage 2 is complete:
+
+- added one 76-descriptor `ActionRegistry` with stable ids, canonical names,
+  categories, scopes, parameter models, requirements/failure text, recovery
+  policy, aliases, and authoritative execution routes
+- migrated F24, built-in inline semantic/template commands, the template
+  catalog, static Global Control commands, Package Tools, source-symbol
+  context actions, and Expose metadata to registry-backed adapters
+- retained distinct trigger semantics while removing the former parallel
+  action definitions
+- made F24 help render the unified user-visible action catalog across all
+  trigger surfaces
+- preserved Package Tool structured slots and the Expose
+  `rtledit.signal.exposeToTop` transaction route
+- passed the test-first registry/catalog regressions and focused integration:
+  `completion_test`, `action_registry_test`, `gui_smoke_test`, and
+  `expose_signal_to_top_gui_test`, 4/4, 0 failed, 11.95 seconds
+
+Stage 3 is complete:
+
+- registered the audited free `;v` token as the semantic-only
+  `completion.visibleSymbols` action and intentionally left `;;v` absent
+- preserved every existing filtered `;cmd` and the explicit Tab-only
+  activation contract; ordinary typing still does not open completion
+- carried module and package identity in the saved abbreviation anchor so
+  input and Backspace filter against the original semantic scope
+- reused the existing `SemanticIndex` owner/import query to return local ports,
+  signals, parameters, types, instances and subroutines plus unambiguous active
+  package imports, while excluding unimported packages and foreign-module
+  internals
+- extended Slang-owned package metadata so package variables,
+  functions/tasks, and existing type/value definitions participate in import
+  visibility without a UI-side fact store
+- made the registry regression fail before implementation, then passed
+  `action_registry_test` 12/12, `completion_test` 842/842, and
+  `gui_smoke_test`, including real Slang package metadata and explicit GUI Tab
+  activation
+
+Stage 4 is complete:
+
+- replaced `EditorModeState` and migrated feature-active booleans with one
+  authoritative `EditorModeController`
+- declared owner, priority, co-existence, input capture, Esc behavior,
+  presentation, and entry/exit reasons for inline/completion candidates,
+  Template Slots, signal selection, column selection, virtual cursor, Fold
+  Region, Fold Shelf, and source navigation
+- routed actual Slot, signal, column/virtual, fold, candidate, and navigation
+  lifecycle through the controller, including real cleanup callbacks rather
+  than an outer compatibility shell
+- added consistent tab switch, document close/identity, Global Control, and
+  F24 stale exits while preserving right-click signal completion, Slot
+  cycling, column/virtual selection, and Fold Shelf behavior
+- published `EditorModeSnapshot` from the active editor and made the persistent
+  Mode Chip consume the structured state instead of transient status text
+- made the controller regression fail before implementation, then fixed the
+  GUI-detected source-navigation input conflict and virtual-caret cleanup;
+  the rebuilt `editor_mode_controller_test` and `gui_smoke_test` pass 2/2,
+  0 failed, in 10.89 seconds
+- recovered the protected root screenshot after a direct diagnostic invocation
+  wrote it, restoring the deterministic 141996-byte artifact and original
+  timestamp; redirected future GUI artifacts to `%TEMP%/zeroslack-gui-smoke`
+  and reverified all four protected entries against the baseline
+
+Stage 5 is complete:
+
+- added `EditorContextMenuModel`, which combines Registry metadata, the shared
+  `EditorActionContext`, and explicit runtime capabilities into one stable
+  menu presentation
+- expanded the single Registry from 77 to 96 descriptors so all standard,
+  navigation, structural refactor, signal-selection, and formatter menu
+  intents have canonical ids, labels, aliases, availability, and execution
+  routes
+- moved normal-menu ownership to `EditorCoordinator`; removed the second flat
+  string/handler list from `EditorSourceNavigationUi`
+- retained Undo/Redo/Cut/Copy/Paste/Select All in the leading block and grouped
+  dynamic actions under Navigate, Inspect, Refactor, and Format
+- omitted specialized actions that do not apply to the current object, kept
+  resolvable actions clickable with reasons in visible labels, and exposed the
+  reason in every shown hard-unavailable label
+- kept Expose on its existing authoritative handler and `rtleditcore` path,
+  and retained signal-selection right-click completion through the same
+  Registry model
+- made the test-first target fail at generation before the model existed, then
+  passed `completion_test`, `action_registry_test`,
+  `editor_context_menu_test`, `gui_smoke_test`, and
+  `expose_signal_to_top_gui_test`: 5/5, 0 failed, 15.21 seconds
+- reverified `git diff --check` and all four protected path sizes/timestamps
+
+Stage 6 is complete:
+
+- added one `InsightFocusController` and central Focus shell that reparents the
+  exact RTL Insights, Signal Kernel, or Wave Preview panel between its Dock and
+  the main editor area without duplicating widgets, scenes, reports, or models
+- registered shared Fit, zoom, search, and Inspector adapters for FSM, Module
+  Block Diagram, Signal Usage Hotspot, Signal Kernel Graph, and Wave Preview
+- preserved graph/search/selection/transform/Inspector state across Back,
+  re-entry, panel-local entry, menu entry, panel switching, and Return to Dock
+- hid and restored the recorded surrounding Dock set so each large panel is at
+  least 640x360 in the 1100x760 `test_sv/new` GUI regression
+- prevented View aliases from revealing an empty focused Dock and made Reset
+  Panel Layout return the exact widget before rebuilding the layout
+- added an isolated temporary mirror of `test_sv/new` for GUI smoke so legacy
+  session writes cannot touch the protected fixture
+- restored a pre-isolation rewrite of protected `test_sv/new/.zs` exactly from
+  checkpoint blob `38aa7c46a6cc62df3a9d0dc337ea76b6c128e5dc`
+  (8642 bytes, original timestamp), then reverified all protected metadata and
+  hash after repeated GUI runs
+- passed `insight_focus_controller_test`, `relationship_test`,
+  `fsm_ui_snapshot_test`, `gui_smoke_test`, `insight_visual_style_test`, and
+  `signal_usage_hotspot_panel_test`: 6/6, 0 failed, 32.85 seconds
+
+Stage 7 is complete:
+
+- split workspace persistence into portable project semantics and local
+  machine session state, without creating another semantic authority
+- made `WorkspaceConfigurationService` atomically write relative include and
+  ignored directories, extensions, defines, and top module to
+  `.zeroslack/project.json`
+- made `WorkspaceSessionStateService` persist tabs, cursor/scroll positions,
+  window/Dock layout, and scan cache to a SHA-256 workspace-identity
+  `QSettings` partition under the user's application-data location
+- removed project configuration from session capture/restore and changed
+  Save/Restore/Clear plus `ow s` labels, descriptions, and feedback to
+  distinguish local state from portable configuration
+- made local Clear suppress automatic recreation during the same workspace
+  activation while retaining an explicit Save path
+- implemented read-only legacy `.zs` configuration/session import; migration
+  writes the separated destinations but never overwrites or deletes its source
+- isolated GUI fixture workspaces and local settings stores so regression runs
+  cannot write the protected repository fixtures
+- made the persistence regression fail at compile time before the split API
+  existed, then passed `completion_test`, `action_registry_test`,
+  `workspace_persistence_test`, `gui_smoke_test`, and
+  `global_control_ow_test`: 5/5, 0 failed, 105.59 seconds
+- passed 23/23 persistence checks, including workspace relocation and
+  byte/digest/timestamp preservation for both actual protected legacy files;
+  reverified all four protected baselines and `git diff --check`
+
+Stage 8 is complete:
+
+- added dedicated `EditorTemplateSlotController`,
+  `EditorColumnModeController`, and `EditorSignalSelectionController` modules;
+  each owns its feature state and unified-mode exit lifecycle
+- removed Slot, signal-selection, column-selection, and virtual-cursor raw
+  state plus helper implementations from `MyCodeEditorState`
+- routed Fold directly through `EditorFoldingController` and moved Source
+  Navigation mode synchronization/exit ownership into
+  `EditorSourceNavigationUi`
+- split RTL Insights into one passive `RtlInsightsPanelViewState`, one
+  `RtlInsightsGraphController`, one `RtlInsightsGraphSceneMapper`, and one
+  `RtlInsightsPresenter`; retained only shell construction, wiring, Focus
+  adapters, and compatibility delegates in the coordinator
+- moved graph item classes, role constants, scene construction, inspector,
+  selection/navigation, search, and report presentation to their owning
+  modules and deleted the original duplicate definitions
+- reduced `editorruntime.cpp` from 6874 to 4987 lines and
+  `rtlinsightspanelcoordinator.cpp` from 4397 to 849 lines
+- made the source/build-boundary regression fail at 5/27 before the split,
+  then pass 27/27 with explicit CMake dependencies and 5000/900 line ceilings
+- passed `completion_test`, `editor_mode_controller_test`,
+  `controller_boundary_test`, `relationship_test`, `fsm_ui_snapshot_test`,
+  `gui_smoke_test`, `insight_visual_style_test`, and
+  `signal_usage_hotspot_panel_test`: 8/8, 0 failed, 33.47 seconds
+- recorded 432.7 seconds for the affected MinGW Debug rebuild/relink without
+  claiming a runtime-performance change; reverified all protected metadata
+  and `git diff --check`
+
+Stage 9 final acceptance is complete:
+
+- the first complete run passed 30/31 and found a forbidden production
+  `QRegularExpression` in Action Registry id validation; replaced it with an
+  equivalent explicit ASCII scanner, added invalid-id cases, and retained the
+  unchanged policy guard
+- completed the MinGW Debug all-target build serially with exit code 0; a
+  parallel attempt exhausted memory in simultaneous GNU ld links, so
+  `--parallel 1` is the verified command on this host
+- passed the complete CTest suite: 31/31, 0 failed, 230.07 seconds, including
+  all six `components/rtleditcore` tests
+- verified Files/Design context parity, unique and multiple-instance Expose,
+  explicit `;cmd`/`;;cmd`/`;v`, F24, Global Control, Slot/Signal/Column/
+  Virtual/Fold modes, grouped context menus, and FSM/Module Block/Usage
+  Hotspot/Signal Kernel/Wave Focus View behavior through the focused and GUI
+  regressions
+- ran sample acceptance using `test_sv/new` and `test_sv/huge_prj`: GUI writes
+  use a temporary mirror, Expose plans/applies on temporary copies, Global
+  Control opens and analyzes both real roots, and persistence reads both real
+  legacy files while proving their byte digest, size, and timestamp unchanged
+- recorded final performance observations without claiming causal speedup:
+  the pre-change 25-test suite took 348.82 seconds and the final 31-test suite
+  took 230.07 seconds on a warm Debug build
+- reverified the four protected metadata baselines, the protected
+  `test_sv/new/.zs` clean-filter hash
+  `38aa7c46a6cc62df3a9d0dc337ea76b6c128e5dc`, successful
+  `git diff --check`, an empty index, branch `main`, and identical
+  `HEAD`/`main`/`origin/main` at
+  `7cb1f214022d7b4bd2ce20cdeb39a1aad4f873ce`
+- left 66 task-owned modified paths, 2 intended deletions, and 31 task-owned
+  new paths unstaged; the protected screenshot, `dist/`, and two `.zs` files
+  remain separate pre-existing untracked content
+- did not commit or push; detailed per-item evidence, complete file groups,
+  commands, timings, GUI scope, and the sole host-linker limitation are in
+  `readme.md`
+
+Remaining stages: none for this goal. Independent control-side review remains
+outside the execution-side scope.
+
 Current product version baseline: `v0.1.0`. The root `VERSION` file is now the
 single manual version source, CMake validates it as strict `X.Y.Z` before
 `project()`, and `generated/version.h` is produced from `version.h.in` for
@@ -1478,6 +1717,27 @@ Milestones:
   (complete: GUI smoke reference/relationship dock regression now isolates
   semantic services and panel filters; Release acceptance CTest passed twice
   consecutively)
+
+## Control-Side Acceptance Remediation Record
+
+This record does not create a new goal or feature track. The 2026-07-30 P1
+acceptance blocker for the editor action-context chip is complete:
+
+- cursor/document refresh no longer materializes `ProjectSnapshot` or
+  traverses, normalizes, sorts, or joins the workspace file table;
+- workspace root, configured top, normalized file scope, stable revision, and
+  deterministic identity are cached from authoritative `projectChanged`
+  publication and rebuilt once per new project revision;
+- the status chip and editor right-click workflow resolve through the same
+  `EditorActionContextService`, while `ProjectModel`, `SemanticIndex`, and
+  `HierarchyService` remain authoritative;
+- identical chip presentation performs no QWidget property or style writes;
+- the production-wired hot-path regression records `128/128/128/896` before
+  and `0/0/0/0` after for snapshot materialization, normalization, sorting,
+  and chip writes across 128 unchanged refreshes;
+- affected tests, `editor_incremental_test`, `gui_smoke_test`, and full Release
+  CTest passed; full CTest result is 31/31 in 148.87 seconds;
+- all four protected artifacts remained byte-identical and untracked.
 
 ## Huge Workspace Status Audit
 

@@ -12,6 +12,13 @@ using namespace semantic_index_lookup;
 
 namespace {
 
+QString semanticContextOwnerName(const SemanticQueryContext& context)
+{
+    return !context.moduleName.isEmpty()
+        ? context.moduleName
+        : context.packageName;
+}
+
 SemanticDefinitionResult combinedDefinitionMissEvidence(
     const SemanticDefinitionResult& local,
     const SemanticDefinitionResult& global)
@@ -114,10 +121,13 @@ CompilationUnitQueryPosition compilationUnitPositionForContext(
                 && candidate.sourceOffset < fallback.sourceOffset)) {
             fallback = candidate;
         }
-        if (!context.moduleName.isEmpty()
-            && record.name == context.moduleName
-            && SymbolTaxonomy::isModuleDeclaration(
-                semanticMetadataForSymbolRecord(record))) {
+        const QString ownerName = semanticContextOwnerName(context);
+        const SymbolTaxonomy::SemanticMetadata metadata =
+            semanticMetadataForSymbolRecord(record);
+        if (!ownerName.isEmpty()
+            && record.name == ownerName
+            && (SymbolTaxonomy::isModuleDeclaration(metadata)
+                || SymbolTaxonomy::isPackageDeclaration(metadata))) {
             return candidate;
         }
     }
@@ -133,8 +143,9 @@ bool packageImportFactVisibleForContext(
         != SymbolTaxonomy::CollectorKind::PackageImport) {
         return false;
     }
+    const QString ownerName = semanticContextOwnerName(context);
     if (!fact.owner.name.isEmpty()
-        && fact.owner.name != context.moduleName) {
+        && fact.owner.name != ownerName) {
         return false;
     }
     const bool sameFile =
@@ -183,9 +194,10 @@ QList<SemanticSymbolRecord> activePackageImportFacts(
     QList<SemanticSymbolRecord> candidates = fileRecords;
     candidates.append(index->getSymbolRecordsByDeclarationKind(
         SymbolTaxonomy::DeclarationKind::Unknown));
-    if (!context.moduleName.isEmpty()) {
+    const QString ownerName = semanticContextOwnerName(context);
+    if (!ownerName.isEmpty()) {
         candidates.append(
-            index->getSymbolRecordsByOwner(context.moduleName));
+            index->getSymbolRecordsByOwner(ownerName));
     }
 
     QList<SemanticSymbolRecord> result;

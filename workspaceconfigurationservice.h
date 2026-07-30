@@ -4,9 +4,8 @@
 #include <QHash>
 #include <QString>
 #include <QStringList>
-#include <memory>
 
-class QSettings;
+#include <memory>
 
 struct WorkspaceConfiguration {
     QString workspaceRoot;
@@ -16,32 +15,66 @@ struct WorkspaceConfiguration {
     QStringList fileExtensions;
     QString topModule;
 
-    bool isValid() const { return !workspaceRoot.isEmpty(); }
+    bool isValid() const {
+        return !workspaceRoot.isEmpty();
+    }
+};
+
+enum class WorkspaceConfigurationSource {
+    Default,
+    ProjectFile,
+    LegacySession,
+};
+
+struct WorkspaceConfigurationLoadResult {
+    bool loaded = false;
+    WorkspaceConfigurationSource source =
+        WorkspaceConfigurationSource::Default;
+    WorkspaceConfiguration configuration;
+    QString projectFilePath;
+    QString legacyFilePath;
+    QStringList externalPaths;
+    QString message;
 };
 
 class WorkspaceConfigurationService
 {
 public:
+    static constexpr int kVersion = 1;
+
     explicit WorkspaceConfigurationService(
-        const QString& settingsFilePath = QString());
+        const QString& projectFilePathOverride =
+            QString());
 
     static WorkspaceConfigurationService* getInstance();
     static QStringList defaultFileExtensions();
+    static QString projectDirectoryPath(
+        const QString& workspaceRoot);
+    static QString projectFilePath(
+        const QString& workspaceRoot);
+    static QString legacyFilePath(
+        const QString& workspaceRoot);
 
     WorkspaceConfiguration defaultConfiguration(
         const QString& workspaceRoot) const;
-    WorkspaceConfiguration load(const QString& workspaceRoot) const;
-    bool save(const WorkspaceConfiguration& configuration) const;
+    WorkspaceConfigurationLoadResult loadWithResult(
+        const QString& workspaceRoot) const;
+    WorkspaceConfiguration load(
+        const QString& workspaceRoot) const;
+    bool save(
+        const WorkspaceConfiguration& configuration) const;
     bool clear(const QString& workspaceRoot) const;
 
     WorkspaceConfiguration normalized(
         const WorkspaceConfiguration& configuration) const;
 
 private:
-    QString settingsFilePath;
-    static std::unique_ptr<WorkspaceConfigurationService> instance;
+    QString projectFilePathOverride;
+    static std::unique_ptr<
+        WorkspaceConfigurationService> instance;
 
-    std::unique_ptr<QSettings> makeSettings() const;
+    QString effectiveProjectFilePath(
+        const QString& workspaceRoot) const;
 };
 
 #endif // WORKSPACECONFIGURATIONSERVICE_H

@@ -1,4 +1,5 @@
 #include "mycodeeditor.h"
+#include "actionregistry.h"
 #include "editorruntime.h"
 #include "editorsemanticcontextservice.h"
 #include "sourcenavigationservice.h"
@@ -480,6 +481,7 @@ void MyCodeEditor::setHierarchyInstanceContext(
 
     state->closeSemanticPopup(this);
     state->setHierarchyInstanceContext(context);
+    emit hierarchyInstanceContextChanged(context);
     state->refreshGhostAnnotations(this);
 }
 
@@ -920,15 +922,15 @@ bool MyCodeEditor::clearSelectedAssignmentRhs(QString* message)
     return state->clearSelectedAssignmentRhs(this, message);
 }
 
-void MyCodeEditor::addStructuralContextMenuActions(
-    QMenu* menu,
-    int cursorPosition)
+EditorStructuralContextMenuState
+MyCodeEditor::structuralContextMenuState(
+    int cursorPosition) const
 {
-    state->addStructuralContextMenuActions(
-        this, menu, cursorPosition);
+    return state->structuralContextMenuState(
+        this, cursorPosition);
 }
 
-bool MyCodeEditor::editInstanceSlotsAtForTest(
+bool MyCodeEditor::editInstanceSlotsAt(
     int cursorPosition,
     QString* message)
 {
@@ -936,17 +938,56 @@ bool MyCodeEditor::editInstanceSlotsAtForTest(
         this, cursorPosition, message);
 }
 
+bool MyCodeEditor::beginSignalDefinitionEditorAt(
+    int cursorPosition,
+    QString* failureReason)
+{
+    return state->beginSignalDefinitionEditor(
+        this, cursorPosition, failureReason);
+}
+
+bool MyCodeEditor::editInstanceSlotsAtForTest(
+    int cursorPosition,
+    QString* message)
+{
+    return editInstanceSlotsAt(cursorPosition, message);
+}
+
 QStringList MyCodeEditor::structuralContextMenuActionsForTest(
     int cursorPosition)
 {
-    QMenu menu(this);
-    state->addStructuralContextMenuActions(
-        this, &menu, cursorPosition);
     QStringList actions;
-    for (const QAction* action : menu.actions()) {
-        actions.append(action->isSeparator()
-                           ? QStringLiteral("<separator>")
-                           : action->text());
+    const EditorStructuralContextMenuState contextState =
+        structuralContextMenuState(cursorPosition);
+    if (contextState.signalDefinitionAvailable) {
+        const ActionDescriptor* descriptor =
+            findActionById(
+                QStringLiteral("refactor.createSignalDefinition"));
+        const ActionAliasDescriptor menuAlias = descriptor
+            ? descriptor->aliasForSurface(
+                  ActionSurface::ContextMenu)
+            : ActionAliasDescriptor();
+        actions.append(
+            menuAlias.label.isEmpty()
+                ? QStringLiteral("Create Signal Definition...")
+                : menuAlias.label);
+    }
+    if (contextState.signalDefinitionAvailable
+        && contextState.instanceSlotsAvailable) {
+        actions.append(QStringLiteral("<separator>"));
+    }
+    if (contextState.instanceSlotsAvailable) {
+        const ActionDescriptor* descriptor =
+            findActionById(
+                QStringLiteral("refactor.editInstanceSlots"));
+        const ActionAliasDescriptor menuAlias = descriptor
+            ? descriptor->aliasForSurface(
+                  ActionSurface::ContextMenu)
+            : ActionAliasDescriptor();
+        actions.append(
+            menuAlias.label.isEmpty()
+                ? QStringLiteral("Edit Instance Slots")
+                : menuAlias.label);
     }
     return actions;
 }
@@ -963,8 +1004,8 @@ bool MyCodeEditor::beginSignalDefinitionEditorForTest(
     int cursorPosition,
     QString* failureReason)
 {
-    return state->beginSignalDefinitionEditor(
-        this, cursorPosition, failureReason);
+    return beginSignalDefinitionEditorAt(
+        cursorPosition, failureReason);
 }
 
 bool MyCodeEditor::confirmSignalDefinitionForTest(
@@ -1005,6 +1046,21 @@ bool MyCodeEditor::createAssignmentQueueAtForTest(
     auto edit = beginSynchronousEditTransaction();
     return state->createAssignmentQueueAt(
         this, cursorPosition, message);
+}
+
+EditorModeSnapshot MyCodeEditor::editorModeSnapshot() const
+{
+    return state->modeSnapshot();
+}
+
+bool MyCodeEditor::editorModeActiveForTest(EditorModeId id) const
+{
+    return state->modes.isActive(id);
+}
+
+void MyCodeEditor::exitInteractionModes(EditorModeExitReason reason)
+{
+    state->exitInteractionModes(reason);
 }
 
 void MyCodeEditor::highlightSearchMatches(
@@ -1070,32 +1126,48 @@ void MyCodeEditor::inputMethodEvent(QInputMethodEvent* event)
 
 void MyCodeEditor::startFoldRegionMarkMode()
 {
-    state->startFoldRegionMarkMode(this);
+    state->folding.startFoldRegionMarkMode(this);
+    state->gutter.handleUpdateRequest(
+        this,
+        viewport()->rect(),
+        0);
 }
 
 void MyCodeEditor::cancelFoldRegionMarkMode()
 {
-    state->cancelFoldRegionMarkMode(this);
+    state->folding.cancelFoldRegionMarkMode(this);
+    state->gutter.handleUpdateRequest(
+        this,
+        viewport()->rect(),
+        0);
 }
 
 bool MyCodeEditor::foldRegionMarkModeActive() const
 {
-    return state->foldRegionMarkModeActive();
+    return state->folding.foldRegionMarkModeActive();
 }
 
 void MyCodeEditor::startFoldShelfMode()
 {
-    state->startFoldShelfMode(this);
+    state->folding.startFoldShelfMode(this);
+    state->gutter.handleUpdateRequest(
+        this,
+        viewport()->rect(),
+        0);
 }
 
 void MyCodeEditor::cancelFoldShelfMode()
 {
-    state->cancelFoldShelfMode(this);
+    state->folding.cancelFoldShelfMode(this);
+    state->gutter.handleUpdateRequest(
+        this,
+        viewport()->rect(),
+        0);
 }
 
 bool MyCodeEditor::foldShelfModeActive() const
 {
-    return state->foldShelfModeActive();
+    return state->folding.foldShelfModeActive();
 }
 
 bool MyCodeEditor::insertCustomFoldMarkersForTest(
@@ -1104,17 +1176,21 @@ bool MyCodeEditor::insertCustomFoldMarkersForTest(
     const QString& alias)
 {
     auto edit = beginSynchronousEditTransaction();
-    return state->insertCustomFoldMarkers(this, startLine, endLine, alias);
+    return state->folding.insertCustomFoldMarkers(
+        this,
+        startLine,
+        endLine,
+        alias);
 }
 
 bool MyCodeEditor::toggleFoldAtLineForTest(int line)
 {
-    return state->toggleFoldAtLineForTest(this, line);
+    return state->folding.toggleFoldAtLine(this, line);
 }
 
 bool MyCodeEditor::foldCollapsedAtLineForTest(int line) const
 {
-    return state->foldCollapsedAtLineForTest(line);
+    return state->folding.isCollapsedAtLine(line);
 }
 
 QList<GhostAnnotation> MyCodeEditor::ghostAnnotationsForTest() const
@@ -1137,13 +1213,18 @@ FoldShelfItem MyCodeEditor::foldShelfItemAtLineForTest(
     int line,
     FoldShelfOriginKind origin) const
 {
-    return state->foldShelfItemAtLine(const_cast<MyCodeEditor*>(this), line, origin);
+    return state->folding.foldShelfItemAtLine(
+        const_cast<MyCodeEditor*>(this),
+        line,
+        origin);
 }
 
 bool MyCodeEditor::deleteCustomFoldAtLineForTest(int line)
 {
     auto edit = beginSynchronousEditTransaction();
-    return state->deleteCustomFoldAtLine(this, line);
+    return state->folding.deleteCustomFoldAtLine(
+        this,
+        line);
 }
 
 bool MyCodeEditor::insertFoldShelfItemAtLineForTest(
@@ -1151,7 +1232,10 @@ bool MyCodeEditor::insertFoldShelfItemAtLineForTest(
     int line)
 {
     auto edit = beginSynchronousEditTransaction();
-    return state->insertFoldShelfItemAtLine(this, item, line);
+    return state->folding.insertShelfItemAtLine(
+        this,
+        item,
+        line);
 }
 
 void MyCodeEditor::keyReleaseEvent(QKeyEvent *event)

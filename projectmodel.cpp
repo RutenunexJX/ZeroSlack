@@ -341,5 +341,6 @@ SymbolTaxonomy::SourceRole ProjectModel::ProjectPathRules::sourceRoleForFile(
 
 void ProjectModel::publishChanged()
 {
+    current.revision = ++revisionCounter;
     emit projectChanged(current);
 }

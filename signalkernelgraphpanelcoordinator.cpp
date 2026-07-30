@@ -964,6 +964,78 @@ void SignalKernelGraphPanelCoordinator::refresh()
     renderReport(report);
 }
 
+void SignalKernelGraphPanelCoordinator::focusFit()
+{
+    if (auto* insightView =
+            dynamic_cast<InsightGraphView*>(graphView)) {
+        insightView->fitScene(Qt::KeepAspectRatio);
+    } else if (graphView && graphScene) {
+        graphView->fitInView(
+            graphScene->itemsBoundingRect(),
+            Qt::KeepAspectRatio);
+    }
+}
+
+void SignalKernelGraphPanelCoordinator::focusZoomIn()
+{
+    if (auto* insightView =
+            dynamic_cast<InsightGraphView*>(graphView)) {
+        insightView->zoomIn();
+    } else if (graphView) {
+        graphView->scale(1.15, 1.15);
+    }
+}
+
+void SignalKernelGraphPanelCoordinator::focusZoomOut()
+{
+    if (auto* insightView =
+            dynamic_cast<InsightGraphView*>(graphView)) {
+        insightView->zoomOut();
+    } else if (graphView) {
+        graphView->scale(1.0 / 1.15, 1.0 / 1.15);
+    }
+}
+
+void SignalKernelGraphPanelCoordinator::setFocusSearchText(
+    const QString& text)
+{
+    if (graphSearchEdit)
+        graphSearchEdit->setText(text);
+}
+
+QString SignalKernelGraphPanelCoordinator::focusSearchText() const
+{
+    return graphSearchEdit
+        ? graphSearchEdit->text() : graphSearchText;
+}
+
+void SignalKernelGraphPanelCoordinator::focusInspector()
+{
+    if (!graphView)
+        return;
+    graphView->setFocus();
+    if (lastFocusedSearchNodeId < 0 || !graphScene) {
+        showStatusMessage(
+            QStringLiteral(
+                "Search for or right-click a graph node to inspect it."),
+            2500);
+        return;
+    }
+
+    for (QGraphicsItem* item : graphScene->items()) {
+        SignalKernelGraphNodeItem* nodeItem =
+            nodeItemFromGraphicsItem(item);
+        if (!nodeItem
+            || nodeItem->graphNode().id
+                   != lastFocusedSearchNodeId) {
+            continue;
+        }
+        showNodePreview(nodeItem->graphNode(),
+                        nodeItem->sceneBoundingRect());
+        return;
+    }
+}
+
 void SignalKernelGraphPanelCoordinator::renderReport(
     const SignalKernelGraphReport& report)
 {
@@ -1561,6 +1633,10 @@ void SignalKernelGraphPanelCoordinator::showDock()
 {
     if (!graphDock)
         return;
+    if (graphDock->property(
+            "insightFocusActive").toBool()) {
+        return;
+    }
     graphDock->show();
     graphDock->raise();
     graphDock->activateWindow();

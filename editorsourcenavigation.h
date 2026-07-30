@@ -10,6 +10,7 @@
 #include <QPoint>
 
 class EditorSelection;
+class EditorModeController;
 class MyCodeEditor;
 class QContextMenuEvent;
 class QKeyEvent;
@@ -24,6 +25,10 @@ class EditorSourceNavigationUi
 public:
     ~EditorSourceNavigationUi();
 
+    void bindModeController(EditorModeController* modes,
+                            MyCodeEditor* editor,
+                            EditorSelection* selections);
+    void syncMode();
     bool handleSourceSymbolShortcut(
         MyCodeEditor* editor,
         QKeyEvent* event,
@@ -62,6 +67,7 @@ public:
         EditorSelection& selections);
     void handleLeave(MyCodeEditor* editor, EditorSelection& selections);
     bool handleEscape(MyCodeEditor* editor, EditorSelection& selections);
+    bool active() const;
     void handleEditorContentChanged(MyCodeEditor* editor,
                                     EditorSelection& selections);
     void handleEditorScrolled(MyCodeEditor* editor,
@@ -120,6 +126,9 @@ private:
     QPoint lastMousePosition;
     int popupStartPos = -1;
     int popupEndPos = -1;
+    EditorModeController* modeController = nullptr;
+    MyCodeEditor* boundEditor = nullptr;
+    EditorSelection* boundSelections = nullptr;
 };
 
 #endif // EDITORSOURCENAVIGATION_H

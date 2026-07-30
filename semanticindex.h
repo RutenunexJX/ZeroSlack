@@ -29,6 +29,7 @@ struct SemanticSnapshotToken {
 struct SemanticQueryContext {
     QString fileName;
     QString moduleName;
+    QString packageName;
     QString prefix;
     int cursorLine = -1;      // 1-based
     int cursorPosition = -1;  // QTextDocument position, when available

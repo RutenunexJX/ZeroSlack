@@ -1,7 +1,7 @@
 #include "editorcompletionworkflow.h"
 
 #include "editorcompletionui.h"
-#include "editormodestate.h"
+#include "editormodecontroller.h"
 #include "editorruntime.h"
 #include "mycodeeditor.h"
 
@@ -62,8 +62,10 @@ QModelIndex previousSelectableIndex(EditorCompletionUi* completion)
 bool EditorCompletionWorkflow::handleInlineCandidateFilterKey(
     QKeyEvent* event)
 {
-    if (!inlineSession.active || !inlineSession.candidateFiltering)
+    if (!inlineAbbreviationSessionActive()
+        || !inlineSession.candidateFiltering) {
         return false;
+    }
     if (!inlineAbbreviationSessionValid()) {
         cancelInlineAbbreviationSession();
         return false;
@@ -163,10 +165,8 @@ bool EditorCompletionWorkflow::applyCompletionPopupKeyState(
         }
         return true;
     case CompletionPopupKeyAction::HidePopupAndClearCommand:
-        if (inlineSession.active) {
-            clearInlineAbbreviationSession();
-            modes->clearCommandMode();
-            hideCompletionPopup();
+        if (inlineAbbreviationSessionActive()) {
+            cancelInlineAbbreviationSession();
             return true;
         }
         clearCommandInputAtCursor();

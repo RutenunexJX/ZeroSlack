@@ -1,5 +1,7 @@
 #include "globalcontrolservice.h"
 
+#include "actionregistry.h"
+
 #include <Qt>
 
 namespace {
@@ -18,6 +20,36 @@ GlobalControlItem item(GlobalControlItemKind kind,
     result.id = id;
     result.title = title;
     result.subtitle = subtitle;
+    return result;
+}
+
+GlobalControlItem actionItem(
+    const QString& token,
+    const QString& subtitleOverride = QString())
+{
+    const ActionDescriptor* descriptor =
+        findActionByAlias(ActionSurface::GlobalControl,
+                          token);
+    GlobalControlItem result =
+        item(GlobalControlItemKind::Command,
+             token,
+             token,
+             subtitleOverride);
+    if (!descriptor)
+        return result;
+
+    const ActionAliasDescriptor* actionAlias =
+        findActionAlias(*descriptor,
+                        ActionSurface::GlobalControl,
+                        token);
+    if (result.subtitle.isEmpty()) {
+        result.subtitle =
+            actionAlias && !actionAlias->description.isEmpty()
+            ? actionAlias->description
+            : descriptor->description;
+    }
+    result.actionId = descriptor->id;
+    result.executionRoute = descriptor->executionRoute;
     return result;
 }
 
@@ -58,14 +90,8 @@ QList<GlobalControlItem> rootDomainItems()
 QList<GlobalControlItem> foldDomainItems(const QString& filter)
 {
     QList<GlobalControlItem> items = {
-        item(GlobalControlItemKind::Command,
-             QStringLiteral("fd r"),
-             QStringLiteral("fd r"),
-             QStringLiteral("Fold Region - mark a custom fold block in the active editor")),
-        item(GlobalControlItemKind::Command,
-             QStringLiteral("fd s"),
-             QStringLiteral("fd s"),
-             QStringLiteral("Fold Shelf - drag custom fold blocks to or from the shelf")),
+        actionItem(QStringLiteral("fd r")),
+        actionItem(QStringLiteral("fd s")),
     };
     QList<GlobalControlItem> result;
     appendFiltered(&result, items, filter);
@@ -75,18 +101,9 @@ QList<GlobalControlItem> foldDomainItems(const QString& filter)
 QList<GlobalControlItem> workspaceSessionDomainItems(const QString& query)
 {
     const QList<GlobalControlItem> sessionItems = {
-        item(GlobalControlItemKind::Command,
-             QStringLiteral("ow s save"),
-             QStringLiteral("ow s save"),
-             QStringLiteral("Workspace Session - save current workspace state")),
-        item(GlobalControlItemKind::Command,
-             QStringLiteral("ow s restore"),
-             QStringLiteral("ow s restore"),
-             QStringLiteral("Workspace Session - restore saved workspace state")),
-        item(GlobalControlItemKind::Command,
-             QStringLiteral("ow s clean"),
-             QStringLiteral("ow s clean"),
-             QStringLiteral("Workspace Session - ignore saved state for this activation")),
+        actionItem(QStringLiteral("ow s save")),
+        actionItem(QStringLiteral("ow s restore")),
+        actionItem(QStringLiteral("ow s clean")),
     };
 
     const QStringList parts = query.split(QLatin1Char(' '),
@@ -117,22 +134,15 @@ QList<GlobalControlItem> workspaceSessionDomainItems(const QString& query)
 QList<GlobalControlItem> workspaceDomainItems(const QString& query)
 {
     const QList<GlobalControlItem> baseItems = {
-        item(GlobalControlItemKind::Command,
-             QStringLiteral("ow 1"),
-             QStringLiteral("ow 1"),
-             QStringLiteral("Open 1 workspace")),
-        item(GlobalControlItemKind::Command,
-             QStringLiteral("ow 2"),
-             QStringLiteral("ow 2"),
-             QStringLiteral("Open 2 workspaces")),
-        item(GlobalControlItemKind::Command,
-             QStringLiteral("ow r"),
-             QStringLiteral("ow r"),
-             QStringLiteral("Recent Workspaces")),
+        actionItem(QStringLiteral("ow 1")),
+        actionItem(QStringLiteral("ow 2")),
+        actionItem(QStringLiteral("ow r")),
         item(GlobalControlItemKind::Domain,
              QStringLiteral("ow s"),
              QStringLiteral("ow s"),
-             QStringLiteral("Workspace Session - save, restore, or clean")),
+             QStringLiteral(
+                 "Local Workspace Session - project config remains "
+                 "in .zeroslack/project.json")),
     };
 
     const QStringList parts = query.split(QLatin1Char(' '),
@@ -154,12 +164,12 @@ QList<GlobalControlItem> workspaceDomainItems(const QString& query)
         const int count = argument.toInt(&ok);
         if (ok && count > 0) {
             return {
-                item(GlobalControlItemKind::Command,
-                     QStringLiteral("ow %1").arg(count),
-                     QStringLiteral("ow %1").arg(count),
-                     QStringLiteral("Open %1 workspace%2")
-                         .arg(count)
-                         .arg(count == 1 ? QString() : QStringLiteral("s"))),
+                actionItem(
+                    QStringLiteral("ow %1").arg(count),
+                    QStringLiteral("Open %1 workspace%2")
+                        .arg(count)
+                        .arg(count == 1 ? QString()
+                                        : QStringLiteral("s"))),
             };
         }
         return {

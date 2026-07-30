@@ -198,6 +198,13 @@ QString EditorSyntaxState::moduleNameAt(int charPos) const
         return QString();
     return document->enclosingModuleName(charPos < 0 ? 0 : charPos);
 }
+QString EditorSyntaxState::packageNameAt(int charPos) const
+{
+    if (!interactiveSyntaxEnabled)
+        return QString();
+    return document->enclosingPackageName(charPos < 0 ? 0 : charPos);
+}
+
 
 TSPortAppendTarget EditorSyntaxState::portAppendTargetAt(int charPos) const
 {

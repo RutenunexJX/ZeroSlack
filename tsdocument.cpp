@@ -1702,6 +1702,21 @@ QString TSDocument::enclosingModuleName(int charOffset) const
     }
     return QString();
 }
+QString TSDocument::enclosingPackageName(int charOffset) const
+{
+    const uint32_t b = static_cast<uint32_t>(qMax(0, charOffset)) * 2u;
+    TSNode node = ts_node_named_descendant_for_byte_range(
+        ts_tree_root_node(m_tree), b, b);
+    while (!ts_node_is_null(node)) {
+        const char* type = ts_node_type(node);
+        if (type && std::strcmp(type, "package_declaration") == 0)
+            return declarationName(m_text, node);
+        node = ts_node_parent(node);
+    }
+    return QString();
+}
+
+
 
 TSPortAppendTarget TSDocument::portAppendTarget(int charOffset) const
 {

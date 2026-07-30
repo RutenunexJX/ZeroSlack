@@ -5,6 +5,7 @@
 #include "completiontypes.h"
 #include "editorcompletionui.h"
 #include "editorcompletionworkflow.h"
+#include "editorcolumnmodecontroller.h"
 #include "editorcursornavigation.h"
 #include "documentchange.h"
 #include "editorfileidentity.h"
@@ -12,13 +13,15 @@
 #include "formatterservice.h"
 #include "editorgeometry.h"
 #include "editorgutter.h"
-#include "editormodestate.h"
+#include "editormodecontroller.h"
 #include "packagetoolservice.h"
 #include "editorselection.h"
+#include "editorsignalselectioncontroller.h"
 #include "editorsemanticcontextservice.h"
 #include "editorsemanticruntime.h"
 #include "editorsourcenavigation.h"
 #include "editorsyntaxstate.h"
+#include "editortemplateslotcontroller.h"
 #include "ghostannotationservice.h"
 #include "sourcenavigationservice.h"
 
@@ -39,35 +42,25 @@ class QMenu;
 class QMouseEvent;
 class QPainter;
 class QPaintEvent;
-class QTimer;
 struct EditorAlwaysScopeTarget;
 struct EditorModuleScopeTarget;
+struct EditorStructuralContextMenuState;
 struct EditorSynchronousEditState;
 
 struct MyCodeEditorState
 {
-    struct TemplateSlotRange {
-        QString name;
-        int start = -1;
-        int end = -1;
-    };
-
-    struct SelectedSignal {
-        QString identity;
-        QString name;
-        int start = -1;
-        int length = 0;
-    };
-
     EditorAppearance appearance;
     EditorGutter gutter;
     EditorDocumentGeometry geometry;
+    EditorModeController modes;
+    EditorTemplateSlotController templateSlots;
+    EditorColumnModeController columnMode;
+    EditorSignalSelectionController signalSelection;
     EditorFoldingController folding;
     EditorCursorNavigation cursorNavigation;
     EditorSyntaxState syntax;
     EditorFileIdentity identity;
     EditorSemanticRuntime semantic;
-    EditorModeState modes;
     EditorCompletionUi completion;
     EditorCompletionWorkflow completionWorkflow;
     EditorHighlightRefresh highlightRefresh;
@@ -96,31 +89,11 @@ struct MyCodeEditorState
     bool hotPathTimingEnabled = false;
     FormatterProfile currentFormatterProfile = FormatterProfile::Structured;
     bool currentFormatOnSaveEnabled = false;
-    bool columnSelectionActive = false;
-    bool columnSelectionDragging = false;
-    bool columnSelectionAwaitingEndpoint = false;
-    bool columnSelectionDragMoved = false;
-    int columnAnchorLine = -1;
-    int columnAnchorColumn = -1;
-    int columnCurrentLine = -1;
-    int columnCurrentColumn = -1;
-    bool virtualCursorActive = false;
-    int virtualCursorLine = -1;
-    int virtualCursorColumn = -1;
-    int virtualCursorSavedWidth = 1;
-    QList<TemplateSlotRange> templateSlotRanges;
-    int templateSlotActiveIndex = -1;
-    int templateSlotSessionStart = -1;
-    int templateSlotSessionEnd = -1;
-    QTimer* templateSlotBlinkTimer = nullptr;
-    bool templateSlotBlinkOn = true;
-    bool templateSlotIgnoreNextCursorCheck = false;
     EditorPackageToolAvailability lastPackageToolAvailability;
     bool packageToolAvailabilityInitialized = false;
     QString lastWavePreviewScopeKey;
     bool suppressNextCursorPresentation = false;
     bool editorPresentationPending = false;
-    bool templateSlotPresentationPending = false;
     bool ghostPresentationPending = false;
     int synchronousEditTransactionDepth = 0;
     std::uint64_t completedSynchronousEditTransactions = 0;
@@ -128,17 +101,14 @@ struct MyCodeEditorState
     int signalDefinitionIdentifierStart = -1;
     std::uint64_t signalDefinitionDocumentRevision = 0;
     QString signalDefinitionFileName;
-    QHash<QString, SelectedSignal> selectedSignals;
-    bool signalSelectionActive = false;
-    bool signalSelectionDragging = false;
-    bool signalSelectionDragSelect = false;
-    QString signalSelectionLastDragIdentity;
-    QPoint signalSelectionLastDragPoint{-1, -1};
 
     void initializeCore(MyCodeEditor* editor);
     void shutdown();
     void attachEditorConnections(MyCodeEditor* editor);
     void attachToEditor(MyCodeEditor* editor);
+    void bindEditorModes(MyCodeEditor* editor);
+    EditorModeSnapshot modeSnapshot() const;
+    void exitInteractionModes(EditorModeExitReason reason);
 
     EditorSemanticContextService* semanticService() const;
     EditorSourceContextProvider sourceContextProvider(
@@ -221,9 +191,9 @@ struct MyCodeEditorState
     void paintGhostAnnotations(MyCodeEditor* editor, QPaintEvent* event) const;
     void paintColumnSelection(MyCodeEditor* editor, QPaintEvent* event) const;
     void handleContextMenu(MyCodeEditor* editor, QContextMenuEvent* event);
-    void addStructuralContextMenuActions(MyCodeEditor* editor,
-                                         QMenu* menu,
-                                         int cursorPosition);
+    EditorStructuralContextMenuState structuralContextMenuState(
+        const MyCodeEditor* editor,
+        int cursorPosition) const;
     bool editInstanceSlotsAt(MyCodeEditor* editor,
                              int cursorPosition,
                              QString* message = nullptr);
@@ -249,10 +219,13 @@ struct MyCodeEditorState
                                  int cursorPosition,
                                  bool toggle,
                                  bool desiredState = true);
+    std::optional<EditorSignalSelectionCandidate>
+        resolveSignalSelectionCandidate(
+            const MyCodeEditor* editor,
+            int cursorPosition) const;
     bool createAssignmentQueueAt(MyCodeEditor* editor,
                                  int cursorPosition,
                                  QString* message = nullptr);
-    void refreshSignalSelectionOverlay(MyCodeEditor* editor);
     bool handleMousePress(MyCodeEditor* editor, QMouseEvent* event);
     bool handleMouseDoubleClick(MyCodeEditor* editor, QMouseEvent* event);
     bool handleMouseMove(MyCodeEditor* editor, QMouseEvent* event);
@@ -293,28 +266,9 @@ struct MyCodeEditorState
     void unindentSelectionOrLine(MyCodeEditor* editor);
     bool clearSelectedAssignmentRhs(MyCodeEditor* editor,
                                     QString* message = nullptr);
-    void startFoldRegionMarkMode(MyCodeEditor* editor);
-    void cancelFoldRegionMarkMode(MyCodeEditor* editor);
-    bool foldRegionMarkModeActive() const;
-    void startFoldShelfMode(MyCodeEditor* editor);
-    void cancelFoldShelfMode(MyCodeEditor* editor);
-    bool foldShelfModeActive() const;
-    bool insertCustomFoldMarkers(MyCodeEditor* editor,
-                                 int startLine,
-                                 int endLine,
-                                 const QString& alias);
-    bool toggleFoldAtLineForTest(MyCodeEditor* editor, int line);
-    bool foldCollapsedAtLineForTest(int line) const;
     QList<GhostAnnotation> ghostAnnotationsForTest() const;
     QString syntaxTextForTest() const;
     EditorLargeFileSyntaxScopeSnapshot largeFileSyntaxScopeForTest() const;
-    FoldShelfItem foldShelfItemAtLine(MyCodeEditor* editor,
-                                      int line,
-                                      FoldShelfOriginKind origin) const;
-    bool deleteCustomFoldAtLine(MyCodeEditor* editor, int line);
-    bool insertFoldShelfItemAtLine(MyCodeEditor* editor,
-                                   const FoldShelfItem& item,
-                                   int line);
     void setSemanticContextService(EditorSemanticContextService* service);
     void setHierarchyInstanceContext(
         const HierarchyInstanceContext& context);

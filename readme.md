@@ -27,6 +27,490 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
 - Do not push unless explicitly asked by the current task owner.
 - Keep docs short, current, and useful for the next development turn.
 
+## Interaction And Architecture Convergence (2026-07-29)
+
+The active execution goal is an eight-part convergence of editor context,
+action discovery, explicit symbol completion, editor modes, context menus,
+Insight presentation, workspace persistence, and oversized coordinators. The
+semantic authority boundary is unchanged:
+
+```text
+saved/buildable workspace semantics -> Slang
+current-buffer structural anchors   -> Tree-sitter
+structured edit preview/apply       -> components/rtleditcore
+UI context/actions/modes/views       -> ZeroSlack coordination services
+```
+
+Stage 0 is complete. The protected baseline was verified on `main` at
+`7cb1f214022d7b4bd2ce20cdeb39a1aad4f873ce`; `origin/main` was identical and
+the only untracked paths were
+`current_app_signal_usage_hotspot_full_after.png`, `dist/`,
+`test_sv/huge_prj/.zs`, and `test_sv/new/.zs`. These paths are excluded from
+all edits, tests, cleanup, and future publication.
+
+The pre-change Debug suite passed 25/25 in 348.82 seconds:
+
+```powershell
+E:\QT6\Tools\CMake_64\bin\ctest.exe `
+  --test-dir E:\ZeroSlack\ZeroSlack\build\Desktop_Qt_6_10_2_MinGW_64_bit-Debug `
+  --output-on-failure
+```
+
+Migration boundaries:
+
+- `EditorActionContext` will be the UI-consumable snapshot of workspace,
+  active top, instance, current module/package, syntax revision, and semantic
+  current/stale/analyzing state. It may reference Slang/Tree-sitter results but
+  cannot become another semantic database.
+- `ActionRegistry` will own stable ids, canonical names, categories, scopes,
+  parameter models, aliases, availability/failure text, and handler/plan
+  routing. F24, `;cmd`, `;;cmd`, Global Control, Package Tools, context menus,
+  and shortcuts remain distinct trigger adapters.
+- `EditorModeController` will own the co-existence matrix, input capture,
+  priority, exit reason, Esc behavior, and persistent Mode Chip presentation.
+  Slot, signal selection, column/virtual cursor, fold, and explicit candidate
+  sessions retain their feature-specific data in dedicated controllers.
+- Insight Focus View will reparent the existing panel widget between Dock and
+  the central focus host. It will not create a second panel, model, scene, or
+  view state.
+- `.zeroslack/project.json` will contain only portable, workspace-relative
+  project semantics. Local tabs/cursors/layout/cache will use a
+  workspace-identity partition in `QSettings`; legacy `.zs` is read-only input
+  and is never deleted or overwritten.
+
+The regression matrix is owned by the existing focused targets:
+
+| Behavior | Primary regression |
+| --- | --- |
+| Files/Design history independence, unique/multiple Expose binding | `expose_signal_to_top_gui_test`, `expose_signal_to_top_fixture_test` |
+| Context strip and semantic current/stale/analyzing states | `gui_smoke_test`, `analysis_scheduler_test` |
+| Registry ids, aliases, availability and one handler path | `completion_test`, `gui_smoke_test` |
+| `;v` token audit, scope/import isolation and Tab filtering | `completion_test`, `gui_smoke_test` |
+| Mode conflicts, input ownership, Esc and stale exits | `completion_test`, `gui_smoke_test` |
+| Navigate/Inspect/Refactor/Format menu grouping and visible reasons | `completion_test`, `gui_smoke_test` |
+| Dock/Focus widget identity, geometry, selection and zoom retention | `relationship_test`, `gui_smoke_test`, panel-specific tests |
+| Portable project move and read-only `.zs` import | `completion_test`, `global_control_ow_test` |
+| Controller boundaries and forbidden duplicate state | build graph plus focused tests and source guards |
+
+Stage 1 is complete. `EditorActionContextService` now produces one
+UI-consumable, revisioned snapshot containing workspace, active top, instance,
+module/package, live syntax revision, semantic snapshot revision, and
+current/stale/analyzing/unavailable state. It reads the existing semantic,
+hierarchy, scheduler, and Tree-sitter-owned context services; it does not store
+or infer a second semantic model. The main status bar continuously displays a
+compact context chip, with the complete state and actionable hierarchy reason
+in its tooltip.
+
+`signal.exposeToTop` now consumes that shared context. A single analyzed
+top/instance candidate is selected independently of whether the editor was
+opened from Files or Design. Multiple candidates keep the action enterable and
+open an explicit top/instance picker. A hard failure is also enterable and
+shows its reason in the menu text and an explanatory dialog, rather than
+depending on a disabled-action tooltip. The existing `rtleditcore`
+plan/preview/apply transaction remains the only edit path.
+
+The Stage 1 regression was added before implementation and initially reported
+28 checks with six expected failures: unique auto-resolution, Files/Design
+candidate parity, ambiguous candidate preservation, and enterable/visible menu
+recovery. After implementation:
+
+```text
+ctest -R ^expose_signal_to_top_gui_test$ --output-on-failure
+1/1 tests passed, 0 failed, 0.50 sec
+```
+
+The changed core and test objects were rebuilt before the targeted executable.
+The only compiler diagnostic was the pre-existing ignored `QFile::open`
+return-value warning. The four protected untracked paths remain unchanged.
+
+Stage 2 is complete. `ActionRegistry` now owns 76 stable descriptors covering
+canonical id/name, category, scope, parameter model, requirements and visible
+failure text, recovery policy, one execution route, and trigger aliases.
+The former F24 registry, built-in `;cmd`/`;;cmd` descriptors, template catalog,
+static Global Control commands, Package Tools metadata, source-symbol context
+actions, and Expose action are generated from or resolved through this single
+registry. Their existing enums remain only typed adapters to established
+handlers; no second metadata registry remains.
+
+F24 remains the editor-local Command Layer, Ctrl+Space remains Global Control,
+`;cmd` remains semantic search, and `;;cmd` remains template insertion.
+Invoking F24 `help` now renders the unified action catalog, including aliases
+for every surface. Package templates retain their existing structured slots,
+and Expose retains the `rtledit.signal.exposeToTop` execution route.
+
+Two regressions were made red before implementation: the first failed to
+compile because `actionregistry.h` did not exist; the catalog extension later
+failed because no user-visible `ActionCatalogEntry` API existed. The final
+focused verification is:
+
+```text
+completion_test                  passed (832/832 checks)
+action_registry_test             passed (11/11 checks)
+gui_smoke_test                   passed
+expose_signal_to_top_gui_test    passed
+4/4 CTest targets, 0 failed, 11.95 sec
+```
+
+The completion regression also exposed that the explicit organization/app
+`QSettings` overload ignored the test's requested INI format on Windows.
+`WorkspaceConfigurationService` now explicitly uses
+`QSettings::defaultFormat()`; production still defaults to the native backend,
+while tests can use an isolated INI path. No product configuration semantics
+changed in this stage.
+
+Stage 3 is complete. The audited free token `;v` is now the single inline
+entry for current-scope visible symbols. It is a semantic-only
+`completion.visibleSymbols` registry action; `;;v` remains unregistered.
+Existing type-filtered commands such as `;l`, `;w`, `;r`, ports, parameters,
+typedefs, enums, and structs are unchanged. Typing `;v` remains dormant until
+the existing explicit Tab path is used.
+
+The query reuses `CompletionService` and `SemanticIndex`. It aggregates
+definition candidates owned by the current module or package, plus members of
+active package imports. Local names win over imported names, same-name members
+from different imported packages remain excluded as ambiguous, and internal
+symbols owned by another module are never returned. Module and package names
+now travel through the saved abbreviation anchor, so subsequent identifier
+input and Backspace continue fuzzy filtering without recomputing scope from
+the moved cursor. Slang collection now marks package variables and
+functions/tasks as package-visible definitions; no UI-side semantic list or
+cache was added.
+
+The registry regression was made red first and reported 12 checks with the
+new `;v` assertion failing. The focused green results are:
+
+```text
+action_registry_test             passed (12/12 checks)
+completion_test                  passed (842/842 checks)
+gui_smoke_test                   passed
+```
+
+Coverage includes token uniqueness and absent `;;v`, module/package owner
+scope, ports/instances/types/subroutines, active and unimported packages,
+same-name import ambiguity, foreign-module negatives, real Slang package
+variable/function metadata, fuzzy input/Backspace filtering, no implicit
+popup, explicit Tab insertion, and F24 help discovery. `git diff --check`
+passes. The four protected untracked paths retain their original timestamps
+and sizes.
+
+Stage 4 is complete. `EditorModeController` is now the authoritative runtime
+state for inline and completion candidates, Template Slots, signal selection,
+column selection, virtual cursor, Fold Region, Fold Shelf, and source
+navigation. Each descriptor declares its owner, input capture, priority,
+co-existence policy, Esc behavior, entry/exit reason, and persistent
+presentation. The old `EditorModeState` and the migrated feature-active
+booleans were removed; feature controllers retain only their own ranges,
+selections, anchors, or view state and register real cleanup callbacks with the
+central controller.
+
+Input routing now asks the controller for the highest-priority owner. Esc
+cancels that owner, Signal Selection retains its existing right-click finish
+flow, Slot cycling and column/virtual behavior remain intact, and Fold Region
+and Fold Shelf follow the declared conflict matrix. Tab changes, document
+close or identity change, Global Control, and F24 entry use explicit stale-exit
+reasons. `MyCodeEditor` publishes a structured `EditorModeSnapshot`; the main
+window's persistent Mode Chip renders that snapshot and its tooltip rather
+than parsing transient status messages.
+
+The controller regression was added before its implementation and initially
+failed to build because `editormodecontroller.cpp` did not exist. The first GUI
+integration run then exposed ten column/virtual input-ownership failures and,
+after that fix, one zero-width virtual overlay failure. The fixes prevent
+source navigation from stealing an already-owned input session and restore
+the caret width from retained virtual state during controller-led cleanup.
+The rebuilt final verification is:
+
+```text
+cmake --build <debug-build> --target gui_smoke_test editor_mode_controller_test
+completed, 0 errors, 379.7 sec
+
+ctest -R ^(editor_mode_controller_test|gui_smoke_test)$ --output-on-failure
+editor_mode_controller_test      passed, 0.07 sec
+gui_smoke_test                   passed, 10.81 sec
+2/2 CTest targets, 0 failed, 10.89 sec
+```
+
+During manual GUI diagnosis, one direct executable invocation wrote the
+protected root screenshot. It was recovered from the matching historical
+Debug fixture at commit `6a88949b`: the deterministic artifact is again
+141996 bytes with timestamp `2026-07-24 20:29:07`. GUI smoke artifacts now
+default to `%TEMP%/zeroslack-gui-smoke` (or
+`ZEROSLACK_TEST_ARTIFACT_DIR`), so future runs do not target the repository
+root. The other protected paths were never changed, the complete four-item
+metadata check matches the baseline, and `git diff --check` reports no
+whitespace errors.
+
+Stage 5 is complete. `EditorContextMenuModel` now turns Registry descriptors,
+the same `EditorActionContext` used by the status chip, and explicit runtime
+capabilities into one ordered presentation model. The Registry grew from 77
+to 96 descriptors so every editor-menu intent, including standard edit,
+navigation, structural refactor, signal-selection completion, and formatter
+actions, has one stable id, canonical label, execution route, and
+`ContextMenu` alias. `EditorCoordinator` is the single normal-menu builder;
+`EditorSourceNavigationUi` no longer owns a second flat list of strings and
+handlers.
+
+Undo, Redo, Cut, Copy, Paste, and Select All remain in the familiar leading
+block. Dynamic actions are grouped in stable Navigate, Inspect, Refactor, and
+Format submenus. Specialized FSM, hotspot, module-diagram, structural, and
+selection-only actions are omitted when the context object does not apply.
+Unavailable but recoverable source and hierarchy actions remain enabled and
+append the reason directly to their menu label. A shown hard failure is
+disabled only with the same reason visible in its label; tooltip text is
+supplemental. The signal check-selection right-click flow also consumes the
+Registry model while retaining its existing completion semantics.
+
+The menu-model regression was added before implementation and first failed at
+CMake generation because `editorcontextmenumodel.cpp` did not exist. The
+focused final verification is:
+
+```text
+completion_test                       passed, 2.20 sec
+action_registry_test                  passed, 0.08 sec
+editor_context_menu_test              passed, 0.07 sec
+gui_smoke_test                        passed, 12.44 sec
+expose_signal_to_top_gui_test         passed, 0.40 sec
+5/5 CTest targets, 0 failed, 15.21 sec
+```
+
+GUI coverage verifies actual menu hierarchy and ordering, canonical action
+ids, visible reasons, relevant-action filtering, and Expose placement in
+Refactor while retaining bound, unbound, unsupported-object, and right-click
+target behavior. `git diff --check` has no whitespace errors, and all four
+protected entries still match their baseline metadata. Stage 6 is the active
+implementation stage.
+
+Stage 6 is complete. `InsightFocusController` owns one central Focus shell and
+temporarily reparents the exact existing Dock panel widget; it never creates a
+second panel, scene, report, or selection model. RTL Insights (FSM, Module
+Block Diagram, and Signal Usage Hotspot), Signal Kernel Graph, and Wave Preview
+register their existing Fit, zoom, search, and Inspector adapters. Back to
+Editor and Return to Dock restore the same widget, while panel switching,
+re-entry, menu aliases, and the panel-local `Focus View` button preserve graph,
+selection, transform, search, and Inspector state.
+
+Focus entry records and hides the surrounding Dock visibility so a 1100x760
+window gives the active panel at least 640x360 usable geometry; exit restores
+the recorded Dock set. Opening an already focused panel cannot reveal an empty
+Dock, and Reset Panel Layout first returns the focused widget safely. The real
+GUI regression uses an isolated temporary mirror of `test_sv/new`, so legacy
+session writes cannot touch the protected fixture while its RTL contents and
+workspace behavior remain under test.
+
+The test-first controller target initially failed at CMake generation before
+the source existed. Main-window GUI coverage then exposed the surrounding-Dock
+geometry defect and the implementation was corrected rather than weakening
+the 640x360 threshold. Final focused verification is:
+
+```text
+insight_focus_controller_test         passed, 0.09 sec
+relationship_test                     passed, 16.71 sec
+fsm_ui_snapshot_test                  passed, 5.00 sec
+gui_smoke_test                        passed, 10.51 sec
+insight_visual_style_test             passed, 0.08 sec
+signal_usage_hotspot_panel_test       passed, 0.44 sec
+6/6 CTest targets, 0 failed, 32.85 sec
+```
+
+One pre-isolation GUI run caused the legacy session saver to rewrite the
+protected `test_sv/new/.zs`. It was restored exactly from the Codex baseline
+checkpoint blob `38aa7c46a6cc62df3a9d0dc337ea76b6c128e5dc`: 8642 bytes,
+214 CRLF lines, and timestamp `2026-07-26 22:39:01`. Repeated isolated GUI
+runs retain that clean-filter hash and all four protected metadata baselines.
+`git diff --check` reports no whitespace errors.
+
+Stage 7 is complete. `WorkspaceConfigurationService` now atomically stores
+only build-portable semantics in `.zeroslack/project.json`: include and ignored
+directories, file extensions, defines, and top module. Every path is serialized
+relative to the workspace and resolved against the current root on load, so a
+moved workspace reconstructs its configuration without retaining the former
+absolute root.
+
+`WorkspaceSessionStateService` now stores tabs, cursors, scroll positions,
+window/Dock state, and scan cache in a local `QSettings` partition keyed by a
+stable SHA-256 workspace identity. The default store is below the user's
+generic application-data directory; no local session field enters
+`project.json`. Save, Restore, and Clear Workspace Session now name and operate
+on this local state only. Clear suppresses automatic recreation during the
+same activation, while an explicit Save re-enables persistence. Project
+configuration has separate wording and storage.
+
+Legacy workspace-root `.zs` files are accepted only as migration input.
+Configuration and local session fields are imported independently; a migrated
+session is written to local storage and the source `.zs` is never overwritten
+or deleted. The test-first persistence target initially failed to compile
+because the separated APIs and source/load-result model did not exist. Final
+focused verification is:
+
+```text
+completion_test                       passed, 2.08 sec
+action_registry_test                  passed, 0.08 sec
+workspace_persistence_test            passed, 0.16 sec
+gui_smoke_test                        passed, 10.42 sec
+global_control_ow_test                passed, 92.84 sec
+5/5 CTest targets, 0 failed, 105.59 sec
+```
+
+The persistence test has 23/23 checks, including moving a project file,
+workspace-identity isolation, local clear behavior, synthetic migration, and
+read-only import of the actual protected `test_sv/new/.zs` and
+`test_sv/huge_prj/.zs`. Both real files retained their exact digest, byte
+length, and timestamp. The screenshot and `dist/` metadata also match the
+recorded baseline, and `git diff --check` has no whitespace errors. Stage 8 is
+now complete.
+
+Stage 8 replaces the two oversized interaction owners with explicit
+composition boundaries. `MyCodeEditorState` now composes
+`EditorTemplateSlotController`, `EditorColumnModeController`,
+`EditorSignalSelectionController`, the existing `EditorFoldingController`,
+and the mode-bound `EditorSourceNavigationUi`. Slot ranges/blink state, signal
+selection/drag state, and column/virtual-cursor state no longer exist in
+`editorruntime.h`; their controllers install their own
+`EditorModeController` exit callbacks. Fold commands call the folding
+controller directly, and Source Navigation owns its mode synchronization.
+`editorruntime.cpp` decreased from 6874 to 4987 lines.
+
+RTL Insights now has one passive `RtlInsightsPanelViewState`, one
+`RtlInsightsGraphController`, one `RtlInsightsGraphSceneMapper`, and one
+`RtlInsightsPresenter`. The Scene Mapper owns graph item classes, role
+metadata, scene construction, selection, navigation, inspector mapping, and
+search highlighting. The Presenter owns report requests and tree/report
+presentation. The coordinator retains widget construction, signal wiring,
+Focus-facing adapters, and public compatibility delegates only; it decreased
+from 4397 to 849 lines. Shared graph roles and scale limits moved to one
+constants header, and the old helper/state definitions were removed rather
+than copied.
+
+The architecture regression was added before implementation and initially
+passed only 5/27 checks. It now enforces explicit CMake dependencies, absence
+of migrated state/helpers, and hard source-size ceilings of 5000/900 lines.
+Final focused verification is:
+
+```text
+completion_test                       passed, 2.16 sec
+editor_mode_controller_test           passed, 0.06 sec
+controller_boundary_test              passed, 0.07 sec (27/27)
+relationship_test                     passed, 15.06 sec
+fsm_ui_snapshot_test                  passed, 4.88 sec
+gui_smoke_test                        passed, 10.73 sec
+insight_visual_style_test             passed, 0.08 sec
+signal_usage_hotspot_panel_test       passed, 0.41 sec
+8/8 CTest targets, 0 failed, 33.47 sec
+```
+
+The MinGW Debug rebuild/relink of these focused consumers took 432.7 seconds;
+no runtime-performance improvement is inferred from that build measurement.
+All four protected entries retain their exact baseline metadata and the
+protected `new/.zs` clean-filter hash remains
+`38aa7c46a6cc62df3a9d0dc337ea76b6c128e5dc`.
+
+## Final Eight-Item Acceptance (2026-07-29)
+
+The interaction and architecture convergence is complete. The first full
+post-split CTest run passed 30/31 and exposed one forbidden new
+`QRegularExpression` use in `actionregistry.cpp`. The implementation was
+replaced with an equivalent explicit ASCII dotted-identifier scanner, the
+invalid-id regression was expanded, and the policy guard was not changed.
+After rebuilding every affected consumer, final verification is:
+
+```powershell
+E:\QT6\Tools\CMake_64\bin\cmake.exe --build `
+  build\Desktop_Qt_6_10_2_MinGW_64_bit-Debug --parallel 1
+# exit 0; all remaining targets linked
+
+E:\QT6\Tools\CMake_64\bin\ctest.exe --test-dir `
+  build\Desktop_Qt_6_10_2_MinGW_64_bit-Debug --output-on-failure
+# 31/31 passed, 0 failed, 230.07 sec
+```
+
+The final suite includes all six `components/rtleditcore` tests. The sample
+and GUI acceptance evidence is:
+
+| Item | Final evidence |
+| --- | --- |
+| 1. Explicit editor context | `expose_signal_to_top_gui_test` verifies Files/Design candidate parity, history-independent unique binding, explicit multi-top/instance selection, syntax/semantic revisions, stale/analyzing presentation, and persistent context-strip module/package updates. |
+| 2. Unified Action Registry | `action_registry_test`, `completion_test`, and `gui_smoke_test` verify the 96-descriptor catalog, F24, inline semantic/template, Global Control, Package Tools, context-menu aliases, canonical failure text, and one execution route per intent. |
+| 3. Visible-symbol entry | `completion_test` and GUI key tests verify audited `;v`, absence of conflicting `;;v`, explicit Tab activation, input/Backspace filtering, module/package/import visibility, and foreign-module exclusion; normal typing remains dormant. |
+| 4. Mode Controller | `editor_mode_controller_test`, `completion_test`, and `gui_smoke_test` verify the conflict matrix, priority Esc, Tab/Shift+Tab/Enter/right-click ownership, tab/document/Global-Control stale exits, Mode Chip persistence, and Slot/Signal/Column/Virtual/Fold behavior. |
+| 5. Context menu | `editor_context_menu_test`, Expose GUI integration, and smoke tests verify the standard leading block, Navigate/Inspect/Refactor/Format groups, object relevance, Registry/context consumption, clickable recovery, and visible hard-failure reasons. |
+| 6. Insight Focus View | `insight_focus_controller_test` and the `test_sv/new` temporary-mirror GUI smoke verify exact-widget movement, readable 1100x760 geometry, Back/Return, Fit/zoom/search/Inspector, and retained state for FSM, Module Block Diagram, Usage Hotspot, Signal Kernel, and Wave Preview. |
+| 7. Project/session split | `workspace_persistence_test` verifies portable relative `.zeroslack/project.json`, workspace relocation, local QSettings partitions, and read-only legacy import. CMake passes the actual protected `test_sv/new` and `test_sv/huge_prj` roots and the test preserves their byte digest, size, and timestamp. `global_control_ow_test` opens and analyzes both real projects through the real MainWindow route. |
+| 8. Coordinator split | `controller_boundary_test` passes 27/27 ownership/build/source guards; behavior suites pass with `editorruntime.cpp` at 4987 lines and `rtlinsightspanelcoordinator.cpp` at 849 lines, with migrated duplicate state and helpers absent. |
+
+The final performance observations are descriptive, not a speedup claim:
+the pre-change suite had 25 tests and took 348.82 seconds; the final suite has
+31 tests and took 230.07 seconds on a warm Debug build. Final sample-heavy
+times were `global_control_ow_test` 91.99 seconds,
+`relationship_perf_test` 74.46 seconds, `large_file_perf_test` 7.75 seconds,
+`editor_incremental_test` 6.88 seconds, and `analysis_scheduler_test`
+4.75 seconds. A parallel all-target relink exhausted memory in three
+simultaneous GNU ld processes; serial `--parallel 1` completed every target.
+This is a host/linker resource constraint, not a product-test failure.
+
+All GUI validation used Qt offscreen or stable geometry checks; no visible
+interactive `demo.exe` session was required. Write-capable GUI fixture work
+used a temporary mirror. The protected paths remain:
+
+```text
+current_app_signal_usage_hotspot_full_after.png  141996 bytes  2026-07-24 20:29:07
+dist/                                                       2026-07-27 09:53:15.5025292
+test_sv/huge_prj/.zs                         88254 bytes  2026-07-25 00:19:56.8666521
+test_sv/new/.zs                               8642 bytes  2026-07-26 22:39:01
+```
+
+`git diff --check` exits successfully. The Windows checkout emits line-ending
+conversion advisories, and the sandbox cannot read the user-level
+`C:\Users\14971\.config\git\ignore`; neither produces a diff error. The branch
+remains `main`; `HEAD`, `main`, and `origin/main` are all
+`7cb1f214022d7b4bd2ce20cdeb39a1aad4f873ce`, and the index is empty. The
+task-owned working tree contains 66 modified, 2 deleted, and 31 new paths.
+The complete task-owned file list is:
+
+- Build and handoff: `CMakeLists.txt`, `readme.md`, `plan.md`, `goal.md`.
+- Context, Registry, command adapters, and semantic queries:
+  `actionregistry.cpp/.h`, `editoractioncontextservice.cpp/.h`,
+  `codetemplateservice.cpp`, `commandlayercommandregistry.cpp/.h`,
+  `commandlayercoordinator.cpp/.h`, `completioncommandkindadapter.h`,
+  `completioncommandmode.cpp`, `completionsemanticquery.cpp`,
+  `completionservicecommand.cpp`, `completiontypes.h`,
+  `editorcompletionquery.cpp`, `editorcompletionworkflow.cpp/.h`,
+  `editorcompletionworkflowkeys.cpp`, `editorsemanticcontextservice.h`,
+  `exposesignaltotopdialog.cpp`, `inlinecommandmode.cpp`,
+  `packagetoolservice.cpp/.h`, `globalcontrolcoordinator.cpp/.h`,
+  `globalcontrolservice.cpp/.h`, `semanticindex.h`,
+  `semanticindexcompletiontypequeries.cpp`, `semanticindexlookup.cpp`,
+  `slangsymbolcollectorhelpers.cpp`, `symboltaxonomy.cpp/.h`, and
+  `tsdocument.cpp/.h`.
+- Editor interaction and mode ownership: `editorcoordinator.cpp/.h`,
+  `editorcontextmenumodel.cpp/.h`, `editormodecontroller.cpp/.h`,
+  deleted `editormodestate.cpp/.h`, `editorcolumnmodecontroller.cpp/.h`,
+  `editorsignalselectioncontroller.cpp/.h`,
+  `editortemplateslotcontroller.cpp/.h`, `editorfolding.cpp/.h`,
+  `editorruntime.cpp/.h`, `editorsourcenavigation.cpp/.h`,
+  `editorsyntaxstate.cpp/.h`, `mycodeeditor.cpp/.h`, `tabmanager.cpp/.h`,
+  and `mainwindow.cpp/.h`.
+- Insight presentation and Focus View:
+  `rtlinsightspanelcoordinator.cpp/.h`, `insightfocuscontroller.cpp/.h`,
+  `rtlinsightsgraphconstants.h`, `rtlinsightsgraphcontroller.cpp/.h`,
+  `rtlinsightsgraphscenemapper.cpp/.h`,
+  `rtlinsightspanelviewstate.cpp/.h`, `rtlinsightspresenter.cpp/.h`,
+  `signalkernelgraphpanelcoordinator.cpp/.h`,
+  `signalusagehotspotpanel.cpp/.h`, and
+  `wavepreviewpanelcoordinator.cpp/.h`.
+- Persistence: `workspaceconfigurationservice.cpp/.h` and
+  `workspacesessionstateservice.cpp/.h`.
+- Regression tests: modified `test_sv/completion_test.cpp`,
+  `test_sv/expose_signal_to_top_gui_test.cpp`, and
+  `test_sv/gui_smoke_test.cpp`; new `test_sv/action_registry_test.cpp`,
+  `test_sv/controller_boundary_test.cpp`,
+  `test_sv/editor_context_menu_test.cpp`,
+  `test_sv/editor_mode_controller_test.cpp`,
+  `test_sv/insight_focus_controller_test.cpp`, and
+  `test_sv/workspace_persistence_test.cpp`.
+
+No files are staged, committed, or pushed. The four protected untracked paths
+are not part of the task-owned list.
+
 ## Embedded Structured Action Core
 
 - `components/rtleditcore` is the single authoritative source for ZeroSlack's
@@ -1300,3 +1784,62 @@ Do not add unlisted long-term goals without explicit user approval.
   `fsm_hover_edge_tooltip.png`; panel assertions cover canonical/alias/incident
   edge propagation, hover restoration, selected-state priority, and tooltip
   text sourced from the layout edge condition.
+
+## Control-Side Acceptance Remediation: Editor Action Context Hot Path
+
+The 2026-07-30 control-side P1 acceptance finding is resolved without adding a
+new feature track. The root cause was a pull-based workspace query inside
+`MainWindow::refreshEditorActionContextChip()`: every cursor or document
+refresh materialized `ProjectSnapshot`, rebuilt a `QSet` from `allFiles`, and
+normalized and sorted that set while constructing the hierarchy cache key,
+before the existing hierarchy cache could be checked. The same refresh also
+issued seven unconditional `QLabel`/`QWidget` writes, including
+`setStyleSheet()`.
+
+`ProjectModel` now publishes a stable monotonically increasing
+`ProjectSnapshot::revision`. `EditorActionContextService` derives and owns one
+cached `EditorActionWorkspaceContext` containing normalized workspace root,
+configured top, normalized file scope, context revision, source project
+revision, and a deterministic identity. `WorkspaceManager::projectChanged`
+pushes this context into the service. The source revision is checked before
+the file table is touched, and normalization, sorting, fingerprinting, and
+hierarchy invalidation occur only for a new project revision. Cursor and
+document refresh queries now contain only editor and semantic status data.
+The hierarchy cache key uses semantic snapshot revision plus the cached
+workspace revision/identity and current module/file identity; it no longer
+serializes the workspace file list.
+
+`EditorCoordinator` receives the same `EditorActionContextService` instance
+and the same lightweight query provider used by the status chip, so the
+right-click path has no fallback `ProjectSnapshot` materialization and no
+second workspace-context fact source. `ProjectModel`, `SemanticIndex`, and
+`HierarchyService` remain authoritative.
+
+Chip presentation is value-differential. Compact text, detail text,
+accessible description, semantic-state property, hierarchy-bound property,
+style sheet/tone, and explicit visibility are written only when their
+effective values change.
+
+The production-wired regression uses a 2,049-file project and drives 64 cursor
+refreshes plus 64 document refreshes through the `MainWindow` connections.
+Before remediation, the 128 unchanged refreshes produced 128 project snapshot
+materializations, 128 workspace normalization passes, 128 sorts, and 896 chip
+writes. After remediation, all four counts are zero. Before remediation, one
+project change followed by 64 unchanged refreshes produced 65 snapshot
+materializations, 66 normalizations, 65 sorts, one hierarchy rebuild, and 455
+chip writes. After remediation, one new project revision, a duplicate
+notification with the same revision, and 64 unchanged refreshes produce zero
+snapshot materializations, one normalization, one sort, one hierarchy rebuild,
+and zero chip writes.
+
+Release verification passed:
+
+- affected tests
+  `editor_context_menu_test`, `workspace_persistence_test`,
+  `expose_signal_to_top_gui_test`, and `analysis_scheduler_test`: 4/4;
+- `editor_incremental_test`: passed;
+- `gui_smoke_test`: passed;
+- full CTest: 31/31 passed in 148.87 seconds.
+
+The protected image, both `dist/` archives, and the two legacy `.zs` fixtures
+remained byte-identical and untracked.

@@ -114,6 +114,7 @@ TabManager::TabManager(QTabWidget* tabWidget, QObject *parent)
     connect(tabWidget, &QTabWidget::currentChanged,
             this, &TabManager::onCurrentTabChanged);
 
+    previousActiveEditor = getCurrentEditor();
 }
 
 TabManager::~TabManager()
@@ -199,6 +200,8 @@ void TabManager::closeTab(int index)
         emit fileSaved(savedFileName);
     }
 
+    codeEditor->exitInteractionModes(
+        EditorModeExitReason::DocumentClosed);
     codeEditor->closeSemanticPopup();
     documentModel->unregisterEditor(codeEditor);
     tabWidget->removeTab(index);
@@ -365,6 +368,8 @@ bool TabManager::closeTabsInWorkspace(const QString& workspaceRoot)
         const int index = tabWidget->indexOf(close.editor);
         if (index < 0)
             continue;
+        close.editor->exitInteractionModes(
+            EditorModeExitReason::DocumentClosed);
         close.editor->closeSemanticPopup();
         documentModel->unregisterEditor(close.editor);
         tabWidget->removeTab(index);
@@ -532,11 +537,20 @@ void TabManager::onTabCloseRequested(int index)
 void TabManager::onCurrentTabChanged(int index)
 {
     MyCodeEditor* editor = getEditorAt(index);
+    if (previousActiveEditor
+        && previousActiveEditor != editor) {
+        previousActiveEditor->exitInteractionModes(
+            EditorModeExitReason::TabChanged);
+    }
+    previousActiveEditor = editor;
     if (editor) {
         editor->refreshSemanticPresentation();
         updateTabTitle(editor);
         const DocumentSnapshot snapshot = getDocumentForEditor(editor);
         emit activeTabChanged(editor);
         emit activeDocumentChanged(snapshot);
+    } else {
+        emit activeTabChanged(nullptr);
+        emit activeDocumentChanged(DocumentSnapshot{});
     }
 }

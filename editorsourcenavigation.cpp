@@ -1,13 +1,11 @@
 #include "editorsourcenavigation.h"
 
 #include "editorhoverpopup.h"
+#include "editormodecontroller.h"
 #include "editorselection.h"
-#include "formatterservice.h"
 #include "ghostannotationservice.h"
 #include "mycodeeditor.h"
 
-#include <QAction>
-#include <QActionGroup>
 #include <QContextMenuEvent>
 #include <QCursor>
 #include <QDir>
@@ -15,6 +13,7 @@
 #include <QKeyEvent>
 #include <QMenu>
 #include <QMouseEvent>
+#include <QPointer>
 #include <QTextBlock>
 #include <QTextCursor>
 #include <QWidget>
@@ -121,6 +120,58 @@ int sourceSymbolContextPositionForMenu(MyCodeEditor* editor,
 }
 
 EditorSourceNavigationUi::~EditorSourceNavigationUi() = default;
+
+void EditorSourceNavigationUi::bindModeController(
+    EditorModeController* modes,
+    MyCodeEditor* editor,
+    EditorSelection* selections)
+{
+    modeController = modes;
+    boundEditor = editor;
+    boundSelections = selections;
+    if (!modeController)
+        return;
+
+    const QPointer<MyCodeEditor> target(editor);
+    modeController->setExitHandler(
+        EditorModeId::SourceNavigation,
+        [this, target](EditorModeExitReason) {
+            if (target && boundSelections) {
+                closeForEditor(
+                    target,
+                    *boundSelections);
+            }
+        });
+}
+
+void EditorSourceNavigationUi::syncMode()
+{
+    if (!modeController)
+        return;
+    if (active()) {
+        if (modeController->hasActiveMode()
+            && !modeController->isActive(
+                EditorModeId::SourceNavigation)) {
+            return;
+        }
+        if (!modeController->isActive(
+                EditorModeId::SourceNavigation)) {
+            modeController->enter(
+                EditorModeId::SourceNavigation,
+                EditorModeEntryReason::MouseGesture);
+        }
+        modeController->updatePresentation(
+            EditorModeId::SourceNavigation,
+            QStringLiteral("Source navigation"),
+            QStringLiteral(
+                "Choose a source target; Esc closes"));
+    } else if (modeController->isActive(
+                   EditorModeId::SourceNavigation)) {
+        modeController->exit(
+            EditorModeId::SourceNavigation,
+            EditorModeExitReason::Completed);
+    }
+}
 
 bool EditorSourceNavigationUi::handleSourceSymbolShortcut(
     MyCodeEditor* editor,
@@ -322,6 +373,11 @@ bool EditorSourceNavigationUi::handleEscape(
     return false;
 }
 
+bool EditorSourceNavigationUi::active() const
+{
+    return hasActiveHover();
+}
+
 void EditorSourceNavigationUi::handleEditorContentChanged(
     MyCodeEditor* editor,
     EditorSelection& selections)
@@ -348,6 +404,9 @@ void EditorSourceNavigationUi::shutdown()
 {
     closePopup();
     popup.reset();
+    modeController = nullptr;
+    boundEditor = nullptr;
+    boundSelections = nullptr;
 }
 
 void EditorSourceNavigationUi::handleContextMenu(
@@ -355,104 +414,13 @@ void EditorSourceNavigationUi::handleContextMenu(
     QContextMenuEvent* event,
     const EditorSourceContextProvider& contextProvider)
 {
-    std::unique_ptr<QMenu> menu(
-        editor->createStandardContextMenu(event->pos()));
+    std::unique_ptr<QMenu> menu =
+        std::make_unique<QMenu>(editor);
     const QTextCursor cursorAtPos = editor->cursorForPosition(event->pos());
-    editor->addStructuralContextMenuActions(
-        menu.get(), cursorAtPos.position());
     emit editor->sourceSymbolContextMenuRequested(
         menu.get(),
         contextProvider(sourceSymbolContextPositionForMenu(editor, cursorAtPos),
                         true));
-    menu->addSeparator();
-
-    QAction* gotoLineAction = menu->addAction(QStringLiteral("Go to Line..."));
-    QObject::connect(gotoLineAction, &QAction::triggered, editor, [editor]() {
-        editor->showGotoLineDialog();
-    });
-    QAction* replaceAction = menu->addAction(QStringLiteral("Replace..."));
-    QObject::connect(replaceAction, &QAction::triggered, editor, [editor]() {
-        editor->showReplaceDialog();
-    });
-    menu->addSeparator();
-
-    QAction* commentAction = menu->addAction(QStringLiteral("Comment Lines"));
-    QObject::connect(commentAction, &QAction::triggered, editor, [editor]() {
-        editor->commentSelectionOrLine();
-    });
-    QAction* uncommentAction =
-        menu->addAction(QStringLiteral("Uncomment Lines"));
-    QObject::connect(uncommentAction, &QAction::triggered, editor, [editor]() {
-        editor->uncommentSelectionOrLine();
-    });
-    QAction* indentAction = menu->addAction(QStringLiteral("Indent Lines"));
-    QObject::connect(indentAction, &QAction::triggered, editor, [editor]() {
-        editor->indentSelectionOrLine();
-    });
-    QAction* unindentAction =
-        menu->addAction(QStringLiteral("Unindent Lines"));
-    QObject::connect(unindentAction, &QAction::triggered, editor, [editor]() {
-        editor->unindentSelectionOrLine();
-    });
-    menu->addSeparator();
-
-    QMenu* profileMenu = menu->addMenu(QStringLiteral("Formatter Profile"));
-    QActionGroup* profileGroup = new QActionGroup(profileMenu);
-    profileGroup->setExclusive(true);
-    QAction* structuredProfileAction =
-        profileMenu->addAction(
-            FormatterService::profileDisplayName(FormatterProfile::Structured));
-    structuredProfileAction->setCheckable(true);
-    structuredProfileAction->setActionGroup(profileGroup);
-    structuredProfileAction->setChecked(
-        editor->formatterProfile() == FormatterProfile::Structured);
-    QObject::connect(structuredProfileAction,
-                     &QAction::triggered,
-                     editor,
-                     [editor]() {
-                         editor->setFormatterProfile(
-                             FormatterProfile::Structured);
-                     });
-    QAction* indentOnlyProfileAction =
-        profileMenu->addAction(
-            FormatterService::profileDisplayName(FormatterProfile::IndentOnly));
-    indentOnlyProfileAction->setCheckable(true);
-    indentOnlyProfileAction->setActionGroup(profileGroup);
-    indentOnlyProfileAction->setChecked(
-        editor->formatterProfile() == FormatterProfile::IndentOnly);
-    QObject::connect(indentOnlyProfileAction,
-                     &QAction::triggered,
-                     editor,
-                     [editor]() {
-                         editor->setFormatterProfile(
-                             FormatterProfile::IndentOnly);
-                     });
-    profileMenu->addSeparator();
-    QAction* formatOnSaveAction =
-        profileMenu->addAction(QStringLiteral("Format On Save"));
-    formatOnSaveAction->setCheckable(true);
-    formatOnSaveAction->setChecked(editor->formatOnSaveEnabled());
-    QObject::connect(formatOnSaveAction,
-                     &QAction::triggered,
-                     editor,
-                     [editor](bool checked) {
-                         editor->setFormatOnSaveEnabled(checked);
-                     });
-
-    QAction* formatSelectionAction =
-        menu->addAction(QStringLiteral("Format Selection"));
-    formatSelectionAction->setEnabled(editor->textCursor().hasSelection());
-    QObject::connect(formatSelectionAction,
-                     &QAction::triggered,
-                     editor,
-                     [editor]() {
-                         editor->formatSelection();
-                     });
-    QAction* formatAction = menu->addAction(QStringLiteral("Format Document"));
-    QObject::connect(formatAction, &QAction::triggered, editor, [editor]() {
-        editor->formatDocument();
-    });
-
     menu->exec(event->globalPos());
 }
 

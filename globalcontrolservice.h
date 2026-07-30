@@ -14,6 +14,8 @@ struct GlobalControlItem {
     QString id;
     QString title;
     QString subtitle;
+    QString actionId;
+    QString executionRoute;
 };
 
 class GlobalControlService

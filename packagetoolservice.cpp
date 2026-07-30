@@ -1,5 +1,7 @@
 #include "packagetoolservice.h"
 
+#include "actionregistry.h"
+
 #include <QtGlobal>
 
 namespace {
@@ -45,18 +47,92 @@ void appendNeedleSlot(CodeTemplateItem& item,
     item.templateSlots.append(makeSlot(name, start, needle.size()));
 }
 
+QString adapterKeyForPackageToolKind(PackageToolKind kind)
+{
+    switch (kind) {
+    case PackageToolKind::Parameter:
+        return QStringLiteral("parameter");
+    case PackageToolKind::Localparam:
+        return QStringLiteral("localparam");
+    case PackageToolKind::TypedefEnum:
+        return QStringLiteral("typedefEnum");
+    case PackageToolKind::TypedefStruct:
+        return QStringLiteral("typedefStruct");
+    case PackageToolKind::TypedefStructPacked:
+        return QStringLiteral("typedefStructPacked");
+    case PackageToolKind::Function:
+        return QStringLiteral("function");
+    }
+    return QString();
+}
+
+bool packageToolKindForAdapterKey(const QString& adapterKey,
+                                  PackageToolKind* kind)
+{
+    for (const PackageToolKind candidate :
+         {PackageToolKind::Parameter,
+          PackageToolKind::Localparam,
+          PackageToolKind::TypedefEnum,
+          PackageToolKind::TypedefStruct,
+          PackageToolKind::TypedefStructPacked,
+          PackageToolKind::Function}) {
+        if (adapterKeyForPackageToolKind(candidate)
+            != adapterKey) {
+            continue;
+        }
+        if (kind)
+            *kind = candidate;
+        return true;
+    }
+    return false;
+}
+
+const ActionDescriptor* actionForPackageToolKind(
+    PackageToolKind kind,
+    const ActionAliasDescriptor** resultAlias = nullptr)
+{
+    const QString adapterKey =
+        adapterKeyForPackageToolKind(kind);
+    for (const ActionDescriptor* descriptor :
+         actionDescriptorsForSurface(
+             ActionSurface::PackageTools)) {
+        if (!descriptor)
+            continue;
+        for (const ActionAliasDescriptor& packageAlias :
+             descriptor->aliases) {
+            if (packageAlias.surface
+                    == ActionSurface::PackageTools
+                && packageAlias.adapterKey == adapterKey) {
+                if (resultAlias)
+                    *resultAlias = &packageAlias;
+                return descriptor;
+            }
+        }
+    }
+    if (resultAlias)
+        *resultAlias = nullptr;
+    return nullptr;
+}
+
 CodeTemplateItem makePackageTemplate(PackageToolKind kind,
-                                     const QString& label,
-                                     const QString& description,
                                      const QString& text)
 {
     CodeTemplateItem item;
+    const ActionAliasDescriptor* packageAlias = nullptr;
+    const ActionDescriptor* descriptor =
+        actionForPackageToolKind(kind, &packageAlias);
     item.commandToken =
         QStringLiteral("package:%1").arg(PackageToolService::idForKind(kind));
-    item.label = label;
-    item.description = description;
+    item.label = packageAlias
+        ? packageAlias->label : QString();
+    item.description = packageAlias
+        ? packageAlias->description : QString();
     item.insertText = text;
     item.defaultValue = text;
+    if (descriptor) {
+        item.actionId = descriptor->id;
+        item.executionRoute = descriptor->executionRoute;
+    }
     return item;
 }
 
@@ -76,52 +152,44 @@ QString indentMultiline(const QString& text, const QString& indent)
 
 QList<PackageToolKind> PackageToolService::toolOrder()
 {
-    return {
-        PackageToolKind::Parameter,
-        PackageToolKind::Localparam,
-        PackageToolKind::TypedefEnum,
-        PackageToolKind::TypedefStruct,
-        PackageToolKind::TypedefStructPacked,
-        PackageToolKind::Function,
-    };
+    QList<PackageToolKind> result;
+    for (const ActionDescriptor* descriptor :
+         actionDescriptorsForSurface(
+             ActionSurface::PackageTools)) {
+        if (!descriptor)
+            continue;
+        const ActionAliasDescriptor* packageAlias =
+            findActionAlias(*descriptor,
+                            ActionSurface::PackageTools);
+        PackageToolKind kind;
+        if (packageAlias
+            && packageToolKindForAdapterKey(
+                packageAlias->adapterKey, &kind)) {
+            result.append(kind);
+        }
+    }
+    return result;
+}
+
+QString PackageToolService::actionIdForKind(PackageToolKind kind)
+{
+    const ActionDescriptor* descriptor =
+        actionForPackageToolKind(kind);
+    return descriptor ? descriptor->id : QString();
 }
 
 QString PackageToolService::idForKind(PackageToolKind kind)
 {
-    switch (kind) {
-    case PackageToolKind::Parameter:
-        return QStringLiteral("parameter");
-    case PackageToolKind::Localparam:
-        return QStringLiteral("localparam");
-    case PackageToolKind::TypedefEnum:
-        return QStringLiteral("typedef_enum");
-    case PackageToolKind::TypedefStruct:
-        return QStringLiteral("typedef_struct");
-    case PackageToolKind::TypedefStructPacked:
-        return QStringLiteral("typedef_struct_packed");
-    case PackageToolKind::Function:
-        return QStringLiteral("function");
-    }
-    return QString();
+    const ActionAliasDescriptor* packageAlias = nullptr;
+    actionForPackageToolKind(kind, &packageAlias);
+    return packageAlias ? packageAlias->token : QString();
 }
 
 QString PackageToolService::labelForKind(PackageToolKind kind)
 {
-    switch (kind) {
-    case PackageToolKind::Parameter:
-        return QStringLiteral("parameter");
-    case PackageToolKind::Localparam:
-        return QStringLiteral("localparam");
-    case PackageToolKind::TypedefEnum:
-        return QStringLiteral("typedef enum");
-    case PackageToolKind::TypedefStruct:
-        return QStringLiteral("typedef struct");
-    case PackageToolKind::TypedefStructPacked:
-        return QStringLiteral("typedef struct packed");
-    case PackageToolKind::Function:
-        return QStringLiteral("function");
-    }
-    return QString();
+    const ActionAliasDescriptor* packageAlias = nullptr;
+    actionForPackageToolKind(kind, &packageAlias);
+    return packageAlias ? packageAlias->label : QString();
 }
 
 CodeTemplateItem PackageToolService::templateForKind(PackageToolKind kind) const
@@ -131,8 +199,6 @@ CodeTemplateItem PackageToolService::templateForKind(PackageToolKind kind) const
     case PackageToolKind::Parameter:
         item = makePackageTemplate(
             kind,
-            labelForKind(kind),
-            QStringLiteral("package parameter declaration"),
             QStringLiteral("parameter int PARAM = 0;"));
         appendNeedleSlot(item, QStringLiteral("type"), QStringLiteral("int"));
         appendNeedleSlot(item, QStringLiteral("name"), QStringLiteral("PARAM"));
@@ -141,8 +207,6 @@ CodeTemplateItem PackageToolService::templateForKind(PackageToolKind kind) const
     case PackageToolKind::Localparam:
         item = makePackageTemplate(
             kind,
-            labelForKind(kind),
-            QStringLiteral("package localparam declaration"),
             QStringLiteral("localparam int LOCAL_PARAM = 0;"));
         appendNeedleSlot(item, QStringLiteral("type"), QStringLiteral("int"));
         appendNeedleSlot(item,
@@ -153,8 +217,6 @@ CodeTemplateItem PackageToolService::templateForKind(PackageToolKind kind) const
     case PackageToolKind::TypedefEnum:
         item = makePackageTemplate(
             kind,
-            labelForKind(kind),
-            QStringLiteral("package typedef enum"),
             QStringLiteral("typedef enum logic [1:0] {\n"
                            "    IDLE,\n"
                            "    BUSY\n"
@@ -169,8 +231,6 @@ CodeTemplateItem PackageToolService::templateForKind(PackageToolKind kind) const
     case PackageToolKind::TypedefStruct:
         item = makePackageTemplate(
             kind,
-            labelForKind(kind),
-            QStringLiteral("package typedef struct"),
             QStringLiteral("typedef struct {\n"
                            "    logic field_name;\n"
                            "} type_name_t;"));
@@ -187,8 +247,6 @@ CodeTemplateItem PackageToolService::templateForKind(PackageToolKind kind) const
     case PackageToolKind::TypedefStructPacked:
         item = makePackageTemplate(
             kind,
-            labelForKind(kind),
-            QStringLiteral("package typedef struct packed"),
             QStringLiteral("typedef struct packed {\n"
                            "    logic field_name;\n"
                            "} type_name_t;"));
@@ -205,8 +263,6 @@ CodeTemplateItem PackageToolService::templateForKind(PackageToolKind kind) const
     case PackageToolKind::Function:
         item = makePackageTemplate(
             kind,
-            labelForKind(kind),
-            QStringLiteral("package function declaration"),
             QStringLiteral("function automatic int function_name(input int arg);\n"
                            "    return '0;\n"
                            "endfunction"));

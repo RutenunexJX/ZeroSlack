@@ -1,5 +1,7 @@
 #include "inlinecommandmode.h"
 
+#include "actionregistry.h"
+
 namespace {
 bool lexicalPositionInCommentOrString(const QString& text, int position)
 {
@@ -167,80 +169,105 @@ InlineCommandDescriptor descriptor(
     return item;
 }
 
-QList<InlineCommandDescriptor> semanticDescriptors()
+CompletionCommandKind completionKindForAdapterKey(
+    const QString& adapterKey)
 {
-    return {
-        descriptor(QStringLiteral(";r "), InlineCommandIntent::SemanticCompletion, CompletionCommandKind::Reg, QStringLiteral(";r"), QStringLiteral("reg variables"), QStringLiteral("reg")),
-        descriptor(QStringLiteral(";w "), InlineCommandIntent::SemanticCompletion, CompletionCommandKind::Wire, QStringLiteral(";w"), QStringLiteral("wire variables"), QStringLiteral("wire")),
-        descriptor(QStringLiteral(";l "), InlineCommandIntent::SemanticCompletion, CompletionCommandKind::Logic, QStringLiteral(";l"), QStringLiteral("logic variables"), QStringLiteral("logic")),
-        descriptor(QStringLiteral(";m "), InlineCommandIntent::SemanticCompletion, CompletionCommandKind::Module, QStringLiteral(";m"), QStringLiteral("module instantiations"), QStringLiteral("module_name u_module_name (\n);")),
-        descriptor(QStringLiteral(";t "), InlineCommandIntent::SemanticCompletion, CompletionCommandKind::Task, QStringLiteral(";t"), QStringLiteral("tasks"), QStringLiteral("task")),
-        descriptor(QStringLiteral(";f "), InlineCommandIntent::SemanticCompletion, CompletionCommandKind::Function, QStringLiteral(";f"), QStringLiteral("functions"), QStringLiteral("function")),
-        descriptor(QStringLiteral(";i "), InlineCommandIntent::SemanticCompletion, CompletionCommandKind::Interface, QStringLiteral(";i"), QStringLiteral("interfaces"), QStringLiteral("interface")),
-        descriptor(QStringLiteral(";d "), InlineCommandIntent::SemanticCompletion, CompletionCommandKind::Macro, QStringLiteral(";d"), QStringLiteral("macro definitions"), QStringLiteral("`define")),
-        descriptor(QStringLiteral(";lp "), InlineCommandIntent::SemanticCompletion, CompletionCommandKind::Localparam, QStringLiteral(";lp"), QStringLiteral("localparam declarations"), QStringLiteral("localparam")),
-        descriptor(QStringLiteral(";p "), InlineCommandIntent::SemanticCompletion, CompletionCommandKind::Parameter, QStringLiteral(";p"), QStringLiteral("parameter declarations"), QStringLiteral("parameter")),
-        descriptor(QStringLiteral(";a "), InlineCommandIntent::SemanticCompletion, CompletionCommandKind::AlwaysProcess, QStringLiteral(";a"), QStringLiteral("always blocks"), QStringLiteral("always")),
-        descriptor(QStringLiteral(";c "), InlineCommandIntent::SemanticCompletion, CompletionCommandKind::ContinuousAssign, QStringLiteral(";c"), QStringLiteral("continuous assignments"), QStringLiteral("assign")),
-        descriptor(QStringLiteral(";u "), InlineCommandIntent::SemanticCompletion, CompletionCommandKind::Typedef, QStringLiteral(";u"), QStringLiteral("type definitions"), QStringLiteral("typedef")),
-        descriptor(QStringLiteral(";ee "), InlineCommandIntent::SemanticCompletion, CompletionCommandKind::EnumValue, QStringLiteral(";ee"), QStringLiteral("enum values"), QStringLiteral("enum_value")),
-        descriptor(QStringLiteral(";ne "), InlineCommandIntent::SemanticCompletion, CompletionCommandKind::EnumType, QStringLiteral(";ne"), QStringLiteral("enum types"), QStringLiteral("enum")),
-        descriptor(QStringLiteral(";e "), InlineCommandIntent::SemanticCompletion, CompletionCommandKind::EnumVariable, QStringLiteral(";e"), QStringLiteral("enum variables"), QStringLiteral("enum_var")),
-        descriptor(QStringLiteral(";sm "), InlineCommandIntent::SemanticCompletion, CompletionCommandKind::StructMember, QStringLiteral(";sm"), QStringLiteral("struct members"), QStringLiteral("member")),
-        descriptor(QStringLiteral(";nsp "), InlineCommandIntent::SemanticCompletion, CompletionCommandKind::PackedStructType, QStringLiteral(";nsp"), QStringLiteral("packed struct types"), QStringLiteral("struct")),
-        descriptor(QStringLiteral(";ns "), InlineCommandIntent::SemanticCompletion, CompletionCommandKind::UnpackedStructType, QStringLiteral(";ns"), QStringLiteral("unpacked struct types"), QStringLiteral("struct")),
-        descriptor(QStringLiteral(";sp "), InlineCommandIntent::SemanticCompletion, CompletionCommandKind::PackedStructVariable, QStringLiteral(";sp"), QStringLiteral("packed struct variables"), QStringLiteral("struct")),
-        descriptor(QStringLiteral(";s "), InlineCommandIntent::SemanticCompletion, CompletionCommandKind::UnpackedStructVariable, QStringLiteral(";s"), QStringLiteral("unpacked struct variables"), QStringLiteral("struct")),
-    };
+    if (adapterKey == QStringLiteral("visibleSymbol"))
+        return CompletionCommandKind::VisibleSymbol;
+    if (adapterKey == QStringLiteral("reg"))
+        return CompletionCommandKind::Reg;
+    if (adapterKey == QStringLiteral("wire"))
+        return CompletionCommandKind::Wire;
+    if (adapterKey == QStringLiteral("logic"))
+        return CompletionCommandKind::Logic;
+    if (adapterKey == QStringLiteral("module"))
+        return CompletionCommandKind::Module;
+    if (adapterKey == QStringLiteral("task"))
+        return CompletionCommandKind::Task;
+    if (adapterKey == QStringLiteral("function"))
+        return CompletionCommandKind::Function;
+    if (adapterKey == QStringLiteral("interface"))
+        return CompletionCommandKind::Interface;
+    if (adapterKey == QStringLiteral("package"))
+        return CompletionCommandKind::Package;
+    if (adapterKey == QStringLiteral("macro"))
+        return CompletionCommandKind::Macro;
+    if (adapterKey == QStringLiteral("localparam"))
+        return CompletionCommandKind::Localparam;
+    if (adapterKey == QStringLiteral("parameter"))
+        return CompletionCommandKind::Parameter;
+    if (adapterKey == QStringLiteral("always"))
+        return CompletionCommandKind::AlwaysProcess;
+    if (adapterKey == QStringLiteral("continuousAssign"))
+        return CompletionCommandKind::ContinuousAssign;
+    if (adapterKey == QStringLiteral("typedef"))
+        return CompletionCommandKind::Typedef;
+    if (adapterKey == QStringLiteral("enumValue"))
+        return CompletionCommandKind::EnumValue;
+    if (adapterKey == QStringLiteral("enumType"))
+        return CompletionCommandKind::EnumType;
+    if (adapterKey == QStringLiteral("enumVariable"))
+        return CompletionCommandKind::EnumVariable;
+    if (adapterKey == QStringLiteral("structMember"))
+        return CompletionCommandKind::StructMember;
+    if (adapterKey == QStringLiteral("packedStructType"))
+        return CompletionCommandKind::PackedStructType;
+    if (adapterKey == QStringLiteral("unpackedStructType"))
+        return CompletionCommandKind::UnpackedStructType;
+    if (adapterKey == QStringLiteral("packedStructVariable"))
+        return CompletionCommandKind::PackedStructVariable;
+    if (adapterKey == QStringLiteral("unpackedStructVariable"))
+        return CompletionCommandKind::UnpackedStructVariable;
+    return CompletionCommandKind::User;
 }
 
-QList<InlineCommandDescriptor> templateDescriptors()
+InlineCommandIntent inlineIntentForAlias(
+    const ActionAliasDescriptor& alias)
+{
+    if (alias.intentKey == QStringLiteral("template"))
+        return InlineCommandIntent::CodeTemplate;
+    if (alias.intentKey == QStringLiteral("headerInclude"))
+        return InlineCommandIntent::HeaderInclude;
+    if (alias.intentKey == QStringLiteral("packageImport"))
+        return InlineCommandIntent::PackageImport;
+    if (alias.intentKey == QStringLiteral("editorAction"))
+        return InlineCommandIntent::EditorAction;
+    return InlineCommandIntent::SemanticCompletion;
+}
+
+QList<InlineCommandDescriptor> inlineDescriptorsForSurface(
+    ActionSurface surface,
+    const QString& intentKey = QString())
 {
     QList<InlineCommandDescriptor> result;
-    for (const InlineCommandDescriptor& item : semanticDescriptors()) {
-        InlineCommandDescriptor next = item;
-        next.prefix = QStringLiteral(";%1").arg(item.prefix);
-        next.intent = InlineCommandIntent::CodeTemplate;
-        next.label = QStringLiteral(";%1").arg(item.label);
-        if (next.label == QStringLiteral(";;m")) {
-            next.description = QStringLiteral("module template");
-            next.defaultValue = QStringLiteral("`timescale 1ns / 1ps\n"
-                                               "module name(\n"
-                                               ");\n"
-                                               "endmodule");
+    for (const ActionDescriptor* action :
+         actionDescriptorsForSurface(surface)) {
+        if (!action)
+            continue;
+        for (const ActionAliasDescriptor& actionAlias :
+             action->aliases) {
+            if (actionAlias.surface != surface
+                || !actionAlias.triggerAdapter
+                || (!intentKey.isEmpty()
+                    && actionAlias.intentKey != intentKey)) {
+                continue;
+            }
+            InlineCommandDescriptor item =
+                descriptor(actionAlias.token + QLatin1Char(' '),
+                           inlineIntentForAlias(actionAlias),
+                           completionKindForAdapterKey(
+                               actionAlias.adapterKey),
+                           actionAlias.token,
+                           actionAlias.description.isEmpty()
+                               ? action->description
+                               : actionAlias.description,
+                           actionAlias.defaultValue);
+            item.actionId = action->id;
+            item.executionRoute = action->executionRoute;
+            result.append(item);
         }
-        result.append(next);
     }
     return result;
-}
-
-QList<InlineCommandDescriptor> headerIncludeDescriptors()
-{
-    return {
-        descriptor(QStringLiteral(";h "),
-                   InlineCommandIntent::HeaderInclude,
-                   CompletionCommandKind::User,
-                   QStringLiteral(";h"),
-                   QStringLiteral("header includes"),
-                   QStringLiteral("`include \"...\""))
-    };
-}
-
-QList<InlineCommandDescriptor> packageImportDescriptors()
-{
-    return {
-        descriptor(QStringLiteral(";pk "),
-                   InlineCommandIntent::PackageImport,
-                   CompletionCommandKind::Package,
-                   QStringLiteral(";pk"),
-                   QStringLiteral("package imports"),
-                   QStringLiteral("import package_name::*;"))
-    };
-}
-
-QList<InlineCommandDescriptor> actionDescriptors()
-{
-    return {};
 }
 
 bool isHelpToken(const QString& token, InlineCommandIntent* intent)
@@ -259,11 +286,22 @@ bool isHelpToken(const QString& token, InlineCommandIntent* intent)
 
 QList<InlineCommandDescriptor> InlineCommandMode::descriptors()
 {
-    QList<InlineCommandDescriptor> result = semanticDescriptors();
-    result.append(templateDescriptors());
-    result.append(headerIncludeDescriptors());
-    result.append(packageImportDescriptors());
-    result.append(actionDescriptors());
+    QList<InlineCommandDescriptor> result =
+        inlineDescriptorsForSurface(
+            ActionSurface::InlineSemantic,
+            QStringLiteral("semantic"));
+    result.append(
+        inlineDescriptorsForSurface(
+            ActionSurface::InlineTemplate,
+            QStringLiteral("template")));
+    result.append(
+        inlineDescriptorsForSurface(
+            ActionSurface::InlineSemantic,
+            QStringLiteral("headerInclude")));
+    result.append(
+        inlineDescriptorsForSurface(
+            ActionSurface::InlineSemantic,
+            QStringLiteral("packageImport")));
     return result;
 }
 
@@ -321,12 +359,26 @@ InlineCommandMatch InlineCommandMode::matchAbbreviationBeforeCursor(
         candidate.endPosition = textBeforeCursor.size();
         candidate.commandToken = helpToken;
         candidate.input = QStringLiteral("?");
-        candidate.descriptor = descriptor(helpToken,
-                                          helpIntent,
-                                          CompletionCommandKind::User,
-                                          helpToken,
-                                          QStringLiteral("inline command help"),
-                                          helpToken);
+        const ActionSurface helpSurface =
+            helpIntent == InlineCommandIntent::CodeTemplate
+            ? ActionSurface::InlineTemplate
+            : ActionSurface::InlineSemantic;
+        const ActionDescriptor* helpAction =
+            findActionByAlias(helpSurface, helpToken);
+        candidate.descriptor =
+            descriptor(helpToken,
+                       helpIntent,
+                       CompletionCommandKind::User,
+                       helpToken,
+                       helpAction ? helpAction->description
+                                  : QStringLiteral(
+                                        "inline command help"),
+                       helpToken);
+        if (helpAction) {
+            candidate.descriptor.actionId = helpAction->id;
+            candidate.descriptor.executionRoute =
+                helpAction->executionRoute;
+        }
         considerInlineMatch(result, candidate);
     }
 

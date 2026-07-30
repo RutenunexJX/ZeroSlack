@@ -12,10 +12,7 @@ QList<SemanticSymbolRecord> CompletionSemanticQuery::commandSymbolRecords(
     const bool directModuleContext =
         completionCommandKindRequiresModuleContext(query.commandKind);
 
-    if (directModuleContext) {
-        if (query.moduleName.isEmpty())
-            return {};
-
+    if (directModuleContext && !query.moduleName.isEmpty()) {
         semanticIndex->refreshStructTypedefEnumForFile(
             query.fileName, query.documentText);
 
@@ -25,10 +22,13 @@ QList<SemanticSymbolRecord> CompletionSemanticQuery::commandSymbolRecords(
             query.commandKind,
             query.prefix);
     }
+    if (directModuleContext && query.packageName.isEmpty())
+        return {};
 
     SemanticQueryContext context;
     context.fileName = query.fileName;
     context.moduleName = query.moduleName;
+    context.packageName = query.packageName;
     context.prefix = query.prefix;
     context.cursorLine = query.cursorLine;
     context.cursorPosition = query.cursorPosition;

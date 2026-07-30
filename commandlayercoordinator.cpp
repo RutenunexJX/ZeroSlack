@@ -582,18 +582,21 @@ void CommandLayerPanel::showSearch(
 }
 
 void CommandLayerPanel::showHelp(
-    const QList<CommandLayerCommandMetadata>& commands,
+    const QList<ActionCatalogEntry>& entries,
     QWidget* anchor)
 {
-    titleLabel->setText(QStringLiteral("COMMAND LAYER HELP"));
+    titleLabel->setText(QStringLiteral("ACTION CATALOG"));
     queryLabel->setText(
-        QStringLiteral("Enter, Esc, or a command key returns to search; "
-                       "release F24 to return to the editor."));
+        QStringLiteral(
+            "All registered actions and aliases. Enter, Esc, or a command key "
+            "returns to F24 search; release F24 to return to the editor."));
     candidateList->clear();
-    for (const CommandLayerCommandMetadata& command : commands) {
+    for (const ActionCatalogEntry& entry : entries) {
         candidateList->addItem(
-            QStringLiteral("%1  —  %2")
-                .arg(command.name, command.description));
+            QStringLiteral("%1 | %2")
+                .arg(entry.canonicalName, entry.displayText));
+        candidateList->item(candidateList->count() - 1)
+            ->setData(Qt::UserRole, entry.actionId);
     }
     candidateList->clearSelection();
     candidateList->setCurrentRow(-1);
@@ -777,7 +780,7 @@ bool CommandLayerCoordinator::handleApplicationEvent(QObject* watched,
         && panel && panel->isVisible()
         && watched == (anchor ? anchor->window() : nullptr)) {
         if (phase == Phase::Help) {
-            panel->showHelp(commandLayerCommandRegistry(), anchor);
+            panel->showHelp(unifiedActionCatalog(), anchor);
         } else if (phase == Phase::Search) {
             panel->showSearch(queryText,
                               matches,
@@ -854,6 +857,8 @@ bool CommandLayerCoordinator::handleF24Event(QKeyEvent* event)
     MyCodeEditor* editor = currentEditorForLocalCommand();
     if (!editor)
         return false;
+    editor->exitInteractionModes(
+        EditorModeExitReason::ExternalControl);
     lastEditor = editor;
     f24Held = true;
     enterSearch();
@@ -1035,7 +1040,7 @@ void CommandLayerCoordinator::showHelp()
     matches.clear();
     selectedMatch = 0;
     if (panel)
-        panel->showHelp(commandLayerCommandRegistry(), anchor);
+        panel->showHelp(unifiedActionCatalog(), anchor);
 }
 
 void CommandLayerCoordinator::moveSelection(int delta)

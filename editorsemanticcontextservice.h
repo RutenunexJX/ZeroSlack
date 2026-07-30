@@ -16,6 +16,7 @@
 struct EditorSemanticContext {
     QString fileName;
     QString moduleName;
+    QString packageName;
     QString documentText;
     QString lineText;
     QString lineUpToCursor;
