@@ -3,26 +3,19 @@
 #include "definitionservice.h"
 #include "formatterservice.h"
 #include "hierarchyservice.h"
-#include "mycodeeditor.h"
 #include "saferenameservice.h"
-#include "tabmanager.h"
 #include "tsdocument.h"
-
-#include <rtledit/text_edit.h>
+#include "workspaceedittransactionservice.h"
 
 #include <QByteArray>
 #include <QDir>
-#include <QFile>
 #include <QFileInfo>
 #include <QHash>
 #include <QMap>
 #include <QSet>
-#include <QTextCursor>
-#include <QTextStream>
 
 #include <algorithm>
 #include <cstdint>
-#include <limits>
 #include <memory>
 #include <optional>
 #include <string>
@@ -620,169 +613,6 @@ bool fileReadOnly(const QString& fileName)
 
 } // namespace
 
-ZeroSlackWorkspaceDocumentManager::ZeroSlackWorkspaceDocumentManager(
-    TabManager* tabManager)
-    : tabs(tabManager)
-{
-}
-
-std::optional<rtledit::WorkspaceDocumentSnapshot>
-ZeroSlackWorkspaceDocumentManager::snapshot(
-    const std::string& filePath) const
-{
-    const QString fileName =
-        normalizedFileName(fromUtf8String(filePath));
-    if (fileName.isEmpty())
-        return std::nullopt;
-
-    if (tabs && tabs->getDocumentModel()) {
-        DocumentModel* model = tabs->getDocumentModel();
-        if (MyCodeEditor* editor = model->editorForFile(fileName)) {
-            const DocumentSnapshot metadata =
-                model->cachedDocumentForFile(fileName);
-            return rtledit::WorkspaceDocumentSnapshot{
-                {static_cast<std::uint64_t>(
-                    qMax(0, metadata.textVersion))},
-                utf8String(editor->cachedDocumentText())};
-        }
-    }
-
-    QFile file(fileName);
-    if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
-        return std::nullopt;
-    QTextStream stream(&file);
-    const QString text = stream.readAll();
-    return rtledit::WorkspaceDocumentSnapshot{
-        {0}, utf8String(text)};
-}
-
-bool ZeroSlackWorkspaceDocumentManager::applyTextEdits(
-    const std::string& filePath,
-    rtledit::DocumentVersion expectedVersion,
-    const std::vector<rtledit::WorkspaceTextEdit>& edits)
-{
-    if (!tabs)
-        return false;
-    const QString fileName =
-        normalizedFileName(fromUtf8String(filePath));
-    if (fileName.isEmpty() || fileReadOnly(fileName))
-        return false;
-    DocumentModel* model = tabs->getDocumentModel();
-    if (!model)
-        return false;
-    MyCodeEditor* editor = model->editorForFile(fileName);
-    if (!editor) {
-        if (!tabs->openFileInTab(fileName))
-            return false;
-        editor = model->editorForFile(fileName);
-    }
-    if (!editor || editor->isReadOnly())
-        return false;
-
-    const DocumentSnapshot metadata =
-        model->cachedDocumentForFile(fileName);
-    if (static_cast<std::uint64_t>(
-            qMax(0, metadata.textVersion))
-        != expectedVersion.value) {
-        return false;
-    }
-
-    const QString beforeText = editor->cachedDocumentText();
-    const std::string before = utf8String(beforeText);
-    struct QtEdit {
-        int start = 0;
-        int end = 0;
-        QString replacement;
-    };
-    QList<QtEdit> qtEdits;
-    qtEdits.reserve(static_cast<qsizetype>(edits.size()));
-    for (const auto& edit : edits) {
-        const auto offsets =
-            rtledit::rangeToOffsets(before, edit.range);
-        if (!offsets
-            || offsets->start
-                > static_cast<std::size_t>(
-                    std::numeric_limits<qsizetype>::max())
-            || offsets->end
-                > static_cast<std::size_t>(
-                    std::numeric_limits<qsizetype>::max())) {
-            return false;
-        }
-        const QByteArray startBytes(
-            before.data(), static_cast<qsizetype>(offsets->start));
-        const QByteArray endBytes(
-            before.data(), static_cast<qsizetype>(offsets->end));
-        const QString startPrefix = QString::fromUtf8(startBytes);
-        const QString endPrefix = QString::fromUtf8(endBytes);
-        if (startPrefix.toUtf8().size()
-                != static_cast<qsizetype>(offsets->start)
-            || endPrefix.toUtf8().size()
-                != static_cast<qsizetype>(offsets->end)) {
-            return false;
-        }
-        qtEdits.append(QtEdit{
-            startPrefix.size(), endPrefix.size(),
-            fromUtf8String(edit.newText)});
-    }
-
-    const auto expectedAfter =
-        rtledit::applyTextEditsToString(before, edits);
-    if (!expectedAfter)
-        return false;
-
-    {
-        auto transaction =
-            editor->beginSynchronousEditTransaction();
-        QTextCursor cursor(editor->document());
-        cursor.beginEditBlock();
-        for (const QtEdit& edit : std::as_const(qtEdits)) {
-            cursor.setPosition(edit.start);
-            cursor.setPosition(edit.end,
-                               QTextCursor::KeepAnchor);
-            cursor.insertText(edit.replacement);
-        }
-        cursor.endEditBlock();
-    }
-    tabs->updateTabTitle(editor);
-    return editor->cachedDocumentText()
-        == fromUtf8String(*expectedAfter);
-}
-
-bool ZeroSlackWorkspaceDocumentManager::restoreSnapshot(
-    const std::string& filePath,
-    const rtledit::WorkspaceDocumentSnapshot& snapshot)
-{
-    if (!tabs)
-        return false;
-    const QString fileName =
-        normalizedFileName(fromUtf8String(filePath));
-    DocumentModel* model = tabs->getDocumentModel();
-    if (fileName.isEmpty() || !model)
-        return false;
-    MyCodeEditor* editor = model->editorForFile(fileName);
-    if (!editor) {
-        if (!tabs->openFileInTab(fileName))
-            return false;
-        editor = model->editorForFile(fileName);
-    }
-    if (!editor || editor->isReadOnly())
-        return false;
-    const QString restored = fromUtf8String(snapshot.text);
-    if (editor->cachedDocumentText() == restored)
-        return true;
-    {
-        auto transaction =
-            editor->beginSynchronousEditTransaction();
-        QTextCursor cursor(editor->document());
-        cursor.beginEditBlock();
-        cursor.select(QTextCursor::Document);
-        cursor.insertText(restored);
-        cursor.endEditBlock();
-    }
-    tabs->updateTabTitle(editor);
-    return editor->cachedDocumentText() == restored;
-}
-
 ExposeSignalToTopService::ExposeSignalToTopService(
     SemanticIndex* semanticIndex,
     HierarchyService* hierarchyService)
@@ -994,16 +824,24 @@ ExposeSignalToTopReport ExposeSignalToTopService::plan(
                 == query.context.hierarchyInstance.instancePath) {
             selectedNodes.append(node);
         }
-        if (node.inSelectedTop && node.isTop
-            && node.rootModule == activeTop)
+        if (!node.inSelectedTop)
+            continue;
+        if (!query.targetAncestorInstancePath.isEmpty()) {
+            if (node.instancePath
+                == query.targetAncestorInstancePath) {
+                targetNodes.append(node);
+            }
+        } else if (node.isTop
+                   && node.rootModule == activeTop) {
             targetNodes.append(node);
+        }
     }
     if (selectedNodes.size() != 1
         || targetNodes.size() != 1) {
         return rejected(
             rtledit::ExposeSignalFailureReason::AmbiguousHierarchy,
             QStringLiteral(
-                "The selected instance or active top is not unique."));
+                "The selected instance or target ancestor is not unique."));
     }
     const DesignHierarchyNode sourceNode =
         selectedNodes.constFirst();
@@ -1589,12 +1427,13 @@ ExposeSignalToTopReport ExposeSignalToTopService::plan(
             utf8String(formatted.formattedText);
     }
 
-    report.sourceDiff =
-        rtledit::buildWorkspaceEditSourceDiff(
+    report.transaction =
+        WorkspaceEditTransactionService::getInstance()->prepare(
             report.planResult.plan.workspaceEdit,
             rtledit::SemanticIndexSnapshot{
                 std::to_string(design.snapshotGeneration)},
             documentManager);
+    report.sourceDiff = report.transaction.sourceDiff;
     if (!report.sourceDiff.built()) {
         rejectInto(
             &report,
@@ -1628,13 +1467,15 @@ ExposeSignalToTopApplyReport ExposeSignalToTopService::apply(
     }
     const std::uint64_t generation =
         semanticIndex()->snapshotRevision();
-    result.result = rtledit::applyWorkspaceEditPlan(
-        report.planResult.plan.workspaceEdit,
-        rtledit::SemanticIndexSnapshot{
-            std::to_string(generation)},
-        documents);
-    result.message = fromUtf8String(
-        rtledit::renderWorkspaceEditPlanApplyResult(
-            result.result));
+    result.transactionResult =
+        WorkspaceEditTransactionService::getInstance()
+            ->applyConfirmed(
+                report.transaction,
+                rtledit::SemanticIndexSnapshot{
+                    std::to_string(generation)},
+                documents);
+    result.result = result.transactionResult.applyResult;
+    result.message =
+        fromUtf8String(result.transactionResult.message);
     return result;
 }

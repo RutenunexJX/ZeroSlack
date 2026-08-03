@@ -159,6 +159,22 @@ int main(int argc, char* argv[])
         QString());
     configuration.topModule =
         QStringLiteral("portable_top");
+    configuration.virtualSourceGroups = {
+        WorkspaceVirtualSourceGroup{
+            QStringLiteral(" RTL "),
+            {topA, topA,
+             QDir(shared).absoluteFilePath(
+                 QStringLiteral("external.sv"))}},
+        WorkspaceVirtualSourceGroup{
+            QStringLiteral("Headers"),
+            {helperA}},
+        WorkspaceVirtualSourceGroup{
+            QStringLiteral("rtl"),
+            {helperA}},
+        WorkspaceVirtualSourceGroup{
+            QStringLiteral("   "),
+            {topA}},
+    };
 
     check(projectService.save(configuration),
           "portable project configuration saves");
@@ -197,7 +213,27 @@ int main(int argc, char* argv[])
             !QFileInfo(value.toString()).isAbsolute()
             && allProjectPathsRelative;
     }
+    const QJsonArray sourceGroups =
+        projectObject.value(
+            QStringLiteral(
+                "virtualSourceGroups"))
+            .toArray();
+    bool allSourceGroupPathsRelative = true;
+    for (const QJsonValue& groupValue :
+         sourceGroups) {
+        for (const QJsonValue& fileValue :
+             groupValue.toObject()
+                 .value(QStringLiteral("files"))
+                 .toArray()) {
+            allSourceGroupPathsRelative =
+                !QFileInfo(
+                     fileValue.toString())
+                     .isAbsolute()
+                && allSourceGroupPathsRelative;
+        }
+    }
     check(allProjectPathsRelative
+              && allSourceGroupPathsRelative
               && includeDirs.contains(
                   QStringLiteral("."))
               && includeDirs.contains(
@@ -205,6 +241,26 @@ int main(int argc, char* argv[])
               && includeDirs.contains(
                   QStringLiteral("../shared")),
           "every project path is stored relatively");
+    check(sourceGroups.size() == 2
+              && sourceGroups.at(0)
+                     .toObject()
+                     .value(QStringLiteral("name"))
+                     .toString()
+                     == QStringLiteral("RTL")
+              && sourceGroups.at(0)
+                     .toObject()
+                     .value(QStringLiteral("files"))
+                     .toArray()
+                     == QJsonArray{
+                         QStringLiteral("rtl/top.sv")}
+              && sourceGroups.at(1)
+                     .toObject()
+                     .value(QStringLiteral("files"))
+                     .toArray()
+                     == QJsonArray{
+                         QStringLiteral(
+                             "rtl/helper.svh")},
+          "virtual source groups normalize names, paths, duplicates, and workspace scope");
 
     const QString projectB =
         WorkspaceConfigurationService::projectFilePath(
@@ -237,7 +293,17 @@ int main(int argc, char* argv[])
                                      QStringLiteral(
                                          "generated")))}
               && movedLoad.configuration.topModule
-                     == QStringLiteral("portable_top"),
+                     == QStringLiteral("portable_top")
+              && movedLoad.configuration
+                     .virtualSourceGroups
+                     == QList<
+                         WorkspaceVirtualSourceGroup>{
+                         WorkspaceVirtualSourceGroup{
+                             QStringLiteral("RTL"),
+                             {topB}},
+                         WorkspaceVirtualSourceGroup{
+                             QStringLiteral("Headers"),
+                             {helperB}}},
           "moved workspace rebuilds absolute config from relatives");
 
     WorkspaceSessionStateService sessionService(localStore);
@@ -245,14 +311,42 @@ int main(int argc, char* argv[])
     sessionA.workspaceRoot = workspaceA;
     sessionA.tabs = {
         WorkspaceSessionTabState{
-            topA, 7, 9, 23, true},
+            topA, 7, 9, 23, 41, true},
         WorkspaceSessionTabState{
-            helperA, 2, 3, 4, false},
+            helperA, 2, 3, 4, 6, false},
     };
+    sessionA.tabs[0].viewId =
+        QStringLiteral("view-top-a");
+    sessionA.tabs[0].groupIndex = 1;
+    sessionA.tabs[0].tabIndex = 2;
+    sessionA.tabs[0].locked = true;
     sessionA.ui.mainWindowGeometry =
         QByteArrayLiteral("geometry-a");
     sessionA.ui.mainWindowState =
         QByteArrayLiteral("dock-state-a");
+    sessionA.ui.navigationFilesQuery =
+        QStringLiteral("top");
+    sessionA.ui.navigationDesignQuery =
+        QStringLiteral("u_stage");
+    sessionA.ui.tabGroupingMode =
+        QStringLiteral("module");
+    sessionA.ui.panelLayout.bottomPanelOrder = {
+        QStringLiteral("problems"),
+        QStringLiteral("activity"),
+        QStringLiteral("wavePreview"),
+    };
+    sessionA.ui.panelLayout.closedBottomPanels = {
+        QStringLiteral("activity"),
+    };
+    sessionA.ui.panelLayout.pinnedBottomPanels = {
+        QStringLiteral("problems"),
+    };
+    sessionA.ui.panelLayout.activeBottomPanel =
+        QStringLiteral("problems");
+    sessionA.ui.panelLayout.expandedBottomHeight = 312;
+    sessionA.ui.panelLayout.bottomCollapsed = true;
+    sessionA.ui.panelLayout.navigationVisible = false;
+    sessionA.ui.panelLayout.valid = true;
     sessionA.scannedFiles = {topA, helperA};
     sessionA.scanComplete = true;
     const QByteArray projectDigestBeforeSession =
@@ -288,9 +382,34 @@ int main(int argc, char* argv[])
                      == cleanPath(topA)
               && loadA.state.tabs.first().cursorLine
                      == 7
+              && loadA.state.tabs.first().verticalScrollValue == 23
+              && loadA.state.tabs.first().horizontalScrollValue == 41
+              && loadA.state.tabs.first().viewId
+                     == QStringLiteral("view-top-a")
+              && loadA.state.tabs.first().groupIndex == 1
+              && loadA.state.tabs.first().tabIndex == 2
+              && loadA.state.tabs.first().locked
               && loadA.state.ui.mainWindowState
                      == QByteArrayLiteral(
                          "dock-state-a")
+              && loadA.state.ui.navigationFilesQuery
+                     == QStringLiteral("top")
+              && loadA.state.ui.navigationDesignQuery
+                     == QStringLiteral("u_stage")
+              && loadA.state.ui.tabGroupingMode
+                     == QStringLiteral("module")
+              && loadA.state.ui.panelLayout.valid
+              && loadA.state.ui.panelLayout.bottomPanelOrder
+                     == sessionA.ui.panelLayout.bottomPanelOrder
+              && loadA.state.ui.panelLayout.closedBottomPanels
+                     == sessionA.ui.panelLayout.closedBottomPanels
+              && loadA.state.ui.panelLayout.pinnedBottomPanels
+                     == sessionA.ui.panelLayout.pinnedBottomPanels
+              && loadA.state.ui.panelLayout.activeBottomPanel
+                     == QStringLiteral("problems")
+              && loadA.state.ui.panelLayout.expandedBottomHeight == 312
+              && loadA.state.ui.panelLayout.bottomCollapsed
+              && !loadA.state.ui.panelLayout.navigationVisible
               && loadA.state.scannedFiles
                      == QStringList{
                          cleanPath(helperA),
@@ -302,7 +421,7 @@ int main(int argc, char* argv[])
     sessionB.workspaceRoot = workspaceB;
     sessionB.tabs = {
         WorkspaceSessionTabState{
-            topB, 3, 4, 5, true},
+            topB, 3, 4, 5, 8, true},
     };
     sessionB.ui.mainWindowGeometry =
         QByteArrayLiteral("geometry-b");

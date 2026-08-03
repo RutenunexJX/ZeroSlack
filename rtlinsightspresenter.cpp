@@ -22,6 +22,7 @@
 #include <QPushButton>
 #include <QSignalBlocker>
 #include <QSpinBox>
+#include <QToolButton>
 #include <QTreeWidget>
 
 #include <exception>
@@ -748,6 +749,24 @@ RtlInsightsPresenter::RtlInsightsPresenter(
 }
 void RtlInsightsPresenter::refresh()
 {
+    if (state.currentGraphMode
+            == QStringLiteral("state-transition")) {
+        showStateTransitionGraphForSignal(
+            state.currentFileName,
+            state.currentModuleName,
+            state.currentSignalName);
+        return;
+    }
+    if (state.currentGraphMode
+            == QStringLiteral("fsm")) {
+        showFsmGraph();
+        return;
+    }
+    if (state.currentGraphMode
+            == QStringLiteral("module-block")) {
+        showModuleBlockDiagram();
+        return;
+    }
     showModuleBrief();
 }
 
@@ -1132,10 +1151,136 @@ void RtlInsightsPresenter::updateModuleContext(
     const QString& moduleName,
     const QString& signalName)
 {
+    RtlInsightSourceLocation location;
+    location.fileName = fileName;
+    location.moduleName = moduleName;
+    location.symbolName = signalName;
+    syncSourceLocation(location);
+}
+
+bool RtlInsightsPresenter::syncSourceLocation(
+    const RtlInsightSourceLocation& sourceLocation)
+{
+    RtlInsightSourceLocation location = sourceLocation;
+    const bool sameContext =
+        QString::compare(
+            QDir::cleanPath(QFileInfo(location.fileName)
+                                .absoluteFilePath()),
+            QDir::cleanPath(QFileInfo(state.currentFileName)
+                                .absoluteFilePath()),
+            Qt::CaseInsensitive)
+            == 0
+        && location.moduleName == state.currentModuleName
+        && (location.instancePath.isEmpty()
+            || state.currentSourceLocation
+                   .instancePath.isEmpty()
+            || location.instancePath
+                   == state.currentSourceLocation
+                          .instancePath);
+    if (sameContext) {
+        if (location.workspacePath.isEmpty()) {
+            location.workspacePath =
+                state.currentSourceLocation.workspacePath;
+        }
+        if (location.activeTopModule.isEmpty()) {
+            location.activeTopModule =
+                state.currentSourceLocation.activeTopModule;
+        }
+        if (location.instancePath.isEmpty()) {
+            location.instancePath =
+                state.currentSourceLocation.instancePath;
+        }
+    }
+
+    if (state.pinned) {
+        state.pendingSourceLocation = location;
+        state.hasPendingSourceLocation = true;
+        const bool selected =
+            graphController.selectSourceLocation(
+                location);
+        if (sameContext
+            && location.documentRevision != 0) {
+            state.currentSourceLocation.documentRevision =
+                location.documentRevision;
+        }
+        return selected;
+    }
+
+    state.hasPendingSourceLocation = false;
+    if (!state.currentGraphMode.isEmpty()
+        && graphController.selectSourceLocation(
+            location)) {
+        if (sameContext
+            && location.documentRevision != 0) {
+            state.currentSourceLocation.documentRevision =
+                location.documentRevision;
+        }
+        return true;
+    }
+    state.currentSourceLocation = location;
+    state.currentFileName = location.fileName;
+    state.currentModuleName = location.moduleName;
+    state.currentSignalName = location.symbolName;
+    if (sameContext
+        && !state.currentGraphMode.isEmpty()) {
+        updateActionState();
+        return false;
+    }
+    renderActionList();
+    return false;
+}
+
+void RtlInsightsPresenter::setPinned(bool pinned)
+{
+    if (state.pinned == pinned)
+        return;
+    state.pinned = pinned;
+    if (state.pinButton
+        && state.pinButton->isChecked() != pinned) {
+        const QSignalBlocker blocker(state.pinButton);
+        state.pinButton->setChecked(pinned);
+    }
+    if (state.pinButton) {
+        state.pinButton->setText(
+            pinned ? QStringLiteral("Pinned")
+                   : QStringLiteral("Pin"));
+    }
+    if (pinned || !state.hasPendingSourceLocation)
+        return;
+    const RtlInsightSourceLocation pending =
+        state.pendingSourceLocation;
+    state.hasPendingSourceLocation = false;
+    syncSourceLocation(pending);
+}
+
+bool RtlInsightsPresenter::isPinned() const
+{
+    return state.pinned;
+}
+
+void RtlInsightsPresenter::setContextDirect(
+    const QString& fileName,
+    const QString& moduleName,
+    const QString& signalName)
+{
+    const bool sameContext =
+        QString::compare(
+            QDir::cleanPath(QFileInfo(fileName)
+                                .absoluteFilePath()),
+            QDir::cleanPath(QFileInfo(state.currentFileName)
+                                .absoluteFilePath()),
+            Qt::CaseInsensitive)
+            == 0
+        && moduleName == state.currentModuleName;
+    if (!sameContext)
+        state.currentSourceLocation = {};
     state.currentFileName = fileName;
     state.currentModuleName = moduleName;
     state.currentSignalName = signalName;
-    renderActionList();
+    state.currentSourceLocation.fileName = fileName;
+    state.currentSourceLocation.moduleName = moduleName;
+    state.currentSourceLocation.symbolName = signalName;
+    state.hasPendingSourceLocation = false;
 }
 
 void RtlInsightsPresenter::showModuleInsights(
@@ -1143,7 +1288,8 @@ void RtlInsightsPresenter::showModuleInsights(
     const QString& moduleName,
     const QString& signalName)
 {
-    updateModuleContext(fileName, moduleName, signalName);
+    setContextDirect(fileName, moduleName, signalName);
+    renderActionList();
     if (state.insightsDock) {
         if (!state.insightsDock->property(
                  "insightFocusActive").toBool()) {
@@ -1158,7 +1304,7 @@ void RtlInsightsPresenter::showStateTransitionGraphForSignal(
     const QString& moduleName,
     const QString& signalName)
 {
-    updateModuleContext(fileName, moduleName, signalName);
+    setContextDirect(fileName, moduleName, signalName);
     if (!state.insightsGraphScene)
         return;
 
@@ -1217,7 +1363,7 @@ void RtlInsightsPresenter::showSignalUsageHotspotForSignal(
     const QString& signalName,
     const QString& signalAccessPath)
 {
-    updateModuleContext(fileName, moduleName, signalName);
+    setContextDirect(fileName, moduleName, signalName);
     graphController.showHotspotSurface();
     if (!state.signalUsageHotspotPanel)
         return;
@@ -1243,7 +1389,7 @@ void RtlInsightsPresenter::showModuleBlockDiagramForModule(
     const QString& fileName,
     const QString& moduleName)
 {
-    updateModuleContext(fileName, moduleName);
+    setContextDirect(fileName, moduleName, {});
     showModuleBlockDiagram();
 }
 

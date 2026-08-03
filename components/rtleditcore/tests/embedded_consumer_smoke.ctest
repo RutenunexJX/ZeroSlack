@@ -15,6 +15,7 @@ set(expected_public_headers
     semantic_object.h
     text_edit.h
     workspace_document_manager.h
+    workspace_edit_transaction.h
 )
 
 file(GLOB_RECURSE actual_public_headers

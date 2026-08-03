@@ -2,6 +2,7 @@
 #define NAVIGATIONPANECOORDINATOR_H
 
 #include <QDockWidget>
+#include <QString>
 
 class NavigationManager;
 class NavigationWidget;
@@ -21,6 +22,10 @@ public:
     void showFiles();
     void showDesign();
     void showSearch();
+    QString filesSearchQuery() const;
+    QString designSearchQuery() const;
+    void setSearchQueries(const QString& filesQuery,
+                          const QString& designQuery);
 
     QDockWidget* dock() const { return navigationDock; }
 

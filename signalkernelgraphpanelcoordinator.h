@@ -1,6 +1,7 @@
 #ifndef SIGNALKERNELGRAPHPANELCOORDINATOR_H
 #define SIGNALKERNELGRAPHPANELCOORDINATOR_H
 
+#include "graphexportservice.h"
 #include "signalkernelgraphservice.h"
 
 #include <QDockWidget>
@@ -12,6 +13,7 @@
 
 class DocumentModel;
 class EditorHoverPopup;
+class QAction;
 class QCheckBox;
 class QLabel;
 class QLineEdit;
@@ -42,6 +44,11 @@ public:
     QString focusSearchText() const;
     void focusInspector();
 
+    GraphExportResult exportGraph(
+        const QString& outputPath,
+        const GraphExportOptions& options = {}) const;
+    QAction* graphExportAction() const { return exportAction; }
+
     QDockWidget* dock() const { return graphDock; }
     QGraphicsView* view() const { return graphView; }
     void renderReportForTest(const SignalKernelGraphReport& report);
@@ -64,6 +71,7 @@ private:
     QCheckBox* showInputsCheck = nullptr;
     QCheckBox* showOutputsCheck = nullptr;
     QCheckBox* crossModuleOnlyCheck = nullptr;
+    QAction* exportAction = nullptr;
     QGraphicsView* graphView = nullptr;
     QGraphicsScene* graphScene = nullptr;
     EditorHoverPopup* hoverPopup = nullptr;

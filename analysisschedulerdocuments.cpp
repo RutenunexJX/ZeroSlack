@@ -183,6 +183,21 @@ void AnalysisScheduler::requestSemanticAnalysis(
     if (!project.isOpen() || project.systemVerilogFiles.isEmpty())
         return;
 
+    if (!semanticRuntimePolicy.enabled) {
+        stabilizeSemanticStatesWhenDisabled();
+        SemanticAnalysisTelemetry telemetry;
+        telemetry.stage = SemanticAnalysisStage::Scheduling;
+        telemetry.reason = reason;
+        telemetry.impact = impactHint;
+        telemetry.files = project.systemVerilogFiles;
+        telemetry.changedFiles = changedFiles;
+        telemetry.detail = QStringLiteral(
+            "suppressed reason=%1 policy=disabled")
+                               .arg(semanticAnalysisReasonName(reason));
+        emit semanticAnalysisTelemetry(telemetry);
+        return;
+    }
+
     if (reason == SemanticAnalysisReason::WorkspaceOpen
         || reason == SemanticAnalysisReason::WorkspaceConfiguration
         || reason == SemanticAnalysisReason::ExplicitRequest) {
@@ -235,6 +250,7 @@ void AnalysisScheduler::requestSemanticAnalysis(
     }
     request.expectedSnapshotRevision =
         SemanticIndex::getInstance()->snapshotRevision();
+    request.runtimePolicy = semanticRuntimePolicy;
 
     if (documentModel) {
         for (const DocumentSnapshot& snapshot :
@@ -711,5 +727,34 @@ void AnalysisScheduler::acknowledgePublishedCleanSemanticChanges(
             SemanticIndex::getInstance()->getCachedFileContent(fileName);
         if (!publishedText.isNull() && publishedText == pending->text)
             pendingCleanSemanticChanges.erase(pending);
+    }
+}
+
+void AnalysisScheduler::stabilizeSemanticStatesWhenDisabled()
+{
+    if (!documentModel)
+        return;
+    for (const DocumentSnapshot& snapshot :
+         documentModel->cachedOpenDocuments()) {
+        const DocumentSemanticStatus current =
+            semanticStatus(snapshot.fileName);
+        if (snapshot.dirty) {
+            setDocumentSemanticState(
+                snapshot.fileName,
+                DocumentSemanticState::Dirty,
+                static_cast<std::uint64_t>(snapshot.textVersion),
+                current.analysisGeneration);
+            continue;
+        }
+        const QString indexedText =
+            SemanticIndex::getInstance()->getCachedFileContent(
+                snapshot.fileName);
+        setDocumentSemanticState(
+            snapshot.fileName,
+            !indexedText.isNull() && indexedText == snapshot.text
+                ? DocumentSemanticState::Current
+                : DocumentSemanticState::Stale,
+            static_cast<std::uint64_t>(snapshot.textVersion),
+            current.analysisGeneration);
     }
 }

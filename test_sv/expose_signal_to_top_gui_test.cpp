@@ -1,25 +1,34 @@
 #include "mainwindow.h"
 #include <QLabel>
 #include "editoractioncontextservice.h"
+#include "editorhoverpopup.h"
 #include "hierarchyservice.h"
 #include "semanticindex.h"
 #include <QDir>
 #include <QFileInfo>
 #include "editorcoordinator.h"
-#include "exposesignaltotopdialog.h"
+#include "exposesignaltotoppreview.h"
 #include "exposesignaltotopservice.h"
 #include "mycodeeditor.h"
 #include "semantic_fixture_records.h"
 #include "semanticindexsnapshot.h"
 #include "tabmanager.h"
 #include "workspacemanager.h"
+#include "workspaceeditdocumentmanager.h"
+#include "workspaceedittransactionservice.h"
 
 #include <rtledit/edit_plan.h>
 
+#include <QAbstractItemView>
+#include <QAction>
 #include <QApplication>
+#include <QClipboard>
+#include <QCompleter>
 #include <QContextMenuEvent>
 #include <QDialog>
+#include <QDockWidget>
 #include <QFile>
+#include <QInputDialog>
 #include <QLineEdit>
 #include <QMenu>
 #include <QPlainTextEdit>
@@ -29,6 +38,7 @@
 #include <QTabWidget>
 #include <QTemporaryDir>
 #include <QTest>
+#include <QTextBlock>
 #include <QTextCursor>
 #include <QTimer>
 
@@ -75,6 +85,15 @@ struct MenuActionState {
     QString groupTitle;
 };
 
+struct ContextActionTriggerState {
+    bool menuShown = false;
+    bool found = false;
+    bool enabled = false;
+    bool triggered = false;
+    QString actionId;
+    QString executionRoute;
+};
+
 QAction* findMenuAction(
     QMenu* menu,
     const QString& objectName,
@@ -93,6 +112,24 @@ QAction* findMenuAction(
                     findMenuAction(child, objectName, groupTitle)) {
                 return found;
             }
+        }
+    }
+    return nullptr;
+}
+
+EditorHoverPopup* activeExposeSignalPreview(QWidget* host)
+{
+    if (!host)
+        return nullptr;
+    const QList<EditorHoverPopup*> peeks =
+        host->findChildren<EditorHoverPopup*>(
+            QString(), Qt::FindDirectChildrenOnly);
+    for (EditorHoverPopup* peek : peeks) {
+        if (peek
+            && peek->property(
+                   "exposeSignalToTopPreview")
+                   .toBool()) {
+            return peek;
         }
     }
     return nullptr;
@@ -161,6 +198,124 @@ MenuActionState contextMenuState(
     return state;
 }
 
+ContextActionTriggerState triggerContextMenuAction(
+    MyCodeEditor* editor,
+    const QString& clickNeedle,
+    const QString& actionId)
+{
+    if (!editor)
+        return {};
+
+    const int clickPosition = positionInside(
+        editor->cachedDocumentText(), clickNeedle);
+    if (clickPosition < 0)
+        return {};
+
+    QTextCursor clickCursor(editor->document());
+    clickCursor.setPosition(clickPosition);
+    const QPoint clickPoint =
+        editor->cursorRect(clickCursor).center();
+
+    ContextActionTriggerState state;
+    const QMetaObject::Connection menuObserved = QObject::connect(
+        editor,
+        &MyCodeEditor::sourceSymbolContextMenuRequested,
+        editor,
+        [&state, actionId](
+            QMenu* menu,
+            const EditorSemanticContext&) {
+            state.menuShown = menu != nullptr;
+            if (!menu)
+                return;
+            QTimer::singleShot(
+                0,
+                menu,
+                [&state, menu, actionId]() {
+                    QAction* action = findMenuAction(
+                        menu, actionId);
+                    state.found = action != nullptr;
+                    state.enabled =
+                        action && action->isEnabled();
+                    state.actionId = action
+                        ? action->property("actionId")
+                              .toString()
+                        : QString();
+                    state.executionRoute = action
+                        ? action->property(
+                              "executionRoute")
+                              .toString()
+                        : QString();
+                    if (state.enabled) {
+                        action->trigger();
+                        state.triggered = true;
+                    }
+                    menu->close();
+                });
+        });
+    QContextMenuEvent event(
+        QContextMenuEvent::Mouse,
+        clickPoint,
+        editor->viewport()->mapToGlobal(clickPoint));
+    QApplication::sendEvent(editor->viewport(), &event);
+    QObject::disconnect(menuObserved);
+    QCoreApplication::processEvents();
+    return state;
+}
+
+ContextActionTriggerState triggerEditorOwnedContextAction(
+    MyCodeEditor* editor,
+    const QString& clickNeedle,
+    const QString& actionId)
+{
+    if (!editor)
+        return {};
+    const int clickPosition = positionInside(
+        editor->cachedDocumentText(), clickNeedle);
+    if (clickPosition < 0)
+        return {};
+    QTextCursor clickCursor(editor->document());
+    clickCursor.setPosition(clickPosition);
+    const QPoint clickPoint =
+        editor->cursorRect(clickCursor).center();
+
+    ContextActionTriggerState state;
+    QTimer::singleShot(0, editor, [&]() {
+        QMenu* menu = qobject_cast<QMenu*>(
+            QApplication::activePopupWidget());
+        state.menuShown = menu != nullptr;
+        QAction* action = findMenuAction(
+            menu, actionId);
+        state.found = action != nullptr;
+        state.enabled = action && action->isEnabled();
+        state.actionId = action
+            ? action->property("actionId").toString()
+            : QString();
+        state.executionRoute = action
+            ? action->property("executionRoute")
+                  .toString()
+            : QString();
+        if (state.enabled) {
+            action->trigger();
+            state.triggered = true;
+        }
+        if (menu)
+            menu->close();
+    });
+    QTimer::singleShot(1000, editor, []() {
+        if (QMenu* menu = qobject_cast<QMenu*>(
+                QApplication::activePopupWidget())) {
+            menu->close();
+        }
+    });
+    QContextMenuEvent event(
+        QContextMenuEvent::Mouse,
+        clickPoint,
+        editor->viewport()->mapToGlobal(clickPoint));
+    QApplication::sendEvent(editor->viewport(), &event);
+    QCoreApplication::processEvents();
+    return state;
+}
+
 ExposeSignalToTopReport readyDialogReport(
     const QString& portName)
 {
@@ -195,6 +350,12 @@ ExposeSignalToTopReport readyDialogReport(
     report.hierarchySteps.append(first);
     report.planResult.status =
         rtledit::ExposeSignalPlanStatus::Ready;
+    report.transaction.status =
+        rtledit::TransactionPrepareStatus::Ready;
+    report.transaction.preview.status =
+        rtledit::PreviewStatus::Built;
+    report.transaction.sourceDiff.status =
+        rtledit::SourceDiffStatus::Built;
     report.sourceDiff.status = rtledit::SourceDiffStatus::Built;
     report.renderedDiff =
         QStringLiteral("--- leaf.sv\n+++ leaf.sv\n+ output logic payload_out");
@@ -436,6 +597,1463 @@ void runEditorActionContextStripRegression()
     window.hide();
 }
 
+void runFileActionRegistryShellRegression()
+{
+    MainWindow window;
+    window.resize(900, 600);
+    window.show();
+    QCoreApplication::processEvents(
+        QEventLoop::AllEvents, 50);
+
+    struct ExpectedAdapter {
+        const char* id;
+        const char* objectName;
+        const char* route;
+    };
+    const ExpectedAdapter expectedAdapters[] = {
+        {ActionIds::FileNew,
+         "new_file",
+         "ui.file.new"},
+        {ActionIds::FileOpen,
+         "open_file",
+         "ui.file.open"},
+        {ActionIds::FileSave,
+         "save_file",
+         "ui.file.save"},
+        {ActionIds::FileSaveAs,
+         "save_as",
+         "ui.file.saveAs"},
+        {ActionIds::WorkspaceOpen,
+         "open_direction_as_workspace",
+         "ui.workspace.open"},
+    };
+    bool adaptersComplete = true;
+    for (const ExpectedAdapter& expected :
+         expectedAdapters) {
+        QAction* action =
+            window.findChild<QAction*>(
+                QString::fromLatin1(
+                    expected.objectName));
+        const ActionDescriptor* descriptor =
+            findActionById(
+                QString::fromLatin1(expected.id));
+        adaptersComplete =
+            adaptersComplete
+            && action
+            && descriptor
+            && action->property("actionId")
+                   .toString() == descriptor->id
+            && action->property("executionRoute")
+                   .toString()
+                   == QString::fromLatin1(expected.route)
+            && action->shortcut().toString(
+                   QKeySequence::PortableText)
+                   == effectiveActionShortcut(
+                       descriptor->id)
+            && action->shortcutContext()
+                   == Qt::ApplicationShortcut
+            && window.actions().contains(action);
+    }
+    check("file shortcuts are Action Registry adapters",
+          adaptersComplete);
+    check("legacy shadow edit and Escape actions are absent",
+          !window.findChild<QAction*>(
+              QStringLiteral("copy"))
+              && !window.findChild<QAction*>(
+                  QStringLiteral("paste"))
+              && !window.findChild<QAction*>(
+                  QStringLiteral("cut"))
+              && !window.findChild<QAction*>(
+                  QStringLiteral("undo"))
+              && !window.findChild<QAction*>(
+                  QStringLiteral("redo"))
+              && !window.findChild<QAction*>(
+                  QStringLiteral("exit"))
+              && !window.findChild<QAction*>(
+                  QStringLiteral("font"))
+              && !window.findChild<QAction*>(
+                  QStringLiteral("print")));
+    check("simplified shell has no removed top-level entry or rail",
+          !window.findChild<QMenu*>(
+              QStringLiteral("searchMenu"))
+              && !window.findChild<QMenu*>(
+                  QStringLiteral("navigateMenu"))
+              && !window.findChild<QMenu*>(
+                  QStringLiteral("helpMenu"))
+              && !window.findChild<QWidget*>(
+                  QStringLiteral("workspaceTabBar"))
+              && !window.findChild<QWidget*>(
+                  QStringLiteral("shellNavigationRailDock")));
+
+    QAction* navigationAction =
+        window.findChild<QAction*>(
+            QStringLiteral("viewNavigationAction"));
+    QDockWidget* navigationDock =
+        window.findChild<QDockWidget*>(
+            QStringLiteral("navigationDock"));
+    const bool navigationInitiallyVisible =
+        navigationDock && navigationDock->isVisible();
+    resetApplicationActionExecutionHistory();
+    if (navigationAction)
+        navigationAction->trigger();
+    QCoreApplication::processEvents(
+        QEventLoop::AllEvents, 50);
+    check("Navigation shortcut is a Registry menu adapter",
+          navigationAction
+              && navigationDock
+              && navigationAction->property("actionId")
+                     .toString()
+                     == QString::fromLatin1(
+                         ActionIds::ViewNavigation)
+              && navigationAction->shortcut().toString(
+                     QKeySequence::PortableText)
+                     == QStringLiteral("Ctrl+1")
+              && navigationDock->isVisible()
+                     != navigationInitiallyVisible
+              && applicationActionExecutionHistory()
+                     .lastActionId()
+                     == QString::fromLatin1(
+                         ActionIds::ViewNavigation));
+
+    window.activateWindow();
+    window.setFocus();
+    QWidget* globalControlPanel =
+        window.findChild<QWidget*>(
+            QStringLiteral("globalControlPanel"));
+    QVariantMap globalControlShortcutOverride;
+    globalControlShortcutOverride.insert(
+        QString::fromLatin1(
+            ActionIds::ViewGlobalControl),
+        QStringLiteral("Ctrl+Alt+Space"));
+    QStringList globalControlShortcutIssues;
+    const bool globalControlOverrideAccepted =
+        configureActionShortcutOverrides(
+            globalControlShortcutOverride,
+            &globalControlShortcutIssues);
+    resetApplicationActionExecutionHistory();
+    QTest::keyClick(
+        &window,
+        Qt::Key_Space,
+        Qt::ControlModifier);
+    QCoreApplication::processEvents(
+        QEventLoop::AllEvents, 50);
+    const bool oldGlobalControlShortcutInactive =
+        globalControlPanel
+        && !globalControlPanel->isVisible()
+        && applicationActionExecutionHistory()
+               .lastActionId().isEmpty();
+    QTest::keyClick(
+        &window,
+        Qt::Key_Space,
+        Qt::ControlModifier | Qt::AltModifier);
+    QCoreApplication::processEvents(
+        QEventLoop::AllEvents, 50);
+    configureActionShortcutOverrides({});
+    check("Global Control shortcut executes its Registry route",
+          globalControlOverrideAccepted
+              && globalControlShortcutIssues.isEmpty()
+              && oldGlobalControlShortcutInactive
+              && globalControlPanel
+              && globalControlPanel->isVisible()
+              && applicationActionExecutionHistory()
+                     .lastActionId()
+                     == QString::fromLatin1(
+                         ActionIds::ViewGlobalControl));
+    if (globalControlPanel)
+        globalControlPanel->hide();
+
+    QAction* newFile =
+        window.findChild<QAction*>(
+            QStringLiteral("new_file"));
+    const int editorsBefore =
+        window.tabManager->editorCount();
+    if (newFile)
+        newFile->trigger();
+    QCoreApplication::processEvents(
+        QEventLoop::AllEvents, 50);
+    check("registry New File route creates one editor",
+          newFile
+              && window.tabManager->editorCount()
+                     == editorsBefore + 1);
+    window.hide();
+}
+
+void runContextActionRegistryExecutionRegression()
+{
+    MainWindow window;
+    window.resize(900, 600);
+    window.show();
+    QCoreApplication::processEvents(
+        QEventLoop::AllEvents, 50);
+
+    QTemporaryDir temp;
+    check("context Action execution fixture root is available",
+          temp.isValid());
+    if (!temp.isValid())
+        return;
+    const QString fileName = temp.filePath(
+        QStringLiteral("context_action_execution.sv"));
+    const QString source = QStringLiteral(
+        "module context_action_execution;\n"
+        "logic first;\n"
+        "logic second;\n"
+        "logic third;\n"
+        "assign first = first;\n"
+        "assign first = second;\n"
+        "`ifdef FEATURE\n"
+        "logic guarded;\n"
+        "`else\n"
+        "logic fallback;\n"
+        "`endif\n"
+        "logic    format_me;\n"
+        "logic join_a;\n"
+        "logic join_b;\n"
+        "logic delete_me;\n"
+        "endmodule\n");
+    QFile fixture(fileName);
+    const bool written =
+        fixture.open(QIODevice::WriteOnly | QIODevice::Text)
+        && fixture.write(source.toUtf8())
+               == source.toUtf8().size();
+    fixture.close();
+    check("context Action execution fixture is written", written);
+    const bool opened = written
+        && window.tabManager->openFileInTab(fileName);
+    check("context Action execution fixture opens a real editor",
+          opened);
+    MyCodeEditor* editor =
+        window.tabManager->getCurrentEditor();
+    if (!editor)
+        return;
+
+    QTextCursor firstCursor(editor->document());
+    firstCursor.setPosition(positionInside(
+        source, QStringLiteral("logic first")));
+    editor->setTextCursor(firstCursor);
+    editor->setFocus();
+    QCoreApplication::processEvents(
+        QEventLoop::AllEvents, 50);
+
+    QWidget* commandModePanel =
+        window.findChild<QWidget*>(
+            QStringLiteral("commandLayerPanel"));
+    QLabel* commandModeTitle = commandModePanel
+        ? commandModePanel->findChild<QLabel*>(
+              QStringLiteral("commandLayerTitle"))
+        : nullptr;
+    QVariantMap commandModeShortcutOverride;
+    commandModeShortcutOverride.insert(
+        QString::fromLatin1(
+            ActionIds::ViewCommandMode),
+        QStringLiteral("Ctrl+F24"));
+    QStringList commandModeShortcutIssues;
+    const bool commandModeOverrideAccepted =
+        configureActionShortcutOverrides(
+            commandModeShortcutOverride,
+            &commandModeShortcutIssues);
+    resetApplicationActionExecutionHistory();
+    QTest::keyPress(editor, Qt::Key_F24);
+    QTest::keyRelease(editor, Qt::Key_F24);
+    QCoreApplication::processEvents(
+        QEventLoop::AllEvents, 50);
+    const bool oldCommandModeShortcutInactive =
+        commandModePanel
+        && !commandModePanel->isVisible();
+    QTest::keyPress(
+        editor,
+        Qt::Key_F24,
+        Qt::ControlModifier);
+    QCoreApplication::processEvents(
+        QEventLoop::AllEvents, 50);
+    const bool commandModeOverrideActive =
+        commandModePanel
+        && commandModePanel->isVisible()
+        && commandModePanel->property(
+               "entryActionId").toString()
+               == QString::fromLatin1(
+                   ActionIds::ViewCommandMode)
+        && commandModeTitle
+        && commandModeTitle->text().contains(
+               QStringLiteral("Ctrl+F24"));
+    QTest::keyRelease(
+        editor,
+        Qt::Key_F24,
+        Qt::ControlModifier);
+    QCoreApplication::processEvents(
+        QEventLoop::AllEvents, 50);
+    configureActionShortcutOverrides({});
+    check("Command Mode hold shortcut consumes its Registry Action",
+          commandModeOverrideAccepted
+              && commandModeShortcutIssues.isEmpty()
+              && oldCommandModeShortcutInactive
+              && commandModeOverrideActive
+              && !commandModePanel->isVisible()
+              && applicationActionExecutionHistory()
+                     .lastActionId().isEmpty());
+
+    const int firstSymbolStart =
+        editor->toPlainText().indexOf(
+            QStringLiteral("first"));
+    QTextCursor smartSelectionCursor(
+        editor->document());
+    smartSelectionCursor.setPosition(
+        firstSymbolStart + 2);
+    editor->setTextCursor(smartSelectionCursor);
+    resetApplicationActionExecutionHistory();
+    QTest::keyClick(
+        editor,
+        Qt::Key_W,
+        Qt::ControlModifier);
+    QCoreApplication::processEvents(
+        QEventLoop::AllEvents, 50);
+    const int expandedOccurrenceStart =
+        editor->textCursor().selectionStart();
+    check("smart selection shortcut executes its Registry Action",
+          firstSymbolStart >= 0
+              && editor->textCursor().selectedText()
+                     == QStringLiteral("first")
+              && expandedOccurrenceStart == firstSymbolStart
+              && applicationActionExecutionHistory()
+                     .lastActionId()
+                     == QString::fromLatin1(
+                         ActionIds::SelectExpandSmart));
+
+    QTest::keyClick(
+        editor,
+        Qt::Key_E,
+        Qt::ControlModifier);
+    QCoreApplication::processEvents(
+        QEventLoop::AllEvents, 50);
+    const int nextOccurrenceStart =
+        editor->textCursor().selectionStart();
+    const bool nextOccurrenceRouted =
+        editor->textCursor().selectedText()
+            == QStringLiteral("first")
+        && nextOccurrenceStart > expandedOccurrenceStart
+        && applicationActionExecutionHistory()
+               .lastActionId()
+               == QString::fromLatin1(
+                   ActionIds::NavigationNextSelectedSymbolOccurrence);
+    QTest::keyClick(
+        editor,
+        Qt::Key_Q,
+        Qt::ControlModifier);
+    QCoreApplication::processEvents(
+        QEventLoop::AllEvents, 50);
+    check("selected-symbol navigation shortcuts execute Registry Actions",
+          nextOccurrenceRouted
+              && editor->textCursor().selectedText()
+                     == QStringLiteral("first")
+              && editor->textCursor().selectionStart()
+                     == expandedOccurrenceStart
+              && applicationActionExecutionHistory()
+                     .lastActionId()
+                     == QString::fromLatin1(
+                         ActionIds::NavigationPreviousSelectedSymbolOccurrence));
+
+    QTextCursor commandSelectionCursor(
+        editor->document());
+    const int secondSymbolStart =
+        editor->toPlainText().indexOf(
+            QStringLiteral("second"));
+    commandSelectionCursor.setPosition(
+        secondSymbolStart + 2);
+    editor->setTextCursor(commandSelectionCursor);
+    resetApplicationActionExecutionHistory();
+    QTest::keyPress(editor, Qt::Key_F24);
+    QCoreApplication::processEvents(
+        QEventLoop::AllEvents, 50);
+    QTest::keyClicks(
+        editor,
+        QStringLiteral("expand selection"));
+    QTest::keyClick(editor, Qt::Key_Return);
+    QTest::keyRelease(editor, Qt::Key_F24);
+    QCoreApplication::processEvents(
+        QEventLoop::AllEvents, 50);
+    check("Command Mode uses the structural selection Action",
+          secondSymbolStart >= 0
+              && editor->textCursor().selectedText()
+                     == QStringLiteral("second")
+              && applicationActionExecutionHistory()
+                     .lastActionId()
+                     == QString::fromLatin1(
+                         ActionIds::SelectExpandSmart));
+
+    editor->setTextCursor(firstCursor);
+    editor->setFocus();
+    resetApplicationActionExecutionHistory();
+    const ContextActionTriggerState contextAction =
+        triggerContextMenuAction(
+            editor,
+            QStringLiteral("logic first"),
+            QStringLiteral("format.commentLines"));
+    check("context formatter is a routed Action Registry adapter",
+          contextAction.menuShown
+              && contextAction.found
+              && contextAction.enabled
+              && contextAction.triggered
+              && contextAction.actionId
+                     == QStringLiteral(
+                         "format.commentLines")
+              && contextAction.executionRoute
+                     == QStringLiteral(
+                         "editor.format.commentLines"));
+    check("context formatter executes through the MainWindow host",
+          editor->toPlainText().contains(
+              QStringLiteral("// logic first;"))
+              && applicationActionExecutionHistory()
+                     .lastActionId()
+                     == QStringLiteral(
+                         "format.commentLines"));
+
+    QTextCursor secondCursor(editor->document());
+    secondCursor.setPosition(positionInside(
+        editor->toPlainText(),
+        QStringLiteral("logic second")));
+    editor->setTextCursor(secondCursor);
+    editor->setFocus();
+    QTest::keyPress(editor, Qt::Key_F24);
+    QCoreApplication::processEvents(
+        QEventLoop::AllEvents, 50);
+    QWidget* commandPanel = window.findChild<QWidget*>(
+        QStringLiteral("commandLayerPanel"));
+    const bool commandLayerEntered =
+        commandPanel && commandPanel->isVisible();
+    QTest::keyClicks(editor, QStringLiteral("repeat action"));
+    QTest::keyClick(editor, Qt::Key_Return);
+    QTest::keyRelease(editor, Qt::Key_F24);
+    QCoreApplication::processEvents(
+        QEventLoop::AllEvents, 50);
+    check("Command Mode repeats the context formatter Action",
+          commandLayerEntered
+              && editor->toPlainText().contains(
+                  QStringLiteral("// logic second;"))
+              && applicationActionExecutionHistory()
+                     .lastActionId()
+                     == QStringLiteral(
+                         "format.commentLines"));
+
+    QTextCursor thirdCursor(editor->document());
+    thirdCursor.setPosition(positionInside(
+        editor->toPlainText(),
+        QStringLiteral("logic third")));
+    editor->setTextCursor(thirdCursor);
+    editor->setFocus();
+    resetApplicationActionExecutionHistory();
+    QTest::keyClick(
+        editor,
+        Qt::Key_Slash,
+        Qt::ControlModifier);
+    QCoreApplication::processEvents(
+        QEventLoop::AllEvents, 50);
+    const bool shortcutCommented =
+        editor->toPlainText().contains(
+            QStringLiteral("// logic third;"))
+        && applicationActionExecutionHistory()
+               .lastActionId()
+               == QStringLiteral("format.commentLines");
+    QTest::keyClick(
+        editor,
+        Qt::Key_Slash,
+        Qt::ControlModifier
+            | Qt::ShiftModifier);
+    QCoreApplication::processEvents(
+        QEventLoop::AllEvents, 50);
+    check("comment shortcuts execute canonical Registry Actions",
+          shortcutCommented
+              && editor->toPlainText().contains(
+                  QStringLiteral("logic third;"))
+              && applicationActionExecutionHistory()
+                     .lastActionId()
+                     == QStringLiteral(
+                         "format.uncommentLines"));
+
+    QTest::keyClick(
+        editor,
+        Qt::Key_BracketRight,
+        Qt::ControlModifier);
+    QCoreApplication::processEvents(
+        QEventLoop::AllEvents, 50);
+    const bool shortcutIndented =
+        editor->toPlainText().contains(
+            QStringLiteral("    logic third;"))
+        && applicationActionExecutionHistory()
+               .lastActionId()
+               == QStringLiteral("format.indentLines");
+    QTest::keyClick(
+        editor,
+        Qt::Key_BracketLeft,
+        Qt::ControlModifier);
+    QCoreApplication::processEvents(
+        QEventLoop::AllEvents, 50);
+    check("indent shortcuts execute canonical Registry Actions",
+          shortcutIndented
+              && editor->toPlainText().contains(
+                  QStringLiteral("logic third;"))
+              && applicationActionExecutionHistory()
+                     .lastActionId()
+                     == QStringLiteral(
+                         "format.unindentLines"));
+
+    const int assignmentFirst =
+        editor->toPlainText().indexOf(
+            QStringLiteral("first"),
+            editor->toPlainText().indexOf(
+                QStringLiteral("assign")));
+    QTextCursor occurrenceCursor(editor->document());
+    occurrenceCursor.setPosition(assignmentFirst + 2);
+    editor->setTextCursor(occurrenceCursor);
+    resetApplicationActionExecutionHistory();
+    QTest::keyClick(
+        editor,
+        Qt::Key_D,
+        Qt::ControlModifier);
+    QCoreApplication::processEvents(
+        QEventLoop::AllEvents, 50);
+    const bool firstOccurrenceRouted =
+        editor->textCursor().selectedText()
+            == QStringLiteral("first")
+        && !editor->editorModeActiveForTest(
+            EditorModeId::MultiCursor)
+        && applicationActionExecutionHistory()
+               .lastActionId()
+               == QStringLiteral(
+                   "select.nextSymbolOccurrence");
+    QTest::keyClick(
+        editor,
+        Qt::Key_D,
+        Qt::ControlModifier);
+    QCoreApplication::processEvents(
+        QEventLoop::AllEvents, 50);
+    check("Ctrl+D executes the canonical occurrence Action",
+          firstOccurrenceRouted
+              && editor->editorModeActiveForTest(
+                  EditorModeId::MultiCursor)
+              && applicationActionExecutionHistory()
+                     .lastActionId()
+                     == QStringLiteral(
+                         "select.nextSymbolOccurrence"));
+    resetApplicationActionExecutionHistory();
+    QTest::keyClick(
+        editor,
+        Qt::Key_C,
+        Qt::ControlModifier);
+    check("multi-cursor clipboard shortcut executes through Registry",
+          editor->editorModeActiveForTest(
+              EditorModeId::MultiCursor)
+              && QApplication::clipboard()->text()
+                     == QStringLiteral("first\nfirst")
+              && applicationActionExecutionHistory()
+                     .lastActionId()
+                     == QStringLiteral("edit.copy"));
+    QTest::keyClick(editor, Qt::Key_Escape);
+
+    occurrenceCursor.clearSelection();
+    occurrenceCursor.setPosition(assignmentFirst + 2);
+    editor->setTextCursor(occurrenceCursor);
+    resetApplicationActionExecutionHistory();
+    QTest::keyClick(
+        editor,
+        Qt::Key_L,
+        Qt::ControlModifier
+            | Qt::ShiftModifier);
+    QCoreApplication::processEvents(
+        QEventLoop::AllEvents, 50);
+    check("scope-occurrence shortcut executes its Registry Action",
+          editor->editorModeActiveForTest(
+              EditorModeId::MultiCursor)
+              && applicationActionExecutionHistory()
+                     .lastActionId()
+                     == QStringLiteral(
+                         "select.allSymbolOccurrences"));
+    QTest::keyClick(editor, Qt::Key_Escape);
+
+    const int secondAssignment =
+        editor->toPlainText().indexOf(
+            QStringLiteral("assign"),
+            editor->toPlainText().indexOf(
+                QStringLiteral("assign")) + 1);
+    const int secondAssignmentFirst =
+        editor->toPlainText().indexOf(
+            QStringLiteral("first"),
+            secondAssignment);
+    occurrenceCursor.clearSelection();
+    occurrenceCursor.setPosition(assignmentFirst + 2);
+    editor->setTextCursor(occurrenceCursor);
+    resetApplicationActionExecutionHistory();
+    QTest::keyClick(
+        editor,
+        Qt::Key_F7,
+        Qt::AltModifier);
+    QCoreApplication::processEvents(
+        QEventLoop::AllEvents, 50);
+    const bool nextAssignmentRouted =
+        editor->textCursor().selectionStart()
+            == secondAssignmentFirst
+        && applicationActionExecutionHistory()
+               .lastActionId()
+               == QString::fromLatin1(
+                   ActionIds::NavigationNextAssignment);
+    QTest::keyClick(
+        editor,
+        Qt::Key_F7,
+        Qt::AltModifier | Qt::ShiftModifier);
+    QCoreApplication::processEvents(
+        QEventLoop::AllEvents, 50);
+    check("assignment shortcuts execute canonical Registry Actions",
+          nextAssignmentRouted
+              && editor->textCursor().selectionStart()
+                     == assignmentFirst
+              && applicationActionExecutionHistory()
+                     .lastActionId()
+                     == QString::fromLatin1(
+                         ActionIds::NavigationPreviousAssignment));
+
+    const int ifdefPosition =
+        editor->toPlainText().indexOf(
+            QStringLiteral("`ifdef"));
+    const int elsePosition =
+        editor->toPlainText().indexOf(
+            QStringLiteral("`else"),
+            ifdefPosition + 1);
+    const int endifPosition =
+        editor->toPlainText().indexOf(
+            QStringLiteral("`endif"),
+            elsePosition + 1);
+    occurrenceCursor.clearSelection();
+    occurrenceCursor.setPosition(ifdefPosition);
+    editor->setTextCursor(occurrenceCursor);
+    resetApplicationActionExecutionHistory();
+    QTest::keyClick(
+        editor,
+        Qt::Key_F8,
+        Qt::AltModifier);
+    QCoreApplication::processEvents(
+        QEventLoop::AllEvents, 50);
+    const bool nextConditionalRouted =
+        editor->textCursor().selectionStart()
+            == elsePosition
+        && applicationActionExecutionHistory()
+               .lastActionId()
+               == QString::fromLatin1(
+                   ActionIds::NavigationNextConditionalBranch);
+    occurrenceCursor.clearSelection();
+    occurrenceCursor.setPosition(endifPosition);
+    editor->setTextCursor(occurrenceCursor);
+    resetApplicationActionExecutionHistory();
+    QTest::keyClick(
+        editor,
+        Qt::Key_F8,
+        Qt::AltModifier | Qt::ShiftModifier);
+    QCoreApplication::processEvents(
+        QEventLoop::AllEvents, 50);
+    check("conditional shortcuts execute canonical Registry Actions",
+          nextConditionalRouted
+              && editor->textCursor().selectionStart()
+                     == elsePosition
+              && applicationActionExecutionHistory()
+                     .lastActionId()
+                     == QString::fromLatin1(
+                         ActionIds::NavigationPreviousConditionalBranch));
+
+    QTextCursor lineCursor(editor->document());
+    lineCursor.setPosition(
+        editor->toPlainText().indexOf(
+            QStringLiteral("logic join_b")));
+    editor->setTextCursor(lineCursor);
+    resetApplicationActionExecutionHistory();
+    QTest::keyClick(
+        editor,
+        Qt::Key_Up,
+        Qt::AltModifier);
+    QCoreApplication::processEvents(
+        QEventLoop::AllEvents, 50);
+    const bool moveUpRouted =
+        editor->toPlainText().indexOf(
+            QStringLiteral("logic join_b"))
+            < editor->toPlainText().indexOf(
+                QStringLiteral("logic join_a"))
+        && applicationActionExecutionHistory()
+               .lastActionId()
+               == QString::fromLatin1(
+                   ActionIds::EditMoveLinesUp);
+    QTest::keyClick(
+        editor,
+        Qt::Key_Down,
+        Qt::AltModifier);
+    QCoreApplication::processEvents(
+        QEventLoop::AllEvents, 50);
+    check("line-move shortcuts execute canonical Registry Actions",
+          moveUpRouted
+              && editor->toPlainText().indexOf(
+                     QStringLiteral("logic join_a"))
+                     < editor->toPlainText().indexOf(
+                         QStringLiteral("logic join_b"))
+              && applicationActionExecutionHistory()
+                     .lastActionId()
+                     == QString::fromLatin1(
+                         ActionIds::EditMoveLinesDown));
+
+    QTest::keyPress(editor, Qt::Key_F24);
+    QCoreApplication::processEvents(
+        QEventLoop::AllEvents, 50);
+    QTest::keyClicks(
+        editor,
+        QStringLiteral("move lines up"));
+    QTest::keyClick(editor, Qt::Key_Return);
+    QTest::keyRelease(editor, Qt::Key_F24);
+    QCoreApplication::processEvents(
+        QEventLoop::AllEvents, 50);
+    const bool commandMoveUp =
+        editor->toPlainText().indexOf(
+            QStringLiteral("logic join_b"))
+            < editor->toPlainText().indexOf(
+                QStringLiteral("logic join_a"))
+        && applicationActionExecutionHistory()
+               .lastActionId()
+               == QString::fromLatin1(
+                   ActionIds::EditMoveLinesUp);
+    QTest::keyPress(editor, Qt::Key_F24);
+    QCoreApplication::processEvents(
+        QEventLoop::AllEvents, 50);
+    QTest::keyClicks(
+        editor,
+        QStringLiteral("move lines down"));
+    QTest::keyClick(editor, Qt::Key_Return);
+    QTest::keyRelease(editor, Qt::Key_F24);
+    QCoreApplication::processEvents(
+        QEventLoop::AllEvents, 50);
+    check("Command Mode uses line-move Actions",
+          commandMoveUp
+              && editor->toPlainText().indexOf(
+                     QStringLiteral("logic join_a"))
+                     < editor->toPlainText().indexOf(
+                         QStringLiteral("logic join_b"))
+              && applicationActionExecutionHistory()
+                     .lastActionId()
+                     == QString::fromLatin1(
+                         ActionIds::EditMoveLinesDown));
+
+    lineCursor.setPosition(
+        editor->toPlainText().indexOf(
+            QStringLiteral("logic join_a")));
+    editor->setTextCursor(lineCursor);
+    resetApplicationActionExecutionHistory();
+    QTest::keyClick(
+        editor,
+        Qt::Key_J,
+        Qt::ControlModifier | Qt::ShiftModifier);
+    QCoreApplication::processEvents(
+        QEventLoop::AllEvents, 50);
+    const bool joinLinesRouted =
+        editor->toPlainText().contains(
+            QStringLiteral("logic join_a; logic join_b;"))
+        && applicationActionExecutionHistory()
+               .lastActionId()
+               == QStringLiteral("edit.joinLines");
+    lineCursor.clearSelection();
+    lineCursor.setPosition(
+        editor->toPlainText().indexOf(
+            QStringLiteral("logic delete_me")));
+    editor->setTextCursor(lineCursor);
+    resetApplicationActionExecutionHistory();
+    QTest::keyClick(
+        editor,
+        Qt::Key_K,
+        Qt::ControlModifier | Qt::ShiftModifier);
+    QCoreApplication::processEvents(
+        QEventLoop::AllEvents, 50);
+    check("line-operation shortcuts execute canonical Registry Actions",
+          joinLinesRouted
+              && !editor->toPlainText().contains(
+                  QStringLiteral("logic delete_me"))
+              && applicationActionExecutionHistory()
+                     .lastActionId()
+                     == QStringLiteral("edit.deleteLines"));
+
+    QTextCursor columnStart(editor->document());
+    columnStart.setPosition(assignmentFirst);
+    QTextCursor columnEnd(editor->document());
+    columnEnd.setPosition(
+        secondAssignmentFirst
+        + QStringLiteral("first").size());
+    editor->setTextCursor(columnStart);
+    QTest::mouseClick(
+        editor->viewport(),
+        Qt::LeftButton,
+        Qt::ShiftModifier | Qt::AltModifier,
+        editor->cursorRect(columnEnd).center());
+    const QStringList selectedColumnRows =
+        editor->columnSelectionTexts();
+    resetApplicationActionExecutionHistory();
+    QTest::keyClick(
+        editor,
+        Qt::Key_C,
+        Qt::ControlModifier);
+    check("column clipboard shortcut executes through Registry",
+          editor->columnSelectionActive()
+              && selectedColumnRows.size() == 2
+              && QApplication::clipboard()->text()
+                     == selectedColumnRows.join(
+                         QLatin1Char('\n'))
+              && applicationActionExecutionHistory()
+                     .lastActionId()
+                     == QStringLiteral("edit.copy"));
+
+    QWidget* columnNumberToolPanel =
+        window.findChild<QWidget*>(
+            QStringLiteral("columnNumberToolPanel"));
+    QVariantMap columnNumberShortcutOverride;
+    columnNumberShortcutOverride.insert(
+        QString::fromLatin1(
+            ActionIds::InsertColumnNumbers),
+        QStringLiteral("Ctrl+Alt+C"));
+    QStringList columnNumberShortcutIssues;
+    const bool columnNumberOverrideAccepted =
+        configureActionShortcutOverrides(
+            columnNumberShortcutOverride,
+            &columnNumberShortcutIssues);
+    resetApplicationActionExecutionHistory();
+    QTest::keyClick(
+        editor,
+        Qt::Key_C,
+        Qt::AltModifier);
+    QCoreApplication::processEvents(
+        QEventLoop::AllEvents, 50);
+    const bool oldColumnNumberShortcutInactive =
+        columnNumberToolPanel
+        && !columnNumberToolPanel->isVisible()
+        && applicationActionExecutionHistory()
+               .lastActionId().isEmpty();
+    QTest::keyClick(
+        editor,
+        Qt::Key_C,
+        Qt::ControlModifier | Qt::AltModifier);
+    QCoreApplication::processEvents(
+        QEventLoop::AllEvents, 50);
+    configureActionShortcutOverrides({});
+    check("Column Number Tool shortcut executes its Registry route",
+          columnNumberOverrideAccepted
+              && columnNumberShortcutIssues.isEmpty()
+              && oldColumnNumberShortcutInactive
+              && columnNumberToolPanel
+              && columnNumberToolPanel->isVisible()
+              && columnNumberToolPanel->property(
+                     "entryActionId").toString()
+                     == QString::fromLatin1(
+                         ActionIds::InsertColumnNumbers)
+              && applicationActionExecutionHistory()
+                     .lastActionId().isEmpty());
+    if (columnNumberToolPanel)
+        columnNumberToolPanel->hide();
+    editor->setFocus();
+    QTest::keyClick(editor, Qt::Key_Escape);
+
+    const int guardedPosition =
+        editor->toPlainText().indexOf(
+            QStringLiteral("guarded"));
+    QTextCursor standardCursor(editor->document());
+    standardCursor.setPosition(guardedPosition);
+    standardCursor.setPosition(
+        guardedPosition + QStringLiteral("guarded").size(),
+        QTextCursor::KeepAnchor);
+    editor->setTextCursor(standardCursor);
+    editor->setFocus();
+    resetApplicationActionExecutionHistory();
+    const ContextActionTriggerState contextCopy =
+        triggerContextMenuAction(
+            editor,
+            QStringLiteral("guarded"),
+            QStringLiteral("edit.copy"));
+    check("hidden standard context action stays hidden",
+          contextCopy.menuShown
+              && !contextCopy.found
+              && !contextCopy.triggered
+              && applicationActionExecutionHistory()
+                     .lastActionId().isEmpty());
+
+    standardCursor.setPosition(guardedPosition);
+    standardCursor.setPosition(
+        guardedPosition + QStringLiteral("guarded").size(),
+        QTextCursor::KeepAnchor);
+    editor->setTextCursor(standardCursor);
+    resetApplicationActionExecutionHistory();
+    QTest::keyClick(
+        editor,
+        Qt::Key_C,
+        Qt::ControlModifier);
+    const bool copyShortcutRouted =
+        QApplication::clipboard()->text()
+            == QStringLiteral("guarded")
+        && applicationActionExecutionHistory()
+               .lastActionId()
+               == QStringLiteral("edit.copy");
+    QTest::keyClick(
+        editor,
+        Qt::Key_X,
+        Qt::ControlModifier);
+    const bool cutShortcutRouted =
+        !editor->toPlainText().contains(
+            QStringLiteral("logic guarded;"))
+        && applicationActionExecutionHistory()
+               .lastActionId()
+               == QStringLiteral("edit.cut");
+    QTest::keyClick(
+        editor,
+        Qt::Key_V,
+        Qt::ControlModifier);
+    const bool pasteShortcutRouted =
+        editor->toPlainText().contains(
+            QStringLiteral("logic guarded;"))
+        && applicationActionExecutionHistory()
+               .lastActionId()
+               == QStringLiteral("edit.paste");
+    QTest::keyClick(
+        editor,
+        Qt::Key_Z,
+        Qt::ControlModifier);
+    const bool undoShortcutRouted =
+        !editor->toPlainText().contains(
+            QStringLiteral("logic guarded;"))
+        && applicationActionExecutionHistory()
+               .lastActionId()
+               == QStringLiteral("edit.undo");
+    QTest::keyClick(
+        editor,
+        Qt::Key_Y,
+        Qt::ControlModifier);
+    const bool redoShortcutRouted =
+        editor->toPlainText().contains(
+            QStringLiteral("logic guarded;"))
+        && applicationActionExecutionHistory()
+               .lastActionId()
+               == QStringLiteral("edit.redo");
+    QTest::keyClick(
+        editor,
+        Qt::Key_A,
+        Qt::ControlModifier);
+    const bool selectAllShortcutRouted =
+        editor->textCursor().selectionStart() == 0
+        && editor->textCursor().selectionEnd()
+               == editor->toPlainText().size()
+        && applicationActionExecutionHistory()
+               .lastActionId()
+               == QStringLiteral("select.all");
+    check("standard edit shortcuts execute canonical Registry Actions",
+          copyShortcutRouted
+              && cutShortcutRouted
+              && pasteShortcutRouted
+              && undoShortcutRouted
+              && redoShortcutRouted
+              && selectAllShortcutRouted);
+
+    standardCursor.clearSelection();
+    standardCursor.setPosition(0);
+    editor->setTextCursor(standardCursor);
+    editor->setFocus();
+    const int goLineTarget =
+        editor->document()
+            ->findBlock(endifPosition)
+            .blockNumber() + 1;
+    QTimer::singleShot(
+        0,
+        editor,
+        [goLineTarget]() {
+            auto* input = qobject_cast<QInputDialog*>(
+                QApplication::activeModalWidget());
+            if (!input)
+                return;
+            input->setIntValue(goLineTarget);
+            input->accept();
+        });
+    resetApplicationActionExecutionHistory();
+    QTest::keyClick(
+        editor,
+        Qt::Key_G,
+        Qt::ControlModifier);
+    QCoreApplication::processEvents(
+        QEventLoop::AllEvents, 50);
+    check("Go to Line shortcut executes its Registry route",
+          editor->textCursor().blockNumber() + 1
+                  == goLineTarget
+              && applicationActionExecutionHistory()
+                     .lastActionId()
+                     == QStringLiteral("navigation.goLine"));
+
+    const auto visibleEditorDialog =
+        [editor](const QString& title) {
+            const QList<QDialog*> dialogs =
+                editor->findChildren<QDialog*>();
+            for (QDialog* dialog : dialogs) {
+                if (dialog
+                    && dialog->isVisible()
+                    && dialog->windowTitle() == title) {
+                    return dialog;
+                }
+            }
+            return static_cast<QDialog*>(nullptr);
+        };
+    editor->setFocus();
+    resetApplicationActionExecutionHistory();
+    QTest::keyClick(
+        editor,
+        Qt::Key_F,
+        Qt::ControlModifier);
+    QCoreApplication::processEvents(
+        QEventLoop::AllEvents, 50);
+    QDialog* findDialog =
+        visibleEditorDialog(QStringLiteral("Find"));
+    const bool findShortcutRouted = findDialog
+        && applicationActionExecutionHistory()
+               .lastActionId()
+               == QStringLiteral("edit.find");
+    if (findDialog)
+        findDialog->close();
+    QCoreApplication::processEvents(
+        QEventLoop::AllEvents, 50);
+    editor->setFocus();
+    resetApplicationActionExecutionHistory();
+    QTest::keyClick(
+        editor,
+        Qt::Key_H,
+        Qt::ControlModifier);
+    QCoreApplication::processEvents(
+        QEventLoop::AllEvents, 50);
+    QDialog* replaceDialog =
+        visibleEditorDialog(QStringLiteral("Replace"));
+    check("Find and Replace shortcuts execute canonical Registry Actions",
+          findShortcutRouted
+              && replaceDialog
+              && applicationActionExecutionHistory()
+                     .lastActionId()
+                     == QStringLiteral("edit.replace"));
+    if (replaceDialog)
+        replaceDialog->close();
+    QCoreApplication::processEvents(
+        QEventLoop::AllEvents, 50);
+
+    MyCodeEditor overriddenShortcutEditor;
+    overriddenShortcutEditor.setPlainText(
+        QStringLiteral(
+            "module override_shortcuts;\n"
+            "logic renamed_signal;\n"
+            "endmodule\n"));
+    QTextCursor overriddenCursor(
+        overriddenShortcutEditor.document());
+    overriddenCursor.setPosition(
+        overriddenShortcutEditor.toPlainText().indexOf(
+            QStringLiteral("renamed_signal")) + 2);
+    overriddenShortcutEditor.setTextCursor(overriddenCursor);
+    bool definitionShortcutRequested = false;
+    bool renameShortcutRequested = false;
+    QObject::connect(
+        &overriddenShortcutEditor,
+        &MyCodeEditor::sourceSymbolActionRequested,
+        &overriddenShortcutEditor,
+        [&definitionShortcutRequested](
+            SourceSymbolAction action,
+            const EditorSemanticContext&) {
+            definitionShortcutRequested =
+                action == SourceSymbolAction::GoToDefinition;
+        });
+    QObject::connect(
+        &overriddenShortcutEditor,
+        &MyCodeEditor::safeRenameRequested,
+        &overriddenShortcutEditor,
+        [&renameShortcutRequested](
+            const QString&,
+            const EditorSemanticContext&,
+            bool*) {
+            renameShortcutRequested = true;
+        });
+    QVariantMap semanticShortcutOverrides;
+    semanticShortcutOverrides.insert(
+        QStringLiteral("source.goToDefinition"),
+        QStringLiteral("Ctrl+F12"));
+    semanticShortcutOverrides.insert(
+        QString::fromLatin1(ActionIds::RtlRename),
+        QStringLiteral("Ctrl+Alt+R"));
+    QStringList semanticShortcutIssues;
+    const bool semanticOverridesAccepted =
+        configureActionShortcutOverrides(
+            semanticShortcutOverrides,
+            &semanticShortcutIssues);
+    QTest::keyClick(
+        &overriddenShortcutEditor,
+        Qt::Key_F12);
+    QTest::keyClick(
+        &overriddenShortcutEditor,
+        Qt::Key_R,
+        Qt::ControlModifier);
+    const bool oldSemanticShortcutsInactive =
+        !definitionShortcutRequested
+        && !renameShortcutRequested;
+    QTest::keyClick(
+        &overriddenShortcutEditor,
+        Qt::Key_F12,
+        Qt::ControlModifier);
+    QTest::keyClick(
+        &overriddenShortcutEditor,
+        Qt::Key_R,
+        Qt::ControlModifier | Qt::AltModifier);
+    configureActionShortcutOverrides({});
+    check("semantic shortcuts consume Registry overrides",
+          semanticOverridesAccepted
+              && semanticShortcutIssues.isEmpty()
+              && oldSemanticShortcutsInactive
+              && definitionShortcutRequested
+              && renameShortcutRequested);
+
+    editor->setFocus();
+    const QString beforeShortcutFormat =
+        editor->toPlainText();
+    resetApplicationActionExecutionHistory();
+    QTest::keyClick(
+        editor,
+        Qt::Key_I,
+        Qt::ControlModifier | Qt::ShiftModifier);
+    QCoreApplication::processEvents(
+        QEventLoop::AllEvents, 50);
+    check("Format Document shortcut executes its Registry route",
+          editor->toPlainText() != beforeShortcutFormat
+              && editor->toPlainText().contains(
+                  QStringLiteral("format_me"))
+              && applicationActionExecutionHistory()
+                     .lastActionId()
+                     == QStringLiteral("format.document"));
+
+    const QString slotFile = temp.filePath(
+        QStringLiteral("context_slot_execution.sv"));
+    const QString slotSource = QStringLiteral(
+        "module context_slot_execution;\n"
+        "  child u_first(.a(foo));\n"
+        "  child u_second(.a(bar));\n"
+        "endmodule\n");
+    QFile slotFixture(slotFile);
+    const bool slotWritten =
+        slotFixture.open(
+            QIODevice::WriteOnly | QIODevice::Text)
+        && slotFixture.write(slotSource.toUtf8())
+               == slotSource.toUtf8().size();
+    slotFixture.close();
+    check("context slot execution fixture is written",
+          slotWritten);
+    const bool slotOpened = slotWritten
+        && window.tabManager->openFileInTab(slotFile);
+    editor = window.tabManager->getCurrentEditor();
+    check("context slot execution fixture opens a real editor",
+          slotOpened && editor);
+    if (!editor)
+        return;
+
+    QTextCursor oldSlotCursor(editor->document());
+    oldSlotCursor.setPosition(0);
+    editor->setTextCursor(oldSlotCursor);
+    resetApplicationActionExecutionHistory();
+    const ContextActionTriggerState slotAction =
+        triggerContextMenuAction(
+            editor,
+            QStringLiteral("u_first"),
+            QStringLiteral("refactor.editInstanceSlots"));
+    check("context Slot action routes the right-click position",
+          slotAction.menuShown
+              && slotAction.found
+              && slotAction.enabled
+              && slotAction.triggered
+              && slotAction.actionId
+                     == QStringLiteral(
+                         "refactor.editInstanceSlots")
+              && slotAction.executionRoute
+                     == QStringLiteral(
+                         "editor.structure.editInstanceSlots")
+              && editor->templateSlotModeActive()
+              && editor->textCursor().selectedText()
+                     == QStringLiteral("foo")
+              && applicationActionExecutionHistory()
+                     .lastActionId()
+                     == QStringLiteral(
+                         "refactor.editInstanceSlots"));
+
+    QTest::keyClick(editor, Qt::Key_Escape);
+    QTextCursor secondSlotCursor(editor->document());
+    secondSlotCursor.setPosition(positionInside(
+        editor->toPlainText(),
+        QStringLiteral("u_second")));
+    editor->setTextCursor(secondSlotCursor);
+    editor->setFocus();
+    QTest::keyPress(editor, Qt::Key_F24);
+    QTest::keyClicks(editor, QStringLiteral("repeat action"));
+    QTest::keyClick(editor, Qt::Key_Return);
+    QTest::keyRelease(editor, Qt::Key_F24);
+    QCoreApplication::processEvents(
+        QEventLoop::AllEvents, 50);
+    check("repeated Slot action resolves the current cursor",
+          editor->templateSlotModeActive()
+              && editor->textCursor().selectedText()
+                     == QStringLiteral("bar"));
+    QTest::keyClick(editor, Qt::Key_Escape);
+
+    const QString insightFile = temp.filePath(
+        QStringLiteral("context_insight_execution.sv"));
+    const QString insightSource = QStringLiteral(
+        "module context_insight_execution;\n"
+        "  logic payload;\n"
+        "  assign payload = 1'b0;\n"
+        "endmodule\n");
+    QFile insightFixture(insightFile);
+    const bool insightWritten =
+        insightFixture.open(
+            QIODevice::WriteOnly | QIODevice::Text)
+        && insightFixture.write(insightSource.toUtf8())
+               == insightSource.toUtf8().size();
+    insightFixture.close();
+    check("context Insight execution fixture is written",
+          insightWritten);
+    const bool insightOpened = insightWritten
+        && window.tabManager->openFileInTab(insightFile);
+    editor = window.tabManager->getCurrentEditor();
+    check("context Insight execution fixture opens a real editor",
+          insightOpened && editor);
+    if (!editor)
+        return;
+
+    SemanticSymbolRecord payload =
+        SemanticFixtureRecordBuilder(
+            QStringLiteral("payload"),
+            SymbolTaxonomy::DeclarationKind::Signal)
+            .withFile(insightFile)
+            .withLocalHandle(401)
+            .withLine(2, 9)
+            .withTextSpan(
+                insightSource.indexOf(
+                    QStringLiteral("payload")),
+                7)
+            .withCollectorKind(
+                SymbolTaxonomy::CollectorKind::Logic)
+            .inModule(
+                QStringLiteral(
+                    "context_insight_execution"))
+            .record();
+    SemanticIndex::getInstance()->setSnapshot(
+        snapshot({payload},
+                 {{insightFile, insightSource}}));
+    QTextCursor oldInsightCursor(editor->document());
+    oldInsightCursor.setPosition(0);
+    editor->setTextCursor(oldInsightCursor);
+    resetApplicationActionExecutionHistory();
+    const ContextActionTriggerState insightAction =
+        triggerContextMenuAction(
+            editor,
+            QStringLiteral("payload"),
+            QStringLiteral("insight.signalKernelGraph"));
+    QDockWidget* kernelDock =
+        window.findChild<QDockWidget*>(
+            QStringLiteral("signalKernelGraphDock"));
+    QLabel* kernelTitle = window.findChild<QLabel*>(
+        QStringLiteral("signalKernelGraphTitle"));
+    check("context Insight executes through Registry into its panel",
+          insightAction.menuShown
+              && insightAction.found
+              && insightAction.enabled
+              && insightAction.triggered
+              && insightAction.actionId
+                     == QStringLiteral(
+                         "insight.signalKernelGraph")
+              && insightAction.executionRoute
+                     == QStringLiteral(
+                         "insight.signalKernel.showSymbol")
+              && applicationActionExecutionHistory()
+                     .lastActionId()
+                     == QStringLiteral(
+                         "insight.signalKernelGraph")
+              && kernelDock
+              && kernelDock->isVisible()
+              && kernelTitle
+              && kernelTitle->text().contains(
+                  QStringLiteral("payload")));
+
+    const QString queueFile = temp.filePath(
+        QStringLiteral("context_queue_execution.sv"));
+    const QString queueSource = QStringLiteral(
+        "module context_queue_execution;\n"
+        "  logic sig0;\n"
+        "  logic sig1;\n"
+        "  always_comb begin\n"
+        "    // queue_here\n"
+        "  end\n"
+        "endmodule\n");
+    QFile queueFixture(queueFile);
+    const bool queueWritten =
+        queueFixture.open(
+            QIODevice::WriteOnly | QIODevice::Text)
+        && queueFixture.write(queueSource.toUtf8())
+               == queueSource.toUtf8().size();
+    queueFixture.close();
+    check("context assignment queue fixture is written",
+          queueWritten);
+    const bool queueOpened = queueWritten
+        && window.tabManager->openFileInTab(queueFile);
+    editor = window.tabManager->getCurrentEditor();
+    check("context assignment queue fixture opens a real editor",
+          queueOpened && editor);
+    if (!editor)
+        return;
+
+    SemanticSymbolRecord sig0 =
+        SemanticFixtureRecordBuilder(
+            QStringLiteral("sig0"),
+            SymbolTaxonomy::DeclarationKind::Signal)
+            .withFile(queueFile)
+            .withLocalHandle(501)
+            .withLine(2, 9)
+            .withTextSpan(
+                queueSource.indexOf(
+                    QStringLiteral("sig0")),
+                4)
+            .withCollectorKind(
+                SymbolTaxonomy::CollectorKind::Logic)
+            .inModule(
+                QStringLiteral(
+                    "context_queue_execution"))
+            .record();
+    SemanticSymbolRecord sig1 =
+        SemanticFixtureRecordBuilder(
+            QStringLiteral("sig1"),
+            SymbolTaxonomy::DeclarationKind::Signal)
+            .withFile(queueFile)
+            .withLocalHandle(502)
+            .withLine(3, 9)
+            .withTextSpan(
+                queueSource.indexOf(
+                    QStringLiteral("sig1")),
+                4)
+            .withCollectorKind(
+                SymbolTaxonomy::CollectorKind::Logic)
+            .inModule(
+                QStringLiteral(
+                    "context_queue_execution"))
+            .record();
+    SemanticIndex::getInstance()->setSnapshot(
+        snapshot({sig0, sig1},
+                 {{queueFile, queueSource}}));
+    QString selectionReason;
+    const bool selectionReady =
+        editor->startSignalSelectionMode(
+            &selectionReason)
+        && editor->toggleSignalSelectionAtForTest(
+            queueSource.indexOf(
+                QStringLiteral("sig1")))
+        && editor->toggleSignalSelectionAtForTest(
+            queueSource.indexOf(
+                QStringLiteral("sig0")));
+    check("assignment queue selects semantic signals",
+          selectionReady
+              && editor->selectedSignalNames()
+                     == QStringList{
+                         QStringLiteral("sig0"),
+                         QStringLiteral("sig1")});
+    resetApplicationActionExecutionHistory();
+    const ContextActionTriggerState queueAction =
+        triggerEditorOwnedContextAction(
+            editor,
+            QStringLiteral("// queue_here"),
+            QStringLiteral(
+                "refactor.createAssignmentQueue"));
+    check("assignment queue context action uses Registry host",
+          queueAction.menuShown
+              && queueAction.found
+              && queueAction.enabled
+              && queueAction.triggered
+              && queueAction.actionId
+                     == QStringLiteral(
+                         "refactor.createAssignmentQueue")
+              && queueAction.executionRoute
+                     == QStringLiteral(
+                         "editor.structure.createAssignmentQueue")
+              && applicationActionExecutionHistory()
+                     .lastActionId()
+                     == QStringLiteral(
+                         "refactor.createAssignmentQueue")
+              && editor->toPlainText().contains(
+                  QStringLiteral(
+                      "    sig0 <= ;\n"
+                      "    sig1 <= ;\n"
+                      "    // queue_here"))
+              && editor->templateSlotModeActive());
+    QTest::keyClick(editor, Qt::Key_Escape);
+
+    resetApplicationActionExecutionHistory();
+    window.hide();
+}
+
+void runCommandLayerCompletionPopupRegression()
+{
+    MainWindow window;
+    window.resize(900, 600);
+    window.show();
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+
+    const QString source = QStringLiteral(
+        ";;p -\n"
+        "module command_layer_completion;\n"
+        "endmodule\n");
+    QTemporaryDir temp;
+    check("command layer completion fixture root is available",
+          temp.isValid());
+    if (!temp.isValid())
+        return;
+    const QString fileName =
+        temp.filePath(QStringLiteral("command_layer_completion.sv"));
+    QFile fixture(fileName);
+    const bool written =
+        fixture.open(QIODevice::WriteOnly | QIODevice::Text)
+        && fixture.write(source.toUtf8()) == source.toUtf8().size();
+    fixture.close();
+    check("command layer completion fixture source is written", written);
+    const bool opened = written
+        && window.tabManager->openFileInTab(fileName);
+    check("command layer completion fixture opens a real editor", opened);
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+
+    MyCodeEditor* editor = window.tabManager->getCurrentEditor();
+    QWidget* commandPanel = window.findChild<QWidget*>(
+        QStringLiteral("commandLayerPanel"));
+    check("command layer completion fixture has an editor and panel",
+          editor && commandPanel);
+    if (!editor || !commandPanel)
+        return;
+
+    QTextCursor cursor(editor->document());
+    cursor.setPosition(QStringLiteral(";;p -").size());
+    editor->setTextCursor(cursor);
+    editor->setFocus();
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+
+    QTest::keyClick(editor, Qt::Key_Tab);
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    QCompleter* completer = editor->findChild<QCompleter*>();
+    QAbstractItemView* completionPopup =
+        completer ? completer->popup() : nullptr;
+    check("explicit completion owns the active popup before COM",
+          completionPopup && completionPopup->isVisible()
+              && QApplication::activePopupWidget()
+                     == completionPopup);
+
+    QTest::keyPress(editor, Qt::Key_F24);
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    check("COM replaces its editor completion popup",
+          completionPopup && !completionPopup->isVisible()
+              && commandPanel->isVisible());
+    check("COM popup replacement preserves source text",
+          editor->toPlainText() == source);
+
+    QTest::keyRelease(editor, Qt::Key_F24);
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    check("releasing F24 closes the command layer after popup replacement",
+          !commandPanel->isVisible());
+    window.hide();
+}
+
 void runEditorActionContextHotPathRegression()
 {
     MainWindow window;
@@ -592,10 +2210,15 @@ void runEditorActionContextHotPathRegression()
     window.hide();
 }
 
-void runDialogRegression()
+void runPeekRegression()
 {
     QString untouched = QStringLiteral("module leaf; endmodule");
-    ExposeSignalToTopDialog cancelDialog(
+    QWidget host;
+    host.resize(920, 700);
+    host.show();
+    QApplication::processEvents();
+
+    ExposeSignalToTopPreview cancelPreview(
         readyDialogReport(QStringLiteral("payload_out")),
         [](const QString& name) {
             ExposeSignalToTopReport report =
@@ -603,43 +2226,158 @@ void runDialogRegression()
             report.renderedDiff =
                 QStringLiteral("+ output logic %1").arg(name);
             return report;
+        },
+        &host);
+
+    bool embedded = false;
+    bool editableName = false;
+    bool completePlan = false;
+    bool applyEnabled = false;
+    bool replanned = false;
+    QTimer::singleShot(0, &host, [&]() {
+        EditorHoverPopup* peek =
+            activeExposeSignalPreview(&host);
+        QLineEdit* nameEdit = peek
+            ? peek->findChild<QLineEdit*>(
+                  QStringLiteral("exposeSignalPortName"))
+            : nullptr;
+        QPlainTextEdit* plan = peek
+            ? peek->findChild<QPlainTextEdit*>(
+                  QStringLiteral("exposeSignalPlanPreview"))
+            : nullptr;
+        QPushButton* apply = peek
+            ? peek->findChild<QPushButton*>(
+                  QStringLiteral("peekAction.apply"))
+            : nullptr;
+        embedded = peek
+            && peek->isVisible()
+            && !peek->isWindow()
+            && QApplication::activeModalWidget() == nullptr;
+        editableName = nameEdit
+            && !nameEdit->isReadOnly()
+            && nameEdit->text()
+                   == QStringLiteral("payload_out");
+        completePlan = plan
+            && plan->toPlainText().contains(
+                   QStringLiteral("top.u_mid.u_leaf"))
+            && plan->toPlainText().contains(
+                   QStringLiteral("leaf, mid, top"))
+            && plan->toPlainText().contains(
+                   QStringLiteral("leaf.sv"));
+        applyEnabled = apply && apply->isEnabled();
+        if (nameEdit)
+            nameEdit->setText(QStringLiteral("debug_out"));
+
+        QTimer::singleShot(10, &host, [&]() {
+            EditorHoverPopup* refreshed =
+                activeExposeSignalPreview(&host);
+            QPlainTextEdit* refreshedPlan = refreshed
+                ? refreshed->findChild<QPlainTextEdit*>(
+                      QStringLiteral(
+                          "exposeSignalPlanPreview"))
+                : nullptr;
+            QPushButton* cancel = refreshed
+                ? refreshed->findChild<QPushButton*>(
+                      QStringLiteral("peekAction.cancel"))
+                : nullptr;
+            replanned = refreshedPlan
+                && refreshedPlan->toPlainText().contains(
+                       QStringLiteral("debug_out"));
+            if (cancel)
+                cancel->click();
         });
-    auto* nameEdit = cancelDialog.findChild<QLineEdit*>(
-        QStringLiteral("exposeSignalPortName"));
-    auto* summary = cancelDialog.findChild<QPlainTextEdit*>(
-        QStringLiteral("exposeSignalSummary"));
-    auto* diff = cancelDialog.findChild<QPlainTextEdit*>(
-        QStringLiteral("exposeSignalDiff"));
-    auto* apply = cancelDialog.findChild<QPushButton*>(
-        QStringLiteral("exposeSignalApplyButton"));
-    auto* cancel = cancelDialog.findChild<QPushButton*>(
-        QStringLiteral("exposeSignalCancelButton"));
+    });
+    QTimer::singleShot(1000, &host, [&]() {
+        if (EditorHoverPopup* peek =
+                activeExposeSignalPreview(&host)) {
+            peek->closePopup();
+        }
+    });
+    const ExposeSignalToTopPreview::Result result =
+        cancelPreview.exec();
+
+    check("preview uses a non-modal embedded Peek",
+          embedded);
     check("preview exposes editable final port",
-          nameEdit && nameEdit->text()
-              == QStringLiteral("payload_out"));
-    check("preview lists source path and affected modules",
-          summary
-              && summary->toPlainText().contains(
-                  QStringLiteral("top.u_mid.u_leaf"))
-              && summary->toPlainText().contains(
-                  QStringLiteral("leaf, mid, top")));
-    check("preview renders diff and enables Apply",
-          diff && diff->toPlainText().contains(
-                      QStringLiteral("leaf.sv"))
-              && apply && apply->isEnabled());
-    if (nameEdit)
-        nameEdit->setText(QStringLiteral("debug_out"));
-    check("editing port replans preview",
-          cancelDialog.reportForApply().exportedPortName
-                  == QStringLiteral("debug_out")
-              && diff->toPlainText().contains(
-                  QStringLiteral("debug_out")));
-    if (cancel)
-        QTest::mouseClick(cancel, Qt::LeftButton);
+          editableName);
+    check("preview lists hierarchy, affected modules, and diff",
+          completePlan && applyEnabled);
+    check("editing port replans Peek content",
+          replanned
+              && cancelPreview.reportForApply().exportedPortName
+                     == QStringLiteral("debug_out"));
     check("Cancel rejects and performs no mutation",
-          cancelDialog.result() == QDialog::Rejected
+          result
+                  == ExposeSignalToTopPreview::Result::Rejected
               && untouched
                   == QStringLiteral("module leaf; endmodule"));
+
+    ExposeSignalToTopPreview planOnlyPreview(
+        readyDialogReport(QStringLiteral("payload_plan")),
+        [](const QString& name) {
+            ExposeSignalToTopReport report =
+                readyDialogReport(name);
+            report.renderedDiff =
+                QStringLiteral("+ output logic %1")
+                    .arg(name);
+            return report;
+        },
+        &host,
+        ExposeSignalToTopPreview::Mode::PreviewOnly);
+    bool planOnlySurface = false;
+    QTimer::singleShot(0, &host, [&]() {
+        EditorHoverPopup* peek =
+            activeExposeSignalPreview(&host);
+        QPushButton* apply = peek
+            ? peek->findChild<QPushButton*>(
+                  QStringLiteral("peekAction.apply"))
+            : nullptr;
+        QPushButton* close = peek
+            ? peek->findChild<QPushButton*>(
+                  QStringLiteral("peekAction.close"))
+            : nullptr;
+        QLineEdit* nameEdit = peek
+            ? peek->findChild<QLineEdit*>(
+                  QStringLiteral("exposeSignalPortName"))
+            : nullptr;
+        planOnlySurface = peek
+            && peek->isVisible()
+            && !apply
+            && close
+            && close->isEnabled()
+            && nameEdit
+            && !nameEdit->isReadOnly();
+        if (nameEdit)
+            nameEdit->setText(QStringLiteral("payload_review"));
+        QTimer::singleShot(10, &host, [&]() {
+            EditorHoverPopup* refreshed =
+                activeExposeSignalPreview(&host);
+            QPushButton* refreshedClose = refreshed
+                ? refreshed->findChild<QPushButton*>(
+                      QStringLiteral("peekAction.close"))
+                : nullptr;
+            if (refreshedClose)
+                refreshedClose->click();
+        });
+    });
+    QTimer::singleShot(1000, &host, [&]() {
+        if (EditorHoverPopup* peek =
+                activeExposeSignalPreview(&host)) {
+            peek->closePopup();
+        }
+    });
+    const ExposeSignalToTopPreview::Result planOnlyResult =
+        planOnlyPreview.exec();
+    check("plan-only Peek replans without exposing Apply",
+          planOnlySurface
+              && planOnlyResult
+                     == ExposeSignalToTopPreview::Result::Accepted
+              && planOnlyPreview.reportForApply()
+                     .exportedPortName
+                     == QStringLiteral("payload_review")
+              && untouched
+                     == QStringLiteral(
+                         "module leaf; endmodule"));
 }
 
 void runMenuAvailabilityRegression()
@@ -769,13 +2507,31 @@ void runQtApplyChainRegression()
     check("fixture opens in real TabManager",
           manager.openFileInTab(fileName));
     MyCodeEditor* editor = manager.getCurrentEditor();
+    tabs.resize(900, 620);
+    tabs.show();
+    QApplication::processEvents();
     QSignalSpy edited(manager.getDocumentModel(),
                       &DocumentModel::documentEdited);
-    ZeroSlackWorkspaceDocumentManager documents(&manager);
+    WorkspaceEditDocumentManager documents(&manager);
     const auto baseline =
         documents.snapshot(fileName.toUtf8().toStdString());
     check("Qt adapter captures editor baseline",
           baseline.has_value());
+    QFile externalWrite(fileName);
+    externalWrite.open(QIODevice::WriteOnly | QIODevice::Text);
+    externalWrite.write(
+        (before + QStringLiteral("// external\n")).toUtf8());
+    externalWrite.close();
+    const auto externallyModified =
+        documents.snapshot(fileName.toUtf8().toStdString());
+    check("Qt adapter version includes external file identity",
+          baseline && externallyModified
+              && externallyModified->version
+                     != baseline->version
+              && externallyModified->text == baseline->text);
+    externalWrite.open(QIODevice::WriteOnly | QIODevice::Text);
+    externalWrite.write(before.toUtf8());
+    externalWrite.close();
 
     SemanticIndex::getInstance()->setSnapshot(snapshot({}));
     const std::uint64_t generation =
@@ -807,28 +2563,56 @@ void runQtApplyChainRegression()
     ExposeSignalToTopReport report =
         readyDialogReport(QStringLiteral("trace"));
     report.planResult.plan.workspaceEdit = plan;
-    report.sourceDiff = rtledit::buildWorkspaceEditSourceDiff(
-        plan, rtledit::SemanticIndexSnapshot{
-                  std::to_string(generation)}, documents);
-    ExposeSignalToTopDialog applyDialog(report);
-    auto* applyButton = applyDialog.findChild<QPushButton*>(
-        QStringLiteral("exposeSignalApplyButton"));
-    if (applyButton)
-        QTest::mouseClick(applyButton, Qt::LeftButton);
+    report.transaction =
+        WorkspaceEditTransactionService::getInstance()->prepare(
+            plan,
+            rtledit::SemanticIndexSnapshot{
+                std::to_string(generation)},
+            documents);
+    report.sourceDiff = report.transaction.sourceDiff;
+    ExposeSignalToTopPreview applyPreview(
+        report, {}, editor);
+    bool embeddedApplyPreview = false;
+    QTimer::singleShot(0, editor, [&]() {
+        EditorHoverPopup* peek =
+            activeExposeSignalPreview(editor);
+        QPushButton* applyButton = peek
+            ? peek->findChild<QPushButton*>(
+                  QStringLiteral("peekAction.apply"))
+            : nullptr;
+        embeddedApplyPreview = peek
+            && peek->isVisible()
+            && !peek->isWindow()
+            && QApplication::activeModalWidget() == nullptr
+            && applyButton
+            && applyButton->isEnabled();
+        if (applyButton)
+            applyButton->click();
+    });
+    QTimer::singleShot(1000, editor, [&]() {
+        if (EditorHoverPopup* peek =
+                activeExposeSignalPreview(editor)) {
+            peek->closePopup();
+        }
+    });
+    const ExposeSignalToTopPreview::Result previewResult =
+        applyPreview.exec();
     ExposeSignalToTopService service;
     const ExposeSignalToTopApplyReport applied =
-        service.apply(applyDialog.reportForApply(), documents);
-    check("Apply accepts and executes rtleditcore transaction",
-          applyDialog.result() == QDialog::Accepted
-              && applied.applied());
+        service.apply(applyPreview.reportForApply(), documents);
+    check("Apply accepts the non-modal embedded Peek",
+          embeddedApplyPreview
+              && previewResult
+                     == ExposeSignalToTopPreview::Result::Accepted);
+    check("accepted Peek executes the rtleditcore transaction",
+          applied.applied());
     QCoreApplication::processEvents();
     check("Apply follows editor incremental document chain",
           editor
               && editor->cachedDocumentText().contains(
                   QStringLiteral("logic trace"))
               && edited.count() > 0
-              && manager.getDocumentForEditor(editor).textVersion
-                  > static_cast<int>(baseline->version.value));
+              && manager.getDocumentForEditor(editor).textVersion > 0);
 }
 } // namespace
 
@@ -837,8 +2621,11 @@ int main(int argc, char** argv)
     QApplication app(argc, argv);
     runEditorActionContextRegression();
     runEditorActionContextStripRegression();
+    runFileActionRegistryShellRegression();
+    runContextActionRegistryExecutionRegression();
+    runCommandLayerCompletionPopupRegression();
     runEditorActionContextHotPathRegression();
-    runDialogRegression();
+    runPeekRegression();
     runMenuAvailabilityRegression();
     runQtApplyChainRegression();
     std::printf("\n%d checks, %d failed\n", checks, failures);

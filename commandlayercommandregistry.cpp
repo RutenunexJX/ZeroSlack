@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <functional>
 #include <limits>
+#include <utility>
 
 namespace {
 QString normalizedCommandText(const QString& text)
@@ -114,31 +115,103 @@ void setReason(QString* reason, const QString& message)
         *reason = message;
 }
 
-CommandLayerCommandId commandLayerIdForActionId(const QString& actionId)
+ActionExecutionResult failedExecution(const QString& reason)
 {
-    if (actionId == QStringLiteral("navigation.goLine"))
-        return CommandLayerCommandId::GoLine;
-    if (actionId == QStringLiteral("navigation.goModule"))
-        return CommandLayerCommandId::GoModule;
-    if (actionId == QStringLiteral("navigation.goPackage"))
-        return CommandLayerCommandId::GoPackage;
-    if (actionId == QStringLiteral("navigation.goEndmodule"))
-        return CommandLayerCommandId::GoEndmodule;
-    if (actionId == QStringLiteral("edit.addSignalRow"))
-        return CommandLayerCommandId::AddSignal;
-    if (actionId == QStringLiteral("edit.addParameterRow"))
-        return CommandLayerCommandId::AddParameter;
-    if (actionId == QStringLiteral("edit.addPortRow"))
-        return CommandLayerCommandId::AddPort;
-    if (actionId == QStringLiteral("edit.clearAssignmentRhs"))
-        return CommandLayerCommandId::ClearRight;
-    if (actionId == QStringLiteral("select.beginEnd"))
-        return CommandLayerCommandId::SelectBeginEnd;
-    if (actionId == QStringLiteral("select.signals"))
-        return CommandLayerCommandId::SelectSignals;
-    return CommandLayerCommandId::Help;
+    ActionExecutionResult result;
+    result.handled = true;
+    result.failureReason = reason;
+    return result;
 }
+
 } // namespace
+
+bool CommandLayerActionExecutionHost::bindRoute(
+    const QString& route,
+    RouteHandler handler,
+    QString* failureReason)
+{
+    const QString normalized = route.trimmed();
+    if (normalized.isEmpty()) {
+        setReason(failureReason,
+                  QStringLiteral("Command Layer route is empty"));
+        return false;
+    }
+    if (!handler) {
+        setReason(
+            failureReason,
+            QStringLiteral("Command Layer route has no handler: %1")
+                .arg(normalized));
+        return false;
+    }
+    if (routeHandlers.contains(normalized)) {
+        setReason(
+            failureReason,
+            QStringLiteral("Duplicate Command Layer route: %1")
+                .arg(normalized));
+        return false;
+    }
+    routeHandlers.insert(normalized, std::move(handler));
+    if (failureReason)
+        failureReason->clear();
+    return true;
+}
+
+bool CommandLayerActionExecutionHost::hasRoute(
+    const QString& route) const
+{
+    return routeHandlers.contains(route.trimmed());
+}
+
+void CommandLayerActionExecutionHost::setFallbackHost(
+    ActionExecutionHost* host)
+{
+    fallbackHost =
+        host == this ? nullptr : host;
+}
+
+bool CommandLayerActionExecutionHost::hasFallbackHost() const
+{
+    return fallbackHost != nullptr;
+}
+
+ActionExecutionResult
+CommandLayerActionExecutionHost::executeActionRoute(
+    const ActionDescriptor& descriptor,
+    const ActionInvocation& invocation)
+{
+    const QString route = descriptor.executionRoute.trimmed();
+    const auto handler = routeHandlers.constFind(route);
+    ActionExecutionResult result;
+    if (handler == routeHandlers.cend()) {
+        if (!fallbackHost) {
+            return failedExecution(
+                QStringLiteral(
+                    "No Command Layer execution handler for route: %1")
+                    .arg(route.isEmpty()
+                             ? QStringLiteral("<empty>")
+                             : route));
+        }
+        result = fallbackHost->executeActionRoute(
+            descriptor, invocation);
+    } else {
+        result = (*handler)(descriptor, invocation);
+    }
+
+    if (!result.handled) {
+        return failedExecution(
+            QStringLiteral(
+                "Command Layer route did not handle action %1: %2")
+                .arg(descriptor.id, route));
+    }
+    if (!result.succeeded
+        && result.failureReason.trimmed().isEmpty()) {
+        result.failureReason = result.message.trimmed().isEmpty()
+            ? QStringLiteral("Command Layer action failed: %1")
+                  .arg(descriptor.id)
+            : result.message;
+    }
+    return result;
+}
 
 const QList<CommandLayerCommandMetadata>& commandLayerCommandRegistry()
 {
@@ -161,8 +234,6 @@ const QList<CommandLayerCommandMetadata>& commandLayerCommandRegistry()
                         == ActionParameterKind::PositiveInteger
                 ? CommandLayerCommandInputKind::PositiveInteger
                 : CommandLayerCommandInputKind::Fixed;
-            metadata.id =
-                commandLayerIdForActionId(descriptor->id);
             metadata.actionId = descriptor->id;
             metadata.executionRoute =
                 descriptor->executionRoute;
@@ -229,9 +300,9 @@ bool validateCommandLayerCommandRegistry(
                               .arg(left.name));
                 return false;
             }
-            if (left.id == right.id) {
+            if (left.actionId == right.actionId) {
                 setReason(reason,
-                          QStringLiteral("Duplicate Command Layer execution id: %1")
+                          QStringLiteral("Duplicate Command Layer action: %1")
                               .arg(left.name));
                 return false;
             }
@@ -357,6 +428,38 @@ CommandLayerLineParseResult parseCommandLayerLineQuery(
     result.state = CommandLayerLineParseState::Valid;
     result.line = static_cast<int>(line);
     return result;
+}
+
+ActionExecutionResult executeCommandLayerCommand(
+    const CommandLayerCommandMetadata& command,
+    ActionExecutionHost& host,
+    const ActionInvocation& invocation)
+{
+    const ActionDescriptor* descriptor =
+        findActionById(command.actionId);
+    if (!descriptor) {
+        return failedExecution(
+            QStringLiteral(
+                "Command Layer action is not registered: %1")
+                .arg(command.actionId.isEmpty()
+                         ? QStringLiteral("<empty>")
+                         : command.actionId));
+    }
+    if (!findActionAlias(*descriptor,
+                         ActionSurface::CommandLayer,
+                         command.name)) {
+        return failedExecution(
+            QStringLiteral(
+                "Action is not registered for this Command Layer command: %1")
+                .arg(command.name));
+    }
+    if (command.executionRoute != descriptor->executionRoute) {
+        return failedExecution(
+            QStringLiteral(
+                "Command Layer route is stale for action %1")
+                .arg(command.actionId));
+    }
+    return executeAction(*descriptor, host, invocation);
 }
 
 QString commandLayerMatchRankName(CommandLayerMatchRank rank)

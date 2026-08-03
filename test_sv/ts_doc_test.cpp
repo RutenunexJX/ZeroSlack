@@ -1,5 +1,6 @@
 // Headless test for the A1/A2 foundation: TSDocument incremental model + tree-sitter highlight spans.
 #include "tsdocument.h"
+#include <QElapsedTimer>
 #include <QString>
 #include <QStringList>
 #include <cstdio>
@@ -9,6 +10,7 @@ static int checks = 0, fails = 0;
 static void check(const char* what, bool ok) {
     ++checks; if (!ok) ++fails;
     printf("[%s] %s\n", ok ? "PASS" : "FAIL", what);
+    fflush(stdout);
 }
 
 static const char* catName(HlCategory c) {
@@ -70,6 +72,106 @@ static QString applyParameterInsertEdit(const QString& src,
 
 int main() {
     TSDocument doc;
+
+    {
+        TSUTF16Text text;
+        QString expected =
+            QStringLiteral("module piece_table; endmodule");
+        text.setText(expected);
+        text.resetMetricsForTest();
+
+        text.replace(0, 0, QStringLiteral("// "));
+        expected.insert(0, QStringLiteral("// "));
+        const int middle = expected.indexOf(
+            QStringLiteral("piece_table"));
+        text.replace(middle,
+                     QStringLiteral("piece_table").size(),
+                     QStringLiteral("piece_storage"));
+        expected.replace(middle,
+                         QStringLiteral("piece_table").size(),
+                         QStringLiteral("piece_storage"));
+        text.replace(text.size(), 0, QStringLiteral("\n"));
+        expected.append(QLatin1Char('\n'));
+        const bool accessorsCorrect =
+            text.at(middle) == QLatin1Char('p')
+            && text.indexOf(
+                   QStringLiteral("piece_storage"))
+                   == middle
+            && text.lastIndexOf(QLatin1Char('\n'))
+                   == text.size() - 1;
+
+        bool differentialMatch = true;
+        quint32 state = 0x4a6f7921u;
+        for (int edit = 0; edit < 160; ++edit) {
+            state = state * 1664525u + 1013904223u;
+            const int position = expected.isEmpty()
+                ? 0
+                : static_cast<int>(
+                      state
+                      % static_cast<quint32>(
+                          expected.size() + 1));
+            state = state * 1664525u + 1013904223u;
+            const int removedLength =
+                qMin(static_cast<int>(state % 6u),
+                     expected.size() - position);
+            const QString inserted =
+                edit % 19 == 0
+                ? QStringLiteral("\U0001f600")
+                : edit % 7 == 0
+                    ? QStringLiteral("xy")
+                    : QString(
+                          1,
+                          QChar(
+                              static_cast<char16_t>(
+                                  'a' + edit % 26)));
+            text.replace(position,
+                         removedLength,
+                         inserted);
+            expected.replace(position,
+                             removedLength,
+                             inserted);
+            differentialMatch =
+                differentialMatch
+                && text.size() == expected.size()
+                && text.mid(0, text.size()) == expected;
+        }
+
+        const TSTextStorageMetrics metrics =
+            text.metricsForTest();
+        check("piece-table edits preserve exact UTF-16 text",
+              accessorsCorrect
+                  && differentialMatch
+                  && text.mid(0, text.size()) == expected);
+        check("piece-table edits move no unchanged document characters",
+              metrics.editCount == 163
+                  && metrics.movedCharacterCount == 0
+                  && metrics.materializationCount == 0);
+    }
+
+    {
+        TSUTF16Text splitSurrogate;
+        splitSurrogate.setText(QStringLiteral("ab"));
+        splitSurrogate.resetMetricsForTest();
+        splitSurrogate.replace(
+            1, 0, QString(1, QChar(0xde00)));
+        splitSurrogate.replace(
+            1, 0, QString(1, QChar(0xd83d)));
+
+        uint32_t bytesRead = 0;
+        const char* bytes =
+            splitSurrogate.read(2u, &bytesRead);
+        const auto* utf16 =
+            reinterpret_cast<const char16_t*>(bytes);
+        check("piece-table input joins a surrogate pair across pieces",
+              bytes != nullptr
+                  && bytesRead == 4u
+                  && utf16[0] == char16_t(0xd83d)
+                  && utf16[1] == char16_t(0xde00)
+                  && splitSurrogate.mid(1, 2)
+                      == QStringLiteral("\U0001f600")
+                  && splitSurrogate.metricsForTest()
+                             .materializationCount == 0);
+    }
 
     // 1) Valid SV parses without error.
     doc.setText(QStringLiteral("module top;\n  logic a;\nendmodule\n"));
@@ -301,6 +403,78 @@ int main() {
             check("repeated fragment replacement keeps TS cache exact",
                   repeated.text() == current);
         }
+    }
+
+    {
+        TSDocument multilineReplacement;
+        const QString multiline = QStringLiteral(
+            "module command_line;\n"
+            "  logic a;\n"
+            "  logic b;\n"
+            "  assign b = a;\n"
+            "endmodule\n");
+        multilineReplacement.setText(multiline);
+
+        DocumentChange clear;
+        clear.removedLength = multiline.size();
+        clear.removedText = multiline;
+        clear.oldLength = multiline.size();
+        clear.newLength = 0;
+        clear.startLine = 0;
+        clear.startColumn = 0;
+        clear.oldEndLine = multiline.count(QLatin1Char('\n'));
+        multilineReplacement.applyEdit(clear);
+        check("multiline full deletion keeps TS cache empty",
+              multilineReplacement.text().isEmpty());
+
+        DocumentChange insert;
+        insert.insertedText = QStringLiteral("`");
+        insert.oldLength = 0;
+        insert.newLength = 1;
+        multilineReplacement.applyEdit(insert);
+        check("input after multiline full deletion keeps TS cache exact",
+              multilineReplacement.text() == QStringLiteral("`"));
+    }
+
+    {
+        TSDocument structuralReplacement;
+        QString current = QStringLiteral("sig");
+        structuralReplacement.setText(current);
+
+        const auto replaceWholeDocument =
+            [&structuralReplacement, &current](const QString& replacement) {
+                DocumentChange change;
+                change.removedLength = current.size();
+                change.removedText = current;
+                change.insertedText = replacement;
+                change.oldLength = current.size();
+                change.newLength = replacement.size();
+                change.oldEndLine =
+                    current.count(QLatin1Char('\n'));
+                change.newEndLine =
+                    replacement.count(QLatin1Char('\n'));
+                change.lineDelta =
+                    change.newEndLine - change.oldEndLine;
+                structuralReplacement.applyEdit(change);
+                current = replacement;
+                return structuralReplacement.text() == current
+                    && !ts_node_is_null(
+                        structuralReplacement.rootNode());
+            };
+
+        bool exact = true;
+        for (int iteration = 0; iteration < 256 && exact; ++iteration) {
+            exact = replaceWholeDocument(QStringLiteral("(sig)"))
+                && replaceWholeDocument(QStringLiteral("sig"))
+                && replaceWholeDocument(QString())
+                && replaceWholeDocument(QStringLiteral("[]"))
+                && !structuralReplacement.isCommentAt(0)
+                && replaceWholeDocument(QStringLiteral("// ("))
+                && structuralReplacement.isCommentAt(1)
+                && replaceWholeDocument(QStringLiteral("sig"));
+        }
+        check("repeated structural whole-document replacement keeps Tree-sitter exact",
+              exact);
     }
 
     // 6) Live enclosing-module scope (A3): cursor inside which module, derived from the tree.
@@ -946,6 +1120,226 @@ int main() {
                       == crlfUnicode.indexOf(QStringLiteral("  );"))
                   && target.prefix == QStringLiteral("    ")
                   && target.suffix == QStringLiteral("\r\n"));
+    }
+
+    // Interactive structural input is sourced from the live Tree-sitter
+    // snapshot. It must not require a saved Slang compilation.
+    {
+        const QString incompleteBegin =
+            QStringLiteral("module input_demo;\n"
+                           "always_comb begin");
+        TSDocument d;
+        d.setText(incompleteBegin);
+        const TSStructuralNewlineTarget target =
+            d.structuralNewlineTarget(incompleteBegin.size());
+        check("structural Enter closes a newly typed begin",
+              target.ok()
+                  && target.insertedClosingKeyword
+                  && target.insertionText
+                      == QStringLiteral("\n    \nend")
+                  && target.caretOffset == 5);
+
+        const QString pairedBegin =
+            QStringLiteral("module input_demo;\n"
+                           "always_comb begin\n"
+                           "end\n"
+                           "endmodule\n");
+        d.setText(pairedBegin);
+        const int pairedCursor =
+            pairedBegin.indexOf(QStringLiteral("begin"))
+            + QStringLiteral("begin").size();
+        const TSStructuralNewlineTarget pairedTarget =
+            d.structuralNewlineTarget(pairedCursor);
+        check("structural Enter does not duplicate an existing end",
+              pairedTarget.ok()
+                  && !pairedTarget.insertedClosingKeyword
+                  && pairedTarget.insertionText
+                      == QStringLiteral("\n    "));
+    }
+
+    {
+        const QString caseBody =
+            QStringLiteral("module case_input;\n"
+                           "always_comb begin\n"
+                           "    case (state)\n"
+                           "        IDLE:\n"
+                           "            next = RUN;\n"
+                           "        default:\n"
+                           "            next = IDLE;\n"
+                           "    endcase\n"
+                           "end\n"
+                           "endmodule\n");
+        TSDocument d;
+        d.setText(caseBody);
+        const int labelCursor =
+            caseBody.indexOf(QStringLiteral("IDLE:"))
+            + QStringLiteral("IDLE:").size();
+        const TSStructuralNewlineTarget target =
+            d.structuralNewlineTarget(labelCursor);
+        check("structural Enter indents the first case-item statement",
+              target.ok()
+                  && target.insertionText
+                      == QStringLiteral("\n            "));
+    }
+
+    {
+        const QString keywordSource =
+            QStringLiteral("module keyword_demo;\n"
+                           "always_comb begin\n"
+                           "    beg\n"
+                           "end\n"
+                           "endmodule\n");
+        TSDocument d;
+        d.setText(keywordSource);
+        const int cursor =
+            keywordSource.lastIndexOf(QStringLiteral("beg"))
+            + QStringLiteral("beg").size();
+        const TSKeywordCompletionTarget completion =
+            d.uniqueKeywordCompletionAt(cursor);
+        check("Tree-sitter keyword completion resolves unique begin",
+              completion.ok()
+                  && completion.prefix == QStringLiteral("beg")
+                  && completion.keyword == QStringLiteral("begin")
+                  && completion.suffix == QStringLiteral("in"));
+
+        const QString ambiguous =
+            QStringLiteral("module keyword_demo;\n"
+                           "  alw\n"
+                           "endmodule\n");
+        d.setText(ambiguous);
+        check("ambiguous keyword prefix has no ghost completion",
+              !d.uniqueKeywordCompletionAt(
+                    ambiguous.indexOf(QStringLiteral("alw")) + 3)
+                   .ok());
+
+        const QString comment =
+            QStringLiteral("module keyword_demo;\n"
+                           "  // beg\n"
+                           "endmodule\n");
+        d.setText(comment);
+        check("keyword ghost is suppressed in comments",
+              !d.uniqueKeywordCompletionAt(
+                    comment.indexOf(QStringLiteral("beg")) + 3)
+                   .ok());
+    }
+
+    {
+        QString largeKeywordSource =
+            QStringLiteral("module keyword_perf;\n"
+                           "always_comb begin\n");
+        largeKeywordSource.reserve(400000);
+        for (int index = 0; index < 12000; ++index) {
+            largeKeywordSource +=
+                QStringLiteral("    logic value_%1;\n")
+                    .arg(index);
+        }
+        largeKeywordSource +=
+            QStringLiteral("    beg\n"
+                           "end\n"
+                           "endmodule\n");
+        TSDocument d;
+        d.setText(largeKeywordSource);
+        const int cursor =
+            largeKeywordSource.lastIndexOf(
+                QStringLiteral("beg")) + 3;
+        QElapsedTimer timer;
+        timer.start();
+        const TSKeywordCompletionTarget completion =
+            d.uniqueKeywordCompletionAt(cursor);
+        const qint64 elapsedNanoseconds =
+            timer.nsecsElapsed();
+        std::printf(
+            "keyword lookahead large-file latency: %.3f ms\n",
+            static_cast<double>(elapsedNanoseconds)
+                / 1000000.0);
+        check("large-file keyword completion stays on parse-state lookahead",
+              completion.ok()
+                  && completion.keyword
+                         == QStringLiteral("begin")
+                  && elapsedNanoseconds < 50000000);
+    }
+
+    {
+        const QString nestedPairs =
+            QStringLiteral("module pair_demo;\n"
+                           "always_comb begin\n"
+                           "    case (state)\n"
+                           "        IDLE: begin\n"
+                           "        end\n"
+                           "    endcase\n"
+                           "end\n"
+                           "endmodule\n");
+        TSDocument d;
+        d.setText(nestedPairs);
+        const int innerBegin =
+            nestedPairs.indexOf(QStringLiteral("begin"),
+                                nestedPairs.indexOf(QStringLiteral("IDLE")));
+        const TSKeywordPairTarget beginPair =
+            d.matchingKeywordPairAt(innerBegin + 1);
+        check("nested begin/end pair resolves structurally",
+              beginPair.ok()
+                  && beginPair.openingStartChar == innerBegin
+                  && nestedPairs.mid(beginPair.closingStartChar,
+                                     beginPair.closingEndChar
+                                         - beginPair.closingStartChar)
+                      == QStringLiteral("end"));
+        const TSKeywordPairTarget boundaryPair =
+            d.matchingKeywordPairAt(
+                innerBegin + QStringLiteral("begin").size());
+        check("begin/end pair resolves at the closing keyword boundary",
+              boundaryPair.ok()
+                  && boundaryPair.openingStartChar == innerBegin
+                  && boundaryPair.closingStartChar
+                         == beginPair.closingStartChar);
+
+        const int caseStart =
+            nestedPairs.indexOf(QStringLiteral("case"));
+        const TSKeywordPairTarget casePair =
+            d.matchingKeywordPairAt(caseStart + 1);
+        check("case/endcase pair resolves structurally",
+              casePair.ok()
+                  && casePair.openingKeyword == QStringLiteral("case")
+                      && casePair.closingKeyword == QStringLiteral("endcase"));
+    }
+
+    {
+        const QString occurrenceSource =
+            QStringLiteral(
+                "module occurrence_demo;\n"
+                "logic sig;\n"
+                "always_comb begin\n"
+                "    sig = sig;\n"
+                "    if (enable) begin\n"
+                "        sig = sig;\n"
+                "        // sig\n"
+                "        text = \"sig\";\n"
+                "    end\n"
+                "end\n"
+                "endmodule\n");
+        TSDocument d;
+        d.setText(occurrenceSource);
+        const int innerSignal =
+            occurrenceSource.indexOf(
+                QStringLiteral("sig = sig"),
+                occurrenceSource.indexOf(
+                    QStringLiteral("if (enable)")));
+        const TSIdentifierOccurrenceSet occurrences =
+            d.identifierOccurrencesAt(
+                innerSignal
+                + QStringLiteral("sig").size());
+        check("identifier occurrences use the nearest Tree-sitter lexical scope",
+              occurrences.ok()
+                  && occurrences.selected.text
+                         == QStringLiteral("sig")
+                  && occurrences.occurrences.size() == 2
+                  && occurrences.occurrences.at(0).startChar
+                         == innerSignal
+                  && occurrences.occurrences.at(1).startChar
+                         == innerSignal + 6
+                  && occurrences.scopeStartChar
+                         < innerSignal
+                  && occurrences.scopeEndChar
+                         > innerSignal + 9);
     }
 
     printf("\n%d checks, %d failed\n", checks, fails);

@@ -7,14 +7,17 @@
 #include "semanticindex.h"
 #include "tabmanager.h"
 
+#include <QAbstractItemView>
 #include <QApplication>
 #include <QComboBox>
+#include <QCompleter>
 #include <QEvent>
 #include <QFormLayout>
 #include <QFont>
 #include <QGuiApplication>
 #include <QHBoxLayout>
 #include <QKeyEvent>
+#include <QKeySequence>
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
@@ -38,17 +41,57 @@ bool focusBelongsToWindow(QWidget* anchor)
     return !anchorWindow || focus->window() == anchorWindow;
 }
 
-bool isColumnNumberShortcutKey(QKeyEvent* event)
+bool isEditorCompletionPopup(MyCodeEditor* editor, QWidget* popup)
 {
-    if (!event || event->key() != Qt::Key_C)
+    if (!editor || !popup)
         return false;
-    const Qt::KeyboardModifiers modifiers =
-        event->modifiers()
-        & (Qt::ShiftModifier
-           | Qt::ControlModifier
-           | Qt::AltModifier
-           | Qt::MetaModifier);
-    return modifiers == Qt::AltModifier;
+
+    const QList<QCompleter*> completers =
+        editor->findChildren<QCompleter*>();
+    for (QCompleter* completer : completers) {
+        QAbstractItemView* candidate =
+            completer ? completer->popup() : nullptr;
+        if (candidate
+            && (popup == candidate || popup == candidate->window())) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool matchesActionShortcut(
+    const QKeyEvent* event,
+    const char* actionId)
+{
+    if (!event || !actionId)
+        return false;
+    const QString shortcutText =
+        effectiveActionShortcut(
+            QString::fromLatin1(actionId));
+    if (shortcutText.isEmpty())
+        return false;
+    const QKeySequence shortcut =
+        QKeySequence::fromString(
+            shortcutText,
+            QKeySequence::PortableText);
+    return shortcut.matches(
+               QKeySequence(
+                   event->keyCombination()))
+        == QKeySequence::ExactMatch;
+}
+
+bool matchesCommandModeShortcut(
+    const QKeyEvent* event)
+{
+    return matchesActionShortcut(
+        event, ActionIds::ViewCommandMode);
+}
+
+bool matchesColumnNumberShortcut(
+    const QKeyEvent* event)
+{
+    return matchesActionShortcut(
+        event, ActionIds::InsertColumnNumbers);
 }
 
 QString commandCharacterForKey(int key)
@@ -89,6 +132,29 @@ int comboValue(const QComboBox* combo, int fallback)
         return fallback;
     const QVariant data = combo->currentData();
     return data.isValid() ? data.toInt() : fallback;
+}
+
+ActionExecutionResult successfulCommandExecution(
+    bool phaseManaged = false)
+{
+    ActionExecutionResult result;
+    result.handled = true;
+    result.succeeded = true;
+    if (phaseManaged) {
+        result.output.insert(
+            QStringLiteral("commandLayer.phaseManaged"),
+            true);
+    }
+    return result;
+}
+
+ActionExecutionResult failedCommandExecution(
+    const QString& reason)
+{
+    ActionExecutionResult result;
+    result.handled = true;
+    result.failureReason = reason;
+    return result;
 }
 } // namespace
 
@@ -551,7 +617,13 @@ void CommandLayerPanel::showSearch(
     const QString& failureReason,
     QWidget* anchor)
 {
-    titleLabel->setText(QStringLiteral("COMMAND LAYER  ·  F24 held"));
+    const QString commandShortcut =
+        effectiveActionShortcut(
+            QString::fromLatin1(
+                ActionIds::ViewCommandMode));
+    titleLabel->setText(
+        QStringLiteral("COMMAND MODE  ·  %1 held")
+            .arg(commandShortcut));
     queryLabel->setText(
         QStringLiteral("Query: %1")
             .arg(query.isEmpty() ? QStringLiteral("<empty>") : query));
@@ -562,8 +634,7 @@ void CommandLayerPanel::showSearch(
             QStringLiteral("%1  —  %2")
                 .arg(match.command.name, match.command.description),
             candidateList);
-        item->setData(Qt::UserRole,
-                      static_cast<int>(match.command.id));
+        item->setData(Qt::UserRole, match.command.actionId);
         item->setToolTip(
             QStringLiteral("%1 match").arg(
                 commandLayerMatchRankName(match.rank)));
@@ -585,11 +656,16 @@ void CommandLayerPanel::showHelp(
     const QList<ActionCatalogEntry>& entries,
     QWidget* anchor)
 {
+    const QString commandShortcut =
+        effectiveActionShortcut(
+            QString::fromLatin1(
+                ActionIds::ViewCommandMode));
     titleLabel->setText(QStringLiteral("ACTION CATALOG"));
     queryLabel->setText(
         QStringLiteral(
             "All registered actions and aliases. Enter, Esc, or a command key "
-            "returns to F24 search; release F24 to return to the editor."));
+            "returns to %1 search; release %1 to return to the editor.")
+            .arg(commandShortcut));
     candidateList->clear();
     for (const ActionCatalogEntry& entry : entries) {
         candidateList->addItem(
@@ -650,7 +726,8 @@ CommandLayerCoordinator::CommandLayerCoordinator(
     ProjectModel* projectModel,
     SemanticIndex* semanticIndex,
     NavigationCommandCoordinator* navigation,
-    QObject* parent)
+    QObject* parent,
+    ActionExecutionHost* applicationActionHost)
     : QObject(parent)
     , anchor(anchor)
     , tabManager(tabManager)
@@ -695,12 +772,298 @@ CommandLayerCoordinator::CommandLayerCoordinator(
             }
             editor->setFocus(Qt::ShortcutFocusReason);
         });
+    actionExecutionHost.setFallbackHost(
+        applicationActionHost);
+    registerActionExecutionRoutes();
 }
 
 CommandLayerCoordinator::~CommandLayerCoordinator()
 {
     if (applicationFilterInstalled && qApp)
         qApp->removeEventFilter(this);
+}
+
+void CommandLayerCoordinator::registerActionExecutionRoutes()
+{
+    using EditorAction = bool (MyCodeEditor::*)(QString*);
+
+    const auto bind =
+        [this](const QString& route,
+               CommandLayerActionExecutionHost::RouteHandler handler) {
+        QString failure;
+        const bool registered =
+            actionExecutionHost.bindRoute(
+                route, std::move(handler), &failure);
+        Q_ASSERT_X(registered,
+                   "CommandLayerCoordinator",
+                   "duplicate or invalid action execution route");
+        Q_UNUSED(failure);
+    };
+    const auto bindEditor =
+        [this, &bind](const QString& route,
+                      EditorAction action,
+                      const QString& fallbackFailure) {
+        bind(route,
+             [this, action, fallbackFailure](
+                 const ActionDescriptor&,
+                 const ActionInvocation&) {
+            MyCodeEditor* editor = executingActionEditor;
+            if (!editor) {
+                return failedCommandExecution(
+                    QStringLiteral("No editor tab is available"));
+            }
+            QString message;
+            if (!(editor->*action)(&message)) {
+                return failedCommandExecution(
+                    message.isEmpty() ? fallbackFailure : message);
+            }
+            return successfulCommandExecution();
+        });
+    };
+
+    bind(QStringLiteral("ui.commandMode.show"),
+         [this](const ActionDescriptor& descriptor,
+                const ActionInvocation&) {
+        if (!beginCommandShortcutHold()) {
+            return failedCommandExecution(
+                QStringLiteral(
+                    "Command Mode cannot take editor input ownership."));
+        }
+        if (panel) {
+            panel->setProperty(
+                "entryActionId",
+                descriptor.id);
+        }
+        return successfulCommandExecution(true);
+    });
+    bind(QStringLiteral("editor.columnNumbers.show"),
+         [this](const ActionDescriptor& descriptor,
+                const ActionInvocation&) {
+        MyCodeEditor* editor = executingActionEditor;
+        if (!editor) {
+            return failedCommandExecution(
+                QStringLiteral("No editor tab is available"));
+        }
+        const QStringList selectedRows =
+            editor->columnSelectionTexts();
+        if (!editor->columnSelectionActive()
+            || selectedRows.isEmpty()) {
+            return failedCommandExecution(
+                QStringLiteral("No column selection"));
+        }
+        if (!columnNumberTool) {
+            return failedCommandExecution(
+                QStringLiteral(
+                    "Column Number Tool is unavailable"));
+        }
+
+        if (phase == Phase::Search
+            || phase == Phase::Help) {
+            leaveCommandLayer(false);
+        }
+        columnNumberEditor = editor;
+        columnNumberTool->setProperty(
+            "entryActionId", descriptor.id);
+        columnNumberTool->configure(
+            inferColumnNumberConfig(
+                selectedRows.constFirst()),
+            selectedRows.size(),
+            selectedRows);
+        columnNumberTool->showFor(
+            anchor ? anchor : editor);
+        return successfulCommandExecution(true);
+    });
+
+    bind(QStringLiteral("editor.navigation.goLine"),
+         [this](const ActionDescriptor&,
+                const ActionInvocation& invocation) {
+        return executeRelativeLineAction(invocation);
+    });
+    bind(QStringLiteral("editor.navigation.goModule"),
+         [this](const ActionDescriptor& descriptor,
+                const ActionInvocation&) {
+        MyCodeEditor* editor = executingActionEditor;
+        if (!editor || !picker) {
+            return failedCommandExecution(
+                QStringLiteral("No editor tab is available"));
+        }
+        showPicker(
+            editor,
+            PickerMode::Module,
+            descriptor.aliasForSurface(
+                          ActionSurface::CommandLayer)
+                .token);
+        return successfulCommandExecution(true);
+    });
+    bind(QStringLiteral("editor.navigation.goPackage"),
+         [this](const ActionDescriptor& descriptor,
+                const ActionInvocation&) {
+        MyCodeEditor* editor = executingActionEditor;
+        if (!editor || !picker) {
+            return failedCommandExecution(
+                QStringLiteral("No editor tab is available"));
+        }
+        showPicker(
+            editor,
+            PickerMode::Package,
+            descriptor.aliasForSurface(
+                          ActionSurface::CommandLayer)
+                .token);
+        return successfulCommandExecution(true);
+    });
+    bindEditor(QStringLiteral("editor.navigation.goEndmodule"),
+               &MyCodeEditor::goToFinalEndmodule,
+               QStringLiteral("No endmodule found"));
+    bindEditor(
+        QStringLiteral(
+            "editor.navigation.nextAssignment"),
+        &MyCodeEditor::
+            goToNextAssignmentForSelectedSignal,
+        QStringLiteral(
+            "No assignment was found for the selected signal"));
+    bindEditor(
+        QStringLiteral(
+            "editor.navigation.previousAssignment"),
+        &MyCodeEditor::
+            goToPreviousAssignmentForSelectedSignal,
+        QStringLiteral(
+            "No assignment was found for the selected signal"));
+    bindEditor(
+        QStringLiteral(
+            "editor.navigation.nextConditionalBranch"),
+        &MyCodeEditor::goToNextConditionalBranch,
+        QStringLiteral(
+            "No conditional compilation group was found"));
+    bindEditor(
+        QStringLiteral(
+            "editor.navigation.previousConditionalBranch"),
+        &MyCodeEditor::goToPreviousConditionalBranch,
+        QStringLiteral(
+            "No conditional compilation group was found"));
+    bind(
+        QStringLiteral("action.repeatLast"),
+        [this](const ActionDescriptor&,
+               const ActionInvocation&) {
+            return applicationActionExecutionHistory()
+                .repeatLast(actionExecutionHost);
+        });
+    bindEditor(QStringLiteral("editor.structure.addSignalRow"),
+               &MyCodeEditor::addSignalRow,
+               QStringLiteral("No clear signal insert point"));
+    bindEditor(
+        QStringLiteral("editor.structure.addParameterRow"),
+        &MyCodeEditor::addParameterRow,
+        QStringLiteral(
+            "No clear parameter insert point"));
+    bindEditor(QStringLiteral("editor.structure.addPortRow"),
+               &MyCodeEditor::addPortRow,
+               QStringLiteral("No clear port append point"));
+    bindEditor(
+        QStringLiteral("editor.structure.clearAssignmentRhs"),
+        &MyCodeEditor::clearSelectedAssignmentRhs,
+        QStringLiteral("No assignment RHS found"));
+    bindEditor(QStringLiteral("editor.selection.beginEnd"),
+               &MyCodeEditor::selectInsideBeginEnd,
+               QStringLiteral("No begin-end block"));
+    bindEditor(
+        QStringLiteral("editor.mode.signalSelection"),
+        &MyCodeEditor::startSignalSelectionMode,
+        QStringLiteral("Signal selection is unavailable"));
+    bindEditor(QStringLiteral("editor.lines.delete"),
+               &MyCodeEditor::deleteLines,
+               QStringLiteral("No logical line is available"));
+    bindEditor(
+        QStringLiteral("editor.lines.join"),
+        &MyCodeEditor::joinLines,
+        QStringLiteral(
+            "At least two logical lines are required"));
+    bindEditor(
+        QStringLiteral("editor.lines.moveUp"),
+        &MyCodeEditor::moveLinesUp,
+        QStringLiteral(
+            "The selected logical lines cannot move upward"));
+    bindEditor(
+        QStringLiteral("editor.lines.moveDown"),
+        &MyCodeEditor::moveLinesDown,
+        QStringLiteral(
+            "The selected logical lines cannot move downward"));
+    bindEditor(
+        QStringLiteral(
+            "editor.multicursor.addNextOccurrence"),
+        &MyCodeEditor::addNextSymbolOccurrence,
+        QStringLiteral(
+            "No structural symbol occurrence is available"));
+    bindEditor(
+        QStringLiteral(
+            "editor.multicursor.selectScopeOccurrences"),
+        &MyCodeEditor::selectAllSymbolOccurrences,
+        QStringLiteral(
+            "No structural symbol occurrence is available"));
+    bindEditor(
+        QStringLiteral("editor.selection.expandSmart"),
+        &MyCodeEditor::expandSmartSelection,
+        QStringLiteral(
+            "No larger structural selection is available"));
+    bindEditor(
+        QStringLiteral(
+            "editor.navigation.nextSelectedSymbolOccurrence"),
+        &MyCodeEditor::goToNextSelectedSymbolOccurrence,
+        QStringLiteral(
+            "No next selected-symbol occurrence is available"));
+    bindEditor(
+        QStringLiteral(
+            "editor.navigation.previousSelectedSymbolOccurrence"),
+        &MyCodeEditor::goToPreviousSelectedSymbolOccurrence,
+        QStringLiteral(
+            "No previous selected-symbol occurrence is available"));
+    bind(QStringLiteral("ui.actionCatalog"),
+         [this](const ActionDescriptor&,
+                const ActionInvocation&) {
+        showHelp();
+        return successfulCommandExecution(true);
+    });
+}
+
+ActionExecutionResult
+CommandLayerCoordinator::executeRelativeLineAction(
+    const ActionInvocation& invocation)
+{
+    MyCodeEditor* editor = executingActionEditor;
+    if (!editor) {
+        return failedCommandExecution(
+            QStringLiteral("No editor tab is available"));
+    }
+
+    bool lineValid = false;
+    const int moduleLine =
+        invocation.parameters.value(QStringLiteral("line"))
+            .toInt(&lineValid);
+    if (!lineValid || moduleLine < 1) {
+        return failedCommandExecution(
+            QStringLiteral(
+                "go <number> requires a line number >= 1"));
+    }
+
+    const QTextBlock block = editor->textCursor().block();
+    CommandLayerRelativeLineQuery query;
+    query.snapshot = semanticSnapshot();
+    query.fileName = editor->documentFileName();
+    query.currentModuleName = editor->currentModuleName();
+    query.currentLine =
+        block.isValid() ? block.blockNumber() + 1 : -1;
+    query.requestedModuleLine = moduleLine;
+    const CommandLayerRelativeLineResult result =
+        service.relativeLineTarget(query);
+    if (!result.ok)
+        return failedCommandExecution(result.message);
+
+    if (navigation) {
+        navigation->navigateToFileAndLine(
+            result.filePath, result.line, result.column);
+    }
+    emit editor->editorStatusMessageRequested(
+        QStringLiteral("go %1").arg(moduleLine));
+    return successfulCommandExecution();
 }
 
 void CommandLayerCoordinator::connectSignals()
@@ -792,11 +1155,11 @@ bool CommandLayerCoordinator::handleApplicationEvent(QObject* watched,
 
     if (event->type() == QEvent::ShortcutOverride) {
         auto* keyEvent = static_cast<QKeyEvent*>(event);
-        if (keyEvent->key() == Qt::Key_F24
+        if (matchesCommandModeShortcut(keyEvent)
             || phase == Phase::Search
             || phase == Phase::Help
             || (phase == Phase::Inactive
-                && isColumnNumberShortcutKey(keyEvent))) {
+                && matchesColumnNumberShortcut(keyEvent))) {
             keyEvent->accept();
             return true;
         }
@@ -809,14 +1172,15 @@ bool CommandLayerCoordinator::handleApplicationEvent(QObject* watched,
     }
 
     auto* keyEvent = static_cast<QKeyEvent*>(event);
-    if (keyEvent->key() == Qt::Key_F24)
-        return handleF24Event(keyEvent);
+    if (matchesCommandModeShortcut(keyEvent))
+        return handleCommandShortcutEvent(keyEvent);
     if (event->type() == QEvent::KeyPress)
         return handleKeyPress(keyEvent);
     return false;
 }
 
-bool CommandLayerCoordinator::handleF24Event(QKeyEvent* event)
+bool CommandLayerCoordinator::handleCommandShortcutEvent(
+    QKeyEvent* event)
 {
     if (!event)
         return false;
@@ -845,24 +1209,54 @@ bool CommandLayerCoordinator::handleF24Event(QKeyEvent* event)
         return true;
     }
 
+    const ActionDescriptor* descriptor =
+        findActionById(
+            QString::fromLatin1(
+                ActionIds::ViewCommandMode));
+    if (!descriptor)
+        return false;
+    const ActionExecutionResult result =
+        executeAction(
+            *descriptor,
+            actionExecutionHost,
+            ActionInvocation());
+    if (!result.succeeded)
+        return false;
+    event->accept();
+    return true;
+}
+
+bool CommandLayerCoordinator::beginCommandShortcutHold()
+{
     if (QApplication::activeModalWidget())
-        return false;
-    if (QWidget* popup = QApplication::activePopupWidget();
-        popup && popup->isVisible()) {
-        return false;
-    }
-    if (!focusBelongsToWindow(anchor))
         return false;
 
     MyCodeEditor* editor = currentEditorForLocalCommand();
     if (!editor)
         return false;
+
+    QWidget* popup = QApplication::activePopupWidget();
+    const bool completionPopupActive =
+        popup && popup->isVisible()
+        && isEditorCompletionPopup(editor, popup);
+    if (!focusBelongsToWindow(anchor) && !completionPopupActive)
+        return false;
+    if (popup && popup->isVisible() && !completionPopupActive)
+        return false;
+
+    // Completion candidates are owned by the editor interaction-mode
+    // controller.  Exit that mode before applying the general popup guard so
+    // the command shortcut can replace an application-owned completion popup,
+    // while menus and other independent popups continue to block Command Mode.
     editor->exitInteractionModes(
         EditorModeExitReason::ExternalControl);
+    if (QWidget* remainingPopup = QApplication::activePopupWidget();
+        remainingPopup && remainingPopup->isVisible()) {
+        return false;
+    }
     lastEditor = editor;
     f24Held = true;
     enterSearch();
-    event->accept();
     return true;
 }
 
@@ -877,7 +1271,7 @@ bool CommandLayerCoordinator::handleKeyPress(QKeyEvent* event)
     if (phase == Phase::Picker)
         return false;
 
-    if (!isColumnNumberShortcutKey(event))
+    if (!matchesColumnNumberShortcut(event))
         return false;
     if (QApplication::activeModalWidget())
         return false;
@@ -887,7 +1281,27 @@ bool CommandLayerCoordinator::handleKeyPress(QKeyEvent* event)
     }
     if (!focusBelongsToWindow(anchor))
         return false;
-    openColumnNumberToolForCurrentEditor();
+    MyCodeEditor* editor = currentEditorForLocalCommand();
+    const ActionDescriptor* descriptor =
+        findActionById(
+            QString::fromLatin1(
+                ActionIds::InsertColumnNumbers));
+    if (!editor || !descriptor)
+        return false;
+    executingActionEditor = editor;
+    const ActionExecutionResult result =
+        executeAction(
+            *descriptor,
+            actionExecutionHost,
+            ActionInvocation());
+    executingActionEditor.clear();
+    if (!result.succeeded) {
+        reportFailure(
+            editor,
+            result.failureReason.isEmpty()
+                ? result.message
+                : result.failureReason);
+    }
     event->accept();
     return true;
 }
@@ -1084,7 +1498,22 @@ void CommandLayerCoordinator::executeSelectedCommand()
         return;
     }
     if (lineQuery.state == CommandLayerLineParseState::Valid) {
-        handleRelativeLine(editor, lineQuery.line);
+        const CommandLayerCommandMetadata* command =
+            findCommandLayerCommand(
+                QStringLiteral("go <number>"));
+        if (!command) {
+            completeCommand(
+                QStringLiteral(
+                    "Command Layer action is not registered: "
+                    "navigation.goLine"));
+            return;
+        }
+        ActionInvocation invocation;
+        invocation.workspaceId =
+            projectSnapshot().workspaceRoot;
+        invocation.parameters.insert(
+            QStringLiteral("line"), lineQuery.line);
+        executeCommand(editor, *command, invocation);
         return;
     }
     if (matches.isEmpty()) {
@@ -1099,10 +1528,7 @@ void CommandLayerCoordinator::executeSelectedCommand()
     const CommandLayerCommandMetadata command =
         matches.at(qBound(0, selectedMatch, matches.size() - 1)).command;
     if (command.inputKind == CommandLayerCommandInputKind::PositiveInteger) {
-        failureReason =
-            QStringLiteral("go <number> requires a line number >= 1");
-        updateSearchPanel();
-        emit editor->editorStatusMessageRequested(failureReason);
+        executeCommand(editor, command);
         return;
     }
     executeCommand(editor, command);
@@ -1110,43 +1536,44 @@ void CommandLayerCoordinator::executeSelectedCommand()
 
 void CommandLayerCoordinator::executeCommand(
     MyCodeEditor* editor,
-    const CommandLayerCommandMetadata& command)
+    const CommandLayerCommandMetadata& command,
+    const ActionInvocation& requestedInvocation)
 {
-    switch (command.id) {
-    case CommandLayerCommandId::GoLine:
+    if (!editor) {
         completeCommand(
-            QStringLiteral("go <number> requires a line number >= 1"));
+            QStringLiteral("No editor tab is available"));
         return;
-    case CommandLayerCommandId::GoModule:
-        showPicker(editor, PickerMode::Module, command.name);
+    }
+
+    ActionInvocation invocation = requestedInvocation;
+    if (invocation.workspaceId.isEmpty())
+        invocation.workspaceId = projectSnapshot().workspaceRoot;
+
+    executingActionEditor = editor;
+    const ActionExecutionResult result =
+        executeCommandLayerCommand(
+            command, actionExecutionHost, invocation);
+    executingActionEditor.clear();
+
+    if (!result.succeeded) {
+        const QString message =
+            !result.failureReason.trimmed().isEmpty()
+            ? result.failureReason
+            : (!result.message.trimmed().isEmpty()
+                   ? result.message
+                   : QStringLiteral(
+                         "Command Layer action failed: %1")
+                         .arg(command.actionId));
+        reportFailure(editor, message);
+        completeCommand(message);
         return;
-    case CommandLayerCommandId::GoPackage:
-        showPicker(editor, PickerMode::Package, command.name);
-        return;
-    case CommandLayerCommandId::GoEndmodule:
-        handleGoEndmodule(editor);
-        return;
-    case CommandLayerCommandId::AddSignal:
-        handleAddSignal(editor);
-        return;
-    case CommandLayerCommandId::AddParameter:
-        handleAddParameter(editor);
-        return;
-    case CommandLayerCommandId::AddPort:
-        handleAddPort(editor);
-        return;
-    case CommandLayerCommandId::ClearRight:
-        handleClearRight(editor);
-        return;
-    case CommandLayerCommandId::SelectBeginEnd:
-        handleSelectBeginEnd(editor);
-        return;
-    case CommandLayerCommandId::SelectSignals:
-        handleSelectSignals(editor);
-        return;
-    case CommandLayerCommandId::Help:
-        showHelp();
-        return;
+    }
+
+    if (!result.output
+             .value(QStringLiteral(
+                 "commandLayer.phaseManaged"))
+             .toBool()) {
+        completeCommand();
     }
 }
 
@@ -1175,152 +1602,6 @@ MyCodeEditor* CommandLayerCoordinator::currentEditorForLocalCommand() const
 {
     MyCodeEditor* editor = tabManager ? tabManager->getCurrentEditor() : nullptr;
     return editor && editor->isEnabled() ? editor : nullptr;
-}
-
-void CommandLayerCoordinator::handleRelativeLine(MyCodeEditor* editor,
-                                                 int moduleLine)
-{
-    if (!editor) {
-        completeCommand(QStringLiteral("No editor tab is available"));
-        return;
-    }
-    const QTextBlock block = editor->textCursor().block();
-    CommandLayerRelativeLineQuery query;
-    query.snapshot = semanticSnapshot();
-    query.fileName = editor->documentFileName();
-    query.currentModuleName = editor->currentModuleName();
-    query.currentLine = block.isValid() ? block.blockNumber() + 1 : -1;
-    query.requestedModuleLine = moduleLine;
-    const CommandLayerRelativeLineResult result =
-        service.relativeLineTarget(query);
-    if (!result.ok) {
-        reportFailure(editor, result.message);
-        completeCommand(result.message);
-        return;
-    }
-    if (navigation)
-        navigation->navigateToFileAndLine(result.filePath,
-                                          result.line,
-                                          result.column);
-    emit editor->editorStatusMessageRequested(
-        QStringLiteral("go %1").arg(moduleLine));
-    completeCommand();
-}
-
-void CommandLayerCoordinator::handleAddPort(MyCodeEditor* editor)
-{
-    QString message;
-    if (!editor || !editor->addPortRow(&message)) {
-        if (message.isEmpty())
-            message = QStringLiteral("No clear port append point");
-        reportFailure(editor, message);
-        completeCommand(message);
-        return;
-    }
-    completeCommand();
-}
-
-void CommandLayerCoordinator::handleAddSignal(MyCodeEditor* editor)
-{
-    QString message;
-    if (!editor || !editor->addSignalRow(&message)) {
-        if (message.isEmpty())
-            message = QStringLiteral("No clear signal insert point");
-        reportFailure(editor, message);
-        completeCommand(message);
-        return;
-    }
-    completeCommand();
-}
-
-void CommandLayerCoordinator::handleAddParameter(MyCodeEditor* editor)
-{
-    QString message;
-    if (!editor || !editor->addParameterRow(&message)) {
-        if (message.isEmpty())
-            message = QStringLiteral("No clear parameter insert point");
-        reportFailure(editor, message);
-        completeCommand(message);
-        return;
-    }
-    completeCommand();
-}
-
-void CommandLayerCoordinator::handleGoEndmodule(MyCodeEditor* editor)
-{
-    QString message;
-    if (!editor || !editor->goToFinalEndmodule(&message)) {
-        if (message.isEmpty())
-            message = QStringLiteral("No endmodule found");
-        reportFailure(editor, message);
-        completeCommand(message);
-        return;
-    }
-    completeCommand();
-}
-
-void CommandLayerCoordinator::handleClearRight(MyCodeEditor* editor)
-{
-    QString message;
-    if (!editor || !editor->clearSelectedAssignmentRhs(&message)) {
-        if (message.isEmpty())
-            message = QStringLiteral("No assignment RHS found");
-        reportFailure(editor, message);
-        completeCommand(message);
-        return;
-    }
-    completeCommand();
-}
-
-void CommandLayerCoordinator::handleSelectBeginEnd(MyCodeEditor* editor)
-{
-    QString message;
-    if (!editor || !editor->selectInsideBeginEnd(&message)) {
-        if (message.isEmpty())
-            message = QStringLiteral("No begin-end block");
-        reportFailure(editor, message);
-        completeCommand(message);
-        return;
-    }
-    completeCommand();
-}
-
-void CommandLayerCoordinator::handleSelectSignals(MyCodeEditor* editor)
-{
-    QString message;
-    if (!editor || !editor->startSignalSelectionMode(&message)) {
-        if (message.isEmpty())
-            message = QStringLiteral("Signal selection is unavailable");
-        reportFailure(editor, message);
-        completeCommand(message);
-        return;
-    }
-    completeCommand();
-}
-
-void CommandLayerCoordinator::openColumnNumberToolForCurrentEditor()
-{
-    handleColumnNumberTool(currentEditorForLocalCommand());
-}
-
-void CommandLayerCoordinator::handleColumnNumberTool(MyCodeEditor* editor)
-{
-    if (!editor)
-        return;
-    const QStringList selectedRows = editor->columnSelectionTexts();
-    if (!editor->columnSelectionActive() || selectedRows.isEmpty()) {
-        emit editor->editorStatusMessageRequested(
-            QStringLiteral("No column selection"));
-        return;
-    }
-    columnNumberEditor = editor;
-    if (columnNumberTool) {
-        columnNumberTool->configure(
-            inferColumnNumberConfig(selectedRows.constFirst()),
-            selectedRows.size(),
-            selectedRows);
-        columnNumberTool->showFor(anchor ? anchor : editor);
-    }
 }
 
 void CommandLayerCoordinator::showPicker(MyCodeEditor* editor,

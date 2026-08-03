@@ -18,6 +18,7 @@
 #include <QHash>
 #include "hierarchyservice.h"
 #include "symboloutlinemodel.h"
+#include "workspaceconfigurationservice.h"
 
 class NavigationWidget : public QWidget
 {
@@ -28,14 +29,37 @@ public:
         FileTab = 0,
         DesignTab = 1
     };
+    enum FileTreeItemKind {
+        PlaceholderItem = 0,
+        FileItem = 1,
+        DirectoryItem = 2,
+        VirtualSourceGroupItem = 3
+    };
+    static constexpr int FileTreeKindRole =
+        Qt::UserRole + 2;
 
     explicit NavigationWidget(QWidget *parent = nullptr);
     ~NavigationWidget();
 
     void setActiveTab(NavigationTab tab);
     void focusSearch();
+    QString searchFilter(NavigationTab tab) const;
+    void setSearchFilter(NavigationTab tab, const QString& filter);
 
+    void setWorkspaceRoot(const QString& workspaceRoot);
+    void setVirtualSourceGroups(
+        const QList<WorkspaceVirtualSourceGroup>& groups);
+    void registerWorkspacePath(const QString& path,
+                               bool directory);
+    void unregisterWorkspacePath(const QString& path,
+                                 bool recursive);
+    void renameWorkspacePath(const QString& sourcePath,
+                             const QString& targetPath,
+                             bool recursive);
     void updateFileHierarchy(const QStringList& files);
+    void updateFileHierarchy(
+        const QStringList& files,
+        const QList<WorkspaceVirtualSourceGroup>& groups);
     void updateDesignHierarchy(const DesignHierarchyReport& report);
     void clearDesignHierarchy();
     void setDesignParticipatingFiles(const QSet<QString>& fileNames);
@@ -45,13 +69,17 @@ public:
 signals:
     void fileDoubleClicked(const QString& filePath);
     void fileContextMenuRequested(const QString& filePath, const QPoint& globalPos);
+    void fileTreeNodeContextMenuRequested(
+        const QString& path,
+        bool directory,
+        const QPoint& globalPos);
     void designNodeContextMenuRequested(const DesignHierarchyNode& node,
                                         const QPoint& globalPos);
     void designNodeDoubleClicked(const DesignHierarchyNode& node);
     void clearDesignTopRequested();
     void refreshDesignHierarchyRequested();
     void viewChanged(int newTabIndex);
-    void searchFilterChanged(const QString& filter);
+    void searchFilterChanged(int tabIndex, const QString& filter);
 
 private slots:
     void onTabChanged(int index);
@@ -85,13 +113,21 @@ private:
     QHash<int, DesignHierarchyNode> designItemPayloads;
     int nextDesignItemPayloadId = 1;
 
-    QString currentSearchFilter;
+    QString fileSearchFilter;
+    QString designSearchFilter;
     QString currentHighlightedFile;
     QString fileTreeRootPath;
+    QString workspaceFileTreeRootPath;
+    QList<WorkspaceVirtualSourceGroup>
+        virtualSourceGroups;
+    QList<WorkspaceVirtualSourceGroup>
+        visibleVirtualSourceGroups;
+    QHash<QString, bool> explicitlyTrackedPaths;
     bool hideUnrelatedFiles = false;
     QHash<QString, QTreeWidgetItem*> fileItemsByNormalizedPath;
     QTimer* fileTreePopulationTimer = nullptr;
     QStringList pendingFileTreeFiles;
+    QStringList visibleExplicitDirectories;
     QHash<QString, QTreeWidgetItem*> pendingFileTreeDirItems;
     int pendingFileTreeIndex = 0;
     bool pendingFileTreeClearPlaceholder = false;
@@ -109,6 +145,10 @@ private:
     void cancelFileTreePopulation();
     void appendFileTreeItem(const QString& filePath,
                             QHash<QString, QTreeWidgetItem*>* dirItems);
+    void appendVirtualSourceGroupItems();
+    QTreeWidgetItem* appendDirectoryTreeItem(
+        const QString& directoryPath,
+        QHash<QString, QTreeWidgetItem*>* dirItems);
     void refreshFileTreeDirectoryDimming();
     void populateDesignTree();
     QTreeWidgetItem* createFileItem(const QString& filePath);
@@ -120,6 +160,8 @@ private:
     bool fileParticipatesInDesign(const QString& filePath) const;
     QString normalizedFileItemPath(const QString& filePath) const;
     void refreshDesignHeader();
+    QString searchFilterForIndex(int index) const;
+    void setStoredSearchFilter(int index, const QString& filter);
     void expandCurrentFileNodes();
     QTreeWidgetItem* findFileItemByPath(const QString& filePath);
     QTreeWidgetItem* findItemByText(QTreeWidget* tree, const QString& text, int column = 0);

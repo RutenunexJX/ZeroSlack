@@ -2,6 +2,7 @@
 #define RTLINSIGHTSPANELVIEWSTATE_H
 
 #include "moduleblockdiagramservice.h"
+#include "rtlinsightlink.h"
 
 #include <QRectF>
 #include <QString>
@@ -9,6 +10,7 @@
 #include <functional>
 
 class InsightGraphView;
+class QAction;
 class QCheckBox;
 class QComboBox;
 class QDockWidget;
@@ -62,6 +64,11 @@ struct RtlInsightsPanelViewState
         nullptr;
     QComboBox* graphLayoutCombo = nullptr;
     QToolButton* graphMoreButton = nullptr;
+    QToolButton* pinButton = nullptr;
+    QAction* graphJumpAction = nullptr;
+    QAction* graphFocusAction = nullptr;
+    QAction* graphSetTopAction = nullptr;
+    QAction* graphExportAction = nullptr;
     QPushButton* graphInspectorJumpButton = nullptr;
     QPushButton* graphInspectorFocusButton = nullptr;
     QPushButton* graphInspectorSetTopButton = nullptr;
@@ -70,14 +77,20 @@ struct RtlInsightsPanelViewState
     QString currentFileName;
     QString currentModuleName;
     QString currentSignalName;
+    RtlInsightSourceLocation currentSourceLocation;
+    RtlInsightSourceLocation pendingSourceLocation;
+    bool hasPendingSourceLocation = false;
+    bool pinned = false;
+    quint64 graphBuildGeneration = 0;
+    quint64 graphDocumentRevision = 0;
     QString graphSearchText;
     QString currentGraphMode;
     QRectF lastGraphFitRect;
     ModuleBlockDiagramReport currentModuleBlockReport;
     int currentModuleBlockSelectedNodeId = -1;
 
-    std::function<bool(const QString&, int, int)>
-        navigationHandler;
+    std::function<bool(const RtlInsightSourceLocation&)>
+        sourceNavigationHandler;
     std::function<void(const QString&, int)>
         statusMessageHandler;
     std::function<void(const QString&, const QString&)>

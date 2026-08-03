@@ -10,6 +10,7 @@
 #include "rtlinsightspanelviewstate.h"
 #include "statetransitiongraphservice.h"
 
+#include <QAction>
 #include <QCheckBox>
 #include <QComboBox>
 #include <QDir>
@@ -26,6 +27,7 @@
 #include <QGraphicsSceneMouseEvent>
 #include <QGraphicsSimpleTextItem>
 #include <QGraphicsTextItem>
+#include <QHash>
 #include <QHeaderView>
 #include <QLineEdit>
 #include <QPainter>
@@ -40,6 +42,7 @@
 #include <QTableWidget>
 #include <QTimer>
 #include <QTreeWidget>
+#include <QVariant>
 
 #include <algorithm>
 #include <cmath>
@@ -56,6 +59,11 @@ struct RtlInsightGraphElement {
     QString detail;
     QString badge;
     RtlInsightCodeLink codeLink;
+    QString moduleName;
+    QString workspacePath;
+    QString activeTopModule;
+    QString instancePath;
+    quint64 documentRevision = 0;
     QString drillModuleName;
     QString drillFileName;
 };
@@ -68,6 +76,30 @@ struct RtlInsightGraphEdgePresentation {
     QString overlapIds;
     QString routeDecision;
 };
+
+void setGraphSelectionActionAvailability(
+    RtlInsightsPanelViewState& state,
+    bool jumpEnabled,
+    bool focusEnabled,
+    bool setTopEnabled)
+{
+    if (state.graphJumpAction)
+        state.graphJumpAction->setEnabled(jumpEnabled);
+    if (state.graphFocusAction)
+        state.graphFocusAction->setEnabled(focusEnabled);
+    if (state.graphSetTopAction)
+        state.graphSetTopAction->setEnabled(setTopEnabled);
+    if (state.graphInspectorJumpButton)
+        state.graphInspectorJumpButton->setEnabled(jumpEnabled);
+    if (state.graphInspectorFocusButton)
+        state.graphInspectorFocusButton->setEnabled(focusEnabled);
+    if (state.graphInspectorSetTopButton)
+        state.graphInspectorSetTopButton->setEnabled(setTopEnabled);
+    if (state.moduleBlockSetSelectionButton) {
+        state.moduleBlockSetSelectionButton->setEnabled(
+            setTopEnabled);
+    }
+}
 
 QString graphElidedText(const QString& text, const QFont& font, int width)
 {
@@ -229,11 +261,69 @@ void applyGraphElementData(QGraphicsItem* item,
     item->setData(kGraphFileRole, element.codeLink.fileName);
     item->setData(kGraphLineRole, element.codeLink.line);
     item->setData(kGraphColumnRole, element.codeLink.column);
+    item->setData(kGraphModuleRole, element.moduleName);
+    item->setData(kGraphWorkspaceRole, element.workspacePath);
+    item->setData(kGraphActiveTopRole, element.activeTopModule);
+    item->setData(kGraphInstancePathRole, element.instancePath);
+    item->setData(
+        kGraphDocumentRevisionRole,
+        QVariant::fromValue<qulonglong>(
+            element.documentRevision));
     item->setData(kGraphDrillModuleRole, element.drillModuleName);
     item->setData(kGraphDrillFileRole, element.drillFileName);
     item->setData(kGraphDetailRole, element.detail);
     item->setData(kGraphBadgeRole, element.badge);
     item->setToolTip(graphElementTooltip(element));
+}
+
+void applyCurrentSourceContext(
+    RtlInsightGraphElement& element,
+    const RtlInsightsPanelViewState& state)
+{
+    element.moduleName = state.currentModuleName;
+    element.workspacePath =
+        state.currentSourceLocation.workspacePath;
+    element.activeTopModule =
+        state.currentSourceLocation.activeTopModule;
+    element.instancePath =
+        state.currentSourceLocation.instancePath;
+    element.documentRevision =
+        state.graphDocumentRevision;
+}
+
+RtlInsightSourceLocation sourceLocationForElement(
+    const RtlInsightGraphElement& element,
+    quint64 graphGeneration)
+{
+    RtlInsightSourceLocation location;
+    location.fileName = element.codeLink.fileName;
+    location.line = element.codeLink.line;
+    location.column = element.codeLink.column;
+    location.moduleName = element.moduleName;
+    location.symbolName = element.primary;
+    location.workspacePath = element.workspacePath;
+    location.activeTopModule = element.activeTopModule;
+    location.instancePath = element.instancePath;
+    location.elementKind = element.kind;
+    location.secondarySymbolName = element.secondary;
+    location.graphGeneration = graphGeneration;
+    location.documentRevision =
+        element.documentRevision;
+    return location;
+}
+
+bool navigateGraphElement(
+    RtlInsightsPanelViewState& state,
+    const RtlInsightGraphElement& element)
+{
+    const RtlInsightSourceLocation location =
+        sourceLocationForElement(
+            element,
+            state.graphBuildGeneration);
+    if (location.fileName.isEmpty())
+        return false;
+    return state.sourceNavigationHandler
+        && state.sourceNavigationHandler(location);
 }
 
 bool painterPathHasCurve(const QPainterPath& path)
@@ -798,6 +888,60 @@ QGraphicsItem* graphItemByData(QGraphicsScene* scene,
     return nullptr;
 }
 
+QString normalizedInsightSourcePath(const QString& path)
+{
+    if (path.trimmed().isEmpty())
+        return {};
+    return QDir::cleanPath(
+        QDir::fromNativeSeparators(
+            QFileInfo(path).absoluteFilePath()));
+}
+
+bool sameInsightSourcePath(
+    const QString& first,
+    const QString& second)
+{
+    return QString::compare(
+               normalizedInsightSourcePath(first),
+               normalizedInsightSourcePath(second),
+               Qt::CaseInsensitive)
+        == 0;
+}
+
+RtlInsightSourceLocation sourceLocationForItem(
+    const QGraphicsItem* item,
+    quint64 graphGeneration)
+{
+    RtlInsightSourceLocation location;
+    if (!item)
+        return location;
+    location.fileName =
+        item->data(kGraphFileRole).toString();
+    location.line =
+        item->data(kGraphLineRole).toInt();
+    location.column =
+        item->data(kGraphColumnRole).toInt();
+    location.moduleName =
+        item->data(kGraphModuleRole).toString();
+    location.symbolName =
+        item->data(kGraphPrimaryRole).toString();
+    location.workspacePath =
+        item->data(kGraphWorkspaceRole).toString();
+    location.activeTopModule =
+        item->data(kGraphActiveTopRole).toString();
+    location.instancePath =
+        item->data(kGraphInstancePathRole).toString();
+    location.documentRevision =
+        item->data(kGraphDocumentRevisionRole)
+            .toULongLong();
+    location.elementKind =
+        item->data(kGraphKindRole).toString();
+    location.secondarySymbolName =
+        item->data(kGraphSecondaryRole).toString();
+    location.graphGeneration = graphGeneration;
+    return location;
+}
+
 bool edgeLabelContainsScenePoint(const QGraphicsItem* item,
                                  const QPointF& scenePoint)
 {
@@ -977,12 +1121,10 @@ void RtlInsightsGraphSceneMapper::renderFsmGraphLayoutScene(
             aliasCanonicalIds.insert(node.canonicalNodeId);
     }
     const auto navigate = [this](const RtlInsightGraphElement& element) {
-        const RtlInsightCodeLink& link = element.codeLink;
-        if (state.navigationHandler && !link.fileName.isEmpty()
-            && !state.navigationHandler(link.fileName, link.line, link.column)
+        if (!navigateGraphElement(state, element)
             && state.statusMessageHandler) {
             state.statusMessageHandler(QStringLiteral("RTL graph jump failed"),
-                                 4000);
+                                  4000);
         }
     };
     const auto select = [this](const RtlInsightGraphElement& element) {
@@ -1024,6 +1166,7 @@ void RtlInsightsGraphSceneMapper::renderFsmGraphLayoutScene(
         element.detail = edge.condition;
         element.badge = edge.label;
         element.codeLink = edge.codeLink;
+        applyCurrentSourceContext(element, state);
 
         RtlInsightGraphEdgePresentation presentation;
         presentation.hasLabelCenter = true;
@@ -1072,6 +1215,7 @@ void RtlInsightsGraphSceneMapper::renderFsmGraphLayoutScene(
             ? QStringLiteral("dead/end")
             : QString();
         element.codeLink = node.codeLink;
+        applyCurrentSourceContext(element, state);
 
         const QColor fill = fsmStateFillColor(node.stateName,
                                               aliasCanonicalIds,
@@ -1231,14 +1375,46 @@ void RtlInsightsGraphSceneMapper::renderModuleBlockDiagramScene(
         state.moduleBlockTopCombo->setCurrentText(report.root.moduleDisplayName);
     }
 
+    QHash<int, QString> instancePaths;
+    QString rootInstancePath =
+        state.currentSourceLocation.instancePath;
+    if (rootInstancePath.isEmpty()) {
+        rootInstancePath =
+            state.currentSourceLocation.activeTopModule;
+    }
+    if (rootInstancePath.isEmpty())
+        rootInstancePath = report.root.moduleDisplayName;
+    instancePaths.insert(report.root.nodeId, rootInstancePath);
+    for (int pass = 0; pass < report.nodes.size(); ++pass) {
+        bool changed = false;
+        for (const ModuleBlockDiagramNode& node : report.nodes) {
+            if (instancePaths.contains(node.nodeId))
+                continue;
+            const auto parent = instancePaths.constFind(
+                node.parentNodeId);
+            if (parent == instancePaths.cend())
+                continue;
+            const QString childName =
+                node.instanceDisplayName.trimmed();
+            instancePaths.insert(
+                node.nodeId,
+                childName.isEmpty()
+                    ? parent.value()
+                    : QStringLiteral("%1.%2")
+                          .arg(parent.value(), childName));
+            changed = true;
+        }
+        if (!changed)
+            break;
+    }
+
     const QFont font = state.insightsGraphView->font();
     const auto navigate = [this](const RtlInsightGraphElement& element) {
         const RtlInsightCodeLink& link = element.codeLink;
-        if (state.navigationHandler && !link.fileName.isEmpty()
-            && !state.navigationHandler(link.fileName, link.line, link.column)
+        if (!navigateGraphElement(state, element)
             && state.statusMessageHandler) {
             state.statusMessageHandler(QStringLiteral("RTL graph jump failed"),
-                                 4000);
+                                  4000);
         }
         if (!element.drillModuleName.isEmpty()) {
             const QString drillFileName = element.drillFileName.isEmpty()
@@ -1285,6 +1461,14 @@ void RtlInsightsGraphSceneMapper::renderModuleBlockDiagramScene(
         element.codeLink = root || node.instanceCodeLink.fileName.isEmpty()
             ? node.definitionCodeLink
             : node.instanceCodeLink;
+        applyCurrentSourceContext(element, state);
+        element.moduleName = node.moduleDisplayName;
+        element.instancePath =
+            instancePaths.value(node.nodeId);
+        if (element.activeTopModule.isEmpty()) {
+            element.activeTopModule =
+                report.root.moduleDisplayName;
+        }
         if (!node.unresolved && !node.definitionCodeLink.fileName.isEmpty()) {
             element.drillModuleName = node.moduleDisplayName;
             element.drillFileName = node.definitionCodeLink.fileName;
@@ -1344,6 +1528,14 @@ void RtlInsightsGraphSceneMapper::renderModuleBlockDiagramScene(
         element.codeLink = edge.childInstanceCodeLink.fileName.isEmpty()
             ? edge.childDefinitionCodeLink
             : edge.childInstanceCodeLink;
+        applyCurrentSourceContext(element, state);
+        element.moduleName = edge.childModuleDisplayName;
+        element.instancePath =
+            instancePaths.value(edge.toNodeId);
+        if (element.activeTopModule.isEmpty()) {
+            element.activeTopModule =
+                report.root.moduleDisplayName;
+        }
         if (!edge.unresolved && !edge.childDefinitionCodeLink.fileName.isEmpty()) {
             element.drillModuleName = edge.childModuleDisplayName;
             element.drillFileName = edge.childDefinitionCodeLink.fileName;
@@ -1649,12 +1841,8 @@ void RtlInsightsGraphSceneMapper::clearDetails()
         state.graphTable->setColumnCount(0);
     }
     state.currentModuleBlockSelectedNodeId = -1;
-    if (state.graphInspectorJumpButton)
-        state.graphInspectorJumpButton->setEnabled(false);
-    if (state.graphInspectorFocusButton)
-        state.graphInspectorFocusButton->setEnabled(false);
-    if (state.graphInspectorSetTopButton)
-        state.graphInspectorSetTopButton->setEnabled(false);
+    setGraphSelectionActionAvailability(
+        state, false, false, false);
     if (state.graphInspectorRevealButton)
         state.graphInspectorRevealButton->setEnabled(false);
 }
@@ -1679,12 +1867,8 @@ void RtlInsightsGraphSceneMapper::renderGenericInspector(
         item->setText(0, split > 0 ? row.left(split) : row);
         item->setText(1, split > 0 ? row.mid(split + 1) : QString());
     }
-    if (state.graphInspectorJumpButton)
-        state.graphInspectorJumpButton->setEnabled(true);
-    if (state.graphInspectorFocusButton)
-        state.graphInspectorFocusButton->setEnabled(true);
-    if (state.graphInspectorSetTopButton)
-        state.graphInspectorSetTopButton->setEnabled(false);
+    setGraphSelectionActionAvailability(
+        state, true, true, false);
 }
 
 void RtlInsightsGraphSceneMapper::renderModuleBlockInspector(
@@ -1768,14 +1952,12 @@ void RtlInsightsGraphSceneMapper::renderModuleBlockInspector(
                : QStringLiteral("%1:%2")
                      .arg(link.fileDisplayName, link.lineDisplayName));
 
-    if (state.graphInspectorJumpButton)
-        state.graphInspectorJumpButton->setEnabled(!link.fileName.isEmpty());
-    if (state.graphInspectorFocusButton)
-        state.graphInspectorFocusButton->setEnabled(true);
-    if (state.graphInspectorSetTopButton) {
-        state.graphInspectorSetTopButton->setEnabled(
-            !node.unresolved && !node.definitionCodeLink.fileName.isEmpty());
-    }
+    setGraphSelectionActionAvailability(
+        state,
+        !link.fileName.isEmpty(),
+        true,
+        !node.unresolved
+            && !node.definitionCodeLink.fileName.isEmpty());
 }
 
 void RtlInsightsGraphSceneMapper::populateModuleBlockInstancesTable(
@@ -1932,17 +2114,21 @@ void RtlInsightsGraphSceneMapper::selectModuleBlockNode(
 
 bool RtlInsightsGraphSceneMapper::navigateItem(QGraphicsItem* item)
 {
-    if (!item || !state.navigationHandler)
+    if (!item)
         return false;
-    const QString fileName = item->data(kGraphFileRole).toString();
-    if (fileName.isEmpty())
+    const RtlInsightSourceLocation location =
+        sourceLocationForItem(
+            item,
+            state.graphBuildGeneration);
+    if (location.fileName.isEmpty())
         return false;
-    if (!state.navigationHandler(fileName,
-                           item->data(kGraphLineRole).toInt(),
-                           item->data(kGraphColumnRole).toInt())) {
+    const bool navigated =
+        state.sourceNavigationHandler
+        && state.sourceNavigationHandler(location);
+    if (!navigated) {
         if (state.statusMessageHandler)
             state.statusMessageHandler(QStringLiteral("RTL graph jump failed"),
-                                 4000);
+                                  4000);
         return false;
     }
     const QString drillModuleName =
@@ -1950,13 +2136,134 @@ bool RtlInsightsGraphSceneMapper::navigateItem(QGraphicsItem* item)
     if (!drillModuleName.isEmpty()) {
         const QString drillFileName =
             item->data(kGraphDrillFileRole).toString().isEmpty()
-                ? fileName
+                ? location.fileName
                 : item->data(kGraphDrillFileRole).toString();
         if (state.moduleBlockDiagramRequestHandler) {
             state.moduleBlockDiagramRequestHandler(
                 drillFileName,
                 drillModuleName);
         }
+    }
+    return true;
+}
+
+bool RtlInsightsGraphSceneMapper::selectSourceLocation(
+    const RtlInsightSourceLocation& location,
+    bool centerGraph)
+{
+    if (!state.insightsGraphScene
+        || state.currentGraphMode.isEmpty()) {
+        return false;
+    }
+    if (location.graphGeneration != 0
+        && location.graphGeneration
+               != state.graphBuildGeneration) {
+        return false;
+    }
+
+    QGraphicsItem* bestItem = nullptr;
+    int bestScore = -1;
+    for (QGraphicsItem* item :
+         state.insightsGraphScene->items()) {
+        if (!item
+            || item->data(kGraphKindRole)
+                   .toString()
+                   .isEmpty()) {
+            continue;
+        }
+
+        const RtlInsightSourceLocation candidate =
+            sourceLocationForItem(
+                item,
+                state.graphBuildGeneration);
+        if (!location.elementKind.isEmpty()
+            && candidate.elementKind
+                   != location.elementKind) {
+            continue;
+        }
+        if (!location.fileName.isEmpty()
+            && !sameInsightSourcePath(
+                candidate.fileName,
+                location.fileName)) {
+            continue;
+        }
+        if (!location.instancePath.isEmpty()
+            && !candidate.instancePath.isEmpty()
+            && candidate.instancePath
+                   != location.instancePath) {
+            continue;
+        }
+        if (!location.moduleName.isEmpty()
+            && !candidate.moduleName.isEmpty()
+            && candidate.moduleName
+                   != location.moduleName) {
+            continue;
+        }
+
+        const bool lineMatch =
+            location.line > 0
+            && candidate.line == location.line;
+        const bool primaryMatch =
+            !location.symbolName.isEmpty()
+            && candidate.symbolName
+                   == location.symbolName;
+        const bool secondaryMatch =
+            !location.symbolName.isEmpty()
+            && candidate.secondarySymbolName
+                   == location.symbolName;
+        if (!lineMatch
+            && !primaryMatch
+            && !secondaryMatch) {
+            continue;
+        }
+
+        int score = 0;
+        if (lineMatch)
+            score += 1000;
+        if (location.column > 0
+            && candidate.column == location.column) {
+            score += 80;
+        }
+        if (primaryMatch)
+            score += 400;
+        if (secondaryMatch)
+            score += 250;
+        if (!location.moduleName.isEmpty()
+            && candidate.moduleName
+                   == location.moduleName) {
+            score += 180;
+        }
+        if (!location.instancePath.isEmpty()
+            && candidate.instancePath
+                   == location.instancePath) {
+            score += 300;
+        }
+        if (dynamic_cast<RtlInsightGraphNodeItem*>(item))
+            score += 20;
+        if (score <= bestScore)
+            continue;
+        bestScore = score;
+        bestItem = item;
+    }
+
+    if (!bestItem)
+        return false;
+    const QVariant nodeId =
+        bestItem->data(kGraphNodeIdRole);
+    if (state.currentGraphMode
+            == QStringLiteral("module-block")
+        && nodeId.isValid()) {
+        selectModuleBlockNode(
+            nodeId.toInt(),
+            centerGraph,
+            true);
+        return true;
+    }
+    if (!selectItemForInspector(bestItem))
+        return false;
+    if (centerGraph && state.insightsGraphView) {
+        state.insightsGraphView->centerOnRect(
+            bestItem->sceneBoundingRect());
     }
     return true;
 }
@@ -2158,6 +2465,34 @@ int RtlInsightsGraphSceneMapper::selectedItemCountForTest() const
         }
     }
     return count;
+}
+
+QStringList RtlInsightsGraphSceneMapper::
+    selectedElementSummariesForTest() const
+{
+    QStringList summaries;
+    if (!state.insightsGraphScene)
+        return summaries;
+    for (QGraphicsItem* item :
+         state.insightsGraphScene->selectedItems()) {
+        if (!item
+            || item->data(kGraphKindRole)
+                   .toString()
+                   .isEmpty()) {
+            continue;
+        }
+        summaries.append(
+            QStringLiteral("%1|%2|%3")
+                .arg(
+                    item->data(kGraphKindRole)
+                        .toString(),
+                    item->data(kGraphPrimaryRole)
+                        .toString(),
+                    item->data(kGraphSecondaryRole)
+                        .toString()));
+    }
+    summaries.sort(Qt::CaseInsensitive);
+    return summaries;
 }
 
 QStringList RtlInsightsGraphSceneMapper::inspectorRowsForTest() const
@@ -2375,23 +2710,26 @@ bool RtlInsightsGraphSceneMapper::triggerNavigationForTest(
                                           elementKind,
                                           primaryText,
                                           secondaryText);
-    if (!item || !state.navigationHandler)
+    if (!item)
         return false;
     item->setSelected(true);
-    const QString fileName = item->data(kGraphFileRole).toString();
-    if (fileName.isEmpty())
+    const RtlInsightSourceLocation location =
+        sourceLocationForItem(
+            item,
+            state.graphBuildGeneration);
+    if (location.fileName.isEmpty())
         return false;
-    if (!state.navigationHandler(fileName,
-                           item->data(kGraphLineRole).toInt(),
-                           item->data(kGraphColumnRole).toInt())) {
+    const bool navigated =
+        state.sourceNavigationHandler
+        && state.sourceNavigationHandler(location);
+    if (!navigated)
         return false;
-    }
     const QString drillModuleName =
         item->data(kGraphDrillModuleRole).toString();
     if (!drillModuleName.isEmpty()) {
         const QString drillFileName =
             item->data(kGraphDrillFileRole).toString().isEmpty()
-                ? fileName
+                ? location.fileName
                 : item->data(kGraphDrillFileRole).toString();
         if (state.moduleBlockDiagramRequestHandler) {
             state.moduleBlockDiagramRequestHandler(

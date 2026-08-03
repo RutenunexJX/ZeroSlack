@@ -21,10 +21,15 @@ struct LineRange {
 QString normalizeLexicalWhitespaceTabs(const QString& text,
                                        int spacesPerTab);
 
-// Removes the synthetic design-unit indentation level while preserving the
-// relative indentation of procedural and structural bodies.
-QString formatDesignUnitIndentation(const QString& text,
-                                    int indentWidth);
+// Re-indents parsed SystemVerilog structure from Tree-sitter ownership.
+// Edits are limited to line-leading whitespace and case-label gaps.
+QString formatStructuralIndentation(
+    const QString& text,
+    int indentWidth,
+    bool indentConditionalBranches = true,
+    bool indentCaseItemBodies = true,
+    bool alignCaseItems = true,
+    bool preservePreprocessorIndent = true);
 
 // Formats module headers, ANSI parameter / port declarations, and module
 // instantiation associations from Tree-sitter spans. Every produced edit is
@@ -37,6 +42,10 @@ QString format(const QString& text, int indentWidth);
 // instantiation before the structured formatter declines it.
 QList<LineRange> conservativeLineRanges(const QString& text,
                                         int indentWidth);
+
+// Returns only Tree-sitter ERROR / missing-node line ranges. Callers use
+// these ranges to keep later non-structural alignment passes conservative.
+QList<LineRange> syntaxErrorLineRanges(const QString& text);
 
 // The formatter's final safety gate. Whitespace may change, but every
 // non-whitespace code unit must remain byte-for-byte ordered and identical.

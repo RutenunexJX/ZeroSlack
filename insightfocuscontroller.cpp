@@ -1,5 +1,6 @@
 #include "insightfocuscontroller.h"
 
+#include <QAction>
 #include <QBoxLayout>
 #include <QDockWidget>
 #include <QHBoxLayout>
@@ -11,6 +12,7 @@
 #include <QShortcut>
 #include <QSignalBlocker>
 #include <QStackedWidget>
+#include <QVariant>
 #include <QVBoxLayout>
 #include <QWidget>
 
@@ -49,13 +51,13 @@ InsightFocusController::InsightFocusController(
     titleLabel = new QLabel(page);
     titleLabel->setObjectName(
         QStringLiteral("insightFocusTitle"));
-    fitButton = new QPushButton(QStringLiteral("Fit"), page);
+    fitButton = new QPushButton(page);
     fitButton->setObjectName(
         QStringLiteral("insightFocusFitButton"));
-    zoomOutButton = new QPushButton(QStringLiteral("-"), page);
+    zoomOutButton = new QPushButton(page);
     zoomOutButton->setObjectName(
         QStringLiteral("insightFocusZoomOutButton"));
-    zoomInButton = new QPushButton(QStringLiteral("+"), page);
+    zoomInButton = new QPushButton(page);
     zoomInButton->setObjectName(
         QStringLiteral("insightFocusZoomInButton"));
     searchEdit = new QLineEdit(page);
@@ -67,6 +69,23 @@ InsightFocusController::InsightFocusController(
         new QPushButton(QStringLiteral("Inspector"), page);
     inspectorButton->setObjectName(
         QStringLiteral("insightFocusInspectorButton"));
+    fitAction = createGraphViewAction(
+        QString::fromLatin1(
+            ActionIds::GraphViewFit));
+    zoomOutAction = createGraphViewAction(
+        QString::fromLatin1(
+            ActionIds::GraphViewZoomOut));
+    zoomInAction = createGraphViewAction(
+        QString::fromLatin1(
+            ActionIds::GraphViewZoomIn));
+    bindGraphViewButton(fitButton, fitAction);
+    bindGraphViewButton(
+        zoomOutButton,
+        zoomOutAction);
+    bindGraphViewButton(
+        zoomInButton,
+        zoomInAction);
+    refreshGraphViewActionAvailability(nullptr);
 
     toolbar->addWidget(backButton);
     toolbar->addWidget(dockButton);
@@ -95,30 +114,6 @@ InsightFocusController::InsightFocusController(
                      &QPushButton::clicked,
                      this,
                      [this]() { returnToDock(); });
-    QObject::connect(fitButton,
-                     &QPushButton::clicked,
-                     this,
-                     [this]() {
-                         PanelEntry* entry = activeEntry();
-                         if (entry && entry->registration.fit)
-                             entry->registration.fit();
-                     });
-    QObject::connect(zoomOutButton,
-                     &QPushButton::clicked,
-                     this,
-                     [this]() {
-                         PanelEntry* entry = activeEntry();
-                         if (entry && entry->registration.zoomOut)
-                             entry->registration.zoomOut();
-                     });
-    QObject::connect(zoomInButton,
-                     &QPushButton::clicked,
-                     this,
-                     [this]() {
-                         PanelEntry* entry = activeEntry();
-                         if (entry && entry->registration.zoomIn)
-                             entry->registration.zoomIn();
-                     });
     QObject::connect(inspectorButton,
                      &QPushButton::clicked,
                      this,
@@ -153,7 +148,7 @@ InsightFocusController::InsightFocusController(
 
 InsightFocusController::~InsightFocusController()
 {
-    restoreActivePanel(false);
+    restoreActivePanel(ActiveDockRestore::PriorVisibility);
 }
 
 bool InsightFocusController::registerPanel(
@@ -172,6 +167,7 @@ bool InsightFocusController::registerPanel(
     PanelEntry entry;
     entry.registration = registration;
     entry.registration.id = id;
+    entry.dock = registration.dock;
     entry.panelWidget = registration.dock->widget();
 
     QPushButton* button =
@@ -214,8 +210,11 @@ bool InsightFocusController::enter(const QString& panelId)
         return true;
     }
 
+    if (beforeEnterHandler)
+        beforeEnterHandler();
+
     PanelEntry& entry = found.value();
-    QDockWidget* dock = entry.registration.dock;
+    QDockWidget* dock = entry.dock.data();
     QWidget* panel = dock ? dock->widget() : nullptr;
     if (!dock || !panel)
         return false;
@@ -223,9 +222,10 @@ bool InsightFocusController::enter(const QString& panelId)
     if (activePanelId.isEmpty())
         captureAndHideDocks();
     else
-        restoreActivePanel(false, false);
+        restoreActivePanel(ActiveDockRestore::Hidden, false);
 
     entry.panelWidget = panel;
+    expandPanelForFocus(entry, panel);
     dock->hide();
     dock->setProperty("insightFocusActive", true);
     dock->setWidget(nullptr);
@@ -242,14 +242,20 @@ bool InsightFocusController::enter(const QString& panelId)
     return true;
 }
 
+void InsightFocusController::setBeforeEnterHandler(
+    std::function<void()> handler)
+{
+    beforeEnterHandler = std::move(handler);
+}
+
 void InsightFocusController::leaveToEditor()
 {
-    restoreActivePanel(false);
+    restoreActivePanel(ActiveDockRestore::PriorVisibility);
 }
 
 void InsightFocusController::returnToDock()
 {
-    restoreActivePanel(true);
+    restoreActivePanel(ActiveDockRestore::Visible);
 }
 
 bool InsightFocusController::isFocused() const
@@ -291,10 +297,17 @@ InsightFocusController::activeEntry() const
 void InsightFocusController::captureAndHideDocks()
 {
     savedDockVisibility.clear();
+    savedMainWindow.clear();
+    savedMainWindowState.clear();
     QWidget* hostWindow =
         stack ? stack->window() : nullptr;
     if (!hostWindow)
         return;
+
+    savedMainWindow =
+        qobject_cast<QMainWindow*>(hostWindow);
+    if (savedMainWindow)
+        savedMainWindowState = savedMainWindow->saveState();
 
     const QList<QDockWidget*> docks =
         hostWindow->findChildren<QDockWidget*>(
@@ -306,50 +319,102 @@ void InsightFocusController::captureAndHideDocks()
             continue;
         savedDockVisibility.append(
             {dock, dock->isVisible()});
+        dock->setProperty(
+            "panelLayoutVisibilityBeforeTransient",
+            dock->toggleViewAction()->isChecked());
+        dock->setProperty(
+            "panelLayoutHeightBeforeTransient",
+            dock->height());
+        dock->setProperty(
+            "panelLayoutVisibilityTransient",
+            true);
         dock->hide();
     }
 }
 
 void InsightFocusController::restoreDockVisibility(
     QDockWidget* activeDock,
-    bool showActiveDock)
+    ActiveDockRestore activeDockRestore)
 {
+    const bool mainWindowRestored =
+        savedMainWindow
+        && !savedMainWindowState.isEmpty()
+        && savedMainWindow->restoreState(
+            savedMainWindowState);
+
     bool activeDockRecorded = false;
-    for (const DockVisibility& state :
-         std::as_const(savedDockVisibility)) {
-        QDockWidget* dock = state.dock;
-        if (!dock)
-            continue;
-        if (dock == activeDock) {
+    bool activeDockWasVisible = false;
+    for (const DockVisibility& state
+         : std::as_const(savedDockVisibility)) {
+        if (state.dock == activeDock) {
             activeDockRecorded = true;
-            dock->setVisible(showActiveDock);
-        } else {
-            dock->setVisible(state.visible);
+            activeDockWasVisible = state.visible;
+        }
+        if (!mainWindowRestored && state.dock) {
+            state.dock->setVisible(state.visible);
         }
     }
-    if (activeDock && !activeDockRecorded)
+
+    if (activeDock
+        && !(mainWindowRestored
+             && activeDockRestore
+                    == ActiveDockRestore::PriorVisibility)) {
+        bool showActiveDock = activeDockWasVisible;
+        if (!activeDockRecorded)
+            showActiveDock = false;
+        if (activeDockRestore
+            == ActiveDockRestore::Hidden) {
+            showActiveDock = false;
+        } else if (activeDockRestore
+                   == ActiveDockRestore::Visible) {
+            showActiveDock = true;
+        }
         activeDock->setVisible(showActiveDock);
-    if (activeDock && showActiveDock)
-        activeDock->raise();
+        if (showActiveDock
+            && activeDockRestore
+                   == ActiveDockRestore::Visible) {
+            activeDock->raise();
+        }
+    }
+
+    for (const DockVisibility& state
+         : std::as_const(savedDockVisibility)) {
+        if (state.dock) {
+            state.dock->setProperty(
+                "panelLayoutVisibilityTransient",
+                false);
+            state.dock->setProperty(
+                "panelLayoutVisibilityBeforeTransient",
+                QVariant());
+            state.dock->setProperty(
+                "panelLayoutHeightBeforeTransient",
+                QVariant());
+        }
+    }
     savedDockVisibility.clear();
+    savedMainWindow.clear();
+    savedMainWindowState.clear();
 }
 
 void InsightFocusController::restoreActivePanel(
-    bool showDock,
+    ActiveDockRestore activeDockRestore,
     bool restoreDocks)
 {
     PanelEntry* entry = activeEntry();
     if (!entry) {
         activePanelId.clear();
+        refreshGraphViewActionAvailability(nullptr);
         if (restoreDocks)
-            restoreDockVisibility(nullptr, false);
+            restoreDockVisibility(
+                nullptr,
+                ActiveDockRestore::PriorVisibility);
         if (restoreDocks && stack && editor)
             stack->setCurrentWidget(editor);
         return;
     }
 
     QWidget* panel = entry->panelWidget;
-    QDockWidget* dock = entry->registration.dock;
+    QDockWidget* dock = entry->dock.data();
     if (panel && dock) {
         panel->hide();
         if (contentLayout)
@@ -357,6 +422,7 @@ void InsightFocusController::restoreActivePanel(
         panel->setParent(dock);
         dock->setWidget(panel);
         dock->setProperty("insightFocusActive", false);
+        restorePanelConstraints(*entry, panel);
         panel->show();
         if (entry->enterButton)
             entry->enterButton->show();
@@ -364,10 +430,43 @@ void InsightFocusController::restoreActivePanel(
     }
 
     activePanelId.clear();
+    refreshGraphViewActionAvailability(nullptr);
     if (restoreDocks)
-        restoreDockVisibility(dock, showDock);
+        restoreDockVisibility(dock, activeDockRestore);
     if (restoreDocks && stack && editor)
         stack->setCurrentWidget(editor);
+}
+
+void InsightFocusController::expandPanelForFocus(
+    PanelEntry& entry,
+    QWidget* panel)
+{
+    if (!panel || entry.constraintsSaved)
+        return;
+
+    entry.savedMinimumHeight = panel->minimumHeight();
+    entry.savedMaximumHeight = panel->maximumHeight();
+    entry.savedSizePolicy = panel->sizePolicy();
+    entry.constraintsSaved = true;
+
+    panel->setMinimumHeight(0);
+    panel->setMaximumHeight(QWIDGETSIZE_MAX);
+    QSizePolicy policy = panel->sizePolicy();
+    policy.setVerticalPolicy(QSizePolicy::Expanding);
+    panel->setSizePolicy(policy);
+}
+
+void InsightFocusController::restorePanelConstraints(
+    PanelEntry& entry,
+    QWidget* panel)
+{
+    if (!panel || !entry.constraintsSaved)
+        return;
+
+    panel->setMinimumHeight(entry.savedMinimumHeight);
+    panel->setMaximumHeight(entry.savedMaximumHeight);
+    panel->setSizePolicy(entry.savedSizePolicy);
+    entry.constraintsSaved = false;
 }
 
 void InsightFocusController::updateToolbar(
@@ -378,17 +477,7 @@ void InsightFocusController::updateToolbar(
             QStringLiteral("%1 — Focus View")
                 .arg(entry.registration.title));
     }
-    if (fitButton)
-        fitButton->setEnabled(
-            static_cast<bool>(entry.registration.fit));
-    if (zoomOutButton) {
-        zoomOutButton->setEnabled(
-            static_cast<bool>(entry.registration.zoomOut));
-    }
-    if (zoomInButton) {
-        zoomInButton->setEnabled(
-            static_cast<bool>(entry.registration.zoomIn));
-    }
+    refreshGraphViewActionAvailability(&entry);
     if (inspectorButton) {
         inspectorButton->setEnabled(
             static_cast<bool>(

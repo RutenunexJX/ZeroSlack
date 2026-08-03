@@ -54,9 +54,22 @@ void NavigationManager::NavigationContext::clearCurrentWorkspacePath()
     currentWorkspacePath.clear();
 }
 
-void NavigationManager::NavigationContext::setSearchFilter(const QString& filter)
+void NavigationManager::NavigationContext::setSearchFilter(
+    NavigationView view,
+    const QString& filter)
 {
-    searchFilter = filter.trimmed();
+    if (view == DesignHierarchyView)
+        designSearchFilter = filter.trimmed();
+    else
+        fileSearchFilter = filter.trimmed();
+}
+
+QString NavigationManager::NavigationContext::searchFilter(
+    NavigationView view) const
+{
+    return view == DesignHierarchyView
+        ? designSearchFilter
+        : fileSearchFilter;
 }
 
 void NavigationManager::NavigationCaches::clearFileList()

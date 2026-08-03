@@ -1429,13 +1429,14 @@ int main(int argc, char** argv) {
     expectBool("Ghost literal hover shows authoritative alternate bases",
                literalHover.valueText == QStringLiteral("16'd65280")
                    && literalHover.displayText.contains(
-                       QStringLiteral("binary: 16'b1111111100000000"))
+                       QStringLiteral(
+                           "binary: 1111_1111_0000_0000"))
                    && literalHover.displayText.contains(
-                       QStringLiteral("octal: 16'o177400"))
+                       QStringLiteral("octal: 17_7400"))
                    && literalHover.displayText.contains(
-                       QStringLiteral("decimal: 16'd65280"))
+                       QStringLiteral("decimal: 6_5280"))
                    && literalHover.displayText.contains(
-                       QStringLiteral("hex: 16'hff00")),
+                       QStringLiteral("hex: ff00")),
                true);
     const GhostNumericLiteralReport stringHover =
         numericLiteralAt(numericHoverText, stringHoverPosition);
@@ -1483,22 +1484,22 @@ int main(int argc, char** argv) {
     expectBool("Ghost numeric hover preserves unary signed negative value",
                negativeHover.available
                    && negativeHover.displayText.contains(
-                       QStringLiteral("binary: -8'sb1"))
+                       QStringLiteral("binary: -1"))
                    && negativeHover.displayText.contains(
-                       QStringLiteral("decimal: -8'sd1"))
+                       QStringLiteral("decimal: -1"))
                    && negativeHover.displayText.contains(
-                       QStringLiteral("hex: -8'sh1")),
+                       QStringLiteral("hex: -1")),
                true);
     const GhostNumericLiteralReport truncatedHover =
         numericLiteralAt(numericHoverText, truncatedHoverPosition);
     expectBool("Ghost numeric hover applies sized literal truncation",
                truncatedHover.available
                    && truncatedHover.displayText.contains(
-                       QStringLiteral("binary: 4'b1111"))
+                       QStringLiteral("binary: 1111"))
                    && truncatedHover.displayText.contains(
-                       QStringLiteral("decimal: 4'd15"))
+                       QStringLiteral("decimal: 15"))
                    && truncatedHover.displayText.contains(
-                       QStringLiteral("hex: 4'hf")),
+                       QStringLiteral("hex: f")),
                true);
     const GhostNumericLiteralReport unknownHover =
         numericLiteralAt(numericHoverText, unknownHoverPosition);
@@ -1506,7 +1507,7 @@ int main(int argc, char** argv) {
                unknownHover.available
                    && unknownHover.radixRepresentations.size() == 3
                    && unknownHover.displayText.contains(
-                       QStringLiteral("binary: 8'b10xz01z1"))
+                       QStringLiteral("binary: 10xz_01z1"))
                    && unknownHover.displayText.contains(
                        QStringLiteral("hex:"))
                    && !unknownHover.displayText.contains(
@@ -1517,11 +1518,11 @@ int main(int argc, char** argv) {
     expectBool("Ghost numeric hover remains authoritative in concat parameter context",
                concatHover.available
                    && concatHover.displayText.contains(
-                       QStringLiteral("binary: 4'b1010"))
+                       QStringLiteral("binary: 1010"))
                    && concatHover.displayText.contains(
-                       QStringLiteral("decimal: 4'd10"))
+                       QStringLiteral("decimal: 10"))
                    && concatHover.displayText.contains(
-                       QStringLiteral("hex: 4'ha")),
+                       QStringLiteral("hex: a")),
                true);
     const GhostNumericLiteralReport legacyStringHover =
         numericLiteralAt(QStringLiteral("`include \"123.sv\"\n"), 10);
@@ -1849,6 +1850,49 @@ int main(int argc, char** argv) {
     expectEq("Formatter indent-only keeps single statement body indentation",
              indentOnlySingleStatementReport.formattedText,
              formatterSingleStatementReport.formattedText);
+
+    const QString formatterDanglingElseInput =
+        QStringLiteral("module dangling_else_demo;\n"
+                       "always_comb begin\n"
+                       "if (outer)\n"
+                       "if (inner)\n"
+                       "y = a;\n"
+                       "else\n"
+                       "y = b;\n"
+                       "else\n"
+                       "y = c;\n"
+                       "end\n"
+                       "endmodule\n");
+    const QString formatterDanglingElseExpected =
+        QStringLiteral("module dangling_else_demo;\n"
+                       "always_comb begin\n"
+                       "    if (outer)\n"
+                       "        if (inner)\n"
+                       "            y = a;\n"
+                       "        else\n"
+                       "            y = b;\n"
+                       "    else\n"
+                       "        y = c;\n"
+                       "end\n"
+                       "endmodule\n");
+    const FormatterReport formatterDanglingElseReport =
+        FormatterService::getInstance()->formatDocument(
+            formatterDanglingElseInput);
+    expectEq("Formatter preserves Tree-sitter dangling-else ownership",
+             formatterDanglingElseReport.formattedText,
+             formatterDanglingElseExpected);
+    expectBool("Formatter dangling-else token stream invariant",
+               StructuredWhitespaceFormatter::
+                   hasIdenticalNonWhitespaceStream(
+                       formatterDanglingElseInput,
+                       formatterDanglingElseReport.formattedText),
+               true);
+    expectBool("Formatter dangling-else output idempotent",
+               !FormatterService::getInstance()
+                    ->formatDocument(
+                        formatterDanglingElseReport.formattedText)
+                    .changed,
+               true);
 
     const QString formatterProceduralBodyInput =
         QStringLiteral("module procedural_stmt_demo;\n"
@@ -2199,7 +2243,7 @@ int main(int argc, char** argv) {
                             "    parameter int P = 8,\n"
                             "    parameter int LONG_PARAM = P + 1,\n"
                             "    localparam logic [7:0] MASK [2] = '{default: 1'b0}\n"
-                            "    )();\n"
+                            ")();\n"
                             "endmodule\n"));
 
     const QString formatterPortListInput =
@@ -2790,6 +2834,12 @@ int main(int argc, char** argv) {
                             "    endcase\n"
                             "end\n"
                             "endmodule\n"));
+    expectBool("Formatter case label token stream invariant",
+               StructuredWhitespaceFormatter::
+                   hasIdenticalNonWhitespaceStream(
+                       formatterCaseItemInput,
+                       formatterCaseItemReport.formattedText),
+               true);
     const FormatterReport unchangedCaseItemReport =
         FormatterService::getInstance()->formatDocument(
             formatterCaseItemReport.formattedText);
@@ -2853,6 +2903,59 @@ int main(int argc, char** argv) {
                             "    endcase\n"
                             "end\n"
                             "endmodule\n"));
+
+    const QString formatterNestedCaseBodyInput =
+        QStringLiteral("module nested_case_body_demo;\n"
+                       "always_comb begin\n"
+                       "case (state)\n"
+                       "IDLE:\n"
+                       "if (enable)\n"
+                       "if (ready)\n"
+                       "next = RUN;\n"
+                       "else\n"
+                       "next = WAIT;\n"
+                       "else\n"
+                       "next = IDLE;\n"
+                       "default:\n"
+                       "next = IDLE;\n"
+                       "endcase\n"
+                       "end\n"
+                       "endmodule\n");
+    const QString formatterNestedCaseBodyExpected =
+        QStringLiteral("module nested_case_body_demo;\n"
+                       "always_comb begin\n"
+                       "    case (state)\n"
+                       "        IDLE:\n"
+                       "            if (enable)\n"
+                       "                if (ready)\n"
+                       "                    next = RUN;\n"
+                       "                else\n"
+                       "                    next = WAIT;\n"
+                       "            else\n"
+                       "                next = IDLE;\n"
+                       "        default:\n"
+                       "            next = IDLE;\n"
+                       "    endcase\n"
+                       "end\n"
+                       "endmodule\n");
+    const FormatterReport formatterNestedCaseBodyReport =
+        FormatterService::getInstance()->formatDocument(
+            formatterNestedCaseBodyInput);
+    expectEq("Formatter indents first nested case statement structurally",
+             formatterNestedCaseBodyReport.formattedText,
+             formatterNestedCaseBodyExpected);
+    expectBool("Formatter nested case token stream invariant",
+               StructuredWhitespaceFormatter::
+                   hasIdenticalNonWhitespaceStream(
+                       formatterNestedCaseBodyInput,
+                       formatterNestedCaseBodyReport.formattedText),
+               true);
+    expectBool("Formatter nested case output idempotent",
+               !FormatterService::getInstance()
+                    ->formatDocument(
+                        formatterNestedCaseBodyReport.formattedText)
+                    .changed,
+               true);
 
     const QString formatterEnumInput =
         QStringLiteral("module enum_demo;\n"
@@ -6825,6 +6928,120 @@ int main(int argc, char** argv) {
                             "module uart(\n"
                             ");\n"
                             "endmodule"));
+    const QString unsavedAlwaysFfDocument =
+        QStringLiteral("module stale(input logic stale_clk,\n"
+                       "             input logic stale_rst_n);\n"
+                       "endmodule\n"
+                       "module edited(input logic edit_clk,\n"
+                       "              input logic edit_reset_n);\n"
+                       "  ;;af \n"
+                       "endmodule\n");
+    CommandModeCompletionQuery unsavedAlwaysFfQuery;
+    unsavedAlwaysFfQuery.lineUpToCursor = QStringLiteral("  ;;af ");
+    unsavedAlwaysFfQuery.documentText = unsavedAlwaysFfDocument;
+    unsavedAlwaysFfQuery.cursorPosition =
+        unsavedAlwaysFfDocument.indexOf(QStringLiteral(";;af "))
+        + QStringLiteral(";;af ").size();
+    const CommandModeCompletionState unsavedAlwaysFfState =
+        CompletionService::getInstance()->commandModeCompletionState(
+            unsavedAlwaysFfQuery);
+    bool unsavedAlwaysFfUsesLiveContext =
+        unsavedAlwaysFfState.matched
+        && unsavedAlwaysFfState.templateItems.size() == 4;
+    QStringList unsavedAlwaysFfLabels;
+    for (const CodeTemplateItem& item :
+         unsavedAlwaysFfState.templateItems) {
+        unsavedAlwaysFfLabels.append(item.label);
+        unsavedAlwaysFfUsesLiveContext =
+            unsavedAlwaysFfUsesLiveContext
+            && item.insertText.contains(QStringLiteral("posedge edit_clk"))
+            && !item.insertText.contains(QStringLiteral("stale_clk"));
+    }
+    expectBool("CompletionService templates use unsaved document context",
+               unsavedAlwaysFfUsesLiveContext,
+               true);
+    expectEq("always_ff offers four explicit process styles",
+             unsavedAlwaysFfLabels.join(QStringLiteral("|")),
+             QStringLiteral(
+                 "always_ff (no reset)|"
+                 "always_ff (synchronous reset)|"
+                 "always_ff (asynchronous active-low reset)|"
+                 "always_ff (asynchronous active-high reset)"));
+    bool everyAlwaysFfHasVisibleBody =
+        !unsavedAlwaysFfState.templateItems.isEmpty();
+    CodeTemplateItem asynchronousLowAlwaysFf;
+    for (const CodeTemplateItem& item :
+         unsavedAlwaysFfState.templateItems) {
+        bool itemHasVisibleBody = false;
+        for (const CodeTemplateSlot& slot : item.templateSlots) {
+            if ((slot.name == QStringLiteral("body")
+                 || slot.name == QStringLiteral("resetBody"))
+                && slot.length == 0
+                && slot.visibleWhenEmpty) {
+                itemHasVisibleBody = true;
+            }
+        }
+        everyAlwaysFfHasVisibleBody =
+            everyAlwaysFfHasVisibleBody && itemHasVisibleBody;
+        if (item.label.contains(
+                QStringLiteral("asynchronous active-low"))) {
+            asynchronousLowAlwaysFf = item;
+        }
+    }
+    expectBool("always_ff variants expose visible empty body slots",
+               everyAlwaysFfHasVisibleBody,
+               true);
+    QList<CodeTemplateSlot> asynchronousResetSlots;
+    for (const CodeTemplateSlot& slot :
+         asynchronousLowAlwaysFf.templateSlots) {
+        if (slot.name == QStringLiteral("reset"))
+            asynchronousResetSlots.append(slot);
+    }
+    expectBool("always_ff reset occurrences are linked",
+               asynchronousResetSlots.size() == 2
+                   && asynchronousResetSlots.at(0).tabStop >= 0
+                   && asynchronousResetSlots.at(0).tabStop
+                          == asynchronousResetSlots.at(1).tabStop,
+               true);
+    expectEq("always_ff reset style splits end and else",
+             asynchronousLowAlwaysFf.insertText,
+             QStringLiteral(
+                 "always_ff @(posedge edit_clk or negedge edit_reset_n) begin\n"
+                 "    if (!edit_reset_n) begin\n"
+                 "        \n"
+                 "    end\n"
+                 "    else begin\n"
+                 "        \n"
+                 "    end\n"
+                 "end"));
+
+    const QString structuralAlwaysFfDocument =
+        QStringLiteral("module edge_driven;\n"
+                       "  logic phase, clear_b;\n"
+                       "  always_ff @(posedge phase or negedge clear_b) begin\n"
+                       "  end\n"
+                       "  ;;af \n"
+                       "endmodule\n");
+    CommandModeCompletionQuery structuralAlwaysFfQuery;
+    structuralAlwaysFfQuery.lineUpToCursor =
+        QStringLiteral("  ;;af ");
+    structuralAlwaysFfQuery.documentText =
+        structuralAlwaysFfDocument;
+    structuralAlwaysFfQuery.cursorPosition =
+        structuralAlwaysFfDocument.indexOf(QStringLiteral(";;af "))
+        + QStringLiteral(";;af ").size();
+    const CommandModeCompletionState structuralAlwaysFfState =
+        CompletionService::getInstance()->commandModeCompletionState(
+            structuralAlwaysFfQuery);
+    expectBool("always_ff infers unconventional event signal names structurally",
+               structuralAlwaysFfState.templateItems.size() == 4
+                   && structuralAlwaysFfState.templateItems.first()
+                          .insertText.contains(
+                              QStringLiteral("posedge phase"))
+                   && structuralAlwaysFfState.templateItems.at(2)
+                          .insertText.contains(
+                              QStringLiteral("negedge clear_b")),
+               true);
 
     QTemporaryDir userTemplateJsonDir;
     expectBool("UserTemplateService temp dir valid",
@@ -7154,6 +7371,22 @@ int main(int argc, char** argv) {
                    != nullptr
                    && findCommandLayerCommand(QStringLiteral(";;pipe"))
                        == nullptr,
+               true);
+    const CommandLayerCommandMetadata* deleteLinesCommand =
+        findCommandLayerCommand(QStringLiteral("delete lines"));
+    const CommandLayerCommandMetadata* joinLinesCommand =
+        findCommandLayerCommand(QStringLiteral("join lines"));
+    expectBool("Command Layer maps line actions to canonical action ids",
+               deleteLinesCommand
+                   && deleteLinesCommand->actionId
+                          == QStringLiteral("edit.deleteLines")
+                   && deleteLinesCommand->executionRoute
+                          == QStringLiteral("editor.lines.delete")
+                   && joinLinesCommand
+                   && joinLinesCommand->actionId
+                          == QStringLiteral("edit.joinLines")
+                   && joinLinesCommand->executionRoute
+                          == QStringLiteral("editor.lines.join"),
                true);
     expectBool("User templates do not enter Global Control",
                GlobalControlService()
@@ -7897,6 +8130,62 @@ int main(int argc, char** argv) {
                    && slotCancelEditor.toPlainText() == parameterScalar.insertText,
                true);
 
+    const QString linkedSlotText =
+        QStringLiteral("posedge rst_n; if (!rst_n) begin\n    \nend");
+    CodeTemplateSlotList linkedSlots;
+    CodeTemplateSlot firstReset;
+    firstReset.name = QStringLiteral("reset");
+    firstReset.start =
+        linkedSlotText.indexOf(QStringLiteral("rst_n"));
+    firstReset.length = QStringLiteral("rst_n").size();
+    firstReset.tabStop = 1;
+    linkedSlots.append(firstReset);
+    CodeTemplateSlot secondReset = firstReset;
+    secondReset.start =
+        linkedSlotText.indexOf(QStringLiteral("rst_n"),
+                               firstReset.start + firstReset.length);
+    linkedSlots.append(secondReset);
+    CodeTemplateSlot linkedBody;
+    linkedBody.name = QStringLiteral("body");
+    linkedBody.start =
+        linkedSlotText.indexOf(QStringLiteral("\n    \n")) + 5;
+    linkedBody.length = 0;
+    linkedBody.tabStop = 2;
+    linkedBody.visibleWhenEmpty = true;
+    linkedSlots.append(linkedBody);
+
+    MyCodeEditor linkedSlotEditor;
+    linkedSlotEditor.setPlainText(linkedSlotText);
+    linkedSlotEditor.startTemplateSlotMode(
+        0, linkedSlotText.size(), linkedSlots);
+    expectBool("linked slots share one logical tab stop",
+               linkedSlotEditor.templateSlotModeActive()
+                   && linkedSlotEditor.templateSlotModeSlotCount() == 2
+                   && linkedSlotEditor.templateSlotModeActiveIndex() == 0
+                   && linkedSlotEditor.textCursor().selectedText()
+                       == QStringLiteral("rst_n"),
+               true);
+    insertAtEditorCursor(linkedSlotEditor,
+                         QStringLiteral("reset_n"));
+    expectBool("editing a linked slot updates every physical range",
+               linkedSlotEditor.toPlainText()
+                   == QStringLiteral(
+                       "posedge reset_n; if (!reset_n) begin\n    \nend")
+                   && linkedSlotEditor.templateSlotModeActive()
+                   && linkedSlotEditor.templateSlotModeSlotCount() == 2,
+               true);
+    expectBool("linked slot Tab skips duplicate range",
+               sendEditorKey(linkedSlotEditor, Qt::Key_Tab)
+                   && linkedSlotEditor.templateSlotModeActiveIndex() == 1
+                   && !linkedSlotEditor.textCursor().hasSelection(),
+               true);
+    expectBool("linked slot edit is one undo transaction",
+               sendEditorKey(linkedSlotEditor,
+                             Qt::Key_Z,
+                             Qt::ControlModifier)
+                   && linkedSlotEditor.toPlainText() == linkedSlotText,
+               true);
+
     MyCodeEditor slotStaleEditor;
     slotStaleEditor.setPlainText(parameterScalar.insertText);
     slotStaleEditor.startTemplateSlotMode(0,
@@ -8466,38 +8755,36 @@ int main(int argc, char** argv) {
 
     EditorSourceSymbolShortcutContext sourceShortcutContext;
     sourceShortcutContext.key = Qt::Key_F12;
-    sourceShortcutContext.modifiers = int(Qt::ShiftModifier);
+    sourceShortcutContext.modifiers = int(Qt::NoModifier);
     sourceShortcutContext.semanticContext = identifierNavigationContext;
-    const EditorSourceSymbolShortcutState findReferencesShortcutState =
+    const EditorSourceSymbolShortcutState definitionShortcutState =
         EditorSemanticContextService::getInstance()
             ->sourceSymbolShortcutState(sourceShortcutContext);
-    expectBool("EditorSemanticContext source shortcut refs",
-               findReferencesShortcutState.matched
-                   && findReferencesShortcutState.acceptEvent
-                   && findReferencesShortcutState.action
-                       == SourceSymbolAction::FindReferences
-                   && findReferencesShortcutState.semanticContext.lineText
-                       == identifierNavigationContext.lineText,
+    expectBool("EditorSemanticContext definition shortcut retained",
+               definitionShortcutState.matched
+                   && definitionShortcutState.acceptEvent
+                   && definitionShortcutState.action
+                       == SourceSymbolAction::GoToDefinition
+                   && definitionShortcutState.semanticContext.lineText
+                        == identifierNavigationContext.lineText,
+                true);
+    sourceShortcutContext.modifiers = int(Qt::ShiftModifier);
+    const EditorSourceSymbolShortcutState removedReferencesShortcutState =
+        EditorSemanticContextService::getInstance()
+            ->sourceSymbolShortcutState(sourceShortcutContext);
+    expectBool("EditorSemanticContext references shortcut removed",
+               !removedReferencesShortcutState.matched
+                   && !removedReferencesShortcutState.acceptEvent,
                true);
     sourceShortcutContext.key = Qt::Key_R;
     sourceShortcutContext.modifiers =
         int(Qt::ControlModifier | Qt::ShiftModifier);
-    const EditorSourceSymbolShortcutState relationshipsShortcutState =
+    const EditorSourceSymbolShortcutState removedRelationshipsShortcutState =
         EditorSemanticContextService::getInstance()
             ->sourceSymbolShortcutState(sourceShortcutContext);
-    expectBool("EditorSemanticContext source shortcut rels",
-               relationshipsShortcutState.matched
-                   && relationshipsShortcutState.acceptEvent
-                   && relationshipsShortcutState.action
-                       == SourceSymbolAction::ShowRelationships,
-               true);
-    sourceShortcutContext.key = Qt::Key_F12;
-    sourceShortcutContext.modifiers = 0;
-    const EditorSourceSymbolShortcutState plainF12State =
-        EditorSemanticContextService::getInstance()
-            ->sourceSymbolShortcutState(sourceShortcutContext);
-    expectBool("EditorSemanticContext source shortcut plain f12",
-               !plainF12State.matched && !plainF12State.acceptEvent,
+    expectBool("EditorSemanticContext relationships shortcut removed",
+               !removedRelationshipsShortcutState.matched
+                   && !removedRelationshipsShortcutState.acceptEvent,
                true);
     sourceShortcutContext.key = Qt::Key_R;
     sourceShortcutContext.modifiers = int(Qt::ControlModifier);
@@ -8535,53 +8822,22 @@ int main(int argc, char** argv) {
             return item && item->enabled == enabled;
         };
     expectBool("EditorSemanticContext source menu enabled",
-               sourceMenuState.items.size() == 7
-                   && !sourceMenuState.items.at(0).enabled
+               sourceMenuState.items.size() == 4
+                   && sourceMenuItemForAction(
+                          sourceMenuState,
+                          SourceSymbolAction::GoToDefinition) == nullptr
+                   && sourceMenuState.items.at(0).enabled
                    && sourceMenuState.items.at(0).action
-                       == SourceSymbolAction::GoToDefinition
-                   && sourceMenuState.items.at(0).disabledReason
-                       == QStringLiteral("Symbol not indexed")
+                       == SourceSymbolAction::ShowSignalKernelGraph
                    && sourceMenuState.items.at(1).enabled
                    && sourceMenuState.items.at(1).action
-                       == SourceSymbolAction::FindReferences
-                   && sourceMenuState.items.at(2).enabled
-                   && sourceMenuState.items.at(2).action
-                       == SourceSymbolAction::ShowRelationships
-                   && sourceMenuState.items.at(3).enabled
-                   && sourceMenuState.items.at(3).action
-                       == SourceSymbolAction::ShowSignalKernelGraph
-                   && sourceMenuState.items.at(4).enabled
-                   && sourceMenuState.items.at(4).action
                        == SourceSymbolAction::ShowSignalUsageHotspot
-                   && !sourceMenuState.items.at(5).enabled
-                   && sourceMenuState.items.at(5).action
+                   && !sourceMenuState.items.at(2).enabled
+                   && sourceMenuState.items.at(2).action
                        == SourceSymbolAction::ShowStateTransitionGraph
-                   && !sourceMenuState.items.at(6).enabled
-                   && sourceMenuState.items.at(6).action
+                   && !sourceMenuState.items.at(3).enabled
+                   && sourceMenuState.items.at(3).action
                        == SourceSymbolAction::ShowModuleBlockDiagram,
-               true);
-    const EditorSourceSymbolActionRequestState sourceRefsRequest =
-        EditorSemanticContextService::getInstance()
-            ->sourceSymbolActionRequestState(
-                SourceSymbolAction::FindReferences,
-                sourceSymbolContext);
-    expectBool("EditorSemanticContext source refs request",
-               sourceRefsRequest.available
-                   && sourceRefsRequest.action == SourceSymbolAction::FindReferences
-                   && sourceRefsRequest.symbolName == QStringLiteral("menu_sig")
-                   && sourceRefsRequest.fileName == path
-                   && sourceRefsRequest.moduleName == QStringLiteral("top"),
-               true);
-    const EditorSourceSymbolActionRequestState sourceRelsRequest =
-        EditorSemanticContextService::getInstance()
-            ->sourceSymbolActionRequestState(
-                SourceSymbolAction::ShowRelationships,
-                sourceSymbolContext);
-    expectBool("EditorSemanticContext source rels request",
-               sourceRelsRequest.available
-                   && sourceRelsRequest.action
-                       == SourceSymbolAction::ShowRelationships
-                   && sourceRelsRequest.symbolName == QStringLiteral("menu_sig"),
                true);
     const EditorSourceSymbolActionRequestState sourceKernelGraphRequest =
         EditorSemanticContextService::getInstance()
@@ -8785,7 +9041,7 @@ int main(int argc, char** argv) {
                 SourceSymbolAction::ShowStateTransitionGraph,
                 nextStateContext);
     expectBool("EditorSemanticContext state transition next_state menu",
-               nextStateMenuState.items.size() == 7
+               nextStateMenuState.items.size() == 4
                    && sourceMenuItemEnabled(
                        nextStateMenuState,
                        SourceSymbolAction::ShowSignalUsageHotspot,
@@ -8815,7 +9071,7 @@ int main(int argc, char** argv) {
                 SourceSymbolAction::ShowStateTransitionGraph,
                 suffixedNextStateContext);
     expectBool("EditorSemanticContext state transition suffixed ns menu",
-               suffixedNextStateMenuState.items.size() == 7
+               suffixedNextStateMenuState.items.size() == 4
                    && sourceMenuItemEnabled(
                        suffixedNextStateMenuState,
                        SourceSymbolAction::ShowSignalUsageHotspot,
@@ -8845,7 +9101,7 @@ int main(int argc, char** argv) {
                 SourceSymbolAction::ShowStateTransitionGraph,
                 currentStateContext);
     expectBool("EditorSemanticContext state transition rejects current_state",
-               currentStateMenuState.items.size() == 7
+               currentStateMenuState.items.size() == 4
                    && sourceMenuItemEnabled(
                        currentStateMenuState,
                        SourceSymbolAction::ShowSignalUsageHotspot,
@@ -8873,7 +9129,7 @@ int main(int argc, char** argv) {
                 SourceSymbolAction::ShowStateTransitionGraph,
                 suffixedCurrentStateContext);
     expectBool("EditorSemanticContext state transition rejects suffixed cs",
-               suffixedCurrentStateMenuState.items.size() == 7
+               suffixedCurrentStateMenuState.items.size() == 4
                    && sourceMenuItemEnabled(
                        suffixedCurrentStateMenuState,
                        SourceSymbolAction::ShowSignalUsageHotspot,
@@ -8921,7 +9177,7 @@ int main(int argc, char** argv) {
                 SourceSymbolAction::ShowModuleBlockDiagram,
                 moduleBlockContext);
     expectBool("EditorSemanticContext module block module menu",
-               moduleBlockMenuState.items.size() == 7
+               moduleBlockMenuState.items.size() == 4
                    && sourceMenuItemEnabled(
                        moduleBlockMenuState,
                        SourceSymbolAction::ShowSignalUsageHotspot,
@@ -8960,24 +9216,10 @@ int main(int argc, char** argv) {
         EditorSemanticContextService::getInstance()
             ->sourceSymbolContextMenuState(unavailableSourceSymbolContext);
     expectBool("EditorSemanticContext source menu disabled",
-               disabledSourceMenuState.items.size() == 7
-                   && sourceMenuItemEnabled(
-                       disabledSourceMenuState,
-                       SourceSymbolAction::GoToDefinition,
-                       false)
+               disabledSourceMenuState.items.size() == 4
                    && sourceMenuItemForAction(
-                       disabledSourceMenuState,
-                       SourceSymbolAction::GoToDefinition)
-                          ->disabledReason
-                       == QStringLiteral("No source file for symbol navigation")
-                   && sourceMenuItemEnabled(
-                       disabledSourceMenuState,
-                       SourceSymbolAction::FindReferences,
-                       false)
-                   && sourceMenuItemEnabled(
-                       disabledSourceMenuState,
-                       SourceSymbolAction::ShowRelationships,
-                       false)
+                          disabledSourceMenuState,
+                          SourceSymbolAction::GoToDefinition) == nullptr
                    && sourceMenuItemEnabled(
                        disabledSourceMenuState,
                        SourceSymbolAction::ShowSignalKernelGraph,
@@ -8998,7 +9240,7 @@ int main(int argc, char** argv) {
     const EditorSourceSymbolActionRequestState unavailableSourceRequest =
         EditorSemanticContextService::getInstance()
             ->sourceSymbolActionRequestState(
-                SourceSymbolAction::FindReferences,
+                SourceSymbolAction::ShowSignalKernelGraph,
                 unavailableSourceSymbolContext);
     expectBool("EditorSemanticContext source request unavailable",
                !unavailableSourceRequest.available,
@@ -10816,13 +11058,17 @@ int main(int argc, char** argv) {
         WorkspaceSessionState sessionState;
         sessionState.workspaceRoot = sessionWorkspaceA.path();
         sessionState.tabs = {
-            WorkspaceSessionTabState{sessionATopFile, 2, 5, 12, false},
-            WorkspaceSessionTabState{sessionAHelperFile, 1, 3, 4, true},
-            WorkspaceSessionTabState{sessionAMissingFile, 1, 1, 0, false},
+            WorkspaceSessionTabState{sessionATopFile, 2, 5, 12, 0, false},
+            WorkspaceSessionTabState{sessionAHelperFile, 1, 3, 4, 0, true},
+            WorkspaceSessionTabState{sessionAMissingFile, 1, 1, 0, 0, false},
         };
         sessionState.ui.mainWindowGeometry =
             QByteArrayLiteral("geometry-bytes");
         sessionState.ui.mainWindowState = QByteArrayLiteral("state-bytes");
+        sessionState.ui.navigationFilesQuery =
+            QStringLiteral("helper");
+        sessionState.ui.navigationDesignQuery =
+            QStringLiteral("u_stage");
         sessionState.scannedFiles = {
             sessionATopFile,
             sessionAHelperFile,
@@ -10897,7 +11143,11 @@ int main(int argc, char** argv) {
                    restoredSession.state.ui.mainWindowGeometry
                            == QByteArrayLiteral("geometry-bytes")
                        && restoredSession.state.ui.mainWindowState
-                              == QByteArrayLiteral("state-bytes"),
+                              == QByteArrayLiteral("state-bytes")
+                       && restoredSession.state.ui.navigationFilesQuery
+                              == QStringLiteral("helper")
+                       && restoredSession.state.ui.navigationDesignQuery
+                              == QStringLiteral("u_stage"),
                    true);
         expectList("Workspace session restores scanned files",
                    restoredSession.state.scannedFiles,

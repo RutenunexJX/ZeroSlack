@@ -1,10 +1,12 @@
 #include "globalcontrolcoordinator.h"
 
+#include "actionregistry.h"
 #include "globalcontrolpanel.h"
 
 #include <QApplication>
 #include <QEvent>
 #include <QKeyEvent>
+#include <QKeySequence>
 #include <QWidget>
 #include <utility>
 
@@ -38,6 +40,12 @@ void GlobalControlCoordinator::setOpeningHandler(
     openingHandler = std::move(handler);
 }
 
+void GlobalControlCoordinator::setOpenRequestHandler(
+    std::function<bool()> handler)
+{
+    openRequestHandler = std::move(handler);
+}
+
 void GlobalControlCoordinator::install()
 {
     if (installed || !qApp)
@@ -60,14 +68,26 @@ bool GlobalControlCoordinator::handleKeyEvent(QEvent* event)
     if (keyEvent->isAutoRepeat())
         return false;
 
-    if (keyEvent->key() != Qt::Key_Space
-        || !keyEvent->modifiers().testFlag(Qt::ControlModifier)
-        || keyEvent->modifiers().testFlag(Qt::AltModifier)
-        || keyEvent->modifiers().testFlag(Qt::MetaModifier)) {
+    const QString shortcutText =
+        effectiveActionShortcut(
+            QString::fromLatin1(
+                ActionIds::ViewGlobalControl));
+    const QKeySequence shortcut =
+        QKeySequence::fromString(
+            shortcutText,
+            QKeySequence::PortableText);
+    if (shortcutText.isEmpty()
+        || shortcut.matches(
+               QKeySequence(
+                   keyEvent->keyCombination()))
+               != QKeySequence::ExactMatch) {
         return false;
     }
 
-    open();
+    const bool routed = openRequestHandler
+        && openRequestHandler();
+    if (!routed)
+        open();
     keyEvent->accept();
     return true;
 }

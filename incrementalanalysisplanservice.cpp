@@ -167,6 +167,24 @@ IncrementalAnalysisPlan IncrementalAnalysisPlanService::plan(
     const SemanticDependencyGraph& previousGraph,
     const SemanticDependencyGraph& nextGraph) const
 {
+    if (request.runtimePolicy.planningMode
+        == SemanticAnalysisPlanningMode::FullWorkspace) {
+        const bool workspaceConfiguration =
+            request.impactHint == SemanticChangeImpact::WorkspaceConfig
+            || request.reason == SemanticAnalysisReason::WorkspaceOpen
+            || request.reason
+                   == SemanticAnalysisReason::WorkspaceConfiguration;
+        IncrementalAnalysisPlan result = fullPlan(
+            request,
+            workspaceConfiguration
+                ? SemanticChangeImpact::WorkspaceConfig
+                : SemanticChangeImpact::FullFallback,
+            QStringLiteral(
+                "Full workspace analysis required by runtime policy"));
+        result.authoritativeWorkspaceReplace = true;
+        return result;
+    }
+
     if (request.impactHint == SemanticChangeImpact::WorkspaceConfig
         || request.reason == SemanticAnalysisReason::WorkspaceOpen
         || request.reason == SemanticAnalysisReason::WorkspaceConfiguration) {

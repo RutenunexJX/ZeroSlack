@@ -28,12 +28,19 @@ void EditorCompletionUi::attachToEditor(
     MyCodeEditor* editor,
     const std::function<void(const QModelIndex&)>& handleActivated)
 {
+    detach();
     init(editor);
-    QObject::connect(
+    activationConnection = QObject::connect(
         completer,
         QOverload<const QModelIndex&>::of(&QCompleter::activated),
         editor,
         handleActivated);
+}
+
+void EditorCompletionUi::detach()
+{
+    QObject::disconnect(activationConnection);
+    activationConnection = {};
 }
 
 QAbstractItemView* EditorCompletionUi::popup() const

@@ -1338,6 +1338,281 @@ void runHoverRevisionRegression()
                && !report.evaluationFailureReason.isEmpty());
 }
 
+void runGhostAnnotationContentPolicyRegression()
+{
+    const EffectiveLiteralResult literal =
+        EffectiveValueService::evaluateLiteral(
+            QStringLiteral("32'hdead_beef"));
+    const QStringList expectedRadices{
+        QStringLiteral(
+            "binary: 1101_1110_1010_1101_1011_1110_1110_1111"),
+        QStringLiteral("octal: 336_5333_7357"),
+        QStringLiteral("decimal: 37_3592_8559"),
+        QStringLiteral("hex: dead_beef")
+    };
+    expect("numeric annotation display groups every radix without prefixes",
+           literal.available
+               && literal.radixRepresentations == expectedRadices
+               && std::none_of(
+                   literal.radixRepresentations.cbegin(),
+                   literal.radixRepresentations.cend(),
+                   [](const QString& representation) {
+                       return representation.contains(
+                           QLatin1Char('\''));
+                   }));
+    const EffectiveLiteralResult fourDigitBoundary =
+        EffectiveValueService::evaluateLiteral(
+            QStringLiteral("16'hffff"));
+    expect("radix grouping does not add a separator at four digits",
+           fourDigitBoundary.available
+               && fourDigitBoundary.radixRepresentations
+                      == QStringList{
+                          QStringLiteral(
+                              "binary: 1111_1111_1111_1111"),
+                          QStringLiteral("octal: 17_7777"),
+                          QStringLiteral("decimal: 6_5535"),
+                          QStringLiteral("hex: ffff")});
+    const EffectiveLiteralResult fiveDigitBoundary =
+        EffectiveValueService::evaluateLiteral(
+            QStringLiteral("20'h10000"));
+    expect("radix grouping inserts a separator across the fifth digit",
+           fiveDigitBoundary.available
+               && fiveDigitBoundary.radixRepresentations
+                      == QStringList{
+                          QStringLiteral(
+                              "binary: 1_0000_0000_0000_0000"),
+                          QStringLiteral("octal: 20_0000"),
+                          QStringLiteral("decimal: 6_5536"),
+                          QStringLiteral("hex: 1_0000")});
+    const EffectiveLiteralResult unknownLiteral =
+        EffectiveValueService::evaluateLiteral(
+            QStringLiteral("8'b10xz_01z1"));
+    expect("numeric annotation display groups four-state binary digits",
+           unknownLiteral.available
+               && unknownLiteral.radixRepresentations.size() == 3
+               && unknownLiteral.radixRepresentations.contains(
+                   QStringLiteral("binary: 10xz_01z1"))
+               && std::none_of(
+                   unknownLiteral.radixRepresentations.cbegin(),
+                   unknownLiteral.radixRepresentations.cend(),
+                   [](const QString& representation) {
+                       return representation.contains(
+                           QLatin1Char('\''));
+                   }));
+
+    const QString widthFile = QDir::current().absoluteFilePath(
+        QStringLiteral("ghost_port_width_policy_fixture.sv"));
+    const QString widthSource = QStringLiteral(
+        "typedef logic [1:0] word_t;\n"
+        "module width_child(\n"
+        "  input logic [1:0] explicit_i,\n"
+        "  input word_t typedef_i\n"
+        ");\n"
+        "  logic [2:0] internal_signal;\n"
+        "endmodule\n"
+        "module width_top;\n"
+        "  logic [1:0] bus;\n"
+        "  width_child u_child(\n"
+        "    .explicit_i(bus),\n"
+        "    .typedef_i(bus)\n"
+        "  );\n"
+        "endmodule\n");
+    const auto lineFor = [](const QString& source,
+                            const QString& needle) {
+        const int position = source.indexOf(needle);
+        return position < 0
+            ? -1
+            : source.left(position).count(QLatin1Char('\n')) + 1;
+    };
+    SlangManager widthSlang;
+    const QList<SemanticSymbolRecord> widthRecords =
+        widthSlang.extractSymbolRecords(widthFile, widthSource);
+    SemanticIndex widthIndex;
+    widthIndex.setSnapshot(
+        snapshot(widthRecords, widthFile, widthSource));
+    GhostAnnotationService widthGhost(&widthIndex);
+    GhostAnnotationQuery widthQuery;
+    widthQuery.fileName = widthFile;
+    widthQuery.documentText = widthSource;
+    const GhostAnnotationReport widthReport =
+        widthGhost.annotationsForDocument(widthQuery);
+    const auto widthTextsOnLine =
+        [&widthReport](int line) {
+            QStringList texts;
+            for (const GhostAnnotation& annotation :
+                 widthReport.annotations) {
+                if (annotation.kind
+                        == GhostAnnotationKind::SignalWidth
+                    && annotation.line == line) {
+                    texts.append(annotation.text);
+                }
+            }
+            return texts;
+        };
+    const int explicitPortLine =
+        lineFor(widthSource, QStringLiteral("explicit_i"));
+    const int typedefPortLine =
+        lineFor(widthSource, QStringLiteral("typedef_i"));
+    const int internalSignalLine =
+        lineFor(widthSource, QStringLiteral("internal_signal"));
+    expect("explicit packed port width is not repeated as a ghost",
+           explicitPortLine > 0
+               && widthTextsOnLine(explicitPortLine).isEmpty());
+    expect("typedef-resolved port width remains visible when not explicit",
+           widthTextsOnLine(typedefPortLine).contains(
+               QStringLiteral("[1:0] 2 bits")));
+    expect("explicit internal signal width policy is unchanged",
+           widthTextsOnLine(internalSignalLine).contains(
+               QStringLiteral("[2:0] 3 bits")));
+
+    const QString generateFile = QDir::current().absoluteFilePath(
+        QStringLiteral("ghost_generate_port_policy_fixture.sv"));
+    const QString generateSource = QStringLiteral(
+        "module generated_leaf(input logic data_i);\n"
+        "endmodule\n"
+        "module generated_top(input logic [1:0] bus);\n"
+        "  for (genvar i = 0; i < 2; i++) begin : g\n"
+        "    generated_leaf u_leaf(.data_i(bus[i]));\n"
+        "  end\n"
+        "endmodule\n");
+    SlangManager generateSlang;
+    const QList<SemanticSymbolRecord> generateRecords =
+        generateSlang.extractSymbolRecords(generateFile,
+                                           generateSource);
+    const int connectionLine =
+        lineFor(generateSource, QStringLiteral(".data_i"));
+    const int elaboratedPinCount = static_cast<int>(std::count_if(
+        generateRecords.cbegin(),
+        generateRecords.cend(),
+        [&](const SemanticSymbolRecord& record) {
+            return record.collectorKind
+                       == SymbolTaxonomy::CollectorKind::InstPin
+                && record.name == QStringLiteral("data_i")
+                && record.location.startLine == connectionLine;
+        }));
+    SemanticIndex generateIndex;
+    generateIndex.setSnapshot(
+        snapshot(generateRecords, generateFile, generateSource));
+    GhostAnnotationService generateGhost(&generateIndex);
+    const auto formalPortCount =
+        [&](const HierarchyInstanceContext& context) {
+            GhostAnnotationQuery query;
+            query.fileName = generateFile;
+            query.documentText = generateSource;
+            query.instanceContext = context;
+            const GhostAnnotationReport report =
+                generateGhost.annotationsForDocument(query);
+            return static_cast<int>(std::count_if(
+                report.annotations.cbegin(),
+                report.annotations.cend(),
+                [&](const GhostAnnotation& annotation) {
+                    return annotation.kind
+                               == GhostAnnotationKind::FormalPort
+                        && annotation.line == connectionLine
+                        && annotation.text
+                               == QStringLiteral(
+                                   "input logic data_i");
+                }));
+        };
+    HierarchyInstanceContext firstContext;
+    firstContext.workspacePath = QStringLiteral("workspace");
+    firstContext.activeTopModule =
+        QStringLiteral("generated_top");
+    firstContext.instancePath =
+        QStringLiteral("generated_top.g[0].u_leaf");
+    HierarchyInstanceContext secondContext = firstContext;
+    secondContext.instancePath =
+        QStringLiteral("generated_top.g[1].u_leaf");
+    expect("generate fixture contains duplicate elaborated InstPin records",
+           elaboratedPinCount >= 2);
+    expect("generate InstPin ghosts dedupe by source and formal identity",
+           formalPortCount({}) == 1);
+    expect("formal-port dedupe remains scoped to each hierarchy context",
+           formalPortCount(firstContext) == 1
+               && formalPortCount(secondContext) == 1);
+
+    const int generateLine = lineFor(
+        generateSource,
+        QStringLiteral("for (genvar i"));
+    const auto generateCountFact = [&](int startPosition,
+                                       int endPosition,
+                                       int line,
+                                       const QString& valueText) {
+        EffectiveValueFact fact;
+        fact.kind = EffectiveValueFactKind::GenerateCount;
+        fact.status = EffectiveValueStatus::Current;
+        fact.fileName = generateFile;
+        fact.startPosition = startPosition;
+        fact.endPosition = endPosition;
+        fact.line = line;
+        fact.expressionText = QStringLiteral("generate-count");
+        fact.valueText = valueText;
+        fact.effectiveScopeKind =
+            SemanticEffectiveScopeKind::CompilationUnit;
+        fact.defaultEvaluation = true;
+        return fact;
+    };
+    const int generateAnchor = generateSource.indexOf(
+        QStringLiteral("for (genvar i"));
+    QList<EffectiveValueFact> duplicateGenerateFacts{
+        generateCountFact(generateAnchor,
+                          generateAnchor + 3,
+                          generateLine,
+                          QStringLiteral("2")),
+        generateCountFact(generateAnchor + 4,
+                          generateAnchor + 8,
+                          generateLine,
+                          QStringLiteral("2")),
+        generateCountFact(generateAnchor + 9,
+                          generateAnchor + 13,
+                          generateLine,
+                          QStringLiteral("3")),
+        generateCountFact(generateAnchor + 14,
+                          generateAnchor + 18,
+                          generateLine + 1,
+                          QStringLiteral("2"))
+    };
+    EffectiveValueService duplicateGenerateValues(&generateIndex);
+    duplicateGenerateValues.publishDocumentFacts(
+        generateFile,
+        generateSource,
+        duplicateGenerateFacts,
+        1);
+    expect("generate fact fixture preserves distinct analyzer anchors",
+           duplicateGenerateValues.factsForDocument(
+               generateFile, generateSource).size() == 4);
+    GhostAnnotationService duplicateGenerateGhost(
+        &generateIndex, &duplicateGenerateValues);
+    GhostAnnotationQuery duplicateGenerateQuery;
+    duplicateGenerateQuery.fileName = generateFile;
+    duplicateGenerateQuery.documentText = generateSource;
+    const GhostAnnotationReport duplicateGenerateReport =
+        duplicateGenerateGhost.annotationsForDocument(
+            duplicateGenerateQuery);
+    const auto generateAnnotationCount =
+        [&](int line, const QString& text) {
+            return static_cast<int>(std::count_if(
+                duplicateGenerateReport.annotations.cbegin(),
+                duplicateGenerateReport.annotations.cend(),
+                [&](const GhostAnnotation& annotation) {
+                    return annotation.kind
+                               == GhostAnnotationKind::GenerateLoop
+                        && annotation.line == line
+                        && annotation.text == text;
+                }));
+        };
+    expect("generate loop annotation dedupes equivalent anchors per line",
+           generateAnnotationCount(
+               generateLine,
+               QStringLiteral("instances=2")) == 1
+               && generateAnnotationCount(
+                      generateLine,
+                      QStringLiteral("instances=3")) == 1
+               && generateAnnotationCount(
+                      generateLine + 1,
+                      QStringLiteral("instances=2")) == 1);
+}
+
 void runGhostUsesSlangRegression()
 {
     const QString fileName = QDir::current().absoluteFilePath(
@@ -1994,6 +2269,7 @@ int main(int argc, char** argv)
     runLargeDocumentRevisionRegression();
     runUtf16AndCrLfOffsetRegression();
     runHoverRevisionRegression();
+    runGhostAnnotationContentPolicyRegression();
     runGhostUsesSlangRegression();
     runParameterSourceDisplayEquivalenceRegression();
     runInvalidEnumIsolationRegression();

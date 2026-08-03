@@ -1813,3 +1813,398 @@ Preferred starting order:
 The remaining tracks may be pulled forward only when the user explicitly asks or
 when a milestone naturally depends on them. Do not combine unrelated tracks in
 one milestone.
+
+## 2026-08-02 A-G Acceptance Continuation
+
+Status: the A-G product batches and their stable acceptance are complete. The
+long-running goal remains active because six unstable test executions reached
+the three-minimal-reproduction limit and therefore are neither rerun nor counted
+as passed.
+
+- E acceptance migrated the Fold Shelf preview, workspace file-operation dry-run
+  plan, and Expose Signal to Top proposal/diff from preview dialogs to the shared
+  embedded `EditorHoverPopup` Peek surface. The Expose dialog implementation was
+  removed, and the source inventory now names `exposesignaltotoppreview.cpp/.h`.
+- Focused verification passed: `unified_peek_container_test` 17/17 checks,
+  `workspace_file_operation_test` 38/38 checks, and
+  `expose_signal_to_top_gui_test` 56/56 checks. The related five-target CTest
+  group passed 5/5 in 7.36 seconds.
+- A subsequent F audit closed the workspace file-operation
+  preview-to-apply revision gap. File mutation plans now carry a SHA-256
+  content snapshot and deterministic revision token through Action Registry
+  dry-run output; Apply rejects a changed token before any filesystem write.
+  The focused test proves rejection even when source size and modification
+  time are restored after a content change. Its second minimal run passed
+  36/36 checks in 0.39 seconds; the first run exposed and then corrected a
+  read-only timestamp-restoration test fixture. A subsequent performance guard
+  confines full-content hashing to Rename/Delete; Copy Full Path and Reveal
+  retain lightweight metadata tokens. The final focused run passed 38/38
+  checks in 0.38 seconds after a 9-step serial build completed in 728.1
+  seconds.
+- A/D continuation removed the generated `.ui` shadow actions that bypassed
+  Action Registry, including legacy Cut/Copy/Paste/Undo/Redo and the global
+  Esc action. New File, Open File, Save, Save As, and Open Workspace now have
+  canonical IDs, execution routes, F24 commands, Action Catalog entries,
+  effective-shortcut adapters, and MainWindow execution through
+  `executeAction`. The reusable `FileCommandCoordinator` remains the route
+  implementation. `action_registry_test` passed in 0.12 seconds after a
+  19.9-second serial build; `expose_signal_to_top_gui_test` passed in 0.86
+  seconds after a 34-step serial build completed in 527.3 seconds.
+- D continuation routes Replace and all nine retained context-menu formatter
+  actions through the MainWindow Action host instead of invoking editor
+  methods directly. Context QAction adapters now expose both canonical
+  `actionId` and `executionRoute`; successful context execution enters the
+  application history and Command Mode `repeat action` replays it against the
+  current editor. The serial target build passed 7/7 steps in 426.8 seconds,
+  `Create Signal Definition` and `Edit Instance Slots` now use the same route
+  with an explicit right-click cursor invocation. Their recorded invocation
+  discards the stale cursor parameter after success so `repeat action`
+  resolves the current cursor. The latest serial target build passed 8/8
+  steps in 514.7 seconds. Source-symbol F12/Insight requests and the four
+  retained Insight context actions now also enter Registry execution with a
+  transient cursor parameter; MainWindow delegates the canonical source
+  routes back to EditorCoordinator and records only successful panel or
+  navigation execution. The latest source-action build passed 8/8 steps in
+  743.9 seconds. `refactor.exposeSignalToTop` now also dispatches through its
+  canonical `rtledit.signal.exposeToTop` route, records the accepted final port
+  and hierarchy binding, and uses remembered parameters on repeat. High-risk
+  repeat enters a dedicated plan-only embedded Peek: it supports live replan
+  but exposes Close instead of Apply and never calls the transaction apply
+  path. The latest serial build passed 9/9 steps in 785.5 seconds, and the
+  final verbose `expose_signal_to_top_gui_test` run passed 74/74 checks in 1.04
+  seconds. The separate signal-selection context menu now emits a canonical
+  Registry request for `refactor.createAssignmentQueue` instead of directly
+  editing; MainWindow executes the routed queue transaction and records it in
+  history while the editor retains a no-host fallback. Its 50-step dependency
+  rebuild passed in 640.6 seconds, and the final GUI run passed 78/78 checks in
+  0.99 seconds. Comment/Uncomment and Indent/Unindent no longer use hard-coded
+  Ctrl key checks: their four shortcuts are canonical Registry surfaces, the
+  editor keyboard path publishes the same request used by the context menu,
+  and standalone editors retain a local fallback. `action_registry_test`
+  passed 54/54 checks in 0.10 seconds after a 4-step, 6.5-second build; the GUI
+  target build passed 8/8 in 497.0 seconds and its final run passed 80/80
+  checks in 1.10 seconds. Ctrl+D and Ctrl+Shift+L now publish the same
+  occurrence-selection Actions before using the standalone-editor fallback;
+  the GUI regression preserves the established two-step Ctrl+D contract and
+  passed 82/82 checks in 1.40 seconds after a 424.6-second relink. Alt+F7,
+  Shift+Alt+F7, Alt+F8, Shift+Alt+F8, Ctrl+Shift+J, and Ctrl+Shift+K now also
+  execute their canonical structural-navigation or line-operation routes in
+  MainWindow and enter application history. The product rebuild passed 7/7
+  steps in 552.2 seconds; the corrected real-document GUI regression passed
+  85/85 checks in 1.24 seconds after a 369.1-second test-only relink. Standard
+  Undo/Redo/Cut/Copy/Paste/Select All plus Ctrl+F/G/H now also resolve their
+  effective Registry shortcuts and execute through MainWindow. Clipboard
+  execution preserves multi-cursor, column-selection, line-copy/cut, and
+  standalone-editor ownership. Interactive Go to Line records its resolved
+  line parameter for repeat, while intentionally hidden standard context-menu
+  entries remain hidden. `action_registry_test` passed in 0.13 seconds after a
+  4-step, 7.0-second build. The dependency rebuild passed 51/51 steps in 791.9
+  seconds; after correcting the hidden-entry GUI expectation, the test-only
+  relink passed 3/3 in 538.9 seconds and the GUI run passed 89/89 checks in
+  1.35 seconds. The final default-shortcut audit routed Ctrl+Shift+I through
+  `format.document` and replaced physical F12/Ctrl+R checks with effective
+  Registry bindings. A standalone editor regression overrides them to
+  Ctrl+F12/Ctrl+Alt+R and proves the defaults stop firing while the new chords
+  dispatch. The serial build passed 8/8 steps in 771.9 seconds and the GUI run
+  passed 91/91 checks in 1.18 seconds. Additional hosted-mode coverage proves
+  Ctrl+C keeps multi-cursor distributed selection and column-selection row
+  slicing while both execute `edit.copy` through Registry history. After a
+  375.4-second test-only relink, the final GUI run passed 93/93 checks in 1.47
+  seconds.
+- The reusable clipboard, line-operation, and scoped-occurrence Action
+  executors now live in `editorruntimecommands.cpp`; key release ownership
+  moved with the command path. This restores the runtime shell boundary from
+  5246 to 4995 lines without changing behavior. `controller_boundary_test`
+  now verifies both the size limit and implementation ownership and passed in
+  0.10 seconds. The serial GUI dependency rebuild passed 6/6 steps in 536.7
+  seconds, and `expose_signal_to_top_gui_test` retained 93/93 passing checks in
+  1.28 seconds.
+- Navigation panel Ctrl+1 is now the default shortcut of
+  `view.navigation.toggle`; the independent `QShortcut` bypass was removed.
+  The real menu adapter toggles `navigationDock` and records Action history.
+  `action_registry_test` passed in 0.13 seconds, the serial GUI build passed
+  8/8 steps in 524.5 seconds, and the GUI test passed 94/94 checks in 1.34
+  seconds.
+- Ctrl+W, Ctrl+E, and Ctrl+Q now resolve Registry-owned structural-selection
+  and selected-symbol navigation Actions. Their reusable algorithms moved to
+  `EditorSelection`, while MainWindow shortcuts and Command Mode share the
+  same execution routes and history. `editorruntime.cpp` is now 4814 lines.
+  `action_registry_test` passed 56/56 checks in 0.12 seconds and
+  `controller_boundary_test` passed in 0.11 seconds. The product GUI build
+  passed 67/67 steps in 515.6 seconds; after restoring the existing formatter
+  fixture cursor, the 3-step test relink passed in 381.4 seconds and the final
+  GUI run passed 98/98 checks in 1.31 seconds.
+- Alt+Up/Down logical-line movement now belongs to
+  `EditorLineOperationController` and canonical `edit.moveLinesUp/Down`
+  Actions. The controller preserves touched-line boundary semantics,
+  cursor/selection position, column-mode exclusion, and one undo transaction;
+  shortcuts and Command Mode share the same routes. The runtime shell is now
+  4635 lines. `editor_line_operation_test` passed 41/41 checks in 0.13 seconds,
+  `action_registry_test` passed 58/58 in 0.13 seconds, and
+  `controller_boundary_test` passed in 0.12 seconds. The serial GUI build
+  completed 67 executed steps in 539.3 seconds and the GUI run passed 100/100
+  checks in 1.43 seconds.
+- Global Control invocation now uses the non-menu
+  `view.globalControl` Action. Its event filter resolves the effective
+  Registry shortcut, requests MainWindow execution, exits editor modes through
+  the existing opening hook, and retains a standalone fallback. The Registry
+  test passed 59/59 checks in 0.13 seconds. A 36-step serial GUI rebuild passed
+  in 503.2 seconds; the GUI test overrides Ctrl+Space with Ctrl+Alt+Space,
+  proves the old chord inactive, and passes 101/101 checks in 1.40 seconds with
+  the canonical history id.
+- Command Mode hold entry now uses the non-menu, non-repeatable
+  `view.commandMode` Action. The application event filter resolves its
+  effective single-stroke shortcut instead of testing physical F24; invalid
+  multi-stroke overrides are rejected, and panel/search-help text shows the
+  active binding. The local Action host owns `ui.commandMode.show`, preserving
+  completion-popup replacement and press/release input ownership without
+  displacing Repeat Last Action history. `action_registry_test` passed 61/61
+  in 0.13 seconds and `controller_boundary_test` passed in 0.11 seconds. An
+  initial parallel build had one unrelated compiler process exit without a
+  diagnostic; explicit `--parallel 1` rebuilt and linked 5/5 steps in 549.9
+  seconds. The GUI override regression passed 102/102 in 1.47 seconds, and the
+  serial `completion_test` rebuild passed 2/2 in 436.3 seconds with its test
+  passing in 2.44 seconds.
+- The Column Number Tool now enters the non-menu, non-repeatable
+  `insert.columnNumbers` Action. Its Alt+C application event path resolves the
+  effective Registry shortcut, Command Mode uses the same
+  `editor.columnNumbers.show` route, and the route validates the active column
+  selection before presenting the existing interactive panel. The old
+  physical-key branch is removed. `action_registry_test` and
+  `controller_boundary_test` passed in 0.12 and 0.10 seconds. The explicit
+  single-thread GUI rebuild completed 36 executed steps in 675.5 seconds; the
+  GUI run passed 102 checks in 1.43 seconds, including old-chord deactivation,
+  Ctrl+Alt+C override activation, panel Action identity, and repeat-history
+  isolation.
+- Fold Shelf list deletion now enters the non-menu, non-repeatable
+  `fold.shelf.deleteSelected` Action. The list resolves the effective Registry
+  shortcut instead of testing physical Delete, MainWindow owns the guarded
+  delete route, and Command Mode shares it while the panel retains a reusable
+  standalone fallback. `action_registry_test` and `controller_boundary_test`
+  passed in 0.12 and 0.10 seconds. The explicit single-thread product/test
+  build completed 38 executed steps in 649.5 seconds;
+  `unified_peek_container_test` passed 18/18 checks in 0.19 seconds, proving
+  old-key deactivation and Ctrl+Delete override activation on a real Fold
+  Shelf list and model.
+- Editor Tab context commands now consume a 12-entry
+  `ActionSurface::TabContextMenu` catalog instead of private labels and an
+  `EditorTabCommand` enum. Close variants, reopen, Duplicate View, four-way
+  split, Merge Group, and Lock/Unlock publish canonical Action ids;
+  TabManager establishes the clicked group/tab context and MainWindow owns the
+  shared execution route. Review also found that copied view state could reuse
+  an attached `viewId`; `SharedDocument::attachView` now regenerates identity
+  collisions centrally, preserving per-view lock, cursor/scroll persistence,
+  and split layout identity while retaining one Document and undo stack.
+  Modified files are `actionregistry.h/.cpp`,
+  `editorsplitcontroller.h/.cpp`, `tabmanager.h/.cpp`, `mainwindow.cpp`,
+  `shareddocument.cpp`, `CMakeLists.txt`, and the four focused tests. Registry,
+  boundary, and split-controller tests passed 1/1 in 0.10, 0.08, and 0.15
+  seconds. The first shared-document run exposed the identity collision (66/69
+  checks); after the product fix, its second minimal run passed all 70 checks
+  in 0.69 seconds. Explicit serial builds took 27.97, 2.56, 655.35, and 555.10
+  seconds for the final affected targets. Both GUI-focused targets used the
+  registered offscreen platform; no capped GUI target was rerun.
+- Navigation design-hierarchy context commands now use three non-repeatable
+  Registry Actions: instantiation navigation, module-definition navigation,
+  and Set Design Top. `navigationmanagerconnections.cpp` materializes the
+  design-tree menu from Registry labels/routes and preserves the complete
+  hierarchy instance context; `navigationmanagerfileoperations.cpp` also
+  reuses the Set Design Top descriptor for single-module and dynamic
+  multi-module file-menu choices. Connecting to an already-open workspace now
+  synchronizes Navigation context before availability evaluation. Modified
+  files are `actionregistry.h/.cpp`, `navigationmanager.h/.cpp`,
+  `navigationmanagerconnections.cpp`, `navigationmanagerfileoperations.cpp`,
+  and three focused tests. `action_registry_test`,
+  `controller_boundary_test`, and `workspace_file_operation_test` passed 1/1
+  in 0.10, 0.08, and 0.43 seconds; the final core/test serial build completed
+  39 executed steps in 744.12 seconds. The offscreen workflow retained all
+  existing file-operation preview and revision-check regressions, and no
+  capped target was run.
+- Bottom-panel Tab context actions now use a dedicated
+  `ActionSurface::PanelContextMenu`. Pin/Unpin and Close labels/routes derive
+  from the existing bottom-panel descriptors, Command Mode receives the same
+  canonical ids, and the clicked `panelId` travels through ActionInvocation so
+  MainWindow acts on the right-clicked page rather than whichever page was
+  previously active. Pinned pages expose a dynamic Unpin label and reject
+  Close before host dispatch; both actions are non-repeatable. Modified files
+  are `actionregistry.h/.cpp`, `panellayoutcontroller.h/.cpp`,
+  `mainwindow.cpp`, `CMakeLists.txt`, and three focused tests.
+  `action_registry_test` passed in 0.11 seconds, the first panel test run
+  exposed only test-fixture active-tab pollution (36/39), and the corrected
+  second minimal run passed 39/39 in 0.11 seconds. `controller_boundary_test`
+  passed in 0.08 seconds, and the final serial `zeroslack_core` build passed
+  37/37 steps in 203.11 seconds. No capped target was run.
+- RTL Insights Jump, Focus, and Set Top now use three non-repeatable
+  `ActionSurface::GraphPanel` descriptors. The More menu, Inspector buttons,
+  and module-block Set Top button share Registry labels, metadata, availability,
+  execution routes, and failure reporting; selection enablement is synchronized
+  by the graph scene mapper. Execution is isolated in
+  `rtlinsightspanelactions.cpp`, while the coordinator remains 834 lines.
+  Modified files are `actionregistry.h/.cpp`,
+  `rtlinsightspanelcoordinator.h/.cpp`, `rtlinsightspanelactions.cpp`,
+  `rtlinsightspanelviewstate.h`, `rtlinsightsgraphscenemapper.cpp`,
+  `rtlinsightspaneltestapi.cpp`, `CMakeLists.txt`, and four focused tests.
+  `action_registry_test`, `controller_boundary_test`,
+  `rtl_insight_linkage_test`, `relationship_test`, and
+  `graph_export_panel_integration_test` passed 1/1 in 0.09, 0.07, 0.31,
+  15.92, and 0.37 seconds. Their serial builds completed in 23.4, 2.7,
+  564.9, 368.6, and 354.5 seconds; the export target had first reached its
+  300.3-second tool limit while compiling and then completed without a source
+  diagnostic under the extended limit. No capped target was run.
+- Signal Usage Hotspot Fit, Zoom In/Out, Center Current, and Reset Layout now
+  use five non-repeatable GraphPanel descriptors. The Track context menu,
+  panel button metadata, and Focus View adapters share the same action ids and
+  `executeAction` host; graph-content and Center-current availability propagate
+  to bound controls. Modified files are `actionregistry.h/.cpp`,
+  `signalusagehotspotpanel.h/.cpp`, `signalusagehotspotpanelactions.cpp`,
+  `CMakeLists.txt`, and three focused tests. `action_registry_test` and
+  `controller_boundary_test` passed 1/1 in 0.09 and 0.07 seconds after 23.7-
+  and 2.9-second serial builds. The panel/core target compiled and linked 46
+  steps in 559.0 seconds. `signal_usage_hotspot_panel_test` then consumed its
+  three-run cap: two CTest starts exited before producing test output in 0.38
+  and 0.31 seconds, and a GDB run showed Windows startup status `0xc0000135`
+  before `main`, with no stack. Its direct and transitive DLL list matches
+  passing GUI targets and all listed DLLs exist. The independent
+  `graph_export_panel_integration_test` started normally: its three runs passed
+  33/34, 38/39, and 38/39 checks; every graph export and Reset, Zoom Out,
+  Center, Fit, metadata, and history check passed. The sole failure was a test
+  calling a deliberately hidden panel `QPushButton`; the real Focus entry uses
+  `focusZoomIn()`. The future assertion now calls that production adapter, but
+  neither capped target was rerun. Serial integration builds took 348.6,
+  345.8, and 433.5 seconds.
+- Insight Focus Fit, Zoom Out, and Zoom In now consume the same non-repeatable
+  GraphPanel descriptors as the embedded graph panels. Toolbar labels,
+  tooltips, route metadata, availability, and dispatch are owned by
+  `ActionRegistry`; active Focus registrations still supply the concrete view
+  callbacks. Execution was separated into
+  `insightfocuscontrolleractions.cpp`, leaving the Focus shell responsible for
+  panel ownership and lifecycle. Modified files are
+  `insightfocuscontroller.h/.cpp`, `insightfocuscontrolleractions.cpp`,
+  `CMakeLists.txt`, and two focused tests. The serial
+  `insight_focus_controller_test` build completed in 14.2 seconds and the test
+  passed 1/1 in 0.13 seconds; `controller_boundary_test` built in 2.9 seconds
+  and passed 1/1 in 0.10 seconds. No capped target was run.
+- Final A-G acceptance on 2026-08-03 built every Debug target serially. The
+  first pass exposed one deterministic stale test adapter in
+  `test_sv/gui_smoke_test.cpp`: its one-argument registered-Action callback no
+  longer matched the product `(actionId, parameters)` contract. The fixture
+  now captures both values and verifies the Rename request carries an empty
+  parameter map. The restarted build completed all remaining targets; after a
+  session continuation, Ninja reported only ten pending links and those 10/10
+  completed in 3333 seconds. All 77 CTest executables therefore compile and
+  link, including the nine execution-capped targets.
+- The final stable suite excluded those nine targets by exact name and passed
+  68/68, 0 failed, in 199.58 seconds. G acceptance includes
+  `graph_export_service_test` 0.14 seconds,
+  `editor_visible_region_perf_test` 4.40 seconds,
+  `rtl_insight_linkage_test` 1.88 seconds,
+  `insight_focus_controller_test` 0.65 seconds,
+  `panel_layout_controller_test` 0.61 seconds,
+  `analysis_scheduler_test` 4.91 seconds, and all seven `rtleditcore` tests.
+- Real-project acceptance passed in the same run:
+  `large_file_perf_test` exercised `test_sv/new` in 7.96 seconds,
+  `relationship_perf_test` exercised `test_sv/huge_prj` in 93.66 seconds,
+  and `expose_signal_to_top_fixture_test` checked both roots in 4.95 seconds.
+  The protected files remain byte-identical:
+  `test_sv/new/.zs` is 8642 bytes, timestamp 2026-07-26 22:39:01, SHA-256
+  `951DAE13441A96CC21063523180E3FA8EE1B37AC1D7C1C76259F1440F865F1C5`;
+  `test_sv/huge_prj/.zs` is 88254 bytes, timestamp 2026-07-25 00:19:56,
+  SHA-256
+  `FD279C386846C51F13C4DBA81378A4BD6748FFF274A9EA0AF9A7DEFA5EB26391`.
+- Offscreen GUI evidence includes seven fresh, nonblank FSM PNGs under
+  `artifacts/ui/fsm`; visual inspection of `fsm_selected_transition.png`
+  confirms distinct selected-transition and alias/implicit-state rendering.
+  The retained `current_signal_usage_hotspot_after.png` confirms readable
+  Track/Matrix layout, counts, selection, cell details, source links, zoom,
+  Fit, and Export controls. `git diff --check` passed apart from line-ending
+  advisories, the status audit found zero temporary log/program entries, and
+  no build or test process remains.
+- Final Debug serial incremental build passed 108/108 Ninja steps in 13,808.5
+  seconds. Stable CTest, with the six capped entries excluded by exact name,
+  passed 71/71 in 161.43 seconds.
+- Real-project acceptance passed in that stable run: `large_file_perf_test`
+  exercised `test_sv/new` in 8.33 seconds, `relationship_perf_test` exercised
+  `test_sv/huge_prj` in 99.16 seconds, and
+  `expose_signal_to_top_fixture_test` checked both projects in 4.24 seconds.
+  The protected `.zs` lengths and timestamps remain 8642 bytes / 2026-07-26
+  22:39:01 and 88254 bytes / 2026-07-25 00:19:56 respectively.
+- `git diff --check -- .
+  ':!test_sv/new/elec_phy_import/ctrl/chl_ctrl.sv'` passed. No obsolete
+  `ExposeSignalToTopDialog` name, temporary test/log artifact, or residual
+  test/build process remains.
+
+### Three-Reproduction Test Cap Record
+
+Each entry below has consumed three minimal execution attempts. No fourth
+execution was made. Current common evidence is that all listed targets compile
+and link while their stable neighbors pass; no repeatable product-source fault
+has been isolated unless an entry states a narrower test-fixture cause. The
+ranges are retained for a future investigation that starts only when new
+evidence is available.
+
+- `gui_smoke_test`: test scope `test_sv/gui_smoke_test.cpp:1` through 15740,
+  with the integration main beginning at line 12237; product scope is
+  `mainwindow.cpp`, `mycodeeditor.cpp`, workspace/session coordinators, and
+  semantic panels. Reproduction is the CMake-registered offscreen test with
+  `test_sv/new` and `test_sv/test_symbols.sv` arguments
+  (`CMakeLists.txt:1507`).
+- `editor_incremental_test`: test scope
+  `test_sv/editor_incremental_test.cpp:1` through 2348, main at line 2049;
+  product scope is `tabmanager.cpp`, `mycodeeditor.cpp`, `tsdocument.cpp`,
+  `symbolanalyzerincremental.cpp`, and incremental-analysis services.
+  Reproduction is the offscreen CMake test with `rtl_top.sv` and
+  `test_sv/huge_prj` (`CMakeLists.txt:1576`).
+- `editor_structural_input_test`: test scope
+  `test_sv/editor_structural_input_test.cpp:125` through 533; product scope is
+  `editorstructuralinputcontroller.cpp`, `mycodeeditor.cpp`, editor syntax, and
+  completion workflow. Reproduction is the no-argument offscreen CMake test
+  (`CMakeLists.txt:1585`).
+- `editor_paste_transaction_test`: test scope
+  `test_sv/editor_paste_transaction_test.cpp:56` through 259; product scope is
+  `mycodeeditor.cpp`, document transactions, and shared-document view updates.
+  Reproduction is the no-argument offscreen CMake test
+  (`CMakeLists.txt:1606`).
+- `global_control_ow_test`: test scope
+  `test_sv/global_control_ow_test.cpp:418` through 967; product scope is
+  `mainwindow.cpp`, Global Control/File Command coordination,
+  `workspacemanager.cpp`, and analysis scheduling. Reproduction is the
+  offscreen CMake test with both real project roots (`CMakeLists.txt:1544`).
+- `editor_multicursor_controller_test`: test scope
+  `test_sv/editor_multicursor_controller_test.cpp:75` through 963; product
+  scope is `editormulticursorcontroller.cpp`, virtual-column ownership,
+  `mycodeeditor.cpp`, and selection/mode coordination. Reproduction is the
+  no-argument offscreen CMake test (`CMakeLists.txt:1599`).
+- `expose_signal_to_top_gui_test` Insight Focus Escape experiment: the stable
+  target first passed the Column Number Tool stage with 102 checks in 1.43
+  seconds. Three later minimal runs against a proposed Registry migration all
+  reproduced the same failure: the signal-kernel Action entered Focus View,
+  and the leave QAction was present, enabled, and carried the effective Escape
+  sequence, but the offscreen key event did not trigger
+  `view.insightFocus.leave`; the following assignment-queue failure was a
+  consequence of the still-active Focus View. Explicit page focus did not
+  change the result. Source scope is `mainwindow.cpp` View-menu QAction setup
+  and route execution plus `insightfocuscontroller.cpp` focus-page input
+  ownership; reproduction is the CMake-registered offscreen GUI test
+  (`CMakeLists.txt:1524`). The unverified migration and transient checks were
+  removed, restoring the previously verified local Escape behavior. Do not
+  run this target again until new shortcut-activation evidence is available.
+- `signal_usage_hotspot_panel_test`: the affected 46-step core/test target
+  compiled and linked in 559.0 seconds. Two CTest runs then exited in 0.38 and
+  0.31 seconds without entering any logged assertion. A third GDB run exited
+  during process startup with Windows status `0xc0000135` and no stack. Static
+  dependency inspection shows the same Qt6Core/Gui/Svg/Widgets and MinGW DLL
+  set as passing `rtl_insight_linkage_test`; every listed DLL exists in the
+  configured runtime paths. Source scope is
+  `test_sv/signal_usage_hotspot_panel_test.cpp`,
+  `signalusagehotspotpanel.cpp`, and `signalusagehotspotpanelactions.cpp`.
+  Do not rerun without new loader evidence.
+- `graph_export_panel_integration_test`: after adding focused Hotspot graph-view
+  checks, three runs passed 33/34, 38/39, and 38/39 checks. All five export
+  surfaces, Registry metadata, availability, structured failures, Reset,
+  Zoom Out, Center, Fit, and repeat-history checks passed every applicable
+  run. The only repeatable failure was `QPushButton::click()` on a control that
+  product layout deliberately hides; the real Focus toolbar invokes
+  `focusZoomIn()`. The future test now calls that production adapter, but the
+  target was not run a fourth time. Source scope is
+  `test_sv/graph_export_panel_integration_test.cpp` and the Hotspot panel Action
+  binding. Do not rerun without a new behavior hypothesis.

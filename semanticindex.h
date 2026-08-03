@@ -132,6 +132,82 @@ struct SemanticElaboratedSymbolInfo {
     QString failureReason;
 };
 
+enum class SemanticTypeDimensionKind : std::uint8_t {
+    Packed,
+    Unpacked
+};
+
+// These structures are the lossless machine-facing counterpart to the
+// presentation strings above. They are populated directly from Slang's bound
+// AST and resolved Type graph; consumers must not reconstruct them by parsing
+// declarationText or any other renderer product.
+struct SemanticConstantEvaluationNode {
+    QString id;
+    QString operationName;
+    QString expressionText;
+    QStringList operandIds;
+    QStringList parameterDependencyIds;
+    QString resultValueText;
+    bool evaluated = false;
+    QString evidenceId;
+};
+
+struct SemanticParameterDependencyNode {
+    QString identity;
+    QString name;
+    bool localparam = false;
+    QString rootEvaluationNodeId;
+    QStringList dependencyIds;
+    QString valueText;
+    bool evaluated = false;
+    QString evidenceId;
+};
+
+struct SemanticConstantDependencyGraph {
+    QList<SemanticConstantEvaluationNode> evaluationNodes;
+    QList<SemanticParameterDependencyNode> parameters;
+    bool complete = false;
+    QString evidenceId;
+    QString failureReason;
+};
+
+struct SemanticTypeDimensionFact {
+    SemanticTypeDimensionKind kind =
+        SemanticTypeDimensionKind::Packed;
+    QString canonicalId;
+    QString declarationText;
+    QString leftEvaluationNodeId;
+    QString rightEvaluationNodeId;
+    QString elementCountText;
+    bool emitInDeclaration = true;
+    bool complete = false;
+    QString evidenceId;
+};
+
+struct SemanticTypedefResolutionStep {
+    QString sourceTypeId;
+    QString sourceTypeName;
+    QString targetTypeId;
+    QString declarationIdentity;
+    QStringList introducedDimensionIds;
+    QString evidenceId;
+};
+
+struct SemanticDeclaredTypeFacts {
+    QString rootTypeId;
+    QString canonicalTypeId;
+    QString declarationShapeId;
+    QString declarationBaseText;
+    bool signednessKnown = false;
+    bool signedIntegral = false;
+    bool complete = false;
+    QList<SemanticTypeDimensionFact> dimensions;
+    QList<SemanticTypedefResolutionStep> typedefChain;
+    SemanticConstantDependencyGraph constants;
+    QString evidenceId;
+    QString failureReason;
+};
+
 // Describes the elaboration domain in which a compile-time value is valid.
 // This is intentionally independent of SemanticSymbolOwner: enum values owned
 // by a typedef, for example, can still be package-scoped effective values.
@@ -156,6 +232,9 @@ struct SemanticSymbolPresentation {
     std::uint64_t documentRevision = 0;
     SemanticElaboratedSymbolInfo defaultInfo;
     QHash<QString, SemanticElaboratedSymbolInfo> instanceInfoByPath;
+    SemanticDeclaredTypeFacts defaultDeclaredTypeFacts;
+    QHash<QString, SemanticDeclaredTypeFacts>
+        declaredTypeFactsByPath;
 };
 
 struct SemanticAnalysisBandMetadata {

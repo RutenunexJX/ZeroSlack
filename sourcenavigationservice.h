@@ -61,8 +61,6 @@ struct SourceSymbolActionContext {
 
 enum class SourceSymbolAction {
     GoToDefinition,
-    FindReferences,
-    ShowRelationships,
     ShowSignalKernelGraph,
     ShowSignalUsageHotspot,
     ShowStateTransitionGraph,

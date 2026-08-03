@@ -70,6 +70,9 @@ struct DocumentRegistry {
     TrackedDocument* find(MyCodeEditor* editor);
     const TrackedDocument* find(MyCodeEditor* editor) const;
     bool markSaved(MyCodeEditor* editor, TrackedDocument* tracked);
+    QList<MyCodeEditor*> editorsForDocumentId(
+        const QString& documentId) const;
+    int viewCountForDocumentId(const QString& documentId) const;
     DocumentSnapshot replace(MyCodeEditor* editor,
                              const TrackedDocument& tracked,
                              const DocumentSnapshot& previous);

@@ -4,6 +4,7 @@
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QMessageBox>
+#include <QSaveFile>
 #include <QStringList>
 #include <QTextStream>
 
@@ -71,19 +72,33 @@ bool TabFileIo::readTextFile(
 bool TabFileIo::writeTextFile(
     QWidget* parent,
     const QString& fileName,
-    const QString& text) const
+    const QString& text,
+    QString* failureReason) const
 {
-    QFile file(fileName);
+    Q_UNUSED(parent);
+    if (failureReason)
+        failureReason->clear();
+    QSaveFile file(fileName);
     if (!file.open(QIODevice::WriteOnly | QFile::Text)) {
-        QMessageBox::warning(
-            parent,
-            "Warning",
-            "Cannot save file: " + file.errorString());
+        if (failureReason) {
+            *failureReason =
+                QStringLiteral("Cannot save file: %1")
+                    .arg(file.errorString());
+        }
         return false;
     }
 
     QTextStream out(&file);
     out << text;
-    file.close();
+    out.flush();
+    if (out.status() != QTextStream::Ok
+        || !file.commit()) {
+        if (failureReason) {
+            *failureReason =
+                QStringLiteral("Cannot save file: %1")
+                    .arg(file.errorString());
+        }
+        return false;
+    }
     return true;
 }

@@ -186,15 +186,53 @@ QList<SemanticSymbolRecord> matchingPortRecords(
     return result;
 }
 
+QString recordSemanticIdentity(const SemanticSymbolRecord& record)
+{
+    const QString stableKey = symbolStableKeyText(record.stableKey);
+    return stableKey.isEmpty()
+        ? EffectiveValueService::stableSourceIdentity(record)
+        : stableKey;
+}
+
+QString hierarchyContextIdentity(
+    const HierarchyInstanceContext& context)
+{
+    return context.workspacePath
+        + QLatin1Char('\x1f')
+        + context.activeTopModule
+        + QLatin1Char('\x1f')
+        + context.instancePath;
+}
+
+QString formalPortAnnotationIdentity(
+    const SemanticSymbolRecord& instPin,
+    const SemanticSymbolRecord& formalPort,
+    const HierarchyInstanceContext& context)
+{
+    const QString instPinIdentity =
+        EffectiveValueService::stableSourceIdentity(instPin);
+    const QString formalPortIdentity =
+        recordSemanticIdentity(formalPort);
+    if (instPinIdentity.isEmpty() || formalPortIdentity.isEmpty())
+        return QString();
+    return instPinIdentity
+        + QLatin1Char('\x1f')
+        + formalPortIdentity
+        + QLatin1Char('\x1f')
+        + hierarchyContextIdentity(context);
+}
+
 void appendFormalPortAnnotations(
     const QList<LineInfo>& lines,
     const QList<SemanticSymbolRecord>& fileRecords,
     SemanticIndex* index,
+    const HierarchyInstanceContext& instanceContext,
     QList<GhostAnnotation>* output)
 {
     if (!output)
         return;
 
+    QSet<QString> emittedAnnotationKeys;
     for (const SemanticSymbolRecord& instPin : fileRecords) {
         if (instPin.collectorKind
                 != SymbolTaxonomy::CollectorKind::InstPin
@@ -224,6 +262,18 @@ void appendFormalPortAnnotations(
             instPin.location.startColumn);
         if (nameStart < 0)
             continue;
+
+        const QString annotationIdentity =
+            formalPortAnnotationIdentity(instPin,
+                                         port,
+                                         instanceContext);
+        if (!annotationIdentity.isEmpty()
+            && emittedAnnotationKeys.contains(annotationIdentity)) {
+            continue;
+        }
+        if (!annotationIdentity.isEmpty())
+            emittedAnnotationKeys.insert(annotationIdentity);
+
         output->append(makeAnnotation(
             GhostAnnotationKind::FormalPort,
             GhostAnnotationPlacement::RightOfLine,
@@ -259,6 +309,15 @@ QString widthGhostText(const EffectiveValueResult& value,
     if (!value.current() || value.bitWidthText.isEmpty()
         || value.bitWidthText == QStringLiteral("not applicable")
         || value.bitWidthText == QStringLiteral("not statically known")) {
+        return QString();
+    }
+
+    // The source-level packed dimensions are collected from Slang syntax.
+    // A port that already spells out its width does not need the same fact
+    // repeated as a trailing annotation. Typedef-resolved widths remain
+    // eligible because their source presentation has no packed dimensions.
+    if (isPortRecord(record)
+        && !record.presentation.packedDimensionsText.trimmed().isEmpty()) {
         return QString();
     }
 
@@ -443,7 +502,23 @@ QList<GhostAnnotation> mergeLineTailAnnotations(
     QList<GhostAnnotation> annotations)
 {
     std::stable_sort(annotations.begin(), annotations.end(), startsBefore);
-    return annotations;
+
+    QList<GhostAnnotation> merged;
+    merged.reserve(annotations.size());
+    QSet<QString> emittedGenerateLines;
+    for (GhostAnnotation& annotation : annotations) {
+        if (annotation.kind == GhostAnnotationKind::GenerateLoop
+            && annotation.placement
+                   == GhostAnnotationPlacement::RightOfLine) {
+            const QString key = QString::number(annotation.line)
+                + QLatin1Char('\x1f') + annotation.text;
+            if (emittedGenerateLines.contains(key))
+                continue;
+            emittedGenerateLines.insert(key);
+        }
+        merged.append(std::move(annotation));
+    }
+    return merged;
 }
 
 }
@@ -504,6 +579,7 @@ GhostAnnotationReport GhostAnnotationService::annotationsForDocument(
     appendFormalPortAnnotations(lines,
                                 fileRecords,
                                 activeIndex,
+                                query.instanceContext,
                                 &report.annotations);
     appendSymbolEffectiveValueAnnotations(lines,
                                           fileRecords,

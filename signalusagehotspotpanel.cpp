@@ -1,6 +1,7 @@
 #include "signalusagehotspotpanel.h"
 
 #include "editorfileidentity.h"
+#include "graphexportui.h"
 #include "insightgraphview.h"
 #include "insightvisualstyle.h"
 #include "semanticindexsnapshot.h"
@@ -29,6 +30,7 @@
 #include <QSplitter>
 #include <QStackedWidget>
 #include <QTimer>
+#include <QToolButton>
 #include <QTreeWidget>
 #include <QVBoxLayout>
 #include <QFutureWatcher>
@@ -622,11 +624,97 @@ SignalUsageHotspotPanel::SignalUsageHotspotPanel(QWidget* parent)
     searchEdit = new QLineEdit(this);
     searchEdit->setPlaceholderText(QStringLiteral("Search usage"));
     InsightVisualStyle::applySearchField(searchEdit);
-    zoomOutButton = new QPushButton(QStringLiteral("Zoom -"), this);
-    zoomInButton = new QPushButton(QStringLiteral("Zoom +"), this);
-    fitButton = new QPushButton(QStringLiteral("Fit"), this);
-    centerCurrentButton = new QPushButton(QStringLiteral("Center"), this);
-    resetLayoutButton = new QPushButton(QStringLiteral("Reset Layout"), this);
+    zoomOutButton = new QPushButton(this);
+    zoomOutButton->setObjectName(
+        QStringLiteral("signalUsageHotspotZoomOutButton"));
+    zoomInButton = new QPushButton(this);
+    zoomInButton->setObjectName(
+        QStringLiteral("signalUsageHotspotZoomInButton"));
+    fitButton = new QPushButton(this);
+    fitButton->setObjectName(
+        QStringLiteral("signalUsageHotspotFitButton"));
+    centerCurrentButton = new QPushButton(this);
+    centerCurrentButton->setObjectName(
+        QStringLiteral("signalUsageHotspotCenterCurrentButton"));
+    resetLayoutButton = new QPushButton(this);
+    resetLayoutButton->setObjectName(
+        QStringLiteral("signalUsageHotspotResetLayoutButton"));
+    fitViewAction = createGraphViewAction(
+        QString::fromLatin1(
+            ActionIds::GraphViewFit));
+    zoomInViewAction = createGraphViewAction(
+        QString::fromLatin1(
+            ActionIds::GraphViewZoomIn));
+    zoomOutViewAction = createGraphViewAction(
+        QString::fromLatin1(
+            ActionIds::GraphViewZoomOut));
+    centerCurrentViewAction = createGraphViewAction(
+        QString::fromLatin1(
+            ActionIds::GraphViewCenterCurrent));
+    resetLayoutViewAction = createGraphViewAction(
+        QString::fromLatin1(
+            ActionIds::GraphViewResetLayout));
+    bindGraphViewButton(fitButton, fitViewAction);
+    bindGraphViewButton(zoomInButton, zoomInViewAction);
+    bindGraphViewButton(zoomOutButton, zoomOutViewAction);
+    bindGraphViewButton(
+        centerCurrentButton,
+        centerCurrentViewAction);
+    bindGraphViewButton(
+        resetLayoutButton,
+        resetLayoutViewAction);
+    refreshGraphViewActionAvailability();
+    auto* exportButton = new QToolButton(this);
+    exportButton->setObjectName(
+        QStringLiteral("signalUsageHotspotExportButton"));
+    exportButton->setText(QStringLiteral("Export"));
+    exportButton->setPopupMode(QToolButton::InstantPopup);
+    auto* exportMenu = new QMenu(exportButton);
+    exportTrackAction = GraphExportUi::bindRegistryAction(
+        this,
+        QString::fromLatin1(
+            ActionIds::GraphExportUsageHotspotTrack),
+        [this]() {
+            return currentReport.found
+                && !currentReport.items.isEmpty()
+                && trackScene
+                && !trackScene->items().isEmpty();
+        },
+        [this](const QString& outputPath,
+               const GraphExportOptions& options) {
+            return exportGraph(
+                SignalUsageHotspotExportSurface::Track,
+                outputPath,
+                options);
+        },
+        [this](const QString& message, int timeoutMs) {
+            showStatusMessage(message, timeoutMs);
+        });
+    exportMatrixAction = GraphExportUi::bindRegistryAction(
+        this,
+        QString::fromLatin1(
+            ActionIds::GraphExportUsageHotspotMatrix),
+        [this]() {
+            return currentReport.found
+                && !currentReport.items.isEmpty()
+                && matrixScene
+                && !matrixScene->items().isEmpty();
+        },
+        [this](const QString& outputPath,
+               const GraphExportOptions& options) {
+            return exportGraph(
+                SignalUsageHotspotExportSurface::Matrix,
+                outputPath,
+                options);
+        },
+        [this](const QString& message, int timeoutMs) {
+            showStatusMessage(message, timeoutMs);
+        });
+    if (exportTrackAction)
+        exportMenu->addAction(exportTrackAction);
+    if (exportMatrixAction)
+        exportMenu->addAction(exportMatrixAction);
+    exportButton->setMenu(exportMenu);
     for (QPushButton* button : {zoomOutButton,
                                 zoomInButton,
                                 fitButton,
@@ -634,12 +722,6 @@ SignalUsageHotspotPanel::SignalUsageHotspotPanel(QWidget* parent)
                                 resetLayoutButton}) {
         InsightVisualStyle::applyToolbarButton(button);
     }
-    zoomOutButton->setToolTip(QStringLiteral("Zoom track out"));
-    zoomInButton->setToolTip(QStringLiteral("Zoom track in"));
-    fitButton->setToolTip(QStringLiteral("Fit track to view"));
-    centerCurrentButton->setToolTip(
-        QStringLiteral("Center current cursor line or selected usage"));
-    resetLayoutButton->setToolTip(QStringLiteral("Reset splitter and zoom"));
     searchEdit->setVisible(false);
     zoomOutButton->setVisible(false);
     zoomInButton->setVisible(false);
@@ -652,6 +734,7 @@ SignalUsageHotspotPanel::SignalUsageHotspotPanel(QWidget* parent)
     toolbar->addWidget(fitButton);
     toolbar->addWidget(centerCurrentButton);
     toolbar->addWidget(resetLayoutButton);
+    toolbar->addWidget(exportButton);
     rootLayout->addLayout(toolbar);
 
     auto* roleLayout = new QHBoxLayout;
@@ -758,47 +841,28 @@ SignalUsageHotspotPanel::SignalUsageHotspotPanel(QWidget* parent)
     connect(matrixModeButton, &QPushButton::clicked, this, [this]() {
         setMode(true);
     });
-    connect(zoomOutButton, &QPushButton::clicked, this, [this]() {
-        zoomTrack(0.8);
-    });
-    connect(zoomInButton, &QPushButton::clicked, this, [this]() {
-        zoomTrack(1.25);
-    });
-    connect(fitButton, &QPushButton::clicked, this, [this]() {
-        fitTrackToView();
-    });
-    connect(centerCurrentButton, &QPushButton::clicked, this, [this]() {
-        centerCurrentUsage();
-    });
-    connect(resetLayoutButton, &QPushButton::clicked, this, [this]() {
-        resetLayout();
-    });
     connect(contentSplitter, &QSplitter::splitterMoved, this, [this]() {
         saveLayout();
     });
     connect(trackView, &QWidget::customContextMenuRequested,
             this, [this](const QPoint& pos) {
+                refreshGraphViewActionAvailability();
                 QMenu menu(trackView);
-                QAction* fitAction = menu.addAction(QStringLiteral("Fit"));
-                QAction* centerAction =
-                    menu.addAction(QStringLiteral("Center Current"));
+                if (fitViewAction)
+                    menu.addAction(fitViewAction);
+                if (centerCurrentViewAction)
+                    menu.addAction(centerCurrentViewAction);
                 menu.addSeparator();
-                QAction* zoomInAction = menu.addAction(QStringLiteral("Zoom In"));
-                QAction* zoomOutAction = menu.addAction(QStringLiteral("Zoom Out"));
+                if (zoomInViewAction)
+                    menu.addAction(zoomInViewAction);
+                if (zoomOutViewAction)
+                    menu.addAction(zoomOutViewAction);
                 menu.addSeparator();
-                QAction* resetAction =
-                    menu.addAction(QStringLiteral("Reset Layout"));
-                QAction* chosen = menu.exec(trackView->viewport()->mapToGlobal(pos));
-                if (chosen == fitAction)
-                    fitTrackToView();
-                else if (chosen == centerAction)
-                    centerCurrentUsage();
-                else if (chosen == zoomInAction)
-                    zoomTrack(1.25);
-                else if (chosen == zoomOutAction)
-                    zoomTrack(0.8);
-                else if (chosen == resetAction)
-                    resetLayout();
+                if (resetLayoutViewAction)
+                    menu.addAction(resetLayoutViewAction);
+                menu.exec(
+                    trackView->viewport()
+                        ->mapToGlobal(pos));
             });
     connect(searchEdit, &QLineEdit::textChanged, this, [this](const QString& text) {
         searchText = text.trimmed();
@@ -903,6 +967,7 @@ void SignalUsageHotspotPanel::showHotspotForSymbol(
     showInspectorMessage(QStringLiteral("Analyzing"),
                          QStringLiteral("Building usage hotspot report..."));
     currentReport = {};
+    refreshGraphViewActionAvailability();
 
     const SignalUsageHotspotQuery query = currentQuery;
     const std::shared_ptr<const SemanticIndexSnapshot> snapshot =
@@ -938,21 +1003,28 @@ void SignalUsageHotspotPanel::setCurrentEditorLocation(const QString& fileName,
     currentEditorFileName = fileName;
     currentEditorLine = line;
     renderTrack();
+    refreshGraphViewActionAvailability();
 }
 
 void SignalUsageHotspotPanel::focusFit()
 {
-    fitTrackToView();
+    requestGraphViewAction(
+        QString::fromLatin1(
+            ActionIds::GraphViewFit));
 }
 
 void SignalUsageHotspotPanel::focusZoomIn()
 {
-    zoomTrack(1.15);
+    requestGraphViewAction(
+        QString::fromLatin1(
+            ActionIds::GraphViewZoomIn));
 }
 
 void SignalUsageHotspotPanel::focusZoomOut()
 {
-    zoomTrack(1.0 / 1.15);
+    requestGraphViewAction(
+        QString::fromLatin1(
+            ActionIds::GraphViewZoomOut));
 }
 
 void SignalUsageHotspotPanel::setFocusSearchText(
@@ -965,6 +1037,29 @@ void SignalUsageHotspotPanel::setFocusSearchText(
 QString SignalUsageHotspotPanel::focusSearchText() const
 {
     return searchEdit ? searchEdit->text() : searchText;
+}
+
+GraphExportResult SignalUsageHotspotPanel::exportGraph(
+    SignalUsageHotspotExportSurface surface,
+    const QString& outputPath,
+    const GraphExportOptions& options) const
+{
+    QGraphicsScene* scene =
+        surface == SignalUsageHotspotExportSurface::Matrix
+        ? matrixScene
+        : trackScene;
+    return GraphExportService::exportGraphicsScene(
+        scene,
+        outputPath,
+        options);
+}
+
+QAction* SignalUsageHotspotPanel::graphExportAction(
+    SignalUsageHotspotExportSurface surface) const
+{
+    return surface == SignalUsageHotspotExportSurface::Matrix
+        ? exportMatrixAction
+        : exportTrackAction;
 }
 
 void SignalUsageHotspotPanel::focusInspector()
@@ -1066,6 +1161,7 @@ bool SignalUsageHotspotPanel::selectUsageForTest(int itemIndex)
     selectedItemIndex = itemIndex;
     renderTrack();
     showInspectorForItem(itemIndex);
+    refreshGraphViewActionAvailability();
     return true;
 }
 
@@ -1124,6 +1220,13 @@ void SignalUsageHotspotPanel::rebuild()
 
     renderTrack();
     renderMatrix();
+    GraphExportUi::updateActionAvailability(
+        exportTrackAction,
+        trackScene && !trackScene->items().isEmpty());
+    GraphExportUi::updateActionAvailability(
+        exportMatrixAction,
+        matrixScene && !matrixScene->items().isEmpty());
+    refreshGraphViewActionAvailability();
     if (activeMatrixCellValid)
         showMatrixCellDetails();
     else if (selectedItemIndex >= 0)
@@ -1149,6 +1252,13 @@ void SignalUsageHotspotPanel::renderUnavailable(const QString& message)
     if (matrixItemsTree)
         matrixItemsTree->clear();
     showInspectorMessage(QStringLiteral("Unavailable"), message);
+    GraphExportUi::updateActionAvailability(
+        exportTrackAction,
+        false);
+    GraphExportUi::updateActionAvailability(
+        exportMatrixAction,
+        false);
+    refreshGraphViewActionAvailability();
 }
 
 void SignalUsageHotspotPanel::renderTrack()
@@ -2434,6 +2544,7 @@ void SignalUsageHotspotPanel::activateMatrixCell(SignalUsageHotspotRole role,
     renderMatrix();
     renderMatrixItems();
     showMatrixCellDetails();
+    refreshGraphViewActionAvailability();
 }
 
 void SignalUsageHotspotPanel::activateMatrixCellForItem(int itemIndex,
@@ -2484,36 +2595,38 @@ qreal SignalUsageHotspotPanel::targetTrackRailWidth() const
     return std::clamp(availableWidth, kTrackRailMinWidth, kTrackRailMaxWidth);
 }
 
-void SignalUsageHotspotPanel::setTrackZoom(double zoomFactor)
+bool SignalUsageHotspotPanel::setTrackZoom(double zoomFactor)
 {
     if (!trackView)
-        return;
+        return false;
     trackZoomFactor = std::clamp(zoomFactor, kMinTrackZoom, kMaxTrackZoom);
     trackView->resetView();
     trackView->zoomBy(trackZoomFactor);
     saveLayout();
+    return true;
 }
 
-void SignalUsageHotspotPanel::zoomTrack(double factor)
+bool SignalUsageHotspotPanel::zoomTrack(double factor)
 {
-    setTrackZoom(trackZoomFactor * factor);
+    return setTrackZoom(trackZoomFactor * factor);
 }
 
-void SignalUsageHotspotPanel::fitTrackToView()
+bool SignalUsageHotspotPanel::fitTrackToView()
 {
     if (!trackView || !trackScene || trackScene->sceneRect().isEmpty())
-        return;
+        return false;
     trackView->fitScene(Qt::KeepAspectRatio);
     trackZoomFactor = std::clamp(trackView->currentZoom(),
                                  kMinTrackZoom,
                                  kMaxTrackZoom);
     saveLayout();
+    return true;
 }
 
-void SignalUsageHotspotPanel::centerCurrentUsage()
+bool SignalUsageHotspotPanel::centerCurrentUsage()
 {
     if (!trackView || !trackScene)
-        return;
+        return false;
     for (const SignalUsageHotspotTrackLane& lane : currentReport.trackLanes) {
         if (!EditorFileIdentity::same(lane.fileName,
                                       currentEditorFileName)
@@ -2532,23 +2645,27 @@ void SignalUsageHotspotPanel::centerCurrentUsage()
                        1.0);
         trackView->centerOn(kLaneLabelWidth + ratio * trackWidth,
                             sceneRect.center().y());
-        return;
+        return true;
     }
 
     const QRectF selectedRect = trackRectForItem(selectedItemIndex);
-    if (!selectedRect.isEmpty())
+    if (!selectedRect.isEmpty()) {
         trackView->centerOnRect(selectedRect);
+        return true;
+    }
+    return false;
 }
 
-void SignalUsageHotspotPanel::resetLayout()
+bool SignalUsageHotspotPanel::resetLayout()
 {
     clearMatrixFocus();
     selectedItemIndex = -1;
-    setTrackZoom(1.0);
+    const bool zoomReset = setTrackZoom(1.0);
     if (contentSplitter)
         contentSplitter->setSizes({820, 980});
     saveLayout();
     rebuild();
+    return zoomReset;
 }
 
 void SignalUsageHotspotPanel::restoreLayout()
@@ -2615,6 +2732,7 @@ void SignalUsageHotspotPanel::showInspectorForItem(int itemIndex)
             .arg(item.snippet.trimmed().toHtmlEscaped())
             .arg(compactFileName(item.fileName).toHtmlEscaped());
     showInspectorMessage(QStringLiteral("Usage Details"), html);
+    refreshGraphViewActionAvailability();
 }
 
 void SignalUsageHotspotPanel::showInspectorMessage(

@@ -52,6 +52,12 @@ struct EditorHotPathMetrics {
     std::uint64_t inlineFilterOverlayEdits = 0;
     std::uint64_t inlineFilterOverlayMaterializations = 0;
     std::uint64_t inlineFilterOverlayForcedTextReads = 0;
+    std::uint64_t visiblePresentationRefreshes = 0;
+    std::uint64_t semanticDecorationCandidatesExamined = 0;
+    std::uint64_t semanticDecorationSelectionsBuilt = 0;
+    std::uint64_t diagnosticVisibleLineProbes = 0;
+    std::uint64_t diagnosticCandidatesExamined = 0;
+    std::uint64_t diagnosticOverviewCandidatesPainted = 0;
     std::uint64_t documentChangeCoreNanoseconds = 0;
     std::uint64_t documentChangePrepareNanoseconds = 0;
     std::uint64_t documentChangeSyntaxNanoseconds = 0;

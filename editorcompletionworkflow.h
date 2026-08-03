@@ -69,6 +69,9 @@ private:
         int filterStartPosition = -1;
         QString abbreviationText;
         QString filterText;
+        bool packageImportSiteValid = false;
+        QString packageImportEnclosingPackageName;
+        QStringList packageImportWildcardImports;
         CommandModeCompletionQuery anchorQuery;
         CommandModeCompletionState completion;
     };
@@ -112,6 +115,7 @@ private:
         const IncludeCompletionContext& context);
     bool showIncludeNewHeaderCompletions(
         const IncludeCompletionContext& context);
+    bool applyPackageImport(const QString& packageName);
     void applyIncludeCompletion(const QString& includePath);
     void applyIncludeNewHeaderChoice(const QString& choice);
 

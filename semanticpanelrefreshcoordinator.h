@@ -1,6 +1,9 @@
 #ifndef SEMANTICPANELREFRESHCOORDINATOR_H
 #define SEMANTICPANELREFRESHCOORDINATOR_H
 
+#include "rtlinsightlink.h"
+
+#include <QMetaObject>
 #include <QString>
 #include <QStringList>
 
@@ -11,8 +14,6 @@ class DocumentModel;
 class NavigationCommandCoordinator;
 class NavigationManager;
 class ProblemsPanelCoordinator;
-class ReferencesPanelCoordinator;
-class RelationshipsPanelCoordinator;
 class RtlInsightsPanelCoordinator;
 class SignalKernelGraphPanelCoordinator;
 class TabManager;
@@ -26,23 +27,14 @@ public:
                                     NavigationManager* navigationManager,
                                     NavigationCommandCoordinator* navigationCommandCoordinator,
                                     ProblemsPanelCoordinator* problemsPanel,
-                                    ReferencesPanelCoordinator* referencesPanel,
-                                    RelationshipsPanelCoordinator* relationshipsPanel,
                                     RtlInsightsPanelCoordinator* rtlInsightsPanel,
                                     SignalKernelGraphPanelCoordinator* signalKernelGraphPanel);
+    ~SemanticPanelRefreshCoordinator();
 
     void setStatusMessageHandler(std::function<void(const QString&, int)> handler);
     void configurePanels();
 
     void updateProblemsPanel();
-    void showReferencesForSymbol(const QString& symbolName,
-                                 const QString& fileName,
-                                 const QString& moduleName);
-    void refreshReferencesPanel();
-    void showRelationshipsForSymbol(const QString& symbolName,
-                                    const QString& fileName,
-                                    const QString& moduleName);
-    void refreshRelationshipsPanel();
     void showSignalKernelGraphForSymbol(const QString& symbolName,
                                         const QString& fileName,
                                         const QString& moduleName,
@@ -64,10 +56,9 @@ private:
     using WorkspaceFilesProvider = std::function<QStringList()>;
     using NavigationHandler =
         std::function<bool(const QString&, int, int)>;
-    using SignalGraphHandler =
-        std::function<void(const QString&, const QString&, const QString&)>;
-    using ModuleGraphHandler =
-        std::function<void(const QString&, const QString&)>;
+    using SourceNavigationHandler =
+        std::function<bool(
+            const RtlInsightSourceLocation&)>;
     using ProblemsNavigationHandler =
         std::function<bool(const QString&, int, int)>;
     using StatusMessageHandler =
@@ -91,6 +82,8 @@ private:
         bool navigateToFileAndLineAndFlash(const QString& fileName,
                                            int line,
                                            int column) const;
+        bool navigateToSourceLocation(
+            const RtlInsightSourceLocation& location) const;
         void revealFileAndFlashLine(const QString& fileName,
                                     int line) const;
         void handleActiveEditorChanged(MyCodeEditor* editor) const;
@@ -98,15 +91,11 @@ private:
 
     struct PanelSet {
         ProblemsPanelCoordinator* problemsPanel = nullptr;
-        ReferencesPanelCoordinator* referencesPanel = nullptr;
-        RelationshipsPanelCoordinator* relationshipsPanel = nullptr;
         RtlInsightsPanelCoordinator* rtlInsightsPanel = nullptr;
         SignalKernelGraphPanelCoordinator* signalKernelGraphPanel = nullptr;
         bool configured = false;
 
         void set(ProblemsPanelCoordinator* problemsPanel,
-                 ReferencesPanelCoordinator* referencesPanel,
-                 RelationshipsPanelCoordinator* relationshipsPanel,
                  RtlInsightsPanelCoordinator* rtlInsightsPanel,
                  SignalKernelGraphPanelCoordinator* signalKernelGraphPanel);
         bool isConfigured() const;
@@ -116,18 +105,9 @@ private:
             const WorkspaceFilesProvider& workspaceFilesProvider,
             const ProblemsNavigationHandler& navigationHandler,
             const StatusMessageHandler& statusMessageHandler) const;
-        void configureReferencesPanel(
-            const WorkspaceFilesProvider& workspaceFilesProvider,
-            const NavigationHandler& navigationHandler,
-            const StatusMessageHandler& statusMessageHandler) const;
-        void configureRelationshipsPanel(
-            const NavigationHandler& navigationHandler,
-            const SignalGraphHandler& signalKernelGraphHandler,
-            const SignalGraphHandler& stateTransitionGraphHandler,
-            const ModuleGraphHandler& moduleBlockDiagramHandler,
-            const StatusMessageHandler& statusMessageHandler) const;
         void configureRtlInsightsPanel(
-            const NavigationHandler& navigationHandler,
+            const SourceNavigationHandler&
+                sourceNavigationHandler,
             const StatusMessageHandler& statusMessageHandler) const;
         void configureSignalKernelGraphPanel(
             DocumentModel* documentModel,
@@ -135,14 +115,6 @@ private:
             const NavigationHandler& revealHandler,
             const StatusMessageHandler& statusMessageHandler) const;
         void updateProblemsPanel() const;
-        void showReferencesForSymbol(const QString& symbolName,
-                                     const QString& fileName,
-                                     const QString& moduleName) const;
-        void refreshReferencesPanel() const;
-        void showRelationshipsForSymbol(const QString& symbolName,
-                                        const QString& fileName,
-                                        const QString& moduleName) const;
-        void refreshRelationshipsPanel() const;
         void showSignalKernelGraphForSymbol(const QString& symbolName,
                                             const QString& fileName,
                                             const QString& moduleName,
@@ -157,9 +129,8 @@ private:
         void showModuleBlockDiagramForSymbol(const QString& symbolName,
                                              const QString& fileName,
                                              const QString& moduleName) const;
-        void updateRtlInsightsPanel(const QString& fileName,
-                                    const QString& moduleName,
-                                    const QString& signalName) const;
+        bool syncRtlInsightsSourceLocation(
+            const RtlInsightSourceLocation& location) const;
         bool problemsPanelShowsCurrentFile() const;
     };
 
@@ -170,14 +141,23 @@ private:
     bool navigateToFileAndLineAndFlash(const QString& fileName,
                                        int line,
                                        int column) const;
+    bool navigateToSourceLocation(
+        const RtlInsightSourceLocation& location) const;
     void revealFileAndFlashLine(const QString& fileName, int line) const;
     void showStatusMessage(const QString& message, int timeoutMs) const;
     bool problemsPanelShowsCurrentFile() const;
+    RtlInsightSourceLocation sourceLocationForEditor(
+        MyCodeEditor* editor) const;
+    void syncEditorSourceLocation(MyCodeEditor* editor);
 
     ContextDependencies dependencies;
     PanelSet panels;
 
     std::function<void(const QString&, int)> statusMessageHandler;
+    MyCodeEditor* observedEditor = nullptr;
+    QMetaObject::Connection editorCursorConnection;
+    QMetaObject::Connection editorSelectionConnection;
+    QMetaObject::Connection editorInstanceContextConnection;
 };
 
 #endif // SEMANTICPANELREFRESHCOORDINATOR_H

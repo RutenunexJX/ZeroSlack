@@ -1,6 +1,7 @@
 #ifndef MYCODEEDITOR_H
 #define MYCODEEDITOR_H
 
+#include "annotationlayer.h"
 #include "semanticindex.h"
 #include "semanticdecorationservice.h"
 #include "ghostannotationservice.h"
@@ -15,9 +16,9 @@
 #include <QList>
 #include <QPlainTextEdit>
 #include <QStringList>
+#include <QVariantMap>
 #include <cstdint>
 #include <functional>
-#include <memory>
 
 class QMenu;
 class QDragEnterEvent;
@@ -31,11 +32,14 @@ class QKeyEvent;
 class QInputMethodEvent;
 class QResizeEvent;
 class QWheelEvent;
+class QTextDocument;
+class TSDocument;
+struct TSTextStorageMetrics;
 class EditorDocumentGeometry;
 class EditorSemanticContextService;
 class EditorGutter;
 class EditorFoldingController;
-struct EditorLargeFileSyntaxScopeSnapshot;
+struct EditorLargeFileSyntaxSnapshot;
 class EditorCompletionWorkflow;
 class EditorSourceNavigationUi;
 struct EditorAppearanceOptions;
@@ -116,11 +120,31 @@ public:
     explicit MyCodeEditor(QWidget *parent = nullptr);
     ~MyCodeEditor();
 
+    void attachSharedDocument(QTextDocument* document,
+                              std::uint64_t textRevision = 0);
     void setPlainText(const QString& text);
     void insertPlainText(const QString& text);
     void clear();
+    void copy();
+    void cut();
+    void paste();
     void undo();
     void redo();
+    void showFindDialog();
+    bool deleteLines(QString* failureReason = nullptr);
+    bool joinLines(QString* failureReason = nullptr);
+    bool moveLinesUp(QString* failureReason = nullptr);
+    bool moveLinesDown(QString* failureReason = nullptr);
+    bool addNextSymbolOccurrence(
+        QString* failureReason = nullptr);
+    bool selectAllSymbolOccurrences(
+        QString* failureReason = nullptr);
+    bool expandSmartSelection(
+        QString* message = nullptr);
+    bool goToNextSelectedSymbolOccurrence(
+        QString* message = nullptr);
+    bool goToPreviousSelectedSymbolOccurrence(
+        QString* message = nullptr);
     void setTextCursor(const QTextCursor& cursor);
     void applyLineNavigationTarget(const SourceLineNavigationTarget& target);
     EditorBlockGeometry blockGeometry(int blockNumber) const;
@@ -128,14 +152,17 @@ public:
     void refreshScopeAndCurrentLineHighlight();
     void refreshSemanticPresentation();
     std::uint64_t semanticDocumentRevision() const;
+    const TSDocument* syntaxDocument() const;
     QString toPlainText() const;
     const QString& cachedDocumentText() const;
+    int cachedDocumentLength() const;
     QString cachedDocumentSlice(int position, int length) const;
     [[nodiscard]] SynchronousEditTransaction
     beginSynchronousEditTransaction();
     EditorSynchronousEditState synchronousEditStateForTest() const;
     void acceptLoadedTextAsSemanticBaseline();
     EditorHotPathMetrics hotPathMetricsForTest() const;
+    TSTextStorageMetrics cachedTextStorageMetricsForTest() const;
     bool inlineFilterTextOverlayActiveForTest() const;
     EditorOccurrenceIndexStats occurrenceIndexStatsForTest() const;
     QList<int> occurrencePositionsForTest(const QString& word) const;
@@ -163,6 +190,14 @@ public:
     bool executePackageToolInsert(PackageToolKind kind,
                                   QString* message = nullptr);
     bool selectInsideBeginEnd(QString* message = nullptr);
+    bool goToPreviousAssignmentForSelectedSignal(
+        QString* message = nullptr);
+    bool goToNextAssignmentForSelectedSignal(
+        QString* message = nullptr);
+    bool goToPreviousConditionalBranch(
+        QString* message = nullptr);
+    bool goToNextConditionalBranch(
+        QString* message = nullptr);
     void startTemplateSlotMode(int insertionStart,
                                int insertedLength,
                                const CodeTemplateSlotList& slotMetadata);
@@ -189,6 +224,10 @@ public:
         const QList<SemanticDecoration>& decorations);
     void setGhostAnnotations(
         const QList<GhostAnnotation>& annotations);
+    void setAnnotationDisplayOptions(
+        const EditorAnnotationDisplayOptions& options);
+    EditorAnnotationDisplayOptions
+    annotationDisplayOptions() const;
     void setFormatterProfile(FormatterProfile profile);
     FormatterProfile formatterProfile() const;
     void setFormatOnSaveEnabled(bool enabled);
@@ -203,7 +242,7 @@ public:
     int replaceAllText(const QString& needle,
                        const QString& replacement,
                        bool caseSensitive = false);
-    void showGotoLineDialog();
+    int showGotoLineDialog();
     void showReplaceDialog();
     void commentSelectionOrLine();
     void uncommentSelectionOrLine();
@@ -232,8 +271,12 @@ public:
         QString* failureReason = nullptr);
     bool startSignalSelectionMode(QString* message = nullptr);
     bool signalSelectionModeActiveForTest() const;
+    QStringList selectedSignalNames() const;
     QStringList selectedSignalNamesForTest() const;
     bool toggleSignalSelectionAtForTest(int cursorPosition);
+    bool createAssignmentQueueAt(
+        int cursorPosition,
+        QString* message = nullptr);
     bool createAssignmentQueueAtForTest(
         int cursorPosition,
         QString* message = nullptr);
@@ -256,8 +299,10 @@ public:
     bool toggleFoldAtLineForTest(int line);
     bool foldCollapsedAtLineForTest(int line) const;
     QList<GhostAnnotation> ghostAnnotationsForTest() const;
+    AnnotationLayerReport annotationLayerReportForTest(
+        const AnnotationLayerQuery& query = {}) const;
     QString syntaxTextForTest() const;
-    EditorLargeFileSyntaxScopeSnapshot largeFileSyntaxScopeForTest() const;
+    EditorLargeFileSyntaxSnapshot largeFileSyntaxSnapshotForTest() const;
     FoldShelfItem foldShelfItemAtLineForTest(
         int line,
         FoldShelfOriginKind origin = FoldShelfOriginKind::Copied) const;
@@ -309,6 +354,10 @@ signals:
     void safeRenameRequested(const QString& symbolName,
                              const EditorSemanticContext& context,
                              bool* handled);
+    void registeredActionRequested(
+        const QString& actionId,
+        const QVariantMap& parameters,
+        bool* handled);
     void sourceSymbolContextMenuRequested(QMenu* menu,
                                           const EditorSemanticContext& context);
     void definitionPreviewNavigationRequested(const QString& fileName,

@@ -76,7 +76,7 @@ struct EditorSourceSymbolShortcutContext {
 struct EditorSourceSymbolShortcutState {
     bool matched = false;
     bool acceptEvent = false;
-    SourceSymbolAction action = SourceSymbolAction::FindReferences;
+    SourceSymbolAction action = SourceSymbolAction::GoToDefinition;
     EditorSemanticContext semanticContext;
 };
 

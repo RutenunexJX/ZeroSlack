@@ -100,6 +100,33 @@ bool sameEffectiveFactValue(const EffectiveValueFact& left,
         && left.signednessText == right.signednessText
         && left.failureReason == right.failureReason;
 }
+
+QString groupedRadixDigits(QString digits)
+{
+    const bool negative = digits.startsWith(QLatin1Char('-'));
+    if (negative)
+        digits.remove(0, 1);
+    digits.remove(QLatin1Char('_'));
+    if (digits.size() <= 4)
+        return negative ? QStringLiteral("-") + digits : digits;
+
+    QString grouped;
+    grouped.reserve(digits.size() + digits.size() / 4);
+    if (negative)
+        grouped.append(QLatin1Char('-'));
+
+    int groupLength = digits.size() % 4;
+    if (groupLength == 0)
+        groupLength = 4;
+    grouped.append(digits.left(groupLength));
+    for (int position = groupLength;
+         position < digits.size();
+         position += 4) {
+        grouped.append(QLatin1Char('_'));
+        grouped.append(digits.mid(position, 4));
+    }
+    return grouped;
+}
 }
 
 struct EffectiveValueService::PreparedFactsState {
@@ -563,9 +590,11 @@ EffectiveLiteralResult EffectiveValueService::evaluateLiteral(
                 ? QStringLiteral("signed")
                 : QStringLiteral("unsigned");
             const auto radixText = [&integer](slang::LiteralBase base) {
-                return QString::fromStdString(integer.toString(
-                    base,
-                    std::numeric_limits<slang::bitwidth_t>::max()));
+                return groupedRadixDigits(
+                    QString::fromStdString(integer.toString(
+                        base,
+                        false,
+                        std::numeric_limits<slang::bitwidth_t>::max())));
             };
             result.radixRepresentations = {
                 QStringLiteral("binary: %1")

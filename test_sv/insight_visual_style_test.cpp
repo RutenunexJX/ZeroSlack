@@ -38,9 +38,6 @@ int main(int argc, char** argv)
     expectTrue("tab tokens valid",
                theme.tab.tabBackgroundSelected.isValid()
                    && theme.tab.borderSelected.isValid());
-    expectTrue("side rail tokens valid",
-               theme.sideRail.background.isValid()
-                   && theme.sideRail.buttonCheckedBackground.isValid());
     expectTrue("status tokens valid",
                theme.statusBar.successBackground.isValid()
                    && theme.statusBar.warningBorder.isValid());
@@ -104,23 +101,6 @@ int main(int argc, char** argv)
                InsightVisualStyle::tabBarStyleSheet(
                    QStringLiteral("mainEditorTabBar"))
                    .contains(QStringLiteral("QTabBar#mainEditorTabBar")));
-    expectTrue("workspace tab qss reuses tab builder",
-               InsightVisualStyle::workspaceTabBarStyleSheet(
-                   QStringLiteral("workspaceTabBar"))
-                   == InsightVisualStyle::tabBarStyleSheet(
-                       QStringLiteral("workspaceTabBar")));
-    expectTrue("workspace tab qss is scoped",
-               InsightVisualStyle::workspaceTabBarStyleSheet(
-                   QStringLiteral("workspaceTabBar"))
-                   .contains(QStringLiteral("QTabBar#workspaceTabBar")));
-    expectTrue("side rail qss is scoped",
-               InsightVisualStyle::sideRailStyleSheet(
-                   QStringLiteral("shellNavigationRail"))
-                   .contains(QStringLiteral("QWidget#shellNavigationRail")));
-    expectTrue("side rail button qss styles checked state",
-               InsightVisualStyle::sideRailButtonStyleSheet(
-                   QStringLiteral("shellRail_insights"))
-                   .contains(QStringLiteral(":checked")));
     expectTrue("package tools qss is scoped",
                InsightVisualStyle::packageToolsBarStyleSheet(
                    QStringLiteral("packageToolsBar"))

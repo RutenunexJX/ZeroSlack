@@ -21,15 +21,6 @@ struct DeclarationAlignmentLine {
     QString trailingComment;
 };
 
-struct CaseItemAlignmentLine {
-    bool valid = false;
-    int indentWidth = 0;
-    QString indent;
-    QString label;
-    QString suffix;
-    QString trailingComment;
-};
-
 struct EnumItemAlignmentLine {
     bool valid = false;
     int indentWidth = 0;
@@ -75,11 +66,6 @@ QString stripLeadingWhitespace(const QString& line)
     while (start < line.size() && line.at(start).isSpace())
         ++start;
     return line.mid(start);
-}
-
-QString indentation(int level, int width)
-{
-    return QString(std::max(0, level) * std::max(1, width), QLatin1Char(' '));
 }
 
 QString repeatSpaces(int count)
@@ -190,31 +176,6 @@ bool isOpeningToken(const QString& token)
         || token == QStringLiteral("fork");
 }
 
-bool isContextualOpeningToken(const QStringList& tokens, int index)
-{
-    if (index < 0 || index >= tokens.size())
-        return false;
-
-    const QString token = tokens.at(index);
-    if (token == QStringLiteral("program")
-        || token == QStringLiteral("primitive")
-        || token == QStringLiteral("checker")
-        || token == QStringLiteral("covergroup")
-        || token == QStringLiteral("property")
-        || token == QStringLiteral("sequence")
-        || token == QStringLiteral("specify")
-        || token == QStringLiteral("table")) {
-        return index == 0;
-    }
-    if (token == QStringLiteral("clocking")) {
-        return index == 0
-            || (index == 1 && tokens.first() == QStringLiteral("default"));
-    }
-    if (token == QStringLiteral("fork"))
-        return index == 0;
-    return isOpeningToken(token);
-}
-
 bool isClosingToken(const QString& token)
 {
     return token == QStringLiteral("end")
@@ -238,26 +199,6 @@ bool isClosingToken(const QString& token)
         || token == QStringLiteral("join")
         || token == QStringLiteral("join_any")
         || token == QStringLiteral("join_none");
-}
-
-int countOpeningTokens(const QStringList& tokens)
-{
-    int count = 0;
-    for (int i = 0; i < tokens.size(); ++i) {
-        if (isContextualOpeningToken(tokens, i))
-            ++count;
-    }
-    return count;
-}
-
-int countClosingTokens(const QStringList& tokens)
-{
-    int count = 0;
-    for (const QString& token : tokens) {
-        if (isClosingToken(token))
-            ++count;
-    }
-    return count;
 }
 
 bool isDeclarationKeyword(const QString& token)
@@ -298,17 +239,6 @@ bool isForbiddenDeclarationName(const QString& token)
         || token == QStringLiteral("while")
         || token == QStringLiteral("return")
         || token == QStringLiteral("typedef");
-}
-
-int leadingClosingTokens(const QStringList& tokens)
-{
-    int count = 0;
-    for (const QString& token : tokens) {
-        if (!isClosingToken(token))
-            break;
-        ++count;
-    }
-    return count;
 }
 
 bool suppressesDelimiterContinuation(const QStringList& tokens)
@@ -363,131 +293,6 @@ bool startsWithLeadingContinuationOperator(const QString& code)
         || firstTwo == QStringLiteral("!=")
         || firstTwo == QStringLiteral("<=")
         || firstTwo == QStringLiteral(">=");
-}
-
-int delimiterContinuationBalance(const QString& codeOnly);
-bool lineHasCode(const QString& line);
-
-bool containsToken(const QStringList& tokens, const QString& needle)
-{
-    for (const QString& token : tokens) {
-        if (token == needle)
-            return true;
-    }
-    return false;
-}
-
-bool isSingleStatementControlHeaderKeyword(const QString& token)
-{
-    return token == QStringLiteral("if")
-        || token == QStringLiteral("for")
-        || token == QStringLiteral("foreach")
-        || token == QStringLiteral("while")
-        || token == QStringLiteral("repeat")
-        || token == QStringLiteral("forever")
-        || token == QStringLiteral("always")
-        || token == QStringLiteral("always_comb")
-        || token == QStringLiteral("always_ff")
-        || token == QStringLiteral("always_latch")
-        || token == QStringLiteral("initial")
-        || token == QStringLiteral("final")
-        || token == QStringLiteral("else");
-}
-
-bool hasSingleStatementHeaderBlockToken(const QStringList& tokens)
-{
-    return containsToken(tokens, QStringLiteral("begin"))
-        || containsToken(tokens, QStringLiteral("fork"))
-        || containsToken(tokens, QStringLiteral("case"))
-        || containsToken(tokens, QStringLiteral("casex"))
-        || containsToken(tokens, QStringLiteral("casez"));
-}
-
-bool isSingleStatementControlHeader(const QString& codeOnly)
-{
-    const QString trimmed = codeOnly.trimmed();
-    if (trimmed.isEmpty()
-        || trimmed.endsWith(QLatin1Char(';'))
-        || startsWithPreprocessor(trimmed)
-        || delimiterContinuationBalance(trimmed) != 0) {
-        return false;
-    }
-
-    const QStringList tokens = codeTokens(trimmed);
-    if (tokens.isEmpty())
-        return false;
-    if (hasSingleStatementHeaderBlockToken(tokens))
-        return false;
-
-    return isSingleStatementControlHeaderKeyword(tokens.first());
-}
-
-bool startsSingleStatementControlHeader(const QString& codeOnly)
-{
-    const QString trimmed = codeOnly.trimmed();
-    if (trimmed.isEmpty()
-        || trimmed.endsWith(QLatin1Char(';'))
-        || startsWithPreprocessor(trimmed)
-        || delimiterContinuationBalance(trimmed) <= 0) {
-        return false;
-    }
-
-    const QStringList tokens = codeTokens(trimmed);
-    if (tokens.isEmpty())
-        return false;
-    if (hasSingleStatementHeaderBlockToken(tokens))
-        return false;
-
-    return isSingleStatementControlHeaderKeyword(tokens.first());
-}
-
-int singleStatementControlHeaderEndIndex(const QStringList& lines,
-                                         int startIndex,
-                                         const QString& startCode)
-{
-    if (isSingleStatementControlHeader(startCode))
-        return startIndex;
-    if (!startsSingleStatementControlHeader(startCode))
-        return -1;
-
-    int balance = delimiterContinuationBalance(startCode);
-    bool inBlockComment = false;
-    for (int i = startIndex + 1; i < lines.size(); ++i) {
-        const QString line = lines.at(i);
-        if (!lineHasCode(line))
-            return -1;
-        if (startsWithPreprocessor(line))
-            return -1;
-
-        const QString codeOnly = codeOnlyLine(line, &inBlockComment);
-        const QString trimmed = codeOnly.trimmed();
-        if (inBlockComment
-            || trimmed.isEmpty()
-            || trimmed.endsWith(QLatin1Char(';'))) {
-            return -1;
-        }
-
-        const QStringList tokens = codeTokens(trimmed);
-        if (hasSingleStatementHeaderBlockToken(tokens))
-            return -1;
-
-        balance += delimiterContinuationBalance(trimmed);
-        if (balance == 0)
-            return i;
-        if (balance < 0)
-            return -1;
-    }
-
-    return -1;
-}
-
-bool startsWithElseOrClosingToken(const QString& codeOnly)
-{
-    const QStringList tokens = codeTokens(codeOnly);
-    if (tokens.isEmpty())
-        return false;
-    return tokens.first() == QStringLiteral("else")
-        || isClosingToken(tokens.first());
 }
 
 bool endsStatement(const QString& code)
@@ -580,6 +385,81 @@ QString joinLinesPreservingFinalNewline(const QStringList& lines,
     QString result = lines.join(QLatin1Char('\n'));
     if (hadFinalNewline)
         result.append(QLatin1Char('\n'));
+    return result;
+}
+
+QStringList lineEndingSequences(const QString& text)
+{
+    QStringList sequences;
+    for (int position = 0; position < text.size(); ++position) {
+        if (text.at(position) != QLatin1Char('\n'))
+            continue;
+        sequences.append(
+            position > 0
+                    && text.at(position - 1) == QLatin1Char('\r')
+                ? QStringLiteral("\r\n")
+                : QStringLiteral("\n"));
+    }
+    return sequences;
+}
+
+QString restoreOriginalLineEndings(const QString& formatted,
+                                   const QString& original)
+{
+    const QStringList originalEndings =
+        lineEndingSequences(original);
+    if (originalEndings.isEmpty())
+        return formatted;
+
+    QStringList lines;
+    QString current;
+    for (int position = 0; position < formatted.size(); ++position) {
+        const QChar ch = formatted.at(position);
+        if (ch == QLatin1Char('\r')
+            && position + 1 < formatted.size()
+            && formatted.at(position + 1) == QLatin1Char('\n')) {
+            continue;
+        }
+        if (ch == QLatin1Char('\n')) {
+            lines.append(current);
+            current.clear();
+            continue;
+        }
+        current.append(ch);
+    }
+    lines.append(current);
+
+    const int boundaryCount =
+        std::max(0, static_cast<int>(lines.size()) - 1);
+    if (boundaryCount == 0)
+        return formatted;
+
+    QStringList targetEndings;
+    if (originalEndings.size() == boundaryCount) {
+        targetEndings = originalEndings;
+    } else {
+        const bool uniformCrlf =
+            std::all_of(
+                originalEndings.cbegin(),
+                originalEndings.cend(),
+                [](const QString& ending) {
+                    return ending == QStringLiteral("\r\n");
+                });
+        targetEndings.fill(
+            uniformCrlf ? QStringLiteral("\r\n")
+                        : QStringLiteral("\n"),
+            boundaryCount);
+    }
+
+    QString result;
+    result.reserve(
+        formatted.size()
+        + (targetEndings.first().size() - 1) * boundaryCount);
+    for (int line = 0; line < lines.size(); ++line) {
+        result.append(lines.at(line));
+        if (line < targetEndings.size())
+            result.append(targetEndings.at(line));
+    }
     return result;
 }
 
@@ -1198,319 +1078,6 @@ void alignDeclarationBlocks(QStringList* lines)
     flush();
 }
 
-void indentSingleStatementBodyLines(QStringList* lines, int indentWidth)
-{
-    if (!lines)
-        return;
-
-    bool inBlockComment = false;
-    for (int i = 0; i < lines->size(); ++i) {
-        const QString headerLine = lines->at(i);
-        if (!lineHasCode(headerLine) || startsWithPreprocessor(headerLine))
-            continue;
-
-        const QString headerCode = codeOnlyLine(headerLine, &inBlockComment);
-        const int headerEndIndex =
-            singleStatementControlHeaderEndIndex(*lines, i, headerCode);
-        if (headerEndIndex < 0)
-            continue;
-
-        const int headerIndent = leadingWhitespaceWidth(headerLine);
-        for (int bodyIndex = headerEndIndex + 1;
-             bodyIndex < lines->size();
-             ++bodyIndex) {
-            const QString bodyLine = lines->at(bodyIndex);
-            if (!lineHasCode(bodyLine))
-                continue;
-            if (startsWithPreprocessor(bodyLine))
-                break;
-
-            bool bodyBlockComment = false;
-            const QString bodyCode =
-                codeOnlyLine(bodyLine, &bodyBlockComment);
-            if (bodyCode.trimmed().isEmpty())
-                continue;
-            if (bodyBlockComment
-                || startsWithElseOrClosingToken(bodyCode)) {
-                break;
-            }
-
-            (*lines)[bodyIndex] =
-                indentation(headerIndent / std::max(1, indentWidth) + 1,
-                            indentWidth)
-                + stripLeadingWhitespace(bodyLine);
-            break;
-        }
-        i = headerEndIndex;
-    }
-}
-
-bool isCaseOpeningLine(const QStringList& tokens)
-{
-    for (const QString& token : tokens) {
-        if (token == QStringLiteral("case")
-            || token == QStringLiteral("casex")
-            || token == QStringLiteral("casez")) {
-            return true;
-        }
-        if (token != QStringLiteral("unique")
-            && token != QStringLiteral("unique0")
-            && token != QStringLiteral("priority")) {
-            return false;
-        }
-    }
-    return false;
-}
-
-bool isCaseClosingLine(const QStringList& tokens)
-{
-    return !tokens.isEmpty()
-        && tokens.first() == QStringLiteral("endcase");
-}
-
-CaseItemAlignmentLine parseCaseItemAlignmentLine(const QString& line)
-{
-    CaseItemAlignmentLine parsed;
-    if (!lineHasCode(line) || startsWithPreprocessor(line))
-        return parsed;
-    const CodeCommentParts parts = splitTrailingLineComment(line);
-    if (parts.hasBlockCommentToken || !lineHasCode(parts.code))
-        return parsed;
-
-    const int indentWidth = leadingWhitespaceWidth(parts.code);
-    const QString indent = parts.code.left(indentWidth);
-    const QString code = parts.code.mid(indentWidth).trimmed();
-    if (code.isEmpty())
-        return parsed;
-
-    const int colonIndex = findTopLevelCaseItemColon(code);
-    if (colonIndex <= 0)
-        return parsed;
-
-    const QString label = code.left(colonIndex).trimmed();
-    const QString suffix = code.mid(colonIndex + 1).trimmed();
-    if (label.isEmpty())
-        return parsed;
-
-    const QStringList labelTokens = codeTokens(label);
-    if (labelTokens.isEmpty())
-        return parsed;
-    const QString firstToken = labelTokens.first();
-    if (isOpeningToken(firstToken)
-        || isClosingToken(firstToken)
-        || firstToken == QStringLiteral("if")
-        || firstToken == QStringLiteral("else")
-        || firstToken == QStringLiteral("for")
-        || firstToken == QStringLiteral("while")) {
-        return parsed;
-    }
-
-    parsed.valid = true;
-    parsed.indentWidth = indentWidth;
-    parsed.indent = indent;
-    parsed.label = label;
-    parsed.suffix = suffix;
-    parsed.trailingComment = parts.trailingComment;
-    return parsed;
-}
-
-QString buildAlignedCaseItemCodeLine(const CaseItemAlignmentLine& line,
-                                     int maxLabelWidth)
-{
-    QString content = line.label
-        + repeatSpaces(maxLabelWidth - line.label.size())
-        + QLatin1Char(':');
-    if (!line.suffix.isEmpty()) {
-        content += QLatin1Char(' ');
-        content += line.suffix;
-    }
-    return line.indent + content;
-}
-
-void flushCaseItemAlignmentBlock(QStringList* lines,
-                                 const QList<int>& blockIndexes,
-                                 const QList<CaseItemAlignmentLine>& block)
-{
-    if (!lines || block.size() < 2)
-        return;
-
-    int maxLabelWidth = 0;
-    for (const CaseItemAlignmentLine& line : block) {
-        maxLabelWidth =
-            std::max(maxLabelWidth,
-                     static_cast<int>(line.label.size()));
-    }
-
-    QStringList codeLines;
-    codeLines.reserve(block.size());
-    int maxCodeLineWidth = 0;
-    bool hasTrailingComment = false;
-    for (const CaseItemAlignmentLine& line : block) {
-        const QString codeLine =
-            buildAlignedCaseItemCodeLine(line, maxLabelWidth);
-        codeLines.append(codeLine);
-        maxCodeLineWidth =
-            std::max(maxCodeLineWidth, static_cast<int>(codeLine.size()));
-        if (!line.trailingComment.isEmpty())
-            hasTrailingComment = true;
-    }
-
-    const int commentColumn = hasTrailingComment ? maxCodeLineWidth + 2 : 0;
-    for (int i = 0; i < block.size(); ++i) {
-        (*lines)[blockIndexes.at(i)] =
-            appendTrailingComment(codeLines.at(i),
-                                  block.at(i).trailingComment,
-                                  commentColumn);
-    }
-}
-
-void alignCaseItemBlocks(QStringList* lines, int indentWidth)
-{
-    if (!lines)
-        return;
-
-    QList<int> caseItemIndentStack;
-    QList<int> blockIndexes;
-    QList<CaseItemAlignmentLine> block;
-
-    auto flush = [&]() {
-        flushCaseItemAlignmentBlock(lines, blockIndexes, block);
-        blockIndexes.clear();
-        block.clear();
-    };
-
-    bool inBlockComment = false;
-    for (int i = 0; i < lines->size(); ++i) {
-        const QString line = lines->at(i);
-        const QString codeOnly = codeOnlyLine(line, &inBlockComment);
-        const QStringList tokens = codeTokens(codeOnly);
-
-        if (isCaseClosingLine(tokens)) {
-            flush();
-            if (!caseItemIndentStack.isEmpty())
-                caseItemIndentStack.removeLast();
-        }
-
-        const int expectedIndent =
-            caseItemIndentStack.isEmpty() ? -1 : caseItemIndentStack.last();
-        const CaseItemAlignmentLine parsed =
-            expectedIndent >= 0
-                && leadingWhitespaceWidth(line) == expectedIndent
-                ? parseCaseItemAlignmentLine(line)
-                : CaseItemAlignmentLine();
-        if (parsed.valid) {
-            if (!block.isEmpty()
-                && block.last().indentWidth != parsed.indentWidth) {
-                flush();
-            }
-            blockIndexes.append(i);
-            block.append(parsed);
-        } else {
-            flush();
-        }
-
-        if (isCaseOpeningLine(tokens)) {
-            flush();
-            caseItemIndentStack.append(
-                leadingWhitespaceWidth(line) + std::max(1, indentWidth));
-        }
-    }
-
-    flush();
-}
-
-bool isLabelOnlyCaseItemLine(const QString& codeOnly)
-{
-    const QString trimmed = codeOnly.trimmed();
-    if (trimmed.isEmpty())
-        return false;
-
-    const int colonIndex = findTopLevelCaseItemColon(trimmed);
-    if (colonIndex <= 0)
-        return false;
-    return trimmed.mid(colonIndex + 1).trimmed().isEmpty();
-}
-
-bool isSimpleCaseItemBodyLine(const QString& codeOnly)
-{
-    const QString trimmed = codeOnly.trimmed();
-    if (trimmed.isEmpty()
-        || startsWithPreprocessor(trimmed)
-        || !trimmed.endsWith(QLatin1Char(';'))) {
-        return false;
-    }
-
-    const QStringList tokens = codeTokens(trimmed);
-    if (tokens.isEmpty())
-        return false;
-    if (isClosingToken(tokens.first()))
-        return false;
-    if (hasSingleStatementHeaderBlockToken(tokens))
-        return false;
-    return true;
-}
-
-void indentCaseItemBodyLines(QStringList* lines, int indentWidth)
-{
-    if (!lines)
-        return;
-
-    QList<int> caseItemIndentStack;
-    int pendingBodyIndent = -1;
-    bool inBlockComment = false;
-    for (int i = 0; i < lines->size(); ++i) {
-        const QString line = lines->at(i);
-        if (!lineHasCode(line))
-            continue;
-        if (startsWithPreprocessor(line)) {
-            pendingBodyIndent = -1;
-            continue;
-        }
-
-        const QString codeOnly = codeOnlyLine(line, &inBlockComment);
-        const QString trimmed = codeOnly.trimmed();
-        if (trimmed.isEmpty())
-            continue;
-
-        const QStringList tokens = codeTokens(codeOnly);
-        const bool closingCase = isCaseClosingLine(tokens);
-        const bool caseItem =
-            !caseItemIndentStack.isEmpty()
-            && leadingWhitespaceWidth(line) == caseItemIndentStack.last()
-            && parseCaseItemAlignmentLine(line).valid;
-
-        if (pendingBodyIndent >= 0 && !closingCase && !caseItem) {
-            if (isSimpleCaseItemBodyLine(codeOnly)) {
-                (*lines)[i] =
-                    repeatSpaces(pendingBodyIndent)
-                    + stripLeadingWhitespace(line);
-            }
-            pendingBodyIndent = -1;
-        } else if (pendingBodyIndent >= 0 && (closingCase || caseItem)) {
-            pendingBodyIndent = -1;
-        }
-
-        if (closingCase) {
-            if (!caseItemIndentStack.isEmpty())
-                caseItemIndentStack.removeLast();
-            continue;
-        }
-
-        if (caseItem) {
-            pendingBodyIndent =
-                isLabelOnlyCaseItemLine(codeOnly)
-                    ? leadingWhitespaceWidth(line) + std::max(1, indentWidth)
-                    : -1;
-        }
-
-        if (isCaseOpeningLine(tokens)) {
-            pendingBodyIndent = -1;
-            caseItemIndentStack.append(
-                leadingWhitespaceWidth(line) + std::max(1, indentWidth));
-        }
-    }
-}
-
 bool isEnumOpeningLine(const QStringList& tokens, const QString& codeOnly)
 {
     bool hasEnum = false;
@@ -1998,6 +1565,95 @@ void alignCallArgumentContinuationLines(QStringList* lines)
             anchorStack.append(opening + alignmentDelta + 1);
     }
 }
+
+void indentNonStructuralContinuations(QStringList* lines,
+                                     const FormatterOptions& options,
+                                     const QList<
+                                         StructuredWhitespaceFormatter::LineRange>&
+                                         protectedRanges)
+{
+    if (!lines)
+        return;
+
+    int delimiterDepth = 0;
+    int assignmentRhsDepth = 0;
+    int protectedRangeIndex = 0;
+    bool inBlockComment = false;
+    for (int index = 0; index < lines->size(); ++index) {
+        while (protectedRangeIndex < protectedRanges.size()
+               && protectedRanges.at(protectedRangeIndex).lastLine
+                      < index) {
+            ++protectedRangeIndex;
+        }
+        const bool protectedLine =
+            protectedRangeIndex < protectedRanges.size()
+            && protectedRanges.at(protectedRangeIndex).valid()
+            && index
+                   >= protectedRanges.at(
+                       protectedRangeIndex).firstLine
+            && index
+                   <= protectedRanges.at(
+                       protectedRangeIndex).lastLine;
+        if (protectedLine) {
+            delimiterDepth = 0;
+            assignmentRhsDepth = 0;
+            inBlockComment = false;
+            continue;
+        }
+        const QString line = lines->at(index);
+        if (!lineHasCode(line))
+            continue;
+        if (startsWithPreprocessor(line)
+            && options.preservePreprocessorIndent) {
+            assignmentRhsDepth = 0;
+            continue;
+        }
+
+        const QString codeOnly =
+            codeOnlyLine(line, &inBlockComment);
+        if (codeOnly.trimmed().isEmpty())
+            continue;
+
+        const int delimiterIndent =
+            options.indentContinuationLines
+                ? std::max(
+                    0,
+                    delimiterDepth
+                        - (startsWithClosingDelimiter(codeOnly) ? 1 : 0))
+                : 0;
+        const int rhsIndent =
+            options.indentAssignmentRhsContinuations
+                ? assignmentRhsDepth
+                : 0;
+        const int structuralIndent =
+            leadingWhitespaceWidth(line);
+        (*lines)[index] =
+            repeatSpaces(
+                structuralIndent
+                + (delimiterIndent + rhsIndent)
+                    * std::max(1, options.indentWidth))
+            + stripLeadingWhitespace(line);
+
+        const bool startsAssignmentRhsContinuation =
+            options.indentAssignmentRhsContinuations
+            && endsWithTopLevelAssignmentOperator(codeOnly);
+        if (options.indentAssignmentRhsContinuations
+            && assignmentRhsDepth > 0
+            && endsStatement(codeOnly)) {
+            assignmentRhsDepth = 0;
+        }
+        if (startsAssignmentRhsContinuation)
+            assignmentRhsDepth = 1;
+
+        if (options.indentContinuationLines) {
+            delimiterDepth =
+                std::max(
+                    0,
+                    delimiterDepth
+                        + delimiterContinuationBalance(codeOnly));
+        }
+    }
+}
 }
 
 FormatterService* FormatterService::getInstance()
@@ -2045,87 +1701,37 @@ FormatterReport FormatterService::formatDocument(
     const QString normalizedText =
         StructuredWhitespaceFormatter::
             normalizeLexicalWhitespaceTabs(text, 4);
+    const QString structurallyIndentedText =
+        StructuredWhitespaceFormatter::
+            formatStructuralIndentation(
+                normalizedText,
+                options.indentWidth,
+                options.indentSingleStatementBodies,
+                options.indentCaseItemBodies,
+                options.alignCaseItems,
+                options.preservePreprocessorIndent);
     const bool hadFinalNewline =
-        normalizedText.endsWith(QLatin1Char('\n'));
-    QStringList lines = splitLines(normalizedText);
+        structurallyIndentedText.endsWith(QLatin1Char('\n'));
+    QStringList lines = splitLines(structurallyIndentedText);
     if (hadFinalNewline && !lines.isEmpty() && lines.last().isEmpty())
         lines.removeLast();
-
-    QStringList formatted;
-    formatted.reserve(lines.size());
-    int indentLevel = 0;
-    int continuationLevel = 0;
-    int assignmentRhsContinuationLevel = 0;
-    bool inBlockComment = false;
-
-    for (const QString& line : lines) {
-        if (!lineHasCode(line)) {
-            formatted.append(QString());
-            continue;
-        }
-
-        if (startsWithPreprocessor(line) && options.preservePreprocessorIndent) {
-            assignmentRhsContinuationLevel = 0;
-            formatted.append(line);
-            continue;
-        }
-
-        const QString codeOnly = codeOnlyLine(line, &inBlockComment);
-        const QStringList tokens = codeTokens(codeOnly);
-        if (codeOnly.trimmed().isEmpty()) {
-            formatted.append(line);
-            continue;
-        }
-
-        const int displayContinuation =
-            options.indentContinuationLines
-                ? std::max(0,
-                           continuationLevel
-                               - (startsWithClosingDelimiter(codeOnly) ? 1 : 0))
-                : 0;
-        const int displayAssignmentContinuation =
-            options.indentAssignmentRhsContinuations
-                ? assignmentRhsContinuationLevel
-                : 0;
-        const int displayIndent =
-            std::max(0, indentLevel - leadingClosingTokens(tokens))
-            + displayContinuation
-            + displayAssignmentContinuation;
-        const QString body = stripLeadingWhitespace(line);
-        formatted.append(indentation(displayIndent, options.indentWidth) + body);
-
-        const bool startsAssignmentRhsContinuation =
-            options.indentAssignmentRhsContinuations
-            && endsWithTopLevelAssignmentOperator(codeOnly);
-        if (options.indentAssignmentRhsContinuations
-            && assignmentRhsContinuationLevel > 0
-            && endsStatement(codeOnly)) {
-            assignmentRhsContinuationLevel = 0;
-        }
-        if (startsAssignmentRhsContinuation)
-            assignmentRhsContinuationLevel = 1;
-
-        indentLevel += countOpeningTokens(tokens);
-        indentLevel -= countClosingTokens(tokens);
-        indentLevel = std::max(0, indentLevel);
-        if (options.indentContinuationLines
-            && !suppressesDelimiterContinuation(tokens)) {
-            continuationLevel =
-                std::max(0,
-                         continuationLevel
-                             + delimiterContinuationBalance(codeOnly));
-        }
+    QStringList originalLines = splitLines(normalizedText);
+    if (hadFinalNewline
+        && !originalLines.isEmpty()
+        && originalLines.last().isEmpty()) {
+        originalLines.removeLast();
     }
 
-    if (options.indentSingleStatementBodies)
-        indentSingleStatementBodyLines(&formatted, options.indentWidth);
-    if (options.indentCaseItemBodies)
-        indentCaseItemBodyLines(&formatted, options.indentWidth);
+    QList<StructuredWhitespaceFormatter::LineRange>
+        conservativeRanges =
+            StructuredWhitespaceFormatter::syntaxErrorLineRanges(
+                normalizedText);
+    QStringList formatted = lines;
+    indentNonStructuralContinuations(
+        &formatted, options, conservativeRanges);
 
     if (options.alignDeclarationBlocks)
         alignDeclarationBlocks(&formatted);
-    if (options.alignCaseItems)
-        alignCaseItemBlocks(&formatted, options.indentWidth);
     if (options.alignEnumItems)
         alignEnumItemBlocks(&formatted, options.indentWidth);
     if (options.alignAssignments)
@@ -2136,40 +1742,39 @@ FormatterReport FormatterService::formatDocument(
         alignCallArgumentContinuationLines(&formatted);
 
     if (options.alignPortLists || options.alignInstanceMaps) {
-        const QList<StructuredWhitespaceFormatter::LineRange>
-            conservativeRanges =
-                StructuredWhitespaceFormatter::
-                    conservativeLineRanges(
-                        normalizedText, options.indentWidth);
-        if (formatted.size() != lines.size()) {
-            report.formattedText = normalizedText;
-            report.changed = report.formattedText != text;
-            report.formattedLines = lines.size();
-            return report;
-        }
-        for (const auto& range : conservativeRanges) {
-            if (!range.valid())
-                continue;
-            const int first =
-                qBound(0, range.firstLine, lines.size() - 1);
-            const int last =
-                qBound(first, range.lastLine, lines.size() - 1);
-            for (int line = first; line <= last; ++line)
-                formatted[line] = lines.at(line);
-        }
+        conservativeRanges.append(
+            StructuredWhitespaceFormatter::
+                conservativeLineRanges(
+                    normalizedText, options.indentWidth));
+    }
+    if (formatted.size() != originalLines.size()) {
+        report.formattedText = normalizedText;
+        report.changed = report.formattedText != text;
+        report.formattedLines = originalLines.size();
+        return report;
+    }
+    for (const auto& range : conservativeRanges) {
+        if (!range.valid() || originalLines.isEmpty())
+            continue;
+        const int first =
+            qBound(0, range.firstLine, originalLines.size() - 1);
+        const int last =
+            qBound(first,
+                   range.lastLine,
+                   originalLines.size() - 1);
+        for (int line = first; line <= last; ++line)
+            formatted[line] = originalLines.at(line);
     }
 
     report.formattedText =
         joinLinesPreservingFinalNewline(formatted, hadFinalNewline);
-    report.formattedText =
-        StructuredWhitespaceFormatter::
-            formatDesignUnitIndentation(
-                report.formattedText, options.indentWidth);
     if (options.alignPortLists || options.alignInstanceMaps) {
         report.formattedText = StructuredWhitespaceFormatter::format(
             report.formattedText,
             options.indentWidth);
     }
+    report.formattedText =
+        restoreOriginalLineEndings(report.formattedText, text);
     if (!StructuredWhitespaceFormatter::hasIdenticalNonWhitespaceStream(
             text,
             report.formattedText)) {
@@ -2231,6 +1836,8 @@ FormatterReport FormatterService::formatSelection(
 
     report.formattedText =
         joinLinesPreservingFinalNewline(formatted, hadFinalNewline);
+    report.formattedText =
+        restoreOriginalLineEndings(report.formattedText, text);
     if (!StructuredWhitespaceFormatter::hasIdenticalNonWhitespaceStream(
             text,
             report.formattedText)) {

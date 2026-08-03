@@ -2516,6 +2516,340 @@ track or feature goal.
   `dist/`, `test_sv/huge_prj/.zs`, and `test_sv/new/.zs` remained
   byte-identical and untracked.
 
+## 2026-08-02 Final Validation Status
+
+- A-G product batches are implemented and their stable acceptance is complete.
+- Final Debug serial incremental build: 108/108 steps, 13,808.5 seconds.
+- Stable CTest with exact-name exclusion of the six three-reproduction-capped
+  entries: 71/71 passed, 161.43 seconds.
+- Real-project checks passed for `test_sv/new` and `test_sv/huge_prj` through
+  `large_file_perf_test`, `relationship_perf_test`, and
+  `expose_signal_to_top_fixture_test`.
+- GUI evidence is repeatable: `unified_peek_container_test`,
+  `workspace_file_operation_test`, and `expose_signal_to_top_gui_test` verify
+  embedded/nonmodal Peek behavior, safe default cancellation, live replan,
+  explicit apply, and transaction integration.
+- The long-running goal remains active only because `gui_smoke_test`,
+  `editor_incremental_test`, `editor_structural_input_test`,
+  `editor_paste_transaction_test`, `global_control_ow_test`, and
+  `editor_multicursor_controller_test` reached the three-minimal-reproduction
+  limit. Their source ranges, CMake conditions, and current evidence are in
+  `goal.md`; do not execute a fourth round without new evidence and a separately
+  justified investigation.
+
+### F Continuation: Reviewed File-Operation Revision
+
+- `WorkspaceFileOperationPlan` now records a deterministic revision token
+  containing normalized path identities, source/target snapshots, metadata,
+  and a SHA-256 file-content digest.
+- Action Registry dry-run returns that token, the embedded Peek flow carries
+  the reviewed token into Apply, and the execution route rejects a mismatch
+  before preparing open documents or mutating the filesystem.
+- Direct service Apply also compares the plan it receives with a fresh plan,
+  protecting the interval between route validation and filesystem mutation.
+- `workspace_file_operation_test` covers a same-size content replacement with
+  its original modification time restored, the dry-run token contract, and a
+  rejected Action Registry Apply. A performance guard verifies that Rename and
+  Delete capture full content revisions while Copy Full Path and Reveal avoid
+  full-file hashing. The final stable run passed 38/38 checks in 0.38 seconds;
+  its 9-step serial build passed in 728.1 seconds. Earlier link-only passes took
+  337.9 and 376.2 seconds.
+
+### A/D Continuation: Registry-Owned File Shortcuts
+
+- Removed all legacy generated QAction declarations from `mainwindow.ui`.
+  This eliminates the non-registry Ctrl+S binding and unused
+  Cut/Copy/Paste/Undo/Redo/Font/Print/Esc shadow actions while retaining the
+  underlying reusable file and editor functions.
+- Added canonical `file.new`, `file.open`, `file.save`, `file.saveAs`, and
+  `workspace.open` descriptors. Each owns its F24 command, Action Catalog
+  metadata, Shortcut adapter, failure contract, and MainWindow execution
+  route; user shortcut overrides now reach the actual application actions.
+- MainWindow builds those five adapters from Registry metadata and dispatches
+  them through `executeAction` before consuming `FileCommandCoordinator`.
+- `action_registry_test` passed in 0.12 seconds after a 19.9-second serial
+  build. `expose_signal_to_top_gui_test` independently verifies the real
+  MainWindow object tree and New File route; it passed in 0.86 seconds after a
+  34-step serial build completed in 527.3 seconds.
+
+### D Continuation: Registry-Executed Context Formatting
+
+- Retained context-menu Replace and formatter actions no longer call editor
+  methods before Action Registry execution. When the production MainWindow
+  host is present, the context adapter resolves its canonical descriptor and
+  dispatches through `executeAction`.
+- MainWindow now implements the editor Replace, line comment/uncomment,
+  indent/unindent, formatter-profile, format-on-save, selection-format, and
+  document-format routes with editor, read-only, and selection guards.
+- Context QAction objects expose the canonical `actionId` and
+  `executionRoute`. The GUI regression opens a real editor, invokes Comment
+  Lines from its real context menu, verifies the application history, moves
+  to a second line, and invokes Command Mode `repeat action`.
+- `Create Signal Definition` and `Edit Instance Slots` now carry the exact
+  right-click cursor through the same Registry handler. A successful
+  structural route clears that transient parameter from the recorded
+  invocation, so a later repeat resolves the active cursor instead of the old
+  menu position.
+- The GUI regression invokes Edit Instance Slots on a first instance while the
+  text cursor is elsewhere, verifies Slot Mode and history, then repeats on a
+  second instance and verifies its distinct actual is selected.
+- F12/source-symbol signals and the four retained Insight context actions now
+  use the same Registry handler. Their canonical routes execute through
+  EditorCoordinator with explicit failure results, then discard the transient
+  click cursor for current-symbol repeat semantics.
+- The GUI regression drives the real Signal Kernel Graph context entry,
+  verifies its Registry route and application history, and checks the visible
+  panel title resolves `payload`.
+- `refactor.exposeSignalToTop` now enters its canonical high-risk route. The
+  route resolves the click cursor, consumes or asks for one hierarchy binding,
+  stores the reviewed port/binding as resolved Action parameters, and applies
+  only after the normal embedded Peek accepts a current plan.
+- High-risk repeat is plan-only. The shared Expose Peek retains editable live
+  replan but shows Close and no Apply; the route returns dry-run output without
+  calling the transaction apply path.
+- The signal-selection-only context menu now publishes
+  `refactor.createAssignmentQueue` with its click cursor through a
+  MyCodeEditor Registry request signal. MainWindow owns the execution route;
+  the editor's direct implementation remains only as a reusable no-host
+  fallback.
+- The GUI regression selects two semantic signals, triggers the real popup
+  action, verifies canonical metadata/history, and checks queue insertion plus
+  linked Slot Mode.
+- Comment/Uncomment and Indent/Unindent now declare Ctrl+/, Ctrl+Shift+/,
+  Ctrl+], and Ctrl+[ in Action Registry. Editor key handling resolves the
+  effective binding and publishes the same Registry request as other surfaces;
+  only unattached standalone editors use the direct fallback.
+- Latest serial verification passed: `action_registry_test` build 4/4 in 6.5
+  seconds and test 54/54 in 0.10 seconds; GUI target build 8/8 in 497.0
+  seconds and verbose GUI test 80/80 in 1.10 seconds. The only build warnings
+  are the test's three pre-existing ignored `QFile::open` results.
+- Ctrl+D and Ctrl+Shift+L occurrence selection now enter Action Registry
+  execution and history in a hosted editor while preserving direct fallback
+  for standalone editor tests. The GUI regression verifies that the first
+  Ctrl+D selects the current structural identifier, the second enters
+  MultiCursor, and scope selection enters MultiCursor immediately; it passed
+  82/82 checks in 1.40 seconds after a 424.6-second relink.
+- Assignment and conditional-branch navigation shortcuts plus Join Lines and
+  Delete Lines now publish their canonical Actions. MainWindow owns the four
+  navigation and two line-operation routes, including explicit no-editor,
+  read-only, and structural-failure results. A real MainWindow GUI fixture
+  verifies destination selections, document mutation, and history IDs for all
+  six routes. The product build passed 7/7 in 552.2 seconds, the final
+  test-only relink passed 3/3 in 369.1 seconds, and the GUI test passed 85/85
+  checks in 1.24 seconds.
+- Standard Undo/Redo/Cut/Copy/Paste/Select All shortcuts and Ctrl+F/G/H no
+  longer bypass Registry execution. MainWindow owns their explicit routes;
+  MyCodeEditor centralizes clipboard semantics so multi-cursor, column mode,
+  whole-line copy/cut, and standalone-editor fallback retain their prior input
+  ownership. Interactive Go to Line returns and records the selected line as
+  resolved Action parameters. Standard context entries previously hidden by
+  the A-batch menu policy remain hidden.
+- `action_registry_test` passed in 0.13 seconds after a 4/4, 7.0-second build.
+  The GUI dependency rebuild passed 51/51 in 791.9 seconds; its corrected
+  test-only relink passed 3/3 in 538.9 seconds, and
+  `expose_signal_to_top_gui_test` passed 89/89 checks in 1.35 seconds.
+- The remaining editor-owned default shortcuts are Registry-resolved:
+  Ctrl+Shift+I executes `format.document`, while definition navigation and RTL
+  rename no longer hard-code F12/Ctrl+R. A standalone editor test overrides
+  them to Ctrl+F12/Ctrl+Alt+R and proves old chords are inactive and new chords
+  emit the semantic requests. The product/GUI build passed 8/8 in 771.9
+  seconds, and the GUI test passed 91/91 checks in 1.18 seconds.
+- Hosted multi-cursor and column-selection Ctrl+C paths now have explicit GUI
+  coverage: each retains its controller-owned distributed/rectangular text and
+  enters the common `edit.copy` execution history. The test-only relink passed
+  3/3 in 375.4 seconds and the GUI test passed 93/93 checks in 1.47 seconds.
+- Reusable clipboard, line-operation, scoped-occurrence, and key-release
+  execution moved from the 5246-line runtime shell into
+  `editorruntimecommands.cpp`. `editorruntime.cpp` is now 4995 lines;
+  `controller_boundary_test` asserts both size and ownership and passed in
+  0.10 seconds. The serial GUI rebuild passed 6/6 in 536.7 seconds and its
+  93/93 behavior regression passed in 1.28 seconds.
+- Navigation Ctrl+1 now belongs to `view.navigation.toggle`; the direct
+  `QShortcut` was removed. The Registry test passed in 0.13 seconds, the GUI
+  build passed 8/8 in 524.5 seconds, and the real dock/history regression
+  passed 94/94 checks in 1.34 seconds.
+- Structural selection expansion and next/previous selected-symbol occurrence
+  navigation now expose canonical Ctrl+W/E/Q Actions and Command Mode aliases.
+  Their algorithms live in `EditorSelection`; `editorruntime.cpp` is 4814
+  lines. Registry and boundary tests passed in 0.12 and 0.11 seconds. The
+  serial GUI product build passed 67/67 in 515.6 seconds, the corrected
+  test-only relink passed 3/3 in 381.4 seconds, and the final GUI run passed
+  98/98 checks in 1.31 seconds.
+- Alt+Up/Down line movement now executes Registry-owned
+  `edit.moveLinesUp/Down` Actions and is implemented by
+  `EditorLineOperationController`, including single undo, touched-line
+  selection boundaries, cursor preservation, and column-mode exclusion. The
+  runtime shell is 4635 lines. Line-operation, Registry, and boundary tests
+  passed 41/41, 58/58, and 1/1 in 0.13, 0.13, and 0.12 seconds. The serial GUI
+  build completed 67 executed steps in 539.3 seconds and the shortcut/Command
+  Mode regression passed 100/100 checks in 1.43 seconds.
+- Ctrl+Space Global Control invocation now resolves the effective shortcut of
+  the non-menu `view.globalControl` Action and enters MainWindow execution
+  history while retaining a standalone coordinator fallback. The Registry
+  test passed 59/59 in 0.13 seconds. The serial GUI rebuild completed 36
+  executed steps in 503.2 seconds; an override regression proves old-key
+  deactivation and new-key activation in a 101/101, 1.40-second GUI run.
+- Command Mode hold entry now resolves the single-stroke shortcut of the
+  non-menu, non-repeatable `view.commandMode` Action. Physical F24 branching
+  is removed; invalid multi-stroke overrides are rejected and the panel/help
+  status reflects the active binding. Registry and boundary tests passed
+  61/61 and 1/1 in 0.13 and 0.11 seconds. After one diagnostic-free compiler
+  exit under parallel build, explicit `--parallel 1` completed 5/5 in 549.9
+  seconds; the GUI test passed 102/102 in 1.47 seconds. A separate serial
+  `completion_test` build passed 2/2 in 436.3 seconds and ran successfully in
+  2.44 seconds.
+- Column Number Tool entry now resolves the Registry-owned
+  `insert.columnNumbers` shortcut rather than testing physical Alt+C.
+  Command Mode, shortcut overrides, and the Action Catalog share
+  `editor.columnNumbers.show`; the interactive Action remains non-repeatable.
+  Registry and boundary tests passed 1/1 in 0.12 and 0.10 seconds. The
+  explicit single-thread GUI rebuild completed 36 executed steps in 675.5
+  seconds, and its old/new chord plus panel-identity regression passed within
+  102/102 checks in 1.43 seconds.
+- Insight Focus Escape Registry migration was isolated but not retained. Three
+  offscreen GUI runs consistently showed successful Focus View entry plus an
+  enabled QAction with the effective Escape sequence, but no QAction
+  activation or `view.insightFocus.leave` history; explicit page focus did not
+  change the result, and the subsequent assignment-queue failure was only a
+  consequence of remaining in Focus View. The attempted product/test changes
+  were removed and the previously verified local Escape path restored.
+  `expose_signal_to_top_gui_test` is capped for this evidence set and must not
+  run again without a new activation hypothesis.
+- Fold Shelf Delete now resolves `fold.shelf.deleteSelected` from Action
+  Registry and executes the same `ui.foldShelf.deleteSelected` route from its
+  list shortcut or Command Mode. MainWindow owns mutation; the reusable panel
+  fallback preserves standalone behavior and moved-block safeguards. Registry
+  and boundary tests passed in 0.12/0.10 seconds. A 38-step explicit
+  single-thread rebuild completed in 649.5 seconds, and the focused panel GUI
+  test passed 18/18 in 0.19 seconds with old Delete deactivated and remapped
+  Ctrl+Delete deleting the copied fixture.
+- Tab right-click commands now resolve a dedicated 12-item
+  `TabContextMenu` surface. The split controller builds labels, Action ids,
+  routes, separators, enablement, and dynamic Lock/Unlock state from Registry
+  metadata; TabManager supplies clicked-group context and MainWindow executes
+  the same routes used by menu and Command Mode. During the focused
+  shared-document test, copied view state exposed duplicate `viewId` reuse;
+  `SharedDocument::attachView` now regenerates an identity already attached to
+  that Document. This prevents view-lock aliasing and keeps split cursor,
+  scroll, and session layout identities independent. Registry, boundary,
+  split-controller, and final shared-document tests passed in 0.10, 0.08,
+  0.15, and 0.69 seconds; the shared test's first 66/69 run was the minimal
+  reproduction that led to the source fix, and the second run passed all 70
+  checks. Final affected serial builds completed in 27.97, 2.56, 655.35, and
+  555.10 seconds. No capped GUI target was executed.
+- Design-hierarchy right-click navigation now resolves three Registry Actions
+  instead of hand-authored QAction labels and callbacks. Instantiation and
+  definition routes preserve workspace/top/instance-path context, while both
+  design-tree and file-tree Set Design Top entries execute
+  `navigation.design.setTop`; multi-module file choices remain runtime
+  parameters under the same descriptor. Navigation also synchronizes when
+  attached to an already-open WorkspaceManager. Registry and boundary tests
+  passed in 0.10/0.08 seconds. The explicit serial product/test build completed
+  39 steps in 744.12 seconds, and `workspace_file_operation_test` passed in
+  0.43 seconds with the prior analyze/preview/revision-check cases intact. No
+  capped GUI target was executed.
+- Bottom-page Pin/Unpin and Close now resolve a dedicated Panel context
+  surface. The context model supplies canonical labels/routes and dynamic
+  Unpin/disabled-Close state; the selected `panelId` is passed to MainWindow
+  through ActionInvocation, so context actions do not depend on the previously
+  active page. Command Mode shares both descriptors, and context mutations are
+  excluded from Repeat Last Action. Registry and boundary tests passed in
+  0.11/0.08 seconds. The initial GUI run's three height failures were caused
+  by the new fixture leaving Problems active; restoring the prior Activity tab
+  yielded 39/39 in the second minimal run at 0.11 seconds. The final explicit
+  serial core build passed 37/37 steps in 203.11 seconds. No capped target was
+  executed.
+
+### G Continuation: Registry-Owned RTL Insights Graph Actions
+
+- Added `graph.selection.jump`, `graph.selection.focus`, and
+  `graph.moduleBlock.setTop` as non-repeatable GraphPanel and Action Catalog
+  descriptors with graph-content requirements and explicit unavailable
+  reasons.
+- The RTL Insights More menu, Inspector buttons, and module-block Set Top
+  button now materialize labels and route metadata from those descriptors and
+  enter one `executeAction` path. The scene mapper synchronizes Jump, Focus,
+  and Set Top availability for no selection, generic graph selection, resolved
+  module selection, and unsupported FSM Set Top state.
+- Graph Action execution moved to `rtlinsightspanelactions.cpp`; the existing
+  coordinator stays below its 900-line boundary at 834 lines. The five export
+  Actions remain independent and retain their existing export host.
+- `action_registry_test` passed in 0.09 seconds after a 23.4-second serial
+  build; `controller_boundary_test` passed in 0.07 seconds after 2.7 seconds.
+  The offscreen `rtl_insight_linkage_test` passed in 0.31 seconds after a
+  564.9-second core/test build, covering actual QAction identity, Jump source
+  context, Focus success, and FSM Set Top rejection. `relationship_test`
+  passed in 15.92 seconds after a 368.6-second build, proving Set Top rebuilds
+  `rel_top.u_stage` as a one-node `rel_stage` graph and that the parent fixture
+  can be restored. `graph_export_panel_integration_test` passed in 0.37
+  seconds; its first build reached a 300.3-second tool limit during compilation
+  and the extended serial continuation linked successfully in 354.5 seconds.
+  No capped test was executed.
+
+### G Continuation: Registry-Owned Usage Hotspot View Actions
+
+- Added non-repeatable GraphPanel/Action Catalog descriptors for Fit, Zoom In,
+  Zoom Out, Center Current, and Reset Layout. The Signal Usage Hotspot Track
+  context menu, bound panel controls, and Focus View adapters now request the
+  same action ids and execute through `signalusagehotspotpanelactions.cpp`.
+- The panel propagates graph-content availability to each QAction/button and
+  enables Center Current only for a matching current source line or selected
+  usage. Fit/Zoom/Center/Reset return explicit success so failure status no
+  longer depends on silent void callbacks.
+- Registry and boundary tests passed in 0.09/0.07 seconds after 23.7/2.9-second
+  serial builds. The affected panel/core target compiled 46 steps in 559.0
+  seconds. `signal_usage_hotspot_panel_test` reached its three-run cap after
+  two silent pre-test exits and a GDB-confirmed Windows `0xc0000135` startup
+  failure before `main`; its DLL table matches passing GUI targets.
+- Independent `graph_export_panel_integration_test` runs passed 33/34, 38/39,
+  and 38/39 checks. All export and graph-view routes except a hidden panel
+  button test passed. The failure was narrowed to calling `click()` on a
+  deliberately hidden control; product Focus View calls `focusZoomIn()`.
+  The future assertion now exercises that real adapter, but the target was not
+  run beyond its third attempt. Serial rebuilds took 348.6, 345.8, and 433.5
+  seconds. Both targets are capped until new evidence exists.
+
+### G Continuation: Registry-Owned Focus View Actions
+
+- Focus View Fit, Zoom Out, and Zoom In now use the existing non-repeatable
+  GraphPanel descriptors. The Focus toolbar derives labels, tooltips, action
+  ids, routes, and availability from `ActionRegistry`, while the active panel
+  registration retains the concrete view callback.
+- Registry execution is isolated in `insightfocuscontrolleractions.cpp`; the
+  lifecycle shell no longer invokes Fit/Zoom callbacks directly. Clearing or
+  restoring Focus state synchronizes Action and button availability.
+- `insight_focus_controller_test` passed 1/1 in 0.13 seconds after a 14.2-
+  second serial build, covering metadata, one-shot callback dispatch, disabled
+  state, and repeat-history exclusion. `controller_boundary_test` passed 1/1
+  in 0.10 seconds after a 2.9-second serial build. No capped target was run.
+
+### A-G Final Acceptance (2026-08-03)
+
+- All Debug targets compile and link under explicit `--parallel 1`. The first
+  all-target pass found a stale one-argument callback in
+  `test_sv/gui_smoke_test.cpp`; the fixture now accepts and checks the product
+  Action parameter map. The resumed final segment linked the last 10/10
+  targets in 3333 seconds. No capped test was executed during this repair.
+- CTest lists 77 targets. Exact-name exclusion of the nine documented
+  three-attempt caps leaves 68 stable targets; the serial run passed 68/68 in
+  199.58 seconds. This covers A layout, B shared documents/splits/persistence,
+  C mode/line/slot editing, D Registry/completion/package commands, E
+  annotation/Peek/formatter/value behavior, F semantic proposals/search/file
+  and RTL edit workflows, and G export/focus/linkage/visible-region/
+  incremental-analysis behavior.
+- Real-project timings in that run were 7.96 seconds for `test_sv/new`, 93.66
+  seconds for `test_sv/huge_prj`, and 4.95 seconds for the fixture test that
+  checks both. Both protected `.zs` files retain their baseline length,
+  timestamp, and SHA-256 digest.
+- `fsm_ui_snapshot_test` regenerated seven nonblank PNGs under
+  `artifacts/ui/fsm`; `fsm_selected_transition.png` and the retained Usage
+  Hotspot Track/Matrix screenshot were visually inspected. Final
+  `git diff --check` passed with line-ending advisories only; no temporary
+  log/program entry or residual build/test process was found.
+- Remaining risk is limited to the nine explicitly capped executions recorded
+  in `goal.md`. Every capped target compiles and links, stable neighboring
+  coverage passes, and no fourth execution was made without new evidence.
+
 ## Commit Policy
 
 - Keep commits coherent and architecture-oriented.

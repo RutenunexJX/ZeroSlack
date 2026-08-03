@@ -16,8 +16,21 @@ DocumentSaveResult DocumentSessionState::markSaved(MyCodeEditor* editor)
     }
 
     const TrackedDocument previous = registry.value(editor);
-    TrackedDocument tracked = snapshotReader.capture(editor, &previous);
-    if (!registry.markSaved(editor, &tracked))
+    const QList<MyCodeEditor*> views =
+        registry.editorsForDocumentId(
+            previous.snapshot.documentId);
+    TrackedDocument tracked;
+    for (MyCodeEditor* view : views) {
+        const TrackedDocument viewPrevious =
+            registry.value(view);
+        TrackedDocument viewTracked =
+            snapshotReader.capture(view, &viewPrevious);
+        if (!registry.markSaved(view, &viewTracked))
+            continue;
+        if (view == editor)
+            tracked = viewTracked;
+    }
+    if (tracked.snapshot.documentId.isEmpty())
         return result;
 
     result.saved = true;
@@ -47,13 +60,26 @@ bool DocumentSessionState::applyChange(
         return false;
     }
 
-    tracked->snapshot.text.clear();
-    tracked->snapshot.textVersion = static_cast<int>(
+    const int nextVersion = static_cast<int>(
         qMin<std::uint64_t>(change.revision,
                             static_cast<std::uint64_t>(
                                 std::numeric_limits<int>::max())));
-    tracked->snapshot.dirty = true;
-    tracked->snapshot.saved = false;
+    if (tracked->snapshot.textVersion >= nextVersion
+        && tracked->snapshot.dirty) {
+        return false;
+    }
+    const QList<MyCodeEditor*> views =
+        registry.editorsForDocumentId(
+            tracked->snapshot.documentId);
+    for (MyCodeEditor* view : views) {
+        TrackedDocument* viewTracked = registry.find(view);
+        if (!viewTracked)
+            continue;
+        viewTracked->snapshot.text.clear();
+        viewTracked->snapshot.textVersion = nextVersion;
+        viewTracked->snapshot.dirty = true;
+        viewTracked->snapshot.saved = false;
+    }
     if (editedSnapshot)
         *editedSnapshot = tracked->snapshot;
     return true;

@@ -5,6 +5,7 @@
 #include <slang/analysis/ValueDriver.h>
 #include <slang/ast/ASTVisitor.h>
 #include <slang/ast/Compilation.h>
+#include <slang/ast/EvalContext.h>
 #include <slang/ast/expressions/LiteralExpressions.h>
 #include <slang/ast/expressions/OperatorExpressions.h>
 #include <slang/ast/symbols/CompilationUnitSymbols.h>
@@ -25,8 +26,10 @@
 #include <QSet>
 #include <QStringList>
 
+#include <algorithm>
 #include <exception>
 #include <limits>
+#include <type_traits>
 #include <utility>
 
 namespace {
@@ -363,6 +366,8 @@ QChar identityKind(const SemanticSymbolRecord& record)
     case CollectorKind::PortInterface:
     case CollectorKind::PortInterfaceModport:
         return QLatin1Char('o');
+    case CollectorKind::Typedef:
+        return QLatin1Char('t');
     default:
         return record.declarationKind
                        == SymbolTaxonomy::DeclarationKind::Signal
@@ -381,6 +386,8 @@ QChar identityKind(const Symbol& symbol)
     case SymbolKind::Port:
     case SymbolKind::InterfacePort:
         return QLatin1Char('o');
+    case SymbolKind::TypeAlias:
+        return QLatin1Char('t');
     case SymbolKind::Variable:
     case SymbolKind::Net:
         return QLatin1Char('v');
@@ -431,6 +438,970 @@ QString exactConstantText(const slang::ConstantValue& value)
 QString semanticRangeText(const slang::ConstantRange& range)
 {
     return QString::fromStdString(range.toString());
+}
+
+QString semanticDeclarationIdentity(
+    const slang::SourceManager* sourceManager,
+    const Symbol& symbol)
+{
+    if (!sourceManager || !symbol.location.valid())
+        return QString();
+    const auto position =
+        slang_symbols::detail::qTextDocumentSourcePosition(
+            sourceManager, symbol.location);
+    const QString fileName = normalizedFileName(position.fileName);
+    if (fileName.isEmpty() || !position.isValid())
+        return QString();
+    return QStringLiteral("%1|%2|%3|%4")
+        .arg(fileName)
+        .arg(position.position)
+        .arg(QString::fromStdString(std::string(symbol.name)))
+        .arg(static_cast<int>(symbol.kind));
+}
+
+QString expressionKindName(ExpressionKind kind)
+{
+    return QString::fromStdString(
+        std::string(toString(kind)));
+}
+
+QList<const Expression*> directExpressionChildren(
+    const Expression& expression)
+{
+    QList<const Expression*> result;
+    auto childCollector = makeVisitor(
+        [&](auto&, const auto& child) {
+            using Child =
+                std::remove_cvref_t<decltype(child)>;
+            if constexpr (std::is_base_of_v<Expression, Child>)
+                result.append(&child);
+        });
+    auto dispatcher = makeVisitor(
+        [&](auto&, const auto& concreteExpression) {
+            using Concrete =
+                std::remove_cvref_t<
+                    decltype(concreteExpression)>;
+            if constexpr (
+                std::is_base_of_v<Expression, Concrete>
+                && requires {
+                       concreteExpression.visitExprs(
+                           childCollector);
+                   }) {
+                concreteExpression.visitExprs(childCollector);
+            }
+        });
+    expression.visit(dispatcher);
+    return result;
+}
+
+slang::ConstantValue evaluatedExpressionValue(
+    const Expression& expression,
+    const Symbol& contextSymbol)
+{
+    if (const slang::ConstantValue* cached =
+            expression.getConstant()) {
+        return *cached;
+    }
+    EvalContext context(contextSymbol);
+    return expression.eval(context);
+}
+
+const SelectorSyntax* selectorSyntaxForDimension(
+    const SyntaxNode* syntax)
+{
+    if (!syntax)
+        return nullptr;
+
+    if (syntax->kind == SyntaxKind::VariableDimension) {
+        const auto& dimension =
+            syntax->as<VariableDimensionSyntax>();
+        if (!dimension.specifier
+            || dimension.specifier->kind
+                   != SyntaxKind::RangeDimensionSpecifier) {
+            return nullptr;
+        }
+        return dimension.specifier
+            ->as<RangeDimensionSpecifierSyntax>()
+            .selector;
+    }
+    if (syntax->kind == SyntaxKind::ElementSelect)
+        return syntax->as<ElementSelectSyntax>().selector;
+    return SelectorSyntax::isKind(syntax->kind)
+        ? &syntax->as<SelectorSyntax>()
+        : nullptr;
+}
+
+struct DeclaredDimensionSyntaxes {
+    QList<const SelectorSyntax*> packed;
+    QList<const SelectorSyntax*> unpacked;
+};
+
+DeclaredDimensionSyntaxes declaredDimensionSyntaxes(
+    const DeclaredType* declaredType)
+{
+    DeclaredDimensionSyntaxes result;
+    if (!declaredType)
+        return result;
+
+    QSet<const SelectorSyntax*> seen;
+    const auto append =
+        [&seen](QList<const SelectorSyntax*>* target,
+                const SelectorSyntax* selector) {
+            if (!target || !selector || seen.contains(selector))
+                return;
+            seen.insert(selector);
+            target->append(selector);
+        };
+
+    if (const auto* dimensions =
+            declaredType->getDimensionSyntax()) {
+        for (const VariableDimensionSyntax* dimension :
+             *dimensions) {
+            append(
+                &result.unpacked,
+                dimension
+                    ? selectorSyntaxForDimension(dimension)
+                    : nullptr);
+        }
+    }
+
+    if (const DataTypeSyntax* typeSyntax =
+            declaredType->getTypeSyntax()) {
+        auto visitor = makeSyntaxVisitor(
+            [&](auto&,
+                const VariableDimensionSyntax& dimension) {
+                append(
+                    &result.packed,
+                    selectorSyntaxForDimension(&dimension));
+            },
+            [&](auto&,
+                const ElementSelectSyntax& dimension) {
+                append(
+                    &result.packed,
+                    selectorSyntaxForDimension(&dimension));
+            });
+        typeSyntax->visit(visitor);
+    }
+    return result;
+}
+
+bool syntaxContainsTypeDimension(const SyntaxNode& syntax)
+{
+    bool found = false;
+    auto visitor = makeSyntaxVisitor(
+        [&](auto&, const VariableDimensionSyntax&) {
+            found = true;
+        },
+        [&](auto&, const ElementSelectSyntax&) {
+            found = true;
+        });
+    syntax.visit(visitor);
+    return found;
+}
+
+class SemanticConstantGraphBuilder
+{
+public:
+    SemanticConstantGraphBuilder(
+        const slang::SourceManager* sourceManager,
+        SemanticConstantDependencyGraph* graph) :
+        m_sourceManager(sourceManager),
+        m_graph(graph)
+    {
+        if (m_graph)
+            m_graph->complete = true;
+    }
+
+    QString buildBoundExpression(
+        const ExpressionSyntax& syntax,
+        const Symbol& contextSymbol,
+        const QString& idPrefix)
+    {
+        if (!m_graph || !contextSymbol.getParentScope()) {
+            fail(QStringLiteral(
+                "Slang has no scope in which to bind a dimension bound."));
+            return QString();
+        }
+
+        try {
+            ASTContext context(
+                *contextSymbol.getParentScope(),
+                LookupLocation::after(contextSymbol),
+                ASTFlags::NoReference
+                    | ASTFlags::NonProcedural);
+            const Expression& expression =
+                Expression::bind(syntax, context);
+            return buildExpression(
+                expression, contextSymbol, idPrefix);
+        } catch (const std::exception& error) {
+            fail(QStringLiteral(
+                     "Slang failed to bind a dimension bound: %1")
+                     .arg(QString::fromUtf8(error.what())));
+        } catch (...) {
+            fail(QStringLiteral(
+                "Slang failed to bind a dimension bound."));
+        }
+        return QString();
+    }
+
+    QString ensureParameter(const ParameterSymbol& parameter)
+    {
+        if (!m_graph)
+            return QString();
+
+        const QString identity =
+            parameterIdentity(parameter);
+        if (identity.isEmpty()) {
+            fail(QStringLiteral(
+                "A referenced parameter has no stable Slang identity."));
+            return QString();
+        }
+
+        const auto existing =
+            m_parameterIndexByIdentity.constFind(identity);
+        if (existing
+            != m_parameterIndexByIdentity.constEnd()) {
+            if (m_parameterStates.value(identity)
+                == ParameterState::Building) {
+                fail(QStringLiteral(
+                    "Slang exposed a cyclic parameter dependency."));
+            }
+            return identity;
+        }
+
+        SemanticParameterDependencyNode node;
+        node.identity = identity;
+        node.name = QString::fromStdString(
+            std::string(parameter.name));
+        node.localparam = parameter.isLocalParam();
+        node.evidenceId = identity;
+        const int parameterIndex = m_graph->parameters.size();
+        m_graph->parameters.append(node);
+        m_parameterIndexByIdentity.insert(
+            identity, parameterIndex);
+        m_parameterStates.insert(
+            identity, ParameterState::Building);
+
+        const Expression* initializer =
+            parameter.getInitializer();
+        QHash<QString, const ParameterSymbol*> dependencies;
+        if (initializer) {
+            initializer->visitSymbolReferences(
+                [&](const Expression&, const Symbol& symbol) {
+                    const auto* dependency =
+                        symbol.as_if<ParameterSymbol>();
+                    if (!dependency)
+                        return;
+                    const QString dependencyIdentity =
+                        parameterIdentity(*dependency);
+                    if (!dependencyIdentity.isEmpty()) {
+                        dependencies.insert(
+                            dependencyIdentity,
+                            dependency);
+                    }
+                });
+        }
+
+        QStringList dependencyIds = dependencies.keys();
+        std::sort(dependencyIds.begin(), dependencyIds.end());
+        for (const QString& dependencyId :
+             std::as_const(dependencyIds)) {
+            const ParameterSymbol* dependency =
+                dependencies.value(dependencyId);
+            if (dependency)
+                ensureParameter(*dependency);
+        }
+
+        QString rootId;
+        if (initializer) {
+            rootId = buildExpression(
+                *initializer,
+                parameter,
+                identity + QStringLiteral(":root"));
+        } else {
+            fail(QStringLiteral(
+                     "Parameter %1 has no bound initializer.")
+                     .arg(node.name));
+        }
+
+        const slang::ConstantValue& value =
+            parameter.getValue();
+        SemanticParameterDependencyNode& stored =
+            m_graph->parameters[parameterIndex];
+        stored.rootEvaluationNodeId = rootId;
+        stored.dependencyIds = dependencyIds;
+        stored.valueText = exactConstantText(value);
+        stored.evaluated =
+            value && !stored.valueText.isEmpty()
+            && !rootId.isEmpty();
+        if (!stored.evaluated) {
+            fail(QStringLiteral(
+                     "Parameter %1 has no exact Slang value.")
+                     .arg(stored.name));
+        } else {
+            const auto rootIndex =
+                m_evaluationIndexById.constFind(rootId);
+            if (rootIndex
+                != m_evaluationIndexById.constEnd()) {
+                SemanticConstantEvaluationNode& root =
+                    m_graph->evaluationNodes[*rootIndex];
+                root.resultValueText = stored.valueText;
+                root.evaluated = true;
+            }
+        }
+
+        m_parameterStates.insert(
+            identity, ParameterState::Complete);
+        return identity;
+    }
+
+    QString addEvaluatedNode(
+        const QString& id,
+        const QString& operationName,
+        const QString& expressionText,
+        const QStringList& operandIds,
+        const QString& resultValueText)
+    {
+        if (!m_graph || id.isEmpty()
+            || resultValueText.isEmpty()) {
+            fail(QStringLiteral(
+                "A derived Slang constant node is incomplete."));
+            return QString();
+        }
+        if (m_evaluationIndexById.contains(id))
+            return id;
+
+        SemanticConstantEvaluationNode node;
+        node.id = id;
+        node.operationName = operationName;
+        node.expressionText = expressionText;
+        node.operandIds = operandIds;
+        node.resultValueText = resultValueText;
+        node.evaluated = true;
+        node.evidenceId = id;
+        const int index = m_graph->evaluationNodes.size();
+        m_graph->evaluationNodes.append(std::move(node));
+        m_evaluationIndexById.insert(id, index);
+        return id;
+    }
+
+    bool evaluationNodeComplete(const QString& id) const
+    {
+        if (!m_graph || id.isEmpty())
+            return false;
+        const auto index =
+            m_evaluationIndexById.constFind(id);
+        return index != m_evaluationIndexById.constEnd()
+            && m_graph->evaluationNodes.at(*index).evaluated
+            && !m_graph->evaluationNodes.at(*index)
+                    .resultValueText.isEmpty();
+    }
+
+private:
+    enum class ParameterState {
+        Building,
+        Complete
+    };
+
+    QString parameterIdentity(
+        const ParameterSymbol& parameter) const
+    {
+        const QString declaration =
+            semanticDeclarationIdentity(
+                m_sourceManager, parameter);
+        return declaration.isEmpty()
+            ? QString()
+            : QStringLiteral("slang:parameter:%1")
+                  .arg(declaration);
+    }
+
+    QString buildExpression(
+        const Expression& expression,
+        const Symbol& contextSymbol,
+        const QString& id)
+    {
+        if (!m_graph || id.isEmpty()) {
+            fail(QStringLiteral(
+                "A constant expression node has no stable identity."));
+            return QString();
+        }
+        if (m_evaluationIndexById.contains(id))
+            return id;
+
+        SemanticConstantEvaluationNode node;
+        node.id = id;
+        node.operationName =
+            expressionKindName(expression.kind);
+        if (expression.syntax)
+            node.expressionText =
+                printedSyntax(*expression.syntax);
+        node.evidenceId = id;
+
+        const QList<const Expression*> children =
+            directExpressionChildren(expression);
+        for (int index = 0; index < children.size(); ++index) {
+            const Expression* child = children.at(index);
+            if (!child)
+                continue;
+            const QString childId = buildExpression(
+                *child,
+                contextSymbol,
+                QStringLiteral("%1.%2").arg(id).arg(index));
+            if (!childId.isEmpty())
+                node.operandIds.append(childId);
+        }
+
+        if (expression.kind == ExpressionKind::NamedValue
+            || expression.kind
+                   == ExpressionKind::HierarchicalValue) {
+            const Symbol* referenced =
+                expression.getSymbolReference();
+            const auto* parameter = referenced
+                ? referenced->as_if<ParameterSymbol>()
+                : nullptr;
+            if (parameter) {
+                const QString parameterId =
+                    ensureParameter(*parameter);
+                if (!parameterId.isEmpty()) {
+                    node.parameterDependencyIds.append(
+                        parameterId);
+                    const int parameterIndex =
+                        m_parameterIndexByIdentity.value(
+                            parameterId, -1);
+                    if (parameterIndex >= 0) {
+                        const QString rootId =
+                            m_graph->parameters
+                                .at(parameterIndex)
+                                .rootEvaluationNodeId;
+                        if (!rootId.isEmpty()
+                            && rootId != id
+                            && !node.operandIds.contains(rootId)) {
+                            node.operandIds.append(rootId);
+                        }
+                    }
+                }
+            }
+        }
+
+        try {
+            const slang::ConstantValue value =
+                evaluatedExpressionValue(
+                    expression, contextSymbol);
+            node.resultValueText = exactConstantText(value);
+            node.evaluated =
+                value && !node.resultValueText.isEmpty();
+        } catch (const std::exception&) {
+            node.evaluated = false;
+        } catch (...) {
+            node.evaluated = false;
+        }
+        if (!node.evaluated) {
+            fail(QStringLiteral(
+                     "Slang could not evaluate constant node %1.")
+                     .arg(id));
+        }
+
+        const int index = m_graph->evaluationNodes.size();
+        m_graph->evaluationNodes.append(std::move(node));
+        m_evaluationIndexById.insert(id, index);
+        return id;
+    }
+
+    void fail(const QString& reason)
+    {
+        if (!m_graph)
+            return;
+        m_graph->complete = false;
+        if (m_graph->failureReason.isEmpty())
+            m_graph->failureReason = reason;
+    }
+
+    const slang::SourceManager* m_sourceManager = nullptr;
+    SemanticConstantDependencyGraph* m_graph = nullptr;
+    QHash<QString, int> m_evaluationIndexById;
+    QHash<QString, int> m_parameterIndexByIdentity;
+    QHash<QString, ParameterState> m_parameterStates;
+};
+
+QString semanticTypeIdentity(
+    const Type& type,
+    const slang::SourceManager* sourceManager,
+    bool signednessKnown,
+    bool signedIntegral)
+{
+    const Type& canonical = type.getCanonicalType();
+    if (canonical.kind == SymbolKind::EnumType
+        || canonical.kind == SymbolKind::PackedStructType
+        || canonical.kind == SymbolKind::UnpackedStructType
+        || canonical.kind == SymbolKind::PackedUnionType
+        || canonical.kind == SymbolKind::UnpackedUnionType
+        || canonical.kind == SymbolKind::ClassType) {
+        const QString declaration =
+            semanticDeclarationIdentity(
+                sourceManager, canonical);
+        if (!declaration.isEmpty()) {
+            return QStringLiteral("slang:nominal:%1")
+                .arg(declaration);
+        }
+    }
+    if (canonical.isIntegral()) {
+        return QStringLiteral(
+                   "slang:integral:%1:%2:%3:%4")
+            .arg(static_cast<int>(canonical.kind))
+            .arg(signednessKnown && signedIntegral
+                     ? QStringLiteral("signed")
+                     : QStringLiteral("unsigned"))
+            .arg(canonical.isFourState()
+                     ? QStringLiteral("four-state")
+                     : QStringLiteral("two-state"))
+            .arg(canonical.getBitWidth());
+    }
+    if (canonical.kind == SymbolKind::StringType)
+        return QStringLiteral("slang:string");
+    if (canonical.kind == SymbolKind::FloatingType) {
+        return QStringLiteral("slang:floating:%1")
+            .arg(static_cast<int>(
+                canonical.as<FloatingType>().floatKind));
+    }
+
+    const QString declaration =
+        semanticDeclarationIdentity(
+            sourceManager, canonical);
+    if (!declaration.isEmpty()) {
+        return QStringLiteral("slang:type:%1")
+            .arg(declaration);
+    }
+    return QString();
+}
+
+QString integralDeclarationBase(
+    const Type& terminalType,
+    bool signedIntegral)
+{
+    QString result;
+    if (terminalType.kind == SymbolKind::ScalarType) {
+        switch (terminalType.as<ScalarType>().scalarKind) {
+        case ScalarType::Bit:
+            result = QStringLiteral("bit");
+            break;
+        case ScalarType::Logic:
+            result = QStringLiteral("logic");
+            break;
+        case ScalarType::Reg:
+            result = QStringLiteral("reg");
+            break;
+        }
+    } else if (terminalType.kind
+               == SymbolKind::PredefinedIntegerType) {
+        switch (terminalType
+                    .as<PredefinedIntegerType>()
+                    .integerKind) {
+        case PredefinedIntegerType::ShortInt:
+            result = QStringLiteral("shortint");
+            break;
+        case PredefinedIntegerType::Int:
+            result = QStringLiteral("int");
+            break;
+        case PredefinedIntegerType::LongInt:
+            result = QStringLiteral("longint");
+            break;
+        case PredefinedIntegerType::Byte:
+            result = QStringLiteral("byte");
+            break;
+        case PredefinedIntegerType::Integer:
+            result = QStringLiteral("integer");
+            break;
+        case PredefinedIntegerType::Time:
+            result = QStringLiteral("time");
+            break;
+        }
+    }
+    if (!result.isEmpty()) {
+        result += signedIntegral
+            ? QStringLiteral(" signed")
+            : QStringLiteral(" unsigned");
+    }
+    return result;
+}
+
+SemanticDeclaredTypeFacts declaredTypeFacts(
+    const Symbol& publishedSymbol,
+    const Symbol& bindingSymbol,
+    const Type& resolvedType,
+    const DeclaredType* declaredType,
+    const slang::SourceManager* sourceManager)
+{
+    SemanticDeclaredTypeFacts result;
+    result.evidenceId =
+        semanticDeclarationIdentity(
+            sourceManager, publishedSymbol);
+    result.constants.evidenceId =
+        result.evidenceId
+        + QStringLiteral(":constant-graph");
+    SemanticConstantGraphBuilder constantGraph(
+        sourceManager, &result.constants);
+
+    const Type* signedType = &resolvedType;
+    while (signedType->kind
+           == SymbolKind::FixedSizeUnpackedArrayType) {
+        signedType = &signedType
+                          ->as<FixedSizeUnpackedArrayType>()
+                          .elementType;
+    }
+    result.signednessKnown = signedType->isIntegral();
+    result.signedIntegral =
+        result.signednessKnown && signedType->isSigned();
+
+    int packedOrdinal = 0;
+    int unpackedOrdinal = 0;
+    auto appendDimension =
+        [&](const Type& arrayType,
+            const slang::ConstantRange& range,
+            SemanticTypeDimensionKind kind,
+            bool emitInDeclaration,
+            const Symbol& expressionContext,
+            const SelectorSyntax* declaredSelector,
+            QStringList* introducedDimensionIds) {
+            const int ordinal =
+                kind == SemanticTypeDimensionKind::Packed
+                ? packedOrdinal++
+                : unpackedOrdinal++;
+            SemanticTypeDimensionFact dimension;
+            dimension.kind = kind;
+            dimension.canonicalId =
+                QStringLiteral("%1:%2:%3:%4")
+                    .arg(kind
+                                 == SemanticTypeDimensionKind::Packed
+                             ? QStringLiteral("packed")
+                             : QStringLiteral("unpacked"))
+                    .arg(ordinal)
+                    .arg(range.left)
+                    .arg(range.right);
+            dimension.elementCountText =
+                QString::number(range.fullWidth());
+            dimension.emitInDeclaration =
+                emitInDeclaration;
+            dimension.evidenceId =
+                result.evidenceId
+                + QStringLiteral(":dimension:")
+                + dimension.canonicalId;
+
+            const SyntaxNode* syntax =
+                arrayType.getSyntax();
+            // Declarations produced in a different module cannot safely
+            // reuse a formal-local parameter name such as N. Render the
+            // exact Slang-evaluated range; the original bound syntax remains
+            // available on the evaluation nodes for preview and evidence.
+            dimension.declarationText =
+                semanticRangeText(range);
+            const SelectorSyntax* selectorSyntax =
+                declaredSelector
+                ? declaredSelector
+                : selectorSyntaxForDimension(syntax);
+            bool boundStructureComplete = false;
+            if (selectorSyntax
+                && RangeSelectSyntax::isKind(
+                    selectorSyntax->kind)) {
+                const auto& rangeSyntax =
+                    selectorSyntax->as<RangeSelectSyntax>();
+                dimension.leftEvaluationNodeId =
+                    constantGraph.buildBoundExpression(
+                        *rangeSyntax.left,
+                        expressionContext,
+                        dimension.evidenceId
+                            + QStringLiteral(":left"));
+                dimension.rightEvaluationNodeId =
+                    constantGraph.buildBoundExpression(
+                        *rangeSyntax.right,
+                        expressionContext,
+                        dimension.evidenceId
+                            + QStringLiteral(":right"));
+                boundStructureComplete = true;
+            } else if (selectorSyntax
+                       && selectorSyntax->kind
+                              == SyntaxKind::BitSelect) {
+                const auto& abbreviated =
+                    selectorSyntax->as<BitSelectSyntax>();
+                const QString sizeNode =
+                    constantGraph.buildBoundExpression(
+                        *abbreviated.expr,
+                        expressionContext,
+                        dimension.evidenceId
+                            + QStringLiteral(":size"));
+                dimension.leftEvaluationNodeId =
+                    constantGraph.addEvaluatedNode(
+                        dimension.evidenceId
+                            + QStringLiteral(":left"),
+                        QStringLiteral(
+                            "SlangAbbreviatedRangeLeft"),
+                        syntax ? printedSyntax(*syntax)
+                               : QString(),
+                        {},
+                        QString::number(range.left));
+                dimension.rightEvaluationNodeId =
+                    constantGraph.addEvaluatedNode(
+                        dimension.evidenceId
+                            + QStringLiteral(":right"),
+                        QStringLiteral(
+                            "SlangAbbreviatedRangeRight"),
+                        syntax ? printedSyntax(*syntax)
+                               : QString(),
+                        sizeNode.isEmpty()
+                            ? QStringList{}
+                            : QStringList{sizeNode},
+                        QString::number(range.right));
+                boundStructureComplete =
+                    !sizeNode.isEmpty();
+            }
+            dimension.complete =
+                !dimension.canonicalId.isEmpty()
+                && !dimension.declarationText.isEmpty()
+                && boundStructureComplete
+                && !dimension.leftEvaluationNodeId.isEmpty()
+                && !dimension.rightEvaluationNodeId.isEmpty()
+                && constantGraph.evaluationNodeComplete(
+                    dimension.leftEvaluationNodeId)
+                && constantGraph.evaluationNodeComplete(
+                    dimension.rightEvaluationNodeId);
+            if (!dimension.complete)
+                result.constants.complete = false;
+            if (introducedDimensionIds)
+                introducedDimensionIds->append(
+                    dimension.canonicalId);
+            result.dimensions.append(
+                std::move(dimension));
+        };
+
+    auto consumeDimensions =
+        [&](const Type*& current,
+            bool emitInDeclaration,
+            const Symbol& expressionContext,
+            const DeclaredType* sourceDeclaredType,
+            QStringList* introducedDimensionIds) {
+            const DeclaredDimensionSyntaxes declaredSyntaxes =
+                declaredDimensionSyntaxes(sourceDeclaredType);
+            int packedSyntaxIndex = 0;
+            int unpackedSyntaxIndex = 0;
+            while (current) {
+                if (current->kind
+                    == SymbolKind::FixedSizeUnpackedArrayType) {
+                    const auto& array =
+                        current->as<
+                            FixedSizeUnpackedArrayType>();
+                    appendDimension(
+                        *current,
+                        array.range,
+                        SemanticTypeDimensionKind::Unpacked,
+                        emitInDeclaration,
+                        expressionContext,
+                        unpackedSyntaxIndex
+                                    < declaredSyntaxes.unpacked.size()
+                            ? declaredSyntaxes.unpacked.at(
+                                  unpackedSyntaxIndex++)
+                            : nullptr,
+                        introducedDimensionIds);
+                    current = &array.elementType;
+                    continue;
+                }
+                if (current->kind
+                    == SymbolKind::PackedArrayType) {
+                    const auto& array =
+                        current->as<PackedArrayType>();
+                    appendDimension(
+                        *current,
+                        array.range,
+                        SemanticTypeDimensionKind::Packed,
+                        emitInDeclaration,
+                        expressionContext,
+                        packedSyntaxIndex
+                                    < declaredSyntaxes.packed.size()
+                            ? declaredSyntaxes.packed.at(
+                                  packedSyntaxIndex++)
+                            : nullptr,
+                        introducedDimensionIds);
+                    current = &array.elementType;
+                    continue;
+                }
+                break;
+            }
+        };
+
+    const Type* current = &resolvedType;
+    consumeDimensions(
+        current,
+        true,
+        bindingSymbol,
+        declaredType,
+        nullptr);
+
+    const TypeAliasType* rootAlias =
+        current && current->kind == SymbolKind::TypeAlias
+        ? &current->as<TypeAliasType>()
+        : nullptr;
+    QSet<QString> visitedAliases;
+    while (current
+           && current->kind == SymbolKind::TypeAlias) {
+        const auto& alias = current->as<TypeAliasType>();
+        SemanticTypedefResolutionStep step;
+        const QString aliasIdentity =
+            semanticDeclarationIdentity(
+                sourceManager, alias);
+        if (!aliasIdentity.isEmpty()) {
+            step.sourceTypeId =
+                QStringLiteral("slang:typedef:%1")
+                    .arg(aliasIdentity);
+        }
+        step.sourceTypeName =
+            QString::fromStdString(
+                std::string(alias.name));
+        step.declarationIdentity = aliasIdentity;
+        step.evidenceId =
+            step.declarationIdentity;
+        if (result.rootTypeId.isEmpty())
+            result.rootTypeId = step.sourceTypeId;
+
+        if (step.sourceTypeId.isEmpty()
+            || visitedAliases.contains(
+                step.sourceTypeId)) {
+            result.failureReason = QStringLiteral(
+                "Slang exposed an unresolved or cyclic typedef chain.");
+            result.constants.complete = false;
+            break;
+        }
+        visitedAliases.insert(step.sourceTypeId);
+
+        const Type* target =
+            &alias.targetType.getType();
+        consumeDimensions(
+            target,
+            false,
+            alias,
+            &alias.targetType,
+            &step.introducedDimensionIds);
+        if (target
+            && target->kind == SymbolKind::TypeAlias) {
+            const QString targetIdentity =
+                semanticDeclarationIdentity(
+                    sourceManager,
+                    target->as<TypeAliasType>());
+            if (!targetIdentity.isEmpty()) {
+                step.targetTypeId =
+                    QStringLiteral("slang:typedef:%1")
+                        .arg(targetIdentity);
+            }
+        } else if (target) {
+            step.targetTypeId =
+                semanticTypeIdentity(
+                    *target,
+                    sourceManager,
+                    result.signednessKnown,
+                    result.signedIntegral);
+        }
+        result.typedefChain.append(std::move(step));
+        current = target;
+    }
+
+    if (current) {
+        result.canonicalTypeId =
+            semanticTypeIdentity(
+                *current,
+                sourceManager,
+                result.signednessKnown,
+                result.signedIntegral);
+    }
+    if (result.rootTypeId.isEmpty())
+        result.rootTypeId = result.canonicalTypeId;
+
+    if (declaredType) {
+        if (const DataTypeSyntax* syntax =
+                declaredType->getTypeSyntax()) {
+            if (!syntaxContainsTypeDimension(*syntax))
+                result.declarationBaseText =
+                    printedSyntax(*syntax);
+        }
+    }
+    if (result.declarationBaseText.isEmpty()
+        && rootAlias) {
+        result.declarationBaseText =
+            QString::fromStdString(
+                std::string(rootAlias->name));
+    }
+    if (result.declarationBaseText.isEmpty()
+        && current) {
+        if (current->isIntegral()) {
+            result.declarationBaseText =
+                integralDeclarationBase(
+                    *current,
+                    result.signedIntegral);
+        }
+        if (result.declarationBaseText.isEmpty()) {
+            result.declarationBaseText =
+                QString::fromStdString(
+                    current->toString());
+        }
+    }
+
+    QStringList declarationShape{
+        result.rootTypeId,
+        result.declarationBaseText,
+    };
+    for (const SemanticTypeDimensionFact& dimension :
+         std::as_const(result.dimensions)) {
+        if (!dimension.emitInDeclaration)
+            continue;
+        declarationShape.append(
+            QStringLiteral("%1:%2")
+                .arg(dimension.kind
+                             == SemanticTypeDimensionKind::Packed
+                         ? QStringLiteral("p")
+                         : QStringLiteral("u"),
+                     dimension.canonicalId));
+    }
+    if (!result.rootTypeId.isEmpty()
+        && !result.declarationBaseText.isEmpty()) {
+        result.declarationShapeId =
+            declarationShape.join(QChar(u'\x1f'));
+    }
+
+    bool dimensionsComplete = true;
+    for (const SemanticTypeDimensionFact& dimension :
+         std::as_const(result.dimensions)) {
+        dimensionsComplete =
+            dimensionsComplete && dimension.complete;
+    }
+    bool typedefChainComplete = true;
+    QString expectedType = result.rootTypeId;
+    for (const SemanticTypedefResolutionStep& step :
+         std::as_const(result.typedefChain)) {
+        if (step.sourceTypeId != expectedType
+            || step.targetTypeId.isEmpty()
+            || step.declarationIdentity.isEmpty()) {
+            typedefChainComplete = false;
+            break;
+        }
+        expectedType = step.targetTypeId;
+    }
+    typedefChainComplete =
+        typedefChainComplete
+        && expectedType == result.canonicalTypeId;
+    result.complete =
+        !resolvedType.isError()
+        && !result.rootTypeId.isEmpty()
+        && !result.canonicalTypeId.isEmpty()
+        && !result.declarationShapeId.isEmpty()
+        && !result.declarationBaseText.isEmpty()
+        && dimensionsComplete
+        && typedefChainComplete
+        && result.constants.complete;
+    if (!result.complete
+        && result.failureReason.isEmpty()) {
+        result.failureReason =
+            !result.constants.failureReason.isEmpty()
+            ? result.constants.failureReason
+            : QStringLiteral(
+                  "Slang declared-type facts are incomplete.");
+    }
+    return result;
 }
 
 void fillSemanticDimensions(const Type& type,
@@ -1045,7 +2016,10 @@ void gatherScopePresentations(
 
     auto storeInfo = [&](const Symbol& symbol,
                          const SemanticElaboratedSymbolInfo& info,
-                         auto&& fillSource) {
+                         const SemanticDeclaredTypeFacts*
+                             declaredType,
+                         auto&& fillSource,
+                         bool storeElaboratedInfo) {
         if (cancelled())
             return;
         const QString key = identityKey(sourceManager, symbol);
@@ -1080,15 +2054,31 @@ void gatherScopePresentations(
                 == SemanticEffectiveScopeKind::Package
             || effectiveScope.kind
                 == SemanticEffectiveScopeKind::CompilationUnit;
-        if (staticValue)
+        if (staticValue) {
             presentation.instanceInfoByPath.clear();
+            presentation.declaredTypeFactsByPath.clear();
+        }
         // Detached definition elaboration supplies declaration defaults only.
         // It must never manufacture an instance-map entry such as "child" or
         // overwrite an actual top.u* entry produced by the real hierarchy.
-        if (!staticValue && !storeAsDefault && !instancePath.isEmpty())
-            presentation.instanceInfoByPath.insert(instancePath, info);
-        if (staticValue || storeAsDefault)
-            presentation.defaultInfo = info;
+        if (!staticValue && !storeAsDefault && !instancePath.isEmpty()) {
+            if (storeElaboratedInfo) {
+                presentation.instanceInfoByPath.insert(
+                    instancePath, info);
+            }
+            if (declaredType) {
+                presentation.declaredTypeFactsByPath.insert(
+                    instancePath, *declaredType);
+            }
+        }
+        if (staticValue || storeAsDefault) {
+            if (storeElaboratedInfo)
+                presentation.defaultInfo = info;
+            if (declaredType) {
+                presentation.defaultDeclaredTypeFacts =
+                    *declaredType;
+            }
+        }
     };
 
     auto storeEnumType = [&](const EnumType& enumType) {
@@ -1101,10 +2091,12 @@ void gatherScopePresentations(
                 "slang elaborated enum constant");
             storeInfo(enumValue,
                       info,
+                      nullptr,
                       [&](SemanticSymbolPresentation* presentation) {
                           fillEnumSourcePresentation(enumValue,
                                                      presentation);
-                      });
+                      },
+                      true);
         }
     };
 
@@ -1143,10 +2135,12 @@ void gatherScopePresentations(
             info.expressionText = parameterExpressionText(parameter);
             info.valueSourceText = parameterValueSourceText(parameter);
             storeInfo(parameter, info,
+                      nullptr,
                       [&](SemanticSymbolPresentation* presentation) {
                           fillParameterSourcePresentation(parameter,
                                                           presentation);
-                      });
+                      },
+                      true);
             if (effectiveValueFacts && parameter.isOverridden()) {
                 const Expression* initializer = parameter.getInitializer();
                 if (initializer && initializer->syntax) {
@@ -1192,10 +2186,12 @@ void gatherScopePresentations(
             info.valueSourceText = QStringLiteral(
                 "slang elaborated enum constant");
             storeInfo(enumValue, info,
+                      nullptr,
                       [&](SemanticSymbolPresentation* presentation) {
                           fillEnumSourcePresentation(enumValue,
                                                      presentation);
-                      });
+                      },
+                      true);
             nestedVisitor.visitDefault(enumValue);
         },
         [&](auto& nestedVisitor, const TypeAliasType& typeAlias) {
@@ -1204,6 +2200,18 @@ void gatherScopePresentations(
             const Type& canonical = typeAlias.getCanonicalType();
             if (canonical.kind == SymbolKind::EnumType)
                 storeEnumType(canonical.as<EnumType>());
+            const SemanticDeclaredTypeFacts typeFacts =
+                declaredTypeFacts(
+                    typeAlias,
+                    typeAlias,
+                    typeAlias,
+                    &typeAlias.targetType,
+                    sourceManager);
+            storeInfo(typeAlias,
+                      typeInfo(typeAlias),
+                      &typeFacts,
+                      [](SemanticSymbolPresentation*) {},
+                      false);
             nestedVisitor.visitDefault(typeAlias);
         },
         [&](auto& nestedVisitor, const VariableSymbol& variable) {
@@ -1212,24 +2220,66 @@ void gatherScopePresentations(
             const Type& canonical = variable.getType().getCanonicalType();
             if (canonical.kind == SymbolKind::EnumType)
                 storeEnumType(canonical.as<EnumType>());
+            const SemanticDeclaredTypeFacts typeFacts =
+                declaredTypeFacts(
+                    variable,
+                    variable,
+                    variable.getType(),
+                    static_cast<const DeclaredType*>(
+                        variable.getDeclaredType()),
+                    sourceManager);
             storeInfo(variable,
                       typeInfo(variable.getType()),
-                      [](SemanticSymbolPresentation*) {});
+                      &typeFacts,
+                      [](SemanticSymbolPresentation*) {},
+                      true);
             nestedVisitor.visitDefault(variable);
         },
         [&](auto& nestedVisitor, const NetSymbol& net) {
             if (cancelled())
                 return;
+            const SemanticDeclaredTypeFacts typeFacts =
+                declaredTypeFacts(
+                    net,
+                    net,
+                    net.getType(),
+                    static_cast<const DeclaredType*>(
+                        net.getDeclaredType()),
+                    sourceManager);
             storeInfo(net,
                       typeInfo(net.getType()),
-                      [](SemanticSymbolPresentation*) {});
+                      &typeFacts,
+                      [](SemanticSymbolPresentation*) {},
+                      true);
             nestedVisitor.visitDefault(net);
         },
         [&](auto& nestedVisitor, const PortSymbol& port) {
             if (cancelled())
                 return;
             const SemanticElaboratedSymbolInfo info = typeInfo(port.getType());
-            storeInfo(port, info, [](SemanticSymbolPresentation*) {});
+            const ValueSymbol* internal =
+                port.internalSymbol
+                    && port.internalSymbol->isValue()
+                ? &port.internalSymbol->as<ValueSymbol>()
+                : nullptr;
+            const DeclaredType* portDeclaredType =
+                internal
+                ? static_cast<const DeclaredType*>(
+                      internal->getDeclaredType())
+                : nullptr;
+            const SemanticDeclaredTypeFacts typeFacts =
+                declaredTypeFacts(
+                    port,
+                    internal ? static_cast<const Symbol&>(*internal)
+                             : static_cast<const Symbol&>(port),
+                    port.getType(),
+                    portDeclaredType,
+                    sourceManager);
+            storeInfo(port,
+                      info,
+                      &typeFacts,
+                      [](SemanticSymbolPresentation*) {},
+                      true);
             nestedVisitor.visitDefault(port);
         },
         [&](auto& nestedVisitor, const InterfacePortSymbol& port) {
@@ -1261,7 +2311,11 @@ void gatherScopePresentations(
                 info.failureReason = QStringLiteral(
                     "slang could not resolve the interface port type.");
             }
-            storeInfo(port, info, [](SemanticSymbolPresentation*) {});
+            storeInfo(port,
+                      info,
+                      nullptr,
+                      [](SemanticSymbolPresentation*) {},
+                      true);
             nestedVisitor.visitDefault(port);
         },
         [&](auto& nestedVisitor, const RangeSelectExpression& expression) {
@@ -1539,7 +2593,8 @@ void slang_symbols::populateSymbolPresentations(
             == SymbolTaxonomy::CollectorKind::EnumValue) {
             record.presentation.enumTypeName = record.owner.name;
         }
-        if (!record.presentation.defaultInfo.available
+        if (kind != QLatin1Char('t')
+            && !record.presentation.defaultInfo.available
             && record.presentation.defaultInfo.failureReason.isEmpty()) {
             record.presentation.defaultInfo.failureReason = QStringLiteral(
                 "No valid slang default elaboration is available for this declaration.");
@@ -1633,6 +2688,44 @@ void storePortDriverSummary(
         summary.portConnections;
 }
 
+void storeValueDriverSummary(
+    const ValueSymbol& value,
+    const QString& instancePath,
+    const slang::SourceManager* sourceManager,
+    const slang::analysis::AnalysisManager& analysis,
+    bool absenceIsProven,
+    QHash<QString, SemanticSymbolPresentation>* presentations)
+{
+    if (!presentations || instancePath.isEmpty())
+        return;
+    const QString key =
+        identityKey(sourceManager, value);
+    auto presentation = presentations->find(key);
+    if (key.isEmpty()
+        || presentation == presentations->end()) {
+        return;
+    }
+    auto instance =
+        presentation->instanceInfoByPath.find(
+            instancePath);
+    if (instance
+        == presentation->instanceInfoByPath.end()) {
+        return;
+    }
+
+    const SlangDriverSummary summary =
+        driverSummary(
+            analysis, &value, absenceIsProven);
+    instance->driverPresence = summary.presence;
+    instance->driverCount = summary.total;
+    instance->continuousDriverCount =
+        summary.continuous;
+    instance->proceduralDriverCount =
+        summary.procedural;
+    instance->portConnectionDriverCount =
+        summary.portConnections;
+}
+
 void gatherScopeDriverSummaries(
     const Scope& scope,
     const QString& instancePath,
@@ -1659,6 +2752,32 @@ void gatherScopeDriverSummaries(
                                    absenceIsProven,
                                    presentations);
             nestedVisitor.visitDefault(port);
+        },
+        [&](auto& nestedVisitor,
+            const VariableSymbol& variable) {
+            if (cancelled())
+                return;
+            storeValueDriverSummary(
+                variable,
+                instancePath,
+                sourceManager,
+                analysis,
+                absenceIsProven,
+                presentations);
+            nestedVisitor.visitDefault(variable);
+        },
+        [&](auto& nestedVisitor,
+            const NetSymbol& net) {
+            if (cancelled())
+                return;
+            storeValueDriverSummary(
+                net,
+                instancePath,
+                sourceManager,
+                analysis,
+                absenceIsProven,
+                presentations);
+            nestedVisitor.visitDefault(net);
         });
     for (const Symbol& member : scope.members()) {
         if (cancelled())
@@ -1712,8 +2831,11 @@ void slang_symbols::populateSymbolDriverSummaries(
 
     QHash<QString, SemanticSymbolPresentation> presentations;
     for (const SemanticSymbolRecord& record : std::as_const(records)) {
-        if (identityKind(record) != QLatin1Char('o'))
+        const QChar kind = identityKind(record);
+        if (kind != QLatin1Char('o')
+            && kind != QLatin1Char('v')) {
             continue;
+        }
         const QString key = identityKey(record);
         if (!key.isEmpty())
             presentations.insert(key, record.presentation);

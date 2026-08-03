@@ -3,6 +3,7 @@ add_library(rtledit-core STATIC
     src/rtledit/expose_signal_to_top.cpp
     src/rtledit/patch_engine.cpp
     src/rtledit/text_edit.cpp
+    src/rtledit/workspace_edit_transaction.cpp
 )
 
 add_library(rtledit::core ALIAS rtledit-core)
@@ -78,6 +79,7 @@ if(BUILD_TESTING)
         rtleditcore_edit_plan_tests
         rtleditcore_text_edit_tests
         rtleditcore_expose_signal_to_top_tests
+        rtleditcore_workspace_edit_transaction_tests
     )
 
     add_executable(rtleditcore_patch_engine_tests
@@ -90,6 +92,8 @@ if(BUILD_TESTING)
         tests/text_edit_tests.cpp)
     add_executable(rtleditcore_expose_signal_to_top_tests
         tests/expose_signal_to_top_tests.cpp)
+    add_executable(rtleditcore_workspace_edit_transaction_tests
+        tests/workspace_edit_transaction_tests.cpp)
 
     foreach(test_target IN LISTS RTLEDITCORE_TEST_TARGETS)
         set_target_properties("${test_target}" PROPERTIES

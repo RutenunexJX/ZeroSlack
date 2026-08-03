@@ -1,7 +1,6 @@
 #include "codetemplateservice.h"
 
 #include "actionregistry.h"
-
 #include <Qt>
 #include <memory>
 
@@ -25,12 +24,18 @@ CodeTemplateItem makeItem(const QString& token,
     return item;
 }
 
-CodeTemplateSlot makeSlot(const QString& name, int start, int length)
+CodeTemplateSlot makeSlot(const QString& name,
+                          int start,
+                          int length,
+                          int tabStop = -1,
+                          bool visibleWhenEmpty = false)
 {
     CodeTemplateSlot slot;
     slot.name = name;
     slot.start = start;
     slot.length = length;
+    slot.tabStop = tabStop;
+    slot.visibleWhenEmpty = visibleWhenEmpty;
     return slot;
 }
 
@@ -400,6 +405,216 @@ CodeTemplateItem expandParameterDeclarationTemplate(CodeTemplateItem item,
     return item;
 }
 
+CodeTemplateItem expandGenericAlwaysTemplate(CodeTemplateItem item)
+{
+    QString text = QStringLiteral("always @(");
+    const int sensitivityStart = text.size();
+    text += QLatin1Char('*');
+    text += QStringLiteral(") begin\n"
+                           "    ");
+    const int bodyStart = text.size();
+    text += QStringLiteral("\n"
+                           "end");
+
+    item.selectionStart = sensitivityStart;
+    item.selectionLength = 1;
+    item.templateSlots = {
+        makeSlot(QStringLiteral("sensitivity"),
+                 sensitivityStart,
+                 1,
+                 1),
+        makeSlot(QStringLiteral("body"),
+                 bodyStart,
+                 0,
+                 2,
+                 true),
+    };
+    item.insertText = text;
+    item.defaultValue = text;
+    return item;
+}
+
+CodeTemplateItem expandAlwaysCombTemplate(CodeTemplateItem item)
+{
+    QString text = QStringLiteral("always_comb begin\n"
+                                  "    ");
+    const int bodyStart = text.size();
+    text += QStringLiteral("\n"
+                           "end");
+
+    item.selectionStart = bodyStart;
+    item.selectionLength = 0;
+    item.templateSlots = {
+        makeSlot(QStringLiteral("body"),
+                 bodyStart,
+                 0,
+                 1,
+                 true),
+    };
+    item.insertText = text;
+    item.defaultValue = text;
+    return item;
+}
+
+enum class AlwaysFfResetStyle {
+    None,
+    Synchronous,
+    AsynchronousActiveLow,
+    AsynchronousActiveHigh
+};
+
+CodeTemplateItem expandAlwaysFfTemplate(
+    CodeTemplateItem item,
+    const QString& label,
+    const QString& description,
+    const QString& clockName,
+    const QString& resetName,
+    AlwaysFfResetStyle resetStyle)
+{
+    item.label = label;
+    item.description = description;
+    item.templateSlots.clear();
+
+    QString text = QStringLiteral("always_ff @(posedge ");
+    const int clockStart = text.size();
+    text += clockName;
+    item.templateSlots.append(
+        makeSlot(QStringLiteral("clock"),
+                 clockStart,
+                 clockName.size(),
+                 1));
+
+    const bool asynchronous =
+        resetStyle == AlwaysFfResetStyle::AsynchronousActiveLow
+        || resetStyle
+               == AlwaysFfResetStyle::AsynchronousActiveHigh;
+    const bool activeLow =
+        resetStyle == AlwaysFfResetStyle::AsynchronousActiveLow;
+    const bool hasReset =
+        resetStyle != AlwaysFfResetStyle::None;
+    if (asynchronous) {
+        text += activeLow
+            ? QStringLiteral(" or negedge ")
+            : QStringLiteral(" or posedge ");
+        const int resetEventStart = text.size();
+        text += resetName;
+        item.templateSlots.append(
+            makeSlot(QStringLiteral("reset"),
+                     resetEventStart,
+                     resetName.size(),
+                     2));
+    }
+    text += QStringLiteral(") begin\n");
+
+    if (!hasReset) {
+        text += QStringLiteral("    ");
+        const int bodyStart = text.size();
+        item.templateSlots.append(
+            makeSlot(QStringLiteral("body"),
+                     bodyStart,
+                     0,
+                     2,
+                     true));
+        text += QStringLiteral("\n"
+                               "end");
+    } else {
+        text += QStringLiteral("    if (");
+        if (activeLow)
+            text += QLatin1Char('!');
+        const int resetConditionStart = text.size();
+        text += resetName;
+        item.templateSlots.append(
+            makeSlot(QStringLiteral("reset"),
+                     resetConditionStart,
+                     resetName.size(),
+                     2));
+        text += QStringLiteral(") begin\n"
+                               "        ");
+        const int resetBodyStart = text.size();
+        item.templateSlots.append(
+            makeSlot(QStringLiteral("resetBody"),
+                     resetBodyStart,
+                     0,
+                     3,
+                     true));
+        text += QStringLiteral("\n"
+                               "    end\n"
+                               "    else begin\n"
+                               "        ");
+        const int bodyStart = text.size();
+        item.templateSlots.append(
+            makeSlot(QStringLiteral("body"),
+                     bodyStart,
+                     0,
+                     4,
+                     true));
+        text += QStringLiteral("\n"
+                               "    end\n"
+                               "end");
+    }
+
+    item.selectionStart = clockStart;
+    item.selectionLength = clockName.size();
+    item.insertText = text;
+    item.defaultValue = text;
+    return item;
+}
+
+QList<CodeTemplateItem> expandAlwaysFfTemplates(
+    const CodeTemplateItem& baseItem,
+    const CodeTemplateSignalContext& context)
+{
+    const QString clockName = context.clockName.isEmpty()
+        ? QStringLiteral("clk")
+        : context.clockName;
+    const QString inferredReset = context.resetName;
+
+    QList<CodeTemplateItem> result;
+    result.append(
+        expandAlwaysFfTemplate(
+            baseItem,
+            QStringLiteral("always_ff (no reset)"),
+            QStringLiteral("flip-flop process without reset"),
+            clockName,
+            QStringLiteral("rst"),
+            AlwaysFfResetStyle::None));
+    result.append(
+        expandAlwaysFfTemplate(
+            baseItem,
+            QStringLiteral("always_ff (synchronous reset)"),
+            QStringLiteral("flip-flop process with synchronous reset"),
+            clockName,
+            inferredReset.isEmpty()
+                ? QStringLiteral("rst")
+                : inferredReset,
+            AlwaysFfResetStyle::Synchronous));
+    result.append(
+        expandAlwaysFfTemplate(
+            baseItem,
+            QStringLiteral(
+                "always_ff (asynchronous active-low reset)"),
+            QStringLiteral(
+                "flip-flop process with asynchronous active-low reset"),
+            clockName,
+            inferredReset.isEmpty()
+                ? QStringLiteral("rst_n")
+                : inferredReset,
+            AlwaysFfResetStyle::AsynchronousActiveLow));
+    result.append(
+        expandAlwaysFfTemplate(
+            baseItem,
+            QStringLiteral(
+                "always_ff (asynchronous active-high reset)"),
+            QStringLiteral(
+                "flip-flop process with asynchronous active-high reset"),
+            clockName,
+            inferredReset.isEmpty()
+                ? QStringLiteral("rst")
+                : inferredReset,
+            AlwaysFfResetStyle::AsynchronousActiveHigh));
+    return result;
+}
+
 }
 
 CodeTemplateService* CodeTemplateService::getInstance()
@@ -440,7 +655,8 @@ QList<CodeTemplateItem> CodeTemplateService::catalog() const
 
 QList<CodeTemplateItem> CodeTemplateService::matchingTemplates(
     const QString& commandToken,
-    const QString& seedText) const
+    const QString& seedText,
+    const CodeTemplateSignalContext& signalContext) const
 {
     QList<CodeTemplateItem> result;
     for (CodeTemplateItem item : catalog()) {
@@ -462,6 +678,19 @@ QList<CodeTemplateItem> CodeTemplateService::matchingTemplates(
             result.append(expandParameterDeclarationTemplate(item, seedText));
             continue;
         }
+        if (item.commandToken == QStringLiteral(";;a")) {
+            result.append(expandGenericAlwaysTemplate(item));
+            continue;
+        }
+        if (item.commandToken == QStringLiteral(";;ac")) {
+            result.append(expandAlwaysCombTemplate(item));
+            continue;
+        }
+        if (item.commandToken == QStringLiteral(";;af")) {
+            result.append(
+                expandAlwaysFfTemplates(item, signalContext));
+            continue;
+        }
 
         item.insertText = expandTemplate(item.commandToken, seedText);
         item.defaultValue = item.insertText;
@@ -472,10 +701,13 @@ QList<CodeTemplateItem> CodeTemplateService::matchingTemplates(
 
 CodeTemplateItem CodeTemplateService::templateForCommand(
     const QString& commandToken,
-    const QString& seedText) const
+    const QString& seedText,
+    const CodeTemplateSignalContext& signalContext) const
 {
     const QList<CodeTemplateItem> matches =
-        matchingTemplates(commandToken, seedText);
+        matchingTemplates(commandToken,
+                          seedText,
+                          signalContext);
     return matches.isEmpty() ? CodeTemplateItem() : matches.first();
 }
 
@@ -515,10 +747,16 @@ QString CodeTemplateService::expandTemplate(
             ? QStringLiteral("assign lhs = rhs;")
             : QStringLiteral("assign %1 = rhs;").arg(name);
     if (commandToken == QStringLiteral(";;a"))
-        return QStringLiteral("always_ff @(posedge clk or negedge rst_n) begin\n"
-                              "    if (!rst_n) begin\n"
-                              "    end else begin\n"
-                              "    end\n"
+        return QStringLiteral("always @(*) begin\n"
+                              "    \n"
+                              "end");
+    if (commandToken == QStringLiteral(";;ac"))
+        return QStringLiteral("always_comb begin\n"
+                              "    \n"
+                              "end");
+    if (commandToken == QStringLiteral(";;af"))
+        return QStringLiteral("always_ff @(posedge clk) begin\n"
+                              "    \n"
                               "end");
     if (commandToken == QStringLiteral(";;m"))
         return QStringLiteral("`timescale 1ns / 1ps\n"

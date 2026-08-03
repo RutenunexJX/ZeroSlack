@@ -19,6 +19,8 @@ public:
 
     void setActionHandler(std::function<void(const GlobalControlItem&)> handler);
     void setOpeningHandler(std::function<void()> handler);
+    void setOpenRequestHandler(
+        std::function<bool()> handler);
     void install();
     bool handleKeyEvent(QEvent* event);
     void open();
@@ -32,6 +34,7 @@ private:
     GlobalControlService service;
     std::function<void(const GlobalControlItem&)> actionHandler;
     std::function<void()> openingHandler;
+    std::function<bool()> openRequestHandler;
     bool installed = false;
 
     void refresh(const QString& queryText = QString());

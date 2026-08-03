@@ -48,6 +48,25 @@ QStringList uniqueSortedPaths(QStringList values)
     return values;
 }
 
+QJsonArray stringArray(const QStringList& values)
+{
+    QJsonArray array;
+    for (const QString& value : values)
+        array.append(value);
+    return array;
+}
+
+QStringList stringList(const QJsonArray& array)
+{
+    QStringList values;
+    for (const QJsonValue& value : array) {
+        const QString text = value.toString();
+        if (!text.isEmpty() && !values.contains(text))
+            values.append(text);
+    }
+    return values;
+}
+
 QJsonObject tabObject(
     const QString& root,
     const WorkspaceSessionTabState& tab)
@@ -67,8 +86,23 @@ QJsonObject tabObject(
         QStringLiteral("verticalScroll"),
         qMax(0, tab.verticalScrollValue));
     object.insert(
+        QStringLiteral("horizontalScroll"),
+        qMax(0, tab.horizontalScrollValue));
+    object.insert(
         QStringLiteral("active"),
         tab.active);
+    object.insert(
+        QStringLiteral("viewId"),
+        tab.viewId);
+    object.insert(
+        QStringLiteral("groupIndex"),
+        qMax(0, tab.groupIndex));
+    object.insert(
+        QStringLiteral("tabIndex"),
+        qMax(0, tab.tabIndex));
+    object.insert(
+        QStringLiteral("locked"),
+        tab.locked);
     return object;
 }
 
@@ -128,6 +162,41 @@ QJsonObject sessionObject(
         QString::fromLatin1(
             state.ui.mainWindowState
                 .toBase64()));
+    ui.insert(
+        QStringLiteral("navigationFilesQuery"),
+        state.ui.navigationFilesQuery);
+    ui.insert(
+        QStringLiteral("navigationDesignQuery"),
+        state.ui.navigationDesignQuery);
+    ui.insert(
+        QStringLiteral("tabGroupingMode"),
+        state.ui.tabGroupingMode);
+    QJsonObject panelLayout;
+    panelLayout.insert(
+        QStringLiteral("order"),
+        stringArray(state.ui.panelLayout.bottomPanelOrder));
+    panelLayout.insert(
+        QStringLiteral("closed"),
+        stringArray(state.ui.panelLayout.closedBottomPanels));
+    panelLayout.insert(
+        QStringLiteral("pinned"),
+        stringArray(state.ui.panelLayout.pinnedBottomPanels));
+    panelLayout.insert(
+        QStringLiteral("active"),
+        state.ui.panelLayout.activeBottomPanel);
+    panelLayout.insert(
+        QStringLiteral("expandedHeight"),
+        qMax(64, state.ui.panelLayout.expandedBottomHeight));
+    panelLayout.insert(
+        QStringLiteral("collapsed"),
+        state.ui.panelLayout.bottomCollapsed);
+    panelLayout.insert(
+        QStringLiteral("navigationVisible"),
+        state.ui.panelLayout.navigationVisible);
+    panelLayout.insert(
+        QStringLiteral("valid"),
+        state.ui.panelLayout.valid);
+    ui.insert(QStringLiteral("panelLayout"), panelLayout);
     object.insert(QStringLiteral("ui"), ui);
 
     QJsonArray files;
@@ -218,9 +287,33 @@ void restoreTabs(
                      QStringLiteral(
                          "verticalScroll"))
                      .toInt(0));
+        tab.horizontalScrollValue =
+            qMax(0,
+                 object.value(
+                     QStringLiteral(
+                         "horizontalScroll"))
+                     .toInt(0));
         tab.active =
             object.value(
                 QStringLiteral("active"))
+                .toBool(false);
+        tab.viewId =
+            object.value(
+                QStringLiteral("viewId"))
+                .toString();
+        tab.groupIndex =
+            qMax(0,
+                 object.value(
+                     QStringLiteral("groupIndex"))
+                     .toInt(0));
+        tab.tabIndex =
+            qMax(0,
+                 object.value(
+                     QStringLiteral("tabIndex"))
+                     .toInt(0));
+        tab.locked =
+            object.value(
+                QStringLiteral("locked"))
                 .toBool(false);
         tabs->append(tab);
     }
@@ -246,6 +339,46 @@ void restoreUi(
                     "mainWindowState"))
                 .toString()
                 .toLatin1());
+    ui->navigationFilesQuery =
+        object.value(
+            QStringLiteral("navigationFilesQuery"))
+            .toString();
+    ui->navigationDesignQuery =
+        object.value(
+            QStringLiteral("navigationDesignQuery"))
+            .toString();
+    ui->tabGroupingMode =
+        object.value(
+            QStringLiteral("tabGroupingMode"))
+            .toString(QStringLiteral("none"));
+    if (object.contains(QStringLiteral("panelLayout"))) {
+        const QJsonObject panelLayout =
+            object.value(QStringLiteral("panelLayout")).toObject();
+        ui->panelLayout.bottomPanelOrder =
+            stringList(
+                panelLayout.value(QStringLiteral("order")).toArray());
+        ui->panelLayout.closedBottomPanels =
+            stringList(
+                panelLayout.value(QStringLiteral("closed")).toArray());
+        ui->panelLayout.pinnedBottomPanels =
+            stringList(
+                panelLayout.value(QStringLiteral("pinned")).toArray());
+        ui->panelLayout.activeBottomPanel =
+            panelLayout.value(QStringLiteral("active")).toString();
+        ui->panelLayout.expandedBottomHeight =
+            qMax(64,
+                 panelLayout.value(
+                     QStringLiteral("expandedHeight"))
+                     .toInt(240));
+        ui->panelLayout.bottomCollapsed =
+            panelLayout.value(QStringLiteral("collapsed")).toBool(false);
+        ui->panelLayout.navigationVisible =
+            panelLayout.value(
+                QStringLiteral("navigationVisible"))
+                .toBool(true);
+        ui->panelLayout.valid =
+            panelLayout.value(QStringLiteral("valid")).toBool(true);
+    }
 }
 
 void restoreScan(

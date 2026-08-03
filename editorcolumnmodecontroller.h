@@ -5,11 +5,11 @@
 
 #include <memory>
 
+class AnnotationLayer;
 class EditorModeController;
 class MyCodeEditor;
 class QKeyEvent;
 class QMouseEvent;
-class QPaintEvent;
 
 struct EditorColumnModeSnapshot
 {
@@ -33,6 +33,7 @@ public:
         const EditorColumnModeController&) = delete;
 
     void bind(EditorModeController* modes,
+              AnnotationLayer* annotations,
               MyCodeEditor* editor);
     void shutdown(MyCodeEditor* editor);
 
@@ -77,8 +78,9 @@ public:
         MyCodeEditor* editor,
         QKeyEvent* event);
 
-    void paint(MyCodeEditor* editor,
-               QPaintEvent* event) const;
+    void publishVisibleAnnotations(MyCodeEditor* editor,
+                                   int firstVisibleLine = -1,
+                                   int lastVisibleLine = -1);
 
 private:
     std::unique_ptr<State> state;

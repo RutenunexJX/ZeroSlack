@@ -17,7 +17,7 @@
 #include <QMouseEvent>
 #include <QTextEdit>
 #include <QImage>
-#include <QToolTip>
+#include <QLabel>
 #include <QWidget>
 #include <cstdio>
 #include <memory>
@@ -25,6 +25,7 @@
 #include "completionmodel.h"
 #include "documentmodel.h"
 #include "definitionservice.h"
+#include "editorhoverpopup.h"
 #include "editorsemanticcontextservice.h"
 #include "projectmodel.h"
 #include "sourcenavigationservice.h"
@@ -982,6 +983,43 @@ int main(int argc, char** argv) {
                diagnosticEditor.diagnosticOverviewLinesForTest()
                    == QList<int>({1, 2}),
                true);
+    AnnotationLayerQuery diagnosticLayerQuery;
+    diagnosticLayerQuery.firstVisibleLine = 0;
+    diagnosticLayerQuery.lastVisibleLine = 3;
+    diagnosticLayerQuery.maxAnnotationsPerLine = 8;
+    diagnosticLayerQuery.maxLanes = 1;
+    const AnnotationLayerReport diagnosticLayerReport =
+        diagnosticEditor.annotationLayerReportForTest(
+            diagnosticLayerQuery);
+    int diagnosticGutterAnnotations = 0;
+    int diagnosticOverviewAnnotations = 0;
+    bool annotationLayerKeepsHighestSeverity = true;
+    for (const ResolvedEditorAnnotation& resolved :
+         diagnosticLayerReport.annotations) {
+        if (resolved.annotation.kind
+            != EditorAnnotationKind::Diagnostic) {
+            continue;
+        }
+        diagnosticGutterAnnotations +=
+            resolved.annotation.placement
+                == EditorAnnotationPlacement::Gutter;
+        diagnosticOverviewAnnotations +=
+            resolved.annotation.placement
+                == EditorAnnotationPlacement::Overview;
+        if (resolved.annotation.range.firstLine == 1) {
+            annotationLayerKeepsHighestSeverity =
+                annotationLayerKeepsHighestSeverity
+                && resolved.annotation.detail
+                       == QString::number(
+                           static_cast<int>(
+                               SemanticDiagnostic::Error));
+        }
+    }
+    expectBool("Diagnostic rendering is sourced from unified annotation layer",
+               diagnosticGutterAnnotations == 2
+                   && diagnosticOverviewAnnotations == 2
+                   && annotationLayerKeepsHighestSeverity,
+               true);
 
     diagnosticEditor.show();
     QCoreApplication::processEvents();
@@ -1006,7 +1044,7 @@ int main(int argc, char** argv) {
         diagnosticEditor.findChild<QWidget*>(
             QStringLiteral("editorLineNumberGutter"));
     bool gutterHasRedIcon = false;
-    bool gutterShowsCompleteTooltip = false;
+    bool gutterShowsCompletePeek = false;
     if (diagnosticGutter) {
         const QImage gutterImage = diagnosticGutter->grab().toImage();
         for (int y = 0; y < gutterImage.height(); ++y) {
@@ -1038,18 +1076,33 @@ int main(int argc, char** argv) {
         QCoreApplication::sendEvent(
             diagnosticGutter, &tooltipMove);
         QCoreApplication::processEvents();
-        gutterShowsCompleteTooltip =
-            QToolTip::text().contains(QStringLiteral("expected ';'"))
-            && QToolTip::text().contains(
+        EditorHoverPopup* diagnosticPeek =
+            diagnosticEditor.findChild<EditorHoverPopup*>(
+                QStringLiteral("editorHoverPopup"));
+        QString peekText;
+        if (diagnosticPeek) {
+            const QList<QLabel*> labels =
+                diagnosticPeek->findChildren<QLabel*>();
+            for (const QLabel* label : labels)
+                peekText += label->text() + QLatin1Char('\n');
+        }
+        gutterShowsCompletePeek =
+            diagnosticPeek
+            && diagnosticPeek->isVisible()
+            && !diagnosticPeek->isWindow()
+            && diagnosticPeek->contentModel().kind
+                   == PeekContentKind::DiagnosticDetail
+            && peekText.contains(QStringLiteral("expected ';'"))
+            && peekText.contains(
                 QStringLiteral("suspicious identifier"))
-            && QToolTip::text().contains(
+            && peekText.contains(
                 QStringLiteral("cross-line diagnostic"));
     }
     expectBool("Diagnostic gutter paints highest severity icon",
                diagnosticGutter && gutterHasRedIcon,
                true);
-    expectBool("Diagnostic gutter hover shows complete tooltip",
-               gutterShowsCompleteTooltip,
+    expectBool("Diagnostic gutter hover shows complete embedded peek",
+               gutterShowsCompletePeek,
                true);
 
     SemanticDiagnostic staleDiagnostic = diagnostic;

@@ -10,7 +10,6 @@
 #include "hierarchyservice.h"
 #include "modulebriefservice.h"
 #include "navigationservice.h"
-#include "referenceservice.h"
 #include "relationshipservice.h"
 #include "searchservice.h"
 #include "semanticdiffservice.h"
@@ -38,7 +37,6 @@ void SemanticRuntimeCoordinator::configureQueryServices(
     DefinitionNavigationService::getInstance()->setSemanticIndex(semanticIndex);
     DiagnosticService::getInstance()->setSemanticIndex(semanticIndex);
     RelationshipService::getInstance()->setSemanticIndex(semanticIndex);
-    ReferenceService::getInstance()->setSemanticIndex(semanticIndex);
     HierarchyService::getInstance()->setSemanticIndex(semanticIndex);
     SearchService::getInstance()->setSemanticIndex(semanticIndex);
     NavigationService::getInstance()->setSemanticIndex(semanticIndex);

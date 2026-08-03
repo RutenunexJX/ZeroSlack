@@ -8,16 +8,23 @@
 
 class NavigationCommandCoordinator;
 class ActivityLogPanelCoordinator;
+class InstancePairConnectionCoordinator;
+class InstancePairConnectionFacade;
+class InstancePairConnectionWorkflow;
+class MultiSignalPropagationPanel;
+class MultiSignalPropagationPlanner;
+class MultiSignalPropagationWorkflow;
 class NavigationManager;
 class ProblemsPanelCoordinator;
-class ReferencesPanelCoordinator;
-class RelationshipsPanelCoordinator;
+class RtlHighRiskEditPanelCoordinator;
 class RtlInsightsPanelCoordinator;
+class ScopedSearchPanelCoordinator;
 class SemanticPanelRefreshCoordinator;
 class SignalKernelGraphPanelCoordinator;
 class TabManager;
 class WavePreviewPanelCoordinator;
 class WorkspaceManager;
+class WorkspaceEditDocumentManager;
 class QMainWindow;
 class QDockWidget;
 
@@ -37,8 +44,21 @@ public:
     SemanticPanelRefreshCoordinator* refreshCoordinator() const;
     ActivityLogPanelCoordinator* activityLogPanelCoordinator() const;
     ProblemsPanelCoordinator* problemsPanelCoordinator() const;
-    ReferencesPanelCoordinator* referencesPanelCoordinator() const;
-    RelationshipsPanelCoordinator* relationshipsPanelCoordinator() const;
+    ScopedSearchPanelCoordinator* scopedSearchPanelCoordinator() const;
+    InstancePairConnectionCoordinator*
+    instancePairConnectionCoordinator() const;
+    InstancePairConnectionWorkflow*
+    instancePairConnectionWorkflow() const;
+    MultiSignalPropagationPanel*
+    multiSignalPropagationPanel() const;
+    MultiSignalPropagationWorkflow*
+    multiSignalPropagationWorkflow() const;
+    RtlHighRiskEditPanelCoordinator*
+    rtlHighRiskEditPanelCoordinator() const;
+    WorkspaceEditDocumentManager*
+    rtlActionDocumentManager() const;
+    QDockWidget* instancePairConnectionDock() const;
+    QDockWidget* multiSignalPropagationDock() const;
     RtlInsightsPanelCoordinator* rtlInsightsPanelCoordinator() const;
     SignalKernelGraphPanelCoordinator* signalKernelGraphPanelCoordinator() const;
     WavePreviewPanelCoordinator* wavePreviewPanelCoordinator() const;
@@ -66,8 +86,25 @@ private:
 
         std::unique_ptr<ProblemsPanelCoordinator> problemsPanel;
         std::unique_ptr<ActivityLogPanelCoordinator> activityLogPanel;
-        std::unique_ptr<ReferencesPanelCoordinator> referencesPanel;
-        std::unique_ptr<RelationshipsPanelCoordinator> relationshipsPanel;
+        std::unique_ptr<ScopedSearchPanelCoordinator> scopedSearchPanel;
+        std::unique_ptr<WorkspaceEditDocumentManager>
+            rtlActionDocuments;
+        std::unique_ptr<RtlHighRiskEditPanelCoordinator>
+            rtlHighRiskEditPanel;
+        std::unique_ptr<InstancePairConnectionFacade>
+            instancePairFacade;
+        std::unique_ptr<InstancePairConnectionCoordinator>
+            instancePairCoordinator;
+        std::unique_ptr<InstancePairConnectionWorkflow>
+            instancePairWorkflow;
+        std::unique_ptr<MultiSignalPropagationPlanner>
+            multiSignalPlanner;
+        std::unique_ptr<MultiSignalPropagationWorkflow>
+            multiSignalWorkflow;
+        QDockWidget* instancePairDock = nullptr;
+        QDockWidget* multiSignalDock = nullptr;
+        MultiSignalPropagationPanel* multiSignalPanel = nullptr;
+        bool rtlActionStatusConnected = false;
         std::unique_ptr<RtlInsightsPanelCoordinator> rtlInsightsPanel;
         std::unique_ptr<SignalKernelGraphPanelCoordinator> signalKernelGraphPanel;
         std::unique_ptr<WavePreviewPanelCoordinator> wavePreviewPanel;

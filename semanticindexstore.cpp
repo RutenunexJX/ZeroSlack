@@ -210,7 +210,9 @@ void SemanticIndex::replaceNativeSymbolRecordsForFile(
         const QList<SemanticSymbolRecord> workspaceRecords =
             m_snapshot->getSymbolRecords(fileName);
         for (const SemanticSymbolRecord& workspaceRecord : workspaceRecords) {
-            if (!workspaceRecord.presentation.instanceInfoByPath.isEmpty()) {
+            if (!workspaceRecord.presentation.instanceInfoByPath.isEmpty()
+                || !workspaceRecord.presentation
+                        .declaredTypeFactsByPath.isEmpty()) {
                 workspacePresentations.insert(
                     presentationIdentity(workspaceRecord),
                     workspaceRecord.presentation);
@@ -289,6 +291,26 @@ void SemanticIndex::replaceNativeSymbolRecordsForFile(
                         "Workspace elaboration for this exact instance is unavailable because the source document changed after the last workspace elaboration.");
                     record.presentation.instanceInfoByPath.insert(it.key(),
                                                                   stale);
+                }
+            }
+            for (auto it = workspacePresentation
+                               ->declaredTypeFactsByPath.constBegin();
+                 it != workspacePresentation
+                           ->declaredTypeFactsByPath.constEnd();
+                 ++it) {
+                if (record.presentation.declaredTypeFactsByPath
+                        .contains(it.key())) {
+                    continue;
+                }
+                if (workspaceContentUnchanged) {
+                    record.presentation.declaredTypeFactsByPath.insert(
+                        it.key(), it.value());
+                } else {
+                    SemanticDeclaredTypeFacts stale;
+                    stale.failureReason = QStringLiteral(
+                        "Workspace declared-type facts for this exact instance are unavailable because the source document changed after the last workspace elaboration.");
+                    record.presentation.declaredTypeFactsByPath.insert(
+                        it.key(), stale);
                 }
             }
         }

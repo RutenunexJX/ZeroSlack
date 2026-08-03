@@ -23,12 +23,15 @@ int main()
     const QList<EditorModeDescriptor>& descriptors =
         editorModeDescriptors();
     const QList<EditorModeId> expectedModes = {
+        EditorModeId::CommandMode,
         EditorModeId::InlineCandidates,
         EditorModeId::CompletionCandidates,
         EditorModeId::TemplateSlots,
         EditorModeId::SignalSelection,
         EditorModeId::ColumnSelection,
         EditorModeId::VirtualCursor,
+        EditorModeId::MultiCursor,
+        EditorModeId::KeywordGhost,
         EditorModeId::FoldRegion,
         EditorModeId::FoldShelf,
         EditorModeId::SourceNavigation,
@@ -54,23 +57,29 @@ int main()
            completeDescriptors);
 
     EditorModeController controller;
-    bool symmetricExclusiveMatrix = true;
+    bool symmetricExplicitMatrix = true;
     for (const EditorModeId left : expectedModes) {
-        symmetricExclusiveMatrix =
-            symmetricExclusiveMatrix
+        symmetricExplicitMatrix =
+            symmetricExplicitMatrix
             && controller.canCoexist(left, left);
         for (const EditorModeId right : expectedModes) {
             if (left == right)
                 continue;
-            symmetricExclusiveMatrix =
-                symmetricExclusiveMatrix
-                && !controller.canCoexist(left, right)
+            const bool expectedCoexistence =
+                (left == EditorModeId::MultiCursor
+                 && right == EditorModeId::VirtualCursor)
+                || (left == EditorModeId::VirtualCursor
+                    && right == EditorModeId::MultiCursor);
+            symmetricExplicitMatrix =
+                symmetricExplicitMatrix
+                && controller.canCoexist(left, right)
+                       == expectedCoexistence
                 && controller.canCoexist(left, right)
                        == controller.canCoexist(right, left);
         }
     }
     expect("coexistence matrix is symmetric and explicit",
-           symmetricExclusiveMatrix);
+           symmetricExplicitMatrix);
 
     QList<EditorModeId> exitedModes;
     QList<EditorModeExitReason> exitReasons;
@@ -126,6 +135,12 @@ int main()
         findEditorModeDescriptor(EditorModeId::TemplateSlots);
     const EditorModeDescriptor* signalDescriptor =
         findEditorModeDescriptor(EditorModeId::SignalSelection);
+    const EditorModeDescriptor* commandDescriptor =
+        findEditorModeDescriptor(EditorModeId::CommandMode);
+    const EditorModeDescriptor* keywordDescriptor =
+        findEditorModeDescriptor(EditorModeId::KeywordGhost);
+    const EditorModeDescriptor* multiCursorDescriptor =
+        findEditorModeDescriptor(EditorModeId::MultiCursor);
     expect("input ownership is declared instead of event-order implicit",
            inlineDescriptor
                && inlineDescriptor->inputs.testFlag(
@@ -143,7 +158,46 @@ int main()
                       EditorModeInput::Backtab)
                && signalDescriptor
                && signalDescriptor->inputs.testFlag(
-                      EditorModeInput::ContextMenu));
+                      EditorModeInput::ContextMenu)
+               && commandDescriptor
+               && commandDescriptor->inputs.testFlag(
+                      EditorModeInput::Modifier)
+               && commandDescriptor->inputs.testFlag(
+                      EditorModeInput::Navigation)
+               && keywordDescriptor
+               && keywordDescriptor->inputs.testFlag(
+                      EditorModeInput::Tab)
+               && !keywordDescriptor->inputs.testFlag(
+                      EditorModeInput::Backtab)
+               && multiCursorDescriptor
+               && multiCursorDescriptor->inputs.testFlag(
+                      EditorModeInput::Clipboard)
+               && multiCursorDescriptor->inputs.testFlag(
+                      EditorModeInput::Mouse));
+
+    EditorModeController coexistenceController;
+    coexistenceController.enter(EditorModeId::VirtualCursor,
+                                EditorModeEntryReason::MouseGesture);
+    coexistenceController.enter(EditorModeId::MultiCursor,
+                                EditorModeEntryReason::KeyboardGesture);
+    expect("multi-cursor and per-caret virtual columns coexist",
+           coexistenceController.isActive(EditorModeId::VirtualCursor)
+               && coexistenceController.isActive(
+                      EditorModeId::MultiCursor)
+               && coexistenceController.highestPriorityForInput(
+                      EditorModeInput::Text)
+                      == EditorModeId::MultiCursor
+               && coexistenceController.escapeTarget()
+                      == EditorModeId::MultiCursor);
+    coexistenceController.enter(EditorModeId::ColumnSelection,
+                                EditorModeEntryReason::MouseGesture);
+    expect("rectangular selection replaces independent multi-cursor state",
+           coexistenceController.isActive(
+               EditorModeId::ColumnSelection)
+               && !coexistenceController.isActive(
+                      EditorModeId::MultiCursor)
+               && !coexistenceController.isActive(
+                      EditorModeId::VirtualCursor));
 
     controller.enter(EditorModeId::TemplateSlots,
                      EditorModeEntryReason::TemplateInserted);

@@ -2,6 +2,7 @@
 #define RTLINSIGHTSGRAPHCONTROLLER_H
 
 #include "moduleblockdiagramservice.h"
+#include "rtlinsightlink.h"
 
 #include <QPointF>
 #include <QRectF>
@@ -36,6 +37,7 @@ public:
         const QString& secondaryText = QString()) const;
     QRectF lastFitRectForTest() const;
     int selectedItemCountForTest() const;
+    QStringList selectedElementSummariesForTest() const;
     QStringList inspectorRowsForTest() const;
     QStringList tableRowsForTest() const;
     bool itemsReadableForTest() const;
@@ -79,6 +81,9 @@ public:
     bool navigateItem(QGraphicsItem* item);
     bool navigateSelectedItem();
     bool setModuleBlockTopFromSelected();
+    bool selectSourceLocation(
+        const RtlInsightSourceLocation& location,
+        bool centerGraph = true);
     void showTreeSurface();
     void showGraphSurface();
     void showHotspotSurface();
@@ -104,6 +109,7 @@ public:
     void setFocusSearchText(const QString& text);
     QString focusSearchText() const;
     void focusInspector();
+    quint64 graphBuildGeneration() const;
 
 private:
     RtlInsightsPanelViewState& state;

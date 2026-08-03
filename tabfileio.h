@@ -22,7 +22,8 @@ public:
     bool writeTextFile(
         QWidget* parent,
         const QString& fileName,
-        const QString& text) const;
+        const QString& text,
+        QString* failureReason = nullptr) const;
 };
 
 #endif // TABFILEIO_H

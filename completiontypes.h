@@ -55,6 +55,10 @@ struct CodeTemplateSlot {
     QString name;
     int start = -1;
     int length = 0;
+    // Equal non-negative values form one linked logical slot; -1 is legacy.
+    int tabStop = -1;
+    // Requests a rendered/navigation marker when length is zero.
+    bool visibleWhenEmpty = false;
 };
 
 using CodeTemplateSlotList = QList<CodeTemplateSlot>;

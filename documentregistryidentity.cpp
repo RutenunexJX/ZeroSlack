@@ -19,6 +19,11 @@ QString DocumentSnapshotReader::documentIdForEditor(MyCodeEditor* editor) const
     if (!editor)
         return QString();
 
+    const QString sharedDocumentId =
+        editor->property("sharedDocumentId").toString();
+    if (!sharedDocumentId.isEmpty())
+        return sharedDocumentId;
+
     const QString fileName = normalizedFileName(editor->documentFileName());
     if (!fileName.isEmpty())
         return fileName;

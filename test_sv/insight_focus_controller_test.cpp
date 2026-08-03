@@ -1,3 +1,5 @@
+#include "actionregistry.h"
+#include "graphexportui.h"
 #include "insightfocuscontroller.h"
 
 #include <QApplication>
@@ -38,6 +40,7 @@ QWidget* makePanel(const QString& objectName)
 int main(int argc, char* argv[])
 {
     QApplication app(argc, argv);
+    resetApplicationActionExecutionHistory();
 
     QMainWindow window;
     auto* stack = new QStackedWidget(&window);
@@ -49,7 +52,20 @@ int main(int argc, char* argv[])
 
     InsightFocusController controller(stack, editorPage, &window);
 
+    QDockWidget navigationDock(
+        QStringLiteral("Navigation"),
+        &window);
+    navigationDock.setObjectName(
+        QStringLiteral("focusTestNavigationDock"));
+    navigationDock.setWidget(
+        makePanel(QStringLiteral("navigationPanel")));
+    window.addDockWidget(
+        Qt::LeftDockWidgetArea,
+        &navigationDock);
+
     QDockWidget firstDock(QStringLiteral("RTL Insights"), &window);
+    firstDock.setObjectName(
+        QStringLiteral("focusTestRtlDock"));
     QWidget* firstPanel = makePanel(QStringLiteral("firstInsightPanel"));
     firstDock.setWidget(firstPanel);
     window.addDockWidget(Qt::BottomDockWidgetArea, &firstDock);
@@ -79,9 +95,12 @@ int main(int argc, char* argv[])
           "panel receives an explicit Focus View entry button");
 
     QDockWidget secondDock(QStringLiteral("Wave Preview"), &window);
+    secondDock.setObjectName(
+        QStringLiteral("focusTestWaveDock"));
     QWidget* secondPanel = makePanel(QStringLiteral("secondInsightPanel"));
     secondDock.setWidget(secondPanel);
     window.addDockWidget(Qt::BottomDockWidgetArea, &secondDock);
+    window.tabifyDockWidget(&firstDock, &secondDock);
     InsightFocusPanelRegistration second;
     second.id = QStringLiteral("wavePreview");
     second.title = QStringLiteral("Wave Preview");
@@ -99,7 +118,21 @@ int main(int argc, char* argv[])
     QApplication::processEvents();
     firstDock.show();
     secondDock.show();
+    navigationDock.show();
+    firstDock.raise();
+    firstPanel->setMinimumHeight(0);
+    firstPanel->setMaximumHeight(0);
+    secondPanel->setMinimumHeight(0);
+    secondPanel->setMaximumHeight(0);
     QApplication::processEvents();
+    const QByteArray dockStateBeforeFocus =
+        window.saveState();
+    const bool firstVisibleBeforeFocus =
+        firstDock.isVisible();
+    const bool secondVisibleBeforeFocus =
+        secondDock.isVisible();
+    const bool navigationVisibleBeforeFocus =
+        navigationDock.isVisible();
 
     check(controller.enter(QStringLiteral("rtlInsights")),
           "Focus View enters registered panel");
@@ -117,9 +150,20 @@ int main(int argc, char* argv[])
           "Focus View hides surrounding docks to preserve central geometry");
     check(stack->currentWidget() == controller.focusPage(),
           "central stack shows Focus View");
+    QLabel* focusTitle =
+        controller.focusPage()->findChild<QLabel*>(
+            QStringLiteral("insightFocusTitle"));
+    check(focusTitle
+              && focusTitle->text()
+                     == QStringLiteral(
+                         "RTL Insights \u2014 Focus View"),
+          "Focus View title uses a stable readable separator");
     check(firstPanel->width() >= 640
               && firstPanel->height() >= 360,
           "focused panel has readable typical-desktop geometry");
+    check(firstPanel->maximumHeight()
+              == QWIDGETSIZE_MAX,
+          "Focus View temporarily overrides a collapsed panel constraint");
 
     QPushButton* fit =
         controller.focusPage()->findChild<QPushButton*>(
@@ -138,6 +182,30 @@ int main(int argc, char* argv[])
             QStringLiteral("insightFocusSearchEdit"));
     check(fit && zoomIn && zoomOut && inspector && search,
           "Focus View exposes Fit, zoom, search, and Inspector controls");
+    check(fit
+              && zoomIn
+              && zoomOut
+              && fit->text() == QStringLiteral("Fit")
+              && zoomIn->text()
+                     == QStringLiteral("Zoom In")
+              && zoomOut->text()
+                     == QStringLiteral("Zoom Out")
+              && fit->property(
+                     GraphExportUi::kActionIdProperty)
+                     .toString()
+                     == QString::fromLatin1(
+                         ActionIds::GraphViewFit)
+              && zoomIn->property(
+                     GraphExportUi::kExecutionRouteProperty)
+                     .toString()
+                     == QStringLiteral(
+                         "insight.graphView.zoomIn")
+              && zoomOut->property(
+                     GraphExportUi::kActionIdProperty)
+                     .toString()
+                     == QString::fromLatin1(
+                         ActionIds::GraphViewZoomOut),
+          "Focus graph controls materialize Registry labels and routes");
     if (fit)
         fit->click();
     if (zoomIn)
@@ -153,6 +221,9 @@ int main(int argc, char* argv[])
               && zoomOutCount == 1
               && inspectorCount == 1,
           "Focus View controls route to the registered single-state panel");
+    check(!applicationActionExecutionHistory()
+               .hasRepeatableAction(),
+          "contextual Focus graph Actions preserve repeat history");
     check(searchText == QStringLiteral("state_q"),
           "Focus View search updates the panel search state");
 
@@ -162,8 +233,17 @@ int main(int argc, char* argv[])
           "Back returns to the editor page");
     check(firstDock.widget() == firstPanel,
           "Back restores the exact widget to its dock");
-    check(secondDock.isVisible(),
-          "Back restores surrounding Dock visibility");
+    check(firstDock.isVisible()
+                  == firstVisibleBeforeFocus
+              && secondDock.isVisible()
+                     == secondVisibleBeforeFocus
+              && navigationDock.isVisible()
+                     == navigationVisibleBeforeFocus
+              && window.saveState()
+                     == dockStateBeforeFocus,
+          "Back restores exact Dock visibility, tab order, and sizes");
+    check(firstPanel->maximumHeight() == 0,
+          "Back restores the original collapsed panel constraint");
     check(retainedZoom == 100
               && searchText == QStringLiteral("state_q"),
           "returning to the editor preserves panel zoom and search state");
@@ -184,7 +264,10 @@ int main(int argc, char* argv[])
     QApplication::processEvents();
     check(firstDock.widget() == firstPanel
               && controller.focusedPanelWidget() == secondPanel
-              && secondDock.widget() == nullptr,
+              && secondDock.widget() == nullptr
+              && firstPanel->maximumHeight() == 0
+              && secondPanel->maximumHeight()
+                     == QWIDGETSIZE_MAX,
           "switching panels restores the first and reparents only the second");
 
     controller.returnToDock();
@@ -192,8 +275,28 @@ int main(int argc, char* argv[])
     check(stack->currentWidget() == editorPage
               && secondDock.widget() == secondPanel
               && secondDock.isVisible()
-              && !firstDock.isVisible(),
+              && secondPanel->maximumHeight() == 0
+              && navigationDock.isVisible()
+                     == navigationVisibleBeforeFocus,
           "Return to Dock restores the same widget and reveals the dock");
+
+    auto* transientDock = new QDockWidget(
+        QStringLiteral("Transient Insight"), &window);
+    transientDock->setObjectName(
+        QStringLiteral("focusTestTransientDock"));
+    transientDock->setWidget(
+        makePanel(QStringLiteral("transientInsightPanel")));
+    window.addDockWidget(Qt::BottomDockWidgetArea, transientDock);
+    InsightFocusPanelRegistration transient;
+    transient.id = QStringLiteral("transientInsight");
+    transient.title = QStringLiteral("Transient Insight");
+    transient.dock = transientDock;
+    check(controller.registerPanel(transient),
+          "transient panel registration succeeds");
+    delete transientDock;
+    QApplication::processEvents();
+    check(!controller.enter(QStringLiteral("transientInsight")),
+          "destroyed dock is rejected without dereferencing stale state");
 
     std::cout << (checks - failures) << "/" << checks
               << " Insight Focus controller checks passed\n";

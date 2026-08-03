@@ -2,13 +2,13 @@
 
 #include "mycodeeditor.h"
 
-#include "definitionservice.h"
-#include "effectivevalueservice.h"
+#include "actionregistry.h"
 #include "editorcontextmenumodel.h"
+#include "editorhoverpopup.h"
+#include "formattercursoranchor.h"
 #include "rtlbatcheditservice.h"
 
 #include <QApplication>
-#include <QAbstractButton>
 #include <QClipboard>
 #include <QContextMenuEvent>
 #include <QDragEnterEvent>
@@ -16,14 +16,11 @@
 #include <QDropEvent>
 #include <QElapsedTimer>
 #include <QFontMetrics>
-#include <QFutureWatcher>
-#include <QInputDialog>
 #include <QHash>
 #include <QKeyEvent>
 #include <QKeySequence>
 #include <QLineEdit>
 #include <QMenu>
-#include <QMessageBox>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPaintEvent>
@@ -34,17 +31,16 @@
 #include <QPushButton>
 #include <QRect>
 #include <QScrollBar>
-#include <QShortcut>
 #include <QTextBlock>
 #include <QTextCharFormat>
 #include <QTextCursor>
 #include <QTextDocument>
 #include <QTextEdit>
 #include <QTextLayout>
-#include <QToolTip>
 #include <QStringList>
-#include <QtConcurrent/QtConcurrentRun>
 
+#include <algorithm>
+#include <cstdio>
 #include <utility>
 
 #include "formatterservice.h"
@@ -52,22 +48,167 @@
 
 namespace {
 constexpr int kManualIndentWidth = 4;
+constexpr int kDiagnosticOverviewBucketCount = 1024;
 constexpr const char* kDiagnosticsEmptyProperty =
     "zeroslackDiagnosticsSelectionsEmpty";
 constexpr const char* kSemanticDecorationsEmptyProperty =
     "zeroslackSemanticDecorationsEmpty";
 
-int diagnosticSeverityRank(SemanticDiagnostic::Severity severity)
+int lifecycleDiagnosticRankFromEnvironment()
 {
-    switch (severity) {
-    case SemanticDiagnostic::Error:
-        return 2;
-    case SemanticDiagnostic::Warning:
-        return 1;
-    case SemanticDiagnostic::Info:
-    default:
-        return 0;
+    const QString profile = qEnvironmentVariable(
+        "ZEROSLACK_EDITOR_LIFECYCLE_PROFILE");
+    static const QStringList profiles = {
+        QStringLiteral("bare"),
+        QStringLiteral("semantic"),
+        QStringLiteral("syntax-state"),
+        QStringLiteral("gutter-core"),
+        QStringLiteral("modes"),
+        QStringLiteral("connections"),
+        QStringLiteral("appearance"),
+        QStringLiteral("highlighter"),
+        QStringLiteral("workflow"),
+        QStringLiteral("completion"),
+        QStringLiteral("current-line"),
+        QStringLiteral("folding"),
+        QStringLiteral("derived-state"),
+        QStringLiteral("full")
+    };
+    return profiles.indexOf(profile);
+}
+
+int changeDiagnosticRankFromEnvironment()
+{
+    const QString profile = qEnvironmentVariable(
+        "ZEROSLACK_EDITOR_CHANGE_PROFILE");
+    static const QStringList profiles = {
+        QStringLiteral("prepare"),
+        QStringLiteral("syntax"),
+        QStringLiteral("folding"),
+        QStringLiteral("decorations"),
+        QStringLiteral("occurrences"),
+        QStringLiteral("presentation"),
+        QStringLiteral("full")
+    };
+    return profiles.indexOf(profile);
+}
+
+void lifecycleTrace(const char* marker)
+{
+    if (!qEnvironmentVariableIsSet(
+            "ZEROSLACK_EDITOR_LIFECYCLE_TRACE")) {
+        return;
     }
+    std::fprintf(stderr, "lifecycle.%s\n", marker);
+    std::fflush(stderr);
+}
+
+QString declareSignalClassText(
+    DeclareSignalProposalClass classification)
+{
+    switch (classification) {
+    case DeclareSignalProposalClass::Exact:
+        return QStringLiteral("Exact");
+    case DeclareSignalProposalClass::Inferred:
+        return QStringLiteral("Inferred");
+    case DeclareSignalProposalClass::Uncertain:
+        return QStringLiteral("Uncertain");
+    case DeclareSignalProposalClass::Conflict:
+        return QStringLiteral("Conflict");
+    }
+    return QStringLiteral("Uncertain");
+}
+
+QString declareSignalCandidateKindText(
+    const DeclareSignalCandidate& candidate)
+{
+    const QString scope =
+        candidate.scopeKind
+                == DeclareSignalScopeKind::BlockLocal
+            ? QStringLiteral("block-local")
+            : QStringLiteral("module");
+    const QString object =
+        candidate.objectKind
+                == DeclareSignalObjectKind::Net
+            ? QStringLiteral("net")
+            : QStringLiteral("variable");
+    return QStringLiteral("%1 %2").arg(scope, object);
+}
+
+QString firstDeclareSignalIssue(
+    const DeclareSignalFactCollectionResult& facts,
+    const DeclareSignalProposal& proposal)
+{
+    for (const DeclareSignalFactCollectionIssue& issue :
+         facts.issues) {
+        if (!issue.message.isEmpty())
+            return issue.message;
+    }
+    for (const DeclareSignalIssue& issue : proposal.issues) {
+        if (!issue.message.isEmpty())
+            return issue.message;
+    }
+    return QString();
+}
+
+bool sameSemanticSnapshotToken(
+    const SemanticSnapshotToken& left,
+    const SemanticSnapshotToken& right)
+{
+    return left.isValid()
+        && right.isValid()
+        && left.revision == right.revision
+        && left.snapshot == right.snapshot;
+}
+
+class InsertionPositionMapper final
+    : public FormatterPositionMapper
+{
+public:
+    InsertionPositionMapper(int insertionPosition,
+                            int insertedLength)
+        : insertionPosition(qMax(0, insertionPosition))
+        , insertedLength(qMax(0, insertedLength))
+    {
+    }
+
+    FormatterLogicalPosition capturePosition(
+        int oldPosition,
+        FormatterPositionAffinity affinity) const override
+    {
+        FormatterLogicalPosition result;
+        result.absoluteFallback = qMax(0, oldPosition);
+        result.affinity = affinity;
+        return result;
+    }
+
+    int restorePosition(
+        const FormatterLogicalPosition& position,
+        int newDocumentLength) const override
+    {
+        if (position.absoluteFallback < 0)
+            return -1;
+        const int mapped =
+            position.absoluteFallback >= insertionPosition
+            ? position.absoluteFallback + insertedLength
+            : position.absoluteFallback;
+        return qBound(0, mapped, qMax(0, newDocumentLength));
+    }
+
+private:
+    int insertionPosition = 0;
+    int insertedLength = 0;
+};
+
+bool hasDeclareSignalIssue(
+    const DeclareSignalProposal& proposal,
+    DeclareSignalIssueCode code)
+{
+    for (const DeclareSignalIssue& issue : proposal.issues) {
+        if (issue.code == code)
+            return true;
+    }
+    return false;
 }
 
 QColor diagnosticSeverityColor(SemanticDiagnostic::Severity severity)
@@ -77,17 +218,17 @@ QColor diagnosticSeverityColor(SemanticDiagnostic::Severity severity)
         : QColor(QStringLiteral("#FBBF24"));
 }
 
-QString diagnosticSeverityLabel(SemanticDiagnostic::Severity severity)
+SemanticDiagnostic::Severity annotationDiagnosticSeverity(
+    const EditorAnnotation& annotation)
 {
-    switch (severity) {
-    case SemanticDiagnostic::Error:
-        return QStringLiteral("Error");
-    case SemanticDiagnostic::Warning:
-        return QStringLiteral("Warning");
-    case SemanticDiagnostic::Info:
-    default:
-        return QStringLiteral("Info");
+    bool valid = false;
+    const int value = annotation.detail.toInt(&valid);
+    if (!valid
+        || value < static_cast<int>(SemanticDiagnostic::Info)
+        || value > static_cast<int>(SemanticDiagnostic::Error)) {
+        return SemanticDiagnostic::Info;
     }
+    return static_cast<SemanticDiagnostic::Severity>(value);
 }
 
 QString insertedDocumentText(QTextDocument* document,
@@ -120,7 +261,7 @@ QString wavePreviewScopeKey(const MyCodeEditorState& state,
                             const MyCodeEditor* editor)
 {
     const EditorAlwaysScopeTarget always =
-        state.currentAlwaysScopeTarget(editor, false);
+        state.currentAlwaysScopeTarget(editor);
     if (always.ok()) {
         return QStringLiteral("always:%1:%2:%3")
             .arg(always.startPosition)
@@ -128,7 +269,7 @@ QString wavePreviewScopeKey(const MyCodeEditorState& state,
             .arg(always.label);
     }
     const EditorModuleScopeTarget module =
-        state.currentModuleScopeTarget(editor, false);
+        state.currentModuleScopeTarget(editor);
     if (module.ok()) {
         return QStringLiteral("module:%1:%2:%3")
             .arg(module.startPosition)
@@ -213,152 +354,6 @@ TextSpan symbolSpanAt(const QString& text, int position)
     return {start, end};
 }
 
-TextSpan identifierSpanEndingAt(const QString& text, int end)
-{
-    int pos = end - 1;
-    if (pos < 0 || pos >= text.size() || !isSmartIdentifierPart(text.at(pos)))
-        return {};
-
-    int start = pos;
-    while (start > 0 && isSmartIdentifierPart(text.at(start - 1)))
-        --start;
-    if (!isSmartIdentifierStart(text.at(start)))
-        return {};
-    return {start, end};
-}
-
-TextSpan identifierSpanStartingAt(const QString& text, int start)
-{
-    if (start < 0 || start >= text.size()
-        || !isSmartIdentifierStart(text.at(start))) {
-        return {};
-    }
-
-    int end = start + 1;
-    while (end < text.size() && isSmartIdentifierPart(text.at(end)))
-        ++end;
-    return {start, end};
-}
-
-TextSpan hierarchicalExpressionSpan(const QString& text, TextSpan span)
-{
-    if (!span.isValid())
-        return {};
-
-    TextSpan result = span;
-    while (result.start >= 2 && text.at(result.start - 1) == QLatin1Char('.')) {
-        const TextSpan previous =
-            identifierSpanEndingAt(text, result.start - 1);
-        if (!previous.isValid())
-            break;
-        result.start = previous.start;
-    }
-    while (result.end + 1 < text.size()
-           && text.at(result.end) == QLatin1Char('.')) {
-        const TextSpan next =
-            identifierSpanStartingAt(text, result.end + 1);
-        if (!next.isValid())
-            break;
-        result.end = next.end;
-    }
-
-    return result == span ? TextSpan{} : result;
-}
-
-TextSpan parenthesizedContentSpan(const QString& text, TextSpan currentSpan)
-{
-    if (text.isEmpty())
-        return {};
-
-    const int targetStart = currentSpan.isValid()
-        ? currentSpan.start
-        : qBound(0, currentSpan.start, text.size());
-    const int targetEnd = currentSpan.isValid()
-        ? currentSpan.end
-        : targetStart;
-
-    QList<TextSpan> stack;
-    TextSpan best;
-    for (int i = 0; i < text.size(); ++i) {
-        const QChar ch = text.at(i);
-        if (ch == QLatin1Char('(')) {
-            stack.append({i, i + 1});
-            continue;
-        }
-        if (ch != QLatin1Char(')') || stack.isEmpty())
-            continue;
-
-        const TextSpan opening = stack.takeLast();
-        const TextSpan content{opening.start + 1, i};
-        if (!content.isValid())
-            continue;
-        if (content.start > targetStart || content.end < targetEnd)
-            continue;
-        if (currentSpan.isValid() && content == currentSpan)
-            continue;
-        if (!best.isValid() || content.length() < best.length())
-            best = content;
-    }
-    return best;
-}
-
-void selectTextSpan(MyCodeEditor* editor, TextSpan span)
-{
-    if (!editor || !span.isValid())
-        return;
-
-    QTextCursor cursor = editor->textCursor();
-    cursor.setPosition(span.start);
-    cursor.setPosition(span.end, QTextCursor::KeepAnchor);
-    editor->setTextCursor(cursor);
-}
-
-bool handleSmartSelectionExpansion(MyCodeEditor* editor, QKeyEvent* event)
-{
-    if (!editor || !event
-        || event->key() != Qt::Key_W
-        || !event->modifiers().testFlag(Qt::ControlModifier)
-        || event->modifiers().testFlag(Qt::AltModifier)
-        || event->modifiers().testFlag(Qt::MetaModifier)) {
-        return false;
-    }
-
-    const QString text = editor->toPlainText();
-    QTextCursor cursor = editor->textCursor();
-    const TextSpan current = cursor.hasSelection()
-        ? TextSpan{cursor.selectionStart(), cursor.selectionEnd()}
-        : TextSpan{cursor.position(), cursor.position()};
-
-    if (!cursor.hasSelection()) {
-        const TextSpan symbol = symbolSpanAt(text, cursor.position());
-        if (symbol.isValid()) {
-            selectTextSpan(editor, symbol);
-            event->accept();
-            return true;
-        }
-    } else {
-        const TextSpan symbol = symbolSpanAt(text, current.start);
-        const TextSpan hierarchy =
-            symbol.isValid() && current == symbol
-                ? hierarchicalExpressionSpan(text, symbol)
-                : hierarchicalExpressionSpan(text, current);
-        if (hierarchy.isValid() && hierarchy.contains(current)) {
-            selectTextSpan(editor, hierarchy);
-            event->accept();
-            return true;
-        }
-    }
-
-    const TextSpan parenthesized = parenthesizedContentSpan(text, current);
-    if (parenthesized.isValid()) {
-        selectTextSpan(editor, parenthesized);
-        event->accept();
-        return true;
-    }
-
-    return false;
-}
-
 bool isStandaloneIdentifierText(const QString& text)
 {
     if (text.isEmpty() || !isSmartIdentifierStart(text.at(0)))
@@ -370,190 +365,16 @@ bool isStandaloneIdentifierText(const QString& text)
     return true;
 }
 
-QList<TextSpan> identifierOccurrences(const QString& text,
-                                      const QString& symbol)
-{
-    QList<TextSpan> occurrences;
-    if (!isStandaloneIdentifierText(symbol))
-        return occurrences;
-
-    int pos = 0;
-    while (pos >= 0 && pos < text.size()) {
-        pos = text.indexOf(symbol, pos, Qt::CaseSensitive);
-        if (pos < 0)
-            break;
-
-        const int end = pos + symbol.size();
-        const bool leftOk = pos == 0 || !isSmartIdentifierPart(text.at(pos - 1));
-        const bool rightOk =
-            end >= text.size() || !isSmartIdentifierPart(text.at(end));
-        if (leftOk && rightOk)
-            occurrences.append({pos, end});
-        pos = end;
-    }
-    return occurrences;
-}
-
-bool handleSelectedSymbolOccurrenceNavigation(MyCodeEditor* editor,
-                                              QKeyEvent* event)
-{
-    if (!editor || !event
-        || !event->modifiers().testFlag(Qt::ControlModifier)
-        || event->modifiers().testFlag(Qt::AltModifier)
-        || event->modifiers().testFlag(Qt::MetaModifier)) {
-        return false;
-    }
-
-    const bool next = event->key() == Qt::Key_E;
-    const bool previous = event->key() == Qt::Key_Q;
-    if (!next && !previous)
-        return false;
-
-    QTextCursor cursor = editor->textCursor();
-    if (!cursor.hasSelection())
-        return false;
-
-    const QString symbol = cursor.selectedText();
-    if (!isStandaloneIdentifierText(symbol))
-        return false;
-
-    const QList<TextSpan> occurrences =
-        identifierOccurrences(editor->toPlainText(), symbol);
-    if (occurrences.isEmpty())
-        return false;
-
-    const int currentStart = cursor.selectionStart();
-    TextSpan target = occurrences.constFirst();
-    if (next) {
-        for (const TextSpan& occurrence : occurrences) {
-            if (occurrence.start > currentStart) {
-                target = occurrence;
-                break;
-            }
-        }
-    } else {
-        target = occurrences.constLast();
-        for (int i = occurrences.size() - 1; i >= 0; --i) {
-            if (occurrences.at(i).start < currentStart) {
-                target = occurrences.at(i);
-                break;
-            }
-        }
-    }
-
-    selectTextSpan(editor, target);
-    editor->centerCursor();
-    event->accept();
-    return true;
-}
-
-bool replaceIdentifierOccurrences(MyCodeEditor* editor,
-                                  const QString& oldName,
-                                  const QString& newName)
-{
-    if (!editor || oldName == newName)
-        return false;
-
-    const QList<TextSpan> occurrences =
-        identifierOccurrences(editor->toPlainText(), oldName);
-    if (occurrences.isEmpty())
-        return false;
-
-    QTextCursor cursor(editor->document());
-    cursor.beginEditBlock();
-    for (int i = occurrences.size() - 1; i >= 0; --i) {
-        const TextSpan span = occurrences.at(i);
-        cursor.setPosition(span.start);
-        cursor.setPosition(span.end, QTextCursor::KeepAnchor);
-        cursor.insertText(newName);
-    }
-    cursor.endEditBlock();
-    return true;
-}
-
-void selectFirstIdentifierOccurrence(MyCodeEditor* editor,
-                                     const QString& name)
-{
-    if (!editor)
-        return;
-    const QList<TextSpan> occurrences =
-        identifierOccurrences(editor->toPlainText(), name);
-    if (!occurrences.isEmpty())
-        selectTextSpan(editor, occurrences.constFirst());
-}
-
-bool promptForRenameName(MyCodeEditor* editor,
-                         const QString& title,
-                         const QString& label,
-                         const QString& currentName,
-                         QString* outName)
-{
-    if (outName)
-        outName->clear();
-
-    bool accepted = false;
-    const QString newName = QInputDialog::getText(
-        editor,
-        title,
-        label,
-        QLineEdit::Normal,
-        currentName,
-        &accepted).trimmed();
-    if (!accepted)
-        return false;
-
-    if (!isStandaloneIdentifierText(newName)) {
-        QMessageBox::warning(
-            editor,
-            title,
-            QStringLiteral("Enter a valid SystemVerilog identifier."));
-        return false;
-    }
-
-    if (outName)
-        *outName = newName;
-    return true;
-}
-
-enum class RenameConflictChoice {
-    Cancel,
-    Force,
-    RenameConflictFirst
-};
-
-RenameConflictChoice promptRenameConflictChoice(MyCodeEditor* editor,
-                                                const QString& newName)
-{
-    QMessageBox box(editor);
-    box.setWindowTitle(QStringLiteral("Rename Symbol"));
-    box.setIcon(QMessageBox::Warning);
-    box.setText(
-        QStringLiteral("The name \"%1\" already exists in this file.")
-            .arg(newName));
-    QAbstractButton* forceButton =
-        box.addButton(QStringLiteral("Force rename"),
-                      QMessageBox::AcceptRole);
-    QAbstractButton* renameConflictButton =
-        box.addButton(QStringLiteral("Rename conflicting definition first"),
-                      QMessageBox::ActionRole);
-    box.addButton(QMessageBox::Cancel);
-    box.exec();
-
-    if (box.clickedButton() == forceButton)
-        return RenameConflictChoice::Force;
-    if (box.clickedButton() == renameConflictButton)
-        return RenameConflictChoice::RenameConflictFirst;
-    return RenameConflictChoice::Cancel;
-}
+bool matchesRegisteredShortcut(
+    const QKeyEvent* event,
+    const QString& actionId);
 
 bool handleSafeRename(MyCodeEditor* editor, QKeyEvent* event)
 {
     if (!editor || !event
-        || event->key() != Qt::Key_R
-        || !event->modifiers().testFlag(Qt::ControlModifier)
-        || event->modifiers().testFlag(Qt::ShiftModifier)
-        || event->modifiers().testFlag(Qt::AltModifier)
-        || event->modifiers().testFlag(Qt::MetaModifier)) {
+        || !matchesRegisteredShortcut(
+            event,
+            QString::fromLatin1(ActionIds::RtlRename))) {
         return false;
     }
 
@@ -574,61 +395,8 @@ bool handleSafeRename(MyCodeEditor* editor, QKeyEvent* event)
         oldName,
         editor->editorSemanticContextForPosition(symbolSpan.start, true),
         &handledByCoordinator);
-    if (handledByCoordinator) {
-        event->accept();
-        return true;
-    }
-
-    QString newName;
-    if (!promptForRenameName(editor,
-                             QStringLiteral("Rename Symbol"),
-                             QStringLiteral("New name"),
-                             oldName,
-                             &newName)) {
-        event->accept();
-        return true;
-    }
-    if (newName == oldName) {
-        event->accept();
-        return true;
-    }
-
-    if (!identifierOccurrences(text, newName).isEmpty()) {
-        const RenameConflictChoice choice =
-            promptRenameConflictChoice(editor, newName);
-        if (choice == RenameConflictChoice::Cancel) {
-            event->accept();
-            return true;
-        }
-
-        if (choice == RenameConflictChoice::RenameConflictFirst) {
-            QString conflictReplacement;
-            if (!promptForRenameName(
-                    editor,
-                    QStringLiteral("Rename Conflicting Definition"),
-                    QStringLiteral("Temporary name"),
-                    newName + QStringLiteral("_renamed"),
-                    &conflictReplacement)) {
-                event->accept();
-                return true;
-            }
-            if (conflictReplacement == oldName
-                || conflictReplacement == newName
-                || !identifierOccurrences(editor->toPlainText(),
-                                          conflictReplacement).isEmpty()) {
-                QMessageBox::warning(
-                    editor,
-                    QStringLiteral("Rename Conflicting Definition"),
-                    QStringLiteral("Choose a unique temporary name."));
-                event->accept();
-                return true;
-            }
-            replaceIdentifierOccurrences(editor, newName, conflictReplacement);
-        }
-    }
-
-    replaceIdentifierOccurrences(editor, oldName, newName);
-    selectFirstIdentifierOccurrence(editor, newName);
+    if (!handledByCoordinator)
+        return false;
     event->accept();
     return true;
 }
@@ -695,266 +463,37 @@ bool bracketRangeAroundCursor(const QTextCursor& cursor,
     return true;
 }
 
-bool handleBracketPairInsertion(MyCodeEditor* editor, QKeyEvent* event)
+bool matchesRegisteredShortcut(
+    const QKeyEvent* event,
+    const QString& actionId)
 {
-    if (!editor || !event || hasCommandModifier(event))
+    if (!event)
         return false;
-    if (event->key() != Qt::Key_BracketLeft
-        && event->text() != QStringLiteral("["))
+    const QString shortcutText =
+        effectiveActionShortcut(actionId);
+    if (shortcutText.isEmpty())
         return false;
-
-    QTextCursor cursor = editor->textCursor();
-    if (cursor.hasSelection()) {
-        cursor.insertText(QStringLiteral("[%1]").arg(cursor.selectedText()));
-    } else {
-        cursor.insertText(QStringLiteral("[]"));
-        cursor.movePosition(QTextCursor::Left);
-    }
-    editor->setTextCursor(cursor);
-    event->accept();
-    return true;
+    const QKeySequence shortcut =
+        QKeySequence::fromString(
+            shortcutText,
+            QKeySequence::PortableText);
+    const QKeySequence pressed(
+        event->keyCombination());
+    return shortcut.matches(pressed)
+        == QKeySequence::ExactMatch;
 }
 
-bool isPlainCtrlShortcut(QKeyEvent* event, int key)
-{
-    if (!event || event->key() != key)
-        return false;
-    const Qt::KeyboardModifiers modifiers = event->modifiers();
-    return modifiers.testFlag(Qt::ControlModifier)
-        && !modifiers.testFlag(Qt::ShiftModifier)
-        && !modifiers.testFlag(Qt::AltModifier)
-        && !modifiers.testFlag(Qt::MetaModifier);
-}
-
-bool isPlainAltShortcut(QKeyEvent* event, int key)
-{
-    if (!event || event->key() != key)
-        return false;
-    const Qt::KeyboardModifiers modifiers = event->modifiers();
-    return modifiers.testFlag(Qt::AltModifier)
-        && !modifiers.testFlag(Qt::ShiftModifier)
-        && !modifiers.testFlag(Qt::ControlModifier)
-        && !modifiers.testFlag(Qt::MetaModifier);
-}
-
-bool handleDuplicateSelectionOrLine(MyCodeEditor* editor, QKeyEvent* event)
-{
-    if (!editor || !isPlainCtrlShortcut(event, Qt::Key_D))
-        return false;
-
-    QTextCursor cursor = editor->textCursor();
-    if (cursor.hasSelection()) {
-        const int start = cursor.selectionStart();
-        const int end = cursor.selectionEnd();
-        const QString selected =
-            editor->toPlainText().mid(start, end - start);
-        cursor.beginEditBlock();
-        cursor.setPosition(end);
-        cursor.insertText(selected);
-        cursor.endEditBlock();
-        cursor.setPosition(end);
-        cursor.setPosition(end + selected.size(), QTextCursor::KeepAnchor);
-        editor->setTextCursor(cursor);
-        event->accept();
-        return true;
-    }
-
-    const QTextBlock block = cursor.block();
-    if (!block.isValid())
-        return false;
-
-    const QString lineText = block.text();
-    const int column = qMax(0, cursor.position() - block.position());
-    const int insertPos = block.position() + lineText.size();
-    cursor.beginEditBlock();
-    cursor.setPosition(insertPos);
-    cursor.insertText(QStringLiteral("\n") + lineText);
-    cursor.endEditBlock();
-
-    QTextCursor duplicated(editor->document());
-    duplicated.setPosition(insertPos + 1 + qMin(column, lineText.size()));
-    editor->setTextCursor(duplicated);
-    event->accept();
-    return true;
-}
-
-struct LineBlockMoveRange {
-    QTextBlock firstBlock;
-    QTextBlock lastBlock;
-    int selectionStart = -1;
-    int selectionEnd = -1;
-    int originalLineOffset = 0;
-    int originalColumn = 0;
-    bool hasSelection = false;
-};
-
-LineBlockMoveRange lineBlockMoveRange(MyCodeEditor* editor)
-{
-    LineBlockMoveRange range;
-    if (!editor || !editor->document())
-        return range;
-
-    const QTextCursor cursor = editor->textCursor();
-    range.hasSelection = cursor.hasSelection()
-        && cursor.selectionEnd() > cursor.selectionStart();
-    range.selectionStart = cursor.selectionStart();
-    range.selectionEnd = cursor.selectionEnd();
-
-    if (!range.hasSelection) {
-        range.firstBlock = cursor.block();
-        range.lastBlock = cursor.block();
-        range.originalLineOffset = 0;
-        range.originalColumn =
-            cursor.block().isValid()
-                ? qMax(0, cursor.position() - cursor.block().position())
-                : 0;
-        return range;
-    }
-
-    int adjustedEnd = range.selectionEnd;
-    const QTextBlock endAtBlock =
-        editor->document()->findBlock(range.selectionEnd);
-    if (endAtBlock.isValid()
-        && range.selectionEnd == endAtBlock.position()
-        && range.selectionEnd > range.selectionStart) {
-        --adjustedEnd;
-    } else {
-        --adjustedEnd;
-    }
-
-    range.firstBlock = editor->document()->findBlock(range.selectionStart);
-    range.lastBlock =
-        editor->document()->findBlock(qMax(range.selectionStart, adjustedEnd));
-    if (range.firstBlock.isValid() && cursor.block().isValid()) {
-        range.originalLineOffset =
-            qMax(0, cursor.block().blockNumber()
-                     - range.firstBlock.blockNumber());
-        range.originalColumn =
-            qMax(0, cursor.position() - cursor.block().position());
-    }
-    return range;
-}
-
-int blockRangeEndInPlainText(QTextDocument* document, const QTextBlock& block)
-{
-    if (!document || !block.isValid())
-        return -1;
-    const int plainTextLength =
-        qMax(0, document->characterCount() - 1);
-    int end = block.position() + block.text().size();
-    if (end < plainTextLength)
-        ++end;
-    return end;
-}
-
-void restoreMovedLineCursor(MyCodeEditor* editor,
-                            const LineBlockMoveRange& range,
-                            int movedFirstLine,
-                            int positionShift)
+bool requestRegisteredEditorAction(
+    MyCodeEditor* editor,
+    const QString& actionId,
+    const QVariantMap& parameters = {})
 {
     if (!editor)
-        return;
-
-    if (range.hasSelection) {
-        QTextCursor selection(editor->document());
-        selection.setPosition(qMax(0, range.selectionStart + positionShift));
-        selection.setPosition(qMax(0, range.selectionEnd + positionShift),
-                              QTextCursor::KeepAnchor);
-        editor->setTextCursor(selection);
-        return;
-    }
-
-    const QTextBlock targetBlock =
-        editor->document()->findBlockByNumber(movedFirstLine
-                                              + range.originalLineOffset);
-    if (!targetBlock.isValid())
-        return;
-
-    QTextCursor next(editor->document());
-    next.setPosition(targetBlock.position()
-                     + qMin(range.originalColumn, targetBlock.text().size()));
-    editor->setTextCursor(next);
-}
-
-bool handleMoveLineBlock(MyCodeEditor* editor,
-                         QKeyEvent* event,
-                         bool columnSelectionActive)
-{
-    if (!editor
-        || (!isPlainAltShortcut(event, Qt::Key_Up)
-            && !isPlainAltShortcut(event, Qt::Key_Down))) {
         return false;
-    }
-
-    if (columnSelectionActive) {
-        emit editor->editorStatusMessageRequested(
-            QStringLiteral("Column selection: Alt+Up/Down is disabled"));
-        event->accept();
-        return true;
-    }
-
-    const bool moveUp = event->key() == Qt::Key_Up;
-    QTextDocument* document = editor->document();
-    const QString text = editor->toPlainText();
-    const LineBlockMoveRange range = lineBlockMoveRange(editor);
-    if (!document || !range.firstBlock.isValid() || !range.lastBlock.isValid())
-        return false;
-    if (moveUp && !range.firstBlock.previous().isValid()) {
-        event->accept();
-        return true;
-    }
-
-    const int start = range.firstBlock.position();
-    const int end = blockRangeEndInPlainText(document, range.lastBlock);
-    if (start < 0 || end <= start || end > text.size())
-        return false;
-
-    const QString movedText = text.mid(start, end - start);
-    QTextCursor cursor(document);
-    if (moveUp) {
-        const QTextBlock previousBlock = range.firstBlock.previous();
-        const int previousStart = previousBlock.position();
-        const int previousLength = start - previousStart;
-        cursor.beginEditBlock();
-        cursor.setPosition(start);
-        cursor.setPosition(end, QTextCursor::KeepAnchor);
-        cursor.removeSelectedText();
-        cursor.setPosition(previousStart);
-        cursor.insertText(movedText);
-        cursor.endEditBlock();
-        restoreMovedLineCursor(editor,
-                               range,
-                               previousBlock.blockNumber(),
-                               -previousLength);
-    } else {
-        if (end >= text.size()) {
-            event->accept();
-            return true;
-        }
-        const QTextBlock nextBlock = range.lastBlock.next();
-        if (!nextBlock.isValid()) {
-            event->accept();
-            return true;
-        }
-        const int nextEnd = blockRangeEndInPlainText(document, nextBlock);
-        if (nextEnd <= end || nextEnd > text.size())
-            return false;
-        const int nextLength = nextEnd - end;
-        cursor.beginEditBlock();
-        cursor.setPosition(nextEnd);
-        cursor.insertText(movedText);
-        cursor.setPosition(start);
-        cursor.setPosition(end, QTextCursor::KeepAnchor);
-        cursor.removeSelectedText();
-        cursor.endEditBlock();
-        restoreMovedLineCursor(editor,
-                               range,
-                               range.firstBlock.blockNumber() + 1,
-                               nextLength);
-    }
-
-    event->accept();
-    return true;
+    bool handled = false;
+    emit editor->registeredActionRequested(
+        actionId, parameters, &handled);
+    return handled;
 }
 
 bool selectedFullLineRange(MyCodeEditor* editor, int* rangeStart, int* rangeEnd)
@@ -1336,57 +875,54 @@ bool applyLineUnindent(MyCodeEditor* editor)
     return changedLines > 0;
 }
 
-bool isCtrlBracketShortcut(QKeyEvent* event, int key)
-{
-    if (!event || event->key() != key)
-        return false;
-
-    const Qt::KeyboardModifiers modifiers = event->modifiers();
-    return modifiers.testFlag(Qt::ControlModifier)
-        && !modifiers.testFlag(Qt::ShiftModifier)
-        && !modifiers.testFlag(Qt::AltModifier)
-        && !modifiers.testFlag(Qt::MetaModifier);
-}
-
 bool handleLineIndentShortcut(MyCodeEditor* editor, QKeyEvent* event)
 {
-    if (isCtrlBracketShortcut(event, Qt::Key_BracketRight)) {
-        applyLineIndent(editor);
+    if (matchesRegisteredShortcut(
+            event,
+            QStringLiteral("format.indentLines"))) {
+        if (!requestRegisteredEditorAction(
+                editor,
+                QStringLiteral("format.indentLines"))) {
+            applyLineIndent(editor);
+        }
         event->accept();
         return true;
     }
-    if (isCtrlBracketShortcut(event, Qt::Key_BracketLeft)) {
-        applyLineUnindent(editor);
+    if (matchesRegisteredShortcut(
+            event,
+            QStringLiteral("format.unindentLines"))) {
+        if (!requestRegisteredEditorAction(
+                editor,
+                QStringLiteral("format.unindentLines"))) {
+            applyLineUnindent(editor);
+        }
         event->accept();
         return true;
     }
     return false;
 }
 
-bool isCtrlSlashShortcut(QKeyEvent* event, bool shiftRequired)
-{
-    if (!event
-        || (event->key() != Qt::Key_Slash
-            && event->key() != Qt::Key_Question)) {
-        return false;
-    }
-
-    const Qt::KeyboardModifiers modifiers = event->modifiers();
-    return modifiers.testFlag(Qt::ControlModifier)
-        && modifiers.testFlag(Qt::ShiftModifier) == shiftRequired
-        && !modifiers.testFlag(Qt::AltModifier)
-        && !modifiers.testFlag(Qt::MetaModifier);
-}
-
 bool handleLineCommentShortcut(MyCodeEditor* editor, QKeyEvent* event)
 {
-    if (isCtrlSlashShortcut(event, false)) {
-        applyLineComment(editor);
+    if (matchesRegisteredShortcut(
+            event,
+            QStringLiteral("format.commentLines"))) {
+        if (!requestRegisteredEditorAction(
+                editor,
+                QStringLiteral("format.commentLines"))) {
+            applyLineComment(editor);
+        }
         event->accept();
         return true;
     }
-    if (isCtrlSlashShortcut(event, true)) {
-        applyLineUncomment(editor);
+    if (matchesRegisteredShortcut(
+            event,
+            QStringLiteral("format.uncommentLines"))) {
+        if (!requestRegisteredEditorAction(
+                editor,
+                QStringLiteral("format.uncommentLines"))) {
+            applyLineUncomment(editor);
+        }
         event->accept();
         return true;
     }
@@ -1641,7 +1177,7 @@ void MyCodeEditorState::initializeCore(MyCodeEditor* editor)
     syntax.init();
     gutter.init(editor);
     identity.set(QString());
-    semanticRevisionText.clear();
+    semanticRevisionText.setText(QString());
     inlineFilterTextOverlayActive = false;
     inlineFilterTextOverlayStart = -1;
     inlineFilterTextOverlayOriginalLength = 0;
@@ -1655,17 +1191,46 @@ void MyCodeEditorState::initializeCore(MyCodeEditor* editor)
     editor->setAcceptDrops(true);
 }
 
-void MyCodeEditorState::shutdown()
+void MyCodeEditorState::shutdown(MyCodeEditor* editor)
 {
+    highlightRefresh.detach();
+    completion.detach();
+    if (editor)
+        QObject::disconnect(editor, nullptr, editor, nullptr);
+    QObject::disconnect(documentContentsChangeConnection);
+    documentContentsChangeConnection = {};
+
+    if (lifecycleDiagnosticRank >= 0) {
+        if (lifecycleDiagnosticRank >= 4) {
+            modes.exitAll(EditorModeExitReason::DocumentClosed);
+            templateSlots.shutdown(nullptr);
+            keywordGhost.shutdown(nullptr);
+            multiCursor.shutdown(nullptr);
+            signalSelection.shutdown(nullptr);
+            columnMode.shutdown(nullptr);
+            sourceNavigation.shutdown();
+        }
+        shutdownGhostQueries(editor);
+        if (lifecycleDiagnosticRank >= 7)
+            syntax.detachHighlighter();
+        cancelSignalDefinitionEditor();
+        annotationLayer.clear();
+        if (lifecycleDiagnosticRank >= 3)
+            gutter.destroy();
+        return;
+    }
+
     modes.exitAll(EditorModeExitReason::DocumentClosed);
     templateSlots.shutdown(nullptr);
-    ++ghostQueryGeneration;
-    if (ghostQueryCancellation)
-        ghostQueryCancellation->store(true);
+    keywordGhost.shutdown(nullptr);
+    multiCursor.shutdown(nullptr);
+    shutdownGhostQueries(editor);
+    syntax.detachHighlighter();
     cancelSignalDefinitionEditor();
     signalSelection.shutdown(nullptr);
     columnMode.shutdown(nullptr);
     sourceNavigation.shutdown();
+    annotationLayer.clear();
     gutter.destroy();
 }
 
@@ -1677,7 +1242,9 @@ void MyCodeEditorState::bindEditorModes(MyCodeEditor* editor)
             if (target)
                 emit target->editorModeStateChanged(snapshot);
         });
-    templateSlots.bind(&modes, &selections, editor);
+    templateSlots.bind(&modes, &annotationLayer, editor);
+    keywordGhost.bind(&modes, &annotationLayer, editor);
+    multiCursor.bind(&modes, editor);
     signalSelection.bind(
         &modes,
         &selections,
@@ -1687,7 +1254,7 @@ void MyCodeEditorState::bindEditorModes(MyCodeEditor* editor)
                 target,
                 cursorPosition);
         });
-    columnMode.bind(&modes, editor);
+    columnMode.bind(&modes, &annotationLayer, editor);
     sourceNavigation.bindModeController(
         &modes,
         editor,
@@ -1710,10 +1277,12 @@ void MyCodeEditorState::exitInteractionModes(
 void MyCodeEditorState::attachEditorConnections(MyCodeEditor* editor)
 {
     highlightRefresh.attachToEditor(editor, [this, editor]() {
+        lifecycleTrace("cursor.highlight-enter");
         if (suppressNextCursorPresentation)
             return;
         refreshScopeAndCurrentLineHighlight(editor);
         editorPresentationPending = false;
+        lifecycleTrace("cursor.highlight-exit");
     });
     QObject::connect(
         editor,
@@ -1729,38 +1298,128 @@ void MyCodeEditorState::attachEditorConnections(MyCodeEditor* editor)
         [this, editor](const QRect& rect, int dy) {
             gutter.handleUpdateRequest(editor, rect, dy);
             if (dy != 0) {
+                refreshVisibleRegionPresentation(editor);
                 sourceNavigation.handleEditorScrolled(editor, selections);
                 sourceNavigation.syncMode();
             }
         });
-    QObject::connect(
-        editor->document(),
-        &QTextDocument::contentsChange,
-        editor,
-        [this, editor](int position, int charsRemoved, int charsAdded) {
-            handleDocumentContentsChange(editor,
-                                         position,
-                                         charsRemoved,
-                                         charsAdded);
-        });
+    attachDocumentConnection(editor);
     QObject::connect(
         editor,
         &QPlainTextEdit::cursorPositionChanged,
         editor,
         [this, editor]() {
+            lifecycleTrace("cursor.state-enter");
             handleVirtualCursorChanged(editor);
+            lifecycleTrace("cursor.virtual");
             if (suppressNextCursorPresentation) {
                 suppressNextCursorPresentation = false;
+                lifecycleTrace("cursor.suppressed");
                 return;
             }
             completionWorkflow.handleCursorPositionChanged();
+            lifecycleTrace("cursor.completion");
             handleTemplateSlotCursorChanged(editor);
+            lifecycleTrace("cursor.templates");
             refreshDerivedEditorState(editor, true);
+            lifecycleTrace("cursor.state-exit");
+        });
+}
+
+void MyCodeEditorState::attachDocumentConnection(
+    MyCodeEditor* editor)
+{
+    QObject::disconnect(documentContentsChangeConnection);
+    documentContentsChangeConnection = {};
+    if (!editor || !editor->document())
+        return;
+    documentContentsChangeConnection = QObject::connect(
+        editor->document(),
+        &QTextDocument::contentsChange,
+        editor,
+        [this, editor](int position, int charsRemoved, int charsAdded) {
+            if (rebindingDocument)
+                return;
+            handleDocumentContentsChange(editor,
+                                         position,
+                                         charsRemoved,
+                                         charsAdded);
         });
 }
 
 void MyCodeEditorState::attachToEditor(MyCodeEditor* editor)
 {
+    lifecycleDiagnosticRank =
+        lifecycleDiagnosticRankFromEnvironment();
+    if (lifecycleDiagnosticRank >= 0) {
+        if (lifecycleDiagnosticRank >= 1)
+            semantic.init();
+        if (lifecycleDiagnosticRank >= 2)
+            syntax.init();
+        if (lifecycleDiagnosticRank >= 3) {
+            gutter.init(editor);
+            identity.set(QString());
+            semanticRevisionText.setText(QString());
+            inlineFilterTextOverlayActive = false;
+            inlineFilterTextOverlayStart = -1;
+            inlineFilterTextOverlayOriginalLength = 0;
+            inlineFilterTextOverlayOriginalText.clear();
+            inlineFilterTextOverlayCurrentText.clear();
+            qRegisterMetaType<DocumentChange>("DocumentChange");
+            qRegisterMetaType<EditorModeSnapshot>("EditorModeSnapshot");
+            editor->setProperty(kDiagnosticsEmptyProperty, true);
+            editor->setProperty(kSemanticDecorationsEmptyProperty, true);
+            editor->setMouseTracking(true);
+            editor->setAcceptDrops(true);
+        }
+        if (lifecycleDiagnosticRank >= 4)
+            bindEditorModes(editor);
+        if (lifecycleDiagnosticRank >= 5)
+            attachEditorConnections(editor);
+        if (lifecycleDiagnosticRank >= 6)
+            appearance.apply(editor);
+        if (lifecycleDiagnosticRank >= 7)
+            syntax.attachToEditor(editor);
+        if (lifecycleDiagnosticRank >= 8) {
+            completionWorkflow.bind(
+                editor,
+                &completion,
+                &modes,
+                &selections,
+                [this, editor](int cursorPosition,
+                               bool includeDocumentText) {
+                    return semanticContextForPosition(
+                        editor,
+                        cursorPosition,
+                        includeDocumentText);
+                },
+                [this](int charPos) {
+                    return currentModuleNameAt(charPos);
+                },
+                [this]() { return semanticService(); });
+        }
+        if (lifecycleDiagnosticRank >= 9) {
+            completion.attachToEditor(
+                editor,
+                [this, editor](const QModelIndex& index) {
+                    auto edit =
+                        editor->beginSynchronousEditTransaction();
+                    completionWorkflow.handleCompletionActivated(index);
+                });
+        }
+        if (lifecycleDiagnosticRank >= 10)
+            selections.highlightCurrentLine(editor);
+        if (lifecycleDiagnosticRank >= 11) {
+            folding.refresh(editor, syntax.tsDocument());
+            ++hotPathMetrics.fullFoldingRebuilds;
+        }
+        if (lifecycleDiagnosticRank >= 12)
+            refreshDerivedEditorState(editor, false);
+        if (lifecycleDiagnosticRank >= 13)
+            gutter.updateViewportMargins(editor);
+        return;
+    }
+
     initializeCore(editor);
     bindEditorModes(editor);
     attachEditorConnections(editor);
@@ -1796,12 +1455,84 @@ void MyCodeEditorState::attachToEditor(MyCodeEditor* editor)
     gutter.updateViewportMargins(editor);
 }
 
+void MyCodeEditorState::rebindDocument(
+    MyCodeEditor* editor,
+    QTextDocument* document,
+    std::uint64_t textRevision)
+{
+    if (!editor || !document)
+        return;
+    if (editor->document() == document) {
+        semanticTextRevision = textRevision;
+        return;
+    }
+
+    modes.exitAll(EditorModeExitReason::DocumentChanged);
+    cancelSignalDefinitionEditor();
+    finishInlineFilterTextOverlay();
+    ++ghostQueryGeneration;
+    if (ghostQueryCancellation)
+        ghostQueryCancellation->store(true);
+
+    QObject::disconnect(documentContentsChangeConnection);
+    documentContentsChangeConnection = {};
+    syntax.detachHighlighter();
+    rebindingDocument = true;
+    editor->QPlainTextEdit::setDocument(document);
+    rebindingDocument = false;
+    multiCursor.resetToEditorCursor();
+
+    const QString text = document->toPlainText();
+    semanticRevisionText.setText(text);
+    semanticTextRevision = textRevision;
+    inlineFilterTextOverlayActive = false;
+    inlineFilterTextOverlayStart = -1;
+    inlineFilterTextOverlayOriginalLength = 0;
+    inlineFilterTextOverlayOriginalText.clear();
+    inlineFilterTextOverlayCurrentText.clear();
+    diagnostics.clear();
+    diagnosticIndexesByLine.clear();
+    diagnosticSeverityByLine.clear();
+    diagnosticOverviewSeverityByBucket.clear();
+    diagnosticComputationRevision = 0;
+    ghostAnnotations.clear();
+    semanticDecorations.clear();
+    annotationLayer.clear();
+    editor->setProperty(kDiagnosticsEmptyProperty, true);
+    editor->setProperty(kSemanticDecorationsEmptyProperty, true);
+
+    syntax.syncText(text);
+    // QTextDocument invokes direct connections in registration order. Keep
+    // the syntax model current before the highlighter reads it after a shared
+    // document edit.
+    attachDocumentConnection(editor);
+    syntax.createHighlighter(document);
+    selections.resetDocumentText(editor, text);
+    selections.highlightDiagnostics(editor, {});
+    selections.highlightSemanticDecorations(editor, {});
+    selections.highlightCurrentLine(editor);
+    folding.refresh(editor, syntax.tsDocument());
+    ++hotPathMetrics.fullFoldingRebuilds;
+    lastWavePreviewScopeKey.clear();
+    suppressNextCursorPresentation = false;
+    editorPresentationPending = false;
+    ghostPresentationPending = false;
+    refreshDerivedEditorState(editor, false);
+    gutter.updateViewportMargins(editor);
+    handleResize(editor);
+    editor->viewport()->update();
+    emit editor->wavePreviewScopeChanged();
+}
+
 void MyCodeEditorState::handleDocumentContentsChange(
     MyCodeEditor* editor,
     int position,
     int charsRemoved,
     int charsAdded)
 {
+    lifecycleTrace("change.enter");
+    const int changeDiagnosticRank =
+        changeDiagnosticRankFromEnvironment();
     if (!editor || !editor->document())
         return;
     QElapsedTimer documentChangeCoreTimer;
@@ -1819,13 +1550,20 @@ void MyCodeEditorState::handleDocumentContentsChange(
         documentChangePhaseTimer.restart();
     };
 
-    if (signalDefinitionEditor)
+    if (signalDefinitionPeekActive
+        || signalDefinitionEditor)
         cancelSignalDefinitionEditor();
     if (modes.isActive(EditorModeId::VirtualCursor))
         clearVirtualCursor(editor);
     if (signalSelection.active()
         || signalSelection.hasSelection()) {
         cancelSignalSelectionMode(editor);
+    }
+    if (multiCursor.active()
+        && !multiCursor.applyingDocumentEdit()) {
+        modes.exit(
+            EditorModeId::MultiCursor,
+            EditorModeExitReason::DocumentChanged);
     }
     ++ghostQueryGeneration;
     if (ghostQueryCancellation)
@@ -1871,31 +1609,31 @@ void MyCodeEditorState::handleDocumentContentsChange(
         + change.insertedText.count(QLatin1Char('\n'));
     change.lineDelta = change.newEndLine - change.oldEndLine;
 
+    const QTextBlock changedBlock = editor->document()->findBlock(
+        qBound(0, change.position, newLength));
+    const int occurrenceNewLineStart = changedBlock.isValid()
+        ? changedBlock.position()
+        : -1;
+    const int occurrenceNewLineEnd = changedBlock.isValid()
+        ? changedBlock.position() + changedBlock.text().size()
+        : -1;
+    const bool localLineChange = changedBlock.isValid()
+        && !change.removedText.contains(QLatin1Char('\n'))
+        && !change.insertedText.contains(QLatin1Char('\n'))
+        && change.position >= occurrenceNewLineStart
+        && change.newEnd() <= occurrenceNewLineEnd;
+
     OccurrenceChangeContext occurrenceContext;
-    bool useInlineOccurrenceLine = false;
-    int occurrenceNewLineStart = -1;
+    bool useLocalOccurrenceLine = false;
     QString occurrenceNewLineText;
     bool appliedToInlineOverlay = false;
     if (inlineFilterTextOverlayActive) {
         const int overlayEnd =
             inlineFilterTextOverlayStart
             + inlineFilterTextOverlayCurrentText.size();
-        const QTextBlock changedBlock = editor->document()->findBlock(
-            qBound(0, change.position, newLength));
-        const int newLineStart = changedBlock.isValid()
-            ? changedBlock.position()
-            : -1;
-        const int newLineEnd = changedBlock.isValid()
-            ? changedBlock.position() + changedBlock.text().size()
-            : -1;
-        const bool singleLineChange = changedBlock.isValid()
-            && !change.removedText.contains(QLatin1Char('\n'))
-            && !change.insertedText.contains(QLatin1Char('\n'))
-            && change.position >= newLineStart
-            && change.newEnd() <= newLineEnd;
         if (change.position >= inlineFilterTextOverlayStart
             && change.oldEnd() <= overlayEnd
-            && singleLineChange) {
+            && localLineChange) {
             QString nextOverlay =
                 inlineFilterTextOverlayCurrentText;
             nextOverlay.replace(
@@ -1911,21 +1649,32 @@ void MyCodeEditorState::handleDocumentContentsChange(
                     std::move(nextOverlay);
                 appliedToInlineOverlay = true;
                 ++hotPathMetrics.inlineFilterOverlayEdits;
-                occurrenceNewLineStart = newLineStart;
                 occurrenceNewLineText = changedBlock.text();
                 occurrenceContext =
                     selections.prepareDocumentLineChange(
                         change,
-                        newLineStart,
-                        newLineEnd - change.characterDelta());
-                useInlineOccurrenceLine = true;
+                        occurrenceNewLineStart,
+                        occurrenceNewLineEnd
+                            - change.characterDelta());
+                useLocalOccurrenceLine = true;
             }
         }
     }
     if (!appliedToInlineOverlay) {
         finishInlineFilterTextOverlay();
-        occurrenceContext = selections.prepareDocumentChange(
-            change, semanticRevisionText);
+        if (localLineChange) {
+            occurrenceNewLineText = changedBlock.text();
+            occurrenceContext =
+                selections.prepareDocumentLineChange(
+                    change,
+                    occurrenceNewLineStart,
+                    occurrenceNewLineEnd
+                        - change.characterDelta());
+            useLocalOccurrenceLine = true;
+        } else {
+            occurrenceContext = selections.prepareDocumentChange(
+                change, cachedDocumentText());
+        }
         semanticRevisionText.replace(change.position,
                                      change.removedLength,
                                      change.insertedText);
@@ -1939,11 +1688,17 @@ void MyCodeEditorState::handleDocumentContentsChange(
     editorPresentationPending = true;
     finishDocumentChangePhase(
         hotPathMetrics.documentChangePrepareNanoseconds);
+    lifecycleTrace("change.prepared");
+    if (changeDiagnosticRank == 0)
+        return;
 
     const QList<TSChangedRange> changedRanges =
         syntax.applyDocumentChange(change, semanticRevisionText);
     finishDocumentChangePhase(
         hotPathMetrics.documentChangeSyntaxNanoseconds);
+    lifecycleTrace("change.syntax");
+    if (changeDiagnosticRank == 1)
+        return;
     if (const TSDocument* syntaxDocument = syntax.tsDocument()) {
         const bool fullFoldRebuild = folding.applyDocumentChange(
             editor, syntaxDocument, change, changedRanges);
@@ -1954,12 +1709,18 @@ void MyCodeEditorState::handleDocumentContentsChange(
     }
     finishDocumentChangePhase(
         hotPathMetrics.documentChangeFoldingNanoseconds);
+    lifecycleTrace("change.folding");
+    if (changeDiagnosticRank == 2)
+        return;
     remapSemanticDecorations(editor, change);
     finishDocumentChangePhase(
         hotPathMetrics.documentChangeDecorationNanoseconds);
+    lifecycleTrace("change.decorations");
+    if (changeDiagnosticRank == 3)
+        return;
 
     const OccurrenceIndexUpdate occurrenceUpdate =
-        useInlineOccurrenceLine
+        useLocalOccurrenceLine
         ? selections.applyDocumentLineChange(
               editor,
               change,
@@ -1969,13 +1730,16 @@ void MyCodeEditorState::handleDocumentContentsChange(
         : selections.applyDocumentChange(editor,
                                          change,
                                          occurrenceContext,
-                                         semanticRevisionText);
+                                         cachedDocumentText());
     if (occurrenceUpdate == OccurrenceIndexUpdate::Full)
         ++hotPathMetrics.occurrenceFullBuilds;
     else if (occurrenceUpdate == OccurrenceIndexUpdate::Incremental)
         ++hotPathMetrics.occurrenceIncrementalUpdates;
     finishDocumentChangePhase(
         hotPathMetrics.documentChangeOccurrenceNanoseconds);
+    lifecycleTrace("change.occurrences");
+    if (changeDiagnosticRank == 4)
+        return;
 
     templateSlots.markPresentationPending();
     handleTemplateSlotContentsChange(editor,
@@ -1986,9 +1750,12 @@ void MyCodeEditorState::handleDocumentContentsChange(
     remapGhostAnnotations(editor, change);
     finishDocumentChangePhase(
         hotPathMetrics.documentChangePresentationNanoseconds);
-    refreshDerivedEditorState(editor, false);
+    lifecycleTrace("change.presentation");
+    if (changeDiagnosticRank == 5)
+        return;
     finishDocumentChangePhase(
         hotPathMetrics.documentChangeDerivedStateNanoseconds);
+    lifecycleTrace("change.derived-deferred");
     if (hotPathTimingEnabled) {
         hotPathMetrics.documentChangeCoreNanoseconds +=
             static_cast<std::uint64_t>(
@@ -1998,10 +1765,12 @@ void MyCodeEditorState::handleDocumentContentsChange(
     if (hotPathTimingEnabled)
         dispatchTimer.start();
     emit editor->documentChangeApplied(change);
+    lifecycleTrace("change.emitted");
     if (hotPathTimingEnabled) {
         hotPathMetrics.documentChangeDispatchNanoseconds +=
             static_cast<std::uint64_t>(dispatchTimer.nsecsElapsed());
     }
+    lifecycleTrace("change.exit");
 }
 
 void MyCodeEditorState::remapGhostAnnotations(
@@ -2009,36 +1778,41 @@ void MyCodeEditorState::remapGhostAnnotations(
     const DocumentChange& change)
 {
     ++hotPathMetrics.ghostRemaps;
-    if (ghostAnnotations.isEmpty())
-        return;
+    const EditorAnchoredRangeIndexStats beforeGhostStats =
+        ghostAnnotations.stats();
+    const EditorAnchoredRangeIndexStats beforeLayerStats =
+        annotationLayer.ghostIndexStats();
+    const EditorAnchoredRangeRemapReport ghostReport =
+        ghostAnnotations.remap(change);
+    const EditorAnchoredRangeRemapReport layerReport =
+        annotationLayer.remapGhostSource(
+            change, ghostQueryGeneration);
+    const EditorAnchoredRangeIndexStats afterGhostStats =
+        ghostAnnotations.stats();
+    const EditorAnchoredRangeIndexStats afterLayerStats =
+        annotationLayer.ghostIndexStats();
 
-    QList<GhostAnnotation> remapped;
-    remapped.reserve(ghostAnnotations.size());
-    bool changed = false;
-    for (GhostAnnotation annotation : std::as_const(ghostAnnotations)) {
-        const int anchorStart = annotation.anchorPosition;
-        const int anchorEnd = anchorStart + annotation.anchorLength;
-        const bool insertionIntersects = change.removedLength == 0
-            && change.position > anchorStart
-            && change.position < anchorEnd;
-        const bool replacementIntersects = change.removedLength > 0
-            && change.position < qMax(anchorStart + 1, anchorEnd)
-            && change.oldEnd() > anchorStart;
-        if (insertionIntersects || replacementIntersects) {
-            changed = true;
-            continue;
-        }
-
-        if (anchorStart >= change.oldEnd()) {
-            annotation.anchorPosition += change.characterDelta();
-            annotation.line = qMax(1, annotation.line + change.lineDelta);
-            changed = changed || change.characterDelta() != 0
-                || change.lineDelta != 0;
-        }
-        remapped.append(annotation);
+    if (editor) {
+        editor->setProperty(
+            "zeroslackGhostAnnotationRemapVisitedCount",
+            static_cast<qlonglong>(
+                ghostReport.visitedNodes
+                + layerReport.visitedNodes));
+        editor->setProperty(
+            "zeroslackGhostAnnotationRemapShiftedCount",
+            static_cast<qlonglong>(ghostReport.shiftedItems));
+        editor->setProperty(
+            "zeroslackGhostAnnotationRemapRemovedCount",
+            static_cast<qlonglong>(ghostReport.removedItems));
+        editor->setProperty(
+            "zeroslackGhostAnnotationRemapMaterializationCount",
+            static_cast<qlonglong>(
+                afterGhostStats.materializationCount
+                - beforeGhostStats.materializationCount
+                + afterLayerStats.materializationCount
+                - beforeLayerStats.materializationCount));
     }
-    if (changed) {
-        ghostAnnotations = remapped;
+    if (ghostReport.changed() || layerReport.changed()) {
         ghostPresentationPending = true;
     }
 }
@@ -2047,30 +1821,105 @@ void MyCodeEditorState::remapSemanticDecorations(
     MyCodeEditor* editor,
     const DocumentChange& change)
 {
-    if (semanticDecorations.isEmpty())
-        return;
-
-    QList<SemanticDecoration> remapped;
-    remapped.reserve(semanticDecorations.size());
-    for (SemanticDecoration decoration : std::as_const(semanticDecorations)) {
-        const int start = decoration.startPosition;
-        const int end = start + decoration.length;
-        const bool insertionIntersects =
-            change.removedLength == 0
-            && change.position > start
-            && change.position < end;
-        const bool replacementIntersects =
-            change.removedLength > 0
-            && change.position < end
-            && change.oldEnd() > start;
-        if (insertionIntersects || replacementIntersects)
-            continue;
-        if (change.oldEnd() <= start)
-            decoration.startPosition += change.characterDelta();
-        if (decoration.isValid())
-            remapped.append(std::move(decoration));
+    const EditorAnchoredRangeIndexStats beforeStats =
+        semanticDecorations.stats();
+    const EditorAnchoredRangeRemapReport report =
+        semanticDecorations.remap(change);
+    const EditorAnchoredRangeIndexStats afterStats =
+        semanticDecorations.stats();
+    if (editor) {
+        editor->setProperty(
+            "zeroslackSemanticDecorationRemapVisitedCount",
+            static_cast<qlonglong>(report.visitedNodes));
+        editor->setProperty(
+            "zeroslackSemanticDecorationRemapShiftedCount",
+            static_cast<qlonglong>(report.shiftedItems));
+        editor->setProperty(
+            "zeroslackSemanticDecorationRemapRemovedCount",
+            static_cast<qlonglong>(report.removedItems));
+        editor->setProperty(
+            "zeroslackSemanticDecorationRemapMaterializationCount",
+            static_cast<qlonglong>(
+                afterStats.materializationCount
+                - beforeStats.materializationCount));
     }
-    semanticDecorations = std::move(remapped);
+    refreshSemanticDecorationPresentation(editor);
+}
+
+void MyCodeEditorState::rebuildSemanticDecorationPositionIndex()
+{
+    QList<SemanticDecoration> sorted =
+        semanticDecorations.toList();
+    sorted.erase(
+        std::remove_if(
+            sorted.begin(),
+            sorted.end(),
+            [](const SemanticDecoration& decoration) {
+                return !decoration.isValid();
+            }),
+        sorted.end());
+    std::stable_sort(
+        sorted.begin(),
+        sorted.end(),
+        [](const SemanticDecoration& left,
+           const SemanticDecoration& right) {
+            if (left.startPosition != right.startPosition) {
+                return left.startPosition
+                    < right.startPosition;
+            }
+            return left.length < right.length;
+        });
+    semanticDecorations = sorted;
+}
+
+EditorVisibleDocumentRange
+MyCodeEditorState::visibleDocumentRange(
+    const MyCodeEditor* editor) const
+{
+    EditorVisibleDocumentRange range;
+    if (!editor || !editor->document())
+        return range;
+
+    const QTextBlock first = editor->firstVisibleBlock();
+    if (!first.isValid())
+        return range;
+    QTextBlock last = editor->cursorForPosition(
+        QPoint(0, qMax(0, editor->viewport()->height() - 1))).block();
+    if (!last.isValid() || last.blockNumber() < first.blockNumber())
+        last = first;
+
+    const int documentEnd =
+        qMax(0, editor->document()->characterCount() - 1);
+    range.firstLine = first.blockNumber();
+    range.lastLine = last.blockNumber();
+    range.startPosition = qBound(
+        0, first.position(), documentEnd);
+    range.endPosition = qBound(
+        range.startPosition,
+        last.position() + qMax(0, last.length() - 1),
+        documentEnd);
+    return range;
+}
+
+void MyCodeEditorState::refreshVisibleRegionPresentation(
+    MyCodeEditor* editor)
+{
+    if (!editor)
+        return;
+    ++hotPathMetrics.visiblePresentationRefreshes;
+    const EditorVisibleDocumentRange range =
+        visibleDocumentRange(editor);
+    if (range.valid()) {
+        templateSlots.publishVisibleAnnotations(
+            editor,
+            range.firstLine,
+            range.lastLine);
+        columnMode.publishVisibleAnnotations(
+            editor,
+            range.firstLine,
+            range.lastLine);
+    }
+    refreshDiagnosticPresentation(editor);
     refreshSemanticDecorationPresentation(editor);
 }
 
@@ -2080,11 +1929,29 @@ void MyCodeEditorState::refreshSemanticDecorationPresentation(
     if (!editor)
         return;
 
+    const EditorVisibleDocumentRange range =
+        visibleDocumentRange(editor);
     QList<SemanticDecoration> visible;
-    visible.reserve(semanticDecorations.size());
+    if (!range.valid() || semanticDecorations.isEmpty()) {
+        selections.highlightSemanticDecorations(editor, visible);
+        editor->setProperty(
+            kSemanticDecorationsEmptyProperty, true);
+        return;
+    }
+
+    qsizetype visitedNodes = 0;
+    const QList<SemanticDecoration> candidates =
+        semanticDecorations.overlapping(
+            range.startPosition,
+            range.endPosition,
+            &visitedNodes);
+    editor->setProperty(
+        "zeroslackSemanticDecorationVisibleQueryVisitedCount",
+        static_cast<qlonglong>(visitedNodes));
+    visible.reserve(candidates.size());
     const TSDocument* document = syntax.tsDocument();
-    for (const SemanticDecoration& decoration :
-         std::as_const(semanticDecorations)) {
+    for (const SemanticDecoration& decoration : candidates) {
+        ++hotPathMetrics.semanticDecorationCandidatesExamined;
         if (!decoration.isValid())
             continue;
         if (document
@@ -2095,6 +1962,8 @@ void MyCodeEditorState::refreshSemanticDecorationPresentation(
         }
         visible.append(decoration);
     }
+    hotPathMetrics.semanticDecorationSelectionsBuilt +=
+        static_cast<std::uint64_t>(visible.size());
     selections.highlightSemanticDecorations(editor, visible);
     editor->setProperty(kSemanticDecorationsEmptyProperty,
                         visible.isEmpty());
@@ -2106,6 +1975,12 @@ void MyCodeEditorState::refreshDerivedEditorState(
 {
     if (!editor)
         return;
+
+    keywordGhost.refresh(editor, syntax);
+    selections.highlightKeywordPair(
+        editor,
+        syntax.matchingKeywordPairAt(
+            editor->textCursor().position()));
 
     const EditorPackageToolAvailability availability =
         currentPackageToolAvailability(editor);
@@ -2132,568 +2007,6 @@ void MyCodeEditorState::refreshDerivedEditorState(
     }
 }
 
-void MyCodeEditorState::applyAppearanceSettings(
-    MyCodeEditor* editor,
-    const EditorAppearanceOptions& options)
-{
-    appearance.apply(editor, options);
-    gutter.updateViewportMargins(editor);
-    handleResize(editor);
-}
-
-EditorSemanticContextService* MyCodeEditorState::semanticService() const
-{
-    return semantic.contextService();
-}
-
-EditorSourceContextProvider MyCodeEditorState::sourceContextProvider(
-    const MyCodeEditor* editor) const
-{
-    return [this, editor](int cursorPosition, bool includeDocumentText) {
-        return semanticContextForPosition(
-            editor,
-            cursorPosition,
-            includeDocumentText);
-    };
-}
-
-QString MyCodeEditorState::currentModuleNameAt(int charPos) const
-{
-    return syntax.moduleNameAt(charPos);
-}
-
-QString MyCodeEditorState::currentModuleName(const MyCodeEditor* editor) const
-{
-    return currentModuleNameAt(editor->textCursor().position());
-}
-
-EditorAlwaysScopeTarget MyCodeEditorState::currentAlwaysScopeTarget(
-    const MyCodeEditor* editor,
-    bool allowLargeFileScopeBuild) const
-{
-    EditorAlwaysScopeTarget result;
-    if (!editor) {
-        result.failureMessage = QStringLiteral("No document selected.");
-        return result;
-    }
-
-    const QTextCursor cursor = editor->textCursor();
-    const QString& syntaxText =
-        allowLargeFileScopeBuild && inlineFilterTextOverlayActive
-        ? editor->cachedDocumentText()
-        : semanticRevisionText;
-    const int syntaxTextLength = cachedDocumentLength();
-    const TSAlwaysScopeTarget target =
-        syntax.alwaysScopeTargetAt(cursor.position(),
-                                   cursor.hasSelection()
-                                       ? cursor.selectionStart()
-                                       : -1,
-                                   cursor.hasSelection()
-                                       ? cursor.selectionEnd()
-                                       : -1,
-                                   syntaxText,
-                                   syntaxTextLength,
-                                   allowLargeFileScopeBuild);
-    if (!target.ok()) {
-        result.failureMessage =
-            target.status == TSAlwaysScopeStatus::AmbiguousSelection
-                ? QStringLiteral("Select only one always block to preview.")
-                : QStringLiteral("Place the cursor in an always block to preview.");
-        return result;
-    }
-
-    result.available = true;
-    result.startPosition = target.startChar;
-    result.endPosition = target.endChar;
-    result.startLine = target.startLine;
-    result.endLine = target.endLine;
-    result.label = target.label;
-    return result;
-}
-
-EditorModuleScopeTarget MyCodeEditorState::currentModuleScopeTarget(
-    const MyCodeEditor* editor,
-    bool allowLargeFileScopeBuild) const
-{
-    EditorModuleScopeTarget result;
-    if (!editor) {
-        result.failureMessage = QStringLiteral("No document selected.");
-        return result;
-    }
-
-    const QTextCursor cursor = editor->textCursor();
-    const QString& syntaxText =
-        allowLargeFileScopeBuild && inlineFilterTextOverlayActive
-        ? editor->cachedDocumentText()
-        : semanticRevisionText;
-    const int syntaxTextLength = cachedDocumentLength();
-    const TSModuleScopeTarget target =
-        syntax.moduleScopeTargetAt(cursor.position(),
-                                   cursor.hasSelection()
-                                       ? cursor.selectionStart()
-                                       : -1,
-                                   cursor.hasSelection()
-                                       ? cursor.selectionEnd()
-                                       : -1,
-                                   syntaxText,
-                                   syntaxTextLength,
-                                   allowLargeFileScopeBuild);
-    if (!target.ok()) {
-        result.failureMessage =
-            target.status == TSModuleScopeStatus::AmbiguousSelection
-                ? QStringLiteral("Select only one module to preview.")
-                : QStringLiteral("Place the cursor in a module or always block to preview.");
-        return result;
-    }
-
-    result.available = true;
-    result.startPosition = target.startChar;
-    result.endPosition = target.endChar;
-    result.startLine = target.startLine;
-    result.endLine = target.endLine;
-    result.moduleName = target.moduleName;
-    result.label = target.label;
-    return result;
-}
-
-bool MyCodeEditorState::addPortRow(MyCodeEditor* editor,
-                                   QString* message)
-{
-    if (!editor)
-        return false;
-
-    const TSPortAppendTarget target =
-        syntax.portAppendTargetAt(editor->textCursor().position());
-    if (!target.ok()) {
-        if (message) {
-            *message = target.status == TSPortAppendStatus::NoCurrentModule
-                ? QStringLiteral("No current module")
-                : QStringLiteral("No clear port append point");
-        }
-        return false;
-    }
-
-    QTextCursor cursor = editor->textCursor();
-    cursor.beginEditBlock();
-    cursor.setPosition(target.insertChar);
-    cursor.insertText(target.insertText);
-    if (target.needsTrailingComma
-        && target.trailingCommaInsertChar >= 0) {
-        cursor.setPosition(target.trailingCommaInsertChar);
-        cursor.insertText(QStringLiteral(","));
-    }
-    cursor.endEditBlock();
-
-    QTextCursor caret = editor->textCursor();
-    caret.setPosition(target.caretCharAfterEdit);
-    editor->setTextCursor(caret);
-    return true;
-}
-
-bool MyCodeEditorState::addSignalRow(MyCodeEditor* editor,
-                                     QString* message)
-{
-    if (!editor)
-        return false;
-
-    const TSSignalInsertTarget target =
-        syntax.signalInsertTargetAt(editor->textCursor().position());
-    if (!target.ok()) {
-        if (message) {
-            *message = target.status == TSSignalInsertStatus::NoCurrentModule
-                ? QStringLiteral("No current module")
-                : QStringLiteral("No clear signal insert point");
-        }
-        return false;
-    }
-
-    QTextCursor cursor = editor->textCursor();
-    cursor.beginEditBlock();
-    cursor.setPosition(target.insertChar);
-    cursor.insertText(target.insertText);
-    cursor.endEditBlock();
-
-    QTextCursor caret = editor->textCursor();
-    caret.setPosition(target.caretCharAfterEdit);
-    editor->setTextCursor(caret);
-    return true;
-}
-
-bool MyCodeEditorState::addParameterRow(MyCodeEditor* editor,
-                                        QString* message)
-{
-    if (!editor)
-        return false;
-
-    const TSParameterInsertTarget target =
-        syntax.parameterInsertTargetAt(editor->textCursor().position());
-    if (!target.ok()) {
-        if (message) {
-            *message =
-                target.status
-                    == TSParameterInsertStatus::NoCurrentParameterScope
-                ? QStringLiteral("No current parameter scope")
-                : QStringLiteral("No clear parameter insert point");
-        }
-        return false;
-    }
-
-    QTextCursor cursor = editor->textCursor();
-    cursor.beginEditBlock();
-    cursor.setPosition(target.insertChar);
-    cursor.insertText(target.insertText);
-    if (target.needsTrailingComma
-        && target.trailingCommaInsertChar >= 0) {
-        cursor.setPosition(target.trailingCommaInsertChar);
-        cursor.insertText(QStringLiteral(","));
-    }
-    cursor.endEditBlock();
-
-    QTextCursor caret = editor->textCursor();
-    caret.setPosition(target.caretCharAfterEdit);
-    editor->setTextCursor(caret);
-    return true;
-}
-
-namespace {
-QString packageToolFailureMessage(TSPackageToolInsertStatus status)
-{
-    switch (status) {
-    case TSPackageToolInsertStatus::NoCurrentPackage:
-        return QStringLiteral("No current package");
-    case TSPackageToolInsertStatus::InsideRtlScope:
-        return QStringLiteral(
-            "Package tools are unavailable inside module/interface scope");
-    case TSPackageToolInsertStatus::PackageHasSyntaxError:
-        return QStringLiteral("Current package has syntax errors");
-    case TSPackageToolInsertStatus::NoEndpackage:
-        return QStringLiteral("No endpackage found");
-    case TSPackageToolInsertStatus::NoClearPackageInsertPoint:
-        return QStringLiteral("No clear package insert point");
-    case TSPackageToolInsertStatus::Ok:
-        return QString();
-    }
-    return QStringLiteral("No clear package insert point");
-}
-} // namespace
-
-EditorPackageToolAvailability MyCodeEditorState::currentPackageToolAvailability(
-    const MyCodeEditor* editor) const
-{
-    EditorPackageToolAvailability availability;
-    if (!editor)
-        return availability;
-
-    const TSPackageToolInsertTarget target =
-        syntax.packageToolInsertTargetAt(editor->textCursor().position(),
-                                         PackageToolKind::Parameter);
-    availability.available = target.ok();
-    availability.packageName = target.packageName;
-    availability.failureMessage = packageToolFailureMessage(target.status);
-    return availability;
-}
-
-bool MyCodeEditorState::executePackageToolInsert(MyCodeEditor* editor,
-                                                 PackageToolKind kind,
-                                                 QString* message)
-{
-    if (!editor)
-        return false;
-
-    const TSPackageToolInsertTarget target =
-        syntax.packageToolInsertTargetAt(editor->textCursor().position(), kind);
-    if (!target.ok()) {
-        const QString failure = packageToolFailureMessage(target.status);
-        if (message)
-            *message = failure;
-        emit editor->editorStatusMessageRequested(failure);
-        return false;
-    }
-
-    const PackageToolService service;
-    const CodeTemplateItem packageTemplate =
-        service.templateForInsertion(kind,
-                                     target.lineIndent,
-                                     target.insertAfterLine);
-    if (packageTemplate.insertText.isEmpty()) {
-        const QString failure = QStringLiteral("No package template available");
-        if (message)
-            *message = failure;
-        emit editor->editorStatusMessageRequested(failure);
-        return false;
-    }
-
-    clearTemplateSlotMode(editor);
-    QTextCursor cursor = editor->textCursor();
-    cursor.beginEditBlock();
-    cursor.setPosition(target.insertChar);
-    cursor.insertText(packageTemplate.insertText);
-    cursor.endEditBlock();
-
-    startTemplateSlotMode(editor,
-                          target.insertChar,
-                          packageTemplate.insertText.size(),
-                          packageTemplate.templateSlots);
-
-    const QString packageName =
-        target.packageName.isEmpty()
-            ? QStringLiteral("package")
-            : QStringLiteral("package %1").arg(target.packageName);
-    const QString success =
-        QStringLiteral("Inserted %1 in %2")
-            .arg(PackageToolService::labelForKind(kind), packageName);
-    if (message)
-        *message = success;
-    emit editor->editorStatusMessageRequested(success);
-    return true;
-}
-
-bool MyCodeEditorState::goToFinalEndmodule(MyCodeEditor* editor,
-                                                  QString* message)
-{
-    if (!editor)
-        return false;
-
-    const TSModuleEndNavigationTarget target =
-        syntax.moduleEndNavigationTargetAt(editor->textCursor().position());
-    if (!target.ok()) {
-        if (message) {
-            *message =
-                target.status
-                    == TSModuleEndNavigationStatus::NoCurrentModule
-                ? QStringLiteral("No current module")
-                : QStringLiteral("No endmodule found");
-        }
-        return false;
-    }
-
-    QTextCursor cursor = editor->textCursor();
-    cursor.setPosition(target.caretChar);
-    editor->setTextCursor(cursor);
-    editor->ensureCursorVisible();
-    if (message)
-        *message = QStringLiteral("Moved to final endmodule");
-    return true;
-}
-bool MyCodeEditorState::selectInsideBeginEnd(MyCodeEditor* editor,
-                                             QString* message)
-{
-    if (!editor || !editor->document())
-        return false;
-
-    const TSBeginEndInsideTarget target =
-        syntax.beginEndInsideTargetAt(editor->textCursor().position());
-    if (!target.ok()) {
-        if (message) {
-            *message =
-                target.status == TSBeginEndInsideStatus::EmptyBeginEndBlock
-                    ? QStringLiteral("No begin-end body")
-                    : QStringLiteral("No begin-end block");
-        }
-        return false;
-    }
-
-    QTextCursor cursor(editor->document());
-    cursor.setPosition(target.startChar);
-    cursor.setPosition(target.endChar, QTextCursor::KeepAnchor);
-    editor->setTextCursor(cursor);
-    if (message) {
-        *message = QStringLiteral("Selected inside begin-end");
-    }
-    emit editor->editorStatusMessageRequested(
-        QStringLiteral("Selected inside begin-end lines %1-%2")
-            .arg(target.startLine + 1)
-            .arg(target.endLine + 1));
-    return true;
-}
-
-EditorSemanticContext MyCodeEditorState::semanticContextForPosition(
-    const MyCodeEditor* editor,
-    int cursorPosition,
-    bool includeDocumentText) const
-{
-    const int semanticPosition = cursorPosition >= 0
-        ? cursorPosition
-        : editor->textCursor().position();
-
-    EditorSemanticContext context = semantic.contextForDocument(
-        editor->document(),
-        identity.current(),
-        currentModuleNameAt(semanticPosition),
-        semanticPosition,
-        false,
-        semanticDocumentRevision());
-    context.packageName = syntax.packageNameAt(semanticPosition);
-    if (includeDocumentText)
-        context.documentText = editor->cachedDocumentText();
-    context.hierarchyInstance = hierarchyInstance;
-    return context;
-}
-
-void MyCodeEditorState::handleControlKeyPress(
-    MyCodeEditor* editor,
-    QKeyEvent* event)
-{
-    sourceNavigation.handleControlKeyPress(
-        editor,
-        event,
-        semanticService(),
-        sourceContextProvider(editor),
-        selections);
-    sourceNavigation.syncMode();
-}
-
-void MyCodeEditorState::handleControlKeyRelease(
-    MyCodeEditor* editor,
-    QKeyEvent* event)
-{
-    sourceNavigation.handleControlKeyRelease(
-        editor,
-        event,
-        semanticService(),
-        sourceContextProvider(editor),
-        selections);
-    sourceNavigation.syncMode();
-}
-
-
-void MyCodeEditorState::startTemplateSlotMode(
-    MyCodeEditor* editor,
-    int insertionStart,
-    int insertedLength,
-    const CodeTemplateSlotList& slotMetadata)
-{
-    templateSlots.start(editor,
-                        insertionStart,
-                        insertedLength,
-                        slotMetadata);
-}
-
-bool MyCodeEditorState::templateSlotModeActive() const
-{
-    return templateSlots.active();
-}
-
-int MyCodeEditorState::templateSlotModeActiveIndex() const
-{
-    return templateSlots.activeIndex();
-}
-
-int MyCodeEditorState::templateSlotModeSlotCount() const
-{
-    return templateSlots.slotCount();
-}
-
-bool MyCodeEditorState::templateSlotModeBlinkOn() const
-{
-    return templateSlots.blinkOn();
-}
-
-bool MyCodeEditorState::columnSelectionActiveForCommand() const
-{
-    return columnMode.selectionActive();
-}
-
-bool MyCodeEditorState::virtualCursorActiveForTest() const
-{
-    return columnMode.virtualCursorActive();
-}
-
-int MyCodeEditorState::virtualCursorLineForTest() const
-{
-    return columnMode.virtualCursorLine();
-}
-
-int MyCodeEditorState::virtualCursorColumnForTest() const
-{
-    return columnMode.virtualCursorColumn();
-}
-
-void MyCodeEditorState::clearVirtualCursor(
-    MyCodeEditor* editor)
-{
-    columnMode.clearVirtualCursor(editor);
-}
-
-void MyCodeEditorState::handleVirtualCursorChanged(
-    MyCodeEditor* editor)
-{
-    columnMode.handleVirtualCursorChanged(editor);
-}
-
-void MyCodeEditorState::prepareVirtualCursorInput(
-    MyCodeEditor* editor)
-{
-    columnMode.prepareVirtualCursorInput(editor);
-}
-
-bool MyCodeEditorState::handleVirtualCursorKeyPress(
-    MyCodeEditor* editor,
-    QKeyEvent* event)
-{
-    if (templateSlotModeActive())
-        return false;
-    return columnMode.handleVirtualCursorKeyPress(
-        editor,
-        event);
-}
-
-QStringList MyCodeEditorState::columnSelectionRowTexts(
-    MyCodeEditor* editor) const
-{
-    return columnMode.selectedRows(editor);
-}
-
-bool MyCodeEditorState::applyColumnSelectionRowTexts(
-    MyCodeEditor* editor,
-    const QStringList& rows,
-    bool replaceSelection,
-    QString* message)
-{
-    return columnMode.applyRows(
-        editor,
-        rows,
-        replaceSelection,
-        message);
-}
-
-void MyCodeEditorState::clearTemplateSlotMode(
-    MyCodeEditor* editor,
-    const QString& message,
-    bool updatePresentation)
-{
-    templateSlots.clear(editor,
-                        message,
-                        updatePresentation);
-}
-
-bool MyCodeEditorState::handleTemplateSlotKeyPress(
-    MyCodeEditor* editor,
-    QKeyEvent* event)
-{
-    return templateSlots.handleKeyPress(editor, event);
-}
-
-void MyCodeEditorState::handleTemplateSlotContentsChange(
-    MyCodeEditor* editor,
-    int position,
-    int charsRemoved,
-    int charsAdded,
-    bool updatePresentation)
-{
-    templateSlots.handleContentsChange(
-        editor,
-        position,
-        charsRemoved,
-        charsAdded,
-        updatePresentation);
-}
-
-void MyCodeEditorState::handleTemplateSlotCursorChanged(
-    MyCodeEditor* editor)
-{
-    templateSlots.handleCursorChanged(editor);
-}
 
 bool MyCodeEditorState::handleKeyPress(MyCodeEditor* editor, QKeyEvent* event)
 {
@@ -2703,6 +2016,12 @@ bool MyCodeEditorState::handleKeyPress(MyCodeEditor* editor, QKeyEvent* event)
     if (event->key() == Qt::Key_Escape) {
         const EditorModeId escapeMode = modes.escapeTarget();
         switch (escapeMode) {
+        case EditorModeId::CommandMode:
+        case EditorModeId::MultiCursor:
+        case EditorModeId::KeywordGhost:
+            modes.exit(escapeMode,
+                       EditorModeExitReason::Canceled);
+            break;
         case EditorModeId::SignalSelection:
             cancelSignalSelectionMode(editor);
             emit editor->editorStatusMessageRequested(
@@ -2744,7 +2063,76 @@ bool MyCodeEditorState::handleKeyPress(MyCodeEditor* editor, QKeyEvent* event)
         }
     }
 
+    const bool nextOccurrenceShortcut =
+        matchesRegisteredShortcut(
+            event,
+            QStringLiteral(
+                "select.nextSymbolOccurrence"));
+    const bool allOccurrencesShortcut =
+        matchesRegisteredShortcut(
+            event,
+            QStringLiteral(
+                "select.allSymbolOccurrences"));
+    if ((nextOccurrenceShortcut || allOccurrencesShortcut)
+        && modes.primaryMode()
+               == EditorModeId::SourceNavigation) {
+        // A modifier press can enter transient Ctrl-hover navigation before
+        // the rest of the registered chord arrives.  The explicit occurrence
+        // action owns the chord and must close that transient mode first.
+        modes.exit(EditorModeId::SourceNavigation,
+                   EditorModeExitReason::Conflict);
+    }
+
     const EditorModeId primaryMode = modes.primaryMode();
+    const bool occurrenceMode =
+        primaryMode == EditorModeId::None
+        || primaryMode == EditorModeId::MultiCursor
+        || primaryMode == EditorModeId::KeywordGhost;
+    if (occurrenceMode
+        && nextOccurrenceShortcut) {
+        keywordGhost.clear(editor);
+        if (requestRegisteredEditorAction(
+                editor,
+                QStringLiteral(
+                    "select.nextSymbolOccurrence"))) {
+            event->accept();
+            return true;
+        }
+        QString failure;
+        selectSymbolOccurrences(
+            editor, false, &failure);
+        if (!failure.isEmpty()) {
+            emit editor->editorStatusMessageRequested(
+                failure);
+        }
+        event->accept();
+        return true;
+    }
+    if (occurrenceMode
+        && allOccurrencesShortcut) {
+        keywordGhost.clear(editor);
+        if (requestRegisteredEditorAction(
+                editor,
+                QStringLiteral(
+                    "select.allSymbolOccurrences"))) {
+            event->accept();
+            return true;
+        }
+        QString failure;
+        selectSymbolOccurrences(
+            editor, true, &failure);
+        if (!failure.isEmpty()) {
+            emit editor->editorStatusMessageRequested(
+                failure);
+        }
+        event->accept();
+        return true;
+    }
+
+    if (primaryMode == EditorModeId::KeywordGhost
+        && keywordGhost.handleKeyPress(editor, event)) {
+        return true;
+    }
     if (primaryMode == EditorModeId::SignalSelection) {
         event->accept();
         return true;
@@ -2760,6 +2148,167 @@ bool MyCodeEditorState::handleKeyPress(MyCodeEditor* editor, QKeyEvent* event)
             QStringLiteral("Fold Shelf: drag custom fold blocks"));
         event->accept();
         return true;
+    }
+
+    if (primaryMode == EditorModeId::MultiCursor) {
+        const bool undoShortcut =
+            matchesRegisteredShortcut(
+                event,
+                QStringLiteral("edit.undo"));
+        const bool redoShortcut =
+            matchesRegisteredShortcut(
+                event,
+                QStringLiteral("edit.redo"));
+        if (undoShortcut || redoShortcut) {
+            multiCursor.escapeToSingleCursor();
+            const QString actionId = undoShortcut
+                ? QStringLiteral("edit.undo")
+                : QStringLiteral("edit.redo");
+            if (!requestRegisteredEditorAction(
+                    editor, actionId)) {
+                if (undoShortcut)
+                    editor->undo();
+                else
+                    editor->redo();
+            }
+            event->accept();
+            return true;
+        }
+        if (matchesRegisteredShortcut(
+                event,
+                QStringLiteral("edit.copy"))) {
+            if (!requestRegisteredEditorAction(
+                    editor,
+                    QStringLiteral("edit.copy"))) {
+                editor->copy();
+            }
+            event->accept();
+            return true;
+        }
+        if (matchesRegisteredShortcut(
+                event,
+                QStringLiteral("edit.cut"))) {
+            if (!requestRegisteredEditorAction(
+                    editor,
+                    QStringLiteral("edit.cut"))) {
+                editor->cut();
+            }
+            event->accept();
+            return true;
+        }
+        if (matchesRegisteredShortcut(
+                event,
+                QStringLiteral("edit.paste"))) {
+            if (!requestRegisteredEditorAction(
+                    editor,
+                    QStringLiteral("edit.paste"))) {
+                editor->paste();
+            }
+            event->accept();
+            return true;
+        }
+        if (event->key() == Qt::Key_Backspace) {
+            multiCursor.backspace();
+            event->accept();
+            return true;
+        }
+        if (event->key() == Qt::Key_Delete) {
+            multiCursor.deleteForward();
+            event->accept();
+            return true;
+        }
+        if (event->key() == Qt::Key_Return
+            || event->key() == Qt::Key_Enter) {
+            const Qt::KeyboardModifiers commandModifiers =
+                event->modifiers()
+                & (Qt::ControlModifier
+                   | Qt::AltModifier
+                   | Qt::MetaModifier);
+            if (commandModifiers == Qt::NoModifier) {
+                multiCursor.insertStructuralNewline(
+                    syntax.tsDocument(),
+                    kManualIndentWidth);
+            } else {
+                multiCursor.insertNewline();
+            }
+            event->accept();
+            return true;
+        }
+        if (event->key() == Qt::Key_Backtab
+            || (event->key() == Qt::Key_Tab
+                && event->modifiers()
+                       == Qt::ShiftModifier)) {
+            multiCursor.unindent(4);
+            event->accept();
+            return true;
+        }
+        if (event->key() == Qt::Key_Tab
+            && event->modifiers()
+                   == Qt::NoModifier) {
+            multiCursor.insertText(
+                QStringLiteral("    "));
+            event->accept();
+            return true;
+        }
+
+        EditorMultiCursorMove move =
+            EditorMultiCursorMove::Left;
+        bool navigation = true;
+        switch (event->key()) {
+        case Qt::Key_Left:
+            move = EditorMultiCursorMove::Left;
+            break;
+        case Qt::Key_Right:
+            move = EditorMultiCursorMove::Right;
+            break;
+        case Qt::Key_Up:
+            move = EditorMultiCursorMove::Up;
+            break;
+        case Qt::Key_Down:
+            move = EditorMultiCursorMove::Down;
+            break;
+        case Qt::Key_Home:
+            move = EditorMultiCursorMove::LineStart;
+            break;
+        case Qt::Key_End:
+            move = EditorMultiCursorMove::LineEnd;
+            break;
+        default:
+            navigation = false;
+            break;
+        }
+        const Qt::KeyboardModifiers navigationModifiers =
+            event->modifiers()
+            & (Qt::ShiftModifier
+               | Qt::ControlModifier
+               | Qt::AltModifier
+               | Qt::MetaModifier);
+        if (navigation
+            && (navigationModifiers
+                    == Qt::NoModifier
+                || navigationModifiers
+                       == Qt::ShiftModifier)) {
+            multiCursor.moveCarets(
+                move,
+                navigationModifiers
+                    == Qt::ShiftModifier);
+            event->accept();
+            return true;
+        }
+
+        const Qt::KeyboardModifiers commandModifiers =
+            event->modifiers()
+            & (Qt::ControlModifier
+               | Qt::AltModifier
+               | Qt::MetaModifier);
+        if (commandModifiers == Qt::NoModifier
+            && !event->text().isEmpty()) {
+            multiCursor.insertTextStructurally(
+                event->text(),
+                syntax.tsDocument());
+            event->accept();
+            return true;
+        }
     }
 
     if (primaryMode == EditorModeId::TemplateSlots
@@ -2787,22 +2336,232 @@ bool MyCodeEditorState::handleKeyPress(MyCodeEditor* editor, QKeyEvent* event)
         return true;
     }
 
-    if (handleSmartSelectionExpansion(editor, event))
-        return true;
+    QString selectionActionId;
+    if (matchesRegisteredShortcut(
+            event,
+            QString::fromLatin1(
+                ActionIds::SelectExpandSmart))) {
+        selectionActionId = QString::fromLatin1(
+            ActionIds::SelectExpandSmart);
+    } else if (matchesRegisteredShortcut(
+                   event,
+                   QString::fromLatin1(
+                       ActionIds::
+                           NavigationNextSelectedSymbolOccurrence))) {
+        selectionActionId = QString::fromLatin1(
+            ActionIds::NavigationNextSelectedSymbolOccurrence);
+    } else if (matchesRegisteredShortcut(
+                   event,
+                   QString::fromLatin1(
+                       ActionIds::
+                           NavigationPreviousSelectedSymbolOccurrence))) {
+        selectionActionId = QString::fromLatin1(
+            ActionIds::NavigationPreviousSelectedSymbolOccurrence);
+    }
+    if (!selectionActionId.isEmpty()) {
+        bool executed = requestRegisteredEditorAction(
+            editor, selectionActionId);
+        if (!executed) {
+            QString message;
+            if (selectionActionId
+                == QString::fromLatin1(
+                    ActionIds::SelectExpandSmart)) {
+                executed = expandSmartSelection(
+                    editor, &message);
+            } else {
+                executed = navigateSelectedSymbolOccurrence(
+                    editor,
+                    selectionActionId
+                        == QString::fromLatin1(
+                            ActionIds::
+                                NavigationPreviousSelectedSymbolOccurrence),
+                    &message);
+            }
+        }
+        if (executed) {
+            event->accept();
+            return true;
+        }
+    }
 
-    if (handleSelectedSymbolOccurrenceNavigation(editor, event))
+    const bool structuralNavigationMode =
+        primaryMode == EditorModeId::None
+        || primaryMode == EditorModeId::KeywordGhost;
+    if (structuralNavigationMode
+        && matchesRegisteredShortcut(
+            event,
+            QString::fromLatin1(
+                ActionIds::NavigationNextAssignment))) {
+        keywordGhost.clear(editor);
+        if (!requestRegisteredEditorAction(
+                editor,
+                QString::fromLatin1(
+                    ActionIds::NavigationNextAssignment))) {
+            navigateSelectedSignalAssignment(
+                editor, false, nullptr);
+        }
+        event->accept();
         return true;
+    }
+
+    const bool undoShortcut =
+        matchesRegisteredShortcut(
+            event, QStringLiteral("edit.undo"));
+    const bool redoShortcut =
+        matchesRegisteredShortcut(
+            event, QStringLiteral("edit.redo"));
+    if (undoShortcut || redoShortcut) {
+        const QString actionId = undoShortcut
+            ? QStringLiteral("edit.undo")
+            : QStringLiteral("edit.redo");
+        if (!requestRegisteredEditorAction(
+                editor, actionId)) {
+            if (undoShortcut)
+                editor->undo();
+            else
+                editor->redo();
+        }
+        event->accept();
+        return true;
+    }
+
+    if (matchesRegisteredShortcut(
+            event, QStringLiteral("select.all"))) {
+        if (!requestRegisteredEditorAction(
+                editor,
+                QStringLiteral("select.all"))) {
+            editor->selectAll();
+        }
+        event->accept();
+        return true;
+    }
+
+    if (matchesRegisteredShortcut(
+            event, QStringLiteral("edit.find"))) {
+        if (!requestRegisteredEditorAction(
+                editor,
+                QStringLiteral("edit.find"))) {
+            editor->showFindDialog();
+        }
+        event->accept();
+        return true;
+    }
+
+    if (matchesRegisteredShortcut(
+            event, QStringLiteral("edit.replace"))) {
+        if (!requestRegisteredEditorAction(
+                editor,
+                QStringLiteral("edit.replace"))) {
+            editor->showReplaceDialog();
+        }
+        event->accept();
+        return true;
+    }
+
+    if (matchesRegisteredShortcut(
+            event,
+            QStringLiteral("navigation.goLine"))) {
+        if (!requestRegisteredEditorAction(
+                editor,
+                QStringLiteral("navigation.goLine"))) {
+            editor->showGotoLineDialog();
+        }
+        event->accept();
+        return true;
+    }
+    if (matchesRegisteredShortcut(
+            event,
+            QStringLiteral("format.document"))) {
+        if (!requestRegisteredEditorAction(
+                editor,
+                QStringLiteral("format.document"))) {
+            editor->formatDocument();
+        }
+        event->accept();
+        return true;
+    }
+    if (structuralNavigationMode
+        && matchesRegisteredShortcut(
+            event,
+            QString::fromLatin1(
+                ActionIds::NavigationPreviousAssignment))) {
+        keywordGhost.clear(editor);
+        if (!requestRegisteredEditorAction(
+                editor,
+                QString::fromLatin1(
+                    ActionIds::NavigationPreviousAssignment))) {
+            navigateSelectedSignalAssignment(
+                editor, true, nullptr);
+        }
+        event->accept();
+        return true;
+    }
+    if (structuralNavigationMode
+        && matchesRegisteredShortcut(
+            event,
+            QString::fromLatin1(
+                ActionIds::
+                    NavigationNextConditionalBranch))) {
+        keywordGhost.clear(editor);
+        if (!requestRegisteredEditorAction(
+                editor,
+                QString::fromLatin1(
+                    ActionIds::
+                        NavigationNextConditionalBranch))) {
+            navigateConditionalBranch(
+                editor, false, nullptr);
+        }
+        event->accept();
+        return true;
+    }
+    if (structuralNavigationMode
+        && matchesRegisteredShortcut(
+            event,
+            QString::fromLatin1(
+                ActionIds::
+                    NavigationPreviousConditionalBranch))) {
+        keywordGhost.clear(editor);
+        if (!requestRegisteredEditorAction(
+                editor,
+                QString::fromLatin1(
+                    ActionIds::
+                        NavigationPreviousConditionalBranch))) {
+            navigateConditionalBranch(
+                editor, true, nullptr);
+        }
+        event->accept();
+        return true;
+    }
 
     if (handleSafeRename(editor, event))
         return true;
 
-    if (handleDuplicateSelectionOrLine(editor, event))
-        return true;
-
-    if (handleMoveLineBlock(
-            editor,
+    QString moveLinesActionId;
+    if (matchesRegisteredShortcut(
             event,
-            modes.isActive(EditorModeId::ColumnSelection))) {
+            QString::fromLatin1(
+                ActionIds::EditMoveLinesUp))) {
+        moveLinesActionId = QString::fromLatin1(
+            ActionIds::EditMoveLinesUp);
+    } else if (matchesRegisteredShortcut(
+                   event,
+                   QString::fromLatin1(
+                       ActionIds::EditMoveLinesDown))) {
+        moveLinesActionId = QString::fromLatin1(
+            ActionIds::EditMoveLinesDown);
+    }
+    if (!moveLinesActionId.isEmpty()) {
+        if (!requestRegisteredEditorAction(
+                editor, moveLinesActionId)) {
+            executeLineOperation(
+                editor,
+                moveLinesActionId
+                        == QString::fromLatin1(
+                            ActionIds::EditMoveLinesUp)
+                    ? EditorLineOperation::MoveLinesUp
+                    : EditorLineOperation::MoveLinesDown);
+        }
+        event->accept();
         return true;
     }
 
@@ -2828,8 +2587,42 @@ bool MyCodeEditorState::handleKeyPress(MyCodeEditor* editor, QKeyEvent* event)
         return true;
     }
 
-    if (columnMode.handleClipboard(editor, event))
-        return true;
+    if (columnMode.selectionActive()) {
+        QString columnClipboardAction;
+        if (matchesRegisteredShortcut(
+                event,
+                QStringLiteral("edit.copy"))) {
+            columnClipboardAction =
+                QStringLiteral("edit.copy");
+        } else if (matchesRegisteredShortcut(
+                       event,
+                       QStringLiteral("edit.cut"))) {
+            columnClipboardAction =
+                QStringLiteral("edit.cut");
+        } else if (matchesRegisteredShortcut(
+                       event,
+                       QStringLiteral("edit.paste"))) {
+            columnClipboardAction =
+                QStringLiteral("edit.paste");
+        }
+        if (!columnClipboardAction.isEmpty()) {
+            if (!requestRegisteredEditorAction(
+                    editor,
+                    columnClipboardAction)) {
+                if (columnClipboardAction
+                    == QStringLiteral("edit.copy")) {
+                    editor->copy();
+                } else if (columnClipboardAction
+                           == QStringLiteral("edit.cut")) {
+                    editor->cut();
+                } else {
+                    editor->paste();
+                }
+            }
+            event->accept();
+            return true;
+        }
+    }
 
     if (columnMode.handleSelectionNavigation(
             editor,
@@ -2841,6 +2634,94 @@ bool MyCodeEditorState::handleKeyPress(MyCodeEditor* editor, QKeyEvent* event)
             editor,
             event)) {
         return true;
+    }
+
+    if (matchesRegisteredShortcut(
+            event,
+            QStringLiteral("edit.copy"))) {
+        if (requestRegisteredEditorAction(
+                editor,
+                QStringLiteral("edit.copy"))) {
+            event->accept();
+            return true;
+        }
+        const EditorLineOperationResult result =
+            executeLineOperation(
+                editor,
+                EditorLineOperation::Copy);
+        if (result.handled) {
+            event->accept();
+            return true;
+        }
+    }
+
+    if (matchesRegisteredShortcut(
+            event,
+            QStringLiteral("edit.cut"))) {
+        if (requestRegisteredEditorAction(
+                editor,
+                QStringLiteral("edit.cut"))) {
+            event->accept();
+            return true;
+        }
+        const EditorLineOperationResult result =
+            executeLineOperation(
+                editor,
+                EditorLineOperation::Cut);
+        if (result.handled) {
+            event->accept();
+            return true;
+        }
+    }
+
+    if (matchesRegisteredShortcut(
+            event,
+            QStringLiteral("edit.paste"))) {
+        if (!requestRegisteredEditorAction(
+                editor,
+                QStringLiteral("edit.paste"))) {
+            editor->paste();
+        }
+        event->accept();
+        return true;
+    }
+
+    if (matchesRegisteredShortcut(
+            event,
+            QStringLiteral("edit.deleteLines"))) {
+        if (requestRegisteredEditorAction(
+                editor,
+                QStringLiteral("edit.deleteLines"))) {
+            event->accept();
+            return true;
+        }
+        const EditorLineOperationResult result =
+            executeLineOperation(
+                editor,
+                EditorLineOperation::DeleteLines);
+        if (result.handled) {
+            event->accept();
+            return true;
+        }
+    }
+
+    if (matchesRegisteredShortcut(
+            event,
+            QStringLiteral("edit.joinLines"))) {
+        if (requestRegisteredEditorAction(
+                editor,
+                QStringLiteral("edit.joinLines"))) {
+            event->accept();
+            return true;
+        }
+        const EditorLineOperationResult result =
+            executeLineOperation(
+                editor,
+                EditorLineOperation::JoinWithNextLine);
+        if (result.handled) {
+            event->accept();
+            return true;
+        }
     }
 
     if (adjustSelectedRangeBound(editor, event))
@@ -2855,7 +2736,7 @@ bool MyCodeEditorState::handleKeyPress(MyCodeEditor* editor, QKeyEvent* event)
     if (completionWorkflow.handleInlineAbbreviationTab(event))
         return true;
 
-    if (handleBracketPairInsertion(editor, event))
+    if (structuralInput.handleKeyPress(editor, event, syntax))
         return true;
 
     if (completionWorkflow.handleCompletionPopupKey(event))
@@ -2880,13 +2761,16 @@ void MyCodeEditorState::beginSynchronousEditTransaction()
 
 void MyCodeEditorState::endSynchronousEditTransaction(MyCodeEditor* editor)
 {
+    lifecycleTrace("transaction.end-enter");
     if (synchronousEditTransactionDepth <= 0)
         return;
     --synchronousEditTransactionDepth;
     if (synchronousEditTransactionDepth != 0)
         return;
     ++completedSynchronousEditTransactions;
+    lifecycleTrace("transaction.before-finish");
     finishEditorInput(editor);
+    lifecycleTrace("transaction.after-finish");
 }
 
 EditorSynchronousEditState
@@ -2902,27 +2786,32 @@ MyCodeEditorState::synchronousEditStateForTest() const
 
 void MyCodeEditorState::finishEditorInput(MyCodeEditor* editor)
 {
+    lifecycleTrace("finish.enter");
     suppressNextCursorPresentation = false;
     if (!editorPresentationPending)
         return;
     sourceNavigation.handleEditorContentChanged(editor, selections);
+    lifecycleTrace("finish.navigation-content");
     sourceNavigation.syncMode();
+    lifecycleTrace("finish.navigation-mode");
     templateSlots.flushPendingPresentation(editor);
+    lifecycleTrace("finish.templates");
     if (ghostPresentationPending) {
-        setGhostAnnotations(editor, ghostAnnotations);
         ghostPresentationPending = false;
+        if (editor) {
+            gutter.updateViewportMargins(editor);
+            handleResize(editor);
+            gutter.handleUpdateRequest(editor,
+                                       editor->viewport()->rect(),
+                                       0);
+            editor->viewport()->update();
+        }
     }
+    refreshDerivedEditorState(editor, false);
+    lifecycleTrace("finish.derived");
     refreshScopeAndCurrentLineHighlight(editor);
+    lifecycleTrace("finish.highlights");
     editorPresentationPending = false;
-}
-
-bool MyCodeEditorState::handleKeyRelease(
-    MyCodeEditor* editor,
-    QKeyEvent* event)
-{
-    handleControlKeyRelease(editor, event);
-    Q_UNUSED(event)
-    return false;
 }
 
 bool MyCodeEditorState::handleDragEnter(
@@ -2944,10 +2833,11 @@ bool MyCodeEditorState::handleDrop(MyCodeEditor* editor, QDropEvent* event)
     return folding.handleFoldShelfDrop(editor, event);
 }
 
-void MyCodeEditorState::handleResize(MyCodeEditor* editor) const
+void MyCodeEditorState::handleResize(MyCodeEditor* editor)
 {
     gutter.updateViewportMargins(editor);
     gutter.resizeTo(editor, editor->contentsRect());
+    refreshVisibleRegionPresentation(editor);
 }
 
 bool MyCodeEditorState::handleGutterMousePress(
@@ -2982,42 +2872,90 @@ bool MyCodeEditorState::handleGutterMouseMove(
     MyCodeEditor* editor,
     QMouseEvent* event)
 {
+    const auto closeDiagnosticPeek = [this]() {
+        EditorHoverPopup* peek = sourceNavigation.currentPeek();
+        if (peek
+            && peek->isVisible()
+            && peek->contentModel().kind
+                   == PeekContentKind::DiagnosticDetail) {
+            sourceNavigation.closeExternalPeek();
+        }
+    };
     if (!editor || !event)
         return false;
 
     const int y = static_cast<int>(event->position().y());
-    if (y < 0 || y >= editor->viewport()->height())
+    if (y < 0 || y >= editor->viewport()->height()) {
+        closeDiagnosticPeek();
         return false;
+    }
 
     ++hotPathMetrics.gutterBlockProbes;
     const QTextBlock block = editor->cursorForPosition(QPoint(0, y)).block();
-    if (!block.isValid() || !block.isVisible())
+    if (!block.isValid() || !block.isVisible()) {
+        closeDiagnosticPeek();
         return false;
+    }
     const EditorBlockGeometry geometry = editor->blockGeometry(
         block.blockNumber());
-    if (y < geometry.top || y > geometry.top + geometry.height)
+    if (y < geometry.top || y > geometry.top + geometry.height) {
+        closeDiagnosticPeek();
         return false;
+    }
 
     const qreal x = event->position().x();
-    if (x >= 14.0 && x <= 28.0
+    if (annotationDisplayOptions.enabled
+        && x >= 14.0 && x <= 28.0
         && diagnosticSeverityByLine.contains(block.blockNumber())) {
         const QString tooltip =
             diagnosticTooltipForLine(block.blockNumber());
         if (!tooltip.isEmpty()) {
-            QStringList richRows;
-            const QStringList rows = tooltip.split(QLatin1Char('\n'));
-            richRows.reserve(rows.size());
-            for (const QString& row : rows)
-                richRows.append(row.toHtmlEscaped());
-            QToolTip::showText(
-                event->globalPosition().toPoint(),
-                richRows.join(QStringLiteral("<br>")),
-                editor);
+            QStringList rows = tooltip.split(
+                QLatin1Char('\n'),
+                Qt::SkipEmptyParts);
+            const QString title =
+                QStringLiteral("Diagnostics - line %1")
+                    .arg(block.blockNumber() + 1);
+            EditorHoverPopup* peek =
+                sourceNavigation.beginExternalPeek(
+                    editor, false);
+            QStringList visibleRows;
+            if (peek
+                && peek->contentModel().kind
+                       == PeekContentKind::DiagnosticDetail) {
+                for (const PeekContentRow& row :
+                     peek->contentModel().rows) {
+                    visibleRows.append(row.text);
+                }
+            }
+            if (peek
+                && (!peek->isVisible()
+                    || peek->contentModel().kind
+                           != PeekContentKind::DiagnosticDetail
+                    || peek->contentModel().title != title
+                    || visibleRows != rows)) {
+                const QString message =
+                    rows.isEmpty() ? QString() : rows.takeFirst();
+                QPoint anchorPoint =
+                    event->globalPosition().toPoint();
+                anchorPoint.rx() -= 7;
+                anchorPoint.ry() +=
+                    static_cast<int>(geometry.top) - y;
+                peek->showDiagnosticDetail(
+                    title,
+                    message,
+                    rows,
+                    QRect(anchorPoint,
+                          QSize(14,
+                                qMax(1,
+                                     static_cast<int>(
+                                         geometry.height)))),
+                    editor->font());
+            }
         }
         return true;
     }
-    if (x >= 14.0 && x <= 28.0)
-        QToolTip::hideText();
+    closeDiagnosticPeek();
 
     const bool handled =
         folding.handleFoldRegionHoverLine(editor, block.blockNumber());
@@ -3032,10 +2970,37 @@ void MyCodeEditorState::paintGutterDecorations(
     const QRect& rect) const
 {
     folding.paintGutter(editor, painter, rect);
-    if (!editor || diagnosticSeverityByLine.isEmpty())
+    if (!editor
+        || !annotationDisplayOptions.enabled
+        || diagnosticSeverityByLine.isEmpty()) {
         return;
+    }
 
     QTextBlock block = editor->firstVisibleBlock();
+    AnnotationLayerQuery query;
+    query.firstVisibleLine = qMax(0, block.blockNumber());
+    query.lastVisibleLine = qMax(
+        query.firstVisibleLine,
+        editor->cursorForPosition(
+            QPoint(0, qMax(0, rect.bottom()))).blockNumber());
+    query.maxAnnotationsPerLine =
+        annotationDisplayOptions.maxAnnotationsPerLine;
+    query.maxLanes = 1;
+    QHash<int, SemanticDiagnostic::Severity> visibleDiagnostics;
+    const AnnotationLayerReport report = annotationLayer.resolve(query);
+    for (const ResolvedEditorAnnotation& resolved :
+         report.annotations) {
+        const EditorAnnotation& annotation = resolved.annotation;
+        if (annotation.kind != EditorAnnotationKind::Diagnostic
+            || annotation.placement
+                   != EditorAnnotationPlacement::Gutter) {
+            continue;
+        }
+        visibleDiagnostics.insert(
+            annotation.range.firstLine,
+            annotationDiagnosticSeverity(annotation));
+    }
+
     int top = static_cast<int>(
         editor->blockBoundingGeometry(block)
             .translated(editor->contentOffset())
@@ -3044,8 +3009,8 @@ void MyCodeEditorState::paintGutterDecorations(
         top + static_cast<int>(editor->blockBoundingRect(block).height());
     while (block.isValid() && top <= rect.bottom()) {
         const auto severity =
-            diagnosticSeverityByLine.constFind(block.blockNumber());
-        if (severity != diagnosticSeverityByLine.constEnd()) {
+            visibleDiagnostics.constFind(block.blockNumber());
+        if (severity != visibleDiagnostics.constEnd()) {
             const int middle = top + (bottom - top) / 2;
             const QPolygon triangle{
                 QPoint(21, middle - 6),
@@ -3078,11 +3043,12 @@ void MyCodeEditorState::paintGutterDecorations(
 
 void MyCodeEditorState::paintDiagnosticOverview(
     MyCodeEditor* editor,
-    QPaintEvent* event) const
+    QPaintEvent* event)
 {
     if (!editor
         || !event
-        || diagnosticSeverityByLine.isEmpty()
+        || !annotationDisplayOptions.enabled
+        || diagnosticOverviewSeverityByBucket.isEmpty()
         || editor->blockCount() <= 0) {
         return;
     }
@@ -3093,21 +3059,22 @@ void MyCodeEditorState::paintDiagnosticOverview(
     const int x = qMax(0, editor->viewport()->width() - markerWidth);
     const int availableHeight =
         qMax(1, editor->viewport()->height() - markerHeight);
-    const int denominator = qMax(1, editor->blockCount() - 1);
-    for (auto iterator = diagnosticSeverityByLine.constBegin();
-         iterator != diagnosticSeverityByLine.constEnd();
-         ++iterator) {
+    for (auto markerIt =
+             diagnosticOverviewSeverityByBucket.cbegin();
+         markerIt
+             != diagnosticOverviewSeverityByBucket.cend();
+         ++markerIt) {
+        ++hotPathMetrics.diagnosticOverviewCandidatesPainted;
         const int y = qRound(
-            static_cast<qreal>(qBound(0,
-                                     iterator.key(),
-                                     editor->blockCount() - 1))
-            / denominator
+            static_cast<qreal>(markerIt.key())
+            / (kDiagnosticOverviewBucketCount - 1)
             * availableHeight);
         const QRect marker(x, y, markerWidth, markerHeight);
         if (!event->rect().intersects(marker))
             continue;
         painter.fillRect(marker,
-                         diagnosticSeverityColor(iterator.value()));
+                         diagnosticSeverityColor(
+                             markerIt.value()));
     }
 }
 
@@ -3120,111 +3087,21 @@ void MyCodeEditorState::paintFoldPlaceholders(
     folding.paintPlaceholders(editor, painter);
 }
 
-void MyCodeEditorState::paintGhostAnnotations(
-    MyCodeEditor* editor,
-    QPaintEvent* event) const
-{
-    Q_UNUSED(event)
-    if (!editor || ghostAnnotations.isEmpty())
-        return;
-
-    QTextDocument* textDocument = editor->document();
-    if (!textDocument)
-        return;
-
-    QPainter painter(editor->viewport());
-    painter.setRenderHint(QPainter::TextAntialiasing);
-    QFont ghostFont = editor->font();
-    ghostFont.setItalic(true);
-    painter.setFont(ghostFont);
-
-    QColor color = editor->palette().color(QPalette::Text);
-    color.setAlpha(72);
-    painter.setPen(color);
-
-    const QFontMetrics metrics(painter.font());
-    const int documentEnd = qMax(0, textDocument->characterCount() - 1);
-    const int viewportWidth = editor->viewport()->width();
-    const int viewportHeight = editor->viewport()->height();
-    QHash<int, qreal> rightLineEndX;
-    constexpr qreal kLineTailSpacing = 8.0;
-
-    for (const GhostAnnotation& annotation : ghostAnnotations) {
-        if (!annotation.isValid())
-            continue;
-
-        const int anchorPosition =
-            qBound(0, annotation.anchorPosition, documentEnd);
-        const TSDocument* syntaxDocument = syntax.tsDocument();
-        if (syntaxDocument
-            && (syntaxDocument->isCommentAt(anchorPosition)
-                || (annotation.anchorLength > 0
-                    && syntaxDocument->isCommentAt(
-                        qMin(documentEnd,
-                             anchorPosition
-                                 + annotation.anchorLength - 1))))) {
-            continue;
-        }
-        QTextBlock block = textDocument->findBlock(anchorPosition);
-        if (!block.isValid() || !block.isVisible())
-            continue;
-
-        QTextCursor cursor(textDocument);
-        cursor.setPosition(anchorPosition);
-        const QRect anchorRect = editor->cursorRect(cursor);
-
-        const int textWidth = metrics.horizontalAdvance(annotation.text);
-        qreal x = -1;
-        qreal baseline = 0;
-        qreal visualTop = anchorRect.top();
-        qreal visualBottom = anchorRect.bottom();
-        const int line =
-            annotation.line > 0 ? annotation.line : block.blockNumber() + 1;
-        if (annotation.placement == GhostAnnotationPlacement::LeftOfAnchor) {
-            x = anchorRect.left() - textWidth - 8;
-            if (x < 2)
-                continue;
-            baseline = anchorRect.top()
-                + (anchorRect.height() + metrics.ascent()
-                   - metrics.descent()) / 2.0;
-        } else {
-            const EditorCodeLineTailGeometry tail =
-                geometry.codeLineTailGeometry(editor, block.blockNumber());
-            if (!tail.valid)
-                continue;
-            x = tail.textRight + kLineTailSpacing;
-            const qreal previousEnd = rightLineEndX.value(line, x);
-            if (x < previousEnd + kLineTailSpacing)
-                x = previousEnd + kLineTailSpacing;
-            baseline = tail.baseline;
-            visualTop = tail.top;
-            visualBottom = tail.top + tail.height;
-        }
-
-        if (visualBottom < 0 || visualTop > viewportHeight)
-            continue;
-        if (x >= viewportWidth - 4 || x + textWidth <= 2)
-            continue;
-        if (annotation.kind != GhostAnnotationKind::FormalPort
-            && (x < 2 || x + textWidth > viewportWidth - 4)) {
-            continue;
-        }
-        if (annotation.placement != GhostAnnotationPlacement::LeftOfAnchor)
-            rightLineEndX.insert(line, x + textWidth);
-
-        QColor annotationColor = color;
-        if (annotation.kind == GhostAnnotationKind::FormalPort)
-            annotationColor.setAlpha(96);
-        painter.setPen(annotationColor);
-        painter.drawText(QPointF(x, baseline), annotation.text);
-    }
-}
-
 void MyCodeEditorState::paintColumnSelection(
     MyCodeEditor* editor,
     QPaintEvent* event) const
 {
-    columnMode.paint(editor, event);
+    // The existing paint hook remains for MyCodeEditor compatibility.
+    // Column carets are rendered by the unified annotation pass.
+    Q_UNUSED(editor)
+    Q_UNUSED(event)
+}
+
+void MyCodeEditorState::paintMultiCursor(
+    MyCodeEditor* editor,
+    QPaintEvent* event) const
+{
+    multiCursor.paint(editor, event);
 }
 
 void MyCodeEditorState::handleContextMenu(
@@ -3245,8 +3122,7 @@ void MyCodeEditorState::handleContextMenu(
             currentModuleName(editor);
         request.actionContext.semanticState =
             !semanticRevisionText.isEmpty()
-                && semanticRevisionText
-                       == editor->toPlainText()
+                && cachedDocumentText() == editor->toPlainText()
                 ? EditorActionSemanticState::Current
                 : EditorActionSemanticState::Stale;
         request.actionContext.resolvedHierarchy =
@@ -3274,6 +3150,17 @@ void MyCodeEditorState::handleContextMenu(
             refactorMenu->addAction(item.text);
         createQueue->setObjectName(
             QStringLiteral("refactor.createAssignmentQueue"));
+        createQueue->setProperty(
+            "actionId",
+            QStringLiteral(
+                "refactor.createAssignmentQueue"));
+        if (const ActionDescriptor* descriptor =
+                findActionById(QStringLiteral(
+                    "refactor.createAssignmentQueue"))) {
+            createQueue->setProperty(
+                "executionRoute",
+                descriptor->executionRoute);
+        }
         createQueue->setEnabled(item.enabled);
         createQueue->setProperty(
             "visibleReason", item.visibleReason);
@@ -3289,6 +3176,18 @@ void MyCodeEditorState::handleContextMenu(
              position = contextCursor.position(),
              &actionTriggered]() {
                 actionTriggered = true;
+                QVariantMap parameters;
+                parameters.insert(
+                    QStringLiteral("cursorPosition"),
+                    position);
+                bool handled = false;
+                emit editor->registeredActionRequested(
+                    QStringLiteral(
+                        "refactor.createAssignmentQueue"),
+                    parameters,
+                    &handled);
+                if (handled)
+                    return;
                 QString message;
                 if (!createAssignmentQueueAt(
                         editor, position, &message)
@@ -3371,6 +3270,71 @@ bool MyCodeEditorState::editInstanceSlotsAt(
     return true;
 }
 
+DeclareSignalFactCollectionResult
+MyCodeEditorState::signalDefinitionFactsAt(
+    const MyCodeEditor* editor,
+    int cursorPosition,
+    SemanticSnapshotToken* semanticToken,
+    std::uint64_t expectedSemanticGeneration,
+    std::uint64_t expectedDocumentRevision) const
+{
+    if (semanticToken)
+        *semanticToken = {};
+
+    DeclareSignalFactCollectionQuery query;
+    query.document = syntax.tsDocument();
+    query.fileName = identity.current();
+    query.cursorPosition = cursorPosition;
+    query.documentRevision = semanticDocumentRevision();
+    query.expectedDocumentRevision =
+        expectedDocumentRevision != 0
+        ? expectedDocumentRevision
+        : query.documentRevision;
+    if (hierarchyInstance.isBound()) {
+        query.hierarchyInstancePath =
+            hierarchyInstance.instancePath;
+    }
+
+    SemanticIndex* index = SemanticIndex::getInstance();
+    if (index) {
+        query.semanticSnapshot = index->snapshotToken();
+        query.expectedSemanticGeneration =
+            expectedSemanticGeneration != 0
+            ? expectedSemanticGeneration
+            : query.semanticSnapshot.revision;
+    }
+    if (semanticToken)
+        *semanticToken = query.semanticSnapshot;
+
+    if (!editor || !editor->document())
+        query.document = nullptr;
+    return DeclareSignalFactCollector::collect(query);
+}
+
+DeclareSignalProposal
+MyCodeEditorState::signalDefinitionProposalAt(
+    const MyCodeEditor* editor,
+    int cursorPosition,
+    DeclareSignalFactCollectionResult* facts,
+    SemanticSnapshotToken* semanticToken,
+    std::uint64_t expectedSemanticGeneration,
+    std::uint64_t expectedDocumentRevision) const
+{
+    const DeclareSignalFactCollectionResult collected =
+        signalDefinitionFactsAt(
+            editor,
+            cursorPosition,
+            semanticToken,
+            expectedSemanticGeneration,
+            expectedDocumentRevision);
+    if (facts)
+        *facts = collected;
+    if (!collected.acceptedForProposal())
+        return {};
+    return DeclareSignalService::propose(
+        collected.request);
+}
+
 QString MyCodeEditorState::signalDefinitionCandidateAt(
     const MyCodeEditor* editor,
     int cursorPosition,
@@ -3381,215 +3345,97 @@ QString MyCodeEditorState::signalDefinitionCandidateAt(
             *failureReason = reason;
         return QString();
     };
-    if (!editor || !editor->document())
-        return fail(QStringLiteral("No editor document"));
 
-    const TSUndefinedSignalContext context =
-        syntax.undefinedSignalContextAt(cursorPosition);
-    if (!context.ok())
-        return fail(QStringLiteral("Identifier is not an undeclared signal context"));
-
-    SemanticIndex* semanticIndex =
-        SemanticIndex::getInstance();
-    const QString analyzedText =
-        semanticIndex
-            ? semanticIndex->getCachedFileContent(
-                  identity.current())
-            : QString();
-    const QString moduleName =
-        currentModuleNameAt(
-            context.identifier.startChar);
-    if (analyzedText.isEmpty()
-        || moduleName.isEmpty()) {
-        return fail(QStringLiteral(
-            "No analyzed module baseline is available"));
-    }
-
-    bool analyzedModuleFound = false;
-    const QList<SemanticSymbolRecord> moduleRecords =
-        semanticIndex->getSymbolRecordsByName(moduleName);
-    for (const SemanticSymbolRecord& record : moduleRecords) {
-        if (!EditorFileIdentity::same(
-                record.location.fileName,
-                identity.current())) {
-            continue;
-        }
-        if (SymbolTaxonomy::isModuleDeclaration(
-                semanticMetadataForSymbolRecord(record))) {
-            analyzedModuleFound = true;
-            break;
-        }
-    }
-    if (!analyzedModuleFound) {
-        return fail(QStringLiteral(
-            "The current module has no analyzed semantic baseline"));
-    }
-
-    const EditorSemanticContext identifierContext =
-        semanticContextForPosition(
-            editor,
-            context.identifier.startChar,
-            false);
-    DefinitionQuery existingQuery;
-    existingQuery.symbolName =
-        context.identifier.text;
-    existingQuery.fileName =
-        identifierContext.fileName;
-    existingQuery.moduleName =
-        identifierContext.moduleName;
-    existingQuery.linePrefixBeforeCursor =
-        identifierContext.lineUpToCursor;
-    existingQuery.cursorLine =
-        identifierContext.cursorLine;
-    existingQuery.cursorColumn =
-        identifierContext.column;
-    const DefinitionResult existingDefinition =
-        DefinitionService::getInstance()->resolveDefinition(
-            existingQuery);
-    if (existingDefinition.found) {
-        return fail(QStringLiteral(
-            "Identifier already resolves to an analyzed declaration"));
-    }
-
-    if (context.kind
-        == TSUndefinedSignalContextKind::
-            ProceduralAssignmentLhs) {
-        if (failureReason)
-            failureReason->clear();
-        return QStringLiteral("logic %1;")
-            .arg(context.identifier.text);
-    }
-
-    if (context.kind
-        != TSUndefinedSignalContextKind::NamedPortActual
-        || context.formalName.isEmpty()
-        || !context.instantiation.ok()) {
-        return fail(QStringLiteral(
-            "No exact instance-port context"));
-    }
-    if (!hierarchyInstance.isBound()) {
-        return fail(QStringLiteral(
-            "No current hierarchy instance context is bound"));
-    }
-
-    const EditorSemanticContext formalContext =
-        semanticContextForPosition(
-            editor, context.formalStartChar, false);
-    DefinitionQuery definitionQuery;
-    definitionQuery.symbolName = context.formalName;
-    definitionQuery.fileName = formalContext.fileName;
-    definitionQuery.moduleName = formalContext.moduleName;
-    definitionQuery.linePrefixBeforeCursor =
-        formalContext.lineUpToCursor;
-    definitionQuery.cursorLine = formalContext.cursorLine;
-    definitionQuery.cursorColumn = formalContext.column;
-    const DefinitionResult definition =
-        DefinitionService::getInstance()->resolveDefinition(
-            definitionQuery);
-    if (!definition.found
-        || !SymbolTaxonomy::isPortDeclaration(
-            semanticMetadataForSymbolRecord(
-                definition.symbolRecord))) {
-        return fail(QStringLiteral(
-            "Slang did not resolve the exact formal port"));
-    }
-
-    HierarchyInstanceContext childContext = hierarchyInstance;
-    if (childContext.isBound()) {
-        if (!childContext.instancePath.endsWith(
-                QLatin1Char('.'))) {
-            childContext.instancePath += QLatin1Char('.');
-        }
-        childContext.instancePath +=
-            context.instantiation.instanceName;
-    }
-
-    EffectiveValueQuery valueQuery;
-    valueQuery.symbol = definition.symbolRecord;
-    valueQuery.instanceContext = childContext;
-    if (EditorFileIdentity::same(
-            definition.symbolRecord.location.fileName,
-            identity.current())) {
-        const SemanticSymbolLocation& location =
-            definition.symbolRecord.location;
-        const bool unchangedDeclarationAnchor =
-            location.position >= 0
-            && location.length > 0
-            && location.position + location.length
-                <= analyzedText.size()
-            && location.position + location.length
-                <= semanticRevisionText.size()
-            && analyzedText.mid(
-                   location.position,
-                   location.length)
-               == semanticRevisionText.mid(
-                   location.position,
-                   location.length);
-        if (analyzedText != semanticRevisionText
-            && !unchangedDeclarationAnchor) {
-            return fail(QStringLiteral(
-                "The formal declaration changed since analysis"));
-        }
-        if (analyzedText == semanticRevisionText) {
-            valueQuery.documentText =
-                semanticRevisionText;
-            valueQuery.documentRevision =
-                semanticDocumentRevision();
-        }
-    }
-    const EffectiveValueResult effective =
-        EffectiveValueService::getInstance()->resolve(
-            valueQuery);
-    if (!effective.current()) {
+    DeclareSignalFactCollectionResult facts;
+    const DeclareSignalProposal proposal =
+        signalDefinitionProposalAt(
+            editor, cursorPosition, &facts);
+    if (!facts.acceptedForProposal()) {
+        const QString reason =
+            firstDeclareSignalIssue(facts, proposal);
         return fail(
-            effective.failureReason.isEmpty()
+            reason.isEmpty()
                 ? QStringLiteral(
-                      "Current Slang formal-port type is unavailable")
-                : effective.failureReason);
+                      "No current structured semantic facts are available")
+                : reason);
+    }
+    if (proposal.classification
+        == DeclareSignalProposalClass::Conflict) {
+        const QString reason =
+            firstDeclareSignalIssue(facts, proposal);
+        return fail(
+            reason.isEmpty()
+                ? QStringLiteral(
+                      "Declare Signal proposal has a conflict")
+                : QStringLiteral("Conflict: %1").arg(reason));
     }
 
-    QString typeText = effective.resolvedTypeText.trimmed();
-    QString unpacked =
-        effective.unpackedDimensionsText.trimmed();
-    if (typeText.isEmpty()) {
+    const DeclareSignalCandidate* candidate =
+        proposal.primaryCandidate();
+    if (!candidate) {
+        const QString reason =
+            firstDeclareSignalIssue(facts, proposal);
+        return fail(
+            reason.isEmpty()
+                ? QStringLiteral(
+                      "No safe declaration candidate is available")
+                : QStringLiteral("%1: %2")
+                      .arg(
+                          declareSignalClassText(
+                              proposal.classification),
+                          reason));
+    }
+
+    const QString declaration =
+        candidate->declarationText(proposal.identifier);
+    if (declaration.isEmpty()) {
         return fail(QStringLiteral(
-            "Current Slang formal-port type is unavailable"));
+            "The structured declaration candidate is incomplete"));
     }
-    if (!unpacked.isEmpty()
-        && typeText.endsWith(unpacked)) {
-        typeText.chop(unpacked.size());
-        typeText = typeText.trimmed();
-    }
-    const QString packed =
-        effective.packedDimensionsText.trimmed();
-    if (!packed.isEmpty() && !typeText.contains(packed)) {
-        if (!typeText.isEmpty())
-            typeText += QLatin1Char(' ');
-        typeText += packed;
-    }
-
-    QString declaration = typeText;
-    if (!declaration.isEmpty())
-        declaration += QLatin1Char(' ');
-    declaration += context.identifier.text;
-    if (!unpacked.isEmpty()) {
-        declaration += QLatin1Char(' ');
-        declaration += unpacked;
-    }
-    declaration += QLatin1Char(';');
     if (failureReason)
         failureReason->clear();
     return declaration;
 }
 
-void MyCodeEditorState::cancelSignalDefinitionEditor()
+void MyCodeEditorState::clearSignalDefinitionEditorState()
 {
-    if (signalDefinitionEditor)
-        signalDefinitionEditor->deleteLater();
+    ++signalDefinitionSessionGeneration;
+    QObject::disconnect(
+        signalDefinitionPeekClosedConnection);
+    signalDefinitionPeekClosedConnection = {};
+    QObject::disconnect(
+        signalDefinitionReturnConnection);
+    signalDefinitionReturnConnection = {};
+    signalDefinitionPeek.clear();
+    signalDefinitionPeekActive = false;
     signalDefinitionEditor.clear();
     signalDefinitionIdentifierStart = -1;
+    signalDefinitionIdentifierEnd = -1;
+    signalDefinitionIdentifier.clear();
+    signalDefinitionDocument.clear();
     signalDefinitionDocumentRevision = 0;
     signalDefinitionFileName.clear();
+    signalDefinitionFileIdentityKey.clear();
+    signalDefinitionHierarchyInstance = {};
+    signalDefinitionSemanticToken = {};
+    signalDefinitionCandidateId.clear();
+    signalDefinitionScopeKind =
+        DeclareSignalScopeKind::Module;
+    signalDefinitionBlockScopeId.clear();
+}
+
+void MyCodeEditorState::cancelSignalDefinitionEditor()
+{
+    const QPointer<EditorHoverPopup> pendingPeek =
+        signalDefinitionPeek;
+    const bool closePendingPeek =
+        signalDefinitionPeekActive
+        && pendingPeek
+        && sourceNavigation.currentPeek()
+               == pendingPeek.data();
+    clearSignalDefinitionEditorState();
+    if (closePendingPeek)
+        sourceNavigation.closeExternalPeek();
 }
 
 bool MyCodeEditorState::beginSignalDefinitionEditor(
@@ -3597,82 +3443,319 @@ bool MyCodeEditorState::beginSignalDefinitionEditor(
     int cursorPosition,
     QString* failureReason)
 {
-    const QString candidate =
-        signalDefinitionCandidateAt(
-            editor, cursorPosition, failureReason);
-    if (candidate.isEmpty())
+    if (!editor || !editor->document()) {
+        if (failureReason)
+            *failureReason = QStringLiteral("No editor document");
         return false;
+    }
 
-    const TSUndefinedSignalContext context =
-        syntax.undefinedSignalContextAt(cursorPosition);
-    if (!context.ok())
+    const QPointer<QTextDocument> capturedDocument(
+        editor->document());
+    const HierarchyInstanceContext capturedHierarchyInstance =
+        hierarchyInstance;
+    DeclareSignalFactCollectionResult facts;
+    SemanticSnapshotToken semanticToken;
+    const DeclareSignalProposal proposal =
+        signalDefinitionProposalAt(
+            editor,
+            cursorPosition,
+            &facts,
+            &semanticToken);
+    if (!facts.acceptedForProposal()
+        || !facts.request.identifierAcceptedBySyntax
+        || facts.request.uses.isEmpty()) {
+        if (failureReason) {
+            const QString reason =
+                firstDeclareSignalIssue(facts, proposal);
+            *failureReason =
+                reason.isEmpty()
+                ? QStringLiteral(
+                      "No structured Declare Signal context is available")
+                : reason;
+        }
         return false;
+    }
 
+    const TSIdentifierTarget selected =
+        syntax.identifierAt(cursorPosition);
+    if (!selected.ok()
+        || selected.text != proposal.identifier) {
+        if (failureReason) {
+            *failureReason = QStringLiteral(
+                "Declare Signal identifier context is stale");
+        }
+        return false;
+    }
+    const std::uint64_t capturedDocumentRevision =
+        facts.request.documentRevision;
+    const QString capturedFileName = identity.current();
+    const QString capturedFileIdentityKey =
+        EditorFileIdentity::lookupKey(capturedFileName);
+
+    const DeclareSignalCandidate* primary =
+        proposal.primaryCandidate();
+    const QString primaryDeclaration =
+        primary
+        ? primary->declarationText(proposal.identifier)
+        : QString();
     cancelSignalDefinitionEditor();
-    QLineEdit* lineEdit = new QLineEdit(editor->viewport());
-    signalDefinitionEditor = lineEdit;
-    signalDefinitionIdentifierStart =
-        context.identifier.startChar;
-    signalDefinitionDocumentRevision =
-        semanticDocumentRevision();
-    signalDefinitionFileName = identity.current();
-    lineEdit->setObjectName(
-        QStringLiteral("signalDefinitionInlineEditor"));
-    lineEdit->setText(candidate);
-    lineEdit->setToolTip(
-        QStringLiteral("Enter: create signal definition; Esc: cancel"));
-    lineEdit->setStyleSheet(
-        QStringLiteral(
-            "QLineEdit {"
-            " border: 1px solid palette(highlight);"
-            " border-radius: 3px;"
-            " padding: 3px 6px;"
-            " background: palette(base);"
-            " color: palette(text);"
-            "}"));
+    EditorHoverPopup* peek =
+        sourceNavigation.beginExternalPeek(editor, true);
+    if (!peek) {
+        if (failureReason) {
+            *failureReason = QStringLiteral(
+                "Unable to open the declaration preview");
+        }
+        return false;
+    }
 
     QTextCursor anchor(editor->document());
-    anchor.setPosition(context.identifier.startChar);
+    anchor.setPosition(selected.startChar);
     const QRect anchorRect = editor->cursorRect(anchor);
-    const int desiredWidth = qBound(
-        220,
-        lineEdit->fontMetrics().horizontalAdvance(candidate)
-            + 32,
-        qMax(220, editor->viewport()->width() - 12));
-    const int height = lineEdit->sizeHint().height();
-    int x = qBound(4,
-                   anchorRect.left(),
-                   qMax(4,
-                        editor->viewport()->width()
-                            - desiredWidth - 4));
-    int y = anchorRect.bottom() + 3;
-    if (y + height > editor->viewport()->height() - 4)
-        y = qMax(4, anchorRect.top() - height - 3);
-    lineEdit->setGeometry(x, y, desiredWidth, height);
+    const QRect globalAnchorRect(
+        editor->viewport()->mapToGlobal(anchorRect.topLeft()),
+        anchorRect.size());
+    const int availableWidth =
+        qMax(260, editor->viewport()->width() - 12);
+    int widestText =
+        editor->fontMetrics().horizontalAdvance(
+            QStringLiteral("Classification: Conflict"));
+    for (const DeclareSignalCandidate& candidate :
+         proposal.candidates) {
+        widestText = qMax(
+            widestText,
+            editor->fontMetrics().horizontalAdvance(
+                candidate.declarationText(
+                    proposal.identifier)));
+    }
+    const int minimumWidth = qMin(300, availableWidth);
+    const int desiredWidth =
+        qBound(minimumWidth,
+               widestText + 120,
+               availableWidth);
 
-    QObject::connect(
-        lineEdit,
-        &QLineEdit::returnPressed,
-        editor,
-        [this, editor, lineEdit]() {
-            QString reason;
-            if (!confirmSignalDefinition(
-                    editor, lineEdit->text(), &reason)
-                && !reason.isEmpty()) {
-                emit editor->editorStatusMessageRequested(reason);
-            }
-        });
-    QShortcut* escape = new QShortcut(
-        QKeySequence(Qt::Key_Escape), lineEdit);
-    QObject::connect(escape,
-                     &QShortcut::activated,
-                     lineEdit,
-                     [this]() {
+    PeekContentModel content;
+    content.kind = PeekContentKind::DeclarationPreview;
+    content.title =
+        QStringLiteral("Declare signal - %1")
+            .arg(declareSignalClassText(
+                proposal.classification));
+    content.rows.append(
+        {QStringLiteral("Classification: %1")
+             .arg(declareSignalClassText(
+                 proposal.classification)),
+         proposal.classification
+                 == DeclareSignalProposalClass::Conflict
+             ? PeekContentRowRole::Warning
+             : PeekContentRowRole::Body,
+         false});
+    for (int index = 0;
+         index < proposal.candidates.size();
+         ++index) {
+        const DeclareSignalCandidate& candidate =
+            proposal.candidates.at(index);
+        content.rows.append(
+            {QStringLiteral("Candidate %1 (%2): %3")
+                 .arg(index + 1)
+                 .arg(declareSignalCandidateKindText(candidate))
+                 .arg(candidate.declarationText(
+                     proposal.identifier)),
+             PeekContentRowRole::Code,
+             true});
+    }
+
+    int issueCount = 0;
+    for (const DeclareSignalFactCollectionIssue& issue :
+         facts.issues) {
+        if (issue.message.isEmpty())
+            continue;
+        content.rows.append(
+            {issue.message,
+             PeekContentRowRole::Muted,
+             true});
+        if (++issueCount >= 6)
+            break;
+    }
+    if (issueCount < 6) {
+        for (const DeclareSignalIssue& issue :
+             proposal.issues) {
+            if (issue.message.isEmpty())
+                continue;
+            content.rows.append(
+                {issue.message,
+                 issue.disposition
+                         == DeclareSignalIssueDisposition::Conflict
+                     ? PeekContentRowRole::Warning
+                     : PeekContentRowRole::Muted,
+                 true});
+            if (++issueCount >= 6)
+                break;
+        }
+    }
+
+    const bool editable =
+        proposal.actionable()
+        && primary
+        && !primaryDeclaration.isEmpty();
+    if (editable) {
+        content.rows.append(
+            {QStringLiteral(
+                 "Edit the selected candidate. Enter confirms; Esc cancels."),
+             PeekContentRowRole::Muted,
+             true});
+        content.editor.enabled = true;
+        content.editor.text = primaryDeclaration;
+        content.editor.placeholderText =
+            QStringLiteral("SystemVerilog declaration");
+        content.editor.objectName =
+            QStringLiteral("signalDefinitionInlineEditor");
+        content.editor.minimumWidth =
+            qMax(240, desiredWidth - 24);
+    } else if (proposal.classification
+               == DeclareSignalProposalClass::Conflict) {
+        content.rows.append(
+            {QStringLiteral(
+                 "Conflict proposals cannot be applied."),
+             PeekContentRowRole::Warning,
+             true});
+    } else {
+        content.rows.append(
+            {QStringLiteral(
+                 "No complete structured candidate is available."),
+             PeekContentRowRole::Muted,
+             true});
+    }
+    content.maximumSize = QSize(
+        qMin(availableWidth, desiredWidth + 24),
+        qMin(420,
+             120 + content.rows.size()
+                 * editor->fontMetrics().height() * 2));
+    peek->showContent(
+        content,
+        globalAnchorRect,
+        editor->font());
+    SemanticIndex* semanticIndex =
+        SemanticIndex::getInstance();
+    const SemanticSnapshotToken shownToken =
+        semanticIndex
+        ? semanticIndex->snapshotToken()
+        : SemanticSnapshotToken{};
+    if (semanticDocumentRevision()
+                != capturedDocumentRevision
+        || editor->document()
+               != capturedDocument.data()
+        || !(hierarchyInstance
+             == capturedHierarchyInstance)
+        || !sameSemanticSnapshotToken(
+            semanticToken, shownToken)
+        || capturedFileIdentityKey.isEmpty()
+        || capturedFileIdentityKey
+               != EditorFileIdentity::lookupKey(
+                   identity.current())
+        || !EditorFileIdentity::same(
+            capturedFileName, identity.current())) {
+        sourceNavigation.closeExternalPeek();
+        if (failureReason) {
+            *failureReason = QStringLiteral(
+                "Declare Signal context changed while opening the preview");
+        }
+        return false;
+    }
+    const std::uint64_t sessionGeneration =
+        ++signalDefinitionSessionGeneration;
+    signalDefinitionPeek = peek;
+    signalDefinitionPeekActive = true;
+    const QPointer<EditorHoverPopup> pendingPeek(peek);
+    signalDefinitionPeekClosedConnection =
+        QObject::connect(
+            peek,
+            &EditorHoverPopup::closed,
+            editor,
+            [this, pendingPeek, sessionGeneration]() {
+                if (signalDefinitionSessionGeneration
+                        != sessionGeneration
+                    || signalDefinitionPeek != pendingPeek) {
+                    return;
+                }
+                clearSignalDefinitionEditorState();
+            });
+
+    if (!editable) {
+        if (failureReason)
+            failureReason->clear();
+        return true;
+    }
+
+    QLineEdit* lineEdit = peek->editableLineEdit();
+    if (!lineEdit) {
         cancelSignalDefinitionEditor();
-    });
-    lineEdit->show();
+        if (failureReason) {
+            *failureReason = QStringLiteral(
+                "Unable to create declaration editor");
+        }
+        return false;
+    }
+    signalDefinitionEditor = lineEdit;
+    signalDefinitionIdentifierStart =
+        selected.startChar;
+    signalDefinitionIdentifierEnd =
+        selected.endChar;
+    signalDefinitionIdentifier =
+        selected.text;
+    signalDefinitionDocument =
+        capturedDocument;
+    signalDefinitionDocumentRevision =
+        capturedDocumentRevision;
+    signalDefinitionFileName = capturedFileName;
+    signalDefinitionFileIdentityKey =
+        capturedFileIdentityKey;
+    signalDefinitionHierarchyInstance =
+        capturedHierarchyInstance;
+    signalDefinitionSemanticToken = semanticToken;
+    signalDefinitionCandidateId =
+        primary->candidateId;
+    signalDefinitionScopeKind =
+        primary->scopeKind;
+    signalDefinitionBlockScopeId =
+        primary->blockScopeId;
+
+    const QPointer<QLineEdit> pendingEditor(lineEdit);
+    signalDefinitionReturnConnection =
+        QObject::connect(
+            lineEdit,
+            &QLineEdit::returnPressed,
+            editor,
+            [this,
+             editor,
+             pendingEditor,
+             sessionGeneration]() {
+                if (!pendingEditor
+                    || signalDefinitionSessionGeneration
+                           != sessionGeneration
+                    || signalDefinitionEditor
+                           != pendingEditor) {
+                    return;
+                }
+                const QString declarationText =
+                    pendingEditor->text();
+                auto edit =
+                    editor
+                        ->beginSynchronousEditTransaction();
+                QString reason;
+                if (!confirmSignalDefinition(
+                        editor,
+                        declarationText,
+                        &reason)
+                    && !reason.isEmpty()) {
+                    emit editor
+                        ->editorStatusMessageRequested(
+                            reason);
+                }
+            });
     lineEdit->setFocus(Qt::PopupFocusReason);
     lineEdit->selectAll();
+    if (failureReason)
+        failureReason->clear();
     return true;
 }
 
@@ -3688,40 +3771,154 @@ bool MyCodeEditorState::confirmSignalDefinition(
     };
     if (!editor || !editor->document())
         return fail(QStringLiteral("No editor document"));
-    if (signalDefinitionIdentifierStart < 0) {
+    if (!signalDefinitionPeekActive
+        || signalDefinitionPeek.isNull()
+        || signalDefinitionEditor.isNull()
+        || signalDefinitionIdentifierStart < 0
+        || signalDefinitionIdentifierEnd
+               <= signalDefinitionIdentifierStart
+        || signalDefinitionIdentifier.isEmpty()
+        || signalDefinitionDocument.isNull()
+        || editor->document()
+               != signalDefinitionDocument.data()) {
         return fail(QStringLiteral(
             "No pending signal definition"));
     }
+    SemanticIndex* semanticIndex =
+        SemanticIndex::getInstance();
+    const SemanticSnapshotToken currentToken =
+        semanticIndex
+        ? semanticIndex->snapshotToken()
+        : SemanticSnapshotToken{};
+    const QString currentFileIdentityKey =
+        EditorFileIdentity::lookupKey(
+            identity.current());
+    const bool currentFileIdentityMatches =
+        !signalDefinitionFileIdentityKey.isEmpty()
+        && signalDefinitionFileIdentityKey
+               == currentFileIdentityKey;
     if (signalDefinitionDocumentRevision
-            != semanticDocumentRevision()
+                != semanticDocumentRevision()
+        || !(hierarchyInstance
+             == signalDefinitionHierarchyInstance)
+        || !sameSemanticSnapshotToken(
+            signalDefinitionSemanticToken,
+            currentToken)
+        || !currentFileIdentityMatches
         || !EditorFileIdentity::same(
-            signalDefinitionFileName, identity.current())) {
+            signalDefinitionFileName,
+            identity.current())) {
         cancelSignalDefinitionEditor();
         return fail(QStringLiteral(
             "Signal definition context is stale"));
     }
 
-    const TSUndefinedSignalContext context =
-        syntax.undefinedSignalContextAt(
+    const TSIdentifierTarget selected =
+        syntax.identifierAt(
             signalDefinitionIdentifierStart);
-    if (!context.ok()
-        || context.identifier.startChar
-            != signalDefinitionIdentifierStart) {
+    if (!selected.ok()
+        || selected.startChar
+               != signalDefinitionIdentifierStart
+        || selected.endChar
+               != signalDefinitionIdentifierEnd
+        || selected.text
+               != signalDefinitionIdentifier) {
         cancelSignalDefinitionEditor();
         return fail(QStringLiteral(
             "Signal definition context is stale"));
+    }
+
+    DeclareSignalFactCollectionResult facts;
+    SemanticSnapshotToken checkedToken;
+    const DeclareSignalProposal proposal =
+        signalDefinitionProposalAt(
+            editor,
+            signalDefinitionIdentifierStart,
+            &facts,
+            &checkedToken,
+            signalDefinitionSemanticToken.revision,
+            signalDefinitionDocumentRevision);
+    const SemanticSnapshotToken postCollectionToken =
+        semanticIndex
+        ? semanticIndex->snapshotToken()
+        : SemanticSnapshotToken{};
+    const QString postCollectionFileIdentityKey =
+        EditorFileIdentity::lookupKey(
+            identity.current());
+    if (!sameSemanticSnapshotToken(
+            signalDefinitionSemanticToken,
+            checkedToken)
+        || !sameSemanticSnapshotToken(
+            signalDefinitionSemanticToken,
+            postCollectionToken)
+        || semanticDocumentRevision()
+               != signalDefinitionDocumentRevision
+        || editor->document()
+               != signalDefinitionDocument.data()
+        || !(hierarchyInstance
+             == signalDefinitionHierarchyInstance)
+        || postCollectionFileIdentityKey
+               != signalDefinitionFileIdentityKey
+        || !facts.acceptedForProposal()
+        || facts.request.documentRevision
+               != signalDefinitionDocumentRevision
+        || proposal.identifier
+               != signalDefinitionIdentifier
+        || proposal.classification
+               == DeclareSignalProposalClass::Conflict) {
+        cancelSignalDefinitionEditor();
+        return fail(QStringLiteral(
+            "Declare Signal proposal is stale or conflicting"));
+    }
+
+    const DeclareSignalCandidate* checkedCandidate = nullptr;
+    for (const DeclareSignalCandidate& candidate :
+         proposal.candidates) {
+        if (candidate.candidateId
+            == signalDefinitionCandidateId) {
+            checkedCandidate = &candidate;
+            break;
+        }
+    }
+    if (!checkedCandidate
+        || checkedCandidate->scopeKind
+               != signalDefinitionScopeKind
+        || checkedCandidate->blockScopeId
+               != signalDefinitionBlockScopeId) {
+        cancelSignalDefinitionEditor();
+        return fail(QStringLiteral(
+            "The selected structured candidate is no longer valid"));
     }
 
     const QString declarationText = declaration.trimmed();
     if (declarationText.isEmpty())
         return fail(QStringLiteral("Signal declaration is empty"));
+    const bool blockLocal =
+        checkedCandidate->scopeKind
+        == DeclareSignalScopeKind::BlockLocal;
+    if (!TSDocument::isSingleSignalDeclaration(
+            declarationText,
+            proposal.identifier,
+            blockLocal)) {
+        return fail(QStringLiteral(
+            "The edited text is not one structured declaration "
+            "for the selected signal"));
+    }
+
     const TSSignalInsertTarget target =
-        syntax.signalInsertTargetAt(
+        blockLocal
+        ? syntax.blockSignalInsertTargetAt(
+              signalDefinitionIdentifierStart)
+        : syntax.signalInsertTargetAt(
             signalDefinitionIdentifierStart);
     if (!target.ok()) {
         cancelSignalDefinitionEditor();
-        return fail(QStringLiteral(
-            "No clear signal declaration section"));
+        return fail(
+            blockLocal
+                ? QStringLiteral(
+                      "No clear block-local declaration section")
+                : QStringLiteral(
+                      "No clear module signal declaration section"));
     }
 
     QString insertionText;
@@ -3742,14 +3939,14 @@ bool MyCodeEditorState::confirmSignalDefinition(
             "Invalid signal declaration anchor"));
     }
 
-    const QTextCursor original = editor->textCursor();
-    const int originalPosition = original.position();
-    const int originalAnchor = original.anchor();
-    const int verticalScroll =
-        editor->verticalScrollBar()->value();
-    const int horizontalScroll =
-        editor->horizontalScrollBar()->value();
     const int insertPosition = target.insertChar;
+    const int declarationPosition =
+        target.caretCharAfterEdit;
+    const InsertionPositionMapper positionMapper(
+        insertPosition,
+        insertionText.size());
+    FormatterCursorAnchor cursorAnchor;
+    cursorAnchor.capture(editor, positionMapper);
     cancelSignalDefinitionEditor();
 
     QTextCursor insertion(editor->document());
@@ -3758,27 +3955,27 @@ bool MyCodeEditorState::confirmSignalDefinition(
     insertion.insertText(insertionText);
     insertion.endEditBlock();
 
-    const auto adjustedPosition =
-        [insertPosition,
-         delta = insertionText.size()](int position) {
-            return position >= insertPosition
-                ? position + delta : position;
-        };
-    QTextCursor restored(editor->document());
-    restored.setPosition(
-        adjustedPosition(originalAnchor));
-    restored.setPosition(
-        adjustedPosition(originalPosition),
-        QTextCursor::KeepAnchor);
-    editor->setTextCursor(restored);
-    editor->verticalScrollBar()->setValue(verticalScroll);
-    editor->horizontalScrollBar()->setValue(horizontalScroll);
+    cursorAnchor.restore(editor, positionMapper);
+
+    const QTextBlock insertedBlock =
+        editor->document()->findBlock(
+            qBound(
+                0,
+                declarationPosition,
+                qMax(
+                    0,
+                    editor->document()->characterCount()
+                        - 1)));
+    if (insertedBlock.isValid()) {
+        editor->flashLine(
+            insertedBlock.blockNumber() + 1);
+    }
 
     if (failureReason)
         failureReason->clear();
     emit editor->editorStatusMessageRequested(
         QStringLiteral("Created signal definition for %1")
-            .arg(context.identifier.text));
+            .arg(proposal.identifier));
     return true;
 }
 
@@ -3908,10 +4105,10 @@ MyCodeEditorState::structuralContextMenuState(
     if (!editor)
         return state;
 
-    QString signalFailure;
-    const QString signalCandidate =
-        signalDefinitionCandidateAt(
-            editor, cursorPosition, &signalFailure);
+    DeclareSignalFactCollectionResult signalFacts;
+    const DeclareSignalProposal signalProposal =
+        signalDefinitionProposalAt(
+            editor, cursorPosition, &signalFacts);
     const TSInstantiationTarget target =
         syntax.instantiationAt(cursorPosition);
     const bool hasInstanceSlots =
@@ -3919,7 +4116,13 @@ MyCodeEditorState::structuralContextMenuState(
         && (!target.parameterActuals.isEmpty()
             || !target.portActuals.isEmpty());
     state.signalDefinitionAvailable =
-        !signalCandidate.isEmpty();
+        signalFacts.acceptedForProposal()
+        && signalFacts.request.identifierAcceptedBySyntax
+        && !signalFacts.request.uses.isEmpty()
+        && !signalProposal.identifier.isEmpty()
+        && !hasDeclareSignalIssue(
+            signalProposal,
+            DeclareSignalIssueCode::ExistingDeclaration);
     state.instanceSlotsAvailable = hasInstanceSlots;
     return state;
 }
@@ -3928,6 +4131,8 @@ bool MyCodeEditorState::handleMousePress(
     MyCodeEditor* editor,
     QMouseEvent* event)
 {
+    keywordGhost.clear(editor);
+
     if (signalSelection.handleMousePress(
             editor,
             event)) {
@@ -3949,6 +4154,72 @@ bool MyCodeEditorState::handleMousePress(
     if (columnMode.beginSelection(editor, event))
         return true;
 
+    if (handleBracketRangeAltClick(editor, event))
+        return true;
+
+    const bool plainAltCaretClick =
+        editor
+        && event
+        && event->button() == Qt::LeftButton
+        && event->modifiers() == Qt::AltModifier;
+    if (plainAltCaretClick) {
+        const QTextCursor previous =
+            editor->textCursor();
+        const bool virtualTarget =
+            columnMode.handlePlainVirtualCursorClick(
+                editor,
+                event);
+        const QTextCursor target =
+            virtualTarget
+            ? editor->textCursor()
+            : editor->cursorForPosition(
+                  event->position().toPoint());
+        const int virtualColumn =
+            virtualTarget
+            ? columnMode.virtualCursorColumn()
+            : -1;
+        const bool samePhysicalVirtualTarget =
+            virtualTarget
+            && !multiCursor.active()
+            && !previous.hasSelection()
+            && previous.position() == target.position();
+        if (samePhysicalVirtualTarget) {
+            // The existing caret and the virtual target share the same QText
+            // position but not the same visual column. Multi-cursor
+            // normalization intentionally merges coincident physical carets,
+            // so keep this as the standalone virtual cursor instead of
+            // discarding its column hint during that merge.
+            event->accept();
+            return true;
+        }
+        if (virtualTarget)
+            columnMode.clearVirtualCursor(editor);
+
+        if (!multiCursor.active()) {
+            multiCursor.setCarets({
+                EditorMultiCursorCaret{
+                    previous.anchor(),
+                    previous.position(),
+                    -1,
+                },
+            });
+        }
+        multiCursor.addCaretAt(
+            target.position(),
+            virtualColumn,
+            true);
+        event->accept();
+        return true;
+    }
+
+    if (multiCursor.active()
+        && event
+        && event->button() == Qt::LeftButton) {
+        modes.exit(
+            EditorModeId::MultiCursor,
+            EditorModeExitReason::Canceled);
+    }
+
     if (modes.isActive(EditorModeId::ColumnSelection)
         && event
         && event->button() == Qt::LeftButton
@@ -3962,14 +4233,12 @@ bool MyCodeEditorState::handleMousePress(
             event)) {
         return true;
     }
+
     if (modes.isActive(EditorModeId::VirtualCursor)
         && event
         && event->button() == Qt::LeftButton) {
         clearVirtualCursor(editor);
     }
-
-    if (handleBracketRangeAltClick(editor, event))
-        return true;
 
     const bool handled = sourceNavigation.handleMousePress(
         editor,
@@ -4053,283 +4322,6 @@ void MyCodeEditorState::handleLeaveEvent(MyCodeEditor* editor)
     sourceNavigation.syncMode();
 }
 
-void MyCodeEditorState::refreshScopeAndCurrentLineHighlight(
-    MyCodeEditor* editor)
-{
-    selections.highlightCurrentSymbolReferences(editor);
-    selections.highlightCurrentLine(editor);
-}
-
-void MyCodeEditorState::refreshSemanticPresentation(MyCodeEditor* editor)
-{
-    if (!editor)
-        return;
-
-    refreshScopeAndCurrentLineHighlight(editor);
-    refreshGhostAnnotations(editor);
-}
-
-std::uint64_t MyCodeEditorState::semanticDocumentRevision() const
-{
-    return semanticTextRevision;
-}
-
-QString MyCodeEditorState::materializeDocumentText(
-    const MyCodeEditor* editor)
-{
-    ++hotPathMetrics.fullTextMaterializations;
-    return editor ? editor->QPlainTextEdit::toPlainText() : QString();
-}
-
-const QString& MyCodeEditorState::cachedDocumentText()
-{
-    if (inlineFilterTextOverlayActive)
-        ++hotPathMetrics.inlineFilterOverlayForcedTextReads;
-    finishInlineFilterTextOverlay();
-    return semanticRevisionText;
-}
-
-int MyCodeEditorState::cachedDocumentLength() const
-{
-    if (!inlineFilterTextOverlayActive)
-        return semanticRevisionText.size();
-    return semanticRevisionText.size()
-        - inlineFilterTextOverlayOriginalLength
-        + inlineFilterTextOverlayCurrentText.size();
-}
-
-QString MyCodeEditorState::cachedDocumentSlice(int position, int length)
-{
-    const int documentLength = cachedDocumentLength();
-    const int boundedPosition = qBound(0, position, documentLength);
-    const int boundedLength = qBound(0,
-                                     length,
-                                     documentLength - boundedPosition);
-    ++hotPathMetrics.cachedTextSliceReads;
-    hotPathMetrics.cachedTextSliceCharacters +=
-        static_cast<std::uint64_t>(boundedLength);
-    if (!inlineFilterTextOverlayActive)
-        return semanticRevisionText.mid(boundedPosition, boundedLength);
-
-    const int requestEnd = boundedPosition + boundedLength;
-    const int overlayStart = inlineFilterTextOverlayStart;
-    const int overlayEnd =
-        overlayStart + inlineFilterTextOverlayCurrentText.size();
-    QString result;
-    result.reserve(boundedLength);
-    int cursor = boundedPosition;
-    if (cursor < overlayStart) {
-        const int beforeEnd = qMin(requestEnd, overlayStart);
-        result += semanticRevisionText.mid(
-            cursor, beforeEnd - cursor);
-        cursor = beforeEnd;
-    }
-    if (cursor < requestEnd && cursor < overlayEnd) {
-        const int currentStart = qMax(cursor, overlayStart);
-        const int currentEnd = qMin(requestEnd, overlayEnd);
-        result += inlineFilterTextOverlayCurrentText.mid(
-            currentStart - overlayStart,
-            currentEnd - currentStart);
-        cursor = currentEnd;
-    }
-    if (cursor < requestEnd) {
-        const int baseStart =
-            cursor
-            - inlineFilterTextOverlayCurrentText.size()
-            + inlineFilterTextOverlayOriginalLength;
-        result += semanticRevisionText.mid(
-            baseStart, requestEnd - cursor);
-    }
-    return result;
-}
-
-bool MyCodeEditorState::beginInlineFilterTextOverlay(
-    int startPosition,
-    int endPosition)
-{
-    if (inlineFilterTextOverlayActive) {
-        return startPosition == inlineFilterTextOverlayStart
-            && endPosition
-                   == inlineFilterTextOverlayStart
-                       + inlineFilterTextOverlayCurrentText.size();
-    }
-    if (!syntax.usesLargeFileScopedSyntax()
-        || startPosition < 0
-        || endPosition < startPosition
-        || endPosition > semanticRevisionText.size()) {
-        return false;
-    }
-
-    inlineFilterTextOverlayActive = true;
-    inlineFilterTextOverlayStart = startPosition;
-    inlineFilterTextOverlayOriginalLength =
-        endPosition - startPosition;
-    inlineFilterTextOverlayOriginalText =
-        semanticRevisionText.mid(
-            startPosition,
-            inlineFilterTextOverlayOriginalLength);
-    inlineFilterTextOverlayCurrentText =
-        inlineFilterTextOverlayOriginalText;
-    ++hotPathMetrics.inlineFilterOverlaySessions;
-    return true;
-}
-
-void MyCodeEditorState::finishInlineFilterTextOverlay()
-{
-    if (!inlineFilterTextOverlayActive)
-        return;
-    if (inlineFilterTextOverlayCurrentText
-        != inlineFilterTextOverlayOriginalText) {
-        semanticRevisionText.replace(
-            inlineFilterTextOverlayStart,
-            inlineFilterTextOverlayOriginalLength,
-            inlineFilterTextOverlayCurrentText);
-        ++hotPathMetrics.inlineFilterOverlayMaterializations;
-    }
-    inlineFilterTextOverlayActive = false;
-    inlineFilterTextOverlayStart = -1;
-    inlineFilterTextOverlayOriginalLength = 0;
-    inlineFilterTextOverlayOriginalText.clear();
-    inlineFilterTextOverlayCurrentText.clear();
-}
-
-void MyCodeEditorState::acceptLoadedTextAsSemanticBaseline(
-    const MyCodeEditor* editor)
-{
-    Q_UNUSED(editor)
-    semanticTextRevision = 0;
-}
-
-EditorHotPathMetrics MyCodeEditorState::hotPathMetricsForTest() const
-{
-    return hotPathMetrics;
-}
-bool MyCodeEditorState::inlineFilterTextOverlayActiveForTest() const
-{
-    return inlineFilterTextOverlayActive;
-}
-
-
-EditorOccurrenceIndexStats
-MyCodeEditorState::occurrenceIndexStatsForTest() const
-{
-    return selections.occurrenceIndexStatsForTest();
-}
-
-QList<int> MyCodeEditorState::occurrencePositionsForTest(
-    const QString& word) const
-{
-    return selections.occurrencePositionsForTest(word);
-}
-
-void MyCodeEditorState::resetHotPathMetricsForTest()
-{
-    hotPathMetrics = {};
-    hotPathTimingEnabled = true;
-}
-
-void MyCodeEditorState::setIncludeFileProvider(
-    EditorCompletionWorkflow::IncludeFileProvider provider)
-{
-    completionWorkflow.setIncludeFileProvider(std::move(provider));
-}
-
-void MyCodeEditorState::setIncludeNewHeaderCreator(
-    EditorCompletionWorkflow::IncludeNewHeaderCreator creator)
-{
-    completionWorkflow.setIncludeNewHeaderCreator(std::move(creator));
-}
-
-void MyCodeEditorState::executeEditorActionCommand(
-    MyCodeEditor* editor,
-    const QString& command)
-{
-    if (command == QStringLiteral("format_document"))
-        formatDocument(editor);
-    else if (command == QStringLiteral("format_selection"))
-        formatSelection(editor);
-}
-
-void MyCodeEditorState::setFormatterProfile(FormatterProfile profile)
-{
-    currentFormatterProfile = profile;
-}
-
-FormatterProfile MyCodeEditorState::formatterProfile() const
-{
-    return currentFormatterProfile;
-}
-
-void MyCodeEditorState::setFormatOnSaveEnabled(bool enabled)
-{
-    currentFormatOnSaveEnabled = enabled;
-}
-
-bool MyCodeEditorState::formatOnSaveEnabled() const
-{
-    return currentFormatOnSaveEnabled;
-}
-
-void MyCodeEditorState::formatDocument(MyCodeEditor* editor)
-{
-    if (!editor)
-        return;
-
-    const FormatterReport report =
-        FormatterService::getInstance()->formatDocument(
-            editor->toPlainText(),
-            currentFormatterProfile);
-    if (!report.changed) {
-        emit editor->editorStatusMessageRequested(
-            QStringLiteral("Document already formatted"));
-        return;
-    }
-
-    QTextCursor cursor = editor->textCursor();
-    const int oldPosition = cursor.position();
-    cursor.beginEditBlock();
-    cursor.select(QTextCursor::Document);
-    cursor.insertText(report.formattedText);
-    cursor.endEditBlock();
-
-    QTextCursor nextCursor = editor->textCursor();
-    nextCursor.setPosition(qMin(oldPosition, editor->document()->characterCount() - 1));
-    editor->setTextCursor(nextCursor);
-    emit editor->editorStatusMessageRequested(
-        QStringLiteral("Formatted document (%1 lines, %2)")
-            .arg(report.formattedLines)
-            .arg(FormatterService::profileDisplayName(currentFormatterProfile)));
-}
-
-bool MyCodeEditorState::formatDocumentForSave(MyCodeEditor* editor)
-{
-    if (!editor || !currentFormatOnSaveEnabled)
-        return false;
-
-    const FormatterReport report =
-        FormatterService::getInstance()->formatDocument(
-            editor->toPlainText(),
-            currentFormatterProfile);
-    if (!report.changed)
-        return false;
-
-    QTextCursor cursor = editor->textCursor();
-    const int oldPosition = cursor.position();
-    cursor.beginEditBlock();
-    cursor.select(QTextCursor::Document);
-    cursor.insertText(report.formattedText);
-    cursor.endEditBlock();
-
-    QTextCursor nextCursor = editor->textCursor();
-    nextCursor.setPosition(
-        qMin(oldPosition, editor->document()->characterCount() - 1));
-    editor->setTextCursor(nextCursor);
-    emit editor->editorStatusMessageRequested(
-        QStringLiteral("Formatted document on save (%1 lines, %2)")
-            .arg(report.formattedLines)
-            .arg(FormatterService::profileDisplayName(currentFormatterProfile)));
-    return true;
-}
 
 void MyCodeEditorState::formatSelection(MyCodeEditor* editor)
 {
@@ -4344,8 +4336,9 @@ void MyCodeEditorState::formatSelection(MyCodeEditor* editor)
         return;
     }
 
+    const QString oldText = editor->toPlainText();
     const QString selectedText =
-        editor->toPlainText().mid(rangeStart, rangeEnd - rangeStart);
+        oldText.mid(rangeStart, rangeEnd - rangeStart);
     const FormatterReport report =
         FormatterService::getInstance()->formatSelection(
             selectedText,
@@ -4356,18 +4349,22 @@ void MyCodeEditorState::formatSelection(MyCodeEditor* editor)
         return;
     }
 
+    QString newText = oldText;
+    newText.replace(rangeStart,
+                    rangeEnd - rangeStart,
+                    report.formattedText);
+    FormatterTriviaPositionMapper positionMapper(oldText,
+                                                 newText);
+    FormatterCursorAnchor anchor;
+    anchor.capture(editor, positionMapper);
+
     QTextCursor cursor = editor->textCursor();
     cursor.beginEditBlock();
     cursor.setPosition(rangeStart);
     cursor.setPosition(rangeEnd, QTextCursor::KeepAnchor);
     cursor.insertText(report.formattedText);
     cursor.endEditBlock();
-
-    QTextCursor nextCursor = editor->textCursor();
-    nextCursor.setPosition(rangeStart);
-    nextCursor.setPosition(rangeStart + report.formattedText.size(),
-                           QTextCursor::KeepAnchor);
-    editor->setTextCursor(nextCursor);
+    anchor.restore(editor, positionMapper);
     emit editor->editorStatusMessageRequested(
         QStringLiteral("Formatted selection (%1 lines, %2)")
             .arg(report.formattedLines)
@@ -4635,353 +4632,4 @@ bool MyCodeEditorState::clearSelectedAssignmentRhs(MyCodeEditor* editor,
         *message = successMessage;
     emit editor->editorStatusMessageRequested(successMessage);
     return true;
-}
-
-QList<GhostAnnotation> MyCodeEditorState::ghostAnnotationsForTest() const
-{
-    return ghostAnnotations;
-}
-
-QString MyCodeEditorState::syntaxTextForTest() const
-{
-    const TSDocument* document = syntax.tsDocument();
-    return document ? document->text() : QString();
-}
-EditorLargeFileSyntaxScopeSnapshot
-MyCodeEditorState::largeFileSyntaxScopeForTest() const
-{
-    return syntax.largeFileScopeSnapshotForTest();
-}
-
-
-void MyCodeEditorState::setSemanticContextService(
-    EditorSemanticContextService* service)
-{
-    semantic.setService(service);
-}
-
-void MyCodeEditorState::setHierarchyInstanceContext(
-    const HierarchyInstanceContext& context)
-{
-    hierarchyInstance = context;
-}
-
-HierarchyInstanceContext MyCodeEditorState::hierarchyInstanceContext() const
-{
-    return hierarchyInstance;
-}
-
-void MyCodeEditorState::closeSemanticPopup(MyCodeEditor* editor)
-{
-    modes.exit(EditorModeId::InlineCandidates,
-               EditorModeExitReason::Canceled);
-    modes.exit(EditorModeId::CompletionCandidates,
-               EditorModeExitReason::Canceled);
-    if (!modes.exit(EditorModeId::SourceNavigation,
-                    EditorModeExitReason::Canceled)) {
-        sourceNavigation.closeForEditor(editor, selections);
-    }
-}
-
-EditorBlockGeometry MyCodeEditorState::blockGeometry(
-    const MyCodeEditor* editor,
-    int blockNumber) const
-{
-    return geometry.blockGeometry(editor, blockNumber);
-}
-
-qreal MyCodeEditorState::documentHeightPx(const MyCodeEditor* editor) const
-{
-    return geometry.documentHeightPx(editor);
-}
-
-void MyCodeEditorState::setDocumentFileName(
-    MyCodeEditor* editor,
-    QString fileName)
-{
-    if (!identity.set(fileName))
-        return;
-
-    modes.exitAll(EditorModeExitReason::FileIdentityChanged);
-    cancelSignalDefinitionEditor();
-    diagnosticComputationRevision = 0;
-    clearDiagnosticHighlights(editor);
-    refreshGhostAnnotations(editor);
-    emit editor->fileNameChanged(identity.current());
-}
-
-QString MyCodeEditorState::documentFileName() const
-{
-    return identity.current();
-}
-
-void MyCodeEditorState::setDiagnosticHighlights(
-    MyCodeEditor* editor,
-    const QList<SemanticDiagnostic>& incomingDiagnostics)
-{
-    if (!editor)
-        return;
-
-    std::uint64_t incomingComputationRevision = 0;
-    for (const SemanticDiagnostic& diagnostic : incomingDiagnostics) {
-        incomingComputationRevision =
-            std::max(incomingComputationRevision,
-                     diagnostic.computationRevision);
-    }
-    if (incomingComputationRevision != 0
-        && incomingComputationRevision
-            < diagnosticComputationRevision) {
-        return;
-    }
-    if (incomingComputationRevision != 0) {
-        diagnosticComputationRevision =
-            incomingComputationRevision;
-    }
-
-    QList<SemanticDiagnostic> currentDiagnostics;
-    currentDiagnostics.reserve(incomingDiagnostics.size());
-    for (const SemanticDiagnostic& diagnostic : incomingDiagnostics) {
-        if (diagnostic.documentRevision != 0
-            && diagnostic.documentRevision
-                != semanticDocumentRevision()) {
-            continue;
-        }
-        currentDiagnostics.append(diagnostic);
-    }
-
-    if (currentDiagnostics.isEmpty()
-        && diagnostics.isEmpty()
-        && editor->property(kDiagnosticsEmptyProperty).toBool()) {
-        return;
-    }
-
-    diagnostics = std::move(currentDiagnostics);
-    diagnosticIndexesByLine.clear();
-    diagnosticSeverityByLine.clear();
-    const int documentEnd =
-        qMax(0, editor->document()->characterCount() - 1);
-    for (int index = 0; index < diagnostics.size(); ++index) {
-        const SemanticDiagnostic& diagnostic = diagnostics.at(index);
-        QSet<int> lines;
-        for (const SemanticSourceRange& range : diagnostic.ranges) {
-            if (range.position < 0 || range.length <= 0)
-                continue;
-            const int start = qBound(0, range.position, documentEnd);
-            const int finalCharacter = qBound(
-                start,
-                range.position + range.length - 1,
-                documentEnd);
-            const QTextBlock startBlock =
-                editor->document()->findBlock(start);
-            const QTextBlock endBlock =
-                editor->document()->findBlock(finalCharacter);
-            if (!startBlock.isValid() || !endBlock.isValid())
-                continue;
-            for (int line = startBlock.blockNumber();
-                 line <= endBlock.blockNumber();
-                 ++line) {
-                lines.insert(line);
-            }
-        }
-        if (lines.isEmpty() && diagnostic.line > 0)
-            lines.insert(diagnostic.line - 1);
-
-        for (const int line : std::as_const(lines)) {
-            diagnosticIndexesByLine[line].append(index);
-            const auto existing =
-                diagnosticSeverityByLine.constFind(line);
-            if (existing == diagnosticSeverityByLine.constEnd()
-                || diagnosticSeverityRank(diagnostic.severity)
-                    > diagnosticSeverityRank(existing.value())) {
-                diagnosticSeverityByLine.insert(
-                    line, diagnostic.severity);
-            }
-        }
-    }
-
-    selections.highlightDiagnostics(editor, diagnostics);
-    editor->setProperty(kDiagnosticsEmptyProperty, diagnostics.isEmpty());
-    gutter.handleUpdateRequest(editor, editor->viewport()->rect(), 0);
-    editor->viewport()->update();
-}
-
-void MyCodeEditorState::clearDiagnosticHighlights(MyCodeEditor* editor)
-{
-    if (!editor)
-        return;
-    diagnostics.clear();
-    diagnosticIndexesByLine.clear();
-    diagnosticSeverityByLine.clear();
-    selections.highlightDiagnostics(editor, {});
-    editor->setProperty(kDiagnosticsEmptyProperty, true);
-    gutter.handleUpdateRequest(editor, editor->viewport()->rect(), 0);
-    editor->viewport()->update();
-}
-
-QString MyCodeEditorState::diagnosticTooltipForLine(
-    int zeroBasedLine) const
-{
-    const QList<int> indexes =
-        diagnosticIndexesByLine.value(zeroBasedLine);
-    QList<const SemanticDiagnostic*> ordered;
-    ordered.reserve(indexes.size());
-    for (const int index : indexes) {
-        if (index >= 0 && index < diagnostics.size())
-            ordered.append(&diagnostics.at(index));
-    }
-    std::stable_sort(
-        ordered.begin(),
-        ordered.end(),
-        [](const SemanticDiagnostic* left,
-           const SemanticDiagnostic* right) {
-            return diagnosticSeverityRank(left->severity)
-                > diagnosticSeverityRank(right->severity);
-        });
-
-    QStringList rows;
-    rows.reserve(ordered.size());
-    for (const SemanticDiagnostic* diagnostic : std::as_const(ordered)) {
-        rows.append(
-            QStringLiteral("%1: %2")
-                .arg(diagnosticSeverityLabel(diagnostic->severity),
-                     diagnostic->message));
-    }
-    return rows.join(QLatin1Char('\n'));
-}
-
-QList<int> MyCodeEditorState::diagnosticOverviewLinesForTest() const
-{
-    QList<int> lines = diagnosticSeverityByLine.keys();
-    std::sort(lines.begin(), lines.end());
-    return lines;
-}
-
-SemanticDiagnostic::Severity
-MyCodeEditorState::diagnosticSeverityForLineForTest(
-    int zeroBasedLine,
-    bool* available) const
-{
-    const auto found =
-        diagnosticSeverityByLine.constFind(zeroBasedLine);
-    if (available)
-        *available = found != diagnosticSeverityByLine.constEnd();
-    return found == diagnosticSeverityByLine.constEnd()
-        ? SemanticDiagnostic::Info
-        : found.value();
-}
-
-void MyCodeEditorState::setSemanticDecorations(
-    MyCodeEditor* editor,
-    const QList<SemanticDecoration>& decorations)
-{
-    if (!editor)
-        return;
-    if (decorations.isEmpty()
-        && semanticDecorations.isEmpty()
-        && editor->property(kSemanticDecorationsEmptyProperty).toBool()) {
-        return;
-    }
-    semanticDecorations = decorations;
-    refreshSemanticDecorationPresentation(editor);
-}
-
-void MyCodeEditorState::refreshGhostAnnotations(MyCodeEditor* editor)
-{
-    ++ghostQueryGeneration;
-    if (ghostQueryCancellation)
-        ghostQueryCancellation->store(true);
-    if (!editor || identity.current().isEmpty()) {
-        setGhostAnnotations(editor, {});
-        return;
-    }
-
-    GhostAnnotationQuery query;
-    query.fileName = identity.current();
-    query.documentText = editor->cachedDocumentText();
-    query.instanceContext = hierarchyInstance;
-    query.documentRevision = semanticDocumentRevision();
-    ++hotPathMetrics.fullGhostQueries;
-
-    const std::uint64_t generation = ghostQueryGeneration;
-    const std::shared_ptr<std::atomic_bool> cancellation =
-        std::make_shared<std::atomic_bool>(false);
-    ghostQueryCancellation = cancellation;
-    const std::shared_ptr<const SemanticIndexSnapshot> snapshot =
-        SemanticIndex::getInstance()->snapshot();
-    const std::shared_ptr<const EffectiveValueService::DocumentSnapshot>
-        valueSnapshot = EffectiveValueService::getInstance()
-                            ->snapshotForDocument(query.fileName);
-
-    auto* watcher = new QFutureWatcher<GhostAnnotationReport>(editor);
-    QObject::connect(
-        watcher,
-        &QFutureWatcher<GhostAnnotationReport>::finished,
-        editor,
-        [this, editor, watcher, generation, cancellation, query]() {
-            const GhostAnnotationReport report = watcher->result();
-            watcher->deleteLater();
-            if (cancellation->load()
-                || generation != ghostQueryGeneration
-                || identity.current() != query.fileName
-                || semanticDocumentRevision() != query.documentRevision) {
-                return;
-            }
-            setGhostAnnotations(editor, report.annotations);
-        });
-    watcher->setFuture(QtConcurrent::run(
-        [query, snapshot, valueSnapshot, cancellation]() {
-            GhostAnnotationReport report;
-            if (cancellation->load() || !snapshot)
-                return report;
-            SemanticIndex localIndex;
-            localIndex.setSnapshot(snapshot);
-            EffectiveValueService localValues(&localIndex, valueSnapshot);
-            GhostAnnotationService service(&localIndex, &localValues);
-            report = service.annotationsForDocument(query);
-            if (cancellation->load())
-                report.annotations.clear();
-            return report;
-        }));
-}
-
-void MyCodeEditorState::setGhostAnnotations(
-    MyCodeEditor* editor,
-    const QList<GhostAnnotation>& annotations)
-{
-    ghostAnnotations = annotations;
-    ghostPresentationPending = false;
-    if (editor) {
-        gutter.updateViewportMargins(editor);
-        handleResize(editor);
-        gutter.handleUpdateRequest(editor,
-                                   editor->viewport()->rect(),
-                                   0);
-        editor->viewport()->update();
-    }
-}
-
-void MyCodeEditorState::highlightSearchMatches(
-    MyCodeEditor* editor,
-    const QString& text,
-    bool caseSensitive)
-{
-    selections.highlightSearchMatches(editor, text, caseSensitive);
-}
-
-void MyCodeEditorState::clearSearchMatches(MyCodeEditor* editor)
-{
-    selections.clearSearchMatches(editor);
-}
-
-void MyCodeEditorState::flashLine(MyCodeEditor* editor, int lineNumber)
-{
-    selections.flashLine(editor, lineNumber);
-}
-
-void MyCodeEditorState::applyLineNavigationTarget(
-    MyCodeEditor* editor,
-    const SourceLineNavigationTarget& target)
-{
-    cursorNavigation.applyLineTarget(editor, target);
-    selections.flashLine(editor);
 }

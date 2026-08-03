@@ -1,6 +1,7 @@
 #ifndef WORKSPACESESSIONSTATESERVICE_H
 #define WORKSPACESESSIONSTATESERVICE_H
 
+#include "panellayoutstate.h"
 #include "workspaceconfigurationservice.h"
 
 #include <QByteArray>
@@ -17,12 +18,21 @@ struct WorkspaceSessionTabState {
     int cursorLine = 1;
     int cursorColumn = 1;
     int verticalScrollValue = 0;
+    int horizontalScrollValue = 0;
     bool active = false;
+    QString viewId;
+    int groupIndex = 0;
+    int tabIndex = 0;
+    bool locked = false;
 };
 
 struct WorkspaceSessionUiState {
     QByteArray mainWindowGeometry;
     QByteArray mainWindowState;
+    QString navigationFilesQuery;
+    QString navigationDesignQuery;
+    QString tabGroupingMode = QStringLiteral("none");
+    PanelLayoutState panelLayout;
 };
 
 struct WorkspaceSessionState {

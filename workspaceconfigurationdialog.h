@@ -26,6 +26,7 @@ private:
     QListWidget* ignoredDirsList = nullptr;
     QListWidget* fileExtensionsList = nullptr;
     QLineEdit* topModuleEdit = nullptr;
+    QTableWidget* virtualSourceGroupsTable = nullptr;
 
     QListWidget* createStringListEditor(
         QWidget* parent,
@@ -47,6 +48,14 @@ private:
     void addDefineRow(const QString& key = QString(),
                       const QString& value = QString());
     void removeSelectedDefineRows();
+    void addVirtualSourceGroupRow(
+        const WorkspaceVirtualSourceGroup& group = {});
+    void addFilesToSelectedVirtualSourceGroup();
+    void removeSelectedVirtualSourceGroup();
+    void moveSelectedVirtualSourceGroup(int delta);
+    void refreshVirtualSourceGroupFilesCell(int row);
+    QList<WorkspaceVirtualSourceGroup>
+    virtualSourceGroupsFromTable() const;
 };
 
 #endif // WORKSPACECONFIGURATIONDIALOG_H

@@ -3,9 +3,11 @@
 #include "codepreviewservice.h"
 #include "documentmodel.h"
 #include "editorhoverpopup.h"
+#include "graphexportui.h"
 #include "insightgraphview.h"
 #include "insightvisualstyle.h"
 
+#include <QAction>
 #include <QBrush>
 #include <QCheckBox>
 #include <QColor>
@@ -30,6 +32,7 @@
 #include <QPolygonF>
 #include <QSignalBlocker>
 #include <QTimer>
+#include <QToolButton>
 #include <QVBoxLayout>
 #include <QWidget>
 
@@ -706,6 +709,30 @@ SignalKernelGraphPanelCoordinator::SignalKernelGraphPanelCoordinator(
     crossModuleOnlyCheck->setChecked(graphCrossModuleOnly);
     InsightVisualStyle::applySegmentedCheckBox(crossModuleOnlyCheck);
     controlsLayout->addWidget(crossModuleOnlyCheck);
+
+    exportAction = GraphExportUi::bindRegistryAction(
+        panel,
+        QString::fromLatin1(
+            ActionIds::GraphExportSignalKernel),
+        [this]() {
+            return currentReport.found
+                && graphScene
+                && !graphScene->items().isEmpty();
+        },
+        [this](const QString& outputPath,
+               const GraphExportOptions& options) {
+            return exportGraph(outputPath, options);
+        },
+        [this](const QString& message, int timeoutMs) {
+            showStatusMessage(message, timeoutMs);
+        });
+    auto* exportButton = new QToolButton(panel);
+    exportButton->setObjectName(
+        QStringLiteral("signalKernelGraphExportButton"));
+    if (exportAction)
+        exportButton->setDefaultAction(exportAction);
+    exportButton->setToolButtonStyle(Qt::ToolButtonTextOnly);
+    controlsLayout->addWidget(exportButton);
     layout->addLayout(controlsLayout);
 
     QObject::connect(graphSearchEdit,
@@ -1007,6 +1034,16 @@ QString SignalKernelGraphPanelCoordinator::focusSearchText() const
 {
     return graphSearchEdit
         ? graphSearchEdit->text() : graphSearchText;
+}
+
+GraphExportResult SignalKernelGraphPanelCoordinator::exportGraph(
+    const QString& outputPath,
+    const GraphExportOptions& options) const
+{
+    return GraphExportService::exportGraphicsScene(
+        graphScene,
+        outputPath,
+        options);
 }
 
 void SignalKernelGraphPanelCoordinator::focusInspector()
@@ -1326,6 +1363,11 @@ void SignalKernelGraphPanelCoordinator::renderReport(
         if (hasSearchFocusRect)
             graphView->centerOn(firstSearchFocusRect.center());
     }
+    GraphExportUi::updateActionAvailability(
+        exportAction,
+        currentReport.found
+            && graphScene
+            && !graphScene->items().isEmpty());
 
     showStatusMessage(searchText.isEmpty()
                           ? QStringLiteral("Rendered signal kernel graph")
@@ -1358,6 +1400,9 @@ void SignalKernelGraphPanelCoordinator::renderUnavailable(
         titleLabel->setText(QStringLiteral("Signal Kernel Graph"));
     if (graphDock)
         graphDock->setWindowTitle(QStringLiteral("Signal Kernel Graph"));
+    GraphExportUi::updateActionAvailability(
+        exportAction,
+        false);
 }
 
 bool SignalKernelGraphPanelCoordinator::nodePassesGraphFilter(
@@ -1639,7 +1684,6 @@ void SignalKernelGraphPanelCoordinator::showDock()
     }
     graphDock->show();
     graphDock->raise();
-    graphDock->activateWindow();
 }
 
 void SignalKernelGraphPanelCoordinator::showStatusMessage(

@@ -25,12 +25,24 @@
 #include <QTextCursor>
 #include <QTextDocument>
 #include <QVBoxLayout>
+
+#include <cstdio>
 #include <QWheelEvent>
 
 #include <memory>
 #include <utility>
 
 namespace {
+void lifecycleTrace(const char* marker)
+{
+    if (!qEnvironmentVariableIsSet(
+            "ZEROSLACK_EDITOR_LIFECYCLE_TRACE")) {
+        return;
+    }
+    std::fprintf(stderr, "lifecycle.%s\n", marker);
+    std::fflush(stderr);
+}
+
 int wheelNotchSteps(QWheelEvent* event)
 {
     if (!event)
@@ -69,20 +81,6 @@ bool handleControlWheelFastScroll(MyCodeEditor* editor, QWheelEvent* event)
     bar->setValue(bar->value() - steps * fastStep);
     event->accept();
     return true;
-}
-
-bool isPlainCtrlKey(const QKeyEvent* event, int key)
-{
-    if (!event || event->key() != key)
-        return false;
-
-    const Qt::KeyboardModifiers modifiers =
-        event->modifiers()
-        & (Qt::ShiftModifier
-           | Qt::ControlModifier
-           | Qt::AltModifier
-           | Qt::MetaModifier);
-    return modifiers == Qt::ControlModifier;
 }
 
 QString selectedPlainText(const QTextCursor& cursor)
@@ -140,7 +138,7 @@ bool findNextInEditor(MyCodeEditor* editor,
     return false;
 }
 
-void showFindDialog(MyCodeEditor* editor)
+void showFindDialogFor(MyCodeEditor* editor)
 {
     if (!editor)
         return;
@@ -339,7 +337,14 @@ MyCodeEditor::SynchronousEditTransaction::~SynchronousEditTransaction()
 
 MyCodeEditor::~MyCodeEditor()
 {
-    state->shutdown();
+    state->shutdown(this);
+}
+
+void MyCodeEditor::attachSharedDocument(
+    QTextDocument* sharedDocument,
+    std::uint64_t textRevision)
+{
+    state->rebindDocument(this, sharedDocument, textRevision);
 }
 
 void MyCodeEditor::setPlainText(const QString& text)
@@ -363,6 +368,32 @@ void MyCodeEditor::clear()
     QPlainTextEdit::clear();
 }
 
+void MyCodeEditor::copy()
+{
+    state->executeClipboardAction(
+        this, QStringLiteral("edit.copy"));
+}
+
+void MyCodeEditor::cut()
+{
+    auto edit = beginSynchronousEditTransaction();
+    state->executeClipboardAction(
+        this, QStringLiteral("edit.cut"));
+}
+
+void MyCodeEditor::paste()
+{
+    auto edit = beginSynchronousEditTransaction();
+    if (isReadOnly() || !document())
+        return;
+
+    QTextCursor transaction(document());
+    transaction.beginEditBlock();
+    state->executeClipboardAction(
+        this, QStringLiteral("edit.paste"));
+    transaction.endEditBlock();
+}
+
 void MyCodeEditor::undo()
 {
     auto edit = beginSynchronousEditTransaction();
@@ -375,6 +406,102 @@ void MyCodeEditor::redo()
     auto edit = beginSynchronousEditTransaction();
     state->clearVirtualCursor(this);
     QPlainTextEdit::redo();
+}
+
+void MyCodeEditor::showFindDialog()
+{
+    showFindDialogFor(this);
+}
+
+bool MyCodeEditor::deleteLines(
+    QString* failureReason)
+{
+    auto edit = beginSynchronousEditTransaction();
+    const EditorLineOperationResult result =
+        state->executeLineOperation(
+            this,
+            EditorLineOperation::DeleteLines);
+    if (failureReason)
+        *failureReason = result.failureReason;
+    return result.succeeded;
+}
+
+bool MyCodeEditor::joinLines(
+    QString* failureReason)
+{
+    auto edit = beginSynchronousEditTransaction();
+    const EditorLineOperationResult result =
+        state->executeLineOperation(
+            this,
+            EditorLineOperation::JoinWithNextLine);
+    if (failureReason)
+        *failureReason = result.failureReason;
+    return result.succeeded;
+}
+
+bool MyCodeEditor::moveLinesUp(
+    QString* failureReason)
+{
+    auto edit = beginSynchronousEditTransaction();
+    const EditorLineOperationResult result =
+        state->executeLineOperation(
+            this,
+            EditorLineOperation::MoveLinesUp);
+    if (failureReason)
+        *failureReason = result.failureReason;
+    return result.succeeded;
+}
+
+bool MyCodeEditor::moveLinesDown(
+    QString* failureReason)
+{
+    auto edit = beginSynchronousEditTransaction();
+    const EditorLineOperationResult result =
+        state->executeLineOperation(
+            this,
+            EditorLineOperation::MoveLinesDown);
+    if (failureReason)
+        *failureReason = result.failureReason;
+    return result.succeeded;
+}
+
+bool MyCodeEditor::addNextSymbolOccurrence(
+    QString* failureReason)
+{
+    return state->selectSymbolOccurrences(
+        this,
+        false,
+        failureReason);
+}
+
+bool MyCodeEditor::selectAllSymbolOccurrences(
+    QString* failureReason)
+{
+    return state->selectSymbolOccurrences(
+        this,
+        true,
+        failureReason);
+}
+
+bool MyCodeEditor::expandSmartSelection(
+    QString* message)
+{
+    return state->expandSmartSelection(
+        this, message);
+}
+
+bool MyCodeEditor::goToNextSelectedSymbolOccurrence(
+    QString* message)
+{
+    return state->navigateSelectedSymbolOccurrence(
+        this, false, message);
+}
+
+bool MyCodeEditor::goToPreviousSelectedSymbolOccurrence(
+    QString* message)
+{
+    return state->navigateSelectedSymbolOccurrence(
+        this, true, message);
 }
 
 void MyCodeEditor::setTextCursor(const QTextCursor& cursor)
@@ -398,6 +525,11 @@ std::uint64_t MyCodeEditor::semanticDocumentRevision() const
     return state->semanticDocumentRevision();
 }
 
+const TSDocument* MyCodeEditor::syntaxDocument() const
+{
+    return state->syntax.tsDocument();
+}
+
 QString MyCodeEditor::toPlainText() const
 {
     return state->materializeDocumentText(this);
@@ -406,6 +538,11 @@ QString MyCodeEditor::toPlainText() const
 const QString& MyCodeEditor::cachedDocumentText() const
 {
     return state->cachedDocumentText();
+}
+
+int MyCodeEditor::cachedDocumentLength() const
+{
+    return state->cachedDocumentLength();
 }
 
 QString MyCodeEditor::cachedDocumentSlice(int position, int length) const
@@ -432,6 +569,11 @@ void MyCodeEditor::acceptLoadedTextAsSemanticBaseline()
 EditorHotPathMetrics MyCodeEditor::hotPathMetricsForTest() const
 {
     return state->hotPathMetricsForTest();
+}
+
+TSTextStorageMetrics MyCodeEditor::cachedTextStorageMetricsForTest() const
+{
+    return state->cachedTextStorageMetricsForTest();
 }
 bool MyCodeEditor::inlineFilterTextOverlayActiveForTest() const
 {
@@ -516,6 +658,7 @@ void MyCodeEditor::paintEvent(QPaintEvent *event)
     QPlainTextEdit::paintEvent(event);
     state->paintFoldPlaceholders(this, event);
     state->paintGhostAnnotations(this, event);
+    state->paintMultiCursor(this, event);
     state->paintColumnSelection(this, event);
     state->paintDiagnosticOverview(this, event);
 }
@@ -723,6 +866,18 @@ void MyCodeEditor::setGhostAnnotations(
     state->setGhostAnnotations(this, annotations);
 }
 
+void MyCodeEditor::setAnnotationDisplayOptions(
+    const EditorAnnotationDisplayOptions& options)
+{
+    state->setAnnotationDisplayOptions(this, options);
+}
+
+EditorAnnotationDisplayOptions
+MyCodeEditor::annotationDisplayOptions() const
+{
+    return state->currentAnnotationDisplayOptions();
+}
+
 void MyCodeEditor::setFormatterProfile(FormatterProfile profile)
 {
     if (state->formatterProfile() == profile)
@@ -790,6 +945,34 @@ bool MyCodeEditor::goToLineNumber(int lineNumber)
     flashLine(lineNumber);
     emit editorStatusMessageRequested(tr("Line %1").arg(lineNumber));
     return true;
+}
+
+bool MyCodeEditor::goToPreviousAssignmentForSelectedSignal(
+    QString* message)
+{
+    return state->navigateSelectedSignalAssignment(
+        this, true, message);
+}
+
+bool MyCodeEditor::goToNextAssignmentForSelectedSignal(
+    QString* message)
+{
+    return state->navigateSelectedSignalAssignment(
+        this, false, message);
+}
+
+bool MyCodeEditor::goToPreviousConditionalBranch(
+    QString* message)
+{
+    return state->navigateConditionalBranch(
+        this, true, message);
+}
+
+bool MyCodeEditor::goToNextConditionalBranch(
+    QString* message)
+{
+    return state->navigateConditionalBranch(
+        this, false, message);
 }
 
 bool MyCodeEditor::replaceNextText(const QString& needle,
@@ -870,7 +1053,7 @@ int MyCodeEditor::replaceAllText(const QString& needle,
     return count;
 }
 
-void MyCodeEditor::showGotoLineDialog()
+int MyCodeEditor::showGotoLineDialog()
 {
     const int maxLine = qMax(1, document() ? document()->blockCount() : 1);
     bool accepted = false;
@@ -883,8 +1066,9 @@ void MyCodeEditor::showGotoLineDialog()
         maxLine,
         1,
         &accepted);
-    if (accepted)
-        goToLineNumber(lineNumber);
+    if (accepted && goToLineNumber(lineNumber))
+        return lineNumber;
+    return -1;
 }
 
 void MyCodeEditor::showReplaceDialog()
@@ -1027,9 +1211,14 @@ bool MyCodeEditor::signalSelectionModeActiveForTest() const
     return state->signalSelectionModeActive();
 }
 
-QStringList MyCodeEditor::selectedSignalNamesForTest() const
+QStringList MyCodeEditor::selectedSignalNames() const
 {
     return state->selectedSignalNames();
+}
+
+QStringList MyCodeEditor::selectedSignalNamesForTest() const
+{
+    return selectedSignalNames();
 }
 
 bool MyCodeEditor::toggleSignalSelectionAtForTest(
@@ -1040,6 +1229,14 @@ bool MyCodeEditor::toggleSignalSelectionAtForTest(
 }
 
 bool MyCodeEditor::createAssignmentQueueAtForTest(
+    int cursorPosition,
+    QString* message)
+{
+    return createAssignmentQueueAt(
+        cursorPosition, message);
+}
+
+bool MyCodeEditor::createAssignmentQueueAt(
     int cursorPosition,
     QString* message)
 {
@@ -1088,29 +1285,18 @@ void MyCodeEditor::applyAppearanceSettings(
 
 void MyCodeEditor::keyPressEvent(QKeyEvent *event)
 {
+    lifecycleTrace("key.enter");
     auto edit = beginSynchronousEditTransaction();
-    if (event->matches(QKeySequence::Find)) {
-        showFindDialog(this);
-        event->accept();
+    lifecycleTrace("key.transaction");
+    lifecycleTrace("key.before-dispatch");
+    if (state->handleKeyPress(this, event)) {
+        lifecycleTrace("key.handled");
         return;
     }
 
-    if (isPlainCtrlKey(event, Qt::Key_H)) {
-        showReplaceDialog();
-        event->accept();
-        return;
-    }
-
-    if (isPlainCtrlKey(event, Qt::Key_G)) {
-        showGotoLineDialog();
-        event->accept();
-        return;
-    }
-
-    if (state->handleKeyPress(this, event))
-        return;
-
+    lifecycleTrace("key.before-base");
     QPlainTextEdit::keyPressEvent(event);
+    lifecycleTrace("key.after-base");
 }
 
 void MyCodeEditor::inputMethodEvent(QInputMethodEvent* event)
@@ -1198,15 +1384,21 @@ QList<GhostAnnotation> MyCodeEditor::ghostAnnotationsForTest() const
     return state->ghostAnnotationsForTest();
 }
 
+AnnotationLayerReport MyCodeEditor::annotationLayerReportForTest(
+    const AnnotationLayerQuery& query) const
+{
+    return state->annotationLayerReportForTest(query);
+}
+
 QString MyCodeEditor::syntaxTextForTest() const
 {
     return state->syntaxTextForTest();
 }
 
-EditorLargeFileSyntaxScopeSnapshot
-MyCodeEditor::largeFileSyntaxScopeForTest() const
+EditorLargeFileSyntaxSnapshot
+MyCodeEditor::largeFileSyntaxSnapshotForTest() const
 {
-    return state->largeFileSyntaxScopeForTest();
+    return state->largeFileSyntaxSnapshotForTest();
 }
 
 FoldShelfItem MyCodeEditor::foldShelfItemAtLineForTest(

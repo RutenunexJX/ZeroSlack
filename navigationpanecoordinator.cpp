@@ -71,6 +71,32 @@ void NavigationPaneCoordinator::showSearch()
         navigationWidget->focusSearch();
 }
 
+QString NavigationPaneCoordinator::filesSearchQuery() const
+{
+    return navigationWidget
+        ? navigationWidget->searchFilter(NavigationWidget::FileTab)
+        : QString();
+}
+
+QString NavigationPaneCoordinator::designSearchQuery() const
+{
+    return navigationWidget
+        ? navigationWidget->searchFilter(NavigationWidget::DesignTab)
+        : QString();
+}
+
+void NavigationPaneCoordinator::setSearchQueries(
+    const QString& filesQuery,
+    const QString& designQuery)
+{
+    if (!navigationWidget)
+        return;
+    navigationWidget->setSearchFilter(NavigationWidget::FileTab,
+                                      filesQuery);
+    navigationWidget->setSearchFilter(NavigationWidget::DesignTab,
+                                      designQuery);
+}
+
 void NavigationPaneCoordinator::showDock()
 {
     if (!navigationDock)

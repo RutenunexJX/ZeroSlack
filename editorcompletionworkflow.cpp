@@ -6,6 +6,8 @@
 #include "editorruntime.h"
 #include "inlinecommandmode.h"
 #include "mycodeeditor.h"
+#include "packagetoolservice.h"
+#include "tsdocument.h"
 
 #include <QAbstractItemView>
 #include <QModelIndex>
@@ -259,11 +261,31 @@ bool EditorCompletionWorkflow::refreshInlineCandidateFilter()
     query.explicitMatch.input = inlineSession.filterText;
     ++editor->state->hotPathMetrics.inlineFilterRefreshes;
     ++editor->state->hotPathMetrics.inlineFilterServiceQueries;
-    const CommandModeCompletionState state =
+    CommandModeCompletionState state =
         CompletionService::getInstance()->commandModeCompletionState(query);
     if (!state.matched) {
         cancelInlineAbbreviationSession();
         return false;
+    }
+    if (state.intent == InlineCommandIntent::PackageImport) {
+        state.symbolRecords.erase(
+            std::remove_if(
+                state.symbolRecords.begin(),
+                state.symbolRecords.end(),
+                [this](const SemanticSymbolRecord& record) {
+                    return !inlineSession.packageImportSiteValid
+                        || record.name.isEmpty()
+                        || record.name
+                               == inlineSession
+                                      .packageImportEnclosingPackageName
+                        || inlineSession.packageImportWildcardImports
+                               .contains(record.name);
+                }),
+            state.symbolRecords.end());
+        state.symbolStableKeys.clear();
+        state.symbolStableKeys.reserve(state.symbolRecords.size());
+        for (const SemanticSymbolRecord& record : state.symbolRecords)
+            state.symbolStableKeys.append(record.stableKey);
     }
 
     inlineSession.completion = state;
@@ -351,6 +373,12 @@ int EditorCompletionWorkflow::inlineCandidateCount(
 bool EditorCompletionWorkflow::applySingleInlineAbbreviationCandidate(
     const CommandModeCompletionState& state)
 {
+    if (state.intent == InlineCommandIntent::PackageImport) {
+        if (state.symbolRecords.size() != 1)
+            return false;
+        return applyPackageImport(state.symbolRecords.constFirst().name);
+    }
+
     CompletionActivationQuery activationQuery;
     activationQuery.selectable = true;
 
@@ -365,8 +393,7 @@ bool EditorCompletionWorkflow::applySingleInlineAbbreviationCandidate(
         activationQuery.selectionStart = item.selectionStart;
         activationQuery.selectionLength = item.selectionLength;
         activationQuery.templateSlots = item.templateSlots;
-    } else if (state.intent == InlineCommandIntent::SemanticCompletion
-               || state.intent == InlineCommandIntent::PackageImport) {
+    } else if (state.intent == InlineCommandIntent::SemanticCompletion) {
         if (state.symbolRecords.size() != 1)
             return false;
         const CommandSymbolCompletionItem item =
@@ -408,8 +435,20 @@ bool EditorCompletionWorkflow::showInlineAbbreviationCompletions(
     inlineSession.filterText = abbreviationText.mid(
         filterStartPosition - replacementStartPosition);
     inlineSession.anchorQuery = anchorQuery;
-    inlineSession.anchorQuery.documentText.clear();
     inlineSession.completion = state;
+    if (state.intent == InlineCommandIntent::PackageImport) {
+        const PackageImportSite site =
+            PackageToolService::analyzePackageImportSite(
+                inlineSession.anchorQuery.documentText,
+                replacementStartPosition,
+                replacementEndPosition);
+        inlineSession.packageImportSiteValid = site.valid;
+        inlineSession.packageImportEnclosingPackageName =
+            site.enclosingPackageName;
+        inlineSession.packageImportWildcardImports =
+            site.wildcardImportedPackages;
+    }
+    inlineSession.anchorQuery.documentText.clear();
     editor->state->hotPathMetrics
         .inlineFilterRetainedDocumentCharactersPeak =
         qMax(editor->state->hotPathMetrics
@@ -498,8 +537,29 @@ bool EditorCompletionWorkflow::handleInlineAbbreviationTab(QKeyEvent* event)
 
     const int column = cursor.position() - block.position();
     const QString textBeforeCursor = block.text().left(column);
-    const CommandModeMatch match =
+    CommandModeMatch match =
         CompletionService::getInstance()->matchCommandMode(textBeforeCursor);
+    if (!match.matched) {
+        const InlineCommandMatch structuralMatch =
+            InlineCommandMode::matchAbbreviationBeforeCursor(
+                textBeforeCursor);
+        if (structuralMatch.matched
+            && (structuralMatch.intent
+                    == InlineCommandIntent::HeaderInclude
+                || structuralMatch.intent
+                    == InlineCommandIntent::PackageImport)) {
+            match.matched = true;
+            match.helpRequested = structuralMatch.helpRequested;
+            match.intent = structuralMatch.intent;
+            match.prefixPosition =
+                structuralMatch.prefixPosition;
+            match.input = structuralMatch.input;
+            match.descriptor = structuralMatch.descriptor;
+            match.command =
+                InlineCommandMode::toCommandModeCommand(
+                    structuralMatch.descriptor);
+        }
+    }
     if (!match.matched)
         return false;
 
@@ -523,9 +583,29 @@ bool EditorCompletionWorkflow::handleInlineAbbreviationTab(QKeyEvent* event)
     EditorSemanticContext anchorContext =
         contextProvider(replacementStartPosition, true);
     anchorContext.moduleName = moduleNameProvider(replacementStartPosition);
-    if (InlineCommandMode::isPositionInCommentOrString(
-            anchorContext.documentText,
-            replacementStartPosition)) {
+    bool commandInCommentOrString = false;
+    if (match.intent == InlineCommandIntent::HeaderInclude
+        || match.intent == InlineCommandIntent::PackageImport) {
+        const TSDocument* syntaxDocument =
+            editor->state->syntax.tsDocument();
+        if (syntaxDocument) {
+            commandInCommentOrString =
+                syntaxDocument->isCommentAt(replacementStartPosition)
+                || syntaxDocument->isStringAt(replacementStartPosition);
+        } else {
+            TSDocument syntaxSnapshot;
+            syntaxSnapshot.setText(anchorContext.documentText);
+            commandInCommentOrString =
+                syntaxSnapshot.isCommentAt(replacementStartPosition)
+                || syntaxSnapshot.isStringAt(replacementStartPosition);
+        }
+    } else {
+        commandInCommentOrString =
+            InlineCommandMode::isPositionInCommentOrString(
+                anchorContext.documentText,
+                replacementStartPosition);
+    }
+    if (commandInCommentOrString) {
         return false;
     }
 
@@ -549,7 +629,7 @@ bool EditorCompletionWorkflow::handleInlineAbbreviationTab(QKeyEvent* event)
 
     const CommandModeCompletionState state =
         CompletionService::getInstance()->commandModeCompletionState(query);
-    if (!state.matched)
+    if (!state.matched || state.hidePopup)
         return false;
 
     event->accept();
@@ -670,6 +750,13 @@ void EditorCompletionWorkflow::handleCompletionActivated(
 
     const EditorCompletionActivationContext activationContext =
         completion->activationContextForIndex(index);
+    if (inlineAbbreviationSessionValid()
+        && inlineSession.completion.intent
+               == InlineCommandIntent::PackageImport) {
+        if (activationContext.selectable)
+            applyPackageImport(activationContext.itemText);
+        return;
+    }
     const CompletionActivationState activationState =
         semanticService()->completionActivationState(activationContext);
     applyCompletionActivationState(activationState);
@@ -799,6 +886,49 @@ bool EditorCompletionWorkflow::showIncludeNewHeaderCompletions(
     return true;
 }
 
+bool EditorCompletionWorkflow::applyPackageImport(
+    const QString& packageName)
+{
+    if (!editor || packageName.isEmpty()
+        || !inlineAbbreviationSessionValid()) {
+        return false;
+    }
+
+    const StructuredInlineInsertionPlan plan =
+        PackageToolService::packageImportPlan(
+            editor->cachedDocumentText(),
+            inlineSession.replacementStartPosition,
+            inlineSession.replacementEndPosition,
+            packageName);
+    if (!plan.ok() && !plan.duplicate()) {
+        if (!plan.failureMessage.isEmpty()) {
+            emit editor->editorStatusMessageRequested(
+                plan.failureMessage);
+        }
+        cancelInlineAbbreviationSession();
+        return true;
+    }
+
+    QTextCursor cursor(editor->document());
+    applyingInlineReplacement = true;
+    cursor.beginEditBlock();
+    cursor.setPosition(plan.replacementStart);
+    cursor.setPosition(plan.replacementEnd,
+                       QTextCursor::KeepAnchor);
+    cursor.insertText(plan.ok() ? plan.replacementText : QString());
+    cursor.endEditBlock();
+    applyingInlineReplacement = false;
+    editor->setTextCursor(cursor);
+
+    if (plan.duplicate() && !plan.failureMessage.isEmpty()) {
+        emit editor->editorStatusMessageRequested(
+            plan.failureMessage);
+    }
+    clearInlineAbbreviationSession();
+    hideCompletionPopup();
+    return true;
+}
+
 void EditorCompletionWorkflow::applyIncludeCompletion(
     const QString& includePath)
 {
@@ -809,15 +939,36 @@ void EditorCompletionWorkflow::applyIncludeCompletion(
     if (!context.active)
         return;
 
-    QTextCursor cursor = editor->textCursor();
+    const StructuredInlineInsertionPlan plan =
+        PackageToolService::headerIncludePlan(
+            editor->cachedDocumentText(),
+            context.replacementStartPosition,
+            context.replacementEndPosition,
+            includePath);
+    if (!plan.ok() && !plan.duplicate()) {
+        if (!plan.failureMessage.isEmpty()) {
+            emit editor->editorStatusMessageRequested(
+                plan.failureMessage);
+        }
+        cancelInlineAbbreviationSession();
+        return;
+    }
+
+    QTextCursor cursor(editor->document());
     applyingInlineReplacement = true;
-    cursor.setPosition(context.replacementStartPosition);
-    cursor.setPosition(context.replacementEndPosition,
+    cursor.beginEditBlock();
+    cursor.setPosition(plan.replacementStart);
+    cursor.setPosition(plan.replacementEnd,
                        QTextCursor::KeepAnchor);
-    cursor.insertText(QStringLiteral("`include \"%1\"").arg(includePath));
+    cursor.insertText(plan.ok() ? plan.replacementText : QString());
+    cursor.endEditBlock();
     applyingInlineReplacement = false;
     editor->setTextCursor(cursor);
 
+    if (plan.duplicate() && !plan.failureMessage.isEmpty()) {
+        emit editor->editorStatusMessageRequested(
+            plan.failureMessage);
+    }
     includeCompletionActive = false;
     clearInlineAbbreviationSession();
     hideCompletionPopup();
@@ -850,6 +1001,23 @@ void EditorCompletionWorkflow::applyIncludeNewHeaderChoice(const QString& choice
     if (stem.isEmpty()
         || (extension != QStringLiteral("vh")
             && extension != QStringLiteral("svh"))) {
+        return;
+    }
+
+    const StructuredInlineInsertionPlan preflight =
+        PackageToolService::headerIncludePlan(
+            editor->cachedDocumentText(),
+            context.replacementStartPosition,
+            context.replacementEndPosition,
+            choice);
+    if (!preflight.ok()) {
+        if (preflight.duplicate()) {
+            applyIncludeCompletion(choice);
+        } else if (!preflight.failureMessage.isEmpty()) {
+            emit editor->editorStatusMessageRequested(
+                preflight.failureMessage);
+            cancelInlineAbbreviationSession();
+        }
         return;
     }
 

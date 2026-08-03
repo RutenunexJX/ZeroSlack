@@ -1,5 +1,6 @@
 #include "editorsourcenavigation.h"
 
+#include "actionregistry.h"
 #include "editorhoverpopup.h"
 #include "editormodecontroller.h"
 #include "editorselection.h"
@@ -11,6 +12,7 @@
 #include <QDir>
 #include <QFileInfo>
 #include <QKeyEvent>
+#include <QKeySequence>
 #include <QMenu>
 #include <QMouseEvent>
 #include <QPointer>
@@ -179,9 +181,25 @@ bool EditorSourceNavigationUi::handleSourceSymbolShortcut(
     EditorSemanticContextService* service,
     const EditorSourceContextProvider& contextProvider)
 {
+    const QString shortcutText =
+        effectiveActionShortcut(
+            QStringLiteral("source.goToDefinition"));
+    const QKeySequence shortcut =
+        QKeySequence::fromString(
+            shortcutText,
+            QKeySequence::PortableText);
+    if (shortcut.isEmpty()
+        || shortcut.matches(
+               QKeySequence(event->keyCombination()))
+               != QKeySequence::ExactMatch) {
+        return false;
+    }
+
     EditorSourceSymbolShortcutContext sourceShortcutContext;
-    sourceShortcutContext.key = event->key();
-    sourceShortcutContext.modifiers = int(event->modifiers());
+    // The semantic query maps the canonical gesture to its action. The
+    // physical gesture has already been resolved through Action Registry.
+    sourceShortcutContext.key = Qt::Key_F12;
+    sourceShortcutContext.modifiers = int(Qt::NoModifier);
     sourceShortcutContext.semanticContext =
         contextProvider(editor->textCursor().position(), false);
     const EditorSourceSymbolShortcutState sourceShortcutState =
@@ -324,6 +342,13 @@ bool EditorSourceNavigationUi::handleMouseMove(
     lastMousePosition = event->pos();
     hasLastMousePosition = true;
 
+    if (popupExternalMode
+        && popupExternalInteractive
+        && popup
+        && popup->isVisible()) {
+        return false;
+    }
+
     if (consumeNextNavigationRelease
         && event->buttons().testFlag(Qt::LeftButton)) {
         event->accept();
@@ -357,6 +382,12 @@ void EditorSourceNavigationUi::handleLeave(
 {
     hasLastMousePosition = false;
     sourceHover.setCtrlPressed(false);
+    if (popupExternalMode
+        && popupExternalInteractive
+        && popup
+        && popup->isVisible()) {
+        return;
+    }
     if (popupPinnedBySelection && popupSelectionStillActive(editor))
         return;
     clearHover(editor, selections);
@@ -367,7 +398,10 @@ bool EditorSourceNavigationUi::handleEscape(
     EditorSelection& selections)
 {
     if (popup && popup->isVisible()) {
-        clearHover(editor, selections);
+        if (popupExternalMode)
+            closePopup();
+        else
+            clearHover(editor, selections);
         return true;
     }
     return false;
@@ -378,10 +412,47 @@ bool EditorSourceNavigationUi::active() const
     return hasActiveHover();
 }
 
+EditorHoverPopup* EditorSourceNavigationUi::beginExternalPeek(
+    MyCodeEditor* editor,
+    bool interactive)
+{
+    if (popup
+        && popup->isVisible()
+        && (!popupExternalMode
+            || popupExternalInteractive != interactive)) {
+        closePopup();
+    }
+    EditorHoverPopup* container = ensurePopup(editor);
+    popupExternalMode = true;
+    popupExternalInteractive = interactive;
+    popupStartPos = -1;
+    popupEndPos = -1;
+    popupNumericMode = false;
+    popupPreviewMode = false;
+    popupPinnedBySelection = false;
+    container->setTransientPreview(!interactive);
+    return container;
+}
+
+EditorHoverPopup* EditorSourceNavigationUi::currentPeek() const
+{
+    return popup.get();
+}
+
+void EditorSourceNavigationUi::closeExternalPeek()
+{
+    if (popupExternalMode)
+        closePopup();
+}
+
 void EditorSourceNavigationUi::handleEditorContentChanged(
     MyCodeEditor* editor,
     EditorSelection& selections)
 {
+    if (popupExternalMode) {
+        closePopup();
+        return;
+    }
     clearHover(editor, selections);
 }
 
@@ -389,6 +460,10 @@ void EditorSourceNavigationUi::handleEditorScrolled(
     MyCodeEditor* editor,
     EditorSelection& selections)
 {
+    if (popupExternalMode) {
+        closePopup();
+        return;
+    }
     if (hasActiveHover())
         clearHover(editor, selections);
 }
@@ -397,7 +472,10 @@ void EditorSourceNavigationUi::closeForEditor(
     MyCodeEditor* editor,
     EditorSelection& selections)
 {
-    clearHover(editor, selections);
+    if (popupExternalMode)
+        closePopup();
+    else
+        clearHover(editor, selections);
 }
 
 void EditorSourceNavigationUi::shutdown()
@@ -491,6 +569,15 @@ void EditorSourceNavigationUi::refreshPopupAt(
     const EditorSourceContextProvider& contextProvider,
     const EditorSourceNavigationTarget& target)
 {
+    if (popupExternalMode
+        && popupExternalInteractive
+        && popup
+        && popup->isVisible()) {
+        return;
+    }
+    popupExternalMode = false;
+    popupExternalInteractive = false;
+
     const QTextCursor cursor = editor->cursorForPosition(position);
     const GhostNumericLiteralReport numericReport =
         editor->numericLiteralAt(cursor.position());
@@ -588,9 +675,18 @@ void EditorSourceNavigationUi::clearHover(
         selections.clearHoveredSymbol(editor);
         sourceHover.clearTarget();
     }
-    if (popup && popup->isVisible())
+    if (popupExternalMode
+        && popupExternalInteractive
+        && popup
+        && popup->isVisible()) {
+        popupStartPos = -1;
+        popupEndPos = -1;
+        popupNumericMode = false;
+        popupPreviewMode = false;
+        popupPinnedBySelection = false;
+    } else if (popup && popup->isVisible()) {
         closePopup();
-    else {
+    } else {
         popupStartPos = -1;
         popupEndPos = -1;
         popupNumericMode = false;
@@ -608,6 +704,8 @@ void EditorSourceNavigationUi::closePopup()
     popupNumericMode = false;
     popupPreviewMode = false;
     popupPinnedBySelection = false;
+    popupExternalMode = false;
+    popupExternalInteractive = false;
 }
 
 bool EditorSourceNavigationUi::hasActiveHover() const
@@ -617,10 +715,22 @@ bool EditorSourceNavigationUi::hasActiveHover() const
 
 EditorHoverPopup* EditorSourceNavigationUi::ensurePopup(MyCodeEditor* editor)
 {
-    if (!popup)
-        popup = std::make_unique<EditorHoverPopup>(
-            editor,
-            EditorHoverPopup::PlacementMode::EmbeddedChild);
+    if (!popup) {
+        popup = std::make_unique<EditorHoverPopup>(editor);
+        QObject::connect(
+            popup.get(),
+            &EditorHoverPopup::closed,
+            popup.get(),
+            [this]() {
+                popupStartPos = -1;
+                popupEndPos = -1;
+                popupNumericMode = false;
+                popupPreviewMode = false;
+                popupPinnedBySelection = false;
+                popupExternalMode = false;
+                popupExternalInteractive = false;
+            });
+    }
     popup->setNavigationHandler([editor](const QString& fileName,
                                          int line,
                                          int column) {

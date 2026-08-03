@@ -2,8 +2,11 @@
 #include "activitylogservice.h"
 #include "navigationservice.h"
 #include "navigationwidget.h"
+#include "workspacefileoperationservice.h"
+#include "workspacemanager.h"
 
 #include <QElapsedTimer>
+#include <QSignalBlocker>
 
 namespace {
 QString navigationViewName(NavigationManager::NavigationView view)
@@ -20,7 +23,10 @@ QString navigationViewName(NavigationManager::NavigationView view)
 }
 
 NavigationManager::NavigationManager(QObject *parent)
-    : QObject(parent)
+    : QObject(parent),
+      fileOperationService(
+          std::make_unique<
+              WorkspaceFileOperationService>())
 {
     navigationService = NavigationService::getInstance();
 }
@@ -36,6 +42,8 @@ void NavigationManager::setNavigationWidget(NavigationWidget* widget)
     navigationWidget = widget;
     designHierarchyWidgetValid = false;
     if (navigationWidget) {
+        navigationWidget->setWorkspaceRoot(
+            context.currentWorkspacePath);
         setupConnections();
         refreshCurrentView();
     }
@@ -54,18 +62,23 @@ void NavigationManager::refreshFileHierarchy()
     QElapsedTimer timer;
     timer.start();
     const bool sourceChanged = updateFileHierarchyData();
+    const QString searchFilter =
+        context.searchFilter(FileHierarchyView);
     const bool filterChanged =
-        caches.fileHierarchyFilter != context.searchFilter;
-    const QStringList visibleFiles = context.searchFilter.isEmpty()
-        ? caches.fileList
-        : filterFiles(caches.fileList, context.searchFilter);
+        caches.fileHierarchyFilter != searchFilter;
     const bool refreshWidget =
         !caches.fileHierarchyValid || sourceChanged || filterChanged;
 
     if (navigationWidget && refreshWidget) {
-        navigationWidget->updateFileHierarchy(visibleFiles);
+        navigationWidget->updateFileHierarchy(
+            caches.fileList,
+            connectedWorkspaceManager
+                ? connectedWorkspaceManager
+                      ->virtualSourceGroups()
+                : QList<
+                      WorkspaceVirtualSourceGroup>{});
     }
-    caches.fileHierarchyFilter = context.searchFilter;
+    caches.fileHierarchyFilter = searchFilter;
     caches.fileHierarchyValid = true;
 
     emit dataRefreshed(FileHierarchyView);
@@ -175,12 +188,34 @@ void NavigationManager::clearDesignTop()
         QStringLiteral("Cleared Design Top override"));
 }
 
+QString NavigationManager::selectedDesignTopModule() const
+{
+    return caches.designTopModule;
+}
+
 void NavigationManager::setSearchFilter(const QString& filter)
 {
-    context.setSearchFilter(filter);
+    setSearchFilter(currentView, filter);
+}
 
-    // Reapply the current search filter.
-    refreshCurrentView();
+void NavigationManager::setSearchFilter(NavigationView view,
+                                        const QString& filter)
+{
+    const QString normalized =
+        filter.trimmed();
+    const NavigationWidget::NavigationTab tab =
+        view == DesignHierarchyView
+        ? NavigationWidget::DesignTab
+        : NavigationWidget::FileTab;
+    if (navigationWidget
+        && navigationWidget->searchFilter(tab)
+               != normalized) {
+        const QSignalBlocker blocker(
+            navigationWidget);
+        navigationWidget->setSearchFilter(
+            tab, normalized);
+    }
+    context.setSearchFilter(view, normalized);
 }
 
 void NavigationManager::highlightCurrentFileInTree()
@@ -205,6 +240,8 @@ void NavigationManager::onWorkspaceChanged(const QString& workspacePath)
 {
     saveDesignHierarchyCache();
     context.setCurrentWorkspacePath(workspacePath);
+    if (navigationWidget)
+        navigationWidget->setWorkspaceRoot(workspacePath);
 
     // Workspace activation changes file scope, while Design hierarchy is
     // cached per workspace to keep tab switching lightweight.

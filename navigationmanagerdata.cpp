@@ -53,7 +53,7 @@ bool NavigationManager::updateFileHierarchyData()
     if (!shouldRefreshCache())
         return false;
 
-    const QStringList files = getSystemVerilogFiles();
+    const QStringList files = getFileHierarchyFiles();
     const bool changed = !caches.fileListValid || caches.fileList != files;
     caches.fileList = files;
     caches.fileListValid = true;
@@ -185,18 +185,13 @@ QStringList NavigationManager::getSystemVerilogFiles() const
     return QStringList();
 }
 
-QStringList NavigationManager::filterFiles(const QStringList& files, const QString& filter) const
+QStringList NavigationManager::getFileHierarchyFiles() const
 {
-    if (filter.isEmpty()) return files;
-
-    QStringList filteredFiles;
-    filteredFiles.reserve(files.size());
-
-    for (const QString& file : files) {
-        if (file.contains(filter, Qt::CaseInsensitive)) {
-            filteredFiles.append(file);
-        }
+    if (connectedWorkspaceManager
+        && connectedWorkspaceManager->isWorkspaceOpen()) {
+        return connectedWorkspaceManager->getAllFiles();
     }
-
-    return filteredFiles;
+    if (connectedTabManager)
+        return connectedTabManager->getAllOpenFileNames();
+    return {};
 }

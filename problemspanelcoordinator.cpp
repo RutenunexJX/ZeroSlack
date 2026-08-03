@@ -415,8 +415,6 @@ void ProblemsPanelCoordinator::update()
 
     if (problemsDock) {
         problemsDock->setWindowTitle(QStringLiteral("Problems (%1)").arg(report.totalCount));
-        if (!diagnostics.isEmpty() || problemsDock->isVisible())
-            problemsDock->show();
     }
 }
 

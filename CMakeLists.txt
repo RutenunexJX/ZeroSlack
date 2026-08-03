@@ -210,7 +210,7 @@ set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 
 # Required Qt modules.
-find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets Concurrent)
+find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets Concurrent Svg)
 
 # =========================================================
 # 4. Sources and Resources
@@ -218,6 +218,7 @@ find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets Concurrent)
 set(ZEROSLACK_CORE_SOURCES
     # --- C++ sources ---
     actionregistry.cpp
+    annotationlayer.cpp
     activitylogpanelcoordinator.cpp
     activitylogservice.cpp
     analysiscoordinator.cpp
@@ -234,6 +235,7 @@ set(ZEROSLACK_CORE_SOURCES
     commandlayercommandregistry.cpp
     commandlayercoordinator.cpp
     commandlayerservice.cpp
+    codetemplatecontextanalyzer.cpp
     codetemplateservice.cpp
     customabbreviationservice.cpp
     mainwindow.cpp
@@ -251,6 +253,8 @@ set(ZEROSLACK_CORE_SOURCES
     definitionnavigationservice.cpp
     definitionpreviewservice.cpp
     definitionservice.cpp
+    declaresignalfactcollector.cpp
+    declaresignalservice.cpp
     diagnosticnavigationservice.cpp
     diagnosticservice.cpp
     diagnosticsrefreshcontroller.cpp
@@ -262,6 +266,9 @@ set(ZEROSLACK_CORE_SOURCES
     documentregistryqueries.cpp
     documentregistryreader.cpp
     documentregistrystate.cpp
+    shareddocument.cpp
+    crashrecoveryservice.cpp
+    externaldocumentsynccontroller.cpp
     documentsessionqueries.cpp
     documentsessionstate.cpp
     documentsessionversions.cpp
@@ -282,8 +289,15 @@ set(ZEROSLACK_CORE_SOURCES
     editorgutter.cpp
     editorhoverpopup.cpp
     editorruntime.cpp
+    editorruntimeannotations.cpp
+    editorruntimecommands.cpp
     editorselection.cpp
+    editorsplitcontroller.cpp
+    editorkeywordghostcontroller.cpp
+    editorlineoperationcontroller.cpp
+    editormulticursorcontroller.cpp
     editorsignalselectioncontroller.cpp
+    editorstructuralinputcontroller.cpp
     editortemplateslotcontroller.cpp
     editoractioncontextservice.cpp
     editorcontextmenumodel.cpp
@@ -301,10 +315,15 @@ set(ZEROSLACK_CORE_SOURCES
     foldshelfrestoreservice.cpp
     fsmgraphlayout.cpp
     fsmgraphservice.cpp
+    formattercursoranchor.cpp
     formattersettings.cpp
     formatterservice.cpp
+    settingscenterschema.cpp
+    settingscenterpanel.cpp
+    settingscenterservice.cpp
     structuredwhitespaceformatter.cpp
     ghostannotationservice.cpp
+    graphexportservice.cpp
     wavepreviewpanelcoordinator.cpp
     wavepreviewservice.cpp
     workspaceconfigurationdialog.cpp
@@ -317,33 +336,34 @@ set(ZEROSLACK_CORE_SOURCES
     hierarchyservicetraversal.cpp
     insightgraphview.cpp
     insightfocuscontroller.cpp
+    insightfocuscontrolleractions.cpp
     insightvisualstyle.cpp
     inlinecommandmode.cpp
     sourcenavigationservice.cpp
     statetransitiongraphservice.cpp
     statetransitiontriggerservice.cpp
+    triviapositionmap.cpp
     tsdocument.cpp
+    unsaveddocumentmanager.cpp
     mycodeeditor.cpp
     myhighlighter.cpp
     navigationcommandcoordinator.cpp
     navigationmanager.cpp
     navigationmanagerconnections.cpp
     navigationmanagerdata.cpp
+    navigationmanagerfileoperations.cpp
     navigationmanagerstate.cpp
     navigationpanecoordinator.cpp
+    panellayoutcontroller.cpp
     packagetoolservice.cpp
     navigationservice.cpp
     navigationservicehierarchy.cpp
     navigationwidgetpresentation.cpp
     navigationwidgettrees.cpp
     navigationwidget.cpp
+    notificationcenter.cpp
     problemspanelcoordinator.cpp
     projectmodel.cpp
-    referencespanelcoordinator.cpp
-    referenceservice.cpp
-    relationshipspanelcoordinator.cpp
-    relationshipspanelrefreshhierarchy.cpp
-    relationshipspanelrefresh.cpp
     relationshipservice.cpp
     relationshipserviceordering.cpp
     relationshipanalysisqueue.cpp
@@ -352,13 +372,28 @@ set(ZEROSLACK_CORE_SOURCES
     relationshipanalysiscontrollerasync.cpp
     relationshipanalysisworker.cpp
     relationshipresultpublisher.cpp
+    rtlinsightspanelactions.cpp
     rtlinsightspanelcoordinator.cpp
+    rtlinsightspaneltestapi.cpp
     rtlinsightspanelviewstate.cpp
     rtlinsightsgraphcontroller.cpp
     rtlinsightsgraphscenemapper.cpp
     rtlinsightspresenter.cpp
     rtlbatcheditservice.cpp
+    rtlconnectiontransformplanner.cpp
+    rtlconnectiontransformworkflow.cpp
+    rtlhighriskeditworkflow.cpp
+    rtlhighriskeditpanel.cpp
+    multisignalpropagationplanner.cpp
+    multisignalpropagationpanel.cpp
+    instancepairconnectionfacade.cpp
+    instancepairconnectionpanel.cpp
+    instancepairconnectionworkflow.cpp
+    rtlrenameplanner.cpp
+    rtlrenameworkflow.cpp
     saferenameservice.cpp
+    scopedsearchpanel.cpp
+    scopedreplaceworkflow.cpp
     searchservice.cpp
     semanticdiffservice.cpp
     semanticanalysisrequest.cpp
@@ -390,6 +425,7 @@ set(ZEROSLACK_CORE_SOURCES
     signaljourneyservice.cpp
     signalkernelgraphservice.cpp
     signalusagehotspotpanel.cpp
+    signalusagehotspotpanelactions.cpp
     signalusagehotspotservice.cpp
     signalkernelgraphpanelcoordinator.cpp
     slangmanagerdiagnostics.cpp
@@ -418,16 +454,16 @@ set(ZEROSLACK_CORE_SOURCES
     tabdocumentqueries.cpp
     tabfileio.cpp
     tabmanager.cpp
-    tabopencontroller.cpp
-    tabsavecontroller.cpp
-    tabtitlecontroller.cpp
     workspacemanager.cpp
+    workspacefileoperationservice.cpp
     workspaceanalysisplanservice.cpp
     workspaceignoreservice.cpp
     usertemplateservice.cpp
     workspaceanalysisrequestqueue.cpp
     workspacesymbolanalysiscontroller.cpp
     workspacesymbolanalysiscontrollerlifecycle.cpp
+    workspaceeditdocumentmanager.cpp
+    workspaceedittransactionservice.cpp
 
     # --- Headers (not required by CMake, listed for IDEs) ---
     activitylogpanelcoordinator.h
@@ -441,6 +477,7 @@ set(ZEROSLACK_CORE_SOURCES
     commandlayercommandregistry.h
     commandlayercoordinator.h
     commandlayerservice.h
+    codetemplatecontextanalyzer.h
     codetemplateservice.h
     customabbreviationservice.h
     mainwindow.h
@@ -466,6 +503,7 @@ set(ZEROSLACK_CORE_SOURCES
     documentregistry.h
     documentsnapshot.h
     documentsessionstate.h
+    shareddocument.h
     editorappearance.h
     editorappearancepanel.h
     editorappearancesettings.h
@@ -482,6 +520,10 @@ set(ZEROSLACK_CORE_SOURCES
     editorhoverpopup.h
     editorruntime.h
     editorselection.h
+    editorkeywordghostcontroller.h
+    editorlineoperationcontroller.h
+    editormulticursorcontroller.h
+    editorstructuralinputcontroller.h
     editoractioncontextservice.h
     editorcontextmenumodel.h
     editorsemanticcontextservice.h
@@ -498,6 +540,7 @@ set(ZEROSLACK_CORE_SOURCES
     foldshelfrestoreservice.h
     fsmgraphlayout.h
     fsmgraphservice.h
+    formattercursoranchor.h
     formattersettings.h
     formatterservice.h
     ghostannotationservice.h
@@ -506,6 +549,8 @@ set(ZEROSLACK_CORE_SOURCES
     workspaceconfigurationdialog.h
     workspaceconfigurationservice.h
     workspacesessionstateservice.h
+    workspaceeditdocumentmanager.h
+    workspaceedittransactionservice.h
     globalcontrolcoordinator.h
     globalcontrolpanel.h
     globalcontrolservice.h
@@ -517,6 +562,7 @@ set(ZEROSLACK_CORE_SOURCES
     sourcenavigationservice.h
     statetransitiongraphservice.h
     statetransitiontriggerservice.h
+    triviapositionmap.h
     tsdocument.h
     mycodeeditor.h
     myhighlighter.h
@@ -529,9 +575,6 @@ set(ZEROSLACK_CORE_SOURCES
     navigationwidget.h
     problemspanelcoordinator.h
     projectmodel.h
-    referencespanelcoordinator.h
-    referenceservice.h
-    relationshipspanelcoordinator.h
     relationshipservice.h
     relationshipserviceordering.h
     relationshipanalysisqueue.h
@@ -541,6 +584,7 @@ set(ZEROSLACK_CORE_SOURCES
     rtlinsightspanelcoordinator.h
     rtlbatcheditservice.h
     saferenameservice.h
+    scopedsearchpanel.h
     searchservice.h
     semanticdiffservice.h
     semanticanalysisrequest.h
@@ -585,9 +629,6 @@ set(ZEROSLACK_CORE_SOURCES
     tabdocumentqueries.h
     tabfileio.h
     tabmanager.h
-    tabopencontroller.h
-    tabsavecontroller.h
-    tabtitlecontroller.h
     workspacemanager.h
     workspaceanalysisplanservice.h
     workspaceignoreservice.h
@@ -622,7 +663,7 @@ add_subdirectory(components/rtleditcore)
 
 target_sources(zeroslack_core PRIVATE
     exposesignaltotopservice.cpp
-    exposesignaltotopdialog.cpp
+    exposesignaltotoppreview.cpp
 )
 
 # Main application target.
@@ -656,6 +697,7 @@ target_link_libraries(zeroslack_core PUBLIC
     Qt6::Gui
     Qt6::Widgets
     Qt6::Concurrent
+    Qt6::Svg
     slang::slang
     rtledit::core
 )
@@ -691,22 +733,46 @@ if(BUILD_TESTING)
     add_executable(ts_doc_test test_sv/ts_doc_test.cpp)
     target_link_libraries(ts_doc_test PRIVATE zeroslack_core)
 
+    add_executable(ts_large_file_semantics_test
+        test_sv/ts_large_file_semantics_test.cpp)
+    target_link_libraries(ts_large_file_semantics_test
+        PRIVATE zeroslack_core Qt6::Core)
+
     add_executable(completion_test test_sv/completion_test.cpp)
     target_link_libraries(completion_test PRIVATE zeroslack_core)
+
+    add_executable(formatter_cursor_anchor_test
+        test_sv/formatter_cursor_anchor_test.cpp)
+    target_link_libraries(formatter_cursor_anchor_test
+        PRIVATE zeroslack_core Qt6::Test)
+
+    add_executable(formatter_tree_indentation_test
+        test_sv/formatter_tree_indentation_test.cpp)
+    target_link_libraries(formatter_tree_indentation_test
+        PRIVATE zeroslack_core)
 
     add_executable(action_registry_test
         test_sv/action_registry_test.cpp
         actionregistry.cpp
         codetemplateservice.cpp
         commandlayercommandregistry.cpp
+        editorfileidentity.cpp
         globalcontrolservice.cpp
         inlinecommandmode.cpp
-        packagetoolservice.cpp)
+        packagetoolservice.cpp
+        tsdocument.cpp
+        $<TARGET_OBJECTS:zeroslack_tree_sitter>)
+    target_include_directories(action_registry_test PRIVATE
+        thirdparty/tree_sitter/lib/include
+        thirdparty/tree_sitter/lib/src)
     if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
         target_compile_options(action_registry_test PRIVATE
             "$<$<COMPILE_LANGUAGE:CXX>:-iquote${CMAKE_CURRENT_SOURCE_DIR}>")
     endif()
-    target_link_libraries(action_registry_test PRIVATE Qt6::Core)
+    target_link_libraries(action_registry_test PRIVATE
+        Qt6::Core
+        Qt6::Gui
+        slang::slang)
 
     add_executable(editor_mode_controller_test
         test_sv/editor_mode_controller_test.cpp
@@ -717,6 +783,238 @@ if(BUILD_TESTING)
     endif()
     target_link_libraries(editor_mode_controller_test PRIVATE Qt6::Core)
 
+    add_executable(annotation_layer_test
+        test_sv/annotation_layer_test.cpp
+        annotationlayer.cpp)
+    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        target_compile_options(annotation_layer_test PRIVATE
+            "$<$<COMPILE_LANGUAGE:CXX>:-iquote${CMAKE_CURRENT_SOURCE_DIR}>")
+    endif()
+    target_link_libraries(annotation_layer_test PRIVATE Qt6::Core)
+
+    add_executable(shared_document_test
+        test_sv/shared_document_test.cpp)
+    target_link_libraries(shared_document_test
+        PRIVATE zeroslack_core Qt6::Test)
+
+    add_executable(external_document_sync_test
+        test_sv/external_document_sync_test.cpp)
+    target_link_libraries(external_document_sync_test
+        PRIVATE zeroslack_core Qt6::Test)
+
+    add_executable(unsaved_document_manager_test
+        test_sv/unsaved_document_manager_test.cpp)
+    target_link_libraries(unsaved_document_manager_test
+        PRIVATE zeroslack_core Qt6::Test)
+
+    add_executable(notification_center_test
+        test_sv/notification_center_test.cpp
+        notificationcenter.cpp)
+    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        target_compile_options(notification_center_test PRIVATE
+            "$<$<COMPILE_LANGUAGE:CXX>:-iquote${CMAKE_CURRENT_SOURCE_DIR}>")
+    endif()
+    target_link_libraries(notification_center_test
+        PRIVATE Qt6::Core)
+
+    add_executable(crash_recovery_service_test
+        test_sv/crash_recovery_service_test.cpp
+        crashrecoveryservice.cpp
+        editorfileidentity.cpp)
+    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        target_compile_options(crash_recovery_service_test PRIVATE
+            "$<$<COMPILE_LANGUAGE:CXX>:-iquote${CMAKE_CURRENT_SOURCE_DIR}>")
+    endif()
+    target_link_libraries(crash_recovery_service_test
+        PRIVATE Qt6::Core)
+
+    add_executable(declare_signal_proposal_test
+        test_sv/declare_signal_proposal_test.cpp
+        declaresignalservice.cpp)
+    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        target_compile_options(declare_signal_proposal_test PRIVATE
+            "$<$<COMPILE_LANGUAGE:CXX>:-iquote${CMAKE_CURRENT_SOURCE_DIR}>")
+    endif()
+    target_link_libraries(declare_signal_proposal_test
+        PRIVATE Qt6::Core)
+
+    add_executable(declare_signal_fact_collector_test
+        test_sv/declare_signal_fact_collector_test.cpp)
+    target_link_libraries(declare_signal_fact_collector_test
+        PRIVATE zeroslack_core)
+
+    add_executable(settings_center_test
+        test_sv/settings_center_test.cpp
+        settingscenterschema.cpp
+        settingscenterservice.cpp
+        workspaceconfigurationservice.cpp)
+    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        target_compile_options(settings_center_test PRIVATE
+            "$<$<COMPILE_LANGUAGE:CXX>:-iquote${CMAKE_CURRENT_SOURCE_DIR}>")
+    endif()
+    target_link_libraries(settings_center_test
+        PRIVATE Qt6::Core Qt6::Gui)
+
+    add_executable(settings_center_panel_test
+        test_sv/settings_center_panel_test.cpp)
+    target_link_libraries(settings_center_panel_test
+        PRIVATE zeroslack_core Qt6::Test)
+
+    add_executable(unified_peek_container_test
+        test_sv/unified_peek_container_test.cpp)
+    target_link_libraries(unified_peek_container_test
+        PRIVATE zeroslack_core Qt6::Test)
+
+    add_executable(graph_export_service_test
+        test_sv/graph_export_service_test.cpp
+        graphexportservice.cpp)
+    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        target_compile_options(graph_export_service_test PRIVATE
+            "$<$<COMPILE_LANGUAGE:CXX>:-iquote${CMAKE_CURRENT_SOURCE_DIR}>")
+    endif()
+    target_link_libraries(graph_export_service_test
+        PRIVATE Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Svg)
+
+    add_executable(graph_export_panel_integration_test
+        test_sv/graph_export_panel_integration_test.cpp)
+    target_link_libraries(graph_export_panel_integration_test
+        PRIVATE zeroslack_core Qt6::Test)
+
+    add_executable(search_scope_service_test
+        test_sv/search_scope_service_test.cpp)
+    target_link_libraries(search_scope_service_test
+        PRIVATE zeroslack_core)
+
+    add_executable(scoped_search_panel_test
+        test_sv/scoped_search_panel_test.cpp)
+    target_link_libraries(scoped_search_panel_test
+        PRIVATE zeroslack_core)
+
+    add_executable(scoped_replace_workflow_test
+        test_sv/scoped_replace_workflow_test.cpp)
+    target_link_libraries(scoped_replace_workflow_test
+        PRIVATE zeroslack_core)
+
+    add_executable(source_structural_navigation_test
+        test_sv/source_structural_navigation_test.cpp
+        tsdocument.cpp
+        $<TARGET_OBJECTS:zeroslack_tree_sitter>)
+    target_include_directories(source_structural_navigation_test PRIVATE
+        thirdparty/tree_sitter/lib/include
+        thirdparty/tree_sitter/lib/src)
+    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        target_compile_options(source_structural_navigation_test PRIVATE
+            "$<$<COMPILE_LANGUAGE:CXX>:-iquote${CMAKE_CURRENT_SOURCE_DIR}>")
+    endif()
+    target_link_libraries(source_structural_navigation_test
+        PRIVATE Qt6::Core)
+
+    add_executable(editor_source_navigation_test
+        test_sv/editor_source_navigation_test.cpp)
+    target_link_libraries(editor_source_navigation_test
+        PRIVATE zeroslack_core Qt6::Test)
+
+    add_executable(editor_annotation_settings_test
+        test_sv/editor_annotation_settings_test.cpp)
+    target_link_libraries(editor_annotation_settings_test
+        PRIVATE zeroslack_core Qt6::Test)
+
+    add_executable(editor_visible_region_perf_test
+        test_sv/editor_visible_region_perf_test.cpp)
+    target_link_libraries(editor_visible_region_perf_test
+        PRIVATE zeroslack_core Qt6::Test)
+
+    add_executable(workspace_file_operation_test
+        test_sv/workspace_file_operation_test.cpp)
+    target_link_libraries(workspace_file_operation_test
+        PRIVATE zeroslack_core Qt6::Test Qt6::Widgets)
+
+    add_executable(navigation_virtual_source_group_test
+        test_sv/navigation_virtual_source_group_test.cpp
+        navigationwidget.cpp
+        navigationwidgettrees.cpp
+        navigationwidgetpresentation.cpp
+        editorfileidentity.cpp
+        symboltaxonomy.cpp)
+    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        target_compile_options(navigation_virtual_source_group_test PRIVATE
+            "$<$<COMPILE_LANGUAGE:CXX>:-iquote${CMAKE_CURRENT_SOURCE_DIR}>")
+    endif()
+    target_link_libraries(navigation_virtual_source_group_test
+        PRIVATE Qt6::Widgets)
+
+    add_executable(workspace_virtual_source_group_ui_test
+        test_sv/workspace_virtual_source_group_ui_test.cpp
+        workspaceconfigurationdialog.cpp)
+    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        target_compile_options(workspace_virtual_source_group_ui_test PRIVATE
+            "$<$<COMPILE_LANGUAGE:CXX>:-iquote${CMAKE_CURRENT_SOURCE_DIR}>")
+    endif()
+    target_link_libraries(workspace_virtual_source_group_ui_test
+        PRIVATE Qt6::Widgets)
+
+    add_executable(rtl_insight_linkage_test
+        test_sv/rtl_insight_linkage_test.cpp)
+    target_link_libraries(rtl_insight_linkage_test
+        PRIVATE zeroslack_core)
+
+    add_executable(rtl_rename_planner_test
+        test_sv/rtl_rename_planner_test.cpp)
+    target_link_libraries(rtl_rename_planner_test
+        PRIVATE zeroslack_core Qt6::Core)
+
+    add_executable(rtl_connection_transform_planner_test
+        test_sv/rtl_connection_transform_planner_test.cpp)
+    target_link_libraries(rtl_connection_transform_planner_test
+        PRIVATE zeroslack_core Qt6::Core
+                rtledit::test_support)
+
+    add_executable(rtl_transform_workflow_test
+        test_sv/rtl_transform_workflow_test.cpp)
+    target_link_libraries(rtl_transform_workflow_test
+        PRIVATE zeroslack_core Qt6::Core
+                rtledit::test_support)
+
+    add_executable(rtl_high_risk_edit_panel_test
+        test_sv/rtl_high_risk_edit_panel_test.cpp)
+    target_link_libraries(rtl_high_risk_edit_panel_test
+        PRIVATE zeroslack_core Qt6::Widgets)
+
+    add_executable(multi_signal_propagation_planner_test
+        test_sv/multi_signal_propagation_planner_test.cpp)
+    target_link_libraries(multi_signal_propagation_planner_test
+        PRIVATE zeroslack_core Qt6::Core)
+
+    add_executable(instance_pair_connection_facade_test
+        test_sv/instance_pair_connection_facade_test.cpp)
+    target_link_libraries(instance_pair_connection_facade_test
+        PRIVATE zeroslack_core Qt6::Core)
+
+    add_executable(instance_pair_connection_panel_test
+        test_sv/instance_pair_connection_panel_test.cpp)
+    target_link_libraries(instance_pair_connection_panel_test
+        PRIVATE zeroslack_core Qt6::Test)
+
+    add_executable(instance_pair_connection_workflow_test
+        test_sv/instance_pair_connection_workflow_test.cpp)
+    target_link_libraries(instance_pair_connection_workflow_test
+        PRIVATE zeroslack_core)
+
+    add_executable(multi_signal_propagation_panel_test
+        test_sv/multi_signal_propagation_panel_test.cpp)
+    target_link_libraries(multi_signal_propagation_panel_test
+        PRIVATE zeroslack_core Qt6::Test)
+
+    add_executable(editor_file_identity_test
+        test_sv/editor_file_identity_test.cpp
+        editorfileidentity.cpp)
+    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        target_compile_options(editor_file_identity_test PRIVATE
+            "$<$<COMPILE_LANGUAGE:CXX>:-iquote${CMAKE_CURRENT_SOURCE_DIR}>")
+    endif()
+    target_link_libraries(editor_file_identity_test
+        PRIVATE Qt6::Core)
+
     add_executable(editor_context_menu_test
         test_sv/editor_context_menu_test.cpp
         actionregistry.cpp
@@ -725,17 +1023,40 @@ if(BUILD_TESTING)
         target_compile_options(editor_context_menu_test PRIVATE
             "$<$<COMPILE_LANGUAGE:CXX>:-iquote${CMAKE_CURRENT_SOURCE_DIR}>")
     endif()
-    target_link_libraries(editor_context_menu_test PRIVATE Qt6::Core)
+    target_link_libraries(editor_context_menu_test
+        PRIVATE Qt6::Core Qt6::Gui)
 
     add_executable(insight_focus_controller_test
         test_sv/insight_focus_controller_test.cpp
-        insightfocuscontroller.cpp)
+        actionregistry.cpp
+        insightfocuscontroller.cpp
+        insightfocuscontrolleractions.cpp)
     if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
         target_compile_options(insight_focus_controller_test PRIVATE
             "$<$<COMPILE_LANGUAGE:CXX>:-iquote${CMAKE_CURRENT_SOURCE_DIR}>")
     endif()
     target_link_libraries(insight_focus_controller_test
         PRIVATE Qt6::Widgets)
+
+    add_executable(panel_layout_controller_test
+        test_sv/panel_layout_controller_test.cpp
+        actionregistry.cpp
+        panellayoutcontroller.cpp)
+    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        target_compile_options(panel_layout_controller_test PRIVATE
+            "$<$<COMPILE_LANGUAGE:CXX>:-iquote${CMAKE_CURRENT_SOURCE_DIR}>")
+    endif()
+    target_link_libraries(panel_layout_controller_test
+        PRIVATE Qt6::Widgets)
+
+    add_executable(editor_split_controller_test
+        test_sv/editor_split_controller_test.cpp)
+    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        target_compile_options(editor_split_controller_test PRIVATE
+            "$<$<COMPILE_LANGUAGE:CXX>:-iquote${CMAKE_CURRENT_SOURCE_DIR}>")
+    endif()
+    target_link_libraries(editor_split_controller_test
+        PRIVATE zeroslack_core Qt6::Test)
 
     add_executable(workspace_persistence_test
         test_sv/workspace_persistence_test.cpp
@@ -802,6 +1123,54 @@ if(BUILD_TESTING)
         test_sv/editor_incremental_test.cpp)
     target_link_libraries(editor_incremental_test PRIVATE zeroslack_core Qt6::Test)
 
+    add_executable(editor_structural_input_test
+        test_sv/editor_structural_input_test.cpp)
+    target_link_libraries(editor_structural_input_test
+        PRIVATE zeroslack_core Qt6::Test)
+
+    add_executable(editor_line_operation_test
+        test_sv/editor_line_operation_test.cpp
+        editorlineoperationcontroller.cpp)
+    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        target_compile_options(editor_line_operation_test PRIVATE
+            "$<$<COMPILE_LANGUAGE:CXX>:-iquote${CMAKE_CURRENT_SOURCE_DIR}>")
+    endif()
+    target_link_libraries(editor_line_operation_test
+        PRIVATE Qt6::Widgets)
+
+    add_executable(editor_multicursor_controller_test
+        test_sv/editor_multicursor_controller_test.cpp)
+    target_link_libraries(editor_multicursor_controller_test
+        PRIVATE zeroslack_core Qt6::Test)
+
+    add_executable(editor_paste_transaction_test
+        test_sv/editor_paste_transaction_test.cpp)
+    target_link_libraries(editor_paste_transaction_test
+        PRIVATE zeroslack_core Qt6::Test)
+
+    add_executable(editor_template_slot_controller_test
+        test_sv/editor_template_slot_controller_test.cpp)
+    target_link_libraries(editor_template_slot_controller_test
+        PRIVATE zeroslack_core)
+
+    add_executable(package_header_command_test
+        test_sv/package_header_command_test.cpp
+        actionregistry.cpp
+        editorfileidentity.cpp
+        inlinecommandmode.cpp
+        packagetoolservice.cpp
+        tsdocument.cpp
+        $<TARGET_OBJECTS:zeroslack_tree_sitter>)
+    target_include_directories(package_header_command_test PRIVATE
+        thirdparty/tree_sitter/lib/include
+        thirdparty/tree_sitter/lib/src)
+    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        target_compile_options(package_header_command_test PRIVATE
+            "$<$<COMPILE_LANGUAGE:CXX>:-iquote${CMAKE_CURRENT_SOURCE_DIR}>")
+    endif()
+    target_link_libraries(package_header_command_test
+        PRIVATE Qt6::Core Qt6::Gui slang::slang)
+
     add_executable(analysis_scheduler_test
         test_sv/analysis_scheduler_test.cpp)
     target_link_libraries(analysis_scheduler_test PRIVATE zeroslack_core Qt6::Test)
@@ -814,6 +1183,11 @@ if(BUILD_TESTING)
             "PATH=${ZEROSLACK_TEST_PATH}"
             $<TARGET_FILE:ts_doc_test>
     )
+    add_test(NAME ts_large_file_semantics_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}"
+            $<TARGET_FILE:ts_large_file_semantics_test>
+    )
     add_test(NAME completion_test
         COMMAND ${CMAKE_COMMAND} -E env
             "PATH=${ZEROSLACK_TEST_PATH}"
@@ -822,6 +1196,18 @@ if(BUILD_TESTING)
             "ZEROSLACK_SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}"
             $<TARGET_FILE:completion_test>
             ${CMAKE_CURRENT_SOURCE_DIR}/test_sv/test_symbols.sv
+    )
+    add_test(NAME formatter_cursor_anchor_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}"
+            "QT_QPA_PLATFORM=offscreen"
+            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
+            $<TARGET_FILE:formatter_cursor_anchor_test>
+    )
+    add_test(NAME formatter_tree_indentation_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}"
+            $<TARGET_FILE:formatter_tree_indentation_test>
     )
     add_test(NAME action_registry_test
         COMMAND ${CMAKE_COMMAND} -E env
@@ -832,6 +1218,226 @@ if(BUILD_TESTING)
         COMMAND ${CMAKE_COMMAND} -E env
             "PATH=${ZEROSLACK_TEST_PATH}"
             $<TARGET_FILE:editor_mode_controller_test>
+    )
+    add_test(NAME annotation_layer_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}"
+            $<TARGET_FILE:annotation_layer_test>
+    )
+    add_test(NAME shared_document_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}"
+            "QT_QPA_PLATFORM=offscreen"
+            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
+            $<TARGET_FILE:shared_document_test>
+    )
+    add_test(NAME external_document_sync_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}"
+            "QT_QPA_PLATFORM=offscreen"
+            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
+            $<TARGET_FILE:external_document_sync_test>
+    )
+    add_test(NAME unsaved_document_manager_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}"
+            "QT_QPA_PLATFORM=offscreen"
+            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
+            $<TARGET_FILE:unsaved_document_manager_test>
+    )
+    add_test(NAME notification_center_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}"
+            $<TARGET_FILE:notification_center_test>
+    )
+    add_test(NAME crash_recovery_service_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}"
+            $<TARGET_FILE:crash_recovery_service_test>
+    )
+    add_test(NAME declare_signal_proposal_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}"
+            $<TARGET_FILE:declare_signal_proposal_test>
+    )
+    add_test(NAME declare_signal_fact_collector_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}"
+            $<TARGET_FILE:declare_signal_fact_collector_test>
+    )
+    add_test(NAME settings_center_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}"
+            $<TARGET_FILE:settings_center_test>
+    )
+    add_test(NAME settings_center_panel_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}"
+            "QT_QPA_PLATFORM=offscreen"
+            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
+            $<TARGET_FILE:settings_center_panel_test>
+    )
+    add_test(NAME unified_peek_container_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}"
+            "QT_QPA_PLATFORM=offscreen"
+            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
+            $<TARGET_FILE:unified_peek_container_test>
+    )
+    add_test(NAME graph_export_service_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}"
+            "QT_QPA_PLATFORM=offscreen"
+            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
+            $<TARGET_FILE:graph_export_service_test>
+    )
+    add_test(NAME graph_export_panel_integration_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}"
+            "QT_QPA_PLATFORM=offscreen"
+            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
+            $<TARGET_FILE:graph_export_panel_integration_test>
+    )
+    add_test(NAME search_scope_service_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}"
+            $<TARGET_FILE:search_scope_service_test>
+    )
+    add_test(NAME scoped_search_panel_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}"
+            "QT_QPA_PLATFORM=offscreen"
+            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
+            $<TARGET_FILE:scoped_search_panel_test>
+    )
+    add_test(NAME scoped_replace_workflow_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}"
+            "QT_QPA_PLATFORM=offscreen"
+            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
+            $<TARGET_FILE:scoped_replace_workflow_test>
+    )
+    set_tests_properties(scoped_replace_workflow_test
+        PROPERTIES TIMEOUT 120)
+    add_test(NAME source_structural_navigation_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}"
+            $<TARGET_FILE:source_structural_navigation_test>
+    )
+    add_test(NAME editor_source_navigation_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}"
+            "QT_QPA_PLATFORM=offscreen"
+            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
+            $<TARGET_FILE:editor_source_navigation_test>
+    )
+    add_test(NAME editor_annotation_settings_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}"
+            "QT_QPA_PLATFORM=offscreen"
+            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
+            $<TARGET_FILE:editor_annotation_settings_test>
+    )
+    add_test(NAME editor_visible_region_perf_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}"
+            "QT_QPA_PLATFORM=offscreen"
+            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
+            $<TARGET_FILE:editor_visible_region_perf_test>
+    )
+    add_test(NAME workspace_file_operation_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}"
+            "QT_QPA_PLATFORM=offscreen"
+            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
+            $<TARGET_FILE:workspace_file_operation_test>
+    )
+    add_test(NAME navigation_virtual_source_group_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}"
+            "QT_QPA_PLATFORM=offscreen"
+            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
+            $<TARGET_FILE:navigation_virtual_source_group_test>
+    )
+    add_test(NAME workspace_virtual_source_group_ui_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}"
+            "QT_QPA_PLATFORM=offscreen"
+            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
+            $<TARGET_FILE:workspace_virtual_source_group_ui_test>
+    )
+    add_test(NAME rtl_insight_linkage_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}"
+            "QT_QPA_PLATFORM=offscreen"
+            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
+            $<TARGET_FILE:rtl_insight_linkage_test>
+    )
+    add_test(NAME rtl_rename_planner_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}"
+            $<TARGET_FILE:rtl_rename_planner_test>
+    )
+    add_test(NAME rtl_connection_transform_planner_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}"
+            $<TARGET_FILE:rtl_connection_transform_planner_test>
+    )
+    add_test(NAME rtl_transform_workflow_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}"
+            $<TARGET_FILE:rtl_transform_workflow_test>
+    )
+    add_test(NAME rtl_high_risk_edit_panel_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}"
+            "QT_QPA_PLATFORM=offscreen"
+            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
+            $<TARGET_FILE:rtl_high_risk_edit_panel_test>
+    )
+    set_tests_properties(rtl_high_risk_edit_panel_test
+        PROPERTIES TIMEOUT 120)
+    add_test(NAME multi_signal_propagation_planner_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}"
+            $<TARGET_FILE:multi_signal_propagation_planner_test>
+    )
+    add_test(NAME instance_pair_connection_facade_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}"
+            $<TARGET_FILE:instance_pair_connection_facade_test>
+    )
+    add_test(NAME instance_pair_connection_panel_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}"
+            "QT_QPA_PLATFORM=offscreen"
+            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
+            $<TARGET_FILE:instance_pair_connection_panel_test>
+    )
+    set_tests_properties(instance_pair_connection_panel_test
+        PROPERTIES TIMEOUT 120)
+    add_test(NAME instance_pair_connection_workflow_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}"
+            "QT_QPA_PLATFORM=offscreen"
+            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
+            $<TARGET_FILE:instance_pair_connection_workflow_test>
+    )
+    set_tests_properties(instance_pair_connection_workflow_test
+        PROPERTIES TIMEOUT 120)
+    add_test(NAME multi_signal_propagation_panel_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}"
+            "QT_QPA_PLATFORM=offscreen"
+            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
+            $<TARGET_FILE:multi_signal_propagation_panel_test>
+    )
+    set_tests_properties(multi_signal_propagation_panel_test
+        PROPERTIES TIMEOUT 120)
+    add_test(NAME editor_file_identity_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}"
+            $<TARGET_FILE:editor_file_identity_test>
     )
     add_test(NAME editor_context_menu_test
         COMMAND ${CMAKE_COMMAND} -E env
@@ -844,6 +1450,20 @@ if(BUILD_TESTING)
             "QT_QPA_PLATFORM=offscreen"
             "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
             $<TARGET_FILE:insight_focus_controller_test>
+    )
+    add_test(NAME panel_layout_controller_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}"
+            "QT_QPA_PLATFORM=offscreen"
+            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
+            $<TARGET_FILE:panel_layout_controller_test>
+    )
+    add_test(NAME editor_split_controller_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}"
+            "QT_QPA_PLATFORM=offscreen"
+            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
+            $<TARGET_FILE:editor_split_controller_test>
     )
     add_test(NAME workspace_persistence_test
         COMMAND ${CMAKE_COMMAND} -E env
@@ -966,6 +1586,46 @@ if(BUILD_TESTING)
             $<TARGET_FILE:editor_incremental_test>
             ${CMAKE_CURRENT_SOURCE_DIR}/test_sv/new/elec_phy_import/top/rtl_top.sv
             ${CMAKE_CURRENT_SOURCE_DIR}/test_sv/huge_prj
+    )
+    add_test(NAME editor_structural_input_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}"
+            "QT_QPA_PLATFORM=offscreen"
+            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
+            $<TARGET_FILE:editor_structural_input_test>
+    )
+    add_test(NAME editor_line_operation_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}"
+            "QT_QPA_PLATFORM=offscreen"
+            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
+            $<TARGET_FILE:editor_line_operation_test>
+    )
+    add_test(NAME editor_multicursor_controller_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}"
+            "QT_QPA_PLATFORM=offscreen"
+            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
+            $<TARGET_FILE:editor_multicursor_controller_test>
+    )
+    add_test(NAME editor_paste_transaction_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}"
+            "QT_QPA_PLATFORM=offscreen"
+            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
+            $<TARGET_FILE:editor_paste_transaction_test>
+    )
+    add_test(NAME editor_template_slot_controller_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}"
+            "QT_QPA_PLATFORM=offscreen"
+            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
+            $<TARGET_FILE:editor_template_slot_controller_test>
+    )
+    add_test(NAME package_header_command_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}"
+            $<TARGET_FILE:package_header_command_test>
     )
     add_test(NAME analysis_scheduler_test
         COMMAND ${CMAKE_COMMAND} -E env

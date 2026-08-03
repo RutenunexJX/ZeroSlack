@@ -2,36 +2,38 @@
 #define EDITORHOVERPOPUP_H
 
 #include "codepreviewservice.h"
+#include "peekcontentmodel.h"
 #include "symbolhoverreports.h"
 
 #include <QFrame>
 #include <QFont>
 #include <QPoint>
+#include <QPointer>
+#include <QRect>
+#include <QStringList>
 #include <functional>
 
 class QLabel;
+class QLineEdit;
 class QMouseEvent;
+class QToolButton;
 class QVBoxLayout;
 
 class EditorHoverPopup : public QFrame
 {
     Q_OBJECT
 public:
-    enum class PlacementMode {
-        TopLevelTool,
-        EmbeddedChild
-    };
-
     using NavigationHandler =
         std::function<void(const QString&, int, int)>;
 
-    explicit EditorHoverPopup(
-        QWidget* parent = nullptr,
-        PlacementMode placementMode = PlacementMode::TopLevelTool);
+    explicit EditorHoverPopup(QWidget* parent);
     ~EditorHoverPopup() override;
 
     void setNavigationHandler(NavigationHandler handler);
     void setTransientPreview(bool transient);
+    void showContent(const PeekContentModel& content,
+                     const QRect& globalAnchorRect,
+                     const QFont& editorFont);
     void showHover(const SymbolHoverReport& report,
                    const QPoint& globalPosition,
                    const QFont& editorFont);
@@ -44,8 +46,28 @@ public:
     void showNumericLiteral(const QString& displayText,
                             const QPoint& globalPosition,
                             const QFont& editorFont);
+    void showDiagnosticDetail(const QString& title,
+                              const QString& message,
+                              const QStringList& details,
+                              const QRect& globalAnchorRect,
+                              const QFont& editorFont);
+    void showDeclarationPreview(const QString& title,
+                                const QString& declaration,
+                                const PeekNavigationTarget& target,
+                                const QRect& globalAnchorRect,
+                                const QFont& editorFont);
+    // Legacy preview coordinators position this widget in screen coordinates.
+    // Keep that contract while the container itself remains a child widget.
+    void move(const QPoint& globalPosition);
+    void move(int globalX, int globalY);
     void closePopup();
     bool hasNavigableTarget() const;
+    QLineEdit* editableLineEdit() const;
+    const PeekContentModel& contentModel() const;
+
+signals:
+    void closed();
+    void actionTriggered(const QString& actionId);
 
 protected:
     bool eventFilter(QObject* watched, QEvent* event) override;
@@ -53,18 +75,28 @@ protected:
 
 private:
     QVBoxLayout* layout = nullptr;
+    QLabel* titleLabel = nullptr;
+    QToolButton* closeButton = nullptr;
+    QPointer<QLineEdit> editControl;
+    QPointer<QWidget> focusReturnWidget;
     QString targetFile;
     int targetLine = -1;
     int targetColumn = -1;
-    PlacementMode placementMode = PlacementMode::TopLevelTool;
     bool transientPreview = false;
     NavigationHandler navigationHandler;
+    PeekContentModel currentContent;
 
     void resetContent();
     QLabel* addLabel(const QString& text,
-                     const QString& style = QString(),
-                     const QFont& font = QFont());
-    void moveNear(const QPoint& globalPosition);
+                     PeekContentRowRole role,
+                     bool wordWrap);
+    void moveNear(const QRect& globalAnchorRect);
 };
+
+QString execPeekActionPrompt(
+    QWidget* host,
+    const PeekContentModel& content,
+    const QRect& globalAnchorRect,
+    const QFont& font);
 
 #endif // EDITORHOVERPOPUP_H

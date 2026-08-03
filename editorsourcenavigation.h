@@ -68,6 +68,10 @@ public:
     void handleLeave(MyCodeEditor* editor, EditorSelection& selections);
     bool handleEscape(MyCodeEditor* editor, EditorSelection& selections);
     bool active() const;
+    EditorHoverPopup* beginExternalPeek(MyCodeEditor* editor,
+                                        bool interactive);
+    EditorHoverPopup* currentPeek() const;
+    void closeExternalPeek();
     void handleEditorContentChanged(MyCodeEditor* editor,
                                     EditorSelection& selections);
     void handleEditorScrolled(MyCodeEditor* editor,
@@ -121,6 +125,8 @@ private:
     bool popupNumericMode = false;
     bool popupPreviewMode = false;
     bool popupPinnedBySelection = false;
+    bool popupExternalMode = false;
+    bool popupExternalInteractive = false;
     bool consumeNextNavigationRelease = false;
     bool hasLastMousePosition = false;
     QPoint lastMousePosition;

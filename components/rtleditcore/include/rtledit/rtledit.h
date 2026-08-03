@@ -9,3 +9,4 @@
 #include "rtledit/semantic_object.h"
 #include "rtledit/text_edit.h"
 #include "rtledit/workspace_document_manager.h"
+#include "rtledit/workspace_edit_transaction.h"

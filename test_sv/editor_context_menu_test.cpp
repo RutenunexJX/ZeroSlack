@@ -2,7 +2,6 @@
 #include "editorcontextmenumodel.h"
 
 #include <QCoreApplication>
-#include <QList>
 #include <QString>
 #include <QStringList>
 
@@ -19,17 +18,6 @@ void check(bool condition, const char* message)
         return;
     ++failures;
     std::cerr << "FAIL: " << message << '\n';
-}
-
-const EditorContextMenuSectionModel* findSection(
-    const EditorContextMenuModel& model,
-    EditorContextMenuSection section)
-{
-    for (const EditorContextMenuSectionModel& candidate : model.sections) {
-        if (candidate.section == section)
-            return &candidate;
-    }
-    return nullptr;
 }
 
 const EditorContextMenuItem* findItem(
@@ -87,25 +75,17 @@ int main(int argc, char* argv[])
         QStringLiteral("Choose an active top / instance.");
     request.symbolAvailable = true;
     request.capabilities = {
-        capability(QStringLiteral("edit.undo"),
-                   true,
-                   false,
-                   QStringLiteral("Nothing to undo."),
-                   true),
+        capability(QStringLiteral("edit.undo"), true, false,
+                   QStringLiteral("Nothing to undo."), true),
         capability(QStringLiteral("edit.redo"), true, true, {}, true),
-        capability(QStringLiteral("edit.cut"),
-                   true,
-                   false,
-                   QStringLiteral("Select text to cut."),
-                   true),
-        capability(QStringLiteral("edit.copy"),
-                   true,
-                   false,
-                   QStringLiteral("Select text to copy."),
-                   true),
+        capability(QStringLiteral("edit.cut"), true, true, {}, true),
+        capability(QStringLiteral("edit.copy"), true, true, {}, true),
         capability(QStringLiteral("edit.paste"), true, true, {}, true),
+        capability(QStringLiteral("select.all"), true, true, {}, true),
+        capability(QStringLiteral("navigation.goLine")),
         capability(QStringLiteral("source.goToDefinition")),
         capability(QStringLiteral("source.findReferences")),
+        capability(QStringLiteral("source.showRelationships")),
         capability(QStringLiteral("insight.stateTransitionGraph"), false),
         capability(QStringLiteral("refactor.exposeSignalToTop")),
         capability(QStringLiteral("format.selection"), false),
@@ -114,48 +94,31 @@ int main(int argc, char* argv[])
 
     const EditorContextMenuModel model =
         buildEditorContextMenuModel(request);
-    check(model.sections.size() == 5,
-          "menu has the five stable standard/category sections");
-    const QList<EditorContextMenuSection> expectedOrder = {
-        EditorContextMenuSection::Standard,
-        EditorContextMenuSection::Navigate,
-        EditorContextMenuSection::Inspect,
-        EditorContextMenuSection::Refactor,
-        EditorContextMenuSection::Format
+    check(model.sections.size() == 2,
+          "removed context surfaces do not leave empty sections");
+    check(model.sections.size() == 2
+              && model.sections.at(0).section
+                     == EditorContextMenuSection::Refactor
+              && model.sections.at(1).section
+                     == EditorContextMenuSection::Format,
+          "remaining context-menu sections retain stable order");
+
+    const QStringList removedContextActions = {
+        QStringLiteral("edit.undo"),
+        QStringLiteral("edit.redo"),
+        QStringLiteral("edit.cut"),
+        QStringLiteral("edit.copy"),
+        QStringLiteral("edit.paste"),
+        QStringLiteral("select.all"),
+        QStringLiteral("navigation.goLine"),
+        QStringLiteral("source.goToDefinition"),
+        QStringLiteral("source.findReferences"),
+        QStringLiteral("source.showRelationships"),
     };
-    for (int index = 0;
-         index < expectedOrder.size() && index < model.sections.size();
-         ++index) {
-        check(model.sections.at(index).section == expectedOrder.at(index),
-              "menu sections retain stable order");
+    for (const QString& actionId : removedContextActions) {
+        check(findItem(model, actionId) == nullptr,
+              "removed action is absent from the editor context menu");
     }
-
-    const EditorContextMenuSectionModel* standard =
-        findSection(model, EditorContextMenuSection::Standard);
-    check(standard && standard->items.size() == 5,
-          "standard actions remain in the familiar leading block");
-    check(standard
-              && standard->items.at(0).actionId
-                     == QStringLiteral("edit.undo")
-              && standard->items.at(1).actionId
-                     == QStringLiteral("edit.redo")
-              && standard->items.at(2).actionId
-                     == QStringLiteral("edit.cut")
-              && standard->items.at(3).actionId
-                     == QStringLiteral("edit.copy")
-              && standard->items.at(4).actionId
-                     == QStringLiteral("edit.paste"),
-          "Undo/Redo/Cut/Copy/Paste order is stable");
-
-    const EditorContextMenuItem* undo =
-        findItem(model, QStringLiteral("edit.undo"));
-    check(undo && !undo->enabled,
-          "hard-unavailable standard action is disabled");
-    check(undo
-              && undo->text.contains(QStringLiteral("Nothing to undo"))
-              && undo->visibleReason
-                     == QStringLiteral("Nothing to undo."),
-          "hard-unavailable action exposes its reason in visible text");
 
     const EditorContextMenuItem* expose =
         findItem(model, QStringLiteral("refactor.exposeSignalToTop"));
@@ -165,7 +128,6 @@ int main(int argc, char* argv[])
               && expose->text.contains(QStringLiteral("active top"))
               && !expose->visibleReason.isEmpty(),
           "resolvable hierarchy failure is visible in the menu label");
-
     check(findItem(model, QStringLiteral("insight.stateTransitionGraph"))
               == nullptr,
           "irrelevant specialized Insight action is omitted");
@@ -173,17 +135,7 @@ int main(int argc, char* argv[])
           "selection-only action is omitted without a selection");
 
     const QStringList requiredContextActions = {
-        QStringLiteral("edit.undo"),
-        QStringLiteral("edit.redo"),
-        QStringLiteral("edit.cut"),
-        QStringLiteral("edit.copy"),
-        QStringLiteral("edit.paste"),
-        QStringLiteral("select.all"),
-        QStringLiteral("navigation.goLine"),
         QStringLiteral("edit.replace"),
-        QStringLiteral("source.goToDefinition"),
-        QStringLiteral("source.findReferences"),
-        QStringLiteral("source.showRelationships"),
         QStringLiteral("insight.signalKernelGraph"),
         QStringLiteral("insight.signalUsageHotspot"),
         QStringLiteral("insight.stateTransitionGraph"),
@@ -205,36 +157,34 @@ int main(int argc, char* argv[])
     for (const QString& actionId : requiredContextActions) {
         const ActionDescriptor* descriptor = findActionById(actionId);
         check(descriptor != nullptr,
-              "every editor menu intent has one registry descriptor");
+              "every retained editor menu intent has one registry descriptor");
         check(descriptor
                   && descriptor->hasSurface(ActionSurface::ContextMenu),
-              "every editor menu descriptor declares its context-menu alias");
+              "every retained editor menu descriptor declares its surface");
     }
 
-    EditorContextMenuRequest staleRequest;
-    staleRequest.actionContext = currentContext();
-    staleRequest.actionContext.semanticState =
-        EditorActionSemanticState::Stale;
-    staleRequest.symbolAvailable = true;
-    staleRequest.capabilities = {
-        capability(
-            QStringLiteral("source.goToDefinition"),
-            true,
-            false,
-            QStringLiteral("Semantic snapshot is stale; analyze the workspace."))
+    const QStringList retainedShortcutActions = {
+        QStringLiteral("edit.undo"),
+        QStringLiteral("edit.redo"),
+        QStringLiteral("edit.cut"),
+        QStringLiteral("edit.copy"),
+        QStringLiteral("edit.paste"),
+        QStringLiteral("select.all"),
+        QStringLiteral("navigation.goLine"),
+        QStringLiteral("source.goToDefinition"),
     };
-    const EditorContextMenuModel staleModel =
-        buildEditorContextMenuModel(staleRequest);
-    const EditorContextMenuItem* staleDefinition =
-        findItem(staleModel, QStringLiteral("source.goToDefinition"));
-    check(staleDefinition
-              && staleDefinition->enabled
-              && !staleDefinition->executable,
-          "recoverable semantic action remains clickable");
-    check(staleDefinition
-              && staleDefinition->text.contains(
-                     QStringLiteral("Semantic snapshot is stale")),
-          "recoverable semantic reason is visible without a tooltip");
+    for (const QString& actionId : retainedShortcutActions) {
+        const ActionDescriptor* descriptor = findActionById(actionId);
+        check(descriptor != nullptr && !descriptor->defaultShortcut.isEmpty(),
+              "removed context action retains its keyboard shortcut");
+        check(descriptor
+                  && !descriptor->hasSurface(ActionSurface::ContextMenu),
+              "removed context action has no context-menu surface");
+    }
+    check(findActionById(QStringLiteral("source.findReferences")) == nullptr
+              && findActionById(
+                     QStringLiteral("source.showRelationships")) == nullptr,
+          "standalone references and relationships actions are removed");
 
     std::cout << (checks - failures) << "/" << checks
               << " editor context menu checks passed\n";

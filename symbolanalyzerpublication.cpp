@@ -1,5 +1,6 @@
 #include "symbolanalyzer.h"
 
+#include "diagnosticpublicationpolicy.h"
 #include "semanticindex.h"
 #include "semanticindexsnapshot.h"
 #include "effectivevalueservice.h"
@@ -35,6 +36,55 @@ QList<SemanticSymbolRecord> recordsWithRevisions(
         record.presentation.documentRevision = documentRevision;
     }
     return result;
+}
+
+int diagnosticLimitForResult(const WorkspaceAnalysisResult& result,
+                             int fallbackLimit)
+{
+    if (result.request.isValid())
+        return result.request.runtimePolicy.normalized().maxDiagnostics;
+    return qMax(1, fallbackLimit);
+}
+
+void applyDiagnosticPublicationPolicy(WorkspaceAnalysisResult* result,
+                                      int fallbackLimit)
+{
+    if (!result)
+        return;
+
+    const int limit = diagnosticLimitForResult(*result, fallbackLimit);
+    if (result->preparedSnapshot) {
+        const QList<SemanticDiagnostic> produced =
+            result->preparedSnapshot->diagnostics();
+        const DiagnosticPublicationSelection selection =
+            DiagnosticPublicationPolicy::select(produced, limit);
+        QStringList diagnosticFiles =
+            result->incrementalPlan.affectedFiles;
+        for (const SemanticDiagnostic& diagnostic : produced) {
+            if (!diagnostic.fileName.isEmpty()
+                && !diagnosticFiles.contains(diagnostic.fileName,
+                                             Qt::CaseInsensitive)) {
+                diagnosticFiles.append(diagnostic.fileName);
+            }
+        }
+        result->preparedSnapshot =
+            std::make_shared<const SemanticIndexSnapshot>(
+                result->preparedSnapshot->withReplacedDiagnostics(
+                    diagnosticFiles,
+                    selection.diagnostics));
+        result->diagnostics = selection.diagnostics;
+        result->diagnosticsProduced = selection.producedCount;
+        result->diagnosticsPublished = selection.publishedCount;
+        result->diagnosticsSuppressed = selection.suppressedCount;
+        return;
+    }
+
+    const DiagnosticPublicationSelection selection =
+        DiagnosticPublicationPolicy::select(result->diagnostics, limit);
+    result->diagnostics = selection.diagnostics;
+    result->diagnosticsProduced = selection.producedCount;
+    result->diagnosticsPublished = selection.publishedCount;
+    result->diagnosticsSuppressed = selection.suppressedCount;
 }
 
 } // namespace
@@ -82,9 +132,13 @@ void SymbolAnalyzer::publishOpenDocumentResults(
     const QStringList& fileNames,
     const QList<SemanticDiagnostic>& diagnostics)
 {
+    const DiagnosticPublicationSelection selection =
+        DiagnosticPublicationPolicy::select(
+            diagnostics,
+            publishedDiagnosticLimit);
     SemanticIndex::getInstance()->publishSnapshotReplacingDiagnostics(
         fileNames,
-        diagnostics);
+        selection.diagnostics);
 }
 
 void SymbolAnalyzer::updateFileSymbols(
@@ -131,11 +185,17 @@ void SymbolAnalyzer::publishFileAnalysisResult(
     if (!values->isComputationCurrent(fileName, revision))
         return;
     SemanticIndex* semanticIndex = SemanticIndex::getInstance();
+    const DiagnosticPublicationSelection selection =
+        DiagnosticPublicationPolicy::select(
+            diagnostics,
+            publishedDiagnosticLimit);
     semanticIndex->updateSymbolRecordsForFile(
         fileName,
         recordsWithRevisions(symbolRecords, revision, documentRevision),
         content);
-    semanticIndex->publishSnapshotReplacingDiagnostics({fileName}, diagnostics);
+    semanticIndex->publishSnapshotReplacingDiagnostics(
+        {fileName},
+        selection.diagnostics);
     values->publishDocumentFacts(
         fileName,
         content,
@@ -198,11 +258,15 @@ void SymbolAnalyzer::publishOverlayAnalysisResult(
             result.documentRevisionsByFile.value(
                 normalizedSymbolAnalyzerFileName(fileResult.fileName), 0));
     }
+    const DiagnosticPublicationSelection selection =
+        DiagnosticPublicationPolicy::select(
+            result.diagnostics,
+            publishedDiagnosticLimit);
     semanticIndex->publishSnapshotReplacingDiagnostics(
         result.diagnosticFiles.isEmpty()
             ? QStringList{result.fileName}
             : result.diagnosticFiles,
-        result.diagnostics);
+        selection.diagnostics);
 }
 
 int SymbolAnalyzer::publishWorkspaceAnalysisResult(
@@ -233,7 +297,19 @@ int SymbolAnalyzer::publishWorkspaceAnalysisResult(
         diagnosticFiles.append(fileResult.fileName);
     }
 
-    diagnostics = result.diagnostics;
+    const DiagnosticPublicationSelection diagnosticSelection =
+        DiagnosticPublicationPolicy::select(
+            result.diagnostics,
+            diagnosticLimitForResult(result,
+                                     publishedDiagnosticLimit));
+    diagnostics = diagnosticSelection.diagnostics;
+    if (telemetry) {
+        telemetry->diagnostics = diagnosticSelection.publishedCount;
+        telemetry->diagnosticsProduced =
+            diagnosticSelection.producedCount;
+        telemetry->diagnosticsSuppressed =
+            diagnosticSelection.suppressedCount;
+    }
 
     QElapsedTimer updateTimer;
     updateTimer.start();
@@ -273,6 +349,8 @@ void SymbolAnalyzer::startWorkspacePublication(
     if (shutdownStarted)
         return;
     cancelWorkspacePublication();
+    applyDiagnosticPublicationPolicy(&result,
+                                     publishedDiagnosticLimit);
 
     QStringList publicationFiles = result.preparedSnapshot
         ? result.incrementalPlan.affectedFiles
@@ -399,12 +477,20 @@ void SymbolAnalyzer::publishPendingWorkspaceAnalysis()
         stageTelemetry.publicationMs = publicationMs;
         stageTelemetry.effectiveFactsMs = effectiveFactsMs;
         stageTelemetry.snapshotInstallMs = snapshotInstallMs;
+        stageTelemetry.diagnosticsProduced =
+            result.diagnosticsProduced;
+        stageTelemetry.diagnosticsPublished =
+            result.diagnosticsPublished;
+        stageTelemetry.diagnosticsSuppressed =
+            result.diagnosticsSuppressed;
         stageTelemetry.slangInvoked = result.slangInvoked;
         stageTelemetry.detail = QStringLiteral(
-            "publish changedFiles=%1 effectiveFactsMs=%2 snapshotInstallMs=%3")
+            "publish changedFiles=%1 effectiveFactsMs=%2 snapshotInstallMs=%3 diagnostics=%4 suppressed=%5")
                                     .arg(affectedFiles.join(','))
                                     .arg(effectiveFactsMs)
-                                    .arg(snapshotInstallMs);
+                                    .arg(snapshotInstallMs)
+                                    .arg(result.diagnosticsPublished)
+                                    .arg(result.diagnosticsSuppressed);
         emit semanticAnalysisTelemetry(stageTelemetry);
         emitWorkspaceAnalysisTelemetry(workspacePath,
                                        result,
@@ -519,7 +605,24 @@ void SymbolAnalyzer::emitWorkspaceAnalysisTelemetry(
     telemetry.totalFiles = totalFiles;
     telemetry.filesAnalyzed = filesAnalyzed;
     telemetry.totalSymbols = result.totalSymbols;
-    telemetry.diagnostics = result.diagnostics.size();
+    const bool publicationCountsRecorded =
+        result.diagnosticsProduced > 0
+        || result.diagnosticsPublished > 0
+        || result.diagnosticsSuppressed > 0;
+    const DiagnosticPublicationSelection selection =
+        publicationCountsRecorded
+        ? DiagnosticPublicationSelection{
+              result.diagnostics,
+              result.diagnosticsProduced,
+              result.diagnosticsPublished,
+              result.diagnosticsSuppressed}
+        : DiagnosticPublicationPolicy::select(
+              result.diagnostics,
+              diagnosticLimitForResult(result,
+                                       publishedDiagnosticLimit));
+    telemetry.diagnostics = selection.publishedCount;
+    telemetry.diagnosticsProduced = selection.producedCount;
+    telemetry.diagnosticsSuppressed = selection.suppressedCount;
     telemetry.workerElapsedMs = result.workerElapsedMs;
     telemetry.symbolExtractionMs = result.symbolExtractionMs;
     telemetry.resultAssemblyMs = result.resultAssemblyMs;

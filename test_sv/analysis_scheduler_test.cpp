@@ -19,6 +19,7 @@
 
 #include "analysiscoordinator.h"
 #include "analysisscheduler.h"
+#include "diagnosticpublicationpolicy.h"
 #include "documentmodel.h"
 #include "editorfileidentity.h"
 #include "effectivevalueservice.h"
@@ -82,6 +83,257 @@ bool containsFile(const QStringList& files, const QString& fileName)
         }
     }
     return false;
+}
+
+void runAnalysisRuntimePolicyPlanning()
+{
+    const QString root =
+        QDir::temp().absoluteFilePath(
+            QStringLiteral("analysis_runtime_policy_planning"));
+    const QString child =
+        QDir(root).absoluteFilePath(QStringLiteral("child.sv"));
+    const QString unrelated =
+        QDir(root).absoluteFilePath(QStringLiteral("unrelated.sv"));
+    ProjectSnapshot project;
+    project.workspaceRoot = root;
+    project.systemVerilogFiles = {child, unrelated};
+    project.allFiles = project.systemVerilogFiles;
+    project.includeDirs = {root};
+
+    const SemanticDependencyGraph graph =
+        SemanticDependencyGraph::build(
+            project,
+            {{child,
+              QStringLiteral("module child; logic value; endmodule\n")},
+             {unrelated,
+              QStringLiteral("module unrelated; endmodule\n")}});
+    SemanticAnalysisRequest request;
+    request.generation = 1;
+    request.reason = SemanticAnalysisReason::Save;
+    request.project = project;
+    request.triggerFile = child;
+    request.changedFiles = {child};
+    SemanticChangeClassification classification;
+    classification.impact = SemanticChangeImpact::LocalBody;
+
+    const IncrementalAnalysisPlan incremental =
+        IncrementalAnalysisPlanService().plan(
+            request,
+            classification,
+            graph);
+    expect("enabled dependency-aware policy retains incremental plan",
+           !incremental.fullWorkspace
+               && incremental.affectedFiles.size() == 1
+               && containsFile(incremental.affectedFiles, child));
+
+    request.runtimePolicy.planningMode =
+        SemanticAnalysisPlanningMode::FullWorkspace;
+    const IncrementalAnalysisPlan forcedFull =
+        IncrementalAnalysisPlanService().plan(
+            request,
+            classification,
+            graph);
+    expect("disabled incremental policy forces authoritative full plan",
+           forcedFull.fullWorkspace
+               && forcedFull.authoritativeWorkspaceReplace
+               && forcedFull.compilationFiles.size()
+                      == project.systemVerilogFiles.size()
+               && forcedFull.fallbackReason.contains(
+                   QStringLiteral("runtime policy")));
+}
+
+void runDiagnosticPublicationPolicyOrdering()
+{
+    auto diagnostic = [](SemanticDiagnostic::Severity severity,
+                         const QString& message) {
+        SemanticDiagnostic value;
+        value.fileName = QStringLiteral("diagnostic_policy.sv");
+        value.message = message;
+        value.severity = severity;
+        return value;
+    };
+    const QList<SemanticDiagnostic> produced{
+        diagnostic(SemanticDiagnostic::Info,
+                   QStringLiteral("info-first")),
+        diagnostic(SemanticDiagnostic::Error,
+                   QStringLiteral("error-first")),
+        diagnostic(SemanticDiagnostic::Warning,
+                   QStringLiteral("warning-first")),
+        diagnostic(SemanticDiagnostic::Error,
+                   QStringLiteral("error-second")),
+        diagnostic(SemanticDiagnostic::Info,
+                   QStringLiteral("info-second")),
+    };
+    const DiagnosticPublicationSelection selected =
+        DiagnosticPublicationPolicy::select(produced, 3);
+    expect("diagnostic publication limit reports produced published and suppressed",
+           selected.producedCount == 5
+               && selected.publishedCount == 3
+               && selected.suppressedCount == 2);
+    expect("diagnostic publication retains highest severity in stable order",
+           selected.diagnostics.size() == 3
+               && selected.diagnostics.at(0).message
+                      == QStringLiteral("error-first")
+               && selected.diagnostics.at(1).message
+                      == QStringLiteral("error-second")
+               && selected.diagnostics.at(2).message
+                      == QStringLiteral("warning-first"));
+}
+
+void runAnalysisRuntimeEnableDisableAndPublicationLimit()
+{
+    QTemporaryDir directory;
+    expect("analysis runtime policy fixture directory is valid",
+           directory.isValid());
+    if (!directory.isValid())
+        return;
+
+    const QString fileName =
+        directory.filePath(QStringLiteral("runtime_policy.sv"));
+    const QString initialSource =
+        QStringLiteral("module runtime_policy; endmodule\n");
+    QString diagnosticSource =
+        QStringLiteral(
+            "`default_nettype none\n"
+            "module runtime_policy;\n");
+    for (int index = 0; index < 8; ++index) {
+        diagnosticSource += QStringLiteral(
+            "  assign unresolved_%1 = missing_%1;\n").arg(index);
+    }
+    diagnosticSource += QStringLiteral(
+        "endmodule\n"
+        "`default_nettype wire\n");
+    QFile file(fileName);
+    expect("analysis runtime policy fixture writes",
+           file.open(QIODevice::WriteOnly | QIODevice::Text)
+               && file.write(initialSource.toUtf8())
+                      == initialSource.toUtf8().size());
+    file.close();
+
+    SemanticIndex::getInstance()->clearSemanticState();
+    AnalysisScheduler scheduler;
+    SymbolAnalyzer analyzer;
+    DocumentModel documents;
+    SemanticAnalysisRuntimePolicy policy;
+    policy.enabled = false;
+    policy.planningMode =
+        SemanticAnalysisPlanningMode::FullWorkspace;
+    policy.maxDiagnostics = 2;
+    scheduler.setSemanticAnalysisRuntimePolicy(policy);
+    scheduler.setSymbolAnalyzer(&analyzer);
+    scheduler.setDocumentModel(&documents);
+
+    QSignalSpy workerStartedSpy(
+        &analyzer,
+        &SymbolAnalyzer::analysisStarted);
+    int suppressedSchedulingRequests = 0;
+    int publicationProduced = 0;
+    int publicationPublished = 0;
+    int publicationSuppressed = 0;
+    bool publicationInvokedSlang = false;
+    QObject::connect(
+        &scheduler,
+        &AnalysisScheduler::semanticAnalysisTelemetry,
+        &scheduler,
+        [&](const SemanticAnalysisTelemetry& telemetry) {
+            if (telemetry.stage == SemanticAnalysisStage::Scheduling
+                && telemetry.detail.contains(
+                    QStringLiteral("policy=disabled"))) {
+                ++suppressedSchedulingRequests;
+            }
+            if (telemetry.stage == SemanticAnalysisStage::Publication) {
+                publicationProduced = telemetry.diagnosticsProduced;
+                publicationPublished = telemetry.diagnosticsPublished;
+                publicationSuppressed = telemetry.diagnosticsSuppressed;
+                publicationInvokedSlang = telemetry.slangInvoked;
+            }
+        });
+
+    MyCodeEditor editor;
+    editor.setPlainText(initialSource);
+    documents.registerEditor(&editor, fileName);
+    editor.setPlainText(diagnosticSource);
+    documents.markSaved(&editor);
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    expect("disabled analysis starts no saved-file Slang worker",
+           workerStartedSpy.isEmpty()
+               && !scheduler.isSemanticAnalysisActive()
+               && suppressedSchedulingRequests >= 2);
+    const DocumentSemanticStatus disabledStatus =
+        scheduler.semanticStatus(fileName);
+    expect("disabled analysis leaves clean document in explicit stable state",
+           disabledStatus.state == DocumentSemanticState::Stale
+               && disabledStatus.state != DocumentSemanticState::Queued
+               && disabledStatus.state != DocumentSemanticState::Analyzing);
+
+    ProjectSnapshot project;
+    project.workspaceRoot = directory.path();
+    project.systemVerilogFiles = {fileName};
+    project.allFiles = project.systemVerilogFiles;
+    project.includeDirs = {directory.path()};
+
+    std::atomic_bool releaseWorker{false};
+    analyzer.setWorkspaceWorkerStartGateForTesting(
+        [&releaseWorker](const std::function<bool()>& isCancelled) {
+            while (!releaseWorker.load(std::memory_order_relaxed)
+                   && !isCancelled()) {
+                QThread::msleep(2);
+            }
+        });
+    policy.enabled = true;
+    scheduler.setSemanticAnalysisRuntimePolicy(policy);
+    QSignalSpy expiredSpy(
+        &analyzer,
+        &SymbolAnalyzer::workspaceAnalysisExpired);
+    scheduler.requestWorkspaceAnalysis(project);
+    expect("re-enabled explicit request starts semantic worker",
+           waitUntil([&]() { return workerStartedSpy.size() == 1; },
+                     3000));
+    const std::uint64_t revisionBeforeDisable =
+        SemanticIndex::getInstance()->snapshotRevision();
+    policy.enabled = false;
+    scheduler.setSemanticAnalysisRuntimePolicy(policy);
+    releaseWorker.store(true, std::memory_order_relaxed);
+    expect("disabling active analysis expires its generation",
+           waitUntil([&]() { return !expiredSpy.isEmpty(); }, 5000));
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
+    expect("expired disabled generation cannot publish",
+           SemanticIndex::getInstance()->snapshotRevision()
+                   == revisionBeforeDisable
+               && !scheduler.isSemanticAnalysisActive()
+               && scheduler.semanticStatus(fileName).state
+                      == DocumentSemanticState::Stale);
+
+    policy.enabled = true;
+    scheduler.setSemanticAnalysisRuntimePolicy(policy);
+    QSignalSpy finishedSpy(
+        &scheduler,
+        &AnalysisScheduler::workspaceSymbolAnalysisFinished);
+    IncrementalAnalysisPlan publishedPlan;
+    QObject::connect(
+        &scheduler,
+        &AnalysisScheduler::semanticAnalysisPlanPrepared,
+        &scheduler,
+        [&publishedPlan](const IncrementalAnalysisPlan& plan) {
+            publishedPlan = plan;
+        });
+    scheduler.requestWorkspaceAnalysis(project);
+    expect("subsequent legal request publishes after re-enable",
+           waitUntil([&]() { return !finishedSpy.isEmpty(); }, 15000));
+    expect("runtime policy reaches worker as authoritative full plan",
+           publishedPlan.fullWorkspace
+               && publishedPlan.authoritativeWorkspaceReplace);
+    const QList<SemanticDiagnostic> publishedDiagnostics =
+        SemanticIndex::getInstance()->getDiagnostics();
+    expect("diagnostic limit applies only at publication after full Slang analysis",
+           publicationInvokedSlang
+               && publicationProduced > publicationPublished
+               && publicationPublished == 2
+               && publicationSuppressed
+                      == publicationProduced - publicationPublished
+               && publishedDiagnostics.size() == 2);
+    scheduler.shutdown();
+    SemanticIndex::getInstance()->clearSemanticState();
 }
 
 void runEditDoesNotScheduleSemanticWork()
@@ -2959,6 +3211,9 @@ void runFailedAnalysisRetainsLastValidSnapshot()
 int main(int argc, char** argv)
 {
     QApplication app(argc, argv);
+    runAnalysisRuntimePolicyPlanning();
+    runDiagnosticPublicationPolicyOrdering();
+    runAnalysisRuntimeEnableDisableAndPublicationLimit();
     runEditDoesNotScheduleSemanticWork();
     runPublicationRefreshesEditorOnce();
     runIncludeResolutionUsesConfiguredSearchOrder();

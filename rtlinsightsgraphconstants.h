@@ -40,6 +40,11 @@ inline constexpr int kGraphEdgeFromNodeIdRole = Qt::UserRole + 1232;
 inline constexpr int kGraphEdgeToNodeIdRole = Qt::UserRole + 1233;
 inline constexpr int kGraphFsmCanonicalNodeIdRole = Qt::UserRole + 1234;
 inline constexpr int kGraphHoverActiveRole = Qt::UserRole + 1235;
+inline constexpr int kGraphModuleRole = Qt::UserRole + 1236;
+inline constexpr int kGraphWorkspaceRole = Qt::UserRole + 1237;
+inline constexpr int kGraphActiveTopRole = Qt::UserRole + 1238;
+inline constexpr int kGraphInstancePathRole = Qt::UserRole + 1239;
+inline constexpr int kGraphDocumentRevisionRole = Qt::UserRole + 1240;
 
 inline constexpr qreal kInsightNodeWidth = 170.0;
 inline constexpr qreal kInsightNodeHeight = 56.0;

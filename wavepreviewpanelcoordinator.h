@@ -2,6 +2,7 @@
 #define WAVEPREVIEWPANELCOORDINATOR_H
 
 #include "documentchange.h"
+#include "graphexportservice.h"
 #include "wavepreviewservice.h"
 
 #include <QDockWidget>
@@ -11,6 +12,7 @@
 #include <functional>
 
 class QLabel;
+class QAction;
 class QCheckBox;
 class QComboBox;
 class QLineEdit;
@@ -39,6 +41,8 @@ public:
     ~WavePreviewPanelCoordinator();
 
     void setNavigationHandler(std::function<void(const QString&, int, int)> handler);
+    void setStatusMessageHandler(
+        std::function<void(const QString&, int)> handler);
     void refreshFromDocument(const QString& fileName,
                              const QString& documentText,
                              bool dirty,
@@ -54,6 +58,16 @@ public:
                              int scopeEndPosition,
                              const QString& scopeLabel,
                              int scopeStartLineZeroBased);
+    void applyDocumentChange(
+        const QString& fileName,
+        const DocumentChange& change,
+        int latestDocumentLength,
+        const std::function<QString(int, int)>& latestDocumentSlice,
+        bool dirty,
+        int scopeStartPosition,
+        int scopeEndPosition,
+        const QString& scopeLabel,
+        int scopeStartLineZeroBased);
     void renderUnavailable(const QString& message);
     void focusFit();
     void focusZoomIn();
@@ -61,6 +75,10 @@ public:
     void setFocusSearchText(const QString& text);
     QString focusSearchText() const;
     void focusInspector();
+    GraphExportResult exportPreview(
+        const QString& outputPath,
+        const GraphExportOptions& options = {}) const;
+    QAction* previewExportAction() const { return exportAction; }
     qreal focusZoomFactorForTest() const {
         return focusZoomFactor;
     }
@@ -84,6 +102,7 @@ private:
     QCheckBox* conditionsCheck = nullptr;
     QCheckBox* stateLabelsCheck = nullptr;
     QCheckBox* sourceLinesCheck = nullptr;
+    QAction* exportAction = nullptr;
     QWidget* previewCanvas = nullptr;
     QTreeWidget* previewTree = nullptr;
     QString currentFileName;
@@ -103,6 +122,7 @@ private:
     qreal focusBaseTreePointSize = 0.0;
 
     std::function<void(const QString&, int, int)> navigationHandler;
+    std::function<void(const QString&, int)> statusMessageHandler;
 
     void renderDocumentNow(const QString& fileName,
                            const QString& documentText,

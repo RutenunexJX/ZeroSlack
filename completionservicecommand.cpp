@@ -1,9 +1,11 @@
 #include "completionservice.h"
 
+#include "codetemplatecontextanalyzer.h"
 #include "codetemplateservice.h"
 #include "completioncommandmode.h"
 #include "completionsemanticquery.h"
 #include "inlinecommandmode.h"
+#include "packagetoolservice.h"
 #include "symboltaxonomy.h"
 #include "usertemplateservice.h"
 
@@ -122,12 +124,20 @@ bool isBetterCommandModeMatch(const CommandModeMatch& candidate,
 QList<CodeTemplateItem> matchingCodeTemplateItems(
     UserTemplateService* userTemplates,
     const QString& commandToken,
-    const QString& seedText)
+    const QString& seedText,
+    const QString& documentText,
+    int cursorPosition)
 {
+    const CodeTemplateSignalContext signalContext =
+        commandToken == QStringLiteral(";;af")
+        ? CodeTemplateContextAnalyzer::analyze(documentText,
+                                               cursorPosition)
+        : CodeTemplateSignalContext();
     QList<CodeTemplateItem> result =
         CodeTemplateService::getInstance()->matchingTemplates(
             commandToken,
-            seedText);
+            seedText,
+            signalContext);
     if (userTemplates)
         result.append(userTemplates->matchingTemplates(commandToken));
     return result;
@@ -433,7 +443,9 @@ CommandModeCompletionState CompletionService::commandModeCompletionState(
         state.templateItems = matchingCodeTemplateItems(
             userTemplateService(),
             state.descriptor.label,
-            state.completionPrefix);
+            state.completionPrefix,
+            query.documentText,
+            query.cursorPosition);
         state.showCompletions = true;
         return state;
     }
@@ -460,6 +472,37 @@ CommandModeCompletionState CompletionService::commandModeCompletionState(
     completionQuery.commandKind = state.command.kind;
 
     state.symbolRecords = findCommandCompletionSymbolRecords(completionQuery);
+    if (state.intent == InlineCommandIntent::PackageImport
+        && query.hasExplicitMatch
+        && query.explicitMatch.matched
+        && !query.documentText.isEmpty()
+        && query.cursorPosition >= 0) {
+        const int replacementLength =
+            query.explicitMatch.endPosition
+            - query.explicitMatch.prefixPosition;
+        const int replacementStart = query.cursorPosition;
+        const int replacementEnd =
+            replacementStart + replacementLength;
+        const PackageImportSite site =
+            PackageToolService::analyzePackageImportSite(
+                query.documentText,
+                replacementStart,
+                replacementEnd);
+        if (!site.valid) {
+            state.symbolRecords.clear();
+            state.hidePopup = true;
+            return state;
+        }
+
+        state.symbolRecords.erase(
+            std::remove_if(
+                state.symbolRecords.begin(),
+                state.symbolRecords.end(),
+                [&site](const SemanticSymbolRecord& record) {
+                    return !site.canImport(record.name);
+                }),
+            state.symbolRecords.end());
+    }
     if (state.symbolRecords.isEmpty()
         && CompletionCommandMode::requiresModuleContext(state.command.kind)
         && completionQuery.moduleName.isEmpty()

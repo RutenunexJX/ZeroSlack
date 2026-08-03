@@ -1,8 +1,12 @@
 #ifndef EDITORRUNTIME_H
 #define EDITORRUNTIME_H
 
+#include "annotationlayer.h"
+#include "editoranchoredrangeindex.h"
 #include "editorappearance.h"
 #include "completiontypes.h"
+#include "declaresignalfactcollector.h"
+#include "declaresignalservice.h"
 #include "editorcompletionui.h"
 #include "editorcompletionworkflow.h"
 #include "editorcolumnmodecontroller.h"
@@ -13,7 +17,10 @@
 #include "formatterservice.h"
 #include "editorgeometry.h"
 #include "editorgutter.h"
+#include "editorkeywordghostcontroller.h"
+#include "editorlineoperationcontroller.h"
 #include "editormodecontroller.h"
+#include "editormulticursorcontroller.h"
 #include "packagetoolservice.h"
 #include "editorselection.h"
 #include "editorsignalselectioncontroller.h"
@@ -21,6 +28,7 @@
 #include "editorsemanticruntime.h"
 #include "editorsourcenavigation.h"
 #include "editorsyntaxstate.h"
+#include "editorstructuralinputcontroller.h"
 #include "editortemplateslotcontroller.h"
 #include "ghostannotationservice.h"
 #include "sourcenavigationservice.h"
@@ -28,6 +36,7 @@
 #include <cstdint>
 #include <atomic>
 #include <memory>
+#include <QMetaObject>
 #include <QPoint>
 #include <QPointer>
 
@@ -42,10 +51,90 @@ class QMenu;
 class QMouseEvent;
 class QPainter;
 class QPaintEvent;
+class QTextDocument;
 struct EditorAlwaysScopeTarget;
 struct EditorModuleScopeTarget;
 struct EditorStructuralContextMenuState;
 struct EditorSynchronousEditState;
+
+struct EditorGhostAnnotationAnchorTraits
+{
+    static int start(const GhostAnnotation& annotation)
+    {
+        return annotation.anchorPosition;
+    }
+
+    static int effectiveEnd(const GhostAnnotation& annotation)
+    {
+        return std::max(annotation.anchorPosition + 1,
+                        annotation.anchorPosition
+                            + annotation.anchorLength);
+    }
+
+    static int firstLine(const GhostAnnotation& annotation)
+    {
+        return annotation.line;
+    }
+
+    static int lastLine(const GhostAnnotation& annotation)
+    {
+        return annotation.line;
+    }
+
+    static void shift(GhostAnnotation& annotation,
+                      int characterDelta,
+                      int lineDelta)
+    {
+        annotation.anchorPosition += characterDelta;
+        annotation.line = std::max(
+            1, annotation.line + lineDelta);
+    }
+};
+
+struct EditorSemanticDecorationAnchorTraits
+{
+    static int start(const SemanticDecoration& decoration)
+    {
+        return decoration.startPosition;
+    }
+
+    static int effectiveEnd(const SemanticDecoration& decoration)
+    {
+        return decoration.startPosition
+            + std::max(0, decoration.length);
+    }
+
+    static int firstLine(const SemanticDecoration&)
+    {
+        return -1;
+    }
+
+    static int lastLine(const SemanticDecoration&)
+    {
+        return -1;
+    }
+
+    static void shift(SemanticDecoration& decoration,
+                      int characterDelta,
+                      int)
+    {
+        decoration.startPosition += characterDelta;
+    }
+};
+
+struct EditorVisibleDocumentRange
+{
+    int firstLine = 0;
+    int lastLine = -1;
+    int startPosition = 0;
+    int endPosition = 0;
+
+    bool valid() const
+    {
+        return lastLine >= firstLine
+            && endPosition >= startPosition;
+    }
+};
 
 struct MyCodeEditorState
 {
@@ -54,6 +143,10 @@ struct MyCodeEditorState
     EditorDocumentGeometry geometry;
     EditorModeController modes;
     EditorTemplateSlotController templateSlots;
+    EditorKeywordGhostController keywordGhost;
+    EditorStructuralInputController structuralInput;
+    EditorLineOperationController lineOperations;
+    EditorMultiCursorController multiCursor;
     EditorColumnModeController columnMode;
     EditorSignalSelectionController signalSelection;
     EditorFoldingController folding;
@@ -70,21 +163,33 @@ struct MyCodeEditorState
     QList<SemanticDiagnostic> diagnostics;
     QHash<int, QList<int>> diagnosticIndexesByLine;
     QHash<int, SemanticDiagnostic::Severity> diagnosticSeverityByLine;
+    QHash<int, SemanticDiagnostic::Severity>
+        diagnosticOverviewSeverityByBucket;
     std::uint64_t diagnosticComputationRevision = 0;
-    QList<GhostAnnotation> ghostAnnotations;
-    QList<SemanticDecoration> semanticDecorations;
+    EditorAnchoredRangeIndex<
+        GhostAnnotation,
+        EditorGhostAnnotationAnchorTraits> ghostAnnotations;
+    EditorRuntimeAnnotationLayer annotationLayer;
+    EditorAnnotationDisplayOptions annotationDisplayOptions;
+    EditorAnchoredRangeIndex<
+        SemanticDecoration,
+        EditorSemanticDecorationAnchorTraits> semanticDecorations;
     // Semantic publications are keyed to text content, not QTextDocument's
     // formatting revision. Appearance and syntax highlighting can advance the
     // latter without changing any source text.
     std::uint64_t semanticTextRevision = 0;
     std::uint64_t ghostQueryGeneration = 0;
-    QString semanticRevisionText;
+    // Keep the live editor cache in the same incremental UTF-16 piece storage
+    // used by Tree-sitter. Ordinary typing must not move the untouched suffix
+    // of a multi-megabyte document merely to keep cachedDocumentText current.
+    TSUTF16Text semanticRevisionText;
     bool inlineFilterTextOverlayActive = false;
     int inlineFilterTextOverlayStart = -1;
     int inlineFilterTextOverlayOriginalLength = 0;
     QString inlineFilterTextOverlayOriginalText;
     QString inlineFilterTextOverlayCurrentText;
     std::shared_ptr<std::atomic_bool> ghostQueryCancellation;
+    QList<QPointer<QObject>> ghostQueryWatchers;
     EditorHotPathMetrics hotPathMetrics;
     bool hotPathTimingEnabled = false;
     FormatterProfile currentFormatterProfile = FormatterProfile::Structured;
@@ -95,17 +200,39 @@ struct MyCodeEditorState
     bool suppressNextCursorPresentation = false;
     bool editorPresentationPending = false;
     bool ghostPresentationPending = false;
+    bool rebindingDocument = false;
+    int lifecycleDiagnosticRank = -1;
     int synchronousEditTransactionDepth = 0;
     std::uint64_t completedSynchronousEditTransactions = 0;
+    QPointer<EditorHoverPopup> signalDefinitionPeek;
     QPointer<QLineEdit> signalDefinitionEditor;
+    QMetaObject::Connection signalDefinitionPeekClosedConnection;
+    QMetaObject::Connection signalDefinitionReturnConnection;
+    bool signalDefinitionPeekActive = false;
+    std::uint64_t signalDefinitionSessionGeneration = 0;
+    QMetaObject::Connection documentContentsChangeConnection;
     int signalDefinitionIdentifierStart = -1;
+    int signalDefinitionIdentifierEnd = -1;
+    QString signalDefinitionIdentifier;
+    QPointer<QTextDocument> signalDefinitionDocument;
     std::uint64_t signalDefinitionDocumentRevision = 0;
     QString signalDefinitionFileName;
+    QString signalDefinitionFileIdentityKey;
+    HierarchyInstanceContext signalDefinitionHierarchyInstance;
+    SemanticSnapshotToken signalDefinitionSemanticToken;
+    QString signalDefinitionCandidateId;
+    DeclareSignalScopeKind signalDefinitionScopeKind =
+        DeclareSignalScopeKind::Module;
+    QString signalDefinitionBlockScopeId;
 
     void initializeCore(MyCodeEditor* editor);
-    void shutdown();
+    void shutdown(MyCodeEditor* editor);
     void attachEditorConnections(MyCodeEditor* editor);
+    void attachDocumentConnection(MyCodeEditor* editor);
     void attachToEditor(MyCodeEditor* editor);
+    void rebindDocument(MyCodeEditor* editor,
+                        QTextDocument* document,
+                        std::uint64_t textRevision);
     void bindEditorModes(MyCodeEditor* editor);
     EditorModeSnapshot modeSnapshot() const;
     void exitInteractionModes(EditorModeExitReason reason);
@@ -116,11 +243,9 @@ struct MyCodeEditorState
     QString currentModuleNameAt(int charPos) const;
     QString currentModuleName(const MyCodeEditor* editor) const;
     EditorAlwaysScopeTarget currentAlwaysScopeTarget(
-        const MyCodeEditor* editor,
-        bool allowLargeFileScopeBuild = true) const;
+        const MyCodeEditor* editor) const;
     EditorModuleScopeTarget currentModuleScopeTarget(
-        const MyCodeEditor* editor,
-        bool allowLargeFileScopeBuild = true) const;
+        const MyCodeEditor* editor) const;
     bool addPortRow(MyCodeEditor* editor, QString* message);
     bool addSignalRow(MyCodeEditor* editor, QString* message);
     bool addParameterRow(MyCodeEditor* editor, QString* message);
@@ -131,6 +256,14 @@ struct MyCodeEditorState
                                   PackageToolKind kind,
                                   QString* message);
     bool selectInsideBeginEnd(MyCodeEditor* editor, QString* message);
+    bool navigateSelectedSignalAssignment(
+        MyCodeEditor* editor,
+        bool previous,
+        QString* message);
+    bool navigateConditionalBranch(
+        MyCodeEditor* editor,
+        bool previous,
+        QString* message);
     void startTemplateSlotMode(MyCodeEditor* editor,
                                int insertionStart,
                                int insertedLength,
@@ -171,6 +304,24 @@ struct MyCodeEditorState
     void handleControlKeyPress(MyCodeEditor* editor, QKeyEvent* event);
     void handleControlKeyRelease(MyCodeEditor* editor, QKeyEvent* event);
     bool handleKeyPress(MyCodeEditor* editor, QKeyEvent* event);
+    bool executeClipboardAction(
+        MyCodeEditor* editor,
+        const QString& actionId,
+        QString* failureReason = nullptr);
+    EditorLineOperationResult executeLineOperation(
+        MyCodeEditor* editor,
+        EditorLineOperation operation);
+    bool selectSymbolOccurrences(
+        MyCodeEditor* editor,
+        bool allInScope,
+        QString* failureReason = nullptr);
+    bool expandSmartSelection(
+        MyCodeEditor* editor,
+        QString* message = nullptr);
+    bool navigateSelectedSymbolOccurrence(
+        MyCodeEditor* editor,
+        bool previous,
+        QString* message = nullptr);
     void beginSynchronousEditTransaction();
     void endSynchronousEditTransaction(MyCodeEditor* editor);
     EditorSynchronousEditState synchronousEditStateForTest() const;
@@ -179,16 +330,17 @@ struct MyCodeEditorState
     bool handleDragEnter(MyCodeEditor* editor, QDragEnterEvent* event);
     bool handleDragMove(MyCodeEditor* editor, QDragMoveEvent* event);
     bool handleDrop(MyCodeEditor* editor, QDropEvent* event);
-    void handleResize(MyCodeEditor* editor) const;
+    void handleResize(MyCodeEditor* editor);
     bool handleGutterMousePress(MyCodeEditor* editor, QMouseEvent* event);
     bool handleGutterMouseMove(MyCodeEditor* editor, QMouseEvent* event);
     void paintGutterDecorations(MyCodeEditor* editor,
                                 QPainter& painter,
                                 const QRect& rect) const;
     void paintDiagnosticOverview(MyCodeEditor* editor,
-                                 QPaintEvent* event) const;
+                                 QPaintEvent* event);
     void paintFoldPlaceholders(MyCodeEditor* editor, QPaintEvent* event) const;
-    void paintGhostAnnotations(MyCodeEditor* editor, QPaintEvent* event) const;
+    void paintGhostAnnotations(MyCodeEditor* editor, QPaintEvent* event);
+    void paintMultiCursor(MyCodeEditor* editor, QPaintEvent* event) const;
     void paintColumnSelection(MyCodeEditor* editor, QPaintEvent* event) const;
     void handleContextMenu(MyCodeEditor* editor, QContextMenuEvent* event);
     EditorStructuralContextMenuState structuralContextMenuState(
@@ -197,6 +349,20 @@ struct MyCodeEditorState
     bool editInstanceSlotsAt(MyCodeEditor* editor,
                              int cursorPosition,
                              QString* message = nullptr);
+    DeclareSignalFactCollectionResult
+        signalDefinitionFactsAt(
+            const MyCodeEditor* editor,
+            int cursorPosition,
+            SemanticSnapshotToken* semanticToken = nullptr,
+            std::uint64_t expectedSemanticGeneration = 0,
+            std::uint64_t expectedDocumentRevision = 0) const;
+    DeclareSignalProposal signalDefinitionProposalAt(
+        const MyCodeEditor* editor,
+        int cursorPosition,
+        DeclareSignalFactCollectionResult* facts = nullptr,
+        SemanticSnapshotToken* semanticToken = nullptr,
+        std::uint64_t expectedSemanticGeneration = 0,
+        std::uint64_t expectedDocumentRevision = 0) const;
     QString signalDefinitionCandidateAt(
         const MyCodeEditor* editor,
         int cursorPosition,
@@ -209,6 +375,7 @@ struct MyCodeEditorState
         MyCodeEditor* editor,
         const QString& declaration,
         QString* failureReason = nullptr);
+    void clearSignalDefinitionEditorState();
     void cancelSignalDefinitionEditor();
     bool startSignalSelectionMode(MyCodeEditor* editor,
                                   QString* message = nullptr);
@@ -239,6 +406,7 @@ struct MyCodeEditorState
     const QString& cachedDocumentText();
     int cachedDocumentLength() const;
     QString cachedDocumentSlice(int position, int length);
+    TSTextStorageMetrics cachedTextStorageMetricsForTest() const;
     bool beginInlineFilterTextOverlay(int startPosition,
                                       int endPosition);
     void finishInlineFilterTextOverlay();
@@ -267,8 +435,10 @@ struct MyCodeEditorState
     bool clearSelectedAssignmentRhs(MyCodeEditor* editor,
                                     QString* message = nullptr);
     QList<GhostAnnotation> ghostAnnotationsForTest() const;
+    AnnotationLayerReport annotationLayerReportForTest(
+        const AnnotationLayerQuery& query = {}) const;
     QString syntaxTextForTest() const;
-    EditorLargeFileSyntaxScopeSnapshot largeFileSyntaxScopeForTest() const;
+    EditorLargeFileSyntaxSnapshot largeFileSyntaxSnapshotForTest() const;
     void setSemanticContextService(EditorSemanticContextService* service);
     void setHierarchyInstanceContext(
         const HierarchyInstanceContext& context);
@@ -290,12 +460,19 @@ struct MyCodeEditorState
         int zeroBasedLine,
         bool* available = nullptr) const;
     void refreshGhostAnnotations(MyCodeEditor* editor);
+    void shutdownGhostQueries(MyCodeEditor* editor);
     void setSemanticDecorations(
         MyCodeEditor* editor,
         const QList<SemanticDecoration>& decorations);
     void setGhostAnnotations(
         MyCodeEditor* editor,
         const QList<GhostAnnotation>& annotations);
+    void setAnnotationDisplayOptions(
+        MyCodeEditor* editor,
+        const EditorAnnotationDisplayOptions& options);
+    EditorAnnotationDisplayOptions
+    currentAnnotationDisplayOptions() const;
+    void refreshGhostAnnotationLayer(MyCodeEditor* editor);
     void handleDocumentContentsChange(MyCodeEditor* editor,
                                       int position,
                                       int charsRemoved,
@@ -304,6 +481,13 @@ struct MyCodeEditorState
                                const DocumentChange& change);
     void remapSemanticDecorations(MyCodeEditor* editor,
                                   const DocumentChange& change);
+    void rebuildSemanticDecorationPositionIndex();
+    EditorVisibleDocumentRange visibleDocumentRange(
+        const MyCodeEditor* editor) const;
+    void refreshVisibleRegionPresentation(MyCodeEditor* editor);
+    void rebuildDiagnosticOverviewIndex(
+        const MyCodeEditor* editor);
+    void refreshDiagnosticPresentation(MyCodeEditor* editor);
     void refreshSemanticDecorationPresentation(MyCodeEditor* editor);
     void refreshDerivedEditorState(MyCodeEditor* editor,
                                    bool allowWavePreviewSignal);

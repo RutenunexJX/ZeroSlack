@@ -4,14 +4,17 @@
 #include "documentchange.h"
 
 #include <QList>
+#include <QPointer>
 #include <QString>
 
+#include <cstdint>
 #include <memory>
 
 class MyCodeEditor;
 class MyHighlighter;
 class QTextDocument;
 class TSDocument;
+class TSUTF16Text;
 struct TSChangedRange;
 enum class PackageToolKind;
 struct TSPortAppendTarget;
@@ -22,19 +25,35 @@ struct TSModuleEndNavigationTarget;
 struct TSAlwaysScopeTarget;
 struct TSModuleScopeTarget;
 struct TSBeginEndInsideTarget;
+struct TSStructuralNewlineTarget;
+struct TSKeywordCompletionTarget;
+struct TSKeywordPairTarget;
 struct TSIdentifierTarget;
-struct EditorLargeFileSyntaxScopeSnapshot {
-    int startPosition = -1;
-    int endPosition = -1;
+struct TSIdentifierOccurrenceSet;
+struct TSAssignmentNavigationTarget;
+struct TSConditionalBranchNavigationTarget;
+struct EditorLargeFileSyntaxSnapshot {
+    int startPosition = 0;
+    int endPosition = 0;
     int startLine = 0;
     int documentLength = 0;
-    QString text;
+    int syntaxTextLength = 0;
+    bool fullDocumentSyntax = false;
+    std::uint64_t fullBuildCount = 0;
+    std::uint64_t incrementalEditCount = 0;
+    // Raw ranges returned by Tree-sitter for the most recent parse. These do
+    // not include the local repaint range synthesized when the tree shape is
+    // unchanged.
+    int lastChangedRangeCount = 0;
+    int lastChangedCharacterCount = 0;
 
     bool valid() const
     {
-        return startPosition >= 0
-            && endPosition == startPosition + text.size()
-            && documentLength >= endPosition;
+        return fullDocumentSyntax
+            && startPosition == 0
+            && startLine == 0
+            && endPosition == syntaxTextLength
+            && documentLength == syntaxTextLength;
     }
 };
 
@@ -51,13 +70,16 @@ public:
     QString packageNameAt(int charPos) const;
     void syncText(const QString& text);
     void createHighlighter(QTextDocument* textDocument);
+    void detachHighlighter();
     void attachToEditor(MyCodeEditor* editor);
     QList<TSChangedRange> applyDocumentChange(
         const DocumentChange& change,
-        const QString& currentText);
+        const TSUTF16Text& currentText);
     QString moduleNameAt(int charPos) const;
     TSPortAppendTarget portAppendTargetAt(int charPos) const;
     TSSignalInsertTarget signalInsertTargetAt(int charPos) const;
+    TSSignalInsertTarget blockSignalInsertTargetAt(
+        int charPos) const;
     TSParameterInsertTarget parameterInsertTargetAt(int charPos) const;
     TSPackageToolInsertTarget packageToolInsertTargetAt(
         int charPos,
@@ -67,42 +89,49 @@ public:
     TSAlwaysScopeTarget alwaysScopeTargetAt(
         int cursorChar,
         int selectionStartChar,
-        int selectionEndChar,
-        const QString& currentText,
-        int currentTextLength,
-        bool allowLargeFileScopeBuild) const;
+        int selectionEndChar) const;
     TSModuleScopeTarget moduleScopeTargetAt(
         int cursorChar,
         int selectionStartChar,
-        int selectionEndChar,
-        const QString& currentText,
-        int currentTextLength,
-        bool allowLargeFileScopeBuild) const;
+        int selectionEndChar) const;
     TSBeginEndInsideTarget beginEndInsideTargetAt(int cursorChar) const;
+    TSStructuralNewlineTarget structuralNewlineTargetAt(
+        int cursorChar,
+        int indentWidth = 4) const;
+    TSKeywordCompletionTarget uniqueKeywordCompletionAt(
+        int cursorChar,
+        int minimumPrefixLength = 3) const;
+    TSKeywordPairTarget matchingKeywordPairAt(int cursorChar) const;
     TSIdentifierTarget identifierAt(int cursorChar) const;
+    TSIdentifierOccurrenceSet identifierOccurrencesAt(
+        int cursorChar) const;
+    TSAssignmentNavigationTarget assignmentNavigationTargetAt(
+        int cursorChar,
+        bool previous) const;
+    TSConditionalBranchNavigationTarget
+    conditionalBranchNavigationTargetAt(
+        int cursorChar,
+        bool previous) const;
     TSInstantiationTarget instantiationAt(int cursorChar) const;
     TSUndefinedSignalContext undefinedSignalContextAt(
         int cursorChar) const;
     const TSDocument* tsDocument() const;
-    EditorLargeFileSyntaxScopeSnapshot largeFileScopeSnapshotForTest() const;
-    bool usesLargeFileScopedSyntax() const;
+    EditorLargeFileSyntaxSnapshot largeFileSnapshotForTest() const;
+    bool isLargeDocument() const;
 
 private:
     std::unique_ptr<TSDocument> document;
-    mutable std::unique_ptr<TSDocument> largeFileScopeDocument;
-    MyHighlighter* highlighter = nullptr;
-    bool interactiveSyntaxEnabled = true;
-    mutable int largeFileScopeStartPosition = -1;
-    mutable int largeFileScopeEndPosition = -1;
-    mutable int largeFileScopeStartLine = 0;
-    mutable int largeFileDocumentLength = 0;
+    QPointer<QTextDocument> highlighterDocument;
+    bool largeDocument = false;
+    std::uint64_t fullBuildCount = 0;
+    std::uint64_t incrementalEditCount = 0;
+    int lastChangedRangeCount = 0;
+    int lastChangedCharacterCount = 0;
 
-    void invalidateLargeFileScope();
-    void applyLargeFileScopeChange(const DocumentChange& change);
-    bool ensureLargeFileScope(const QString& currentText,
-                              int currentTextLength,
-                              int cursorChar,
-                              bool allowBuild) const;
+    QList<TSChangedRange> fullDocumentRange(
+        const QString& text) const;
+    void recordChangedRanges(
+        const QList<TSChangedRange>& ranges);
 };
 
 #endif // EDITORSYNTAXSTATE_H

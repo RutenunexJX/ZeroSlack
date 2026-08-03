@@ -2,7 +2,11 @@
 #define MAINWINDOW_H
 
 #include <QMainWindow>
+#include "actionregistry.h"
+#include "annotationlayer.h"
+#include <QHash>
 #include <QList>
+#include <QPointer>
 #include <QSet>
 #include <QString>
 #include <atomic>
@@ -14,12 +18,16 @@
 class AnalysisProgressCoordinator;
 class EditorAppearanceSettings;
 class FormatterSettings;
+class SettingsCenterPanel;
+class SettingsCenterService;
 class MyCodeEditor;
 class TabManager;
 class WorkspaceManager;
 class NavigationCommandCoordinator;
 class NavigationManager;
 class NavigationPaneCoordinator;
+class NotificationCenter;
+class PanelLayoutController;
 class AnalysisCoordinator;
 class AnalysisScheduler;
 class CommandLayerCoordinator;
@@ -32,16 +40,25 @@ class FoldBlockShelfPanel;
 class GlobalControlCoordinator;
 class SemanticDockCoordinator;
 class SemanticRuntimeCoordinator;
+class ScopedReplaceWorkflow;
+class WorkspaceEditDocumentManager;
+class QAction;
+class QDialog;
 class QDockWidget;
 class QLabel;
 class QMenu;
+class QPlainTextEdit;
 class QProgressBar;
+class QPushButton;
 class QStackedWidget;
 class QTabBar;
 class QTimer;
 class QToolButton;
+class QTreeWidget;
 class QVBoxLayout;
 class QWidget;
+struct CrashRecoveryCandidate;
+struct ExternalDocumentConflictReview;
 struct DocumentChange;
 struct EditorActionContext;
 struct EditorActionContextQuery;
@@ -50,6 +67,8 @@ struct EditorModeSnapshot;
 struct WorkspaceSessionState;
 struct UserTemplateLoadReport;
 struct SemanticAnalysisTelemetry;
+struct SettingsCenterSnapshot;
+struct ScopedSearchPanelContext;
 
 struct EditorActionContextChipWriteCounts {
     std::uint64_t text = 0;
@@ -72,7 +91,8 @@ QT_BEGIN_NAMESPACE
 namespace Ui { class MainWindow; }
 QT_END_NAMESPACE
 
-class MainWindow : public QMainWindow
+class MainWindow : public QMainWindow,
+                   private ActionExecutionHost
 {
     Q_OBJECT
 
@@ -88,6 +108,7 @@ public:
     EditorActionContextChipWriteCounts
     editorActionContextChipWriteCountsForTesting() const;
     void resetEditorActionContextChipWriteCountsForTesting();
+    NotificationCenter* notificationCenterForTesting() const;
 
 protected:
     void closeEvent(QCloseEvent *event) override;
@@ -100,6 +121,8 @@ private:
     Ui::MainWindow *ui;
 
     std::unique_ptr<NavigationPaneCoordinator> navigationPane;
+    std::unique_ptr<NotificationCenter> notificationCenter;
+    std::unique_ptr<PanelLayoutController> panelLayoutController;
     std::unique_ptr<SemanticRuntimeCoordinator> semanticRuntime;
     std::unique_ptr<AnalysisCoordinator> analysisCoordinator;
     std::unique_ptr<CommandLayerCoordinator> commandLayerCoordinator;
@@ -113,17 +136,53 @@ private:
     std::unique_ptr<GlobalControlCoordinator> globalControlCoordinator;
     std::unique_ptr<NavigationCommandCoordinator> navigationCommandCoordinator;
     std::unique_ptr<SemanticDockCoordinator> semanticDocks;
+    std::unique_ptr<WorkspaceEditDocumentManager>
+        scopedReplaceDocuments;
+    std::unique_ptr<ScopedReplaceWorkflow>
+        scopedReplaceWorkflow;
+    std::unique_ptr<SettingsCenterService> settingsCenterService;
     std::unique_ptr<EditorAppearanceSettings> editorAppearanceSettings;
     std::unique_ptr<FormatterSettings> formatterSettings;
-    QDockWidget* editorAppearanceDock = nullptr;
-    QDockWidget* shellNavigationRailDock = nullptr;
+    SettingsCenterPanel* settingsCenterPanel = nullptr;
+    QDockWidget* settingsCenterDock = nullptr;
     QMenu* viewMenu = nullptr;
     QMenu* workspaceMenu = nullptr;
+    QMenu* openWorkspacesMenu = nullptr;
+    QAction* closeActiveWorkspaceAction = nullptr;
     QMenu* toolsMenu = nullptr;
     QMenu* userTemplatesMenu = nullptr;
+    QDialog* crashRecoveryReviewDialog = nullptr;
+    QTreeWidget* crashRecoveryCandidateList = nullptr;
+    QPlainTextEdit* crashRecoverySourceText = nullptr;
+    QPlainTextEdit* crashRecoveryRecoveredText = nullptr;
+    QLabel* crashRecoveryReviewStatus = nullptr;
+    QPushButton* crashRecoveryRestoreButton = nullptr;
+    QPushButton* crashRecoveryDiscardButton = nullptr;
+    std::unique_ptr<CrashRecoveryCandidate>
+        reviewedCrashRecoveryCandidate;
+    QHash<QString, QString>
+        crashRecoveryNotificationWorkspaces;
+    QHash<QString, QString>
+        externalConflictNotificationFiles;
+    QHash<QString, int>
+        crashRecoveryIsolatedRecordCounts;
+    QSet<QString> handledCrashRecoveryCandidates;
+    QString crashRecoveryReviewWorkspace;
+    QWidget* externalConflictReviewBar = nullptr;
+    QLabel* externalConflictReviewTitle = nullptr;
+    QLabel* externalConflictReviewStatus = nullptr;
+    QPlainTextEdit* externalConflictLocalText = nullptr;
+    QPlainTextEdit* externalConflictDiskText = nullptr;
+    QPushButton* externalConflictKeepLocalButton = nullptr;
+    QPushButton* externalConflictReloadButton = nullptr;
+    QPushButton* externalConflictSaveAsButton = nullptr;
+    std::unique_ptr<ExternalDocumentConflictReview>
+        reviewedExternalConflict;
+    QPointer<QWidget> externalConflictPreviousFocus;
     QToolButton* panelsStatusButton = nullptr;
     QStackedWidget* centralContentStack = nullptr;
     QWidget* editorCentralPage = nullptr;
+    QWidget* editorSplitHost = nullptr;
     QLabel* editorModeChip = nullptr;
     QLabel* editorActionContextChip = nullptr;
     QWidget* packageToolsBar = nullptr;
@@ -133,13 +192,16 @@ private:
     EditorPackageToolAvailability packageToolsState;
     bool packageToolsStateValid = false;
     QProgressBar* workspaceProgressBar = nullptr;
-    QTabBar* workspaceTabBar = nullptr;
     QTimer* workspaceSessionSaveTimer = nullptr;
     QString pendingActiveEditorPassiveRefreshFile;
     QString diagnosticsAnalysisState;
     QSet<QString> workspaceSessionCleanRoots;
     bool pendingActiveEditorPassiveRefreshAll = false;
     bool activeEditorPassiveRefreshQueued = false;
+    bool restoreWorkspaceSessionOnActivation = true;
+    bool rememberWorkspacePanelState = true;
+    EditorAnnotationDisplayOptions
+        editorAnnotationDisplayOptions;
     std::uint64_t semanticDecorationGeneration = 0;
     std::shared_ptr<std::atomic_bool> semanticDecorationCancellation;
     EditorActionContextChipWriteCounts editorActionContextChipWriteCounts;
@@ -147,9 +209,10 @@ private:
     static const int kFileChangeDebounceMs = 350;
 
     void setupNavigationPane();
-    void setupShellNavigationRail();
+    void setupNotificationCenter();
     void applyModernShellStyle();
     void setupSemanticDocks();
+    ScopedSearchPanelContext scopedSearchContext() const;
     void setupInsightFocusView();
     bool insightPanelVisibleOrFocused(
         const QString& panelId) const;
@@ -164,9 +227,35 @@ private:
         const EditorPackageToolAvailability& availability);
     void insertPackageTool(PackageToolKind kind);
     void setupFoldBlockShelf();
+    void setupPanelLayoutController();
     void setupViewMenu();
     void setupWorkspaceMenu();
+    void refreshWorkspaceMenuEntries();
+    void activateWorkspace(int index);
+    void closeActiveWorkspace();
     void setupToolsMenu();
+    void setupCrashRecoveryReviewUi();
+    void notifyCrashRecoveryCandidates(
+        const QString& workspaceRoot,
+        int candidateCount,
+        int isolatedRecordCount);
+    void postCrashRecoveryFailure(
+        const QString& documentId,
+        const QString& failureReason);
+    void openCrashRecoveryReview(
+        const QString& workspaceRoot = QString());
+    void reloadCrashRecoveryReview(
+        const QString& preferredRecoveryId = QString());
+    void reviewCrashRecoverySelection();
+    void applyReviewedCrashRecovery();
+    void discardReviewedCrashRecovery();
+    void refreshCrashRecoveryAvailability(
+        const QString& workspaceRoot);
+    QString crashRecoveryNotificationKey(
+        const QString& workspaceRoot) const;
+    QString crashRecoveryHandledKey(
+        const QString& workspaceRoot,
+        const QString& recoveryId) const;
     void openGlobalUserTemplates();
     void openWorkspaceUserTemplates();
     void reloadUserTemplates();
@@ -178,9 +267,6 @@ private:
         const UserTemplateLoadReport& report) const;
     QString userTemplateIssueReportText(
         const UserTemplateLoadReport& report) const;
-    void addPanelViewAction(QDockWidget* dock,
-                            const QString& text,
-                            const QString& objectName);
     QDockWidget* dockForPanelId(const QString& panelId) const;
     void showDockWidget(QDockWidget* dock,
                         const QString& statusMessage = QString());
@@ -203,7 +289,26 @@ private:
     void showFoldBlockShelf();
     void restoreFoldShelfItem(const QString& id);
     void restoreFoldShelfItemToActiveEditor(const QString& id);
-    void setupEditorAppearanceSettings();
+    void setupSettingsCenter();
+    void applySettingsCenterSnapshot(
+        const SettingsCenterSnapshot& snapshot);
+    void applyRegisteredActionShortcuts();
+    QAction* addRegistryMenuAction(
+        QMenu* menu,
+        const QString& actionId);
+    ActionExecutionResult executeActionRoute(
+        const ActionDescriptor& descriptor,
+        const ActionInvocation& invocation) override;
+    ActionExecutionResult executeInstancePairConnectionAction(
+        const ActionInvocation& invocation);
+    ActionExecutionResult executeMultiSignalPropagationAction(
+        const ActionInvocation& invocation);
+    ActionExecutionResult executeRtlRenameAction(
+        const ActionInvocation& invocation);
+    ActionExecutionResult executeRtlConnectionTransformAction(
+        const ActionInvocation& invocation);
+    void refreshSettingsCenterWorkspace(
+        const QString& workspaceRoot);
     void setupEditorCoordinator();
     WorkspaceSessionState captureWorkspaceSessionState() const;
     bool saveWorkspaceSession(bool showStatus = true);
@@ -214,12 +319,21 @@ private:
 
     void setupManagerConnections();
     void setupSemanticRuntime();
-    void setupWorkspaceBar();
+    void setupEditorCentralArea();
+    void setupExternalConflictReviewUi(
+        QVBoxLayout* editorLayout,
+        QWidget* parent);
+    void openExternalConflictReview(
+        const QString& fileName);
+    void closeExternalConflictReview();
+    void keepReviewedExternalConflict();
+    void reloadReviewedExternalConflict();
+    void saveReviewedExternalConflictAs();
+    void postExternalConflictActionFailure(
+        const QString& fileName,
+        const QString& failureReason);
     void setupWorkspaceProgressIndicator();
-    void refreshWorkspaceTabs();
-    void closeWorkspaceTab(int index);
-    void showWorkspaceTabContextMenu(const QPoint& position);
-    void renameWorkspaceTab(int index);
+    void refreshWorkspaceScope();
     void refreshActiveEditorDiagnosticHighlights(
         const QString& changedFileName = QString());
     void refreshActiveEditorSemanticDecorations(

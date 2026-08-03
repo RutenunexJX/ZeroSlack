@@ -7,7 +7,6 @@
 #include <QAction>
 #include <QCloseEvent>
 #include <QFileDialog>
-#include <QMessageBox>
 #include <QString>
 #include <QWidget>
 
@@ -71,9 +70,18 @@ void FileCommandCoordinator::CommandTargets::openWorkspace(
         workspaceManager->openWorkspaceFromUserSelection(folderPath);
 }
 
-bool FileCommandCoordinator::CommandTargets::hasUnsavedChanges() const
+bool FileCommandCoordinator::CommandTargets::
+resolvePendingDocuments(QWidget* dialogParent) const
 {
-    return tabManager && tabManager->hasUnsavedChanges();
+    return !tabManager
+        || tabManager->resolvePendingDocuments(dialogParent);
+}
+
+void FileCommandCoordinator::CommandTargets::
+finalizeNormalClose() const
+{
+    if (tabManager)
+        tabManager->clearCrashRecoveryAfterNormalClose();
 }
 
 MyCodeEditor* FileCommandCoordinator::CommandTargets::currentEditor() const
@@ -222,18 +230,10 @@ void FileCommandCoordinator::handleCloseEvent(QCloseEvent* event, QWidget* dialo
     if (!event)
         return;
 
-    if (!targets.hasUnsavedChanges()) {
+    if (targets.resolvePendingDocuments(dialogParent)) {
+        targets.finalizeNormalClose();
         event->accept();
-        return;
-    }
-
-    const QMessageBox::StandardButton answer = QMessageBox::question(
-        dialogParent,
-        "Warning",
-        "There are unsaved changes. Quit?",
-        QMessageBox::Yes | QMessageBox::No);
-    if (answer == QMessageBox::Yes)
-        event->accept();
-    else
+    } else {
         event->ignore();
+    }
 }

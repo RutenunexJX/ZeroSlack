@@ -1,5 +1,6 @@
 #include "rtlinsightspanelcoordinator.h"
 
+#include "graphexportui.h"
 #include "insightgraphview.h"
 #include "insightvisualstyle.h"
 #include "rtlinsightsgraphcontroller.h"
@@ -8,6 +9,7 @@
 #include "rtlinsightspresenter.h"
 #include "signalusagehotspotpanel.h"
 
+#include <QAction>
 #include <QCheckBox>
 #include <QComboBox>
 #include <QDockWidget>
@@ -59,7 +61,21 @@ RtlInsightsPanelCoordinator::RtlInsightsPanelCoordinator(QWidget* parent)
     auto* titleLabel = new QLabel(QStringLiteral("RTL Insights"), panel);
     titleLabel->setObjectName(QStringLiteral("rtlInsightsTitle"));
     InsightVisualStyle::applyTitleLabel(titleLabel);
-    layout->addWidget(titleLabel);
+    viewState->pinButton = new QToolButton(panel);
+    viewState->pinButton->setObjectName(
+        QStringLiteral("rtlInsightsPinButton"));
+    viewState->pinButton->setText(QStringLiteral("Pin"));
+    viewState->pinButton->setCheckable(true);
+    viewState->pinButton->setToolTip(
+        QStringLiteral(
+            "Keep the current insight while the editor selection changes"));
+    viewState->pinButton->setAutoRaise(true);
+    auto* titleLayout = new QHBoxLayout;
+    titleLayout->setContentsMargins(0, 0, 0, 0);
+    titleLayout->addWidget(titleLabel);
+    titleLayout->addStretch(1);
+    titleLayout->addWidget(viewState->pinButton);
+    layout->addLayout(titleLayout);
 
     auto* actionLayout = new QHBoxLayout;
     actionLayout->setContentsMargins(0, 0, 0, 0);
@@ -97,7 +113,7 @@ RtlInsightsPanelCoordinator::RtlInsightsPanelCoordinator(QWidget* parent)
     viewState->moduleBlockTopCombo->setObjectName(QStringLiteral("rtlModuleBlockTopCombo"));
     viewState->moduleBlockTopCombo->setMinimumWidth(150);
     viewState->moduleBlockSetSelectionButton =
-        new QPushButton(QStringLiteral("Set from selection"), panel);
+        new QPushButton(panel);
     viewState->moduleBlockSetSelectionButton->setObjectName(
         QStringLiteral("rtlModuleBlockSetSelectionButton"));
     viewState->moduleBlockDepthSpin = new QSpinBox(panel);
@@ -151,23 +167,57 @@ RtlInsightsPanelCoordinator::RtlInsightsPanelCoordinator(QWidget* parent)
     viewState->graphMoreButton->setPopupMode(QToolButton::InstantPopup);
     viewState->graphMoreButton->setToolTip(QStringLiteral("More graph actions"));
     auto* graphMoreMenu = new QMenu(viewState->graphMoreButton);
-    graphMoreMenu->addAction(QStringLiteral("Jump"),
-                             viewState->graphMoreButton,
-                             [this]() { graphController->navigateSelectedItem(); });
-    graphMoreMenu->addAction(QStringLiteral("Focus"),
-                             viewState->graphMoreButton,
-                             [this]() {
-                                 if (!viewState->insightsGraphScene || !viewState->insightsGraphView)
-                                     return;
-                                 const QList<QGraphicsItem*> selected =
-                                     viewState->insightsGraphScene->selectedItems();
-                                 if (!selected.isEmpty())
-                                     viewState->insightsGraphView->centerOnRect(
-                                         selected.first()->sceneBoundingRect());
-                             });
-    graphMoreMenu->addAction(QStringLiteral("Set top"),
-                             viewState->graphMoreButton,
-                             [this]() { graphController->setModuleBlockTopFromSelected(); });
+    viewState->graphJumpAction = createGraphAction(
+        viewState->graphMoreButton,
+        QString::fromLatin1(
+            ActionIds::GraphJumpSelected));
+    viewState->graphFocusAction = createGraphAction(
+        viewState->graphMoreButton,
+        QString::fromLatin1(
+            ActionIds::GraphFocusSelected));
+    viewState->graphSetTopAction = createGraphAction(
+        viewState->graphMoreButton,
+        QString::fromLatin1(
+            ActionIds::GraphSetTopSelected));
+    for (QAction* action :
+         {viewState->graphJumpAction,
+          viewState->graphFocusAction,
+          viewState->graphSetTopAction}) {
+        if (action)
+            graphMoreMenu->addAction(action);
+    }
+    graphMoreMenu->addSeparator();
+    const GraphExportUi::AvailabilityProvider
+        rtlGraphExportAvailable = [this]() {
+            return hasExportableGraph();
+        };
+    viewState->graphExportAction =
+        GraphExportUi::bindRegistryAction(
+            viewState->graphMoreButton,
+            QString::fromLatin1(
+                ActionIds::GraphExportRtlInsights),
+            rtlGraphExportAvailable,
+            [this](const QString& outputPath,
+                   const GraphExportOptions& options) {
+                return exportCurrentGraph(outputPath, options);
+            },
+            [this](const QString& message, int timeoutMs) {
+                if (viewState->statusMessageHandler) {
+                    viewState->statusMessageHandler(
+                        message,
+                        timeoutMs);
+                }
+            });
+    if (viewState->graphExportAction)
+        graphMoreMenu->addAction(viewState->graphExportAction);
+    QObject::connect(
+        graphMoreMenu,
+        &QMenu::aboutToShow,
+        viewState->graphMoreButton,
+        [this]() {
+            refreshGraphActionAvailability();
+            refreshGraphExportActionAvailability();
+        });
     viewState->graphMoreButton->setMenu(graphMoreMenu);
     for (QPushButton* button :
          {viewState->moduleBriefButton,
@@ -213,6 +263,13 @@ RtlInsightsPanelCoordinator::RtlInsightsPanelCoordinator(QWidget* parent)
     viewState->insightsTree->header()->setSectionResizeMode(4, QHeaderView::ResizeToContents);
 
     viewState->insightsGraphScene = new QGraphicsScene(panel);
+    QObject::connect(
+        viewState->insightsGraphScene,
+        &QGraphicsScene::changed,
+        viewState->graphMoreButton,
+        [this]() {
+            refreshGraphExportActionAvailability();
+        });
     viewState->insightsGraphView = new InsightGraphView(viewState->insightsGraphScene, panel);
     viewState->insightsGraphView->setObjectName(QStringLiteral("rtlInsightsGraphView"));
     viewState->insightsGraphView->applyInsightGraphStyle();
@@ -286,21 +343,33 @@ RtlInsightsPanelCoordinator::RtlInsightsPanelCoordinator(QWidget* parent)
     viewState->graphInspector->header()->setSectionResizeMode(1, QHeaderView::Stretch);
     viewState->graphInspector->setMinimumWidth(260);
     viewState->graphInspectorJumpButton =
-        new QPushButton(QStringLiteral("Jump"), panel);
+        new QPushButton(panel);
     viewState->graphInspectorJumpButton->setObjectName(
         QStringLiteral("rtlGraphInspectorJumpButton"));
     viewState->graphInspectorFocusButton =
-        new QPushButton(QStringLiteral("Focus"), panel);
+        new QPushButton(panel);
     viewState->graphInspectorFocusButton->setObjectName(
         QStringLiteral("rtlGraphInspectorFocusButton"));
     viewState->graphInspectorSetTopButton =
-        new QPushButton(QStringLiteral("Set Top"), panel);
+        new QPushButton(panel);
     viewState->graphInspectorSetTopButton->setObjectName(
         QStringLiteral("rtlGraphInspectorSetTopButton"));
     viewState->graphInspectorRevealButton =
         new QPushButton(QStringLiteral("Reveal"), panel);
     viewState->graphInspectorRevealButton->setObjectName(
         QStringLiteral("rtlGraphInspectorRevealButton"));
+    bindGraphActionButton(
+        viewState->graphInspectorJumpButton,
+        viewState->graphJumpAction);
+    bindGraphActionButton(
+        viewState->graphInspectorFocusButton,
+        viewState->graphFocusAction);
+    bindGraphActionButton(
+        viewState->graphInspectorSetTopButton,
+        viewState->graphSetTopAction);
+    bindGraphActionButton(
+        viewState->moduleBlockSetSelectionButton,
+        viewState->graphSetTopAction);
     for (QPushButton* button :
          {viewState->graphInspectorJumpButton,
           viewState->graphInspectorFocusButton,
@@ -363,14 +432,28 @@ RtlInsightsPanelCoordinator::RtlInsightsPanelCoordinator(QWidget* parent)
 
     QObject::connect(viewState->insightsTree, &QTreeWidget::itemDoubleClicked,
                      viewState->insightsDock, [this](QTreeWidgetItem* item, int) {
-                         if (!item || !viewState->navigationHandler)
+                         if (!item || !viewState->sourceNavigationHandler)
                              return;
-                         const QString fileName = item->data(0, Qt::UserRole).toString();
-                         if (fileName.isEmpty())
+                         RtlInsightSourceLocation location;
+                         location.fileName =
+                             item->data(0, Qt::UserRole).toString();
+                         if (location.fileName.isEmpty())
                              return;
-                         const int line = item->data(0, Qt::UserRole + 1).toInt();
-                         const int column = item->data(0, Qt::UserRole + 2).toInt();
-                         if (!viewState->navigationHandler(fileName, line, column)
+                         location.line =
+                             item->data(0, Qt::UserRole + 1).toInt();
+                         location.column =
+                             item->data(0, Qt::UserRole + 2).toInt();
+                         location.moduleName =
+                             viewState->currentModuleName;
+                         location.workspacePath =
+                             viewState->currentSourceLocation.workspacePath;
+                         location.activeTopModule =
+                             viewState->currentSourceLocation.activeTopModule;
+                         location.instancePath =
+                             viewState->currentSourceLocation.instancePath;
+                         location.documentRevision =
+                             viewState->currentSourceLocation.documentRevision;
+                         if (!viewState->sourceNavigationHandler(location)
                              && viewState->statusMessageHandler) {
                              viewState->statusMessageHandler(
                                  QStringLiteral("RTL Insights jump failed"),
@@ -379,6 +462,12 @@ RtlInsightsPanelCoordinator::RtlInsightsPanelCoordinator(QWidget* parent)
                      });
     QObject::connect(viewState->moduleBriefButton, &QPushButton::clicked,
                      viewState->insightsDock, [this]() { presenter->showModuleBrief(); });
+    QObject::connect(viewState->pinButton,
+                     &QToolButton::toggled,
+                     viewState->insightsDock,
+                     [this](bool pinned) {
+                         presenter->setPinned(pinned);
+                     });
     QObject::connect(viewState->signalJourneyButton, &QPushButton::clicked,
                      viewState->insightsDock, [this]() { presenter->showSignalJourney(); });
     QObject::connect(viewState->signalUsageHotspotButton, &QPushButton::clicked,
@@ -410,17 +499,6 @@ RtlInsightsPanelCoordinator::RtlInsightsPanelCoordinator(QWidget* parent)
                      [this](const QString& text) {
                          viewState->graphSearchText = text.trimmed();
                          graphController->applySearchHighlight();
-                     });
-    QObject::connect(viewState->moduleBlockSetSelectionButton,
-                     &QPushButton::clicked,
-                     viewState->insightsDock,
-                     [this]() {
-                         if (!graphController->setModuleBlockTopFromSelected()
-                             && viewState->statusMessageHandler) {
-                             viewState->statusMessageHandler(
-                                 QStringLiteral("Select a resolved module block first"),
-                                 1800);
-                             }
                      });
     QObject::connect(viewState->moduleBlockTopCombo,
                      qOverload<int>(&QComboBox::activated),
@@ -501,27 +579,6 @@ RtlInsightsPanelCoordinator::RtlInsightsPanelCoordinator(QWidget* parent)
                          }
                          graphController->navigateSelectedItem();
                      });
-    QObject::connect(viewState->graphInspectorJumpButton,
-                     &QPushButton::clicked,
-                     viewState->insightsDock,
-                     [this]() { graphController->navigateSelectedItem(); });
-    QObject::connect(viewState->graphInspectorFocusButton,
-                     &QPushButton::clicked,
-                     viewState->insightsDock,
-                     [this]() {
-                         if (!viewState->insightsGraphScene || !viewState->insightsGraphView)
-                             return;
-                         const QList<QGraphicsItem*> selected =
-                             viewState->insightsGraphScene->selectedItems();
-                         if (!selected.isEmpty())
-                             viewState->insightsGraphView->centerOnRect(
-                                 selected.first()->sceneBoundingRect());
-                     });
-    QObject::connect(viewState->graphInspectorSetTopButton,
-                     &QPushButton::clicked,
-                     viewState->insightsDock,
-                     [this]() { graphController->setModuleBlockTopFromSelected(); });
-
     presenter->renderNoContext();
 }
 
@@ -532,13 +589,33 @@ RtlInsightsPanelCoordinator::~RtlInsightsPanelCoordinator() =
 void RtlInsightsPanelCoordinator::setNavigationHandler(
     std::function<bool(const QString&, int, int)> handler)
 {
-    viewState->navigationHandler = std::move(handler);
+    viewState->sourceNavigationHandler =
+        [handler = std::move(handler)](
+            const RtlInsightSourceLocation& location) {
+            return handler
+                && handler(
+                    location.fileName,
+                    location.line,
+                    location.column);
+        };
+}
+
+void RtlInsightsPanelCoordinator::setSourceNavigationHandler(
+    std::function<bool(
+        const RtlInsightSourceLocation&)> handler)
+{
+    viewState->sourceNavigationHandler =
+        std::move(handler);
 }
 
 void RtlInsightsPanelCoordinator::setStatusMessageHandler(
     std::function<void(const QString&, int)> handler)
 {
     viewState->statusMessageHandler = std::move(handler);
+    if (viewState->signalUsageHotspotPanel) {
+        viewState->signalUsageHotspotPanel->setStatusMessageHandler(
+            viewState->statusMessageHandler);
+    }
 }
 
 void RtlInsightsPanelCoordinator::updateModuleContext(
@@ -550,6 +627,22 @@ void RtlInsightsPanelCoordinator::updateModuleContext(
         fileName,
         moduleName,
         signalName);
+}
+
+bool RtlInsightsPanelCoordinator::syncSourceLocation(
+    const RtlInsightSourceLocation& location)
+{
+    return presenter->syncSourceLocation(location);
+}
+
+void RtlInsightsPanelCoordinator::setPinned(bool pinned)
+{
+    presenter->setPinned(pinned);
+}
+
+bool RtlInsightsPanelCoordinator::isPinned() const
+{
+    return presenter->isPinned();
 }
 
 void RtlInsightsPanelCoordinator::showModuleInsights(
@@ -682,6 +775,48 @@ void RtlInsightsPanelCoordinator::focusInspector()
     graphController->focusInspector();
 }
 
+GraphExportResult RtlInsightsPanelCoordinator::exportCurrentGraph(
+    const QString& outputPath,
+    const GraphExportOptions& options) const
+{
+    return GraphExportService::exportGraphicsScene(
+        viewState ? viewState->insightsGraphScene : nullptr,
+        outputPath,
+        options);
+}
+
+bool RtlInsightsPanelCoordinator::hasExportableGraph() const
+{
+    if (!viewState || !viewState->insightsGraphScene)
+        return false;
+    const QString mode = viewState->currentGraphMode;
+    if (mode != QStringLiteral("fsm")
+        && mode != QStringLiteral("state-transition")
+        && mode != QStringLiteral("module-block")) {
+        return false;
+    }
+    for (QGraphicsItem* item :
+         viewState->insightsGraphScene->items()) {
+        if (item && item->isVisible())
+            return true;
+    }
+    return false;
+}
+
+void RtlInsightsPanelCoordinator::
+    refreshGraphExportActionAvailability() const
+{
+    GraphExportUi::updateActionAvailability(
+        viewState ? viewState->graphExportAction : nullptr,
+        hasExportableGraph());
+}
+
+QAction* RtlInsightsPanelCoordinator::graphExportAction() const
+{
+    refreshGraphExportActionAvailability();
+    return viewState ? viewState->graphExportAction : nullptr;
+}
+
 QDockWidget* RtlInsightsPanelCoordinator::dock() const
 {
     return viewState->insightsDock;
@@ -696,154 +831,4 @@ QGraphicsView*
 RtlInsightsPanelCoordinator::graphView() const
 {
     return viewState->insightsGraphView;
-}
-
-QStackedWidget*
-RtlInsightsPanelCoordinator::stackForTest() const
-{
-    return viewState->insightsStack;
-}
-
-SignalUsageHotspotPanel*
-RtlInsightsPanelCoordinator::
-    signalUsageHotspotPanelForTest() const
-{
-    return viewState->signalUsageHotspotPanel;
-}
-
-int RtlInsightsPanelCoordinator::
-    graphNodeItemCountForTest() const
-{
-    return graphController->nodeItemCountForTest();
-}
-
-int RtlInsightsPanelCoordinator::
-    graphEdgeItemCountForTest() const
-{
-    return graphController->edgeItemCountForTest();
-}
-
-QStringList RtlInsightsPanelCoordinator::
-    graphTextItemsForTest() const
-{
-    return graphController->textItemsForTest();
-}
-
-QStringList RtlInsightsPanelCoordinator::
-    graphElementSummariesForTest() const
-{
-    return graphController
-        ->elementSummariesForTest();
-}
-
-QStringList RtlInsightsPanelCoordinator::
-    graphElementVisualSummariesForTest() const
-{
-    return graphController
-        ->elementVisualSummariesForTest();
-}
-
-QStringList RtlInsightsPanelCoordinator::
-    graphHoveredElementSummariesForTest() const
-{
-    return graphController
-        ->hoveredElementSummariesForTest();
-}
-
-QString RtlInsightsPanelCoordinator::
-    graphItemToolTipForTest(
-        const QString& elementKind,
-        const QString& primaryText,
-        const QString& secondaryText) const
-{
-    return graphController->itemToolTipForTest(
-        elementKind,
-        primaryText,
-        secondaryText);
-}
-
-QRectF RtlInsightsPanelCoordinator::
-    graphLastFitRectForTest() const
-{
-    return graphController->lastFitRectForTest();
-}
-
-int RtlInsightsPanelCoordinator::
-    graphSelectedItemCountForTest() const
-{
-    return graphController
-        ->selectedItemCountForTest();
-}
-
-QStringList RtlInsightsPanelCoordinator::
-    graphInspectorRowsForTest() const
-{
-    return graphController->inspectorRowsForTest();
-}
-
-QStringList RtlInsightsPanelCoordinator::
-    graphTableRowsForTest() const
-{
-    return graphController->tableRowsForTest();
-}
-
-bool RtlInsightsPanelCoordinator::
-    graphItemsReadableForTest() const
-{
-    return graphController->itemsReadableForTest();
-}
-
-bool RtlInsightsPanelCoordinator::
-    graphNestedNodeStackingReadableForTest() const
-{
-    return graphController
-        ->nestedNodeStackingReadableForTest();
-}
-
-bool RtlInsightsPanelCoordinator::
-    setGraphItemHoveredForTest(
-        const QString& elementKind,
-        const QString& primaryText,
-        const QString& secondaryText,
-        bool hovered)
-{
-    return graphController->setItemHoveredForTest(
-        elementKind,
-        primaryText,
-        secondaryText,
-        hovered);
-}
-
-bool RtlInsightsPanelCoordinator::
-    selectGraphItemForTest(
-        const QString& elementKind,
-        const QString& primaryText,
-        const QString& secondaryText)
-{
-    return graphController->selectItemForTest(
-        elementKind,
-        primaryText,
-        secondaryText);
-}
-
-bool RtlInsightsPanelCoordinator::
-    selectGraphTableRowForTest(
-        const QString& primaryText,
-        const QString& secondaryText)
-{
-    return graphController->selectTableRowForTest(
-        primaryText,
-        secondaryText);
-}
-
-bool RtlInsightsPanelCoordinator::
-    triggerGraphNavigationForTest(
-        const QString& elementKind,
-        const QString& primaryText,
-        const QString& secondaryText)
-{
-    return graphController->triggerNavigationForTest(
-        elementKind,
-        primaryText,
-        secondaryText);
 }

@@ -59,6 +59,18 @@ QString semanticAnalysisStageName(SemanticAnalysisStage stage)
     return QStringLiteral("Scheduling");
 }
 
+QString semanticAnalysisPlanningModeName(
+    SemanticAnalysisPlanningMode planningMode)
+{
+    switch (planningMode) {
+    case SemanticAnalysisPlanningMode::DependencyAwareIncremental:
+        return QStringLiteral("DependencyAwareIncremental");
+    case SemanticAnalysisPlanningMode::FullWorkspace:
+        return QStringLiteral("FullWorkspace");
+    }
+    return QStringLiteral("DependencyAwareIncremental");
+}
+
 QString documentSemanticStateName(DocumentSemanticState state)
 {
     switch (state) {

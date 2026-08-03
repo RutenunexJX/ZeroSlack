@@ -172,6 +172,18 @@ TrackedDocument DocumentRegistry::take(MyCodeEditor* editor)
 {
     const TrackedDocument tracked = documents.take(editor);
     indexes.remove(editor, tracked.snapshot);
+    if (!tracked.snapshot.documentId.isEmpty()
+        && !indexes.editorForDocumentId(
+            tracked.snapshot.documentId)) {
+        const QList<MyCodeEditor*> remaining =
+            editorsForDocumentId(
+                tracked.snapshot.documentId);
+        if (!remaining.isEmpty()) {
+            const TrackedDocument fallback =
+                documents.value(remaining.first());
+            indexes.add(remaining.first(), fallback.snapshot);
+        }
+    }
     return tracked;
 }
 
@@ -188,6 +200,31 @@ TrackedDocument* DocumentRegistry::find(MyCodeEditor* editor)
 const TrackedDocument* DocumentRegistry::find(MyCodeEditor* editor) const
 {
     return documents.find(editor);
+}
+
+QList<MyCodeEditor*> DocumentRegistry::editorsForDocumentId(
+    const QString& documentId) const
+{
+    QList<MyCodeEditor*> result;
+    const QString key =
+        EditorFileIdentity::lookupKey(documentId);
+    for (auto iterator = documents.byEditor.constBegin();
+         iterator != documents.byEditor.constEnd();
+         ++iterator) {
+        if (iterator.key()
+            && EditorFileIdentity::lookupKey(
+                   iterator.value().snapshot.documentId)
+                   == key) {
+            result.append(iterator.key());
+        }
+    }
+    return result;
+}
+
+int DocumentRegistry::viewCountForDocumentId(
+    const QString& documentId) const
+{
+    return editorsForDocumentId(documentId).size();
 }
 
 DocumentSnapshot DocumentRegistry::replace(

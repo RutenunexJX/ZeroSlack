@@ -1,10 +1,363 @@
 #include "tsdocument.h"
 #include <cstring>
 #include <algorithm>
+#include <cctype>
 #include <cstdlib>
+#include <initializer_list>
+#include <limits>
+#include <QElapsedTimer>
 #include <QSet>
 
 extern "C" TSLanguage *tree_sitter_systemverilog();
+
+namespace {
+constexpr int kSmallAdditionReserveCharacters = 4 * 1024;
+constexpr int kLargeAdditionReserveCharacters = 64 * 1024;
+constexpr int kLargeTextCharacters = 2 * 1024 * 1024;
+}
+
+TSUTF16Text::TSUTF16Text()
+{
+    m_additions.reserve(kSmallAdditionReserveCharacters);
+}
+
+const QString& TSUTF16Text::bufferFor(const Piece& piece) const
+{
+    return piece.buffer == BufferKind::Original
+        ? m_original
+        : m_additions;
+}
+
+int TSUTF16Text::pieceIndexAt(int logicalIndex) const
+{
+    Q_ASSERT(logicalIndex >= 0 && logicalIndex < m_size);
+    const auto upper =
+        std::upper_bound(m_pieceStarts.cbegin(),
+                         m_pieceStarts.cend(),
+                         logicalIndex);
+    const int index =
+        static_cast<int>(upper - m_pieceStarts.cbegin()) - 1;
+    Q_ASSERT(index >= 0 && index < m_pieces.size());
+    return index;
+}
+
+void TSUTF16Text::appendPiece(QVector<Piece>* pieces,
+                              BufferKind buffer,
+                              int offset,
+                              int length)
+{
+    if (!pieces || length <= 0)
+        return;
+
+    if (!pieces->isEmpty()) {
+        Piece& previous = pieces->last();
+        if (previous.buffer == buffer
+            && previous.offset + previous.length == offset) {
+            previous.length += length;
+            return;
+        }
+    }
+    pieces->append(Piece{buffer, offset, length});
+}
+
+void TSUTF16Text::appendLogicalRange(QVector<Piece>* pieces,
+                                     int position,
+                                     int length) const
+{
+    if (!pieces || length <= 0)
+        return;
+
+    const int endPosition = position + length;
+    int pieceIndex = pieceIndexAt(position);
+    int logicalPosition = position;
+    while (logicalPosition < endPosition
+           && pieceIndex < m_pieces.size()) {
+        const Piece& piece = m_pieces.at(pieceIndex);
+        const int pieceStart = m_pieceStarts.at(pieceIndex);
+        const int offsetInPiece = logicalPosition - pieceStart;
+        const int copiedLength =
+            qMin(endPosition - logicalPosition,
+                 piece.length - offsetInPiece);
+        appendPiece(pieces,
+                    piece.buffer,
+                    piece.offset + offsetInPiece,
+                    copiedLength);
+        logicalPosition += copiedLength;
+        ++pieceIndex;
+    }
+    Q_ASSERT(logicalPosition == endPosition);
+}
+
+void TSUTF16Text::rebuildPieceStarts()
+{
+    m_pieceStarts.clear();
+    m_pieceStarts.reserve(m_pieces.size());
+    int position = 0;
+    for (const Piece& piece : std::as_const(m_pieces)) {
+        Q_ASSERT(piece.length > 0);
+        m_pieceStarts.append(position);
+        position += piece.length;
+    }
+    Q_ASSERT(position == m_size);
+}
+
+void TSUTF16Text::setText(const QString& text)
+{
+    m_original = text;
+    m_additions = QString();
+    m_additions.reserve(
+        text.size() > kLargeTextCharacters
+            ? kLargeAdditionReserveCharacters
+            : kSmallAdditionReserveCharacters);
+    m_pieces.clear();
+    if (!text.isEmpty()) {
+        m_pieces.append(Piece{
+            BufferKind::Original,
+            0,
+            static_cast<int>(text.size())});
+    }
+    m_size = text.size();
+    rebuildPieceStarts();
+    m_materialized = text;
+    m_materializedValid = true;
+    m_metrics = {};
+}
+
+void TSUTF16Text::replace(int position,
+                          int removedLength,
+                          const QString& insertedText)
+{
+    const int boundedPosition = qBound(0, position, m_size);
+    const int boundedRemovedLength =
+        qBound(0, removedLength, m_size - boundedPosition);
+    if (m_metrics.editCount == 0) {
+        m_metrics.firstEditPosition = boundedPosition;
+        // Retained as a compatibility diagnostic: in piece-table storage the
+        // edit boundary itself replaces the former gap position.
+        m_metrics.firstEditGapStart = boundedPosition;
+    }
+
+    const int removedEnd =
+        boundedPosition + boundedRemovedLength;
+    QVector<Piece> replacement;
+    replacement.reserve(m_pieces.size() + 2);
+    appendLogicalRange(&replacement, 0, boundedPosition);
+    if (!insertedText.isEmpty()) {
+        const int additionOffset = m_additions.size();
+        m_additions.append(insertedText);
+        appendPiece(&replacement,
+                    BufferKind::Additions,
+                    additionOffset,
+                    insertedText.size());
+    }
+    appendLogicalRange(&replacement,
+                       removedEnd,
+                       m_size - removedEnd);
+
+    m_pieces = std::move(replacement);
+    m_size += insertedText.size() - boundedRemovedLength;
+    rebuildPieceStarts();
+    m_materialized.clear();
+    m_materializedValid = false;
+    ++m_metrics.editCount;
+}
+
+QChar TSUTF16Text::at(int position) const
+{
+    Q_ASSERT(position >= 0 && position < m_size);
+    const int pieceIndex = pieceIndexAt(position);
+    const Piece& piece = m_pieces.at(pieceIndex);
+    return bufferFor(piece).at(
+        piece.offset + position - m_pieceStarts.at(pieceIndex));
+}
+
+void TSUTF16Text::copyRange(int position,
+                            int length,
+                            QChar* destination) const
+{
+    if (length <= 0)
+        return;
+
+    const int endPosition = position + length;
+    int pieceIndex = pieceIndexAt(position);
+    int logicalPosition = position;
+    int destinationOffset = 0;
+    while (logicalPosition < endPosition
+           && pieceIndex < m_pieces.size()) {
+        const Piece& piece = m_pieces.at(pieceIndex);
+        const int pieceStart = m_pieceStarts.at(pieceIndex);
+        const int offsetInPiece = logicalPosition - pieceStart;
+        const int copiedLength =
+            qMin(endPosition - logicalPosition,
+                 piece.length - offsetInPiece);
+        std::memcpy(
+            destination + destinationOffset,
+            bufferFor(piece).constData()
+                + piece.offset + offsetInPiece,
+            static_cast<size_t>(copiedLength) * sizeof(QChar));
+        logicalPosition += copiedLength;
+        destinationOffset += copiedLength;
+        ++pieceIndex;
+    }
+    Q_ASSERT(logicalPosition == endPosition);
+}
+
+QString TSUTF16Text::mid(int position, int length) const
+{
+    const int boundedPosition = qBound(0, position, m_size);
+    const int available = m_size - boundedPosition;
+    const int boundedLength =
+        length < 0 ? available : qBound(0, length, available);
+    if (boundedLength == 0)
+        return QString();
+
+    QString result;
+    result.resize(boundedLength);
+    copyRange(boundedPosition, boundedLength, result.data());
+    return result;
+}
+
+QString TSUTF16Text::left(int length) const
+{
+    return mid(0, qBound(0, length, m_size));
+}
+
+int TSUTF16Text::indexOf(const QString& value, int from) const
+{
+    int start = from;
+    if (start < 0)
+        start = qMax(0, m_size + start);
+    if (value.isEmpty())
+        return start <= m_size ? start : -1;
+    if (start < 0 || start > m_size - value.size())
+        return -1;
+
+    QVector<int> prefix(value.size(), 0);
+    for (int index = 1, matched = 0;
+         index < value.size();) {
+        if (value.at(index) == value.at(matched)) {
+            prefix[index++] = ++matched;
+        } else if (matched > 0) {
+            matched = prefix.at(matched - 1);
+        } else {
+            ++index;
+        }
+    }
+
+    int matched = 0;
+    int logicalPosition = start;
+    int pieceIndex = pieceIndexAt(start);
+    int offsetInPiece =
+        start - m_pieceStarts.at(pieceIndex);
+    while (pieceIndex < m_pieces.size()) {
+        const Piece& piece = m_pieces.at(pieceIndex);
+        const QString& buffer = bufferFor(piece);
+        for (int local = offsetInPiece;
+             local < piece.length;
+             ++local, ++logicalPosition) {
+            const QChar current =
+                buffer.at(piece.offset + local);
+            while (matched > 0
+                   && current != value.at(matched)) {
+                matched = prefix.at(matched - 1);
+            }
+            if (current == value.at(matched))
+                ++matched;
+            if (matched == value.size())
+                return logicalPosition - value.size() + 1;
+        }
+        ++pieceIndex;
+        offsetInPiece = 0;
+    }
+    return -1;
+}
+
+int TSUTF16Text::lastIndexOf(QChar value, int from) const
+{
+    if (m_size == 0)
+        return -1;
+    int position = from < 0 ? m_size - 1 : qMin(from, m_size - 1);
+    int pieceIndex = pieceIndexAt(position);
+    int offsetInPiece =
+        position - m_pieceStarts.at(pieceIndex);
+    while (pieceIndex >= 0) {
+        const Piece& piece = m_pieces.at(pieceIndex);
+        const QString& buffer = bufferFor(piece);
+        for (int local = offsetInPiece; local >= 0; --local) {
+            if (buffer.at(piece.offset + local) == value)
+                return m_pieceStarts.at(pieceIndex) + local;
+        }
+        --pieceIndex;
+        if (pieceIndex >= 0)
+            offsetInPiece = m_pieces.at(pieceIndex).length - 1;
+    }
+    return -1;
+}
+
+const QString& TSUTF16Text::materialized() const
+{
+    if (m_materializedValid)
+        return m_materialized;
+
+    m_materialized.resize(m_size);
+    copyRange(0, m_size, m_materialized.data());
+    m_materializedValid = true;
+    ++m_metrics.materializationCount;
+    return m_materialized;
+}
+
+const char* TSUTF16Text::read(uint32_t byteOffset,
+                              uint32_t* bytesRead) const
+{
+    ++m_metrics.inputReadCount;
+    if (!bytesRead)
+        return nullptr;
+    *bytesRead = 0;
+    if ((byteOffset & 1u) != 0u)
+        return nullptr;
+
+    const uint32_t characterOffset = byteOffset / 2u;
+    if (characterOffset >= static_cast<uint32_t>(m_size))
+        return nullptr;
+
+    const int logicalOffset = static_cast<int>(characterOffset);
+    const auto isHighSurrogate = [](char16_t value) {
+        return value >= 0xd800u && value <= 0xdbffu;
+    };
+    const auto isLowSurrogate = [](char16_t value) {
+        return value >= 0xdc00u && value <= 0xdfffu;
+    };
+
+    const int pieceIndex = pieceIndexAt(logicalOffset);
+    const Piece& piece = m_pieces.at(pieceIndex);
+    const int pieceStart = m_pieceStarts.at(pieceIndex);
+    const int offsetInPiece = logicalOffset - pieceStart;
+    const QString& buffer = bufferFor(piece);
+    int contiguousCharacters = piece.length - offsetInPiece;
+    const bool pieceSplitsSurrogate =
+        pieceIndex + 1 < m_pieces.size()
+        && isHighSurrogate(
+            buffer.at(piece.offset + piece.length - 1).unicode())
+        && isLowSurrogate(at(pieceStart + piece.length).unicode());
+    if (pieceSplitsSurrogate
+        && offsetInPiece + 1 == piece.length) {
+        m_boundaryRead[0] = static_cast<char16_t>(
+            buffer.at(piece.offset + offsetInPiece).unicode());
+        m_boundaryRead[1] = static_cast<char16_t>(
+            at(logicalOffset + 1).unicode());
+        *bytesRead = 4u;
+        return reinterpret_cast<const char*>(
+            m_boundaryRead.data());
+    }
+    if (pieceSplitsSurrogate)
+        --contiguousCharacters;
+    const uint32_t boundedCharacters =
+        qMin(static_cast<uint32_t>(contiguousCharacters),
+             std::numeric_limits<uint32_t>::max() / 2u);
+    *bytesRead = boundedCharacters * 2u;
+    return reinterpret_cast<const char*>(
+        buffer.constData() + piece.offset + offsetInPiece);
+}
 
 HlCategory classifyTokenType(const char* type, bool isNamed)
 {
@@ -54,14 +407,29 @@ TSDocument::~TSDocument()
         ts_parser_delete(m_parser);
 }
 
+namespace {
+const char* readTSUTF16Text(void* payload,
+                            uint32_t byteOffset,
+                            TSPoint,
+                            uint32_t* bytesRead)
+{
+    const auto* text =
+        static_cast<const TSUTF16Text*>(payload);
+    return text ? text->read(byteOffset, bytesRead)
+                : nullptr;
+}
+}
+
 void TSDocument::reparse(TSTree* oldTree)
 {
-    // QString internal storage is UTF-16 (host-endian = LE on this target). Length is in bytes.
-    const char* data = reinterpret_cast<const char*>(m_text.utf16());
-    const uint32_t lengthBytes = static_cast<uint32_t>(m_text.size()) * 2u;
-
-    TSTree* newTree = ts_parser_parse_string_encoding(
-        m_parser, oldTree, data, lengthBytes, TSInputEncodingUTF16LE);
+    const TSInput input{
+        &m_text,
+        readTSUTF16Text,
+        TSInputEncodingUTF16LE,
+        nullptr
+    };
+    TSTree* newTree =
+        ts_parser_parse(m_parser, oldTree, input);
 
     if (m_tree)
         ts_tree_delete(m_tree);
@@ -70,7 +438,7 @@ void TSDocument::reparse(TSTree* oldTree)
 
 void TSDocument::setText(const QString& text)
 {
-    m_text = QString(text.constData(), text.size());
+    m_text.setText(text);
     reparse(nullptr);
 }
 
@@ -113,15 +481,33 @@ QList<TSChangedRange> TSDocument::applyEdit(const DocumentChange& change)
                                          change.startColumn,
                                          change.insertedText);
 
+    QElapsedTimer phaseTimer;
+    phaseTimer.start();
     if (m_tree)
         ts_tree_edit(m_tree, &edit);
+    m_text.m_metrics.treeEditNanoseconds +=
+        static_cast<std::uint64_t>(
+            phaseTimer.nsecsElapsed());
+    phaseTimer.restart();
     m_text.replace(position, removedLength, change.insertedText);
+    m_text.m_metrics.storageEditNanoseconds +=
+        static_cast<std::uint64_t>(
+            phaseTimer.nsecsElapsed());
 
-    const char* data = reinterpret_cast<const char*>(m_text.utf16());
-    const uint32_t lengthBytes = static_cast<uint32_t>(m_text.size()) * 2u;
-    TSTree* newTree = ts_parser_parse_string_encoding(
-        m_parser, m_tree, data, lengthBytes, TSInputEncodingUTF16LE);
+    const TSInput input{
+        &m_text,
+        readTSUTF16Text,
+        TSInputEncodingUTF16LE,
+        nullptr
+    };
+    phaseTimer.restart();
+    TSTree* newTree =
+        ts_parser_parse(m_parser, m_tree, input);
+    m_text.m_metrics.parseNanoseconds +=
+        static_cast<std::uint64_t>(
+            phaseTimer.nsecsElapsed());
 
+    phaseTimer.restart();
     if (m_tree && newTree) {
         uint32_t rangeCount = 0;
         TSRange* ranges = ts_tree_get_changed_ranges(
@@ -137,9 +523,16 @@ QList<TSChangedRange> TSDocument::applyEdit(const DocumentChange& change)
         }
         std::free(ranges);
     }
+    m_text.m_metrics.changedRangeNanoseconds +=
+        static_cast<std::uint64_t>(
+            phaseTimer.nsecsElapsed());
 
+    phaseTimer.restart();
     if (m_tree)
         ts_tree_delete(m_tree);
+    m_text.m_metrics.treeDeleteNanoseconds +=
+        static_cast<std::uint64_t>(
+            phaseTimer.nsecsElapsed());
     m_tree = newTree;
     return changedRanges;
 }
@@ -165,6 +558,31 @@ bool TSDocument::isCommentAt(int charOffset) const
         const char* t = ts_node_type(node);
         if (t && (std::strcmp(t, "one_line_comment") == 0 ||
                   std::strcmp(t, "block_comment") == 0)) {
+            return true;
+        }
+        node = ts_node_parent(node);
+    }
+    return false;
+}
+
+bool TSDocument::isStringAt(int charOffset) const
+{
+    if (charOffset < 0 || m_text.isEmpty())
+        return false;
+
+    const int bounded =
+        qBound(0, charOffset, m_text.size() - 1);
+    const uint32_t byte =
+        static_cast<uint32_t>(bounded) * 2u;
+    TSNode node = ts_node_descendant_for_byte_range(
+        ts_tree_root_node(m_tree), byte, byte);
+    while (!ts_node_is_null(node)) {
+        const char* type = ts_node_type(node);
+        if (type
+            && (std::strcmp(type, "string_literal") == 0
+                || std::strcmp(type, "quoted_string") == 0
+                || std::strcmp(type,
+                               "triple_quoted_string") == 0)) {
             return true;
         }
         node = ts_node_parent(node);
@@ -282,7 +700,8 @@ bool identifierNode(TSNode node);
 bool commentOrStringNode(TSNode node);
 bool nodeTypeIs(TSNode node, const char* expected);
 TSNode namedNodeAt(const TSTree* tree, int charOffset, int textSize);
-QString nodeText(const QString& text, TSNode node);
+template <typename Text>
+QString nodeText(const Text& text, TSNode node);
 TSNode ancestorOfType(TSNode node, const char* expected);
 int nodeStartChar(TSNode node);
 int nodeEndChar(TSNode node);
@@ -294,15 +713,19 @@ TSNode firstDirectNamedChildOfType(TSNode node,
 TSNode childByField(TSNode node, const char* field);
 bool nodeContainsChar(TSNode node, int position);
 TSNode firstIdentifierChild(TSNode node);
+template <typename Text>
 bool collectAssociationSlots(TSNode container,
-                             const QString& text,
+                             const Text& text,
                              const char* namedType,
                              const char* orderedType,
                              QList<TSExpressionSlot>* outputSlots);
 TSNode firstLvalueChild(TSNode assignment);
-int closingParenStart(TSNode node, const QString& text);
-int lineStartChar(const QString& text, int line);
-QString lineIndentAt(const QString& text, int line);
+template <typename Text>
+int closingParenStart(TSNode node, const Text& text);
+template <typename Text>
+int lineStartChar(const Text& text, int line);
+template <typename Text>
+QString lineIndentAt(const Text& text, int line);
 int nodeLastLine(TSNode node);
 } // namespace
 
@@ -342,6 +765,544 @@ TSIdentifierTarget TSDocument::identifierAt(int charOffset) const
         return {};
     }
     target.text = nodeText(m_text, identifier);
+    return target;
+}
+
+TSIdentifierOccurrenceSet
+TSDocument::identifierOccurrencesAt(
+    int charOffset) const
+{
+    TSIdentifierOccurrenceSet result;
+    if (m_text.isEmpty()
+        || charOffset < 0
+        || charOffset > m_text.size()) {
+        return result;
+    }
+
+    const auto identifierNodeAtPosition =
+        [this](int position) {
+            TSNode node = namedNodeAt(
+                m_tree,
+                qBound(0, position, m_text.size() - 1),
+                m_text.size());
+            while (!ts_node_is_null(node)) {
+                if (commentOrStringNode(node))
+                    return TSNode{};
+                if (identifierNode(node))
+                    return node;
+                node = ts_node_parent(node);
+            }
+            return TSNode{};
+        };
+
+    TSNode selectedNode =
+        identifierNodeAtPosition(
+            qMin(charOffset, m_text.size() - 1));
+    if (ts_node_is_null(selectedNode)
+        && charOffset > 0) {
+        selectedNode =
+            identifierNodeAtPosition(charOffset - 1);
+    }
+    if (ts_node_is_null(selectedNode))
+        return result;
+
+    result.selected.startChar =
+        nodeStartChar(selectedNode);
+    result.selected.endChar =
+        nodeEndChar(selectedNode);
+    result.selected.text =
+        nodeText(m_text, selectedNode);
+    if (!result.selected.ok())
+        return {};
+
+    const auto isLexicalScope =
+        [](TSNode node) {
+            return nodeTypeIs(node, "seq_block")
+                || nodeTypeIs(node, "par_block")
+                || nodeTypeIs(
+                    node, "function_declaration")
+                || nodeTypeIs(
+                    node, "task_declaration")
+                || nodeTypeIs(
+                    node, "class_declaration")
+                || nodeTypeIs(
+                    node, "module_declaration")
+                || nodeTypeIs(
+                    node, "interface_declaration")
+                || nodeTypeIs(
+                    node, "program_declaration")
+                || nodeTypeIs(
+                    node, "package_declaration")
+                || nodeTypeIs(
+                    node, "checker_declaration");
+        };
+    TSNode scope = selectedNode;
+    while (!ts_node_is_null(scope)
+           && !isLexicalScope(scope)) {
+        scope = ts_node_parent(scope);
+    }
+    if (ts_node_is_null(scope))
+        scope = ts_tree_root_node(m_tree);
+    result.scopeStartChar =
+        nodeStartChar(scope);
+    result.scopeEndChar =
+        nodeEndChar(scope);
+
+    QList<TSNode> pending;
+    pending.append(scope);
+    while (!pending.isEmpty()) {
+        const TSNode node = pending.takeLast();
+        const uint32_t childCount =
+            ts_node_child_count(node);
+        if (childCount == 0) {
+            if (identifierNode(node)
+                && nodeText(m_text, node)
+                       == result.selected.text) {
+                TSIdentifierTarget occurrence;
+                occurrence.startChar =
+                    nodeStartChar(node);
+                occurrence.endChar =
+                    nodeEndChar(node);
+                occurrence.text =
+                    result.selected.text;
+                if (occurrence.ok())
+                    result.occurrences.prepend(
+                        occurrence);
+            }
+            continue;
+        }
+        for (uint32_t index = 0;
+             index < childCount;
+             ++index) {
+            pending.append(
+                ts_node_child(node, index));
+        }
+    }
+    std::sort(
+        result.occurrences.begin(),
+        result.occurrences.end(),
+        [](const TSIdentifierTarget& left,
+           const TSIdentifierTarget& right) {
+            if (left.startChar != right.startChar)
+                return left.startChar < right.startChar;
+            return left.endChar < right.endChar;
+        });
+    return result;
+}
+
+TSAssignmentNavigationTarget
+TSDocument::assignmentNavigationTarget(
+    int charOffset,
+    bool previous) const
+{
+    TSAssignmentNavigationTarget target;
+    const TSIdentifierTarget selected =
+        identifierAt(charOffset);
+    if (!selected.ok())
+        return target;
+
+    target.identifier = selected.text;
+    target.sourceChar = selected.startChar;
+
+    TSNode selectedNode = namedNodeAt(
+        m_tree,
+        selected.startChar,
+        m_text.size());
+    while (!ts_node_is_null(selectedNode)
+           && !identifierNode(selectedNode)) {
+        selectedNode = ts_node_parent(selectedNode);
+    }
+    if (ts_node_is_null(selectedNode))
+        return target;
+
+    const auto isAssignmentScope =
+        [](TSNode node) {
+            return nodeTypeIs(
+                       node,
+                       "function_declaration")
+                || nodeTypeIs(
+                       node,
+                       "task_declaration")
+                || nodeTypeIs(
+                       node,
+                       "class_declaration")
+                || nodeTypeIs(
+                       node,
+                       "module_declaration")
+                || nodeTypeIs(
+                       node,
+                       "interface_declaration")
+                || nodeTypeIs(
+                       node,
+                       "program_declaration")
+                || nodeTypeIs(
+                       node,
+                       "package_declaration")
+                || nodeTypeIs(
+                       node,
+                       "checker_declaration");
+        };
+    TSNode scope = selectedNode;
+    while (!ts_node_is_null(scope)
+           && !isAssignmentScope(scope)) {
+        scope = ts_node_parent(scope);
+    }
+    if (ts_node_is_null(scope))
+        scope = ts_tree_root_node(m_tree);
+    const int scopeStart = nodeStartChar(scope);
+    const int scopeEnd = nodeEndChar(scope);
+
+    QList<TSIdentifierTarget> occurrences;
+    QList<TSNode> pending = {scope};
+    while (!pending.isEmpty()) {
+        const TSNode node = pending.takeLast();
+        const uint32_t childCount =
+            ts_node_child_count(node);
+        if (childCount == 0) {
+            if (identifierNode(node)
+                && nodeText(m_text, node)
+                       == selected.text) {
+                TSIdentifierTarget occurrence;
+                occurrence.startChar =
+                    nodeStartChar(node);
+                occurrence.endChar =
+                    nodeEndChar(node);
+                occurrence.text = selected.text;
+                if (occurrence.ok())
+                    occurrences.prepend(occurrence);
+            }
+            continue;
+        }
+        for (uint32_t index = 0;
+             index < childCount;
+             ++index) {
+            pending.append(
+                ts_node_child(node, index));
+        }
+    }
+
+    QList<int> assignmentPositions;
+    QSet<int> seenAssignments;
+    for (const TSIdentifierTarget& occurrence :
+         std::as_const(occurrences)) {
+        TSNode node = namedNodeAt(
+            m_tree,
+            occurrence.startChar,
+            m_text.size());
+        while (!ts_node_is_null(node)
+               && !identifierNode(node)) {
+            node = ts_node_parent(node);
+        }
+        if (ts_node_is_null(node))
+            continue;
+
+        TSNode assignment = node;
+        while (!ts_node_is_null(assignment)) {
+            if (nodeTypeIs(assignment, "net_assignment")
+                || nodeTypeIs(
+                    assignment, "variable_assignment")
+                || nodeTypeIs(
+                    assignment, "blocking_assignment")
+                || nodeTypeIs(
+                    assignment, "nonblocking_assignment")
+                || nodeTypeIs(
+                    assignment, "operator_assignment")) {
+                break;
+            }
+            if (nodeStartChar(assignment)
+                    < scopeStart
+                || nodeEndChar(assignment)
+                    > scopeEnd) {
+                assignment = {};
+                break;
+            }
+            assignment = ts_node_parent(assignment);
+        }
+        if (ts_node_is_null(assignment)
+            || ts_node_has_error(assignment)) {
+            continue;
+        }
+
+        const TSNode lvalue =
+            firstLvalueChild(assignment);
+        if (ts_node_is_null(lvalue)
+            || occurrence.startChar < nodeStartChar(lvalue)
+            || occurrence.endChar > nodeEndChar(lvalue)) {
+            continue;
+        }
+
+        const int assignmentStart =
+            nodeStartChar(assignment);
+        if (seenAssignments.contains(assignmentStart))
+            continue;
+        seenAssignments.insert(assignmentStart);
+        assignmentPositions.append(occurrence.startChar);
+    }
+
+    std::sort(assignmentPositions.begin(),
+              assignmentPositions.end());
+    target.assignmentCount = assignmentPositions.size();
+    if (assignmentPositions.isEmpty()) {
+        target.status =
+            TSAssignmentNavigationStatus::NoAssignment;
+        return target;
+    }
+
+    int selectedIndex = -1;
+    if (previous) {
+        for (int index = assignmentPositions.size() - 1;
+             index >= 0;
+             --index) {
+            if (assignmentPositions.at(index)
+                < target.sourceChar) {
+                selectedIndex = index;
+                break;
+            }
+        }
+        if (selectedIndex < 0) {
+            selectedIndex = assignmentPositions.size() - 1;
+            target.wrapped = true;
+        }
+    } else {
+        for (int index = 0;
+             index < assignmentPositions.size();
+             ++index) {
+            if (assignmentPositions.at(index)
+                > target.sourceChar) {
+                selectedIndex = index;
+                break;
+            }
+        }
+        if (selectedIndex < 0) {
+            selectedIndex = 0;
+            target.wrapped = true;
+        }
+    }
+
+    target.targetChar =
+        assignmentPositions.at(selectedIndex);
+    target.status = TSAssignmentNavigationStatus::Ok;
+    return target;
+}
+
+TSConditionalBranchNavigationTarget
+TSDocument::conditionalBranchNavigationTarget(
+    int charOffset,
+    bool previous) const
+{
+    TSConditionalBranchNavigationTarget target;
+    if (m_text.isEmpty()
+        || charOffset < 0
+        || charOffset > m_text.size()) {
+        return target;
+    }
+
+    struct Directive {
+        int startChar = -1;
+        int endChar = -1;
+        QString text;
+    };
+    QList<Directive> directives;
+    QList<TSNode> pending = {ts_tree_root_node(m_tree)};
+    while (!pending.isEmpty()) {
+        const TSNode node = pending.takeLast();
+        if (nodeTypeIs(
+                node,
+                "conditional_compilation_directive")) {
+            Directive directive;
+            directive.startChar = nodeStartChar(node);
+            directive.endChar = nodeEndChar(node);
+
+            QList<TSNode> leaves = {node};
+            while (!leaves.isEmpty()) {
+                const TSNode candidate =
+                    leaves.takeLast();
+                const uint32_t childCount =
+                    ts_node_child_count(candidate);
+                if (childCount == 0) {
+                    const QString token =
+                        nodeText(m_text, candidate);
+                    if (token == QStringLiteral("`ifdef")
+                        || token
+                            == QStringLiteral("`ifndef")
+                        || token
+                            == QStringLiteral("`elsif")
+                        || token
+                            == QStringLiteral("`else")
+                        || token
+                            == QStringLiteral("`endif")) {
+                        directive.startChar =
+                            nodeStartChar(candidate);
+                        directive.endChar =
+                            nodeEndChar(candidate);
+                        directive.text = token;
+                        break;
+                    }
+                    continue;
+                }
+                for (uint32_t reverse = childCount;
+                     reverse > 0;
+                     --reverse) {
+                    leaves.append(
+                        ts_node_child(
+                            candidate,
+                            reverse - 1));
+                }
+            }
+            if (!directive.text.isEmpty())
+                directives.append(directive);
+            continue;
+        }
+
+        const uint32_t childCount =
+            ts_node_child_count(node);
+        for (uint32_t index = 0;
+             index < childCount;
+             ++index) {
+            pending.append(ts_node_child(node, index));
+        }
+    }
+    std::sort(
+        directives.begin(),
+        directives.end(),
+        [](const Directive& left,
+           const Directive& right) {
+            return left.startChar < right.startChar;
+        });
+
+    struct ConditionalGroup {
+        int openChar = -1;
+        int closeChar = -1;
+        int closeEndChar = -1;
+        int depth = 0;
+        QList<int> branchStartChars;
+        QStringList branchDirectives;
+    };
+    QList<ConditionalGroup> groups;
+    QList<int> stack;
+    bool sawIncompleteGroup = false;
+    for (const Directive& directive :
+         std::as_const(directives)) {
+        if (directive.text == QStringLiteral("`ifdef")
+            || directive.text
+                == QStringLiteral("`ifndef")) {
+            ConditionalGroup group;
+            group.openChar = directive.startChar;
+            group.depth = stack.size();
+            group.branchStartChars.append(
+                directive.startChar);
+            group.branchDirectives.append(
+                directive.text);
+            groups.append(group);
+            stack.append(groups.size() - 1);
+            continue;
+        }
+
+        if (stack.isEmpty())
+            continue;
+        ConditionalGroup& group =
+            groups[stack.constLast()];
+        if (directive.text == QStringLiteral("`elsif")
+            || directive.text
+                == QStringLiteral("`else")) {
+            group.branchStartChars.append(
+                directive.startChar);
+            group.branchDirectives.append(
+                directive.text);
+            continue;
+        }
+        if (directive.text == QStringLiteral("`endif")) {
+            group.branchStartChars.append(
+                directive.startChar);
+            group.branchDirectives.append(
+                directive.text);
+            group.closeChar = directive.startChar;
+            group.closeEndChar = directive.endChar;
+            stack.removeLast();
+        }
+    }
+    if (!stack.isEmpty())
+        sawIncompleteGroup = true;
+
+    const int boundedSource =
+        qBound(0, charOffset, m_text.size());
+    int selectedGroup = -1;
+    for (int index = 0; index < groups.size(); ++index) {
+        const ConditionalGroup& group = groups.at(index);
+        if (group.closeChar < 0
+            || boundedSource < group.openChar
+            || boundedSource > group.closeEndChar) {
+            continue;
+        }
+        if (selectedGroup < 0
+            || group.depth
+                > groups.at(selectedGroup).depth
+            || (group.depth
+                    == groups.at(selectedGroup).depth
+                && group.closeEndChar - group.openChar
+                    < groups.at(selectedGroup).closeEndChar
+                        - groups.at(selectedGroup).openChar)) {
+            selectedGroup = index;
+        }
+    }
+
+    target.sourceChar = boundedSource;
+    if (selectedGroup < 0) {
+        target.status = sawIncompleteGroup
+            ? TSConditionalBranchNavigationStatus::
+                  IncompleteConditionalGroup
+            : TSConditionalBranchNavigationStatus::
+                  NoConditionalGroup;
+        return target;
+    }
+
+    const ConditionalGroup& group =
+        groups.at(selectedGroup);
+    target.branchStartChars =
+        group.branchStartChars;
+    target.branchDirectives =
+        group.branchDirectives;
+
+    int selectedIndex = -1;
+    if (previous) {
+        for (int index =
+                 group.branchStartChars.size() - 1;
+             index >= 0;
+             --index) {
+            if (group.branchStartChars.at(index)
+                < boundedSource) {
+                selectedIndex = index;
+                break;
+            }
+        }
+        if (selectedIndex < 0) {
+            selectedIndex =
+                group.branchStartChars.size() - 1;
+            target.wrapped = true;
+        }
+    } else {
+        for (int index = 0;
+             index < group.branchStartChars.size();
+             ++index) {
+            if (group.branchStartChars.at(index)
+                > boundedSource) {
+                selectedIndex = index;
+                break;
+            }
+        }
+        if (selectedIndex < 0) {
+            selectedIndex = 0;
+            target.wrapped = true;
+        }
+    }
+
+    target.targetIndex = selectedIndex;
+    target.targetChar =
+        group.branchStartChars.at(selectedIndex);
+    target.targetDirective =
+        group.branchDirectives.at(selectedIndex);
+    target.status =
+        TSConditionalBranchNavigationStatus::Ok;
     return target;
 }
 
@@ -703,7 +1664,8 @@ TSUndefinedSignalContext TSDocument::undefinedSignalContextAt(
 namespace {
 // Extract the declared name from a *_declaration node: try a "name" field, else find a "*_header"
 // child and take its name field or first simple_identifier.
-QString declarationName(const QString& text, TSNode declNode)
+template <typename Text>
+QString declarationName(const Text& text, TSNode declNode)
 {
     auto textOf = [&text](TSNode n) -> QString {
         if (ts_node_is_null(n)) return QString();
@@ -766,7 +1728,8 @@ QString foldSyntaxLabel(const char* type)
     return label;
 }
 
-QString nodeText(const QString& text, TSNode node)
+template <typename Text>
+QString nodeText(const Text& text, TSNode node)
 {
     if (ts_node_is_null(node))
         return QString();
@@ -953,7 +1916,8 @@ TSNode expressionChildForAssociation(TSNode association,
     return {};
 }
 
-int closingParenStart(TSNode node, const QString& text)
+template <typename Text>
+int closingParenStart(TSNode node, const Text& text)
 {
     int result = -1;
     const uint32_t count = ts_node_child_count(node);
@@ -965,8 +1929,9 @@ int closingParenStart(TSNode node, const QString& text)
     return result;
 }
 
+template <typename Text>
 bool collectAssociationSlots(TSNode container,
-                             const QString& text,
+                             const Text& text,
                              const char* namedType,
                              const char* orderedType,
                              QList<TSExpressionSlot>* outputSlots)
@@ -1023,7 +1988,8 @@ bool collectAssociationSlots(TSNode container,
 TSNode firstLvalueChild(TSNode assignment)
 {
     for (const TSNode child : directNamedChildrenOf(assignment)) {
-        if (nodeTypeIs(child, "variable_lvalue")
+        if (nodeTypeIs(child, "net_lvalue")
+            || nodeTypeIs(child, "variable_lvalue")
             || nodeTypeIs(child, "nonrange_variable_lvalue")
             || nodeTypeIs(child, "hierarchical_identifier")) {
             return child;
@@ -1034,7 +2000,8 @@ TSNode firstLvalueChild(TSNode assignment)
     return {};
 }
 
-QString leadingIdentifierAt(const QString& text, int start, int end)
+template <typename Text>
+QString leadingIdentifierAt(const Text& text, int start, int end)
 {
     int pos = qBound(0, start, text.size());
     const int limit = qBound(pos, end, text.size());
@@ -1057,7 +2024,8 @@ QString leadingIdentifierAt(const QString& text, int start, int end)
         : QString();
 }
 
-int firstNonSpaceChar(const QString& text, int start, int end)
+template <typename Text>
+int firstNonSpaceChar(const Text& text, int start, int end)
 {
     int pos = qBound(0, start, text.size());
     const int limit = qBound(pos, end, text.size());
@@ -1066,7 +2034,8 @@ int firstNonSpaceChar(const QString& text, int start, int end)
     return pos;
 }
 
-int lastNonSpaceChar(const QString& text, int start, int end)
+template <typename Text>
+int lastNonSpaceChar(const Text& text, int start, int end)
 {
     const int boundedStart = qBound(0, start, text.size());
     int pos = qBound(boundedStart, end, text.size());
@@ -1086,7 +2055,8 @@ TSNode namedNodeAtChar(TSTree* tree, int charOffset, int textSize)
                                                    byte);
 }
 
-int lineStartChar(const QString& text, int line)
+template <typename Text>
+int lineStartChar(const Text& text, int line)
 {
     if (line <= 0)
         return 0;
@@ -1101,7 +2071,8 @@ int lineStartChar(const QString& text, int line)
     return text.size();
 }
 
-int lineEndChar(const QString& text, int line)
+template <typename Text>
+int lineEndChar(const Text& text, int line)
 {
     const int start = lineStartChar(text, line);
     for (int i = start; i < text.size(); ++i) {
@@ -1111,7 +2082,8 @@ int lineEndChar(const QString& text, int line)
     return text.size();
 }
 
-QString lineIndentAt(const QString& text, int line)
+template <typename Text>
+QString lineIndentAt(const Text& text, int line)
 {
     const int start = lineStartChar(text, line);
     const int end = lineEndChar(text, line);
@@ -1125,7 +2097,8 @@ QString lineIndentAt(const QString& text, int line)
     return text.mid(start, pos - start);
 }
 
-bool lineIsBlank(const QString& text, int line)
+template <typename Text>
+bool lineIsBlank(const Text& text, int line)
 {
     if (line < 0)
         return false;
@@ -1139,7 +2112,8 @@ bool lineIsBlank(const QString& text, int line)
     return true;
 }
 
-int previousNonBlankLine(const QString& text, int line)
+template <typename Text>
+int previousNonBlankLine(const Text& text, int line)
 {
     for (int current = line; current >= 0; --current) {
         if (!lineIsBlank(text, current))
@@ -1163,7 +2137,8 @@ struct PortParenRange {
     TSNode closeParen{};
 };
 
-PortParenRange findPortListParens(const QString& text, TSNode header)
+template <typename Text>
+PortParenRange findPortListParens(const Text& text, TSNode header)
 {
     PortParenRange range;
     const uint32_t childCount = ts_node_child_count(header);
@@ -1253,7 +2228,8 @@ QList<TSNode> parameterPortEntries(TSNode parameterPortList)
     return result;
 }
 
-bool trailingCommaStateOnPortLine(const QString& text,
+template <typename Text>
+bool trailingCommaStateOnPortLine(const Text& text,
                                   TSNode portDecl,
                                   int portLine,
                                   bool* hasComma,
@@ -1368,18 +2344,53 @@ bool isInternalSignalDeclaration(TSNode node)
 {
     if (nodeTypeIs(node, "net_declaration")) {
         return !ts_node_is_null(
-                   directNamedChildOfType(node,
-                                          "list_of_net_decl_assignments"))
-            && descendantNodeTypeIs(node, "wire");
+            directNamedChildOfType(
+                node, "list_of_net_decl_assignments"));
     }
     if (nodeTypeIs(node, "data_declaration")) {
         return !ts_node_is_null(
-                   directNamedChildOfType(node,
-                                          "list_of_variable_decl_assignments"))
-            && (descendantNodeTypeIs(node, "logic")
-                || descendantNodeTypeIs(node, "reg"));
+            directNamedChildOfType(
+                node, "list_of_variable_decl_assignments"));
     }
     return false;
+}
+
+template <typename Text>
+QStringList signalDeclarationNames(const Text& text,
+                                   TSNode declaration)
+{
+    QStringList names;
+    TSNode declaratorList{};
+    const char* declaratorType = nullptr;
+    if (nodeTypeIs(declaration, "data_declaration")) {
+        declaratorList = directNamedChildOfType(
+            declaration,
+            "list_of_variable_decl_assignments");
+        declaratorType = "variable_decl_assignment";
+    } else if (nodeTypeIs(declaration, "net_declaration")) {
+        declaratorList = directNamedChildOfType(
+            declaration,
+            "list_of_net_decl_assignments");
+        declaratorType = "net_decl_assignment";
+    }
+    if (ts_node_is_null(declaratorList) || !declaratorType)
+        return names;
+
+    const uint32_t count =
+        ts_node_named_child_count(declaratorList);
+    for (uint32_t index = 0; index < count; ++index) {
+        const TSNode declarator =
+            ts_node_named_child(declaratorList, index);
+        if (!nodeTypeIs(declarator, declaratorType))
+            continue;
+        TSNode name = childByField(declarator, "name");
+        if (ts_node_is_null(name))
+            name = firstIdentifierChild(declarator);
+        if (!identifierNode(name))
+            return {};
+        names.append(nodeText(text, name));
+    }
+    return names;
 }
 
 bool isParameterLikeDeclaration(TSNode node)
@@ -1452,7 +2463,8 @@ TSNode directModuleHeader(TSNode module)
     return directNamedChildOfType(module, "module_nonansi_header");
 }
 
-int endmoduleLine(TSNode module, const QString& text)
+template <typename Text>
+int endmoduleLine(TSNode module, const Text& text)
 {
     const uint32_t childCount = ts_node_child_count(module);
     for (uint32_t i = 0; i < childCount; ++i) {
@@ -1463,7 +2475,8 @@ int endmoduleLine(TSNode module, const QString& text)
     return -1;
 }
 
-int endpackageLine(TSNode package, const QString& text)
+template <typename Text>
+int endpackageLine(TSNode package, const Text& text)
 {
     const uint32_t childCount = ts_node_child_count(package);
     for (uint32_t i = 0; i < childCount; ++i) {
@@ -1474,7 +2487,8 @@ int endpackageLine(TSNode package, const QString& text)
     return -1;
 }
 
-int seqBlockEndLine(TSNode block, const QString& text)
+template <typename Text>
+int seqBlockEndLine(TSNode block, const Text& text)
 {
     const uint32_t childCount = ts_node_child_count(block);
     for (uint32_t i = 0; i < childCount; ++i) {
@@ -1492,7 +2506,8 @@ struct SignalInsertAnchor {
     QString indent;
 };
 
-SignalInsertAnchor anchorAfterNode(const QString& text, TSNode node)
+template <typename Text>
+SignalInsertAnchor anchorAfterNode(const Text& text, TSNode node)
 {
     SignalInsertAnchor anchor;
     anchor.valid = !ts_node_is_null(node);
@@ -1502,7 +2517,8 @@ SignalInsertAnchor anchorAfterNode(const QString& text, TSNode node)
     return anchor;
 }
 
-SignalInsertAnchor anchorBeforeLine(const QString& text,
+template <typename Text>
+SignalInsertAnchor anchorBeforeLine(const Text& text,
                                     int line,
                                     const QString& indent)
 {
@@ -1539,7 +2555,8 @@ QString firstToken(const QString& payload, int* tokenEnd)
     return payload.left(end);
 }
 
-bool customFoldMarkerForNode(const QString& text,
+template <typename Text>
+bool customFoldMarkerForNode(const Text& text,
                              TSNode node,
                              TSCustomFoldMarker* marker)
 {
@@ -1569,7 +2586,8 @@ bool customFoldMarkerForNode(const QString& text,
     return true;
 }
 
-void collectCustomFoldMarkers(const QString& text,
+template <typename Text>
+void collectCustomFoldMarkers(const Text& text,
                               TSNode node,
                               QList<TSCustomFoldMarker>& markers)
 {
@@ -1587,7 +2605,8 @@ void collectCustomFoldMarkers(const QString& text,
     }
 }
 
-void collectFoldNodes(const QString& text,
+template <typename Text>
+void collectFoldNodes(const Text& text,
                       TSNode node,
                       QList<TSFoldRange>& syntaxRanges,
                       QList<TSFoldRange>& customRanges,
@@ -1948,6 +2967,200 @@ TSSignalInsertTarget TSDocument::signalInsertTarget(int charOffset) const
     target.insertText = anchor.indent + QLatin1Char('\n');
     target.caretCharAfterEdit = insertChar + anchor.indent.size();
     return target;
+}
+
+TSSignalInsertTarget TSDocument::blockSignalInsertTarget(
+    int charOffset) const
+{
+    TSSignalInsertTarget target;
+    if (!m_tree || m_text.isEmpty())
+        return target;
+
+    const int bounded =
+        qBound(0, charOffset, m_text.size() - 1);
+    TSNode node = namedNodeAt(m_tree, bounded, m_text.size());
+    TSNode block = ancestorOfType(node, "seq_block");
+    if (ts_node_is_null(block) || ts_node_has_error(block))
+        return target;
+
+    TSNode lastDeclaration{};
+    TSNode firstStatement{};
+    const uint32_t childCount =
+        ts_node_named_child_count(block);
+    for (uint32_t index = 0; index < childCount; ++index) {
+        const TSNode child =
+            ts_node_named_child(block, index);
+        if (nodeTypeIs(child, "block_item_declaration")) {
+            lastDeclaration = child;
+            continue;
+        }
+        if (nodeTypeIs(child, "statement_or_null")) {
+            firstStatement = child;
+            break;
+        }
+    }
+
+    SignalInsertAnchor anchor;
+    if (!ts_node_is_null(lastDeclaration)) {
+        if (!ts_node_is_null(firstStatement)
+            && nodeStartLine(firstStatement)
+                   <= nodeLastLine(lastDeclaration)) {
+            return target;
+        }
+        anchor = anchorAfterNode(m_text, lastDeclaration);
+    } else if (!ts_node_is_null(firstStatement)) {
+        const int statementLine = nodeStartLine(firstStatement);
+        const int beginLine = nodeStartLine(block);
+        if (statementLine <= beginLine)
+            return target;
+        anchor = anchorBeforeLine(
+            m_text,
+            statementLine,
+            lineIndentAt(m_text, statementLine));
+    } else {
+        const int endLine = seqBlockEndLine(block, m_text);
+        const int beginLine = nodeStartLine(block);
+        if (endLine <= beginLine)
+            return target;
+        anchor = anchorBeforeLine(
+            m_text,
+            endLine,
+            lineIndentAt(m_text, endLine)
+                + QStringLiteral("    "));
+    }
+
+    if (!anchor.valid || anchor.line < 0)
+        return target;
+    if (anchor.insertAfterLine) {
+        const int insertChar =
+            lineEndChar(m_text, anchor.line);
+        target.status = TSSignalInsertStatus::Ok;
+        target.insertChar = insertChar;
+        target.insertText =
+            QLatin1Char('\n') + anchor.indent;
+        target.caretCharAfterEdit =
+            insertChar + 1 + anchor.indent.size();
+        return target;
+    }
+
+    const int insertChar =
+        lineStartChar(m_text, anchor.line);
+    target.status = TSSignalInsertStatus::Ok;
+    target.insertChar = insertChar;
+    target.insertText =
+        anchor.indent + QLatin1Char('\n');
+    target.caretCharAfterEdit =
+        insertChar + anchor.indent.size();
+    return target;
+}
+
+bool TSDocument::isSingleSignalDeclaration(
+    const QString& declaration,
+    const QString& identifier,
+    bool blockLocal)
+{
+    const QString candidate = declaration.trimmed();
+    if (candidate.isEmpty() || identifier.isEmpty())
+        return false;
+
+    const QString prefix = blockLocal
+        ? QStringLiteral(
+              "module __zs_declare_check;\n"
+              "  initial begin\n"
+              "    ")
+        : QStringLiteral(
+              "module __zs_declare_check;\n"
+              "  ");
+    const QString suffix = blockLocal
+        ? QStringLiteral(
+              "\n"
+              "  end\n"
+              "endmodule\n")
+        : QStringLiteral(
+              "\n"
+              "endmodule\n");
+
+    TSDocument parsed;
+    parsed.setText(prefix + candidate + suffix);
+    if (parsed.hasError())
+        return false;
+
+    const TSNode root = parsed.rootNode();
+    const TSNode module =
+        directNamedChildOfType(root, "module_declaration");
+    if (ts_node_is_null(module))
+        return false;
+
+    TSNode signalDeclaration{};
+    if (blockLocal) {
+        TSNode block{};
+        QList<TSNode> pending{module};
+        while (!pending.isEmpty()) {
+            const TSNode current = pending.takeLast();
+            if (nodeTypeIs(current, "seq_block")) {
+                if (!ts_node_is_null(block))
+                    return false;
+                block = current;
+                continue;
+            }
+            const uint32_t count =
+                ts_node_named_child_count(current);
+            for (uint32_t index = 0; index < count; ++index) {
+                pending.append(
+                    ts_node_named_child(current, index));
+            }
+        }
+        if (ts_node_is_null(block))
+            return false;
+
+        int blockItems = 0;
+        int statements = 0;
+        const uint32_t count =
+            ts_node_named_child_count(block);
+        for (uint32_t index = 0; index < count; ++index) {
+            const TSNode child =
+                ts_node_named_child(block, index);
+            if (nodeTypeIs(child, "block_item_declaration")) {
+                ++blockItems;
+                const TSNode declarationNode =
+                    directNamedChildOfType(
+                        child, "data_declaration");
+                if (!ts_node_is_null(declarationNode))
+                    signalDeclaration = declarationNode;
+            } else if (nodeTypeIs(child, "statement_or_null")) {
+                ++statements;
+            }
+        }
+        if (blockItems != 1 || statements != 0)
+            return false;
+    } else {
+        int bodyMembers = 0;
+        const uint32_t count =
+            ts_node_named_child_count(module);
+        for (uint32_t index = 0; index < count; ++index) {
+            const TSNode child =
+                ts_node_named_child(module, index);
+            if (nodeTypeIs(child, "module_ansi_header")
+                || nodeTypeIs(child, "module_nonansi_header")) {
+                continue;
+            }
+            const TSNode member =
+                effectiveModuleMemberNode(child);
+            ++bodyMembers;
+            if (isInternalSignalDeclaration(member))
+                signalDeclaration = member;
+        }
+        if (bodyMembers != 1)
+            return false;
+    }
+
+    if (ts_node_is_null(signalDeclaration)
+        || !isInternalSignalDeclaration(signalDeclaration)) {
+        return false;
+    }
+    return signalDeclarationNames(
+               parsed.text(), signalDeclaration)
+        == QStringList{identifier};
 }
 
 TSSignalInsertTarget TSDocument::sourceBridgeInsertTarget(
@@ -2460,6 +3673,472 @@ TSBeginEndInsideTarget TSDocument::beginEndInsideTarget(int cursorChar) const
     target.startLine = firstInsideLine;
     target.endLine = lastInsideLine;
     target.status = TSBeginEndInsideStatus::Ok;
+    return target;
+}
+
+namespace {
+TSNode lastLeafEndingAtOrBefore(TSNode node, int charOffset)
+{
+    if (ts_node_is_null(node)
+        || nodeStartChar(node) >= charOffset) {
+        return {};
+    }
+
+    const uint32_t childCount = ts_node_child_count(node);
+    if (childCount == 0) {
+        return nodeEndChar(node) <= charOffset
+            ? node : TSNode{};
+    }
+    for (uint32_t reverse = childCount; reverse > 0; --reverse) {
+        const TSNode child = ts_node_child(node, reverse - 1);
+        if (nodeStartChar(child) >= charOffset)
+            continue;
+        const TSNode leaf =
+            lastLeafEndingAtOrBefore(child, charOffset);
+        if (!ts_node_is_null(leaf))
+            return leaf;
+    }
+    return {};
+}
+
+TSNode leafContainingChar(TSNode root, int charOffset)
+{
+    if (ts_node_is_null(root)
+        || charOffset < nodeStartChar(root)
+        || charOffset >= nodeEndChar(root)) {
+        return {};
+    }
+    const uint32_t byte =
+        static_cast<uint32_t>(charOffset) * 2u;
+    TSNode node =
+        ts_node_descendant_for_byte_range(root, byte, byte);
+    while (!ts_node_is_null(node)
+           && ts_node_child_count(node) > 0) {
+        TSNode containing{};
+        const uint32_t count = ts_node_child_count(node);
+        for (uint32_t index = 0; index < count; ++index) {
+            const TSNode child = ts_node_child(node, index);
+            if (charOffset >= nodeStartChar(child)
+                && charOffset < nodeEndChar(child)) {
+                containing = child;
+                break;
+            }
+        }
+        if (ts_node_is_null(containing))
+            break;
+        node = containing;
+    }
+    return node;
+}
+
+template <typename Text>
+bool whitespaceOnlyBetween(const Text& text, int start, int end)
+{
+    const int boundedStart = qBound(0, start, text.size());
+    const int boundedEnd = qBound(boundedStart, end, text.size());
+    for (int index = boundedStart; index < boundedEnd; ++index) {
+        if (!text.at(index).isSpace())
+            return false;
+    }
+    return true;
+}
+
+template <typename Text>
+QString leadingWhitespaceForLineAt(const Text& text, int charOffset)
+{
+    const int bounded = qBound(0, charOffset, text.size());
+    const int newline =
+        bounded > 0
+            ? text.lastIndexOf(QLatin1Char('\n'), bounded - 1)
+            : -1;
+    const int start = newline < 0 ? 0 : newline + 1;
+    int end = start;
+    while (end < text.size()
+           && (text.at(end) == QLatin1Char(' ')
+               || text.at(end) == QLatin1Char('\t'))) {
+        ++end;
+    }
+    return text.mid(start, end - start);
+}
+
+bool nodeTypeIn(TSNode node,
+                std::initializer_list<const char*> types)
+{
+    if (ts_node_is_null(node))
+        return false;
+    for (const char* type : types) {
+        if (nodeTypeIs(node, type))
+            return true;
+    }
+    return false;
+}
+
+TSNode ancestorOfAnyType(
+    TSNode node,
+    std::initializer_list<const char*> types)
+{
+    while (!ts_node_is_null(node)) {
+        if (nodeTypeIn(node, types))
+            return node;
+        node = ts_node_parent(node);
+    }
+    return {};
+}
+
+template <typename Text>
+void keywordBoundaryLeaves(
+    TSNode node,
+    const Text& text,
+    const QSet<QString>& openingKeywords,
+    const QString& closingKeyword,
+    TSNode* opening,
+    TSNode* closing)
+{
+    if (ts_node_is_null(node))
+        return;
+    const uint32_t count = ts_node_child_count(node);
+    if (count == 0) {
+        const QString token = nodeText(text, node);
+        if (opening && ts_node_is_null(*opening)
+            && openingKeywords.contains(token)) {
+            *opening = node;
+        }
+        if (closing && token == closingKeyword)
+            *closing = node;
+        return;
+    }
+    for (uint32_t index = 0; index < count; ++index) {
+        keywordBoundaryLeaves(ts_node_child(node, index),
+                              text,
+                              openingKeywords,
+                              closingKeyword,
+                              opening,
+                              closing);
+    }
+}
+
+bool keywordSymbolName(const char* name)
+{
+    if (!name || !*name)
+        return false;
+    const unsigned char first =
+        static_cast<unsigned char>(*name);
+    if (!std::isalpha(first) && first != '_')
+        return false;
+    for (const char* current = name; *current; ++current) {
+        const unsigned char value =
+            static_cast<unsigned char>(*current);
+        if (!std::isalnum(value)
+            && value != '_'
+            && value != '$') {
+            return false;
+        }
+    }
+    return true;
+}
+} // namespace
+
+TSStructuralNewlineTarget TSDocument::structuralNewlineTarget(
+    int cursorChar,
+    int indentWidth) const
+{
+    TSStructuralNewlineTarget target;
+    const int boundedCursor =
+        qBound(0, cursorChar, m_text.size());
+    const QString baseIndent =
+        leadingWhitespaceForLineAt(m_text, boundedCursor);
+    const QString childIndent =
+        baseIndent
+        + QString(qMax(1, indentWidth), QLatin1Char(' '));
+
+    target.insertionText =
+        QStringLiteral("\n") + baseIndent;
+    target.caretOffset = target.insertionText.size();
+    if (m_text.isEmpty() || boundedCursor <= 0)
+        return target;
+
+    const TSNode previous =
+        lastLeafEndingAtOrBefore(
+            ts_tree_root_node(m_tree), boundedCursor);
+    if (ts_node_is_null(previous)
+        || !whitespaceOnlyBetween(m_text,
+                                  nodeEndChar(previous),
+                                  boundedCursor)
+        || commentOrStringNode(previous)) {
+        return target;
+    }
+
+    const QString previousText = nodeText(m_text, previous);
+    if (previousText == QStringLiteral("begin")) {
+        TSNode block =
+            ancestorOfType(previous, "seq_block");
+        TSNode opening{};
+        TSNode closing{};
+        if (!ts_node_is_null(block)) {
+            keywordBoundaryLeaves(
+                block,
+                m_text,
+                {QStringLiteral("begin")},
+                QStringLiteral("end"),
+                &opening,
+                &closing);
+            if (!ts_node_is_null(opening)
+                && nodeStartChar(opening)
+                       != nodeStartChar(previous)) {
+                block = {};
+                opening = {};
+                closing = {};
+            }
+        }
+
+        const bool hasClosing =
+            !ts_node_is_null(closing)
+            && nodeStartChar(closing) >= boundedCursor;
+        const bool closingOnCurrentLine =
+            hasClosing
+            && ts_node_start_point(closing).row
+                   == ts_node_end_point(previous).row;
+        target.insertionText =
+            QStringLiteral("\n") + childIndent;
+        target.caretOffset = target.insertionText.size();
+        if (closingOnCurrentLine) {
+            target.insertionText +=
+                QStringLiteral("\n") + baseIndent;
+        } else if (!hasClosing) {
+            target.insertionText +=
+                QStringLiteral("\n")
+                + baseIndent
+                + QStringLiteral("end");
+            target.insertedClosingKeyword = true;
+        }
+        return target;
+    }
+
+    const TSNode caseContainer =
+        ancestorOfAnyType(
+            previous,
+            {"case_statement",
+             "case_generate_construct",
+             "randcase_statement"});
+    const TSNode caseItem =
+        ancestorOfAnyType(
+            previous,
+            {"case_item",
+             "case_generate_item",
+             "randcase_item"});
+    const bool opensCaseBody =
+        !ts_node_is_null(caseContainer)
+        && ts_node_end_point(previous).row
+               == static_cast<uint32_t>(
+                   m_text.left(boundedCursor)
+                       .count(QLatin1Char('\n')))
+        && (previousText == QStringLiteral(")")
+            || previousText == QStringLiteral("randcase"));
+    const bool opensCaseItem =
+        !ts_node_is_null(caseItem)
+        && previousText == QStringLiteral(":");
+    if (opensCaseBody || opensCaseItem) {
+        target.insertionText =
+            QStringLiteral("\n") + childIndent;
+        target.caretOffset = target.insertionText.size();
+    }
+    return target;
+}
+
+TSKeywordCompletionTarget TSDocument::uniqueKeywordCompletionAt(
+    int cursorChar,
+    int minimumPrefixLength) const
+{
+    TSKeywordCompletionTarget target;
+    const int boundedCursor =
+        qBound(0, cursorChar, m_text.size());
+    if (boundedCursor <= 0
+        || minimumPrefixLength < 1
+        || isCommentAt(boundedCursor - 1)) {
+        return target;
+    }
+
+    TSIdentifierTarget prefixTarget =
+        identifierAt(boundedCursor - 1);
+    TSNode prefixNode{};
+    if (!prefixTarget.ok()
+        || prefixTarget.endChar != boundedCursor) {
+        const TSNode partialKeyword =
+            lastLeafEndingAtOrBefore(
+                ts_tree_root_node(m_tree),
+                boundedCursor);
+        if (ts_node_is_null(partialKeyword)
+            || nodeEndChar(partialKeyword)
+                   != boundedCursor
+            || commentOrStringNode(partialKeyword)) {
+            return target;
+        }
+        prefixTarget.startChar =
+            nodeStartChar(partialKeyword);
+        prefixTarget.endChar =
+            nodeEndChar(partialKeyword);
+        prefixTarget.text =
+            nodeText(m_text, partialKeyword);
+        prefixNode = partialKeyword;
+    } else {
+        prefixNode = leafContainingChar(
+            ts_tree_root_node(m_tree),
+            boundedCursor - 1);
+    }
+    if (prefixTarget.text.size() < minimumPrefixLength
+        || prefixTarget.text.startsWith(QLatin1Char('\\'))) {
+        return target;
+    }
+    for (int index = 0;
+         index < prefixTarget.text.size();
+         ++index) {
+        const QChar value = prefixTarget.text.at(index);
+        const bool valid =
+            value.isLetter()
+            || value == QLatin1Char('_')
+            || (index > 0
+                && (value.isDigit()
+                    || value == QLatin1Char('$')));
+        if (!valid)
+            return target;
+    }
+    if (prefixTarget.startChar < 0
+        || prefixTarget.endChar != boundedCursor) {
+        return target;
+    }
+
+    const TSLanguage* language =
+        tree_sitter_systemverilog();
+    if (!language || ts_node_is_null(prefixNode))
+        return target;
+
+    QSet<QString> candidates;
+    TSLookaheadIterator* lookahead =
+        ts_lookahead_iterator_new(
+            language,
+            ts_node_parse_state(prefixNode));
+    while (lookahead
+           && ts_lookahead_iterator_next(lookahead)) {
+        const TSSymbol symbol =
+            ts_lookahead_iterator_current_symbol(
+                lookahead);
+        if (ts_language_symbol_type(language, symbol)
+                != TSSymbolTypeAnonymous) {
+            continue;
+        }
+        const char* name =
+            ts_lookahead_iterator_current_symbol_name(
+                lookahead);
+        if (!keywordSymbolName(name))
+            continue;
+        const QString keyword =
+            QString::fromLatin1(name);
+        if (keyword.size() > prefixTarget.text.size()
+            && keyword.startsWith(prefixTarget.text,
+                                  Qt::CaseSensitive)) {
+            candidates.insert(keyword);
+        }
+    }
+    ts_lookahead_iterator_delete(lookahead);
+    if (candidates.size() != 1)
+        return target;
+    const QString selectedKeyword =
+        *candidates.constBegin();
+
+    target.startChar = prefixTarget.startChar;
+    target.endChar = prefixTarget.endChar;
+    target.prefix = prefixTarget.text;
+    target.keyword = selectedKeyword;
+    target.suffix =
+        selectedKeyword.mid(prefixTarget.text.size());
+    return target;
+}
+
+TSKeywordPairTarget TSDocument::matchingKeywordPairAt(
+    int cursorChar) const
+{
+    TSKeywordPairTarget target;
+    if (m_text.isEmpty())
+        return target;
+    const TSNode root = ts_tree_root_node(m_tree);
+    const auto keywordLeafAt =
+        [this, root](int probe) {
+            const TSNode leaf = leafContainingChar(
+                root,
+                qBound(0, probe, m_text.size() - 1));
+            if (ts_node_is_null(leaf))
+                return TSNode{};
+            const QString text = nodeText(m_text, leaf);
+            if (text == QStringLiteral("begin")
+                || text == QStringLiteral("end")
+                || text == QStringLiteral("case")
+                || text == QStringLiteral("casez")
+                || text == QStringLiteral("casex")
+                || text == QStringLiteral("randcase")
+                || text == QStringLiteral("endcase")) {
+                return leaf;
+            }
+            return TSNode{};
+        };
+    TSNode leaf = keywordLeafAt(cursorChar);
+    if (ts_node_is_null(leaf) && cursorChar > 0)
+        leaf = keywordLeafAt(cursorChar - 1);
+    if (ts_node_is_null(leaf))
+        return target;
+
+    const QString selected = nodeText(m_text, leaf);
+    TSNode container{};
+    QSet<QString> openingKeywords;
+    QString closingKeyword;
+    if (selected == QStringLiteral("begin")
+        || selected == QStringLiteral("end")) {
+        container = ancestorOfType(leaf, "seq_block");
+        openingKeywords.insert(QStringLiteral("begin"));
+        closingKeyword = QStringLiteral("end");
+    } else if (selected == QStringLiteral("case")
+               || selected == QStringLiteral("casez")
+               || selected == QStringLiteral("casex")
+               || selected == QStringLiteral("randcase")
+               || selected == QStringLiteral("endcase")) {
+        container = ancestorOfAnyType(
+            leaf,
+            {"case_statement",
+             "case_generate_construct",
+             "randcase_statement"});
+        openingKeywords = {
+            QStringLiteral("case"),
+            QStringLiteral("casez"),
+            QStringLiteral("casex"),
+            QStringLiteral("randcase"),
+        };
+        closingKeyword = QStringLiteral("endcase");
+    } else {
+        return target;
+    }
+    if (ts_node_is_null(container)
+        || ts_node_has_error(container)) {
+        return target;
+    }
+
+    TSNode opening{};
+    TSNode closing{};
+    keywordBoundaryLeaves(container,
+                          m_text,
+                          openingKeywords,
+                          closingKeyword,
+                          &opening,
+                          &closing);
+    if (ts_node_is_null(opening)
+        || ts_node_is_null(closing)) {
+        return target;
+    }
+
+    target.openingStartChar = nodeStartChar(opening);
+    target.openingEndChar = nodeEndChar(opening);
+    target.closingStartChar = nodeStartChar(closing);
+    target.closingEndChar = nodeEndChar(closing);
+    target.openingKeyword = nodeText(m_text, opening);
+    target.closingKeyword = nodeText(m_text, closing);
     return target;
 }
 

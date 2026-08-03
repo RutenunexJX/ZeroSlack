@@ -1,21 +1,15 @@
 #include "semanticpanelrefreshcoordinator.h"
 
 #include "problemspanelcoordinator.h"
-#include "referencespanelcoordinator.h"
-#include "relationshipspanelcoordinator.h"
 #include "rtlinsightspanelcoordinator.h"
 #include "signalkernelgraphpanelcoordinator.h"
 
 void SemanticPanelRefreshCoordinator::PanelSet::set(
     ProblemsPanelCoordinator* newProblemsPanel,
-    ReferencesPanelCoordinator* newReferencesPanel,
-    RelationshipsPanelCoordinator* newRelationshipsPanel,
     RtlInsightsPanelCoordinator* newRtlInsightsPanel,
     SignalKernelGraphPanelCoordinator* newSignalKernelGraphPanel)
 {
     problemsPanel = newProblemsPanel;
-    referencesPanel = newReferencesPanel;
-    relationshipsPanel = newRelationshipsPanel;
     rtlInsightsPanel = newRtlInsightsPanel;
     signalKernelGraphPanel = newSignalKernelGraphPanel;
 }
@@ -45,44 +39,16 @@ void SemanticPanelRefreshCoordinator::PanelSet::configureProblemsPanel(
     problemsPanel->setStatusMessageHandler(statusMessageHandler);
 }
 
-void SemanticPanelRefreshCoordinator::PanelSet::configureReferencesPanel(
-    const WorkspaceFilesProvider& workspaceFilesProvider,
-    const NavigationHandler& navigationHandler,
-    const StatusMessageHandler& statusMessageHandler) const
-{
-    if (!referencesPanel)
-        return;
-
-    referencesPanel->setWorkspaceFilesProvider(workspaceFilesProvider);
-    referencesPanel->setNavigationHandler(navigationHandler);
-    referencesPanel->setStatusMessageHandler(statusMessageHandler);
-}
-
-void SemanticPanelRefreshCoordinator::PanelSet::configureRelationshipsPanel(
-    const NavigationHandler& navigationHandler,
-    const SignalGraphHandler& signalKernelGraphHandler,
-    const SignalGraphHandler& stateTransitionGraphHandler,
-    const ModuleGraphHandler& moduleBlockDiagramHandler,
-    const StatusMessageHandler& statusMessageHandler) const
-{
-    if (!relationshipsPanel)
-        return;
-
-    relationshipsPanel->setNavigationHandler(navigationHandler);
-    relationshipsPanel->setSignalKernelGraphHandler(signalKernelGraphHandler);
-    relationshipsPanel->setStateTransitionGraphHandler(stateTransitionGraphHandler);
-    relationshipsPanel->setModuleBlockDiagramHandler(moduleBlockDiagramHandler);
-    relationshipsPanel->setStatusMessageHandler(statusMessageHandler);
-}
-
 void SemanticPanelRefreshCoordinator::PanelSet::configureRtlInsightsPanel(
-    const NavigationHandler& navigationHandler,
+    const SourceNavigationHandler&
+        sourceNavigationHandler,
     const StatusMessageHandler& statusMessageHandler) const
 {
     if (!rtlInsightsPanel)
         return;
 
-    rtlInsightsPanel->setNavigationHandler(navigationHandler);
+    rtlInsightsPanel->setSourceNavigationHandler(
+        sourceNavigationHandler);
     rtlInsightsPanel->setStatusMessageHandler(statusMessageHandler);
 }
 
@@ -105,36 +71,6 @@ void SemanticPanelRefreshCoordinator::PanelSet::updateProblemsPanel() const
 {
     if (problemsPanel)
         problemsPanel->update();
-}
-
-void SemanticPanelRefreshCoordinator::PanelSet::showReferencesForSymbol(
-    const QString& symbolName,
-    const QString& fileName,
-    const QString& moduleName) const
-{
-    if (referencesPanel)
-        referencesPanel->showReferencesForSymbol(symbolName, fileName, moduleName);
-}
-
-void SemanticPanelRefreshCoordinator::PanelSet::refreshReferencesPanel() const
-{
-    if (referencesPanel)
-        referencesPanel->refresh();
-}
-
-void SemanticPanelRefreshCoordinator::PanelSet::showRelationshipsForSymbol(
-    const QString& symbolName,
-    const QString& fileName,
-    const QString& moduleName) const
-{
-    if (relationshipsPanel)
-        relationshipsPanel->showRelationshipsForSymbol(symbolName, fileName, moduleName);
-}
-
-void SemanticPanelRefreshCoordinator::PanelSet::refreshRelationshipsPanel() const
-{
-    if (relationshipsPanel)
-        relationshipsPanel->refresh();
 }
 
 void SemanticPanelRefreshCoordinator::PanelSet::showSignalKernelGraphForSymbol(
@@ -185,13 +121,13 @@ void SemanticPanelRefreshCoordinator::PanelSet::showModuleBlockDiagramForSymbol(
                                                           symbolName);
 }
 
-void SemanticPanelRefreshCoordinator::PanelSet::updateRtlInsightsPanel(
-    const QString& fileName,
-    const QString& moduleName,
-    const QString& signalName) const
+bool SemanticPanelRefreshCoordinator::PanelSet::
+    syncRtlInsightsSourceLocation(
+        const RtlInsightSourceLocation& location) const
 {
-    if (rtlInsightsPanel)
-        rtlInsightsPanel->updateModuleContext(fileName, moduleName, signalName);
+    return rtlInsightsPanel
+        && rtlInsightsPanel->syncSourceLocation(
+            location);
 }
 
 bool SemanticPanelRefreshCoordinator::PanelSet::problemsPanelShowsCurrentFile() const

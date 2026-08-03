@@ -39,8 +39,11 @@ SemanticAnalysisBandReport preparedBandReport(
 void SymbolAnalyzer::startSemanticAnalysisAsync(
     const SemanticAnalysisRequest& originalRequest)
 {
-    if (shutdownStarted || !originalRequest.isValid())
+    if (shutdownStarted
+        || !originalRequest.isValid()
+        || !originalRequest.runtimePolicy.normalized().enabled) {
         return;
+    }
 
     // The controller serializes requests. A legacy overlap is expired without
     // joining on the GUI thread; generation checks reject its result.

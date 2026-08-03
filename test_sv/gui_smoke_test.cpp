@@ -30,6 +30,7 @@
 #include <QIODevice>
 #include <QSettings>
 #include <QSignalSpy>
+#include <QSpinBox>
 #include <QStatusBar>
 #include <QStackedWidget>
 #include <QTabBar>
@@ -71,6 +72,7 @@
 
 #define private public
 #include "mainwindow.h"
+#include "panellayoutcontroller.h"
 #include "analysiscoordinator.h"
 #include "analysisprogresscoordinator.h"
 #include "analysisscheduler.h"
@@ -79,7 +81,6 @@
 #include "definitionpreviewservice.h"
 #include "diagnosticservice.h"
 #include "editorappearance.h"
-#include "editorappearancepanel.h"
 #include "editorappearancesettings.h"
 #include "editorcoordinator.h"
 #include "editorgeometry.h"
@@ -97,11 +98,14 @@
 #include "commandlayerservice.h"
 #include "completionservice.h"
 #include "codetemplateservice.h"
+#include "crashrecoveryservice.h"
 #include "globalcontrolcoordinator.h"
 #include "globalcontrolpanel.h"
 #include "globalcontrolservice.h"
 #include "hierarchyservice.h"
 #include "insightfocuscontroller.h"
+#include "instancepairconnectionpanel.h"
+#include "multisignalpropagationpanel.h"
 #include "navigationwidget.h"
 #include "navigationpanecoordinator.h"
 #include "semantic_fixture_records.h"
@@ -111,18 +115,17 @@
 #include "navigationmanager.h"
 #include "navigationservice.h"
 #include "navigationcommandcoordinator.h"
+#include "notificationcenter.h"
 #include "packagetoolservice.h"
 #include "problemspanelcoordinator.h"
-#include "referencespanelcoordinator.h"
-#include "referenceservice.h"
-#include "relationshipspanelcoordinator.h"
-#include "relationshipservice.h"
+#include "rtlhighriskeditpanel.h"
 #include "rtlinsightspanelcoordinator.h"
 #include "semanticindex.h"
 #include "semanticindexsnapshot.h"
 #include "semanticdockcoordinator.h"
 #include "semanticpanelrefreshcoordinator.h"
 #include "semanticruntimecoordinator.h"
+#include "settingscenterpanel.h"
 #include "signalkernelgraphpanelcoordinator.h"
 #include "signalusagehotspotpanel.h"
 #include "slangmanager.h"
@@ -255,14 +258,12 @@ static bool saveFullAppSignalUsageHotspotScreenshot(MainWindow& window,
                                    QStringLiteral("signalKernelGraph"),
                                    QStringLiteral("wavePreview"),
                                    QStringLiteral("foldShelf"),
-                                   QStringLiteral("editorAppearance")}) {
+                                   QStringLiteral("settingsCenter")}) {
         if (QDockWidget* dock = window.dockForPanelId(panelId))
             dock->hide();
     }
     if (QDockWidget* navigationDock = window.dockForPanelId(QStringLiteral("navigation")))
         navigationDock->show();
-    if (window.shellNavigationRailDock)
-        window.shellNavigationRailDock->show();
     QDockWidget* rtlDock = window.dockForPanelId(QStringLiteral("rtlInsights"));
     if (rtlDock)
         rtlDock->show();
@@ -469,52 +470,6 @@ static bool sendEditorWheel(MyCodeEditor* editor,
     return event.isAccepted();
 }
 
-static void acceptNextLineEditDialog(const QString& text)
-{
-    auto action = std::make_shared<std::function<void(int)>>();
-    *action = [text, action](int attempts) {
-        QWidget* dialog = QApplication::activeModalWidget();
-        if (!dialog) {
-            if (attempts > 0)
-                QTimer::singleShot(10, [action, attempts]() { (*action)(attempts - 1); });
-            return;
-        }
-
-        QLineEdit* lineEdit = dialog->findChild<QLineEdit*>();
-        if (lineEdit) {
-            lineEdit->setText(text);
-            lineEdit->selectAll();
-        }
-
-        QDialogButtonBox* buttons =
-            dialog->findChild<QDialogButtonBox*>();
-        if (buttons && buttons->button(QDialogButtonBox::Ok)) {
-            buttons->button(QDialogButtonBox::Ok)->click();
-            return;
-        }
-
-        if (QDialog* asDialog = qobject_cast<QDialog*>(dialog))
-            asDialog->accept();
-    };
-    QTimer::singleShot(0, [action]() { (*action)(50); });
-}
-
-static void acceptNextMessageBoxYes()
-{
-    auto action = std::make_shared<std::function<void(int)>>();
-    *action = [action](int attempts) {
-        QMessageBox* box = qobject_cast<QMessageBox*>(QApplication::activeModalWidget());
-        if (!box) {
-            if (attempts > 0)
-                QTimer::singleShot(10, [action, attempts]() { (*action)(attempts - 1); });
-            return;
-        }
-        if (QAbstractButton* yes = box->button(QMessageBox::Yes))
-            yes->click();
-    };
-    QTimer::singleShot(0, [action]() { (*action)(50); });
-}
-
 static void acceptNextMessageBoxOk()
 {
     auto action = std::make_shared<std::function<void(int)>>();
@@ -530,40 +485,6 @@ static void acceptNextMessageBoxOk()
         }
         if (QAbstractButton* ok = box->button(QMessageBox::Ok))
             ok->click();
-    };
-    QTimer::singleShot(0, [action]() { (*action)(50); });
-}
-
-static void acceptNextMultilineDialog(const QString& text)
-{
-    auto action = std::make_shared<std::function<void(int)>>();
-    *action = [text, action](int attempts) {
-        QWidget* dialog = QApplication::activeModalWidget();
-        QTextEdit* textEdit = dialog ? dialog->findChild<QTextEdit*>() : nullptr;
-        QPlainTextEdit* plainTextEdit =
-            dialog ? dialog->findChild<QPlainTextEdit*>() : nullptr;
-        if (!dialog || (!textEdit && !plainTextEdit)) {
-            if (attempts > 0)
-                QTimer::singleShot(10, [action, attempts]() { (*action)(attempts - 1); });
-            return;
-        }
-
-        if (textEdit) {
-            textEdit->setPlainText(text);
-            textEdit->selectAll();
-        } else if (plainTextEdit) {
-            plainTextEdit->setPlainText(text);
-            plainTextEdit->selectAll();
-        }
-
-        QDialogButtonBox* buttons =
-            dialog->findChild<QDialogButtonBox*>();
-        if (buttons && buttons->button(QDialogButtonBox::Ok)) {
-            buttons->button(QDialogButtonBox::Ok)->click();
-            return;
-        }
-        if (QDialog* asDialog = qobject_cast<QDialog*>(dialog))
-            asDialog->accept();
     };
     QTimer::singleShot(0, [action]() { (*action)(50); });
 }
@@ -721,29 +642,6 @@ static void runEditorAppearanceSettingsRegression()
                    true);
     }
 
-    {
-        EditorAppearanceSettings panelSettings(
-            makeTemporarySettings(
-                settingsDir.filePath(QStringLiteral("appearance_panel.ini"))));
-        EditorAppearancePanel panel(&panelSettings);
-        QComboBox* combo =
-            panel.findChild<QComboBox*>(
-                QStringLiteral("editorFontFamilyCombo"));
-        QStringList comboFamilies;
-        if (combo) {
-            for (int i = 0; i < combo->count(); ++i) {
-                const QString family = combo->itemText(i);
-                if (!family.isEmpty())
-                    comboFamilies.append(family);
-            }
-        }
-        expectBool("appearance combo only selected fonts",
-                   combo && comboFamilies == expectedRecommended,
-                   true);
-        expectBool("appearance combo has no cjk fonts",
-                   combo && !EditorAppearance::isCjkFontFamily(comboFamilies.value(0)),
-                   true);
-    }
 }
 
 static void runEditorAppearanceCoordinatorRegression()
@@ -2048,6 +1946,77 @@ static void runWorkspaceScanSignalReentrancyRegression()
 
     {
         QTemporaryDir directory;
+        const QString source =
+            createSource(
+                directory,
+                QStringLiteral("activation_restore.sv"));
+        expectBool(
+            "workspace activation restore fixture valid",
+            directory.isValid() && !source.isEmpty(),
+            true);
+        if (!directory.isValid() || source.isEmpty())
+            return;
+
+        WorkspaceManager workspace;
+        workspace.setRecentWorkspacePersistenceEnabledForTesting(
+            false);
+        const QString expectedPath =
+            normalizedPath(directory.path());
+        const QString expectedSource =
+            normalizedPath(source);
+        int restoredActivations = 0;
+        QObject::connect(
+            &workspace,
+            &WorkspaceManager::workspaceActivated,
+            &workspace,
+            [&](int,
+                const QString&,
+                const QString& path) {
+                if (normalizedPath(path)
+                    != expectedPath) {
+                    return;
+                }
+                if (workspace.restoreSessionScanState(
+                        QStringList{source}, true)) {
+                    ++restoredActivations;
+                }
+            });
+
+        expectBool(
+            "workspace activation restore reports successful open",
+            workspace.openWorkspace(directory.path()),
+            true);
+        expectBool(
+            "workspace activation restore owns completed scan",
+            restoredActivations == 1
+                && workspace.isWorkspaceOpen()
+                && workspace.getWorkspacePath()
+                       == expectedPath
+                && workspace.getSystemVerilogFiles()
+                       == QStringList{expectedSource}
+                && !workspace.scanIterator
+                && workspace.scanningPath.isEmpty(),
+            true);
+
+        workspace.closeWorkspace();
+        expectBool(
+            "workspace activation restore reports successful reopen",
+            workspace.openWorkspace(directory.path()),
+            true);
+        expectBool(
+            "workspace activation restore remains isolated after close",
+            restoredActivations == 2
+                && workspace.isWorkspaceOpen()
+                && workspace.workspaceEntries().size() == 1
+                && workspace.getSystemVerilogFiles()
+                       == QStringList{expectedSource}
+                && !workspace.scanIterator
+                && workspace.scanningPath.isEmpty(),
+            true);
+    }
+
+    {
+        QTemporaryDir directory;
         const QString source = createSource(directory,
                                             QStringLiteral("started_close.sv"));
         expectBool("workspace scan-start close fixture valid",
@@ -2376,7 +2345,7 @@ static void runWorkspaceSessionCloseSaveOrderRegression()
                               == QStringLiteral("session_close_top.sv"),
                    true);
 
-        window.closeWorkspaceTab(0);
+        window.closeActiveWorkspace();
         QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
 
         WorkspaceSessionStateService service;
@@ -2405,6 +2374,571 @@ static void runWorkspaceSessionCloseSaveOrderRegression()
             "ZEROSLACK_SESSION_STORAGE_PATH",
             previousSessionStorage);
     }
+}
+
+static void runExternalConflictReviewRegression()
+{
+    printf("\n-- external conflict review regression --\n");
+    QTemporaryDir directory;
+    const QString fileName =
+        directory.filePath(
+            QStringLiteral("external_conflict_ui.sv"));
+    const QString initialText =
+        QStringLiteral(
+            "module external_conflict_ui;\n"
+            "  logic initial_signal;\n"
+            "endmodule\n");
+    const QString firstExternalText =
+        QStringLiteral(
+            "module external_conflict_ui;\n"
+            "  logic first_external_signal;\n"
+            "endmodule\n");
+    const QString secondExternalText =
+        QStringLiteral(
+            "module external_conflict_ui;\n"
+            "  logic second_external_signal;\n"
+            "endmodule\n");
+    expectBool("external conflict UI fixture writable",
+               directory.isValid()
+                   && writeTextFile(fileName, initialText),
+               true);
+    if (!directory.isValid())
+        return;
+
+    MainWindow window;
+    window.resize(900, 640);
+    window.show();
+    expectBool("external conflict UI opens source",
+               window.tabManager
+                   && window.tabManager->openFileInTab(
+                       fileName),
+               true);
+    MyCodeEditor* editor =
+        window.tabManager
+        ? window.tabManager->getCurrentEditor()
+        : nullptr;
+    SharedDocument* document =
+        window.tabManager && editor
+        ? window.tabManager
+              ->sharedDocumentForEditor(editor)
+        : nullptr;
+    if (!editor || !document)
+        return;
+
+    QTextCursor localEdit(editor->document());
+    localEdit.movePosition(QTextCursor::End);
+    localEdit.insertText(
+        QStringLiteral("// local dirty text\n"));
+    editor->setFocus(Qt::OtherFocusReason);
+    QCoreApplication::processEvents(
+        QEventLoop::AllEvents,
+        50);
+    QWidget* originalFocus =
+        QApplication::focusWidget();
+    const PanelLayoutState before =
+        window.panelLayoutController->layoutState();
+
+    expectBool("external conflict UI external replacement writable",
+               writeTextFile(fileName,
+                             firstExternalText),
+               true);
+    const ExternalDocumentSyncResult conflict =
+        window.tabManager
+            ->externalDocumentSyncController()
+            ->processFileChange(fileName);
+    QCoreApplication::processEvents(
+        QEventLoop::AllEvents,
+        50);
+
+    NotificationItem notification;
+    const bool hasNotification =
+        window.notificationCenterForTesting()
+        && window.notificationCenterForTesting()
+               ->notificationByKey(
+                   QStringLiteral("external:%1")
+                       .arg(fileName),
+                   &notification);
+    const PanelLayoutState afterDetection =
+        window.panelLayoutController->layoutState();
+    expectBool("dirty external change posts actionable notification",
+               conflict.outcome
+                       == ExternalDocumentSyncOutcome::Conflict
+                   && hasNotification
+                   && notification.actions.size() == 4,
+               true);
+    expectBool("conflict detection is non-blocking and layout neutral",
+               window.externalConflictReviewBar
+                   && !window.externalConflictReviewBar
+                           ->isVisible()
+                   && QApplication::focusWidget()
+                          == originalFocus
+                   && afterDetection.closedBottomPanels
+                          == before.closedBottomPanels
+                   && afterDetection.bottomPanelOrder
+                          == before.bottomPanelOrder
+                   && afterDetection.pinnedBottomPanels
+                          == before.pinnedBottomPanels
+                   && afterDetection.activeBottomPanel
+                          == before.activeBottomPanel
+                   && afterDetection.bottomCollapsed
+                          == before.bottomCollapsed
+                   && afterDetection.expandedBottomHeight
+                          == before.expandedBottomHeight,
+               true);
+
+    expectBool("compare action is accepted",
+               window.notificationCenterForTesting()
+                   ->requestAction(
+                       notification.id,
+                       QStringLiteral(
+                           "external.review")),
+               true);
+    QCoreApplication::processEvents(
+        QEventLoop::AllEvents,
+        50);
+    expectBool("comparison is embedded and preserves focus",
+               window.externalConflictReviewBar
+                   && window.externalConflictReviewBar
+                          ->isVisible()
+                   && window.externalConflictReviewBar
+                          ->window()
+                          == &window
+                   && window.externalConflictLocalText
+                          ->toPlainText()
+                          .contains(
+                              QStringLiteral(
+                                  "local dirty text"))
+                   && window.externalConflictDiskText
+                          ->toPlainText()
+                          == firstExternalText
+                   && QApplication::focusWidget()
+                          == originalFocus,
+               true);
+
+    expectBool("second external generation is writable",
+               writeTextFile(fileName,
+                             secondExternalText),
+               true);
+    window.tabManager
+        ->externalDocumentSyncController()
+        ->processFileChange(fileName);
+    QCoreApplication::processEvents(
+        QEventLoop::AllEvents,
+        50);
+    expectBool("open comparison refreshes to the latest generation",
+               window.externalConflictDiskText
+                   ->toPlainText()
+                   == secondExternalText
+                   && document->dirty()
+                   && editor->toPlainText().contains(
+                       QStringLiteral(
+                           "local dirty text")),
+               true);
+
+    QPushButton* closeButton =
+        window.findChild<QPushButton*>(
+            QStringLiteral(
+                "externalConflictCloseButton"));
+    if (closeButton)
+        closeButton->click();
+    QCoreApplication::processEvents(
+        QEventLoop::AllEvents,
+        50);
+    expectBool("comparison cancellation preserves dirty text and focus",
+               closeButton
+                   && !window.externalConflictReviewBar
+                           ->isVisible()
+                   && document->dirty()
+                   && editor->toPlainText().contains(
+                       QStringLiteral(
+                           "local dirty text"))
+                   && QApplication::focusWidget()
+                          == originalFocus,
+               true);
+
+    expectBool("reload notification action is accepted",
+               window.notificationCenterForTesting()
+                   ->requestAction(
+                       notification.id,
+                       QStringLiteral(
+                           "external.reload")),
+               true);
+    QCoreApplication::processEvents(
+        QEventLoop::AllEvents,
+        50);
+    const PanelLayoutState afterReload =
+        window.panelLayoutController->layoutState();
+    expectBool("explicit reload resolves conflict without panel mutation",
+               !document->dirty()
+                   && document->externalState()
+                          == SharedDocumentExternalState::Current
+                   && editor->toPlainText()
+                          == secondExternalText
+                   && !window.externalConflictReviewBar
+                           ->isVisible()
+                   && QApplication::focusWidget()
+                          == originalFocus
+                   && afterReload.closedBottomPanels
+                          == before.closedBottomPanels
+                   && afterReload.bottomPanelOrder
+                          == before.bottomPanelOrder
+                   && afterReload.pinnedBottomPanels
+                          == before.pinnedBottomPanels
+                   && afterReload.activeBottomPanel
+                          == before.activeBottomPanel
+                   && afterReload.bottomCollapsed
+                          == before.bottomCollapsed
+                   && afterReload.expandedBottomHeight
+                          == before.expandedBottomHeight,
+               true);
+}
+
+static void runCrashRecoveryReviewRegression()
+{
+    printf("\n-- crash recovery review regression --\n");
+    QTemporaryDir workspaceDir;
+    QTemporaryDir recoveryStorageDir;
+    expectBool("crash recovery UI temp dirs valid",
+               workspaceDir.isValid()
+                   && recoveryStorageDir.isValid(),
+               true);
+    if (!workspaceDir.isValid()
+        || !recoveryStorageDir.isValid()) {
+        return;
+    }
+
+    const QString firstFile =
+        workspaceDir.filePath(
+            QStringLiteral("recover_first.sv"));
+    const QString secondFile =
+        workspaceDir.filePath(
+            QStringLiteral("recover_second.sv"));
+    const QString firstSource =
+        QStringLiteral("module recover_first;\nendmodule\n");
+    const QString secondSource =
+        QStringLiteral("module recover_second;\nendmodule\n");
+    const QString firstRecovered =
+        QStringLiteral("module recover_first;\n"
+                       "  logic recovered_a;\n"
+                       "endmodule\n");
+    const QString firstRecoveredUpdated =
+        QStringLiteral("module recover_first;\n"
+                       "  logic recovered_after_review;\n"
+                       "endmodule\n");
+    const QString secondRecovered =
+        QStringLiteral("module recover_second;\n"
+                       "  logic discard_me;\n"
+                       "endmodule\n");
+    expectBool("crash recovery UI sources writable",
+               writeTextFile(firstFile, firstSource)
+                   && writeTextFile(secondFile,
+                                    secondSource),
+               true);
+
+    const auto fileBytes =
+        [](const QString& path) {
+            QFile file(path);
+            if (!file.open(QIODevice::ReadOnly))
+                return QByteArray();
+            return file.readAll();
+        };
+    const auto recoveryRequest =
+        [&](const QString& fileName,
+            const QString& recoveredText,
+            quint64 revision) {
+            CrashRecoverySnapshotRequest request;
+            request.document.workspacePath =
+                workspaceDir.path();
+            request.document.originalFilePath =
+                fileName;
+            request.text = recoveredText;
+            request.documentRevision = revision;
+            request.savedBaselineSha256 =
+                CrashRecoveryService::sha256(
+                    fileBytes(fileName));
+            request.savedBaselineModifiedUtc =
+                QFileInfo(fileName)
+                    .lastModified()
+                    .toUTC();
+            return request;
+        };
+
+    MainWindow window;
+    auto recoveryService =
+        std::make_unique<CrashRecoveryService>(
+            recoveryStorageDir.path());
+    CrashRecoveryService* recoveryServiceRaw =
+        recoveryService.get();
+    window.tabManager->setCrashRecoveryService(
+        std::move(recoveryService));
+
+    CrashRecoverySnapshotRequest firstRequest =
+        recoveryRequest(firstFile,
+                        firstRecovered,
+                        4);
+    CrashRecoverySnapshotRequest secondRequest =
+        recoveryRequest(secondFile,
+                        secondRecovered,
+                        7);
+    const CrashRecoveryWriteResult firstWrite =
+        recoveryServiceRaw->writeSnapshot(
+            firstRequest);
+    const CrashRecoveryWriteResult secondWrite =
+        recoveryServiceRaw->writeSnapshot(
+            secondRequest);
+    expectBool("crash recovery UI fixtures persisted",
+               firstWrite.succeeded()
+                   && secondWrite.succeeded(),
+               true);
+    if (!firstWrite.succeeded()
+        || !secondWrite.succeeded()) {
+        return;
+    }
+
+    window.resize(900, 640);
+    window.show();
+    auto* focusProbe = new QLineEdit(&window);
+    focusProbe->setObjectName(
+        QStringLiteral("crashRecoveryFocusProbe"));
+    focusProbe->setGeometry(8, 8, 160, 24);
+    focusProbe->show();
+    focusProbe->setFocus(Qt::OtherFocusReason);
+    QCoreApplication::processEvents(
+        QEventLoop::AllEvents,
+        50);
+    QDockWidget* activityDock =
+        window.findChild<QDockWidget*>(
+            QStringLiteral("activityDock"));
+    if (activityDock)
+        activityDock->hide();
+    const QWidget* focusBeforeNotification =
+        QApplication::focusWidget();
+
+    window.tabManager
+        ->crashRecoveryCandidatesAvailable(
+            workspaceDir.path(),
+            2,
+            0);
+    QCoreApplication::processEvents(
+        QEventLoop::AllEvents,
+        50);
+
+    NotificationItem availability;
+    const bool availabilityPosted =
+        window.notificationCenter
+        && window.notificationCenter
+               ->notificationByKey(
+                   window.crashRecoveryNotificationKey(
+                       workspaceDir.path()),
+                   &availability);
+    expectBool("recovery discovery posts actionable notification",
+               availabilityPosted
+                   && availability.source
+                          == QStringLiteral("CrashRecovery")
+                   && availability.actions.size() == 1
+                   && availability.actions.first().id
+                          == QString::fromLatin1(
+                              ActionIds::
+                                  ReviewCrashRecovery),
+               true);
+    expectBool("recovery discovery does not create or show review UI",
+               window.crashRecoveryReviewDialog == nullptr
+                   && activityDock
+                   && !activityDock->isVisible(),
+               true);
+    expectBool("recovery discovery does not steal focus",
+               QApplication::focusWidget()
+                   == focusBeforeNotification,
+               true);
+
+    const bool reviewRequested =
+        availabilityPosted
+        && window.notificationCenter->requestAction(
+            availability.id,
+            QString::fromLatin1(
+                ActionIds::
+                    ReviewCrashRecovery));
+    QCoreApplication::processEvents(
+        QEventLoop::AllEvents,
+        50);
+    expectBool("notification action opens centralized review",
+               reviewRequested
+                   && window.crashRecoveryReviewDialog
+                   && window.crashRecoveryReviewDialog
+                          ->isVisible()
+                   && window.crashRecoveryCandidateList
+                   && window.crashRecoveryCandidateList
+                          ->topLevelItemCount() == 2,
+               true);
+    expectBool("recovery review is nonmodal non-topmost",
+               window.crashRecoveryReviewDialog
+                   && !window.crashRecoveryReviewDialog
+                           ->isModal()
+                   && window.crashRecoveryReviewDialog
+                          ->windowModality()
+                          == Qt::NonModal
+                   && !window.crashRecoveryReviewDialog
+                           ->windowFlags()
+                           .testFlag(
+                               Qt::WindowStaysOnTopHint)
+                   && window.crashRecoveryReviewDialog
+                          ->testAttribute(
+                              Qt::WA_ShowWithoutActivating),
+               true);
+    expectBool("opening recovery review leaves editor focus active",
+               QApplication::focusWidget()
+                   == focusBeforeNotification,
+               true);
+
+    const auto candidateItem =
+        [&](const QString& recoveryId) {
+            if (!window.crashRecoveryCandidateList)
+                return static_cast<QTreeWidgetItem*>(
+                    nullptr);
+            for (int row = 0;
+                 row < window.crashRecoveryCandidateList
+                           ->topLevelItemCount();
+                 ++row) {
+                QTreeWidgetItem* item =
+                    window.crashRecoveryCandidateList
+                        ->topLevelItem(row);
+                if (item
+                    && item->data(
+                           0,
+                           Qt::UserRole)
+                           .toString()
+                           == recoveryId) {
+                    return item;
+                }
+            }
+            return static_cast<QTreeWidgetItem*>(
+                nullptr);
+        };
+
+    QTreeWidgetItem* firstItem =
+        candidateItem(firstWrite.recoveryId);
+    if (firstItem) {
+        window.crashRecoveryCandidateList
+            ->setCurrentItem(firstItem);
+    }
+    QCoreApplication::processEvents(
+        QEventLoop::AllEvents,
+        20);
+    expectBool("review shows source and recovered snapshot side by side",
+               firstItem
+                   && window.crashRecoverySourceText
+                   && window.crashRecoverySourceText
+                          ->toPlainText()
+                          == firstSource
+                   && window.crashRecoveryRecoveredText
+                   && window.crashRecoveryRecoveredText
+                          ->toPlainText()
+                          == firstRecovered
+                   && window.crashRecoveryRestoreButton
+                          ->isEnabled()
+                   && window.crashRecoveryDiscardButton
+                          ->isEnabled(),
+               true);
+
+    firstRequest.text =
+        firstRecoveredUpdated;
+    firstRequest.documentRevision = 8;
+    const CrashRecoveryWriteResult changedAfterReview =
+        recoveryServiceRaw->writeSnapshot(
+            firstRequest);
+    expectBool("recovery fixture can change after review",
+               changedAfterReview.succeeded(),
+               true);
+    window.crashRecoveryRestoreButton->click();
+    QCoreApplication::processEvents(
+        QEventLoop::AllEvents,
+        50);
+    NotificationItem staleReviewError;
+    expectBool("stale reviewed token is rejected atomically",
+               window.notificationCenter
+                   ->notificationByKey(
+                       QStringLiteral(
+                           "crash-recovery-error:%1")
+                           .arg(firstWrite.recoveryId),
+                       &staleReviewError)
+                   && staleReviewError.message.contains(
+                       QStringLiteral(
+                           "changed after review"))
+                   && window.tabManager
+                          ->getPlainTextFromOpenFile(
+                              firstFile)
+                          .isEmpty(),
+               true);
+    expectBool("failed restore refreshes comparison before retry",
+               window.reviewedCrashRecoveryCandidate
+                   && window.reviewedCrashRecoveryCandidate
+                          ->documentRevision == 8
+                   && window.crashRecoveryRecoveredText
+                          ->toPlainText()
+                          == firstRecoveredUpdated,
+               true);
+
+    window.crashRecoveryRestoreButton->click();
+    QCoreApplication::processEvents(
+        QEventLoop::AllEvents,
+        50);
+    expectBool("fresh reviewed token restores document text",
+               window.tabManager
+                       ->getPlainTextFromOpenFile(
+                           firstFile)
+                       == firstRecoveredUpdated,
+               true);
+    expectBool("fresh reviewed token leaves document unsaved",
+               window.tabManager
+                   ->hasUnsavedChanges(),
+               true);
+    expectBool("restored recovery candidate leaves the pending review",
+               candidateItem(
+                   firstWrite.recoveryId)
+                   == nullptr,
+               true);
+
+    QTreeWidgetItem* secondItem =
+        candidateItem(secondWrite.recoveryId);
+    if (secondItem) {
+        window.crashRecoveryCandidateList
+            ->setCurrentItem(secondItem);
+    }
+    QCoreApplication::processEvents(
+        QEventLoop::AllEvents,
+        20);
+    expectBool("second recovery candidate is independently reviewed",
+               secondItem
+                   && window.crashRecoverySourceText
+                          ->toPlainText()
+                          == secondSource
+                   && window.crashRecoveryRecoveredText
+                          ->toPlainText()
+                          == secondRecovered,
+               true);
+    window.crashRecoveryDiscardButton->click();
+    QCoreApplication::processEvents(
+        QEventLoop::AllEvents,
+        50);
+
+    const CrashRecoveryRecoverResult discarded =
+        recoveryServiceRaw->recoverText(
+            workspaceDir.path(),
+            secondWrite.recoveryId);
+    NotificationItem remainingAvailability;
+    expectBool("discard removes only the selected snapshot",
+               discarded.status
+                       == CrashRecoveryStatus::NotFound
+                   && window.crashRecoveryCandidateList
+                          ->topLevelItemCount() == 0,
+               true);
+    expectBool("handled recovery notification is dismissed",
+               !window.notificationCenter
+                    ->notificationByKey(
+                        window.crashRecoveryNotificationKey(
+                            workspaceDir.path()),
+                        &remainingAvailability),
+               true);
 }
 
 static void runNoImplicitCompletionRegression()
@@ -3107,9 +3641,24 @@ static void runEditorOccurrenceNavigationRegression()
                true);
 }
 
-static void runEditorSafeRenameRegression()
+static void runEditorRegistryRenameAdapterRegression()
 {
+    QTabWidget tabsWidget;
+    TabManager tabs(&tabsWidget);
+    EditorCoordinator coordinator(&tabs);
+    int actionRequests = 0;
+    QString requestedActionId;
+    QVariantMap requestedParameters;
+    coordinator.setRegisteredActionRequestHandler(
+        [&](const QString& actionId,
+            const QVariantMap& parameters) {
+            ++actionRequests;
+            requestedActionId = actionId;
+            requestedParameters = parameters;
+        });
+
     MyCodeEditor editor;
+    coordinator.attachEditor(&editor);
     editor.resize(520, 160);
     editor.setPlainText(
         QStringLiteral("logic oldName;\n"
@@ -3126,255 +3675,20 @@ static void runEditorSafeRenameRegression()
                        QTextCursor::KeepAnchor);
     editor.setTextCursor(cursor);
 
-    acceptNextLineEditDialog(QStringLiteral("newName"));
+    const QString before = editor.toPlainText();
     QTest::keyClick(&editor, Qt::Key_R, Qt::ControlModifier);
-    expectBool("safe rename updates current file occurrences",
-               editor.toPlainText()
-                   == QStringLiteral("logic newName;\n"
-                                     "assign oldName_next = newName;\n"
-                                     "assign sink = newName;\n"),
+    expectBool("Ctrl+R routes once through the Action Registry adapter",
+               actionRequests == 1
+                   && requestedActionId
+                          == QString::fromLatin1(
+                              ActionIds::RtlRename)
+                   && requestedParameters.isEmpty(),
                true);
-    expectBool("safe rename preserves word boundaries and selection",
-               editor.textCursor().selectedText() == QStringLiteral("newName")
-                   && editor.toPlainText().contains(QStringLiteral("oldName_next")),
+    expectBool("Ctrl+R adapter performs no editor-local rename",
+               editor.toPlainText() == before
+                   && QApplication::activeModalWidget()
+                          == nullptr,
                true);
-}
-
-static void runSafeRenameCoordinatorRegression()
-{
-    QTemporaryDir dir;
-    expectBool("safe rename coordinator temp dir valid", dir.isValid(), true);
-    if (!dir.isValid())
-        return;
-
-    const QString defFile =
-        QDir(dir.path()).absoluteFilePath(QStringLiteral("defs.sv"));
-    const QString useFile =
-        QDir(dir.path()).absoluteFilePath(QStringLiteral("use.sv"));
-    const QString defText =
-        QStringLiteral("module top;\n"
-                       "  parameter int P_WIDTH = 8;\n"
-                       "endmodule\n");
-    const QString useText =
-        QStringLiteral("module top;\n"
-                       "  logic [P_WIDTH-1:0] data;\n"
-                       "endmodule\n");
-    auto writeTextFile = [](const QString& fileName, const QString& text) {
-        QFile file(fileName);
-        if (!file.open(QIODevice::WriteOnly | QIODevice::Text))
-            return false;
-        file.write(text.toUtf8());
-        return true;
-    };
-    expectBool("safe rename coordinator write def file",
-               writeTextFile(defFile, defText),
-               true);
-    expectBool("safe rename coordinator write use file",
-               writeTextFile(useFile, useText),
-               true);
-
-    const int defPos = defText.indexOf(QStringLiteral("P_WIDTH"));
-    const int usePos = useText.indexOf(QStringLiteral("P_WIDTH"));
-    const SemanticSymbolRecord defModule =
-        SemanticFixtureRecordBuilder(QStringLiteral("top"),
-                                     SymbolTaxonomy::DeclarationKind::Module)
-            .withFile(defFile)
-            .withLocalHandle(101)
-            .withRange(1, 1, 3, 10)
-            .record();
-    const SemanticSymbolRecord useModule =
-        SemanticFixtureRecordBuilder(QStringLiteral("top"),
-                                     SymbolTaxonomy::DeclarationKind::Module)
-            .withFile(useFile)
-            .withLocalHandle(102)
-            .withRange(1, 1, 3, 10)
-            .record();
-    const SemanticSymbolRecord parameter =
-        SemanticFixtureRecordBuilder(QStringLiteral("P_WIDTH"),
-                                     SymbolTaxonomy::DeclarationKind::Parameter)
-            .withFile(defFile)
-            .withLocalHandle(103)
-            .withLine(2, defPos - defText.lastIndexOf(QLatin1Char('\n'), defPos))
-            .withTextSpan(defPos, QStringLiteral("P_WIDTH").size())
-            .inModule(QStringLiteral("top"))
-            .record();
-    QHash<QString, QString> contents;
-    contents.insert(defFile, defText);
-    contents.insert(useFile, useText);
-
-    const auto previousSnapshot = SemanticIndex::getInstance()->snapshot();
-    SemanticIndex::getInstance()->setSnapshot(
-        snapshotFromRecords({defModule, useModule, parameter},
-                            {},
-                            {},
-                            contents));
-
-    QTabWidget tabsWidget;
-    TabManager tabs(&tabsWidget);
-    EditorCoordinator coordinator(&tabs);
-    coordinator.connectSignals();
-
-    expectBool("safe rename coordinator opens use file",
-               tabs.openFileInTab(useFile),
-               true);
-    MyCodeEditor* editor = tabs.getCurrentEditor();
-    expectBool("safe rename coordinator has editor", editor != nullptr, true);
-    if (editor) {
-        QTextCursor cursor = editor->textCursor();
-        cursor.setPosition(usePos);
-        cursor.setPosition(usePos + QStringLiteral("P_WIDTH").size(),
-                           QTextCursor::KeepAnchor);
-        editor->setTextCursor(cursor);
-        editor->setFocus();
-
-        acceptNextLineEditDialog(QStringLiteral("P_DATA"));
-        QTest::keyClick(editor, Qt::Key_R, Qt::ControlModifier);
-        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-    }
-
-    expectBool("safe rename coordinator updates definition file",
-               tabs.getPlainTextFromOpenFile(defFile)
-                   == QStringLiteral("module top;\n"
-                                     "  parameter int P_DATA = 8;\n"
-                                     "endmodule\n"),
-               true);
-    expectBool("safe rename coordinator updates use file",
-               tabs.getPlainTextFromOpenFile(useFile)
-                   == QStringLiteral("module top;\n"
-                                     "  logic [P_DATA-1:0] data;\n"
-                                     "endmodule\n"),
-               true);
-
-    MyCodeEditor* definitionEditor = tabs.getDocumentModel()
-        ? tabs.getDocumentModel()->editorForFile(defFile)
-        : nullptr;
-    MyCodeEditor* useEditor = tabs.getDocumentModel()
-        ? tabs.getDocumentModel()->editorForFile(useFile)
-        : nullptr;
-    MyCodeEditor* nonCurrentEditor =
-        tabs.getCurrentEditor() == definitionEditor ? useEditor
-                                                    : definitionEditor;
-    const EditorSynchronousEditState nonCurrentRenameState =
-        nonCurrentEditor
-            ? nonCurrentEditor->synchronousEditStateForTest()
-            : EditorSynchronousEditState();
-    expectBool("safe rename commits non-current editor transaction",
-               nonCurrentEditor
-                   && nonCurrentRenameState.completedTransactionCount > 0
-                   && nonCurrentRenameState.transactionDepth == 0
-                   && !nonCurrentRenameState.presentationPending
-                   && !nonCurrentRenameState.cursorPresentationSuppressed,
-               true);
-
-    bool nonCurrentLineMoved = false;
-    if (nonCurrentEditor) {
-        QTextCursor realMove(
-            nonCurrentEditor->document()->findBlockByNumber(2));
-        nonCurrentEditor->QPlainTextEdit::setTextCursor(realMove);
-        QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
-        for (const QTextEdit::ExtraSelection& selection :
-             nonCurrentEditor->extraSelections()) {
-            nonCurrentLineMoved = nonCurrentLineMoved
-                || (selection.format
-                            .property(QTextFormat::UserProperty)
-                            .toInt()
-                        == 998
-                    && selection.cursor.blockNumber() == 2);
-        }
-    }
-    expectBool("first cursor move after non-current safe rename is not swallowed",
-               nonCurrentLineMoved,
-               true);
-
-    if (previousSnapshot)
-        SemanticIndex::getInstance()->setSnapshot(previousSnapshot);
-    else
-        SemanticIndex::getInstance()->clearSnapshot();
-}
-
-static void runSafeRenameCreateDefinitionRegression()
-{
-    QTemporaryDir dir;
-    expectBool("safe rename create definition temp dir valid", dir.isValid(), true);
-    if (!dir.isValid())
-        return;
-
-    const QString fileName =
-        QDir(dir.path()).absoluteFilePath(QStringLiteral("create_def.sv"));
-    const QString text =
-        QStringLiteral("module top;\n"
-                       "  typedef enum logic {IDLE} st_e;\n"
-                       "  assign sink = cs;\n"
-                       "endmodule\n");
-    QFile file(fileName);
-    expectBool("safe rename create definition write file",
-               file.open(QIODevice::WriteOnly | QIODevice::Text),
-               true);
-    if (!file.isOpen())
-        return;
-    file.write(text.toUtf8());
-    file.close();
-
-    const SemanticSymbolRecord module =
-        SemanticFixtureRecordBuilder(QStringLiteral("top"),
-                                     SymbolTaxonomy::DeclarationKind::Module)
-            .withFile(fileName)
-            .withLocalHandle(201)
-            .withRange(1, 1, 4, 10)
-            .record();
-    const SemanticSymbolRecord enumType =
-        SemanticFixtureRecordBuilder(QStringLiteral("st_e"),
-                                     SymbolTaxonomy::DeclarationKind::Enum)
-            .withFile(fileName)
-            .withLocalHandle(202)
-            .withRange(2, 29, 2, 33)
-            .inModule(QStringLiteral("top"))
-            .record();
-    QHash<QString, QString> contents;
-    contents.insert(fileName, text);
-
-    const auto previousSnapshot = SemanticIndex::getInstance()->snapshot();
-    SemanticIndex::getInstance()->setSnapshot(
-        snapshotFromRecords({module, enumType}, {}, {}, contents));
-
-    QTabWidget tabsWidget;
-    TabManager tabs(&tabsWidget);
-    EditorCoordinator coordinator(&tabs);
-    coordinator.connectSignals();
-
-    expectBool("safe rename create definition opens file",
-               tabs.openFileInTab(fileName),
-               true);
-    MyCodeEditor* editor = tabs.getCurrentEditor();
-    expectBool("safe rename create definition has editor", editor != nullptr, true);
-    if (editor) {
-        const int csPos = text.indexOf(QStringLiteral("cs"));
-        QTextCursor cursor = editor->textCursor();
-        cursor.setPosition(csPos);
-        cursor.setPosition(csPos + 2, QTextCursor::KeepAnchor);
-        editor->setTextCursor(cursor);
-        editor->setFocus();
-
-        acceptNextLineEditDialog(QStringLiteral("ns"));
-        acceptNextMessageBoxYes();
-        acceptNextMultilineDialog(QStringLiteral("st_e ns;"));
-        QTest::keyClick(editor, Qt::Key_R, Qt::ControlModifier);
-        QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
-    }
-
-    expectBool("safe rename create definition inserts after type",
-               tabs.getPlainTextFromOpenFile(fileName)
-                   == QStringLiteral("module top;\n"
-                                     "  typedef enum logic {IDLE} st_e;\n"
-                                     "  st_e ns;\n"
-                                     "  assign sink = ns;\n"
-                                     "endmodule\n"),
-               true);
-
-    if (previousSnapshot)
-        SemanticIndex::getInstance()->setSnapshot(previousSnapshot);
-    else
-        SemanticIndex::getInstance()->clearSnapshot();
 }
 
 static void runEditorColumnEditRegression()
@@ -4252,68 +4566,56 @@ static void runEditorLineActionRegression()
                    == QStringLiteral("foo FOO\nfoo\n"),
                true);
 
-    MyCodeEditor duplicateEditor;
-    duplicateEditor.resize(480, 180);
-    duplicateEditor.setPlainText(QStringLiteral("one\ntwo\nthree\n"));
-    duplicateEditor.show();
-    duplicateEditor.setFocus();
+    MyCodeEditor occurrenceEditor;
+    occurrenceEditor.resize(480, 180);
+    const QString occurrenceSource =
+        QStringLiteral(
+            "one\n"
+            "sig = sig + 1;\n"
+            "sig = sig + 2;\n");
+    occurrenceEditor.setPlainText(occurrenceSource);
+    occurrenceEditor.show();
+    occurrenceEditor.setFocus();
     QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
 
-    QTextBlock twoBlock = duplicateEditor.document()->findBlockByNumber(1);
-    QTextCursor duplicateCursor(twoBlock);
-    duplicateCursor.setPosition(twoBlock.position() + 1);
-    duplicateEditor.setTextCursor(duplicateCursor);
-    QTest::keyClick(&duplicateEditor, Qt::Key_D, Qt::ControlModifier);
-    QTextCursor afterDuplicate = duplicateEditor.textCursor();
-    expectBool("Ctrl+D duplicates current line below",
-               duplicateEditor.toPlainText()
-                   == QStringLiteral("one\ntwo\ntwo\nthree\n"),
+    const int firstOccurrence =
+        occurrenceSource.indexOf(QStringLiteral("sig"));
+    QTextCursor occurrenceCursor(occurrenceEditor.document());
+    occurrenceCursor.setPosition(firstOccurrence + 1);
+    occurrenceEditor.setTextCursor(occurrenceCursor);
+    QTest::keyClick(
+        &occurrenceEditor,
+        Qt::Key_D,
+        Qt::ControlModifier);
+    expectBool("first Ctrl+D selects the current structured symbol",
+               occurrenceEditor.toPlainText()
+                       == occurrenceSource
+                   && occurrenceEditor.textCursor().selectedText()
+                       == QStringLiteral("sig")
+                   && !occurrenceEditor.editorModeActiveForTest(
+                       EditorModeId::MultiCursor),
                true);
-    expectBool("Ctrl+D preserves current line cursor column",
-               afterDuplicate.blockNumber() == 2
-                   && afterDuplicate.position() - afterDuplicate.block().position() == 1,
+    QTest::keyClick(
+        &occurrenceEditor,
+        Qt::Key_D,
+        Qt::ControlModifier);
+    expectBool("second Ctrl+D adds exactly one occurrence cursor",
+               occurrenceEditor.toPlainText()
+                       == occurrenceSource
+                   && occurrenceEditor.editorModeActiveForTest(
+                       EditorModeId::MultiCursor),
                true);
-
-    MyCodeEditor finalLineEditor;
-    finalLineEditor.resize(480, 120);
-    finalLineEditor.setPlainText(QStringLiteral("last"));
-    finalLineEditor.show();
-    finalLineEditor.setFocus();
-    QTextCursor finalCursor(finalLineEditor.document());
-    finalCursor.setPosition(2);
-    finalLineEditor.setTextCursor(finalCursor);
-    QTest::keyClick(&finalLineEditor, Qt::Key_D, Qt::ControlModifier);
-    expectBool("Ctrl+D duplicates final line onto new line",
-               finalLineEditor.toPlainText() == QStringLiteral("last\nlast"),
+    QTest::keyClicks(&occurrenceEditor, QStringLiteral("x"));
+    expectBool("multi-cursor input replaces only the selected occurrences",
+               occurrenceEditor.toPlainText()
+                   == QStringLiteral(
+                       "one\n"
+                       "x = x + 1;\n"
+                       "sig = sig + 2;\n"),
                true);
-    expectBool("Ctrl+D final line keeps cursor column",
-               finalLineEditor.textCursor().blockNumber() == 1
-                   && finalLineEditor.textCursor().position()
-                          - finalLineEditor.textCursor().block().position()
-                          == 2,
-               true);
-
-    MyCodeEditor selectionDuplicateEditor;
-    selectionDuplicateEditor.resize(480, 120);
-    selectionDuplicateEditor.setPlainText(QStringLiteral("abc def\n"));
-    selectionDuplicateEditor.show();
-    selectionDuplicateEditor.setFocus();
-    QTextCursor selectionCursor(selectionDuplicateEditor.document());
-    const int defStart =
-        selectionDuplicateEditor.toPlainText().indexOf(QStringLiteral("def"));
-    selectionCursor.setPosition(defStart);
-    selectionCursor.setPosition(defStart + 3, QTextCursor::KeepAnchor);
-    selectionDuplicateEditor.setTextCursor(selectionCursor);
-    QTest::keyClick(&selectionDuplicateEditor,
-                    Qt::Key_D,
-                    Qt::ControlModifier);
-    expectBool("Ctrl+D duplicates selection after selection",
-               selectionDuplicateEditor.toPlainText()
-                   == QStringLiteral("abc defdef\n"),
-               true);
-    expectBool("Ctrl+D selects duplicated selection",
-               selectionDuplicateEditor.textCursor().selectedText()
-                   == QStringLiteral("def"),
+    occurrenceEditor.undo();
+    expectBool("Ctrl+D distributed replacement is one undo transaction",
+               occurrenceEditor.toPlainText() == occurrenceSource,
                true);
 
     MyCodeEditor moveEditor;
@@ -4586,6 +4888,11 @@ static void runSignalKernelGraphPopupInteractionRegression()
                waitUntil([&]() { return graph.hoverPopup->isVisible(); },
                          1000),
                true);
+    expectBool("signal kernel graph preview is embedded",
+               !graph.hoverPopup->isWindow()
+                   && graph.hoverPopup->window()
+                          == view->window(),
+               true);
 
     const QRect nodeViewRect =
         view->mapFromScene(kernelRectItem->sceneBoundingRect())
@@ -4593,7 +4900,9 @@ static void runSignalKernelGraphPopupInteractionRegression()
     const QRect nodeGlobalRect(
         view->viewport()->mapToGlobal(nodeViewRect.topLeft()),
         view->viewport()->mapToGlobal(nodeViewRect.bottomRight()));
-    const QRect popupRect(graph.hoverPopup->pos(), graph.hoverPopup->size());
+    const QRect popupRect(
+        graph.hoverPopup->mapToGlobal(QPoint(0, 0)),
+        graph.hoverPopup->size());
     expectBool("signal kernel graph popup avoids clicked node",
                !popupRect.intersects(nodeGlobalRect.normalized()),
                true);
@@ -4910,7 +5219,10 @@ static void runEditorHoverPreviewRegression(const QString& workspacePath)
                        QStringLiteral("preview unavailable")),
                true);
 
-    EditorHoverPopup popup;
+    QWidget popupHost;
+    popupHost.resize(800, 480);
+    popupHost.show();
+    EditorHoverPopup popup(&popupHost);
     bool popupNavigationRequested = false;
     QString popupFile;
     int popupLine = -1;
@@ -4935,6 +5247,7 @@ static void runEditorHoverPreviewRegression(const QString& workspacePath)
                    && popupColumn == signalColumn + 1,
                true);
     popup.closePopup();
+    popupHost.hide();
 
     const auto previousGlobalSnapshot = SemanticIndex::getInstance()->snapshot();
     SemanticIndex::getInstance()->setSnapshot(hoverIndex.snapshot());
@@ -5022,9 +5335,7 @@ static void runEditorHoverPreviewRegression(const QString& workspacePath)
                outsideClickPopupVisible,
                false);
 
-    EditorHoverPopup fontAuditPopup(
-        &hoverEditor,
-        EditorHoverPopup::PlacementMode::EmbeddedChild);
+    EditorHoverPopup fontAuditPopup(&hoverEditor);
     SymbolHoverReport parameterFontReport;
     parameterFontReport.available = true;
     parameterFontReport.symbolName = QStringLiteral("P_WIDTH");
@@ -5211,13 +5522,14 @@ static void runEditorHoverPreviewRegression(const QString& workspacePath)
     expectBool("numeric double-click shows Slang alternate-base values",
                numericHoverVisible
                    && numericHoverText.contains(
-                       QStringLiteral("binary: 16'b1010101010101010"))
+                       QStringLiteral(
+                           "binary: 1010_1010_1010_1010"))
                    && numericHoverText.contains(
-                       QStringLiteral("octal: 16'o125252"))
+                       QStringLiteral("octal: 12_5252"))
                    && numericHoverText.contains(
-                       QStringLiteral("decimal: 16'd43690"))
+                       QStringLiteral("decimal: 4_3690"))
                    && numericHoverText.contains(
-                       QStringLiteral("hex: 16'haaaa")),
+                       QStringLiteral("hex: aaaa")),
                true);
     QTest::mouseMove(numericEditor.viewport(), numericPoint + QPoint(2, 0));
     QApplication::processEvents();
@@ -5427,7 +5739,7 @@ static void runEditorHoverPreviewRegression(const QString& workspacePath)
                staleParameterHover.effectiveValueStatus
                    == EffectiveValueStatus::Stale,
                true);
-    EditorHoverPopup staleParameterPopup;
+    EditorHoverPopup staleParameterPopup(&parameterHoverEditor);
     staleParameterPopup.showHover(staleParameterHover,
                                   QPoint(20, 20),
                                   parameterHoverEditor.font());
@@ -5502,7 +5814,7 @@ static void runEditorHoverPreviewRegression(const QString& workspacePath)
                    && !packageHover.instanceBound
                    && !packageHover.defaultEvaluation,
                true);
-    EditorHoverPopup packagePopup;
+    EditorHoverPopup packagePopup(&parameterHoverEditor);
     packagePopup.showHover(packageHover,
                            QPoint(20, 20),
                            parameterHoverEditor.font());
@@ -5864,7 +6176,23 @@ static void runActivityLogServiceRegression()
         if (allFilesIndex >= 0)
             diagnosticActivityProblems.scopeCombo()->setCurrentIndex(allFilesIndex);
     }
+    if (diagnosticActivityProblems.dock())
+        diagnosticActivityProblems.dock()->hide();
+    const int hiddenProblemsHeightBeforeUpdate =
+        diagnosticActivityProblems.dock()
+        ? diagnosticActivityProblems.dock()->height()
+        : -1;
+    QWidget* const focusBeforeProblemsUpdate =
+        QApplication::focusWidget();
     diagnosticActivityProblems.update();
+    expectBool("diagnostic result update keeps a closed page passive",
+               diagnosticActivityProblems.dock()
+                   && diagnosticActivityProblems.dock()->isHidden()
+                   && diagnosticActivityProblems.dock()->height()
+                          == hiddenProblemsHeightBeforeUpdate
+                   && QApplication::focusWidget()
+                          == focusBeforeProblemsUpdate,
+               true);
     expectBool("problems current file diagnostic summary",
                diagnosticActivityProblems.summaryLabel()
                    && diagnosticActivityProblems.summaryLabel()->text()
@@ -6618,48 +6946,6 @@ static QComboBox* problemsBandCombo(MainWindow& window)
         : nullptr;
 }
 
-static QTreeWidget* referencesTree(MainWindow& window)
-{
-    return window.semanticDocks && window.semanticDocks->referencesPanelCoordinator()
-        ? window.semanticDocks->referencesPanelCoordinator()->tree()
-        : nullptr;
-}
-
-static QLabel* referencesContextLabel(MainWindow& window)
-{
-    return window.semanticDocks && window.semanticDocks->referencesPanelCoordinator()
-        ? window.semanticDocks->referencesPanelCoordinator()->contextLabel()
-        : nullptr;
-}
-
-static QComboBox* referenceScopeCombo(MainWindow& window)
-{
-    return window.semanticDocks && window.semanticDocks->referencesPanelCoordinator()
-        ? window.semanticDocks->referencesPanelCoordinator()->scopeCombo()
-        : nullptr;
-}
-
-static QComboBox* referenceTypeCombo(MainWindow& window)
-{
-    return window.semanticDocks && window.semanticDocks->referencesPanelCoordinator()
-        ? window.semanticDocks->referencesPanelCoordinator()->typeCombo()
-        : nullptr;
-}
-
-static QTreeWidget* relationshipsTree(MainWindow& window)
-{
-    return window.semanticDocks && window.semanticDocks->relationshipsPanelCoordinator()
-        ? window.semanticDocks->relationshipsPanelCoordinator()->tree()
-        : nullptr;
-}
-
-static QLabel* relationshipsContextLabel(MainWindow& window)
-{
-    return window.semanticDocks && window.semanticDocks->relationshipsPanelCoordinator()
-        ? window.semanticDocks->relationshipsPanelCoordinator()->contextLabel()
-        : nullptr;
-}
-
 static QTreeWidget* rtlInsightsTree(MainWindow& window)
 {
     return window.semanticDocks && window.semanticDocks->rtlInsightsPanelCoordinator()
@@ -6711,76 +6997,6 @@ static bool renderedWidgetHasColorVariation(QWidget* widget)
     }
     return false;
 }
-
-static QComboBox* relationshipViewCombo(MainWindow& window)
-{
-    return window.semanticDocks && window.semanticDocks->relationshipsPanelCoordinator()
-        ? window.semanticDocks->relationshipsPanelCoordinator()->viewCombo()
-        : nullptr;
-}
-
-static QComboBox* relationshipDirectionCombo(MainWindow& window)
-{
-    return window.semanticDocks && window.semanticDocks->relationshipsPanelCoordinator()
-        ? window.semanticDocks->relationshipsPanelCoordinator()->directionCombo()
-        : nullptr;
-}
-
-static QComboBox* relationshipTypeCombo(MainWindow& window)
-{
-    return window.semanticDocks && window.semanticDocks->relationshipsPanelCoordinator()
-        ? window.semanticDocks->relationshipsPanelCoordinator()->typeCombo()
-        : nullptr;
-}
-
-static QComboBox* relationshipDepthCombo(MainWindow& window)
-{
-    return window.semanticDocks && window.semanticDocks->relationshipsPanelCoordinator()
-        ? window.semanticDocks->relationshipsPanelCoordinator()->depthCombo()
-        : nullptr;
-}
-
-static void setComboTextIfPresent(QComboBox* combo, const QString& text)
-{
-    if (!combo)
-        return;
-    const int index = combo->findText(text);
-    if (index >= 0 && combo->currentIndex() != index)
-        combo->setCurrentIndex(index);
-}
-
-static void resetReferenceRelationshipDockFilters(MainWindow& window)
-{
-    setComboTextIfPresent(referenceScopeCombo(window), QStringLiteral("All Files"));
-    setComboTextIfPresent(referenceTypeCombo(window), QStringLiteral("All Types"));
-    setComboTextIfPresent(relationshipViewCombo(window), QStringLiteral("Direct"));
-    setComboTextIfPresent(relationshipDirectionCombo(window),
-                          QStringLiteral("All Directions"));
-    setComboTextIfPresent(relationshipTypeCombo(window), QStringLiteral("All Types"));
-    setComboTextIfPresent(relationshipDepthCombo(window), QStringLiteral("Depth 1"));
-    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-}
-
-class ScopedSemanticServiceIndex
-{
-public:
-    explicit ScopedSemanticServiceIndex(SemanticIndex* semanticIndex)
-    {
-        ReferenceService::getInstance()->setSemanticIndex(semanticIndex);
-        RelationshipService::getInstance()->setSemanticIndex(semanticIndex);
-        HierarchyService::getInstance()->setSemanticIndex(semanticIndex);
-    }
-
-    ~ScopedSemanticServiceIndex()
-    {
-        ReferenceService::getInstance()->setSemanticIndex(SemanticIndex::getInstance());
-        RelationshipService::getInstance()->setSemanticIndex(SemanticIndex::getInstance());
-        HierarchyService::getInstance()->setSemanticIndex(SemanticIndex::getInstance());
-    }
-
-    ScopedSemanticServiceIndex(const ScopedSemanticServiceIndex&) = delete;
-    ScopedSemanticServiceIndex& operator=(const ScopedSemanticServiceIndex&) = delete;
-};
 
 static SemanticPanelRefreshCoordinator* semanticPanelRefresh(MainWindow& window)
 {
@@ -6984,376 +7200,6 @@ static void runSemanticStateUiRegression()
     drainRelationshipWork(window);
     window.analysisScheduler->shutdown();
     SemanticIndex::getInstance()->clearSemanticState();
-}
-
-static void runReferenceDockRegression(MainWindow& window, const QString& fixturePath)
-{
-    printf("\n-- reference dock regression --\n");
-
-    const SemanticSymbolRecord referenced =
-        SemanticFixtureRecordBuilder(QStringLiteral("target_ref"),
-                                     SymbolTaxonomy::DeclarationKind::Signal)
-            .withFile(fixturePath)
-            .withLocalHandle(9001)
-            .withRange(3, 9, 3, 18)
-            .withTextSpan(0, 10)
-            .withCollectorKind(SymbolTaxonomy::CollectorKind::Logic)
-            .inModule(QStringLiteral("ref_top"))
-            .record();
-    const SemanticSymbolRecord referencing =
-        SemanticFixtureRecordBuilder(QStringLiteral("source_ref"),
-                                     SymbolTaxonomy::DeclarationKind::Process)
-            .withFile(fixturePath)
-            .withLocalHandle(9002)
-            .withRange(8, 3, 8, 20)
-            .withTextSpan(0, 10)
-            .withCollectorKind(SymbolTaxonomy::CollectorKind::Assign)
-            .withUsageRole(SymbolTaxonomy::SymbolUsageRole::Process)
-            .inModule(QStringLiteral("ref_top"))
-            .record();
-    const SemanticSymbolRecord externalReferencing =
-        SemanticFixtureRecordBuilder(QStringLiteral("external_ref"),
-                                     SymbolTaxonomy::DeclarationKind::Process)
-            .withFile(fixturePath + QStringLiteral(".refs.sv"))
-            .withLocalHandle(9004)
-            .withRange(4, 5, 4, 22)
-            .withTextSpan(0, 12)
-            .withCollectorKind(SymbolTaxonomy::CollectorKind::Assign)
-            .withUsageRole(SymbolTaxonomy::SymbolUsageRole::Process)
-            .inModule(QStringLiteral("ref_external"))
-            .record();
-    const SemanticSymbolRecord target =
-        SemanticFixtureRecordBuilder(QStringLiteral("target_sink"),
-                                     SymbolTaxonomy::DeclarationKind::Function)
-            .withFile(fixturePath)
-            .withLocalHandle(9003)
-            .withRange(12, 12, 12, 22)
-            .withTextSpan(0, 11)
-            .withCollectorKind(SymbolTaxonomy::CollectorKind::Function)
-            .inModule(QStringLiteral("ref_top"))
-            .record();
-
-    const SemanticRelationship incomingRelationship =
-        semanticFixtureRelationship(referencing,
-                                    referenced,
-                                    SymbolRelationshipEngine::REFERENCES);
-    const SemanticRelationship externalIncomingRelationship =
-        semanticFixtureRelationship(externalReferencing,
-                                    referenced,
-                                    SymbolRelationshipEngine::READS_FROM);
-    const SemanticRelationship outgoingRelationship =
-        semanticFixtureRelationship(referenced,
-                                    target,
-                                    SymbolRelationshipEngine::CALLS);
-
-    const QList<SemanticSymbolRecord> referenceRecords{
-        referenced,
-        referencing,
-        externalReferencing,
-        target,
-    };
-
-    SemanticIndex fixtureIndex;
-    fixtureIndex.setSnapshot(
-        snapshotFromRecords(
-            referenceRecords,
-            QList<SemanticRelationship>{incomingRelationship,
-                                        externalIncomingRelationship,
-                                        outgoingRelationship}));
-    ScopedSemanticServiceIndex scopedIndex(&fixtureIndex);
-    resetReferenceRelationshipDockFilters(window);
-
-    semanticPanelRefresh(window)->showReferencesForSymbol(QStringLiteral("target_ref"),
-                                                          fixturePath,
-                                                          QStringLiteral("ref_top"));
-
-    expectBool("references tree exists", referencesTree(window) != nullptr, true);
-    expectBool("references context label records query",
-               referencesContextLabel(window)
-                   && referencesContextLabel(window)->text().contains(
-                       QStringLiteral("Symbol: target_ref"))
-                   && referencesContextLabel(window)->text().contains(
-                       QStringLiteral("Scope: All Files"))
-                   && referencesContextLabel(window)->text().contains(
-                       QStringLiteral("Type: All Types")),
-               true);
-    expectBool("reference results rendered",
-               navigableItemCount(referencesTree(window)) == 2,
-               true);
-    semanticPanelRefresh(window)->showReferencesForSymbol(QString(),
-                                                          fixturePath,
-                                                          QStringLiteral("ref_top"));
-    expectBool("references empty symbol reason rendered",
-               referencesTree(window)
-                   && referencesTree(window)->topLevelItemCount() == 1
-                   && referencesTree(window)->topLevelItem(0)->text(0)
-                       == QStringLiteral("no symbol under cursor"),
-               true);
-    semanticPanelRefresh(window)->showReferencesForSymbol(QStringLiteral("target_ref"),
-                                                          fixturePath,
-                                                          QStringLiteral("ref_top"));
-    expectBool("reference scope filter exists",
-               referenceScopeCombo(window) != nullptr,
-               true);
-    expectBool("reference type filter exists",
-               referenceTypeCombo(window) != nullptr,
-               true);
-    if (referenceScopeCombo(window)) {
-        referenceScopeCombo(window)->setCurrentIndex(
-            referenceScopeCombo(window)->findText(QStringLiteral("Workspace Files")));
-        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-        expectBool("reference workspace scope hides non-workspace files",
-                   navigableItemCount(referencesTree(window)) == 0,
-                   true);
-    }
-    if (referenceScopeCombo(window)) {
-        referenceScopeCombo(window)->setCurrentIndex(
-            referenceScopeCombo(window)->findText(QStringLiteral("Current File")));
-        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-        expectBool("reference scope narrows to current file",
-                   navigableItemCount(referencesTree(window)) == 1,
-                   true);
-    }
-    if (referencesTree(window) && navigableItemCount(referencesTree(window)) == 1) {
-        QTreeWidgetItem* item = firstNavigableItem(referencesTree(window));
-        expectBool("reference row uses source symbol",
-                   item && item->text(0) == QStringLiteral("source_ref"),
-                   true);
-        expectBool("reference row stores source line",
-                   item && item->data(0, Qt::UserRole + 1).toInt()
-                       == referencing.location.startLine,
-                   true);
-    }
-    if (referenceScopeCombo(window) && referenceTypeCombo(window)) {
-        referenceScopeCombo(window)->setCurrentIndex(
-            referenceScopeCombo(window)->findText(QStringLiteral("All Files")));
-        referenceTypeCombo(window)->setCurrentIndex(
-            referenceTypeCombo(window)->findText(QStringLiteral("Reads From")));
-        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-        expectBool("reference type filter narrows results",
-                   navigableItemCount(referencesTree(window)) == 1,
-                   true);
-        QTreeWidgetItem* item = firstNavigableItem(referencesTree(window));
-        expectBool("reference type filter keeps external source",
-                   item && item->text(0) == QStringLiteral("external_ref"),
-                   true);
-        referenceTypeCombo(window)->setCurrentIndex(
-            referenceTypeCombo(window)->findText(QStringLiteral("All Types")));
-        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-    }
-
-    MyCodeEditor shortcutEditor;
-    shortcutEditor.setPlainText(
-        "module ref_top;\n"
-        "  logic target_ref;\n"
-        "endmodule\n");
-    DocumentModel shortcutDocumentModel;
-    shortcutDocumentModel.registerEditor(&shortcutEditor, fixturePath);
-    const int targetOffset = shortcutEditor.toPlainText().indexOf(QStringLiteral("target_ref")) + 2;
-    QTextCursor shortcutCursor(shortcutEditor.document());
-    shortcutCursor.setPosition(targetOffset);
-    shortcutEditor.setTextCursor(shortcutCursor);
-    int sourceActionCount = 0;
-    SourceSymbolAction lastSourceAction = SourceSymbolAction::FindReferences;
-    EditorSemanticContext lastSourceActionContext;
-    QObject::connect(&shortcutEditor,
-                     &MyCodeEditor::sourceSymbolActionRequested,
-                     &shortcutEditor,
-                     [&](SourceSymbolAction action,
-                         const EditorSemanticContext& context) {
-                         ++sourceActionCount;
-                         lastSourceAction = action;
-                         lastSourceActionContext = context;
-                     });
-    QTest::keyClick(&shortcutEditor, Qt::Key_F12, Qt::ShiftModifier);
-    expectBool("find references shortcut emits request",
-               sourceActionCount == 1
-                   && lastSourceAction == SourceSymbolAction::FindReferences,
-               true);
-    expectBool("find references shortcut emits symbol",
-               lastSourceActionContext.lineText.contains(QStringLiteral("target_ref")),
-               true);
-    QTest::keyClick(&shortcutEditor, Qt::Key_R,
-                    Qt::ControlModifier | Qt::ShiftModifier);
-    expectBool("show relationships shortcut emits request",
-               sourceActionCount == 2
-                   && lastSourceAction == SourceSymbolAction::ShowRelationships,
-               true);
-    expectBool("show relationships shortcut emits symbol",
-               lastSourceActionContext.lineText.contains(QStringLiteral("target_ref"))
-                   && lastSourceActionContext.fileName == fixturePath
-                   && lastSourceActionContext.moduleName == QStringLiteral("ref_top"),
-               true);
-
-    semanticPanelRefresh(window)->showRelationshipsForSymbol(QStringLiteral("target_ref"),
-                                                             fixturePath,
-                                                             QStringLiteral("ref_top"));
-    expectBool("relationships tree exists", relationshipsTree(window) != nullptr, true);
-    expectBool("relationships context label records query",
-               relationshipsContextLabel(window)
-                   && relationshipsContextLabel(window)->text().contains(
-                       QStringLiteral("Symbol: target_ref"))
-                   && relationshipsContextLabel(window)->text().contains(
-                       QStringLiteral("Direction: All Directions"))
-                   && relationshipsContextLabel(window)->text().contains(
-                       QStringLiteral("Type: All Types")),
-               true);
-    expectBool("relationship results rendered",
-               navigableItemCount(relationshipsTree(window)) == 3,
-               true);
-    semanticPanelRefresh(window)->showRelationshipsForSymbol(QString(),
-                                                             fixturePath,
-                                                             QStringLiteral("ref_top"));
-    expectBool("relationships empty symbol reason rendered",
-               relationshipsTree(window)
-                   && relationshipsTree(window)->topLevelItemCount() == 1
-                   && relationshipsTree(window)->topLevelItem(0)->text(5)
-                       == QStringLiteral("no symbol under cursor"),
-               true);
-    semanticPanelRefresh(window)->showRelationshipsForSymbol(QStringLiteral("target_ref"),
-                                                             fixturePath,
-                                                             QStringLiteral("ref_top"));
-    if (relationshipsTree(window) && navigableItemCount(relationshipsTree(window)) == 3) {
-        bool sawIncoming = false;
-        bool sawOutgoing = false;
-        bool sawExternal = false;
-        bool sawExplanation = false;
-        const QList<QTreeWidgetItem*> items = navigableItems(relationshipsTree(window));
-        for (QTreeWidgetItem* item : items) {
-            sawIncoming = sawIncoming
-                || (item->text(0) == QStringLiteral("Incoming")
-                    && item->text(1) == QStringLiteral("source_ref"));
-            sawOutgoing = sawOutgoing
-                || (item->text(0) == QStringLiteral("Outgoing")
-                    && item->text(1) == QStringLiteral("target_sink"));
-            sawExternal = sawExternal
-                || (item->text(0) == QStringLiteral("Incoming")
-                    && item->text(1) == QStringLiteral("external_ref"));
-            sawExplanation = sawExplanation
-                || item->text(5) == QStringLiteral("source_ref references target_ref");
-        }
-        expectBool("incoming relationship row rendered", sawIncoming, true);
-        expectBool("outgoing relationship row rendered", sawOutgoing, true);
-        expectBool("external relationship row rendered", sawExternal, true);
-        expectBool("relationship explanation column rendered", sawExplanation, true);
-    }
-
-    expectBool("relationship direction filter exists",
-               relationshipDirectionCombo(window) != nullptr,
-               true);
-    expectBool("relationship type filter exists",
-               relationshipTypeCombo(window) != nullptr,
-               true);
-    expectBool("relationship view filter exists",
-               relationshipViewCombo(window) != nullptr,
-               true);
-    expectBool("relationship depth filter exists",
-               relationshipDepthCombo(window) != nullptr,
-               true);
-    if (relationshipDirectionCombo(window) && relationshipTypeCombo(window)) {
-        relationshipDirectionCombo(window)->setCurrentIndex(
-            relationshipDirectionCombo(window)->findText(QStringLiteral("Outgoing")));
-        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-        expectBool("outgoing filter narrows relationships",
-                   navigableItemCount(relationshipsTree(window)) == 1,
-                   true);
-        if (relationshipsTree(window) && navigableItemCount(relationshipsTree(window)) == 1) {
-            QTreeWidgetItem* item = firstNavigableItem(relationshipsTree(window));
-            expectBool("outgoing filter keeps target",
-                       item && item->text(1) == QStringLiteral("target_sink"),
-                       true);
-        }
-
-        relationshipDirectionCombo(window)->setCurrentIndex(
-            relationshipDirectionCombo(window)->findText(QStringLiteral("All Directions")));
-        relationshipTypeCombo(window)->setCurrentIndex(
-            relationshipTypeCombo(window)->findText(QStringLiteral("References")));
-        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-        expectBool("type filter narrows relationships",
-                   navigableItemCount(relationshipsTree(window)) == 1,
-                   true);
-        if (relationshipsTree(window) && navigableItemCount(relationshipsTree(window)) == 1) {
-            QTreeWidgetItem* item = firstNavigableItem(relationshipsTree(window));
-            expectBool("type filter keeps incoming source",
-                       item && item->text(1) == QStringLiteral("source_ref"),
-                       true);
-        }
-    }
-    if (relationshipViewCombo(window) && relationshipTypeCombo(window)
-        && relationshipDepthCombo(window)) {
-        relationshipTypeCombo(window)->setCurrentIndex(
-            relationshipTypeCombo(window)->findText(QStringLiteral("Calls")));
-        relationshipDepthCombo(window)->setCurrentIndex(
-            relationshipDepthCombo(window)->findText(QStringLiteral("Depth 2")));
-        relationshipViewCombo(window)->setCurrentIndex(
-            relationshipViewCombo(window)->findText(QStringLiteral("Tree")));
-        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-        expectBool("relationship tree mode renders hierarchy",
-                   navigableItemCount(relationshipsTree(window)) == 2,
-                   true);
-        bool sawTreeRoot = false;
-        bool sawTreeChild = false;
-        const QList<QTreeWidgetItem*> items = navigableItems(relationshipsTree(window));
-        for (QTreeWidgetItem* item : items) {
-            sawTreeRoot = sawTreeRoot
-                || (item->text(0) == QStringLiteral("Root")
-                    && item->text(1) == QStringLiteral("target_ref"));
-            sawTreeChild = sawTreeChild
-                || (item->text(0) == QStringLiteral("Outgoing")
-                    && item->text(1) == QStringLiteral("target_sink"));
-        }
-        expectBool("relationship tree mode keeps root", sawTreeRoot, true);
-        expectBool("relationship tree mode keeps child target", sawTreeChild, true);
-        expectBool("relationship tree keeps direction filter enabled",
-                   relationshipDirectionCombo(window)->isEnabled(),
-                   true);
-        relationshipDirectionCombo(window)->setCurrentIndex(
-            relationshipDirectionCombo(window)->findText(QStringLiteral("Incoming")));
-        relationshipTypeCombo(window)->setCurrentIndex(
-            relationshipTypeCombo(window)->findText(QStringLiteral("Reads From")));
-        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-        expectBool("relationship tree incoming filter renders hierarchy",
-                   navigableItemCount(relationshipsTree(window)) == 2,
-                   true);
-        bool sawIncomingTreeSource = false;
-        const QList<QTreeWidgetItem*> incomingItems = navigableItems(relationshipsTree(window));
-        for (QTreeWidgetItem* item : incomingItems) {
-            sawIncomingTreeSource = sawIncomingTreeSource
-                || (item->text(0) == QStringLiteral("Incoming")
-                    && item->text(1) == QStringLiteral("external_ref"));
-        }
-        expectBool("relationship tree keeps incoming source",
-                   sawIncomingTreeSource, true);
-        QTreeWidgetItem* rootItem = nullptr;
-        for (QTreeWidgetItem* item : incomingItems) {
-            if (item->text(0) == QStringLiteral("Root")
-                && item->text(1) == QStringLiteral("target_ref")) {
-                rootItem = item;
-                break;
-            }
-        }
-        expectBool("relationship tree root found for expansion state",
-                   rootItem != nullptr, true);
-        if (rootItem) {
-            rootItem->setExpanded(false);
-            semanticPanelRefresh(window)->refreshRelationshipsPanel();
-            QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-            QTreeWidgetItem* refreshedRoot = nullptr;
-            const QList<QTreeWidgetItem*> refreshedItems =
-                navigableItems(relationshipsTree(window));
-            for (QTreeWidgetItem* item : refreshedItems) {
-                if (item->text(0) == QStringLiteral("Root")
-                    && item->text(1) == QStringLiteral("target_ref")) {
-                    refreshedRoot = item;
-                    break;
-                }
-            }
-            expectBool("relationship tree preserves collapsed root",
-                       refreshedRoot && !refreshedRoot->isExpanded(),
-                       true);
-        }
-    }
-    resetReferenceRelationshipDockFilters(window);
 }
 
 static SemanticSymbolRecord makeGuiSmokeRecord(
@@ -8818,6 +8664,27 @@ static void runNavigationHierarchyModelRegression()
                    && widget.tabWidget->tabText(0) == QStringLiteral("Files")
                    && widget.tabWidget->tabText(1) == QStringLiteral("Design"),
                true);
+    widget.setSearchFilter(NavigationWidget::FileTab,
+                           QStringLiteral("rtl/top"));
+    widget.setSearchFilter(NavigationWidget::DesignTab,
+                           QStringLiteral("u_stage"));
+    widget.setActiveTab(NavigationWidget::FileTab);
+    expectBool("Files search keeps its independent query",
+               widget.searchLineEdit
+                   && widget.searchLineEdit->text()
+                          == QStringLiteral("rtl/top"),
+               true);
+    widget.setActiveTab(NavigationWidget::DesignTab);
+    expectBool("Design search restores its independent query",
+               widget.searchLineEdit
+                   && widget.searchLineEdit->text()
+                          == QStringLiteral("u_stage")
+                   && widget.searchLineEdit->placeholderText().contains(
+                          QStringLiteral("instances")),
+               true);
+    widget.setSearchFilter(NavigationWidget::DesignTab, QString());
+    widget.setActiveTab(NavigationWidget::FileTab);
+    widget.setSearchFilter(NavigationWidget::FileTab, QString());
 
     const QString fileTabPath = QStringLiteral("C:/fixture/relationship_top.sv");
     widget.updateFileHierarchy({fileTabPath});
@@ -9297,22 +9164,21 @@ static void runCommandLayerRegression(MainWindow& window)
     expectBool("Command Layer registry is valid",
                commandLayerCommandRegistryIsValid(&registryError),
                true);
-    const QStringList canonicalNames = {
-        QStringLiteral("go <number>"),
-        QStringLiteral("go module"),
-        QStringLiteral("go package"),
-        QStringLiteral("go endmodule"),
-        QStringLiteral("add signal"),
-        QStringLiteral("add parameter"),
-        QStringLiteral("add port"),
-        QStringLiteral("clear right"),
-        QStringLiteral("select begin end"),
-        QStringLiteral("select signals"),
-        QStringLiteral("help"),
-    };
-    bool canonicalRegistryOk =
-        commandLayerCommandRegistry().size() == canonicalNames.size();
-    for (const QString& name : canonicalNames) {
+    int expectedCommandCount = 0;
+    bool canonicalRegistryOk = true;
+    for (const ActionDescriptor* descriptor :
+         actionDescriptorsForSurface(
+             ActionSurface::CommandLayer)) {
+        const ActionAliasDescriptor* commandAlias =
+            descriptor
+            ? findActionAlias(
+                  *descriptor,
+                  ActionSurface::CommandLayer)
+            : nullptr;
+        if (!commandAlias || !commandAlias->triggerAdapter)
+            continue;
+        ++expectedCommandCount;
+        const QString name = commandAlias->token;
         const CommandLayerCommandMetadata* command =
             findCommandLayerCommand(name);
         const QList<CommandLayerCommandMatch> exactMatches =
@@ -9320,12 +9186,19 @@ static void runCommandLayerRegression(MainWindow& window)
         canonicalRegistryOk =
             canonicalRegistryOk
             && command
+            && command->actionId == descriptor->id
+            && command->executionRoute
+                   == descriptor->executionRoute
             && !command->description.isEmpty()
             && !exactMatches.isEmpty()
             && exactMatches.first().command.name == name
             && exactMatches.first().rank == CommandLayerMatchRank::Exact;
     }
-    expectBool("Command Layer exposes exactly eleven canonical commands",
+    canonicalRegistryOk =
+        canonicalRegistryOk
+        && commandLayerCommandRegistry().size()
+               == expectedCommandCount;
+    expectBool("Command Layer exposes every Action Registry command",
                canonicalRegistryOk,
                true);
 
@@ -9504,12 +9377,13 @@ static void runCommandLayerRegression(MainWindow& window)
 
     pressF24(editor);
     CommandLayerPanel* commandPanel = coordinator->panelWidget();
-    expectBool("F24 press enters application Command Layer",
+    expectBool("F24 press enters application Command Layer with every registered command",
                coordinator->isActive()
                    && coordinator->isF24Held()
                    && commandPanel
                    && commandPanel->isVisible()
-                   && commandPanel->candidateListWidget()->count() == 11,
+                   && commandPanel->candidateListWidget()->count()
+                          == commandLayerCommandRegistry().size(),
                true);
     typeQuery(editor, QStringLiteral("gm"));
     sendKeyEvent(editor,
@@ -10576,6 +10450,45 @@ static void runStructuralEditingRegression()
                            "signalDefinitionInlineEditor")),
                true);
     QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+    QLineEdit* signalDefinitionEditor =
+        proceduralEditor.findChild<QLineEdit*>(
+            QStringLiteral("signalDefinitionInlineEditor"));
+    EditorHoverPopup* signalDefinitionPeek =
+        proceduralEditor.findChild<EditorHoverPopup*>(
+            QStringLiteral("editorHoverPopup"));
+    expectBool("undefined signal editor uses the shared embedded peek",
+               signalDefinitionEditor
+                   && signalDefinitionPeek
+                   && !signalDefinitionPeek->isWindow()
+                   && signalDefinitionEditor->parentWidget()
+                          == signalDefinitionPeek
+                   && signalDefinitionPeek->contentModel().kind
+                          == PeekContentKind::DeclarationPreview
+                   && signalDefinitionPeek->editableLineEdit()
+                          == signalDefinitionEditor,
+               true);
+    bool inferredClassificationVisible = false;
+    bool structuredCandidateVisible = false;
+    if (signalDefinitionPeek) {
+        for (const PeekContentRow& row :
+             signalDefinitionPeek->contentModel().rows) {
+            inferredClassificationVisible =
+                inferredClassificationVisible
+                || row.text
+                       == QStringLiteral(
+                           "Classification: Inferred");
+            structuredCandidateVisible =
+                structuredCandidateVisible
+                || row.text.contains(
+                    QStringLiteral(
+                        "Candidate 1 (block-local variable): "
+                        "logic missing_q;"));
+        }
+    }
+    expectBool("Declare Signal peek shows classification and structured candidate",
+               inferredClassificationVisible
+                   && structuredCandidateVisible,
+               true);
     expectBool("undefined signal inline editor does not insert eagerly",
                proceduralEditor.toPlainText() == beforePopup,
                true);
@@ -10593,6 +10506,33 @@ static void runStructuralEditingRegression()
                            "signalDefinitionInlineEditor")),
                true);
 
+    expectBool("undefined signal editor opens for generation guard",
+               proceduralEditor.beginSignalDefinitionEditorForTest(
+                   missingPosition, &reason),
+               true);
+    const auto sameProceduralSnapshot =
+        SemanticIndex::getInstance()->snapshot();
+    SemanticIndex::getInstance()->setSnapshot(
+        sameProceduralSnapshot);
+    bool staleGenerationRejected = false;
+    if (QLineEdit* staleEditor =
+            proceduralEditor.findChild<QLineEdit*>(
+                QStringLiteral(
+                    "signalDefinitionInlineEditor"))) {
+        QTest::keyClick(staleEditor, Qt::Key_Return);
+        QCoreApplication::processEvents(
+            QEventLoop::AllEvents, 20);
+        staleGenerationRejected =
+            !proceduralEditor.findChild<QLineEdit*>(
+                QStringLiteral(
+                    "signalDefinitionInlineEditor"));
+    }
+    expectBool("Declare Signal rechecks semantic generation before apply",
+               staleGenerationRejected
+                   && proceduralEditor.toPlainText()
+                          == beforePopup,
+               true);
+
     QTextCursor originalCursor(proceduralEditor.document());
     originalCursor.setPosition(
         proceduralSource.indexOf(
@@ -10606,19 +10546,38 @@ static void runStructuralEditingRegression()
                proceduralEditor.beginSignalDefinitionEditorForTest(
                    missingPosition, &reason),
                true);
+    bool declarationSubmittedFromPeek = false;
+    if (QLineEdit* reopenedEditor =
+            proceduralEditor.findChild<QLineEdit*>(
+                QStringLiteral(
+                    "signalDefinitionInlineEditor"))) {
+        reopenedEditor->setText(
+            QStringLiteral(
+                "logic signed [3:0] missing_q;"));
+        QTest::keyClick(reopenedEditor, Qt::Key_Return);
+        QCoreApplication::processEvents(
+            QEventLoop::AllEvents, 20);
+        declarationSubmittedFromPeek =
+            !proceduralEditor.findChild<QLineEdit*>(
+                QStringLiteral(
+                    "signalDefinitionInlineEditor"));
+    }
     expectBool("undefined signal confirmation inserts edited declaration",
-               proceduralEditor.confirmSignalDefinitionForTest(
-                   QStringLiteral(
-                       "logic signed [3:0] missing_q;"),
-                   &reason)
+               declarationSubmittedFromPeek
                    && proceduralEditor.toPlainText().contains(
                        QStringLiteral(
-                           "  logic signed [3:0] missing_q;\n"))
+                           "    logic signed [3:0] missing_q;\n"))
+                   && proceduralEditor.toPlainText().indexOf(
+                          QStringLiteral(
+                              "logic signed [3:0] missing_q;"))
+                      > proceduralEditor.toPlainText().indexOf(
+                          QStringLiteral("always_ff"))
                    && proceduralEditor.toPlainText().indexOf(
                           QStringLiteral(
                               "logic signed [3:0] missing_q;"))
                       < proceduralEditor.toPlainText().indexOf(
-                          QStringLiteral("always_ff")),
+                          QStringLiteral(
+                              "missing_q <= clk;")),
                true);
     const int insertionDelta =
         proceduralEditor.toPlainText().size()
@@ -10633,6 +10592,152 @@ static void runStructuralEditingRegression()
                    && proceduralEditor.verticalScrollBar()->value()
                        == oldVerticalScroll,
                true);
+    bool insertionFlashVisible = false;
+    const int insertedDeclarationPosition =
+        proceduralEditor.toPlainText().indexOf(
+            QStringLiteral(
+                "logic signed [3:0] missing_q;"));
+    const int insertedDeclarationBlock =
+        proceduralEditor.document()
+            ->findBlock(insertedDeclarationPosition)
+            .blockNumber();
+    for (const QTextEdit::ExtraSelection& selection :
+         proceduralEditor.extraSelections()) {
+        const QColor background =
+            selection.format.background().color();
+        insertionFlashVisible =
+            insertionFlashVisible
+            || (selection.cursor.blockNumber()
+                    == insertedDeclarationBlock
+                && background
+                       == QColor(97, 175, 239, 70));
+    }
+    expectBool("Declare Signal briefly flashes the insertion line",
+               insertionFlashVisible,
+               true);
+    const QString confirmedSignalDefinitionSource =
+        proceduralEditor.toPlainText();
+    proceduralEditor.undo();
+    QCoreApplication::processEvents(
+        QEventLoop::AllEvents, 20);
+    const bool signalDefinitionUndone =
+        proceduralEditor.toPlainText()
+            == proceduralSource;
+    proceduralEditor.redo();
+    QCoreApplication::processEvents(
+        QEventLoop::AllEvents, 20);
+    expectBool("Declare Signal confirmation is one undo transaction",
+               signalDefinitionUndone
+                   && proceduralEditor.toPlainText()
+                          == confirmedSignalDefinitionSource,
+               true);
+
+    const QString classificationSource = QStringLiteral(
+        "module procedural_top;\n"
+        "  assign mixed_missing = clk;\n"
+        "  assign net_missing = clk;\n"
+        "  always_comb begin\n"
+        "    mixed_missing = clk;\n"
+        "    uncertain_missing = 1'b0;\n"
+        "  end\n"
+        "endmodule\n");
+    MyCodeEditor classificationEditor;
+    classificationEditor.resize(620, 260);
+    classificationEditor.setPlainText(
+        classificationSource);
+    classificationEditor.setDocumentFileName(
+        proceduralFile);
+    classificationEditor.show();
+    const int mixedPosition =
+        classificationSource.indexOf(
+            QStringLiteral("mixed_missing")) + 2;
+    expectBool("mixed driver Declare Signal opens a non-editable conflict peek",
+               classificationEditor
+                   .beginSignalDefinitionEditorForTest(
+                       mixedPosition, &reason),
+               true);
+    EditorHoverPopup* classificationPeek =
+        classificationEditor.findChild<EditorHoverPopup*>(
+            QStringLiteral("editorHoverPopup"));
+    bool conflictClassificationVisible = false;
+    if (classificationPeek) {
+        for (const PeekContentRow& row :
+             classificationPeek->contentModel().rows) {
+            conflictClassificationVisible =
+                conflictClassificationVisible
+                || row.text
+                       == QStringLiteral(
+                           "Classification: Conflict");
+        }
+    }
+    expectBool("conflict proposal is visible but cannot apply string edits",
+               conflictClassificationVisible
+                   && !classificationEditor.findChild<QLineEdit*>(
+                       QStringLiteral(
+                           "signalDefinitionInlineEditor")),
+               true);
+    if (classificationPeek)
+        classificationPeek->closePopup();
+
+    const int uncertainPosition =
+        classificationSource.indexOf(
+            QStringLiteral("uncertain_missing")) + 2;
+    expectBool("missing type evidence opens an Uncertain explanation",
+               classificationEditor
+                   .beginSignalDefinitionEditorForTest(
+                       uncertainPosition, &reason),
+               true);
+    classificationPeek =
+        classificationEditor.findChild<EditorHoverPopup*>(
+            QStringLiteral("editorHoverPopup"));
+    bool uncertainClassificationVisible = false;
+    if (classificationPeek) {
+        for (const PeekContentRow& row :
+             classificationPeek->contentModel().rows) {
+            uncertainClassificationVisible =
+                uncertainClassificationVisible
+                || row.text
+                       == QStringLiteral(
+                           "Classification: Uncertain");
+        }
+    }
+    expectBool("Uncertain proposal without a Slang type has no editor",
+               uncertainClassificationVisible
+                   && !classificationEditor.findChild<QLineEdit*>(
+                       QStringLiteral(
+                           "signalDefinitionInlineEditor")),
+               true);
+    if (classificationPeek)
+        classificationPeek->closePopup();
+
+    const int netPosition =
+        classificationSource.indexOf(
+            QStringLiteral("net_missing")) + 2;
+    expectBool("continuous assignment opens a module-net proposal",
+               classificationEditor
+                   .beginSignalDefinitionEditorForTest(
+                       netPosition, &reason),
+               true);
+    classificationPeek =
+        classificationEditor.findChild<EditorHoverPopup*>(
+            QStringLiteral("editorHoverPopup"));
+    bool moduleNetCandidateVisible = false;
+    if (classificationPeek) {
+        for (const PeekContentRow& row :
+             classificationPeek->contentModel().rows) {
+            moduleNetCandidateVisible =
+                moduleNetCandidateVisible
+                || row.text.contains(
+                    QStringLiteral(
+                        "Candidate 1 (module net): "
+                        "wire logic net_missing;"));
+        }
+    }
+    expectBool("continuous assignment candidate explicitly prefers net",
+               moduleNetCandidateVisible,
+               true);
+    if (classificationPeek)
+        classificationPeek->closePopup();
     SemanticIndex::getInstance()->setSnapshot(
         proceduralPreviousSnapshot);
 
@@ -10825,6 +10930,7 @@ static void runStructuralEditingRegression()
     values->clearPublishedFacts();
 
     MyCodeEditor semanticEditor;
+    semanticEditor.resize(260, 260);
     semanticEditor.setPlainText(
         semanticBaselineSource);
     semanticEditor.setDocumentFileName(semanticFile);
@@ -10921,6 +11027,41 @@ static void runStructuralEditingRegression()
                    && !u1Candidate.contains(QStringLiteral("[7:0]"))
                    && u1Candidate.contains(QStringLiteral("signal_u1")),
                true);
+    expectBool("exact named-port opens the shared structured proposal peek in a narrow editor",
+               semanticEditor.beginSignalDefinitionEditorForTest(
+                   u0Signal, &reason),
+               true);
+    EditorHoverPopup* exactProposalPeek =
+        semanticEditor.findChild<EditorHoverPopup*>(
+            QStringLiteral("editorHoverPopup"));
+    bool exactClassificationVisible = false;
+    bool exactCandidateVisible = false;
+    if (exactProposalPeek) {
+        for (const PeekContentRow& row :
+             exactProposalPeek->contentModel().rows) {
+            exactClassificationVisible =
+                exactClassificationVisible
+                || row.text
+                       == QStringLiteral(
+                           "Classification: Exact");
+            exactCandidateVisible =
+                exactCandidateVisible
+                || (row.text.contains(
+                         QStringLiteral("signal_u0"))
+                    && row.text.contains(
+                        QStringLiteral("[7:0]"))
+                    && row.text.contains(
+                        QStringLiteral("[0:1]"))
+                    && !row.text.contains(
+                        QStringLiteral("input")));
+        }
+    }
+    expectBool("exact proposal displays packed/unpacked candidate without direction",
+               exactClassificationVisible
+                   && exactCandidateVisible,
+               true);
+    if (exactProposalPeek)
+        exactProposalPeek->closePopup();
     const int typedUndefined =
         semanticSource.indexOf(
             QStringLiteral("undefined_typed")) + 2;
@@ -10968,9 +11109,12 @@ static void runStructuralEditingRegression()
                semanticEditor.signalDefinitionCandidateForTest(
                    u0Signal, &reason)
                        .isEmpty()
-                   && reason.contains(
-                       QStringLiteral(
-                           "hierarchy instance context")),
+                   && (reason.contains(
+                           QStringLiteral(
+                               "elaborated instance"))
+                       || reason.contains(
+                           QStringLiteral(
+                               "different structured Slang types"))),
                true);
     semanticEditor.setHierarchyInstanceContext(topContext);
     const int moduleTypePosition =
@@ -11445,40 +11589,31 @@ void runEditorContextMenuGroupingRegression()
     expectBool("context menu has stable grouped order",
                groupTitles
                    == QStringList{
-                       QStringLiteral("Navigate"),
                        QStringLiteral("Inspect"),
                        QStringLiteral("Refactor"),
                        QStringLiteral("Format")},
                true);
-    expectBool("context menu keeps familiar standard leading order",
-               leadingStandardIds.mid(0, 5)
-                   == QStringList{
-                       QStringLiteral("edit.undo"),
-                       QStringLiteral("edit.redo"),
-                       QStringLiteral("edit.cut"),
-                       QStringLiteral("edit.copy"),
-                       QStringLiteral("edit.paste")},
+    expectBool("context menu omits standard editing actions",
+               leadingStandardIds.isEmpty(),
                true);
 
     QAction* undo = editorContextMenuActionById(
         &menu, QStringLiteral("edit.undo"));
-    expectBool("disabled standard action has visible reason",
-               undo
-                   && !undo->isEnabled()
-                   && undo->text().contains(
-                       QStringLiteral("Nothing to undo")),
+    expectBool("standard editing action is absent",
+               undo == nullptr,
                true);
     QAction* definition = editorContextMenuActionById(
         &menu, QStringLiteral("source.goToDefinition"));
-    expectBool("recoverable source action remains clickable with reason",
-               definition
-                   && definition->isEnabled()
-                   && !definition->property("visibleReason")
-                           .toString()
-                           .isEmpty()
-                   && definition->text().contains(
-                       definition->property("visibleReason")
-                           .toString()),
+    expectBool("definition action is absent",
+               definition == nullptr
+                   && editorContextMenuActionById(
+                          &menu,
+                          QStringLiteral("navigation.goLine"))
+                       == nullptr
+                   && editorContextMenuActionById(
+                          &menu,
+                          QStringLiteral("select.all"))
+                       == nullptr,
                true);
     expectBool("irrelevant FSM action is absent",
                editorContextMenuActionById(
@@ -11666,6 +11801,18 @@ void runInsightFocusIntegrationRegression(
                rtl->graphNodeItemCountForTest() > 0
                    && rtl->graphEdgeItemCountForTest() > 0,
                true);
+    if (window.panelLayoutController)
+        window.panelLayoutController->setBottomCollapsed(true);
+    QCoreApplication::processEvents(
+        QEventLoop::AllEvents, 50);
+    const PanelLayoutState panelLayoutBeforeRtlFocus =
+        window.panelLayoutController
+        ? window.panelLayoutController->layoutState()
+        : PanelLayoutState();
+    const int rtlDockHeightBeforeFocus =
+        rtlDock ? rtlDock->height() : -1;
+    const bool rtlDockVisibleBeforeFocus =
+        rtlDock && rtlDock->isVisible();
     focusRtlAction->trigger();
     QCoreApplication::processEvents(
         QEventLoop::AllEvents, 50);
@@ -11684,7 +11831,10 @@ void runInsightFocusIntegrationRegression(
                           == focusPage,
                true);
     expectBool("FSM Focus View is readable at 1100x760",
-               focusedGeometryReadable(),
+               focusedGeometryReadable()
+                   && window.panelLayoutController
+                   && window.panelLayoutController
+                          ->isBottomCollapsed(),
                true);
 
     fitButton->click();
@@ -11710,7 +11860,8 @@ void runInsightFocusIntegrationRegression(
                !controller->isFocused()
                    && rtlDock
                    && rtlDock->widget() == rtlPanel
-                   && !rtlDock->isVisible()
+                   && rtlDock->isVisible()
+                          == rtlDockVisibleBeforeFocus
                    && window.centralContentStack
                    && window.centralContentStack
                           ->currentWidget()
@@ -11730,6 +11881,28 @@ void runInsightFocusIntegrationRegression(
                           < 0.0001
                    && rtl->graphSelectedItemCountForTest()
                           == fsmSelectionBeforeReturn,
+               true);
+    const PanelLayoutState panelLayoutAfterRtlFocus =
+        window.panelLayoutController
+        ? window.panelLayoutController->layoutState()
+        : PanelLayoutState();
+    expectBool("FSM Focus exit restores exact bottom layout",
+               window.panelLayoutController
+                   && panelLayoutAfterRtlFocus.bottomPanelOrder
+                          == panelLayoutBeforeRtlFocus.bottomPanelOrder
+                   && panelLayoutAfterRtlFocus.closedBottomPanels
+                          == panelLayoutBeforeRtlFocus.closedBottomPanels
+                   && panelLayoutAfterRtlFocus.pinnedBottomPanels
+                          == panelLayoutBeforeRtlFocus.pinnedBottomPanels
+                   && panelLayoutAfterRtlFocus.activeBottomPanel
+                          == panelLayoutBeforeRtlFocus.activeBottomPanel
+                   && panelLayoutAfterRtlFocus.expandedBottomHeight
+                          == panelLayoutBeforeRtlFocus
+                                 .expandedBottomHeight
+                   && panelLayoutAfterRtlFocus.bottomCollapsed
+                   && rtlDock->height()
+                          == rtlDockHeightBeforeFocus
+                   && rtlPanel->maximumHeight() == 0,
                true);
     focusRtlAction->trigger();
     QCoreApplication::processEvents(
@@ -12037,9 +12210,14 @@ void runInsightFocusIntegrationRegression(
     expectBool("Dock toggle cannot reveal an empty focused Dock",
                controller->focusedPanelWidget()
                        == wavePanel
+                   && controller->isFocused()
                    && waveDock
                    && !waveDock->isVisible()
-                   && waveDock->widget() == nullptr,
+                   && waveDock->widget() == nullptr
+                   && window.centralContentStack
+                   && window.centralContentStack
+                          ->currentWidget()
+                          == controller->focusPage(),
                true);
     if (resetLayoutAction)
         resetLayoutAction->trigger();
@@ -12071,9 +12249,7 @@ int main(int argc, char** argv)
     runEditorBracketRangeRegression();
     runEditorSmartSelectionRegression();
     runEditorOccurrenceNavigationRegression();
-    runEditorSafeRenameRegression();
-    runSafeRenameCoordinatorRegression();
-    runSafeRenameCreateDefinitionRegression();
+    runEditorRegistryRenameAdapterRegression();
     runStructuralEditingRegression();
     runEditorColumnEditRegression();
     runEditorLineActionRegression();
@@ -12090,6 +12266,8 @@ int main(int argc, char** argv)
     runWorkspaceScanSignalReentrancyRegression();
     runWorkspaceAliasRenameRegression();
     runWorkspaceSessionCloseSaveOrderRegression();
+    runExternalConflictReviewRegression();
+    runCrashRecoveryReviewRegression();
     runNoImplicitCompletionRegression();
     runIncludeCompletionRegression();
     runTreeSitterFoldingProviderRegression();
@@ -12184,11 +12362,9 @@ int main(int argc, char** argv)
     window.resize(1100, 760);
     window.show();
     expectBool("main window visible", waitUntil([&]() { return window.isVisible(); }, 2000), true);
-    expectBool("workspace tab bar has close action",
-               window.workspaceTabBar
-                   && window.workspaceTabBar->tabsClosable()
-                   && window.workspaceTabBar->contextMenuPolicy()
-                          == Qt::CustomContextMenu,
+    expectBool("outer workspace tab bar removed",
+               window.findChild<QTabBar*>(
+                   QStringLiteral("workspaceTabBar")) == nullptr,
                true);
     expectBool("activity output panel exists",
                window.findChild<QPlainTextEdit*>(
@@ -12202,26 +12378,21 @@ int main(int argc, char** argv)
     expectBool("fold shelf dock starts hidden",
                foldShelfDock && !foldShelfDock->isVisible(),
                true);
-    QToolButton* explorerRailButton =
-        window.findChild<QToolButton*>(QStringLiteral("shellRail_explorer"));
-    QToolButton* outlineRailButton =
-        window.findChild<QToolButton*>(
-            QStringLiteral("shellRail_") + QStringLiteral("outline"));
-    QToolButton* designRailButton =
-        window.findChild<QToolButton*>(QStringLiteral("shellRail_design"));
-    QToolButton* searchRailButton =
-        window.findChild<QToolButton*>(QStringLiteral("shellRail_search"));
     NavigationWidget* railNavigationWidget =
         window.navigationPane ? window.navigationPane->navigationWidget : nullptr;
     QDockWidget* navigationDock =
         window.navigationPane ? window.navigationPane->dock() : nullptr;
-    expectBool("navigation rail has explorer design search only",
-               explorerRailButton
-                   && !outlineRailButton
-                   && designRailButton
-                   && searchRailButton,
+    expectBool("left feature navigation rail removed",
+               window.findChild<QDockWidget*>(
+                   QStringLiteral("shellNavigationRailDock")) == nullptr
+                   && window.findChild<QToolButton*>(
+                          QStringLiteral("shellRail_explorer")) == nullptr
+                   && window.findChild<QToolButton*>(
+                          QStringLiteral("shellRail_design")) == nullptr
+                   && window.findChild<QToolButton*>(
+                          QStringLiteral("shellRail_search")) == nullptr,
                true);
-    expectBool("navigation rail widget exists",
+    expectBool("navigation pane remains available",
                railNavigationWidget
                    && railNavigationWidget->tabWidget
                    && railNavigationWidget->searchLineEdit,
@@ -12229,10 +12400,9 @@ int main(int argc, char** argv)
     if (railNavigationWidget && navigationDock) {
         navigationDock->hide();
         railNavigationWidget->setActiveTab(NavigationWidget::DesignTab);
-        if (explorerRailButton)
-            explorerRailButton->click();
+        window.navigationPane->showFiles();
         QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-        expectBool("explorer rail opens files tab",
+        expectBool("navigation Files entry restores pane",
                    navigationDock->isVisible()
                        && railNavigationWidget->tabWidget->currentIndex()
                               == NavigationWidget::FileTab,
@@ -12240,10 +12410,9 @@ int main(int argc, char** argv)
 
         navigationDock->hide();
         railNavigationWidget->setActiveTab(NavigationWidget::FileTab);
-        if (designRailButton)
-            designRailButton->click();
+        window.navigationPane->showDesign();
         QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-        expectBool("design rail opens design tab",
+        expectBool("navigation Design entry restores pane",
                    navigationDock->isVisible()
                        && railNavigationWidget->tabWidget->currentIndex()
                               == NavigationWidget::DesignTab,
@@ -12251,9 +12420,8 @@ int main(int argc, char** argv)
 
         navigationDock->hide();
         railNavigationWidget->searchLineEdit->clearFocus();
-        if (searchRailButton)
-            searchRailButton->click();
-        expectBool("search rail focuses navigation search",
+        window.navigationPane->showSearch();
+        expectBool("navigation search restores pane and focus",
                    waitUntil([&]() {
                        return navigationDock->isVisible()
                            && railNavigationWidget->searchLineEdit->hasFocus();
@@ -12262,6 +12430,110 @@ int main(int argc, char** argv)
     }
     QMenu* viewMenu = window.findChild<QMenu*>(QStringLiteral("viewMenu"));
     expectBool("view menu exists", viewMenu != nullptr, true);
+    bool fixedMenuActionsUseRegistry = true;
+    for (const ActionDescriptor* descriptor :
+         actionDescriptorsForSurface(
+             ActionSurface::Menu)) {
+        if (!descriptor) {
+            fixedMenuActionsUseRegistry = false;
+            break;
+        }
+        const ActionAliasDescriptor alias =
+            descriptor->aliasForSurface(
+                ActionSurface::Menu);
+        const QList<QAction*> actions =
+            window.findChildren<QAction*>(
+                alias.adapterKey);
+        if (actions.size() != 1
+            || actions.constFirst()
+                   ->property("actionId").toString()
+                   != descriptor->id
+            || actions.constFirst()
+                   ->property(
+                       "executionRoute").toString()
+                   != descriptor->executionRoute
+            || actions.constFirst()->shortcut()
+                   .toString(
+                       QKeySequence::PortableText)
+                   != QKeySequence::fromString(
+                          effectiveActionShortcut(
+                              descriptor->id),
+                          QKeySequence::PortableText)
+                          .toString(
+                              QKeySequence::PortableText)) {
+            fixedMenuActionsUseRegistry = false;
+            break;
+        }
+    }
+    expectBool(
+        "all fixed menu actions are unique Action Registry adapters",
+        fixedMenuActionsUseRegistry,
+        true);
+    QDockWidget* settingsCenterDock =
+        window.findChild<QDockWidget*>(
+            QStringLiteral("editorAppearanceDock"));
+    QAction* viewSettingsCenterAction =
+        window.findChild<QAction*>(
+            QStringLiteral("viewSettingsCenterAction"));
+    expectBool("unified Settings Center replaces appearance panel",
+               settingsCenterDock
+                   && settingsCenterDock->windowTitle()
+                          == QStringLiteral("Settings")
+                   && settingsCenterDock->widget()
+                          == window.settingsCenterPanel
+                   && window.settingsCenterPanel
+                   && window.findChild<QWidget*>(
+                          QStringLiteral(
+                              "editorAppearancePanel")) == nullptr,
+               true);
+    expectBool("Settings Center keeps legacy dock identity",
+               window.dockForPanelId(
+                   QStringLiteral("settingsCenter"))
+                       == settingsCenterDock
+                   && window.dockForPanelId(
+                          QStringLiteral("editorAppearance"))
+                          == settingsCenterDock
+                   && settingsCenterDock
+                   && settingsCenterDock->property(
+                          "legacyPanelId").toString()
+                          == QStringLiteral("editorAppearance"),
+               true);
+    if (viewSettingsCenterAction) {
+        viewSettingsCenterAction->trigger();
+        QCoreApplication::processEvents(
+            QEventLoop::AllEvents, 50);
+    }
+    expectBool("Settings Center has one View entry",
+               viewSettingsCenterAction
+                   && settingsCenterDock
+                   && settingsCenterDock->isVisible()
+                   && window.findChild<QAction*>(
+                          QStringLiteral(
+                              "viewEditorAppearanceAction")) == nullptr,
+               true);
+    if (settingsCenterDock)
+        settingsCenterDock->hide();
+    expectBool("Search Navigate Help menus removed",
+               window.findChild<QMenu*>(
+                   QStringLiteral("searchMenu")) == nullptr
+                   && window.findChild<QMenu*>(
+                          QStringLiteral("navigateMenu")) == nullptr
+                   && window.findChild<QMenu*>(
+                          QStringLiteral("helpMenu")) == nullptr,
+               true);
+    expectBool("standalone semantic panel actions removed",
+               window.findChild<QAction*>(
+                   QStringLiteral("viewReferencesAction")) == nullptr
+                   && window.findChild<QAction*>(
+                          QStringLiteral("viewRelationshipsAction")) == nullptr,
+               true);
+    expectBool("multi-workspace controls remain in Workspace menu",
+               window.findChild<QMenu*>(
+                   QStringLiteral("openWorkspacesMenu")) != nullptr
+                   && window.findChild<QAction*>(
+                          QStringLiteral("closeActiveWorkspaceAction"))
+                          != nullptr,
+               true);
     QToolButton* panelsStatusButton =
         window.findChild<QToolButton*>(QStringLiteral("panelsStatusButton"));
     expectBool("panels status button exists",
@@ -12288,6 +12560,266 @@ int main(int argc, char** argv)
                    && openWorkspaceUserTemplatesAction
                    && reloadUserTemplatesAction,
                true);
+    QMenu* rtlActionsMenu =
+        window.findChild<QMenu*>(
+            QStringLiteral("rtlActionsMenu"));
+    QAction* rtlRenameAction =
+        window.findChild<QAction*>(
+            QStringLiteral(
+                "rtlRenameAction"));
+    QAction* rtlConnectionTransformAction =
+        window.findChild<QAction*>(
+            QStringLiteral(
+                "rtlConnectionTransformAction"));
+    QAction* connectInstancePairAction =
+        window.findChild<QAction*>(
+            QStringLiteral(
+                "connectInstancePairAction"));
+    QAction* propagateMultipleSignalsAction =
+        window.findChild<QAction*>(
+            QStringLiteral(
+                "propagateMultipleSignalsAction"));
+    QDockWidget* instancePairDock =
+        window.findChild<QDockWidget*>(
+            QStringLiteral(
+                "InstancePairConnectionDock"));
+    QDockWidget* multiSignalDock =
+        window.findChild<QDockWidget*>(
+            QStringLiteral(
+                "MultiSignalPropagationDock"));
+    RtlHighRiskEditPanelCoordinator*
+        rtlHighRiskEdit =
+            window.semanticDocks
+            ? window.semanticDocks
+                  ->rtlHighRiskEditPanelCoordinator()
+            : nullptr;
+    QDockWidget* rtlHighRiskEditDock =
+        rtlHighRiskEdit
+        ? rtlHighRiskEdit->dock()
+        : nullptr;
+    expectBool("RTL Actions are reachable from one registry-backed Tools submenu",
+               rtlActionsMenu
+                   && rtlActionsMenu->actions().size() == 4
+                   && rtlRenameAction
+                   && rtlConnectionTransformAction
+                   && connectInstancePairAction
+                   && propagateMultipleSignalsAction
+                   && rtlRenameAction
+                          ->property(
+                              "actionId").toString()
+                          == QString::fromLatin1(
+                              ActionIds::RtlRename)
+                   && rtlRenameAction->shortcut()
+                          .toString(
+                              QKeySequence::
+                                  PortableText)
+                          == QStringLiteral("Ctrl+R")
+                   && rtlConnectionTransformAction
+                          ->property(
+                              "actionId").toString()
+                          == QString::fromLatin1(
+                              ActionIds::
+                                  RtlConnectionTransform)
+                   && connectInstancePairAction
+                          ->property(
+                              "actionId").toString()
+                          == QString::fromLatin1(
+                              ActionIds::
+                                  RtlConnectInstancePair)
+                   && propagateMultipleSignalsAction
+                          ->property(
+                              "actionId").toString()
+                          == QString::fromLatin1(
+                              ActionIds::
+                                  RtlPropagateMultipleSignals),
+               true);
+    expectBool("Command Layer Repeat Last has the unified MainWindow fallback",
+               window.commandLayerCoordinator
+                   && window.commandLayerCoordinator
+                          ->actionExecutionHost
+                          .hasFallbackHost(),
+               true);
+    expectBool("high-risk RTL pages are unique managed bottom pages",
+               instancePairDock
+                   && multiSignalDock
+                   && rtlHighRiskEdit
+                   && rtlHighRiskEditDock
+                   && window.findChildren<
+                          RtlHighRiskEditPanel*>()
+                          .size() == 1
+                   && window.findChildren<
+                          QDockWidget*>(
+                              QStringLiteral(
+                                  "rtlHighRiskEditDock"))
+                          .size() == 1
+                   && window.findChildren<
+                          InstancePairConnectionPanel*>()
+                          .size() == 1
+                   && window.findChildren<
+                          MultiSignalPropagationPanel*>()
+                          .size() == 1
+                   && window.panelLayoutController
+                   && window.panelLayoutController
+                          ->isBottomPanel(
+                              rtlHighRiskEditDock)
+                   && window.panelLayoutController
+                          ->isBottomPanel(
+                              instancePairDock)
+                   && window.panelLayoutController
+                          ->isBottomPanel(
+                              multiSignalDock),
+               true);
+    if (rtlRenameAction
+        && rtlConnectionTransformAction
+        && rtlHighRiskEditDock) {
+        const int dockCountBefore =
+            window.findChildren<QDockWidget*>(
+                QStringLiteral(
+                    "rtlHighRiskEditDock"))
+                .size();
+        rtlRenameAction->trigger();
+        rtlRenameAction->trigger();
+        rtlConnectionTransformAction->trigger();
+        QCoreApplication::processEvents(
+            QEventLoop::AllEvents, 50);
+        expectBool(
+            "repeated unified RTL actions never create duplicate pages",
+            window.findChildren<QDockWidget*>(
+                QStringLiteral(
+                    "rtlHighRiskEditDock"))
+                    .size()
+                == dockCountBefore
+                && !rtlHighRiskEditDock
+                        ->isVisible(),
+            true);
+        expectBool(
+            "unavailable unified RTL action exposes a failure reason",
+            window.statusBar()
+                && window.statusBar()
+                       ->currentMessage()
+                       .contains(
+                           QStringLiteral(
+                               "workspace"),
+                           Qt::CaseInsensitive),
+            true);
+    }
+    if (rtlHighRiskEdit
+        && rtlHighRiskEditDock
+        && window.panelLayoutController) {
+        window.panelLayoutController->closePanel(
+            RtlHighRiskEditPanelCoordinator::
+                panelId());
+        QWidget* focusBefore =
+            QApplication::focusWidget();
+        const PanelLayoutState layoutBefore =
+            window.panelLayoutController
+                ->layoutState();
+        QDockWidget* activityDock =
+            window.dockForPanelId(
+                QStringLiteral("activity"));
+        const bool activityVisibleBefore =
+            activityDock
+            && activityDock->isVisible();
+        RtlHighRiskEditPanelOutcome
+            conflictOutcome;
+        conflictOutcome.panelState =
+            RtlHighRiskEditPanelState::Conflict;
+        conflictOutcome.workflowState =
+            RtlHighRiskEditWorkflowState::Failed;
+        conflictOutcome.failure =
+            RtlHighRiskEditWorkflowFailure::
+                ExternalModification;
+        conflictOutcome.transactionStatus =
+            rtledit::TransactionStatus::Conflict;
+        conflictOutcome.actionId =
+            QString::fromLatin1(
+                ActionIds::RtlRename);
+        conflictOutcome.message =
+            QStringLiteral(
+                "RTL transaction conflict test");
+        rtlHighRiskEdit->panel()
+            ->presentOutcome(conflictOutcome);
+        QMetaObject::invokeMethod(
+            rtlHighRiskEdit,
+            "stateChanged",
+            Qt::DirectConnection,
+            Q_ARG(
+                RtlHighRiskEditPanelOutcome,
+                conflictOutcome));
+        QCoreApplication::processEvents(
+            QEventLoop::AllEvents, 50);
+        const PanelLayoutState layoutAfter =
+            window.panelLayoutController
+                ->layoutState();
+        bool transactionNotificationFound =
+            false;
+        if (window.notificationCenter) {
+            for (const NotificationItem& item :
+                 window.notificationCenter
+                     ->notifications()) {
+                transactionNotificationFound =
+                    transactionNotificationFound
+                    || (item.topic
+                            == NotificationTopic::
+                                TransactionConflict
+                        && item.source
+                            == QStringLiteral(
+                                "RtlHighRiskEdit")
+                        && item.message
+                               .contains(
+                                   QStringLiteral(
+                                       "conflict"),
+                                   Qt::CaseInsensitive));
+            }
+        }
+        expectBool(
+            "RTL result updates preserve layout and focus",
+            !rtlHighRiskEditDock->isVisible()
+                && layoutAfter.bottomCollapsed
+                    == layoutBefore
+                           .bottomCollapsed
+                && layoutAfter
+                       .expandedBottomHeight
+                    == layoutBefore
+                           .expandedBottomHeight
+                && QApplication::focusWidget()
+                    == focusBefore,
+            true);
+        expectBool(
+            "RTL transaction conflicts use non-blocking notifications",
+            transactionNotificationFound
+                && activityDock
+                && activityDock->isVisible()
+                    == activityVisibleBefore
+                && !rtlHighRiskEditDock
+                        ->isVisible(),
+            true);
+    }
+    if (instancePairDock && multiSignalDock
+        && window.semanticDocks) {
+        window.panelLayoutController->closePanel(
+            InstancePairConnectionCoordinator::panelId());
+        window.panelLayoutController->closePanel(
+            MultiSignalPropagationPanel::panelId());
+        QWidget* focusBefore =
+            QApplication::focusWidget();
+        InstancePairConnectionAnalysis emptyAnalysis;
+        window.semanticDocks
+            ->instancePairConnectionCoordinator()
+            ->presentAnalysis(emptyAnalysis);
+        MultiSignalPropagationPanelInput emptyInput;
+        window.semanticDocks
+            ->multiSignalPropagationPanel()
+            ->setInput(emptyInput);
+        QCoreApplication::processEvents(
+            QEventLoop::AllEvents, 50);
+        expectBool("RTL data refresh does not expand pages or steal focus",
+                   !instancePairDock->isVisible()
+                       && !multiSignalDock->isVisible()
+                       && QApplication::focusWidget()
+                              == focusBefore,
+                   true);
+    }
 
     QTemporaryDir userTemplateEntryDir;
     expectBool("user template entry temp dir valid",
@@ -12414,29 +12946,129 @@ int main(int argc, char** argv)
                                  "\"body\":\"reserved;\"}\n"
                                  "]\n")),
                true);
+    QStringList invalidUserTemplateReloadMessages;
+    QMetaObject::Connection invalidUserTemplateReloadStatusConnection;
+    if (window.statusBar()) {
+        invalidUserTemplateReloadStatusConnection = QObject::connect(
+            window.statusBar(),
+            &QStatusBar::messageChanged,
+            &window,
+            [&](const QString& message) {
+                invalidUserTemplateReloadMessages.append(message);
+            });
+    }
     acceptNextMessageBoxOk();
     if (reloadUserTemplatesAction) {
         reloadUserTemplatesAction->trigger();
         QCoreApplication::processEvents(QEventLoop::AllEvents, 150);
     }
+    if (invalidUserTemplateReloadStatusConnection)
+        QObject::disconnect(invalidUserTemplateReloadStatusConnection);
+    const bool sawInvalidTemplateReload = std::any_of(
+        invalidUserTemplateReloadMessages.cbegin(),
+        invalidUserTemplateReloadMessages.cend(),
+        [](const QString& message) {
+            return message.contains(QStringLiteral("loaded: 0"))
+                && message.contains(QStringLiteral("ignored: 2"));
+        });
     expectBool("reload user templates status has ignored count",
-               window.statusBar()
-                   && window.statusBar()->currentMessage().contains(
-                       QStringLiteral("loaded: 0"))
-                   && window.statusBar()->currentMessage().contains(
-                       QStringLiteral("ignored:")),
+               sawInvalidTemplateReload,
                true);
 
     QTemporaryDir userTemplateWorkspaceDir;
     expectBool("user template workspace temp dir valid",
                userTemplateWorkspaceDir.isValid(),
                true);
+    const QString productionSettingsPath =
+        window.settingsCenterService
+        ? window.settingsCenterService->workspaceSettingsFilePath(
+              userTemplateWorkspaceDir.path())
+        : QString();
+    expectBool(
+        "write production Settings Center workspace fixture",
+        !productionSettingsPath.isEmpty()
+            && QDir().mkpath(
+                QFileInfo(productionSettingsPath).absolutePath())
+            && writeTextFile(
+                productionSettingsPath,
+                QStringLiteral(
+                    "{\n"
+                    "  \"schema\": \"ZeroSlack.SettingsCenter\",\n"
+                    "  \"version\": 1,\n"
+                    "  \"values\": {\n"
+                    "    \"font.sizePt\": 19,\n"
+                    "    \"formatter.profile\": \"indent_only\",\n"
+                    "    \"formatter.formatOnSave\": true\n"
+                    "  }\n"
+                    "}\n")),
+        true);
     if (userTemplateWorkspaceDir.isValid()) {
+        QDockWidget* passiveActivityDock =
+            window.findChild<QDockWidget*>(
+                QStringLiteral("activityDock"));
+        if (passiveActivityDock)
+            passiveActivityDock->hide();
         expectBool("open temp workspace for user templates",
                    window.workspaceManager->openWorkspace(
                        userTemplateWorkspaceDir.path()),
                    true);
         QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
+        expectBool("workspace open does not expand Activity",
+                   passiveActivityDock
+                       && !passiveActivityDock->isVisible(),
+                   true);
+        expectBool("workspace activation loads Settings Center layer",
+                   window.settingsCenterPanel
+                       && QDir::cleanPath(
+                              window.settingsCenterPanel
+                                  ->workspaceRoot())
+                              == QDir::cleanPath(
+                                  userTemplateWorkspaceDir.path())
+                       && window.settingsCenterPanel->effectiveValue(
+                              QStringLiteral("font.sizePt")).toInt()
+                              == 19,
+                   true);
+        expectBool("effective appearance and formatter drive runtime backends",
+                   window.editorAppearanceSettings
+                       && window.editorAppearanceSettings
+                              ->options().fontSizePt == 19
+                       && window.formatterSettings
+                       && window.formatterSettings->profile()
+                              == FormatterProfile::IndentOnly
+                       && window.formatterSettings
+                              ->formatOnSaveEnabled(),
+                   true);
+
+        window.settingsCenterPanel->setScope(
+            SettingsCenterScope::Workspace);
+        const QVariantMap globalLayerBeforeWorkspaceApply =
+            window.settingsCenterPanel->snapshot().globalValues;
+        auto* productionSizeEditor =
+            qobject_cast<QSpinBox*>(
+                window.settingsCenterPanel->fieldEditor(
+                    QStringLiteral("font.sizePt")));
+        if (productionSizeEditor)
+            productionSizeEditor->setValue(21);
+        window.settingsCenterPanel->applyCurrentScope();
+        QCoreApplication::processEvents(
+            QEventLoop::AllEvents, 50);
+        const SettingsCenterSnapshot persistedSettings =
+            window.settingsCenterService->load(
+                userTemplateWorkspaceDir.path());
+        expectBool("Settings Center apply refreshes runtime backend",
+                   productionSizeEditor
+                       && window.editorAppearanceSettings
+                       && window.editorAppearanceSettings
+                              ->options().fontSizePt == 21
+                       && persistedSettings.workspaceValues.value(
+                                  QStringLiteral(
+                                      "font.sizePt")).toInt()
+                              == 21,
+                   true);
+        expectBool("workspace effective values do not rewrite global layer",
+                   persistedSettings.globalValues
+                       == globalLayerBeforeWorkspaceApply,
+                   true);
     }
     if (openWorkspaceUserTemplatesAction) {
         openWorkspaceUserTemplatesAction->trigger();
@@ -12468,6 +13100,19 @@ int main(int argc, char** argv)
                        QFileInfo(workspaceUserTemplatePath).absoluteFilePath())),
                true);
     window.workspaceManager->closeWorkspace();
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    expectBool("workspace close restores global effective settings",
+               window.settingsCenterPanel
+                   && window.settingsCenterPanel
+                          ->workspaceRoot().isEmpty()
+                   && window.editorAppearanceSettings
+                   && window.editorAppearanceSettings
+                          ->options().fontSizePt
+                          == window.settingsCenterPanel
+                                 ->effectiveValue(
+                                     QStringLiteral(
+                                         "font.sizePt")).toInt(),
+               true);
     workspaceFilesScanned = false;
     workspaceSymbolsDone = false;
 
@@ -12582,6 +13227,112 @@ int main(int argc, char** argv)
                wavePreviewDock && wavePreviewDock->isVisible(),
                true);
 
+    QAction* collapseBottomAction =
+        window.findChild<QAction*>(
+            QStringLiteral("toggleBottomPanelCollapsedAction"));
+    QAction* focusModeAction =
+        window.findChild<QAction*>(
+            QStringLiteral("toggleFocusModeAction"));
+    QAction* pinBottomAction =
+        window.findChild<QAction*>(
+            QStringLiteral("pinActiveBottomPanelAction"));
+    QAction* closeBottomAction =
+        window.findChild<QAction*>(
+            QStringLiteral("closeActiveBottomPanelAction"));
+    QDockWidget* problemsDock =
+        window.findChild<QDockWidget*>(
+            QStringLiteral("problemsDock"));
+    expectBool("panel layout controller and actions exist",
+               window.panelLayoutController
+                   && collapseBottomAction
+                   && focusModeAction
+                   && pinBottomAction
+                   && closeBottomAction
+                   && problemsDock,
+               true);
+    if (collapseBottomAction) {
+        collapseBottomAction->trigger();
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    }
+    expectBool("bottom panel collapses to its tab strip",
+               window.panelLayoutController
+                   && window.panelLayoutController
+                          ->isBottomCollapsed()
+                   && problemsDock
+                   && problemsDock->widget()
+                   && problemsDock->widget()->maximumHeight() == 0,
+               true);
+    const bool activityVisibleBeforePassiveUpdate =
+        activityDock && activityDock->isVisible();
+    const int collapsedProblemsHeight =
+        problemsDock ? problemsDock->height() : -1;
+    ActivityLogService::getInstance()->append(
+        QStringLiteral("GUI"),
+        ActivityLogLevel::Info,
+        QStringLiteral("Passive panel update"));
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    expectBool("panel result update preserves visibility and height",
+               activityDock
+                       && activityDock->isVisible()
+                              == activityVisibleBeforePassiveUpdate
+                   && problemsDock
+                   && problemsDock->height()
+                          == collapsedProblemsHeight
+                   && window.panelLayoutController
+                          ->isBottomCollapsed(),
+               true);
+    if (collapseBottomAction) {
+        collapseBottomAction->trigger();
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    }
+    expectBool("bottom panel restores its prior height state",
+               window.panelLayoutController
+                   && !window.panelLayoutController
+                           ->isBottomCollapsed()
+                   && problemsDock
+                   && problemsDock->widget()
+                   && problemsDock->widget()->maximumHeight() > 0,
+               true);
+
+    if (window.panelLayoutController)
+        window.panelLayoutController->closePanel(
+            QStringLiteral("activity"));
+    const bool navigationVisibleBeforeFocus =
+        window.navigationPane
+        && window.navigationPane->dock()
+        && window.navigationPane->dock()->isVisible();
+    if (focusModeAction) {
+        focusModeAction->trigger();
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    }
+    expectBool("focus mode hides navigation and bottom together",
+               window.panelLayoutController
+                   && window.panelLayoutController
+                          ->isFocusModeActive()
+                   && window.navigationPane
+                   && window.navigationPane->dock()
+                   && !window.navigationPane->dock()->isVisible()
+                   && problemsDock
+                   && !problemsDock->isVisible(),
+               true);
+    if (focusModeAction) {
+        focusModeAction->trigger();
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    }
+    expectBool("focus mode restores the exact prior layout",
+               window.panelLayoutController
+                   && !window.panelLayoutController
+                           ->isFocusModeActive()
+                   && window.navigationPane
+                   && window.navigationPane->dock()
+                   && window.navigationPane->dock()->isVisible()
+                          == navigationVisibleBeforeFocus
+                   && problemsDock
+                   && problemsDock->isVisible()
+                   && activityDock
+                   && !activityDock->isVisible(),
+               true);
+
     QAction* newFileAction = window.findChild<QAction*>(QStringLiteral("new_file"));
     const int editorCountBeforeNewAction = window.tabManager->editorCount();
     if (newFileAction) {
@@ -12593,6 +13344,143 @@ int main(int argc, char** argv)
                    && window.tabManager->editorCount()
                        == editorCountBeforeNewAction + 1,
                true);
+
+    QAction* splitEditorLeftAction =
+        window.findChild<QAction*>(
+            QStringLiteral("splitEditorLeftAction"));
+    QAction* splitEditorRightAction =
+        window.findChild<QAction*>(
+            QStringLiteral("splitEditorRightAction"));
+    QAction* splitEditorAboveAction =
+        window.findChild<QAction*>(
+            QStringLiteral("splitEditorAboveAction"));
+    QAction* splitEditorBelowAction =
+        window.findChild<QAction*>(
+            QStringLiteral("splitEditorBelowAction"));
+    QAction* maximizeEditorSplitAction =
+        window.findChild<QAction*>(
+            QStringLiteral("maximizeEditorSplitAction"));
+    QAction* equalizeEditorSplitsAction =
+        window.findChild<QAction*>(
+            QStringLiteral("equalizeEditorSplitsAction"));
+    QAction* mergeEditorSplitAction =
+        window.findChild<QAction*>(
+            QStringLiteral("mergeEditorSplitAction"));
+    QAction* reopenClosedTabAction =
+        window.findChild<QAction*>(
+            QStringLiteral("reopenClosedTabAction"));
+    expectBool("editor layout menu exposes split lifecycle actions",
+               splitEditorLeftAction
+                   && splitEditorRightAction
+                   && splitEditorAboveAction
+                   && splitEditorBelowAction
+                   && maximizeEditorSplitAction
+                   && equalizeEditorSplitsAction
+                   && mergeEditorSplitAction
+                   && reopenClosedTabAction,
+               true);
+
+    MyCodeEditor* originalSplitView =
+        window.tabManager->getCurrentEditor();
+    SharedDocument* originalSplitDocument =
+        window.tabManager->sharedDocumentForEditor(
+            originalSplitView);
+    const int splitCountBeforeAction =
+        window.tabManager->splitCount();
+    const int editorCountBeforeSplit =
+        window.tabManager->editorCount();
+    if (splitEditorRightAction)
+        splitEditorRightAction->trigger();
+    QCoreApplication::processEvents(
+        QEventLoop::AllEvents, 50);
+    MyCodeEditor* duplicatedSplitView =
+        window.tabManager->getCurrentEditor();
+    expectBool("editor layout action creates shared right split",
+               originalSplitView
+                   && duplicatedSplitView
+                   && duplicatedSplitView
+                          != originalSplitView
+                   && window.tabManager->splitCount()
+                          == splitCountBeforeAction + 1
+                   && window.tabManager->editorCount()
+                          == editorCountBeforeSplit + 1
+                   && originalSplitDocument
+                          == window.tabManager
+                                 ->sharedDocumentForEditor(
+                                     duplicatedSplitView),
+               true);
+
+    if (maximizeEditorSplitAction)
+        maximizeEditorSplitAction->trigger();
+    QCoreApplication::processEvents(
+        QEventLoop::AllEvents, 50);
+    expectBool("editor layout action maximizes current split",
+               window.tabManager->editorSplitController()
+                   && window.tabManager
+                          ->editorSplitController()
+                          ->isGroupMaximized(),
+               true);
+    if (maximizeEditorSplitAction)
+        maximizeEditorSplitAction->trigger();
+    if (equalizeEditorSplitsAction)
+        equalizeEditorSplitsAction->trigger();
+    QCoreApplication::processEvents(
+        QEventLoop::AllEvents, 50);
+    expectBool("editor split exits maximize before equalize",
+               window.tabManager->editorSplitController()
+                   && !window.tabManager
+                           ->editorSplitController()
+                           ->isGroupMaximized(),
+               true);
+
+    QString layoutArtifactRoot =
+        qEnvironmentVariable(
+            "ZEROSLACK_TEST_ARTIFACT_DIR");
+    if (layoutArtifactRoot.isEmpty()) {
+        layoutArtifactRoot =
+            QDir::temp().absoluteFilePath(
+                QStringLiteral("zeroslack-gui-smoke"));
+    }
+    const bool layoutArtifactDirectoryReady =
+        QDir().mkpath(layoutArtifactRoot);
+    const QString layoutScreenshotPath =
+        QDir(layoutArtifactRoot).absoluteFilePath(
+            QStringLiteral(
+                "ui_shell_shared_document_split.png"));
+    expectBool("UI shell shared-document split screenshot saved",
+               layoutArtifactDirectoryReady
+                   && window.grab().save(
+                       layoutScreenshotPath),
+               true);
+
+    if (mergeEditorSplitAction)
+        mergeEditorSplitAction->trigger();
+    QCoreApplication::processEvents(
+        QEventLoop::AllEvents, 50);
+    expectBool("editor layout action merges current split",
+               window.tabManager->splitCount()
+                   == splitCountBeforeAction
+                   && window.tabManager->editorCount()
+                          == editorCountBeforeSplit + 1,
+               true);
+    if (duplicatedSplitView) {
+        QTabWidget* duplicatedViewGroup =
+            window.tabManager
+                ->editorSplitController()
+                ->groupForPage(duplicatedSplitView);
+        if (duplicatedViewGroup) {
+            window.tabManager->closeTab(
+                duplicatedViewGroup->indexOf(
+                    duplicatedSplitView));
+        }
+    }
+    QCoreApplication::processEvents(
+        QEventLoop::AllEvents, 50);
+    expectBool("split integration restores original view count",
+               window.tabManager->editorCount()
+                   == editorCountBeforeSplit,
+               true);
+
     MyCodeEditor* waveEditor = window.tabManager->getCurrentEditor();
     QTemporaryDir wavePreviewNavDir;
     expectBool("wave preview nav temp dir valid",
@@ -14752,7 +15640,6 @@ int main(int argc, char** argv)
         }
     }
 
-    runReferenceDockRegression(window, normalizedSymbolFixturePath);
     runRtlInsightsPanelRegression(window, normalizedSymbolFixturePath);
     runInsightFocusIntegrationRegression(window,
                                          normalizedSymbolFixturePath,

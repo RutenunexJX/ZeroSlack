@@ -12,12 +12,15 @@
 enum class EditorModeId
 {
     None,
+    CommandMode,
     InlineCandidates,
     CompletionCandidates,
     TemplateSlots,
     SignalSelection,
     ColumnSelection,
     VirtualCursor,
+    MultiCursor,
+    KeywordGhost,
     FoldRegion,
     FoldShelf,
     SourceNavigation,
@@ -26,11 +29,14 @@ enum class EditorModeId
 enum class EditorModeOwner
 {
     Unknown,
+    Command,
     Completion,
+    KeywordCompletion,
     TemplateInsertion,
     SignalSelection,
     ColumnEditing,
     VirtualCursor,
+    MultiCursor,
     Folding,
     SourceNavigation,
 };
@@ -49,6 +55,7 @@ enum class EditorModeInput : quint32
     ContextMenu = 1U << 8,
     DragDrop = 1U << 9,
     Clipboard = 1U << 10,
+    Modifier = 1U << 11,
 };
 Q_DECLARE_FLAGS(EditorModeInputs, EditorModeInput)
 Q_DECLARE_OPERATORS_FOR_FLAGS(EditorModeInputs)

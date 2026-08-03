@@ -89,6 +89,13 @@ int RtlInsightsGraphController::selectedItemCountForTest() const
     return sceneMapper->selectedItemCountForTest();
 }
 
+QStringList RtlInsightsGraphController::
+    selectedElementSummariesForTest() const
+{
+    return sceneMapper
+        ->selectedElementSummariesForTest();
+}
+
 QStringList RtlInsightsGraphController::inspectorRowsForTest() const
 {
     return sceneMapper->inspectorRowsForTest();
@@ -232,6 +239,15 @@ bool RtlInsightsGraphController::
         ->setModuleBlockTopFromSelected();
 }
 
+bool RtlInsightsGraphController::selectSourceLocation(
+    const RtlInsightSourceLocation& location,
+    bool centerGraph)
+{
+    return sceneMapper->selectSourceLocation(
+        location,
+        centerGraph);
+}
+
 void RtlInsightsGraphController::applySearchHighlight()
 {
     sceneMapper->applySearchHighlight();
@@ -241,6 +257,9 @@ void RtlInsightsGraphController::
     renderStateTransitionGraphScene(
         const StateTransitionGraphReport& report)
 {
+    ++state.graphBuildGeneration;
+    state.graphDocumentRevision =
+        state.currentSourceLocation.documentRevision;
     sceneMapper->renderStateTransitionGraphScene(
         report);
 }
@@ -249,6 +268,9 @@ void RtlInsightsGraphController::renderFsmGraphScene(
     const FsmGraphReport& report,
     const QString& title)
 {
+    ++state.graphBuildGeneration;
+    state.graphDocumentRevision =
+        state.currentSourceLocation.documentRevision;
     sceneMapper->renderFsmGraphScene(report, title);
 }
 
@@ -258,6 +280,9 @@ void RtlInsightsGraphController::
         const QString& title,
         const QString& mode)
 {
+    ++state.graphBuildGeneration;
+    state.graphDocumentRevision =
+        state.currentSourceLocation.documentRevision;
     sceneMapper->renderFsmGraphLayoutScene(
         graph,
         title,
@@ -268,6 +293,9 @@ void RtlInsightsGraphController::
     mapModuleBlockDiagram(
         const ModuleBlockDiagramReport& report)
 {
+    ++state.graphBuildGeneration;
+    state.graphDocumentRevision =
+        state.currentSourceLocation.documentRevision;
     sceneMapper->renderModuleBlockDiagramScene(
         report);
 }
@@ -350,6 +378,11 @@ void RtlInsightsGraphController::focusInspector()
     } else if (state.insightsTree) {
         state.insightsTree->setFocus();
     }
+}
+
+quint64 RtlInsightsGraphController::graphBuildGeneration() const
+{
+    return state.graphBuildGeneration;
 }
 void RtlInsightsGraphController::showTreeSurface()
 {

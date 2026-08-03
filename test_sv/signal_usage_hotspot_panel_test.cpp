@@ -1,14 +1,18 @@
+#include "actionregistry.h"
+#include "graphexportui.h"
 #include "signalusagehotspotpanel.h"
 #include "semantic_fixture_records.h"
 #include "semanticindexsnapshot.h"
 
 #include <QApplication>
+#include <QAction>
 #include <QDebug>
 #include <QDir>
 #include <QElapsedTimer>
 #include <QFont>
 #include <QFontDatabase>
 #include <QHBoxLayout>
+#include <QPushButton>
 #include <QPixmap>
 #include <QThread>
 #include <QTimer>
@@ -459,6 +463,7 @@ bool verifyReportBuildIsAsyncAndLatestWins()
 int main(int argc, char** argv)
 {
     QApplication app(argc, argv);
+    resetApplicationActionExecutionHistory();
     if (!verifyReportBuildIsAsyncAndLatestWins()) {
         qWarning() << "Hotspot report build blocked UI or published a stale result";
         return 1;
@@ -473,6 +478,101 @@ int main(int argc, char** argv)
             return true;
         });
     panel.renderReportForTest(sampleReport());
+
+    const QList<QAction*> graphViewActions =
+        panel.graphViewActionsForTest();
+    const auto graphActionById =
+        [&graphViewActions](const char* id) {
+            const QString expected =
+                QString::fromLatin1(id);
+            for (QAction* action : graphViewActions) {
+                if (action
+                    && action->property(
+                           GraphExportUi::kActionIdProperty)
+                           .toString()
+                           == expected) {
+                    return action;
+                }
+            }
+            return static_cast<QAction*>(nullptr);
+        };
+    QAction* fitAction = graphActionById(
+        ActionIds::GraphViewFit);
+    QAction* zoomInAction = graphActionById(
+        ActionIds::GraphViewZoomIn);
+    QAction* zoomOutAction = graphActionById(
+        ActionIds::GraphViewZoomOut);
+    QAction* centerAction = graphActionById(
+        ActionIds::GraphViewCenterCurrent);
+    QAction* resetAction = graphActionById(
+        ActionIds::GraphViewResetLayout);
+    if (graphViewActions.size() != 5
+        || !fitAction || !zoomInAction
+        || !zoomOutAction || !centerAction
+        || !resetAction
+        || fitAction->text() != QStringLiteral("Fit")
+        || zoomInAction->text()
+               != QStringLiteral("Zoom In")
+        || zoomOutAction->text()
+               != QStringLiteral("Zoom Out")
+        || centerAction->text()
+               != QStringLiteral("Center Current")
+        || resetAction->text()
+               != QStringLiteral("Reset Layout")
+        || fitAction->property(
+               GraphExportUi::kExecutionRouteProperty)
+               .toString()
+               != QStringLiteral("insight.graphView.fit")
+        || !fitAction->isEnabled()
+        || centerAction->isEnabled()) {
+        qWarning() << "Usage Hotspot graph view Actions do not match Registry metadata";
+        return 1;
+    }
+    QPushButton* zoomInButton =
+        panel.findChild<QPushButton*>(
+            QStringLiteral(
+                "signalUsageHotspotZoomInButton"));
+    if (!zoomInButton
+        || zoomInButton->text()
+               != zoomInAction->text()
+        || zoomInButton->property(
+               GraphExportUi::kActionIdProperty)
+               .toString()
+               != QString::fromLatin1(
+                   ActionIds::GraphViewZoomIn)) {
+        qWarning() << "Usage Hotspot toolbar does not consume Registry Action metadata";
+        return 1;
+    }
+    const ActionExecutionResult resetResult =
+        panel.triggerGraphViewActionForTest(
+            QString::fromLatin1(
+                ActionIds::GraphViewResetLayout));
+    if (!resetResult.succeeded
+        || qAbs(panel.trackZoomFactorForTest() - 1.0)
+               > 0.001) {
+        qWarning() << "Registered Reset Layout Action failed";
+        return 1;
+    }
+    panel.focusZoomIn();
+    if (panel.trackZoomFactorForTest() <= 1.0) {
+        qWarning() << "Registered Focus Zoom In Action failed";
+        return 1;
+    }
+    const ActionExecutionResult zoomOutResult =
+        panel.triggerGraphViewActionForTest(
+            QString::fromLatin1(
+                ActionIds::GraphViewZoomOut));
+    const ActionExecutionResult fitResult =
+        panel.triggerGraphViewActionForTest(
+            QString::fromLatin1(
+                ActionIds::GraphViewFit));
+    if (!zoomOutResult.succeeded
+        || !fitResult.succeeded
+        || applicationActionExecutionHistory()
+               .hasRepeatableAction()) {
+        qWarning() << "Registered graph view Actions failed or displaced repeat history";
+        return 1;
+    }
 
     if (panel.trackBlockCountForTest() != 2) {
         qWarning() << "Expected 2 track blocks, got"
@@ -503,6 +603,18 @@ int main(int argc, char** argv)
         return 1;
     }
     panel.setCurrentEditorLocation(QStringLiteral("chl_ctrl.sv"), 18);
+    centerAction = panel.graphViewActionForTest(
+        QString::fromLatin1(
+            ActionIds::GraphViewCenterCurrent));
+    const ActionExecutionResult centerResult =
+        panel.triggerGraphViewActionForTest(
+            QString::fromLatin1(
+                ActionIds::GraphViewCenterCurrent));
+    if (!centerAction || !centerAction->isEnabled()
+        || !centerResult.succeeded) {
+        qWarning() << "Registered Center Current Action failed";
+        return 1;
+    }
     if (panel.trackBlockCountForTest() != 2) {
         qWarning() << "Current-line marker changed focused track count";
         return 1;

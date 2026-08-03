@@ -7,10 +7,12 @@
 
 #include <QHash>
 #include <QList>
+#include <QMetaObject>
 #include <QPair>
 #include <QSet>
 #include <cstdint>
 #include <functional>
+#include <limits>
 #include <memory>
 #include <vector>
 
@@ -19,6 +21,7 @@ class QPlainTextEdit;
 class QTimer;
 struct EditorSourceNavigationTarget;
 struct EditorOccurrenceNode;
+struct TSKeywordPairTarget;
 
 struct EditorOccurrenceIndexStats {
     qsizetype handleCount = 0;
@@ -54,11 +57,21 @@ public:
     void clearHoveredSymbol(QPlainTextEdit* editor);
     void highlightDiagnostics(
         MyCodeEditor* editor,
-        const QList<SemanticDiagnostic>& diagnostics);
+        const QList<SemanticDiagnostic>& diagnostics,
+        int firstVisiblePosition = 0,
+        int endVisiblePosition =
+            std::numeric_limits<int>::max());
     void highlightSemanticDecorations(
         MyCodeEditor* editor,
         const QList<SemanticDecoration>& decorations);
     void highlightCurrentSymbolReferences(MyCodeEditor* editor);
+    bool expandSmartSelection(
+        MyCodeEditor* editor,
+        QString* message = nullptr);
+    bool navigateSelectedSymbolOccurrence(
+        MyCodeEditor* editor,
+        bool previous,
+        QString* message = nullptr);
     OccurrenceChangeContext prepareDocumentChange(
         const DocumentChange& change,
         const QString& oldText) const;
@@ -77,17 +90,18 @@ public:
         const OccurrenceChangeContext& context,
         int newLineStart,
         const QString& newLineText);
+    void resetDocumentText(MyCodeEditor* editor,
+                           const QString& text);
     EditorOccurrenceIndexStats occurrenceIndexStatsForTest() const;
     QList<int> occurrencePositionsForTest(const QString& word) const;
     void highlightSearchMatches(MyCodeEditor* editor,
-                                const QString& text,
-                                bool caseSensitive);
+                                 const QString& text,
+                                 bool caseSensitive);
     void clearSearchMatches(QPlainTextEdit* editor);
-    void highlightTemplateSlots(MyCodeEditor* editor,
-                                const QList<QPair<int, int>>& ranges,
-                                int activeIndex,
-                                bool pulseOn = true);
-    void clearTemplateSlots(QPlainTextEdit* editor);
+    void highlightKeywordPair(
+        MyCodeEditor* editor,
+        const TSKeywordPairTarget& target);
+    void clearKeywordPair(QPlainTextEdit* editor);
     void highlightSignalSelections(
         MyCodeEditor* editor,
         const QList<QPair<int, int>>& ranges);
@@ -96,7 +110,9 @@ public:
     void flashLine(MyCodeEditor* editor, int lineNumber);
 
 private:
-    void removeByProperty(QPlainTextEdit* editor, int property, int value);
+    static void removeByProperty(QPlainTextEdit* editor,
+                                 int property,
+                                 int value);
     void rebuildOccurrenceIndex(MyCodeEditor* editor,
                                 const QString& text);
     void appendOccurrenceRange(const QString& text,
@@ -120,10 +136,12 @@ class EditorHighlightRefresh
 {
 public:
     void attachToEditor(MyCodeEditor* editor, const std::function<void()>& refresh);
+    void detach();
     void schedule() const;
 
 private:
     std::function<void()> refreshHandler;
+    QMetaObject::Connection cursorConnection;
 };
 
 #endif // EDITORSELECTION_H

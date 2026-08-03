@@ -22,6 +22,16 @@ void SymbolAnalyzer::setWorkspaceFileAnalysisBands(
     workspaceFileAnalysisBands = bands;
 }
 
+void SymbolAnalyzer::setMaxPublishedDiagnostics(int maxDiagnostics)
+{
+    publishedDiagnosticLimit = qMax(1, maxDiagnostics);
+}
+
+int SymbolAnalyzer::maxPublishedDiagnostics() const
+{
+    return publishedDiagnosticLimit;
+}
+
 QString SymbolAnalyzer::contentHash(const QString& content) const
 {
     return QString::fromLatin1(

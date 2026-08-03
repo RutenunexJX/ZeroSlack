@@ -8,6 +8,8 @@
 AnalysisScheduler::AnalysisScheduler(QObject* parent)
     : QObject(parent)
 {
+    qRegisterMetaType<SemanticAnalysisRuntimePolicy>(
+        "SemanticAnalysisRuntimePolicy");
     setupRelationshipAnalysis();
     setupWorkspaceSymbolAnalysis();
     setupDiagnosticsRefreshAndWorkspaceRequests();
@@ -105,6 +107,10 @@ void AnalysisScheduler::setSymbolAnalyzer(SymbolAnalyzer* analyzer)
         return;
 
     symbolAnalyzer = analyzer;
+    if (symbolAnalyzer) {
+        symbolAnalyzer->setMaxPublishedDiagnostics(
+            semanticRuntimePolicy.maxDiagnostics);
+    }
     if (workspaceSymbolAnalysis)
         workspaceSymbolAnalysis->setSymbolAnalyzer(analyzer);
     if (relationshipAnalysis)
@@ -132,6 +138,39 @@ void AnalysisScheduler::setCurrentFileProvider(std::function<QString()> provider
     currentFileProvider = provider;
     if (workspaceSymbolAnalysis)
         workspaceSymbolAnalysis->setCurrentFileProvider(std::move(provider));
+}
+
+void AnalysisScheduler::setSemanticAnalysisRuntimePolicy(
+    const SemanticAnalysisRuntimePolicy& policy)
+{
+    if (shuttingDown)
+        return;
+    const SemanticAnalysisRuntimePolicy normalized = policy.normalized();
+    if (semanticRuntimePolicy == normalized)
+        return;
+
+    const bool disabling =
+        semanticRuntimePolicy.enabled && !normalized.enabled;
+    semanticRuntimePolicy = normalized;
+    if (symbolAnalyzer) {
+        symbolAnalyzer->setMaxPublishedDiagnostics(
+            semanticRuntimePolicy.maxDiagnostics);
+    }
+    if (disabling) {
+        for (QTimer* timer : std::as_const(externalFileTimers)) {
+            if (timer)
+                timer->stop();
+        }
+        cancelWorkspaceAnalysis();
+        stabilizeSemanticStatesWhenDisabled();
+    }
+    emit semanticAnalysisRuntimePolicyChanged(semanticRuntimePolicy);
+}
+
+SemanticAnalysisRuntimePolicy
+AnalysisScheduler::semanticAnalysisRuntimePolicy() const
+{
+    return semanticRuntimePolicy;
 }
 
 void AnalysisScheduler::requestWorkspaceAnalysis(const ProjectSnapshot& project)

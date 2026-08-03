@@ -1,8 +1,12 @@
 #include "formattersettings.h"
 
+#include "settingscenterkeys.h"
+
 namespace {
-constexpr const char* kFormatterProfileKey = "formatter/profile";
-constexpr const char* kFormatOnSaveKey = "formatter/formatOnSave";
+constexpr const char* kFormatterProfileKey =
+    SettingsCenterKeys::FormatterProfile;
+constexpr const char* kFormatOnSaveKey =
+    SettingsCenterKeys::FormatterFormatOnSave;
 constexpr const char* kStructuredProfile = "structured";
 constexpr const char* kIndentOnlyProfile = "indent_only";
 }

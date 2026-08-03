@@ -37,6 +37,38 @@ enum class SemanticAnalysisStage {
     Navigation
 };
 
+enum class SemanticAnalysisPlanningMode {
+    DependencyAwareIncremental,
+    FullWorkspace
+};
+
+struct SemanticAnalysisRuntimePolicy {
+    bool enabled = true;
+    SemanticAnalysisPlanningMode planningMode =
+        SemanticAnalysisPlanningMode::DependencyAwareIncremental;
+    int maxDiagnostics = 2000;
+
+    SemanticAnalysisRuntimePolicy normalized() const
+    {
+        SemanticAnalysisRuntimePolicy result = *this;
+        if (result.maxDiagnostics < 1)
+            result.maxDiagnostics = 1;
+        return result;
+    }
+
+    bool operator==(const SemanticAnalysisRuntimePolicy& other) const
+    {
+        return enabled == other.enabled
+            && planningMode == other.planningMode
+            && maxDiagnostics == other.maxDiagnostics;
+    }
+
+    bool operator!=(const SemanticAnalysisRuntimePolicy& other) const
+    {
+        return !(*this == other);
+    }
+};
+
 enum class DocumentSemanticState {
     Current,
     Dirty,
@@ -106,6 +138,7 @@ struct SemanticAnalysisRequest {
     QHash<QString, std::uint64_t> documentRevisions;
     std::uint64_t expectedSnapshotRevision = 0;
     std::uint64_t computationRevision = 0;
+    SemanticAnalysisRuntimePolicy runtimePolicy;
 
     bool isValid() const
     {
@@ -126,6 +159,9 @@ struct SemanticAnalysisTelemetry {
     qint64 effectiveFactsMs = 0;
     qint64 snapshotInstallMs = 0;
     qint64 uiRefreshMs = 0;
+    int diagnosticsProduced = 0;
+    int diagnosticsPublished = 0;
+    int diagnosticsSuppressed = 0;
     bool slangInvoked = false;
     QString detail;
 };
@@ -141,11 +177,15 @@ struct DocumentSemanticStatus {
 QString semanticAnalysisReasonName(SemanticAnalysisReason reason);
 QString semanticChangeImpactName(SemanticChangeImpact impact);
 QString semanticAnalysisStageName(SemanticAnalysisStage stage);
+QString semanticAnalysisPlanningModeName(
+    SemanticAnalysisPlanningMode planningMode);
 QString documentSemanticStateName(DocumentSemanticState state);
 
 Q_DECLARE_METATYPE(SemanticAnalysisReason)
 Q_DECLARE_METATYPE(SemanticChangeImpact)
 Q_DECLARE_METATYPE(SemanticAnalysisStage)
+Q_DECLARE_METATYPE(SemanticAnalysisPlanningMode)
+Q_DECLARE_METATYPE(SemanticAnalysisRuntimePolicy)
 Q_DECLARE_METATYPE(DocumentSemanticState)
 Q_DECLARE_METATYPE(SemanticAnalysisRequestDisposition)
 Q_DECLARE_METATYPE(SourceTextDelta)

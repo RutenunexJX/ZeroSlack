@@ -38,7 +38,7 @@ WorkspaceConfigurationDialog::WorkspaceConfigurationDialog(QWidget* parent)
 {
     setWindowTitle(QStringLiteral("Workspace Configuration"));
     setObjectName(QStringLiteral("workspaceConfigurationDialog"));
-    resize(720, 560);
+    resize(720, 720);
 
     auto* rootLayout = new QVBoxLayout(this);
     auto* hint = new QLabel(
@@ -122,6 +122,138 @@ WorkspaceConfigurationDialog::WorkspaceConfigurationDialog(QWidget* parent)
                       topModuleEdit);
     rootLayout->addLayout(topLayout);
 
+    auto* sourceGroups =
+        new QGroupBox(
+            QStringLiteral(
+                "Virtual Source Groups"),
+            this);
+    auto* sourceGroupsLayout =
+        new QVBoxLayout(sourceGroups);
+    virtualSourceGroupsTable =
+        new QTableWidget(0, 2, sourceGroups);
+    virtualSourceGroupsTable->setObjectName(
+        QStringLiteral(
+            "workspaceVirtualSourceGroupsTable"));
+    virtualSourceGroupsTable
+        ->setHorizontalHeaderLabels(
+            {QStringLiteral("Group"),
+             QStringLiteral("Files")});
+    virtualSourceGroupsTable
+        ->horizontalHeader()
+        ->setStretchLastSection(true);
+    virtualSourceGroupsTable
+        ->verticalHeader()
+        ->hide();
+    virtualSourceGroupsTable
+        ->setSelectionBehavior(
+            QAbstractItemView::SelectRows);
+    virtualSourceGroupsTable
+        ->setSelectionMode(
+            QAbstractItemView::SingleSelection);
+    sourceGroupsLayout->addWidget(
+        virtualSourceGroupsTable, 1);
+
+    auto* sourceGroupButtons =
+        new QHBoxLayout();
+    auto* addGroupButton =
+        new QPushButton(
+            QStringLiteral("Add Group"),
+            sourceGroups);
+    addGroupButton->setObjectName(
+        QStringLiteral(
+            "workspaceAddVirtualSourceGroupButton"));
+    auto* addFilesButton =
+        new QPushButton(
+            QStringLiteral("Add Files"),
+            sourceGroups);
+    addFilesButton->setObjectName(
+        QStringLiteral(
+            "workspaceAddVirtualSourceFilesButton"));
+    auto* removeGroupButton =
+        new QPushButton(
+            QStringLiteral("Remove"),
+            sourceGroups);
+    removeGroupButton->setObjectName(
+        QStringLiteral(
+            "workspaceRemoveVirtualSourceGroupButton"));
+    auto* moveGroupUpButton =
+        new QPushButton(
+            QStringLiteral("Up"),
+            sourceGroups);
+    moveGroupUpButton->setObjectName(
+        QStringLiteral(
+            "workspaceMoveVirtualSourceGroupUpButton"));
+    auto* moveGroupDownButton =
+        new QPushButton(
+            QStringLiteral("Down"),
+            sourceGroups);
+    moveGroupDownButton->setObjectName(
+        QStringLiteral(
+            "workspaceMoveVirtualSourceGroupDownButton"));
+    sourceGroupButtons->addWidget(
+        addGroupButton);
+    sourceGroupButtons->addWidget(
+        addFilesButton);
+    sourceGroupButtons->addWidget(
+        removeGroupButton);
+    sourceGroupButtons->addWidget(
+        moveGroupUpButton);
+    sourceGroupButtons->addWidget(
+        moveGroupDownButton);
+    sourceGroupButtons->addStretch(1);
+    sourceGroupsLayout->addLayout(
+        sourceGroupButtons);
+    rootLayout->addWidget(sourceGroups, 1);
+
+    connect(
+        addGroupButton,
+        &QPushButton::clicked,
+        this,
+        [this]() {
+            bool accepted = false;
+            const QString name =
+                QInputDialog::getText(
+                    this,
+                    QStringLiteral(
+                        "Add Virtual Source Group"),
+                    QStringLiteral("Group name"),
+                    QLineEdit::Normal,
+                    QString(),
+                    &accepted)
+                    .trimmed();
+            if (accepted && !name.isEmpty()) {
+                addVirtualSourceGroupRow(
+                    WorkspaceVirtualSourceGroup{
+                        name, {}});
+            }
+        });
+    connect(
+        addFilesButton,
+        &QPushButton::clicked,
+        this,
+        &WorkspaceConfigurationDialog::
+            addFilesToSelectedVirtualSourceGroup);
+    connect(
+        removeGroupButton,
+        &QPushButton::clicked,
+        this,
+        &WorkspaceConfigurationDialog::
+            removeSelectedVirtualSourceGroup);
+    connect(
+        moveGroupUpButton,
+        &QPushButton::clicked,
+        this,
+        [this]() {
+            moveSelectedVirtualSourceGroup(-1);
+        });
+    connect(
+        moveGroupDownButton,
+        &QPushButton::clicked,
+        this,
+        [this]() {
+            moveSelectedVirtualSourceGroup(1);
+        });
+
     auto* buttons = new QDialogButtonBox(
         QDialogButtonBox::Ok | QDialogButtonBox::Cancel,
         this);
@@ -139,6 +271,13 @@ void WorkspaceConfigurationDialog::setConfiguration(
     setListValues(fileExtensionsList, configuration.fileExtensions);
     if (topModuleEdit)
         topModuleEdit->setText(configuration.topModule);
+    if (virtualSourceGroupsTable) {
+        virtualSourceGroupsTable->setRowCount(0);
+        for (const WorkspaceVirtualSourceGroup& group :
+             configuration.virtualSourceGroups) {
+            addVirtualSourceGroupRow(group);
+        }
+    }
 
     if (definesTable) {
         definesTable->setRowCount(0);
@@ -158,6 +297,8 @@ WorkspaceConfiguration WorkspaceConfigurationDialog::configuration() const
     configuration.fileExtensions = listValues(fileExtensionsList);
     configuration.topModule = topModuleEdit ? topModuleEdit->text().trimmed()
                                             : QString();
+    configuration.virtualSourceGroups =
+        virtualSourceGroupsFromTable();
     if (definesTable) {
         for (int row = 0; row < definesTable->rowCount(); ++row) {
             const QTableWidgetItem* keyItem = definesTable->item(row, 0);
@@ -346,4 +487,178 @@ void WorkspaceConfigurationDialog::removeSelectedDefineRows()
     const int row = definesTable->currentRow();
     if (row >= 0)
         definesTable->removeRow(row);
+}
+
+void WorkspaceConfigurationDialog::
+    addVirtualSourceGroupRow(
+        const WorkspaceVirtualSourceGroup& group)
+{
+    if (!virtualSourceGroupsTable)
+        return;
+    const int row =
+        virtualSourceGroupsTable->rowCount();
+    virtualSourceGroupsTable->insertRow(row);
+    auto* nameItem =
+        new QTableWidgetItem(group.name);
+    auto* filesItem =
+        new QTableWidgetItem();
+    filesItem->setFlags(
+        filesItem->flags()
+        & ~Qt::ItemIsEditable);
+    filesItem->setData(
+        Qt::UserRole,
+        group.files);
+    virtualSourceGroupsTable->setItem(
+        row, 0, nameItem);
+    virtualSourceGroupsTable->setItem(
+        row, 1, filesItem);
+    refreshVirtualSourceGroupFilesCell(row);
+    virtualSourceGroupsTable->setCurrentCell(
+        row, 0);
+}
+
+void WorkspaceConfigurationDialog::
+    addFilesToSelectedVirtualSourceGroup()
+{
+    if (!virtualSourceGroupsTable)
+        return;
+    const int row =
+        virtualSourceGroupsTable->currentRow();
+    if (row < 0)
+        return;
+    const QStringList selected =
+        QFileDialog::getOpenFileNames(
+            this,
+            QStringLiteral(
+                "Add Files to Virtual Source Group"),
+            workspaceRoot);
+    if (selected.isEmpty())
+        return;
+    QTableWidgetItem* item =
+        virtualSourceGroupsTable->item(row, 1);
+    if (!item)
+        return;
+    QStringList files =
+        item->data(Qt::UserRole)
+            .toStringList();
+    files.append(selected);
+    item->setData(Qt::UserRole, files);
+    refreshVirtualSourceGroupFilesCell(row);
+}
+
+void WorkspaceConfigurationDialog::
+    removeSelectedVirtualSourceGroup()
+{
+    if (!virtualSourceGroupsTable)
+        return;
+    const int row =
+        virtualSourceGroupsTable->currentRow();
+    if (row >= 0)
+        virtualSourceGroupsTable->removeRow(row);
+}
+
+void WorkspaceConfigurationDialog::
+    moveSelectedVirtualSourceGroup(int delta)
+{
+    if (!virtualSourceGroupsTable)
+        return;
+    const int row =
+        virtualSourceGroupsTable->currentRow();
+    const int target = row + delta;
+    if (row < 0
+        || target < 0
+        || target
+               >= virtualSourceGroupsTable
+                      ->rowCount()) {
+        return;
+    }
+    for (int column = 0;
+         column
+         < virtualSourceGroupsTable
+               ->columnCount();
+         ++column) {
+        QTableWidgetItem* current =
+            virtualSourceGroupsTable
+                ->takeItem(row, column);
+        QTableWidgetItem* other =
+            virtualSourceGroupsTable
+                ->takeItem(target, column);
+        virtualSourceGroupsTable
+            ->setItem(row, column, other);
+        virtualSourceGroupsTable
+            ->setItem(target, column, current);
+    }
+    virtualSourceGroupsTable
+        ->setCurrentCell(target, 0);
+}
+
+void WorkspaceConfigurationDialog::
+    refreshVirtualSourceGroupFilesCell(int row)
+{
+    if (!virtualSourceGroupsTable
+        || row < 0
+        || row
+               >= virtualSourceGroupsTable
+                      ->rowCount()) {
+        return;
+    }
+    QTableWidgetItem* item =
+        virtualSourceGroupsTable->item(row, 1);
+    if (!item)
+        return;
+    const QStringList files =
+        item->data(Qt::UserRole)
+            .toStringList();
+    QStringList labels;
+    labels.reserve(files.size());
+    const QDir root(workspaceRoot);
+    for (const QString& file : files) {
+        const QString relative =
+            root.relativeFilePath(file);
+        labels.append(
+            QDir::fromNativeSeparators(
+                relative));
+    }
+    item->setText(
+        labels.join(
+            QStringLiteral("; ")));
+    item->setToolTip(
+        files.join(QLatin1Char('\n')));
+}
+
+QList<WorkspaceVirtualSourceGroup>
+WorkspaceConfigurationDialog::
+    virtualSourceGroupsFromTable() const
+{
+    QList<WorkspaceVirtualSourceGroup> groups;
+    if (!virtualSourceGroupsTable)
+        return groups;
+    groups.reserve(
+        virtualSourceGroupsTable->rowCount());
+    for (int row = 0;
+         row
+         < virtualSourceGroupsTable
+               ->rowCount();
+         ++row) {
+        const QTableWidgetItem* nameItem =
+            virtualSourceGroupsTable
+                ->item(row, 0);
+        const QTableWidgetItem* filesItem =
+            virtualSourceGroupsTable
+                ->item(row, 1);
+        WorkspaceVirtualSourceGroup group;
+        group.name =
+            nameItem
+            ? nameItem->text().trimmed()
+            : QString();
+        group.files =
+            filesItem
+            ? filesItem->data(
+                  Qt::UserRole)
+                  .toStringList()
+            : QStringList();
+        if (!group.name.isEmpty())
+            groups.append(group);
+    }
+    return groups;
 }

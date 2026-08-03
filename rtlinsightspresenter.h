@@ -1,6 +1,8 @@
 #ifndef RTLINSIGHTSPRESENTER_H
 #define RTLINSIGHTSPRESENTER_H
 
+#include "rtlinsightlink.h"
+
 #include <QString>
 
 #include <memory>
@@ -20,6 +22,10 @@ public:
         const QString& fileName,
         const QString& moduleName,
         const QString& signalName = QString());
+    bool syncSourceLocation(
+        const RtlInsightSourceLocation& location);
+    void setPinned(bool pinned);
+    bool isPinned() const;
     void showModuleInsights(
         const QString& fileName,
         const QString& moduleName,
@@ -65,6 +71,10 @@ private:
                        int durationMs) const;
     void logReportError(const QString& reportName,
                         const QString& message) const;
+    void setContextDirect(
+        const QString& fileName,
+        const QString& moduleName,
+        const QString& signalName);
 };
 
 #endif // RTLINSIGHTSPRESENTER_H

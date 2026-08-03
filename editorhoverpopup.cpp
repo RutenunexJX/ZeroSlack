@@ -3,12 +3,16 @@
 #include "effectivevalueservice.h"
 
 #include <QApplication>
+#include <QEventLoop>
 #include <QFileInfo>
-#include <QGuiApplication>
+#include <QHBoxLayout>
 #include <QLabel>
 #include <QKeyEvent>
+#include <QLineEdit>
 #include <QMouseEvent>
-#include <QScreen>
+#include <QPlainTextEdit>
+#include <QPushButton>
+#include <QToolButton>
 #include <QVBoxLayout>
 
 namespace {
@@ -35,19 +39,15 @@ QString effectiveValueLabel(const SymbolHoverReport& report)
 }
 }
 
-EditorHoverPopup::EditorHoverPopup(QWidget* parent,
-                                   PlacementMode newPlacementMode)
-    : QFrame(parent,
-             newPlacementMode == PlacementMode::TopLevelTool
-                 ? (Qt::ToolTip
-                    | Qt::FramelessWindowHint
-                    | Qt::BypassWindowManagerHint)
-                 : Qt::Widget)
-    , placementMode(newPlacementMode)
+EditorHoverPopup::EditorHoverPopup(QWidget* parent)
+    : QFrame(parent, Qt::Widget)
 {
+    Q_ASSERT(parent);
     setAttribute(Qt::WA_ShowWithoutActivating);
     setAttribute(Qt::WA_TransparentForMouseEvents, false);
+    setFocusPolicy(Qt::NoFocus);
     setObjectName(QStringLiteral("editorHoverPopup"));
+    setProperty("unifiedPeekContainer", true);
     setFrameShape(QFrame::StyledPanel);
     setStyleSheet(QStringLiteral(
         "QFrame#editorHoverPopup {"
@@ -55,19 +55,59 @@ EditorHoverPopup::EditorHoverPopup(QWidget* parent,
         "border: 1px solid palette(mid);"
         "border-radius: 5px;"
         "}"
-        "QLabel { color: palette(text); }"));
+        "QLabel { color: palette(text); }"
+        "QLineEdit {"
+        "border: 1px solid palette(highlight);"
+        "border-radius: 3px;"
+        "padding: 3px 6px;"
+        "background: palette(base);"
+        "color: palette(text);"
+        "}"
+        "QPlainTextEdit {"
+        "border: 1px solid palette(mid);"
+        "border-radius: 3px;"
+        "background: palette(base);"
+        "color: palette(text);"
+        "}"));
 
-    layout = new QVBoxLayout(this);
-    layout->setContentsMargins(10, 8, 10, 8);
+    auto* outerLayout = new QVBoxLayout(this);
+    outerLayout->setContentsMargins(10, 8, 10, 8);
+    outerLayout->setSpacing(4);
+
+    auto* headerLayout = new QHBoxLayout;
+    headerLayout->setContentsMargins(0, 0, 0, 0);
+    headerLayout->setSpacing(6);
+    titleLabel = new QLabel(this);
+    titleLabel->setObjectName(QStringLiteral("peekTitle"));
+    titleLabel->setTextFormat(Qt::PlainText);
+    headerLayout->addWidget(titleLabel, 1);
+
+    closeButton = new QToolButton(this);
+    closeButton->setObjectName(QStringLiteral("peekCloseButton"));
+    closeButton->setText(QStringLiteral("\u00d7"));
+    closeButton->setToolTip(QStringLiteral("Close peek (Esc)"));
+    closeButton->setAutoRaise(true);
+    closeButton->setFocusPolicy(Qt::NoFocus);
+    headerLayout->addWidget(closeButton);
+    outerLayout->addLayout(headerLayout);
+
+    layout = new QVBoxLayout;
+    layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(4);
+    outerLayout->addLayout(layout);
 
-    if (placementMode == PlacementMode::EmbeddedChild && qApp)
+    connect(closeButton,
+            &QToolButton::clicked,
+            this,
+            &EditorHoverPopup::closePopup);
+
+    if (qApp)
         qApp->installEventFilter(this);
 }
 
 EditorHoverPopup::~EditorHoverPopup()
 {
-    if (placementMode == PlacementMode::EmbeddedChild && qApp)
+    if (qApp)
         qApp->removeEventFilter(this);
 }
 
@@ -81,79 +121,210 @@ void EditorHoverPopup::setTransientPreview(bool transient)
     transientPreview = transient;
 }
 
+void EditorHoverPopup::showContent(const PeekContentModel& content,
+                                   const QRect& globalAnchorRect,
+                                   const QFont& editorFont)
+{
+    if (content.isEmpty()) {
+        closePopup();
+        return;
+    }
+
+    resetContent();
+    currentContent = content;
+    setFont(editorFont);
+    focusReturnWidget = parentWidget();
+
+    targetFile = content.navigationTarget.fileName;
+    targetLine = content.navigationTarget.line;
+    targetColumn = content.navigationTarget.column;
+
+    QFont titleFont = editorFont;
+    titleFont.setBold(true);
+    titleLabel->setFont(titleFont);
+    titleLabel->setText(content.title);
+    titleLabel->setVisible(!content.title.isEmpty());
+    closeButton->setFont(editorFont);
+
+    for (const PeekContentRow& row : content.rows)
+        addLabel(row.text, row.role, row.wordWrap);
+    if (content.readOnlyText.enabled) {
+        auto* textEdit = new QPlainTextEdit(this);
+        textEdit->setObjectName(
+            content.readOnlyText.objectName.isEmpty()
+                ? QStringLiteral("peekReadOnlyText")
+                : content.readOnlyText.objectName);
+        textEdit->setFont(editorFont);
+        textEdit->setReadOnly(true);
+        textEdit->setPlainText(content.readOnlyText.text);
+        textEdit->setLineWrapMode(
+            content.readOnlyText.wordWrap
+                ? QPlainTextEdit::WidgetWidth
+                : QPlainTextEdit::NoWrap);
+        QSize minimum =
+            content.readOnlyText.minimumSize.expandedTo(
+                QSize(1, 1));
+        if (parentWidget()) {
+            minimum.setWidth(
+                qMin(minimum.width(),
+                     qMax(1, parentWidget()->width() - 28)));
+            minimum.setHeight(
+                qMin(minimum.height(),
+                     qMax(1, parentWidget()->height() - 72)));
+        }
+        textEdit->setMinimumSize(minimum);
+        layout->addWidget(textEdit);
+    }
+    if (content.editor.enabled) {
+        auto* lineEdit = new QLineEdit(this);
+        editControl = lineEdit;
+        lineEdit->setObjectName(
+            content.editor.objectName.isEmpty()
+                ? QStringLiteral("peekEditableText")
+                : content.editor.objectName);
+        lineEdit->setFont(editorFont);
+        lineEdit->setReadOnly(content.editor.readOnly);
+        lineEdit->setText(content.editor.text);
+        lineEdit->setPlaceholderText(
+            content.editor.placeholderText);
+        if (content.editor.minimumWidth > 0) {
+            lineEdit->setMinimumWidth(
+                content.editor.minimumWidth);
+        }
+        connect(
+            lineEdit,
+            &QLineEdit::textChanged,
+            this,
+            [this](const QString& text) {
+                currentContent.editor.text = text;
+            });
+        layout->addWidget(lineEdit);
+    }
+    if (!content.actions.isEmpty()) {
+        auto* actionHost = new QWidget(this);
+        actionHost->setObjectName(
+            QStringLiteral("peekActionBar"));
+        auto* actionLayout = new QHBoxLayout(actionHost);
+        actionLayout->setContentsMargins(0, 4, 0, 0);
+        actionLayout->setSpacing(6);
+        actionLayout->addStretch(1);
+        for (const PeekContentAction& action : content.actions) {
+            if (action.id.isEmpty() || action.label.isEmpty())
+                continue;
+            auto* button = new QPushButton(
+                action.label, actionHost);
+            button->setObjectName(
+                QStringLiteral("peekAction.%1").arg(action.id));
+            button->setProperty("peekActionId", action.id);
+            button->setProperty(
+                "peekActionRole",
+                static_cast<int>(action.role));
+            button->setEnabled(action.enabled);
+            button->setDefault(action.defaultAction);
+            button->setAutoDefault(false);
+            button->setFocusPolicy(Qt::NoFocus);
+            if (action.role
+                == PeekContentActionRole::Destructive) {
+                button->setStyleSheet(
+                    QStringLiteral("color:#b91c1c;"));
+            }
+            connect(
+                button,
+                &QPushButton::clicked,
+                this,
+                [this, action]() {
+                    emit actionTriggered(action.id);
+                });
+            actionLayout->addWidget(button);
+        }
+        layout->addWidget(actionHost);
+    }
+
+    QSize maximum(
+        qMax(1, content.maximumSize.width()),
+        qMax(1, content.maximumSize.height()));
+    if (parentWidget()) {
+        maximum.setWidth(
+            qMin(maximum.width(),
+                 qMax(1, parentWidget()->width() - 8)));
+        maximum.setHeight(
+            qMin(maximum.height(),
+                 qMax(1, parentWidget()->height() - 8)));
+    }
+    setMaximumSize(maximum);
+    adjustSize();
+    resize(qMin(width(), maximum.width()),
+           qMin(height(), maximum.height()));
+    moveNear(globalAnchorRect);
+    show();
+    raise();
+}
+
 void EditorHoverPopup::showHover(const SymbolHoverReport& report,
                                  const QPoint& globalPosition,
                                  const QFont& editorFont)
 {
-    resetContent();
-    setFont(editorFont);
-    targetFile.clear();
-    targetLine = -1;
-    targetColumn = -1;
+    PeekContentModel content;
+    content.kind =
+        report.parameterLike || report.enumMember || report.port
+        ? PeekContentKind::EffectiveValue
+        : PeekContentKind::DeclarationPreview;
+    content.title = report.symbolName;
+    content.maximumSize = QSize(760, 480);
 
-    QFont titleFont = editorFont;
-    titleFont.setBold(true);
-    addLabel(report.symbolName, QStringLiteral("font-weight:600;"), titleFont);
+    auto addRow = [&content](const QString& text,
+                             PeekContentRowRole role =
+                                 PeekContentRowRole::Body,
+                             bool wrap = false) {
+        if (!text.isEmpty())
+            content.rows.append({text, role, wrap});
+    };
     if (!report.unavailableReason.isEmpty()) {
-        addLabel(report.unavailableReason,
-                 QStringLiteral("color: palette(mid);"),
-                 editorFont);
+        addRow(report.unavailableReason, PeekContentRowRole::Muted);
     } else {
         auto addField = [&](const QString& label,
                             const QString& value,
-                            const QFont& font = QFont(),
                             bool wrap = false) {
             if (value.isEmpty())
                 return;
-            QLabel* field = addLabel(
-                QStringLiteral("%1: %2").arg(label, value),
-                QString(),
-                font.family().isEmpty() ? editorFont : font);
-            if (wrap) {
-                field->setMaximumWidth(720);
-                field->setWordWrap(true);
-            }
+            addRow(QStringLiteral("%1: %2").arg(label, value),
+                   PeekContentRowRole::Body,
+                   wrap);
         };
 
         addField(QStringLiteral("kind"), report.displayKind);
         addField(QStringLiteral("owner"), report.ownerName);
 
-        QFont codeFont = editorFont;
         addField(QStringLiteral("declaration"),
                  report.declarationText,
-                 codeFont,
                  true);
         const QString location =
             locationText(report.definitionFile, report.definitionLine);
         if (!location.isEmpty())
-            addLabel(location,
-                     QStringLiteral("color: palette(mid);"),
-                     editorFont);
+            addRow(location, PeekContentRowRole::Muted);
 
         const bool staleEffectiveValue =
             report.effectiveValueStatus == EffectiveValueStatus::Stale;
         if (staleEffectiveValue
             && (report.parameterLike || report.enumMember || report.port)) {
-            addLabel(QStringLiteral(
-                         "effective value: stale (waiting for the current document revision)"),
-                     QStringLiteral("color: palette(mid);"),
-                     editorFont);
+            addRow(
+                QStringLiteral(
+                    "effective value: stale (waiting for the current document revision)"),
+                PeekContentRowRole::Muted);
         }
         const bool unavailableEffectiveValue =
             report.effectiveValueStatus == EffectiveValueStatus::Unavailable
             || report.effectiveValueStatus == EffectiveValueStatus::Error;
         if (unavailableEffectiveValue
             && (report.parameterLike || report.enumMember || report.port)) {
-            addLabel(QStringLiteral("effective value: unavailable"),
-                     QStringLiteral("color: palette(mid);"),
-                     editorFont);
+            addRow(QStringLiteral("effective value: unavailable"),
+                   PeekContentRowRole::Muted);
         }
 
         if (report.parameterLike) {
             if (hasCurrentEffectiveValue(report)) {
                 addField(effectiveValueLabel(report),
                          report.valueText,
-                         codeFont,
                          true);
                 addField(QStringLiteral("value source"),
                          report.valueSource);
@@ -166,13 +337,11 @@ void EditorHoverPopup::showHover(const SymbolHoverReport& report,
             }
             addField(QStringLiteral("expression"),
                      report.expressionText,
-                     codeFont,
                      true);
         } else if (report.enumMember) {
             if (hasCurrentEffectiveValue(report)) {
                 addField(effectiveValueLabel(report),
                          report.valueText,
-                         codeFont,
                          true);
                 addField(QStringLiteral("enum"), report.enumTypeName);
                 addField(QStringLiteral("underlying bit width"),
@@ -187,11 +356,9 @@ void EditorHoverPopup::showHover(const SymbolHoverReport& report,
                 addField(QStringLiteral("resolved type"),
                          report.resolvedTypeText);
                 addField(QStringLiteral("packed dimensions"),
-                         report.packedDimensionsText,
-                         codeFont);
+                         report.packedDimensionsText);
                 addField(QStringLiteral("unpacked dimensions"),
-                         report.unpackedDimensionsText,
-                         codeFont);
+                         report.unpackedDimensionsText);
                 addField(QStringLiteral("bit width"),
                          report.bitWidthText);
                 addField(QStringLiteral("signedness"),
@@ -208,54 +375,49 @@ void EditorHoverPopup::showHover(const SymbolHoverReport& report,
 
         if (!report.evaluationFailureReason.isEmpty()
             && !staleEffectiveValue) {
-            addLabel(QStringLiteral("evaluation failed: %1")
-                         .arg(report.evaluationFailureReason),
-                     QStringLiteral("color: palette(mid);"),
-                     editorFont);
+            addRow(QStringLiteral("evaluation failed: %1")
+                       .arg(report.evaluationFailureReason),
+                   PeekContentRowRole::Warning);
         }
 
         if (!report.macroSignatureText.isEmpty()) {
-            addLabel(QStringLiteral("macro: %1").arg(report.macroSignatureText),
-                     QStringLiteral("padding-top: 2px;"),
-                     codeFont);
+            addRow(QStringLiteral("macro: %1")
+                       .arg(report.macroSignatureText),
+                   PeekContentRowRole::Code);
         }
         if (!report.macroBodyText.isEmpty()) {
-            addLabel(QStringLiteral("body: %1").arg(report.macroBodyText),
-                     QStringLiteral("color: palette(text);"),
-                     codeFont);
+            addRow(QStringLiteral("body: %1").arg(report.macroBodyText),
+                   PeekContentRowRole::Code);
         }
     }
 
-    adjustSize();
-    resize(qMin(width(), 760), qMin(height(), 480));
-    moveNear(globalPosition);
-    show();
-    raise();
+    showContent(content,
+                QRect(globalPosition, QSize(1, 1)),
+                editorFont);
 }
 
 void EditorHoverPopup::showPreview(const DefinitionPreviewReport& report,
                                    const QPoint& globalPosition,
                                    const QFont& editorFont)
 {
-    resetContent();
-    setFont(editorFont);
-    targetFile = report.targetFile;
-    targetLine = report.targetLine;
-    targetColumn = report.targetColumn;
-
-    QFont titleFont = editorFont;
-    titleFont.setBold(true);
+    PeekContentModel content;
+    content.kind = PeekContentKind::DefinitionPreview;
+    content.maximumSize = QSize(760, 460);
+    content.navigationTarget = {
+        report.targetFile,
+        report.targetLine,
+        report.targetColumn};
     const QString title = report.displayKind.isEmpty()
         ? report.symbolName
         : QStringLiteral("%1  %2").arg(report.symbolName, report.displayKind);
-    addLabel(title, QStringLiteral("font-weight:600;"), titleFont);
+    content.title = title;
 
     const QString location =
         locationText(report.targetFile, report.targetLine);
     if (!location.isEmpty())
-        addLabel(location, QStringLiteral("color: palette(mid);"), editorFont);
+        content.rows.append(
+            {location, PeekContentRowRole::Muted, false});
 
-    QFont codeFont = editorFont;
     if (report.available) {
         for (int i = 0; i < report.codeLines.size(); ++i) {
             const int lineNumber = report.firstLineNumber + i;
@@ -264,56 +426,55 @@ void EditorHoverPopup::showPreview(const DefinitionPreviewReport& report,
                     .arg(lineNumber, 4)
                     .arg(report.codeLines.at(i));
             const bool highlighted = lineNumber == report.highlightedLine;
-            addLabel(line,
-                     highlighted
-                         ? QStringLiteral("background: rgba(97,175,239,0.18);"
-                                          "padding: 1px 4px;")
-                         : QStringLiteral("padding: 1px 4px;"),
-                     codeFont);
+            content.rows.append(
+                {line,
+                 highlighted
+                     ? PeekContentRowRole::HighlightedCode
+                     : PeekContentRowRole::Code,
+                 false});
         }
     } else {
-        addLabel(report.unavailableReason.isEmpty()
-                     ? QStringLiteral("Definition preview unavailable.")
-                     : report.unavailableReason,
-                 QStringLiteral("color: palette(mid);"),
-                 editorFont);
+        content.rows.append(
+            {report.unavailableReason.isEmpty()
+                 ? QStringLiteral("Definition preview unavailable.")
+                 : report.unavailableReason,
+             PeekContentRowRole::Muted,
+             false});
     }
 
-    adjustSize();
-    resize(qMin(width(), 760), qMin(height(), 460));
-    moveNear(globalPosition);
-    show();
-    raise();
+    showContent(content,
+                QRect(globalPosition, QSize(1, 1)),
+                editorFont);
 }
 
 void EditorHoverPopup::showCodePreview(const CodePreviewReport& report,
                                        const QPoint& globalPosition,
                                        const QFont& editorFont)
 {
-    resetContent();
-    setFont(editorFont);
-    targetFile = report.fileName;
-    targetLine = report.targetLine;
-    targetColumn = report.targetColumn;
-
-    QFont titleFont = editorFont;
-    titleFont.setBold(true);
-    addLabel(report.title.isEmpty()
-                 ? QStringLiteral("Code preview")
-                 : report.title,
-             QStringLiteral("font-weight:600;"),
-             titleFont);
+    PeekContentModel content;
+    content.kind = PeekContentKind::CodePreview;
+    content.maximumSize = QSize(780, 480);
+    content.navigationTarget = {
+        report.fileName,
+        report.targetLine,
+        report.targetColumn};
+    content.title = report.title.isEmpty()
+        ? QStringLiteral("Code preview")
+        : report.title;
     if (!report.detail.isEmpty())
-        addLabel(report.detail, QStringLiteral("color: palette(mid);"), editorFont);
+        content.rows.append(
+            {report.detail, PeekContentRowRole::Muted, false});
     if (!report.locationDisplayName.isEmpty()) {
-        addLabel(report.preciseRange
-                     ? QStringLiteral("evidence at %1").arg(report.locationDisplayName)
-                     : QStringLiteral("near %1").arg(report.locationDisplayName),
-                 QStringLiteral("color: palette(mid);"),
-                 editorFont);
+        content.rows.append(
+            {report.preciseRange
+                 ? QStringLiteral("evidence at %1")
+                       .arg(report.locationDisplayName)
+                 : QStringLiteral("near %1")
+                       .arg(report.locationDisplayName),
+             PeekContentRowRole::Muted,
+             false});
     }
 
-    QFont codeFont = editorFont;
     if (report.available) {
         for (int i = 0; i < report.codeLines.size(); ++i) {
             const int lineNumber = report.firstLineNumber + i;
@@ -322,59 +483,131 @@ void EditorHoverPopup::showCodePreview(const CodePreviewReport& report,
                     .arg(lineNumber, 4)
                     .arg(report.codeLines.at(i));
             const bool highlighted = lineNumber == report.highlightedLine;
-            addLabel(line,
-                     highlighted
-                         ? QStringLiteral("background: rgba(64,156,255,0.18);"
-                                          "padding: 1px 4px;")
-                         : QStringLiteral("padding: 1px 4px;"),
-                     codeFont);
+            content.rows.append(
+                {line,
+                 highlighted
+                     ? PeekContentRowRole::HighlightedCode
+                     : PeekContentRowRole::Code,
+                 false});
             if (highlighted && !report.caretLine.isEmpty()) {
-                addLabel(QStringLiteral("      %1").arg(report.caretLine),
-                         QStringLiteral("color: #2563eb; padding: 0 4px;"),
-                         codeFont);
+                content.rows.append(
+                    {QStringLiteral("      %1").arg(report.caretLine),
+                     PeekContentRowRole::Caret,
+                     false});
             }
         }
     } else {
-        addLabel(report.unavailableReason.isEmpty()
-                     ? QStringLiteral("Code preview unavailable.")
-                     : report.unavailableReason,
-                 QStringLiteral("color: palette(mid);"),
-                 editorFont);
+        content.rows.append(
+            {report.unavailableReason.isEmpty()
+                 ? QStringLiteral("Code preview unavailable.")
+                 : report.unavailableReason,
+             PeekContentRowRole::Muted,
+             false});
     }
 
-    adjustSize();
-    resize(qMin(width(), 780), qMin(height(), 480));
-    moveNear(globalPosition);
-    show();
-    raise();
+    showContent(content,
+                QRect(globalPosition, QSize(1, 1)),
+                editorFont);
 }
 
 void EditorHoverPopup::showNumericLiteral(const QString& displayText,
                                           const QPoint& globalPosition,
                                           const QFont& editorFont)
 {
-    resetContent();
-    setFont(editorFont);
-    targetFile.clear();
-    targetLine = -1;
-    targetColumn = -1;
+    PeekContentModel content;
+    content.kind = PeekContentKind::NumericRadix;
+    content.title = QStringLiteral("Numeric value");
+    content.maximumSize = QSize(520, 160);
+    content.rows.append(
+        {displayText, PeekContentRowRole::Code, false});
+    showContent(content,
+                QRect(globalPosition, QSize(1, 1)),
+                editorFont);
+}
 
-    QFont codeFont = editorFont;
-    addLabel(displayText, QStringLiteral("font-weight:600;"), codeFont);
+void EditorHoverPopup::showDiagnosticDetail(
+    const QString& title,
+    const QString& message,
+    const QStringList& details,
+    const QRect& globalAnchorRect,
+    const QFont& editorFont)
+{
+    PeekContentModel content;
+    content.kind = PeekContentKind::DiagnosticDetail;
+    content.title = title.isEmpty()
+        ? QStringLiteral("Diagnostic")
+        : title;
+    content.maximumSize = QSize(720, 420);
+    if (!message.isEmpty()) {
+        content.rows.append(
+            {message, PeekContentRowRole::Warning, true});
+    }
+    for (const QString& detail : details) {
+        if (!detail.isEmpty()) {
+            content.rows.append(
+                {detail, PeekContentRowRole::Body, true});
+        }
+    }
+    showContent(content, globalAnchorRect, editorFont);
+}
 
-    adjustSize();
-    resize(qMin(width(), 520), qMin(height(), 120));
-    moveNear(globalPosition);
-    show();
-    raise();
+void EditorHoverPopup::showDeclarationPreview(
+    const QString& title,
+    const QString& declaration,
+    const PeekNavigationTarget& target,
+    const QRect& globalAnchorRect,
+    const QFont& editorFont)
+{
+    PeekContentModel content;
+    content.kind = PeekContentKind::DeclarationPreview;
+    content.title = title.isEmpty()
+        ? QStringLiteral("Declaration")
+        : title;
+    content.navigationTarget = target;
+    content.maximumSize = QSize(760, 320);
+    if (target.isValid()) {
+        content.rows.append(
+            {locationText(target.fileName, target.line),
+             PeekContentRowRole::Muted,
+             false});
+    }
+    if (!declaration.isEmpty()) {
+        content.rows.append(
+            {declaration, PeekContentRowRole::Code, true});
+    }
+    showContent(content, globalAnchorRect, editorFont);
+}
+
+void EditorHoverPopup::move(const QPoint& globalPosition)
+{
+    if (QWidget* host = parentWidget())
+        QFrame::move(host->mapFromGlobal(globalPosition));
+}
+
+void EditorHoverPopup::move(int globalX, int globalY)
+{
+    move(QPoint(globalX, globalY));
 }
 
 void EditorHoverPopup::closePopup()
 {
+    const bool hadContent = isVisible() || !currentContent.isEmpty();
+    QWidget* focused = QApplication::focusWidget();
+    const bool restoreFocus =
+        focused
+        && (focused == this || isAncestorOf(focused));
     hide();
     targetFile.clear();
     targetLine = -1;
     targetColumn = -1;
+    currentContent = PeekContentModel();
+    titleLabel->clear();
+    resetContent();
+    if (restoreFocus && focusReturnWidget)
+        focusReturnWidget->setFocus(Qt::OtherFocusReason);
+    focusReturnWidget.clear();
+    if (hadContent)
+        emit closed();
 }
 
 bool EditorHoverPopup::hasNavigableTarget() const
@@ -382,12 +615,20 @@ bool EditorHoverPopup::hasNavigableTarget() const
     return !targetFile.isEmpty() && targetLine > 0;
 }
 
+QLineEdit* EditorHoverPopup::editableLineEdit() const
+{
+    return editControl.data();
+}
+
+const PeekContentModel& EditorHoverPopup::contentModel() const
+{
+    return currentContent;
+}
+
 bool EditorHoverPopup::eventFilter(QObject* watched, QEvent* event)
 {
     Q_UNUSED(watched)
-    if (placementMode != PlacementMode::EmbeddedChild
-        || !isVisible()
-        || !event) {
+    if (!isVisible() || !event) {
         return QFrame::eventFilter(watched, event);
     }
 
@@ -396,6 +637,16 @@ bool EditorHoverPopup::eventFilter(QObject* watched, QEvent* event)
         if (keyEvent->key() == Qt::Key_Escape) {
             closePopup();
             return true;
+        }
+        if (keyEvent->key() == Qt::Key_Return
+            || keyEvent->key() == Qt::Key_Enter) {
+            for (const PeekContentAction& action :
+                 currentContent.actions) {
+                if (action.enabled && action.defaultAction) {
+                    emit actionTriggered(action.id);
+                    return true;
+                }
+            }
         }
     } else if (event->type() == QEvent::MouseButtonPress
                || event->type()
@@ -428,59 +679,124 @@ void EditorHoverPopup::mouseDoubleClickEvent(QMouseEvent* event)
 void EditorHoverPopup::resetContent()
 {
     while (QLayoutItem* item = layout->takeAt(0)) {
-        if (QWidget* widget = item->widget())
-            delete widget;
+        if (QWidget* widget = item->widget()) {
+            if (widget == editControl.data()) {
+                widget->hide();
+                widget->setParent(nullptr);
+                widget->deleteLater();
+                editControl.clear();
+            } else {
+                delete widget;
+            }
+        }
         delete item;
     }
 }
 
 QLabel* EditorHoverPopup::addLabel(const QString& text,
-                                   const QString& style,
-                                   const QFont& font)
+                                   PeekContentRowRole role,
+                                   bool wordWrap)
 {
     auto* label = new QLabel(text, this);
+    label->setObjectName(QStringLiteral("peekContentRow"));
     label->setTextFormat(Qt::PlainText);
     label->setTextInteractionFlags(Qt::NoTextInteraction);
-    label->setWordWrap(false);
-    QFont labelFont = this->font();
-    if (!font.family().isEmpty()) {
-        labelFont.setWeight(font.weight());
-        labelFont.setItalic(font.italic());
-        labelFont.setUnderline(font.underline());
-        labelFont.setStrikeOut(font.strikeOut());
+    label->setWordWrap(wordWrap);
+    label->setFont(font());
+    if (wordWrap)
+        label->setMaximumWidth(720);
+
+    switch (role) {
+    case PeekContentRowRole::Muted:
+        label->setStyleSheet(QStringLiteral("color: palette(mid);"));
+        break;
+    case PeekContentRowRole::Code:
+        label->setStyleSheet(QStringLiteral("padding: 1px 4px;"));
+        break;
+    case PeekContentRowRole::HighlightedCode:
+        label->setStyleSheet(
+            QStringLiteral("background: rgba(64,156,255,0.18);"
+                           "padding: 1px 4px;"));
+        break;
+    case PeekContentRowRole::Caret:
+        label->setStyleSheet(
+            QStringLiteral("color: #2563eb; padding: 0 4px;"));
+        break;
+    case PeekContentRowRole::Warning:
+        label->setStyleSheet(
+            QStringLiteral("color: palette(highlight);"));
+        break;
+    case PeekContentRowRole::Body:
+        break;
     }
-    label->setFont(labelFont);
-    if (!style.isEmpty())
-        label->setStyleSheet(style);
     layout->addWidget(label);
     return label;
 }
 
-void EditorHoverPopup::moveNear(const QPoint& globalPosition)
+void EditorHoverPopup::moveNear(const QRect& globalAnchorRect)
 {
-    if (placementMode == PlacementMode::EmbeddedChild && parentWidget()) {
-        QWidget* host = parentWidget();
-        QPoint target = host->mapFromGlobal(globalPosition) + QPoint(14, 20);
-        const QRect bounds = host->rect();
-        if (target.x() + width() > bounds.right())
-            target.setX(qMax(bounds.left(), bounds.right() - width()));
-        if (target.y() + height() > bounds.bottom()) {
-            const int above = host->mapFromGlobal(globalPosition).y()
-                - height() - 12;
-            target.setY(qMax(bounds.top(), above));
-        }
-        move(target);
+    const QRect anchor = globalAnchorRect.normalized();
+    QWidget* host = parentWidget();
+    if (!host)
         return;
-    }
 
-    QPoint target = globalPosition + QPoint(14, 20);
-    const QRect screen =
-        QGuiApplication::screenAt(globalPosition)
-            ? QGuiApplication::screenAt(globalPosition)->availableGeometry()
-            : QApplication::primaryScreen()->availableGeometry();
-    if (target.x() + width() > screen.right())
-        target.setX(qMax(screen.left(), screen.right() - width()));
-    if (target.y() + height() > screen.bottom())
-        target.setY(qMax(screen.top(), globalPosition.y() - height() - 12));
-    move(target);
+    const QRect localAnchor(
+        host->mapFromGlobal(anchor.topLeft()),
+        host->mapFromGlobal(anchor.bottomRight()));
+    const QRect bounds = host->rect().adjusted(4, 4, -4, -4);
+    QPoint target(localAnchor.right() + 14,
+                  localAnchor.bottom() + 4);
+    if (target.x() + width() > bounds.right())
+        target.setX(localAnchor.left() - width() - 14);
+    if (target.x() < bounds.left())
+        target.setX(qMax(bounds.left(), bounds.right() - width() + 1));
+    if (target.y() + height() > bounds.bottom()) {
+        const int above = localAnchor.top() - height() - 4;
+        target.setY(qMax(bounds.top(), above));
+    }
+    QFrame::move(target);
+}
+
+QString execPeekActionPrompt(
+    QWidget* host,
+    const PeekContentModel& content,
+    const QRect& globalAnchorRect,
+    const QFont& font)
+{
+    if (!host || content.actions.isEmpty())
+        return QString();
+
+    QEventLoop eventLoop;
+    QPointer<EditorHoverPopup> peek =
+        new EditorHoverPopup(host);
+    peek->setProperty("peekActionPrompt", true);
+    QString selectedAction;
+
+    QObject::connect(
+        peek.data(),
+        &EditorHoverPopup::actionTriggered,
+        &eventLoop,
+        [&selectedAction, &peek](const QString& actionId) {
+            selectedAction = actionId;
+            if (peek)
+                peek->closePopup();
+        });
+    QObject::connect(
+        peek.data(),
+        &EditorHoverPopup::closed,
+        &eventLoop,
+        &QEventLoop::quit);
+    QObject::connect(
+        host,
+        &QObject::destroyed,
+        &eventLoop,
+        &QEventLoop::quit);
+
+    peek->showContent(content, globalAnchorRect, font);
+    if (peek && peek->isVisible())
+        eventLoop.exec();
+
+    if (peek)
+        delete peek.data();
+    return selectedAction;
 }

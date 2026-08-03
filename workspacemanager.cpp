@@ -239,6 +239,7 @@ void WorkspaceManager::closeWorkspace()
 
     cancelDirectoryScan();
     stopFileWatching();
+    ++workspaceActivationGeneration;
     const QString closingPath = workspacePath;
     workspacePath.clear();
     workspaceAlias.clear();
@@ -264,6 +265,7 @@ bool WorkspaceManager::closeWorkspace(int index)
     const bool activateReplacement = closingActive && workspaces.size() > 1;
 
     if (closingActive) {
+        ++workspaceActivationGeneration;
         cancelDirectoryScan();
         stopFileWatching();
         if (!activateReplacement) {
@@ -415,9 +417,43 @@ WorkspaceConfiguration WorkspaceManager::workspaceConfiguration() const
     configuration.ignoredDirs = snapshot.ignoredPaths;
     configuration.fileExtensions = snapshot.fileExtensions;
     configuration.topModule = snapshot.topModule;
+    if (activeIndex >= 0
+        && activeIndex < workspaces.size()
+        && workspaces.at(activeIndex).path
+               == snapshot.workspaceRoot) {
+        configuration.virtualSourceGroups =
+            workspaces.at(activeIndex)
+                .virtualSourceGroups;
+    }
     return workspaceConfigurationService
         ? workspaceConfigurationService->normalized(configuration)
         : configuration;
+}
+
+QList<WorkspaceVirtualSourceGroup>
+WorkspaceManager::virtualSourceGroups() const
+{
+    return workspaceConfiguration()
+        .virtualSourceGroups;
+}
+
+bool WorkspaceManager::setVirtualSourceGroups(
+    const QList<WorkspaceVirtualSourceGroup>& groups,
+    QString* errorMessage)
+{
+    WorkspaceConfiguration configuration =
+        workspaceConfiguration();
+    if (!configuration.isValid()) {
+        if (errorMessage) {
+            *errorMessage =
+                QStringLiteral(
+                    "No workspace is open.");
+        }
+        return false;
+    }
+    configuration.virtualSourceGroups = groups;
+    return setWorkspaceConfiguration(
+        configuration, errorMessage);
 }
 
 bool WorkspaceManager::setIgnoredDirectories(const QStringList& directories,
@@ -576,6 +612,12 @@ QStringList WorkspaceManager::getAllFiles() const
 QStringList WorkspaceManager::getSystemVerilogFiles() const
 {
     return files.systemVerilogFiles;
+}
+
+void WorkspaceManager::refreshWorkspaceFiles()
+{
+    if (isWorkspaceOpen())
+        startDirectoryScan(workspacePath);
 }
 
 QString WorkspaceManager::resolveIncludePath(const QString& includePath,
@@ -802,6 +844,10 @@ bool WorkspaceManager::restoreWorkspaceFilesFromEntry(int index)
         configuration.topModule = entry.topModule;
     if (!entry.ignoredDirectories.isEmpty())
         configuration.ignoredDirs = entry.ignoredDirectories;
+    if (!entry.virtualSourceGroups.isEmpty()) {
+        configuration.virtualSourceGroups =
+            entry.virtualSourceGroups;
+    }
     applyWorkspaceConfiguration(configuration, false, nullptr, false);
     files.allFiles = projectModel->allFiles();
     files.systemVerilogFiles = projectModel->systemVerilogFiles();
@@ -890,6 +936,8 @@ void WorkspaceManager::updateActiveEntryConfiguration(
     entry.defines = configuration.defines;
     entry.fileExtensions = configuration.fileExtensions;
     entry.topModule = configuration.topModule;
+    entry.virtualSourceGroups =
+        configuration.virtualSourceGroups;
 }
 
 bool WorkspaceManager::activateWorkspacePath(const QString& path,
@@ -901,6 +949,8 @@ bool WorkspaceManager::activateWorkspacePath(const QString& path,
     if (normalizedPath.isEmpty() || alias.trimmed().isEmpty())
         return false;
 
+    const std::uint64_t requestedActivationGeneration =
+        ++workspaceActivationGeneration;
     cancelDirectoryScan();
     stopFileWatching();
 
@@ -929,29 +979,41 @@ bool WorkspaceManager::activateWorkspacePath(const QString& path,
     startFileWatching();
 
     const QString activatedPath = workspacePath;
-    const std::uint64_t activationGeneration = scanGeneration;
-    const bool requiresScan = openedNewWorkspace
-        || index < 0
-        || index >= workspaces.size()
-        || !workspaces.at(index).scanComplete;
     QPointer<WorkspaceManager> self(this);
 
     emit workspaceActivated(activeIndex, workspaceAlias, workspacePath);
-    if (!self || scanGeneration != activationGeneration
+    if (!self
+        || workspaceActivationGeneration
+               != requestedActivationGeneration
         || workspacePath != activatedPath || activeIndex != index) {
         return false;
     }
     if (openedNewWorkspace) {
         emit workspaceOpened(workspacePath);
-        if (!self || scanGeneration != activationGeneration
+        if (!self
+            || workspaceActivationGeneration
+                   != requestedActivationGeneration
             || workspacePath != activatedPath || activeIndex != index) {
             return false;
         }
     }
+    const bool requiresScan =
+        index < 0
+        || index >= workspaces.size()
+        || !workspaces.at(index).scanComplete;
     if (requiresScan) {
-        startDirectoryScan(workspacePath);
-        if (!self || workspacePath != activatedPath || activeIndex != index)
+        const bool scanAlreadyStarted =
+            scanIterator
+            && scanningPath == activatedPath;
+        if (!scanAlreadyStarted)
+            startDirectoryScan(workspacePath);
+        if (!self
+            || workspaceActivationGeneration
+                   != requestedActivationGeneration
+            || workspacePath != activatedPath
+            || activeIndex != index) {
             return false;
+        }
     }
     return true;
 }

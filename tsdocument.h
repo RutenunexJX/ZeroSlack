@@ -5,12 +5,126 @@
 #include <QList>
 #include <QVector>
 
+#include <array>
+#include <cstdint>
+
 #include "documentchange.h"
 #include "packagetoolservice.h"
 
 extern "C" {
 #include <tree_sitter/api.h>
 }
+
+struct TSTextStorageMetrics {
+    std::uint64_t editCount = 0;
+    std::uint64_t materializationCount = 0;
+    std::uint64_t inputReadCount = 0;
+    std::uint64_t movedCharacterCount = 0;
+    int firstEditPosition = -1;
+    int firstEditGapStart = -1;
+    std::uint64_t treeEditNanoseconds = 0;
+    std::uint64_t storageEditNanoseconds = 0;
+    std::uint64_t parseNanoseconds = 0;
+    std::uint64_t changedRangeNanoseconds = 0;
+    std::uint64_t treeDeleteNanoseconds = 0;
+};
+
+// UTF-16 piece-table storage used directly by Tree-sitter's TSInput callback.
+// Edits rebuild only piece metadata and append inserted text, so an edit never
+// moves the unchanged body of a large document. A contiguous QString is
+// materialized only for explicit whole-text callers.
+class TSUTF16Text
+{
+public:
+    TSUTF16Text();
+
+    void setText(const QString& text);
+    void replace(int position,
+                 int removedLength,
+                 const QString& insertedText);
+
+    int size() const { return m_size; }
+    bool isEmpty() const { return m_size == 0; }
+    QChar at(int position) const;
+    QString mid(int position, int length = -1) const;
+    QString left(int length) const;
+    int indexOf(const QString& value, int from = 0) const;
+    int lastIndexOf(QChar value, int from = -1) const;
+
+    const QString& materialized() const;
+    operator QString() const { return materialized(); }
+
+    const char* read(uint32_t byteOffset,
+                     uint32_t* bytesRead) const;
+
+    TSTextStorageMetrics metricsForTest() const
+    {
+        return m_metrics;
+    }
+    void resetMetricsForTest() const
+    {
+        m_metrics = {};
+    }
+
+    friend bool operator==(const TSUTF16Text& left,
+                           const QString& right)
+    {
+        return left.materialized() == right;
+    }
+    friend bool operator==(const QString& left,
+                           const TSUTF16Text& right)
+    {
+        return left == right.materialized();
+    }
+    friend bool operator!=(const TSUTF16Text& left,
+                           const QString& right)
+    {
+        return !(left == right);
+    }
+    friend bool operator!=(const QString& left,
+                           const TSUTF16Text& right)
+    {
+        return !(left == right);
+    }
+
+private:
+    friend class TSDocument;
+
+    enum class BufferKind {
+        Original,
+        Additions
+    };
+
+    struct Piece {
+        BufferKind buffer = BufferKind::Original;
+        int offset = 0;
+        int length = 0;
+    };
+
+    const QString& bufferFor(const Piece& piece) const;
+    int pieceIndexAt(int logicalIndex) const;
+    static void appendPiece(QVector<Piece>* pieces,
+                            BufferKind buffer,
+                            int offset,
+                            int length);
+    void appendLogicalRange(QVector<Piece>* pieces,
+                            int position,
+                            int length) const;
+    void rebuildPieceStarts();
+    void copyRange(int position,
+                   int length,
+                   QChar* destination) const;
+
+    QString m_original;
+    QString m_additions;
+    QVector<Piece> m_pieces;
+    QVector<int> m_pieceStarts;
+    int m_size = 0;
+    mutable QString m_materialized;
+    mutable bool m_materializedValid = true;
+    mutable std::array<char16_t, 2> m_boundaryRead{};
+    mutable TSTextStorageMetrics m_metrics;
+};
 
 // Highlight categories produced from tree-sitter token types (see classifyTokenType).
 enum class HlCategory {
@@ -157,6 +271,76 @@ struct TSIdentifierTarget {
         return startChar >= 0
             && endChar > startChar
             && !text.isEmpty();
+    }
+};
+
+struct TSIdentifierOccurrenceSet {
+    TSIdentifierTarget selected;
+    int scopeStartChar = -1;
+    int scopeEndChar = -1;
+    QList<TSIdentifierTarget> occurrences;
+
+    bool ok() const
+    {
+        return selected.ok()
+            && scopeStartChar >= 0
+            && scopeEndChar > scopeStartChar
+            && !occurrences.isEmpty();
+    }
+};
+
+enum class TSAssignmentNavigationStatus {
+    Ok,
+    NoIdentifier,
+    NoAssignment
+};
+
+struct TSAssignmentNavigationTarget {
+    TSAssignmentNavigationStatus status =
+        TSAssignmentNavigationStatus::NoIdentifier;
+    QString identifier;
+    int sourceChar = -1;
+    int targetChar = -1;
+    int assignmentCount = 0;
+    bool wrapped = false;
+
+    bool ok() const
+    {
+        return status == TSAssignmentNavigationStatus::Ok
+            && !identifier.isEmpty()
+            && sourceChar >= 0
+            && targetChar >= 0
+            && assignmentCount > 0;
+    }
+};
+
+enum class TSConditionalBranchNavigationStatus {
+    Ok,
+    NoConditionalGroup,
+    IncompleteConditionalGroup
+};
+
+struct TSConditionalBranchNavigationTarget {
+    TSConditionalBranchNavigationStatus status =
+        TSConditionalBranchNavigationStatus::NoConditionalGroup;
+    int sourceChar = -1;
+    int targetChar = -1;
+    int targetIndex = -1;
+    QString targetDirective;
+    QList<int> branchStartChars;
+    QStringList branchDirectives;
+    bool wrapped = false;
+
+    bool ok() const
+    {
+        return status
+                == TSConditionalBranchNavigationStatus::Ok
+            && sourceChar >= 0
+            && targetChar >= 0
+            && targetIndex >= 0
+            && targetIndex < branchStartChars.size()
+            && branchStartChars.size()
+                == branchDirectives.size();
     }
 };
 
@@ -315,6 +499,55 @@ struct TSBeginEndInsideTarget {
     }
 };
 
+struct TSStructuralNewlineTarget {
+    QString insertionText;
+    int caretOffset = -1;
+    bool insertedClosingKeyword = false;
+
+    bool ok() const
+    {
+        return !insertionText.isEmpty()
+            && caretOffset >= 0
+            && caretOffset <= insertionText.size();
+    }
+};
+
+struct TSKeywordCompletionTarget {
+    int startChar = -1;
+    int endChar = -1;
+    QString prefix;
+    QString keyword;
+    QString suffix;
+
+    bool ok() const
+    {
+        return startChar >= 0
+            && endChar > startChar
+            && endChar == startChar + prefix.size()
+            && keyword == prefix + suffix
+            && !suffix.isEmpty();
+    }
+};
+
+struct TSKeywordPairTarget {
+    int openingStartChar = -1;
+    int openingEndChar = -1;
+    int closingStartChar = -1;
+    int closingEndChar = -1;
+    QString openingKeyword;
+    QString closingKeyword;
+
+    bool ok() const
+    {
+        return openingStartChar >= 0
+            && openingEndChar > openingStartChar
+            && closingStartChar >= openingEndChar
+            && closingEndChar > closingStartChar
+            && !openingKeyword.isEmpty()
+            && !closingKeyword.isEmpty();
+    }
+};
+
 // Persistent, per-document Tree-sitter model: keeps a live parse tree plus the document text and
 // supports incremental re-parse on edits. Foundation of the real-time syntactic layer
 // (highlighting, live outline / scope) in the Slang + Tree-sitter architecture.
@@ -343,10 +576,20 @@ public:
 
     TSNode rootNode() const;                 // always valid (empty doc parses to an empty tree)
     bool hasError() const;                   // tree contains ERROR / MISSING nodes (half-typed code)
-    const QString& text() const { return m_text; }
+    const TSUTF16Text& text() const { return m_text; }
+    TSTextStorageMetrics textStorageMetricsForTest() const
+    {
+        return m_text.metricsForTest();
+    }
+    void resetTextStorageMetricsForTest() const
+    {
+        m_text.resetMetricsForTest();
+    }
 
     // True if the char offset is inside a Tree-sitter comment node.
     bool isCommentAt(int charOffset) const;
+    // True if the char offset is inside a Tree-sitter string node.
+    bool isStringAt(int charOffset) const;
 
     // Exact numeric token under the cursor. Comments and strings are excluded
     // by construction because only Tree-sitter numeric literal nodes match.
@@ -355,6 +598,15 @@ public:
     // Exact SystemVerilog identifier under the cursor. Comment and string
     // nodes are never returned.
     TSIdentifierTarget identifierAt(int charOffset) const;
+    TSIdentifierOccurrenceSet identifierOccurrencesAt(
+        int charOffset) const;
+    TSAssignmentNavigationTarget assignmentNavigationTarget(
+        int charOffset,
+        bool previous) const;
+    TSConditionalBranchNavigationTarget
+    conditionalBranchNavigationTarget(
+        int charOffset,
+        bool previous) const;
 
     // Complete module instantiation at the cursor and its editable parameter /
     // port actual expression spans. Incomplete or ambiguous instantiations are
@@ -390,6 +642,19 @@ public:
     // Clear module-member insert point for adding an internal signal declaration.
     TSSignalInsertTarget signalInsertTarget(int charOffset) const;
 
+    // Clear declaration point in the nearest sequential block. Only a
+    // declaration section before the first statement is accepted.
+    TSSignalInsertTarget blockSignalInsertTarget(
+        int charOffset) const;
+
+    // Parse an edited Declare Signal candidate as exactly one Tree-sitter
+    // declaration for identifier. This is intentionally structural: callers
+    // do not validate declarations with regular expressions or token scans.
+    static bool isSingleSignalDeclaration(
+        const QString& declaration,
+        const QString& identifier,
+        bool blockLocal);
+
     // Clear module-item insert point immediately after the selected internal
     // signal declaration. This keeps a generated bridge after the declaration
     // that Slang resolved, including multi-declarator declarations.
@@ -421,6 +686,16 @@ public:
     // selection commands.
     TSBeginEndInsideTarget beginEndInsideTarget(int cursorChar) const;
 
+    // Synchronous structural input plans derived from the current unsaved
+    // Tree-sitter snapshot. These APIs never consult Slang or a timer.
+    TSStructuralNewlineTarget structuralNewlineTarget(
+        int cursorChar,
+        int indentWidth = 4) const;
+    TSKeywordCompletionTarget uniqueKeywordCompletionAt(
+        int cursorChar,
+        int minimumPrefixLength = 3) const;
+    TSKeywordPairTarget matchingKeywordPairAt(int cursorChar) const;
+
     // Highlight spans (block-local char coords) for the char range [blockStartChar, +blockLenChar).
     // Walks the live tree; clips tokens to the block. Multi-line tokens (block comments, strings)
     // are clipped per block.
@@ -444,7 +719,7 @@ private:
 
     TSParser* m_parser = nullptr;  // owned
     TSTree*   m_tree   = nullptr;  // owned
-    QString   m_text;              // current document text (UTF-16)
+    TSUTF16Text m_text;            // current document text (UTF-16)
 };
 
 // Map a tree-sitter token type to a highlight category. isNamed distinguishes grammar tokens

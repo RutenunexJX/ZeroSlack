@@ -1,10 +1,35 @@
 #include "documentregistry.h"
 
+#include "editorfileidentity.h"
 #include "mycodeeditor.h"
+
+#include <QSet>
+
+#include <algorithm>
 
 QList<DocumentSnapshot> DocumentRegistry::snapshots() const
 {
-    return documents.snapshots();
+    QList<DocumentSnapshot> result;
+    QSet<QString> seen;
+    for (auto iterator = documents.byEditor.constBegin();
+         iterator != documents.byEditor.constEnd();
+         ++iterator) {
+        const QString key =
+            EditorFileIdentity::lookupKey(
+                iterator.value().snapshot.documentId);
+        if (key.isEmpty() || seen.contains(key))
+            continue;
+        seen.insert(key);
+        result.append(snapshotForEditor(iterator.key()));
+    }
+    std::sort(
+        result.begin(),
+        result.end(),
+        [](const DocumentSnapshot& left,
+           const DocumentSnapshot& right) {
+            return left.documentId < right.documentId;
+        });
+    return result;
 }
 
 DocumentSnapshot DocumentRegistry::snapshotForEditor(MyCodeEditor* editor) const

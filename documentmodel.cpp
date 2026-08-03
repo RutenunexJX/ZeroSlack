@@ -13,10 +13,15 @@ DocumentModel::~DocumentModel() = default;
 
 void DocumentModel::registerEditor(MyCodeEditor* editor, const QString& fileName)
 {
+    const DocumentSnapshot existing =
+        fileName.isEmpty()
+        ? DocumentSnapshot()
+        : state->documentForFile(fileName);
     DocumentSnapshot snapshot;
     if (state->registerEditor(editor, fileName, &snapshot)) {
         connectEditorSignals(editor);
-        emit documentOpened(snapshot);
+        if (existing.documentId.isEmpty())
+            emit documentOpened(snapshot);
     }
 }
 

@@ -4,10 +4,12 @@
 #include "completiontypes.h"
 
 #include <QList>
+#include <QMetaObject>
 #include <QString>
+#include <QtGlobal>
 
 class EditorModeController;
-class EditorSelection;
+class AnnotationLayer;
 class MyCodeEditor;
 class QKeyEvent;
 class QTimer;
@@ -16,7 +18,7 @@ class EditorTemplateSlotController
 {
 public:
     void bind(EditorModeController* modes,
-              EditorSelection* selections,
+              AnnotationLayer* annotations,
               MyCodeEditor* editor);
     void shutdown(MyCodeEditor* editor);
 
@@ -45,30 +47,50 @@ public:
 
     void markPresentationPending();
     void flushPendingPresentation(MyCodeEditor* editor);
+    void publishVisibleAnnotations(MyCodeEditor* editor,
+                                   int firstVisibleLine = -1,
+                                   int lastVisibleLine = -1);
 
 private:
     struct SlotRange {
         QString name;
         int start = -1;
         int end = -1;
+        int tabStop = -1;
+        int groupIndex = -1;
+        bool visibleWhenEmpty = false;
     };
 
     EditorModeController* modeController = nullptr;
-    EditorSelection* selectionPresenter = nullptr;
+    AnnotationLayer* annotationLayer = nullptr;
     QList<SlotRange> ranges;
     int currentIndex = -1;
     int sessionStart = -1;
     int sessionEnd = -1;
     QTimer* blinkTimer = nullptr;
+    QMetaObject::Connection blinkConnection;
     bool currentBlinkOn = true;
     bool ignoreNextCursorCheck = false;
     bool presentationPending = false;
+    bool applyingLinkedEdit = false;
+    quint64 presentationGeneration = 0;
 
-    QList<QPair<int, int>> highlightRanges() const;
-    int indexForCursor(MyCodeEditor* editor) const;
+    int physicalIndexForCursor(MyCodeEditor* editor) const;
+    int physicalIndexForChange(int position, int removedLength) const;
     bool cursorInsideActiveRange(
         MyCodeEditor* editor) const;
-    void refreshHighlights(MyCodeEditor* editor);
+    int groupCount() const;
+    int firstPhysicalIndexForGroup(int groupIndex) const;
+    void applyRangeChange(int physicalIndex,
+                          int changeStart,
+                          int changeEnd,
+                          int delta);
+    void mirrorLinkedEdit(MyCodeEditor* editor,
+                          int sourcePhysicalIndex,
+                          int relativeStart,
+                          int relativeEnd,
+                          const QString& insertedText);
+    void refreshPresentation(MyCodeEditor* editor);
     void stopBlinkTimer();
     void ensureBlinkTimer(MyCodeEditor* editor);
     void select(MyCodeEditor* editor, int index);

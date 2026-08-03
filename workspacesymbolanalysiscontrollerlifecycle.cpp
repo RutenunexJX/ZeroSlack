@@ -100,8 +100,11 @@ void WorkspaceSymbolAnalysisController::dropPendingRequest(
 void WorkspaceSymbolAnalysisController::requestSemanticAnalysis(
     const SemanticAnalysisRequest& request)
 {
-    if (!request.isValid() || !symbolAnalyzer)
+    if (!request.isValid()
+        || !request.runtimePolicy.normalized().enabled
+        || !symbolAnalyzer) {
         return;
+    }
 
     if (workspaceAnalysisActive) {
         dropPendingRequest(

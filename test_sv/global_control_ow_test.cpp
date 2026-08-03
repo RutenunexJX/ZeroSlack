@@ -444,6 +444,13 @@ int main(int argc, char** argv)
     MainWindow window;
     window.workspaceManager->setRecentWorkspacePersistenceEnabledForTesting(
         false);
+    // This test owns the clean "ow 1" scan path. Keep the real-project
+    // fixtures and any user-local session snapshots read-only so restored
+    // tabs or cached scans cannot change the preconditions between runs.
+    window.workspaceSessionCleanRoots.insert(
+        normalizedPath(newWorkspace));
+    window.workspaceSessionCleanRoots.insert(
+        normalizedPath(hugeWorkspace));
     window.resize(960, 640);
     window.show();
     QPointer<MainWindow> windowGuard(&window);

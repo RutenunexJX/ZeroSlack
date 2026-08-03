@@ -4,6 +4,7 @@
 #include "navigationcommandcoordinator.h"
 #include "navigationmanager.h"
 #include "rtlinsightspanelcoordinator.h"
+#include "symbolpresentationservice.h"
 #include "tabmanager.h"
 #include "workspacemanager.h"
 
@@ -94,8 +95,6 @@ SemanticPanelRefreshCoordinator::SemanticPanelRefreshCoordinator(
     NavigationManager* navigationManager,
     NavigationCommandCoordinator* navigationCommandCoordinator,
     ProblemsPanelCoordinator* problemsPanel,
-    ReferencesPanelCoordinator* referencesPanel,
-    RelationshipsPanelCoordinator* relationshipsPanel,
     RtlInsightsPanelCoordinator* rtlInsightsPanel,
     SignalKernelGraphPanelCoordinator* signalKernelGraphPanel)
 {
@@ -104,10 +103,17 @@ SemanticPanelRefreshCoordinator::SemanticPanelRefreshCoordinator(
                      navigationManager,
                      navigationCommandCoordinator);
     panels.set(problemsPanel,
-               referencesPanel,
-               relationshipsPanel,
                rtlInsightsPanel,
                signalKernelGraphPanel);
+}
+
+SemanticPanelRefreshCoordinator::
+    ~SemanticPanelRefreshCoordinator()
+{
+    QObject::disconnect(editorCursorConnection);
+    QObject::disconnect(editorSelectionConnection);
+    QObject::disconnect(
+        editorInstanceContextConnection);
 }
 
 void SemanticPanelRefreshCoordinator::ContextDependencies::set(
@@ -156,6 +162,28 @@ bool SemanticPanelRefreshCoordinator::ContextDependencies::navigateToFileAndLine
             column);
 }
 
+bool SemanticPanelRefreshCoordinator::ContextDependencies::
+    navigateToSourceLocation(
+        const RtlInsightSourceLocation& location) const
+{
+    if (!navigationCommandCoordinator)
+        return false;
+    HierarchyInstanceContext instanceContext;
+    instanceContext.workspacePath =
+        location.workspacePath;
+    instanceContext.activeTopModule =
+        location.activeTopModule;
+    instanceContext.instancePath =
+        location.instancePath;
+    navigationCommandCoordinator
+        ->navigateToFileAndLineWithContext(
+            location.fileName,
+            location.line,
+            location.column,
+            instanceContext);
+    return true;
+}
+
 void SemanticPanelRefreshCoordinator::ContextDependencies::revealFileAndFlashLine(
     const QString& fileName,
     int line) const
@@ -194,6 +222,11 @@ void SemanticPanelRefreshCoordinator::configurePanels()
         [this](const QString& fileName, int line, int column) {
             return navigateToFileAndLine(fileName, line, column);
         };
+    const SourceNavigationHandler sourceNavigationHandler =
+        [this](
+            const RtlInsightSourceLocation& location) {
+            return navigateToSourceLocation(location);
+        };
     const ProblemsNavigationHandler problemsNavigationHandler =
         [this](const QString& fileName, int line, int column) {
             return navigateToFileAndLineAndFlash(fileName, line, column);
@@ -212,35 +245,7 @@ void SemanticPanelRefreshCoordinator::configurePanels()
                                   workspaceFilesProvider,
                                   problemsNavigationHandler,
                                   statusMessageHandler);
-    panels.configureReferencesPanel(workspaceFilesProvider,
-                                    navigationHandler,
-                                    statusMessageHandler);
-    panels.configureRelationshipsPanel(navigationHandler,
-                                       [this](const QString& symbolName,
-                                              const QString& fileName,
-                                              const QString& moduleName) {
-                                           showSignalKernelGraphForSymbol(
-                                               symbolName,
-                                               fileName,
-                                               moduleName);
-                                       },
-                                       [this](const QString& symbolName,
-                                              const QString& fileName,
-                                              const QString& moduleName) {
-                                           showStateTransitionGraphForSymbol(
-                                               symbolName,
-                                               fileName,
-                                               moduleName);
-                                       },
-                                       [this](const QString& fileName,
-                                              const QString& moduleName) {
-                                           showModuleBlockDiagramForSymbol(
-                                               moduleName,
-                                               fileName,
-                                               moduleName);
-                                       },
-                                       statusMessageHandler);
-    panels.configureRtlInsightsPanel(navigationHandler,
+    panels.configureRtlInsightsPanel(sourceNavigationHandler,
                                      statusMessageHandler);
     panels.configureSignalKernelGraphPanel(
         dependencies.tabManager ? dependencies.tabManager->getDocumentModel() : nullptr,
@@ -253,32 +258,6 @@ void SemanticPanelRefreshCoordinator::configurePanels()
 void SemanticPanelRefreshCoordinator::updateProblemsPanel()
 {
     panels.updateProblemsPanel();
-}
-
-void SemanticPanelRefreshCoordinator::showReferencesForSymbol(
-    const QString& symbolName,
-    const QString& fileName,
-    const QString& moduleName)
-{
-    panels.showReferencesForSymbol(symbolName, fileName, moduleName);
-}
-
-void SemanticPanelRefreshCoordinator::refreshReferencesPanel()
-{
-    panels.refreshReferencesPanel();
-}
-
-void SemanticPanelRefreshCoordinator::showRelationshipsForSymbol(
-    const QString& symbolName,
-    const QString& fileName,
-    const QString& moduleName)
-{
-    panels.showRelationshipsForSymbol(symbolName, fileName, moduleName);
-}
-
-void SemanticPanelRefreshCoordinator::refreshRelationshipsPanel()
-{
-    panels.refreshRelationshipsPanel();
 }
 
 void SemanticPanelRefreshCoordinator::showSignalKernelGraphForSymbol(
@@ -324,9 +303,41 @@ void SemanticPanelRefreshCoordinator::showModuleBlockDiagramForSymbol(
 void SemanticPanelRefreshCoordinator::handleActiveEditorChanged(MyCodeEditor* editor)
 {
     dependencies.handleActiveEditorChanged(editor);
-    panels.updateRtlInsightsPanel(editor ? editor->documentFileName() : QString(),
-                                  editor ? editor->currentModuleName() : QString(),
-                                  currentEditorWord(editor));
+    QObject::disconnect(editorCursorConnection);
+    QObject::disconnect(editorSelectionConnection);
+    QObject::disconnect(
+        editorInstanceContextConnection);
+    observedEditor = editor;
+    if (editor) {
+        editorCursorConnection = QObject::connect(
+            editor,
+            &QPlainTextEdit::cursorPositionChanged,
+            editor,
+            [this, editor]() {
+                if (observedEditor == editor)
+                    syncEditorSourceLocation(editor);
+            });
+        editorSelectionConnection = QObject::connect(
+            editor,
+            &QPlainTextEdit::selectionChanged,
+            editor,
+            [this, editor]() {
+                if (observedEditor == editor)
+                    syncEditorSourceLocation(editor);
+            });
+        editorInstanceContextConnection =
+            QObject::connect(
+                editor,
+                &MyCodeEditor::
+                    hierarchyInstanceContextChanged,
+                editor,
+                [this, editor](
+                    const HierarchyInstanceContext&) {
+                    if (observedEditor == editor)
+                        syncEditorSourceLocation(editor);
+                });
+    }
+    syncEditorSourceLocation(editor);
     updateProblemsPanel();
 }
 
@@ -383,6 +394,34 @@ bool SemanticPanelRefreshCoordinator::navigateToFileAndLineAndFlash(
     return dependencies.navigateToFileAndLineAndFlash(fileName, line, column);
 }
 
+bool SemanticPanelRefreshCoordinator::
+    navigateToSourceLocation(
+        const RtlInsightSourceLocation& location) const
+{
+    const QString failureReason =
+        panelNavigationFailureReason(
+            dependencies.workspaceManager,
+            location.fileName,
+            location.line,
+            location.column);
+    if (!failureReason.isEmpty()) {
+        showStatusMessage(
+            QStringLiteral("Navigation failed: %1")
+                .arg(failureReason),
+            4000);
+        return false;
+    }
+    if (!dependencies.navigateToSourceLocation(
+            location)) {
+        showStatusMessage(
+            QStringLiteral(
+                "Navigation failed: source target is no longer available"),
+            4000);
+        return false;
+    }
+    return true;
+}
+
 void SemanticPanelRefreshCoordinator::revealFileAndFlashLine(
     const QString& fileName,
     int line) const
@@ -401,4 +440,45 @@ void SemanticPanelRefreshCoordinator::showStatusMessage(
 bool SemanticPanelRefreshCoordinator::problemsPanelShowsCurrentFile() const
 {
     return panels.problemsPanelShowsCurrentFile();
+}
+
+RtlInsightSourceLocation
+SemanticPanelRefreshCoordinator::sourceLocationForEditor(
+    MyCodeEditor* editor) const
+{
+    RtlInsightSourceLocation location;
+    if (!editor)
+        return location;
+    location.fileName = editor->documentFileName();
+    location.moduleName = editor->currentModuleName();
+    location.symbolName = currentEditorWord(editor);
+    const QTextCursor cursor = editor->textCursor();
+    location.line = cursor.blockNumber() + 1;
+    location.column =
+        cursor.positionInBlock() + 1;
+    location.documentRevision =
+        editor->semanticDocumentRevision();
+    const HierarchyInstanceContext instanceContext =
+        editor->hierarchyInstanceContext();
+    location.workspacePath =
+        instanceContext.workspacePath;
+    if (location.workspacePath.isEmpty()
+        && dependencies.workspaceManager) {
+        location.workspacePath =
+            dependencies.workspaceManager
+                ->getWorkspacePath();
+    }
+    location.activeTopModule =
+        instanceContext.activeTopModule;
+    location.instancePath =
+        instanceContext.instancePath;
+    return location;
+}
+
+void SemanticPanelRefreshCoordinator::
+    syncEditorSourceLocation(
+        MyCodeEditor* editor)
+{
+    panels.syncRtlInsightsSourceLocation(
+        sourceLocationForEditor(editor));
 }

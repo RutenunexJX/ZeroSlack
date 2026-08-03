@@ -1,9 +1,10 @@
 #include "foldblockshelfpanel.h"
 
+#include "actionregistry.h"
 #include "activitylogservice.h"
+#include "editorhoverpopup.h"
 #include "insightvisualstyle.h"
 
-#include <QDialog>
 #include <QDrag>
 #include <QDragEnterEvent>
 #include <QDragMoveEvent>
@@ -11,14 +12,17 @@
 #include <QHBoxLayout>
 #include <QInputDialog>
 #include <QKeyEvent>
+#include <QKeySequence>
 #include <QLineEdit>
 #include <QListWidget>
 #include <QListWidgetItem>
 #include <QMessageBox>
 #include <QMimeData>
-#include <QPlainTextEdit>
 #include <QPushButton>
+#include <QStringList>
 #include <QVBoxLayout>
+
+#include <utility>
 
 namespace {
 class FoldShelfListWidget : public QListWidget
@@ -56,11 +60,8 @@ protected:
 
     void keyPressEvent(QKeyEvent* event) override
     {
-        if (event->key() == Qt::Key_Delete && panel) {
-            panel->requestDeleteSelectedItem();
-            event->accept();
+        if (panel && panel->handleListShortcut(event))
             return;
-        }
         QListWidget::keyPressEvent(event);
     }
 
@@ -127,6 +128,9 @@ FoldBlockShelfPanel::FoldBlockShelfPanel(QWidget* parent)
     listWidget->setDragDropMode(QAbstractItemView::DragOnly);
     layout->addWidget(listWidget);
 
+    previewPeek = new EditorHoverPopup(this);
+    previewPeek->hide();
+
     connect(listWidget, &QListWidget::itemDoubleClicked,
             this, [this](QListWidgetItem* item) {
                 if (!shelfModel || !item)
@@ -180,9 +184,48 @@ FoldBlockShelfModel* FoldBlockShelfPanel::model() const
     return shelfModel;
 }
 
-void FoldBlockShelfPanel::requestDeleteSelectedItem()
+void FoldBlockShelfPanel::setActionRequestHandler(
+    ActionRequestHandler handler)
 {
-    handleDeleteSelectedItem();
+    actionRequestHandler = std::move(handler);
+}
+
+bool FoldBlockShelfPanel::handleListShortcut(
+    QKeyEvent* event)
+{
+    if (!event)
+        return false;
+    const QString shortcutText =
+        effectiveActionShortcut(
+            QString::fromLatin1(
+                ActionIds::FoldShelfDeleteSelected));
+    if (shortcutText.isEmpty())
+        return false;
+    const QKeySequence shortcut =
+        QKeySequence::fromString(
+            shortcutText,
+            QKeySequence::PortableText);
+    if (shortcut.matches(
+            QKeySequence(event->keyCombination()))
+        != QKeySequence::ExactMatch) {
+        return false;
+    }
+
+    requestDeleteSelectedItem();
+    event->accept();
+    return true;
+}
+
+bool FoldBlockShelfPanel::requestDeleteSelectedItem(
+    QString* failureReason)
+{
+    if (actionRequestHandler) {
+        return actionRequestHandler(
+            QString::fromLatin1(
+                ActionIds::FoldShelfDeleteSelected),
+            failureReason);
+    }
+    return deleteSelectedItem(failureReason);
 }
 
 void FoldBlockShelfPanel::setShelfModeActive(bool active)
@@ -211,6 +254,9 @@ void FoldBlockShelfPanel::updateModeStyle()
 
 void FoldBlockShelfPanel::refresh()
 {
+    if (previewPeek && previewPeek->isVisible())
+        previewPeek->closePopup();
+
     const QString previousId = selectedItemId();
     listWidget->clear();
     if (!shelfModel) {
@@ -294,33 +340,94 @@ void FoldBlockShelfPanel::dropEvent(QDropEvent* event)
 
 void FoldBlockShelfPanel::showPreview(const FoldShelfItem& item)
 {
-    if (item.id.isEmpty())
+    if (item.id.isEmpty() || !previewPeek)
         return;
 
-    auto* dialog = new QDialog(this);
-    dialog->setAttribute(Qt::WA_DeleteOnClose);
-    dialog->setWindowTitle(QStringLiteral("Fold Block: %1").arg(item.alias));
-    auto* layout = new QVBoxLayout(dialog);
-    auto* preview = new QPlainTextEdit(dialog);
-    preview->setReadOnly(true);
-    preview->setPlainText(item.text);
-    layout->addWidget(preview);
-    dialog->resize(720, 420);
-    dialog->show();
+    PeekContentModel content;
+    content.kind = PeekContentKind::FoldShelfPreview;
+    content.title = QStringLiteral("Fold Block: %1").arg(item.alias);
+    content.maximumSize = QSize(760, 480);
+
+    QString source = item.sourceFile;
+    if (!source.isEmpty() && item.sourceStartLine > 0) {
+        source += QStringLiteral(":%1").arg(item.sourceStartLine);
+        if (item.sourceEndLine > item.sourceStartLine) {
+            source += QStringLiteral("-%1").arg(item.sourceEndLine);
+        }
+    }
+    if (!source.isEmpty()) {
+        content.rows.append(
+            {source, PeekContentRowRole::Muted, false});
+    }
+    if (!item.sourceModule.isEmpty()) {
+        content.rows.append(
+            {QStringLiteral("module: %1").arg(item.sourceModule),
+             PeekContentRowRole::Muted,
+             false});
+    }
+
+    QStringList state;
+    state.append(item.originKind == FoldShelfOriginKind::Moved
+                     ? QStringLiteral("moved")
+                     : QStringLiteral("copied"));
+    if (item.consumed)
+        state.append(QStringLiteral("consumed"));
+    if (item.stale)
+        state.append(QStringLiteral("stale"));
+    content.rows.append(
+        {QStringLiteral("%1 lines · %2")
+             .arg(item.lineCount)
+             .arg(state.join(QStringLiteral(", "))),
+         PeekContentRowRole::Muted,
+         false});
+
+    content.readOnlyText.enabled = true;
+    content.readOnlyText.text = item.text;
+    content.readOnlyText.objectName =
+        QStringLiteral("foldShelfPreviewText");
+    content.readOnlyText.minimumSize = QSize(420, 220);
+
+    QRect globalAnchor(
+        mapToGlobal(rect().center()),
+        QSize(1, 1));
+    if (listWidget && listWidget->currentItem()) {
+        const QRect rowRect =
+            listWidget->visualItemRect(listWidget->currentItem());
+        if (rowRect.isValid()) {
+            globalAnchor = QRect(
+                listWidget->viewport()->mapToGlobal(
+                    rowRect.topLeft()),
+                rowRect.size());
+        }
+    }
+    previewPeek->showContent(content, globalAnchor, font());
 }
 
-void FoldBlockShelfPanel::handleDeleteSelectedItem()
+bool FoldBlockShelfPanel::deleteSelectedItem(
+    QString* failureReason)
 {
-    if (!shelfModel || !listWidget)
-        return;
+    const auto fail =
+        [failureReason](const QString& reason) {
+            if (failureReason)
+                *failureReason = reason;
+            return false;
+        };
+    if (!shelfModel || !listWidget) {
+        return fail(QStringLiteral(
+            "Fold Shelf is unavailable"));
+    }
 
     const QString id = selectedItemId();
-    if (id.isEmpty())
-        return;
+    if (id.isEmpty()) {
+        return fail(QStringLiteral(
+            "No Fold Shelf item is selected"));
+    }
 
     const FoldShelfItem item = shelfModel->item(id);
-    if (item.id.isEmpty())
-        return;
+    if (item.id.isEmpty()) {
+        return fail(QStringLiteral(
+            "The selected Fold Shelf item no longer exists"));
+    }
 
     if (item.originKind == FoldShelfOriginKind::Moved && !item.consumed) {
         QMessageBox box(this);
@@ -334,17 +441,25 @@ void FoldBlockShelfPanel::handleDeleteSelectedItem()
         box.exec();
         if (box.clickedButton() == restoreButton) {
             emit restoreItemRequested(id);
-            return;
+            if (failureReason)
+                failureReason->clear();
+            return true;
         }
         if (box.clickedButton() != deleteButton)
-            return;
+            return fail(QStringLiteral("Delete canceled"));
     }
 
-    shelfModel->removeItem(id);
+    if (!shelfModel->removeItem(id)) {
+        return fail(QStringLiteral(
+            "The selected Fold Shelf item could not be deleted"));
+    }
     ActivityLogService::getInstance()->append(
         QStringLiteral("Fold Shelf"),
         ActivityLogLevel::Info,
         QStringLiteral("Deleted shelf item \"%1\"").arg(item.alias));
+    if (failureReason)
+        failureReason->clear();
+    return true;
 }
 
 void FoldBlockShelfPanel::handleRestoreSelectedItem()

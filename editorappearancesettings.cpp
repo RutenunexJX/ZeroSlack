@@ -1,12 +1,15 @@
 #include "editorappearancesettings.h"
 
+#include "settingscenterkeys.h"
+
 #include <QtGlobal>
 
 namespace {
-constexpr const char* kFontFamilyKey = "editorAppearance/fontFamily";
-constexpr const char* kFontSizeKey = "editorAppearance/fontSizePt";
-constexpr const char* kLineHeightKey = "editorAppearance/lineHeight";
-constexpr const char* kLigaturesKey = "editorAppearance/ligaturesEnabled";
+constexpr const char* kFontFamilyKey = SettingsCenterKeys::FontFamily;
+constexpr const char* kFontSizeKey = SettingsCenterKeys::FontSizePt;
+constexpr const char* kLineHeightKey = SettingsCenterKeys::FontLineHeight;
+constexpr const char* kLigaturesKey =
+    SettingsCenterKeys::FontLigaturesEnabled;
 
 bool sameOptions(const EditorAppearanceOptions& lhs,
                  const EditorAppearanceOptions& rhs)

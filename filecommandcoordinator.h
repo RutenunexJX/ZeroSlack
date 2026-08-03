@@ -60,7 +60,9 @@ private:
         void saveCurrentTab() const;
         void saveAsCurrentTab() const;
         void openWorkspace(const QString& folderPath) const;
-        bool hasUnsavedChanges() const;
+        bool resolvePendingDocuments(
+            QWidget* dialogParent) const;
+        void finalizeNormalClose() const;
         MyCodeEditor* currentEditor() const;
     };
 

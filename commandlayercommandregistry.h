@@ -1,26 +1,17 @@
 #ifndef COMMANDLAYERCOMMANDREGISTRY_H
 #define COMMANDLAYERCOMMANDREGISTRY_H
 
+#include "actionregistry.h"
+
+#include <QHash>
 #include <QList>
 #include <QString>
+
+#include <functional>
 
 enum class CommandLayerCommandInputKind {
     Fixed,
     PositiveInteger
-};
-
-enum class CommandLayerCommandId {
-    GoLine,
-    GoModule,
-    GoPackage,
-    GoEndmodule,
-    AddSignal,
-    AddParameter,
-    AddPort,
-    ClearRight,
-    SelectBeginEnd,
-    SelectSignals,
-    Help
 };
 
 struct CommandLayerCommandMetadata {
@@ -28,7 +19,6 @@ struct CommandLayerCommandMetadata {
     QString description;
     CommandLayerCommandInputKind inputKind =
         CommandLayerCommandInputKind::Fixed;
-    CommandLayerCommandId id = CommandLayerCommandId::Help;
     QString actionId;
     QString executionRoute;
 };
@@ -60,6 +50,29 @@ struct CommandLayerLineParseResult {
     QString failureReason;
 };
 
+class CommandLayerActionExecutionHost final : public ActionExecutionHost
+{
+public:
+    using RouteHandler = std::function<ActionExecutionResult(
+        const ActionDescriptor&,
+        const ActionInvocation&)>;
+
+    bool bindRoute(const QString& route,
+                   RouteHandler handler,
+                   QString* failureReason = nullptr);
+    bool hasRoute(const QString& route) const;
+    void setFallbackHost(ActionExecutionHost* host);
+    bool hasFallbackHost() const;
+
+    ActionExecutionResult executeActionRoute(
+        const ActionDescriptor& descriptor,
+        const ActionInvocation& invocation) override;
+
+private:
+    QHash<QString, RouteHandler> routeHandlers;
+    ActionExecutionHost* fallbackHost = nullptr;
+};
+
 const QList<CommandLayerCommandMetadata>& commandLayerCommandRegistry();
 const CommandLayerCommandMetadata* findCommandLayerCommand(
     const QString& canonicalName);
@@ -71,6 +84,10 @@ QList<CommandLayerCommandMatch> commandLayerCommandMatches(
     const QString& query);
 CommandLayerLineParseResult parseCommandLayerLineQuery(
     const QString& query);
+ActionExecutionResult executeCommandLayerCommand(
+    const CommandLayerCommandMetadata& command,
+    ActionExecutionHost& host,
+    const ActionInvocation& invocation = {});
 QString commandLayerMatchRankName(CommandLayerMatchRank rank);
 
 #endif // COMMANDLAYERCOMMANDREGISTRY_H

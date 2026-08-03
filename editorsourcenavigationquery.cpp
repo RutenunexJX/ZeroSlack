@@ -121,8 +121,6 @@ QString actionUnavailableReason(
                 .arg(actionContext.symbolName);
         }
         return QStringLiteral("Symbol not indexed");
-    case SourceSymbolAction::FindReferences:
-    case SourceSymbolAction::ShowRelationships:
     case SourceSymbolAction::ShowSignalKernelGraph:
         return QString();
     case SourceSymbolAction::ShowSignalUsageHotspot:
@@ -173,20 +171,11 @@ EditorSourceNavigationQuery::sourceSymbolShortcutState(
     const Qt::KeyboardModifiers modifiers =
         Qt::KeyboardModifiers::fromInt(context.modifiers);
 
-    if (context.key == Qt::Key_F12 && modifiers.testFlag(Qt::ShiftModifier)) {
+    if (context.key == Qt::Key_F12
+        && modifiers == Qt::NoModifier) {
         state.matched = true;
         state.acceptEvent = true;
-        state.action = SourceSymbolAction::FindReferences;
-        state.semanticContext = context.semanticContext;
-        return state;
-    }
-
-    if (context.key == Qt::Key_R
-        && modifiers.testFlag(Qt::ControlModifier)
-        && modifiers.testFlag(Qt::ShiftModifier)) {
-        state.matched = true;
-        state.acceptEvent = true;
-        state.action = SourceSymbolAction::ShowRelationships;
+        state.action = SourceSymbolAction::GoToDefinition;
         state.semanticContext = context.semanticContext;
         return state;
     }
@@ -200,8 +189,6 @@ EditorSourceNavigationQuery::sourceSymbolContextMenuState(
 {
     const SourceSymbolActionContext actionContext =
         sourceSymbolActionContext(context);
-    const bool hasDefinition = actionContext.available
-        && canResolveDefinitionTarget(actionContext.symbolName, context);
     const StateTransitionTriggerReport stateTransitionTrigger =
         actionContext.available
             ? stateTransitionTriggerForContext(actionContext)
@@ -212,27 +199,6 @@ EditorSourceNavigationQuery::sourceSymbolContextMenuState(
         signalUsageHotspotAvailableForContext(actionContext);
 
     EditorSourceSymbolContextMenuState state;
-    state.items.append(sourceSymbolMenuItem(
-        SourceSymbolAction::GoToDefinition,
-        hasDefinition,
-        actionUnavailableReason(
-            SourceSymbolAction::GoToDefinition,
-            actionContext,
-            context)));
-    state.items.append(sourceSymbolMenuItem(
-        SourceSymbolAction::FindReferences,
-        actionContext.available,
-        actionUnavailableReason(
-            SourceSymbolAction::FindReferences,
-            actionContext,
-            context)));
-    state.items.append(sourceSymbolMenuItem(
-        SourceSymbolAction::ShowRelationships,
-        actionContext.available,
-        actionUnavailableReason(
-            SourceSymbolAction::ShowRelationships,
-            actionContext,
-            context)));
     state.items.append(sourceSymbolMenuItem(
         SourceSymbolAction::ShowSignalKernelGraph,
         actionContext.available,

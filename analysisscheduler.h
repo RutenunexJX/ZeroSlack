@@ -39,6 +39,9 @@ public:
     void setWorkspaceOpenProvider(std::function<bool()> provider);
     void setWorkspaceSymbolCancelProvider(std::function<bool()> provider);
     void setCurrentFileProvider(std::function<QString()> provider);
+    void setSemanticAnalysisRuntimePolicy(
+        const SemanticAnalysisRuntimePolicy& policy);
+    SemanticAnalysisRuntimePolicy semanticAnalysisRuntimePolicy() const;
     void setRelationshipEngine(SymbolRelationshipEngine* engine);
     void setRelationshipBuilder(SmartRelationshipBuilder* builder);
 
@@ -83,6 +86,8 @@ signals:
         const WorkspaceAnalysisRequestTelemetry& telemetry);
     void semanticAnalysisPlanPrepared(const IncrementalAnalysisPlan& plan);
     void semanticAnalysisTelemetry(const SemanticAnalysisTelemetry& telemetry);
+    void semanticAnalysisRuntimePolicyChanged(
+        const SemanticAnalysisRuntimePolicy& policy);
     void documentSemanticStateChanged(const DocumentSemanticStatus& status);
     void relationshipAnalysisProgress(const QString& fileName, int relationshipsFound);
     void relationshipAnalysisError(const QString& fileName, const QString& error);
@@ -130,6 +135,7 @@ private:
     QString lastProjectSignature;
     bool workspaceInitialAnalysisScheduled = false;
     std::uint64_t nextSemanticGeneration = 0;
+    SemanticAnalysisRuntimePolicy semanticRuntimePolicy;
     bool shuttingDown = false;
 
     static constexpr int kOpenDocumentRelationshipAnalysisDebounceMs = 2000;
@@ -169,6 +175,7 @@ private:
         SemanticAnalysisReason reason);
     void acknowledgePublishedCleanSemanticChanges(
         const SemanticAnalysisRequest& request);
+    void stabilizeSemanticStatesWhenDisabled();
 
     QString contentForOpenFile(const QString& fileName) const;
     void setupRelationshipAnalysis();

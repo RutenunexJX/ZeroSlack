@@ -12,6 +12,20 @@ const QList<EditorModeDescriptor>& descriptors()
 {
     static const QList<EditorModeDescriptor> value = {
         {
+            EditorModeId::CommandMode,
+            EditorModeOwner::Command,
+            QStringLiteral("command-mode"),
+            QStringLiteral("Command mode"),
+            QStringLiteral(
+                "Type to filter actions; Enter executes; Esc or F24 release "
+                "returns to the editor"),
+            120,
+            Input::Escape | Input::Tab | Input::Backtab
+                | Input::Enter | Input::Text | Input::Backspace
+                | Input::Navigation | Input::Mouse | Input::Modifier,
+            EditorModeEscapeBehavior::Close,
+        },
+        {
             EditorModeId::InlineCandidates,
             EditorModeOwner::Completion,
             QStringLiteral("inline-candidates"),
@@ -90,6 +104,33 @@ const QList<EditorModeDescriptor>& descriptors()
                 "Esc cancels"),
             60,
             Input::Escape | Input::Text | Input::Backspace
+                | Input::Navigation | Input::Mouse,
+            EditorModeEscapeBehavior::Cancel,
+        },
+        {
+            EditorModeId::MultiCursor,
+            EditorModeOwner::MultiCursor,
+            QStringLiteral("multi-cursor"),
+            QStringLiteral("Multi-cursor"),
+            QStringLiteral(
+                "Type and edit at every caret; Ctrl+D adds an occurrence; "
+                "Esc returns to one caret"),
+            75,
+            Input::Escape | Input::Tab | Input::Backtab
+                | Input::Enter | Input::Text | Input::Backspace
+                | Input::Navigation | Input::Mouse
+                | Input::Clipboard | Input::Modifier,
+            EditorModeEscapeBehavior::Finish,
+        },
+        {
+            EditorModeId::KeywordGhost,
+            EditorModeOwner::KeywordCompletion,
+            QStringLiteral("keyword-ghost"),
+            QStringLiteral("Keyword completion"),
+            QStringLiteral(
+                "Tab accepts the keyword; Esc or navigation cancels"),
+            85,
+            Input::Escape | Input::Tab | Input::Text
                 | Input::Navigation | Input::Mouse,
             EditorModeEscapeBehavior::Cancel,
         },
@@ -216,8 +257,12 @@ QString editorModeOwnerText(EditorModeOwner owner)
     switch (owner) {
     case EditorModeOwner::Unknown:
         return QStringLiteral("unknown");
+    case EditorModeOwner::Command:
+        return QStringLiteral("command");
     case EditorModeOwner::Completion:
         return QStringLiteral("completion");
+    case EditorModeOwner::KeywordCompletion:
+        return QStringLiteral("keyword completion");
     case EditorModeOwner::TemplateInsertion:
         return QStringLiteral("template insertion");
     case EditorModeOwner::SignalSelection:
@@ -226,6 +271,8 @@ QString editorModeOwnerText(EditorModeOwner owner)
         return QStringLiteral("column editing");
     case EditorModeOwner::VirtualCursor:
         return QStringLiteral("virtual cursor");
+    case EditorModeOwner::MultiCursor:
+        return QStringLiteral("multi cursor");
     case EditorModeOwner::Folding:
         return QStringLiteral("folding");
     case EditorModeOwner::SourceNavigation:
@@ -358,7 +405,15 @@ bool EditorModeController::canCoexist(EditorModeId left,
         || !findEditorModeDescriptor(right)) {
         return false;
     }
-    return left == right;
+    if (left == right)
+        return true;
+
+    const bool multiVirtual =
+        (left == EditorModeId::MultiCursor
+         && right == EditorModeId::VirtualCursor)
+        || (left == EditorModeId::VirtualCursor
+            && right == EditorModeId::MultiCursor);
+    return multiVirtual;
 }
 
 bool EditorModeController::ownsInput(EditorModeId id,

@@ -2,6 +2,7 @@
 
 #include "editorsemanticcontextservice.h"
 #include "mycodeeditor.h"
+#include "tsdocument.h"
 
 #include <algorithm>
 #include <QColor>
@@ -46,13 +47,249 @@ constexpr int kCurrentSymbolSelectionProperty = QTextFormat::UserProperty + 4;
 constexpr int kCurrentSymbolSelectionMarker = 1004;
 constexpr int kSearchSelectionProperty = QTextFormat::UserProperty + 5;
 constexpr int kSearchSelectionMarker = 1005;
-constexpr int kTemplateSlotSelectionProperty = QTextFormat::UserProperty + 7;
-constexpr int kTemplateSlotSelectionMarker = 1007;
 constexpr int kSignalSelectionProperty = QTextFormat::UserProperty + 8;
 constexpr int kSignalSelectionMarker = 1008;
+constexpr int kKeywordPairSelectionProperty = QTextFormat::UserProperty + 9;
+constexpr int kKeywordPairSelectionMarker = 1009;
 constexpr int kFlashSelectionProperty = QTextFormat::UserProperty + 6;
 constexpr int kFlashSelectionMarker = 1006;
 constexpr int kMaxPassiveMatchHighlights = 500;
+
+struct SmartSelectionSpan {
+    int start = -1;
+    int end = -1;
+
+    bool isValid() const
+    {
+        return start >= 0 && end > start;
+    }
+
+    bool contains(const SmartSelectionSpan& other) const
+    {
+        return isValid() && other.isValid()
+            && start <= other.start && end >= other.end;
+    }
+
+    int length() const
+    {
+        return isValid() ? end - start : 0;
+    }
+
+    bool operator==(const SmartSelectionSpan& other) const
+    {
+        return start == other.start && end == other.end;
+    }
+};
+
+bool isSmartSelectionIdentifierStart(QChar ch)
+{
+    return ch.isLetter() || ch == QLatin1Char('_')
+        || ch == QLatin1Char('$');
+}
+
+bool isSmartSelectionIdentifierPart(QChar ch)
+{
+    return ch.isLetterOrNumber() || ch == QLatin1Char('_')
+        || ch == QLatin1Char('$');
+}
+
+SmartSelectionSpan smartSymbolSpanAt(
+    const QString& text,
+    int position)
+{
+    if (text.isEmpty())
+        return {};
+
+    int pos = qBound(0, position, text.size());
+    if (pos >= text.size()
+        || !isSmartSelectionIdentifierPart(text.at(pos))) {
+        if (pos > 0
+            && isSmartSelectionIdentifierPart(text.at(pos - 1))) {
+            --pos;
+        } else {
+            return {};
+        }
+    }
+
+    int start = pos;
+    while (start > 0
+           && isSmartSelectionIdentifierPart(text.at(start - 1))) {
+        --start;
+    }
+    if (start >= text.size()
+        || !isSmartSelectionIdentifierStart(text.at(start))) {
+        return {};
+    }
+
+    int end = pos + 1;
+    while (end < text.size()
+           && isSmartSelectionIdentifierPart(text.at(end))) {
+        ++end;
+    }
+    return {start, end};
+}
+
+SmartSelectionSpan smartIdentifierSpanEndingAt(
+    const QString& text,
+    int end)
+{
+    int pos = end - 1;
+    if (pos < 0 || pos >= text.size()
+        || !isSmartSelectionIdentifierPart(text.at(pos))) {
+        return {};
+    }
+
+    int start = pos;
+    while (start > 0
+           && isSmartSelectionIdentifierPart(text.at(start - 1))) {
+        --start;
+    }
+    if (!isSmartSelectionIdentifierStart(text.at(start)))
+        return {};
+    return {start, end};
+}
+
+SmartSelectionSpan smartIdentifierSpanStartingAt(
+    const QString& text,
+    int start)
+{
+    if (start < 0 || start >= text.size()
+        || !isSmartSelectionIdentifierStart(text.at(start))) {
+        return {};
+    }
+
+    int end = start + 1;
+    while (end < text.size()
+           && isSmartSelectionIdentifierPart(text.at(end))) {
+        ++end;
+    }
+    return {start, end};
+}
+
+SmartSelectionSpan smartHierarchySpan(
+    const QString& text,
+    SmartSelectionSpan span)
+{
+    if (!span.isValid())
+        return {};
+
+    SmartSelectionSpan result = span;
+    while (result.start >= 2
+           && text.at(result.start - 1) == QLatin1Char('.')) {
+        const SmartSelectionSpan previous =
+            smartIdentifierSpanEndingAt(
+                text, result.start - 1);
+        if (!previous.isValid())
+            break;
+        result.start = previous.start;
+    }
+    while (result.end + 1 < text.size()
+           && text.at(result.end) == QLatin1Char('.')) {
+        const SmartSelectionSpan next =
+            smartIdentifierSpanStartingAt(
+                text, result.end + 1);
+        if (!next.isValid())
+            break;
+        result.end = next.end;
+    }
+    return result == span ? SmartSelectionSpan{} : result;
+}
+
+SmartSelectionSpan smartParenthesizedContentSpan(
+    const QString& text,
+    SmartSelectionSpan currentSpan)
+{
+    if (text.isEmpty())
+        return {};
+
+    const int targetStart = currentSpan.isValid()
+        ? currentSpan.start
+        : qBound(0, currentSpan.start, text.size());
+    const int targetEnd = currentSpan.isValid()
+        ? currentSpan.end
+        : targetStart;
+
+    QList<SmartSelectionSpan> stack;
+    SmartSelectionSpan best;
+    for (int index = 0; index < text.size(); ++index) {
+        const QChar ch = text.at(index);
+        if (ch == QLatin1Char('(')) {
+            stack.append({index, index + 1});
+            continue;
+        }
+        if (ch != QLatin1Char(')') || stack.isEmpty())
+            continue;
+
+        const SmartSelectionSpan opening = stack.takeLast();
+        const SmartSelectionSpan content{
+            opening.start + 1, index};
+        if (!content.isValid()
+            || content.start > targetStart
+            || content.end < targetEnd
+            || (currentSpan.isValid()
+                && content == currentSpan)) {
+            continue;
+        }
+        if (!best.isValid() || content.length() < best.length())
+            best = content;
+    }
+    return best;
+}
+
+void applySmartSelectionSpan(
+    MyCodeEditor* editor,
+    SmartSelectionSpan span)
+{
+    if (!editor || !span.isValid())
+        return;
+    QTextCursor cursor = editor->textCursor();
+    cursor.setPosition(span.start);
+    cursor.setPosition(
+        span.end, QTextCursor::KeepAnchor);
+    editor->setTextCursor(cursor);
+}
+
+bool isStandaloneSmartIdentifier(const QString& text)
+{
+    if (text.isEmpty()
+        || !isSmartSelectionIdentifierStart(text.at(0))) {
+        return false;
+    }
+    for (int index = 1; index < text.size(); ++index) {
+        if (!isSmartSelectionIdentifierPart(text.at(index)))
+            return false;
+    }
+    return true;
+}
+
+QList<SmartSelectionSpan> smartIdentifierOccurrences(
+    const QString& text,
+    const QString& symbol)
+{
+    QList<SmartSelectionSpan> occurrences;
+    if (!isStandaloneSmartIdentifier(symbol))
+        return occurrences;
+
+    int position = 0;
+    while (position >= 0 && position < text.size()) {
+        position = text.indexOf(
+            symbol, position, Qt::CaseSensitive);
+        if (position < 0)
+            break;
+        const int end = position + symbol.size();
+        const bool leftBoundary =
+            position == 0
+            || !isSmartSelectionIdentifierPart(
+                text.at(position - 1));
+        const bool rightBoundary =
+            end >= text.size()
+            || !isSmartSelectionIdentifierPart(text.at(end));
+        if (leftBoundary && rightBoundary)
+            occurrences.append({position, end});
+        position = end;
+    }
+    return occurrences;
+}
 
 bool isOccurrenceIdentifierStart(QChar ch)
 {
@@ -337,6 +574,137 @@ QTextCharFormat semanticFormatForRole(
 EditorSelection::EditorSelection() = default;
 EditorSelection::~EditorSelection() = default;
 
+bool EditorSelection::expandSmartSelection(
+    MyCodeEditor* editor,
+    QString* message)
+{
+    if (message)
+        message->clear();
+    if (!editor || !editor->document()) {
+        if (message) {
+            *message = QStringLiteral(
+                "No editor is available.");
+        }
+        return false;
+    }
+
+    const QString text = editor->toPlainText();
+    const QTextCursor cursor = editor->textCursor();
+    const SmartSelectionSpan current = cursor.hasSelection()
+        ? SmartSelectionSpan{
+              cursor.selectionStart(),
+              cursor.selectionEnd()}
+        : SmartSelectionSpan{
+              cursor.position(),
+              cursor.position()};
+
+    SmartSelectionSpan target;
+    if (!cursor.hasSelection()) {
+        target = smartSymbolSpanAt(
+            text, cursor.position());
+    } else {
+        const SmartSelectionSpan symbol =
+            smartSymbolSpanAt(text, current.start);
+        const SmartSelectionSpan hierarchy =
+            symbol.isValid() && current == symbol
+            ? smartHierarchySpan(text, symbol)
+            : smartHierarchySpan(text, current);
+        if (hierarchy.isValid()
+            && hierarchy.contains(current)) {
+            target = hierarchy;
+        }
+    }
+    if (!target.isValid()) {
+        target = smartParenthesizedContentSpan(
+            text, current);
+    }
+    if (!target.isValid()) {
+        if (message) {
+            *message = QStringLiteral(
+                "No larger structural selection is available.");
+        }
+        return false;
+    }
+
+    applySmartSelectionSpan(editor, target);
+    if (message) {
+        *message = QStringLiteral(
+            "Expanded structural selection");
+    }
+    return true;
+}
+
+bool EditorSelection::navigateSelectedSymbolOccurrence(
+    MyCodeEditor* editor,
+    bool previous,
+    QString* message)
+{
+    if (message)
+        message->clear();
+    if (!editor || !editor->document()) {
+        if (message) {
+            *message = QStringLiteral(
+                "No editor is available.");
+        }
+        return false;
+    }
+
+    const QTextCursor cursor = editor->textCursor();
+    const QString symbol = cursor.selectedText();
+    if (!cursor.hasSelection()
+        || !isStandaloneSmartIdentifier(symbol)) {
+        if (message) {
+            *message = QStringLiteral(
+                "Select one SystemVerilog identifier.");
+        }
+        return false;
+    }
+
+    const QList<SmartSelectionSpan> occurrences =
+        smartIdentifierOccurrences(
+            editor->toPlainText(), symbol);
+    if (occurrences.isEmpty()) {
+        if (message) {
+            *message = QStringLiteral(
+                "No matching symbol occurrence is available.");
+        }
+        return false;
+    }
+
+    const int currentStart = cursor.selectionStart();
+    SmartSelectionSpan target = previous
+        ? occurrences.constLast()
+        : occurrences.constFirst();
+    if (previous) {
+        for (int index = occurrences.size() - 1;
+             index >= 0;
+             --index) {
+            if (occurrences.at(index).start < currentStart) {
+                target = occurrences.at(index);
+                break;
+            }
+        }
+    } else {
+        for (const SmartSelectionSpan& occurrence : occurrences) {
+            if (occurrence.start > currentStart) {
+                target = occurrence;
+                break;
+            }
+        }
+    }
+
+    applySmartSelectionSpan(editor, target);
+    editor->centerCursor();
+    if (message) {
+        *message = previous
+            ? QStringLiteral("Previous occurrence of %1")
+                  .arg(symbol)
+            : QStringLiteral("Next occurrence of %1")
+                  .arg(symbol);
+    }
+    return true;
+}
+
 void EditorSelection::highlightCurrentLine(MyCodeEditor* editor)
 {
     QList<QTextEdit::ExtraSelection> selections = editor->extraSelections();
@@ -422,17 +790,26 @@ void EditorSelection::highlightHoveredSymbol(
     MyCodeEditor* editor,
     const EditorSourceNavigationTarget& target)
 {
-    if (target.text.isEmpty()
+    if (!editor
+        || !editor->document()
+        || target.text.isEmpty()
         || target.startPos < 0
         || target.endPos <= target.startPos) {
         return;
     }
 
+    const int documentEnd =
+        qMax(0, editor->document()->characterCount() - 1);
+    const int start = qBound(0, target.startPos, documentEnd);
+    const int end = qBound(start, target.endPos, documentEnd);
+    if (end <= start)
+        return;
+
     QTextEdit::ExtraSelection highlight;
-    highlight.cursor = editor->textCursor();
-    highlight.cursor.setPosition(target.startPos);
+    highlight.cursor = QTextCursor(editor->document());
+    highlight.cursor.setPosition(start);
     highlight.cursor.setPosition(
-        target.endPos,
+        end,
         QTextCursor::KeepAnchor);
     highlight.format.setUnderlineStyle(QTextCharFormat::SingleUnderline);
     highlight.format.setUnderlineColor(QColor(0, 100, 200));
@@ -460,7 +837,9 @@ void EditorSelection::clearHoveredSymbol(QPlainTextEdit* editor)
 
 void EditorSelection::highlightDiagnostics(
     MyCodeEditor* editor,
-    const QList<SemanticDiagnostic>& diagnostics)
+    const QList<SemanticDiagnostic>& diagnostics,
+    int firstVisiblePosition,
+    int endVisiblePosition)
 {
     QList<QTextEdit::ExtraSelection> selections =
         editorSelectionsWithout(
@@ -491,11 +870,13 @@ void EditorSelection::highlightDiagnostics(
         for (const SemanticSourceRange& range : diagnostic.ranges) {
             if (range.position < 0 || range.length <= 0)
                 continue;
-            const int start = qBound(0, range.position, documentEnd);
-            const int end = qBound(
+            int start = qBound(0, range.position, documentEnd);
+            int end = qBound(
                 start,
                 range.position + range.length,
                 documentEnd);
+            start = qMax(start, firstVisiblePosition);
+            end = qMin(end, endVisiblePosition);
             if (end <= start)
                 continue;
 
@@ -535,6 +916,9 @@ void EditorSelection::highlightSemanticDecorations(
     MyCodeEditor* editor,
     const QList<SemanticDecoration>& decorations)
 {
+    if (!editor || !editor->document())
+        return;
+
     QList<QTextEdit::ExtraSelection> selections =
         editorSelectionsWithout(
             editor,
@@ -542,15 +926,30 @@ void EditorSelection::highlightSemanticDecorations(
             kSemanticSelectionMarker);
 
     const bool dark = editorUsesDarkPalette(editor);
+    const int documentEnd =
+        qMax(0, editor->document()->characterCount() - 1);
     for (const SemanticDecoration& decoration : decorations) {
         if (!decoration.isValid())
             continue;
 
+        const int start = qBound(
+            0, decoration.startPosition, documentEnd);
+        const qint64 requestedEnd =
+            static_cast<qint64>(decoration.startPosition)
+            + static_cast<qint64>(decoration.length);
+        const int end = requestedEnd >= documentEnd
+            ? documentEnd
+            : qBound(start,
+                     static_cast<int>(requestedEnd),
+                     documentEnd);
+        if (end <= start)
+            continue;
+
         QTextEdit::ExtraSelection selection;
-        selection.cursor = editor->textCursor();
-        selection.cursor.setPosition(decoration.startPosition);
+        selection.cursor = QTextCursor(editor->document());
+        selection.cursor.setPosition(start);
         selection.cursor.setPosition(
-            decoration.startPosition + decoration.length,
+            end,
             QTextCursor::KeepAnchor);
         selection.format = semanticFormatForRole(decoration.role, dark);
         selections.append(selection);
@@ -619,7 +1018,7 @@ void EditorSelection::highlightCurrentSymbolReferences(MyCodeEditor* editor)
 }
 
 void EditorSelection::rebuildOccurrenceIndex(MyCodeEditor* editor,
-                                             const QString& text)
+                                              const QString& text)
 {
     Q_UNUSED(editor)
     occurrenceIndex.clear();
@@ -630,6 +1029,12 @@ void EditorSelection::rebuildOccurrenceIndex(MyCodeEditor* editor,
     activeOccurrenceCount = 0;
     occurrenceIndexInitialized = true;
     appendOccurrenceRange(text, 0, text.size());
+}
+
+void EditorSelection::resetDocumentText(MyCodeEditor* editor,
+                                        const QString& text)
+{
+    rebuildOccurrenceIndex(editor, text);
 }
 
 void EditorSelection::appendOccurrenceRange(const QString& text,
@@ -853,81 +1258,64 @@ void EditorSelection::clearSearchMatches(QPlainTextEdit* editor)
     removeByProperty(editor, kSearchSelectionProperty, kSearchSelectionMarker);
 }
 
-void EditorSelection::highlightTemplateSlots(
+void EditorSelection::highlightKeywordPair(
     MyCodeEditor* editor,
-    const QList<QPair<int, int>>& ranges,
-    int activeIndex,
-    bool pulseOn)
+    const TSKeywordPairTarget& target)
 {
     if (!editor || !editor->document())
         return;
+    if (!target.ok()) {
+        clearKeywordPair(editor);
+        return;
+    }
 
     QList<QTextEdit::ExtraSelection> selections =
         editorSelectionsWithout(
             editor,
-            kTemplateSlotSelectionProperty,
-            kTemplateSlotSelectionMarker);
-
-    const int docEnd = qMax(0, editor->document()->characterCount() - 1);
-    for (int i = 0; i < ranges.size(); ++i) {
-        const int start = ranges.at(i).first;
-        const int requestedLength = ranges.at(i).second;
-        if (start < 0 || requestedLength < 0 || start > docEnd)
+            kKeywordPairSelectionProperty,
+            kKeywordPairSelectionMarker);
+    const QList<QPair<int, int>> ranges = {
+        {target.openingStartChar, target.openingEndChar},
+        {target.closingStartChar, target.closingEndChar},
+    };
+    const int documentEnd =
+        qMax(0, editor->document()->characterCount() - 1);
+    for (const QPair<int, int>& range : ranges) {
+        const int start = qBound(0, range.first, documentEnd);
+        const int end = qBound(start, range.second, documentEnd);
+        if (end <= start)
             continue;
 
-        int visibleStart = qBound(0, start, docEnd);
-        int visibleEnd = qBound(0, start + requestedLength, docEnd);
-        if (visibleEnd <= visibleStart) {
-            if (visibleStart < docEnd) {
-                visibleEnd = visibleStart + 1;
-            } else if (visibleStart > 0) {
-                --visibleStart;
-                visibleEnd = visibleStart + 1;
-            } else {
-                continue;
-            }
-        }
-
-        QTextCursor cursor(editor->document());
-        cursor.setPosition(visibleStart);
-        cursor.setPosition(visibleEnd, QTextCursor::KeepAnchor);
-
-        QTextEdit::ExtraSelection slotSelection;
-        slotSelection.cursor = cursor;
-        const bool active = i == activeIndex;
-        const int weakAlpha = pulseOn ? 58 : 26;
-        const int activeAlpha = pulseOn ? 118 : 82;
-        slotSelection.format.setBackground(
-            active
-                ? QColor(34, 197, 94, activeAlpha)
-                : QColor(59, 130, 246, weakAlpha));
-        slotSelection.format.setUnderlineStyle(
-            active ? QTextCharFormat::DashUnderline
-                   : QTextCharFormat::SingleUnderline);
-        slotSelection.format.setUnderlineColor(
-            active ? QColor("#22C55E") : QColor("#60A5FA"));
-        slotSelection.format.setProperty(
-            kTemplateSlotSelectionProperty,
-            kTemplateSlotSelectionMarker);
-        selections.append(slotSelection);
+        QTextEdit::ExtraSelection selection;
+        selection.cursor = QTextCursor(editor->document());
+        selection.cursor.setPosition(start);
+        selection.cursor.setPosition(end, QTextCursor::KeepAnchor);
+        selection.format.setBackground(QColor(250, 204, 21, 54));
+        selection.format.setUnderlineStyle(
+            QTextCharFormat::SingleUnderline);
+        selection.format.setUnderlineColor(QColor("#EAB308"));
+        selection.format.setFontWeight(QFont::DemiBold);
+        selection.format.setProperty(
+            kKeywordPairSelectionProperty,
+            kKeywordPairSelectionMarker);
+        selections.append(selection);
     }
-
     editor->setExtraSelections(selections);
 }
 
-void EditorSelection::clearTemplateSlots(QPlainTextEdit* editor)
+void EditorSelection::clearKeywordPair(QPlainTextEdit* editor)
 {
     removeByProperty(
         editor,
-        kTemplateSlotSelectionProperty,
-        kTemplateSlotSelectionMarker);
+        kKeywordPairSelectionProperty,
+        kKeywordPairSelectionMarker);
 }
 
 void EditorSelection::highlightSignalSelections(
     MyCodeEditor* editor,
     const QList<QPair<int, int>>& ranges)
 {
-    if (!editor)
+    if (!editor || !editor->document())
         return;
     QList<QTextEdit::ExtraSelection> selections =
         editorSelectionsWithout(
@@ -940,14 +1328,27 @@ void EditorSelection::highlightSignalSelections(
     background.setAlpha(46);
     QColor underline = accent;
     underline.setAlpha(150);
+    const int documentEnd =
+        qMax(0, editor->document()->characterCount() - 1);
     for (const QPair<int, int>& range : ranges) {
         if (range.first < 0 || range.second <= 0)
             continue;
+        const int start = qBound(0, range.first, documentEnd);
+        const qint64 requestedEnd =
+            static_cast<qint64>(range.first)
+            + static_cast<qint64>(range.second);
+        const int end = requestedEnd >= documentEnd
+            ? documentEnd
+            : qBound(start,
+                     static_cast<int>(requestedEnd),
+                     documentEnd);
+        if (end <= start)
+            continue;
         QTextEdit::ExtraSelection selection;
         selection.cursor = QTextCursor(editor->document());
-        selection.cursor.setPosition(range.first);
+        selection.cursor.setPosition(start);
         selection.cursor.setPosition(
-            range.first + range.second,
+            end,
             QTextCursor::KeepAnchor);
         selection.format.setBackground(background);
         selection.format.setUnderlineStyle(
@@ -998,9 +1399,12 @@ void EditorSelection::flashLine(MyCodeEditor* editor, int lineNumber)
     editor->setExtraSelections(selections);
 
     const QPointer<QPlainTextEdit> guardedEditor(editor);
-    QTimer::singleShot(650, editor, [this, guardedEditor]() {
+    QTimer::singleShot(650, editor, [guardedEditor]() {
         if (guardedEditor)
-            removeByProperty(guardedEditor, kFlashSelectionProperty, kFlashSelectionMarker);
+            EditorSelection::removeByProperty(
+                guardedEditor,
+                kFlashSelectionProperty,
+                kFlashSelectionMarker);
     });
 }
 
@@ -1008,12 +1412,22 @@ void EditorHighlightRefresh::attachToEditor(
     MyCodeEditor* editor,
     const std::function<void()>& refresh)
 {
+    detach();
     refreshHandler = refresh;
-    QObject::connect(
+    if (!editor)
+        return;
+    cursorConnection = QObject::connect(
         editor,
         &QPlainTextEdit::cursorPositionChanged,
         editor,
         [this]() { schedule(); });
+}
+
+void EditorHighlightRefresh::detach()
+{
+    QObject::disconnect(cursorConnection);
+    cursorConnection = {};
+    refreshHandler = {};
 }
 
 void EditorHighlightRefresh::schedule() const

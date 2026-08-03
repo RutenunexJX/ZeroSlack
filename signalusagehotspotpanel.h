@@ -1,6 +1,8 @@
 #ifndef SIGNALUSAGEHOTSPOTPANEL_H
 #define SIGNALUSAGEHOTSPOTPANEL_H
 
+#include "actionregistry.h"
+#include "graphexportservice.h"
 #include "signalusagehotspotservice.h"
 
 #include <QWidget>
@@ -11,6 +13,7 @@
 #include <QSet>
 
 class QCheckBox;
+class QAction;
 class QGraphicsScene;
 class InsightGraphView;
 class QLabel;
@@ -21,7 +24,13 @@ class QSplitter;
 class QStackedWidget;
 class QTreeWidget;
 
-class SignalUsageHotspotPanel : public QWidget
+enum class SignalUsageHotspotExportSurface {
+    Track,
+    Matrix
+};
+
+class SignalUsageHotspotPanel : public QWidget,
+                                public ActionExecutionHost
 {
 public:
     using ReportBuilder = std::function<SignalUsageHotspotReport(
@@ -46,6 +55,18 @@ public:
     void setFocusSearchText(const QString& text);
     QString focusSearchText() const;
     void focusInspector();
+    GraphExportResult exportGraph(
+        SignalUsageHotspotExportSurface surface,
+        const QString& outputPath,
+        const GraphExportOptions& options = {}) const;
+    QAction* graphExportAction(
+        SignalUsageHotspotExportSurface surface) const;
+    QAction* graphViewActionForTest(
+        const QString& actionId) const;
+    QList<QAction*> graphViewActionsForTest() const;
+    ActionExecutionResult triggerGraphViewActionForTest(
+        const QString& actionId);
+    qreal trackZoomFactorForTest() const;
     void renderReportForTest(const SignalUsageHotspotReport& report);
     int trackBlockCountForTest() const;
     int trackLaneCountForTest() const;
@@ -78,6 +99,13 @@ private:
     QPushButton* fitButton = nullptr;
     QPushButton* centerCurrentButton = nullptr;
     QPushButton* resetLayoutButton = nullptr;
+    QAction* fitViewAction = nullptr;
+    QAction* zoomInViewAction = nullptr;
+    QAction* zoomOutViewAction = nullptr;
+    QAction* centerCurrentViewAction = nullptr;
+    QAction* resetLayoutViewAction = nullptr;
+    QAction* exportTrackAction = nullptr;
+    QAction* exportMatrixAction = nullptr;
     QList<QCheckBox*> roleChecks;
     QSplitter* contentSplitter = nullptr;
     QStackedWidget* modeStack = nullptr;
@@ -127,11 +155,11 @@ private:
     void clearMatrixFocus();
     QRectF trackRectForItem(int itemIndex) const;
     qreal targetTrackRailWidth() const;
-    void setTrackZoom(double zoomFactor);
-    void zoomTrack(double factor);
-    void fitTrackToView();
-    void centerCurrentUsage();
-    void resetLayout();
+    bool setTrackZoom(double zoomFactor);
+    bool zoomTrack(double factor);
+    bool fitTrackToView();
+    bool centerCurrentUsage();
+    bool resetLayout();
     void restoreLayout();
     void saveLayout() const;
     void showInspectorForItem(int itemIndex);
@@ -142,6 +170,21 @@ private:
     bool roleEnabled(SignalUsageHotspotRole role) const;
     QList<int> filteredItemIndexes(bool includeMatrixFocus = true) const;
     void showStatusMessage(const QString& message, int timeoutMs) const;
+    QAction* createGraphViewAction(
+        const QString& actionId);
+    void bindGraphViewButton(
+        QPushButton* button,
+        QAction* action);
+    QAction* graphViewAction(
+        const QString& actionId) const;
+    QList<QAction*> graphViewActions() const;
+    bool hasGraphViewContent() const;
+    void refreshGraphViewActionAvailability() const;
+    ActionExecutionResult requestGraphViewAction(
+        const QString& actionId);
+    ActionExecutionResult executeActionRoute(
+        const ActionDescriptor& descriptor,
+        const ActionInvocation& invocation) override;
 };
 
 #endif // SIGNALUSAGEHOTSPOTPANEL_H

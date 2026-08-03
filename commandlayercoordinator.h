@@ -37,7 +37,8 @@ public:
         ProjectModel* projectModel,
         SemanticIndex* semanticIndex,
         NavigationCommandCoordinator* navigation,
-        QObject* parent = nullptr);
+        QObject* parent = nullptr,
+        ActionExecutionHost* applicationActionHost = nullptr);
     ~CommandLayerCoordinator() override;
 
     void connectSignals();
@@ -72,12 +73,14 @@ private:
     std::unique_ptr<CommandLayerPickerPanel> picker;
     std::unique_ptr<ColumnNumberToolPanel> columnNumberTool;
     CommandLayerService service;
+    CommandLayerActionExecutionHost actionExecutionHost;
     Phase phase = Phase::Inactive;
     PickerMode activePickerMode = PickerMode::Module;
     QString activePickerCommand;
     QPointer<MyCodeEditor> activePickerEditor;
     QPointer<MyCodeEditor> lastEditor;
     QPointer<MyCodeEditor> columnNumberEditor;
+    QPointer<MyCodeEditor> executingActionEditor;
     QString queryText;
     QString failureReason;
     QList<CommandLayerCommandMatch> matches;
@@ -89,7 +92,8 @@ private:
     void installApplicationEventFilter();
     bool handleApplicationEvent(QObject* watched, QEvent* event);
     bool handleKeyPress(QKeyEvent* event);
-    bool handleF24Event(QKeyEvent* event);
+    bool handleCommandShortcutEvent(QKeyEvent* event);
+    bool beginCommandShortcutHold();
     bool handleSearchKey(QKeyEvent* event);
     bool handleHelpKey(QKeyEvent* event);
     void enterSearch(bool clearFailure = true);
@@ -100,22 +104,15 @@ private:
     void appendQueryCharacter(QKeyEvent* event);
     void executeSelectedCommand();
     void executeCommand(MyCodeEditor* editor,
-                        const CommandLayerCommandMetadata& command);
+                        const CommandLayerCommandMetadata& command,
+                        const ActionInvocation& invocation = {});
     void completeCommand(const QString& failure = QString());
     void reportFailure(MyCodeEditor* editor, const QString& message);
     MyCodeEditor* currentEditorForLocalCommand() const;
 
-    void handleRelativeLine(MyCodeEditor* editor, int moduleLine);
-    void handleAddPort(MyCodeEditor* editor);
-    void handleAddSignal(MyCodeEditor* editor);
-    void handleAddParameter(MyCodeEditor* editor);
-    void handleGoEndmodule(MyCodeEditor* editor);
-    void handleClearRight(MyCodeEditor* editor);
-    void handleSelectBeginEnd(MyCodeEditor* editor);
-    void handleSelectSignals(MyCodeEditor* editor);
-
-    void openColumnNumberToolForCurrentEditor();
-    void handleColumnNumberTool(MyCodeEditor* editor);
+    void registerActionExecutionRoutes();
+    ActionExecutionResult executeRelativeLineAction(
+        const ActionInvocation& invocation);
 
     void showPicker(MyCodeEditor* editor,
                     PickerMode mode,

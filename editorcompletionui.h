@@ -2,6 +2,7 @@
 #define EDITORCOMPLETIONUI_H
 
 #include <QList>
+#include <QMetaObject>
 #include <QString>
 
 #include <functional>
@@ -25,6 +26,7 @@ public:
     void attachToEditor(
         MyCodeEditor* editor,
         const std::function<void(const QModelIndex&)>& handleActivated);
+    void detach();
 
     QAbstractItemView* popup() const;
     bool popupVisible() const;
@@ -56,6 +58,7 @@ private:
 
     QCompleter* completer = nullptr;
     CompletionModel* model = nullptr;
+    QMetaObject::Connection activationConnection;
 };
 
 #endif // EDITORCOMPLETIONUI_H

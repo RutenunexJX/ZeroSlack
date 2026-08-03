@@ -5,23 +5,35 @@
 
 #include <QWidget>
 
+#include <functional>
+
 class QListWidget;
 class QLineEdit;
 class QPushButton;
+class QKeyEvent;
 class QDragEnterEvent;
 class QDragMoveEvent;
 class QDropEvent;
+class EditorHoverPopup;
 
 class FoldBlockShelfPanel : public QWidget
 {
     Q_OBJECT
 
 public:
+    using ActionRequestHandler =
+        std::function<bool(const QString&, QString*)>;
+
     explicit FoldBlockShelfPanel(QWidget* parent = nullptr);
 
     void setModel(FoldBlockShelfModel* model);
     FoldBlockShelfModel* model() const;
-    void requestDeleteSelectedItem();
+    void setActionRequestHandler(ActionRequestHandler handler);
+    bool handleListShortcut(QKeyEvent* event);
+    bool requestDeleteSelectedItem(
+        QString* failureReason = nullptr);
+    bool deleteSelectedItem(
+        QString* failureReason = nullptr);
     void setShelfModeActive(bool active);
     bool shelfModeActive() const;
 
@@ -41,12 +53,13 @@ private:
     QPushButton* restoreButton = nullptr;
     QPushButton* renameButton = nullptr;
     QPushButton* cleanButton = nullptr;
+    EditorHoverPopup* previewPeek = nullptr;
     bool activeShelfMode = false;
+    ActionRequestHandler actionRequestHandler;
 
     void refresh();
     void updateModeStyle();
     void showPreview(const FoldShelfItem& item);
-    void handleDeleteSelectedItem();
     void handleRestoreSelectedItem();
     void handleRenameSelectedItem();
     void handleCleanItems();

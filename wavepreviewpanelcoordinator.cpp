@@ -1,8 +1,10 @@
 #include "wavepreviewpanelcoordinator.h"
 
+#include "graphexportui.h"
 #include "insightvisualstyle.h"
 #include "semanticindex.h"
 
+#include <QAction>
 #include <QCheckBox>
 #include <QComboBox>
 #include <QFileInfo>
@@ -17,6 +19,7 @@
 #include <QSizePolicy>
 #include <QSignalBlocker>
 #include <QToolTip>
+#include <QToolButton>
 #include <QTreeWidget>
 #include <QTreeWidgetItem>
 #include <QVBoxLayout>
@@ -1487,6 +1490,29 @@ WavePreviewPanelCoordinator::WavePreviewPanelCoordinator(QWidget* parent)
     stateLabelsCheck->setObjectName(QStringLiteral("wavePreviewStateLabelsCheck"));
     sourceLinesCheck = new QCheckBox(QStringLiteral("Source lines"), panel);
     sourceLinesCheck->setObjectName(QStringLiteral("wavePreviewSourceLinesCheck"));
+    exportAction = GraphExportUi::bindRegistryAction(
+        panel,
+        QString::fromLatin1(
+            ActionIds::GraphExportWavePreview),
+        [this]() {
+            return currentReport.available
+                && previewCanvas
+                && !previewCanvas->size().isEmpty();
+        },
+        [this](const QString& outputPath,
+               const GraphExportOptions& options) {
+            return exportPreview(outputPath, options);
+        },
+        [this](const QString& message, int timeoutMs) {
+            if (statusMessageHandler)
+                statusMessageHandler(message, timeoutMs);
+        });
+    auto* exportButton = new QToolButton(panel);
+    exportButton->setObjectName(
+        QStringLiteral("wavePreviewExportButton"));
+    if (exportAction)
+        exportButton->setDefaultAction(exportAction);
+    exportButton->setToolButtonStyle(Qt::ToolButtonTextOnly);
     for (QCheckBox* checkBox :
          {assignsCheck, conditionsCheck, stateLabelsCheck, sourceLinesCheck}) {
         checkBox->setChecked(true);
@@ -1502,6 +1528,7 @@ WavePreviewPanelCoordinator::WavePreviewPanelCoordinator(QWidget* parent)
     toolbarLayout->addWidget(conditionsCheck);
     toolbarLayout->addWidget(stateLabelsCheck);
     toolbarLayout->addWidget(sourceLinesCheck);
+    toolbarLayout->addWidget(exportButton);
     layout->addLayout(toolbarLayout);
 
     auto* canvas = new WavePreviewCanvas(panel);
@@ -1613,6 +1640,12 @@ void WavePreviewPanelCoordinator::setNavigationHandler(
     navigationHandler = std::move(handler);
 }
 
+void WavePreviewPanelCoordinator::setStatusMessageHandler(
+    std::function<void(const QString&, int)> handler)
+{
+    statusMessageHandler = std::move(handler);
+}
+
 void WavePreviewPanelCoordinator::focusFit()
 {
     focusZoomFactor = 1.0;
@@ -1651,6 +1684,16 @@ QString WavePreviewPanelCoordinator::focusSearchText() const
 {
     return laneFilterEdit
         ? laneFilterEdit->text() : laneFilterText;
+}
+
+GraphExportResult WavePreviewPanelCoordinator::exportPreview(
+    const QString& outputPath,
+    const GraphExportOptions& options) const
+{
+    return GraphExportService::exportWidget(
+        previewCanvas,
+        outputPath,
+        options);
 }
 
 void WavePreviewPanelCoordinator::focusInspector()
@@ -1750,13 +1793,38 @@ void WavePreviewPanelCoordinator::applyDocumentChange(
     const QString& scopeLabel,
     int scopeStartLineZeroBased)
 {
+    applyDocumentChange(
+        fileName,
+        change,
+        latestDocumentText.size(),
+        [&latestDocumentText](int position, int length) {
+            return latestDocumentText.mid(position, length);
+        },
+        dirty,
+        scopeStartPosition,
+        scopeEndPosition,
+        scopeLabel,
+        scopeStartLineZeroBased);
+}
+
+void WavePreviewPanelCoordinator::applyDocumentChange(
+    const QString& fileName,
+    const DocumentChange& change,
+    int latestDocumentLength,
+    const std::function<QString(int, int)>& latestDocumentSlice,
+    bool dirty,
+    int scopeStartPosition,
+    int scopeEndPosition,
+    const QString& scopeLabel,
+    int scopeStartLineZeroBased)
+{
     QElapsedTimer scopeCacheTimer;
     if (refreshTimingEnabled)
         scopeCacheTimer.start();
 
     const bool validScope = scopeStartPosition >= 0
         && scopeEndPosition > scopeStartPosition
-        && scopeEndPosition <= latestDocumentText.size();
+        && scopeEndPosition <= latestDocumentLength;
     if (!validScope) {
         if (refreshTimingEnabled) {
             refreshMetrics.scopeCacheUpdateNanoseconds +=
@@ -1812,8 +1880,11 @@ void WavePreviewPanelCoordinator::applyDocumentChange(
     if (updatedCachedScope) {
         ++refreshMetrics.scopeDeltaUpdateCount;
     } else {
-        currentScopeText = latestDocumentText.mid(
-            scopeStartPosition, scopeEndPosition - scopeStartPosition);
+        currentScopeText = latestDocumentSlice
+            ? latestDocumentSlice(
+                  scopeStartPosition,
+                  scopeEndPosition - scopeStartPosition)
+            : QString();
         ++refreshMetrics.scopeRebuildCount;
     }
 
@@ -1898,6 +1969,9 @@ void WavePreviewPanelCoordinator::renderUnavailable(const QString& message)
         canvas->clearReport();
     if (previewTree)
         previewTree->clear();
+    GraphExportUi::updateActionAvailability(
+        exportAction,
+        false);
 }
 
 void WavePreviewPanelCoordinator::renderReport(
@@ -2165,6 +2239,11 @@ void WavePreviewPanelCoordinator::renderReport(
     }
 
     synchronizeTree(previewTree, stagingRoot);
+    GraphExportUi::updateActionAvailability(
+        exportAction,
+        currentReport.available
+            && previewCanvas
+            && !previewCanvas->size().isEmpty());
     if (refreshTimingEnabled) {
         const qint64 modelSceneElapsed =
             modelSceneTimer.nsecsElapsed() - canvasUpdateElapsed;

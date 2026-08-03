@@ -2,16 +2,16 @@
 #define EDITORCOORDINATOR_H
 
 #include <QObject>
-#include <QHash>
 #include <QString>
 #include <QStringList>
+#include <QVariantMap>
 #include <functional>
 #include <memory>
 
 #include "editoractioncontextservice.h"
+#include "annotationlayer.h"
 #include "editormodecontroller.h"
 #include "includeheaderworkflowtypes.h"
-#include "saferenameservice.h"
 
 class FileCommandCoordinator;
 class EditorAppearanceSettings;
@@ -28,6 +28,9 @@ class QMenu;
 class SemanticPanelRefreshCoordinator;
 class TabManager;
 class WorkspaceManager;
+struct ActionDescriptor;
+struct ActionExecutionResult;
+struct ActionInvocation;
 
 class EditorCoordinator : public QObject
 {
@@ -44,6 +47,8 @@ public:
         SemanticPanelRefreshCoordinator* semanticPanelRefresh);
     void setAppearanceSettings(EditorAppearanceSettings* settings);
     void setFormatterSettings(FormatterSettings* settings);
+    void setAnnotationDisplayOptions(
+        const EditorAnnotationDisplayOptions& options);
     void setStatusMessageHandler(
         std::function<void(const QString&, int)> handler);
     void setModeStateHandler(
@@ -53,6 +58,9 @@ public:
     void setActionContextQueryProvider(
         std::function<EditorActionContextQuery(
             const EditorSemanticContext&)> provider);
+    void setRegisteredActionRequestHandler(
+        std::function<void(const QString&,
+                           const QVariantMap&)> handler);
     void setFoldShelfItemConsumedHandler(std::function<void(const QString&)> handler);
 
     void connectSignals();
@@ -60,6 +68,12 @@ public:
     void populateSourceSymbolContextMenuForTest(
         QMenu* menu,
         const EditorSemanticContext& context) const;
+    ActionExecutionResult executeRegisteredSourceAction(
+        const ActionDescriptor& descriptor,
+        const ActionInvocation& invocation) const;
+    ActionExecutionResult executeRegisteredExposeSignalAction(
+        const ActionDescriptor& descriptor,
+        const ActionInvocation& invocation) const;
 
 private:
     struct WorkflowDependencies {
@@ -89,12 +103,6 @@ private:
             const HierarchyInstanceContext& instanceContext) const;
         void navigateBack() const;
         void navigateForward() const;
-        void showReferencesForSymbol(const QString& symbolName,
-                                     const QString& fileName,
-                                     const QString& moduleName) const;
-        void showRelationshipsForSymbol(const QString& symbolName,
-                                        const QString& fileName,
-                                        const QString& moduleName) const;
         void showSignalKernelGraphForSymbol(const QString& symbolName,
                                             const QString& fileName,
                                             const QString& moduleName,
@@ -126,6 +134,9 @@ private:
     void applyAppearanceToOpenEditors() const;
     void applyFormatterSettings(MyCodeEditor* editor) const;
     void applyFormatterSettingsToOpenEditors() const;
+    void applyAnnotationDisplayOptions(
+        MyCodeEditor* editor) const;
+    void applyAnnotationDisplayOptionsToOpenEditors() const;
     void handleIncludeOpenRequested(MyCodeEditor* editor,
                                     const QString& includePath,
                                     const QString& currentFile) const;
@@ -147,11 +158,10 @@ private:
     void handleSourceSymbolActionRequested(
         SourceSymbolAction action,
         const EditorSemanticContext& context) const;
-    void handleSafeRenameRequested(
-        MyCodeEditor* editor,
-        const QString& symbolName,
+    bool executeSourceSymbolActionRequested(
+        SourceSymbolAction action,
         const EditorSemanticContext& context,
-        bool* handled);
+        QString* failureReason) const;
     void handleSourceSymbolContextMenuRequested(
         QMenu* menu,
         MyCodeEditor* editor,
@@ -161,23 +171,11 @@ private:
     void handleExposeSignalToTopRequested(
         const EditorSemanticContext& context) const;
     void handleActiveEditorChanged(MyCodeEditor* editor);
-    QHash<QString, QString> openFileContents() const;
-    SafeRenamePlanQuery safeRenameQuery(
-        const QString& symbolName,
-        const QString& newName,
-        const EditorSemanticContext& context,
-        bool forceConflicts = false) const;
-    bool applySafeRenamePlan(MyCodeEditor* originEditor,
-                             const SafeRenamePlan& plan) const;
-    bool createDefinitionAndRenameCurrentFile(
-        MyCodeEditor* editor,
-        const QString& symbolName,
-        const QString& newName,
-        const EditorSemanticContext& context) const;
 
     TabManager* tabManager = nullptr;
     EditorAppearanceSettings* appearanceSettings = nullptr;
     FormatterSettings* formatterSettings = nullptr;
+    EditorAnnotationDisplayOptions annotationDisplayOptions;
     QMetaObject::Connection appearanceSettingsConnection;
     QMetaObject::Connection formatterSettingsConnection;
     QMetaObject::Connection formatterFormatOnSaveConnection;
@@ -190,6 +188,9 @@ private:
     std::function<void(const EditorModeSnapshot&)> modeStateHandler;
     std::function<EditorActionContextQuery(
         const EditorSemanticContext&)> actionContextQueryProvider;
+    std::function<void(const QString&,
+                       const QVariantMap&)>
+        registeredActionRequestHandler;
     std::function<void(const QString&)> foldShelfItemConsumedHandler;
     bool signalsConnected = false;
     mutable bool applyingFormatterSettings = false;

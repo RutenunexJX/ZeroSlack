@@ -35,6 +35,8 @@ public:
         QHash<QString, QString> defines;
         QStringList fileExtensions;
         QString topModule;
+        QList<WorkspaceVirtualSourceGroup>
+            virtualSourceGroups;
         bool scanComplete = false;
     };
 
@@ -60,6 +62,11 @@ public:
     int activeWorkspaceIndex() const;
     QStringList ignoredDirectories() const;
     WorkspaceConfiguration workspaceConfiguration() const;
+    QList<WorkspaceVirtualSourceGroup>
+    virtualSourceGroups() const;
+    bool setVirtualSourceGroups(
+        const QList<WorkspaceVirtualSourceGroup>& groups,
+        QString* errorMessage = nullptr);
     bool setIgnoredDirectories(const QStringList& directories,
                                QString* errorMessage = nullptr);
     bool setWorkspaceConfiguration(
@@ -76,6 +83,7 @@ public:
     // File management
     QStringList getAllFiles() const;
     QStringList getSystemVerilogFiles() const;
+    void refreshWorkspaceFiles();
     QString resolveIncludePath(const QString& includePath,
                                const QString& currentFile = QString()) const;
 
@@ -136,6 +144,7 @@ private:
     std::unique_ptr<QDirIterator> scanIterator;
     QStringList pendingScannedFiles;
     QString scanningPath;
+    std::uint64_t workspaceActivationGeneration = 0;
     std::uint64_t scanGeneration = 0;
     mutable std::uint64_t projectSnapshotMaterializationCount = 0;
     QTimer* scanTimer = nullptr;

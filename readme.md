@@ -475,7 +475,7 @@ The complete task-owned file list is:
   `completionservicecommand.cpp`, `completiontypes.h`,
   `editorcompletionquery.cpp`, `editorcompletionworkflow.cpp/.h`,
   `editorcompletionworkflowkeys.cpp`, `editorsemanticcontextservice.h`,
-  `exposesignaltotopdialog.cpp`, `inlinecommandmode.cpp`,
+  `exposesignaltotoppreview.cpp/.h`, `inlinecommandmode.cpp`,
   `packagetoolservice.cpp/.h`, `globalcontrolcoordinator.cpp/.h`,
   `globalcontrolservice.cpp/.h`, `semanticindex.h`,
   `semanticindexcompletiontypequeries.cpp`, `semanticindexlookup.cpp`,

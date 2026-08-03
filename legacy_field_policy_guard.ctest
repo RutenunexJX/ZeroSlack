@@ -41,12 +41,6 @@ set(PROTECTED_BOUNDARY_FILES
     navigationwidgettrees.cpp
     problemspanelcoordinator.cpp
     problemspanelcoordinator.h
-    referencespanelcoordinator.cpp
-    referencespanelcoordinator.h
-    relationshipspanelcoordinator.cpp
-    relationshipspanelcoordinator.h
-    relationshipspanelrefresh.cpp
-    relationshipspanelrefreshhierarchy.cpp
     rtlinsightspanelcoordinator.cpp
     rtlinsightspanelcoordinator.h
     semanticdockcoordinator.cpp
@@ -62,12 +56,6 @@ set(PROTECTED_BOUNDARY_FILES
     tabfileio.h
     tabmanager.cpp
     tabmanager.h
-    tabopencontroller.cpp
-    tabopencontroller.h
-    tabsavecontroller.cpp
-    tabsavecontroller.h
-    tabtitlecontroller.cpp
-    tabtitlecontroller.h
 )
 
 set(RECORD_FIRST_METADATA_FILES
@@ -91,7 +79,6 @@ set(STABLE_KEY_MIGRATED_SERVICE_FILES
     hierarchyservice.cpp
     hierarchyservicetraversal.cpp
     modulebriefservice.cpp
-    referenceservice.cpp
     relationshipservice.cpp
     semanticindexmodulecontext.cpp
     signaljourneyservice.cpp
@@ -604,7 +591,6 @@ set(F3_REMOVED_COMPATIBILITY_PATTERNS
     "modulebriefservice.cpp|lhs\\.symbolId"
     "modulebriefservice.cpp|rhs\\.symbolId"
     "relationshipservice.h|struct[ \t\r\n]+DirectedRelationshipResult[ \t\r\n]*\\{[^}]*RelationshipResult[ \t\r\n]+relationship"
-    "referenceservice.h|struct[ \t\r\n]+ReferenceResult[ \t\r\n]*\\{[^}]*RelationshipResult[ \t\r\n]+relationship"
     "navigationservice.h|struct[ \t\r\n]+NavigationModuleTarget[ \t\r\n]*\\{[^}]*sym_list::SymbolInfo[ \t\r\n]+symbol"
     "navigationservice.cpp|result\\.symbol[ \t\r\n]*="
     "navigationservice.h|moduleSymbols[ \t\r\n]*\\("
@@ -626,12 +612,6 @@ set(F3_REMOVED_COMPATIBILITY_PATTERNS
     "symboloutlinemodel.h|symbolOutlineGroupsWithRows[ \t\r\n]*\\("
     "semanticindexcompletionrelationships.cpp|getRelationshipResults[ \t\r\n]*\\([^\\)]*symbolId|getRelationships[ \t\r\n]*\\([^\\)]*symbolId"
     "semanticindexmodulecontext.cpp|getRelationshipResults[ \t\r\n]*\\([^\\)]*symbolId"
-    "referenceservice.h|struct[ \t\r\n]+ReferenceQuery[ \t\r\n]*\\{[^}]*int[ \t\r\n]+symbolId"
-    "referenceservice.h|subjectSymbolId"
-    "referenceservice.cpp|const[ \t\r\n]+sym_list::SymbolInfo[ \t\r\n]+referencingSymbol[ \t\r\n]*=[ \t\r\n]*relationship\\.fromSymbol"
-    "referenceservice.cpp|const[ \t\r\n]+sym_list::SymbolInfo[ \t\r\n]+referencedSymbol[ \t\r\n]*=[ \t\r\n]*relationship\\.toSymbol"
-    "referenceservice.cpp|semanticSymbolRecordForSymbol[ \t\r\n]*\\([ \t\r\n]*referencingSymbol"
-    "referenceservice.cpp|semanticSymbolRecordForSymbol[ \t\r\n]*\\([ \t\r\n]*referencedSymbol"
     "relationshipservice.h|struct[ \t\r\n]+RelationshipQuery[ \t\r\n]*\\{[^}]*int[ \t\r\n]+symbolId|struct[ \t\r\n]+RelationshipBrowseQuery[ \t\r\n]*\\{[^}]*int[ \t\r\n]+symbolId"
     "relationshipservice.h|findRelatedSymbolIds[ \t\r\n]*\\("
     "relationshipservice.h|hasRelationship[ \t\r\n]*\\([ \t\r\n]*int"

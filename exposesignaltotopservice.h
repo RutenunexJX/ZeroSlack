@@ -6,7 +6,7 @@
 
 #include <rtledit/edit_plan.h>
 #include <rtledit/expose_signal_to_top.h>
-#include <rtledit/workspace_document_manager.h>
+#include <rtledit/workspace_edit_transaction.h>
 
 #include <QList>
 #include <QSet>
@@ -19,12 +19,14 @@
 #include <vector>
 
 class HierarchyService;
-class TabManager;
 
 struct ExposeSignalToTopQuery {
     EditorSemanticContext context;
     QString exportedPortName;
     QSet<QString> workspaceFiles;
+    // Empty preserves the original active-top behavior. A non-empty value
+    // must identify one exact ancestor in the selected elaborated top.
+    QString targetAncestorInstancePath;
 };
 
 struct ExposeSignalHierarchyStepView {
@@ -58,44 +60,28 @@ struct ExposeSignalToTopReport {
     QStringList affectedInstancePaths;
     QStringList blockers;
     rtledit::ExposeSignalToTopPlanResult planResult;
+    rtledit::PreparedWorkspaceEditTransaction transaction;
     rtledit::WorkspaceEditSourceDiff sourceDiff;
     QString renderedDiff;
 
     bool ready() const
     {
         return status == ExposeSignalToTopReportStatus::Ready
-            && planResult.ready() && sourceDiff.built();
+            && planResult.ready() && transaction.ready()
+            && sourceDiff.built();
     }
 };
 
 struct ExposeSignalToTopApplyReport {
     rtledit::PlanApplyResult result;
+    rtledit::WorkspaceEditTransactionResult transactionResult;
     QString message;
 
-    bool applied() const { return result.applied(); }
-};
-
-// Qt editor adapter for rtleditcore. Snapshots are UTF-8 because core ranges
-// use UTF-8 byte columns; individual QTextCursor edits are converted back to
-// UTF-16 positions before mutation.
-class ZeroSlackWorkspaceDocumentManager final
-    : public rtledit::WorkspaceDocumentManager
-{
-public:
-    explicit ZeroSlackWorkspaceDocumentManager(TabManager* tabManager);
-
-    std::optional<rtledit::WorkspaceDocumentSnapshot> snapshot(
-        const std::string& filePath) const override;
-    bool applyTextEdits(
-        const std::string& filePath,
-        rtledit::DocumentVersion expectedVersion,
-        const std::vector<rtledit::WorkspaceTextEdit>& edits) override;
-    bool restoreSnapshot(
-        const std::string& filePath,
-        const rtledit::WorkspaceDocumentSnapshot& snapshot) override;
-
-private:
-    TabManager* tabs = nullptr;
+    bool applied() const
+    {
+        return transactionResult.status
+            == rtledit::TransactionStatus::Applied;
+    }
 };
 
 class ExposeSignalToTopService

@@ -1,6 +1,8 @@
 #ifndef RTLINSIGHTSGRAPHSCENEMAPPER_H
 #define RTLINSIGHTSGRAPHSCENEMAPPER_H
 
+#include "rtlinsightlink.h"
+
 #include <QPointF>
 #include <QRectF>
 #include <QString>
@@ -34,6 +36,7 @@ public:
         const QString& secondaryText = QString()) const;
     QRectF lastFitRectForTest() const;
     int selectedItemCountForTest() const;
+    QStringList selectedElementSummariesForTest() const;
     QStringList inspectorRowsForTest() const;
     QStringList tableRowsForTest() const;
     bool itemsReadableForTest() const;
@@ -79,6 +82,9 @@ public:
     bool navigateItem(QGraphicsItem* item);
     bool navigateSelectedItem();
     bool setModuleBlockTopFromSelected();
+    bool selectSourceLocation(
+        const RtlInsightSourceLocation& location,
+        bool centerGraph = true);
 
     void renderStateTransitionGraphScene(
         const StateTransitionGraphReport& report);

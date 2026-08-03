@@ -36,7 +36,10 @@ DocumentCloseResult DocumentSessionState::unregisterEditor(
         return result;
 
     const TrackedDocument tracked = registry.take(editor);
-    result.closed = true;
+    result.closed =
+        registry.viewCountForDocumentId(
+            tracked.snapshot.documentId)
+        == 0;
     result.documentId = tracked.snapshot.documentId;
     result.fileName = tracked.snapshot.fileName;
     return result;

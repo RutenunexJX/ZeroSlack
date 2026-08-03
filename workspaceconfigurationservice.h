@@ -2,10 +2,20 @@
 #define WORKSPACECONFIGURATIONSERVICE_H
 
 #include <QHash>
+#include <QList>
 #include <QString>
 #include <QStringList>
 
 #include <memory>
+
+struct WorkspaceVirtualSourceGroup {
+    QString name;
+    QStringList files;
+
+    bool operator==(const WorkspaceVirtualSourceGroup& other) const {
+        return name == other.name && files == other.files;
+    }
+};
 
 struct WorkspaceConfiguration {
     QString workspaceRoot;
@@ -14,6 +24,7 @@ struct WorkspaceConfiguration {
     QStringList ignoredDirs;
     QStringList fileExtensions;
     QString topModule;
+    QList<WorkspaceVirtualSourceGroup> virtualSourceGroups;
 
     bool isValid() const {
         return !workspaceRoot.isEmpty();

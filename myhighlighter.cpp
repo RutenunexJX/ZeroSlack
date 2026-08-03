@@ -2,6 +2,8 @@
 #include <QTextDocument>
 #include <QTextBlock>
 
+#include <cstdio>
+
 namespace {
 int lineCommentStartOutsideString(const QString& text)
 {
@@ -67,6 +69,12 @@ const QTextCharFormat* MyHighlighter::formatFor(HlCategory category) const
 
 void MyHighlighter::highlightBlock(const QString &text)
 {
+    const bool trace = qEnvironmentVariableIsSet(
+        "ZEROSLACK_EDITOR_LIFECYCLE_TRACE");
+    if (trace) {
+        std::fprintf(stderr, "lifecycle.highlight.enter\n");
+        std::fflush(stderr);
+    }
     if (!m_tsdoc)
         return;
     if (m_tsdoc->text().isEmpty() && !text.isEmpty())
@@ -76,6 +84,10 @@ void MyHighlighter::highlightBlock(const QString &text)
     // connected before this highlighter, so it runs first). Just read spans for this block.
     const int blockStart = currentBlock().position();
     const QVector<HlSpan> spans = m_tsdoc->highlightSpans(blockStart, text.length());
+    if (trace) {
+        std::fprintf(stderr, "lifecycle.highlight.spans\n");
+        std::fflush(stderr);
+    }
     for (const HlSpan& s : spans) {
         if (const QTextCharFormat* f = formatFor(s.category))
             setFormat(s.start, s.length, *f);
@@ -89,4 +101,8 @@ void MyHighlighter::highlightBlock(const QString &text)
 
     // Propagate multi-line block-comment state so following blocks re-highlight when a /* */ opens.
     setCurrentBlockState(m_tsdoc->blockEndCommentState(blockStart, text.length()));
+    if (trace) {
+        std::fprintf(stderr, "lifecycle.highlight.exit\n");
+        std::fflush(stderr);
+    }
 }

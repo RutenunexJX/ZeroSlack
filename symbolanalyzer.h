@@ -55,6 +55,9 @@ struct WorkspaceAnalysisResult {
     qint64 relationshipExtractionMs = 0;
     qint64 relationshipBuildMs = 0;
     qint64 relationshipStateBuildMs = 0;
+    int diagnosticsProduced = 0;
+    int diagnosticsPublished = 0;
+    int diagnosticsSuppressed = 0;
     SemanticAnalysisRequest request;
     IncrementalAnalysisPlan incrementalPlan;
     SemanticDependencyGraph dependencyGraph;
@@ -80,6 +83,8 @@ struct WorkspaceAnalysisTelemetry {
     int filesAnalyzed = 0;
     int totalSymbols = 0;
     int diagnostics = 0;
+    int diagnosticsProduced = 0;
+    int diagnosticsSuppressed = 0;
     qint64 workerElapsedMs = 0;
     qint64 symbolExtractionMs = 0;
     qint64 resultAssemblyMs = 0;
@@ -151,6 +156,8 @@ public:
     void cancelFileAnalysis(const QString& fileName);
     void setWorkspaceFileAnalysisBands(
         const QHash<QString, SemanticAnalysisBandMetadata>& bands);
+    void setMaxPublishedDiagnostics(int maxDiagnostics);
+    int maxPublishedDiagnostics() const;
     void expireWorkspaceAnalysis();
     // Broadcast cancellation without joining worker threads. Shutdown callers
     // use this before waiting on any analysis family so a saturated global
@@ -213,6 +220,7 @@ private:
     bool shutdownStarted = false;
     std::uint64_t workspaceAnalysisGeneration = 0;
     std::uint64_t workspaceEpoch = 0;
+    int publishedDiagnosticLimit = 2000;
 
     QFutureWatcher<WorkspaceAnalysisResult>* workspaceAnalysisWatcher = nullptr;
     std::shared_ptr<std::atomic_bool> workspaceAnalysisCancelFlag;

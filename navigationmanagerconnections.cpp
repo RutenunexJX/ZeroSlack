@@ -8,6 +8,8 @@
 #include <QAction>
 #include <QMenu>
 
+#include <algorithm>
+
 void NavigationManager::connectToTabManager(TabManager* tabManager)
 {
     if (connectedTabManager == tabManager) return;
@@ -75,6 +77,8 @@ void NavigationManager::connectToWorkspaceManager(WorkspaceManager* workspaceMan
                         return;
                     }
                     context.clearCurrentWorkspacePath();
+                    if (navigationWidget)
+                        navigationWidget->setWorkspaceRoot(QString());
                     caches.clearFileList();
                     caches.clearDesignHierarchy();
                     designHierarchyCacheByScope.clear();
@@ -105,6 +109,11 @@ void NavigationManager::connectToWorkspaceManager(WorkspaceManager* workspaceMan
                         refreshDesignHierarchy();
                     }
                 });
+        if (connectedWorkspaceManager->isWorkspaceOpen()) {
+            onWorkspaceChanged(
+                connectedWorkspaceManager
+                    ->getWorkspacePath());
+        }
     }
 }
 
@@ -117,56 +126,166 @@ void NavigationManager::onFileContextMenuRequested(
     const QString& filePath,
     const QPoint& globalPos)
 {
-    if (!navigationService)
-        return;
-    const QStringList modules = navigationService->modulesDefinedInFile(filePath);
-    if (modules.isEmpty())
-        return;
+    onFileTreeNodeContextMenuRequested(
+        filePath, false, globalPos);
+}
 
-    QMenu menu;
-    if (modules.size() == 1) {
-        QAction* setTopAction = menu.addAction(QStringLiteral("Set as Design Top"));
-        connect(setTopAction, &QAction::triggered, this, [this, modules]() {
-            setDesignTop(modules.first());
-        });
-    } else {
-        QMenu* topMenu = menu.addMenu(QStringLiteral("Set as Design Top"));
-        for (const QString& moduleName : modules) {
-            QAction* action = topMenu->addAction(moduleName);
-            connect(action, &QAction::triggered, this, [this, moduleName]() {
-                setDesignTop(moduleName);
-            });
+QList<DesignHierarchyContextAction>
+NavigationManager::designNodeContextActions(
+    const DesignHierarchyNode& node) const
+{
+    struct Spec {
+        const char* actionId;
+        bool enabled;
+        bool separatorBefore;
+    };
+    const Spec specs[] = {
+        {ActionIds::NavigationDesignGoInstantiation,
+         !node.isTop && !node.instanceFile.isEmpty(),
+         false},
+        {ActionIds::NavigationDesignGoDefinition,
+         !node.definitionFile.isEmpty(),
+         false},
+        {ActionIds::NavigationDesignSetTop,
+         !node.moduleType.isEmpty(),
+         true},
+    };
+    ActionAvailabilityContext contextAvailability;
+    contextAvailability.workspaceAvailable =
+        !context.currentWorkspacePath.isEmpty();
+    contextAvailability.hierarchyBound = true;
+
+    QList<DesignHierarchyContextAction> result;
+    result.reserve(
+        static_cast<qsizetype>(
+            sizeof(specs) / sizeof(specs[0])));
+    for (const Spec& spec : specs) {
+        const ActionDescriptor* descriptor =
+            findActionById(
+                QString::fromLatin1(spec.actionId));
+        if (!descriptor
+            || !descriptor->hasSurface(
+                ActionSurface::ContextMenu)) {
+            continue;
         }
+        const ActionAliasDescriptor contextAlias =
+            descriptor->aliasForSurface(
+                ActionSurface::ContextMenu);
+        DesignHierarchyContextAction item;
+        item.actionId = descriptor->id;
+        item.label = contextAlias.label.isEmpty()
+            ? descriptor->canonicalName
+            : contextAlias.label;
+        item.executionRoute =
+            descriptor->executionRoute;
+        item.enabled = spec.enabled
+            && evaluateActionAvailability(
+                   *descriptor,
+                   contextAvailability)
+                   .executable;
+        item.separatorBefore =
+            spec.separatorBefore;
+        result.append(item);
     }
-    menu.exec(globalPos);
+    return result;
+}
+
+ActionExecutionResult
+NavigationManager::requestDesignNodeAction(
+    const QString& actionId,
+    const DesignHierarchyNode& node)
+{
+    ActionExecutionResult failure;
+    failure.handled = true;
+    const QList<DesignHierarchyContextAction> actions =
+        designNodeContextActions(node);
+    const auto selected = std::find_if(
+        actions.cbegin(),
+        actions.cend(),
+        [&actionId](
+            const DesignHierarchyContextAction& action) {
+            return action.actionId == actionId;
+        });
+    if (selected == actions.cend()) {
+        failure.failureReason = QStringLiteral(
+            "Unknown design-hierarchy Action: %1")
+                                    .arg(actionId);
+        return failure;
+    }
+    const ActionDescriptor* descriptor =
+        findActionById(actionId);
+    if (!descriptor || !selected->enabled) {
+        failure.failureReason = descriptor
+            ? descriptor->unavailableReason
+            : QStringLiteral(
+                  "The design-hierarchy Action is unavailable.");
+        return failure;
+    }
+
+    ActionInvocation invocation;
+    invocation.workspaceId =
+        context.currentWorkspacePath;
+    invocation.parameters.insert(
+        QStringLiteral("nodeId"), node.id);
+    invocation.parameters.insert(
+        QStringLiteral("rootModule"),
+        node.rootModule);
+    invocation.parameters.insert(
+        QStringLiteral("instancePath"),
+        node.instancePath);
+    invocation.parameters.insert(
+        QStringLiteral("moduleType"),
+        node.moduleType);
+    if (actionId
+        == QString::fromLatin1(
+            ActionIds::NavigationDesignGoInstantiation)) {
+        invocation.parameters.insert(
+            QStringLiteral("path"),
+            node.instanceFile);
+        invocation.parameters.insert(
+            QStringLiteral("line"),
+            node.instanceLine);
+    } else if (actionId
+               == QString::fromLatin1(
+                   ActionIds::NavigationDesignGoDefinition)) {
+        invocation.parameters.insert(
+            QStringLiteral("path"),
+            node.definitionFile);
+        invocation.parameters.insert(
+            QStringLiteral("line"),
+            node.definitionLine);
+    }
+    return executeAction(
+        *descriptor, *this, invocation);
 }
 
 void NavigationManager::onDesignNodeContextMenuRequested(
     const DesignHierarchyNode& node,
     const QPoint& globalPos)
 {
-    QMenu menu;
-    QAction* instantiationAction =
-        menu.addAction(QStringLiteral("Go to Instantiation"));
-    instantiationAction->setEnabled(!node.isTop && !node.instanceFile.isEmpty());
-    connect(instantiationAction, &QAction::triggered, this, [this, node]() {
-        navigateToDesignNodeFile(node.instanceFile, node.instanceLine, node);
-    });
-
-    QAction* definitionAction =
-        menu.addAction(QStringLiteral("Go to Module Definition"));
-    definitionAction->setEnabled(!node.definitionFile.isEmpty());
-    connect(definitionAction, &QAction::triggered, this, [this, node]() {
-        navigateToDesignNodeFile(node.definitionFile, node.definitionLine, node);
-    });
-
-    menu.addSeparator();
-    QAction* setTopAction = menu.addAction(QStringLiteral("Set as Design Top"));
-    setTopAction->setEnabled(!node.moduleType.isEmpty());
-    connect(setTopAction, &QAction::triggered, this, [this, node]() {
-        setDesignTop(node.moduleType);
-    });
-    menu.exec(globalPos);
+    QMenu menu(navigationWidget);
+    for (const DesignHierarchyContextAction& item :
+         designNodeContextActions(node)) {
+        if (item.separatorBefore)
+            menu.addSeparator();
+        QAction* action = menu.addAction(item.label);
+        action->setObjectName(
+            QStringLiteral("navigationContext.%1")
+                .arg(item.actionId));
+        action->setProperty(
+            "actionId", item.actionId);
+        action->setProperty(
+            "executionRoute",
+            item.executionRoute);
+        action->setEnabled(item.enabled);
+    }
+    QAction* selected = menu.exec(globalPos);
+    if (!selected)
+        return;
+    const QString actionId =
+        selected->property("actionId").toString();
+    if (!actionId.isEmpty())
+        requestDesignNodeAction(actionId, node);
 }
 
 void NavigationManager::onDesignNodeDoubleClicked(const DesignHierarchyNode& node)
@@ -209,9 +328,11 @@ void NavigationManager::setupConnections()
             this, SLOT(onFileTreeDoubleClicked(QString)));
 
     connect(navigationWidget,
-            &NavigationWidget::fileContextMenuRequested,
+            &NavigationWidget::
+                fileTreeNodeContextMenuRequested,
             this,
-            &NavigationManager::onFileContextMenuRequested);
+            &NavigationManager::
+                onFileTreeNodeContextMenuRequested);
 
     connect(navigationWidget,
             &NavigationWidget::designNodeContextMenuRequested,
@@ -238,6 +359,14 @@ void NavigationManager::setupConnections()
     connect(navigationWidget, &NavigationWidget::viewChanged,
             this, &NavigationManager::onViewChanged);
 
-    connect(navigationWidget, &NavigationWidget::searchFilterChanged,
-            this, &NavigationManager::setSearchFilter);
+    connect(navigationWidget,
+            &NavigationWidget::searchFilterChanged,
+            this,
+            [this](int tabIndex, const QString& filter) {
+                setSearchFilter(
+                    tabIndex == NavigationWidget::DesignTab
+                        ? DesignHierarchyView
+                        : FileHierarchyView,
+                    filter);
+            });
 }

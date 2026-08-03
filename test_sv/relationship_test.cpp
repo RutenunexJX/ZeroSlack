@@ -1,5 +1,6 @@
 // Headless relationship regression test. Verifies that relationship analysis in a multi-module
 // file attaches line-derived relationships to the containing module, not always the first module.
+#include "actionregistry.h"
 #include "slangmanager.h"
 #include "smartrelationshipbuilder.h"
 #include "analysisscheduler.h"
@@ -19,7 +20,6 @@
 #include "navigationservice.h"
 #include "relationshipanalysisworker.h"
 #include "relationshipresultpublisher.h"
-#include "referenceservice.h"
 #include "relationshipservice.h"
 #include "searchservice.h"
 #include "semantic_fixture_records.h"
@@ -39,6 +39,7 @@
 #include "symbolanalyzer.h"
 
 #include <QApplication>
+#include <QAction>
 #include <QDir>
 #include <QDirIterator>
 #include <QEventLoop>
@@ -2843,231 +2844,6 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                    && snapshotNoRelationshipReport.notFoundReasonDisplayName
                        == QStringLiteral("no relationships"),
                true);
-    ReferenceService snapshotReferenceService(&snapshotIndex);
-    ReferenceQuery snapshotReferenceQuery;
-    snapshotReferenceQuery.symbolStableKey = stageStableKey;
-    snapshotReferenceQuery.types = {SymbolRelationshipEngine::INSTANTIATES};
-    const QList<ReferenceResult> snapshotReferenceResults =
-        snapshotReferenceService.findReferences(snapshotReferenceQuery);
-    bool snapshotReferenceFoundTop = false;
-    for (const ReferenceResult& reference : snapshotReferenceResults) {
-        snapshotReferenceFoundTop = snapshotReferenceFoundTop
-            || (reference.relationshipType == SymbolRelationshipEngine::INSTANTIATES
-                && reference.referencingSymbolRecord.isValid()
-                && reference.referencingSymbolRecord.localHandle == topId
-                && reference.referencingSymbolRecord.stableKey == topStableKey
-                && reference.referencedSymbolRecord.isValid()
-                && reference.referencedSymbolRecord.localHandle == stageId
-                && reference.referencedSymbolRecord.stableKey == stageStableKey);
-    }
-    expectBool("snapshot reference service finds stage instantiation",
-               snapshotReferenceFoundTop, true);
-    expectBool("snapshot reference service has references",
-               snapshotReferenceService.hasReferences(snapshotReferenceQuery), true);
-    ReferenceQuery snapshotStableReferenceQuery = snapshotReferenceQuery;
-    snapshotStableReferenceQuery.symbolStableKey = stageStableKey;
-    const QList<ReferenceResult> snapshotStableReferenceResults =
-        snapshotReferenceService.findReferences(snapshotStableReferenceQuery);
-    expectBool("snapshot reference service resolves stable query key",
-               snapshotStableReferenceResults.size()
-                   == snapshotReferenceResults.size()
-                   && !snapshotStableReferenceResults.isEmpty()
-                   && snapshotStableReferenceResults.first().referencedStableKey
-                       == stageStableKey,
-               true);
-    const ReferenceReport snapshotReferenceReport =
-        snapshotReferenceService.findReferenceReport(snapshotReferenceQuery);
-    expectBool("snapshot reference report subject local handle",
-               snapshotReferenceReport.subjectSymbolRecord.localHandle == stageId,
-               true);
-    expectBool("snapshot reference report subject stable key",
-               snapshotReferenceReport.subjectStableKey == stageStableKey,
-               true);
-    expectBool("snapshot reference report subject record",
-               snapshotReferenceReport.subjectSymbolRecord.isValid()
-                   && snapshotReferenceReport.subjectSymbolRecord.localHandle == stageId
-                   && snapshotReferenceReport.subjectSymbolRecord.stableKey == stageStableKey
-                   && snapshotReferenceReport.subjectSymbolRecord.name
-                       == QStringLiteral("rel_stage"),
-               true);
-    expectBool("snapshot reference report subject display name",
-               snapshotReferenceReport.subjectDisplayName
-                   == QStringLiteral("rel_stage"),
-               true);
-    expectBool("snapshot reference report found reason metadata",
-               snapshotReferenceReport.notFoundReason
-                       == ReferenceReportNotFoundReason::None
-                   && snapshotReferenceReport.notFoundReasonDisplayName.isEmpty(),
-               true);
-    const ReferenceReport snapshotStableReferenceReport =
-        snapshotReferenceService.findReferenceReport(snapshotStableReferenceQuery);
-    expectBool("snapshot reference report resolves stable query key",
-               snapshotStableReferenceReport.totalCount
-                   == snapshotReferenceReport.totalCount
-                   && snapshotStableReferenceReport.subjectStableKey == stageStableKey
-                   && snapshotStableReferenceReport.subjectSymbolRecord.localHandle
-                       == stageId,
-               true);
-    expectInt("snapshot reference report total count",
-              snapshotReferenceReport.totalCount, 1);
-    expectInt("snapshot reference report file count",
-              snapshotReferenceReport.fileCounts.value(topPath), 1);
-    expectInt("snapshot reference report type count",
-              snapshotReferenceReport.typeCounts.value(SymbolRelationshipEngine::INSTANTIATES), 1);
-    expectInt("snapshot reference report file/type count",
-              snapshotReferenceReport.fileTypeCounts
-                  .value(topPath)
-                  .value(SymbolRelationshipEngine::INSTANTIATES),
-              1);
-    expectBool("snapshot reference report groups file metadata",
-               snapshotReferenceReport.fileGroups.size() == 1
-                   && snapshotReferenceReport.fileGroups.first().fileKey == topPath
-                   && snapshotReferenceReport.fileGroups.first().displayName
-                       == QStringLiteral("relationship_top.sv")
-                   && snapshotReferenceReport.fileGroups.first().count == 1
-                   && snapshotReferenceReport.fileGroups.first().typeGroups.size() == 1
-                   && snapshotReferenceReport.fileGroups.first()
-                          .typeGroups.first()
-                          .type == SymbolRelationshipEngine::INSTANTIATES
-                   && snapshotReferenceReport.fileGroups.first()
-                          .typeGroups.first()
-                          .displayName == QStringLiteral("Instantiates")
-                   && snapshotReferenceReport.fileGroups.first()
-                          .typeGroups.first()
-                          .count == 1,
-               true);
-    expectBool("snapshot reference report keeps grouped records",
-               snapshotReferenceReport.fileGroups.size() == 1
-                   && snapshotReferenceReport.fileGroups.first().typeGroups.size() == 1
-                   && snapshotReferenceReport.fileGroups.first()
-                          .typeGroups.first()
-                          .references.first()
-                          .referencingSymbolRecord.localHandle == topId
-                   && snapshotReferenceReport.fileGroups.first()
-                          .typeGroups.first()
-                          .references.first()
-                          .referencedSymbolRecord.localHandle == stageId,
-               true);
-    expectBool("snapshot reference report keeps grouped records",
-               snapshotReferenceReport.fileGroups.size() == 1
-                   && snapshotReferenceReport.fileGroups.first().typeGroups.size() == 1
-                   && !snapshotReferenceReport.fileGroups.first()
-                          .typeGroups.first()
-                          .references.isEmpty()
-                   && snapshotReferenceReport.fileGroups.first()
-                          .typeGroups.first()
-                          .references.first()
-                          .referencingSymbolRecord.stableKey == topStableKey
-                   && snapshotReferenceReport.fileGroups.first()
-                          .typeGroups.first()
-                          .references.first()
-                          .referencedSymbolRecord.stableKey == stageStableKey,
-               true);
-    expectBool("snapshot reference report keeps stable identity",
-               !snapshotReferenceReport.references.isEmpty()
-                   && snapshotReferenceReport.references.first().referencingStableKey
-                          == topStableKey
-                   && snapshotReferenceReport.references.first().referencedStableKey
-                          == stageStableKey
-                   && snapshotReferenceReport.references.first().referencingSymbolRecord.name
-                          == QStringLiteral("rel_top")
-                   && snapshotReferenceReport.references.first().referencedSymbolRecord.name
-                          == QStringLiteral("rel_stage")
-                   && snapshotReferenceReport.fileGroups.size() == 1
-                   && snapshotReferenceReport.fileGroups.first().typeGroups.size() == 1
-                   && !snapshotReferenceReport.fileGroups.first()
-                          .typeGroups.first()
-                          .references.isEmpty()
-                   && snapshotReferenceReport.fileGroups.first()
-                          .typeGroups.first()
-                          .references.first()
-                          .referencingStableKey == topStableKey
-                   && snapshotReferenceReport.fileGroups.first()
-                          .typeGroups.first()
-                          .references.first()
-                          .referencedStableKey == stageStableKey,
-               true);
-    ReferenceQuery snapshotCurrentFileReferenceQuery = snapshotReferenceQuery;
-    snapshotCurrentFileReferenceQuery.currentFileOnly = true;
-    snapshotCurrentFileReferenceQuery.fileName = topPath;
-    expectInt("snapshot reference report current file filter",
-              snapshotReferenceService.findReferenceReport(snapshotCurrentFileReferenceQuery)
-                  .totalCount,
-              1);
-    snapshotCurrentFileReferenceQuery.fileName = stagePath;
-    expectInt("snapshot reference report current file hides other file",
-              snapshotReferenceService.findReferenceReport(snapshotCurrentFileReferenceQuery)
-                  .totalCount,
-              0);
-    ReferenceQuery snapshotWorkspaceReferenceQuery = snapshotReferenceQuery;
-    snapshotWorkspaceReferenceQuery.workspaceFilesOnly = true;
-    snapshotWorkspaceReferenceQuery.workspaceFiles = {topPath};
-    expectInt("snapshot reference report workspace filter",
-              snapshotReferenceService.findReferenceReport(snapshotWorkspaceReferenceQuery)
-                  .totalCount,
-              1);
-#ifdef Q_OS_WIN
-    snapshotCurrentFileReferenceQuery.fileName = topPath.toUpper();
-    expectInt("Windows reference current-file filter uses file identity",
-              snapshotReferenceService
-                  .findReferenceReport(snapshotCurrentFileReferenceQuery)
-                  .totalCount,
-              1);
-    snapshotWorkspaceReferenceQuery.workspaceFiles = {topPath.toUpper()};
-    expectInt("Windows reference workspace filter uses file identity",
-              snapshotReferenceService
-                  .findReferenceReport(snapshotWorkspaceReferenceQuery)
-                  .totalCount,
-              1);
-#endif
-    snapshotWorkspaceReferenceQuery.workspaceFiles = {stagePath};
-    expectInt("snapshot reference report workspace hides other file",
-              snapshotReferenceService.findReferenceReport(snapshotWorkspaceReferenceQuery)
-                  .totalCount,
-              0);
-    ReferenceQuery snapshotNamedReferenceQuery;
-    snapshotNamedReferenceQuery.symbolName = QStringLiteral("rel_stage");
-    snapshotNamedReferenceQuery.fileName = stagePath;
-    snapshotNamedReferenceQuery.types = {SymbolRelationshipEngine::INSTANTIATES};
-    const ReferenceReport snapshotNamedReferenceReport =
-        snapshotReferenceService.findReferenceReport(snapshotNamedReferenceQuery);
-    expectBool("snapshot reference service resolves query symbol name",
-               snapshotNamedReferenceReport.subjectStableKey == stageStableKey
-                   && snapshotNamedReferenceReport.totalCount == 1
-                   && !snapshotNamedReferenceReport.references.isEmpty()
-                   && snapshotNamedReferenceReport.references.first()
-                          .referencingSymbolRecord.localHandle == topId,
-               true);
-    ReferenceQuery snapshotMissingReferenceQuery;
-    snapshotMissingReferenceQuery.symbolName = QStringLiteral("missing_reference_subject");
-    snapshotMissingReferenceQuery.fileName = topPath;
-    const ReferenceReport snapshotMissingReferenceReport =
-        snapshotReferenceService.findReferenceReport(snapshotMissingReferenceQuery);
-    expectBool("snapshot reference report missing subject reason",
-               !snapshotMissingReferenceReport.subjectStableKey.isValid()
-                   && !snapshotMissingReferenceReport.subjectSymbolRecord.isValid()
-                   && snapshotMissingReferenceReport.notFoundReason
-                       == ReferenceReportNotFoundReason::NoSubjectSymbol
-                   && snapshotMissingReferenceReport.notFoundReasonDisplayName
-                       == QStringLiteral("no subject symbol"),
-               true);
-    expectBool("snapshot reference report missing subject display name",
-               snapshotMissingReferenceReport.subjectDisplayName
-                   == QStringLiteral("missing_reference_subject"),
-               true);
-    ReferenceQuery snapshotNoReferenceQuery;
-    snapshotNoReferenceQuery.symbolStableKey = topStableKey;
-    snapshotNoReferenceQuery.types = {SymbolRelationshipEngine::INSTANTIATES};
-    const ReferenceReport snapshotNoReferenceReport =
-        snapshotReferenceService.findReferenceReport(snapshotNoReferenceQuery);
-    expectBool("snapshot reference report no references reason",
-               snapshotNoReferenceReport.subjectStableKey == topStableKey
-                   && snapshotNoReferenceReport.totalCount == 0
-                   && snapshotNoReferenceReport.notFoundReason
-                       == ReferenceReportNotFoundReason::NoReferences
-                   && snapshotNoReferenceReport.notFoundReasonDisplayName
-                       == QStringLiteral("no references"),
-               true);
     HierarchyService snapshotHierarchyService(&snapshotIndex);
     HierarchyQuery snapshotHierarchyQuery;
     snapshotHierarchyQuery.symbolStableKey = topStableKey;
@@ -5249,6 +5025,45 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                        QLatin1Char('\n')).contains(
                        QStringLiteral("Selected=u_stage : rel_stage")),
                true);
+    QAction* moduleBlockSetTopAction =
+        moduleBlockPanel.graphActionForTest(
+            QString::fromLatin1(
+                ActionIds::GraphSetTopSelected));
+    expectBool("module block Set Top control consumes Registry Action",
+               moduleBlockSetTopAction
+                   && moduleBlockSetTopAction->isEnabled()
+                   && moduleBlockSetTopAction->text()
+                       == QStringLiteral("Set Top")
+                   && moduleBlockSetTopAction
+                          ->property(
+                              "zeroSlack.actionExecutionRoute")
+                          .toString()
+                       == QStringLiteral(
+                           "insight.graph.setTopSelected"),
+               true);
+    if (moduleBlockSetTopAction)
+        moduleBlockSetTopAction->trigger();
+    QApplication::processEvents();
+    expectBool("registered Set Top Action rebuilds selected module context",
+               moduleBlockPanel.currentModuleNameForTest()
+                       == QStringLiteral("rel_stage")
+                   && moduleBlockPanel.graphNodeItemCountForTest()
+                       == 1
+                   && moduleBlockPanel.graphEdgeItemCountForTest()
+                       == 0,
+               true);
+    moduleBlockPanel.showModuleBlockDiagramForModule(
+        topPath,
+        QStringLiteral("rel_top"));
+    const bool restoredStageSelection =
+        moduleBlockPanel.selectGraphTableRowForTest(
+            QStringLiteral("rel_stage"),
+            QStringLiteral("u_stage"));
+    expectBool("module block Action fixture restores parent graph selection",
+               restoredStageSelection
+                   && moduleBlockPanel.currentModuleNameForTest()
+                       == QStringLiteral("rel_top"),
+               true);
     QLineEdit* moduleBlockSearchEdit =
         moduleBlockPanel.dock()
             ? moduleBlockPanel.dock()->findChild<QLineEdit*>(
@@ -5589,316 +5404,6 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
               cycleReport.rootDirectionCounts.value(HierarchyQuery::Children), 1);
     expectInt("hierarchy report keeps incoming root branch count",
               cycleReport.rootDirectionCounts.value(HierarchyQuery::Parents), 1);
-
-    ReferenceService referenceService(&index);
-
-    ReferenceQuery stageReferenceQuery;
-    stageReferenceQuery.symbolStableKey = stageStableKey;
-    stageReferenceQuery.types = {SymbolRelationshipEngine::INSTANTIATES};
-    const QList<ReferenceResult> stageReferences =
-        referenceService.findReferences(stageReferenceQuery);
-    bool referenceFoundTopInstance = false;
-    for (const ReferenceResult& ref : stageReferences) {
-        referenceFoundTopInstance = referenceFoundTopInstance
-            || (ref.referencingSymbolRecord.localHandle == topId
-                && ref.referencedSymbolRecord.localHandle == stageId
-                && ref.relationshipType == SymbolRelationshipEngine::INSTANTIATES);
-    }
-    expectBool("reference service finds stage instantiation",
-               referenceFoundTopInstance, true);
-    const ReferenceReport stageReferenceReport =
-        referenceService.findReferenceReport(stageReferenceQuery);
-    expectBool("reference report subject record",
-               stageReferenceReport.subjectSymbolRecord.name == QStringLiteral("rel_stage"),
-               true);
-    expectBool("reference report subject display name",
-               stageReferenceReport.subjectDisplayName == QStringLiteral("rel_stage"),
-               true);
-    expectInt("reference report total count",
-              stageReferenceReport.totalCount, 1);
-    expectInt("reference report file count",
-              stageReferenceReport.fileCounts.value(topPath), 1);
-    expectInt("reference report type count",
-              stageReferenceReport.typeCounts.value(SymbolRelationshipEngine::INSTANTIATES), 1);
-    expectInt("reference report file type count",
-              stageReferenceReport.fileTypeCounts
-                  .value(topPath)
-                  .value(SymbolRelationshipEngine::INSTANTIATES),
-              1);
-    expectInt("reference report file group count",
-              stageReferenceReport.fileGroups.size(), 1);
-    expectInt("reference report type group count",
-              stageReferenceReport.fileGroups.isEmpty()
-                  ? 0
-                  : stageReferenceReport.fileGroups.first().typeGroups.size(),
-              1);
-    expectBool("reference report type group display name",
-               !stageReferenceReport.fileGroups.isEmpty()
-                   && !stageReferenceReport.fileGroups.first().typeGroups.isEmpty()
-                   && stageReferenceReport.fileGroups.first()
-                          .typeGroups.first()
-                          .displayName == QStringLiteral("Instantiates"),
-               true);
-    expectBool("reference report row display metadata",
-               !stageReferenceReport.references.isEmpty()
-                   && stageReferenceReport.references.first().symbolDisplayName
-                       == QStringLiteral("rel_top")
-                   && stageReferenceReport.references.first().fileDisplayName
-                       == QFileInfo(topPath).fileName()
-                   && !stageReferenceReport.references.first().lineDisplayName.isEmpty()
-                   && stageReferenceReport.references.first()
-                          .relationshipTypeDisplayName
-                       == QStringLiteral("Instantiates"),
-               true);
-    expectInt("reference report grouped result count",
-              stageReferenceReport.fileGroups.isEmpty()
-                  || stageReferenceReport.fileGroups.first().typeGroups.isEmpty()
-                  ? 0
-                  : stageReferenceReport.fileGroups.first().typeGroups.first().references.size(),
-              1);
-    expectBool("reference report grouped records",
-               !stageReferenceReport.fileGroups.isEmpty()
-                   && !stageReferenceReport.fileGroups.first().typeGroups.isEmpty()
-                   && !stageReferenceReport.fileGroups.first()
-                           .typeGroups.first()
-                           .references.isEmpty()
-                   && stageReferenceReport.fileGroups.first()
-                           .typeGroups.first()
-                           .references.first()
-                           .referencingSymbolRecord.localHandle == topId
-                   && stageReferenceReport.fileGroups.first()
-                           .typeGroups.first()
-                           .references.first()
-                           .referencedSymbolRecord.localHandle == stageId,
-               true);
-    ReferenceQuery stableStageReferenceQuery = stageReferenceQuery;
-    stableStageReferenceQuery.symbolStableKey = stageStableKey;
-    const ReferenceReport stableStageReferenceReport =
-        referenceService.findReferenceReport(stableStageReferenceQuery);
-    expectBool("reference report resolves stable query key",
-               stableStageReferenceReport.totalCount == stageReferenceReport.totalCount
-                   && stableStageReferenceReport.subjectStableKey
-                       == stableStageReferenceQuery.symbolStableKey
-                   && stableStageReferenceReport.subjectDisplayName
-                       == QStringLiteral("rel_stage"),
-               true);
-
-    ReferenceQuery currentFileStageReferenceQuery = stageReferenceQuery;
-    currentFileStageReferenceQuery.fileName = stagePath;
-    currentFileStageReferenceQuery.currentFileOnly = true;
-    expectInt("reference report current file filter",
-              referenceService.findReferenceReport(currentFileStageReferenceQuery).totalCount, 0);
-    currentFileStageReferenceQuery.fileName =
-        QDir(QFileInfo(topPath).dir()).filePath(QStringLiteral("./relationship_top.sv"));
-    expectInt("reference report current file keeps matching file",
-              referenceService.findReferenceReport(currentFileStageReferenceQuery).totalCount, 1);
-
-    ReferenceQuery workspaceStageReferenceQuery = stageReferenceQuery;
-    workspaceStageReferenceQuery.workspaceFilesOnly = true;
-    workspaceStageReferenceQuery.workspaceFiles = {
-        QDir(QFileInfo(topPath).dir()).filePath(QStringLiteral("./relationship_top.sv")),
-        topPath,
-    };
-    expectInt("reference report workspace filter",
-              referenceService.findReferenceReport(workspaceStageReferenceQuery).totalCount, 1);
-    workspaceStageReferenceQuery.workspaceFiles = {stagePath};
-    expectInt("reference report workspace filter hides other file",
-              referenceService.findReferenceReport(workspaceStageReferenceQuery).totalCount, 0);
-
-    ReferencePanelQueryOptions currentFileReferenceOptions;
-    currentFileReferenceOptions.symbolName = QStringLiteral("rel_stage");
-    currentFileReferenceOptions.fileName =
-        QDir(QFileInfo(topPath).dir()).filePath(QStringLiteral("./relationship_top.sv"));
-    currentFileReferenceOptions.scope = ReferencePanelScope::CurrentFile;
-    currentFileReferenceOptions.typeFilter =
-        static_cast<int>(SymbolRelationshipEngine::INSTANTIATES);
-    const ReferenceQuery currentFileReferencePanelQuery =
-        referenceService.queryForPanel(currentFileReferenceOptions);
-    expectBool("reference panel query selects current file/type",
-               currentFileReferencePanelQuery.currentFileOnly
-                   && !currentFileReferencePanelQuery.workspaceFilesOnly
-                   && currentFileReferencePanelQuery.fileName == topPath
-                   && currentFileReferencePanelQuery.types
-                       == QList<SymbolRelationshipEngine::RelationType>{
-                              SymbolRelationshipEngine::INSTANTIATES},
-               true);
-    expectInt("reference panel current file count",
-              referenceService
-                  .findReferenceReport(currentFileReferencePanelQuery)
-                  .totalCount,
-              1);
-
-    ReferencePanelQueryOptions workspaceReferenceOptions = currentFileReferenceOptions;
-    workspaceReferenceOptions.scope = ReferencePanelScope::WorkspaceFiles;
-    workspaceReferenceOptions.workspaceFiles = {
-        QDir(QFileInfo(stagePath).dir()).filePath(QStringLiteral("./relationship_stage.sv")),
-        stagePath,
-    };
-    const ReferenceQuery workspaceReferencePanelQuery =
-        referenceService.queryForPanel(workspaceReferenceOptions);
-    expectBool("reference panel query selects workspace files",
-               workspaceReferencePanelQuery.workspaceFilesOnly
-                   && !workspaceReferencePanelQuery.currentFileOnly
-                   && workspaceReferencePanelQuery.workspaceFiles == QStringList{stagePath},
-               true);
-    expectInt("reference panel workspace count",
-              referenceService
-                  .findReferenceReport(workspaceReferencePanelQuery)
-                  .totalCount,
-              0);
-
-    ReferencePanelQueryOptions allReferenceOptions = currentFileReferenceOptions;
-    allReferenceOptions.scope = ReferencePanelScope::AllFiles;
-    allReferenceOptions.typeFilter = -1;
-    const ReferenceQuery allReferencePanelQuery =
-        referenceService.queryForPanel(allReferenceOptions);
-    expectBool("reference panel query selects all refs",
-               !allReferencePanelQuery.workspaceFilesOnly
-                   && !allReferencePanelQuery.currentFileOnly
-                   && allReferencePanelQuery.types.isEmpty(),
-               true);
-
-    ReferenceQuery reqValidReferenceQuery;
-    reqValidReferenceQuery.symbolStableKey = reqValidRecord.stableKey;
-    reqValidReferenceQuery.types = {SymbolRelationshipEngine::READS_FROM};
-    const QList<ReferenceResult> reqValidReferences =
-        referenceService.findReferences(reqValidReferenceQuery);
-    bool referenceFoundReqRead = false;
-    for (const ReferenceResult& ref : reqValidReferences) {
-        referenceFoundReqRead = referenceFoundReqRead
-            || (ref.referencingSymbolRecord.localHandle == topId
-                && ref.referencedSymbolRecord.localHandle == reqValidId
-                && ref.relationshipType == SymbolRelationshipEngine::READS_FROM);
-    }
-    expectBool("reference service finds condition read",
-               referenceFoundReqRead, true);
-    const ReferenceReport reqValidReferenceReport =
-        referenceService.findReferenceReport(reqValidReferenceQuery);
-    expectInt("reference report condition read total",
-              reqValidReferenceReport.totalCount, 1);
-    expectInt("reference report condition read type count",
-              reqValidReferenceReport.typeCounts.value(SymbolRelationshipEngine::READS_FROM), 1);
-    expectInt("reference report condition read file count",
-              reqValidReferenceReport.fileCounts.value(topPath), 1);
-    expectInt("reference report condition read grouped count",
-              reqValidReferenceReport.fileGroups.isEmpty()
-                  || reqValidReferenceReport.fileGroups.first().typeGroups.isEmpty()
-                  ? 0
-                  : reqValidReferenceReport.fileGroups.first().typeGroups.first().references.size(),
-              1);
-    expectBool("reference report condition read subject display name",
-               reqValidReferenceReport.subjectDisplayName == QStringLiteral("req_valid"),
-               true);
-
-    ReferenceQuery topTimingReferenceQuery;
-    topTimingReferenceQuery.symbolStableKey = topStableKey;
-    topTimingReferenceQuery.types = {SymbolRelationshipEngine::CLOCKS};
-    const ReferenceReport topClockReferenceReport =
-        referenceService.findReferenceReport(topTimingReferenceQuery);
-    expectInt("reference report clock total",
-              topClockReferenceReport.totalCount, 1);
-    expectInt("reference report clock type count",
-              topClockReferenceReport.typeCounts.value(SymbolRelationshipEngine::CLOCKS), 1);
-    expectInt("reference report clock file count",
-              topClockReferenceReport.fileCounts.value(topPath), 1);
-    expectInt("reference report clock grouped count",
-              topClockReferenceReport.fileGroups.isEmpty()
-                  || topClockReferenceReport.fileGroups.first().typeGroups.isEmpty()
-                  ? 0
-                  : topClockReferenceReport.fileGroups.first().typeGroups.first().references.size(),
-              1);
-    expectBool("reference report clock subject display name",
-               topClockReferenceReport.subjectDisplayName == QStringLiteral("rel_top"),
-               true);
-    expectBool("reference report clock referencing symbol",
-               !topClockReferenceReport.references.isEmpty()
-                   && topClockReferenceReport.references.first()
-                          .referencingSymbolRecord.localHandle == topClkId,
-               true);
-
-    topTimingReferenceQuery.types = {SymbolRelationshipEngine::RESETS};
-    const ReferenceReport topResetReferenceReport =
-        referenceService.findReferenceReport(topTimingReferenceQuery);
-    expectInt("reference report reset total",
-              topResetReferenceReport.totalCount, 1);
-    expectInt("reference report reset type count",
-              topResetReferenceReport.typeCounts.value(SymbolRelationshipEngine::RESETS), 1);
-    expectInt("reference report reset file count",
-              topResetReferenceReport.fileCounts.value(topPath), 1);
-    expectInt("reference report reset grouped count",
-              topResetReferenceReport.fileGroups.isEmpty()
-                  || topResetReferenceReport.fileGroups.first().typeGroups.isEmpty()
-                  ? 0
-                  : topResetReferenceReport.fileGroups.first().typeGroups.first().references.size(),
-              1);
-    expectBool("reference report reset subject display name",
-               topResetReferenceReport.subjectDisplayName == QStringLiteral("rel_top"),
-               true);
-    expectBool("reference report reset referencing symbol",
-               !topResetReferenceReport.references.isEmpty()
-                   && topResetReferenceReport.references.first()
-                          .referencingSymbolRecord.localHandle == topRstId,
-               true);
-
-    topTimingReferenceQuery.types.clear();
-    const ReferenceReport topDefaultReferenceReport =
-        referenceService.findReferenceReport(topTimingReferenceQuery);
-    expectBool("reference report default includes timing total",
-               topDefaultReferenceReport.totalCount >= 2, true);
-    expectInt("reference report default clock count",
-              topDefaultReferenceReport.typeCounts.value(SymbolRelationshipEngine::CLOCKS), 1);
-    expectInt("reference report default reset count",
-              topDefaultReferenceReport.typeCounts.value(SymbolRelationshipEngine::RESETS), 1);
-    expectBool("reference report default includes timing file count",
-               topDefaultReferenceReport.fileCounts.value(topPath) >= 2, true);
-    bool defaultHasClockGroup = false;
-    bool defaultHasResetGroup = false;
-    for (const ReferenceFileGroup& fileGroup : topDefaultReferenceReport.fileGroups) {
-        if (fileGroup.fileKey != topPath)
-            continue;
-        for (const ReferenceTypeGroup& typeGroup : fileGroup.typeGroups) {
-            defaultHasClockGroup = defaultHasClockGroup
-                || typeGroup.type == SymbolRelationshipEngine::CLOCKS;
-            defaultHasResetGroup = defaultHasResetGroup
-                || typeGroup.type == SymbolRelationshipEngine::RESETS;
-        }
-    }
-    expectBool("reference report default clock group",
-               defaultHasClockGroup, true);
-    expectBool("reference report default reset group",
-               defaultHasResetGroup, true);
-
-    ReferenceQuery rspDataReferenceQuery;
-    rspDataReferenceQuery.symbolStableKey = rspDataRecord.stableKey;
-    rspDataReferenceQuery.types = {SymbolRelationshipEngine::ASSIGNS_TO};
-    const QList<ReferenceResult> rspDataReferences =
-        referenceService.findReferences(rspDataReferenceQuery);
-    bool referenceFoundRspWrite = false;
-    for (const ReferenceResult& ref : rspDataReferences) {
-        referenceFoundRspWrite = referenceFoundRspWrite
-            || (ref.referencingSymbolRecord.localHandle == stageDataId
-                && ref.referencedSymbolRecord.localHandle == rspDataId
-                && ref.relationshipType == SymbolRelationshipEngine::ASSIGNS_TO);
-    }
-    expectBool("reference service finds assignment write",
-               referenceFoundRspWrite, true);
-    const ReferenceReport rspDataReferenceReport =
-        referenceService.findReferenceReport(rspDataReferenceQuery);
-    expectInt("reference report assignment write total",
-              rspDataReferenceReport.totalCount, 1);
-    expectInt("reference report assignment write type count",
-              rspDataReferenceReport.typeCounts.value(SymbolRelationshipEngine::ASSIGNS_TO), 1);
-    expectInt("reference report assignment write file count",
-              rspDataReferenceReport.fileCounts.value(topPath), 1);
-    expectInt("reference report assignment write grouped count",
-              rspDataReferenceReport.fileGroups.isEmpty()
-                  || rspDataReferenceReport.fileGroups.first().typeGroups.isEmpty()
-                  ? 0
-                  : rspDataReferenceReport.fileGroups.first().typeGroups.first().references.size(),
-              1);
-    expectBool("reference report assignment write subject display name",
-               rspDataReferenceReport.subjectDisplayName == QStringLiteral("rsp_data"),
-               true);
 
     if (previousGlobalSnapshot)
         SemanticIndex::getInstance()->setSnapshot(previousGlobalSnapshot);
@@ -13383,35 +12888,6 @@ static void runMacroDefineSemanticFixture()
                        == QStringLiteral("FUNC_MACRO(a, b)")
                    && hoverReport.macroBodyText.contains(
                        QStringLiteral("((a) + (b))")),
-               true);
-
-    ReferenceService referenceService(&index);
-    ReferenceQuery referenceQuery;
-    referenceQuery.symbolName = QStringLiteral("FUNC_MACRO");
-    referenceQuery.fileName = sourcePath;
-    referenceQuery.moduleName = QStringLiteral("macro_top");
-    referenceQuery.workspaceFiles = files;
-    const ReferenceReport referenceReport =
-        referenceService.findReferenceReport(referenceQuery);
-    bool sawMacroDefinitionReference = false;
-    bool sawMacroUseReference = false;
-    for (const ReferenceResult& reference : referenceReport.references) {
-        sawMacroDefinitionReference = sawMacroDefinitionReference
-            || (normalizedPath(
-                    reference.referencingSymbolRecord.location.fileName)
-                    == headerPath
-                && reference.referencingSymbolRecord.location.startLine == 2);
-        sawMacroUseReference = sawMacroUseReference
-            || (normalizedPath(
-                    reference.referencingSymbolRecord.location.fileName)
-                    == sourcePath
-                && reference.referencingSymbolRecord.location.startLine
-                    == hoverContext.cursorLine);
-    }
-    expectBool("macro references include define and use",
-               referenceReport.totalCount == 2
-                   && sawMacroDefinitionReference
-                   && sawMacroUseReference,
                true);
 
     SemanticQueryContext macroDefinitionContext;

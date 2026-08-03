@@ -68,20 +68,6 @@ struct InsightMenuTokens {
     QColor border;
 };
 
-struct InsightRailTokens {
-    QColor background;
-    QColor border;
-    QColor buttonBackground;
-    QColor buttonHoverBackground;
-    QColor buttonCheckedBackground;
-    QColor buttonBorder;
-    QColor buttonHoverBorder;
-    QColor buttonCheckedBorder;
-    QColor text;
-    QColor textHover;
-    QColor textChecked;
-};
-
 struct InsightDockTokens {
     QColor background;
     QColor titleBackground;
@@ -165,7 +151,6 @@ struct InsightTheme {
     InsightControlTokens button;
     InsightInputTokens input;
     InsightTabTokens tab;
-    InsightRailTokens sideRail;
     InsightStatusTokens statusBar;
     InsightDockTokens dock;
     InsightItemViewTokens itemView;
@@ -196,9 +181,6 @@ public:
     static QString panelStyleSheet(const QString& objectName = {});
     static QString applicationStyleSheet();
     static QString tabBarStyleSheet(const QString& objectName = {});
-    static QString workspaceTabBarStyleSheet(const QString& objectName = {});
-    static QString sideRailStyleSheet(const QString& objectName = {});
-    static QString sideRailButtonStyleSheet(const QString& objectName = {});
     static QString packageToolsBarStyleSheet(const QString& objectName = {});
     static QString labelStyleSheet(const QString& objectName = {},
                                    bool strong = false);

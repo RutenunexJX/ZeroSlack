@@ -1,10 +1,12 @@
 #include "documentmodel.h"
 #include "completionmodel.h"
 #include "documentregistry.h"
+#include "editoranchoredrangeindex.h"
 #include "editorselection.h"
 #include "editorsyntaxstate.h"
 #include "mycodeeditor.h"
 #include "tabmanager.h"
+#include "tsdocument.h"
 #include "wavepreviewpanelcoordinator.h"
 
 #include <QApplication>
@@ -49,6 +51,54 @@ void expect(const QString& label, bool condition)
 {
     expect(label.toLocal8Bit().constData(), condition);
 }
+
+bool hasFutureWatcherChild(const QObject& object)
+{
+    const QList<QObject*> children = object.findChildren<QObject*>();
+    return std::any_of(
+        children.cbegin(),
+        children.cend(),
+        [](const QObject* child) {
+            return child && child->inherits("QFutureWatcherBase");
+        });
+}
+
+struct AnchoredRangeFixture {
+    int startPosition = 0;
+    int length = 0;
+    int line = 0;
+    int serial = 0;
+};
+
+struct AnchoredRangeFixtureTraits {
+    static int start(const AnchoredRangeFixture& item)
+    {
+        return item.startPosition;
+    }
+
+    static int effectiveEnd(const AnchoredRangeFixture& item)
+    {
+        return item.startPosition + qMax(1, item.length);
+    }
+
+    static int firstLine(const AnchoredRangeFixture& item)
+    {
+        return item.line;
+    }
+
+    static int lastLine(const AnchoredRangeFixture& item)
+    {
+        return item.line;
+    }
+
+    static void shift(AnchoredRangeFixture& item,
+                      int characterDelta,
+                      int lineDelta)
+    {
+        item.startPosition += characterDelta;
+        item.line += lineDelta;
+    }
+};
 
 QString readText(const QString& fileName)
 {
@@ -101,6 +151,7 @@ LatencySummary summarizeLatency(QList<qint64> samples)
 struct TypingReport {
     LatencySummary latency;
     EditorHotPathMetrics metrics;
+    TSTextStorageMetrics textStorageMetrics;
 };
 
 TypingReport measureTyping(const QString& fileName)
@@ -119,6 +170,8 @@ TypingReport measureTyping(const QString& fileName)
     editor.show();
     QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
     editor.resetHotPathMetricsForTest();
+    if (const TSDocument* syntax = editor.syntaxDocument())
+        syntax->resetTextStorageMetricsForTest();
 
     QList<qint64> samples;
     constexpr int warmupCount = 5;
@@ -141,6 +194,9 @@ TypingReport measureTyping(const QString& fileName)
         samples.at((samples.size() * 95 + 99) / 100 - 1);
     report.latency.maxUs = samples.constLast();
     report.metrics = editor.hotPathMetricsForTest();
+    if (const TSDocument* syntax = editor.syntaxDocument())
+        report.textStorageMetrics =
+            syntax->textStorageMetricsForTest();
     return report;
 }
 
@@ -148,6 +204,7 @@ struct InlineFilterReport {
     LatencySummary latency;
     EditorHotPathMetrics metrics;
     EditorHotPathMetrics postCancelMetrics;
+    TSTextStorageMetrics textStorageMetrics;
     int initialCandidateCount = 0;
     int filteredCandidateCount = 0;
     bool sessionStayedActive = false;
@@ -159,6 +216,7 @@ struct VisibleWaveTypingReport {
     LatencySummary synchronousKeyLatency;
     LatencySummary eventProcessingLatency;
     EditorHotPathMetrics editorMetrics;
+    TSTextStorageMetrics textStorageMetrics;
     DocumentTextCopyMetrics textCopyMetrics;
     WavePreviewRefreshMetrics waveMetrics;
     std::uint64_t metadataNanoseconds = 0;
@@ -185,6 +243,8 @@ InlineFilterReport measureInlineCandidateFiltering(const QString& fileName)
     QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
 
     editor.resetHotPathMetricsForTest();
+    if (const TSDocument* syntax = editor.syntaxDocument())
+        syntax->resetTextStorageMetricsForTest();
     QTest::keyClick(&editor, Qt::Key_Tab);
     QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
 
@@ -221,6 +281,9 @@ InlineFilterReport measureInlineCandidateFiltering(const QString& fileName)
         && editor.cachedDocumentSlice(0, 6)
                == QStringLiteral(";;p -\n");
     report.metrics = editor.hotPathMetricsForTest();
+    if (const TSDocument* syntax = editor.syntaxDocument())
+        report.textStorageMetrics =
+            syntax->textStorageMetricsForTest();
     QTest::keyClick(&editor, Qt::Key_L);
     QCoreApplication::processEvents(QEventLoop::AllEvents, 5);
     QTest::keyClick(&editor, Qt::Key_Escape);
@@ -339,22 +402,34 @@ QString documentTextSliceForTest(QTextDocument* document,
     return text;
 }
 
-void expectLargeFileSyntaxScopeMatchesDocument(
+void expectLargeFileSyntaxMatchesDocument(
     const QString& label,
     MyCodeEditor& editor)
 {
-    const EditorLargeFileSyntaxScopeSnapshot scope =
-        editor.largeFileSyntaxScopeForTest();
+    const EditorLargeFileSyntaxSnapshot snapshot =
+        editor.largeFileSyntaxSnapshotForTest();
+    const TSDocument* syntax = editor.syntaxDocument();
     const int documentLength = qMax(
         0, editor.document()->characterCount() - 1);
-    expect(label + QStringLiteral(" Tree-sitter scoped text is current"),
-           scope.valid()
-               && scope.documentLength == documentLength
-               && scope.text
+    const int boundaryLength = qMin(128, documentLength);
+    const int suffixStart =
+        qMax(0, documentLength - boundaryLength);
+    expect(label + QStringLiteral(" full Tree-sitter text is current"),
+           snapshot.valid()
+               && snapshot.fullDocumentSyntax
+               && snapshot.documentLength == documentLength
+               && snapshot.syntaxTextLength == documentLength
+               && syntax
+               && syntax->text().size() == documentLength
+               && syntax->text().left(boundaryLength)
+                      == documentTextSliceForTest(
+                          editor.document(), 0, boundaryLength)
+               && syntax->text().mid(
+                      suffixStart, boundaryLength)
                       == documentTextSliceForTest(
                           editor.document(),
-                          scope.startPosition,
-                          scope.text.size()));
+                          suffixStart,
+                          boundaryLength));
 }
 
 void expectHugeIncrementalCaches(const QString& label,
@@ -374,7 +449,7 @@ void expectHugeIncrementalCaches(const QString& label,
            snapshot.textVersion
                    == static_cast<int>(editor.semanticDocumentRevision())
                && snapshot.dirty && !snapshot.saved);
-    expectLargeFileSyntaxScopeMatchesDocument(label, editor);
+    expectLargeFileSyntaxMatchesDocument(label, editor);
     expectOccurrenceIndexMatchesDocument(label,
                                          editor,
                                          probeWords,
@@ -429,8 +504,8 @@ void exerciseInlineFilterOverlayConsistency(const QString& fileName)
 
         const QList<int> initialSuffixPositions =
             editor.occurrencePositionsForTest(suffixWord);
-        const EditorLargeFileSyntaxScopeSnapshot initialSyntaxScope =
-            editor.largeFileSyntaxScopeForTest();
+        const EditorLargeFileSyntaxSnapshot initialSyntaxSnapshot =
+            editor.largeFileSyntaxSnapshotForTest();
         int accumulatedDelta = 0;
         const QList<Qt::Key> keys({Qt::Key_L, Qt::Key_O});
         for (int index = 0; index < keys.size(); ++index) {
@@ -469,23 +544,24 @@ void exerciseInlineFilterOverlayConsistency(const QString& fileName)
                 editor,
                 probeWords,
                 index + 1 == keys.size());
-            const EditorLargeFileSyntaxScopeSnapshot currentSyntaxScope =
-                editor.largeFileSyntaxScopeForTest();
-            expect(QStringLiteral("overlay key %1 shifts syntax scope once")
+            const EditorLargeFileSyntaxSnapshot currentSyntaxSnapshot =
+                editor.largeFileSyntaxSnapshotForTest();
+            expect(QStringLiteral("overlay key %1 incrementally updates full syntax once")
                        .arg(index + 1),
-                   initialSyntaxScope.valid()
-                       && currentSyntaxScope.valid()
-                       && currentSyntaxScope.startPosition
-                              == initialSyntaxScope.startPosition
+                   initialSyntaxSnapshot.valid()
+                       && currentSyntaxSnapshot.valid()
+                       && currentSyntaxSnapshot.fullBuildCount
+                              == initialSyntaxSnapshot.fullBuildCount
+                       && currentSyntaxSnapshot.incrementalEditCount
+                              == initialSyntaxSnapshot.incrementalEditCount
+                                     + static_cast<std::uint64_t>(
+                                         index + 1)
+                       && currentSyntaxSnapshot.documentLength
+                              == initialSyntaxSnapshot.documentLength
                                      + accumulatedDelta
-                       && currentSyntaxScope.endPosition
-                              == initialSyntaxScope.endPosition
-                                     + accumulatedDelta
-                       && currentSyntaxScope.documentLength
-                              == initialSyntaxScope.documentLength
-                                     + accumulatedDelta
-                       && currentSyntaxScope.text == initialSyntaxScope.text);
-            expectLargeFileSyntaxScopeMatchesDocument(
+                       && currentSyntaxSnapshot.syntaxTextLength
+                              == currentSyntaxSnapshot.documentLength);
+            expectLargeFileSyntaxMatchesDocument(
                 QStringLiteral("overlay key %1").arg(index + 1),
                 editor);
         }
@@ -636,6 +712,8 @@ VisibleWaveTypingReport measureVisibleWaveTyping(const QString& fileName)
         });
 
     editor.resetHotPathMetricsForTest();
+    if (const TSDocument* syntax = editor.syntaxDocument())
+        syntax->resetTextStorageMetricsForTest();
     resetDocumentTextCopyMetricsForTest();
     coordinator.resetRefreshMetricsForTest();
 
@@ -677,6 +755,9 @@ VisibleWaveTypingReport measureVisibleWaveTyping(const QString& fileName)
     report.eventProcessingLatency =
         summarizeLatency(eventProcessingSamples);
     report.editorMetrics = editor.hotPathMetricsForTest();
+    if (const TSDocument* syntax = editor.syntaxDocument())
+        report.textStorageMetrics =
+            syntax->textStorageMetricsForTest();
     report.textCopyMetrics = documentTextCopyMetricsForTest();
     report.waveMetrics = coordinator.refreshMetricsForTest();
     report.metadataNanoseconds = metadataNanoseconds;
@@ -699,6 +780,65 @@ void printLatency(const char* fixture, const LatencySummary& summary)
     std::printf("perf.typing.%s.max_us=%lld\n",
                 fixture,
                 static_cast<long long>(summary.maxUs));
+}
+
+void printTextStorageMetrics(
+    const char* fixture,
+    const TSTextStorageMetrics& metrics)
+{
+    std::printf("perf.syntax_storage.%s.edits=%llu\n",
+                fixture,
+                static_cast<unsigned long long>(
+                    metrics.editCount));
+    std::printf("perf.syntax_storage.%s.materializations=%llu\n",
+                fixture,
+                static_cast<unsigned long long>(
+                    metrics.materializationCount));
+    std::printf("perf.syntax_storage.%s.input_reads=%llu\n",
+                fixture,
+                static_cast<unsigned long long>(
+                    metrics.inputReadCount));
+    std::printf("perf.syntax_storage.%s.moved_characters=%llu\n",
+                fixture,
+                static_cast<unsigned long long>(
+                    metrics.movedCharacterCount));
+    std::printf("perf.syntax_storage.%s.first_edit_position=%d\n",
+                fixture,
+                metrics.firstEditPosition);
+    std::printf("perf.syntax_storage.%s.first_edit_gap_start=%d\n",
+                fixture,
+                metrics.firstEditGapStart);
+    const auto meanMicroseconds =
+        [&metrics](std::uint64_t nanoseconds) {
+            return metrics.editCount == 0
+                ? std::uint64_t{0}
+                : nanoseconds / metrics.editCount / 1000;
+        };
+    std::printf("perf.syntax_storage.%s.tree_edit.mean_us=%llu\n",
+                fixture,
+                static_cast<unsigned long long>(
+                    meanMicroseconds(
+                        metrics.treeEditNanoseconds)));
+    std::printf("perf.syntax_storage.%s.storage_edit.mean_us=%llu\n",
+                fixture,
+                static_cast<unsigned long long>(
+                    meanMicroseconds(
+                        metrics.storageEditNanoseconds)));
+    std::printf("perf.syntax_storage.%s.parse.mean_us=%llu\n",
+                fixture,
+                static_cast<unsigned long long>(
+                    meanMicroseconds(
+                        metrics.parseNanoseconds)));
+    std::printf("perf.syntax_storage.%s.changed_range.mean_us=%llu\n",
+                fixture,
+                static_cast<unsigned long long>(
+                    meanMicroseconds(
+                        metrics.changedRangeNanoseconds)));
+    std::printf("perf.syntax_storage.%s.tree_delete.mean_us=%llu\n",
+                fixture,
+                static_cast<unsigned long long>(
+                    meanMicroseconds(
+                        metrics.treeDeleteNanoseconds)));
 }
 
 void printTypingCoreMetrics(const char* fixture,
@@ -922,6 +1062,187 @@ void verifyIncrementalCaches(const QString& label,
            snapshot.textVersion
                    == static_cast<int>(editor.semanticDocumentRevision())
                && snapshot.dirty && !snapshot.saved);
+}
+
+void exerciseAnchoredRangeIndex()
+{
+    constexpr int denseCount = 32768;
+    QList<AnchoredRangeFixture> dense;
+    dense.reserve(denseCount);
+    for (int index = 0; index < denseCount; ++index) {
+        dense.append(AnchoredRangeFixture{
+            index * 4,
+            2,
+            index,
+            index});
+    }
+
+    EditorAnchoredRangeIndex<
+        AnchoredRangeFixture,
+        AnchoredRangeFixtureTraits> index;
+    index = dense;
+    const EditorAnchoredRangeIndexStats before =
+        index.stats();
+
+    DocumentChange prefix;
+    prefix.position = 0;
+    prefix.insertedText = QStringLiteral("//\n");
+    prefix.oldLength = denseCount * 4;
+    prefix.newLength = prefix.oldLength + prefix.insertedText.size();
+    prefix.lineDelta = 1;
+    const EditorAnchoredRangeRemapReport shifted =
+        index.remap(prefix);
+    const EditorAnchoredRangeIndexStats after =
+        index.stats();
+    expect("anchored range suffix shift is logarithmic",
+           shifted.removedItems == 0
+               && shifted.shiftedItems == denseCount
+               && shifted.visitedNodes < 256);
+    expect("anchored range remap does not materialize dense storage",
+           after.materializationCount
+               == before.materializationCount);
+
+    qsizetype visibleVisited = 0;
+    const QList<AnchoredRangeFixture> visible =
+        index.overlappingLines(12001, 12001, &visibleVisited);
+    expect("anchored range visible query is stable and bounded",
+           visible.size() == 1
+               && visible.first().serial == 12000
+               && visible.first().startPosition == 12000 * 4 + 3
+               && visibleVisited < 128);
+
+    const int crossedSerial = 1000;
+    DocumentChange crossing;
+    crossing.position = crossedSerial * 4 + 3 + 1;
+    crossing.insertedText = QStringLiteral("x");
+    crossing.oldLength = prefix.newLength;
+    crossing.newLength = crossing.oldLength + 1;
+    const EditorAnchoredRangeRemapReport crossed =
+        index.remap(crossing);
+    expect("anchored range crossing edit invalidates only the overlap",
+           crossed.removedItems == 1
+               && crossed.shiftedItems
+                      == denseCount - crossedSerial - 1
+               && crossed.visitedNodes < 256
+               && index.size() == denseCount - 1);
+
+    EditorAnchoredRangeIndex<
+        AnchoredRangeFixture,
+        AnchoredRangeFixtureTraits> equalStart;
+    equalStart = {
+        AnchoredRangeFixture{20, 4, 2, 7},
+        AnchoredRangeFixture{20, 4, 2, 8},
+        AnchoredRangeFixture{20, 4, 2, 9}};
+    const QList<AnchoredRangeFixture> equalVisible =
+        equalStart.overlapping(20, 24);
+    expect("anchored range equal-position query preserves input order",
+           equalVisible.size() == 3
+               && equalVisible.at(0).serial == 7
+               && equalVisible.at(1).serial == 8
+               && equalVisible.at(2).serial == 9);
+}
+
+void exerciseDenseAnnotationRemap()
+{
+    constexpr int annotationCount = 4096;
+    QString text = QStringLiteral("module dense_annotations;\n");
+    QList<GhostAnnotation> ghosts;
+    QList<SemanticDecoration> decorations;
+    ghosts.reserve(annotationCount);
+    decorations.reserve(annotationCount);
+    for (int index = 0; index < annotationCount; ++index) {
+        const int start = text.size();
+        text.append(QStringLiteral("logic dense_signal;\n"));
+
+        GhostAnnotation ghost;
+        ghost.kind = GhostAnnotationKind::SignalWidth;
+        ghost.placement = GhostAnnotationPlacement::RightOfLine;
+        ghost.text = QStringLiteral("1 bit %1").arg(index);
+        ghost.line = index + 2;
+        ghost.anchorPosition = start;
+        ghost.anchorLength = 5;
+        ghosts.append(ghost);
+
+        SemanticDecoration decoration;
+        decoration.role = SemanticDecorationRole::ActualSignal;
+        decoration.text = QStringLiteral("logic");
+        decoration.startPosition = start;
+        decoration.length = 5;
+        decorations.append(decoration);
+    }
+    text.append(QStringLiteral("endmodule\n"));
+
+    MyCodeEditor editor;
+    editor.resize(640, 320);
+    editor.setPlainText(text);
+    editor.acceptLoadedTextAsSemanticBaseline();
+    editor.setGhostAnnotations(ghosts);
+    editor.setSemanticDecorations(decorations);
+
+    QTextCursor prefix(editor.document());
+    prefix.setPosition(0);
+    prefix.insertText(QStringLiteral("//\n"));
+    expect("dense Ghost suffix remap visits logarithmic nodes",
+           editor.property(
+                     "zeroslackGhostAnnotationRemapVisitedCount")
+                       .toLongLong()
+                   < 512
+               && editor.property(
+                     "zeroslackGhostAnnotationRemapShiftedCount")
+                       .toLongLong()
+                   == annotationCount
+               && editor.property(
+                     "zeroslackGhostAnnotationRemapMaterializationCount")
+                       .toLongLong()
+                   == 0);
+    expect("dense semantic suffix remap visits logarithmic nodes",
+           editor.property(
+                     "zeroslackSemanticDecorationRemapVisitedCount")
+                       .toLongLong()
+                   < 256
+               && editor.property(
+                     "zeroslackSemanticDecorationRemapShiftedCount")
+                       .toLongLong()
+                   == annotationCount
+               && editor.property(
+                     "zeroslackSemanticDecorationRemapMaterializationCount")
+                       .toLongLong()
+                   == 0);
+    expect("dense semantic visible query remains local",
+           editor.property(
+                     "zeroslackSemanticDecorationVisibleQueryVisitedCount")
+                       .toLongLong()
+                   < 256);
+
+    AnnotationLayerQuery visibleQuery;
+    visibleQuery.firstVisibleLine = 0;
+    visibleQuery.lastVisibleLine = 8;
+    const AnnotationLayerReport visibleGhosts =
+        editor.annotationLayerReportForTest(visibleQuery);
+    expect("dense Ghost layer materializes only visible stable rows",
+           visibleGhosts.inputCount == annotationCount
+               && visibleGhosts.examinedCount <= 8
+               && visibleGhosts.offscreenCount
+                      >= annotationCount - 8);
+
+    const QList<GhostAnnotation> shifted =
+        editor.ghostAnnotationsForTest();
+    const int crossingPosition =
+        shifted.at(annotationCount / 2).anchorPosition + 1;
+    QTextCursor crossing(editor.document());
+    crossing.setPosition(crossingPosition);
+    crossing.insertText(QStringLiteral("x"));
+    expect("dense crossing edit removes one Ghost and semantic anchor",
+           editor.property(
+                     "zeroslackGhostAnnotationRemapRemovedCount")
+                       .toLongLong()
+                   == 1
+               && editor.property(
+                     "zeroslackSemanticDecorationRemapRemovedCount")
+                       .toLongLong()
+                   == 1
+               && editor.ghostAnnotationsForTest().size()
+                      == annotationCount - 1);
 }
 
 void exerciseDeltaCorrectness()
@@ -1233,6 +1554,18 @@ void exerciseFoldGhostAndSlotState()
     annotation.anchorPosition = ghostEditor.cachedDocumentText().indexOf(
         QStringLiteral("data"));
     annotation.anchorLength = 4;
+    ghostEditor.setGhostAnnotations({annotation, annotation});
+    AnnotationLayerQuery ghostLayerQuery;
+    ghostLayerQuery.firstVisibleLine = 0;
+    ghostLayerQuery.lastVisibleLine = 3;
+    const AnnotationLayerReport ghostLayerReport =
+        ghostEditor.annotationLayerReportForTest(ghostLayerQuery);
+    expect("editor annotation source deduplicates repeated ghost values",
+           ghostLayerReport.inputCount == 2
+               && ghostLayerReport.duplicateCount == 1
+               && ghostLayerReport.annotations.size() == 1
+               && ghostLayerReport.annotations.first().annotation.kind
+                      == EditorAnnotationKind::EffectiveValue);
     ghostEditor.setGhostAnnotations({annotation});
     ghostEditor.resetHotPathMetricsForTest();
 
@@ -1265,6 +1598,8 @@ void exerciseFoldGhostAndSlotState()
     ghostEditor.refreshSemanticPresentation();
     expect("explicit semantic refresh performs one full ghost query",
            ghostEditor.hotPathMetricsForTest().fullGhostQueries == 1);
+    expect("empty semantic snapshot starts no Ghost worker",
+           !hasFutureWatcherChild(ghostEditor));
 
     MyCodeEditor largeGhostEditor;
     largeGhostEditor.setDocumentFileName(QStringLiteral("large_ghost.sv"));
@@ -1278,6 +1613,8 @@ void exerciseFoldGhostAndSlotState()
     largeGhostEditor.refreshSemanticPresentation();
     expect("large documents keep ghost analysis enabled",
            largeGhostEditor.hotPathMetricsForTest().fullGhostQueries == 1);
+    expect("large document without semantic snapshot starts no Ghost worker",
+           !hasFutureWatcherChild(largeGhostEditor));
 
     MyCodeEditor slotEditor;
     slotEditor.setPlainText(QStringLiteral("foo bar"));
@@ -1293,14 +1630,40 @@ void exerciseFoldGhostAndSlotState()
                && slotEditor.templateSlotModeSlotCount() == 2);
 }
 
-void exerciseRepeatedReplacementStability()
+enum class LifecycleEditorPresentation {
+    TopLevelVisible,
+    ChildVisible,
+    Hidden
+};
+
+void exerciseSingleLineReplacementLifecycle(
+    int replacementLimit = -1,
+    LifecycleEditorPresentation presentation =
+        LifecycleEditorPresentation::TopLevelVisible,
+    const QByteArray& diagnosticProfile = QByteArray())
 {
+    if (!diagnosticProfile.isEmpty()) {
+        qputenv("ZEROSLACK_EDITOR_LIFECYCLE_PROFILE",
+                diagnosticProfile);
+    }
     {
-        MyCodeEditor editor;
+        QWidget host;
+        MyCodeEditor editor(
+            presentation == LifecycleEditorPresentation::ChildVisible
+                ? &host
+                : nullptr);
         editor.resize(560, 160);
-        editor.show();
-        editor.setFocus();
-        QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+        if (presentation != LifecycleEditorPresentation::Hidden) {
+            if (presentation == LifecycleEditorPresentation::ChildVisible) {
+                host.resize(600, 200);
+                host.show();
+                editor.show();
+            } else {
+                editor.show();
+            }
+            editor.setFocus();
+            QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+        }
 
         const QStringList replacements{
             QStringLiteral("ab"),
@@ -1310,7 +1673,11 @@ void exerciseRepeatedReplacementStability()
             QStringLiteral("obj.member"),
             QStringLiteral("pkg::member")
         };
-        for (const QString& replacement : replacements) {
+        const int count = replacementLimit < 0
+            ? replacements.size()
+            : qBound(0, replacementLimit, replacements.size());
+        for (int index = 0; index < count; ++index) {
+            const QString& replacement = replacements.at(index);
             editor.clear();
             QTest::keyClicks(&editor, replacement);
             QCoreApplication::processEvents(QEventLoop::AllEvents, 5);
@@ -1320,10 +1687,17 @@ void exerciseRepeatedReplacementStability()
                        && editor.syntaxTextForTest() == replacement);
         }
     }
+    if (!diagnosticProfile.isEmpty())
+        qunsetenv("ZEROSLACK_EDITOR_LIFECYCLE_PROFILE");
     expect("single-line replacement editor destroys cleanly", true);
+}
 
+void exerciseMultilineReplacementLifecycle()
+{
     {
         MyCodeEditor editor;
+        expect("second editor constructs after the first editor is destroyed",
+               true);
         const QString multiline = QStringLiteral(
             "module command_line;\n"
             "  logic a;\n"
@@ -1331,13 +1705,25 @@ void exerciseRepeatedReplacementStability()
             "  assign b = a;\n"
             "endmodule\n");
         editor.setPlainText(multiline);
+        expect("second editor accepts multiline replacement",
+               editor.cachedDocumentText() == multiline
+                   && editor.syntaxTextForTest() == multiline);
         editor.setPlainText(QString());
+        expect("second editor clears multiline replacement",
+               editor.cachedDocumentText().isEmpty()
+                   && editor.syntaxTextForTest().isEmpty());
         QTest::keyClicks(&editor, QStringLiteral("`"));
         expect("multiline replacement followed by input remains stable",
                editor.cachedDocumentText() == QStringLiteral("`")
                    && editor.syntaxTextForTest() == QStringLiteral("`"));
     }
     expect("multiline replacement editor destroys cleanly", true);
+}
+
+void exerciseRepeatedReplacementStability()
+{
+    exerciseSingleLineReplacementLifecycle();
+    exerciseMultilineReplacementLifecycle();
 }
 
 void exercisePassiveUiSignals()
@@ -1663,6 +2049,87 @@ void exerciseNumericHoverDoesNotMaterializeDocument()
 int main(int argc, char** argv)
 {
     QApplication app(argc, argv);
+    if (argc == 2) {
+        const QString mode = QString::fromLocal8Bit(argv[1]);
+        bool handled = true;
+        if (mode == QStringLiteral("--lifecycle-single"))
+            exerciseSingleLineReplacementLifecycle();
+        else if (mode == QStringLiteral("--lifecycle-multiline"))
+            exerciseMultilineReplacementLifecycle();
+        else if (mode.startsWith(
+                     QStringLiteral("--lifecycle-multiline-repeat="))) {
+            bool ok = false;
+            const int repeatCount = mode.sliced(
+                QStringLiteral("--lifecycle-multiline-repeat=").size())
+                                        .toInt(&ok);
+            if (ok && repeatCount >= 0) {
+                for (int index = 0; index < repeatCount; ++index)
+                    exerciseMultilineReplacementLifecycle();
+            } else {
+                handled = false;
+            }
+        }
+        else if (mode == QStringLiteral("--lifecycle-only"))
+            exerciseRepeatedReplacementStability();
+        else if (mode.startsWith(QStringLiteral("--lifecycle-count="))) {
+            bool ok = false;
+            const int replacementCount =
+                mode.sliced(QStringLiteral("--lifecycle-count=").size())
+                    .toInt(&ok);
+            if (ok) {
+                exerciseSingleLineReplacementLifecycle(replacementCount);
+                exerciseMultilineReplacementLifecycle();
+            } else {
+                handled = false;
+            }
+        }
+        else if (mode.startsWith(QStringLiteral("--lifecycle-hidden-count="))) {
+            bool ok = false;
+            const int replacementCount =
+                mode.sliced(
+                        QStringLiteral("--lifecycle-hidden-count=").size())
+                    .toInt(&ok);
+            if (ok) {
+                exerciseSingleLineReplacementLifecycle(
+                    replacementCount,
+                    LifecycleEditorPresentation::Hidden);
+                exerciseMultilineReplacementLifecycle();
+            } else {
+                handled = false;
+            }
+        }
+        else if (mode.startsWith(QStringLiteral("--lifecycle-child-count="))) {
+            bool ok = false;
+            const int replacementCount =
+                mode.sliced(
+                        QStringLiteral("--lifecycle-child-count=").size())
+                    .toInt(&ok);
+            if (ok) {
+                exerciseSingleLineReplacementLifecycle(
+                    replacementCount,
+                    LifecycleEditorPresentation::ChildVisible);
+                exerciseMultilineReplacementLifecycle();
+            } else {
+                handled = false;
+            }
+        }
+        else if (mode.startsWith(QStringLiteral("--lifecycle-profile="))) {
+            const QByteArray profile =
+                mode.sliced(QStringLiteral("--lifecycle-profile=").size())
+                    .toLocal8Bit();
+            exerciseSingleLineReplacementLifecycle(
+                0,
+                LifecycleEditorPresentation::Hidden,
+                profile);
+            exerciseMultilineReplacementLifecycle();
+        }
+        else
+            handled = false;
+        if (handled) {
+            std::printf("checks=%d failures=%d\n", checks, failures);
+            return failures == 0 ? 0 : 1;
+        }
+    }
     if (argc < 3) {
         std::fprintf(stderr,
                      "usage: editor_incremental_test <rtl_top.sv> <huge_prj>\n");
@@ -1711,6 +2178,8 @@ int main(int argc, char** argv)
                && manager.getCurrentEditor() == firstEditor);
 #endif
 
+    exerciseAnchoredRangeIndex();
+    exerciseDenseAnnotationRemap();
     exerciseDeltaCorrectness();
     exerciseFoldGhostAndSlotState();
     exerciseRepeatedReplacementStability();
@@ -1725,6 +2194,8 @@ int main(int argc, char** argv)
         const TypingReport report = measureTyping(rtlTop);
         printLatency("rtl_top_after", report.latency);
         printTypingCoreMetrics("rtl_top_after", report.metrics);
+        printTextStorageMetrics("rtl_top_after",
+                                report.textStorageMetrics);
         // A keystroke receives less than one quarter of a 60 Hz frame at p95;
         // max remains below half a frame. These are fixed interaction budgets.
         expect("rtl_top typing p95 stays below 4 ms",
@@ -1736,11 +2207,21 @@ int main(int argc, char** argv)
                    && report.metrics.fullFoldingRebuilds == 0
                    && report.metrics.fullGhostQueries == 0
                    && report.metrics.occurrenceFullBuilds == 0);
+        expect("rtl_top Tree-sitter reads edited gap storage without materializing it",
+               report.textStorageMetrics.editCount == 45
+                   && report.textStorageMetrics
+                          .materializationCount == 0
+                   && report.textStorageMetrics.inputReadCount
+                          >= report.textStorageMetrics.editCount
+                   && report.textStorageMetrics.movedCharacterCount
+                          <= 128);
     }
     if (QFileInfo(hugeFile).isFile()) {
         const TypingReport report = measureTyping(hugeFile);
         printLatency("huge_after", report.latency);
         printTypingCoreMetrics("huge_after", report.metrics);
+        printTextStorageMetrics("huge_after",
+                                report.textStorageMetrics);
         // The 4.5 MB fixture receives a stricter-than-frame p95 budget and a
         // max budget below one 60 Hz frame; no size-based threshold expansion.
         expect("huge-file typing p95 stays below 5 ms",
@@ -1752,11 +2233,21 @@ int main(int argc, char** argv)
                    && report.metrics.fullFoldingRebuilds == 0
                    && report.metrics.fullGhostQueries == 0
                    && report.metrics.occurrenceFullBuilds == 0);
+        expect("huge-file Tree-sitter reads local gap edits without per-key full-text movement",
+               report.textStorageMetrics.editCount == 45
+                   && report.textStorageMetrics
+                          .materializationCount == 0
+                   && report.textStorageMetrics.inputReadCount
+                          >= report.textStorageMetrics.editCount
+                   && report.textStorageMetrics.movedCharacterCount
+                          <= 128);
 
         const VisibleWaveTypingReport waveReport =
             measureVisibleWaveTyping(hugeFile);
         printVisibleWaveLatency(waveReport.latency);
         printVisibleWaveMetrics(waveReport);
+        printTextStorageMetrics("visible_wave",
+                                waveReport.textStorageMetrics);
         expect("visible Wave consumes exactly one scoped delta per key",
                waveReport.initialScopeValid
                    && waveReport.editorMetrics.documentChanges == 44
@@ -1774,6 +2265,14 @@ int main(int argc, char** argv)
                waveReport.textCopyMetrics.fullTextCopyCount == 0
                    && waveReport.textCopyMetrics.copiedCharacterCount == 0
                    && waveReport.editorMetrics.fullTextMaterializations == 0);
+        expect("visible Wave syntax edits stay in Tree-sitter gap storage",
+               waveReport.textStorageMetrics.editCount == 44
+                   && waveReport.textStorageMetrics
+                          .materializationCount == 0
+                   && waveReport.textStorageMetrics.inputReadCount
+                          >= waveReport.textStorageMetrics.editCount
+                   && waveReport.textStorageMetrics.movedCharacterCount
+                          <= 256);
         expect("visible Wave huge-file typing p95 stays below 6 ms",
                waveReport.latency.p95Us < 6000);
         expect("visible Wave huge-file typing max stays below 12 ms",
@@ -1783,6 +2282,8 @@ int main(int argc, char** argv)
             measureInlineCandidateFiltering(hugeFile);
         printInlineFilterLatency(inlineReport.latency);
         printInlineFilterMetrics(inlineReport.metrics);
+        printTextStorageMetrics("inline_filter",
+                                inlineReport.textStorageMetrics);
         expect("huge inline Tab opens and preserves a filter session",
                inlineReport.initialCandidateCount >= 4
                    && inlineReport.sessionStayedActive);
@@ -1809,6 +2310,14 @@ int main(int argc, char** argv)
                    && inlineReport.metrics
                           .inlineFilterOverlayMaterializations
                        == 0);
+        expect("huge inline filtering parses directly from local syntax gap edits",
+               inlineReport.textStorageMetrics.editCount == 44
+                   && inlineReport.textStorageMetrics
+                          .materializationCount == 0
+                   && inlineReport.textStorageMetrics.inputReadCount
+                          >= inlineReport.textStorageMetrics.editCount
+                   && inlineReport.textStorageMetrics.movedCharacterCount
+                          <= 128);
         expect("huge inline cancel materializes one pending overlay",
                inlineReport.cancelSynchronizesCachedText
                    && inlineReport.metrics

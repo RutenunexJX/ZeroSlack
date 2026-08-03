@@ -114,22 +114,6 @@ const char* designUnitClosingKeyword(TSNode node)
     return nullptr;
 }
 
-void collectDesignUnits(TSNode node, QList<TSNode>* units)
-{
-    if (!units || ts_node_is_null(node))
-        return;
-    if (designUnitClosingKeyword(node)) {
-        units->append(node);
-        return;
-    }
-    const uint32_t count = ts_node_named_child_count(node);
-    for (uint32_t index = 0; index < count; ++index) {
-        collectDesignUnits(
-            ts_node_named_child(node, index), units);
-    }
-}
-
-
 int nodeEnd(TSNode node)
 {
     return static_cast<int>(ts_node_end_byte(node) / 2u);
@@ -189,6 +173,51 @@ void collectDescendants(TSNode node,
                            result,
                            stopAtMatch);
     }
+}
+
+bool isStatementWrapperNode(TSNode node)
+{
+    return typeIs(node, "statement_or_null")
+        || typeIs(node, "statement")
+        || typeIs(node, "statement_item")
+        || typeIs(node, "function_statement")
+        || typeIs(node, "function_statement_or_null");
+}
+
+bool isParseFailureNode(TSNode node)
+{
+    return typeIs(node, "ERROR") || ts_node_is_missing(node);
+}
+
+bool isCaseItemNode(TSNode node)
+{
+    return typeIs(node, "case_item")
+        || typeIs(node, "case_inside_item")
+        || typeIs(node, "case_pattern_item");
+}
+
+bool isDesignUnitNode(TSNode node)
+{
+    return typeIs(node, "module_declaration")
+        || typeIs(node, "interface_declaration")
+        || typeIs(node, "package_declaration")
+        || typeIs(node, "program_declaration")
+        || typeIs(node, "udp_declaration")
+        || typeIs(node, "config_declaration");
+}
+
+bool isTransparentWrapperNode(TSNode node)
+{
+    if (isStatementWrapperNode(node))
+        return true;
+    const QString type = QString::fromLatin1(ts_node_type(node));
+    return type.endsWith(QStringLiteral("_item"))
+        || type == QStringLiteral("class_method")
+        || type == QStringLiteral("module_item")
+        || type == QStringLiteral("interface_item")
+        || type == QStringLiteral("program_item")
+        || type == QStringLiteral("package_item")
+        || type == QStringLiteral("checker_item");
 }
 
 TSNode firstDescendant(TSNode node, const char* type)
@@ -413,6 +442,11 @@ public:
           m_indentWidth(std::max(1, indentWidth))
     {
         m_document.setText(source);
+        m_lineStarts.append(0);
+        for (int position = 0; position < source.size(); ++position) {
+            if (source.at(position) == QLatin1Char('\n'))
+                m_lineStarts.append(position + 1);
+        }
     }
 
     QString run()
@@ -438,17 +472,32 @@ public:
         return applyEdits();
     }
 
-    QString runDesignUnitIndentation()
+    QString runStructuralIndentation(bool indentConditionalBranches,
+                                    bool indentCaseItemBodies,
+                                    bool alignCaseItems,
+                                    bool preservePreprocessorIndent)
     {
-        QList<TSNode> units;
-        collectDesignUnits(m_document.rootNode(), &units);
-        for (const TSNode unit : units)
-            formatDesignUnitIndentation(unit);
+        m_indentConditionalBranches = indentConditionalBranches;
+        m_indentCaseItemBodies = indentCaseItemBodies;
+        m_alignCaseItems = alignCaseItems;
+        m_preservePreprocessorIndent = preservePreprocessorIndent;
+        collectConservativeErrors(m_document.rootNode());
+        for (const TSNode child
+             : directNamedChildren(m_document.rootNode())) {
+            formatOwnedNode(child, 0);
+        }
         return applyEdits();
     }
 
     QList<LineRange> conservativeRanges() const
     {
+        return m_conservativeRanges;
+    }
+
+    QList<LineRange> syntaxErrorRanges()
+    {
+        m_conservativeRanges.clear();
+        collectConservativeErrors(m_document.rootNode());
         return m_conservativeRanges;
     }
 
@@ -485,6 +534,25 @@ private:
         bool multiline = false;
     };
 
+    struct CaseItemLayout {
+        LeafToken labelFirst;
+        LeafToken labelLast;
+        LeafToken colon;
+        LeafToken branchFirst;
+        LeafToken comment;
+        int indent = 0;
+        int labelWidth = 0;
+        int codeEnd = -1;
+        bool branchOnLabelLine = false;
+
+        bool valid() const
+        {
+            return labelFirst.start >= 0
+                && labelLast.end > labelFirst.start
+                && colon.start >= labelLast.end;
+        }
+    };
+
     QString applyEdits()
     {
         if (!m_valid)
@@ -515,6 +583,8 @@ private:
 
     bool setLineLeading(const LeafToken& leaf, int indent)
     {
+        if (leaf.start < 0 || lineIsConservative(nodeStartLine(leaf.node)))
+            return true;
         const int startOfLine =
             lineStart(m_source, leaf.start);
         const QStringView gap =
@@ -523,6 +593,19 @@ private:
                 leaf.start - startOfLine);
         if (!allWhitespace(gap))
             return true;
+        if (m_preservePreprocessorIndent) {
+            int first = startOfLine;
+            while (first < m_source.size()
+                   && first < leaf.start
+                   && m_source.at(first).isSpace()
+                   && m_source.at(first) != QLatin1Char('\n')) {
+                ++first;
+            }
+            if (first < m_source.size()
+                && m_source.at(first) == QLatin1Char('`')) {
+                return true;
+            }
+        }
         return addEdit(
             startOfLine,
             leaf.start,
@@ -530,61 +613,611 @@ private:
                     QLatin1Char(' ')));
     }
 
-    void shiftDirectMemberToColumnZero(TSNode member)
+    LeafToken firstLeafOf(TSNode node) const
     {
-        const QList<LeafToken> leaves =
-            leavesOf(member, m_source);
-        if (leaves.isEmpty())
-            return;
+        const QList<LeafToken> leaves = leavesOf(node, m_source);
+        return leaves.isEmpty() ? LeafToken{} : leaves.first();
+    }
 
-        const LeafToken anchor = leaves.first();
-        const int anchorLineStart =
-            lineStart(m_source, anchor.start);
-        const QStringView anchorGap =
-            QStringView(m_source).mid(
-                anchorLineStart,
-                anchor.start - anchorLineStart);
-        if (!allWhitespace(anchorGap))
-            return;
+    LeafToken leafForNode(TSNode node) const
+    {
+        if (ts_node_is_null(node))
+            return {};
+        const int start = nodeStart(node);
+        const int end = nodeEnd(node);
+        if (start < 0 || end <= start)
+            return {};
+        return {node, start, end, m_source.mid(start, end - start)};
+    }
 
-        const int baseIndent =
-            anchor.start - anchorLineStart;
-        const int firstLine = nodeStartLine(member);
-        const int lastLine = nodeEndLine(member);
-        if (lastLine < firstLine)
-            return;
-
-        QVector<LeafToken> firstLeaves(lastLine - firstLine + 1);
-        for (const LeafToken& leaf : leaves) {
-            const int relative =
-                nodeStartLine(leaf.node) - firstLine;
-            if (relative < 0 || relative >= firstLeaves.size())
+    TSNode semanticChild(TSNode wrapper) const
+    {
+        const uint32_t count = ts_node_named_child_count(wrapper);
+        for (uint32_t index = 0; index < count; ++index) {
+            const TSNode child = ts_node_named_child(wrapper, index);
+            if (isCommentNode(child)
+                || typeIs(child, "attribute_instance")
+                || isParseFailureNode(child)) {
                 continue;
-            LeafToken& first = firstLeaves[relative];
-            if (first.start < 0 || leaf.start < first.start)
-                first = leaf;
+            }
+            return child;
         }
+        return {};
+    }
 
-        for (const LeafToken& first : firstLeaves) {
-            if (first.start < 0)
+    TSNode unwrapTransparentNode(TSNode node) const
+    {
+        TSNode current = node;
+        while (!ts_node_is_null(current)
+               && isTransparentWrapperNode(current)) {
+            const TSNode child = semanticChild(current);
+            if (ts_node_is_null(child)
+                || (nodeStart(child) == nodeStart(current)
+                    && nodeEnd(child) == nodeEnd(current)
+                    && std::strcmp(ts_node_type(child),
+                                   ts_node_type(current)) == 0)) {
+                break;
+            }
+            current = child;
+        }
+        return current;
+    }
+
+    void setOwnedLines(TSNode node,
+                       int indent,
+                       int rangeStart = -1,
+                       int rangeEnd = -1)
+    {
+        if (ts_node_is_null(node))
+            return;
+        const int start =
+            rangeStart >= 0 ? rangeStart : nodeStart(node);
+        const int end =
+            rangeEnd >= 0 ? rangeEnd : nodeEnd(node);
+        if (start < 0 || end <= start)
+            return;
+
+        QSet<int> formattedLines;
+        for (const LeafToken& leaf : leavesOf(node, m_source)) {
+            if (leaf.start < start || leaf.start >= end)
                 continue;
-            const int startOfLine =
-                lineStart(m_source, first.start);
-            const QStringView gap =
-                QStringView(m_source).mid(
-                    startOfLine,
-                    first.start - startOfLine);
-            if (!allWhitespace(gap))
+            const int line = nodeStartLine(leaf.node);
+            if (formattedLines.contains(line))
                 continue;
-            const int currentIndent =
-                first.start - startOfLine;
-            setLineLeading(
-                first,
-                std::max(0, currentIndent - baseIndent));
+            formattedLines.insert(line);
+            setLineLeading(leaf, indent);
         }
     }
 
-    void formatDesignUnitIndentation(TSNode unit)
+    void formatBodyNode(TSNode body,
+                        int ownerIndent,
+                        int ownerLine)
+    {
+        const TSNode actual = unwrapTransparentNode(body);
+        const LeafToken first = firstLeafOf(actual);
+        if (first.start < 0)
+            return;
+        const int bodyIndent =
+            nodeStartLine(first.node) == ownerLine
+                ? ownerIndent
+                : ownerIndent + m_indentWidth;
+        formatOwnedNode(actual, bodyIndent);
+    }
+
+    int ownerLineBeforeChild(TSNode parent,
+                             TSNode target,
+                             int fallbackLine) const
+    {
+        int ownerLine = fallbackLine;
+        const uint32_t childCount = ts_node_child_count(parent);
+        for (uint32_t index = 0; index < childCount; ++index) {
+            const TSNode child = ts_node_child(parent, index);
+            if (ts_node_eq(child, target))
+                break;
+            if (isCommentNode(child)
+                || typeIs(child, "conditional_compilation_directive")) {
+                continue;
+            }
+            ownerLine = nodeEndLine(child);
+        }
+        return ownerLine;
+    }
+
+    bool isGenericKeywordContainer(TSNode node) const
+    {
+        return typeIs(node, "checker_declaration")
+            || typeIs(node, "class_declaration")
+            || typeIs(node, "interface_class_declaration")
+            || typeIs(node, "clocking_declaration")
+            || typeIs(node, "covergroup_declaration")
+            || typeIs(node, "property_declaration")
+            || typeIs(node, "sequence_declaration")
+            || typeIs(node, "specify_block")
+            || typeIs(node, "combinational_body")
+            || typeIs(node, "sequential_body");
+    }
+
+    void formatOwnedNode(TSNode node, int indent)
+    {
+        if (ts_node_is_null(node) || isParseFailureNode(node))
+            return;
+
+        if (isTransparentWrapperNode(node)) {
+            const TSNode child = semanticChild(node);
+            if (!ts_node_is_null(child)) {
+                formatOwnedNode(child, indent);
+                return;
+            }
+        }
+        if (isDesignUnitNode(node)) {
+            formatDesignUnit(node);
+        } else if (typeIs(node, "seq_block")) {
+            formatSequentialBlock(node, indent);
+        } else if (typeIs(node, "par_block")) {
+            formatParallelBlock(node, indent);
+        } else if (typeIs(node, "conditional_statement")) {
+            formatConditionalStatement(node, indent);
+        } else if (typeIs(node, "case_statement")) {
+            formatCaseStatement(node, indent);
+        } else if (typeIs(node, "loop_statement")) {
+            formatLoopStatement(node, indent);
+        } else if (typeIs(node, "always_construct")
+                   || typeIs(node, "initial_construct")
+                   || typeIs(node, "final_construct")
+                   || typeIs(
+                       node,
+                       "procedural_timing_control_statement")) {
+            formatProceduralConstruct(node, indent);
+        } else if (typeIs(node, "function_declaration")
+                   || typeIs(node, "task_declaration")
+                   || typeIs(
+                       node,
+                       "class_constructor_declaration")) {
+            formatSubroutine(node, indent);
+        } else if (typeIs(node, "generate_region")) {
+            formatGenerateRegion(node, indent);
+        } else if (typeIs(node, "generate_block")) {
+            formatGenerateBlock(node, indent);
+        } else if (typeIs(node, "conditional_generate_construct")
+                   || typeIs(node, "if_generate_construct")
+                   || typeIs(node, "case_generate_construct")) {
+            formatGenerateConditional(node, indent);
+        } else if (typeIs(node, "loop_generate_construct")) {
+            formatGenerateLoop(node, indent);
+        } else if (isGenericKeywordContainer(node)) {
+            formatKeywordContainer(node, indent);
+        } else if (typeIs(node, "conditional_compilation_directive")) {
+            for (const TSNode child : directNamedChildren(node)) {
+                if (!isCommentNode(child)
+                    && !isParseFailureNode(child)) {
+                    formatOwnedNode(child, indent);
+                }
+            }
+        } else {
+            setOwnedLines(node, indent);
+        }
+    }
+
+    void formatBranch(TSNode statementOrNull,
+                      int ownerIndent,
+                      int ownerLine)
+    {
+        if (!m_indentConditionalBranches)
+            return;
+        formatBodyNode(statementOrNull, ownerIndent, ownerLine);
+    }
+
+    void formatConditionalStatement(TSNode statement, int baseIndent)
+    {
+        const QList<LeafToken> leaves =
+            leavesOf(statement, m_source);
+        if (leaves.isEmpty())
+            return;
+
+        struct BranchLayout {
+            TSNode node{};
+            int ownerLine = -1;
+        };
+        QList<BranchLayout> branches;
+        for (const TSNode child : directNamedChildren(statement)) {
+            if (!typeIs(child, "statement_or_null"))
+                continue;
+            branches.append(
+                {child,
+                 ownerLineBeforeChild(
+                     statement,
+                     child,
+                     nodeStartLine(leaves.first().node))});
+        }
+        const int headerEnd =
+            branches.isEmpty() ? nodeEnd(statement)
+                               : nodeStart(branches.first().node);
+        setOwnedLines(statement,
+                      baseIndent,
+                      nodeStart(statement),
+                      headerEnd);
+
+        for (const BranchLayout& branch : branches) {
+            formatBranch(
+                branch.node, baseIndent, branch.ownerLine);
+        }
+
+        const uint32_t childCount = ts_node_child_count(statement);
+        for (uint32_t index = 0; index < childCount; ++index) {
+            const TSNode child = ts_node_child(statement, index);
+            if (ts_node_is_named(child))
+                continue;
+            const LeafToken token = leafForNode(child);
+            if (token.text == QStringLiteral("else"))
+                setLineLeading(token, baseIndent);
+        }
+    }
+
+    CaseItemLayout caseItemLayout(TSNode item,
+                                  int desiredIndent) const
+    {
+        CaseItemLayout layout;
+        const QList<LeafToken> leaves =
+            leavesOf(item, m_source);
+        if (leaves.isEmpty())
+            return layout;
+
+        const uint32_t childCount = ts_node_child_count(item);
+        for (uint32_t index = 0; index < childCount; ++index) {
+            const TSNode child = ts_node_child(item, index);
+            if (ts_node_is_named(child))
+                continue;
+            const int start = nodeStart(child);
+            const int end = nodeEnd(child);
+            if (start >= 0 && end > start
+                && m_source.mid(start, end - start)
+                       == QStringLiteral(":")) {
+                layout.colon = {child, start, end, QStringLiteral(":")};
+                break;
+            }
+        }
+        if (layout.colon.start < 0)
+            return {};
+
+        for (const LeafToken& leaf : leaves) {
+            if (leaf.end <= layout.colon.start
+                && !isCommentNode(leaf.node)) {
+                if (layout.labelFirst.start < 0)
+                    layout.labelFirst = leaf;
+                layout.labelLast = leaf;
+            }
+        }
+        if (layout.labelFirst.start < 0
+            || nodeStartLine(layout.labelFirst.node)
+                   != nodeStartLine(layout.colon.node)) {
+            return {};
+        }
+
+        layout.indent = m_indentCaseItemBodies
+            ? desiredIndent
+            : leadingWidthAt(m_source, layout.labelFirst.start);
+        layout.labelWidth =
+            layout.labelLast.end - layout.labelFirst.start;
+        layout.codeEnd = layout.colon.end;
+
+        const TSNode branch =
+            firstDirectNamedChild(item, "statement_or_null");
+        const QList<LeafToken> branchLeaves =
+            leavesOf(branch, m_source);
+        if (!branchLeaves.isEmpty()) {
+            layout.branchFirst = branchLeaves.first();
+            layout.branchOnLabelLine =
+                nodeStartLine(layout.branchFirst.node)
+                == nodeStartLine(layout.labelFirst.node);
+        }
+
+        const int labelLine = nodeStartLine(layout.labelFirst.node);
+        for (const LeafToken& leaf : leaves) {
+            if (nodeStartLine(leaf.node) != labelLine)
+                continue;
+            if (isCommentNode(leaf.node)) {
+                if (layout.comment.start < 0)
+                    layout.comment = leaf;
+                continue;
+            }
+            if (layout.comment.start < 0
+                || leaf.end <= layout.comment.start) {
+                layout.codeEnd =
+                    std::max(layout.codeEnd, leaf.end);
+            }
+        }
+        if (layout.comment.start < 0) {
+            const QList<LeafToken> parentLeaves =
+                leavesOf(ts_node_parent(item), m_source);
+            for (const LeafToken& leaf : parentLeaves) {
+                if (leaf.start < layout.colon.end
+                    || nodeStartLine(leaf.node) != labelLine
+                    || !isCommentNode(leaf.node)) {
+                    continue;
+                }
+                layout.comment = leaf;
+                break;
+            }
+        }
+        if (!allWhitespace(
+                QStringView(m_source).mid(
+                    layout.labelLast.end,
+                    layout.colon.start - layout.labelLast.end))) {
+            return {};
+        }
+        if (layout.branchOnLabelLine
+            && !allWhitespace(
+                QStringView(m_source).mid(
+                    layout.colon.end,
+                    layout.branchFirst.start - layout.colon.end))) {
+            return {};
+        }
+        return layout;
+    }
+
+    void alignCaseItemGroup(const QList<TSNode>& items,
+                            int desiredIndent)
+    {
+        if (!m_alignCaseItems || items.isEmpty())
+            return;
+
+        QList<CaseItemLayout> layouts;
+        for (const TSNode item : items) {
+            const CaseItemLayout layout =
+                caseItemLayout(item, desiredIndent);
+            if (layout.valid())
+                layouts.append(layout);
+        }
+        if (layouts.isEmpty())
+            return;
+
+        int maxLabelWidth = 0;
+        for (const CaseItemLayout& layout : layouts) {
+            maxLabelWidth =
+                std::max(maxLabelWidth, layout.labelWidth);
+        }
+
+        int maxCodeEndColumn = 0;
+        bool hasComment = false;
+        for (const CaseItemLayout& layout : layouts) {
+            setGap(layout.labelLast.end,
+                   layout.colon.start,
+                   maxLabelWidth - layout.labelWidth);
+            if (layout.branchOnLabelLine) {
+                setGap(layout.colon.end,
+                       layout.branchFirst.start,
+                       1);
+            }
+
+            int codeEndColumn =
+                layout.indent + maxLabelWidth + 1;
+            if (layout.branchOnLabelLine) {
+                codeEndColumn +=
+                    1 + layout.codeEnd - layout.branchFirst.start;
+            }
+            maxCodeEndColumn =
+                std::max(maxCodeEndColumn, codeEndColumn);
+            hasComment = hasComment || layout.comment.start >= 0;
+        }
+
+        if (!hasComment)
+            return;
+        const int commentColumn = maxCodeEndColumn + 2;
+        for (const CaseItemLayout& layout : layouts) {
+            if (layout.comment.start < 0)
+                continue;
+            int codeEndColumn =
+                layout.indent + maxLabelWidth + 1;
+            if (layout.branchOnLabelLine) {
+                codeEndColumn +=
+                    1 + layout.codeEnd - layout.branchFirst.start;
+            }
+            if (layout.comment.start >= layout.codeEnd
+                && allWhitespace(
+                    QStringView(m_source).mid(
+                        layout.codeEnd,
+                        layout.comment.start - layout.codeEnd))) {
+                setGap(layout.codeEnd,
+                       layout.comment.start,
+                       commentColumn - codeEndColumn);
+            }
+        }
+    }
+
+    void formatCaseStatement(TSNode statement, int baseIndent)
+    {
+        const QList<LeafToken> leaves =
+            leavesOf(statement, m_source);
+        if (leaves.isEmpty())
+            return;
+        QList<TSNode> caseItems;
+        for (const TSNode child : directNamedChildren(statement)) {
+            if (isCaseItemNode(child))
+                caseItems.append(child);
+        }
+        const int headerEnd =
+            caseItems.isEmpty() ? nodeEnd(statement)
+                                : nodeStart(caseItems.first());
+        setOwnedLines(statement,
+                      baseIndent,
+                      nodeStart(statement),
+                      headerEnd);
+
+        QList<TSNode> alignmentGroup;
+        auto flushAlignmentGroup = [&]() {
+            alignCaseItemGroup(
+                alignmentGroup, baseIndent + m_indentWidth);
+            alignmentGroup.clear();
+        };
+
+        const uint32_t childCount = ts_node_child_count(statement);
+        for (uint32_t index = 0; index < childCount; ++index) {
+            const TSNode child = ts_node_child(statement, index);
+            if (!ts_node_is_named(child)) {
+                const int start = nodeStart(child);
+                const int end = nodeEnd(child);
+                if (!m_indentCaseItemBodies
+                    || start < 0 || end <= start
+                    || m_source.mid(start, end - start)
+                           != QStringLiteral("endcase")) {
+                    continue;
+                }
+                LeafToken endcaseToken;
+                endcaseToken.node = child;
+                endcaseToken.start = start;
+                endcaseToken.end = end;
+                endcaseToken.text = QStringLiteral("endcase");
+                setLineLeading(endcaseToken, baseIndent);
+                continue;
+            }
+
+            if (!isCaseItemNode(child)) {
+                const bool trailingItemComment =
+                    isCommentNode(child)
+                    && !alignmentGroup.isEmpty()
+                    && nodeStartLine(child)
+                           == nodeStartLine(alignmentGroup.last());
+                if (!alignmentGroup.isEmpty()
+                    && (typeIs(
+                            child,
+                            "conditional_compilation_directive")
+                        || (isCommentNode(child)
+                            && !trailingItemComment))) {
+                    flushAlignmentGroup();
+                }
+                continue;
+            }
+            if (ts_node_has_error(child)) {
+                flushAlignmentGroup();
+                continue;
+            }
+            if (!ts_node_is_null(
+                    firstDirectNamedChild(
+                        child,
+                        "conditional_compilation_directive"))) {
+                flushAlignmentGroup();
+                continue;
+            }
+
+            alignmentGroup.append(child);
+            const QList<LeafToken> itemLeaves =
+                leavesOf(child, m_source);
+            if (itemLeaves.isEmpty())
+                continue;
+            const TSNode branch =
+                firstDirectNamedChild(
+                    child, "statement_or_null");
+            const QList<LeafToken> branchLeaves =
+                leavesOf(branch, m_source);
+            const int branchOwnerLine =
+                ts_node_is_null(branch)
+                ? nodeStartLine(itemLeaves.first().node)
+                : ownerLineBeforeChild(
+                      child,
+                      branch,
+                      nodeStartLine(itemLeaves.first().node));
+            const bool branchOnItemLine =
+                !branchLeaves.isEmpty()
+                && nodeStartLine(branchLeaves.first().node)
+                       == branchOwnerLine;
+            if (m_indentCaseItemBodies) {
+                setLineLeading(
+                    itemLeaves.first(),
+                    baseIndent + m_indentWidth);
+
+                if (!ts_node_is_null(branch)) {
+                    formatBodyNode(
+                        branch,
+                        baseIndent + m_indentWidth,
+                        branchOwnerLine);
+                }
+            }
+            if (!branchOnItemLine)
+                flushAlignmentGroup();
+        }
+        flushAlignmentGroup();
+    }
+
+    LeafToken lastLeafWithText(const QList<LeafToken>& leaves,
+                               const QStringList& texts) const
+    {
+        for (auto iterator = leaves.crbegin();
+             iterator != leaves.crend();
+             ++iterator) {
+            if (texts.contains(iterator->text))
+                return *iterator;
+        }
+        return {};
+    }
+
+    LeafToken firstSemicolonBefore(const QList<LeafToken>& leaves,
+                                   int limit) const
+    {
+        for (const LeafToken& leaf : leaves) {
+            if (leaf.start >= limit)
+                break;
+            if (leaf.text == QStringLiteral(";"))
+                return leaf;
+        }
+        return {};
+    }
+
+    void formatChildrenBetween(TSNode container,
+                               int bodyStart,
+                               int bodyEnd,
+                               int indent)
+    {
+        for (const TSNode child : directNamedChildren(container)) {
+            if (nodeEnd(child) <= bodyStart
+                || nodeStart(child) >= bodyEnd
+                || isParseFailureNode(child)) {
+                continue;
+            }
+            formatOwnedNode(child, indent);
+        }
+    }
+
+    void formatSequentialBlock(TSNode block, int indent)
+    {
+        const QList<LeafToken> leaves = leavesOf(block, m_source);
+        const LeafToken opening =
+            firstLeafText(leaves, QStringLiteral("begin"));
+        const LeafToken closing =
+            lastLeafText(leaves, QStringLiteral("end"));
+        if (opening.start < 0 || closing.start < opening.end)
+            return;
+
+        setLineLeading(opening, indent);
+        formatChildrenBetween(block,
+                              opening.end,
+                              closing.start,
+                              indent + m_indentWidth);
+        setLineLeading(closing, indent);
+    }
+
+    void formatParallelBlock(TSNode block, int indent)
+    {
+        const QList<LeafToken> leaves = leavesOf(block, m_source);
+        const LeafToken opening =
+            firstLeafText(leaves, QStringLiteral("fork"));
+        const LeafToken closing =
+            lastLeafWithText(
+                leaves,
+                {QStringLiteral("join"),
+                 QStringLiteral("join_any"),
+                 QStringLiteral("join_none")});
+        if (opening.start < 0 || closing.start < opening.end)
+            return;
+
+        setLineLeading(opening, indent);
+        formatChildrenBetween(block,
+                              opening.end,
+                              closing.start,
+                              indent + m_indentWidth);
+        setLineLeading(closing, indent);
+    }
+
+    void formatDesignUnit(TSNode unit)
     {
         const char* closingKeyword =
             designUnitClosingKeyword(unit);
@@ -611,15 +1244,318 @@ private:
             return;
         }
 
-        setLineLeading(leaves.first(), 0);
+        setOwnedLines(unit,
+                      0,
+                      nodeStart(unit),
+                      headerSemicolon.end);
         for (const TSNode child : directNamedChildren(unit)) {
             if (nodeEnd(child) <= headerSemicolon.end
                 || nodeStart(child) >= closing.start) {
                 continue;
             }
-            shiftDirectMemberToColumnZero(child);
+            formatOwnedNode(child, 0);
         }
         setLineLeading(closing, 0);
+    }
+
+    void formatLoopStatement(TSNode statement, int indent)
+    {
+        TSNode body;
+        for (const TSNode child : directNamedChildren(statement)) {
+            if (typeIs(child, "statement_or_null")
+                || typeIs(child, "statement")) {
+                body = child;
+            }
+        }
+        if (ts_node_is_null(body)) {
+            setOwnedLines(statement, indent);
+            return;
+        }
+        setOwnedLines(statement,
+                      indent,
+                      nodeStart(statement),
+                      nodeStart(body));
+        formatBodyNode(body,
+                       indent,
+                       nodeStartLine(statement));
+    }
+
+    void formatProceduralConstruct(TSNode construct, int indent)
+    {
+        TSNode body;
+        for (const TSNode child : directNamedChildren(construct)) {
+            if (typeIs(child, "statement")
+                || typeIs(child, "statement_or_null")
+                || typeIs(child, "function_statement")
+                || typeIs(child, "function_statement_or_null")) {
+                body = child;
+            }
+        }
+        if (ts_node_is_null(body)) {
+            setOwnedLines(construct, indent);
+            return;
+        }
+
+        setOwnedLines(construct,
+                      indent,
+                      nodeStart(construct),
+                      nodeStart(body));
+        formatBodyNode(body,
+                       indent,
+                       nodeStartLine(construct));
+    }
+
+    void formatSubroutine(TSNode declaration, int indent)
+    {
+        const QList<LeafToken> leaves =
+            leavesOf(declaration, m_source);
+        const QString closingText =
+            typeIs(declaration, "function_declaration")
+                || typeIs(
+                    declaration,
+                    "class_constructor_declaration")
+                ? QStringLiteral("endfunction")
+                : QStringLiteral("endtask");
+        const LeafToken closing =
+            lastLeafText(leaves, closingText);
+        if (leaves.isEmpty() || closing.start < 0)
+            return;
+        const LeafToken headerSemicolon =
+            firstSemicolonBefore(leaves, closing.start);
+        if (headerSemicolon.start < 0)
+            return;
+
+        setOwnedLines(declaration,
+                      indent,
+                      nodeStart(declaration),
+                      headerSemicolon.end);
+        TSNode bodyDeclaration =
+            firstDirectNamedChild(
+                declaration,
+                typeIs(declaration, "function_declaration")
+                    ? "function_body_declaration"
+                    : "task_body_declaration");
+        if (ts_node_is_null(bodyDeclaration))
+            bodyDeclaration = declaration;
+        formatChildrenBetween(bodyDeclaration,
+                              headerSemicolon.end,
+                              closing.start,
+                              indent + m_indentWidth);
+        setLineLeading(closing, indent);
+    }
+
+    void formatGenerateRegion(TSNode region, int indent)
+    {
+        const QList<LeafToken> leaves = leavesOf(region, m_source);
+        const LeafToken opening =
+            firstLeafText(leaves, QStringLiteral("generate"));
+        const LeafToken closing =
+            lastLeafText(leaves, QStringLiteral("endgenerate"));
+        if (opening.start < 0 || closing.start < opening.end)
+            return;
+        setLineLeading(opening, indent);
+        formatChildrenBetween(region,
+                              opening.end,
+                              closing.start,
+                              indent + m_indentWidth);
+        setLineLeading(closing, indent);
+    }
+
+    void formatGenerateBlock(TSNode block, int indent)
+    {
+        const QList<LeafToken> leaves = leavesOf(block, m_source);
+        const LeafToken opening =
+            firstLeafText(leaves, QStringLiteral("begin"));
+        const LeafToken closing =
+            lastLeafText(leaves, QStringLiteral("end"));
+        if (opening.start < 0 || closing.start < opening.end)
+            return;
+        setLineLeading(opening, indent);
+
+        for (const TSNode child : directNamedChildren(block)) {
+            if (nodeEnd(child) <= opening.end
+                || nodeStart(child) >= closing.start
+                || typeIs(child, "simple_identifier")
+                || typeIs(child, "escaped_identifier")
+                || isParseFailureNode(child)) {
+                continue;
+            }
+            formatOwnedNode(child, indent + m_indentWidth);
+        }
+        setLineLeading(closing, indent);
+    }
+
+    void formatGenerateConditional(TSNode construct, int indent)
+    {
+        TSNode actual = construct;
+        if (typeIs(actual, "conditional_generate_construct")) {
+            const TSNode child = semanticChild(actual);
+            if (!ts_node_is_null(child))
+                actual = child;
+        }
+        if (typeIs(actual, "case_generate_construct")) {
+            formatGenerateCase(actual, indent);
+            return;
+        }
+
+        QList<TSNode> branches;
+        for (const TSNode child : directNamedChildren(actual)) {
+            if (typeIs(child, "generate_block"))
+                branches.append(child);
+        }
+        const int headerEnd =
+            branches.isEmpty() ? nodeEnd(actual)
+                               : nodeStart(branches.first());
+        setOwnedLines(actual,
+                      indent,
+                      nodeStart(actual),
+                      headerEnd);
+        const int ownerLine = nodeStartLine(actual);
+        for (const TSNode branch : branches)
+            formatBodyNode(branch, indent, ownerLine);
+
+        const uint32_t count = ts_node_child_count(actual);
+        for (uint32_t index = 0; index < count; ++index) {
+            const TSNode child = ts_node_child(actual, index);
+            if (!ts_node_is_named(child)) {
+                const LeafToken token = leafForNode(child);
+                if (token.text == QStringLiteral("else"))
+                    setLineLeading(token, indent);
+            }
+        }
+    }
+
+    void formatGenerateCase(TSNode construct, int indent)
+    {
+        QList<TSNode> items;
+        for (const TSNode child : directNamedChildren(construct)) {
+            if (typeIs(child, "case_generate_item"))
+                items.append(child);
+        }
+        const int headerEnd =
+            items.isEmpty() ? nodeEnd(construct)
+                            : nodeStart(items.first());
+        setOwnedLines(construct,
+                      indent,
+                      nodeStart(construct),
+                      headerEnd);
+        for (const TSNode item : items) {
+            const LeafToken first = firstLeafOf(item);
+            if (first.start < 0 || ts_node_has_error(item))
+                continue;
+            setLineLeading(first, indent + m_indentWidth);
+            const TSNode body =
+                firstDirectNamedChild(item, "generate_block");
+            if (!ts_node_is_null(body)) {
+                formatBodyNode(
+                    body,
+                    indent + m_indentWidth,
+                    nodeStartLine(first.node));
+            }
+        }
+        const QList<LeafToken> leaves =
+            leavesOf(construct, m_source);
+        const LeafToken closing =
+            lastLeafText(leaves, QStringLiteral("endcase"));
+        if (closing.start >= 0)
+            setLineLeading(closing, indent);
+    }
+
+    void formatGenerateLoop(TSNode construct, int indent)
+    {
+        TSNode body =
+            firstDirectNamedChild(construct, "generate_block");
+        if (ts_node_is_null(body)) {
+            setOwnedLines(construct, indent);
+            return;
+        }
+        setOwnedLines(construct,
+                      indent,
+                      nodeStart(construct),
+                      nodeStart(body));
+        formatBodyNode(body,
+                       indent,
+                       nodeStartLine(construct));
+    }
+
+    const char* keywordContainerClosing(TSNode node) const
+    {
+        if (typeIs(node, "checker_declaration"))
+            return "endchecker";
+        if (typeIs(node, "class_declaration")
+            || typeIs(node, "interface_class_declaration")) {
+            return "endclass";
+        }
+        if (typeIs(node, "clocking_declaration"))
+            return "endclocking";
+        if (typeIs(node, "covergroup_declaration"))
+            return "endgroup";
+        if (typeIs(node, "property_declaration"))
+            return "endproperty";
+        if (typeIs(node, "sequence_declaration"))
+            return "endsequence";
+        if (typeIs(node, "specify_block"))
+            return "endspecify";
+        if (typeIs(node, "combinational_body")
+            || typeIs(node, "sequential_body")) {
+            return "endtable";
+        }
+        return nullptr;
+    }
+
+    void formatKeywordContainer(TSNode container, int indent)
+    {
+        const char* closingText =
+            keywordContainerClosing(container);
+        if (!closingText)
+            return;
+        const QList<LeafToken> leaves =
+            leavesOf(container, m_source);
+        const LeafToken closing =
+            lastLeafText(
+                leaves, QString::fromLatin1(closingText));
+        if (leaves.isEmpty() || closing.start < 0)
+            return;
+
+        if (typeIs(container, "specify_block")
+            || typeIs(container, "combinational_body")
+            || typeIs(container, "sequential_body")) {
+            const LeafToken opening =
+                firstLeafText(
+                    leaves,
+                    typeIs(container, "specify_block")
+                        ? QStringLiteral("specify")
+                        : QStringLiteral("table"));
+            if (opening.start < 0)
+                return;
+            setOwnedLines(container,
+                          indent,
+                          nodeStart(container),
+                          opening.end);
+            formatChildrenBetween(container,
+                                  opening.end,
+                                  closing.start,
+                                  indent + m_indentWidth);
+            setLineLeading(closing, indent);
+            return;
+        }
+
+        const LeafToken headerSemicolon =
+            firstSemicolonBefore(leaves, closing.start);
+        if (headerSemicolon.start < 0) {
+            setLineLeading(leaves.first(), indent);
+            setLineLeading(closing, indent);
+            return;
+        }
+        setOwnedLines(container,
+                      indent,
+                      nodeStart(container),
+                      headerSemicolon.end);
+        formatChildrenBetween(container,
+                              headerSemicolon.end,
+                              closing.start,
+                              indent + m_indentWidth);
+        setLineLeading(closing, indent);
     }
 
     bool addEdit(int start, int end, const QString& replacement)
@@ -627,6 +1563,14 @@ private:
         if (start < 0 || end < start || end > m_source.size()) {
             m_valid = false;
             return false;
+        }
+        const int firstLine = sourceLineAt(start);
+        const int lastPosition =
+            end > start ? end - 1 : start;
+        const int lastLine = sourceLineAt(lastPosition);
+        for (int line = firstLine; line <= lastLine; ++line) {
+            if (lineIsConservative(line))
+                return true;
         }
         if (!allWhitespace(QStringView(m_source).mid(start, end - start))) {
             m_valid = false;
@@ -648,6 +1592,33 @@ private:
         }
         m_edits.append({start, end, replacement});
         return true;
+    }
+
+    bool lineIsConservative(int line) const
+    {
+        for (const LineRange& range : m_conservativeRanges) {
+            if (range.valid()
+                && line >= range.firstLine
+                && line <= range.lastLine) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    int sourceLineAt(int position) const
+    {
+        const int bounded =
+            qBound(0, position, static_cast<int>(m_source.size()));
+        const auto iterator =
+            std::upper_bound(m_lineStarts.cbegin(),
+                             m_lineStarts.cend(),
+                             bounded);
+        return std::max(
+            0,
+            static_cast<int>(
+                std::distance(m_lineStarts.cbegin(), iterator))
+                - 1);
     }
 
     void markConservative(TSNode node)
@@ -682,10 +1653,10 @@ private:
             if (typeIs(node, "ERROR"))
                 return;
         }
-        const uint32_t count = ts_node_named_child_count(node);
+        const uint32_t count = ts_node_child_count(node);
         for (uint32_t index = 0; index < count; ++index) {
             collectConservativeErrors(
-                ts_node_named_child(node, index));
+                ts_node_child(node, index));
         }
     }
 
@@ -1941,8 +2912,13 @@ private:
     const QString& m_source;
     int m_indentWidth = 4;
     TSDocument m_document;
+    QVector<int> m_lineStarts;
     QList<WhitespaceEdit> m_edits;
     QList<LineRange> m_conservativeRanges;
+    bool m_indentConditionalBranches = true;
+    bool m_indentCaseItemBodies = true;
+    bool m_alignCaseItems = true;
+    bool m_preservePreprocessorIndent = true;
     bool m_valid = true;
 };
 
@@ -2051,13 +3027,23 @@ QString normalizeLexicalWhitespaceTabs(const QString& text,
     return result;
 }
 
-QString formatDesignUnitIndentation(const QString& text,
-                                    int indentWidth)
+QString formatStructuralIndentation(
+    const QString& text,
+    int indentWidth,
+    bool indentConditionalBranches,
+    bool indentCaseItemBodies,
+    bool alignCaseItems,
+    bool preservePreprocessorIndent)
 {
     if (text.isEmpty())
         return text;
     TreeWhitespaceFormatter formatter(text, indentWidth);
-    const QString candidate = formatter.runDesignUnitIndentation();
+    const QString candidate =
+        formatter.runStructuralIndentation(
+            indentConditionalBranches,
+            indentCaseItemBodies,
+            alignCaseItems,
+            preservePreprocessorIndent);
     if (!hasIdenticalNonWhitespaceStream(text, candidate))
         return text;
     return candidate;
@@ -2106,6 +3092,22 @@ QList<LineRange> conservativeLineRanges(const QString& text,
     TreeWhitespaceFormatter formatter(text, indentWidth);
     formatter.run();
     QList<LineRange> ranges = formatter.conservativeRanges();
+    std::sort(ranges.begin(),
+              ranges.end(),
+              [](const LineRange& left, const LineRange& right) {
+        if (left.firstLine != right.firstLine)
+            return left.firstLine < right.firstLine;
+        return left.lastLine < right.lastLine;
+    });
+    return ranges;
+}
+
+QList<LineRange> syntaxErrorLineRanges(const QString& text)
+{
+    if (text.isEmpty())
+        return {};
+    TreeWhitespaceFormatter formatter(text, 4);
+    QList<LineRange> ranges = formatter.syntaxErrorRanges();
     std::sort(ranges.begin(),
               ranges.end(),
               [](const LineRange& left, const LineRange& right) {

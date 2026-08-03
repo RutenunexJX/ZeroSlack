@@ -84,17 +84,6 @@ InsightTheme buildTheme()
     theme.tab.border = color("#d8e1ec");
     theme.tab.borderSelected = color("#b9cff4");
 
-    theme.sideRail.background = theme.panelBackground;
-    theme.sideRail.border = color("#d8e1ec");
-    theme.sideRail.buttonBackground = QColor(0, 0, 0, 0);
-    theme.sideRail.buttonHoverBackground = color("#eef4ff");
-    theme.sideRail.buttonCheckedBackground = color("#e8f1ff");
-    theme.sideRail.buttonBorder = QColor(0, 0, 0, 0);
-    theme.sideRail.buttonHoverBorder = color("#dbeafe");
-    theme.sideRail.buttonCheckedBorder = color("#bfdbfe");
-    theme.sideRail.text = color("#475569");
-    theme.sideRail.textHover = color("#1d4ed8");
-    theme.sideRail.textChecked = color("#1d4ed8");
 
     theme.statusBar.background = theme.panelBackground;
     theme.statusBar.text = color("#334155");
@@ -483,45 +472,6 @@ QString InsightVisualStyle::tabBarStyleSheet(const QString& objectName)
              t.tab.borderSelected.name(),
              t.tab.tabBackgroundHover.name(),
              t.tab.textHover.name());
-}
-
-QString InsightVisualStyle::workspaceTabBarStyleSheet(
-    const QString& objectName)
-{
-    return tabBarStyleSheet(objectName);
-}
-
-QString InsightVisualStyle::sideRailStyleSheet(const QString& objectName)
-{
-    const InsightTheme t = theme();
-    return QStringLiteral(
-               "%1 { background: %2; border-right: 1px solid %3; }")
-        .arg(objectSelector(QStringLiteral("QWidget"), objectName),
-             t.sideRail.background.name(),
-             t.sideRail.border.name());
-}
-
-QString InsightVisualStyle::sideRailButtonStyleSheet(
-    const QString& objectName)
-{
-    const InsightTheme t = theme();
-    return QStringLiteral(
-               "%1 { background: %2; border: 1px solid %3; "
-               "border-radius: 6px; color: %4; padding: 3px 2px; "
-               "font-size: 10px; }"
-               "%1:hover { background: %5; border-color: %6; color: %7; }"
-               "%1:checked { background: %8; border-color: %9; "
-               "color: %10; font-weight: 600; }")
-        .arg(objectSelector(QStringLiteral("QToolButton"), objectName),
-             t.sideRail.buttonBackground.name(QColor::HexArgb),
-             t.sideRail.buttonBorder.name(QColor::HexArgb),
-             t.sideRail.text.name(),
-             t.sideRail.buttonHoverBackground.name(),
-             t.sideRail.buttonHoverBorder.name(),
-             t.sideRail.textHover.name(),
-             t.sideRail.buttonCheckedBackground.name(),
-             t.sideRail.buttonCheckedBorder.name(),
-             t.sideRail.textChecked.name());
 }
 
 QString InsightVisualStyle::packageToolsBarStyleSheet(

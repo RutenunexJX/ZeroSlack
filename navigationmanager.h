@@ -6,7 +6,9 @@
 #include <QByteArray>
 #include <QStringList>
 #include <QHash>
+#include <QList>
 #include <memory>
+#include "actionregistry.h"
 #include "hierarchyservice.h"
 #include "semanticanalysisrequest.h"
 #include "symbolpresentationservice.h"
@@ -15,8 +17,20 @@ class NavigationWidget;
 class NavigationService;
 class TabManager;
 class WorkspaceManager;
+class WorkspaceFileOperationService;
+struct WorkspaceFileOperationPlan;
 
-class NavigationManager : public QObject
+struct DesignHierarchyContextAction {
+    QString actionId;
+    QString label;
+    QString executionRoute;
+    bool enabled = false;
+    bool separatorBefore = false;
+};
+
+class NavigationManager :
+    public QObject,
+    public ActionExecutionHost
 {
     Q_OBJECT
 
@@ -34,6 +48,7 @@ public:
     void setNavigationService(NavigationService* service);
     void setActiveView(NavigationView view);
     void setSearchFilter(const QString &filter);
+    void setSearchFilter(NavigationView view, const QString& filter);
 
     // Manager connections
     void connectToTabManager(TabManager* tabManager);
@@ -51,10 +66,22 @@ public:
     void navigateToFile(const QString& filePath, int lineNumber = -1);
     void setDesignTop(const QString& moduleName);
     void clearDesignTop();
+    QString selectedDesignTopModule() const;
+    QList<DesignHierarchyContextAction>
+    designNodeContextActions(
+        const DesignHierarchyNode& node) const;
+    ActionExecutionResult requestDesignNodeAction(
+        const QString& actionId,
+        const DesignHierarchyNode& node);
 
     // Context operations
     void highlightCurrentFileInTree();
     void syncWithActiveEditor();
+    WorkspaceFileOperationService*
+    fileOperationServiceForTesting() const;
+    ActionExecutionResult executeActionRoute(
+        const ActionDescriptor& descriptor,
+        const ActionInvocation& invocation) override;
 
 signals:
     void navigationRequested(const QString& filePath, int lineNumber);
@@ -64,6 +91,13 @@ signals:
         const HierarchyInstanceContext& instanceContext);
     void dataRefreshed(NavigationView view);
     void navigationTelemetry(const SemanticAnalysisTelemetry& telemetry);
+    void workspaceFileOperationCompleted(
+        const QString& actionId,
+        const QString& path);
+    void workspaceFileOperationFailed(
+        const QString& actionId,
+        const QString& path,
+        const QString& failureReason);
 
 public slots:
     void onTabChanged(const QString& fileName);
@@ -74,6 +108,10 @@ public slots:
 private slots:
     void onFileTreeDoubleClicked(const QString& filePath);
     void onFileContextMenuRequested(const QString& filePath, const QPoint& globalPos);
+    void onFileTreeNodeContextMenuRequested(
+        const QString& path,
+        bool directory,
+        const QPoint& globalPos);
     void onDesignNodeContextMenuRequested(const DesignHierarchyNode& node,
                                           const QPoint& globalPos);
     void onDesignNodeDoubleClicked(const DesignHierarchyNode& node);
@@ -84,12 +122,14 @@ private:
     struct NavigationContext {
         QString currentFileName;
         QString currentWorkspacePath;
-        QString searchFilter;
+        QString fileSearchFilter;
+        QString designSearchFilter;
 
         void setCurrentFileName(const QString& fileName);
         void setCurrentWorkspacePath(const QString& workspacePath);
         void clearCurrentWorkspacePath();
-        void setSearchFilter(const QString& filter);
+        void setSearchFilter(NavigationView view, const QString& filter);
+        QString searchFilter(NavigationView view) const;
     };
 
     struct NavigationCaches {
@@ -127,6 +167,8 @@ private:
 
     TabManager* connectedTabManager = nullptr;
     WorkspaceManager* connectedWorkspaceManager = nullptr;
+    std::unique_ptr<WorkspaceFileOperationService>
+        fileOperationService;
 
     NavigationContext context;
     NavigationCaches caches;
@@ -140,7 +182,7 @@ private:
     bool updateDesignHierarchyData(bool force = false);
     bool shouldRefreshCache() const;
     QStringList getSystemVerilogFiles() const;
-    QStringList filterFiles(const QStringList& files, const QString& filter) const;
+    QStringList getFileHierarchyFiles() const;
     QString designHierarchyCacheKey() const;
     void saveDesignHierarchyCache();
     void restoreDesignHierarchyCache();
@@ -148,6 +190,14 @@ private:
     void navigateToDesignNodeFile(const QString& filePath,
                                   int lineNumber,
                                   const DesignHierarchyNode& node);
+    void executeFileTreeAction(
+        const QString& actionId,
+        const QString& path,
+        bool directory);
+    void refreshAfterFileOperation(
+        const WorkspaceFileOperationPlan& plan);
+    void updateFileCacheAfterOperation(
+        const WorkspaceFileOperationPlan& plan);
 };
 
 #endif // NAVIGATIONMANAGER_H

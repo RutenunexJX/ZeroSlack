@@ -180,6 +180,24 @@ QJsonArray relativePathArray(
     return array;
 }
 
+QJsonArray virtualSourceGroupsArray(
+    const QString& root,
+    const QList<WorkspaceVirtualSourceGroup>& groups)
+{
+    QJsonArray array;
+    for (const WorkspaceVirtualSourceGroup& group : groups) {
+        QJsonObject object;
+        object.insert(
+            QStringLiteral("name"),
+            group.name);
+        object.insert(
+            QStringLiteral("files"),
+            relativePathArray(root, group.files));
+        array.append(object);
+    }
+    return array;
+}
+
 QString resolveRelativePath(const QString& root,
                             const QString& stored)
 {
@@ -202,6 +220,62 @@ QStringList pathsFromPortableArray(
             paths.append(path);
     }
     return uniquePreservingOrder(paths);
+}
+
+QList<WorkspaceVirtualSourceGroup>
+virtualSourceGroupsFromArray(
+    const QString& root,
+    const QJsonArray& array)
+{
+    QList<WorkspaceVirtualSourceGroup> groups;
+    groups.reserve(array.size());
+    for (const QJsonValue& value : array) {
+        if (!value.isObject())
+            continue;
+        const QJsonObject object = value.toObject();
+        WorkspaceVirtualSourceGroup group;
+        group.name =
+            object.value(
+                QStringLiteral("name"))
+                .toString();
+        group.files =
+            pathsFromPortableArray(
+                root,
+                object.value(
+                    QStringLiteral("files"))
+                    .toArray());
+        groups.append(group);
+    }
+    return groups;
+}
+
+QList<WorkspaceVirtualSourceGroup>
+normalizeVirtualSourceGroups(
+    const QString& root,
+    const QList<WorkspaceVirtualSourceGroup>& groups)
+{
+    QList<WorkspaceVirtualSourceGroup> normalized;
+    QSet<QString> seenNames;
+    for (const WorkspaceVirtualSourceGroup& source : groups) {
+        WorkspaceVirtualSourceGroup group;
+        group.name = source.name.trimmed();
+        const QString nameKey =
+            group.name.toCaseFolded();
+        if (group.name.isEmpty()
+            || seenNames.contains(nameKey)) {
+            continue;
+        }
+        seenNames.insert(nameKey);
+
+        const QStringList files =
+            normalizePaths(source.files);
+        for (const QString& file : files) {
+            if (isInsideRoot(root, file))
+                group.files.append(file);
+        }
+        normalized.append(group);
+    }
+    return normalized;
 }
 
 QString resolveLegacyPath(
@@ -406,6 +480,13 @@ WorkspaceConfigurationService::loadWithResult(
                     QStringLiteral("topModule"))
                     .toString()
                     .trimmed();
+            configuration.virtualSourceGroups =
+                virtualSourceGroupsFromArray(
+                    configuration.workspaceRoot,
+                    object.value(
+                        QStringLiteral(
+                            "virtualSourceGroups"))
+                        .toArray());
             result.configuration =
                 normalized(configuration);
             result.loaded = true;
@@ -555,6 +636,11 @@ bool WorkspaceConfigurationService::save(
     object.insert(
         QStringLiteral("defines"),
         definesObject(clean.defines));
+    object.insert(
+        QStringLiteral("virtualSourceGroups"),
+        virtualSourceGroupsArray(
+            clean.workspaceRoot,
+            clean.virtualSourceGroups));
 
     QSaveFile file(filePath);
     if (!file.open(QIODevice::WriteOnly
@@ -603,6 +689,10 @@ WorkspaceConfigurationService::normalized(
         normalizeDefines(configuration.defines);
     clean.topModule =
         configuration.topModule.trimmed();
+    clean.virtualSourceGroups =
+        normalizeVirtualSourceGroups(
+            clean.workspaceRoot,
+            configuration.virtualSourceGroups);
     if (clean.includeDirs.isEmpty()
         && !clean.workspaceRoot.isEmpty()) {
         clean.includeDirs = {

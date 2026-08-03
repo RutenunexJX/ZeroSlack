@@ -1,6 +1,10 @@
 #ifndef RTLINSIGHTSPANELCOORDINATOR_H
 #define RTLINSIGHTSPANELCOORDINATOR_H
 
+#include "actionregistry.h"
+#include "graphexportservice.h"
+#include "rtlinsightlink.h"
+
 #include <QDockWidget>
 #include <QGraphicsView>
 #include <QRectF>
@@ -13,14 +17,16 @@
 #include <memory>
 
 class InsightGraphView;
+class QAction;
 class SemanticIndexSnapshot;
 class SignalUsageHotspotPanel;
 class RtlInsightsGraphController;
 class RtlInsightsPresenter;
 struct RtlInsightsPanelViewState;
+class QToolButton;
 class QWidget;
 
-class RtlInsightsPanelCoordinator
+class RtlInsightsPanelCoordinator : public ActionExecutionHost
 {
 public:
     explicit RtlInsightsPanelCoordinator(
@@ -32,6 +38,9 @@ public:
             const QString&,
             int,
             int)> handler);
+    void setSourceNavigationHandler(
+        std::function<bool(
+            const RtlInsightSourceLocation&)> handler);
     void setStatusMessageHandler(
         std::function<void(
             const QString&,
@@ -41,6 +50,10 @@ public:
         const QString& fileName,
         const QString& moduleName,
         const QString& signalName = QString());
+    bool syncSourceLocation(
+        const RtlInsightSourceLocation& location);
+    void setPinned(bool pinned);
+    bool isPinned() const;
     void showModuleInsights(
         const QString& fileName,
         const QString& moduleName,
@@ -80,6 +93,15 @@ public:
     QString focusSearchText() const;
     void focusInspector();
 
+    GraphExportResult exportCurrentGraph(
+        const QString& outputPath,
+        const GraphExportOptions& options = {}) const;
+    QAction* graphExportAction() const;
+    QAction* graphActionForTest(
+        const QString& actionId) const;
+    ActionExecutionResult triggerGraphActionForTest(
+        const QString& actionId);
+
     QDockWidget* dock() const;
     QTreeWidget* tree() const;
     QGraphicsView* graphView() const;
@@ -99,6 +121,7 @@ public:
         const QString& secondaryText = QString()) const;
     QRectF graphLastFitRectForTest() const;
     int graphSelectedItemCountForTest() const;
+    QStringList graphSelectedElementSummariesForTest() const;
     QStringList graphInspectorRowsForTest() const;
     QStringList graphTableRowsForTest() const;
     bool graphItemsReadableForTest() const;
@@ -119,8 +142,31 @@ public:
         const QString& elementKind,
         const QString& primaryText,
         const QString& secondaryText = QString());
+    quint64 graphBuildGenerationForTest() const;
+    QString graphModeForTest() const;
+    QString currentFileNameForTest() const;
+    QString currentModuleNameForTest() const;
+    QString currentSignalNameForTest() const;
+    QToolButton* pinButtonForTest() const;
 
 private:
+    QAction* createGraphAction(
+        QWidget* owner,
+        const QString& actionId);
+    void bindGraphActionButton(
+        class QPushButton* button,
+        QAction* action);
+    QAction* graphAction(
+        const QString& actionId) const;
+    void refreshGraphActionAvailability() const;
+    ActionExecutionResult requestGraphAction(
+        const QString& actionId);
+    ActionExecutionResult executeActionRoute(
+        const ActionDescriptor& descriptor,
+        const ActionInvocation& invocation) override;
+    bool hasExportableGraph() const;
+    void refreshGraphExportActionAvailability() const;
+
     std::unique_ptr<RtlInsightsPanelViewState>
         viewState;
     std::unique_ptr<RtlInsightsGraphController>

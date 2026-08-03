@@ -3,6 +3,7 @@
 
 #include <QFileInfo>
 #include <QString>
+#include <QtGlobal>
 
 struct RtlInsightCodeLink {
     QString fileName;
@@ -10,6 +11,30 @@ struct RtlInsightCodeLink {
     int column = 0;
     QString fileDisplayName;
     QString lineDisplayName;
+};
+
+// Stable hand-off between the editor and an already materialized insight
+// graph. A zero graphGeneration means "use the current graph"; a non-zero
+// value is checked so an asynchronous/stale source selection cannot select an
+// item from a newer graph.
+struct RtlInsightSourceLocation {
+    QString fileName;
+    int line = 0;
+    int column = 0;
+    QString moduleName;
+    QString symbolName;
+    QString workspacePath;
+    QString activeTopModule;
+    QString instancePath;
+    QString elementKind;
+    QString secondarySymbolName;
+    quint64 documentRevision = 0;
+    quint64 graphGeneration = 0;
+
+    bool hasSourcePosition() const
+    {
+        return !fileName.isEmpty() && line > 0;
+    }
 };
 
 namespace RtlInsightLink {

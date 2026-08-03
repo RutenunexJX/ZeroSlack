@@ -1,5 +1,6 @@
 #include "editorcolumnmodecontroller.h"
 
+#include "annotationlayer.h"
 #include "editormodecontroller.h"
 #include "mycodeeditor.h"
 
@@ -9,9 +10,6 @@
 #include <QKeyEvent>
 #include <QKeySequence>
 #include <QMouseEvent>
-#include <QPainter>
-#include <QPaintEvent>
-#include <QPalette>
 #include <QPointer>
 #include <QTextBlock>
 #include <QTextCursor>
@@ -24,6 +22,7 @@ struct EditorColumnModeController::State
 {
     EditorColumnModeController* owner = nullptr;
     EditorModeController* modes = nullptr;
+    AnnotationLayer* annotations = nullptr;
     bool columnSelectionDragging = false;
     bool columnSelectionAwaitingEndpoint = false;
     bool columnSelectionDragMoved = false;
@@ -34,14 +33,18 @@ struct EditorColumnModeController::State
     int virtualCursorLine = -1;
     int virtualCursorColumn = -1;
     int virtualCursorSavedWidth = 1;
+    quint64 presentationGeneration = 0;
 };
 
 namespace {
 constexpr int kManualIndentWidth = 4;
+constexpr const char* kColumnCaretAnnotationSource =
+    "column-carets";
 
 bool hasColumnSelection(const EditorColumnModeController::State& state)
 {
-    return state.modes->isActive(EditorModeId::ColumnSelection)
+    return state.modes
+        && state.modes->isActive(EditorModeId::ColumnSelection)
         && state.columnAnchorLine >= 0
         && state.columnCurrentLine >= 0
         && state.columnAnchorColumn >= 0
@@ -408,7 +411,9 @@ void replaceColumnSelectionRows(MyCodeEditor* editor,
 void clearColumnSelection(MyCodeEditor* editor, EditorColumnModeController::State& state)
 {
     const bool wasActive =
-        state.modes->isActive(EditorModeId::ColumnSelection);
+        state.modes
+        && state.modes->isActive(
+            EditorModeId::ColumnSelection);
     state.columnSelectionDragging = false;
     state.columnSelectionAwaitingEndpoint = false;
     state.columnSelectionDragMoved = false;
@@ -416,6 +421,8 @@ void clearColumnSelection(MyCodeEditor* editor, EditorColumnModeController::Stat
     state.columnAnchorColumn = -1;
     state.columnCurrentLine = -1;
     state.columnCurrentColumn = -1;
+    if (state.owner)
+        state.owner->publishVisibleAnnotations(editor);
     if (editor) {
         editor->viewport()->setCursor(Qt::IBeamCursor);
         editor->viewport()->update();
@@ -427,11 +434,13 @@ void clearColumnSelection(MyCodeEditor* editor, EditorColumnModeController::Stat
 }
 
 void updateColumnSelectionHighlight(MyCodeEditor* editor,
-                                    const EditorColumnModeController::State& state)
+                                     const EditorColumnModeController::State& state)
 {
     if (!editor)
         return;
 
+    if (state.owner)
+        state.owner->publishVisibleAnnotations(editor);
     editor->viewport()->update();
 }
 
@@ -504,7 +513,8 @@ bool handlePlainVirtualCursorClick(
 {
     if (!editor || !event
         || event->button() != Qt::LeftButton
-        || event->modifiers() != Qt::NoModifier) {
+        || (event->modifiers() != Qt::NoModifier
+            && event->modifiers() != Qt::AltModifier)) {
         return false;
     }
 
@@ -551,8 +561,10 @@ bool handlePlainVirtualCursorClick(
         QStringLiteral("Virtual column %1")
             .arg(column + 1),
         QStringLiteral(
-            "Type to materialize; arrows move; Esc cancels"));
+             "Type to materialize; arrows move; Esc cancels"));
     editor->setCursorWidth(0);
+    if (state.owner)
+        state.owner->publishVisibleAnnotations(editor);
     editor->viewport()->update();
     event->accept();
     return true;
@@ -924,178 +936,6 @@ bool handleColumnSelectionNavigation(MyCodeEditor* editor,
     return true;
 }
 
-int xForVisualColumn(MyCodeEditor* editor,
-                     const QTextBlock& block,
-                     int visualColumn)
-{
-    if (!editor || !block.isValid())
-        return 0;
-
-    QTextCursor cursor(block);
-    cursor.setPosition(block.position());
-    const QRect rect = editor->cursorRect(cursor);
-    return qRound(
-        rect.left()
-        + qMax(0, visualColumn)
-              * editorSpaceAdvance(editor));
-}
-
-void paintColumnSelectionOverlay(MyCodeEditor* editor,
-                                 const EditorColumnModeController::State& state,
-                                 QPaintEvent* event)
-{
-    if (!editor || !event)
-        return;
-
-    const bool columnMode = hasColumnSelection(state);
-    if (!columnMode
-        && !state.modes->isActive(EditorModeId::VirtualCursor)) {
-        return;
-    }
-
-    int firstLine = state.virtualCursorLine;
-    int lastLine = state.virtualCursorLine;
-    int targetColumn = state.virtualCursorColumn;
-    int activeLine = state.virtualCursorLine;
-    if (columnMode) {
-        const auto lines = lineSpan(state);
-        firstLine = lines.first;
-        lastLine = lines.second;
-        targetColumn = state.columnCurrentColumn;
-        activeLine = state.columnCurrentLine;
-    }
-
-    const QTextCursor visibleTop =
-        editor->cursorForPosition(
-            QPoint(0, qMax(0, event->rect().top())));
-    const QTextCursor visibleBottom =
-        editor->cursorForPosition(
-            QPoint(0,
-                   qMin(editor->viewport()->height() - 1,
-                        event->rect().bottom())));
-    firstLine = qMax(
-        firstLine,
-        visibleTop.block().isValid()
-            ? visibleTop.block().blockNumber()
-            : firstLine);
-    lastLine = qMin(
-        lastLine,
-        visibleBottom.block().isValid()
-            ? visibleBottom.block().blockNumber()
-            : lastLine);
-    if (firstLine > lastLine)
-        return;
-
-    int selectionLeft = targetColumn;
-    int selectionRight = targetColumn;
-    if (columnMode) {
-        const auto columns = columnSpan(state);
-        selectionLeft = columns.first;
-        selectionRight = columns.second;
-    }
-
-    QPainter painter(editor->viewport());
-    painter.setRenderHint(QPainter::Antialiasing, false);
-    const QColor accent =
-        editor->palette().color(QPalette::Highlight);
-
-    for (int line = firstLine; line <= lastLine; ++line) {
-        const QTextBlock block = editor->document()->findBlockByNumber(line);
-        if (!block.isValid() || !block.isVisible())
-            continue;
-
-        QTextCursor endCursor(block);
-        endCursor.setPosition(
-            block.position() + block.text().size());
-        const QRect endRect =
-            editor->cursorRect(endCursor);
-        const int lineEndColumn =
-            layoutVisualColumnForOffset(
-                editor, block, block.text().size());
-        const int targetX =
-            xForVisualColumn(editor, block, targetColumn);
-        const int selectionLeftX =
-            xForVisualColumn(
-                editor, block, selectionLeft);
-        const int selectionRightX =
-            xForVisualColumn(
-                editor, block, selectionRight);
-        const int affectedLeft =
-            std::min({endRect.left(),
-                      targetX,
-                      selectionLeftX});
-        const int affectedRight =
-            std::max({endRect.left(),
-                      targetX,
-                      selectionRightX});
-        const QRect affected(
-            affectedLeft - 3,
-            endRect.top(),
-            affectedRight - affectedLeft + 7,
-            endRect.height());
-        if (!event->rect().intersects(affected))
-            continue;
-
-        if (columnMode
-            && selectionRight > selectionLeft) {
-            const int actualRight =
-                qMin(selectionRight, lineEndColumn);
-            if (actualRight > selectionLeft) {
-                QColor selected = accent;
-                selected.setAlpha(
-                    line == activeLine ? 86 : 68);
-                const int actualRightX =
-                    xForVisualColumn(
-                        editor, block, actualRight);
-                painter.fillRect(
-                    QRect(selectionLeftX,
-                          endRect.top() + 1,
-                          qMax(1,
-                               actualRightX
-                                   - selectionLeftX),
-                          qMax(1,
-                               endRect.height() - 2)),
-                    selected);
-            }
-        }
-
-        const int virtualEndColumn =
-            columnMode ? selectionRight : targetColumn;
-        const int virtualEndX =
-            xForVisualColumn(
-                editor, block, virtualEndColumn);
-        if (virtualEndColumn > lineEndColumn) {
-            QColor fill = accent;
-            fill.setAlpha(line == activeLine ? 40 : 24);
-            painter.fillRect(
-                QRect(endRect.left(),
-                      endRect.top() + 2,
-                      virtualEndX - endRect.left(),
-                      qMax(1, endRect.height() - 4)),
-                fill);
-            QColor guide = accent;
-            guide.setAlpha(line == activeLine ? 95 : 54);
-            QPen guidePen(guide);
-            guidePen.setStyle(Qt::DotLine);
-            guidePen.setWidth(1);
-            painter.setPen(guidePen);
-            painter.drawLine(endRect.left(),
-                             endRect.bottom() - 2,
-                             virtualEndX,
-                             endRect.bottom() - 2);
-        }
-
-        QColor caret = accent;
-        caret.setAlpha(line == activeLine ? 230 : 115);
-        QPen caretPen(caret);
-        caretPen.setWidth(line == activeLine ? 2 : 1);
-        painter.setPen(caretPen);
-        painter.drawLine(targetX,
-                         endRect.top() + 1,
-                         targetX,
-                         endRect.bottom() - 1);
-    }
-}
 }
 
 
@@ -1110,9 +950,11 @@ EditorColumnModeController::~EditorColumnModeController() =
 
 void EditorColumnModeController::bind(
     EditorModeController* modes,
+    AnnotationLayer* annotations,
     MyCodeEditor* editor)
 {
     state->modes = modes;
+    state->annotations = annotations;
     if (!modes)
         return;
 
@@ -1135,6 +977,7 @@ void EditorColumnModeController::shutdown(
     clearSelection(editor);
     clearVirtualCursor(editor);
     state->modes = nullptr;
+    state->annotations = nullptr;
 }
 
 bool EditorColumnModeController::selectionActive() const
@@ -1201,6 +1044,164 @@ bool EditorColumnModeController::applyRows(
     if (message)
         message->clear();
     return true;
+}
+
+void EditorColumnModeController::publishVisibleAnnotations(
+    MyCodeEditor* editor,
+    int firstVisibleLine,
+    int lastVisibleLine)
+{
+    if (!state->annotations)
+        return;
+
+    const bool columnMode = hasColumnSelection(*state);
+    const bool virtualMode =
+        state->modes
+        && state->modes->isActive(
+            EditorModeId::VirtualCursor)
+        && state->virtualCursorLine >= 0
+        && state->virtualCursorColumn >= 0;
+    if (!editor
+        || !editor->document()
+        || (!columnMode && !virtualMode)) {
+        state->annotations->removeSource(
+            QString::fromLatin1(
+                kColumnCaretAnnotationSource));
+        return;
+    }
+
+    const int finalDocumentLine =
+        qMax(0, editor->blockCount() - 1);
+    int visibleFirst = firstVisibleLine;
+    int visibleLast = lastVisibleLine;
+    if (visibleFirst < 0 || visibleLast < visibleFirst) {
+        const QTextBlock first =
+            editor->cursorForPosition(QPoint(0, 0)).block();
+        QTextBlock last =
+            editor->cursorForPosition(
+                QPoint(
+                    0,
+                    qMax(
+                        0,
+                        editor->viewport()->height() - 1)))
+                .block();
+        if (!first.isValid()) {
+            state->annotations->removeSource(
+                QString::fromLatin1(
+                    kColumnCaretAnnotationSource));
+            return;
+        }
+        if (!last.isValid()
+            || last.blockNumber()
+                   < first.blockNumber()) {
+            last = first;
+        }
+        visibleFirst = first.blockNumber();
+        visibleLast = last.blockNumber();
+    }
+    visibleFirst =
+        qBound(0, visibleFirst, finalDocumentLine);
+    visibleLast =
+        qBound(visibleFirst,
+               visibleLast,
+               finalDocumentLine);
+
+    int firstLine = state->virtualCursorLine;
+    int lastLine = state->virtualCursorLine;
+    int targetColumn = state->virtualCursorColumn;
+    int activeLine = state->virtualCursorLine;
+    int selectionLeft = targetColumn;
+    int selectionRight = targetColumn;
+    if (columnMode) {
+        const auto lines = lineSpan(*state);
+        firstLine = lines.first;
+        lastLine = lines.second;
+        targetColumn = state->columnCurrentColumn;
+        activeLine = state->columnCurrentLine;
+        const auto columns = columnSpan(*state);
+        selectionLeft = columns.first;
+        selectionRight = columns.second;
+    }
+
+    firstLine = qMax(firstLine, visibleFirst);
+    lastLine = qMin(lastLine, visibleLast);
+    if (firstLine > lastLine) {
+        state->annotations->removeSource(
+            QString::fromLatin1(
+                kColumnCaretAnnotationSource));
+        return;
+    }
+
+    ++state->presentationGeneration;
+    QList<EditorAnnotation> annotations;
+    annotations.reserve(lastLine - firstLine + 1);
+    for (int line = firstLine;
+         line <= lastLine;
+         ++line) {
+        const QTextBlock block =
+            editor->document()->findBlockByNumber(line);
+        if (!block.isValid() || !block.isVisible())
+            continue;
+
+        const int lineEndColumn =
+            layoutVisualColumnForOffset(
+                editor,
+                block,
+                block.text().size());
+        const int rangeStartOffset =
+            layoutOffsetForVisualColumn(
+                editor,
+                block,
+                qMin(selectionLeft, lineEndColumn),
+                VisualBoundary::Start);
+        const int rangeEndOffset =
+            layoutOffsetForVisualColumn(
+                editor,
+                block,
+                qMin(selectionRight, lineEndColumn),
+                VisualBoundary::End);
+
+        EditorAnnotation annotation;
+        annotation.kind =
+            EditorAnnotationKind::ColumnCaret;
+        annotation.placement =
+            EditorAnnotationPlacement::Overlay;
+        annotation.range.startPosition =
+            block.position() + rangeStartOffset;
+        annotation.range.endPosition =
+            block.position()
+            + qMax(rangeStartOffset,
+                   rangeEndOffset);
+        annotation.range.firstLine = line;
+        annotation.range.lastLine = line;
+        annotation.semanticKey =
+            QStringLiteral("column-caret:%1")
+                .arg(line);
+        annotation.priority =
+            AnnotationLayer::defaultPriority(
+                annotation.kind)
+            + (line == activeLine ? 5 : 0);
+        annotation.sourceGeneration =
+            state->presentationGeneration;
+        annotation.visualColumn = targetColumn;
+        annotation.visualRangeStartColumn =
+            selectionLeft;
+        annotation.visualRangeEndColumn =
+            selectionRight;
+        annotation.active = line == activeLine;
+        annotations.append(std::move(annotation));
+    }
+
+    if (annotations.isEmpty()) {
+        state->annotations->removeSource(
+            QString::fromLatin1(
+                kColumnCaretAnnotationSource));
+    } else {
+        state->annotations->setSourceAnnotations(
+            QString::fromLatin1(
+                kColumnCaretAnnotationSource),
+            annotations);
+    }
 }
 
 void EditorColumnModeController::clearSelection(
@@ -1291,6 +1292,7 @@ void EditorColumnModeController::clearVirtualCursor(
         || state->virtualCursorColumn >= 0;
     state->virtualCursorLine = -1;
     state->virtualCursorColumn = -1;
+    publishVisibleAnnotations(editor);
     if (editor && hadVirtualState) {
         editor->setCursorWidth(
             qMax(1, state->virtualCursorSavedWidth));
@@ -1418,8 +1420,9 @@ bool EditorColumnModeController::
                     state->virtualCursorColumn
                     + 1),
             QStringLiteral(
-                "Type to materialize; arrows move; Esc cancels"));
+                 "Type to materialize; arrows move; Esc cancels"));
         editor->setCursorWidth(0);
+        publishVisibleAnnotations(editor);
         editor->viewport()->update();
         event->accept();
         return true;
@@ -1454,7 +1457,8 @@ bool EditorColumnModeController::
                         state->virtualCursorColumn
                         + 1),
                 QStringLiteral(
-                    "Type to materialize; arrows move; Esc cancels"));
+                     "Type to materialize; arrows move; Esc cancels"));
+            publishVisibleAnnotations(editor);
             editor->viewport()->update();
         }
         event->accept();
@@ -1470,7 +1474,8 @@ bool EditorColumnModeController::
                     state->virtualCursorColumn
                     + 1),
             QStringLiteral(
-                "Type to materialize; arrows move; Esc cancels"));
+                 "Type to materialize; arrows move; Esc cancels"));
+        publishVisibleAnnotations(editor);
         editor->viewport()->update();
         event->accept();
         return true;
@@ -1517,14 +1522,4 @@ bool EditorColumnModeController::
 
     clearVirtualCursor(editor);
     return false;
-}
-
-void EditorColumnModeController::paint(
-    MyCodeEditor* editor,
-    QPaintEvent* event) const
-{
-    paintColumnSelectionOverlay(
-        editor,
-        *state,
-        event);
 }
