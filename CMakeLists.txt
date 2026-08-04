@@ -907,7 +907,7 @@ if(BUILD_TESTING)
             "$<$<COMPILE_LANGUAGE:CXX>:-iquote${CMAKE_CURRENT_SOURCE_DIR}>")
     endif()
     target_link_libraries(source_structural_navigation_test
-        PRIVATE Qt6::Core)
+        PRIVATE Qt6::Core slang::slang)
 
     add_executable(editor_source_navigation_test
         test_sv/editor_source_navigation_test.cpp)

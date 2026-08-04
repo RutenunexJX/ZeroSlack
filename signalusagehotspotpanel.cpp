@@ -2599,11 +2599,15 @@ bool SignalUsageHotspotPanel::setTrackZoom(double zoomFactor)
 {
     if (!trackView)
         return false;
-    trackZoomFactor = std::clamp(zoomFactor, kMinTrackZoom, kMaxTrackZoom);
+    const double targetZoom =
+        std::clamp(zoomFactor, kMinTrackZoom, kMaxTrackZoom);
     trackView->resetView();
-    trackView->zoomBy(trackZoomFactor);
+    trackView->zoomBy(targetZoom);
+    trackZoomFactor = std::clamp(trackView->currentZoom(),
+                                 kMinTrackZoom,
+                                 kMaxTrackZoom);
     saveLayout();
-    return true;
+    return qAbs(trackZoomFactor - targetZoom) <= 0.000001;
 }
 
 bool SignalUsageHotspotPanel::zoomTrack(double factor)

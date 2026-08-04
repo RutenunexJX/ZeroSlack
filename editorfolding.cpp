@@ -259,6 +259,23 @@ bool EditorFoldingController::applyDocumentChange(
     if (!editor || !document)
         return false;
 
+    // Inline candidate text is a transient, single-line non-language
+    // overlay. Its edited Tree-sitter snapshot remains positional only until
+    // the session ends, so existing fold facts are authoritative during the
+    // overlay. Re-querying that intentionally unparsed tree can select the
+    // root node and turn a local keystroke into a full-tree traversal.
+    if (document->hasDeferredSyntaxEdits()
+        && change.lineDelta == 0) {
+        QList<TSCustomFoldMarker> remappedMarkers;
+        remappedMarkers.reserve(customMarkers.size());
+        for (TSCustomFoldMarker marker : std::as_const(customMarkers)) {
+            if (remapCustomMarker(&marker, change))
+                remappedMarkers.append(marker);
+        }
+        customMarkers = remappedMarkers;
+        return false;
+    }
+
     const bool hadCollapsedRanges = !collapsedStartLines.isEmpty();
     int replacementFirstLine = qMin(change.startLine, change.newEndLine);
     int replacementLastLine = qMax(change.startLine, change.newEndLine);

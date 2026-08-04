@@ -18,10 +18,25 @@
 #include <QTimer>
 
 #include <atomic>
+#include <cstdio>
 #include <functional>
 #include <memory>
 
 namespace {
+void stderrQtMessageHandler(QtMsgType type,
+                            const QMessageLogContext&,
+                            const QString& message)
+{
+    const char* level = "INFO";
+    if (type == QtWarningMsg)
+        level = "WARN";
+    else if (type == QtCriticalMsg || type == QtFatalMsg)
+        level = "ERROR";
+    const QByteArray encoded = message.toLocal8Bit();
+    std::fprintf(stderr, "[%s] %s\n", level, encoded.constData());
+    std::fflush(stderr);
+}
+
 bool waitUntil(const std::function<bool()>& predicate, int timeoutMs)
 {
     QElapsedTimer timer;
@@ -462,6 +477,7 @@ bool verifyReportBuildIsAsyncAndLatestWins()
 
 int main(int argc, char** argv)
 {
+    qInstallMessageHandler(stderrQtMessageHandler);
     QApplication app(argc, argv);
     resetApplicationActionExecutionHistory();
     if (!verifyReportBuildIsAsyncAndLatestWins()) {

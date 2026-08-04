@@ -8,6 +8,8 @@
 #include <QElapsedTimer>
 #include <QSet>
 
+#include <slang/parsing/LexerFacts.h>
+
 extern "C" TSLanguage *tree_sitter_systemverilog();
 
 namespace {
@@ -440,6 +442,8 @@ void TSDocument::setText(const QString& text)
 {
     m_text.setText(text);
     reparse(nullptr);
+    m_hasPendingEdits = false;
+    m_hasDeferredSyntaxEdits = false;
 }
 
 namespace {
@@ -457,14 +461,119 @@ TSPoint endPointForText(int startLine,
     point.column = static_cast<uint32_t>(qMax(0, column)) * 2u;
     return point;
 }
+
+bool isSimpleIdentifierText(const QString& text)
+{
+    if (text.isEmpty()
+        || (!text.at(0).isLetter()
+            && text.at(0) != QLatin1Char('_'))) {
+        return false;
+    }
+    for (int index = 1; index < text.size(); ++index) {
+        const QChar character = text.at(index);
+        if (!character.isLetterOrNumber()
+            && character != QLatin1Char('_')
+            && character != QLatin1Char('$')) {
+            return false;
+        }
+    }
+
+    static const QSet<QString> reservedKeywords = [] {
+        QSet<QString> keywords;
+        const auto* keywordTable =
+            slang::parsing::LexerFacts::getKeywordTable(
+                slang::parsing::KeywordVersion::v1800_2023);
+        keywords.reserve(
+            static_cast<qsizetype>(keywordTable->size()));
+        for (const auto& entry : *keywordTable) {
+            keywords.insert(QString::fromLatin1(
+                entry.first.data(),
+                static_cast<qsizetype>(entry.first.size())));
+        }
+        return keywords;
+    }();
+    return !reservedKeywords.contains(text);
+}
+
+bool preservesSimpleIdentifierStructure(
+    const TSTree* tree,
+    const TSUTF16Text& text,
+    const DocumentChange& change)
+{
+    if (!tree || !change.changesText()
+        || change.removedText.contains(QLatin1Char('\n'))
+        || change.insertedText.contains(QLatin1Char('\n'))
+        || change.position < 0
+        || change.oldEnd() > text.size()) {
+        return false;
+    }
+
+    const int probe = change.oldEnd() > change.position
+        ? change.oldEnd() - 1
+        : change.position - 1;
+    if (probe < 0 || probe >= text.size())
+        return false;
+
+    const uint32_t probeByte = static_cast<uint32_t>(probe) * 2u;
+    TSNode node = ts_node_named_descendant_for_byte_range(
+        ts_tree_root_node(tree), probeByte, probeByte);
+    while (!ts_node_is_null(node)
+           && std::strcmp(ts_node_type(node),
+                          "simple_identifier") != 0) {
+        node = ts_node_parent(node);
+    }
+    if (ts_node_is_null(node))
+        return false;
+
+    const int nodeStart = static_cast<int>(
+        ts_node_start_byte(node) / 2u);
+    const int nodeEnd = static_cast<int>(
+        ts_node_end_byte(node) / 2u);
+    if (change.position < nodeStart
+        || change.oldEnd() != nodeEnd) {
+        return false;
+    }
+
+    const QString oldIdentifier = text.mid(
+        nodeStart, nodeEnd - nodeStart);
+    if (!isSimpleIdentifierText(oldIdentifier)
+        || oldIdentifier.mid(change.position - nodeStart,
+                             change.removedLength)
+               != change.removedText) {
+        return false;
+    }
+    QString newIdentifier = oldIdentifier;
+    newIdentifier.replace(change.position - nodeStart,
+                          change.removedLength,
+                          change.insertedText);
+    return isSimpleIdentifierText(newIdentifier);
+}
+
+QList<TSChangedRange> localChangedRanges(
+    const DocumentChange& change)
+{
+    if (!change.changesText())
+        return {};
+    TSChangedRange range;
+    range.startChar = change.position;
+    range.endChar = change.newEnd();
+    range.startLine = change.startLine;
+    range.endLine = qMax(change.startLine, change.newEndLine);
+    return {range};
+}
 } // namespace
 
-QList<TSChangedRange> TSDocument::applyEdit(const DocumentChange& change)
+QList<TSChangedRange> TSDocument::applyEdit(
+    const DocumentChange& change,
+    bool deferSyntaxReparse)
 {
-    QList<TSChangedRange> changedRanges;
     const int position = qBound(0, change.position, m_text.size());
     const int removedLength = qBound(
         0, change.removedLength, m_text.size() - position);
+    const bool structurePreserving =
+        !deferSyntaxReparse
+        && preservesSimpleIdentifierStructure(
+            m_tree, m_text, change);
 
     TSInputEdit edit{};
     edit.start_byte = static_cast<uint32_t>(position) * 2u;
@@ -494,6 +603,23 @@ QList<TSChangedRange> TSDocument::applyEdit(const DocumentChange& change)
         static_cast<std::uint64_t>(
             phaseTimer.nsecsElapsed());
 
+    phaseTimer.restart();
+    QList<TSChangedRange> changedRanges =
+        localChangedRanges(change);
+    m_text.m_metrics.changedRangeNanoseconds +=
+        static_cast<std::uint64_t>(
+            phaseTimer.nsecsElapsed());
+    if (deferSyntaxReparse || structurePreserving) {
+        m_hasPendingEdits = true;
+        if (deferSyntaxReparse) {
+            m_hasDeferredSyntaxEdits = true;
+            ++m_text.m_metrics.deferredSyntaxEditCount;
+        } else {
+            ++m_text.m_metrics.structurePreservingEditCount;
+        }
+        return changedRanges;
+    }
+
     const TSInput input{
         &m_text,
         readTSUTF16Text,
@@ -503,22 +629,28 @@ QList<TSChangedRange> TSDocument::applyEdit(const DocumentChange& change)
     phaseTimer.restart();
     TSTree* newTree =
         ts_parser_parse(m_parser, m_tree, input);
+    ++m_text.m_metrics.syntaxParseCount;
     m_text.m_metrics.parseNanoseconds +=
         static_cast<std::uint64_t>(
             phaseTimer.nsecsElapsed());
 
     phaseTimer.restart();
     if (m_tree && newTree) {
+        changedRanges.clear();
         uint32_t rangeCount = 0;
         TSRange* ranges = ts_tree_get_changed_ranges(
             m_tree, newTree, &rangeCount);
         changedRanges.reserve(static_cast<int>(rangeCount));
         for (uint32_t index = 0; index < rangeCount; ++index) {
             TSChangedRange range;
-            range.startChar = static_cast<int>(ranges[index].start_byte / 2u);
-            range.endChar = static_cast<int>(ranges[index].end_byte / 2u);
-            range.startLine = static_cast<int>(ranges[index].start_point.row);
-            range.endLine = static_cast<int>(ranges[index].end_point.row);
+            range.startChar = static_cast<int>(
+                ranges[index].start_byte / 2u);
+            range.endChar = static_cast<int>(
+                ranges[index].end_byte / 2u);
+            range.startLine = static_cast<int>(
+                ranges[index].start_point.row);
+            range.endLine = static_cast<int>(
+                ranges[index].end_point.row);
             changedRanges.append(range);
         }
         std::free(ranges);
@@ -528,13 +660,48 @@ QList<TSChangedRange> TSDocument::applyEdit(const DocumentChange& change)
             phaseTimer.nsecsElapsed());
 
     phaseTimer.restart();
-    if (m_tree)
+    if (m_tree && newTree)
         ts_tree_delete(m_tree);
     m_text.m_metrics.treeDeleteNanoseconds +=
         static_cast<std::uint64_t>(
             phaseTimer.nsecsElapsed());
-    m_tree = newTree;
+    if (newTree) {
+        m_tree = newTree;
+        m_hasPendingEdits = false;
+        m_hasDeferredSyntaxEdits = false;
+    } else {
+        m_hasPendingEdits = true;
+    }
     return changedRanges;
+}
+
+void TSDocument::flushPendingEdits()
+{
+    if (!m_hasPendingEdits || !m_tree)
+        return;
+    const TSInput input{
+        &m_text,
+        readTSUTF16Text,
+        TSInputEncodingUTF16LE,
+        nullptr
+    };
+    QElapsedTimer timer;
+    timer.start();
+    TSTree* newTree = ts_parser_parse(m_parser, m_tree, input);
+    ++m_text.m_metrics.syntaxParseCount;
+    ++m_text.m_metrics.deferredSyntaxFlushCount;
+    m_text.m_metrics.parseNanoseconds +=
+        static_cast<std::uint64_t>(timer.nsecsElapsed());
+    if (!newTree)
+        return;
+
+    timer.restart();
+    ts_tree_delete(m_tree);
+    m_text.m_metrics.treeDeleteNanoseconds +=
+        static_cast<std::uint64_t>(timer.nsecsElapsed());
+    m_tree = newTree;
+    m_hasPendingEdits = false;
+    m_hasDeferredSyntaxEdits = false;
 }
 
 TSNode TSDocument::rootNode() const
@@ -3689,7 +3856,16 @@ TSNode lastLeafEndingAtOrBefore(TSNode node, int charOffset)
         return nodeEndChar(node) <= charOffset
             ? node : TSNode{};
     }
-    for (uint32_t reverse = childCount; reverse > 0; --reverse) {
+    uint32_t low = 0;
+    uint32_t high = childCount;
+    while (low < high) {
+        const uint32_t middle = low + (high - low) / 2;
+        if (nodeStartChar(ts_node_child(node, middle)) < charOffset)
+            low = middle + 1;
+        else
+            high = middle;
+    }
+    for (uint32_t reverse = low; reverse > 0; --reverse) {
         const TSNode child = ts_node_child(node, reverse - 1);
         if (nodeStartChar(child) >= charOffset)
             continue;
@@ -3714,14 +3890,22 @@ TSNode leafContainingChar(TSNode root, int charOffset)
         ts_node_descendant_for_byte_range(root, byte, byte);
     while (!ts_node_is_null(node)
            && ts_node_child_count(node) > 0) {
-        TSNode containing{};
         const uint32_t count = ts_node_child_count(node);
-        for (uint32_t index = 0; index < count; ++index) {
-            const TSNode child = ts_node_child(node, index);
-            if (charOffset >= nodeStartChar(child)
-                && charOffset < nodeEndChar(child)) {
-                containing = child;
-                break;
+        uint32_t low = 0;
+        uint32_t high = count;
+        while (low < high) {
+            const uint32_t middle = low + (high - low) / 2;
+            if (nodeEndChar(ts_node_child(node, middle)) <= charOffset)
+                low = middle + 1;
+            else
+                high = middle;
+        }
+        TSNode containing{};
+        if (low < count) {
+            const TSNode candidate = ts_node_child(node, low);
+            if (charOffset >= nodeStartChar(candidate)
+                && charOffset < nodeEndChar(candidate)) {
+                containing = candidate;
             }
         }
         if (ts_node_is_null(containing))
@@ -3952,8 +4136,25 @@ TSKeywordCompletionTarget TSDocument::uniqueKeywordCompletionAt(
     TSKeywordCompletionTarget target;
     const int boundedCursor =
         qBound(0, cursorChar, m_text.size());
-    if (boundedCursor <= 0
-        || minimumPrefixLength < 1
+    if (boundedCursor <= 0 || minimumPrefixLength < 1)
+        return target;
+
+    int lexicalStart = boundedCursor;
+    while (lexicalStart > 0) {
+        const QChar value = m_text.at(lexicalStart - 1);
+        if (!value.isLetterOrNumber()
+            && value != QLatin1Char('_')
+            && value != QLatin1Char('$')) {
+            break;
+        }
+        --lexicalStart;
+    }
+    const int lexicalLength = boundedCursor - lexicalStart;
+    if (lexicalLength < minimumPrefixLength
+        || !m_text.at(lexicalStart).isLetter()
+        || (lexicalStart > 0
+            && m_text.at(lexicalStart - 1)
+                   == QLatin1Char('\\'))
         || isCommentAt(boundedCursor - 1)) {
         return target;
     }
@@ -3986,6 +4187,7 @@ TSKeywordCompletionTarget TSDocument::uniqueKeywordCompletionAt(
             boundedCursor - 1);
     }
     if (prefixTarget.text.size() < minimumPrefixLength
+        || !prefixTarget.text.at(0).isLetter()
         || prefixTarget.text.startsWith(QLatin1Char('\\'))) {
         return target;
     }
@@ -4060,6 +4262,35 @@ TSKeywordPairTarget TSDocument::matchingKeywordPairAt(
     TSKeywordPairTarget target;
     if (m_text.isEmpty())
         return target;
+
+    int probe = qBound(0, cursorChar, m_text.size());
+    if (probe == m_text.size()
+        || !m_text.at(probe).isLetter()) {
+        --probe;
+    }
+    if (probe < 0 || !m_text.at(probe).isLetter())
+        return target;
+    int localStart = probe;
+    while (localStart > 0
+           && m_text.at(localStart - 1).isLetter()) {
+        --localStart;
+    }
+    int localEnd = probe + 1;
+    while (localEnd < m_text.size()
+           && m_text.at(localEnd).isLetter()) {
+        ++localEnd;
+    }
+    const QString localWord =
+        m_text.mid(localStart, localEnd - localStart);
+    if (localWord != QStringLiteral("begin")
+        && localWord != QStringLiteral("end")
+        && localWord != QStringLiteral("case")
+        && localWord != QStringLiteral("casez")
+        && localWord != QStringLiteral("casex")
+        && localWord != QStringLiteral("randcase")
+        && localWord != QStringLiteral("endcase")) {
+        return target;
+    }
     const TSNode root = ts_tree_root_node(m_tree);
     const auto keywordLeafAt =
         [this, root](int probe) {

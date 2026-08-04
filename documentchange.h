@@ -52,6 +52,10 @@ struct EditorHotPathMetrics {
     std::uint64_t inlineFilterOverlayEdits = 0;
     std::uint64_t inlineFilterOverlayMaterializations = 0;
     std::uint64_t inlineFilterOverlayForcedTextReads = 0;
+    std::uint64_t inlineFilterServiceQueryNanoseconds = 0;
+    std::uint64_t inlineFilterModelUpdateNanoseconds = 0;
+    std::uint64_t inlineFilterDocumentEditNanoseconds = 0;
+    std::uint64_t inlineFilterRefreshNanoseconds = 0;
     std::uint64_t visiblePresentationRefreshes = 0;
     std::uint64_t semanticDecorationCandidatesExamined = 0;
     std::uint64_t semanticDecorationSelectionsBuilt = 0;
@@ -67,6 +71,16 @@ struct EditorHotPathMetrics {
     std::uint64_t documentChangePresentationNanoseconds = 0;
     std::uint64_t documentChangeDerivedStateNanoseconds = 0;
     std::uint64_t documentChangeDispatchNanoseconds = 0;
+    std::uint64_t editorInputFinishNanoseconds = 0;
+    std::uint64_t editorInputNavigationNanoseconds = 0;
+    std::uint64_t editorInputTemplateNanoseconds = 0;
+    std::uint64_t editorInputDerivedStateNanoseconds = 0;
+    std::uint64_t editorDerivedKeywordGhostNanoseconds = 0;
+    std::uint64_t editorDerivedKeywordPairNanoseconds = 0;
+    std::uint64_t editorDerivedPackageToolNanoseconds = 0;
+    std::uint64_t editorDerivedWaveScopeNanoseconds = 0;
+    std::uint64_t editorInputSemanticDecorationNanoseconds = 0;
+    std::uint64_t editorInputHighlightNanoseconds = 0;
 };
 
 Q_DECLARE_METATYPE(DocumentChange)

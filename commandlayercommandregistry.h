@@ -33,6 +33,7 @@ enum class CommandLayerMatchRank {
 struct CommandLayerCommandMatch {
     CommandLayerCommandMetadata command;
     CommandLayerMatchRank rank = CommandLayerMatchRank::Subsequence;
+    bool exactWordInitials = false;
     int skippedCharacters = 0;
     int registryIndex = -1;
 };

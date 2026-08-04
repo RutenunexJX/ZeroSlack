@@ -150,9 +150,38 @@ LatencySummary summarizeLatency(QList<qint64> samples)
 
 struct TypingReport {
     LatencySummary latency;
+    LatencySummary synchronousKeyLatency;
+    LatencySummary eventProcessingLatency;
     EditorHotPathMetrics metrics;
     TSTextStorageMetrics textStorageMetrics;
+    bool editTargetValid = false;
 };
+
+int firstSimpleIdentifierEnd(const TSDocument* syntax,
+                             int documentLength)
+{
+    if (!syntax)
+        return -1;
+    const int limit = qMin(documentLength, 16 * 1024);
+    for (int position = 0; position < limit; ++position) {
+        const TSIdentifierTarget target = syntax->identifierAt(position);
+        if (!target.ok() || target.text.isEmpty())
+            continue;
+        const bool validStart = target.text.at(0).isLetter()
+            || target.text.at(0) == QLatin1Char('_');
+        bool valid = validStart;
+        for (int index = 1; valid && index < target.text.size(); ++index) {
+            const QChar character = target.text.at(index);
+            valid = character.isLetterOrNumber()
+                || character == QLatin1Char('_')
+                || character == QLatin1Char('$');
+        }
+        if (valid)
+            return target.endChar;
+        position = qMax(position, target.endChar - 1);
+    }
+    return -1;
+}
 
 TypingReport measureTyping(const QString& fileName)
 {
@@ -165,7 +194,9 @@ TypingReport measureTyping(const QString& fileName)
     DocumentModel documents;
     documents.registerEditor(&editor, fileName);
     QTextCursor cursor = editor.textCursor();
-    cursor.movePosition(QTextCursor::Start);
+    const int editPosition = firstSimpleIdentifierEnd(
+        editor.syntaxDocument(), editor.cachedDocumentLength());
+    cursor.setPosition(qMax(0, editPosition));
     editor.setTextCursor(cursor);
     editor.show();
     QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
@@ -174,25 +205,45 @@ TypingReport measureTyping(const QString& fileName)
         syntax->resetTextStorageMetricsForTest();
 
     QList<qint64> samples;
+    QList<qint64> synchronousKeySamples;
+    QList<qint64> eventProcessingSamples;
     constexpr int warmupCount = 5;
     constexpr int sampleCount = 40;
     samples.reserve(sampleCount);
+    synchronousKeySamples.reserve(sampleCount);
+    eventProcessingSamples.reserve(sampleCount);
     for (int index = 0; index < warmupCount + sampleCount; ++index) {
         QElapsedTimer timer;
         timer.start();
+        QElapsedTimer synchronousKeyTimer;
+        synchronousKeyTimer.start();
         QTest::keyClick(&editor, Qt::Key_X);
+        const qint64 synchronousKeyUs =
+            synchronousKeyTimer.nsecsElapsed() / 1000;
+        QElapsedTimer eventProcessingTimer;
+        eventProcessingTimer.start();
         QCoreApplication::processEvents(QEventLoop::AllEvents, 5);
+        const qint64 eventProcessingUs =
+            eventProcessingTimer.nsecsElapsed() / 1000;
         const qint64 elapsedUs = timer.nsecsElapsed() / 1000;
-        if (index >= warmupCount)
+        if (index >= warmupCount) {
             samples.append(elapsedUs);
+            synchronousKeySamples.append(synchronousKeyUs);
+            eventProcessingSamples.append(eventProcessingUs);
+        }
     }
 
     std::sort(samples.begin(), samples.end());
     TypingReport report;
+    report.editTargetValid = editPosition >= 0;
     report.latency.p50Us = samples.at(samples.size() / 2);
     report.latency.p95Us =
         samples.at((samples.size() * 95 + 99) / 100 - 1);
     report.latency.maxUs = samples.constLast();
+    report.synchronousKeyLatency =
+        summarizeLatency(synchronousKeySamples);
+    report.eventProcessingLatency =
+        summarizeLatency(eventProcessingSamples);
     report.metrics = editor.hotPathMetricsForTest();
     if (const TSDocument* syntax = editor.syntaxDocument())
         report.textStorageMetrics =
@@ -202,9 +253,12 @@ TypingReport measureTyping(const QString& fileName)
 
 struct InlineFilterReport {
     LatencySummary latency;
+    LatencySummary synchronousKeyLatency;
+    LatencySummary eventProcessingLatency;
     EditorHotPathMetrics metrics;
     EditorHotPathMetrics postCancelMetrics;
     TSTextStorageMetrics textStorageMetrics;
+    TSTextStorageMetrics postCancelTextStorageMetrics;
     int initialCandidateCount = 0;
     int filteredCandidateCount = 0;
     bool sessionStayedActive = false;
@@ -254,19 +308,34 @@ InlineFilterReport measureInlineCandidateFiltering(const QString& fileName)
         completer && completer->model() ? completer->model()->rowCount() : 0;
 
     QList<qint64> samples;
+    QList<qint64> synchronousKeySamples;
+    QList<qint64> eventProcessingSamples;
     constexpr int warmupCount = 4;
     constexpr int sampleCount = 40;
     samples.reserve(sampleCount);
+    synchronousKeySamples.reserve(sampleCount);
+    eventProcessingSamples.reserve(sampleCount);
     for (int index = 0; index < warmupCount + sampleCount; ++index) {
         QElapsedTimer timer;
         timer.start();
+        QElapsedTimer synchronousKeyTimer;
+        synchronousKeyTimer.start();
         QTest::keyClick(&editor,
                         index % 2 == 0 ? Qt::Key_L
                                        : Qt::Key_Backspace);
+        const qint64 synchronousKeyUs =
+            synchronousKeyTimer.nsecsElapsed() / 1000;
+        QElapsedTimer eventProcessingTimer;
+        eventProcessingTimer.start();
         QCoreApplication::processEvents(QEventLoop::AllEvents, 5);
+        const qint64 eventProcessingUs =
+            eventProcessingTimer.nsecsElapsed() / 1000;
         const qint64 elapsedUs = timer.nsecsElapsed() / 1000;
-        if (index >= warmupCount)
+        if (index >= warmupCount) {
             samples.append(elapsedUs);
+            synchronousKeySamples.append(synchronousKeyUs);
+            eventProcessingSamples.append(eventProcessingUs);
+        }
     }
 
     std::sort(samples.begin(), samples.end());
@@ -274,6 +343,10 @@ InlineFilterReport measureInlineCandidateFiltering(const QString& fileName)
     report.latency.p95Us =
         samples.at((samples.size() * 95 + 99) / 100 - 1);
     report.latency.maxUs = samples.constLast();
+    report.synchronousKeyLatency =
+        summarizeLatency(synchronousKeySamples);
+    report.eventProcessingLatency =
+        summarizeLatency(eventProcessingSamples);
     report.filteredCandidateCount =
         completer && completer->model() ? completer->model()->rowCount() : 0;
     report.sessionStayedActive = completer && completer->popup()->isVisible()
@@ -291,6 +364,10 @@ InlineFilterReport measureInlineCandidateFiltering(const QString& fileName)
     report.cancelSynchronizesCachedText =
         editor.cachedDocumentText() == editor.toPlainText();
     report.postCancelMetrics = editor.hotPathMetricsForTest();
+    if (const TSDocument* syntax = editor.syntaxDocument()) {
+        report.postCancelTextStorageMetrics =
+            syntax->textStorageMetricsForTest();
+    }
     return report;
 }
 
@@ -654,7 +731,7 @@ VisibleWaveTypingReport measureVisibleWaveTyping(const QString& fileName)
     QTextCursor cursor(editor.document());
     cursor.setPosition(editor.cachedDocumentText().indexOf(
                            QStringLiteral("q <= d"))
-                       + QStringLiteral("q <= ").size());
+                       + QStringLiteral("q <= d").size());
     editor.setTextCursor(cursor);
     editor.show();
 
@@ -699,14 +776,18 @@ VisibleWaveTypingReport measureVisibleWaveTyping(const QString& fileName)
             scopeRegistryNanoseconds +=
                 static_cast<std::uint64_t>(stageTimer.nsecsElapsed());
             stageTimer.restart();
-            coordinator.applyDocumentChange(metadata.fileName,
-                                            change,
-                                            editor.cachedDocumentText(),
-                                            metadata.dirty,
-                                            scope.startPosition,
-                                            scope.endPosition,
-                                            scope.label,
-                                            scope.startLine);
+            coordinator.applyDocumentChange(
+                metadata.fileName,
+                change,
+                editor.cachedDocumentLength(),
+                [&editor](int position, int length) {
+                    return editor.cachedDocumentSlice(position, length);
+                },
+                metadata.dirty,
+                scope.startPosition,
+                scope.endPosition,
+                scope.label,
+                scope.startLine);
             coordinatorNanoseconds +=
                 static_cast<std::uint64_t>(stageTimer.nsecsElapsed());
         });
@@ -782,6 +863,19 @@ void printLatency(const char* fixture, const LatencySummary& summary)
                 static_cast<long long>(summary.maxUs));
 }
 
+void printTypingLatencyBreakdown(const char* fixture,
+                                 const TypingReport& report)
+{
+    std::printf("perf.typing.%s.synchronous_key.p95_us=%lld\n",
+                fixture,
+                static_cast<long long>(
+                    report.synchronousKeyLatency.p95Us));
+    std::printf("perf.typing.%s.event_processing.p95_us=%lld\n",
+                fixture,
+                static_cast<long long>(
+                    report.eventProcessingLatency.p95Us));
+}
+
 void printTextStorageMetrics(
     const char* fixture,
     const TSTextStorageMetrics& metrics)
@@ -798,6 +892,30 @@ void printTextStorageMetrics(
                 fixture,
                 static_cast<unsigned long long>(
                     metrics.inputReadCount));
+    std::printf("perf.syntax_storage.%s.syntax_parses=%llu\n",
+                fixture,
+                static_cast<unsigned long long>(
+                    metrics.syntaxParseCount));
+    std::printf("perf.syntax_storage.%s.structure_preserving_edits=%llu\n",
+                fixture,
+                static_cast<unsigned long long>(
+                    metrics.structurePreservingEditCount));
+    std::printf("perf.syntax_storage.%s.deferred_edits=%llu\n",
+                fixture,
+                static_cast<unsigned long long>(
+                    metrics.deferredSyntaxEditCount));
+    std::printf("perf.syntax_storage.%s.deferred_flushes=%llu\n",
+                fixture,
+                static_cast<unsigned long long>(
+                    metrics.deferredSyntaxFlushCount));
+    std::printf("perf.syntax_storage.%s.highlight_blocks=%llu\n",
+                fixture,
+                static_cast<unsigned long long>(
+                    metrics.highlightBlockCount));
+    std::printf("perf.syntax_storage.%s.highlight_total_us=%llu\n",
+                fixture,
+                static_cast<unsigned long long>(
+                    metrics.highlightNanoseconds / 1000));
     std::printf("perf.syntax_storage.%s.moved_characters=%llu\n",
                 fixture,
                 static_cast<unsigned long long>(
@@ -894,6 +1012,56 @@ void printTypingCoreMetrics(const char* fixture,
                 static_cast<unsigned long long>(
                     meanMicroseconds(
                         metrics.documentChangeDispatchNanoseconds)));
+    std::printf("perf.typing.%s.finish.total.mean_us=%llu\n",
+                fixture,
+                static_cast<unsigned long long>(
+                    meanMicroseconds(
+                        metrics.editorInputFinishNanoseconds)));
+    std::printf("perf.typing.%s.finish.navigation.mean_us=%llu\n",
+                fixture,
+                static_cast<unsigned long long>(
+                    meanMicroseconds(
+                        metrics.editorInputNavigationNanoseconds)));
+    std::printf("perf.typing.%s.finish.templates.mean_us=%llu\n",
+                fixture,
+                static_cast<unsigned long long>(
+                    meanMicroseconds(
+                        metrics.editorInputTemplateNanoseconds)));
+    std::printf("perf.typing.%s.finish.derived.mean_us=%llu\n",
+                fixture,
+                static_cast<unsigned long long>(
+                    meanMicroseconds(
+                        metrics.editorInputDerivedStateNanoseconds)));
+    std::printf("perf.typing.%s.derived.keyword_ghost.mean_us=%llu\n",
+                fixture,
+                static_cast<unsigned long long>(
+                    meanMicroseconds(
+                        metrics.editorDerivedKeywordGhostNanoseconds)));
+    std::printf("perf.typing.%s.derived.keyword_pair.mean_us=%llu\n",
+                fixture,
+                static_cast<unsigned long long>(
+                    meanMicroseconds(
+                        metrics.editorDerivedKeywordPairNanoseconds)));
+    std::printf("perf.typing.%s.derived.package_tool.mean_us=%llu\n",
+                fixture,
+                static_cast<unsigned long long>(
+                    meanMicroseconds(
+                        metrics.editorDerivedPackageToolNanoseconds)));
+    std::printf("perf.typing.%s.derived.wave_scope.mean_us=%llu\n",
+                fixture,
+                static_cast<unsigned long long>(
+                    meanMicroseconds(
+                        metrics.editorDerivedWaveScopeNanoseconds)));
+    std::printf("perf.typing.%s.finish.semantic.mean_us=%llu\n",
+                fixture,
+                static_cast<unsigned long long>(
+                    meanMicroseconds(
+                        metrics.editorInputSemanticDecorationNanoseconds)));
+    std::printf("perf.typing.%s.finish.highlights.mean_us=%llu\n",
+                fixture,
+                static_cast<unsigned long long>(
+                    meanMicroseconds(
+                        metrics.editorInputHighlightNanoseconds)));
 }
 
 void printInlineFilterLatency(const LatencySummary& summary)
@@ -904,6 +1072,19 @@ void printInlineFilterLatency(const LatencySummary& summary)
                 static_cast<long long>(summary.p95Us));
     std::printf("perf.inline_filter.huge_after.max_us=%lld\n",
                 static_cast<long long>(summary.maxUs));
+}
+
+void printInlineFilterLatencyBreakdown(
+    const InlineFilterReport& report)
+{
+    std::printf(
+        "perf.inline_filter.huge_after.synchronous_key.p95_us=%lld\n",
+        static_cast<long long>(
+            report.synchronousKeyLatency.p95Us));
+    std::printf(
+        "perf.inline_filter.huge_after.event_processing.p95_us=%lld\n",
+        static_cast<long long>(
+            report.eventProcessingLatency.p95Us));
 }
 
 void printInlineFilterMetrics(const EditorHotPathMetrics& metrics)
@@ -935,9 +1116,33 @@ void printInlineFilterMetrics(const EditorHotPathMetrics& metrics)
     std::printf("perf.inline_filter.metrics.service_queries=%llu\n",
                 static_cast<unsigned long long>(
                     metrics.inlineFilterServiceQueries));
+    std::printf("perf.inline_filter.metrics.document_edit.mean_us=%llu\n",
+                static_cast<unsigned long long>(
+                    metrics.inlineFilterKeyEvents == 0
+                        ? 0
+                        : metrics.inlineFilterDocumentEditNanoseconds
+                              / metrics.inlineFilterKeyEvents / 1000));
+    std::printf("perf.inline_filter.metrics.refresh.mean_us=%llu\n",
+                static_cast<unsigned long long>(
+                    metrics.inlineFilterRefreshes == 0
+                        ? 0
+                        : metrics.inlineFilterRefreshNanoseconds
+                              / metrics.inlineFilterRefreshes / 1000));
+    std::printf("perf.inline_filter.metrics.service_query.mean_us=%llu\n",
+                static_cast<unsigned long long>(
+                    metrics.inlineFilterServiceQueries == 0
+                        ? 0
+                        : metrics.inlineFilterServiceQueryNanoseconds
+                              / metrics.inlineFilterServiceQueries / 1000));
     std::printf("perf.inline_filter.metrics.model_updates=%llu\n",
                 static_cast<unsigned long long>(
                     metrics.inlineFilterModelUpdates));
+    std::printf("perf.inline_filter.metrics.model_update.mean_us=%llu\n",
+                static_cast<unsigned long long>(
+                    metrics.inlineFilterModelUpdates == 0
+                        ? 0
+                        : metrics.inlineFilterModelUpdateNanoseconds
+                              / metrics.inlineFilterModelUpdates / 1000));
     std::printf("perf.inline_filter.metrics.highlight_updates=%llu\n",
                 static_cast<unsigned long long>(
                     metrics.inlineFilterHighlightUpdates));
@@ -1257,23 +1462,59 @@ void exerciseDeltaCorrectness()
     QSignalSpy changeSpy(&editor, &MyCodeEditor::documentChangeApplied);
     QSignalSpy editedSpy(&documents, &DocumentModel::documentEdited);
     editor.resetHotPathMetricsForTest();
+    EditorHotPathMetrics editMetrics;
+    std::uint64_t verificationMaterializations = 0;
+
+    const auto counterDelta = [](std::uint64_t after,
+                                 std::uint64_t before) {
+        return after >= before ? after - before : 0;
+    };
 
     auto oneDelta = [&](const QString& label,
                         const std::function<void()>& edit) {
         const int changesBefore = changeSpy.count();
         const int editsBefore = editedSpy.count();
+        const EditorHotPathMetrics before = editor.hotPathMetricsForTest();
         edit();
         QCoreApplication::processEvents(QEventLoop::AllEvents, 5);
+        const EditorHotPathMetrics after = editor.hotPathMetricsForTest();
+        editMetrics.documentChanges +=
+            counterDelta(after.documentChanges, before.documentChanges);
+        editMetrics.fullTextMaterializations +=
+            counterDelta(after.fullTextMaterializations,
+                         before.fullTextMaterializations);
+        editMetrics.fullFoldingRebuilds +=
+            counterDelta(after.fullFoldingRebuilds,
+                         before.fullFoldingRebuilds);
+        editMetrics.incrementalFoldingUpdates +=
+            counterDelta(after.incrementalFoldingUpdates,
+                         before.incrementalFoldingUpdates);
+        editMetrics.fullGhostQueries +=
+            counterDelta(after.fullGhostQueries, before.fullGhostQueries);
+        editMetrics.ghostRemaps +=
+            counterDelta(after.ghostRemaps, before.ghostRemaps);
+        editMetrics.occurrenceFullBuilds +=
+            counterDelta(after.occurrenceFullBuilds,
+                         before.occurrenceFullBuilds);
+        editMetrics.occurrenceIncrementalUpdates +=
+            counterDelta(after.occurrenceIncrementalUpdates,
+                         before.occurrenceIncrementalUpdates);
         expect(label + QStringLiteral(" emits one authoritative delta"),
                changeSpy.count() == changesBefore + 1
                    && editedSpy.count() == editsBefore + 1);
         verifyIncrementalCaches(label, editor, documents);
+        const EditorHotPathMetrics afterVerification =
+            editor.hotPathMetricsForTest();
+        verificationMaterializations += counterDelta(
+            afterVerification.fullTextMaterializations,
+            after.fullTextMaterializations);
     };
 
     oneDelta(QStringLiteral("single character"), [&]() {
         QTextCursor cursor(editor.document());
-        cursor.setPosition(editor.cachedDocumentText().indexOf(
-            QStringLiteral("data")));
+        const QString text = editor.cachedDocumentSlice(
+            0, editor.cachedDocumentLength());
+        cursor.setPosition(text.indexOf(QStringLiteral("data")));
         cursor.insertText(QStringLiteral("x"));
     });
     expect("single-character delta carries only inserted fragment",
@@ -1286,8 +1527,9 @@ void exerciseDeltaCorrectness()
 
     oneDelta(QStringLiteral("cross-line paste and Unicode"), [&]() {
         QTextCursor cursor(editor.document());
-        cursor.setPosition(editor.cachedDocumentText().indexOf(
-            QStringLiteral("endmodule")));
+        const QString text = editor.cachedDocumentSlice(
+            0, editor.cachedDocumentLength());
+        cursor.setPosition(text.indexOf(QStringLiteral("endmodule")));
         cursor.insertText(QStringLiteral("  logic \u4fe1\u53f7\U0001f600;\n"
                                          "  logic pasted;\n"));
     });
@@ -1297,7 +1539,8 @@ void exerciseDeltaCorrectness()
                                  "  logic pasted;\n"));
 
     oneDelta(QStringLiteral("cross-line deletion"), [&]() {
-        const QString text = editor.cachedDocumentText();
+        const QString text = editor.cachedDocumentSlice(
+            0, editor.cachedDocumentLength());
         const int start = text.indexOf(QStringLiteral("logic \u4fe1\u53f7"));
         const int end = text.indexOf(QStringLiteral("logic pasted")) + 6;
         QTextCursor cursor(editor.document());
@@ -1314,7 +1557,9 @@ void exerciseDeltaCorrectness()
     oneDelta(QStringLiteral("undo"), [&]() { editor.undo(); });
     oneDelta(QStringLiteral("redo"), [&]() { editor.redo(); });
 
-    const EditorHotPathMetrics metrics = editor.hotPathMetricsForTest();
+    const EditorHotPathMetrics metrics = editMetrics;
+    expect("cache verification materializes only outside the measured edit path",
+           verificationMaterializations > 0);
     expect("ordinary deltas never materialize full editor text",
            metrics.fullTextMaterializations == 0);
     expect("ordinary deltas never rebuild all folds",
@@ -1723,6 +1968,7 @@ void exerciseMultilineReplacementLifecycle()
 void exerciseRepeatedReplacementStability()
 {
     exerciseSingleLineReplacementLifecycle();
+    exerciseMultilineReplacementLifecycle();
     exerciseMultilineReplacementLifecycle();
 }
 
@@ -2193,6 +2439,7 @@ int main(int argc, char** argv)
     if (QFileInfo(rtlTop).isFile()) {
         const TypingReport report = measureTyping(rtlTop);
         printLatency("rtl_top_after", report.latency);
+        printTypingLatencyBreakdown("rtl_top_after", report);
         printTypingCoreMetrics("rtl_top_after", report.metrics);
         printTextStorageMetrics("rtl_top_after",
                                 report.textStorageMetrics);
@@ -2207,18 +2454,25 @@ int main(int argc, char** argv)
                    && report.metrics.fullFoldingRebuilds == 0
                    && report.metrics.fullGhostQueries == 0
                    && report.metrics.occurrenceFullBuilds == 0);
-        expect("rtl_top Tree-sitter reads edited gap storage without materializing it",
+        expect("rtl_top typing targets an identifier suffix",
+               report.editTargetValid);
+        expect("rtl_top Tree-sitter applies structure-preserving suffix edits",
                report.textStorageMetrics.editCount == 45
                    && report.textStorageMetrics
                           .materializationCount == 0
-                   && report.textStorageMetrics.inputReadCount
-                          >= report.textStorageMetrics.editCount
+                   && report.textStorageMetrics
+                          .structurePreservingEditCount == 45
+                   && report.textStorageMetrics
+                          .deferredSyntaxEditCount == 0
+                   && report.textStorageMetrics.syntaxParseCount == 0
+                   && report.textStorageMetrics.inputReadCount == 0
                    && report.textStorageMetrics.movedCharacterCount
                           <= 128);
     }
     if (QFileInfo(hugeFile).isFile()) {
         const TypingReport report = measureTyping(hugeFile);
         printLatency("huge_after", report.latency);
+        printTypingLatencyBreakdown("huge_after", report);
         printTypingCoreMetrics("huge_after", report.metrics);
         printTextStorageMetrics("huge_after",
                                 report.textStorageMetrics);
@@ -2233,12 +2487,18 @@ int main(int argc, char** argv)
                    && report.metrics.fullFoldingRebuilds == 0
                    && report.metrics.fullGhostQueries == 0
                    && report.metrics.occurrenceFullBuilds == 0);
-        expect("huge-file Tree-sitter reads local gap edits without per-key full-text movement",
+        expect("huge-file typing targets an identifier suffix",
+               report.editTargetValid);
+        expect("huge-file Tree-sitter applies structure-preserving suffix edits",
                report.textStorageMetrics.editCount == 45
                    && report.textStorageMetrics
                           .materializationCount == 0
-                   && report.textStorageMetrics.inputReadCount
-                          >= report.textStorageMetrics.editCount
+                   && report.textStorageMetrics
+                          .structurePreservingEditCount == 45
+                   && report.textStorageMetrics
+                          .deferredSyntaxEditCount == 0
+                   && report.textStorageMetrics.syntaxParseCount == 0
+                   && report.textStorageMetrics.inputReadCount == 0
                    && report.textStorageMetrics.movedCharacterCount
                           <= 128);
 
@@ -2265,12 +2525,16 @@ int main(int argc, char** argv)
                waveReport.textCopyMetrics.fullTextCopyCount == 0
                    && waveReport.textCopyMetrics.copiedCharacterCount == 0
                    && waveReport.editorMetrics.fullTextMaterializations == 0);
-        expect("visible Wave syntax edits stay in Tree-sitter gap storage",
+        expect("visible Wave syntax edits preserve identifier structure",
                waveReport.textStorageMetrics.editCount == 44
                    && waveReport.textStorageMetrics
                           .materializationCount == 0
-                   && waveReport.textStorageMetrics.inputReadCount
-                          >= waveReport.textStorageMetrics.editCount
+                   && waveReport.textStorageMetrics
+                          .structurePreservingEditCount == 44
+                   && waveReport.textStorageMetrics
+                          .deferredSyntaxEditCount == 0
+                   && waveReport.textStorageMetrics.syntaxParseCount == 0
+                   && waveReport.textStorageMetrics.inputReadCount == 0
                    && waveReport.textStorageMetrics.movedCharacterCount
                           <= 256);
         expect("visible Wave huge-file typing p95 stays below 6 ms",
@@ -2281,7 +2545,10 @@ int main(int argc, char** argv)
         const InlineFilterReport inlineReport =
             measureInlineCandidateFiltering(hugeFile);
         printInlineFilterLatency(inlineReport.latency);
+        printInlineFilterLatencyBreakdown(inlineReport);
         printInlineFilterMetrics(inlineReport.metrics);
+        printTypingCoreMetrics("inline_filter",
+                               inlineReport.metrics);
         printTextStorageMetrics("inline_filter",
                                 inlineReport.textStorageMetrics);
         expect("huge inline Tab opens and preserves a filter session",
@@ -2310,12 +2577,18 @@ int main(int argc, char** argv)
                    && inlineReport.metrics
                           .inlineFilterOverlayMaterializations
                        == 0);
-        expect("huge inline filtering parses directly from local syntax gap edits",
+        expect("huge inline filtering defers only its non-source overlay syntax",
                inlineReport.textStorageMetrics.editCount == 44
                    && inlineReport.textStorageMetrics
                           .materializationCount == 0
-                   && inlineReport.textStorageMetrics.inputReadCount
-                          >= inlineReport.textStorageMetrics.editCount
+                   && inlineReport.textStorageMetrics
+                          .structurePreservingEditCount == 0
+                   && inlineReport.textStorageMetrics
+                          .deferredSyntaxEditCount == 44
+                   && inlineReport.textStorageMetrics.syntaxParseCount == 0
+                   && inlineReport.textStorageMetrics
+                          .deferredSyntaxFlushCount == 0
+                   && inlineReport.textStorageMetrics.inputReadCount == 0
                    && inlineReport.textStorageMetrics.movedCharacterCount
                           <= 128);
         expect("huge inline cancel materializes one pending overlay",
@@ -2331,7 +2604,19 @@ int main(int argc, char** argv)
                        == 45
                    && inlineReport.postCancelMetrics
                           .inlineFilterOverlayMaterializations
-                       == 1);
+                       == 1
+                   && inlineReport.postCancelMetrics
+                          .documentChanges == 45
+                   && inlineReport.postCancelTextStorageMetrics
+                          .editCount == 45
+                   && inlineReport.postCancelTextStorageMetrics
+                          .deferredSyntaxEditCount == 45
+                   && inlineReport.postCancelTextStorageMetrics
+                          .syntaxParseCount == 1
+                   && inlineReport.postCancelTextStorageMetrics
+                          .deferredSyntaxFlushCount == 1
+                   && inlineReport.postCancelTextStorageMetrics
+                          .inputReadCount > 0);
         expect("huge inline candidate filtering p95 stays below 4 ms",
                inlineReport.latency.p95Us < 4000);
         expect("huge inline candidate filtering max stays below 8 ms",

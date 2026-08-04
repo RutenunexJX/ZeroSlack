@@ -1,5 +1,72 @@
 # ZeroSlack Handoff
 
+## Current Acceptance Repair (2026-08-04)
+
+Overall status: **验收通过，P1 正确性修复完成**.
+
+- Phase 0 — P1 Acceptance State Alignment: complete. The three documents now
+  withdraw the prior acceptance claim before any product-code change.
+- Phase 1 — Keyword-Boundary Incremental Tree Repair: complete. Product fix,
+  focused regressions, full build, and unfiltered acceptance all pass.
+- Repair baseline is `73ddc5d0e3cb275bb291c9bfb8828d3fd8801dc6` for both
+  `HEAD` and `origin/main`. The protected untracked screenshot, `dist/`, and
+  both protected `.zs` paths remained outside all edits and cleanup.
+- The registered CTest inventory contains 77 targets. The historical all-target
+  build proves only compile/link. Historical excluded runs of 68/68 and 71/71
+  remain partial records and are not used as complete acceptance evidence.
+- The P1 root is fixed by deriving the fast-path exclusion set from Slang's
+  IEEE 1800-2023 keyword table. Ordinary non-keyword identifier suffix edits
+  still skip parsing; identifier-to-keyword and keyword-to-identifier edits
+  synchronously take the existing authoritative Tree-sitter incremental parse.
+- Current focused verification passes: `ts_doc_test` 0.20 seconds,
+  `ts_large_file_semantics_test` 0.83 seconds, and
+  `editor_incremental_test` 9.31 seconds. The semantic suite reports 26/26,
+  including `alway -> always`, `logi -> logic`, reverse keyword exit, and the
+  unchanged ordinary-identifier no-parse path.
+- The complete serial build succeeds. Final unfiltered
+  `ctest --output-on-failure -j1` passes 77/77 in 395.51 seconds, including
+  `editor_incremental_test` in 13.64 seconds with every existing correctness
+  and performance threshold unchanged.
+- Pre-final history: one earlier full run produced 76/77 while the external
+  `PassTheFear.exe` process was active, and an isolated rerun reproduced two
+  latency-gate failures. That run was not accepted and no threshold was changed;
+  the final unfiltered rerun above is the current acceptance result.
+- Historical resolved blocker roots from the preceding repair:
+  - Command Layer word-prefix matches did not distinguish exact word initials
+    and retained weaker ranks, breaking required abbreviations and stable `go`
+    ambiguity. One matcher now ranks exact initials and keeps only the strongest
+    rank; no second command fact source was introduced.
+  - The editor materialization assertion had included explicit cache-verification
+    reads outside the edit path. The measured edit path is now isolated, while
+    product-side identifier edits, transient candidate overlays, syntax lookup,
+    folding, and occurrence updates remain incremental. The `0xc0000374` exit
+    came from rebuilding `ExtraSelection` cursors during
+    `QTextDocument::contentsChange`; presentation now refreshes after the
+    transaction and selections are released while their document is alive.
+  - Hotspot zoom reset emitted a synchronous zoom-state signal that overwrote
+    the requested target before it was applied. The shared Registry/Focus route
+    now preserves the target across reset and resynchronizes from the view.
+  - The Hotspot panel test had no guaranteed diagnostic path before
+    `QApplication`; it now installs an early stderr Qt message handler. With the
+    shared zoom fix, the registered test completes every assertion normally.
+- Historical consecutive target runs passed: `gui_smoke_test` 14.37/14.49/15.60
+  seconds; `editor_incremental_test` 11.30/10.89/10.10 seconds;
+  `graph_export_panel_integration_test` 0.32/0.32/0.32 seconds; and
+  `signal_usage_hotspot_panel_test` 0.44/0.46/0.41 seconds.
+- Historical required regressions passed: `expose_signal_to_top_gui_test` 1.17 seconds,
+  `editor_structural_input_test` 0.32 seconds, and
+  `editor_paste_transaction_test` 0.69 seconds. Added root checks also passed:
+  `ts_large_file_semantics_test` 0.85 seconds and
+  `action_registry_test` 0.09 seconds.
+- Historical pre-P1 acceptance used `ctest --output-on-failure -j1` with no `-R`, `-E`,
+  label filtering, exclusions, skipped tests, or relaxed thresholds: 77/77
+  passed in 300.53 seconds. An earlier same-code full run passed 76/77 and
+  transiently exceeded the existing visible-Wave 6/12 ms latency assertions;
+  the isolated rerun measured p95 2.293 ms and max 2.640 ms, and the subsequent
+  complete run passed the unchanged thresholds. That result predates the newly
+  confirmed keyword-boundary defect and does not establish current acceptance.
+- Phase 0 `git diff --check` passes. No commit or push was performed.
+
 ZeroSlack is a SystemVerilog code editor and workspace browser. It should feel
 fast on real RTL workspaces while keeping semantic behavior behind stable
 service boundaries.

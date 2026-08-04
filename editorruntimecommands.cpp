@@ -969,6 +969,7 @@ void MyCodeEditorState::finishInlineFilterTextOverlay()
 {
     if (!inlineFilterTextOverlayActive)
         return;
+    syntax.flushPendingEdits();
     if (inlineFilterTextOverlayCurrentText
         != inlineFilterTextOverlayOriginalText) {
         semanticRevisionText.replace(

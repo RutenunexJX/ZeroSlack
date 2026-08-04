@@ -12,6 +12,7 @@
 #include <QAbstractItemView>
 #include <QModelIndex>
 #include <QDir>
+#include <QElapsedTimer>
 #include <QFileInfo>
 #include <QKeyEvent>
 #include <QRegularExpression>
@@ -261,8 +262,12 @@ bool EditorCompletionWorkflow::refreshInlineCandidateFilter()
     query.explicitMatch.input = inlineSession.filterText;
     ++editor->state->hotPathMetrics.inlineFilterRefreshes;
     ++editor->state->hotPathMetrics.inlineFilterServiceQueries;
+    QElapsedTimer serviceTimer;
+    serviceTimer.start();
     CommandModeCompletionState state =
         CompletionService::getInstance()->commandModeCompletionState(query);
+    editor->state->hotPathMetrics.inlineFilterServiceQueryNanoseconds +=
+        static_cast<std::uint64_t>(serviceTimer.nsecsElapsed());
     if (!state.matched) {
         cancelInlineAbbreviationSession();
         return false;
@@ -300,6 +305,8 @@ bool EditorCompletionWorkflow::refreshInlineCandidateFilter()
                      inlineSession.filterText));
     }
     ++editor->state->hotPathMetrics.inlineFilterModelUpdates;
+    QElapsedTimer modelTimer;
+    modelTimer.start();
     completion->updateCommandModeCompletions(state, false);
     if (completion->popupVisible()) {
         const QModelIndex selectable =
@@ -309,6 +316,8 @@ bool EditorCompletionWorkflow::refreshInlineCandidateFilter()
     } else {
         showCompletionPopup(true);
     }
+    editor->state->hotPathMetrics.inlineFilterModelUpdateNanoseconds +=
+        static_cast<std::uint64_t>(modelTimer.nsecsElapsed());
 
     if (inlineCandidateCount(state) == 0) {
         emit editor->editorStatusMessageRequested(

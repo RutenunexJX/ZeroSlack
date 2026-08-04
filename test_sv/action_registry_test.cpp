@@ -64,6 +64,32 @@ bool descriptorHasAlias(const ActionDescriptor& descriptor,
         findActionAlias(descriptor, surface, token);
     return alias && alias->token == token;
 }
+
+bool firstCommandMatchIs(const QString& query, const QString& expected)
+{
+    const QList<CommandLayerCommandMatch> matches =
+        commandLayerCommandMatches(query);
+    if (!matches.isEmpty() && matches.first().command.name == expected)
+        return true;
+
+    const QByteArray queryText = query.toUtf8();
+    const QByteArray expectedText = expected.toUtf8();
+    std::fprintf(stderr,
+                 "Command query '%s' expected '%s'; matches:",
+                 queryText.constData(),
+                 expectedText.constData());
+    for (const CommandLayerCommandMatch& match : matches) {
+        const QByteArray name = match.command.name.toUtf8();
+        const QByteArray rank = commandLayerMatchRankName(match.rank).toUtf8();
+        std::fprintf(stderr,
+                     " [%s,%s,%d]",
+                     name.constData(),
+                     rank.constData(),
+                     match.skippedCharacters);
+    }
+    std::fprintf(stderr, "\n");
+    return false;
+}
 }
 
 int main()
@@ -76,6 +102,42 @@ int main()
     QString registryReason;
     expect("unified action registry validates",
            actionRegistryIsValid(&registryReason));
+
+    const QList<QPair<QString, QString>> requiredCommandAbbreviations = {
+        {QStringLiteral("gm"), QStringLiteral("go module")},
+        {QStringLiteral("gpk"), QStringLiteral("go package")},
+        {QStringLiteral("gopack"), QStringLiteral("go package")},
+        {QStringLiteral("goendm"), QStringLiteral("go endmodule")},
+        {QStringLiteral("as"), QStringLiteral("add signal")},
+        {QStringLiteral("addsig"), QStringLiteral("add signal")},
+        {QStringLiteral("apar"), QStringLiteral("add parameter")},
+        {QStringLiteral("addparam"), QStringLiteral("add parameter")},
+        {QStringLiteral("aport"), QStringLiteral("add port")},
+        {QStringLiteral("addport"), QStringLiteral("add port")},
+        {QStringLiteral("cr"), QStringLiteral("clear right")},
+        {QStringLiteral("clearr"), QStringLiteral("clear right")},
+        {QStringLiteral("sbe"), QStringLiteral("select begin end")},
+        {QStringLiteral("selectbe"), QStringLiteral("select begin end")},
+        {QStringLiteral("ss"), QStringLiteral("select signals")},
+        {QStringLiteral("selectsig"), QStringLiteral("select signals")},
+    };
+    bool requiredCommandAbbreviationsMatch = true;
+    for (const auto& abbreviation : requiredCommandAbbreviations) {
+        requiredCommandAbbreviationsMatch =
+            firstCommandMatchIs(abbreviation.first, abbreviation.second)
+            && requiredCommandAbbreviationsMatch;
+    }
+    expect("Command Layer required abbreviations stay registry-derived",
+           requiredCommandAbbreviationsMatch);
+
+    const QList<CommandLayerCommandMatch> ambiguousGo =
+        commandLayerCommandMatches(QStringLiteral("go"));
+    expect("Command Layer keeps only the four strongest stable go matches",
+           ambiguousGo.size() == 4
+               && ambiguousGo.at(0).command.name
+                      == QStringLiteral("go <number>")
+               && ambiguousGo.at(1).command.name
+                      == QStringLiteral("go module"));
     bool invalidIdsRejected = true;
     const QStringList invalidIds = {
         QStringLiteral("Navigation.goLine"),

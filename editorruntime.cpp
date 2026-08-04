@@ -28,6 +28,7 @@
 #include <QPlainTextEdit>
 #include <QPoint>
 #include <QPolygon>
+#include <QPointer>
 #include <QPushButton>
 #include <QRect>
 #include <QScrollBar>
@@ -37,6 +38,7 @@
 #include <QTextDocument>
 #include <QTextEdit>
 #include <QTextLayout>
+#include <QTimer>
 #include <QStringList>
 
 #include <algorithm>
@@ -1195,8 +1197,13 @@ void MyCodeEditorState::shutdown(MyCodeEditor* editor)
 {
     highlightRefresh.detach();
     completion.detach();
-    if (editor)
+    if (editor) {
         QObject::disconnect(editor, nullptr, editor, nullptr);
+        // Extra selections own QTextCursor instances registered with the
+        // current QTextDocument. Release them while that document is still
+        // alive; QPlainTextEdit's base destructor runs after this state.
+        editor->setExtraSelections({});
+    }
     QObject::disconnect(documentContentsChangeConnection);
     documentContentsChangeConnection = {};
 
@@ -1477,6 +1484,7 @@ void MyCodeEditorState::rebindDocument(
     QObject::disconnect(documentContentsChangeConnection);
     documentContentsChangeConnection = {};
     syntax.detachHighlighter();
+    editor->setExtraSelections({});
     rebindingDocument = true;
     editor->QPlainTextEdit::setDocument(document);
     rebindingDocument = false;
@@ -1611,7 +1619,7 @@ void MyCodeEditorState::handleDocumentContentsChange(
 
     const QTextBlock changedBlock = editor->document()->findBlock(
         qBound(0, change.position, newLength));
-    const int occurrenceNewLineStart = changedBlock.isValid()
+    int occurrenceNewLineStart = changedBlock.isValid()
         ? changedBlock.position()
         : -1;
     const int occurrenceNewLineEnd = changedBlock.isValid()
@@ -1672,12 +1680,36 @@ void MyCodeEditorState::handleDocumentContentsChange(
                         - change.characterDelta());
             useLocalOccurrenceLine = true;
         } else {
-            occurrenceContext = selections.prepareDocumentChange(
-                change, cachedDocumentText());
+            const int oldLineStart = change.position <= 0
+                ? 0
+                : semanticRevisionText.lastIndexOf(
+                      QLatin1Char('\n'), change.position - 1) + 1;
+            const int oldLineBreak = semanticRevisionText.indexOf(
+                QStringLiteral("\n"), change.oldEnd());
+            const int oldLineEnd = oldLineBreak < 0
+                ? semanticRevisionText.size()
+                : oldLineBreak;
+            occurrenceContext = selections.prepareDocumentLineChange(
+                change, oldLineStart, oldLineEnd);
         }
         semanticRevisionText.replace(change.position,
                                      change.removedLength,
                                      change.insertedText);
+        if (!localLineChange && !occurrenceContext.rebuild) {
+            occurrenceNewLineStart = change.position <= 0
+                ? 0
+                : semanticRevisionText.lastIndexOf(
+                      QLatin1Char('\n'), change.position - 1) + 1;
+            const int newLineBreak = semanticRevisionText.indexOf(
+                QStringLiteral("\n"), change.newEnd());
+            const int newLineEnd = newLineBreak < 0
+                ? semanticRevisionText.size()
+                : newLineBreak;
+            occurrenceNewLineText = semanticRevisionText.mid(
+                occurrenceNewLineStart,
+                newLineEnd - occurrenceNewLineStart);
+            useLocalOccurrenceLine = true;
+        }
     }
     ++semanticTextRevision;
     change.revision = semanticTextRevision;
@@ -1693,7 +1725,9 @@ void MyCodeEditorState::handleDocumentContentsChange(
         return;
 
     const QList<TSChangedRange> changedRanges =
-        syntax.applyDocumentChange(change, semanticRevisionText);
+        syntax.applyDocumentChange(change,
+                                   semanticRevisionText,
+                                   appliedToInlineOverlay);
     finishDocumentChangePhase(
         hotPathMetrics.documentChangeSyntaxNanoseconds);
     lifecycleTrace("change.syntax");
@@ -1770,6 +1804,13 @@ void MyCodeEditorState::handleDocumentContentsChange(
         hotPathMetrics.documentChangeDispatchNanoseconds +=
             static_cast<std::uint64_t>(dispatchTimer.nsecsElapsed());
     }
+    if (synchronousEditTransactionDepth == 0) {
+        const QPointer<MyCodeEditor> target(editor);
+        QTimer::singleShot(0, editor, [this, target]() {
+            if (target && synchronousEditTransactionDepth == 0)
+                finishEditorInput(target);
+        });
+    }
     lifecycleTrace("change.exit");
 }
 
@@ -1843,7 +1884,6 @@ void MyCodeEditorState::remapSemanticDecorations(
                 afterStats.materializationCount
                 - beforeStats.materializationCount));
     }
-    refreshSemanticDecorationPresentation(editor);
 }
 
 void MyCodeEditorState::rebuildSemanticDecorationPositionIndex()
@@ -1976,12 +2016,20 @@ void MyCodeEditorState::refreshDerivedEditorState(
     if (!editor)
         return;
 
+    QElapsedTimer derivedTimer;
+    derivedTimer.start();
     keywordGhost.refresh(editor, syntax);
+    hotPathMetrics.editorDerivedKeywordGhostNanoseconds +=
+        static_cast<std::uint64_t>(derivedTimer.nsecsElapsed());
+    derivedTimer.restart();
     selections.highlightKeywordPair(
         editor,
         syntax.matchingKeywordPairAt(
             editor->textCursor().position()));
+    hotPathMetrics.editorDerivedKeywordPairNanoseconds +=
+        static_cast<std::uint64_t>(derivedTimer.nsecsElapsed());
 
+    derivedTimer.restart();
     const EditorPackageToolAvailability availability =
         currentPackageToolAvailability(editor);
     if (!packageToolAvailabilityInitialized
@@ -1991,8 +2039,13 @@ void MyCodeEditorState::refreshDerivedEditorState(
         packageToolAvailabilityInitialized = true;
         emit editor->packageToolAvailabilityChanged(availability);
     }
+    hotPathMetrics.editorDerivedPackageToolNanoseconds +=
+        static_cast<std::uint64_t>(derivedTimer.nsecsElapsed());
 
+    derivedTimer.restart();
     const QString scopeKey = wavePreviewScopeKey(*this, editor);
+    hotPathMetrics.editorDerivedWaveScopeNanoseconds +=
+        static_cast<std::uint64_t>(derivedTimer.nsecsElapsed());
     if (!allowWavePreviewSignal) {
         lastWavePreviewScopeKey = scopeKey;
         return;
@@ -2769,7 +2822,11 @@ void MyCodeEditorState::endSynchronousEditTransaction(MyCodeEditor* editor)
         return;
     ++completedSynchronousEditTransactions;
     lifecycleTrace("transaction.before-finish");
+    QElapsedTimer finishTimer;
+    finishTimer.start();
     finishEditorInput(editor);
+    hotPathMetrics.editorInputFinishNanoseconds +=
+        static_cast<std::uint64_t>(finishTimer.nsecsElapsed());
     lifecycleTrace("transaction.after-finish");
 }
 
@@ -2790,10 +2847,15 @@ void MyCodeEditorState::finishEditorInput(MyCodeEditor* editor)
     suppressNextCursorPresentation = false;
     if (!editorPresentationPending)
         return;
+    QElapsedTimer phaseTimer;
+    phaseTimer.start();
     sourceNavigation.handleEditorContentChanged(editor, selections);
     lifecycleTrace("finish.navigation-content");
     sourceNavigation.syncMode();
+    hotPathMetrics.editorInputNavigationNanoseconds +=
+        static_cast<std::uint64_t>(phaseTimer.nsecsElapsed());
     lifecycleTrace("finish.navigation-mode");
+    phaseTimer.restart();
     templateSlots.flushPendingPresentation(editor);
     lifecycleTrace("finish.templates");
     if (ghostPresentationPending) {
@@ -2807,9 +2869,25 @@ void MyCodeEditorState::finishEditorInput(MyCodeEditor* editor)
             editor->viewport()->update();
         }
     }
+    hotPathMetrics.editorInputTemplateNanoseconds +=
+        static_cast<std::uint64_t>(phaseTimer.nsecsElapsed());
+    phaseTimer.restart();
     refreshDerivedEditorState(editor, false);
+    hotPathMetrics.editorInputDerivedStateNanoseconds +=
+        static_cast<std::uint64_t>(phaseTimer.nsecsElapsed());
     lifecycleTrace("finish.derived");
+    // Extra selections own QTextCursor instances. Rebuild their presentation
+    // only after QTextDocument has finished adjusting its registered cursors
+    // for the current edit.
+    phaseTimer.restart();
+    refreshSemanticDecorationPresentation(editor);
+    hotPathMetrics.editorInputSemanticDecorationNanoseconds +=
+        static_cast<std::uint64_t>(phaseTimer.nsecsElapsed());
+    lifecycleTrace("finish.semantic-decorations");
+    phaseTimer.restart();
     refreshScopeAndCurrentLineHighlight(editor);
+    hotPathMetrics.editorInputHighlightNanoseconds +=
+        static_cast<std::uint64_t>(phaseTimer.nsecsElapsed());
     lifecycleTrace("finish.highlights");
     editorPresentationPending = false;
 }

@@ -27,6 +27,12 @@ struct TSTextStorageMetrics {
     std::uint64_t parseNanoseconds = 0;
     std::uint64_t changedRangeNanoseconds = 0;
     std::uint64_t treeDeleteNanoseconds = 0;
+    std::uint64_t syntaxParseCount = 0;
+    std::uint64_t structurePreservingEditCount = 0;
+    std::uint64_t deferredSyntaxEditCount = 0;
+    std::uint64_t deferredSyntaxFlushCount = 0;
+    std::uint64_t highlightBlockCount = 0;
+    std::uint64_t highlightNanoseconds = 0;
 };
 
 // UTF-16 piece-table storage used directly by Tree-sitter's TSInput callback.
@@ -570,9 +576,17 @@ public:
     // Full (re)parse of the entire text from scratch.
     void setText(const QString& text);
 
-    // Applies one UTF-16 delta to the owned QString, edits the previous tree,
-    // reparses incrementally, and returns Tree-sitter's changed ranges.
-    QList<TSChangedRange> applyEdit(const DocumentChange& change);
+    // Applies one UTF-16 delta to the owned text and updates the live tree.
+    // A caller may defer reparsing for a transient non-language overlay; the
+    // same edited tree remains the sole positional source until it is flushed.
+    QList<TSChangedRange> applyEdit(
+        const DocumentChange& change,
+        bool deferSyntaxReparse = false);
+    void flushPendingEdits();
+    bool hasDeferredSyntaxEdits() const
+    {
+        return m_hasDeferredSyntaxEdits;
+    }
 
     TSNode rootNode() const;                 // always valid (empty doc parses to an empty tree)
     bool hasError() const;                   // tree contains ERROR / MISSING nodes (half-typed code)
@@ -584,6 +598,12 @@ public:
     void resetTextStorageMetricsForTest() const
     {
         m_text.resetMetricsForTest();
+    }
+    void recordHighlightBlockForTest(
+        std::uint64_t elapsedNanoseconds) const
+    {
+        ++m_text.m_metrics.highlightBlockCount;
+        m_text.m_metrics.highlightNanoseconds += elapsedNanoseconds;
     }
 
     // True if the char offset is inside a Tree-sitter comment node.
@@ -720,6 +740,8 @@ private:
     TSParser* m_parser = nullptr;  // owned
     TSTree*   m_tree   = nullptr;  // owned
     TSUTF16Text m_text;            // current document text (UTF-16)
+    bool m_hasPendingEdits = false;
+    bool m_hasDeferredSyntaxEdits = false;
 };
 
 // Map a tree-sitter token type to a highlight category. isNamed distinguishes grammar tokens

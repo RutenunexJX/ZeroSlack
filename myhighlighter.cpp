@@ -1,6 +1,7 @@
 #include "myhighlighter.h"
 #include <QTextDocument>
 #include <QTextBlock>
+#include <QElapsedTimer>
 
 #include <cstdio>
 
@@ -69,6 +70,8 @@ const QTextCharFormat* MyHighlighter::formatFor(HlCategory category) const
 
 void MyHighlighter::highlightBlock(const QString &text)
 {
+    QElapsedTimer blockTimer;
+    blockTimer.start();
     const bool trace = qEnvironmentVariableIsSet(
         "ZEROSLACK_EDITOR_LIFECYCLE_TRACE");
     if (trace) {
@@ -101,6 +104,8 @@ void MyHighlighter::highlightBlock(const QString &text)
 
     // Propagate multi-line block-comment state so following blocks re-highlight when a /* */ opens.
     setCurrentBlockState(m_tsdoc->blockEndCommentState(blockStart, text.length()));
+    m_tsdoc->recordHighlightBlockForTest(
+        static_cast<std::uint64_t>(blockTimer.nsecsElapsed()));
     if (trace) {
         std::fprintf(stderr, "lifecycle.highlight.exit\n");
         std::fflush(stderr);

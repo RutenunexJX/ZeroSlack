@@ -74,7 +74,9 @@ public:
     void attachToEditor(MyCodeEditor* editor);
     QList<TSChangedRange> applyDocumentChange(
         const DocumentChange& change,
-        const TSUTF16Text& currentText);
+        const TSUTF16Text& currentText,
+        bool deferSyntaxReparse = false);
+    void flushPendingEdits();
     QString moduleNameAt(int charPos) const;
     TSPortAppendTarget portAppendTargetAt(int charPos) const;
     TSSignalInsertTarget signalInsertTargetAt(int charPos) const;

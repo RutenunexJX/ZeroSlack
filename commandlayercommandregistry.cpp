@@ -85,6 +85,17 @@ bool isWordPrefixAbbreviation(const QStringList& words,
     return matchFrom(0, 0);
 }
 
+bool isExactWordInitialism(const QStringList& words, const QString& query)
+{
+    if (words.size() != query.size())
+        return false;
+    for (int i = 0; i < words.size(); ++i) {
+        if (words.at(i).isEmpty() || words.at(i).at(0) != query.at(i))
+            return false;
+    }
+    return true;
+}
+
 bool subsequenceMatch(const QString& command,
                       const QString& query,
                       int* skippedCharacters)
@@ -346,9 +357,11 @@ QList<CommandLayerCommandMatch> commandLayerCommandMatches(
             match.rank = CommandLayerMatchRank::Prefix;
             match.skippedCharacters =
                 normalizedName.size() - normalizedQuery.size();
-        } else if (isWordPrefixAbbreviation(commandWords(command.name),
-                                            normalizedQuery)) {
+        } else if (const QStringList words = commandWords(command.name);
+                   isWordPrefixAbbreviation(words, normalizedQuery)) {
             match.rank = CommandLayerMatchRank::WordPrefix;
+            match.exactWordInitials =
+                isExactWordInitialism(words, normalizedQuery);
             match.skippedCharacters =
                 normalizedName.size() - normalizedQuery.size();
         } else {
@@ -371,10 +384,19 @@ QList<CommandLayerCommandMatch> commandLayerCommandMatches(
             return static_cast<int>(left.rank)
                 > static_cast<int>(right.rank);
         }
+        if (left.exactWordInitials != right.exactWordInitials)
+            return left.exactWordInitials;
         if (left.skippedCharacters != right.skippedCharacters)
             return left.skippedCharacters < right.skippedCharacters;
         return left.registryIndex < right.registryIndex;
     });
+    if (!matches.isEmpty()) {
+        const CommandLayerMatchRank strongestRank = matches.first().rank;
+        while (!matches.isEmpty()
+               && matches.constLast().rank != strongestRank) {
+            matches.removeLast();
+        }
+    }
     return matches;
 }
 

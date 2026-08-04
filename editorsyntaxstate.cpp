@@ -153,7 +153,8 @@ void EditorSyntaxState::attachToEditor(MyCodeEditor* editor)
 
 QList<TSChangedRange> EditorSyntaxState::applyDocumentChange(
     const DocumentChange& change,
-    const TSUTF16Text& currentText)
+    const TSUTF16Text& currentText,
+    bool deferSyntaxReparse)
 {
     if (document->text().size() != change.oldLength
         || document->text().mid(change.position, change.removedLength)
@@ -180,7 +181,8 @@ QList<TSChangedRange> EditorSyntaxState::applyDocumentChange(
         return ranges;
     }
 
-    QList<TSChangedRange> ranges = document->applyEdit(change);
+    QList<TSChangedRange> ranges = document->applyEdit(
+        change, deferSyntaxReparse);
     ++incrementalEditCount;
     largeDocument =
         document->text().size()
@@ -195,6 +197,11 @@ QList<TSChangedRange> EditorSyntaxState::applyDocumentChange(
         ranges.append(range);
     }
     return ranges;
+}
+
+void EditorSyntaxState::flushPendingEdits()
+{
+    document->flushPendingEdits();
 }
 
 QString EditorSyntaxState::moduleNameAt(int charPos) const

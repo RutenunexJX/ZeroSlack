@@ -7,6 +7,7 @@
 
 #include <QAbstractItemView>
 #include <QApplication>
+#include <QElapsedTimer>
 #include <QKeyEvent>
 #include <QModelIndex>
 #include <QTextCursor>
@@ -86,6 +87,8 @@ bool EditorCompletionWorkflow::handleInlineCandidateFilterKey(
         inlineSession.replacementStartPosition,
         inlineSession.replacementEndPosition);
     ++editor->state->hotPathMetrics.inlineFilterKeyEvents;
+    QElapsedTimer documentEditTimer;
+    documentEditTimer.start();
     QTextCursor cursor = editor->textCursor();
     applyingInlineReplacement = true;
     cursor.beginEditBlock();
@@ -106,6 +109,8 @@ bool EditorCompletionWorkflow::handleInlineCandidateFilterKey(
     }
     cursor.endEditBlock();
     editor->setTextCursor(cursor);
+    editor->state->hotPathMetrics.inlineFilterDocumentEditNanoseconds +=
+        static_cast<std::uint64_t>(documentEditTimer.nsecsElapsed());
 
     inlineSession.replacementEndPosition = cursor.position();
     inlineSession.abbreviationText = editor->cachedDocumentSlice(
@@ -119,7 +124,11 @@ bool EditorCompletionWorkflow::handleInlineCandidateFilterKey(
     applyingInlineReplacement = false;
 
     event->accept();
+    QElapsedTimer refreshTimer;
+    refreshTimer.start();
     refreshInlineCandidateFilter();
+    editor->state->hotPathMetrics.inlineFilterRefreshNanoseconds +=
+        static_cast<std::uint64_t>(refreshTimer.nsecsElapsed());
     return true;
 }
 

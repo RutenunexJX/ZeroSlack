@@ -2,7 +2,9 @@
 #include "tsdocument.h"
 
 #include <QCoreApplication>
+#include <QElapsedTimer>
 
+#include <cstring>
 #include <cstdio>
 #include <vector>
 
@@ -141,6 +143,46 @@ bool structurallyEquivalent(TSNode left, TSNode right)
     }
     return true;
 }
+
+bool containsNodeTypeAtRange(TSNode root,
+                             const char* type,
+                             int startChar,
+                             int endChar)
+{
+    std::vector<TSNode> pending{root};
+    while (!pending.empty()) {
+        const TSNode node = pending.back();
+        pending.pop_back();
+        if (std::strcmp(ts_node_type(node), type) == 0
+            && ts_node_start_byte(node)
+                   == static_cast<uint32_t>(startChar) * 2u
+            && ts_node_end_byte(node)
+                   == static_cast<uint32_t>(endChar) * 2u) {
+            return true;
+        }
+        const uint32_t childCount = ts_node_child_count(node);
+        for (uint32_t index = 0; index < childCount; ++index)
+            pending.push_back(ts_node_child(node, index));
+    }
+    return false;
+}
+
+DocumentChange inlineChange(const QString& oldText,
+                            int position,
+                            int removedLength,
+                            const QString& insertedText)
+{
+    DocumentChange change;
+    change.position = position;
+    change.removedLength = removedLength;
+    change.removedText = oldText.mid(position, removedLength);
+    change.insertedText = insertedText;
+    change.oldLength = oldText.size();
+    change.newLength = oldText.size()
+        - removedLength + insertedText.size();
+    change.startColumn = position;
+    return change;
+}
 } // namespace
 
 int main(int argc, char** argv)
@@ -161,6 +203,155 @@ int main(int argc, char** argv)
                        .keyword
                == QStringLiteral("begin"));
 
+    const QString stableIdentifierText = QStringLiteral(
+        "module stable_identifier;\n"
+        "  logic selected_signal;\n"
+        "endmodule\n");
+    const int stableIdentifierEnd =
+        stableIdentifierText.indexOf(QStringLiteral("selected_signal"))
+        + QStringLiteral("selected_signal").size();
+    TSDocument stableIdentifierDocument;
+    stableIdentifierDocument.setText(stableIdentifierText);
+    stableIdentifierDocument.resetTextStorageMetricsForTest();
+    DocumentChange stableInsert;
+    stableInsert.position = stableIdentifierEnd;
+    stableInsert.insertedText = QStringLiteral("X");
+    stableInsert.oldLength = stableIdentifierText.size();
+    stableInsert.newLength = stableInsert.oldLength + 1;
+    stableInsert.startLine = 1;
+    stableInsert.startColumn = 23;
+    stableInsert.oldEndLine = 1;
+    stableInsert.newEndLine = 1;
+    stableIdentifierDocument.applyEdit(stableInsert);
+    QString stableIdentifierEdited = stableIdentifierText;
+    stableIdentifierEdited.insert(stableIdentifierEnd,
+                                  QLatin1Char('X'));
+    TSDocument stableIdentifierFull;
+    stableIdentifierFull.setText(stableIdentifierEdited);
+    const TSTextStorageMetrics stableInsertMetrics =
+        stableIdentifierDocument.textStorageMetricsForTest();
+    expect("identifier suffix insertion preserves authoritative tree structure",
+           structurallyEquivalent(
+               stableIdentifierDocument.rootNode(),
+               stableIdentifierFull.rootNode())
+               && stableInsertMetrics.editCount == 1
+               && stableInsertMetrics.structurePreservingEditCount == 1
+               && stableInsertMetrics.syntaxParseCount == 0
+               && stableInsertMetrics.inputReadCount == 0);
+
+    stableIdentifierDocument.resetTextStorageMetricsForTest();
+    DocumentChange stableDelete;
+    stableDelete.position = stableIdentifierEnd;
+    stableDelete.removedLength = 1;
+    stableDelete.removedText = QStringLiteral("X");
+    stableDelete.oldLength = stableIdentifierEdited.size();
+    stableDelete.newLength = stableIdentifierText.size();
+    stableDelete.startLine = 1;
+    stableDelete.startColumn = 23;
+    stableDelete.oldEndLine = 1;
+    stableDelete.newEndLine = 1;
+    stableIdentifierDocument.applyEdit(stableDelete);
+    TSDocument stableIdentifierOriginal;
+    stableIdentifierOriginal.setText(stableIdentifierText);
+    const TSTextStorageMetrics stableDeleteMetrics =
+        stableIdentifierDocument.textStorageMetricsForTest();
+    expect("identifier suffix deletion preserves authoritative tree structure",
+           structurallyEquivalent(
+               stableIdentifierDocument.rootNode(),
+               stableIdentifierOriginal.rootNode())
+               && stableDeleteMetrics.editCount == 1
+               && stableDeleteMetrics.structurePreservingEditCount == 1
+               && stableDeleteMetrics.syntaxParseCount == 0
+               && stableDeleteMetrics.inputReadCount == 0);
+
+    const QString alwaysPrefixText = QStringLiteral(
+        "module m; alway begin end endmodule");
+    const int alwaysPrefixStart =
+        alwaysPrefixText.indexOf(QStringLiteral("alway"));
+    const int alwaysPrefixEnd =
+        alwaysPrefixStart + QStringLiteral("alway").size();
+    TSDocument alwaysBoundaryDocument;
+    alwaysBoundaryDocument.setText(alwaysPrefixText);
+    expect("always boundary probe starts as a simple identifier",
+           containsNodeTypeAtRange(
+               alwaysBoundaryDocument.rootNode(),
+               "simple_identifier",
+               alwaysPrefixStart,
+               alwaysPrefixEnd));
+    alwaysBoundaryDocument.resetTextStorageMetricsForTest();
+    alwaysBoundaryDocument.applyEdit(
+        inlineChange(alwaysPrefixText,
+                     alwaysPrefixEnd,
+                     0,
+                     QStringLiteral("s")));
+    QString alwaysKeywordText = alwaysPrefixText;
+    alwaysKeywordText.insert(alwaysPrefixEnd, QLatin1Char('s'));
+    TSDocument alwaysBoundaryFull;
+    alwaysBoundaryFull.setText(alwaysKeywordText);
+    const TSTextStorageMetrics alwaysEntryMetrics =
+        alwaysBoundaryDocument.textStorageMetricsForTest();
+    expect("identifier entering always reparses to the authoritative structure",
+           structurallyEquivalent(
+               alwaysBoundaryDocument.rootNode(),
+               alwaysBoundaryFull.rootNode())
+               && containsNodeTypeAtRange(
+                   alwaysBoundaryDocument.rootNode(),
+                   "always_keyword",
+                   alwaysPrefixStart,
+                   alwaysPrefixEnd + 1)
+               && alwaysEntryMetrics.syntaxParseCount == 1
+               && alwaysEntryMetrics.structurePreservingEditCount == 0);
+
+    alwaysBoundaryDocument.resetTextStorageMetricsForTest();
+    alwaysBoundaryDocument.applyEdit(
+        inlineChange(alwaysKeywordText,
+                     alwaysPrefixEnd,
+                     1,
+                     QString()));
+    TSDocument alwaysReverseFull;
+    alwaysReverseFull.setText(alwaysPrefixText);
+    const TSTextStorageMetrics alwaysExitMetrics =
+        alwaysBoundaryDocument.textStorageMetricsForTest();
+    expect("keyword suffix deletion back to an identifier reparses immediately",
+           structurallyEquivalent(
+               alwaysBoundaryDocument.rootNode(),
+               alwaysReverseFull.rootNode())
+               && alwaysExitMetrics.syntaxParseCount == 1
+               && alwaysExitMetrics.structurePreservingEditCount == 0);
+
+    const QString logicPrefixText = QStringLiteral(
+        "module keyword_probe; logi value; endmodule");
+    const int logicPrefixStart =
+        logicPrefixText.indexOf(QStringLiteral("logi"));
+    const int logicPrefixEnd =
+        logicPrefixStart + QStringLiteral("logi").size();
+    TSDocument logicBoundaryDocument;
+    logicBoundaryDocument.setText(logicPrefixText);
+    expect("logic boundary probe starts as a simple identifier",
+           containsNodeTypeAtRange(
+               logicBoundaryDocument.rootNode(),
+               "simple_identifier",
+               logicPrefixStart,
+               logicPrefixEnd));
+    logicBoundaryDocument.resetTextStorageMetricsForTest();
+    logicBoundaryDocument.applyEdit(
+        inlineChange(logicPrefixText,
+                     logicPrefixEnd,
+                     0,
+                     QStringLiteral("c")));
+    QString logicKeywordText = logicPrefixText;
+    logicKeywordText.insert(logicPrefixEnd, QLatin1Char('c'));
+    TSDocument logicBoundaryFull;
+    logicBoundaryFull.setText(logicKeywordText);
+    const TSTextStorageMetrics logicEntryMetrics =
+        logicBoundaryDocument.textStorageMetricsForTest();
+    expect("keyword boundary handling is not specific to always",
+           structurallyEquivalent(
+               logicBoundaryDocument.rootNode(),
+               logicBoundaryFull.rootNode())
+               && logicEntryMetrics.syntaxParseCount == 1
+               && logicEntryMetrics.structurePreservingEditCount == 0);
+
     const Fixture fixture = makeFixture();
     expect("fixture exceeds 2 MiB",
            fixture.text.size() > 2 * 1024 * 1024
@@ -168,6 +359,46 @@ int main(int argc, char** argv)
 
     TSDocument document;
     document.setText(fixture.text);
+    const int earlyWhitespaceCursor =
+        fixture.text.indexOf(QLatin1Char(' ')) + 1;
+    QElapsedTimer earlyLookupTimer;
+    earlyLookupTimer.start();
+    const TSKeywordCompletionTarget earlyCompletion =
+        document.uniqueKeywordCompletionAt(earlyWhitespaceCursor);
+    const qint64 earlyLookupNanoseconds =
+        earlyLookupTimer.nsecsElapsed();
+    std::printf("early non-keyword lookup latency: %.3f ms\n",
+                static_cast<double>(earlyLookupNanoseconds)
+                    / 1000000.0);
+    expect("early non-keyword lookup stays logarithmic in a large tree",
+           !earlyCompletion.ok()
+               && earlyLookupNanoseconds < 5000000);
+    QElapsedTimer earlyPairTimer;
+    earlyPairTimer.start();
+    const TSKeywordPairTarget earlyPair =
+        document.matchingKeywordPairAt(earlyWhitespaceCursor);
+    const qint64 earlyPairNanoseconds =
+        earlyPairTimer.nsecsElapsed();
+    std::printf("early non-pair lookup latency: %.3f ms\n",
+                static_cast<double>(earlyPairNanoseconds)
+                    / 1000000.0);
+    expect("early non-pair lookup bypasses the large syntax tree",
+           !earlyPair.ok()
+               && earlyPairNanoseconds < 5000000);
+
+    const QString underscoreIdentifier = QStringLiteral(
+        "module underscore_probe;\n"
+        "  logic __NOT_A_KEYWORD__;\n"
+        "endmodule\n");
+    TSDocument underscoreDocument;
+    underscoreDocument.setText(underscoreIdentifier);
+    const int underscoreCursor =
+        underscoreIdentifier.indexOf(
+            QStringLiteral("__NOT_A_KEYWORD__"))
+        + QStringLiteral("__NOT_A_KEYWORD__").size();
+    expect("underscore identifier bypasses keyword lookahead",
+           !underscoreDocument.uniqueKeywordCompletionAt(
+                underscoreCursor).ok());
     const TSStructuralNewlineTarget newline =
         document.structuralNewlineTarget(
             fixture.beginPosition + 5);
