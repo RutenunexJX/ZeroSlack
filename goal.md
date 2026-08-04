@@ -12,8 +12,11 @@ Overall status: **验收通过，P1 正确性修复完成**.
 - Phase 1 — Keyword-Boundary Incremental Tree Repair: complete. Product fix,
   focused regressions, full build, and unfiltered acceptance all pass.
 - 文档状态已更新为验收通过；P1 产品代码、回归与完整 77 项验收均已完成。
-- Repair baseline and protection snapshot: `HEAD` and `origin/main` are both
-  `73ddc5d0e3cb275bb291c9bfb8828d3fd8801dc6`. Protected untracked paths remain
+- Historical repair baseline: `73ddc5d0e3cb275bb291c9bfb8828d3fd8801dc6`.
+- Accepted implementation commit: `8308b5a9820ac9ad4fd852348ad8fe17f9b120ef`.
+  This documentation-only follow-up records that result and does not claim a
+  later documentation commit as the current `HEAD`.
+- Protection snapshot: protected untracked paths remain
   `current_app_signal_usage_hotspot_full_after.png` (141996 bytes, SHA-256
   `2FDBB5A46870821FF5927D26BE7B381D891DBBA7ABAA3A386910189F44B66A6F`),
   `test_sv/new/.zs` (8642 bytes, SHA-256
@@ -37,10 +40,15 @@ Overall status: **验收通过，P1 正确性修复完成**.
   `editor_incremental_test` 9.31 seconds. The semantic suite reports 26/26,
   including `alway -> always`, `logi -> logic`, reverse keyword exit, and the
   unchanged ordinary-identifier no-parse path.
-- The complete serial build succeeds. Final unfiltered
-  `ctest --output-on-failure -j1` passes 77/77 in 395.51 seconds, including
-  `editor_incremental_test` in 13.64 seconds with every existing correctness
-  and performance threshold unchanged.
+- Execution-side verification: the complete serial build succeeded, and its
+  final unfiltered `ctest --output-on-failure -j1` passed 77/77 in 395.51
+  seconds, including `editor_incremental_test` in 13.64 seconds with every
+  existing correctness and performance threshold unchanged.
+- Control-side independent verification: `ts_doc_test` passed in 0.74 seconds,
+  `ts_large_file_semantics_test` in 1.36 seconds, and
+  `editor_incremental_test` in 12.01 seconds. The subsequent unfiltered serial
+  CTest run passed 77/77 in 412.70 seconds, including the corresponding three
+  targets.
 - Pre-final history: one earlier full run produced 76/77 while the external
   `PassTheFear.exe` process was active, and an isolated rerun reproduced two
   latency-gate failures. That run was not accepted and no threshold was changed;
