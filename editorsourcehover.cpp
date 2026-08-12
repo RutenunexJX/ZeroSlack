@@ -1,6 +1,7 @@
 #include "editorsourcehover.h"
 
 #include "editorsemanticcontextservice.h"
+#include "insightvisualstyle.h"
 
 #include <QPainter>
 #include <QPen>
@@ -76,7 +77,7 @@ QCursor EditorSourceHover::createJumpableCursor() const
 
     painter.setRenderHint(QPainter::Antialiasing);
 
-    QPen pen(QColor(0, 255, 0), 4);
+    QPen pen(InsightVisualStyle::theme().semantic.read, 4);
     pen.setCapStyle(Qt::RoundCap);
     pen.setJoinStyle(Qt::RoundJoin);
     painter.setPen(pen);
@@ -97,7 +98,8 @@ QCursor EditorSourceHover::createNonJumpableCursor() const
     QPainter painter(&pixmap);
     painter.setRenderHint(QPainter::Antialiasing);
 
-    QPen pen(QColor(255, 0, 0), 3);
+    QPen pen(
+        InsightVisualStyle::theme().syntax.errorUnderline, 3);
     pen.setCapStyle(Qt::RoundCap);
     painter.setPen(pen);
 

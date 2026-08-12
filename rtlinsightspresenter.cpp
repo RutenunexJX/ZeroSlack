@@ -1013,6 +1013,7 @@ void RtlInsightsPresenter::showFsmGraph()
     logReportStart(QStringLiteral("FSM Graph"));
     FsmGraphReport report;
     try {
+        ++graphBuildRequestCount;
         FsmGraphQuery query;
         query.fileName = state.currentFileName;
         query.moduleName = state.currentModuleName;
@@ -1053,6 +1054,7 @@ void RtlInsightsPresenter::showModuleBlockDiagram()
     logReportStart(QStringLiteral("Module Block Diagram"));
     ModuleBlockDiagramReport report;
     try {
+        ++graphBuildRequestCount;
         ModuleBlockDiagramQuery query;
         query.fileName = state.currentFileName;
         query.moduleName = state.currentModuleName;
@@ -1318,6 +1320,7 @@ void RtlInsightsPresenter::showStateTransitionGraphForSignal(
     logReportStart(QStringLiteral("State Transition Graph"));
     StateTransitionGraphReport report;
     try {
+        ++graphBuildRequestCount;
         StateTransitionGraphQuery query;
         query.fileName = state.currentFileName;
         query.moduleName = state.currentModuleName;
@@ -1459,4 +1462,9 @@ void RtlInsightsPresenter::showSemanticDiff(
     }
     logReportDone(QStringLiteral("Semantic Diff"),
                   static_cast<int>(timer.elapsed()));
+}
+
+quint64 RtlInsightsPresenter::graphBuildRequestCountForTest() const
+{
+    return graphBuildRequestCount;
 }

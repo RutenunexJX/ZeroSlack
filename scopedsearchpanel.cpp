@@ -5,6 +5,7 @@
 #include <rtledit/edit_plan.h>
 
 #include <QAbstractItemView>
+#include <QAction>
 #include <QCheckBox>
 #include <QComboBox>
 #include <QDockWidget>
@@ -13,6 +14,7 @@
 #include <QHeaderView>
 #include <QLabel>
 #include <QLineEdit>
+#include <QMenu>
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QSet>
@@ -477,6 +479,8 @@ void ScopedSearchPanel::buildUi()
     resultsTree->setAlternatingRowColors(true);
     resultsTree->setSelectionMode(
         QAbstractItemView::SingleSelection);
+    resultsTree->setContextMenuPolicy(
+        Qt::CustomContextMenu);
     resultsTree->header()->setStretchLastSection(false);
     resultsTree->header()->setSectionResizeMode(
         0, QHeaderView::ResizeToContents);
@@ -633,6 +637,10 @@ void ScopedSearchPanel::buildUi()
             [this](QTreeWidgetItem* item, int) {
                 activateResultItem(item);
             });
+    connect(resultsTree,
+            &QTreeWidget::customContextMenuRequested,
+            this,
+            &ScopedSearchPanel::showResultContextMenu);
     connect(replaceTree,
             &QTreeWidget::itemChanged,
             this,
@@ -862,6 +870,89 @@ void ScopedSearchPanel::activateResultItem(
     emit navigationRequested(fileName, line, column);
 }
 
+bool ScopedSearchPanel::requestTemporaryEditorOpenForItem(
+    QTreeWidgetItem* item)
+{
+    if (!item || !item->parent())
+        return false;
+    const int resultIndex =
+        item->data(0, kResultIndexRole).toInt();
+    if (resultIndex < 0
+        || resultIndex >= currentResponse.results.size()) {
+        return false;
+    }
+
+    const ScopedSearchResult& result =
+        currentResponse.results.at(resultIndex);
+    EditorLocation location;
+    location.filePath = result.fileName;
+    location.line = qMax(1, result.line);
+    location.column = qMax(1, result.column);
+    location.symbolKey = result.hasSemanticRecord
+        ? result.semanticRecord.name
+        : result.matchedText;
+    location.sourceLinkId = result.identity.isValid()
+        ? result.identity.toString()
+        : resultIdentityKey(result);
+    if (!result.matchedText.isEmpty()
+        && !result.matchedText.contains(QLatin1Char('\n'))
+        && !result.matchedText.contains(QLatin1Char('\r'))) {
+        EditorSelectionRange selection;
+        selection.startLine = location.line;
+        selection.startColumn = location.column;
+        selection.endLine = location.line;
+        selection.endColumn = location.column
+            + result.matchedText.size();
+        location.selection = selection;
+    }
+    if (!location.isValid())
+        return false;
+    emit temporaryEditorOpenRequested(location);
+    return true;
+}
+
+void ScopedSearchPanel::showResultContextMenu(
+    const QPoint& position)
+{
+    if (!resultsTree)
+        return;
+    QTreeWidgetItem* item =
+        resultsTree->itemAt(position);
+    if (!item || !item->parent())
+        return;
+
+    const ActionDescriptor* descriptor =
+        findActionById(QString::fromLatin1(
+            ActionIds::ViewTemporaryEditorOpen));
+    if (!descriptor
+        || !descriptor->hasSurface(
+            ActionSurface::ContextMenu)) {
+        return;
+    }
+    const ActionAliasDescriptor alias =
+        descriptor->aliasForSurface(
+            ActionSurface::ContextMenu);
+    QMenu menu(resultsTree);
+    QAction* action = menu.addAction(
+        alias.label.trimmed().isEmpty()
+            ? descriptor->canonicalName
+            : alias.label);
+    action->setObjectName(
+        QStringLiteral("scopedSearchTemporaryEditorAction"));
+    action->setProperty(
+        "actionId", descriptor->id);
+    action->setProperty(
+        "executionRoute",
+        descriptor->executionRoute);
+    action->setToolTip(descriptor->description);
+    action->setStatusTip(descriptor->description);
+    if (menu.exec(
+            resultsTree->viewport()->mapToGlobal(position))
+        == action) {
+        requestTemporaryEditorOpenForItem(item);
+    }
+}
+
 void ScopedSearchPanel::updateReplaceSelection(
     QTreeWidgetItem* item)
 {
@@ -1037,6 +1128,12 @@ ScopedSearchPanelCoordinator(
                 }
             });
     connect(searchPanel.data(),
+            &ScopedSearchPanel::temporaryEditorOpenRequested,
+            this,
+            [this](const EditorLocation& location) {
+                requestTemporaryEditorOpen(location);
+            });
+    connect(searchPanel.data(),
             &ScopedSearchPanel::replacePreviewReady,
             this,
             &ScopedSearchPanelCoordinator::
@@ -1078,6 +1175,42 @@ void ScopedSearchPanelCoordinator::setNavigationHandler(
     NavigationHandler handler)
 {
     navigationHandler = std::move(handler);
+}
+
+void ScopedSearchPanelCoordinator::
+    setRegisteredActionRequestHandler(
+        RegisteredActionRequestHandler handler)
+{
+    registeredActionRequestHandler =
+        std::move(handler);
+}
+
+ActionExecutionResult
+ScopedSearchPanelCoordinator::requestTemporaryEditorOpen(
+    const EditorLocation& location)
+{
+    ActionExecutionResult result;
+    result.handled = true;
+    emit temporaryEditorOpenRequested(location);
+    if (!location.isValid()) {
+        result.failureReason = QStringLiteral(
+            "The selected Search result has no valid source location.");
+    } else if (!registeredActionRequestHandler) {
+        result.failureReason = QStringLiteral(
+            "The temporary-editor Action is unavailable.");
+    } else {
+        result = registeredActionRequestHandler(
+            QString::fromLatin1(
+                ActionIds::ViewTemporaryEditorOpen),
+            editorLocationActionParameters(location));
+    }
+    emit temporaryEditorOpenFinished(
+        location,
+        result.succeeded,
+        result.failureReason.isEmpty()
+            ? result.message
+            : result.failureReason);
+    return result;
 }
 
 void ScopedSearchPanelCoordinator::setReplaceWorkflow(

@@ -61,10 +61,12 @@ public:
     void showFsmGraph();
     void showModuleBlockDiagram();
     void updateActionState();
+    quint64 graphBuildRequestCountForTest() const;
 
 private:
     RtlInsightsPanelViewState& state;
     RtlInsightsGraphController& graphController;
+    quint64 graphBuildRequestCount = 0;
 
     void logReportStart(const QString& reportName) const;
     void logReportDone(const QString& reportName,

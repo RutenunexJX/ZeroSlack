@@ -474,6 +474,7 @@ SharedDocumentViewState SharedDocument::viewState(
         result.verticalScrollValue = bar->value();
     if (const QScrollBar* bar = editor->horizontalScrollBar())
         result.horizontalScrollValue = bar->value();
+    result.folding = editor->foldingViewState();
     return result;
 }
 
@@ -489,6 +490,7 @@ void SharedDocument::captureViewState(MyCodeEditor* editor)
         found->state.verticalScrollValue = bar->value();
     if (const QScrollBar* bar = editor->horizontalScrollBar())
         found->state.horizontalScrollValue = bar->value();
+    found->state.folding = editor->foldingViewState();
 }
 
 void SharedDocument::handleContentsChange()
@@ -562,6 +564,7 @@ void SharedDocument::applyViewState(
             state.cursorPosition),
         QTextCursor::KeepAnchor);
     editor->setTextCursor(cursor);
+    editor->restoreFoldingViewState(state.folding);
     if (QScrollBar* bar = editor->verticalScrollBar())
         bar->setValue(qMax(0, state.verticalScrollValue));
     if (QScrollBar* bar = editor->horizontalScrollBar())
@@ -583,6 +586,8 @@ void SharedDocument::setFileIdentity(
     const QString& documentId,
     const QString& fileName)
 {
+    const QString previousDocumentId = id;
+    const QString previousFileName = normalizedFileName;
     id = documentId;
     normalizedFileName =
         EditorFileIdentity::normalized(fileName);
@@ -590,6 +595,10 @@ void SharedDocument::setFileIdentity(
         if (editor)
             editor->setDocumentFileName(normalizedFileName);
     }
+    emit identityChanged(previousDocumentId,
+                         previousFileName,
+                         id,
+                         normalizedFileName);
     emit statusChanged();
 }
 

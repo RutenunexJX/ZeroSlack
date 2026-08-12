@@ -1,5 +1,6 @@
 #include "signalkernelgraphpanelcoordinator.h"
 
+#include "applicationthememanager.h"
 #include "codepreviewservice.h"
 #include "documentmodel.h"
 #include "editorhoverpopup.h"
@@ -378,6 +379,7 @@ public:
     }
 
     ToggleHandler toggleHandler;
+    const QString& groupKey() const { return key; }
 
 protected:
     void hoverEnterEvent(QGraphicsSceneHoverEvent* event) override
@@ -835,10 +837,22 @@ SignalKernelGraphPanelCoordinator::SignalKernelGraphPanelCoordinator(
                          closeNodePreviewNow();
                      });
 
+    themeAboutToChangeConnection =
+        QObject::connect(&ApplicationThemeManager::instance(),
+                         &ApplicationThemeManager::themeAboutToChange,
+                         graphDock,
+                         [this](ThemeMode, ThemeMode) {
+                             pendingThemePresentationState =
+                                 captureThemePresentationState();
+                         });
+
     renderUnavailable(QStringLiteral("No signal selected."));
 }
 
-SignalKernelGraphPanelCoordinator::~SignalKernelGraphPanelCoordinator() = default;
+SignalKernelGraphPanelCoordinator::~SignalKernelGraphPanelCoordinator()
+{
+    QObject::disconnect(themeAboutToChangeConnection);
+}
 
 void SignalKernelGraphPanelCoordinator::renderReportForTest(
     const SignalKernelGraphReport& report)
@@ -933,6 +947,12 @@ int SignalKernelGraphPanelCoordinator::focusedSearchNodeIdForTest() const
     return lastFocusedSearchNodeId;
 }
 
+quint64 SignalKernelGraphPanelCoordinator::
+    graphBuildRequestCountForTest() const
+{
+    return graphBuildRequestCount;
+}
+
 void SignalKernelGraphPanelCoordinator::setNavigationHandler(
     std::function<bool(const QString&, int, int)> handler)
 {
@@ -985,10 +1005,93 @@ void SignalKernelGraphPanelCoordinator::refresh()
         return;
     }
 
+    ++graphBuildRequestCount;
     const SignalKernelGraphReport report =
         SignalKernelGraphService::getInstance()->buildSignalKernelGraph(
             currentQuery);
     renderReport(report);
+}
+
+void SignalKernelGraphPanelCoordinator::refreshThemePresentation()
+{
+    if (!graphView || !graphScene)
+        return;
+
+    ThemePresentationState presentationState =
+        pendingThemePresentationState.valid
+            ? pendingThemePresentationState
+            : captureThemePresentationState();
+    // Consume the pre-theme snapshot before rebuilding the scene. A second
+    // explicit refresh must observe the current view rather than replaying an
+    // older transform after the user has interacted with the graph.
+    pendingThemePresentationState = {};
+
+    if (presentationState.valid) {
+        graphSearchText = presentationState.searchText;
+        collapsedFanoutGroupKeys =
+            presentationState.collapsedGroupKeys;
+        if (graphSearchEdit
+            && graphSearchEdit->text()
+                   != presentationState.searchText) {
+            const QSignalBlocker blocker(graphSearchEdit);
+            graphSearchEdit->setText(
+                presentationState.searchText);
+        }
+    }
+
+    const SignalKernelGraphReport cachedReport = currentReport;
+    renderReport(cachedReport, false);
+    for (QGraphicsItem* item : graphScene->items()) {
+        if (auto* node =
+                dynamic_cast<SignalKernelGraphNodeItem*>(item)) {
+            if (presentationState.selectedNodeIds.contains(
+                    node->graphNode().id)) {
+                node->setSelected(true);
+            }
+        } else if (auto* group =
+                       dynamic_cast<SignalKernelGraphFanoutGroupItem*>(item)) {
+            if (presentationState.selectedGroupKeys.contains(
+                    group->groupKey())) {
+                group->setSelected(true);
+            }
+        }
+    }
+    if (presentationState.valid) {
+        graphView->setTransform(presentationState.transform);
+        if (presentationState.hasCenter)
+            graphView->centerOn(presentationState.center);
+    }
+    if (graphView->viewport())
+        graphView->viewport()->update();
+}
+
+SignalKernelGraphPanelCoordinator::ThemePresentationState
+SignalKernelGraphPanelCoordinator::captureThemePresentationState() const
+{
+    ThemePresentationState state;
+    if (!graphView || !graphScene)
+        return state;
+
+    state.valid = true;
+    state.transform = graphView->transform();
+    if (graphView->viewport()) {
+        state.hasCenter = true;
+        state.center = graphView->mapToScene(
+            graphView->viewport()->rect().center());
+    }
+    state.searchText = graphSearchEdit
+        ? graphSearchEdit->text() : graphSearchText;
+    state.collapsedGroupKeys = collapsedFanoutGroupKeys;
+    for (QGraphicsItem* item : graphScene->selectedItems()) {
+        if (auto* node =
+                dynamic_cast<SignalKernelGraphNodeItem*>(item)) {
+            state.selectedNodeIds.insert(node->graphNode().id);
+        } else if (auto* group =
+                       dynamic_cast<SignalKernelGraphFanoutGroupItem*>(item)) {
+            state.selectedGroupKeys.insert(group->groupKey());
+        }
+    }
+    return state;
 }
 
 void SignalKernelGraphPanelCoordinator::focusFit()
@@ -1074,7 +1177,8 @@ void SignalKernelGraphPanelCoordinator::focusInspector()
 }
 
 void SignalKernelGraphPanelCoordinator::renderReport(
-    const SignalKernelGraphReport& report)
+    const SignalKernelGraphReport& report,
+    bool announce)
 {
     if (!graphScene)
         return;
@@ -1369,11 +1473,13 @@ void SignalKernelGraphPanelCoordinator::renderReport(
             && graphScene
             && !graphScene->items().isEmpty());
 
-    showStatusMessage(searchText.isEmpty()
-                          ? QStringLiteral("Rendered signal kernel graph")
-                          : QStringLiteral("%1 graph match(es)")
-                                .arg(lastSearchMatchCount),
-                      1500);
+    if (announce) {
+        showStatusMessage(searchText.isEmpty()
+                              ? QStringLiteral("Rendered signal kernel graph")
+                              : QStringLiteral("%1 graph match(es)")
+                                    .arg(lastSearchMatchCount),
+                          1500);
+    }
 }
 
 void SignalKernelGraphPanelCoordinator::renderUnavailable(

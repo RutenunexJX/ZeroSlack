@@ -1,6 +1,8 @@
 #ifndef INSTANCEPAIRCONNECTIONPANEL_H
 #define INSTANCEPAIRCONNECTIONPANEL_H
 
+#include "zeroslackexport.h"
+
 #include "instancepairconnectionfacade.h"
 
 #include <QHash>
@@ -46,7 +48,7 @@ Q_DECLARE_METATYPE(InstancePairConnectionPlanRequest)
 
 // The drag is deliberately process-local and typed. The drop target never
 // deserializes a display string or accepts arbitrary textual MIME payloads.
-class InstancePairConnectionDragMimeData final : public QMimeData
+class ZEROSLACK_API InstancePairConnectionDragMimeData final : public QMimeData
 {
 public:
     explicit InstancePairConnectionDragMimeData(
@@ -59,7 +61,7 @@ private:
     InstancePairConnectionPlanRequest typedRequest;
 };
 
-class InstancePairConnectionPanel final : public QWidget
+class ZEROSLACK_API InstancePairConnectionPanel final : public QWidget
 {
     Q_OBJECT
 
@@ -136,7 +138,7 @@ private:
 // The coordinator attaches exactly one reusable panel page to a stack. Data
 // updates do not select the page, show/raise a window, resize a dock, or move
 // keyboard focus.
-class InstancePairConnectionCoordinator final : public QObject
+class ZEROSLACK_API InstancePairConnectionCoordinator final : public QObject
 {
     Q_OBJECT
 

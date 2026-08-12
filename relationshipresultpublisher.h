@@ -1,6 +1,8 @@
 #ifndef RELATIONSHIPRESULTPUBLISHER_H
 #define RELATIONSHIPRESULTPUBLISHER_H
 
+#include "zeroslackexport.h"
+
 #include "relationshipanalysisworker.h"
 
 #include <QObject>
@@ -9,7 +11,7 @@
 class QTimer;
 class SymbolRelationshipEngine;
 
-class RelationshipResultPublisher : public QObject
+class ZEROSLACK_API RelationshipResultPublisher : public QObject
 {
     Q_OBJECT
 

@@ -758,6 +758,11 @@ void MyCodeEditorState::clearVirtualCursor(
     columnMode.clearVirtualCursor(editor);
 }
 
+void MyCodeEditorState::clearPendingColumnAnchor()
+{
+    columnMode.clearPendingColumnAnchor();
+}
+
 void MyCodeEditorState::handleVirtualCursorChanged(
     MyCodeEditor* editor)
 {
@@ -851,6 +856,7 @@ void MyCodeEditorState::refreshSemanticPresentation(MyCodeEditor* editor)
         return;
 
     refreshScopeAndCurrentLineHighlight(editor);
+    refreshDiagnosticPresentation(editor);
     refreshGhostAnnotations(editor);
 }
 

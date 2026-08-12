@@ -1,5 +1,6 @@
 #include "rtlinsightspanelcoordinator.h"
 
+#include "editorlocation.h"
 #include "graphexportui.h"
 #include "insightgraphview.h"
 #include "rtlinsightsgraphcontroller.h"
@@ -43,6 +44,50 @@ QAction* RtlInsightsPanelCoordinator::createGraphAction(
         GraphExportUi::kExecutionRouteProperty,
         descriptor->executionRoute);
     action->setToolTip(descriptor->description);
+    QObject::connect(
+        action,
+        &QAction::triggered,
+        owner,
+        [this, actionId]() {
+            requestGraphAction(actionId);
+        });
+    return action;
+}
+
+QAction* RtlInsightsPanelCoordinator::
+    createSelectedSourceAction(
+        QWidget* owner,
+        const QString& actionId)
+{
+    if (!owner)
+        return nullptr;
+    const ActionDescriptor* descriptor =
+        findActionById(actionId);
+    if (!descriptor
+        || !descriptor->hasSurface(
+            ActionSurface::ContextMenu)) {
+        return nullptr;
+    }
+    const ActionAliasDescriptor contextAlias =
+        descriptor->aliasForSurface(
+            ActionSurface::ContextMenu);
+    auto* action = new QAction(
+        contextAlias.label.trimmed().isEmpty()
+            ? descriptor->canonicalName
+            : contextAlias.label.trimmed(),
+        owner);
+    action->setObjectName(
+        QStringLiteral(
+            "rtlGraphTemporaryEditorAction"));
+    action->setProperty(
+        GraphExportUi::kActionIdProperty,
+        descriptor->id);
+    action->setProperty(
+        GraphExportUi::kExecutionRouteProperty,
+        descriptor->executionRoute);
+    action->setToolTip(descriptor->description);
+    action->setStatusTip(descriptor->description);
+    action->setEnabled(false);
     QObject::connect(
         action,
         &QAction::triggered,
@@ -99,6 +144,11 @@ QAction* RtlInsightsPanelCoordinator::graphAction(
         == QString::fromLatin1(
             ActionIds::GraphSetTopSelected)) {
         return viewState->graphSetTopAction;
+    }
+    if (actionId
+        == QString::fromLatin1(
+            ActionIds::ViewTemporaryEditorOpen)) {
+        return viewState->graphTemporaryEditorAction;
     }
     return nullptr;
 }
@@ -167,6 +217,37 @@ RtlInsightsPanelCoordinator::requestGraphAction(
     } else if (!action->isEnabled()) {
         result.failureReason =
             descriptor->unavailableReason;
+    } else if (actionId
+               == QString::fromLatin1(
+                   ActionIds::ViewTemporaryEditorOpen)) {
+        const RtlInsightSourceLocation source =
+            graphController
+            ? graphController->selectedSourceLocation()
+            : RtlInsightSourceLocation();
+        if (!source.hasSourcePosition()) {
+            result.failureReason = QStringLiteral(
+                "Select a graph item with a source location first.");
+        } else if (!registeredActionRequestHandler) {
+            result.failureReason = QStringLiteral(
+                "The temporary-editor Action is unavailable.");
+        } else {
+            EditorLocation location;
+            location.filePath = source.fileName;
+            location.line = source.line;
+            location.column = qMax(1, source.column);
+            location.symbolKey = source.symbolName;
+            location.sourceLinkId = QStringLiteral(
+                "rtl-insight:%1:%2:%3:%4:%5")
+                .arg(
+                    source.elementKind,
+                    source.moduleName,
+                    source.symbolName,
+                    source.secondarySymbolName)
+                .arg(source.line);
+            result = registeredActionRequestHandler(
+                descriptor->id,
+                editorLocationActionParameters(location));
+        }
     } else {
         result = executeAction(*descriptor, *this);
     }

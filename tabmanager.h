@@ -1,6 +1,8 @@
 #ifndef TABMANAGER_H
 #define TABMANAGER_H
 
+#include "zeroslackexport.h"
+
 #include <QObject>
 #include <QHash>
 #include <QPointer>
@@ -36,7 +38,7 @@ struct CrashRecoveryApplyResult :
     bool openedView = false;
 };
 
-class TabManager : public QObject
+class ZEROSLACK_API TabManager : public QObject
 {
     Q_OBJECT
 
@@ -68,6 +70,26 @@ public:
     EditorSplitController* editorSplitController() const;
     SharedDocument* sharedDocumentForEditor(
         MyCodeEditor* editor) const;
+    MyCodeEditor* editorActionTarget(
+        const QString& preferredViewId = QString()) const;
+    bool saveEditorView(MyCodeEditor* editor,
+                        bool forceSaveAs = false,
+                        const QString& explicitFileName = QString());
+    MyCodeEditor* createAuxiliaryView(
+        const QString& documentId,
+        const QString& fileName,
+        QWidget* parent,
+        const SharedDocumentViewState& state = {});
+    bool rebindAuxiliaryView(
+        MyCodeEditor* editor,
+        const QString& documentId,
+        const QString& fileName,
+        const SharedDocumentViewState& state = {});
+    bool closeAuxiliaryView(MyCodeEditor* editor);
+    bool saveAuxiliaryView(MyCodeEditor* editor,
+                           bool forceSaveAs = false);
+    bool isAuxiliaryView(MyCodeEditor* editor) const;
+    QList<MyCodeEditor*> auxiliaryViews() const;
     ExternalDocumentSyncController*
     externalDocumentSyncController() const;
     ExternalDocumentConflictReview externalConflictReview(
@@ -165,6 +187,13 @@ public:
 
 signals:
     void tabCreated(MyCodeEditor* editor);
+    void auxiliaryViewCreated(MyCodeEditor* editor);
+    void auxiliaryViewAboutToClose(MyCodeEditor* editor);
+    void documentIdentityChanged(
+        const QString& previousDocumentId,
+        const QString& previousFileName,
+        const QString& documentId,
+        const QString& fileName);
     void tabClosed(const QString& fileName);
     void fileSaved(const QString& fileName);
     void fileSaveFailed(const QString& fileName,
@@ -233,6 +262,7 @@ private:
         recoveryDocumentStates;
     QSet<QString> recoveryScannedWorkspaceKeys;
     QSet<QString> lockedViewIds;
+    QSet<MyCodeEditor*> auxiliaryEditors;
     QList<ClosedTabState> recentlyClosedTabs;
     TabGroupingMode groupingMode = TabGroupingMode::None;
     bool closingBatch = false;
@@ -263,6 +293,21 @@ private:
         SharedDocument* document,
         QTabWidget* group,
         const SharedDocumentViewState& state = {});
+    MyCodeEditor* createBoundView(
+        SharedDocument* document,
+        QWidget* parentWidget,
+        const SharedDocumentViewState& state,
+        bool auxiliary);
+    SharedDocument* auxiliaryDocument(
+        const QString& documentId,
+        const QString& fileName);
+    bool closeAuxiliaryViewInternal(
+        MyCodeEditor* editor,
+        bool releaseUnusedDocument);
+    bool bindEditorToDocument(
+        MyCodeEditor* editor,
+        SharedDocument* document,
+        const SharedDocumentViewState& state);
     SharedDocument* acquireFileDocument(
         const QString& fileName,
         bool* loaded = nullptr);

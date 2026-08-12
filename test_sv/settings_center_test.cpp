@@ -75,10 +75,13 @@ int main(int argc, char* argv[])
 
     const QList<SettingsCenterCategoryDescriptor>& categories =
         SettingsCenterSchema::categories();
-    check(categories.size() == 6,
-          "schema exposes exactly six settings categories");
+    check(categories.size() == 7,
+          "schema exposes exactly seven settings categories");
     check(SettingsCenterSchema::categoryId(
-              SettingsCenterCategory::Font)
+              SettingsCenterCategory::Appearance)
+              == QStringLiteral("appearance")
+              && SettingsCenterSchema::categoryId(
+                     SettingsCenterCategory::Font)
               == QStringLiteral("font")
               && SettingsCenterSchema::categoryId(
                      SettingsCenterCategory::Formatter)
@@ -97,7 +100,9 @@ int main(int argc, char* argv[])
                      == QStringLiteral("layout"),
           "category identifiers are stable for UI binding");
     check(SettingsCenterSchema::field(
-              QStringLiteral("font.sizePt"))
+              QStringLiteral("appearance.theme"))
+              && SettingsCenterSchema::field(
+                     QStringLiteral("font.sizePt"))
               && SettingsCenterSchema::field(
                      QStringLiteral("formatter.profile"))
               && SettingsCenterSchema::field(
@@ -109,6 +114,23 @@ int main(int argc, char* argv[])
               && SettingsCenterSchema::field(
                      QStringLiteral("layout.rememberPanelState")),
           "each category provides a field description model");
+    const SettingsCenterFieldDescriptor* themeField =
+        SettingsCenterSchema::field(
+            QStringLiteral("appearance.theme"));
+    check(themeField
+              && themeField->storageKey
+                     == QStringLiteral(
+                         "settingsCenter/appearance/theme")
+              && themeField->defaultValue.toString()
+                     == QStringLiteral("Light")
+              && themeField->choices
+                     == QStringList{QStringLiteral("Light"),
+                                    QStringLiteral("Dark")}
+              && themeField->globalAllowed
+              && !themeField->workspaceAllowed
+              && themeField->alwaysActive
+              && themeField->immediateApply,
+          "appearance theme is a global immediate Light/Dark choice");
     check(SettingsCenterSchema::field(
               QStringLiteral("font.sizePt"))->storageKey
               == QStringLiteral("editorAppearance/fontSizePt")
@@ -161,6 +183,8 @@ int main(int argc, char* argv[])
     const QString workspacePath =
         service.workspaceSettingsFilePath(workspaceRoot);
     const QJsonObject initialWorkspaceValues = {
+        {QStringLiteral("appearance.theme"),
+         QStringLiteral("Dark")},
         {QStringLiteral("font.sizePt"), 99},
         {QStringLiteral("formatter.profile"),
          QStringLiteral("STRUCTURED")},
@@ -234,9 +258,16 @@ int main(int argc, char* argv[])
               QStringLiteral("analysis.maxDiagnostics")).toInt()
               == 2000
               && snapshot.value(
+                     QStringLiteral("appearance.theme")).toString()
+                     == QStringLiteral("Light")
+              && snapshot.value(
                      QStringLiteral(
                          "layout.restoreWorkspaceSession")).toBool(),
           "missing fields resolve from schema defaults");
+    check(hasIssue(snapshot.issues,
+                   SettingsCenterIssueKind::InvalidValue,
+                   QStringLiteral("appearance.theme")),
+          "workspace theme overrides are rejected");
 
     const SettingsCenterSaveResult globalSave =
         service.saveGlobal(snapshot.globalValues,
@@ -264,6 +295,57 @@ int main(int argc, char* argv[])
                          == 1,
               "global save records the unified schema version");
     }
+
+    {
+        QSettings settings(globalPath, QSettings::IniFormat);
+        settings.setValue(
+            QStringLiteral("temporaryEditorDrawer/preferredEdge"),
+            QStringLiteral("right"));
+        settings.sync();
+    }
+    const SettingsCenterSnapshot afterUnrelatedGlobalWrite =
+        service.load(workspaceRoot);
+    check(afterUnrelatedGlobalWrite.globalRevision
+              == globalSave.revision,
+          "unrelated application preferences do not invalidate the Settings Center revision");
+
+    QVariantMap darkGlobal = globalSave.normalizedValues;
+    darkGlobal.insert(
+        QStringLiteral("appearance.theme"),
+        QStringLiteral("dark"));
+    const SettingsCenterSaveResult darkSave =
+        service.saveGlobal(
+            darkGlobal,
+            globalSave.revision);
+    const SettingsCenterSnapshot darkSnapshot =
+        service.load(workspaceRoot);
+    check(darkSave.saved
+              && darkSave.revision != globalSave.revision
+              && darkSave.normalizedValues.value(
+                     QStringLiteral("appearance.theme")).toString()
+                     == QStringLiteral("Dark")
+              && darkSnapshot.value(
+                     QStringLiteral("appearance.theme")).toString()
+                     == QStringLiteral("Dark"),
+          "Dark theme is normalized, persisted and reloaded");
+
+    QVariantMap invalidTheme = darkSave.normalizedValues;
+    invalidTheme.insert(
+        QStringLiteral("appearance.theme"),
+        QStringLiteral("Solarized"));
+    const SettingsCenterSaveResult invalidThemeSave =
+        service.saveGlobal(
+            invalidTheme,
+            darkSave.revision);
+    check(invalidThemeSave.saved
+              && invalidThemeSave.normalizedValues.value(
+                     QStringLiteral("appearance.theme")).toString()
+                     == QStringLiteral("Light")
+              && hasIssue(
+                  invalidThemeSave.issues,
+                  SettingsCenterIssueKind::InvalidValue,
+                  QStringLiteral("appearance.theme")),
+          "unsupported theme values fall back to Light explicitly");
 
     QVariantMap workspaceValues = snapshot.workspaceValues;
     workspaceValues.insert(

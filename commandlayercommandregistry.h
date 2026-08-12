@@ -2,6 +2,7 @@
 #define COMMANDLAYERCOMMANDREGISTRY_H
 
 #include "actionregistry.h"
+#include "zeroslackexport.h"
 
 #include <QHash>
 #include <QList>
@@ -51,7 +52,8 @@ struct CommandLayerLineParseResult {
     QString failureReason;
 };
 
-class CommandLayerActionExecutionHost final : public ActionExecutionHost
+class ZEROSLACK_API CommandLayerActionExecutionHost final
+    : public ActionExecutionHost
 {
 public:
     using RouteHandler = std::function<ActionExecutionResult(

@@ -1,5 +1,7 @@
 #include "editorfolding.h"
 
+#include "insightvisualstyle.h"
+
 #include "activitylogservice.h"
 #include "mycodeeditor.h"
 
@@ -22,6 +24,12 @@
 #include <limits>
 
 namespace {
+QColor alphaColor(QColor color, int alpha)
+{
+    color.setAlpha(alpha);
+    return color;
+}
+
 bool betterFoldForLine(const TSFoldRange& candidate, const TSFoldRange& current)
 {
     if (current.startLine < 0)
@@ -46,20 +54,21 @@ QPixmap foldDragPixmap(const FoldShelfItem& item, const QFont& font)
 
     QPainter painter(&pixmap);
     painter.setRenderHint(QPainter::Antialiasing, true);
-    painter.setPen(QPen(QColor(37, 99, 235, 180), 2));
-    painter.setBrush(QColor(219, 234, 254, 235));
+    const InsightTheme& theme = InsightVisualStyle::theme();
+    painter.setPen(QPen(alphaColor(theme.accent, 180), 2));
+    painter.setBrush(alphaColor(theme.semantic.portFill, 235));
     painter.drawRoundedRect(QRectF(1, 1, size.width() - 2, size.height() - 2), 6, 6);
 
     QFont labelFont(font);
     labelFont.setBold(true);
     painter.setFont(labelFont);
-    painter.setPen(QColor(30, 64, 175));
+    painter.setPen(theme.accent);
     painter.drawText(QRect(12, 10, size.width() - 24, 22),
                      Qt::AlignLeft | Qt::AlignVCenter,
                      item.alias.isEmpty() ? QStringLiteral("fold block") : item.alias);
 
     painter.setFont(font);
-    painter.setPen(QColor(55, 65, 81));
+    painter.setPen(theme.textSecondary);
     painter.drawText(QRect(12, 36, size.width() - 24, 22),
                      Qt::AlignLeft | Qt::AlignVCenter,
                      QStringLiteral("%1 lines").arg(item.lineCount));
@@ -235,6 +244,8 @@ void EditorFoldingController::refresh(MyCodeEditor* editor, const TSDocument* do
     if (!editor || !document)
         return;
 
+    const QList<QPair<int, int>> previousCollapsedRanges =
+        collapsedRangesCache;
     ranges = document->foldingRanges();
     customMarkers = document->customFoldMarkers();
     QSet<int> validStarts;
@@ -246,8 +257,9 @@ void EditorFoldingController::refresh(MyCodeEditor* editor, const TSDocument* do
         else
             ++it;
     }
-    if (!collapsedStartLines.isEmpty())
-        applyVisibility(editor);
+    rebuildCollapsedRangesCache();
+    if (collapsedRangesCache != previousCollapsedRanges)
+        markPresentationChanged(editor);
 }
 
 bool EditorFoldingController::applyDocumentChange(
@@ -258,6 +270,9 @@ bool EditorFoldingController::applyDocumentChange(
 {
     if (!editor || !document)
         return false;
+
+    const QList<QPair<int, int>> previousCollapsedRanges =
+        collapsedRangesCache;
 
     // Inline candidate text is a transient, single-line non-language
     // overlay. Its edited Tree-sitter snapshot remains positional only until
@@ -394,11 +409,16 @@ bool EditorFoldingController::applyDocumentChange(
     }
     if (!hadCollapsedRanges)
         return false;
-    applyVisibilityForLines(
-        editor,
-        qMax(0, firstLine - 1),
-        qMin(qMax(0, editor->document()->blockCount() - 1),
-             lastLine + 1));
+    rebuildCollapsedRangesCache();
+    if (collapsedRangesCache != previousCollapsedRanges) {
+        applyVisibilityForLines(
+            editor,
+            qMax(0, firstLine - 1),
+            qMin(qMax(0, editor->document()->blockCount() - 1),
+                 lastLine + 1));
+    } else {
+        editor->viewport()->update();
+    }
     return false;
 }
 
@@ -410,6 +430,179 @@ bool EditorFoldingController::hasFoldAtLine(int line) const
 bool EditorFoldingController::isCollapsedAtLine(int line) const
 {
     return collapsedStartLines.contains(line);
+}
+
+bool EditorFoldingController::isLineVisible(int line) const
+{
+    if (line < 0)
+        return false;
+    for (const TSFoldRange& range : ranges) {
+        if (collapsedStartLines.contains(range.startLine)
+            && line > range.startLine
+            && line <= range.endLine) {
+            return false;
+        }
+    }
+    return true;
+}
+
+void EditorFoldingController::revealLine(MyCodeEditor* editor, int line)
+{
+    bool changed = false;
+    for (auto it = collapsedStartLines.begin();
+         it != collapsedStartLines.end();) {
+        const TSFoldRange range = foldAtLine(*it);
+        if (range.startLine >= 0
+            && line > range.startLine
+            && line <= range.endLine) {
+            it = collapsedStartLines.erase(it);
+            changed = true;
+        } else {
+            ++it;
+        }
+    }
+    if (changed)
+        markPresentationChanged(editor);
+}
+
+EditorFoldViewState EditorFoldingController::captureViewState(
+    MyCodeEditor* editor) const
+{
+    EditorFoldViewState state;
+    if (!editor || !editor->document())
+        return state;
+
+    QList<int> starts = collapsedStartLines.values();
+    std::sort(starts.begin(), starts.end());
+    QTextDocument* document = editor->document();
+    for (int startLine : std::as_const(starts)) {
+        const TSFoldRange range = foldAtLine(startLine);
+        const QTextBlock startBlock =
+            document->findBlockByNumber(range.startLine);
+        const QTextBlock endBlock =
+            document->findBlockByNumber(range.endLine);
+        if (range.startLine < 0
+            || range.endLine <= range.startLine
+            || !startBlock.isValid()
+            || !endBlock.isValid()) {
+            continue;
+        }
+        EditorFoldAnchorState fold;
+        fold.startAnchor = QTextCursor(document);
+        fold.startAnchor.setPosition(startBlock.position());
+        fold.endAnchor = QTextCursor(document);
+        fold.endAnchor.setPosition(
+            endBlock.position() + qMax(0, endBlock.length() - 1));
+        fold.endAnchor.setKeepPositionOnInsert(true);
+        fold.fallbackStartLine = range.startLine;
+        fold.fallbackEndLine = range.endLine;
+        state.collapsedRanges.append(fold);
+    }
+    return state;
+}
+
+void EditorFoldingController::restoreViewState(
+    MyCodeEditor* editor,
+    const EditorFoldViewState& state)
+{
+    collapsedStartLines.clear();
+    if (!editor || !editor->document()) {
+        markPresentationChanged(editor);
+        return;
+    }
+
+    QTextDocument* document = editor->document();
+    for (const EditorFoldAnchorState& fold : state.collapsedRanges) {
+        int startLine = fold.fallbackStartLine;
+        int endLine = fold.fallbackEndLine;
+        if (!fold.startAnchor.isNull()
+            && fold.startAnchor.document() == document) {
+            startLine = fold.startAnchor.blockNumber();
+        }
+        if (!fold.endAnchor.isNull()
+            && fold.endAnchor.document() == document) {
+            endLine = fold.endAnchor.blockNumber();
+        }
+
+        TSFoldRange best;
+        for (const TSFoldRange& candidate : std::as_const(ranges)) {
+            if (candidate.startLine != startLine)
+                continue;
+            if (best.startLine < 0
+                || qAbs(candidate.endLine - endLine)
+                       < qAbs(best.endLine - endLine)) {
+                best = candidate;
+            }
+        }
+        if (best.startLine >= 0 && best.endLine > best.startLine)
+            collapsedStartLines.insert(best.startLine);
+    }
+    const int cursorLine = editor->textCursor().blockNumber();
+    if (!isLineVisible(cursorLine)) {
+        for (const TSFoldRange& range : std::as_const(ranges)) {
+            if (!collapsedStartLines.contains(range.startLine)
+                || cursorLine <= range.startLine
+                || cursorLine > range.endLine) {
+                continue;
+            }
+            const QTextBlock startBlock =
+                document->findBlockByNumber(range.startLine);
+            if (startBlock.isValid()) {
+                editor->QPlainTextEdit::setTextCursor(
+                    QTextCursor(startBlock));
+            }
+            break;
+        }
+    }
+    markPresentationChanged(editor);
+}
+
+void EditorFoldingController::resetForDocumentChange(
+    MyCodeEditor* editor)
+{
+    ranges.clear();
+    customMarkers.clear();
+    collapsedStartLines.clear();
+    markPresentationChanged(editor);
+}
+
+const QList<QPair<int, int>>&
+EditorFoldingController::collapsedLineRanges() const
+{
+    return collapsedRangesCache;
+}
+
+void EditorFoldingController::rebuildCollapsedRangesCache()
+{
+    QList<QPair<int, int>> result;
+    for (int startLine : collapsedStartLines) {
+        const TSFoldRange range = foldAtLine(startLine);
+        if (range.startLine >= 0 && range.endLine > range.startLine)
+            result.append(qMakePair(range.startLine, range.endLine));
+    }
+    std::sort(result.begin(), result.end());
+    QList<QPair<int, int>> normalized;
+    normalized.reserve(result.size());
+    for (const QPair<int, int>& range : std::as_const(result)) {
+        if (normalized.isEmpty()
+            || range.first > normalized.last().second) {
+            normalized.append(range);
+        } else {
+            normalized.last().second = qMax(
+                normalized.last().second, range.second);
+        }
+    }
+    collapsedRangesCache = std::move(normalized);
+}
+
+void EditorFoldingController::markPresentationChanged(
+    MyCodeEditor* editor)
+{
+    rebuildCollapsedRangesCache();
+    if (!editor)
+        return;
+    editor->invalidateViewProjection();
+    editor->viewport()->update();
 }
 
 TSFoldRange EditorFoldingController::foldAtLine(int line) const
@@ -428,10 +621,19 @@ bool EditorFoldingController::toggleFoldAtLine(MyCodeEditor* editor, int line)
     if (range.startLine < 0 || range.endLine <= range.startLine)
         return false;
 
-    if (collapsedStartLines.contains(range.startLine))
+    if (collapsedStartLines.contains(range.startLine)) {
         collapsedStartLines.remove(range.startLine);
-    else
+    } else {
         collapsedStartLines.insert(range.startLine);
+        const QTextCursor current = editor->textCursor();
+        if (current.blockNumber() > range.startLine
+            && current.blockNumber() <= range.endLine) {
+            QTextBlock startBlock = editor->document()
+                                        ->findBlockByNumber(range.startLine);
+            if (startBlock.isValid())
+                editor->QPlainTextEdit::setTextCursor(QTextCursor(startBlock));
+        }
+    }
     applyVisibilityForLines(editor, range.startLine, range.endLine);
     return true;
 }
@@ -864,44 +1066,9 @@ void EditorFoldingController::applyVisibilityForLines(
     int startLine,
     int endLine)
 {
-    if (!editor)
-        return;
-
-    QTextDocument* doc = editor->document();
-    const int firstLine = qBound(0,
-                                 qMin(startLine, endLine),
-                                 qMax(0, doc->blockCount() - 1));
-    const int lastLine = qBound(firstLine,
-                                qMax(startLine, endLine),
-                                qMax(firstLine, doc->blockCount() - 1));
-    QTextBlock firstBlock = doc->findBlockByNumber(firstLine);
-    QTextBlock lastBlock = doc->findBlockByNumber(lastLine);
-    if (!firstBlock.isValid() || !lastBlock.isValid())
-        return;
-
-    for (QTextBlock block = firstBlock; block.isValid(); block = block.next()) {
-        const int line = block.blockNumber();
-        bool visible = true;
-        for (const TSFoldRange& range : std::as_const(ranges)) {
-            if (!collapsedStartLines.contains(range.startLine))
-                continue;
-            if (line > range.startLine && line <= range.endLine) {
-                visible = false;
-                break;
-            }
-        }
-        if (block.isVisible() != visible)
-            block.setVisible(visible);
-        if (block.lineCount() != (visible ? 1 : 0))
-            block.setLineCount(visible ? 1 : 0);
-        if (line >= lastLine)
-            break;
-    }
-
-    const int dirtyStart = firstBlock.position();
-    const int dirtyEnd = lastBlock.position() + lastBlock.length();
-    doc->markContentsDirty(dirtyStart, qMax(0, dirtyEnd - dirtyStart));
-    editor->viewport()->update();
+    Q_UNUSED(startLine)
+    Q_UNUSED(endLine)
+    markPresentationChanged(editor);
 }
 
 void EditorFoldingController::paintGutter(
@@ -922,7 +1089,7 @@ void EditorFoldingController::paintGutter(
         if (markMode == FoldRegionMarkMode::WaitingForEnd
             && line == pendingStartLine) {
             painter.save();
-            painter.setPen(QColor(59, 130, 246));
+            painter.setPen(InsightVisualStyle::theme().accent);
             painter.drawLine(1, top + 1, 1, bottom - 1);
             painter.restore();
         }
@@ -940,15 +1107,16 @@ void EditorFoldingController::paintGutter(
                 ? QStringLiteral("1")
                 : (isHoverEnd ? QStringLiteral("E") : QStringLiteral("S"));
             const QColor badgeColor = isPendingStart
-                ? QColor(59, 130, 246)
-                : QColor(16, 185, 129);
+                ? InsightVisualStyle::theme().accent
+                : InsightVisualStyle::theme().semantic.read;
             painter.save();
             painter.setRenderHint(QPainter::Antialiasing, true);
             painter.setPen(Qt::NoPen);
             painter.setBrush(badgeColor);
             const QRect badgeRect(1, top + 2, 12, qMax(12, bottom - top - 4));
             painter.drawRoundedRect(badgeRect, 4, 4);
-            painter.setPen(Qt::white);
+            painter.setPen(
+                InsightVisualStyle::theme().button.textChecked);
             painter.drawText(badgeRect, Qt::AlignCenter, badge);
             painter.restore();
         }
@@ -957,7 +1125,8 @@ void EditorFoldingController::paintGutter(
             && (line == hoveredShelfRange.startLine
                 || line == hoveredShelfRange.endLine)) {
             painter.save();
-            painter.setPen(QPen(QColor(245, 158, 11), 2));
+            painter.setPen(QPen(
+                InsightVisualStyle::theme().warning, 2));
             painter.drawLine(1, top + 1, 1, bottom - 1);
             painter.restore();
         }
@@ -975,13 +1144,14 @@ void EditorFoldingController::paintGutter(
                          << QPoint(7, midY + 4);
             }
             painter.save();
-            painter.setBrush(QColor(90, 100, 115));
+            painter.setBrush(
+                InsightVisualStyle::theme().textMuted);
             painter.setPen(Qt::NoPen);
             painter.drawPolygon(triangle);
             painter.restore();
         }
 
-        block = block.next();
+        block = editor->nextVisibleBlock(block);
         top = bottom;
         bottom = top + static_cast<int>(editor->blockBoundingRect(block).height());
     }
@@ -1004,14 +1174,15 @@ void EditorFoldingController::paintPlaceholders(
     paintCustomFoldBackgrounds(editor, painter);
     paintFoldRegionPreview(editor, painter);
     paintFoldShelfHighlight(editor, painter);
-    painter.setPen(QColor(115, 125, 140));
+    painter.setPen(InsightVisualStyle::theme().textMuted);
     const QFontMetrics metrics(editor->font());
     for (int startLine : collapsedStartLines) {
         const TSFoldRange range = foldAtLine(startLine);
         if (range.startLine < 0)
             continue;
         QTextBlock block = editor->document()->findBlockByNumber(startLine);
-        if (!block.isValid() || !block.isVisible())
+        if (!block.isValid()
+            || !editor->sourceLineVisible(block.blockNumber()))
             continue;
         const QRectF rect = editor->blockBoundingGeometry(block)
                                 .translated(editor->contentOffset());
@@ -1042,7 +1213,8 @@ void EditorFoldingController::paintCustomFoldBackgrounds(
 
     painter.save();
     painter.setPen(Qt::NoPen);
-    painter.setBrush(QColor(251, 191, 36, 26));
+    painter.setBrush(alphaColor(
+        InsightVisualStyle::theme().warning, 26));
     for (const TSFoldRange& range : ranges) {
         if (range.kind != TSFoldRangeKind::Custom
             || collapsedStartLines.contains(range.startLine)) {
@@ -1052,7 +1224,8 @@ void EditorFoldingController::paintCustomFoldBackgrounds(
         QRectF lastRect;
         for (int line = range.startLine; line <= range.endLine; ++line) {
             QTextBlock block = editor->document()->findBlockByNumber(line);
-            if (!block.isValid() || !block.isVisible())
+            if (!block.isValid()
+                || !editor->sourceLineVisible(block.blockNumber()))
                 continue;
             const QRectF rect =
                 editor->blockBoundingGeometry(block).translated(editor->contentOffset());
@@ -1065,7 +1238,8 @@ void EditorFoldingController::paintCustomFoldBackgrounds(
         }
         if (firstRect.isValid() && lastRect.isValid()) {
             painter.setBrush(Qt::NoBrush);
-            painter.setPen(QPen(QColor(245, 158, 11, 120), 1));
+            painter.setPen(QPen(alphaColor(
+                InsightVisualStyle::theme().warning, 120), 1));
             const qreal topY = qBound<qreal>(0,
                                              firstRect.top() + 1,
                                              editor->viewport()->height() - 1);
@@ -1077,7 +1251,8 @@ void EditorFoldingController::paintCustomFoldBackgrounds(
             painter.drawLine(QPointF(0, bottomY),
                              QPointF(editor->viewport()->width(), bottomY));
             painter.setPen(Qt::NoPen);
-            painter.setBrush(QColor(251, 191, 36, 26));
+            painter.setBrush(alphaColor(
+                InsightVisualStyle::theme().warning, 26));
         }
     }
     painter.restore();
@@ -1108,12 +1283,14 @@ void EditorFoldingController::paintFoldRegionPreview(
 
     painter.save();
     painter.setPen(Qt::NoPen);
-    painter.setBrush(QColor(16, 185, 129, 34));
+    painter.setBrush(alphaColor(
+        InsightVisualStyle::theme().semantic.read, 34));
     QRectF firstRect;
     QRectF lastRect;
     for (int line = startLine; line <= endLine; ++line) {
         QTextBlock block = editor->document()->findBlockByNumber(line);
-        if (!block.isValid() || !block.isVisible())
+        if (!block.isValid()
+            || !editor->sourceLineVisible(block.blockNumber()))
             continue;
         const QRectF rect =
             editor->blockBoundingGeometry(block).translated(editor->contentOffset());
@@ -1126,7 +1303,8 @@ void EditorFoldingController::paintFoldRegionPreview(
     }
     if (firstRect.isValid() && lastRect.isValid()) {
         painter.setBrush(Qt::NoBrush);
-        painter.setPen(QPen(QColor(16, 185, 129, 150), 2));
+        painter.setPen(QPen(alphaColor(
+            InsightVisualStyle::theme().semantic.read, 150), 2));
         const qreal topY = qBound<qreal>(0,
                                          firstRect.top() + 1,
                                          editor->viewport()->height() - 1);
@@ -1249,13 +1427,15 @@ void EditorFoldingController::paintFoldShelfHighlight(
 
     painter.save();
     painter.setPen(Qt::NoPen);
-    painter.setBrush(QColor(59, 130, 246, 28));
+    painter.setBrush(alphaColor(
+        InsightVisualStyle::theme().accent, 28));
     QRectF bottomRect;
     for (int line = hoveredShelfRange.startLine;
          line <= hoveredShelfRange.endLine;
          ++line) {
         QTextBlock block = editor->document()->findBlockByNumber(line);
-        if (!block.isValid() || !block.isVisible())
+        if (!block.isValid()
+            || !editor->sourceLineVisible(block.blockNumber()))
             continue;
         const QRectF rect =
             editor->blockBoundingGeometry(block).translated(editor->contentOffset());
@@ -1267,7 +1447,8 @@ void EditorFoldingController::paintFoldShelfHighlight(
     }
     if (bottomRect.isValid()) {
         painter.setBrush(Qt::NoBrush);
-        painter.setPen(QPen(QColor(59, 130, 246, 150), 2));
+        painter.setPen(QPen(alphaColor(
+            InsightVisualStyle::theme().accent, 150), 2));
         const qreal y = qBound<qreal>(0,
                                       bottomRect.bottom() - 1,
                                       editor->viewport()->height() - 1);

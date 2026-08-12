@@ -33,6 +33,8 @@ std::unique_ptr<QSettings> makeGlobalSettings(
     std::unique_ptr<QSettings> settings;
     if (settingsFilePath.isEmpty()) {
         settings = std::make_unique<QSettings>(
+            QSettings::defaultFormat(),
+            QSettings::UserScope,
             QStringLiteral("ZeroSlack"),
             QStringLiteral("ZeroSlack"));
     } else {
@@ -169,6 +171,40 @@ QJsonObject valuesObject(const QVariantMap& values)
     return sortedObject(object);
 }
 
+QString globalRevisionForSettings(
+    const QSettings& settings)
+{
+    // The global INI is shared with layout and transient UI preferences.
+    // Only Settings Center-owned keys participate in its conflict token.
+    QVariantMap ownedValues;
+    const QString schemaKey =
+        QString::fromLatin1(SettingsCenterKeys::Schema);
+    const QString versionKey =
+        QString::fromLatin1(SettingsCenterKeys::Version);
+    if (settings.contains(schemaKey))
+        ownedValues.insert(schemaKey, settings.value(schemaKey));
+    if (settings.contains(versionKey))
+        ownedValues.insert(versionKey, settings.value(versionKey));
+    for (const SettingsCenterFieldDescriptor& descriptor :
+         SettingsCenterSchema::fields()) {
+        if (!descriptor.globalAllowed
+            || !settings.contains(descriptor.storageKey)) {
+            continue;
+        }
+        ownedValues.insert(
+            descriptor.storageKey,
+            settings.value(descriptor.storageKey));
+    }
+    if (ownedValues.isEmpty())
+        return QStringLiteral("missing");
+    return QString::fromLatin1(
+        QCryptographicHash::hash(
+            QJsonDocument(valuesObject(ownedValues))
+                .toJson(QJsonDocument::Compact),
+            QCryptographicHash::Sha256)
+            .toHex());
+}
+
 bool revisionMatches(const QString& expected,
                      const QString& current)
 {
@@ -206,7 +242,7 @@ SettingsCenterSnapshot SettingsCenterService::load(
     std::unique_ptr<QSettings> global =
         makeGlobalSettings(globalSettingsFilePath);
     result.globalStoragePath = global->fileName();
-    result.globalRevision = revisionForFile(result.globalStoragePath);
+    result.globalRevision = globalRevisionForSettings(*global);
     result.globalCompatible =
         globalDocumentCompatible(*global, &result.issues);
     if (result.globalCompatible) {
@@ -273,7 +309,7 @@ SettingsCenterSaveResult SettingsCenterService::saveGlobal(
         makeGlobalSettings(globalSettingsFilePath);
     result.storagePath = settings->fileName();
     const QString currentRevision =
-        revisionForFile(result.storagePath);
+        globalRevisionForSettings(*settings);
     if (!revisionMatches(expectedRevision, currentRevision)) {
         result.conflict = true;
         result.message =
@@ -331,7 +367,7 @@ SettingsCenterSaveResult SettingsCenterService::saveGlobal(
     }
 
     result.saved = true;
-    result.revision = revisionForFile(result.storagePath);
+    result.revision = globalRevisionForSettings(*settings);
     result.message = QStringLiteral("Global settings saved.");
     return result;
 }

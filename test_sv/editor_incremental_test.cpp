@@ -1583,7 +1583,7 @@ void exerciseFoldGhostAndSlotState()
     foldingEditor.acceptLoadedTextAsSemanticBaseline();
     expect("syntax fold can collapse", foldingEditor.toggleFoldAtLineForTest(0));
     expect("collapsed syntax fold hides its body",
-           !foldingEditor.document()->findBlockByNumber(1).isVisible());
+           !foldingEditor.foldLineVisibleForTest(1));
     foldingEditor.resetHotPathMetricsForTest();
 
     QTextCursor hiddenEdit(foldingEditor.document());
@@ -1592,14 +1592,14 @@ void exerciseFoldGhostAndSlotState()
     hiddenEdit.insertText(QStringLiteral("x"));
     expect("ordinary edit preserves collapsed fold",
            foldingEditor.foldCollapsedAtLineForTest(0)
-               && !foldingEditor.document()->findBlockByNumber(1).isVisible());
+               && !foldingEditor.foldLineVisibleForTest(1));
 
     QTextCursor prefix(foldingEditor.document());
     prefix.setPosition(0);
     prefix.insertText(QStringLiteral("\n"));
     expect("newline before fold remaps collapsed start",
            foldingEditor.foldCollapsedAtLineForTest(1)
-               && !foldingEditor.document()->findBlockByNumber(2).isVisible());
+               && !foldingEditor.foldLineVisibleForTest(2));
     expect("fold edits stay incremental",
            foldingEditor.hotPathMetricsForTest().fullFoldingRebuilds == 0);
 
@@ -1619,9 +1619,7 @@ void exerciseFoldGhostAndSlotState()
     customBody.insertText(QStringLiteral("x"));
     expect("ordinary edit preserves collapsed custom fold",
            customFoldEditor.foldCollapsedAtLineForTest(0)
-               && !customFoldEditor.document()
-                       ->findBlockByNumber(2)
-                       .isVisible());
+               && !customFoldEditor.foldLineVisibleForTest(2));
     expect("custom fold ordinary edit stays local",
            customFoldEditor.hotPathMetricsForTest().fullFoldingRebuilds == 0);
 
@@ -1632,9 +1630,7 @@ void exerciseFoldGhostAndSlotState()
     markerEdit.deleteChar();
     expect("character edit invalidates only the affected custom marker",
            !customFoldEditor.toggleFoldAtLineForTest(0)
-               && customFoldEditor.document()
-                      ->findBlockByNumber(2)
-                      .isVisible());
+               && customFoldEditor.foldLineVisibleForTest(2));
     customFoldEditor.undo();
     expect("undo restores a locally parsed custom fold",
            customFoldEditor.toggleFoldAtLineForTest(0));
@@ -1669,20 +1665,16 @@ void exerciseFoldGhostAndSlotState()
            deletedSyntaxFoldEditor.document()->findBlockByNumber(3).text()
                    .contains(QStringLiteral("surviving_fold"))
                && deletedSyntaxFoldEditor.document()
-                      ->findBlockByNumber(4)
-                      .isVisible());
+                      ->findBlockByNumber(4).isValid()
+               && deletedSyntaxFoldEditor.foldLineVisibleForTest(4));
     deletedSyntaxFoldEditor.undo();
     expect("undo of complete fold deletion has no stale collapsed state",
            !deletedSyntaxFoldEditor.foldCollapsedAtLineForTest(3)
-               && deletedSyntaxFoldEditor.document()
-                      ->findBlockByNumber(4)
-                      .isVisible());
+               && deletedSyntaxFoldEditor.foldLineVisibleForTest(4));
     deletedSyntaxFoldEditor.redo();
     expect("redo of complete fold deletion stays free of stale state",
            !deletedSyntaxFoldEditor.foldCollapsedAtLineForTest(3)
-               && deletedSyntaxFoldEditor.document()
-                      ->findBlockByNumber(4)
-                      .isVisible());
+               && deletedSyntaxFoldEditor.foldLineVisibleForTest(4));
 
     MyCodeEditor deletedCustomFoldEditor;
     deletedCustomFoldEditor.setPlainText(QStringLiteral(
@@ -1722,9 +1714,7 @@ void exerciseFoldGhostAndSlotState()
                       ->findBlockByNumber(1)
                       .text()
                       .contains(QStringLiteral("after_custom"))
-               && deletedCustomFoldEditor.document()
-                      ->findBlockByNumber(1)
-                      .isVisible());
+               && deletedCustomFoldEditor.foldLineVisibleForTest(1));
 
     MyCodeEditor pastedBeforeFoldEditor;
     pastedBeforeFoldEditor.setPlainText(QStringLiteral(
@@ -1740,21 +1730,15 @@ void exerciseFoldGhostAndSlotState()
     pastedPrefix.insertText(QStringLiteral("// pasted a\n// pasted b\n"));
     expect("cross-line paste remaps collapsed fold start",
            pastedBeforeFoldEditor.foldCollapsedAtLineForTest(3)
-               && !pastedBeforeFoldEditor.document()
-                       ->findBlockByNumber(4)
-                       .isVisible());
+               && !pastedBeforeFoldEditor.foldLineVisibleForTest(4));
     pastedBeforeFoldEditor.undo();
     expect("undo cross-line paste restores collapsed fold coordinates",
            pastedBeforeFoldEditor.foldCollapsedAtLineForTest(1)
-               && !pastedBeforeFoldEditor.document()
-                       ->findBlockByNumber(2)
-                       .isVisible());
+               && !pastedBeforeFoldEditor.foldLineVisibleForTest(2));
     pastedBeforeFoldEditor.redo();
     expect("redo cross-line paste restores remapped collapsed coordinates",
            pastedBeforeFoldEditor.foldCollapsedAtLineForTest(3)
-               && !pastedBeforeFoldEditor.document()
-                       ->findBlockByNumber(4)
-                       .isVisible());
+               && !pastedBeforeFoldEditor.foldLineVisibleForTest(4));
 
     MyCodeEditor wholeReplacementFoldEditor;
     wholeReplacementFoldEditor.setPlainText(QStringLiteral(
@@ -1776,15 +1760,9 @@ void exerciseFoldGhostAndSlotState()
     expect("whole-document replacement removes late collapsed starts",
            !wholeReplacementFoldEditor.foldCollapsedAtLineForTest(4));
     expect("whole-document replacement leaves every short block visible",
-           wholeReplacementFoldEditor.document()
-                   ->findBlockByNumber(0)
-                   .isVisible()
-               && wholeReplacementFoldEditor.document()
-                      ->findBlockByNumber(1)
-                      .isVisible()
-               && wholeReplacementFoldEditor.document()
-                      ->findBlockByNumber(2)
-                      .isVisible());
+           wholeReplacementFoldEditor.foldLineVisibleForTest(0)
+               && wholeReplacementFoldEditor.foldLineVisibleForTest(1)
+               && wholeReplacementFoldEditor.foldLineVisibleForTest(2));
 
     MyCodeEditor ghostEditor;
     ghostEditor.setDocumentFileName(QStringLiteral("ghost_remap.sv"));

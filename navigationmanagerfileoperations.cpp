@@ -180,6 +180,12 @@ void NavigationManager::onFileTreeNodeContextMenuRequested(
                 });
         };
 
+    if (!directory) {
+        addFileAction(
+            QString::fromLatin1(
+                ActionIds::ViewTemporaryEditorOpen));
+        menu.addSeparator();
+    }
     addFileAction(
         QString::fromLatin1(
             ActionIds::WorkspaceFileCreate));
@@ -461,10 +467,19 @@ void NavigationManager::executeFileTreeAction(
             navigationWidget,
             *descriptor,
             result.failureReason);
-        emit workspaceFileOperationFailed(
-            actionId,
-            path,
-            result.failureReason);
+        if (actionId
+            != QString::fromLatin1(
+                ActionIds::ViewTemporaryEditorOpen)) {
+            emit workspaceFileOperationFailed(
+                actionId,
+                path,
+                result.failureReason);
+        }
+        return;
+    }
+    if (actionId
+        == QString::fromLatin1(
+            ActionIds::ViewTemporaryEditorOpen)) {
         return;
     }
     emit workspaceFileOperationCompleted(
@@ -481,8 +496,7 @@ NavigationManager::executeActionRoute(
 {
     ActionExecutionResult actionResult;
     actionResult.handled = true;
-    if (!fileOperationService
-        || !connectedWorkspaceManager
+    if (!connectedWorkspaceManager
         || !connectedWorkspaceManager
                 ->isWorkspaceOpen()) {
         actionResult.failureReason =
@@ -507,6 +521,49 @@ NavigationManager::executeActionRoute(
 
     const QString& route =
         descriptor.executionRoute;
+    if (route
+        == QStringLiteral("ui.temporaryEditor.open")) {
+        const EditorLocation location =
+            editorLocationFromActionParameters(
+                invocation.parameters);
+        if (!location.isValid()) {
+            actionResult.failureReason = QStringLiteral(
+                "The selected temporary-editor target is unavailable.");
+            return actionResult;
+        }
+        emit temporaryEditorOpenRequested(location);
+        if (!temporaryEditorOpenHandler) {
+            actionResult.failureReason = QStringLiteral(
+                "The temporary editor is unavailable.");
+            emit temporaryEditorOpenFinished(
+                location,
+                false,
+                actionResult.failureReason);
+            return actionResult;
+        }
+        if (!temporaryEditorOpenHandler(location)) {
+            actionResult.failureReason = QStringLiteral(
+                "The temporary editor could not open the selected target.");
+            emit temporaryEditorOpenFinished(
+                location,
+                false,
+                actionResult.failureReason);
+            return actionResult;
+        }
+        actionResult.output.insert(
+            QStringLiteral("path"), location.filePath);
+        actionResult.output.insert(
+            QStringLiteral("line"), location.line);
+        actionResult.succeeded = true;
+        emit temporaryEditorOpenFinished(
+            location, true, QString());
+        return actionResult;
+    }
+    if (!fileOperationService) {
+        actionResult.failureReason = QStringLiteral(
+            "The workspace file operation service is unavailable.");
+        return actionResult;
+    }
     if (route
             == QStringLiteral(
                 "navigation.design.goInstantiation")

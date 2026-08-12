@@ -1,9 +1,12 @@
 #ifndef INSIGHTVISUALSTYLE_H
 #define INSIGHTVISUALSTYLE_H
 
+#include "applicationthememanager.h"
+
 #include <QBrush>
 #include <QColor>
 #include <QFont>
+#include <QPalette>
 #include <QPen>
 #include <QString>
 
@@ -82,6 +85,7 @@ struct InsightInputTokens {
     QColor border;
     QColor focusBorder;
     QColor selectionBackground;
+    QColor selectionText;
 };
 
 struct InsightItemViewTokens {
@@ -130,6 +134,58 @@ struct InsightGraphTokens {
     QColor selectionBorder;
 };
 
+struct InsightSyntaxTokens {
+    QColor keyword;
+    QColor comment;
+    QColor number;
+    QColor string;
+    QColor errorUnderline;
+    QColor warningUnderline;
+    QColor structuralPair;
+};
+
+struct InsightSemanticTokens {
+    QColor write;
+    QColor read;
+    QColor port;
+    QColor condition;
+    QColor caseRole;
+    QColor timing;
+    QColor unknown;
+    QColor kernel;
+    QColor data;
+
+    QColor writeFill;
+    QColor readFill;
+    QColor portFill;
+    QColor conditionFill;
+    QColor caseFill;
+    QColor timingFill;
+    QColor unknownFill;
+    QColor kernelFill;
+    QColor dataFill;
+
+    QColor heatLow;
+    QColor heatMid;
+    QColor heatHigh;
+};
+
+struct InsightEditorSemanticTokens {
+    QColor moduleInterface;
+    QColor packageClassType;
+    QColor instanceName;
+    QColor formalPort;
+    QColor modulePort;
+    QColor actualSignal;
+    QColor parameter;
+    QColor enumValue;
+    QColor typeAlias;
+    QColor macro;
+    QColor systemTask;
+    QColor inactiveText;
+    QColor inactiveBackground;
+};
+
 struct InsightTheme {
     QColor appBackground;
     QColor canvasBackground;
@@ -155,17 +211,24 @@ struct InsightTheme {
     InsightDockTokens dock;
     InsightItemViewTokens itemView;
     InsightGraphTokens graph;
+    InsightSyntaxTokens syntax;
+    InsightSemanticTokens semantic;
+    InsightEditorSemanticTokens editorSemantic;
 };
 
 class InsightVisualStyle
 {
 public:
     static const InsightTheme& theme();
+    static const InsightTheme& theme(ThemeMode mode);
 
     static QColor roleColor(InsightVisualRole role);
+    static QColor roleColor(InsightVisualRole role, ThemeMode mode);
     static QColor roleColor(const QString& roleName);
     static QColor roleFillColor(InsightVisualRole role);
+    static QColor roleFillColor(InsightVisualRole role, ThemeMode mode);
     static QColor heatIntensityColor(double intensity);
+    static QColor heatIntensityColor(double intensity, ThemeMode mode);
 
     static QPen hairlinePen(const QColor& color);
     static QPen panelBorderPen();
@@ -178,8 +241,11 @@ public:
     static QFont compactFont(const QFont& base);
     static QFont labelFont(const QFont& base);
 
+    static QPalette applicationPalette();
+    static QPalette applicationPalette(ThemeMode mode);
     static QString panelStyleSheet(const QString& objectName = {});
     static QString applicationStyleSheet();
+    static QString applicationStyleSheet(ThemeMode mode);
     static QString tabBarStyleSheet(const QString& objectName = {});
     static QString packageToolsBarStyleSheet(const QString& objectName = {});
     static QString labelStyleSheet(const QString& objectName = {},
@@ -191,6 +257,8 @@ public:
         const QString& objectName,
         InsightStatusTone tone = InsightStatusTone::Warning);
     static QString globalControlPanelStyleSheet(
+        const QString& objectName = {});
+    static QString sideInspectorStyleSheet(
         const QString& objectName = {});
     static QString foldShelfActiveStyleSheet(
         const QString& objectName = {});
@@ -205,9 +273,12 @@ public:
 
     static void applyPanel(QWidget* widget);
     static void applyTitleLabel(QLabel* label);
+    static void applyLabel(QLabel* label, bool strong = false);
     static void applySearchField(QLineEdit* edit);
     static void applyToolbarButton(QPushButton* button);
     static void applySegmentedCheckBox(QWidget* checkBox);
+    static void applyGlobalControlPanel(QWidget* widget);
+    static void applySideInspector(QWidget* widget);
 };
 
 #endif // INSIGHTVISUALSTYLE_H

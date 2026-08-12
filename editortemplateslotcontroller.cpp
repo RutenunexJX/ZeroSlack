@@ -216,7 +216,7 @@ void EditorTemplateSlotController::publishVisibleAnnotations(
                 editor->document()
                     ->findBlockByNumber(line);
             if (!block.isValid()
-                || !block.isVisible()) {
+                || !editor->sourceLineVisible(block.blockNumber())) {
                 continue;
             }
             const int blockStart = block.position();

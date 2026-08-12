@@ -7,6 +7,7 @@
 #include "semanticindexsnapshot.h"
 
 #include <QAction>
+#include <QApplication>
 #include <QBrush>
 #include <QCheckBox>
 #include <QFileInfo>
@@ -60,6 +61,79 @@ constexpr qreal kMatrixColumnWidth = 70.0;
 constexpr qreal kMatrixHeaderHeight = 96.0;
 constexpr qreal kMatrixRowHeight = 72.0;
 const char* kSettingsGroup = "SignalUsageHotspotPanel";
+
+struct GraphicsViewPresentationState {
+    QTransform transform;
+    QPointF center;
+    int horizontalScrollValue = 0;
+    int verticalScrollValue = 0;
+    bool scrollPositionValid = false;
+    bool valid = false;
+};
+
+GraphicsViewPresentationState captureGraphicsViewPresentation(
+    QGraphicsView* view)
+{
+    GraphicsViewPresentationState state;
+    if (!view || !view->viewport())
+        return state;
+    state.transform = view->transform();
+    state.center = view->mapToScene(
+        view->viewport()->rect().center());
+    if (view->horizontalScrollBar()
+        && view->verticalScrollBar()) {
+        state.horizontalScrollValue =
+            view->horizontalScrollBar()->value();
+        state.verticalScrollValue =
+            view->verticalScrollBar()->value();
+        state.scrollPositionValid = true;
+    }
+    state.valid = true;
+    return state;
+}
+
+qreal squaredDistance(const QPointF& lhs, const QPointF& rhs)
+{
+    const qreal dx = lhs.x() - rhs.x();
+    const qreal dy = lhs.y() - rhs.y();
+    return dx * dx + dy * dy;
+}
+
+void restoreGraphicsViewPresentation(
+    QGraphicsView* view,
+    const GraphicsViewPresentationState& state)
+{
+    if (!view || !state.valid)
+        return;
+    view->setTransform(state.transform);
+    view->centerOn(state.center);
+
+    if (state.scrollPositionValid
+        && view->horizontalScrollBar()
+        && view->verticalScrollBar()) {
+        QScrollBar* horizontal =
+            view->horizontalScrollBar();
+        QScrollBar* vertical =
+            view->verticalScrollBar();
+        const int centeredHorizontal = horizontal->value();
+        const int centeredVertical = vertical->value();
+        const QPointF centeredPosition = view->mapToScene(
+            view->viewport()->rect().center());
+
+        horizontal->setValue(state.horizontalScrollValue);
+        vertical->setValue(state.verticalScrollValue);
+        const QPointF scrollPosition = view->mapToScene(
+            view->viewport()->rect().center());
+
+        if (squaredDistance(centeredPosition, state.center)
+            < squaredDistance(scrollPosition, state.center)) {
+            horizontal->setValue(centeredHorizontal);
+            vertical->setValue(centeredVertical);
+        }
+    }
+    if (view->viewport())
+        view->viewport()->update();
+}
 
 SignalUsageHotspotReport buildReportFromSnapshot(
     const SignalUsageHotspotQuery& query,
@@ -344,26 +418,36 @@ QColor hotspotRoleColor(SignalUsageHotspotRole role)
 {
     switch (role) {
     case SignalUsageHotspotRole::Write:
-        return QColor(QStringLiteral("#f97316"));
+        return InsightVisualStyle::roleColor(
+            InsightVisualRole::Write);
     case SignalUsageHotspotRole::Read:
-        return QColor(QStringLiteral("#2563eb"));
+        return InsightVisualStyle::roleColor(
+            InsightVisualRole::Read);
     case SignalUsageHotspotRole::Port:
-        return QColor(QStringLiteral("#22c55e"));
+        return InsightVisualStyle::roleColor(
+            InsightVisualRole::Port);
     case SignalUsageHotspotRole::Condition:
+        return InsightVisualStyle::roleColor(
+            InsightVisualRole::Condition);
     case SignalUsageHotspotRole::Case:
-        return QColor(QStringLiteral("#a855f7"));
+        return InsightVisualStyle::roleColor(
+            InsightVisualRole::Case);
     case SignalUsageHotspotRole::Timing:
-        return QColor(QStringLiteral("#60a5fa"));
+        return InsightVisualStyle::roleColor(
+            InsightVisualRole::Timing);
     case SignalUsageHotspotRole::Unknown:
-        return QColor(QStringLiteral("#93c5fd"));
+        return InsightVisualStyle::roleColor(
+            InsightVisualRole::Unknown);
     }
-    return QColor(QStringLiteral("#93c5fd"));
+    return InsightVisualStyle::roleColor(
+        InsightVisualRole::Unknown);
 }
 
 QColor heatColorForRole(SignalUsageHotspotRole role, double intensity)
 {
     const QColor base = hotspotRoleColor(role);
-    const QColor low = QColor(QStringLiteral("#f5f7fb"));
+    const QColor low =
+        InsightVisualStyle::theme().semantic.heatLow;
     return mixedColor(low, base, std::clamp(0.18 + intensity * 0.48, 0.0, 1.0));
 }
 
@@ -542,7 +626,8 @@ public:
             setBrush(QBrush(heatColorForRole(role, intensity)));
         } else {
             setPen(QPen(alphaColor(InsightVisualStyle::theme().border, 68), 0.65));
-            setBrush(QBrush(QColor(QStringLiteral("#f3f6fa"))));
+            setBrush(QBrush(
+                InsightVisualStyle::theme().panelSubtle));
         }
         setZValue(selected ? 2.0 : 0.0);
     }
@@ -582,20 +667,17 @@ QPushButton* modeButton(const QString& text, QWidget* parent)
 {
     auto* button = new QPushButton(text, parent);
     button->setCheckable(true);
-    button->setMinimumHeight(28);
-    button->setStyleSheet(
-        QStringLiteral(
-            "QPushButton { padding: 4px 10px; border: 1px solid %1; "
-            "background: %2; color: %3; border-radius: 6px; }"
-            "QPushButton:checked { background: %4; color: white; "
-            "border-color: %4; }")
-            .arg(InsightVisualStyle::theme().border.name(),
-                 InsightVisualStyle::theme().panelBackground.name(),
-                 InsightVisualStyle::theme().textSecondary.name(),
-                 InsightVisualStyle::theme().accent.name()));
+    InsightVisualStyle::applyToolbarButton(button);
     return button;
 }
 }
+
+struct SignalUsageHotspotThemePresentationSnapshot {
+    GraphicsViewPresentationState track;
+    GraphicsViewPresentationState matrix;
+    QGraphicsScene* trackScene = nullptr;
+    QGraphicsScene* matrixScene = nullptr;
+};
 
 SignalUsageHotspotPanel::SignalUsageHotspotPanel(QWidget* parent)
     : QWidget(parent)
@@ -801,12 +883,7 @@ SignalUsageHotspotPanel::SignalUsageHotspotPanel(QWidget* parent)
     inspector->setObjectName(QStringLiteral("signalUsageHotspotInspector"));
     inspector->setMinimumWidth(250);
     inspector->setMaximumWidth(300);
-    inspector->setStyleSheet(
-        QStringLiteral(
-            "#signalUsageHotspotInspector { background: transparent; "
-            "border-left: 1px solid %1; border-radius: 0; }")
-            .arg(alphaColor(InsightVisualStyle::theme().border, 80).name(
-                QColor::HexArgb)));
+    InsightVisualStyle::applySideInspector(inspector);
     auto* inspectorLayout = new QVBoxLayout(inspector);
     inspectorLayout->setContentsMargins(10, 90, 8, 10);
     inspectorLayout->setSpacing(8);
@@ -823,6 +900,30 @@ SignalUsageHotspotPanel::SignalUsageHotspotPanel(QWidget* parent)
     inspectorDetailLabel->setAlignment(Qt::AlignTop | Qt::AlignLeft);
     inspectorLayout->addWidget(inspectorTitleLabel);
     inspectorLayout->addWidget(inspectorDetailLabel, 1);
+
+    connect(&ApplicationThemeManager::instance(),
+            &ApplicationThemeManager::themeAboutToChange,
+            this,
+            [this](ThemeMode previousMode, ThemeMode nextMode) {
+                if (previousMode == nextMode)
+                    return;
+                auto snapshot = std::make_shared<
+                    SignalUsageHotspotThemePresentationSnapshot>();
+                snapshot->track =
+                    captureGraphicsViewPresentation(trackView);
+                snapshot->matrix =
+                    captureGraphicsViewPresentation(matrixView);
+                snapshot->trackScene = trackScene;
+                snapshot->matrixScene = matrixScene;
+                pendingThemePresentation = std::move(snapshot);
+                ++themePresentationGeneration;
+            });
+    connect(&ApplicationThemeManager::instance(),
+            &ApplicationThemeManager::themeChanged,
+            this,
+            [this](ThemeMode) {
+                refreshThemePresentation();
+            });
     matrixLayout->addWidget(matrixView, 1);
     matrixLayout->addWidget(inspector, 0);
     inspector->setVisible(false);
@@ -938,8 +1039,14 @@ void SignalUsageHotspotPanel::resizeEvent(QResizeEvent* event)
     QTimer::singleShot(0, this, [this]() {
         if (!currentReport.found || currentReport.items.isEmpty())
             return;
+        const GraphicsViewPresentationState trackState =
+            captureGraphicsViewPresentation(trackView);
+        const GraphicsViewPresentationState matrixState =
+            captureGraphicsViewPresentation(matrixView);
         renderTrack();
         renderMatrix();
+        restoreGraphicsViewPresentation(trackView, trackState);
+        restoreGraphicsViewPresentation(matrixView, matrixState);
         if (activeMatrixCellValid)
             showMatrixCellDetails();
     });
@@ -976,6 +1083,7 @@ void SignalUsageHotspotPanel::showHotspotForSymbol(
         ? reportBuilder
         : ReportBuilder(buildReportFromSnapshot);
     const std::uint64_t generation = ++reportGeneration;
+    ++reportBuildRequestCount;
     ++activeReportBuilds;
 
     auto* watcher = new QFutureWatcher<SignalUsageHotspotReport>(this);
@@ -1037,6 +1145,99 @@ void SignalUsageHotspotPanel::setFocusSearchText(
 QString SignalUsageHotspotPanel::focusSearchText() const
 {
     return searchEdit ? searchEdit->text() : searchText;
+}
+
+void SignalUsageHotspotPanel::refreshThemePresentation()
+{
+    const int currentThemeMode = static_cast<int>(
+        ApplicationThemeManager::instance().mode());
+    if (presentationThemeMode == currentThemeMode)
+        return;
+    presentationThemeMode = currentThemeMode;
+
+    std::shared_ptr<const
+        SignalUsageHotspotThemePresentationSnapshot> snapshot =
+        pendingThemePresentation;
+    if (!snapshot) {
+        auto currentSnapshot = std::make_shared<
+            SignalUsageHotspotThemePresentationSnapshot>();
+        currentSnapshot->track =
+            captureGraphicsViewPresentation(trackView);
+        currentSnapshot->matrix =
+            captureGraphicsViewPresentation(matrixView);
+        currentSnapshot->trackScene = trackScene;
+        currentSnapshot->matrixScene = matrixScene;
+        snapshot = std::move(currentSnapshot);
+        ++themePresentationGeneration;
+    }
+    pendingThemePresentation.reset();
+    const std::uint64_t generation =
+        themePresentationGeneration;
+    const std::uint64_t expectedReportGeneration =
+        reportGeneration;
+    const QString expectedSearchText = searchText;
+    const int expectedSelectedItemIndex =
+        selectedItemIndex;
+
+    rebuild();
+    restoreGraphicsViewPresentation(trackView, snapshot->track);
+    restoreGraphicsViewPresentation(matrixView, snapshot->matrix);
+    const GraphicsViewPresentationState expectedTrackState =
+        captureGraphicsViewPresentation(trackView);
+    const GraphicsViewPresentationState expectedMatrixState =
+        captureGraphicsViewPresentation(matrixView);
+
+    // Application-wide QSS can post layout and viewport resize work after the
+    // theme signal. Reapply only while this refresh still owns the same graph
+    // state; a later theme, rebuild, zoom, or active drag takes precedence.
+    QTimer::singleShot(
+        0,
+        this,
+        [this,
+         snapshot,
+         generation,
+         expectedReportGeneration,
+         expectedSearchText,
+         expectedSelectedItemIndex,
+         expectedTrackState,
+         expectedMatrixState]() {
+            if (generation != themePresentationGeneration
+                || reportGeneration != expectedReportGeneration
+                || searchText != expectedSearchText
+                || selectedItemIndex != expectedSelectedItemIndex
+                || trackScene != snapshot->trackScene
+                || matrixScene != snapshot->matrixScene
+                || !trackView
+                || !matrixView
+                || trackView->scene() != snapshot->trackScene
+                || matrixView->scene() != snapshot->matrixScene
+                || trackView->transform()
+                       != expectedTrackState.transform
+                || matrixView->transform()
+                       != expectedMatrixState.transform
+                || QApplication::mouseButtons()
+                       != Qt::NoButton
+                || (trackView->horizontalScrollBar()
+                    && trackView->horizontalScrollBar()
+                           ->isSliderDown())
+                || (trackView->verticalScrollBar()
+                    && trackView->verticalScrollBar()
+                           ->isSliderDown())
+                || (matrixView->horizontalScrollBar()
+                    && matrixView->horizontalScrollBar()
+                           ->isSliderDown())
+                || (matrixView->verticalScrollBar()
+                    && matrixView->verticalScrollBar()
+                           ->isSliderDown())) {
+                return;
+            }
+            restoreGraphicsViewPresentation(
+                trackView,
+                snapshot->track);
+            restoreGraphicsViewPresentation(
+                matrixView,
+                snapshot->matrix);
+        });
 }
 
 GraphExportResult SignalUsageHotspotPanel::exportGraph(
@@ -1182,6 +1383,16 @@ void SignalUsageHotspotPanel::setReportBuilderForTest(ReportBuilder builder)
 bool SignalUsageHotspotPanel::reportBuildInFlightForTest() const
 {
     return activeReportBuilds > 0;
+}
+
+quint64 SignalUsageHotspotPanel::reportBuildRequestCountForTest() const
+{
+    return reportBuildRequestCount;
+}
+
+int SignalUsageHotspotPanel::selectedItemIndexForTest() const
+{
+    return selectedItemIndex;
 }
 
 QString SignalUsageHotspotPanel::currentDeclarationDisplayNameForTest() const
@@ -1400,7 +1611,8 @@ void SignalUsageHotspotPanel::renderTrack()
         countLabel->setPos(12, laneY + 39);
 
         QRectF rail(kLaneLabelWidth, laneY + 42, trackWidth, 1);
-        QPen railPen(QColor(QStringLiteral("#111827")), 1.4);
+        QPen railPen(
+            InsightVisualStyle::theme().graph.edge, 1.4);
         railPen.setCosmetic(true);
         auto* railItem = trackScene->addLine(rail.left(),
                                              rail.center().y(),
@@ -2092,7 +2304,8 @@ void SignalUsageHotspotPanel::renderMatrix()
             countText->setBrush(QBrush(
                 count > 0
                     ? (selected || intensity > 0.7
-                           ? QColor(Qt::white)
+                           ? InsightVisualStyle::theme()
+                                 .button.textChecked
                            : InsightVisualStyle::theme().textPrimary)
                     : alphaColor(InsightVisualStyle::theme().textMuted, 165)));
             const QRectF countBounds = countText->boundingRect();
@@ -2146,7 +2359,9 @@ void SignalUsageHotspotPanel::renderMatrix()
         addSimpleSceneText(matrixScene,
                            buckets.at(i),
                            detailFont,
-                           i > 3 ? QColor(Qt::white)
+                           i > 3
+                               ? InsightVisualStyle::theme()
+                                     .button.textChecked
                                  : InsightVisualStyle::theme().textPrimary,
                            QPointF(bucketX + 9, footerY + 14),
                            2.0);
@@ -2715,6 +2930,7 @@ void SignalUsageHotspotPanel::showInspectorForItem(int itemIndex)
         return;
     selectedItemIndex = itemIndex;
     const SignalUsageHotspotItem& item = currentReport.items.at(itemIndex);
+    const InsightTheme& theme = InsightVisualStyle::theme();
     const QColor roleColor = hotspotRoleColor(item.role);
     const QString reason = item.roleReasonDisplayName.isEmpty()
         ? SignalUsageHotspotService::roleDisplayName(item.role)
@@ -2724,17 +2940,21 @@ void SignalUsageHotspotPanel::showInspectorForItem(int itemIndex)
             "<div style='font-family:Segoe UI,Arial,sans-serif;'>"
             "<p><b>Line %1</b> &nbsp; "
             "<span style='color:%2;font-weight:600;'>%3</span></p>"
-            "<p style='color:#374151;'>%4</p>"
+            "<p style='color:%7;'>%4</p>"
             "<pre style='font-family:Consolas,monospace;"
-            "background:#f8fafc;padding:6px;border:1px solid #e5e7eb;'>%5</pre>"
-            "<p style='color:#64748b;'>%6</p>"
+            "background:%8;padding:6px;border:1px solid %9;'>%5</pre>"
+            "<p style='color:%10;'>%6</p>"
             "</div>")
             .arg(item.line)
             .arg(roleColor.name())
             .arg(reason.toHtmlEscaped())
             .arg(item.evidenceKindDisplayName.toHtmlEscaped())
             .arg(item.snippet.trimmed().toHtmlEscaped())
-            .arg(compactFileName(item.fileName).toHtmlEscaped());
+            .arg(compactFileName(item.fileName).toHtmlEscaped())
+            .arg(theme.textSecondary.name())
+            .arg(theme.panelSubtle.name())
+            .arg(theme.border.name())
+            .arg(theme.textMuted.name());
     showInspectorMessage(QStringLiteral("Usage Details"), html);
     refreshGraphViewActionAvailability();
 }
@@ -2774,31 +2994,37 @@ void SignalUsageHotspotPanel::showMatrixCellDetails()
     }
 
     const QColor roleColor = hotspotRoleColor(activeMatrixRole);
+    const InsightTheme& theme = InsightVisualStyle::theme();
     QString rows;
     const int rowLimit = qMin(matches.size(), 8);
     for (int i = 0; i < rowLimit; ++i) {
         const SignalUsageHotspotItem& item = currentReport.items.at(matches.at(i));
         rows += QStringLiteral(
                     "<tr>"
-                    "<td style='padding:5px 12px 5px 0;color:#111827;"
-                    "border-bottom:1px solid #eef2f7;'>%1</td>"
+                    "<td style='padding:5px 12px 5px 0;color:%3;"
+                    "border-bottom:1px solid %4;'>%1</td>"
                     "<td style='padding:5px 0;font-family:Consolas,monospace;"
-                    "border-bottom:1px solid #eef2f7;"
-                    "color:#374151;'>%2</td></tr>")
+                    "border-bottom:1px solid %4;"
+                    "color:%5;'>%2</td></tr>")
                     .arg(item.line)
                     .arg(elidedForWidth(item.snippet, QFont(QStringLiteral("Consolas")), 270)
-                             .toHtmlEscaped());
+                             .toHtmlEscaped())
+                    .arg(theme.textPrimary.name())
+                    .arg(theme.border.name())
+                    .arg(theme.textSecondary.name());
     }
     if (matches.size() > rowLimit) {
         rows += QStringLiteral(
-            "<tr><td style='padding:5px 12px 5px 0;color:#64748b;'>...</td>"
-            "<td style='padding:5px 0;color:#64748b;'>%1 more hits</td></tr>")
-                    .arg(matches.size() - rowLimit);
+            "<tr><td style='padding:5px 12px 5px 0;color:%2;'>...</td>"
+            "<td style='padding:5px 0;color:%2;'>%1 more hits</td></tr>")
+                    .arg(matches.size() - rowLimit)
+                    .arg(theme.textMuted.name());
     }
     if (rows.isEmpty()) {
         rows = QStringLiteral(
-            "<tr><td colspan='2' style='color:#64748b;padding:6px 0;'>"
-            "No hits in this cell.</td></tr>");
+            "<tr><td colspan='2' style='color:%1;padding:6px 0;'>"
+            "No hits in this cell.</td></tr>")
+                   .arg(theme.textMuted.name());
     }
 
     int firstLine = -1;
@@ -2814,14 +3040,14 @@ void SignalUsageHotspotPanel::showMatrixCellDetails()
             "<span style='background:%8;color:%2;font-weight:600;"
             "padding:2px 6px;border-radius:4px;'>%3</span> / "
             "<b>%4 hits</b></p>"
-            "<p style='color:#64748b;margin:0 0 10px 0;'>%5</p>"
+            "<p style='color:%9;margin:0 0 10px 0;'>%5</p>"
             "<table cellspacing='0' cellpadding='0' width='100%'>"
-            "<tr><th align='left' style='padding:0 12px 7px 0;color:#64748b;'>Line</th>"
-            "<th align='left' style='padding:0 0 7px 0;color:#64748b;'>Code preview</th></tr>"
+            "<tr><th align='left' style='padding:0 12px 7px 0;color:%9;'>Line</th>"
+            "<th align='left' style='padding:0 0 7px 0;color:%9;'>Code preview</th></tr>"
             "%6</table>"
-            "<p style='margin-top:12px;'><a style='color:#2563eb;text-decoration:none;' "
+            "<p style='margin-top:12px;'><a style='color:%10;text-decoration:none;' "
             "href='show-all'>Show all %4 hits in list</a></p>"
-            "<p><a style='color:#2563eb;text-decoration:none;' href='jump-first'>%7</a></p>"
+            "<p><a style='color:%10;text-decoration:none;' href='jump-first'>%7</a></p>"
             "</div>")
             .arg(activeMatrixModuleName.toHtmlEscaped())
             .arg(roleColor.name())
@@ -2830,7 +3056,12 @@ void SignalUsageHotspotPanel::showMatrixCellDetails()
             .arg(compactFileName(activeMatrixFileName).toHtmlEscaped())
             .arg(rows)
             .arg(firstLineText.toHtmlEscaped())
-            .arg(mixedColor(QColor(Qt::white), roleColor, 0.12).name());
+            .arg(mixedColor(
+                     theme.panelBackground,
+                     roleColor,
+                     0.12).name())
+            .arg(theme.textMuted.name())
+            .arg(theme.accent.name());
     showInspectorMessage(QStringLiteral("Cell Details"), html);
 }
 

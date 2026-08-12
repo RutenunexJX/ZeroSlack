@@ -45,6 +45,11 @@ inline constexpr int kGraphWorkspaceRole = Qt::UserRole + 1237;
 inline constexpr int kGraphActiveTopRole = Qt::UserRole + 1238;
 inline constexpr int kGraphInstancePathRole = Qt::UserRole + 1239;
 inline constexpr int kGraphDocumentRevisionRole = Qt::UserRole + 1240;
+inline constexpr int kGraphThemeVisualRole = Qt::UserRole + 1241;
+inline constexpr int kGraphThemeTextPrimary = 1;
+inline constexpr int kGraphThemeTextSecondary = 2;
+inline constexpr int kGraphThemeWarning = 3;
+inline constexpr int kGraphThemePanel = 4;
 
 inline constexpr qreal kInsightNodeWidth = 170.0;
 inline constexpr qreal kInsightNodeHeight = 56.0;

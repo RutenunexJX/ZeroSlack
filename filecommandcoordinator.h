@@ -1,6 +1,8 @@
 #ifndef FILECOMMANDCOORDINATOR_H
 #define FILECOMMANDCOORDINATOR_H
 
+#include "zeroslackexport.h"
+
 #include <QObject>
 #include <QString>
 #include <functional>
@@ -12,7 +14,7 @@ class MyCodeEditor;
 class TabManager;
 class WorkspaceManager;
 
-class FileCommandCoordinator : public QObject
+class ZEROSLACK_API FileCommandCoordinator : public QObject
 {
     Q_OBJECT
 
@@ -30,6 +32,8 @@ public:
     void openFile();
     void saveFile();
     void saveFileAs();
+    bool saveEditor(const QString& preferredViewId,
+                    bool forceSaveAs = false);
     void copy();
     void paste();
     void cut();
@@ -57,13 +61,14 @@ private:
                  WorkspaceManager* workspaceManager);
         void createNewTab() const;
         void openFile() const;
-        void saveCurrentTab() const;
-        void saveAsCurrentTab() const;
+        bool saveEditor(const QString& preferredViewId,
+                        bool forceSaveAs) const;
         void openWorkspace(const QString& folderPath) const;
         bool resolvePendingDocuments(
             QWidget* dialogParent) const;
         void finalizeNormalClose() const;
-        MyCodeEditor* currentEditor() const;
+        MyCodeEditor* editorActionTarget(
+            const QString& preferredViewId = QString()) const;
     };
 
     struct EditorCommandDispatcher {

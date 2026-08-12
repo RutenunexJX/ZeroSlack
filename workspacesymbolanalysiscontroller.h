@@ -1,6 +1,8 @@
 #ifndef WORKSPACESYMBOLANALYSISCONTROLLER_H
 #define WORKSPACESYMBOLANALYSISCONTROLLER_H
 
+#include "zeroslackexport.h"
+
 #include "projectmodel.h"
 #include "semanticanalysisrequest.h"
 #include "workspaceanalysisplanservice.h"
@@ -16,7 +18,7 @@
 class DocumentModel;
 class SymbolAnalyzer;
 
-class WorkspaceSymbolAnalysisController : public QObject
+class ZEROSLACK_API WorkspaceSymbolAnalysisController : public QObject
 {
     Q_OBJECT
 

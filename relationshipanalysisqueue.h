@@ -1,6 +1,8 @@
 #ifndef RELATIONSHIPANALYSISQUEUE_H
 #define RELATIONSHIPANALYSISQUEUE_H
 
+#include "zeroslackexport.h"
+
 #include <QMap>
 #include <QObject>
 #include <QString>
@@ -8,7 +10,7 @@
 
 class QTimer;
 
-class RelationshipAnalysisQueue : public QObject
+class ZEROSLACK_API RelationshipAnalysisQueue : public QObject
 {
     Q_OBJECT
 

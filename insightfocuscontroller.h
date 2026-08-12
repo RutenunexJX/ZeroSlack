@@ -2,6 +2,7 @@
 #define INSIGHTFOCUSCONTROLLER_H
 
 #include "actionregistry.h"
+#include "zeroslackexport.h"
 
 #include <QObject>
 #include <QByteArray>
@@ -36,7 +37,7 @@ struct InsightFocusPanelRegistration {
     std::function<void()> showInspector;
 };
 
-class InsightFocusController : public QObject,
+class ZEROSLACK_API InsightFocusController : public QObject,
                                public ActionExecutionHost
 {
 public:

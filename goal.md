@@ -1,19 +1,138 @@
 # ZeroSlack Long-Term Goal Model
 
-## Current Acceptance Repair (2026-08-04)
+## Current Theme and Temporary-View Contract (2026-08-11)
 
-Overall status: **验收通过，P1 正确性修复完成**.
+Status: **控制侧已独立验收通过**.
+
+- Light remains the default visual mode; Settings > Appearance can switch to
+  Dark immediately. Settings Center/QSettings owns persistence under
+  `appearance.theme`; `ApplicationThemeManager` owns only the current
+  in-process mode, application palette/QSS, and ordered pre-change/post-change
+  signals. `InsightVisualStyle` owns the Light/Dark tokens consumed by shell
+  controls, editors, diagnostics, popups, previews, graphs, and the temporary
+  drawer. A theme change is presentation-only and cannot recreate document,
+  semantic, workspace, tab, split, cursor, selection, or scroll state.
+- The application has at most one temporary editor drawer. Every producer uses
+  an `EditorLocation`/`OpenTarget` containing stable document identity, path,
+  location, and optional selection/symbol/source-link data. Opening another
+  target replaces the View and records drawer-local Back/Forward history; it
+  does not create a tab or a text fragment detached from the complete file.
+  The shared route is available from the current editor, Tab, Files, Design,
+  definition preview, Scoped Search, and RTL source-linked graph entry points.
+  Title search exposes an ordered list of file/module/package/symbol candidates
+  with target identity, type, primary text, and disambiguation. It uses cached
+  workspace-file and `SearchService` semantic catalogs, refreshes file entries
+  on `filesScanned`, and performs lightweight in-memory fuzzy ranking. Duplicate
+  names remain explicit choices in a themed child popup supporting keyboard,
+  mouse, and Esc interaction.
+- The drawer is a movable/resizable child overlay inside the editor region. It
+  never joins the main splitter and is never a dock or top-level window. It can
+  be stowed on any edge, where only a small labeled handle is interactive, and
+  it guards delayed collapse during editor, completion, menu, popup, search,
+  selection, and drag interactions. Pin controls auto-collapse; Close destroys
+  only the auxiliary View. Its controller state is `Hidden`, `Floating`, or
+  `EdgeStowed`; Pin is an independent runtime policy and is not persisted.
+  Parent-region resize and ordinary drawer events use local filters. The
+  application-wide event filter is installed only for popup/menu protection or
+  an active title/resize drag, gates event types before widget ownership
+  traversal, and is removed in Hidden and idle states.
+- Main and drawer editors use the same `SharedDocument`/`QTextDocument`, undo,
+  save, and external-change authority. Cursor, selection, scroll, and history
+  remain View-local, including folding. Every `MyCodeEditor` owns an
+  `EditorViewProjection` whose collapsed source ranges drive per-View painting,
+  geometry, hit testing, cursor navigation, and scrolling without changing the
+  shared `QTextBlock` visibility or line counts. Insertion-aware `QTextCursor`
+  anchors remap fold endpoints across edits, and drawer history restores the
+  fold set belonging to each target entry. Only drawer edge and size are
+  preferences; Pin, target, and history are not restored as workspace content.
+- Execution-side regression work covers view-local folding, shared-document
+  editing, event-filter lifecycle and idle-event guards, candidate search,
+  drawer navigation/history, four-edge stow, theme refresh, input/performance,
+  and splitter non-interference. The final affected
+  `jump_test`/`insight_visual_style_test`/`shared_core_runtime_test` group passed
+  3/3. Shared-Debug unfiltered serial CTest passed 82/82 with zero failures in
+  380.30 seconds wall-clock. The control side independently accepted the
+  repaired behavior and shared DLL boundary.
+- Existing Light/Dark screenshots are stored under
+  `artifacts/ui/theme_drawer`; GUI smoke coverage belongs to the completed
+  execution-side verification. The working tree remains uncommitted and
+  nothing was pushed.
+
+## Default Shared-Core Build Goal (2026-08-12)
+
+Status: **执行侧实现及测试完成，等待控制侧验收**. The complete build,
+link measurements, and final unfiltered serial result are recorded below.
+
+- CMake 3.27 or newer is the project minimum. `ZEROSLACK_SHARED_CORE` defaults
+  to `ON`; Debug, Release, tests, and subsequent acceptance use the shared core.
+  Development and Debug acceptance use the Shared-Debug directory. Explicit
+  `-DZEROSLACK_SHARED_CORE=OFF` remains only as a compatibility/comparison
+  route, never as an implicit fallback.
+- Clean configure-only probes must demonstrate an `ON` cache plus DLL target
+  for the default graph and an `OFF` cache plus static archive target for the
+  explicit fallback. `shared_core_policy_guard` keeps that contract under
+  CTest without compiling another graph.
+- The default graph exports the shared core's public Qt and C++ boundary through
+  `ZEROSLACK_API`. MinGW generates and validates an explicit filtered `.def`
+  from core and Tree-sitter objects, and `shared_core_runtime_test` verifies
+  meta-object, signal, RTTI, and editor use across the DLL boundary.
+- Slang is non-transitive from the shared core. Direct Slang consumers and the
+  two tests that directly call the Tree-sitter C API link their existing
+  authoritative targets explicitly; no second semantic or syntax source is
+  introduced.
+- `ZEROSLACK_LINK_JOBS` provides a Ninja link job pool and defaults to one on
+  this MinGW host. The latest core DLL edge is 389.726 seconds.
+  Static-Debug core consumers are N=53 with median 349.730 seconds, P75
+  354.114, maximum 406.279, and cumulative 4.851 hours. Shared-Debug core
+  consumers are N=54 with median 0.675 seconds, P75 1.306, maximum 205.073,
+  and cumulative 279.092 seconds. Excluding the sole direct-Slang
+  core-consumer outlier `effective_value_test`, the Shared-Debug N=53 values
+  are median 0.670 seconds, P75 1.201, maximum 16.675, and cumulative 74.019
+  seconds.
+- Representative current links are 0.670 seconds
+  (`temporary_editor_drawer_test`), 0.748
+  (`temporary_editor_drawer_search_test`), 0.304
+  (`temporary_editor_drawer_event_filter_test`), 0.324
+  (`editor_view_local_folding_test`), and 16.675 (`gui_smoke_test`). The final
+  affected group passed 3/3, and Shared-Debug unfiltered serial CTest passed
+  82/82 with zero failures in 380.30 seconds wall-clock. These Debug results do
+  not assert that Release distribution packaging has been validated.
+- The current default-policy rebuild succeeded, a second build was a no-op,
+  and the five focused shared-runtime/CMake policy checks passed. Runtime code
+  did not change, so the accepted 82/82 unfiltered suite was not rerun.
+
+## Current Editor Interaction Contract (2026-08-10)
+
+- The code viewport begins immediately after a functional, stable-width gutter;
+  generic text-panel borders and padding do not alter code-editor geometry.
+- A bottom panel can be dragged continuously down to its still-interactive tab
+  strip and back up. Manual and explicit collapse share persisted state.
+- Cross-group editor-tab drags preview the exact Left, Right, Above, Below, or
+  Center destination. Previewing is non-mutating, and a Drop moves only the
+  unique `editorViewId`, including among Views sharing one `QTextDocument`.
+- Virtual columns are explicit: Alt+click beyond EOL creates one virtual caret,
+  and Shift+Alt+click extends or adjusts column selection. Ordinary clicks and
+  ordinary arrows use Qt real-cursor semantics and never create virtual space.
+- Navigation in an explicit virtual region does not modify the document;
+  typing or paste materializes padding, while Esc or a real-position click
+  cancels the virtual state.
+
+## Historical Keyword-Boundary Repair Record (2026-08-04)
+
+Current project status: **控制侧已独立验收通过**. The
+following bullets record an earlier keyword-boundary repair only and do not
+state the acceptance status of the current theme/drawer work.
 
 - Phase 0 — P1 Acceptance State Alignment: complete. The three documents now
   withdraw the prior acceptance claim before any product-code change.
 - The Phase 0 checkpoint explicitly recorded “文档状态已对齐，代码修复尚未完成。”
-  before product edits began. This is a historical checkpoint; the completed
-  P1 repair and final 77/77 acceptance supersede it.
-- Phase 1 — Keyword-Boundary Incremental Tree Repair: complete. Product fix,
-  focused regressions, full build, and unfiltered acceptance all pass.
-- 文档状态已更新为验收通过；P1 产品代码、回归与完整 77 项验收均已完成。
+  before product edits began. It is retained only as historical context for the
+  later keyword-boundary repair.
+- Phase 1 — Keyword-Boundary Incremental Tree Repair: historically complete.
+  Its product fix, focused regressions, full build, and unfiltered test run were
+  recorded as passing at that checkpoint.
 - Historical repair baseline: `73ddc5d0e3cb275bb291c9bfb8828d3fd8801dc6`.
-- Accepted implementation commit: `8308b5a9820ac9ad4fd852348ad8fe17f9b120ef`.
+- Historical implementation commit: `8308b5a9820ac9ad4fd852348ad8fe17f9b120ef`.
   This documentation-only follow-up records that result and does not claim a
   later documentation commit as the current `HEAD`.
 - Protection snapshot: protected untracked paths remain
@@ -28,23 +147,25 @@ Overall status: **验收通过，P1 正确性修复完成**.
   `E3798348BBA07DB8E585C93892DD98D230EAB761F00D2A4F32D6AE3ECA65A9A1`)
   and `ZeroSlack-0.1.0-win64-20260727.zip` (46803753 bytes, SHA-256
   `2DBB6E28ECA2D4F50C00C02EC0F7A92CA42BB282B54236AD8B969FBBED693B74`).
-- The registered CTest inventory contains 77 targets. The historical all-target
-  build proves only compile/link. Historical excluded runs of 68/68 and 71/71
-  remain partial records and are not used as complete acceptance evidence.
+- The final Shared-Debug unfiltered CTest run for the current work completed
+  82/82 with zero failures in 380.30 seconds wall-clock. The historical P1
+  all-target build and 77-target runs prove only their recorded baseline, while
+  excluded runs of 68/68 and 71/71 remain partial historical records.
 - The P1 root is fixed by deriving the fast-path exclusion set from Slang's
   IEEE 1800-2023 keyword table. Ordinary non-keyword identifier suffix edits
   still skip parsing; identifier-to-keyword and keyword-to-identifier edits
   synchronously take the existing authoritative Tree-sitter incremental parse.
-- Current focused verification passes: `ts_doc_test` 0.20 seconds,
+- Historical focused verification recorded: `ts_doc_test` 0.20 seconds,
   `ts_large_file_semantics_test` 0.83 seconds, and
   `editor_incremental_test` 9.31 seconds. The semantic suite reports 26/26,
   including `alway -> always`, `logi -> logic`, reverse keyword exit, and the
   unchanged ordinary-identifier no-parse path.
-- Execution-side verification: the complete serial build succeeded, and its
+- Historical execution-side verification: the complete serial build succeeded,
+  and its
   final unfiltered `ctest --output-on-failure -j1` passed 77/77 in 395.51
   seconds, including `editor_incremental_test` in 13.64 seconds with every
   existing correctness and performance threshold unchanged.
-- Control-side independent verification: `ts_doc_test` passed in 0.74 seconds,
+- Historical control-side verification: `ts_doc_test` passed in 0.74 seconds,
   `ts_large_file_semantics_test` in 1.36 seconds, and
   `editor_incremental_test` in 12.01 seconds. The subsequent unfiltered serial
   CTest run passed 77/77 in 412.70 seconds, including the corresponding three
@@ -52,7 +173,8 @@ Overall status: **验收通过，P1 正确性修复完成**.
 - Pre-final history: one earlier full run produced 76/77 while the external
   `PassTheFear.exe` process was active, and an isolated rerun reproduced two
   latency-gate failures. That run was not accepted and no threshold was changed;
-  the final unfiltered rerun above is the current acceptance result.
+  the final unfiltered rerun above is the recorded result for that historical
+  keyword-boundary repair only.
 - Historical resolved blocker roots from the preceding repair:
   - Command Layer word-prefix matches did not distinguish exact word initials
     and retained weaker ranks, breaking required abbreviations and stable `go`
@@ -114,7 +236,7 @@ ProjectModel / DocumentModel / SemanticIndexSnapshot
 - Huge Workspace work is status audit only unless the user explicitly changes
   the scope.
 
-## Current Build Performance Goal Status (2026-07-20)
+## Historical Build Performance Goal Status (2026-07-20; superseded 2026-08-12)
 
 The local MinGW Debug link goal is measured but not complete. A representative
 core mtime update rebuilt two core objects, one static archive, and all thirteen
@@ -122,23 +244,24 @@ dependent executables in 431.890 seconds. The observed ratios against the
 818.9/1099.2-second GNU-ld baselines are 1.90x/2.54x, below the required 3x,
 and the local linker remained GNU ld.
 
-The accepted build-system scope is limited to stable inherited-PATH Ninja
-launchers and a probed, Debug-only `ZEROSLACK_DEBUG_LINKER` LLD option with safe
-GNU fallback. The only installed LLD is incompatible LLVM 7.0.1. Shared-core
-and aggregated-test prototypes were rejected because their Qt DLL boundary or
-test-initialization risks could not be proven safe without product/fixture
-changes. Release configuration and ABI remain unchanged; Debug CTest passes
-12/12 and demo passes hidden offscreen startup. Achieving and claiming 3x now
-requires a compatible LLD host followed by a full Qt/Slang link benchmark and
-the same regression suite.
+The build-system scope accepted in that historical milestone was limited to
+stable inherited-PATH Ninja launchers and a probed, Debug-only
+`ZEROSLACK_DEBUG_LINKER` LLD option with safe GNU fallback. The only installed
+LLD is incompatible LLVM 7.0.1. The
+shared-core prototype was rejected then because its Qt DLL boundary was not
+annotated; that rejection is superseded by the 2026-08-12 default shared-core
+implementation and runtime boundary regression above. The decision not to
+aggregate tests into one process remains unchanged. The historical Release ABI
+and 12/12 Debug record apply only to that milestone, not to the current
+Shared-Debug result of 82/82 with zero failures in 380.30 seconds wall-clock.
 
 ## Current Goal State
 
 Historical milestone record (2026-07-29): the eight requested product
 interaction and architecture convergence items passed the then-current
 regression and GUI/sample-workspace checks. This record does not establish the
-current 77-target acceptance; that acceptance is established separately by the
-2026-08-03 repair summary above.
+current theme/drawer acceptance; the 2026-08-03 repair summary is also a
+separate historical record. Current status is **控制侧已独立验收通过**.
 
 Stage 0 is complete:
 
@@ -335,7 +458,7 @@ Stage 8 is complete:
   claiming a runtime-performance change; reverified all protected metadata
   and `git diff --check`
 
-Stage 9 final acceptance is complete:
+Stage 9 historical verification record:
 
 - the first complete run passed 30/31 and found a forbidden production
   `QRegularExpression` in Action Registry id validation; replaced it with an
@@ -510,9 +633,10 @@ integration. The `ow 1` regression additionally opens analyzed `rtl_top.sv`
   through the real TabManager at semantic revision zero and verifies no
   open-tabs analysis, snapshot publication, or Design refresh while stable
   relationships, package values, semantic Ghost, port presentation, and nested
-  Navigation data remain available. Final headless acceptance is complete: the
-  final Debug all-target incremental build passed 17/17 steps in 1099.2 seconds,
-  and complete CTest passed 12/12 in 130.60 seconds. No visible
+  Navigation data remain available. At that historical checkpoint, final
+  headless verification recorded a Debug all-target incremental build passing
+  17/17 steps in 1099.2 seconds and complete CTest passing 12/12 in 130.60
+  seconds. No visible
 `demo.exe` was launched after the user prohibited GUI interference; the real
 coordinator route ran under Qt offscreen and remained alive for both projects.
 The final static audit left both user `.zs` files untouched. `new/.zs` is the
@@ -527,15 +651,18 @@ fingerprints; full engine-mirror replacement still runs on the GUI thread; and
 the conservative source-text revision check copies a large editor buffer on
 each `textChanged` event.
 
-Previous milestone: RTL Insight core-view modernization is complete on top of
-the UI theme and graph foundation. The current UI route keeps Qt Widgets, uses
-`InsightVisualStyle` as the global theme layer, and uses `InsightGraphView` as
-the shared graph view interaction layer.
+RTL Insight core-view modernization remains complete on top of the theme and
+graph foundation. The current UI route keeps Qt Widgets, uses Settings
+Center/QSettings `appearance.theme` for persistence,
+`ApplicationThemeManager` for the live Light/Dark mode, application palette/
+QSS, and ordered pre/post change signals, `InsightVisualStyle` for shared
+visual tokens, and `InsightGraphView` for the shared graph view interaction
+layer.
 
 Current baseline highlights:
 
-- Insight UI v2 visual foundation is now the app theme foundation.
-  `InsightVisualStyle` provides reusable light-theme tokens, role colors,
+- Insight UI v2 visual foundation is part of the app theme foundation.
+  `InsightVisualStyle` provides reusable Light/Dark tokens, role colors,
   selected/hover pens, heat intensity colors, compact control styling,
   panel/legend helpers, app shell/menu/toolbar/tab/side-rail/status/dock/input
   QSS builders, tree/list/table/splitter/scrollbar coverage, Global Control
@@ -1909,7 +2036,8 @@ one milestone.
 Status: the A-G product batches were implemented, but complete acceptance was
 not established. Six targets were omitted after a historical
 three-reproduction policy; omitted targets were not passed tests, and that
-policy is superseded by the current acceptance repair.
+policy was superseded by later repair work and by the current theme/drawer
+verification contract above.
 
 - E acceptance migrated the Fold Shelf preview, workspace file-operation dry-run
   plan, and Expose Signal to Top proposal/diff from preview dialogs to the shared
@@ -1966,8 +2094,8 @@ policy is superseded by the current acceptance repair.
   Registry request for `refactor.createAssignmentQueue` instead of directly
   editing; MainWindow executes the routed queue transaction and records it in
   history while the editor retains a no-host fallback. Its 50-step dependency
-  rebuild passed in 640.6 seconds, and the final GUI run passed 78/78 checks in
-  0.99 seconds. Comment/Uncomment and Indent/Unindent no longer use hard-coded
+  rebuild passed in 640.6 seconds, and that historical GUI run passed 78/78
+  checks in 0.99 seconds. Comment/Uncomment and Indent/Unindent no longer use hard-coded
   Ctrl key checks: their four shortcuts are canonical Registry surfaces, the
   editor keyboard path publishes the same request used by the context menu,
   and standalone editors retain a local fallback. `action_registry_test`

@@ -1,6 +1,8 @@
 #ifndef INSTANCEPAIRCONNECTIONWORKFLOW_H
 #define INSTANCEPAIRCONNECTIONWORKFLOW_H
 
+#include "zeroslackexport.h"
+
 #include "instancepairconnectionpanel.h"
 
 #include <QObject>
@@ -60,7 +62,7 @@ Q_DECLARE_METATYPE(InstancePairConnectionWorkflowState)
 Q_DECLARE_METATYPE(InstancePairConnectionWorkflowFailure)
 Q_DECLARE_METATYPE(InstancePairConnectionWorkflowResult)
 
-class InstancePairConnectionWorkflow final : public QObject
+class ZEROSLACK_API InstancePairConnectionWorkflow final : public QObject
 {
     Q_OBJECT
 

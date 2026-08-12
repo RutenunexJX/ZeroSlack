@@ -1,6 +1,7 @@
 #include "editorselection.h"
 
 #include "editorsemanticcontextservice.h"
+#include "insightvisualstyle.h"
 #include "mycodeeditor.h"
 #include "tsdocument.h"
 
@@ -32,6 +33,12 @@ struct EditorOccurrenceNode {
 };
 
 namespace {
+QColor themeColorWithAlpha(QColor color, int alpha)
+{
+    color.setAlpha(alpha);
+    return color;
+}
+
 constexpr int kPrimarySelectionProperty = QTextFormat::UserProperty;
 constexpr int kScopeBackgroundSelectionMarker = 997;
 constexpr int kCurrentLineSelectionMarker = 998;
@@ -516,52 +523,53 @@ QTextCharFormat semanticFormatForRole(
     bool dark)
 {
     QTextCharFormat format;
-    auto color = [dark](const char* darkColor, const char* lightColor) {
-        return QColor(QString::fromLatin1(dark ? darkColor : lightColor));
-    };
+    const InsightEditorSemanticTokens& semantic =
+        InsightVisualStyle::theme(
+            dark ? ThemeMode::Dark : ThemeMode::Light)
+            .editorSemantic;
 
     switch (role) {
     case SemanticDecorationRole::ModuleInterface:
-        format.setForeground(color("#61AFEF", "#005CC5"));
+        format.setForeground(semantic.moduleInterface);
         format.setFontWeight(QFont::Bold);
         break;
     case SemanticDecorationRole::PackageClassType:
-        format.setForeground(color("#56B6C2", "#007C89"));
+        format.setForeground(semantic.packageClassType);
         format.setFontWeight(QFont::Bold);
         break;
     case SemanticDecorationRole::InstanceName:
-        format.setForeground(color("#E5C07B", "#8A5A00"));
+        format.setForeground(semantic.instanceName);
         break;
     case SemanticDecorationRole::FormalPort:
-        format.setForeground(color("#98C379", "#22863A"));
+        format.setForeground(semantic.formalPort);
         break;
     case SemanticDecorationRole::ModulePort:
-        format.setForeground(color("#9CDCFE", "#0366D6"));
+        format.setForeground(semantic.modulePort);
         format.setFontWeight(QFont::DemiBold);
         break;
     case SemanticDecorationRole::ActualSignal:
-        format.setForeground(color("#D19A66", "#B05A00"));
+        format.setForeground(semantic.actualSignal);
         break;
     case SemanticDecorationRole::Parameter:
-        format.setForeground(color("#E06C75", "#D73A49"));
+        format.setForeground(semantic.parameter);
         break;
     case SemanticDecorationRole::EnumValue:
-        format.setForeground(color("#DCDCAA", "#795E26"));
+        format.setForeground(semantic.enumValue);
         format.setFontWeight(QFont::DemiBold);
         break;
     case SemanticDecorationRole::TypeAlias:
-        format.setForeground(color("#4EC9B0", "#00796B"));
+        format.setForeground(semantic.typeAlias);
         format.setFontWeight(QFont::Bold);
         break;
     case SemanticDecorationRole::Macro:
-        format.setForeground(color("#D7BA7D", "#735C0F"));
+        format.setForeground(semantic.macro);
         break;
     case SemanticDecorationRole::SystemTask:
-        format.setForeground(color("#56B6C2", "#007C89"));
+        format.setForeground(semantic.systemTask);
         break;
     case SemanticDecorationRole::InactivePreprocessorBranch:
-        format.setForeground(color("#6B7280", "#9CA3AF"));
-        format.setBackground(color("#1F2937", "#F3F4F6"));
+        format.setForeground(semantic.inactiveText);
+        format.setBackground(semantic.inactiveBackground);
         format.setProperty(QTextFormat::FullWidthSelection, true);
         break;
     }
@@ -720,7 +728,10 @@ void EditorSelection::highlightCurrentLine(MyCodeEditor* editor)
         selections.end());
 
     QTextEdit::ExtraSelection currentLine;
-    currentLine.format.setBackground(QColor(0, 100, 100, 20));
+    currentLine.format.setBackground(
+        themeColorWithAlpha(
+            InsightVisualStyle::theme().hover,
+            24));
     currentLine.format.setProperty(
         QTextFormat::FullWidthSelection,
         true);
@@ -759,8 +770,12 @@ void EditorSelection::highlightCommand(MyCodeEditor* editor, int prefixPosition)
             kCommandSelectionMarker);
 
     QTextEdit::ExtraSelection commandSelection;
-    commandSelection.format.setBackground(QColor(60, 60, 60, 180));
-    commandSelection.format.setForeground(QColor(255, 255, 255));
+    commandSelection.format.setBackground(
+        themeColorWithAlpha(
+            InsightVisualStyle::theme().accent,
+            205));
+    commandSelection.format.setForeground(
+        InsightVisualStyle::theme().button.textChecked);
     commandSelection.format.setProperty(
         kCommandSelectionProperty,
         kCommandSelectionMarker);
@@ -812,8 +827,10 @@ void EditorSelection::highlightHoveredSymbol(
         end,
         QTextCursor::KeepAnchor);
     highlight.format.setUnderlineStyle(QTextCharFormat::SingleUnderline);
-    highlight.format.setUnderlineColor(QColor(0, 100, 200));
-    highlight.format.setForeground(QColor(0, 100, 200));
+    highlight.format.setUnderlineColor(
+        InsightVisualStyle::theme().accent);
+    highlight.format.setForeground(
+        InsightVisualStyle::theme().accent);
     highlight.format.setProperty(
         kHoveredSymbolSelectionProperty,
         kHoveredSymbolSelectionMarker);
@@ -899,8 +916,10 @@ void EditorSelection::highlightDiagnostics(
                 QTextCharFormat::WaveUnderline);
             underlineSelection.format.setUnderlineColor(
                 diagnostic.severity == SemanticDiagnostic::Error
-                    ? QColor(QStringLiteral("#EF4444"))
-                    : QColor(QStringLiteral("#FBBF24")));
+                    ? InsightVisualStyle::theme()
+                          .syntax.errorUnderline
+                    : InsightVisualStyle::theme()
+                          .syntax.warningUnderline);
             underlineSelection.format.setProperty(
                 kDiagnosticSelectionProperty,
                 kDiagnosticSelectionMarker);
@@ -1006,7 +1025,10 @@ void EditorSelection::highlightCurrentSymbolReferences(MyCodeEditor* editor)
         match.cursor.setPosition(position);
         match.cursor.setPosition(position + occurrence->length,
                                  QTextCursor::KeepAnchor);
-        match.format.setBackground(QColor(59, 130, 246, 28));
+        match.format.setBackground(
+            themeColorWithAlpha(
+                InsightVisualStyle::theme().accent,
+                34));
         match.format.setProperty(
             kCurrentSymbolSelectionProperty,
             kCurrentSymbolSelectionMarker);
@@ -1242,7 +1264,10 @@ void EditorSelection::highlightSearchMatches(
 
         QTextEdit::ExtraSelection match;
         match.cursor = cursor;
-        match.format.setBackground(QColor(245, 158, 11, 45));
+        match.format.setBackground(
+            themeColorWithAlpha(
+                InsightVisualStyle::theme().warning,
+                52));
         match.format.setProperty(
             kSearchSelectionProperty,
             kSearchSelectionMarker);
@@ -1290,10 +1315,14 @@ void EditorSelection::highlightKeywordPair(
         selection.cursor = QTextCursor(editor->document());
         selection.cursor.setPosition(start);
         selection.cursor.setPosition(end, QTextCursor::KeepAnchor);
-        selection.format.setBackground(QColor(250, 204, 21, 54));
+        selection.format.setBackground(
+            themeColorWithAlpha(
+                InsightVisualStyle::theme().syntax.structuralPair,
+                58));
         selection.format.setUnderlineStyle(
             QTextCharFormat::SingleUnderline);
-        selection.format.setUnderlineColor(QColor("#EAB308"));
+        selection.format.setUnderlineColor(
+            InsightVisualStyle::theme().syntax.structuralPair);
         selection.format.setFontWeight(QFont::DemiBold);
         selection.format.setProperty(
             kKeywordPairSelectionProperty,
@@ -1392,7 +1421,10 @@ void EditorSelection::flashLine(MyCodeEditor* editor, int lineNumber)
 
     QTextEdit::ExtraSelection flash;
     flash.cursor = QTextCursor(block);
-    flash.format.setBackground(QColor(97, 175, 239, 70));
+    flash.format.setBackground(
+        themeColorWithAlpha(
+            InsightVisualStyle::theme().accent,
+            72));
     flash.format.setProperty(QTextFormat::FullWidthSelection, true);
     flash.format.setProperty(kFlashSelectionProperty, kFlashSelectionMarker);
     selections.append(flash);

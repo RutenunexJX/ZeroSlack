@@ -27,6 +27,7 @@ void DocumentModel::registerEditor(MyCodeEditor* editor, const QString& fileName
 
 void DocumentModel::unregisterEditor(MyCodeEditor* editor)
 {
+    disconnectEditorSignals(editor);
     const DocumentCloseResult result = state->unregisterEditor(editor);
     if (result.closed)
         emit documentClosed(result.documentId, result.fileName);

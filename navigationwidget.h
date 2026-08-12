@@ -1,6 +1,8 @@
 #ifndef NAVIGATIONWIDGET_H
 #define NAVIGATIONWIDGET_H
 
+#include "zeroslackexport.h"
+
 #include <QWidget>
 #include <QTabWidget>
 #include <QTreeWidget>
@@ -20,7 +22,7 @@
 #include "symboloutlinemodel.h"
 #include "workspaceconfigurationservice.h"
 
-class NavigationWidget : public QWidget
+class ZEROSLACK_API NavigationWidget : public QWidget
 {
     Q_OBJECT
 
@@ -65,6 +67,10 @@ public:
     void setDesignParticipatingFiles(const QSet<QString>& fileNames);
 
     void highlightFile(const QString& filePath);
+
+    void refreshThemePresentation();
+    QIcon symbolIconForTest(SymbolOutlineIconKind iconKind);
+    int iconCacheEntryCountForTest() const;
 
 signals:
     void fileDoubleClicked(const QString& filePath);
@@ -155,6 +161,8 @@ private:
     QTreeWidgetItem* createDesignItem(const DesignHierarchyNode& node);
     QIcon getFileIcon(const QString& filePath);
     QIcon getSymbolIcon(SymbolOutlineIconKind iconKind);
+    void refreshFileTreeIcons();
+    void refreshDesignTreeIcons();
     void applyDesignFileDimming(QTreeWidgetItem* item, bool dimmed);
     void applyDesignItemDimming(QTreeWidgetItem* item, bool dimmed);
     bool fileParticipatesInDesign(const QString& filePath) const;

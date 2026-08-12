@@ -1,6 +1,8 @@
 #ifndef COMPLETIONMODEL_H
 #define COMPLETIONMODEL_H
 
+#include "zeroslackexport.h"
+
 #include <QMetaType>
 #include <QAbstractItemModel>
 #include <QList>
@@ -8,7 +10,7 @@
 #include "completiontypes.h"
 #include "includeheaderworkflowtypes.h"
 
-class CompletionModel : public QAbstractItemModel
+class ZEROSLACK_API CompletionModel : public QAbstractItemModel
 {
     Q_OBJECT
 

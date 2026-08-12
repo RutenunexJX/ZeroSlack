@@ -1,6 +1,8 @@
 #ifndef SEMANTICRUNTIMECOORDINATOR_H
 #define SEMANTICRUNTIMECOORDINATOR_H
 
+#include "zeroslackexport.h"
+
 #include <QObject>
 #include <memory>
 
@@ -11,7 +13,7 @@ class SemanticIndex;
 class SymbolAnalyzer;
 class SymbolRelationshipEngine;
 
-class SemanticRuntimeCoordinator : public QObject
+class ZEROSLACK_API SemanticRuntimeCoordinator : public QObject
 {
     Q_OBJECT
 

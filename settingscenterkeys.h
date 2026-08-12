@@ -2,6 +2,9 @@
 #define SETTINGSCENTERKEYS_H
 
 namespace SettingsCenterKeys {
+inline constexpr const char* AppearanceTheme =
+    "settingsCenter/appearance/theme";
+
 inline constexpr const char* FontFamily =
     "editorAppearance/fontFamily";
 inline constexpr const char* FontSizePt =

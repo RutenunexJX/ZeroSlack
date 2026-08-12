@@ -1,4 +1,6 @@
 #include "completionmodel.h"
+#include "applicationthememanager.h"
+#include "insightvisualstyle.h"
 #include <QFont>
 #include <QFontMetrics>
 #include <QColor>
@@ -12,6 +14,18 @@ CompletionModel::CompletionModel(QObject *parent)
     : QAbstractItemModel(parent)
 {
     completions.reserve(50);
+    connect(&ApplicationThemeManager::instance(),
+            &ApplicationThemeManager::themeChanged,
+            this,
+            [this](ThemeMode) {
+                if (completions.isEmpty())
+                    return;
+                emit dataChanged(
+                    index(0, 0),
+                    index(completions.size() - 1, 0),
+                    {Qt::BackgroundRole,
+                     Qt::ForegroundRole});
+            });
 }
 
 QModelIndex CompletionModel::index(int row, int column, const QModelIndex &parent) const
@@ -56,38 +70,44 @@ QVariant CompletionModel::data(const QModelIndex &index, int role) const
         return item.toolTipText.isEmpty() ? item.description : item.toolTipText;
 
     case Qt::BackgroundRole:
+        {
+        const InsightTheme& theme = InsightVisualStyle::theme();
         switch (item.visualKind) {
         case SymbolHeaderVisual:
-            return QColor(100, 150, 200);
+            return theme.semantic.kernel;
         case SymbolDefaultVisual:
-            return QColor(200, 255, 200);
+            return theme.statusBar.successBackground;
         case SymbolVisual:
-            return QColor(240, 250, 240);
+            return theme.semantic.readFill;
         case CommandHeaderVisual:
-            return QColor(80, 80, 200);
+            return theme.accent;
         case CommandEmptyVisual:
-            return QColor(255, 200, 200);
+            return theme.statusBar.errorBackground;
         case CommandVisual:
-            return QColor(240, 240, 250);
+            return theme.itemView.alternateBackground;
         }
         break;
+        }
 
     case Qt::ForegroundRole:
+        {
+        const InsightTheme& theme = InsightVisualStyle::theme();
         switch (item.visualKind) {
         case SymbolHeaderVisual:
         case CommandHeaderVisual:
-            return QColor(255, 255, 255);
+            return theme.button.textChecked;
         case SymbolDefaultVisual:
         case SymbolVisual:
-            return QColor(0, 100, 0);
+            return theme.semantic.read;
         case CommandEmptyVisual:
-            return QColor(100, 100, 100);
+            return theme.statusBar.errorText;
         case CommandVisual:
-            return QColor(0, 0, 150);
+            return theme.textPrimary;
         default:
-            return QColor(0, 0, 0);
+            return theme.textPrimary;
         }
         break;
+        }
 
     case Qt::FontRole:
         {

@@ -84,6 +84,21 @@ bool targetIsCurrentEditorFile(
         && targetFile == contextFile;
 }
 
+QVariantMap withEditorActionTarget(
+    MyCodeEditor* editor,
+    QVariantMap parameters = {})
+{
+    if (!editor)
+        return parameters;
+    const QString viewId =
+        editor->property("editorViewId").toString();
+    if (!viewId.isEmpty()) {
+        parameters.insert(
+            QStringLiteral("editorViewId"), viewId);
+    }
+    return parameters;
+}
+
 }
 
 EditorCoordinator::EditorCoordinator(TabManager* tabManager,
@@ -396,6 +411,10 @@ void EditorCoordinator::connectSignals()
 
     connect(tabManager, &TabManager::tabCreated,
             this, &EditorCoordinator::attachEditor);
+    connect(tabManager,
+            &TabManager::auxiliaryViewCreated,
+            this,
+            &EditorCoordinator::attachEditor);
     connect(tabManager, &TabManager::activeTabChanged,
             this, &EditorCoordinator::handleActiveEditorChanged);
     DefinitionPreviewService::getInstance()->setDocumentModel(
@@ -426,8 +445,8 @@ void EditorCoordinator::attachEditor(MyCodeEditor* editor)
                 handleSourceNavigationRequested(editor, target, context);
             });
     connect(editor, &MyCodeEditor::sourceSymbolActionRequested,
-            this, [this](SourceSymbolAction action,
-                         const EditorSemanticContext& context) {
+            this, [this, editor](SourceSymbolAction action,
+                                 const EditorSemanticContext& context) {
                 if (registeredActionRequestHandler) {
                     QVariantMap parameters;
                     parameters.insert(
@@ -435,7 +454,8 @@ void EditorCoordinator::attachEditor(MyCodeEditor* editor)
                         context.cursorPosition);
                     registeredActionRequestHandler(
                         sourceSymbolActionId(action),
-                        parameters);
+                        withEditorActionTarget(
+                            editor, parameters));
                     return;
                 }
                 handleSourceSymbolActionRequested(
@@ -463,9 +483,9 @@ void EditorCoordinator::attachEditor(MyCodeEditor* editor)
     connect(editor,
             &MyCodeEditor::registeredActionRequested,
             this,
-            [this](const QString& actionId,
-                   const QVariantMap& parameters,
-                   bool* handled) {
+            [this, editor](const QString& actionId,
+                           const QVariantMap& parameters,
+                           bool* handled) {
                 if (handled)
                     *handled = false;
                 if (!registeredActionRequestHandler)
@@ -473,7 +493,9 @@ void EditorCoordinator::attachEditor(MyCodeEditor* editor)
                 if (handled)
                     *handled = true;
                 registeredActionRequestHandler(
-                    actionId, parameters);
+                    actionId,
+                    withEditorActionTarget(
+                        editor, parameters));
             });
     connect(editor, &MyCodeEditor::sourceSymbolContextMenuRequested,
             this, [this, editor](QMenu* menu,
@@ -584,6 +606,10 @@ void EditorCoordinator::applyAppearanceToOpenEditors() const
          tabManager->openEditors()) {
         applyAppearance(editor);
     }
+    for (MyCodeEditor* editor :
+         tabManager->auxiliaryViews()) {
+        applyAppearance(editor);
+    }
 }
 
 void EditorCoordinator::applyFormatterSettingsToOpenEditors() const
@@ -593,6 +619,10 @@ void EditorCoordinator::applyFormatterSettingsToOpenEditors() const
 
     for (MyCodeEditor* editor :
          tabManager->openEditors()) {
+        applyFormatterSettings(editor);
+    }
+    for (MyCodeEditor* editor :
+         tabManager->auxiliaryViews()) {
         applyFormatterSettings(editor);
     }
 }
@@ -605,6 +635,10 @@ applyAnnotationDisplayOptionsToOpenEditors() const
 
     for (MyCodeEditor* editor :
          tabManager->openEditors()) {
+        applyAnnotationDisplayOptions(editor);
+    }
+    for (MyCodeEditor* editor :
+         tabManager->auxiliaryViews()) {
         applyAnnotationDisplayOptions(editor);
     }
 }
@@ -1314,6 +1348,8 @@ void EditorCoordinator::handleSourceSymbolContextMenuRequested(
                item.disabledReason);
     }
     append(QStringLiteral("navigation.goLine"));
+    append(QString::fromLatin1(
+        ActionIds::ViewTemporaryEditorOpen));
     append(QStringLiteral("edit.replace"),
            true,
            editable,
@@ -1377,6 +1413,9 @@ void EditorCoordinator::handleSourceSymbolContextMenuRequested(
                 || actionId == QStringLiteral("edit.paste")
                 || actionId == QStringLiteral("select.all")
                 || actionId == QStringLiteral("navigation.goLine")
+                || actionId
+                       == QString::fromLatin1(
+                           ActionIds::ViewTemporaryEditorOpen)
                 || actionId == QStringLiteral("edit.replace")
                 || actionId
                        == QStringLiteral(
@@ -1397,6 +1436,29 @@ void EditorCoordinator::handleSourceSymbolContextMenuRequested(
                 parameters.insert(
                     QStringLiteral("cursorPosition"),
                     cursorPosition);
+                parameters = withEditorActionTarget(
+                    editor, parameters);
+                if (actionId
+                    == QString::fromLatin1(
+                        ActionIds::ViewTemporaryEditorOpen)) {
+                    parameters.insert(
+                        QStringLiteral("path"),
+                        editor->documentFileName());
+                    parameters.insert(
+                        QStringLiteral("documentId"),
+                        editor->property(
+                            "sharedDocumentId"));
+                    const QTextCursor selection =
+                        editor->textCursor();
+                    if (selection.hasSelection()) {
+                        parameters.insert(
+                            QStringLiteral("selectionStart"),
+                            selection.selectionStart());
+                        parameters.insert(
+                            QStringLiteral("selectionEnd"),
+                            selection.selectionEnd());
+                    }
+                }
                 registeredActionRequestHandler(
                     actionId, parameters);
                 return;

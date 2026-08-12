@@ -2,6 +2,7 @@
 
 #include "rtlinsightsgraphcontroller.h"
 #include "rtlinsightspanelviewstate.h"
+#include "rtlinsightspresenter.h"
 
 QAction* RtlInsightsPanelCoordinator::graphActionForTest(
     const QString& actionId) const
@@ -178,6 +179,12 @@ quint64 RtlInsightsPanelCoordinator::
     graphBuildGenerationForTest() const
 {
     return graphController->graphBuildGeneration();
+}
+
+quint64 RtlInsightsPanelCoordinator::
+    graphBuildRequestCountForTest() const
+{
+    return presenter->graphBuildRequestCountForTest();
 }
 
 QString RtlInsightsPanelCoordinator::

@@ -1,0 +1,50 @@
+cmake_minimum_required(VERSION 3.27)
+
+if(NOT DEFINED ZEROSLACK_SOURCE_DIR)
+    message(FATAL_ERROR "ZEROSLACK_SOURCE_DIR is required")
+endif()
+
+set(ZEROSLACK_TOP_LEVEL_CMAKE
+    "${ZEROSLACK_SOURCE_DIR}/CMakeLists.txt")
+if(NOT EXISTS "${ZEROSLACK_TOP_LEVEL_CMAKE}")
+    message(FATAL_ERROR
+        "Top-level CMakeLists.txt is missing: ${ZEROSLACK_TOP_LEVEL_CMAKE}")
+endif()
+
+file(READ "${ZEROSLACK_TOP_LEVEL_CMAKE}" ZEROSLACK_CMAKE_TEXT)
+
+string(REGEX MATCH
+    "cmake_minimum_required\\(VERSION[ \t]+([0-9]+\\.[0-9]+)"
+    ZEROSLACK_MINIMUM_MATCH
+    "${ZEROSLACK_CMAKE_TEXT}")
+if(NOT ZEROSLACK_MINIMUM_MATCH)
+    message(FATAL_ERROR "Unable to read the project CMake minimum version")
+endif()
+if(CMAKE_MATCH_1 VERSION_LESS "3.27")
+    message(FATAL_ERROR
+        "Default shared core requires a project minimum of CMake 3.27")
+endif()
+
+string(REGEX MATCH
+    "option\\(ZEROSLACK_SHARED_CORE[ \t\r\n]+\"[^\"]*\"[ \t\r\n]+ON\\)"
+    ZEROSLACK_SHARED_DEFAULT_MATCH
+    "${ZEROSLACK_CMAKE_TEXT}")
+if(NOT ZEROSLACK_SHARED_DEFAULT_MATCH)
+    message(FATAL_ERROR
+        "ZEROSLACK_SHARED_CORE must remain ON by default")
+endif()
+
+foreach(required_text IN ITEMS
+        "set(ZEROSLACK_CORE_LIBRARY_TYPE STATIC)"
+        "set(ZEROSLACK_CORE_LIBRARY_TYPE SHARED)"
+        "$<COMPILE_ONLY:slang::slang>")
+    string(FIND "${ZEROSLACK_CMAKE_TEXT}"
+        "${required_text}" required_position)
+    if(required_position EQUAL -1)
+        message(FATAL_ERROR
+            "Shared-core policy is missing: ${required_text}")
+    endif()
+endforeach()
+
+message(STATUS
+    "Shared-core policy guard passed: default=ON, fallback=STATIC, CMake>=3.27")

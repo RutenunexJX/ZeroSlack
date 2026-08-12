@@ -1,13 +1,15 @@
 #ifndef FORMATTERSETTINGS_H
 #define FORMATTERSETTINGS_H
 
+#include "zeroslackexport.h"
+
 #include "formatterservice.h"
 
 #include <QObject>
 #include <QSettings>
 #include <memory>
 
-class FormatterSettings : public QObject
+class ZEROSLACK_API FormatterSettings : public QObject
 {
     Q_OBJECT
 

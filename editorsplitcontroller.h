@@ -1,9 +1,12 @@
 #ifndef EDITORSPLITCONTROLLER_H
 #define EDITORSPLITCONTROLLER_H
 
+#include "zeroslackexport.h"
+
 #include <QHash>
 #include <QIcon>
 #include <QList>
+#include <QMetaObject>
 #include <QObject>
 #include <QPointer>
 #include <QPoint>
@@ -15,6 +18,7 @@ class QSplitter;
 class QTabBar;
 class QTabWidget;
 class QWidget;
+class EditorDropPreviewOverlay;
 
 enum class EditorSplitDirection {
     Left,
@@ -32,13 +36,14 @@ struct EditorTabContextAction {
     bool separatorBefore = false;
 };
 
-class EditorSplitController : public QObject
+class ZEROSLACK_API EditorSplitController : public QObject
 {
     Q_OBJECT
 
 public:
     explicit EditorSplitController(QTabWidget* initialGroup,
                                    QObject* parent = nullptr);
+    ~EditorSplitController() override;
 
     void setHost(QWidget* host);
     QWidget* host() const;
@@ -105,14 +110,19 @@ private:
     QPointer<QTabWidget> currentGroup;
     QList<QPointer<QTabWidget>> tabGroups;
     QPointer<QTabBar> pressedBar;
+    QPointer<QWidget> pressedPage;
     QPoint dragStartPosition;
     int pressedTabIndex = -1;
     QHash<QSplitter*, QList<int>> savedSplitterSizes;
     QHash<QTabWidget*, bool> savedGroupVisibility;
+    QPointer<EditorDropPreviewOverlay> dropPreview;
+    QPointer<QWidget> previewSourcePage;
+    QMetaObject::Connection previewSourceDestroyedConnection;
     bool groupMaximized = false;
 
     QTabWidget* createGroup();
     void configureGroup(QTabWidget* group);
+    void bindGroupDropTargets(QTabWidget* group);
     void bindDropTarget(QWidget* target);
     QTabWidget* groupForObject(QObject* object) const;
     QWidget* pageForViewId(const QString& viewId) const;
@@ -134,6 +144,19 @@ private:
     EditorSplitDirection dropDirection(
         QTabWidget* target,
         const QPoint& position) const;
+    EditorDropPreviewOverlay* ensureDropPreview();
+    QTabWidget* dropTargetForEvent(
+        QObject* watched,
+        const QPoint& watchedPosition) const;
+    QPoint targetPositionForEvent(
+        QObject* watched,
+        QTabWidget* target,
+        const QPoint& watchedPosition) const;
+    bool updateDropPreview(
+        const QString& viewId,
+        QTabWidget* target,
+        const QPoint& targetPosition);
+    void clearDropPreview();
     bool startTabDrag(QTabBar* bar, QMouseEvent* event);
     bool handleTabDrop(const QString& viewId,
                        QTabWidget* target,

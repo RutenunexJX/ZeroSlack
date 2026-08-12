@@ -1,6 +1,7 @@
 #include "commandlayercoordinator.h"
 
 #include "columnnumbertool.h"
+#include "insightvisualstyle.h"
 #include "mycodeeditor.h"
 #include "navigationcommandcoordinator.h"
 #include "projectmodel.h"
@@ -210,15 +211,7 @@ ColumnNumberToolPanel::ColumnNumberToolPanel(QWidget* parent)
     setObjectName(QStringLiteral("columnNumberToolPanel"));
     setFocusPolicy(Qt::StrongFocus);
     setMinimumWidth(430);
-    setStyleSheet(QStringLiteral(
-        "QFrame#columnNumberToolPanel { background:#0B1120; color:#E5E7EB; "
-        "border:1px solid #38BDF8; border-radius:6px; }"
-        "QLabel { color:#E5E7EB; }"
-        "QComboBox, QSpinBox { padding:4px 6px; background:#111827; "
-        "color:#F9FAFB; border:1px solid #475569; border-radius:4px; }"
-        "QLabel#columnNumberPreview { background:#111827; color:#D1FAE5; "
-        "border:1px solid #334155; border-radius:4px; padding:6px; "
-        "font-family:monospace; }"));
+    InsightVisualStyle::applyPanel(this);
 
     auto* outer = new QVBoxLayout(this);
     outer->setContentsMargins(12, 10, 12, 12);
@@ -572,18 +565,7 @@ CommandLayerPanel::CommandLayerPanel(QWidget* parent)
 {
     setObjectName(QStringLiteral("commandLayerPanel"));
     setFocusPolicy(Qt::NoFocus);
-    setStyleSheet(QStringLiteral(
-        "QFrame#commandLayerPanel { background:#0B1120; color:#F9FAFB; "
-        "border:1px solid #38BDF8; border-radius:7px; }"
-        "QLabel#commandLayerTitle { color:#7DD3FC; font-weight:700; "
-        "letter-spacing:1px; }"
-        "QLabel#commandLayerQuery { color:#F9FAFB; font-family:monospace; }"
-        "QLabel#commandLayerFailure { color:#FCA5A5; "
-        "background:#1F1115; padding:4px 7px; border-radius:3px; }"
-        "QListWidget { border:0; background:#111827; color:#E5E7EB; "
-        "outline:0; font-family:monospace; }"
-        "QListWidget::item { padding:4px 7px; border-radius:3px; }"
-        "QListWidget::item:selected { background:#0369A1; color:white; }"));
+    InsightVisualStyle::applyPanel(this);
 
     auto* layout = new QVBoxLayout(this);
     layout->setContentsMargins(10, 8, 10, 9);
@@ -591,6 +573,7 @@ CommandLayerPanel::CommandLayerPanel(QWidget* parent)
 
     titleLabel = new QLabel(this);
     titleLabel->setObjectName(QStringLiteral("commandLayerTitle"));
+    InsightVisualStyle::applyTitleLabel(titleLabel);
     layout->addWidget(titleLabel);
 
     queryLabel = new QLabel(this);
@@ -1688,22 +1671,14 @@ CommandLayerPickerPanel::CommandLayerPickerPanel(QWidget* parent)
     setFocusPolicy(Qt::StrongFocus);
     setMinimumWidth(560);
     setMaximumWidth(820);
-    setStyleSheet(QStringLiteral(
-        "QFrame#commandLayerPicker { background:#111827; color:#F9FAFB; "
-        "border:1px solid #38BDF8; border-radius:6px; }"
-        "QLineEdit { margin:8px 10px 4px 10px; padding:7px; "
-        "border:1px solid #475569; border-radius:4px; "
-        "background:#0B1120; color:#F9FAFB; font-family:monospace; }"
-        "QListWidget { margin:4px 10px 10px 10px; border:0; "
-        "background:#111827; color:#E5E7EB; outline:0; }"
-        "QListWidget::item { padding:5px 7px; border-radius:3px; }"
-        "QListWidget::item:selected { background:#0EA5E9; color:white; }"));
+    InsightVisualStyle::applyPanel(this);
 
     auto* layout = new QVBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(0);
     searchEdit = new QLineEdit(this);
     searchEdit->setObjectName(QStringLiteral("commandLayerPickerSearch"));
+    InsightVisualStyle::applySearchField(searchEdit);
     layout->addWidget(searchEdit);
     resultList = new QListWidget(this);
     resultList->setObjectName(QStringLiteral("commandLayerPickerResults"));

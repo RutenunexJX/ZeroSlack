@@ -28,10 +28,76 @@ QString objectSelector(const QString& typeName, const QString& objectName)
         return typeName;
     return QStringLiteral("%1#%2").arg(typeName, objectName);
 }
+
+constexpr const char* kThemeHelperProperty =
+    "_zeroslackInsightThemeHelper";
+constexpr const char* kThemeHelperConnectedProperty =
+    "_zeroslackInsightThemeHelperConnected";
+
+void refreshRegisteredWidget(QWidget* widget)
+{
+    if (!widget)
+        return;
+    const QString helper =
+        widget->property(kThemeHelperProperty).toString();
+    if (helper == QStringLiteral("panel")) {
+        widget->setStyleSheet(
+            InsightVisualStyle::panelStyleSheet(widget->objectName()));
+    } else if (helper == QStringLiteral("title")) {
+        widget->setStyleSheet(
+            InsightVisualStyle::titleBarStyleSheet(widget->objectName()));
+    } else if (helper == QStringLiteral("label")) {
+        widget->setStyleSheet(
+            InsightVisualStyle::labelStyleSheet(widget->objectName()));
+    } else if (helper == QStringLiteral("strongLabel")) {
+        widget->setStyleSheet(
+            InsightVisualStyle::labelStyleSheet(
+                widget->objectName(), true));
+    } else if (helper == QStringLiteral("search")) {
+        widget->setStyleSheet(
+            InsightVisualStyle::compactSearchFieldStyleSheet(
+                widget->objectName()));
+    } else if (helper == QStringLiteral("toolbarButton")) {
+        widget->setStyleSheet(
+            InsightVisualStyle::toolbarButtonStyleSheet(
+                widget->objectName()));
+    } else if (helper == QStringLiteral("segmentedCheckBox")) {
+        widget->setStyleSheet(
+            InsightVisualStyle::segmentedCheckBoxStyleSheet(
+                widget->objectName()));
+    } else if (helper == QStringLiteral("globalControlPanel")) {
+        widget->setStyleSheet(
+            InsightVisualStyle::globalControlPanelStyleSheet(
+                widget->objectName()));
+    } else if (helper == QStringLiteral("sideInspector")) {
+        widget->setStyleSheet(
+            InsightVisualStyle::sideInspectorStyleSheet(
+                widget->objectName()));
+    }
+}
+
+void registerThemedWidget(QWidget* widget, const QString& helper)
+{
+    if (!widget)
+        return;
+    widget->setProperty(kThemeHelperProperty, helper);
+    if (!widget->property(kThemeHelperConnectedProperty).toBool()) {
+        widget->setProperty(kThemeHelperConnectedProperty, true);
+        QObject::connect(
+            &ApplicationThemeManager::instance(),
+            &ApplicationThemeManager::themeChanged,
+            widget,
+            [widget](ThemeMode) {
+                refreshRegisteredWidget(widget);
+                widget->update();
+            });
+    }
+    refreshRegisteredWidget(widget);
+}
 }
 
 namespace {
-InsightTheme buildTheme()
+InsightTheme buildLightTheme()
 {
     InsightTheme theme;
     theme.appBackground = color("#eef1f5");
@@ -73,6 +139,7 @@ InsightTheme buildTheme()
     theme.input.border = color("#d8e1ec");
     theme.input.focusBorder = theme.accent;
     theme.input.selectionBackground = color("#bfdbfe");
+    theme.input.selectionText = theme.textPrimary;
 
     theme.tab.barBackground = color("#f4f7fb");
     theme.tab.tabBackground = color("#f3f6fa");
@@ -130,42 +197,243 @@ InsightTheme buildTheme()
     theme.graph.edgeSelected = theme.selected;
     theme.graph.selectionFill = color("#dbeafe");
     theme.graph.selectionBorder = theme.accent;
+
+    theme.syntax.keyword = color("#C678DD");
+    theme.syntax.comment = color("#7F848E");
+    theme.syntax.number = color("#D19A66");
+    theme.syntax.string = color("#98C379");
+    theme.syntax.errorUnderline = color("#EF4444");
+    theme.syntax.warningUnderline = color("#FBBF24");
+    theme.syntax.structuralPair = color("#EAB308");
+
+    theme.semantic.write = color("#b45309");
+    theme.semantic.read = color("#15803d");
+    theme.semantic.port = color("#2563eb");
+    theme.semantic.condition = color("#7c3aed");
+    theme.semantic.caseRole = color("#c026d3");
+    theme.semantic.timing = color("#0284c7");
+    theme.semantic.unknown = color("#64748b");
+    theme.semantic.kernel = color("#1d4ed8");
+    theme.semantic.data = color("#16a34a");
+    theme.semantic.writeFill = color("#fff7ed");
+    theme.semantic.readFill = color("#ecfdf3");
+    theme.semantic.portFill = color("#eff6ff");
+    theme.semantic.conditionFill = color("#f5f3ff");
+    theme.semantic.caseFill = color("#fdf4ff");
+    theme.semantic.timingFill = color("#e0f2fe");
+    theme.semantic.unknownFill = color("#f8fafc");
+    theme.semantic.kernelFill = color("#eff6ff");
+    theme.semantic.dataFill = color("#dcfce7");
+    theme.semantic.heatLow = color("#f8fafc");
+    theme.semantic.heatMid = color("#facc15");
+    theme.semantic.heatHigh = color("#ef4444");
+    theme.editorSemantic.moduleInterface = color("#005CC5");
+    theme.editorSemantic.packageClassType = color("#007C89");
+    theme.editorSemantic.instanceName = color("#8A5A00");
+    theme.editorSemantic.formalPort = color("#22863A");
+    theme.editorSemantic.modulePort = color("#0366D6");
+    theme.editorSemantic.actualSignal = color("#B05A00");
+    theme.editorSemantic.parameter = color("#D73A49");
+    theme.editorSemantic.enumValue = color("#795E26");
+    theme.editorSemantic.typeAlias = color("#00796B");
+    theme.editorSemantic.macro = color("#735C0F");
+    theme.editorSemantic.systemTask = color("#007C89");
+    theme.editorSemantic.inactiveText = color("#9CA3AF");
+    theme.editorSemantic.inactiveBackground = color("#F3F4F6");
+    return theme;
+}
+
+InsightTheme buildDarkTheme()
+{
+    InsightTheme theme;
+    theme.appBackground = color("#0b1120");
+    theme.canvasBackground = color("#0b1220");
+    theme.panelBackground = color("#111827");
+    theme.panelSubtle = color("#172033");
+    theme.border = color("#334155");
+    theme.borderStrong = color("#64748b");
+    theme.textPrimary = color("#f1f5f9");
+    theme.textSecondary = color("#cbd5e1");
+    theme.textMuted = color("#94a3b8");
+    theme.accent = color("#60a5fa");
+    theme.selected = color("#f472b6");
+    theme.hover = color("#2dd4bf");
+    theme.warning = color("#fbbf24");
+    theme.splitterHandle = color("#334155");
+    theme.toolbarBackground = color("#0f172a");
+
+    theme.menu.background = theme.panelBackground;
+    theme.menu.itemHoverBackground = color("#1e3a5f");
+    theme.menu.text = theme.textPrimary;
+    theme.menu.itemHoverText = color("#dbeafe");
+    theme.menu.border = theme.border;
+
+    theme.button.background = theme.panelSubtle;
+    theme.button.backgroundHover = color("#1e3a5f");
+    theme.button.backgroundPressed = color("#1e40af");
+    theme.button.backgroundChecked = color("#2563eb");
+    theme.button.text = color("#e2e8f0");
+    theme.button.textHover = color("#f8fafc");
+    theme.button.textChecked = color("#ffffff");
+    theme.button.textDisabled = color("#64748b");
+    theme.button.border = color("#475569");
+    theme.button.borderHover = color("#60a5fa");
+    theme.button.borderChecked = color("#60a5fa");
+
+    theme.input.background = color("#0f172a");
+    theme.input.text = color("#f8fafc");
+    theme.input.border = color("#475569");
+    theme.input.focusBorder = theme.accent;
+    theme.input.selectionBackground = color("#1d4ed8");
+    theme.input.selectionText = color("#ffffff");
+
+    theme.tab.barBackground = color("#0f172a");
+    theme.tab.tabBackground = color("#172033");
+    theme.tab.tabBackgroundHover = color("#1e3a5f");
+    theme.tab.tabBackgroundSelected = theme.panelBackground;
+    theme.tab.text = color("#94a3b8");
+    theme.tab.textHover = color("#dbeafe");
+    theme.tab.textSelected = color("#bfdbfe");
+    theme.tab.border = theme.border;
+    theme.tab.borderSelected = color("#3b82f6");
+
+    theme.statusBar.background = color("#0f172a");
+    theme.statusBar.text = color("#e2e8f0");
+    theme.statusBar.border = theme.border;
+    theme.statusBar.infoText = color("#bfdbfe");
+    theme.statusBar.infoBackground = color("#1e3a8a");
+    theme.statusBar.infoBorder = color("#60a5fa");
+    theme.statusBar.successText = color("#bbf7d0");
+    theme.statusBar.successBackground = color("#14532d");
+    theme.statusBar.successBorder = color("#4ade80");
+    theme.statusBar.warningText = color("#fde68a");
+    theme.statusBar.warningBackground = color("#713f12");
+    theme.statusBar.warningBorder = color("#fbbf24");
+    theme.statusBar.errorText = color("#fecaca");
+    theme.statusBar.errorBackground = color("#7f1d1d");
+    theme.statusBar.errorBorder = color("#f87171");
+
+    theme.dock.background = theme.appBackground;
+    theme.dock.titleBackground = theme.panelBackground;
+    theme.dock.border = theme.border;
+    theme.dock.titleBorder = theme.border;
+    theme.dock.text = theme.textPrimary;
+
+    theme.itemView.background = theme.panelBackground;
+    theme.itemView.alternateBackground = color("#151f31");
+    theme.itemView.headerBackground = color("#172033");
+    theme.itemView.border = theme.border;
+    theme.itemView.headerBorder = theme.border;
+    theme.itemView.text = color("#e5e7eb");
+    theme.itemView.headerText = color("#cbd5e1");
+    theme.itemView.selectedBackground = color("#1e3a8a");
+    theme.itemView.hoverBackground = color("#1e293b");
+
+    theme.graph.background = theme.canvasBackground;
+    theme.graph.gridLine = color("#25344a");
+    theme.graph.nodeFill = theme.panelBackground;
+    theme.graph.nodeBorder = theme.borderStrong;
+    theme.graph.nodeHoverFill = color("#1e293b");
+    theme.graph.nodeHoverBorder = theme.hover;
+    theme.graph.nodeSelectedFill = color("#3b1630");
+    theme.graph.nodeSelectedBorder = theme.selected;
+    theme.graph.edge = color("#94a3b8");
+    theme.graph.edgeHover = theme.hover;
+    theme.graph.edgeSelected = theme.selected;
+    theme.graph.selectionFill = color("#172554");
+    theme.graph.selectionBorder = theme.accent;
+
+    theme.syntax.keyword = color("#e879f9");
+    theme.syntax.comment = color("#94a3b8");
+    theme.syntax.number = color("#f6ad55");
+    theme.syntax.string = color("#86efac");
+    theme.syntax.errorUnderline = color("#f87171");
+    theme.syntax.warningUnderline = color("#facc15");
+    theme.syntax.structuralPair = color("#facc15");
+
+    theme.semantic.write = color("#f59e0b");
+    theme.semantic.read = color("#4ade80");
+    theme.semantic.port = color("#60a5fa");
+    theme.semantic.condition = color("#c084fc");
+    theme.semantic.caseRole = color("#e879f9");
+    theme.semantic.timing = color("#38bdf8");
+    theme.semantic.unknown = color("#94a3b8");
+    theme.semantic.kernel = color("#93c5fd");
+    theme.semantic.data = color("#22c55e");
+    theme.semantic.writeFill = color("#3b2710");
+    theme.semantic.readFill = color("#143321");
+    theme.semantic.portFill = color("#172554");
+    theme.semantic.conditionFill = color("#2e1065");
+    theme.semantic.caseFill = color("#3b0a45");
+    theme.semantic.timingFill = color("#0c3447");
+    theme.semantic.unknownFill = color("#1e293b");
+    theme.semantic.kernelFill = color("#172554");
+    theme.semantic.dataFill = color("#12351f");
+    theme.semantic.heatLow = color("#172033");
+    theme.semantic.heatMid = color("#ca8a04");
+    theme.semantic.heatHigh = color("#ef4444");
+    theme.editorSemantic.moduleInterface = color("#61AFEF");
+    theme.editorSemantic.packageClassType = color("#56B6C2");
+    theme.editorSemantic.instanceName = color("#E5C07B");
+    theme.editorSemantic.formalPort = color("#98C379");
+    theme.editorSemantic.modulePort = color("#9CDCFE");
+    theme.editorSemantic.actualSignal = color("#D19A66");
+    theme.editorSemantic.parameter = color("#E06C75");
+    theme.editorSemantic.enumValue = color("#DCDCAA");
+    theme.editorSemantic.typeAlias = color("#4EC9B0");
+    theme.editorSemantic.macro = color("#D7BA7D");
+    theme.editorSemantic.systemTask = color("#56B6C2");
+    theme.editorSemantic.inactiveText = color("#6B7280");
+    theme.editorSemantic.inactiveBackground = color("#1F2937");
     return theme;
 }
 }
 
 const InsightTheme& InsightVisualStyle::theme()
 {
-    static const InsightTheme cachedTheme = buildTheme();
-    return cachedTheme;
+    return theme(ApplicationThemeManager::instance().mode());
+}
+
+const InsightTheme& InsightVisualStyle::theme(ThemeMode mode)
+{
+    static const InsightTheme lightTheme = buildLightTheme();
+    static const InsightTheme darkTheme = buildDarkTheme();
+    return mode == ThemeMode::Dark ? darkTheme : lightTheme;
 }
 
 QColor InsightVisualStyle::roleColor(InsightVisualRole role)
 {
+    return roleColor(role, ApplicationThemeManager::instance().mode());
+}
+
+QColor InsightVisualStyle::roleColor(InsightVisualRole role,
+                                     ThemeMode mode)
+{
+    const InsightSemanticTokens& semantic = theme(mode).semantic;
     switch (role) {
     case InsightVisualRole::Write:
     case InsightVisualRole::Output:
-        return color("#b45309");
+        return semantic.write;
     case InsightVisualRole::Read:
     case InsightVisualRole::Input:
-        return color("#15803d");
+        return semantic.read;
     case InsightVisualRole::Port:
-        return color("#2563eb");
+        return semantic.port;
     case InsightVisualRole::Condition:
     case InsightVisualRole::Control:
-        return color("#7c3aed");
+        return semantic.condition;
     case InsightVisualRole::Case:
-        return color("#c026d3");
+        return semantic.caseRole;
     case InsightVisualRole::Timing:
-        return color("#0284c7");
+        return semantic.timing;
     case InsightVisualRole::Kernel:
-        return color("#1d4ed8");
+        return semantic.kernel;
     case InsightVisualRole::Data:
-        return color("#16a34a");
+        return semantic.data;
     case InsightVisualRole::Unknown:
-        return color("#64748b");
+        return semantic.unknown;
     }
-    return color("#64748b");
+    return semantic.unknown;
 }
 
 QColor InsightVisualStyle::roleColor(const QString& roleName)
@@ -192,37 +460,55 @@ QColor InsightVisualStyle::roleColor(const QString& roleName)
 
 QColor InsightVisualStyle::roleFillColor(InsightVisualRole role)
 {
+    return roleFillColor(role, ApplicationThemeManager::instance().mode());
+}
+
+QColor InsightVisualStyle::roleFillColor(InsightVisualRole role,
+                                         ThemeMode mode)
+{
+    const InsightSemanticTokens& semantic = theme(mode).semantic;
     switch (role) {
     case InsightVisualRole::Write:
     case InsightVisualRole::Output:
-        return color("#fff7ed");
+        return semantic.writeFill;
     case InsightVisualRole::Read:
     case InsightVisualRole::Input:
-        return color("#ecfdf3");
+        return semantic.readFill;
     case InsightVisualRole::Port:
+        return semantic.portFill;
     case InsightVisualRole::Kernel:
-        return color("#eff6ff");
+        return semantic.kernelFill;
     case InsightVisualRole::Condition:
     case InsightVisualRole::Control:
-        return color("#f5f3ff");
+        return semantic.conditionFill;
     case InsightVisualRole::Case:
-        return color("#fdf4ff");
+        return semantic.caseFill;
     case InsightVisualRole::Timing:
-        return color("#e0f2fe");
+        return semantic.timingFill;
     case InsightVisualRole::Data:
-        return color("#dcfce7");
+        return semantic.dataFill;
     case InsightVisualRole::Unknown:
-        return color("#f8fafc");
+        return semantic.unknownFill;
     }
-    return color("#f8fafc");
+    return semantic.unknownFill;
 }
 
 QColor InsightVisualStyle::heatIntensityColor(double intensity)
 {
+    return heatIntensityColor(
+        intensity, ApplicationThemeManager::instance().mode());
+}
+
+QColor InsightVisualStyle::heatIntensityColor(double intensity,
+                                              ThemeMode mode)
+{
     const double t = std::clamp(intensity, 0.0, 1.0);
+    const InsightSemanticTokens& semantic = theme(mode).semantic;
     if (t < 0.5)
-        return mix(color("#f8fafc"), color("#facc15"), t * 2.0);
-    return mix(color("#facc15"), color("#ef4444"), (t - 0.5) * 2.0);
+        return mix(semantic.heatLow, semantic.heatMid, t * 2.0);
+    return mix(semantic.heatMid,
+               semantic.heatHigh,
+               (t - 0.5) * 2.0);
 }
 
 QPen InsightVisualStyle::hairlinePen(const QColor& color)
@@ -279,6 +565,65 @@ QFont InsightVisualStyle::labelFont(const QFont& base)
     return font;
 }
 
+QPalette InsightVisualStyle::applicationPalette()
+{
+    return applicationPalette(
+        ApplicationThemeManager::instance().mode());
+}
+
+QPalette InsightVisualStyle::applicationPalette(ThemeMode mode)
+{
+    const InsightTheme& t = theme(mode);
+    QPalette palette;
+    palette.setColor(QPalette::Window, t.appBackground);
+    palette.setColor(QPalette::WindowText, t.textPrimary);
+    palette.setColor(QPalette::Base, t.input.background);
+    palette.setColor(QPalette::AlternateBase,
+                     t.itemView.alternateBackground);
+    palette.setColor(QPalette::ToolTipBase, t.panelBackground);
+    palette.setColor(QPalette::ToolTipText, t.textPrimary);
+    palette.setColor(QPalette::Text, t.input.text);
+    palette.setColor(QPalette::Button, t.button.background);
+    palette.setColor(QPalette::ButtonText, t.button.text);
+    palette.setColor(QPalette::BrightText,
+                     t.statusBar.errorText);
+    palette.setColor(QPalette::Highlight,
+                     t.input.selectionBackground);
+    palette.setColor(QPalette::HighlightedText,
+                     t.input.selectionText);
+    palette.setColor(QPalette::Link, t.accent);
+    palette.setColor(QPalette::LinkVisited, t.selected);
+    palette.setColor(QPalette::PlaceholderText, t.textMuted);
+    palette.setColor(QPalette::Light, t.panelSubtle);
+    palette.setColor(QPalette::Midlight, t.border);
+    palette.setColor(QPalette::Mid, t.borderStrong);
+    palette.setColor(QPalette::Dark, t.borderStrong);
+    palette.setColor(QPalette::Shadow, t.canvasBackground);
+
+    for (QPalette::ColorRole role :
+         {QPalette::WindowText,
+          QPalette::Text,
+          QPalette::ButtonText,
+          QPalette::PlaceholderText}) {
+        palette.setColor(QPalette::Disabled,
+                         role,
+                         t.button.textDisabled);
+    }
+    palette.setColor(QPalette::Disabled,
+                     QPalette::Button,
+                     t.panelSubtle);
+    palette.setColor(QPalette::Disabled,
+                     QPalette::Base,
+                     t.panelSubtle);
+    palette.setColor(QPalette::Disabled,
+                     QPalette::Highlight,
+                     t.borderStrong);
+    palette.setColor(QPalette::Disabled,
+                     QPalette::HighlightedText,
+                     t.button.textDisabled);
+    return palette;
+}
+
 QString InsightVisualStyle::panelStyleSheet(const QString& objectName)
 {
     const InsightTheme t = theme();
@@ -294,8 +639,14 @@ QString InsightVisualStyle::panelStyleSheet(const QString& objectName)
 
 QString InsightVisualStyle::applicationStyleSheet()
 {
-    const InsightTheme t = theme();
-    return QStringLiteral(
+    return applicationStyleSheet(
+        ApplicationThemeManager::instance().mode());
+}
+
+QString InsightVisualStyle::applicationStyleSheet(ThemeMode mode)
+{
+    const InsightTheme t = theme(mode);
+    QString result = QStringLiteral(
                "QMainWindow { background: %1; }"
                "QMenuBar { background: %2; border-bottom: 1px solid %3; "
                "padding: 3px 10px; spacing: 18px; color: %4; }"
@@ -329,6 +680,10 @@ QString InsightVisualStyle::applicationStyleSheet()
                "border: 1px solid %28; border-radius: 4px; padding: 5px 8px; "
                "selection-background-color: %29; }"
                "QTextEdit:focus, QPlainTextEdit:focus { border-color: %30; }"
+               "QPlainTextEdit[codeEditorSurface=\"true\"] { border: 0; "
+               "border-radius: 0; padding: 0; }"
+               "QPlainTextEdit[codeEditorSurface=\"true\"]:focus { "
+               "border: 0; }"
                "QComboBox, QAbstractSpinBox { background: %26; color: %27; "
                "border: 1px solid %28; border-radius: 4px; padding: 4px 8px; "
                "selection-background-color: %29; }"
@@ -433,6 +788,63 @@ QString InsightVisualStyle::applicationStyleSheet()
              t.toolbarBackground.name(),
              t.borderStrong.name(),
              t.panelSubtle.name());
+
+    result += QStringLiteral(
+                  "QWidget { color: %1; }"
+                  "QMainWindow, QDialog, QMessageBox { "
+                  "background: %2; color: %1; }"
+                  "QToolTip { background: %3; color: %1; "
+                  "border: 1px solid %4; padding: 4px 6px; }"
+                  "QLabel:disabled { color: %5; }"
+                  "QMenu::item:disabled { color: %5; background: transparent; }"
+                  "QMenu::separator { background: %4; height: 1px; "
+                  "margin: 4px 8px; }"
+                  "QLineEdit:disabled, QTextEdit:disabled, "
+                  "QPlainTextEdit:disabled, QComboBox:disabled, "
+                  "QAbstractSpinBox:disabled { background: %6; color: %5; "
+                  "border-color: %4; }"
+                  "QComboBox QAbstractItemView { background: %3; color: %1; "
+                  "border: 1px solid %4; selection-background-color: %7; "
+                  "selection-color: %8; outline: 0; }"
+                  "QAbstractItemView:disabled { background: %6; color: %5; }"
+                  "QTreeView::item:selected:!active, QListView::item:selected:!active, "
+                  "QTableView::item:selected:!active { background: %9; color: %1; }"
+                  "QCheckBox, QRadioButton { color: %1; spacing: 6px; "
+                  "padding: 2px; }"
+                  "QCheckBox:hover, QRadioButton:hover { background: %10; "
+                  "border-radius: 4px; }"
+                  "QCheckBox:disabled, QRadioButton:disabled { color: %5; }"
+                  "QGroupBox { color: %1; border: 1px solid %4; "
+                  "border-radius: 6px; margin-top: 10px; padding-top: 8px; }"
+                  "QGroupBox::title { subcontrol-origin: margin; left: 8px; "
+                  "padding: 0 4px; color: %11; }"
+                  "QAbstractScrollArea, QScrollArea, QStackedWidget { "
+                  "background: %3; color: %1; border-color: %4; }"
+                  "QScrollArea > QWidget > QWidget { background: %3; }"
+                  "QGraphicsView { background: %12; color: %1; }"
+                  "QTableCornerButton::section { background: %6; "
+                  "border: 1px solid %4; }"
+                  "QProgressBar { background: %6; color: %1; "
+                  "border: 1px solid %4; border-radius: 4px; text-align: center; }"
+                  "QProgressBar::chunk { background: %13; border-radius: 3px; }"
+                  "QPushButton:disabled, QToolButton:disabled { "
+                  "background: %6; color: %5; border-color: %4; }"
+                  "QStatusBar::item { border: 0; }"
+                  "QToolBar:disabled { color: %5; }")
+                  .arg(t.textPrimary.name(),
+                       t.appBackground.name(),
+                       t.panelBackground.name(),
+                       t.border.name(),
+                       t.button.textDisabled.name(),
+                       t.panelSubtle.name(),
+                       t.input.selectionBackground.name(),
+                       t.input.selectionText.name(),
+                       t.itemView.selectedBackground.name(),
+                       t.itemView.hoverBackground.name(),
+                       t.textSecondary.name(),
+                       t.canvasBackground.name(),
+                       t.accent.name());
+    return result;
 }
 
 QString InsightVisualStyle::tabBarStyleSheet(const QString& objectName)
@@ -756,7 +1168,7 @@ QString InsightVisualStyle::segmentedCheckBoxStyleSheet(
                "}")
         .arg(objectSelector(QStringLiteral("QCheckBox"), objectName),
              t.textSecondary.name(),
-             t.hover.lighter(190).name(),
+             t.itemView.hoverBackground.name(),
              t.borderStrong.name(),
              t.panelBackground.name(),
              t.accent.name());
@@ -780,7 +1192,7 @@ QString InsightVisualStyle::toolbarButtonStyleSheet(const QString& objectName)
                "}"
                "%1:pressed, %1:checked {"
                "  background: %7;"
-               "  color: white;"
+               "  color: %10;"
                "  border-color: %7;"
                "}"
                "%1:disabled {"
@@ -796,14 +1208,30 @@ QString InsightVisualStyle::toolbarButtonStyleSheet(const QString& objectName)
              t.borderStrong.name(),
              t.accent.name(),
              t.panelSubtle.name(),
-             t.textMuted.name());
+             t.textMuted.name(),
+             t.button.textChecked.name());
+}
+
+QString InsightVisualStyle::sideInspectorStyleSheet(
+    const QString& objectName)
+{
+    const InsightTheme t = theme();
+    return QStringLiteral(
+               "%1 {"
+               "  background: transparent;"
+               "  border: 0;"
+               "  border-left: 1px solid %2;"
+               "  border-radius: 0;"
+               "}")
+        .arg(objectSelector(QStringLiteral("QWidget"), objectName),
+             t.border.name());
 }
 
 void InsightVisualStyle::applyPanel(QWidget* widget)
 {
     if (!widget)
         return;
-    widget->setStyleSheet(panelStyleSheet(widget->objectName()));
+    registerThemedWidget(widget, QStringLiteral("panel"));
 }
 
 void InsightVisualStyle::applyTitleLabel(QLabel* label)
@@ -812,7 +1240,17 @@ void InsightVisualStyle::applyTitleLabel(QLabel* label)
         return;
     label->setFont(titleFont(label->font()));
     label->setMinimumHeight(30);
-    label->setStyleSheet(titleBarStyleSheet(label->objectName()));
+    registerThemedWidget(label, QStringLiteral("title"));
+}
+
+void InsightVisualStyle::applyLabel(QLabel* label, bool strong)
+{
+    if (!label)
+        return;
+    registerThemedWidget(
+        label,
+        strong ? QStringLiteral("strongLabel")
+               : QStringLiteral("label"));
 }
 
 void InsightVisualStyle::applySearchField(QLineEdit* edit)
@@ -822,7 +1260,7 @@ void InsightVisualStyle::applySearchField(QLineEdit* edit)
     edit->setFont(compactFont(edit->font()));
     edit->setMinimumHeight(28);
     edit->setMinimumWidth(180);
-    edit->setStyleSheet(compactSearchFieldStyleSheet(edit->objectName()));
+    registerThemedWidget(edit, QStringLiteral("search"));
 }
 
 void InsightVisualStyle::applyToolbarButton(QPushButton* button)
@@ -830,7 +1268,7 @@ void InsightVisualStyle::applyToolbarButton(QPushButton* button)
     if (!button)
         return;
     button->setMinimumHeight(28);
-    button->setStyleSheet(toolbarButtonStyleSheet(button->objectName()));
+    registerThemedWidget(button, QStringLiteral("toolbarButton"));
 }
 
 void InsightVisualStyle::applySegmentedCheckBox(QWidget* checkBox)
@@ -838,6 +1276,16 @@ void InsightVisualStyle::applySegmentedCheckBox(QWidget* checkBox)
     if (!checkBox)
         return;
     checkBox->setMinimumHeight(28);
-    checkBox->setStyleSheet(segmentedCheckBoxStyleSheet(
-        checkBox->objectName()));
+    registerThemedWidget(checkBox,
+                         QStringLiteral("segmentedCheckBox"));
+}
+
+void InsightVisualStyle::applyGlobalControlPanel(QWidget* widget)
+{
+    registerThemedWidget(widget, QStringLiteral("globalControlPanel"));
+}
+
+void InsightVisualStyle::applySideInspector(QWidget* widget)
+{
+    registerThemedWidget(widget, QStringLiteral("sideInspector"));
 }

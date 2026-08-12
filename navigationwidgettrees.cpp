@@ -1,5 +1,6 @@
 #include "navigationwidget.h"
 #include "editorfileidentity.h"
+#include "insightvisualstyle.h"
 
 #include <QBrush>
 #include <QDir>
@@ -683,7 +684,8 @@ void NavigationWidget::applyDesignItemDimming(QTreeWidgetItem* item, bool dimmed
     if (!item)
         return;
     QColor instanceColor = palette().color(QPalette::Text);
-    QColor moduleColor(37, 99, 111);
+    QColor moduleColor = InsightVisualStyle::roleColor(
+        InsightVisualRole::Kernel);
     if (dimmed) {
         instanceColor.setAlphaF(0.35);
         moduleColor.setAlphaF(0.35);

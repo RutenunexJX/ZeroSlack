@@ -1,6 +1,8 @@
 #ifndef SMARTRELATIONSHIPBUILDER_H
 #define SMARTRELATIONSHIPBUILDER_H
 
+#include "zeroslackexport.h"
+
 #include <QObject>
 #include <QString>
 #include <QStringList>
@@ -28,7 +30,7 @@ struct RelationshipToAdd {
     bool exactValueForward = false;
 };
 
-class SmartRelationshipBuilder : public QObject
+class ZEROSLACK_API SmartRelationshipBuilder : public QObject
 {
     Q_OBJECT
 

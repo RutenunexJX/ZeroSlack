@@ -14,6 +14,7 @@
 #include "documentchange.h"
 #include "editorfileidentity.h"
 #include "editorfolding.h"
+#include "editorviewprojection.h"
 #include "formatterservice.h"
 #include "editorgeometry.h"
 #include "editorgutter.h"
@@ -150,6 +151,7 @@ struct MyCodeEditorState
     EditorColumnModeController columnMode;
     EditorSignalSelectionController signalSelection;
     EditorFoldingController folding;
+    EditorViewProjection projection;
     EditorCursorNavigation cursorNavigation;
     EditorSyntaxState syntax;
     EditorFileIdentity identity;
@@ -289,6 +291,7 @@ struct MyCodeEditorState
                                      QKeyEvent* event);
     void prepareVirtualCursorInput(MyCodeEditor* editor);
     void clearVirtualCursor(MyCodeEditor* editor);
+    void clearPendingColumnAnchor();
     void handleVirtualCursorChanged(MyCodeEditor* editor);
     void handleTemplateSlotContentsChange(MyCodeEditor* editor,
                                           int position,

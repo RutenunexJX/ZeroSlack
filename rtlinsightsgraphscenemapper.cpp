@@ -46,6 +46,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <functional>
 #include <limits>
 #include <utility>
 
@@ -89,6 +90,10 @@ void setGraphSelectionActionAvailability(
         state.graphFocusAction->setEnabled(focusEnabled);
     if (state.graphSetTopAction)
         state.graphSetTopAction->setEnabled(setTopEnabled);
+    if (state.graphTemporaryEditorAction) {
+        state.graphTemporaryEditorAction->setEnabled(
+            jumpEnabled);
+    }
     if (state.graphInspectorJumpButton)
         state.graphInspectorJumpButton->setEnabled(jumpEnabled);
     if (state.graphInspectorFocusButton)
@@ -375,30 +380,31 @@ public:
         titleFont.setPointSize(qMax(8, titleFont.pointSize() + 1));
         QFont detailFont = InsightVisualStyle::compactFont(font);
 
-        auto* title = new QGraphicsSimpleTextItem(
+        titleItem = new QGraphicsSimpleTextItem(
             graphElidedText(element.primary,
                             titleFont,
                             static_cast<int>(rect.width() - 18)),
             this);
-        title->setAcceptedMouseButtons(Qt::NoButton);
-        title->setFont(titleFont);
-        title->setBrush(QBrush(InsightVisualStyle::theme().textPrimary));
-        title->setPos(rect.left() + 10, rect.top() + 8);
+        titleItem->setAcceptedMouseButtons(Qt::NoButton);
+        titleItem->setFont(titleFont);
+        titleItem->setBrush(
+            QBrush(InsightVisualStyle::theme().textPrimary));
+        titleItem->setPos(rect.left() + 10, rect.top() + 8);
 
         QString detail = element.secondary;
         if (detail.isEmpty())
             detail = element.detail;
         if (showDetail) {
-            auto* detailItem = new QGraphicsSimpleTextItem(
+            detailTextItem = new QGraphicsSimpleTextItem(
                 graphElidedText(detail,
                                 detailFont,
                                 static_cast<int>(rect.width() - 18)),
                 this);
-            detailItem->setAcceptedMouseButtons(Qt::NoButton);
-            detailItem->setFont(detailFont);
-            detailItem->setBrush(
+            detailTextItem->setAcceptedMouseButtons(Qt::NoButton);
+            detailTextItem->setFont(detailFont);
+            detailTextItem->setBrush(
                 QBrush(InsightVisualStyle::theme().textSecondary));
-            detailItem->setPos(rect.left() + 10, rect.top() + 32);
+            detailTextItem->setPos(rect.left() + 10, rect.top() + 32);
         }
     }
 
@@ -411,6 +417,32 @@ public:
         normalZValue = normalZ;
         hoverZValue = hoverZ;
         setZValue(hovered ? hoverZValue : normalZValue);
+    }
+
+    void setThemeColorResolvers(
+        std::function<QColor()> fillResolver,
+        std::function<QColor()> strokeResolver)
+    {
+        themeFillResolver = std::move(fillResolver);
+        themeStrokeResolver = std::move(strokeResolver);
+    }
+
+    void refreshThemePresentation()
+    {
+        if (themeFillResolver)
+            normalBrush.setColor(themeFillResolver());
+        if (themeStrokeResolver)
+            normalPen.setColor(themeStrokeResolver());
+        hoverPen = InsightVisualStyle::hoverPen();
+        if (titleItem) {
+            titleItem->setBrush(
+                QBrush(InsightVisualStyle::theme().textPrimary));
+        }
+        if (detailTextItem) {
+            detailTextItem->setBrush(
+                QBrush(InsightVisualStyle::theme().textSecondary));
+        }
+        refreshVisual();
     }
 
     void setHoveredForTest(bool value)
@@ -500,6 +532,10 @@ private:
     QBrush normalBrush;
     QPen normalPen;
     QPen hoverPen;
+    QGraphicsSimpleTextItem* titleItem = nullptr;
+    QGraphicsSimpleTextItem* detailTextItem = nullptr;
+    std::function<QColor()> themeFillResolver;
+    std::function<QColor()> themeStrokeResolver;
     qreal normalZValue = 10.0;
     qreal hoverZValue = 40.0;
     bool hovered = false;
@@ -591,15 +627,15 @@ public:
             const QRectF pathBounds = path.boundingRect();
             const QRectF labelBounds = labelItem->boundingRect();
             if (labelBackgroundVisible) {
-                auto* labelBackground = new QGraphicsRectItem(
+                labelBackgroundItem = new QGraphicsRectItem(
                     labelBounds.adjusted(-4.0, -2.0, 4.0, 2.0),
                     labelItem);
-                labelBackground->setAcceptedMouseButtons(Qt::NoButton);
-                labelBackground->setPen(Qt::NoPen);
+                labelBackgroundItem->setAcceptedMouseButtons(Qt::NoButton);
+                labelBackgroundItem->setPen(Qt::NoPen);
                 QColor labelFill = InsightVisualStyle::theme().canvasBackground;
                 labelFill.setAlpha(226);
-                labelBackground->setBrush(labelFill);
-                labelBackground->setZValue(-1);
+                labelBackgroundItem->setBrush(labelFill);
+                labelBackgroundItem->setZValue(-1);
             }
             const QPointF labelCenter = presentation.hasLabelCenter
                 ? presentation.labelCenter
@@ -633,6 +669,32 @@ public:
         setToolTip(text);
         if (labelTextItem)
             labelTextItem->setToolTip(text);
+    }
+
+    void setThemeColorResolvers(
+        std::function<QColor()> colorResolver,
+        std::function<QColor()> labelColorResolver)
+    {
+        themeColorResolver = std::move(colorResolver);
+        themeLabelColorResolver =
+            std::move(labelColorResolver);
+    }
+
+    void refreshThemePresentation()
+    {
+        if (themeColorResolver)
+            normalColor = themeColorResolver();
+        normalPen.setColor(normalColor);
+        hoverPen = InsightVisualStyle::hoverPen(2.3);
+        if (themeLabelColorResolver)
+            normalLabelColor = themeLabelColorResolver();
+        if (labelBackgroundItem) {
+            QColor fill =
+                InsightVisualStyle::theme().canvasBackground;
+            fill.setAlpha(226);
+            labelBackgroundItem->setBrush(fill);
+        }
+        refreshPen();
     }
 
     QPainterPath shape() const override
@@ -732,6 +794,9 @@ private:
     QColor normalLabelColor;
     QGraphicsPolygonItem* arrowItem = nullptr;
     QGraphicsTextItem* labelTextItem = nullptr;
+    QGraphicsRectItem* labelBackgroundItem = nullptr;
+    std::function<QColor()> themeColorResolver;
+    std::function<QColor()> themeLabelColorResolver;
     QRectF labelHitRect;
     bool hovered = false;
 };
@@ -1192,6 +1257,13 @@ void RtlInsightsGraphSceneMapper::renderFsmGraphLayoutScene(
             false,
             theme.textPrimary,
             presentation);
+        item->setThemeColorResolvers(
+            []() {
+                return InsightVisualStyle::theme().graph.edge;
+            },
+            []() {
+                return InsightVisualStyle::theme().textPrimary;
+            });
         item->navigateHandler = navigate;
         item->selectHandler = select;
         item->hoverHandler = hover;
@@ -1233,6 +1305,30 @@ void RtlInsightsGraphSceneMapper::renderFsmGraphLayoutScene(
                                                 node.alias || node.implicitState,
                                                 node.canonicalNodeId,
                                                 node.showDetail);
+        const QString stateName = node.stateName;
+        const int canonicalNodeId = node.canonicalNodeId;
+        const bool deadEndState = node.deadEndState;
+        item->setThemeColorResolvers(
+            [stateName,
+             aliasCanonicalIds,
+             canonicalNodeId,
+             deadEndState]() {
+                return fsmStateFillColor(
+                    stateName,
+                    aliasCanonicalIds,
+                    canonicalNodeId,
+                    deadEndState);
+            },
+            [stateName,
+             aliasCanonicalIds,
+             canonicalNodeId,
+             deadEndState]() {
+                return fsmStateStrokeColor(
+                    stateName,
+                    aliasCanonicalIds,
+                    canonicalNodeId,
+                    deadEndState);
+            });
         item->setData(kGraphFsmNodeIdRole, node.nodeId);
         item->setData(kGraphFsmCanonicalNodeIdRole, node.canonicalNodeId);
         item->navigateHandler = navigate;
@@ -1489,6 +1585,23 @@ void RtlInsightsGraphSceneMapper::renderModuleBlockDiagramScene(
                         : InsightVisualStyle::roleColor(
                               InsightVisualRole::Port)),
             font);
+        item->setThemeColorResolvers(
+            [root, unresolved = node.unresolved]() {
+                const InsightVisualRole role = root
+                    ? InsightVisualRole::Kernel
+                    : (unresolved
+                           ? InsightVisualRole::Unknown
+                           : InsightVisualRole::Port);
+                return InsightVisualStyle::roleFillColor(role);
+            },
+            [root, unresolved = node.unresolved]() {
+                const InsightVisualRole role = root
+                    ? InsightVisualRole::Kernel
+                    : (unresolved
+                           ? InsightVisualRole::Unknown
+                           : InsightVisualRole::Port);
+                return InsightVisualStyle::roleColor(role);
+            });
         const qreal baseZ = root ? 0.0 : 6.0 + node.depth * 8.0;
         item->setBaseZValues(baseZ, root ? 1.0 : baseZ + 3.0);
         item->setData(kGraphNodeIdRole, node.nodeId);
@@ -1549,6 +1662,15 @@ void RtlInsightsGraphSceneMapper::renderModuleBlockDiagramScene(
             font,
             edge.unresolved ? InsightVisualStyle::theme().textMuted
                             : InsightVisualStyle::theme().borderStrong);
+        item->setThemeColorResolvers(
+            [unresolved = edge.unresolved]() {
+                return unresolved
+                    ? InsightVisualStyle::theme().textMuted
+                    : InsightVisualStyle::theme().borderStrong;
+            },
+            []() {
+                return InsightVisualStyle::theme().textSecondary;
+            });
         item->navigateHandler = navigate;
         item->selectHandler = select;
         state.insightsGraphScene->addItem(item);
@@ -1727,6 +1849,8 @@ void RtlInsightsGraphSceneMapper::renderModuleBlockDiagramScene(
             .arg(report.root.moduleDisplayName),
         titleFont);
     titleItem->setBrush(QBrush(InsightVisualStyle::theme().textPrimary));
+    titleItem->setData(kGraphThemeVisualRole,
+                       kGraphThemeTextPrimary);
     titleItem->setPos(rootRect.left(), rootRect.top() - 54.0);
 
     const QString summaryText =
@@ -1738,6 +1862,8 @@ void RtlInsightsGraphSceneMapper::renderModuleBlockDiagramScene(
         summaryText,
         InsightVisualStyle::compactFont(font));
     summaryItem->setBrush(QBrush(InsightVisualStyle::theme().textSecondary));
+    summaryItem->setData(kGraphThemeVisualRole,
+                         kGraphThemeTextSecondary);
     summaryItem->setPos(rootRect.left(), rootRect.top() - 30.0);
 
     addNode(report.root, rootRect, true);
@@ -1776,6 +1902,8 @@ void RtlInsightsGraphSceneMapper::renderModuleBlockDiagramScene(
             state.insightsGraphScene->addSimpleText(noChildText,
                                               InsightVisualStyle::compactFont(font));
         label->setBrush(QBrush(InsightVisualStyle::theme().warning));
+        label->setData(kGraphThemeVisualRole,
+                       kGraphThemeWarning);
         label->setPos(rootRect.center().x() - 70,
                       rootRect.center().y() - 10);
     }
@@ -2278,6 +2406,20 @@ bool RtlInsightsGraphSceneMapper::navigateSelectedItem()
     return navigateItem(selected.first());
 }
 
+RtlInsightSourceLocation
+RtlInsightsGraphSceneMapper::selectedSourceLocation() const
+{
+    if (!state.insightsGraphScene)
+        return {};
+    const QList<QGraphicsItem*> selected =
+        state.insightsGraphScene->selectedItems();
+    if (selected.isEmpty())
+        return {};
+    return sourceLocationForItem(
+        selected.first(),
+        state.graphBuildGeneration);
+}
+
 bool RtlInsightsGraphSceneMapper::setModuleBlockTopFromSelected()
 {
     if (!state.insightsGraphScene
@@ -2493,6 +2635,64 @@ QStringList RtlInsightsGraphSceneMapper::
     }
     summaries.sort(Qt::CaseInsensitive);
     return summaries;
+}
+
+void RtlInsightsGraphSceneMapper::refreshThemePresentation()
+{
+    if (!state.insightsGraphScene)
+        return;
+
+    const InsightTheme theme = InsightVisualStyle::theme();
+    for (QGraphicsItem* item : state.insightsGraphScene->items()) {
+        if (auto* node =
+                dynamic_cast<RtlInsightGraphNodeItem*>(item)) {
+            node->refreshThemePresentation();
+            continue;
+        }
+        if (auto* edge =
+                dynamic_cast<RtlInsightGraphEdgeItem*>(item)) {
+            edge->refreshThemePresentation();
+            continue;
+        }
+
+        const int visualRole =
+            item->data(kGraphThemeVisualRole).toInt();
+        QColor color;
+        switch (visualRole) {
+        case kGraphThemeTextPrimary:
+            color = theme.textPrimary;
+            break;
+        case kGraphThemeTextSecondary:
+            color = theme.textSecondary;
+            break;
+        case kGraphThemeWarning:
+            color = theme.warning;
+            break;
+        case kGraphThemePanel:
+            if (auto* panel =
+                    dynamic_cast<QGraphicsRectItem*>(item)) {
+                panel->setPen(
+                    InsightVisualStyle::panelBorderPen());
+                panel->setBrush(
+                    InsightVisualStyle::panelBrush());
+            }
+            continue;
+        default:
+            continue;
+        }
+
+        if (auto* simpleText =
+                dynamic_cast<QGraphicsSimpleTextItem*>(item)) {
+            simpleText->setBrush(QBrush(color));
+        } else if (auto* text =
+                       dynamic_cast<QGraphicsTextItem*>(item)) {
+            text->setDefaultTextColor(color);
+        }
+    }
+
+    state.insightsGraphScene->update();
+    if (state.insightsGraphView->viewport())
+        state.insightsGraphView->viewport()->update();
 }
 
 QStringList RtlInsightsGraphSceneMapper::inspectorRowsForTest() const

@@ -1669,6 +1669,10 @@ void EditorMultiCursorController::paint(
                 editor->document()->findBlock(
                     selectionStart);
             while (block.isValid()
+                   && !editor->sourceLineVisible(block.blockNumber())) {
+                block = editor->nextVisibleBlock(block);
+            }
+            while (block.isValid()
                    && block.position()
                           < selectionEnd) {
                 const int blockStart =
@@ -1703,9 +1707,11 @@ void EditorMultiCursorController::paint(
                         endRect.left()
                             - startRect.left()),
                     startRect.height());
+                const QTextBlock nextBlock =
+                    editor->nextVisibleBlock(block);
                 if (selectionEnd
                         > blockTextEnd
-                    && block.next().isValid()) {
+                    && nextBlock.isValid()) {
                     highlight.setRight(
                         editor->viewport()
                             ->width());
@@ -1716,18 +1722,15 @@ void EditorMultiCursorController::paint(
                         highlight,
                         selectionColor);
                 }
-                if (block == editor->document()
-                                 ->findBlock(
-                                     selectionEnd)) {
-                    break;
-                }
-                block = block.next();
+                block = nextBlock;
             }
         }
 
         QTextCursor cursor(
             editor->document());
         cursor.setPosition(caret.position);
+        if (!editor->sourceLineVisible(cursor.blockNumber()))
+            continue;
         QRect caretRect =
             editor->cursorRect(cursor);
         if (caret.virtualColumn >= 0) {

@@ -1,14 +1,18 @@
 #ifndef NAVIGATIONMANAGER_H
 #define NAVIGATIONMANAGER_H
 
+#include "zeroslackexport.h"
+
 #include <QObject>
 #include <QPoint>
 #include <QByteArray>
 #include <QStringList>
 #include <QHash>
 #include <QList>
+#include <functional>
 #include <memory>
 #include "actionregistry.h"
+#include "editorlocation.h"
 #include "hierarchyservice.h"
 #include "semanticanalysisrequest.h"
 #include "symbolpresentationservice.h"
@@ -28,7 +32,7 @@ struct DesignHierarchyContextAction {
     bool separatorBefore = false;
 };
 
-class NavigationManager :
+class ZEROSLACK_API NavigationManager :
     public QObject,
     public ActionExecutionHost
 {
@@ -53,6 +57,8 @@ public:
     // Manager connections
     void connectToTabManager(TabManager* tabManager);
     void connectToWorkspaceManager(WorkspaceManager* workspaceManager);
+    void setTemporaryEditorOpenHandler(
+        std::function<bool(const EditorLocation&)> handler);
 
     // Data refresh operations
     void refreshFileHierarchy();
@@ -85,6 +91,12 @@ public:
 
 signals:
     void navigationRequested(const QString& filePath, int lineNumber);
+    void temporaryEditorOpenRequested(
+        const EditorLocation& location);
+    void temporaryEditorOpenFinished(
+        const EditorLocation& location,
+        bool succeeded,
+        const QString& failureReason);
     void instanceNavigationRequested(
         const QString& filePath,
         int lineNumber,
@@ -169,6 +181,8 @@ private:
     WorkspaceManager* connectedWorkspaceManager = nullptr;
     std::unique_ptr<WorkspaceFileOperationService>
         fileOperationService;
+    std::function<bool(const EditorLocation&)>
+        temporaryEditorOpenHandler;
 
     NavigationContext context;
     NavigationCaches caches;

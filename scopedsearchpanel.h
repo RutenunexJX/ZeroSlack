@@ -1,6 +1,10 @@
 #ifndef SCOPEDSEARCHPANEL_H
 #define SCOPEDSEARCHPANEL_H
 
+#include "zeroslackexport.h"
+
+#include "actionregistry.h"
+#include "editorlocation.h"
 #include "searchservice.h"
 
 #include <QList>
@@ -17,6 +21,7 @@ class QDockWidget;
 class QLabel;
 class QLineEdit;
 class QPlainTextEdit;
+class QPoint;
 class QPushButton;
 class QTreeWidget;
 class QTreeWidgetItem;
@@ -35,7 +40,7 @@ Q_DECLARE_METATYPE(ScopedSearchScope)
 Q_DECLARE_METATYPE(ScopedSearchResponse)
 Q_DECLARE_METATYPE(ReplacePreviewPlan)
 
-class ScopedSearchPanel : public QWidget
+class ZEROSLACK_API ScopedSearchPanel : public QWidget
 {
     Q_OBJECT
 
@@ -95,6 +100,8 @@ public:
     }
     QLabel* searchStatus() const { return searchStatusLabel; }
     QLabel* replaceStatus() const { return replaceStatusLabel; }
+    bool requestTemporaryEditorOpenForItem(
+        QTreeWidgetItem* item);
 
 public slots:
     void refresh();
@@ -108,6 +115,8 @@ signals:
         const QString& fileName,
         int line,
         int column);
+    void temporaryEditorOpenRequested(
+        const EditorLocation& location);
     void searchCompleted(
         const ScopedSearchResponse& response);
     void replacePreviewReady(
@@ -123,6 +132,7 @@ private:
     void renderResponse();
     void renderReplaceChecklist();
     void activateResultItem(QTreeWidgetItem* item);
+    void showResultContextMenu(const QPoint& position);
     void updateReplaceSelection(QTreeWidgetItem* item);
     void invalidateReplacePreview(
         const QString& message = QString());
@@ -164,7 +174,7 @@ private:
 // Owns one dock and one page for its complete lifetime. It deliberately has
 // no open/close API: the registered PanelLayoutController remains the sole
 // owner of visibility, tab selection, and restored height.
-class ScopedSearchPanelCoordinator : public QObject
+class ZEROSLACK_API ScopedSearchPanelCoordinator : public QObject
 {
     Q_OBJECT
 
@@ -187,8 +197,12 @@ public:
     void setSearchContext(
         const ScopedSearchPanelContext& context);
     void setNavigationHandler(NavigationHandler handler);
+    void setRegisteredActionRequestHandler(
+        RegisteredActionRequestHandler handler);
     void setReplaceWorkflow(
         ScopedReplaceWorkflow* workflow);
+    ActionExecutionResult requestTemporaryEditorOpen(
+        const EditorLocation& location);
 
 public slots:
     void refresh();
@@ -199,6 +213,12 @@ signals:
         const QString& fileName,
         int line,
         int column);
+    void temporaryEditorOpenRequested(
+        const EditorLocation& location);
+    void temporaryEditorOpenFinished(
+        const EditorLocation& location,
+        bool succeeded,
+        const QString& failureReason);
     void replacePreviewReady(
         const ReplacePreviewPlan& preview);
 
@@ -206,6 +226,8 @@ private:
     QPointer<QDockWidget> searchDock;
     QPointer<ScopedSearchPanel> searchPanel;
     NavigationHandler navigationHandler;
+    RegisteredActionRequestHandler
+        registeredActionRequestHandler;
 };
 
 #endif // SCOPEDSEARCHPANEL_H

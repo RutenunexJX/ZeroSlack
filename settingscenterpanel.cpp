@@ -28,6 +28,7 @@
 #include <QStyle>
 
 #include <limits>
+#include <utility>
 
 namespace {
 constexpr int kCategoryIdRole = Qt::UserRole + 1;
@@ -457,6 +458,8 @@ void SettingsCenterPanel::buildUi()
             binding.overrideCheck = new QCheckBox(group);
             binding.overrideCheck->setObjectName(
                 fieldOverrideObjectName(descriptor.id));
+            binding.overrideCheck->setVisible(
+                !descriptor.alwaysActive);
             fieldLayout->addWidget(binding.overrideCheck);
 
             binding.editor = createEditor(
@@ -792,9 +795,14 @@ void SettingsCenterPanel::populateField(
         : binding->descriptor.workspaceAllowed;
     const bool overridden =
         activeDraftValues().contains(binding->descriptor.id);
-    binding->overrideCheck->setChecked(overridden);
-    binding->overrideCheck->setEnabled(allowed);
-    binding->editor->setEnabled(allowed && overridden);
+    const bool active = overridden
+        || binding->descriptor.alwaysActive;
+    binding->overrideCheck->setChecked(active);
+    binding->overrideCheck->setEnabled(
+        allowed && !binding->descriptor.alwaysActive);
+    binding->overrideCheck->setVisible(
+        !binding->descriptor.alwaysActive);
+    binding->editor->setEnabled(allowed && active);
     setEditorValue(
         binding,
         overridden
@@ -821,7 +829,14 @@ void SettingsCenterPanel::updateFieldState(
     const QString effective =
         formattedValue(
             effectiveDraftValues().value(binding->descriptor.id));
-    if (activeScope == SettingsCenterScope::Global) {
+    if (binding->descriptor.alwaysActive) {
+        binding->stateLabel->setText(
+            activeScope == SettingsCenterScope::Global
+                ? tr("Applied immediately - Effective: %1")
+                      .arg(effective)
+                : tr("Global only - Effective: %1")
+                      .arg(effective));
+    } else if (activeScope == SettingsCenterScope::Global) {
         binding->overrideCheck->setText(tr("Override schema default"));
         binding->stateLabel->setText(
             overridden
@@ -885,13 +900,136 @@ void SettingsCenterPanel::updateDraftFromEditor(
     if (populating)
         return;
     auto it = fieldBindings.find(fieldId);
-    if (it == fieldBindings.end()
-        || !activeDraftValues().contains(fieldId)) {
+    if (it == fieldBindings.end()) {
         return;
     }
+    if (it->descriptor.alwaysActive) {
+        if (activeScope != SettingsCenterScope::Global
+            || !it->descriptor.globalAllowed) {
+            return;
+        }
+        globalDraft.insert(fieldId, editorValue(it.value()));
+        if (it->descriptor.immediateApply)
+            applyImmediateField(fieldId);
+        else {
+            updateFieldStates();
+            updateButtons();
+        }
+        return;
+    }
+    if (!activeDraftValues().contains(fieldId))
+        return;
     activeDraftValues().insert(fieldId, editorValue(it.value()));
     updateFieldStates();
     updateButtons();
+}
+
+void SettingsCenterPanel::applyImmediateField(
+    const QString& fieldId)
+{
+    auto it = fieldBindings.find(fieldId);
+    if (it == fieldBindings.end()
+        || !settingsService
+        || activeScope != SettingsCenterScope::Global) {
+        return;
+    }
+
+    QVariantMap values = loadedSnapshot.globalValues;
+    const QVariant requestedValue = globalDraft.value(fieldId);
+    values.insert(fieldId, requestedValue);
+    SettingsCenterSaveResult result =
+        settingsService->saveGlobal(
+            values,
+            loadedSnapshot.globalRevision);
+    if (!result.saved && result.conflict) {
+        // Immediate fields represent one explicit user choice. If another
+        // Settings Center-owned field changed concurrently, merge only this
+        // choice into the latest layer and retry once with its revision.
+        const QVariantMap previousLoadedValues =
+            loadedSnapshot.globalValues;
+        const QVariantMap previousDraftValues = globalDraft;
+        SettingsCenterSnapshot latestSnapshot =
+            settingsService->load(activeWorkspaceRoot);
+        QVariantMap rebasedDraft =
+            latestSnapshot.globalValues;
+        QSet<QString> candidateFields;
+        for (auto draft = previousDraftValues.cbegin();
+             draft != previousDraftValues.cend();
+             ++draft) {
+            candidateFields.insert(draft.key());
+        }
+        for (auto loaded = previousLoadedValues.cbegin();
+             loaded != previousLoadedValues.cend();
+             ++loaded) {
+            candidateFields.insert(loaded.key());
+        }
+        for (const QString& candidateField : candidateFields) {
+            const bool loadedContains =
+                previousLoadedValues.contains(candidateField);
+            const bool draftContains =
+                previousDraftValues.contains(candidateField);
+            const bool locallyChanged =
+                loadedContains != draftContains
+                || (loadedContains
+                    && previousLoadedValues.value(candidateField)
+                           != previousDraftValues.value(candidateField));
+            if (!locallyChanged)
+                continue;
+            if (draftContains) {
+                rebasedDraft.insert(
+                    candidateField,
+                    previousDraftValues.value(candidateField));
+            } else {
+                rebasedDraft.remove(candidateField);
+            }
+        }
+        loadedSnapshot = std::move(latestSnapshot);
+        globalDraft = std::move(rebasedDraft);
+        if (loadedSnapshot.globalCompatible) {
+            QVariantMap retryValues =
+                loadedSnapshot.globalValues;
+            retryValues.insert(fieldId, requestedValue);
+            result = settingsService->saveGlobal(
+                retryValues,
+                loadedSnapshot.globalRevision);
+        } else {
+            result.saved = false;
+            result.conflict = false;
+            result.issues = loadedSnapshot.issues;
+            result.message = tr(
+                "The latest global settings are incompatible.");
+        }
+    }
+    if (!result.saved) {
+        if (loadedSnapshot.globalValues.contains(fieldId)) {
+            globalDraft.insert(
+                fieldId,
+                loadedSnapshot.globalValues.value(fieldId));
+        } else {
+            globalDraft.remove(fieldId);
+        }
+        populateFields();
+        reportIssues(
+            result.issues,
+            result.message.isEmpty()
+                ? tr("The setting could not be saved.")
+                : result.message,
+            true);
+        return;
+    }
+
+    loadedSnapshot.globalValues = result.normalizedValues;
+    loadedSnapshot.globalRevision = result.revision;
+    loadedSnapshot.effectiveValues = SettingsCenterSchema::merge(
+        loadedSnapshot.globalValues,
+        loadedSnapshot.workspaceValues);
+    globalDraft.insert(
+        fieldId,
+        result.normalizedValues.value(fieldId));
+    updateFieldStates();
+    updateButtons();
+    reportIssues(result.issues, result.message);
+    emit settingsApplied(SettingsCenterScope::Global);
 }
 
 void SettingsCenterPanel::setOverride(

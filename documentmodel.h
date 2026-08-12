@@ -1,11 +1,15 @@
 #ifndef DOCUMENTMODEL_H
 #define DOCUMENTMODEL_H
 
+#include "zeroslackexport.h"
+
 #include "documentsnapshot.h"
 #include "documentchange.h"
 
 #include <QObject>
+#include <QHash>
 #include <QList>
+#include <QMetaObject>
 #include <QString>
 
 #include <memory>
@@ -13,7 +17,7 @@
 class MyCodeEditor;
 class DocumentSessionState;
 
-class DocumentModel : public QObject
+class ZEROSLACK_API DocumentModel : public QObject
 {
     Q_OBJECT
 
@@ -52,8 +56,11 @@ signals:
 
 private:
     std::unique_ptr<DocumentSessionState> state;
+    QHash<MyCodeEditor*, QList<QMetaObject::Connection>>
+        editorSignalConnections;
 
     void connectEditorSignals(MyCodeEditor* editor);
+    void disconnectEditorSignals(MyCodeEditor* editor);
     void handleEditorDocumentChange(MyCodeEditor* editor,
                                     const DocumentChange& change);
     void handleEditorCursorChanged(MyCodeEditor* editor);

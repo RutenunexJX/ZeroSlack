@@ -582,7 +582,8 @@ private:
                     const int x0 = xForSample(sample);
                     const int x1 = xForSample(sample + 1);
                     if (unknown) {
-                        painter.setPen(QPen(QColor(QStringLiteral("#94a3b8")), 1));
+                        painter.setPen(QPen(
+                            InsightVisualStyle::theme().textMuted, 1));
                         painter.drawLine(x0, centerY, x1, centerY);
                         painter.drawText(QRect(x0, y + 2, x1 - x0, 12),
                                          Qt::AlignCenter,
@@ -694,11 +695,11 @@ QColor colorForAssignmentKind(WavePreviewAssignmentKind kind)
 {
     switch (kind) {
     case WavePreviewAssignmentKind::Continuous:
-        return QColor(QStringLiteral("#2f855a"));
+        return InsightVisualStyle::theme().semantic.read;
     case WavePreviewAssignmentKind::Blocking:
-        return QColor(QStringLiteral("#2563eb"));
+        return InsightVisualStyle::theme().semantic.port;
     case WavePreviewAssignmentKind::NonBlocking:
-        return QColor(QStringLiteral("#9333ea"));
+        return InsightVisualStyle::theme().semantic.condition;
     }
     return InsightVisualStyle::roleColor(InsightVisualRole::Unknown);
 }
@@ -1460,9 +1461,8 @@ WavePreviewPanelCoordinator::WavePreviewPanelCoordinator(QWidget* parent)
     summaryLabel = new QLabel(QStringLiteral("No document selected."), panel);
     summaryLabel->setObjectName(QStringLiteral("wavePreviewSummary"));
     summaryLabel->setWordWrap(true);
-    summaryLabel->setStyleSheet(
-        QStringLiteral("QLabel#wavePreviewSummary { color: %1; padding: 0 4px 3px 4px; }")
-            .arg(InsightVisualStyle::theme().textSecondary.name()));
+    summaryLabel->setContentsMargins(4, 0, 4, 3);
+    InsightVisualStyle::applyLabel(summaryLabel);
     layout->addWidget(summaryLabel);
 
     auto* toolbarLayout = new QHBoxLayout;
@@ -1470,8 +1470,7 @@ WavePreviewPanelCoordinator::WavePreviewPanelCoordinator(QWidget* parent)
     toolbarLayout->setSpacing(6);
     scopeLabel = new QLabel(QStringLiteral("Scope: full document"), panel);
     scopeLabel->setObjectName(QStringLiteral("wavePreviewScopeLabel"));
-    scopeLabel->setStyleSheet(InsightVisualStyle::labelStyleSheet(
-        scopeLabel->objectName()));
+    InsightVisualStyle::applyLabel(scopeLabel);
     clockCombo = new QComboBox(panel);
     clockCombo->setObjectName(QStringLiteral("wavePreviewClockCombo"));
     clockCombo->setMinimumWidth(116);

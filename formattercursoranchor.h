@@ -1,6 +1,8 @@
 #ifndef FORMATTERCURSORANCHOR_H
 #define FORMATTERCURSORANCHOR_H
 
+#include "zeroslackexport.h"
+
 #include <QString>
 
 #include <memory>
@@ -27,7 +29,7 @@ struct FormatterLogicalPosition {
     bool hasTokenIdentity() const;
 };
 
-class FormatterPositionMapper
+class ZEROSLACK_API FormatterPositionMapper
 {
 public:
     virtual ~FormatterPositionMapper() = default;
@@ -43,7 +45,7 @@ public:
         int newDocumentLength) const = 0;
 };
 
-class FormatterTriviaPositionMapper final
+class ZEROSLACK_API FormatterTriviaPositionMapper final
     : public FormatterPositionMapper
 {
 public:

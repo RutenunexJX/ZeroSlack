@@ -5,6 +5,10 @@
 #include <QDockWidget>
 #include <QLabel>
 #include <QMainWindow>
+#include <QPoint>
+#include <QSize>
+#include <QSizePolicy>
+#include <QStyle>
 #include <QTabBar>
 #include <QWidget>
 
@@ -23,6 +27,56 @@ void check(bool condition, const char* message)
     std::cerr << "FAIL: " << message << '\n';
 }
 
+void processUiEvents()
+{
+    for (int iteration = 0; iteration < 3; ++iteration) {
+        QApplication::sendPostedEvents();
+        QApplication::processEvents();
+    }
+}
+
+int visibleBottomContentHeight(QMainWindow* window,
+                               QTabBar* bar)
+{
+    if (!window || !window->centralWidget()
+        || !bar || !bar->isVisible()) {
+        return -1;
+    }
+    QWidget* central = window->centralWidget();
+    const int centralBottom =
+        central->mapTo(window, QPoint(0, 0)).y()
+        + central->height();
+    const int tabTop = bar->mapTo(window, QPoint(0, 0)).y();
+    const int separatorExtent = window->style()->pixelMetric(
+        QStyle::PM_DockWidgetSeparatorExtent,
+        nullptr,
+        window);
+    return qMax(0,
+                tabTop - centralBottom
+                    - qMax(0, separatorExtent));
+}
+
+class TallMinimumPanel final : public QLabel
+{
+public:
+    explicit TallMinimumPanel(const QString& text,
+                              QWidget* parent = nullptr)
+        : QLabel(text, parent)
+    {
+        setMinimumHeight(180);
+    }
+
+    QSize minimumSizeHint() const override
+    {
+        return QSize(160, 180);
+    }
+
+    QSize sizeHint() const override
+    {
+        return QSize(320, 260);
+    }
+};
+
 QDockWidget* makeDock(QMainWindow* window,
                       const QString& title,
                       const QString& objectName)
@@ -30,6 +84,17 @@ QDockWidget* makeDock(QMainWindow* window,
     auto* dock = new QDockWidget(title, window);
     dock->setObjectName(objectName);
     dock->setWidget(new QLabel(title, dock));
+    window->addDockWidget(Qt::BottomDockWidgetArea, dock);
+    return dock;
+}
+
+QDockWidget* makeTallDock(QMainWindow* window,
+                          const QString& title,
+                          const QString& objectName)
+{
+    auto* dock = new QDockWidget(title, window);
+    dock->setObjectName(objectName);
+    dock->setWidget(new TallMinimumPanel(title, dock));
     window->addDockWidget(Qt::BottomDockWidgetArea, dock);
     return dock;
 }
@@ -265,30 +330,34 @@ int main(int argc, char* argv[])
                      == navigationVisibleBeforeToggle,
           "navigation visibility restore schedules and preserves the original state");
 
-    window.resizeDocks(
-        {activity},
-        {173},
-        Qt::Vertical);
-    QApplication::processEvents();
-    const int expandedDockHeight = activity->height();
+    activity->raise();
+    processUiEvents();
+    window.resizeDocks({activity}, {173}, Qt::Vertical);
+    processUiEvents();
+    const int expandedDockHeight =
+        visibleBottomContentHeight(&window, bottomTabs);
     check(expandedDockHeight > 64,
           "bottom panel accepts a user-selected expanded height");
     controller.setBottomCollapsed(true);
-    QApplication::processEvents();
+    processUiEvents();
+    const int collapsedContentHeight =
+        visibleBottomContentHeight(&window, bottomTabs);
     check(controller.isBottomCollapsed()
-              && problems->widget()->maximumHeight() == 0
-              && activity->widget()->maximumHeight() == 0,
-          "collapse leaves panel contents at zero height");
-    check(problems->height() <= expandedDockHeight,
+              && collapsedContentHeight <= 1
+              && problems->widget()->maximumHeight() > 0
+              && activity->widget()->maximumHeight() > 0,
+          "collapse leaves no page content visible without locking expansion");
+    check(collapsedContentHeight <= expandedDockHeight,
           "collapse never increases the bottom panel height");
     check(controller.layoutState().expandedBottomHeight
               == expandedDockHeight,
           "collapse records the exact current expanded height");
     controller.setBottomCollapsed(false);
-    QApplication::processEvents();
+    processUiEvents();
     check(!controller.isBottomCollapsed()
               && problems->widget()->maximumHeight() > 0
-              && activity->height() == expandedDockHeight,
+              && visibleBottomContentHeight(&window, bottomTabs)
+                     == expandedDockHeight,
           "expansion restores panel constraints and exact height");
 
     check(controller.setPanelPinned(
@@ -502,6 +571,201 @@ int main(int argc, char* argv[])
               && denseController.bottomPanelIds()
                      == denseIds,
           "six-page reset preserves Qt dock ownership and order");
+
+    QMainWindow resizeWindow;
+    resizeWindow.resize(980, 700);
+    resizeWindow.setCentralWidget(new QWidget(&resizeWindow));
+    QDockWidget* manualFirst = makeTallDock(
+        &resizeWindow,
+        QStringLiteral("Manual First"),
+        QStringLiteral("manualFirstDock"));
+    QDockWidget* manualSecond = makeTallDock(
+        &resizeWindow,
+        QStringLiteral("Manual Second"),
+        QStringLiteral("manualSecondDock"));
+    resizeWindow.tabifyDockWidget(manualFirst, manualSecond);
+    PanelLayoutController resizeController(&resizeWindow);
+    check(resizeController.registerBottomPanel(
+              QStringLiteral("manualFirst"), manualFirst)
+              && resizeController.registerBottomPanel(
+                  QStringLiteral("manualSecond"), manualSecond),
+          "minimum-size fixture registers as real tabified docks");
+    resizeController.finalize();
+    resizeWindow.show();
+    manualSecond->raise();
+    processUiEvents();
+
+    QTabBar* resizeTabs =
+        resizeWindow.findChild<QTabBar*>(
+            QStringLiteral("bottomPanelTabBar"));
+    if (resizeTabs) {
+        for (int index = 0; index < resizeTabs->count(); ++index) {
+            if (resizeTabs->tabText(index)
+                == QStringLiteral("Manual Second")) {
+                resizeTabs->setCurrentIndex(index);
+                break;
+            }
+        }
+        manualSecond->raise();
+        processUiEvents();
+    }
+    check(resizeTabs
+              && resizeTabs->isVisible()
+              && resizeTabs->contextMenuPolicy()
+                     == Qt::CustomContextMenu
+              && manualFirst->widget()->minimumHeight() == 0
+              && manualSecond->widget()->minimumHeight() == 0
+              && manualFirst->widget()->sizePolicy().verticalPolicy()
+                     == QSizePolicy::Ignored
+              && manualSecond->widget()->sizePolicy().verticalPolicy()
+                     == QSizePolicy::Ignored
+              && resizeController.activeBottomPanelId()
+                     == QStringLiteral("manualSecond"),
+          "bottom pages ignore content minimum-size hints while preserving the tab bar");
+
+    resizeWindow.resizeDocks(
+        {manualSecond}, {260}, Qt::Vertical);
+    processUiEvents();
+    const int startingExpandedHeight =
+        visibleBottomContentHeight(&resizeWindow, resizeTabs);
+    int previousContentHeight = startingExpandedHeight;
+    bool shrankContinuously = startingExpandedHeight > 64;
+    const QList<int> requestedHeights = {180, 120, 70, 35, 1};
+    for (int requestedHeight : requestedHeights) {
+        resizeWindow.resizeDocks(
+            {manualSecond}, {requestedHeight}, Qt::Vertical);
+        processUiEvents();
+        const int contentHeight =
+            visibleBottomContentHeight(&resizeWindow, resizeTabs);
+        shrankContinuously =
+            shrankContinuously
+            && contentHeight <= previousContentHeight;
+        previousContentHeight = contentHeight;
+    }
+    const PanelLayoutState manuallyCollapsed =
+        resizeController.layoutState();
+    const int collapsedCentralHeight =
+        resizeWindow.centralWidget()->height();
+    const int collapsedBottomAreaHeight =
+        resizeWindow.height() - collapsedCentralHeight;
+    check(shrankContinuously
+              && previousContentHeight <= 1
+              && resizeTabs
+              && collapsedBottomAreaHeight
+                     <= resizeTabs->height() + 12
+              && resizeController.isBottomCollapsed()
+              && manuallyCollapsed.bottomCollapsed
+              && manuallyCollapsed.expandedBottomHeight >= 64,
+          "native dock resizing continuously reaches tab-only height and enters the shared collapsed state");
+    check(resizeTabs
+              && resizeTabs->isVisible()
+              && manualSecond->toggleViewAction()->isChecked(),
+          "manual collapse keeps the dock and its interactive tab bar visible");
+
+    if (resizeTabs && resizeTabs->count() >= 2) {
+        const int otherIndex =
+            resizeTabs->currentIndex() == 0 ? 1 : 0;
+        resizeTabs->setCurrentIndex(otherIndex);
+        processUiEvents();
+    }
+    QDockWidget* selectedManualDock =
+        resizeController.activeBottomPanelId()
+                == QStringLiteral("manualFirst")
+            ? manualFirst
+            : manualSecond;
+    check(resizeWindow.centralWidget()->height()
+                  == collapsedCentralHeight
+              && visibleBottomContentHeight(
+                     &resizeWindow, resizeTabs) <= 1
+              && resizeController.isBottomCollapsed(),
+          "switching bottom pages at tab-only height preserves panel geometry");
+
+    resizeWindow.resizeDocks(
+        {selectedManualDock}, {260}, Qt::Vertical);
+    processUiEvents();
+    const int manuallyReopenedHeight =
+        visibleBottomContentHeight(&resizeWindow, resizeTabs);
+    check(manuallyReopenedHeight > 64
+              && !resizeController.isBottomCollapsed(),
+          "the native separator reopens a manually collapsed bottom panel");
+    resizeWindow.resizeDocks(
+        {selectedManualDock}, {1}, Qt::Vertical);
+    processUiEvents();
+    const PanelLayoutState recollapsedState =
+        resizeController.layoutState();
+    check(recollapsedState.bottomCollapsed
+              && recollapsedState.expandedBottomHeight
+                     == manuallyReopenedHeight,
+          "manual collapse persists the last stable expanded dock height");
+
+    resizeController.setBottomCollapsed(false);
+    processUiEvents();
+    check(!resizeController.isBottomCollapsed()
+              && qAbs(visibleBottomContentHeight(
+                          &resizeWindow, resizeTabs)
+                      - manuallyReopenedHeight) <= 1,
+          "explicit expansion uses the same persisted height as manual resizing");
+    resizeController.setBottomCollapsed(true);
+    processUiEvents();
+    resizeWindow.resizeDocks(
+        {selectedManualDock}, {260}, Qt::Vertical);
+    processUiEvents();
+    check(!resizeController.isBottomCollapsed()
+              && visibleBottomContentHeight(
+                     &resizeWindow, resizeTabs) > 4,
+          "a panel collapsed explicitly can be dragged open from its tab bar");
+
+    resizeController.setBottomCollapsed(true);
+    processUiEvents();
+    const PanelLayoutState savedManualState =
+        resizeController.layoutState();
+    QMainWindow restoredWindow;
+    restoredWindow.resize(980, 700);
+    restoredWindow.setCentralWidget(new QWidget(&restoredWindow));
+    QDockWidget* restoredFirst = makeTallDock(
+        &restoredWindow,
+        QStringLiteral("Manual First"),
+        QStringLiteral("restoredManualFirstDock"));
+    QDockWidget* restoredSecond = makeTallDock(
+        &restoredWindow,
+        QStringLiteral("Manual Second"),
+        QStringLiteral("restoredManualSecondDock"));
+    restoredWindow.tabifyDockWidget(restoredFirst, restoredSecond);
+    PanelLayoutController restoredController(&restoredWindow);
+    restoredController.registerBottomPanel(
+        QStringLiteral("manualFirst"), restoredFirst);
+    restoredController.registerBottomPanel(
+        QStringLiteral("manualSecond"), restoredSecond);
+    restoredController.finalize();
+    restoredWindow.show();
+    processUiEvents();
+    restoredController.restoreLayoutState(savedManualState);
+    processUiEvents();
+    QTabBar* restoredTabs =
+        restoredWindow.findChild<QTabBar*>(
+            QStringLiteral("bottomPanelTabBar"));
+    QDockWidget* restoredActive =
+        restoredController.activeBottomPanelId()
+                == QStringLiteral("manualFirst")
+            ? restoredFirst
+            : restoredSecond;
+    const PanelLayoutState roundTrippedManualState =
+        restoredController.layoutState();
+    check(restoredController.isBottomCollapsed()
+              && restoredTabs
+              && restoredTabs->isVisible()
+              && visibleBottomContentHeight(
+                     &restoredWindow, restoredTabs) <= 1
+              && roundTrippedManualState.expandedBottomHeight
+                     == savedManualState.expandedBottomHeight,
+          "tab-only state and expanded height survive session restoration");
+    restoredWindow.resizeDocks(
+        {restoredActive}, {260}, Qt::Vertical);
+    processUiEvents();
+    check(!restoredController.isBottomCollapsed()
+              && visibleBottomContentHeight(
+                     &restoredWindow, restoredTabs) > 4,
+          "a restored tab-only panel remains draggable upward");
 
     std::cout << (checks - failures) << "/" << checks
               << " panel layout checks passed\n";

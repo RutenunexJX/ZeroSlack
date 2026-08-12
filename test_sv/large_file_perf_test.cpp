@@ -199,6 +199,12 @@ static void runRealSourceColumnProbe(const QString& fileName)
         Qt::LeftButton,
         Qt::NoModifier,
         pointAt(0, targetColumn));
+    expectBool("real long-short first endpoint stays at real EOL",
+               !editor.virtualCursorActiveForTest()
+                   && editor.textCursor().blockNumber() == 0
+                   && editor.textCursor().positionInBlock()
+                          == longest.size(),
+               true);
     QTest::mouseClick(
         editor.viewport(),
         Qt::LeftButton,

@@ -1,6 +1,10 @@
 #ifndef SHAREDDOCUMENT_H
 #define SHAREDDOCUMENT_H
 
+#include "zeroslackexport.h"
+
+#include "editorfoldviewstate.h"
+
 #include <QHash>
 #include <QList>
 #include <QMetaObject>
@@ -21,6 +25,7 @@ struct SharedDocumentViewState {
     int anchorPosition = 0;
     int verticalScrollValue = 0;
     int horizontalScrollValue = 0;
+    EditorFoldViewState folding;
 };
 
 enum class SharedDocumentExternalState {
@@ -29,7 +34,7 @@ enum class SharedDocumentExternalState {
     Conflict
 };
 
-class SharedDocument : public QObject
+class ZEROSLACK_API SharedDocument : public QObject
 {
     Q_OBJECT
 
@@ -83,6 +88,10 @@ public:
 signals:
     void textRevisionChanged(std::uint64_t revision);
     void dirtyChanged(bool dirty);
+    void identityChanged(const QString& previousDocumentId,
+                         const QString& previousFileName,
+                         const QString& documentId,
+                         const QString& fileName);
     void viewAttached(const QString& viewId);
     void viewDetached(const QString& viewId);
     void statusChanged();
@@ -120,7 +129,7 @@ private:
                          const QString& fileName);
 };
 
-class SharedDocumentRegistry : public QObject
+class ZEROSLACK_API SharedDocumentRegistry : public QObject
 {
     Q_OBJECT
 

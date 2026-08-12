@@ -1,6 +1,8 @@
 #ifndef EDITORCOORDINATOR_H
 #define EDITORCOORDINATOR_H
 
+#include "zeroslackexport.h"
+
 #include <QObject>
 #include <QString>
 #include <QStringList>
@@ -32,7 +34,7 @@ struct ActionDescriptor;
 struct ActionExecutionResult;
 struct ActionInvocation;
 
-class EditorCoordinator : public QObject
+class ZEROSLACK_API EditorCoordinator : public QObject
 {
     Q_OBJECT
 

@@ -1,9 +1,13 @@
+#include "actionregistry.h"
+#include "editorsourcenavigation.h"
 #include "mycodeeditor.h"
 
 #include <QApplication>
+#include <QPushButton>
 #include <QTextCursor>
 #include <QtTest/QTest>
 
+#include <algorithm>
 #include <cstdio>
 
 namespace {
@@ -163,6 +167,88 @@ int main(int argc, char** argv)
                && message.contains(
                    QStringLiteral(
                        "not inside a conditional")));
+
+    EditorSourceNavigationUi sourceNavigation;
+    EditorHoverPopup* definitionPreview =
+        sourceNavigation.beginExternalPeek(
+            &editor, true);
+    DefinitionPreviewReport previewReport;
+    previewReport.available = true;
+    previewReport.targetResolved = true;
+    previewReport.symbolName = QStringLiteral("value");
+    previewReport.displayKind = QStringLiteral("signal");
+    previewReport.targetFile =
+        QStringLiteral("C:/rtl/workspace/definition.sv");
+    previewReport.targetLine = 23;
+    previewReport.targetColumn = 7;
+    previewReport.firstLineNumber = 23;
+    previewReport.highlightedLine = 23;
+    previewReport.codeLines = {
+        QStringLiteral("logic value;")};
+    definitionPreview->showPreview(
+        previewReport,
+        QPoint(10, 10),
+        editor.font());
+
+    const QString temporaryEditorActionId =
+        QString::fromLatin1(
+            ActionIds::ViewTemporaryEditorOpen);
+    const PeekContentModel previewContent =
+        definitionPreview->contentModel();
+    const auto action = std::find_if(
+        previewContent.actions.cbegin(),
+        previewContent.actions.cend(),
+        [&temporaryEditorActionId](
+            const PeekContentAction& candidate) {
+            return candidate.id
+                == temporaryEditorActionId;
+        });
+    expect("definition preview exposes the unified temporary-editor Action",
+           action != previewContent.actions.cend()
+               && !action->label.isEmpty()
+               && previewContent.navigationTarget.fileName
+                      == previewReport.targetFile
+               && previewContent.navigationTarget.line
+                      == previewReport.targetLine
+               && previewContent.navigationTarget.column
+                      == previewReport.targetColumn);
+
+    QString requestedActionId;
+    QVariantMap requestedParameters;
+    QObject::connect(
+        &editor,
+        &MyCodeEditor::registeredActionRequested,
+        &editor,
+        [&](const QString& actionId,
+            const QVariantMap& parameters,
+            bool* handled) {
+            requestedActionId = actionId;
+            requestedParameters = parameters;
+            if (handled)
+                *handled = true;
+        });
+    QPushButton* temporaryEditorButton =
+        definitionPreview->findChild<QPushButton*>(
+            QStringLiteral("peekAction.%1")
+                .arg(temporaryEditorActionId));
+    if (temporaryEditorButton)
+        temporaryEditorButton->click();
+    expect("definition preview routes its target through the Registry Action",
+           temporaryEditorButton
+               && requestedActionId
+                      == temporaryEditorActionId
+               && requestedParameters
+                      .value(QStringLiteral("path"))
+                      .toString()
+                      == previewReport.targetFile
+               && requestedParameters
+                      .value(QStringLiteral("line"))
+                      .toInt()
+                      == previewReport.targetLine
+               && requestedParameters
+                      .value(QStringLiteral("column"))
+                      .toInt()
+                      == previewReport.targetColumn);
 
     std::printf("%d checks, %d failures\n",
                 checks,

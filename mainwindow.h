@@ -1,6 +1,8 @@
 #ifndef MAINWINDOW_H
 #define MAINWINDOW_H
 
+#include "zeroslackexport.h"
+
 #include <QMainWindow>
 #include "actionregistry.h"
 #include "annotationlayer.h"
@@ -40,6 +42,8 @@ class FoldBlockShelfPanel;
 class GlobalControlCoordinator;
 class SemanticDockCoordinator;
 class SemanticRuntimeCoordinator;
+class TemporaryEditorDrawerController;
+class TemporaryEditorSearchProvider;
 class ScopedReplaceWorkflow;
 class WorkspaceEditDocumentManager;
 class QAction;
@@ -91,7 +95,7 @@ QT_BEGIN_NAMESPACE
 namespace Ui { class MainWindow; }
 QT_END_NAMESPACE
 
-class MainWindow : public QMainWindow,
+class ZEROSLACK_API MainWindow : public QMainWindow,
                    private ActionExecutionHost
 {
     Q_OBJECT
@@ -127,6 +131,10 @@ private:
     std::unique_ptr<AnalysisCoordinator> analysisCoordinator;
     std::unique_ptr<CommandLayerCoordinator> commandLayerCoordinator;
     std::unique_ptr<EditorCoordinator> editorCoordinator;
+    std::unique_ptr<TemporaryEditorSearchProvider>
+        temporaryEditorSearchProvider;
+    std::unique_ptr<TemporaryEditorDrawerController>
+        temporaryEditorDrawerController;
     std::unique_ptr<EditorActionContextService> editorActionContextService;
     std::unique_ptr<InsightFocusController> insightFocusController;
     std::unique_ptr<FileCommandCoordinator> fileCommandCoordinator;
@@ -210,7 +218,8 @@ private:
 
     void setupNavigationPane();
     void setupNotificationCenter();
-    void applyModernShellStyle();
+    void applyModernShellStyle(bool applyApplicationTheme = true);
+    void refreshThemePresentation();
     void setupSemanticDocks();
     ScopedSearchPanelContext scopedSearchContext() const;
     void setupInsightFocusView();
@@ -299,6 +308,9 @@ private:
     ActionExecutionResult executeActionRoute(
         const ActionDescriptor& descriptor,
         const ActionInvocation& invocation) override;
+    ActionExecutionResult executeRegisteredUiAction(
+        const QString& actionId,
+        const QVariantMap& parameters);
     ActionExecutionResult executeInstancePairConnectionAction(
         const ActionInvocation& invocation);
     ActionExecutionResult executeMultiSignalPropagationAction(
@@ -320,6 +332,8 @@ private:
     void setupManagerConnections();
     void setupSemanticRuntime();
     void setupEditorCentralArea();
+    void refreshTemporaryEditorFileCatalog();
+    void refreshTemporaryEditorSemanticCatalog();
     void setupExternalConflictReviewUi(
         QVBoxLayout* editorLayout,
         QWidget* parent);

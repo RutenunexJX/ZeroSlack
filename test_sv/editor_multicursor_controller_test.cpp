@@ -7,6 +7,7 @@
 #include <QKeyEvent>
 #include <QTextBlock>
 #include <QTextCursor>
+#include <QTextDocument>
 #include <QtTest/QTest>
 
 #include <cstdio>
@@ -87,10 +88,24 @@ int main(int argc, char* argv[])
         const QTextBlock block = editor.document()->firstBlock();
         QTextCursor end(block);
         end.setPosition(block.position() + block.text().size());
-        editor.setTextCursor(end);
+        QTextCursor initial(block);
+        initial.setPosition(block.position() + 1);
+        editor.setTextCursor(initial);
         editor.show();
         editor.setFocus();
         QApplication::processEvents();
+
+        QTest::mouseClick(
+            editor.viewport(),
+            Qt::LeftButton,
+            Qt::NoModifier,
+            pointBeyondLineEnd(editor, 0, 4));
+        expect("ordinary click beyond EOL stays at the real EOL",
+               !editor.virtualCursorActiveForTest()
+                   && editor.textCursor().position()
+                          == block.position() + block.text().size()
+                   && editor.toPlainText() == original
+                   && !editor.document()->isModified());
 
         QTest::mouseClick(
             editor.viewport(),
@@ -104,6 +119,29 @@ int main(int argc, char* argv[])
                    && virtualColumn > block.text().size()
                    && editor.toPlainText() == original
                    && !editor.document()->isModified());
+
+        QTextCursor realPosition(block);
+        realPosition.setPosition(block.position() + 1);
+        QTest::mouseClick(
+            editor.viewport(),
+            Qt::LeftButton,
+            Qt::NoModifier,
+            editor.cursorRect(realPosition).center());
+        expect("ordinary click on real text cancels the virtual caret",
+               !editor.virtualCursorActiveForTest()
+                   && editor.textCursor().position()
+                          == realPosition.position()
+                   && editor.toPlainText() == original
+                   && !editor.document()->isModified());
+
+        QTest::mouseClick(
+            editor.viewport(),
+            Qt::LeftButton,
+            Qt::AltModifier,
+            pointBeyondLineEnd(editor, 0, 4));
+        expect("Alt click replaces a real caret with one virtual caret",
+               editor.virtualCursorActiveForTest()
+                   && editor.virtualCursorColumnForTest() == virtualColumn);
 
         QTest::keyClicks(&editor, QStringLiteral("X"));
         const QString firstLine =
@@ -121,6 +159,219 @@ int main(int argc, char* argv[])
         editor.undo();
         expect("same-EOL virtual input is one undo transaction",
                editor.toPlainText() == original);
+
+        QTest::mouseClick(
+            editor.viewport(),
+            Qt::LeftButton,
+            Qt::AltModifier,
+            pointBeyondLineEnd(editor, 0, 4));
+        QTest::keyClick(&editor, Qt::Key_Escape);
+        expect("Escape cancels a virtual caret without editing",
+               !editor.virtualCursorActiveForTest()
+                   && editor.toPlainText() == original);
+
+        editor.setTextCursor(end);
+        editor.document()->setModified(false);
+        QTest::keyClick(&editor, Qt::Key_Right);
+        expect("Right at real EOL uses ordinary Qt navigation",
+               !editor.virtualCursorActiveForTest()
+                   && editor.textCursor().blockNumber() == 1
+                   && editor.textCursor().positionInBlock() == 0
+                   && editor.toPlainText() == original
+                   && !editor.document()->isModified());
+    }
+
+    {
+        MyCodeEditor editor;
+        editor.resize(520, 160);
+        editor.setLineWrapMode(QPlainTextEdit::NoWrap);
+        editor.setPlainText(QStringLiteral("abc\ndef\n"));
+        QTextCursor first(editor.document()->firstBlock());
+        first.setPosition(first.block().position() + 1);
+        const QTextBlock second =
+            editor.document()->findBlockByNumber(1);
+        QTextCursor secondCaret(second);
+        secondCaret.setPosition(second.position() + 1);
+        editor.setTextCursor(first);
+        editor.show();
+        editor.setFocus();
+        QApplication::processEvents();
+
+        QTest::mouseClick(
+            editor.viewport(),
+            Qt::LeftButton,
+            Qt::AltModifier,
+            editor.cursorRect(secondCaret).center());
+        expect("real Alt click establishes the prerequisite multi-cursor",
+               editor.editorModeActiveForTest(EditorModeId::MultiCursor));
+        QTest::mouseClick(
+            editor.viewport(),
+            Qt::LeftButton,
+            Qt::AltModifier,
+            pointBeyondLineEnd(editor, 1, 6));
+        expect("Alt EOL replaces an existing multi-cursor with one virtual caret",
+               editor.virtualCursorActiveForTest()
+                   && !editor.editorModeActiveForTest(
+                       EditorModeId::MultiCursor));
+        QTest::keyClicks(&editor, QStringLiteral("X"));
+        const QString replacementFirst =
+            editor.toPlainText().section(QLatin1Char('\n'), 0, 0);
+        const QString replacementSecond =
+            editor.toPlainText().section(QLatin1Char('\n'), 1, 1);
+        const QString replacementPadding =
+            replacementSecond.mid(
+                3, qMax(0, replacementSecond.size() - 4));
+        expect("replacement virtual caret materializes only its target",
+               replacementFirst == QStringLiteral("abc")
+                   && replacementSecond.startsWith(QStringLiteral("def"))
+                   && replacementSecond.endsWith(QLatin1Char('X'))
+                   && !replacementPadding.isEmpty()
+                   && replacementPadding.trimmed().isEmpty());
+    }
+
+    {
+        MyCodeEditor editor;
+        editor.resize(520, 160);
+        editor.setLineWrapMode(QPlainTextEdit::NoWrap);
+        editor.setPlainText(QStringLiteral("abc\ndef\n"));
+        editor.show();
+        editor.setFocus();
+        QApplication::processEvents();
+
+        QTest::mouseClick(
+            editor.viewport(),
+            Qt::LeftButton,
+            Qt::NoModifier,
+            pointBeyondLineEnd(editor, 0, 6));
+        QTest::keyClick(&editor, Qt::Key_Left);
+        QTest::keyClick(&editor, Qt::Key_Right);
+        QTest::mouseClick(
+            editor.viewport(),
+            Qt::LeftButton,
+            Qt::ShiftModifier | Qt::AltModifier,
+            pointBeyondLineEnd(editor, 1, 6));
+        QTest::keyClicks(&editor, QStringLiteral("X"));
+        expect("leaving a pending EOL anchor prevents stale virtual-column reuse",
+               editor.toPlainText()
+                   == QStringLiteral("abcX\ndefX\n"));
+    }
+
+    {
+        QTextDocument replacement;
+        MyCodeEditor editor;
+        replacement.setDefaultFont(editor.font());
+        replacement.setPlainText(QStringLiteral("abc\ndef\n"));
+        editor.resize(520, 160);
+        editor.setLineWrapMode(QPlainTextEdit::NoWrap);
+        editor.setPlainText(QStringLiteral("abc\ndef\n"));
+        editor.show();
+        editor.setFocus();
+        QApplication::processEvents();
+
+        QTest::mouseClick(
+            editor.viewport(),
+            Qt::LeftButton,
+            Qt::NoModifier,
+            pointBeyondLineEnd(editor, 0, 6));
+        editor.attachSharedDocument(&replacement, 1);
+        QTextCursor replacementEnd(replacement.firstBlock());
+        replacementEnd.setPosition(
+            replacementEnd.block().position()
+            + replacementEnd.block().text().size());
+        editor.setTextCursor(replacementEnd);
+        QApplication::processEvents();
+        QTest::mouseClick(
+            editor.viewport(),
+            Qt::LeftButton,
+            Qt::ShiftModifier | Qt::AltModifier,
+            pointBeyondLineEnd(editor, 1, 6));
+        QTest::keyClicks(&editor, QStringLiteral("X"));
+        const QString reboundText = editor.toPlainText();
+        if (reboundText != QStringLiteral("abcX\ndefX\n")) {
+            std::printf("[DIAG] rebound text: %s\n",
+                        qPrintable(
+                            QString(reboundText)
+                                .replace(QLatin1Char('\n'),
+                                         QStringLiteral("\\n"))));
+        }
+        expect("document rebind discards a pending EOL anchor",
+               reboundText == QStringLiteral("abcX\ndefX\n"));
+    }
+
+    {
+        MyCodeEditor editor;
+        const QString original = QStringLiteral("abc\ndef\n");
+        editor.resize(520, 160);
+        editor.setLineWrapMode(QPlainTextEdit::NoWrap);
+        editor.setPlainText(original);
+        editor.document()->setModified(false);
+        QTextCursor initial(editor.document()->firstBlock());
+        initial.setPosition(initial.block().position() + 1);
+        editor.setTextCursor(initial);
+        editor.show();
+        editor.setFocus();
+        QApplication::processEvents();
+
+        QTest::mouseClick(
+            editor.viewport(),
+            Qt::LeftButton,
+            Qt::AltModifier,
+            pointBeyondLineEnd(editor, 1, 4));
+        const int targetColumn = editor.virtualCursorColumnForTest();
+        expect("Alt click beyond another line creates one virtual caret",
+               editor.virtualCursorActiveForTest()
+                   && editor.virtualCursorLineForTest() == 1
+                   && targetColumn > 3
+                   && editor.textCursor().blockNumber() == 1
+                   && editor.textCursor().positionInBlock() == 3
+                   && editor.toPlainText() == original
+                   && !editor.document()->isModified());
+
+        QTest::keyClicks(&editor, QStringLiteral("X"));
+        const QString firstLine =
+            editor.toPlainText().section(QLatin1Char('\n'), 0, 0);
+        const QString secondLine =
+            editor.toPlainText().section(QLatin1Char('\n'), 1, 1);
+        const QString padding =
+            secondLine.size() > 4
+            ? secondLine.mid(3, secondLine.size() - 4)
+            : QString();
+        expect("single explicit virtual caret materializes only its target",
+               firstLine == QStringLiteral("abc")
+                   && secondLine.startsWith(QStringLiteral("def"))
+                   && secondLine.endsWith(QLatin1Char('X'))
+                   && !padding.isEmpty()
+                   && padding.trimmed().isEmpty()
+                   && !editor.virtualCursorActiveForTest());
+    }
+
+    {
+        MyCodeEditor editor;
+        editor.resize(520, 160);
+        editor.setPlainText(QStringLiteral("abc\ndef\n"));
+        QTextCursor first(editor.document()->firstBlock());
+        first.setPosition(first.block().position() + 1);
+        const QTextBlock second =
+            editor.document()->findBlockByNumber(1);
+        QTextCursor secondCaret(second);
+        secondCaret.setPosition(second.position() + 1);
+        editor.setTextCursor(first);
+        editor.show();
+        editor.setFocus();
+        QApplication::processEvents();
+
+        QTest::mouseClick(
+            editor.viewport(),
+            Qt::LeftButton,
+            Qt::AltModifier,
+            editor.cursorRect(secondCaret).center());
+        expect("Alt click on real text retains multi-cursor priority",
+               editor.editorModeActiveForTest(EditorModeId::MultiCursor)
+                   && !editor.virtualCursorActiveForTest());
+        QTest::keyClicks(&editor, QStringLiteral("X"));
+        expect("real Alt-click caret edits both physical positions",
+               editor.toPlainText()
+                   == QStringLiteral("aXbc\ndXef\n"));
     }
 
     {

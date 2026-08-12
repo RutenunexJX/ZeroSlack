@@ -70,6 +70,7 @@ public:
                           QMouseEvent* event);
 
     void clearVirtualCursor(MyCodeEditor* editor);
+    void clearPendingColumnAnchor();
     void handleVirtualCursorChanged(
         MyCodeEditor* editor);
     void prepareVirtualCursorInput(

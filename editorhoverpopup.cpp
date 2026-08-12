@@ -1,5 +1,6 @@
 #include "editorhoverpopup.h"
 
+#include "actionregistry.h"
 #include "effectivevalueservice.h"
 
 #include <QApplication>
@@ -226,7 +227,7 @@ void EditorHoverPopup::showContent(const PeekContentModel& content,
             if (action.role
                 == PeekContentActionRole::Destructive) {
                 button->setStyleSheet(
-                    QStringLiteral("color:#b91c1c;"));
+                    QStringLiteral("color: palette(highlight);"));
             }
             connect(
                 button,
@@ -440,6 +441,23 @@ void EditorHoverPopup::showPreview(const DefinitionPreviewReport& report,
                  : report.unavailableReason,
              PeekContentRowRole::Muted,
              false});
+    }
+
+    if (content.navigationTarget.isValid()) {
+        const ActionDescriptor* descriptor =
+            findActionById(QString::fromLatin1(
+                ActionIds::ViewTemporaryEditorOpen));
+        const ActionAliasDescriptor alias = descriptor
+            ? descriptor->aliasForSurface(
+                  ActionSurface::ContextMenu)
+            : ActionAliasDescriptor();
+        if (descriptor && !alias.label.isEmpty()) {
+            PeekContentAction action;
+            action.id = descriptor->id;
+            action.label = alias.label;
+            action.role = PeekContentActionRole::Secondary;
+            content.actions.append(action);
+        }
     }
 
     showContent(content,
@@ -715,12 +733,12 @@ QLabel* EditorHoverPopup::addLabel(const QString& text,
         break;
     case PeekContentRowRole::HighlightedCode:
         label->setStyleSheet(
-            QStringLiteral("background: rgba(64,156,255,0.18);"
+            QStringLiteral("background: palette(alternate-base);"
                            "padding: 1px 4px;"));
         break;
     case PeekContentRowRole::Caret:
         label->setStyleSheet(
-            QStringLiteral("color: #2563eb; padding: 0 4px;"));
+            QStringLiteral("color: palette(highlight); padding: 0 4px;"));
         break;
     case PeekContentRowRole::Warning:
         label->setStyleSheet(

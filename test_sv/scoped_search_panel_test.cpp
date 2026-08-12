@@ -285,6 +285,32 @@ int main(int argc, char* argv[])
               && navigatedColumn > 0,
           "result activation emits file, line, and column");
 
+    EditorLocation temporarySearchLocation;
+    QObject::connect(
+        &panel,
+        &ScopedSearchPanel::temporaryEditorOpenRequested,
+        [&](const EditorLocation& location) {
+            temporarySearchLocation = location;
+        });
+    const bool temporarySearchRequested =
+        panel.requestTemporaryEditorOpenForItem(
+            navigatedItem);
+    check(temporarySearchRequested
+              && panel.resultsView()->contextMenuPolicy()
+                     == Qt::CustomContextMenu
+              && temporarySearchLocation.isValid()
+              && temporarySearchLocation.filePath
+                     == navigatedFile
+              && temporarySearchLocation.line
+                     == navigatedLine
+              && temporarySearchLocation.column
+                     == navigatedColumn
+              && !temporarySearchLocation.symbolKey.isEmpty()
+              && !temporarySearchLocation.sourceLinkId.isEmpty()
+              && temporarySearchLocation.selection
+              && temporarySearchLocation.selection->isValid(),
+          "Search result exposes a source-preserving temporary-editor context Action target");
+
     panel.setScope(ScopedSearchScope::SyntaxBlock);
     panel.refresh();
     check(panel.response().ready()
@@ -363,6 +389,47 @@ int main(int argc, char* argv[])
         QStringLiteral("target"));
     coordinator.panel()->setScope(
         ScopedSearchScope::Workspace);
+    QString temporarySearchActionId;
+    QVariantMap temporarySearchParameters;
+    coordinator.setRegisteredActionRequestHandler(
+        [&](const QString& actionId,
+            const QVariantMap& parameters) {
+            temporarySearchActionId = actionId;
+            temporarySearchParameters = parameters;
+            ActionExecutionResult result;
+            result.handled = true;
+            result.succeeded = true;
+            return result;
+        });
+    coordinator.refresh();
+    QTreeWidgetItem* coordinatorSearchItem =
+        firstMatch(coordinator.panel()->resultsView());
+    const bool coordinatorTemporaryRequest =
+        coordinator.panel()
+        && coordinator.panel()
+               ->requestTemporaryEditorOpenForItem(
+                   coordinatorSearchItem);
+    check(coordinatorTemporaryRequest
+              && temporarySearchActionId
+                     == QString::fromLatin1(
+                         ActionIds::ViewTemporaryEditorOpen)
+              && temporarySearchParameters
+                     .value(QStringLiteral("path"))
+                     .toString()
+                     == temporarySearchLocation.filePath
+              && temporarySearchParameters
+                     .value(QStringLiteral("line"))
+                     .toInt()
+                     == temporarySearchLocation.line
+              && temporarySearchParameters
+                     .value(QStringLiteral("column"))
+                     .toInt()
+                     == temporarySearchLocation.column
+              && !temporarySearchParameters
+                      .value(QStringLiteral("sourceLinkId"))
+                      .toString()
+                      .isEmpty(),
+          "Search result dispatches the unified temporary-editor Registry Action");
     window.addDockWidget(
         Qt::BottomDockWidgetArea,
         coordinator.dock());

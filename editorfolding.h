@@ -3,6 +3,7 @@
 
 #include "foldblockshelfmodel.h"
 #include "documentchange.h"
+#include "editorfoldviewstate.h"
 #include "editormodecontroller.h"
 #include "tsdocument.h"
 
@@ -18,6 +19,7 @@ class QDropEvent;
 class QMouseEvent;
 class QPainter;
 class QRect;
+class QScrollBar;
 
 class EditorFoldingController
 {
@@ -58,7 +60,14 @@ public:
     bool deleteCustomFoldAtLine(MyCodeEditor* editor, int line);
     bool hasFoldAtLine(int line) const;
     bool isCollapsedAtLine(int line) const;
+    bool isLineVisible(int line) const;
+    void revealLine(MyCodeEditor* editor, int line);
     TSFoldRange foldAtLine(int line) const;
+    EditorFoldViewState captureViewState(MyCodeEditor* editor) const;
+    void restoreViewState(MyCodeEditor* editor,
+                          const EditorFoldViewState& state);
+    void resetForDocumentChange(MyCodeEditor* editor);
+    const QList<QPair<int, int>>& collapsedLineRanges() const;
     void paintGutter(MyCodeEditor* editor, QPainter& painter, const QRect& rect) const;
     void paintPlaceholders(MyCodeEditor* editor, QPainter& painter) const;
 
@@ -72,6 +81,7 @@ private:
     QList<TSFoldRange> ranges;
     QList<TSCustomFoldMarker> customMarkers;
     QSet<int> collapsedStartLines;
+    QList<QPair<int, int>> collapsedRangesCache;
     FoldRegionMarkMode markMode = FoldRegionMarkMode::Inactive;
     int pendingStartLine = -1;
     int foldRegionHoverLine = -1;
@@ -87,6 +97,8 @@ private:
     void applyVisibilityForLines(MyCodeEditor* editor,
                                  int startLine,
                                  int endLine);
+    void markPresentationChanged(MyCodeEditor* editor);
+    void rebuildCollapsedRangesCache();
     void updateStatus(MyCodeEditor* editor, const QString& message) const;
     QString defaultAlias();
     TSFoldRange customFoldContainingLine(int line) const;

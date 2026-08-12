@@ -3,17 +3,28 @@
 #include "actionregistry.h"
 
 #include <QAction>
+#include <QApplication>
 #include <QDockWidget>
+#include <QEvent>
 #include <QMainWindow>
 #include <QMenu>
+#include <QMouseEvent>
 #include <QPoint>
 #include <QSizePolicy>
+#include <QStyle>
 #include <QTabBar>
 #include <QTabWidget>
+#include <QTimer>
 #include <QWidget>
 
 #include <algorithm>
 #include <utility>
+
+namespace {
+constexpr int kMinimumStoredExpandedHeight = 64;
+constexpr int kCollapsedContentHeight = 1;
+constexpr int kExpandedContentHeight = 4;
+}
 
 PanelLayoutController::PanelLayoutController(
     QMainWindow* mainWindow,
@@ -21,6 +32,12 @@ PanelLayoutController::PanelLayoutController(
     : QObject(parent)
     , window(mainWindow)
 {
+}
+
+PanelLayoutController::~PanelLayoutController()
+{
+    if (qApp)
+        qApp->removeEventFilter(this);
 }
 
 void PanelLayoutController::setNavigationDock(QDockWidget* dock)
@@ -60,12 +77,10 @@ bool PanelLayoutController::registerBottomPanel(
     entry.initialTitle = dock->windowTitle();
     entry.dock = dock;
     entry.content = dock->widget();
-    if (entry.content) {
-        entry.contentMinimumHeight = entry.content->minimumHeight();
-        entry.contentMaximumHeight = entry.content->maximumHeight();
-    }
     entry.dockFeatures = dock->features();
     panels.append(entry);
+    dock->installEventFilter(this);
+    prepareContentForManualResize(panels.last());
     defaultOrder.append(id);
     order.append(id);
     panelOpen.insert(id, !dock->isHidden());
@@ -105,8 +120,12 @@ void PanelLayoutController::finalize()
     if (finalized || !window || panels.isEmpty())
         return;
     finalized = true;
+    if (qApp)
+        qApp->installEventFilter(this);
     applyOrder();
     bindManagedTabBars();
+    initialBottomGeometryPending = true;
+    scheduleBottomGeometrySync();
 }
 
 PanelLayoutState PanelLayoutController::layoutState() const
@@ -184,7 +203,8 @@ void PanelLayoutController::restoreLayoutState(
     activePanel = entryForId(state.activeBottomPanel)
         ? state.activeBottomPanel
         : QString();
-    expandedHeight = qMax(64, state.expandedBottomHeight);
+    expandedHeight = qMax(kMinimumStoredExpandedHeight,
+                          state.expandedBottomHeight);
     applyOrder();
 
     if (navigationDock)
@@ -199,9 +219,8 @@ void PanelLayoutController::restoreLayoutState(
     }
 
     const bool restoreCollapsed = state.bottomCollapsed;
-    collapsed = false;
-    applyContentCollapse(restoreCollapsed);
     collapsed = restoreCollapsed;
+    applyBottomPanelGeometry(restoreCollapsed);
     applying = false;
     bindManagedTabBars();
 }
@@ -215,8 +234,8 @@ void PanelLayoutController::resetLayout()
     pinnedPanels.clear();
     activePanel = order.isEmpty() ? QString() : order.first();
     expandedHeight = 240;
-    applyContentCollapse(false);
     collapsed = false;
+    applyBottomPanelGeometry(false);
     if (navigationDock)
         navigationDock->show();
     for (PanelEntry& entry : panels) {
@@ -376,13 +395,7 @@ void PanelLayoutController::setBottomCollapsed(bool shouldCollapse)
         return;
     if (focusMode)
         setFocusModeActive(false);
-
-    if (shouldCollapse) {
-        expandedHeight = currentExpandedBottomHeight();
-    }
-    applyContentCollapse(shouldCollapse);
-    collapsed = shouldCollapse;
-    notifyStateChanged();
+    setBottomCollapsedState(shouldCollapse, true, true);
 }
 
 void PanelLayoutController::toggleBottomCollapsed()
@@ -472,6 +485,7 @@ void PanelLayoutController::bindManagedTabBars()
 
         if (!managedTabBars.contains(bar))
             managedTabBars.append(bar);
+        bar->installEventFilter(this);
         bar->setObjectName(QStringLiteral("bottomPanelTabBar"));
         bar->setMovable(true);
         bar->setTabsClosable(true);
@@ -496,6 +510,7 @@ void PanelLayoutController::bindManagedTabBars()
                         if (id.isEmpty() || activePanel == id)
                             return;
                         activePanel = id;
+                        scheduleBottomGeometrySync();
                         notifyStateChanged();
                     });
             connect(bar,
@@ -522,6 +537,56 @@ void PanelLayoutController::setStateChangedHandler(
     stateChangedHandler = std::move(handler);
 }
 
+bool PanelLayoutController::eventFilter(QObject* watched,
+                                        QEvent* event)
+{
+    if (!event)
+        return QObject::eventFilter(watched, event);
+
+    const bool geometryEvent =
+        event->type() == QEvent::Resize
+        || event->type() == QEvent::LayoutRequest
+        || event->type() == QEvent::Show;
+    if (geometryEvent) {
+        bool watchesBottomGeometry =
+            window && watched == window->centralWidget();
+        if (!watchesBottomGeometry) {
+            for (const QPointer<QTabBar>& bar : managedTabBars) {
+                if (bar && watched == bar) {
+                    watchesBottomGeometry = true;
+                    break;
+                }
+            }
+        }
+        if (!watchesBottomGeometry) {
+            for (const PanelEntry& entry : std::as_const(panels)) {
+                if (watched == entry.dock
+                    || watched == entry.content) {
+                    watchesBottomGeometry = true;
+                    break;
+                }
+            }
+        }
+        if (watchesBottomGeometry)
+            scheduleBottomGeometrySync();
+    }
+    if (watched == window && event->type() == QEvent::Show)
+        scheduleBottomGeometrySync();
+
+    if (event->type() == QEvent::MouseButtonRelease) {
+        const auto* mouseEvent = static_cast<QMouseEvent*>(event);
+        QWidget* widget = qobject_cast<QWidget*>(watched);
+        if (mouseEvent->button() == Qt::LeftButton
+            && window
+            && widget
+            && (widget == window
+                || window->isAncestorOf(widget))) {
+            scheduleBottomGeometrySync();
+        }
+    }
+    return QObject::eventFilter(watched, event);
+}
+
 PanelLayoutController::PanelEntry*
 PanelLayoutController::entryForId(const QString& panelId)
 {
@@ -540,6 +605,224 @@ PanelLayoutController::entryForId(const QString& panelId) const
             return &entry;
     }
     return nullptr;
+}
+
+PanelLayoutController::PanelEntry*
+PanelLayoutController::activeBottomEntry()
+{
+    return const_cast<PanelEntry*>(
+        std::as_const(*this).activeBottomEntry());
+}
+
+const PanelLayoutController::PanelEntry*
+PanelLayoutController::activeBottomEntry() const
+{
+    const QString currentId = activeBottomPanelId();
+    const PanelEntry* current = entryForId(currentId);
+    if (current
+        && current->dock
+        && panelOpen.value(current->id, false)) {
+        return current;
+    }
+    current = entryForId(activePanel);
+    if (current
+        && current->dock
+        && panelOpen.value(current->id, false)) {
+        return current;
+    }
+    for (const QString& id : order) {
+        current = entryForId(id);
+        if (current
+            && current->dock
+            && panelOpen.value(id, false)
+            && current->dock->toggleViewAction()->isChecked()) {
+            return current;
+        }
+    }
+    return nullptr;
+}
+
+QTabBar* PanelLayoutController::managedBottomTabBar() const
+{
+    const auto isManagedBar = [this](QTabBar* bar) {
+        if (!bar)
+            return false;
+        int managedCount = 0;
+        for (int index = 0; index < bar->count(); ++index) {
+            if (!idForTab(bar, index).isEmpty())
+                ++managedCount;
+        }
+        return managedCount >= 2;
+    };
+    for (const QPointer<QTabBar>& bar : managedTabBars) {
+        if (isManagedBar(bar))
+            return bar;
+    }
+    if (!window)
+        return nullptr;
+    const QList<QTabBar*> bars = window->findChildren<QTabBar*>();
+    for (QTabBar* bar : bars) {
+        if (isManagedBar(bar))
+            return bar;
+    }
+    return nullptr;
+}
+
+int PanelLayoutController::visibleBottomContentHeight() const
+{
+    if (!window || !window->centralWidget())
+        return -1;
+    QTabBar* bar = managedBottomTabBar();
+    if (!bar || !bar->isVisible())
+        return -1;
+
+    QWidget* central = window->centralWidget();
+    const int centralBottom =
+        central->mapTo(window, QPoint(0, 0)).y()
+        + central->height();
+    const int tabTop =
+        bar->mapTo(window, QPoint(0, 0)).y();
+    const int separatorExtent = window->style()->pixelMetric(
+        QStyle::PM_DockWidgetSeparatorExtent,
+        nullptr,
+        window);
+    return qMax(0,
+                tabTop - centralBottom
+                    - qMax(0, separatorExtent));
+}
+
+void PanelLayoutController::prepareContentForManualResize(
+    PanelEntry& entry)
+{
+    if (!entry.dock)
+        return;
+    QWidget* content = entry.dock->widget();
+    if (content != entry.content) {
+        if (entry.content)
+            entry.content->removeEventFilter(this);
+        entry.content = content;
+    }
+    if (!entry.content)
+        return;
+
+    entry.content->installEventFilter(this);
+    if (entry.content->minimumHeight() != 0)
+        entry.content->setMinimumHeight(0);
+    QSizePolicy policy = entry.content->sizePolicy();
+    if (policy.verticalPolicy() != QSizePolicy::Ignored) {
+        policy.setVerticalPolicy(QSizePolicy::Ignored);
+        entry.content->setSizePolicy(policy);
+    }
+}
+
+void PanelLayoutController::scheduleBottomGeometrySync()
+{
+    if (applying
+        || resizingBottomPanel
+        || bottomGeometrySyncPending
+        || focusMode) {
+        return;
+    }
+    if (initialBottomGeometryPending) {
+        if (!window || !window->isVisible()
+            || bottomGeometrySyncPending) {
+            return;
+        }
+        bottomGeometrySyncPending = true;
+        QTimer::singleShot(0, this, [this]() {
+            bottomGeometrySyncPending = false;
+            if (!initialBottomGeometryPending
+                || !window
+                || !window->isVisible()
+                || applying
+                || resizingBottomPanel
+                || focusMode) {
+                return;
+            }
+            initialBottomGeometryPending = false;
+            applyBottomPanelGeometry(collapsed);
+            scheduleBottomGeometrySync();
+        });
+        return;
+    }
+    bottomGeometrySyncPending = true;
+    QTimer::singleShot(0, this, [this]() {
+        bottomGeometrySyncPending = false;
+        if (!applying && !resizingBottomPanel && !focusMode)
+            synchronizeBottomStateFromGeometry();
+    });
+}
+
+void PanelLayoutController::synchronizeBottomStateFromGeometry()
+{
+    PanelEntry* entry = activeBottomEntry();
+    if (!entry || !entry->dock)
+        return;
+    prepareContentForManualResize(*entry);
+    if (!entry->content || !entry->dock->isVisible())
+        return;
+
+    const int contentHeight = visibleBottomContentHeight();
+    if (contentHeight < 0)
+        return;
+    if (collapsed && contentHeight > kExpandedContentHeight) {
+        ++expandedGeometrySamples;
+        if (expandedGeometrySamples < 2) {
+            QTimer::singleShot(0, this, [this]() {
+                if (!applying
+                    && !resizingBottomPanel
+                    && !focusMode) {
+                    synchronizeBottomStateFromGeometry();
+                }
+            });
+            return;
+        }
+    } else {
+        expandedGeometrySamples = 0;
+    }
+    const bool shouldCollapse = collapsed
+        ? contentHeight <= kExpandedContentHeight
+        : contentHeight <= kCollapsedContentHeight;
+    if (shouldCollapse != collapsed) {
+        if (!shouldCollapse
+            && contentHeight
+                   > kMinimumStoredExpandedHeight
+            && !(QApplication::mouseButtons()
+                 & Qt::LeftButton)) {
+            expandedHeight = contentHeight;
+        }
+        setBottomCollapsedState(shouldCollapse, false, true);
+        return;
+    }
+
+    if (collapsed
+        || contentHeight <= kExpandedContentHeight
+        || (QApplication::mouseButtons() & Qt::LeftButton)) {
+        return;
+    }
+    const int height = contentHeight;
+    if (height <= kMinimumStoredExpandedHeight
+        || height == expandedHeight) {
+        return;
+    }
+    expandedHeight = height;
+    notifyStateChanged();
+}
+
+void PanelLayoutController::setBottomCollapsedState(
+    bool shouldCollapse,
+    bool resizeDock,
+    bool notify)
+{
+    const bool changed = collapsed != shouldCollapse;
+    expandedGeometrySamples = 0;
+    if (changed && shouldCollapse)
+        expandedHeight = currentExpandedBottomHeight();
+    collapsed = shouldCollapse;
+    if (resizeDock)
+        applyBottomPanelGeometry(shouldCollapse);
+    if (changed && notify)
+        notifyStateChanged();
 }
 
 QString PanelLayoutController::idForTab(
@@ -561,27 +844,22 @@ int PanelLayoutController::currentExpandedBottomHeight() const
     if (collapsed)
         return expandedHeight;
 
-    for (const QString& id : order) {
-        const PanelEntry* entry = entryForId(id);
-        if (!entry
-            || !entry->dock
-            || !panelOpen.value(id, false)) {
-            continue;
-        }
-        if (entry->dock->property(
+    const PanelEntry* active = activeBottomEntry();
+    if (active && active->dock) {
+        if (active->dock->property(
                 "panelLayoutVisibilityTransient")
                 .toBool()) {
             const int savedHeight =
-                entry->dock->property(
+                active->dock->property(
                     "panelLayoutHeightBeforeTransient")
                     .toInt();
-            if (savedHeight > 64)
+            if (savedHeight > kMinimumStoredExpandedHeight)
                 return savedHeight;
         }
-        const int height = entry->dock->height();
-        if (height > 64)
-            return height;
     }
+    const int visibleHeight = visibleBottomContentHeight();
+    if (visibleHeight > kMinimumStoredExpandedHeight)
+        return visibleHeight;
     return expandedHeight;
 }
 
@@ -680,9 +958,10 @@ void PanelLayoutController::applyPinnedFeatures(PanelEntry& entry)
     entry.dock->setFeatures(features);
 }
 
-void PanelLayoutController::applyContentCollapse(bool shouldCollapse)
+void PanelLayoutController::applyBottomPanelGeometry(
+    bool shouldCollapse)
 {
-    PanelEntry* activeEntry = entryForId(activePanel);
+    PanelEntry* activeEntry = activeBottomEntry();
     QDockWidget* resizeTarget =
         activeEntry
             && activeEntry->dock
@@ -700,20 +979,7 @@ void PanelLayoutController::applyContentCollapse(bool shouldCollapse)
             && entry.dock->toggleViewAction()->isChecked()) {
             resizeTarget = entry.dock;
         }
-        QWidget* content = entry.dock->widget();
-        if (content && content != entry.content)
-            entry.content = content;
-        if (entry.content) {
-            if (shouldCollapse) {
-                entry.content->setMinimumHeight(0);
-                entry.content->setMaximumHeight(0);
-            } else {
-                entry.content->setMinimumHeight(
-                    entry.contentMinimumHeight);
-                entry.content->setMaximumHeight(
-                    entry.contentMaximumHeight);
-            }
-        }
+        prepareContentForManualResize(entry);
     }
     if (!resizeTarget)
         resizeTarget = fallbackTarget;
@@ -721,28 +987,17 @@ void PanelLayoutController::applyContentCollapse(bool shouldCollapse)
         int requestedHeight =
             shouldCollapse ? 1 : expandedHeight;
         if (!shouldCollapse) {
-            const QList<QTabBar*> bars =
-                window->findChildren<QTabBar*>();
-            for (QTabBar* bar : bars) {
-                if (!bar || !bar->isVisible())
-                    continue;
-                int managedCount = 0;
-                for (int index = 0;
-                     index < bar->count();
-                     ++index) {
-                    if (!idForTab(bar, index).isEmpty())
-                        ++managedCount;
-                }
-                if (managedCount >= 2) {
-                    requestedHeight += bar->height();
-                    break;
-                }
+            if (QTabBar* bar = managedBottomTabBar()) {
+                requestedHeight +=
+                    qMax(bar->height(),
+                         bar->sizeHint().height());
             }
         }
-        window->resizeDocks(
-            {resizeTarget},
-            {requestedHeight},
-            Qt::Vertical);
+        resizingBottomPanel = true;
+        window->resizeDocks({resizeTarget},
+                            {requestedHeight},
+                            Qt::Vertical);
+        resizingBottomPanel = false;
     }
 }
 

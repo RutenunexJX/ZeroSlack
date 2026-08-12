@@ -1,4 +1,5 @@
 #include "navigationwidget.h"
+#include "applicationthememanager.h"
 #include "editorfileidentity.h"
 #include <QFileInfo>
 #include <QHeaderView>
@@ -10,6 +11,12 @@ NavigationWidget::NavigationWidget(QWidget *parent)
 {
     setupUI();
     setupConnections();
+    connect(&ApplicationThemeManager::instance(),
+            &ApplicationThemeManager::themeChanged,
+            this,
+            [this](ThemeMode) {
+                refreshThemePresentation();
+            });
 }
 
 NavigationWidget::~NavigationWidget()

@@ -1,6 +1,8 @@
 #ifndef FOLDBLOCKSHELFMODEL_H
 #define FOLDBLOCKSHELFMODEL_H
 
+#include "zeroslackexport.h"
+
 #include <QObject>
 #include <QList>
 #include <QString>
@@ -26,7 +28,7 @@ struct FoldShelfItem {
     bool stale = false;
 };
 
-class FoldBlockShelfModel : public QObject
+class ZEROSLACK_API FoldBlockShelfModel : public QObject
 {
     Q_OBJECT
 

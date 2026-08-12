@@ -1,6 +1,8 @@
 #ifndef WORKSPACECONFIGURATIONDIALOG_H
 #define WORKSPACECONFIGURATIONDIALOG_H
 
+#include "zeroslackexport.h"
+
 #include "workspaceconfigurationservice.h"
 
 #include <QDialog>
@@ -9,7 +11,7 @@ class QLineEdit;
 class QListWidget;
 class QTableWidget;
 
-class WorkspaceConfigurationDialog : public QDialog
+class ZEROSLACK_API WorkspaceConfigurationDialog : public QDialog
 {
     Q_OBJECT
 

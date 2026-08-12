@@ -51,16 +51,16 @@ void FileCommandCoordinator::CommandTargets::openFile() const
         tabManager->openFileInTab(QString());
 }
 
-void FileCommandCoordinator::CommandTargets::saveCurrentTab() const
+bool FileCommandCoordinator::CommandTargets::saveEditor(
+    const QString& preferredViewId,
+    bool forceSaveAs) const
 {
-    if (tabManager)
-        tabManager->saveCurrentTab();
-}
-
-void FileCommandCoordinator::CommandTargets::saveAsCurrentTab() const
-{
-    if (tabManager)
-        tabManager->saveAsCurrentTab();
+    if (!tabManager)
+        return false;
+    MyCodeEditor* editor =
+        tabManager->editorActionTarget(preferredViewId);
+    return editor
+        && tabManager->saveEditorView(editor, forceSaveAs);
 }
 
 void FileCommandCoordinator::CommandTargets::openWorkspace(
@@ -84,9 +84,12 @@ finalizeNormalClose() const
         tabManager->clearCrashRecoveryAfterNormalClose();
 }
 
-MyCodeEditor* FileCommandCoordinator::CommandTargets::currentEditor() const
+MyCodeEditor* FileCommandCoordinator::CommandTargets::
+editorActionTarget(const QString& preferredViewId) const
 {
-    return tabManager ? tabManager->getCurrentEditor() : nullptr;
+    return tabManager
+        ? tabManager->editorActionTarget(preferredViewId)
+        : nullptr;
 }
 
 void FileCommandCoordinator::EditorCommandDispatcher::copy(
@@ -136,37 +139,45 @@ void FileCommandCoordinator::openFile()
 
 void FileCommandCoordinator::saveFile()
 {
-    targets.saveCurrentTab();
+    saveEditor(QString(), false);
 }
 
 void FileCommandCoordinator::saveFileAs()
 {
-    targets.saveAsCurrentTab();
+    saveEditor(QString(), true);
+}
+
+bool FileCommandCoordinator::saveEditor(
+    const QString& preferredViewId,
+    bool forceSaveAs)
+{
+    return targets.saveEditor(
+        preferredViewId, forceSaveAs);
 }
 
 void FileCommandCoordinator::copy()
 {
-    editorCommands.copy(targets.currentEditor());
+    editorCommands.copy(targets.editorActionTarget());
 }
 
 void FileCommandCoordinator::paste()
 {
-    editorCommands.paste(targets.currentEditor());
+    editorCommands.paste(targets.editorActionTarget());
 }
 
 void FileCommandCoordinator::cut()
 {
-    editorCommands.cut(targets.currentEditor());
+    editorCommands.cut(targets.editorActionTarget());
 }
 
 void FileCommandCoordinator::undo()
 {
-    editorCommands.undo(targets.currentEditor());
+    editorCommands.undo(targets.editorActionTarget());
 }
 
 void FileCommandCoordinator::redo()
 {
-    editorCommands.redo(targets.currentEditor());
+    editorCommands.redo(targets.editorActionTarget());
 }
 
 void FileCommandCoordinator::openDirectoryAsWorkspace()

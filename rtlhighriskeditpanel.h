@@ -1,6 +1,8 @@
 #ifndef RTLHIGHRISKEDITPANEL_H
 #define RTLHIGHRISKEDITPANEL_H
 
+#include "zeroslackexport.h"
+
 #include "rtlconnectiontransformworkflow.h"
 #include "rtlrenameworkflow.h"
 
@@ -107,7 +109,7 @@ Q_DECLARE_METATYPE(RtlHighRiskEditPanelOutcome)
 
 // A non-applying input and High+Diff presentation surface. It never owns a
 // planner, a prepared transaction, or a confirmation token.
-class RtlHighRiskEditPanel final : public QWidget
+class ZEROSLACK_API RtlHighRiskEditPanel final : public QWidget
 {
     Q_OBJECT
 
@@ -201,7 +203,7 @@ private:
 
 // Owns the only confirmation token and the only active session for both RTL
 // workflows. The contained workflows remain the sole transaction protocol.
-class RtlHighRiskEditPanelCoordinator final : public QObject
+class ZEROSLACK_API RtlHighRiskEditPanelCoordinator final : public QObject
 {
     Q_OBJECT
 

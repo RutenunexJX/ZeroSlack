@@ -3,13 +3,55 @@
 #include "editorruntime.h"
 #include "mycodeeditor.h"
 
+#include <QFontDatabase>
+#include <QFontMetricsF>
 #include <QMouseEvent>
+#include <QPalette>
 #include <QPainter>
 #include <QScrollBar>
 #include <QTextBlock>
 #include <QTextCursor>
 #include <QWheelEvent>
 #include <QWidget>
+
+namespace {
+constexpr int kEditorGutterWidth = 80;
+constexpr int kLineNumberLeft = 28;
+constexpr int kLineNumberRightPadding = 3;
+constexpr qreal kLineNumberPointSize = 10.0;
+constexpr qreal kMinimumLineNumberPointSize = 7.0;
+
+QFont lineNumberFont(int blockCount)
+{
+    QFont font = QFontDatabase::systemFont(
+        QFontDatabase::FixedFont);
+    font.setPointSizeF(kLineNumberPointSize);
+    font.setStretch(QFont::Unstretched);
+
+    const QString widestNumber = QString::number(qMax(1, blockCount));
+    const int availableWidth = kEditorGutterWidth
+        - kLineNumberLeft
+        - kLineNumberRightPadding;
+    while (font.pointSizeF() > kMinimumLineNumberPointSize
+           && QFontMetricsF(font).horizontalAdvance(widestNumber)
+                  > availableWidth) {
+        font.setPointSizeF(
+            qMax(kMinimumLineNumberPointSize,
+                 font.pointSizeF() - 0.5));
+    }
+    const qreal numberWidth =
+        QFontMetricsF(font).horizontalAdvance(widestNumber);
+    if (numberWidth > availableWidth) {
+        const int stretch = qBound(
+            50,
+            static_cast<int>(
+                100.0 * availableWidth / numberWidth),
+            100);
+        font.setStretch(stretch);
+    }
+    return font;
+}
+}
 
 class LineNumberWidget : public QWidget
 {
@@ -76,6 +118,7 @@ void EditorGutter::init(MyCodeEditor* editor)
 {
     widget = new LineNumberWidget(editor, this);
     appliedLeftMargin = -1;
+    updateNumberFont(editor);
 }
 
 void EditorGutter::destroy()
@@ -87,9 +130,17 @@ void EditorGutter::destroy()
 
 int EditorGutter::widthFor(MyCodeEditor* editor) const
 {
-    return 36
-        + QString::number(editor->blockCount() + 1).length()
-            * editor->fontMetrics().horizontalAdvance(QChar('0'));
+    Q_UNUSED(editor);
+    return kEditorGutterWidth;
+}
+
+void EditorGutter::updateNumberFont(MyCodeEditor* editor) const
+{
+    if (!widget || !editor)
+        return;
+    const QFont font = lineNumberFont(editor->blockCount());
+    if (widget->font() != font)
+        widget->setFont(font);
 }
 
 void EditorGutter::refresh(const QRect& rect, int dy, int width) const
@@ -112,6 +163,7 @@ void EditorGutter::handleUpdateRequest(
 
 void EditorGutter::updateViewportMargins(MyCodeEditor* editor) const
 {
+    updateNumberFont(editor);
     const int leftWidth = widthFor(editor);
     if (leftWidth != appliedLeftMargin) {
         editor->setViewportMargins(leftWidth, 0, 0, 0);
@@ -123,8 +175,8 @@ void EditorGutter::resizeTo(MyCodeEditor* editor, const QRect& contentsRect) con
 {
     if (widget)
         widget->setGeometry(
-            0,
-            0,
+            contentsRect.left(),
+            contentsRect.top(),
             widthFor(editor),
             contentsRect.height());
 }
@@ -132,7 +184,10 @@ void EditorGutter::resizeTo(MyCodeEditor* editor, const QRect& contentsRect) con
 void EditorGutter::paint(MyCodeEditor* editor, QPaintEvent* event) const
 {
     QPainter painter(widget);
-    painter.fillRect(event->rect(), QColor(100, 100, 100, 20));
+    const QPalette palette = editor->palette();
+    painter.fillRect(
+        event->rect(),
+        palette.color(QPalette::AlternateBase));
     if (editor->state)
         editor->state->paintGutterDecorations(editor, painter, event->rect());
 
@@ -146,19 +201,24 @@ void EditorGutter::paint(MyCodeEditor* editor, QPaintEvent* event) const
     int bottom = top + editor->blockBoundingRect(block).height();
 
     while (block.isValid() && top <= event->rect().bottom()) {
-        painter.setPen(cursorTop == top ? Qt::black : Qt::gray);
+        painter.setPen(
+            cursorTop == top
+                ? palette.color(QPalette::Text)
+                : palette.color(QPalette::PlaceholderText));
         painter.drawText(
-            28,
+            kLineNumberLeft,
             top,
-            widthFor(editor) - 31,
+            widthFor(editor)
+                - kLineNumberLeft
+                - kLineNumberRightPadding,
             bottom - top,
-            Qt::AlignRight,
+            Qt::AlignRight | Qt::AlignVCenter,
             QString::number(blockNumber + 1));
 
-        block = block.next();
+        block = editor->nextVisibleBlock(block);
         top = bottom;
         bottom = top + editor->blockBoundingRect(block).height();
-        blockNumber++;
+        blockNumber = block.blockNumber();
     }
 }
 
@@ -169,11 +229,10 @@ void EditorGutter::handleMousePress(MyCodeEditor* editor, QMouseEvent* event) co
         return;
     }
 
-    QTextBlock block = editor->document()->findBlockByLineNumber(
-        static_cast<int>(event->position().y())
-            / editor->fontMetrics().height()
-        + editor->verticalScrollBar()->value());
-    editor->setTextCursor(QTextCursor(block));
+    const QTextCursor cursor = editor->cursorForPosition(
+        QPoint(0, static_cast<int>(event->position().y())));
+    if (!cursor.isNull())
+        editor->setTextCursor(cursor);
 }
 
 void EditorGutter::handleMouseMove(MyCodeEditor* editor, QMouseEvent* event) const
@@ -192,10 +251,16 @@ void EditorGutter::handleWheel(MyCodeEditor* editor, QWheelEvent* event) const
         const int dx = angle.x();
         if (dy != 0) {
             QScrollBar* bar = editor->verticalScrollBar();
-            bar->setValue(bar->value() - dy);
+            const int steps = qMax(1, qAbs(dy) / 120);
+            bar->setValue(bar->value()
+                          - (dy > 0 ? steps : -steps)
+                                * 3 * bar->singleStep());
         } else if (dx != 0) {
             QScrollBar* bar = editor->horizontalScrollBar();
-            bar->setValue(bar->value() - dx);
+            const int steps = qMax(1, qAbs(dx) / 120);
+            bar->setValue(bar->value()
+                          - (dx > 0 ? steps : -steps)
+                                * 3 * bar->singleStep());
         }
     }
 

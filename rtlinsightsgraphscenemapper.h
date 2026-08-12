@@ -37,6 +37,7 @@ public:
     QRectF lastFitRectForTest() const;
     int selectedItemCountForTest() const;
     QStringList selectedElementSummariesForTest() const;
+    void refreshThemePresentation();
     QStringList inspectorRowsForTest() const;
     QStringList tableRowsForTest() const;
     bool itemsReadableForTest() const;
@@ -81,6 +82,7 @@ public:
         const QPointF& scenePoint);
     bool navigateItem(QGraphicsItem* item);
     bool navigateSelectedItem();
+    RtlInsightSourceLocation selectedSourceLocation() const;
     bool setModuleBlockTopFromSelected();
     bool selectSourceLocation(
         const RtlInsightSourceLocation& location,

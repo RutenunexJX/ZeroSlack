@@ -1,6 +1,8 @@
 #ifndef FOLDBLOCKSHELFPANEL_H
 #define FOLDBLOCKSHELFPANEL_H
 
+#include "zeroslackexport.h"
+
 #include "foldblockshelfmodel.h"
 
 #include <QWidget>
@@ -16,7 +18,7 @@ class QDragMoveEvent;
 class QDropEvent;
 class EditorHoverPopup;
 
-class FoldBlockShelfPanel : public QWidget
+class ZEROSLACK_API FoldBlockShelfPanel : public QWidget
 {
     Q_OBJECT
 

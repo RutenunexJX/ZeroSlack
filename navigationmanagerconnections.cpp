@@ -9,6 +9,13 @@
 #include <QMenu>
 
 #include <algorithm>
+#include <utility>
+
+void NavigationManager::setTemporaryEditorOpenHandler(
+    std::function<bool(const EditorLocation&)> handler)
+{
+    temporaryEditorOpenHandler = std::move(handler);
+}
 
 void NavigationManager::connectToTabManager(TabManager* tabManager)
 {
@@ -146,6 +153,10 @@ NavigationManager::designNodeContextActions(
         {ActionIds::NavigationDesignGoDefinition,
          !node.definitionFile.isEmpty(),
          false},
+        {ActionIds::ViewTemporaryEditorOpen,
+         !node.definitionFile.isEmpty()
+             || !node.instanceFile.isEmpty(),
+         false},
         {ActionIds::NavigationDesignSetTop,
          !node.moduleType.isEmpty(),
          true},
@@ -247,13 +258,36 @@ NavigationManager::requestDesignNodeAction(
             node.instanceLine);
     } else if (actionId
                == QString::fromLatin1(
-                   ActionIds::NavigationDesignGoDefinition)) {
+                    ActionIds::NavigationDesignGoDefinition)) {
         invocation.parameters.insert(
             QStringLiteral("path"),
             node.definitionFile);
         invocation.parameters.insert(
             QStringLiteral("line"),
             node.definitionLine);
+    } else if (actionId
+               == QString::fromLatin1(
+                   ActionIds::ViewTemporaryEditorOpen)) {
+        const bool useDefinition =
+            !node.definitionFile.isEmpty();
+        invocation.parameters.insert(
+            QStringLiteral("path"),
+            useDefinition
+                ? node.definitionFile
+                : node.instanceFile);
+        invocation.parameters.insert(
+            QStringLiteral("line"),
+            useDefinition
+                ? node.definitionLine
+                : node.instanceLine);
+        invocation.parameters.insert(
+            QStringLiteral("column"), 1);
+        invocation.parameters.insert(
+            QStringLiteral("symbolId"),
+            node.moduleType);
+        invocation.parameters.insert(
+            QStringLiteral("sourceLinkId"),
+            node.id);
     }
     return executeAction(
         *descriptor, *this, invocation);

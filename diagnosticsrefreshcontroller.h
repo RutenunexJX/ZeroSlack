@@ -1,12 +1,14 @@
 #ifndef DIAGNOSTICSREFRESHCONTROLLER_H
 #define DIAGNOSTICSREFRESHCONTROLLER_H
 
+#include "zeroslackexport.h"
+
 #include <QObject>
 #include <QString>
 
 class QTimer;
 
-class DiagnosticsRefreshController : public QObject
+class ZEROSLACK_API DiagnosticsRefreshController : public QObject
 {
     Q_OBJECT
 

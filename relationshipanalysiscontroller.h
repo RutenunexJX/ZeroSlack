@@ -1,6 +1,8 @@
 #ifndef RELATIONSHIPANALYSISCONTROLLER_H
 #define RELATIONSHIPANALYSISCONTROLLER_H
 
+#include "zeroslackexport.h"
+
 #include "projectmodel.h"
 #include "relationshipanalysisqueue.h"
 #include "relationshipanalysisworker.h"
@@ -15,7 +17,7 @@
 class SmartRelationshipBuilder;
 class SymbolAnalyzer;
 
-class RelationshipAnalysisController : public QObject
+class ZEROSLACK_API RelationshipAnalysisController : public QObject
 {
     Q_OBJECT
 

@@ -68,6 +68,7 @@ struct RtlInsightsPanelViewState
     QAction* graphJumpAction = nullptr;
     QAction* graphFocusAction = nullptr;
     QAction* graphSetTopAction = nullptr;
+    QAction* graphTemporaryEditorAction = nullptr;
     QAction* graphExportAction = nullptr;
     QPushButton* graphInspectorJumpButton = nullptr;
     QPushButton* graphInspectorFocusButton = nullptr;

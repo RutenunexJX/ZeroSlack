@@ -6,6 +6,7 @@
 #include "editorcontextmenumodel.h"
 #include "editorhoverpopup.h"
 #include "formattercursoranchor.h"
+#include "insightvisualstyle.h"
 #include "rtlbatcheditservice.h"
 
 #include <QApplication>
@@ -216,8 +217,8 @@ bool hasDeclareSignalIssue(
 QColor diagnosticSeverityColor(SemanticDiagnostic::Severity severity)
 {
     return severity == SemanticDiagnostic::Error
-        ? QColor(QStringLiteral("#EF4444"))
-        : QColor(QStringLiteral("#FBBF24"));
+        ? InsightVisualStyle::theme().syntax.errorUnderline
+        : InsightVisualStyle::theme().warning;
 }
 
 SemanticDiagnostic::Severity annotationDiagnosticSeverity(
@@ -1195,6 +1196,7 @@ void MyCodeEditorState::initializeCore(MyCodeEditor* editor)
 
 void MyCodeEditorState::shutdown(MyCodeEditor* editor)
 {
+    folding.resetForDocumentChange(editor);
     highlightRefresh.detach();
     completion.detach();
     if (editor) {
@@ -1475,6 +1477,8 @@ void MyCodeEditorState::rebindDocument(
     }
 
     modes.exitAll(EditorModeExitReason::DocumentChanged);
+    columnMode.clearPendingColumnAnchor();
+    folding.resetForDocumentChange(editor);
     cancelSignalDefinitionEditor();
     finishInlineFilterTextOverlay();
     ++ghostQueryGeneration;
@@ -1563,6 +1567,8 @@ void MyCodeEditorState::handleDocumentContentsChange(
         cancelSignalDefinitionEditor();
     if (modes.isActive(EditorModeId::VirtualCursor))
         clearVirtualCursor(editor);
+    else
+        columnMode.clearPendingColumnAnchor();
     if (signalSelection.active()
         || signalSelection.hasSelection()) {
         cancelSignalSelectionMode(editor);
@@ -2925,13 +2931,16 @@ bool MyCodeEditorState::handleGutterMousePress(
     if (!editor || !event)
         return false;
 
+    columnMode.clearPendingColumnAnchor();
+
     const int y = static_cast<int>(event->position().y());
     if (y < 0 || y >= editor->viewport()->height())
         return false;
 
     ++hotPathMetrics.gutterBlockProbes;
     const QTextBlock block = editor->cursorForPosition(QPoint(0, y)).block();
-    if (!block.isValid() || !block.isVisible())
+    if (!block.isValid()
+        || !editor->sourceLineVisible(block.blockNumber()))
         return false;
     const EditorBlockGeometry geometry = editor->blockGeometry(
         block.blockNumber());
@@ -2970,7 +2979,8 @@ bool MyCodeEditorState::handleGutterMouseMove(
 
     ++hotPathMetrics.gutterBlockProbes;
     const QTextBlock block = editor->cursorForPosition(QPoint(0, y)).block();
-    if (!block.isValid() || !block.isVisible()) {
+    if (!block.isValid()
+        || !editor->sourceLineVisible(block.blockNumber())) {
         closeDiagnosticPeek();
         return false;
     }
@@ -3100,7 +3110,8 @@ void MyCodeEditorState::paintGutterDecorations(
             painter.setPen(Qt::NoPen);
             painter.setBrush(diagnosticSeverityColor(severity.value()));
             painter.drawPolygon(triangle);
-            painter.setPen(Qt::white);
+            painter.setPen(
+                InsightVisualStyle::theme().button.textChecked);
             QFont iconFont = painter.font();
             iconFont.setBold(true);
             iconFont.setPixelSize(9);
@@ -3112,7 +3123,7 @@ void MyCodeEditorState::paintGutterDecorations(
             painter.restore();
         }
 
-        block = block.next();
+        block = editor->nextVisibleBlock(block);
         top = bottom;
         bottom =
             top + static_cast<int>(editor->blockBoundingRect(block).height());
@@ -4211,6 +4222,9 @@ bool MyCodeEditorState::handleMousePress(
 {
     keywordGhost.clear(editor);
 
+    if (event && event->button() != Qt::LeftButton)
+        columnMode.clearPendingColumnAnchor();
+
     if (signalSelection.handleMousePress(
             editor,
             event)) {
@@ -4226,14 +4240,18 @@ bool MyCodeEditorState::handleMousePress(
         }
     }
 
-    if (folding.handleFoldShelfMousePress(editor, event))
+    if (folding.handleFoldShelfMousePress(editor, event)) {
+        columnMode.clearPendingColumnAnchor();
         return true;
+    }
 
     if (columnMode.beginSelection(editor, event))
         return true;
 
-    if (handleBracketRangeAltClick(editor, event))
+    if (handleBracketRangeAltClick(editor, event)) {
+        columnMode.clearPendingColumnAnchor();
         return true;
+    }
 
     const bool plainAltCaretClick =
         editor
@@ -4247,31 +4265,13 @@ bool MyCodeEditorState::handleMousePress(
             columnMode.handlePlainVirtualCursorClick(
                 editor,
                 event);
-        const QTextCursor target =
-            virtualTarget
-            ? editor->textCursor()
-            : editor->cursorForPosition(
-                  event->position().toPoint());
-        const int virtualColumn =
-            virtualTarget
-            ? columnMode.virtualCursorColumn()
-            : -1;
-        const bool samePhysicalVirtualTarget =
-            virtualTarget
-            && !multiCursor.active()
-            && !previous.hasSelection()
-            && previous.position() == target.position();
-        if (samePhysicalVirtualTarget) {
-            // The existing caret and the virtual target share the same QText
-            // position but not the same visual column. Multi-cursor
-            // normalization intentionally merges coincident physical carets,
-            // so keep this as the standalone virtual cursor instead of
-            // discarding its column hint during that merge.
+        if (virtualTarget) {
             event->accept();
             return true;
         }
-        if (virtualTarget)
-            columnMode.clearVirtualCursor(editor);
+        const QTextCursor target =
+            editor->cursorForPosition(
+                event->position().toPoint());
 
         if (!multiCursor.active()) {
             multiCursor.setCarets({
@@ -4284,7 +4284,7 @@ bool MyCodeEditorState::handleMousePress(
         }
         multiCursor.addCaretAt(
             target.position(),
-            virtualColumn,
+            -1,
             true);
         event->accept();
         return true;
@@ -4332,6 +4332,7 @@ bool MyCodeEditorState::handleMouseDoubleClick(
     MyCodeEditor* editor,
     QMouseEvent* event)
 {
+    columnMode.clearPendingColumnAnchor();
     const bool handled = sourceNavigation.handleMouseDoubleClick(
         editor,
         event,

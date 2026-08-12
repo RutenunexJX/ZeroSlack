@@ -1,6 +1,8 @@
 #ifndef EDITORAPPEARANCEPANEL_H
 #define EDITORAPPEARANCEPANEL_H
 
+#include "zeroslackexport.h"
+
 #include <QWidget>
 
 class QCheckBox;
@@ -11,7 +13,7 @@ class QSpinBox;
 class EditorAppearanceSettings;
 struct EditorAppearanceOptions;
 
-class EditorAppearancePanel : public QWidget
+class ZEROSLACK_API EditorAppearancePanel : public QWidget
 {
     Q_OBJECT
 

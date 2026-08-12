@@ -1,6 +1,8 @@
 #ifndef ANALYSISPROGRESSCOORDINATOR_H
 #define ANALYSISPROGRESSCOORDINATOR_H
 
+#include "zeroslackexport.h"
+
 #include <QObject>
 #include <QHash>
 #include <QString>
@@ -14,7 +16,7 @@ struct WorkspaceAnalysisPlan;
 struct WorkspaceAnalysisRequestTelemetry;
 struct WorkspaceRelationshipAnalysisResult;
 
-class AnalysisProgressCoordinator : public QObject
+class ZEROSLACK_API AnalysisProgressCoordinator : public QObject
 {
     Q_OBJECT
 

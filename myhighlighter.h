@@ -1,6 +1,8 @@
 #ifndef MYHIGHLIGHTER_H
 #define MYHIGHLIGHTER_H
 
+#include "zeroslackexport.h"
+
 #include <QSyntaxHighlighter>
 #include <QTextCharFormat>
 #include "tsdocument.h"
@@ -11,7 +13,7 @@ class QTextDocument;
 // the owning MyCodeEditor keeps a TSDocument in sync (incrementally, on contentsChange, before this
 // highlighter runs) and passes it in. highlightBlock just reads tree-sitter highlight spans, so it
 // is error-tolerant (works on half-typed code) and correct with non-ASCII (UTF-16 offsets).
-class MyHighlighter : public QSyntaxHighlighter
+class ZEROSLACK_API MyHighlighter : public QSyntaxHighlighter
 {
     Q_OBJECT
 

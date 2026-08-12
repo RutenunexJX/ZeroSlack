@@ -1,5 +1,6 @@
 #include "formattercursoranchor.h"
 
+#include "mycodeeditor.h"
 #include "triviapositionmap.h"
 
 #include <QPlainTextEdit>
@@ -122,7 +123,25 @@ int cursorTop(QPlainTextEdit* editor, int position)
     cursor.setPosition(qBound(0,
                               position,
                               documentLength(editor)));
+    if (auto* codeEditor = qobject_cast<MyCodeEditor*>(editor))
+        return codeEditor->cursorRect(cursor).top();
     return editor->cursorRect(cursor).top();
+}
+
+QTextCursor cursorForEditorPosition(QPlainTextEdit* editor,
+                                    const QPoint& point)
+{
+    if (auto* codeEditor = qobject_cast<MyCodeEditor*>(editor))
+        return codeEditor->cursorForPosition(point);
+    return editor ? editor->cursorForPosition(point) : QTextCursor();
+}
+
+void setEditorCursor(QPlainTextEdit* editor, const QTextCursor& cursor)
+{
+    if (auto* codeEditor = qobject_cast<MyCodeEditor*>(editor))
+        codeEditor->setTextCursor(cursor);
+    else if (editor)
+        editor->setTextCursor(cursor);
 }
 
 bool alignTopVisiblePosition(QPlainTextEdit* editor,
@@ -175,7 +194,7 @@ bool alignTopVisiblePosition(QPlainTextEdit* editor,
 
         if (desiredValue == currentValue) {
             const int currentVisibleBlock =
-                editor->cursorForPosition(QPoint(0, 0))
+                cursorForEditorPosition(editor, QPoint(0, 0))
                     .blockNumber();
             QTextCursor targetCursor(editor->document());
             targetCursor.setPosition(boundedPosition);
@@ -308,13 +327,13 @@ bool FormatterCursorAnchor::capture(
                         anchorAffinity);
 
     const QTextCursor topVisibleCursor =
-        editor->cursorForPosition(QPoint(0, 0));
+        cursorForEditorPosition(editor, QPoint(0, 0));
     capturedState.topVisiblePosition =
         capturePosition(mapper,
                         topVisibleCursor.position(),
                         FormatterPositionAffinity::Leading);
     capturedState.topVisiblePixelOffset =
-        editor->cursorRect(topVisibleCursor).top();
+        cursorTop(editor, topVisibleCursor.position());
     capturedState.verticalScroll =
         captureScrollState(editor->verticalScrollBar());
     capturedState.horizontalScroll =
@@ -369,7 +388,7 @@ FormatterCursorRestoreResult FormatterCursorAnchor::restore(
     QTextCursor cursor(editor->document());
     cursor.setPosition(selectionAnchor);
     cursor.setPosition(cursorPosition, QTextCursor::KeepAnchor);
-    editor->setTextCursor(cursor);
+    setEditorCursor(editor, cursor);
 
     // setTextCursor can scroll to the active endpoint. Reapply the horizontal
     // offset and then align the logical top anchor once more.

@@ -4,6 +4,7 @@
 #include "actionregistry.h"
 #include "graphexportservice.h"
 #include "signalusagehotspotservice.h"
+#include "zeroslackexport.h"
 
 #include <QWidget>
 
@@ -23,13 +24,14 @@ class QResizeEvent;
 class QSplitter;
 class QStackedWidget;
 class QTreeWidget;
+struct SignalUsageHotspotThemePresentationSnapshot;
 
 enum class SignalUsageHotspotExportSurface {
     Track,
     Matrix
 };
 
-class SignalUsageHotspotPanel : public QWidget,
+class ZEROSLACK_API SignalUsageHotspotPanel : public QWidget,
                                 public ActionExecutionHost
 {
 public:
@@ -55,6 +57,7 @@ public:
     void setFocusSearchText(const QString& text);
     QString focusSearchText() const;
     void focusInspector();
+    void refreshThemePresentation();
     GraphExportResult exportGraph(
         SignalUsageHotspotExportSurface surface,
         const QString& outputPath,
@@ -84,6 +87,8 @@ public:
     bool triggerFirstUsageNavigationForTest();
     void setReportBuilderForTest(ReportBuilder builder);
     bool reportBuildInFlightForTest() const;
+    quint64 reportBuildRequestCountForTest() const;
+    int selectedItemIndexForTest() const;
     QString currentDeclarationDisplayNameForTest() const;
 
 protected:
@@ -136,7 +141,12 @@ private:
     double trackZoomFactor = 1.0;
     ReportBuilder reportBuilder;
     std::uint64_t reportGeneration = 0;
+    std::uint64_t reportBuildRequestCount = 0;
     int activeReportBuilds = 0;
+    int presentationThemeMode = -1;
+    std::uint64_t themePresentationGeneration = 0;
+    std::shared_ptr<const SignalUsageHotspotThemePresentationSnapshot>
+        pendingThemePresentation;
 
     std::function<bool(const QString&, int, int)> navigationHandler;
     std::function<void(const QString&, int)> statusMessageHandler;

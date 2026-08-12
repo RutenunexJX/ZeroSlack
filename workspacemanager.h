@@ -1,6 +1,8 @@
 #ifndef WORKSPACEMANAGER_H
 #define WORKSPACEMANAGER_H
 
+#include "zeroslackexport.h"
+
 #include "projectmodel.h"
 #include "workspaceconfigurationservice.h"
 
@@ -17,7 +19,7 @@ class QDirIterator;
 class QTimer;
 class QWidget;
 
-class WorkspaceManager : public QObject
+class ZEROSLACK_API WorkspaceManager : public QObject
 {
     Q_OBJECT
 

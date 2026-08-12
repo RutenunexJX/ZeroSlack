@@ -2,6 +2,7 @@
 #define GLOBALCONTROLCOORDINATOR_H
 
 #include "globalcontrolservice.h"
+#include "zeroslackexport.h"
 
 #include <QObject>
 #include <functional>
@@ -10,7 +11,7 @@
 class GlobalControlPanel;
 class QWidget;
 
-class GlobalControlCoordinator : public QObject
+class ZEROSLACK_API GlobalControlCoordinator : public QObject
 {
 public:
     explicit GlobalControlCoordinator(QWidget* anchor,

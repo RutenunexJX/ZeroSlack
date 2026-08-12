@@ -1,6 +1,8 @@
 #ifndef NOTIFICATIONCENTER_H
 #define NOTIFICATIONCENTER_H
 
+#include "zeroslackexport.h"
+
 #include <QList>
 #include <QMetaType>
 #include <QMutex>
@@ -79,7 +81,7 @@ Q_DECLARE_METATYPE(NotificationDraft)
 Q_DECLARE_METATYPE(NotificationItem)
 Q_DECLARE_METATYPE(NotificationPostResult)
 
-class NotificationCenter final : public QObject
+class ZEROSLACK_API NotificationCenter final : public QObject
 {
     Q_OBJECT
 

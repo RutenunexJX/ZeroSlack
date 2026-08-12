@@ -45,6 +45,28 @@ RtlInsightCodeLink codeLinkForRecord(const SemanticSymbolRecord& record)
                                         record.location.startColumn);
 }
 
+SearchResult searchResultForRecord(
+    const SemanticSymbolRecord& record,
+    const SymbolStableKey& fallbackStableKey = {},
+    int score = 0)
+{
+    SearchResult item;
+    item.symbolRecord = record;
+    item.symbolStableKey = record.stableKey.isValid()
+        ? record.stableKey
+        : fallbackStableKey;
+    item.symbolDisplayName = symbolDisplayNameForRecord(record);
+    const SymbolTaxonomy::SemanticMetadata metadata =
+        semanticMetadataForSymbolRecord(record);
+    item.symbolTypeDisplayName =
+        SymbolTaxonomy::symbolTypeLabel(metadata);
+    item.sourceRoleDisplayName =
+        SymbolTaxonomy::sourceRoleDisplayName(metadata.sourceRole);
+    item.codeLink = codeLinkForRecord(record);
+    item.score = score;
+    return item;
+}
+
 QString normalizedFileIdentity(const QString& fileName)
 {
     QString identity = EditorFileIdentity::lookupKey(fileName);
@@ -502,6 +524,17 @@ void SearchService::setSemanticIndex(SemanticIndex* semanticIndex)
     index = semanticIndex ? semanticIndex : SemanticIndex::getInstance();
 }
 
+QList<SearchResult> SearchService::symbolCatalog() const
+{
+    const QList<SemanticSymbolRecord> records =
+        semanticIndex()->getSymbolRecords();
+    QList<SearchResult> result;
+    result.reserve(records.size());
+    for (const SemanticSymbolRecord& record : records)
+        result.append(searchResultForRecord(record));
+    return result;
+}
+
 QList<SearchResult> SearchService::findSymbols(const SearchQuery& query) const
 {
     SemanticSymbolSearchQuery indexQuery;
@@ -518,21 +551,10 @@ QList<SearchResult> SearchService::findSymbols(const SearchQuery& query) const
         semanticIndex()->searchSymbols(indexQuery);
     result.reserve(indexResults.size());
     for (const SemanticSymbolSearchResult& indexResult : indexResults) {
-        SearchResult item;
-        item.symbolRecord = indexResult.symbolRecord;
-        item.symbolStableKey = item.symbolRecord.stableKey.isValid()
-            ? item.symbolRecord.stableKey
-            : indexResult.symbolStableKey;
-        item.symbolDisplayName =
-            symbolDisplayNameForRecord(item.symbolRecord);
-        const SymbolTaxonomy::SemanticMetadata metadata =
-            semanticMetadataForSymbolRecord(item.symbolRecord);
-        item.symbolTypeDisplayName = SymbolTaxonomy::symbolTypeLabel(metadata);
-        item.sourceRoleDisplayName =
-            SymbolTaxonomy::sourceRoleDisplayName(metadata.sourceRole);
-        item.codeLink = codeLinkForRecord(item.symbolRecord);
-        item.score = indexResult.score;
-        result.append(item);
+        result.append(searchResultForRecord(
+            indexResult.symbolRecord,
+            indexResult.symbolStableKey,
+            indexResult.score));
     }
     return result;
 }

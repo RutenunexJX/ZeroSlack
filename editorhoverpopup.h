@@ -1,6 +1,8 @@
 #ifndef EDITORHOVERPOPUP_H
 #define EDITORHOVERPOPUP_H
 
+#include "zeroslackexport.h"
+
 #include "codepreviewservice.h"
 #include "peekcontentmodel.h"
 #include "symbolhoverreports.h"
@@ -19,7 +21,7 @@ class QMouseEvent;
 class QToolButton;
 class QVBoxLayout;
 
-class EditorHoverPopup : public QFrame
+class ZEROSLACK_API EditorHoverPopup : public QFrame
 {
     Q_OBJECT
 public:

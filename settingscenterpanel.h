@@ -1,6 +1,8 @@
 #ifndef SETTINGSCENTERPANEL_H
 #define SETTINGSCENTERPANEL_H
 
+#include "zeroslackexport.h"
+
 #include "settingscenterservice.h"
 
 #include <QHash>
@@ -23,7 +25,7 @@ class QStandardItemModel;
 
 Q_DECLARE_METATYPE(SettingsCenterScope)
 
-class SettingsCenterPanel : public QWidget
+class ZEROSLACK_API SettingsCenterPanel : public QWidget
 {
     Q_OBJECT
 
@@ -91,6 +93,7 @@ private:
     void updateButtons();
     void updateScopePresentation();
     void updateDraftFromEditor(const QString& fieldId);
+    void applyImmediateField(const QString& fieldId);
     void setOverride(const QString& fieldId, bool enabled);
 
     QVariant editorValue(const FieldBinding& binding) const;

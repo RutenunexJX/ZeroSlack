@@ -1025,6 +1025,8 @@ int main()
          "ui.editorTabs.reopenClosed", "Reopen Closed Tab"},
         {ActionIds::ViewEditorTabDuplicate,
          "ui.editorTabs.duplicateView", "Duplicate View"},
+        {ActionIds::ViewTemporaryEditorOpen,
+         "ui.temporaryEditor.open", "Open in Temporary Editor"},
         {ActionIds::ViewEditorSplitLeft,
          "ui.editorLayout.split.left", "Split Left"},
         {ActionIds::ViewEditorSplitRight,
@@ -1083,17 +1085,38 @@ int main()
         const char* id;
         const char* route;
         const char* label;
+        ActionScope scope;
+        quint32 requirements;
+        bool commandLayer;
     };
     const HierarchyContextExpectation hierarchyContextActions[] = {
         {ActionIds::NavigationDesignGoInstantiation,
          "navigation.design.goInstantiation",
-         "Go to Instantiation"},
+         "Go to Instantiation",
+         ActionScope::Hierarchy,
+         ActionRequirements::Workspace
+             | ActionRequirements::Hierarchy,
+         false},
         {ActionIds::NavigationDesignGoDefinition,
          "navigation.design.goDefinition",
-         "Go to Module Definition"},
+         "Go to Module Definition",
+         ActionScope::Hierarchy,
+         ActionRequirements::Workspace
+             | ActionRequirements::Hierarchy,
+         false},
+        {ActionIds::ViewTemporaryEditorOpen,
+         "ui.temporaryEditor.open",
+         "Open in Temporary Editor",
+         ActionScope::Editor,
+         0,
+         true},
         {ActionIds::NavigationDesignSetTop,
          "navigation.design.setTop",
-         "Set as Design Top"},
+         "Set as Design Top",
+         ActionScope::Hierarchy,
+         ActionRequirements::Workspace
+             | ActionRequirements::Hierarchy,
+         false},
     };
     bool hierarchyContextCatalogComplete = true;
     for (const HierarchyContextExpectation& expected :
@@ -1112,18 +1135,16 @@ int main()
             && descriptor->executionRoute
                    == QString::fromLatin1(expected.route)
             && descriptor->scope
-                   == ActionScope::Hierarchy
-            && (descriptor->requirementMask
-                & (ActionRequirements::Workspace
-                   | ActionRequirements::Hierarchy))
-                   == (ActionRequirements::Workspace
-                       | ActionRequirements::Hierarchy)
+                   == expected.scope
+            && descriptor->requirementMask
+                   == expected.requirements
             && descriptor->hasSurface(
                    ActionSurface::ContextMenu)
             && descriptor->hasSurface(
                    ActionSurface::ActionCatalog)
-            && !descriptor->hasSurface(
+            && descriptor->hasSurface(
                    ActionSurface::CommandLayer)
+                   == expected.commandLayer
             && !descriptor->repeatable
             && !descriptor->rememberParameters
             && contextAlias.token == id
@@ -1135,6 +1156,27 @@ int main()
     }
     expect("Registry owns design-hierarchy context Actions",
            hierarchyContextCatalogComplete);
+
+    const ActionDescriptor* temporaryEditorAction =
+        findActionById(QString::fromLatin1(
+            ActionIds::ViewTemporaryEditorOpen));
+    expect("temporary editor uses one navigation Action on all entry surfaces",
+           temporaryEditorAction
+               && temporaryEditorAction->category
+                      == ActionCategory::Navigate
+               && temporaryEditorAction->scope
+                      == ActionScope::Editor
+               && temporaryEditorAction->requirementMask == 0
+               && temporaryEditorAction->executionRoute
+                      == QStringLiteral("ui.temporaryEditor.open")
+               && temporaryEditorAction->hasSurface(
+                      ActionSurface::ContextMenu)
+               && temporaryEditorAction->hasSurface(
+                      ActionSurface::TabContextMenu)
+               && temporaryEditorAction->hasSurface(
+                      ActionSurface::CommandLayer)
+               && temporaryEditorAction->hasSurface(
+                      ActionSurface::ActionCatalog));
 
     struct PanelContextExpectation {
         const char* id;

@@ -4,9 +4,11 @@
 #include "actionregistry.h"
 #include "graphexportservice.h"
 #include "rtlinsightlink.h"
+#include "zeroslackexport.h"
 
 #include <QDockWidget>
 #include <QGraphicsView>
+#include <QMetaObject>
 #include <QRectF>
 #include <QStackedWidget>
 #include <QString>
@@ -26,7 +28,7 @@ struct RtlInsightsPanelViewState;
 class QToolButton;
 class QWidget;
 
-class RtlInsightsPanelCoordinator : public ActionExecutionHost
+class ZEROSLACK_API RtlInsightsPanelCoordinator : public ActionExecutionHost
 {
 public:
     explicit RtlInsightsPanelCoordinator(
@@ -45,6 +47,8 @@ public:
         std::function<void(
             const QString&,
             int)> handler);
+    void setRegisteredActionRequestHandler(
+        RegisteredActionRequestHandler handler);
 
     void updateModuleContext(
         const QString& fileName,
@@ -79,6 +83,7 @@ public:
         const QString& beforeFileName = QString(),
         const QString& afterFileName = QString());
     void refresh();
+    void refreshThemePresentation();
     void showModuleBrief();
     void showSignalJourney();
     void showSignalUsageHotspot();
@@ -143,6 +148,7 @@ public:
         const QString& primaryText,
         const QString& secondaryText = QString());
     quint64 graphBuildGenerationForTest() const;
+    quint64 graphBuildRequestCountForTest() const;
     QString graphModeForTest() const;
     QString currentFileNameForTest() const;
     QString currentModuleNameForTest() const;
@@ -151,6 +157,9 @@ public:
 
 private:
     QAction* createGraphAction(
+        QWidget* owner,
+        const QString& actionId);
+    QAction* createSelectedSourceAction(
         QWidget* owner,
         const QString& actionId);
     void bindGraphActionButton(
@@ -173,6 +182,9 @@ private:
         graphController;
     std::unique_ptr<RtlInsightsPresenter>
         presenter;
+    RegisteredActionRequestHandler
+        registeredActionRequestHandler;
+    QMetaObject::Connection themeAboutToChangeConnection;
 };
 
 #endif // RTLINSIGHTSPANELCOORDINATOR_H

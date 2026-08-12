@@ -1,6 +1,8 @@
 #ifndef EXTERNALDOCUMENTSYNCCONTROLLER_H
 #define EXTERNALDOCUMENTSYNCCONTROLLER_H
 
+#include "zeroslackexport.h"
+
 #include <QByteArray>
 #include <QHash>
 #include <QMetaObject>
@@ -63,7 +65,7 @@ struct ExternalDocumentConflictActionResult {
     }
 };
 
-class ExternalDocumentSyncController : public QObject
+class ZEROSLACK_API ExternalDocumentSyncController : public QObject
 {
     Q_OBJECT
 

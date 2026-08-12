@@ -1,6 +1,7 @@
 #include "mainwindow.h"
 
 #include "actionregistry.h"
+#include "applicationthememanager.h"
 #include "ui_mainwindow.h"
 
 #include "mycodeeditor.h"
@@ -48,6 +49,10 @@
 #include "shareddocument.h"
 #include "settingscenterpanel.h"
 #include "settingscenterservice.h"
+#include "searchservice.h"
+#include "temporaryeditordrawer.h"
+#include "temporaryeditordrawercontroller.h"
+#include "temporaryeditorsearchprovider.h"
 #include "usertemplateservice.h"
 #include "activitylogpanelcoordinator.h"
 #include "activitylogservice.h"
@@ -112,6 +117,7 @@
 #include <QWidget>
 #include <QtConcurrent/QtConcurrentRun>
 
+#include <algorithm>
 #include <atomic>
 #include <optional>
 #include <string>
@@ -697,8 +703,7 @@ MainWindow::MainWindow(QWidget *parent)
         versionLabel->setToolTip(
             QStringLiteral("ZeroSlack v%1\nBuilt at %2")
                 .arg(QLatin1String(APP_VERSION), QLatin1String(APP_BUILD_TIME)));
-        versionLabel->setStyleSheet(
-            InsightVisualStyle::labelStyleSheet(versionLabel->objectName()));
+        InsightVisualStyle::applyLabel(versionLabel);
         statusBar()->addPermanentWidget(versionLabel);
         statusBar()->showMessage(QStringLiteral("Ready"));
     }
@@ -979,9 +984,10 @@ MainWindow::~MainWindow()
     ui = nullptr;
 }
 
-void MainWindow::applyModernShellStyle()
+void MainWindow::applyModernShellStyle(bool applyApplicationTheme)
 {
-    setStyleSheet(InsightVisualStyle::applicationStyleSheet());
+    if (applyApplicationTheme)
+        ApplicationThemeManager::instance().applyToApplication();
 
     if (ui && ui->tabWidget) {
         ui->tabWidget->setDocumentMode(true);
@@ -994,6 +1000,86 @@ void MainWindow::applyModernShellStyle()
                 InsightVisualStyle::tabBarStyleSheet(bar->objectName()));
         }
     }
+}
+
+void MainWindow::refreshThemePresentation()
+{
+    // ApplicationThemeManager already applied the global palette and QSS
+    // before emitting themeChanged. Re-applying it here would re-polish every
+    // widget during graph-specific refresh callbacks and shift viewports.
+    applyModernShellStyle(false);
+
+    if (packageToolsBar) {
+        packageToolsBar->setStyleSheet(
+            InsightVisualStyle::packageToolsBarStyleSheet(
+                packageToolsBar->objectName()));
+    }
+    if (packageToolsPackageLabel) {
+        packageToolsPackageLabel->setStyleSheet(
+            InsightVisualStyle::labelStyleSheet(
+                packageToolsPackageLabel->objectName()));
+    }
+    refreshEditorActionContextChip();
+    if (tabManager && tabManager->getCurrentEditor()) {
+        updateEditorModeChip(
+            tabManager->getCurrentEditor()->editorModeSnapshot());
+    } else {
+        updateEditorModeChip(EditorModeSnapshot());
+    }
+
+    const QList<MyCodeEditor*> editorViews =
+        findChildren<MyCodeEditor*>();
+    for (MyCodeEditor* editor : editorViews) {
+        if (!editor)
+            continue;
+        editor->refreshSemanticPresentation();
+        editor->viewport()->update();
+    }
+
+    if (semanticDocks) {
+        if (RtlInsightsPanelCoordinator* insights =
+                semanticDocks->rtlInsightsPanelCoordinator()) {
+            insights->refreshThemePresentation();
+        }
+        if (SignalKernelGraphPanelCoordinator* kernel =
+                semanticDocks->signalKernelGraphPanelCoordinator()) {
+            kernel->refreshThemePresentation();
+        }
+        if (WavePreviewPanelCoordinator* wave =
+                semanticDocks->wavePreviewPanelCoordinator()) {
+            if (wave->canvas())
+                wave->canvas()->update();
+        }
+    }
+
+    const QList<QWidget*> widgets = findChildren<QWidget*>();
+    for (QWidget* widget : widgets) {
+        if (widget)
+            widget->update();
+    }
+    update();
+}
+
+void MainWindow::refreshTemporaryEditorFileCatalog()
+{
+    if (!temporaryEditorSearchProvider)
+        return;
+    const QStringList cachedFiles = workspaceManager
+        ? workspaceManager->getAllFiles()
+        : QStringList{};
+    const QString workspaceRoot = workspaceManager
+        ? workspaceManager->getWorkspacePath()
+        : QString{};
+    temporaryEditorSearchProvider->setWorkspaceFiles(
+        cachedFiles, workspaceRoot);
+}
+
+void MainWindow::refreshTemporaryEditorSemanticCatalog()
+{
+    if (!temporaryEditorSearchProvider)
+        return;
+    temporaryEditorSearchProvider->setSemanticCatalog(
+        SearchService::getInstance()->symbolCatalog());
 }
 
 void MainWindow::setupEditorCentralArea()
@@ -1018,6 +1104,49 @@ void MainWindow::setupEditorCentralArea()
     setupExternalConflictReviewUi(layout, editorContainer);
     if (tabManager) {
         tabManager->enableSplitLayout(editorSplitHost);
+        temporaryEditorDrawerController =
+            std::make_unique<TemporaryEditorDrawerController>(
+                tabManager.get(), editorSplitHost, this);
+        temporaryEditorSearchProvider =
+            std::make_unique<TemporaryEditorSearchProvider>();
+        refreshTemporaryEditorFileCatalog();
+        refreshTemporaryEditorSemanticCatalog();
+        temporaryEditorDrawerController->setSearchProvider(
+            [this](const QString& rawQuery)
+                -> EditorSearchCandidates {
+                return temporaryEditorSearchProvider
+                    ? temporaryEditorSearchProvider->query(rawQuery)
+                    : EditorSearchCandidates{};
+            });
+        if (workspaceManager) {
+            connectTemporaryEditorFileCatalogRefresh(
+                workspaceManager.get(),
+                this,
+                [this]() {
+                    refreshTemporaryEditorFileCatalog();
+                });
+            connect(workspaceManager.get(),
+                    &WorkspaceManager::workspaceActivated,
+                    this,
+                    [this](
+                        int, const QString&, const QString&) {
+                        refreshTemporaryEditorFileCatalog();
+                        if (temporaryEditorSearchProvider) {
+                            temporaryEditorSearchProvider
+                                ->setSemanticCatalog({});
+                        }
+                    });
+            connect(workspaceManager.get(),
+                    &WorkspaceManager::workspaceClosed,
+                    this,
+                    [this]() {
+                        refreshTemporaryEditorFileCatalog();
+                        if (temporaryEditorSearchProvider) {
+                            temporaryEditorSearchProvider
+                                ->setSemanticCatalog({});
+                        }
+                    });
+        }
         connect(tabManager.get(),
                 &TabManager::workspaceSessionStateChanged,
                 this,
@@ -1447,16 +1576,13 @@ void MainWindow::setupPackageTools(QVBoxLayout* editorLayout, QWidget* parent)
     QLabel* title =
         new QLabel(QStringLiteral("Package Tools"), packageToolsBar);
     title->setObjectName(QStringLiteral("packageToolsTitle"));
-    title->setStyleSheet(
-        InsightVisualStyle::labelStyleSheet(title->objectName(), true));
+    InsightVisualStyle::applyLabel(title, true);
     layout->addWidget(title);
 
     packageToolsPackageLabel = new QLabel(packageToolsBar);
     packageToolsPackageLabel->setObjectName(
         QStringLiteral("packageToolsPackageLabel"));
-    packageToolsPackageLabel->setStyleSheet(
-        InsightVisualStyle::labelStyleSheet(
-            packageToolsPackageLabel->objectName()));
+    InsightVisualStyle::applyLabel(packageToolsPackageLabel);
     layout->addWidget(packageToolsPackageLabel);
 
     const PackageToolService service;
@@ -1630,6 +1756,29 @@ void MainWindow::setupWorkspaceProgressIndicator()
 
 void MainWindow::setupManagerConnections()
 {
+    if (navigationManager
+        && temporaryEditorDrawerController) {
+        navigationManager->setTemporaryEditorOpenHandler(
+            [this](const EditorLocation& location) {
+                return temporaryEditorDrawerController
+                    && temporaryEditorDrawerController
+                           ->openLocation(location);
+            });
+        connect(
+            navigationManager.get(),
+            &NavigationManager::temporaryEditorOpenFinished,
+            this,
+            [this](const EditorLocation&,
+                   bool succeeded,
+                   const QString& failureReason) {
+                if (!succeeded
+                    && statusBar()
+                    && !failureReason.isEmpty()) {
+                    statusBar()->showMessage(
+                        failureReason, 5000);
+                }
+            });
+    }
     analysisCoordinator = std::make_unique<AnalysisCoordinator>(
         analysisScheduler.get(),
         analysisProgressCoordinator.get(),
@@ -1764,6 +1913,10 @@ void MainWindow::setupManagerConnections()
             &AnalysisScheduler::fileSymbolAnalysisFinished,
             this,
             [this](const QString& fileName, int) {
+                if (!analysisScheduler
+                    || !analysisScheduler->isSemanticAnalysisActive()) {
+                    refreshTemporaryEditorSemanticCatalog();
+                }
                 scheduleActiveEditorPassiveRefresh(fileName);
                 refreshEditorActionContextChip();
             });
@@ -1778,6 +1931,7 @@ void MainWindow::setupManagerConnections()
             &AnalysisScheduler::workspaceSymbolAnalysisFinished,
             this,
             [this](const ProjectSnapshot&, int, int) {
+                refreshTemporaryEditorSemanticCatalog();
                 refreshDiagnosticsAnalysisState();
                 scheduleActiveEditorPassiveRefresh();
                 refreshEditorActionContextChip();
@@ -2186,6 +2340,15 @@ void MainWindow::setupSemanticDocks()
                 statusBar()->showMessage(message, timeoutMs);
         });
     semanticDocks->setup();
+    if (RtlInsightsPanelCoordinator* rtlInsights =
+            semanticDocks->rtlInsightsPanelCoordinator()) {
+        rtlInsights->setRegisteredActionRequestHandler(
+            [this](const QString& actionId,
+                   const QVariantMap& parameters) {
+                return executeRegisteredUiAction(
+                    actionId, parameters);
+            });
+    }
     if (RtlHighRiskEditPanelCoordinator* rtlEdit =
             semanticDocks
                 ->rtlHighRiskEditPanelCoordinator()) {
@@ -2325,6 +2488,13 @@ void MainWindow::setupSemanticDocks()
                             ->navigateToFileAndLine(
                                 fileName, line, column);
                     }
+                });
+        semanticDocks->scopedSearchPanelCoordinator()
+            ->setRegisteredActionRequestHandler(
+                [this](const QString& actionId,
+                       const QVariantMap& parameters) {
+                    return executeRegisteredUiAction(
+                        actionId, parameters);
                 });
     }
     if (semanticDocks->wavePreviewPanelCoordinator()) {
@@ -3739,6 +3909,40 @@ QAction* MainWindow::addRegistryMenuAction(
     return action;
 }
 
+ActionExecutionResult MainWindow::executeRegisteredUiAction(
+    const QString& actionId,
+    const QVariantMap& parameters)
+{
+    ActionExecutionResult result;
+    result.handled = true;
+    const ActionDescriptor* descriptor =
+        findActionById(actionId);
+    if (!descriptor) {
+        result.failureReason = QStringLiteral(
+            "The requested Action is not registered.");
+    } else {
+        ActionInvocation invocation;
+        invocation.workspaceId = workspaceManager
+            ? workspaceManager->getWorkspacePath()
+            : QString();
+        invocation.parameters = parameters;
+        result = executeAction(
+            *descriptor, *this, invocation);
+    }
+    const QString statusMessage =
+        result.succeeded
+        ? result.message
+        : (result.failureReason.isEmpty()
+               ? result.message
+               : result.failureReason);
+    if (!statusMessage.isEmpty() && statusBar()) {
+        statusBar()->showMessage(
+            statusMessage,
+            result.succeeded ? 3000 : 5000);
+    }
+    return result;
+}
+
 ActionExecutionResult MainWindow::executeActionRoute(
     const ActionDescriptor& descriptor,
     const ActionInvocation& invocation)
@@ -3843,18 +4047,30 @@ ActionExecutionResult MainWindow::executeActionRoute(
             fileCommandCoordinator->openFile();
         } else if (route
                    == QStringLiteral("ui.file.save")) {
+            const QString preferredViewId =
+                invocation.parameters
+                    .value(QStringLiteral("editorViewId"))
+                    .toString();
             if (!tabManager
-                || !tabManager->getCurrentEditor()) {
+                || !tabManager->editorActionTarget(
+                    preferredViewId)) {
                 return fail();
             }
-            fileCommandCoordinator->saveFile();
+            fileCommandCoordinator->saveEditor(
+                preferredViewId, false);
         } else if (route
                    == QStringLiteral("ui.file.saveAs")) {
+            const QString preferredViewId =
+                invocation.parameters
+                    .value(QStringLiteral("editorViewId"))
+                    .toString();
             if (!tabManager
-                || !tabManager->getCurrentEditor()) {
+                || !tabManager->editorActionTarget(
+                    preferredViewId)) {
                 return fail();
             }
-            fileCommandCoordinator->saveFileAs();
+            fileCommandCoordinator->saveEditor(
+                preferredViewId, true);
         } else if (route
                    == QStringLiteral("ui.workspace.open")) {
             fileCommandCoordinator
@@ -3946,8 +4162,13 @@ ActionExecutionResult MainWindow::executeActionRoute(
         || route == QStringLiteral("editor.standard.copy")
         || route == QStringLiteral("editor.standard.paste")
         || route == QStringLiteral("editor.standard.selectAll")) {
+        const QString preferredViewId =
+            invocation.parameters
+                .value(QStringLiteral("editorViewId"))
+                .toString();
         MyCodeEditor* editor = tabManager
-            ? tabManager->getCurrentEditor()
+            ? tabManager->editorActionTarget(
+                  preferredViewId)
             : nullptr;
         if (!editor) {
             return fail(QStringLiteral(
@@ -4260,6 +4481,166 @@ ActionExecutionResult MainWindow::executeActionRoute(
         }
         panelLayoutController
             ->setFocusModeActive(enter);
+        return succeeded();
+    }
+
+    if (route
+        == QStringLiteral("ui.temporaryEditor.open")) {
+        if (!tabManager
+            || !temporaryEditorDrawerController) {
+            return fail(QStringLiteral(
+                "The temporary editor is unavailable."));
+        }
+
+        const QString preferredViewId =
+            invocation.parameters
+                .value(QStringLiteral("editorViewId"))
+                .toString();
+        MyCodeEditor* sourceEditor =
+            tabManager->editorActionTarget(
+                preferredViewId);
+        const QString requestedDocumentId =
+            invocation.parameters
+                .value(QStringLiteral("documentId"))
+                .toString();
+        const QString requestedPath =
+            invocation.parameters
+                .value(QStringLiteral("path"))
+                .toString();
+        const auto matchesRequest =
+            [&requestedDocumentId,
+             &requestedPath](MyCodeEditor* editor) {
+                if (!editor)
+                    return false;
+                if (!requestedDocumentId.isEmpty()
+                    && editor->property("sharedDocumentId")
+                           .toString()
+                           == requestedDocumentId) {
+                    return true;
+                }
+                return !requestedPath.isEmpty()
+                    && EditorFileIdentity::same(
+                        editor->documentFileName(), requestedPath);
+            };
+        if ((!requestedDocumentId.isEmpty()
+             || !requestedPath.isEmpty())
+            && !matchesRequest(sourceEditor)) {
+            const QList<MyCodeEditor*> candidates =
+                tabManager->openEditors()
+                + tabManager->auxiliaryViews();
+            const auto found = std::find_if(
+                candidates.cbegin(),
+                candidates.cend(),
+                matchesRequest);
+            sourceEditor = found == candidates.cend()
+                ? nullptr
+                : *found;
+        }
+
+        EditorLocation location =
+            editorLocationFromActionParameters(
+                invocation.parameters);
+        if (sourceEditor) {
+            if (SharedDocument* shared =
+                    tabManager->sharedDocumentForEditor(
+                        sourceEditor)) {
+                location.documentId = shared->documentId();
+                location.filePath = shared->fileName();
+            }
+            QTextDocument* document =
+                sourceEditor->document();
+            const int maximumPosition = document
+                ? qMax(0, document->characterCount() - 1)
+                : 0;
+            int cursorPosition =
+                sourceEditor->textCursor().position();
+            if (invocation.parameters.contains(
+                    QStringLiteral("cursorPosition"))) {
+                cursorPosition = invocation.parameters
+                                     .value(QStringLiteral(
+                                         "cursorPosition"))
+                                     .toInt();
+            } else if (document
+                       && invocation.parameters.contains(
+                           QStringLiteral("line"))) {
+                const int blockNumber = qBound(
+                    0,
+                    location.line - 1,
+                    qMax(0, document->blockCount() - 1));
+                const QTextBlock targetBlock =
+                    document->findBlockByNumber(blockNumber);
+                if (targetBlock.isValid()) {
+                    cursorPosition = targetBlock.position()
+                        + qBound(
+                            0,
+                            location.column - 1,
+                            qMax(0, targetBlock.length() - 1));
+                }
+            }
+            cursorPosition = qBound(
+                0, cursorPosition, maximumPosition);
+            const QTextBlock cursorBlock =
+                document
+                ? document->findBlock(cursorPosition)
+                : QTextBlock();
+            if (cursorBlock.isValid()) {
+                location.line =
+                    cursorBlock.blockNumber() + 1;
+                location.column = cursorPosition
+                    - cursorBlock.position() + 1;
+            }
+
+            if (invocation.parameters.contains(
+                    QStringLiteral("selectionStart"))
+                && invocation.parameters.contains(
+                    QStringLiteral("selectionEnd"))
+                && document) {
+                const int start = qBound(
+                    0,
+                    invocation.parameters
+                        .value(QStringLiteral("selectionStart"))
+                        .toInt(),
+                    maximumPosition);
+                const int end = qBound(
+                    start,
+                    invocation.parameters
+                        .value(QStringLiteral("selectionEnd"))
+                        .toInt(),
+                    maximumPosition);
+                const QTextBlock startBlock =
+                    document->findBlock(start);
+                const QTextBlock endBlock =
+                    document->findBlock(end);
+                if (startBlock.isValid()
+                    && endBlock.isValid()) {
+                    EditorSelectionRange range;
+                    range.startLine =
+                        startBlock.blockNumber() + 1;
+                    range.startColumn =
+                        start - startBlock.position() + 1;
+                    range.endLine =
+                        endBlock.blockNumber() + 1;
+                    range.endColumn =
+                        end - endBlock.position() + 1;
+                    location.selection = range;
+                }
+            }
+        }
+        if (!location.isValid()) {
+            return fail(QStringLiteral(
+                "The temporary-editor target has no document identity."));
+        }
+        if (!temporaryEditorDrawerController
+                 ->openLocation(location)) {
+            return fail(QStringLiteral(
+                "The temporary editor could not open the target."));
+        }
+        result.output.insert(
+            QStringLiteral("documentId"),
+            location.documentId);
+        result.output.insert(
+            QStringLiteral("path"),
+            location.filePath);
         return succeeded();
     }
 
@@ -7594,6 +7975,13 @@ void MainWindow::setupSettingsCenter()
     settingsCenterDock->setWidget(settingsCenterPanel);
     addDockWidget(Qt::RightDockWidgetArea, settingsCenterDock);
 
+    connect(&ApplicationThemeManager::instance(),
+            &ApplicationThemeManager::themeChanged,
+            this,
+            [this](ThemeMode) {
+                refreshThemePresentation();
+            });
+
     connect(settingsCenterPanel,
             &SettingsCenterPanel::settingsApplied,
             this,
@@ -7609,6 +7997,17 @@ void MainWindow::setupSettingsCenter()
 void MainWindow::applySettingsCenterSnapshot(
     const SettingsCenterSnapshot& snapshot)
 {
+    const QString themeName =
+        snapshot.value(
+            QStringLiteral("appearance.theme"))
+            .toString();
+    ApplicationThemeManager::instance().setMode(
+        themeName.compare(
+            QStringLiteral("Dark"),
+            Qt::CaseInsensitive) == 0
+            ? ThemeMode::Dark
+            : ThemeMode::Light);
+
     if (editorAppearanceSettings) {
         EditorAppearanceOptions options;
         options.fontFamily =

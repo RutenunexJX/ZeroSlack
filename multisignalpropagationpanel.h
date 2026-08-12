@@ -1,6 +1,8 @@
 #ifndef MULTISIGNALPROPAGATIONPANEL_H
 #define MULTISIGNALPROPAGATIONPANEL_H
 
+#include "zeroslackexport.h"
+
 #include "multisignalpropagationplanner.h"
 
 #include <QHash>
@@ -53,7 +55,7 @@ struct MultiSignalPropagationPanelInput {
 
 // Compact, non-applying High+Diff preview surface. Planning is synchronous and
 // occurs only after an explicit requestPreview() or Preview button activation.
-class MultiSignalPropagationPanel final : public QWidget
+class ZEROSLACK_API MultiSignalPropagationPanel final : public QWidget
 {
     Q_OBJECT
 
@@ -166,7 +168,7 @@ Q_DECLARE_METATYPE(MultiSignalPropagationWorkflowResult)
 // Owns confirmation-time conflict checking and the single unified workspace
 // transaction used by the panel. The panel remains a non-applying preview
 // surface and only emits explicit confirmation/undo requests.
-class MultiSignalPropagationWorkflow final : public QObject
+class ZEROSLACK_API MultiSignalPropagationWorkflow final : public QObject
 {
     Q_OBJECT
 

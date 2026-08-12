@@ -1,4 +1,5 @@
 #include "actionregistry.h"
+#include "applicationthememanager.h"
 #include "fsmgraphservice.h"
 #include "graphexportui.h"
 #include "mycodeeditor.h"
@@ -13,10 +14,12 @@
 #include <QDir>
 #include <QFileInfo>
 #include <QHash>
+#include <QLineF>
 #include <QScrollBar>
 #include <QTextCursor>
 #include <QTextDocument>
 #include <QToolButton>
+#include <QTransform>
 #include <QWidget>
 
 #include <iostream>
@@ -189,6 +192,141 @@ int main(int argc, char** argv)
     check(pinButton && pinButton->isCheckable(),
           "RTL Insights exposes a checkable Pin control");
 
+    ApplicationThemeManager::instance().setMode(ThemeMode::Light);
+    panel.refreshThemePresentation();
+    // Finish the initial Light layout before recording viewport state. This
+    // prevents the Dark-side event pump from also settling the baseline UI.
+    QApplication::processEvents();
+    panel.setFocusSearchText(QStringLiteral("RUN"));
+    check(panel.selectGraphItemForTest(
+              QStringLiteral("state"),
+              QStringLiteral("RUN")),
+          "theme fixture selects a graph node");
+    check(panel.setGraphItemHoveredForTest(
+              QStringLiteral("state"),
+              QStringLiteral("IDLE"),
+              QString(),
+              true),
+          "theme fixture records a hovered graph node");
+    QGraphicsView* themeGraphView = panel.graphView();
+    if (themeGraphView) {
+        themeGraphView->setTransform(
+            QTransform::fromScale(1.37, 1.37));
+        themeGraphView->centerOn(
+            themeGraphView->scene()->sceneRect().center()
+                + QPointF(23.0, 11.0));
+    }
+    const QTransform lightTransform = themeGraphView
+        ? themeGraphView->transform() : QTransform();
+    const QPointF lightCenter = themeGraphView
+        ? themeGraphView->mapToScene(
+              themeGraphView->viewport()->rect().center())
+        : QPointF();
+    const QSize lightViewportSize = themeGraphView
+        ? themeGraphView->viewport()->size() : QSize();
+    const QStringList lightVisuals =
+        panel.graphElementVisualSummariesForTest();
+    const QStringList lightSelection =
+        panel.graphSelectedElementSummariesForTest();
+    const QStringList lightHovered =
+        panel.graphHoveredElementSummariesForTest();
+    const quint64 themeGeneration =
+        panel.graphBuildGenerationForTest();
+    const quint64 themeBuildRequests =
+        panel.graphBuildRequestCountForTest();
+
+    ApplicationThemeManager::instance().setMode(ThemeMode::Dark);
+    panel.refreshThemePresentation();
+    QApplication::processEvents();
+    const QPointF darkCenter = themeGraphView
+        ? themeGraphView->mapToScene(
+              themeGraphView->viewport()->rect().center())
+        : QPointF();
+    const QSize darkViewportSize = themeGraphView
+        ? themeGraphView->viewport()->size() : QSize();
+    check(panel.graphBuildRequestCountForTest()
+                  == themeBuildRequests
+              && panel.graphBuildGenerationForTest()
+                     == themeGeneration,
+          "theme refresh consumes the cached RTL graph without service or semantic rebuild");
+    const QStringList darkSelection =
+        panel.graphSelectedElementSummariesForTest();
+    const QStringList darkHovered =
+        panel.graphHoveredElementSummariesForTest();
+    const bool darkInteractionStatePreserved =
+        panel.focusSearchText() == QStringLiteral("RUN")
+        && darkSelection == lightSelection
+        && darkHovered == lightHovered;
+    if (!darkInteractionStatePreserved) {
+        std::cerr
+            << "RTL theme state diagnostic: search='"
+            << panel.focusSearchText().toStdString()
+            << "', light selection=["
+            << lightSelection.join(QStringLiteral(" || ")).toStdString()
+            << "], dark selection=["
+            << darkSelection.join(QStringLiteral(" || ")).toStdString()
+            << "], light hover=["
+            << lightHovered.join(QStringLiteral(" || ")).toStdString()
+            << "], dark hover=["
+            << darkHovered.join(QStringLiteral(" || ")).toStdString()
+            << "]\n";
+    }
+    check(darkInteractionStatePreserved,
+          "dark theme preserves RTL graph search, selection, and hover state");
+    const bool darkViewportStatePreserved =
+        themeGraphView
+        && themeGraphView->transform() == lightTransform
+        && QLineF(lightCenter, darkCenter).length() < 1.0;
+    if (!darkViewportStatePreserved) {
+        const QTransform darkTransform = themeGraphView
+            ? themeGraphView->transform() : QTransform();
+        std::cerr
+            << "RTL theme viewport diagnostic: light scale=("
+            << lightTransform.m11() << ',' << lightTransform.m22()
+            << "), dark scale=(" << darkTransform.m11() << ','
+            << darkTransform.m22() << "), light size="
+            << lightViewportSize.width() << 'x'
+            << lightViewportSize.height() << ", dark size="
+            << darkViewportSize.width() << 'x'
+            << darkViewportSize.height() << ", light center=("
+            << lightCenter.x() << ',' << lightCenter.y()
+            << "), dark center=(" << darkCenter.x() << ','
+            << darkCenter.y() << "), distance="
+            << QLineF(lightCenter, darkCenter).length() << '\n';
+    }
+    check(darkViewportStatePreserved,
+          "dark theme preserves RTL graph transform and center");
+    check(panel.graphElementVisualSummariesForTest()
+                  != lightVisuals
+              && panel.graphItemsReadableForTest(),
+          "dark theme recolors cached RTL graph items readably");
+
+    ApplicationThemeManager::instance().setMode(ThemeMode::Light);
+    panel.refreshThemePresentation();
+    QApplication::processEvents();
+    const QStringList restoredLightVisuals =
+        panel.graphElementVisualSummariesForTest();
+    const bool lightVisualsRestored =
+        restoredLightVisuals == lightVisuals
+              && panel.graphBuildRequestCountForTest()
+                     == themeBuildRequests
+              && panel.graphBuildGenerationForTest()
+                     == themeGeneration;
+    if (!lightVisualsRestored) {
+        std::cerr
+            << "RTL theme round-trip diagnostic: original=["
+            << lightVisuals.join(QStringLiteral(" || ")).toStdString()
+            << "], restored=["
+            << restoredLightVisuals.join(QStringLiteral(" || ")).toStdString()
+            << "], build requests="
+            << panel.graphBuildRequestCountForTest() << '/'
+            << themeBuildRequests << ", generation="
+            << panel.graphBuildGenerationForTest() << '/'
+            << themeGeneration << '\n';
+    }
+    check(lightVisualsRestored,
+          "Light-Dark-Light restores RTL graph visuals without rebuilding its model");
+
     if (pinButton)
         pinButton->click();
     check(panel.isPinned()
@@ -281,9 +419,14 @@ int main(int argc, char** argv)
     QAction* setTopAction = panel.graphActionForTest(
         QString::fromLatin1(
             ActionIds::GraphSetTopSelected));
+    QAction* temporaryEditorAction =
+        panel.graphActionForTest(
+            QString::fromLatin1(
+                ActionIds::ViewTemporaryEditorOpen));
     check(jumpAction
               && focusAction
               && setTopAction
+              && temporaryEditorAction
               && jumpAction->text()
                      == QStringLiteral("Jump")
               && focusAction->text()
@@ -301,6 +444,44 @@ int main(int argc, char** argv)
                      == QStringLiteral(
                          "insight.graph.jumpSelected"),
           "graph selection controls materialize Registry labels and routes");
+    QString temporaryActionId;
+    QVariantMap temporaryActionParameters;
+    panel.setRegisteredActionRequestHandler(
+        [&](const QString& actionId,
+            const QVariantMap& parameters) {
+            temporaryActionId = actionId;
+            temporaryActionParameters = parameters;
+            ActionExecutionResult result;
+            result.handled = true;
+            result.succeeded = true;
+            return result;
+        });
+    const ActionExecutionResult temporaryOpened =
+        panel.triggerGraphActionForTest(
+            QString::fromLatin1(
+                ActionIds::ViewTemporaryEditorOpen));
+    check(temporaryOpened.handled
+              && temporaryOpened.succeeded
+              && temporaryActionId
+                     == QString::fromLatin1(
+                         ActionIds::ViewTemporaryEditorOpen)
+              && temporaryActionParameters
+                     .value(QStringLiteral("path"))
+                     .toString()
+                     == fileName
+              && temporaryActionParameters
+                     .value(QStringLiteral("line"))
+                     .toInt()
+                     == 2
+              && temporaryActionParameters
+                     .value(QStringLiteral("symbolId"))
+                     .toString()
+                     == QStringLiteral("IDLE")
+              && !temporaryActionParameters
+                      .value(QStringLiteral("sourceLinkId"))
+                      .toString()
+                      .isEmpty(),
+          "RTL graph More menu dispatches selected source through the unified temporary-editor Action");
     check(jumpAction && jumpAction->isEnabled()
               && focusAction && focusAction->isEnabled()
               && setTopAction && !setTopAction->isEnabled(),

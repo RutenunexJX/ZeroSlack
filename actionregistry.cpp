@@ -2132,6 +2132,12 @@ void appendApplicationMenuActions(
          "ui.editorTabs.duplicateView",
          "Duplicate View",
          "duplicate view"},
+        {ActionIds::ViewTemporaryEditorOpen,
+         "Open in Temporary Editor",
+         "Open the selected complete shared Document in the editor-region temporary drawer without changing the split layout.",
+         "ui.temporaryEditor.open",
+         "Open in Temporary Editor",
+         "open in temporary editor"},
         {ActionIds::ViewEditorTabToggleLocked,
          "Toggle Tab Lock",
          "Lock or unlock the selected editor view without changing its shared Document.",
@@ -2140,17 +2146,29 @@ void appendApplicationMenuActions(
          "toggle tab lock"},
     };
     for (const TabActionSpec& spec : tabActions) {
+        const QString actionId =
+            QString::fromLatin1(spec.id);
+        const bool temporaryEditorAction =
+            actionId == QString::fromLatin1(
+                ActionIds::ViewTemporaryEditorOpen);
         ActionDescriptor descriptor =
             makeAction(
-                QString::fromLatin1(spec.id),
+                actionId,
                 QString::fromLatin1(spec.name),
                 QString::fromLatin1(spec.description),
-                ActionCategory::Workspace,
+                temporaryEditorAction
+                    ? ActionCategory::Navigate
+                    : ActionCategory::Workspace,
                 ActionScope::Editor,
                 QString::fromLatin1(spec.route),
-                ActionRequirements::Editor,
-                QStringLiteral(
-                    "Open or select an editor tab before running this Action."),
+                temporaryEditorAction
+                    ? 0u
+                    : ActionRequirements::Editor,
+                temporaryEditorAction
+                    ? QStringLiteral(
+                          "Select a file or source location before running this Action.")
+                    : QStringLiteral(
+                          "Open or select an editor tab before running this Action."),
                 ActionRecoveryPolicy::Explain);
         descriptor.repeatable = false;
         descriptor.aliases = {
@@ -2175,6 +2193,14 @@ void appendApplicationMenuActions(
                 false,
                 true),
         };
+        if (temporaryEditorAction) {
+            descriptor.aliases.prepend(
+                alias(
+                    ActionSurface::ContextMenu,
+                    descriptor.id,
+                    QString::fromLatin1(spec.label),
+                    descriptor.description));
+        }
         out->append(descriptor);
     }
 }

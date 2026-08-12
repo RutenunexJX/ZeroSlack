@@ -5,9 +5,12 @@
 #include "signalkernelgraphservice.h"
 
 #include <QDockWidget>
+#include <QMetaObject>
+#include <QPointF>
 #include <QRectF>
 #include <QSet>
 #include <QString>
+#include <QTransform>
 
 #include <functional>
 
@@ -37,6 +40,7 @@ public:
                                         const QString& moduleName,
                                         const QString& signalAccessPath = {});
     void refresh();
+    void refreshThemePresentation();
     void focusFit();
     void focusZoomIn();
     void focusZoomOut();
@@ -63,8 +67,20 @@ public:
                                bool crossModuleOnly);
     int searchMatchCountForTest() const;
     int focusedSearchNodeIdForTest() const;
+    quint64 graphBuildRequestCountForTest() const;
 
 private:
+    struct ThemePresentationState {
+        bool valid = false;
+        bool hasCenter = false;
+        QTransform transform;
+        QPointF center;
+        QSet<int> selectedNodeIds;
+        QSet<QString> selectedGroupKeys;
+        QString searchText;
+        QSet<QString> collapsedGroupKeys;
+    };
+
     QDockWidget* graphDock = nullptr;
     QLabel* titleLabel = nullptr;
     QLineEdit* graphSearchEdit = nullptr;
@@ -90,11 +106,16 @@ private:
     QRectF lastRenderedFanoutGroupRect;
     int lastSearchMatchCount = 0;
     int lastFocusedSearchNodeId = -1;
+    quint64 graphBuildRequestCount = 0;
+    QMetaObject::Connection themeAboutToChangeConnection;
+    ThemePresentationState pendingThemePresentationState;
 
     std::function<bool(const QString&, int, int)> navigationHandler;
     std::function<void(const QString&, int)> statusMessageHandler;
 
-    void renderReport(const SignalKernelGraphReport& report);
+    void renderReport(const SignalKernelGraphReport& report,
+                      bool announce = true);
+    ThemePresentationState captureThemePresentationState() const;
     void renderUnavailable(const QString& message);
     bool nodePassesGraphFilter(const SignalKernelGraphNode& node) const;
     bool nodeMatchesGraphSearch(const SignalKernelGraphNode& node) const;

@@ -1,6 +1,8 @@
 #ifndef NAVIGATIONCOMMANDCOORDINATOR_H
 #define NAVIGATIONCOMMANDCOORDINATOR_H
 
+#include "zeroslackexport.h"
+
 #include <QObject>
 #include <QString>
 #include <QVector>
@@ -12,7 +14,7 @@ class MyCodeEditor;
 class TabManager;
 class WorkspaceManager;
 
-class NavigationCommandCoordinator : public QObject
+class ZEROSLACK_API NavigationCommandCoordinator : public QObject
 {
     Q_OBJECT
 

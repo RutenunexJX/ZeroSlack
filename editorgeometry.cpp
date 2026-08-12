@@ -30,7 +30,8 @@ EditorCodeLineTailGeometry EditorDocumentGeometry::codeLineTailGeometry(
     const QTextBlock block =
         editor->document()->findBlockByNumber(blockNumber);
     QTextLayout* layout = block.isValid() ? block.layout() : nullptr;
-    if (!block.isValid() || !block.isVisible() || !layout
+    if (!block.isValid()
+        || !editor->sourceLineVisible(block.blockNumber()) || !layout
         || layout->lineCount() <= 0) {
         return {};
     }

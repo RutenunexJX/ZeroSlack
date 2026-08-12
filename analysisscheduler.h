@@ -1,6 +1,8 @@
 #ifndef ANALYSISSCHEDULER_H
 #define ANALYSISSCHEDULER_H
 
+#include "zeroslackexport.h"
+
 #include "documentmodel.h"
 #include "projectmodel.h"
 #include "semanticanalysisrequest.h"
@@ -22,7 +24,7 @@ class SymbolRelationshipEngine;
 class SmartRelationshipBuilder;
 class DiagnosticsRefreshController;
 
-class AnalysisScheduler : public QObject
+class ZEROSLACK_API AnalysisScheduler : public QObject
 {
     Q_OBJECT
 

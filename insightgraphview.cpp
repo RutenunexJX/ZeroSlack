@@ -14,13 +14,28 @@
 InsightGraphView::InsightGraphView(QWidget* parent)
     : QGraphicsView(parent)
 {
+    initializeThemeConnection();
     applyInsightGraphStyle();
 }
 
 InsightGraphView::InsightGraphView(QGraphicsScene* scene, QWidget* parent)
     : QGraphicsView(scene, parent)
 {
+    initializeThemeConnection();
     applyInsightGraphStyle();
+}
+
+void InsightGraphView::initializeThemeConnection()
+{
+    QObject::connect(
+        &ApplicationThemeManager::instance(),
+        &ApplicationThemeManager::themeChanged,
+        this,
+        [this](ThemeMode) {
+            applyInsightGraphStyle();
+            if (viewport())
+                viewport()->update();
+        });
 }
 
 void InsightGraphView::applyInsightGraphStyle()

@@ -1,5 +1,6 @@
 #include "rtlinsightspanelcoordinator.h"
 
+#include "applicationthememanager.h"
 #include "graphexportui.h"
 #include "insightgraphview.h"
 #include "insightvisualstyle.h"
@@ -179,10 +180,16 @@ RtlInsightsPanelCoordinator::RtlInsightsPanelCoordinator(QWidget* parent)
         viewState->graphMoreButton,
         QString::fromLatin1(
             ActionIds::GraphSetTopSelected));
+    viewState->graphTemporaryEditorAction =
+        createSelectedSourceAction(
+            viewState->graphMoreButton,
+            QString::fromLatin1(
+                ActionIds::ViewTemporaryEditorOpen));
     for (QAction* action :
          {viewState->graphJumpAction,
           viewState->graphFocusAction,
-          viewState->graphSetTopAction}) {
+          viewState->graphSetTopAction,
+          viewState->graphTemporaryEditorAction}) {
         if (action)
             graphMoreMenu->addAction(action);
     }
@@ -429,6 +436,13 @@ RtlInsightsPanelCoordinator::RtlInsightsPanelCoordinator(QWidget* parent)
     viewState->insightsDock->setFeatures(QDockWidget::DockWidgetMovable |
                               QDockWidget::DockWidgetFloatable |
                               QDockWidget::DockWidgetClosable);
+    themeAboutToChangeConnection = QObject::connect(
+        &ApplicationThemeManager::instance(),
+        &ApplicationThemeManager::themeAboutToChange,
+        viewState->insightsGraphView,
+        [this](ThemeMode, ThemeMode) {
+            graphController->captureThemeViewportState();
+        });
 
     QObject::connect(viewState->insightsTree, &QTreeWidget::itemDoubleClicked,
                      viewState->insightsDock, [this](QTreeWidgetItem* item, int) {
@@ -583,8 +597,21 @@ RtlInsightsPanelCoordinator::RtlInsightsPanelCoordinator(QWidget* parent)
 }
 
 
-RtlInsightsPanelCoordinator::~RtlInsightsPanelCoordinator() =
-    default;
+RtlInsightsPanelCoordinator::~RtlInsightsPanelCoordinator()
+{
+    QObject::disconnect(themeAboutToChangeConnection);
+    // The scene is parented to the MainWindow-owned panel and can outlive this
+    // non-QObject coordinator during MainWindow member teardown.  Disconnect
+    // deferred scene notifications before viewState and lambdas capturing this
+    // coordinator are destroyed.
+    if (viewState && viewState->insightsGraphScene) {
+        QObject::disconnect(
+            viewState->insightsGraphScene,
+            nullptr,
+            nullptr,
+            nullptr);
+    }
+}
 
 void RtlInsightsPanelCoordinator::setNavigationHandler(
     std::function<bool(const QString&, int, int)> handler)
@@ -616,6 +643,14 @@ void RtlInsightsPanelCoordinator::setStatusMessageHandler(
         viewState->signalUsageHotspotPanel->setStatusMessageHandler(
             viewState->statusMessageHandler);
     }
+}
+
+void RtlInsightsPanelCoordinator::
+    setRegisteredActionRequestHandler(
+        RegisteredActionRequestHandler handler)
+{
+    registeredActionRequestHandler =
+        std::move(handler);
 }
 
 void RtlInsightsPanelCoordinator::updateModuleContext(
@@ -712,6 +747,13 @@ void RtlInsightsPanelCoordinator::showSemanticDiff(
 void RtlInsightsPanelCoordinator::refresh()
 {
     presenter->refresh();
+}
+
+void RtlInsightsPanelCoordinator::refreshThemePresentation()
+{
+    graphController->refreshThemePresentation();
+    refreshGraphActionAvailability();
+    refreshGraphExportActionAvailability();
 }
 
 void RtlInsightsPanelCoordinator::showModuleBrief()

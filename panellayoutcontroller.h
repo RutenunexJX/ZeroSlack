@@ -2,6 +2,7 @@
 #define PANELLAYOUTCONTROLLER_H
 
 #include "panellayoutstate.h"
+#include "zeroslackexport.h"
 
 #include <QDockWidget>
 #include <QHash>
@@ -15,6 +16,7 @@
 #include <functional>
 
 class QMainWindow;
+class QEvent;
 class QPoint;
 class QTabBar;
 class QWidget;
@@ -26,7 +28,7 @@ struct BottomPanelContextAction {
     bool enabled = false;
 };
 
-class PanelLayoutController : public QObject
+class ZEROSLACK_API PanelLayoutController : public QObject
 {
 public:
     using RegisteredPanelActionRequestHandler =
@@ -36,6 +38,7 @@ public:
 
     explicit PanelLayoutController(QMainWindow* mainWindow,
                                    QObject* parent = nullptr);
+    ~PanelLayoutController() override;
 
     void setNavigationDock(QDockWidget* dock);
     bool registerBottomPanel(const QString& panelId,
@@ -78,14 +81,15 @@ public:
     void bindManagedTabBars();
     void setStateChangedHandler(std::function<void()> handler);
 
+protected:
+    bool eventFilter(QObject* watched, QEvent* event) override;
+
 private:
     struct PanelEntry {
         QString id;
         QString initialTitle;
         QPointer<QDockWidget> dock;
         QPointer<QWidget> content;
-        int contentMinimumHeight = 0;
-        int contentMaximumHeight = 0;
         QDockWidget::DockWidgetFeatures dockFeatures;
     };
 
@@ -99,8 +103,12 @@ private:
     QList<QPointer<QTabBar>> managedTabBars;
     QString activePanel;
     int expandedHeight = 240;
+    int expandedGeometrySamples = 0;
     bool collapsed = false;
     bool applying = false;
+    bool bottomGeometrySyncPending = false;
+    bool initialBottomGeometryPending = false;
+    bool resizingBottomPanel = false;
     bool finalized = false;
     bool focusMode = false;
     bool navigationOpenBeforeFocus = false;
@@ -113,10 +121,20 @@ private:
     const PanelEntry* entryForId(const QString& panelId) const;
     QString idForTab(const QTabBar* bar, int index) const;
     int currentExpandedBottomHeight() const;
+    PanelEntry* activeBottomEntry();
+    const PanelEntry* activeBottomEntry() const;
+    QTabBar* managedBottomTabBar() const;
+    int visibleBottomContentHeight() const;
+    void prepareContentForManualResize(PanelEntry& entry);
+    void scheduleBottomGeometrySync();
+    void synchronizeBottomStateFromGeometry();
+    void setBottomCollapsedState(bool shouldCollapse,
+                                 bool resizeDock,
+                                 bool notify);
     void applyOrder();
     void applyTabBarOrder();
     void applyPinnedFeatures(PanelEntry& entry);
-    void applyContentCollapse(bool shouldCollapse);
+    void applyBottomPanelGeometry(bool shouldCollapse);
     void updateTabCloseButtons();
     void synchronizeOrderFromTabBar(QTabBar* bar);
     void showTabContextMenu(QTabBar* bar, const QPoint& position);

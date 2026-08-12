@@ -1,13 +1,15 @@
 #ifndef EDITORAPPEARANCESETTINGS_H
 #define EDITORAPPEARANCESETTINGS_H
 
+#include "zeroslackexport.h"
+
 #include "editorappearance.h"
 
 #include <QObject>
 #include <QSettings>
 #include <memory>
 
-class EditorAppearanceSettings : public QObject
+class ZEROSLACK_API EditorAppearanceSettings : public QObject
 {
     Q_OBJECT
 

@@ -181,6 +181,10 @@ public:
 
     void setSemanticIndex(SemanticIndex* semanticIndex);
 
+    // Materializes the currently published semantic snapshot without query
+    // truncation. Callers cache this catalog at publication boundaries; this
+    // is not intended for per-keystroke search.
+    QList<SearchResult> symbolCatalog() const;
     QList<SearchResult> findSymbols(const SearchQuery& query) const;
     bool hasMatches(const SearchQuery& query) const;
     ScopedSearchResponse search(

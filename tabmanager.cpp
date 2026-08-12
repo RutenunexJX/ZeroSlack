@@ -4,6 +4,7 @@
 #include "documentmodel.h"
 #include "editorfileidentity.h"
 
+#include <QApplication>
 #include <QDir>
 #include <QEvent>
 #include <QFileInfo>
@@ -338,6 +339,10 @@ TabManager::TabManager(QTabWidget* initialTabWidget, QObject* parent)
 
 TabManager::~TabManager()
 {
+    const QList<MyCodeEditor*> auxiliary = auxiliaryViews();
+    for (MyCodeEditor* editor : auxiliary)
+        closeAuxiliaryView(editor);
+
     for (SharedDocument* document :
          std::as_const(observedDocuments)) {
         if (document)
@@ -1017,6 +1022,161 @@ SharedDocument* TabManager::sharedDocumentForEditor(
         : nullptr;
 }
 
+MyCodeEditor* TabManager::editorActionTarget(
+    const QString& preferredViewId) const
+{
+    const auto registeredEditors =
+        [this]() {
+            return openEditors() + auxiliaryViews();
+        };
+    const auto isRegistered =
+        [this](MyCodeEditor* editor) {
+            return editor
+                && sharedDocumentForEditor(editor);
+        };
+
+    if (!preferredViewId.isEmpty()) {
+        for (MyCodeEditor* editor : registeredEditors()) {
+            if (editor
+                && editor->property("editorViewId").toString()
+                       == preferredViewId) {
+                return editor;
+            }
+        }
+        return nullptr;
+    }
+
+    QWidget* focused = QApplication::focusWidget();
+    for (QWidget* widget = focused;
+         widget;
+         widget = widget->parentWidget()) {
+        auto* editor = qobject_cast<MyCodeEditor*>(widget);
+        if (isRegistered(editor))
+            return editor;
+    }
+
+    MyCodeEditor* current = getCurrentEditor();
+    return isRegistered(current) ? current : nullptr;
+}
+
+bool TabManager::saveEditorView(
+    MyCodeEditor* editor,
+    bool forceSaveAs,
+    const QString& explicitFileName)
+{
+    return sharedDocumentForEditor(editor)
+        && saveEditor(editor,
+                      forceSaveAs,
+                      explicitFileName);
+}
+
+MyCodeEditor* TabManager::createAuxiliaryView(
+    const QString& documentId,
+    const QString& fileName,
+    QWidget* parentWidget,
+    const SharedDocumentViewState& state)
+{
+    SharedDocument* document =
+        auxiliaryDocument(documentId, fileName);
+    if (!document || !parentWidget)
+        return nullptr;
+    return createBoundView(
+        document, parentWidget, state, true);
+}
+
+bool TabManager::rebindAuxiliaryView(
+    MyCodeEditor* editor,
+    const QString& documentId,
+    const QString& fileName,
+    const SharedDocumentViewState& state)
+{
+    if (!isAuxiliaryView(editor))
+        return false;
+
+    SharedDocument* target =
+        auxiliaryDocument(documentId, fileName);
+    SharedDocument* previous =
+        sharedDocumentForEditor(editor);
+    if (!target)
+        return false;
+    if (target == previous)
+        return true;
+
+    const SharedDocumentViewState previousState =
+        previous ? previous->viewState(editor)
+                 : SharedDocumentViewState();
+    editor->exitInteractionModes(
+        EditorModeExitReason::TabChanged);
+    editor->closeSemanticPopup();
+    documentModel->unregisterEditor(editor);
+    if (previous)
+        previous->detachView(editor, false);
+
+    if (bindEditorToDocument(editor, target, state))
+        return true;
+
+    if (previous)
+        bindEditorToDocument(editor, previous, previousState);
+    return false;
+}
+
+bool TabManager::closeAuxiliaryView(MyCodeEditor* editor)
+{
+    return closeAuxiliaryViewInternal(editor, false);
+}
+
+bool TabManager::closeAuxiliaryViewInternal(
+    MyCodeEditor* editor,
+    bool releaseUnusedDocument)
+{
+    if (!isAuxiliaryView(editor))
+        return false;
+
+    SharedDocument* document =
+        sharedDocumentForEditor(editor);
+    emit auxiliaryViewAboutToClose(editor);
+    editor->hide();
+    editor->exitInteractionModes(
+        EditorModeExitReason::DocumentClosed);
+    editor->closeSemanticPopup();
+    documentModel->unregisterEditor(editor);
+    if (document)
+        document->detachView(editor, false);
+    auxiliaryEditors.remove(editor);
+    editor->removeEventFilter(this);
+    // The editor still references the shared QTextDocument while its widget
+    // and text-control state are destroyed. Keep the SharedDocument alive
+    // through this synchronous teardown instead of cloning the full text.
+    delete editor;
+    if (releaseUnusedDocument && document && sharedDocuments)
+        sharedDocuments->releaseIfUnused(document);
+    return true;
+}
+
+bool TabManager::saveAuxiliaryView(
+    MyCodeEditor* editor,
+    bool forceSaveAs)
+{
+    return isAuxiliaryView(editor)
+        && saveEditorView(editor, forceSaveAs);
+}
+
+bool TabManager::isAuxiliaryView(MyCodeEditor* editor) const
+{
+    return editor && auxiliaryEditors.contains(editor);
+}
+
+QList<MyCodeEditor*> TabManager::auxiliaryViews() const
+{
+    QList<MyCodeEditor*> result;
+    result.reserve(auxiliaryEditors.size());
+    for (MyCodeEditor* editor : auxiliaryEditors) {
+        if (editor)
+            result.append(editor);
+    }
+    return result;
+}
+
 ExternalDocumentSyncController*
 TabManager::externalDocumentSyncController() const
 {
@@ -1580,10 +1740,12 @@ bool TabManager::finalizeWorkspacePathMutation(
     bool closedAll = true;
     for (MyCodeEditor* editor :
          std::as_const(affectedEditors)) {
-        if (editor)
-            closedAll =
-                closeEditor(editor, false, false)
-                && closedAll;
+        if (!editor)
+            continue;
+        const bool closed = isAuxiliaryView(editor)
+            ? closeAuxiliaryViewInternal(editor, true)
+            : closeEditor(editor, false, false);
+        closedAll = closed && closedAll;
     }
     closingBatch = false;
     if (splitController)
@@ -1948,18 +2110,39 @@ MyCodeEditor* TabManager::createView(
 {
     if (!document || !group)
         return nullptr;
-    std::unique_ptr<MyCodeEditor> editor(
-        new MyCodeEditor(group));
-    MyCodeEditor* editorPointer = editor.get();
-    const QString viewId =
-        document->attachView(editorPointer, state);
-    if (viewId.isEmpty())
+
+    MyCodeEditor* editorPointer = createBoundView(
+        document, group, state, false);
+    if (!editorPointer)
         return nullptr;
-    editorPointer->setProperty(
-        "editorViewId", viewId);
-    editorPointer->setProperty(
-        "sharedDocumentId",
-        document->documentId());
+
+    const int index =
+        group->addTab(editorPointer, QString());
+    group->setCurrentIndex(index);
+    splitController->setActiveGroup(group);
+    // A newly opened document can introduce a basename conflict for tabs
+    // that were already present. Refresh every title so both sides adopt the
+    // same shortest unique suffix, then apply the active grouping once.
+    updateAllTabTitles();
+    emit tabCreated(editorPointer);
+    return editorPointer;
+}
+
+MyCodeEditor* TabManager::createBoundView(
+    SharedDocument* document,
+    QWidget* parentWidget,
+    const SharedDocumentViewState& state,
+    bool auxiliary)
+{
+    if (!document || !parentWidget)
+        return nullptr;
+    std::unique_ptr<MyCodeEditor> editor(
+        new MyCodeEditor(parentWidget));
+    MyCodeEditor* editorPointer = editor.get();
+    if (!bindEditorToDocument(
+            editorPointer, document, state)) {
+        return nullptr;
+    }
     connect(editorPointer,
             &MyCodeEditor::fileNameChanged,
             this,
@@ -2015,42 +2198,84 @@ MyCodeEditor* TabManager::createView(
                 applyWorkspaceScope();
                 emit workspaceSessionStateChanged();
             });
-    connect(editorPointer,
-            &QPlainTextEdit::cursorPositionChanged,
-            this,
-            &TabManager::workspaceSessionStateChanged);
-    if (QScrollBar* bar = editorPointer->verticalScrollBar()) {
-        connect(bar,
-                &QScrollBar::valueChanged,
+    if (!auxiliary) {
+        connect(editorPointer,
+                &QPlainTextEdit::cursorPositionChanged,
                 this,
                 &TabManager::workspaceSessionStateChanged);
+        if (QScrollBar* bar =
+                editorPointer->verticalScrollBar()) {
+            connect(bar,
+                    &QScrollBar::valueChanged,
+                    this,
+                    &TabManager::workspaceSessionStateChanged);
+        }
+        if (QScrollBar* bar =
+                editorPointer->horizontalScrollBar()) {
+            connect(bar,
+                    &QScrollBar::valueChanged,
+                    this,
+                    &TabManager::workspaceSessionStateChanged);
+        }
     }
-    if (QScrollBar* bar = editorPointer->horizontalScrollBar()) {
-        connect(bar,
-                &QScrollBar::valueChanged,
-                this,
-                &TabManager::workspaceSessionStateChanged);
-    }
-    editorPointer->acceptLoadedTextAsSemanticBaseline();
-    editorPointer->setHierarchyInstanceContext(
-        unboundTabInstanceContext(
-            activeWorkspaceRoot));
-    documentModel->registerEditor(
-        editorPointer,
-        document->fileName());
-
-    const int index =
-        group->addTab(editor.release(), QString());
-    group->setCurrentIndex(index);
     editorPointer->installEventFilter(this);
-    observeDocument(document);
-    splitController->setActiveGroup(group);
-    // A newly opened document can introduce a basename conflict for tabs
-    // that were already present. Refresh every title so both sides adopt the
-    // same shortest unique suffix, then apply the active grouping once.
-    updateAllTabTitles();
-    emit tabCreated(editorPointer);
+    editor.release();
+    if (auxiliary) {
+        auxiliaryEditors.insert(editorPointer);
+        connect(editorPointer,
+                &QObject::destroyed,
+                this,
+                [this, editorPointer]() {
+                    auxiliaryEditors.remove(editorPointer);
+                });
+        emit auxiliaryViewCreated(editorPointer);
+    }
     return editorPointer;
+}
+
+SharedDocument* TabManager::auxiliaryDocument(
+    const QString& documentId,
+    const QString& fileName)
+{
+    if (!sharedDocuments)
+        return nullptr;
+    if (!documentId.isEmpty()) {
+        if (SharedDocument* document =
+                sharedDocuments->documentById(documentId)) {
+            return document;
+        }
+    }
+    if (!fileName.isEmpty()) {
+        if (SharedDocument* document =
+                sharedDocuments->documentForFile(fileName)) {
+            return document;
+        }
+        return acquireFileDocument(fileName);
+    }
+    return nullptr;
+}
+
+bool TabManager::bindEditorToDocument(
+    MyCodeEditor* editor,
+    SharedDocument* document,
+    const SharedDocumentViewState& state)
+{
+    if (!editor || !document)
+        return false;
+    const QString viewId =
+        document->attachView(editor, state);
+    if (viewId.isEmpty())
+        return false;
+    editor->setProperty("editorViewId", viewId);
+    editor->setProperty(
+        "sharedDocumentId", document->documentId());
+    editor->acceptLoadedTextAsSemanticBaseline();
+    editor->setHierarchyInstanceContext(
+        unboundTabInstanceContext(activeWorkspaceRoot));
+    documentModel->registerEditor(
+        editor, document->fileName());
+    observeDocument(document);
+    return true;
 }
 
 SharedDocument* TabManager::acquireFileDocument(
@@ -2351,6 +2576,19 @@ void TabManager::observeDocument(
                         true,
                         false);
                 }
+            });
+    connect(document,
+            &SharedDocument::identityChanged,
+            this,
+            [this](const QString& previousDocumentId,
+                   const QString& previousFileName,
+                   const QString& documentId,
+                   const QString& fileName) {
+                emit documentIdentityChanged(
+                    previousDocumentId,
+                    previousFileName,
+                    documentId,
+                    fileName);
             });
     connect(document,
             &QObject::destroyed,

@@ -17,6 +17,7 @@ struct StateTransitionGraphReport;
 struct RtlInsightsPanelViewState;
 class QGraphicsItem;
 class RtlInsightsGraphSceneMapper;
+struct RtlInsightsThemeViewportState;
 
 class RtlInsightsGraphController
 {
@@ -80,6 +81,7 @@ public:
         const QPointF& scenePoint);
     bool navigateItem(QGraphicsItem* item);
     bool navigateSelectedItem();
+    RtlInsightSourceLocation selectedSourceLocation() const;
     bool setModuleBlockTopFromSelected();
     bool selectSourceLocation(
         const RtlInsightSourceLocation& location,
@@ -109,12 +111,16 @@ public:
     void setFocusSearchText(const QString& text);
     QString focusSearchText() const;
     void focusInspector();
+    void captureThemeViewportState();
+    void refreshThemePresentation();
     quint64 graphBuildGeneration() const;
 
 private:
     RtlInsightsPanelViewState& state;
     std::unique_ptr<RtlInsightsGraphSceneMapper>
         sceneMapper;
+    std::unique_ptr<RtlInsightsThemeViewportState>
+        themeViewportState;
 };
 
 #endif // RTLINSIGHTSGRAPHCONTROLLER_H

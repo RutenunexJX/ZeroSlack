@@ -35,6 +35,8 @@
 #include "saferenameservice.h"
 #include "symboltaxonomy.h"
 #include "mycodeeditor.h"
+#include "applicationthememanager.h"
+#include "insightvisualstyle.h"
 
 static int g_checks = 0, g_fails = 0;
 
@@ -871,6 +873,7 @@ int main(int argc, char** argv) {
 
     const QString diagnosticText =
         QStringLiteral("module bad;\n  broken\nendmodule\n");
+    ApplicationThemeManager::instance().setMode(ThemeMode::Light);
     MyCodeEditor diagnosticEditor;
     diagnosticEditor.resize(360, 160);
     diagnosticEditor.setPlainText(diagnosticText);
@@ -937,19 +940,25 @@ int main(int argc, char** argv) {
             || (start == diagnosticRange.position
                 && end == diagnosticRange.position
                     + diagnosticRange.length
-                && underline == QColor(QStringLiteral("#EF4444")));
+                && underline
+                    == InsightVisualStyle::theme()
+                           .syntax.errorUnderline);
         diagnosticExactWarningUnderline =
             diagnosticExactWarningUnderline
             || (start == warning.ranges.first().position
                 && end == warning.ranges.first().position
                     + warning.ranges.first().length
-                && underline == QColor(QStringLiteral("#FBBF24")));
+                && underline
+                    == InsightVisualStyle::theme()
+                           .syntax.warningUnderline);
         diagnosticMultilineUnderline =
             diagnosticMultilineUnderline
             || (start == multiline.ranges.first().position
                 && end == multiline.ranges.first().position
                     + multiline.ranges.first().length
-                && underline == QColor(QStringLiteral("#FBBF24")));
+                && underline
+                    == InsightVisualStyle::theme()
+                           .syntax.warningUnderline);
     }
     expectBool("Diagnostic decoration removes line background",
                diagnosticLineBackground,
@@ -962,6 +971,51 @@ int main(int argc, char** argv) {
                true);
     expectBool("Diagnostic cross-line range remains exact",
                diagnosticMultilineUnderline,
+               true);
+    const auto diagnosticUnderlinesMatchTheme = [&diagnosticEditor,
+                                                  &diagnosticRange,
+                                                  &warning,
+                                                  &multiline]() {
+        bool errorMatches = false;
+        bool warningMatches = false;
+        bool multilineMatches = false;
+        const InsightTheme& theme = InsightVisualStyle::theme();
+        for (const QTextEdit::ExtraSelection& selection :
+             diagnosticEditor.extraSelections()) {
+            if (selection.format.underlineStyle()
+                != QTextCharFormat::WaveUnderline) {
+                continue;
+            }
+            const int start = selection.cursor.selectionStart();
+            const int end = selection.cursor.selectionEnd();
+            const QColor underline = selection.format.underlineColor();
+            errorMatches = errorMatches
+                || (start == diagnosticRange.position
+                    && end == diagnosticRange.position
+                        + diagnosticRange.length
+                    && underline == theme.syntax.errorUnderline);
+            warningMatches = warningMatches
+                || (start == warning.ranges.first().position
+                    && end == warning.ranges.first().position
+                        + warning.ranges.first().length
+                    && underline == theme.syntax.warningUnderline);
+            multilineMatches = multilineMatches
+                || (start == multiline.ranges.first().position
+                    && end == multiline.ranges.first().position
+                        + multiline.ranges.first().length
+                    && underline == theme.syntax.warningUnderline);
+        }
+        return errorMatches && warningMatches && multilineMatches;
+    };
+    ApplicationThemeManager::instance().setMode(ThemeMode::Dark);
+    diagnosticEditor.refreshSemanticPresentation();
+    expectBool("Diagnostic ranges recolor exactly in Dark",
+               diagnosticUnderlinesMatchTheme(),
+               true);
+    ApplicationThemeManager::instance().setMode(ThemeMode::Light);
+    diagnosticEditor.refreshSemanticPresentation();
+    expectBool("Diagnostic ranges survive Light round trip",
+               diagnosticUnderlinesMatchTheme(),
                true);
     bool diagnosticLineSeverityAvailable = false;
     expectBool("Diagnostic same-line icon uses highest severity",

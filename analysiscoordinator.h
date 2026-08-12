@@ -1,6 +1,8 @@
 #ifndef ANALYSISCOORDINATOR_H
 #define ANALYSISCOORDINATOR_H
 
+#include "zeroslackexport.h"
+
 #include <QObject>
 #include <QString>
 
@@ -16,7 +18,7 @@ class WorkspaceManager;
 struct DocumentSnapshot;
 struct SemanticAnalysisTelemetry;
 
-class AnalysisCoordinator : public QObject
+class ZEROSLACK_API AnalysisCoordinator : public QObject
 {
     Q_OBJECT
 

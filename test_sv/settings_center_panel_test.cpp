@@ -135,8 +135,8 @@ int main(int argc, char* argv[])
     auto* categories =
         panel.findChild<QListWidget*>(
             QStringLiteral("settingsCenterCategoryList"));
-    check(categories && categories->count() == 6,
-          "all six schema categories are shown");
+    check(categories && categories->count() == 7,
+          "all seven schema categories are shown");
     bool everyCategoryHasPage = true;
     bool everyFieldHasStableEditor = true;
     int generatedFieldCount = 0;
@@ -173,6 +173,20 @@ int main(int argc, char* argv[])
               && panel.scope() == SettingsCenterScope::Global,
           "global and workspace scopes are explicit");
 
+    auto* themeEditor = qobject_cast<QComboBox*>(
+        panel.fieldEditor(
+            QStringLiteral("appearance.theme")));
+    auto* themeOverride =
+        panel.findChild<QCheckBox*>(
+            SettingsCenterPanel::fieldOverrideObjectName(
+                QStringLiteral("appearance.theme")));
+    check(themeEditor && themeOverride
+              && themeEditor->currentText()
+                     == QStringLiteral("Light")
+              && themeEditor->isEnabled()
+              && themeOverride->isHidden(),
+          "Appearance exposes an always-active Light/Dark selector");
+
     auto* sizeEditor = qobject_cast<QSpinBox*>(
         panel.fieldEditor(QStringLiteral("font.sizePt")));
     auto* sizeOverride =
@@ -195,6 +209,8 @@ int main(int argc, char* argv[])
                   QStringLiteral("font.sizePt"),
                   SettingsCenterScope::Workspace),
           "workspace override is loaded independently");
+    check(themeEditor && !themeEditor->isEnabled(),
+          "workspace scope cannot override the application theme");
 
     auto* familyEditor = qobject_cast<QLineEdit*>(
         panel.fieldEditor(QStringLiteral("font.family")));
@@ -271,6 +287,34 @@ int main(int argc, char* argv[])
           "revert preserves focused editor");
 
     panel.setScope(SettingsCenterScope::Global);
+    panel.selectCategory(QStringLiteral("appearance"));
+    sizeEditor->setValue(16);
+    {
+        QSettings externalSettings(globalPath, QSettings::IniFormat);
+        externalSettings.setValue(
+            QStringLiteral("editorAppearance/fontSizePt"),
+            19);
+        externalSettings.sync();
+    }
+    themeEditor->setCurrentText(QStringLiteral("Dark"));
+    QApplication::processEvents();
+    const SettingsCenterSnapshot afterThemeSwitch =
+        service.load(workspaceRoot);
+    check(afterThemeSwitch.globalValues.value(
+              QStringLiteral("appearance.theme")).toString()
+              == QStringLiteral("Dark")
+              && afterThemeSwitch.globalValues.value(
+                     QStringLiteral("font.sizePt")).toInt()
+                     == 19
+              && appliedSignals == 2
+              && panel.isScopeDirty(
+                  SettingsCenterScope::Global),
+          "theme retry preserves concurrent fields without applying local drafts");
+    panel.revertCurrentScope();
+    check(themeEditor->currentText() == QStringLiteral("Dark")
+              && sizeEditor->value() == 19,
+          "revert retains the applied theme and discards unrelated drafts");
+
     panel.selectCategory(QStringLiteral("shortcut"));
     QApplication::processEvents();
     QAbstractItemModel* shortcutModel =

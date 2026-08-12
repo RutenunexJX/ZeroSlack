@@ -1,6 +1,8 @@
 #ifndef SYMBOLANALYZER_H
 #define SYMBOLANALYZER_H
 
+#include "zeroslackexport.h"
+
 #include <QObject>
 #include <QElapsedTimer>
 #include <QStringList>
@@ -123,7 +125,7 @@ struct SemanticPublicationRetirementPayload {
     }
 };
 
-class SymbolAnalyzer : public QObject
+class ZEROSLACK_API SymbolAnalyzer : public QObject
 {
     Q_OBJECT
 

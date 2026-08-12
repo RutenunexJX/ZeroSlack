@@ -33,6 +33,11 @@ struct EditorColumnModeController::State
     int virtualCursorLine = -1;
     int virtualCursorColumn = -1;
     int virtualCursorSavedWidth = 1;
+    int pendingColumnAnchorLine = -1;
+    int pendingColumnAnchorColumn = -1;
+    int pendingColumnAnchorPosition = -1;
+    int pendingColumnAnchorRevision = -1;
+    QPointer<QTextDocument> pendingColumnAnchorDocument;
     quint64 presentationGeneration = 0;
 };
 
@@ -474,7 +479,8 @@ bool columnPointFromMouse(MyCodeEditor* editor,
     const QTextCursor rowCursor =
         editor->cursorForPosition(QPoint(0, position.y()));
     const QTextBlock block = rowCursor.block();
-    if (!block.isValid() || !block.isVisible())
+    if (!block.isValid()
+        || !editor->sourceLineVisible(block.blockNumber()))
         return false;
     const EditorBlockGeometry geometry =
         editor->blockGeometry(block.blockNumber());
@@ -514,7 +520,8 @@ bool handlePlainVirtualCursorClick(
     if (!editor || !event
         || event->button() != Qt::LeftButton
         || (event->modifiers() != Qt::NoModifier
-            && event->modifiers() != Qt::AltModifier)) {
+            && event->modifiers() != Qt::AltModifier)
+        || !state.modes) {
         return false;
     }
 
@@ -545,7 +552,25 @@ bool handlePlainVirtualCursorClick(
     if (column <= lineEndColumn)
         column = lineEndColumn + 1;
 
+    if (event->modifiers() == Qt::AltModifier
+        && state.modes->isActive(EditorModeId::MultiCursor)) {
+        state.modes->exit(
+            EditorModeId::MultiCursor,
+            EditorModeExitReason::Canceled);
+    }
     state.owner->clearVirtualCursor(editor);
+    if (event->modifiers() == Qt::NoModifier) {
+        state.pendingColumnAnchorLine = line;
+        state.pendingColumnAnchorColumn = column;
+        state.pendingColumnAnchorPosition =
+            block.position() + block.text().size();
+        state.pendingColumnAnchorRevision =
+            editor->document()->revision();
+        state.pendingColumnAnchorDocument =
+            editor->document();
+        return false;
+    }
+
     QTextCursor cursor(block);
     cursor.setPosition(
         block.position() + block.text().size());
@@ -610,9 +635,29 @@ bool beginColumnSelection(MyCodeEditor* editor,
 
     const bool virtualAnchor =
         state.modes->isActive(EditorModeId::VirtualCursor);
+    const QTextCursor anchor = editor->textCursor();
+    const bool pendingAnchor =
+        !virtualAnchor
+        && state.pendingColumnAnchorLine >= 0
+        && state.pendingColumnAnchorColumn >= 0
+        && state.pendingColumnAnchorPosition == anchor.position()
+        && !anchor.hasSelection()
+        && state.pendingColumnAnchorDocument
+               == editor->document()
+        && state.pendingColumnAnchorRevision
+               == editor->document()->revision()
+        && anchor.block().isValid()
+        && anchor.blockNumber()
+               == state.pendingColumnAnchorLine
+        && anchor.position()
+               == anchor.block().position()
+                      + anchor.block().text().size()
+        && editor->sourceLineVisible(
+               state.pendingColumnAnchorLine);
     const int virtualAnchorLine = state.virtualCursorLine;
     const int virtualAnchorColumn = state.virtualCursorColumn;
-    const QTextCursor anchor = editor->textCursor();
+    const int pendingAnchorLine = state.pendingColumnAnchorLine;
+    const int pendingAnchorColumn = state.pendingColumnAnchorColumn;
     state.modes->enter(EditorModeId::ColumnSelection,
                       EditorModeEntryReason::MouseGesture);
     state.columnSelectionDragging = false;
@@ -621,6 +666,9 @@ bool beginColumnSelection(MyCodeEditor* editor,
     if (virtualAnchor) {
         state.columnAnchorLine = virtualAnchorLine;
         state.columnAnchorColumn = virtualAnchorColumn;
+    } else if (pendingAnchor) {
+        state.columnAnchorLine = pendingAnchorLine;
+        state.columnAnchorColumn = pendingAnchorColumn;
     } else {
         setColumnPointFromCursor(editor,
                                  anchor,
@@ -1140,7 +1188,8 @@ void EditorColumnModeController::publishVisibleAnnotations(
          ++line) {
         const QTextBlock block =
             editor->document()->findBlockByNumber(line);
-        if (!block.isValid() || !block.isVisible())
+        if (!block.isValid()
+            || !editor->sourceLineVisible(block.blockNumber()))
             continue;
 
         const int lineEndColumn =
@@ -1292,6 +1341,11 @@ void EditorColumnModeController::clearVirtualCursor(
         || state->virtualCursorColumn >= 0;
     state->virtualCursorLine = -1;
     state->virtualCursorColumn = -1;
+    state->pendingColumnAnchorLine = -1;
+    state->pendingColumnAnchorColumn = -1;
+    state->pendingColumnAnchorPosition = -1;
+    state->pendingColumnAnchorRevision = -1;
+    state->pendingColumnAnchorDocument.clear();
     publishVisibleAnnotations(editor);
     if (editor && hadVirtualState) {
         editor->setCursorWidth(
@@ -1306,10 +1360,33 @@ void EditorColumnModeController::clearVirtualCursor(
     }
 }
 
+void EditorColumnModeController::clearPendingColumnAnchor()
+{
+    state->pendingColumnAnchorLine = -1;
+    state->pendingColumnAnchorColumn = -1;
+    state->pendingColumnAnchorPosition = -1;
+    state->pendingColumnAnchorRevision = -1;
+    state->pendingColumnAnchorDocument.clear();
+}
+
 void EditorColumnModeController::
     handleVirtualCursorChanged(
         MyCodeEditor* editor)
 {
+    if (editor
+        && state->pendingColumnAnchorLine >= 0) {
+        const QTextCursor cursor = editor->textCursor();
+        const bool pendingStillValid =
+            state->pendingColumnAnchorDocument
+                == editor->document()
+            && state->pendingColumnAnchorRevision
+                   == editor->document()->revision()
+            && !cursor.hasSelection()
+            && cursor.position()
+                   == state->pendingColumnAnchorPosition;
+        if (!pendingStillValid)
+            clearPendingColumnAnchor();
+    }
     if (!virtualCursorActive() || !editor)
         return;
 
@@ -1381,51 +1458,13 @@ bool EditorColumnModeController::
            | Qt::AltModifier
            | Qt::MetaModifier);
     if (!virtualCursorActive()) {
-        if (selectionActive()
-            || !state->modes) {
-            return false;
+        if (event->key() != Qt::Key_Shift
+            && event->key() != Qt::Key_Alt
+            && event->key() != Qt::Key_Control
+            && event->key() != Qt::Key_Meta) {
+            clearPendingColumnAnchor();
         }
-        if (event->key() != Qt::Key_Right
-            || relevantModifiers
-                   != Qt::NoModifier) {
-            return false;
-        }
-        const QTextCursor cursor =
-            editor->textCursor();
-        const QTextBlock block = cursor.block();
-        if (cursor.hasSelection()
-            || !block.isValid()
-            || cursor.position()
-                   != block.position()
-                          + block.text().size()) {
-            return false;
-        }
-        state->virtualCursorSavedWidth =
-            qMax(1, editor->cursorWidth());
-        state->modes->enter(
-            EditorModeId::VirtualCursor,
-            EditorModeEntryReason::KeyboardGesture);
-        state->virtualCursorLine =
-            block.blockNumber();
-        state->virtualCursorColumn =
-            layoutVisualColumnForOffset(
-                editor,
-                block,
-                block.text().size())
-            + 1;
-        state->modes->updatePresentation(
-            EditorModeId::VirtualCursor,
-            QStringLiteral("Virtual column %1")
-                .arg(
-                    state->virtualCursorColumn
-                    + 1),
-            QStringLiteral(
-                 "Type to materialize; arrows move; Esc cancels"));
-        editor->setCursorWidth(0);
-        publishVisibleAnnotations(editor);
-        editor->viewport()->update();
-        event->accept();
-        return true;
+        return false;
     }
 
     const QTextBlock block =

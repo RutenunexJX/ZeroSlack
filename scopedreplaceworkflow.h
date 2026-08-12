@@ -1,6 +1,8 @@
 #ifndef SCOPEDREPLACEWORKFLOW_H
 #define SCOPEDREPLACEWORKFLOW_H
 
+#include "zeroslackexport.h"
+
 #include "searchservice.h"
 
 #include <rtledit/workspace_edit_transaction.h>
@@ -65,7 +67,7 @@ Q_DECLARE_METATYPE(ScopedReplaceWorkflowResult)
 // Coordinates one explicit replace preview at a time. Search revisions are
 // validated before they are rebound to WorkspaceDocumentManager versions, and
 // confirmation rechecks both the document snapshots and external file state.
-class ScopedReplaceWorkflow final : public QObject
+class ZEROSLACK_API ScopedReplaceWorkflow final : public QObject
 {
     Q_OBJECT
 

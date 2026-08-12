@@ -1,36 +1,193 @@
 # ZeroSlack Handoff
 
-## Current Acceptance Repair (2026-08-04)
+## Global Theme and Temporary Editor Drawer (2026-08-11)
 
-Overall status: **验收通过，P1 正确性修复完成**.
+Status: **控制侧已独立验收通过**. The working tree remains
+uncommitted and nothing has been pushed.
+
+- Settings > Appearance now offers Light and Dark. A selection is applied
+  immediately and persisted through the existing Settings Center/QSettings
+  `appearance.theme` path; Light remains the default for an unset profile.
+- `ApplicationThemeManager` owns the application palette, common-widget QSS,
+  current in-process mode, and ordered pre-change/post-change signals; it does
+  not own persistence. `InsightVisualStyle` is the single token source for
+  both modes, including editor presentation, diagnostics, shell controls,
+  popups, drag previews, and QGraphicsScene consumers. A theme round trip
+  refreshes presentation only; it does not recreate a workspace, document,
+  semantic index, tab, split, cursor, selection, or scroll state.
+- The application owns one `TemporaryEditorDrawerController`. Its
+  `EditorLocation`/`OpenTarget` route is exposed by the current editor, Tab,
+  Files, Design, definition preview, Scoped Search, and RTL source-linked graph
+  entry points. Title search returns an ordered `EditorSearchCandidate` list
+  containing the target, kind, primary label, and disambiguation text. It
+  queries cached workspace-file and `SearchService` semantic catalogs, refreshes
+  the file catalog on `filesScanned`, and performs only in-memory fuzzy ranking
+  while the user types. Duplicate file and symbol names remain selectable; the
+  themed child popup supports Up/Down/Enter/Esc and mouse selection, and a
+  unique exact match may be opened directly.
+- `TemporaryEditorDrawer` is a child overlay of the editor split host, not a
+  dock, splitter child, top-level window, or session tab. Drag it to move or
+  resize it, or to stow it on the Left, Right, Top, or Bottom edge. Only the
+  small labeled handle expands a stowed drawer. Back, Forward, Pin, Close, and
+  target search are available in the title bar; Pin disables automatic
+  collapse and Close removes only the auxiliary View. Controller state is
+  `Hidden`, `Floating`, or `EdgeStowed`; Pin is an independent runtime policy,
+  not a persisted state. Parent-region resize and ordinary drawer interaction
+  use local event filters. The application-wide event filter is absent while
+  the drawer is Hidden or visible-but-idle and is armed only for popup/menu
+  protection or an active title/resize drag; it type-gates relevant events
+  before widget ownership checks and is removed when that interaction ends.
+- `TabManager` creates the auxiliary editor View from the existing
+  `SharedDocument`/`QTextDocument`. Edits, undo, save, and external-change
+  handling therefore use the same document authority as normal tabs, while
+  cursor, selection, scroll, folding, and drawer history remain View-local.
+  Each `MyCodeEditor` owns an `EditorViewProjection`: collapsed source ranges,
+  visible-row geometry, painting, hit testing, cursor navigation, and scroll
+  mapping are projected per View without changing shared `QTextBlock`
+  visibility or line counts. Fold boundaries are stored as `QTextCursor`
+  anchors with insertion affinity, so document edits remap them safely; drawer
+  history saves and restores the fold set together with cursor and scroll
+  state. The drawer never changes the editor splitter tree. Only edge and size
+  preferences are persisted; Pin, target content, and history are not restored
+  with a workspace.
+- Regression coverage includes `editor_view_local_folding_test`,
+  `temporary_editor_drawer_event_filter_test`,
+  `temporary_editor_drawer_search_test`, and the existing drawer, shared
+  document, theme, search, editor-input, performance, and GUI smoke tests. The
+  final Shared-Debug unfiltered serial CTest completed 82/82 with zero failures
+  in 380.30 seconds wall-clock; the final affected
+  `jump_test`/`insight_visual_style_test`/`shared_core_runtime_test` group
+  completed 3/3.
+- Existing Light/Dark drawer artifacts remain under
+  `artifacts/ui/theme_drawer`; the GUI smoke coverage is included in the
+  completed execution-side verification.
+
+## Default Shared-Core Build Strategy (2026-08-12)
+
+Status: **执行侧实现及测试完成，等待控制侧验收**. The complete
+Shared-Debug build and unfiltered serial CTest run are recorded below.
+
+- CMake 3.27 or newer is required. `ZEROSLACK_SHARED_CORE` defaults to `ON`, so
+  normal Debug, Release, test, and subsequent acceptance configurations build
+  `zeroslack_core` as a shared library. Development and Debug acceptance use
+  `build/Desktop_Qt_6_10_2_MinGW_64_bit-Shared-Debug`. Explicit
+  `-DZEROSLACK_SHARED_CORE=OFF` is retained only for compatibility or
+  comparison builds; it is not an automatic fallback.
+- Clean configure-only probes verified the default cache as `ON` with a
+  `libzeroslack_core.dll` Ninja edge, and explicit `OFF` as a
+  `libzeroslack_core.a` edge; neither probe compiled a target. The source-level
+  `shared_core_policy_guard` prevents regression of the minimum version,
+  default, static fallback, or non-transitive Slang policy.
+- The default graph builds `zeroslack_core` as one shared library. Public Qt and
+  C++ boundary types use `ZEROSLACK_API`, including `Q_OBJECT` classes whose
+  meta-objects must be imported by consumers. MinGW runs a guarded pre-link
+  export generator over the core and bundled Tree-sitter objects, filters
+  non-ABI helper symbols, and emits the explicit `.def` used to link the DLL.
+  `shared_core_runtime_test` exercises the resulting meta-object, signal, RTTI,
+  and editor boundary at runtime.
+- Slang remains available to core compilation but is non-transitive through
+  the shared-core interface. The small set of tests that directly use Slang
+  links it explicitly; the two tests that directly call the Tree-sitter C API
+  likewise link the existing Tree-sitter object target. This retains the
+  existing semantic and syntax fact sources without putting their large static
+  archives on every downstream link edge.
+- Ninja link concurrency is bounded by the `ZEROSLACK_LINK_JOBS` job pool,
+  which defaults to one on this memory-constrained MinGW host and can be raised
+  explicitly after measuring available RAM.
+- The latest shared core DLL edge is 389.726 seconds and remains the
+  intentional one-time cost. For core consumers, the Static-Debug link-log
+  baseline is N=53, median 349.730 seconds, P75 354.114, maximum 406.279, and
+  cumulative 4.851 hours. Shared-Debug is N=54, median 0.675 seconds, P75
+  1.306, maximum 205.073, and cumulative 279.092 seconds. Excluding the sole
+  direct-Slang core-consumer outlier `effective_value_test`, Shared-Debug is
+  N=53, median 0.670 seconds, P75 1.201, maximum 16.675, and cumulative 74.019
+  seconds.
+- Representative current downstream links measured 0.670 seconds for
+  `temporary_editor_drawer_test`, 0.748 for
+  `temporary_editor_drawer_search_test`, 0.304 for
+  `temporary_editor_drawer_event_filter_test`, 0.324 for
+  `editor_view_local_folding_test`, and 16.675 for `gui_smoke_test`. The
+  complete build is present under
+  `build/Desktop_Qt_6_10_2_MinGW_64_bit-Shared-Debug`; its final affected group
+  passed 3/3 and its unfiltered serial CTest passed 82/82 with zero failures in
+  380.30 seconds wall-clock. These measurements verify Shared-Debug behavior;
+  they do not claim that a Release distribution or packaging workflow has been
+  validated.
+- After this default-policy update, the existing Shared-Debug graph rebuilt
+  successfully and a second build was a no-op. The focused policy/runtime
+  group passed 5/5 (`shared_core_runtime_test`, `controller_boundary_test`,
+  `legacy_field_policy_guard`, `shared_core_policy_guard`, and
+  `tree_sitter_compile_options_guard`). No runtime source behavior changed, so
+  the already accepted 82/82 unfiltered result was not repeated.
+
+```powershell
+cmake -S . -B build/Desktop_Qt_6_10_2_MinGW_64_bit-Shared-Debug -G Ninja `
+  -DCMAKE_BUILD_TYPE=Debug -DBUILD_TESTING=ON `
+  -DZEROSLACK_DEBUG_LINKER=GNU `
+  -DZEROSLACK_LINK_JOBS=1
+cmake --build build/Desktop_Qt_6_10_2_MinGW_64_bit-Shared-Debug
+ctest --test-dir build/Desktop_Qt_6_10_2_MinGW_64_bit-Shared-Debug `
+  --output-on-failure -j 1
+```
+
+## Editor Layout and Explicit Virtual Columns (2026-08-10)
+
+Status: implemented and verified without committing or pushing.
+
+- `MyCodeEditor` now opts into a code-editor-only zero-frame, zero-padding
+  surface. The gutter starts at the editor contents origin, uses a stable
+  functional width, and renders multi-digit line numbers with a compact font
+  that remains visible through the supported 32 pt editor zoom range.
+- Bottom tabified docks resize continuously to the tab strip. Manual dragging,
+  Collapse/Expand, persisted `bottomCollapsed`, and `expandedBottomHeight` use
+  one state machine; the dock and interactive tab bar remain present.
+- Cross-group editor-tab drags show themed Left, Right, Above, Below, or Center
+  previews without changing the splitter before Drop. Drag cancellation and
+  source/target lifetime changes clear the overlay, and `editorViewId` keeps
+  shared-document Views distinct.
+- Ordinary clicks beyond EOL clamp to the real line end and ordinary arrow keys
+  retain Qt cursor behavior. Virtual columns require Alt+click beyond EOL;
+  Shift+Alt+click remains the column-selection endpoint gesture.
+- The seven focused CTest targets pass 7/7. Real-main-window evidence is under
+  `artifacts/ui/editor_layout/` for the editor boundary, tab-only bottom panel,
+  and all four directional split previews.
+
+## Historical Keyword-Boundary Repair Record (2026-08-04)
+
+Current project status: **控制侧已独立验收通过**. The
+following bullets record an earlier keyword-boundary repair only and do not
+state the acceptance status of the current theme/drawer work.
 
 - Phase 0 — P1 Acceptance State Alignment: complete. The three documents now
   withdraw the prior acceptance claim before any product-code change.
-- Phase 1 — Keyword-Boundary Incremental Tree Repair: complete. Product fix,
-  focused regressions, full build, and unfiltered acceptance all pass.
+- Phase 1 — Keyword-Boundary Incremental Tree Repair: historically complete.
+  Its product fix, focused regressions, full build, and unfiltered test run were
+  recorded as passing at that checkpoint.
 - Repair baseline: `73ddc5d0e3cb275bb291c9bfb8828d3fd8801dc6`.
-- Accepted implementation commit: `8308b5a9820ac9ad4fd852348ad8fe17f9b120ef`.
+- Historical implementation commit: `8308b5a9820ac9ad4fd852348ad8fe17f9b120ef`.
   This documentation-only follow-up records that result and does not claim a
   later documentation commit as the current `HEAD`.
 - The protected untracked screenshot, `dist/`, and both protected `.zs` paths
   remained outside all edits and cleanup.
-- The registered CTest inventory contains 77 targets. The historical all-target
-  build proves only compile/link. Historical excluded runs of 68/68 and 71/71
-  remain partial records and are not used as complete acceptance evidence.
+- The final Shared-Debug unfiltered CTest run for the current work completed
+  82/82 with zero failures in 380.30 seconds wall-clock. The historical P1
+  all-target build and 77-target runs prove only their recorded baseline, while
+  excluded runs of 68/68 and 71/71 remain partial historical records.
 - The P1 root is fixed by deriving the fast-path exclusion set from Slang's
   IEEE 1800-2023 keyword table. Ordinary non-keyword identifier suffix edits
   still skip parsing; identifier-to-keyword and keyword-to-identifier edits
   synchronously take the existing authoritative Tree-sitter incremental parse.
-- Current focused verification passes: `ts_doc_test` 0.20 seconds,
+- Historical focused verification recorded: `ts_doc_test` 0.20 seconds,
   `ts_large_file_semantics_test` 0.83 seconds, and
   `editor_incremental_test` 9.31 seconds. The semantic suite reports 26/26,
   including `alway -> always`, `logi -> logic`, reverse keyword exit, and the
   unchanged ordinary-identifier no-parse path.
-- Execution-side verification: the complete serial build succeeded, and its
+- Historical execution-side verification: the complete serial build succeeded,
+  and its
   final unfiltered `ctest --output-on-failure -j1` passed 77/77 in 395.51
   seconds, including `editor_incremental_test` in 13.64 seconds with every
   existing correctness and performance threshold unchanged.
-- Control-side independent verification: `ts_doc_test` passed in 0.74 seconds,
+- Historical control-side verification: `ts_doc_test` passed in 0.74 seconds,
   `ts_large_file_semantics_test` in 1.36 seconds, and
   `editor_incremental_test` in 12.01 seconds. The subsequent unfiltered serial
   CTest run passed 77/77 in 412.70 seconds, including the corresponding three
@@ -38,7 +195,8 @@ Overall status: **验收通过，P1 正确性修复完成**.
 - Pre-final history: one earlier full run produced 76/77 while the external
   `PassTheFear.exe` process was active, and an isolated rerun reproduced two
   latency-gate failures. That run was not accepted and no threshold was changed;
-  the final unfiltered rerun above is the current acceptance result.
+  the final unfiltered rerun above is the recorded result for that historical
+  keyword-boundary repair only.
 - Historical resolved blocker roots from the preceding repair:
   - Command Layer word-prefix matches did not distinguish exact word initials
     and retained weaker ranks, breaking required abbreviations and stable `go`
@@ -280,7 +438,8 @@ central controller.
 
 Input routing now asks the controller for the highest-priority owner. Esc
 cancels that owner, Signal Selection retains its existing right-click finish
-flow, Slot cycling and column/virtual behavior remain intact, and Fold Region
+flow, Slot cycling and explicit Alt/Shift+Alt column/virtual behavior remain
+intact, and Fold Region
 and Fold Shelf follow the declared conflict matrix. Tab changes, document
 close or identity change, Global Control, and F24 entry use explicit stale-exit
 reasons. `MyCodeEditor` publishes a structured `EditorModeSnapshot`; the main
@@ -479,7 +638,7 @@ All four protected entries retain their exact baseline metadata and the
 protected `new/.zs` clean-filter hash remains
 `38aa7c46a6cc62df3a9d0dc337ea76b6c128e5dc`.
 
-## Final Eight-Item Acceptance (2026-07-29)
+## Historical Eight-Item Verification Record (2026-07-29)
 
 The interaction and architecture convergence is complete. The first full
 post-split CTest run passed 30/31 and exposed one forbidden new
@@ -598,7 +757,9 @@ are not part of the task-owned list.
   semantics, while Tree-sitter remains authoritative for live-buffer
   structural anchors.
 - A fresh single-config build needs only the normal ZeroSlack Qt/compiler
-  configuration:
+  configuration and CMake 3.27 or newer. Both examples use the default shared
+  core; pass `-DZEROSLACK_SHARED_CORE=OFF` only for an explicit compatibility
+  or comparison build:
 
 ```powershell
 cmake -S . -B <fresh-debug-build> -G Ninja -DCMAKE_BUILD_TYPE=Debug
@@ -614,12 +775,13 @@ cmake --build <fresh-release-build>
   set, rejects legacy and mock headers, and consumes only `rtledit::core`.
   Test-only mocks remain under `components/rtleditcore/tests/support`.
 
-## Local Debug Link Policy (2026-07-20)
+## Historical Local Debug Link Policy (2026-07-20; superseded 2026-08-12)
 
-- `zeroslack_core` remains a static library. Its archive is a direct input of
-  `demo` and twelve independent test executables, so any core object update
-  changes `libzeroslack_core.a` and invalidates all thirteen PE/COFF link
-  edges. In the audited Debug build the core archive is 426,178,552 bytes,
+- At that historical checkpoint, `zeroslack_core` was a static library. Its
+  archive was a direct input of `demo` and twelve independent test executables,
+  so any core object update changed `libzeroslack_core.a` and invalidated all
+  thirteen PE/COFF link edges. In the audited Debug build the core archive was
+  426,178,552 bytes,
   Slang's static archive is 906,937,806 bytes, and most resulting executables
   are about 740-746 MB because `.debug_*` sections dominate them.
 - `ZEROSLACK_DEBUG_LINKER` controls the linker policy and accepts `AUTO`
@@ -627,8 +789,8 @@ cmake --build <fresh-release-build>
   explicit `ZEROSLACK_LLD_EXECUTABLE`. CMake identifies the candidate and runs
   a GCC-driver C++ link probe before adding `-fuse-ld=lld` and its `-B` search
   path. Failure is non-fatal and reports the resolved GNU ld path. These flags
-  are Debug-only, so Release and distribution ABI remain on the existing
-  MinGW/GNU path.
+  were Debug-only, so that checkpoint's Release and distribution ABI stayed on
+  the then-existing MinGW/GNU path. This is not the current default linkage.
 
 ```powershell
 cmake -S . -B <debug-build> `
@@ -640,11 +802,12 @@ cmake -S . -B <debug-build> -DZEROSLACK_DEBUG_LINKER=GNU
 ```
 
 - Generated compile, link, and custom rules prepend the MinGW compiler `bin`
-  directory to the inherited run-time `PATH` with `cmake -E env --modify` on
-  CMake 3.25 or newer. They no longer embed the complete configure-session
-  `PATH`, whose volatile IDE/Codex entries previously changed every Ninja
-  command and caused a spurious full rebuild after reconfiguration. Older
-  CMake versions retain the compatible former launcher form.
+  directory to the inherited run-time `PATH` with `cmake -E env --modify`.
+  They no longer embed the complete configure-session `PATH`, whose volatile
+  IDE/Codex entries previously changed every Ninja command and caused a
+  spurious full rebuild after reconfiguration. This was introduced when CMake
+  3.25 compatibility still mattered; the current project contract requires
+  CMake 3.27 or newer, so no older-CMake launcher path is supported.
 - The local host has no compatible LLD. Its only `ld.lld` is LLVM 7.0.1 from
   Vivado: the normal GCC-driver probe rejects its unsupported plugin arguments,
   while bypassing the plugin made a project link fail on duplicate GCC
@@ -658,24 +821,26 @@ cmake -S . -B <debug-build> -DZEROSLACK_DEBUG_LINKER=GNU
   818.9 and 1099.2 seconds this is an observed 1.90x and 2.54x respectively,
   below the required 3x. Because the actual linker did not change, this
   run-to-run improvement is not attributed to the CMake change.
-- A test-facing shared core prototype reduced one test link to 1.558 seconds,
-  but a headless runtime check crashed in Qt `QMetaObject::static_metacall`
-  while connecting `SymbolAnalyzer::analysisCompleted`. Correcting that DLL
-  boundary requires product-wide import/export annotations and ABI work. A
-  combined test-runtime variant would additionally require twelve renamed
-  entry points and couple all test translation-unit initializers. Shared core,
-  shared test runtime, and single-process test aggregation are therefore not
-  enabled. Splitting roughly 180 coupled core sources by test, removing Debug
-  information, or relying only on link-job throttling were also rejected for
-  maintenance, coverage, or insufficient-benefit reasons.
-- Verification for the retained low-risk change: Debug no-op reports no work;
+- The historical test-facing shared-core prototype reduced one test link to
+  1.558 seconds but crashed in Qt `QMetaObject::static_metacall` while
+  connecting `SymbolAnalyzer::analysisCompleted`; at that point the DLL
+  boundary had no import/export annotations. That rejection is superseded by
+  the 2026-08-12 default shared-core implementation above, which adds the
+  explicit Qt/C++ export boundary, generated MinGW `.def`, and runtime boundary
+  regression.
+  The separate historical decision not to aggregate all tests into one process
+  remains unchanged.
+- Historical verification for the then-retained low-risk change: Debug no-op
+  reports no work;
   demo and all twelve test executables link; final CTest passes 12/12 in 143.40
   seconds; demo stays alive in a hidden offscreen startup smoke test and its
   import table has no new core/test DLL; Release configuration generation
   succeeds and its demo link command remains static GNU ld. This repository
   currently defines no CPack, `install`, or `package` target. A host with a
   compatible modern LLD must still perform one full Qt/Slang link and CTest run
-  before a 3x link-speed result can be claimed.
+  before a 3x LLD-specific result can be claimed. It does not describe the
+  current default Shared-Debug graph, whose unfiltered serial CTest completed
+  82/82 with zero failures in 380.30 seconds wall-clock.
 
 ## Current Product Baseline
 
@@ -800,10 +965,12 @@ cmake -S . -B <debug-build> -DZEROSLACK_DEBUG_LINKER=GNU
   generation, active path, and entry identity before continuing. A callback
   may therefore close or switch the workspace without a stale scan publishing
   into the replacement workspace.
-- Current UI route: keep Qt Widgets, evolve the existing `InsightVisualStyle`
-  into the application theme layer, and reuse a shared `InsightGraphView`
-  foundation for graph surfaces. Phase 1 theme foundation and GraphCanvas
-  Phase 2 migration are complete for current QGraphicsView graph consumers.
+- Current UI route: keep Qt Widgets, use Settings Center/QSettings
+  `appearance.theme` for persistence, use `ApplicationThemeManager` for the
+  live Light/Dark mode, application palette/QSS, and ordered pre/post change
+  signals, use `InsightVisualStyle` as the shared dual-theme token source, and reuse a
+  shared `InsightGraphView` foundation for graph surfaces. GraphCanvas Phase 2
+  migration is complete for current QGraphicsView graph consumers.
   The App Shell modernization pass is also complete: menu/status/tab/dock/
   sidebar, toolbar, splitter, common input, tree/list/table, scrollbar,
   Global Control, and Fold Shelf shell styling now flow through
@@ -842,9 +1009,9 @@ cmake -S . -B <debug-build> -DZEROSLACK_DEBUG_LINKER=GNU
   no snapshot publication or Design refresh, and continued availability of
   stable relationships, package values, semantic Ghost, port presentation,
   Design/Navigation data, and a nested `NavigationWidget` item.
-  Final headless acceptance is complete: the final Debug all-target incremental
-  build passed 17/17 Ninja steps in 1099.2 seconds; complete CTest passed 12/12
-  in 130.60 seconds. At the user's
+  At that historical checkpoint, final headless verification recorded a Debug
+  all-target incremental build passing 17/17 Ninja steps in 1099.2 seconds and
+  complete CTest passing 12/12 in 130.60 seconds. At the user's
   request, this final repair/verification did not launch `demo.exe`; Qt GUI
   coverage used `QT_QPA_PLATFORM=offscreen` and non-interactive CTest.
   `global_control_ow_test` passed in 92.57 seconds with both real projects and
@@ -879,7 +1046,8 @@ cmake -S . -B <debug-build> -DZEROSLACK_DEBUG_LINKER=GNU
   business logic.
 - Insight UI v2 remains the accepted panel baseline. Signal Kernel Graph,
   Signal Usage Hotspot, State Transition Graph, Module Block Diagram, and Wave
-  Preview still share the light canvas/panel palette, title/toolbar treatment,
+  Preview share the active Light/Dark canvas and panel tokens, title/toolbar
+  treatment,
   empty/failure feedback, hover/selected graph states, and source-navigation
   status behavior through `InsightVisualStyle`. Hotspot opens from the editor
   source-symbol context action `Signal Usage Hotspot` or the RTL Insights
@@ -1113,7 +1281,8 @@ cmake -S . -B <debug-build> -DZEROSLACK_DEBUG_LINKER=GNU
   action for selected module names. Rendering is module-only: interface
   declarations, interface instances, and unresolved interface-typed children are
   filtered before the report reaches the graph. Signals are still hidden. The
-  v2 graph uses the shared light canvas, summary text, hover/selected feedback,
+  v2 graph uses the active Light/Dark canvas tokens, summary text,
+  hover/selected feedback,
   graph search highlighting, and a visible no-child or blackbox reason when
   containment cannot be resolved. The selected module remains a container with
   child module/instance nodes arranged inside it using a compact wrapped grid

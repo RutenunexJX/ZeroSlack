@@ -13,6 +13,7 @@ enum class SettingsCenterScope {
 };
 
 enum class SettingsCenterCategory {
+    Appearance,
     Font,
     Formatter,
     Shortcut,
@@ -51,6 +52,8 @@ struct SettingsCenterFieldDescriptor {
     QStringList choices;
     bool globalAllowed = true;
     bool workspaceAllowed = true;
+    bool alwaysActive = false;
+    bool immediateApply = false;
 };
 
 struct SettingsCenterCategoryDescriptor {

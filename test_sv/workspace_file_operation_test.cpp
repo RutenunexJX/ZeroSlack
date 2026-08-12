@@ -1,10 +1,13 @@
 #include "actionregistry.h"
 #include "editorhoverpopup.h"
 #include "editorfileidentity.h"
+#include "documentmodel.h"
+#include "editorlocation.h"
 #include "navigationmanager.h"
 #include "navigationwidget.h"
 #include "shareddocument.h"
 #include "tabmanager.h"
+#include "temporaryeditordrawercontroller.h"
 #include "workspacefileoperationservice.h"
 #include "workspacemanager.h"
 
@@ -14,8 +17,10 @@
 #include <QFileInfo>
 #include <QKeyEvent>
 #include <QPlainTextEdit>
+#include <QPointer>
 #include <QPushButton>
 #include <QSaveFile>
+#include <QSettings>
 #include <QTabWidget>
 #include <QTemporaryDir>
 #include <QTimer>
@@ -371,8 +376,13 @@ int main(int argc, char** argv)
     const QString routeTarget =
         QDir(workspace).absoluteFilePath(
             QStringLiteral("route_target.sv"));
+    const QString hierarchyDefinitionTarget =
+        QDir(workspace).absoluteFilePath(
+            QStringLiteral("route_definition.sv"));
     expect("action-route revision fixture is written",
-           writeText(routeSource, "abcd"));
+           writeText(routeSource, "abcd")
+               && writeText(hierarchyDefinitionTarget,
+                            "module target; endmodule\n"));
     WorkspaceManager workspaceManager;
     workspaceManager
         .setRecentWorkspacePersistenceEnabledForTesting(
@@ -382,6 +392,10 @@ int main(int argc, char** argv)
     NavigationManager navigationManager;
     navigationManager.connectToWorkspaceManager(
         &workspaceManager);
+    navigationManager.setTemporaryEditorOpenHandler(
+        [](const EditorLocation& location) {
+            return QFileInfo::exists(location.filePath);
+        });
     DesignHierarchyNode hierarchyNode;
     hierarchyNode.id = QStringLiteral("top/u_child");
     hierarchyNode.rootModule = QStringLiteral("top");
@@ -392,7 +406,7 @@ int main(int argc, char** argv)
         QStringLiteral("child");
     hierarchyNode.instanceFile = routeSource;
     hierarchyNode.instanceLine = 17;
-    hierarchyNode.definitionFile = routeTarget;
+    hierarchyNode.definitionFile = hierarchyDefinitionTarget;
     hierarchyNode.definitionLine = 4;
 
     const QList<DesignHierarchyContextAction>
@@ -405,6 +419,8 @@ int main(int argc, char** argv)
             ActionIds::NavigationDesignGoInstantiation),
         QString::fromLatin1(
             ActionIds::NavigationDesignGoDefinition),
+        QString::fromLatin1(
+            ActionIds::ViewTemporaryEditorOpen),
         QString::fromLatin1(
             ActionIds::NavigationDesignSetTop),
     };
@@ -434,12 +450,15 @@ int main(int argc, char** argv)
            actualHierarchyActionIds
                    == expectedHierarchyActionIds
                && hierarchyActionMetadataMatches
-               && hierarchyActions.value(2)
+               && hierarchyActions.value(3)
                       .separatorBefore);
 
     QString navigatedHierarchyFile;
     int navigatedHierarchyLine = -1;
     HierarchyInstanceContext navigatedHierarchyContext;
+    QList<EditorLocation> temporaryEditorTargets;
+    QList<bool> temporaryEditorOutcomes;
+    QString temporaryEditorFailureReason;
     QObject::connect(
         &navigationManager,
         &NavigationManager::instanceNavigationRequested,
@@ -450,6 +469,23 @@ int main(int argc, char** argv)
             navigatedHierarchyFile = filePath;
             navigatedHierarchyLine = line;
             navigatedHierarchyContext = instanceContext;
+        });
+    QObject::connect(
+        &navigationManager,
+        &NavigationManager::temporaryEditorOpenRequested,
+        &navigationManager,
+        [&](const EditorLocation& location) {
+            temporaryEditorTargets.append(location);
+        });
+    QObject::connect(
+        &navigationManager,
+        &NavigationManager::temporaryEditorOpenFinished,
+        &navigationManager,
+        [&](const EditorLocation&,
+            bool succeeded,
+            const QString& failureReason) {
+            temporaryEditorOutcomes.append(succeeded);
+            temporaryEditorFailureReason = failureReason;
         });
     const ActionExecutionResult instantiationNavigation =
         navigationManager.requestDesignNodeAction(
@@ -483,6 +519,79 @@ int main(int argc, char** argv)
                && navigatedHierarchyLine
                       == hierarchyNode.definitionLine);
 
+    const ActionExecutionResult temporaryDesignNavigation =
+        navigationManager.requestDesignNodeAction(
+            QString::fromLatin1(
+                ActionIds::ViewTemporaryEditorOpen),
+            hierarchyNode);
+    expect("Design temporary-open entry emits one complete EditorLocation",
+           temporaryDesignNavigation.succeeded
+               && temporaryEditorTargets.size() == 1
+               && temporaryEditorTargets.constLast().filePath
+                      == hierarchyNode.definitionFile
+               && temporaryEditorTargets.constLast().line
+                      == hierarchyNode.definitionLine
+               && temporaryEditorTargets.constLast().column == 1
+               && temporaryEditorTargets.constLast().symbolKey
+                      == hierarchyNode.moduleType
+               && temporaryEditorTargets.constLast().sourceLinkId
+                      == hierarchyNode.id);
+
+    const ActionDescriptor* temporaryEditorDescriptor =
+        findActionById(QString::fromLatin1(
+            ActionIds::ViewTemporaryEditorOpen));
+    ActionInvocation temporaryFileInvocation;
+    temporaryFileInvocation.workspaceId = workspace;
+    temporaryFileInvocation.parameters.insert(
+        QStringLiteral("path"), routeSource);
+    temporaryFileInvocation.parameters.insert(
+        QStringLiteral("directory"), false);
+    const ActionExecutionResult temporaryFileNavigation =
+        temporaryEditorDescriptor
+        ? executeAction(
+              *temporaryEditorDescriptor,
+              navigationManager,
+              temporaryFileInvocation)
+        : ActionExecutionResult();
+    expect("Files temporary-open entry reuses the same Action and EditorLocation signal",
+           temporaryFileNavigation.succeeded
+               && temporaryEditorDescriptor
+               && temporaryEditorDescriptor->executionRoute
+                      == QStringLiteral("ui.temporaryEditor.open")
+               && temporaryEditorTargets.size() == 2
+               && temporaryEditorTargets.constLast().filePath
+                      == routeSource
+               && temporaryEditorTargets.constLast().line == 1
+               && temporaryEditorTargets.constLast().column == 1
+               && temporaryEditorTargets.constLast().symbolKey.isEmpty()
+               && temporaryEditorTargets.constLast().sourceLinkId.isEmpty()
+               && temporaryEditorOutcomes
+                      == QList<bool>({true, true})
+               && temporaryEditorFailureReason.isEmpty());
+
+    ActionInvocation missingTemporaryInvocation;
+    missingTemporaryInvocation.workspaceId = workspace;
+    missingTemporaryInvocation.parameters.insert(
+        QStringLiteral("path"),
+        QDir(workspace).absoluteFilePath(
+            QStringLiteral("missing_target.sv")));
+    const ActionExecutionResult missingTemporaryResult =
+        temporaryEditorDescriptor
+        ? executeAction(
+              *temporaryEditorDescriptor,
+              navigationManager,
+              missingTemporaryInvocation)
+        : ActionExecutionResult();
+    expect("temporary-open route synchronously propagates controller rejection",
+           missingTemporaryResult.handled
+               && !missingTemporaryResult.succeeded
+               && !missingTemporaryResult.failureReason.isEmpty()
+               && temporaryEditorTargets.size() == 3
+               && temporaryEditorOutcomes
+                      == QList<bool>({true, true, false})
+               && temporaryEditorFailureReason
+                      == missingTemporaryResult.failureReason);
+
     const ActionExecutionResult setTopResult =
         navigationManager.requestDesignNodeAction(
             QString::fromLatin1(
@@ -502,7 +611,8 @@ int main(int argc, char** argv)
                && !topNodeActions.isEmpty()
                && !topNodeActions.first().enabled
                && topNodeActions.value(1).enabled
-               && topNodeActions.value(2).enabled);
+               && topNodeActions.value(2).enabled
+               && topNodeActions.value(3).enabled);
 
     const ActionDescriptor* routeRenameDescriptor =
         findActionById(
@@ -753,6 +863,30 @@ int main(int argc, char** argv)
             SharedDocumentExternalState::
                 Conflict);
     }
+    QWidget temporaryEditorRegion;
+    temporaryEditorRegion.resize(640, 420);
+    auto drawerSettings = std::make_unique<QSettings>(
+        QDir(sandbox.path()).absoluteFilePath(
+            QStringLiteral("workspace-drawer.ini")),
+        QSettings::IniFormat);
+    TemporaryEditorDrawerController drawerController(
+        &tabManager,
+        &temporaryEditorRegion,
+        std::move(drawerSettings),
+        &temporaryEditorRegion);
+    EditorLocation pendingDrawerLocation;
+    pendingDrawerLocation.documentId = pendingDocument
+        ? pendingDocument->documentId()
+        : QString();
+    pendingDrawerLocation.filePath = pendingPath;
+    pendingDrawerLocation.line = 1;
+    pendingDrawerLocation.column = 1;
+    expect("path-mutation fixture opens the affected shared document in the drawer",
+           drawerController.openLocation(
+               pendingDrawerLocation)
+               && drawerController.isOpen()
+               && pendingDocument
+               && pendingDocument->viewCount() == 2);
 
     QString mutationFailure;
     expect("locked affected tab blocks path mutation",
@@ -816,13 +950,68 @@ int main(int argc, char** argv)
                    true,
                    nullptr,
                    &mutationFailure));
-    expect("successful mutation finalization closes affected views once",
+    const QString renamedPendingDirectory =
+        QDir(workspace).absoluteFilePath(
+            QStringLiteral("open-directory-renamed"));
+    expect("Rename fixture applies after preflight and before finalization",
+           QDir().rename(
+               pendingDirectory,
+               renamedPendingDirectory));
+    QPointer<SharedDocument> pendingDocumentLifetime(
+        pendingDocument);
+    expect("Rename finalization closes tab and auxiliary views through the drawer controller",
            tabManager
                    .finalizeWorkspacePathMutation(
                        pendingDirectory,
                        true,
                        &mutationFailure)
-               && tabManager.editorCount() == 0);
+               && tabManager.editorCount() == 0
+               && tabManager.auxiliaryViews().isEmpty()
+               && !drawerController.isOpen()
+               && drawerController.historyCount() == 0
+               && pendingDocumentLifetime.isNull()
+               && tabManager.getDocumentModel()
+                      ->documentForFile(pendingPath)
+                      .documentId.isEmpty());
+
+    const QString deleteDrawerPath =
+        QDir(workspace).absoluteFilePath(
+            QStringLiteral("drawer-only-delete.sv"));
+    expect("auxiliary-only delete fixture is written",
+           writeText(
+               deleteDrawerPath,
+               "module drawer_only; endmodule\n"));
+    EditorLocation deleteDrawerLocation;
+    deleteDrawerLocation.filePath = deleteDrawerPath;
+    deleteDrawerLocation.line = 1;
+    deleteDrawerLocation.column = 1;
+    expect("Delete preflight recognizes an auxiliary-only affected document",
+           drawerController.openLocation(
+               deleteDrawerLocation)
+               && drawerController.isOpen()
+               && tabManager.auxiliaryViews().size() == 1
+               && tabManager.prepareWorkspacePathMutation(
+                   deleteDrawerPath,
+                   false,
+                   nullptr,
+                   &mutationFailure));
+    QPointer<SharedDocument> deleteDrawerDocument(
+        tabManager.sharedDocumentForEditor(
+            drawerController.editor()));
+    expect("Delete fixture applies after auxiliary preflight",
+           QFile::remove(deleteDrawerPath));
+    expect("Delete finalization synchronously clears drawer history and the old path binding",
+           tabManager.finalizeWorkspacePathMutation(
+               deleteDrawerPath,
+               false,
+               &mutationFailure)
+               && tabManager.auxiliaryViews().isEmpty()
+               && !drawerController.isOpen()
+               && drawerController.historyCount() == 0
+               && deleteDrawerDocument.isNull()
+               && tabManager.getDocumentModel()
+                      ->documentForFile(deleteDrawerPath)
+                      .documentId.isEmpty());
 
     std::printf("\n%d checks, %d failed\n",
                 checks, failures);

@@ -717,6 +717,46 @@ EditorHoverPopup* EditorSourceNavigationUi::ensurePopup(MyCodeEditor* editor)
 {
     if (!popup) {
         popup = std::make_unique<EditorHoverPopup>(editor);
+        QPointer<MyCodeEditor> editorGuard(editor);
+        QPointer<EditorHoverPopup> popupGuard(
+            popup.get());
+        QObject::connect(
+            popup.get(),
+            &EditorHoverPopup::actionTriggered,
+            popup.get(),
+            [editorGuard, popupGuard](
+                const QString& actionId) {
+                if (!editorGuard
+                    || !popupGuard
+                    || actionId
+                           != QString::fromLatin1(
+                               ActionIds::ViewTemporaryEditorOpen)) {
+                    return;
+                }
+                const PeekNavigationTarget target =
+                    popupGuard->contentModel()
+                        .navigationTarget;
+                if (!target.isValid())
+                    return;
+                QVariantMap parameters;
+                parameters.insert(
+                    QStringLiteral("path"),
+                    target.fileName);
+                parameters.insert(
+                    QStringLiteral("line"),
+                    target.line);
+                parameters.insert(
+                    QStringLiteral("column"),
+                    qMax(1, target.column));
+                bool handled = false;
+                emit editorGuard
+                    ->registeredActionRequested(
+                        actionId,
+                        parameters,
+                        &handled);
+                if (handled && popupGuard)
+                    popupGuard->closePopup();
+            });
         QObject::connect(
             popup.get(),
             &EditorHoverPopup::closed,

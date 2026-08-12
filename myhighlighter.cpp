@@ -1,4 +1,6 @@
 #include "myhighlighter.h"
+#include "applicationthememanager.h"
+#include "insightvisualstyle.h"
 #include <QTextDocument>
 #include <QTextBlock>
 #include <QElapsedTimer>
@@ -38,22 +40,39 @@ MyHighlighter::MyHighlighter(QTextDocument *parent, const TSDocument *tsdoc)
     : QSyntaxHighlighter(parent), m_tsdoc(tsdoc)
 {
     initFormats();
+    QObject::connect(
+        &ApplicationThemeManager::instance(),
+        &ApplicationThemeManager::themeChanged,
+        this,
+        [this](ThemeMode) {
+            initFormats();
+            rehighlight();
+        });
 }
 
 void MyHighlighter::initFormats()
 {
-    keywordFormat.setForeground(QColor("#C678DD"));
+    const InsightSyntaxTokens& syntax =
+        InsightVisualStyle::theme().syntax;
+
+    keywordFormat = QTextCharFormat();
+    commentFormat = QTextCharFormat();
+    numberFormat = QTextCharFormat();
+    stringFormat = QTextCharFormat();
+    errorFormat = QTextCharFormat();
+
+    keywordFormat.setForeground(syntax.keyword);
     keywordFormat.setFontWeight(QFont::Bold);
 
-    commentFormat.setForeground(QColor("#7F848E"));
+    commentFormat.setForeground(syntax.comment);
     commentFormat.setFontItalic(true);
 
-    numberFormat.setForeground(QColor("#D19A66"));
+    numberFormat.setForeground(syntax.number);
 
-    stringFormat.setForeground(QColor("#98C379"));
+    stringFormat.setForeground(syntax.string);
 
     errorFormat.setUnderlineStyle(QTextCharFormat::WaveUnderline);
-    errorFormat.setUnderlineColor(QColor("#EF4444"));
+    errorFormat.setUnderlineColor(syntax.errorUnderline);
 }
 
 const QTextCharFormat* MyHighlighter::formatFor(HlCategory category) const

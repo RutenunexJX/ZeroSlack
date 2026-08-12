@@ -1,4 +1,5 @@
 #include "actionregistry.h"
+#include "applicationthememanager.h"
 #include "graphexportservice.h"
 #include "graphexportui.h"
 #include "rtlinsightspanelcoordinator.h"
@@ -11,10 +12,13 @@
 #include <QFile>
 #include <QGraphicsScene>
 #include <QGraphicsSimpleTextItem>
+#include <QGraphicsRectItem>
 #include <QGraphicsView>
+#include <QLineF>
 #include <QPushButton>
 #include <QTemporaryDir>
 #include <QWidget>
+#include <QTransform>
 
 #include <cstdio>
 #include <functional>
@@ -79,6 +83,75 @@ SignalUsageHotspotReport hotspotGraphViewFixture()
     report.items = {item};
     report.trackLanes = {lane};
     return report;
+}
+
+SignalKernelGraphReport signalKernelThemeFixture()
+{
+    SignalKernelGraphReport report;
+    report.found = true;
+    report.kernel.id = 0;
+    report.kernel.role = SignalKernelGraphNodeRole::Kernel;
+    report.kernel.displayName = QStringLiteral("tracked_signal");
+    report.kernel.moduleDisplayName = QStringLiteral("graph_view_module");
+
+    SignalKernelGraphNode input;
+    input.id = 1;
+    input.role = SignalKernelGraphNodeRole::Input;
+    input.inputLane = SignalKernelGraphInputLane::Data;
+    input.displayName = QStringLiteral("source_a");
+    input.moduleDisplayName = QStringLiteral("source_module");
+    report.inputs = {input};
+
+    SignalKernelGraphNode outputA;
+    outputA.id = 2;
+    outputA.role = SignalKernelGraphNodeRole::Output;
+    outputA.displayName = QStringLiteral("sink_a");
+    outputA.moduleDisplayName = QStringLiteral("sink_module");
+    SignalKernelGraphNode outputB = outputA;
+    outputB.id = 3;
+    outputB.displayName = QStringLiteral("sink_b");
+    report.outputs = {outputA, outputB};
+    report.edges = {{1, 0, QStringLiteral("read")},
+                    {0, 2, QStringLiteral("write")},
+                    {0, 3, QStringLiteral("write")}};
+
+    SignalKernelGraphFanoutGroup group;
+    group.id = 7;
+    group.role = SignalKernelGraphNodeRole::Output;
+    group.groupKey = QStringLiteral("output:sink_module");
+    group.displayName = QStringLiteral("sink_module outputs");
+    group.moduleName = QStringLiteral("sink_module");
+    group.nodeIds = {2, 3};
+    group.nodeCount = 2;
+    group.totalRoleNodeCount = 2;
+    group.highFanout = true;
+    report.outputFanoutGroups = {group};
+    return report;
+}
+
+QColor selectedRectBrush(QGraphicsScene* scene)
+{
+    if (!scene)
+        return {};
+    for (QGraphicsItem* item : scene->selectedItems()) {
+        if (auto* rect = dynamic_cast<QGraphicsRectItem*>(item))
+            return rect->brush().color();
+    }
+    return {};
+}
+
+QColor sceneTextColor(QGraphicsScene* scene,
+                      const QString& text)
+{
+    if (!scene)
+        return {};
+    for (QGraphicsItem* item : scene->items()) {
+        auto* label =
+            dynamic_cast<QGraphicsSimpleTextItem*>(item);
+        if (label && label->text().contains(text))
+            return label->brush().color();
+    }
+    return {};
 }
 
 void verifyRegistryBinding(const QString& prefix,
@@ -270,6 +343,84 @@ int main(int argc, char** argv)
         temporary);
 
     SignalKernelGraphPanelCoordinator signalKernel(&host);
+    host.resize(1100, 760);
+    host.show();
+    QApplication::processEvents();
+    ApplicationThemeManager::instance().setMode(ThemeMode::Light);
+    signalKernel.renderReportForTest(
+        signalKernelThemeFixture());
+    signalKernel.setGraphSearchTextForTest(
+        QStringLiteral("sink_b"));
+    QGraphicsView* kernelView = signalKernel.view();
+    if (kernelView) {
+        kernelView->setTransform(
+            QTransform::fromScale(1.29, 1.29));
+        kernelView->centerOn(
+            kernelView->scene()->sceneRect().center()
+                + QPointF(17.0, 9.0));
+        for (QGraphicsItem* item : kernelView->scene()->items()) {
+            if (item
+                && item->flags().testFlag(
+                    QGraphicsItem::ItemIsSelectable)) {
+                item->setSelected(true);
+                break;
+            }
+        }
+    }
+    const QTransform kernelLightTransform = kernelView
+        ? kernelView->transform() : QTransform();
+    const QPointF kernelLightCenter = kernelView
+        ? kernelView->mapToScene(
+              kernelView->viewport()->rect().center())
+        : QPointF();
+    const QColor kernelLightBrush = kernelView
+        ? selectedRectBrush(kernelView->scene()) : QColor();
+    const int kernelCollapsedGroups =
+        signalKernel.collapsedFanoutGroupCountForTest();
+    const int kernelSearchMatches =
+        signalKernel.searchMatchCountForTest();
+    const quint64 kernelBuildRequests =
+        signalKernel.graphBuildRequestCountForTest();
+
+    ApplicationThemeManager::instance().setMode(ThemeMode::Dark);
+    signalKernel.refreshThemePresentation();
+    QApplication::processEvents();
+    const QPointF kernelDarkCenter = kernelView
+        ? kernelView->mapToScene(
+              kernelView->viewport()->rect().center())
+        : QPointF();
+    const QColor kernelDarkBrush = kernelView
+        ? selectedRectBrush(kernelView->scene()) : QColor();
+    expect("Signal Kernel theme refresh consumes cached report without service build",
+           signalKernel.graphBuildRequestCountForTest()
+                   == kernelBuildRequests);
+    expect("Signal Kernel theme refresh preserves transform, center, selection, search, and collapse",
+           kernelView
+               && kernelView->transform()
+                      == kernelLightTransform
+               && QLineF(kernelLightCenter,
+                         kernelDarkCenter).length() < 1.0
+               && kernelView->scene()->selectedItems().size() == 1
+               && signalKernel.focusSearchText()
+                      == QStringLiteral("sink_b")
+               && signalKernel.searchMatchCountForTest()
+                      == kernelSearchMatches
+               && signalKernel.collapsedFanoutGroupCountForTest()
+                      == kernelCollapsedGroups);
+    expect("Signal Kernel cached graph is recolored in Dark mode",
+           kernelLightBrush.isValid()
+               && kernelDarkBrush.isValid()
+               && kernelLightBrush != kernelDarkBrush);
+
+    ApplicationThemeManager::instance().setMode(ThemeMode::Light);
+    signalKernel.refreshThemePresentation();
+    QApplication::processEvents();
+    expect("Signal Kernel Light-Dark-Light restores visual tokens without service build",
+           kernelView
+               && selectedRectBrush(kernelView->scene())
+                      == kernelLightBrush
+               && signalKernel.graphBuildRequestCountForTest()
+                      == kernelBuildRequests);
     addFixture(signalKernel.view()->scene(),
                QStringLiteral("Signal kernel"));
     verifyFormats(
@@ -289,6 +440,144 @@ int main(int argc, char** argv)
     hotspot.setCurrentEditorLocation(
         QStringLiteral("graph_view.sv"),
         12);
+    hotspot.setFocusSearchText(
+        QStringLiteral("tracked_signal"));
+    hotspot.selectMatrixCellForTest(
+        SignalUsageHotspotRole::Read,
+        QStringLiteral("graph_view_module"),
+        QStringLiteral("graph_view.sv"));
+    // Finish the initial scene/splitter layout before recording the Light
+    // viewport baseline. The later event pump must measure theme work only.
+    QApplication::processEvents();
+    auto* themedTrackView = hotspot.findChild<QGraphicsView*>(
+        QStringLiteral("signalUsageHotspotTrackView"));
+    auto* themedMatrixView = hotspot.findChild<QGraphicsView*>(
+        QStringLiteral("signalUsageHotspotMatrixView"));
+    if (themedTrackView) {
+        themedTrackView->setTransform(
+            QTransform::fromScale(1.18, 1.18));
+        themedTrackView->centerOn(
+            themedTrackView->scene()->sceneRect().center());
+    }
+    if (themedMatrixView) {
+        themedMatrixView->setTransform(
+            QTransform::fromScale(0.91, 0.91));
+        themedMatrixView->centerOn(
+            themedMatrixView->scene()->sceneRect().center());
+    }
+    const QTransform hotspotTrackTransform = themedTrackView
+        ? themedTrackView->transform() : QTransform();
+    const QTransform hotspotMatrixTransform = themedMatrixView
+        ? themedMatrixView->transform() : QTransform();
+    const QPointF hotspotTrackCenter = themedTrackView
+        ? themedTrackView->mapToScene(
+              themedTrackView->viewport()->rect().center())
+        : QPointF();
+    const QPointF hotspotMatrixCenter = themedMatrixView
+        ? themedMatrixView->mapToScene(
+              themedMatrixView->viewport()->rect().center())
+        : QPointF();
+    const QSize hotspotTrackViewportSize = themedTrackView
+        ? themedTrackView->viewport()->size() : QSize();
+    const QSize hotspotMatrixViewportSize = themedMatrixView
+        ? themedMatrixView->viewport()->size() : QSize();
+    const QColor hotspotLightText = themedTrackView
+        ? sceneTextColor(themedTrackView->scene(),
+                         QStringLiteral("Signal Usage Map"))
+        : QColor();
+    const quint64 hotspotBuildRequests =
+        hotspot.reportBuildRequestCountForTest();
+
+    ApplicationThemeManager::instance().setMode(ThemeMode::Dark);
+    QApplication::processEvents();
+    const QColor hotspotDarkText = themedTrackView
+        ? sceneTextColor(themedTrackView->scene(),
+                         QStringLiteral("Signal Usage Map"))
+        : QColor();
+    expect("Usage Hotspot theme refresh consumes cached report without service build",
+           hotspot.reportBuildRequestCountForTest()
+                   == hotspotBuildRequests);
+    expect("Usage Hotspot theme refresh preserves search and selected usage",
+           hotspot.focusSearchText()
+                   == QStringLiteral("tracked_signal")
+               && hotspot.selectedItemIndexForTest() == 0);
+    const QTransform hotspotDarkTrackTransform = themedTrackView
+        ? themedTrackView->transform() : QTransform();
+    const QTransform hotspotDarkMatrixTransform = themedMatrixView
+        ? themedMatrixView->transform() : QTransform();
+    const QPointF hotspotDarkTrackCenter = themedTrackView
+        ? themedTrackView->mapToScene(
+              themedTrackView->viewport()->rect().center())
+        : QPointF();
+    const QPointF hotspotDarkMatrixCenter = themedMatrixView
+        ? themedMatrixView->mapToScene(
+              themedMatrixView->viewport()->rect().center())
+        : QPointF();
+    const QSize hotspotDarkTrackViewportSize = themedTrackView
+        ? themedTrackView->viewport()->size() : QSize();
+    const QSize hotspotDarkMatrixViewportSize = themedMatrixView
+        ? themedMatrixView->viewport()->size() : QSize();
+    const qreal hotspotTrackCenterDelta =
+        QLineF(hotspotTrackCenter,
+               hotspotDarkTrackCenter).length();
+    const qreal hotspotMatrixCenterDelta =
+        QLineF(hotspotMatrixCenter,
+               hotspotDarkMatrixCenter).length();
+    const bool hotspotPresentationPreserved =
+        themedTrackView
+        && themedMatrixView
+        && hotspotDarkTrackTransform == hotspotTrackTransform
+        && hotspotDarkMatrixTransform == hotspotMatrixTransform
+        && hotspotTrackCenterDelta < 1.0
+        && hotspotMatrixCenterDelta < 1.0;
+    if (!hotspotPresentationPreserved) {
+        std::fprintf(
+            stderr,
+            "Hotspot presentation mismatch: "
+            "trackScale %.6f->%.6f trackSize %dx%d->%dx%d "
+            "trackCenter (%.3f,%.3f)->(%.3f,%.3f) delta=%.3f "
+            "matrixScale %.6f->%.6f matrixSize %dx%d->%dx%d "
+            "matrixCenter (%.3f,%.3f)->(%.3f,%.3f) delta=%.3f\n",
+            hotspotTrackTransform.m11(),
+            hotspotDarkTrackTransform.m11(),
+            hotspotTrackViewportSize.width(),
+            hotspotTrackViewportSize.height(),
+            hotspotDarkTrackViewportSize.width(),
+            hotspotDarkTrackViewportSize.height(),
+            hotspotTrackCenter.x(),
+            hotspotTrackCenter.y(),
+            hotspotDarkTrackCenter.x(),
+            hotspotDarkTrackCenter.y(),
+            hotspotTrackCenterDelta,
+            hotspotMatrixTransform.m11(),
+            hotspotDarkMatrixTransform.m11(),
+            hotspotMatrixViewportSize.width(),
+            hotspotMatrixViewportSize.height(),
+            hotspotDarkMatrixViewportSize.width(),
+            hotspotDarkMatrixViewportSize.height(),
+            hotspotMatrixCenter.x(),
+            hotspotMatrixCenter.y(),
+            hotspotDarkMatrixCenter.x(),
+            hotspotDarkMatrixCenter.y(),
+            hotspotMatrixCenterDelta);
+    }
+    expect("Usage Hotspot theme refresh preserves both graph transforms and centers",
+           hotspotPresentationPreserved);
+    expect("Usage Hotspot cached scenes are recolored in Dark mode",
+           hotspotLightText.isValid()
+               && hotspotDarkText.isValid()
+               && hotspotLightText != hotspotDarkText);
+
+    ApplicationThemeManager::instance().setMode(ThemeMode::Light);
+    QApplication::processEvents();
+    expect("Usage Hotspot Light-Dark-Light restores scene tokens without service build",
+           themedTrackView
+               && sceneTextColor(
+                      themedTrackView->scene(),
+                      QStringLiteral("Signal Usage Map"))
+                      == hotspotLightText
+               && hotspot.reportBuildRequestCountForTest()
+                      == hotspotBuildRequests);
     const QList<QAction*> graphViewActions =
         hotspot.graphViewActionsForTest();
     bool graphViewMetadataComplete =

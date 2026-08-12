@@ -21,7 +21,11 @@ SettingsCenterFieldDescriptor field(
     const QVariant& defaultValue,
     const QVariant& minimumValue = {},
     const QVariant& maximumValue = {},
-    const QStringList& choices = {})
+    const QStringList& choices = {},
+    bool globalAllowed = true,
+    bool workspaceAllowed = true,
+    bool alwaysActive = false,
+    bool immediateApply = false)
 {
     SettingsCenterFieldDescriptor result;
     result.id = id;
@@ -34,6 +38,10 @@ SettingsCenterFieldDescriptor field(
     result.minimumValue = minimumValue;
     result.maximumValue = maximumValue;
     result.choices = choices;
+    result.globalAllowed = globalAllowed;
+    result.workspaceAllowed = workspaceAllowed;
+    result.alwaysActive = alwaysActive;
+    result.immediateApply = immediateApply;
     return result;
 }
 
@@ -43,6 +51,32 @@ QList<SettingsCenterCategoryDescriptor> makeCategories()
     using Kind = SettingsCenterValueKind;
 
     QList<SettingsCenterCategoryDescriptor> result;
+    result.append({
+        Category::Appearance,
+        QStringLiteral("appearance"),
+        QStringLiteral("Appearance"),
+        QStringLiteral("Application color theme."),
+        {
+            field(QStringLiteral("appearance.theme"),
+                  QString::fromLatin1(
+                      SettingsCenterKeys::AppearanceTheme),
+                  Category::Appearance,
+                  QStringLiteral("Color theme"),
+                  QStringLiteral(
+                      "Switch the complete application between Light and "
+                      "Dark appearance."),
+                  Kind::String,
+                  QStringLiteral("Light"),
+                  {},
+                  {},
+                  {QStringLiteral("Light"),
+                   QStringLiteral("Dark")},
+                  true,
+                  false,
+                  true,
+                  true),
+        },
+    });
     result.append({
         Category::Font,
         QStringLiteral("font"),

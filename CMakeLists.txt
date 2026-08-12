@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.16)
+cmake_minimum_required(VERSION 3.27)
 
 set(ZEROSLACK_VERSION_FILE "${CMAKE_CURRENT_SOURCE_DIR}/VERSION")
 if(NOT EXISTS "${ZEROSLACK_VERSION_FILE}")
@@ -37,6 +37,21 @@ set(CMAKE_C_STANDARD 99)            # Used by tree-sitter
 
 include(CTest)
 
+option(ZEROSLACK_SHARED_CORE
+    "Build zeroslack_core as a shared library (disable only for compatibility comparisons)"
+    ON)
+
+set(ZEROSLACK_LINK_JOBS "1" CACHE STRING
+    "Maximum concurrent Ninja link jobs (use 1 for MinGW GNU ld stability)")
+if(NOT ZEROSLACK_LINK_JOBS MATCHES "^[1-9][0-9]*$")
+    message(FATAL_ERROR "ZEROSLACK_LINK_JOBS must be a positive integer")
+endif()
+if(CMAKE_GENERATOR MATCHES "Ninja")
+    set_property(GLOBAL APPEND PROPERTY JOB_POOLS
+        zeroslack_link_pool=${ZEROSLACK_LINK_JOBS})
+    set(CMAKE_JOB_POOL_LINK zeroslack_link_pool)
+endif()
+
 set(ZEROSLACK_DEBUG_LINKER "AUTO" CACHE STRING
     "Debug linker selection: AUTO, GNU, or LLD")
 set_property(CACHE ZEROSLACK_DEBUG_LINKER PROPERTY STRINGS AUTO GNU LLD)
@@ -54,20 +69,11 @@ endif()
 if(WIN32 AND CMAKE_CXX_COMPILER)
     get_filename_component(ZEROSLACK_COMPILER_BIN_DIR
         "${CMAKE_CXX_COMPILER}" DIRECTORY)
-    if(CMAKE_VERSION VERSION_GREATER_EQUAL "3.25")
-        # Read the inherited PATH when the rule runs. Embedding the complete
-        # configure-time PATH makes harmless IDE/session PATH changes alter
-        # every Ninja command and forces a full rebuild after reconfigure.
-        set(ZEROSLACK_BUILD_TOOL_LAUNCHER
-            "${CMAKE_COMMAND} -E env --modify \"PATH=path_list_prepend:${ZEROSLACK_COMPILER_BIN_DIR}\" --")
-    else()
-        set(ZEROSLACK_BUILD_TOOL_PATH
-            "${ZEROSLACK_COMPILER_BIN_DIR};$ENV{PATH}")
-        string(REPLACE ";" "\\;" ZEROSLACK_BUILD_TOOL_PATH
-            "${ZEROSLACK_BUILD_TOOL_PATH}")
-        set(ZEROSLACK_BUILD_TOOL_LAUNCHER
-            "${CMAKE_COMMAND} -E env \"PATH=${ZEROSLACK_BUILD_TOOL_PATH}\"")
-    endif()
+    # Read the inherited PATH when the rule runs. Embedding the complete
+    # configure-time PATH makes harmless IDE/session PATH changes alter
+    # every Ninja command and forces a full rebuild after reconfigure.
+    set(ZEROSLACK_BUILD_TOOL_LAUNCHER
+        "${CMAKE_COMMAND} -E env --modify \"PATH=path_list_prepend:${ZEROSLACK_COMPILER_BIN_DIR}\" --")
     set_property(GLOBAL PROPERTY RULE_LAUNCH_COMPILE
         "${ZEROSLACK_BUILD_TOOL_LAUNCHER}")
     set_property(GLOBAL PROPERTY RULE_LAUNCH_LINK
@@ -229,6 +235,7 @@ set(ZEROSLACK_CORE_SOURCES
     analysisschedulerdocuments.cpp
     analysisschedulerrelationships.cpp
     analysisschedulerwiring.cpp
+    applicationthememanager.cpp
     clockresetdomainservice.cpp
     codepreviewservice.cpp
     columnnumbertool.cpp
@@ -285,6 +292,7 @@ set(ZEROSLACK_CORE_SOURCES
       editorcursornavigation.cpp
       editorfileidentity.cpp
       editorfolding.cpp
+      editorviewprojection.cpp
       editorgeometry.cpp
     editorgutter.cpp
     editorhoverpopup.cpp
@@ -292,6 +300,7 @@ set(ZEROSLACK_CORE_SOURCES
     editorruntimeannotations.cpp
     editorruntimecommands.cpp
     editorselection.cpp
+    editordroppreviewoverlay.cpp
     editorsplitcontroller.cpp
     editorkeywordghostcontroller.cpp
     editorlineoperationcontroller.cpp
@@ -342,6 +351,10 @@ set(ZEROSLACK_CORE_SOURCES
     sourcenavigationservice.cpp
     statetransitiongraphservice.cpp
     statetransitiontriggerservice.cpp
+    temporaryeditordrawer.cpp
+    temporaryeditordrawercontroller.cpp
+    temporaryeditorsearchpopup.cpp
+    temporaryeditorsearchprovider.cpp
     triviapositionmap.cpp
     tsdocument.cpp
     unsaveddocumentmanager.cpp
@@ -514,7 +527,9 @@ set(ZEROSLACK_CORE_SOURCES
       editorcoordinator.h
       editorcursornavigation.h
       editorfileidentity.h
+      editorfoldviewstate.h
       editorfolding.h
+      editorviewprojection.h
       editorgeometry.h
     editorgutter.h
     editorhoverpopup.h
@@ -558,10 +573,13 @@ set(ZEROSLACK_CORE_SOURCES
     insightgraphview.h
     insightfocuscontroller.h
     insightvisualstyle.h
+    editorsearchcandidate.h
     inlinecommandmode.h
     sourcenavigationservice.h
     statetransitiongraphservice.h
     statetransitiontriggerservice.h
+    temporaryeditorsearchpopup.h
+    temporaryeditorsearchprovider.h
     triviapositionmap.h
     tsdocument.h
     mycodeeditor.h
@@ -655,9 +673,59 @@ add_subdirectory(cmake/tree_sitter_runtime)
 # =========================================================
 # 5. Core Library and Executable
 # =========================================================
-add_library(zeroslack_core STATIC
+set(ZEROSLACK_CORE_LIBRARY_TYPE STATIC)
+if(ZEROSLACK_SHARED_CORE)
+    set(ZEROSLACK_CORE_LIBRARY_TYPE SHARED)
+endif()
+
+add_library(zeroslack_core ${ZEROSLACK_CORE_LIBRARY_TYPE}
     ${ZEROSLACK_CORE_SOURCES}
     $<TARGET_OBJECTS:zeroslack_tree_sitter>)
+
+if(ZEROSLACK_SHARED_CORE)
+    target_compile_definitions(zeroslack_core PUBLIC
+        ZEROSLACK_CORE_SHARED=1)
+endif()
+
+if(ZEROSLACK_SHARED_CORE AND WIN32)
+    if(MINGW)
+        if(NOT Python_EXECUTABLE)
+            find_package(Python REQUIRED COMPONENTS Interpreter)
+        endif()
+        if(NOT CMAKE_DLLTOOL)
+            message(FATAL_ERROR
+                "ZEROSLACK_SHARED_CORE requires MinGW dlltool")
+        endif()
+
+        set(ZEROSLACK_CORE_EXPORT_DEF
+            "${CMAKE_CURRENT_BINARY_DIR}/CMakeFiles/zeroslack_core.dir/exports.def")
+        add_custom_command(TARGET zeroslack_core PRE_LINK
+            COMMAND "${Python_EXECUTABLE}"
+                "${CMAKE_CURRENT_SOURCE_DIR}/cmake/generate_mingw_exports.py"
+                --dlltool "${CMAKE_DLLTOOL}"
+                --output "${ZEROSLACK_CORE_EXPORT_DEF}"
+                --object-root
+                    "${CMAKE_CURRENT_BINARY_DIR}/CMakeFiles/zeroslack_core.dir"
+                --object-root
+                    "${CMAKE_CURRENT_BINARY_DIR}/cmake/tree_sitter_runtime/CMakeFiles/zeroslack_tree_sitter.dir"
+            BYPRODUCTS
+                "${ZEROSLACK_CORE_EXPORT_DEF}"
+                "${ZEROSLACK_CORE_EXPORT_DEF}.raw"
+                "${ZEROSLACK_CORE_EXPORT_DEF}.rsp"
+            COMMENT "Generating bounded MinGW export table for zeroslack_core"
+            VERBATIM)
+        target_link_options(zeroslack_core PRIVATE
+            "${ZEROSLACK_CORE_EXPORT_DEF}")
+    else()
+        # Explicit API annotations define the supported DLL boundary. Retain
+        # CMake's supplemental export discovery for non-MinGW Windows tools.
+        set_target_properties(zeroslack_core PROPERTIES
+            WINDOWS_EXPORT_ALL_SYMBOLS ON)
+    endif()
+endif()
+
+message(STATUS
+    "ZeroSlack core library type: ${ZEROSLACK_CORE_LIBRARY_TYPE}")
 
 add_subdirectory(components/rtleditcore)
 
@@ -691,16 +759,25 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
         "$<$<COMPILE_LANGUAGE:CXX>:-iquote${CMAKE_CURRENT_SOURCE_DIR}>")
 endif()
 
-# Link libraries: Qt6 and Slang.
+# Link libraries. In a shared-core developer build, Slang remains a private
+# implementation dependency of the DLL. Consumers inherit only its compile
+# usage requirements; tests that directly call Slang link it explicitly.
 target_link_libraries(zeroslack_core PUBLIC
     Qt6::Core
     Qt6::Gui
     Qt6::Widgets
     Qt6::Concurrent
     Qt6::Svg
-    slang::slang
     rtledit::core
 )
+
+if(ZEROSLACK_SHARED_CORE)
+    target_link_libraries(zeroslack_core PRIVATE slang::slang)
+    target_link_libraries(zeroslack_core INTERFACE
+        "$<BUILD_INTERFACE:$<COMPILE_ONLY:slang::slang>>")
+else()
+    target_link_libraries(zeroslack_core PUBLIC slang::slang)
+endif()
 
 target_link_libraries(demo PRIVATE zeroslack_core)
 
@@ -731,12 +808,13 @@ if(BUILD_TESTING)
     string(REPLACE ";" "\\;" ZEROSLACK_TEST_PATH "${ZEROSLACK_TEST_PATH}")
 
     add_executable(ts_doc_test test_sv/ts_doc_test.cpp)
-    target_link_libraries(ts_doc_test PRIVATE zeroslack_core)
+    target_link_libraries(ts_doc_test
+        PRIVATE zeroslack_core zeroslack_tree_sitter)
 
     add_executable(ts_large_file_semantics_test
         test_sv/ts_large_file_semantics_test.cpp)
     target_link_libraries(ts_large_file_semantics_test
-        PRIVATE zeroslack_core Qt6::Core)
+        PRIVATE zeroslack_core zeroslack_tree_sitter Qt6::Core)
 
     add_executable(completion_test test_sv/completion_test.cpp)
     target_link_libraries(completion_test PRIVATE zeroslack_core)
@@ -931,6 +1009,8 @@ if(BUILD_TESTING)
 
     add_executable(navigation_virtual_source_group_test
         test_sv/navigation_virtual_source_group_test.cpp
+        applicationthememanager.cpp
+        insightvisualstyle.cpp
         navigationwidget.cpp
         navigationwidgettrees.cpp
         navigationwidgetpresentation.cpp
@@ -1050,13 +1130,18 @@ if(BUILD_TESTING)
         PRIVATE Qt6::Widgets)
 
     add_executable(editor_split_controller_test
-        test_sv/editor_split_controller_test.cpp)
+        test_sv/editor_split_controller_test.cpp
+        actionregistry.cpp
+        applicationthememanager.cpp
+        editordroppreviewoverlay.cpp
+        editorsplitcontroller.cpp
+        insightvisualstyle.cpp)
     if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
         target_compile_options(editor_split_controller_test PRIVATE
             "$<$<COMPILE_LANGUAGE:CXX>:-iquote${CMAKE_CURRENT_SOURCE_DIR}>")
     endif()
     target_link_libraries(editor_split_controller_test
-        PRIVATE zeroslack_core Qt6::Test)
+        PRIVATE Qt6::Widgets Qt6::Test)
 
     add_executable(workspace_persistence_test
         test_sv/workspace_persistence_test.cpp
@@ -1075,7 +1160,8 @@ if(BUILD_TESTING)
         PRIVATE Qt6::Core)
 
     add_executable(effective_value_test test_sv/effective_value_test.cpp)
-    target_link_libraries(effective_value_test PRIVATE zeroslack_core)
+    target_link_libraries(effective_value_test
+        PRIVATE zeroslack_core slang::slang)
 
     add_executable(jump_test test_sv/jump_test.cpp)
     target_link_libraries(jump_test PRIVATE zeroslack_core)
@@ -1092,6 +1178,26 @@ if(BUILD_TESTING)
 
     add_executable(gui_smoke_test test_sv/gui_smoke_test.cpp)
     target_link_libraries(gui_smoke_test PRIVATE zeroslack_core Qt6::Test)
+
+    add_executable(temporary_editor_drawer_test
+        test_sv/temporary_editor_drawer_test.cpp)
+    target_link_libraries(temporary_editor_drawer_test
+        PRIVATE zeroslack_core Qt6::Test)
+
+    add_executable(temporary_editor_drawer_search_test
+        test_sv/temporary_editor_drawer_search_test.cpp)
+    target_link_libraries(temporary_editor_drawer_search_test
+        PRIVATE zeroslack_core Qt6::Test)
+
+    add_executable(temporary_editor_drawer_event_filter_test
+        test_sv/temporary_editor_drawer_event_filter_test.cpp)
+    target_link_libraries(temporary_editor_drawer_event_filter_test
+        PRIVATE zeroslack_core Qt6::Test)
+
+    add_executable(editor_view_local_folding_test
+        test_sv/editor_view_local_folding_test.cpp)
+    target_link_libraries(editor_view_local_folding_test
+        PRIVATE zeroslack_core Qt6::Test)
 
     add_executable(expose_signal_to_top_test test_sv/expose_signal_to_top_test.cpp)
     target_link_libraries(expose_signal_to_top_test PRIVATE zeroslack_core)
@@ -1174,6 +1280,13 @@ if(BUILD_TESTING)
     add_executable(analysis_scheduler_test
         test_sv/analysis_scheduler_test.cpp)
     target_link_libraries(analysis_scheduler_test PRIVATE zeroslack_core Qt6::Test)
+
+    if(ZEROSLACK_SHARED_CORE)
+        add_executable(shared_core_runtime_test
+            test_sv/shared_core_runtime_test.cpp)
+        target_link_libraries(shared_core_runtime_test
+            PRIVATE zeroslack_core Qt6::Test)
+    endif()
 
     add_executable(relationship_perf_test test_sv/relationship_perf_test.cpp)
     target_link_libraries(relationship_perf_test PRIVATE zeroslack_core)
@@ -1465,6 +1578,34 @@ if(BUILD_TESTING)
             "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
             $<TARGET_FILE:editor_split_controller_test>
     )
+    add_test(NAME temporary_editor_drawer_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}"
+            "QT_QPA_PLATFORM=offscreen"
+            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
+            $<TARGET_FILE:temporary_editor_drawer_test>
+    )
+    add_test(NAME temporary_editor_drawer_search_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}"
+            "QT_QPA_PLATFORM=offscreen"
+            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
+            $<TARGET_FILE:temporary_editor_drawer_search_test>
+    )
+    add_test(NAME temporary_editor_drawer_event_filter_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}"
+            "QT_QPA_PLATFORM=offscreen"
+            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
+            $<TARGET_FILE:temporary_editor_drawer_event_filter_test>
+    )
+    add_test(NAME editor_view_local_folding_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}"
+            "QT_QPA_PLATFORM=offscreen"
+            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
+            $<TARGET_FILE:editor_view_local_folding_test>
+    )
     add_test(NAME workspace_persistence_test
         COMMAND ${CMAKE_COMMAND} -E env
             "PATH=${ZEROSLACK_TEST_PATH}"
@@ -1634,6 +1775,15 @@ if(BUILD_TESTING)
             "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
             $<TARGET_FILE:analysis_scheduler_test>
     )
+    if(ZEROSLACK_SHARED_CORE)
+        add_test(NAME shared_core_runtime_test
+            COMMAND ${CMAKE_COMMAND} -E env
+                "PATH=${ZEROSLACK_TEST_PATH}"
+                "QT_QPA_PLATFORM=offscreen"
+                "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
+                $<TARGET_FILE:shared_core_runtime_test>
+        )
+    endif()
     add_test(NAME relationship_perf_test
         COMMAND ${CMAKE_COMMAND} -E env
             "PATH=${ZEROSLACK_TEST_PATH}"
@@ -1645,6 +1795,11 @@ if(BUILD_TESTING)
         COMMAND ${CMAKE_COMMAND}
             -DZEROSLACK_SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}
             -P ${CMAKE_CURRENT_SOURCE_DIR}/legacy_field_policy_guard.ctest
+    )
+    add_test(NAME shared_core_policy_guard
+        COMMAND ${CMAKE_COMMAND}
+            -DZEROSLACK_SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/shared_core_policy_guard.ctest
     )
     add_test(NAME tree_sitter_compile_options_guard
         COMMAND ${CMAKE_COMMAND}

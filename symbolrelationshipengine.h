@@ -1,6 +1,8 @@
 #ifndef SYMBOLRELATIONSHIPENGINE_H
 #define SYMBOLRELATIONSHIPENGINE_H
 
+#include "zeroslackexport.h"
+
 #include <QObject>
 #include <QHash>
 #include <QSet>
@@ -16,7 +18,7 @@
 struct SemanticSymbolRecord;
 struct SemanticRelationship;
 
-class SymbolRelationshipEngine : public QObject
+class ZEROSLACK_API SymbolRelationshipEngine : public QObject
 {
     Q_OBJECT
 

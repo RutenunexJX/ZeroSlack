@@ -1,6 +1,8 @@
 #ifndef ACTIONREGISTRY_H
 #define ACTIONREGISTRY_H
 
+#include "zeroslackexport.h"
+
 #include <QList>
 #include <QHash>
 #include <QString>
@@ -164,6 +166,8 @@ inline constexpr const char ViewEditorTabCloseAll[] =
     "view.editorTab.closeAll";
 inline constexpr const char ViewEditorTabDuplicate[] =
     "view.editorTab.duplicateView";
+inline constexpr const char ViewTemporaryEditorOpen[] =
+    "view.temporaryEditor.open";
 inline constexpr const char ViewEditorTabToggleLocked[] =
     "view.editorTab.toggleLocked";
 inline constexpr const char ViewGroupTabsNone[] =
@@ -304,9 +308,14 @@ struct ActionExecutionResult {
     QVariantMap output;
 };
 
+using RegisteredActionRequestHandler =
+    std::function<ActionExecutionResult(
+        const QString&,
+        const QVariantMap&)>;
+
 struct ActionDescriptor;
 
-class ActionExecutionHost
+class ZEROSLACK_API ActionExecutionHost
 {
 public:
     virtual ~ActionExecutionHost() = default;

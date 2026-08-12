@@ -3,23 +3,186 @@
 #include "rtlinsightsgraphscenemapper.h"
 #include "insightgraphview.h"
 #include "insightvisualstyle.h"
+#include "rtlinsightsgraphconstants.h"
 #include "rtlinsightspanelviewstate.h"
 #include "signalusagehotspotpanel.h"
 
 #include <QCheckBox>
 #include <QComboBox>
+#include <QEvent>
 #include <QGraphicsScene>
 #include <QGraphicsView>
 #include <QGraphicsItem>
+#include <QLineF>
 #include <QLineEdit>
+#include <QList>
+#include <QPointer>
 #include <QPushButton>
+#include <QScrollBar>
 #include <QSignalBlocker>
+#include <QSize>
 #include <QSpinBox>
 #include <QStackedWidget>
 #include <QTableWidget>
+#include <QTimer>
 #include <QToolButton>
 #include <QTreeWidget>
+#include <QVariant>
 #include <QWidget>
+
+#include <memory>
+
+namespace {
+
+class RtlThemeViewportInteractionGuard final : public QObject
+{
+public:
+    explicit RtlThemeViewportInteractionGuard(
+        std::shared_ptr<quint64> interactionEpoch)
+        : epoch(std::move(interactionEpoch))
+    {
+    }
+
+    void watch(QObject* object)
+    {
+        if (!object || watchedObjects.contains(object))
+            return;
+        watchedObjects.append(object);
+        object->installEventFilter(this);
+    }
+
+protected:
+    bool eventFilter(QObject* watched, QEvent* event) override
+    {
+        Q_UNUSED(watched)
+        if (!event)
+            return false;
+        switch (event->type()) {
+        case QEvent::MouseButtonPress:
+        case QEvent::MouseButtonDblClick:
+        case QEvent::Wheel:
+        case QEvent::KeyPress:
+        case QEvent::TouchBegin:
+        case QEvent::TouchUpdate:
+        case QEvent::NativeGesture:
+            ++(*epoch);
+            break;
+        default:
+            break;
+        }
+        return false;
+    }
+
+private:
+    std::shared_ptr<quint64> epoch;
+    QList<QObject*> watchedObjects;
+};
+
+void restoreThemeViewport(
+    InsightGraphView* graphView,
+    const QTransform& transform,
+    const QPointF& center,
+    const QSize& viewportSize,
+    int horizontalValue,
+    int verticalValue)
+{
+    if (!graphView || !graphView->viewport())
+        return;
+
+    graphView->setTransform(transform);
+    if (graphView->viewport()->size() == viewportSize) {
+        graphView->horizontalScrollBar()->setValue(
+            horizontalValue);
+        graphView->verticalScrollBar()->setValue(
+            verticalValue);
+    } else {
+        graphView->centerOn(center);
+    }
+
+    // QGraphicsView represents its center through integer scroll-bar values.
+    // centerOn() can round both axes in the same direction; at fractional zoom
+    // that makes the combined two-axis error larger than either pixel step.
+    // Search the small set of realizable values around Qt's candidate and keep
+    // the closest scene-space center.
+    QScrollBar* horizontal =
+        graphView->horizontalScrollBar();
+    QScrollBar* vertical =
+        graphView->verticalScrollBar();
+    const int baseHorizontal = horizontal->value();
+    const int baseVertical = vertical->value();
+    int bestHorizontal = baseHorizontal;
+    int bestVertical = baseVertical;
+    qreal bestDistance = QLineF(
+        graphView->mapToScene(
+            graphView->viewport()->rect().center()),
+        center).length();
+
+    constexpr int kScrollCandidateRadius = 2;
+    for (int horizontalDelta = -kScrollCandidateRadius;
+         horizontalDelta <= kScrollCandidateRadius;
+         ++horizontalDelta) {
+        horizontal->setValue(
+            baseHorizontal + horizontalDelta);
+        for (int verticalDelta = -kScrollCandidateRadius;
+             verticalDelta <= kScrollCandidateRadius;
+             ++verticalDelta) {
+            vertical->setValue(
+                baseVertical + verticalDelta);
+            const qreal candidateDistance = QLineF(
+                graphView->mapToScene(
+                    graphView->viewport()->rect().center()),
+                center).length();
+            if (candidateDistance < bestDistance) {
+                bestDistance = candidateDistance;
+                bestHorizontal = horizontal->value();
+                bestVertical = vertical->value();
+            }
+        }
+    }
+    horizontal->setValue(bestHorizontal);
+    vertical->setValue(bestVertical);
+}
+
+} // namespace
+
+struct RtlInsightsThemeViewportState
+{
+    QTransform transform;
+    QPointF center;
+    QSize viewportSize;
+    int horizontalValue = 0;
+    int verticalValue = 0;
+    quint64 graphGeneration = 0;
+    quint64 captureEpoch = 0;
+    quint64 interactionEpochAtCapture = 0;
+    bool valid = false;
+    QPointer<QGraphicsScene> scene;
+    std::shared_ptr<quint64> restoreEpoch =
+        std::make_shared<quint64>(0);
+    std::shared_ptr<quint64> interactionEpoch =
+        std::make_shared<quint64>(0);
+    std::unique_ptr<RtlThemeViewportInteractionGuard> interactionGuard =
+        std::make_unique<RtlThemeViewportInteractionGuard>(
+            interactionEpoch);
+};
+
+namespace {
+
+constexpr auto kRtlGraphBuildGenerationProperty =
+    "rtlGraphBuildGeneration";
+
+void publishGraphGeneration(
+    const RtlInsightsPanelViewState& state)
+{
+    if (state.insightsGraphScene) {
+        state.insightsGraphScene->setProperty(
+            kRtlGraphBuildGenerationProperty,
+            QVariant::fromValue<qulonglong>(
+                state.graphBuildGeneration));
+    }
+}
+
+} // namespace
 
 RtlInsightsGraphController::RtlInsightsGraphController(
     RtlInsightsPanelViewState& viewState)
@@ -28,7 +191,9 @@ RtlInsightsGraphController::RtlInsightsGraphController(
           std::make_unique<
               RtlInsightsGraphSceneMapper>(
               state,
-              *this))
+              *this)),
+      themeViewportState(
+          std::make_unique<RtlInsightsThemeViewportState>())
 {
 }
 
@@ -232,6 +397,12 @@ bool RtlInsightsGraphController::navigateSelectedItem()
     return sceneMapper->navigateSelectedItem();
 }
 
+RtlInsightSourceLocation
+RtlInsightsGraphController::selectedSourceLocation() const
+{
+    return sceneMapper->selectedSourceLocation();
+}
+
 bool RtlInsightsGraphController::
     setModuleBlockTopFromSelected()
 {
@@ -258,6 +429,7 @@ void RtlInsightsGraphController::
         const StateTransitionGraphReport& report)
 {
     ++state.graphBuildGeneration;
+    publishGraphGeneration(state);
     state.graphDocumentRevision =
         state.currentSourceLocation.documentRevision;
     sceneMapper->renderStateTransitionGraphScene(
@@ -269,6 +441,7 @@ void RtlInsightsGraphController::renderFsmGraphScene(
     const QString& title)
 {
     ++state.graphBuildGeneration;
+    publishGraphGeneration(state);
     state.graphDocumentRevision =
         state.currentSourceLocation.documentRevision;
     sceneMapper->renderFsmGraphScene(report, title);
@@ -281,6 +454,7 @@ void RtlInsightsGraphController::
         const QString& mode)
 {
     ++state.graphBuildGeneration;
+    publishGraphGeneration(state);
     state.graphDocumentRevision =
         state.currentSourceLocation.documentRevision;
     sceneMapper->renderFsmGraphLayoutScene(
@@ -294,6 +468,7 @@ void RtlInsightsGraphController::
         const ModuleBlockDiagramReport& report)
 {
     ++state.graphBuildGeneration;
+    publishGraphGeneration(state);
     state.graphDocumentRevision =
         state.currentSourceLocation.documentRevision;
     sceneMapper->renderModuleBlockDiagramScene(
@@ -380,6 +555,144 @@ void RtlInsightsGraphController::focusInspector()
     }
 }
 
+void RtlInsightsGraphController::captureThemeViewportState()
+{
+    RtlInsightsThemeViewportState& snapshot =
+        *themeViewportState;
+    ++(*snapshot.restoreEpoch);
+    snapshot.valid = false;
+
+    InsightGraphView* graphView =
+        state.insightsGraphView;
+    if (!graphView || !graphView->viewport()
+        || !state.insightsGraphScene) {
+        return;
+    }
+
+    for (QObject* object :
+         {static_cast<QObject*>(graphView),
+          static_cast<QObject*>(graphView->viewport()),
+          static_cast<QObject*>(graphView->horizontalScrollBar()),
+          static_cast<QObject*>(graphView->verticalScrollBar()),
+          static_cast<QObject*>(state.graphZoomOutButton),
+          static_cast<QObject*>(state.graphFitButton),
+          static_cast<QObject*>(state.graphZoomInButton),
+          static_cast<QObject*>(state.graphSearchEdit)}) {
+        snapshot.interactionGuard->watch(object);
+    }
+
+    snapshot.transform = graphView->transform();
+    snapshot.center = graphView->mapToScene(
+        graphView->viewport()->rect().center());
+    snapshot.viewportSize =
+        graphView->viewport()->size();
+    snapshot.horizontalValue =
+        graphView->horizontalScrollBar()->value();
+    snapshot.verticalValue =
+        graphView->verticalScrollBar()->value();
+    snapshot.graphGeneration =
+        state.graphBuildGeneration;
+    snapshot.captureEpoch =
+        *snapshot.restoreEpoch;
+    snapshot.interactionEpochAtCapture =
+        *snapshot.interactionEpoch;
+    snapshot.scene = state.insightsGraphScene;
+    snapshot.valid = true;
+}
+
+void RtlInsightsGraphController::refreshThemePresentation()
+{
+    if (state.signalUsageHotspotPanel)
+        state.signalUsageHotspotPanel->refreshThemePresentation();
+
+    if (state.insightsTree && state.insightsTree->viewport())
+        state.insightsTree->viewport()->update();
+    if (!state.insightsGraphView
+        || !state.insightsGraphScene) {
+        return;
+    }
+    sceneMapper->refreshThemePresentation();
+
+    RtlInsightsThemeViewportState& snapshot =
+        *themeViewportState;
+    if (!snapshot.valid)
+        return;
+    snapshot.valid = false;
+    if (snapshot.scene != state.insightsGraphScene
+        || snapshot.graphGeneration
+               != state.graphBuildGeneration
+        || snapshot.interactionEpochAtCapture
+               != *snapshot.interactionEpoch) {
+        return;
+    }
+
+    InsightGraphView* graphView =
+        state.insightsGraphView;
+    const QTransform transform = snapshot.transform;
+    const QPointF center = snapshot.center;
+    const QSize viewportSize = snapshot.viewportSize;
+    const int horizontalValue =
+        snapshot.horizontalValue;
+    const int verticalValue =
+        snapshot.verticalValue;
+    const quint64 captureEpoch =
+        snapshot.captureEpoch;
+    const quint64 graphGeneration =
+        snapshot.graphGeneration;
+    const auto restoreEpoch = snapshot.restoreEpoch;
+    const auto interactionEpoch =
+        snapshot.interactionEpoch;
+
+    restoreThemeViewport(graphView,
+                         transform,
+                         center,
+                         viewportSize,
+                         horizontalValue,
+                         verticalValue);
+    const quint64 interactionEpochAfterRestore =
+        *interactionEpoch;
+    QPointer<InsightGraphView> guardedView = graphView;
+    QPointer<QGraphicsScene> guardedScene =
+        state.insightsGraphScene;
+    QTimer::singleShot(
+        0,
+        graphView,
+        [guardedView,
+         guardedScene,
+         transform,
+         center,
+         viewportSize,
+         horizontalValue,
+         verticalValue,
+         graphGeneration,
+         captureEpoch,
+         restoreEpoch,
+         interactionEpoch,
+         interactionEpochAfterRestore]() {
+            if (!guardedView || !guardedScene
+                || guardedView->scene() != guardedScene
+                || *restoreEpoch != captureEpoch
+                || *interactionEpoch
+                       != interactionEpochAfterRestore
+                || guardedScene
+                       ->property(
+                           kRtlGraphBuildGenerationProperty)
+                       .toULongLong()
+                       != graphGeneration) {
+                return;
+            }
+            restoreThemeViewport(
+                guardedView,
+                transform,
+                center,
+                viewportSize,
+                horizontalValue,
+                verticalValue);
+            if (guardedView->viewport())
+                guardedView->viewport()->update();
+        });
+}
+
 quint64 RtlInsightsGraphController::graphBuildGeneration() const
 {
     return state.graphBuildGeneration;
@@ -424,9 +737,13 @@ void RtlInsightsGraphController::renderUnavailable(
         InsightVisualStyle::panelBorderPen(),
         InsightVisualStyle::panelBrush());
     card->setZValue(-1);
+    card->setData(kGraphThemeVisualRole,
+                  kGraphThemePanel);
 
     auto* titleItem = state.insightsGraphScene->addSimpleText(title, titleFont);
     titleItem->setBrush(QBrush(t.textPrimary));
+    titleItem->setData(kGraphThemeVisualRole,
+                       kGraphThemeTextPrimary);
     titleItem->setPos(-188, -48);
 
     QFont detailFont = InsightVisualStyle::compactFont(state.insightsGraphView->font());
@@ -437,6 +754,8 @@ void RtlInsightsGraphController::renderUnavailable(
         detailFont);
     detailItem->setTextWidth(376.0);
     detailItem->setDefaultTextColor(t.warning);
+    detailItem->setData(kGraphThemeVisualRole,
+                        kGraphThemeWarning);
     detailItem->setPos(-188, -8);
 
     state.insightsGraphScene->setSceneRect(-220, -90, 440, 180);

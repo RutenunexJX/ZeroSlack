@@ -10,6 +10,7 @@
 #include <QDragEnterEvent>
 #include <QDragMoveEvent>
 #include <QDropEvent>
+#include <QFocusEvent>
 #include <QHBoxLayout>
 #include <QInputDialog>
 #include <QKeyEvent>
@@ -17,6 +18,7 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QMenu>
+#include <QMimeData>
 #include <QMouseEvent>
 #include <QPaintEvent>
 #include <QPushButton>
@@ -318,6 +320,7 @@ MyCodeEditor::MyCodeEditor(QWidget *parent)
     : QPlainTextEdit(parent)
     , state(std::make_unique<MyCodeEditorState>())
 {
+    setProperty("codeEditorSurface", true);
     state->attachToEditor(this);
 }
 
@@ -406,6 +409,19 @@ void MyCodeEditor::redo()
     auto edit = beginSynchronousEditTransaction();
     state->clearVirtualCursor(this);
     QPlainTextEdit::redo();
+}
+
+bool MyCodeEditor::find(const QString& expression,
+                        QTextDocument::FindFlags options)
+{
+    const bool found = QPlainTextEdit::find(expression, options);
+    if (!found)
+        return false;
+    state->folding.revealLine(this, textCursor().blockNumber());
+    state->projection.ensure(this, state->folding.collapsedLineRanges());
+    if (state->projection.active())
+        state->projection.ensureCursorVisible(this, true);
+    return true;
 }
 
 void MyCodeEditor::showFindDialog()
@@ -506,8 +522,98 @@ bool MyCodeEditor::goToPreviousSelectedSymbolOccurrence(
 
 void MyCodeEditor::setTextCursor(const QTextCursor& cursor)
 {
+    state->folding.revealLine(this, cursor.blockNumber());
     auto edit = beginSynchronousEditTransaction();
     QPlainTextEdit::setTextCursor(cursor);
+    state->projection.ensure(this, state->folding.collapsedLineRanges());
+    if (state->projection.active())
+        state->projection.ensureCursorVisible(this, false);
+}
+
+void MyCodeEditor::centerCursor()
+{
+    state->projection.ensure(this, state->folding.collapsedLineRanges());
+    if (state->projection.active())
+        state->projection.ensureCursorVisible(this, true);
+    else
+        QPlainTextEdit::centerCursor();
+}
+
+void MyCodeEditor::ensureCursorVisible()
+{
+    state->projection.ensure(this, state->folding.collapsedLineRanges());
+    if (state->projection.active())
+        state->projection.ensureCursorVisible(this, false);
+    else
+        QPlainTextEdit::ensureCursorVisible();
+}
+
+QTextCursor MyCodeEditor::cursorForPosition(const QPoint& position) const
+{
+    auto* editor = const_cast<MyCodeEditor*>(this);
+    state->projection.ensure(editor, state->folding.collapsedLineRanges());
+    return state->projection.active()
+        ? state->projection.cursorForPosition(editor, position)
+        : QPlainTextEdit::cursorForPosition(position);
+}
+
+QRect MyCodeEditor::cursorRect(const QTextCursor& cursor) const
+{
+    auto* editor = const_cast<MyCodeEditor*>(this);
+    state->projection.ensure(editor, state->folding.collapsedLineRanges());
+    return state->projection.active()
+        ? state->projection.cursorRect(editor, cursor)
+        : QPlainTextEdit::cursorRect(cursor);
+}
+
+QRect MyCodeEditor::cursorRect() const
+{
+    return cursorRect(textCursor());
+}
+
+QTextBlock MyCodeEditor::firstVisibleBlock() const
+{
+    auto* editor = const_cast<MyCodeEditor*>(this);
+    state->projection.ensure(editor, state->folding.collapsedLineRanges());
+    return state->projection.active()
+        ? state->projection.firstVisibleBlock(editor)
+        : QPlainTextEdit::firstVisibleBlock();
+}
+
+QTextBlock MyCodeEditor::nextVisibleBlock(const QTextBlock& block) const
+{
+    auto* editor = const_cast<MyCodeEditor*>(this);
+    state->projection.ensure(editor, state->folding.collapsedLineRanges());
+    return state->projection.active()
+        ? state->projection.nextVisibleBlock(editor, block)
+        : block.next();
+}
+
+QRectF MyCodeEditor::blockBoundingGeometry(const QTextBlock& block) const
+{
+    auto* editor = const_cast<MyCodeEditor*>(this);
+    state->projection.ensure(editor, state->folding.collapsedLineRanges());
+    return state->projection.active()
+        ? state->projection.blockBoundingGeometry(editor, block)
+        : QPlainTextEdit::blockBoundingGeometry(block);
+}
+
+QRectF MyCodeEditor::blockBoundingRect(const QTextBlock& block) const
+{
+    auto* editor = const_cast<MyCodeEditor*>(this);
+    state->projection.ensure(editor, state->folding.collapsedLineRanges());
+    return state->projection.active()
+        ? state->projection.blockBoundingRect(editor, block)
+        : QPlainTextEdit::blockBoundingRect(block);
+}
+
+QPointF MyCodeEditor::contentOffset() const
+{
+    auto* editor = const_cast<MyCodeEditor*>(this);
+    state->projection.ensure(editor, state->folding.collapsedLineRanges());
+    return state->projection.active()
+        ? state->projection.contentOffset(editor)
+        : QPlainTextEdit::contentOffset();
 }
 
 void MyCodeEditor::refreshScopeAndCurrentLineHighlight()
@@ -639,23 +745,39 @@ void MyCodeEditor::closeSemanticPopup()
 
 EditorBlockGeometry MyCodeEditor::blockGeometry(int blockNumber) const
 {
+    auto* editor = const_cast<MyCodeEditor*>(this);
+    state->projection.ensure(editor, state->folding.collapsedLineRanges());
+    if (state->projection.active()) {
+        const EditorProjectionGeometry geometry =
+            state->projection.blockGeometry(editor, blockNumber);
+        return {geometry.top, geometry.height};
+    }
     return state->blockGeometry(this, blockNumber);
 }
 
 qreal MyCodeEditor::documentHeightPx() const
 {
+    auto* editor = const_cast<MyCodeEditor*>(this);
+    state->projection.ensure(editor, state->folding.collapsedLineRanges());
+    if (state->projection.active())
+        return state->projection.documentHeight();
     return state->documentHeightPx(this);
 }
 
 void MyCodeEditor::resizeEvent(QResizeEvent *event)
 {
     QPlainTextEdit::resizeEvent(event);
+    state->projection.ensure(this, state->folding.collapsedLineRanges());
     state->handleResize(this);
 }
 
 void MyCodeEditor::paintEvent(QPaintEvent *event)
 {
-    QPlainTextEdit::paintEvent(event);
+    state->projection.ensure(this, state->folding.collapsedLineRanges());
+    if (state->projection.active())
+        state->projection.paint(this, event);
+    else
+        QPlainTextEdit::paintEvent(event);
     state->paintFoldPlaceholders(this, event);
     state->paintGhostAnnotations(this, event);
     state->paintMultiCursor(this, event);
@@ -1281,6 +1403,8 @@ void MyCodeEditor::applyAppearanceSettings(
     const EditorAppearanceOptions& options)
 {
     state->applyAppearanceSettings(this, options);
+    state->projection.invalidate();
+    state->projection.ensure(this, state->folding.collapsedLineRanges());
 }
 
 void MyCodeEditor::keyPressEvent(QKeyEvent *event)
@@ -1294,20 +1418,128 @@ void MyCodeEditor::keyPressEvent(QKeyEvent *event)
         return;
     }
 
+    state->projection.ensure(this, state->folding.collapsedLineRanges());
+    if (state->projection.active()
+        && event
+        && !(event->modifiers()
+                 & (Qt::ControlModifier
+                    | Qt::AltModifier
+                    | Qt::MetaModifier))
+        && (event->key() == Qt::Key_Up
+            || event->key() == Qt::Key_Down
+            || event->key() == Qt::Key_PageUp
+            || event->key() == Qt::Key_PageDown)) {
+        const QTextCursor current = textCursor();
+        const QTextBlock currentBlock = current.block();
+        const int row = state->projection.visibleRowForSourceLine(
+            currentBlock.blockNumber());
+        if (row >= 0) {
+            const int page = qMax(1, verticalScrollBar()->pageStep());
+            const int delta = event->key() == Qt::Key_Up
+                ? -1
+                : (event->key() == Qt::Key_Down
+                       ? 1
+                       : (event->key() == Qt::Key_PageUp ? -page : page));
+            const int targetRow = qBound(
+                0,
+                row + delta,
+                state->projection.visibleRowCount() - 1);
+            const int targetLine =
+                state->projection.sourceLineForVisibleRow(targetRow);
+            const QTextBlock targetBlock =
+                document()->findBlockByNumber(targetLine);
+            const int column = qMax(
+                0, current.position() - currentBlock.position());
+            QTextCursor target(document());
+            target.setPosition(
+                targetBlock.position()
+                + qMin(column, targetBlock.text().size()));
+            if (event->modifiers().testFlag(Qt::ShiftModifier)) {
+                const int position = target.position();
+                target.setPosition(current.anchor());
+                target.setPosition(position, QTextCursor::KeepAnchor);
+            }
+            QPlainTextEdit::setTextCursor(target);
+            state->projection.ensureCursorVisible(this, false);
+            viewport()->update();
+            event->accept();
+            return;
+        }
+    }
+
+    const int previousProjectedScroll = state->projection.active()
+        ? verticalScrollBar()->value() : -1;
+    const int originalAnchor = textCursor().anchor();
     lifecycleTrace("key.before-base");
     QPlainTextEdit::keyPressEvent(event);
+    state->projection.ensure(this, state->folding.collapsedLineRanges());
+    if (state->projection.active()) {
+        if (previousProjectedScroll >= 0)
+            verticalScrollBar()->setValue(previousProjectedScroll);
+        QTextCursor corrected = textCursor();
+        int sourceLine = corrected.blockNumber();
+        if (!state->projection.sourceLineVisible(sourceLine)) {
+            const bool forward = event
+                && (event->key() == Qt::Key_Right
+                    || event->key() == Qt::Key_Down
+                    || event->key() == Qt::Key_PageDown);
+            int candidate = sourceLine;
+            while (candidate >= 0 && candidate < document()->blockCount()
+                   && !state->projection.sourceLineVisible(candidate)) {
+                candidate += forward ? 1 : -1;
+            }
+            if (candidate < 0 || candidate >= document()->blockCount()) {
+                candidate = qBound(0,
+                                   sourceLine,
+                                   document()->blockCount() - 1);
+                while (candidate > 0
+                       && !state->projection.sourceLineVisible(candidate)) {
+                    --candidate;
+                }
+            }
+            const QTextBlock visibleBlock =
+                document()->findBlockByNumber(candidate);
+            if (visibleBlock.isValid()) {
+                const int correctedPosition = forward
+                    ? visibleBlock.position()
+                    : visibleBlock.position() + visibleBlock.text().size();
+                corrected = QTextCursor(document());
+                if (event
+                    && event->modifiers().testFlag(Qt::ShiftModifier)) {
+                    corrected.setPosition(originalAnchor);
+                    corrected.setPosition(correctedPosition,
+                                          QTextCursor::KeepAnchor);
+                } else {
+                    corrected.setPosition(correctedPosition);
+                }
+                QPlainTextEdit::setTextCursor(corrected);
+            }
+        }
+        state->projection.ensureCursorVisible(this, false);
+        viewport()->update();
+    }
     lifecycleTrace("key.after-base");
 }
 
 void MyCodeEditor::inputMethodEvent(QInputMethodEvent* event)
 {
     auto edit = beginSynchronousEditTransaction();
+    state->projection.ensure(this, state->folding.collapsedLineRanges());
+    const int previousProjectedScroll = state->projection.active()
+        ? verticalScrollBar()->value() : -1;
     if (event
         && (!event->commitString().isEmpty()
             || !event->preeditString().isEmpty())) {
         state->prepareVirtualCursorInput(this);
     }
     QPlainTextEdit::inputMethodEvent(event);
+    state->projection.ensure(this, state->folding.collapsedLineRanges());
+    if (state->projection.active()) {
+        if (previousProjectedScroll >= 0)
+            verticalScrollBar()->setValue(previousProjectedScroll);
+        state->projection.ensureCursorVisible(this, false);
+        viewport()->update();
+    }
 }
 
 void MyCodeEditor::startFoldRegionMarkMode()
@@ -1371,12 +1603,57 @@ bool MyCodeEditor::insertCustomFoldMarkersForTest(
 
 bool MyCodeEditor::toggleFoldAtLineForTest(int line)
 {
+    state->clearPendingColumnAnchor();
     return state->folding.toggleFoldAtLine(this, line);
 }
 
 bool MyCodeEditor::foldCollapsedAtLineForTest(int line) const
 {
     return state->folding.isCollapsedAtLine(line);
+}
+
+bool MyCodeEditor::foldLineVisibleForTest(int line) const
+{
+    return sourceLineVisible(line);
+}
+
+bool MyCodeEditor::sourceLineVisible(int line) const
+{
+    auto* editor = const_cast<MyCodeEditor*>(this);
+    state->projection.ensure(editor, state->folding.collapsedLineRanges());
+    return state->projection.sourceLineVisible(line);
+}
+
+bool MyCodeEditor::viewProjectionActive() const
+{
+    auto* editor = const_cast<MyCodeEditor*>(this);
+    state->projection.ensure(editor, state->folding.collapsedLineRanges());
+    return state->projection.active();
+}
+
+void MyCodeEditor::invalidateViewProjection()
+{
+    state->projection.invalidate();
+}
+
+EditorViewProjectionMetrics MyCodeEditor::viewProjectionMetricsForTest() const
+{
+    auto* editor = const_cast<MyCodeEditor*>(this);
+    state->projection.ensure(editor, state->folding.collapsedLineRanges());
+    return state->projection.metrics();
+}
+
+EditorFoldViewState MyCodeEditor::foldingViewState() const
+{
+    return state->folding.captureViewState(
+        const_cast<MyCodeEditor*>(this));
+}
+
+void MyCodeEditor::restoreFoldingViewState(
+    const EditorFoldViewState& foldingState)
+{
+    state->clearPendingColumnAnchor();
+    state->folding.restoreViewState(this, foldingState);
 }
 
 QList<GhostAnnotation> MyCodeEditor::ghostAnnotationsForTest() const
@@ -1460,6 +1737,29 @@ void MyCodeEditor::dropEvent(QDropEvent* event)
     if (state->handleDrop(this, event))
         return;
 
+    state->projection.ensure(this, state->folding.collapsedLineRanges());
+    if (state->projection.active()
+        && event
+        && event->mimeData()
+        && event->mimeData()->hasText()
+        && !isReadOnly()) {
+        if (event->proposedAction() == Qt::MoveAction
+            && (event->source() == this
+                || event->source() == viewport())) {
+            event->ignore();
+            return;
+        }
+        QTextCursor cursor = cursorForPosition(
+            event->position().toPoint());
+        cursor.insertText(event->mimeData()->text());
+        QPlainTextEdit::setTextCursor(cursor);
+        state->projection.ensure(this, state->folding.collapsedLineRanges());
+        state->projection.ensureCursorVisible(this, false);
+        event->acceptProposedAction();
+        viewport()->update();
+        return;
+    }
+
     QPlainTextEdit::dropEvent(event);
 }
 
@@ -1480,6 +1780,22 @@ void MyCodeEditor::mousePressEvent(QMouseEvent *event)
     if (state->handleMousePress(this, event))
         return;
 
+    state->projection.ensure(this, state->folding.collapsedLineRanges());
+    if (state->projection.active()
+        && event->button() == Qt::LeftButton) {
+        setFocus(Qt::MouseFocusReason);
+        QTextCursor target = cursorForPosition(event->position().toPoint());
+        if (event->modifiers().testFlag(Qt::ShiftModifier)) {
+            const int position = target.position();
+            target.setPosition(textCursor().anchor());
+            target.setPosition(position, QTextCursor::KeepAnchor);
+        }
+        QPlainTextEdit::setTextCursor(target);
+        viewport()->update();
+        event->accept();
+        return;
+    }
+
     QPlainTextEdit::mousePressEvent(event);
 }
 
@@ -1488,7 +1804,24 @@ void MyCodeEditor::mouseDoubleClickEvent(QMouseEvent *event)
     if (state->handleMouseDoubleClick(this, event))
         return;
 
+    state->projection.ensure(this, state->folding.collapsedLineRanges());
+    if (state->projection.active()
+        && event->button() == Qt::LeftButton) {
+        QTextCursor target = cursorForPosition(event->position().toPoint());
+        target.select(QTextCursor::WordUnderCursor);
+        QPlainTextEdit::setTextCursor(target);
+        viewport()->update();
+        event->accept();
+        return;
+    }
+
     QPlainTextEdit::mouseDoubleClickEvent(event);
+}
+
+void MyCodeEditor::focusOutEvent(QFocusEvent* event)
+{
+    state->clearPendingColumnAnchor();
+    QPlainTextEdit::focusOutEvent(event);
 }
 
 void MyCodeEditor::mouseMoveEvent(QMouseEvent *event)
@@ -1496,6 +1829,19 @@ void MyCodeEditor::mouseMoveEvent(QMouseEvent *event)
     auto edit = beginSynchronousEditTransaction();
     if (state->handleMouseMove(this, event))
         return;
+
+    state->projection.ensure(this, state->folding.collapsedLineRanges());
+    if (state->projection.active()
+        && event->buttons().testFlag(Qt::LeftButton)) {
+        QTextCursor target = cursorForPosition(event->position().toPoint());
+        const int position = target.position();
+        target.setPosition(textCursor().anchor());
+        target.setPosition(position, QTextCursor::KeepAnchor);
+        QPlainTextEdit::setTextCursor(target);
+        viewport()->update();
+        event->accept();
+        return;
+    }
 
     QPlainTextEdit::mouseMoveEvent(event);
 }
@@ -1505,6 +1851,12 @@ void MyCodeEditor::mouseReleaseEvent(QMouseEvent *event)
     auto edit = beginSynchronousEditTransaction();
     if (state->handleMouseRelease(this, event))
         return;
+
+    if (viewProjectionActive()
+        && event->button() == Qt::LeftButton) {
+        event->accept();
+        return;
+    }
 
     QPlainTextEdit::mouseReleaseEvent(event);
 }
@@ -1527,6 +1879,22 @@ void MyCodeEditor::wheelEvent(QWheelEvent* event)
         return;
     }
 
+    state->projection.ensure(this, state->folding.collapsedLineRanges());
+    if (state->projection.active() && event) {
+        const int steps = wheelNotchSteps(event);
+        if (steps != 0) {
+            QScrollBar* bar = verticalScrollBar();
+            bar->setValue(bar->value() - steps * 3 * bar->singleStep());
+        } else if (!event->pixelDelta().isNull()) {
+            QScrollBar* bar = verticalScrollBar();
+            const int lineHeight = qMax(1, fontMetrics().height());
+            const int rows = event->pixelDelta().y() / lineHeight;
+            bar->setValue(bar->value() - rows);
+        }
+        viewport()->update();
+        event->accept();
+        return;
+    }
     QPlainTextEdit::wheelEvent(event);
 }
 
@@ -1535,6 +1903,50 @@ void MyCodeEditor::leaveEvent(QEvent *event)
     state->handleLeaveEvent(this);
 
     QPlainTextEdit::leaveEvent(event);
+}
+
+QVariant MyCodeEditor::inputMethodQuery(
+    Qt::InputMethodQuery query) const
+{
+    if (viewProjectionActive()) {
+        if (query == Qt::ImCursorRectangle)
+            return cursorRect();
+        if (query == Qt::ImAnchorRectangle) {
+            QTextCursor anchor = textCursor();
+            anchor.setPosition(anchor.anchor());
+            return cursorRect(anchor);
+        }
+        if (query == Qt::ImInputItemClipRectangle)
+            return viewport()->rect();
+    }
+    return QPlainTextEdit::inputMethodQuery(query);
+}
+
+void MyCodeEditor::scrollContentsBy(int dx, int dy)
+{
+    state->projection.ensure(this, state->folding.collapsedLineRanges());
+    if (!state->projection.active()) {
+        QPlainTextEdit::scrollContentsBy(dx, dy);
+        return;
+    }
+    Q_UNUSED(dx)
+    viewport()->update();
+    state->gutter.handleUpdateRequest(this, viewport()->rect(), 0);
+    if (dy != 0) {
+        state->refreshVisibleRegionPresentation(this);
+        state->sourceNavigation.handleEditorScrolled(this, state->selections);
+        state->sourceNavigation.syncMode();
+    }
+}
+
+void MyCodeEditor::doSetTextCursor(const QTextCursor& cursor)
+{
+    QPlainTextEdit::doSetTextCursor(cursor);
+    if (!state)
+        return;
+    state->projection.ensure(this, state->folding.collapsedLineRanges());
+    if (state->projection.active())
+        viewport()->update();
 }
 
 void MyCodeEditor::applyLineNavigationTarget(

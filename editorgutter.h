@@ -24,6 +24,7 @@ public:
 
 private:
     int widthFor(MyCodeEditor* editor) const;
+    void updateNumberFont(MyCodeEditor* editor) const;
     void refresh(const QRect& rect, int dy, int width) const;
 
     LineNumberWidget* widget = nullptr;

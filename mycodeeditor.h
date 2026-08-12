@@ -1,11 +1,15 @@
 #ifndef MYCODEEDITOR_H
 #define MYCODEEDITOR_H
 
+#include "zeroslackexport.h"
+
 #include "annotationlayer.h"
 #include "semanticindex.h"
 #include "semanticdecorationservice.h"
 #include "ghostannotationservice.h"
 #include "foldblockshelfmodel.h"
+#include "editorfoldviewstate.h"
+#include "editorviewprojection.h"
 #include "includeheaderworkflowtypes.h"
 #include "completiontypes.h"
 #include "documentchange.h"
@@ -24,6 +28,7 @@ class QMenu;
 class QDragEnterEvent;
 class QDragMoveEvent;
 class QDropEvent;
+class QFocusEvent;
 class QMouseEvent;
 class QPaintEvent;
 class QRect;
@@ -99,7 +104,7 @@ struct EditorSynchronousEditState {
     std::uint64_t completedTransactionCount = 0;
 };
 
-class MyCodeEditor : public QPlainTextEdit
+class ZEROSLACK_API MyCodeEditor : public QPlainTextEdit
 {
     Q_OBJECT
 public:
@@ -130,6 +135,8 @@ public:
     void paste();
     void undo();
     void redo();
+    bool find(const QString& expression,
+              QTextDocument::FindFlags options = {});
     void showFindDialog();
     bool deleteLines(QString* failureReason = nullptr);
     bool joinLines(QString* failureReason = nullptr);
@@ -146,6 +153,16 @@ public:
     bool goToPreviousSelectedSymbolOccurrence(
         QString* message = nullptr);
     void setTextCursor(const QTextCursor& cursor);
+    void centerCursor();
+    void ensureCursorVisible();
+    QTextCursor cursorForPosition(const QPoint& position) const;
+    QRect cursorRect(const QTextCursor& cursor) const;
+    QRect cursorRect() const;
+    QTextBlock firstVisibleBlock() const;
+    QTextBlock nextVisibleBlock(const QTextBlock& block) const;
+    QRectF blockBoundingGeometry(const QTextBlock& block) const;
+    QRectF blockBoundingRect(const QTextBlock& block) const;
+    QPointF contentOffset() const;
     void applyLineNavigationTarget(const SourceLineNavigationTarget& target);
     EditorBlockGeometry blockGeometry(int blockNumber) const;
     qreal documentHeightPx() const;
@@ -298,6 +315,13 @@ public:
                                         const QString& alias = QString());
     bool toggleFoldAtLineForTest(int line);
     bool foldCollapsedAtLineForTest(int line) const;
+    bool foldLineVisibleForTest(int line) const;
+    bool sourceLineVisible(int line) const;
+    bool viewProjectionActive() const;
+    void invalidateViewProjection();
+    EditorViewProjectionMetrics viewProjectionMetricsForTest() const;
+    EditorFoldViewState foldingViewState() const;
+    void restoreFoldingViewState(const EditorFoldViewState& state);
     QList<GhostAnnotation> ghostAnnotationsForTest() const;
     AnnotationLayerReport annotationLayerReportForTest(
         const AnnotationLayerQuery& query = {}) const;
@@ -328,10 +352,14 @@ protected:
 
     void mousePressEvent(QMouseEvent *event) override;
     void mouseDoubleClickEvent(QMouseEvent *event) override;
+    void focusOutEvent(QFocusEvent* event) override;
     void mouseMoveEvent(QMouseEvent *event) override;
     void mouseReleaseEvent(QMouseEvent *event) override;
     void wheelEvent(QWheelEvent* event) override;
     void leaveEvent(QEvent *event) override;
+    QVariant inputMethodQuery(Qt::InputMethodQuery query) const override;
+    void scrollContentsBy(int dx, int dy) override;
+    void doSetTextCursor(const QTextCursor& cursor) override;
 
 private:
     friend class EditorDocumentGeometry;

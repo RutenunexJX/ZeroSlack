@@ -33,6 +33,7 @@
 #include <QSpinBox>
 #include <QStatusBar>
 #include <QStackedWidget>
+#include <QStyle>
 #include <QTabBar>
 #include <QTabWidget>
 #include <QLineEdit>
@@ -72,6 +73,7 @@
 
 #define private public
 #include "mainwindow.h"
+#include "insightvisualstyle.h"
 #include "panellayoutcontroller.h"
 #include "analysiscoordinator.h"
 #include "analysisprogresscoordinator.h"
@@ -138,9 +140,49 @@
 #include "workspaceanalysisrequestqueue.h"
 #include "workspacemanager.h"
 #undef private
+#include "applicationthememanager.h"
+#include "editordroppreviewoverlay.h"
+#include "temporaryeditordrawer.h"
+#include "temporaryeditordrawercontroller.h"
 
 static int g_checks = 0;
 static int g_fails = 0;
+
+class ScopedGuiTestSettingsRoot final
+{
+public:
+    ScopedGuiTestSettingsRoot()
+        : previousFormat(QSettings::defaultFormat())
+    {
+        if (!settingsRoot.isValid())
+            return;
+        QSettings::setDefaultFormat(QSettings::IniFormat);
+        QSettings::setPath(QSettings::IniFormat,
+                           QSettings::UserScope,
+                           settingsRoot.path());
+    }
+
+    ~ScopedGuiTestSettingsRoot()
+    {
+        QSettings::setDefaultFormat(previousFormat);
+        // QSettings has no path getter. The IniFormat path override remains
+        // process-local and the test process exits after this guard.
+    }
+
+    bool isValid() const
+    {
+        return settingsRoot.isValid();
+    }
+
+    QString path() const
+    {
+        return settingsRoot.path();
+    }
+
+private:
+    QTemporaryDir settingsRoot;
+    QSettings::Format previousFormat;
+};
 
 static bool waitUntil(const std::function<bool()>& predicate, int timeoutMs);
 
@@ -303,6 +345,46 @@ static bool saveFullAppSignalUsageHotspotScreenshot(MainWindow& window,
     else
         qInfo() << "Saved full app screenshot" << outputPath;
     return saved;
+}
+
+static QString editorLayoutArtifactPath(const QString& fileName)
+{
+    QString artifactRoot =
+        qEnvironmentVariable("ZEROSLACK_TEST_ARTIFACT_DIR");
+    if (artifactRoot.isEmpty()) {
+        artifactRoot = QDir::temp().absoluteFilePath(
+            QStringLiteral("zeroslack-editor-layout"));
+    }
+    if (!QDir().mkpath(artifactRoot))
+        return QString();
+    return QDir(artifactRoot).absoluteFilePath(fileName);
+}
+
+static bool saveEditorLayoutScreenshot(MainWindow& window,
+                                       const QString& fileName)
+{
+    const QString path = editorLayoutArtifactPath(fileName);
+    return !path.isEmpty() && window.grab().save(path);
+}
+
+static int visibleBottomPanelContentHeight(MainWindow& window,
+                                           QTabBar* tabBar)
+{
+    QWidget* central = window.centralWidget();
+    if (!central || !tabBar || !tabBar->isVisible())
+        return -1;
+    const int centralBottom =
+        central->mapTo(&window, QPoint(0, 0)).y()
+        + central->height();
+    const int tabTop =
+        tabBar->mapTo(&window, QPoint(0, 0)).y();
+    const int separatorExtent = window.style()->pixelMetric(
+        QStyle::PM_DockWidgetSeparatorExtent,
+        nullptr,
+        &window);
+    return qMax(0,
+                tabTop - centralBottom
+                    - qMax(0, separatorExtent));
 }
 
 static QString visibleEditorHoverPopupText(bool* visible = nullptr)
@@ -3965,15 +4047,31 @@ static void runEditorColumnEditRegression()
         ordinaryFirstBlock.position()
         + ordinaryFirstBlock.text().size());
     ordinaryVirtualEditor.setTextCursor(ordinaryFirstEnd);
-    ordinaryVirtualEditor.viewport()->repaint();
-    const QImage beforeVirtualClick =
-        renderWidgetImage(ordinaryVirtualEditor.viewport());
     const QPoint firstVirtualPoint =
         pointAtVisualColumn(
             ordinaryVirtualEditor, 0, firstTargetVisual);
     QTest::mouseClick(ordinaryVirtualEditor.viewport(),
                       Qt::LeftButton,
                       Qt::NoModifier,
+                      firstVirtualPoint);
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+
+    expectBool("ordinary click beyond EOL clamps to the real EOL",
+               !ordinaryVirtualEditor.virtualCursorActiveForTest()
+                   && ordinaryVirtualEditor.textCursor().position()
+                          == ordinaryFirstBlock.position()
+                                 + ordinaryFirstBlock.text().size()
+                   && ordinaryVirtualEditor.toPlainText()
+                          == QStringLiteral("123456\n12345\n")
+                   && !ordinaryVirtualEditor.document()->isModified(),
+               true);
+
+    ordinaryVirtualEditor.viewport()->repaint();
+    const QImage beforeVirtualClick =
+        renderWidgetImage(ordinaryVirtualEditor.viewport());
+    QTest::mouseClick(ordinaryVirtualEditor.viewport(),
+                      Qt::LeftButton,
+                      Qt::AltModifier,
                       firstVirtualPoint);
     QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
     const QImage afterVirtualClick =
@@ -3989,13 +4087,13 @@ static void runEditorColumnEditRegression()
                        ordinaryFirstEnd).left() + 3),
         ordinaryVirtualEditor.cursorRect(ordinaryFirstEnd).height());
 
-    expectBool("ordinary click beyond EOL records a virtual cursor",
+    expectBool("Alt+click beyond EOL records a virtual cursor",
                ordinaryVirtualEditor.virtualCursorActiveForTest()
                    && ordinaryVirtualEditor.virtualCursorLineForTest() == 0
                    && ordinaryVirtualEditor.virtualCursorColumnForTest()
                           == firstTargetVisual,
                true);
-    expectBool("ordinary virtual click does not modify the document",
+    expectBool("explicit virtual click does not modify the document",
                ordinaryVirtualEditor.toPlainText()
                        == QStringLiteral("123456\n12345\n")
                    && !ordinaryVirtualEditor.document()->isModified()
@@ -4003,7 +4101,7 @@ static void runEditorColumnEditRegression()
                           == ordinaryFirstBlock.position()
                                  + ordinaryFirstBlock.text().size(),
                true);
-    expectBool("ordinary virtual cursor paints only an overlay",
+    expectBool("explicit virtual cursor paints only an overlay",
                !virtualOverlayDiff.isNull()
                    && virtualOverlayDiff.intersects(firstVirtualBand),
                true);
@@ -4021,7 +4119,10 @@ static void runEditorColumnEditRegression()
     expectBool("Right moves right inside the virtual region",
                ordinaryVirtualEditor.virtualCursorActiveForTest()
                    && ordinaryVirtualEditor.virtualCursorColumnForTest()
-                          == firstTargetVisual,
+                          == firstTargetVisual
+                   && ordinaryVirtualEditor.toPlainText()
+                          == QStringLiteral("123456\n12345\n")
+                   && !ordinaryVirtualEditor.document()->isModified(),
                true);
     QApplication::clipboard()->setText(
         QStringLiteral("virtual-copy-sentinel"));
@@ -4055,7 +4156,7 @@ static void runEditorColumnEditRegression()
     QTest::mouseClick(
         ordinaryVirtualEditor.viewport(),
         Qt::LeftButton,
-        Qt::NoModifier,
+        Qt::AltModifier,
         pointAtVisualColumn(
             ordinaryVirtualEditor, 1, secondTargetVisual));
     QApplication::clipboard()->setText(QStringLiteral("YZ"));
@@ -4080,23 +4181,34 @@ static void runEditorColumnEditRegression()
         resetFirst.position() + resetFirst.text().size());
     ordinaryVirtualEditor.setTextCursor(resetEnd);
     QTest::keyClick(&ordinaryVirtualEditor, Qt::Key_Right);
-    expectBool("Right at a real EOL enters one virtual column",
-               ordinaryVirtualEditor.virtualCursorActiveForTest()
-                   && ordinaryVirtualEditor.virtualCursorColumnForTest()
-                          == visualColumnAtLineEnd(
-                                 ordinaryVirtualEditor, 0) + 1,
+    expectBool("Right at a real EOL keeps ordinary Qt cursor semantics",
+               !ordinaryVirtualEditor.virtualCursorActiveForTest()
+                   && ordinaryVirtualEditor.textCursor().blockNumber() == 1
+                   && ordinaryVirtualEditor.textCursor().positionInBlock() == 0
+                   && ordinaryVirtualEditor.toPlainText()
+                          == QStringLiteral("123456\n12345\n")
+                   && !ordinaryVirtualEditor.document()->isModified(),
                true);
+    QTest::mouseClick(
+        ordinaryVirtualEditor.viewport(),
+        Qt::LeftButton,
+        Qt::AltModifier,
+        pointAtVisualColumn(
+            ordinaryVirtualEditor,
+            0,
+            visualColumnAtLineEnd(ordinaryVirtualEditor, 0) + 1));
     QTest::keyClick(&ordinaryVirtualEditor, Qt::Key_Left);
-    expectBool("Left returns from the first virtual column to real EOL",
+    expectBool("Left returns from an explicit virtual column to real EOL",
                !ordinaryVirtualEditor.virtualCursorActiveForTest()
                    && ordinaryVirtualEditor.toPlainText()
-                          == QStringLiteral("123456\n12345\n"),
+                          == QStringLiteral("123456\n12345\n")
+                   && !ordinaryVirtualEditor.document()->isModified(),
                true);
 
     QTest::mouseClick(
         ordinaryVirtualEditor.viewport(),
         Qt::LeftButton,
-        Qt::NoModifier,
+        Qt::AltModifier,
         pointAtVisualColumn(
             ordinaryVirtualEditor, 0, firstTargetVisual));
     ordinaryVirtualEditor.undo();
@@ -4108,7 +4220,7 @@ static void runEditorColumnEditRegression()
     QTest::mouseClick(
         ordinaryVirtualEditor.viewport(),
         Qt::LeftButton,
-        Qt::NoModifier,
+        Qt::AltModifier,
         pointAtVisualColumn(
             ordinaryVirtualEditor, 0, firstTargetVisual));
     ordinaryVirtualEditor.setDocumentFileName(
@@ -4120,7 +4232,7 @@ static void runEditorColumnEditRegression()
     QTest::mouseClick(
         ordinaryVirtualEditor.viewport(),
         Qt::LeftButton,
-        Qt::NoModifier,
+        Qt::AltModifier,
         pointAtVisualColumn(
             ordinaryVirtualEditor, 0, firstTargetVisual));
     QTextCursor realJump(
@@ -4152,7 +4264,7 @@ static void runEditorColumnEditRegression()
     QTest::mouseClick(
         layoutVirtualEditor.viewport(),
         Qt::LeftButton,
-        Qt::NoModifier,
+        Qt::AltModifier,
         pointAtVisualColumn(
             layoutVirtualEditor, 0, layoutEndVisual + 2));
     expectBool("virtual columns use Qt layout for Tab Unicode and zoom",
@@ -4189,7 +4301,7 @@ static void runEditorColumnEditRegression()
             scrolledVirtualEditor, 1, scrolledEndVisual + 2);
     QTest::mouseClick(scrolledVirtualEditor.viewport(),
                       Qt::LeftButton,
-                      Qt::NoModifier,
+                      Qt::AltModifier,
                       scrolledTarget);
     expectBool("virtual click remains layout-correct when horizontally scrolled",
                scrolledVirtualEditor.horizontalScrollBar()->value() > 0
@@ -4214,7 +4326,7 @@ static void runEditorColumnEditRegression()
     QTest::mouseClick(
         virtualColumnClickEditor.viewport(),
         Qt::LeftButton,
-        Qt::NoModifier,
+        Qt::AltModifier,
         pointAtVisualColumn(
             virtualColumnClickEditor, 0, sharedVirtualColumn));
     QTest::mouseClick(
@@ -4243,7 +4355,7 @@ static void runEditorColumnEditRegression()
         virtualColumnSelection =
             virtualColumnClickEditor.state
                 ->columnMode.snapshotForTest();
-    expectBool("ordinary virtual start plus Shift+Alt click forms column mode",
+    expectBool("Alt virtual start plus Shift+Alt click forms column mode",
                virtualColumnClickEditor.columnSelectionActive()
                    && virtualColumnSelection.anchorLine == 0
                    && virtualColumnSelection.currentLine == 1
@@ -8449,12 +8561,12 @@ static void runTreeSitterFoldingProviderRegression()
     const bool folded = editor.state->folding.toggleFoldAtLine(&editor, 0);
     QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
     expectBool("editor folding collapses block",
-               folded && !editor.document()->findBlockByNumber(1).isVisible(),
+               folded && !editor.foldLineVisibleForTest(1),
                true);
     const bool unfolded = editor.state->folding.toggleFoldAtLine(&editor, 0);
     QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
     expectBool("editor folding expands block",
-               unfolded && editor.document()->findBlockByNumber(1).isVisible(),
+               unfolded && editor.foldLineVisibleForTest(1),
                true);
 
     MyCodeEditor gutterEditor;
@@ -8474,7 +8586,7 @@ static void runTreeSitterFoldingProviderRegression()
                           Qt::NoModifier);
     const bool gutterCollapsed =
         gutterEditor.state->handleGutterMousePress(&gutterEditor, &foldClick)
-        && !gutterEditor.document()->findBlockByNumber(1).isVisible();
+        && !gutterEditor.foldLineVisibleForTest(1);
     expectBool("editor gutter click collapses fold", gutterCollapsed, true);
     QMouseEvent unfoldClick(QEvent::MouseButtonPress,
                             QPointF(6, 4),
@@ -8485,7 +8597,7 @@ static void runTreeSitterFoldingProviderRegression()
                             Qt::NoModifier);
     const bool gutterExpanded =
         gutterEditor.state->handleGutterMousePress(&gutterEditor, &unfoldClick)
-        && gutterEditor.document()->findBlockByNumber(1).isVisible();
+        && gutterEditor.foldLineVisibleForTest(1);
     expectBool("editor gutter click expands fold", gutterExpanded, true);
 
     MyCodeEditor commandEditor;
@@ -10605,12 +10717,15 @@ static void runStructuralEditingRegression()
          proceduralEditor.extraSelections()) {
         const QColor background =
             selection.format.background().color();
+        QColor expectedFlash =
+            InsightVisualStyle::theme().accent;
+        expectedFlash.setAlpha(72);
         insertionFlashVisible =
             insertionFlashVisible
             || (selection.cursor.blockNumber()
                     == insertedDeclarationBlock
                 && background
-                       == QColor(97, 175, 239, 70));
+                       == expectedFlash);
     }
     expectBool("Declare Signal briefly flashes the insertion line",
                insertionFlashVisible,
@@ -11589,6 +11704,7 @@ void runEditorContextMenuGroupingRegression()
     expectBool("context menu has stable grouped order",
                groupTitles
                    == QStringList{
+                       QStringLiteral("Navigate"),
                        QStringLiteral("Inspect"),
                        QStringLiteral("Refactor"),
                        QStringLiteral("Format")},
@@ -11902,7 +12018,12 @@ void runInsightFocusIntegrationRegression(
                    && panelLayoutAfterRtlFocus.bottomCollapsed
                    && rtlDock->height()
                           == rtlDockHeightBeforeFocus
-                   && rtlPanel->maximumHeight() == 0,
+                   && rtlPanel->maximumHeight() > 0
+                   && visibleBottomPanelContentHeight(
+                          window,
+                          window.findChild<QTabBar*>(
+                              QStringLiteral(
+                                  "bottomPanelTabBar"))) <= 1,
                true);
     focusRtlAction->trigger();
     QCoreApplication::processEvents(
@@ -12240,7 +12361,15 @@ void runInsightFocusIntegrationRegression(
 
 int main(int argc, char** argv)
 {
+    ScopedGuiTestSettingsRoot isolatedSettings;
     QApplication app(argc, argv);
+
+    expectBool("GUI settings use an isolated writable INI root",
+               isolatedSettings.isValid()
+                   && QFileInfo(isolatedSettings.path()).isDir()
+                   && QSettings::defaultFormat()
+                          == QSettings::IniFormat,
+               true);
 
     runActivityLogServiceRegression();
     runRtlInsightsOnDemandRegression();
@@ -13242,6 +13371,9 @@ int main(int argc, char** argv)
     QDockWidget* problemsDock =
         window.findChild<QDockWidget*>(
             QStringLiteral("problemsDock"));
+    QTabBar* bottomPanelTabs =
+        window.findChild<QTabBar*>(
+            QStringLiteral("bottomPanelTabBar"));
     expectBool("panel layout controller and actions exist",
                window.panelLayoutController
                    && collapseBottomAction
@@ -13252,20 +13384,34 @@ int main(int argc, char** argv)
                true);
     if (collapseBottomAction) {
         collapseBottomAction->trigger();
-        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+        for (int iteration = 0; iteration < 3; ++iteration)
+            QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
     }
     expectBool("bottom panel collapses to its tab strip",
                window.panelLayoutController
                    && window.panelLayoutController
                           ->isBottomCollapsed()
+                   && bottomPanelTabs
+                   && bottomPanelTabs->isVisible()
+                   && bottomPanelTabs->contextMenuPolicy()
+                          == Qt::CustomContextMenu
+                   && visibleBottomPanelContentHeight(
+                          window, bottomPanelTabs) <= 1
                    && problemsDock
                    && problemsDock->widget()
-                   && problemsDock->widget()->maximumHeight() == 0,
+                   && problemsDock->widget()->maximumHeight() > 0,
+               true);
+    expectBool("bottom tab-only main-window screenshot saved",
+               saveEditorLayoutScreenshot(
+                   window,
+                   QStringLiteral("bottom_tab_only.png")),
                true);
     const bool activityVisibleBeforePassiveUpdate =
         activityDock && activityDock->isVisible();
-    const int collapsedProblemsHeight =
-        problemsDock ? problemsDock->height() : -1;
+    const int collapsedCentralHeight =
+        window.centralWidget()
+            ? window.centralWidget()->height()
+            : -1;
     ActivityLogService::getInstance()->append(
         QStringLiteral("GUI"),
         ActivityLogLevel::Info,
@@ -13276,14 +13422,16 @@ int main(int argc, char** argv)
                        && activityDock->isVisible()
                               == activityVisibleBeforePassiveUpdate
                    && problemsDock
-                   && problemsDock->height()
-                          == collapsedProblemsHeight
+                   && window.centralWidget()
+                   && window.centralWidget()->height()
+                          == collapsedCentralHeight
                    && window.panelLayoutController
                           ->isBottomCollapsed(),
                true);
     if (collapseBottomAction) {
         collapseBottomAction->trigger();
-        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+        for (int iteration = 0; iteration < 3; ++iteration)
+            QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
     }
     expectBool("bottom panel restores its prior height state",
                window.panelLayoutController
@@ -13291,7 +13439,9 @@ int main(int argc, char** argv)
                            ->isBottomCollapsed()
                    && problemsDock
                    && problemsDock->widget()
-                   && problemsDock->widget()->maximumHeight() > 0,
+                   && problemsDock->widget()->maximumHeight() > 0
+                   && visibleBottomPanelContentHeight(
+                          window, bottomPanelTabs) > 4,
                true);
 
     if (window.panelLayoutController)
@@ -13410,6 +13560,51 @@ int main(int argc, char** argv)
                                      duplicatedSplitView),
                true);
 
+    expectBool("real main-window editor boundary screenshot saved",
+               saveEditorLayoutScreenshot(
+                   window,
+                   QStringLiteral("editor_left_boundary.png")),
+               true);
+    EditorSplitController* splitController =
+        window.tabManager->editorSplitController();
+    QTabWidget* previewTarget =
+        splitController && duplicatedSplitView
+            ? splitController->groupForPage(duplicatedSplitView)
+            : nullptr;
+    QWidget* previewHost =
+        splitController ? splitController->host() : nullptr;
+    bool directionalPreviewsSaved =
+        previewTarget && previewHost;
+    if (directionalPreviewsSaved) {
+        EditorDropPreviewOverlay preview(previewHost);
+        const QPair<EditorSplitDirection, QString> previews[] = {
+            {EditorSplitDirection::Left,
+             QStringLiteral("split_preview_left.png")},
+            {EditorSplitDirection::Right,
+             QStringLiteral("split_preview_right.png")},
+            {EditorSplitDirection::Above,
+             QStringLiteral("split_preview_above.png")},
+            {EditorSplitDirection::Below,
+             QStringLiteral("split_preview_below.png")},
+        };
+        for (const auto& item : previews) {
+            preview.showPreview(previewTarget, item.first);
+            QCoreApplication::processEvents(
+                QEventLoop::AllEvents, 50);
+            directionalPreviewsSaved =
+                directionalPreviewsSaved
+                && preview.isVisible()
+                && preview.target() == previewTarget
+                && saveEditorLayoutScreenshot(window, item.second);
+        }
+        preview.clearPreview();
+        QCoreApplication::processEvents(
+            QEventLoop::AllEvents, 20);
+    }
+    expectBool("four directional split-preview screenshots saved",
+               directionalPreviewsSaved,
+               true);
+
     if (maximizeEditorSplitAction)
         maximizeEditorSplitAction->trigger();
     QCoreApplication::processEvents(
@@ -13479,6 +13674,484 @@ int main(int argc, char** argv)
     expectBool("split integration restores original view count",
                window.tabManager->editorCount()
                    == editorCountBeforeSplit,
+               true);
+
+    TemporaryEditorDrawerController* themeDrawerController =
+        window.temporaryEditorDrawerController.get();
+    TemporaryEditorDrawer* themeDrawer =
+        themeDrawerController
+            ? themeDrawerController->drawer()
+            : nullptr;
+    MyCodeEditor* themeMainEditor =
+        window.tabManager->getCurrentEditor();
+
+    EditorSplitController* themeSplitController =
+        window.tabManager->editorSplitController();
+    QTabWidget* themeMainGroup =
+        themeSplitController && themeMainEditor
+            ? themeSplitController->groupForPage(themeMainEditor)
+            : nullptr;
+    if (themeMainGroup && themeMainEditor) {
+        themeMainGroup->setCurrentWidget(themeMainEditor);
+        themeSplitController->setActiveGroup(themeMainGroup);
+    }
+    QCoreApplication::processEvents(
+        QEventLoop::AllEvents, 50);
+
+    SharedDocument* themeMainDocument =
+        window.tabManager->sharedDocumentForEditor(
+            themeMainEditor);
+    QTextDocument* themeTextDocument =
+        themeMainDocument
+            ? themeMainDocument->textDocument()
+            : nullptr;
+    if (themeMainEditor && themeTextDocument
+        && themeTextDocument->characterCount() <= 8
+        && themeMainDocument->fileName().isEmpty()) {
+        themeMainEditor->setPlainText(
+            QStringLiteral("module theme_drawer_preview;\n"
+                           "  logic selected_signal;\n"
+                           "endmodule\n"));
+    }
+    if (themeMainEditor && themeTextDocument) {
+        const int lastPosition =
+            qMax(0, themeTextDocument->characterCount() - 1);
+        QTextCursor themeSelection(themeTextDocument);
+        themeSelection.setPosition(qMin(2, lastPosition));
+        themeSelection.setPosition(qMin(8, lastPosition),
+                                   QTextCursor::KeepAnchor);
+        themeMainEditor->setTextCursor(themeSelection);
+        QScrollBar* scrollBar =
+            themeMainEditor->verticalScrollBar();
+        if (scrollBar)
+            scrollBar->setValue(scrollBar->maximum() / 2);
+    }
+
+    if (window.settingsCenterPanel) {
+        window.settingsCenterPanel->setScope(
+            SettingsCenterScope::Global);
+        window.settingsCenterPanel->reload();
+    }
+    QComboBox* themeSettingEditor =
+        window.settingsCenterPanel
+        ? qobject_cast<QComboBox*>(
+              window.settingsCenterPanel->fieldEditor(
+                  QStringLiteral("appearance.theme")))
+        : nullptr;
+    const auto selectThemeThroughSettings =
+        [](QComboBox* editor, const QString& themeName) {
+            if (!editor || !editor->isEnabled())
+                return false;
+            const int targetIndex = editor->findText(themeName);
+            if (targetIndex < 0)
+                return false;
+            if (editor->currentIndex() == targetIndex) {
+                const int alternateIndex = targetIndex == 0 ? 1 : 0;
+                if (alternateIndex >= 0
+                    && alternateIndex < editor->count()) {
+                    editor->setCurrentIndex(alternateIndex);
+                }
+            }
+            editor->setCurrentIndex(targetIndex);
+            return editor->currentIndex() == targetIndex;
+        };
+    const bool lightThemeSelected =
+        selectThemeThroughSettings(
+            themeSettingEditor,
+            QStringLiteral("Light"));
+    for (int iteration = 0; iteration < 3; ++iteration) {
+        QCoreApplication::processEvents(
+            QEventLoop::AllEvents, 50);
+    }
+
+    const TemporaryEditorDrawer::Edge originalDrawerEdge =
+        themeDrawer
+            ? themeDrawer->edge()
+            : TemporaryEditorDrawer::Edge::None;
+    const QSize originalDrawerPreferredSize =
+        themeDrawer
+            ? themeDrawer->preferredSize()
+            : QSize();
+    const bool originalDrawerPinned =
+        themeDrawer && themeDrawer->pinned();
+    const int themeSplitCountBefore =
+        window.tabManager->splitCount();
+    const int themeEditorCountBefore =
+        window.tabManager->editorCount();
+    const QList<QTabWidget*> themeGroupsBefore =
+        themeSplitController
+            ? themeSplitController->groups()
+            : QList<QTabWidget*>();
+    QList<QRect> themeGroupGeometriesBefore;
+    for (QTabWidget* group : themeGroupsBefore) {
+        themeGroupGeometriesBefore.append(
+            group ? group->geometry() : QRect());
+    }
+    const int themeSharedViewCountBefore =
+        themeMainDocument
+            ? themeMainDocument->viewCount()
+            : -1;
+    const QString themeFileBefore =
+        themeMainDocument
+            ? themeMainDocument->fileName()
+            : QString();
+    const int themeCursorBefore =
+        themeMainEditor
+            ? themeMainEditor->textCursor().position()
+            : -1;
+    const int themeAnchorBefore =
+        themeMainEditor
+            ? themeMainEditor->textCursor().anchor()
+            : -1;
+    const int themeScrollBefore =
+        themeMainEditor && themeMainEditor->verticalScrollBar()
+            ? themeMainEditor->verticalScrollBar()->value()
+            : -1;
+    expectBool("theme drawer integration has a selectable shared document",
+               lightThemeSelected
+                   && ApplicationThemeManager::instance().mode()
+                          == ThemeMode::Light
+                   && themeMainEditor
+                   && themeMainDocument
+                   && themeTextDocument
+                   && themeTextDocument->characterCount() > 8
+                   && themeMainGroup
+                   && themeCursorBefore != themeAnchorBefore,
+               true);
+
+    EditorLocation themeDrawerLocation;
+    if (themeMainDocument) {
+        themeDrawerLocation.documentId =
+            themeMainDocument->documentId();
+        themeDrawerLocation.filePath =
+            themeMainDocument->fileName();
+    }
+    themeDrawerLocation.line = 1;
+    themeDrawerLocation.column = 1;
+    themeDrawerLocation.symbolKey =
+        QStringLiteral("theme.drawer.preview");
+    const bool themeDrawerOpened =
+        themeDrawerController
+            && themeDrawerController->openLocation(
+                themeDrawerLocation);
+    if (themeDrawer) {
+        // Pin during deterministic screenshots so the test controls every
+        // stow/expand transition explicitly instead of racing auto-collapse.
+        themeDrawer->setPinned(true);
+        themeDrawer->setState(
+            TemporaryEditorDrawer::State::Floating);
+    }
+    for (int iteration = 0; iteration < 3; ++iteration) {
+        QCoreApplication::processEvents(
+            QEventLoop::AllEvents, 50);
+    }
+
+    const QColor lightWindowSurface =
+        window.palette().color(QPalette::Window);
+    const QColor lightDrawerSurface =
+        themeDrawer
+            ? themeDrawer->palette().color(QPalette::Window)
+            : QColor();
+    const QImage lightDrawerImage = window.grab().toImage();
+    expectBool("Light theme temporary drawer screenshot saved",
+               themeDrawerOpened
+                   && themeDrawer
+                   && themeDrawer->state()
+                          == TemporaryEditorDrawer::State::Floating
+                   && themeDrawer->searchField()
+                   && themeDrawer->searchField()->isVisible()
+                   && themeDrawerController->editor()
+                   && themeDrawerController->editor()->document()
+                          == themeTextDocument
+                   && saveEditorLayoutScreenshot(
+                       window,
+                       QStringLiteral(
+                           "theme_light_temporary_drawer_floating.png")),
+               true);
+
+    bool lightHandleScreenshotSaved = false;
+    bool lightPreviewScreenshotSaved = false;
+    if (themeDrawer) {
+        themeDrawer->stow(
+            TemporaryEditorDrawer::Edge::Right);
+        QCoreApplication::processEvents(
+            QEventLoop::AllEvents, 50);
+        lightHandleScreenshotSaved =
+            themeDrawer->isHandleVisible()
+            && saveEditorLayoutScreenshot(
+                window,
+                QStringLiteral(
+                    "theme_light_temporary_drawer_right_handle.png"));
+        themeDrawer->setState(
+            TemporaryEditorDrawer::State::Floating);
+        themeDrawer->showDockPreview(
+            TemporaryEditorDrawer::Edge::Left);
+        QCoreApplication::processEvents(
+            QEventLoop::AllEvents, 50);
+        lightPreviewScreenshotSaved =
+            themeDrawer->dockPreviewVisible()
+            && saveEditorLayoutScreenshot(
+                window,
+                QStringLiteral(
+                    "theme_light_temporary_drawer_left_preview.png"));
+        themeDrawer->clearDockPreview();
+    }
+    expectBool("Light theme drawer handle and preview screenshots saved",
+               lightHandleScreenshotSaved
+                   && lightPreviewScreenshotSaved,
+               true);
+
+    const bool darkThemeSelected =
+        selectThemeThroughSettings(
+            themeSettingEditor,
+            QStringLiteral("Dark"));
+    for (int iteration = 0; iteration < 3; ++iteration) {
+        QCoreApplication::processEvents(
+            QEventLoop::AllEvents, 50);
+    }
+    const QColor darkWindowSurface =
+        window.palette().color(QPalette::Window);
+    const QColor darkDrawerSurface =
+        themeDrawer
+            ? themeDrawer->palette().color(QPalette::Window)
+            : QColor();
+    const QImage darkDrawerImage = window.grab().toImage();
+    const bool darkThemeModeReady =
+        ApplicationThemeManager::instance().mode()
+            == ThemeMode::Dark;
+    const bool darkThemeSettingReady =
+        darkThemeSelected
+        && themeSettingEditor
+        && themeSettingEditor->currentText()
+               == QStringLiteral("Dark");
+    const bool darkDrawerFloating =
+        themeDrawer
+        && themeDrawer->pinned()
+        && themeDrawer->state()
+               == TemporaryEditorDrawer::State::Floating;
+    const bool darkSurfacesChanged =
+        lightWindowSurface != darkWindowSurface
+        && lightDrawerSurface != darkDrawerSurface;
+    const bool darkPixelsChanged =
+        !differentPixelBounds(
+             lightDrawerImage,
+             darkDrawerImage)
+             .isNull();
+    const bool darkFloatingScreenshotSaved =
+        saveEditorLayoutScreenshot(
+            window,
+            QStringLiteral(
+                "theme_dark_temporary_drawer_floating.png"));
+    if (!(darkThemeModeReady
+          && darkThemeSettingReady
+          && darkDrawerFloating
+          && darkSurfacesChanged
+          && darkPixelsChanged
+          && darkFloatingScreenshotSaved)) {
+        QStringList settingIssues;
+        if (window.settingsCenterPanel) {
+            for (const SettingsCenterValidationIssue& issue :
+                 window.settingsCenterPanel->currentIssues()) {
+                settingIssues.append(issue.message);
+            }
+        }
+        const QByteArray settingIssueText =
+            settingIssues.join(QStringLiteral(" | "))
+                .toUtf8();
+        const SettingsCenterSnapshot settingSnapshot =
+            window.settingsCenterPanel
+            ? window.settingsCenterPanel->snapshot()
+            : SettingsCenterSnapshot();
+        const QByteArray settingStoragePath =
+            settingSnapshot.globalStoragePath.toUtf8();
+        const QByteArray settingRevision =
+            settingSnapshot.globalRevision.toUtf8();
+        const auto* settingStatusLabel =
+            window.settingsCenterPanel
+            ? window.settingsCenterPanel->findChild<QLabel*>(
+                  QStringLiteral("settingsCenterStatusLabel"))
+            : nullptr;
+        const QByteArray settingStatus =
+            settingStatusLabel
+            ? settingStatusLabel->text().toUtf8()
+            : QByteArray();
+        const int settingScope =
+            window.settingsCenterPanel
+            ? static_cast<int>(
+                  window.settingsCenterPanel->scope())
+            : -1;
+        std::fprintf(
+            stderr,
+            "Dark drawer integration mismatch: mode=%d setting=%d "
+            "floating=%d surfaces=%d pixels=%d saved=%d scope=%d "
+            "path=%s revision=%s status=%s reason=%s\n",
+            darkThemeModeReady,
+            darkThemeSettingReady,
+            darkDrawerFloating,
+            darkSurfacesChanged,
+            darkPixelsChanged,
+            darkFloatingScreenshotSaved,
+            settingScope,
+            settingStoragePath.isEmpty()
+                ? "<empty>"
+                : settingStoragePath.constData(),
+            settingRevision.isEmpty()
+                ? "<empty>"
+                : settingRevision.constData(),
+            settingStatus.isEmpty()
+                ? "<none>"
+                : settingStatus.constData(),
+            settingIssueText.isEmpty()
+                ? "<none>"
+                : settingIssueText.constData());
+    }
+    expectBool("Dark theme temporary drawer screenshot saved",
+                darkThemeModeReady
+                    && darkThemeSettingReady
+                    && darkDrawerFloating
+                    && darkSurfacesChanged
+                    && darkPixelsChanged
+                    && darkFloatingScreenshotSaved,
+                true);
+
+    bool darkHandleScreenshotSaved = false;
+    bool darkPreviewScreenshotSaved = false;
+    if (themeDrawer) {
+        themeDrawer->stow(
+            TemporaryEditorDrawer::Edge::Right);
+        QCoreApplication::processEvents(
+            QEventLoop::AllEvents, 50);
+        darkHandleScreenshotSaved =
+            themeDrawer->isHandleVisible()
+            && saveEditorLayoutScreenshot(
+                window,
+                QStringLiteral(
+                    "theme_dark_temporary_drawer_right_handle.png"));
+        themeDrawer->setState(
+            TemporaryEditorDrawer::State::Floating);
+        themeDrawer->showDockPreview(
+            TemporaryEditorDrawer::Edge::Left);
+        QCoreApplication::processEvents(
+            QEventLoop::AllEvents, 50);
+        darkPreviewScreenshotSaved =
+            themeDrawer->dockPreviewVisible()
+            && saveEditorLayoutScreenshot(
+                window,
+                QStringLiteral(
+                    "theme_dark_temporary_drawer_left_preview.png"));
+        themeDrawer->clearDockPreview();
+    }
+    expectBool("Dark theme drawer handle and preview screenshots saved",
+               darkHandleScreenshotSaved
+                   && darkPreviewScreenshotSaved,
+               true);
+
+    QList<QRect> themeGroupGeometriesAfterDark;
+    for (QTabWidget* group : themeGroupsBefore) {
+        themeGroupGeometriesAfterDark.append(
+            group ? group->geometry() : QRect());
+    }
+    expectBool("Light-to-Dark preserves active document and editor state",
+               window.tabManager->getCurrentEditor()
+                       == themeMainEditor
+                   && window.tabManager->sharedDocumentForEditor(
+                          themeMainEditor)
+                          == themeMainDocument
+                   && themeMainDocument
+                   && themeMainDocument->textDocument()
+                          == themeTextDocument
+                   && themeMainDocument->fileName()
+                          == themeFileBefore
+                   && themeMainEditor->textCursor().position()
+                          == themeCursorBefore
+                   && themeMainEditor->textCursor().anchor()
+                          == themeAnchorBefore
+                   && themeMainEditor->verticalScrollBar()->value()
+                          == themeScrollBefore,
+               true);
+    expectBool("temporary drawer remains outside the split layout during theme switch",
+               window.tabManager->splitCount()
+                       == themeSplitCountBefore
+                   && window.tabManager->editorCount()
+                          == themeEditorCountBefore
+                   && themeSplitController
+                   && themeSplitController->groups()
+                          == themeGroupsBefore
+                   && themeGroupGeometriesAfterDark
+                          == themeGroupGeometriesBefore
+                   && themeMainDocument
+                   && themeMainDocument->viewCount()
+                          == themeSharedViewCountBefore + 1,
+               true);
+
+    const bool lightThemeRestored =
+        selectThemeThroughSettings(
+            themeSettingEditor,
+            QStringLiteral("Light"));
+    for (int iteration = 0; iteration < 3; ++iteration) {
+        QCoreApplication::processEvents(
+            QEventLoop::AllEvents, 50);
+    }
+    expectBool("Light-Dark-Light round trip preserves editor and drawer state",
+               lightThemeRestored
+                   && ApplicationThemeManager::instance().mode()
+                       == ThemeMode::Light
+                   && window.palette().color(QPalette::Window)
+                          == lightWindowSurface
+                   && themeDrawer
+                   && themeDrawer->palette().color(QPalette::Window)
+                          == lightDrawerSurface
+                   && themeDrawerController
+                   && themeDrawerController->isOpen()
+                    && themeDrawerController->editor()
+                    && themeDrawerController->editor()->document()
+                           == themeTextDocument
+                    && themeDrawer->pinned()
+                   && window.tabManager->getCurrentEditor()
+                          == themeMainEditor
+                   && themeMainEditor->textCursor().position()
+                          == themeCursorBefore
+                   && themeMainEditor->textCursor().anchor()
+                          == themeAnchorBefore
+                   && themeMainEditor->verticalScrollBar()->value()
+                          == themeScrollBefore,
+               true);
+
+    if (themeDrawer)
+        themeDrawer->setPinned(originalDrawerPinned);
+    if (themeDrawerController)
+        themeDrawerController->closeDrawer();
+    QCoreApplication::processEvents(
+        QEventLoop::AllEvents, 50);
+    if (themeDrawer) {
+        if (themeDrawer->edge() == originalDrawerEdge) {
+            themeDrawer->setEdge(
+                originalDrawerEdge
+                        == TemporaryEditorDrawer::Edge::Left
+                    ? TemporaryEditorDrawer::Edge::Right
+                    : TemporaryEditorDrawer::Edge::Left);
+        }
+        themeDrawer->setEdge(originalDrawerEdge);
+        if (originalDrawerPreferredSize.isValid()) {
+            themeDrawer->setPreferredSize(
+                originalDrawerPreferredSize);
+        }
+    }
+    expectBool("closing temporary drawer restores shared-view and split baselines",
+               themeDrawerController
+                   && !themeDrawerController->isOpen()
+                   && themeMainDocument
+                   && themeMainDocument->textDocument()
+                          == themeTextDocument
+                   && themeMainDocument->viewCount()
+                          == themeSharedViewCountBefore
+                   && window.tabManager->splitCount()
+                          == themeSplitCountBefore
+                   && window.tabManager->editorCount()
+                          == themeEditorCountBefore
+                   && themeSplitController
+                   && themeSplitController->groups()
+                          == themeGroupsBefore,
                true);
 
     MyCodeEditor* waveEditor = window.tabManager->getCurrentEditor();

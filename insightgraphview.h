@@ -1,6 +1,8 @@
 #ifndef INSIGHTGRAPHVIEW_H
 #define INSIGHTGRAPHVIEW_H
 
+#include "zeroslackexport.h"
+
 #include <QGraphicsView>
 #include <QPoint>
 #include <QPointF>
@@ -9,7 +11,7 @@
 
 #include <functional>
 
-class InsightGraphView : public QGraphicsView
+class ZEROSLACK_API InsightGraphView : public QGraphicsView
 {
 public:
     explicit InsightGraphView(QWidget* parent = nullptr);
@@ -57,6 +59,7 @@ private:
     std::function<bool(const QPoint&)> doubleClickHandler;
     std::function<void(qreal)> zoomChangedHandler;
 
+    void initializeThemeConnection();
     void notifyZoomChanged();
 };
 

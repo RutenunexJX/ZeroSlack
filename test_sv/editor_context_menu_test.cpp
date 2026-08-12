@@ -83,6 +83,8 @@ int main(int argc, char* argv[])
         capability(QStringLiteral("edit.paste"), true, true, {}, true),
         capability(QStringLiteral("select.all"), true, true, {}, true),
         capability(QStringLiteral("navigation.goLine")),
+        capability(QString::fromLatin1(
+            ActionIds::ViewTemporaryEditorOpen)),
         capability(QStringLiteral("source.goToDefinition")),
         capability(QStringLiteral("source.findReferences")),
         capability(QStringLiteral("source.showRelationships")),
@@ -94,12 +96,14 @@ int main(int argc, char* argv[])
 
     const EditorContextMenuModel model =
         buildEditorContextMenuModel(request);
-    check(model.sections.size() == 2,
+    check(model.sections.size() == 3,
           "removed context surfaces do not leave empty sections");
-    check(model.sections.size() == 2
+    check(model.sections.size() == 3
               && model.sections.at(0).section
-                     == EditorContextMenuSection::Refactor
+                     == EditorContextMenuSection::Navigate
               && model.sections.at(1).section
+                     == EditorContextMenuSection::Refactor
+              && model.sections.at(2).section
                      == EditorContextMenuSection::Format,
           "remaining context-menu sections retain stable order");
 
@@ -133,9 +137,20 @@ int main(int argc, char* argv[])
           "irrelevant specialized Insight action is omitted");
     check(findItem(model, QStringLiteral("format.selection")) == nullptr,
           "selection-only action is omitted without a selection");
+    const EditorContextMenuItem* temporaryEditor =
+        findItem(model, QString::fromLatin1(
+            ActionIds::ViewTemporaryEditorOpen));
+    check(temporaryEditor
+              && temporaryEditor->enabled
+              && temporaryEditor->executable
+              && temporaryEditor->section
+                     == EditorContextMenuSection::Navigate,
+          "current editor exposes the unified temporary-editor navigation Action");
 
     const QStringList requiredContextActions = {
         QStringLiteral("edit.replace"),
+        QString::fromLatin1(
+            ActionIds::ViewTemporaryEditorOpen),
         QStringLiteral("insight.signalKernelGraph"),
         QStringLiteral("insight.signalUsageHotspot"),
         QStringLiteral("insight.stateTransitionGraph"),

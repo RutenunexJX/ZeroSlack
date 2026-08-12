@@ -19,8 +19,7 @@ GlobalControlPanel::GlobalControlPanel(QWidget* parent)
     setFocusPolicy(Qt::StrongFocus);
     setMinimumWidth(520);
     setMaximumWidth(720);
-    setStyleSheet(InsightVisualStyle::globalControlPanelStyleSheet(
-        objectName()));
+    InsightVisualStyle::applyGlobalControlPanel(this);
 
     auto* layout = new QVBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);

@@ -1,6 +1,8 @@
 #ifndef PROJECTMODEL_H
 #define PROJECTMODEL_H
 
+#include "zeroslackexport.h"
+
 #include "symboltaxonomy.h"
 
 #include <QHash>
@@ -27,7 +29,7 @@ struct ProjectSnapshot {
     QStringList headerSourceFiles() const;
 };
 
-class ProjectModel : public QObject
+class ZEROSLACK_API ProjectModel : public QObject
 {
     Q_OBJECT
 

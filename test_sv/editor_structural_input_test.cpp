@@ -406,9 +406,11 @@ int main(int argc, char* argv[])
             Qt::LeftButton,
             Qt::AltModifier,
             beyondEnd);
-        expect("Alt click beyond EOL creates a virtual multi-caret hint",
+        expect("Alt click beyond EOL creates one explicit virtual caret",
                editor.editorModeActiveForTest(
-                   EditorModeId::MultiCursor)
+                   EditorModeId::VirtualCursor)
+                   && !editor.editorModeActiveForTest(
+                       EditorModeId::MultiCursor)
                    && editor.toPlainText()
                           == QStringLiteral("a\nbb"));
         sendTextKey(editor,
@@ -429,7 +431,7 @@ int main(int argc, char* argv[])
         expect("virtual space materializes independently only on input",
                lines.size() == 2
                    && lines.at(0)
-                          == QStringLiteral("xa")
+                          == QStringLiteral("a")
                    && virtualLine.startsWith(
                        QStringLiteral("bb"))
                    && virtualLine.endsWith(
@@ -437,7 +439,7 @@ int main(int argc, char* argv[])
                    && !virtualPadding.isEmpty()
                    && virtualPadding.trimmed().isEmpty());
         editor.undo();
-        expect("Alt virtual multi-caret input is one undo transaction",
+        expect("Alt virtual-caret input is one undo transaction",
                editor.toPlainText()
                    == QStringLiteral("a\nbb"));
     }

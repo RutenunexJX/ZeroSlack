@@ -1,6 +1,8 @@
 #ifndef ACTIVITYLOGSERVICE_H
 #define ACTIVITYLOGSERVICE_H
 
+#include "zeroslackexport.h"
+
 #include <QDateTime>
 #include <QList>
 #include <QMetaType>
@@ -27,7 +29,7 @@ struct ActivityLogEvent
 
 Q_DECLARE_METATYPE(ActivityLogEvent)
 
-class ActivityLogService : public QObject
+class ZEROSLACK_API ActivityLogService : public QObject
 {
     Q_OBJECT
 

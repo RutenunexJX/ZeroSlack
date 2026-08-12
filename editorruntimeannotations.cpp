@@ -1,6 +1,7 @@
 #include "editorruntime.h"
 
 #include "effectivevalueservice.h"
+#include "insightvisualstyle.h"
 #include "mycodeeditor.h"
 #include "semanticindex.h"
 #include "tsdocument.h"
@@ -160,7 +161,8 @@ void paintTemplateSlotAnnotation(
                documentEnd);
     const QTextBlock block =
         editor->document()->findBlock(startPosition);
-    if (!block.isValid() || !block.isVisible())
+    if (!block.isValid()
+        || !editor->sourceLineVisible(block.blockNumber()))
         return;
 
     QTextCursor startCursor(editor->document());
@@ -196,16 +198,17 @@ void paintTemplateSlotAnnotation(
         annotation.phaseVisible ? 58 : 26;
     const int activeAlpha =
         annotation.phaseVisible ? 118 : 82;
-    const QColor background =
-        annotation.active
-        ? QColor(34, 197, 94, activeAlpha)
-        : QColor(59, 130, 246, weakAlpha);
+    QColor background = annotation.active
+        ? InsightVisualStyle::theme().semantic.read
+        : InsightVisualStyle::theme().accent;
+    background.setAlpha(
+        annotation.active ? activeAlpha : weakAlpha);
     painter.fillRect(highlight, background);
 
     QPen underline(
         annotation.active
-            ? QColor(QStringLiteral("#22C55E"))
-            : QColor(QStringLiteral("#60A5FA")));
+            ? InsightVisualStyle::theme().semantic.read
+            : InsightVisualStyle::theme().accent);
     underline.setStyle(
         annotation.active
             ? Qt::DashLine : Qt::SolidLine);
@@ -237,7 +240,8 @@ void paintColumnCaretAnnotation(
     const QTextBlock block =
         editor->document()->findBlockByNumber(
             annotation.range.firstLine);
-    if (!block.isValid() || !block.isVisible())
+    if (!block.isValid()
+        || !editor->sourceLineVisible(block.blockNumber()))
         return;
 
     QTextCursor endCursor(block);
@@ -966,7 +970,8 @@ void MyCodeEditorState::paintGhostAnnotations(
         }
         QTextBlock block =
             textDocument->findBlock(anchorPosition);
-        if (!block.isValid() || !block.isVisible())
+        if (!block.isValid()
+            || !editor->sourceLineVisible(block.blockNumber()))
             continue;
 
         QTextCursor cursor(textDocument);

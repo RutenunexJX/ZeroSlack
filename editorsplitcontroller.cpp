@@ -1,19 +1,26 @@
 #include "editorsplitcontroller.h"
 
 #include "actionregistry.h"
+#include "editordroppreviewoverlay.h"
 
+#include <QAbstractScrollArea>
 #include <QApplication>
 #include <QBoxLayout>
+#include <QChildEvent>
 #include <QContextMenuEvent>
 #include <QDrag>
 #include <QDragEnterEvent>
+#include <QDragLeaveEvent>
 #include <QDropEvent>
 #include <QEvent>
+#include <QKeyEvent>
 #include <QLayout>
 #include <QMenu>
 #include <QMimeData>
 #include <QMouseEvent>
+#include <QPixmap>
 #include <QSplitter>
+#include <QStackedWidget>
 #include <QTabBar>
 #include <QTabWidget>
 #include <QWidget>
@@ -56,8 +63,19 @@ EditorSplitController::EditorSplitController(
     }
 }
 
+EditorSplitController::~EditorSplitController()
+{
+    clearDropPreview();
+    if (dropPreview)
+        delete dropPreview.data();
+}
+
 void EditorSplitController::setHost(QWidget* hostWidget)
 {
+    if (splitHost != hostWidget && dropPreview) {
+        clearDropPreview();
+        delete dropPreview.data();
+    }
     splitHost = hostWidget;
     if (!splitHost || !firstGroup)
         return;
@@ -170,6 +188,8 @@ QTabWidget* EditorSplitController::createSplit(
             nested->addWidget(created);
         }
     }
+    bindGroupDropTargets(source);
+    bindGroupDropTargets(created);
     setActiveGroup(created);
     equalizeSplitSizes();
     emit layoutChanged();
@@ -331,6 +351,15 @@ bool EditorSplitController::eventFilter(
     QObject* watched,
     QEvent* event)
 {
+    if (event->type() == QEvent::ChildAdded
+        && qobject_cast<QStackedWidget*>(watched)) {
+        auto* childEvent = static_cast<QChildEvent*>(event);
+        if (auto* childWidget =
+                qobject_cast<QWidget*>(childEvent->child())) {
+            bindDropTarget(childWidget);
+        }
+    }
+
     QTabBar* bar = qobject_cast<QTabBar*>(watched);
     if (bar && event->type() == QEvent::MouseButtonPress) {
         auto* mouse = static_cast<QMouseEvent*>(event);
@@ -338,15 +367,34 @@ bool EditorSplitController::eventFilter(
             pressedBar = bar;
             dragStartPosition = mouse->position().toPoint();
             pressedTabIndex = bar->tabAt(dragStartPosition);
+            QTabWidget* group = groupForObject(bar);
+            pressedPage = group && pressedTabIndex >= 0
+                    && pressedTabIndex < group->count()
+                ? group->widget(pressedTabIndex)
+                : nullptr;
         }
     } else if (bar && event->type() == QEvent::MouseMove) {
         auto* mouse = static_cast<QMouseEvent*>(event);
         if (startTabDrag(bar, mouse))
             return true;
+    } else if (bar
+               && event->type() == QEvent::MouseButtonRelease) {
+        auto* mouse = static_cast<QMouseEvent*>(event);
+        if (mouse->button() == Qt::LeftButton) {
+            pressedBar = nullptr;
+            pressedPage = nullptr;
+            pressedTabIndex = -1;
+        }
     } else if (bar && event->type() == QEvent::ContextMenu) {
         auto* context = static_cast<QContextMenuEvent*>(event);
         showTabContextMenu(bar, context->pos());
         return true;
+    }
+
+    if (event->type() == QEvent::KeyPress) {
+        auto* key = static_cast<QKeyEvent*>(event);
+        if (key->key() == Qt::Key_Escape)
+            clearDropPreview();
     }
 
     if (event->type() == QEvent::DragEnter
@@ -354,7 +402,27 @@ bool EditorSplitController::eventFilter(
         auto* drag = static_cast<QDragMoveEvent*>(event);
         if (drag->mimeData()->hasFormat(
                 QString::fromLatin1(kEditorTabMime))) {
-            drag->acceptProposedAction();
+            const QString viewId = QString::fromUtf8(
+                drag->mimeData()->data(
+                    QString::fromLatin1(kEditorTabMime)));
+            QTabWidget* target = dropTargetForEvent(
+                watched, drag->position().toPoint());
+            const QPoint targetPosition = targetPositionForEvent(
+                watched,
+                target,
+                drag->position().toPoint());
+            if (updateDropPreview(
+                    viewId, target, targetPosition)) {
+                drag->setDropAction(Qt::MoveAction);
+                drag->accept();
+            } else {
+                drag->ignore();
+            }
+            return true;
+        }
+    } else if (event->type() == QEvent::DragLeave) {
+        if (dropPreview && dropPreview->isVisible()) {
+            clearDropPreview();
             return true;
         }
     } else if (event->type() == QEvent::Drop) {
@@ -363,27 +431,30 @@ bool EditorSplitController::eventFilter(
                 QString::fromLatin1(kEditorTabMime))) {
             return QObject::eventFilter(watched, event);
         }
-        QTabWidget* target = groupForObject(watched);
-        if (!target)
-            target = activeGroup();
-        const QPoint localPosition =
-            target
-            ? target->mapFromGlobal(
-                  static_cast<QWidget*>(watched)
-                      ->mapToGlobal(
-                          drop->position().toPoint()))
-            : QPoint();
-        const EditorSplitDirection direction =
-            target
-            ? dropDirection(target, localPosition)
-            : EditorSplitDirection::Center;
         const QString viewId = QString::fromUtf8(
             drop->mimeData()->data(
                 QString::fromLatin1(kEditorTabMime)));
-        if (handleTabDrop(viewId, target, direction)) {
-            drop->acceptProposedAction();
+        QTabWidget* target = dropTargetForEvent(
+            watched, drop->position().toPoint());
+        const QPoint targetPosition = targetPositionForEvent(
+            watched,
+            target,
+            drop->position().toPoint());
+        const bool hasPreview = updateDropPreview(
+            viewId, target, targetPosition);
+        const EditorSplitDirection direction =
+            hasPreview && dropPreview
+            ? dropPreview->direction()
+            : dropDirection(target, targetPosition);
+        clearDropPreview();
+        if (hasPreview
+            && handleTabDrop(viewId, target, direction)) {
+            drop->setDropAction(Qt::MoveAction);
+            drop->accept();
             return true;
         }
+        drop->ignore();
+        return true;
     }
     return QObject::eventFilter(watched, event);
 }
@@ -408,16 +479,13 @@ void EditorSplitController::configureGroup(QTabWidget* group)
     group->setTabsClosable(true);
     group->setMovable(true);
     group->setElideMode(Qt::ElideMiddle);
-    group->setAcceptDrops(true);
-    group->installEventFilter(this);
-    if (QTabBar* bar = group->tabBar()) {
-        bar->setAcceptDrops(true);
-        bar->installEventFilter(this);
-    }
+    bindGroupDropTargets(group);
     connect(group,
             &QTabWidget::currentChanged,
             this,
-            [this, group](int) {
+            [this, group](int index) {
+                if (index >= 0)
+                    bindDropTarget(group->widget(index));
                 setActiveGroup(group);
             });
     connect(group,
@@ -426,7 +494,22 @@ void EditorSplitController::configureGroup(QTabWidget* group)
             [this, group](int index) {
                 emit tabCloseRequested(group, index);
             });
+}
+
+void EditorSplitController::bindGroupDropTargets(
+    QTabWidget* group)
+{
+    if (!group)
+        return;
     bindDropTarget(group);
+    if (QTabBar* bar = group->tabBar())
+        bindDropTarget(bar);
+    if (auto* stack =
+            group->findChild<QStackedWidget*>()) {
+        bindDropTarget(stack);
+    }
+    for (int index = 0; index < group->count(); ++index)
+        bindDropTarget(group->widget(index));
 }
 
 void EditorSplitController::bindDropTarget(QWidget* target)
@@ -435,6 +518,14 @@ void EditorSplitController::bindDropTarget(QWidget* target)
         return;
     target->setAcceptDrops(true);
     target->installEventFilter(this);
+    if (auto* scrollArea =
+            qobject_cast<QAbstractScrollArea*>(target)) {
+        QWidget* viewport = scrollArea->viewport();
+        if (viewport) {
+            viewport->setAcceptDrops(true);
+            viewport->installEventFilter(this);
+        }
+    }
 }
 
 QTabWidget* EditorSplitController::groupForObject(QObject* object) const
@@ -584,18 +675,98 @@ EditorSplitDirection EditorSplitController::dropDirection(
 {
     if (!target)
         return EditorSplitDirection::Center;
-    const QRect rect = target->rect();
-    const int horizontalEdge = qMin(90, qMax(24, rect.width() / 4));
-    const int verticalEdge = qMin(90, qMax(24, rect.height() / 4));
-    if (position.x() <= horizontalEdge)
-        return EditorSplitDirection::Left;
-    if (position.x() >= rect.width() - horizontalEdge)
-        return EditorSplitDirection::Right;
-    if (position.y() <= verticalEdge)
-        return EditorSplitDirection::Above;
-    if (position.y() >= rect.height() - verticalEdge)
-        return EditorSplitDirection::Below;
-    return EditorSplitDirection::Center;
+    return EditorDropPreviewOverlay::directionAt(
+        target->rect(), position);
+}
+
+EditorDropPreviewOverlay*
+EditorSplitController::ensureDropPreview()
+{
+    if (!splitHost)
+        return nullptr;
+    if (!dropPreview) {
+        dropPreview = new EditorDropPreviewOverlay(splitHost);
+    }
+    return dropPreview;
+}
+
+QTabWidget* EditorSplitController::dropTargetForEvent(
+    QObject* watched,
+    const QPoint& watchedPosition) const
+{
+    if (QTabWidget* direct = groupForObject(watched))
+        return direct;
+
+    QWidget* watchedWidget = qobject_cast<QWidget*>(watched);
+    if (watchedWidget) {
+        const QPoint globalPosition =
+            watchedWidget->mapToGlobal(watchedPosition);
+        for (QTabWidget* group : groups()) {
+            if (!group->isVisible())
+                continue;
+            const QRect globalRect(
+                group->mapToGlobal(QPoint(0, 0)),
+                group->size());
+            if (globalRect.contains(globalPosition))
+                return group;
+        }
+    }
+    return activeGroup();
+}
+
+QPoint EditorSplitController::targetPositionForEvent(
+    QObject* watched,
+    QTabWidget* target,
+    const QPoint& watchedPosition) const
+{
+    if (!target)
+        return {};
+    QWidget* watchedWidget = qobject_cast<QWidget*>(watched);
+    if (!watchedWidget)
+        return {};
+    return target->mapFromGlobal(
+        watchedWidget->mapToGlobal(watchedPosition));
+}
+
+bool EditorSplitController::updateDropPreview(
+    const QString& viewId,
+    QTabWidget* target,
+    const QPoint& targetPosition)
+{
+    QWidget* page = pageForViewId(viewId);
+    if (!page || !target || !tabGroups.contains(target)) {
+        clearDropPreview();
+        return false;
+    }
+
+    if (previewSourcePage != page) {
+        QObject::disconnect(previewSourceDestroyedConnection);
+        previewSourcePage = page;
+        previewSourceDestroyedConnection = connect(
+            page,
+            &QObject::destroyed,
+            this,
+            [this]() {
+                clearDropPreview();
+            });
+    }
+
+    EditorDropPreviewOverlay* overlay = ensureDropPreview();
+    if (!overlay) {
+        clearDropPreview();
+        return false;
+    }
+    overlay->showPreview(target, targetPosition);
+    return true;
+}
+
+void EditorSplitController::clearDropPreview()
+{
+    QObject::disconnect(previewSourceDestroyedConnection);
+    previewSourceDestroyedConnection = {};
+    previewSourcePage.clear();
+    if (dropPreview)
+        dropPreview->clearPreview();
 }
 
 bool EditorSplitController::startTabDrag(
@@ -616,12 +787,11 @@ bool EditorSplitController::startTabDrag(
         return false;
 
     QTabWidget* group = groupForObject(bar);
-    QWidget* page =
-        group && pressedTabIndex < group->count()
-        ? group->widget(pressedTabIndex)
-        : nullptr;
+    QWidget* page = pressedPage;
+    const int currentTabIndex =
+        group && page ? group->indexOf(page) : -1;
     const QString viewId = viewIdForPage(page);
-    if (viewId.isEmpty())
+    if (viewId.isEmpty() || currentTabIndex < 0)
         return false;
 
     auto* mime = new QMimeData;
@@ -630,9 +800,28 @@ bool EditorSplitController::startTabDrag(
         viewId.toUtf8());
     auto* drag = new QDrag(bar);
     drag->setMimeData(mime);
-    drag->exec(Qt::MoveAction);
+    const QPixmap pixmap =
+        EditorDropPreviewOverlay::tabDragPixmap(
+            bar, currentTabIndex);
+    if (!pixmap.isNull()) {
+        drag->setPixmap(pixmap);
+        const QRect tabRect = bar->tabRect(currentTabIndex);
+        const QSize logicalSize(
+            qRound(pixmap.width()
+                   / pixmap.devicePixelRatio()),
+            qRound(pixmap.height()
+                   / pixmap.devicePixelRatio()));
+        const QPoint pressedOffset =
+            dragStartPosition - tabRect.topLeft();
+        drag->setHotSpot(QPoint(
+            qBound(0, pressedOffset.x(), logicalSize.width() - 1),
+            qBound(0, pressedOffset.y(), logicalSize.height() - 1)));
+    }
     pressedBar = nullptr;
+    pressedPage = nullptr;
     pressedTabIndex = -1;
+    drag->exec(Qt::MoveAction, Qt::MoveAction);
+    clearDropPreview();
     return true;
 }
 
@@ -675,6 +864,7 @@ EditorSplitController::tabContextActions(
         {ActionIds::ViewEditorTabCloseAll, false, false, false},
         {ActionIds::ViewReopenClosedTab, false, false, false},
         {ActionIds::ViewEditorTabDuplicate, true, false, true},
+        {ActionIds::ViewTemporaryEditorOpen, true, false, false},
         {ActionIds::ViewEditorSplitLeft, true, false, false},
         {ActionIds::ViewEditorSplitRight, true, false, false},
         {ActionIds::ViewEditorSplitAbove, true, false, false},
