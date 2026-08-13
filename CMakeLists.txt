@@ -246,6 +246,7 @@ set(ZEROSLACK_CORE_SOURCES
     codetemplateservice.cpp
     customabbreviationservice.cpp
     mainwindow.cpp
+    rtlactioncoordinator.cpp
     moduleblockdiagramservice.cpp
     modulebriefservice.cpp
     completioncommandmode.cpp
@@ -337,6 +338,7 @@ set(ZEROSLACK_CORE_SOURCES
     wavepreviewservice.cpp
     workspaceconfigurationdialog.cpp
     workspaceconfigurationservice.cpp
+    workspacesessioncoordinator.cpp
     workspacesessionstateservice.cpp
     globalcontrolcoordinator.cpp
     globalcontrolpanel.cpp
@@ -563,6 +565,7 @@ set(ZEROSLACK_CORE_SOURCES
     wavepreviewservice.h
     workspaceconfigurationdialog.h
     workspaceconfigurationservice.h
+    workspacesessioncoordinator.h
     workspacesessionstateservice.h
     workspaceeditdocumentmanager.h
     workspaceedittransactionservice.h
@@ -600,6 +603,7 @@ set(ZEROSLACK_CORE_SOURCES
     relationshipanalysisworker.h
     relationshipresultpublisher.h
     rtlinsightspanelcoordinator.h
+    rtlactioncoordinator.h
     rtlbatcheditservice.h
     saferenameservice.h
     scopedsearchpanel.h
@@ -1060,6 +1064,11 @@ if(BUILD_TESTING)
     target_link_libraries(rtl_high_risk_edit_panel_test
         PRIVATE zeroslack_core Qt6::Widgets)
 
+    add_executable(rtl_action_coordinator_test
+        test_sv/rtl_action_coordinator_test.cpp)
+    target_link_libraries(rtl_action_coordinator_test
+        PRIVATE zeroslack_core Qt6::Test)
+
     add_executable(multi_signal_propagation_planner_test
         test_sv/multi_signal_propagation_planner_test.cpp)
     target_link_libraries(multi_signal_propagation_planner_test
@@ -1153,6 +1162,11 @@ if(BUILD_TESTING)
     endif()
     target_link_libraries(workspace_persistence_test
         PRIVATE Qt6::Core)
+
+    add_executable(workspace_session_coordinator_test
+        test_sv/workspace_session_coordinator_test.cpp)
+    target_link_libraries(workspace_session_coordinator_test
+        PRIVATE zeroslack_core Qt6::Test)
 
     add_executable(controller_boundary_test
         test_sv/controller_boundary_test.cpp)
@@ -1510,6 +1524,15 @@ if(BUILD_TESTING)
     )
     set_tests_properties(rtl_high_risk_edit_panel_test
         PROPERTIES TIMEOUT 120)
+    add_test(NAME rtl_action_coordinator_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}"
+            "QT_QPA_PLATFORM=offscreen"
+            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
+            $<TARGET_FILE:rtl_action_coordinator_test>
+    )
+    set_tests_properties(rtl_action_coordinator_test
+        PROPERTIES TIMEOUT 180)
     add_test(NAME multi_signal_propagation_planner_test
         COMMAND ${CMAKE_COMMAND} -E env
             "PATH=${ZEROSLACK_TEST_PATH}"
@@ -1612,6 +1635,13 @@ if(BUILD_TESTING)
             $<TARGET_FILE:workspace_persistence_test>
             ${CMAKE_CURRENT_SOURCE_DIR}/test_sv/new
             ${CMAKE_CURRENT_SOURCE_DIR}/test_sv/huge_prj
+    )
+    add_test(NAME workspace_session_coordinator_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}"
+            "QT_QPA_PLATFORM=offscreen"
+            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
+            $<TARGET_FILE:workspace_session_coordinator_test>
     )
     add_test(NAME controller_boundary_test
         COMMAND ${CMAKE_COMMAND} -E env
@@ -1800,6 +1830,12 @@ if(BUILD_TESTING)
         COMMAND ${CMAKE_COMMAND}
             -DZEROSLACK_SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}
             -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/shared_core_policy_guard.ctest
+    )
+    add_test(NAME version_documentation_guard
+        COMMAND ${CMAKE_COMMAND}
+            -DZEROSLACK_SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}
+            -DZEROSLACK_BINARY_DIR=${CMAKE_CURRENT_BINARY_DIR}
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/version_documentation_guard.ctest
     )
     add_test(NAME tree_sitter_compile_options_guard
         COMMAND ${CMAKE_COMMAND}

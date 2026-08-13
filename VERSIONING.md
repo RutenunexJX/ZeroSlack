@@ -3,7 +3,7 @@
 `VERSION` is the single manually maintained product version source. It must
 contain exactly one SemVer value in strict `X.Y.Z` numeric form.
 
-Current controlled baseline: `v0.1.0`.
+Current controlled baseline: `v0.2.0`.
 
 ## Upgrade Rules
 
@@ -21,4 +21,9 @@ visible product version must not include dependency labels.
 2. Reconfigure CMake so `generated/version.h` is regenerated.
 3. Build and run the release verification targets.
 4. Create a signed-off release tag named `vX.Y.Z`.
-5. Name the Windows package `ZeroSlack-X.Y.Z-win64`.
+5. Keep both the Windows package directory and archive basename fixed as
+   `ZeroSlack-win64`; do not include the product version in either package
+   filename so existing shortcuts remain valid.
+
+The product version is recorded only in `VERSION`, the application display,
+`CHANGELOG.md`, and the release tag.

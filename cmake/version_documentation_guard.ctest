@@ -1,0 +1,86 @@
+cmake_minimum_required(VERSION 3.27)
+
+if(NOT DEFINED ZEROSLACK_SOURCE_DIR)
+    message(FATAL_ERROR "ZEROSLACK_SOURCE_DIR is required")
+endif()
+if(NOT DEFINED ZEROSLACK_BINARY_DIR)
+    message(FATAL_ERROR "ZEROSLACK_BINARY_DIR is required")
+endif()
+
+file(READ "${ZEROSLACK_SOURCE_DIR}/VERSION" release_version)
+string(STRIP "${release_version}" release_version)
+if(NOT release_version MATCHES "^[0-9]+\\.[0-9]+\\.[0-9]+$")
+    message(FATAL_ERROR "VERSION must contain one strict X.Y.Z value")
+endif()
+
+function(assert_version_marker relative_path marker_regex marker_name)
+    set(path "${ZEROSLACK_SOURCE_DIR}/${relative_path}")
+    if(NOT EXISTS "${path}")
+        message(FATAL_ERROR "Missing ${marker_name}: ${relative_path}")
+    endif()
+    file(READ "${path}" content)
+    string(REGEX MATCH "${marker_regex}" marker "${content}")
+    if(NOT marker)
+        message(FATAL_ERROR
+            "Missing parseable ${marker_name} version marker in ${relative_path}")
+    endif()
+    if(NOT CMAKE_MATCH_1 STREQUAL release_version)
+        message(FATAL_ERROR
+            "${marker_name} version ${CMAKE_MATCH_1} does not match VERSION ${release_version}")
+    endif()
+endfunction()
+
+assert_version_marker(
+    "README.md"
+    "Current version:[ \\t]*`v?([0-9]+\\.[0-9]+\\.[0-9]+)`"
+    "README")
+assert_version_marker(
+    "CHANGELOG.md"
+    "##[ \\t]+\\[([0-9]+\\.[0-9]+\\.[0-9]+)\\]"
+    "CHANGELOG")
+assert_version_marker(
+    "plan.md"
+    "Product version:[ \\t]*`v?([0-9]+\\.[0-9]+\\.[0-9]+)`"
+    "plan")
+assert_version_marker(
+    "goal.md"
+    "Product version:[ \\t]*`v?([0-9]+\\.[0-9]+\\.[0-9]+)`"
+    "goal")
+assert_version_marker(
+    "VERSIONING.md"
+    "Current controlled baseline:[ \\t]*`v?([0-9]+\\.[0-9]+\\.[0-9]+)`"
+    "VERSIONING")
+
+file(READ "${ZEROSLACK_SOURCE_DIR}/VERSIONING.md" versioning_policy)
+if(NOT versioning_policy MATCHES "ZeroSlack-win64")
+    message(FATAL_ERROR
+        "VERSIONING.md must preserve the fixed ZeroSlack-win64 package basename")
+endif()
+foreach(current_document
+        README.md CHANGELOG.md plan.md goal.md VERSIONING.md)
+    file(READ "${ZEROSLACK_SOURCE_DIR}/${current_document}" current_content)
+    if(current_content MATCHES "ZeroSlack-(X\\.Y\\.Z|v?[0-9]+\\.[0-9]+\\.[0-9]+)-win64")
+        message(FATAL_ERROR
+            "${current_document} contains a versioned Windows package basename")
+    endif()
+endforeach()
+
+set(generated_header "${ZEROSLACK_BINARY_DIR}/generated/version.h")
+if(NOT EXISTS "${generated_header}")
+    message(FATAL_ERROR
+        "Missing generated version header; reconfigure CMake before testing")
+endif()
+file(READ "${generated_header}" generated_content)
+string(REGEX MATCH
+    "#define[ \\t]+APP_VERSION[ \\t]+\"([0-9]+\\.[0-9]+\\.[0-9]+)\""
+    generated_marker
+    "${generated_content}")
+if(NOT generated_marker)
+    message(FATAL_ERROR "generated/version.h has no APP_VERSION value")
+endif()
+if(NOT CMAKE_MATCH_1 STREQUAL release_version)
+    message(FATAL_ERROR
+        "generated APP_VERSION ${CMAKE_MATCH_1} does not match VERSION ${release_version}")
+endif()
+
+message(STATUS "Version/documentation baseline is consistent: ${release_version}")

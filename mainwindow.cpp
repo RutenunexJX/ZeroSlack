@@ -12,7 +12,6 @@
 #include "analysiscoordinator.h"
 #include "analysisprogresscoordinator.h"
 #include "commandlayercoordinator.h"
-#include "definitionservice.h"
 #include "editorcoordinator.h"
 #include "editoractioncontextservice.h"
 #include "editorfileidentity.h"
@@ -37,7 +36,6 @@
 #include "insightfocuscontroller.h"
 #include "insightvisualstyle.h"
 #include "instancepairconnectionpanel.h"
-#include "instancepairconnectionworkflow.h"
 #include "multisignalpropagationpanel.h"
 #include "semanticdockcoordinator.h"
 #include "semanticindex.h"
@@ -58,12 +56,13 @@
 #include "activitylogservice.h"
 #include "problemspanelcoordinator.h"
 #include "rtlhighriskeditpanel.h"
+#include "rtlactioncoordinator.h"
 #include "rtlinsightspanelcoordinator.h"
 #include "signalkernelgraphpanelcoordinator.h"
 #include "wavepreviewpanelcoordinator.h"
 #include "workspaceconfigurationdialog.h"
 #include "workspaceeditdocumentmanager.h"
-#include "workspacesessionstateservice.h"
+#include "workspacesessioncoordinator.h"
 #include "tsdocument.h"
 #include "version.h"
 #include <QAction>
@@ -84,7 +83,6 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QFutureWatcher>
-#include <QFormLayout>
 #include <QGroupBox>
 #include <QHeaderView>
 #include <QHBoxLayout>
@@ -110,7 +108,6 @@
 #include <QStackedWidget>
 #include <QTabBar>
 #include <QTabWidget>
-#include <QTimer>
 #include <QToolButton>
 #include <QTreeWidget>
 #include <QVBoxLayout>
@@ -205,386 +202,6 @@ QString crashRecoveryDocumentLabel(
     return QStringLiteral("Untitled");
 }
 
-QString normalizedRtlActionFileName(
-    const QString& fileName)
-{
-    return EditorFileIdentity::normalized(fileName);
-}
-
-std::string rtlActionUtf8String(const QString& text)
-{
-    const QByteArray bytes = text.toUtf8();
-    return std::string(
-        bytes.constData(),
-        static_cast<std::size_t>(bytes.size()));
-}
-
-QString rtlActionFromUtf8(const std::string& text)
-{
-    return QString::fromUtf8(
-        text.data(), static_cast<qsizetype>(text.size()));
-}
-
-template <typename CapturedDocument>
-bool captureRtlActionDocuments(
-    const QSet<QString>& workspaceFiles,
-    const SemanticSnapshotToken& semanticToken,
-    rtledit::WorkspaceDocumentManager& documents,
-    QHash<QString, CapturedDocument>* captured,
-    QString* failureReason)
-{
-    if (!captured || !semanticToken.isValid()) {
-        if (failureReason) {
-            *failureReason = QStringLiteral(
-                "A current Slang semantic snapshot is required.");
-        }
-        return false;
-    }
-
-    QHash<QString, QString> semanticContents;
-    for (auto it =
-             semanticToken.snapshot
-                 ->fileContentsView().constBegin();
-         it != semanticToken.snapshot
-                   ->fileContentsView().constEnd();
-         ++it) {
-        const QString fileName =
-            normalizedRtlActionFileName(it.key());
-        if (!fileName.isEmpty())
-            semanticContents.insert(fileName, it.value());
-    }
-
-    captured->clear();
-    for (const QString& requestedFile : workspaceFiles) {
-        const QString fileName =
-            normalizedRtlActionFileName(requestedFile);
-        if (fileName.isEmpty()
-            || captured->contains(fileName)) {
-            continue;
-        }
-        const auto live =
-            documents.snapshot(
-                rtlActionUtf8String(fileName));
-        if (!live) {
-            if (failureReason) {
-                *failureReason = QStringLiteral(
-                    "The workspace document is unavailable: %1")
-                    .arg(fileName);
-            }
-            captured->clear();
-            return false;
-        }
-        const QString text =
-            rtlActionFromUtf8(live->text);
-        auto syntax = std::make_shared<TSDocument>();
-        syntax->setText(text);
-
-        CapturedDocument document;
-        document.fileName = fileName;
-        document.revision = live->version.value;
-        document.text = text;
-        document.syntax = std::move(syntax);
-        const auto semantic =
-            semanticContents.constFind(fileName);
-        document.unsaved =
-            semantic == semanticContents.constEnd()
-            || semantic.value() != text;
-        captured->insert(fileName, std::move(document));
-    }
-    if (captured->isEmpty()) {
-        if (failureReason) {
-            *failureReason = QStringLiteral(
-                "No SystemVerilog workspace documents were captured.");
-        }
-        return false;
-    }
-    return true;
-}
-
-bool isSupportedRtlRenameSubject(
-    const SemanticSymbolRecord& record)
-{
-    const bool supportedKind =
-        record.declarationKind
-            == SymbolTaxonomy::DeclarationKind::Port
-        || record.declarationKind
-            == SymbolTaxonomy::DeclarationKind::Parameter
-        || record.declarationKind
-            == SymbolTaxonomy::DeclarationKind::Localparam;
-    const bool supportedOwner =
-        record.owner.kind
-            == SymbolTaxonomy::SymbolOwnerScope::Module
-        || record.owner.kind
-            == SymbolTaxonomy::SymbolOwnerScope::Interface;
-    return supportedKind
-        && supportedOwner
-        && record.stableKey.isValid();
-}
-
-DefinitionResult resolveRtlRenameSubject(
-    const EditorSemanticContext& context,
-    const TSIdentifierTarget& identifier)
-{
-    DefinitionQuery query;
-    query.symbolName = identifier.text;
-    query.fileName = context.fileName;
-    query.moduleName = context.moduleName;
-    query.linePrefixBeforeCursor =
-        context.lineUpToCursor;
-    query.cursorLine = context.cursorLine;
-    query.cursorColumn = context.column;
-    return DefinitionService(
-               SemanticIndex::getInstance())
-        .resolveDefinition(query);
-}
-
-std::optional<SemanticSymbolRecord>
-resolveRtlInstanceSubject(
-    const SemanticSnapshotToken& token,
-    const EditorSemanticContext& context,
-    const TSIdentifierTarget& identifier,
-    QString* failureReason)
-{
-    if (failureReason)
-        failureReason->clear();
-    if (!token.isValid() || !identifier.ok()) {
-        if (failureReason) {
-            *failureReason = QStringLiteral(
-                "A current semantic snapshot and one selected "
-                "instance identifier are required.");
-        }
-        return std::nullopt;
-    }
-
-    QList<SemanticSymbolRecord> exact;
-    QList<SemanticSymbolRecord> containing;
-    for (const SemanticSymbolRecord& record :
-         token.snapshot->getSymbolRecords(
-             context.fileName)) {
-        if (record.name != identifier.text
-            || record.declarationKind
-                != SymbolTaxonomy::DeclarationKind::Instance
-            || !record.stableKey.isValid()
-            || !EditorFileIdentity::same(
-                record.location.fileName,
-                context.fileName)
-            || (!context.moduleName.isEmpty()
-                && record.owner.name
-                    != context.moduleName)) {
-            continue;
-        }
-
-        const int recordStart =
-            record.location.position;
-        const int recordLength =
-            qMax(record.location.length,
-                 static_cast<int>(
-                     record.name.size()));
-        if (recordStart == identifier.startChar
-            || record.stableKey.sourcePosition
-                == identifier.startChar) {
-            exact.append(record);
-        } else if (
-            recordStart >= 0
-            && identifier.startChar >= recordStart
-            && identifier.startChar
-                < recordStart + recordLength) {
-            containing.append(record);
-        }
-    }
-
-    const QList<SemanticSymbolRecord>& matches =
-        !exact.isEmpty() ? exact : containing;
-    if (matches.size() != 1) {
-        if (failureReason) {
-            *failureReason =
-                matches.isEmpty()
-                ? QStringLiteral(
-                      "Place the cursor on one exact Slang module "
-                      "instance declaration.")
-                : QStringLiteral(
-                      "The selected instance declaration is "
-                      "semantically ambiguous.");
-        }
-        return std::nullopt;
-    }
-    return matches.constFirst();
-}
-
-bool rtlTransactionFailureNeedsNotification(
-    const RtlHighRiskEditPanelOutcome& outcome)
-{
-    if (outcome.panelState
-        == RtlHighRiskEditPanelState::Conflict) {
-        return true;
-    }
-    switch (outcome.failure) {
-    case RtlHighRiskEditWorkflowFailure::ApplyFailed:
-    case RtlHighRiskEditWorkflowFailure::AtomicRollbackFailed:
-    case RtlHighRiskEditWorkflowFailure::UndoFailed:
-    case RtlHighRiskEditWorkflowFailure::UndoConflict:
-    case RtlHighRiskEditWorkflowFailure::
-        TransactionGenerationConflict:
-    case RtlHighRiskEditWorkflowFailure::ExternalModification:
-        return true;
-    case RtlHighRiskEditWorkflowFailure::None:
-    case RtlHighRiskEditWorkflowFailure::MissingDependency:
-    case RtlHighRiskEditWorkflowFailure::InvalidState:
-    case RtlHighRiskEditWorkflowFailure::PlanningRejected:
-    case RtlHighRiskEditWorkflowFailure::InvalidPlan:
-    case RtlHighRiskEditWorkflowFailure::PreviewConflict:
-    case RtlHighRiskEditWorkflowFailure::
-        ConfirmationTokenMismatch:
-    case RtlHighRiskEditWorkflowFailure::
-        StaleSemanticGeneration:
-    case RtlHighRiskEditWorkflowFailure::
-        StaleDocumentRevision:
-    case RtlHighRiskEditWorkflowFailure::NothingToUndo:
-        break;
-    }
-    return false;
-}
-
-struct InstancePairUserSelection {
-    QString leftInstancePath;
-    QString rightInstancePath;
-    QString connectionName;
-};
-
-std::optional<InstancePairUserSelection>
-selectInstancePair(
-    QWidget* parent,
-    const QList<DesignHierarchyNode>& nodes,
-    const QString& sourceModule,
-    const InstancePairUserSelection& defaults)
-{
-    QHash<QString, DesignHierarchyNode> nodesByPath;
-    QList<DesignHierarchyNode> leftChoices;
-    for (const DesignHierarchyNode& node : nodes) {
-        if (node.isTop || node.unresolved
-            || !node.inSelectedTop
-            || node.instancePath.isEmpty()) {
-            continue;
-        }
-        nodesByPath.insert(node.instancePath, node);
-        if (node.moduleType == sourceModule)
-            leftChoices.append(node);
-    }
-    if (leftChoices.isEmpty()
-        || nodesByPath.size() < 2) {
-        return std::nullopt;
-    }
-
-    QDialog dialog(parent);
-    dialog.setObjectName(
-        QStringLiteral("instancePairSelectionDialog"));
-    dialog.setWindowTitle(
-        QStringLiteral("Connect Instance Pair"));
-    auto* layout = new QVBoxLayout(&dialog);
-    auto* form = new QFormLayout();
-    auto* leftCombo = new QComboBox(&dialog);
-    leftCombo->setObjectName(
-        QStringLiteral("instancePairLeftSelection"));
-    auto* rightCombo = new QComboBox(&dialog);
-    rightCombo->setObjectName(
-        QStringLiteral("instancePairRightSelection"));
-    auto* connectionEdit = new QLineEdit(
-        defaults.connectionName, &dialog);
-    connectionEdit->setObjectName(
-        QStringLiteral("instancePairConnectionName"));
-
-    const auto nodeLabel =
-        [](const DesignHierarchyNode& node) {
-            return QStringLiteral("%1  (%2)")
-                .arg(node.instancePath, node.moduleType);
-        };
-    for (const DesignHierarchyNode& node : leftChoices) {
-        leftCombo->addItem(
-            nodeLabel(node), node.instancePath);
-    }
-    const int preferredLeft =
-        leftCombo->findData(defaults.leftInstancePath);
-    if (preferredLeft >= 0)
-        leftCombo->setCurrentIndex(preferredLeft);
-
-    const auto rebuildRight =
-        [rightCombo,
-         leftCombo,
-         nodesByPath,
-         nodeLabel,
-         preferred = defaults.rightInstancePath]() {
-            const QString leftPath =
-                leftCombo->currentData().toString();
-            const DesignHierarchyNode left =
-                nodesByPath.value(leftPath);
-            const QSignalBlocker blocker(rightCombo);
-            rightCombo->clear();
-            for (const DesignHierarchyNode& node :
-                 nodesByPath) {
-                if (node.instancePath == leftPath
-                    || node.rootId != left.rootId) {
-                    continue;
-                }
-                rightCombo->addItem(
-                    nodeLabel(node), node.instancePath);
-            }
-            const int preferredIndex =
-                rightCombo->findData(preferred);
-            if (preferredIndex >= 0)
-                rightCombo->setCurrentIndex(
-                    preferredIndex);
-        };
-    QObject::connect(
-        leftCombo,
-        qOverload<int>(&QComboBox::currentIndexChanged),
-        &dialog,
-        [rebuildRight](int) { rebuildRight(); });
-    rebuildRight();
-
-    form->addRow(
-        QStringLiteral("Source instance"),
-        leftCombo);
-    form->addRow(
-        QStringLiteral("Destination instance"),
-        rightCombo);
-    form->addRow(
-        QStringLiteral("Connection identifier"),
-        connectionEdit);
-    layout->addLayout(form);
-    auto* buttons = new QDialogButtonBox(
-        QDialogButtonBox::Ok
-            | QDialogButtonBox::Cancel,
-        &dialog);
-    buttons->setObjectName(
-        QStringLiteral("instancePairSelectionButtons"));
-    QObject::connect(
-        buttons, &QDialogButtonBox::accepted,
-        &dialog, &QDialog::accept);
-    QObject::connect(
-        buttons, &QDialogButtonBox::rejected,
-        &dialog, &QDialog::reject);
-    layout->addWidget(buttons);
-
-    if (rightCombo->count() == 0
-        || dialog.exec() != QDialog::Accepted) {
-        return std::nullopt;
-    }
-    InstancePairUserSelection result;
-    result.leftInstancePath =
-        leftCombo->currentData().toString();
-    result.rightInstancePath =
-        rightCombo->currentData().toString();
-    result.connectionName =
-        connectionEdit->text().trimmed();
-    if (result.leftInstancePath.isEmpty()
-        || result.rightInstancePath.isEmpty()
-        || result.leftInstancePath
-               == result.rightInstancePath
-        || result.connectionName.isEmpty()) {
-        return std::nullopt;
-    }
-    return result;
-}
 }
 
 MainWindow::MainWindow(QWidget *parent)
@@ -644,6 +261,8 @@ MainWindow::MainWindow(QWidget *parent)
     setupFileCommandCoordinator();
     setupFoldBlockShelf();
     setupPanelLayoutController();
+    setupRtlActionCoordinator();
+    setupWorkspaceSessionCoordinator();
     setupWorkspaceMenu();
     setupViewMenu();
     setupToolsMenu();
@@ -967,6 +586,8 @@ MainWindow::~MainWindow()
     if (analysisScheduler)
         analysisScheduler->shutdown();
 
+    workspaceSessionCoordinator.reset();
+
     // TabManager owns SharedDocuments whose teardown rebinds every attached
     // editor to an independent QTextDocument.  That operation legitimately
     // emits editor state signals.  Stop MainWindow routes and destroy the
@@ -1148,10 +769,6 @@ void MainWindow::setupEditorCentralArea()
                     });
         }
         connect(tabManager.get(),
-                &TabManager::workspaceSessionStateChanged,
-                this,
-                [this]() { scheduleWorkspaceSessionSave(); });
-        connect(tabManager.get(),
                 &TabManager::tabGroupCreated,
                 this,
                 [](QTabWidget* group) {
@@ -1192,10 +809,6 @@ void MainWindow::setupEditorCentralArea()
                 refreshSettingsCenterWorkspace(path);
                 refreshWorkspaceScope();
                 refreshWorkspaceMenuEntries();
-                if (restoreWorkspaceSessionOnActivation)
-                    restoreWorkspaceSession();
-                else
-                    noteWorkspaceSessionAvailability();
             });
     connect(workspaceManager.get(),
             &WorkspaceManager::workspaceClosed,
@@ -2349,120 +1962,6 @@ void MainWindow::setupSemanticDocks()
                     actionId, parameters);
             });
     }
-    if (RtlHighRiskEditPanelCoordinator* rtlEdit =
-            semanticDocks
-                ->rtlHighRiskEditPanelCoordinator()) {
-        connect(
-            rtlEdit,
-            &RtlHighRiskEditPanelCoordinator::
-                acceptedParameters,
-            this,
-            [this](const QString& workflowActionId,
-                   const QVariantMap& parameters,
-                   bool dryRun) {
-                const QString actionId =
-                    workflowActionId.startsWith(
-                        QStringLiteral("rtl.rename"))
-                    ? RtlRenameWorkflow::
-                          actionFamilyId()
-                    : workflowActionId;
-                const ActionDescriptor* descriptor =
-                    findActionById(actionId);
-                if (!descriptor)
-                    return;
-                ActionInvocation invocation;
-                invocation.workspaceId =
-                    workspaceManager
-                    ? workspaceManager
-                          ->getWorkspacePath()
-                    : QString();
-                invocation.parameters = parameters;
-                invocation.mode =
-                    dryRun
-                    ? ActionExecutionMode::DryRun
-                    : ActionExecutionMode::Execute;
-                ActionExecutionResult result;
-                result.handled = true;
-                result.succeeded = true;
-                result.dryRun = dryRun;
-                result.hasResolvedParameters = true;
-                result.resolvedParameters =
-                    parameters;
-                applicationActionExecutionHistory()
-                    .recordSuccessful(
-                        *descriptor,
-                        invocation,
-                        result);
-            });
-        connect(
-            rtlEdit,
-            &RtlHighRiskEditPanelCoordinator::
-                stateChanged,
-            this,
-            [this](
-                const RtlHighRiskEditPanelOutcome&
-                    outcome) {
-                if (!notificationCenter)
-                    return;
-                const QString actionId =
-                    outcome.actionId.startsWith(
-                        QStringLiteral("rtl.rename"))
-                    ? RtlRenameWorkflow::
-                          actionFamilyId()
-                    : outcome.actionId;
-                const QString workspaceId =
-                    workspaceManager
-                    ? workspaceManager
-                          ->getWorkspacePath()
-                    : QString();
-                const QString key =
-                    QStringLiteral(
-                        "rtl-edit:%1:%2")
-                        .arg(
-                            actionId.isEmpty()
-                                ? QStringLiteral(
-                                      "unknown")
-                                : actionId,
-                            workspaceId);
-                if (!rtlTransactionFailureNeedsNotification(
-                        outcome)) {
-                    if (outcome.panelState
-                            == RtlHighRiskEditPanelState::
-                                Applied
-                        || outcome.panelState
-                            == RtlHighRiskEditPanelState::
-                                Undone
-                        || outcome.panelState
-                            == RtlHighRiskEditPanelState::
-                                Cancelled) {
-                        notificationCenter
-                            ->dismissByKey(key);
-                    }
-                    return;
-                }
-                NotificationDraft draft;
-                draft.key = key;
-                draft.topic =
-                    NotificationTopic::
-                        TransactionConflict;
-                draft.severity =
-                    outcome.panelState
-                        == RtlHighRiskEditPanelState::
-                            Conflict
-                    ? NotificationSeverity::Critical
-                    : NotificationSeverity::Error;
-                draft.source =
-                    QStringLiteral(
-                        "RtlHighRiskEdit");
-                draft.message =
-                    outcome.message.isEmpty()
-                    ? QStringLiteral(
-                          "The RTL edit transaction "
-                          "failed.")
-                    : outcome.message;
-                notificationCenter->post(draft);
-            });
-    }
     if (semanticDocks->scopedSearchPanelCoordinator()) {
         scopedReplaceDocuments =
             std::make_unique<WorkspaceEditDocumentManager>(
@@ -2867,15 +2366,18 @@ void MainWindow::setupGlobalControl()
             } else if (executionRoute
                        == QStringLiteral(
                            "globalControl.workspaceSession.save")) {
-                saveWorkspaceSession(true);
+                if (workspaceSessionCoordinator)
+                    workspaceSessionCoordinator->saveSession(true);
             } else if (executionRoute
                        == QStringLiteral(
                            "globalControl.workspaceSession.restore")) {
-                restoreWorkspaceSession();
+                if (workspaceSessionCoordinator)
+                    workspaceSessionCoordinator->restoreSession();
             } else if (executionRoute
                        == QStringLiteral(
                            "globalControl.workspaceSession.clean")) {
-                cleanWorkspaceSession();
+                if (workspaceSessionCoordinator)
+                    workspaceSessionCoordinator->clearSession();
             } else if (item.id == QStringLiteral("ow s")) {
                 if (statusBar())
                     statusBar()->showMessage(
@@ -3084,8 +2586,6 @@ void MainWindow::setupPanelLayoutController()
             ? semanticDocks->wavePreviewPanelCoordinator()->dock()
             : nullptr);
     registerPanel(QStringLiteral("foldShelf"), foldShelfDock);
-    panelLayoutController->setStateChangedHandler(
-        [this]() { scheduleWorkspaceSessionSave(); });
     panelLayoutController->finalize();
 
     if (insightFocusController) {
@@ -3097,6 +2597,30 @@ void MainWindow::setupPanelLayoutController()
                     panelLayoutController->setFocusModeActive(false);
             });
     }
+}
+
+void MainWindow::setupRtlActionCoordinator()
+{
+    RtlActionCoordinatorCallbacks callbacks;
+    callbacks.resolveContext =
+        [this](const EditorSemanticContext& context) {
+            return resolveEditorActionContext(context);
+        };
+    callbacks.showPanel =
+        [this](const QString& panelId) {
+            showPanelById(panelId);
+        };
+
+    rtlActionCoordinator =
+        std::make_unique<RtlActionCoordinator>(
+            tabManager.get(),
+            workspaceManager.get(),
+            semanticDocks.get(),
+            panelLayoutController.get(),
+            this,
+            std::move(callbacks),
+            notificationCenter.get(),
+            this);
 }
 
 void MainWindow::showFoldBlockShelf()
@@ -3597,14 +3121,14 @@ void MainWindow::refreshWorkspaceMenuEntries()
 void MainWindow::activateWorkspace(int index)
 {
     if (!workspaceManager
+        || !workspaceSessionCoordinator
         || index < 0
         || index >= workspaceManager->workspaceEntries().size()
         || index == workspaceManager->activeWorkspaceIndex()) {
         return;
     }
 
-    saveWorkspaceSession(false);
-    if (workspaceManager->switchWorkspace(index)) {
+    if (workspaceSessionCoordinator->switchWorkspace(index)) {
         refreshSettingsCenterWorkspace(
             workspaceManager->getWorkspacePath());
     }
@@ -3612,7 +3136,7 @@ void MainWindow::activateWorkspace(int index)
 
 void MainWindow::closeActiveWorkspace()
 {
-    if (!workspaceManager || !tabManager)
+    if (!workspaceManager || !workspaceSessionCoordinator)
         return;
 
     const int index = workspaceManager->activeWorkspaceIndex();
@@ -3621,10 +3145,7 @@ void MainWindow::closeActiveWorkspace()
     if (index < 0 || index >= entries.size())
         return;
 
-    saveWorkspaceSession(false);
-    if (!tabManager->closeTabsInWorkspace(entries.at(index).path))
-        return;
-    if (workspaceManager->closeWorkspace(index)) {
+    if (workspaceSessionCoordinator->closeWorkspace(index)) {
         refreshSettingsCenterWorkspace(
             workspaceManager->getWorkspacePath());
     }
@@ -3688,6 +3209,14 @@ void MainWindow::setupToolsMenu()
             rtlActionsMenu,
             QString::fromLatin1(
                 ActionIds::RtlPropagateMultipleSignals));
+    if (rtlActionCoordinator) {
+        rtlActionCoordinator->connectActionAvailability(
+            toolsMenu,
+            rtlRenameAction,
+            rtlConnectionTransformAction,
+            connectInstancePairAction,
+            propagateMultipleSignalsAction);
+    }
 
     toolsMenu->addSeparator();
     QAction* crashRecoveryAction =
@@ -3703,10 +3232,6 @@ void MainWindow::setupToolsMenu()
          openGlobalAction,
          openWorkspaceAction,
          reloadAction,
-         rtlRenameAction,
-         rtlConnectionTransformAction,
-         connectInstancePairAction,
-         propagateMultipleSignalsAction,
          crashRecoveryAction]() {
             const bool workspaceAvailable =
                 workspaceManager
@@ -3719,126 +3244,6 @@ void MainWindow::setupToolsMenu()
             }
             if (reloadAction)
                 reloadAction->setEnabled(true);
-            MyCodeEditor* editor =
-                tabManager
-                ? tabManager->getCurrentEditor()
-                : nullptr;
-            EditorSemanticContext semanticContext;
-            EditorActionContext actionContext;
-            bool cursorSignalAvailable = false;
-            bool renameSubjectAvailable = false;
-            bool instanceSubjectAvailable = false;
-            int selectedSignalCount = 0;
-            if (editor) {
-                semanticContext =
-                    editor
-                        ->editorSemanticContextForPosition(
-                            -1, true);
-                actionContext =
-                    resolveEditorActionContext(
-                        semanticContext);
-                TSDocument syntax;
-                syntax.setText(
-                    semanticContext.documentText);
-                const TSIdentifierTarget identifier =
-                    syntax.identifierAt(
-                        semanticContext.cursorPosition);
-                cursorSignalAvailable =
-                    identifier.ok();
-                if (identifier.ok()) {
-                    const EditorSemanticContext
-                        identifierContext =
-                            editor
-                                ->editorSemanticContextForPosition(
-                                    identifier.startChar,
-                                    true);
-                    const DefinitionResult definition =
-                        resolveRtlRenameSubject(
-                            identifierContext,
-                            identifier);
-                    renameSubjectAvailable =
-                        definition.found
-                        && isSupportedRtlRenameSubject(
-                            definition
-                                .symbolRecord);
-                    QString ignoredFailure;
-                    instanceSubjectAvailable =
-                        resolveRtlInstanceSubject(
-                            SemanticIndex::
-                                getInstance()
-                                    ->snapshotToken(),
-                            identifierContext,
-                            identifier,
-                            &ignoredFailure)
-                            .has_value();
-                }
-                selectedSignalCount =
-                    editor->selectedSignalNames().size();
-            }
-            ActionAvailabilityContext availability;
-            availability.editorAvailable =
-                editor != nullptr;
-            availability.workspaceAvailable =
-                workspaceAvailable;
-            availability.semanticCurrent =
-                actionContext.semanticState
-                == EditorActionSemanticState::Current;
-            availability.hierarchyBound =
-                actionContext.hierarchyBound();
-            availability.symbolAvailable =
-                cursorSignalAvailable
-                || selectedSignalCount >= 2;
-            const auto refreshRtlAction =
-                [&availability](
-                    QAction* action,
-                    bool featureReady,
-                    const QString& featureReason) {
-                    if (!action)
-                        return;
-                    const ActionDescriptor* descriptor =
-                        findActionById(
-                            action->property(
-                                "actionId").toString());
-                    const ActionAvailabilityState state =
-                        descriptor
-                        ? evaluateActionAvailability(
-                              *descriptor,
-                              availability)
-                        : ActionAvailabilityState{};
-                    action->setEnabled(
-                        state.executable
-                        && featureReady);
-                    if (!featureReady)
-                        action->setToolTip(featureReason);
-                    else if (!state.executable)
-                        action->setToolTip(state.reason);
-                    else if (descriptor)
-                        action->setToolTip(
-                            descriptor->description);
-                };
-            refreshRtlAction(
-                rtlRenameAction,
-                renameSubjectAvailable,
-                QStringLiteral(
-                    "Place the cursor on a module or "
-                    "interface port, parameter, or "
-                    "localparam."));
-            refreshRtlAction(
-                rtlConnectionTransformAction,
-                instanceSubjectAvailable,
-                QStringLiteral(
-                    "Place the cursor on one exact "
-                    "module instance declaration."));
-            refreshRtlAction(
-                connectInstancePairAction,
-                cursorSignalAvailable,
-                QStringLiteral(
-                    "Place the cursor on the source signal."));
-            refreshRtlAction(
-                propagateMultipleSignalsAction,
-                selectedSignalCount >= 2,
-                QStringLiteral(
-                    "Use Signal Selection to select at least two signals."));
             if (crashRecoveryAction)
                 crashRecoveryAction->setEnabled(true);
         });
@@ -4002,27 +3407,13 @@ ActionExecutionResult MainWindow::executeActionRoute(
                            == panelId);
         };
 
-    if (route
-        == QStringLiteral(
-            "rtledit.instancePair.connect")) {
-        return executeInstancePairConnectionAction(
-            invocation);
-    }
-    if (route
-        == QStringLiteral(
-            "rtledit.signal.propagateBatch")) {
-        return executeMultiSignalPropagationAction(
-            invocation);
-    }
-    if (route
-        == QStringLiteral("rtledit.rename")) {
-        return executeRtlRenameAction(invocation);
-    }
-    if (route
-        == QStringLiteral(
-            "rtledit.connection.transform")) {
-        return executeRtlConnectionTransformAction(
-            invocation);
+    if (RtlActionCoordinator::handlesRoute(route)) {
+        if (!rtlActionCoordinator) {
+            return fail(QStringLiteral(
+                "RTL action orchestration is unavailable."));
+        }
+        return rtlActionCoordinator->execute(
+            descriptor, invocation);
     }
     if (route
         == QStringLiteral(
@@ -5034,1122 +4425,6 @@ ActionExecutionResult MainWindow::executeActionRoute(
     return result;
 }
 
-ActionExecutionResult
-MainWindow::executeRtlRenameAction(
-    const ActionInvocation& invocation)
-{
-    ActionExecutionResult result;
-    result.handled = true;
-    result.dryRun =
-        invocation.mode
-        == ActionExecutionMode::DryRun;
-    const auto fail =
-        [&result](const QString& reason) {
-            result.failureReason = reason;
-            return result;
-        };
-    if (!tabManager || !workspaceManager
-        || !workspaceManager->isWorkspaceOpen()
-        || !semanticDocks
-        || !semanticDocks
-                ->rtlHighRiskEditPanelCoordinator()
-        || !semanticDocks
-                ->rtlActionDocumentManager()) {
-        return fail(QStringLiteral(
-            "The unified RTL High+Diff workspace "
-            "workflow is unavailable."));
-    }
-
-    MyCodeEditor* editor =
-        tabManager->getCurrentEditor();
-    if (!editor) {
-        return fail(QStringLiteral(
-            "Open a SystemVerilog editor before "
-            "renaming an RTL declaration."));
-    }
-    EditorSemanticContext context =
-        editor->editorSemanticContextForPosition(
-            -1, true);
-    const EditorActionContext actionContext =
-        resolveEditorActionContext(context);
-    if (actionContext.semanticState
-        != EditorActionSemanticState::Current) {
-        return fail(
-            actionContext.semanticError.isEmpty()
-            ? QStringLiteral(
-                  "A current Slang semantic snapshot "
-                  "is required for RTL rename.")
-            : actionContext.semanticError);
-    }
-
-    const SemanticSnapshotToken semanticToken =
-        SemanticIndex::getInstance()
-            ->snapshotToken();
-    if (!semanticToken.isValid()
-        || semanticToken.revision == 0
-        || (actionContext
-                    .semanticSnapshotRevision
-                != 0
-            && actionContext
-                    .semanticSnapshotRevision
-                != semanticToken.revision)) {
-        return fail(QStringLiteral(
-            "The active editor does not match the "
-            "current Slang semantic generation."));
-    }
-
-    TSDocument syntax;
-    syntax.setText(context.documentText);
-    const TSIdentifierTarget identifier =
-        syntax.identifierAt(
-            context.cursorPosition);
-    if (!identifier.ok()) {
-        return fail(QStringLiteral(
-            "Place the cursor on a port, parameter, "
-            "or localparam identifier."));
-    }
-    context =
-        editor->editorSemanticContextForPosition(
-            identifier.startChar, true);
-    const DefinitionResult definition =
-        resolveRtlRenameSubject(
-            context, identifier);
-    if (!definition.found
-        || !isSupportedRtlRenameSubject(
-            definition.symbolRecord)) {
-        return fail(QStringLiteral(
-            "Only one exact Slang module or "
-            "interface port, parameter, or "
-            "localparam can be renamed."));
-    }
-
-    QSet<QString> workspaceFileSet;
-    for (const QString& file :
-         workspaceManager
-             ->getSystemVerilogFiles()) {
-        const QString normalized =
-            normalizedRtlActionFileName(file);
-        if (!normalized.isEmpty())
-            workspaceFileSet.insert(normalized);
-    }
-    const QString subjectFile =
-        normalizedRtlActionFileName(
-            definition.symbolRecord
-                .location.fileName);
-    if (!subjectFile.isEmpty())
-        workspaceFileSet.insert(subjectFile);
-
-    QHash<QString, RtlRenameDocumentSnapshot>
-        capturedDocuments;
-    QString captureFailure;
-    if (!captureRtlActionDocuments(
-            workspaceFileSet,
-            semanticToken,
-            *semanticDocks
-                 ->rtlActionDocumentManager(),
-            &capturedDocuments,
-            &captureFailure)) {
-        return fail(captureFailure);
-    }
-
-    QVariantMap parameters =
-        invocation.parameters;
-    if (parameters.isEmpty()) {
-        parameters =
-            applicationActionExecutionHistory()
-                .rememberedParameters(
-                    workspaceManager
-                        ->getWorkspacePath(),
-                    RtlRenameWorkflow::
-                        actionFamilyId());
-    }
-    RtlRenamePanelSession session;
-    session.baseQuery.subjectStableKey =
-        definition.symbolRecord.stableKey;
-    session.baseQuery.semanticToken =
-        semanticToken;
-    session.baseQuery.documents =
-        capturedDocuments;
-    session.baseQuery.workspaceFiles =
-        workspaceFileSet.values();
-    session.baseQuery.workspaceFiles.sort();
-    session.baseQuery.dryRun = result.dryRun;
-    session.subjectLabel =
-        definition.symbolRecord.owner.name
-            .isEmpty()
-        ? definition.symbolRecord.name
-        : QStringLiteral("%1.%2")
-              .arg(
-                  definition.symbolRecord
-                      .owner.name,
-                  definition.symbolRecord.name);
-    session.oldName =
-        definition.symbolRecord.name;
-    session.suggestedNewName =
-        parameters
-            .value(QStringLiteral("newName"))
-            .toString()
-            .trimmed();
-
-    QString beginFailure;
-    RtlHighRiskEditPanelCoordinator*
-        coordinator =
-            semanticDocks
-                ->rtlHighRiskEditPanelCoordinator();
-    if (!panelLayoutController
-        || !coordinator->dock()
-        || !panelLayoutController
-                ->isBottomPanel(
-                    coordinator->dock())
-        || panelLayoutController
-               ->panelIdForDock(
-                   coordinator->dock())
-            != RtlHighRiskEditPanelCoordinator::
-                   panelId()) {
-        return fail(QStringLiteral(
-            "The RTL High+Diff bottom page is "
-            "not managed by the panel layout."));
-    }
-    if (!coordinator->beginRename(
-            std::move(session),
-            &beginFailure)) {
-        return fail(
-            beginFailure.isEmpty()
-            ? QStringLiteral(
-                  "The RTL rename page rejected "
-                  "the new session.")
-            : beginFailure);
-    }
-
-    QPointer<QWidget> previousFocus =
-        QApplication::focusWidget();
-    if (!panelLayoutController->restorePanel(
-            RtlHighRiskEditPanelCoordinator::
-                panelId())) {
-        coordinator->resetForWorkspaceClose();
-        return fail(QStringLiteral(
-            "The RTL High+Diff bottom page is "
-            "not managed by the panel layout."));
-    }
-    if (previousFocus
-        && QApplication::focusWidget()
-            != previousFocus) {
-        previousFocus->setFocus(
-            Qt::OtherFocusReason);
-    }
-
-    result.succeeded = true;
-    result.message = QStringLiteral(
-        "RTL rename request opened in the "
-        "High+Diff bottom page.");
-    result.output.insert(
-        QStringLiteral("panelId"),
-        RtlHighRiskEditPanelCoordinator::
-            panelId());
-    result.output.insert(
-        QStringLiteral("sessionId"),
-        QVariant::fromValue<qulonglong>(
-            coordinator->activeSessionId()));
-    return result;
-}
-
-ActionExecutionResult
-MainWindow::executeRtlConnectionTransformAction(
-    const ActionInvocation& invocation)
-{
-    ActionExecutionResult result;
-    result.handled = true;
-    result.dryRun =
-        invocation.mode
-        == ActionExecutionMode::DryRun;
-    const auto fail =
-        [&result](const QString& reason) {
-            result.failureReason = reason;
-            return result;
-        };
-    if (!tabManager || !workspaceManager
-        || !workspaceManager->isWorkspaceOpen()
-        || !semanticDocks
-        || !semanticDocks
-                ->rtlHighRiskEditPanelCoordinator()
-        || !semanticDocks
-                ->rtlActionDocumentManager()) {
-        return fail(QStringLiteral(
-            "The unified RTL High+Diff workspace "
-            "workflow is unavailable."));
-    }
-
-    MyCodeEditor* editor =
-        tabManager->getCurrentEditor();
-    if (!editor) {
-        return fail(QStringLiteral(
-            "Open a SystemVerilog editor before "
-            "transforming instance connections."));
-    }
-    const EditorSemanticContext context =
-        editor->editorSemanticContextForPosition(
-            -1, true);
-    const EditorActionContext actionContext =
-        resolveEditorActionContext(context);
-    if (actionContext.semanticState
-            != EditorActionSemanticState::Current
-        || !actionContext.hierarchyBound()) {
-        return fail(
-            !actionContext
-                 .hierarchyResolutionReason
-                 .isEmpty()
-            ? actionContext
-                  .hierarchyResolutionReason
-            : actionContext.semanticError
-                      .isEmpty()
-                ? QStringLiteral(
-                      "A current Slang snapshot "
-                      "and one exact parent "
-                      "hierarchy instance are "
-                      "required.")
-                : actionContext.semanticError);
-    }
-
-    const SemanticSnapshotToken semanticToken =
-        SemanticIndex::getInstance()
-            ->snapshotToken();
-    if (!semanticToken.isValid()
-        || semanticToken.revision == 0
-        || (actionContext
-                    .semanticSnapshotRevision
-                != 0
-            && actionContext
-                    .semanticSnapshotRevision
-                != semanticToken.revision)) {
-        return fail(QStringLiteral(
-            "The active editor does not match the "
-            "current Slang semantic generation."));
-    }
-
-    TSDocument syntax;
-    syntax.setText(context.documentText);
-    const TSIdentifierTarget identifier =
-        syntax.identifierAt(
-            context.cursorPosition);
-    QString instanceFailure;
-    const auto instance =
-        resolveRtlInstanceSubject(
-            semanticToken,
-            context,
-            identifier,
-            &instanceFailure);
-    if (!instance)
-        return fail(instanceFailure);
-
-    const QString instanceFile =
-        normalizedRtlActionFileName(
-            instance->location.fileName);
-    const auto document =
-        semanticDocks
-            ->rtlActionDocumentManager()
-            ->snapshot(
-                rtlActionUtf8String(
-                    instanceFile));
-    if (!document) {
-        return fail(QStringLiteral(
-            "The selected instance document "
-            "snapshot is unavailable."));
-    }
-
-    QVariantMap parameters =
-        invocation.parameters;
-    if (parameters.isEmpty()) {
-        parameters =
-            applicationActionExecutionHistory()
-                .rememberedParameters(
-                    workspaceManager
-                        ->getWorkspacePath(),
-                    RtlConnectionTransformWorkflow::
-                        actionId());
-    }
-    RtlConnectionTransformPanelSession session;
-    session.baseRequest.instanceStableKey =
-        instance->stableKey;
-    session.baseRequest.parentInstancePath =
-        actionContext.resolvedHierarchy
-            .instancePath;
-    session.baseRequest.selectedInstancePath =
-        session.baseRequest.parentInstancePath
-        + QLatin1Char('.')
-        + instance->name;
-    session.baseRequest
-        .expectedSemanticGeneration =
-            semanticToken.revision;
-    session.baseRequest
-        .expectedDocumentRevision =
-            document->version.value;
-    session.baseRequest
-        .convertOrderedToNamed =
-            parameters.value(
-                QStringLiteral(
-                    "convertOrderedToNamed"),
-                true).toBool();
-    session.baseRequest.addMissingPorts =
-        parameters.value(
-            QStringLiteral(
-                "addMissingPorts"),
-            false).toBool();
-    const int missingPolicy =
-        parameters.value(
-            QStringLiteral(
-                "missingPortPolicy"),
-            static_cast<int>(
-                RtlMissingPortConnectionPolicy::
-                    LeaveUnconnected))
-            .toInt();
-    if (missingPolicy
-            == static_cast<int>(
-                RtlMissingPortConnectionPolicy::
-                    ConnectSameNamedSignal)) {
-        session.baseRequest.missingPortPolicy =
-            RtlMissingPortConnectionPolicy::
-                ConnectSameNamedSignal;
-    }
-    const int castPolicy =
-        parameters.value(
-            QStringLiteral("castPolicy"),
-            static_cast<int>(
-                RtlExplicitCastPolicy::
-                    PreserveExistingExpression))
-            .toInt();
-    if (castPolicy
-            == static_cast<int>(
-                RtlExplicitCastPolicy::
-                    InsertWhenRequired)) {
-        session.baseRequest.castPolicy =
-            RtlExplicitCastPolicy::
-                InsertWhenRequired;
-    }
-    session.instanceLabel =
-        QStringLiteral("%1  (%2)")
-            .arg(
-                session.baseRequest
-                    .selectedInstancePath,
-                instance->type
-                    .resolvedTypeName);
-    session.dryRun = result.dryRun;
-
-    QString beginFailure;
-    RtlHighRiskEditPanelCoordinator*
-        coordinator =
-            semanticDocks
-                ->rtlHighRiskEditPanelCoordinator();
-    if (!panelLayoutController
-        || !coordinator->dock()
-        || !panelLayoutController
-                ->isBottomPanel(
-                    coordinator->dock())
-        || panelLayoutController
-               ->panelIdForDock(
-                   coordinator->dock())
-            != RtlHighRiskEditPanelCoordinator::
-                   panelId()) {
-        return fail(QStringLiteral(
-            "The RTL High+Diff bottom page is "
-            "not managed by the panel layout."));
-    }
-    if (!coordinator
-             ->beginConnectionTransform(
-                 std::move(session),
-                 &beginFailure)) {
-        return fail(
-            beginFailure.isEmpty()
-            ? QStringLiteral(
-                  "The connection transform "
-                  "page rejected the new "
-                  "session.")
-            : beginFailure);
-    }
-
-    QPointer<QWidget> previousFocus =
-        QApplication::focusWidget();
-    if (!panelLayoutController->restorePanel(
-            RtlHighRiskEditPanelCoordinator::
-                panelId())) {
-        coordinator->resetForWorkspaceClose();
-        return fail(QStringLiteral(
-            "The RTL High+Diff bottom page is "
-            "not managed by the panel layout."));
-    }
-    if (previousFocus
-        && QApplication::focusWidget()
-            != previousFocus) {
-        previousFocus->setFocus(
-            Qt::OtherFocusReason);
-    }
-
-    result.succeeded = true;
-    result.message = QStringLiteral(
-        "Connection transform request opened "
-        "in the High+Diff bottom page.");
-    result.output.insert(
-        QStringLiteral("panelId"),
-        RtlHighRiskEditPanelCoordinator::
-            panelId());
-    result.output.insert(
-        QStringLiteral("sessionId"),
-        QVariant::fromValue<qulonglong>(
-            coordinator->activeSessionId()));
-    return result;
-}
-
-ActionExecutionResult
-MainWindow::executeInstancePairConnectionAction(
-    const ActionInvocation& invocation)
-{
-    ActionExecutionResult result;
-    result.handled = true;
-    result.dryRun =
-        invocation.mode == ActionExecutionMode::DryRun;
-    const auto fail =
-        [&result](const QString& reason) {
-            result.failureReason = reason;
-            return result;
-        };
-    if (!tabManager || !workspaceManager
-        || !workspaceManager->isWorkspaceOpen()
-        || !semanticDocks
-        || !semanticDocks
-                ->instancePairConnectionCoordinator()
-        || !semanticDocks
-                ->instancePairConnectionWorkflow()) {
-        return fail(QStringLiteral(
-            "The instance-pair workspace workflow is unavailable."));
-    }
-    if (semanticDocks->instancePairConnectionWorkflow()
-            ->canUndoAppliedTransaction()) {
-        showPanelById(
-            InstancePairConnectionCoordinator::panelId());
-        return fail(QStringLiteral(
-            "Undo the applied instance-pair transaction before "
-            "starting another instance-pair action."));
-    }
-
-    MyCodeEditor* editor =
-        tabManager->getCurrentEditor();
-    if (!editor) {
-        return fail(QStringLiteral(
-            "Open a SystemVerilog editor before connecting instances."));
-    }
-    EditorSemanticContext sourceContext =
-        editor->editorSemanticContextForPosition(
-            -1, true);
-    const EditorActionContext actionContext =
-        resolveEditorActionContext(sourceContext);
-    if (actionContext.semanticState
-            != EditorActionSemanticState::Current
-        || !actionContext.hierarchyBound()) {
-        return fail(
-            actionContext.hierarchyResolutionReason
-                    .isEmpty()
-                ? QStringLiteral(
-                      "A current Slang snapshot and exact hierarchy "
-                      "instance are required.")
-                : actionContext.hierarchyResolutionReason);
-    }
-
-    const SemanticSnapshotToken semanticToken =
-        SemanticIndex::getInstance()->snapshotToken();
-    if (!semanticToken.isValid()) {
-        return fail(QStringLiteral(
-            "A current Slang semantic snapshot is required."));
-    }
-    QSet<QString> workspaceFiles;
-    for (const QString& file :
-         workspaceManager->getSystemVerilogFiles()) {
-        const QString normalized =
-            normalizedRtlActionFileName(file);
-        if (!normalized.isEmpty())
-            workspaceFiles.insert(normalized);
-    }
-
-    WorkspaceEditDocumentManager captureDocuments(
-        tabManager.get());
-    QHash<QString, InstancePairDocumentSnapshot>
-        captured;
-    QString captureFailure;
-    if (!captureRtlActionDocuments(
-            workspaceFiles,
-            semanticToken,
-            captureDocuments,
-            &captured,
-            &captureFailure)) {
-        return fail(captureFailure);
-    }
-    const QString sourceFile =
-        normalizedRtlActionFileName(
-            sourceContext.fileName);
-    const auto capturedSource =
-        captured.constFind(sourceFile);
-    if (capturedSource == captured.constEnd()) {
-        return fail(QStringLiteral(
-            "The source signal document was not captured."));
-    }
-    sourceContext.fileName = sourceFile;
-    sourceContext.documentText =
-        capturedSource->text;
-    sourceContext.documentRevision =
-        capturedSource->revision;
-
-    const TSIdentifierTarget identifier =
-        capturedSource->syntax
-            ? capturedSource->syntax->identifierAt(
-                  sourceContext.cursorPosition)
-            : TSIdentifierTarget{};
-    if (!identifier.ok()) {
-        return fail(QStringLiteral(
-            "Place the cursor on the source signal identifier."));
-    }
-
-    HierarchyService* hierarchy =
-        HierarchyService::getInstance();
-    QStringList roots =
-        hierarchy->inferDesignTopModules(
-            workspaceFiles);
-    const QString activeTop =
-        actionContext.resolvedHierarchy
-            .activeTopModule;
-    if (!roots.contains(activeTop))
-        roots.append(activeTop);
-    const DesignHierarchyReport design =
-        hierarchy->getDesignHierarchyReport(
-            roots, activeTop, workspaceFiles);
-    if (design.snapshotGeneration
-            != semanticToken.revision) {
-        return fail(QStringLiteral(
-            "The design hierarchy is stale relative to Slang."));
-    }
-
-    InstancePairUserSelection selection;
-    selection.leftInstancePath =
-        invocation.parameters.value(
-            QStringLiteral("leftInstancePath"),
-            actionContext.resolvedHierarchy
-                .instancePath)
-            .toString();
-    selection.rightInstancePath =
-        invocation.parameters.value(
-            QStringLiteral("rightInstancePath"))
-            .toString();
-    selection.connectionName =
-        invocation.parameters.value(
-            QStringLiteral("connectionName"),
-            identifier.text
-                + QStringLiteral("_link"))
-            .toString()
-            .trimmed();
-    const bool completeStructuredSelection =
-        !selection.leftInstancePath.isEmpty()
-        && !selection.rightInstancePath.isEmpty()
-        && !selection.connectionName.isEmpty();
-    if (!completeStructuredSelection) {
-        const auto selected =
-            selectInstancePair(
-                editor,
-                design.nodes,
-                sourceContext.moduleName,
-                selection);
-        if (!selected) {
-            return fail(QStringLiteral(
-                "Instance-pair selection was cancelled or has no "
-                "compatible destination."));
-        }
-        selection = *selected;
-    }
-
-    DesignHierarchyNode selectedLeft;
-    DesignHierarchyNode selectedRight;
-    int leftMatches = 0;
-    int rightMatches = 0;
-    for (const DesignHierarchyNode& node :
-         design.nodes) {
-        if (!node.inSelectedTop || node.unresolved)
-            continue;
-        if (node.instancePath
-            == selection.leftInstancePath) {
-            selectedLeft = node;
-            ++leftMatches;
-        }
-        if (node.instancePath
-            == selection.rightInstancePath) {
-            selectedRight = node;
-            ++rightMatches;
-        }
-    }
-    if (leftMatches != 1 || rightMatches != 1
-        || selectedLeft.isTop
-        || selectedRight.isTop
-        || selectedLeft.instancePath
-               == selectedRight.instancePath
-        || selectedLeft.moduleType
-               != sourceContext.moduleName
-        || selectedLeft.rootId
-               != selectedRight.rootId) {
-        return fail(QStringLiteral(
-            "The structured instance selection does not identify "
-            "two compatible instances in one design root."));
-    }
-
-    sourceContext.hierarchyInstance.workspacePath =
-        workspaceManager->getWorkspacePath();
-    sourceContext.hierarchyInstance.activeTopModule =
-        activeTop;
-    sourceContext.hierarchyInstance.instancePath =
-        selectedLeft.instancePath;
-
-    InstancePairConnectionQuery query;
-    query.leftSignalContext =
-        std::move(sourceContext);
-    query.leftInstancePath =
-        selectedLeft.instancePath;
-    query.rightInstancePath =
-        selectedRight.instancePath;
-    query.connectionName =
-        selection.connectionName;
-    query.workspaceFiles =
-        workspaceFiles;
-    query.semanticToken =
-        semanticToken;
-    query.documents =
-        std::move(captured);
-    query.dryRun =
-        invocation.mode
-        == ActionExecutionMode::DryRun;
-
-    InstancePairConnectionWorkflow* workflow =
-        semanticDocks
-            ->instancePairConnectionWorkflow();
-    const InstancePairConnectionWorkflowResult
-        analyzed =
-            workflow->analyzeAndPresent(query);
-    if (!analyzed.succeeded()) {
-        return fail(
-            analyzed.message.isEmpty()
-                ? QStringLiteral(
-                      "Instance-pair analysis was rejected.")
-                : analyzed.message);
-    }
-
-    showPanelById(
-        InstancePairConnectionCoordinator::panelId());
-    if (query.dryRun) {
-        InstancePairConnectionPanel* panel =
-            semanticDocks
-                ->instancePairConnectionCoordinator()
-                ->panel();
-        if (!panel) {
-            return fail(QStringLiteral(
-                "The instance-pair preview page is unavailable."));
-        }
-        const InstancePairConnectionWorkflowResult
-            previewed =
-                workflow->requestPreview(
-                    panel->currentPlanRequest());
-        if (!previewed.succeeded()) {
-            return fail(
-                previewed.message.isEmpty()
-                    ? QStringLiteral(
-                          "Instance-pair dry-run planning was rejected.")
-                    : previewed.message);
-        }
-    }
-
-    result.succeeded = true;
-    result.message =
-        query.dryRun
-        ? QStringLiteral(
-              "Instance-pair High+Diff dry-run preview is ready.")
-        : QStringLiteral(
-              "Drag the selected source signal to the destination "
-              "block to build the High+Diff preview.");
-    result.hasResolvedParameters = true;
-    result.resolvedParameters.insert(
-        QStringLiteral("leftInstancePath"),
-        selectedLeft.instancePath);
-    result.resolvedParameters.insert(
-        QStringLiteral("rightInstancePath"),
-        selectedRight.instancePath);
-    result.resolvedParameters.insert(
-        QStringLiteral("connectionName"),
-        selection.connectionName);
-    result.output.insert(
-        QStringLiteral("panelId"),
-        InstancePairConnectionCoordinator::panelId());
-    result.output.insert(
-        QStringLiteral("leftInstancePath"),
-        selectedLeft.instancePath);
-    result.output.insert(
-        QStringLiteral("rightInstancePath"),
-        selectedRight.instancePath);
-    result.output.insert(
-        QStringLiteral("semanticGeneration"),
-        QVariant::fromValue<qulonglong>(
-            semanticToken.revision));
-    return result;
-}
-
-ActionExecutionResult
-MainWindow::executeMultiSignalPropagationAction(
-    const ActionInvocation& invocation)
-{
-    ActionExecutionResult result;
-    result.handled = true;
-    result.dryRun =
-        invocation.mode == ActionExecutionMode::DryRun;
-    const auto fail =
-        [&result](const QString& reason) {
-            result.failureReason = reason;
-            return result;
-        };
-    if (!tabManager || !workspaceManager
-        || !workspaceManager->isWorkspaceOpen()
-        || !semanticDocks
-        || !semanticDocks
-                ->multiSignalPropagationPanel()
-        || !semanticDocks
-                ->multiSignalPropagationWorkflow()) {
-        return fail(QStringLiteral(
-            "The multi-signal workspace workflow is unavailable."));
-    }
-    if (semanticDocks->multiSignalPropagationWorkflow()
-            ->canUndoAppliedTransaction()) {
-        showPanelById(
-            MultiSignalPropagationPanel::panelId());
-        return fail(QStringLiteral(
-            "Undo the applied multi-signal transaction before "
-            "starting another batch propagation action."));
-    }
-    MyCodeEditor* editor =
-        tabManager->getCurrentEditor();
-    if (!editor) {
-        return fail(QStringLiteral(
-            "Open a SystemVerilog editor before propagating signals."));
-    }
-
-    EditorSemanticContext editorContext =
-        editor->editorSemanticContextForPosition(
-            -1, true);
-    const EditorActionContext actionContext =
-        resolveEditorActionContext(editorContext);
-    if (actionContext.semanticState
-            != EditorActionSemanticState::Current
-        || !actionContext.hierarchyBound()) {
-        return fail(
-            actionContext.hierarchyResolutionReason
-                    .isEmpty()
-                ? QStringLiteral(
-                      "A current Slang snapshot and exact hierarchy "
-                      "instance are required.")
-                : actionContext.hierarchyResolutionReason);
-    }
-
-    QStringList selectedNames =
-        invocation.parameters.value(
-            QStringLiteral("signalNames"))
-            .toStringList();
-    if (selectedNames.isEmpty())
-        selectedNames = editor->selectedSignalNames();
-    selectedNames.removeDuplicates();
-    if (selectedNames.size() < 2) {
-        return fail(QStringLiteral(
-            "Use Signal Selection to select at least two signals."));
-    }
-
-    SemanticIndex* semanticIndex =
-        SemanticIndex::getInstance();
-    const SemanticSnapshotToken semanticToken =
-        semanticIndex->snapshotToken();
-    if (!semanticToken.isValid()) {
-        return fail(QStringLiteral(
-            "A current Slang semantic snapshot is required."));
-    }
-    QSet<QString> workspaceFiles;
-    for (const QString& file :
-         workspaceManager->getSystemVerilogFiles()) {
-        const QString normalized =
-            normalizedRtlActionFileName(file);
-        if (!normalized.isEmpty())
-            workspaceFiles.insert(normalized);
-    }
-    WorkspaceEditDocumentManager captureDocuments(
-        tabManager.get());
-    QHash<QString, MultiSignalPropagationDocumentSnapshot>
-        captured;
-    QString captureFailure;
-    if (!captureRtlActionDocuments(
-            workspaceFiles,
-            semanticToken,
-            captureDocuments,
-            &captured,
-            &captureFailure)) {
-        return fail(captureFailure);
-    }
-    const QString activeFile =
-        normalizedRtlActionFileName(
-            editorContext.fileName);
-    const auto capturedActive =
-        captured.constFind(activeFile);
-    if (capturedActive == captured.constEnd()) {
-        return fail(QStringLiteral(
-            "The selected signal document was not captured."));
-    }
-
-    QList<MultiSignalPropagationSignalChoice>
-        signalChoices;
-    QSet<QString> stableKeys;
-    for (const QString& name : selectedNames) {
-        QList<SemanticSymbolRecord> candidates;
-        for (const SemanticSymbolRecord& record :
-             semanticToken.snapshot
-                 ->getSymbolRecordsByName(name)) {
-            SymbolTaxonomy::SemanticMetadata metadata;
-            metadata.declarationKind =
-                record.declarationKind;
-            metadata.usageRole =
-                record.usageRole;
-            metadata.ownerScope =
-                record.owner.kind;
-            metadata.visibility =
-                record.visibility;
-            metadata.sourceRole =
-                record.sourceRole;
-            metadata.collectorKind =
-                record.collectorKind;
-            metadata.interfaceLikeOwner =
-                record.owner.interfaceLike;
-            if (normalizedRtlActionFileName(
-                    record.location.fileName)
-                    != activeFile
-                || record.owner.name
-                       != editorContext.moduleName
-                || (!SymbolTaxonomy::
-                        isSignalDeclaration(metadata)
-                    && !SymbolTaxonomy::
-                        isPortDeclaration(metadata))
-                || !record.stableKey.isValid()) {
-                continue;
-            }
-            const QString stable =
-                record.stableKey.toString();
-            bool duplicate = false;
-            for (const SemanticSymbolRecord& existing :
-                 candidates) {
-                if (existing.stableKey.toString()
-                    == stable) {
-                    duplicate = true;
-                    break;
-                }
-            }
-            if (!duplicate)
-                candidates.append(record);
-        }
-        if (candidates.size() != 1) {
-            return fail(QStringLiteral(
-                "Slang did not resolve selected signal \"%1\" "
-                "to one module declaration.")
-                .arg(name));
-        }
-        const SemanticSymbolRecord record =
-            candidates.constFirst();
-        const QString stable =
-            record.stableKey.toString();
-        if (stableKeys.contains(stable)) {
-            return fail(QStringLiteral(
-                "The selected signal set contains a duplicate "
-                "semantic identity."));
-        }
-        stableKeys.insert(stable);
-
-        EditorSemanticContext memberContext =
-            editor->editorSemanticContextForPosition(
-                record.location.position,
-                true);
-        memberContext.fileName = activeFile;
-        memberContext.documentText =
-            capturedActive->text;
-        memberContext.documentRevision =
-            capturedActive->revision;
-        memberContext.cursorPosition =
-            record.location.position;
-        memberContext.hierarchyInstance =
-            actionContext.resolvedHierarchy;
-
-        MultiSignalPropagationSignalChoice choice;
-        choice.label =
-            QStringLiteral("%1.%2")
-                .arg(
-                    actionContext.resolvedHierarchy
-                        .instancePath,
-                    name);
-        choice.member.context =
-            std::move(memberContext);
-        choice.member.exportedPortName =
-            name + QStringLiteral("_out");
-        choice.member.groupMemberName = name;
-        choice.selected = true;
-        signalChoices.append(std::move(choice));
-    }
-
-    HierarchyService* hierarchy =
-        HierarchyService::getInstance();
-    QStringList roots =
-        hierarchy->inferDesignTopModules(
-            workspaceFiles);
-    const QString activeTop =
-        actionContext.resolvedHierarchy
-            .activeTopModule;
-    if (!roots.contains(activeTop))
-        roots.append(activeTop);
-    const DesignHierarchyReport design =
-        hierarchy->getDesignHierarchyReport(
-            roots, activeTop, workspaceFiles);
-    if (design.snapshotGeneration
-            != semanticToken.revision) {
-        return fail(QStringLiteral(
-            "The design hierarchy is stale relative to Slang."));
-    }
-    QHash<QString, DesignHierarchyNode> nodesById;
-    DesignHierarchyNode sourceNode;
-    int sourceMatches = 0;
-    for (const DesignHierarchyNode& node :
-         design.nodes) {
-        nodesById.insert(node.id, node);
-        if (node.inSelectedTop
-            && node.instancePath
-                   == actionContext
-                          .resolvedHierarchy
-                          .instancePath) {
-            sourceNode = node;
-            ++sourceMatches;
-        }
-    }
-    if (sourceMatches != 1) {
-        return fail(QStringLiteral(
-            "The selected source instance is not unique in the "
-            "current hierarchy."));
-    }
-
-    QList<MultiSignalPropagationAncestorChoice>
-        ancestors;
-    ancestors.append(
-        {QStringLiteral("Active design top"),
-         QString()});
-    DesignHierarchyNode cursor = sourceNode;
-    while (!cursor.parentId.isEmpty()) {
-        const auto parent =
-            nodesById.constFind(cursor.parentId);
-        if (parent == nodesById.constEnd())
-            break;
-        cursor = parent.value();
-        if (!cursor.isTop) {
-            ancestors.append(
-                {QStringLiteral("%1  (%2)")
-                     .arg(cursor.instancePath,
-                          cursor.moduleType),
-                 cursor.instancePath});
-        }
-    }
-
-    MultiSignalPropagationPanelInput input;
-    input.signalChoices =
-        std::move(signalChoices);
-    input.ancestors =
-        std::move(ancestors);
-    input.workspaceFiles =
-        workspaceFiles;
-    input.semanticToken =
-        semanticToken;
-    input.capturedDocuments =
-        std::move(captured);
-    input.dryRun =
-        invocation.mode
-        == ActionExecutionMode::DryRun;
-    const QString requestedMode =
-        invocation.parameters.value(
-            QStringLiteral("mode"))
-            .toString();
-    input.groupName =
-        invocation.parameters.value(
-            QStringLiteral("groupName"))
-            .toString()
-            .trimmed();
-    input.mode =
-        requestedMode.compare(
-            QStringLiteral("portGroup"),
-            Qt::CaseInsensitive) == 0
-            || !input.groupName.isEmpty()
-        ? MultiSignalPropagationMode::PortGroup
-        : MultiSignalPropagationMode::IndependentPorts;
-    const QString requestedAncestor =
-        invocation.parameters.value(
-            QStringLiteral(
-                "targetAncestorInstancePath"))
-            .toString();
-    if (!requestedAncestor.isEmpty()) {
-        for (int index = 0;
-             index < input.ancestors.size();
-             ++index) {
-            if (input.ancestors.at(index).instancePath
-                == requestedAncestor) {
-                input.selectedAncestorIndex = index;
-                break;
-            }
-        }
-    }
-
-    MultiSignalPropagationPanel* panel =
-        semanticDocks
-            ->multiSignalPropagationPanel();
-    panel->setInput(input);
-    showPanelById(
-        MultiSignalPropagationPanel::panelId());
-    if (input.dryRun
-        && !panel->requestPreview()) {
-        return fail(
-            panel->statusText().isEmpty()
-                ? QStringLiteral(
-                      "Multi-signal dry-run planning was rejected.")
-                : panel->statusText());
-    }
-
-    result.succeeded = true;
-    result.message =
-        input.dryRun
-        ? QStringLiteral(
-              "Multi-signal High+Diff dry-run preview is ready.")
-        : QStringLiteral(
-              "Review the selected signals, ancestor, and port "
-              "layout before requesting the High+Diff preview.");
-    result.hasResolvedParameters = true;
-    result.resolvedParameters.insert(
-        QStringLiteral("mode"),
-        input.mode == MultiSignalPropagationMode::PortGroup
-            ? QStringLiteral("portGroup")
-            : QStringLiteral("independentPorts"));
-    result.resolvedParameters.insert(
-        QStringLiteral("groupName"),
-        input.groupName);
-    result.resolvedParameters.insert(
-        QStringLiteral("targetAncestorInstancePath"),
-        input.ancestors.at(input.selectedAncestorIndex)
-            .instancePath);
-    result.output.insert(
-        QStringLiteral("panelId"),
-        MultiSignalPropagationPanel::panelId());
-    result.output.insert(
-        QStringLiteral("signalCount"),
-        selectedNames.size());
-    result.output.insert(
-        QStringLiteral("semanticGeneration"),
-        QVariant::fromValue<qulonglong>(
-            semanticToken.revision));
-    return result;
-}
 
 QString MainWindow::crashRecoveryNotificationKey(
     const QString& workspaceRoot) const
@@ -6965,300 +5240,105 @@ void MainWindow::showWorkspaceConfigurationDialog()
                                 ->getWorkspacePath()))),
             4000);
     }
-    scheduleWorkspaceSessionSave();
+    if (workspaceSessionCoordinator)
+        workspaceSessionCoordinator->scheduleSessionSave();
     if (semanticDocks && semanticDocks->refreshCoordinator())
         semanticDocks->refreshCoordinator()->updateProblemsPanel();
 }
 
-WorkspaceSessionState MainWindow::captureWorkspaceSessionState() const
+void MainWindow::setupWorkspaceSessionCoordinator()
 {
-    WorkspaceSessionState state;
-    if (!workspaceManager || !workspaceManager->isWorkspaceOpen())
-        return state;
+    WorkspaceSessionUiBridge bridge;
+    bridge.captureUiState =
+        [this](bool rememberPanelState) {
+            WorkspaceSessionUiState state;
+            if (rememberPanelState) {
+                state.mainWindowGeometry = saveGeometry();
+                state.mainWindowState = saveState();
+            }
+            if (navigationPane) {
+                state.navigationFilesQuery =
+                    navigationPane->filesSearchQuery();
+                state.navigationDesignQuery =
+                    navigationPane->designSearchQuery();
+            }
+            if (panelLayoutController && rememberPanelState) {
+                state.panelLayout =
+                    panelLayoutController->layoutState();
+            }
+            return state;
+        };
+    bridge.restoreUiState =
+        [this](const WorkspaceSessionUiState& state,
+               bool rememberPanelState) {
+            WorkspaceSessionUiRestoreResult result;
+            if (rememberPanelState
+                && !state.mainWindowGeometry.isEmpty()) {
+                result.geometryRestored =
+                    restoreGeometry(state.mainWindowGeometry);
+            }
+            if (rememberPanelState
+                && !state.mainWindowState.isEmpty()) {
+                result.dockStateRestored =
+                    restoreState(state.mainWindowState);
+            }
+            if (navigationPane) {
+                navigationPane->setSearchQueries(
+                    state.navigationFilesQuery,
+                    state.navigationDesignQuery);
+            }
+            if (rememberPanelState
+                && !result.dockStateRestored) {
+                resetPanelLayout();
+            }
+            if (panelLayoutController && rememberPanelState) {
+                if (state.panelLayout.valid) {
+                    panelLayoutController->restoreLayoutState(
+                        state.panelLayout);
+                } else {
+                    panelLayoutController->bindManagedTabBars();
+                }
+            }
+            return result;
+        };
+    bridge.showStatus =
+        [this](const QString& message, int timeoutMs) {
+            if (statusBar())
+                statusBar()->showMessage(message, timeoutMs);
+        };
 
-    const QString workspaceRoot = workspaceManager->getWorkspacePath();
-    state.workspaceRoot = workspaceRoot;
-    if (tabManager)
-        state.tabs = tabManager->workspaceSessionTabs(workspaceRoot);
-    if (rememberWorkspacePanelState) {
-        state.ui.mainWindowGeometry = saveGeometry();
-        state.ui.mainWindowState = saveState();
-    }
-    if (navigationPane) {
-        state.ui.navigationFilesQuery =
-            navigationPane->filesSearchQuery();
-        state.ui.navigationDesignQuery =
-            navigationPane->designSearchQuery();
-    }
-    if (tabManager) {
-        state.ui.tabGroupingMode =
-            tabGroupingModeStableId(
-                tabManager->tabGroupingMode());
-    }
-    if (panelLayoutController && rememberWorkspacePanelState)
-        state.ui.panelLayout = panelLayoutController->layoutState();
+    workspaceSessionCoordinator =
+        std::make_unique<WorkspaceSessionCoordinator>(
+            workspaceManager.get(),
+            tabManager.get(),
+            panelLayoutController.get(),
+            std::move(bridge),
+            QString(),
+            WorkspaceSessionCoordinator::kDefaultSaveDelayMs,
+            this);
 
-    const QList<WorkspaceManager::WorkspaceEntry> entries =
-        workspaceManager->workspaceEntries();
-    const int activeIndex = workspaceManager->activeWorkspaceIndex();
-    if (activeIndex >= 0 && activeIndex < entries.size()) {
-        const WorkspaceManager::WorkspaceEntry& entry =
-            entries.at(activeIndex);
-        if (entry.path == workspaceRoot) {
-            state.scannedFiles = entry.scannedFiles;
-            state.scanComplete = entry.scanComplete;
-        }
-    }
-    if (state.scannedFiles.isEmpty()) {
-        const ProjectSnapshot snapshot = workspaceManager->projectSnapshot();
-        state.scannedFiles = snapshot.allFiles;
-    }
-    return state;
-}
-
-bool MainWindow::saveWorkspaceSession(bool showStatus)
-{
-    if (!workspaceManager || !workspaceManager->isWorkspaceOpen()) {
-        if (showStatus && statusBar())
-            statusBar()->showMessage(
-                QStringLiteral("Open a workspace before saving a session"),
-                3000);
-        return false;
-    }
-
-    const QString workspaceRoot =
-        workspaceManager->getWorkspacePath();
-    const QString rootKey =
-        workspaceSessionRootKey(workspaceRoot);
-    if (workspaceSessionCleanRoots.contains(rootKey)) {
-        if (!showStatus)
-            return false;
-        workspaceSessionCleanRoots.remove(rootKey);
-    }
-
-    WorkspaceSessionStateService service;
-    const WorkspaceSessionSaveResult result =
-        service.save(captureWorkspaceSessionState());
-    if (showStatus && statusBar()) {
-        statusBar()->showMessage(
-            result.saved
-                ? QStringLiteral(
-                      "Local workspace session saved to %1; "
-                      ".zeroslack/project.json is unchanged")
-                      .arg(QDir::toNativeSeparators(
-                          result.storagePath))
-                : result.message,
-            result.saved ? 3000 : 5000);
-    }
-    return result.saved;
-}
-
-bool MainWindow::restoreWorkspaceSession()
-{
-    if (!workspaceManager || !workspaceManager->isWorkspaceOpen()) {
-        if (statusBar())
-            statusBar()->showMessage(
-                QStringLiteral("Open a workspace before restoring a session"),
-                3000);
-        return false;
+    if (fileCommandCoordinator) {
+        QPointer<WorkspaceSessionCoordinator> sessionCoordinator(
+            workspaceSessionCoordinator.get());
+        fileCommandCoordinator->setWorkspaceOpenHandler(
+            [sessionCoordinator](const QString& folderPath) {
+                return sessionCoordinator
+                    && sessionCoordinator
+                           ->openWorkspaceFromUserSelection(folderPath);
+            });
     }
 
-    const QString workspaceRoot = workspaceManager->getWorkspacePath();
-    const QString rootKey = workspaceSessionRootKey(workspaceRoot);
-    if (workspaceSessionCleanRoots.contains(rootKey)) {
-        if (statusBar())
-            statusBar()->showMessage(
-                QStringLiteral("Workspace session ignored for this activation"),
-                3000);
-        return false;
-    }
-
-    WorkspaceSessionStateService service;
-    WorkspaceSessionRestoreResult result =
-        service.load(workspaceRoot);
-    bool importedLegacy = false;
-    if (!result.loaded
-        && WorkspaceSessionStateService::
-               legacySessionFileExists(workspaceRoot)) {
-        const WorkspaceLegacyImportResult legacy =
-            service.loadLegacy(workspaceRoot);
-        if (legacy.loaded) {
-            result.loaded = true;
-            result.state = legacy.state;
-            result.skippedTabs = legacy.skippedTabs;
-            result.skippedScannedFiles =
-                legacy.skippedScannedFiles;
-            result.message = legacy.message;
-            importedLegacy = true;
-            service.save(legacy.state);
-        } else {
-            result.message = legacy.message;
-        }
-    }
-    if (!result.loaded) {
-        if (statusBar())
-            statusBar()->showMessage(result.message, 5000);
-        return false;
-    }
-
-    const bool scanRestored =
-        workspaceManager->restoreSessionScanState(
-            result.state.scannedFiles,
-            result.state.scanComplete);
-
-    QStringList skippedTabs = result.skippedTabs;
-    QStringList tabRestoreSkips;
-    const QStringList restoredTabs =
-        tabManager
-            ? tabManager->restoreWorkspaceSessionTabs(workspaceRoot,
-                                                      result.state.tabs,
-                                                      &tabRestoreSkips)
-            : QStringList();
-    if (tabManager) {
-        tabManager->setTabGroupingMode(
-            tabGroupingModeFromStableId(
-                result.state.ui.tabGroupingMode));
-    }
-    skippedTabs.append(tabRestoreSkips);
-    skippedTabs.removeDuplicates();
-
-    bool geometryRestored = true;
-    bool dockStateRestored = true;
-    if (rememberWorkspacePanelState
-        && !result.state.ui.mainWindowGeometry.isEmpty()) {
-        geometryRestored =
-            restoreGeometry(result.state.ui.mainWindowGeometry);
-    }
-    if (rememberWorkspacePanelState
-        && !result.state.ui.mainWindowState.isEmpty()) {
-        dockStateRestored =
-            restoreState(result.state.ui.mainWindowState);
-    }
-    if (navigationPane) {
-        navigationPane->setSearchQueries(
-            result.state.ui.navigationFilesQuery,
-            result.state.ui.navigationDesignQuery);
-    }
-    if (rememberWorkspacePanelState && !dockStateRestored)
-        resetPanelLayout();
-    if (panelLayoutController && rememberWorkspacePanelState) {
-        if (result.state.ui.panelLayout.valid) {
-            panelLayoutController->restoreLayoutState(
-                result.state.ui.panelLayout);
-        } else {
-            panelLayoutController->bindManagedTabBars();
-        }
-    }
-
-    QStringList notes;
-    if (!scanRestored)
-        notes.append(QStringLiteral("scan list skipped"));
-    if (!geometryRestored || !dockStateRestored)
-        notes.append(QStringLiteral("layout fallback used"));
-    if (!skippedTabs.isEmpty())
-        notes.append(QStringLiteral("%1 tab(s) skipped").arg(skippedTabs.size()));
-    if (!result.skippedScannedFiles.isEmpty()) {
-        notes.append(QStringLiteral("%1 scanned file(s) skipped")
-                         .arg(result.skippedScannedFiles.size()));
-    }
-    if (importedLegacy)
-        notes.append(
-            QStringLiteral(
-                "legacy .zs imported read-only"));
-
-    QString message =
-        QStringLiteral(
-            "Local workspace session restored: "
-            "%1 tab(s), %2 scanned file(s); "
-            "portable project configuration unchanged")
-            .arg(restoredTabs.size())
-            .arg(result.state.scannedFiles.size());
-    if (!notes.isEmpty())
-        message += QStringLiteral(" (%1)").arg(notes.join(QStringLiteral("; ")));
-    if (statusBar())
-        statusBar()->showMessage(message, notes.isEmpty() ? 4000 : 7000);
-    scheduleWorkspaceSessionSave();
-    return scanRestored && dockStateRestored;
-}
-
-void MainWindow::cleanWorkspaceSession()
-{
-    if (!workspaceManager || !workspaceManager->isWorkspaceOpen()) {
-        if (statusBar())
-            statusBar()->showMessage(
-                QStringLiteral("Open a workspace before ignoring a session"),
-                3000);
-        return;
-    }
-
-    const QString workspaceRoot =
-        workspaceManager->getWorkspacePath();
-    WorkspaceSessionStateService service;
-    const bool cleared = service.clear(workspaceRoot);
-    workspaceSessionCleanRoots.insert(
-        workspaceSessionRootKey(workspaceRoot));
-    if (statusBar())
-        statusBar()->showMessage(
-            cleared
-                ? QStringLiteral(
-                      "Local workspace session cleared; "
-                      "portable project configuration and "
-                      "legacy .zs are unchanged")
-                : QStringLiteral(
-                      "Failed to clear local workspace session; "
-                      "portable project configuration is unchanged"),
-            cleared ? 4000 : 5000);
-}
-
-void MainWindow::scheduleWorkspaceSessionSave()
-{
-    if (!workspaceManager || !workspaceManager->isWorkspaceOpen())
-        return;
-    if (workspaceSessionCleanRoots.contains(
-            workspaceSessionRootKey(
-                workspaceManager
-                    ->getWorkspacePath()))) {
-        return;
-    }
-
-    if (!workspaceSessionSaveTimer) {
-        workspaceSessionSaveTimer = new QTimer(this);
-        workspaceSessionSaveTimer->setSingleShot(true);
-        connect(workspaceSessionSaveTimer,
-                &QTimer::timeout,
-                this,
-                [this]() { saveWorkspaceSession(false); });
-    }
-    workspaceSessionSaveTimer->start(900);
-}
-
-void MainWindow::noteWorkspaceSessionAvailability()
-{
-    if (!workspaceManager || !workspaceManager->isWorkspaceOpen())
-        return;
-
-    const QString workspaceRoot = workspaceManager->getWorkspacePath();
-    if (workspaceSessionCleanRoots.contains(workspaceSessionRootKey(workspaceRoot)))
-        return;
-    WorkspaceSessionStateService service;
-    if (statusBar()
-        && service.sessionExists(workspaceRoot)) {
-        statusBar()->showMessage(
-            QStringLiteral(
-                "Local workspace session available: "
-                "use ow s restore; project configuration "
-                "loads separately"),
-            5000);
-    } else if (statusBar()
-               && WorkspaceSessionStateService::
-                      legacySessionFileExists(
-                          workspaceRoot)) {
-        statusBar()->showMessage(
-            QStringLiteral(
-                "Legacy .zs detected: ow s restore imports "
-                "local state read-only; project settings "
-                "load separately"),
-            6000);
+    if (settingsCenterPanel) {
+        const SettingsCenterSnapshot snapshot =
+            settingsCenterPanel->snapshot();
+        workspaceSessionCoordinator->setRestoreOnActivation(
+            snapshot.value(
+                QStringLiteral(
+                    "layout.restoreWorkspaceSession")).toBool());
+        workspaceSessionCoordinator->setRememberPanelState(
+            snapshot.value(
+                QStringLiteral(
+                    "layout.rememberPanelState")).toBool());
     }
 }
 
@@ -7756,8 +5836,10 @@ void MainWindow::showRecentWorkspacesDialog()
             item ? item->data(0, Qt::UserRole).toString() : QString();
         if (path.isEmpty() || !workspaceManager)
             return;
-        if (workspaceManager->openWorkspace(path))
+        if (workspaceSessionCoordinator
+            && workspaceSessionCoordinator->openWorkspace(path)) {
             dialog->close();
+        }
     };
 
     connect(tree,
@@ -7833,7 +5915,8 @@ void MainWindow::resetPanelLayout()
 
     showDockWidget(settingsCenterDockWidget);
 
-    scheduleWorkspaceSessionSave();
+    if (workspaceSessionCoordinator)
+        workspaceSessionCoordinator->scheduleSessionSave();
     if (statusBar())
         statusBar()->showMessage(tr("Panel layout reset"), 3000);
 }
@@ -8035,14 +6118,16 @@ void MainWindow::applySettingsCenterSnapshot(
                 QStringLiteral("formatter.formatOnSave")).toBool());
     }
 
-    restoreWorkspaceSessionOnActivation =
-        snapshot.value(
-            QStringLiteral(
-                "layout.restoreWorkspaceSession")).toBool();
-    rememberWorkspacePanelState =
-        snapshot.value(
-            QStringLiteral(
-                "layout.rememberPanelState")).toBool();
+    if (workspaceSessionCoordinator) {
+        workspaceSessionCoordinator->setRestoreOnActivation(
+            snapshot.value(
+                QStringLiteral(
+                    "layout.restoreWorkspaceSession")).toBool());
+        workspaceSessionCoordinator->setRememberPanelState(
+            snapshot.value(
+                QStringLiteral(
+                    "layout.rememberPanelState")).toBool());
+    }
 
     editorAnnotationDisplayOptions.enabled =
         snapshot.value(
@@ -8223,8 +6308,10 @@ void MainWindow::closeEvent(QCloseEvent *event)
         fileCommandCoordinator->handleCloseEvent(event, this);
     else
         event->accept();
-    if (event && event->isAccepted())
-        saveWorkspaceSession(false);
+    if (event && event->isAccepted()
+        && workspaceSessionCoordinator) {
+        workspaceSessionCoordinator->saveBeforeWorkspaceTransition();
+    }
 }
 
 void MainWindow::setupSemanticRuntime()

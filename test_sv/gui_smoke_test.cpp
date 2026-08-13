@@ -2418,11 +2418,12 @@ static void runWorkspaceSessionCloseSaveOrderRegression()
                        && window.tabManager->openFileInTab(sessionFile),
                    true);
 
-        const WorkspaceSessionState capturedBeforeClose =
-            window.captureWorkspaceSessionState();
+        const QList<WorkspaceSessionTabState> capturedBeforeClose =
+            window.tabManager->workspaceSessionTabs(
+                workspaceDir.path());
         expectBool("workspace session close pre-capture has tab",
-                   capturedBeforeClose.tabs.size() == 1
-                       && QFileInfo(capturedBeforeClose.tabs.first().filePath)
+                   capturedBeforeClose.size() == 1
+                       && QFileInfo(capturedBeforeClose.first().filePath)
                               .fileName()
                               == QStringLiteral("session_close_top.sv"),
                    true);
@@ -12438,15 +12439,16 @@ int main(int argc, char** argv)
 
     MainWindow window;
     const QString productVersion = QLatin1String(APP_VERSION);
-    expectBool("product version baseline is v0.1.0",
-               productVersion == QStringLiteral("0.1.0"),
+    expectBool("product version baseline is v0.2.0",
+               productVersion == QStringLiteral("0.2.0"),
                true);
     expectBool("product version omits dependency marker",
                !productVersion.contains(QStringLiteral("slang"), Qt::CaseInsensitive),
                true);
     expectBool("main window title shows product version",
                window.windowTitle().contains(QStringLiteral("ZeroSlack"))
-                   && window.windowTitle().contains(QStringLiteral("v0.1.0"))
+                   && window.windowTitle().contains(
+                       QStringLiteral("v%1").arg(productVersion))
                    && !window.windowTitle().contains(QStringLiteral("slang"),
                                                      Qt::CaseInsensitive),
                true);
@@ -12456,10 +12458,13 @@ int main(int argc, char** argv)
         const QList<QLabel*> labels = window.statusBar()->findChildren<QLabel*>();
         for (const QLabel* label : labels) {
             statusVersionVisible =
-                statusVersionVisible || label->text() == QStringLiteral("v0.1.0");
+                statusVersionVisible
+                || label->text()
+                       == QStringLiteral("v%1").arg(productVersion);
             statusVersionTooltipVisible =
                 statusVersionTooltipVisible
-                || (label->toolTip().contains(QStringLiteral("ZeroSlack v0.1.0"))
+                || (label->toolTip().contains(
+                        QStringLiteral("ZeroSlack v%1").arg(productVersion))
                     && !label->toolTip().contains(QStringLiteral("slang"),
                                                   Qt::CaseInsensitive));
         }

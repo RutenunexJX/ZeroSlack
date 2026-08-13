@@ -21,12 +21,15 @@ class ZEROSLACK_API FileCommandCoordinator : public QObject
 public:
     using WorkspaceDirectorySelector =
         std::function<QString(QWidget* dialogParent)>;
+    using WorkspaceOpenHandler =
+        std::function<bool(const QString& folderPath)>;
 
     explicit FileCommandCoordinator(TabManager* tabManager,
                                     WorkspaceManager* workspaceManager,
                                     QObject* parent = nullptr);
 
     void setWorkspaceDirectorySelector(WorkspaceDirectorySelector selector);
+    void setWorkspaceOpenHandler(WorkspaceOpenHandler handler);
 
     void newFile();
     void openFile();
@@ -82,6 +85,7 @@ private:
     CommandTargets targets;
     EditorCommandDispatcher editorCommands;
     WorkspaceDirectorySelector workspaceDirectorySelector;
+    WorkspaceOpenHandler workspaceOpenHandler;
 };
 
 #endif // FILECOMMANDCOORDINATOR_H

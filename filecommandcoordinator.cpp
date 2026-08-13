@@ -31,6 +31,12 @@ void FileCommandCoordinator::setWorkspaceDirectorySelector(
     workspaceDirectorySelector = std::move(selector);
 }
 
+void FileCommandCoordinator::setWorkspaceOpenHandler(
+    WorkspaceOpenHandler handler)
+{
+    workspaceOpenHandler = std::move(handler);
+}
+
 void FileCommandCoordinator::CommandTargets::set(
     TabManager* newTabManager,
     WorkspaceManager* newWorkspaceManager)
@@ -189,7 +195,10 @@ void FileCommandCoordinator::openDirectoryAsWorkspace()
         qobject_cast<QWidget*>(parent()));
     if (folderPath.isEmpty())
         return;
-    targets.openWorkspace(folderPath);
+    if (workspaceOpenHandler)
+        workspaceOpenHandler(folderPath);
+    else
+        targets.openWorkspace(folderPath);
 }
 
 void FileCommandCoordinator::connectActions(

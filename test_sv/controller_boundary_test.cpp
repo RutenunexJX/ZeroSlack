@@ -95,6 +95,30 @@ int main(int argc, char* argv[])
         readSource(
             root,
             QStringLiteral("mainwindow.cpp"));
+    const QString mainWindowHeader =
+        readSource(
+            root,
+            QStringLiteral("mainwindow.h"));
+    const QString workspaceSessionCoordinatorHeader =
+        readSource(
+            root,
+            QStringLiteral(
+                "workspacesessioncoordinator.h"));
+    const QString workspaceSessionCoordinatorSource =
+        readSource(
+            root,
+            QStringLiteral(
+                "workspacesessioncoordinator.cpp"));
+    const QString rtlActionCoordinatorHeader =
+        readSource(
+            root,
+            QStringLiteral(
+                "rtlactioncoordinator.h"));
+    const QString rtlActionCoordinatorSource =
+        readSource(
+            root,
+            QStringLiteral(
+                "rtlactioncoordinator.cpp"));
     const QString editorSplitSource =
         readSource(
             root,
@@ -475,6 +499,144 @@ int main(int argc, char* argv[])
                    "invocation.parameters")}),
           QStringLiteral(
               "MainWindow owns targeted bottom-page Action routes"));
+
+    check(!workspaceSessionCoordinatorHeader.isEmpty()
+              && !workspaceSessionCoordinatorSource.isEmpty()
+              && cmake.contains(
+                  QStringLiteral(
+                      "workspacesessioncoordinator.cpp")),
+          QStringLiteral(
+              "workspace session coordinator is an explicit build boundary"));
+    check(containsAll(
+              workspaceSessionCoordinatorHeader,
+              {QStringLiteral(
+                   "class ZEROSLACK_API WorkspaceSessionCoordinator"),
+               QStringLiteral("QTimer* saveTimer"),
+               QStringLiteral("QSet<QString> cleanWorkspaceRoots"),
+               QStringLiteral("openWorkspace("),
+               QStringLiteral("switchWorkspace("),
+               QStringLiteral("closeWorkspace(")})
+              && containsAll(
+                  workspaceSessionCoordinatorSource,
+                  {QStringLiteral(
+                       "&TabManager::workspaceSessionStateChanged"),
+                   QStringLiteral(
+                       "&WorkspaceManager::workspaceActivated"),
+                   QStringLiteral(
+                       "&WorkspaceManager::workspaceClosed"),
+                   QStringLiteral(
+                       "WorkspaceSessionCoordinator::flushScheduledSave")}),
+          QStringLiteral(
+              "workspace session coordinator owns lifecycle state timer and connections"));
+    check(containsNone(
+              mainWindowHeader,
+              {QStringLiteral("workspaceSessionSaveTimer"),
+               QStringLiteral("workspaceSessionCleanRoots"),
+               QStringLiteral("captureWorkspaceSessionState("),
+               QStringLiteral("saveWorkspaceSession("),
+               QStringLiteral("restoreWorkspaceSession("),
+               QStringLiteral("cleanWorkspaceSession("),
+               QStringLiteral("scheduleWorkspaceSessionSave(")})
+              && containsNone(
+                  mainWindowSource,
+                  {QStringLiteral(
+                       "WorkspaceSessionStateService service"),
+                   QStringLiteral(
+                       "&TabManager::workspaceSessionStateChanged")}),
+          QStringLiteral(
+              "MainWindow has no parallel workspace session implementation"));
+
+    check(!rtlActionCoordinatorHeader.isEmpty()
+              && !rtlActionCoordinatorSource.isEmpty()
+              && cmake.contains(
+                  QStringLiteral(
+                      "rtlactioncoordinator.cpp")),
+          QStringLiteral(
+              "RTL action coordinator is an explicit build boundary"));
+    check(containsAll(
+              rtlActionCoordinatorHeader,
+              {QStringLiteral(
+                   "class ZEROSLACK_API RtlActionCoordinator"),
+               QStringLiteral("TabManager* tabManager"),
+               QStringLiteral(
+                   "WorkspaceManager* workspaceManager"),
+               QStringLiteral(
+                   "SemanticDockCoordinator* semanticDocks"),
+               QStringLiteral(
+                   "PanelLayoutController* panelLayoutController"),
+               QStringLiteral("QWidget* dialogParent"),
+               QStringLiteral("resolveContext"),
+               QStringLiteral("showPanel")})
+              && !rtlActionCoordinatorHeader.contains(
+                  QStringLiteral("MainWindow")),
+          QStringLiteral(
+              "RTL action coordinator uses explicit hosts and narrow callbacks"));
+    check(containsAll(
+              rtlActionCoordinatorSource,
+              {QStringLiteral(
+                   "RtlActionCoordinator::executeRtlRenameAction("),
+               QStringLiteral(
+                   "RtlActionCoordinator::executeRtlConnectionTransformAction("),
+               QStringLiteral(
+                   "RtlActionCoordinator::executeInstancePairConnectionAction("),
+               QStringLiteral(
+                   "RtlActionCoordinator::executeMultiSignalPropagationAction("),
+               QStringLiteral(
+                   "RtlHighRiskEditPanelCoordinator"),
+               QStringLiteral(
+                   "instancePairConnectionWorkflow()"),
+               QStringLiteral(
+                   "multiSignalPropagationWorkflow()"),
+               QStringLiteral(
+                   "rtlActionDocumentManager()"),
+               QStringLiteral(
+                   "selectInstancePair(")})
+              && containsNone(
+                  rtlActionCoordinatorSource,
+                  {QStringLiteral("RtlRenamePlanner"),
+                   QStringLiteral(
+                       "RtlConnectionTransformPlanner"),
+                   QStringLiteral(
+                       "MultiSignalPropagationPlanner"),
+                   QStringLiteral(
+                       "WorkspaceEditTransactionService")}),
+          QStringLiteral(
+              "RTL action coordinator owns launch UI while reusing existing workflows"));
+    const QStringList migratedRtlOrchestration = {
+        QStringLiteral("executeRtlRenameAction("),
+        QStringLiteral(
+            "executeRtlConnectionTransformAction("),
+        QStringLiteral(
+            "executeInstancePairConnectionAction("),
+        QStringLiteral(
+            "executeMultiSignalPropagationAction("),
+        QStringLiteral("captureRtlActionDocuments("),
+        QStringLiteral("resolveRtlRenameSubject("),
+        QStringLiteral("resolveRtlInstanceSubject("),
+        QStringLiteral("selectInstancePair("),
+        QStringLiteral("InstancePairUserSelection"),
+    };
+    check(containsNone(
+              mainWindowHeader,
+              migratedRtlOrchestration)
+              && containsNone(
+                  mainWindowSource,
+                  migratedRtlOrchestration),
+          QStringLiteral(
+              "MainWindow has no parallel RTL action orchestration"));
+    check(containsAll(
+              mainWindowSource,
+              {QStringLiteral(
+                   "setupRtlActionCoordinator("),
+               QStringLiteral(
+                   "RtlActionCoordinator::handlesRoute(route)"),
+               QStringLiteral(
+                   "rtlActionCoordinator->execute(")}),
+          QStringLiteral(
+              "MainWindow only assembles and delegates owned RTL routes"));
+    check(sourceLineCount(mainWindowSource) <= 7000,
+          QStringLiteral(
+              "mainwindow.cpp remains below the post-extraction ownership ceiling"));
 
     const QStringList insightModules = {
         QStringLiteral("rtlinsightspanelviewstate"),

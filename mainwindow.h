@@ -25,6 +25,8 @@ class SettingsCenterService;
 class MyCodeEditor;
 class TabManager;
 class WorkspaceManager;
+class WorkspaceSessionCoordinator;
+class RtlActionCoordinator;
 class NavigationCommandCoordinator;
 class NavigationManager;
 class NavigationPaneCoordinator;
@@ -56,7 +58,6 @@ class QProgressBar;
 class QPushButton;
 class QStackedWidget;
 class QTabBar;
-class QTimer;
 class QToolButton;
 class QTreeWidget;
 class QVBoxLayout;
@@ -68,7 +69,6 @@ struct EditorActionContext;
 struct EditorActionContextQuery;
 struct EditorSemanticContext;
 struct EditorModeSnapshot;
-struct WorkspaceSessionState;
 struct UserTemplateLoadReport;
 struct SemanticAnalysisTelemetry;
 struct SettingsCenterSnapshot;
@@ -138,12 +138,15 @@ private:
     std::unique_ptr<EditorActionContextService> editorActionContextService;
     std::unique_ptr<InsightFocusController> insightFocusController;
     std::unique_ptr<FileCommandCoordinator> fileCommandCoordinator;
+    std::unique_ptr<WorkspaceSessionCoordinator>
+        workspaceSessionCoordinator;
     std::unique_ptr<FoldBlockShelfModel> foldShelfModel;
     FoldBlockShelfPanel* foldShelfPanel = nullptr;
     QDockWidget* foldShelfDock = nullptr;
     std::unique_ptr<GlobalControlCoordinator> globalControlCoordinator;
     std::unique_ptr<NavigationCommandCoordinator> navigationCommandCoordinator;
     std::unique_ptr<SemanticDockCoordinator> semanticDocks;
+    std::unique_ptr<RtlActionCoordinator> rtlActionCoordinator;
     std::unique_ptr<WorkspaceEditDocumentManager>
         scopedReplaceDocuments;
     std::unique_ptr<ScopedReplaceWorkflow>
@@ -200,14 +203,10 @@ private:
     EditorPackageToolAvailability packageToolsState;
     bool packageToolsStateValid = false;
     QProgressBar* workspaceProgressBar = nullptr;
-    QTimer* workspaceSessionSaveTimer = nullptr;
     QString pendingActiveEditorPassiveRefreshFile;
     QString diagnosticsAnalysisState;
-    QSet<QString> workspaceSessionCleanRoots;
     bool pendingActiveEditorPassiveRefreshAll = false;
     bool activeEditorPassiveRefreshQueued = false;
-    bool restoreWorkspaceSessionOnActivation = true;
-    bool rememberWorkspacePanelState = true;
     EditorAnnotationDisplayOptions
         editorAnnotationDisplayOptions;
     std::uint64_t semanticDecorationGeneration = 0;
@@ -311,23 +310,11 @@ private:
     ActionExecutionResult executeRegisteredUiAction(
         const QString& actionId,
         const QVariantMap& parameters);
-    ActionExecutionResult executeInstancePairConnectionAction(
-        const ActionInvocation& invocation);
-    ActionExecutionResult executeMultiSignalPropagationAction(
-        const ActionInvocation& invocation);
-    ActionExecutionResult executeRtlRenameAction(
-        const ActionInvocation& invocation);
-    ActionExecutionResult executeRtlConnectionTransformAction(
-        const ActionInvocation& invocation);
     void refreshSettingsCenterWorkspace(
         const QString& workspaceRoot);
     void setupEditorCoordinator();
-    WorkspaceSessionState captureWorkspaceSessionState() const;
-    bool saveWorkspaceSession(bool showStatus = true);
-    bool restoreWorkspaceSession();
-    void cleanWorkspaceSession();
-    void scheduleWorkspaceSessionSave();
-    void noteWorkspaceSessionAvailability();
+    void setupRtlActionCoordinator();
+    void setupWorkspaceSessionCoordinator();
 
     void setupManagerConnections();
     void setupSemanticRuntime();

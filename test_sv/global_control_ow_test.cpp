@@ -7,11 +7,13 @@
 #include <QFileInfo>
 #include <QPointer>
 #include <QQueue>
+#include <QSettings>
 #include <QSet>
 #include <QStringList>
 #include <QThread>
 #include <QThreadPool>
 #include <QTreeWidget>
+#include <QTemporaryDir>
 
 #include <cstdio>
 #include <algorithm>
@@ -22,6 +24,7 @@
 
 #define private public
 #include "mainwindow.h"
+#include "workspacesessioncoordinator.h"
 #include "analysisscheduler.h"
 #include "documentmodel.h"
 #include "editorruntime.h"
@@ -36,6 +39,7 @@
 #include "navigationwidget.h"
 #include "semanticindex.h"
 #include "semanticindexsnapshot.h"
+#include "settingscenterservice.h"
 #include "symbolanalyzer.h"
 #include "tabmanager.h"
 #include "workspacemanager.h"
@@ -440,17 +444,46 @@ int main(int argc, char** argv)
     const auto symbolGateExited =
         std::make_shared<std::atomic_bool>(false);
 
+    QTemporaryDir sessionStateDir;
+    check("session state isolation directory exists",
+          sessionStateDir.isValid());
+    if (!sessionStateDir.isValid())
+        return failures;
+    const QByteArray previousSessionStorage =
+        qgetenv("ZEROSLACK_SESSION_STORAGE_PATH");
+    qputenv(
+        "ZEROSLACK_SESSION_STORAGE_PATH",
+        QDir(sessionStateDir.path())
+            .absoluteFilePath(
+                QStringLiteral("workspace-sessions.ini"))
+            .toUtf8());
+    QSettings::setDefaultFormat(QSettings::IniFormat);
+    QSettings::setPath(
+        QSettings::IniFormat,
+        QSettings::UserScope,
+        QDir(sessionStateDir.path())
+            .absoluteFilePath(QStringLiteral("qsettings")));
+    SettingsCenterService isolatedSettings;
+    const SettingsCenterSnapshot initialSettings =
+        isolatedSettings.load();
+    QVariantMap globalSettings = initialSettings.globalValues;
+    globalSettings.insert(
+        QStringLiteral("layout.restoreWorkspaceSession"),
+        false);
+    check("workspace session auto-restore is disabled in isolation",
+          isolatedSettings
+              .saveGlobal(globalSettings,
+                          initialSettings.globalRevision)
+              .saved);
+
     {
     MainWindow window;
     window.workspaceManager->setRecentWorkspacePersistenceEnabledForTesting(
         false);
     // This test owns the clean "ow 1" scan path. Keep the real-project
-    // fixtures and any user-local session snapshots read-only so restored
-    // tabs or cached scans cannot change the preconditions between runs.
-    window.workspaceSessionCleanRoots.insert(
-        normalizedPath(newWorkspace));
-    window.workspaceSessionCleanRoots.insert(
-        normalizedPath(hugeWorkspace));
+    // fixtures and user-local session snapshots read-only so restored tabs or
+    // cached scans cannot change the preconditions between runs.
+    window.workspaceSessionCoordinator->setRestoreOnActivation(false);
     window.resize(960, 640);
     window.show();
     QPointer<MainWindow> windowGuard(&window);
@@ -960,6 +993,12 @@ int main(int argc, char** argv)
           symbolGateExited->load(std::memory_order_acquire));
     check("semantic runtime detaches relationship engine at teardown",
           SemanticIndex::getInstance()->relationshipEngine() == nullptr);
+
+    if (previousSessionStorage.isEmpty())
+        qunsetenv("ZEROSLACK_SESSION_STORAGE_PATH");
+    else
+        qputenv("ZEROSLACK_SESSION_STORAGE_PATH",
+                previousSessionStorage);
 
     std::printf("%d failure(s)\n", failures);
     std::fflush(stdout);
