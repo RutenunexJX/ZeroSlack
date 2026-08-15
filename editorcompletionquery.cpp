@@ -61,6 +61,7 @@ CompletionPopupKeyState EditorCompletionQueryHelper::completionPopupKeyState(
 {
     CompletionPopupKeyQuery query;
     query.key = context.key;
+    query.modifiers = context.modifiers;
     query.currentIndexValid = context.currentIndexValid;
     query.hasRows = context.hasRows;
     return completionPopupKeyState(query);

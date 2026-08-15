@@ -786,6 +786,28 @@ TSNumericLiteralTarget TSDocument::numericLiteralAt(int charOffset) const
         return TSNode{};
     };
 
+    auto stringNodeAt = [this](int position) {
+        const uint32_t byte =
+            static_cast<uint32_t>(qMax(0, position)) * 2u;
+        TSNode node = ts_node_descendant_for_byte_range(
+            ts_tree_root_node(m_tree), byte, byte);
+        TSNode stringNode{};
+        while (!ts_node_is_null(node)) {
+            const char* type = ts_node_type(node);
+            if (type
+                && (std::strcmp(type, "one_line_comment") == 0
+                    || std::strcmp(type, "block_comment") == 0
+                    || std::strcmp(type,
+                                   "include_compiler_directive") == 0)) {
+                return TSNode{};
+            }
+            if (type && std::strcmp(type, "string_literal") == 0)
+                stringNode = node;
+            node = ts_node_parent(node);
+        }
+        return stringNode;
+    };
+
     TSNode numeric = numericNodeAt(probe);
     if (ts_node_is_null(numeric)
         && charOffset > 0
@@ -793,8 +815,40 @@ TSNumericLiteralTarget TSDocument::numericLiteralAt(int charOffset) const
             || m_text.at(charOffset).isSpace())) {
         numeric = numericNodeAt(charOffset - 1);
     }
-    if (ts_node_is_null(numeric))
+    if (ts_node_is_null(numeric)) {
+        TSNode stringNode = stringNodeAt(probe);
+        if (ts_node_is_null(stringNode)
+            && charOffset > 0) {
+            stringNode = stringNodeAt(charOffset - 1);
+        }
+        if (ts_node_is_null(stringNode))
+            return target;
+
+        const int tokenStart =
+            static_cast<int>(ts_node_start_byte(stringNode) / 2u);
+        const int tokenEnd =
+            static_cast<int>(ts_node_end_byte(stringNode) / 2u);
+        if (tokenStart < 0
+            || tokenEnd <= tokenStart + 2
+            || tokenEnd > m_text.size()) {
+            return target;
+        }
+        const QString token =
+            m_text.mid(tokenStart, tokenEnd - tokenStart);
+        if (!token.startsWith(QLatin1Char('"'))
+            || !token.endsWith(QLatin1Char('"'))
+            || token.startsWith(QStringLiteral("\"\"\""))) {
+            return target;
+        }
+        target.startChar = tokenStart + 1;
+        target.endChar = tokenEnd - 1;
+        target.text = m_text.mid(
+            target.startChar,
+            target.endChar - target.startChar);
+        target.evaluationText = token;
+        target.stringLiteral = true;
         return target;
+    }
 
     target.startChar = static_cast<int>(ts_node_start_byte(numeric) / 2u);
     target.endChar = static_cast<int>(ts_node_end_byte(numeric) / 2u);
@@ -3916,13 +3970,17 @@ TSNode leafContainingChar(TSNode root, int charOffset)
 }
 
 template <typename Text>
-bool whitespaceOnlyBetween(const Text& text, int start, int end)
+bool horizontalWhitespaceOnlyBetween(const Text& text,
+                                     int start,
+                                     int end)
 {
     const int boundedStart = qBound(0, start, text.size());
     const int boundedEnd = qBound(boundedStart, end, text.size());
     for (int index = boundedStart; index < boundedEnd; ++index) {
-        if (!text.at(index).isSpace())
+        if (text.at(index) != QLatin1Char(' ')
+            && text.at(index) != QLatin1Char('\t')) {
             return false;
+        }
     }
     return true;
 }
@@ -4031,12 +4089,19 @@ TSStructuralNewlineTarget TSDocument::structuralNewlineTarget(
         qBound(0, cursorChar, m_text.size());
     const QString baseIndent =
         leadingWhitespaceForLineAt(m_text, boundedCursor);
+    const int previousNewline =
+        boundedCursor > 0
+            ? m_text.lastIndexOf(QLatin1Char('\n'), boundedCursor - 1)
+            : -1;
+    const int lineStart = previousNewline < 0 ? 0 : previousNewline + 1;
+    const QString cursorIndent = baseIndent.left(
+        qBound(0, boundedCursor - lineStart, baseIndent.size()));
     const QString childIndent =
         baseIndent
         + QString(qMax(1, indentWidth), QLatin1Char(' '));
 
     target.insertionText =
-        QStringLiteral("\n") + baseIndent;
+        QStringLiteral("\n") + cursorIndent;
     target.caretOffset = target.insertionText.size();
     if (m_text.isEmpty() || boundedCursor <= 0)
         return target;
@@ -4045,9 +4110,9 @@ TSStructuralNewlineTarget TSDocument::structuralNewlineTarget(
         lastLeafEndingAtOrBefore(
             ts_tree_root_node(m_tree), boundedCursor);
     if (ts_node_is_null(previous)
-        || !whitespaceOnlyBetween(m_text,
-                                  nodeEndChar(previous),
-                                  boundedCursor)
+        || !horizontalWhitespaceOnlyBetween(m_text,
+                                            nodeEndChar(previous),
+                                            boundedCursor)
         || commentOrStringNode(previous)) {
         return target;
     }

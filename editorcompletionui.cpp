@@ -103,6 +103,7 @@ EditorCompletionPopupKeyContext EditorCompletionUi::popupKeyContextForEvent(
 {
     EditorCompletionPopupKeyContext context;
     context.key = event->key();
+    context.modifiers = int(event->modifiers());
     context.currentIndexValid = currentIndex().isValid();
     context.hasRows = hasRows();
     return context;

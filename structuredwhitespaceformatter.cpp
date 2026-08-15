@@ -64,6 +64,26 @@ bool isStringNode(TSNode node)
         || typeIs(node, "triple_quoted_string");
 }
 
+TSNode enclosingStringNode(TSNode node)
+{
+    while (!ts_node_is_null(node)) {
+        if (isStringNode(node))
+            return node;
+        node = ts_node_parent(node);
+    }
+    return {};
+}
+
+bool shareEnclosingString(const LeafToken& left,
+                          const LeafToken& right)
+{
+    const TSNode leftString = enclosingStringNode(left.node);
+    const TSNode rightString = enclosingStringNode(right.node);
+    return !ts_node_is_null(leftString)
+        && !ts_node_is_null(rightString)
+        && ts_node_eq(leftString, rightString);
+}
+
 struct ProtectedTextRange {
     int start = -1;
     int end = -1;
@@ -338,10 +358,18 @@ bool unaryContext(const QString& previous)
         || binaryOperator(previous);
 }
 
-QString canonicalGap(const QList<LeafToken>& leaves, int index)
+QString canonicalGap(const QList<LeafToken>& leaves,
+                     int index,
+                     const QString& source)
 {
-    const QString previous = leaves.at(index - 1).text;
-    const QString current = leaves.at(index).text;
+    const LeafToken& previousLeaf = leaves.at(index - 1);
+    const LeafToken& currentLeaf = leaves.at(index);
+    if (shareEnclosingString(previousLeaf, currentLeaf)) {
+        return source.mid(previousLeaf.end,
+                          currentLeaf.start - previousLeaf.end);
+    }
+    const QString previous = previousLeaf.text;
+    const QString current = currentLeaf.text;
     const QString beforePrevious =
         index >= 2 ? leaves.at(index - 2).text : QString();
 
@@ -376,14 +404,15 @@ QString canonicalGap(const QList<LeafToken>& leaves, int index)
     return QStringLiteral(" ");
 }
 
-int canonicalWidth(const QList<LeafToken>& leaves)
+int canonicalWidth(const QList<LeafToken>& leaves,
+                   const QString& source)
 {
     if (leaves.isEmpty())
         return 0;
     int width = 0;
     for (int index = 0; index < leaves.size(); ++index) {
         if (index > 0)
-            width += canonicalGap(leaves, index).size();
+            width += canonicalGap(leaves, index, source).size();
         width += leaves.at(index).text.size();
     }
     return width;
@@ -1773,7 +1802,7 @@ private:
         }
         part.start = part.leaves.first().start;
         part.end = part.leaves.last().end;
-        part.width = canonicalWidth(part.leaves);
+        part.width = canonicalWidth(part.leaves, m_source);
         return part;
     }
 
@@ -1795,7 +1824,7 @@ private:
         for (int index = 1; index < part.leaves.size(); ++index) {
             addEdit(part.leaves.at(index - 1).end,
                     part.leaves.at(index).start,
-                    canonicalGap(part.leaves, index));
+                    canonicalGap(part.leaves, index, m_source));
         }
     }
 
@@ -2093,7 +2122,8 @@ private:
         if (item.formal.leaves.isEmpty())
             return {};
         item.formal.end = item.formal.leaves.last().end;
-        item.formal.width = canonicalWidth(item.formal.leaves);
+        item.formal.width = canonicalWidth(
+            item.formal.leaves, m_source);
         if (item.formal.leaves.size() < 2)
             return {};
 
@@ -2188,7 +2218,8 @@ private:
 
         const int keywordColumn = itemIndent;
         const int typeColumn = keywordColumn + keywordWidth + 1;
-        const int nameColumn = typeColumn + typeWidth + 1;
+        const int nameColumn = typeColumn
+            + (typeWidth > 0 ? typeWidth + 1 : 0);
         const int unpackedColumn = nameColumn + nameWidth + 1;
         const int equalColumn = unpackedColumn
             + (unpackedWidth > 0 ? unpackedWidth + 1 : 0);
@@ -2976,8 +3007,11 @@ bool hasIdenticalImmutableLeafTokens(const QString& before,
 } // namespace
 
 QString normalizeLexicalWhitespaceTabs(const QString& text,
-                                       int spacesPerTab)
+                                       int spacesPerTab,
+                                       QString* rejectionReason)
 {
+    if (rejectionReason)
+        rejectionReason->clear();
     if (text.isEmpty()
         || !text.contains(QLatin1Char('\t')))
         return text;
@@ -3022,8 +3056,13 @@ QString normalizeLexicalWhitespaceTabs(const QString& text,
             result.append(text.at(position));
         }
     }
-    if (!hasIdenticalNonWhitespaceStream(text, result))
+    if (!hasIdenticalNonWhitespaceStream(text, result)) {
+        if (rejectionReason) {
+            *rejectionReason = QStringLiteral(
+                "Lexical Tab normalization was rejected because it changed the token stream.");
+        }
         return text;
+    }
     return result;
 }
 
@@ -3033,8 +3072,11 @@ QString formatStructuralIndentation(
     bool indentConditionalBranches,
     bool indentCaseItemBodies,
     bool alignCaseItems,
-    bool preservePreprocessorIndent)
+    bool preservePreprocessorIndent,
+    QString* rejectionReason)
 {
+    if (rejectionReason)
+        rejectionReason->clear();
     if (text.isEmpty())
         return text;
     TreeWhitespaceFormatter formatter(text, indentWidth);
@@ -3044,8 +3086,13 @@ QString formatStructuralIndentation(
             indentCaseItemBodies,
             alignCaseItems,
             preservePreprocessorIndent);
-    if (!hasIdenticalNonWhitespaceStream(text, candidate))
+    if (!hasIdenticalNonWhitespaceStream(text, candidate)) {
+        if (rejectionReason) {
+            *rejectionReason = QStringLiteral(
+                "Structural indentation was rejected because it changed the token stream.");
+        }
         return text;
+    }
     return candidate;
 }
 
@@ -3073,14 +3120,23 @@ bool hasIdenticalNonWhitespaceStream(const QString& before,
     }
 }
 
-QString format(const QString& text, int indentWidth)
+QString format(const QString& text,
+               int indentWidth,
+               QString* rejectionReason)
 {
+    if (rejectionReason)
+        rejectionReason->clear();
     if (text.isEmpty())
         return text;
     TreeWhitespaceFormatter formatter(text, indentWidth);
     const QString candidate = formatter.run();
-    if (!hasIdenticalNonWhitespaceStream(text, candidate))
+    if (!hasIdenticalNonWhitespaceStream(text, candidate)) {
+        if (rejectionReason) {
+            *rejectionReason = QStringLiteral(
+                "Structured alignment was rejected because it changed the token stream.");
+        }
         return text;
+    }
     return candidate;
 }
 

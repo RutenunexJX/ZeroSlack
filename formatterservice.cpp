@@ -1698,9 +1698,14 @@ FormatterReport FormatterService::formatDocument(
     if (text.isEmpty())
         return report;
 
+    QStringList diagnostics;
+    QString stageDiagnostic;
     const QString normalizedText =
         StructuredWhitespaceFormatter::
-            normalizeLexicalWhitespaceTabs(text, 4);
+            normalizeLexicalWhitespaceTabs(
+                text, 4, &stageDiagnostic);
+    if (!stageDiagnostic.isEmpty())
+        diagnostics.append(stageDiagnostic);
     const QString structurallyIndentedText =
         StructuredWhitespaceFormatter::
             formatStructuralIndentation(
@@ -1709,7 +1714,10 @@ FormatterReport FormatterService::formatDocument(
                 options.indentSingleStatementBodies,
                 options.indentCaseItemBodies,
                 options.alignCaseItems,
-                options.preservePreprocessorIndent);
+                options.preservePreprocessorIndent,
+                &stageDiagnostic);
+    if (!stageDiagnostic.isEmpty())
+        diagnostics.append(stageDiagnostic);
     const bool hadFinalNewline =
         structurallyIndentedText.endsWith(QLatin1Char('\n'));
     QStringList lines = splitLines(structurallyIndentedText);
@@ -1726,6 +1734,10 @@ FormatterReport FormatterService::formatDocument(
         conservativeRanges =
             StructuredWhitespaceFormatter::syntaxErrorLineRanges(
                 normalizedText);
+    if (!conservativeRanges.isEmpty()) {
+        diagnostics.append(QStringLiteral(
+            "Formatting preserved syntax-error regions."));
+    }
     QStringList formatted = lines;
     indentNonStructuralContinuations(
         &formatted, options, conservativeRanges);
@@ -1742,15 +1754,26 @@ FormatterReport FormatterService::formatDocument(
         alignCallArgumentContinuationLines(&formatted);
 
     if (options.alignPortLists || options.alignInstanceMaps) {
-        conservativeRanges.append(
+        const QList<StructuredWhitespaceFormatter::LineRange>
+            structuredConservativeRanges =
             StructuredWhitespaceFormatter::
                 conservativeLineRanges(
-                    normalizedText, options.indentWidth));
+                    normalizedText, options.indentWidth);
+        if (!structuredConservativeRanges.isEmpty()) {
+            diagnostics.append(QStringLiteral(
+                "Formatting preserved structurally incomplete regions."));
+            conservativeRanges.append(
+                structuredConservativeRanges);
+        }
     }
     if (formatted.size() != originalLines.size()) {
         report.formattedText = normalizedText;
         report.changed = report.formattedText != text;
         report.formattedLines = originalLines.size();
+        report.outcome = FormatterOutcome::ConservativeFallback;
+        diagnostics.append(QStringLiteral(
+            "Formatting was limited to lexical whitespace because the structural pass changed the line count."));
+        report.diagnostic = diagnostics.join(QLatin1Char(' '));
         return report;
     }
     for (const auto& range : conservativeRanges) {
@@ -1771,7 +1794,10 @@ FormatterReport FormatterService::formatDocument(
     if (options.alignPortLists || options.alignInstanceMaps) {
         report.formattedText = StructuredWhitespaceFormatter::format(
             report.formattedText,
-            options.indentWidth);
+            options.indentWidth,
+            &stageDiagnostic);
+        if (!stageDiagnostic.isEmpty())
+            diagnostics.append(stageDiagnostic);
     }
     report.formattedText =
         restoreOriginalLineEndings(report.formattedText, text);
@@ -1779,9 +1805,19 @@ FormatterReport FormatterService::formatDocument(
             text,
             report.formattedText)) {
         report.formattedText = normalizedText;
+        diagnostics.append(QStringLiteral(
+            "Formatting was limited to lexical whitespace because the structural result changed the token stream."));
     }
     report.changed = report.formattedText != text;
     report.formattedLines = formatted.size();
+    report.diagnostic = diagnostics.join(QLatin1Char(' '));
+    if (!report.diagnostic.isEmpty()) {
+        report.outcome = FormatterOutcome::ConservativeFallback;
+    } else {
+        report.outcome = report.changed
+            ? FormatterOutcome::Applied
+            : FormatterOutcome::Unchanged;
+    }
     return report;
 }
 
@@ -1800,9 +1836,15 @@ FormatterReport FormatterService::formatSelection(
     if (text.isEmpty())
         return report;
 
+    QString selectionDiagnostic;
     const QString normalizedText =
         StructuredWhitespaceFormatter::
-            normalizeLexicalWhitespaceTabs(text, 4);
+            normalizeLexicalWhitespaceTabs(
+                text, 4, &selectionDiagnostic);
+    if (!selectionDiagnostic.isEmpty()) {
+        report.outcome = FormatterOutcome::ConservativeFallback;
+        report.diagnostic = selectionDiagnostic;
+    }
     const bool hadFinalNewline =
         normalizedText.endsWith(QLatin1Char('\n'));
     QStringList lines = splitLines(normalizedText);
@@ -1825,6 +1867,12 @@ FormatterReport FormatterService::formatSelection(
     const QString dedentedText =
         joinLinesPreservingFinalNewline(dedented, hadFinalNewline);
     const FormatterReport inner = formatDocument(dedentedText, options);
+    if (inner.outcome == FormatterOutcome::ConservativeFallback) {
+        report.outcome = inner.outcome;
+        if (!report.diagnostic.isEmpty())
+            report.diagnostic += QLatin1Char(' ');
+        report.diagnostic += inner.diagnostic;
+    }
     QStringList formatted = splitLines(inner.formattedText);
     if (hadFinalNewline && !formatted.isEmpty() && formatted.last().isEmpty())
         formatted.removeLast();
@@ -1842,9 +1890,19 @@ FormatterReport FormatterService::formatSelection(
             text,
             report.formattedText)) {
         report.formattedText = normalizedText;
+        report.outcome = FormatterOutcome::ConservativeFallback;
+        if (!report.diagnostic.isEmpty())
+            report.diagnostic += QLatin1Char(' ');
+        report.diagnostic += QStringLiteral(
+            "Selection formatting was limited to lexical whitespace because the result changed the token stream.");
     }
     report.changed = report.formattedText != text;
     report.formattedLines = formatted.size();
+    if (report.outcome != FormatterOutcome::ConservativeFallback) {
+        report.outcome = report.changed
+            ? FormatterOutcome::Applied
+            : FormatterOutcome::Unchanged;
+    }
     return report;
 }
 

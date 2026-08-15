@@ -335,6 +335,8 @@ EditorLineOperationController::execute(
         return copy(cursor, clipboard);
     case EditorLineOperation::Cut:
         return cut(cursor, clipboard);
+    case EditorLineOperation::DuplicateLines:
+        return duplicateLines(cursor);
     case EditorLineOperation::DeleteLines:
         return deleteLines(cursor);
     case EditorLineOperation::JoinWithNextLine:
@@ -424,6 +426,78 @@ EditorLineOperationController::cut(
         successResult(changed);
     result.clipboardText = text;
     return result;
+}
+
+EditorLineOperationResult
+EditorLineOperationController::duplicateLines(
+    QTextCursor& cursor) const
+{
+    QTextDocument* document = cursor.document();
+    if (!document) {
+        return failureResult(
+            QStringLiteral(
+                "No text document is available."));
+    }
+
+    const bool hadSelection = cursor.hasSelection();
+    const int selectionStart = cursor.selectionStart();
+    const int selectionEnd = cursor.selectionEnd();
+    if (hadSelection && selectionEnd > selectionStart) {
+        const QString selectedText = plainTextInRange(
+            document, {selectionStart, selectionEnd});
+        QTextCursor edit(document);
+        edit.setPosition(selectionEnd);
+        edit.beginEditBlock();
+        edit.insertText(selectedText);
+        edit.endEditBlock();
+        edit.setPosition(selectionEnd);
+        edit.setPosition(selectionEnd + selectedText.size(),
+                         QTextCursor::KeepAnchor);
+        cursor = edit;
+        return successResult(true);
+    }
+
+    const QTextBlock first = blockAtCursor(cursor);
+    if (!first.isValid()) {
+        return failureResult(
+            QStringLiteral(
+                "The current logical line is unavailable."));
+    }
+
+    const int sourceStart = first.position();
+    const QTextBlock afterLast = first.next();
+    const int sourceEnd = afterLast.isValid()
+        ? afterLast.position()
+        : documentEnd(document);
+    if (sourceEnd < sourceStart) {
+        return failureResult(
+            QStringLiteral(
+                "The selected logical-line range is invalid."));
+    }
+
+    const QString sourceText = plainTextInRange(
+        document, {sourceStart, sourceEnd});
+    const bool sourceHasTrailingNewline =
+        afterLast.isValid();
+    const QString insertionText = sourceHasTrailingNewline
+        ? sourceText
+        : QStringLiteral("\n") + sourceText;
+    const int duplicateStart = sourceEnd
+        + (sourceHasTrailingNewline ? 0 : 1);
+
+    QTextCursor edit(document);
+    edit.setPosition(sourceEnd);
+    edit.beginEditBlock();
+    edit.insertText(insertionText);
+    edit.endEditBlock();
+
+    const int originalColumn = qMax(
+        0, cursor.position() - first.position());
+    edit.setPosition(
+        duplicateStart
+        + qMin(originalColumn, first.text().size()));
+    cursor = edit;
+    return successResult(true);
 }
 
 EditorLineOperationResult

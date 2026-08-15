@@ -7,6 +7,7 @@
 #include "slangsymbolpresentation.h"
 #include "symbolanalyzer.h"
 #include "symbolhoverservice.h"
+#include "tsdocument.h"
 #include "workspacesymbolanalysiscontroller.h"
 #include "editorsemanticcontextservice.h"
 
@@ -1360,6 +1361,95 @@ void runGhostAnnotationContentPolicyRegression()
                        return representation.contains(
                            QLatin1Char('\''));
                    }));
+    const EffectiveLiteralResult asciiLiteral =
+        EffectiveValueService::evaluateLiteral(
+            QStringLiteral("\"A\""),
+            true);
+    expect("single ASCII character uses the numeric radix formatter",
+           asciiLiteral.available
+               && asciiLiteral.valueText
+                      == QStringLiteral("character: \"A\"")
+               && asciiLiteral.bitWidthText == QStringLiteral("8")
+               && asciiLiteral.radixRepresentations
+                      == QStringList{
+                          QStringLiteral("binary: 100_0001"),
+                          QStringLiteral("octal: 101"),
+                          QStringLiteral("decimal: 65"),
+                          QStringLiteral("hex: 41")});
+    const EffectiveLiteralResult escapedAsciiLiteral =
+        EffectiveValueService::evaluateLiteral(
+            QStringLiteral("\"\\n\""),
+            true);
+    expect("escaped ASCII character preserves its source spelling",
+           escapedAsciiLiteral.available
+               && escapedAsciiLiteral.valueText
+                      == QStringLiteral("character: \"\\n\"")
+               && escapedAsciiLiteral.radixRepresentations.contains(
+                   QStringLiteral("decimal: 10")));
+    const EffectiveLiteralResult multiCharacterAscii =
+        EffectiveValueService::evaluateLiteral(
+            QStringLiteral("\"CODER\""), true);
+    expect("multi-character ASCII string uses its packed numeric value",
+           multiCharacterAscii.available
+               && multiCharacterAscii.valueText
+                      == QStringLiteral("characters: \"CODER\"")
+               && multiCharacterAscii.bitWidthText
+                      == QStringLiteral("40")
+               && multiCharacterAscii.radixRepresentations.contains(
+                   QStringLiteral("hex: 43_4f44_4552")));
+    expect("non-ASCII strings are not numeric literals",
+           !EffectiveValueService::evaluateLiteral(
+                QStringLiteral("\"中\""), true).available);
+
+    const QString asciiHoverSource =
+        QStringLiteral(
+            "module ascii_hover;\n"
+            "  initial value = \"~\";\n"
+            "endmodule\n");
+    TSDocument asciiHoverDocument;
+    asciiHoverDocument.setText(asciiHoverSource);
+    GhostAnnotationService asciiGhost;
+    const GhostNumericLiteralReport asciiHover =
+        asciiGhost.numericLiteralAt({
+            &asciiHoverDocument,
+            static_cast<int>(
+                asciiHoverSource.indexOf(QStringLiteral("~")))
+        });
+    expect("ASCII hover states the character and equivalent values",
+           asciiHover.available
+               && asciiHover.displayText.startsWith(
+                   QStringLiteral("character: \"~\"\n"))
+               && asciiHover.radixRepresentations.contains(
+                   QStringLiteral("decimal: 126"))
+               && asciiHover.radixRepresentations.contains(
+                   QStringLiteral("hex: 7e")));
+    const QString stringHoverSource =
+        QStringLiteral(
+            "module string_hover;\n"
+            "  initial non_ascii = \"中\";\n"
+            "  parameter P_MODE = \"CODER\";\n"
+            "  `include \"A\"\n"
+            "endmodule\n");
+    TSDocument stringHoverDocument;
+    stringHoverDocument.setText(stringHoverSource);
+    const auto stringHover =
+        [&asciiGhost,
+         &stringHoverDocument,
+         &stringHoverSource](const QString& token) {
+            return asciiGhost.numericLiteralAt({
+                &stringHoverDocument,
+                static_cast<int>(stringHoverSource.indexOf(token))
+            });
+        };
+    expect("parameter string hover exposes its packed numeric value",
+           stringHover(QStringLiteral("CODER")).available
+               && stringHover(QStringLiteral("CODER"))
+                      .radixRepresentations.contains(
+                          QStringLiteral("hex: 43_4f44_4552")));
+    expect("non-ASCII and include strings do not open numeric hover",
+           !stringHover(QStringLiteral("中")).available
+               && !stringHover(QStringLiteral("\"A\""))
+                       .available);
     const EffectiveLiteralResult fourDigitBoundary =
         EffectiveValueService::evaluateLiteral(
             QStringLiteral("16'hffff"));

@@ -19,7 +19,8 @@ struct LineRange {
 // Replaces lexical-whitespace Tab characters with a fixed number of spaces.
 // Tree-sitter comment and string ranges are immutable and remain byte-exact.
 QString normalizeLexicalWhitespaceTabs(const QString& text,
-                                       int spacesPerTab);
+                                       int spacesPerTab,
+                                       QString* rejectionReason = nullptr);
 
 // Re-indents parsed SystemVerilog structure from Tree-sitter ownership.
 // Edits are limited to line-leading whitespace and case-label gaps.
@@ -29,12 +30,15 @@ QString formatStructuralIndentation(
     bool indentConditionalBranches = true,
     bool indentCaseItemBodies = true,
     bool alignCaseItems = true,
-    bool preservePreprocessorIndent = true);
+    bool preservePreprocessorIndent = true,
+    QString* rejectionReason = nullptr);
 
 // Formats module headers, ANSI parameter / port declarations, and module
 // instantiation associations from Tree-sitter spans. Every produced edit is
 // confined to a whitespace gap between immutable syntax tokens.
-QString format(const QString& text, int indentWidth);
+QString format(const QString& text,
+               int indentWidth,
+               QString* rejectionReason = nullptr);
 
 // Returns syntax regions that the structured formatter cannot update as one
 // complete whitespace-only transaction. FormatterService uses these ranges

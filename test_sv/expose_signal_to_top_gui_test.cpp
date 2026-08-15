@@ -9,6 +9,7 @@
 #include "editorcoordinator.h"
 #include "exposesignaltotoppreview.h"
 #include "exposesignaltotopservice.h"
+#include "formatterservice.h"
 #include "mycodeeditor.h"
 #include "semantic_fixture_records.h"
 #include "semanticindexsnapshot.h"
@@ -35,6 +36,7 @@
 #include <QPushButton>
 #include <QSignalSpy>
 #include <QSignalBlocker>
+#include <QStatusBar>
 #include <QTabWidget>
 #include <QTemporaryDir>
 #include <QTest>
@@ -1103,15 +1105,21 @@ void runContextActionRegistryExecutionRegression()
     QTextCursor occurrenceCursor(editor->document());
     occurrenceCursor.setPosition(assignmentFirst + 2);
     editor->setTextCursor(occurrenceCursor);
+    const auto invokeNextOccurrence = [editor]() {
+        bool handled = false;
+        emit editor->registeredActionRequested(
+            QStringLiteral("select.nextSymbolOccurrence"),
+            {},
+            &handled);
+        QCoreApplication::processEvents(
+            QEventLoop::AllEvents, 50);
+        return handled;
+    };
     resetApplicationActionExecutionHistory();
-    QTest::keyClick(
-        editor,
-        Qt::Key_D,
-        Qt::ControlModifier);
-    QCoreApplication::processEvents(
-        QEventLoop::AllEvents, 50);
+    const bool firstOccurrenceHandled = invokeNextOccurrence();
     const bool firstOccurrenceRouted =
-        editor->textCursor().selectedText()
+        firstOccurrenceHandled
+        && editor->textCursor().selectedText()
             == QStringLiteral("first")
         && !editor->editorModeActiveForTest(
             EditorModeId::MultiCursor)
@@ -1119,14 +1127,10 @@ void runContextActionRegistryExecutionRegression()
                .lastActionId()
                == QStringLiteral(
                    "select.nextSymbolOccurrence");
-    QTest::keyClick(
-        editor,
-        Qt::Key_D,
-        Qt::ControlModifier);
-    QCoreApplication::processEvents(
-        QEventLoop::AllEvents, 50);
-    check("Ctrl+D executes the canonical occurrence Action",
+    const bool secondOccurrenceHandled = invokeNextOccurrence();
+    check("next-occurrence command executes the canonical occurrence Action",
           firstOccurrenceRouted
+              && secondOccurrenceHandled
               && editor->editorModeActiveForTest(
                   EditorModeId::MultiCursor)
               && applicationActionExecutionHistory()
@@ -1147,6 +1151,37 @@ void runContextActionRegistryExecutionRegression()
                      .lastActionId()
                      == QStringLiteral("edit.copy"));
     QTest::keyClick(editor, Qt::Key_Escape);
+
+    occurrenceCursor.clearSelection();
+    occurrenceCursor.setPosition(assignmentFirst + 2);
+    editor->setTextCursor(occurrenceCursor);
+    const QString beforeDuplicate = editor->toPlainText();
+    const int duplicateLineEnd = beforeDuplicate.indexOf(
+        QLatin1Char('\n'), assignmentFirst);
+    const int duplicateLineStart = beforeDuplicate.lastIndexOf(
+        QLatin1Char('\n'), assignmentFirst) + 1;
+    const QString duplicateLine = beforeDuplicate.mid(
+        duplicateLineStart,
+        duplicateLineEnd - duplicateLineStart + 1);
+    resetApplicationActionExecutionHistory();
+    QTest::keyClick(
+        editor,
+        Qt::Key_D,
+        Qt::ControlModifier);
+    QCoreApplication::processEvents(
+        QEventLoop::AllEvents, 50);
+    check("Ctrl+D executes the canonical duplicate Action",
+          editor->toPlainText()
+                  == QString(beforeDuplicate).insert(
+                      duplicateLineEnd + 1,
+                      duplicateLine)
+              && applicationActionExecutionHistory()
+                     .lastActionId()
+                     == QString::fromLatin1(
+                         ActionIds::EditDuplicateLines));
+    editor->undo();
+    check("Ctrl+D duplicate remains one undo transaction",
+          editor->toPlainText() == beforeDuplicate);
 
     occurrenceCursor.clearSelection();
     occurrenceCursor.setPosition(assignmentFirst + 2);
@@ -1359,7 +1394,7 @@ void runContextActionRegistryExecutionRegression()
     resetApplicationActionExecutionHistory();
     QTest::keyClick(
         editor,
-        Qt::Key_K,
+        Qt::Key_D,
         Qt::ControlModifier | Qt::ShiftModifier);
     QCoreApplication::processEvents(
         QEventLoop::AllEvents, 50);
@@ -1984,6 +2019,422 @@ void runContextActionRegistryExecutionRegression()
 
     resetApplicationActionExecutionHistory();
     window.hide();
+}
+
+void runEditorViewTargetedActionRegression()
+{
+    MainWindow window;
+    window.resize(900, 600);
+    window.show();
+    QCoreApplication::processEvents(
+        QEventLoop::AllEvents, 50);
+
+    QTemporaryDir temp;
+    check("editor-view Action fixture root is available",
+          temp.isValid());
+    if (!temp.isValid())
+        return;
+
+    const QString targetFile =
+        temp.filePath(QStringLiteral("target_view.sv"));
+    const QString currentFile =
+        temp.filePath(QStringLiteral("current_view.sv"));
+    const QString targetSource = QStringLiteral(
+        "module target_view;\n"
+        "logic sig;\n"
+        "logic delete_me;\n"
+        "assign sig = sig;\n"
+        "assign sig = sig + 1;\n"
+        "endmodule\n");
+    const QString currentSource = QStringLiteral(
+        "module current_view;\n"
+        "logic other;\n"
+        "assign other = other;\n"
+        "endmodule\n");
+    const auto writeFixture = [](const QString& fileName,
+                                 const QString& text) {
+        QFile file(fileName);
+        const QByteArray bytes = text.toUtf8();
+        const bool written =
+            file.open(QIODevice::WriteOnly | QIODevice::Text)
+            && file.write(bytes) == bytes.size();
+        file.close();
+        return written;
+    };
+    const bool fixturesWritten =
+        writeFixture(targetFile, targetSource)
+        && writeFixture(currentFile, currentSource);
+    check("editor-view Action fixtures are written",
+          fixturesWritten);
+    if (!fixturesWritten)
+        return;
+
+    const bool targetOpened =
+        window.tabManager->openFileInTab(targetFile);
+    MyCodeEditor* targetTab =
+        window.tabManager->getCurrentEditor();
+    const DocumentSnapshot targetSnapshot =
+        window.tabManager->getDocumentForEditor(targetTab);
+    const bool currentOpened =
+        window.tabManager->openFileInTab(currentFile);
+    MyCodeEditor* currentEditor =
+        window.tabManager->getCurrentEditor();
+    check("two editor-view Action fixture documents open",
+          targetOpened && targetTab
+              && !targetSnapshot.documentId.isEmpty()
+              && currentOpened && currentEditor
+              && currentEditor != targetTab);
+    if (!targetTab || !currentEditor
+        || targetSnapshot.documentId.isEmpty()) {
+        return;
+    }
+
+    QWidget auxiliaryHost;
+    auxiliaryHost.resize(720, 360);
+    MyCodeEditor* auxiliary =
+        window.tabManager->createAuxiliaryView(
+            targetSnapshot.documentId,
+            targetFile,
+            &auxiliaryHost);
+    if (auxiliary) {
+        auxiliary->setGeometry(auxiliaryHost.rect());
+        auxiliary->show();
+    }
+    auxiliaryHost.show();
+    QCoreApplication::processEvents(
+        QEventLoop::AllEvents, 50);
+    check("auxiliary source View shares only the target document",
+          auxiliary
+              && auxiliary->document() == targetTab->document()
+              && auxiliary->document()
+                     != currentEditor->document());
+    if (!auxiliary)
+        return;
+
+    QTextCursor currentCursor(currentEditor->document());
+    currentCursor.setPosition(
+        currentSource.indexOf(QStringLiteral("other")) + 1);
+    currentEditor->setTextCursor(currentCursor);
+    const int currentCursorBefore =
+        currentEditor->textCursor().position();
+    QTextCursor occurrenceCursor(auxiliary->document());
+    const int targetAssignment = targetSource.indexOf(
+        QStringLiteral("assign sig"));
+    occurrenceCursor.setPosition(
+        targetAssignment
+        + QStringLiteral("assign ").size() + 1);
+    auxiliary->setTextCursor(occurrenceCursor);
+    auxiliary->setFocus();
+    const auto invokeAuxiliaryNextOccurrence = [auxiliary]() {
+        bool handled = false;
+        emit auxiliary->registeredActionRequested(
+            QStringLiteral("select.nextSymbolOccurrence"),
+            {},
+            &handled);
+        QCoreApplication::processEvents(
+            QEventLoop::AllEvents, 50);
+        return handled;
+    };
+    resetApplicationActionExecutionHistory();
+    const bool firstAuxiliaryOccurrenceHandled =
+        invokeAuxiliaryNextOccurrence();
+    const bool firstOccurrenceTargeted =
+        firstAuxiliaryOccurrenceHandled
+        && auxiliary->textCursor().selectedText()
+            == QStringLiteral("sig")
+        && !auxiliary->editorModeActiveForTest(
+            EditorModeId::MultiCursor)
+        && !currentEditor->textCursor().hasSelection()
+        && currentEditor->textCursor().position()
+               == currentCursorBefore
+        && applicationActionExecutionHistory()
+               .lastActionId()
+               == QStringLiteral(
+                   "select.nextSymbolOccurrence");
+    const bool secondAuxiliaryOccurrenceHandled =
+        invokeAuxiliaryNextOccurrence();
+    check("next-occurrence command stays on the source View",
+          firstOccurrenceTargeted
+              && secondAuxiliaryOccurrenceHandled
+              && auxiliary->editorModeActiveForTest(
+                  EditorModeId::MultiCursor)
+              && !currentEditor->editorModeActiveForTest(
+                  EditorModeId::MultiCursor));
+    QTest::keyClick(auxiliary, Qt::Key_Escape);
+
+    occurrenceCursor.clearSelection();
+    occurrenceCursor.setPosition(
+        targetAssignment + QStringLiteral("assign ").size() + 1);
+    auxiliary->setTextCursor(occurrenceCursor);
+    const QString auxiliaryBeforeDuplicate =
+        auxiliary->toPlainText();
+    const int auxiliaryLineEnd = auxiliaryBeforeDuplicate.indexOf(
+        QLatin1Char('\n'), targetAssignment);
+    const int auxiliaryLineStart = auxiliaryBeforeDuplicate.lastIndexOf(
+        QLatin1Char('\n'), targetAssignment) + 1;
+    const QString auxiliaryLine = auxiliaryBeforeDuplicate.mid(
+        auxiliaryLineStart,
+        auxiliaryLineEnd - auxiliaryLineStart + 1);
+    resetApplicationActionExecutionHistory();
+    QTest::keyClick(auxiliary,
+                    Qt::Key_D,
+                    Qt::ControlModifier);
+    QCoreApplication::processEvents(
+        QEventLoop::AllEvents, 50);
+    check("Ctrl+D duplicates only the focused source View",
+          auxiliary->toPlainText()
+                  == QString(auxiliaryBeforeDuplicate).insert(
+                      auxiliaryLineEnd + 1,
+                      auxiliaryLine)
+              && currentEditor->textCursor().position()
+                     == currentCursorBefore
+              && applicationActionExecutionHistory()
+                     .lastActionId()
+                     == QString::fromLatin1(
+                         ActionIds::EditDuplicateLines));
+    auxiliary->undo();
+    check("source-View duplicate is one undo transaction",
+          auxiliary->toPlainText()
+                  == auxiliaryBeforeDuplicate);
+
+    QTextCursor deleteCursor(auxiliary->document());
+    deleteCursor.setPosition(
+        auxiliary->toPlainText().indexOf(
+            QStringLiteral("delete_me")) + 2);
+    auxiliary->setTextCursor(deleteCursor);
+    const QString currentBeforeDelete =
+        currentEditor->toPlainText();
+    resetApplicationActionExecutionHistory();
+    QTest::keyClick(
+        auxiliary,
+        Qt::Key_D,
+        Qt::ControlModifier | Qt::ShiftModifier);
+    QCoreApplication::processEvents(
+        QEventLoop::AllEvents, 50);
+    check("Ctrl+Shift+D deletes source-View lines without conflicting with Ctrl+D",
+          !auxiliary->toPlainText().contains(
+              QStringLiteral("delete_me"))
+              && currentEditor->toPlainText()
+                     == currentBeforeDelete
+              && applicationActionExecutionHistory()
+                     .lastActionId()
+                     == QStringLiteral("edit.deleteLines"));
+
+    const auto requestAction =
+        [auxiliary](const QString& actionId) {
+            resetApplicationActionExecutionHistory();
+            bool handled = false;
+            emit auxiliary->registeredActionRequested(
+                actionId, {}, &handled);
+            QCoreApplication::processEvents(
+                QEventLoop::AllEvents, 50);
+            return handled;
+        };
+    const QString formatInput = QStringLiteral(
+        "module format_target;\n"
+        "\tlogic    alpha;\n"
+        "\tlogic      beta;\n"
+        "\tassign alpha=beta;\n"
+        "endmodule\n");
+    auxiliary->setPlainText(formatInput);
+    const int selectionStart =
+        formatInput.indexOf(QStringLiteral("\tlogic    alpha;"));
+    const int selectionEnd =
+        formatInput.indexOf(
+            QLatin1Char('\n'),
+            formatInput.indexOf(
+                QStringLiteral("\tlogic      beta;"))) + 1;
+    const int logicalSelectionStart =
+        formatInput.indexOf(QStringLiteral("alpha")) + 2;
+    const int logicalSelectionEnd =
+        formatInput.indexOf(QStringLiteral("beta")) + 2;
+    QTextCursor peerSelectionCursor(targetTab->document());
+    peerSelectionCursor.setPosition(logicalSelectionStart);
+    targetTab->setTextCursor(peerSelectionCursor);
+    QTextCursor reverseSelection(auxiliary->document());
+    reverseSelection.setPosition(logicalSelectionEnd);
+    reverseSelection.setPosition(
+        logicalSelectionStart, QTextCursor::KeepAnchor);
+    auxiliary->setTextCursor(reverseSelection);
+    const FormatterReport selectionContextReport =
+        FormatterService::getInstance()->formatDocument(
+            formatInput,
+            FormatterProfile::Structured);
+    const QStringList selectionContextLines =
+        selectionContextReport.formattedText.split(
+            QLatin1Char('\n'));
+    const QString formattedSelection =
+        selectionContextLines.size() >= 3
+        ? selectionContextLines.at(1)
+              + QLatin1Char('\n')
+              + selectionContextLines.at(2)
+              + QLatin1Char('\n')
+        : QString();
+    QString expectedSelectionText = formatInput;
+    expectedSelectionText.replace(
+        selectionStart,
+        selectionEnd - selectionStart,
+        formattedSelection);
+    const bool selectionRouted =
+        requestAction(QStringLiteral("format.selection"));
+    const QTextCursor selectionAfter =
+        auxiliary->textCursor();
+    QTextCursor activeEndpoint(auxiliary->document());
+    activeEndpoint.setPosition(selectionAfter.position());
+    activeEndpoint.select(QTextCursor::WordUnderCursor);
+    QTextCursor anchorEndpoint(auxiliary->document());
+    anchorEndpoint.setPosition(selectionAfter.anchor());
+    anchorEndpoint.select(QTextCursor::WordUnderCursor);
+    QTextCursor peerSelectionAfter = targetTab->textCursor();
+    peerSelectionAfter.select(QTextCursor::WordUnderCursor);
+    const bool reverseEndpointsPreserved =
+        selectionAfter.position() < selectionAfter.anchor()
+        && activeEndpoint.selectedText()
+               == QStringLiteral("alpha")
+        && anchorEndpoint.selectedText()
+               == QStringLiteral("beta")
+        && peerSelectionAfter.selectedText()
+               == QStringLiteral("alpha");
+    auxiliary->undo();
+    const bool selectionUndo =
+        auxiliary->toPlainText() == formatInput;
+    auxiliary->redo();
+    check("Format Selection targets the source View and preserves reverse endpoints in one undo unit",
+          selectionContextReport.changed
+              && !formattedSelection.isEmpty()
+              && selectionRouted
+              && expectedSelectionText
+                     == auxiliary->toPlainText()
+              && reverseEndpointsPreserved
+              && selectionUndo);
+
+    auxiliary->setPlainText(formatInput);
+    QTextCursor documentCursor(auxiliary->document());
+    documentCursor.setPosition(
+        formatInput.indexOf(QStringLiteral("beta")) + 2);
+    auxiliary->setTextCursor(documentCursor);
+    QTextCursor peerDocumentCursor(targetTab->document());
+    peerDocumentCursor.setPosition(
+        formatInput.indexOf(QStringLiteral("alpha")) + 2);
+    targetTab->setTextCursor(peerDocumentCursor);
+    const FormatterReport documentReport =
+        FormatterService::getInstance()->formatDocument(
+            formatInput,
+            FormatterProfile::Structured);
+    const QString currentBeforeFormat =
+        currentEditor->toPlainText();
+    auxiliary->setFocus();
+    resetApplicationActionExecutionHistory();
+    QTest::keyClick(
+        auxiliary,
+        Qt::Key_I,
+        Qt::ControlModifier | Qt::ShiftModifier);
+    QCoreApplication::processEvents(
+        QEventLoop::AllEvents, 50);
+    QTextCursor wordCursor = auxiliary->textCursor();
+    wordCursor.select(QTextCursor::WordUnderCursor);
+    QTextCursor peerWordCursor = targetTab->textCursor();
+    peerWordCursor.select(QTextCursor::WordUnderCursor);
+    const bool documentRouted =
+        documentReport.changed
+        && auxiliary->toPlainText()
+               == documentReport.formattedText
+        && currentEditor->toPlainText()
+               == currentBeforeFormat
+        && wordCursor.selectedText()
+               == QStringLiteral("beta")
+        && peerWordCursor.selectedText()
+               == QStringLiteral("alpha")
+        && applicationActionExecutionHistory()
+               .lastActionId()
+               == QStringLiteral("format.document");
+    auxiliary->undo();
+    const bool documentUndo =
+        auxiliary->toPlainText() == formatInput;
+    auxiliary->redo();
+    const bool documentRedo =
+        auxiliary->toPlainText()
+            == documentReport.formattedText;
+    resetApplicationActionExecutionHistory();
+    QTest::keyClick(
+        auxiliary,
+        Qt::Key_I,
+        Qt::ControlModifier | Qt::ShiftModifier);
+    QCoreApplication::processEvents(
+        QEventLoop::AllEvents, 50);
+    check("Format Document is deterministic, preserves its logical cursor, and reports idempotence",
+          documentRouted && documentUndo && documentRedo
+              && auxiliary->toPlainText()
+                     == documentReport.formattedText
+              && applicationActionExecutionHistory()
+                     .lastActionId()
+                     == QStringLiteral("format.document")
+              && window.statusBar()
+              && window.statusBar()->currentMessage()
+                     .contains(QStringLiteral("already formatted"),
+                               Qt::CaseInsensitive));
+
+    bool transitionStressOk = true;
+    for (int iteration = 0; iteration < 12; ++iteration) {
+        const FormatterProfile profile =
+            iteration % 2 == 0
+                ? FormatterProfile::Structured
+                : FormatterProfile::IndentOnly;
+        const QString profileAction =
+            profile == FormatterProfile::Structured
+                ? QStringLiteral("format.profile.structured")
+                : QStringLiteral("format.profile.indentOnly");
+        const bool profileRouted =
+            requestAction(profileAction);
+        const bool profileTargeted =
+            profileRouted
+            && auxiliary->formatterProfile() == profile
+            && currentEditor->formatterProfile()
+                   == profile;
+        auxiliary->setPlainText(formatInput);
+        const bool selectionPass = iteration % 2 != 0;
+        FormatterReport expected;
+        QString formatAction;
+        if (selectionPass) {
+            QTextCursor selection(auxiliary->document());
+            selection.setPosition(formatInput.size());
+            selection.setPosition(
+                0, QTextCursor::KeepAnchor);
+            auxiliary->setTextCursor(selection);
+            expected = FormatterService::getInstance()
+                           ->formatSelection(formatInput, profile);
+            formatAction = QStringLiteral("format.selection");
+        } else {
+            QTextCursor cursor(auxiliary->document());
+            cursor.setPosition(
+                formatInput.indexOf(QStringLiteral("alpha")) + 2);
+            auxiliary->setTextCursor(cursor);
+            expected = FormatterService::getInstance()
+                           ->formatDocument(formatInput, profile);
+            formatAction = QStringLiteral("format.document");
+        }
+        const bool formatRouted =
+            requestAction(formatAction);
+        const bool formatApplied =
+            expected.changed
+            && formatRouted
+            && auxiliary->toPlainText()
+                   == expected.formattedText;
+        auxiliary->undo();
+        const bool undoRestored =
+            auxiliary->toPlainText() == formatInput;
+        auxiliary->redo();
+        const bool redoRestored =
+            auxiliary->toPlainText()
+                == expected.formattedText;
+        transitionStressOk = transitionStressOk
+            && profileTargeted
+            && formatApplied
+            && undoRestored
+            && redoRestored;
+    }
+    check("format profile, Selection/Document, undo/redo, and multi-View transitions remain deterministic",
+          transitionStressOk);
 }
 
 void runCommandLayerCompletionPopupRegression()
@@ -2623,6 +3074,7 @@ int main(int argc, char** argv)
     runEditorActionContextStripRegression();
     runFileActionRegistryShellRegression();
     runContextActionRegistryExecutionRegression();
+    runEditorViewTargetedActionRegression();
     runCommandLayerCompletionPopupRegression();
     runEditorActionContextHotPathRegression();
     runPeekRegression();

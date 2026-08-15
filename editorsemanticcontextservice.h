@@ -38,6 +38,7 @@ struct EditorCompletionActivationContext {
 
 struct EditorCompletionPopupKeyContext {
     int key = 0;
+    int modifiers = 0;
     bool currentIndexValid = false;
     bool hasRows = false;
 };

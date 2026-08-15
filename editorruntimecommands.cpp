@@ -555,6 +555,7 @@ MyCodeEditorState::executeLineOperation(
     }
     const bool modifiesDocument =
         operation == EditorLineOperation::Cut
+        || operation == EditorLineOperation::DuplicateLines
         || operation == EditorLineOperation::DeleteLines
         || operation
                == EditorLineOperation::JoinWithNextLine
@@ -1075,10 +1076,16 @@ bool MyCodeEditorState::formatOnSaveEnabled() const
     return currentFormatOnSaveEnabled;
 }
 
-void MyCodeEditorState::formatDocument(MyCodeEditor* editor)
+FormatterReport MyCodeEditorState::formatDocument(
+    MyCodeEditor* editor)
 {
-    if (!editor)
-        return;
+    if (!editor) {
+        FormatterReport unavailable;
+        unavailable.outcome = FormatterOutcome::Rejected;
+        unavailable.diagnostic = QStringLiteral(
+            "No editor is available to format.");
+        return unavailable;
+    }
 
     const QString oldText = editor->toPlainText();
     const FormatterReport report =
@@ -1087,26 +1094,41 @@ void MyCodeEditorState::formatDocument(MyCodeEditor* editor)
             currentFormatterProfile);
     if (!report.changed) {
         emit editor->editorStatusMessageRequested(
-            QStringLiteral("Document already formatted"));
-        return;
+            report.diagnostic.isEmpty()
+                ? QStringLiteral("Document already formatted")
+                : report.diagnostic);
+        return report;
     }
 
     FormatterTriviaPositionMapper positionMapper(
         oldText,
         report.formattedText);
-    FormatterCursorAnchor anchor;
-    anchor.capture(editor, positionMapper);
+    QList<QPair<MyCodeEditor*, FormatterCursorAnchor>> anchors;
+    for (MyCodeEditor* view :
+         editor->sharedDocumentViewsForFormatting()) {
+        FormatterCursorAnchor anchor;
+        if (anchor.capture(view, positionMapper))
+            anchors.append(qMakePair(view, anchor));
+    }
 
     QTextCursor cursor = editor->textCursor();
     cursor.beginEditBlock();
     cursor.select(QTextCursor::Document);
     cursor.insertText(report.formattedText);
     cursor.endEditBlock();
-    anchor.restore(editor, positionMapper);
-    emit editor->editorStatusMessageRequested(
+    for (const auto& anchoredView : anchors) {
+        anchoredView.second.restore(
+            anchoredView.first, positionMapper);
+    }
+    QString message =
         QStringLiteral("Formatted document (%1 lines, %2)")
             .arg(report.formattedLines)
-            .arg(FormatterService::profileDisplayName(currentFormatterProfile)));
+            .arg(FormatterService::profileDisplayName(
+                currentFormatterProfile));
+    if (!report.diagnostic.isEmpty())
+        message += QStringLiteral(": ") + report.diagnostic;
+    emit editor->editorStatusMessageRequested(message);
+    return report;
 }
 
 bool MyCodeEditorState::formatDocumentForSave(MyCodeEditor* editor)
@@ -1119,21 +1141,34 @@ bool MyCodeEditorState::formatDocumentForSave(MyCodeEditor* editor)
         FormatterService::getInstance()->formatDocument(
             oldText,
             currentFormatterProfile);
-    if (!report.changed)
+    if (!report.changed) {
+        if (!report.diagnostic.isEmpty()) {
+            emit editor->editorStatusMessageRequested(
+                report.diagnostic);
+        }
         return false;
+    }
 
     FormatterTriviaPositionMapper positionMapper(
         oldText,
         report.formattedText);
-    FormatterCursorAnchor anchor;
-    anchor.capture(editor, positionMapper);
+    QList<QPair<MyCodeEditor*, FormatterCursorAnchor>> anchors;
+    for (MyCodeEditor* view :
+         editor->sharedDocumentViewsForFormatting()) {
+        FormatterCursorAnchor anchor;
+        if (anchor.capture(view, positionMapper))
+            anchors.append(qMakePair(view, anchor));
+    }
 
     QTextCursor cursor = editor->textCursor();
     cursor.beginEditBlock();
     cursor.select(QTextCursor::Document);
     cursor.insertText(report.formattedText);
     cursor.endEditBlock();
-    anchor.restore(editor, positionMapper);
+    for (const auto& anchoredView : anchors) {
+        anchoredView.second.restore(
+            anchoredView.first, positionMapper);
+    }
     emit editor->editorStatusMessageRequested(
         QStringLiteral("Formatted document on save (%1 lines, %2)")
             .arg(report.formattedLines)

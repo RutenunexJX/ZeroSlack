@@ -45,6 +45,7 @@
 #include <QMessageBox>
 #include <QPlainTextEdit>
 #include <QPixmap>
+#include <QRegularExpression>
 #include <QScrollBar>
 #include <QSet>
 #include <QTemporaryDir>
@@ -3199,9 +3200,9 @@ static void runNoImplicitCompletionRegression()
                true);
     QTest::keyClick(&editor, Qt::Key_Tab);
     QTest::keyClick(&editor,
-                    Qt::Key_Backtab,
+                    Qt::Key_Tab,
                     Qt::ShiftModifier);
-    expectBool("explicit template Tab and Shift+Tab navigate slots",
+    expectBool("GUI Tab and Tab+Shift navigate template slots",
                editor.templateSlotModeActive()
                    && editor.templateSlotModeActiveIndex() == 0
                    && editor.textCursor().selectedText()
@@ -3500,6 +3501,16 @@ static void runEditorBracketRangeRegression()
                    && editor.textCursor().position() == 1,
                true);
     QTest::keyClicks(&editor, "8");
+    QTest::keyClick(&editor,
+                    Qt::Key_Tab,
+                    Qt::ShiftModifier);
+    expectBool("editor reserves bracket expansion for plain Tab",
+               editor.toPlainText() != QStringLiteral("[7:0]"),
+               true);
+    editor.setPlainText(QStringLiteral("[8]"));
+    QTextCursor numericCursor = editor.textCursor();
+    numericCursor.setPosition(2);
+    editor.setTextCursor(numericCursor);
     QTest::keyClick(&editor, Qt::Key_Tab);
     expectBool("editor expands numeric bracket range",
                editor.toPlainText() == QStringLiteral("[7:0]")
@@ -3984,8 +3995,10 @@ static void runEditorColumnEditRegression()
                tabKeyEditor.toPlainText()
                    == QStringLiteral("\t    foo\n        foo\n"),
                true);
-    QTest::keyClick(&tabKeyEditor, Qt::Key_Backtab);
-    expectBool("editor column mode Shift+Tab is captured as visual outdent",
+    QTest::keyClick(&tabKeyEditor,
+                    Qt::Key_Tab,
+                    Qt::ShiftModifier);
+    expectBool("editor column mode Tab+Shift is captured as visual outdent",
                tabKeyEditor.toPlainText()
                    == QStringLiteral("\tfoo\n    foo\n"),
                true);
@@ -4696,25 +4709,22 @@ static void runEditorLineActionRegression()
     QTextCursor occurrenceCursor(occurrenceEditor.document());
     occurrenceCursor.setPosition(firstOccurrence + 1);
     occurrenceEditor.setTextCursor(occurrenceCursor);
-    QTest::keyClick(
-        &occurrenceEditor,
-        Qt::Key_D,
-        Qt::ControlModifier);
-    expectBool("first Ctrl+D selects the current structured symbol",
-               occurrenceEditor.toPlainText()
-                       == occurrenceSource
+    QString occurrenceFailure;
+    expectBool("next-occurrence command selects the current structured symbol",
+               occurrenceEditor.addNextSymbolOccurrence(&occurrenceFailure)
+                   && occurrenceFailure.isEmpty()
+                   && occurrenceEditor.toPlainText()
+                          == occurrenceSource
                    && occurrenceEditor.textCursor().selectedText()
-                       == QStringLiteral("sig")
+                          == QStringLiteral("sig")
                    && !occurrenceEditor.editorModeActiveForTest(
                        EditorModeId::MultiCursor),
                true);
-    QTest::keyClick(
-        &occurrenceEditor,
-        Qt::Key_D,
-        Qt::ControlModifier);
-    expectBool("second Ctrl+D adds exactly one occurrence cursor",
-               occurrenceEditor.toPlainText()
-                       == occurrenceSource
+    expectBool("next-occurrence command adds exactly one occurrence cursor",
+               occurrenceEditor.addNextSymbolOccurrence(&occurrenceFailure)
+                   && occurrenceFailure.isEmpty()
+                   && occurrenceEditor.toPlainText()
+                          == occurrenceSource
                    && occurrenceEditor.editorModeActiveForTest(
                        EditorModeId::MultiCursor),
                true);
@@ -4727,7 +4737,25 @@ static void runEditorLineActionRegression()
                        "sig = sig + 2;\n"),
                true);
     occurrenceEditor.undo();
-    expectBool("Ctrl+D distributed replacement is one undo transaction",
+    expectBool("multi-cursor replacement is one undo transaction",
+               occurrenceEditor.toPlainText() == occurrenceSource,
+               true);
+    occurrenceCursor.setPosition(firstOccurrence + 1);
+    occurrenceEditor.setTextCursor(occurrenceCursor);
+    QTest::keyClick(
+        &occurrenceEditor,
+        Qt::Key_D,
+        Qt::ControlModifier);
+    expectBool("Ctrl+D duplicates the current logical line",
+               occurrenceEditor.toPlainText()
+                   == QStringLiteral(
+                       "one\n"
+                       "sig = sig + 1;\n"
+                       "sig = sig + 1;\n"
+                       "sig = sig + 2;\n"),
+               true);
+    occurrenceEditor.undo();
+    expectBool("Ctrl+D duplicate is one undo transaction",
                occurrenceEditor.toPlainText() == occurrenceSource,
                true);
 
@@ -5156,15 +5184,17 @@ static void runEditorFormatterRegression()
     selectionCursor.setPosition(selectionEnd, QTextCursor::KeepAnchor);
     selectionEditor.setTextCursor(selectionCursor);
     selectionEditor.formatSelection();
-    expectBool("editor formatter selection preserves base indent",
+    const QString expectedSelectionOutput =
+        QStringLiteral("module top;\n"
+                       "logic       a   ;  // flag\n"
+                       "logic [7:0] data;  // byte\n"
+                       "    always_comb begin\n"
+                       "        data = '0;\n"
+                       "    end\n"
+                       "endmodule\n");
+    expectBool("editor formatter selection uses document structural context",
                selectionEditor.toPlainText()
-                   == QStringLiteral("module top;\n"
-                                     "    logic       a   ;  // flag\n"
-                                     "    logic [7:0] data;  // byte\n"
-                                     "    always_comb begin\n"
-                                     "        data = '0;\n"
-                                     "    end\n"
-                                     "endmodule\n"),
+                   == expectedSelectionOutput,
                true);
     expectBool("editor formatter selection emits status",
                selectionStatusMessage.contains(QStringLiteral("Formatted selection")),
@@ -5651,6 +5681,40 @@ static void runEditorHoverPreviewRegression(const QString& workspacePath)
     visibleEditorHoverPopupText(&movedNumericHoverVisible);
     expectBool("numeric double-click hover survives tiny mouse move",
                movedNumericHoverVisible,
+               true);
+    hideEditorHoverPopups();
+
+    MyCodeEditor asciiEditor;
+    asciiEditor.setLineWrapMode(QPlainTextEdit::NoWrap);
+    asciiEditor.resize(500, 160);
+    asciiEditor.setPlainText(
+        QStringLiteral("module ascii_hover;\n"
+                       "initial ch = \"A\";\n"
+                       "endmodule\n"));
+    asciiEditor.show();
+    QApplication::processEvents();
+    QTextCursor asciiCursor(asciiEditor.document());
+    asciiCursor.setPosition(
+        asciiEditor.toPlainText().indexOf(QStringLiteral("A\"")));
+    asciiEditor.setTextCursor(asciiCursor);
+    asciiEditor.ensureCursorVisible();
+    QTest::mouseDClick(
+        asciiEditor.viewport(),
+        Qt::LeftButton,
+        Qt::NoModifier,
+        asciiEditor.cursorRect(asciiCursor).center());
+    QApplication::processEvents();
+    bool asciiHoverVisible = false;
+    const QString asciiHoverText =
+        visibleEditorHoverPopupText(&asciiHoverVisible);
+    expectBool("ASCII double-click shows character and equivalent number",
+               asciiHoverVisible
+                   && asciiHoverText.contains(
+                       QStringLiteral("character: \"A\""))
+                   && asciiHoverText.contains(
+                       QStringLiteral("decimal: 65"))
+                   && asciiHoverText.contains(
+                       QStringLiteral("hex: 41")),
                true);
     hideEditorHoverPopups();
 
@@ -12439,8 +12503,11 @@ int main(int argc, char** argv)
 
     MainWindow window;
     const QString productVersion = QLatin1String(APP_VERSION);
-    expectBool("product version baseline is v0.2.0",
-               productVersion == QStringLiteral("0.2.0"),
+    expectBool("product version uses strict SemVer",
+               QRegularExpression(
+                   QStringLiteral("^[0-9]+\\.[0-9]+\\.[0-9]+$"))
+                   .match(productVersion)
+                   .hasMatch(),
                true);
     expectBool("product version omits dependency marker",
                !productVersion.contains(QStringLiteral("slang"), Qt::CaseInsensitive),
@@ -15984,10 +16051,10 @@ int main(int argc, char** argv)
                               != initialInlineSelection,
                    true);
         QTest::keyClick(editor,
-                        Qt::Key_Backtab,
+                        Qt::Key_Tab,
                         Qt::ShiftModifier);
         QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-        expectBool("inline command Shift+Tab traverses candidates backward",
+        expectBool("inline command Tab+Shift traverses candidates backward",
                    inlineCompleter
                        && inlineCompleter->popup()->isVisible()
                        && selectedInlineLogicName()

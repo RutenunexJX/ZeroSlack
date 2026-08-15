@@ -9,6 +9,13 @@ enum class FormatterProfile {
     Structured
 };
 
+enum class FormatterOutcome {
+    Applied,
+    Unchanged,
+    ConservativeFallback,
+    Rejected
+};
+
 struct FormatterOptions {
     int indentWidth = 4;
     bool preservePreprocessorIndent = true;
@@ -30,6 +37,13 @@ struct FormatterReport {
     QString formattedText;
     bool changed = false;
     int formattedLines = 0;
+    FormatterOutcome outcome = FormatterOutcome::Unchanged;
+    QString diagnostic;
+
+    bool accepted() const
+    {
+        return outcome != FormatterOutcome::Rejected;
+    }
 };
 
 class FormatterService

@@ -1403,7 +1403,7 @@ int main()
                           "editor.lines.moveDown")
                && deleteLinesAction->defaultShortcut
                       == QStringLiteral(
-                          "Ctrl+Shift+K")
+                          "Ctrl+Shift+D")
                && joinLinesAction->defaultShortcut
                       == QStringLiteral(
                           "Ctrl+Shift+J")
@@ -1461,21 +1461,30 @@ int main()
         findActionById(
             QStringLiteral(
                 "select.allSymbolOccurrences"));
-    expect("registry owns multi-cursor occurrence routes and shortcuts",
+    const ActionDescriptor* duplicateLinesAction =
+        findActionById(QString::fromLatin1(
+            ActionIds::EditDuplicateLines));
+    expect("registry owns duplicate-line and multi-cursor routes",
            nextOccurrenceAction
                && allOccurrencesAction
+               && duplicateLinesAction
+               && duplicateLinesAction->executionRoute
+                      == QStringLiteral("editor.lines.duplicate")
+               && duplicateLinesAction->defaultShortcut
+                      == QStringLiteral("Ctrl+D")
+               && duplicateLinesAction->hasSurface(
+                      ActionSurface::Shortcut)
                && nextOccurrenceAction->executionRoute
                       == QStringLiteral(
                           "editor.multicursor.addNextOccurrence")
                && allOccurrencesAction->executionRoute
                       == QStringLiteral(
                           "editor.multicursor.selectScopeOccurrences")
-               && nextOccurrenceAction->defaultShortcut
-                      == QStringLiteral("Ctrl+D")
+               && nextOccurrenceAction->defaultShortcut.isEmpty()
+               && !nextOccurrenceAction->hasSurface(
+                      ActionSurface::Shortcut)
                && allOccurrencesAction->defaultShortcut
                       == QStringLiteral("Ctrl+Shift+L")
-               && nextOccurrenceAction->hasSurface(
-                      ActionSurface::Shortcut)
                && allOccurrencesAction->hasSurface(
                       ActionSurface::Shortcut));
     const CommandLayerCommandMetadata* nextOccurrenceCommand =

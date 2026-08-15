@@ -534,6 +534,35 @@ bool selectedFullLineRange(MyCodeEditor* editor, int* rangeStart, int* rangeEnd)
     return true;
 }
 
+int lineStartOffset(const QString& text, int lineNumber)
+{
+    if (lineNumber <= 0)
+        return 0;
+    int offset = 0;
+    for (int line = 0; line < lineNumber; ++line) {
+        const int newline = text.indexOf(QLatin1Char('\n'), offset);
+        if (newline < 0)
+            return text.size();
+        offset = newline + 1;
+    }
+    return offset;
+}
+
+QString formattedLineSlice(const QString& formattedText,
+                           int firstLine,
+                           int lastLine,
+                           bool includeTrailingNewline)
+{
+    const int start = lineStartOffset(formattedText, firstLine);
+    const int lastStart = lineStartOffset(formattedText, lastLine);
+    const int newline = formattedText.indexOf(
+        QLatin1Char('\n'), lastStart);
+    const int end = newline < 0
+        ? formattedText.size()
+        : newline + (includeTrailingNewline ? 1 : 0);
+    return formattedText.mid(start, qMax(0, end - start));
+}
+
 struct TouchedLineRange {
     int firstLine = -1;
     int lastLine = -1;
@@ -934,8 +963,16 @@ bool handleLineCommentShortcut(MyCodeEditor* editor, QKeyEvent* event)
 
 bool handleBracketRangeTab(MyCodeEditor* editor, QKeyEvent* event)
 {
-    if (!editor || !event || hasCommandModifier(event)
+    if (!editor || !event
         || event->key() != Qt::Key_Tab)
+        return false;
+    const Qt::KeyboardModifiers modifiers =
+        event->modifiers()
+        & (Qt::ShiftModifier
+           | Qt::ControlModifier
+           | Qt::AltModifier
+           | Qt::MetaModifier);
+    if (modifiers != Qt::NoModifier)
         return false;
 
     QTextCursor cursor = editor->textCursor();
@@ -2122,6 +2159,15 @@ bool MyCodeEditorState::handleKeyPress(MyCodeEditor* editor, QKeyEvent* event)
         }
     }
 
+    // Slot navigation owns Tab and Backtab whenever a slot session exists.
+    // Do not depend on the mode stack's current primary presentation: a
+    // completion or source-navigation overlay can otherwise consume the same
+    // physical Shift+Tab event and make it advance instead of moving back.
+    if (templateSlots.active()
+        && handleTemplateSlotKeyPress(editor, event)) {
+        return true;
+    }
+
     const bool nextOccurrenceShortcut =
         matchesRegisteredShortcut(
             event,
@@ -2368,11 +2414,6 @@ bool MyCodeEditorState::handleKeyPress(MyCodeEditor* editor, QKeyEvent* event)
             event->accept();
             return true;
         }
-    }
-
-    if (primaryMode == EditorModeId::TemplateSlots
-        && handleTemplateSlotKeyPress(editor, event)) {
-        return true;
     }
 
     if ((primaryMode == EditorModeId::VirtualCursor
@@ -2697,6 +2738,22 @@ bool MyCodeEditorState::handleKeyPress(MyCodeEditor* editor, QKeyEvent* event)
 
     if (matchesRegisteredShortcut(
             event,
+            QString::fromLatin1(
+                ActionIds::EditDuplicateLines))) {
+        if (!requestRegisteredEditorAction(
+                editor,
+                QString::fromLatin1(
+                    ActionIds::EditDuplicateLines))) {
+            executeLineOperation(
+                editor,
+                EditorLineOperation::DuplicateLines);
+        }
+        event->accept();
+        return true;
+    }
+
+    if (matchesRegisteredShortcut(
+            event,
             QStringLiteral("edit.copy"))) {
         if (requestRegisteredEditorAction(
                 editor,
@@ -2800,6 +2857,14 @@ bool MyCodeEditorState::handleKeyPress(MyCodeEditor* editor, QKeyEvent* event)
 
     if (completionWorkflow.handleCompletionPopupKey(event))
         return true;
+
+    if (event->key() == Qt::Key_Backtab
+        || (event->key() == Qt::Key_Tab
+            && event->modifiers() == Qt::ShiftModifier)) {
+        applyLineUnindent(editor);
+        event->accept();
+        return true;
+    }
 
     if (event->key() == Qt::Key_Tab
         && event->modifiers() == Qt::NoModifier) {
@@ -4402,30 +4467,77 @@ void MyCodeEditorState::handleLeaveEvent(MyCodeEditor* editor)
 }
 
 
-void MyCodeEditorState::formatSelection(MyCodeEditor* editor)
+FormatterReport MyCodeEditorState::formatSelection(
+    MyCodeEditor* editor)
 {
-    if (!editor)
-        return;
+    if (!editor) {
+        FormatterReport unavailable;
+        unavailable.outcome = FormatterOutcome::Rejected;
+        unavailable.diagnostic = QStringLiteral(
+            "No editor is available to format.");
+        return unavailable;
+    }
 
     int rangeStart = -1;
     int rangeEnd = -1;
     if (!selectedFullLineRange(editor, &rangeStart, &rangeEnd)) {
+        FormatterReport unavailable;
+        unavailable.outcome = FormatterOutcome::Rejected;
+        unavailable.diagnostic = QStringLiteral(
+            "No selection to format");
         emit editor->editorStatusMessageRequested(
-            QStringLiteral("No selection to format"));
-        return;
+            unavailable.diagnostic);
+        return unavailable;
     }
 
     const QString oldText = editor->toPlainText();
     const QString selectedText =
         oldText.mid(rangeStart, rangeEnd - rangeStart);
-    const FormatterReport report =
-        FormatterService::getInstance()->formatSelection(
-            selectedText,
+    QTextDocument* document = editor->document();
+    const QTextBlock firstBlock = document
+        ? document->findBlock(rangeStart)
+        : QTextBlock();
+    const QTextBlock lastBlock = document
+        ? document->findBlock(qMax(rangeStart, rangeEnd - 1))
+        : QTextBlock();
+    FormatterReport report;
+    if (!firstBlock.isValid() || !lastBlock.isValid()) {
+        report.outcome = FormatterOutcome::Rejected;
+        report.diagnostic = QStringLiteral(
+            "The selected line range is unavailable.");
+        emit editor->editorStatusMessageRequested(report.diagnostic);
+        return report;
+    }
+
+    // Format with the complete syntax context, then apply only the selected
+    // logical lines.  Parsing a case item, port row, or continuation fragment
+    // in isolation made Format Selection appear to fail at random.
+    const FormatterReport documentReport =
+        FormatterService::getInstance()->formatDocument(
+            oldText,
             currentFormatterProfile);
+    report = documentReport;
+    const bool includesTrailingNewline =
+        rangeEnd > lastBlock.position() + lastBlock.text().size();
+    report.formattedText = formattedLineSlice(
+        documentReport.formattedText,
+        firstBlock.blockNumber(),
+        lastBlock.blockNumber(),
+        includesTrailingNewline);
+    report.formattedLines =
+        lastBlock.blockNumber() - firstBlock.blockNumber() + 1;
+    report.changed = report.formattedText != selectedText;
+    if (report.outcome != FormatterOutcome::ConservativeFallback) {
+        report.outcome = report.changed
+            ? FormatterOutcome::Applied
+            : FormatterOutcome::Unchanged;
+    }
     if (!report.changed) {
         emit editor->editorStatusMessageRequested(
-            QStringLiteral("Selection already formatted"));
-        return;
+            report.diagnostic.isEmpty()
+                ? QStringLiteral("Selection already formatted")
+                : report.diagnostic);
+        return report;
     }
 
     QString newText = oldText;
@@ -4434,8 +4546,13 @@ void MyCodeEditorState::formatSelection(MyCodeEditor* editor)
                     report.formattedText);
     FormatterTriviaPositionMapper positionMapper(oldText,
                                                  newText);
-    FormatterCursorAnchor anchor;
-    anchor.capture(editor, positionMapper);
+    QList<QPair<MyCodeEditor*, FormatterCursorAnchor>> anchors;
+    for (MyCodeEditor* view :
+         editor->sharedDocumentViewsForFormatting()) {
+        FormatterCursorAnchor anchor;
+        if (anchor.capture(view, positionMapper))
+            anchors.append(qMakePair(view, anchor));
+    }
 
     QTextCursor cursor = editor->textCursor();
     cursor.beginEditBlock();
@@ -4443,11 +4560,19 @@ void MyCodeEditorState::formatSelection(MyCodeEditor* editor)
     cursor.setPosition(rangeEnd, QTextCursor::KeepAnchor);
     cursor.insertText(report.formattedText);
     cursor.endEditBlock();
-    anchor.restore(editor, positionMapper);
-    emit editor->editorStatusMessageRequested(
+    for (const auto& anchoredView : anchors) {
+        anchoredView.second.restore(
+            anchoredView.first, positionMapper);
+    }
+    QString message =
         QStringLiteral("Formatted selection (%1 lines, %2)")
             .arg(report.formattedLines)
-            .arg(FormatterService::profileDisplayName(currentFormatterProfile)));
+            .arg(FormatterService::profileDisplayName(
+                currentFormatterProfile));
+    if (!report.diagnostic.isEmpty())
+        message += QStringLiteral(": ") + report.diagnostic;
+    emit editor->editorStatusMessageRequested(message);
+    return report;
 }
 
 void MyCodeEditorState::commentSelectionOrLine(MyCodeEditor* editor)

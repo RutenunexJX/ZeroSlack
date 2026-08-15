@@ -186,6 +186,23 @@ int main(int argc, char* argv[])
     {
         MyCodeEditor editor;
         const QString original =
+            QStringLiteral("module m;\n    logic value;\nendmodule\n");
+        editor.setPlainText(original);
+        setCursor(editor,
+                  original.indexOf(QStringLiteral("value")) + 2);
+        QTest::keyClick(&editor, Qt::Key_Backtab);
+        expect("ordinary Shift+Tab unindents the current line",
+               editor.toPlainText()
+                   == QStringLiteral(
+                       "module m;\nlogic value;\nendmodule\n"));
+        editor.undo();
+        expect("ordinary Shift+Tab is one undo transaction",
+               editor.toPlainText() == original);
+    }
+
+    {
+        MyCodeEditor editor;
+        const QString original =
             QStringLiteral("module m;\nalways_comb begin");
         editor.setPlainText(original);
         setCursor(editor, original.size());
@@ -199,6 +216,75 @@ int main(int argc, char* argv[])
         editor.undo();
         expect("structural Enter is one undo transaction",
                editor.toPlainText() == original);
+    }
+
+    {
+        MyCodeEditor editor;
+        const QString original =
+            QStringLiteral("module m;\n"
+                           "always_comb begin\n"
+                           "    logic value;\n"
+                           "end\n"
+                           "endmodule\n");
+        const int lineStart =
+            original.indexOf(QStringLiteral("    logic value;"));
+        const auto verifyEnter =
+            [&editor, &original, lineStart](
+                int indentOffset,
+                Qt::Key key,
+                const QString& expected,
+                int expectedCursor) {
+                editor.setPlainText(original);
+                setCursor(editor, lineStart + indentOffset);
+                QTest::keyClick(&editor, key);
+                const bool inserted =
+                    editor.toPlainText() == expected
+                    && editor.textCursor().position() == expectedCursor;
+                editor.undo();
+                return inserted
+                    && editor.toPlainText() == original;
+            };
+        expect("Return at physical indented-line start does not duplicate indent",
+               verifyEnter(
+                   0,
+                   Qt::Key_Return,
+                   QString(original).insert(lineStart, QStringLiteral("\n")),
+                   lineStart + 1));
+        expect("Enter inside indentation preserves one total indent",
+               verifyEnter(
+                   2,
+                   Qt::Key_Enter,
+                   QString(original).replace(lineStart,
+                                             2,
+                                             QStringLiteral("\n  ")),
+                   lineStart + 3));
+        expect("Return at logical line start inherits one indent",
+               verifyEnter(
+                   4,
+                   Qt::Key_Return,
+                   QString(original).replace(lineStart,
+                                             4,
+                                             QStringLiteral("\n    ")),
+                   lineStart + 5));
+
+        const QString whitespaceOriginal =
+            QStringLiteral("module m;\n"
+                           "always_comb begin\n"
+                           "    \n"
+                           "end\n"
+                           "endmodule\n");
+        const int whitespaceStart =
+            whitespaceOriginal.indexOf(QStringLiteral("    \n"));
+        editor.setPlainText(whitespaceOriginal);
+        setCursor(editor, whitespaceStart);
+        QTest::keyClick(&editor, Qt::Key_Return);
+        expect("Return at whitespace-line start does not duplicate indent and undoes once",
+               editor.toPlainText()
+                       == QString(whitespaceOriginal)
+                              .insert(whitespaceStart, QStringLiteral("\n")));
+        editor.undo();
+        expect("whitespace-line structural Enter is one undo transaction",
+               editor.toPlainText() == whitespaceOriginal);
     }
 
     {
@@ -270,22 +356,19 @@ int main(int argc, char* argv[])
             source.indexOf(QStringLiteral("sig"));
         setCursor(editor, firstSignal + 1);
 
-        QTest::keyClick(
-            &editor,
-            Qt::Key_D,
-            Qt::ControlModifier);
-        expect("first Ctrl+D selects the structural identifier",
-               editor.textCursor().selectedText()
-                   == QStringLiteral("sig")
+        QString occurrenceFailure;
+        expect("next-occurrence command selects the structural identifier",
+               editor.addNextSymbolOccurrence(&occurrenceFailure)
+                   && occurrenceFailure.isEmpty()
+                   && editor.textCursor().selectedText()
+                          == QStringLiteral("sig")
                    && !editor.editorModeActiveForTest(
                        EditorModeId::MultiCursor));
-        QTest::keyClick(
-            &editor,
-            Qt::Key_D,
-            Qt::ControlModifier);
-        expect("second Ctrl+D enters centralized multi-cursor mode",
-               editor.editorModeActiveForTest(
-                   EditorModeId::MultiCursor));
+        expect("next-occurrence command enters centralized multi-cursor mode",
+               editor.addNextSymbolOccurrence(&occurrenceFailure)
+                   && occurrenceFailure.isEmpty()
+                   && editor.editorModeActiveForTest(
+                       EditorModeId::MultiCursor));
         sendTextKey(editor,
                     Qt::Key_X,
                     QStringLiteral("x"));
@@ -296,6 +379,23 @@ int main(int argc, char* argv[])
                        "    sig = sig + 2;")));
         editor.undo();
         expect("multi-cursor occurrence replacement is one undo transaction",
+               editor.toPlainText() == source);
+
+        setCursor(editor, firstSignal + 1);
+        QTest::keyClick(
+            &editor,
+            Qt::Key_D,
+            Qt::ControlModifier);
+        expect("Ctrl+D duplicates the current logical line",
+               editor.toPlainText().contains(
+                   QStringLiteral(
+                       "    sig = sig + 1;\n"
+                       "    sig = sig + 1;\n"
+                       "    sig = sig + 2;"))
+                   && !editor.editorModeActiveForTest(
+                       EditorModeId::MultiCursor));
+        editor.undo();
+        expect("Ctrl+D duplicate is one undo transaction",
                editor.toPlainText() == source);
 
         setCursor(editor, firstSignal + 1);

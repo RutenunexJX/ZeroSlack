@@ -92,12 +92,44 @@ int EditorTemplateSlotController::physicalIndexForCursor(
     const int selectionEnd = cursor.hasSelection()
         ? cursor.selectionEnd()
         : cursor.position();
+    const auto containsCursor =
+        [selectionStart, selectionEnd](const SlotRange& slot) {
+            return selectionStart >= slot.start
+                && selectionEnd <= slot.end;
+        };
+
+    // A collapsed cursor at a shared endpoint belongs to both adjacent
+    // closed ranges. Preserve the controller's active logical group first;
+    // Tab navigation has already selected that group intentionally, and
+    // ordinary edits commonly leave the caret at its inclusive end.
     for (int index = 0;
          index < ranges.size();
          ++index) {
         const SlotRange& slot = ranges.at(index);
-        if (selectionStart >= slot.start
-            && selectionEnd <= slot.end) {
+        if (slot.groupIndex == currentIndex
+            && containsCursor(slot)) {
+            return index;
+        }
+    }
+
+    // Outside the active group, an exact zero-length marker is less
+    // ambiguous than the inclusive end of a neighbouring non-empty slot.
+    if (!cursor.hasSelection()) {
+        for (int index = 0;
+             index < ranges.size();
+             ++index) {
+            const SlotRange& slot = ranges.at(index);
+            if (slot.start == slot.end
+                && selectionStart == slot.start) {
+                return index;
+            }
+        }
+    }
+    for (int index = 0;
+         index < ranges.size();
+         ++index) {
+        const SlotRange& slot = ranges.at(index);
+        if (containsCursor(slot)) {
             return index;
         }
     }
@@ -546,22 +578,6 @@ bool EditorTemplateSlotController::handleKeyPress(
         return true;
     }
 
-    const int cursorPhysicalIndex =
-        physicalIndexForCursor(editor);
-    const int cursorGroupIndex =
-        cursorPhysicalIndex >= 0
-        ? ranges.at(cursorPhysicalIndex).groupIndex
-        : -1;
-    if (cursorGroupIndex >= 0
-        && cursorGroupIndex != currentIndex) {
-        currentIndex = cursorGroupIndex;
-        refreshPresentation(editor);
-    }
-    if (!cursorInsideActiveRange(editor)) {
-        clear(editor);
-        return false;
-    }
-
     const Qt::KeyboardModifiers modifiers =
         event->modifiers()
         & (Qt::ShiftModifier
@@ -575,20 +591,47 @@ bool EditorTemplateSlotController::handleKeyPress(
         event->key() == Qt::Key_Backtab
         || (event->key() == Qt::Key_Tab
             && modifiers == Qt::ShiftModifier);
-    if ((!forward && !backward)
-        || (modifiers != Qt::NoModifier
-            && modifiers != Qt::ShiftModifier)) {
-        return false;
+    const bool navigationKey =
+        (forward || backward)
+        && (modifiers == Qt::NoModifier
+            || modifiers == Qt::ShiftModifier);
+    if (navigationKey) {
+        if (!cursorInsideActiveRange(editor)) {
+            clear(editor);
+            return false;
+        }
+        const int count = groupCount();
+        if (count <= 0) {
+            clear(editor);
+            return false;
+        }
+        // currentIndex is the logical slot selected by the controller.  Do
+        // not infer it again from a shared endpoint immediately before
+        // navigation; adjacent empty slots can occupy the same cursor
+        // position and would turn Shift+Tab into a forward step.
+        select(
+            editor,
+            backward
+                ? (currentIndex - 1 + count) % count
+                : (currentIndex + 1) % count);
+        event->accept();
+        return true;
     }
 
-    const int count = groupCount();
-    select(
-        editor,
-        backward
-            ? (currentIndex - 1 + count) % count
-            : (currentIndex + 1) % count);
-    event->accept();
-    return true;
+    const int cursorPhysicalIndex =
+        physicalIndexForCursor(editor);
+    const int cursorGroupIndex =
+        cursorPhysicalIndex >= 0
+        ? ranges.at(cursorPhysicalIndex).groupIndex
+        : -1;
+    if (cursorGroupIndex >= 0
+        && cursorGroupIndex != currentIndex) {
+        currentIndex = cursorGroupIndex;
+        refreshPresentation(editor);
+    }
+    if (!cursorInsideActiveRange(editor))
+        clear(editor);
+    return false;
 }
 
 void EditorTemplateSlotController::handleContentsChange(

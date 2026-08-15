@@ -211,6 +211,75 @@ int main(int argc, char* argv[])
     {
         QTextDocument document;
         const QString original =
+            QStringLiteral("alpha\nbeta\ngamma\n");
+        resetDocument(document, original);
+        QTextCursor cursor = cursorAt(
+            document,
+            original.indexOf(QStringLiteral("beta")) + 2);
+
+        const EditorLineOperationResult result =
+            controller.duplicateLines(cursor);
+        expect("duplicate copies the current logical line below itself",
+               result.succeeded
+                   && result.documentChanged
+                   && document.toPlainText()
+                          == QStringLiteral(
+                              "alpha\nbeta\nbeta\ngamma\n"));
+        expect("duplicate preserves the cursor column on the copy",
+               cursor.blockNumber() == 2
+                   && cursor.position() - cursor.block().position() == 2
+                   && !cursor.hasSelection());
+        expect("single-line duplicate is one undo transaction",
+               oneUndoRestores(document, original));
+    }
+
+    {
+        QTextDocument document;
+        const QString original =
+            QStringLiteral("alpha beta gamma");
+        resetDocument(document, original);
+        QTextCursor cursor = cursorAt(
+            document,
+            original.indexOf(QStringLiteral("beta")) + 4,
+            original.indexOf(QStringLiteral("beta")));
+
+        const EditorLineOperationResult result =
+            controller.duplicateLines(cursor);
+        expect("duplicate copies an exact selection immediately after itself",
+               result.succeeded
+                   && result.documentChanged
+                   && document.toPlainText()
+                          == QStringLiteral("alpha betabeta gamma"));
+        expect("duplicate selects the copied text",
+               cursor.selectedText() == QStringLiteral("beta"));
+        expect("selection duplicate is one undo transaction",
+               oneUndoRestores(document, original));
+    }
+
+    {
+        QTextDocument document;
+        const QString original =
+            QStringLiteral("alpha\nlast");
+        resetDocument(document, original);
+        QTextCursor cursor = cursorAt(document, original.size());
+
+        const EditorLineOperationResult result =
+            controller.execute(EditorLineOperation::DuplicateLines,
+                               cursor);
+        expect("duplicate preserves a final line without an original newline",
+               result.handled
+                   && result.succeeded
+                   && document.toPlainText()
+                          == QStringLiteral("alpha\nlast\nlast")
+                   && cursor.blockNumber() == 2
+                   && cursor.position() - cursor.block().position() == 4);
+        expect("final-line duplicate is one undo transaction",
+               oneUndoRestores(document, original));
+    }
+
+    {
+        QTextDocument document;
+        const QString original =
             QStringLiteral("a\nbb\ncc\nd");
         resetDocument(document, original);
         QTextCursor cursor =

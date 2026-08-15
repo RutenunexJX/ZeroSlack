@@ -8,6 +8,7 @@
 
 #include <slang/ast/ScriptSession.h>
 
+#include <algorithm>
 #include <limits>
 
 #include <memory>
@@ -126,6 +127,39 @@ QString groupedRadixDigits(QString digits)
         grouped.append(digits.mid(position, 4));
     }
     return grouped;
+}
+
+void populateIntegerLiteralResult(
+    const slang::SVInt& integer,
+    EffectiveLiteralResult* result)
+{
+    if (!result)
+        return;
+    result->bitWidthText = QString::number(integer.getBitWidth());
+    result->signednessText = integer.isSigned()
+        ? QStringLiteral("signed")
+        : QStringLiteral("unsigned");
+    const auto radixText = [&integer](slang::LiteralBase base) {
+        return groupedRadixDigits(
+            QString::fromStdString(integer.toString(
+                base,
+                false,
+                std::numeric_limits<slang::bitwidth_t>::max())));
+    };
+    result->radixRepresentations = {
+        QStringLiteral("binary: %1")
+            .arg(radixText(slang::LiteralBase::Binary)),
+        QStringLiteral("octal: %1")
+            .arg(radixText(slang::LiteralBase::Octal))
+    };
+    if (!integer.hasUnknown()) {
+        result->radixRepresentations.append(
+            QStringLiteral("decimal: %1")
+                .arg(radixText(slang::LiteralBase::Decimal)));
+    }
+    result->radixRepresentations.append(
+        QStringLiteral("hex: %1")
+            .arg(radixText(slang::LiteralBase::Hex)));
 }
 }
 
@@ -579,41 +613,49 @@ EffectiveLiteralResult EffectiveValueService::evaluateLiteral(
                 "Slang did not produce a constant value.");
             return result;
         }
-        result.available = true;
-        result.valueText = QString::fromStdString(value.toString(
-            std::numeric_limits<slang::bitwidth_t>::max(),
-            true));
         if (value.isInteger()) {
             const slang::SVInt& integer = value.integer();
-            result.bitWidthText = QString::number(integer.getBitWidth());
-            result.signednessText = integer.isSigned()
-                ? QStringLiteral("signed")
-                : QStringLiteral("unsigned");
-            const auto radixText = [&integer](slang::LiteralBase base) {
-                return groupedRadixDigits(
-                    QString::fromStdString(integer.toString(
-                        base,
-                        false,
-                        std::numeric_limits<slang::bitwidth_t>::max())));
-            };
-            result.radixRepresentations = {
-                QStringLiteral("binary: %1")
-                    .arg(radixText(slang::LiteralBase::Binary)),
-                QStringLiteral("octal: %1")
-                    .arg(radixText(slang::LiteralBase::Octal))
-            };
-            if (!integer.hasUnknown()) {
-                result.radixRepresentations.append(
-                    QStringLiteral("decimal: %1")
-                        .arg(radixText(slang::LiteralBase::Decimal)));
-            }
-            result.radixRepresentations.append(
-                QStringLiteral("hex: %1")
-                    .arg(radixText(slang::LiteralBase::Hex)));
+            result.available = true;
+            result.valueText = QString::fromStdString(value.toString(
+                std::numeric_limits<slang::bitwidth_t>::max(),
+                true));
+            populateIntegerLiteralResult(integer, &result);
         } else if (value.isString()) {
-            result.bitWidthText = QString::number(
-                value.str().size() * 8);
-            result.signednessText = QStringLiteral("not applicable");
+            const std::string& decoded = value.str();
+            if (stringLiteral) {
+                const bool ascii = std::all_of(
+                    decoded.cbegin(),
+                    decoded.cend(),
+                    [](char character) {
+                        return static_cast<unsigned char>(character) <= 0x7f;
+                    });
+                if (!ascii) {
+                    result.failureReason = QStringLiteral(
+                        "The string contains non-ASCII characters.");
+                    return result;
+                }
+                const slang::ConstantValue packedValue = value.convertToInt();
+                if (!packedValue || !packedValue.isInteger()) {
+                    result.failureReason = QStringLiteral(
+                        "Slang could not pack the ASCII string as an integer.");
+                    return result;
+                }
+                result.available = true;
+                result.valueText = QStringLiteral("%1: %2")
+                    .arg(decoded.size() == 1
+                             ? QStringLiteral("character")
+                             : QStringLiteral("characters"),
+                         expressionText.trimmed());
+                populateIntegerLiteralResult(
+                    packedValue.integer(), &result);
+            } else {
+                result.available = true;
+                result.valueText = QString::fromStdString(value.toString(
+                    std::numeric_limits<slang::bitwidth_t>::max(),
+                    true));
+                result.bitWidthText = QString::number(decoded.size() * 8);
+                result.signednessText = QStringLiteral("not applicable");
+            }
         }
     } catch (const std::exception& error) {
         result.failureReason = QString::fromUtf8(error.what());

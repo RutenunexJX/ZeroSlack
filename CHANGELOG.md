@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.2.1] - 2026-08-15
+
+### Editor reliability update
+
+- Stabilized Format Document and Format Selection by retaining full syntax
+  context, preserving immutable string/comment content, reporting conservative
+  fallbacks, and aligning mixed ANSI parameter and port declarations.
+- Corrected editor command ownership for ordinary and mode-specific Tab /
+  Shift+Tab behavior, line duplication/deletion, structural Enter, completion,
+  and template-slot navigation.
+- Extended effective-literal inspection to display the packed numeric value of
+  arbitrary ASCII strings while continuing to reject nonnumeric strings and
+  include paths.
+- Hardened editor action availability, multi-view formatting anchors, command
+  dispatch, and expose-to-top regressions without adding source-file-specific
+  behavior.
+- Expanded formatter, effective-value, completion, line-operation,
+  multi-cursor, template-slot, Tree-sitter, and GUI regression coverage.
+
 ## [0.2.0] - 2026-08-12
 
 ### Current milestone

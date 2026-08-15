@@ -120,6 +120,8 @@ inline constexpr const char NavigationDesignGoDefinition[] =
     "navigation.design.goDefinition";
 inline constexpr const char NavigationDesignSetTop[] =
     "navigation.design.setTop";
+inline constexpr const char EditDuplicateLines[] =
+    "edit.duplicateLines";
 inline constexpr const char EditMoveLinesUp[] =
     "edit.moveLinesUp";
 inline constexpr const char EditMoveLinesDown[] =

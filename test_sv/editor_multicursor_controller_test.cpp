@@ -425,7 +425,7 @@ int main(int argc, char* argv[])
             {8, 11},
         };
 
-        expect("first Ctrl+D core step selects current structured occurrence",
+        expect("first next-occurrence core step selects current structured occurrence",
                controller.addNextOccurrence(
                    occurrences, 0, 11)
                    && controller.caretCount() == 1
@@ -433,7 +433,7 @@ int main(int argc, char* argv[])
                           .carets.constFirst()
                           .selectionStart()
                           == 0);
-        expect("subsequent Ctrl+D core steps add one occurrence",
+        expect("subsequent next-occurrence core steps add one occurrence",
                controller.addNextOccurrence(
                    occurrences, 0, 11)
                    && controller.caretCount() == 2
@@ -490,29 +490,37 @@ int main(int argc, char* argv[])
             &editor,
             Qt::Key_D,
             Qt::ControlModifier);
-        expect("Ctrl+D action preempts transient SourceNavigation",
-               editor.textCursor().selectedText()
-                       == QStringLiteral("sig")
+        const QString duplicatedSource = QString(source)
+            .insert(source.indexOf(QLatin1Char('\n'), firstAssignment) + 1,
+                    QStringLiteral("    sig = sig + 1;\n"));
+        expect("Ctrl+D duplicate preempts transient SourceNavigation",
+               editor.toPlainText() == duplicatedSource
                    && !editor.editorModeActiveForTest(
                        EditorModeId::SourceNavigation)
                    && !editor.editorModeActiveForTest(
                        EditorModeId::MultiCursor));
+        editor.undo();
+        expect("Ctrl+D duplicate is one undo transaction",
+               editor.toPlainText() == source);
 
-        QTest::keyClick(
-            &editor,
-            Qt::Key_D,
-            Qt::ControlModifier);
-        expect("second routed Ctrl+D enters MultiCursor",
-               editor.editorModeActiveForTest(
-                   EditorModeId::MultiCursor));
+        occurrenceCursor.setPosition(firstAssignment + 1);
+        editor.setTextCursor(occurrenceCursor);
+        QString occurrenceFailure;
+        expect("next-occurrence command selects then enters MultiCursor",
+               editor.addNextSymbolOccurrence(&occurrenceFailure)
+                   && occurrenceFailure.isEmpty()
+                   && editor.addNextSymbolOccurrence(&occurrenceFailure)
+                   && occurrenceFailure.isEmpty()
+                   && editor.editorModeActiveForTest(
+                       EditorModeId::MultiCursor));
         QTest::keyClicks(&editor, QStringLiteral("x"));
         const QString replaced = QString(source)
             .replace(firstAssignment, 3, QStringLiteral("x"))
             .replace(firstAssignment + 4, 3, QStringLiteral("x"));
-        expect("routed Ctrl+D distributes replacement structurally",
+        expect("next-occurrence command distributes replacement structurally",
                editor.toPlainText() == replaced);
         editor.undo();
-        expect("routed Ctrl+D replacement is one undo transaction",
+        expect("next-occurrence replacement is one undo transaction",
                editor.toPlainText() == source);
     }
 
@@ -1114,6 +1122,38 @@ int main(int argc, char* argv[])
                              + declarationPlan.caretOffset);
         editor.undo();
         expect("multi-caret structural Enter is one undo unit",
+               editor.toPlainText() == original);
+    }
+
+    {
+        MyCodeEditor editor;
+        EditorModeController modes;
+        EditorMultiCursorController controller;
+        TSDocument syntax;
+        const QString original =
+            QStringLiteral("module m;\n"
+                           "initial begin\n"
+                           "    logic a;\n"
+                           "    logic b;\n"
+                           "end\n"
+                           "endmodule\n");
+        editor.setPlainText(original);
+        syntax.setText(original);
+        controller.bind(&modes, &editor);
+        const int firstLineStart =
+            original.indexOf(QStringLiteral("    logic a;"));
+        const int secondLineStart =
+            original.indexOf(QStringLiteral("    logic b;"));
+        controller.setCarets(
+            {point(firstLineStart), point(secondLineStart)});
+        QString expected = original;
+        expected.insert(secondLineStart, QLatin1Char('\n'));
+        expected.insert(firstLineStart, QLatin1Char('\n'));
+        expect("multi-caret Enter at physical line starts does not stack indentation",
+               controller.insertStructuralNewline(&syntax, 4)
+                   && editor.toPlainText() == expected);
+        editor.undo();
+        expect("physical-line multi-caret Enter is one undo unit",
                editor.toPlainText() == original);
     }
 

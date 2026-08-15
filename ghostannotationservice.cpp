@@ -617,7 +617,8 @@ GhostNumericLiteralReport GhostAnnotationService::numericLiteralAt(
         EffectiveValueService::evaluateLiteral(
             target.evaluationText.isEmpty()
                 ? target.text
-                : target.evaluationText);
+                : target.evaluationText,
+            target.stringLiteral);
     if (!literal.available
         || literal.valueText.isEmpty()
         || literal.radixRepresentations.isEmpty()) {
@@ -626,7 +627,10 @@ GhostNumericLiteralReport GhostAnnotationService::numericLiteralAt(
     report.available = true;
     report.valueText = literal.valueText;
     report.radixRepresentations = literal.radixRepresentations;
-    report.displayText = literal.radixRepresentations.join(QLatin1Char('\n'));
+    QStringList displayLines = literal.radixRepresentations;
+    if (target.stringLiteral)
+        displayLines.prepend(literal.valueText);
+    report.displayText = displayLines.join(QLatin1Char('\n'));
     report.startPosition = target.startChar;
     report.endPosition = target.endChar;
     return report;

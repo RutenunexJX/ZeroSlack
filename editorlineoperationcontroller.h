@@ -10,6 +10,7 @@ enum class EditorLineOperation
 {
     Copy,
     Cut,
+    DuplicateLines,
     DeleteLines,
     JoinWithNextLine,
     MoveLinesUp,
@@ -39,6 +40,8 @@ public:
     EditorLineOperationResult cut(
         QTextCursor& cursor,
         QClipboard* clipboard = nullptr) const;
+    EditorLineOperationResult duplicateLines(
+        QTextCursor& cursor) const;
     EditorLineOperationResult deleteLines(
         QTextCursor& cursor) const;
     EditorLineOperationResult joinLines(

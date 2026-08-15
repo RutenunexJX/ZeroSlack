@@ -76,12 +76,34 @@ bool EditorStructuralInputController::handleStructuralEnter(
     QTextCursor cursor = editor->textCursor();
     if (cursor.hasSelection())
         return false;
-    const int insertionStart = cursor.position();
+    const int originalPosition = cursor.position();
     const TSStructuralNewlineTarget target =
         syntax.structuralNewlineTargetAt(
-            insertionStart, 4);
+            originalPosition, 4);
     if (!target.ok())
         return false;
+
+    int insertionStart = originalPosition;
+    const QTextBlock block = cursor.block();
+    if (block.isValid()) {
+        const int column = qMax(
+            0, originalPosition - block.position());
+        const QString blockText = block.text();
+        int leadingWhitespace = 0;
+        while (leadingWhitespace < blockText.size()
+               && (blockText.at(leadingWhitespace)
+                       == QLatin1Char(' ')
+                   || blockText.at(leadingWhitespace)
+                          == QLatin1Char('\t'))) {
+            ++leadingWhitespace;
+        }
+        if (column <= leadingWhitespace) {
+            insertionStart = block.position();
+            cursor.setPosition(insertionStart);
+            cursor.setPosition(originalPosition,
+                               QTextCursor::KeepAnchor);
+        }
+    }
 
     cursor.beginEditBlock();
     cursor.insertText(target.insertionText);

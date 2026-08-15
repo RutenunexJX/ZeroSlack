@@ -1,5 +1,7 @@
 #include "formattercursoranchor.h"
+#include "formatterservice.h"
 #include "mycodeeditor.h"
+#include "structuredwhitespaceformatter.h"
 
 #include <QApplication>
 #include <QCoreApplication>
@@ -450,15 +452,27 @@ int main(int argc, char* argv[])
         cursor.setPosition(oldValue + 3);
         editor.setTextCursor(cursor);
 
-        editor.formatDocument();
+        const FormatterReport firstFormat =
+            editor.formatDocument();
         const QString formatted = editor.toPlainText();
         const int newValue =
             formatted.indexOf(QStringLiteral("value"));
         expect("Format Document restores the logical cursor",
                formatted != source
+                   && firstFormat.outcome
+                          == FormatterOutcome::Applied
+                   && firstFormat.changed
                    && newValue >= 0
                    && editor.textCursor().position()
                        == newValue + 3);
+        const FormatterReport secondFormat =
+            editor.formatDocument();
+        expect("Format Document reports a deterministic unchanged outcome",
+               secondFormat.accepted()
+                   && secondFormat.outcome
+                          == FormatterOutcome::Unchanged
+                   && !secondFormat.changed
+                   && editor.toPlainText() == formatted);
         editor.undo();
         expect("Format Document remains one undo transaction",
                editor.toPlainText() == source);
@@ -505,6 +519,14 @@ int main(int argc, char* argv[])
                 "endmodule\n");
         MyCodeEditor editor;
         editor.setPlainText(source);
+        const FormatterReport noSelection =
+            editor.formatSelection();
+        expect("Format Selection rejection carries an explicit reason",
+               !noSelection.accepted()
+                   && noSelection.outcome
+                          == FormatterOutcome::Rejected
+                   && !noSelection.diagnostic.isEmpty()
+                   && editor.toPlainText() == source);
         const int oldAlways =
             source.indexOf(QStringLiteral("always_comb"));
         const int oldEnd =
@@ -515,7 +537,8 @@ int main(int argc, char* argv[])
                                      QTextCursor::KeepAnchor);
         editor.setTextCursor(reverseSelection);
 
-        editor.formatSelection();
+        const FormatterReport selectionFormat =
+            editor.formatSelection();
         const QString formatted = editor.toPlainText();
         const int newAlways =
             formatted.indexOf(QStringLiteral("always_comb"));
@@ -526,12 +549,65 @@ int main(int argc, char* argv[])
         const QTextCursor restored = editor.textCursor();
         expect("Format Selection restores both logical endpoints",
                formatted != source
+                   && selectionFormat.outcome
+                          == FormatterOutcome::Applied
+                   && selectionFormat.changed
                    && restored.position() == newAlways + 2
                    && restored.anchor() == newEnd + 2);
         expect("Format Selection preserves selection direction",
                restored.position() < restored.anchor());
         editor.undo();
         expect("Format Selection remains one undo transaction",
+               editor.toPlainText() == source);
+    }
+
+    {
+        const QString source =
+            QStringLiteral(
+                "module mixed_header #(\n"
+                " parameter P_MODE = \"CODER\",// modes\n"
+                " parameter P_BASE = 32'h0\n"
+                ")(\n"
+                " input logic clk,\n"
+                " input logic [31:0] address,\n"
+                " output logic ready\n"
+                ");\n"
+                "endmodule\n");
+        MyCodeEditor editor;
+        editor.setPlainText(source);
+        const int selectionStart =
+            source.indexOf(QStringLiteral(" parameter P_MODE"));
+        const int selectionEnd =
+            source.indexOf(QStringLiteral("\n);")) + 1;
+        QTextCursor selection(editor.document());
+        selection.setPosition(selectionStart);
+        selection.setPosition(selectionEnd,
+                              QTextCursor::KeepAnchor);
+        editor.setTextCursor(selection);
+
+        const FormatterReport report = editor.formatSelection();
+        const QString formatted = editor.toPlainText();
+        const bool headerAligned =
+            report.outcome == FormatterOutcome::Applied
+            && formatted.contains(QStringLiteral(
+                "    parameter P_MODE = \"CODER\" , // modes"))
+            && formatted.contains(QStringLiteral(
+                "    input  logic [31:0] address ,"))
+            && formatted.contains(QStringLiteral(
+                "    output logic        ready"));
+        if (!headerAligned) {
+            std::fprintf(stderr,
+                         "contextual header output (outcome %d):\n%s\n",
+                         static_cast<int>(report.outcome),
+                         qPrintable(formatted));
+        }
+        expect("Format Selection aligns a header using full document context",
+               headerAligned);
+        expect("contextual header selection formatting is whitespace-only",
+               StructuredWhitespaceFormatter::
+                   hasIdenticalNonWhitespaceStream(source, formatted));
+        editor.undo();
+        expect("contextual header selection formatting is one undo transaction",
                editor.toPlainText() == source);
     }
 

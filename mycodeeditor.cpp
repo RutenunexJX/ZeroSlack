@@ -2,6 +2,7 @@
 #include "actionregistry.h"
 #include "editorruntime.h"
 #include "editorsemanticcontextservice.h"
+#include "shareddocument.h"
 #include "sourcenavigationservice.h"
 #include "tsdocument.h"
 
@@ -427,6 +428,19 @@ bool MyCodeEditor::find(const QString& expression,
 void MyCodeEditor::showFindDialog()
 {
     showFindDialogFor(this);
+}
+
+bool MyCodeEditor::duplicateLines(
+    QString* failureReason)
+{
+    auto edit = beginSynchronousEditTransaction();
+    const EditorLineOperationResult result =
+        state->executeLineOperation(
+            this,
+            EditorLineOperation::DuplicateLines);
+    if (failureReason)
+        *failureReason = result.failureReason;
+    return result.succeeded;
 }
 
 bool MyCodeEditor::deleteLines(
@@ -1032,16 +1046,29 @@ bool MyCodeEditor::formatDocumentForSave()
     return state->formatDocumentForSave(this);
 }
 
-void MyCodeEditor::formatDocument()
+QList<MyCodeEditor*>
+MyCodeEditor::sharedDocumentViewsForFormatting() const
 {
-    auto edit = beginSynchronousEditTransaction();
-    state->formatDocument(this);
+    auto* sharedDocument = qobject_cast<SharedDocument*>(
+        document() ? document()->parent() : nullptr);
+    QList<MyCodeEditor*> views = sharedDocument
+        ? sharedDocument->views()
+        : QList<MyCodeEditor*>();
+    views.removeAll(const_cast<MyCodeEditor*>(this));
+    views.append(const_cast<MyCodeEditor*>(this));
+    return views;
 }
 
-void MyCodeEditor::formatSelection()
+FormatterReport MyCodeEditor::formatDocument()
 {
     auto edit = beginSynchronousEditTransaction();
-    state->formatSelection(this);
+    return state->formatDocument(this);
+}
+
+FormatterReport MyCodeEditor::formatSelection()
+{
+    auto edit = beginSynchronousEditTransaction();
+    return state->formatSelection(this);
 }
 
 bool MyCodeEditor::goToLineNumber(int lineNumber)

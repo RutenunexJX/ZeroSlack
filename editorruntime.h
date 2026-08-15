@@ -428,8 +428,8 @@ struct MyCodeEditorState
     FormatterProfile formatterProfile() const;
     void setFormatOnSaveEnabled(bool enabled);
     bool formatOnSaveEnabled() const;
-    void formatDocument(MyCodeEditor* editor);
-    void formatSelection(MyCodeEditor* editor);
+    FormatterReport formatDocument(MyCodeEditor* editor);
+    FormatterReport formatSelection(MyCodeEditor* editor);
     bool formatDocumentForSave(MyCodeEditor* editor);
     void commentSelectionOrLine(MyCodeEditor* editor);
     void uncommentSelectionOrLine(MyCodeEditor* editor);

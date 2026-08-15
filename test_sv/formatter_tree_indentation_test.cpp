@@ -174,6 +174,54 @@ int main(int argc, char** argv)
                hasIdenticalNonWhitespaceStream(
                    caseSource, alignedCase.formattedText));
 
+    const QString pwmCodecHeader =
+        QStringLiteral(
+            "module pwm_codec_top #(\n"
+            "    parameter P_MODE = \"CODER\",// \"CODER\", \"DECODER\", \"CODEC\"\n"
+            "    parameter P_LITE_BASE_ADDR = 32'h0000_0000\n"
+            ")(\n"
+            "  input logic clk,\n"
+            "  input logic rst,\n"
+            "  input    logic [31:0]  lite_awaddr  ,\n"
+            "  input    logic [2:0]         lite_awprot  ,\n"
+            "  input    logic               lite_awvalid ,\n"
+            "  output logic pwm_out,\n"
+            "  input logic pwm_in\n"
+            ");\n"
+            "endmodule\n");
+    const FormatterReport pwmCodecHeaderReport =
+        FormatterService::getInstance()->formatDocument(
+            pwmCodecHeader, FormatterProfile::Structured);
+    const bool pwmCodecHeaderAligned =
+           hasLine(pwmCodecHeaderReport.formattedText,
+                   QStringLiteral(
+                       "    parameter P_MODE           = \"CODER\"       , // \"CODER\", \"DECODER\", \"CODEC\""))
+               && hasLine(pwmCodecHeaderReport.formattedText,
+                          QStringLiteral(
+                              "    input  logic [31:0] lite_awaddr  ,"))
+               && hasLine(pwmCodecHeaderReport.formattedText,
+                          QStringLiteral(
+                              "    input  logic        lite_awvalid ,"))
+               && hasLine(pwmCodecHeaderReport.formattedText,
+                          QStringLiteral(
+                              "    output logic        pwm_out      ,"))
+               && hasLine(pwmCodecHeaderReport.formattedText,
+                          QStringLiteral(
+                              "    input  logic        pwm_in"));
+    expect("pwm codec parameter and ANSI port header is structurally aligned",
+           pwmCodecHeaderAligned);
+    expect("pwm codec header formatting remains whitespace-only",
+           StructuredWhitespaceFormatter::
+               hasIdenticalNonWhitespaceStream(
+                   pwmCodecHeader,
+                   pwmCodecHeaderReport.formattedText));
+    const FormatterReport pwmCodecSelectionReport =
+        FormatterService::getInstance()->formatSelection(
+            pwmCodecHeader, FormatterProfile::Structured);
+    expect("pwm codec header selection uses the same structural alignment",
+           pwmCodecSelectionReport.formattedText
+               == pwmCodecHeaderReport.formattedText);
+
     const QString danglingElseSource =
         QStringLiteral(
             "module nested_case_if;\n"

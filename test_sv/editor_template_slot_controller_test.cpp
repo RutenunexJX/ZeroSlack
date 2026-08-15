@@ -299,6 +299,85 @@ int main(int argc, char* argv[])
 
     {
         MyCodeEditor editor;
+        const QString original = QStringLiteral("abc");
+        editor.setPlainText(original);
+
+        CodeTemplateSlot first;
+        first.name = QStringLiteral("first");
+        first.start = 0;
+        first.length = 1;
+        first.tabStop = 1;
+        CodeTemplateSlot adjacentEmpty;
+        adjacentEmpty.name = QStringLiteral("adjacent-empty");
+        adjacentEmpty.start = 1;
+        adjacentEmpty.length = 0;
+        adjacentEmpty.tabStop = 2;
+        adjacentEmpty.visibleWhenEmpty = true;
+        CodeTemplateSlot third;
+        third.name = QStringLiteral("third");
+        third.start = 2;
+        third.length = 1;
+        third.tabStop = 3;
+        editor.startTemplateSlotMode(
+            0, original.size(), {first, adjacentEmpty, third});
+
+        expect("Tab selects an adjacent zero-length slot",
+               sendKey(editor, Qt::Key_Tab)
+                   && editor.templateSlotModeActiveIndex() == 1
+                   && !editor.textCursor().hasSelection()
+                   && editor.textCursor().position() == 1);
+        expect("Tab+Shift reverses from a shared slot endpoint",
+               sendKey(editor,
+                       Qt::Key_Tab,
+                       Qt::ShiftModifier)
+                   && editor.templateSlotModeActiveIndex() == 0
+                   && editor.textCursor().selectedText()
+                          == QStringLiteral("a")
+                   && editor.toPlainText() == original);
+        expect("Shift+Tab wraps from the first slot to the last",
+               sendKey(editor,
+                       Qt::Key_Backtab,
+                       Qt::ShiftModifier)
+                   && editor.templateSlotModeActiveIndex() == 2
+                   && editor.textCursor().selectedText()
+                          == QStringLiteral("c"));
+        expect("Tab wraps from the last slot to the first",
+               sendKey(editor, Qt::Key_Tab)
+                   && editor.templateSlotModeActiveIndex() == 0
+                   && editor.textCursor().selectedText()
+                          == QStringLiteral("a"));
+    }
+
+    {
+        MyCodeEditor editor;
+        const QString original = QStringLiteral("x");
+        editor.setPlainText(original);
+        CodeTemplateSlot only;
+        only.name = QStringLiteral("only");
+        only.start = 0;
+        only.length = 1;
+        only.tabStop = 1;
+        editor.startTemplateSlotMode(0, original.size(), {only});
+
+        expect("single-slot Tab remains in the only slot",
+               sendKey(editor, Qt::Key_Tab)
+                   && editor.templateSlotModeActive()
+                   && editor.templateSlotModeActiveIndex() == 0
+                   && editor.textCursor().selectedText()
+                          == QStringLiteral("x"));
+        expect("single-slot Tab+Shift remains in the only slot",
+               sendKey(editor,
+                       Qt::Key_Tab,
+                       Qt::ShiftModifier)
+                   && editor.templateSlotModeActive()
+                   && editor.templateSlotModeActiveIndex() == 0
+                   && editor.textCursor().selectedText()
+                          == QStringLiteral("x")
+                   && editor.toPlainText() == original);
+    }
+
+    {
+        MyCodeEditor editor;
         editor.setPlainText(QStringLiteral("abc"));
         CodeTemplateSlot finalSlot;
         finalSlot.name = QStringLiteral("final");

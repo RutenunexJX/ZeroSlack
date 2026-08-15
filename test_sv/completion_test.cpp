@@ -1440,9 +1440,13 @@ int main(int argc, char** argv) {
                true);
     const GhostNumericLiteralReport stringHover =
         numericLiteralAt(numericHoverText, stringHoverPosition);
-    expectBool("Ghost numeric hover excludes strings",
-               stringHover.available,
-               false);
+    expectBool("Ghost numeric hover packs ASCII strings",
+               stringHover.available
+                   && stringHover.valueText
+                          == QStringLiteral("characters: \"123\"")
+                   && stringHover.radixRepresentations.contains(
+                       QStringLiteral("hex: 31_3233")),
+               true);
     const GhostNumericLiteralReport includeStringHover =
         numericLiteralAt(numericHoverText, includeStringHoverPosition);
     expectBool("Ghost literal hover skips include string",
@@ -3594,6 +3598,7 @@ int main(int argc, char** argv) {
             FormatterProfile::IndentOnly),
     };
     bool formatterMalformedTabPathsSafe = true;
+    bool formatterMalformedTabDiagnosticsVisible = true;
     for (const FormatterReport& report : formatterMalformedTabReports) {
         formatterMalformedTabPathsSafe =
             formatterMalformedTabPathsSafe
@@ -3602,9 +3607,17 @@ int main(int argc, char** argv) {
             && StructuredWhitespaceFormatter::hasIdenticalNonWhitespaceStream(
                    formatterMalformedTabInput,
                    report.formattedText);
+        formatterMalformedTabDiagnosticsVisible =
+            formatterMalformedTabDiagnosticsVisible
+            && report.outcome
+                   == FormatterOutcome::ConservativeFallback
+            && !report.diagnostic.isEmpty();
     }
     expectBool("Formatter malformed Tab safety covers document and selection",
                formatterMalformedTabPathsSafe,
+               true);
+    expectBool("Formatter conservative fallback exposes a deterministic reason",
+               formatterMalformedTabDiagnosticsVisible,
                true);
 
     const QString formatterSemicolonInput =
@@ -6345,6 +6358,43 @@ int main(int argc, char** argv) {
                        .action
                    == CompletionPopupKeyAction::ActivateCurrentOrFirstSelectable,
                true);
+    popupQuery.key = Qt::Key_Backtab;
+    popupQuery.modifiers = int(Qt::NoModifier);
+    expectBool("CompletionService Backtab selects previous",
+               CompletionService::getInstance()
+                       ->completionPopupKeyState(popupQuery)
+                       .action
+                   == CompletionPopupKeyAction::SelectPreviousSelectable,
+               true);
+    popupQuery.modifiers = int(Qt::ShiftModifier);
+    expectBool("CompletionService shifted Backtab selects previous",
+               CompletionService::getInstance()
+                       ->completionPopupKeyState(popupQuery)
+                       .action
+                   == CompletionPopupKeyAction::SelectPreviousSelectable,
+               true);
+    popupQuery.key = Qt::Key_Tab;
+    expectBool("CompletionService Tab+Shift selects previous",
+               CompletionService::getInstance()
+                       ->completionPopupKeyState(popupQuery)
+                       .action
+                   == CompletionPopupKeyAction::SelectPreviousSelectable,
+               true);
+    popupQuery.modifiers = int(Qt::NoModifier);
+    expectBool("CompletionService plain Tab activates selectable",
+               CompletionService::getInstance()
+                       ->completionPopupKeyState(popupQuery)
+                       .action
+                   == CompletionPopupKeyAction::ActivateCurrentOrFirstSelectable,
+               true);
+    popupQuery.modifiers = int(Qt::ControlModifier);
+    expectBool("CompletionService command-modified Tab is not activation",
+               CompletionService::getInstance()
+                       ->completionPopupKeyState(popupQuery)
+                       .action
+                   == CompletionPopupKeyAction::None,
+               true);
+    popupQuery.modifiers = int(Qt::NoModifier);
     popupQuery.key = Qt::Key_Escape;
     expectBool("CompletionService popup clears explicit command",
                CompletionService::getInstance()
@@ -6362,7 +6412,17 @@ int main(int argc, char** argv) {
                    == CompletionPopupKeyAction::ActivateCurrentOrFirstSelectable,
                true);
     EditorCompletionPopupKeyContext contextCommandPopupQuery;
+    contextCommandPopupQuery.key = Qt::Key_Tab;
+    contextCommandPopupQuery.modifiers = int(Qt::ShiftModifier);
+    contextCommandPopupQuery.hasRows = true;
+    expectBool("EditorContext preserves Tab+Shift popup direction",
+               EditorSemanticContextService::getInstance()
+                       ->completionPopupKeyState(contextCommandPopupQuery)
+                       .action
+                   == CompletionPopupKeyAction::SelectPreviousSelectable,
+               true);
     contextCommandPopupQuery.key = Qt::Key_Escape;
+    contextCommandPopupQuery.modifiers = int(Qt::NoModifier);
     expectBool("EditorContext command popup clears",
                EditorSemanticContextService::getInstance()
                        ->completionPopupKeyState(contextCommandPopupQuery)

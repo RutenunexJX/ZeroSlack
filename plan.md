@@ -1,12 +1,13 @@
 # ZeroSlack Current Plan
 
-Product version: `v0.2.0`
+Product version: `v0.2.1`
 
 ## Current status
 
-- Independent control-side acceptance for 0.2.0 completed on 2026-08-13.
-- The load-sensitive Wave Preview latency threshold is deferred from this
-  milestone by product decision.
+- The 0.2.1 editor reliability changes and focused regression coverage are
+  implemented.
+- Release verification, source publication, and replacement of the fixed-name
+  `ZeroSlack-win64` portable package complete this maintenance cycle.
 
 Superseded plans and completed milestone logs are available in the
 [archive index](docs/archive/README.md).

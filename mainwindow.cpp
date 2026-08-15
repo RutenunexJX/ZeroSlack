@@ -16,6 +16,7 @@
 #include "editoractioncontextservice.h"
 #include "editorfileidentity.h"
 #include "filecommandcoordinator.h"
+#include "formatterservice.h"
 #include "navigationcommandcoordinator.h"
 #include "navigationmanager.h"
 #include "navigationpanecoordinator.h"
@@ -3495,12 +3496,20 @@ ActionExecutionResult MainWindow::executeActionRoute(
                      "editor.multicursor.addNextOccurrence")
         || route == QStringLiteral(
                         "editor.multicursor.selectScopeOccurrences")) {
+        const QString preferredViewId =
+            invocation.parameters
+                .value(QStringLiteral("editorViewId"))
+                .toString();
         MyCodeEditor* editor = tabManager
-            ? tabManager->getCurrentEditor()
+            ? tabManager->editorActionTarget(
+                  preferredViewId)
             : nullptr;
         if (!editor) {
-            return fail(QStringLiteral(
-                "No editor tab is available."));
+            return fail(preferredViewId.isEmpty()
+                ? QStringLiteral(
+                      "No editor tab is available.")
+                : QStringLiteral(
+                      "The requested editor view is no longer available."));
         }
         QString message;
         const bool executed = route == QStringLiteral(
@@ -3676,16 +3685,25 @@ ActionExecutionResult MainWindow::executeActionRoute(
         return succeeded();
     }
 
-    if (route == QStringLiteral("editor.lines.delete")
+    if (route == QStringLiteral("editor.lines.duplicate")
+        || route == QStringLiteral("editor.lines.delete")
         || route == QStringLiteral("editor.lines.join")
         || route == QStringLiteral("editor.lines.moveUp")
         || route == QStringLiteral("editor.lines.moveDown")) {
+        const QString preferredViewId =
+            invocation.parameters
+                .value(QStringLiteral("editorViewId"))
+                .toString();
         MyCodeEditor* editor = tabManager
-            ? tabManager->getCurrentEditor()
+            ? tabManager->editorActionTarget(
+                  preferredViewId)
             : nullptr;
         if (!editor) {
-            return fail(QStringLiteral(
-                "No editor tab is available."));
+            return fail(preferredViewId.isEmpty()
+                ? QStringLiteral(
+                      "No editor tab is available.")
+                : QStringLiteral(
+                      "The requested editor view is no longer available."));
         }
         if (editor->isReadOnly()) {
             return fail(QStringLiteral(
@@ -3694,6 +3712,9 @@ ActionExecutionResult MainWindow::executeActionRoute(
         QString message;
         bool executed = false;
         if (route == QStringLiteral(
+                         "editor.lines.duplicate")) {
+            executed = editor->duplicateLines(&message);
+        } else if (route == QStringLiteral(
                          "editor.lines.delete")) {
             executed = editor->deleteLines(&message);
         } else if (route == QStringLiteral(
@@ -3720,12 +3741,21 @@ ActionExecutionResult MainWindow::executeActionRoute(
                         "editor.structure.createAssignmentQueue")
         || route.startsWith(
             QStringLiteral("editor.format."))) {
+        const QString preferredViewId =
+            invocation.parameters
+                .value(QStringLiteral("editorViewId"))
+                .toString();
         MyCodeEditor* editor = tabManager
-            ? tabManager->getCurrentEditor()
+            ? tabManager->editorActionTarget(
+                  preferredViewId)
             : nullptr;
-        if (!editor)
-            return fail(QStringLiteral(
-                "No editor tab is available."));
+        if (!editor) {
+            return fail(preferredViewId.isEmpty()
+                ? QStringLiteral(
+                      "No editor tab is available.")
+                : QStringLiteral(
+                      "The requested editor view is no longer available."));
+        }
 
         const bool editsDocument =
             route == QStringLiteral(
@@ -3828,10 +3858,58 @@ ActionExecutionResult MainWindow::executeActionRoute(
                 return fail(QStringLiteral(
                     "Select text to format."));
             }
-            editor->formatSelection();
+            const FormatterReport report =
+                editor->formatSelection();
+            if (!report.accepted()) {
+                return fail(report.diagnostic.isEmpty()
+                    ? QStringLiteral(
+                          "Selection formatting was rejected.")
+                    : report.diagnostic);
+            }
+            result.output.insert(
+                QStringLiteral("changed"), report.changed);
+            result.output.insert(
+                QStringLiteral("outcome"),
+                report.outcome
+                        == FormatterOutcome::ConservativeFallback
+                    ? QStringLiteral("conservativeFallback")
+                    : (report.outcome
+                               == FormatterOutcome::Applied
+                           ? QStringLiteral("applied")
+                           : QStringLiteral("unchanged")));
+            result.message = report.diagnostic;
+            if (result.message.isEmpty()
+                && !report.changed) {
+                result.message = QStringLiteral(
+                    "Selection already formatted");
+            }
         } else if (route == QStringLiteral(
                                 "editor.format.document")) {
-            editor->formatDocument();
+            const FormatterReport report =
+                editor->formatDocument();
+            if (!report.accepted()) {
+                return fail(report.diagnostic.isEmpty()
+                    ? QStringLiteral(
+                          "Document formatting was rejected.")
+                    : report.diagnostic);
+            }
+            result.output.insert(
+                QStringLiteral("changed"), report.changed);
+            result.output.insert(
+                QStringLiteral("outcome"),
+                report.outcome
+                        == FormatterOutcome::ConservativeFallback
+                    ? QStringLiteral("conservativeFallback")
+                    : (report.outcome
+                               == FormatterOutcome::Applied
+                           ? QStringLiteral("applied")
+                           : QStringLiteral("unchanged")));
+            result.message = report.diagnostic;
+            if (result.message.isEmpty()
+                && !report.changed) {
+                result.message = QStringLiteral(
+                    "Document already formatted");
+            }
         } else {
             return fail();
         }

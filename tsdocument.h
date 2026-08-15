@@ -258,6 +258,7 @@ struct TSNumericLiteralTarget {
     int endChar = -1;
     QString text;
     QString evaluationText;
+    bool stringLiteral = false;
 
     bool ok() const
     {
@@ -611,8 +612,9 @@ public:
     // True if the char offset is inside a Tree-sitter string node.
     bool isStringAt(int charOffset) const;
 
-    // Exact numeric token under the cursor. Comments and strings are excluded
-    // by construction because only Tree-sitter numeric literal nodes match.
+    // Exact numeric token or single-character string candidate under the
+    // cursor. Comments and include-path strings are excluded structurally;
+    // string candidates are validated by the shared literal evaluator.
     TSNumericLiteralTarget numericLiteralAt(int charOffset) const;
 
     // Exact SystemVerilog identifier under the cursor. Comment and string

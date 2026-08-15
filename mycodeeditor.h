@@ -8,6 +8,7 @@
 #include "semanticdecorationservice.h"
 #include "ghostannotationservice.h"
 #include "foldblockshelfmodel.h"
+#include "formatterservice.h"
 #include "editorfoldviewstate.h"
 #include "editorviewprojection.h"
 #include "includeheaderworkflowtypes.h"
@@ -52,7 +53,6 @@ struct EditorOccurrenceIndexStats;
 struct EditorSemanticContext;
 struct EditorSourceNavigationTarget;
 struct SourceLineNavigationTarget;
-enum class FormatterProfile;
 enum class SourceSymbolAction;
 struct MyCodeEditorState;
 
@@ -138,6 +138,7 @@ public:
     bool find(const QString& expression,
               QTextDocument::FindFlags options = {});
     void showFindDialog();
+    bool duplicateLines(QString* failureReason = nullptr);
     bool deleteLines(QString* failureReason = nullptr);
     bool joinLines(QString* failureReason = nullptr);
     bool moveLinesUp(QString* failureReason = nullptr);
@@ -250,8 +251,8 @@ public:
     void setFormatOnSaveEnabled(bool enabled);
     bool formatOnSaveEnabled() const;
     bool formatDocumentForSave();
-    void formatDocument();
-    void formatSelection();
+    FormatterReport formatDocument();
+    FormatterReport formatSelection();
     bool goToLineNumber(int lineNumber);
     bool replaceNextText(const QString& needle,
                          const QString& replacement,
@@ -370,6 +371,7 @@ private:
     friend struct MyCodeEditorState;
 
     std::unique_ptr<MyCodeEditorState> state;
+    QList<MyCodeEditor*> sharedDocumentViewsForFormatting() const;
 
 signals:
     void fileNameChanged(const QString& fileName);

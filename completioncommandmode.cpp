@@ -208,15 +208,33 @@ CompletionPopupKeyState CompletionCommandMode::popupKeyState(
     const CompletionPopupKeyQuery& query)
 {
     CompletionPopupKeyState state;
+    const Qt::KeyboardModifiers modifiers =
+        Qt::KeyboardModifiers::fromInt(query.modifiers)
+        & (Qt::ShiftModifier
+           | Qt::ControlModifier
+           | Qt::AltModifier
+           | Qt::MetaModifier);
+    const bool backwardTab =
+        (query.key == Qt::Key_Backtab
+         && (modifiers == Qt::NoModifier
+             || modifiers == Qt::ShiftModifier))
+        || (query.key == Qt::Key_Tab
+            && modifiers == Qt::ShiftModifier);
+    if (backwardTab) {
+        state.action =
+            CompletionPopupKeyAction::SelectPreviousSelectable;
+        return state;
+    }
+    if ((query.key == Qt::Key_Tab
+         || query.key == Qt::Key_Backtab)
+        && modifiers != Qt::NoModifier) {
+        return state;
+    }
 
     switch (query.key) {
     case Qt::Key_Down:
     case Qt::Key_Up:
         state.action = CompletionPopupKeyAction::ForwardToPopup;
-        return state;
-    case Qt::Key_Backtab:
-        state.action =
-            CompletionPopupKeyAction::SelectPreviousSelectable;
         return state;
     case Qt::Key_Escape:
         state.action = CompletionPopupKeyAction::HidePopupAndClearCommand;

@@ -3,6 +3,7 @@
 #include <QElapsedTimer>
 #include <QString>
 #include <QStringList>
+#include <algorithm>
 #include <cstdio>
 #include <cstring>
 
@@ -286,6 +287,56 @@ int main() {
                   && concatenated.text == QStringLiteral("4'ha")
                   && concatenated.evaluationText
                       == QStringLiteral("4'ha"));
+    }
+
+    {
+        const QString asciiSource =
+            QStringLiteral(
+                "module ascii_context;\n"
+                "  string printable = \"A\";\n"
+                "  string lower_boundary = \" \";\n"
+                "  string upper_boundary = \"~\";\n"
+                "  string escaped = \"\\n\";\n"
+                "  string escaped_quote = \"\\\"\";\n"
+                "  string non_ascii = \"中\";\n"
+                "  string multiple = \"AB\";\n"
+                "  `include \"A\"\n"
+                "endmodule\n");
+        TSDocument asciiDocument;
+        asciiDocument.setText(asciiSource);
+        const auto asciiTarget =
+            [&asciiDocument, &asciiSource](const QString& token,
+                                           int occurrence = 0) {
+                int position = -1;
+                int from = 0;
+                for (int i = 0; i <= occurrence; ++i) {
+                    position = asciiSource.indexOf(token, from);
+                    if (position < 0)
+                        break;
+                    from = position + token.size();
+                }
+                return asciiDocument.numericLiteralAt(
+                    position < 0 ? position : position + 1);
+            };
+        const TSNumericLiteralTarget printableAscii =
+            asciiTarget(QStringLiteral("\"A\""));
+        check("numeric query accepts one printable ASCII string token",
+              printableAscii.ok()
+                  && printableAscii.stringLiteral
+                  && printableAscii.text == QStringLiteral("A")
+                  && printableAscii.evaluationText
+                      == QStringLiteral("\"A\""));
+        check("numeric query accepts printable ASCII boundaries",
+              asciiTarget(QStringLiteral("\" \"")).ok()
+                  && asciiTarget(QStringLiteral("\"~\"")).ok());
+        check("numeric query accepts one escaped ASCII character",
+              asciiTarget(QStringLiteral("\"\\n\"")).ok()
+                  && asciiTarget(QStringLiteral("\"\\\"\"")).ok());
+        check("numeric query marks string candidates for shared evaluation",
+              asciiTarget(QStringLiteral("\"中\"")).stringLiteral
+                  && asciiTarget(QStringLiteral("\"AB\"")).stringLiteral);
+        check("numeric query rejects include path strings",
+              !asciiTarget(QStringLiteral("\"A\""), 1).ok());
     }
 
     {
@@ -1155,6 +1206,63 @@ int main() {
                   && !pairedTarget.insertedClosingKeyword
                   && pairedTarget.insertionText
                       == QStringLiteral("\n    "));
+
+        const QString indentedLine =
+            QStringLiteral("module input_demo;\n"
+                           "always_comb begin\n"
+                           "    logic value;\n"
+                           "end\n"
+                           "endmodule\n");
+        d.setText(indentedLine);
+        const int physicalLineStart =
+            indentedLine.indexOf(QStringLiteral("    logic value;"));
+        const TSStructuralNewlineTarget atPhysicalStart =
+            d.structuralNewlineTarget(physicalLineStart);
+        const TSStructuralNewlineTarget insideIndent =
+            d.structuralNewlineTarget(physicalLineStart + 2);
+        const TSStructuralNewlineTarget atLogicalStart =
+            d.structuralNewlineTarget(physicalLineStart + 4);
+        check("structural Enter preserves exactly the indentation before the cursor",
+              atPhysicalStart.insertionText == QStringLiteral("\n")
+                  && atPhysicalStart.caretOffset == 1
+                  && insideIndent.insertionText == QStringLiteral("\n  ")
+                  && insideIndent.caretOffset == 3
+                  && atLogicalStart.insertionText
+                      == QStringLiteral("\n    ")
+                  && atLogicalStart.caretOffset == 5
+                  && !atPhysicalStart.insertedClosingKeyword
+                  && !insideIndent.insertedClosingKeyword
+                  && !atLogicalStart.insertedClosingKeyword);
+
+        const QString whitespaceLine =
+            QStringLiteral("module input_demo;\n"
+                           "always_comb begin\n"
+                           "    \n"
+                           "end\n"
+                           "endmodule\n");
+        d.setText(whitespaceLine);
+        const int whitespaceStart =
+            whitespaceLine.indexOf(QStringLiteral("    \n"));
+        check("structural Enter does not duplicate a whitespace-only line indent",
+              d.structuralNewlineTarget(whitespaceStart).insertionText
+                      == QStringLiteral("\n")
+                  && d.structuralNewlineTarget(whitespaceStart + 4)
+                         .insertionText
+                      == QStringLiteral("\n    "));
+
+        const QString closingLine =
+            QStringLiteral("module input_demo;\n"
+                           "always_comb begin\n"
+                           "end\n"
+                           "endmodule\n");
+        d.setText(closingLine);
+        const int closingLineStart =
+            closingLine.indexOf(QStringLiteral("end\n"));
+        check("structural Enter at a following line does not reopen begin",
+              d.structuralNewlineTarget(closingLineStart).insertionText
+                      == QStringLiteral("\n")
+                  && !d.structuralNewlineTarget(closingLineStart)
+                          .insertedClosingKeyword);
     }
 
     {
@@ -1180,6 +1288,12 @@ int main() {
               target.ok()
                   && target.insertionText
                       == QStringLiteral("\n            "));
+
+        const int statementLineStart =
+            caseBody.indexOf(QStringLiteral("            next = RUN;"));
+        check("structural Enter on the next case line does not reapply label indent",
+              d.structuralNewlineTarget(statementLineStart).insertionText
+                  == QStringLiteral("\n"));
     }
 
     {
@@ -1311,6 +1425,10 @@ int main() {
                 "    sig = sig;\n"
                 "    if (enable) begin\n"
                 "        sig = sig;\n"
+                "        logic sig_extra;\n"
+                "        sig_extra = sig_extra;\n"
+                "        logic sig2;\n"
+                "        sig2 = sig2 + 1;\n"
                 "        // sig\n"
                 "        text = \"sig\";\n"
                 "    end\n"
@@ -1340,6 +1458,37 @@ int main() {
                          < innerSignal
                   && occurrences.scopeEndChar
                          > innerSignal + 9);
+        const int extendedSignal =
+            occurrenceSource.indexOf(
+                QStringLiteral("sig_extra ="));
+        const TSIdentifierOccurrenceSet extendedOccurrences =
+            d.identifierOccurrencesAt(extendedSignal + 2);
+        check("identifier occurrence boundaries do not match prefixes or adjacent identifiers",
+              extendedOccurrences.ok()
+                  && extendedOccurrences.selected.text
+                         == QStringLiteral("sig_extra")
+                  && extendedOccurrences.occurrences.size() == 3
+                  && std::all_of(
+                      extendedOccurrences.occurrences.cbegin(),
+                      extendedOccurrences.occurrences.cend(),
+                      [&occurrenceSource](
+                          const TSIdentifierTarget& range) {
+                          return occurrenceSource.mid(
+                                     range.startChar,
+                                     range.endChar
+                                         - range.startChar)
+                              == QStringLiteral("sig_extra");
+                      }));
+        check("identifier occurrence queries reject comments strings and numbers",
+              !d.identifierOccurrencesAt(
+                    occurrenceSource.indexOf(
+                        QStringLiteral("// sig")) + 3).ok()
+                  && !d.identifierOccurrencesAt(
+                         occurrenceSource.indexOf(
+                             QStringLiteral("\"sig\"")) + 2).ok()
+                  && !d.identifierOccurrencesAt(
+                         occurrenceSource.indexOf(
+                             QStringLiteral("+ 1")) + 2).ok());
     }
 
     printf("\n%d checks, %d failed\n", checks, fails);
