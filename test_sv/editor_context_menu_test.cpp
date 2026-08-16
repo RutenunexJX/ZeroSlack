@@ -165,7 +165,6 @@ int main(int argc, char* argv[])
         QStringLiteral("format.unindentLines"),
         QStringLiteral("format.profile.structured"),
         QStringLiteral("format.profile.indentOnly"),
-        QStringLiteral("format.onSave"),
         QStringLiteral("format.selection"),
         QStringLiteral("format.document")
     };

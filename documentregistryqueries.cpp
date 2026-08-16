@@ -38,11 +38,8 @@ DocumentSnapshot DocumentRegistry::snapshotForEditor(MyCodeEditor* editor) const
     if (!tracked)
         return DocumentSnapshot();
     DocumentSnapshot snapshot = tracked->snapshot;
-    if (tracked->editor) {
-        const QString& text = tracked->editor->cachedDocumentText();
-        recordDocumentTextCopy(text.size());
-        snapshot.text = QString(text.constData(), text.size());
-    }
+    if (tracked->editor)
+        snapshot.text = tracked->editor->cachedDocumentText();
     return snapshot;
 }
 

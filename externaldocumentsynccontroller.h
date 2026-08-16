@@ -77,6 +77,8 @@ public:
     void trackDocument(SharedDocument* document);
     void untrackDocument(SharedDocument* document);
     void noteDocumentSaved(SharedDocument* document);
+    void noteDocumentSaved(SharedDocument* document,
+                           const QByteArray& fingerprint);
 
     // This is the deterministic business-logic entry point. The
     // QFileSystemWatcher callbacks delegate to it, while tests can invoke it

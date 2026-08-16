@@ -2351,6 +2351,9 @@ bool TabManager::saveEditor(
             fileName,
             document->fileName());
     QString overwriteFailure;
+    // Validate once at the last possible point before the atomic write. The
+    // former pre-check became redundant after format-on-save was removed and
+    // doubled the synchronous external-state probe on every Ctrl+S.
     if (overwritesCurrentSource
         && externalDocumentSync
         && !externalDocumentSync->canOverwriteDocument(
@@ -2365,31 +2368,17 @@ bool TabManager::saveEditor(
                 : overwriteFailure);
         return false;
     }
-    if (editor->formatDocumentForSave())
-        documentModel->refreshEditorState(editor);
-    // Re-read immediately before the atomic write. This closes the gap
-    // between the initial command check and formatter/user-dialog work.
-    if (overwritesCurrentSource
-        && externalDocumentSync
-        && !externalDocumentSync->canOverwriteDocument(
-            document,
-            &overwriteFailure)) {
-        writeRecoverySnapshot(document, true);
-        emit fileSaveFailed(
-            fileName,
-            overwriteFailure.isEmpty()
-                ? QStringLiteral(
-                      "The source changed externally before the save could be applied.")
-                : overwriteFailure);
-        return false;
-    }
     QString saveFailure;
+    const QString& savedText = editor->cachedDocumentText();
+    QByteArray savedRawFingerprint;
+    QByteArray savedLogicalFingerprint;
     if (!fileIo.writeTextFile(
             qobject_cast<QWidget*>(parent()),
             fileName,
-            document->textDocument()
-                ->toPlainText(),
-            &saveFailure)) {
+            savedText,
+            &saveFailure,
+            &savedRawFingerprint,
+            &savedLogicalFingerprint)) {
         writeRecoverySnapshot(document, true);
         emit fileSaveFailed(
             fileName,
@@ -2398,9 +2387,10 @@ bool TabManager::saveEditor(
                 : saveFailure);
         return false;
     }
-    if (!sameLexicalPath(
-            fileName,
-            document->fileName())) {
+    const bool renamedDocument = !sameLexicalPath(
+        fileName,
+        document->fileName());
+    if (renamedDocument) {
         if (!sharedDocuments->renameDocument(
                 document,
                 fileName)) {
@@ -2419,12 +2409,17 @@ bool TabManager::saveEditor(
         !QFileInfo(fileName).isWritable());
     document->setExternalState(
         SharedDocumentExternalState::Current);
-    document->markSaved();
+    const QDateTime savedModifiedUtc =
+        QFileInfo(fileName).lastModified().toUTC();
+    document->markSaved(savedRawFingerprint,
+                        savedModifiedUtc);
     clearRecoverySnapshot(document, true);
     if (externalDocumentSync)
-        externalDocumentSync->noteDocumentSaved(document);
+        externalDocumentSync->noteDocumentSaved(
+            document, savedLogicalFingerprint);
     updateTitlesForDocument(document);
-    applyWorkspaceScope();
+    if (renamedDocument)
+        applyWorkspaceScope();
     emit fileSaved(document->fileName());
     return true;
 }

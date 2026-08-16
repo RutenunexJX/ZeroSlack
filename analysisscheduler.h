@@ -23,6 +23,7 @@ class SymbolAnalyzer;
 class SymbolRelationshipEngine;
 class SmartRelationshipBuilder;
 class DiagnosticsRefreshController;
+class AnalysisSchedulerTestAccess;
 
 class ZEROSLACK_API AnalysisScheduler : public QObject
 {
@@ -104,6 +105,8 @@ signals:
     void workspaceRelationshipAnalysisCancelled();
 
 private:
+    friend class AnalysisSchedulerTestAccess;
+
     // These collaborators are externally owned. They can be declared after
     // the scheduler and therefore be destroyed first; guarded handles make
     // shutdown and queued callbacks observe that destruction immediately.

@@ -1647,7 +1647,8 @@ void MainWindow::runActiveEditorPassiveRefresh()
             // Re-query after the analysis publication turn. The immediate
             // analysis-state update can precede other queued active-document
             // UI work, leaving Current File on an older diagnostic snapshot.
-            problemsPanel->update();
+            if (problemsPanel->isVisibleToUser())
+                problemsPanel->update();
         }
     }
     const qint64 panelsMs = stageTimer.elapsed();
@@ -3848,10 +3849,6 @@ ActionExecutionResult MainWindow::executeActionRoute(
                                 "editor.format.profile.indentOnly")) {
             editor->setFormatterProfile(
                 FormatterProfile::IndentOnly);
-        } else if (route == QStringLiteral(
-                                "editor.format.onSave")) {
-            editor->setFormatOnSaveEnabled(
-                !editor->formatOnSaveEnabled());
         } else if (route == QStringLiteral(
                                 "editor.format.selection")) {
             if (!editor->textCursor().hasSelection()) {
@@ -6191,9 +6188,6 @@ void MainWindow::applySettingsCenterSnapshot(
             profile == QStringLiteral("indent_only")
                 ? FormatterProfile::IndentOnly
                 : FormatterProfile::Structured);
-        formatterSettings->setFormatOnSaveEnabled(
-            snapshot.value(
-                QStringLiteral("formatter.formatOnSave")).toBool());
     }
 
     if (workspaceSessionCoordinator) {

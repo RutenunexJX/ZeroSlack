@@ -1,6 +1,7 @@
 #ifndef TABFILEIO_H
 #define TABFILEIO_H
 
+#include <QByteArray>
 #include <QString>
 
 class QWidget;
@@ -23,7 +24,9 @@ public:
         QWidget* parent,
         const QString& fileName,
         const QString& text,
-        QString* failureReason = nullptr) const;
+        QString* failureReason = nullptr,
+        QByteArray* rawSha256 = nullptr,
+        QByteArray* logicalTextSha256 = nullptr) const;
 };
 
 #endif // TABFILEIO_H

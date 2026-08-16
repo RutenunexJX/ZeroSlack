@@ -978,22 +978,45 @@ void EditorSelection::highlightSemanticDecorations(
     editor->setExtraSelections(selections);
 }
 
+void EditorSelection::activateCurrentSymbolReferences(MyCodeEditor* editor)
+{
+    if (!editor)
+        return;
+    QTextCursor wordCursor = editor->textCursor();
+    if (!wordCursor.hasSelection())
+        wordCursor.select(QTextCursor::WordUnderCursor);
+    const QString word = wordCursor.selectedText().trimmed();
+    currentSymbolReferencesActive = word.size() >= 2
+        && (word.at(0).isLetter() || word.at(0) == QLatin1Char('_'));
+    currentSymbolReferenceWord = currentSymbolReferencesActive
+        ? word
+        : QString();
+    highlightCurrentSymbolReferences(editor);
+}
+
+void EditorSelection::clearCurrentSymbolReferences(MyCodeEditor* editor)
+{
+    currentSymbolReferencesActive = false;
+    currentSymbolReferenceWord.clear();
+    highlightCurrentSymbolReferences(editor);
+}
+
 void EditorSelection::highlightCurrentSymbolReferences(MyCodeEditor* editor)
 {
+    if (!editor)
+        return;
     QList<QTextEdit::ExtraSelection> selections =
         editorSelectionsWithout(
             editor,
             kCurrentSymbolSelectionProperty,
             kCurrentSymbolSelectionMarker);
 
-    QTextCursor wordCursor = editor->textCursor();
-    wordCursor.select(QTextCursor::WordUnderCursor);
-    const QString word = wordCursor.selectedText().trimmed();
-    if (word.size() < 2
-        || (!word.at(0).isLetter() && word.at(0) != QLatin1Char('_'))) {
+    if (!currentSymbolReferencesActive
+        || currentSymbolReferenceWord.isEmpty()) {
         editor->setExtraSelections(selections);
         return;
     }
+    const QString word = currentSymbolReferenceWord;
 
     auto occurrenceIt = occurrenceIndex.find(word);
     if (!occurrenceIndexInitialized
@@ -1056,7 +1079,10 @@ void EditorSelection::rebuildOccurrenceIndex(MyCodeEditor* editor,
 void EditorSelection::resetDocumentText(MyCodeEditor* editor,
                                         const QString& text)
 {
+    currentSymbolReferencesActive = false;
+    currentSymbolReferenceWord.clear();
     rebuildOccurrenceIndex(editor, text);
+    highlightCurrentSymbolReferences(editor);
 }
 
 void EditorSelection::appendOccurrenceRange(const QString& text,

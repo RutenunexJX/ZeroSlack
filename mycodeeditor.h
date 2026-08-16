@@ -50,6 +50,7 @@ class EditorCompletionWorkflow;
 class EditorSourceNavigationUi;
 struct EditorAppearanceOptions;
 struct EditorOccurrenceIndexStats;
+struct EditorColumnModeSnapshot;
 struct EditorSemanticContext;
 struct EditorSourceNavigationTarget;
 struct SourceLineNavigationTarget;
@@ -224,6 +225,7 @@ public:
     int templateSlotModeSlotCount() const;
     bool templateSlotModeBlinkOnForTest() const;
     bool columnSelectionActive() const;
+    EditorColumnModeSnapshot columnModeSnapshotForTest() const;
     bool virtualCursorActiveForTest() const;
     int virtualCursorLineForTest() const;
     int virtualCursorColumnForTest() const;
@@ -248,9 +250,6 @@ public:
     annotationDisplayOptions() const;
     void setFormatterProfile(FormatterProfile profile);
     FormatterProfile formatterProfile() const;
-    void setFormatOnSaveEnabled(bool enabled);
-    bool formatOnSaveEnabled() const;
-    bool formatDocumentForSave();
     FormatterReport formatDocument();
     FormatterReport formatSelection();
     bool goToLineNumber(int lineNumber);
@@ -398,7 +397,6 @@ signals:
     void editorStatusMessageRequested(const QString& message);
     void editorModeStateChanged(const EditorModeSnapshot& snapshot);
     void formatterProfileChanged(FormatterProfile profile);
-    void formatOnSaveChanged(bool enabled);
     void foldShelfItemConsumed(const QString& id);
     void fontZoomRequested(int steps);
     void documentChangeApplied(const DocumentChange& change);

@@ -17,6 +17,8 @@ int baseRadix(ColumnNumberBase base)
         return 16;
     case ColumnNumberBase::Bin:
         return 2;
+    case ColumnNumberBase::Oct:
+        return 8;
     }
     return 10;
 }
@@ -30,6 +32,8 @@ QChar svBaseChar(ColumnNumberBase base)
         return QLatin1Char('h');
     case ColumnNumberBase::Bin:
         return QLatin1Char('b');
+    case ColumnNumberBase::Oct:
+        return QLatin1Char('o');
     }
     return QLatin1Char('d');
 }
@@ -97,6 +101,11 @@ ColumnNumberBase baseFromSvChar(QChar ch, bool* ok)
             *ok = true;
         return ColumnNumberBase::Bin;
     }
+    if (lower == QLatin1Char('o')) {
+        if (ok)
+            *ok = true;
+        return ColumnNumberBase::Oct;
+    }
     if (ok)
         *ok = false;
     return ColumnNumberBase::Dec;
@@ -111,6 +120,14 @@ bool bodyMatchesBase(const QString& body, ColumnNumberBase base)
         return allHexDigits(body);
     case ColumnNumberBase::Bin:
         return allBinaryDigits(body);
+    case ColumnNumberBase::Oct:
+        if (body.isEmpty())
+            return false;
+        for (const QChar ch : body) {
+            if (ch < QLatin1Char('0') || ch > QLatin1Char('7'))
+                return false;
+        }
+        return true;
     }
     return false;
 }
@@ -196,6 +213,16 @@ ColumnNumberConfig inferColumnNumberConfig(const QString& text)
         }
     }
 
+    if (sample.size() > 2
+        && sample.startsWith(QStringLiteral("0o"), Qt::CaseInsensitive)) {
+        const QString body = sample.mid(2);
+        config.base = ColumnNumberBase::Oct;
+        config.style = ColumnNumberStyle::CLike;
+        if (setStartFromBody(&config, body))
+            return config;
+        config = defaultColumnNumberConfig();
+    }
+
     if (allDigits(sample)) {
         config.base = ColumnNumberBase::Dec;
         config.style = ColumnNumberStyle::Plain;
@@ -230,10 +257,11 @@ QString formatColumnNumber(qint64 value, const ColumnNumberConfig& config)
     case ColumnNumberStyle::CLike:
         if (config.base == ColumnNumberBase::Dec)
             return body;
-        return (config.base == ColumnNumberBase::Hex
-                    ? QStringLiteral("0x")
-                    : QStringLiteral("0b"))
-            + body;
+        if (config.base == ColumnNumberBase::Hex)
+            return QStringLiteral("0x") + body;
+        if (config.base == ColumnNumberBase::Bin)
+            return QStringLiteral("0b") + body;
+        return QStringLiteral("0o") + body;
     case ColumnNumberStyle::SvUnsized:
         return QStringLiteral("'%1%2")
             .arg(QString(svBaseChar(config.base)), body);

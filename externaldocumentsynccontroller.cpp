@@ -150,6 +150,33 @@ void ExternalDocumentSyncController::noteDocumentSaved(
     rearmFileSubscription(found->fileName);
 }
 
+void ExternalDocumentSyncController::noteDocumentSaved(
+    SharedDocument* document,
+    const QByteArray& fingerprint)
+{
+    if (!document || fingerprint.size() != 32) {
+        noteDocumentSaved(document);
+        return;
+    }
+    trackDocument(document);
+    auto found = trackedDocuments.find(document);
+    if (found == trackedDocuments.end())
+        return;
+    const QFileInfo source(found->fileName);
+    if (!source.isFile()) {
+        refreshSubscriptions();
+        return;
+    }
+    found->savedFingerprint = fingerprint;
+    found->observedFingerprint = fingerprint;
+    found->keptLocalFingerprint.clear();
+    found->diskAvailable = true;
+    document->setReadOnly(!source.isWritable());
+    document->setExternalState(
+        SharedDocumentExternalState::Current);
+    rearmFileSubscription(found->fileName);
+}
+
 ExternalDocumentSyncResult
 ExternalDocumentSyncController::processFileChange(
     const QString& requestedFileName)

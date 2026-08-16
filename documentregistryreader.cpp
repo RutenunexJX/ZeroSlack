@@ -27,10 +27,7 @@ TrackedDocument DocumentSnapshotReader::capture(
                             static_cast<std::uint64_t>(
                                 std::numeric_limits<int>::max())));
     if (!previous) {
-        const QString& currentText = editor->cachedDocumentText();
-        recordDocumentTextCopy(currentText.size());
-        tracked.snapshot.text = QString(currentText.constData(),
-                                        currentText.size());
+        tracked.snapshot.text = editor->cachedDocumentText();
         tracked.snapshot.savedTextVersion = tracked.snapshot.textVersion;
     }
     return tracked;

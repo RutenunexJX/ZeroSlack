@@ -37,6 +37,33 @@
 #include "workspacemanager.h"
 #include "semantic_fixture_records.h"
 
+class AnalysisSchedulerTestAccess
+{
+public:
+    static void rememberPendingCleanChange(AnalysisScheduler& scheduler,
+                                           const QString& fileName,
+                                           const QString& text)
+    {
+        scheduler.rememberPendingCleanSemanticChange(
+            fileName,
+            text,
+            0,
+            SemanticAnalysisReason::Save);
+    }
+
+    static void requestSave(AnalysisScheduler& scheduler,
+                            const QString& triggerFile,
+                            const ProjectSnapshot& project)
+    {
+        scheduler.requestSemanticAnalysis(
+            SemanticAnalysisReason::Save,
+            SemanticChangeImpact::Unknown,
+            triggerFile,
+            {triggerFile},
+            project);
+    }
+};
+
 namespace {
 int checks = 0;
 int failures = 0;
@@ -1044,6 +1071,61 @@ void runSupersededRequestsConvergeDocumentStates()
                    == saveGenerations.last());
     sameScheduler.cancelWorkspaceAnalysis();
     sameScheduler.shutdown();
+}
+
+void runSinglePendingCleanChangeMergesIntoDifferentRequest()
+{
+    QTemporaryDir directory;
+    expect("single-pending fixture directory is valid", directory.isValid());
+    if (!directory.isValid())
+        return;
+
+    const QString pendingFile =
+        directory.filePath(QStringLiteral("pending.sv"));
+    const QString requestedFile =
+        directory.filePath(QStringLiteral("requested.sv"));
+    const QString pendingText =
+        QStringLiteral("module pending; logic changed; endmodule\n");
+    const QString requestedText =
+        QStringLiteral("module requested; endmodule\n");
+    for (const auto& source : QList<QPair<QString, QString>>{
+             {pendingFile, pendingText}, {requestedFile, requestedText}}) {
+        QFile file(source.first);
+        expect("single-pending source opens",
+               file.open(QIODevice::WriteOnly | QIODevice::Text));
+        if (file.isOpen()) {
+            file.write(source.second.toUtf8());
+            file.close();
+        }
+    }
+
+    AnalysisScheduler scheduler;
+    SymbolAnalyzer analyzer;
+    scheduler.setSymbolAnalyzer(&analyzer);
+    ProjectSnapshot project;
+    project.workspaceRoot = directory.path();
+    project.systemVerilogFiles = {pendingFile, requestedFile};
+    project.allFiles = project.systemVerilogFiles;
+
+    QStringList scheduledFiles;
+    QObject::connect(
+        &scheduler,
+        &AnalysisScheduler::semanticAnalysisTelemetry,
+        &scheduler,
+        [&](const SemanticAnalysisTelemetry& telemetry) {
+            if (telemetry.stage == SemanticAnalysisStage::Scheduling
+                && telemetry.reason == SemanticAnalysisReason::Save) {
+                scheduledFiles = telemetry.changedFiles;
+            }
+        });
+    AnalysisSchedulerTestAccess::rememberPendingCleanChange(
+        scheduler, pendingFile, pendingText);
+    AnalysisSchedulerTestAccess::requestSave(
+        scheduler, requestedFile, project);
+    expect("one pending clean file is merged into a different request",
+           containsFile(scheduledFiles, pendingFile)
+               && containsFile(scheduledFiles, requestedFile));
+    scheduler.shutdown();
 }
 
 void runSaveQueuesExactlyOnceAndRejectsStaleRevision()
@@ -3220,6 +3302,7 @@ int main(int argc, char** argv)
     runDocumentOpenRequiresMatchingIndexedText();
     runWorkspaceEditDoesNotRestartWorker();
     runSupersededRequestsConvergeDocumentStates();
+    runSinglePendingCleanChangeMergesIntoDifferentRequest();
     runSaveQueuesExactlyOnceAndRejectsStaleRevision();
     runExternalChangesConvergeAndCoalesce();
     runFullWorkspaceRebuildDropsRemovedFilesAndKeepsGraph();

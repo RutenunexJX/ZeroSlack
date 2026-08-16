@@ -228,25 +228,54 @@ void AnalysisScheduler::requestSemanticAnalysis(
     request.changedFiles = changedFiles.isEmpty()
         ? project.systemVerilogFiles
         : changedFiles;
-    QSet<QString> projectFiles;
-    for (const QString& fileName : project.systemVerilogFiles)
-        projectFiles.insert(normalizedFileName(fileName));
-    QSet<QString> requestedFiles;
-    for (const QString& fileName : std::as_const(request.changedFiles))
-        requestedFiles.insert(normalizedFileName(fileName));
-    for (auto it = pendingCleanSemanticChanges.constBegin();
-         it != pendingCleanSemanticChanges.constEnd(); ++it) {
-        if (!projectFiles.contains(it.key())
-            || requestedFiles.contains(it.key())) {
-            continue;
+    if (pendingCleanSemanticChanges.size() == 1) {
+        const auto pending = pendingCleanSemanticChanges.constBegin();
+        bool alreadyRequested = false;
+        for (const QString& fileName : std::as_const(request.changedFiles)) {
+            if (normalizedFileName(fileName) == pending.key()) {
+                alreadyRequested = true;
+                break;
+            }
         }
-        const DocumentSnapshot snapshot = documentModel
-            ? documentModel->cachedDocumentForFile(it.value().fileName)
-            : DocumentSnapshot();
-        if (!snapshot.fileName.isEmpty() && snapshot.dirty)
-            continue;
-        request.changedFiles.append(it.value().fileName);
-        requestedFiles.insert(it.key());
+        if (!alreadyRequested) {
+            bool belongsToProject = false;
+            for (const QString& fileName : project.systemVerilogFiles) {
+                if (normalizedFileName(fileName) == pending.key()) {
+                    belongsToProject = true;
+                    break;
+                }
+            }
+            const DocumentSnapshot snapshot = belongsToProject && documentModel
+                ? documentModel->cachedDocumentForFile(pending->fileName)
+                : DocumentSnapshot();
+            if (belongsToProject
+                && (snapshot.fileName.isEmpty() || !snapshot.dirty)) {
+                request.changedFiles.append(pending->fileName);
+            }
+        }
+    } else if (pendingCleanSemanticChanges.size() > 1) {
+        QSet<QString> projectFiles;
+        projectFiles.reserve(project.systemVerilogFiles.size());
+        for (const QString& fileName : project.systemVerilogFiles)
+            projectFiles.insert(normalizedFileName(fileName));
+        QSet<QString> requestedFiles;
+        requestedFiles.reserve(request.changedFiles.size());
+        for (const QString& fileName : std::as_const(request.changedFiles))
+            requestedFiles.insert(normalizedFileName(fileName));
+        for (auto it = pendingCleanSemanticChanges.constBegin();
+             it != pendingCleanSemanticChanges.constEnd(); ++it) {
+            if (!projectFiles.contains(it.key())
+                || requestedFiles.contains(it.key())) {
+                continue;
+            }
+            const DocumentSnapshot snapshot = documentModel
+                ? documentModel->cachedDocumentForFile(it.value().fileName)
+                : DocumentSnapshot();
+            if (!snapshot.fileName.isEmpty() && snapshot.dirty)
+                continue;
+            request.changedFiles.append(it.value().fileName);
+            requestedFiles.insert(it.key());
+        }
     }
     request.expectedSnapshotRevision =
         SemanticIndex::getInstance()->snapshotRevision();

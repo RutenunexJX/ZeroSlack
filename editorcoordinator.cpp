@@ -326,8 +326,6 @@ void EditorCoordinator::setFormatterSettings(FormatterSettings* settings)
 
     if (formatterSettingsConnection)
         disconnect(formatterSettingsConnection);
-    if (formatterFormatOnSaveConnection)
-        disconnect(formatterFormatOnSaveConnection);
 
     formatterSettings = settings;
     if (formatterSettings) {
@@ -338,16 +336,8 @@ void EditorCoordinator::setFormatterSettings(FormatterSettings* settings)
             [this](FormatterProfile) {
                 applyFormatterSettingsToOpenEditors();
             });
-        formatterFormatOnSaveConnection = connect(
-            formatterSettings,
-            &FormatterSettings::formatOnSaveChanged,
-            this,
-            [this](bool) {
-                applyFormatterSettingsToOpenEditors();
-            });
     } else {
         formatterSettingsConnection = QMetaObject::Connection();
-        formatterFormatOnSaveConnection = QMetaObject::Connection();
     }
 
     applyFormatterSettingsToOpenEditors();
@@ -542,12 +532,6 @@ void EditorCoordinator::attachEditor(MyCodeEditor* editor)
                     return;
                 formatterSettings->setProfile(profile);
             });
-    connect(editor, &MyCodeEditor::formatOnSaveChanged,
-            this, [this](bool enabled) {
-                if (!formatterSettings || applyingFormatterSettings)
-                    return;
-                formatterSettings->setFormatOnSaveEnabled(enabled);
-            });
     connect(editor, &MyCodeEditor::fontZoomRequested,
             this, [this](int steps) {
                 if (!appearanceSettings || steps == 0)
@@ -579,7 +563,6 @@ void EditorCoordinator::applyFormatterSettings(MyCodeEditor* editor) const
 
     applyingFormatterSettings = true;
     editor->setFormatterProfile(formatterSettings->profile());
-    editor->setFormatOnSaveEnabled(formatterSettings->formatOnSaveEnabled());
     applyingFormatterSettings = false;
 }
 
@@ -1386,7 +1369,6 @@ void EditorCoordinator::handleSourceSymbolContextMenuRequested(
            QStringLiteral("The editor is read-only."));
     append(QStringLiteral("format.profile.structured"));
     append(QStringLiteral("format.profile.indentOnly"));
-    append(QStringLiteral("format.onSave"));
     append(QStringLiteral("format.selection"),
            hasSelection,
            editable,
@@ -1527,10 +1509,6 @@ void EditorCoordinator::handleSourceSymbolContextMenuRequested(
                 editor->setFormatterProfile(
                     FormatterProfile::IndentOnly);
             } else if (actionId
-                       == QStringLiteral("format.onSave")) {
-                editor->setFormatOnSaveEnabled(
-                    !editor->formatOnSaveEnabled());
-            } else if (actionId
                        == QStringLiteral("format.selection")) {
                 editor->formatSelection();
             } else if (actionId
@@ -1610,11 +1588,6 @@ void EditorCoordinator::handleSourceSymbolContextMenuRequested(
                 action->setChecked(
                     editor->formatterProfile()
                     == FormatterProfile::IndentOnly);
-            } else if (item.actionId
-                       == QStringLiteral("format.onSave")) {
-                action->setCheckable(true);
-                action->setChecked(
-                    editor->formatOnSaveEnabled());
             }
 
             const QString shortcut =

@@ -137,14 +137,6 @@ QList<SettingsCenterCategoryDescriptor> makeCategories()
                   {},
                   {QStringLiteral("structured"),
                    QStringLiteral("indent_only")}),
-            field(QStringLiteral("formatter.formatOnSave"),
-                  QString::fromLatin1(
-                      SettingsCenterKeys::FormatterFormatOnSave),
-                  Category::Formatter,
-                  QStringLiteral("Format on save"),
-                  QStringLiteral("Format a document before saving it."),
-                  Kind::Boolean,
-                  false),
         },
     });
     result.append({

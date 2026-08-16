@@ -330,7 +330,7 @@ MyCodeEditor::SynchronousEditTransaction::SynchronousEditTransaction(
     : editor(targetEditor)
 {
     if (editor)
-        editor->state->beginSynchronousEditTransaction();
+        editor->state->beginSynchronousEditTransaction(editor);
 }
 
 MyCodeEditor::SynchronousEditTransaction::~SynchronousEditTransaction()
@@ -401,15 +401,31 @@ void MyCodeEditor::paste()
 void MyCodeEditor::undo()
 {
     auto edit = beginSynchronousEditTransaction();
-    state->clearVirtualCursor(this);
+    const int beforeUndoSteps = document()
+        ? document()->availableUndoSteps()
+        : 0;
+    state->beginUndoRedo();
     QPlainTextEdit::undo();
+    const int afterUndoSteps = document()
+        ? document()->availableUndoSteps()
+        : 0;
+    state->restoreCursorAfterUndoRedo(
+        this, false, beforeUndoSteps, afterUndoSteps);
 }
 
 void MyCodeEditor::redo()
 {
     auto edit = beginSynchronousEditTransaction();
-    state->clearVirtualCursor(this);
+    const int beforeUndoSteps = document()
+        ? document()->availableUndoSteps()
+        : 0;
+    state->beginUndoRedo();
     QPlainTextEdit::redo();
+    const int afterUndoSteps = document()
+        ? document()->availableUndoSteps()
+        : 0;
+    state->restoreCursorAfterUndoRedo(
+        this, true, beforeUndoSteps, afterUndoSteps);
 }
 
 bool MyCodeEditor::find(const QString& expression,
@@ -933,6 +949,11 @@ bool MyCodeEditor::columnSelectionActive() const
     return state->columnSelectionActiveForCommand();
 }
 
+EditorColumnModeSnapshot MyCodeEditor::columnModeSnapshotForTest() const
+{
+    return state->columnModeSnapshotForTest();
+}
+
 bool MyCodeEditor::virtualCursorActiveForTest() const
 {
     return state->virtualCursorActiveForTest();
@@ -1025,25 +1046,6 @@ void MyCodeEditor::setFormatterProfile(FormatterProfile profile)
 FormatterProfile MyCodeEditor::formatterProfile() const
 {
     return state->formatterProfile();
-}
-
-void MyCodeEditor::setFormatOnSaveEnabled(bool enabled)
-{
-    if (state->formatOnSaveEnabled() == enabled)
-        return;
-    state->setFormatOnSaveEnabled(enabled);
-    emit formatOnSaveChanged(enabled);
-}
-
-bool MyCodeEditor::formatOnSaveEnabled() const
-{
-    return state->formatOnSaveEnabled();
-}
-
-bool MyCodeEditor::formatDocumentForSave()
-{
-    auto edit = beginSynchronousEditTransaction();
-    return state->formatDocumentForSave(this);
 }
 
 QList<MyCodeEditor*>
@@ -1837,12 +1839,15 @@ void MyCodeEditor::mouseDoubleClickEvent(QMouseEvent *event)
         QTextCursor target = cursorForPosition(event->position().toPoint());
         target.select(QTextCursor::WordUnderCursor);
         QPlainTextEdit::setTextCursor(target);
+        state->selections.activateCurrentSymbolReferences(this);
         viewport()->update();
         event->accept();
         return;
     }
 
     QPlainTextEdit::mouseDoubleClickEvent(event);
+    if (event && event->button() == Qt::LeftButton)
+        state->selections.activateCurrentSymbolReferences(this);
 }
 
 void MyCodeEditor::focusOutEvent(QFocusEvent* event)

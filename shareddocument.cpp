@@ -312,6 +312,19 @@ void SharedDocument::markSaved()
     emit statusChanged();
 }
 
+void SharedDocument::markSaved(const QByteArray& sha256,
+                               const QDateTime& modifiedUtc)
+{
+    if (!document)
+        return;
+    savedRevision = revision;
+    document->setModified(false);
+    restoreSavedBaseline(sha256, modifiedUtc);
+    publishDirtyIfChanged();
+    setExternalState(SharedDocumentExternalState::Current);
+    emit statusChanged();
+}
+
 void SharedDocument::setReadOnly(bool nextReadOnly)
 {
     if (readOnlyState == nextReadOnly)

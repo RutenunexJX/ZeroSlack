@@ -25,6 +25,15 @@ bool hasLine(const QString& text, const QString& expected)
     return text.split(QLatin1Char('\n')).contains(expected);
 }
 
+QString lineContaining(const QString& text, const QString& token)
+{
+    for (const QString& line : text.split(QLatin1Char('\n'))) {
+        if (line.contains(token))
+            return line;
+    }
+    return {};
+}
+
 bool usesOnlyCrlfLineEndings(const QString& text)
 {
     bool sawNewline = false;
@@ -221,6 +230,48 @@ int main(int argc, char** argv)
     expect("pwm codec header selection uses the same structural alignment",
            pwmCodecSelectionReport.formattedText
                == pwmCodecHeaderReport.formattedText);
+
+    const QString declarationWidths =
+        QStringLiteral(
+            "module width_alignment;\n"
+            "logic [31:0] encoded_period;\n"
+            "logic [7:0][3:0] encoded_id;\n"
+            "wire ready;\n"
+            "endmodule\n");
+    const FormatterReport declarationWidthReport =
+        FormatterService::getInstance()->formatDocument(
+            declarationWidths, FormatterProfile::Structured);
+    const QString encodedPeriodLine = lineContaining(
+        declarationWidthReport.formattedText,
+        QStringLiteral("encoded_period"));
+    const QString encodedIdLine = lineContaining(
+        declarationWidthReport.formattedText,
+        QStringLiteral("encoded_id"));
+    const QString readyLine = lineContaining(
+        declarationWidthReport.formattedText,
+        QStringLiteral("ready"));
+    expect("internal declaration type width and name columns align generically",
+           !encodedPeriodLine.isEmpty()
+               && !encodedIdLine.isEmpty()
+               && !readyLine.isEmpty()
+               && encodedPeriodLine.indexOf(QStringLiteral("[31:0]"))
+                      == encodedIdLine.indexOf(QStringLiteral("[7:0][3:0]"))
+               && encodedPeriodLine.indexOf(QStringLiteral("encoded_period"))
+                      == encodedIdLine.indexOf(QStringLiteral("encoded_id"))
+               && encodedPeriodLine.indexOf(QStringLiteral("encoded_period"))
+                      == readyLine.indexOf(QStringLiteral("ready")));
+    expect("internal declaration alignment changes whitespace only",
+           StructuredWhitespaceFormatter::hasIdenticalNonWhitespaceStream(
+               declarationWidths,
+               declarationWidthReport.formattedText));
+    const FormatterReport declarationWidthStable =
+        FormatterService::getInstance()->formatDocument(
+            declarationWidthReport.formattedText,
+            FormatterProfile::Structured);
+    expect("internal declaration alignment is idempotent",
+           !declarationWidthStable.changed
+               && declarationWidthStable.formattedText
+                      == declarationWidthReport.formattedText);
 
     const QString danglingElseSource =
         QStringLiteral(

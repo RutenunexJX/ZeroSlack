@@ -247,6 +247,13 @@ ProblemsPanelCoordinator::ProblemsPanelCoordinator(QWidget* parent)
     problemsDock->setFeatures(QDockWidget::DockWidgetMovable |
                               QDockWidget::DockWidgetFloatable |
                               QDockWidget::DockWidgetClosable);
+    QObject::connect(problemsDock,
+                     &QDockWidget::visibilityChanged,
+                     problemsDock,
+                     [this](bool visible) {
+                         if (visible)
+                             update();
+                     });
 
     QObject::connect(problemsScopeCombo, qOverload<int>(&QComboBox::currentIndexChanged),
                      problemsDock, [this](int) { update(); });
@@ -421,4 +428,11 @@ void ProblemsPanelCoordinator::update()
 bool ProblemsPanelCoordinator::showsCurrentFileScope() const
 {
     return !problemsScopeCombo || problemsScopeCombo->currentData().toInt() == 0;
+}
+
+bool ProblemsPanelCoordinator::isVisibleToUser() const
+{
+    return problemsDock
+        && problemsDock->isVisible()
+        && !problemsDock->visibleRegion().isEmpty();
 }

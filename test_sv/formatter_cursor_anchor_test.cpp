@@ -483,37 +483,6 @@ int main(int argc, char* argv[])
             QStringLiteral(
                 "module m;\n"
                 "always_comb begin\n"
-                "value = 1'b0;\n"
-                "end\n"
-                "endmodule\n");
-        MyCodeEditor editor;
-        editor.setPlainText(source);
-        const int oldValue =
-            source.indexOf(QStringLiteral("value"));
-        QTextCursor cursor(editor.document());
-        cursor.setPosition(oldValue + 2);
-        editor.setTextCursor(cursor);
-        editor.setFormatOnSaveEnabled(true);
-
-        const bool changed = editor.formatDocumentForSave();
-        const int newValue =
-            editor.toPlainText().indexOf(
-                QStringLiteral("value"));
-        expect("format-on-save restores the logical cursor",
-               changed
-                   && newValue >= 0
-                   && editor.textCursor().position()
-                       == newValue + 2);
-        editor.undo();
-        expect("format-on-save remains one undo transaction",
-               editor.toPlainText() == source);
-    }
-
-    {
-        const QString source =
-            QStringLiteral(
-                "module m;\n"
-                "always_comb begin\n"
                 "target = selected_value;\n"
                 "end\n"
                 "endmodule\n");

@@ -16,9 +16,6 @@ inline constexpr const char* FontLigaturesEnabled =
 
 inline constexpr const char* FormatterProfile =
     "formatter/profile";
-inline constexpr const char* FormatterFormatOnSave =
-    "formatter/formatOnSave";
-
 inline constexpr const char* ShortcutOverrides =
     "settingsCenter/shortcut/overrides";
 inline constexpr const char* AnnotationEnabled =

@@ -2040,45 +2040,20 @@ void exerciseSynchronousEditTransactions()
                        .cursorPresentationSuppressed);
 }
 
-QList<int> currentReferenceHighlightPositions(const MyCodeEditor& editor)
-{
-    QList<int> positions;
-    for (const QTextEdit::ExtraSelection& selection :
-         editor.extraSelections()) {
-        if (selection.format
-                    .property(QTextFormat::UserProperty + 4)
-                    .toInt() == 1004) {
-            positions.append(selection.cursor.selectionStart());
-        }
-    }
-    std::sort(positions.begin(), positions.end());
-    return positions;
-}
-
-void selectWord(MyCodeEditor& editor, const QString& word)
-{
-    QTextCursor cursor(editor.document());
-    cursor.setPosition(editor.cachedDocumentText().indexOf(word));
-    editor.setTextCursor(cursor);
-    editor.refreshScopeAndCurrentLineHighlight();
-}
-
 void exerciseOccurrenceIndexRemap()
 {
     MyCodeEditor editor;
     editor.setPlainText(QStringLiteral(
         "alpha beta\nalpha gamma\n"));
-    selectWord(editor, QStringLiteral("alpha"));
-    expect("occurrence index highlights both initial references",
-           currentReferenceHighlightPositions(editor)
+    expect("occurrence index records both initial references",
+           editor.occurrencePositionsForTest(QStringLiteral("alpha"))
                == QList<int>({0, 11}));
 
     QTextCursor prefix(editor.document());
     prefix.setPosition(0);
     prefix.insertText(QStringLiteral("\n"));
-    selectWord(editor, QStringLiteral("alpha"));
     expect("occurrence index lazily remaps suffix positions",
-           currentReferenceHighlightPositions(editor)
+           editor.occurrencePositionsForTest(QStringLiteral("alpha"))
                == QList<int>({1, 12}));
 
     QTextCursor replace(editor.document());
@@ -2087,15 +2062,13 @@ void exerciseOccurrenceIndexRemap()
     replace.setPosition(firstAlpha);
     replace.setPosition(firstAlpha + 5, QTextCursor::KeepAnchor);
     replace.insertText(QStringLiteral("omega"));
-    selectWord(editor, QStringLiteral("alpha"));
     expect("occurrence index rebuilds only the edited line",
-           currentReferenceHighlightPositions(editor)
+           editor.occurrencePositionsForTest(QStringLiteral("alpha"))
                == QList<int>({12}));
 
     editor.setPlainText(QStringLiteral("delta delta\n"));
-    selectWord(editor, QStringLiteral("delta"));
     expect("whole-document replacement rebuilds safe occurrence anchors",
-           currentReferenceHighlightPositions(editor)
+           editor.occurrencePositionsForTest(QStringLiteral("delta"))
                == QList<int>({0, 6}));
 }
 
@@ -2167,9 +2140,9 @@ void exerciseOccurrenceIndexStorageBound()
     }
     expect("thousands of local occurrence replacements find their token",
            replacementsSucceeded);
-    selectWord(editor, QStringLiteral("repeat_word"));
     expect("same-word churn retains both live repeated words",
-           currentReferenceHighlightPositions(editor).size() == 2);
+           editor.occurrencePositionsForTest(
+                     QStringLiteral("repeat_word")).size() == 2);
     expectBoundedOccurrenceStorage(QStringLiteral("same-word churn"), editor);
 
     for (int iteration = 0; iteration < 128; ++iteration)

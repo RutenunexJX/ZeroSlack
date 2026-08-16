@@ -260,8 +260,7 @@ void paintColumnCaretAnnotation(
     const int selectionRight =
         qMax(selectionLeft,
              annotation.visualRangeEndColumn);
-    const int laneOffset =
-        qMax(0, resolved.lane) * 2;
+    const int laneOffset = 0;
     const int targetX =
         annotationXForVisualColumn(
             editor,
@@ -356,18 +355,16 @@ void paintColumnCaretAnnotation(
             endRect.bottom() - 2);
     }
 
-    QColor caret = accent;
-    caret.setAlpha(
-        annotation.active ? 230 : 115);
+    QColor caret(220, 38, 38);
+    caret.setAlpha(annotation.active ? 255 : 205);
     QPen caretPen(caret);
-    caretPen.setWidth(
-        annotation.active ? 2 : 1);
+    caretPen.setWidth(annotation.active ? 3 : 2);
     painter.setPen(caretPen);
     painter.drawLine(
         targetX,
-        endRect.top() + 1,
+        endRect.top(),
         targetX,
-        endRect.bottom() - 1);
+        endRect.bottom() + 1);
 }
 }
 

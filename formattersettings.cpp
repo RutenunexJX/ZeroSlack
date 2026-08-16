@@ -5,8 +5,6 @@
 namespace {
 constexpr const char* kFormatterProfileKey =
     SettingsCenterKeys::FormatterProfile;
-constexpr const char* kFormatOnSaveKey =
-    SettingsCenterKeys::FormatterFormatOnSave;
 constexpr const char* kStructuredProfile = "structured";
 constexpr const char* kIndentOnlyProfile = "indent_only";
 }
@@ -34,11 +32,6 @@ FormatterProfile FormatterSettings::profile() const
     return currentProfile;
 }
 
-bool FormatterSettings::formatOnSaveEnabled() const
-{
-    return currentFormatOnSaveEnabled;
-}
-
 void FormatterSettings::setProfile(FormatterProfile profile)
 {
     if (currentProfile == profile)
@@ -49,23 +42,11 @@ void FormatterSettings::setProfile(FormatterProfile profile)
     emit settingsChanged(currentProfile);
 }
 
-void FormatterSettings::setFormatOnSaveEnabled(bool enabled)
-{
-    if (currentFormatOnSaveEnabled == enabled)
-        return;
-
-    currentFormatOnSaveEnabled = enabled;
-    save();
-    emit formatOnSaveChanged(currentFormatOnSaveEnabled);
-}
-
 void FormatterSettings::load()
 {
     QString key = QString::fromLatin1(kStructuredProfile);
     if (settings) {
         key = settings->value(kFormatterProfileKey, key).toString();
-        currentFormatOnSaveEnabled =
-            settings->value(kFormatOnSaveKey, false).toBool();
     }
     currentProfile = profileFromKey(key);
 }
@@ -76,7 +57,6 @@ void FormatterSettings::save() const
         return;
 
     settings->setValue(kFormatterProfileKey, profileKey(currentProfile));
-    settings->setValue(kFormatOnSaveKey, currentFormatOnSaveEnabled);
     settings->sync();
 }
 

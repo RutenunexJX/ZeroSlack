@@ -30,6 +30,7 @@ public:
     QLabel* summaryLabel() const { return diagnosticSummaryLabel; }
     QLabel* stateLabel() const { return diagnosticStateLabel; }
     bool showsCurrentFileScope() const;
+    bool isVisibleToUser() const;
     int updateInvocationCount() const { return updateInvocations; }
 
 private:

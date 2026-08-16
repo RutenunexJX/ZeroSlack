@@ -72,6 +72,8 @@ public:
         const QByteArray& sha256,
         const QDateTime& modifiedUtc);
     void markSaved();
+    void markSaved(const QByteArray& sha256,
+                   const QDateTime& modifiedUtc);
     void setReadOnly(bool readOnly);
     void setExternalState(SharedDocumentExternalState state);
 

@@ -10,6 +10,7 @@
 #include <QColor>
 #include <QCompleter>
 #include <QComboBox>
+#include <QCryptographicHash>
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QDockWidget>
@@ -46,6 +47,7 @@
 #include <QPlainTextEdit>
 #include <QPixmap>
 #include <QRegularExpression>
+#include <QRadioButton>
 #include <QScrollBar>
 #include <QSet>
 #include <QTemporaryDir>
@@ -825,28 +827,15 @@ static void runFormatterSettingsRegression()
     {
         FormatterSettings settings(makeTemporarySettings(settingsFile));
         QSignalSpy spy(&settings, &FormatterSettings::settingsChanged);
-        QSignalSpy formatOnSaveSpy(
-            &settings,
-            &FormatterSettings::formatOnSaveChanged);
-        expectBool("formatter settings default format-on-save off",
-                   !settings.formatOnSaveEnabled(),
-                   true);
         settings.setProfile(FormatterProfile::IndentOnly);
         expectBool("formatter settings emits change",
                    spy.count() == 1,
-                   true);
-        settings.setFormatOnSaveEnabled(true);
-        expectBool("formatter settings emits format-on-save change",
-                   formatOnSaveSpy.count() == 1,
                    true);
     }
 
     FormatterSettings reloaded(makeTemporarySettings(settingsFile));
     expectBool("formatter settings persists profile",
                reloaded.profile() == FormatterProfile::IndentOnly,
-               true);
-    expectBool("formatter settings persists format-on-save",
-               reloaded.formatOnSaveEnabled(),
                true);
 
     {
@@ -887,14 +876,12 @@ static void runFormatterCoordinatorRegression()
                true);
 
     settings.setProfile(FormatterProfile::IndentOnly);
-    settings.setFormatOnSaveEnabled(true);
     bool allOpenEditorsUpdated = true;
     for (int i = 0; i < tabs.editorCount(); ++i) {
         MyCodeEditor* editor = tabs.getEditorAt(i);
         allOpenEditorsUpdated = allOpenEditorsUpdated
             && editor
-            && editor->formatterProfile() == FormatterProfile::IndentOnly
-            && editor->formatOnSaveEnabled();
+            && editor->formatterProfile() == FormatterProfile::IndentOnly;
     }
     expectBool("formatter coordinator updates open editors",
                allOpenEditorsUpdated,
@@ -903,22 +890,16 @@ static void runFormatterCoordinatorRegression()
     MyCodeEditor* currentEditor = tabs.getCurrentEditor();
     if (currentEditor) {
         currentEditor->setFormatterProfile(FormatterProfile::Structured);
-        currentEditor->setFormatOnSaveEnabled(false);
     }
     expectBool("formatter coordinator stores editor change",
                settings.profile() == FormatterProfile::Structured,
                true);
-    expectBool("formatter coordinator stores format-on-save change",
-               !settings.formatOnSaveEnabled(),
-               true);
-
     tabs.createNewTab();
     MyCodeEditor* newEditor = tabs.getCurrentEditor();
     expectBool("formatter coordinator applies new editor",
                newEditor
                    && newEditor->formatterProfile()
-                       == FormatterProfile::Structured
-                   && !newEditor->formatOnSaveEnabled(),
+                       == FormatterProfile::Structured,
                true);
 }
 
@@ -10036,6 +10017,69 @@ static void runCommandLayerRegression(MainWindow& window)
                        && numberTool->isVisible()
                        && !coordinator->isActive(),
                    true);
+        expectBool("Column Number Tool has no preview-only widget",
+                   numberTool
+                       && !numberTool->findChild<QWidget*>(
+                           QStringLiteral("columnNumberPreview")),
+                   true);
+        QSpinBox* startValue = numberTool
+            ? numberTool->findChild<QSpinBox*>(
+                  QStringLiteral("columnNumberStart"))
+            : nullptr;
+        QSpinBox* stepValue = numberTool
+            ? numberTool->findChild<QSpinBox*>(
+                  QStringLiteral("columnNumberStep"))
+            : nullptr;
+        QSpinBox* repeatValue = numberTool
+            ? numberTool->findChild<QSpinBox*>(
+                  QStringLiteral("columnNumberRepeat"))
+            : nullptr;
+        QRadioButton* octalBase = numberTool
+            ? numberTool->findChild<QRadioButton*>(
+                  QStringLiteral("columnNumberBaseOctal"))
+            : nullptr;
+        if (startValue)
+            startValue->setValue(7);
+        if (stepValue)
+            stepValue->setValue(3);
+        if (repeatValue)
+            repeatValue->setValue(2);
+        if (octalBase)
+            octalBase->setChecked(true);
+        expectBool("Column Number Tool exposes compact remembered controls",
+                   startValue && stepValue && repeatValue && octalBase,
+                   true);
+        sendWidgetKey(numberTool, Qt::Key_Return);
+
+        sendWidgetKey(editor, Qt::Key_Escape);
+        editor->setPlainText(QStringLiteral("0010\n9999\n"));
+        const QTextBlock reopenedFirst =
+            editor->document()->findBlockByNumber(0);
+        const QTextBlock reopenedSecond =
+            editor->document()->findBlockByNumber(1);
+        QTextCursor reopenedStart(reopenedFirst);
+        reopenedStart.setPosition(reopenedFirst.position());
+        QTextCursor reopenedEnd(reopenedSecond);
+        reopenedEnd.setPosition(reopenedSecond.position() + 4);
+        editor->setTextCursor(reopenedStart);
+        QTest::mouseClick(editor->viewport(),
+                          Qt::LeftButton,
+                          Qt::ShiftModifier | Qt::AltModifier,
+                          editor->cursorRect(reopenedEnd).center());
+        QTest::keyClick(editor, Qt::Key_C, Qt::AltModifier);
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 30);
+        expectBool("Column Number Tool restores the last applied start",
+                   startValue && startValue->value() == 7,
+                   true);
+        expectBool("Column Number Tool restores the last applied step",
+                   stepValue && stepValue->value() == 3,
+                   true);
+        expectBool("Column Number Tool restores the last applied repeat",
+                   repeatValue && repeatValue->value() == 2,
+                   true);
+        expectBool("Column Number Tool restores the last applied base",
+                   octalBase && octalBase->isChecked(),
+                   true);
         sendWidgetKey(numberTool, Qt::Key_Escape);
         sendWidgetKey(editor, Qt::Key_Escape);
     }
@@ -13198,8 +13242,7 @@ int main(int argc, char** argv)
                     "  \"version\": 1,\n"
                     "  \"values\": {\n"
                     "    \"font.sizePt\": 19,\n"
-                    "    \"formatter.profile\": \"indent_only\",\n"
-                    "    \"formatter.formatOnSave\": true\n"
+                    "    \"formatter.profile\": \"indent_only\"\n"
                     "  }\n"
                     "}\n")),
         true);
@@ -13235,9 +13278,7 @@ int main(int argc, char** argv)
                               ->options().fontSizePt == 19
                        && window.formatterSettings
                        && window.formatterSettings->profile()
-                              == FormatterProfile::IndentOnly
-                       && window.formatterSettings
-                              ->formatOnSaveEnabled(),
+                              == FormatterProfile::IndentOnly,
                    true);
 
         window.settingsCenterPanel->setScope(
@@ -14922,6 +14963,26 @@ int main(int argc, char** argv)
         expectBool("document model records saved version",
                    savedDoc.savedTextVersion == savedDoc.textVersion,
                    true);
+        expectBool("document model retains the saved immutable text snapshot",
+                   savedDoc.text == savedText,
+                   true);
+        QFile savedRawFile(savePath);
+        const bool savedRawFileOpened =
+            savedRawFile.open(QIODevice::ReadOnly);
+        const QByteArray savedRawBytes = savedRawFileOpened
+            ? savedRawFile.readAll()
+            : QByteArray();
+        savedRawFile.close();
+        SharedDocument* savedSharedDocument =
+            window.tabManager->sharedDocumentForEditor(saveEditor);
+        expectBool("saved baseline digest matches exact disk bytes",
+                   savedRawFileOpened
+                       && savedSharedDocument
+                       && savedSharedDocument->savedBaselineSha256()
+                              == QCryptographicHash::hash(
+                                     savedRawBytes,
+                                     QCryptographicHash::Sha256),
+                   true);
 
         const QString shortcutSavedText =
             QStringLiteral("module shortcut_saved_tab;\nendmodule\n");
@@ -14946,46 +15007,6 @@ int main(int argc, char** argv)
                    documentSavedSpy.count() == 2,
                    true);
 
-        const QString formatOnSaveText =
-            QStringLiteral("module format_save;\n"
-                           "logic [7:0] data;\n"
-                           "logic valid;\n"
-                           "endmodule\n");
-        const QString formattedOnSaveText =
-            QStringLiteral("module format_save;\n"
-                           "logic [7:0] data ;\n"
-                           "logic       valid;\n"
-                           "endmodule\n");
-        if (window.formatterSettings) {
-            window.formatterSettings->setProfile(
-                FormatterProfile::Structured);
-            window.formatterSettings->setFormatOnSaveEnabled(true);
-        }
-        saveEditor->setPlainText(formatOnSaveText);
-        expectBool("format-on-save enabled on save editor",
-                   saveEditor->formatOnSaveEnabled(),
-                   true);
-        expectBool("tab manager format-on-save saves current tab",
-                   window.tabManager->saveCurrentTab(),
-                   true);
-        QFile formattedFile(savePath);
-        expectBool("format-on-save file reopens",
-                   formattedFile.open(QIODevice::ReadOnly | QFile::Text),
-                   true);
-        const QString formattedFileText =
-            QTextStream(&formattedFile).readAll();
-        formattedFile.close();
-        expectBool("format-on-save writes formatted text",
-                   formattedFileText == formattedOnSaveText,
-                   true);
-        expectBool("format-on-save updates editor text",
-                   saveEditor->toPlainText() == formattedOnSaveText,
-                   true);
-        expectBool("format-on-save updates document model text",
-                   saveDocuments
-                       && saveDocuments->documentTextForEditor(saveEditor)
-                           == formattedOnSaveText,
-                   true);
     }
 
     const bool workspaceOpened = window.workspaceManager->openWorkspace(workspacePath);

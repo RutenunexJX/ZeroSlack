@@ -14,10 +14,13 @@ class QMouseEvent;
 struct EditorColumnModeSnapshot
 {
     bool selectionActive = false;
+    bool virtualCursorActive = false;
     int anchorLine = -1;
     int anchorColumn = -1;
     int currentLine = -1;
     int currentColumn = -1;
+    int virtualCursorLine = -1;
+    int virtualCursorColumn = -1;
 };
 
 class EditorColumnModeController
@@ -42,6 +45,8 @@ public:
     int virtualCursorLine() const;
     int virtualCursorColumn() const;
     EditorColumnModeSnapshot snapshotForTest() const;
+    void restoreSnapshot(MyCodeEditor* editor,
+                         const EditorColumnModeSnapshot& snapshot);
 
     QStringList selectedRows(
         MyCodeEditor* editor) const;

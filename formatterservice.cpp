@@ -13,6 +13,7 @@ struct DeclarationAlignmentLine {
     QString family;
     QString indent;
     QString prefix;
+    QString packedDimensions;
     QString name;
     QString suffix;
     QString assignmentRhs;
@@ -881,8 +882,26 @@ DeclarationAlignmentLine parseDeclarationAlignmentLine(const QString& line)
     if (name.isEmpty() || isForbiddenDeclarationName(name))
         return parsed;
 
-    const QString prefix = left.left(nameStart).trimmed();
+    const QString rawPrefix = left.left(nameStart).trimmed();
     const QString suffix = left.mid(suffixStart).trimmed();
+    if (rawPrefix.isEmpty())
+        return parsed;
+
+    int packedStart = rawPrefix.size();
+    int packedEnd = rawPrefix.size() - 1;
+    while (packedEnd >= 0
+           && rawPrefix.at(packedEnd) == QLatin1Char(']')) {
+        const int bracketStart = matchingOpeningBracket(rawPrefix, packedEnd);
+        if (bracketStart < 0)
+            return parsed;
+        packedStart = bracketStart;
+        packedEnd = bracketStart - 1;
+        while (packedEnd >= 0 && rawPrefix.at(packedEnd).isSpace())
+            --packedEnd;
+    }
+    QString prefix = rawPrefix.left(packedStart).simplified();
+    QString packedDimensions = rawPrefix.mid(packedStart).simplified();
+    packedDimensions.replace(QStringLiteral("] ["), QStringLiteral("]["));
     if (prefix.isEmpty())
         return parsed;
 
@@ -917,6 +936,7 @@ DeclarationAlignmentLine parseDeclarationAlignmentLine(const QString& line)
     parsed.family = family;
     parsed.indent = indent;
     parsed.prefix = prefix;
+    parsed.packedDimensions = packedDimensions;
     parsed.name = name;
     parsed.suffix = suffix;
     parsed.terminator = terminator;
@@ -929,14 +949,23 @@ DeclarationAlignmentLine parseDeclarationAlignmentLine(const QString& line)
 
 QString buildAlignedDeclarationCodeLine(const DeclarationAlignmentLine& line,
                                         int maxPrefixWidth,
+                                        int maxPackedWidth,
+                                        bool alignPackedDimensions,
                                         int maxNameWidth,
                                         int maxBeforeAssignmentWidth,
                                         bool alignAssignment,
                                         int semicolonColumn)
 {
-    QString content = line.prefix
-        + repeatSpaces(maxPrefixWidth - line.prefix.size() + 1)
-        + line.name;
+    QString content = line.prefix;
+    if (alignPackedDimensions) {
+        content += repeatSpaces(maxPrefixWidth - line.prefix.size() + 1)
+            + line.packedDimensions
+            + repeatSpaces(maxPackedWidth
+                           - line.packedDimensions.size() + 1);
+    } else {
+        content += repeatSpaces(maxPrefixWidth - line.prefix.size() + 1);
+    }
+    content += line.name;
     if (!line.suffix.isEmpty()) {
         content += repeatSpaces(maxNameWidth - line.name.size() + 1);
         content += line.suffix;
@@ -972,11 +1001,18 @@ void flushDeclarationAlignmentBlock(QStringList* lines,
         return;
 
     int maxPrefixWidth = 0;
+    int maxPackedWidth = 0;
+    bool alignPackedDimensions = false;
     int maxNameWidth = 0;
     int assignmentCount = 0;
     for (const DeclarationAlignmentLine& line : block) {
         maxPrefixWidth = std::max(maxPrefixWidth,
                                   static_cast<int>(line.prefix.size()));
+        maxPackedWidth = std::max(
+            maxPackedWidth,
+            static_cast<int>(line.packedDimensions.size()));
+        alignPackedDimensions = alignPackedDimensions
+            || !line.packedDimensions.isEmpty();
         maxNameWidth = std::max(maxNameWidth,
                                 static_cast<int>(line.name.size()));
         if (line.hasAssignment)
@@ -985,9 +1021,16 @@ void flushDeclarationAlignmentBlock(QStringList* lines,
 
     int maxBeforeAssignmentWidth = 0;
     for (const DeclarationAlignmentLine& line : block) {
-        QString content = line.prefix
-            + repeatSpaces(maxPrefixWidth - line.prefix.size() + 1)
-            + line.name;
+        QString content = line.prefix;
+        if (alignPackedDimensions) {
+            content += repeatSpaces(maxPrefixWidth - line.prefix.size() + 1)
+                + line.packedDimensions
+                + repeatSpaces(maxPackedWidth
+                               - line.packedDimensions.size() + 1);
+        } else {
+            content += repeatSpaces(maxPrefixWidth - line.prefix.size() + 1);
+        }
+        content += line.name;
         if (!line.suffix.isEmpty()) {
             content += repeatSpaces(maxNameWidth - line.name.size() + 1);
             content += line.suffix;
@@ -1006,6 +1049,8 @@ void flushDeclarationAlignmentBlock(QStringList* lines,
             buildAlignedDeclarationCodeLine(
                 line,
                 maxPrefixWidth,
+                maxPackedWidth,
+                alignPackedDimensions,
                 maxNameWidth,
                 maxBeforeAssignmentWidth,
                 alignAssignment,
@@ -1022,6 +1067,8 @@ void flushDeclarationAlignmentBlock(QStringList* lines,
         const QString codeLine =
             buildAlignedDeclarationCodeLine(block.at(i),
                                             maxPrefixWidth,
+                                            maxPackedWidth,
+                                            alignPackedDimensions,
                                             maxNameWidth,
                                             maxBeforeAssignmentWidth,
                                             alignAssignment,

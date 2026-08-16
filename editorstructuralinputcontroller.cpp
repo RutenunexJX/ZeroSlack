@@ -54,7 +54,7 @@ bool syntaxLiteralAt(const TSDocument* document,
 bool EditorStructuralInputController::handleKeyPress(
     MyCodeEditor* editor,
     QKeyEvent* event,
-    const EditorSyntaxState& syntax) const
+    const EditorSyntaxState& syntax)
 {
     return handleStructuralEnter(editor, event, syntax)
         || handlePairInput(editor, event, syntax);
@@ -63,7 +63,7 @@ bool EditorStructuralInputController::handleKeyPress(
 bool EditorStructuralInputController::handleStructuralEnter(
     MyCodeEditor* editor,
     QKeyEvent* event,
-    const EditorSyntaxState& syntax) const
+    const EditorSyntaxState& syntax)
 {
     if (!editor
         || !event
@@ -118,7 +118,7 @@ bool EditorStructuralInputController::handleStructuralEnter(
 bool EditorStructuralInputController::handlePairInput(
     MyCodeEditor* editor,
     QKeyEvent* event,
-    const EditorSyntaxState& syntax) const
+    const EditorSyntaxState& syntax)
 {
     if (!editor
         || !event
@@ -145,10 +145,7 @@ bool EditorStructuralInputController::handlePairInput(
 
     if (!cursor.hasSelection()
         && closingCharacter(typed)
-        && position < documentEnd
-        && textDocument->characterAt(position) == typed) {
-        cursor.movePosition(QTextCursor::Right);
-        editor->setTextCursor(cursor);
+        && consumeTrackedCloser(editor, &cursor, typed)) {
         event->accept();
         return true;
     }
@@ -160,6 +157,34 @@ bool EditorStructuralInputController::handlePairInput(
             position > 0 ? position - 1 : position;
         if (syntaxLiteralAt(syntaxDocument, probe))
             return false;
+
+        if (typed == QLatin1Char('(')) {
+            const TSIdentifierTarget identifier =
+                syntax.identifierAt(position);
+            if (identifier.ok()
+                && position == identifier.startChar) {
+                cursor.insertText(QString(typed));
+                editor->setTextCursor(cursor);
+                event->accept();
+                return true;
+            }
+            if (identifier.ok()
+                && position > identifier.startChar
+                && position < identifier.endChar) {
+                cursor.setPosition(identifier.startChar);
+                cursor.setPosition(identifier.endChar,
+                                   QTextCursor::KeepAnchor);
+                const QString text = cursor.selectedText();
+                cursor.beginEditBlock();
+                cursor.insertText(QString(typed)
+                                  + text
+                                  + QString(closer));
+                cursor.endEditBlock();
+                editor->setTextCursor(cursor);
+                event->accept();
+                return true;
+            }
+        }
     }
 
     QString selected;
@@ -172,10 +197,69 @@ bool EditorStructuralInputController::handlePairInput(
     cursor.insertText(QString(typed)
                       + selected
                       + QString(closer));
-    if (selected.isEmpty())
+    if (selected.isEmpty()) {
         cursor.movePosition(QTextCursor::Left);
+        trackCloser(textDocument, cursor.position(), closer);
+    }
     cursor.endEditBlock();
     editor->setTextCursor(cursor);
     event->accept();
     return true;
+}
+
+void EditorStructuralInputController::pruneTrackedClosers()
+{
+    for (auto it = trackedClosers.begin(); it != trackedClosers.end();) {
+        QTextDocument* document = it->document.data();
+        const int position = it->cursor.position();
+        const int documentEnd = document
+            ? qMax(0, document->characterCount() - 1)
+            : 0;
+        if (!document
+            || position < 0
+            || position >= documentEnd
+            || document->characterAt(position) != it->value) {
+            it = trackedClosers.erase(it);
+        } else {
+            ++it;
+        }
+    }
+}
+
+bool EditorStructuralInputController::consumeTrackedCloser(
+    MyCodeEditor* editor,
+    QTextCursor* cursor,
+    QChar typed)
+{
+    if (!editor || !cursor || !editor->document())
+        return false;
+    pruneTrackedClosers();
+    for (auto it = trackedClosers.begin(); it != trackedClosers.end(); ++it) {
+        if (it->document != editor->document()
+            || it->cursor.position() != cursor->position()
+            || it->value != typed) {
+            continue;
+        }
+        trackedClosers.erase(it);
+        cursor->movePosition(QTextCursor::Right);
+        editor->setTextCursor(*cursor);
+        return true;
+    }
+    return false;
+}
+
+void EditorStructuralInputController::trackCloser(
+    QTextDocument* document,
+    int position,
+    QChar value)
+{
+    if (!document || value.isNull())
+        return;
+    pruneTrackedClosers();
+    QTextCursor cursor(document);
+    cursor.setPosition(qBound(0,
+                              position,
+                              qMax(0, document->characterCount() - 1)));
+    cursor.setKeepPositionOnInsert(false);
+    trackedClosers.append({document, cursor, value});
 }

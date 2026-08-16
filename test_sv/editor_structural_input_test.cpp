@@ -1,4 +1,6 @@
 #include "annotationlayer.h"
+#include "columnnumbertool.h"
+#include "editorcolumnmodecontroller.h"
 #include "editormodecontroller.h"
 #include "mycodeeditor.h"
 
@@ -120,12 +122,37 @@ int highlightedPairKeywordCount(const MyCodeEditor& editor)
     }
     return count;
 }
+
+int selectedTextCount(const MyCodeEditor& editor,
+                      const QString& text)
+{
+    int count = 0;
+    for (const QTextEdit::ExtraSelection& selection :
+         editor.extraSelections()) {
+        if (selection.cursor.selectedText() == text)
+            ++count;
+    }
+    return count;
+}
 }
 
 int main(int argc, char* argv[])
 {
     QApplication app(argc, argv);
     QApplication::setQuitOnLastWindowClosed(false);
+
+    {
+        const ColumnNumberConfig octal =
+            inferColumnNumberConfig(QStringLiteral("0o0017"));
+        expect("column number inference supports C-like octal",
+               octal.base == ColumnNumberBase::Oct
+                   && octal.style == ColumnNumberStyle::CLike
+                   && octal.start == 15
+                   && octal.fixedDigitWidth
+                   && octal.digitWidth == 4
+                   && formatColumnNumber(octal.start, octal)
+                          == QStringLiteral("0o0017"));
+    }
 
     {
         MyCodeEditor editor;
@@ -316,6 +343,32 @@ int main(int argc, char* argv[])
                editor.toPlainText() == QStringLiteral("[]")
                    && editor.textCursor().position() == 2);
 
+        editor.setPlainText(QStringLiteral(")"));
+        setCursor(editor, 0);
+        sendTextKey(editor,
+                    Qt::Key_ParenRight,
+                    QStringLiteral(")"));
+        expect("an arbitrary adjacent closer is inserted rather than skipped",
+               editor.toPlainText() == QStringLiteral("))")
+                   && editor.textCursor().position() == 1);
+
+        editor.setPlainText(QStringLiteral("signal"));
+        setCursor(editor, 0);
+        sendTextKey(editor,
+                    Qt::Key_ParenLeft,
+                    QStringLiteral("("));
+        expect("opening parenthesis before an identifier inserts only the opener",
+               editor.toPlainText() == QStringLiteral("(signal")
+                   && editor.textCursor().position() == 1);
+
+        editor.setPlainText(QStringLiteral("signal"));
+        setCursor(editor, 3);
+        sendTextKey(editor,
+                    Qt::Key_ParenLeft,
+                    QStringLiteral("("));
+        expect("opening parenthesis inside an identifier wraps the complete token",
+               editor.toPlainText() == QStringLiteral("(signal)"));
+
         editor.setPlainText(QStringLiteral("// "));
         setCursor(editor, 3);
         sendTextKey(editor,
@@ -441,10 +494,96 @@ int main(int argc, char* argv[])
     {
         MyCodeEditor editor;
         editor.resize(520, 160);
+        const QString source =
+            QStringLiteral("module m;\n"
+                           "logic sig;\n"
+                           "assign sig = sig;\n"
+                           "endmodule\n");
+        editor.setPlainText(source);
+        editor.show();
+        editor.setFocus();
+        QCoreApplication::processEvents();
+        const int firstSignal = source.indexOf(QStringLiteral("sig"));
+        setCursor(editor, firstSignal);
+        const QPoint signalPoint = editor.cursorRect().center();
+
+        QTest::mouseClick(editor.viewport(),
+                          Qt::LeftButton,
+                          Qt::NoModifier,
+                          signalPoint);
+        expect("single click does not highlight same-name signal occurrences",
+               selectedTextCount(editor, QStringLiteral("sig")) == 0);
+        QTest::mouseDClick(editor.viewport(),
+                          Qt::LeftButton,
+                          Qt::NoModifier,
+                          signalPoint);
+        expect("double click activates same-name signal occurrence highlighting",
+               selectedTextCount(editor, QStringLiteral("sig")) >= 3);
+        const QTextBlock moduleBlock = editor.document()->firstBlock();
+        QTextCursor moduleCursor(moduleBlock);
+        moduleCursor.setPosition(moduleBlock.position());
+        const QPoint modulePoint = editor.cursorRect(moduleCursor).center();
+        QTest::mouseClick(editor.viewport(),
+                          Qt::LeftButton,
+                          Qt::NoModifier,
+                          modulePoint);
+        expect("the next single click clears same-name signal highlighting",
+               selectedTextCount(editor, QStringLiteral("sig")) == 0);
+    }
+
+    {
+        MyCodeEditor editor;
+        editor.resize(520, 160);
         editor.setPlainText(QStringLiteral("a\nbb"));
         editor.show();
         editor.setFocus();
         QCoreApplication::processEvents();
+        setCursor(editor, 0);
+
+        QTest::keyClick(&editor,
+                        Qt::Key_Down,
+                        Qt::ShiftModifier | Qt::AltModifier);
+        QTest::keyClick(&editor,
+                        Qt::Key_Right,
+                        Qt::ShiftModifier | Qt::AltModifier);
+        EditorColumnModeSnapshot keyboardColumn =
+            editor.columnModeSnapshotForTest();
+        expect("Shift+Alt+Arrow enters and extends column selection",
+               editor.editorModeActiveForTest(
+                   EditorModeId::ColumnSelection)
+                   && keyboardColumn.selectionActive
+                   && keyboardColumn.anchorLine == 0
+                   && keyboardColumn.currentLine == 1
+                   && keyboardColumn.anchorColumn == 0
+                   && keyboardColumn.currentColumn == 1);
+        sendTextKey(editor,
+                    Qt::Key_Z,
+                    QStringLiteral("z"));
+        EditorColumnModeSnapshot replacedColumn =
+            editor.columnModeSnapshotForTest();
+        expect("rectangular replacement leaves the column caret after inserted text",
+               replacedColumn.selectionActive
+                   && replacedColumn.anchorColumn == 1
+                   && replacedColumn.currentColumn == 1);
+        editor.undo();
+        EditorColumnModeSnapshot undoneColumn =
+            editor.columnModeSnapshotForTest();
+        expect("undo restores the pre-edit column selection instead of document start",
+               editor.toPlainText() == QStringLiteral("a\nbb")
+                   && undoneColumn.selectionActive
+                   && undoneColumn.anchorLine == 0
+                   && undoneColumn.currentLine == 1
+                   && undoneColumn.anchorColumn == 0
+                   && undoneColumn.currentColumn == 1);
+        editor.redo();
+        EditorColumnModeSnapshot redoneColumn =
+            editor.columnModeSnapshotForTest();
+        expect("redo restores the post-edit logical column caret",
+               redoneColumn.selectionActive
+                   && redoneColumn.anchorColumn == 1
+                   && redoneColumn.currentColumn == 1);
+        editor.undo();
+        QTest::keyClick(&editor, Qt::Key_Escape);
         setCursor(editor, 0);
 
         const QTextBlock secondBlock =

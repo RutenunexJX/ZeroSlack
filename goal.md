@@ -1,28 +1,35 @@
 # ZeroSlack Current Goal
 
-Product version: `v0.2.1`
+Product version: `v0.2.2`
 
 ## Objective
 
-Publish a verifiable 0.2.1 maintenance release that makes formatter,
-effective-literal inspection, and editor key behavior deterministic across
-ordinary editing and specialized editor modes.
+Deliver a verifiable 0.2.2 maintenance revision that makes column editing,
+undo cursor restoration, delimiter input, declaration alignment, and manual
+save analysis deterministic without adding file-specific rules or deferred
+idle refreshes.
 
 ## Completion criteria
 
-- `VERSION`, generated GUI metadata, current documents, and the release package
-  agree on 0.2.1.
-- Format Document and Format Selection align complete SystemVerilog structures
-  while changing only whitespace and line endings.
-- Ordinary Shift+Tab moves backward by unindenting, while slot, multi-cursor,
-  and column modes retain their explicit ownership rules.
-- ASCII string literals expose their packed equivalent values through the
-  existing literal inspector without per-file or per-symbol rules.
-- Focused and release regression targets pass, and the fixed-name Windows
-  package is rebuilt from the accepted source revision.
+- `VERSION`, generated GUI metadata, and current documents agree on 0.2.2.
+- Column replacement, Shift+Alt keyboard selection, virtual columns, and
+  undo/redo preserve their logical caret state.
+- Contextual parentheses never swallow an unrelated closer, and same-name
+  highlighting is entered only by double-click.
+- Structured formatting aligns general packed-width declaration columns while
+  changing only whitespace and line endings; format-on-save is absent.
+- Ctrl+S reuses the cached text, performs one UTF-8 encoding for the atomic
+  write and both fingerprints, queues semantic work asynchronously, and
+  avoids hidden-panel or duplicate file-baseline work.
+- Coalesced semantic requests retain a single pending clean file even when a
+  different saved file triggers publication.
+- Focused and full regression targets pass without fixture-specific rules or
+  relaxed thresholds.
 
 ## Current status
 
-Implementation and focused regression coverage are complete. The 0.2.1 shared
-Release application and the version/document consistency guard pass; this
-revision is the accepted fixed-name package baseline.
+Implementation and verification are complete. The optimized Release build
+passes all 86 registered tests, including editor incremental/performance,
+analysis scheduling, formatter, external-document synchronization, completion,
+GUI smoke, and version/documentation guards. This task does not publish or
+package the revision.

@@ -180,7 +180,6 @@ private:
     EditorAnnotationDisplayOptions annotationDisplayOptions;
     QMetaObject::Connection appearanceSettingsConnection;
     QMetaObject::Connection formatterSettingsConnection;
-    QMetaObject::Connection formatterFormatOnSaveConnection;
     WorkflowDependencies dependencies;
     SemanticRuntime semanticRuntime;
     std::unique_ptr<EditorActionContextService>

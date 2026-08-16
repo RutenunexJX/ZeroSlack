@@ -9,13 +9,17 @@
 #include "tabmanager.h"
 
 #include <QAbstractItemView>
+#include <QAbstractButton>
 #include <QApplication>
+#include <QButtonGroup>
 #include <QComboBox>
 #include <QCompleter>
 #include <QEvent>
 #include <QFormLayout>
 #include <QFont>
 #include <QGuiApplication>
+#include <QGridLayout>
+#include <QGroupBox>
 #include <QHBoxLayout>
 #include <QKeyEvent>
 #include <QKeySequence>
@@ -23,13 +27,16 @@
 #include <QLineEdit>
 #include <QListWidget>
 #include <QPointer>
+#include <QRadioButton>
 #include <QScreen>
+#include <QSettings>
 #include <QSpinBox>
 #include <QTextBlock>
 #include <QTextCursor>
 #include <QVBoxLayout>
 #include <QWidget>
 
+#include <optional>
 #include <utility>
 
 namespace {
@@ -178,7 +185,11 @@ protected:
 
 private:
     QSpinBox* startSpin = nullptr;
-    QComboBox* baseCombo = nullptr;
+    QButtonGroup* baseButtons = nullptr;
+    QRadioButton* decimalRadio = nullptr;
+    QRadioButton* hexadecimalRadio = nullptr;
+    QRadioButton* octalRadio = nullptr;
+    QRadioButton* binaryRadio = nullptr;
     QComboBox* styleCombo = nullptr;
     QLabel* bitWidthLabel = nullptr;
     QSpinBox* bitWidthSpin = nullptr;
@@ -192,14 +203,17 @@ private:
     QLabel* hexCaseLabel = nullptr;
     QComboBox* hexCaseCombo = nullptr;
     QComboBox* replaceModeCombo = nullptr;
-    QLabel* previewLabel = nullptr;
     int lineCount = 0;
+    std::optional<ColumnNumberConfig> rememberedConfig;
     std::function<void(const ColumnNumberConfig&, int)> applyHandler;
     std::function<void()> cancelledHandler;
 
     ColumnNumberConfig currentConfig() const;
     void applyConfig(const ColumnNumberConfig& config);
-    void refreshPreview();
+    ColumnNumberConfig loadConfig(
+        const ColumnNumberConfig& fallback) const;
+    void saveConfig(const ColumnNumberConfig& config);
+    void refreshFieldVisibility();
     void cancel();
     void apply();
     bool handleKey(QKeyEvent* event);
@@ -210,14 +224,14 @@ ColumnNumberToolPanel::ColumnNumberToolPanel(QWidget* parent)
 {
     setObjectName(QStringLiteral("columnNumberToolPanel"));
     setFocusPolicy(Qt::StrongFocus);
-    setMinimumWidth(430);
+    setMinimumWidth(330);
     InsightVisualStyle::applyPanel(this);
 
     auto* outer = new QVBoxLayout(this);
     outer->setContentsMargins(12, 10, 12, 12);
     outer->setSpacing(8);
 
-    auto* title = new QLabel(QStringLiteral("Column Number Tool"), this);
+    auto* title = new QLabel(QStringLiteral("Insert Numbers"), this);
     QFont titleFont = title->font();
     titleFont.setBold(true);
     title->setFont(titleFont);
@@ -229,19 +243,40 @@ ColumnNumberToolPanel::ColumnNumberToolPanel(QWidget* parent)
     outer->addLayout(form);
 
     startSpin = new QSpinBox(this);
+    startSpin->setObjectName(QStringLiteral("columnNumberStart"));
     startSpin->setRange(-1000000000, 1000000000);
     form->addRow(QStringLiteral("Start"), startSpin);
 
-    baseCombo = new QComboBox(this);
-    baseCombo->addItem(QStringLiteral("Dec"),
-                       static_cast<int>(ColumnNumberBase::Dec));
-    baseCombo->addItem(QStringLiteral("Hex"),
-                       static_cast<int>(ColumnNumberBase::Hex));
-    baseCombo->addItem(QStringLiteral("Bin"),
-                       static_cast<int>(ColumnNumberBase::Bin));
-    form->addRow(QStringLiteral("Base"), baseCombo);
+    auto* baseGroup = new QGroupBox(QStringLiteral("Format"), this);
+    auto* baseLayout = new QGridLayout(baseGroup);
+    baseLayout->setContentsMargins(8, 8, 8, 8);
+    baseLayout->setHorizontalSpacing(12);
+    baseLayout->setVerticalSpacing(4);
+    baseButtons = new QButtonGroup(this);
+    decimalRadio = new QRadioButton(QStringLiteral("Decimal"), baseGroup);
+    hexadecimalRadio = new QRadioButton(QStringLiteral("Hexadecimal"), baseGroup);
+    octalRadio = new QRadioButton(QStringLiteral("Octal"), baseGroup);
+    binaryRadio = new QRadioButton(QStringLiteral("Binary"), baseGroup);
+    decimalRadio->setObjectName(QStringLiteral("columnNumberBaseDecimal"));
+    hexadecimalRadio->setObjectName(QStringLiteral("columnNumberBaseHexadecimal"));
+    octalRadio->setObjectName(QStringLiteral("columnNumberBaseOctal"));
+    binaryRadio->setObjectName(QStringLiteral("columnNumberBaseBinary"));
+    baseButtons->addButton(decimalRadio,
+                           static_cast<int>(ColumnNumberBase::Dec));
+    baseButtons->addButton(hexadecimalRadio,
+                           static_cast<int>(ColumnNumberBase::Hex));
+    baseButtons->addButton(binaryRadio,
+                           static_cast<int>(ColumnNumberBase::Bin));
+    baseButtons->addButton(octalRadio,
+                           static_cast<int>(ColumnNumberBase::Oct));
+    baseLayout->addWidget(decimalRadio, 0, 0);
+    baseLayout->addWidget(hexadecimalRadio, 0, 1);
+    baseLayout->addWidget(octalRadio, 1, 0);
+    baseLayout->addWidget(binaryRadio, 1, 1);
+    form->addRow(baseGroup);
 
     styleCombo = new QComboBox(this);
+    styleCombo->setObjectName(QStringLiteral("columnNumberStyle"));
     styleCombo->addItem(QStringLiteral("Plain"),
                         static_cast<int>(ColumnNumberStyle::Plain));
     styleCombo->addItem(QStringLiteral("C-like"),
@@ -258,6 +293,7 @@ ColumnNumberToolPanel::ColumnNumberToolPanel(QWidget* parent)
     form->addRow(bitWidthLabel, bitWidthSpin);
 
     directionCombo = new QComboBox(this);
+    directionCombo->setObjectName(QStringLiteral("columnNumberDirection"));
     directionCombo->addItem(QStringLiteral("Up"),
                             static_cast<int>(ColumnNumberDirection::Up));
     directionCombo->addItem(QStringLiteral("Down"),
@@ -265,16 +301,19 @@ ColumnNumberToolPanel::ColumnNumberToolPanel(QWidget* parent)
     form->addRow(QStringLiteral("Direction"), directionCombo);
 
     stepSpin = new QSpinBox(this);
+    stepSpin->setObjectName(QStringLiteral("columnNumberStep"));
     stepSpin->setRange(0, 1000000000);
     stepSpin->setValue(1);
     form->addRow(QStringLiteral("Step"), stepSpin);
 
     repeatSpin = new QSpinBox(this);
+    repeatSpin->setObjectName(QStringLiteral("columnNumberRepeat"));
     repeatSpin->setRange(1, 1000000);
     repeatSpin->setValue(1);
     form->addRow(QStringLiteral("Repeat"), repeatSpin);
 
     digitWidthModeCombo = new QComboBox(this);
+    digitWidthModeCombo->setObjectName(QStringLiteral("columnNumberDigitWidthMode"));
     digitWidthModeCombo->addItem(QStringLiteral("auto"), 0);
     digitWidthModeCombo->addItem(QStringLiteral("fixed"), 1);
     form->addRow(QStringLiteral("Digit width"), digitWidthModeCombo);
@@ -285,6 +324,7 @@ ColumnNumberToolPanel::ColumnNumberToolPanel(QWidget* parent)
     form->addRow(digitWidthLabel, digitWidthSpin);
 
     padCombo = new QComboBox(this);
+    padCombo->setObjectName(QStringLiteral("columnNumberPad"));
     padCombo->addItem(QStringLiteral("none"),
                       static_cast<int>(ColumnNumberPad::None));
     padCombo->addItem(QStringLiteral("space"),
@@ -308,15 +348,12 @@ ColumnNumberToolPanel::ColumnNumberToolPanel(QWidget* parent)
         static_cast<int>(ColumnNumberReplaceMode::InsertAtColumn));
     form->addRow(QStringLiteral("Replace mode"), replaceModeCombo);
 
-    previewLabel = new QLabel(this);
-    previewLabel->setObjectName(QStringLiteral("columnNumberPreview"));
-    previewLabel->setMinimumHeight(82);
-    previewLabel->setAlignment(Qt::AlignLeft | Qt::AlignTop);
-    outer->addWidget(previewLabel);
-
     const QList<QWidget*> watched = {
         startSpin,
-        baseCombo,
+        decimalRadio,
+        hexadecimalRadio,
+        octalRadio,
+        binaryRadio,
         styleCombo,
         bitWidthSpin,
         directionCombo,
@@ -332,52 +369,19 @@ ColumnNumberToolPanel::ColumnNumberToolPanel(QWidget* parent)
         widget->installEventFilter(this);
     }
 
-    auto refresh = [this]() { refreshPreview(); };
-    connect(startSpin,
-            QOverload<int>::of(&QSpinBox::valueChanged),
+    auto refresh = [this]() { refreshFieldVisibility(); };
+    connect(baseButtons,
+            &QButtonGroup::idToggled,
             this,
-            refresh);
-    connect(baseCombo,
-            QOverload<int>::of(&QComboBox::currentIndexChanged),
-            this,
-            refresh);
+            [refresh](int, bool checked) {
+                if (checked)
+                    refresh();
+            });
     connect(styleCombo,
             QOverload<int>::of(&QComboBox::currentIndexChanged),
             this,
             refresh);
-    connect(bitWidthSpin,
-            QOverload<int>::of(&QSpinBox::valueChanged),
-            this,
-            refresh);
-    connect(directionCombo,
-            QOverload<int>::of(&QComboBox::currentIndexChanged),
-            this,
-            refresh);
-    connect(stepSpin,
-            QOverload<int>::of(&QSpinBox::valueChanged),
-            this,
-            refresh);
-    connect(repeatSpin,
-            QOverload<int>::of(&QSpinBox::valueChanged),
-            this,
-            refresh);
     connect(digitWidthModeCombo,
-            QOverload<int>::of(&QComboBox::currentIndexChanged),
-            this,
-            refresh);
-    connect(digitWidthSpin,
-            QOverload<int>::of(&QSpinBox::valueChanged),
-            this,
-            refresh);
-    connect(padCombo,
-            QOverload<int>::of(&QComboBox::currentIndexChanged),
-            this,
-            refresh);
-    connect(hexCaseCombo,
-            QOverload<int>::of(&QComboBox::currentIndexChanged),
-            this,
-            refresh);
-    connect(replaceModeCombo,
             QOverload<int>::of(&QComboBox::currentIndexChanged),
             this,
             refresh);
@@ -390,7 +394,7 @@ void ColumnNumberToolPanel::configure(
 {
     Q_UNUSED(selectedRows)
     lineCount = qMax(0, rows);
-    applyConfig(config);
+    applyConfig(loadConfig(config));
 }
 
 void ColumnNumberToolPanel::showFor(QWidget* anchor)
@@ -428,7 +432,9 @@ ColumnNumberConfig ColumnNumberToolPanel::currentConfig() const
     ColumnNumberConfig config;
     config.start = startSpin ? startSpin->value() : 0;
     config.base = static_cast<ColumnNumberBase>(
-        comboValue(baseCombo, static_cast<int>(ColumnNumberBase::Dec)));
+        baseButtons && baseButtons->checkedId() >= 0
+            ? baseButtons->checkedId()
+            : static_cast<int>(ColumnNumberBase::Dec));
     config.style = static_cast<ColumnNumberStyle>(
         comboValue(styleCombo, static_cast<int>(ColumnNumberStyle::Plain)));
     if (config.base == ColumnNumberBase::Dec
@@ -458,7 +464,12 @@ void ColumnNumberToolPanel::applyConfig(const ColumnNumberConfig& config)
 {
     if (startSpin)
         startSpin->setValue(static_cast<int>(config.start));
-    setComboValue(baseCombo, static_cast<int>(config.base));
+    if (baseButtons) {
+        if (QAbstractButton* button =
+                baseButtons->button(static_cast<int>(config.base))) {
+            button->setChecked(true);
+        }
+    }
     setComboValue(styleCombo, static_cast<int>(config.style));
     if (bitWidthSpin)
         bitWidthSpin->setValue(qMax(1, config.bitWidth));
@@ -473,10 +484,68 @@ void ColumnNumberToolPanel::applyConfig(const ColumnNumberConfig& config)
     setComboValue(padCombo, static_cast<int>(config.pad));
     setComboValue(hexCaseCombo, config.uppercaseHex ? 1 : 0);
     setComboValue(replaceModeCombo, static_cast<int>(config.replaceMode));
-    refreshPreview();
+    refreshFieldVisibility();
 }
 
-void ColumnNumberToolPanel::refreshPreview()
+ColumnNumberConfig ColumnNumberToolPanel::loadConfig(
+    const ColumnNumberConfig& fallback) const
+{
+    if (rememberedConfig.has_value())
+        return *rememberedConfig;
+
+    QSettings settings(QStringLiteral("ZeroSlack"),
+                       QStringLiteral("ZeroSlack"));
+    settings.beginGroup(QStringLiteral("columnNumberTool/v1"));
+    if (!settings.contains(QStringLiteral("start")))
+        return fallback;
+    ColumnNumberConfig config = fallback;
+    config.start = settings.value(QStringLiteral("start"), config.start).toLongLong();
+    config.base = static_cast<ColumnNumberBase>(
+        settings.value(QStringLiteral("base"), static_cast<int>(config.base)).toInt());
+    config.style = static_cast<ColumnNumberStyle>(
+        settings.value(QStringLiteral("style"), static_cast<int>(config.style)).toInt());
+    config.bitWidth = settings.value(QStringLiteral("bitWidth"), config.bitWidth).toInt();
+    config.direction = static_cast<ColumnNumberDirection>(
+        settings.value(QStringLiteral("direction"), static_cast<int>(config.direction)).toInt());
+    config.step = settings.value(QStringLiteral("step"), config.step).toLongLong();
+    config.repeat = settings.value(QStringLiteral("repeat"), config.repeat).toInt();
+    config.fixedDigitWidth = settings.value(
+        QStringLiteral("fixedDigitWidth"), config.fixedDigitWidth).toBool();
+    config.digitWidth = settings.value(
+        QStringLiteral("digitWidth"), config.digitWidth).toInt();
+    config.pad = static_cast<ColumnNumberPad>(
+        settings.value(QStringLiteral("pad"), static_cast<int>(config.pad)).toInt());
+    config.uppercaseHex = settings.value(
+        QStringLiteral("uppercaseHex"), config.uppercaseHex).toBool();
+    config.replaceMode = static_cast<ColumnNumberReplaceMode>(
+        settings.value(QStringLiteral("replaceMode"),
+                       static_cast<int>(config.replaceMode)).toInt());
+    return config;
+}
+
+void ColumnNumberToolPanel::saveConfig(
+    const ColumnNumberConfig& config)
+{
+    rememberedConfig = config;
+    QSettings settings(QStringLiteral("ZeroSlack"),
+                       QStringLiteral("ZeroSlack"));
+    settings.beginGroup(QStringLiteral("columnNumberTool/v1"));
+    settings.setValue(QStringLiteral("start"), config.start);
+    settings.setValue(QStringLiteral("base"), static_cast<int>(config.base));
+    settings.setValue(QStringLiteral("style"), static_cast<int>(config.style));
+    settings.setValue(QStringLiteral("bitWidth"), config.bitWidth);
+    settings.setValue(QStringLiteral("direction"), static_cast<int>(config.direction));
+    settings.setValue(QStringLiteral("step"), config.step);
+    settings.setValue(QStringLiteral("repeat"), config.repeat);
+    settings.setValue(QStringLiteral("fixedDigitWidth"), config.fixedDigitWidth);
+    settings.setValue(QStringLiteral("digitWidth"), config.digitWidth);
+    settings.setValue(QStringLiteral("pad"), static_cast<int>(config.pad));
+    settings.setValue(QStringLiteral("uppercaseHex"), config.uppercaseHex);
+    settings.setValue(QStringLiteral("replaceMode"), static_cast<int>(config.replaceMode));
+    settings.sync();
+}
+
+void ColumnNumberToolPanel::refreshFieldVisibility()
 {
     ColumnNumberConfig config = currentConfig();
     if (config.base == ColumnNumberBase::Dec
@@ -503,14 +572,6 @@ void ColumnNumberToolPanel::refreshPreview()
     if (hexCaseCombo)
         hexCaseCombo->setVisible(isHex);
 
-    QStringList rows = previewColumnNumbers(config, qMin(lineCount, 12));
-    if (lineCount > rows.size())
-        rows.append(QStringLiteral("..."));
-    if (previewLabel) {
-        previewLabel->setText(rows.isEmpty()
-                                  ? QStringLiteral("Preview")
-                                  : rows.join(QLatin1Char('\n')));
-    }
 }
 
 void ColumnNumberToolPanel::cancel()
@@ -524,6 +585,7 @@ void ColumnNumberToolPanel::apply()
 {
     const ColumnNumberConfig config = currentConfig();
     const int rows = lineCount;
+    saveConfig(config);
     hide();
     if (applyHandler)
         applyHandler(config, rows);

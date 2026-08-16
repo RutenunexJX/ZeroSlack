@@ -890,12 +890,9 @@ bool handleColumnSelectionKeyInput(MyCodeEditor* editor,
     }
     cursor.endEditBlock();
 
-    const bool wasRectangularSelection = leftColumn != rightColumn;
-    const int collapsedColumn = wasRectangularSelection
-        ? leftColumn
-        : ((printable || forwardTab)
-               ? leftColumn + visualWidthOfText(text, leftColumn, tabWidth)
-               : editColumn);
+    const int collapsedColumn = (printable || forwardTab)
+        ? leftColumn + visualWidthOfText(text, leftColumn, tabWidth)
+        : editColumn;
     state.columnAnchorColumn = collapsedColumn;
     state.columnCurrentColumn = state.columnAnchorColumn;
     state.columnSelectionAwaitingEndpoint = false;
@@ -916,7 +913,7 @@ bool handleColumnSelectionNavigation(MyCodeEditor* editor,
                                      QKeyEvent* event,
                                      EditorColumnModeController::State& state)
 {
-    if (!editor || !event || !hasColumnSelection(state))
+    if (!editor || !event)
         return false;
 
     const int key = event->key();
@@ -940,6 +937,24 @@ bool handleColumnSelectionNavigation(MyCodeEditor* editor,
         && !modifiers.testFlag(Qt::MetaModifier);
     if (!adjustSelection && !moveSelection)
         return false;
+
+    if (!hasColumnSelection(state)) {
+        if (!adjustSelection || !state.modes)
+            return false;
+        state.modes->enter(EditorModeId::ColumnSelection,
+                           EditorModeEntryReason::KeyboardGesture);
+        setColumnPointFromCursor(editor,
+                                 editor->textCursor(),
+                                 &state.columnAnchorLine,
+                                 &state.columnAnchorColumn);
+        state.columnCurrentLine = state.columnAnchorLine;
+        state.columnCurrentColumn = state.columnAnchorColumn;
+        state.modes->updatePresentation(
+            EditorModeId::ColumnSelection,
+            QStringLiteral("Column selection"),
+            QStringLiteral(
+                "Shift+Alt+Arrow adjusts; type edits; Esc cancels"));
+    }
 
     const int lastLine = qMax(0, editor->document()->blockCount() - 1);
     const int lineDelta =
@@ -1056,6 +1071,7 @@ EditorColumnModeController::snapshotForTest() const
     EditorColumnModeSnapshot snapshot;
     snapshot.selectionActive =
         hasColumnSelection(*state);
+    snapshot.virtualCursorActive = virtualCursorActive();
     snapshot.anchorLine = state->columnAnchorLine;
     snapshot.anchorColumn =
         state->columnAnchorColumn;
@@ -1063,7 +1079,40 @@ EditorColumnModeController::snapshotForTest() const
         state->columnCurrentLine;
     snapshot.currentColumn =
         state->columnCurrentColumn;
+    snapshot.virtualCursorLine = state->virtualCursorLine;
+    snapshot.virtualCursorColumn = state->virtualCursorColumn;
     return snapshot;
+}
+
+void EditorColumnModeController::restoreSnapshot(
+    MyCodeEditor* editor,
+    const EditorColumnModeSnapshot& snapshot)
+{
+    clearColumnSelection(editor, *state);
+    clearVirtualCursor(editor);
+    if (!state->modes)
+        return;
+
+    if (snapshot.selectionActive) {
+        state->modes->enter(EditorModeId::ColumnSelection,
+                            EditorModeEntryReason::Restore);
+        state->columnAnchorLine = snapshot.anchorLine;
+        state->columnAnchorColumn = snapshot.anchorColumn;
+        state->columnCurrentLine = snapshot.currentLine;
+        state->columnCurrentColumn = snapshot.currentColumn;
+        updateColumnSelectionHighlight(editor, *state);
+        return;
+    }
+
+    if (snapshot.virtualCursorActive
+        && snapshot.virtualCursorLine >= 0
+        && snapshot.virtualCursorColumn >= 0) {
+        state->modes->enter(EditorModeId::VirtualCursor,
+                            EditorModeEntryReason::Restore);
+        state->virtualCursorLine = snapshot.virtualCursorLine;
+        state->virtualCursorColumn = snapshot.virtualCursorColumn;
+        publishVisibleAnnotations(editor);
+    }
 }
 
 QStringList EditorColumnModeController::selectedRows(

@@ -16,6 +16,7 @@ DocumentSaveResult DocumentSessionState::markSaved(MyCodeEditor* editor)
     }
 
     const TrackedDocument previous = registry.value(editor);
+    const QString savedText = editor->cachedDocumentText();
     const QList<MyCodeEditor*> views =
         registry.editorsForDocumentId(
             previous.snapshot.documentId);
@@ -25,6 +26,7 @@ DocumentSaveResult DocumentSessionState::markSaved(MyCodeEditor* editor)
             registry.value(view);
         TrackedDocument viewTracked =
             snapshotReader.capture(view, &viewPrevious);
+        viewTracked.snapshot.text = savedText;
         if (!registry.markSaved(view, &viewTracked))
             continue;
         if (view == editor)
@@ -35,9 +37,7 @@ DocumentSaveResult DocumentSessionState::markSaved(MyCodeEditor* editor)
 
     result.saved = true;
     result.snapshot = tracked.snapshot;
-    const QString& text = editor->cachedDocumentText();
-    recordDocumentTextCopy(text.size());
-    result.snapshot.text = QString(text.constData(), text.size());
+    result.snapshot.text = savedText;
     return result;
 }
 

@@ -12,11 +12,8 @@ std::atomic<std::uint64_t> copiedCharacterCount{0};
 DocumentSnapshot materializedSnapshot(const TrackedDocument& tracked)
 {
     DocumentSnapshot snapshot = tracked.snapshot;
-    if (tracked.editor) {
-        const QString& text = tracked.editor->cachedDocumentText();
-        recordDocumentTextCopy(text.size());
-        snapshot.text = QString(text.constData(), text.size());
-    }
+    if (tracked.editor)
+        snapshot.text = tracked.editor->cachedDocumentText();
     return snapshot;
 }
 }
@@ -150,9 +147,7 @@ QString DocumentStore::textForEditor(MyCodeEditor* editor) const
     const TrackedDocument* tracked = find(editor);
     if (!tracked || !tracked->editor)
         return QString();
-    const QString& text = tracked->editor->cachedDocumentText();
-    recordDocumentTextCopy(text.size());
-    return QString(text.constData(), text.size());
+    return tracked->editor->cachedDocumentText();
 }
 
 bool DocumentRegistry::contains(MyCodeEditor* editor) const

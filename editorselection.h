@@ -64,6 +64,8 @@ public:
     void highlightSemanticDecorations(
         MyCodeEditor* editor,
         const QList<SemanticDecoration>& decorations);
+    void activateCurrentSymbolReferences(MyCodeEditor* editor);
+    void clearCurrentSymbolReferences(MyCodeEditor* editor);
     void highlightCurrentSymbolReferences(MyCodeEditor* editor);
     bool expandSmartSelection(
         MyCodeEditor* editor,
@@ -130,6 +132,8 @@ private:
     std::uint32_t occurrencePrioritySeed = 0x9e3779b9u;
     qsizetype activeOccurrenceCount = 0;
     bool occurrenceIndexInitialized = false;
+    bool currentSymbolReferencesActive = false;
+    QString currentSymbolReferenceWord;
 };
 
 class EditorHighlightRefresh

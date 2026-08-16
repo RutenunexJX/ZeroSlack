@@ -2878,8 +2878,38 @@ bool MyCodeEditorState::handleKeyPress(MyCodeEditor* editor, QKeyEvent* event)
     return false;
 }
 
-void MyCodeEditorState::beginSynchronousEditTransaction()
+namespace {
+EditorLogicalCursorState captureLogicalCursorState(
+    MyCodeEditor* editor,
+    const EditorColumnModeController& columnMode,
+    const EditorMultiCursorController& multiCursor)
 {
+    EditorLogicalCursorState state;
+    if (!editor)
+        return state;
+    const QTextCursor cursor = editor->textCursor();
+    state.anchor = cursor.anchor();
+    state.position = cursor.position();
+    state.column = columnMode.snapshotForTest();
+    state.multiCursor = multiCursor.snapshot();
+    return state;
+}
+}
+
+void MyCodeEditorState::beginSynchronousEditTransaction(
+    MyCodeEditor* editor)
+{
+    if (synchronousEditTransactionDepth == 0) {
+        synchronousEditStartRevision = editor && editor->document()
+            ? editor->document()->revision()
+            : -1;
+        synchronousEditStartUndoSteps = editor && editor->document()
+            ? editor->document()->availableUndoSteps()
+            : 0;
+        synchronousEditStartCursor = captureLogicalCursorState(
+            editor, columnMode, multiCursor);
+        synchronousEditIsUndoRedo = false;
+    }
     ++synchronousEditTransactionDepth;
 }
 
@@ -2892,6 +2922,40 @@ void MyCodeEditorState::endSynchronousEditTransaction(MyCodeEditor* editor)
     if (synchronousEditTransactionDepth != 0)
         return;
     ++completedSynchronousEditTransactions;
+    const int finalRevision = editor && editor->document()
+        ? editor->document()->revision()
+        : -1;
+    const int finalUndoSteps = editor && editor->document()
+        ? editor->document()->availableUndoSteps()
+        : 0;
+    if (!synchronousEditIsUndoRedo
+        && finalRevision != synchronousEditStartRevision) {
+        if (finalUndoSteps == 0) {
+            undoCursorEntries.clear();
+        } else if (finalUndoSteps >= synchronousEditStartUndoSteps) {
+            while (!undoCursorEntries.isEmpty()
+                   && undoCursorEntries.constLast().afterUndoSteps
+                          > synchronousEditStartUndoSteps) {
+                undoCursorEntries.removeLast();
+            }
+            const EditorLogicalCursorState finalCursor =
+                captureLogicalCursorState(editor,
+                                          columnMode,
+                                          multiCursor);
+            if (!undoCursorEntries.isEmpty()
+                && undoCursorEntries.constLast().afterUndoSteps
+                       == finalUndoSteps) {
+                undoCursorEntries.last().after = finalCursor;
+            } else {
+                undoCursorEntries.append({
+                    synchronousEditStartUndoSteps,
+                    finalUndoSteps,
+                    synchronousEditStartCursor,
+                    finalCursor,
+                });
+            }
+        }
+    }
     lifecycleTrace("transaction.before-finish");
     QElapsedTimer finishTimer;
     finishTimer.start();
@@ -2899,6 +2963,60 @@ void MyCodeEditorState::endSynchronousEditTransaction(MyCodeEditor* editor)
     hotPathMetrics.editorInputFinishNanoseconds +=
         static_cast<std::uint64_t>(finishTimer.nsecsElapsed());
     lifecycleTrace("transaction.after-finish");
+    synchronousEditIsUndoRedo = false;
+}
+
+void MyCodeEditorState::beginUndoRedo()
+{
+    synchronousEditIsUndoRedo = true;
+}
+
+void MyCodeEditorState::restoreCursorAfterUndoRedo(
+    MyCodeEditor* editor,
+    bool redo,
+    int beforeUndoSteps,
+    int afterUndoSteps)
+{
+    if (!editor || !editor->document())
+        return;
+
+    const EditorUndoCursorEntry* match = nullptr;
+    for (auto it = undoCursorEntries.crbegin();
+         it != undoCursorEntries.crend();
+         ++it) {
+        const bool matches = redo
+            ? it->beforeUndoSteps == beforeUndoSteps
+                  && it->afterUndoSteps == afterUndoSteps
+            : it->afterUndoSteps == beforeUndoSteps
+                  && it->beforeUndoSteps == afterUndoSteps;
+        if (matches) {
+            match = &*it;
+            break;
+        }
+    }
+    if (!match) {
+        columnMode.clearSelection(editor);
+        clearVirtualCursor(editor);
+        return;
+    }
+
+    const EditorLogicalCursorState& logical =
+        redo ? match->after : match->before;
+    const int documentEnd = qMax(
+        0, editor->document()->characterCount() - 1);
+    QTextCursor cursor(editor->document());
+    cursor.setPosition(qBound(0, logical.anchor, documentEnd));
+    cursor.setPosition(qBound(0, logical.position, documentEnd),
+                       QTextCursor::KeepAnchor);
+    editor->setTextCursor(cursor);
+    columnMode.restoreSnapshot(editor, logical.column);
+    if (logical.multiCursor.active
+        && !logical.multiCursor.carets.isEmpty()) {
+        multiCursor.setCarets(logical.multiCursor.carets,
+                              logical.multiCursor.primaryIndex);
+    } else {
+        multiCursor.resetToEditorCursor();
+    }
 }
 
 EditorSynchronousEditState
@@ -4286,6 +4404,9 @@ bool MyCodeEditorState::handleMousePress(
     QMouseEvent* event)
 {
     keywordGhost.clear(editor);
+
+    if (event && event->button() == Qt::LeftButton)
+        selections.clearCurrentSymbolReferences(editor);
 
     if (event && event->button() != Qt::LeftButton)
         columnMode.clearPendingColumnAnchor();

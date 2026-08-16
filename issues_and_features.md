@@ -4,6 +4,93 @@ This file is a running checklist for problems to fix and new features to conside
 
 ## Issues
 
+### Completed in v0.2.2
+
+- [x] Undo cursor restoration is unreliable. A stable reproduction is editing
+  in column mode and pressing `Ctrl+Z`: the text is undone, but the caret jumps
+  to the start of the first line instead of returning to the pre-edit logical
+  position. The same first-line jump occurs in several other edit workflows,
+  so the eventual fix must audit the shared undo transaction/cursor-anchor
+  path rather than patching column mode alone. Undo must restore the relevant
+  caret, selection, virtual-column, and mode-local cursor state without
+  defaulting to document offset 0.
+
+- [x] Replacing a rectangular column selection positions the carets on the
+  wrong side of the first inserted character. After typing the first character
+  to replace the selected rectangle, every column caret must land immediately
+  after that character so subsequent typing appends normally; currently the
+  carets remain before it. The fix must cover real and virtual columns and keep
+  the entire replacement as one undo transaction.
+
+- [x] The `Alt+C` Column Number Tool must remember its last-used configuration,
+  including radix, initial value, increment, repeat count, and padding mode,
+  and restore those values when the dialog is opened again. Redesign the dialog
+  as the compact form shown in the supplied reference: a radix group followed
+  by aligned parameter rows in one small window. Remove the preview area and
+  all preview-only update logic; the dialog should contain only the settings
+  required to perform the insertion.
+
+- [x] A single mouse click on a signal must only place the caret; it must not
+  highlight or otherwise display every occurrence of the same signal name.
+  Same-name signal highlighting and occurrence display must be activated only
+  by double-clicking the signal.
+
+- [x] The column-mode caret must be rendered in a clearly visible red and form
+  one continuous vertical line across the complete selected row span, rather
+  than appearing as separate or faint per-line caret fragments. This visual
+  treatment applies only to column mode; the ordinary editor caret is unchanged.
+
+- [x] `Shift+Alt+Arrow` does not currently provide column-mode keyboard
+  selection. Holding `Shift+Alt` while pressing the arrow keys must create a
+  rectangular selection and extend or contract its row and column boundaries;
+  it must not be ignored or fall back to ordinary linear selection. Horizontal
+  movement must continue to support virtual columns on shorter lines.
+
+- [x] Typing `)` near an existing closing parenthesis can consume the new input
+  and merely move across the existing character. A closing parenthesis must be
+  inserted normally unless the editor can identify that exact character as the
+  still-paired counterpart it automatically inserted for the current opening
+  parenthesis; an arbitrary adjacent `)` must never cause the input to be lost.
+
+- [x] Opening-parenthesis completion must be context-sensitive instead of
+  unconditionally inserting `()`. When the caret is immediately before a
+  clearly complete symbol, typing `(` must insert only the opening parenthesis.
+  When the caret is inside a signal identifier, typing `(` must wrap the entire
+  identifier as `(signal)` rather than insert an empty pair or split the token.
+  Symbol boundaries must come from the editor's syntax context, not a loose
+  character-only guess.
+
+- [x] Formatter width-column alignment is still incorrect at the stable
+  reproduction `pwm_codec_top.sv:59` in
+  `C:\Users\14971\Desktop\codec\EN_DE_CODER_22\EN_DE_CODER_22.srcs\sources_1\new`.
+  The declaration's packed or unpacked width does not align with peer entries.
+  The eventual fix must correct the general syntax-aware width alignment rule
+  for equivalent declaration/port rows and must not special-case this file or
+  line number.
+
+- [x] The synchronous `Ctrl+S` path repeatedly materialized the complete
+  `QTextDocument`, probed the source more than once, and reread the saved file
+  to establish baselines. Saving now reuses the editor's immutable cached
+  `QString`, encodes it once, derives both raw-disk and logical-text SHA-256
+  fingerprints from that encoding, performs one final conflict probe, and
+  passes the fingerprints to document/external-sync state without rereading.
+
+- [x] `DocumentSessionState::markSaved` and document-registry queries forced
+  deep text copies while updating multiple views of the same document. They
+  now pass Qt implicitly shared `QString` snapshots and assign the same saved
+  snapshot to every view without per-view character-buffer duplication.
+
+- [x] Hidden Problems and Activity panels continued to mutate expensive text
+  widgets during analysis publication. Hidden Problems refreshes are skipped;
+  Activity events are coalesced while visible and rebuilt from the service's
+  bounded event history when the dock becomes visible again.
+
+- [x] Semantic request coalescing could omit exactly one pending clean file
+  when another file initiated the next save request. The common one-file path
+  now merges that file without allocating multi-file lookup sets, while the
+  existing worker-prepared immutable snapshot publication and asynchronous
+  retirement boundary remain the sole semantic publication mechanism.
+
 ## Feature Ideas
 
 ## Discussion Needed

@@ -1,5 +1,6 @@
 #include "tabfileio.h"
 
+#include <QCryptographicHash>
 #include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
@@ -73,13 +74,31 @@ bool TabFileIo::writeTextFile(
     QWidget* parent,
     const QString& fileName,
     const QString& text,
-    QString* failureReason) const
+    QString* failureReason,
+    QByteArray* rawSha256,
+    QByteArray* logicalTextSha256) const
 {
     Q_UNUSED(parent);
     if (failureReason)
         failureReason->clear();
+    if (rawSha256)
+        rawSha256->clear();
+    if (logicalTextSha256)
+        logicalTextSha256->clear();
+
+    QByteArray logicalBytes = text.toUtf8();
+    const QByteArray logicalDigest = QCryptographicHash::hash(
+        logicalBytes, QCryptographicHash::Sha256);
+#ifdef Q_OS_WIN
+    // Match QIODevice::Text's native newline conversion while retaining the
+    // exact bytes for the crash-recovery baseline digest.
+    logicalBytes.replace("\n", "\r\n");
+#endif
+    const QByteArray rawDigest = QCryptographicHash::hash(
+        logicalBytes, QCryptographicHash::Sha256);
+
     QSaveFile file(fileName);
-    if (!file.open(QIODevice::WriteOnly | QFile::Text)) {
+    if (!file.open(QIODevice::WriteOnly)) {
         if (failureReason) {
             *failureReason =
                 QStringLiteral("Cannot save file: %1")
@@ -88,11 +107,16 @@ bool TabFileIo::writeTextFile(
         return false;
     }
 
-    QTextStream out(&file);
-    out << text;
-    out.flush();
-    if (out.status() != QTextStream::Ok
-        || !file.commit()) {
+    qsizetype written = 0;
+    while (written < logicalBytes.size()) {
+        const qint64 chunk = file.write(
+            logicalBytes.constData() + written,
+            logicalBytes.size() - written);
+        if (chunk <= 0)
+            break;
+        written += chunk;
+    }
+    if (written != logicalBytes.size() || !file.commit()) {
         if (failureReason) {
             *failureReason =
                 QStringLiteral("Cannot save file: %1")
@@ -100,5 +124,9 @@ bool TabFileIo::writeTextFile(
         }
         return false;
     }
+    if (rawSha256)
+        *rawSha256 = rawDigest;
+    if (logicalTextSha256)
+        *logicalTextSha256 = logicalDigest;
     return true;
 }

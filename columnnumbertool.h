@@ -7,7 +7,8 @@
 enum class ColumnNumberBase {
     Dec,
     Hex,
-    Bin
+    Bin,
+    Oct
 };
 
 enum class ColumnNumberStyle {

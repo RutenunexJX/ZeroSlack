@@ -2,6 +2,7 @@
 #define ACTIVITYLOGPANELCOORDINATOR_H
 
 #include <QDockWidget>
+#include <QStringList>
 
 class ActivityLogService;
 class QPlainTextEdit;
@@ -19,8 +20,14 @@ private:
     QPlainTextEdit* outputText = nullptr;
     QPushButton* clearButton = nullptr;
     ActivityLogService* service = nullptr;
+    QStringList pendingLines;
+    bool flushQueued = false;
+    bool rebuildFromService = false;
 
     void appendExistingEvents();
+    void schedulePendingFlush();
+    void flushPendingEvents();
+    bool isVisibleToUser() const;
 };
 
 #endif // ACTIVITYLOGPANELCOORDINATOR_H

@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.2.2] - 2026-08-16
+
+### Editor interaction and save-path update
+
+- Restored logical cursor and mode-local column state across undo/redo, fixed
+  rectangular replacement placement, added Shift+Alt keyboard column
+  selection, and made column carets a continuous high-contrast red guide.
+- Made delimiter completion context-sensitive, limited same-name occurrence
+  highlighting to double-click, and redesigned Alt+C as a compact remembered
+  configuration panel without a preview area.
+- Extended structured declaration alignment to explicit packed-width columns
+  while preserving the formatter's whitespace-only contract, and removed the
+  format-on-save feature and its settings/action residue.
+- Reduced synchronous Ctrl+S work by sharing the editor's cached immutable
+  text snapshot, producing disk/logical fingerprints from one encoding,
+  removing duplicate conflict probes and baseline disk reads, avoiding
+  unchanged workspace-tab work, and coalescing Activity panel output.
+- Preserved every clean saved change when semantic requests merge, including
+  the one-pending-file case where a different file triggers the next request.
+- Verified the revision with the optimized Release build and all 86 registered
+  tests, including incremental editor and large-file performance coverage.
+
 ## [0.2.1] - 2026-08-15
 
 ### Editor reliability update

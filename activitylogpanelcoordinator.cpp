@@ -5,6 +5,8 @@
 #include <QHBoxLayout>
 #include <QPlainTextEdit>
 #include <QPushButton>
+#include <QScrollBar>
+#include <QTextCursor>
 #include <QVBoxLayout>
 
 ActivityLogPanelCoordinator::ActivityLogPanelCoordinator(QWidget* parent)
@@ -42,16 +44,37 @@ ActivityLogPanelCoordinator::ActivityLogPanelCoordinator(QWidget* parent)
                      &ActivityLogService::eventAppended,
                      outputText,
                      [this](const ActivityLogEvent& event) {
-                         if (outputText)
-                             outputText->appendPlainText(
-                                 ActivityLogService::formatEvent(event));
+                         if (!isVisibleToUser()) {
+                             pendingLines.clear();
+                             rebuildFromService = true;
+                             return;
+                         }
+                         pendingLines.append(
+                             ActivityLogService::formatEvent(event));
+                         schedulePendingFlush();
                      });
     QObject::connect(service,
                      &ActivityLogService::cleared,
                      outputText,
                      [this]() {
-                         if (outputText)
+                         pendingLines.clear();
+                         rebuildFromService = !isVisibleToUser();
+                         if (outputText && !rebuildFromService)
                              outputText->clear();
+                     });
+    QObject::connect(activityDock,
+                     &QDockWidget::visibilityChanged,
+                     outputText,
+                     [this](bool visible) {
+                         if (!visible)
+                             return;
+                         if (rebuildFromService) {
+                             pendingLines.clear();
+                             appendExistingEvents();
+                             rebuildFromService = false;
+                         } else {
+                             schedulePendingFlush();
+                         }
                      });
     QObject::connect(clearButton,
                      &QPushButton::clicked,
@@ -64,6 +87,52 @@ void ActivityLogPanelCoordinator::appendExistingEvents()
     if (!outputText || !service)
         return;
 
-    for (const ActivityLogEvent& event : service->events())
-        outputText->appendPlainText(ActivityLogService::formatEvent(event));
+    QStringList lines;
+    const QList<ActivityLogEvent> events = service->events();
+    lines.reserve(events.size());
+    for (const ActivityLogEvent& event : events)
+        lines.append(ActivityLogService::formatEvent(event));
+    outputText->setPlainText(lines.join(QLatin1Char('\n')));
+}
+
+void ActivityLogPanelCoordinator::schedulePendingFlush()
+{
+    if (flushQueued || pendingLines.isEmpty() || !isVisibleToUser())
+        return;
+    flushQueued = true;
+    QMetaObject::invokeMethod(
+        outputText,
+        [this]() {
+            flushQueued = false;
+            flushPendingEvents();
+        },
+        Qt::QueuedConnection);
+}
+
+void ActivityLogPanelCoordinator::flushPendingEvents()
+{
+    if (!outputText || pendingLines.isEmpty() || !isVisibleToUser())
+        return;
+
+    const QString text = pendingLines.join(QLatin1Char('\n'));
+    pendingLines.clear();
+    QScrollBar* scrollBar = outputText->verticalScrollBar();
+    const bool followTail = !scrollBar
+        || scrollBar->value() >= scrollBar->maximum();
+    QTextCursor cursor(outputText->document());
+    cursor.movePosition(QTextCursor::End);
+    cursor.beginEditBlock();
+    if (!outputText->document()->isEmpty())
+        cursor.insertBlock();
+    cursor.insertText(text);
+    cursor.endEditBlock();
+    if (followTail && scrollBar)
+        scrollBar->setValue(scrollBar->maximum());
+}
+
+bool ActivityLogPanelCoordinator::isVisibleToUser() const
+{
+    return activityDock
+        && activityDock->isVisible()
+        && !activityDock->visibleRegion().isEmpty();
 }

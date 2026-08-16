@@ -58,6 +58,22 @@ struct EditorModuleScopeTarget;
 struct EditorStructuralContextMenuState;
 struct EditorSynchronousEditState;
 
+struct EditorLogicalCursorState
+{
+    int anchor = -1;
+    int position = -1;
+    EditorColumnModeSnapshot column;
+    EditorMultiCursorSnapshot multiCursor;
+};
+
+struct EditorUndoCursorEntry
+{
+    int beforeUndoSteps = 0;
+    int afterUndoSteps = 0;
+    EditorLogicalCursorState before;
+    EditorLogicalCursorState after;
+};
+
 struct EditorGhostAnnotationAnchorTraits
 {
     static int start(const GhostAnnotation& annotation)
@@ -195,7 +211,6 @@ struct MyCodeEditorState
     EditorHotPathMetrics hotPathMetrics;
     bool hotPathTimingEnabled = false;
     FormatterProfile currentFormatterProfile = FormatterProfile::Structured;
-    bool currentFormatOnSaveEnabled = false;
     EditorPackageToolAvailability lastPackageToolAvailability;
     bool packageToolAvailabilityInitialized = false;
     QString lastWavePreviewScopeKey;
@@ -206,6 +221,11 @@ struct MyCodeEditorState
     int lifecycleDiagnosticRank = -1;
     int synchronousEditTransactionDepth = 0;
     std::uint64_t completedSynchronousEditTransactions = 0;
+    int synchronousEditStartRevision = -1;
+    int synchronousEditStartUndoSteps = 0;
+    bool synchronousEditIsUndoRedo = false;
+    EditorLogicalCursorState synchronousEditStartCursor;
+    QList<EditorUndoCursorEntry> undoCursorEntries;
     QPointer<EditorHoverPopup> signalDefinitionPeek;
     QPointer<QLineEdit> signalDefinitionEditor;
     QMetaObject::Connection signalDefinitionPeekClosedConnection;
@@ -275,6 +295,7 @@ struct MyCodeEditorState
     int templateSlotModeSlotCount() const;
     bool templateSlotModeBlinkOn() const;
     bool columnSelectionActiveForCommand() const;
+    EditorColumnModeSnapshot columnModeSnapshotForTest() const;
     bool virtualCursorActiveForTest() const;
     int virtualCursorLineForTest() const;
     int virtualCursorColumnForTest() const;
@@ -325,8 +346,13 @@ struct MyCodeEditorState
         MyCodeEditor* editor,
         bool previous,
         QString* message = nullptr);
-    void beginSynchronousEditTransaction();
+    void beginSynchronousEditTransaction(MyCodeEditor* editor);
     void endSynchronousEditTransaction(MyCodeEditor* editor);
+    void beginUndoRedo();
+    void restoreCursorAfterUndoRedo(MyCodeEditor* editor,
+                                    bool redo,
+                                    int beforeUndoSteps,
+                                    int afterUndoSteps);
     EditorSynchronousEditState synchronousEditStateForTest() const;
     void finishEditorInput(MyCodeEditor* editor);
     bool handleKeyRelease(MyCodeEditor* editor, QKeyEvent* event);
@@ -426,11 +452,8 @@ struct MyCodeEditorState
     void executeEditorActionCommand(MyCodeEditor* editor, const QString& command);
     void setFormatterProfile(FormatterProfile profile);
     FormatterProfile formatterProfile() const;
-    void setFormatOnSaveEnabled(bool enabled);
-    bool formatOnSaveEnabled() const;
     FormatterReport formatDocument(MyCodeEditor* editor);
     FormatterReport formatSelection(MyCodeEditor* editor);
-    bool formatDocumentForSave(MyCodeEditor* editor);
     void commentSelectionOrLine(MyCodeEditor* editor);
     void uncommentSelectionOrLine(MyCodeEditor* editor);
     void indentSelectionOrLine(MyCodeEditor* editor);
