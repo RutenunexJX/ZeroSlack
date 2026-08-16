@@ -156,6 +156,7 @@ void appendCommandLayerActions(QList<ActionDescriptor>* out)
         const char* parameterName;
         const char* placeholder;
         const char* shortcut = "";
+        bool commandLayer = true;
     };
     const QList<Spec> specs = {
         {"navigation.goLine",
@@ -207,58 +208,6 @@ void appendCommandLayerActions(QList<ActionDescriptor>* out)
          ActionParameterKind::None,
          "",
          ""},
-        {ActionIds::NavigationNextAssignment,
-         "Next Signal Assignment",
-         "Jump to the next structural assignment of the selected signal.",
-         "next assignment",
-         "editor.navigation.nextAssignment",
-         ActionCategory::Navigate,
-         ActionScope::Symbol,
-         editor,
-         "Place the cursor on a SystemVerilog signal identifier.",
-         ActionParameterKind::None,
-         "",
-         "",
-         "Alt+F7"},
-        {ActionIds::NavigationPreviousAssignment,
-         "Previous Signal Assignment",
-         "Jump to the previous structural assignment of the selected signal.",
-         "previous assignment",
-         "editor.navigation.previousAssignment",
-         ActionCategory::Navigate,
-         ActionScope::Symbol,
-         editor,
-         "Place the cursor on a SystemVerilog signal identifier.",
-         ActionParameterKind::None,
-         "",
-         "",
-         "Shift+Alt+F7"},
-        {ActionIds::NavigationNextConditionalBranch,
-         "Next Conditional Branch",
-         "Jump to the next `ifdef, `ifndef, `elsif, `else, or `endif branch.",
-         "next conditional branch",
-         "editor.navigation.nextConditionalBranch",
-         ActionCategory::Navigate,
-         ActionScope::Editor,
-         editor,
-         "Place the cursor inside a conditional compilation group.",
-         ActionParameterKind::None,
-         "",
-         "",
-         "Alt+F8"},
-        {ActionIds::NavigationPreviousConditionalBranch,
-         "Previous Conditional Branch",
-         "Jump to the previous `ifdef, `ifndef, `elsif, `else, or `endif branch.",
-         "previous conditional branch",
-         "editor.navigation.previousConditionalBranch",
-         ActionCategory::Navigate,
-         ActionScope::Editor,
-         editor,
-         "Place the cursor inside a conditional compilation group.",
-         ActionParameterKind::None,
-         "",
-         "",
-         "Shift+Alt+F8"},
         {ActionIds::RepeatLastAction,
          "Repeat Last Action",
          "Repeat the most recent successful Action; high-risk Actions "
@@ -269,42 +218,6 @@ void appendCommandLayerActions(QList<ActionDescriptor>* out)
          ActionScope::Application,
          0,
          "",
-         ActionParameterKind::None,
-         "",
-         ""},
-        {"edit.addSignalRow",
-         "Add Signal Row",
-         "Create a signal declaration row in the current module.",
-         "add signal",
-         "editor.structure.addSignalRow",
-         ActionCategory::Insert,
-         ActionScope::Module,
-         editor,
-         "Place the cursor in a module.",
-         ActionParameterKind::None,
-         "",
-         ""},
-        {"edit.addParameterRow",
-         "Add Parameter Row",
-         "Create a parameter row in the current module or package.",
-         "add parameter",
-         "editor.structure.addParameterRow",
-         ActionCategory::Insert,
-         ActionScope::Editor,
-         editor,
-         "Place the cursor in a module or package parameter scope.",
-         ActionParameterKind::None,
-         "",
-         ""},
-        {"edit.addPortRow",
-         "Add Port Row",
-         "Append a row to a multiline module port list.",
-         "add port",
-         "editor.structure.addPortRow",
-         ActionCategory::Insert,
-         ActionScope::Module,
-         editor,
-         "Place the cursor in a module with a multiline port list.",
          ActionParameterKind::None,
          "",
          ""},
@@ -459,7 +372,8 @@ void appendCommandLayerActions(QList<ActionDescriptor>* out)
          ActionParameterKind::None,
          "",
          "",
-         "Ctrl+E"},
+         "Ctrl+E",
+         false},
         {ActionIds::NavigationPreviousSelectedSymbolOccurrence,
          "Previous Selected Symbol Occurrence",
          "Move the current identifier selection to its previous document occurrence.",
@@ -472,7 +386,8 @@ void appendCommandLayerActions(QList<ActionDescriptor>* out)
          ActionParameterKind::None,
          "",
          "",
-         "Ctrl+Q"},
+         "Ctrl+Q",
+         false},
     };
 
     for (const Spec& spec : specs) {
@@ -491,10 +406,19 @@ void appendCommandLayerActions(QList<ActionDescriptor>* out)
                        QString::fromLatin1(spec.placeholder));
         descriptor.defaultShortcut =
             QString::fromLatin1(spec.shortcut);
-        descriptor.aliases.append(
-            alias(ActionSurface::CommandLayer,
-                  QString::fromLatin1(spec.token),
-                  QString::fromLatin1(spec.token)));
+        if (spec.commandLayer) {
+            descriptor.aliases.append(
+                alias(ActionSurface::CommandLayer,
+                      QString::fromLatin1(spec.token),
+                      QString::fromLatin1(spec.token)));
+        }
+        if (spec.shortcut && *spec.shortcut) {
+            descriptor.aliases.append(
+                alias(ActionSurface::Shortcut,
+                      QString::fromLatin1(spec.shortcut),
+                      QString::fromLatin1(spec.name),
+                      QString::fromLatin1(spec.description)));
+        }
         if (descriptor.id
             == QString::fromLatin1(
                 ActionIds::RepeatLastAction)) {
@@ -546,7 +470,6 @@ void appendFileCommandActions(QList<ActionDescriptor>* out)
         const char* id;
         const char* name;
         const char* description;
-        const char* command;
         const char* route;
         const char* shortcut;
         const char* adapterKey;
@@ -558,7 +481,6 @@ void appendFileCommandActions(QList<ActionDescriptor>* out)
         {ActionIds::FileNew,
          "New File",
          "Create a new unsaved editor document.",
-         "new file",
          "ui.file.new",
          "Ctrl+N",
          "new_file",
@@ -568,7 +490,6 @@ void appendFileCommandActions(QList<ActionDescriptor>* out)
         {ActionIds::FileOpen,
          "Open File",
          "Choose a file and open it in an editor tab.",
-         "open file",
          "ui.file.open",
          "Ctrl+O",
          "open_file",
@@ -578,7 +499,6 @@ void appendFileCommandActions(QList<ActionDescriptor>* out)
         {ActionIds::FileSave,
          "Save File",
          "Save the active editor document.",
-         "save file",
          "ui.file.save",
          "Ctrl+S",
          "save_file",
@@ -588,7 +508,6 @@ void appendFileCommandActions(QList<ActionDescriptor>* out)
         {ActionIds::FileSaveAs,
          "Save File As",
          "Save the active editor document under a selected path.",
-         "save file as",
          "ui.file.saveAs",
          "Ctrl+Shift+S",
          "save_as",
@@ -598,7 +517,6 @@ void appendFileCommandActions(QList<ActionDescriptor>* out)
         {ActionIds::WorkspaceOpen,
          "Open Workspace",
          "Choose a directory and open it as a workspace.",
-         "open workspace",
          "ui.workspace.open",
          "Ctrl+K, Ctrl+O",
          "open_direction_as_workspace",
@@ -624,10 +542,6 @@ void appendFileCommandActions(QList<ActionDescriptor>* out)
         descriptor.defaultShortcut =
             QString::fromLatin1(spec.shortcut);
         descriptor.aliases = {
-            alias(
-                ActionSurface::CommandLayer,
-                QString::fromLatin1(spec.command),
-                QString::fromLatin1(spec.command)),
             alias(
                 ActionSurface::Shortcut,
                 QString::fromLatin1(spec.shortcut),
@@ -2301,11 +2215,12 @@ void appendRtlEditMenuActions(
         makeAction(
             QString::fromLatin1(
                 ActionIds::RtlConnectionTransform),
-            QStringLiteral("Transform Instance Connections"),
+            QStringLiteral("Synchronize Instance Connections"),
             QStringLiteral(
                 "Build one structured High+Diff transaction that safely "
-                "converts ordered connections to named connections, fills "
-                "missing ports, or inserts provable width and signed casts."),
+                "synchronizes all source instances with the current Slang "
+                "formal ports, removes obsolete connections, converts ordered "
+                "connections, and inserts only provable casts."),
             ActionCategory::Refactor,
             ActionScope::Hierarchy,
             QStringLiteral("rtledit.connection.transform"),
@@ -2317,7 +2232,7 @@ void appendRtlEditMenuActions(
             ActionParameterKind::HierarchySelection,
             QStringLiteral("connectionTransform"),
             QStringLiteral(
-                "ordered, missing-port, and explicit-cast options"));
+                "scope, missing-port, obsolete-port, and explicit-cast options"));
     connectionTransform.riskLevel = ActionRiskLevel::High;
     connectionTransform.supportsDryRun = true;
     connectionTransform.repeatable = true;
@@ -2326,7 +2241,7 @@ void appendRtlEditMenuActions(
         alias(
             ActionSurface::Menu,
             connectionTransform.id,
-            QStringLiteral("Transform Instance Connections..."),
+            QStringLiteral("Synchronize Instance Connections..."),
             connectionTransform.description,
             QString(),
             QStringLiteral("rtlConnectionTransformAction")),
@@ -2342,7 +2257,7 @@ void appendRtlEditMenuActions(
             true),
         alias(
             ActionSurface::CommandLayer,
-            QStringLiteral("transform instance connections"),
+            QStringLiteral("synchronize instance connections"),
             connectionTransform.canonicalName,
             connectionTransform.description),
     };

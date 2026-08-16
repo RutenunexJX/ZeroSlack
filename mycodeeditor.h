@@ -191,6 +191,13 @@ public:
     void setIncludeNewHeaderCreator(
         std::function<IncludeNewHeaderResult(
             const IncludeNewHeaderRequest& request)> creator);
+    QStringList includeFileCompletionCandidates() const;
+    bool insertPackageImport(const QString& packageName,
+                             QString* failureReason = nullptr);
+    bool insertHeaderInclude(const QString& includePath,
+                             QString* failureReason = nullptr);
+    bool createAndInsertHeader(const QString& fileName,
+                               QString* failureReason = nullptr);
     void setSemanticContextService(EditorSemanticContextService* service);
     void setHierarchyInstanceContext(
         const HierarchyInstanceContext& context);
@@ -201,25 +208,20 @@ public:
     QString currentModuleName() const;
     EditorAlwaysScopeTarget currentAlwaysScopeTarget() const;
     EditorModuleScopeTarget currentModuleScopeTarget() const;
-    bool addPortRow(QString* message = nullptr);
-    bool addSignalRow(QString* message = nullptr);
-    bool addParameterRow(QString* message = nullptr);
     bool goToFinalEndmodule(QString* message = nullptr);
     EditorPackageToolAvailability currentPackageToolAvailability() const;
     bool executePackageToolInsert(PackageToolKind kind,
                                   QString* message = nullptr);
     bool selectInsideBeginEnd(QString* message = nullptr);
-    bool goToPreviousAssignmentForSelectedSignal(
-        QString* message = nullptr);
-    bool goToNextAssignmentForSelectedSignal(
-        QString* message = nullptr);
-    bool goToPreviousConditionalBranch(
-        QString* message = nullptr);
-    bool goToNextConditionalBranch(
-        QString* message = nullptr);
     void startTemplateSlotMode(int insertionStart,
                                int insertedLength,
                                const CodeTemplateSlotList& slotMetadata);
+    bool insertCompletionText(
+        const QString& text,
+        int selectionStart = -1,
+        int selectionLength = 0,
+        const CodeTemplateSlotList& slotMetadata = {},
+        QString* failureReason = nullptr);
     bool templateSlotModeActive() const;
     int templateSlotModeActiveIndex() const;
     int templateSlotModeSlotCount() const;

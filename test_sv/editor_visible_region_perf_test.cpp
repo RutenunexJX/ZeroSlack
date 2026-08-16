@@ -441,32 +441,6 @@ void exerciseLargeFileIncrementalChangedRanges()
                && conditional.targetDirective
                       == QStringLiteral("`elsif"));
 
-    QTextCursor assignmentCursor(editor.document());
-    assignmentCursor.setPosition(
-        fixture.identifierProbePosition);
-    editor.setTextCursor(assignmentCursor);
-    QString assignmentMessage;
-    const bool assignmentActionAvailable =
-        editor.goToNextAssignmentForSelectedSignal(
-            &assignmentMessage);
-    QTextCursor conditionalCursor(editor.document());
-    conditionalCursor.setPosition(
-        fixture.conditionalProbePosition);
-    editor.setTextCursor(conditionalCursor);
-    QString conditionalMessage;
-    const bool conditionalActionAvailable =
-        editor.goToNextConditionalBranch(
-            &conditionalMessage);
-    expect("large-file editor routes assignment and conditional actions through full syntax",
-           assignmentActionAvailable
-               && assignmentMessage.contains(
-                   QStringLiteral("assignment"),
-                   Qt::CaseInsensitive)
-               && conditionalActionAvailable
-               && conditionalMessage.contains(
-                   QStringLiteral("conditional"),
-                   Qt::CaseInsensitive));
-
     QTextCursor keywordCursor(editor.document());
     keywordCursor.setPosition(
         fixture.keywordPrefixEndPosition);

@@ -224,6 +224,9 @@ struct MyCodeEditorState
     int synchronousEditStartRevision = -1;
     int synchronousEditStartUndoSteps = 0;
     bool synchronousEditIsUndoRedo = false;
+    bool undoRedoViewportCaptured = false;
+    int undoRedoVerticalScroll = 0;
+    int undoRedoHorizontalScroll = 0;
     EditorLogicalCursorState synchronousEditStartCursor;
     QList<EditorUndoCursorEntry> undoCursorEntries;
     QPointer<EditorHoverPopup> signalDefinitionPeek;
@@ -268,9 +271,6 @@ struct MyCodeEditorState
         const MyCodeEditor* editor) const;
     EditorModuleScopeTarget currentModuleScopeTarget(
         const MyCodeEditor* editor) const;
-    bool addPortRow(MyCodeEditor* editor, QString* message);
-    bool addSignalRow(MyCodeEditor* editor, QString* message);
-    bool addParameterRow(MyCodeEditor* editor, QString* message);
     bool goToFinalEndmodule(MyCodeEditor* editor, QString* message);
     EditorPackageToolAvailability currentPackageToolAvailability(
         const MyCodeEditor* editor) const;
@@ -278,14 +278,6 @@ struct MyCodeEditorState
                                   PackageToolKind kind,
                                   QString* message);
     bool selectInsideBeginEnd(MyCodeEditor* editor, QString* message);
-    bool navigateSelectedSignalAssignment(
-        MyCodeEditor* editor,
-        bool previous,
-        QString* message);
-    bool navigateConditionalBranch(
-        MyCodeEditor* editor,
-        bool previous,
-        QString* message);
     void startTemplateSlotMode(MyCodeEditor* editor,
                                int insertionStart,
                                int insertedLength,
@@ -348,7 +340,7 @@ struct MyCodeEditorState
         QString* message = nullptr);
     void beginSynchronousEditTransaction(MyCodeEditor* editor);
     void endSynchronousEditTransaction(MyCodeEditor* editor);
-    void beginUndoRedo();
+    void beginUndoRedo(MyCodeEditor* editor);
     void restoreCursorAfterUndoRedo(MyCodeEditor* editor,
                                     bool redo,
                                     int beforeUndoSteps,
@@ -449,6 +441,16 @@ struct MyCodeEditorState
         EditorCompletionWorkflow::IncludeFileProvider provider);
     void setIncludeNewHeaderCreator(
         EditorCompletionWorkflow::IncludeNewHeaderCreator creator);
+    QStringList includeFileCandidates() const;
+    bool insertPackageImportAtCursor(MyCodeEditor* editor,
+                                     const QString& packageName,
+                                     QString* failureReason = nullptr);
+    bool insertHeaderIncludeAtCursor(MyCodeEditor* editor,
+                                     const QString& includePath,
+                                     QString* failureReason = nullptr);
+    bool createAndInsertHeaderAtCursor(MyCodeEditor* editor,
+                                       const QString& fileName,
+                                       QString* failureReason = nullptr);
     void executeEditorActionCommand(MyCodeEditor* editor, const QString& command);
     void setFormatterProfile(FormatterProfile profile);
     FormatterProfile formatterProfile() const;

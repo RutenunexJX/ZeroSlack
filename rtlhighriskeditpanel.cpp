@@ -190,6 +190,18 @@ void RtlHighRiskEditPanel::setupUi()
         QStringLiteral(
             "rtlHighRiskAddMissingPorts"));
     connectionForm->addRow(QString(), addMissingPortsCheck);
+    removeUnknownPortsCheck = new QCheckBox(
+        QStringLiteral("Remove connections to deleted formal ports"),
+        connectionInputPage);
+    removeUnknownPortsCheck->setObjectName(
+        QStringLiteral("rtlHighRiskRemoveUnknownPorts"));
+    connectionForm->addRow(QString(), removeUnknownPortsCheck);
+    synchronizeAllInstancesCheck = new QCheckBox(
+        QStringLiteral("Apply to every source instance of this module"),
+        connectionInputPage);
+    synchronizeAllInstancesCheck->setObjectName(
+        QStringLiteral("rtlHighRiskSynchronizeAllInstances"));
+    connectionForm->addRow(QString(), synchronizeAllInstancesCheck);
 
     missingPortPolicyCombo =
         new QComboBox(connectionInputPage);
@@ -336,6 +348,20 @@ void RtlHighRiskEditPanel::setupUi()
             emitDraftChanged();
         });
     connect(
+        removeUnknownPortsCheck,
+        &QCheckBox::toggled,
+        this,
+        [this](bool) {
+            emitDraftChanged();
+        });
+    connect(
+        synchronizeAllInstancesCheck,
+        &QCheckBox::toggled,
+        this,
+        [this](bool) {
+            emitDraftChanged();
+        });
+    connect(
         missingPortPolicyCombo,
         qOverload<int>(
             &QComboBox::currentIndexChanged),
@@ -432,6 +458,10 @@ void RtlHighRiskEditPanel::beginConnectionTransform(
         defaults.convertOrderedToNamed);
     addMissingPortsCheck->setChecked(
         defaults.addMissingPorts);
+    removeUnknownPortsCheck->setChecked(
+        defaults.removeUnknownPorts);
+    synchronizeAllInstancesCheck->setChecked(
+        defaults.synchronizeAllInstances);
     missingPortPolicyCombo->setCurrentIndex(
         qMax(
             0,
@@ -540,6 +570,10 @@ RtlHighRiskEditDraft RtlHighRiskEditPanel::draft() const
         convertOrderedCheck->isChecked();
     value.addMissingPorts =
         addMissingPortsCheck->isChecked();
+    value.removeUnknownPorts =
+        removeUnknownPortsCheck->isChecked();
+    value.synchronizeAllInstances =
+        synchronizeAllInstancesCheck->isChecked();
     value.missingPortPolicy =
         static_cast<RtlMissingPortConnectionPolicy>(
             missingPortPolicyCombo
@@ -617,13 +651,18 @@ void RtlHighRiskEditPanel::setConnectionOptions(
     bool convertOrderedToNamed,
     bool addMissingPorts,
     RtlMissingPortConnectionPolicy missingPortPolicy,
-    RtlExplicitCastPolicy castPolicy)
+    RtlExplicitCastPolicy castPolicy,
+    bool removeUnknownPorts,
+    bool synchronizeAllInstances)
 {
     const RtlHighRiskEditDraft before = draft();
     rebuilding = true;
     convertOrderedCheck->setChecked(
         convertOrderedToNamed);
     addMissingPortsCheck->setChecked(addMissingPorts);
+    removeUnknownPortsCheck->setChecked(removeUnknownPorts);
+    synchronizeAllInstancesCheck->setChecked(
+        synchronizeAllInstances);
     missingPortPolicyCombo->setCurrentIndex(
         qMax(
             0,
@@ -641,6 +680,10 @@ void RtlHighRiskEditPanel::setConnectionOptions(
             != after.convertOrderedToNamed
         || before.addMissingPorts
             != after.addMissingPorts
+        || before.removeUnknownPorts
+            != after.removeUnknownPorts
+        || before.synchronizeAllInstances
+            != after.synchronizeAllInstances
         || before.missingPortPolicy
             != after.missingPortPolicy
         || before.castPolicy != after.castPolicy) {
@@ -1161,6 +1204,10 @@ RtlHighRiskEditPanelCoordinator::requestPreview(
             request.convertOrderedToNamed;
         query.addMissingPorts =
             request.addMissingPorts;
+        query.removeUnknownPorts =
+            request.removeUnknownPorts;
+        query.synchronizeAllInstances =
+            request.synchronizeAllInstances;
         query.missingPortPolicy =
             request.missingPortPolicy;
         query.castPolicy = request.castPolicy;
@@ -1173,6 +1220,12 @@ RtlHighRiskEditPanelCoordinator::requestPreview(
         accepted.insert(
             QStringLiteral("addMissingPorts"),
             request.addMissingPorts);
+        accepted.insert(
+            QStringLiteral("removeUnknownPorts"),
+            request.removeUnknownPorts);
+        accepted.insert(
+            QStringLiteral("synchronizeAllInstances"),
+            request.synchronizeAllInstances);
         accepted.insert(
             QStringLiteral("missingPortPolicy"),
             static_cast<int>(

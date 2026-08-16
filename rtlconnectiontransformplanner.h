@@ -61,6 +61,8 @@ struct RtlConnectionTransformRequest {
     std::uint64_t expectedDocumentRevision = 0;
     bool convertOrderedToNamed = true;
     bool addMissingPorts = false;
+    bool removeUnknownPorts = false;
+    bool synchronizeAllInstances = false;
     RtlMissingPortConnectionPolicy missingPortPolicy =
         RtlMissingPortConnectionPolicy::LeaveUnconnected;
     RtlExplicitCastPolicy castPolicy =
@@ -112,6 +114,10 @@ private:
     SemanticIndex* index = nullptr;
 
     SemanticIndex* semanticIndex() const;
+    RtlConnectionTransformReport planSingle(
+        const RtlConnectionTransformRequest& request,
+        const rtledit::WorkspaceDocumentManager& documents,
+        const QString& synchronizedModuleName = {}) const;
 };
 
 #endif // RTLCONNECTIONTRANSFORMPLANNER_H

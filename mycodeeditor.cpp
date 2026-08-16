@@ -404,7 +404,7 @@ void MyCodeEditor::undo()
     const int beforeUndoSteps = document()
         ? document()->availableUndoSteps()
         : 0;
-    state->beginUndoRedo();
+    state->beginUndoRedo(this);
     QPlainTextEdit::undo();
     const int afterUndoSteps = document()
         ? document()->availableUndoSteps()
@@ -419,7 +419,7 @@ void MyCodeEditor::redo()
     const int beforeUndoSteps = document()
         ? document()->availableUndoSteps()
         : 0;
-    state->beginUndoRedo();
+    state->beginUndoRedo(this);
     QPlainTextEdit::redo();
     const int afterUndoSteps = document()
         ? document()->availableUndoSteps()
@@ -746,6 +746,35 @@ void MyCodeEditor::setIncludeNewHeaderCreator(
     state->setIncludeNewHeaderCreator(std::move(creator));
 }
 
+QStringList MyCodeEditor::includeFileCompletionCandidates() const
+{
+    return state->includeFileCandidates();
+}
+
+bool MyCodeEditor::insertPackageImport(
+    const QString& packageName,
+    QString* failureReason)
+{
+    return state->insertPackageImportAtCursor(
+        this, packageName, failureReason);
+}
+
+bool MyCodeEditor::insertHeaderInclude(
+    const QString& includePath,
+    QString* failureReason)
+{
+    return state->insertHeaderIncludeAtCursor(
+        this, includePath, failureReason);
+}
+
+bool MyCodeEditor::createAndInsertHeader(
+    const QString& fileName,
+    QString* failureReason)
+{
+    return state->createAndInsertHeaderAtCursor(
+        this, fileName, failureReason);
+}
+
 void MyCodeEditor::setSemanticContextService(EditorSemanticContextService* service)
 {
     state->setSemanticContextService(service);
@@ -872,24 +901,6 @@ EditorModuleScopeTarget MyCodeEditor::currentModuleScopeTarget() const
     return state->currentModuleScopeTarget(this);
 }
 
-bool MyCodeEditor::addPortRow(QString* message)
-{
-    auto edit = beginSynchronousEditTransaction();
-    return state->addPortRow(this, message);
-}
-
-bool MyCodeEditor::addSignalRow(QString* message)
-{
-    auto edit = beginSynchronousEditTransaction();
-    return state->addSignalRow(this, message);
-}
-
-bool MyCodeEditor::addParameterRow(QString* message)
-{
-    auto edit = beginSynchronousEditTransaction();
-    return state->addParameterRow(this, message);
-}
-
 bool MyCodeEditor::goToFinalEndmodule(QString* message)
 {
     return state->goToFinalEndmodule(this, message);
@@ -922,6 +933,88 @@ void MyCodeEditor::startTemplateSlotMode(
                                  insertionStart,
                                  insertedLength,
                                  slotMetadata);
+}
+
+bool MyCodeEditor::insertCompletionText(
+    const QString& text,
+    int selectionStart,
+    int selectionLength,
+    const CodeTemplateSlotList& slotMetadata,
+    QString* failureReason)
+{
+    if (isReadOnly()) {
+        if (failureReason)
+            *failureReason = QStringLiteral("The editor is read-only.");
+        return false;
+    }
+    if (text.isEmpty()) {
+        if (failureReason)
+            *failureReason = QStringLiteral("The insertion text is empty.");
+        return false;
+    }
+
+    QTextCursor cursor = textCursor();
+    const int insertionStart = cursor.selectionStart();
+    QTextCursor indentationCursor(document());
+    indentationCursor.setPosition(insertionStart);
+    const QString prefix = indentationCursor.block().text().left(
+        insertionStart - indentationCursor.block().position());
+    const QString indentation = prefix.trimmed().isEmpty()
+        ? prefix : QString();
+
+    QString adjustedText;
+    adjustedText.reserve(text.size()
+                         + text.count(QLatin1Char('\n'))
+                               * indentation.size());
+    QVector<int> offsetMap(text.size() + 1, 0);
+    for (int i = 0; i < text.size(); ++i) {
+        offsetMap[i] = adjustedText.size();
+        adjustedText.append(text.at(i));
+        if (text.at(i) == QLatin1Char('\n')
+            && i + 1 < text.size()) {
+            adjustedText.append(indentation);
+        }
+    }
+    offsetMap[text.size()] = adjustedText.size();
+
+    CodeTemplateSlotList adjustedSlots = slotMetadata;
+    for (CodeTemplateSlot& slot : adjustedSlots) {
+        if (slot.start < 0 || slot.start > text.size())
+            continue;
+        const int originalEnd = qBound(slot.start,
+                                       slot.start + slot.length,
+                                       text.size());
+        slot.start = offsetMap.at(slot.start);
+        slot.length = offsetMap.at(originalEnd) - slot.start;
+    }
+
+    auto edit = beginSynchronousEditTransaction();
+    cursor.beginEditBlock();
+    cursor.insertText(adjustedText);
+    cursor.endEditBlock();
+    setTextCursor(cursor);
+
+    if (!adjustedSlots.isEmpty()) {
+        startTemplateSlotMode(insertionStart,
+                              adjustedText.size(),
+                              adjustedSlots);
+    } else if (selectionStart >= 0
+               && selectionStart <= text.size()) {
+        const int originalEnd = qBound(selectionStart,
+                                       selectionStart + selectionLength,
+                                       text.size());
+        QTextCursor selection(document());
+        selection.setPosition(insertionStart
+                              + offsetMap.at(selectionStart));
+        selection.setPosition(insertionStart
+                                  + offsetMap.at(originalEnd),
+                              QTextCursor::KeepAnchor);
+        setTextCursor(selection);
+    }
+
+    if (failureReason)
+        failureReason->clear();
+    return true;
 }
 
 bool MyCodeEditor::templateSlotModeActive() const
@@ -1096,34 +1189,6 @@ bool MyCodeEditor::goToLineNumber(int lineNumber)
     flashLine(lineNumber);
     emit editorStatusMessageRequested(tr("Line %1").arg(lineNumber));
     return true;
-}
-
-bool MyCodeEditor::goToPreviousAssignmentForSelectedSignal(
-    QString* message)
-{
-    return state->navigateSelectedSignalAssignment(
-        this, true, message);
-}
-
-bool MyCodeEditor::goToNextAssignmentForSelectedSignal(
-    QString* message)
-{
-    return state->navigateSelectedSignalAssignment(
-        this, false, message);
-}
-
-bool MyCodeEditor::goToPreviousConditionalBranch(
-    QString* message)
-{
-    return state->navigateConditionalBranch(
-        this, true, message);
-}
-
-bool MyCodeEditor::goToNextConditionalBranch(
-    QString* message)
-{
-    return state->navigateConditionalBranch(
-        this, false, message);
 }
 
 bool MyCodeEditor::replaceNextText(const QString& needle,

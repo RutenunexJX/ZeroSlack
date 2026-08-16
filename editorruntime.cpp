@@ -2484,26 +2484,6 @@ bool MyCodeEditorState::handleKeyPress(MyCodeEditor* editor, QKeyEvent* event)
         }
     }
 
-    const bool structuralNavigationMode =
-        primaryMode == EditorModeId::None
-        || primaryMode == EditorModeId::KeywordGhost;
-    if (structuralNavigationMode
-        && matchesRegisteredShortcut(
-            event,
-            QString::fromLatin1(
-                ActionIds::NavigationNextAssignment))) {
-        keywordGhost.clear(editor);
-        if (!requestRegisteredEditorAction(
-                editor,
-                QString::fromLatin1(
-                    ActionIds::NavigationNextAssignment))) {
-            navigateSelectedSignalAssignment(
-                editor, false, nullptr);
-        }
-        event->accept();
-        return true;
-    }
-
     const bool undoShortcut =
         matchesRegisteredShortcut(
             event, QStringLiteral("edit.undo"));
@@ -2580,59 +2560,6 @@ bool MyCodeEditorState::handleKeyPress(MyCodeEditor* editor, QKeyEvent* event)
         event->accept();
         return true;
     }
-    if (structuralNavigationMode
-        && matchesRegisteredShortcut(
-            event,
-            QString::fromLatin1(
-                ActionIds::NavigationPreviousAssignment))) {
-        keywordGhost.clear(editor);
-        if (!requestRegisteredEditorAction(
-                editor,
-                QString::fromLatin1(
-                    ActionIds::NavigationPreviousAssignment))) {
-            navigateSelectedSignalAssignment(
-                editor, true, nullptr);
-        }
-        event->accept();
-        return true;
-    }
-    if (structuralNavigationMode
-        && matchesRegisteredShortcut(
-            event,
-            QString::fromLatin1(
-                ActionIds::
-                    NavigationNextConditionalBranch))) {
-        keywordGhost.clear(editor);
-        if (!requestRegisteredEditorAction(
-                editor,
-                QString::fromLatin1(
-                    ActionIds::
-                        NavigationNextConditionalBranch))) {
-            navigateConditionalBranch(
-                editor, false, nullptr);
-        }
-        event->accept();
-        return true;
-    }
-    if (structuralNavigationMode
-        && matchesRegisteredShortcut(
-            event,
-            QString::fromLatin1(
-                ActionIds::
-                    NavigationPreviousConditionalBranch))) {
-        keywordGhost.clear(editor);
-        if (!requestRegisteredEditorAction(
-                editor,
-                QString::fromLatin1(
-                    ActionIds::
-                        NavigationPreviousConditionalBranch))) {
-            navigateConditionalBranch(
-                editor, true, nullptr);
-        }
-        event->accept();
-        return true;
-    }
-
     if (handleSafeRename(editor, event))
         return true;
 
@@ -2849,9 +2776,6 @@ bool MyCodeEditorState::handleKeyPress(MyCodeEditor* editor, QKeyEvent* event)
     if (handleBracketRangeTab(editor, event))
         return true;
 
-    if (completionWorkflow.handleInlineAbbreviationTab(event))
-        return true;
-
     if (structuralInput.handleKeyPress(editor, event, syntax))
         return true;
 
@@ -2909,6 +2833,7 @@ void MyCodeEditorState::beginSynchronousEditTransaction(
         synchronousEditStartCursor = captureLogicalCursorState(
             editor, columnMode, multiCursor);
         synchronousEditIsUndoRedo = false;
+        undoRedoViewportCaptured = false;
     }
     ++synchronousEditTransactionDepth;
 }
@@ -2963,12 +2888,39 @@ void MyCodeEditorState::endSynchronousEditTransaction(MyCodeEditor* editor)
     hotPathMetrics.editorInputFinishNanoseconds +=
         static_cast<std::uint64_t>(finishTimer.nsecsElapsed());
     lifecycleTrace("transaction.after-finish");
+    if (synchronousEditIsUndoRedo
+        && undoRedoViewportCaptured
+        && editor) {
+        QScrollBar* vertical = editor->verticalScrollBar();
+        QScrollBar* horizontal = editor->horizontalScrollBar();
+        if (vertical) {
+            vertical->setValue(
+                qBound(vertical->minimum(),
+                       undoRedoVerticalScroll,
+                       vertical->maximum()));
+        }
+        if (horizontal) {
+            horizontal->setValue(
+                qBound(horizontal->minimum(),
+                       undoRedoHorizontalScroll,
+                       horizontal->maximum()));
+        }
+        editor->viewport()->update();
+    }
     synchronousEditIsUndoRedo = false;
+    undoRedoViewportCaptured = false;
 }
 
-void MyCodeEditorState::beginUndoRedo()
+void MyCodeEditorState::beginUndoRedo(MyCodeEditor* editor)
 {
     synchronousEditIsUndoRedo = true;
+    if (!editor || undoRedoViewportCaptured)
+        return;
+    if (QScrollBar* vertical = editor->verticalScrollBar())
+        undoRedoVerticalScroll = vertical->value();
+    if (QScrollBar* horizontal = editor->horizontalScrollBar())
+        undoRedoHorizontalScroll = horizontal->value();
+    undoRedoViewportCaptured = true;
 }
 
 void MyCodeEditorState::restoreCursorAfterUndoRedo(
@@ -3355,6 +3307,8 @@ void MyCodeEditorState::paintFoldPlaceholders(
     QPaintEvent* event) const
 {
     Q_UNUSED(event)
+    if (!editor || !folding.hasPaintOverlay())
+        return;
     QPainter painter(editor->viewport());
     folding.paintPlaceholders(editor, painter);
 }

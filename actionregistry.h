@@ -100,14 +100,6 @@ inline constexpr const char FileSaveAs[] =
     "file.saveAs";
 inline constexpr const char WorkspaceOpen[] =
     "workspace.open";
-inline constexpr const char NavigationNextAssignment[] =
-    "navigation.nextAssignment";
-inline constexpr const char NavigationPreviousAssignment[] =
-    "navigation.previousAssignment";
-inline constexpr const char NavigationNextConditionalBranch[] =
-    "navigation.nextConditionalBranch";
-inline constexpr const char NavigationPreviousConditionalBranch[] =
-    "navigation.previousConditionalBranch";
 inline constexpr const char SelectExpandSmart[] =
     "select.expandSmart";
 inline constexpr const char NavigationNextSelectedSymbolOccurrence[] =

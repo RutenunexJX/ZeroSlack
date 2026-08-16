@@ -1,6 +1,7 @@
 #include "globalcontrolservice.h"
 
 #include "actionregistry.h"
+#include "commandlayercommandregistry.h"
 
 #include <Qt>
 
@@ -182,6 +183,76 @@ QList<GlobalControlItem> workspaceDomainItems(const QString& query)
 
     return baseItems;
 }
+
+QList<GlobalControlItem> commandPaletteItems(const QString& text)
+{
+    const QString queryText = normalizedQuery(text);
+    if (queryText == QStringLiteral("fd")
+        || queryText.startsWith(QStringLiteral("fd "))) {
+        return foldDomainItems(queryText);
+    }
+    if (queryText == QStringLiteral("ow")
+        || queryText.startsWith(QStringLiteral("ow "))) {
+        return workspaceDomainItems(queryText);
+    }
+
+    QList<GlobalControlItem> result;
+    appendFiltered(&result, rootDomainItems(), queryText);
+
+    const CommandLayerLineParseResult lineQuery =
+        parseCommandLayerLineQuery(queryText);
+    if (lineQuery.state == CommandLayerLineParseState::Valid) {
+        if (const CommandLayerCommandMetadata* command =
+                findCommandLayerCommand(QStringLiteral("go <number>"))) {
+            GlobalControlItem lineItem =
+                item(GlobalControlItemKind::Command,
+                     QStringLiteral("go %1").arg(lineQuery.line),
+                     QStringLiteral("Go to line %1").arg(lineQuery.line),
+                     command->description);
+            lineItem.actionId = command->actionId;
+            lineItem.executionRoute = command->executionRoute;
+            lineItem.parameters.insert(QStringLiteral("line"),
+                                       lineQuery.line);
+            result.prepend(lineItem);
+        }
+        return result.mid(0, 80);
+    }
+    if (lineQuery.state == CommandLayerLineParseState::Invalid)
+        return result;
+
+    for (const CommandLayerCommandMatch& match :
+         commandLayerCommandMatches(queryText)) {
+        GlobalControlItem commandItem =
+            item(GlobalControlItemKind::Command,
+                 match.command.name,
+                 match.command.name,
+                 match.command.description);
+        commandItem.actionId = match.command.actionId;
+        commandItem.executionRoute = match.command.executionRoute;
+        result.append(commandItem);
+        if (result.size() >= 80)
+            break;
+    }
+    return result.mid(0, 80);
+}
+
+}
+
+QList<GlobalControlItem> GlobalControlService::query(
+    GlobalControlCategory category,
+    const QString& text,
+    const GlobalControlQueryContext& context) const
+{
+    switch (category) {
+    case GlobalControlCategory::Symbols:
+    case GlobalControlCategory::Templates:
+        Q_UNUSED(text);
+        Q_UNUSED(context);
+        return {};
+    case GlobalControlCategory::Commands:
+        return commandPaletteItems(text);
+    }
+    return {};
 }
 
 QList<GlobalControlItem> GlobalControlService::query(

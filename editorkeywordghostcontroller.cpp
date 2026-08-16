@@ -158,11 +158,18 @@ bool EditorKeywordGhostController::handleKeyPress(
     }
 
     if (plainTab(event)) {
-        const QString suffix = currentTarget.suffix;
+        QString acceptedText = currentTarget.suffix;
         clear(editor);
         QTextCursor cursor = editor->textCursor();
+        const QString nextCharacter =
+            editor->cachedDocumentSlice(cursor.position(), 1);
+        if (nextCharacter.isEmpty()
+            || (nextCharacter.at(0) != QLatin1Char(' ')
+                && nextCharacter.at(0) != QLatin1Char('\t'))) {
+            acceptedText.append(QLatin1Char(' '));
+        }
         cursor.beginEditBlock();
-        cursor.insertText(suffix);
+        cursor.insertText(acceptedText);
         cursor.endEditBlock();
         editor->setTextCursor(cursor);
         event->accept();

@@ -124,14 +124,33 @@ private:
     };
 
     struct WorkspaceWatcher {
+        struct EntryStamp {
+            bool directory = false;
+        };
+
+        struct DirectoryDelta {
+            bool membershipChanged = false;
+        };
+
         std::unique_ptr<QFileSystemWatcher> watcher;
+        WorkspaceManager* owner = nullptr;
+        QHash<QString, QHash<QString, EntryStamp>> directorySnapshots;
 
         void ensure(WorkspaceManager* owner);
         void clear();
         void watchWorkspace(const QString& workspacePath,
-                            const QStringList& files);
-        void updateFiles(const QStringList& files);
+                            const QStringList& files,
+                            const QStringList& directories);
+        void updatePaths(const QString& workspacePath,
+                         const QStringList& files,
+                         const QStringList& directories);
+        DirectoryDelta refreshDirectory(const QString& path);
+        void rewatchFile(const QString& path);
         bool active() const;
+
+    private:
+        QHash<QString, EntryStamp> snapshotDirectory(
+            const QString& path) const;
     };
 
     QString workspacePath;
@@ -145,6 +164,8 @@ private:
     std::unique_ptr<WorkspaceConfigurationService> workspaceConfigurationService;
     std::unique_ptr<QDirIterator> scanIterator;
     QStringList pendingScannedFiles;
+    QStringList pendingScannedDirectories;
+    QStringList scannedDirectories;
     QString scanningPath;
     std::uint64_t workspaceActivationGeneration = 0;
     std::uint64_t scanGeneration = 0;

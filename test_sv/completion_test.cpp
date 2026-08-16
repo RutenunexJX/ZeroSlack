@@ -13,6 +13,7 @@
 #include "documentmodel.h"
 #include "effectivevalueservice.h"
 #include "editorsemanticcontextservice.h"
+#include "editorinsertpaletteservice.h"
 #include "foldblockshelfmodel.h"
 #include "foldshelfpersistenceservice.h"
 #include "foldshelfrestoreservice.h"
@@ -1447,6 +1448,47 @@ int main(int argc, char** argv) {
                    && stringHover.radixRepresentations.contains(
                        QStringLiteral("hex: 31_3233")),
                true);
+
+    const QList<GlobalControlItem> paletteCommands =
+        globalControlService.query(
+            GlobalControlCategory::Commands,
+            QStringLiteral("duplicate"));
+    expectBool("Ctrl+Space command category uses Action registry",
+               std::any_of(
+                   paletteCommands.cbegin(),
+                   paletteCommands.cend(),
+                   [](const GlobalControlItem& item) {
+                       return item.actionId
+                           == QString::fromLatin1(
+                               ActionIds::EditDuplicateLines);
+                   }),
+               true);
+
+    GlobalControlQueryContext paletteContext;
+    paletteContext.editorAvailable = true;
+    paletteContext.fileName = path;
+    paletteContext.moduleName = QStringLiteral("top");
+    paletteContext.documentText = content;
+    paletteContext.cursorLine = 1;
+    paletteContext.cursorPosition = content.indexOf(
+        QStringLiteral("module top"));
+    const EditorInsertPaletteService insertPalette;
+    const QList<GlobalControlItem> paletteTemplates =
+        insertPalette.query(GlobalControlCategory::Templates,
+                            QStringLiteral("always_comb"),
+                            paletteContext);
+    expectBool("Ctrl+Space template category uses template catalog",
+               std::any_of(
+                   paletteTemplates.cbegin(),
+                   paletteTemplates.cend(),
+                   [](const GlobalControlItem& item) {
+                       return item.kind
+                                  == GlobalControlItemKind::Template
+                           && item.id == QStringLiteral(";;ac")
+                           && item.insertionText.contains(
+                               QStringLiteral("always_comb"));
+                   }),
+               true);
     const GhostNumericLiteralReport includeStringHover =
         numericLiteralAt(numericHoverText, includeStringHoverPosition);
     expectBool("Ghost literal hover skips include string",
@@ -1561,160 +1603,6 @@ int main(int argc, char** argv) {
     }
     expectBool("Highlighter line comment wins",
                commentNumberUsesCommentFormat,
-               true);
-
-    const QString portAppendOriginal =
-        QStringLiteral("module demo (\n"
-                       "    input  logic clk,\n"
-                       "    output logic done\n"
-                       ");\n"
-                       "endmodule\n");
-    const QString portAppendExpected =
-        QStringLiteral("module demo (\n"
-                       "    input  logic clk,\n"
-                       "    output logic done,\n"
-                       "    \n"
-                       ");\n"
-                       "endmodule\n");
-    MyCodeEditor portAppendEditor;
-    portAppendEditor.setPlainText(portAppendOriginal);
-    QTextCursor portAppendCursor = portAppendEditor.textCursor();
-    portAppendCursor.setPosition(
-        portAppendOriginal.indexOf(QStringLiteral("done")));
-    portAppendEditor.setTextCursor(portAppendCursor);
-    QString portAppendMessage;
-    const bool portAppendOk =
-        portAppendEditor.addPortRow(&portAppendMessage);
-    expectBool("add port editor append succeeds", portAppendOk, true);
-    expectEq("add port editor append text",
-             portAppendEditor.toPlainText(),
-             portAppendExpected);
-    expectBool("add port editor caret at indent",
-               portAppendEditor.textCursor().position()
-                   == portAppendExpected.indexOf(QStringLiteral("    \n);"))
-                          + 4,
-               true);
-    portAppendEditor.undo();
-    expectEq("add port editor undo restores original",
-             portAppendEditor.toPlainText(),
-             portAppendOriginal);
-
-    const QString singleLinePortList =
-        QStringLiteral("module demo (input logic clk);\nendmodule\n");
-    portAppendEditor.setPlainText(singleLinePortList);
-    portAppendCursor = portAppendEditor.textCursor();
-    portAppendCursor.setPosition(
-        singleLinePortList.indexOf(QStringLiteral("clk")));
-    portAppendEditor.setTextCursor(portAppendCursor);
-    portAppendMessage.clear();
-    expectBool("add port editor rejects unclear list",
-               !portAppendEditor.addPortRow(&portAppendMessage)
-                   && portAppendMessage
-                          == QStringLiteral("No clear port append point")
-                   && portAppendEditor.toPlainText() == singleLinePortList,
-               true);
-
-    const QString signalInsertOriginal =
-        QStringLiteral("module sig_demo;\n"
-                       "  logic a;\n"
-                       "  wire b;\n"
-                       "  assign y = b;\n"
-                       "endmodule\n");
-    const QString signalInsertExpected =
-        QStringLiteral("module sig_demo;\n"
-                       "  logic a;\n"
-                       "  wire b;\n"
-                       "  \n"
-                       "  assign y = b;\n"
-                       "endmodule\n");
-    MyCodeEditor signalInsertEditor;
-    signalInsertEditor.setPlainText(signalInsertOriginal);
-    QTextCursor signalInsertCursor = signalInsertEditor.textCursor();
-    signalInsertCursor.setPosition(
-        signalInsertOriginal.indexOf(QStringLiteral("assign")));
-    signalInsertEditor.setTextCursor(signalInsertCursor);
-    QString signalInsertMessage;
-    const bool signalInsertOk =
-        signalInsertEditor.addSignalRow(&signalInsertMessage);
-    expectBool("add signal editor insert succeeds", signalInsertOk, true);
-    expectEq("add signal editor insert text",
-             signalInsertEditor.toPlainText(),
-             signalInsertExpected);
-    expectBool("add signal editor caret at indent",
-               signalInsertEditor.textCursor().position()
-                   == signalInsertExpected.indexOf(
-                          QStringLiteral("  \n  assign")) + 2,
-               true);
-    signalInsertEditor.undo();
-    expectEq("add signal editor undo restores original",
-             signalInsertEditor.toPlainText(),
-             signalInsertOriginal);
-
-    const QString noModuleSignalInsert = QStringLiteral("logic stray;\n");
-    signalInsertEditor.setPlainText(noModuleSignalInsert);
-    signalInsertCursor = signalInsertEditor.textCursor();
-    signalInsertCursor.setPosition(0);
-    signalInsertEditor.setTextCursor(signalInsertCursor);
-    signalInsertMessage.clear();
-    expectBool("add signal editor reports no module",
-               !signalInsertEditor.addSignalRow(&signalInsertMessage)
-                   && signalInsertMessage == QStringLiteral("No current module")
-                   && signalInsertEditor.toPlainText() == noModuleSignalInsert,
-               true);
-
-    const QString parameterInsertOriginal =
-        QStringLiteral("module parameter_demo #(\n"
-                       "  parameter int WIDTH = 8\n"
-                       ") (\n"
-                       "  input logic clk\n"
-                       ");\n"
-                       "endmodule\n");
-    const QString parameterInsertExpected =
-        QStringLiteral("module parameter_demo #(\n"
-                       "  parameter int WIDTH = 8,\n"
-                       "  \n"
-                       ") (\n"
-                       "  input logic clk\n"
-                       ");\n"
-                       "endmodule\n");
-    MyCodeEditor parameterInsertEditor;
-    parameterInsertEditor.setPlainText(parameterInsertOriginal);
-    QTextCursor parameterInsertCursor = parameterInsertEditor.textCursor();
-    parameterInsertCursor.setPosition(
-        parameterInsertOriginal.indexOf(QStringLiteral("clk")));
-    parameterInsertEditor.setTextCursor(parameterInsertCursor);
-    QString parameterInsertMessage;
-    const bool parameterInsertOk =
-        parameterInsertEditor.addParameterRow(
-            &parameterInsertMessage);
-    expectBool("add parameter editor insert succeeds", parameterInsertOk, true);
-    expectEq("add parameter editor insert text",
-             parameterInsertEditor.toPlainText(),
-             parameterInsertExpected);
-    expectBool("add parameter editor caret at indent",
-               parameterInsertEditor.textCursor().position()
-                   == parameterInsertExpected.indexOf(
-                          QStringLiteral("  \n)")) + 2,
-               true);
-    parameterInsertEditor.undo();
-    expectEq("add parameter editor undo restores original",
-             parameterInsertEditor.toPlainText(),
-             parameterInsertOriginal);
-
-    const QString noScopeParameterInsert =
-        QStringLiteral("parameter int WIDTH = 8;\n");
-    parameterInsertEditor.setPlainText(noScopeParameterInsert);
-    parameterInsertCursor = parameterInsertEditor.textCursor();
-    parameterInsertCursor.setPosition(0);
-    parameterInsertEditor.setTextCursor(parameterInsertCursor);
-    parameterInsertMessage.clear();
-    expectBool("add parameter editor reports no parameter scope",
-               !parameterInsertEditor.addParameterRow(
-                   &parameterInsertMessage)
-                   && parameterInsertMessage
-                          == QStringLiteral("No current parameter scope")
-                   && parameterInsertEditor.toPlainText()
-                          == noScopeParameterInsert,
                true);
 
     const QString moduleEndOriginal =
@@ -3756,16 +3644,16 @@ int main(int argc, char** argv) {
               QStringLiteral("enable"))
         + QStringLiteral("enable").size());
     semanticCommandTabEditor.setTextCursor(semanticCommandCursor);
-    expectBool("Editor ;cmd Tab is consumed",
+    expectBool("Editor legacy ;cmd Tab is ordinary indentation",
                sendEditorKey(
                    semanticCommandTabEditor,
                    Qt::Key_Tab),
                true);
-    expectEq("Editor ;cmd Tab does not append four spaces",
+    expectEq("Editor legacy ;cmd remains literal text",
              semanticCommandTabEditor.toPlainText(),
              QStringLiteral(
                  "module top;\n"
-                 "assign lhs = enable;\n"
+                 "assign lhs = ;l enable    ;\n"
                  "endmodule\n"));
 
     MyCodeEditor templateCommandTabEditor;
@@ -3779,19 +3667,55 @@ int main(int argc, char** argv) {
     QTextCursor templateCommandCursor(templateCommandBlock);
     templateCommandCursor.movePosition(QTextCursor::EndOfBlock);
     templateCommandTabEditor.setTextCursor(templateCommandCursor);
-    expectBool("Editor ;;cmd Tab is consumed",
+    expectBool("Editor legacy ;;cmd Tab is ordinary indentation",
                sendEditorKey(
                    templateCommandTabEditor,
                    Qt::Key_Tab),
                true);
-    expectBool(
-        "Editor ;;cmd Tab activates without four-space insertion",
-        templateCommandTabEditor.toPlainText().contains(
-            QStringLiteral("logic [7:0] tab_signal;"))
-            && !templateCommandTabEditor.toPlainText().contains(
-                QStringLiteral(";;l 8 tab_signal    ")),
-        true);
-    sendEditorKey(templateCommandTabEditor, Qt::Key_Escape);
+    expectBool("Editor legacy ;;cmd remains literal text",
+               templateCommandTabEditor.toPlainText().contains(
+                   QStringLiteral(";;l 8 tab_signal    \n")),
+               true);
+
+    MyCodeEditor paletteInsertionEditor;
+    paletteInsertionEditor.setPlainText(
+        QStringLiteral("module palette_insert;\n    \nendmodule\n"));
+    QTextCursor paletteInsertionCursor(
+        paletteInsertionEditor.document()->findBlockByNumber(1));
+    paletteInsertionCursor.movePosition(QTextCursor::EndOfBlock);
+    paletteInsertionEditor.setTextCursor(paletteInsertionCursor);
+    const QString paletteSnippet =
+        QStringLiteral("always_comb begin\n    next_value\nend");
+    CodeTemplateSlotList paletteSlots;
+    paletteSlots.append(
+        {QStringLiteral("body"),
+         static_cast<int>(paletteSnippet.indexOf(
+             QStringLiteral("next_value"))),
+         static_cast<int>(QStringLiteral("next_value").size()),
+         0,
+         false});
+    QString paletteInsertionFailure;
+    expectBool("Ctrl+Space insertion accepts template text",
+               paletteInsertionEditor.insertCompletionText(
+                   paletteSnippet,
+                   -1,
+                   0,
+                   paletteSlots,
+                   &paletteInsertionFailure),
+               true);
+    expectBool("Ctrl+Space insertion preserves current indentation",
+               paletteInsertionEditor.toPlainText().contains(
+                   QStringLiteral(
+                       "    always_comb begin\n"
+                       "        next_value\n"
+                       "    end")),
+               true);
+    expectBool("Ctrl+Space insertion enters slot mode",
+               paletteInsertionEditor.templateSlotModeActive()
+                   && paletteInsertionEditor.textCursor().selectedText()
+                          == QStringLiteral("next_value"),
+               true);
+    sendEditorKey(paletteInsertionEditor, Qt::Key_Escape);
 
     const QString wavePreviewInput =
         QStringLiteral("module wave_probe(\n"

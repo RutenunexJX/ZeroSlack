@@ -1,23 +1,27 @@
 # ZeroSlack Current Plan
 
-Product version: `v0.2.2`
+Product version: `v0.3.0`
 
 ## Current status
 
-- The 0.2.2 implementation covers logical undo cursor restoration, column-mode
-  keyboard and rendering fixes, contextual delimiters, explicit double-click
-  occurrence highlighting, remembered Alt+C settings, declaration-width
-  alignment, and removal of format-on-save.
-- Ctrl+S now reuses one immutable cached text snapshot, avoids duplicate
-  external-state probes and post-save disk reads, derives raw/logical
-  fingerprints from one encoding, skips unchanged workspace-tab visibility
-  work, and batches Activity output updates.
-- Semantic request coalescing now covers the single-pending-file/different-
-  trigger case without allocating the multi-file lookup sets on the common
-  one-file save path.
-- Focused regressions and the optimized Release full suite pass; all 86
-  registered tests are green. No release package or source publication is part
-  of this work item.
+- `Ctrl+Space` is the sole explicit insertion/control surface. Its Symbols,
+  Templates, and Commands categories keep semantic scope, reusable templates,
+  package/header workflows, and application actions visibly separate.
+- The former `;cmd` / `;;cmd` runtime trigger is retired. F24 is limited to
+  editor-oriented command-layer actions; file operations and shortcut-only
+  occurrence navigation are not shown there.
+- Saving an existing source file produces a file-level workspace change and
+  queues file-granular semantic work. Directory rescans are reserved for source
+  membership changes.
+- Undo/redo preserves vertical and horizontal viewport positions; keyword
+  ghost completion appends a separating space; ternary continuation alignment
+  remains covered by formatter regressions.
+- Synchronize Instance Connections can add missing named ports and remove
+  obsolete named ports across every provable source instance in one High+Diff,
+  all-or-nothing workspace transaction.
+- Cleanup and documentation are complete. The configured Debug suite passes
+  all 86 tests, including the large-workspace `ow` workflow and the original
+  editor performance budgets, without threshold changes.
 
 Superseded plans and completed milestone logs are available in the
 [archive index](docs/archive/README.md).

@@ -1161,6 +1161,84 @@ void runAmbiguousFormalRejection()
                    AmbiguousFormal);
 }
 
+void runModulePortSynchronizationRegression()
+{
+    const QString source = QStringLiteral(
+        "module child (\n"
+        "  input logic data,\n"
+        "  input logic added\n"
+        ");\n"
+        "endmodule\n"
+        "module top;\n"
+        "  logic data;\n"
+        "  logic obsolete;\n"
+        "  child u0(\n"
+        "    .data(data),\n"
+        "    .obsolete(obsolete)\n"
+        "  );\n"
+        "  child u1(\n"
+        "    .data(data),\n"
+        "    .obsolete(obsolete)\n"
+        "  );\n"
+        "endmodule\n");
+    const Fixture fixture = makeFixture(
+        QStringLiteral("rtl_connection_sync_fixture.sv"),
+        source,
+        QStringLiteral("u0"));
+    SemanticIndex index;
+    index.setSnapshot(fixture.snapshot);
+    const std::uint64_t generation = index.snapshotRevision();
+    MockWorkspaceDocumentManager documents;
+    documents.openDocument(
+        utf8(fixture.fileName),
+        utf8(fixture.source),
+        rtledit::DocumentVersion{81});
+
+    RtlConnectionTransformRequest request = requestFor(
+        fixture, generation, 81);
+    request.convertOrderedToNamed = false;
+    request.addMissingPorts = true;
+    request.removeUnknownPorts = true;
+    request.synchronizeAllInstances = true;
+    request.castPolicy =
+        RtlExplicitCastPolicy::PreserveExistingExpression;
+
+    const RtlConnectionTransformReport report =
+        RtlConnectionTransformPlanner(&index).plan(request, documents);
+    expect("module-port synchronization creates one High+Diff plan",
+           report.ready()
+               && report.workspaceEdit.riskLevel
+                      == rtledit::RiskLevel::High
+               && report.workspaceEdit.previewPolicy
+                      == rtledit::PreviewPolicy::Diff);
+
+    rtledit::WorkspaceEditTransactionCoordinator transactions;
+    auto prepared = transactions.prepare(
+        report.workspaceEdit,
+        rtledit::SemanticIndexSnapshot{
+            std::to_string(generation)},
+        documents);
+    const bool confirmed = prepared.ready()
+        && prepared.preview.built()
+        && prepared.sourceDiff.built()
+        && transactions.confirmPreview(&prepared);
+    const auto applied = transactions.apply(
+        prepared,
+        rtledit::SemanticIndexSnapshot{
+            std::to_string(generation)},
+        documents);
+    const QString after = fromUtf8(
+        documents.text(utf8(fixture.fileName)));
+    expect("module-port synchronization removes obsolete associations",
+           confirmed
+               && applied.status
+                      == rtledit::TransactionStatus::Applied
+               && !after.contains(QStringLiteral(".obsolete(")));
+    expect("module-port synchronization fills every source instance",
+           after.count(QStringLiteral(".added()")) == 2
+               && after.count(QStringLiteral("child u")) == 2);
+}
+
 } // namespace
 
 int main()
@@ -1177,6 +1255,7 @@ int main()
     runMultiInstanceTypeDifferenceRejection();
     runUnprovableCastRejection();
     runAmbiguousFormalRejection();
+    runModulePortSynchronizationRegression();
 
     std::printf(
         "rtl_connection_transform_planner_test: "

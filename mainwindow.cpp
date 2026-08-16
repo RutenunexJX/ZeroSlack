@@ -15,6 +15,7 @@
 #include "editorcoordinator.h"
 #include "editoractioncontextservice.h"
 #include "editorfileidentity.h"
+#include "editorinsertpaletteservice.h"
 #include "filecommandcoordinator.h"
 #include "formatterservice.h"
 #include "navigationcommandcoordinator.h"
@@ -2350,8 +2351,91 @@ void MainWindow::setupGlobalControl()
                 EditorModeExitReason::ExternalControl);
         }
     });
+    globalControlCoordinator->setContextProvider([this]() {
+        GlobalControlQueryContext context;
+        MyCodeEditor* editor =
+            tabManager ? tabManager->getCurrentEditor() : nullptr;
+        QWidget* focus = QApplication::focusWidget();
+        if (!editor
+            || (focus != editor && !editor->isAncestorOf(focus)))
+            return context;
+        const EditorSemanticContext editorContext =
+            editor->editorSemanticContextForPosition(-1, true);
+        context.editorAvailable = true;
+        context.fileName = editorContext.fileName;
+        context.moduleName = editorContext.moduleName;
+        context.packageName = editorContext.packageName;
+        context.documentText = editorContext.documentText;
+        context.includeFiles =
+            editor->includeFileCompletionCandidates();
+        context.cursorLine = editorContext.cursorLine;
+        context.cursorPosition = editorContext.cursorPosition;
+        return context;
+    });
+    globalControlCoordinator->setItemProvider(
+        [](GlobalControlCategory category,
+           const QString& text,
+           const GlobalControlQueryContext& context) {
+            return EditorInsertPaletteService().query(
+                category, text, context);
+        });
     globalControlCoordinator->setActionHandler(
         [this](const GlobalControlItem& item) {
+            if (item.kind == GlobalControlItemKind::Symbol
+                || item.kind == GlobalControlItemKind::Template) {
+                MyCodeEditor* editor =
+                    tabManager ? tabManager->getCurrentEditor() : nullptr;
+                QString failureReason;
+                bool inserted = false;
+                if (editor) {
+                    switch (item.operation) {
+                    case GlobalControlItemOperation::InsertText:
+                        inserted = editor->insertCompletionText(
+                            item.insertionText,
+                            item.selectionStart,
+                            item.selectionLength,
+                            item.templateSlots,
+                            &failureReason);
+                        break;
+                    case GlobalControlItemOperation::InsertPackageImport:
+                        inserted = editor->insertPackageImport(
+                            item.parameters.value(
+                                QStringLiteral("packageName")).toString(),
+                            &failureReason);
+                        break;
+                    case GlobalControlItemOperation::InsertHeaderInclude:
+                        inserted = editor->insertHeaderInclude(
+                            item.parameters.value(
+                                QStringLiteral("includePath")).toString(),
+                            &failureReason);
+                        break;
+                    case GlobalControlItemOperation::CreateHeader:
+                        inserted = editor->createAndInsertHeader(
+                            item.parameters.value(
+                                QStringLiteral("fileName")).toString(),
+                            &failureReason);
+                        break;
+                    }
+                }
+                if (!inserted) {
+                    if (statusBar()) {
+                        statusBar()->showMessage(
+                            failureReason.isEmpty()
+                                ? QStringLiteral(
+                                      "No editable editor tab is available.")
+                                : failureReason,
+                            5000);
+                    }
+                }
+                return;
+            }
+            if (!item.actionId.isEmpty()
+                && commandLayerCoordinator
+                && commandLayerCoordinator->executePaletteCommand(
+                    item.actionId,
+                    item.parameters)) {
+                return;
+            }
             QString executionRoute = item.executionRoute;
             if (executionRoute.isEmpty()) {
                 const ActionDescriptor* descriptor =
@@ -3642,47 +3726,6 @@ ActionExecutionResult MainWindow::executeActionRoute(
                 "The requested line is outside the document."));
         }
         result.message = QStringLiteral("Line %1").arg(line);
-        return succeeded();
-    }
-
-    if (route == QStringLiteral(
-                     "editor.navigation.nextAssignment")
-        || route == QStringLiteral(
-                        "editor.navigation.previousAssignment")
-        || route == QStringLiteral(
-                        "editor.navigation.nextConditionalBranch")
-        || route == QStringLiteral(
-                        "editor.navigation.previousConditionalBranch")) {
-        MyCodeEditor* editor = tabManager
-            ? tabManager->getCurrentEditor()
-            : nullptr;
-        if (!editor) {
-            return fail(QStringLiteral(
-                "No editor tab is available."));
-        }
-        QString message;
-        bool executed = false;
-        if (route == QStringLiteral(
-                         "editor.navigation.nextAssignment")) {
-            executed =
-                editor->goToNextAssignmentForSelectedSignal(
-                    &message);
-        } else if (route == QStringLiteral(
-                                "editor.navigation.previousAssignment")) {
-            executed =
-                editor->goToPreviousAssignmentForSelectedSignal(
-                    &message);
-        } else if (route == QStringLiteral(
-                                "editor.navigation.nextConditionalBranch")) {
-            executed = editor->goToNextConditionalBranch(
-                &message);
-        } else {
-            executed = editor->goToPreviousConditionalBranch(
-                &message);
-        }
-        if (!executed)
-            return fail(message);
-        result.message = message;
         return succeeded();
     }
 

@@ -35,6 +35,7 @@ constexpr int kRoleFileName = Qt::UserRole + 1;
 constexpr int kRoleLine = Qt::UserRole + 2;
 constexpr int kRoleColumn = Qt::UserRole + 3;
 constexpr int kRoleDefaultExpanded = Qt::UserRole + 4;
+constexpr int kRoleStableIdentity = Qt::UserRole + 5;
 
 QString canvasEventLabel(const WavePreviewAssignment& assignment);
 QString canvasEventSelectionText(const WavePreviewAssignment& assignment,
@@ -1252,9 +1253,31 @@ void recordTreeColumnWidth(const QTreeWidgetItem* item,
 bool treeItemsHaveSameIdentity(const QTreeWidgetItem* left,
                                const QTreeWidgetItem* right)
 {
-    return left && right
-        && left->data(0, Qt::DisplayRole)
-               == right->data(0, Qt::DisplayRole);
+    if (!left || !right)
+        return false;
+    const QVariant rightIdentity =
+        right->data(0, kRoleStableIdentity);
+    if (rightIdentity.isValid() && !rightIdentity.toString().isEmpty()) {
+        return left->data(0, kRoleStableIdentity) == rightIdentity;
+    }
+    return left->data(0, Qt::DisplayRole)
+        == right->data(0, Qt::DisplayRole);
+}
+
+bool treeStructureMatches(const QTreeWidgetItem* target,
+                          const QTreeWidgetItem* source)
+{
+    if (!treeItemsHaveSameIdentity(target, source)
+        || target->childCount() != source->childCount()) {
+        return false;
+    }
+    for (int index = 0; index < source->childCount(); ++index) {
+        if (!treeStructureMatches(target->child(index),
+                                  source->child(index))) {
+            return false;
+        }
+    }
+    return true;
 }
 
 void synchronizeTreeItem(QTreeWidget* tree,
@@ -1281,6 +1304,8 @@ void synchronizeTreeItem(QTreeWidget* tree,
     copyTreeItemRoleIfChanged(target, source, 0, kRoleColumn);
     copyTreeItemRoleIfChanged(
         target, source, 0, kRoleDefaultExpanded);
+    copyTreeItemRoleIfChanged(
+        target, source, 0, kRoleStableIdentity);
 
     for (int index = 0; index < source->childCount(); ++index) {
         const QTreeWidgetItem* sourceChild = source->child(index);
@@ -1331,7 +1356,16 @@ void synchronizeTree(QTreeWidget* target,
 
     QVector<int> desiredColumnWidths;
     const bool restoreUpdates = target->updatesEnabled();
-    if (restoreUpdates)
+    bool structureMatches =
+        target->topLevelItemCount() == sourceRoot.childCount();
+    for (int index = 0;
+         structureMatches && index < sourceRoot.childCount();
+         ++index) {
+        structureMatches = treeStructureMatches(
+            target->topLevelItem(index), sourceRoot.child(index));
+    }
+    const bool suspendUpdates = restoreUpdates && !structureMatches;
+    if (suspendUpdates)
         target->setUpdatesEnabled(false);
     const QSignalBlocker signalBlocker(target);
 
@@ -1380,7 +1414,7 @@ void synchronizeTree(QTreeWidget* target,
                 header->resizeSection(column, desiredWidth);
         }
     }
-    if (restoreUpdates)
+    if (suspendUpdates)
         target->setUpdatesEnabled(true);
 }
 
@@ -2085,6 +2119,10 @@ void WavePreviewPanelCoordinator::renderReport(
             if (!traceSignalMatchesFilter(signal, laneFilterText))
                 continue;
             auto* signalItem = new QTreeWidgetItem(traceRoot);
+            signalItem->setData(
+                0,
+                kRoleStableIdentity,
+                QStringLiteral("trace:%1").arg(signal.signalName));
             signalItem->setText(0, signal.signalName);
             signalItem->setText(1,
                                 signal.values.join(QStringLiteral(" -> ")));
@@ -2200,6 +2238,10 @@ void WavePreviewPanelCoordinator::renderReport(
         if (!laneMatchesFilter(lane, laneFilterText))
             continue;
         auto* laneItem = new QTreeWidgetItem(&stagingRoot);
+        laneItem->setData(
+            0,
+            kRoleStableIdentity,
+            QStringLiteral("lane:%1").arg(lane.signalName));
         laneItem->setText(0, lane.signalName);
         laneItem->setText(1, laneSummaryText(lane.summary));
         laneItem->setText(2, QStringLiteral("-"));
@@ -2216,6 +2258,14 @@ void WavePreviewPanelCoordinator::renderReport(
 
         for (const WavePreviewAssignment& assignment : lane.assignments) {
             auto* eventItem = new QTreeWidgetItem(laneItem);
+            eventItem->setData(
+                0,
+                kRoleStableIdentity,
+                QStringLiteral("event:%1:%2:%3:%4")
+                    .arg(assignment.target)
+                    .arg(assignment.line)
+                    .arg(assignment.column)
+                    .arg(assignment.blockIndex));
             eventItem->setText(0, eventText(assignment, report));
             eventItem->setText(1, timingText(assignment));
             eventItem->setText(2, clockResetText(assignment, report));

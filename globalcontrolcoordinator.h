@@ -20,6 +20,13 @@ public:
 
     void setActionHandler(std::function<void(const GlobalControlItem&)> handler);
     void setOpeningHandler(std::function<void()> handler);
+    void setContextProvider(
+        std::function<GlobalControlQueryContext()> provider);
+    void setItemProvider(
+        std::function<QList<GlobalControlItem>(
+            GlobalControlCategory,
+            const QString&,
+            const GlobalControlQueryContext&)> provider);
     void setOpenRequestHandler(
         std::function<bool()> handler);
     void install();
@@ -35,8 +42,14 @@ private:
     GlobalControlService service;
     std::function<void(const GlobalControlItem&)> actionHandler;
     std::function<void()> openingHandler;
+    std::function<GlobalControlQueryContext()> contextProvider;
+    std::function<QList<GlobalControlItem>(
+        GlobalControlCategory,
+        const QString&,
+        const GlobalControlQueryContext&)> itemProvider;
     std::function<bool()> openRequestHandler;
     bool installed = false;
+    GlobalControlQueryContext currentContext;
 
     void refresh(const QString& queryText = QString());
     void dispatch(const GlobalControlItem& item);

@@ -40,6 +40,11 @@ struct ConnectionSyntax {
     bool ordered = false;
 };
 
+struct CharacterRange {
+    int start = -1;
+    int end = -1;
+};
+
 struct FormalFact {
     SemanticSymbolRecord record;
     SemanticElaboratedSymbolInfo type;
@@ -95,6 +100,94 @@ int nodeEndChar(TSNode node)
     return ts_node_is_null(node)
         ? -1
         : static_cast<int>(ts_node_end_byte(node) / 2u);
+}
+
+std::optional<CharacterRange> obsoleteConnectionRange(
+    const QString& text,
+    const ConnectionSyntax& syntax,
+    const ConnectionNode& item,
+    bool keepPrecedingDelimiter)
+{
+    const int itemStart = nodeStartChar(item.node);
+    const int itemEnd = nodeEndChar(item.node);
+    if (itemStart < 0 || itemEnd <= itemStart)
+        return std::nullopt;
+    if (keepPrecedingDelimiter)
+        return CharacterRange{itemStart, itemEnd};
+
+    const uint32_t count = ts_node_child_count(syntax.connections);
+    int itemChild = -1;
+    for (uint32_t index = 0; index < count; ++index) {
+        if (ts_node_eq(ts_node_child(syntax.connections, index), item.node)) {
+            itemChild = static_cast<int>(index);
+            break;
+        }
+    }
+    if (itemChild < 0)
+        return std::nullopt;
+
+    int start = itemStart;
+    int end = itemEnd;
+    for (int index = itemChild + 1;
+         index < static_cast<int>(count); ++index) {
+        const TSNode child = ts_node_child(syntax.connections,
+                                          static_cast<uint32_t>(index));
+        if (nodeTypeIs(child, ",")) {
+            end = nodeEndChar(child);
+            while (end < text.size()
+                   && (text.at(end) == QLatin1Char(' ')
+                       || text.at(end) == QLatin1Char('\t'))) {
+                ++end;
+            }
+            return CharacterRange{start, end};
+        }
+        if (ts_node_is_named(child)
+            && !nodeTypeIs(child, "one_line_comment")
+            && !nodeTypeIs(child, "block_comment"))
+            break;
+    }
+
+    for (int index = itemChild - 1; index >= 0; --index) {
+        const TSNode child = ts_node_child(syntax.connections,
+                                          static_cast<uint32_t>(index));
+        if (nodeTypeIs(child, ",")) {
+            start = nodeStartChar(child);
+            while (start > 0
+                   && (text.at(start - 1) == QLatin1Char(' ')
+                       || text.at(start - 1) == QLatin1Char('\t'))) {
+                --start;
+            }
+            return CharacterRange{start, end};
+        }
+        if (ts_node_is_named(child)
+            && !nodeTypeIs(child, "one_line_comment")
+            && !nodeTypeIs(child, "block_comment"))
+            break;
+    }
+    return CharacterRange{start, end};
+}
+
+QList<CharacterRange> mergedCharacterRanges(
+    QList<CharacterRange> ranges)
+{
+    std::sort(ranges.begin(), ranges.end(),
+              [](const CharacterRange& left,
+                 const CharacterRange& right) {
+                  return left.start < right.start
+                      || (left.start == right.start
+                          && left.end < right.end);
+              });
+    QList<CharacterRange> result;
+    for (const CharacterRange& range : std::as_const(ranges)) {
+        if (range.start < 0 || range.end <= range.start)
+            continue;
+        if (!result.isEmpty() && range.start <= result.last().end) {
+            result.last().end = qMax(result.last().end, range.end);
+        } else {
+            result.append(range);
+        }
+    }
+    return result;
 }
 
 QString nodeText(const QString& text, TSNode node)
@@ -305,6 +398,36 @@ std::optional<SemanticDeclaredTypeFacts> exactDeclaredType(
         }
     }
     return selected.value();
+}
+
+QStringList elaboratedPathsForSourceInstance(
+    const SemanticIndexSnapshot& snapshot,
+    const QString& targetModuleName,
+    const QString& instanceName)
+{
+    QSet<QString> paths;
+    const QString suffix = QLatin1Char('.') + instanceName;
+    for (const SemanticSymbolRecord& record :
+         snapshot.symbolRecordsView()) {
+        if (record.owner.name != targetModuleName
+            || record.declarationKind
+                   != SymbolTaxonomy::DeclarationKind::Port) {
+            continue;
+        }
+        for (const QString& path :
+             record.presentation.instanceInfoByPath.keys()) {
+            if (path.endsWith(suffix))
+                paths.insert(path);
+        }
+        for (const QString& path :
+             record.presentation.declaredTypeFactsByPath.keys()) {
+            if (path.endsWith(suffix))
+                paths.insert(path);
+        }
+    }
+    QStringList result = paths.values();
+    std::sort(result.begin(), result.end());
+    return result;
 }
 
 bool sourceMappedName(
@@ -1168,6 +1291,75 @@ bool hasSlangErrorForFile(
     return false;
 }
 
+bool hasUnexpectedSlangErrorForFile(
+    const SemanticIndexSnapshot& snapshot,
+    const QString& fileName,
+    const QList<ConnectionNode>& allowedObsoleteConnections,
+    const QString& synchronizedModuleName,
+    const QSet<QString>& synchronizedFormalNames)
+{
+    const QString normalized = normalizedFileName(fileName);
+    for (const SemanticDiagnostic& diagnostic :
+         snapshot.getDiagnostics()) {
+        if (diagnostic.severity != SemanticDiagnostic::Error
+            || normalizedFileName(diagnostic.fileName) != normalized) {
+            continue;
+        }
+
+        bool expected = false;
+        if (!synchronizedModuleName.isEmpty()) {
+            const QString obsoletePortSuffix =
+                QStringLiteral("does not exist in '%1'")
+                    .arg(synchronizedModuleName);
+            if (diagnostic.message.contains(obsoletePortSuffix,
+                                            Qt::CaseSensitive)) {
+                expected = true;
+            }
+            if (!expected) {
+                for (const QString& formalName :
+                     synchronizedFormalNames) {
+                    if (diagnostic.message
+                            == QStringLiteral("port '%1' has no connection")
+                                   .arg(formalName)) {
+                        expected = true;
+                        break;
+                    }
+                }
+            }
+        }
+        for (const ConnectionNode& connection :
+             allowedObsoleteConnections) {
+            const int start = nodeStartChar(connection.node);
+            const int end = nodeEndChar(connection.node);
+            bool rangeMatches = false;
+            for (const SemanticSourceRange& range : diagnostic.ranges) {
+                if (range.position >= start && range.position < end) {
+                    rangeMatches = true;
+                    break;
+                }
+            }
+            const int startLine = static_cast<int>(
+                                      ts_node_start_point(connection.node).row)
+                + 1;
+            const int endLine = static_cast<int>(
+                                    ts_node_end_point(connection.node).row)
+                + 1;
+            const bool lineAndNameMatch =
+                diagnostic.line >= startLine
+                && diagnostic.line <= endLine
+                && diagnostic.message.contains(
+                    connection.formalName, Qt::CaseSensitive);
+            if (rangeMatches || lineAndNameMatch) {
+                expected = true;
+                break;
+            }
+        }
+        if (!expected)
+            return true;
+    }
+    return false;
+}
+
 } // namespace
 
 RtlConnectionTransformPlanner::
@@ -1188,6 +1380,240 @@ RtlConnectionTransformPlanner::plan(
     const RtlConnectionTransformRequest& request,
     const rtledit::WorkspaceDocumentManager& documents) const
 {
+    if (!request.synchronizeAllInstances)
+        return planSingle(request, documents);
+
+    SemanticIndex* semantic = semanticIndex();
+    if (!semantic || !request.instanceStableKey.isValid()) {
+        return rejected(
+            RtlConnectionTransformFailure::InvalidRequest,
+            QStringLiteral(
+                "The all-instance synchronization request is incomplete."));
+    }
+    const SemanticSnapshotToken token = semantic->snapshotToken();
+    if (!token.isValid()) {
+        return rejected(
+            RtlConnectionTransformFailure::MissingSemanticSnapshot,
+            QStringLiteral(
+                "No immutable Slang semantic snapshot is available."));
+    }
+    if (token.revision != request.expectedSemanticGeneration) {
+        return rejected(
+            RtlConnectionTransformFailure::StaleSemanticGeneration,
+            QStringLiteral(
+                "The semantic generation changed before synchronization."));
+    }
+
+    const SemanticSymbolRecord selected =
+        token.snapshot->getSymbolRecordByStableKey(
+            request.instanceStableKey);
+    if (!selected.isValid()
+        || selected.declarationKind
+               != SymbolTaxonomy::DeclarationKind::Instance
+        || selected.type.resolvedTypeName.isEmpty()) {
+        return rejected(
+            RtlConnectionTransformFailure::InstanceSemanticMismatch,
+            QStringLiteral(
+                "The selected symbol is not one resolved Slang module "
+                "instance."));
+    }
+
+    QList<SemanticSymbolRecord> instances;
+    QSet<QString> seenStableKeys;
+    for (const SemanticSymbolRecord& record :
+         token.snapshot->symbolRecordsView()) {
+        if (record.declarationKind
+                != SymbolTaxonomy::DeclarationKind::Instance
+            || record.type.resolvedTypeName
+                   != selected.type.resolvedTypeName
+            || record.owner.kind
+                   != SymbolTaxonomy::SymbolOwnerScope::Module
+            || record.type.resolvedTypeKind
+                   != SymbolTaxonomy::DeclarationKind::Module
+            || !record.stableKey.isValid()) {
+            continue;
+        }
+        const QString source = token.snapshot->getCachedFileContent(
+            normalizedFileName(record.location.fileName));
+        if (source.isEmpty() || !sourceMappedName(source, record))
+            continue;
+        TSDocument syntax;
+        syntax.setText(source);
+        RtlConnectionTransformFailure syntaxFailure =
+            RtlConnectionTransformFailure::None;
+        QString syntaxMessage;
+        if (!connectionSyntaxAt(syntax,
+                                record,
+                                &syntaxFailure,
+                                &syntaxMessage)) {
+            continue;
+        }
+        const QString key = record.stableKey.toString();
+        if (seenStableKeys.contains(key))
+            continue;
+        seenStableKeys.insert(key);
+        instances.append(record);
+    }
+    if (!seenStableKeys.contains(selected.stableKey.toString()))
+        instances.append(selected);
+    std::sort(instances.begin(), instances.end(),
+              [](const SemanticSymbolRecord& left,
+                 const SemanticSymbolRecord& right) {
+                  const QString leftFile = normalizedFileName(
+                      left.location.fileName);
+                  const QString rightFile = normalizedFileName(
+                      right.location.fileName);
+                  if (leftFile != rightFile)
+                      return leftFile < rightFile;
+                  return left.location.position < right.location.position;
+              });
+
+    std::vector<rtledit::WorkspaceTextEdit> combinedEdits;
+    std::vector<rtledit::TextEditProvenance> combinedProvenance;
+    QSet<QString> semanticFiles;
+    RtlConnectionTransformReport combined;
+    combined.instanceRecord = selected;
+    combined.failure = RtlConnectionTransformFailure::None;
+    int changedInstances = 0;
+
+    for (const SemanticSymbolRecord& instance : std::as_const(instances)) {
+        RtlConnectionTransformRequest local = request;
+        local.synchronizeAllInstances = false;
+        local.instanceStableKey = instance.stableKey;
+
+        if (instance.stableKey == selected.stableKey) {
+            local.selectedInstancePath = request.selectedInstancePath;
+            local.parentInstancePath = request.parentInstancePath;
+        } else {
+            QStringList paths =
+                instance.presentation.instanceInfoByPath.keys();
+            for (const QString& path :
+                 instance.presentation.declaredTypeFactsByPath.keys()) {
+                if (!paths.contains(path))
+                    paths.append(path);
+            }
+            for (const QString& path :
+                 elaboratedPathsForSourceInstance(
+                     *token.snapshot,
+                     selected.type.resolvedTypeName,
+                     instance.name)) {
+                if (!paths.contains(path))
+                    paths.append(path);
+            }
+            std::sort(paths.begin(), paths.end());
+            const QString suffix = QLatin1Char('.') + instance.name;
+            QString selectedPath;
+            for (const QString& path : std::as_const(paths)) {
+                if (path.endsWith(suffix)) {
+                    selectedPath = path;
+                    break;
+                }
+            }
+            if (selectedPath.isEmpty()) {
+                return rejected(
+                    RtlConnectionTransformFailure::
+                        InstanceSemanticMismatch,
+                    QStringLiteral(
+                        "Slang did not provide an exact hierarchy path for "
+                        "instance %1 while synchronizing module %2.")
+                        .arg(instance.name,
+                             selected.type.resolvedTypeName));
+            }
+            local.selectedInstancePath = selectedPath;
+            local.parentInstancePath =
+                selectedPath.left(selectedPath.size() - suffix.size());
+        }
+
+        const QString fileName =
+            normalizedFileName(instance.location.fileName);
+        const auto document = documents.snapshot(utf8String(fileName));
+        if (!document) {
+            return rejected(
+                RtlConnectionTransformFailure::MissingDocument,
+                QStringLiteral(
+                    "The source document for instance %1 is unavailable.")
+                    .arg(local.selectedInstancePath));
+        }
+        local.expectedDocumentRevision = document->version.value;
+
+        RtlConnectionTransformReport report =
+            planSingle(local, documents,
+                       selected.type.resolvedTypeName);
+        if (report.status == RtlConnectionTransformStatus::Rejected) {
+            report.message = QStringLiteral("%1: %2")
+                                 .arg(local.selectedInstancePath,
+                                      report.message);
+            return report;
+        }
+        if (combined.formals.isEmpty())
+            combined.formals = report.formals;
+        if (!report.ready())
+            continue;
+
+        const std::size_t editOffset = combinedEdits.size();
+        combinedEdits.insert(combinedEdits.end(),
+                             report.workspaceEdit.edits.begin(),
+                             report.workspaceEdit.edits.end());
+        for (rtledit::TextEditProvenance provenanceItem :
+             report.workspaceEdit.provenance) {
+            provenanceItem.editIndex += editOffset;
+            combinedProvenance.push_back(std::move(provenanceItem));
+        }
+        for (const std::string& path :
+             report.workspaceEdit.semanticIndexFilePaths) {
+            semanticFiles.insert(fromUtf8String(path));
+        }
+        ++changedInstances;
+    }
+
+    if (combinedEdits.empty()) {
+        combined.status = RtlConnectionTransformStatus::NoChanges;
+        combined.message = QStringLiteral(
+            "All instances already match the current module ports.");
+        return combined;
+    }
+
+    rtledit::SemanticEditIntent intent;
+    intent.kind = rtledit::SemanticEditKind::ReplaceText;
+    intent.target.kind = rtledit::SemanticObjectKind::Unknown;
+    intent.target.qualifiedName =
+        utf8String(selected.type.resolvedTypeName);
+    intent.target.ownerScope = utf8String(selected.owner.name);
+    intent.target.filePath =
+        utf8String(normalizedFileName(selected.location.fileName));
+    intent.target.signatureHash =
+        utf8String(selected.type.resolvedTypeName);
+    combined.workspaceEdit = rtledit::makeWorkspaceEditPlan(
+        std::move(intent),
+        rtledit::RiskLevel::High,
+        rtledit::PreviewPolicy::Diff,
+        std::move(combinedEdits),
+        std::move(combinedProvenance));
+    combined.workspaceEdit.semanticSnapshot.id =
+        std::to_string(token.revision);
+    QStringList sortedSemanticFiles = semanticFiles.values();
+    std::sort(sortedSemanticFiles.begin(), sortedSemanticFiles.end());
+    for (const QString& fileName : std::as_const(sortedSemanticFiles)) {
+        combined.workspaceEdit.semanticIndexFilePaths.push_back(
+            utf8String(fileName));
+    }
+    combined.status = RtlConnectionTransformStatus::Ready;
+    combined.message = QStringLiteral(
+        "A High+Diff synchronization preview for %1 instance source%2 is "
+        "ready.")
+                           .arg(changedInstances)
+                           .arg(changedInstances == 1
+                                    ? QString()
+                                    : QStringLiteral("s"));
+    return combined;
+}
+
+RtlConnectionTransformReport
+RtlConnectionTransformPlanner::planSingle(
+    const RtlConnectionTransformRequest& request,
+    const rtledit::WorkspaceDocumentManager& documents,
+    const QString& synchronizedModuleName) const
+{
     SemanticIndex* semantic = semanticIndex();
     if (!semantic
         || !request.instanceStableKey.isValid()
@@ -1197,6 +1623,7 @@ RtlConnectionTransformPlanner::plan(
         || request.expectedDocumentRevision == 0
         || (!request.convertOrderedToNamed
             && !request.addMissingPorts
+            && !request.removeUnknownPorts
             && request.castPolicy
                 != RtlExplicitCastPolicy::
                     InsertWhenRequired)) {
@@ -1300,9 +1727,7 @@ RtlConnectionTransformPlanner::plan(
 
     TSDocument syntax;
     syntax.setText(text);
-    if (syntax.hasError()
-        || hasSlangErrorForFile(
-            *token.snapshot, fileName)) {
+    if (syntax.hasError()) {
         return rejected(
             RtlConnectionTransformFailure::SyntaxError,
             QStringLiteral(
@@ -1402,26 +1827,41 @@ RtlConnectionTransformPlanner::plan(
     }
 
     QHash<QString, int> formalIndexByName;
+    QSet<QString> synchronizedFormalNames;
     for (int index = 0; index < formals->size(); ++index)
         formalIndexByName.insert(
             formals->at(index).record.name, index);
+    for (const FormalFact& formal : *formals)
+        synchronizedFormalNames.insert(formal.record.name);
 
     QSet<QString> connectedNames;
+    QList<ConnectionNode> obsoleteConnections;
+    QList<ConnectionNode> retainedConnections;
     if (connectionSyntax->named) {
         for (const ConnectionNode& item :
              connectionSyntax->items) {
-            if (!formalIndexByName.contains(
-                    item.formalName)
-                || connectedNames.contains(
-                    item.formalName)) {
+            if (!formalIndexByName.contains(item.formalName)) {
+                if (request.removeUnknownPorts) {
+                    obsoleteConnections.append(item);
+                    continue;
+                }
                 return rejected(
                     RtlConnectionTransformFailure::
                         UnknownNamedFormal,
                     QStringLiteral(
-                        "A named connection is unknown or duplicated in "
-                        "the Slang formal set."));
+                        "A named connection is not present in the current "
+                        "Slang formal port set."));
+            }
+            if (connectedNames.contains(item.formalName)) {
+                return rejected(
+                    RtlConnectionTransformFailure::
+                        UnknownNamedFormal,
+                    QStringLiteral(
+                        "A named connection is duplicated in the Slang "
+                        "formal port set."));
             }
             connectedNames.insert(item.formalName);
+            retainedConnections.append(item);
         }
     } else if (connectionSyntax->ordered) {
         for (int index = 0;
@@ -1430,6 +1870,23 @@ RtlConnectionTransformPlanner::plan(
             connectedNames.insert(
                 formals->at(index).record.name);
         }
+        retainedConnections = connectionSyntax->items;
+    }
+
+    if (hasUnexpectedSlangErrorForFile(
+            *token.snapshot,
+            fileName,
+            request.removeUnknownPorts
+                ? obsoleteConnections
+                : QList<ConnectionNode>(),
+            synchronizedModuleName,
+            synchronizedFormalNames)) {
+        return rejected(
+            RtlConnectionTransformFailure::SyntaxError,
+            QStringLiteral(
+                "The instance source contains unrelated Slang errors; only "
+                "diagnostics anchored to obsolete named ports can be "
+                "repaired by synchronization."));
     }
 
     QList<int> missingFormalIndexes;
@@ -1465,6 +1922,50 @@ RtlConnectionTransformPlanner::plan(
     std::vector<rtledit::TextEditProvenance>
         provenanceItems;
     bool commaMergedIntoLastReplacement = false;
+    const bool preserveDelimiterForMissingPorts =
+        !missingFormalIndexes.isEmpty()
+        && !retainedConnections.isEmpty()
+        && !connectionSyntax->items.isEmpty()
+        && !obsoleteConnections.isEmpty()
+        && ts_node_eq(connectionSyntax->items.constLast().node,
+                      obsoleteConnections.constLast().node);
+
+    QList<CharacterRange> obsoleteRanges;
+    for (const ConnectionNode& obsolete :
+         std::as_const(obsoleteConnections)) {
+        const bool keepPrecedingDelimiter =
+            preserveDelimiterForMissingPorts
+            && ts_node_eq(obsolete.node,
+                          obsoleteConnections.constLast().node);
+        const auto range = obsoleteConnectionRange(
+            text, *connectionSyntax, obsolete,
+            keepPrecedingDelimiter);
+        if (!range) {
+            return rejected(
+                RtlConnectionTransformFailure::
+                    UnsupportedConnectionSyntax,
+                QStringLiteral(
+                    "An obsolete named connection has no safe "
+                    "Tree-sitter delimiter range."));
+        }
+        obsoleteRanges.append(*range);
+    }
+    for (const CharacterRange& range :
+         mergedCharacterRanges(std::move(obsoleteRanges))) {
+        edits.push_back(textEdit(
+            fileName, document->version, text,
+            range.start, range.end, QString()));
+        const auto& edit = edits.back();
+        provenanceItems.push_back(provenance(
+            provenanceItems.size(),
+            QStringLiteral("connection.obsolete.remove"),
+            QStringLiteral(
+                "Remove named connections that are absent from the "
+                "current Slang formal port set."),
+            token.revision, instance,
+            request.selectedInstancePath,
+            fileName, edit.range));
+    }
 
     if (connectionSyntax->ordered) {
         edits.reserve(
@@ -1713,10 +2214,10 @@ RtlConnectionTransformPlanner::plan(
         QString insertion;
         int insertionChar = closeParen;
         const bool hasExisting =
-            !connectionSyntax->items.isEmpty();
+            !retainedConnections.isEmpty();
         if (hasExisting) {
             const ConnectionNode& last =
-                connectionSyntax->items.constLast();
+                retainedConnections.constLast();
             const int lastLine =
                 static_cast<int>(
                     ts_node_end_point(last.node).row);
@@ -1733,7 +2234,8 @@ RtlConnectionTransformPlanner::plan(
                         QStringLiteral(",")
                         + newline + indent)
                     + newline;
-                if (!commaMergedIntoLastReplacement) {
+                if (!commaMergedIntoLastReplacement
+                    && !preserveDelimiterForMissingPorts) {
                     const int commaChar =
                         nodeEndChar(last.node);
                     edits.push_back(textEdit(
@@ -1755,7 +2257,9 @@ RtlConnectionTransformPlanner::plan(
                 }
             } else {
                 insertion =
-                    QStringLiteral(", ")
+                    (preserveDelimiterForMissingPorts
+                         ? QStringLiteral(" ")
+                         : QStringLiteral(", "))
                     + missingConnections.join(
                         QStringLiteral(", "));
             }

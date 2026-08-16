@@ -783,6 +783,136 @@ void EditorCompletionWorkflow::setIncludeNewHeaderCreator(
     includeNewHeaderCreator = std::move(creator);
 }
 
+QStringList EditorCompletionWorkflow::includeFileCandidates() const
+{
+    if (!editor || !includeFileProvider)
+        return {};
+    return includeFileProvider(editor->documentFileName());
+}
+
+bool EditorCompletionWorkflow::applyStructuredInsertionPlan(
+    const StructuredInlineInsertionPlan& plan,
+    QString* failureReason)
+{
+    if (!editor) {
+        if (failureReason)
+            *failureReason = QStringLiteral("No editable editor tab is available.");
+        return false;
+    }
+    if (!plan.ok()) {
+        if (plan.duplicate()) {
+            if (!plan.failureMessage.isEmpty())
+                emit editor->editorStatusMessageRequested(plan.failureMessage);
+            if (failureReason)
+                failureReason->clear();
+            return true;
+        }
+        if (failureReason)
+            *failureReason = plan.failureMessage;
+        return false;
+    }
+
+    QTextCursor cursor(editor->document());
+    cursor.beginEditBlock();
+    cursor.setPosition(plan.replacementStart);
+    cursor.setPosition(plan.replacementEnd, QTextCursor::KeepAnchor);
+    cursor.insertText(plan.replacementText);
+    cursor.endEditBlock();
+    editor->setTextCursor(cursor);
+    if (failureReason)
+        failureReason->clear();
+    return true;
+}
+
+bool EditorCompletionWorkflow::insertPackageImportAtCursor(
+    const QString& packageName,
+    QString* failureReason)
+{
+    if (!editor)
+        return applyStructuredInsertionPlan({}, failureReason);
+    const int position = editor->textCursor().position();
+    return applyStructuredInsertionPlan(
+        PackageToolService::packageImportPlan(
+            editor->cachedDocumentText(), position, position, packageName),
+        failureReason);
+}
+
+bool EditorCompletionWorkflow::insertHeaderIncludeAtCursor(
+    const QString& includePath,
+    QString* failureReason)
+{
+    if (!editor)
+        return applyStructuredInsertionPlan({}, failureReason);
+    const int position = editor->textCursor().position();
+    return applyStructuredInsertionPlan(
+        PackageToolService::headerIncludePlan(
+            editor->cachedDocumentText(), position, position, includePath),
+        failureReason);
+}
+
+bool EditorCompletionWorkflow::createAndInsertHeaderAtCursor(
+    const QString& fileName,
+    QString* failureReason)
+{
+    if (!editor || !includeNewHeaderCreator) {
+        if (failureReason)
+            *failureReason = QStringLiteral("Header creation is unavailable.");
+        return false;
+    }
+
+    const QString typedName = fileName.trimmed();
+    const QString stem = sanitizedIncludeHeaderStem(typedName);
+    QString extension = QFileInfo(QDir::fromNativeSeparators(typedName))
+                            .suffix()
+                            .toLower();
+    if (extension.isEmpty())
+        extension = QStringLiteral("svh");
+    if (stem.isEmpty()
+        || (extension != QStringLiteral("vh")
+            && extension != QStringLiteral("svh"))) {
+        if (failureReason)
+            *failureReason = QStringLiteral("Use a .vh or .svh header name.");
+        return false;
+    }
+
+    const QString normalizedName = stem + QLatin1Char('.') + extension;
+    const int position = editor->textCursor().position();
+    const StructuredInlineInsertionPlan preflight =
+        PackageToolService::headerIncludePlan(
+            editor->cachedDocumentText(), position, position, normalizedName);
+    if (!preflight.ok())
+        return applyStructuredInsertionPlan(preflight, failureReason);
+
+    const QList<IncludeTemplateDefinition> templates =
+        includeHeaderTemplates(stem, extension);
+    if (templates.isEmpty()) {
+        if (failureReason)
+            *failureReason = QStringLiteral("No header template is available.");
+        return false;
+    }
+
+    IncludeNewHeaderRequest request;
+    request.fileStem = stem;
+    request.extension = extension;
+    request.currentFileName = editor->documentFileName();
+    request.templateName = templates.constFirst().name;
+    request.templateBody = templates.constFirst().body;
+    request.cursorToken = QStringLiteral("__ZEROSLACK_CURSOR__");
+    const IncludeNewHeaderResult result = includeNewHeaderCreator(request);
+    if (!result.success) {
+        if (failureReason)
+            *failureReason = result.errorMessage;
+        return false;
+    }
+    return applyStructuredInsertionPlan(
+        PackageToolService::headerIncludePlan(
+            editor->cachedDocumentText(),
+            position,
+            position,
+            result.includePath),
+        failureReason);
+}
+
 EditorCompletionWorkflow::IncludeCompletionContext
 EditorCompletionWorkflow::includeCompletionContextAtCursor() const
 {

@@ -572,6 +572,16 @@ EditorFoldingController::collapsedLineRanges() const
     return collapsedRangesCache;
 }
 
+bool EditorFoldingController::hasPaintOverlay() const
+{
+    return !collapsedStartLines.isEmpty()
+        || !customMarkers.isEmpty()
+        || (foldRegionMarkModeActive()
+            && (foldRegionHoverLine >= 0 || pendingStartLine >= 0))
+        || (foldShelfModeActive()
+            && hoveredShelfRange.startLine >= 0);
+}
+
 void EditorFoldingController::rebuildCollapsedRangesCache()
 {
     QList<QPair<int, int>> result;
@@ -1161,13 +1171,17 @@ void EditorFoldingController::paintPlaceholders(
     MyCodeEditor* editor,
     QPainter& painter) const
 {
-    if (!editor || collapsedStartLines.isEmpty())
-    {
+    if (!editor)
+        return;
+    if (!hasPaintOverlay()) {
+        return;
+    }
+
+    if (collapsedStartLines.isEmpty()) {
         paintCustomFoldBackgrounds(editor, painter);
         paintFoldRegionPreview(editor, painter);
         paintFoldShelfHighlight(editor, painter);
-        if (!editor || collapsedStartLines.isEmpty())
-            return;
+        return;
     }
 
     painter.save();

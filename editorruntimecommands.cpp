@@ -119,105 +119,6 @@ EditorModuleScopeTarget MyCodeEditorState::currentModuleScopeTarget(
     return result;
 }
 
-bool MyCodeEditorState::addPortRow(MyCodeEditor* editor,
-                                   QString* message)
-{
-    if (!editor)
-        return false;
-
-    const TSPortAppendTarget target =
-        syntax.portAppendTargetAt(editor->textCursor().position());
-    if (!target.ok()) {
-        if (message) {
-            *message = target.status == TSPortAppendStatus::NoCurrentModule
-                ? QStringLiteral("No current module")
-                : QStringLiteral("No clear port append point");
-        }
-        return false;
-    }
-
-    QTextCursor cursor = editor->textCursor();
-    cursor.beginEditBlock();
-    cursor.setPosition(target.insertChar);
-    cursor.insertText(target.insertText);
-    if (target.needsTrailingComma
-        && target.trailingCommaInsertChar >= 0) {
-        cursor.setPosition(target.trailingCommaInsertChar);
-        cursor.insertText(QStringLiteral(","));
-    }
-    cursor.endEditBlock();
-
-    QTextCursor caret = editor->textCursor();
-    caret.setPosition(target.caretCharAfterEdit);
-    editor->setTextCursor(caret);
-    return true;
-}
-
-bool MyCodeEditorState::addSignalRow(MyCodeEditor* editor,
-                                     QString* message)
-{
-    if (!editor)
-        return false;
-
-    const TSSignalInsertTarget target =
-        syntax.signalInsertTargetAt(editor->textCursor().position());
-    if (!target.ok()) {
-        if (message) {
-            *message = target.status == TSSignalInsertStatus::NoCurrentModule
-                ? QStringLiteral("No current module")
-                : QStringLiteral("No clear signal insert point");
-        }
-        return false;
-    }
-
-    QTextCursor cursor = editor->textCursor();
-    cursor.beginEditBlock();
-    cursor.setPosition(target.insertChar);
-    cursor.insertText(target.insertText);
-    cursor.endEditBlock();
-
-    QTextCursor caret = editor->textCursor();
-    caret.setPosition(target.caretCharAfterEdit);
-    editor->setTextCursor(caret);
-    return true;
-}
-
-bool MyCodeEditorState::addParameterRow(MyCodeEditor* editor,
-                                        QString* message)
-{
-    if (!editor)
-        return false;
-
-    const TSParameterInsertTarget target =
-        syntax.parameterInsertTargetAt(editor->textCursor().position());
-    if (!target.ok()) {
-        if (message) {
-            *message =
-                target.status
-                    == TSParameterInsertStatus::NoCurrentParameterScope
-                ? QStringLiteral("No current parameter scope")
-                : QStringLiteral("No clear parameter insert point");
-        }
-        return false;
-    }
-
-    QTextCursor cursor = editor->textCursor();
-    cursor.beginEditBlock();
-    cursor.setPosition(target.insertChar);
-    cursor.insertText(target.insertText);
-    if (target.needsTrailingComma
-        && target.trailingCommaInsertChar >= 0) {
-        cursor.setPosition(target.trailingCommaInsertChar);
-        cursor.insertText(QStringLiteral(","));
-    }
-    cursor.endEditBlock();
-
-    QTextCursor caret = editor->textCursor();
-    caret.setPosition(target.caretCharAfterEdit);
-    editor->setTextCursor(caret);
-    return true;
-}
-
 namespace {
 QString packageToolFailureMessage(TSPackageToolInsertStatus status)
 {
@@ -1051,6 +952,38 @@ void MyCodeEditorState::setIncludeNewHeaderCreator(
     completionWorkflow.setIncludeNewHeaderCreator(std::move(creator));
 }
 
+QStringList MyCodeEditorState::includeFileCandidates() const
+{
+    return completionWorkflow.includeFileCandidates();
+}
+
+bool MyCodeEditorState::insertPackageImportAtCursor(
+    MyCodeEditor*,
+    const QString& packageName,
+    QString* failureReason)
+{
+    return completionWorkflow.insertPackageImportAtCursor(
+        packageName, failureReason);
+}
+
+bool MyCodeEditorState::insertHeaderIncludeAtCursor(
+    MyCodeEditor*,
+    const QString& includePath,
+    QString* failureReason)
+{
+    return completionWorkflow.insertHeaderIncludeAtCursor(
+        includePath, failureReason);
+}
+
+bool MyCodeEditorState::createAndInsertHeaderAtCursor(
+    MyCodeEditor*,
+    const QString& fileName,
+    QString* failureReason)
+{
+    return completionWorkflow.createAndInsertHeaderAtCursor(
+        fileName, failureReason);
+}
+
 void MyCodeEditorState::executeEditorActionCommand(
     MyCodeEditor* editor,
     const QString& command)
@@ -1233,123 +1166,6 @@ void MyCodeEditorState::highlightSearchMatches(
 void MyCodeEditorState::clearSearchMatches(MyCodeEditor* editor)
 {
     selections.clearSearchMatches(editor);
-}
-
-bool MyCodeEditorState::navigateSelectedSignalAssignment(
-    MyCodeEditor* editor,
-    bool previous,
-    QString* message)
-{
-    if (message)
-        message->clear();
-    if (!editor)
-        return false;
-
-    const QTextCursor current = editor->textCursor();
-    const int sourceChar = current.hasSelection()
-        ? current.selectionStart()
-        : current.position();
-    const TSAssignmentNavigationTarget target =
-        syntax.assignmentNavigationTargetAt(
-            sourceChar, previous);
-    if (!target.ok()) {
-        const QString failure =
-            target.status
-                    == TSAssignmentNavigationStatus::
-                        NoAssignment
-                ? QStringLiteral(
-                      "No assignment was found for the selected signal.")
-                : QStringLiteral(
-                      "Select a SystemVerilog signal identifier.");
-        if (message)
-            *message = failure;
-        emit editor->editorStatusMessageRequested(failure);
-        return false;
-    }
-
-    exitInteractionModes(
-        EditorModeExitReason::ExternalControl);
-    QTextCursor cursor(editor->document());
-    cursor.setPosition(target.targetChar);
-    cursor.movePosition(
-        QTextCursor::Right,
-        QTextCursor::KeepAnchor,
-        target.identifier.size());
-    editor->setTextCursor(cursor);
-    editor->centerCursor();
-    selections.flashLine(editor);
-
-    const QString result =
-        QStringLiteral("%1 assignment%2")
-            .arg(previous
-                     ? QStringLiteral("Previous")
-                     : QStringLiteral("Next"),
-                 target.wrapped
-                     ? QStringLiteral(" (wrapped)")
-                     : QString());
-    if (message)
-        *message = result;
-    emit editor->editorStatusMessageRequested(result);
-    return true;
-}
-
-bool MyCodeEditorState::navigateConditionalBranch(
-    MyCodeEditor* editor,
-    bool previous,
-    QString* message)
-{
-    if (message)
-        message->clear();
-    if (!editor)
-        return false;
-
-    const QTextCursor current = editor->textCursor();
-    const int sourceChar = current.hasSelection()
-        ? current.selectionStart()
-        : current.position();
-    const TSConditionalBranchNavigationTarget target =
-        syntax.conditionalBranchNavigationTargetAt(
-            sourceChar, previous);
-    if (!target.ok()) {
-        const QString failure =
-            target.status
-                    == TSConditionalBranchNavigationStatus::
-                        IncompleteConditionalGroup
-                ? QStringLiteral(
-                      "The conditional compilation group is incomplete.")
-                : QStringLiteral(
-                      "The cursor is not inside a conditional compilation group.");
-        if (message)
-            *message = failure;
-        emit editor->editorStatusMessageRequested(failure);
-        return false;
-    }
-
-    exitInteractionModes(
-        EditorModeExitReason::ExternalControl);
-    QTextCursor cursor(editor->document());
-    cursor.setPosition(target.targetChar);
-    cursor.movePosition(
-        QTextCursor::Right,
-        QTextCursor::KeepAnchor,
-        target.targetDirective.size());
-    editor->setTextCursor(cursor);
-    editor->centerCursor();
-    selections.flashLine(editor);
-
-    const QString result =
-        QStringLiteral("%1 conditional branch: %2%3")
-            .arg(previous
-                     ? QStringLiteral("Previous")
-                     : QStringLiteral("Next"),
-                 target.targetDirective,
-                 target.wrapped
-                     ? QStringLiteral(" (wrapped)")
-                     : QString());
-    if (message)
-        *message = result;
-    emit editor->editorStatusMessageRequested(result);
-    return true;
 }
 
 void MyCodeEditorState::flashLine(MyCodeEditor* editor, int lineNumber)

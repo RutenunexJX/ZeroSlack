@@ -859,6 +859,12 @@ void MyCodeEditorState::paintGhostAnnotations(
         || !annotationDisplayOptions.enabled) {
         return;
     }
+    if (annotationLayer.isEmpty()
+        && !templateSlots.active()
+        && !columnMode.selectionActive()
+        && !columnMode.virtualCursorActive()) {
+        return;
+    }
 
     QTextDocument* textDocument = editor->document();
     if (!textDocument)

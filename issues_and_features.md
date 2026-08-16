@@ -4,6 +4,29 @@ This file is a running checklist for problems to fix and new features to conside
 
 ## Issues
 
+### Completed in v0.3.0
+
+- [x] Saving an existing SystemVerilog file could be observed as a directory
+  change and trigger a full workspace rescan. Workspace watching now monitors
+  source files directly and reserves directory refreshes for source membership
+  changes; one save emits one file-level change.
+- [x] Undo/redo restored logical cursors but could move the editor viewport.
+  Both scrollbar positions are now restored after synchronous presentation.
+- [x] Keyword ghost completion accepted by Tab omitted the separating space.
+  It now appends one space unless a space or Tab already follows.
+- [x] Inline `;cmd` / `;;cmd` activation mixed symbols and templates and could
+  still be triggered accidentally. `Ctrl+Space` now explicitly opens separate
+  Symbols, Templates, and Commands categories; semicolons remain ordinary
+  source input.
+- [x] F24 contained low-value assignment/conditional navigation, independent
+  add-signal/add-parameter/add-port actions, file operations, and actions that
+  already have direct selected-occurrence shortcuts. Those entries were
+  removed or hidden while repeat action remains available.
+- [x] Module port-list changes had no guarded way to synchronize every source
+  instance. Synchronize Instance Connections now adds missing and removes
+  obsolete named connections across all provable instances in one High+Diff,
+  all-or-nothing plan.
+
 ### Completed in v0.2.2
 
 - [x] Undo cursor restoration is unreliable. A stable reproduction is editing
@@ -97,7 +120,7 @@ This file is a running checklist for problems to fix and new features to conside
 
 ## Done
 
-- [x] Replace the former persistent short-code editor mode with the application-level F24 Command Layer. Its canonical commands are `go <number>`, `go module`, `go package`, `go endmodule`, `add signal`, `add parameter`, `add port`, `clear right`, `select begin end`, and `help`; Enter explicitly executes the ranked selection, and module/package pickers retain keyboard ownership after opening. Column Number Tool remains independent on Alt+C. Ctrl+Space Global Control continues to show the `ow` and `fd` domains.
+- [x] Replace the former persistent short-code editor mode with the application-level F24 Command Layer. Its retained canonical commands include `go <number>`, `go module`, `go package`, `go endmodule`, `clear right`, `select begin end`, `repeat action`, and `help`; Enter explicitly executes the ranked selection, and module/package pickers retain keyboard ownership after opening. Column Number Tool remains independent on Alt+C.
 - [x] After switching or closing workspace tabs, the first return to the Design tab still rebuilt the design hierarchy and caused a visible pause. Navigation now saves Design hierarchy state per workspace/file scope, restores it on `workspaceActivated`, keeps the restored cache valid across unrelated global snapshot revision changes, and invalidates only the active workspace Design cache when files, symbol analysis, or explicit Design top changes require it.
 - [x] Switching or closing workspace tabs still behaved like reopening a project: it cleared the active ProjectModel, discarded the scanned file list, emitted `workspaceOpened`, rescanned the directory, and retriggered full workspace symbol/relationship analysis. Workspace entries now retain their scanned file cache, activation restores root+files in one ProjectModel update, `workspaceOpened` is reserved for newly opened workspaces, Navigation follows `workspaceActivated`, and the workspace symbol controller skips automatic analysis for a workspace that already completed in the current session while cancelling stale relationship work on activation.
 - [x] Design view can show stale hierarchy from a previously active workspace and closing/switching workspaces can stall on unnecessary hierarchy rebuilds, reproduced with `huge_prj`. Design top inference and hierarchy expansion now accept an active workspace file scope, NavigationManager caches that scope with the hierarchy, empty or not-yet-scanned workspaces render an empty Design instead of falling back to the global index, and `workspaceClosed` clears the Design view without rebuilding in the no-active-workspace intermediate state.
@@ -131,4 +154,4 @@ This file is a running checklist for problems to fix and new features to conside
 - [x] Add `Ctrl+W` smart selection expansion. It now expands symbol -> member/hierarchical expression -> current parenthesized expression content -> next outer parenthesized expression content, and starts from operator/number positions inside parentheses by selecting the parenthesized expression content.
 - [x] Add selected-symbol occurrence navigation in the current file. When a symbol is selected, `Ctrl+E` jumps to the next occurrence/call site and `Ctrl+Q` jumps to the previous occurrence/call site, preserving selection and wrapping at file boundaries.
 - [x] Add current-file `Ctrl+R` safe rename MVP. It prompts for a valid identifier, renames all current-file word-boundary occurrences in one edit block, preserves similarly prefixed names, and offers `Force rename` / `Rename conflicting definition first` choices for current-file name conflicts.
-- [x] Extend `Ctrl+R` safe rename beyond the current-file MVP. The app-level path now resolves the selected symbol, builds a cross-file edit plan for definition and resolved reference occurrences from semantic file contents/open editors, applies edits through `TabManager` so files stay tracked as open/dirty documents, detects new-name definition conflicts with `Force rename` and `Rename conflicting definition first`, rejects intermediate conflict names, and supports missing-definition creation through raw declarations or `;cmd` / `;;cmd` template expansion inserted before first use and after required type definitions such as enum/typedef records.
+- [x] Extend `Ctrl+R` safe rename beyond the current-file MVP. The app-level path now resolves the selected symbol, builds a cross-file edit plan for definition and resolved reference occurrences from semantic file contents/open editors, applies edits through `TabManager` so files stay tracked as open/dirty documents, detects new-name definition conflicts with `Force rename` and `Rename conflicting definition first`, rejects intermediate conflict names, and supports missing-definition creation through raw declarations or structured template expansion inserted before first use and after required type definitions such as enum/typedef records.

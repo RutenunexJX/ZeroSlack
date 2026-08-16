@@ -714,6 +714,12 @@ public:
         AnnotationLayer::clear();
     }
 
+    bool isEmpty() const
+    {
+        return ghostAnnotations.isEmpty()
+            && AnnotationLayer::isEmpty();
+    }
+
     QStringList sourceIds() const
     {
         QStringList result = AnnotationLayer::sourceIds();

@@ -47,6 +47,9 @@ public:
     QString query() const;
     CommandLayerPanel* panelWidget() const;
     CommandLayerPickerPanel* pickerPanel() const;
+    bool executePaletteCommand(
+        const QString& actionId,
+        const QVariantMap& parameters = {});
 
 protected:
     bool eventFilter(QObject* watched, QEvent* event) override;

@@ -18,6 +18,10 @@ GlobalControlCoordinator::GlobalControlCoordinator(QWidget* anchorWidget,
     panel = std::make_unique<GlobalControlPanel>(anchorWidget);
     panel->setQueryChangedHandler(
         [this](const QString& text) { refresh(text); });
+    panel->setCategoryChangedHandler(
+        [this](GlobalControlCategory) {
+            refresh(panel ? panel->queryText() : QString());
+        });
     panel->setItemActivatedHandler(
         [this](const GlobalControlItem& item) { dispatch(item); });
 }
@@ -38,6 +42,21 @@ void GlobalControlCoordinator::setOpeningHandler(
     std::function<void()> handler)
 {
     openingHandler = std::move(handler);
+}
+
+void GlobalControlCoordinator::setContextProvider(
+    std::function<GlobalControlQueryContext()> provider)
+{
+    contextProvider = std::move(provider);
+}
+
+void GlobalControlCoordinator::setItemProvider(
+    std::function<QList<GlobalControlItem>(
+        GlobalControlCategory,
+        const QString&,
+        const GlobalControlQueryContext&)> provider)
+{
+    itemProvider = std::move(provider);
 }
 
 void GlobalControlCoordinator::setOpenRequestHandler(
@@ -96,12 +115,17 @@ void GlobalControlCoordinator::open()
 {
     if (!panel)
         return;
-    if (openingHandler)
-        openingHandler();
     if (panel->isVisible()) {
         panel->focusSearch();
         return;
     }
+    currentContext = contextProvider
+        ? contextProvider() : GlobalControlQueryContext();
+    panel->setCategory(currentContext.editorAvailable
+                           ? GlobalControlCategory::Symbols
+                           : GlobalControlCategory::Commands);
+    if (openingHandler)
+        openingHandler();
     refresh();
     panel->showCentered(anchor);
 }
@@ -110,7 +134,13 @@ void GlobalControlCoordinator::refresh(const QString& queryText)
 {
     if (!panel)
         return;
-    panel->setItems(service.query(queryText));
+    const GlobalControlCategory category = panel->category();
+    panel->setItems(
+        category == GlobalControlCategory::Commands
+            ? service.query(category, queryText, currentContext)
+            : (itemProvider
+                   ? itemProvider(category, queryText, currentContext)
+                   : QList<GlobalControlItem>()));
 }
 
 void GlobalControlCoordinator::dispatch(const GlobalControlItem& item)

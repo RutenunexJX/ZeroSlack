@@ -173,9 +173,9 @@ int main(int argc, char* argv[])
                    && hasKeywordGhost(editor,
                                       QStringLiteral("in")));
         QTest::keyClick(&editor, Qt::Key_Tab);
-        expect("Tab accepts the unique keyword suffix",
-               editor.toPlainText().mid(cursor - 3, 5)
-                   == QStringLiteral("begin")
+        expect("Tab accepts the unique keyword suffix and trailing space",
+               editor.toPlainText().mid(cursor - 3, 6)
+                   == QStringLiteral("begin ")
                    && !editor.editorModeActiveForTest(
                        EditorModeId::KeywordGhost));
         editor.undo();
@@ -765,6 +765,49 @@ int main(int argc, char* argv[])
                    && visibleColumnAnnotations.size()
                           < lastVisible.blockNumber()
                    && onlyVisibleRows);
+    }
+
+    {
+        MyCodeEditor editor;
+        editor.setLineWrapMode(QPlainTextEdit::NoWrap);
+        editor.resize(420, 220);
+        QString source;
+        for (int line = 0; line < 240; ++line) {
+            source.append(
+                QStringLiteral("logic row_%1 = value_%2_%3;\n")
+                    .arg(line)
+                    .arg(line)
+                    .arg(QString(120, QLatin1Char('x'))));
+        }
+        editor.setPlainText(source);
+        editor.show();
+        QCoreApplication::processEvents();
+
+        QTextCursor cursor(
+            editor.document()->findBlockByNumber(120));
+        cursor.movePosition(QTextCursor::EndOfBlock);
+        editor.setTextCursor(cursor);
+        editor.insertPlainText(QStringLiteral("X"));
+        QScrollBar* vertical = editor.verticalScrollBar();
+        QScrollBar* horizontal = editor.horizontalScrollBar();
+        vertical->setValue(vertical->maximum() / 2);
+        horizontal->setValue(horizontal->maximum() / 2);
+        const int verticalBeforeUndo = vertical->value();
+        const int horizontalBeforeUndo = horizontal->value();
+
+        editor.undo();
+        QCoreApplication::processEvents();
+        expect("undo preserves both editor viewport axes",
+               vertical->value() == verticalBeforeUndo
+                   && horizontal->value() == horizontalBeforeUndo);
+
+        const int verticalBeforeRedo = vertical->value();
+        const int horizontalBeforeRedo = horizontal->value();
+        editor.redo();
+        QCoreApplication::processEvents();
+        expect("redo preserves both editor viewport axes",
+               vertical->value() == verticalBeforeRedo
+                   && horizontal->value() == horizontalBeforeRedo);
     }
 
     std::printf("%d checks, %d failed\n",

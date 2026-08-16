@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.3.0] - 2026-08-16
+
+### Explicit insertion and guarded synchronization
+
+- Replaced the inline `;cmd` / `;;cmd` activation workflow with one explicit
+  `Ctrl+Space` palette split into Symbols, Templates, and Commands. Semantic
+  symbols remain limited to the active editor scope; templates cover built-in
+  and user snippets, complete module instantiation, package import, header
+  include, and header creation while preserving Slot Mode.
+- Reduced F24 to editor-oriented actions by removing assignment/conditional
+  navigation and independent add-signal/add-parameter/add-port actions, hiding
+  file operations and shortcut-only selected-occurrence navigation, and
+  retaining repeat action.
+- Changed workspace watching so saves to an existing source emit one file-level
+  change and do not trigger a directory rescan; source membership changes still
+  refresh the workspace.
+- Preserved both scroll axes across undo/redo and added the expected separating
+  space when accepting keyword ghost completion with Tab.
+- Extended guarded instance-connection editing to synchronize missing and
+  obsolete named ports across all provable source instances in one High+Diff,
+  all-or-nothing workspace transaction.
+- Made MinGW shared-core export generation consume the active linker response
+  file, excluding stale object files from export discovery.
+
 ## [0.2.2] - 2026-08-16
 
 ### Editor interaction and save-path update

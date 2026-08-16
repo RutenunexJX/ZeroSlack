@@ -297,6 +297,7 @@ set(ZEROSLACK_CORE_SOURCES
       editorgeometry.cpp
     editorgutter.cpp
     editorhoverpopup.cpp
+    editorinsertpaletteservice.cpp
     editorruntime.cpp
     editorruntimeannotations.cpp
     editorruntimecommands.cpp
@@ -535,6 +536,7 @@ set(ZEROSLACK_CORE_SOURCES
       editorgeometry.h
     editorgutter.h
     editorhoverpopup.h
+    editorinsertpaletteservice.h
     editorruntime.h
     editorselection.h
     editorkeywordghostcontroller.h
@@ -708,6 +710,9 @@ if(ZEROSLACK_SHARED_CORE AND WIN32)
                 "${CMAKE_CURRENT_SOURCE_DIR}/cmake/generate_mingw_exports.py"
                 --dlltool "${CMAKE_DLLTOOL}"
                 --output "${ZEROSLACK_CORE_EXPORT_DEF}"
+                --link-response
+                    "${CMAKE_CURRENT_BINARY_DIR}/CMakeFiles/zeroslack_core.rsp"
+                --link-working-directory "${CMAKE_CURRENT_BINARY_DIR}"
                 --object-root
                     "${CMAKE_CURRENT_BINARY_DIR}/CMakeFiles/zeroslack_core.dir"
                 --object-root

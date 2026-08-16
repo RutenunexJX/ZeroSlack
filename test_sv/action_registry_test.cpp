@@ -108,12 +108,6 @@ int main()
         {QStringLiteral("gpk"), QStringLiteral("go package")},
         {QStringLiteral("gopack"), QStringLiteral("go package")},
         {QStringLiteral("goendm"), QStringLiteral("go endmodule")},
-        {QStringLiteral("as"), QStringLiteral("add signal")},
-        {QStringLiteral("addsig"), QStringLiteral("add signal")},
-        {QStringLiteral("apar"), QStringLiteral("add parameter")},
-        {QStringLiteral("addparam"), QStringLiteral("add parameter")},
-        {QStringLiteral("aport"), QStringLiteral("add port")},
-        {QStringLiteral("addport"), QStringLiteral("add port")},
         {QStringLiteral("cr"), QStringLiteral("clear right")},
         {QStringLiteral("clearr"), QStringLiteral("clear right")},
         {QStringLiteral("sbe"), QStringLiteral("select begin end")},
@@ -442,18 +436,6 @@ int main()
         findActionById(QStringLiteral("edit.undo"));
     const ActionDescriptor* lineAction =
         findActionById(QStringLiteral("navigation.goLine"));
-    const ActionDescriptor* nextAssignmentAction =
-        findActionById(QString::fromLatin1(
-            ActionIds::NavigationNextAssignment));
-    const ActionDescriptor* previousAssignmentAction =
-        findActionById(QString::fromLatin1(
-            ActionIds::NavigationPreviousAssignment));
-    const ActionDescriptor* nextConditionalAction =
-        findActionById(QString::fromLatin1(
-            ActionIds::NavigationNextConditionalBranch));
-    const ActionDescriptor* previousConditionalAction =
-        findActionById(QString::fromLatin1(
-            ActionIds::NavigationPreviousConditionalBranch));
     const ActionDescriptor* settingsAction =
         findActionById(QString::fromLatin1(
             ActionIds::ViewSettingsCenter));
@@ -465,7 +447,6 @@ int main()
             ActionIds::RepeatLastAction));
     struct FileActionExpectation {
         const char* id;
-        const char* command;
         const char* route;
         const char* shortcut;
         const char* adapterKey;
@@ -473,31 +454,26 @@ int main()
     };
     const FileActionExpectation fileActions[] = {
         {ActionIds::FileNew,
-         "new file",
          "ui.file.new",
          "Ctrl+N",
          "new_file",
          0},
         {ActionIds::FileOpen,
-         "open file",
          "ui.file.open",
          "Ctrl+O",
          "open_file",
          0},
         {ActionIds::FileSave,
-         "save file",
          "ui.file.save",
          "Ctrl+S",
          "save_file",
          ActionRequirements::Editor},
         {ActionIds::FileSaveAs,
-         "save file as",
          "ui.file.saveAs",
          "Ctrl+Shift+S",
          "save_as",
          ActionRequirements::Editor},
         {ActionIds::WorkspaceOpen,
-         "open workspace",
          "ui.workspace.open",
          "Ctrl+K, Ctrl+O",
          "open_direction_as_workspace",
@@ -514,9 +490,6 @@ int main()
             ? descriptor->aliasForSurface(
                   ActionSurface::Shortcut)
             : ActionAliasDescriptor();
-        const CommandLayerCommandMetadata* command =
-            findCommandLayerCommand(
-                QString::fromLatin1(expected.command));
         fileActionsComplete =
             fileActionsComplete
             && descriptor
@@ -529,12 +502,10 @@ int main()
             && shortcutAlias.adapterKey
                    == QString::fromLatin1(
                        expected.adapterKey)
-            && descriptor->hasSurface(
+            && !descriptor->hasSurface(
                    ActionSurface::CommandLayer)
             && descriptor->hasSurface(
                    ActionSurface::ActionCatalog)
-            && command
-            && command->actionId == descriptor->id
             && !descriptor->repeatable;
     }
     expect("file and workspace commands are canonical registry actions",
@@ -547,39 +518,6 @@ int main()
                && lineAction
                && lineAction->rememberParameters
                && lineAction->repeatable);
-    expect("registry owns structural navigation routes and shortcuts",
-           nextAssignmentAction
-               && previousAssignmentAction
-               && nextConditionalAction
-               && previousConditionalAction
-               && nextAssignmentAction->executionRoute
-                      == QStringLiteral(
-                          "editor.navigation.nextAssignment")
-               && previousAssignmentAction->executionRoute
-                      == QStringLiteral(
-                          "editor.navigation.previousAssignment")
-               && nextConditionalAction->executionRoute
-                      == QStringLiteral(
-                          "editor.navigation.nextConditionalBranch")
-               && previousConditionalAction->executionRoute
-                      == QStringLiteral(
-                          "editor.navigation.previousConditionalBranch")
-               && nextAssignmentAction->defaultShortcut
-                      == QStringLiteral("Alt+F7")
-               && previousAssignmentAction->defaultShortcut
-                      == QStringLiteral("Shift+Alt+F7")
-               && nextConditionalAction->defaultShortcut
-                      == QStringLiteral("Alt+F8")
-               && previousConditionalAction->defaultShortcut
-                      == QStringLiteral("Shift+Alt+F8")
-               && nextAssignmentAction->hasSurface(
-                      ActionSurface::CommandLayer)
-               && nextAssignmentAction->hasSurface(
-                      ActionSurface::Shortcut)
-               && nextConditionalAction->hasSurface(
-                      ActionSurface::CommandLayer)
-               && nextConditionalAction->hasSurface(
-                      ActionSurface::Shortcut));
     expect("registry owns Settings and crash-recovery menu actions",
            settingsAction
                && crashRecoveryAction
@@ -1303,7 +1241,7 @@ int main()
     QVariantMap shortcutOverrides;
     shortcutOverrides.insert(
         QString::fromLatin1(
-            ActionIds::NavigationNextAssignment),
+            ActionIds::EditMoveLinesUp),
         QStringLiteral("Ctrl+Alt+N"));
     QStringList shortcutIssues;
     expect("shortcut overrides apply by canonical action id",
@@ -1314,20 +1252,20 @@ int main()
                && effectiveActionShortcut(
                       QString::fromLatin1(
                           ActionIds::
-                              NavigationNextAssignment))
+                              EditMoveLinesUp))
                       == QStringLiteral("Ctrl+Alt+N")
                && effectiveActionShortcut(
                       QString::fromLatin1(
                           ActionIds::
-                              NavigationPreviousAssignment))
-                      == QStringLiteral("Shift+Alt+F7"));
+                              EditMoveLinesDown))
+                      == QStringLiteral("Alt+Down"));
     bool catalogShowsEffectiveShortcut = false;
     for (const ActionCatalogEntry& entry :
          unifiedActionCatalog()) {
         if (entry.actionId
                 == QString::fromLatin1(
                     ActionIds::
-                        NavigationNextAssignment)
+                        EditMoveLinesUp)
             && entry.displayText.contains(
                 QStringLiteral(
                     "Shortcut: Ctrl+Alt+N"))) {
@@ -1341,7 +1279,7 @@ int main()
         shortcutOverrides;
     conflictingShortcuts.insert(
         QString::fromLatin1(
-            ActionIds::NavigationPreviousAssignment),
+            ActionIds::EditMoveLinesDown),
         QStringLiteral("Ctrl+Alt+N"));
     expect("conflicting shortcut overrides are rejected atomically",
            !configureActionShortcutOverrides(
@@ -1351,16 +1289,16 @@ int main()
                && effectiveActionShortcut(
                       QString::fromLatin1(
                           ActionIds::
-                              NavigationNextAssignment))
+                              EditMoveLinesUp))
                       == QStringLiteral("Ctrl+Alt+N")
                && effectiveActionShortcut(
                       QString::fromLatin1(
                           ActionIds::
-                              NavigationPreviousAssignment))
-                      == QStringLiteral("Shift+Alt+F7"));
+                              EditMoveLinesDown))
+                      == QStringLiteral("Alt+Down"));
     shortcutOverrides.insert(
         QString::fromLatin1(
-            ActionIds::NavigationNextAssignment),
+            ActionIds::EditMoveLinesUp),
         QString());
     expect("empty shortcut override disables the binding",
            configureActionShortcutOverrides(
@@ -1369,7 +1307,7 @@ int main()
                && effectiveActionShortcut(
                       QString::fromLatin1(
                           ActionIds::
-                              NavigationNextAssignment))
+                              EditMoveLinesUp))
                       .isEmpty());
     configureActionShortcutOverrides({});
     const ActionDescriptor* deleteLinesAction =
@@ -1535,7 +1473,11 @@ int main()
                && nextSelectedOccurrenceAction->hasSurface(
                       ActionSurface::Shortcut)
                && previousSelectedOccurrenceAction->hasSurface(
-                      ActionSurface::Shortcut));
+                      ActionSurface::Shortcut)
+               && !nextSelectedOccurrenceAction->hasSurface(
+                      ActionSurface::CommandLayer)
+               && !previousSelectedOccurrenceAction->hasSurface(
+                      ActionSurface::CommandLayer));
     const CommandLayerCommandMetadata* expandSelectionCommand =
         findCommandLayerCommand(
             QStringLiteral("expand selection"));
@@ -1545,19 +1487,13 @@ int main()
     const CommandLayerCommandMetadata* previousSelectedOccurrenceCommand =
         findCommandLayerCommand(
             QStringLiteral("previous selected occurrence"));
-    expect("selection navigation Command Mode aliases stay canonical",
+    expect("selected-occurrence navigation stays shortcut-only",
            expandSelectionCommand
-               && nextSelectedOccurrenceCommand
-               && previousSelectedOccurrenceCommand
+               && !nextSelectedOccurrenceCommand
+               && !previousSelectedOccurrenceCommand
                && expandSelectionCommand->actionId
                       == QString::fromLatin1(
-                          ActionIds::SelectExpandSmart)
-               && nextSelectedOccurrenceCommand->actionId
-                      == QString::fromLatin1(
-                          ActionIds::NavigationNextSelectedSymbolOccurrence)
-               && previousSelectedOccurrenceCommand->actionId
-                      == QString::fromLatin1(
-                          ActionIds::NavigationPreviousSelectedSymbolOccurrence));
+                          ActionIds::SelectExpandSmart));
 
     RecordingActionHost actionHost;
     ActionExecutionHistory& applicationHistory =
@@ -2177,8 +2113,8 @@ int main()
                       == rtlRenameAction
                && findActionByAlias(
                       ActionSurface::CommandLayer,
-                      QStringLiteral(
-                          "transform instance connections"))
+            QStringLiteral(
+                          "synchronize instance connections"))
                       == rtlConnectionTransformAction
                && evaluateActionAvailability(
                       *rtlRenameAction,

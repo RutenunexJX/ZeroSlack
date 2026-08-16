@@ -118,6 +118,7 @@ public:
     void removeSource(const QString& sourceId);
     void clear();
 
+    bool isEmpty() const { return annotationsBySource.isEmpty(); }
     QStringList sourceIds() const;
     AnnotationLayerReport resolve(
         const AnnotationLayerQuery& query = {}) const;

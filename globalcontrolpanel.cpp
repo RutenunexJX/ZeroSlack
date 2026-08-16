@@ -9,6 +9,7 @@
 #include <QLineEdit>
 #include <QListWidget>
 #include <QScreen>
+#include <QTabBar>
 #include <QVBoxLayout>
 #include <utility>
 
@@ -25,18 +26,27 @@ GlobalControlPanel::GlobalControlPanel(QWidget* parent)
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(0);
 
-    auto* title = new QLabel(QStringLiteral("ZeroSlack Global Control"), this);
+    auto* title = new QLabel(QStringLiteral("Insert and Command"), this);
     layout->addWidget(title);
+
+    categoryTabs = new QTabBar(this);
+    categoryTabs->setObjectName(QStringLiteral("globalControlCategoryTabs"));
+    categoryTabs->setExpanding(true);
+    categoryTabs->addTab(QStringLiteral("Symbols"));
+    categoryTabs->addTab(QStringLiteral("Templates"));
+    categoryTabs->addTab(QStringLiteral("Commands"));
+    layout->addWidget(categoryTabs);
 
     searchEdit = new QLineEdit(this);
     searchEdit->setObjectName(QStringLiteral("globalControlSearchEdit"));
-    searchEdit->setPlaceholderText(QStringLiteral("Type a domain: ow or fd"));
+    searchEdit->installEventFilter(this);
     layout->addWidget(searchEdit);
 
     resultList = new QListWidget(this);
     resultList->setObjectName(QStringLiteral("globalControlResultList"));
     resultList->setMinimumHeight(260);
     resultList->setMouseTracking(true);
+    resultList->installEventFilter(this);
     layout->addWidget(resultList);
 
     connect(searchEdit, &QLineEdit::textChanged,
@@ -46,6 +56,13 @@ GlobalControlPanel::GlobalControlPanel(QWidget* parent)
             });
     connect(resultList, &QListWidget::itemDoubleClicked,
             this, [this](QListWidgetItem*) { activateCurrentItem(); });
+    connect(categoryTabs, &QTabBar::currentChanged,
+            this, [this](int) {
+                updatePlaceholder();
+                if (categoryChangedHandler)
+                    categoryChangedHandler(category());
+            });
+    updatePlaceholder();
 }
 
 void GlobalControlPanel::setItems(const QList<GlobalControlItem>& items)
@@ -63,6 +80,25 @@ void GlobalControlPanel::setItems(const QList<GlobalControlItem>& items)
     }
     if (resultList->count() > 0)
         resultList->setCurrentRow(0);
+}
+
+void GlobalControlPanel::setCategory(GlobalControlCategory value)
+{
+    if (!categoryTabs)
+        return;
+    categoryTabs->setCurrentIndex(static_cast<int>(value));
+    updatePlaceholder();
+}
+
+GlobalControlCategory GlobalControlPanel::category() const
+{
+    const int index = categoryTabs ? categoryTabs->currentIndex() : 0;
+    return static_cast<GlobalControlCategory>(qBound(0, index, 2));
+}
+
+QString GlobalControlPanel::queryText() const
+{
+    return searchEdit ? searchEdit->text() : QString();
 }
 
 void GlobalControlPanel::showCentered(QWidget* anchor)
@@ -100,6 +136,12 @@ void GlobalControlPanel::setQueryChangedHandler(
     queryChangedHandler = std::move(handler);
 }
 
+void GlobalControlPanel::setCategoryChangedHandler(
+    std::function<void(GlobalControlCategory)> handler)
+{
+    categoryChangedHandler = std::move(handler);
+}
+
 void GlobalControlPanel::setItemActivatedHandler(
     std::function<void(const GlobalControlItem&)> handler)
 {
@@ -108,27 +150,43 @@ void GlobalControlPanel::setItemActivatedHandler(
 
 void GlobalControlPanel::keyPressEvent(QKeyEvent* event)
 {
+    if (handleKey(event))
+        return;
+    QFrame::keyPressEvent(event);
+}
+
+bool GlobalControlPanel::eventFilter(QObject* watched, QEvent* event)
+{
+    if ((watched == searchEdit || watched == resultList)
+        && event->type() == QEvent::KeyPress
+        && handleKey(static_cast<QKeyEvent*>(event))) {
+        return true;
+    }
+    return QFrame::eventFilter(watched, event);
+}
+
+bool GlobalControlPanel::handleKey(QKeyEvent* event)
+{
+    if (!event)
+        return false;
     if (event->key() == Qt::Key_Escape) {
         hide();
-        event->accept();
-        return;
-    }
-    if (event->key() == Qt::Key_Return || event->key() == Qt::Key_Enter) {
+    } else if (event->key() == Qt::Key_Return
+               || event->key() == Qt::Key_Enter) {
         activateCurrentItem();
-        event->accept();
-        return;
-    }
-    if (event->key() == Qt::Key_Down) {
+    } else if (event->key() == Qt::Key_Down) {
         moveSelection(1);
-        event->accept();
-        return;
-    }
-    if (event->key() == Qt::Key_Up) {
+    } else if (event->key() == Qt::Key_Up) {
         moveSelection(-1);
-        event->accept();
-        return;
+    } else if (event->key() == Qt::Key_Tab) {
+        moveCategory(event->modifiers().testFlag(Qt::ShiftModifier) ? -1 : 1);
+    } else if (event->key() == Qt::Key_Backtab) {
+        moveCategory(-1);
+    } else {
+        return false;
     }
-    QFrame::keyPressEvent(event);
+    event->accept();
+    return true;
 }
 
 void GlobalControlPanel::activateCurrentItem()
@@ -155,4 +213,31 @@ void GlobalControlPanel::moveSelection(int delta)
     const int next = qBound(0, resultList->currentRow() + delta,
                             resultList->count() - 1);
     resultList->setCurrentRow(next);
+}
+
+void GlobalControlPanel::moveCategory(int delta)
+{
+    if (!categoryTabs || categoryTabs->count() == 0)
+        return;
+    const int count = categoryTabs->count();
+    const int next = (categoryTabs->currentIndex() + delta + count) % count;
+    categoryTabs->setCurrentIndex(next);
+    focusSearch();
+}
+
+void GlobalControlPanel::updatePlaceholder()
+{
+    if (!searchEdit)
+        return;
+    switch (category()) {
+    case GlobalControlCategory::Symbols:
+        searchEdit->setPlaceholderText(QStringLiteral("Filter visible symbols"));
+        break;
+    case GlobalControlCategory::Templates:
+        searchEdit->setPlaceholderText(QStringLiteral("Filter templates"));
+        break;
+    case GlobalControlCategory::Commands:
+        searchEdit->setPlaceholderText(QStringLiteral("Filter commands, ow, or fd"));
+        break;
+    }
 }

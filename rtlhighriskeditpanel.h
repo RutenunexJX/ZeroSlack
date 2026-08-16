@@ -57,6 +57,8 @@ struct RtlHighRiskEditDraft {
     QString newName;
     bool convertOrderedToNamed = true;
     bool addMissingPorts = false;
+    bool removeUnknownPorts = false;
+    bool synchronizeAllInstances = false;
     RtlMissingPortConnectionPolicy missingPortPolicy =
         RtlMissingPortConnectionPolicy::LeaveUnconnected;
     RtlExplicitCastPolicy castPolicy =
@@ -147,7 +149,9 @@ public:
         bool convertOrderedToNamed,
         bool addMissingPorts,
         RtlMissingPortConnectionPolicy missingPortPolicy,
-        RtlExplicitCastPolicy castPolicy);
+        RtlExplicitCastPolicy castPolicy,
+        bool removeUnknownPorts = false,
+        bool synchronizeAllInstances = false);
 
 signals:
     void draftChanged(std::uint64_t sessionId);
@@ -175,6 +179,8 @@ private:
     QLabel* connectionInstanceLabel = nullptr;
     QCheckBox* convertOrderedCheck = nullptr;
     QCheckBox* addMissingPortsCheck = nullptr;
+    QCheckBox* removeUnknownPortsCheck = nullptr;
+    QCheckBox* synchronizeAllInstancesCheck = nullptr;
     QComboBox* missingPortPolicyCombo = nullptr;
     QComboBox* castPolicyCombo = nullptr;
     QLabel* stateLabel = nullptr;

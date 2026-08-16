@@ -1203,94 +1203,6 @@ void runContextActionRegistryExecutionRegression()
                          "select.allSymbolOccurrences"));
     QTest::keyClick(editor, Qt::Key_Escape);
 
-    const int secondAssignment =
-        editor->toPlainText().indexOf(
-            QStringLiteral("assign"),
-            editor->toPlainText().indexOf(
-                QStringLiteral("assign")) + 1);
-    const int secondAssignmentFirst =
-        editor->toPlainText().indexOf(
-            QStringLiteral("first"),
-            secondAssignment);
-    occurrenceCursor.clearSelection();
-    occurrenceCursor.setPosition(assignmentFirst + 2);
-    editor->setTextCursor(occurrenceCursor);
-    resetApplicationActionExecutionHistory();
-    QTest::keyClick(
-        editor,
-        Qt::Key_F7,
-        Qt::AltModifier);
-    QCoreApplication::processEvents(
-        QEventLoop::AllEvents, 50);
-    const bool nextAssignmentRouted =
-        editor->textCursor().selectionStart()
-            == secondAssignmentFirst
-        && applicationActionExecutionHistory()
-               .lastActionId()
-               == QString::fromLatin1(
-                   ActionIds::NavigationNextAssignment);
-    QTest::keyClick(
-        editor,
-        Qt::Key_F7,
-        Qt::AltModifier | Qt::ShiftModifier);
-    QCoreApplication::processEvents(
-        QEventLoop::AllEvents, 50);
-    check("assignment shortcuts execute canonical Registry Actions",
-          nextAssignmentRouted
-              && editor->textCursor().selectionStart()
-                     == assignmentFirst
-              && applicationActionExecutionHistory()
-                     .lastActionId()
-                     == QString::fromLatin1(
-                         ActionIds::NavigationPreviousAssignment));
-
-    const int ifdefPosition =
-        editor->toPlainText().indexOf(
-            QStringLiteral("`ifdef"));
-    const int elsePosition =
-        editor->toPlainText().indexOf(
-            QStringLiteral("`else"),
-            ifdefPosition + 1);
-    const int endifPosition =
-        editor->toPlainText().indexOf(
-            QStringLiteral("`endif"),
-            elsePosition + 1);
-    occurrenceCursor.clearSelection();
-    occurrenceCursor.setPosition(ifdefPosition);
-    editor->setTextCursor(occurrenceCursor);
-    resetApplicationActionExecutionHistory();
-    QTest::keyClick(
-        editor,
-        Qt::Key_F8,
-        Qt::AltModifier);
-    QCoreApplication::processEvents(
-        QEventLoop::AllEvents, 50);
-    const bool nextConditionalRouted =
-        editor->textCursor().selectionStart()
-            == elsePosition
-        && applicationActionExecutionHistory()
-               .lastActionId()
-               == QString::fromLatin1(
-                   ActionIds::NavigationNextConditionalBranch);
-    occurrenceCursor.clearSelection();
-    occurrenceCursor.setPosition(endifPosition);
-    editor->setTextCursor(occurrenceCursor);
-    resetApplicationActionExecutionHistory();
-    QTest::keyClick(
-        editor,
-        Qt::Key_F8,
-        Qt::AltModifier | Qt::ShiftModifier);
-    QCoreApplication::processEvents(
-        QEventLoop::AllEvents, 50);
-    check("conditional shortcuts execute canonical Registry Actions",
-          nextConditionalRouted
-              && editor->textCursor().selectionStart()
-                     == elsePosition
-              && applicationActionExecutionHistory()
-                     .lastActionId()
-                     == QString::fromLatin1(
-                         ActionIds::NavigationPreviousConditionalBranch));
-
     QTextCursor lineCursor(editor->document());
     lineCursor.setPosition(
         editor->toPlainText().indexOf(
@@ -1406,6 +1318,15 @@ void runContextActionRegistryExecutionRegression()
                      .lastActionId()
                      == QStringLiteral("edit.deleteLines"));
 
+    const int secondAssignment =
+        editor->toPlainText().indexOf(
+            QStringLiteral("assign"),
+            editor->toPlainText().indexOf(
+                QStringLiteral("assign")) + 1);
+    const int secondAssignmentFirst =
+        editor->toPlainText().indexOf(
+            QStringLiteral("first"),
+            secondAssignment);
     QTextCursor columnStart(editor->document());
     columnStart.setPosition(assignmentFirst);
     QTextCursor columnEnd(editor->document());
@@ -1586,9 +1507,12 @@ void runContextActionRegistryExecutionRegression()
     standardCursor.setPosition(0);
     editor->setTextCursor(standardCursor);
     editor->setFocus();
+    const int endmodulePosition =
+        editor->toPlainText().indexOf(
+            QStringLiteral("endmodule"));
     const int goLineTarget =
         editor->document()
-            ->findBlock(endifPosition)
+            ->findBlock(endmodulePosition)
             .blockNumber() + 1;
     QTimer::singleShot(
         0,
@@ -2485,18 +2409,17 @@ void runCommandLayerCompletionPopupRegression()
     QCompleter* completer = editor->findChild<QCompleter*>();
     QAbstractItemView* completionPopup =
         completer ? completer->popup() : nullptr;
-    check("explicit completion owns the active popup before COM",
-          completionPopup && completionPopup->isVisible()
-              && QApplication::activePopupWidget()
-                     == completionPopup);
+    check("legacy inline completion remains inactive before COM",
+          !completionPopup || !completionPopup->isVisible());
+    const QString sourceAfterTab = editor->toPlainText();
 
     QTest::keyPress(editor, Qt::Key_F24);
     QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-    check("COM replaces its editor completion popup",
-          completionPopup && !completionPopup->isVisible()
+    check("COM opens without a legacy editor completion popup",
+          (!completionPopup || !completionPopup->isVisible())
               && commandPanel->isVisible());
-    check("COM popup replacement preserves source text",
-          editor->toPlainText() == source);
+    check("COM activation preserves source text",
+          editor->toPlainText() == sourceAfterTab);
 
     QTest::keyRelease(editor, Qt::Key_F24);
     QCoreApplication::processEvents(QEventLoop::AllEvents, 50);

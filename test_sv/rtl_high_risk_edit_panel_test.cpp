@@ -515,7 +515,9 @@ int main(int argc, char* argv[])
         true,
         RtlMissingPortConnectionPolicy::
             ConnectSameNamedSignal,
-        RtlExplicitCastPolicy::InsertWhenRequired);
+        RtlExplicitCastPolicy::InsertWhenRequired,
+        true,
+        true);
     const RtlHighRiskEditPanelOutcome dryPreview =
         coordinator.requestPreview();
     const RtlHighRiskEditPanelOutcome dryRun =
@@ -526,6 +528,8 @@ int main(int argc, char* argv[])
             && observed.connection
                    .convertOrderedToNamed
             && observed.connection.addMissingPorts
+            && observed.connection.removeUnknownPorts
+            && observed.connection.synchronizeAllInstances
             && observed.connection.missingPortPolicy
                 == RtlMissingPortConnectionPolicy::
                     ConnectSameNamedSignal

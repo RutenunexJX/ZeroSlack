@@ -68,6 +68,7 @@ public:
                           const EditorFoldViewState& state);
     void resetForDocumentChange(MyCodeEditor* editor);
     const QList<QPair<int, int>>& collapsedLineRanges() const;
+    bool hasPaintOverlay() const;
     void paintGutter(MyCodeEditor* editor, QPainter& painter, const QRect& rect) const;
     void paintPlaceholders(MyCodeEditor* editor, QPainter& painter) const;
 

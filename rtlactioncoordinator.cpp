@@ -1149,9 +1149,17 @@ RtlActionCoordinator::executeRtlConnectionTransformAction(
                 true).toBool();
     session.baseRequest.addMissingPorts =
         parameters.value(
-            QStringLiteral(
-                "addMissingPorts"),
-            false).toBool();
+                QStringLiteral(
+                    "addMissingPorts"),
+                true).toBool();
+    session.baseRequest.removeUnknownPorts =
+        parameters.value(
+                QStringLiteral("removeUnknownPorts"),
+                true).toBool();
+    session.baseRequest.synchronizeAllInstances =
+        parameters.value(
+                QStringLiteral("synchronizeAllInstances"),
+                true).toBool();
     const int missingPolicy =
         parameters.value(
             QStringLiteral(

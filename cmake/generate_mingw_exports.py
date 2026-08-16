@@ -13,7 +13,6 @@ import sys
 _EXPORT_PATTERN = re.compile(
     r'^\s*(?P<symbol>"[^"]+"|\S+)\s+@\s+\d+(?P<qualifiers>.*)$'
 )
-
 # These are header-defined Qt container implementation templates. A consumer
 # instantiates them locally; exporting every copy consumes thousands of PE
 # ordinals without exposing a ZeroSlack ABI entry point.
@@ -33,6 +32,10 @@ def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--dlltool", required=True, type=pathlib.Path)
     parser.add_argument("--output", required=True, type=pathlib.Path)
+    parser.add_argument("--link-response", required=True, type=pathlib.Path)
+    parser.add_argument(
+        "--link-working-directory", required=True, type=pathlib.Path
+    )
     parser.add_argument(
         "--object-root",
         action="append",
@@ -49,11 +52,25 @@ def _keep_symbol(symbol: str) -> bool:
     return not unquoted.startswith(_FILTERED_PREFIXES)
 
 
-def _object_files(roots: list[pathlib.Path]) -> list[pathlib.Path]:
+def _object_files(
+    link_response: pathlib.Path,
+    link_working_directory: pathlib.Path,
+    roots: list[pathlib.Path],
+) -> list[pathlib.Path]:
+    response_text = link_response.read_text(encoding="utf-8", errors="replace")
+    object_tokens = re.findall(r'"([^"]+\.obj)"|(\S+\.obj)', response_text)
+    allowed_roots = [root.resolve() for root in roots]
     objects: set[pathlib.Path] = set()
-    for root in roots:
-        if root.is_dir():
-            objects.update(path.resolve() for path in root.rglob("*.obj"))
+    for quoted, unquoted in object_tokens:
+        token = quoted or unquoted
+        path = pathlib.Path(token)
+        if not path.is_absolute():
+            path = link_working_directory / path
+        path = path.resolve()
+        if not path.is_file():
+            continue
+        if any(path.is_relative_to(root) for root in allowed_roots):
+            objects.add(path)
     return sorted(objects, key=lambda path: path.as_posix().casefold())
 
 
@@ -62,7 +79,15 @@ def main() -> int:
     output = args.output.resolve()
     output.parent.mkdir(parents=True, exist_ok=True)
 
-    objects = _object_files(args.object_root)
+    link_response = args.link_response.resolve()
+    if not link_response.is_file():
+        print(f"link response file was not found: {link_response}", file=sys.stderr)
+        return 2
+    objects = _object_files(
+        link_response,
+        args.link_working_directory.resolve(),
+        args.object_root,
+    )
     if not objects:
         print("no MinGW objects found for export generation", file=sys.stderr)
         return 2
@@ -77,7 +102,10 @@ def main() -> int:
         if response.is_file()
         else ""
     )
-    newest_object_mtime = max(path.stat().st_mtime_ns for path in objects)
+    newest_object_mtime = max(
+        max(path.stat().st_mtime_ns for path in objects),
+        pathlib.Path(__file__).stat().st_mtime_ns,
+    )
     if (
         output.is_file()
         and previous_response == response_text

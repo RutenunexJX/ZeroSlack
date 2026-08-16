@@ -959,32 +959,6 @@ void CommandLayerCoordinator::registerActionExecutionRoutes()
     bindEditor(QStringLiteral("editor.navigation.goEndmodule"),
                &MyCodeEditor::goToFinalEndmodule,
                QStringLiteral("No endmodule found"));
-    bindEditor(
-        QStringLiteral(
-            "editor.navigation.nextAssignment"),
-        &MyCodeEditor::
-            goToNextAssignmentForSelectedSignal,
-        QStringLiteral(
-            "No assignment was found for the selected signal"));
-    bindEditor(
-        QStringLiteral(
-            "editor.navigation.previousAssignment"),
-        &MyCodeEditor::
-            goToPreviousAssignmentForSelectedSignal,
-        QStringLiteral(
-            "No assignment was found for the selected signal"));
-    bindEditor(
-        QStringLiteral(
-            "editor.navigation.nextConditionalBranch"),
-        &MyCodeEditor::goToNextConditionalBranch,
-        QStringLiteral(
-            "No conditional compilation group was found"));
-    bindEditor(
-        QStringLiteral(
-            "editor.navigation.previousConditionalBranch"),
-        &MyCodeEditor::goToPreviousConditionalBranch,
-        QStringLiteral(
-            "No conditional compilation group was found"));
     bind(
         QStringLiteral("action.repeatLast"),
         [this](const ActionDescriptor&,
@@ -992,17 +966,6 @@ void CommandLayerCoordinator::registerActionExecutionRoutes()
             return applicationActionExecutionHistory()
                 .repeatLast(actionExecutionHost);
         });
-    bindEditor(QStringLiteral("editor.structure.addSignalRow"),
-               &MyCodeEditor::addSignalRow,
-               QStringLiteral("No clear signal insert point"));
-    bindEditor(
-        QStringLiteral("editor.structure.addParameterRow"),
-        &MyCodeEditor::addParameterRow,
-        QStringLiteral(
-            "No clear parameter insert point"));
-    bindEditor(QStringLiteral("editor.structure.addPortRow"),
-               &MyCodeEditor::addPortRow,
-               QStringLiteral("No clear port append point"));
     bindEditor(
         QStringLiteral("editor.structure.clearAssignmentRhs"),
         &MyCodeEditor::clearSelectedAssignmentRhs,
@@ -1153,6 +1116,32 @@ CommandLayerPanel* CommandLayerCoordinator::panelWidget() const
 CommandLayerPickerPanel* CommandLayerCoordinator::pickerPanel() const
 {
     return picker.get();
+}
+
+bool CommandLayerCoordinator::executePaletteCommand(
+    const QString& actionId,
+    const QVariantMap& parameters)
+{
+    const auto found = std::find_if(
+        commandLayerCommandRegistry().cbegin(),
+        commandLayerCommandRegistry().cend(),
+        [&actionId](const CommandLayerCommandMetadata& command) {
+            return command.actionId == actionId;
+        });
+    if (found == commandLayerCommandRegistry().cend())
+        return false;
+
+    MyCodeEditor* editor = currentEditorForLocalCommand();
+    if (!editor)
+        editor = lastEditor;
+    if (!editor)
+        return false;
+
+    ActionInvocation invocation;
+    invocation.workspaceId = projectSnapshot().workspaceRoot;
+    invocation.parameters = parameters;
+    executeCommand(editor, *found, invocation);
+    return true;
 }
 
 void CommandLayerCoordinator::installApplicationEventFilter()
