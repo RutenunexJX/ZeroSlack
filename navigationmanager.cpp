@@ -287,6 +287,13 @@ void NavigationManager::onBatchSymbolAnalysisCompleted(
     Q_UNUSED(filesAnalyzed)
     Q_UNUSED(totalSymbols)
 
+    if (semanticAnalysisContext.impact
+            == SemanticChangeImpact::TriviaOnly
+        || semanticAnalysisContext.impact
+               == SemanticChangeImpact::LocalBody) {
+        return;
+    }
+
     if (currentView == DesignHierarchyView) {
         if (navigationService
             && caches.designHierarchyValid

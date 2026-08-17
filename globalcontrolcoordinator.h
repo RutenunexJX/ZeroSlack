@@ -5,6 +5,7 @@
 #include "zeroslackexport.h"
 
 #include <QObject>
+#include <QPoint>
 #include <functional>
 #include <memory>
 
@@ -29,6 +30,8 @@ public:
             const GlobalControlQueryContext&)> provider);
     void setOpenRequestHandler(
         std::function<bool()> handler);
+    void setAnchorPositionProvider(
+        std::function<QPoint()> provider);
     void install();
     bool handleKeyEvent(QEvent* event);
     void open();
@@ -48,6 +51,7 @@ private:
         const QString&,
         const GlobalControlQueryContext&)> itemProvider;
     std::function<bool()> openRequestHandler;
+    std::function<QPoint()> anchorPositionProvider;
     bool installed = false;
     GlobalControlQueryContext currentContext;
 

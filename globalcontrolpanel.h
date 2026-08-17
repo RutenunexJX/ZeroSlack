@@ -4,6 +4,7 @@
 #include "globalcontrolservice.h"
 
 #include <QFrame>
+#include <QPoint>
 #include <functional>
 
 class QLineEdit;
@@ -21,6 +22,7 @@ public:
     GlobalControlCategory category() const;
     QString queryText() const;
     void showCentered(QWidget* anchor);
+    void showAt(QWidget* anchor, const QPoint& globalAnchor);
     void focusSearch();
     void setQueryChangedHandler(std::function<void(const QString&)> handler);
     void setCategoryChangedHandler(

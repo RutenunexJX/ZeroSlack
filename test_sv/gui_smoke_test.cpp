@@ -27,6 +27,7 @@
 #include <QGraphicsRectItem>
 #include <QGraphicsScene>
 #include <QGraphicsView>
+#include <QGuiApplication>
 #include <QImage>
 #include <QIODevice>
 #include <QSettings>
@@ -49,6 +50,7 @@
 #include <QRegularExpression>
 #include <QRadioButton>
 #include <QScrollBar>
+#include <QScreen>
 #include <QSet>
 #include <QTemporaryDir>
 #include <QTextBlock>
@@ -1550,6 +1552,37 @@ static void runTabOpenGhostLifecycleRegression()
         "[0:P_1 - 1] /* deliberately long declaration */");
 
     EditorDocumentGeometry documentGeometry;
+    const QTextBlock visualGeometryBlock =
+        geometryEditor.document()->firstBlock();
+    bool visualGeometryMatchesEditBoundaries =
+        visualGeometryBlock.isValid();
+    for (int offset = 0;
+         visualGeometryMatchesEditBoundaries
+         && offset <= visualGeometryBlock.text().size();
+         ++offset) {
+        const int visualColumn =
+            EditorVisualColumnGeometry::visualColumnForOffset(
+                &geometryEditor, visualGeometryBlock, offset);
+        const int resolvedOffset =
+            EditorVisualColumnGeometry::offsetForVisualColumn(
+                &geometryEditor,
+                visualGeometryBlock,
+                visualColumn,
+                EditorVisualBoundary::Start);
+        QTextCursor resolvedCursor(visualGeometryBlock);
+        resolvedCursor.setPosition(
+            visualGeometryBlock.position() + resolvedOffset);
+        visualGeometryMatchesEditBoundaries =
+            EditorVisualColumnGeometry::viewportXForVisualColumn(
+                &geometryEditor,
+                visualGeometryBlock,
+                visualColumn,
+                EditorVisualBoundary::Start)
+            == geometryEditor.cursorRect(resolvedCursor).left();
+    }
+    expectBool("column caret geometry matches edit boundaries",
+               visualGeometryMatchesEditBoundaries,
+               true);
     auto renderFormalPortDifference = [&]() {
         geometryEditor.setGhostAnnotations({});
         QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
@@ -14813,6 +14846,15 @@ int main(int argc, char** argv)
         expectBool("ctrl-s emits documentSaved",
                    documentSavedSpy.count() == 2,
                    true);
+        const int fileSavedCountBeforeNoOp = fileSavedSpy.count();
+        const int documentSavedCountBeforeNoOp = documentSavedSpy.count();
+        QTest::keyClick(saveEditor, Qt::Key_S, Qt::ControlModifier);
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
+        expectBool("unchanged ctrl-s is a zero-signal no-op",
+                   fileSavedSpy.count() == fileSavedCountBeforeNoOp
+                       && documentSavedSpy.count()
+                              == documentSavedCountBeforeNoOp,
+                   true);
 
     }
 
@@ -15568,6 +15610,78 @@ int main(int argc, char** argv)
                 }
                 return false;
             };
+
+        editor->setPlainText(QStringLiteral("module gui_top;\n"
+                                            "    logic anchor_here;\n"
+                                            "endmodule\n"));
+        QTextCursor paletteAnchorCursor(
+            editor->document()->findBlockByNumber(1));
+        paletteAnchorCursor.movePosition(QTextCursor::EndOfBlock);
+        editor->setTextCursor(paletteAnchorCursor);
+        const QPoint expectedPaletteAnchor =
+            editor->viewport()->mapToGlobal(
+                editor->cursorRect().bottomLeft());
+        GlobalControlPanel* positionedPalette =
+            openInsertPalette(GlobalControlCategory::Symbols,
+                              QStringLiteral("anchor"));
+        const QRect positionedPaletteGeometry = positionedPalette
+            ? positionedPalette->geometry()
+            : QRect();
+        QScreen* paletteScreen =
+            QGuiApplication::screenAt(expectedPaletteAnchor);
+        const QRect paletteAvailable = paletteScreen
+            ? paletteScreen->availableGeometry()
+            : QRect();
+        const int expectedPaletteX = positionedPalette && paletteScreen
+            ? qBound(
+                  paletteAvailable.left(),
+                  expectedPaletteAnchor.x(),
+                  qMax(paletteAvailable.left(),
+                       paletteAvailable.right()
+                           - positionedPalette->width() + 1))
+            : expectedPaletteAnchor.x();
+        int expectedPaletteY = expectedPaletteAnchor.y() + 8;
+        if (positionedPalette && paletteScreen
+            && expectedPaletteY + positionedPalette->height()
+                   > paletteAvailable.bottom() + 1) {
+            expectedPaletteY = expectedPaletteAnchor.y()
+                - positionedPalette->height() - 8;
+        }
+        if (positionedPalette && paletteScreen) {
+            expectedPaletteY = qBound(
+                paletteAvailable.top(),
+                expectedPaletteY,
+                qMax(paletteAvailable.top(),
+                     paletteAvailable.bottom()
+                         - positionedPalette->height() + 1));
+        }
+        expectBool("Ctrl+Space palette anchors at editor caret",
+                   positionedPalette
+                       && qAbs(positionedPaletteGeometry.left()
+                               - expectedPaletteX) <= 2
+                       && qAbs(positionedPaletteGeometry.top()
+                               - expectedPaletteY) <= 2,
+                   true);
+        if (positionedPalette) {
+            positionedPalette->searchEdit->setText(
+                QStringLiteral("anchor"));
+            QTest::keyClick(positionedPalette->searchEdit, Qt::Key_Right);
+            expectBool("Ctrl+Space Right switches category",
+                       positionedPalette->category()
+                               == GlobalControlCategory::Templates
+                           && positionedPalette->queryText()
+                                  == QStringLiteral("anchor")
+                           && positionedPalette->searchEdit->hasFocus(),
+                       true);
+            QTest::keyClick(positionedPalette->searchEdit, Qt::Key_Left);
+            expectBool("Ctrl+Space Left switches category",
+                       positionedPalette->category()
+                               == GlobalControlCategory::Symbols
+                           && positionedPalette->queryText()
+                                  == QStringLiteral("anchor"),
+                       true);
+            positionedPalette->hide();
+        }
 
         editor->setPlainText(QStringLiteral("module gui_top;\n"
                                             "\n"

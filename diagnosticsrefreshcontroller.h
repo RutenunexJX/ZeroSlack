@@ -6,8 +6,6 @@
 #include <QObject>
 #include <QString>
 
-class QTimer;
-
 class ZEROSLACK_API DiagnosticsRefreshController : public QObject
 {
     Q_OBJECT
@@ -23,7 +21,7 @@ signals:
 private:
     QString pendingFileName;
     bool pendingFullRefresh = false;
-    QTimer* refreshTimer = nullptr;
+    bool refreshQueued = false;
 };
 
 #endif // DIAGNOSTICSREFRESHCONTROLLER_H

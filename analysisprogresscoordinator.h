@@ -56,8 +56,8 @@ private:
 
     void rememberWorkspacePlanBands(const WorkspaceAnalysisPlan& plan);
     QString workspaceSymbolBandForFile(const QString& fileName) const;
-    void showAnalysisProgress(const QStringList& files);
-    void showSymbolStageStarted(const QStringList& files);
+    void showAnalysisProgress();
+    void showSymbolStageStarted();
     void showRelationshipStageStarted(const QStringList& files);
     void showRelationshipAnalysisFinished(const WorkspaceRelationshipAnalysisResult& result);
     void showRelationshipProgress(const QString& fileName, int relationshipsFound);

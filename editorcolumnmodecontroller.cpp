@@ -1,12 +1,12 @@
 #include "editorcolumnmodecontroller.h"
 
 #include "annotationlayer.h"
+#include "editorgeometry.h"
 #include "editormodecontroller.h"
 #include "mycodeeditor.h"
 
 #include <QApplication>
 #include <QClipboard>
-#include <QFontMetrics>
 #include <QKeyEvent>
 #include <QKeySequence>
 #include <QMouseEvent>
@@ -14,7 +14,6 @@
 #include <QTextBlock>
 #include <QTextCursor>
 #include <QTextDocument>
-#include <QTextLayout>
 
 #include <utility>
 
@@ -80,85 +79,20 @@ QStringList normalizedClipboardRows(QString text)
 
 int editorTabStopColumns(const MyCodeEditor* editor)
 {
-    if (!editor)
-        return kManualIndentWidth;
-    const QFontMetrics metrics(editor->font());
-    const int spaceWidth = qMax(1, metrics.horizontalAdvance(QLatin1Char(' ')));
-    return qMax(1, qRound(editor->tabStopDistance() / spaceWidth));
+    return EditorVisualColumnGeometry::tabStopColumns(editor);
 }
 
 int visualAdvanceForChar(QChar ch, int visualColumn, int tabWidth)
 {
-    if (ch == QLatin1Char('\t')) {
-        const int remainder = visualColumn % qMax(1, tabWidth);
-        return remainder == 0 ? qMax(1, tabWidth) : qMax(1, tabWidth) - remainder;
-    }
-    return 1;
+    return EditorVisualColumnGeometry::advanceForCharacter(
+        ch, visualColumn, tabWidth);
 }
 
-int visualColumnForOffset(const QString& text, int offset, int tabWidth)
-{
-    int visual = 0;
-    const int boundedOffset = qBound(0, offset, text.size());
-    for (int i = 0; i < boundedOffset; ++i)
-        visual += visualAdvanceForChar(text.at(i), visual, tabWidth);
-    return visual;
-}
-
-enum class VisualBoundary {
-    Start,
-    End
-};
-
-int offsetForVisualColumn(const QString& text,
-                          int visualColumn,
-                          int tabWidth,
-                          VisualBoundary boundary)
-{
-    const int target = qMax(0, visualColumn);
-    int visual = 0;
-    for (int i = 0; i < text.size(); ++i) {
-        const int next =
-            visual + visualAdvanceForChar(text.at(i), visual, tabWidth);
-        if (target == visual)
-            return i;
-        if (target > visual && target < next)
-            return boundary == VisualBoundary::End ? i + 1 : i;
-        if (target == next)
-            return i + 1;
-        visual = next;
-    }
-    return text.size();
-}
+using VisualBoundary = EditorVisualBoundary;
 
 qreal editorSpaceAdvance(const MyCodeEditor* editor)
 {
-    if (!editor)
-        return 1.0;
-    const QFontMetricsF metrics(editor->font());
-    return qMax<qreal>(
-        1.0, metrics.horizontalAdvance(QLatin1Char(' ')));
-}
-
-QTextLine blockTextLine(const QTextBlock& block)
-{
-    QTextLayout* layout =
-        block.isValid() ? block.layout() : nullptr;
-    if (!layout || layout->lineCount() <= 0)
-        return {};
-    return layout->lineAt(0);
-}
-
-qreal blockTextXForOffset(const QTextBlock& block,
-                          int offset)
-{
-    const QTextLine line = blockTextLine(block);
-    if (!line.isValid())
-        return -1.0;
-    int bounded = qBound(0, offset, block.text().size());
-    int zero = 0;
-    return line.cursorToX(&bounded, QTextLine::Leading)
-        - line.cursorToX(&zero, QTextLine::Leading);
+    return EditorVisualColumnGeometry::spaceAdvance(editor);
 }
 
 int layoutVisualColumnForOffset(
@@ -166,14 +100,8 @@ int layoutVisualColumnForOffset(
     const QTextBlock& block,
     int offset)
 {
-    const qreal x = blockTextXForOffset(block, offset);
-    if (x < 0.0) {
-        return visualColumnForOffset(
-            block.text(),
-            offset,
-            editorTabStopColumns(editor));
-    }
-    return qMax(0, qRound(x / editorSpaceAdvance(editor)));
+    return EditorVisualColumnGeometry::visualColumnForOffset(
+        editor, block, offset);
 }
 
 int layoutOffsetForVisualColumn(
@@ -182,39 +110,8 @@ int layoutOffsetForVisualColumn(
     int visualColumn,
     VisualBoundary boundary)
 {
-    const QTextLine line = blockTextLine(block);
-    if (!line.isValid()) {
-        return offsetForVisualColumn(
-            block.text(),
-            visualColumn,
-            editorTabStopColumns(editor),
-            boundary);
-    }
-
-    int zero = 0;
-    const qreal zeroX =
-        line.cursorToX(&zero, QTextLine::Leading);
-    const qreal targetX =
-        zeroX
-        + qMax(0, visualColumn)
-              * editorSpaceAdvance(editor);
-    int offset = line.xToCursor(
-        targetX,
-        QTextLine::CursorBetweenCharacters);
-    offset = qBound(0, offset, block.text().size());
-    int probe = offset;
-    const qreal offsetX =
-        line.cursorToX(&probe, QTextLine::Leading);
-    if (boundary == VisualBoundary::Start
-        && offsetX > targetX
-        && offset > 0) {
-        --offset;
-    } else if (boundary == VisualBoundary::End
-               && offsetX < targetX
-               && offset < block.text().size()) {
-        ++offset;
-    }
-    return qBound(0, offset, block.text().size());
+    return EditorVisualColumnGeometry::offsetForVisualColumn(
+        editor, block, visualColumn, boundary);
 }
 
 QString layoutVisualSlice(const MyCodeEditor* editor,
@@ -489,18 +386,15 @@ bool columnPointFromMouse(MyCodeEditor* editor,
         return false;
     }
 
-    QTextCursor startCursor(block);
-    startCursor.setPosition(block.position());
     QTextCursor endCursor(block);
     endCursor.setPosition(
         block.position() + block.text().size());
-    const qreal startX =
-        editor->cursorRect(startCursor).left();
     const qreal endX =
         editor->cursorRect(endCursor).left();
     const qreal space = editorSpaceAdvance(editor);
-    const int targetColumn = qMax(
-        0, qRound((position.x() - startX) / space));
+    const int targetColumn =
+        EditorVisualColumnGeometry::visualColumnForViewportX(
+            editor, block, position.x());
     if (line)
         *line = block.blockNumber();
     if (column)

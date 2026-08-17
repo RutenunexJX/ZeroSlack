@@ -86,15 +86,17 @@ void AnalysisProgressCoordinator::connectToScheduler(AnalysisScheduler* newSched
             &AnalysisScheduler::workspaceSymbolAnalysisStarted,
             this,
             [this](const ProjectSnapshot& project, int totalFiles) {
+                Q_UNUSED(project)
+                Q_UNUSED(totalFiles)
                 symbolAnalysisCancelled.store(false);
                 lastSymbolProgressCheckpoint = 0;
                 lastRelationshipProgressCheckpoint = 0;
-                showAnalysisProgress(project.systemVerilogFiles);
-                showSymbolStageStarted(project.systemVerilogFiles);
+                showAnalysisProgress();
+                showSymbolStageStarted();
                 ActivityLogService::getInstance()->append(
                     QStringLiteral("Analyzer"),
                     ActivityLogLevel::Info,
-                    QStringLiteral("Scheduled %1 files").arg(totalFiles));
+                    QStringLiteral("Semantic analysis request scheduled"));
             });
     connect(scheduler,
             &AnalysisScheduler::workspaceAnalysisPlanPrepared,
@@ -357,19 +359,19 @@ bool AnalysisProgressCoordinator::isSymbolAnalysisCancelled() const
     return symbolAnalysisCancelled.load();
 }
 
-void AnalysisProgressCoordinator::showAnalysisProgress(const QStringList& files)
+void AnalysisProgressCoordinator::showAnalysisProgress()
 {
     emit statusMessageRequested(
-        QString("Workspace analysis scheduled: %1 files").arg(files.size()),
+        QStringLiteral("Semantic analysis scheduled"),
         2000);
 }
 
-void AnalysisProgressCoordinator::showSymbolStageStarted(const QStringList& files)
+void AnalysisProgressCoordinator::showSymbolStageStarted()
 {
     ActivityLogService::getInstance()->append(
         QStringLiteral("Analyzer"),
         ActivityLogLevel::Info,
-        QStringLiteral("Symbol analysis started for %1 files").arg(files.size()));
+        QStringLiteral("Symbol analysis started"));
 }
 
 void AnalysisProgressCoordinator::showRelationshipStageStarted(const QStringList& files)

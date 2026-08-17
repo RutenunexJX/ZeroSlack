@@ -4,6 +4,28 @@ This file is a running checklist for problems to fix and new features to conside
 
 ## Issues
 
+### Completed in v0.3.1
+
+- [x] Formatter alignment remains incorrect in multiple constructs in the
+  reproduction file `C:\Users\14971\Desktop\temp.sv`. The eventual fix must
+  identify general syntax-aware alignment defects from this file and must not
+  add file-specific or line-specific rules.
+- [x] In column mode, the rendered red caret can be displaced by one column
+  from the position where editing actually takes effect. Rendering and edit
+  coordinates must resolve to the same real or virtual column.
+- [x] The `Ctrl+Space` palette is not anchored near the active editor caret.
+  It must open beside the insertion point while remaining inside the usable
+  screen or editor viewport.
+- [x] Left and Right do not switch the `Ctrl+Space` palette among Symbols,
+  Templates, and Commands. Horizontal keys must change the active category
+  without transferring focus away from filtering and result navigation.
+
+- [x] A clean `Ctrl+S` still wrote the file and scheduled semantic lifecycle
+  work. It is now a true no-op, while changed saves skip already-current
+  snapshots, classify trivia-only edits without Slang, avoid unrelated
+  hierarchy/editor refreshes, and no longer label incremental work as a
+  workspace-wide analysis request.
+
 ### Completed in v0.3.0
 
 - [x] Saving an existing SystemVerilog file could be observed as a directory

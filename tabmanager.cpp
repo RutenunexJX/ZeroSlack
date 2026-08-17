@@ -2327,6 +2327,17 @@ bool TabManager::saveEditor(
         return false;
     if (document->readOnly() && !forceSaveAs)
         forceSaveAs = true;
+    if (!forceSaveAs
+        && explicitFileName.isEmpty()
+        && !document->fileName().isEmpty()
+        && !document->dirty()
+        && document->textRevision()
+               == document->savedTextRevision()
+        && document->externalState()
+               == SharedDocumentExternalState::Current
+        && QFileInfo::exists(document->fileName())) {
+        return true;
+    }
     const QString fileName =
         explicitFileName.isEmpty()
         ? fileIo.resolveSaveFileName(

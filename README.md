@@ -1,6 +1,6 @@
 # ZeroSlack
 
-Current version: `v0.3.0`
+Current version: `v0.3.1`
 
 ZeroSlack is a Qt 6 desktop environment for navigating, understanding, and
 editing SystemVerilog workspaces. It combines an incremental editor syntax
@@ -15,7 +15,8 @@ and preview-first RTL editing workflows.
 - Edit SystemVerilog with incremental highlighting, folding, structural
   navigation, formatter support, multi-cursor and column operations, split
   views, templates, and an explicit `Ctrl+Space` palette for scoped symbols,
-  templates, and application commands.
+  templates, and application commands. The palette opens at the active caret
+  and supports horizontal category switching without leaving its filter.
 - Query Slang-backed symbols, diagnostics, definitions, references,
   relationships, hierarchy, hover information, and effective compile-time
   values from the current workspace snapshot.
@@ -29,6 +30,9 @@ and preview-first RTL editing workflows.
 - Save and restore workspace-local tabs, layout, navigation filters, and scan
   state. Current sessions use local application storage; a workspace `.zs`
   file is accepted only as a legacy read-only import source.
+- Treat a clean `Ctrl+S` as a true no-op. Changed saves classify their semantic
+  impact and schedule only the required file/dependency work outside the UI
+  thread; trivia-only edits do not invoke Slang.
 
 ## Build, run, and test
 

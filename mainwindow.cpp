@@ -1527,12 +1527,11 @@ void MainWindow::setupManagerConnections()
     connect(analysisScheduler.get(),
             &AnalysisScheduler::fileSymbolAnalysisFinished,
             this,
-            [this](const QString& fileName, int) {
+            [this](const QString&, int) {
                 if (!analysisScheduler
                     || !analysisScheduler->isSemanticAnalysisActive()) {
                     refreshTemporaryEditorSemanticCatalog();
                 }
-                scheduleActiveEditorPassiveRefresh(fileName);
                 refreshEditorActionContextChip();
             });
     connect(analysisScheduler.get(),
@@ -1546,9 +1545,14 @@ void MainWindow::setupManagerConnections()
             &AnalysisScheduler::workspaceSymbolAnalysisFinished,
             this,
             [this](const ProjectSnapshot&, int, int) {
-                refreshTemporaryEditorSemanticCatalog();
+                const QVariant pending =
+                    property("pendingSemanticPublicationTelemetry");
+                const bool triviaOnly = pending.isValid()
+                    && pending.value<SemanticAnalysisTelemetry>().impact
+                           == SemanticChangeImpact::TriviaOnly;
+                if (!triviaOnly)
+                    refreshTemporaryEditorSemanticCatalog();
                 refreshDiagnosticsAnalysisState();
-                scheduleActiveEditorPassiveRefresh();
                 refreshEditorActionContextChip();
             });
     connect(analysisScheduler.get(),
@@ -2318,6 +2322,14 @@ void MainWindow::setupGlobalControl()
 {
     globalControlCoordinator =
         std::make_unique<GlobalControlCoordinator>(this, this);
+    globalControlCoordinator->setAnchorPositionProvider([this]() {
+        MyCodeEditor* editor =
+            tabManager ? tabManager->getCurrentEditor() : nullptr;
+        if (!editor || !editor->viewport())
+            return QPoint();
+        return editor->viewport()->mapToGlobal(
+            editor->cursorRect().bottomLeft());
+    });
     globalControlCoordinator->setOpenRequestHandler(
         [this]() {
             const ActionDescriptor* descriptor =

@@ -3288,6 +3288,52 @@ void runFailedAnalysisRetainsLastValidSnapshot()
                && SemanticIndex::getInstance()->snapshot() == validSnapshot);
     scheduler.shutdown();
 }
+
+void runSavedTextMatchingSnapshotSkipsAnalysis()
+{
+    QTemporaryDir directory;
+    expect("matching-save fixture directory is valid", directory.isValid());
+    if (!directory.isValid())
+        return;
+    const QString fileName =
+        directory.filePath(QStringLiteral("matching_save.sv"));
+    const QString content =
+        QStringLiteral("module matching_save; endmodule\n");
+    QFile file(fileName);
+    expect("matching-save fixture opens",
+           file.open(QIODevice::WriteOnly | QIODevice::Text));
+    if (!file.isOpen())
+        return;
+    file.write(content.toUtf8());
+    file.close();
+
+    const auto snapshot =
+        std::make_shared<const SemanticIndexSnapshot>(
+            SemanticIndexSnapshot::fromSymbolRecords(
+                {}, {}, {}, {{fileName, content}}));
+    SemanticIndex::getInstance()->installPreparedSnapshot(
+        snapshot, {fileName});
+
+    AnalysisScheduler scheduler;
+    SymbolAnalyzer analyzer;
+    DocumentModel documents;
+    scheduler.setSymbolAnalyzer(&analyzer);
+    scheduler.setDocumentModel(&documents);
+    MyCodeEditor editor;
+    editor.setPlainText(content);
+    documents.registerEditor(&editor, fileName);
+    QSignalSpy startedSpy(
+        &scheduler,
+        &AnalysisScheduler::workspaceSymbolAnalysisStarted);
+    documents.markSaved(&editor);
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
+    expect("saved text matching published snapshot schedules no worker",
+           startedSpy.isEmpty());
+    expect("matching saved text remains semantically current",
+           scheduler.semanticStatus(fileName).state
+               == DocumentSemanticState::Current);
+    scheduler.shutdown();
+}
 }
 
 int main(int argc, char** argv)
@@ -3314,6 +3360,7 @@ int main(int argc, char** argv)
     runDesignHierarchyTopologyFingerprint();
     runPreparedPublicationRetirementIsOrderedAndShutdownSafe();
     runFailedAnalysisRetainsLastValidSnapshot();
+    runSavedTextMatchingSnapshotSkipsAnalysis();
     std::printf("\n%d checks, %d failed\n", checks, failures);
     return failures == 0 ? 0 : 1;
 }

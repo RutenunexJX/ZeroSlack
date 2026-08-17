@@ -503,6 +503,17 @@ void AnalysisScheduler::onDocumentSaved(const DocumentSnapshot& snapshot)
     stamp.modifiedMs = info.lastModified().toMSecsSinceEpoch();
     stamp.recordedMs = QDateTime::currentMSecsSinceEpoch();
     selfWriteStamps.insert(normalizedFileName(snapshot.fileName), stamp);
+    const QString indexedText =
+        SemanticIndex::getInstance()->getCachedFileContent(snapshot.fileName);
+    if (!indexedText.isNull() && indexedText == snapshot.text) {
+        pendingCleanSemanticChanges.remove(
+            normalizedFileName(snapshot.fileName));
+        setDocumentSemanticState(
+            snapshot.fileName,
+            DocumentSemanticState::Current,
+            static_cast<std::uint64_t>(snapshot.textVersion));
+        return;
+    }
     rememberPendingCleanSemanticChange(
         snapshot.fileName,
         snapshot.text,
@@ -598,6 +609,10 @@ void AnalysisScheduler::onSemanticAnalysisFinished(
     const IncrementalAnalysisPlan& plan)
 {
     acknowledgePublishedCleanSemanticChanges(request);
+    if (plan.impact == SemanticChangeImpact::TriviaOnly) {
+        for (const QString& fileName : plan.affectedFiles)
+            emit documentRefreshRequested(fileName);
+    }
     auto requestedRevisionForFile = [&request, this](const QString& fileName,
                                                       bool* found) {
         if (found)

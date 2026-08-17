@@ -1,6 +1,7 @@
 #include "editorruntime.h"
 
 #include "effectivevalueservice.h"
+#include "editorgeometry.h"
 #include "insightvisualstyle.h"
 #include "mycodeeditor.h"
 #include "semanticindex.h"
@@ -9,7 +10,6 @@
 #include <QColor>
 #include <QFont>
 #include <QFontMetrics>
-#include <QFontMetricsF>
 #include <QFutureWatcher>
 #include <QHash>
 #include <QPainter>
@@ -23,7 +23,6 @@
 #include <QTextBlock>
 #include <QTextCursor>
 #include <QTextDocument>
-#include <QTextLayout>
 #include <QtConcurrent/QtConcurrentRun>
 
 #include <algorithm>
@@ -83,22 +82,7 @@ EditorAnnotationPlacement annotationPlacement(
 
 qreal annotationSpaceAdvance(const MyCodeEditor* editor)
 {
-    if (!editor)
-        return 1.0;
-    const QFontMetricsF metrics(editor->font());
-    return qMax<qreal>(
-        1.0,
-        metrics.horizontalAdvance(QLatin1Char(' ')));
-}
-
-QTextLine annotationBlockTextLine(
-    const QTextBlock& block)
-{
-    QTextLayout* layout =
-        block.isValid() ? block.layout() : nullptr;
-    if (!layout || layout->lineCount() <= 0)
-        return {};
-    return layout->lineAt(0);
+    return EditorVisualColumnGeometry::spaceAdvance(editor);
 }
 
 int annotationVisualColumnForOffset(
@@ -106,34 +90,18 @@ int annotationVisualColumnForOffset(
     const QTextBlock& block,
     int offset)
 {
-    const QTextLine line =
-        annotationBlockTextLine(block);
-    if (!line.isValid())
-        return qMax(0, offset);
-    int bounded =
-        qBound(0, offset, block.text().size());
-    int zero = 0;
-    const qreal x =
-        line.cursorToX(&bounded, QTextLine::Leading)
-        - line.cursorToX(&zero, QTextLine::Leading);
-    return qMax(
-        0,
-        qRound(x / annotationSpaceAdvance(editor)));
+    return EditorVisualColumnGeometry::visualColumnForOffset(
+        editor, block, offset);
 }
 
 int annotationXForVisualColumn(
     MyCodeEditor* editor,
     const QTextBlock& block,
-    int visualColumn)
+    int visualColumn,
+    EditorVisualBoundary boundary = EditorVisualBoundary::Start)
 {
-    if (!editor || !block.isValid())
-        return 0;
-    QTextCursor cursor(block);
-    cursor.setPosition(block.position());
-    return qRound(
-        editor->cursorRect(cursor).left()
-        + qMax(0, visualColumn)
-              * annotationSpaceAdvance(editor));
+    return EditorVisualColumnGeometry::viewportXForVisualColumn(
+        editor, block, visualColumn, boundary);
 }
 
 void paintTemplateSlotAnnotation(
@@ -277,7 +245,8 @@ void paintColumnCaretAnnotation(
         annotationXForVisualColumn(
             editor,
             block,
-            selectionRight)
+            selectionRight,
+            EditorVisualBoundary::End)
         + laneOffset;
     const int affectedLeft =
         std::min({endRect.left(),
@@ -308,7 +277,8 @@ void paintColumnCaretAnnotation(
                 annotationXForVisualColumn(
                     editor,
                     block,
-                    actualRight)
+                    actualRight,
+                    EditorVisualBoundary::End)
                 + laneOffset;
             painter.fillRect(
                 QRect(selectionLeftX,
@@ -326,7 +296,8 @@ void paintColumnCaretAnnotation(
         annotationXForVisualColumn(
             editor,
             block,
-            selectionRight)
+            selectionRight,
+            EditorVisualBoundary::End)
         + laneOffset;
     if (selectionRight > lineEndColumn) {
         QColor fill = accent;

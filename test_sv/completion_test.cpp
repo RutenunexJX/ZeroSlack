@@ -2933,6 +2933,36 @@ int main(int argc, char** argv) {
     expectBool("Formatter assignment idempotent",
                unchangedAssignmentReport.changed,
                false);
+
+    const QString formatterIndexedTernaryInput =
+        QStringLiteral("module indexed_ternary_demo;\n"
+                       "always_comb begin\n"
+                       "bar_reg[SHORT                 ] <= (!w_hs) ? bar_reg[A        ][31:0] : hold_short;\n"
+                       "long_signal <= (!w_hs) ? bar_reg[LONG_NAME][31:0] : long_signal;\n"
+                       "end\n"
+                       "endmodule\n");
+    const FormatterReport formatterIndexedTernaryReport =
+        FormatterService::getInstance()->formatDocument(
+            formatterIndexedTernaryInput);
+    expectEq("Formatter aligns indexed ternary assignments",
+             formatterIndexedTernaryReport.formattedText,
+             QStringLiteral("module indexed_ternary_demo;\n"
+                            "always_comb begin\n"
+                            "    bar_reg[SHORT] <= (!w_hs) ? bar_reg[A][31:0]         : hold_short ;\n"
+                            "    long_signal    <= (!w_hs) ? bar_reg[LONG_NAME][31:0] : long_signal;\n"
+                            "end\n"
+                            "endmodule\n"));
+    expectBool("Formatter indexed ternary token stream invariant",
+               StructuredWhitespaceFormatter::hasIdenticalNonWhitespaceStream(
+                   formatterIndexedTernaryInput,
+                   formatterIndexedTernaryReport.formattedText),
+               true);
+    expectBool("Formatter indexed ternary idempotent",
+               !FormatterService::getInstance()
+                    ->formatDocument(
+                        formatterIndexedTernaryReport.formattedText)
+                    .changed,
+               true);
     const FormatterReport indentOnlyAssignmentReport =
         FormatterService::getInstance()->formatDocument(
             formatterAssignmentInput,
@@ -5530,7 +5560,7 @@ int main(int argc, char** argv) {
     diagnosticsRefresh.requestRefresh(QStringLiteral("first.sv"));
     diagnosticsRefresh.requestRefresh(QString());
     diagnosticsRefresh.requestRefresh(QStringLiteral("second.sv"));
-    expectBool("Diagnostics refresh debounce emits coalesced request",
+    expectBool("Diagnostics refresh queue emits coalesced request",
                waitForEventPredicate(
                    [&emittedDiagnosticsRefreshes]() {
                        return !emittedDiagnosticsRefreshes.isEmpty();

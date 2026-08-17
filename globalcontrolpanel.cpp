@@ -103,19 +103,42 @@ QString GlobalControlPanel::queryText() const
 
 void GlobalControlPanel::showCentered(QWidget* anchor)
 {
+    QPoint globalAnchor;
+    if (QWidget* target = anchor ? anchor->window() : nullptr) {
+        const QRect rect = target->geometry();
+        globalAnchor = QPoint(rect.center().x(),
+                              rect.top() + qMax(80, rect.height() / 5));
+    } else if (QScreen* screen = QGuiApplication::primaryScreen()) {
+        const QRect rect = screen->availableGeometry();
+        globalAnchor = QPoint(rect.center().x(),
+                              rect.top() + qMax(80, rect.height() / 5));
+    }
+    showAt(anchor, globalAnchor);
+}
+
+void GlobalControlPanel::showAt(QWidget* anchor,
+                                const QPoint& globalAnchor)
+{
     if (searchEdit)
         searchEdit->clear();
 
     adjustSize();
-    QWidget* target = anchor ? anchor->window() : nullptr;
-    QRect rect;
-    if (target)
-        rect = target->geometry();
-    else if (QScreen* screen = QGuiApplication::primaryScreen())
-        rect = screen->availableGeometry();
-
-    const QPoint pos(rect.center().x() - width() / 2,
-                     rect.top() + qMax(80, rect.height() / 5));
+    QScreen* screen = QGuiApplication::screenAt(globalAnchor);
+    if (!screen && anchor)
+        screen = anchor->screen();
+    if (!screen)
+        screen = QGuiApplication::primaryScreen();
+    const QRect available = screen
+        ? screen->availableGeometry()
+        : QRect(globalAnchor, size());
+    const int maxX = qMax(available.left(), available.right() - width() + 1);
+    const int maxY = qMax(available.top(), available.bottom() - height() + 1);
+    const int x = qBound(available.left(), globalAnchor.x(), maxX);
+    int y = globalAnchor.y() + 8;
+    if (y + height() > available.bottom() + 1)
+        y = globalAnchor.y() - height() - 8;
+    y = qBound(available.top(), y, maxY);
+    const QPoint pos(x, y);
     move(pos);
     show();
     raise();
@@ -178,6 +201,10 @@ bool GlobalControlPanel::handleKey(QKeyEvent* event)
         moveSelection(1);
     } else if (event->key() == Qt::Key_Up) {
         moveSelection(-1);
+    } else if (event->key() == Qt::Key_Right) {
+        moveCategory(1);
+    } else if (event->key() == Qt::Key_Left) {
+        moveCategory(-1);
     } else if (event->key() == Qt::Key_Tab) {
         moveCategory(event->modifiers().testFlag(Qt::ShiftModifier) ? -1 : 1);
     } else if (event->key() == Qt::Key_Backtab) {

@@ -65,6 +65,12 @@ void GlobalControlCoordinator::setOpenRequestHandler(
     openRequestHandler = std::move(handler);
 }
 
+void GlobalControlCoordinator::setAnchorPositionProvider(
+    std::function<QPoint()> provider)
+{
+    anchorPositionProvider = std::move(provider);
+}
+
 void GlobalControlCoordinator::install()
 {
     if (installed || !qApp)
@@ -119,6 +125,9 @@ void GlobalControlCoordinator::open()
         panel->focusSearch();
         return;
     }
+    const QPoint popupAnchor = anchorPositionProvider
+        ? anchorPositionProvider()
+        : QPoint();
     currentContext = contextProvider
         ? contextProvider() : GlobalControlQueryContext();
     panel->setCategory(currentContext.editorAvailable
@@ -127,7 +136,10 @@ void GlobalControlCoordinator::open()
     if (openingHandler)
         openingHandler();
     refresh();
-    panel->showCentered(anchor);
+    if (!popupAnchor.isNull())
+        panel->showAt(anchor, popupAnchor);
+    else
+        panel->showCentered(anchor);
 }
 
 void GlobalControlCoordinator::refresh(const QString& queryText)

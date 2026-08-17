@@ -40,6 +40,10 @@ struct AssignmentAlignmentLine {
     QString left;
     QString op;
     QString right;
+    bool hasTernary = false;
+    QString ternaryCondition;
+    QString ternaryTrueExpression;
+    QString ternaryFalseExpression;
     QString trailingComment;
 };
 
@@ -717,6 +721,140 @@ int findTopLevelAssignmentOperator(const QString& text, QString* op)
     return -1;
 }
 
+QString normalizeBracketEdgeWhitespace(const QString& text)
+{
+    QString normalized;
+    normalized.reserve(text.size());
+    bool inString = false;
+    bool escaped = false;
+
+    for (int i = 0; i < text.size(); ++i) {
+        const QChar ch = text.at(i);
+        if (inString) {
+            normalized.append(ch);
+            if (escaped)
+                escaped = false;
+            else if (ch == QLatin1Char('\\'))
+                escaped = true;
+            else if (ch == QLatin1Char('"'))
+                inString = false;
+            continue;
+        }
+        if (ch == QLatin1Char('"')) {
+            inString = true;
+            normalized.append(ch);
+            continue;
+        }
+        if (ch == QLatin1Char('[')) {
+            int trailing = normalized.size();
+            while (trailing > 0
+                   && (normalized.at(trailing - 1) == QLatin1Char(' ')
+                       || normalized.at(trailing - 1) == QLatin1Char('\t'))) {
+                --trailing;
+            }
+            if (trailing > 0
+                && normalized.at(trailing - 1) == QLatin1Char(']')) {
+                normalized.truncate(trailing);
+            }
+            normalized.append(ch);
+            while (i + 1 < text.size()
+                   && (text.at(i + 1) == QLatin1Char(' ')
+                       || text.at(i + 1) == QLatin1Char('\t'))) {
+                ++i;
+            }
+            continue;
+        }
+        if (ch == QLatin1Char(']')) {
+            while (!normalized.isEmpty()
+                   && (normalized.back() == QLatin1Char(' ')
+                       || normalized.back() == QLatin1Char('\t'))) {
+                normalized.chop(1);
+            }
+        }
+        normalized.append(ch);
+    }
+    return normalized;
+}
+
+bool splitTopLevelTernary(const QString& text,
+                          QString* condition,
+                          QString* trueExpression,
+                          QString* falseExpression)
+{
+    int bracketDepth = 0;
+    int parenDepth = 0;
+    int braceDepth = 0;
+    int nestedTernaryDepth = 0;
+    int questionIndex = -1;
+    bool inString = false;
+    bool escaped = false;
+
+    for (int i = 0; i < text.size(); ++i) {
+        const QChar ch = text.at(i);
+        const QChar prev = i > 0 ? text.at(i - 1) : QChar();
+        const QChar next = i + 1 < text.size() ? text.at(i + 1) : QChar();
+        if (inString) {
+            if (escaped)
+                escaped = false;
+            else if (ch == QLatin1Char('\\'))
+                escaped = true;
+            else if (ch == QLatin1Char('"'))
+                inString = false;
+            continue;
+        }
+        if (ch == QLatin1Char('"')) {
+            inString = true;
+            continue;
+        }
+        if (ch == QLatin1Char('['))
+            ++bracketDepth;
+        else if (ch == QLatin1Char(']'))
+            bracketDepth = std::max(0, bracketDepth - 1);
+        else if (ch == QLatin1Char('('))
+            ++parenDepth;
+        else if (ch == QLatin1Char(')'))
+            parenDepth = std::max(0, parenDepth - 1);
+        else if (ch == QLatin1Char('{'))
+            ++braceDepth;
+        else if (ch == QLatin1Char('}'))
+            braceDepth = std::max(0, braceDepth - 1);
+        else if (bracketDepth == 0
+                 && parenDepth == 0
+                 && braceDepth == 0
+                 && ch == QLatin1Char('?')) {
+            if (questionIndex < 0)
+                questionIndex = i;
+            else
+                ++nestedTernaryDepth;
+        } else if (questionIndex >= 0
+                   && bracketDepth == 0
+                   && parenDepth == 0
+                   && braceDepth == 0
+                   && ch == QLatin1Char(':')
+                   && prev != QLatin1Char(':')
+                   && next != QLatin1Char(':')) {
+            if (nestedTernaryDepth > 0) {
+                --nestedTernaryDepth;
+                continue;
+            }
+            const QString left = text.left(questionIndex).trimmed();
+            const QString middle =
+                text.mid(questionIndex + 1, i - questionIndex - 1).trimmed();
+            const QString right = text.mid(i + 1).trimmed();
+            if (left.isEmpty() || middle.isEmpty() || right.isEmpty())
+                return false;
+            if (condition)
+                *condition = left;
+            if (trueExpression)
+                *trueExpression = middle;
+            if (falseExpression)
+                *falseExpression = right;
+            return true;
+        }
+    }
+    return false;
+}
+
 int continuationOperatorAnchorColumn(const QString& line)
 {
     const CodeCommentParts parts = splitTrailingLineComment(line);
@@ -1363,10 +1501,10 @@ AssignmentAlignmentLine parseAssignmentAlignmentLine(const QString& line)
     if (opIndex <= 0 || op.isEmpty())
         return parsed;
 
-    const QString left =
-        codeWithoutSemicolon.left(opIndex).trimmed();
-    const QString right =
-        codeWithoutSemicolon.mid(opIndex + op.size()).trimmed();
+    const QString left = normalizeBracketEdgeWhitespace(
+        codeWithoutSemicolon.left(opIndex).trimmed());
+    const QString right = normalizeBracketEdgeWhitespace(
+        codeWithoutSemicolon.mid(opIndex + op.size()).trimmed());
     if (left.isEmpty()
         || right.isEmpty()
         || hasTopLevelChar(left, QLatin1Char(','))
@@ -1393,20 +1531,39 @@ AssignmentAlignmentLine parseAssignmentAlignmentLine(const QString& line)
     parsed.left = left;
     parsed.op = op;
     parsed.right = right;
+    parsed.hasTernary = splitTopLevelTernary(
+        right,
+        &parsed.ternaryCondition,
+        &parsed.ternaryTrueExpression,
+        &parsed.ternaryFalseExpression);
     parsed.trailingComment = parts.trailingComment;
     return parsed;
 }
 
 QString buildAlignedAssignmentCodeLine(const AssignmentAlignmentLine& line,
                                        int maxLeftWidth,
+                                       int questionColumn,
+                                       int colonColumn,
                                        int semicolonColumn)
 {
     QString codeLine = line.indent
         + line.left
         + repeatSpaces(maxLeftWidth - line.left.size() + 1)
         + line.op
-        + QLatin1Char(' ')
-        + line.right;
+        + QLatin1Char(' ');
+    if (line.hasTernary) {
+        codeLine += line.ternaryCondition;
+        if (questionColumn > codeLine.size())
+            codeLine += repeatSpaces(questionColumn - codeLine.size());
+        codeLine += QStringLiteral(" ? ");
+        codeLine += line.ternaryTrueExpression;
+        if (colonColumn > codeLine.size())
+            codeLine += repeatSpaces(colonColumn - codeLine.size());
+        codeLine += QStringLiteral(" : ");
+        codeLine += line.ternaryFalseExpression;
+    } else {
+        codeLine += line.right;
+    }
     if (semicolonColumn > codeLine.size()) {
         codeLine += repeatSpaces(
             semicolonColumn - codeLine.size());
@@ -1429,11 +1586,43 @@ void flushAssignmentAlignmentBlock(QStringList* lines,
                      static_cast<int>(line.left.size()));
     }
 
+    int questionColumn = 0;
+    for (const AssignmentAlignmentLine& line : block) {
+        if (!line.hasTernary)
+            continue;
+        const int prefixWidth = line.indent.size()
+            + maxLeftWidth + 1
+            + line.op.size() + 1;
+        questionColumn = std::max(
+            questionColumn,
+            prefixWidth + static_cast<int>(line.ternaryCondition.size()));
+    }
+
+    int colonColumn = 0;
+    for (const AssignmentAlignmentLine& line : block) {
+        if (!line.hasTernary)
+            continue;
+        const int prefixWidth = line.indent.size()
+            + maxLeftWidth + 1
+            + line.op.size() + 1;
+        const int beforeQuestion =
+            prefixWidth + line.ternaryCondition.size();
+        const int alignedQuestion = std::max(questionColumn, beforeQuestion);
+        colonColumn = std::max(
+            colonColumn,
+            alignedQuestion + 3
+                + static_cast<int>(line.ternaryTrueExpression.size()));
+    }
+
     int semicolonColumn = 0;
     for (const AssignmentAlignmentLine& line : block) {
         const QString preliminary =
             buildAlignedAssignmentCodeLine(
-                line, maxLeftWidth, 0);
+                line,
+                maxLeftWidth,
+                questionColumn,
+                colonColumn,
+                0);
         semicolonColumn = std::max(
             semicolonColumn,
             static_cast<int>(preliminary.size()) - 1);
@@ -1448,6 +1637,8 @@ void flushAssignmentAlignmentBlock(QStringList* lines,
             buildAlignedAssignmentCodeLine(
                 line,
                 maxLeftWidth,
+                questionColumn,
+                colonColumn,
                 semicolonColumn);
         codeLines.append(codeLine);
         maxCodeLineWidth =

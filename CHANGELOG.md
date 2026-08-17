@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.3.1] - 2026-08-17
+
+### Editing geometry and save responsiveness
+
+- Anchored the `Ctrl+Space` palette to the active editor caret, clamped it to
+  the usable screen, and added in-place Left/Right category switching without
+  interrupting query filtering.
+- Unified column-mode edit, mouse, and red-caret coordinates on Qt text-layout
+  geometry so tabbed text and virtual columns resolve to the same boundary.
+- Extended whitespace-only formatting with lexical bracket-edge normalization
+  and top-level ternary alignment, with idempotence and token-preservation
+  coverage against the supplied full-file reproduction.
+- Made a clean `Ctrl+S` a true no-op and removed redundant broad refreshes from
+  changed saves. Matching semantic snapshots and trivia-only edits no longer
+  invoke unnecessary Slang work; status messages no longer mislabel an
+  incremental request as workspace-wide analysis.
+- Replaced the diagnostics idle timer with one queued event-turn coalescing
+  pass, preserving revision checks without adding save-time delay.
+
 ## [0.3.0] - 2026-08-16
 
 ### Explicit insertion and guarded synchronization
