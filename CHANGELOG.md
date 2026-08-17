@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.3.2] - 2026-08-17
+
+### Column caret and line-move reliability
+
+- Replaced accumulated pixel-width column inference with discrete document
+  insertion columns and exact `QTextCursor` pixels for real text. The final
+  half-cell now snaps to EOL, keeping a column caret selected after a semicolon
+  on the boundary after that semicolon at normal and fractional display scale.
+- Prevented operating-system key auto-repeat from repeatedly executing
+  `Alt+Up` / `Alt+Down`; each physical press moves the current logical-line
+  range at most once, while separate presses remain independent.
+- Added GUI regressions for every ASCII insertion boundary, the semicolon/EOL
+  caret, fractional scaling, and held-key repeat, while retaining the existing
+  Tab, Unicode, virtual-column, clipboard, and line-operation coverage.
+
 ## [0.3.1] - 2026-08-17
 
 ### Editing geometry and save responsiveness

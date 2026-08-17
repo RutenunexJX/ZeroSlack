@@ -1,6 +1,6 @@
 # ZeroSlack Current Plan
 
-Product version: `v0.3.1`
+Product version: `v0.3.2`
 
 ## Current status
 
@@ -19,8 +19,13 @@ Product version: `v0.3.1`
   ghost completion appends a separating space; ternary continuation alignment
   and bracket-edge whitespace normalization are covered by formatter
   regressions and a full-file idempotence probe.
-- Column-mode editing, mouse mapping, and red-caret rendering now share one Qt
-  text-layout geometry source, including tabbed text and virtual columns.
+- Column-mode editing, mouse mapping, and red-caret rendering share one
+  insertion-boundary model. ASCII and Tab columns are derived from document
+  structure, real pixels come from `QTextCursor`, and the final half-cell
+  snaps to EOL so a caret after `;` cannot render before it.
+- `Alt+Up` / `Alt+Down` consumes operating-system auto-repeat events after the
+  initial key press. A held key therefore moves the selected logical lines
+  once, while separate presses remain repeatable.
 - Synchronize Instance Connections can add missing named ports and remove
   obsolete named ports across every provable source instance in one High+Diff,
   all-or-nothing workspace transaction.

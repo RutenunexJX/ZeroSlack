@@ -1,36 +1,32 @@
 # ZeroSlack Current Goal
 
-Product version: `v0.3.1`
+Product version: `v0.3.2`
 
 ## Objective
 
-Deliver a verifiable 0.3.1 reliability patch that corrects formatter and
-column-mode geometry, keeps the explicit `Ctrl+Space` palette attached to the
-editing context, and removes avoidable synchronous and semantic work from
-`Ctrl+S`.
+Deliver a verifiable 0.3.2 editor reliability patch that keeps column-mode
+carets on the exact insertion boundary selected by the user and prevents a
+held `Alt+Up` / `Alt+Down` key from moving logical lines repeatedly.
 
 ## Completion criteria
 
-- `VERSION`, generated GUI metadata, and current documents agree on 0.3.1.
-- `Ctrl+Space` exposes Symbols, Templates, and Commands with keyboard category
-  switching, caret-relative placement, screen clamping, and context-correct
-  semantic filtering.
-- Column-mode rendering and edits resolve through the same Qt text-layout
-  geometry for tabs, proportional widths, and virtual columns.
-- Formatter output preserves non-whitespace tokens, aligns top-level ternary
-  operators, normalizes bracket-edge whitespace, and remains idempotent on the
-  supplied full-file reproduction.
-- A clean `Ctrl+S` performs no write or analysis request. Changed saves remain
-  dependency-aware, asynchronous, generation-safe, and avoid Slang when the
-  semantic snapshot already matches or the edit is trivia-only.
-- Save completion does not rebuild hierarchy or refresh every editor when the
-  classified change cannot alter those views.
-- Focused and full regression targets pass without fixture-specific rules or
-  relaxed thresholds.
+- `VERSION`, generated GUI metadata, and current documents agree on 0.3.2.
+- ASCII and Tab insertion columns are independent of accumulated font-metric
+  rounding; real-text caret pixels resolve from the exact `QTextCursor`.
+- Mouse positions in the final half-cell resolve to the real EOL boundary,
+  including fractional display scaling and the column immediately after `;`.
+- `Alt+Up` / `Alt+Down` executes once for the initial press and ignores only
+  auto-repeat key events; separate key presses still move one row each.
+- Existing real/virtual column editing, Tab, Unicode, clipboard, selection,
+  and line-operation behavior remains covered without fixture-specific rules.
 
 ## Current status
 
-Implementation and verification are complete. The configured Debug suite
-passes all 86 tests, including formatter, GUI, scheduler, large-file
-performance, workspace, semantic, RTL workflow, and policy-guard coverage. No
-test threshold was relaxed. This task does not publish or package the revision.
+Implementation and focused verification are complete. GUI regression passes
+at 1.0 and 1.25 scale factors, the independent line-operation test passes, and
+the version-documentation guard passes. The full Debug suite passes 85 of 86
+tests; the only failure is the pre-existing visible-Wave performance budget in
+`editor_incremental_test` (measured p95 8.0 ms and max 19.8 ms against 6/12 ms
+budgets). Its functional and incremental assertions pass, and this patch does
+not change the Wave path or relax its thresholds. This task does not publish or
+package the revision.

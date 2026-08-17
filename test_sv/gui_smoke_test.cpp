@@ -3696,6 +3696,84 @@ static void runEditorRegistryRenameAdapterRegression()
 
 static void runEditorColumnEditRegression()
 {
+    MyCodeEditor boundaryEditor;
+    EditorAppearance().apply(&boundaryEditor);
+    boundaryEditor.resize(900, 180);
+    const QString boundaryLine = QStringLiteral(
+        "        rx_step_len[i]        <= 'd0;");
+    boundaryEditor.setPlainText(
+        boundaryLine + QLatin1Char('\n')
+        + boundaryLine + QLatin1Char('\n'));
+    boundaryEditor.show();
+    boundaryEditor.setFocus();
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    const QTextBlock boundaryFirst =
+        boundaryEditor.document()->findBlockByNumber(0);
+    const QTextBlock boundaryLast =
+        boundaryEditor.document()->findBlockByNumber(1);
+    bool asciiBoundariesRemainExact =
+        boundaryFirst.isValid() && boundaryLast.isValid();
+    for (int offset = 0;
+         asciiBoundariesRemainExact
+         && offset <= boundaryLine.size();
+         ++offset) {
+        asciiBoundariesRemainExact =
+            EditorVisualColumnGeometry::visualColumnForOffset(
+                &boundaryEditor, boundaryFirst, offset)
+            == offset;
+    }
+    expectBool("column geometry preserves every ASCII insertion boundary",
+               asciiBoundariesRemainExact,
+               true);
+
+    QTextCursor boundaryProbe(boundaryFirst);
+    boundaryProbe.setPosition(
+        boundaryFirst.position() + boundaryLine.size());
+    const qreal boundaryEndX =
+        boundaryEditor.cursorRect(boundaryProbe).left();
+    const qreal boundaryCell =
+        EditorVisualColumnGeometry::spaceAdvance(&boundaryEditor);
+    expectBool("column mouse geometry snaps the final half-cell to EOL",
+               EditorVisualColumnGeometry::visualColumnForViewportX(
+                   &boundaryEditor,
+                   boundaryFirst,
+                   boundaryEndX - boundaryCell * 0.4)
+                   == boundaryLine.size()
+                   && EditorVisualColumnGeometry::visualColumnForViewportX(
+                          &boundaryEditor,
+                          boundaryFirst,
+                          boundaryEndX + boundaryCell * 0.4)
+                          == boundaryLine.size(),
+               true);
+
+    QTextCursor boundaryStart(boundaryFirst);
+    boundaryStart.setPosition(
+        boundaryFirst.position() + boundaryLine.size());
+    QTextCursor boundaryEnd(boundaryLast);
+    boundaryEnd.setPosition(
+        boundaryLast.position() + boundaryLine.size());
+    boundaryEditor.setTextCursor(boundaryStart);
+    QTest::mouseClick(
+        boundaryEditor.viewport(),
+        Qt::LeftButton,
+        Qt::ShiftModifier | Qt::AltModifier,
+        boundaryEditor.cursorRect(boundaryEnd).center());
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    const EditorColumnModeSnapshot boundarySnapshot =
+        boundaryEditor.state->columnMode.snapshotForTest();
+    expectBool("column caret after semicolon stays at the real EOL boundary",
+               boundarySnapshot.selectionActive
+                   && boundarySnapshot.anchorColumn
+                          == boundaryLine.size()
+                   && boundarySnapshot.currentColumn
+                          == boundaryLine.size()
+                   && EditorVisualColumnGeometry::viewportXForVisualColumn(
+                          &boundaryEditor,
+                          boundaryLast,
+                          boundarySnapshot.currentColumn)
+                          == boundaryEditor.cursorRect(boundaryEnd).left(),
+               true);
+
     MyCodeEditor editor;
     editor.resize(480, 180);
     editor.setPlainText(QStringLiteral("abc\nabc\nabc\n"));
@@ -4690,6 +4768,46 @@ static void runEditorLineActionRegression()
     QTest::keyClick(&moveEditor, Qt::Key_Down, Qt::AltModifier);
     expectBool("Alt+Down moves current logical line down",
                moveEditor.toPlainText() == QStringLiteral("aa\nbb\ncc\n"),
+               true);
+
+    MyCodeEditor heldMoveEditor;
+    heldMoveEditor.resize(480, 180);
+    heldMoveEditor.setPlainText(
+        QStringLiteral("aa\nbb\ncc\ndd\n"));
+    heldMoveEditor.show();
+    heldMoveEditor.setFocus();
+    const QTextBlock heldBlock =
+        heldMoveEditor.document()->findBlockByNumber(1);
+    QTextCursor heldCursor(heldBlock);
+    heldCursor.setPosition(heldBlock.position() + 1);
+    heldMoveEditor.setTextCursor(heldCursor);
+    QKeyEvent initialMove(
+        QEvent::KeyPress,
+        Qt::Key_Down,
+        Qt::AltModifier,
+        QString(),
+        false,
+        1);
+    QApplication::sendEvent(&heldMoveEditor, &initialMove);
+    for (int repeat = 0; repeat < 3; ++repeat) {
+        QKeyEvent repeatedMove(
+            QEvent::KeyPress,
+            Qt::Key_Down,
+            Qt::AltModifier,
+            QString(),
+            true,
+            repeat + 2);
+        QApplication::sendEvent(&heldMoveEditor, &repeatedMove);
+    }
+    QKeyEvent releaseMove(
+        QEvent::KeyRelease,
+        Qt::Key_Down,
+        Qt::AltModifier);
+    QApplication::sendEvent(&heldMoveEditor, &releaseMove);
+    expectBool("held Alt+Down moves the logical line only once",
+               heldMoveEditor.toPlainText()
+                   == QStringLiteral("aa\ncc\nbb\ndd\n")
+                   && heldMoveEditor.textCursor().blockNumber() == 2,
                true);
 
     MyCodeEditor touchedSelectionEditor;

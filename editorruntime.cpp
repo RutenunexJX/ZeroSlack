@@ -2578,6 +2578,10 @@ bool MyCodeEditorState::handleKeyPress(MyCodeEditor* editor, QKeyEvent* event)
             ActionIds::EditMoveLinesDown);
     }
     if (!moveLinesActionId.isEmpty()) {
+        if (event->isAutoRepeat()) {
+            event->accept();
+            return true;
+        }
         if (!requestRegisteredEditorAction(
                 editor, moveLinesActionId)) {
             executeLineOperation(

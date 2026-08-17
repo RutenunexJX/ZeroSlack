@@ -4,6 +4,16 @@ This file is a running checklist for problems to fix and new features to conside
 
 ## Issues
 
+### Completed in v0.3.2
+
+- [x] A column-mode caret selected immediately after a semicolon could render
+  one character earlier. Text columns now use discrete insertion boundaries,
+  real positions use exact `QTextCursor` geometry, and the final half-cell
+  snaps to EOL at normal and fractional display scaling.
+- [x] Holding `Alt+Up` or `Alt+Down` could feed repeated move actions and make
+  the current logical line continue moving. Auto-repeat events are consumed
+  after the initial action; separate physical presses still move one row.
+
 ### Completed in v0.3.1
 
 - [x] Formatter alignment remains incorrect in multiple constructs in the

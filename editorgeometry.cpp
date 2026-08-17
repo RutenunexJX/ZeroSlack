@@ -91,16 +91,8 @@ int EditorVisualColumnGeometry::visualColumnForOffset(
     const QTextBlock& block,
     int offset)
 {
-    const QTextLine line = firstTextLine(block);
-    if (!line.isValid()) {
-        return plainVisualColumnForOffset(
-            block.text(), offset, tabStopColumns(editor));
-    }
-    int bounded = qBound(0, offset, block.text().size());
-    int zero = 0;
-    const qreal x = line.cursorToX(&bounded, QTextLine::Leading)
-        - line.cursorToX(&zero, QTextLine::Leading);
-    return qMax(0, qRound(x / spaceAdvance(editor)));
+    return plainVisualColumnForOffset(
+        block.text(), offset, tabStopColumns(editor));
 }
 
 int EditorVisualColumnGeometry::offsetForVisualColumn(
@@ -109,29 +101,8 @@ int EditorVisualColumnGeometry::offsetForVisualColumn(
     int visualColumn,
     EditorVisualBoundary boundary)
 {
-    const QTextLine line = firstTextLine(block);
-    if (!line.isValid()) {
-        return plainOffsetForVisualColumn(
-            block.text(), visualColumn, tabStopColumns(editor), boundary);
-    }
-    int zero = 0;
-    const qreal zeroX = line.cursorToX(&zero, QTextLine::Leading);
-    const qreal targetX = zeroX
-        + qMax(0, visualColumn) * spaceAdvance(editor);
-    int offset = qBound(
-        0,
-        line.xToCursor(targetX, QTextLine::CursorBetweenCharacters),
-        block.text().size());
-    int probe = offset;
-    const qreal offsetX = line.cursorToX(&probe, QTextLine::Leading);
-    if (boundary == EditorVisualBoundary::Start
-        && offsetX > targetX && offset > 0) {
-        --offset;
-    } else if (boundary == EditorVisualBoundary::End
-               && offsetX < targetX && offset < block.text().size()) {
-        ++offset;
-    }
-    return qBound(0, offset, block.text().size());
+    return plainOffsetForVisualColumn(
+        block.text(), visualColumn, tabStopColumns(editor), boundary);
 }
 
 int EditorVisualColumnGeometry::viewportXForVisualColumn(
@@ -170,11 +141,12 @@ int EditorVisualColumnGeometry::visualColumnForViewportX(
     end.setPosition(block.position() + block.text().size());
     const qreal startX = editor->cursorRect(start).left();
     const qreal endX = editor->cursorRect(end).left();
+    const qreal cellWidth = spaceAdvance(editor);
     const int endVisual = visualColumnForOffset(
         editor, block, block.text().size());
-    if (viewportX > endX) {
+    if (viewportX >= endX - cellWidth * 0.5) {
         return endVisual
-            + qMax(0, qRound((viewportX - endX) / spaceAdvance(editor)));
+            + qMax(0, qRound((viewportX - endX) / cellWidth));
     }
     const QTextLine line = firstTextLine(block);
     if (!line.isValid())
