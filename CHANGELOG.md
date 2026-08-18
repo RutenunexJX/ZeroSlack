@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.4.3] - 2026-08-18
+
+### Whole-line mouse selection
+
+- Added triple-click selection for a complete logical line while preserving
+  double-click symbol highlighting and higher-priority column, multi-cursor,
+  folding, and signal-selection gestures.
+- Included a line break in the selection when present and handled the final
+  line correctly when the document has no trailing newline.
+
 ## [0.4.2] - 2026-08-18
 
 ### Editing commands and desktop identity

@@ -4,6 +4,12 @@ This file is a running checklist for problems to fix and new features to conside
 
 ## Issues
 
+### Completed in v0.4.3
+
+- [x] Triple-clicking now selects the complete logical line, including the line
+  break when present, while preserving existing double-click symbol
+  highlighting and mode-specific mouse gestures.
+
 ### Completed in v0.4.2
 
 - [x] Enter in the compact `Ctrl+R` rename popup now prepares and applies the

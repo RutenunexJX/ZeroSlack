@@ -37,6 +37,7 @@
 #include <cstdint>
 #include <atomic>
 #include <memory>
+#include <QElapsedTimer>
 #include <QMetaObject>
 #include <QPoint>
 #include <QPointer>
@@ -264,6 +265,9 @@ struct MyCodeEditorState
     int lineBoundarySelectionAnchor = -1;
     int lineBoundarySelectionDirection = 0;
     bool lineBoundarySelectionAtPhysicalEdge = false;
+    QElapsedTimer tripleClickTimer;
+    QPoint tripleClickPosition;
+    bool tripleClickArmed = false;
     QList<int> multiLineBoundarySelectionAnchors;
     int multiLineBoundarySelectionDirection = 0;
 

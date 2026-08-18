@@ -7,6 +7,7 @@
 #include "sourcenavigationservice.h"
 #include "tsdocument.h"
 
+#include <QApplication>
 #include <QCheckBox>
 #include <QDialog>
 #include <QDragEnterEvent>
@@ -2003,8 +2004,38 @@ void MyCodeEditor::mousePressEvent(QMouseEvent *event)
         return;
     }
 
+    const bool tripleClick = event->button() == Qt::LeftButton
+        && event->modifiers() == Qt::NoModifier
+        && state->tripleClickArmed
+        && state->tripleClickTimer.isValid()
+        && state->tripleClickTimer.elapsed()
+               <= QApplication::doubleClickInterval()
+        && (event->position().toPoint() - state->tripleClickPosition)
+                   .manhattanLength()
+               <= QApplication::startDragDistance();
+    state->tripleClickArmed = false;
+
     if (state->handleMousePress(this, event))
         return;
+
+    if (tripleClick) {
+        setFocus(Qt::MouseFocusReason);
+        const QTextBlock block =
+            cursorForPosition(event->position().toPoint()).block();
+        if (block.isValid()) {
+            QTextCursor lineCursor(document());
+            lineCursor.setPosition(block.position());
+            const QTextBlock nextBlock = block.next();
+            const int lineEnd = nextBlock.isValid()
+                ? nextBlock.position()
+                : qMax(block.position(), document()->characterCount() - 1);
+            lineCursor.setPosition(lineEnd, QTextCursor::KeepAnchor);
+            QPlainTextEdit::setTextCursor(lineCursor);
+        }
+        viewport()->update();
+        event->accept();
+        return;
+    }
 
     state->projection.ensure(this, state->folding.collapsedLineRanges());
     if (state->projection.active()
@@ -2027,6 +2058,14 @@ void MyCodeEditor::mousePressEvent(QMouseEvent *event)
 
 void MyCodeEditor::mouseDoubleClickEvent(QMouseEvent *event)
 {
+    if (event && event->button() == Qt::LeftButton) {
+        state->tripleClickPosition = event->position().toPoint();
+        state->tripleClickTimer.restart();
+        state->tripleClickArmed = event->modifiers() == Qt::NoModifier;
+    } else {
+        state->tripleClickArmed = false;
+    }
+
     if (state->handleMouseDoubleClick(this, event))
         return;
 
@@ -2049,6 +2088,7 @@ void MyCodeEditor::mouseDoubleClickEvent(QMouseEvent *event)
 
 void MyCodeEditor::focusOutEvent(QFocusEvent* event)
 {
+    state->tripleClickArmed = false;
     state->clearPendingColumnAnchor();
     QPlainTextEdit::focusOutEvent(event);
 }

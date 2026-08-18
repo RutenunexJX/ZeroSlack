@@ -769,7 +769,7 @@ int main(int argc, char* argv[])
             QStringLiteral("module m;\n"
                            "logic sig;\n"
                            "assign sig = sig;\n"
-                           "endmodule\n");
+                           "endmodule");
         editor.setPlainText(source);
         editor.show();
         editor.setFocus();
@@ -790,6 +790,21 @@ int main(int argc, char* argv[])
                           signalPoint);
         expect("double click activates same-name signal occurrence highlighting",
                selectedTextCount(editor, QStringLiteral("sig")) >= 3);
+        QTest::mouseClick(editor.viewport(),
+                          Qt::LeftButton,
+                          Qt::NoModifier,
+                          signalPoint);
+        const QTextBlock signalBlock =
+            editor.document()->findBlock(firstSignal);
+        const QTextCursor lineSelection = editor.textCursor();
+        expect("triple click selects the complete logical line",
+               lineSelection.selectionStart() == signalBlock.position()
+                   && lineSelection.selectionEnd()
+                          == signalBlock.next().position()
+                   && lineSelection.selectedText()
+                          == QStringLiteral("logic sig;\u2029"));
+        expect("triple click clears same-name signal occurrence highlighting",
+               selectedTextCount(editor, QStringLiteral("sig")) == 0);
         const QTextBlock moduleBlock = editor.document()->firstBlock();
         QTextCursor moduleCursor(moduleBlock);
         moduleCursor.setPosition(moduleBlock.position());
@@ -800,6 +815,25 @@ int main(int argc, char* argv[])
                           modulePoint);
         expect("the next single click clears same-name signal highlighting",
                selectedTextCount(editor, QStringLiteral("sig")) == 0);
+
+        const int finalLineStart = source.indexOf(QStringLiteral("endmodule"));
+        setCursor(editor, finalLineStart);
+        const QPoint finalLinePoint = editor.cursorRect().center();
+        QTest::mouseDClick(editor.viewport(),
+                          Qt::LeftButton,
+                          Qt::NoModifier,
+                          finalLinePoint);
+        QTest::mouseClick(editor.viewport(),
+                          Qt::LeftButton,
+                          Qt::NoModifier,
+                          finalLinePoint);
+        const QTextCursor finalLineSelection = editor.textCursor();
+        expect("triple click selects a final line without a trailing newline",
+               finalLineSelection.selectionStart() == finalLineStart
+                   && finalLineSelection.selectionEnd()
+                          == editor.document()->characterCount() - 1
+                   && finalLineSelection.selectedText()
+                          == QStringLiteral("endmodule"));
     }
 
     {
