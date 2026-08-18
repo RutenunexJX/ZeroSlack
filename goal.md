@@ -1,30 +1,33 @@
 # ZeroSlack Current Goal
 
-Product version: `v0.5.0`
+Product version: `v0.6.0`
 
 ## Objective
 
-Complete Wave Simulation slice S10 by making the existing external simulation
-pipeline directly usable from normal ZeroSlack editing and Design workflows.
+Complete Wave Simulation slice S11 by embedding the full WaveWorkbench result
+workspace in a first-class ZeroSlack editor-area Wave tab while retaining the
+standalone application.
 
 ## Completion criteria
 
-- `VERSION`, generated GUI metadata, and current documents agree on 0.5.0.
-- Current module, selected `always`, selected signal, and exact Design instance
-  entries preserve their semantic context through preparation and execution.
-- Unsaved buffers are compiled as one coherent workspace snapshot.
-- Module Manifest v2 remains portable and WaveWorkbench retains v1 import
-  compatibility.
-- Build/run failures carry source file, line, and column back to ZeroSlack.
+- `VERSION`, generated GUI metadata, and current documents agree on 0.6.0.
+- `wavewidgets` provides a versioned runtime factory for the complete simulation
+  workspace; ZeroSlack validates its ABI and workspace contract before hosting.
+- The embedded and standalone forms consume the same project, stimulus canvas,
+  trace canvas, timeline mapping, and scenario/result semantics.
+- Wave results use generic tool-tab activation and close behavior without
+  contaminating source-editor document queries.
+- The portable WaveWorkbench component contains the application, shared widget
+  library, CLI tools, contracts, schemas, and examples.
 - Both repositories pass their complete configured suites without relaxed
   assertions.
 
 ## Current status
 
-Implementation and verification are complete. ZeroSlack passes 89/89 tests and
-WaveWorkbench passes 88/88 tests. Formal entries, selected-`always` observation
-scope, explicit source observations, exact instance targeting, scenario/cache
-reuse, and structured source diagnostics are covered. This machine does not
-have a real Verilator installation, so the external process path is verified
-with the deterministic runner fixture rather than represented as a real RTL
-compile. Shared-widget embedding remains S11 and is not part of this goal.
+Implementation and verification are complete. ZeroSlack passes 90/90 tests and
+WaveWorkbench passes 90/90 tests. A real cross-repository runtime check loads
+`wavewidgets` dynamically, opens the handshake result project, verifies both
+shared canvases, hosts the workspace in a generic tool tab, and captures the
+embedded interface. This machine does not have a real Verilator installation,
+so the external compile/run path remains verified with deterministic process
+fixtures rather than represented as a real RTL compile.

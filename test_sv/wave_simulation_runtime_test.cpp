@@ -3,13 +3,11 @@
 
 #include <QCoreApplication>
 #include <QDir>
-#include <QElapsedTimer>
 #include <QEventLoop>
 #include <QFile>
 #include <QFileInfo>
 #include <QSaveFile>
 #include <QTemporaryDir>
-#include <QThread>
 #include <QTimer>
 
 #include <iostream>
@@ -143,6 +141,17 @@ bool installFakeTool(const QString& directory,
         QCoreApplication::applicationFilePath(), destination);
 }
 
+QString widgetLibraryFileName()
+{
+#ifdef Q_OS_WIN
+    return QStringLiteral("wavewidgets.dll");
+#elif defined(Q_OS_MACOS)
+    return QStringLiteral("libwavewidgets.dylib");
+#else
+    return QStringLiteral("libwavewidgets.so");
+#endif
+}
+
 WaveSimulationPreparationRequest fixtureRequest(
     const QString& root,
     const QString& sourcePath,
@@ -216,7 +225,11 @@ int main(int argc, char** argv)
     QDir().mkpath(toolsDirectory);
     check(installFakeTool(toolsDirectory, QStringLiteral("wave-bridge"))
               && installFakeTool(toolsDirectory, QStringLiteral("wave-sim-runner"))
-              && installFakeTool(toolsDirectory, QStringLiteral("wave-workbench")),
+              && installFakeTool(toolsDirectory, QStringLiteral("wave-workbench"))
+              && writeFile(
+                  QDir(toolsDirectory).absoluteFilePath(
+                      widgetLibraryFileName()),
+                  QByteArrayLiteral("fixture")),
           "independent process fixtures are installed");
     const QByteArray oldPath = qgetenv("PATH");
     qputenv("PATH",
@@ -233,6 +246,8 @@ int main(int argc, char** argv)
         toolFileName(QStringLiteral("wave-sim-runner")));
     run.tools.application = QDir(toolsDirectory).absoluteFilePath(
         toolFileName(QStringLiteral("wave-workbench")));
+    run.tools.widgetLibrary = QDir(toolsDirectory).absoluteFilePath(
+        widgetLibraryFileName());
 
     WaveSimulationCoordinator coordinator;
     QEventLoop loop;
@@ -241,6 +256,20 @@ int main(int argc, char** argv)
     QString resultProject;
     QString lastStageMessage;
     WaveSimulationStage lastStage = WaveSimulationStage::Idle;
+    bool resultPublished = false;
+    QString publishedResultProject;
+    QString publishedWidgetLibrary;
+    QObject::connect(
+        &coordinator,
+        &WaveSimulationCoordinator::resultReady,
+        &loop,
+        [&](const QString& projectPath,
+            const QString& widgetLibrary,
+            const QString&) {
+            resultPublished = true;
+            publishedResultProject = projectPath;
+            publishedWidgetLibrary = widgetLibrary;
+        });
     QObject::connect(
         &coordinator,
         &WaveSimulationCoordinator::stageChanged,
@@ -320,16 +349,10 @@ int main(int argc, char** argv)
               && !mirroredText.contains("assign q = clk"),
           "source mirror uses unsaved editor text instead of stale disk text");
 
-    const QString marker = QDir(QFileInfo(resultProject).absolutePath())
-        .absoluteFilePath(QStringLiteral("opened.marker"));
-    QElapsedTimer markerWait;
-    markerWait.start();
-    while (!QFileInfo::exists(marker) && markerWait.elapsed() < 5000) {
-        QCoreApplication::processEvents();
-        QThread::msleep(10);
-    }
-    check(QFileInfo::exists(marker),
-          "the completed result opens in an independent WaveWorkbench process");
+    check(resultPublished
+              && publishedResultProject == resultProject
+              && publishedWidgetLibrary == run.tools.widgetLibrary,
+          "the completed result is published to the embedded Wave tab host");
 
     const QString scenarioDirectory = scenarioTargets.isEmpty()
         ? QString()

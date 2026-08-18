@@ -65,6 +65,9 @@ signals:
                       const QString& message);
     void diagnosticAvailable(
         const WaveSimulationDiagnostic& diagnostic);
+    void resultReady(const QString& resultProjectPath,
+                     const QString& widgetLibraryPath,
+                     const QString& applicationPath);
     void finished(bool success,
                   const QString& resultProjectPath,
                   const QString& message);

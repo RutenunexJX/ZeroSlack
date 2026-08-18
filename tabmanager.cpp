@@ -306,12 +306,7 @@ TabManager::TabManager(QTabWidget* initialTabWidget, QObject* parent)
             &EditorSplitController::tabCloseRequested,
             this,
             [this](QTabWidget* group, int index) {
-                MyCodeEditor* editor =
-                    group
-                    ? qobject_cast<MyCodeEditor*>(
-                          group->widget(index))
-                    : nullptr;
-                closeEditor(editor);
+                closePage(group, index);
             });
     connect(splitController.get(),
             &EditorSplitController::tabActionRequested,
@@ -930,8 +925,7 @@ void TabManager::closeTab(int index)
     QTabWidget* group = activeTabWidget();
     if (!group || index < 0 || index >= group->count())
         return;
-    closeEditor(
-        qobject_cast<MyCodeEditor*>(group->widget(index)));
+    closePage(group, index);
 }
 
 void TabManager::enableSplitLayout(QWidget* host)
@@ -1490,6 +1484,73 @@ bool TabManager::activateOpenFile(const QString& fileName)
         }
     }
     return false;
+}
+
+QWidget* TabManager::toolPage(const QString& stableId) const
+{
+    if (!splitController || stableId.trimmed().isEmpty())
+        return nullptr;
+    for (QTabWidget* group : splitController->groups()) {
+        if (!group)
+            continue;
+        for (int index = 0; index < group->count(); ++index) {
+            QWidget* page = group->widget(index);
+            if (page
+                && page->property("toolPageId").toString()
+                    == stableId) {
+                return page;
+            }
+        }
+    }
+    return nullptr;
+}
+
+QWidget* TabManager::openToolPage(QWidget* page,
+                                  const QString& stableId,
+                                  const QString& title)
+{
+    if (!page || stableId.trimmed().isEmpty()
+        || !splitController) {
+        return nullptr;
+    }
+    if (QWidget* existing = toolPage(stableId)) {
+        if (existing != page)
+            page->deleteLater();
+        QTabWidget* group = splitController->groupForPage(existing);
+        if (group) {
+            splitController->setActiveGroup(group);
+            group->setCurrentWidget(existing);
+        }
+        return existing;
+    }
+
+    QTabWidget* group = activeTabWidget();
+    if (!group)
+        group = splitController->initialGroup();
+    if (!group)
+        return nullptr;
+    page->setProperty("toolPage", true);
+    page->setProperty("toolPageId", stableId);
+    page->setParent(group);
+    const int index = group->addTab(page, title);
+    group->setTabToolTip(index, title);
+    splitController->setActiveGroup(group);
+    group->setCurrentIndex(index);
+    emit workspaceSessionStateChanged();
+    return page;
+}
+
+bool TabManager::activateToolPage(const QString& stableId)
+{
+    QWidget* page = toolPage(stableId);
+    if (!page || !splitController)
+        return false;
+    QTabWidget* group = splitController->groupForPage(page);
+    if (!group)
+        return false;
+    splitController->setActiveGroup(group);
+    group->setCurrentWidget(page);
+    return true;
 }
 
 QString TabManager::getPlainTextFromCurrentTab() const
@@ -2537,6 +2598,27 @@ bool TabManager::closeEditor(
     applyWorkspaceScope();
     updateAllTabTitles();
     emit tabClosed(fileName);
+    emit workspaceSessionStateChanged();
+    return true;
+}
+
+bool TabManager::closePage(QTabWidget* group, const int index)
+{
+    if (!group || index < 0 || index >= group->count())
+        return false;
+    QWidget* page = group->widget(index);
+    if (auto* editor = qobject_cast<MyCodeEditor*>(page))
+        return closeEditor(editor);
+    if (!page || !page->property("toolPage").toBool())
+        return false;
+
+    const QString stableId = page->property("toolPageId").toString();
+    if (!page->close())
+        return false;
+    group->removeTab(index);
+    page->deleteLater();
+    splitController->removeEmptyGroups();
+    emit toolPageClosed(stableId);
     emit workspaceSessionStateChanged();
     return true;
 }

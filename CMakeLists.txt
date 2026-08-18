@@ -340,6 +340,7 @@ set(ZEROSLACK_CORE_SOURCES
     graphexportservice.cpp
     wavesimulationconfiguration.cpp
     wavesimulationcoordinator.cpp
+    waveembeddedworkspaceloader.cpp
     wavesimulationmodulemanifest.cpp
     wavesimulationmanifestservice.cpp
     wavesimulationpreparationservice.cpp
@@ -977,6 +978,20 @@ if(BUILD_TESTING)
     target_link_libraries(wave_simulation_runtime_test
         PRIVATE zeroslack_core Qt6::Core)
 
+    add_library(wavewidgets_fixture SHARED
+        test_sv/wavewidgets_fixture.cpp)
+    target_link_libraries(wavewidgets_fixture
+        PRIVATE Qt6::Core Qt6::Gui Qt6::Widgets)
+    set_target_properties(wavewidgets_fixture PROPERTIES
+        PREFIX "")
+
+    add_executable(wave_embedded_workspace_test
+        test_sv/wave_embedded_workspace_test.cpp)
+    target_link_libraries(wave_embedded_workspace_test
+        PRIVATE zeroslack_core Qt6::Widgets)
+    add_dependencies(wave_embedded_workspace_test
+        wavewidgets_fixture)
+
     add_executable(unified_peek_container_test
         test_sv/unified_peek_container_test.cpp)
     target_link_libraries(unified_peek_container_test
@@ -1455,6 +1470,14 @@ if(BUILD_TESTING)
             "PATH=${ZEROSLACK_TEST_PATH}"
             "ZEROSLACK_SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}"
             $<TARGET_FILE:wave_simulation_runtime_test>
+    )
+    add_test(NAME wave_embedded_workspace_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}"
+            "QT_QPA_PLATFORM=offscreen"
+            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
+            $<TARGET_FILE:wave_embedded_workspace_test>
+            $<TARGET_FILE:wavewidgets_fixture>
     )
     add_test(NAME unified_peek_container_test
         COMMAND ${CMAKE_COMMAND} -E env

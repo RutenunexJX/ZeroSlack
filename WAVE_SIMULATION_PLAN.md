@@ -661,7 +661,7 @@ S10 实际结果：
 
 ### S11：共享控件嵌入
 
-状态：`pending`
+状态：`completed`（2026-08-19）
 
 范围：
 
@@ -671,6 +671,22 @@ S10 实际结果：
 - 保留 WaveWorkbench 独立应用。
 
 验收：嵌入前后使用相同场景和结果契约，仿真语义不变化。
+
+S11 实际结果：
+
+- WaveWorkbench 新增 `wavewidgets` 共享库和版本化 C ABI 工厂；独立应用改为链接同一
+  `MainWindow`、`StimulusCanvas` 与 `TraceCanvas` 实现，没有复制第二套界面。
+- trace 实现归入独立 `wavetrace` target，旧 `waveimport` 保留为兼容 target；刺激与
+  结果画布的 tick/pixel 换算收敛到无 Widgets 依赖的公共 `TimelineViewport`。
+- ZeroSlack 通过运行时 ABI 与 workspace contract 校验加载结果，并由通用非编辑器
+  tool tab 承载；正常路径不再启动独立进程，加载失败页才提供显式外部打开操作。
+- 便携安装同时包含独立应用、`wavewidgets`、CLI、Schema、文档与示例；独立应用不是
+  ZeroSlack 正常嵌入路径的硬依赖。
+- ZeroSlack Debug CTest `90/90`、WaveWorkbench CTest `90/90` 通过。真实跨仓运行测试
+  动态加载共享库、打开 handshake 工程并确认两个共享画布存在；本机仍未安装真实
+  Verilator，RTL 编译/运行链继续由确定性 fixture 验证。
+
+下一最小切片：S12 的内部信号层级浏览，其他增强项继续独立排期。
 
 ### S12：独立增强项
 

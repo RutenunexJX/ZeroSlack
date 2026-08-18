@@ -130,6 +130,11 @@ public:
     DocumentSnapshot getCurrentDocumentMetadata() const;
     DocumentSnapshot getDocumentForEditor(MyCodeEditor* editor) const;
     bool activateOpenFile(const QString& fileName);
+    QWidget* toolPage(const QString& stableId) const;
+    QWidget* openToolPage(QWidget* page,
+                          const QString& stableId,
+                          const QString& title);
+    bool activateToolPage(const QString& stableId);
     QString getPlainTextFromCurrentTab() const;
     QString getPlainTextFromOpenFile(const QString& fileName) const;
     QStringList getAllOpenFileNames() const;
@@ -215,6 +220,7 @@ signals:
     void tabGroupCreated(QTabWidget* group);
     void splitLayoutChanged();
     void workspaceSessionStateChanged();
+    void toolPageClosed(const QString& stableId);
 
 private slots:
     void onTabCloseRequested(int index);
@@ -323,6 +329,7 @@ private:
     bool closeEditor(MyCodeEditor* editor,
                      bool confirmUnsaved = true,
                      bool remember = true);
+    bool closePage(QTabWidget* group, int index);
     void observeDocument(SharedDocument* document);
     void updateTitlesForDocument(SharedDocument* document);
     void updateAllTabTitles();

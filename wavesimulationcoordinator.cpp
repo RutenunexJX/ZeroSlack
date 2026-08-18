@@ -280,21 +280,14 @@ void WaveSimulationCoordinator::startNextStage()
 void WaveSimulationCoordinator::openResultWindow()
 {
     setStage(WaveSimulationStage::OpeningResult,
-             QStringLiteral("Opening the simulation result in WaveWorkbench..."));
-    qint64 processId = 0;
-    if (!QProcess::startDetached(
-            currentRequest.tools.application,
-            {QStringLiteral("--load-first-trace"),
-             prepared.resultProjectPath},
-            prepared.resultRoot,
-            &processId)) {
-        fail(QStringLiteral("Cannot open the WaveWorkbench result window."));
-        return;
-    }
+             QStringLiteral("Opening the simulation result in a Wave tab..."));
+    emit resultReady(prepared.resultProjectPath,
+                     currentRequest.tools.widgetLibrary,
+                     currentRequest.tools.application);
     active = false;
     cancellation.reset();
     setStage(WaveSimulationStage::Complete,
-             QStringLiteral("Wave Simulation result opened in WaveWorkbench."));
+             QStringLiteral("Wave Simulation result is ready."));
     emit finished(true,
                   prepared.resultProjectPath,
                   QStringLiteral("Wave Simulation completed."));

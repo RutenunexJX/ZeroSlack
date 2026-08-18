@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.6.0] - 2026-08-19
+
+### Embedded Wave Simulation workspace
+
+- Added a versioned `wavewidgets` runtime contract and embedded the complete
+  WaveWorkbench simulation workspace in an editor-area Wave tab.
+- Added generic non-editor tool tabs with stable identity, activation, split
+  ownership, close lifecycle, and source-editor query isolation.
+- Replaced automatic standalone result launch with embedded result publication;
+  the standalone application is retained as an explicit load-failure fallback.
+- Extracted a shared timeline viewport and a dedicated trace library so the
+  standalone and embedded forms use the same stimulus and result canvases.
+- Extended runtime, ABI, real-library integration, portable-install, and GUI
+  coverage; both repositories pass their complete 90-test suites.
+
 ## [0.5.0] - 2026-08-19
 
 ### Formal Wave Simulation integration

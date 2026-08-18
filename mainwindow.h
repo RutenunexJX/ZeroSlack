@@ -49,6 +49,7 @@ class TemporaryEditorSearchProvider;
 class ScopedReplaceWorkflow;
 class WorkspaceEditDocumentManager;
 class WaveSimulationCoordinator;
+class WaveEmbeddedWorkspaceLoader;
 class QAction;
 class QDialog;
 class QDockWidget;
@@ -154,6 +155,8 @@ private:
         scopedReplaceDocuments;
     std::unique_ptr<WaveSimulationCoordinator>
         waveSimulationCoordinator;
+    std::unique_ptr<WaveEmbeddedWorkspaceLoader>
+        waveEmbeddedWorkspaceLoader;
     std::unique_ptr<ScopedReplaceWorkflow>
         scopedReplaceWorkflow;
     std::unique_ptr<SettingsCenterService> settingsCenterService;
@@ -250,6 +253,10 @@ private:
     void closeActiveWorkspace();
     void setupToolsMenu();
     void setupWaveSimulation();
+    void openWaveSimulationResultTab(
+        const QString& resultProjectPath,
+        const QString& widgetLibraryPath,
+        const QString& applicationPath);
     bool startWaveSimulation(
         const QString& targetFile,
         const QString& moduleName,

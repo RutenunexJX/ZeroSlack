@@ -65,6 +65,7 @@
 #include "wavepreviewpanelcoordinator.h"
 #include "wavesimulationconfiguration.h"
 #include "wavesimulationcoordinator.h"
+#include "waveembeddedworkspaceloader.h"
 #include "workspaceconfigurationdialog.h"
 #include "workspaceeditdocumentmanager.h"
 #include "workspacesessioncoordinator.h"
@@ -87,6 +88,7 @@
 #include <QVariant>
 #include <QFile>
 #include <QFileInfo>
+#include <QFont>
 #include <QFutureWatcher>
 #include <QGroupBox>
 #include <QHeaderView>
@@ -101,6 +103,7 @@
 #include <QMenu>
 #include <QMenuBar>
 #include <QProgressBar>
+#include <QProcess>
 #include <QPointer>
 #include <QPushButton>
 #include <QMessageBox>
@@ -108,6 +111,7 @@
 #include <QSignalBlocker>
 #include <QShortcut>
 #include <QSize>
+#include <QSizePolicy>
 #include <QSplitter>
 #include <QStatusBar>
 #include <QStackedWidget>
@@ -3440,6 +3444,8 @@ void MainWindow::setupToolsMenu()
 
 void MainWindow::setupWaveSimulation()
 {
+    waveEmbeddedWorkspaceLoader =
+        std::make_unique<WaveEmbeddedWorkspaceLoader>();
     waveSimulationCoordinator =
         std::make_unique<WaveSimulationCoordinator>(this);
     connect(waveSimulationCoordinator.get(),
@@ -3449,6 +3455,10 @@ void MainWindow::setupWaveSimulation()
                 if (statusBar() && !message.isEmpty())
                     statusBar()->showMessage(message);
             });
+    connect(waveSimulationCoordinator.get(),
+            &WaveSimulationCoordinator::resultReady,
+            this,
+            &MainWindow::openWaveSimulationResultTab);
     connect(waveSimulationCoordinator.get(),
             &WaveSimulationCoordinator::finished,
             this,
@@ -3505,6 +3515,88 @@ void MainWindow::setupWaveSimulation()
                 waveSimulationNotificationLocations.insert(
                     posted.id, location);
             });
+}
+
+void MainWindow::openWaveSimulationResultTab(
+    const QString& resultProjectPath,
+    const QString& widgetLibraryPath,
+    const QString& applicationPath)
+{
+    if (!tabManager || !waveEmbeddedWorkspaceLoader)
+        return;
+    const QString absoluteProject =
+        QFileInfo(resultProjectPath).absoluteFilePath();
+    const QString stableId =
+        QStringLiteral("wave-result:%1")
+            .arg(QDir::cleanPath(absoluteProject));
+    if (tabManager->activateToolPage(stableId))
+        return;
+
+    QString failureReason;
+    QWidget* workspace =
+        waveEmbeddedWorkspaceLoader->createWorkspace(
+            widgetLibraryPath,
+            absoluteProject,
+            nullptr,
+            &failureReason);
+    const QString title = QStringLiteral("Wave: %1")
+        .arg(QFileInfo(absoluteProject).completeBaseName());
+    if (workspace) {
+        workspace->setObjectName(
+            QStringLiteral("EmbeddedWaveSimulationWorkspace"));
+        workspace->setSizePolicy(
+            QSizePolicy::Expanding,
+            QSizePolicy::Expanding);
+        tabManager->openToolPage(workspace, stableId, title);
+        if (statusBar()) {
+            statusBar()->showMessage(
+                QStringLiteral("Wave Simulation opened in an editor tab."),
+                5000);
+        }
+        return;
+    }
+
+    auto* fallback = new QWidget;
+    fallback->setObjectName(
+        QStringLiteral("WaveSimulationLoadFailurePage"));
+    auto* layout = new QVBoxLayout(fallback);
+    layout->setContentsMargins(24, 24, 24, 24);
+    layout->setSpacing(12);
+    auto* heading = new QLabel(
+        QStringLiteral("The embedded Wave workspace could not be loaded."),
+        fallback);
+    QFont headingFont = heading->font();
+    headingFont.setBold(true);
+    heading->setFont(headingFont);
+    auto* detail = new QLabel(failureReason, fallback);
+    detail->setWordWrap(true);
+    auto* openExternal = new QPushButton(
+        QStringLiteral("Open in WaveWorkbench"),
+        fallback);
+    openExternal->setEnabled(
+        QFileInfo::exists(applicationPath));
+    layout->addWidget(heading);
+    layout->addWidget(detail);
+    layout->addWidget(openExternal, 0, Qt::AlignLeft);
+    layout->addStretch(1);
+    connect(openExternal,
+            &QPushButton::clicked,
+            fallback,
+            [applicationPath, absoluteProject, fallback] {
+                qint64 processId = 0;
+                if (!QProcess::startDetached(
+                        applicationPath,
+                        {QStringLiteral("--load-first-trace"),
+                         absoluteProject},
+                        QFileInfo(absoluteProject).absolutePath(),
+                        &processId)) {
+                    if (auto* label = fallback->findChild<QLabel*>()) {
+                        label->setToolTip(QStringLiteral(
+                            "WaveWorkbench could not be started."));
+                    }
+                }
+            });
+    tabManager->openToolPage(fallback, stableId, title);
 }
 
 bool MainWindow::startWaveSimulation(

@@ -1,11 +1,11 @@
 # ZeroSlack Current Plan
 
-Product version: `v0.5.0`
+Product version: `v0.6.0`
 
 ## Current status
 
-- Wave Simulation is a formal Action Registry workflow rather than a hidden
-  experimental menu entry.
+- Wave Simulation is a formal Action Registry workflow and opens its complete
+  WaveWorkbench result workspace as a first-class editor-area tool tab.
 - The current module, an enclosing `always` block, an editor-selected signal,
   and an exact Design hierarchy instance can start a run without manually
   opening WaveWorkbench or handling interchange files.
@@ -17,10 +17,14 @@ Product version: `v0.5.0`
   internal observations as watch lanes.
 - Build and run diagnostics use structured source locations and expose a
   direct source-navigation action in ZeroSlack.
-- The MinGW shared-core export generator preserves valid symbols emitted after
-  `dlltool` ordinal wraparound, with an explicit ABI policy guard.
-- The complete configured Debug suite passes all 89 tests. WaveWorkbench passes
-  all 88 tests against the same integration contract.
+- `wavewidgets` exposes a versioned C ABI factory while the standalone
+  WaveWorkbench application consumes the same shared canvases and project
+  contract. Stimulus and result canvases share one pure timeline mapping.
+- Generic tool tabs participate in split activation and close lifecycle without
+  being treated as source editors. The standalone application is optional for
+  normal embedded operation and remains available as an explicit fallback.
+- The complete configured Debug suite passes all 90 tests. WaveWorkbench passes
+  all 90 tests against the same integration and portable-install contracts.
 
 Superseded plans and completed milestone logs are available in the
 [archive index](docs/archive/README.md).

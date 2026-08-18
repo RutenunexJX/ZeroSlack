@@ -88,6 +88,18 @@ int main(int argc, char** argv)
               "fake WaveWorkbench tool can be created");
         tool.close();
     }
+#ifdef Q_OS_WIN
+    const QString widgetLibraryName = QStringLiteral("wavewidgets.dll");
+#elif defined(Q_OS_MACOS)
+    const QString widgetLibraryName = QStringLiteral("libwavewidgets.dylib");
+#else
+    const QString widgetLibraryName = QStringLiteral("libwavewidgets.so");
+#endif
+    QFile widgetLibrary(
+        QDir(toolDirectory).absoluteFilePath(widgetLibraryName));
+    check(widgetLibrary.open(QIODevice::WriteOnly),
+          "fake WaveWorkbench widget library can be created");
+    widgetLibrary.close();
     const WaveSimulationToolPaths toolPaths =
         WaveSimulationConfiguration(
             settingsPath,
@@ -97,6 +109,10 @@ int main(int argc, char** argv)
     check(toolPaths.isValid()
               && toolPaths.missingTools().isEmpty(),
           "an explicit WaveWorkbench tool directory resolves all executables");
+    check(QFile::remove(toolPaths.application)
+              && toolPaths.isValid()
+              && toolPaths.missingTools().isEmpty(),
+          "the standalone application is optional for embedded Wave tabs");
 
     WaveSimulationConfiguration productionDefaults(settingsPath);
     const WaveSimulationCachePaths defaultPaths =

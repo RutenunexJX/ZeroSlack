@@ -64,6 +64,17 @@ QString executableName(const QString& baseName)
 #endif
 }
 
+QString libraryName(const QString& baseName)
+{
+#ifdef Q_OS_WIN
+    return baseName + QStringLiteral(".dll");
+#elif defined(Q_OS_MACOS)
+    return QStringLiteral("lib") + baseName + QStringLiteral(".dylib");
+#else
+    return QStringLiteral("lib") + baseName + QStringLiteral(".so");
+#endif
+}
+
 WaveSimulationToolPaths toolsInDirectory(const QString& directory)
 {
     WaveSimulationToolPaths paths;
@@ -76,6 +87,8 @@ WaveSimulationToolPaths toolsInDirectory(const QString& directory)
         executableName(QStringLiteral("wave-sim-runner")));
     paths.application = root.absoluteFilePath(
         executableName(QStringLiteral("wave-workbench")));
+    paths.widgetLibrary = root.absoluteFilePath(
+        libraryName(QStringLiteral("wavewidgets")));
     return paths;
 }
 
@@ -85,6 +98,27 @@ QString existingExecutable(const QString& path)
     return info.exists() && info.isFile()
         ? info.absoluteFilePath()
         : QString();
+}
+
+QString existingFile(const QString& path)
+{
+    const QFileInfo info(path);
+    return info.exists() && info.isFile()
+        ? info.absoluteFilePath()
+        : QString();
+}
+
+QString libraryOnPath(const QString& name)
+{
+    const QString pathValue = QProcessEnvironment::systemEnvironment()
+        .value(QStringLiteral("PATH"));
+    for (const QString& directory :
+         pathValue.split(QDir::listSeparator(), Qt::SkipEmptyParts)) {
+        const QString candidate = QDir(directory).absoluteFilePath(name);
+        if (!existingFile(candidate).isEmpty())
+            return candidate;
+    }
+    return QString();
 }
 }
 
@@ -100,7 +134,7 @@ bool WaveSimulationToolPaths::isValid() const
 {
     return !existingExecutable(bridge).isEmpty()
         && !existingExecutable(runner).isEmpty()
-        && !existingExecutable(application).isEmpty();
+        && !existingFile(widgetLibrary).isEmpty();
 }
 
 QStringList WaveSimulationToolPaths::missingTools() const
@@ -110,8 +144,8 @@ QStringList WaveSimulationToolPaths::missingTools() const
         missing.append(QStringLiteral("wave-bridge"));
     if (existingExecutable(runner).isEmpty())
         missing.append(QStringLiteral("wave-sim-runner"));
-    if (existingExecutable(application).isEmpty())
-        missing.append(QStringLiteral("wave-workbench"));
+    if (existingFile(widgetLibrary).isEmpty())
+        missing.append(QStringLiteral("wavewidgets"));
     return missing;
 }
 
@@ -181,6 +215,8 @@ WaveSimulationConfiguration::toolPaths() const
         executableName(QStringLiteral("wave-sim-runner")));
     pathTools.application = QStandardPaths::findExecutable(
         executableName(QStringLiteral("wave-workbench")));
+    pathTools.widgetLibrary = libraryOnPath(
+        libraryName(QStringLiteral("wavewidgets")));
     return pathTools;
 }
 
