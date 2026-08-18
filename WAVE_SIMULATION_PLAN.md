@@ -332,7 +332,7 @@ Schema/接口版本：Module Manifest `v1`；Stimulus Scenario `v1`。
 
 ### S4：Verilator 环境探测
 
-状态：`pending`
+状态：`completed`（2026-08-18）
 
 范围：
 
@@ -342,6 +342,46 @@ Schema/接口版本：Module Manifest `v1`；Stimulus Scenario `v1`。
 - 不生成 DUT 模型。
 
 验收：未安装、版本不兼容、运行失败和取消均有确定状态，不阻塞 GUI。
+
+S4 实际结果：
+
+- WaveWorkbench 新增独立 `wavesim` 静态库。`ProcessRunner` 只依赖 QtCore 事件循环，
+  异步启动进程并分别捕获 stdout/stderr，支持输出容量上限、硬超时和取消；实现不调用
+  `waitForStarted`、`waitForFinished` 或 `processEvents`。
+- `ToolchainProbeRunner` 并行探测 Verilator 与 C++ 编译器。发现顺序为显式程序、
+  `VERILATOR`/`VERILATOR_ROOT`/`CXX`、请求 PATH、宿主 PATH 兜底；请求环境优先，
+  `inheritCurrentProcessPath=false` 可关闭宿主继承。
+- 当前兼容基线为 Verilator 5.0、GCC 8、Clang 7、MSVC 19.20。版本无法识别时拒绝继续，
+  不按“可能兼容”处理。
+- 工具与总体结果分别使用确定状态，区分 `ready`、`not-found`、
+  `incompatible-version`、`version-unrecognized`、`execution-failed`、`timed-out` 和
+  `cancelled`；保留解析程序路径、参数、退出码、耗时、stdout/stderr 和截断标记。
+- 新增实验性 `wave-sim-runner probe`，输出
+  `wave-workbench.toolchain-probe/v1` JSON。命令可指定工具路径、超时和自动取消；本阶段
+  不读取 Manifest/Stimulus、不生成 harness、不编译或 elaboration DUT。
+- 测试通过独立子进程 fixture 覆盖成功、缺失、旧版本、非零退出、超时和取消，并验证
+  Qt 事件循环在探测期间继续推进、输出截断、PATH 自动发现和严格环境隔离。
+- `wave-tests` 为 `58/58`，全量 CTest 为 `83/83`；便携安装契约确认 runner 与
+  `docs/simulation-runner.md` 均被安装。
+- 当前开发机实测耗时约 29 ms：G++ 13.1.0 为 `ready`，Verilator 未安装为
+  `not-found`，总体为 `unavailable`。该结果符合 S4 对未安装环境的验收要求。
+
+本轮切片：S4 Verilator 环境探测
+完成内容：异步通用进程层、双工具链探测、版本兼容判定、结构化报告、实验性 CLI、
+六类终态测试及便携安装交付。
+明确未做：DUT/harness 生成、Verilator 编译和运行、VCD 产生与读取、正式 GUI 入口。
+用户可见行为：新增实验性 `wave-sim-runner probe`；ZeroSlack 与 WaveWorkbench 正式 GUI
+均无入口变化。
+自动测试：WaveWorkbench `wave-tests` 58/58；CTest 83/83。
+人工验证：当前机器探测到 G++ 13.1.0，确定报告 Verilator 缺失，总耗时约 29 ms。
+Schema/接口版本：Toolchain Probe Report `v1`。
+修改仓库与提交：WaveWorkbench `9bf1e8b`；ZeroSlack 仅更新本文档。
+已知限制：当前机器没有真实 Verilator，因此 S4 验证的是缺失路径和确定性进程 fixture；
+真实 Verilator 编译链将在 S5 固定 fixture 中形成端到端证据。
+下一最小切片：S5 固定 Fixture 端到端。
+恢复开发所需上下文：从 WaveWorkbench 的 `wave/simulation_runner.h`、
+`wave-sim-runner probe` 和本文档 S5 继续；必须复用现有异步进程状态模型，不在 CLI 或 GUI
+另建同步 QProcess 路径。
 
 ### S5：固定 Fixture 端到端
 
