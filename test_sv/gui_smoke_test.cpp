@@ -4766,7 +4766,7 @@ static void runEditorLineActionRegression()
     MyCodeEditor heldMoveEditor;
     heldMoveEditor.resize(480, 180);
     heldMoveEditor.setPlainText(
-        QStringLiteral("aa\nbb\ncc\ndd\n"));
+        QStringLiteral("aa\nbb\ncc\ndd\nee\nff\n"));
     heldMoveEditor.show();
     heldMoveEditor.setFocus();
     const QTextBlock heldBlock =
@@ -4797,10 +4797,13 @@ static void runEditorLineActionRegression()
         Qt::Key_Down,
         Qt::AltModifier);
     QApplication::sendEvent(&heldMoveEditor, &releaseMove);
-    expectBool("held Alt+Down moves the logical line only once",
+    expectBool("held Alt+Down repeats and keeps the caret on the moved line",
                heldMoveEditor.toPlainText()
-                   == QStringLiteral("aa\ncc\nbb\ndd\n")
-                   && heldMoveEditor.textCursor().blockNumber() == 2,
+                    == QStringLiteral("aa\ncc\ndd\nee\nff\nbb\n")
+                    && heldMoveEditor.textCursor().blockNumber() == 5
+                    && heldMoveEditor.textCursor().position()
+                           - heldMoveEditor.textCursor().block().position()
+                           == 1,
                true);
 
     MyCodeEditor touchedSelectionEditor;

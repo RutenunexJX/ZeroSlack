@@ -637,6 +637,8 @@ EditorLineOperationController::moveLines(
 
     const QString movedText = text.mid(
         start, end - start);
+    const int originalFirstLine =
+        range.firstBlock.blockNumber();
     QTextCursor edit(document);
     if (up) {
         const QTextBlock previousBlock =
@@ -656,7 +658,7 @@ EditorLineOperationController::moveLines(
         restoreLineMoveCursor(
             cursor,
             range,
-            previousBlock.blockNumber(),
+            originalFirstLine - 1,
             -previousLength);
     } else {
         const QTextBlock nextBlock =
@@ -680,7 +682,7 @@ EditorLineOperationController::moveLines(
         restoreLineMoveCursor(
             cursor,
             range,
-            range.firstBlock.blockNumber() + 1,
+            originalFirstLine + 1,
             nextLength);
     }
     return successResult(true);

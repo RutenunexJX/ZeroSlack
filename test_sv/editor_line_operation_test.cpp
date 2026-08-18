@@ -557,6 +557,32 @@ int main(int argc, char* argv[])
 
     {
         QTextDocument document;
+        resetDocument(
+            document,
+            QStringLiteral("aa\nbb\ncc\ndd\nee\nff\n"));
+        QTextCursor cursor = cursorAt(document, 4);
+
+        bool allMoved = true;
+        for (int move = 0; move < 4; ++move) {
+            const EditorLineOperationResult result =
+                controller.moveLines(cursor, false);
+            allMoved = allMoved
+                && result.succeeded
+                && result.documentChanged
+                && cursor.blockNumber() == move + 2
+                && cursor.position()
+                       - cursor.block().position()
+                       == 1;
+        }
+        expect("repeated move-down keeps the cursor on the moved line",
+               allMoved
+                   && document.toPlainText()
+                          == QStringLiteral(
+                              "aa\ncc\ndd\nee\nff\nbb\n"));
+    }
+
+    {
+        QTextDocument document;
         const QString original =
             QStringLiteral("aa\nbb\ncc\n");
         resetDocument(document, original);

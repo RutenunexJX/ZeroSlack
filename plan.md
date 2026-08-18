@@ -1,9 +1,15 @@
 # ZeroSlack Current Plan
 
-Product version: `v0.4.0`
+Product version: `v0.4.1`
 
 ## Current status
 
+- `Alt+Up` / `Alt+Down` accepts operating-system auto-repeat so holding either
+  key continuously moves the logical line or selected line range. Cursor
+  restoration uses the pre-edit logical line number and remains attached to
+  the moved text near the final document line.
+- An existing column selection accepts `Shift+Left` / `Shift+Right` to extend
+  or contract its horizontal span; `Shift+Alt+Arrow` remains the entry gesture.
 - F24 opens command search immediately. Enter alone executes fuzzy-search
   results; direct gestures are active only for an empty query, and an empty tap
   repeats the last currently valid repeatable action.
@@ -22,8 +28,8 @@ Product version: `v0.4.0`
   targets, ternary operands, and named associations while preserving tokens,
   comments, grouping boundaries, and second-pass idempotence.
 - A clean configure and full Debug build pass. The complete configured suite
-  passes all 86 tests, including command, completion, rename, formatter, GUI,
-  workspace, semantic, performance, architecture, and policy-guard coverage.
+  passes all 86 tests, including the line-operation, structural-input, GUI,
+  workspace, semantic, performance, architecture, and version-policy coverage.
 
 Superseded plans and completed milestone logs are available in the
 [archive index](docs/archive/README.md).

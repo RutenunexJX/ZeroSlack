@@ -827,6 +827,22 @@ int main(int argc, char* argv[])
                    && keyboardColumn.currentLine == 1
                    && keyboardColumn.anchorColumn == 0
                    && keyboardColumn.currentColumn == 1);
+        QTest::keyClick(&editor,
+                        Qt::Key_Right,
+                        Qt::ShiftModifier);
+        keyboardColumn = editor.columnModeSnapshotForTest();
+        expect("Shift+Right extends an existing column selection",
+               keyboardColumn.selectionActive
+                   && keyboardColumn.anchorColumn == 0
+                   && keyboardColumn.currentColumn == 2);
+        QTest::keyClick(&editor,
+                        Qt::Key_Left,
+                        Qt::ShiftModifier);
+        keyboardColumn = editor.columnModeSnapshotForTest();
+        expect("Shift+Left contracts an existing column selection",
+               keyboardColumn.selectionActive
+                   && keyboardColumn.anchorColumn == 0
+                   && keyboardColumn.currentColumn == 1);
         sendTextKey(editor,
                     Qt::Key_Z,
                     QStringLiteral("z"));

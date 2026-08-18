@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.4.1] - 2026-08-18
+
+### Keyboard movement reliability
+
+- Restored continuous `Alt+Up` / `Alt+Down` movement on operating-system key
+  auto-repeat instead of consuming repeated key presses.
+- Stabilized repeated downward movement by restoring the caret from the
+  pre-edit logical line number rather than a mutated `QTextBlock`.
+- Allowed `Shift+Left` / `Shift+Right` to extend or contract an existing column
+  selection while retaining `Shift+Alt+Arrow` as the entry gesture.
+- Added controller, structural-input, and GUI regressions for repeated movement,
+  cursor following, and horizontal column selection.
+
 ## [0.4.0] - 2026-08-18
 
 ### Contextual editing and command workflows

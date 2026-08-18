@@ -4,6 +4,17 @@ This file is a running checklist for problems to fix and new features to conside
 
 ## Issues
 
+### Completed in v0.4.1
+
+- [x] Holding `Alt+Up` or `Alt+Down` must continuously move the current logical
+  line or selected lines. Auto-repeat now executes one move per event, and
+  downward cursor restoration uses a stable pre-edit line number so the caret
+  follows the moved text through the final non-empty line. This supersedes the
+  v0.3.2 decision to consume repeated events.
+- [x] After column mode is active, `Shift+Left` and `Shift+Right` now extend or
+  contract the rectangular selection without requiring Alt to remain held.
+  `Shift+Alt+Arrow` remains the explicit gesture for entering column mode.
+
 ### Completed in v0.3.2
 
 - [x] A column-mode caret selected immediately after a semicolon could render
@@ -12,7 +23,8 @@ This file is a running checklist for problems to fix and new features to conside
   snaps to EOL at normal and fractional display scaling.
 - [x] Holding `Alt+Up` or `Alt+Down` could feed repeated move actions and make
   the current logical line continue moving. Auto-repeat events are consumed
-  after the initial action; separate physical presses still move one row.
+  after the initial action; separate physical presses still move one row. This
+  historical behavior was superseded by the v0.4.1 continuous-move decision.
 
 ### Completed in v0.3.1
 
@@ -368,8 +380,8 @@ This file is a running checklist for problems to fix and new features to conside
 - [x] Regression: after double-click selecting a symbol, Ctrl+click jump-to-definition can select all text between the call site and the definition in large design contexts, reproduced on `test_sv/huge_prj/vendor_ip_ctl.sv:1660` for `CC_IB_MCPL_SEG_BUF_RAM_ADDR_WD`. Ctrl+click navigation now avoids moving the system mouse while the left button is still pressed and consumes pending navigation mouse moves/releases, so the editor cannot turn the jump into a drag selection.
 - [x] Column selection zero-width rendering is wrong. Zero-width rectangular selections now render as one vertical caret per selected line, including virtual-column positions on short lines, without broad text-selection highlighting.
 - [x] Add `Ctrl+D` duplicate selection/line editor action. With a selection, it duplicates the selected text and selects the new copy; without a selection, it duplicates the current logical line below while preserving the cursor column, including final lines without trailing newlines.
-- [x] Refine column selection to the requested Notepad++-like interaction model. The normal editor caret is the anchor, `Shift+Alt+click` sets or updates the endpoint, `Shift+Alt+Arrow` adjusts the endpoint, plain click or `Esc` exits, and text input, Backspace, Delete, virtual-column padding, rectangular Copy/Cut/Paste operate on every selected line.
-- [x] Add `Alt+Up` / `Alt+Down` line-block move. It moves the current logical line or every logical line touched by the selection, preserves cursor or selection range, treats a selection ending at next-line column 0 as excluding that line, and reports that `Alt+Up/Down` is disabled while column selection is active.
+- [x] Refine column selection to the requested Notepad++-like interaction model. The normal editor caret is the anchor, `Shift+Alt+click` sets or updates the endpoint, `Shift+Alt+Arrow` enters or adjusts the endpoint, active column mode also accepts `Shift+Left` / `Shift+Right`, plain click or `Esc` exits, and text input, Backspace, Delete, virtual-column padding, rectangular Copy/Cut/Paste operate on every selected line.
+- [x] Add `Alt+Up` / `Alt+Down` line-block move. It moves the current logical line or every logical line touched by the selection, supports continuous key auto-repeat, preserves cursor or selection range, treats a selection ending at next-line column 0 as excluding that line, and reports that `Alt+Up/Down` is disabled while column selection is active.
 - [x] Global or package-defined enum values are not semantically highlighted at use sites, reproduced on `test_sv/new/elec_phy_import/elec/elec_inj.sv:1094` for `E_NOISE_WGN`. Semantic decorations now derive usage candidates from the current file plus visible imported, qualified, include, and global/package records, including imports discovered through recursively resolved include files such as `_svh.svh` and package-owned enum values whose direct owner is the typedef enum such as `noise_type_e`, while current-file symbols suppress external same-name candidates.
 - [x] Signal Kernel Graph hover preview flickers and can move outside the graph viewport. The graph no longer opens the code preview on hover; right-clicking a node opens or switches the popup, left-clicking or right-clicking blank graph space closes it, double-click navigation remains on left button, and popup placement uses the clicked node's viewport/global rectangle so the popup stays inside the graph viewport without overlapping the node box.
 - [x] Signal Kernel Graph node double-click navigation is currently broken. Node double-click now closes the hover popup and navigates through both item-level handling and a graph-view fallback that resolves the node under the cursor when `ScrollHandDrag` intercepts item events.

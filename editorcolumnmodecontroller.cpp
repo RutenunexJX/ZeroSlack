@@ -819,11 +819,19 @@ bool handleColumnSelectionNavigation(MyCodeEditor* editor,
         return false;
 
     const Qt::KeyboardModifiers modifiers = event->modifiers();
-    const bool adjustSelection =
+    const bool shiftOnly =
+        modifiers.testFlag(Qt::ShiftModifier)
+        && !modifiers.testFlag(Qt::AltModifier)
+        && !modifiers.testFlag(Qt::ControlModifier)
+        && !modifiers.testFlag(Qt::MetaModifier);
+    const bool shiftAlt =
         modifiers.testFlag(Qt::ShiftModifier)
         && modifiers.testFlag(Qt::AltModifier)
         && !modifiers.testFlag(Qt::ControlModifier)
         && !modifiers.testFlag(Qt::MetaModifier);
+    const bool adjustSelection =
+        shiftAlt
+        || (hasColumnSelection(state) && horizontal && shiftOnly);
     const bool moveSelection =
         !modifiers.testFlag(Qt::ShiftModifier)
         && !modifiers.testFlag(Qt::AltModifier)
