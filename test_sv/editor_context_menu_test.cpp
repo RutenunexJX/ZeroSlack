@@ -90,6 +90,8 @@ int main(int argc, char* argv[])
         capability(QStringLiteral("source.showRelationships")),
         capability(QStringLiteral("insight.stateTransitionGraph"), false),
         capability(QStringLiteral("refactor.exposeSignalToTop")),
+        capability(QString::fromLatin1(
+            ActionIds::EditToggleSelectionCase)),
         capability(QStringLiteral("format.selection"), false),
         capability(QStringLiteral("format.document"))
     };
@@ -118,6 +120,11 @@ int main(int argc, char* argv[])
         QStringLiteral("source.goToDefinition"),
         QStringLiteral("source.findReferences"),
         QStringLiteral("source.showRelationships"),
+        QStringLiteral("edit.replace"),
+        QStringLiteral("format.commentLines"),
+        QStringLiteral("format.uncommentLines"),
+        QStringLiteral("format.indentLines"),
+        QStringLiteral("format.unindentLines"),
     };
     for (const QString& actionId : removedContextActions) {
         check(findItem(model, actionId) == nullptr,
@@ -148,7 +155,6 @@ int main(int argc, char* argv[])
           "current editor exposes the unified temporary-editor navigation Action");
 
     const QStringList requiredContextActions = {
-        QStringLiteral("edit.replace"),
         QString::fromLatin1(
             ActionIds::ViewTemporaryEditorOpen),
         QStringLiteral("insight.signalKernelGraph"),
@@ -159,10 +165,8 @@ int main(int argc, char* argv[])
         QStringLiteral("refactor.editInstanceSlots"),
         QStringLiteral("refactor.createAssignmentQueue"),
         QStringLiteral("refactor.exposeSignalToTop"),
-        QStringLiteral("format.commentLines"),
-        QStringLiteral("format.uncommentLines"),
-        QStringLiteral("format.indentLines"),
-        QStringLiteral("format.unindentLines"),
+        QString::fromLatin1(
+            ActionIds::EditToggleSelectionCase),
         QStringLiteral("format.profile.structured"),
         QStringLiteral("format.profile.indentOnly"),
         QStringLiteral("format.selection"),
@@ -186,6 +190,11 @@ int main(int argc, char* argv[])
         QStringLiteral("select.all"),
         QStringLiteral("navigation.goLine"),
         QStringLiteral("source.goToDefinition"),
+        QStringLiteral("edit.replace"),
+        QStringLiteral("format.commentLines"),
+        QStringLiteral("format.uncommentLines"),
+        QStringLiteral("format.indentLines"),
+        QStringLiteral("format.unindentLines"),
     };
     for (const QString& actionId : retainedShortcutActions) {
         const ActionDescriptor* descriptor = findActionById(actionId);

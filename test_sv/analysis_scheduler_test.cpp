@@ -2565,6 +2565,16 @@ void runTriviaSaveRemapsSourceLocationsWithoutSlang()
     diagnostic.line = 3;
     diagnostic.column = 10;
     diagnostic.message = QStringLiteral("remapped diagnostic");
+    diagnostic.documentRevision = 1;
+    SemanticSourceRange diagnosticRange;
+    diagnosticRange.fileName = fileName;
+    diagnosticRange.line = 3;
+    diagnosticRange.column = 10;
+    diagnosticRange.endLine = 3;
+    diagnosticRange.endColumn = 15;
+    diagnosticRange.position = referencePosition;
+    diagnosticRange.length = 5;
+    diagnostic.ranges.append(diagnosticRange);
     const auto baseSnapshot =
         std::make_shared<const SemanticIndexSnapshot>(
             SemanticIndexSnapshot::fromSymbolRecords(
@@ -2638,6 +2648,8 @@ void runTriviaSaveRemapsSourceLocationsWithoutSlang()
            !workerInvokedSlang);
 
     const auto remapped = SemanticIndex::getInstance()->snapshot();
+    const DocumentSnapshot savedDocument =
+        documents.documentForFile(fileName);
     const QList<SemanticSymbolRecord> records =
         remapped ? remapped->getSymbolRecords(fileName)
                  : QList<SemanticSymbolRecord>();
@@ -2671,8 +2683,17 @@ void runTriviaSaveRemapsSourceLocationsWithoutSlang()
            referenceRemapped);
     expect("trivia remap updates diagnostic source location",
            remapped && !remapped->diagnostics().isEmpty()
-               && remapped->diagnostics().first().line
-                      == remappedReferenceLine);
+                && remapped->diagnostics().first().line
+                       == remappedReferenceLine
+                && remapped->diagnostics().first().documentRevision
+                       == static_cast<std::uint64_t>(
+                           savedDocument.textVersion)
+                && remapped->diagnostics().first().ranges.size() == 1
+                && remapped->diagnostics().first().ranges.first().position
+                       == remappedReferencePosition
+                && remapped->diagnostics().first().ranges.first().length == 5
+                && remapped->diagnostics().first().ranges.first().line
+                       == remappedReferenceLine);
     expect("trivia remap updates relationship evidence and endpoint keys",
            remapped && !remapped->relationships().isEmpty()
                && remapped->relationships().first().evidenceRange.line
@@ -2680,8 +2701,6 @@ void runTriviaSaveRemapsSourceLocationsWithoutSlang()
                && remapped->relationships().first()
                           .fromStableKey.sourcePosition
                       == remappedReferencePosition);
-    const DocumentSnapshot savedDocument =
-        documents.documentForFile(fileName);
     const QList<EffectiveValueFact> remappedFacts =
         effectiveValues->factsForDocument(
             fileName,

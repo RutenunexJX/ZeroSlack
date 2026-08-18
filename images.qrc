@@ -4,5 +4,6 @@
         <file>images/workspace.png</file>
         <file>images/open_file.png</file>
         <file>images/new_file.png</file>
+        <file alias="zeroslack_app.png">images/zeroslack_app.png</file>
     </qresource>
 </RCC>

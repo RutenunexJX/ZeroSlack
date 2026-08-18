@@ -753,6 +753,7 @@ add_executable(demo main.cpp)
 
 # Build a Windows GUI app without a console window.
 if(WIN32)
+    target_sources(demo PRIVATE resources/windows/zeroslack.rc)
     set_target_properties(demo PROPERTIES WIN32_EXECUTABLE ON)
 endif()
 

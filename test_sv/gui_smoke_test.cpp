@@ -4462,6 +4462,46 @@ static void runEditorLineActionRegression()
                shortcutCommentEditor.toPlainText()
                    == QStringLiteral("logic a;\n"),
                true);
+    shortcutCommentEditor.commentSelectionOrLine();
+    QKeyEvent questionShortcut(
+        QEvent::KeyPress,
+        Qt::Key_Question,
+        Qt::ControlModifier | Qt::ShiftModifier,
+        QStringLiteral("?"));
+    QApplication::sendEvent(&shortcutCommentEditor, &questionShortcut);
+    expectBool("Ctrl+Shift+? key report uncomments current line",
+               shortcutCommentEditor.toPlainText()
+                   == QStringLiteral("logic a;\n"),
+               true);
+
+    MyCodeEditor toggleCaseEditor;
+    toggleCaseEditor.setPlainText(QStringLiteral("Ab_c1"));
+    QTextCursor toggleCursor(toggleCaseEditor.document());
+    toggleCursor.select(QTextCursor::Document);
+    toggleCaseEditor.setTextCursor(toggleCursor);
+    QString toggleCaseFailure;
+    expectBool("selection case action toggles letters only",
+               toggleCaseEditor.toggleSelectionCase(&toggleCaseFailure)
+                   && toggleCaseEditor.toPlainText()
+                          == QStringLiteral("aB_C1")
+                   && toggleCaseEditor.textCursor().hasSelection(),
+               true);
+    toggleCaseEditor.undo();
+    expectBool("selection case action is one undoable edit",
+               toggleCaseEditor.toPlainText()
+                   == QStringLiteral("Ab_c1"),
+               true);
+
+    toggleCaseEditor.setPlainText(QStringLiteral("Ab\nCd"));
+    toggleCursor = QTextCursor(toggleCaseEditor.document());
+    toggleCursor.select(QTextCursor::Document);
+    toggleCaseEditor.setTextCursor(toggleCursor);
+    expectBool("selection case action preserves multiline structure",
+               toggleCaseEditor.toggleSelectionCase(&toggleCaseFailure)
+                   && toggleCaseEditor.toPlainText()
+                          == QStringLiteral("aB\ncD")
+                   && toggleCaseEditor.textCursor().hasSelection(),
+               true);
 
     MyCodeEditor selectionCommentEditor;
     selectionCommentEditor.resize(480, 150);

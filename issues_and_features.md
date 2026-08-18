@@ -4,6 +4,22 @@ This file is a running checklist for problems to fix and new features to conside
 
 ## Issues
 
+### Completed in v0.4.2
+
+- [x] Enter in the compact `Ctrl+R` rename popup now prepares and applies the
+  validated semantic transaction instead of stopping after parameter capture.
+- [x] Trivia-only save remapping now updates diagnostic document revisions and
+  exact ranges, preserving error/warning underlines, gutter icons, and overview
+  markers after formatter or whitespace edits.
+- [x] `Ctrl+Space` Symbols supports `m <filter>` for module-only lookup.
+- [x] Windows Shift+/ key reporting is normalized so `Ctrl+Shift+/` reliably
+  executes Uncomment through the Action Registry.
+- [x] The editor context menu provides Toggle Selection Case and no longer
+  lists Replace, comment, uncomment, indent, or unindent; the removed entries
+  retain their commands and shortcuts.
+- [x] ZeroSlack has an application icon shared by Qt windows and the Windows
+  executable resource.
+
 ### Completed in v0.4.1
 
 - [x] Holding `Alt+Up` or `Alt+Down` must continuously move the current logical

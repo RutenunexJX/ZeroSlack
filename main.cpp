@@ -2,10 +2,12 @@
 #include "symbolrelationshipengine.h"
 
 #include <QApplication>
+#include <QIcon>
 
 int main(int argc, char *argv[])
 {
     QApplication a(argc, argv);
+    a.setWindowIcon(QIcon(QStringLiteral(":/images/zeroslack_app.png")));
 
     qRegisterMetaType<SymbolRelationshipEngine::RelationType>();
 

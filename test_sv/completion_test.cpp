@@ -1534,6 +1534,9 @@ int main(int argc, char** argv) {
                 QStringLiteral("palette_top"), DeclarationKind::Module,
                 CollectorKind::User, QString(), QString(), 1, palettePath),
             makeSemanticFixtureRecord(
+                QStringLiteral("palette_child"), DeclarationKind::Module,
+                CollectorKind::User, QString(), QString(), 1, palettePath),
+            makeSemanticFixtureRecord(
                 QStringLiteral("wire_sig"), DeclarationKind::Signal,
                 CollectorKind::Wire, QStringLiteral("palette_top"),
                 QStringLiteral("wire"), 2, palettePath),
@@ -1622,6 +1625,22 @@ int main(int argc, char** argv) {
                        && wireItems.first().replacementStart
                               == typedContext.replacementStart
                        && wireItems.first().sourceDocumentRevision == 12,
+                    true);
+
+        const QList<GlobalControlItem> moduleItems = insertPalette.query(
+            GlobalControlCategory::Symbols,
+            QStringLiteral("m palette_"), typedContext);
+        expectBool("Ctrl+Space m selector filters modules only",
+                   moduleItems.size() == 2
+                       && std::all_of(
+                           moduleItems.cbegin(),
+                           moduleItems.cend(),
+                           [](const GlobalControlItem& item) {
+                               return item.title
+                                      == QStringLiteral("palette_child")
+                                   || item.title
+                                      == QStringLiteral("palette_top");
+                           }),
                    true);
 
         const auto itemTitles = [](const QList<GlobalControlItem>& items) {

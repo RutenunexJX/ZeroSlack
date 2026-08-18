@@ -473,10 +473,21 @@ bool matchesRegisteredShortcut(
         QKeySequence::fromString(
             shortcutText,
             QKeySequence::PortableText);
-    const QKeySequence pressed(
-        event->keyCombination());
-    return shortcut.matches(pressed)
-        == QKeySequence::ExactMatch;
+    const QKeySequence pressed(event->keyCombination());
+    if (shortcut.matches(pressed) == QKeySequence::ExactMatch)
+        return true;
+
+    // Windows may report Shift+/ as the produced '?' key rather than the
+    // physical slash key. Normalize that one layout-dependent combination so
+    // the portable Action Registry shortcut remains authoritative.
+    if (event->key() == Qt::Key_Question
+        && event->modifiers().testFlag(Qt::ShiftModifier)) {
+        const QKeyCombination normalized(
+            event->modifiers(), Qt::Key_Slash);
+        return shortcut.matches(QKeySequence(normalized))
+            == QKeySequence::ExactMatch;
+    }
+    return false;
 }
 
 bool requestRegisteredEditorAction(

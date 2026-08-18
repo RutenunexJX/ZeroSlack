@@ -229,6 +229,28 @@ int main(int argc, char* argv[])
         &panelLayout,
         &host,
         std::move(callbacks));
+    ActionExecutionResult inlineRenameResult;
+    bool inlineRenameInvoked = false;
+    QObject::connect(
+        editor,
+        &MyCodeEditor::registeredActionRequested,
+        editor,
+        [&](const QString& actionId,
+            const QVariantMap& parameters,
+            bool* handled) {
+            if (actionId
+                != QString::fromLatin1(ActionIds::RtlRename)) {
+                return;
+            }
+            ActionInvocation invocation;
+            invocation.workspaceId = workspacePath;
+            invocation.parameters = parameters;
+            inlineRenameResult = coordinator.execute(
+                *renameAction, invocation);
+            inlineRenameInvoked = true;
+            if (handled)
+                *handled = inlineRenameResult.handled;
+        });
 
     ActionInvocation renameInvocation;
     renameInvocation.workspaceId = workspacePath;
@@ -326,6 +348,39 @@ int main(int argc, char* argv[])
            showPanelCalls == 0);
 
     highRisk->resetForWorkspaceClose();
+    cursor = QTextCursor(editor->document());
+    cursor.setPosition(subjectPosition + 1);
+    editor->setTextCursor(cursor);
+    const ActionExecutionResult applyingPopupResult =
+        coordinator.execute(*renameAction, popupInvocation);
+    inlineRename = editor->findChild<QLineEdit*>(
+        QStringLiteral("semanticRenameInlineEditor"));
+    expect("rename popup reopens for applying workflow",
+           applyingPopupResult.succeeded && inlineRename);
+    if (inlineRename) {
+        inlineRename->setText(QStringLiteral("payload_i"));
+        QTest::keyClick(inlineRename, Qt::Key_Return);
+        QCoreApplication::processEvents();
+    }
+    MyCodeEditor* renamedTopEditor =
+        tabManager.getDocumentModel()->editorForFile(topFile);
+    expect("Enter dispatches the applying rename Action",
+           inlineRenameInvoked
+               && inlineRenameResult.handled
+               && inlineRenameResult.succeeded);
+    expect("Enter reaches the applied High+Diff state",
+           highRisk->lastOutcome().panelState
+               == RtlHighRiskEditPanelState::Applied);
+    expect("Enter renames the open subject document",
+           editor->toPlainText().contains(
+               QStringLiteral("payload_i")));
+    expect("Enter renames closed-file instance connections",
+           renamedTopEditor
+               && renamedTopEditor->toPlainText().contains(
+                   QStringLiteral("payload_i")));
+    const RtlHighRiskEditPanelOutcome undo = highRisk->undo();
+    expect("popup-applied rename retains protected transaction undo",
+           undo.panelState == RtlHighRiskEditPanelState::Undone);
     if (previousSnapshot)
         index->setSnapshot(previousSnapshot);
     else

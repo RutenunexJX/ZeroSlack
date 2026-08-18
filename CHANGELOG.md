@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.4.2] - 2026-08-18
+
+### Editing commands and desktop identity
+
+- Made Enter in the compact `Ctrl+R` rename popup prepare and apply the
+  validated rename transaction, including affected document buffers, while
+  retaining the protected High+Diff transaction undo position.
+- Preserved diagnostic revisions and exact source ranges across trivia-only
+  saves so error/warning underlines, gutter icons, and overview markers remain
+  current after formatter or whitespace edits.
+- Added the `m <filter>` `Ctrl+Space` Symbols selector for workspace modules.
+- Normalized the Windows `Ctrl+Shift+/` key report so Uncomment executes the
+  registered shortcut reliably.
+- Added an undoable, multiline-safe Toggle Selection Case context action and
+  removed Replace, comment, uncomment, indent, and unindent from the editor
+  context menu without removing their commands or shortcuts.
+- Added a ZeroSlack circuit-trace application icon to the Qt resources and the
+  Windows executable resource.
+
 ## [0.4.1] - 2026-08-18
 
 ### Keyboard movement reliability

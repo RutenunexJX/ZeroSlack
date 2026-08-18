@@ -296,6 +296,7 @@ bool MyCodeEditorState::beginSemanticRenameEditor(
                 semanticRenameSubject.stableKey.toString());
             parameters.insert(QStringLiteral("cursorPosition"),
                               editor->textCursor().position());
+            parameters.insert(QStringLiteral("applyOnEnter"), true);
             if (!requestRenameAction(editor, parameters)) {
                 pendingPeek->setEditableMessage(
                     QStringLiteral(

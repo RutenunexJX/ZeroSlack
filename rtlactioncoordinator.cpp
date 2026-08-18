@@ -1111,6 +1111,52 @@ RtlActionCoordinator::executeRtlRenameAction(
             : beginFailure);
     }
 
+    const bool applyOnEnter =
+        invocation.parameters
+            .value(QStringLiteral("applyOnEnter"))
+            .toBool();
+    if (applyOnEnter && !result.dryRun) {
+        const std::uint64_t sessionId =
+            coordinator->activeSessionId();
+        const RtlHighRiskEditPanelOutcome preview =
+            coordinator->requestPreview(sessionId);
+        if (preview.panelState
+            != RtlHighRiskEditPanelState::PreviewReady) {
+            panelLayoutController->restorePanel(
+                RtlHighRiskEditPanelCoordinator::panelId());
+            return fail(
+                preview.message.isEmpty()
+                    ? QStringLiteral(
+                          "The exact RTL rename preview could not be prepared.")
+                    : preview.message);
+        }
+        const RtlHighRiskEditPanelOutcome applied =
+            coordinator->confirm(sessionId);
+        if (applied.panelState
+            != RtlHighRiskEditPanelState::Applied) {
+            panelLayoutController->restorePanel(
+                RtlHighRiskEditPanelCoordinator::panelId());
+            return fail(
+                applied.message.isEmpty()
+                    ? QStringLiteral(
+                          "The exact RTL rename transaction was not applied.")
+                    : applied.message);
+        }
+        result.succeeded = true;
+        result.message = QStringLiteral(
+            "Renamed %1 reference(s) in %2 file(s).")
+                .arg(applied.editCount)
+                .arg(applied.fileCount);
+        result.output.insert(QStringLiteral("editCount"),
+                             applied.editCount);
+        result.output.insert(QStringLiteral("fileCount"),
+                             applied.fileCount);
+        result.output.insert(
+            QStringLiteral("sessionId"),
+            QVariant::fromValue<qulonglong>(sessionId));
+        return result;
+    }
+
     QPointer<QWidget> previousFocus =
         QApplication::focusWidget();
     if (!panelLayoutController->restorePanel(

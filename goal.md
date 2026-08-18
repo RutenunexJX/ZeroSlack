@@ -1,26 +1,29 @@
 # ZeroSlack Current Goal
 
-Product version: `v0.4.1`
+Product version: `v0.4.2`
 
 ## Objective
 
-Deliver a verifiable 0.4.1 keyboard-reliability patch that restores continuous
-`Alt+Up` / `Alt+Down` line movement, keeps the caret attached to each repeated
-downward move, and lets an active column selection expand horizontally with
-`Shift+Left` / `Shift+Right`.
+Deliver a verifiable 0.4.2 editing-command reliability patch: make compact
+semantic rename apply on Enter, preserve diagnostics after trivia-only saves,
+add module filtering and selection-case editing, restore Uncomment, simplify
+the context menu, and establish a stable ZeroSlack application icon.
 
 ## Completion criteria
 
-- `VERSION`, generated GUI metadata, and current documents agree on 0.4.1.
-- Auto-repeat key presses execute one line move per event until the document
-  boundary, with the original column and logical selection preserved.
-- Active column selections accept Shift-only horizontal adjustment while
-  retaining `Shift+Alt+Arrow` as the explicit entry gesture.
-- Focused controller and GUI regressions cover both behaviors, followed by the
-  complete configured test suite.
+- `VERSION`, generated GUI metadata, and current documents agree on 0.4.2.
+- Ctrl+R Enter applies a generation-checked rename to every affected document
+  buffer and retains one protected transaction undo position.
+- Diagnostic ranges remain current after formatter and whitespace-only saves.
+- `m <filter>`, Toggle Selection Case, and `Ctrl+Shift+/` have focused tests;
+  removed context entries retain their Action descriptors and shortcuts.
+- The Qt window and packaged Windows executable expose the new icon.
+- The complete configured test suite passes without relaxed assertions.
 
 ## Current status
 
-Implementation and verification are complete. A clean configure and full Debug
-build pass, and all 86 configured tests pass, including the focused line-move
-and column-selection regressions. This revision is the `v0.4.1` release source.
+Implementation and verification are complete. The generated GUI metadata and
+current documents agree on `v0.4.2`, and all 86 configured Debug tests pass,
+including the focused rename, completion, diagnostics, shortcut, context-menu,
+GUI integration, performance, and version-policy coverage. This revision is
+the `v0.4.2` release source.

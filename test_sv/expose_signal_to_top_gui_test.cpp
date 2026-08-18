@@ -981,38 +981,47 @@ void runContextActionRegistryExecutionRegression()
                      == QString::fromLatin1(
                          ActionIds::SelectExpandSmart));
 
-    editor->setTextCursor(firstCursor);
+    QTextCursor firstCaseCursor(editor->document());
+    firstCaseCursor.setPosition(firstSymbolStart);
+    firstCaseCursor.setPosition(
+        firstSymbolStart + QStringLiteral("first").size(),
+        QTextCursor::KeepAnchor);
+    editor->setTextCursor(firstCaseCursor);
     editor->setFocus();
     resetApplicationActionExecutionHistory();
     const ContextActionTriggerState contextAction =
         triggerContextMenuAction(
             editor,
-            QStringLiteral("logic first"),
-            QStringLiteral("format.commentLines"));
-    check("context formatter is a routed Action Registry adapter",
+            QStringLiteral("first"),
+            QString::fromLatin1(
+                ActionIds::EditToggleSelectionCase));
+    check("context selection-case action is a routed Action Registry adapter",
           contextAction.menuShown
               && contextAction.found
               && contextAction.enabled
               && contextAction.triggered
               && contextAction.actionId
-                     == QStringLiteral(
-                         "format.commentLines")
+                     == QString::fromLatin1(
+                         ActionIds::EditToggleSelectionCase)
               && contextAction.executionRoute
                      == QStringLiteral(
-                         "editor.format.commentLines"));
-    check("context formatter executes through the MainWindow host",
+                         "editor.edit.toggleSelectionCase"));
+    check("context selection-case action executes through the MainWindow host",
           editor->toPlainText().contains(
-              QStringLiteral("// logic first;"))
+              QStringLiteral("logic FIRST;"))
               && applicationActionExecutionHistory()
                      .lastActionId()
-                     == QStringLiteral(
-                         "format.commentLines"));
+                     == QString::fromLatin1(
+                         ActionIds::EditToggleSelectionCase));
 
-    QTextCursor secondCursor(editor->document());
-    secondCursor.setPosition(positionInside(
-        editor->toPlainText(),
-        QStringLiteral("logic second")));
-    editor->setTextCursor(secondCursor);
+    const int secondCaseStart =
+        editor->toPlainText().indexOf(QStringLiteral("second"));
+    QTextCursor secondCaseCursor(editor->document());
+    secondCaseCursor.setPosition(secondCaseStart);
+    secondCaseCursor.setPosition(
+        secondCaseStart + QStringLiteral("second").size(),
+        QTextCursor::KeepAnchor);
+    editor->setTextCursor(secondCaseCursor);
     editor->setFocus();
     QTest::keyPress(editor, Qt::Key_F24);
     QCoreApplication::processEvents(
@@ -1026,14 +1035,14 @@ void runContextActionRegistryExecutionRegression()
     QTest::keyRelease(editor, Qt::Key_F24);
     QCoreApplication::processEvents(
         QEventLoop::AllEvents, 50);
-    check("Command Mode repeats the context formatter Action",
+    check("Command Mode repeats the context selection-case Action",
           commandLayerEntered
               && editor->toPlainText().contains(
-                  QStringLiteral("// logic second;"))
+                  QStringLiteral("logic SECOND;"))
               && applicationActionExecutionHistory()
                      .lastActionId()
-                     == QStringLiteral(
-                         "format.commentLines"));
+                     == QString::fromLatin1(
+                         ActionIds::EditToggleSelectionCase));
 
     QTextCursor thirdCursor(editor->document());
     thirdCursor.setPosition(positionInside(

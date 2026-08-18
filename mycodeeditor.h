@@ -276,6 +276,7 @@ public:
                        bool caseSensitive = false);
     int showGotoLineDialog();
     void showReplaceDialog();
+    bool toggleSelectionCase(QString* failureReason = nullptr);
     void commentSelectionOrLine();
     void uncommentSelectionOrLine();
     void indentSelectionOrLine();

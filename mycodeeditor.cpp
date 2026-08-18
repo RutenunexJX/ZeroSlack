@@ -1371,6 +1371,47 @@ void MyCodeEditor::showReplaceDialog()
     showReplaceDialogFor(this);
 }
 
+bool MyCodeEditor::toggleSelectionCase(QString* failureReason)
+{
+    if (failureReason)
+        failureReason->clear();
+    if (isReadOnly()) {
+        if (failureReason)
+            *failureReason = tr("The editor is read-only.");
+        return false;
+    }
+
+    QTextCursor cursor = textCursor();
+    if (!cursor.hasSelection()) {
+        if (failureReason)
+            *failureReason = tr("Select text to change its case.");
+        return false;
+    }
+
+    const int selectionStart = cursor.selectionStart();
+    const int selectionLength =
+        cursor.selectionEnd() - selectionStart;
+    QString toggled = cachedDocumentText().mid(
+        selectionStart, selectionLength);
+    for (QChar& character : toggled) {
+        if (character.isLower())
+            character = character.toUpper();
+        else if (character.isUpper())
+            character = character.toLower();
+    }
+
+    auto edit = beginSynchronousEditTransaction();
+    cursor.beginEditBlock();
+    cursor.insertText(toggled);
+    cursor.endEditBlock();
+    cursor.setPosition(selectionStart);
+    cursor.setPosition(selectionStart + toggled.size(),
+                       QTextCursor::KeepAnchor);
+    setTextCursor(cursor);
+    emit editorStatusMessageRequested(tr("Selection case toggled"));
+    return true;
+}
+
 void MyCodeEditor::commentSelectionOrLine()
 {
     auto edit = beginSynchronousEditTransaction();

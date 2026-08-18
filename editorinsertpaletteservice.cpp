@@ -45,6 +45,7 @@ ParsedSymbolQuery parseSymbolQuery(const QString& text)
         {"p", {CompletionCommandKind::Parameter}},
         {"t", {CompletionCommandKind::Task}},
         {"f", {CompletionCommandKind::Function}},
+        {"m", {CompletionCommandKind::Module}},
         {"e", {CompletionCommandKind::EnumValue,
                 CompletionCommandKind::EnumType,
                 CompletionCommandKind::EnumVariable}},
@@ -192,6 +193,14 @@ QList<GlobalControlItem> symbolItems(
             continue;
         }
         if (parsed.explicitSelector) {
+            if (kind == CompletionCommandKind::Module) {
+                append(service->findCommandCompletionSymbolRecords(
+                           completionQuery(context,
+                                           kind,
+                                           parsed.filter)),
+                       kind);
+                continue;
+            }
             QList<SemanticSymbolRecord> matchingRecords;
             for (const SemanticSymbolRecord& record : visibleRecords) {
                 if (completionCommandKindMatchesCommandRecord(record, kind))

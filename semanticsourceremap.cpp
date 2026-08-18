@@ -153,12 +153,20 @@ void remapSourceRange(SemanticSourceRange* range,
 {
     if (!range || !fileMatcher.matches(range->fileName))
         return;
-    const int oldStart = oldLineIndex.positionForLineColumn(range->line,
-                                                            range->column);
-    const int oldEnd = oldLineIndex.positionForLineColumn(range->endLine,
-                                                          range->endColumn);
+    const int oldStart = range->position >= 0
+        ? range->position
+        : oldLineIndex.positionForLineColumn(range->line,
+                                             range->column);
+    int oldEnd = range->length > 0
+        ? oldStart + range->length
+        : oldLineIndex.positionForLineColumn(range->endLine,
+                                             range->endColumn);
+    if (oldEnd < oldStart)
+        oldEnd = oldStart;
     const int newStart = positionMap.map(oldStart, false);
     const int newEnd = positionMap.map(oldEnd, true);
+    range->position = newStart;
+    range->length = qMax(0, newEnd - newStart);
     newLineIndex.lineColumnForPosition(newStart,
                                        &range->line,
                                        &range->column);
@@ -215,12 +223,26 @@ SemanticSourceRemapper::remapSnapshot(
     for (SemanticDiagnostic& diagnostic : diagnostics) {
         if (!fileMatcher.matches(diagnostic.fileName))
             continue;
-        const int oldPosition = oldLineIndex.positionForLineColumn(
-            diagnostic.line, diagnostic.column);
-        const int newPosition = positionMap.map(oldPosition, false);
-        newLineIndex.lineColumnForPosition(newPosition,
-                                           &diagnostic.line,
-                                           &diagnostic.column);
+        for (SemanticSourceRange& range : diagnostic.ranges) {
+            remapSourceRange(&range,
+                             fileMatcher,
+                             oldLineIndex,
+                             newLineIndex,
+                             positionMap);
+        }
+        if (!diagnostic.ranges.isEmpty()) {
+            diagnostic.line = diagnostic.ranges.first().line;
+            diagnostic.column = diagnostic.ranges.first().column;
+        } else {
+            const int oldPosition = oldLineIndex.positionForLineColumn(
+                diagnostic.line, diagnostic.column);
+            const int newPosition = positionMap.map(oldPosition, false);
+            newLineIndex.lineColumnForPosition(newPosition,
+                                               &diagnostic.line,
+                                               &diagnostic.column);
+        }
+        if (documentRevision > 0)
+            diagnostic.documentRevision = documentRevision;
     }
 
     QHash<QString, QString> contents = snapshot->fileContents();

@@ -1314,10 +1314,13 @@ void EditorCoordinator::handleSourceSymbolContextMenuRequested(
     append(QStringLiteral("navigation.goLine"));
     append(QString::fromLatin1(
         ActionIds::ViewTemporaryEditorOpen));
-    append(QStringLiteral("edit.replace"),
-           true,
-           editable,
-           QStringLiteral("The editor is read-only."));
+    append(QString::fromLatin1(
+               ActionIds::EditToggleSelectionCase),
+           hasSelection,
+           editable && hasSelection,
+           editable
+               ? QStringLiteral("Select text to change its case.")
+               : QStringLiteral("The editor is read-only."));
 
     const EditorStructuralContextMenuState structural =
         editor->structuralContextMenuState(cursorPosition);
@@ -1332,22 +1335,6 @@ void EditorCoordinator::handleSourceSymbolContextMenuRequested(
            false,
            true);
 
-    append(QStringLiteral("format.commentLines"),
-           true,
-           editable,
-           QStringLiteral("The editor is read-only."));
-    append(QStringLiteral("format.uncommentLines"),
-           true,
-           editable,
-           QStringLiteral("The editor is read-only."));
-    append(QStringLiteral("format.indentLines"),
-           true,
-           editable,
-           QStringLiteral("The editor is read-only."));
-    append(QStringLiteral("format.unindentLines"),
-           true,
-           editable,
-           QStringLiteral("The editor is read-only."));
     append(QStringLiteral("format.profile.structured"));
     append(QStringLiteral("format.profile.indentOnly"));
     append(QStringLiteral("format.selection"),
@@ -1375,11 +1362,13 @@ void EditorCoordinator::handleSourceSymbolContextMenuRequested(
                 || actionId == QStringLiteral("edit.copy")
                 || actionId == QStringLiteral("edit.paste")
                 || actionId == QStringLiteral("select.all")
+                || actionId
+                       == QString::fromLatin1(
+                           ActionIds::EditToggleSelectionCase)
                 || actionId == QStringLiteral("navigation.goLine")
                 || actionId
                        == QString::fromLatin1(
                            ActionIds::ViewTemporaryEditorOpen)
-                || actionId == QStringLiteral("edit.replace")
                 || actionId
                        == QStringLiteral(
                            "refactor.createSignalDefinition")
@@ -1439,10 +1428,17 @@ void EditorCoordinator::handleSourceSymbolContextMenuRequested(
             } else if (actionId == QStringLiteral("select.all")) {
                 editor->selectAll();
             } else if (actionId
+                       == QString::fromLatin1(
+                           ActionIds::EditToggleSelectionCase)) {
+                QString reason;
+                if (!editor->toggleSelectionCase(&reason)
+                    && !reason.isEmpty()
+                    && statusMessageHandler) {
+                    statusMessageHandler(reason, 5000);
+                }
+            } else if (actionId
                        == QStringLiteral("navigation.goLine")) {
                 editor->showGotoLineDialog();
-            } else if (actionId == QStringLiteral("edit.replace")) {
-                editor->showReplaceDialog();
             } else if (actionId
                        == QStringLiteral(
                            "refactor.createSignalDefinition")) {

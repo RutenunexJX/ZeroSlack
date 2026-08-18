@@ -1033,6 +1033,13 @@ void appendEditorContextMenuActions(QList<ActionDescriptor>* out)
          ActionScope::Editor,
          "Open an editor tab.",
          "Ctrl+H"},
+        {ActionIds::EditToggleSelectionCase,
+         "Toggle Selection Case",
+         "Toggle the letter case of every character in the current selection.",
+         "editor.edit.toggleSelectionCase",
+         ActionCategory::Refactor,
+         ActionScope::Editor,
+         "Select editable text."},
         {"refactor.createSignalDefinition",
          "Create Signal Definition",
          "Create a declaration for the undeclared signal at the context cursor.",
@@ -1146,7 +1153,13 @@ void appendEditorContextMenuActions(QList<ActionDescriptor>* out)
             || descriptor.id == QStringLiteral("edit.paste")
             || descriptor.id == QStringLiteral("select.all")
             || descriptor.id == QStringLiteral("edit.find");
-        if (!standardEditorAction) {
+        const bool hiddenFromContextMenu =
+            descriptor.id == QStringLiteral("edit.replace")
+            || descriptor.id == QStringLiteral("format.commentLines")
+            || descriptor.id == QStringLiteral("format.uncommentLines")
+            || descriptor.id == QStringLiteral("format.indentLines")
+            || descriptor.id == QStringLiteral("format.unindentLines");
+        if (!standardEditorAction && !hiddenFromContextMenu) {
             descriptor.aliases.append(
                 alias(ActionSurface::ContextMenu,
                       descriptor.id,

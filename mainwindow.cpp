@@ -3814,6 +3814,7 @@ ActionExecutionResult MainWindow::executeActionRoute(
 
     if (route == QStringLiteral("editor.edit.find")
         || route == QStringLiteral("editor.edit.replace")
+        || route == QStringLiteral("editor.edit.toggleSelectionCase")
         || route == QStringLiteral(
                         "editor.structure.createSignalDefinition")
         || route == QStringLiteral(
@@ -3842,6 +3843,8 @@ ActionExecutionResult MainWindow::executeActionRoute(
             route == QStringLiteral(
                          "editor.edit.replace")
             || route == QStringLiteral(
+                            "editor.edit.toggleSelectionCase")
+            || route == QStringLiteral(
                             "editor.format.commentLines")
             || route == QStringLiteral(
                             "editor.format.uncommentLines")
@@ -3864,6 +3867,11 @@ ActionExecutionResult MainWindow::executeActionRoute(
         } else if (route == QStringLiteral(
                          "editor.edit.replace")) {
             editor->showReplaceDialog();
+        } else if (route == QStringLiteral(
+                                "editor.edit.toggleSelectionCase")) {
+            QString message;
+            if (!editor->toggleSelectionCase(&message))
+                return fail(message);
         } else if (route == QStringLiteral(
                                 "editor.structure.createSignalDefinition")) {
             const int cursorPosition =
