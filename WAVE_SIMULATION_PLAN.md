@@ -218,7 +218,7 @@ S1 实际结果：
 
 ### S2：WaveWorkbench 导入目标
 
-状态：`pending`
+状态：`completed`（2026-08-18）
 
 范围：
 
@@ -228,6 +228,45 @@ S1 实际结果：
 - 默认输入值可见，不允许隐藏生成激励。
 
 验收：导入后可以直接编辑模块输入波形，不需要手工重建全部信号。
+
+S2 实际结果：
+
+- WaveWorkbench 新增严格的 Module Manifest v1 解析器，逐字段对齐 ZeroSlack
+  的版本化 Schema；拒绝未知字段、非法版本、绝对路径、重复身份和无效候选引用。
+- 新增实验性命令
+  `wave-bridge import-module <module-manifest.json> <output.wave.json>`，将模块或
+  实例目标转换为可直接打开、保存和继续编辑的 WaveWorkbench 工程。
+- 唯一 clock candidate 创建可见 Clock lane 和显式 ClockDomain；唯一 reset
+  candidate 标记对应输入 lane。候选为空或有歧义时不猜测，并输出明确状态与诊断。
+- `input`、`inout` 和 `ref` 创建可见 stimulus lane；除 clock 外均以覆盖完整
+  duration 的显式零值 Segment 初始化。`output` 创建无驱动 watch lane；`inout`
+  和 `ref` 同时保留 stimulus/watch 角色。
+- bit、bus 和 enum 映射到原生 Lane；enum 名称与 Slang 生效值进入 enum map。
+  声明文本、方向、源码位置、类型 identity、typedef chain、workspace identity 和
+  manifest identity 保存在版本化扩展字段中。
+- interface、unpacked array 以及无可靠固定 integral 位宽的端口不做隐式扁平化，
+  而是跳过并产生明确诊断，留给 S12 的结构化输入切片。
+- 新增真实契约 fixture、解析/分类/歧义/非法输入/普通编辑命令测试，以及 CLI
+  生成后由 `wave-cli inspect` 重载的冒烟测试。WaveWorkbench 全量测试
+  `78/78` 通过；生成工程经 `wave-cli validate` 验证为有效，未驱动 output 的
+  undefined warning 属于预期 watch 状态。
+
+本轮切片：S2 WaveWorkbench 导入目标
+完成内容：Manifest v1 严格读取、确定性 Project/Scenario/Lane 映射、clock/reset
+建议、显式默认输入、watch lane、CLI 导入、保存重载与测试。
+明确未做：Stimulus Scenario 独立契约、Verilator、正式 GUI 入口、interface/unpacked
+array 编辑和仿真运行。
+用户可见行为：仅新增实验性 `wave-bridge import-module`；ZeroSlack 正式 UI 无变化。
+自动测试：WaveWorkbench `wave-tests` 55/55；CTest 78/78。
+人工验证：fixture 成功生成 `.wave.json`，并由 `wave-cli validate`/`inspect` 重新读取；
+得到 6 条 stimulus lane、3 条 watch lane、唯一 clock/reset 和显式 interface warning。
+Schema/接口版本：ZeroSlack Module Manifest `v1`，生产者契约未修改。
+修改仓库与提交：WaveWorkbench `a454f6b`；ZeroSlack 本文档提交。
+已知限制：output 在真实仿真结果导入前保持 undefined；interface、unpacked array 和
+非固定 integral 类型暂不创建 lane。
+下一最小切片：S3 Stimulus Scenario 契约。
+恢复开发所需上下文：从 WaveWorkbench 的 `wave/module_manifest.h` 与
+`wave-bridge import-module` 继续；以工程扩展中的 manifest identity 为 S3 场景绑定依据。
 
 ### S3：Stimulus Scenario 契约
 
