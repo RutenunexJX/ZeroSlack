@@ -385,7 +385,7 @@ Schema/接口版本：Toolchain Probe Report `v1`。
 
 ### S5：固定 Fixture 端到端
 
-状态：`pending`
+状态：`completed`（2026-08-19）
 
 范围：
 
@@ -395,6 +395,45 @@ Schema/接口版本：Toolchain Probe Report `v1`。
 - 用 WaveWorkbench TraceIndex 读取并由 TraceCanvas 显示。
 
 验收：自动测试覆盖完整链路，不依赖用户工程，不暴露正式入口。
+
+S5 实际结果：
+
+- WaveWorkbench 新增独立 `wave/simulation_pipeline.h`，以
+  `VerilatorSimulationRunner` 串联契约校验、异步工具链探测、harness 生成、模型构建、
+  仿真执行和 VCD 导入。外部进程全部复用 S4 的 `ProcessRunner`，未在 CLI 或 GUI 中增加
+  同步等待路径。
+- 固定 DUT `wave_fixed_counter`、Module Manifest 和 Stimulus Scenario 均纳入仓库。
+  runner 要求两份契约精确恢复一致，并校验 source、include、define、parameter 与端口能力；
+  不支持的 interface、inout/ref、unpacked array、未知位宽或 X/Z 输入会明确失败，不静默降级。
+- 生成的 C++ harness 按 Stimulus 驱动输入与时钟，使用 Manifest 的顶层、源文件、include、
+  define 和 parameter 调用 Verilator，运行后将 VCD 解析为现有 `TraceIndex`。
+- 实验性 `wave-sim-runner run-fixture` 输出
+  `wave-workbench.simulation-run/v1` JSON，保留终止阶段、诊断、工具链、构建与运行证据、
+  harness/model/VCD 路径及导入后的 signal/transition 摘要；支持硬超时和取消。
+- 自动测试覆盖成功、构建失败、运行超时、取消、CLI 契约和离屏 `TraceCanvas` 非空渲染；
+  CMake 若发现真实 Verilator，会额外注册 `wave-fixed-fixture-real-verilator`。
+- 修复 `ProcessRunner` 在 Windows 下解析程序与子进程实际收到的 `Path/PATH` 不一致问题，
+  并补齐既有 module-manifest load 测试遗漏的 Qt/MinGW 运行环境。
+- `wave-tests` 为 `59/59`，全量 CTest 为 `85/85`；手工确定性链路报告为
+  `succeeded`，导入 4 个信号、16 次 transition，TraceCanvas 截图测试通过。
+
+本轮切片：S5 固定 Fixture 端到端
+完成内容：固定 DUT 契约、异步仿真流水线、harness、Verilator 构建/运行编排、VCD 导入、
+结构化报告、实验性 CLI、TraceCanvas 冒烟及失败终态测试。
+明确未做：ZeroSlack 当前选中模块、未保存源码镜像、正式 GUI 入口、复杂端口类型与缓存复用。
+用户可见行为：仅新增实验性 `wave-sim-runner run-fixture`；两个正式 GUI 均无入口变化。
+自动测试：WaveWorkbench `wave-tests` 59/59；CTest 85/85。
+人工验证：确定性独立进程 fixture 完成 build -> run -> VCD -> TraceIndex 全链，得到
+4 个信号和 16 次 transition；离屏 TraceCanvas 输出非空波形图。
+Schema/接口版本：Simulation Run Report `v1`；Toolchain Probe Report 继续为 `v1`。
+修改仓库与提交：WaveWorkbench `9a65170`；ZeroSlack 仅更新本文档。
+已知限制：当前机器仍未安装真实 Verilator，因此本机未执行真实编译 CTest；真实测试已按
+工具可用性条件注册，确定性 fixture 验证的是同一参数、artifact 和异步终态编排，不冒充
+真实 Verilator 编译证据。
+下一最小切片：S6 选中模块运行。
+恢复开发所需上下文：从 WaveWorkbench 的 `wave/simulation_pipeline.h`、
+`wave-sim-runner run-fixture`、ZeroSlack 的 Module Manifest 导出和本文档 S6 继续；正式接入前
+必须先建立未保存文档的临时源码镜像，不能直接仿真磁盘旧内容。
 
 ### S6：选中模块运行
 
