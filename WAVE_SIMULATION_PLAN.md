@@ -270,7 +270,7 @@ Schema/接口版本：ZeroSlack Module Manifest `v1`，生产者契约未修改�
 
 ### S3：Stimulus Scenario 契约
 
-状态：`pending`
+状态：`completed`（2026-08-18）
 
 范围：
 
@@ -280,6 +280,55 @@ Schema/接口版本：ZeroSlack Module Manifest `v1`，生产者契约未修改�
 - 不接 Verilator。
 
 验收：场景保存、重开和 workspace 移动后保持一致；无绝对路径泄漏。
+
+S3 实际结果：
+
+- WaveWorkbench 新增纯逻辑模块 `wave/stimulus_scenario.h` 与
+  `stimulus_scenario.cpp`；模块只依赖 QtCore 和既有 model/Manifest API，
+  不执行文件 I/O，不依赖 QtWidgets，也不重新解释 SystemVerilog。
+- 定义严格的 Stimulus Scenario `v1`，对应 JSON Schema 位于
+  `schemas/stimulus/v1/stimulus-scenario.schema.json`。所有 tick 以十进制字符串
+  保存，覆盖 timebase、duration、bit/bus/enum stimulus、clock
+  period/phase/duty/edge/initial value、reset 元数据与显式区间，以及 watch
+  role、顺序、分组、可见性和 radix。
+- 契约绑定 Manifest schema/identity、workspace identity、module/instance target
+  及每个端口的方向、宽度、signed、canonical type、declaration shape 和源码顺序；
+  内容另有 SHA-256 identity，解析时拒绝未知字段、非法版本、重复身份、显示顺序冲突、
+  值/类型冲突、stimulus 区间缺口和内容哈希不一致。
+- 新增实验性命令
+  `wave-bridge export-stimulus <project.wave.json> <stimulus.json>` 和
+  `wave-bridge import-stimulus <module-manifest.json> <stimulus.json>
+  <output.wave.json>`；统一 `wave-cli bridge` 转发入口也已实际验证。
+- 恢复时先由当前 Module Manifest 生成基础工程，不建立第二套模块事实源。Manifest
+  identity 未变化时要求端口契约精确一致；identity 变化时只迁移同 workspace、同 target、
+  同名且方向/类型兼容的端口。删除、类型变化、新增端口分别输出 missing、incompatible、
+  new 计数，不进行相似名称或位置猜测；enum 成员变化视为类型不兼容。
+- 场景文件不保存源码、工程或缓存路径。自动测试将同一个 `stimulus.json` 移动到另一临时
+  目录后重开，并验证 identity 不变；恢复工程还经过正常 `.wave.json` 保存/重开以及
+  `wave-cli inspect`/`validate`。
+- 新增 Schema、安装包内容、核心迁移及四级 CLI 链测试。WaveWorkbench 核心测试
+  `56/56`、CTest `82/82` 通过；恢复工程仅有未驱动 output watch lane 的预期
+  undefined warning。
+
+本轮切片：S3 Stimulus Scenario 契约
+完成内容：严格版本化场景契约、Manifest 绑定、便携保存、确定性端口迁移、CLI
+导入导出、安装 Schema、目录移动和保存重开测试。
+明确未做：Verilator 探测与运行、正式 GUI 入口、interface/unpacked array、结果波形、
+轻量检查规则和多命名场景管理。
+用户可见行为：仅新增实验性 CLI；ZeroSlack 和 WaveWorkbench 正式 GUI 均无新增入口。
+自动测试：WaveWorkbench `wave-tests` 56/56；CTest 82/82；portable install 包含
+Stimulus Scenario v1 Schema。
+人工验证：经 `wave-cli bridge` 导出 8 个端口的场景，使用同一 Manifest 恢复后由
+`wave-cli validate` 接受；2 个 output watch 的 undefined warning 符合当前阶段预期。
+Schema/接口版本：Module Manifest `v1`；Stimulus Scenario `v1`。
+修改仓库与提交：WaveWorkbench `f77a367`；ZeroSlack 仅更新本文档。
+已知限制：reset active level/synchronization 在当前 Manifest 只有候选信息时保存为
+`unspecified`；interface/unpacked array 仍沿用 S2 的显式 deferred 诊断；本阶段不产生
+真实仿真结果。
+下一最小切片：S4 Verilator 环境探测。
+恢复开发所需上下文：从 WaveWorkbench 的 `wave/stimulus_scenario.h`、
+`wave-bridge import-stimulus` 和本文档 S4 继续；S4 只建立独立 runner 的工具链探测、
+取消、超时和结构化失败，不生成 DUT 模型。
 
 ### S4：Verilator 环境探测
 
