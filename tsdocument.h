@@ -705,6 +705,9 @@ public:
     // Exact SystemVerilog identifier under the cursor. Comment and string
     // nodes are never returned.
     TSIdentifierTarget identifierAt(int charOffset) const;
+    QList<TSIdentifierTarget> identifiersInRange(
+        int startChar,
+        int endChar) const;
     TSExpressionAtomTarget expressionAtomAt(int charOffset) const;
     TSCompletionContextTarget completionContextAt(int charOffset) const;
     TSIdentifierOccurrenceSet identifierOccurrencesAt(

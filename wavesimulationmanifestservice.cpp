@@ -1,6 +1,7 @@
 #include "wavesimulationmanifestservice.h"
 
 #include "semanticindexsnapshot.h"
+#include "tsdocument.h"
 
 #include <QCryptographicHash>
 #include <QDir>
@@ -114,6 +115,23 @@ bool isPort(const SemanticSymbolRecord& record)
         || record.collectorKind == CollectorKind::PortRef
         || record.collectorKind == CollectorKind::PortInterface
         || record.collectorKind == CollectorKind::PortInterfaceModport;
+}
+
+bool isObservable(const SemanticSymbolRecord& record)
+{
+    if (isPort(record))
+        return true;
+    switch (record.collectorKind) {
+    case CollectorKind::Reg:
+    case CollectorKind::Wire:
+    case CollectorKind::Logic:
+    case CollectorKind::EnumVariable:
+    case CollectorKind::PackedStructVariable:
+    case CollectorKind::UnpackedStructVariable:
+        return true;
+    default:
+        return false;
+    }
 }
 
 bool sameStableKey(const SymbolStableKey& left,
@@ -317,6 +335,63 @@ WaveSimulationManifestType manifestType(
     return result;
 }
 
+bool supportedObservationType(const WaveSimulationManifestType& type)
+{
+    const WaveSimulationManifestTypeShape& shape = type.shape;
+    return shape.semanticAvailable
+        && shape.fixedSize
+        && shape.integral
+        && !shape.unpackedArray
+        && !shape.interfaceType
+        && shape.bitWidth > 0;
+}
+
+int lineStartChar(const QString& text, int oneBasedLine)
+{
+    if (oneBasedLine <= 1)
+        return 0;
+    int line = 1;
+    int position = 0;
+    while (line < oneBasedLine && position < text.size()) {
+        const int newline = text.indexOf(QLatin1Char('\n'), position);
+        if (newline < 0)
+            return text.size();
+        position = newline + 1;
+        ++line;
+    }
+    return position;
+}
+
+QString observationRootName(const QString& accessPath,
+                            const QString& fallback)
+{
+    const QString trimmed = accessPath.trimmed();
+    if (trimmed.isEmpty())
+        return fallback.trimmed();
+    const qsizetype separator = trimmed.indexOf(QLatin1Char('.'));
+    return separator < 0 ? trimmed : trimmed.left(separator);
+}
+
+const SemanticSymbolRecord* observableRecord(
+    const QList<SemanticSymbolRecord>& records,
+    const SemanticSymbolRecord& module,
+    const QString& name)
+{
+    const SemanticSymbolRecord* best = nullptr;
+    for (const SemanticSymbolRecord& record : records) {
+        if (record.name != name
+            || !belongsToModule(record, module)
+            || !isObservable(record)) {
+            continue;
+        }
+        if (!best
+            || record.location.position < best->location.position) {
+            best = &record;
+        }
+    }
+    return best;
+}
+
 QString workspaceIdentity(const WaveSimulationModuleManifest& manifest,
                          const ProjectSnapshot& project)
 {
@@ -400,6 +475,48 @@ WaveSimulationManifestBuildResult WaveSimulationManifestService::build(
         return result;
     }
     manifest.target.sourceFile = *modulePath;
+    manifest.observationScope.mode = QStringLiteral("module");
+    manifest.observationScope.sourceFile = *modulePath;
+    manifest.observationScope.startLine = module.location.startLine;
+    manifest.observationScope.endLine = module.location.startLine;
+
+    if (!request.observationScope.mode.trimmed().isEmpty()) {
+        if (request.observationScope.mode != QStringLiteral("always")
+            || request.observationScope.fileName.trimmed().isEmpty()
+            || request.observationScope.startLine <= 0
+            || request.observationScope.endLine
+                   < request.observationScope.startLine) {
+            result.status =
+                WaveSimulationManifestBuildStatus::InvalidObservationScope;
+            result.message = QStringLiteral(
+                "The selected Wave Simulation observation scope is invalid.");
+            return result;
+        }
+        const std::optional<QString> scopePath = relativeProjectPath(
+            request.project.workspaceRoot,
+            request.observationScope.fileName);
+        if (!scopePath) {
+            result.status =
+                WaveSimulationManifestBuildStatus::ProjectPathOutsideWorkspace;
+            result.message = QStringLiteral(
+                "The observation scope is outside the workspace root.");
+            return result;
+        }
+        if (*scopePath != *modulePath) {
+            result.status =
+                WaveSimulationManifestBuildStatus::InvalidObservationScope;
+            result.message = QStringLiteral(
+                "The selected always block does not belong to the target module source file.");
+            return result;
+        }
+        manifest.observationScope.mode = QStringLiteral("always");
+        manifest.observationScope.label = request.observationScope.label;
+        manifest.observationScope.sourceFile = *scopePath;
+        manifest.observationScope.startLine =
+            request.observationScope.startLine;
+        manifest.observationScope.endLine =
+            request.observationScope.endLine;
+    }
 
     QSet<QString> seenSources;
     for (const QString& sourcePath : request.project.systemVerilogFiles) {
@@ -536,6 +653,83 @@ WaveSimulationManifestBuildResult WaveSimulationManifestService::build(
             manifest.ports.append(port);
         }
     }
+
+    QList<QPair<QString, QString>> requestedObservations;
+    if (manifest.observationScope.mode == QStringLiteral("always")) {
+        const QString scopeSource =
+            request.semanticSnapshot->getCachedFileContent(
+                request.observationScope.fileName);
+        if (scopeSource.isEmpty()) {
+            result.status =
+                WaveSimulationManifestBuildStatus::InvalidObservationScope;
+            result.message = QStringLiteral(
+                "The selected always block is absent from the current semantic snapshot.");
+            return result;
+        }
+        TSDocument syntax;
+        syntax.setText(scopeSource);
+        const int startChar = lineStartChar(
+            scopeSource, request.observationScope.startLine);
+        const int endChar = lineStartChar(
+            scopeSource, request.observationScope.endLine + 1);
+        for (const TSIdentifierTarget& identifier :
+             syntax.identifiersInRange(startChar, endChar)) {
+            requestedObservations.append({identifier.text, identifier.text});
+        }
+    }
+    for (const WaveSimulationObservationRequest& observation :
+         request.explicitObservations) {
+        const QString accessPath = observation.accessPath.trimmed().isEmpty()
+            ? observation.name
+            : observation.accessPath;
+        requestedObservations.append(
+            {observationRootName(accessPath, observation.name), accessPath});
+    }
+
+    QSet<QString> seenObservationPaths;
+    for (const auto& requested : std::as_const(requestedObservations)) {
+        const QString accessPath = requested.second.trimmed();
+        if (accessPath.isEmpty() || seenObservationPaths.contains(accessPath))
+            continue;
+        const SemanticSymbolRecord* record = observableRecord(
+            request.semanticSnapshot->symbolRecordsView(),
+            module,
+            requested.first);
+        if (!record)
+            continue;
+        const WaveSimulationManifestType type = manifestType(
+            *record,
+            request.instancePath,
+            request.semanticSnapshot->symbolRecordsView());
+        if (!supportedObservationType(type)) {
+            result.warnings.append(
+                QStringLiteral("Observation %1 has no supported fixed integral representation.")
+                    .arg(accessPath));
+            continue;
+        }
+        const std::optional<QString> sourceFile = relativeProjectPath(
+            request.project.workspaceRoot, record->location.fileName);
+        if (!sourceFile) {
+            result.status =
+                WaveSimulationManifestBuildStatus::ProjectPathOutsideWorkspace;
+            result.message = QStringLiteral(
+                "An observed signal is outside the workspace root: %1")
+                                 .arg(record->location.fileName);
+            return result;
+        }
+        WaveSimulationManifestObservation observation;
+        observation.name = record->name;
+        observation.accessPath = accessPath;
+        observation.semanticId = record->stableKey.toString();
+        observation.declarationText =
+            record->presentation.declarationText;
+        observation.type = type;
+        observation.sourceFile = *sourceFile;
+        observation.sourceLine = record->location.startLine;
+        observation.port = isPort(*record);
+        manifest.observations.append(std::move(observation));
+        seenObservationPaths.insert(accessPath);
+    }
     if (!instanceContextFound) {
         result.status =
             WaveSimulationManifestBuildStatus::InstanceContextNotFound;
@@ -604,6 +798,8 @@ QString WaveSimulationManifestService::statusCode(
         return QStringLiteral("unsupported-target");
     case WaveSimulationManifestBuildStatus::InstanceContextNotFound:
         return QStringLiteral("instance-context-not-found");
+    case WaveSimulationManifestBuildStatus::InvalidObservationScope:
+        return QStringLiteral("invalid-observation-scope");
     case WaveSimulationManifestBuildStatus::ProjectPathOutsideWorkspace:
         return QStringLiteral("project-path-outside-workspace");
     }

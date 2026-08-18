@@ -78,7 +78,9 @@ int runFakeTool(const QString& toolName,
     if (toolName == QStringLiteral("wave-sim-runner")) {
         if (qEnvironmentVariableIntValue(
                 "ZEROSLACK_FAKE_WAVE_RUNNER_FAILURE") == 1) {
-            std::cerr << "forced runner failure\n";
+            std::cout
+                << R"({"schema":"wave-workbench.simulation-run/v1","schemaVersion":1,"ok":false,"status":"build-failed","stage":"build-model","diagnostic":"forced runner failure","diagnostics":[{"severity":"error","stage":"build-model","code":"VLT_TEST","message":"forced runner failure","sourceFile":"rtl/top.sv","line":8,"column":5}]})"
+                << '\n';
             return 9;
         }
         const QString output = optionValue(
@@ -415,6 +417,14 @@ int main(int argc, char** argv)
     bool failureCompleted = false;
     bool failureSucceeded = true;
     QString failureMessage;
+    WaveSimulationDiagnostic failureDiagnostic;
+    QObject::connect(
+        &failingCoordinator,
+        &WaveSimulationCoordinator::diagnosticAvailable,
+        &failureLoop,
+        [&](const WaveSimulationDiagnostic& diagnostic) {
+            failureDiagnostic = diagnostic;
+        });
     QObject::connect(
         &failingCoordinator,
         &WaveSimulationCoordinator::finished,
@@ -441,6 +451,15 @@ int main(int argc, char** argv)
               && failureMessage.contains(
                   QStringLiteral("forced runner failure")),
           "runner failure reaches an explicit terminal state with diagnostics");
+    check(failureDiagnostic.isValid()
+              && QFileInfo(failureDiagnostic.sourceFile)
+                     .absoluteFilePath()
+                     == QFileInfo(sourcePath).absoluteFilePath()
+              && failureDiagnostic.line == 8
+              && failureDiagnostic.column == 5
+              && failureDiagnostic.stage
+                     == QStringLiteral("build-model"),
+          "structured runner diagnostics resolve back to original workspace source");
 
     std::cout << "wave simulation runtime checks: "
               << checks << ", failures: " << failures << '\n';

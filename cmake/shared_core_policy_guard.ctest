@@ -12,6 +12,9 @@ if(NOT EXISTS "${ZEROSLACK_TOP_LEVEL_CMAKE}")
 endif()
 
 file(READ "${ZEROSLACK_TOP_LEVEL_CMAKE}" ZEROSLACK_CMAKE_TEXT)
+file(READ
+    "${ZEROSLACK_SOURCE_DIR}/cmake/generate_mingw_exports.py"
+    ZEROSLACK_MINGW_EXPORT_TEXT)
 
 string(REGEX MATCH
     "cmake_minimum_required\\(VERSION[ \t]+([0-9]+\\.[0-9]+)"
@@ -43,6 +46,17 @@ foreach(required_text IN ITEMS
     if(required_position EQUAL -1)
         message(FATAL_ERROR
             "Shared-core policy is missing: ${required_text}")
+    endif()
+endforeach()
+
+foreach(required_export_text IN ITEMS
+        "-?\\d+"
+        "_ZTV28WorkspaceEditDocumentManager")
+    string(FIND "${ZEROSLACK_MINGW_EXPORT_TEXT}"
+        "${required_export_text}" required_export_position)
+    if(required_export_position EQUAL -1)
+        message(FATAL_ERROR
+            "MinGW export policy is missing: ${required_export_text}")
     endif()
 endforeach()
 

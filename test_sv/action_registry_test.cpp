@@ -248,6 +248,29 @@ int main()
                && actionDescriptorsForSurface(
                       ActionSurface::GraphPanel).size()
                       == 13);
+    const ActionDescriptor* runWave = findActionById(
+        QString::fromLatin1(
+            ActionIds::WaveSimulationRunCurrentContext));
+    const ActionDescriptor* observeWave = findActionById(
+        QString::fromLatin1(
+            ActionIds::WaveSimulationObserveSignal));
+    const ActionDescriptor* runWaveInstance = findActionById(
+        QString::fromLatin1(
+            ActionIds::WaveSimulationRunDesignInstance));
+    expect("Wave Simulation exposes formal registry-owned entry points",
+           runWave
+               && runWave->canonicalName
+                      == QStringLiteral("Run Wave Simulation")
+               && runWave->hasSurface(ActionSurface::Menu)
+               && runWave->hasSurface(ActionSurface::ContextMenu)
+               && !runWave->canonicalName.contains(
+                      QStringLiteral("Experimental"))
+               && observeWave
+               && observeWave->scope == ActionScope::Symbol
+               && observeWave->hasSurface(ActionSurface::ContextMenu)
+               && runWaveInstance
+               && runWaveInstance->scope == ActionScope::Hierarchy
+               && runWaveInstance->hasSurface(ActionSurface::ContextMenu));
     const QStringList graphViewActionIds = {
         QString::fromLatin1(ActionIds::GraphViewFit),
         QString::fromLatin1(ActionIds::GraphViewZoomIn),
@@ -771,6 +794,13 @@ int main()
              | ActionRequirements::SemanticCurrent
              | ActionRequirements::Symbol
              | ActionRequirements::Hierarchy,
+         ""},
+        {ActionIds::WaveSimulationRunCurrentContext,
+         "runWaveSimulationAction",
+         "waveSimulation.runCurrentContext",
+         ActionRequirements::Workspace
+             | ActionRequirements::Editor
+             | ActionRequirements::SemanticCurrent,
          ""},
     };
     bool stableMenuCatalogComplete = true;

@@ -290,6 +290,8 @@ struct MyCodeEditorState
     QString currentModuleName(const MyCodeEditor* editor) const;
     EditorAlwaysScopeTarget currentAlwaysScopeTarget(
         const MyCodeEditor* editor) const;
+    EditorAlwaysScopeTarget alwaysScopeTargetAt(
+        int cursorPosition) const;
     EditorModuleScopeTarget currentModuleScopeTarget(
         const MyCodeEditor* editor) const;
     bool goToFinalEndmodule(MyCodeEditor* editor, QString* message);

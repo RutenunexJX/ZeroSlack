@@ -498,6 +498,28 @@ void MainWindow::setupNotificationCenter()
             this,
             [this](const QString& notificationId,
                    const QString& actionId) {
+                if (actionId
+                    == QStringLiteral(
+                        "waveSimulation.goToSource")) {
+                    const QVariantMap location =
+                        waveSimulationNotificationLocations
+                            .value(notificationId);
+                    if (!location.isEmpty()
+                        && navigationCommandCoordinator) {
+                        navigationCommandCoordinator
+                            ->navigateToFileAndLineAndFlash(
+                                location.value(
+                                    QStringLiteral("fileName"))
+                                    .toString(),
+                                location.value(
+                                    QStringLiteral("line"))
+                                    .toInt(),
+                                location.value(
+                                    QStringLiteral("column"))
+                                    .toInt());
+                    }
+                    return;
+                }
                 const QString conflictFile =
                     externalConflictNotificationFiles
                         .value(notificationId);
@@ -559,6 +581,8 @@ void MainWindow::setupNotificationCenter()
                 crashRecoveryNotificationWorkspaces
                     .remove(item.id);
                 externalConflictNotificationFiles
+                    .remove(item.id);
+                waveSimulationNotificationLocations
                     .remove(item.id);
             });
     if (analysisScheduler) {
@@ -1395,6 +1419,28 @@ void MainWindow::setupManagerConnections()
                     && !failureReason.isEmpty()) {
                     statusBar()->showMessage(
                         failureReason, 5000);
+                }
+            });
+    }
+    if (navigationManager) {
+        connect(
+            navigationManager.get(),
+            &NavigationManager::waveSimulationRequested,
+            this,
+            [this](const QString& filePath,
+                   const QString& moduleName,
+                   const QString& instancePath) {
+                QString failureReason;
+                if (!startWaveSimulation(
+                        filePath,
+                        moduleName,
+                        instancePath,
+                        {},
+                        {},
+                        &failureReason)
+                    && statusBar()) {
+                    statusBar()->showMessage(
+                        failureReason, 10000);
                 }
             });
     }
@@ -3345,20 +3391,12 @@ void MainWindow::setupToolsMenu()
             propagateMultipleSignalsAction);
     }
 
-    QAction* runWaveSimulationAction = nullptr;
-    if (waveSimulationCoordinator) {
-        toolsMenu->addSeparator();
-        runWaveSimulationAction = toolsMenu->addAction(
-            tr("Run Wave Simulation (Experimental)"));
-        runWaveSimulationAction->setObjectName(
-            QStringLiteral("runWaveSimulationExperimentalAction"));
-        runWaveSimulationAction->setToolTip(
-            tr("Run the current module snapshot and open the result in WaveWorkbench"));
-        connect(runWaveSimulationAction,
-                &QAction::triggered,
-                this,
-                &MainWindow::runSelectedWaveSimulation);
-    }
+    toolsMenu->addSeparator();
+    QAction* runWaveSimulationAction =
+        addRegistryMenuAction(
+            toolsMenu,
+            QString::fromLatin1(
+                ActionIds::WaveSimulationRunCurrentContext));
 
     toolsMenu->addSeparator();
     QAction* crashRecoveryAction =
@@ -3402,10 +3440,6 @@ void MainWindow::setupToolsMenu()
 
 void MainWindow::setupWaveSimulation()
 {
-    const WaveSimulationConfiguration configuration;
-    if (!configuration.experimentalWaveSimulationEnabled())
-        return;
-
     waveSimulationCoordinator =
         std::make_unique<WaveSimulationCoordinator>(this);
     connect(waveSimulationCoordinator.get(),
@@ -3427,43 +3461,87 @@ void MainWindow::setupWaveSimulation()
                         success ? 5000 : 10000);
                 }
             });
+    connect(waveSimulationCoordinator.get(),
+            &WaveSimulationCoordinator::diagnosticAvailable,
+            this,
+            [this](const WaveSimulationDiagnostic& diagnostic) {
+                if (!notificationCenter || !diagnostic.isValid())
+                    return;
+                NotificationDraft draft;
+                draft.key = QStringLiteral(
+                    "wave-simulation:%1:%2:%3")
+                                .arg(diagnostic.sourceFile)
+                                .arg(diagnostic.line)
+                                .arg(diagnostic.column);
+                draft.topic = NotificationTopic::Analysis;
+                draft.severity = diagnostic.severity.compare(
+                                     QStringLiteral("warning"),
+                                     Qt::CaseInsensitive)
+                                     == 0
+                    ? NotificationSeverity::Warning
+                    : NotificationSeverity::Error;
+                draft.source = QStringLiteral("Wave Simulation");
+                const QString detail =
+                    diagnostic.code.trimmed().isEmpty()
+                    ? diagnostic.stage
+                    : QStringLiteral("%1/%2")
+                          .arg(diagnostic.stage, diagnostic.code);
+                draft.message = detail.trimmed().isEmpty()
+                    ? diagnostic.message
+                    : QStringLiteral("%1: %2")
+                          .arg(detail, diagnostic.message);
+                draft.actions = {
+                    {QStringLiteral("waveSimulation.goToSource"),
+                     QStringLiteral("Go to Source")}};
+                const NotificationPostResult posted =
+                    notificationCenter->post(draft);
+                QVariantMap location;
+                location.insert(QStringLiteral("fileName"),
+                                diagnostic.sourceFile);
+                location.insert(QStringLiteral("line"),
+                                diagnostic.line);
+                location.insert(QStringLiteral("column"),
+                                diagnostic.column);
+                waveSimulationNotificationLocations.insert(
+                    posted.id, location);
+            });
 }
 
-void MainWindow::runSelectedWaveSimulation()
+bool MainWindow::startWaveSimulation(
+    const QString& targetFile,
+    const QString& moduleName,
+    const QString& instancePath,
+    const WaveSimulationObservationScopeRequest& observationScope,
+    const QList<WaveSimulationObservationRequest>& observations,
+    QString* failureReason)
 {
+    const auto fail = [failureReason](const QString& message) {
+        if (failureReason)
+            *failureReason = message;
+        return false;
+    };
     if (!waveSimulationCoordinator || !workspaceManager || !tabManager)
-        return;
-    MyCodeEditor* editor = tabManager->getCurrentEditor();
-    if (!editor) {
-        if (statusBar())
-            statusBar()->showMessage(
-                tr("Wave Simulation requires an active editor."), 5000);
-        return;
+        return fail(QStringLiteral("Wave Simulation is unavailable."));
+    if (waveSimulationCoordinator->isRunning()) {
+        return fail(QStringLiteral(
+            "A Wave Simulation run is already active."));
     }
-
-    const EditorSemanticContext context =
-        editor->editorSemanticContextForPosition(-1, true);
     const ProjectSnapshot project = workspaceManager->projectSnapshot();
-    if (!project.isOpen() || context.moduleName.trimmed().isEmpty()) {
-        if (statusBar()) {
-            statusBar()->showMessage(
-                tr("Place the cursor inside a module in the active workspace."),
-                7000);
-        }
-        return;
+    if (!project.isOpen())
+        return fail(QStringLiteral("Open a workspace first."));
+    if (targetFile.trimmed().isEmpty()
+        || moduleName.trimmed().isEmpty()) {
+        return fail(QStringLiteral(
+            "Place the cursor inside a module in the active workspace."));
     }
 
     WaveSimulationRunRequest request;
     request.preparation.project = project;
-    request.preparation.target.fileName = context.fileName;
-    request.preparation.target.moduleName = context.moduleName;
-    if (context.hierarchyInstance.isBound()
-        && workspaceSessionRootKey(
-               context.hierarchyInstance.workspacePath)
-               == workspaceSessionRootKey(project.workspaceRoot)) {
-        request.preparation.target.instancePath =
-            context.hierarchyInstance.instancePath;
-    }
+    request.preparation.target.fileName = targetFile;
+    request.preparation.target.moduleName = moduleName;
+    request.preparation.target.instancePath = instancePath;
+    request.preparation.observationScope = observationScope;
+    request.preparation.explicitObservations = observations;
 
     QSet<QString> capturedFiles;
     const QList<MyCodeEditor*> editors =
@@ -3499,11 +3577,8 @@ void MainWindow::runSelectedWaveSimulation()
     const WaveSimulationConfiguration configuration;
     request.preparation.cachePaths = configuration.cachePaths();
     request.tools = configuration.toolPaths();
-    QString failureReason;
-    if (!waveSimulationCoordinator->start(request, &failureReason)
-        && statusBar()) {
-        statusBar()->showMessage(failureReason, 10000);
-    }
+    return waveSimulationCoordinator->start(
+        request, failureReason);
 }
 
 QAction* MainWindow::addRegistryMenuAction(
@@ -3682,6 +3757,111 @@ ActionExecutionResult MainWindow::executeActionRoute(
         return editorCoordinator
             ->executeRegisteredExposeSignalAction(
                 descriptor, invocation);
+    }
+    if (route
+            == QStringLiteral(
+                "waveSimulation.runCurrentContext")
+        || route
+               == QStringLiteral(
+                   "waveSimulation.observeSignal")) {
+        const QString preferredViewId =
+            invocation.parameters
+                .value(QStringLiteral("editorViewId"))
+                .toString();
+        MyCodeEditor* editor = tabManager
+            ? tabManager->editorActionTarget(
+                  preferredViewId)
+            : nullptr;
+        if (!editor)
+            return fail(QStringLiteral("No editor tab is available."));
+
+        const int cursorPosition =
+            invocation.parameters
+                .value(QStringLiteral("cursorPosition"), -1)
+                .toInt();
+        const EditorSemanticContext context =
+            editor->editorSemanticContextForPosition(
+                cursorPosition, false);
+        const QString targetFile =
+            invocation.parameters
+                .value(QStringLiteral("fileName"),
+                       context.fileName)
+                .toString();
+        const QString moduleName =
+            invocation.parameters
+                .value(QStringLiteral("moduleName"),
+                       context.moduleName)
+                .toString();
+        QString instancePath;
+        const ProjectSnapshot project = workspaceManager
+            ? workspaceManager->projectSnapshot()
+            : ProjectSnapshot();
+        if (context.hierarchyInstance.isBound()
+            && workspaceSessionRootKey(
+                   context.hierarchyInstance.workspacePath)
+                   == workspaceSessionRootKey(
+                       project.workspaceRoot)) {
+            instancePath =
+                context.hierarchyInstance.instancePath;
+        }
+
+        WaveSimulationObservationScopeRequest scope;
+        const EditorAlwaysScopeTarget alwaysScope =
+            cursorPosition >= 0
+            ? editor->alwaysScopeTargetAt(cursorPosition)
+            : editor->currentAlwaysScopeTarget();
+        if (alwaysScope.ok()) {
+            scope.mode = QStringLiteral("always");
+            scope.label = alwaysScope.label;
+            scope.fileName = targetFile;
+            scope.startLine = alwaysScope.startLine + 1;
+            scope.endLine = alwaysScope.endLine + 1;
+        }
+
+        QList<WaveSimulationObservationRequest> observations;
+        if (route
+            == QStringLiteral(
+                "waveSimulation.observeSignal")) {
+            WaveSimulationObservationRequest observation;
+            observation.name =
+                invocation.parameters
+                    .value(QStringLiteral("symbolName"))
+                    .toString();
+            observation.accessPath =
+                invocation.parameters
+                    .value(QStringLiteral("signalAccessPath"))
+                    .toString();
+            observation.fileName = targetFile;
+            observation.line =
+                invocation.parameters
+                    .value(QStringLiteral("line"),
+                           context.cursorLine + 1)
+                    .toInt();
+            observation.column =
+                invocation.parameters
+                    .value(QStringLiteral("column"),
+                           context.column + 1)
+                    .toInt();
+            if (observation.name.trimmed().isEmpty()) {
+                return fail(QStringLiteral(
+                    "Select a signal to observe."));
+            }
+            observations.append(observation);
+        }
+
+        QString failureReason;
+        if (!startWaveSimulation(
+                targetFile,
+                moduleName,
+                instancePath,
+                scope,
+                observations,
+                &failureReason)) {
+            return fail(failureReason);
+        }
+        result.message = QStringLiteral(
+            "Wave Simulation started.");
+        return succeeded();
     }
 
     if (route.startsWith(QStringLiteral("ui.file."))

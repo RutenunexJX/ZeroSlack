@@ -112,6 +112,12 @@ inline constexpr const char NavigationDesignGoDefinition[] =
     "navigation.design.goDefinition";
 inline constexpr const char NavigationDesignSetTop[] =
     "navigation.design.setTop";
+inline constexpr const char WaveSimulationRunCurrentContext[] =
+    "waveSimulation.runCurrentContext";
+inline constexpr const char WaveSimulationObserveSignal[] =
+    "waveSimulation.observeSignal";
+inline constexpr const char WaveSimulationRunDesignInstance[] =
+    "waveSimulation.runDesignInstance";
 inline constexpr const char EditDuplicateLines[] =
     "edit.duplicateLines";
 inline constexpr const char EditMoveLinesUp[] =

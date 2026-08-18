@@ -4,6 +4,7 @@
 #include "projectmodel.h"
 #include "wavesimulationconfiguration.h"
 #include "wavesimulationmodulemanifest.h"
+#include "wavesimulationmanifestservice.h"
 #include "zeroslackexport.h"
 
 #include <QList>
@@ -27,6 +28,8 @@ struct WaveSimulationTargetContext {
 struct WaveSimulationPreparationRequest {
     ProjectSnapshot project;
     WaveSimulationTargetContext target;
+    WaveSimulationObservationScopeRequest observationScope;
+    QList<WaveSimulationObservationRequest> explicitObservations;
     QList<WaveSimulationSourceOverride> sourceOverrides;
     WaveSimulationCachePaths cachePaths;
 };

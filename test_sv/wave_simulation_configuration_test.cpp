@@ -4,7 +4,6 @@
 #include <QDir>
 #include <QFileInfo>
 #include <QFile>
-#include <QSettings>
 #include <QStandardPaths>
 #include <QTemporaryDir>
 
@@ -54,20 +53,6 @@ int main(int argc, char** argv)
     WaveSimulationConfiguration configuration(
         settingsPath,
         cacheRoot);
-
-    check(!configuration.experimentalWaveSimulationEnabled(),
-          "experimental wave simulation defaults to disabled");
-    {
-        QSettings settings(settingsPath, QSettings::IniFormat);
-        settings.setValue(
-            QString::fromLatin1(
-                WaveSimulationConfiguration::
-                    kExperimentalSettingKey),
-            true);
-        settings.sync();
-    }
-    check(configuration.experimentalWaveSimulationEnabled(),
-          "the hidden setting explicitly enables the experiment");
 
     const WaveSimulationCachePaths paths =
         configuration.cachePaths();

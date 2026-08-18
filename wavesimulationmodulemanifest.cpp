@@ -76,7 +76,13 @@ bool WaveSimulationModuleManifest::isValid() const
         && !target.sourceFile.isEmpty()
         && (target.mode == QStringLiteral("module-definition")
             || (target.mode == QStringLiteral("instance")
-                && !target.instancePath.isEmpty()));
+                && !target.instancePath.isEmpty()))
+        && (observationScope.mode == QStringLiteral("module")
+            || (observationScope.mode == QStringLiteral("always")
+                && !observationScope.sourceFile.isEmpty()
+                && observationScope.startLine > 0
+                && observationScope.endLine
+                       >= observationScope.startLine));
 }
 
 QJsonObject WaveSimulationModuleManifest::toJson() const
@@ -92,6 +98,34 @@ QJsonObject WaveSimulationModuleManifest::toJson() const
     targetObject.insert(QStringLiteral("sourceFile"), target.sourceFile);
     targetObject.insert(QStringLiteral("sourceLine"), target.sourceLine);
     root.insert(QStringLiteral("target"), targetObject);
+
+    QJsonObject scopeObject;
+    scopeObject.insert(QStringLiteral("mode"), observationScope.mode);
+    scopeObject.insert(QStringLiteral("label"), observationScope.label);
+    scopeObject.insert(QStringLiteral("sourceFile"),
+                       observationScope.sourceFile);
+    scopeObject.insert(QStringLiteral("startLine"),
+                       observationScope.startLine);
+    scopeObject.insert(QStringLiteral("endLine"),
+                       observationScope.endLine);
+    root.insert(QStringLiteral("observationScope"), scopeObject);
+
+    QJsonArray observationArray;
+    for (const WaveSimulationManifestObservation& observation :
+         observations) {
+        QJsonObject entry;
+        entry.insert(QStringLiteral("name"), observation.name);
+        entry.insert(QStringLiteral("accessPath"), observation.accessPath);
+        entry.insert(QStringLiteral("semanticId"), observation.semanticId);
+        entry.insert(QStringLiteral("declarationText"),
+                     observation.declarationText);
+        entry.insert(QStringLiteral("type"), typeObject(observation.type));
+        entry.insert(QStringLiteral("sourceFile"), observation.sourceFile);
+        entry.insert(QStringLiteral("sourceLine"), observation.sourceLine);
+        entry.insert(QStringLiteral("port"), observation.port);
+        observationArray.append(entry);
+    }
+    root.insert(QStringLiteral("observations"), observationArray);
 
     QJsonArray sourceArray;
     for (const WaveSimulationManifestSource& source : sources) {

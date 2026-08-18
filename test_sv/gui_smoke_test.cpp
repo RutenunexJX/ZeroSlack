@@ -141,6 +141,7 @@
 #include "tsdocument.h"
 #include "usertemplateservice.h"
 #include "wavepreviewpanelcoordinator.h"
+#include "wavesimulationcoordinator.h"
 #include "workspaceanalysisplanservice.h"
 #include "workspaceanalysisrequestqueue.h"
 #include "workspacemanager.h"
@@ -12874,6 +12875,59 @@ int main(int argc, char** argv)
         window.findChild<QAction*>(
             QStringLiteral("reloadUserTemplatesAction"));
     expectBool("tools menu exists", toolsMenu != nullptr, true);
+    QAction* runWaveSimulationAction =
+        window.findChild<QAction*>(
+            QStringLiteral("runWaveSimulationAction"));
+    expectBool("Wave Simulation is a formal registry-backed Tools Action",
+               window.waveSimulationCoordinator
+                   && runWaveSimulationAction
+                   && runWaveSimulationAction
+                          ->property("actionId").toString()
+                          == QString::fromLatin1(
+                              ActionIds::
+                                  WaveSimulationRunCurrentContext)
+                   && !runWaveSimulationAction->text().contains(
+                       QStringLiteral("Experimental"),
+                       Qt::CaseInsensitive),
+               true);
+    if (window.waveSimulationCoordinator
+        && window.notificationCenter
+        && window.tabManager
+        && window.tabManager->getCurrentEditor()) {
+        WaveSimulationDiagnostic diagnostic;
+        diagnostic.sourceFile =
+            window.tabManager->getCurrentEditor()
+                ->documentFileName();
+        diagnostic.line = 1;
+        diagnostic.column = 1;
+        diagnostic.severity = QStringLiteral("error");
+        diagnostic.stage = QStringLiteral("compile");
+        diagnostic.code = QStringLiteral("fixture");
+        diagnostic.message =
+            QStringLiteral("Wave Simulation fixture diagnostic");
+        emit window.waveSimulationCoordinator
+            ->diagnosticAvailable(diagnostic);
+        NotificationItem item;
+        const bool notificationPublished =
+            window.notificationCenter->notificationByKey(
+                QStringLiteral("wave-simulation:%1:1:1")
+                    .arg(diagnostic.sourceFile),
+                &item);
+        expectBool("Wave Simulation diagnostic exposes source navigation",
+                   notificationPublished
+                       && item.actions.size() == 1
+                       && item.actions.constFirst().id
+                              == QStringLiteral(
+                                  "waveSimulation.goToSource")
+                       && window.waveSimulationNotificationLocations
+                              .contains(item.id)
+                       && window.notificationCenter->requestAction(
+                           item.id,
+                           QStringLiteral(
+                               "waveSimulation.goToSource")),
+                   true);
+        window.notificationCenter->dismiss(item.id);
+    }
     expectBool("user templates menu exists",
                userTemplatesMenu != nullptr,
                true);

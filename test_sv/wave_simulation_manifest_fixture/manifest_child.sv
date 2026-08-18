@@ -11,7 +11,10 @@ module manifest_child #(
     input  manifest_payload_t     payload_i,
     output logic [WIDTH:0]        data_o
 );
+    logic [WIDTH:0] next_data;
+
     always_comb begin
-        data_o = payload_i.valid ? {1'b0, data_i} : '0;
+        next_data = payload_i.valid ? {1'b0, data_i} : '0;
+        data_o = next_data;
     end
 endmodule

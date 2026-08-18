@@ -83,6 +83,27 @@ EditorAlwaysScopeTarget MyCodeEditorState::currentAlwaysScopeTarget(
     return result;
 }
 
+EditorAlwaysScopeTarget MyCodeEditorState::alwaysScopeTargetAt(
+    int cursorPosition) const
+{
+    EditorAlwaysScopeTarget result;
+    const TSAlwaysScopeTarget target =
+        syntax.alwaysScopeTargetAt(cursorPosition, -1, -1);
+    if (!target.ok()) {
+        result.failureMessage = QStringLiteral(
+            "Place the cursor in an always block to preview.");
+        return result;
+    }
+
+    result.available = true;
+    result.startPosition = target.startChar;
+    result.endPosition = target.endChar;
+    result.startLine = target.startLine;
+    result.endLine = target.endLine;
+    result.label = target.label;
+    return result;
+}
+
 EditorModuleScopeTarget MyCodeEditorState::currentModuleScopeTarget(
     const MyCodeEditor* editor) const
 {

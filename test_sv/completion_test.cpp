@@ -4218,6 +4218,21 @@ int main(int argc, char** argv) {
                           == TSAlwaysScopeStatus::AmbiguousSelection,
                true);
 
+    const QList<TSIdentifierTarget> combIdentifiers =
+        waveScopeDocument.identifiersInRange(
+            combSelectedScope.startChar,
+            combSelectedScope.endChar);
+    QStringList combIdentifierNames;
+    for (const TSIdentifierTarget& identifier : combIdentifiers)
+        combIdentifierNames.append(identifier.text);
+    expectBool("TSDocument enumerates source-ordered identifiers in an always scope",
+               combIdentifierNames
+                       == QStringList{
+                           QStringLiteral("next"),
+                           QStringLiteral("q"),
+                           QStringLiteral("data")},
+               true);
+
     MyCodeEditor waveScopeEditor;
     waveScopeEditor.setPlainText(wavePreviewInput);
     QTextCursor waveScopeCursor(waveScopeEditor.document());
@@ -4226,6 +4241,10 @@ int main(int argc, char** argv) {
     waveScopeEditor.setTextCursor(waveScopeCursor);
     const EditorAlwaysScopeTarget editorAlwaysScope =
         waveScopeEditor.currentAlwaysScopeTarget();
+    const EditorAlwaysScopeTarget editorAlwaysScopeAt =
+        waveScopeEditor.alwaysScopeTargetAt(
+            wavePreviewInput.indexOf(
+                QStringLiteral("next = q")));
     WavePreviewQuery editorAlwaysQuery;
     editorAlwaysQuery.fileName = QStringLiteral("wave_probe.sv");
     editorAlwaysQuery.documentText = wavePreviewInput;
@@ -4252,6 +4271,13 @@ int main(int argc, char** argv) {
                                      QStringLiteral("out"))
                    && !waveLaneNamed(editorAlwaysReport,
                                      QStringLiteral("pulse")),
+               true);
+    expectBool("Editor resolves an always scope at an explicit context-menu position",
+               editorAlwaysScopeAt.ok()
+                   && editorAlwaysScopeAt.startPosition
+                          == editorAlwaysScope.startPosition
+                   && editorAlwaysScopeAt.endPosition
+                          == editorAlwaysScope.endPosition,
                true);
 
     const QString moduleScopedWaveInput =

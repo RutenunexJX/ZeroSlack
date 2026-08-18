@@ -1,7 +1,11 @@
 #include "wavesimulationcoordinator.h"
 
+#include <QDir>
 #include <QFileInfo>
 #include <QFutureWatcher>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QProcess>
 #include <QtConcurrent>
 
@@ -185,7 +189,11 @@ void WaveSimulationCoordinator::handleProcessFinished(
     }
     if (exitStatus != static_cast<int>(QProcess::NormalExit)
         || exitCode != 0) {
-        QString detail = QString::fromUtf8(standardError).trimmed();
+        QString detail;
+        if (currentStage == WaveSimulationStage::Running)
+            detail = publishRunnerDiagnostics();
+        if (detail.isEmpty())
+            detail = QString::fromUtf8(standardError).trimmed();
         if (detail.isEmpty())
             detail = QString::fromUtf8(standardOutput).trimmed();
         clearProcess();
@@ -330,4 +338,58 @@ void WaveSimulationCoordinator::appendBounded(
     if (destination->size() > kMaximumProcessOutput) {
         *destination = destination->right(kMaximumProcessOutput);
     }
+}
+
+QString WaveSimulationCoordinator::publishRunnerDiagnostics()
+{
+    const QByteArray trimmed = standardOutput.trimmed();
+    QJsonDocument document = QJsonDocument::fromJson(trimmed);
+    if (!document.isObject()) {
+        const QList<QByteArray> lines = trimmed.split('\n');
+        for (auto it = lines.crbegin(); it != lines.crend(); ++it) {
+            document = QJsonDocument::fromJson(it->trimmed());
+            if (document.isObject())
+                break;
+        }
+    }
+    if (!document.isObject())
+        return {};
+
+    const QJsonObject report = document.object();
+    const QString workspaceRoot = QFileInfo(
+        currentRequest.preparation.project.workspaceRoot)
+                                      .absoluteFilePath();
+    const QDir workspace(workspaceRoot);
+    const QJsonArray diagnostics = report.value(
+        QStringLiteral("diagnostics")).toArray();
+    for (const QJsonValue& value : diagnostics) {
+        if (!value.isObject())
+            continue;
+        const QJsonObject object = value.toObject();
+        const QString portableSource = QDir::cleanPath(
+            QDir::fromNativeSeparators(
+                object.value(QStringLiteral("sourceFile")).toString()));
+        if (portableSource.isEmpty()
+            || QDir::isAbsolutePath(portableSource)
+            || portableSource == QStringLiteral("..")
+            || portableSource.startsWith(QStringLiteral("../"))) {
+            continue;
+        }
+        WaveSimulationDiagnostic diagnostic;
+        diagnostic.sourceFile = QFileInfo(
+            workspace.filePath(portableSource)).absoluteFilePath();
+        diagnostic.line = object.value(QStringLiteral("line")).toInt();
+        diagnostic.column = object.value(QStringLiteral("column")).toInt();
+        diagnostic.severity = object.value(
+            QStringLiteral("severity")).toString();
+        diagnostic.stage = object.value(
+            QStringLiteral("stage")).toString();
+        diagnostic.code = object.value(
+            QStringLiteral("code")).toString();
+        diagnostic.message = object.value(
+            QStringLiteral("message")).toString();
+        if (diagnostic.isValid())
+            emit diagnosticAvailable(diagnostic);
+    }
+    return report.value(QStringLiteral("diagnostic")).toString().trimmed();
 }

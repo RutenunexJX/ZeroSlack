@@ -1,27 +1,30 @@
 # ZeroSlack Current Goal
 
-Product version: `v0.4.3`
+Product version: `v0.5.0`
 
 ## Objective
 
-Deliver a verifiable 0.4.3 editor interaction patch that adds conventional
-triple-click whole-line selection without changing existing single-click,
-double-click, column-mode, multi-cursor, or semantic navigation behavior.
+Complete Wave Simulation slice S10 by making the existing external simulation
+pipeline directly usable from normal ZeroSlack editing and Design workflows.
 
 ## Completion criteria
 
-- `VERSION`, generated GUI metadata, and current documents agree on 0.4.3.
-- A third unmodified left click at the double-click position selects one full
-  logical line within the platform double-click interval and drag tolerance.
-- Non-final and unterminated final-line boundaries are both covered by tests.
-- Existing higher-priority editor modes and double-click symbol highlighting
-  retain their established behavior.
-- The complete configured test suite passes without relaxed assertions.
+- `VERSION`, generated GUI metadata, and current documents agree on 0.5.0.
+- Current module, selected `always`, selected signal, and exact Design instance
+  entries preserve their semantic context through preparation and execution.
+- Unsaved buffers are compiled as one coherent workspace snapshot.
+- Module Manifest v2 remains portable and WaveWorkbench retains v1 import
+  compatibility.
+- Build/run failures carry source file, line, and column back to ZeroSlack.
+- Both repositories pass their complete configured suites without relaxed
+  assertions.
 
 ## Current status
 
-Implementation and verification are complete. The generated GUI metadata and
-current documents agree on `v0.4.3`, and all 86 configured Debug tests pass,
-including focused middle-line and unterminated-final-line triple-click checks,
-editor mode regressions, GUI integration, shared-core ABI/runtime checks, and
-version-policy coverage. This revision is the `v0.4.3` release source.
+Implementation and verification are complete. ZeroSlack passes 89/89 tests and
+WaveWorkbench passes 88/88 tests. Formal entries, selected-`always` observation
+scope, explicit source observations, exact instance targeting, scenario/cache
+reuse, and structured source diagnostics are covered. This machine does not
+have a real Verilator installation, so the external process path is verified
+with the deterministic runner fixture rather than represented as a real RTL
+compile. Shared-widget embedding remains S11 and is not part of this goal.

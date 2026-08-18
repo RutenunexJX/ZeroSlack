@@ -994,6 +994,50 @@ TSIdentifierTarget TSDocument::identifierAt(int charOffset) const
     return target;
 }
 
+QList<TSIdentifierTarget> TSDocument::identifiersInRange(
+    int startChar,
+    int endChar) const
+{
+    QList<TSIdentifierTarget> result;
+    if (!m_tree || m_text.isEmpty())
+        return result;
+
+    const int boundedStart = qBound(0, startChar, m_text.size());
+    const int boundedEnd = qBound(boundedStart, endChar, m_text.size());
+    if (boundedEnd <= boundedStart)
+        return result;
+
+    QSet<QString> seenNames;
+    QList<TSNode> pending{ts_tree_root_node(m_tree)};
+    while (!pending.isEmpty()) {
+        const TSNode node = pending.takeLast();
+        const int nodeStart = nodeStartChar(node);
+        const int nodeEnd = nodeEndChar(node);
+        if (nodeEnd <= boundedStart || nodeStart >= boundedEnd)
+            continue;
+        if (commentOrStringNode(node))
+            continue;
+        if (identifierNode(node)) {
+            TSIdentifierTarget identifier;
+            identifier.startChar = nodeStart;
+            identifier.endChar = nodeEnd;
+            identifier.text = nodeText(m_text, node);
+            if (identifier.ok() && !seenNames.contains(identifier.text)) {
+                seenNames.insert(identifier.text);
+                result.append(std::move(identifier));
+            }
+            continue;
+        }
+        for (int index = static_cast<int>(ts_node_named_child_count(node)) - 1;
+             index >= 0;
+             --index) {
+            pending.append(ts_node_named_child(
+                node, static_cast<uint32_t>(index)));
+        }
+    }
+    return result;
+}
+
 TSExpressionAtomTarget TSDocument::expressionAtomAt(
     int charOffset) const
 {

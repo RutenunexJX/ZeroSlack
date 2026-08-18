@@ -392,6 +392,12 @@ int main(int argc, char** argv)
     NavigationManager navigationManager;
     navigationManager.connectToWorkspaceManager(
         &workspaceManager);
+    SemanticAnalysisTelemetry hierarchyTelemetry;
+    hierarchyTelemetry.generation = 1;
+    hierarchyTelemetry.stage =
+        SemanticAnalysisStage::Publication;
+    navigationManager.setSemanticAnalysisContext(
+        hierarchyTelemetry);
     navigationManager.setTemporaryEditorOpenHandler(
         [](const EditorLocation& location) {
             return QFileInfo::exists(location.filePath);
@@ -421,6 +427,8 @@ int main(int argc, char** argv)
             ActionIds::NavigationDesignGoDefinition),
         QString::fromLatin1(
             ActionIds::ViewTemporaryEditorOpen),
+        QString::fromLatin1(
+            ActionIds::WaveSimulationRunDesignInstance),
         QString::fromLatin1(
             ActionIds::NavigationDesignSetTop),
     };
@@ -459,6 +467,9 @@ int main(int argc, char** argv)
     QList<EditorLocation> temporaryEditorTargets;
     QList<bool> temporaryEditorOutcomes;
     QString temporaryEditorFailureReason;
+    QString waveSimulationFile;
+    QString waveSimulationModule;
+    QString waveSimulationInstance;
     QObject::connect(
         &navigationManager,
         &NavigationManager::instanceNavigationRequested,
@@ -469,6 +480,17 @@ int main(int argc, char** argv)
             navigatedHierarchyFile = filePath;
             navigatedHierarchyLine = line;
             navigatedHierarchyContext = instanceContext;
+        });
+    QObject::connect(
+        &navigationManager,
+        &NavigationManager::waveSimulationRequested,
+        &navigationManager,
+        [&](const QString& filePath,
+            const QString& moduleName,
+            const QString& instancePath) {
+            waveSimulationFile = filePath;
+            waveSimulationModule = moduleName;
+            waveSimulationInstance = instancePath;
         });
     QObject::connect(
         &navigationManager,
@@ -536,6 +558,20 @@ int main(int argc, char** argv)
                       == hierarchyNode.moduleType
                && temporaryEditorTargets.constLast().sourceLinkId
                       == hierarchyNode.id);
+
+    const ActionExecutionResult waveSimulationResult =
+        navigationManager.requestDesignNodeAction(
+            QString::fromLatin1(
+                ActionIds::WaveSimulationRunDesignInstance),
+            hierarchyNode);
+    expect("Design Wave Simulation entry preserves exact instance context",
+           waveSimulationResult.succeeded
+               && waveSimulationFile
+                      == hierarchyNode.definitionFile
+               && waveSimulationModule
+                      == hierarchyNode.moduleType
+               && waveSimulationInstance
+                      == hierarchyNode.instancePath);
 
     const ActionDescriptor* temporaryEditorDescriptor =
         findActionById(QString::fromLatin1(
@@ -612,7 +648,8 @@ int main(int argc, char** argv)
                && !topNodeActions.first().enabled
                && topNodeActions.value(1).enabled
                && topNodeActions.value(2).enabled
-               && topNodeActions.value(3).enabled);
+               && topNodeActions.value(3).enabled
+               && topNodeActions.value(4).enabled);
 
     const ActionDescriptor* routeRenameDescriptor =
         findActionById(

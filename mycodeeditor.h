@@ -219,6 +219,7 @@ public:
     QString documentFileName() const;
     QString currentModuleName() const;
     EditorAlwaysScopeTarget currentAlwaysScopeTarget() const;
+    EditorAlwaysScopeTarget alwaysScopeTargetAt(int cursorPosition) const;
     EditorModuleScopeTarget currentModuleScopeTarget() const;
     bool goToFinalEndmodule(QString* message = nullptr);
     EditorPackageToolAvailability currentPackageToolAvailability() const;

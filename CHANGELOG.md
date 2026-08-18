@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.5.0] - 2026-08-19
+
+### Formal Wave Simulation integration
+
+- Promoted Wave Simulation into the Action Registry with entries for the
+  current module or `always` context, selected source signals, and exact Design
+  hierarchy instances.
+- Added Module Manifest v2 observation scopes and semantic watch signals while
+  retaining WaveWorkbench v1 import compatibility and saved-scenario reuse.
+- Preserved unsaved workspace buffers during simulation preparation and mapped
+  structured build/run diagnostics back to source navigation.
+- Fixed the MinGW shared-core export generator so valid late `dlltool` symbols,
+  including required virtual tables, are not dropped after ordinal wraparound.
+
 ## [0.4.3] - 2026-08-18
 
 ### Whole-line mouse selection

@@ -1388,6 +1388,106 @@ void appendNavigationContextActions(
     }
 }
 
+void appendWaveSimulationActions(QList<ActionDescriptor>* out)
+{
+    struct Spec {
+        const char* id;
+        const char* canonicalName;
+        const char* description;
+        const char* route;
+        const char* contextLabel;
+        const char* contextAdapterKey;
+        const char* menuAdapterKey;
+        ActionScope scope;
+        quint32 requirements;
+        bool menu;
+    };
+    const Spec specs[] = {
+        {ActionIds::WaveSimulationRunCurrentContext,
+         "Run Wave Simulation",
+         "Compile and simulate the current module; an enclosing always block narrows the initial observation scope.",
+         "waveSimulation.runCurrentContext",
+         "Run Wave Simulation",
+         "runWaveSimulationContextAction",
+         "runWaveSimulationAction",
+         ActionScope::Module,
+         ActionRequirements::Workspace
+             | ActionRequirements::Editor
+             | ActionRequirements::SemanticCurrent,
+         true},
+        {ActionIds::WaveSimulationObserveSignal,
+         "Observe Signal in Wave Simulation",
+         "Compile the current module and add the selected signal to the initial observation set.",
+         "waveSimulation.observeSignal",
+         "Observe Signal in Wave Simulation",
+         "observeSignalInWaveSimulationAction",
+         "",
+         ActionScope::Symbol,
+         ActionRequirements::Workspace
+             | ActionRequirements::Editor
+             | ActionRequirements::SemanticCurrent
+             | ActionRequirements::Symbol,
+         false},
+        {ActionIds::WaveSimulationRunDesignInstance,
+         "Run Instance in Wave Simulation",
+         "Compile and simulate the module represented by the selected design-hierarchy instance.",
+         "waveSimulation.runDesignInstance",
+         "Run Instance in Wave Simulation",
+         "runDesignInstanceInWaveSimulationAction",
+         "",
+         ActionScope::Hierarchy,
+         ActionRequirements::Workspace
+             | ActionRequirements::SemanticCurrent
+             | ActionRequirements::Hierarchy,
+         false},
+    };
+
+    for (const Spec& spec : specs) {
+        ActionDescriptor descriptor =
+            makeAction(QString::fromLatin1(spec.id),
+                       QString::fromLatin1(spec.canonicalName),
+                       QString::fromLatin1(spec.description),
+                       ActionCategory::Inspect,
+                       spec.scope,
+                       QString::fromLatin1(spec.route),
+                       spec.requirements,
+                       QStringLiteral(
+                           "Open an analyzed SystemVerilog workspace and select a compatible context."),
+                       ActionRecoveryPolicy::Analyze);
+        descriptor.repeatable = false;
+        descriptor.rememberParameters = false;
+        descriptor.aliases = {
+            alias(ActionSurface::ContextMenu,
+                  descriptor.id,
+                  QString::fromLatin1(spec.contextLabel),
+                  descriptor.description,
+                  QString(),
+                  QString::fromLatin1(
+                      spec.contextAdapterKey)),
+            alias(ActionSurface::ActionCatalog,
+                  descriptor.id,
+                  descriptor.canonicalName,
+                  descriptor.description,
+                  QString(),
+                  QString(),
+                  QString(),
+                  false,
+                  true),
+        };
+        if (spec.menu) {
+            descriptor.aliases.append(
+                alias(ActionSurface::Menu,
+                      descriptor.id,
+                      descriptor.canonicalName,
+                      descriptor.description,
+                      QString(),
+                      QString::fromLatin1(
+                          spec.menuAdapterKey)));
+        }
+        out->append(descriptor);
+    }
+}
+
 void appendApplicationMenuActions(
     QList<ActionDescriptor>* out)
 {
@@ -2875,6 +2975,7 @@ const QList<ActionDescriptor>& actionRegistry()
         appendPackageActions(&result);
         appendWorkspaceFileActions(&result);
         appendNavigationContextActions(&result);
+        appendWaveSimulationActions(&result);
         appendApplicationMenuActions(&result);
         appendRtlEditMenuActions(&result);
         appendGraphViewActions(&result);

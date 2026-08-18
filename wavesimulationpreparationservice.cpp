@@ -362,6 +362,8 @@ WaveSimulationPreparationService::prepare(
     manifestRequest.project = request.project;
     manifestRequest.moduleStableKey = candidates.constFirst().stableKey;
     manifestRequest.instancePath = request.target.instancePath;
+    manifestRequest.observationScope = request.observationScope;
+    manifestRequest.explicitObservations = request.explicitObservations;
     const WaveSimulationManifestBuildResult manifestResult =
         WaveSimulationManifestService().build(manifestRequest);
     if (!manifestResult.succeeded()) {

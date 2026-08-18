@@ -240,6 +240,7 @@ void NavigationManager::onWorkspaceChanged(const QString& workspacePath)
 {
     saveDesignHierarchyCache();
     context.setCurrentWorkspacePath(workspacePath);
+    semanticAnalysisContext = {};
     if (navigationWidget)
         navigationWidget->setWorkspaceRoot(workspacePath);
 

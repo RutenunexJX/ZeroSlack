@@ -11,7 +11,7 @@ import sys
 
 
 _EXPORT_PATTERN = re.compile(
-    r'^\s*(?P<symbol>"[^"]+"|\S+)\s+@\s+\d+(?P<qualifiers>.*)$'
+    r'^\s*(?P<symbol>"[^"]+"|\S+)\s+@\s+-?\d+(?P<qualifiers>.*)$'
 )
 # These are header-defined Qt container implementation templates. A consumer
 # instantiates them locally; exporting every copy consumes thousands of PE
@@ -25,6 +25,7 @@ _REQUIRED_EXPORTS = {
     "_ZN12MyCodeEditor16staticMetaObjectE",
     "_ZN23ApplicationThemeManager16staticMetaObjectE",
     "_ZN23ApplicationThemeManager8instanceEv",
+    "_ZTV28WorkspaceEditDocumentManager",
 }
 
 

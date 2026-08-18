@@ -68,6 +68,18 @@ const WaveSimulationManifestPort* port(
     return nullptr;
 }
 
+const WaveSimulationManifestObservation* observation(
+    const WaveSimulationModuleManifest& manifest,
+    const QString& name)
+{
+    for (const WaveSimulationManifestObservation& value :
+         manifest.observations) {
+        if (value.name == name)
+            return &value;
+    }
+    return nullptr;
+}
+
 bool isRelativeProjectPath(const QString& path)
 {
     return !path.isEmpty()
@@ -90,7 +102,7 @@ int main(int argc, char** argv)
     const QString topFile = QDir(fixtureRoot).absoluteFilePath(
         QStringLiteral("manifest_top.sv"));
     const QString schemaFile = QDir(sourceRoot).absoluteFilePath(
-        QStringLiteral("schemas/wave-simulation-module-manifest-v1.schema.json"));
+        QStringLiteral("schemas/wave-simulation-module-manifest-v2.schema.json"));
 
     check(QFileInfo(fixtureRoot).isDir(), "real manifest fixture exists");
     const QHash<QString, QString> contents{
@@ -159,6 +171,13 @@ int main(int argc, char** argv)
     definitionRequest.semanticSnapshot = snapshot;
     definitionRequest.project = project;
     definitionRequest.moduleStableKey = module.stableKey;
+    definitionRequest.observationScope.mode =
+        QStringLiteral("always");
+    definitionRequest.observationScope.fileName = childFile;
+    definitionRequest.observationScope.startLine = 16;
+    definitionRequest.observationScope.endLine = 19;
+    definitionRequest.observationScope.label =
+        QStringLiteral("always_comb at manifest_child.sv:16");
     const WaveSimulationManifestBuildResult definition =
         service.build(definitionRequest);
     check(definition.succeeded() && definition.manifest.isValid(),
@@ -166,6 +185,27 @@ int main(int argc, char** argv)
     check(definition.manifest.target.mode == QStringLiteral("module-definition")
               && definition.manifest.target.instancePath.isEmpty(),
           "definition and instance target modes are distinct");
+    check(definition.manifest.schemaVersion == 2
+              && definition.manifest.observationScope.mode
+                     == QStringLiteral("always")
+              && definition.manifest.observationScope.sourceFile
+                     == QStringLiteral("manifest_child.sv")
+              && definition.manifest.observationScope.startLine == 16
+              && definition.manifest.observationScope.endLine == 19,
+          "selected always scope is preserved as portable manifest metadata");
+    const WaveSimulationManifestObservation* nextData = observation(
+        definition.manifest, QStringLiteral("next_data"));
+    check(nextData
+              && nextData->accessPath == QStringLiteral("next_data")
+              && nextData->type.shape.semanticAvailable
+              && nextData->type.shape.bitWidth == 6
+              && observation(definition.manifest,
+                             QStringLiteral("payload_i"))
+              && observation(definition.manifest,
+                             QStringLiteral("data_i"))
+              && observation(definition.manifest,
+                             QStringLiteral("data_o")),
+          "selected always scope resolves internal and port observations from Slang relationships");
     check(definition.manifest.sources.size() == 3
               && definition.manifest.sources.at(0).path
                   == QStringLiteral("manifest_child.sv")
@@ -238,6 +278,33 @@ int main(int argc, char** argv)
               && payloadPort->type.structMembers.at(1).name
                   == QStringLiteral("payload"),
           "packed struct port metadata preserves semantic source order");
+
+    WaveSimulationManifestBuildRequest explicitRequest = definitionRequest;
+    explicitRequest.observationScope = {};
+    WaveSimulationObservationRequest explicitObservation;
+    explicitObservation.name = QStringLiteral("next_data");
+    explicitObservation.accessPath = QStringLiteral("next_data");
+    explicitObservation.fileName = childFile;
+    explicitObservation.line = 14;
+    explicitRequest.explicitObservations = {explicitObservation};
+    const WaveSimulationManifestBuildResult explicitResult =
+        service.build(explicitRequest);
+    check(explicitResult.succeeded()
+              && explicitResult.manifest.observationScope.mode
+                     == QStringLiteral("module")
+              && explicitResult.manifest.observations.size() == 1
+              && explicitResult.manifest.observations.constFirst().name
+                     == QStringLiteral("next_data"),
+          "an editor-selected internal signal can be added explicitly without narrowing compilation");
+
+    WaveSimulationManifestBuildRequest foreignScopeRequest =
+        definitionRequest;
+    foreignScopeRequest.observationScope.fileName = topFile;
+    const WaveSimulationManifestBuildResult foreignScopeResult =
+        service.build(foreignScopeRequest);
+    check(foreignScopeResult.status
+              == WaveSimulationManifestBuildStatus::InvalidObservationScope,
+          "an always observation scope from another source file is rejected");
 
     for (const WaveSimulationManifestSource& source : instance.manifest.sources)
         check(isRelativeProjectPath(source.path), "source paths are workspace-relative");

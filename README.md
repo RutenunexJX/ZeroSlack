@@ -1,6 +1,6 @@
 # ZeroSlack
 
-Current version: `v0.4.3`
+Current version: `v0.5.0`
 
 ZeroSlack is a Qt 6 desktop environment for navigating, understanding, and
 editing SystemVerilog workspaces. It combines an incremental editor syntax
@@ -25,6 +25,11 @@ and preview-first RTL editing workflows.
 - Inspect RTL through Problems, Design, RTL Insights, state-transition and FSM
   views, module block diagrams, signal journeys, signal-kernel graphs, usage
   hotspots, and symbolic wave previews.
+- Run the formal Wave Simulation workflow from the current module, an enclosing
+  `always` block, a selected source signal, or an exact Design instance. The
+  run captures unsaved workspace buffers, restores saved scenarios, reuses the
+  compiled model when only stimulus changes, launches WaveWorkbench
+  automatically, and maps structured build/run diagnostics back to source.
 - Preview and apply guarded RTL changes through the existing rename,
   connection, expose-to-top, scoped replace, instance-pair connection, and
   multi-signal propagation workflows. Module-port changes can be synchronized

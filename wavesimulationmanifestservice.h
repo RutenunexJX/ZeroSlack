@@ -18,7 +18,24 @@ enum class WaveSimulationManifestBuildStatus {
     ModuleNotFound,
     UnsupportedTarget,
     InstanceContextNotFound,
+    InvalidObservationScope,
     ProjectPathOutsideWorkspace
+};
+
+struct WaveSimulationObservationScopeRequest {
+    QString mode;
+    QString label;
+    QString fileName;
+    int startLine = 0;
+    int endLine = 0;
+};
+
+struct WaveSimulationObservationRequest {
+    QString name;
+    QString accessPath;
+    QString fileName;
+    int line = 0;
+    int column = 0;
 };
 
 struct WaveSimulationManifestBuildRequest {
@@ -26,6 +43,8 @@ struct WaveSimulationManifestBuildRequest {
     ProjectSnapshot project;
     SymbolStableKey moduleStableKey;
     QString instancePath;
+    WaveSimulationObservationScopeRequest observationScope;
+    QList<WaveSimulationObservationRequest> explicitObservations;
 };
 
 struct WaveSimulationManifestBuildResult {

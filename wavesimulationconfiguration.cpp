@@ -184,18 +184,6 @@ WaveSimulationConfiguration::toolPaths() const
     return pathTools;
 }
 
-bool WaveSimulationConfiguration::
-    experimentalWaveSimulationEnabled() const
-{
-    const std::unique_ptr<QSettings> settings =
-        makeSettings(settingsFilePath);
-    return settings->value(
-                       QString::fromLatin1(
-                           kExperimentalSettingKey),
-                       false)
-        .toBool();
-}
-
 WaveSimulationCachePaths
 WaveSimulationConfiguration::cachePaths() const
 {

@@ -26,8 +26,6 @@ class WaveSimulationConfiguration
 {
 public:
     static constexpr int kCacheLayoutVersion = 1;
-    static constexpr const char* kExperimentalSettingKey =
-        "experimental/ExperimentalWaveSimulation";
     static constexpr const char* kToolDirectorySettingKey =
         "experimental/WaveWorkbenchDirectory";
 
@@ -36,7 +34,6 @@ public:
         const QString& cacheRootOverride = QString(),
         const QString& toolDirectoryOverride = QString());
 
-    bool experimentalWaveSimulationEnabled() const;
     WaveSimulationCachePaths cachePaths() const;
     WaveSimulationToolPaths toolPaths() const;
 

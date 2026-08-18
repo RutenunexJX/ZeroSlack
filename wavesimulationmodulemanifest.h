@@ -86,12 +86,33 @@ struct WaveSimulationManifestTarget {
     int sourceLine = 0;
 };
 
+struct WaveSimulationManifestObservationScope {
+    QString mode = QStringLiteral("module");
+    QString label;
+    QString sourceFile;
+    int startLine = 0;
+    int endLine = 0;
+};
+
+struct WaveSimulationManifestObservation {
+    QString name;
+    QString accessPath;
+    QString semanticId;
+    QString declarationText;
+    WaveSimulationManifestType type;
+    QString sourceFile;
+    int sourceLine = 0;
+    bool port = false;
+};
+
 struct WaveSimulationModuleManifest {
-    static constexpr int kSchemaVersion = 1;
+    static constexpr int kSchemaVersion = 2;
 
     int schemaVersion = kSchemaVersion;
     QString workspaceId;
     WaveSimulationManifestTarget target;
+    WaveSimulationManifestObservationScope observationScope;
+    QList<WaveSimulationManifestObservation> observations;
     QList<WaveSimulationManifestSource> sources;
     QStringList includeDirs;
     QMap<QString, QString> defines;

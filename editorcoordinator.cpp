@@ -1315,6 +1315,16 @@ void EditorCoordinator::handleSourceSymbolContextMenuRequested(
     append(QString::fromLatin1(
         ActionIds::ViewTemporaryEditorOpen));
     append(QString::fromLatin1(
+               ActionIds::WaveSimulationRunCurrentContext),
+           !context.moduleName.trimmed().isEmpty(),
+           !context.moduleName.trimmed().isEmpty(),
+           QStringLiteral("Place the cursor inside a module."));
+    append(QString::fromLatin1(
+               ActionIds::WaveSimulationObserveSignal),
+           symbolAvailable,
+           symbolAvailable,
+           QStringLiteral("Select a signal to observe."));
+    append(QString::fromLatin1(
                ActionIds::EditToggleSelectionCase),
            hasSelection,
            editable && hasSelection,
@@ -1353,7 +1363,12 @@ void EditorCoordinator::handleSourceSymbolContextMenuRequested(
     profileGroup->setExclusive(true);
 
     const auto execute =
-        [this, editor, context, cursorPosition, menuState](
+        [this,
+         editor,
+         context,
+         cursorPosition,
+         menuState,
+         sourceContext](
             const QString& actionId) {
             const bool registeredEditorAction =
                 actionId == QStringLiteral("edit.undo")
@@ -1380,6 +1395,8 @@ void EditorCoordinator::handleSourceSymbolContextMenuRequested(
                 || actionId
                        == QStringLiteral(
                            "refactor.exposeSignalToTop")
+                || actionId.startsWith(
+                    QStringLiteral("waveSimulation."))
                 || actionId.startsWith(
                     QStringLiteral("format."));
             if (registeredEditorAction
@@ -1409,6 +1426,32 @@ void EditorCoordinator::handleSourceSymbolContextMenuRequested(
                         parameters.insert(
                             QStringLiteral("selectionEnd"),
                             selection.selectionEnd());
+                    }
+                } else if (actionId.startsWith(
+                               QStringLiteral("waveSimulation."))) {
+                    parameters.insert(
+                        QStringLiteral("fileName"),
+                        context.fileName);
+                    parameters.insert(
+                        QStringLiteral("moduleName"),
+                        context.moduleName);
+                    parameters.insert(
+                        QStringLiteral("line"),
+                        context.cursorLine + 1);
+                    parameters.insert(
+                        QStringLiteral("column"),
+                        context.column + 1);
+                    if (actionId
+                        == QString::fromLatin1(
+                            ActionIds::WaveSimulationObserveSignal)) {
+                        parameters.insert(
+                            QStringLiteral("symbolName"),
+                            sourceContext.symbolName);
+                        parameters.insert(
+                            QStringLiteral("signalAccessPath"),
+                            sourceContext.memberAccessPath.isEmpty()
+                                ? sourceContext.symbolName
+                                : sourceContext.memberAccessPath);
                     }
                 }
                 registeredActionRequestHandler(

@@ -971,6 +971,12 @@ EditorAlwaysScopeTarget MyCodeEditor::currentAlwaysScopeTarget() const
     return state->currentAlwaysScopeTarget(this);
 }
 
+EditorAlwaysScopeTarget MyCodeEditor::alwaysScopeTargetAt(
+    int cursorPosition) const
+{
+    return state->alwaysScopeTargetAt(cursorPosition);
+}
+
 EditorModuleScopeTarget MyCodeEditor::currentModuleScopeTarget() const
 {
     return state->currentModuleScopeTarget(this);

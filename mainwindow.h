@@ -74,6 +74,8 @@ struct UserTemplateLoadReport;
 struct SemanticAnalysisTelemetry;
 struct SettingsCenterSnapshot;
 struct ScopedSearchPanelContext;
+struct WaveSimulationObservationRequest;
+struct WaveSimulationObservationScopeRequest;
 
 struct EditorActionContextChipWriteCounts {
     std::uint64_t text = 0;
@@ -178,6 +180,8 @@ private:
         crashRecoveryNotificationWorkspaces;
     QHash<QString, QString>
         externalConflictNotificationFiles;
+    QHash<QString, QVariantMap>
+        waveSimulationNotificationLocations;
     QHash<QString, int>
         crashRecoveryIsolatedRecordCounts;
     QSet<QString> handledCrashRecoveryCandidates;
@@ -246,7 +250,13 @@ private:
     void closeActiveWorkspace();
     void setupToolsMenu();
     void setupWaveSimulation();
-    void runSelectedWaveSimulation();
+    bool startWaveSimulation(
+        const QString& targetFile,
+        const QString& moduleName,
+        const QString& instancePath,
+        const WaveSimulationObservationScopeRequest& observationScope,
+        const QList<WaveSimulationObservationRequest>& observations,
+        QString* failureReason);
     void setupCrashRecoveryReviewUi();
     void notifyCrashRecoveryCandidates(
         const QString& workspaceRoot,

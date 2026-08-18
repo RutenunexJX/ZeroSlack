@@ -627,7 +627,7 @@ S9 实际结果：
 
 ### S10：正式接入 ZeroSlack
 
-状态：`pending`
+状态：`completed`（2026-08-19）
 
 范围：
 
@@ -638,6 +638,26 @@ S9 实际结果：
 - 达到正式开放门槛后启用正式入口。
 
 验收：日常操作不需要先打开 WaveWorkbench 或处理文件。
+
+S10 实际结果：
+
+- Wave Simulation 已进入统一 Action Registry，Tools 菜单、编辑器上下文和 Design
+  实例上下文不再依赖隐藏实验设置；Design 入口保留精确 instance path。
+- 当前 `always` 由增量 Tree-sitter 文档定位，只缩小初始观察集；Slang 仍对包含所有
+  未保存缓冲区的完整工作区快照 elaboration，并编译完整目标模块。
+- Module Manifest 升级为 v2，新增便携 observation scope 和语义 observation；
+  WaveWorkbench 兼容读取 v1，并把内部信号作为 watch lane 导入。相同声明的不同成员
+  以 access path 保持独立 lane 身份。
+- runner 的构建/运行错误输出结构化源码诊断，ZeroSlack Notification Center 提供
+  `Go to Source`，并拒绝工作区外路径。
+- 场景恢复、仅激励复用模型、stale/generation、取消隔离和未保存缓冲区一致性沿用
+  S7-S9 已验收能力，正式开放门槛的产品链路已闭合。
+- ZeroSlack Debug CTest `89/89`、WaveWorkbench CTest `88/88` 通过。本机未安装真实
+  Verilator，外部编译/运行与诊断路径使用确定性进程 fixture 验证，未将其表述为真实 RTL
+  编译结果。
+
+明确未做：S11 的共享控件嵌入、内部信号层级浏览和复杂 structured input 编辑。
+下一最小切片：S11 共享控件嵌入。
 
 ### S11：共享控件嵌入
 

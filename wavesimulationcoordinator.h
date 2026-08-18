@@ -31,6 +31,21 @@ struct WaveSimulationRunRequest {
     WaveSimulationToolPaths tools;
 };
 
+struct WaveSimulationDiagnostic {
+    QString sourceFile;
+    int line = 0;
+    int column = 0;
+    QString severity;
+    QString stage;
+    QString code;
+    QString message;
+
+    bool isValid() const
+    {
+        return !sourceFile.isEmpty() && line > 0 && !message.isEmpty();
+    }
+};
+
 class ZEROSLACK_API WaveSimulationCoordinator : public QObject
 {
     Q_OBJECT
@@ -48,6 +63,8 @@ public:
 signals:
     void stageChanged(WaveSimulationStage stage,
                       const QString& message);
+    void diagnosticAvailable(
+        const WaveSimulationDiagnostic& diagnostic);
     void finished(bool success,
                   const QString& resultProjectPath,
                   const QString& message);
@@ -82,6 +99,7 @@ private:
     void clearProcess();
     void appendBounded(QByteArray* destination,
                        const QByteArray& content);
+    QString publishRunnerDiagnostics();
 };
 
 #endif // WAVESIMULATIONCOORDINATOR_H
