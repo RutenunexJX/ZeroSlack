@@ -3646,22 +3646,7 @@ static void runEditorOccurrenceNavigationRegression()
 
 static void runEditorRegistryRenameAdapterRegression()
 {
-    QTabWidget tabsWidget;
-    TabManager tabs(&tabsWidget);
-    EditorCoordinator coordinator(&tabs);
-    int actionRequests = 0;
-    QString requestedActionId;
-    QVariantMap requestedParameters;
-    coordinator.setRegisteredActionRequestHandler(
-        [&](const QString& actionId,
-            const QVariantMap& parameters) {
-            ++actionRequests;
-            requestedActionId = actionId;
-            requestedParameters = parameters;
-        });
-
     MyCodeEditor editor;
-    coordinator.attachEditor(&editor);
     editor.resize(520, 160);
     editor.setPlainText(
         QStringLiteral("logic oldName;\n"
@@ -3679,15 +3664,23 @@ static void runEditorRegistryRenameAdapterRegression()
     editor.setTextCursor(cursor);
 
     const QString before = editor.toPlainText();
+    QString statusMessage;
+    QObject::connect(
+        &editor,
+        &MyCodeEditor::editorStatusMessageRequested,
+        &editor,
+        [&statusMessage](const QString& message) {
+            statusMessage = message;
+        });
     QTest::keyClick(&editor, Qt::Key_R, Qt::ControlModifier);
-    expectBool("Ctrl+R routes once through the Action Registry adapter",
-               actionRequests == 1
-                   && requestedActionId
-                          == QString::fromLatin1(
-                              ActionIds::RtlRename)
-                   && requestedParameters.isEmpty(),
+    expectBool("Ctrl+R rejects an editor without current semantic identity",
+               !statusMessage.isEmpty()
+                   && editor.findChild<QLineEdit*>(
+                          QStringLiteral(
+                              "semanticRenameInlineEditor"))
+                          == nullptr,
                true);
-    expectBool("Ctrl+R adapter performs no editor-local rename",
+    expectBool("failed Ctrl+R performs no editor-local rename",
                editor.toPlainText() == before
                    && QApplication::activeModalWidget()
                           == nullptr,
@@ -9606,6 +9599,89 @@ static void runCommandLayerRegression(MainWindow& window)
                !coordinator->isActive()
                    && !coordinator->isF24Held()
                    && !commandPanel->isVisible(),
+               true);
+
+    pressF24(editor);
+    sendKeyEvent(editor,
+                 QEvent::KeyPress,
+                 Qt::Key_unknown,
+                 Qt::NoModifier,
+                 QStringLiteral("goendm"));
+    expectBool("F24 search consumes event text without losing fast input",
+               coordinator->query() == QStringLiteral("goendm"),
+               true);
+    releaseF24(editor);
+
+    editor->setPlainText(QStringLiteral("alpha beta gamma"));
+    QTextCursor directDelete(editor->document());
+    directDelete.setPosition(6);
+    directDelete.setPosition(10, QTextCursor::KeepAnchor);
+    editor->setTextCursor(directDelete);
+    pressF24(editor);
+    sendKeyEvent(editor, QEvent::KeyPress, Qt::Key_D,
+                 Qt::NoModifier, QStringLiteral("d"));
+    expectBool("F24+D waits for D release",
+               editor->toPlainText()
+                   == QStringLiteral("alpha beta gamma"),
+               true);
+    sendKeyEvent(editor, QEvent::KeyRelease, Qt::Key_D,
+                 Qt::NoModifier, QStringLiteral("d"));
+    expectBool("F24+D release deletes one selection",
+               coordinator->isActive()
+                   && editor->toPlainText()
+                          == QStringLiteral("alpha  gamma"),
+               true);
+    releaseF24(editor);
+
+    QTextCursor repeatedDelete(editor->document());
+    repeatedDelete.setPosition(7);
+    repeatedDelete.setPosition(12, QTextCursor::KeepAnchor);
+    editor->setTextCursor(repeatedDelete);
+    pressF24(editor);
+    releaseF24(editor);
+    expectBool("empty F24 tap repeats the last executable action",
+               editor->toPlainText() == QStringLiteral("alpha  "),
+               true);
+
+    editor->setPlainText(QStringLiteral("keep this"));
+    QTextCursor cancelledDelete(editor->document());
+    cancelledDelete.setPosition(5);
+    cancelledDelete.setPosition(9, QTextCursor::KeepAnchor);
+    editor->setTextCursor(cancelledDelete);
+    pressF24(editor);
+    sendKeyEvent(editor, QEvent::KeyPress, Qt::Key_D,
+                 Qt::NoModifier, QStringLiteral("d"));
+    releaseF24(editor);
+    sendKeyEvent(editor, QEvent::KeyRelease, Qt::Key_D,
+                 Qt::NoModifier, QStringLiteral("d"));
+    expectBool("releasing F24 before direct key cancels the gesture",
+               editor->toPlainText() == QStringLiteral("keep this"),
+               true);
+
+    pressF24(editor);
+    sendKeyEvent(editor, QEvent::KeyPress, Qt::Key_D,
+                 Qt::NoModifier, QStringLiteral("d"));
+    sendKeyEvent(editor, QEvent::KeyPress, Qt::Key_Escape);
+    sendKeyEvent(editor, QEvent::KeyRelease, Qt::Key_D,
+                 Qt::NoModifier, QStringLiteral("d"));
+    expectBool("Escape cancels a pending F24 direct gesture",
+               editor->toPlainText() == QStringLiteral("keep this"),
+               true);
+    releaseF24(editor);
+
+    pressF24(editor);
+    QMouseEvent commandLayerMousePress(
+        QEvent::MouseButtonPress,
+        QPointF(2.0, 2.0),
+        QPointF(2.0, 2.0),
+        Qt::LeftButton,
+        Qt::LeftButton,
+        Qt::NoModifier);
+    QCoreApplication::sendEvent(commandPanel,
+                                &commandLayerMousePress);
+    releaseF24(editor);
+    expectBool("mouse input cancels empty F24 tap repeat",
+               editor->toPlainText() == QStringLiteral("keep this"),
                true);
 
     pressF24(editor);

@@ -118,6 +118,8 @@ inline constexpr const char EditMoveLinesUp[] =
     "edit.moveLinesUp";
 inline constexpr const char EditMoveLinesDown[] =
     "edit.moveLinesDown";
+inline constexpr const char EditDeleteSelection[] =
+    "edit.deleteSelection";
 inline constexpr const char InsertColumnNumbers[] =
     "insert.columnNumbers";
 inline constexpr const char FoldShelfDeleteSelected[] =

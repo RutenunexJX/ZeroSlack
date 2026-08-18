@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdlib>
+#include <functional>
 #include <initializer_list>
 #include <limits>
 #include <QElapsedTimer>
@@ -934,6 +935,8 @@ TSNode firstDirectNamedChildOfType(TSNode node,
 TSNode childByField(TSNode node, const char* field);
 bool nodeContainsChar(TSNode node, int position);
 TSNode firstIdentifierChild(TSNode node);
+TSNode expressionChildForAssociation(TSNode association,
+                                     bool namedAssociation);
 template <typename Text>
 bool collectAssociationSlots(TSNode container,
                              const Text& text,
@@ -941,6 +944,8 @@ bool collectAssociationSlots(TSNode container,
                              const char* orderedType,
                              QList<TSExpressionSlot>* outputSlots);
 TSNode firstLvalueChild(TSNode assignment);
+template <typename Text>
+QString leadingIdentifierAt(const Text& text, int start, int end);
 template <typename Text>
 int closingParenStart(TSNode node, const Text& text);
 template <typename Text>
@@ -986,6 +991,244 @@ TSIdentifierTarget TSDocument::identifierAt(int charOffset) const
         return {};
     }
     target.text = nodeText(m_text, identifier);
+    return target;
+}
+
+TSExpressionAtomTarget TSDocument::expressionAtomAt(
+    int charOffset) const
+{
+    TSExpressionAtomTarget target;
+    const TSIdentifierTarget identifier = identifierAt(charOffset);
+    if (!identifier.ok() || m_text.isEmpty())
+        return target;
+
+    TSNode node = namedNodeAt(
+        m_tree,
+        qBound(0, charOffset, m_text.size() - 1),
+        m_text.size());
+    while (!ts_node_is_null(node)
+           && (!identifierNode(node)
+               || nodeStartChar(node) != identifier.startChar
+               || nodeEndChar(node) != identifier.endChar)) {
+        if (commentOrStringNode(node))
+            return {};
+        node = ts_node_parent(node);
+    }
+    if (ts_node_is_null(node))
+        return {};
+
+    TSNode atom = node;
+    while (true) {
+        const TSNode parent = ts_node_parent(atom);
+        if (ts_node_is_null(parent) || ts_node_has_error(parent))
+            break;
+        const bool atomContainer = nodeTypeIs(parent, "primary")
+            || nodeTypeIs(parent, "hierarchical_identifier")
+            || nodeTypeIs(parent, "select")
+            || nodeTypeIs(parent, "bit_select")
+            || nodeTypeIs(parent, "constant_bit_select")
+            || nodeTypeIs(parent, "part_select_range")
+            || nodeTypeIs(parent, "indexed_range")
+            || nodeTypeIs(parent, "subroutine_call")
+            || nodeTypeIs(parent, "function_subroutine_call")
+            || nodeTypeIs(parent, "method_call")
+            || nodeTypeIs(parent, "method_call_body")
+            || nodeTypeIs(parent, "system_tf_call");
+        if (!atomContainer)
+            break;
+        atom = parent;
+    }
+
+    target.startChar = nodeStartChar(atom);
+    target.endChar = nodeEndChar(atom);
+    if (target.startChar < 0
+        || target.endChar <= target.startChar
+        || target.endChar > m_text.size()) {
+        return {};
+    }
+    target.text = nodeText(m_text, atom);
+    return target;
+}
+
+TSCompletionContextTarget TSDocument::completionContextAt(
+    int charOffset) const
+{
+    TSCompletionContextTarget target;
+    if (m_text.isEmpty())
+        return target;
+    const int cursor = qBound(0, charOffset, m_text.size());
+
+    const TSIdentifierTarget identifier = identifierAt(cursor);
+    int prefixStart = cursor;
+    if (identifier.ok()
+        && cursor >= identifier.startChar
+        && cursor <= identifier.endChar) {
+        prefixStart = identifier.startChar;
+    }
+    int dot = prefixStart;
+    while (dot > 0 && m_text.at(dot - 1).isSpace()
+           && m_text.at(dot - 1) != QLatin1Char('\n')) {
+        --dot;
+    }
+    --dot;
+    if (dot >= 0 && m_text.at(dot) == QLatin1Char('.')) {
+        int baseEnd = dot;
+        while (baseEnd > 0 && m_text.at(baseEnd - 1).isSpace())
+            --baseEnd;
+        TSNode baseNode = namedNodeAt(
+            m_tree, qMax(0, baseEnd - 1), m_text.size());
+        while (!ts_node_is_null(baseNode)) {
+            const TSNode parent = ts_node_parent(baseNode);
+            if (ts_node_is_null(parent)
+                || nodeEndChar(parent) > baseEnd) {
+                break;
+            }
+            const bool atomParent = nodeTypeIs(parent, "primary")
+                || nodeTypeIs(parent, "hierarchical_identifier")
+                || nodeTypeIs(parent, "select")
+                || nodeTypeIs(parent, "bit_select")
+                || nodeTypeIs(parent, "constant_bit_select")
+                || nodeTypeIs(parent, "part_select_range")
+                || nodeTypeIs(parent, "indexed_range")
+                || nodeTypeIs(parent, "nonrange_select");
+            if (!atomParent)
+                break;
+            baseNode = parent;
+        }
+        const int baseStart = nodeStartChar(baseNode);
+        const int boundedBaseEnd = nodeEndChar(baseNode);
+        if (!ts_node_is_null(baseNode)
+            && baseStart >= 0
+            && boundedBaseEnd > baseStart
+            && boundedBaseEnd <= baseEnd) {
+            QStringList path;
+            const QString text = m_text.mid(
+                baseStart, boundedBaseEnd - baseStart);
+            int squareDepth = 0;
+            int parenDepth = 0;
+            for (int index = 0; index < text.size();) {
+                const QChar character = text.at(index);
+                if (character == QLatin1Char('[')) {
+                    ++squareDepth;
+                    ++index;
+                    continue;
+                }
+                if (character == QLatin1Char(']')) {
+                    squareDepth = qMax(0, squareDepth - 1);
+                    ++index;
+                    continue;
+                }
+                if (character == QLatin1Char('(')) {
+                    ++parenDepth;
+                    ++index;
+                    continue;
+                }
+                if (character == QLatin1Char(')')) {
+                    parenDepth = qMax(0, parenDepth - 1);
+                    ++index;
+                    continue;
+                }
+                if (squareDepth == 0 && parenDepth == 0
+                    && (character.isLetter()
+                        || character == QLatin1Char('_')
+                        || character == QLatin1Char('$'))) {
+                    const int start = index++;
+                    while (index < text.size()) {
+                        const QChar next = text.at(index);
+                        if (!next.isLetterOrNumber()
+                            && next != QLatin1Char('_')
+                            && next != QLatin1Char('$')) {
+                            break;
+                        }
+                        ++index;
+                    }
+                    path.append(text.mid(start, index - start));
+                    continue;
+                }
+                ++index;
+            }
+            if (!path.isEmpty()) {
+                target.memberAccess = true;
+                target.memberPath = path;
+            }
+        }
+    }
+
+    TSNode node = namedNodeAt(
+        m_tree,
+        qBound(0, cursor == m_text.size() ? cursor - 1 : cursor,
+               m_text.size() - 1),
+        m_text.size());
+    while (!ts_node_is_null(node)) {
+        if (commentOrStringNode(node))
+            break;
+
+        if (nodeTypeIs(node, "nonblocking_assignment")
+            || nodeTypeIs(node, "blocking_assignment")
+            || nodeTypeIs(node, "operator_assignment")
+            || nodeTypeIs(node, "variable_assignment")
+            || nodeTypeIs(node, "net_assignment")) {
+            const TSNode lvalue = firstLvalueChild(node);
+            if (!ts_node_is_null(lvalue)
+                && cursor >= nodeEndChar(lvalue)) {
+                target.expectedTypeIdentifier = leadingIdentifierAt(
+                    m_text, nodeStartChar(lvalue), nodeEndChar(lvalue));
+                if (!target.expectedTypeIdentifier.isEmpty())
+                    break;
+            }
+        }
+
+        if (nodeTypeIs(node, "expression")) {
+            const TSNode operatorNode = childByField(node, "operator");
+            const QString operatorText = nodeText(m_text, operatorNode);
+            const bool comparison = operatorText == QStringLiteral("==")
+                || operatorText == QStringLiteral("!=")
+                || operatorText == QStringLiteral("===")
+                || operatorText == QStringLiteral("!==")
+                || operatorText == QStringLiteral("==?")
+                || operatorText == QStringLiteral("!=?");
+            if (comparison) {
+                const TSNode left = childByField(node, "left");
+                const TSNode right = childByField(node, "right");
+                TSNode opposite;
+                if (!ts_node_is_null(left)
+                    && (ts_node_is_null(right)
+                        || cursor >= nodeStartChar(right))) {
+                    opposite = left;
+                } else if (!ts_node_is_null(right)
+                           && cursor <= nodeEndChar(left)) {
+                    opposite = right;
+                }
+                if (!ts_node_is_null(opposite)) {
+                    target.expectedTypeIdentifier = leadingIdentifierAt(
+                        m_text,
+                        nodeStartChar(opposite),
+                        nodeEndChar(opposite));
+                    if (!target.expectedTypeIdentifier.isEmpty())
+                        break;
+                }
+            }
+        }
+
+        if (nodeTypeIs(node, "case_item")) {
+            TSNode caseStatement = ts_node_parent(node);
+            while (!ts_node_is_null(caseStatement)
+                   && !nodeTypeIs(caseStatement, "case_statement")) {
+                caseStatement = ts_node_parent(caseStatement);
+            }
+            const TSNode caseExpression = firstDirectNamedChildOfType(
+                caseStatement, "case_expression");
+            if (!ts_node_is_null(caseExpression)) {
+                target.expectedTypeIdentifier = leadingIdentifierAt(
+                    m_text,
+                    nodeStartChar(caseExpression),
+                    nodeEndChar(caseExpression));
+                if (!target.expectedTypeIdentifier.isEmpty())
+                    break;
+            }
+        }
+        node = ts_node_parent(node);
+    }
     return target;
 }
 
@@ -1525,6 +1768,668 @@ TSDocument::conditionalBranchNavigationTarget(
     target.status =
         TSConditionalBranchNavigationStatus::Ok;
     return target;
+}
+
+TSExpressionSuffixTarget TSDocument::expressionSuffixTarget(
+    int startChar,
+    int endChar) const
+{
+    TSExpressionSuffixTarget target;
+    if (!m_tree || m_text.isEmpty())
+        return target;
+    int start = qBound(0, startChar, m_text.size());
+    int end = qBound(start, endChar, m_text.size());
+    while (start < end && m_text.at(start).isSpace())
+        ++start;
+    while (end > start && m_text.at(end - 1).isSpace())
+        --end;
+    if (end <= start)
+        return target;
+
+    TSNode covering = namedNodeAt(m_tree, start, m_text.size());
+    while (!ts_node_is_null(covering)
+           && (nodeStartChar(covering) > start
+               || nodeEndChar(covering) < end)) {
+        covering = ts_node_parent(covering);
+    }
+    if (ts_node_is_null(covering) || ts_node_has_error(covering)
+        || commentOrStringNode(covering)) {
+        return target;
+    }
+
+    QList<TSNode> leaves;
+    const std::function<void(TSNode)> collectLeaves =
+        [&](TSNode node) {
+            if (ts_node_is_null(node)
+                || nodeEndChar(node) <= start
+                || nodeStartChar(node) >= end) {
+                return;
+            }
+            const uint32_t count = ts_node_child_count(node);
+            if (count == 0) {
+                if (nodeStartChar(node) >= start
+                    && nodeEndChar(node) <= end) {
+                    leaves.append(node);
+                }
+                return;
+            }
+            for (uint32_t index = 0; index < count; ++index)
+                collectLeaves(ts_node_child(node, index));
+        };
+    collectLeaves(covering);
+    std::sort(leaves.begin(), leaves.end(),
+              [](TSNode left, TSNode right) {
+        return nodeStartChar(left) < nodeStartChar(right);
+    });
+    if (leaves.isEmpty())
+        return target;
+
+    int parenDepth = 0;
+    int braceDepth = 0;
+    int bracketDepth = 0;
+    int suffixIndex = -1;
+    for (int index = 0; index < leaves.size(); ++index) {
+        const QString token = nodeText(m_text, leaves.at(index));
+        if (token == QStringLiteral("[")
+            && parenDepth == 0
+            && braceDepth == 0
+            && bracketDepth == 0) {
+            suffixIndex = index;
+            break;
+        }
+        if (token == QStringLiteral("("))
+            ++parenDepth;
+        else if (token == QStringLiteral(")"))
+            parenDepth = std::max(0, parenDepth - 1);
+        else if (token == QStringLiteral("{"))
+            ++braceDepth;
+        else if (token == QStringLiteral("}"))
+            braceDepth = std::max(0, braceDepth - 1);
+        else if (token == QStringLiteral("["))
+            ++bracketDepth;
+        else if (token == QStringLiteral("]"))
+            bracketDepth = std::max(0, bracketDepth - 1);
+    }
+
+    bool terminalChain = suffixIndex >= 0;
+    bracketDepth = 0;
+    for (int index = suffixIndex;
+         terminalChain && index < leaves.size();
+         ++index) {
+        const QString token = nodeText(m_text, leaves.at(index));
+        if (bracketDepth == 0) {
+            if (token != QStringLiteral("[")) {
+                terminalChain = false;
+                break;
+            }
+            ++bracketDepth;
+        } else if (token == QStringLiteral("[")) {
+            ++bracketDepth;
+        } else if (token == QStringLiteral("]")) {
+            --bracketDepth;
+        }
+    }
+    terminalChain = terminalChain && bracketDepth == 0;
+
+    target.baseStartChar = start;
+    target.baseEndChar = terminalChain
+        ? nodeStartChar(leaves.at(suffixIndex)) : end;
+    target.suffixStartChar = target.baseEndChar;
+    target.suffixEndChar = terminalChain ? end : target.baseEndChar;
+    return target.ok() ? target : TSExpressionSuffixTarget{};
+}
+
+TSStructuralNavigationTarget TSDocument::structuralNavigationTarget(
+    int charOffset,
+    TSStructuralNavigationDirection direction) const
+{
+    struct Field {
+        TSStructuralNavigationTarget target;
+        int ordinal = 0;
+    };
+
+    if (!m_tree || m_text.isEmpty()
+        || charOffset < 0 || charOffset > m_text.size()) {
+        return {};
+    }
+
+    const int cursor = qBound(0, charOffset, m_text.size());
+    TSNode leaf = namedNodeAt(
+        m_tree, qMin(cursor, m_text.size() - 1), m_text.size());
+    if (ts_node_is_null(leaf) && cursor > 0) {
+        leaf = namedNodeAt(m_tree, cursor - 1, m_text.size());
+    }
+    if (ts_node_is_null(leaf) || commentOrStringNode(leaf))
+        return {};
+
+    const auto matchesAny = [](TSNode node,
+                               std::initializer_list<const char*> types) {
+        for (const char* type : types) {
+            if (nodeTypeIs(node, type))
+                return true;
+        }
+        return false;
+    };
+    const auto trimRange = [this](int* start, int* end) {
+        if (!start || !end)
+            return;
+        *start = qBound(0, *start, m_text.size());
+        *end = qBound(*start, *end, m_text.size());
+        while (*start < *end && m_text.at(*start).isSpace())
+            ++*start;
+        while (*end > *start && m_text.at(*end - 1).isSpace())
+            --*end;
+    };
+    const auto appendRange = [&](QList<Field>* fields,
+                                 TSStructuralFieldRole role,
+                                 int start,
+                                 int end,
+                                 TSNode item,
+                                 TSNode list,
+                                 int ordinal = 0) {
+        if (!fields || role == TSStructuralFieldRole::Unknown)
+            return;
+        trimRange(&start, &end);
+        if (end <= start)
+            return;
+        Field field;
+        field.target.startChar = start;
+        field.target.endChar = end;
+        field.target.itemStartChar = ts_node_is_null(item)
+            ? start : nodeStartChar(item);
+        field.target.itemEndChar = ts_node_is_null(item)
+            ? end : nodeEndChar(item);
+        field.target.listStartChar = ts_node_is_null(list)
+            ? field.target.itemStartChar : nodeStartChar(list);
+        field.target.listEndChar = ts_node_is_null(list)
+            ? field.target.itemEndChar : nodeEndChar(list);
+        field.target.role = role;
+        field.ordinal = ordinal;
+        fields->append(field);
+    };
+    const auto appendNode = [&](QList<Field>* fields,
+                                TSStructuralFieldRole role,
+                                TSNode node,
+                                TSNode item,
+                                TSNode list,
+                                int ordinal = 0) {
+        if (!ts_node_is_null(node)) {
+            appendRange(fields, role,
+                        nodeStartChar(node), nodeEndChar(node),
+                        item, list, ordinal);
+        }
+    };
+
+    const std::function<void(TSNode,
+                             std::initializer_list<const char*>,
+                             QList<TSNode>*)> collectDescendants =
+        [&](TSNode node,
+            std::initializer_list<const char*> types,
+            QList<TSNode>* output) {
+            if (ts_node_is_null(node) || !output)
+                return;
+            const uint32_t count = ts_node_named_child_count(node);
+            for (uint32_t index = 0; index < count; ++index) {
+                const TSNode child = ts_node_named_child(node, index);
+                if (matchesAny(child, types))
+                    output->append(child);
+                collectDescendants(child, types, output);
+            }
+        };
+    const auto firstDescendant = [&](TSNode node,
+                                     std::initializer_list<const char*> types) {
+        QList<TSNode> matches;
+        collectDescendants(node, types, &matches);
+        return matches.isEmpty() ? TSNode{} : matches.constFirst();
+    };
+    const auto directChild = [&](TSNode node,
+                                 std::initializer_list<const char*> types) {
+        for (const TSNode child : directNamedChildrenOf(node)) {
+            if (matchesAny(child, types))
+                return child;
+        }
+        return TSNode{};
+    };
+
+    const auto associationFields = [&](TSNode item,
+                                       TSNode list,
+                                       TSStructuralFieldRole formalRole,
+                                       TSStructuralFieldRole actualRole) {
+        QList<Field> result;
+        const bool named = nodeTypeIs(item, "named_port_connection")
+            || nodeTypeIs(item, "named_parameter_assignment");
+        if (named) {
+            TSNode formal = nodeTypeIs(item, "named_port_connection")
+                ? childByField(item, "port_name") : TSNode{};
+            if (ts_node_is_null(formal))
+                formal = firstIdentifierChild(item);
+            appendNode(&result, formalRole, formal, item, list);
+        }
+        TSNode actual = nodeTypeIs(item, "named_port_connection")
+            ? childByField(item, "connection") : TSNode{};
+        if (ts_node_is_null(actual))
+            actual = expressionChildForAssociation(item, named);
+        appendNode(&result, actualRole, actual, item, list);
+        return result;
+    };
+
+    const auto declarationFields = [&](TSNode item,
+                                       TSNode list,
+                                       TSNode declaration) {
+        QList<Field> result;
+        if (ts_node_is_null(item) || ts_node_has_error(item))
+            return result;
+
+        if (nodeTypeIs(item, "ansi_port_declaration")) {
+            TSNode header = directChild(
+                item, {"variable_port_header", "net_port_header",
+                       "interface_port_header"});
+            TSNode directionNode = firstDescendant(
+                header, {"port_direction"});
+            appendNode(&result,
+                       TSStructuralFieldRole::DeclarationDirection,
+                       directionNode, item, list);
+
+            QList<TSNode> packed;
+            collectDescendants(header, {"packed_dimension"}, &packed);
+            int typeStart = nodeStartChar(header);
+            if (!ts_node_is_null(directionNode))
+                typeStart = nodeEndChar(directionNode);
+            int typeEnd = packed.isEmpty()
+                ? nodeEndChar(header) : nodeStartChar(packed.constFirst());
+            appendRange(&result,
+                        TSStructuralFieldRole::DeclarationType,
+                        typeStart, typeEnd, item, list);
+            for (int index = 0; index < packed.size(); ++index) {
+                appendNode(&result,
+                           TSStructuralFieldRole::PackedDimension,
+                           packed.at(index), item, list, index);
+            }
+
+            TSNode name = childByField(item, "port_name");
+            appendNode(&result, TSStructuralFieldRole::Name,
+                       name, item, list);
+            QList<TSNode> unpacked;
+            collectDescendants(
+                item,
+                {"unpacked_dimension", "unsized_dimension",
+                 "associative_dimension", "queue_dimension"},
+                &unpacked);
+            int unpackedOrdinal = 0;
+            for (const TSNode dimension : std::as_const(unpacked)) {
+                if (!ts_node_is_null(name)
+                    && nodeStartChar(dimension) >= nodeEndChar(name)) {
+                    appendNode(&result,
+                               TSStructuralFieldRole::UnpackedDimension,
+                               dimension, item, list, unpackedOrdinal++);
+                }
+            }
+            for (const TSNode child : directNamedChildrenOf(item)) {
+                if (!ts_node_is_null(name)
+                    && nodeStartChar(child) >= nodeEndChar(name)
+                    && matchesAny(child,
+                                  {"constant_expression", "expression"})) {
+                    appendNode(&result,
+                               TSStructuralFieldRole::Initializer,
+                               child, item, list);
+                    break;
+                }
+            }
+            return result;
+        }
+
+        TSNode name = childByField(item, "name");
+        if (ts_node_is_null(name))
+            name = firstIdentifierChild(item);
+
+        TSNode typeNode = directChild(
+            declaration,
+            {"data_type_or_implicit", "data_type", "implicit_data_type",
+             "net_port_type", "variable_port_type"});
+        if (ts_node_is_null(typeNode)) {
+            typeNode = firstDescendant(
+                declaration,
+                {"data_type_or_implicit", "data_type",
+                 "implicit_data_type"});
+        }
+        QList<TSNode> packed;
+        collectDescendants(typeNode, {"packed_dimension"}, &packed);
+        if (!ts_node_is_null(typeNode)) {
+            const int typeEnd = packed.isEmpty()
+                ? nodeEndChar(typeNode)
+                : nodeStartChar(packed.constFirst());
+            appendRange(&result,
+                        TSStructuralFieldRole::DeclarationType,
+                        nodeStartChar(typeNode), typeEnd, item, list);
+        }
+        for (int index = 0; index < packed.size(); ++index) {
+            appendNode(&result,
+                       TSStructuralFieldRole::PackedDimension,
+                       packed.at(index), item, list, index);
+        }
+        appendNode(&result, TSStructuralFieldRole::Name,
+                   name, item, list);
+
+        QList<TSNode> unpacked;
+        collectDescendants(
+            item,
+            {"unpacked_dimension", "unsized_dimension",
+             "associative_dimension", "queue_dimension"},
+            &unpacked);
+        int unpackedOrdinal = 0;
+        for (const TSNode dimension : std::as_const(unpacked)) {
+            if (!ts_node_is_null(name)
+                && nodeStartChar(dimension) >= nodeEndChar(name)) {
+                appendNode(&result,
+                           TSStructuralFieldRole::UnpackedDimension,
+                           dimension, item, list, unpackedOrdinal++);
+            }
+        }
+        for (const TSNode child : directNamedChildrenOf(item)) {
+            if (!ts_node_is_null(name)
+                && nodeStartChar(child) >= nodeEndChar(name)
+                && matchesAny(child,
+                              {"expression", "constant_expression",
+                               "param_expression", "class_new",
+                               "dynamic_array_new"})) {
+                appendNode(&result,
+                           TSStructuralFieldRole::Initializer,
+                           child, item, list);
+                break;
+            }
+        }
+        return result;
+    };
+
+    const auto fieldsForList = [&](TSNode list) {
+        QList<Field> fields;
+        if (ts_node_is_null(list) || ts_node_has_error(list))
+            return fields;
+        const QList<TSNode> items = directNamedChildrenOf(list);
+        for (const TSNode item : items) {
+            if (commentOrStringNode(item))
+                continue;
+            if (nodeTypeIs(item, "ansi_port_declaration")) {
+                fields.append(declarationFields(item, list, item));
+            } else if (nodeTypeIs(item, "named_port_connection")
+                       || nodeTypeIs(item, "ordered_port_connection")) {
+                fields.append(associationFields(
+                    item, list,
+                    TSStructuralFieldRole::PortFormal,
+                    TSStructuralFieldRole::PortActual));
+            } else if (nodeTypeIs(item, "named_parameter_assignment")
+                       || nodeTypeIs(item, "ordered_parameter_assignment")) {
+                fields.append(associationFields(
+                    item, list,
+                    TSStructuralFieldRole::ParameterFormal,
+                    TSStructuralFieldRole::ParameterActual));
+            } else if (nodeTypeIs(item, "variable_decl_assignment")
+                       || nodeTypeIs(item, "net_decl_assignment")
+                       || nodeTypeIs(item, "param_assignment")) {
+                fields.append(declarationFields(
+                    item, list, ts_node_parent(list)));
+            } else if (nodeTypeIs(list, "list_of_arguments")) {
+                appendNode(&fields, TSStructuralFieldRole::CallArgument,
+                           item, item, list);
+            } else if (nodeTypeIs(item,
+                                  "parameter_port_declaration")) {
+                TSNode assignments = firstDescendant(
+                    item, {"list_of_param_assignments"});
+                if (!ts_node_is_null(assignments)) {
+                    for (const TSNode assignment
+                         : directNamedChildrenOf(assignments)) {
+                        fields.append(declarationFields(
+                            assignment, list, item));
+                    }
+                }
+            }
+        }
+        return fields;
+    };
+
+    TSNode instantiation{};
+    TSNode declaration{};
+    TSNode ternary{};
+    TSNode conditional{};
+    TSNode argumentList{};
+    TSNode current = leaf;
+    while (!ts_node_is_null(current)) {
+        if (ts_node_has_error(current))
+            return {};
+        if (ts_node_is_null(instantiation)
+            && nodeTypeIs(current, "module_instantiation")) {
+            instantiation = current;
+        }
+        if (ts_node_is_null(declaration)
+            && matchesAny(current,
+                          {"ansi_port_declaration", "data_declaration",
+                           "net_declaration", "parameter_port_declaration",
+                           "parameter_declaration",
+                           "local_parameter_declaration"})) {
+            declaration = current;
+        }
+        if (ts_node_is_null(ternary)
+            && nodeTypeIs(current, "conditional_expression")) {
+            ternary = current;
+        }
+        if (ts_node_is_null(conditional)
+            && nodeTypeIs(current, "conditional_statement")) {
+            conditional = current;
+        }
+        if (ts_node_is_null(argumentList)
+            && nodeTypeIs(current, "list_of_arguments")) {
+            argumentList = current;
+        }
+        current = ts_node_parent(current);
+    }
+
+    QList<Field> fields;
+    if (!ts_node_is_null(instantiation)) {
+        const TSNode moduleType =
+            childByField(instantiation, "instance_type");
+        appendNode(&fields, TSStructuralFieldRole::ModuleType,
+                   moduleType, instantiation, instantiation);
+
+        const TSNode parameterValue = directChild(
+            instantiation, {"parameter_value_assignment"});
+        const TSNode parameterList = directChild(
+            parameterValue, {"list_of_parameter_value_assignments"});
+        if (!ts_node_is_null(parameterList))
+            fields.append(fieldsForList(parameterList));
+
+        TSNode hierarchy{};
+        for (const TSNode candidate
+             : directNamedChildrenOfType(instantiation,
+                                         "hierarchical_instance")) {
+            if (nodeContainsChar(candidate,
+                                 qMin(cursor, m_text.size() - 1))) {
+                hierarchy = candidate;
+                break;
+            }
+            if (ts_node_is_null(hierarchy))
+                hierarchy = candidate;
+        }
+        const TSNode instanceNameContainer = directChild(
+            hierarchy, {"name_of_instance"});
+        appendNode(&fields, TSStructuralFieldRole::InstanceName,
+                   firstIdentifierChild(instanceNameContainer),
+                   hierarchy, instantiation);
+        const TSNode ports = directChild(
+            hierarchy, {"list_of_port_connections"});
+        if (!ts_node_is_null(ports))
+            fields.append(fieldsForList(ports));
+    } else if (!ts_node_is_null(ternary)) {
+        QList<TSNode> children;
+        for (const TSNode child : directNamedChildrenOf(ternary)) {
+            if (nodeTypeIs(child, "attribute_instance"))
+                continue;
+            children.append(child);
+        }
+        if (children.size() >= 3) {
+            appendNode(&fields, TSStructuralFieldRole::TernaryCondition,
+                       children.at(0), ternary, ternary);
+            appendNode(&fields, TSStructuralFieldRole::TernaryTrue,
+                       children.at(1), ternary, ternary);
+            appendNode(&fields, TSStructuralFieldRole::TernaryFalse,
+                       children.at(2), ternary, ternary);
+        }
+    } else if (!ts_node_is_null(argumentList)) {
+        fields = fieldsForList(argumentList);
+    } else if (!ts_node_is_null(declaration)) {
+        if (nodeTypeIs(declaration, "ansi_port_declaration")) {
+            const TSNode list = ts_node_parent(declaration);
+            fields = declarationFields(declaration, list, declaration);
+        } else {
+            TSNode list = firstDescendant(
+                declaration,
+                {"list_of_variable_decl_assignments",
+                 "list_of_net_decl_assignments",
+                 "list_of_param_assignments"});
+            if (!ts_node_is_null(list)) {
+                const QList<Field> listFields = fieldsForList(list);
+                TSNode selectedItem{};
+                for (const TSNode item : directNamedChildrenOf(list)) {
+                    if (nodeContainsChar(item,
+                                         qMin(cursor,
+                                              m_text.size() - 1))) {
+                        selectedItem = item;
+                        break;
+                    }
+                }
+                if (ts_node_is_null(selectedItem)
+                    && !directNamedChildrenOf(list).isEmpty()) {
+                    selectedItem = directNamedChildrenOf(list).constFirst();
+                }
+                for (const Field& field : listFields) {
+                    if (field.target.itemStartChar
+                            == nodeStartChar(selectedItem)
+                        && field.target.itemEndChar
+                            == nodeEndChar(selectedItem)) {
+                        fields.append(field);
+                    }
+                }
+            } else if (nodeTypeIs(declaration,
+                                  "parameter_port_declaration")) {
+                fields = fieldsForList(ts_node_parent(declaration));
+            }
+        }
+    } else if (!ts_node_is_null(conditional)) {
+        const TSNode predicate = directChild(
+            conditional, {"cond_predicate"});
+        TSNode operandRoot = predicate;
+        while (!ts_node_is_null(operandRoot)) {
+            QList<TSNode> children;
+            for (const TSNode child : directNamedChildrenOf(operandRoot)) {
+                if (!nodeTypeIs(child, "attribute_instance"))
+                    children.append(child);
+            }
+            if (children.size() != 1)
+                break;
+            operandRoot = children.constFirst();
+        }
+        QList<TSNode> operands;
+        for (const TSNode child : directNamedChildrenOf(operandRoot)) {
+            if (!nodeTypeIs(child, "attribute_instance"))
+                operands.append(child);
+        }
+        if (operands.isEmpty() && !ts_node_is_null(operandRoot))
+            operands.append(operandRoot);
+        for (int index = 0; index < operands.size(); ++index) {
+            appendNode(&fields, TSStructuralFieldRole::ConditionOperand,
+                       operands.at(index), conditional, conditional, index);
+        }
+    }
+
+    if (fields.isEmpty())
+        return {};
+    std::sort(fields.begin(), fields.end(),
+              [](const Field& left, const Field& right) {
+        if (left.target.startChar != right.target.startChar)
+            return left.target.startChar < right.target.startChar;
+        if (left.target.endChar != right.target.endChar)
+            return left.target.endChar < right.target.endChar;
+        return static_cast<int>(left.target.role)
+            < static_cast<int>(right.target.role);
+    });
+
+    int originIndex = -1;
+    int closestDistance = std::numeric_limits<int>::max();
+    for (int index = 0; index < fields.size(); ++index) {
+        const Field& field = fields.at(index);
+        if (cursor >= field.target.startChar
+            && cursor <= field.target.endChar) {
+            originIndex = index;
+            break;
+        }
+        const int distance = cursor < field.target.startChar
+            ? field.target.startChar - cursor
+            : cursor - field.target.endChar;
+        if (distance < closestDistance) {
+            closestDistance = distance;
+            originIndex = index;
+        }
+    }
+    if (originIndex < 0)
+        return {};
+
+    if (direction == TSStructuralNavigationDirection::PreviousField
+        || direction == TSStructuralNavigationDirection::NextField) {
+        const int targetIndex = originIndex
+            + (direction == TSStructuralNavigationDirection::PreviousField
+                   ? -1 : 1);
+        return targetIndex >= 0 && targetIndex < fields.size()
+            ? fields.at(targetIndex).target
+            : TSStructuralNavigationTarget{};
+    }
+
+    const Field origin = fields.at(originIndex);
+    TSNode list = namedNodeAt(
+        m_tree,
+        qMin(origin.target.listStartChar, m_text.size() - 1),
+        m_text.size());
+    while (!ts_node_is_null(list)
+           && (nodeStartChar(list) != origin.target.listStartChar
+               || nodeEndChar(list) != origin.target.listEndChar)) {
+        list = ts_node_parent(list);
+    }
+    if (ts_node_is_null(list))
+        return {};
+
+    QList<Field> vertical = fieldsForList(list);
+    std::sort(vertical.begin(), vertical.end(),
+              [](const Field& left, const Field& right) {
+        if (left.target.itemStartChar != right.target.itemStartChar)
+            return left.target.itemStartChar < right.target.itemStartChar;
+        if (left.target.startChar != right.target.startChar)
+            return left.target.startChar < right.target.startChar;
+        return left.ordinal < right.ordinal;
+    });
+
+    QList<Field> matching;
+    for (const Field& field : std::as_const(vertical)) {
+        if (field.target.role == origin.target.role
+            && field.ordinal == origin.ordinal) {
+            matching.append(field);
+        }
+    }
+    int currentItem = -1;
+    for (int index = 0; index < matching.size(); ++index) {
+        if (matching.at(index).target.itemStartChar
+                == origin.target.itemStartChar
+            && matching.at(index).target.itemEndChar
+                == origin.target.itemEndChar) {
+            currentItem = index;
+            break;
+        }
+    }
+    if (currentItem < 0)
+        return {};
+    const int targetItem = currentItem
+        + (direction == TSStructuralNavigationDirection::PreviousItem
+               ? -1 : 1);
+    return targetItem >= 0 && targetItem < matching.size()
+        ? matching.at(targetItem).target
+        : TSStructuralNavigationTarget{};
 }
 
 TSInstantiationTarget TSDocument::instantiationAt(int charOffset) const

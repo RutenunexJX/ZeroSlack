@@ -1,6 +1,6 @@
 # ZeroSlack
 
-Current version: `v0.3.2`
+Current version: `v0.4.0`
 
 ZeroSlack is a Qt 6 desktop environment for navigating, understanding, and
 editing SystemVerilog workspaces. It combines an incremental editor syntax
@@ -33,6 +33,14 @@ and preview-first RTL editing workflows.
 - Treat a clean `Ctrl+S` as a true no-op. Changed saves classify their semantic
   impact and schedule only the required file/dependency work outside the UI
   thread; trivia-only edits do not invoke Slang.
+- Use F24 as an explicit command search layer: Enter executes a fuzzy result,
+  `F24+D` deletes the current selection, and an empty F24 tap repeats the last
+  currently valid repeatable action.
+- Filter `Ctrl+Space` symbols by semantic kind, current scope, struct receiver,
+  or expected enum type, and replace the identifier already under the caret.
+- Rename supported semantic symbols from `Ctrl+R`, navigate lexical and
+  Tree-sitter structural fields with the keyboard, and align indexed fields in
+  assignments, ternaries, and named associations without changing tokens.
 
 ## Build, run, and test
 

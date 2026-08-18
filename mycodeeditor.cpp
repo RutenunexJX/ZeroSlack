@@ -1,6 +1,7 @@
 #include "mycodeeditor.h"
 #include "actionregistry.h"
 #include "editorruntime.h"
+#include "editorlexicalboundary.h"
 #include "editorsemanticcontextservice.h"
 #include "shareddocument.h"
 #include "sourcenavigationservice.h"
@@ -459,6 +460,44 @@ bool MyCodeEditor::duplicateLines(
     return result.succeeded;
 }
 
+bool MyCodeEditor::deleteSelectedContent(
+    QString* failureReason)
+{
+    auto edit = beginSynchronousEditTransaction();
+    const int verticalScroll = verticalScrollBar()->value();
+    const int horizontalScroll = horizontalScrollBar()->value();
+
+    bool deleted = false;
+    if (state->multiCursor.active()) {
+        const EditorMultiCursorSnapshot snapshot =
+            state->multiCursor.snapshot();
+        bool hasSelection = false;
+        for (const EditorMultiCursorCaret& caret : snapshot.carets) {
+            if (caret.hasSelection()) {
+                hasSelection = true;
+                break;
+            }
+        }
+        if (hasSelection)
+            deleted = state->multiCursor.deleteForward();
+    } else {
+        QTextCursor cursor = textCursor();
+        if (cursor.hasSelection()) {
+            cursor.beginEditBlock();
+            cursor.removeSelectedText();
+            cursor.endEditBlock();
+            setTextCursor(cursor);
+            deleted = true;
+        }
+    }
+
+    verticalScrollBar()->setValue(verticalScroll);
+    horizontalScrollBar()->setValue(horizontalScroll);
+    if (!deleted && failureReason)
+        *failureReason = QStringLiteral("No selected content");
+    return deleted;
+}
+
 bool MyCodeEditor::deleteLines(
     QString* failureReason)
 {
@@ -860,6 +899,41 @@ EditorSemanticContext MyCodeEditor::editorSemanticContextForPosition(
         includeDocumentText);
 }
 
+EditorSymbolPaletteContext MyCodeEditor::symbolPaletteContext() const
+{
+    EditorSymbolPaletteContext result;
+    const QTextCursor cursor = textCursor();
+    const QString& text = cachedDocumentText();
+    if (cursor.hasSelection()) {
+        result.replacementStart = cursor.selectionStart();
+        result.replacementLength = cursor.selectionEnd()
+            - cursor.selectionStart();
+        result.initialQuery = text.mid(result.replacementStart,
+                                       result.replacementLength);
+    } else {
+        const EditorLexicalBoundary::Range identifier =
+            EditorLexicalBoundary::identifierAt(
+                text, cursor.position());
+        if (identifier.isValid()) {
+            result.replacementStart = identifier.start;
+            result.replacementLength = identifier.length();
+            const int prefixEnd = qBound(identifier.start,
+                                         cursor.position(),
+                                         identifier.end);
+            result.initialQuery = text.mid(identifier.start,
+                                           prefixEnd - identifier.start);
+        }
+    }
+    const TSCompletionContextTarget syntaxContext =
+        state->syntax.completionContextAt(cursor.position());
+    result.memberAccess = syntaxContext.memberAccess;
+    result.memberPath = syntaxContext.memberPath;
+    result.expectedTypeIdentifier =
+        syntaxContext.expectedTypeIdentifier;
+    result.documentRevision = document()->revision();
+    return result;
+}
+
 bool MyCodeEditor::syntaxCommentAt(int cursorPosition) const
 {
     const TSDocument* document = state->syntax.tsDocument();
@@ -1045,6 +1119,11 @@ bool MyCodeEditor::columnSelectionActive() const
 EditorColumnModeSnapshot MyCodeEditor::columnModeSnapshotForTest() const
 {
     return state->columnModeSnapshotForTest();
+}
+
+EditorMultiCursorSnapshot MyCodeEditor::multiCursorSnapshotForTest() const
+{
+    return state->multiCursor.snapshot();
 }
 
 bool MyCodeEditor::virtualCursorActiveForTest() const
@@ -1346,6 +1425,13 @@ bool MyCodeEditor::beginSignalDefinitionEditorAt(
         this, cursorPosition, failureReason);
 }
 
+bool MyCodeEditor::beginSemanticRename(
+    QString* failureReason)
+{
+    return state->beginSemanticRenameEditor(
+        this, failureReason);
+}
+
 bool MyCodeEditor::editInstanceSlotsAtForTest(
     int cursorPosition,
     QString* message)
@@ -1491,6 +1577,11 @@ void MyCodeEditor::clearSearchMatches()
 void MyCodeEditor::flashLine(int lineNumber)
 {
     state->flashLine(this, lineNumber);
+}
+
+void MyCodeEditor::flashRange(int startChar, int endChar)
+{
+    state->selections.flashRange(this, startChar, endChar);
 }
 
 void MyCodeEditor::applyAppearanceSettings(

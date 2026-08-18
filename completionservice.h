@@ -40,6 +40,19 @@ public:
         const CompletionPopupKeyQuery& query) const;
     QList<SemanticSymbolRecord> findCommandCompletionSymbolRecords(
         const CommandCompletionQuery& query) const;
+    QList<SemanticSymbolRecord> findStructMemberCompletionRecords(
+        const QStringList& memberPath,
+        const QString& moduleName,
+        const QString& prefix = QString()) const;
+    QList<SemanticSymbolRecord> findVisibleStructMemberRecords(
+        const CommandCompletionQuery& query) const;
+    QList<SemanticSymbolRecord> findExpectedEnumValueRecords(
+        const QString& identifier,
+        const QString& moduleName,
+        const QString& packageName,
+        const QString& prefix = QString()) const;
+    QList<SemanticSymbolRecord> findVisibleEnumValueRecords(
+        const CommandCompletionQuery& query) const;
 
 private:
     SemanticIndex* index = nullptr;

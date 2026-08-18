@@ -29,9 +29,13 @@ struct TSStructuralNewlineTarget;
 struct TSKeywordCompletionTarget;
 struct TSKeywordPairTarget;
 struct TSIdentifierTarget;
+struct TSExpressionAtomTarget;
+struct TSCompletionContextTarget;
 struct TSIdentifierOccurrenceSet;
 struct TSAssignmentNavigationTarget;
 struct TSConditionalBranchNavigationTarget;
+struct TSStructuralNavigationTarget;
+enum class TSStructuralNavigationDirection;
 struct EditorLargeFileSyntaxSnapshot {
     int startPosition = 0;
     int endPosition = 0;
@@ -105,6 +109,8 @@ public:
         int minimumPrefixLength = 3) const;
     TSKeywordPairTarget matchingKeywordPairAt(int cursorChar) const;
     TSIdentifierTarget identifierAt(int cursorChar) const;
+    TSExpressionAtomTarget expressionAtomAt(int cursorChar) const;
+    TSCompletionContextTarget completionContextAt(int cursorChar) const;
     TSIdentifierOccurrenceSet identifierOccurrencesAt(
         int cursorChar) const;
     TSAssignmentNavigationTarget assignmentNavigationTargetAt(
@@ -114,6 +120,9 @@ public:
     conditionalBranchNavigationTargetAt(
         int cursorChar,
         bool previous) const;
+    TSStructuralNavigationTarget structuralNavigationTargetAt(
+        int cursorChar,
+        TSStructuralNavigationDirection direction) const;
     TSInstantiationTarget instantiationAt(int cursorChar) const;
     TSUndefinedSignalContext undefinedSignalContextAt(
         int cursorChar) const;

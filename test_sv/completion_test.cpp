@@ -1489,6 +1489,268 @@ int main(int argc, char** argv) {
                                QStringLiteral("always_comb"));
                    }),
                true);
+
+    {
+        const QString completionContextSource =
+            QStringLiteral(
+                "module palette_top;\n"
+                "  packet_t packet;\n"
+                "  state_t state;\n"
+                "  always_comb state <= IDLE;\n"
+                "  assign sink = packet.payload;\n"
+                "  always_comb case (state) IDLE: sink = 1'b0; endcase\n"
+                "endmodule\n");
+        TSDocument completionSyntax;
+        completionSyntax.setText(completionContextSource);
+        const int memberPosition = completionContextSource.indexOf(
+            QStringLiteral("payload")) + 3;
+        const TSCompletionContextTarget memberContext =
+            completionSyntax.completionContextAt(memberPosition);
+        expectBool("Ctrl+Space syntax identifies member access path",
+                   memberContext.memberAccess
+                       && memberContext.memberPath
+                              == QStringList{QStringLiteral("packet")},
+                   true);
+        const int assignmentValue = completionContextSource.indexOf(
+            QStringLiteral("IDLE"));
+        expectBool("Ctrl+Space syntax distinguishes nonblocking assignment",
+                   completionSyntax.completionContextAt(assignmentValue)
+                           .expectedTypeIdentifier
+                       == QStringLiteral("state"),
+                   true);
+        const int caseValue = completionContextSource.lastIndexOf(
+            QStringLiteral("IDLE"));
+        expectBool("Ctrl+Space syntax derives case selector type anchor",
+                   completionSyntax.completionContextAt(caseValue)
+                           .expectedTypeIdentifier
+                       == QStringLiteral("state"),
+                   true);
+
+        using DeclarationKind = SymbolTaxonomy::DeclarationKind;
+        using CollectorKind = SymbolTaxonomy::CollectorKind;
+        const QString palettePath = QStringLiteral("palette_context.sv");
+        const QList<SemanticSymbolRecord> paletteRecords{
+            makeSemanticFixtureRecord(
+                QStringLiteral("palette_top"), DeclarationKind::Module,
+                CollectorKind::User, QString(), QString(), 1, palettePath),
+            makeSemanticFixtureRecord(
+                QStringLiteral("wire_sig"), DeclarationKind::Signal,
+                CollectorKind::Wire, QStringLiteral("palette_top"),
+                QStringLiteral("wire"), 2, palettePath),
+            makeSemanticFixtureRecord(
+                QStringLiteral("logic_sig"), DeclarationKind::Signal,
+                CollectorKind::Logic, QStringLiteral("palette_top"),
+                QStringLiteral("logic"), 3, palettePath),
+            makeSemanticFixtureRecord(
+                QStringLiteral("u_signal"), DeclarationKind::Signal,
+                CollectorKind::Logic, QStringLiteral("palette_top"),
+                QStringLiteral("logic"), 3, palettePath),
+            makeSemanticFixtureRecord(
+                QStringLiteral("sp_signal"), DeclarationKind::Signal,
+                CollectorKind::Logic, QStringLiteral("palette_top"),
+                QStringLiteral("logic"), 3, palettePath),
+            makeSemanticFixtureRecord(
+                QStringLiteral("ne_signal"), DeclarationKind::Signal,
+                CollectorKind::Logic, QStringLiteral("palette_top"),
+                QStringLiteral("logic"), 3, palettePath),
+            makeSemanticFixtureRecord(
+                QStringLiteral("nsp_signal"), DeclarationKind::Signal,
+                CollectorKind::Logic, QStringLiteral("palette_top"),
+                QStringLiteral("logic"), 3, palettePath),
+            makeSemanticFixtureRecord(
+                QStringLiteral("ns_signal"), DeclarationKind::Signal,
+                CollectorKind::Logic, QStringLiteral("palette_top"),
+                QStringLiteral("logic"), 3, palettePath),
+            makeSemanticFixtureRecord(
+                QStringLiteral("word_t"), DeclarationKind::Typedef,
+                CollectorKind::Typedef, QStringLiteral("palette_top"),
+                QStringLiteral("logic [7:0]"), 3, palettePath),
+            makeSemanticFixtureRecord(
+                QStringLiteral("state_t"), DeclarationKind::Enum,
+                CollectorKind::Enum, QStringLiteral("palette_top"),
+                QStringLiteral("logic [1:0]"), 4, palettePath),
+            makeSemanticFixtureRecord(
+                QStringLiteral("state"), DeclarationKind::Signal,
+                CollectorKind::EnumVariable,
+                QStringLiteral("palette_top"),
+                QStringLiteral("state_t"), 5, palettePath),
+            makeSemanticFixtureRecord(
+                QStringLiteral("IDLE"), DeclarationKind::Enum,
+                CollectorKind::EnumValue, QStringLiteral("state_t"),
+                QStringLiteral("state_t"), 6, palettePath),
+            makeSemanticFixtureRecord(
+                QStringLiteral("RUN"), DeclarationKind::Enum,
+                CollectorKind::EnumValue, QStringLiteral("state_t"),
+                QStringLiteral("state_t"), 7, palettePath),
+            makeSemanticFixtureRecord(
+                QStringLiteral("packet_t"), DeclarationKind::Struct,
+                CollectorKind::PackedStruct,
+                QStringLiteral("palette_top"), QString(), 8, palettePath),
+            makeSemanticFixtureRecord(
+                QStringLiteral("packet"), DeclarationKind::StructVariable,
+                CollectorKind::PackedStructVariable,
+                QStringLiteral("palette_top"),
+                QStringLiteral("packet_t"), 9, palettePath),
+            makeSemanticFixtureRecord(
+                QStringLiteral("payload"), DeclarationKind::StructMember,
+                CollectorKind::StructMember, QStringLiteral("packet_t"),
+                QStringLiteral("logic [7:0]"), 10, palettePath),
+        };
+        SemanticIndex paletteIndex;
+        paletteIndex.setSnapshot(
+            sharedSnapshotFromRecords(paletteRecords));
+        CompletionService::getInstance()->setSemanticIndex(&paletteIndex);
+
+        GlobalControlQueryContext typedContext;
+        typedContext.editorAvailable = true;
+        typedContext.fileName = palettePath;
+        typedContext.moduleName = QStringLiteral("palette_top");
+        typedContext.documentText = completionContextSource;
+        typedContext.cursorLine = 4;
+        typedContext.cursorPosition = memberPosition;
+        typedContext.replacementStart = memberPosition - 3;
+        typedContext.replacementLength = 7;
+        typedContext.documentRevision = 12;
+
+        const QList<GlobalControlItem> wireItems = insertPalette.query(
+            GlobalControlCategory::Symbols,
+            QStringLiteral("w "), typedContext);
+        expectBool("Ctrl+Space selector filters wire only",
+                   wireItems.size() == 1
+                       && wireItems.first().title
+                              == QStringLiteral("wire_sig")
+                       && wireItems.first().replacementStart
+                              == typedContext.replacementStart
+                       && wireItems.first().sourceDocumentRevision == 12,
+                   true);
+
+        const auto itemTitles = [](const QList<GlobalControlItem>& items) {
+            QSet<QString> titles;
+            for (const GlobalControlItem& item : items)
+                titles.insert(item.title);
+            return titles;
+        };
+        const QSet<QString> typedefTitles = itemTitles(insertPalette.query(
+            GlobalControlCategory::Symbols,
+            QStringLiteral("td "), typedContext));
+        expectBool("Ctrl+Space td selector includes all typedef families",
+                   typedefTitles.contains(QStringLiteral("word_t"))
+                       && typedefTitles.contains(QStringLiteral("state_t"))
+                       && typedefTitles.contains(QStringLiteral("packet_t")),
+                   true);
+        expectBool("Ctrl+Space et selector filters enum types",
+                   itemTitles(insertPalette.query(
+                       GlobalControlCategory::Symbols,
+                       QStringLiteral("et "), typedContext))
+                           == QSet<QString>{QStringLiteral("state_t")},
+                   true);
+        expectBool("Ctrl+Space ev selector filters enum variables",
+                   itemTitles(insertPalette.query(
+                       GlobalControlCategory::Symbols,
+                       QStringLiteral("ev "), typedContext))
+                           == QSet<QString>{QStringLiteral("state")},
+                   true);
+        expectBool("Ctrl+Space st selector filters struct types",
+                   itemTitles(insertPalette.query(
+                       GlobalControlCategory::Symbols,
+                       QStringLiteral("st "), typedContext))
+                           == QSet<QString>{QStringLiteral("packet_t")},
+                   true);
+        const QSet<QString> structVariableTitles = itemTitles(
+            insertPalette.query(GlobalControlCategory::Symbols,
+                                QStringLiteral("sv "), typedContext));
+        expectBool("Ctrl+Space sv selector includes struct variables",
+                   structVariableTitles.contains(QStringLiteral("packet")),
+                   true);
+        expectBool("Ctrl+Space sv selector excludes other symbol families",
+                   structVariableTitles
+                       == QSet<QString>{QStringLiteral("packet")},
+                   true);
+        expectBool("Ctrl+Space removed selector aliases are name text",
+                   itemTitles(insertPalette.query(
+                       GlobalControlCategory::Symbols,
+                       QStringLiteral("u "), typedContext))
+                           .contains(QStringLiteral("u_signal"))
+                       && itemTitles(insertPalette.query(
+                           GlobalControlCategory::Symbols,
+                           QStringLiteral("sp "), typedContext))
+                              .contains(QStringLiteral("sp_signal"))
+                       && itemTitles(insertPalette.query(
+                           GlobalControlCategory::Symbols,
+                           QStringLiteral("ne "), typedContext))
+                              .contains(QStringLiteral("ne_signal"))
+                       && itemTitles(insertPalette.query(
+                           GlobalControlCategory::Symbols,
+                           QStringLiteral("nsp "), typedContext))
+                              .contains(QStringLiteral("nsp_signal"))
+                       && itemTitles(insertPalette.query(
+                           GlobalControlCategory::Symbols,
+                           QStringLiteral("ns "), typedContext))
+                              .contains(QStringLiteral("ns_signal")),
+                   true);
+
+        typedContext.memberAccess = true;
+        typedContext.memberPath = {QStringLiteral("packet")};
+        const QList<GlobalControlItem> memberItems = insertPalette.query(
+            GlobalControlCategory::Symbols, QString(), typedContext);
+        expectBool("Ctrl+Space member context suppresses unrelated symbols",
+                   memberItems.size() == 1
+                       && memberItems.first().title
+                              == QStringLiteral("payload"),
+                   true);
+        expectBool("Ctrl+Space sm selector resolves receiver members",
+                   itemTitles(insertPalette.query(
+                       GlobalControlCategory::Symbols,
+                       QStringLiteral("sm "), typedContext))
+                           == QSet<QString>{QStringLiteral("payload")},
+                   true);
+
+        typedContext.memberAccess = false;
+        typedContext.memberPath.clear();
+        const QSet<QString> structFamilyTitles = itemTitles(
+            insertPalette.query(GlobalControlCategory::Symbols,
+                                QStringLiteral("s "), typedContext));
+        expectBool("Ctrl+Space s selector includes visible struct family",
+                   structFamilyTitles.contains(QStringLiteral("packet_t"))
+                       && structFamilyTitles.contains(QStringLiteral("packet"))
+                       && structFamilyTitles.contains(QStringLiteral("payload")),
+                   true);
+        expectBool("Ctrl+Space s selector excludes other symbol families",
+                   structFamilyTitles.size() == 3,
+                   true);
+        expectBool("Ctrl+Space sm selector finds members of visible types",
+                   itemTitles(insertPalette.query(
+                       GlobalControlCategory::Symbols,
+                       QStringLiteral("sm "), typedContext))
+                           == QSet<QString>{QStringLiteral("payload")},
+                   true);
+        typedContext.expectedTypeIdentifier = QStringLiteral("state");
+        const QList<GlobalControlItem> enumItems = insertPalette.query(
+            GlobalControlCategory::Symbols, QString(), typedContext);
+        expectBool("Ctrl+Space expected enum values rank first",
+                   enumItems.size() >= 2
+                       && enumItems.at(0).title == QStringLiteral("IDLE")
+                       && enumItems.at(1).title == QStringLiteral("RUN"),
+                   true);
+        const QSet<QString> enumFamilyTitles = itemTitles(insertPalette.query(
+            GlobalControlCategory::Symbols,
+            QStringLiteral("e "), typedContext));
+        expectBool("Ctrl+Space e selector includes complete enum family",
+                   enumFamilyTitles.contains(QStringLiteral("state_t"))
+                       && enumFamilyTitles.contains(QStringLiteral("state"))
+                       && enumFamilyTitles.contains(QStringLiteral("IDLE"))
+                       && enumFamilyTitles.contains(QStringLiteral("RUN")),
+                   true);
+        expectBool("Ctrl+Space ee selector filters enum values",
+                   itemTitles(insertPalette.query(
+                       GlobalControlCategory::Symbols,
+                       QStringLiteral("ee "), typedContext))
+                           == QSet<QString>{QStringLiteral("IDLE"),
+                                            QStringLiteral("RUN")},
+                   true);
+        CompletionService::getInstance()->setSemanticIndex(
+            SemanticIndex::getInstance());
+    }
     const GhostNumericLiteralReport includeStringHover =
         numericLiteralAt(numericHoverText, includeStringHoverPosition);
     expectBool("Ghost literal hover skips include string",
@@ -2207,6 +2469,42 @@ int main(int argc, char** argv) {
     expectEq("Formatter instance map stable text",
              unchangedInstanceMapReport.formattedText,
              formatterInstanceMapReport.formattedText);
+
+    const QString formatterAssociationSuffixInput =
+        QStringLiteral("module association_suffix_demo;\n"
+                       "child u_child (\n"
+                       ".tx_driv_flag(tx_driv_flag[i]), // drive\n"
+                       ".stop_bit(tx_stop_bit[i]),\n"
+                       ".parity_check(tx_parity_check[i]),\n"
+                       ".axi_wr_eff_len(tx_axi_wr_eff_len[i]),\n"
+                       ".bypass(bypass) // direct\n"
+                       ");\n"
+                       "endmodule\n");
+    const FormatterReport formatterAssociationSuffixReport =
+        FormatterService::getInstance()->formatDocument(
+            formatterAssociationSuffixInput);
+    expectEq("Formatter aligns association suffix columns",
+             formatterAssociationSuffixReport.formattedText,
+             QStringLiteral("module association_suffix_demo;\n"
+                            "child u_child(\n"
+                            "    .tx_driv_flag   ( tx_driv_flag     [i] ), // drive\n"
+                            "    .stop_bit       ( tx_stop_bit      [i] ),\n"
+                            "    .parity_check   ( tx_parity_check  [i] ),\n"
+                            "    .axi_wr_eff_len ( tx_axi_wr_eff_len[i] ),\n"
+                            "    .bypass         ( bypass               )  // direct\n"
+                            ");\n"
+                            "endmodule\n"));
+    expectBool("Formatter association suffix token stream invariant",
+               StructuredWhitespaceFormatter::hasIdenticalNonWhitespaceStream(
+                   formatterAssociationSuffixInput,
+                   formatterAssociationSuffixReport.formattedText),
+               true);
+    expectBool("Formatter association suffix idempotent",
+               !FormatterService::getInstance()
+                    ->formatDocument(
+                        formatterAssociationSuffixReport.formattedText)
+                    .changed,
+               true);
 
     const QString formatterTrailingCommentInput =
         QStringLiteral("module comment_demo(\n"
@@ -2948,8 +3246,8 @@ int main(int argc, char** argv) {
              formatterIndexedTernaryReport.formattedText,
              QStringLiteral("module indexed_ternary_demo;\n"
                             "always_comb begin\n"
-                            "    bar_reg[SHORT] <= (!w_hs) ? bar_reg[A][31:0]         : hold_short ;\n"
-                            "    long_signal    <= (!w_hs) ? bar_reg[LONG_NAME][31:0] : long_signal;\n"
+                            "    bar_reg    [SHORT] <= (!w_hs) ? bar_reg[A][31:0]         : hold_short ;\n"
+                            "    long_signal        <= (!w_hs) ? bar_reg[LONG_NAME][31:0] : long_signal;\n"
                             "end\n"
                             "endmodule\n"));
     expectBool("Formatter indexed ternary token stream invariant",
@@ -2961,6 +3259,87 @@ int main(int argc, char** argv) {
                !FormatterService::getInstance()
                     ->formatDocument(
                         formatterIndexedTernaryReport.formattedText)
+                    .changed,
+               true);
+
+    const QString formatterSuffixColumnsInput =
+        QStringLiteral("module suffix_columns_demo;\n"
+                       "always_ff @(posedge clk) begin\n"
+                       "rx_step_len[i] <= next_step[i];\n"
+                       "rx_frac_step_len[i][j] <= next_frac[index][23:0]; // fraction\n"
+                       "tx_stop_bit <= next_stop;\n"
+                       "tx_axi_wr_eff_len[SHORT] <= next_eff[LONG_NAME];\n"
+                       "end\n"
+                       "endmodule\n");
+    const FormatterReport formatterSuffixColumnsReport =
+        FormatterService::getInstance()->formatDocument(
+            formatterSuffixColumnsInput);
+    expectEq("Formatter aligns assignment suffix columns",
+             formatterSuffixColumnsReport.formattedText,
+             QStringLiteral("module suffix_columns_demo;\n"
+                            "always_ff @(posedge clk) begin\n"
+                            "    rx_step_len      [i]     <= next_step[i]          ;\n"
+                            "    rx_frac_step_len [i][j]  <= next_frac[index][23:0];  // fraction\n"
+                            "    tx_stop_bit              <= next_stop             ;\n"
+                            "    tx_axi_wr_eff_len[SHORT] <= next_eff[LONG_NAME]   ;\n"
+                            "end\n"
+                            "endmodule\n"));
+    expectBool("Formatter assignment suffix token stream invariant",
+               StructuredWhitespaceFormatter::hasIdenticalNonWhitespaceStream(
+                   formatterSuffixColumnsInput,
+                   formatterSuffixColumnsReport.formattedText),
+               true);
+    expectBool("Formatter assignment suffix idempotent",
+               !FormatterService::getInstance()
+                    ->formatDocument(
+                        formatterSuffixColumnsReport.formattedText)
+                    .changed,
+               true);
+    const QString formatterSuffixSelectionInput =
+        QStringLiteral("    rx_step_len[i] <= next_step[i];\n"
+                       "    rx_frac_step_len[i][j] <= next_frac[index][23:0];\n"
+                       "    tx_stop_bit <= next_stop;\n"
+                       "    tx_axi_wr_eff_len[SHORT] <= next_eff[LONG_NAME];\n");
+    const FormatterReport formatterSuffixSelectionReport =
+        FormatterService::getInstance()->formatSelection(
+            formatterSuffixSelectionInput);
+    expectEq("Formatter selection aligns assignment suffix columns",
+             formatterSuffixSelectionReport.formattedText,
+             QStringLiteral("    rx_step_len      [i]     <= next_step[i]          ;\n"
+                            "    rx_frac_step_len [i][j]  <= next_frac[index][23:0];\n"
+                            "    tx_stop_bit              <= next_stop             ;\n"
+                            "    tx_axi_wr_eff_len[SHORT] <= next_eff[LONG_NAME]   ;\n"));
+    expectBool("Formatter suffix selection token stream invariant",
+               StructuredWhitespaceFormatter::hasIdenticalNonWhitespaceStream(
+                   formatterSuffixSelectionInput,
+                   formatterSuffixSelectionReport.formattedText),
+               true);
+    expectBool("Formatter suffix selection idempotent",
+               !FormatterService::getInstance()
+                    ->formatSelection(
+                        formatterSuffixSelectionReport.formattedText)
+                    .changed,
+               true);
+
+    const QString formatterIncompleteSuffixInput =
+        QStringLiteral("module incomplete_suffix_demo;\n"
+                       "always_comb begin\n"
+                       "data_a[i] = source[\n"
+                       "data_long[index] = source_long[j];\n"
+                       "end\n"
+                       "endmodule\n");
+    const FormatterReport formatterIncompleteSuffixReport =
+        FormatterService::getInstance()->formatDocument(
+            formatterIncompleteSuffixInput);
+    expectBool("Formatter incomplete suffix token stream invariant",
+               StructuredWhitespaceFormatter::hasIdenticalNonWhitespaceStream(
+                   formatterIncompleteSuffixInput,
+                   formatterIncompleteSuffixReport.formattedText),
+               true);
+    expectBool("Formatter incomplete suffix second pass is stable",
+               !FormatterService::getInstance()
+                    ->formatDocument(
+                        formatterIncompleteSuffixReport.formattedText)
                     .changed,
                true);
     const FormatterReport indentOnlyAssignmentReport =
@@ -6160,9 +6539,10 @@ int main(int argc, char** argv) {
         SemanticFixtureRecordBuilder(
             QStringLiteral("pixel"),
             SymbolTaxonomy::DeclarationKind::StructVariable)
-            .inModule(QStringLiteral("pixel_t"))
+            .inModule(QStringLiteral("top"))
             .withLocalHandle(9003)
             .withCollectorKind(SymbolTaxonomy::CollectorKind::PackedStructVariable)
+            .withType(QStringLiteral("pixel_t"))
             .record();
     const CommandSymbolCompletionItem structPresentationItem =
         CompletionService::getInstance()->commandSymbolCompletionItem(
@@ -6170,12 +6550,13 @@ int main(int argc, char** argv) {
             CompletionCommandKind::PackedStructVariable);
     expectEq("CompletionService struct text",
              structPresentationItem.text,
-             QStringLiteral("pixel(%1)")
-                 .arg(structPresentationItem.symbolRecord.owner.name));
+             QStringLiteral("pixel"));
+    expectEq("CompletionService struct description",
+             structPresentationItem.description,
+             QStringLiteral("pixel_t"));
     expectEq("CompletionService struct key",
              structPresentationItem.uniqueKey,
-             QStringLiteral("pixel:%1")
-                 .arg(structPresentationItem.symbolRecord.owner.name));
+             QStringLiteral("pixel:pixel_t"));
     expectBool("CompletionService struct item record",
                structPresentationItem.symbolRecord.isValid()
                    && structPresentationItem.symbolRecord.localHandle == 9003
@@ -6184,7 +6565,7 @@ int main(int argc, char** argv) {
                    && structPresentationItem.symbolStableKey
                        == structPresentationRecord.stableKey
                    && structPresentationItem.symbolRecord.owner.name
-                       == QStringLiteral("pixel_t")
+                       == QStringLiteral("top")
                    && structPresentationItem.declarationKind
                        == SymbolTaxonomy::DeclarationKind::StructVariable
                    && structPresentationItem.ownerScope

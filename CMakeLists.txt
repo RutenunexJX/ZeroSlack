@@ -291,6 +291,7 @@ set(ZEROSLACK_CORE_SOURCES
       editorcoordinator.cpp
       editorcolumnmodecontroller.cpp
       editorcursornavigation.cpp
+      editorlexicalboundary.cpp
       editorfileidentity.cpp
       editorfolding.cpp
       editorviewprojection.cpp
@@ -301,6 +302,8 @@ set(ZEROSLACK_CORE_SOURCES
     editorruntime.cpp
     editorruntimeannotations.cpp
     editorruntimecommands.cpp
+    editorruntimenavigation.cpp
+    editorruntimerename.cpp
     editorselection.cpp
     editordroppreviewoverlay.cpp
     editorsplitcontroller.cpp
@@ -408,6 +411,7 @@ set(ZEROSLACK_CORE_SOURCES
     rtlrenameplanner.cpp
     rtlrenameworkflow.cpp
     saferenameservice.cpp
+    semanticrenamesupport.cpp
     scopedsearchpanel.cpp
     scopedreplaceworkflow.cpp
     searchservice.cpp
@@ -529,6 +533,7 @@ set(ZEROSLACK_CORE_SOURCES
     effectivevalueservice.h
       editorcoordinator.h
       editorcursornavigation.h
+      editorlexicalboundary.h
       editorfileidentity.h
       editorfoldviewstate.h
       editorfolding.h

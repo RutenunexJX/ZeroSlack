@@ -2082,7 +2082,9 @@ int main()
                && rtlRenameAction->supportsDryRun
                && rtlConnectionTransformAction
                       ->supportsDryRun
-               && rtlRenameAction->rememberParameters
+                && !rtlRenameAction->rememberParameters
+                && rtlRenameAction->parameterModel.kind
+                       == ActionParameterKind::None
                && rtlConnectionTransformAction
                       ->rememberParameters
                && rtlRenameAction->defaultShortcut

@@ -556,6 +556,8 @@ private:
         TSNode node{};
         Part formal;
         Part actual;
+        Part actualBase;
+        Part actualSuffix;
         LeafToken openParen;
         LeafToken closeParen;
         Trailer trailer;
@@ -2142,6 +2144,69 @@ private:
         }
         if (!ts_node_is_null(actualNode)) {
             item.actual = rawPart(actualNode);
+            const QList<LeafToken> actualLeaves =
+                leavesOf(actualNode, m_source);
+            int parenDepth = 0;
+            int braceDepth = 0;
+            int bracketDepth = 0;
+            int suffixLeafIndex = -1;
+            for (int index = 0; index < actualLeaves.size(); ++index) {
+                const QString token = actualLeaves.at(index).text;
+                if (token == QStringLiteral("[")
+                    && parenDepth == 0
+                    && braceDepth == 0
+                    && bracketDepth == 0) {
+                    suffixLeafIndex = index;
+                    break;
+                }
+                if (token == QStringLiteral("("))
+                    ++parenDepth;
+                else if (token == QStringLiteral(")"))
+                    parenDepth = std::max(0, parenDepth - 1);
+                else if (token == QStringLiteral("{"))
+                    ++braceDepth;
+                else if (token == QStringLiteral("}"))
+                    braceDepth = std::max(0, braceDepth - 1);
+                else if (token == QStringLiteral("["))
+                    ++bracketDepth;
+                else if (token == QStringLiteral("]"))
+                    bracketDepth = std::max(0, bracketDepth - 1);
+            }
+
+            bool terminalSuffixChain = suffixLeafIndex >= 0;
+            bracketDepth = 0;
+            for (int index = suffixLeafIndex;
+                 terminalSuffixChain && index < actualLeaves.size();
+                 ++index) {
+                const QString token = actualLeaves.at(index).text;
+                if (bracketDepth == 0) {
+                    if (token != QStringLiteral("[")) {
+                        terminalSuffixChain = false;
+                        break;
+                    }
+                    ++bracketDepth;
+                } else if (token == QStringLiteral("[")) {
+                    ++bracketDepth;
+                } else if (token == QStringLiteral("]")) {
+                    --bracketDepth;
+                }
+            }
+            terminalSuffixChain = terminalSuffixChain
+                && bracketDepth == 0;
+            if (terminalSuffixChain) {
+                const int suffixStart =
+                    actualLeaves.at(suffixLeafIndex).start;
+                item.actualBase = canonicalPart(
+                    actualNode, nodeStart(actualNode), suffixStart);
+                item.actualSuffix = canonicalPart(
+                    actualNode, suffixStart, nodeEnd(actualNode));
+            } else {
+                item.actualBase = rawPart(actualNode);
+                item.actualBase.leaves = actualLeaves;
+                item.actualSuffix.start = nodeEnd(actualNode);
+                item.actualSuffix.end = nodeEnd(actualNode);
+                item.actualSuffix.width = 0;
+            }
             item.hasActual = true;
             item.multiline =
                 nodeStartLine(actualNode) != nodeEndLine(actualNode);
@@ -2149,6 +2214,8 @@ private:
             item.actual.start = close.start;
             item.actual.end = close.start;
             item.actual.width = 0;
+            item.actualBase = item.actual;
+            item.actualSuffix = item.actual;
         }
         item.multiline = item.multiline
             || nodeStartLine(node) != nodeEndLine(node);
@@ -2486,17 +2553,23 @@ private:
             }
 
             int formalWidth = 0;
-            int actualWidth = 0;
+            int actualBaseWidth = 0;
+            int actualSuffixWidth = 0;
             for (int index = blockStart; index <= blockEnd; ++index) {
                 formalWidth =
                     std::max(formalWidth, items.at(index).formal.width);
-                actualWidth =
-                    std::max(actualWidth, items.at(index).actual.width);
+                actualBaseWidth = std::max(
+                    actualBaseWidth,
+                    items.at(index).actualBase.width);
+                actualSuffixWidth = std::max(
+                    actualSuffixWidth,
+                    items.at(index).actualSuffix.width);
             }
             const int formalColumn = itemIndent;
             const int openColumn = formalColumn + formalWidth + 1;
             const int actualColumn = openColumn + 2;
-            const int closeColumn = actualColumn + actualWidth + 1;
+            const int suffixColumn = actualColumn + actualBaseWidth;
+            const int closeColumn = suffixColumn + actualSuffixWidth + 1;
             const int commaColumn = closeColumn + 1;
             const int commentColumn = commaColumn + 2;
 
@@ -2509,12 +2582,25 @@ private:
                            - (formalColumn + item.formal.width));
                 if (item.hasActual) {
                     setGap(item.openParen.end,
-                           item.actual.start,
+                           item.actualBase.start,
                            actualColumn - (openColumn + 1));
-                    setGap(item.actual.end,
+                    canonicalize(item.actualBase);
+                    int actualEnd = item.actualBase.end;
+                    int actualEndColumn =
+                        actualColumn + item.actualBase.width;
+                    if (item.actualSuffix.width > 0) {
+                        setGap(item.actualBase.end,
+                               item.actualSuffix.start,
+                               suffixColumn - actualEndColumn);
+                        canonicalize(item.actualSuffix);
+                        actualEnd = item.actualSuffix.end;
+                        actualEndColumn = suffixColumn
+                            + item.actualSuffix.width;
+                    }
+                    setGap(actualEnd,
                            item.closeParen.start,
                            closeColumn
-                               - (actualColumn + item.actual.width));
+                               - actualEndColumn);
                 } else {
                     setGap(item.openParen.end,
                            item.closeParen.start,

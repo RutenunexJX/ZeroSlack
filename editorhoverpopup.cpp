@@ -200,6 +200,14 @@ void EditorHoverPopup::showContent(const PeekContentModel& content,
                 currentContent.editor.text = text;
             });
         layout->addWidget(lineEdit);
+        auto* messageLabel = new QLabel(this);
+        editMessageControl = messageLabel;
+        messageLabel->setObjectName(
+            QStringLiteral("peekEditableMessage"));
+        messageLabel->setTextFormat(Qt::PlainText);
+        messageLabel->setWordWrap(true);
+        messageLabel->hide();
+        layout->addWidget(messageLabel);
     }
     if (!content.actions.isEmpty()) {
         auto* actionHost = new QWidget(this);
@@ -638,6 +646,20 @@ QLineEdit* EditorHoverPopup::editableLineEdit() const
     return editControl.data();
 }
 
+void EditorHoverPopup::setEditableMessage(
+    const QString& message,
+    bool error)
+{
+    if (!editMessageControl)
+        return;
+    editMessageControl->setText(message);
+    editMessageControl->setStyleSheet(
+        error
+            ? QStringLiteral("color: palette(highlight);")
+            : QStringLiteral("color: palette(mid);"));
+    editMessageControl->setVisible(!message.isEmpty());
+}
+
 const PeekContentModel& EditorHoverPopup::contentModel() const
 {
     return currentContent;
@@ -709,6 +731,7 @@ void EditorHoverPopup::resetContent()
         }
         delete item;
     }
+    editMessageControl.clear();
 }
 
 QLabel* EditorHoverPopup::addLabel(const QString& text,

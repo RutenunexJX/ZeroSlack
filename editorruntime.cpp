@@ -5,6 +5,7 @@
 #include "actionregistry.h"
 #include "editorcontextmenumodel.h"
 #include "editorhoverpopup.h"
+#include "editorlexicalboundary.h"
 #include "formattercursoranchor.h"
 #include "insightvisualstyle.h"
 #include "rtlbatcheditservice.h"
@@ -372,34 +373,26 @@ bool matchesRegisteredShortcut(
     const QKeyEvent* event,
     const QString& actionId);
 
-bool handleSafeRename(MyCodeEditor* editor, QKeyEvent* event)
+bool handleSafeRename(MyCodeEditorState* state,
+                      MyCodeEditor* editor,
+                      QKeyEvent* event)
 {
-    if (!editor || !event
+    if (!state || !editor || !event
         || !matchesRegisteredShortcut(
             event,
             QString::fromLatin1(ActionIds::RtlRename))) {
         return false;
     }
 
-    const QString text = editor->toPlainText();
-    QTextCursor cursor = editor->textCursor();
-    TextSpan symbolSpan = cursor.hasSelection()
-        ? TextSpan{cursor.selectionStart(), cursor.selectionEnd()}
-        : symbolSpanAt(text, cursor.position());
-    if (!symbolSpan.isValid())
+    QString failureReason;
+    if (!state->beginSemanticRenameEditor(
+            editor, &failureReason)) {
+        if (!failureReason.isEmpty()) {
+            emit editor->editorStatusMessageRequested(
+                failureReason);
+        }
         return false;
-
-    const QString oldName = text.mid(symbolSpan.start, symbolSpan.length());
-    if (!isStandaloneIdentifierText(oldName))
-        return false;
-
-    bool handledByCoordinator = false;
-    emit editor->safeRenameRequested(
-        oldName,
-        editor->editorSemanticContextForPosition(symbolSpan.start, true),
-        &handledByCoordinator);
-    if (!handledByCoordinator)
-        return false;
+    }
     event->accept();
     return true;
 }
@@ -1260,6 +1253,7 @@ void MyCodeEditorState::shutdown(MyCodeEditor* editor)
         if (lifecycleDiagnosticRank >= 7)
             syntax.detachHighlighter();
         cancelSignalDefinitionEditor();
+        cancelSemanticRenameEditor();
         annotationLayer.clear();
         if (lifecycleDiagnosticRank >= 3)
             gutter.destroy();
@@ -1273,6 +1267,7 @@ void MyCodeEditorState::shutdown(MyCodeEditor* editor)
     shutdownGhostQueries(editor);
     syntax.detachHighlighter();
     cancelSignalDefinitionEditor();
+    cancelSemanticRenameEditor();
     signalSelection.shutdown(nullptr);
     columnMode.shutdown(nullptr);
     sourceNavigation.shutdown();
@@ -1517,6 +1512,7 @@ void MyCodeEditorState::rebindDocument(
     columnMode.clearPendingColumnAnchor();
     folding.resetForDocumentChange(editor);
     cancelSignalDefinitionEditor();
+    cancelSemanticRenameEditor();
     finishInlineFilterTextOverlay();
     ++ghostQueryGeneration;
     if (ghostQueryCancellation)
@@ -1602,6 +1598,8 @@ void MyCodeEditorState::handleDocumentContentsChange(
     if (signalDefinitionPeekActive
         || signalDefinitionEditor)
         cancelSignalDefinitionEditor();
+    if (semanticRenamePeek || semanticRenameEditor)
+        cancelSemanticRenameEditor();
     if (modes.isActive(EditorModeId::VirtualCursor))
         clearVirtualCursor(editor);
     else
@@ -2103,7 +2101,6 @@ void MyCodeEditorState::refreshDerivedEditorState(
     }
 }
 
-
 bool MyCodeEditorState::handleKeyPress(MyCodeEditor* editor, QKeyEvent* event)
 {
     if (!editor || !event)
@@ -2115,6 +2112,10 @@ bool MyCodeEditorState::handleKeyPress(MyCodeEditor* editor, QKeyEvent* event)
         case EditorModeId::CommandMode:
         case EditorModeId::MultiCursor:
         case EditorModeId::KeywordGhost:
+            if (escapeMode == EditorModeId::MultiCursor) {
+                multiLineBoundarySelectionAnchors.clear();
+                multiLineBoundarySelectionDirection = 0;
+            }
             modes.exit(escapeMode,
                        EditorModeExitReason::Canceled);
             break;
@@ -2256,6 +2257,15 @@ bool MyCodeEditorState::handleKeyPress(MyCodeEditor* editor, QKeyEvent* event)
     }
 
     if (primaryMode == EditorModeId::MultiCursor) {
+        if (handleMultiCursorLineBoundarySelection(
+                editor, event)) {
+            return true;
+        }
+        if (event->key() != Qt::Key_Alt) {
+            multiLineBoundarySelectionAnchors.clear();
+            multiLineBoundarySelectionDirection = 0;
+        }
+
         const bool undoShortcut =
             matchesRegisteredShortcut(
                 event,
@@ -2432,8 +2442,26 @@ bool MyCodeEditorState::handleKeyPress(MyCodeEditor* editor, QKeyEvent* event)
         QTextCursor cursor = editor->textCursor();
         cursor.clearSelection();
         editor->setTextCursor(cursor);
+        lineBoundarySelectionAnchor = -1;
+        lineBoundarySelectionDirection = 0;
+        lineBoundarySelectionAtPhysicalEdge = false;
         event->accept();
         return true;
+    }
+
+    if (primaryMode == EditorModeId::None
+        && handleStructuralNavigation(editor, event)) {
+        return true;
+    }
+
+    if (primaryMode == EditorModeId::None
+        && handleLineBoundarySelection(editor, event)) {
+        return true;
+    }
+    if (event->key() != Qt::Key_Alt) {
+        lineBoundarySelectionAnchor = -1;
+        lineBoundarySelectionDirection = 0;
+        lineBoundarySelectionAtPhysicalEdge = false;
     }
 
     QString selectionActionId;
@@ -2483,6 +2511,9 @@ bool MyCodeEditorState::handleKeyPress(MyCodeEditor* editor, QKeyEvent* event)
             return true;
         }
     }
+
+    if (handleLexicalNavigationOrDeletion(editor, event))
+        return true;
 
     const bool undoShortcut =
         matchesRegisteredShortcut(
@@ -2560,7 +2591,7 @@ bool MyCodeEditorState::handleKeyPress(MyCodeEditor* editor, QKeyEvent* event)
         event->accept();
         return true;
     }
-    if (handleSafeRename(editor, event))
+    if (handleSafeRename(this, editor, event))
         return true;
 
     QString moveLinesActionId;
@@ -4484,7 +4515,44 @@ bool MyCodeEditorState::handleMouseDoubleClick(
         sourceContextProvider(editor),
         selections);
     sourceNavigation.syncMode();
-    return handled;
+    if (handled || !editor || !event
+        || event->button() != Qt::LeftButton) {
+        return handled;
+    }
+
+    const QTextCursor hit = editor->cursorForPosition(
+        event->position().toPoint());
+    const QString& text = editor->cachedDocumentText();
+    if (text.isEmpty())
+        return false;
+    const int position = qBound(
+        0, hit.position(), text.size() - 1);
+    EditorLexicalBoundary::Range range =
+        EditorLexicalBoundary::horizontalWhitespaceAt(
+            text, position);
+    const bool identifier =
+        EditorLexicalBoundary::identifierAt(
+            text, position).isValid();
+    if (!range.isValid()) {
+        range = EditorLexicalBoundary::identifierAt(
+            text, position);
+    }
+    if (!range.isValid())
+        range = EditorLexicalBoundary::unitAt(text, position);
+    if (!range.isValid())
+        return false;
+
+    QTextCursor selection(editor->document());
+    selection.setPosition(range.start);
+    selection.setPosition(range.end, QTextCursor::KeepAnchor);
+    editor->setTextCursor(selection);
+    if (identifier)
+        selections.activateCurrentSymbolReferences(editor);
+    else
+        selections.clearCurrentSymbolReferences(editor);
+    editor->viewport()->update();
+    event->accept();
+    return true;
 }
 
 bool MyCodeEditorState::handleMouseMove(

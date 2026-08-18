@@ -35,8 +35,15 @@ struct GlobalControlQueryContext {
     QString packageName;
     QString documentText;
     QStringList includeFiles;
+    QString initialQuery;
+    QStringList memberPath;
+    QString expectedTypeIdentifier;
     int cursorLine = -1;
     int cursorPosition = -1;
+    int replacementStart = -1;
+    int replacementLength = 0;
+    int documentRevision = -1;
+    bool memberAccess = false;
 };
 
 struct GlobalControlItem {
@@ -51,6 +58,9 @@ struct GlobalControlItem {
     int selectionStart = -1;
     int selectionLength = 0;
     CodeTemplateSlotList templateSlots;
+    int replacementStart = -1;
+    int replacementLength = 0;
+    int sourceDocumentRevision = -1;
     GlobalControlItemOperation operation =
         GlobalControlItemOperation::InsertText;
 };

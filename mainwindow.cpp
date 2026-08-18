@@ -2382,6 +2382,16 @@ void MainWindow::setupGlobalControl()
             editor->includeFileCompletionCandidates();
         context.cursorLine = editorContext.cursorLine;
         context.cursorPosition = editorContext.cursorPosition;
+        const EditorSymbolPaletteContext paletteContext =
+            editor->symbolPaletteContext();
+        context.initialQuery = paletteContext.initialQuery;
+        context.memberPath = paletteContext.memberPath;
+        context.expectedTypeIdentifier =
+            paletteContext.expectedTypeIdentifier;
+        context.replacementStart = paletteContext.replacementStart;
+        context.replacementLength = paletteContext.replacementLength;
+        context.documentRevision = paletteContext.documentRevision;
+        context.memberAccess = paletteContext.memberAccess;
         return context;
     });
     globalControlCoordinator->setItemProvider(
@@ -2402,6 +2412,21 @@ void MainWindow::setupGlobalControl()
                 if (editor) {
                     switch (item.operation) {
                     case GlobalControlItemOperation::InsertText:
+                        if (item.replacementStart >= 0) {
+                            if (editor->document()->revision()
+                                != item.sourceDocumentRevision) {
+                                failureReason = QStringLiteral(
+                                    "The document changed while completion was open.");
+                                break;
+                            }
+                            QTextCursor replacement(editor->document());
+                            replacement.setPosition(item.replacementStart);
+                            replacement.setPosition(
+                                item.replacementStart
+                                    + item.replacementLength,
+                                QTextCursor::KeepAnchor);
+                            editor->setTextCursor(replacement);
+                        }
                         inserted = editor->insertCompletionText(
                             item.insertionText,
                             item.selectionStart,

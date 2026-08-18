@@ -1,6 +1,7 @@
 #include "rtlactioncoordinator.h"
 
 #include "definitionservice.h"
+#include "documentmodel.h"
 #include "editorfileidentity.h"
 #include "hierarchyservice.h"
 #include "instancepairconnectionpanel.h"
@@ -10,9 +11,11 @@
 #include "notificationcenter.h"
 #include "panellayoutcontroller.h"
 #include "rtlhighriskeditpanel.h"
+#include "saferenameservice.h"
 #include "semanticdockcoordinator.h"
 #include "semanticindex.h"
 #include "semanticindexsnapshot.h"
+#include "semanticrenamesupport.h"
 #include "tabmanager.h"
 #include "tsdocument.h"
 #include "workspaceeditdocumentmanager.h"
@@ -30,9 +33,11 @@
 #include <QPointer>
 #include <QSet>
 #include <QSignalBlocker>
+#include <QTextCursor>
 #include <QVBoxLayout>
 #include <QWidget>
 
+#include <algorithm>
 #include <optional>
 #include <string>
 #include <utility>
@@ -137,21 +142,7 @@ bool captureRtlActionDocuments(
 bool isSupportedRtlRenameSubject(
     const SemanticSymbolRecord& record)
 {
-    const bool supportedKind =
-        record.declarationKind
-            == SymbolTaxonomy::DeclarationKind::Port
-        || record.declarationKind
-            == SymbolTaxonomy::DeclarationKind::Parameter
-        || record.declarationKind
-            == SymbolTaxonomy::DeclarationKind::Localparam;
-    const bool supportedOwner =
-        record.owner.kind
-            == SymbolTaxonomy::SymbolOwnerScope::Module
-        || record.owner.kind
-            == SymbolTaxonomy::SymbolOwnerScope::Interface;
-    return supportedKind
-        && supportedOwner
-        && record.stableKey.isValid();
+    return isSupportedSemanticRenameSubject(record);
 }
 
 DefinitionResult resolveRtlRenameSubject(
@@ -169,6 +160,88 @@ DefinitionResult resolveRtlRenameSubject(
     return DefinitionService(
                SemanticIndex::getInstance())
         .resolveDefinition(query);
+}
+
+bool applySingleFileSemanticRename(
+    TabManager* tabs,
+    const SafeRenameFileEdits& fileEdits,
+    QString* failureReason)
+{
+    if (failureReason)
+        failureReason->clear();
+    if (!tabs || fileEdits.fileName.isEmpty()
+        || fileEdits.edits.isEmpty()) {
+        if (failureReason) {
+            *failureReason = QStringLiteral(
+                "The single-file rename plan is empty.");
+        }
+        return false;
+    }
+    DocumentModel* model = tabs->getDocumentModel();
+    if (!model) {
+        if (failureReason)
+            *failureReason = QStringLiteral("The document model is unavailable.");
+        return false;
+    }
+    MyCodeEditor* target =
+        model->editorForFile(fileEdits.fileName);
+    if (!target) {
+        if (!tabs->openFileInTab(fileEdits.fileName)) {
+            if (failureReason) {
+                *failureReason = QStringLiteral(
+                    "The rename target file could not be opened.");
+            }
+            return false;
+        }
+        target = model->editorForFile(fileEdits.fileName);
+    }
+    if (!target || target->isReadOnly()) {
+        if (failureReason) {
+            *failureReason = QStringLiteral(
+                "The rename target document is read-only.");
+        }
+        return false;
+    }
+
+    QList<SafeRenameTextEdit> edits = fileEdits.edits;
+    std::sort(edits.begin(), edits.end(),
+              [](const SafeRenameTextEdit& left,
+                 const SafeRenameTextEdit& right) {
+        return left.startPosition > right.startPosition;
+    });
+    const QString& text = target->cachedDocumentText();
+    int previousStart = text.size() + 1;
+    for (const SafeRenameTextEdit& edit : edits) {
+        if (!edit.isValid()
+            || edit.startPosition + edit.length > text.size()
+            || edit.startPosition + edit.length > previousStart
+            || text.mid(edit.startPosition, edit.length)
+                   != edit.oldText) {
+            if (failureReason) {
+                *failureReason = QStringLiteral(
+                    "The document changed before the rename could be applied.");
+            }
+            return false;
+        }
+        previousStart = edit.startPosition;
+    }
+
+    {
+        auto transaction =
+            target->beginSynchronousEditTransaction();
+        QTextCursor cursor(target->document());
+        cursor.beginEditBlock();
+        for (const SafeRenameTextEdit& edit : edits) {
+            cursor.setPosition(edit.startPosition);
+            cursor.setPosition(
+                edit.startPosition + edit.length,
+                QTextCursor::KeepAnchor);
+            cursor.insertText(edit.newText);
+        }
+        cursor.endEditBlock();
+    }
+    tabs->updateTabTitle(target);
+    return true;
 }
 
 std::optional<SemanticSymbolRecord>
@@ -608,9 +681,8 @@ void RtlActionCoordinator::connectActionAvailability(
                 renameAction,
                 renameSubjectAvailable,
                 QStringLiteral(
-                    "Place the cursor on a module or "
-                    "interface port, parameter, or "
-                    "localparam."));
+                    "Place the cursor on a supported SystemVerilog "
+                    "declaration or bound reference."));
             refreshAction(
                 connectionTransformAction,
                 instanceSubjectAvailable,
@@ -825,6 +897,25 @@ RtlActionCoordinator::executeRtlRenameAction(
             "Open a SystemVerilog editor before "
             "renaming an RTL declaration."));
     }
+    const QString requestedNewName =
+        invocation.parameters
+            .value(QStringLiteral("newName"))
+            .toString()
+            .trimmed();
+    if (requestedNewName.isEmpty()) {
+        QString popupFailure;
+        if (!editor->beginSemanticRename(&popupFailure)) {
+            return fail(
+                popupFailure.isEmpty()
+                    ? QStringLiteral(
+                          "The semantic rename popup could not be opened.")
+                    : popupFailure);
+        }
+        result.succeeded = true;
+        result.message = QStringLiteral(
+            "Semantic rename editor opened at the caret.");
+        return result;
+    }
     EditorSemanticContext context =
         editor->editorSemanticContextForPosition(
             -1, true);
@@ -863,8 +954,7 @@ RtlActionCoordinator::executeRtlRenameAction(
             context.cursorPosition);
     if (!identifier.ok()) {
         return fail(QStringLiteral(
-            "Place the cursor on a port, parameter, "
-            "or localparam identifier."));
+            "Place the cursor on a supported SystemVerilog identifier."));
     }
     context =
         editor->editorSemanticContextForPosition(
@@ -876,9 +966,17 @@ RtlActionCoordinator::executeRtlRenameAction(
         || !isSupportedRtlRenameSubject(
             definition.symbolRecord)) {
         return fail(QStringLiteral(
-            "Only one exact Slang module or "
-            "interface port, parameter, or "
-            "localparam can be renamed."));
+            "The selected Slang symbol kind cannot be renamed safely."));
+    }
+    const QString expectedStableKey =
+        invocation.parameters
+            .value(QStringLiteral("subjectStableKey"))
+            .toString();
+    if (!expectedStableKey.isEmpty()
+        && expectedStableKey
+               != definition.symbolRecord.stableKey.toString()) {
+        return fail(QStringLiteral(
+            "The selected symbol changed while the rename popup was open."));
     }
 
     QSet<QString> workspaceFileSet;
@@ -910,17 +1008,54 @@ RtlActionCoordinator::executeRtlRenameAction(
         return fail(captureFailure);
     }
 
-    QVariantMap parameters =
-        invocation.parameters;
-    if (parameters.isEmpty()) {
-        parameters =
-            applicationActionExecutionHistory()
-                .rememberedParameters(
-                    workspaceManager
-                        ->getWorkspacePath(),
-                    RtlRenameWorkflow::
-                        actionFamilyId());
+    if (!isStructuralSemanticRenameSubject(
+            definition.symbolRecord)) {
+        SafeRenamePlanQuery renameQuery;
+        renameQuery.symbolName = definition.symbolRecord.name;
+        renameQuery.newName = requestedNewName;
+        renameQuery.fileName = context.fileName;
+        renameQuery.moduleName = context.moduleName;
+        renameQuery.documentText = context.documentText;
+        renameQuery.cursorPosition = identifier.startChar;
+        for (auto it = capturedDocuments.constBegin();
+             it != capturedDocuments.constEnd(); ++it) {
+            renameQuery.openFileContents.insert(
+                it.value().fileName,
+                it.value().text);
+        }
+        const SafeRenamePlan safePlan =
+            SafeRenameService(SemanticIndex::getInstance())
+                .createRenamePlan(renameQuery);
+        if (!safePlan.isReady()
+            || safePlan.subjectStableKey
+                   != definition.symbolRecord.stableKey) {
+            return fail(
+                safePlan.message.isEmpty()
+                    ? QStringLiteral(
+                          "The semantic rename plan could not be proven.")
+                    : safePlan.message);
+        }
+        if (safePlan.fileEdits.size() == 1) {
+            QString applyFailure;
+            if (!applySingleFileSemanticRename(
+                    tabManager,
+                    safePlan.fileEdits.constFirst(),
+                    &applyFailure)) {
+                return fail(applyFailure);
+            }
+            result.succeeded = true;
+            result.message = QStringLiteral(
+                "Renamed %1 reference(s) in one undoable file edit.")
+                    .arg(safePlan.editCount());
+            result.output.insert(
+                QStringLiteral("editCount"),
+                safePlan.editCount());
+            result.output.insert(
+                QStringLiteral("fileCount"), 1);
+            return result;
+        }
     }
+
     RtlRenamePanelSession session;
     session.baseQuery.subjectStableKey =
         definition.symbolRecord.stableKey;
@@ -944,10 +1079,7 @@ RtlActionCoordinator::executeRtlRenameAction(
     session.oldName =
         definition.symbolRecord.name;
     session.suggestedNewName =
-        parameters
-            .value(QStringLiteral("newName"))
-            .toString()
-            .trimmed();
+        requestedNewName;
 
     QString beginFailure;
     RtlHighRiskEditPanelCoordinator*

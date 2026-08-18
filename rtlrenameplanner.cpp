@@ -1,6 +1,7 @@
 #include "rtlrenameplanner.h"
 
 #include "saferenameservice.h"
+#include "semanticrenamesupport.h"
 #include "semanticindexsnapshot.h"
 #include "tsdocument.h"
 #include "workspaceedittransactionservice.h"
@@ -27,7 +28,8 @@ using OwnerScope = SymbolTaxonomy::SymbolOwnerScope;
 enum class RenameKind {
     Port,
     Parameter,
-    Localparam
+    Localparam,
+    Generic
 };
 
 enum class DeclarationRole {
@@ -411,6 +413,8 @@ DeclarationRole targetDeclarationRole(RenameKind kind)
         return DeclarationRole::Parameter;
     case RenameKind::Localparam:
         return DeclarationRole::Localparam;
+    case RenameKind::Generic:
+        return DeclarationRole::Other;
     }
     return DeclarationRole::None;
 }
@@ -824,12 +828,16 @@ std::optional<RenameKind> renameKindForRecord(
         return RenameKind::Parameter;
     if (record.declarationKind == DeclarationKind::Localparam)
         return RenameKind::Localparam;
+    if (isSupportedSemanticRenameSubject(record))
+        return RenameKind::Generic;
     return std::nullopt;
 }
 
 bool supportedOwner(const SemanticSymbolRecord& record,
                     RenameKind kind)
 {
+    if (kind == RenameKind::Generic)
+        return record.stableKey.isValid();
     if (record.owner.name.isEmpty())
         return false;
     if (kind == RenameKind::Port) {
@@ -844,9 +852,11 @@ bool supportedOwner(const SemanticSymbolRecord& record,
 
 QString actionId(RenameKind kind)
 {
-    return kind == RenameKind::Port
-        ? QStringLiteral("rtl.renamePort")
-        : QStringLiteral("rtl.renameParameter");
+    if (kind == RenameKind::Port)
+        return QStringLiteral("rtl.renamePort");
+    if (kind == RenameKind::Generic)
+        return QStringLiteral("semantic.rename");
+    return QStringLiteral("rtl.renameParameter");
 }
 
 rtledit::SourcePosition utf8PositionAt(
@@ -1435,6 +1445,164 @@ bool validateTargetAgainstSavedSyntax(
     return true;
 }
 
+RtlRenameProposal finalizeRenameProposal(
+    const SemanticSymbolRecord& subject,
+    const QString& newName,
+    RenameKind kind,
+    const BoundDocument& subjectDocument,
+    int declarationStart,
+    int declarationEnd,
+    QList<PendingEdit> pendingEdits,
+    const RtlRenamePlanQuery& query,
+    const rtledit::WorkspaceDocumentManager& documentManager,
+    const QString& resolver)
+{
+    if (!subjectDocument.captured
+        || declarationStart < 0
+        || declarationEnd <= declarationStart
+        || pendingEdits.isEmpty()) {
+        return rejected(
+            RtlRenamePlanStatus::AmbiguousStructure,
+            QStringLiteral("No verified rename edits were produced."),
+            query);
+    }
+
+    std::sort(
+        pendingEdits.begin(), pendingEdits.end(),
+        [](const PendingEdit& left,
+           const PendingEdit& right) {
+            const QString leftFile =
+                normalizedFileName(left.fileName);
+            const QString rightFile =
+                normalizedFileName(right.fileName);
+            if (leftFile != rightFile)
+                return leftFile < rightFile;
+            return left.start < right.start;
+        });
+
+    std::vector<rtledit::WorkspaceTextEdit> edits;
+    std::vector<rtledit::TextEditProvenance> provenance;
+    edits.reserve(static_cast<std::size_t>(pendingEdits.size()));
+    provenance.reserve(edits.capacity());
+    const std::string semanticId =
+        std::to_string(query.semanticToken.revision);
+    const QString action = actionId(kind);
+    for (const PendingEdit& pending :
+         std::as_const(pendingEdits)) {
+        rtledit::WorkspaceTextEdit edit;
+        edit.filePath = utf8String(pending.fileName);
+        edit.expectedDocumentVersion = {pending.revision};
+        edit.range = utf8Range(
+            pending.documentText,
+            pending.start,
+            pending.end);
+        edit.expectedText = utf8String(pending.expectedText);
+        edit.newText = utf8String(pending.newText);
+        edits.push_back(std::move(edit));
+
+        rtledit::TextEditProvenance item;
+        item.editIndex = provenance.size();
+        item.actionId = utf8String(action);
+        item.anchorName = utf8String(pending.anchorName);
+        item.description = utf8String(pending.description);
+        item.anchor.source =
+            rtledit::AnchorResolutionSource::TreeSitter;
+        item.anchor.resolver = utf8String(resolver);
+        item.anchor.semanticSnapshotId = semanticId;
+        item.signalQualifiedName =
+            utf8String(subject.owner.name
+                       + QLatin1Char('.')
+                       + subject.name);
+        item.sourceFilePath = utf8String(pending.fileName);
+        item.sourceRange = utf8Range(
+            pending.documentText,
+            pending.start,
+            pending.end);
+        provenance.push_back(std::move(item));
+    }
+
+    rtledit::SemanticEditIntent intent;
+    intent.kind = rtledit::SemanticEditKind::ReplaceText;
+    intent.target.kind =
+        kind == RenameKind::Port
+            ? rtledit::SemanticObjectKind::Port
+            : rtledit::SemanticObjectKind::Unknown;
+    intent.target.qualifiedName =
+        utf8String(subject.owner.name
+                   + QLatin1Char('.')
+                   + subject.name);
+    intent.target.ownerScope = utf8String(subject.owner.name);
+    intent.target.filePath =
+        utf8String(subjectDocument.captured->fileName);
+    intent.target.range = utf8Range(
+        subjectDocument.captured->text,
+        declarationStart,
+        declarationEnd);
+    intent.target.signatureHash =
+        utf8String(recordIdentity(subject));
+
+    RtlRenameProposal proposal;
+    proposal.subject = subject;
+    proposal.oldName = subject.name;
+    proposal.newName = newName;
+    proposal.dryRun = query.dryRun;
+    proposal.workspaceEdit = rtledit::makeWorkspaceEditPlan(
+        std::move(intent),
+        rtledit::RiskLevel::High,
+        rtledit::PreviewPolicy::Diff,
+        std::move(edits),
+        std::move(provenance));
+    proposal.workspaceEdit.semanticSnapshot =
+        rtledit::SemanticIndexSnapshot{semanticId};
+
+    QSet<QString> semanticFiles;
+    for (const PendingEdit& edit :
+         std::as_const(pendingEdits)) {
+        semanticFiles.insert(
+            normalizedFileName(edit.fileName));
+    }
+    QStringList sortedFiles = semanticFiles.values();
+    std::sort(sortedFiles.begin(), sortedFiles.end());
+    for (const QString& file : std::as_const(sortedFiles)) {
+        proposal.workspaceEdit.semanticIndexFilePaths
+            .push_back(utf8String(file));
+    }
+
+    proposal.transaction =
+        WorkspaceEditTransactionService::getInstance()->prepare(
+            proposal.workspaceEdit,
+            rtledit::SemanticIndexSnapshot{semanticId},
+            documentManager,
+            query.dryRun);
+    proposal.sourceDiff = proposal.transaction.sourceDiff;
+    if (!proposal.transaction.ready()
+        || !proposal.sourceDiff.built()) {
+        return rejected(
+            RtlRenamePlanStatus::TransactionPreparationFailed,
+            QStringLiteral(
+                "The unified workspace transaction could not build an atomic preview."),
+            query);
+    }
+
+    proposal.renderedDiff = fromUtf8String(
+        rtledit::renderWorkspaceEditSourceDiffHunks(
+            proposal.sourceDiff));
+    QMap<QString, RtlRenameFilePreview> previews;
+    for (const PendingEdit& edit :
+         std::as_const(pendingEdits)) {
+        const QString file = normalizedFileName(edit.fileName);
+        RtlRenameFilePreview& preview = previews[file];
+        preview.fileName = edit.fileName;
+        preview.revision = edit.revision;
+        ++preview.editCount;
+    }
+    proposal.files = previews.values();
+    proposal.status = RtlRenamePlanStatus::Ready;
+    proposal.message = QStringLiteral(
+        "High-risk semantic rename proposal ready for preview.");
+    return proposal;
+}
+
 } // namespace
 
 bool RtlRenameDocumentSnapshot::isValid() const
@@ -1538,8 +1706,8 @@ RtlRenameProposal RtlRenamePlanner::plan(
         return rejected(
             RtlRenamePlanStatus::UnsupportedSubject,
             QStringLiteral(
-                "Only module/interface ports, parameters, "
-                "and localparams can be planned safely."),
+                "The selected SystemVerilog declaration kind or owner "
+                "cannot be planned safely."),
             query);
     }
     if (definitionConflicts(
@@ -1550,6 +1718,154 @@ RtlRenameProposal RtlRenamePlanner::plan(
                 "The new name conflicts with a declaration "
                 "in the same semantic owner."),
             query);
+    }
+
+    if (*kind == RenameKind::Generic) {
+        const QHash<QString, BoundDocument> boundDocuments =
+            bindDocuments(query);
+        const QString subjectFile = normalizedFileName(
+            subject.location.fileName);
+        if (!boundDocuments.contains(subjectFile)) {
+            return rejected(
+                RtlRenamePlanStatus::MissingDocumentSnapshot,
+                QStringLiteral(
+                    "The subject document snapshot is missing."),
+                query);
+        }
+
+        SafeRenamePlanQuery safeQuery;
+        safeQuery.symbolName = subject.name;
+        safeQuery.newName = newName;
+        safeQuery.fileName = subject.location.fileName;
+        safeQuery.moduleName =
+            subject.owner.kind == OwnerScope::Module
+                || subject.owner.kind == OwnerScope::Interface
+            ? subject.owner.name
+            : QString();
+        safeQuery.documentText =
+            boundDocuments.value(subjectFile).captured->text;
+        safeQuery.cursorPosition = subject.location.position;
+        for (auto it = boundDocuments.constBegin();
+             it != boundDocuments.constEnd(); ++it) {
+            safeQuery.openFileContents.insert(
+                it.value().captured->fileName,
+                it.value().captured->text);
+        }
+        const SafeRenamePlan safePlan =
+            SafeRenameService(semantic)
+                .createRenamePlan(safeQuery);
+        if (!safePlan.isReady()
+            || safePlan.subjectStableKey != subject.stableKey) {
+            return rejected(
+                RtlRenamePlanStatus::IncompleteSemanticBinding,
+                safePlan.message.isEmpty()
+                    ? QStringLiteral(
+                          "The Slang identity could not produce an exact rename plan.")
+                    : safePlan.message,
+                query);
+        }
+
+        QList<PendingEdit> pendingEdits;
+        QSet<QString> validatedFiles;
+        for (const SafeRenameFileEdits& fileEdits :
+             safePlan.fileEdits) {
+            const QString file =
+                normalizedFileName(fileEdits.fileName);
+            if (!boundDocuments.contains(file)) {
+                return rejected(
+                    RtlRenamePlanStatus::MissingDocumentSnapshot,
+                    QStringLiteral(
+                        "A referenced document has no live snapshot."),
+                    query);
+            }
+            const BoundDocument& document =
+                boundDocuments.value(file);
+            if (!validatedFiles.contains(file)) {
+                QString validationFailure;
+                RtlRenamePlanStatus validationStatus =
+                    RtlRenamePlanStatus::MissingDocumentSnapshot;
+                if (!validateDocumentSnapshot(
+                        document,
+                        documentManager,
+                        &validationFailure,
+                        &validationStatus)) {
+                    return rejected(
+                        validationStatus,
+                        validationFailure,
+                        query);
+                }
+                validatedFiles.insert(file);
+            }
+            for (const SafeRenameTextEdit& edit :
+                 fileEdits.edits) {
+                if (!edit.isValid()
+                    || edit.startPosition + edit.length
+                           > document.captured->text.size()) {
+                    return rejected(
+                        RtlRenamePlanStatus::AmbiguousStructure,
+                        QStringLiteral(
+                            "A semantic rename range is invalid."),
+                        query);
+                }
+                const TSIdentifierTarget syntaxIdentifier =
+                    document.captured->syntax->identifierAt(
+                        edit.startPosition);
+                if (!syntaxIdentifier.ok()
+                    || syntaxIdentifier.startChar
+                           != edit.startPosition
+                    || syntaxIdentifier.endChar
+                           != edit.startPosition + edit.length
+                    || syntaxIdentifier.text != edit.oldText) {
+                    return rejected(
+                        RtlRenamePlanStatus::AmbiguousStructure,
+                        QStringLiteral(
+                            "Tree-sitter could not verify a semantic rename range."),
+                        query);
+                }
+                QString appendFailure;
+                if (!appendEdit(
+                        &pendingEdits,
+                        document,
+                        edit.startPosition,
+                        edit.startPosition + edit.length,
+                        edit.newText,
+                        QStringLiteral("semantic.reference"),
+                        QStringLiteral(
+                            "Rename a Slang-resolved declaration or reference."),
+                        &appendFailure)) {
+                    return rejected(
+                        RtlRenamePlanStatus::AmbiguousStructure,
+                        appendFailure,
+                        query);
+                }
+            }
+        }
+
+        const BoundDocument& subjectDocument =
+            boundDocuments.value(subjectFile);
+        const TSIdentifierTarget declaration =
+            subjectDocument.captured->syntax->identifierAt(
+                subject.location.position);
+        if (!declaration.ok()
+            || declaration.text != subject.name) {
+            return rejected(
+                RtlRenamePlanStatus::AmbiguousStructure,
+                QStringLiteral(
+                    "Tree-sitter could not verify the selected declaration."),
+                query);
+        }
+        return finalizeRenameProposal(
+            subject,
+            newName,
+            *kind,
+            subjectDocument,
+            declaration.startChar,
+            declaration.endChar,
+            std::move(pendingEdits),
+            query,
+            documentManager,
+            QStringLiteral(
+                "ZeroSlack.SafeRenameService/Slang+TSDocument"));
     }
 
     const QList<SemanticSymbolRecord> moduleDefinitions =
@@ -1981,180 +2297,18 @@ RtlRenameProposal RtlRenamePlanner::plan(
         }
     }
 
-    if (pendingEdits.isEmpty()) {
-        return rejected(
-            RtlRenamePlanStatus::AmbiguousStructure,
-            QStringLiteral(
-                "No verified rename edits were produced."),
-            query);
-    }
-
-    std::sort(
-        pendingEdits.begin(), pendingEdits.end(),
-        [](const PendingEdit& left,
-           const PendingEdit& right) {
-            const QString leftFile =
-                normalizedFileName(left.fileName);
-            const QString rightFile =
-                normalizedFileName(right.fileName);
-            if (leftFile != rightFile)
-                return leftFile < rightFile;
-            return left.start < right.start;
-        });
-
-    std::vector<rtledit::WorkspaceTextEdit> edits;
-    std::vector<rtledit::TextEditProvenance> provenance;
-    edits.reserve(
-        static_cast<std::size_t>(
-            pendingEdits.size()));
-    provenance.reserve(edits.capacity());
-    const std::string semanticId =
-        std::to_string(query.semanticToken.revision);
-    const QString action = actionId(*kind);
-    for (const PendingEdit& pending :
-         std::as_const(pendingEdits)) {
-        rtledit::WorkspaceTextEdit edit;
-        edit.filePath =
-            utf8String(pending.fileName);
-        edit.expectedDocumentVersion = {
-            pending.revision};
-        edit.range = utf8Range(
-            pending.documentText,
-            pending.start,
-            pending.end);
-        edit.expectedText =
-            utf8String(pending.expectedText);
-        edit.newText =
-            utf8String(pending.newText);
-        edits.push_back(std::move(edit));
-
-        rtledit::TextEditProvenance item;
-        item.editIndex = provenance.size();
-        item.actionId = utf8String(action);
-        item.anchorName =
-            utf8String(pending.anchorName);
-        item.description =
-            utf8String(pending.description);
-        item.anchor.source =
-            rtledit::AnchorResolutionSource::
-                TreeSitter;
-        item.anchor.resolver =
-            "ZeroSlack.RtlRenamePlanner/TSDocument";
-        item.anchor.semanticSnapshotId =
-            semanticId;
-        item.signalQualifiedName =
-            utf8String(subject.owner.name
-                       + QLatin1Char('.')
-                       + subject.name);
-        item.sourceFilePath =
-            utf8String(pending.fileName);
-        item.sourceRange = utf8Range(
-            pending.documentText,
-            pending.start,
-            pending.end);
-        provenance.push_back(std::move(item));
-    }
-
-    rtledit::SemanticEditIntent intent;
-    intent.kind =
-        rtledit::SemanticEditKind::ReplaceText;
-    intent.target.kind =
-        *kind == RenameKind::Port
-            ? rtledit::SemanticObjectKind::Port
-            : rtledit::SemanticObjectKind::Unknown;
-    intent.target.qualifiedName =
-        utf8String(subject.owner.name
-                   + QLatin1Char('.')
-                   + subject.name);
-    intent.target.ownerScope =
-        utf8String(subject.owner.name);
-    intent.target.filePath =
-        utf8String(subjectDocument.captured->fileName);
-    intent.target.range = utf8Range(
-        subjectDocument.captured->text,
+    return finalizeRenameProposal(
+        subject,
+        newName,
+        *kind,
+        subjectDocument,
         targetDeclaration.start,
-        targetDeclaration.end);
-    intent.target.signatureHash =
-        utf8String(recordIdentity(subject));
-
-    RtlRenameProposal proposal;
-    proposal.subject = subject;
-    proposal.oldName = subject.name;
-    proposal.newName = newName;
-    proposal.dryRun = query.dryRun;
-    proposal.workspaceEdit =
-        rtledit::makeWorkspaceEditPlan(
-            std::move(intent),
-            rtledit::RiskLevel::High,
-            rtledit::PreviewPolicy::Diff,
-            std::move(edits),
-            std::move(provenance));
-    proposal.workspaceEdit.semanticSnapshot =
-        rtledit::SemanticIndexSnapshot{
-            semanticId};
-
-    QSet<QString> semanticFiles;
-    for (const PendingEdit& edit :
-         std::as_const(pendingEdits)) {
-        semanticFiles.insert(
-            normalizedFileName(edit.fileName));
-    }
-    QStringList sortedFiles =
-        semanticFiles.values();
-    std::sort(sortedFiles.begin(),
-              sortedFiles.end());
-    for (const QString& file :
-         std::as_const(sortedFiles)) {
-        proposal.workspaceEdit
-            .semanticIndexFilePaths
-            .push_back(utf8String(file));
-    }
-
-    proposal.transaction =
-        WorkspaceEditTransactionService::
-            getInstance()->prepare(
-                proposal.workspaceEdit,
-                rtledit::SemanticIndexSnapshot{
-                    semanticId},
-                documentManager,
-                query.dryRun);
-    proposal.sourceDiff =
-        proposal.transaction.sourceDiff;
-    if (!proposal.transaction.ready()
-        || !proposal.sourceDiff.built()) {
-        return rejected(
-            RtlRenamePlanStatus::
-                TransactionPreparationFailed,
-            QStringLiteral(
-                "The unified workspace transaction could "
-                "not build an atomic preview."),
-            query);
-    }
-
-    proposal.renderedDiff =
-        fromUtf8String(
-            rtledit::
-                renderWorkspaceEditSourceDiffHunks(
-                    proposal.sourceDiff));
-    QMap<QString, RtlRenameFilePreview>
-        previews;
-    for (const PendingEdit& edit :
-         std::as_const(pendingEdits)) {
-        const QString file =
-            normalizedFileName(edit.fileName);
-        RtlRenameFilePreview& preview =
-            previews[file];
-        preview.fileName = edit.fileName;
-        preview.revision = edit.revision;
-        ++preview.editCount;
-    }
-    proposal.files = previews.values();
-    proposal.status = RtlRenamePlanStatus::Ready;
-    proposal.message =
+        targetDeclaration.end,
+        std::move(pendingEdits),
+        query,
+        documentManager,
         QStringLiteral(
-            "High-risk RTL rename proposal ready for "
-            "preview.");
-    return proposal;
+            "ZeroSlack.RtlRenamePlanner/TSDocument"));
 }
 
 SemanticIndex* RtlRenamePlanner::semanticIndex() const

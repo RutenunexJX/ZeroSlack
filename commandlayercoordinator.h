@@ -89,6 +89,9 @@ private:
     QList<CommandLayerCommandMatch> matches;
     int selectedMatch = 0;
     bool f24Held = false;
+    bool f24TapCandidate = false;
+    int pendingDirectKey = 0;
+    QString pendingDirectActionId;
     bool connected = false;
     bool applicationFilterInstalled = false;
 
@@ -96,7 +99,12 @@ private:
     bool handleApplicationEvent(QObject* watched, QEvent* event);
     bool handleKeyPress(QKeyEvent* event);
     bool handleCommandShortcutEvent(QKeyEvent* event);
+    bool handleDirectGestureKeyRelease(QKeyEvent* event);
     bool beginCommandShortcutHold();
+    bool beginDirectGesture(QKeyEvent* event);
+    void cancelDirectGesture();
+    void executeDirectGesture();
+    void repeatLastActionFromTap();
     bool handleSearchKey(QKeyEvent* event);
     bool handleHelpKey(QKeyEvent* event);
     void enterSearch(bool clearFailure = true);

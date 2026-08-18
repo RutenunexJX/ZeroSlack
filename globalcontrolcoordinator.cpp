@@ -135,7 +135,8 @@ void GlobalControlCoordinator::open()
                            : GlobalControlCategory::Commands);
     if (openingHandler)
         openingHandler();
-    refresh();
+    panel->resetQuery(currentContext.initialQuery);
+    refresh(currentContext.initialQuery);
     if (!popupAnchor.isNull())
         panel->showAt(anchor, popupAnchor);
     else

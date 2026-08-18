@@ -110,6 +110,7 @@ public:
     void clearSignalSelections(QPlainTextEdit* editor);
     void flashLine(MyCodeEditor* editor);
     void flashLine(MyCodeEditor* editor, int lineNumber);
+    void flashRange(MyCodeEditor* editor, int startChar, int endChar);
 
 private:
     static void removeByProperty(QPlainTextEdit* editor,

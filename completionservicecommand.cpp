@@ -3,6 +3,8 @@
 #include "codetemplatecontextanalyzer.h"
 #include "codetemplateservice.h"
 #include "completioncommandmode.h"
+#include "completioncommandkindadapter.h"
+#include "completionmatcher.h"
 #include "completionsemanticquery.h"
 #include "inlinecommandmode.h"
 #include "packagetoolservice.h"
@@ -561,4 +563,234 @@ QList<SemanticSymbolRecord> CompletionService::findCommandCompletionSymbolRecord
     const CommandCompletionQuery& query) const
 {
     return CompletionSemanticQuery::commandSymbolRecords(semanticIndex(), query);
+}
+
+QList<SemanticSymbolRecord>
+CompletionService::findStructMemberCompletionRecords(
+    const QStringList& memberPath,
+    const QString& moduleName,
+    const QString& prefix) const
+{
+    SemanticIndex* semantic = semanticIndex();
+    if (!semantic || memberPath.isEmpty())
+        return {};
+
+    QString typeName = semantic->getStructTypeForVariable(
+        memberPath.first(), moduleName);
+    for (int index = 1;
+         !typeName.isEmpty() && index < memberPath.size();
+         ++index) {
+        QString nextType;
+        for (const SemanticSymbolRecord& member :
+             semantic->getStructMemberRecords(typeName)) {
+            if (member.name != memberPath.at(index))
+                continue;
+            nextType = !member.type.resolvedTypeName.isEmpty()
+                ? member.type.resolvedTypeName
+                : member.type.rawTypeText;
+            break;
+        }
+        typeName = nextType;
+    }
+    if (typeName.isEmpty())
+        return {};
+
+    QList<SemanticSymbolRecord> result;
+    for (const SemanticSymbolRecord& record :
+         semantic->getStructMemberRecords(typeName)) {
+        if (!prefix.isEmpty()
+            && CompletionMatcher::completionItemScore(
+                   record.name, prefix) <= 0) {
+            continue;
+        }
+        result.append(record);
+    }
+    return result;
+}
+
+QList<SemanticSymbolRecord>
+CompletionService::findVisibleStructMemberRecords(
+    const CommandCompletionQuery& query) const
+{
+    SemanticIndex* semantic = semanticIndex();
+    if (!semantic)
+        return {};
+
+    QSet<QString> typeNames;
+    for (const CompletionCommandKind kind : {
+             CompletionCommandKind::PackedStructType,
+             CompletionCommandKind::UnpackedStructType}) {
+        CommandCompletionQuery typeQuery = query;
+        typeQuery.commandKind = kind;
+        typeQuery.prefix.clear();
+        for (const SemanticSymbolRecord& type :
+             findCommandCompletionSymbolRecords(typeQuery)) {
+            if (!type.name.isEmpty())
+                typeNames.insert(type.name);
+        }
+    }
+    CommandCompletionQuery visibleQuery = query;
+    visibleQuery.commandKind = CompletionCommandKind::VisibleSymbol;
+    visibleQuery.prefix.clear();
+    for (const SemanticSymbolRecord& record :
+         findCommandCompletionSymbolRecords(visibleQuery)) {
+        const QString typeName =
+            !record.type.resolvedTypeName.isEmpty()
+            ? record.type.resolvedTypeName
+            : record.type.rawTypeText;
+        if (!typeName.isEmpty())
+            typeNames.insert(typeName);
+    }
+
+    QList<SemanticSymbolRecord> result;
+    QSet<QString> seen;
+    for (const QString& typeName : typeNames) {
+        for (const SemanticSymbolRecord& record :
+             semantic->getStructMemberRecords(typeName)) {
+            if (!query.prefix.isEmpty()
+                && CompletionMatcher::completionItemScore(
+                       record.name, query.prefix) <= 0) {
+                continue;
+            }
+            const QString key = record.stableKey.isValid()
+                ? symbolStableKeyText(record.stableKey)
+                : typeName + QLatin1Char('|') + record.name;
+            if (seen.contains(key))
+                continue;
+            seen.insert(key);
+            result.append(record);
+        }
+    }
+    std::stable_sort(result.begin(), result.end(),
+                     [](const SemanticSymbolRecord& left,
+                        const SemanticSymbolRecord& right) {
+        return QString::compare(left.name, right.name,
+                                Qt::CaseInsensitive) < 0;
+    });
+    return result;
+}
+
+QList<SemanticSymbolRecord>
+CompletionService::findExpectedEnumValueRecords(
+    const QString& identifier,
+    const QString& moduleName,
+    const QString& packageName,
+    const QString& prefix) const
+{
+    SemanticIndex* semantic = semanticIndex();
+    if (!semantic || identifier.isEmpty())
+        return {};
+
+    QList<SemanticSymbolRecord> variables =
+        semantic->getSymbolRecordsByName(identifier);
+    std::stable_sort(
+        variables.begin(), variables.end(),
+        [&moduleName, &packageName](const SemanticSymbolRecord& left,
+                                    const SemanticSymbolRecord& right) {
+            const auto rank = [&moduleName, &packageName](
+                                  const SemanticSymbolRecord& record) {
+                if (!moduleName.isEmpty()
+                    && record.owner.name == moduleName) {
+                    return 0;
+                }
+                if (!packageName.isEmpty()
+                    && record.owner.name == packageName) {
+                    return 1;
+                }
+                return 2;
+            };
+            return rank(left) < rank(right);
+        });
+
+    for (const SemanticSymbolRecord& variable : variables) {
+        if ((!moduleName.isEmpty() || !packageName.isEmpty())
+            && variable.owner.name != moduleName
+            && variable.owner.name != packageName) {
+            continue;
+        }
+        const QString typeName =
+            !variable.type.resolvedTypeName.isEmpty()
+            ? variable.type.resolvedTypeName
+            : variable.type.rawTypeText;
+        if (typeName.isEmpty())
+            continue;
+
+        QList<SemanticSymbolRecord> values;
+        for (const SemanticSymbolRecord& record :
+             semantic->getSymbolRecordsByOwner(typeName)) {
+            if (!completionCommandKindMatchesCommandRecord(
+                    record, CompletionCommandKind::EnumValue)) {
+                continue;
+            }
+            if (!prefix.isEmpty()
+                && CompletionMatcher::completionItemScore(
+                       record.name, prefix) <= 0) {
+                continue;
+            }
+            values.append(record);
+        }
+        if (!values.isEmpty())
+            return values;
+    }
+    return {};
+}
+
+QList<SemanticSymbolRecord>
+CompletionService::findVisibleEnumValueRecords(
+    const CommandCompletionQuery& query) const
+{
+    SemanticIndex* semantic = semanticIndex();
+    if (!semantic)
+        return {};
+
+    QSet<QString> typeNames;
+    CommandCompletionQuery typeQuery = query;
+    typeQuery.commandKind = CompletionCommandKind::EnumType;
+    typeQuery.prefix.clear();
+    for (const SemanticSymbolRecord& type :
+         findCommandCompletionSymbolRecords(typeQuery)) {
+        if (!type.name.isEmpty())
+            typeNames.insert(type.name);
+    }
+    CommandCompletionQuery visibleQuery = query;
+    visibleQuery.commandKind = CompletionCommandKind::VisibleSymbol;
+    visibleQuery.prefix.clear();
+    for (const SemanticSymbolRecord& record :
+         findCommandCompletionSymbolRecords(visibleQuery)) {
+        const QString typeName =
+            !record.type.resolvedTypeName.isEmpty()
+            ? record.type.resolvedTypeName
+            : record.type.rawTypeText;
+        if (!typeName.isEmpty())
+            typeNames.insert(typeName);
+    }
+
+    QList<SemanticSymbolRecord> result;
+    QSet<QString> seen;
+    for (const QString& typeName : typeNames) {
+        for (const SemanticSymbolRecord& record :
+             semantic->getSymbolRecordsByOwner(typeName)) {
+            if (!completionCommandKindMatchesCommandRecord(
+                    record, CompletionCommandKind::EnumValue)
+                || (!query.prefix.isEmpty()
+                    && CompletionMatcher::completionItemScore(
+                           record.name, query.prefix) <= 0)) {
+                continue;
+            }
+            const QString key = record.stableKey.isValid()
+                ? symbolStableKeyText(record.stableKey)
+                : typeName + QLatin1Char('|') + record.name;
+            if (seen.contains(key))
+                continue;
+            seen.insert(key);
+            result.append(record);
+        }
+    }
+    std::stable_sort(result.begin(), result.end(),
+                     [](const SemanticSymbolRecord& left,
+                        const SemanticSymbolRecord& right) {
+        return QString::compare(left.name, right.name,
+                                Qt::CaseInsensitive) < 0;
+    });
+    return result;
 }

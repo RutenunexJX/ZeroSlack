@@ -1,6 +1,7 @@
 #include "editorstructuralinputcontroller.h"
 
 #include "editorsyntaxstate.h"
+#include "editorlexicalboundary.h"
 #include "mycodeeditor.h"
 #include "tsdocument.h"
 
@@ -171,8 +172,21 @@ bool EditorStructuralInputController::handlePairInput(
             if (identifier.ok()
                 && position > identifier.startChar
                 && position < identifier.endChar) {
-                cursor.setPosition(identifier.startChar);
-                cursor.setPosition(identifier.endChar,
+                const TSExpressionAtomTarget atom =
+                    syntax.expressionAtomAt(position);
+                int start = atom.ok()
+                    ? atom.startChar : identifier.startChar;
+                int end = atom.ok()
+                    ? atom.endChar : identifier.endChar;
+                if (start < 0 || end <= start) {
+                    const EditorLexicalBoundary::Range lexical =
+                        EditorLexicalBoundary::identifierAt(
+                            editor->cachedDocumentText(), position);
+                    start = lexical.start;
+                    end = lexical.end;
+                }
+                cursor.setPosition(start);
+                cursor.setPosition(end,
                                    QTextCursor::KeepAnchor);
                 const QString text = cursor.selectedText();
                 cursor.beginEditBlock();

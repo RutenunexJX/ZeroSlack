@@ -21,9 +21,10 @@ public:
     void setCategory(GlobalControlCategory category);
     GlobalControlCategory category() const;
     QString queryText() const;
+    void resetQuery(const QString& text);
     void showCentered(QWidget* anchor);
     void showAt(QWidget* anchor, const QPoint& globalAnchor);
-    void focusSearch();
+    void focusSearch(bool selectAll = true);
     void setQueryChangedHandler(std::function<void(const QString&)> handler);
     void setCategoryChangedHandler(
         std::function<void(GlobalControlCategory)> handler);

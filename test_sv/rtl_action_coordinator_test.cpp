@@ -14,10 +14,12 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QLineEdit>
 #include <QMainWindow>
 #include <QStandardPaths>
 #include <QTabWidget>
 #include <QTemporaryDir>
+#include <QTest>
 #include <QTextCursor>
 
 #include <cstdio>
@@ -267,6 +269,22 @@ int main(int argc, char* argv[])
                 fileContents)));
     semanticState = EditorActionSemanticState::Current;
     semanticFailure.clear();
+
+    ActionInvocation popupInvocation;
+    popupInvocation.workspaceId = workspacePath;
+    const ActionExecutionResult popupResult =
+        coordinator.execute(*renameAction, popupInvocation);
+    QLineEdit* inlineRename =
+        editor->findChild<QLineEdit*>(
+            QStringLiteral("semanticRenameInlineEditor"));
+    expect("parameterless rename opens the compact caret popup",
+           popupResult.handled
+               && popupResult.succeeded
+               && inlineRename
+               && inlineRename->text()
+                      == QStringLiteral("data_i"));
+    if (inlineRename)
+        QTest::keyClick(inlineRename, Qt::Key_Escape);
 
     const ActionExecutionResult launched =
         coordinator.execute(

@@ -973,6 +973,9 @@ void CommandLayerCoordinator::registerActionExecutionRoutes()
     bindEditor(QStringLiteral("editor.selection.beginEnd"),
                &MyCodeEditor::selectInsideBeginEnd,
                QStringLiteral("No begin-end block"));
+    bindEditor(QStringLiteral("editor.selection.delete"),
+               &MyCodeEditor::deleteSelectedContent,
+               QStringLiteral("No selected content"));
     bindEditor(
         QStringLiteral("editor.mode.signalSelection"),
         &MyCodeEditor::startSignalSelectionMode,
@@ -1167,9 +1170,19 @@ bool CommandLayerCoordinator::handleApplicationEvent(QObject* watched,
 
     if (event->type() == QEvent::ApplicationDeactivate) {
         f24Held = false;
+        f24TapCandidate = false;
+        cancelDirectGesture();
         if (phase == Phase::Search || phase == Phase::Help)
             leaveCommandLayer(false);
         return false;
+    }
+
+    if (f24Held
+        && (event->type() == QEvent::MouseButtonPress
+            || event->type() == QEvent::MouseButtonDblClick
+            || event->type() == QEvent::Wheel)) {
+        f24TapCandidate = false;
+        cancelDirectGesture();
     }
 
     if ((event->type() == QEvent::Resize
@@ -1210,6 +1223,8 @@ bool CommandLayerCoordinator::handleApplicationEvent(QObject* watched,
         return handleCommandShortcutEvent(keyEvent);
     if (event->type() == QEvent::KeyPress)
         return handleKeyPress(keyEvent);
+    if (event->type() == QEvent::KeyRelease)
+        return handleDirectGestureKeyRelease(keyEvent);
     return false;
 }
 
@@ -1225,7 +1240,16 @@ bool CommandLayerCoordinator::handleCommandShortcutEvent(
 
     if (event->type() == QEvent::KeyRelease) {
         const bool owned = f24Held || phase != Phase::Inactive;
+        const bool repeatTap = f24Held
+            && f24TapCandidate
+            && pendingDirectKey == 0
+            && queryText.isEmpty()
+            && phase == Phase::Search;
         f24Held = false;
+        f24TapCandidate = false;
+        cancelDirectGesture();
+        if (repeatTap)
+            repeatLastActionFromTap();
         if (phase == Phase::Search || phase == Phase::Help)
             leaveCommandLayer();
         event->accept();
@@ -1290,8 +1314,111 @@ bool CommandLayerCoordinator::beginCommandShortcutHold()
     }
     lastEditor = editor;
     f24Held = true;
+    f24TapCandidate = true;
+    cancelDirectGesture();
     enterSearch();
     return true;
+}
+
+bool CommandLayerCoordinator::handleDirectGestureKeyRelease(
+    QKeyEvent* event)
+{
+    if (!event || event->isAutoRepeat()
+        || pendingDirectKey == 0
+        || event->key() != pendingDirectKey) {
+        return false;
+    }
+
+    const bool execute = f24Held
+        && phase == Phase::Search
+        && !QApplication::activeModalWidget();
+    event->accept();
+    if (execute)
+        executeDirectGesture();
+    else
+        cancelDirectGesture();
+    return true;
+}
+
+bool CommandLayerCoordinator::beginDirectGesture(QKeyEvent* event)
+{
+    if (!event || !f24Held || phase != Phase::Search
+        || !queryText.isEmpty() || pendingDirectKey != 0
+        || event->isAutoRepeat()) {
+        return false;
+    }
+
+    if (event->key() != Qt::Key_D)
+        return false;
+
+    pendingDirectKey = event->key();
+    pendingDirectActionId = QString::fromLatin1(
+        ActionIds::EditDeleteSelection);
+    f24TapCandidate = false;
+    failureReason = QStringLiteral("Release D: delete selection");
+    updateSearchPanel();
+    event->accept();
+    return true;
+}
+
+void CommandLayerCoordinator::cancelDirectGesture()
+{
+    pendingDirectKey = 0;
+    pendingDirectActionId.clear();
+}
+
+void CommandLayerCoordinator::executeDirectGesture()
+{
+    const QString actionId = pendingDirectActionId;
+    cancelDirectGesture();
+    failureReason.clear();
+
+    const ActionDescriptor* descriptor = findActionById(actionId);
+    MyCodeEditor* editor = currentEditorForLocalCommand();
+    if (!editor)
+        editor = lastEditor;
+    if (!descriptor || !editor) {
+        completeCommand(QStringLiteral("No editor tab is available"));
+        return;
+    }
+
+    executingActionEditor = editor;
+    ActionInvocation invocation;
+    invocation.workspaceId = projectSnapshot().workspaceRoot;
+    const ActionExecutionResult result = executeAction(
+        *descriptor, actionExecutionHost, invocation);
+    executingActionEditor.clear();
+    if (!result.succeeded) {
+        const QString message = !result.failureReason.isEmpty()
+            ? result.failureReason
+            : result.message;
+        reportFailure(editor, message);
+        completeCommand(message);
+        return;
+    }
+    completeCommand();
+}
+
+void CommandLayerCoordinator::repeatLastActionFromTap()
+{
+    MyCodeEditor* editor = currentEditorForLocalCommand();
+    if (!editor)
+        editor = lastEditor;
+    if (!editor)
+        return;
+
+    executingActionEditor = editor;
+    const ActionExecutionResult result =
+        applicationActionExecutionHistory().repeatLast(
+            actionExecutionHost);
+    executingActionEditor.clear();
+    if (!result.succeeded) {
+        const QString message = !result.failureReason.isEmpty()
+            ? result.failureReason
+            : result.message;
+        if (!message.isEmpty())
+            reportFailure(editor, message);
+    }
 }
 
 bool CommandLayerCoordinator::handleKeyPress(QKeyEvent* event)
@@ -1344,6 +1471,22 @@ bool CommandLayerCoordinator::handleSearchKey(QKeyEvent* event)
 {
     if (!event)
         return false;
+    if (pendingDirectKey != 0) {
+        if (event->key() == Qt::Key_Escape) {
+            f24TapCandidate = false;
+            cancelDirectGesture();
+            failureReason.clear();
+            updateSearchPanel();
+        }
+        if (!event->isAutoRepeat())
+            f24TapCandidate = false;
+        event->accept();
+        return true;
+    }
+    if (beginDirectGesture(event))
+        return true;
+    if (!event->isAutoRepeat())
+        f24TapCandidate = false;
     if (event->key() == Qt::Key_Return
         || event->key() == Qt::Key_Enter) {
         executeSelectedCommand();
@@ -1503,10 +1646,20 @@ void CommandLayerCoordinator::moveSelection(int delta)
 
 void CommandLayerCoordinator::appendQueryCharacter(QKeyEvent* event)
 {
-    const QString character = commandCharacterForKey(event ? event->key() : 0);
-    if (character.isEmpty())
+    if (!event)
         return;
-    queryText.append(character);
+    QString text = event->text();
+    if (text.isEmpty())
+        text = commandCharacterForKey(event->key());
+    QString printable;
+    printable.reserve(text.size());
+    for (const QChar character : text) {
+        if (!character.isNull() && character.isPrint())
+            printable.append(character);
+    }
+    if (printable.isEmpty())
+        return;
+    queryText.append(printable);
     failureReason.clear();
     selectedMatch = 0;
     updateSearchPanel();

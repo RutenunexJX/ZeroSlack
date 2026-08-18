@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.4.0] - 2026-08-18
+
+### Contextual editing and command workflows
+
+- Reworked F24 into an immediate fuzzy command layer with Enter-only search
+  execution, cancellable direct-key gestures, selection deletion on `F24+D`,
+  reliable rapid input, and an empty-tap repeat action.
+- Extended `Ctrl+Space` Symbols with semantic kind selectors, identifier-aware
+  replacement, lexical visibility ranking, struct-member resolution, and
+  expected-enum-value ranking for assignment, comparison, and case contexts.
+- Added a unified `Ctrl+R` semantic rename popup for ports, parameters,
+  variables, typedefs, enums, structs, and members, retaining atomic local
+  edits and High+Diff confirmation for cross-file or structural changes.
+- Unified word selection, Ctrl movement, and Ctrl deletion on a shared lexical
+  boundary engine; added Tree-sitter structural field navigation and anchored
+  line-boundary selection, including multi-cursor behavior.
+- Made parenthesis wrapping selection-driven and conservative for incomplete
+  code, and aligned top-level index/part-select suffix fields in assignments,
+  ternary operands, and named associations while preserving all source tokens.
+- Added event-level, semantic-scope, rename, movement, multi-cursor, formatter,
+  token-preservation, and idempotence regressions for the new behavior.
+
 ## [0.3.2] - 2026-08-17
 
 ### Column caret and line-move reliability

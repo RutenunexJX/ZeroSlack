@@ -65,6 +65,8 @@ public:
     void closePopup();
     bool hasNavigableTarget() const;
     QLineEdit* editableLineEdit() const;
+    void setEditableMessage(const QString& message,
+                            bool error = false);
     const PeekContentModel& contentModel() const;
 
 signals:
@@ -80,6 +82,7 @@ private:
     QLabel* titleLabel = nullptr;
     QToolButton* closeButton = nullptr;
     QPointer<QLineEdit> editControl;
+    QPointer<QLabel> editMessageControl;
     QPointer<QWidget> focusReturnWidget;
     QString targetFile;
     int targetLine = -1;

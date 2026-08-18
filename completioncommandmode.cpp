@@ -131,10 +131,13 @@ CommandSymbolCompletionItem CompletionCommandMode::symbolCompletionItem(
         item.uniqueKey = symbolName;
     } else if (requestedKind == CompletionCommandKind::PackedStructVariable
         || requestedKind == CompletionCommandKind::UnpackedStructVariable) {
-        const QString structTypeName = item.symbolRecord.owner.name;
-        item.text = structTypeName.isEmpty()
-            ? symbolName
-            : QStringLiteral("%1(%2)").arg(symbolName, structTypeName);
+        const QString structTypeName =
+            !item.symbolRecord.type.resolvedTypeName.isEmpty()
+            ? item.symbolRecord.type.resolvedTypeName
+            : item.symbolRecord.type.rawTypeText;
+        item.text = symbolName;
+        if (!structTypeName.isEmpty())
+            item.description = structTypeName;
         item.uniqueKey = QStringLiteral("%1:%2").arg(symbolName, structTypeName);
     } else if (requestedKind == CompletionCommandKind::EnumValue) {
         item.text = symbolName;

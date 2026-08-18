@@ -249,6 +249,23 @@ struct MyCodeEditorState
     DeclareSignalScopeKind signalDefinitionScopeKind =
         DeclareSignalScopeKind::Module;
     QString signalDefinitionBlockScopeId;
+    QPointer<EditorHoverPopup> semanticRenamePeek;
+    QPointer<QLineEdit> semanticRenameEditor;
+    QMetaObject::Connection semanticRenamePeekClosedConnection;
+    QMetaObject::Connection semanticRenameTextConnection;
+    QMetaObject::Connection semanticRenameReturnConnection;
+    std::uint64_t semanticRenameSessionGeneration = 0;
+    QPointer<QTextDocument> semanticRenameDocument;
+    std::uint64_t semanticRenameDocumentRevision = 0;
+    QString semanticRenameFileName;
+    QString semanticRenameFileIdentityKey;
+    SemanticSnapshotToken semanticRenameToken;
+    SemanticSymbolRecord semanticRenameSubject;
+    int lineBoundarySelectionAnchor = -1;
+    int lineBoundarySelectionDirection = 0;
+    bool lineBoundarySelectionAtPhysicalEdge = false;
+    QList<int> multiLineBoundarySelectionAnchors;
+    int multiLineBoundarySelectionDirection = 0;
 
     void initializeCore(MyCodeEditor* editor);
     void shutdown(MyCodeEditor* editor);
@@ -302,6 +319,15 @@ struct MyCodeEditorState
     bool handleTemplateSlotKeyPress(MyCodeEditor* editor, QKeyEvent* event);
     bool handleVirtualCursorKeyPress(MyCodeEditor* editor,
                                      QKeyEvent* event);
+    bool handleLexicalNavigationOrDeletion(MyCodeEditor* editor,
+                                           QKeyEvent* event);
+    bool handleStructuralNavigation(MyCodeEditor* editor,
+                                    QKeyEvent* event);
+    bool handleLineBoundarySelection(MyCodeEditor* editor,
+                                     QKeyEvent* event);
+    bool handleMultiCursorLineBoundarySelection(
+        MyCodeEditor* editor,
+        QKeyEvent* event);
     void prepareVirtualCursorInput(MyCodeEditor* editor);
     void clearVirtualCursor(MyCodeEditor* editor);
     void clearPendingColumnAnchor();
@@ -398,6 +424,11 @@ struct MyCodeEditorState
         QString* failureReason = nullptr);
     void clearSignalDefinitionEditorState();
     void cancelSignalDefinitionEditor();
+    bool beginSemanticRenameEditor(
+        MyCodeEditor* editor,
+        QString* failureReason = nullptr);
+    void clearSemanticRenameEditorState();
+    void cancelSemanticRenameEditor();
     bool startSignalSelectionMode(MyCodeEditor* editor,
                                   QString* message = nullptr);
     void cancelSignalSelectionMode(MyCodeEditor* editor);

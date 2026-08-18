@@ -427,6 +427,24 @@ void appendCommandLayerActions(QList<ActionDescriptor>* out)
         out->append(descriptor);
     }
 
+    ActionDescriptor deleteSelection =
+        makeAction(QString::fromLatin1(ActionIds::EditDeleteSelection),
+                   QStringLiteral("Delete Selection"),
+                   QStringLiteral(
+                       "Delete the current ordinary, multi-cursor, or column selection."),
+                   ActionCategory::Refactor,
+                   ActionScope::Editor,
+                   QStringLiteral("editor.selection.delete"),
+                   editor,
+                   openEditor,
+                   ActionRecoveryPolicy::Explain);
+    deleteSelection.aliases.append(
+        alias(ActionSurface::ActionCatalog,
+              QStringLiteral("F24+D"),
+              QStringLiteral("Delete Selection"),
+              deleteSelection.description));
+    out->append(deleteSelection);
+
     ActionDescriptor help =
         makeAction(QStringLiteral("help.actionCatalog"),
                    QStringLiteral("Action Catalog"),
@@ -2161,11 +2179,11 @@ void appendRtlEditMenuActions(
     ActionDescriptor rename =
         makeAction(
             QString::fromLatin1(ActionIds::RtlRename),
-            QStringLiteral("Rename RTL Port or Parameter"),
+            QStringLiteral("Rename SystemVerilog Symbol"),
             QStringLiteral(
-                "Build one structured High+Diff transaction that renames "
-                "a module or interface port, parameter, or localparam and "
-                "updates its named associations."),
+                "Rename the selected SystemVerilog symbol. Single-file "
+                "renames apply atomically; cross-file and structural "
+                "renames use a High+Diff transaction."),
             ActionCategory::Refactor,
             ActionScope::Symbol,
             QStringLiteral("rtledit.rename"),
@@ -2177,19 +2195,17 @@ void appendRtlEditMenuActions(
                 "Open a current analyzed SystemVerilog editor and select "
                 "a module or interface port, parameter, or localparam."),
             ActionRecoveryPolicy::Analyze,
-            ActionParameterKind::TextQuery,
-            QStringLiteral("newName"),
-            QStringLiteral("new RTL identifier"));
+            ActionParameterKind::None);
     rename.defaultShortcut = QStringLiteral("Ctrl+R");
     rename.riskLevel = ActionRiskLevel::High;
     rename.supportsDryRun = true;
     rename.repeatable = true;
-    rename.rememberParameters = true;
+    rename.rememberParameters = false;
     rename.aliases = {
         alias(
             ActionSurface::Menu,
             rename.id,
-            QStringLiteral("Rename RTL Port or Parameter..."),
+            QStringLiteral("Rename SystemVerilog Symbol..."),
             rename.description,
             QString(),
             QStringLiteral("rtlRenameAction")),

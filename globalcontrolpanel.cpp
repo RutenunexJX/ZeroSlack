@@ -9,6 +9,7 @@
 #include <QLineEdit>
 #include <QListWidget>
 #include <QScreen>
+#include <QSignalBlocker>
 #include <QTabBar>
 #include <QVBoxLayout>
 #include <utility>
@@ -101,6 +102,15 @@ QString GlobalControlPanel::queryText() const
     return searchEdit ? searchEdit->text() : QString();
 }
 
+void GlobalControlPanel::resetQuery(const QString& text)
+{
+    if (!searchEdit)
+        return;
+    const QSignalBlocker blocker(searchEdit);
+    searchEdit->setText(text);
+    searchEdit->setCursorPosition(text.size());
+}
+
 void GlobalControlPanel::showCentered(QWidget* anchor)
 {
     QPoint globalAnchor;
@@ -119,9 +129,6 @@ void GlobalControlPanel::showCentered(QWidget* anchor)
 void GlobalControlPanel::showAt(QWidget* anchor,
                                 const QPoint& globalAnchor)
 {
-    if (searchEdit)
-        searchEdit->clear();
-
     adjustSize();
     QScreen* screen = QGuiApplication::screenAt(globalAnchor);
     if (!screen && anchor)
@@ -142,14 +149,17 @@ void GlobalControlPanel::showAt(QWidget* anchor,
     move(pos);
     show();
     raise();
-    focusSearch();
+    focusSearch(false);
 }
 
-void GlobalControlPanel::focusSearch()
+void GlobalControlPanel::focusSearch(bool selectAll)
 {
     if (searchEdit) {
         searchEdit->setFocus(Qt::ShortcutFocusReason);
-        searchEdit->selectAll();
+        if (selectAll)
+            searchEdit->selectAll();
+        else
+            searchEdit->setCursorPosition(searchEdit->text().size());
     }
 }
 

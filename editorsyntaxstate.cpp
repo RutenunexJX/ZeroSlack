@@ -311,6 +311,20 @@ TSIdentifierTarget EditorSyntaxState::identifierAt(int cursorChar) const
     return document->identifierAt(cursorChar < 0 ? 0 : cursorChar);
 }
 
+TSExpressionAtomTarget EditorSyntaxState::expressionAtomAt(
+    int cursorChar) const
+{
+    return document->expressionAtomAt(
+        cursorChar < 0 ? 0 : cursorChar);
+}
+
+TSCompletionContextTarget EditorSyntaxState::completionContextAt(
+    int cursorChar) const
+{
+    return document->completionContextAt(
+        cursorChar < 0 ? 0 : cursorChar);
+}
+
 TSIdentifierOccurrenceSet
 EditorSyntaxState::identifierOccurrencesAt(
     int cursorChar) const
@@ -337,6 +351,16 @@ EditorSyntaxState::conditionalBranchNavigationTargetAt(
     return document->conditionalBranchNavigationTarget(
         cursorChar < 0 ? 0 : cursorChar,
         previous);
+}
+
+TSStructuralNavigationTarget
+EditorSyntaxState::structuralNavigationTargetAt(
+    int cursorChar,
+    TSStructuralNavigationDirection direction) const
+{
+    return document->structuralNavigationTarget(
+        cursorChar < 0 ? 0 : cursorChar,
+        direction);
 }
 
 TSInstantiationTarget EditorSyntaxState::instantiationAt(

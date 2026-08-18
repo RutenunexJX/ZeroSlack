@@ -2,6 +2,7 @@
 #define TSDOCUMENT_H
 
 #include <QString>
+#include <QStringList>
 #include <QList>
 #include <QVector>
 
@@ -281,6 +282,25 @@ struct TSIdentifierTarget {
     }
 };
 
+struct TSExpressionAtomTarget {
+    int startChar = -1;
+    int endChar = -1;
+    QString text;
+
+    bool ok() const
+    {
+        return startChar >= 0
+            && endChar > startChar
+            && !text.isEmpty();
+    }
+};
+
+struct TSCompletionContextTarget {
+    bool memberAccess = false;
+    QStringList memberPath;
+    QString expectedTypeIdentifier;
+};
+
 struct TSIdentifierOccurrenceSet {
     TSIdentifierTarget selected;
     int scopeStartChar = -1;
@@ -555,6 +575,71 @@ struct TSKeywordPairTarget {
     }
 };
 
+enum class TSStructuralFieldRole {
+    Unknown,
+    ConditionOperand,
+    DeclarationDirection,
+    DeclarationType,
+    PackedDimension,
+    Name,
+    UnpackedDimension,
+    Initializer,
+    CallArgument,
+    TernaryCondition,
+    TernaryTrue,
+    TernaryFalse,
+    ModuleType,
+    ParameterFormal,
+    ParameterActual,
+    InstanceName,
+    PortFormal,
+    PortActual
+};
+
+enum class TSStructuralNavigationDirection {
+    PreviousField,
+    NextField,
+    PreviousItem,
+    NextItem
+};
+
+struct TSStructuralNavigationTarget {
+    int startChar = -1;
+    int endChar = -1;
+    int itemStartChar = -1;
+    int itemEndChar = -1;
+    int listStartChar = -1;
+    int listEndChar = -1;
+    TSStructuralFieldRole role = TSStructuralFieldRole::Unknown;
+
+    bool ok() const
+    {
+        return startChar >= 0
+            && endChar > startChar
+            && role != TSStructuralFieldRole::Unknown;
+    }
+};
+
+struct TSExpressionSuffixTarget {
+    int baseStartChar = -1;
+    int baseEndChar = -1;
+    int suffixStartChar = -1;
+    int suffixEndChar = -1;
+
+    bool ok() const
+    {
+        return baseStartChar >= 0
+            && baseEndChar > baseStartChar
+            && suffixStartChar >= baseEndChar
+            && suffixEndChar >= suffixStartChar;
+    }
+
+    bool hasSuffix() const
+    {
+        return ok() && suffixEndChar > suffixStartChar;
+    }
+};
+
 // Persistent, per-document Tree-sitter model: keeps a live parse tree plus the document text and
 // supports incremental re-parse on edits. Foundation of the real-time syntactic layer
 // (highlighting, live outline / scope) in the Slang + Tree-sitter architecture.
@@ -620,6 +705,8 @@ public:
     // Exact SystemVerilog identifier under the cursor. Comment and string
     // nodes are never returned.
     TSIdentifierTarget identifierAt(int charOffset) const;
+    TSExpressionAtomTarget expressionAtomAt(int charOffset) const;
+    TSCompletionContextTarget completionContextAt(int charOffset) const;
     TSIdentifierOccurrenceSet identifierOccurrencesAt(
         int charOffset) const;
     TSAssignmentNavigationTarget assignmentNavigationTarget(
@@ -629,6 +716,12 @@ public:
     conditionalBranchNavigationTarget(
         int charOffset,
         bool previous) const;
+    TSStructuralNavigationTarget structuralNavigationTarget(
+        int charOffset,
+        TSStructuralNavigationDirection direction) const;
+    TSExpressionSuffixTarget expressionSuffixTarget(
+        int startChar,
+        int endChar) const;
 
     // Complete module instantiation at the cursor and its editable parameter /
     // port actual expression spans. Incomplete or ambiguous instantiations are

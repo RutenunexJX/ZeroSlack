@@ -451,25 +451,6 @@ void EditorCoordinator::attachEditor(MyCodeEditor* editor)
                 handleSourceSymbolActionRequested(
                     action, context);
             });
-    connect(editor, &MyCodeEditor::safeRenameRequested,
-            this, [this](const QString&,
-                         const EditorSemanticContext&,
-                         bool* handled) {
-                if (handled)
-                    *handled = true;
-                if (registeredActionRequestHandler) {
-                    registeredActionRequestHandler(
-                        QString::fromLatin1(
-                            ActionIds::RtlRename),
-                        {});
-                } else if (statusMessageHandler) {
-                    statusMessageHandler(
-                        QStringLiteral(
-                            "RTL rename is unavailable because no "
-                            "Action Registry host is connected."),
-                        5000);
-                }
-            });
     connect(editor,
             &MyCodeEditor::registeredActionRequested,
             this,

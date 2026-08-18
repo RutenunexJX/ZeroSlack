@@ -1617,13 +1617,11 @@ void runContextActionRegistryExecutionRegression()
         });
     QObject::connect(
         &overriddenShortcutEditor,
-        &MyCodeEditor::safeRenameRequested,
+        &MyCodeEditor::editorStatusMessageRequested,
         &overriddenShortcutEditor,
-        [&renameShortcutRequested](
-            const QString&,
-            const EditorSemanticContext&,
-            bool*) {
-            renameShortcutRequested = true;
+        [&renameShortcutRequested](const QString& message) {
+            if (!message.isEmpty())
+                renameShortcutRequested = true;
         });
     QVariantMap semanticShortcutOverrides;
     semanticShortcutOverrides.insert(
@@ -1644,9 +1642,11 @@ void runContextActionRegistryExecutionRegression()
         &overriddenShortcutEditor,
         Qt::Key_R,
         Qt::ControlModifier);
+    const bool oldRenameShortcutInactive =
+        !renameShortcutRequested;
     const bool oldSemanticShortcutsInactive =
         !definitionShortcutRequested
-        && !renameShortcutRequested;
+        && oldRenameShortcutInactive;
     QTest::keyClick(
         &overriddenShortcutEditor,
         Qt::Key_F12,

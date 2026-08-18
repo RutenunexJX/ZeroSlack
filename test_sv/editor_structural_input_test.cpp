@@ -1,8 +1,11 @@
 #include "annotationlayer.h"
 #include "columnnumbertool.h"
 #include "editorcolumnmodecontroller.h"
+#include "editorlexicalboundary.h"
 #include "editormodecontroller.h"
+#include "editormulticursorcontroller.h"
 #include "mycodeeditor.h"
+#include "tsdocument.h"
 
 #include <QApplication>
 #include <QCoreApplication>
@@ -140,6 +143,185 @@ int main(int argc, char* argv[])
 {
     QApplication app(argc, argv);
     QApplication::setQuitOnLastWindowClosed(false);
+
+    {
+        const QString text = QStringLiteral("aaa_bbb_ccc AXIReadData data32Width");
+        const EditorLexicalBoundary::Range bbb =
+            EditorLexicalBoundary::unitAt(text, 5);
+        const EditorLexicalBoundary::Range acronym =
+            EditorLexicalBoundary::unitAt(text, 13);
+        const EditorLexicalBoundary::Range read =
+            EditorLexicalBoundary::unitAt(text, 16);
+        expect("shared lexical boundaries split underscore fragments",
+               bbb.isValid()
+                   && text.mid(bbb.start, bbb.length())
+                          == QStringLiteral("bbb"));
+        expect("shared lexical boundaries split acronym and camel fragments",
+               acronym.isValid()
+                   && text.mid(acronym.start, acronym.length())
+                          == QStringLiteral("AXI")
+                   && read.isValid()
+                   && text.mid(read.start, read.length())
+                          == QStringLiteral("Read"));
+        expect("Ctrl-style movement skips underscore and horizontal whitespace",
+               EditorLexicalBoundary::moveRight(text, 0) == 4
+                   && EditorLexicalBoundary::moveLeft(text, 11) == 8
+                   && EditorLexicalBoundary::moveRight(text, 8) == 12);
+        const EditorLexicalBoundary::Range backward =
+            EditorLexicalBoundary::deleteBackward(text, 11);
+        expect("Ctrl-style deletion removes one adjacent fragment",
+               backward.isValid()
+                   && text.mid(backward.start, backward.length())
+                          == QStringLiteral("ccc"));
+        const EditorLexicalBoundary::Range whitespace =
+            EditorLexicalBoundary::horizontalWhitespaceAt(
+                QStringLiteral("a  \t b"), 2);
+        expect("horizontal whitespace is one line-local lexical unit",
+               whitespace.start == 1 && whitespace.end == 5);
+
+        const QString numericText = QStringLiteral(
+            "16'hff_00 1.25e-3 10ns 'x data32Width");
+        const auto literalText = [&numericText](int position) {
+            const EditorLexicalBoundary::Range range =
+                EditorLexicalBoundary::unitAt(numericText, position);
+            return range.isValid()
+                ? numericText.mid(range.start, range.length())
+                : QString();
+        };
+        expect("based numeric literal is one lexical unit",
+               literalText(4) == QStringLiteral("16'hff_00"));
+        expect("real exponent literal is one lexical unit",
+               literalText(numericText.indexOf(QStringLiteral("25")))
+                   == QStringLiteral("1.25e-3"));
+        expect("time literal is one lexical unit",
+               literalText(numericText.indexOf(QStringLiteral("10ns")) + 2)
+                   == QStringLiteral("10ns"));
+        expect("unbased four-state literal is one lexical unit",
+               literalText(numericText.indexOf(QStringLiteral("'x")) + 1)
+                   == QStringLiteral("'x"));
+    }
+
+    {
+        MyCodeEditor editor;
+        const QString source = QStringLiteral(
+            "module top #(\n"
+            "    parameter int WIDTH = 8,\n"
+            "    parameter logic MODE = 1\n"
+            ")(\n"
+            "    input logic [WIDTH - 1:0] data_i,\n"
+            "    output logic valid_o\n"
+            ");\n"
+            "child #(\n"
+            "    .P_WIDTH(WIDTH),\n"
+            "    .P_MODE(MODE)\n"
+            ") u_child (\n"
+            "    .data_i(data_i),\n"
+            "    .valid_o(valid_o)\n"
+            ");\n"
+            "always_comb begin\n"
+            "    result = ready ? data_i : valid_o;\n"
+            "    if (ready && valid_o) result = data_i;\n"
+            "end\n"
+            "endmodule\n");
+        editor.setPlainText(source);
+        editor.show();
+        editor.setFocus();
+        QCoreApplication::processEvents();
+
+        const TSDocument* syntax = editor.syntaxDocument();
+        const int moduleType = source.indexOf(QStringLiteral("child #"));
+        const TSStructuralNavigationTarget parameterFormal =
+            syntax->structuralNavigationTarget(
+                moduleType,
+                TSStructuralNavigationDirection::NextField);
+        expect("Tree-sitter structural navigation exposes parameter formal fields",
+               parameterFormal.ok()
+                   && parameterFormal.role
+                          == TSStructuralFieldRole::ParameterFormal
+                   && source.mid(parameterFormal.startChar,
+                                 parameterFormal.endChar
+                                     - parameterFormal.startChar)
+                          == QStringLiteral("P_WIDTH"));
+
+        const TSStructuralNavigationTarget parameterActual =
+            syntax->structuralNavigationTarget(
+                parameterFormal.startChar,
+                TSStructuralNavigationDirection::NextField);
+        expect("Tree-sitter structural navigation separates formal and actual",
+               parameterActual.ok()
+                   && parameterActual.role
+                          == TSStructuralFieldRole::ParameterActual
+                   && source.mid(parameterActual.startChar,
+                                 parameterActual.endChar
+                                     - parameterActual.startChar)
+                          == QStringLiteral("WIDTH"));
+
+        const TSStructuralNavigationTarget nextParameterFormal =
+            syntax->structuralNavigationTarget(
+                parameterFormal.startChar,
+                TSStructuralNavigationDirection::NextItem);
+        expect("vertical structural navigation matches parameter field roles",
+               nextParameterFormal.ok()
+                   && nextParameterFormal.role
+                          == TSStructuralFieldRole::ParameterFormal
+                   && source.mid(nextParameterFormal.startChar,
+                                 nextParameterFormal.endChar
+                                     - nextParameterFormal.startChar)
+                          == QStringLiteral("P_MODE"));
+
+        const int firstPortActual = source.indexOf(
+            QStringLiteral("data_i),"), moduleType);
+        const TSStructuralNavigationTarget nextPortActual =
+            syntax->structuralNavigationTarget(
+                firstPortActual,
+                TSStructuralNavigationDirection::NextItem);
+        expect("vertical structural navigation matches port actual roles",
+               nextPortActual.ok()
+                   && nextPortActual.role
+                          == TSStructuralFieldRole::PortActual
+                   && source.mid(nextPortActual.startChar,
+                                 nextPortActual.endChar
+                                     - nextPortActual.startChar)
+                          == QStringLiteral("valid_o"));
+
+        setCursor(editor, moduleType);
+        QTest::keyClick(&editor,
+                        Qt::Key_Right,
+                        Qt::ControlModifier | Qt::AltModifier);
+        expect("Ctrl+Alt+Right moves to the next Tree-sitter field",
+               editor.textCursor().position()
+                   == parameterFormal.startChar);
+        QTest::keyClick(&editor,
+                        Qt::Key_Down,
+                        Qt::ControlModifier | Qt::AltModifier);
+        expect("Ctrl+Alt+Down moves to the same role in the next item",
+               editor.textCursor().position()
+                   == nextParameterFormal.startChar);
+        QTest::keyClick(&editor,
+                        Qt::Key_Right,
+                        Qt::ControlModifier
+                            | Qt::AltModifier
+                            | Qt::ShiftModifier);
+        expect("Shift extends selection through structural movement",
+               editor.textCursor().hasSelection()
+                   && editor.textCursor().selectedText().contains(
+                       QStringLiteral("MODE")));
+
+        const int ternaryCondition = source.indexOf(
+            QStringLiteral("ready ?"));
+        const TSStructuralNavigationTarget ternaryTrue =
+            syntax->structuralNavigationTarget(
+                ternaryCondition,
+                TSStructuralNavigationDirection::NextField);
+        expect("ternary branches are independent structural fields",
+               ternaryTrue.ok()
+                   && ternaryTrue.role
+                          == TSStructuralFieldRole::TernaryTrue
+                   && source.mid(ternaryTrue.startChar,
+                                 ternaryTrue.endChar
+                                     - ternaryTrue.startChar)
+                          == QStringLiteral("data_i"));
+    }
 
     {
         const ColumnNumberConfig octal =
@@ -369,6 +551,22 @@ int main(int argc, char* argv[])
         expect("opening parenthesis inside an identifier wraps the complete token",
                editor.toPlainText() == QStringLiteral("(signal)"));
 
+        const QString memberExpression =
+            QStringLiteral("module m;\n"
+                           "assign out = ~object.member[index];\n"
+                           "endmodule\n");
+        editor.setPlainText(memberExpression);
+        setCursor(editor,
+                  memberExpression.indexOf(QStringLiteral("member")) + 3);
+        sendTextKey(editor,
+                    Qt::Key_ParenLeft,
+                    QStringLiteral("("));
+        expect("opening parenthesis wraps the smallest complete expression atom",
+               editor.toPlainText().contains(
+                   QStringLiteral("~(object.member[index])"))
+                   && !editor.toPlainText().contains(
+                       QStringLiteral("(~object.member[index])")));
+
         editor.setPlainText(QStringLiteral("// "));
         setCursor(editor, 3);
         sendTextKey(editor,
@@ -489,6 +687,79 @@ int main(int argc, char* argv[])
         editor.undo();
         expect("multi-cursor Shift+Tab is one undo transaction",
                editor.toPlainText() == source);
+    }
+
+    {
+        MyCodeEditor editor;
+        const QString source =
+            QStringLiteral("module m;\n"
+                           "logic sig;   \n"
+                           "assign out = sig;  \n"
+                           "endmodule\n");
+        editor.setPlainText(source);
+        const int firstSignal =
+            source.indexOf(QStringLiteral("sig"));
+        setCursor(editor, firstSignal + 1);
+        QString occurrenceFailure;
+        expect("multi-cursor line-boundary fixture selects the first occurrence",
+               editor.addNextSymbolOccurrence(&occurrenceFailure)
+                   && occurrenceFailure.isEmpty());
+        expect("multi-cursor line-boundary fixture adds the second occurrence",
+               editor.addNextSymbolOccurrence(&occurrenceFailure)
+                   && occurrenceFailure.isEmpty()
+                   && editor.editorModeActiveForTest(
+                       EditorModeId::MultiCursor));
+        QTest::keyClick(&editor,
+                        Qt::Key_Right,
+                        Qt::AltModifier);
+        QString deleteFailure;
+        expect("Alt+Right selects to each caret's content boundary independently",
+               editor.deleteSelectedContent(&deleteFailure)
+                   && deleteFailure.isEmpty()
+                   && editor.toPlainText()
+                          == QStringLiteral("module m;\n"
+                                            "logic sig   \n"
+                                            "assign out = sig  \n"
+                                            "endmodule\n"));
+        MyCodeEditor physicalEdgeEditor;
+        physicalEdgeEditor.setPlainText(source);
+        setCursor(physicalEdgeEditor, firstSignal + 1);
+        occurrenceFailure.clear();
+        physicalEdgeEditor.addNextSymbolOccurrence(&occurrenceFailure);
+        physicalEdgeEditor.addNextSymbolOccurrence(&occurrenceFailure);
+        QTest::keyClick(&physicalEdgeEditor,
+                        Qt::Key_Right,
+                        Qt::AltModifier);
+        const EditorMultiCursorSnapshot contentBoundarySnapshot =
+            physicalEdgeEditor.multiCursorSnapshotForTest();
+        QTest::keyClick(&physicalEdgeEditor,
+                        Qt::Key_Right,
+                        Qt::AltModifier);
+        const EditorMultiCursorSnapshot physicalBoundarySnapshot =
+            physicalEdgeEditor.multiCursorSnapshotForTest();
+        deleteFailure.clear();
+        const bool physicalDeleted =
+            physicalEdgeEditor.deleteSelectedContent(&deleteFailure);
+        expect("multi-cursor Alt+Right retains both independent carets",
+               contentBoundarySnapshot.active
+                   && contentBoundarySnapshot.carets.size() == 2
+                   && physicalBoundarySnapshot.active
+                   && physicalBoundarySnapshot.carets.size() == 2);
+        expect("repeated multi-cursor Alt+Right advances beyond content boundary",
+               contentBoundarySnapshot.carets.size() == 2
+                   && physicalBoundarySnapshot.carets.size() == 2
+                   && physicalBoundarySnapshot.carets.at(0).position
+                          > contentBoundarySnapshot.carets.at(0).position
+                   && physicalBoundarySnapshot.carets.at(1).position
+                          > contentBoundarySnapshot.carets.at(1).position);
+        expect("repeated multi-cursor Alt+Right includes each physical line edge",
+               physicalDeleted
+                   && deleteFailure.isEmpty()
+                   && physicalEdgeEditor.toPlainText()
+                          == QStringLiteral("module m;\n"
+                                            "logic sig\n"
+                                            "assign out = sig\n"
+                                            "endmodule\n"));
     }
 
     {

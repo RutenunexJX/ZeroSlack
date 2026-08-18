@@ -2,14 +2,96 @@
 
 #include "codetemplatecontextanalyzer.h"
 #include "codetemplateservice.h"
+#include "completioncommandkindadapter.h"
 #include "completionservice.h"
 #include "packagetoolservice.h"
 #include "usertemplateservice.h"
 
 #include <QFileInfo>
+#include <QSet>
 #include <Qt>
 
 namespace {
+
+struct ParsedSymbolQuery {
+    bool explicitSelector = false;
+    QString filter;
+    QList<CompletionCommandKind> kinds;
+};
+
+ParsedSymbolQuery parseSymbolQuery(const QString& text)
+{
+    struct Selector {
+        const char* token;
+        QList<CompletionCommandKind> kinds;
+    };
+    const QList<Selector> selectors{
+        {"lp", {CompletionCommandKind::Localparam}},
+        {"td", {CompletionCommandKind::Typedef,
+                 CompletionCommandKind::EnumType,
+                 CompletionCommandKind::PackedStructType,
+                 CompletionCommandKind::UnpackedStructType}},
+        {"et", {CompletionCommandKind::EnumType}},
+        {"ee", {CompletionCommandKind::EnumValue}},
+        {"ev", {CompletionCommandKind::EnumVariable}},
+        {"st", {CompletionCommandKind::PackedStructType,
+                 CompletionCommandKind::UnpackedStructType}},
+        {"sv", {CompletionCommandKind::PackedStructVariable,
+                 CompletionCommandKind::UnpackedStructVariable}},
+        {"sm", {CompletionCommandKind::StructMember}},
+        {"w", {CompletionCommandKind::Wire}},
+        {"r", {CompletionCommandKind::Reg}},
+        {"l", {CompletionCommandKind::Logic}},
+        {"p", {CompletionCommandKind::Parameter}},
+        {"t", {CompletionCommandKind::Task}},
+        {"f", {CompletionCommandKind::Function}},
+        {"e", {CompletionCommandKind::EnumValue,
+                CompletionCommandKind::EnumType,
+                CompletionCommandKind::EnumVariable}},
+        {"s", {CompletionCommandKind::StructMember,
+                CompletionCommandKind::PackedStructType,
+                CompletionCommandKind::UnpackedStructType,
+                CompletionCommandKind::PackedStructVariable,
+                CompletionCommandKind::UnpackedStructVariable}},
+    };
+
+    for (const Selector& selector : selectors) {
+        const QString token = QString::fromLatin1(selector.token);
+        if (text.size() <= token.size()
+            || text.left(token.size()).compare(
+                   token, Qt::CaseInsensitive) != 0
+            || !text.at(token.size()).isSpace()) {
+            continue;
+        }
+        ParsedSymbolQuery parsed;
+        parsed.explicitSelector = true;
+        parsed.kinds = selector.kinds;
+        parsed.filter = text.mid(token.size()).trimmed();
+        return parsed;
+    }
+
+    ParsedSymbolQuery parsed;
+    parsed.filter = text.trimmed();
+    parsed.kinds = {CompletionCommandKind::VisibleSymbol};
+    return parsed;
+}
+
+CommandCompletionQuery completionQuery(
+    const GlobalControlQueryContext& context,
+    CompletionCommandKind kind,
+    const QString& prefix)
+{
+    CommandCompletionQuery query;
+    query.prefix = prefix;
+    query.fileName = context.fileName;
+    query.moduleName = context.moduleName;
+    query.packageName = context.packageName;
+    query.documentText = context.documentText;
+    query.cursorLine = context.cursorLine;
+    query.cursorPosition = context.cursorPosition;
+    query.commandKind = kind;
+    return query;
+}
 
 QList<GlobalControlItem> symbolItems(
     const QString& text,
@@ -18,38 +100,109 @@ QList<GlobalControlItem> symbolItems(
     if (!context.editorAvailable)
         return {};
 
-    CommandCompletionQuery query;
-    query.prefix = text.trimmed();
-    query.fileName = context.fileName;
-    query.moduleName = context.moduleName;
-    query.packageName = context.packageName;
-    query.documentText = context.documentText;
-    query.cursorLine = context.cursorLine;
-    query.cursorPosition = context.cursorPosition;
-    query.commandKind = CompletionCommandKind::VisibleSymbol;
-
+    const ParsedSymbolQuery parsed = parseSymbolQuery(text);
+    CompletionService* service = CompletionService::getInstance();
     QList<GlobalControlItem> result;
-    for (const SemanticSymbolRecord& record :
-         CompletionService::getInstance()
-             ->findCommandCompletionSymbolRecords(query)) {
-        const CommandSymbolCompletionItem completion =
-            CompletionService::getInstance()->commandSymbolCompletionItem(
-                record,
-                CompletionCommandKind::VisibleSymbol,
-                query.prefix);
-        GlobalControlItem item;
-        item.kind = GlobalControlItemKind::Symbol;
-        item.id = completion.uniqueKey;
-        item.title = completion.text;
-        item.subtitle = completion.description;
-        item.insertionText = completion.defaultValue.isEmpty()
-            ? completion.text : completion.defaultValue;
-        item.selectionStart = completion.selectionStart;
-        item.selectionLength = completion.selectionLength;
-        item.templateSlots = completion.templateSlots;
-        result.append(item);
+    QSet<QString> seen;
+    auto append = [&](const QList<SemanticSymbolRecord>& records,
+                      CompletionCommandKind kind) {
+        for (const SemanticSymbolRecord& record : records) {
+            const QString stable = record.stableKey.isValid()
+                ? symbolStableKeyText(record.stableKey)
+                : QStringLiteral("%1|%2|%3")
+                      .arg(record.owner.name,
+                           QString::number(
+                               static_cast<int>(record.declarationKind)),
+                           record.name);
+            if (seen.contains(stable))
+                continue;
+            seen.insert(stable);
+            const CommandSymbolCompletionItem completion =
+                service->commandSymbolCompletionItem(
+                    record, kind, parsed.filter);
+            GlobalControlItem item;
+            item.kind = GlobalControlItemKind::Symbol;
+            item.id = stable;
+            item.title = completion.text;
+            item.subtitle = completion.description;
+            item.insertionText = completion.defaultValue.isEmpty()
+                ? completion.text : completion.defaultValue;
+            item.selectionStart = completion.selectionStart;
+            item.selectionLength = completion.selectionLength;
+            item.templateSlots = completion.templateSlots;
+            item.replacementStart = context.replacementStart;
+            item.replacementLength = context.replacementLength;
+            item.sourceDocumentRevision = context.documentRevision;
+            result.append(item);
+            if (result.size() >= 120)
+                return;
+        }
+    };
+
+    const auto expectedEnumValues = [&]() {
+        return service->findExpectedEnumValueRecords(
+            context.expectedTypeIdentifier,
+            context.moduleName,
+            context.packageName,
+            parsed.filter);
+    };
+    const auto structMembers = [&]() {
+        return service->findStructMemberCompletionRecords(
+            context.memberPath,
+            context.moduleName,
+            parsed.filter);
+    };
+    const QList<SemanticSymbolRecord> visibleRecords =
+        parsed.explicitSelector
+        ? service->findCommandCompletionSymbolRecords(
+              completionQuery(context,
+                              CompletionCommandKind::VisibleSymbol,
+                              parsed.filter))
+        : QList<SemanticSymbolRecord>();
+
+    if (!parsed.explicitSelector && context.memberAccess) {
+        const QList<SemanticSymbolRecord> members = structMembers();
+        if (!members.isEmpty()) {
+            append(members, CompletionCommandKind::StructMember);
+            return result;
+        }
+    }
+    if (!parsed.explicitSelector
+        && !context.expectedTypeIdentifier.isEmpty()) {
+        append(expectedEnumValues(), CompletionCommandKind::EnumValue);
+    }
+
+    for (const CompletionCommandKind kind : parsed.kinds) {
         if (result.size() >= 120)
             break;
+        if (kind == CompletionCommandKind::StructMember) {
+            if (context.memberAccess)
+                append(structMembers(), kind);
+            else
+                append(service->findVisibleStructMemberRecords(
+                           completionQuery(context, kind, parsed.filter)),
+                       kind);
+            continue;
+        }
+        if (kind == CompletionCommandKind::EnumValue) {
+            append(expectedEnumValues(), kind);
+            append(service->findVisibleEnumValueRecords(
+                       completionQuery(context, kind, parsed.filter)),
+                   kind);
+            continue;
+        }
+        if (parsed.explicitSelector) {
+            QList<SemanticSymbolRecord> matchingRecords;
+            for (const SemanticSymbolRecord& record : visibleRecords) {
+                if (completionCommandKindMatchesCommandRecord(record, kind))
+                    matchingRecords.append(record);
+            }
+            append(matchingRecords, kind);
+            continue;
+        }
+        append(service->findCommandCompletionSymbolRecords(
+                   completionQuery(context, kind, parsed.filter)),
+               kind);
     }
     return result;
 }

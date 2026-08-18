@@ -51,6 +51,7 @@ class EditorSourceNavigationUi;
 struct EditorAppearanceOptions;
 struct EditorOccurrenceIndexStats;
 struct EditorColumnModeSnapshot;
+struct EditorMultiCursorSnapshot;
 struct EditorSemanticContext;
 struct EditorSourceNavigationTarget;
 struct SourceLineNavigationTarget;
@@ -86,6 +87,16 @@ struct EditorModuleScopeTarget {
     {
         return available && startPosition >= 0 && endPosition > startPosition;
     }
+};
+
+struct EditorSymbolPaletteContext {
+    QString initialQuery;
+    int replacementStart = -1;
+    int replacementLength = 0;
+    int documentRevision = -1;
+    bool memberAccess = false;
+    QStringList memberPath;
+    QString expectedTypeIdentifier;
 };
 
 struct EditorStructuralContextMenuState {
@@ -140,6 +151,7 @@ public:
               QTextDocument::FindFlags options = {});
     void showFindDialog();
     bool duplicateLines(QString* failureReason = nullptr);
+    bool deleteSelectedContent(QString* failureReason = nullptr);
     bool deleteLines(QString* failureReason = nullptr);
     bool joinLines(QString* failureReason = nullptr);
     bool moveLinesUp(QString* failureReason = nullptr);
@@ -228,6 +240,7 @@ public:
     bool templateSlotModeBlinkOnForTest() const;
     bool columnSelectionActive() const;
     EditorColumnModeSnapshot columnModeSnapshotForTest() const;
+    EditorMultiCursorSnapshot multiCursorSnapshotForTest() const;
     bool virtualCursorActiveForTest() const;
     int virtualCursorLineForTest() const;
     int virtualCursorColumnForTest() const;
@@ -275,6 +288,8 @@ public:
     bool beginSignalDefinitionEditorAt(
         int cursorPosition,
         QString* failureReason = nullptr);
+    bool beginSemanticRename(
+        QString* failureReason = nullptr);
     bool editInstanceSlotsAtForTest(int cursorPosition,
                                     QString* message = nullptr);
     QStringList structuralContextMenuActionsForTest(
@@ -305,6 +320,7 @@ public:
     void highlightSearchMatches(const QString& text, bool caseSensitive);
     void clearSearchMatches();
     void flashLine(int lineNumber);
+    void flashRange(int startChar, int endChar);
     void applyAppearanceSettings(const EditorAppearanceOptions& options);
     void startFoldRegionMarkMode();
     void cancelFoldRegionMarkMode();
@@ -337,6 +353,7 @@ public:
     EditorSemanticContext editorSemanticContextForPosition(
         int cursorPosition = -1,
         bool includeDocumentText = false) const;
+    EditorSymbolPaletteContext symbolPaletteContext() const;
     bool syntaxCommentAt(int cursorPosition) const;
     GhostNumericLiteralReport numericLiteralAt(
         int cursorPosition) const;
@@ -382,9 +399,6 @@ signals:
                                    const EditorSemanticContext& context);
     void sourceSymbolActionRequested(SourceSymbolAction action,
                                      const EditorSemanticContext& context);
-    void safeRenameRequested(const QString& symbolName,
-                             const EditorSemanticContext& context,
-                             bool* handled);
     void registeredActionRequested(
         const QString& actionId,
         const QVariantMap& parameters,

@@ -1466,6 +1466,49 @@ void EditorSelection::flashLine(MyCodeEditor* editor, int lineNumber)
     });
 }
 
+void EditorSelection::flashRange(MyCodeEditor* editor,
+                                 int startChar,
+                                 int endChar)
+{
+    if (!editor || !editor->document())
+        return;
+    const int documentEnd = qMax(
+        0, editor->document()->characterCount() - 1);
+    const int start = qBound(0, startChar, documentEnd);
+    const int end = qBound(start, endChar, documentEnd);
+    if (end <= start)
+        return;
+
+    QList<QTextEdit::ExtraSelection> selections =
+        editorSelectionsWithout(
+            editor,
+            kFlashSelectionProperty,
+            kFlashSelectionMarker);
+    QTextEdit::ExtraSelection flash;
+    flash.cursor = QTextCursor(editor->document());
+    flash.cursor.setPosition(start);
+    flash.cursor.setPosition(end, QTextCursor::KeepAnchor);
+    flash.format.setBackground(
+        themeColorWithAlpha(
+            InsightVisualStyle::theme().accent,
+            72));
+    flash.format.setProperty(
+        kFlashSelectionProperty,
+        kFlashSelectionMarker);
+    selections.append(flash);
+    editor->setExtraSelections(selections);
+
+    const QPointer<QPlainTextEdit> guardedEditor(editor);
+    QTimer::singleShot(450, editor, [guardedEditor]() {
+        if (guardedEditor) {
+            EditorSelection::removeByProperty(
+                guardedEditor,
+                kFlashSelectionProperty,
+                kFlashSelectionMarker);
+        }
+    });
+}
+
 void EditorHighlightRefresh::attachToEditor(
     MyCodeEditor* editor,
     const std::function<void()>& refresh)

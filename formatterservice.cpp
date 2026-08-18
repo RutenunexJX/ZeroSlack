@@ -1,8 +1,10 @@
 #include "formatterservice.h"
 #include "structuredwhitespaceformatter.h"
+#include "tsdocument.h"
 
 #include <QStringList>
 #include <algorithm>
+#include <utility>
 
 std::unique_ptr<FormatterService> FormatterService::instance = nullptr;
 
@@ -38,12 +40,18 @@ struct AssignmentAlignmentLine {
     int indentWidth = 0;
     QString indent;
     QString left;
+    QString leftBase;
+    QString leftSuffix;
     QString op;
     QString right;
     bool hasTernary = false;
     QString ternaryCondition;
     QString ternaryTrueExpression;
     QString ternaryFalseExpression;
+    QString ternaryTrueBase;
+    QString ternaryTrueSuffix;
+    QString ternaryFalseBase;
+    QString ternaryFalseSuffix;
     QString trailingComment;
 };
 
@@ -779,7 +787,9 @@ QString normalizeBracketEdgeWhitespace(const QString& text)
 bool splitTopLevelTernary(const QString& text,
                           QString* condition,
                           QString* trueExpression,
-                          QString* falseExpression)
+                          QString* falseExpression,
+                          int* questionPosition = nullptr,
+                          int* colonPosition = nullptr)
 {
     int bracketDepth = 0;
     int parenDepth = 0;
@@ -849,6 +859,10 @@ bool splitTopLevelTernary(const QString& text,
                 *trueExpression = middle;
             if (falseExpression)
                 *falseExpression = right;
+            if (questionPosition)
+                *questionPosition = questionIndex;
+            if (colonPosition)
+                *colonPosition = i;
             return true;
         }
     }
@@ -1474,7 +1488,50 @@ bool isForbiddenAssignmentStarter(const QString& token)
         || token == QStringLiteral("task");
 }
 
-AssignmentAlignmentLine parseAssignmentAlignmentLine(const QString& line)
+QPair<int, int> trimmedBounds(const QString& text, int start, int end)
+{
+    int boundedStart = qBound(0, start, text.size());
+    int boundedEnd = qBound(boundedStart, end, text.size());
+    while (boundedStart < boundedEnd && text.at(boundedStart).isSpace())
+        ++boundedStart;
+    while (boundedEnd > boundedStart
+           && text.at(boundedEnd - 1).isSpace()) {
+        --boundedEnd;
+    }
+    return {boundedStart, boundedEnd};
+}
+
+void splitSyntaxSuffix(const TSDocument* syntax,
+                       int absoluteStart,
+                       int absoluteEnd,
+                       const QString& fallback,
+                       QString* base,
+                       QString* suffix)
+{
+    if (base)
+        *base = fallback;
+    if (suffix)
+        suffix->clear();
+    if (!syntax || !base || !suffix)
+        return;
+    const TSExpressionSuffixTarget target =
+        syntax->expressionSuffixTarget(absoluteStart, absoluteEnd);
+    if (!target.hasSuffix())
+        return;
+    *base = normalizeBracketEdgeWhitespace(
+        syntax->text().mid(
+            target.baseStartChar,
+            target.baseEndChar - target.baseStartChar));
+    *suffix = normalizeBracketEdgeWhitespace(
+        syntax->text().mid(
+            target.suffixStartChar,
+            target.suffixEndChar - target.suffixStartChar));
+}
+
+AssignmentAlignmentLine parseAssignmentAlignmentLine(
+    const QString& line,
+    int absoluteLineStart,
+    const TSDocument* syntax)
 {
     AssignmentAlignmentLine parsed;
     if (!lineHasCode(line) || startsWithPreprocessor(line))
@@ -1485,7 +1542,11 @@ AssignmentAlignmentLine parseAssignmentAlignmentLine(const QString& line)
 
     const int indentWidth = leadingWhitespaceWidth(parts.code);
     const QString indent = parts.code.left(indentWidth);
-    const QString code = parts.code.mid(indentWidth).trimmed();
+    const QPair<int, int> codeBounds =
+        trimmedBounds(parts.code, indentWidth, parts.code.size());
+    const QString code = parts.code.mid(
+        codeBounds.first,
+        codeBounds.second - codeBounds.first);
     if (!code.endsWith(QLatin1Char(';')))
         return parsed;
 
@@ -1501,10 +1562,20 @@ AssignmentAlignmentLine parseAssignmentAlignmentLine(const QString& line)
     if (opIndex <= 0 || op.isEmpty())
         return parsed;
 
+    const QPair<int, int> leftBounds = trimmedBounds(
+        codeWithoutSemicolon, 0, opIndex);
+    const QPair<int, int> rightBounds = trimmedBounds(
+        codeWithoutSemicolon,
+        opIndex + op.size(),
+        codeWithoutSemicolon.size());
     const QString left = normalizeBracketEdgeWhitespace(
-        codeWithoutSemicolon.left(opIndex).trimmed());
-    const QString right = normalizeBracketEdgeWhitespace(
-        codeWithoutSemicolon.mid(opIndex + op.size()).trimmed());
+        codeWithoutSemicolon.mid(
+            leftBounds.first,
+            leftBounds.second - leftBounds.first));
+    const QString rightRaw = codeWithoutSemicolon.mid(
+        rightBounds.first,
+        rightBounds.second - rightBounds.first);
+    const QString right = normalizeBracketEdgeWhitespace(rightRaw);
     if (left.isEmpty()
         || right.isEmpty()
         || hasTopLevelChar(left, QLatin1Char(','))
@@ -1529,38 +1600,107 @@ AssignmentAlignmentLine parseAssignmentAlignmentLine(const QString& line)
     parsed.indentWidth = indentWidth;
     parsed.indent = indent;
     parsed.left = left;
+    const int expressionBase = absoluteLineStart + codeBounds.first;
+    splitSyntaxSuffix(
+        syntax,
+        expressionBase + leftBounds.first,
+        expressionBase + leftBounds.second,
+        left,
+        &parsed.leftBase,
+        &parsed.leftSuffix);
     parsed.op = op;
     parsed.right = right;
+    int questionPosition = -1;
+    int colonPosition = -1;
     parsed.hasTernary = splitTopLevelTernary(
-        right,
+        rightRaw,
         &parsed.ternaryCondition,
         &parsed.ternaryTrueExpression,
-        &parsed.ternaryFalseExpression);
+        &parsed.ternaryFalseExpression,
+        &questionPosition,
+        &colonPosition);
+    parsed.ternaryCondition = normalizeBracketEdgeWhitespace(
+        parsed.ternaryCondition);
+    parsed.ternaryTrueExpression = normalizeBracketEdgeWhitespace(
+        parsed.ternaryTrueExpression);
+    parsed.ternaryFalseExpression = normalizeBracketEdgeWhitespace(
+        parsed.ternaryFalseExpression);
+    parsed.ternaryTrueBase = parsed.ternaryTrueExpression;
+    parsed.ternaryFalseBase = parsed.ternaryFalseExpression;
+    if (parsed.hasTernary) {
+        const QPair<int, int> trueBounds = trimmedBounds(
+            rightRaw, questionPosition + 1, colonPosition);
+        const QPair<int, int> falseBounds = trimmedBounds(
+            rightRaw, colonPosition + 1, rightRaw.size());
+        const int rightAbsoluteStart =
+            expressionBase + rightBounds.first;
+        splitSyntaxSuffix(
+            syntax,
+            rightAbsoluteStart + trueBounds.first,
+            rightAbsoluteStart + trueBounds.second,
+            parsed.ternaryTrueExpression,
+            &parsed.ternaryTrueBase,
+            &parsed.ternaryTrueSuffix);
+        splitSyntaxSuffix(
+            syntax,
+            rightAbsoluteStart + falseBounds.first,
+            rightAbsoluteStart + falseBounds.second,
+            parsed.ternaryFalseExpression,
+            &parsed.ternaryFalseBase,
+            &parsed.ternaryFalseSuffix);
+    }
     parsed.trailingComment = parts.trailingComment;
     return parsed;
 }
 
 QString buildAlignedAssignmentCodeLine(const AssignmentAlignmentLine& line,
-                                       int maxLeftWidth,
+                                       int maxLeftBaseWidth,
+                                       int maxLeftSuffixWidth,
                                        int questionColumn,
+                                       int maxTrueBaseWidth,
+                                       int maxTrueSuffixWidth,
                                        int colonColumn,
+                                       int maxFalseBaseWidth,
+                                       int maxFalseSuffixWidth,
                                        int semicolonColumn)
 {
+    const auto alignedSuffixExpression = [](
+            const QString& base,
+            const QString& suffix,
+            int maxBaseWidth,
+            int maxSuffixWidth) {
+        return base
+            + repeatSpaces(maxBaseWidth - base.size())
+            + suffix
+            + repeatSpaces(maxSuffixWidth - suffix.size());
+    };
     QString codeLine = line.indent
-        + line.left
-        + repeatSpaces(maxLeftWidth - line.left.size() + 1)
+        + alignedSuffixExpression(
+            line.leftBase,
+            line.leftSuffix,
+            maxLeftBaseWidth,
+            maxLeftSuffixWidth)
+        + QLatin1Char(' ')
         + line.op
         + QLatin1Char(' ');
     if (line.hasTernary) {
         codeLine += line.ternaryCondition;
         if (questionColumn > codeLine.size())
-            codeLine += repeatSpaces(questionColumn - codeLine.size());
+        codeLine += repeatSpaces(questionColumn - codeLine.size());
         codeLine += QStringLiteral(" ? ");
-        codeLine += line.ternaryTrueExpression;
+        codeLine += alignedSuffixExpression(
+            line.ternaryTrueBase,
+            line.ternaryTrueSuffix,
+            maxTrueBaseWidth,
+            maxTrueSuffixWidth);
         if (colonColumn > codeLine.size())
             codeLine += repeatSpaces(colonColumn - codeLine.size());
         codeLine += QStringLiteral(" : ");
-        codeLine += line.ternaryFalseExpression;
+        codeLine += alignedSuffixExpression(
+            line.ternaryFalseBase,
+            line.ternaryFalseSuffix,
+            maxFalseBaseWidth,
+            maxFalseSuffixWidth);
     } else {
         codeLine += line.right;
     }
@@ -1579,11 +1719,15 @@ void flushAssignmentAlignmentBlock(QStringList* lines,
     if (!lines || block.size() < 2)
         return;
 
-    int maxLeftWidth = 0;
+    int maxLeftBaseWidth = 0;
+    int maxLeftSuffixWidth = 0;
     for (const AssignmentAlignmentLine& line : block) {
-        maxLeftWidth =
-            std::max(maxLeftWidth,
-                     static_cast<int>(line.left.size()));
+        maxLeftBaseWidth = std::max(
+            maxLeftBaseWidth,
+            static_cast<int>(line.leftBase.size()));
+        maxLeftSuffixWidth = std::max(
+            maxLeftSuffixWidth,
+            static_cast<int>(line.leftSuffix.size()));
     }
 
     int questionColumn = 0;
@@ -1591,37 +1735,49 @@ void flushAssignmentAlignmentBlock(QStringList* lines,
         if (!line.hasTernary)
             continue;
         const int prefixWidth = line.indent.size()
-            + maxLeftWidth + 1
+            + maxLeftBaseWidth + maxLeftSuffixWidth + 1
             + line.op.size() + 1;
         questionColumn = std::max(
             questionColumn,
             prefixWidth + static_cast<int>(line.ternaryCondition.size()));
     }
 
-    int colonColumn = 0;
+    int maxTrueBaseWidth = 0;
+    int maxTrueSuffixWidth = 0;
+    int maxFalseBaseWidth = 0;
+    int maxFalseSuffixWidth = 0;
     for (const AssignmentAlignmentLine& line : block) {
         if (!line.hasTernary)
             continue;
-        const int prefixWidth = line.indent.size()
-            + maxLeftWidth + 1
-            + line.op.size() + 1;
-        const int beforeQuestion =
-            prefixWidth + line.ternaryCondition.size();
-        const int alignedQuestion = std::max(questionColumn, beforeQuestion);
-        colonColumn = std::max(
-            colonColumn,
-            alignedQuestion + 3
-                + static_cast<int>(line.ternaryTrueExpression.size()));
+        maxTrueBaseWidth = std::max(
+            maxTrueBaseWidth,
+            static_cast<int>(line.ternaryTrueBase.size()));
+        maxTrueSuffixWidth = std::max(
+            maxTrueSuffixWidth,
+            static_cast<int>(line.ternaryTrueSuffix.size()));
+        maxFalseBaseWidth = std::max(
+            maxFalseBaseWidth,
+            static_cast<int>(line.ternaryFalseBase.size()));
+        maxFalseSuffixWidth = std::max(
+            maxFalseSuffixWidth,
+            static_cast<int>(line.ternaryFalseSuffix.size()));
     }
+    const int colonColumn = questionColumn + 3
+        + maxTrueBaseWidth + maxTrueSuffixWidth;
 
     int semicolonColumn = 0;
     for (const AssignmentAlignmentLine& line : block) {
         const QString preliminary =
             buildAlignedAssignmentCodeLine(
                 line,
-                maxLeftWidth,
+                maxLeftBaseWidth,
+                maxLeftSuffixWidth,
                 questionColumn,
+                maxTrueBaseWidth,
+                maxTrueSuffixWidth,
                 colonColumn,
+                maxFalseBaseWidth,
+                maxFalseSuffixWidth,
                 0);
         semicolonColumn = std::max(
             semicolonColumn,
@@ -1636,9 +1792,14 @@ void flushAssignmentAlignmentBlock(QStringList* lines,
         const QString codeLine =
             buildAlignedAssignmentCodeLine(
                 line,
-                maxLeftWidth,
+                maxLeftBaseWidth,
+                maxLeftSuffixWidth,
                 questionColumn,
+                maxTrueBaseWidth,
+                maxTrueSuffixWidth,
                 colonColumn,
+                maxFalseBaseWidth,
+                maxFalseSuffixWidth,
                 semicolonColumn);
         codeLines.append(codeLine);
         maxCodeLineWidth =
@@ -1661,6 +1822,18 @@ void alignAssignmentBlocks(QStringList* lines)
     if (!lines)
         return;
 
+    const QString syntaxText = lines->join(QLatin1Char('\n'));
+    TSDocument syntax;
+    syntax.setText(syntaxText);
+    QList<AssignmentAlignmentLine> parsedLines;
+    parsedLines.reserve(lines->size());
+    int absoluteLineStart = 0;
+    for (const QString& line : std::as_const(*lines)) {
+        parsedLines.append(parseAssignmentAlignmentLine(
+            line, absoluteLineStart, &syntax));
+        absoluteLineStart += line.size() + 1;
+    }
+
     QList<int> blockIndexes;
     QList<AssignmentAlignmentLine> block;
 
@@ -1671,8 +1844,7 @@ void alignAssignmentBlocks(QStringList* lines)
     };
 
     for (int i = 0; i < lines->size(); ++i) {
-        const AssignmentAlignmentLine parsed =
-            parseAssignmentAlignmentLine(lines->at(i));
+        const AssignmentAlignmentLine parsed = parsedLines.at(i);
         if (!parsed.valid) {
             flush();
             continue;
