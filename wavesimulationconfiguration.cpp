@@ -1,8 +1,11 @@
 #include "wavesimulationconfiguration.h"
 
 #include <QDir>
+#include <QCoreApplication>
 #include <QFileInfo>
+#include <QProcessEnvironment>
 #include <QSettings>
+#include <QSet>
 #include <QStandardPaths>
 
 #include <memory>
@@ -51,6 +54,38 @@ QString defaultCacheRoot()
                 .arg(WaveSimulationConfiguration::
                          kCacheLayoutVersion)));
 }
+
+QString executableName(const QString& baseName)
+{
+#ifdef Q_OS_WIN
+    return baseName + QStringLiteral(".exe");
+#else
+    return baseName;
+#endif
+}
+
+WaveSimulationToolPaths toolsInDirectory(const QString& directory)
+{
+    WaveSimulationToolPaths paths;
+    if (directory.trimmed().isEmpty())
+        return paths;
+    const QDir root(cleanAbsolutePath(directory));
+    paths.bridge = root.absoluteFilePath(
+        executableName(QStringLiteral("wave-bridge")));
+    paths.runner = root.absoluteFilePath(
+        executableName(QStringLiteral("wave-sim-runner")));
+    paths.application = root.absoluteFilePath(
+        executableName(QStringLiteral("wave-workbench")));
+    return paths;
+}
+
+QString existingExecutable(const QString& path)
+{
+    const QFileInfo info(path);
+    return info.exists() && info.isFile()
+        ? info.absoluteFilePath()
+        : QString();
+}
 }
 
 bool WaveSimulationCachePaths::isValid() const
@@ -61,14 +96,92 @@ bool WaveSimulationCachePaths::isValid() const
         && !results.isEmpty();
 }
 
+bool WaveSimulationToolPaths::isValid() const
+{
+    return !existingExecutable(bridge).isEmpty()
+        && !existingExecutable(runner).isEmpty()
+        && !existingExecutable(application).isEmpty();
+}
+
+QStringList WaveSimulationToolPaths::missingTools() const
+{
+    QStringList missing;
+    if (existingExecutable(bridge).isEmpty())
+        missing.append(QStringLiteral("wave-bridge"));
+    if (existingExecutable(runner).isEmpty())
+        missing.append(QStringLiteral("wave-sim-runner"));
+    if (existingExecutable(application).isEmpty())
+        missing.append(QStringLiteral("wave-workbench"));
+    return missing;
+}
+
 WaveSimulationConfiguration::WaveSimulationConfiguration(
     const QString& newSettingsFilePath,
-    const QString& newCacheRootOverride)
+    const QString& newCacheRootOverride,
+    const QString& newToolDirectoryOverride)
     : settingsFilePath(
           cleanAbsolutePath(newSettingsFilePath))
     , cacheRootOverride(
           cleanAbsolutePath(newCacheRootOverride))
+    , toolDirectoryOverride(
+          cleanAbsolutePath(newToolDirectoryOverride))
 {
+}
+
+WaveSimulationToolPaths
+WaveSimulationConfiguration::toolPaths() const
+{
+    QStringList candidateDirectories;
+    if (!toolDirectoryOverride.isEmpty())
+        candidateDirectories.append(toolDirectoryOverride);
+
+    const std::unique_ptr<QSettings> settings =
+        makeSettings(settingsFilePath);
+    const QString configuredDirectory = cleanAbsolutePath(
+        settings->value(
+            QString::fromLatin1(kToolDirectorySettingKey))
+            .toString());
+    if (!configuredDirectory.isEmpty())
+        candidateDirectories.append(configuredDirectory);
+
+    const QString environmentDirectory = cleanAbsolutePath(
+        QProcessEnvironment::systemEnvironment()
+            .value(QStringLiteral("WAVEWORKBENCH_HOME")));
+    if (!environmentDirectory.isEmpty())
+        candidateDirectories.append(environmentDirectory);
+
+    const QString applicationDirectory =
+        QCoreApplication::applicationDirPath();
+    if (!applicationDirectory.isEmpty()) {
+        candidateDirectories.append(applicationDirectory);
+        candidateDirectories.append(
+            QDir(applicationDirectory)
+                .absoluteFilePath(QStringLiteral("WaveWorkbench")));
+        candidateDirectories.append(
+            QDir(applicationDirectory)
+                .absoluteFilePath(QStringLiteral("../WaveWorkbench")));
+    }
+
+    QSet<QString> visited;
+    for (const QString& directory : candidateDirectories) {
+        const QString normalized = cleanAbsolutePath(directory);
+        if (normalized.isEmpty() || visited.contains(normalized))
+            continue;
+        visited.insert(normalized);
+        const WaveSimulationToolPaths candidate =
+            toolsInDirectory(normalized);
+        if (candidate.isValid())
+            return candidate;
+    }
+
+    WaveSimulationToolPaths pathTools;
+    pathTools.bridge = QStandardPaths::findExecutable(
+        executableName(QStringLiteral("wave-bridge")));
+    pathTools.runner = QStandardPaths::findExecutable(
+        executableName(QStringLiteral("wave-sim-runner")));
+    pathTools.application = QStandardPaths::findExecutable(
+        executableName(QStringLiteral("wave-workbench")));
+    return pathTools;
 }
 
 bool WaveSimulationConfiguration::

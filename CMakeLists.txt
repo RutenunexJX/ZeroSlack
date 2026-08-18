@@ -339,8 +339,10 @@ set(ZEROSLACK_CORE_SOURCES
     ghostannotationservice.cpp
     graphexportservice.cpp
     wavesimulationconfiguration.cpp
+    wavesimulationcoordinator.cpp
     wavesimulationmodulemanifest.cpp
     wavesimulationmanifestservice.cpp
+    wavesimulationpreparationservice.cpp
     wavepreviewpanelcoordinator.cpp
     wavepreviewservice.cpp
     workspaceconfigurationdialog.cpp
@@ -970,6 +972,10 @@ if(BUILD_TESTING)
         test_sv/wave_simulation_manifest_test.cpp)
     target_link_libraries(wave_simulation_manifest_test
         PRIVATE zeroslack_core Qt6::Core)
+    add_executable(wave_simulation_runtime_test
+        test_sv/wave_simulation_runtime_test.cpp)
+    target_link_libraries(wave_simulation_runtime_test
+        PRIVATE zeroslack_core Qt6::Core)
 
     add_executable(unified_peek_container_test
         test_sv/unified_peek_container_test.cpp)
@@ -1443,6 +1449,12 @@ if(BUILD_TESTING)
             "PATH=${ZEROSLACK_TEST_PATH}"
             "ZEROSLACK_SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}"
             $<TARGET_FILE:wave_simulation_manifest_test>
+    )
+    add_test(NAME wave_simulation_runtime_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}"
+            "ZEROSLACK_SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}"
+            $<TARGET_FILE:wave_simulation_runtime_test>
     )
     add_test(NAME unified_peek_container_test
         COMMAND ${CMAKE_COMMAND} -E env

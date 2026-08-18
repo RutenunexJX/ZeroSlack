@@ -13,6 +13,7 @@
 #include "analysisprogresscoordinator.h"
 #include "commandlayercoordinator.h"
 #include "editorcoordinator.h"
+#include "editorsemanticcontextservice.h"
 #include "editoractioncontextservice.h"
 #include "editorfileidentity.h"
 #include "editorinsertpaletteservice.h"
@@ -62,6 +63,8 @@
 #include "rtlinsightspanelcoordinator.h"
 #include "signalkernelgraphpanelcoordinator.h"
 #include "wavepreviewpanelcoordinator.h"
+#include "wavesimulationconfiguration.h"
+#include "wavesimulationcoordinator.h"
 #include "workspaceconfigurationdialog.h"
 #include "workspaceeditdocumentmanager.h"
 #include "workspacesessioncoordinator.h"
@@ -264,6 +267,7 @@ MainWindow::MainWindow(QWidget *parent)
     setupFoldBlockShelf();
     setupPanelLayoutController();
     setupRtlActionCoordinator();
+    setupWaveSimulation();
     setupWorkspaceSessionCoordinator();
     setupWorkspaceMenu();
     setupViewMenu();
@@ -3341,6 +3345,21 @@ void MainWindow::setupToolsMenu()
             propagateMultipleSignalsAction);
     }
 
+    QAction* runWaveSimulationAction = nullptr;
+    if (waveSimulationCoordinator) {
+        toolsMenu->addSeparator();
+        runWaveSimulationAction = toolsMenu->addAction(
+            tr("Run Wave Simulation (Experimental)"));
+        runWaveSimulationAction->setObjectName(
+            QStringLiteral("runWaveSimulationExperimentalAction"));
+        runWaveSimulationAction->setToolTip(
+            tr("Run the current module snapshot and open the result in WaveWorkbench"));
+        connect(runWaveSimulationAction,
+                &QAction::triggered,
+                this,
+                &MainWindow::runSelectedWaveSimulation);
+    }
+
     toolsMenu->addSeparator();
     QAction* crashRecoveryAction =
         addRegistryMenuAction(
@@ -3355,7 +3374,8 @@ void MainWindow::setupToolsMenu()
          openGlobalAction,
          openWorkspaceAction,
          reloadAction,
-         crashRecoveryAction]() {
+         crashRecoveryAction,
+         runWaveSimulationAction]() {
             const bool workspaceAvailable =
                 workspaceManager
                 && workspaceManager->isWorkspaceOpen();
@@ -3369,7 +3389,121 @@ void MainWindow::setupToolsMenu()
                 reloadAction->setEnabled(true);
             if (crashRecoveryAction)
                 crashRecoveryAction->setEnabled(true);
+            if (runWaveSimulationAction) {
+                runWaveSimulationAction->setEnabled(
+                    workspaceAvailable
+                    && tabManager
+                    && tabManager->getCurrentEditor()
+                    && waveSimulationCoordinator
+                    && !waveSimulationCoordinator->isRunning());
+            }
         });
+}
+
+void MainWindow::setupWaveSimulation()
+{
+    const WaveSimulationConfiguration configuration;
+    if (!configuration.experimentalWaveSimulationEnabled())
+        return;
+
+    waveSimulationCoordinator =
+        std::make_unique<WaveSimulationCoordinator>(this);
+    connect(waveSimulationCoordinator.get(),
+            &WaveSimulationCoordinator::stageChanged,
+            this,
+            [this](WaveSimulationStage, const QString& message) {
+                if (statusBar() && !message.isEmpty())
+                    statusBar()->showMessage(message);
+            });
+    connect(waveSimulationCoordinator.get(),
+            &WaveSimulationCoordinator::finished,
+            this,
+            [this](bool success,
+                   const QString&,
+                   const QString& message) {
+                if (statusBar()) {
+                    statusBar()->showMessage(
+                        message,
+                        success ? 5000 : 10000);
+                }
+            });
+}
+
+void MainWindow::runSelectedWaveSimulation()
+{
+    if (!waveSimulationCoordinator || !workspaceManager || !tabManager)
+        return;
+    MyCodeEditor* editor = tabManager->getCurrentEditor();
+    if (!editor) {
+        if (statusBar())
+            statusBar()->showMessage(
+                tr("Wave Simulation requires an active editor."), 5000);
+        return;
+    }
+
+    const EditorSemanticContext context =
+        editor->editorSemanticContextForPosition(-1, true);
+    const ProjectSnapshot project = workspaceManager->projectSnapshot();
+    if (!project.isOpen() || context.moduleName.trimmed().isEmpty()) {
+        if (statusBar()) {
+            statusBar()->showMessage(
+                tr("Place the cursor inside a module in the active workspace."),
+                7000);
+        }
+        return;
+    }
+
+    WaveSimulationRunRequest request;
+    request.preparation.project = project;
+    request.preparation.target.fileName = context.fileName;
+    request.preparation.target.moduleName = context.moduleName;
+    if (context.hierarchyInstance.isBound()
+        && workspaceSessionRootKey(
+               context.hierarchyInstance.workspacePath)
+               == workspaceSessionRootKey(project.workspaceRoot)) {
+        request.preparation.target.instancePath =
+            context.hierarchyInstance.instancePath;
+    }
+
+    QSet<QString> capturedFiles;
+    const QList<MyCodeEditor*> editors =
+        tabManager->openEditors() + tabManager->auxiliaryViews();
+    for (MyCodeEditor* openEditor : editors) {
+        SharedDocument* document =
+            tabManager->sharedDocumentForEditor(openEditor);
+        if (!document || document->fileName().isEmpty()
+            || !document->textDocument()) {
+            continue;
+        }
+        const QString key = workspaceSessionRootKey(
+            document->fileName());
+        if (key.isEmpty() || capturedFiles.contains(key))
+            continue;
+        bool projectFile = false;
+        for (const QString& fileName : project.systemVerilogFiles) {
+            if (workspaceSessionRootKey(fileName) == key) {
+                projectFile = true;
+                break;
+            }
+        }
+        if (!projectFile)
+            continue;
+        capturedFiles.insert(key);
+        WaveSimulationSourceOverride source;
+        source.fileName = document->fileName();
+        source.content = document->textDocument()->toPlainText();
+        source.revision = document->textRevision();
+        request.preparation.sourceOverrides.append(std::move(source));
+    }
+
+    const WaveSimulationConfiguration configuration;
+    request.preparation.cachePaths = configuration.cachePaths();
+    request.tools = configuration.toolPaths();
+    QString failureReason;
+    if (!waveSimulationCoordinator->start(request, &failureReason)
+        && statusBar()) {
+        statusBar()->showMessage(failureReason, 10000);
+    }
 }
 
 QAction* MainWindow::addRegistryMenuAction(

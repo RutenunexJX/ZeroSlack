@@ -3,6 +3,7 @@
 #include <QCoreApplication>
 #include <QDir>
 #include <QFileInfo>
+#include <QFile>
 #include <QSettings>
 #include <QStandardPaths>
 #include <QTemporaryDir>
@@ -83,6 +84,34 @@ int main(int argc, char** argv)
           "generated artifact classes use separate directories");
     check(!QFileInfo::exists(paths.root),
           "reading configuration does not create cache directories");
+
+    const QString toolDirectory =
+        temporary.filePath(QStringLiteral("tools"));
+    QDir().mkpath(toolDirectory);
+#ifdef Q_OS_WIN
+    const QString executableSuffix = QStringLiteral(".exe");
+#else
+    const QString executableSuffix;
+#endif
+    for (const QString& name : {
+             QStringLiteral("wave-bridge"),
+             QStringLiteral("wave-sim-runner"),
+             QStringLiteral("wave-workbench")}) {
+        QFile tool(QDir(toolDirectory).absoluteFilePath(
+            name + executableSuffix));
+        check(tool.open(QIODevice::WriteOnly),
+              "fake WaveWorkbench tool can be created");
+        tool.close();
+    }
+    const WaveSimulationToolPaths toolPaths =
+        WaveSimulationConfiguration(
+            settingsPath,
+            cacheRoot,
+            toolDirectory)
+            .toolPaths();
+    check(toolPaths.isValid()
+              && toolPaths.missingTools().isEmpty(),
+          "an explicit WaveWorkbench tool directory resolves all executables");
 
     WaveSimulationConfiguration productionDefaults(settingsPath);
     const WaveSimulationCachePaths defaultPaths =

@@ -48,6 +48,7 @@ class TemporaryEditorDrawerController;
 class TemporaryEditorSearchProvider;
 class ScopedReplaceWorkflow;
 class WorkspaceEditDocumentManager;
+class WaveSimulationCoordinator;
 class QAction;
 class QDialog;
 class QDockWidget;
@@ -149,6 +150,8 @@ private:
     std::unique_ptr<RtlActionCoordinator> rtlActionCoordinator;
     std::unique_ptr<WorkspaceEditDocumentManager>
         scopedReplaceDocuments;
+    std::unique_ptr<WaveSimulationCoordinator>
+        waveSimulationCoordinator;
     std::unique_ptr<ScopedReplaceWorkflow>
         scopedReplaceWorkflow;
     std::unique_ptr<SettingsCenterService> settingsCenterService;
@@ -242,6 +245,8 @@ private:
     void activateWorkspace(int index);
     void closeActiveWorkspace();
     void setupToolsMenu();
+    void setupWaveSimulation();
+    void runSelectedWaveSimulation();
     void setupCrashRecoveryReviewUi();
     void notifyCrashRecoveryCandidates(
         const QString& workspaceRoot,

@@ -437,7 +437,7 @@ Schema/接口版本：Simulation Run Report `v1`；Toolchain Probe Report 继续
 
 ### S6：选中模块运行
 
-状态：`pending`
+状态：`completed`（2026-08-19）
 
 范围：
 
@@ -448,6 +448,55 @@ Schema/接口版本：Simulation Run Report `v1`；Toolchain Probe Report 继续
 - 结果先在独立 WaveWorkbench 窗口显示。
 
 验收：选中真实模块后无需手写 TB 即可产生真实波形。
+
+S6 实际结果：
+
+- ZeroSlack 新增 `WaveSimulationPreparationService`。用户主动运行时，它从当前
+  `ProjectSnapshot` 和全部已打开 `SharedDocument` 构造一次不可变源码快照；未保存
+  缓冲区覆盖磁盘旧内容，其余工程文件从磁盘读取。随后复用 Slang overlay、
+  `SemanticIndexSnapshot`、`SmartRelationshipBuilder` 和既有 Manifest Service，未建立
+  第二套 SystemVerilog 事实源。
+- 目标从当前编辑位置的 `EditorSemanticContext` 获取模块；存在同工作区绑定实例时同时
+  传递精确 instance path。重复声明、实例不匹配、语义不完整、非 input/output、
+  interface、unpacked array、未知/动态位宽及超过 64 bit 的端口均明确拒绝，不回退到
+  猜测或磁盘旧快照。
+- 源码镜像保持工作区相对目录结构，并携带真实 source、include、define、parameter 和
+  port 契约。每次运行使用唯一 run id，Manifest、Stimulus、构建产物、VCD 与结果工程均
+  位于应用缓存，不写入用户工程。
+- 新增 `WaveSimulationCoordinator`，通过 QtConcurrent 准备快照，并按顺序异步执行
+  `wave-bridge import-module`、`wave-bridge export-stimulus`、
+  `wave-sim-runner run-module`；失败、取消和成功均为唯一终态，子进程输出有容量上限。
+  成功后以独立进程启动
+  `wave-workbench --load-first-trace result.wave.json`。
+- WaveWorkbench 的 runner 在 VCD 导入后物化包含相对 trace 引用和自动 signal mapping
+  的结果工程。`--load-first-trace` 使用独立结果模式和中央 `TraceCanvas`，不再依赖已退役
+  Trace Dock；结果窗口只显示实际可用的 Zoom/Fit 工具，解析完成后才进入 ready。
+- ZeroSlack 工具发现支持显式目录、设置项、`WAVEWORKBENCH_HOME`、应用相邻目录和 PATH。
+  正式入口继续受 `experimental/ExperimentalWaveSimulation=false` 隐藏开关保护；开启后
+  仅在有工作区、活动编辑器且无运行任务时显示可执行状态。
+- 自动测试覆盖未保存源码优先、真实 `test_sv/new/elec_phy_import/top/rst_gen.v` 模块
+  解析与镜像、异步三进程编排、独立结果进程参数和 runner 失败终态。WaveWorkbench
+  全量 CTest `86/86`；ZeroSlack S6 高相关测试 `7/7`。ZeroSlack 全量 CTest 为 `88/89`，
+  唯一失败是本切片未修改且不进入 Wave Simulation 调用链的
+  `scoped_search_panel_test` 启动即访问冲突，单独复跑结果一致，未通过放宽或跳过处理。
+
+本轮切片：S6 选中模块运行
+完成内容：实时源码快照、真实模块/实例 Manifest、异步宿主编排、通用 `run-module`、
+结果工程物化及独立 TraceCanvas 结果窗口。
+明确未做：WaveWorkbench 内 Run/Stop/Rerun、激励编辑后重跑、构建缓存、正式入口、
+interface/unpacked array 和大于 64 bit 端口。
+用户可见行为：默认无变化；显式开启实验设置后，Tools 菜单可从当前模块发起运行并在独立
+WaveWorkbench 窗口显示结果。
+Schema/接口版本：Module Manifest `v1`、Stimulus Scenario `v1`、Simulation Run Report
+`v1`，未引入不兼容版本。
+修改仓库与提交：WaveWorkbench `006e108`；ZeroSlack 提交见本切片提交记录。
+已知限制：当前开发机仍未安装 Verilator，因此真实 `test_sv` 模块已完成 Slang 解析、
+契约和源码镜像验证，完整运行链由确定性独立进程 fixture 验证；本机未冒充已经完成真实
+Verilator 编译。具备 Verilator 的环境会走同一 `run-module` 流水线。
+下一最小切片：S7 图形激励直接运行。
+恢复开发所需上下文：从 ZeroSlack 的 `WaveSimulationCoordinator`、WaveWorkbench 的
+`wave-sim-runner run-module` 和 `--load-first-trace` 结果模式继续；S7 只增加
+Run/Stop/Rerun 与可见运行状态，不提前实现 S8 构建缓存。
 
 ### S7：图形激励直接运行
 
