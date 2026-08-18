@@ -500,7 +500,7 @@ Run/Stop/Rerun 与可见运行状态，不提前实现 S8 构建缓存。
 
 ### S7：图形激励直接运行
 
-状态：`pending`
+状态：`completed (2026-08-19)`
 
 范围：
 
@@ -509,6 +509,39 @@ Run/Stop/Rerun 与可见运行状态，不提前实现 S8 构建缓存。
 - 修改图形激励后直接重新运行。
 
 验收：用户不需要手工操作 JSON、命令行或 VCD 文件。
+
+实际结果：
+
+- WaveWorkbench 结果工作区改为上下分栏：上方 `Stimulus` 可直接编辑图形激励，下方
+  `Actual` 显示最近一次有效结果；工具栏提供 `Run`、`Stop` 和 `Rerun`。
+- 新增严格的 `wave-workbench.simulation-session/v1` 私有会话契约，结果工程保存重跑所需
+  路径和显式工具参数，但不持久化进程环境；加载时重新获取当前环境。
+- 新增独立状态机和 `Ready`、`Compiling`、`Running`、`Current`、`Stale`、`Failed`
+  六种可见状态。图形激励修改后立即标记 `Stale`，运行阶段由 runner 实时回调驱动。
+- Run/Rerun 将当前内存场景直接写入 Stimulus 契约并在进程内启动既有异步流水线；成功后
+  直接消费返回的 trace、刷新 `Actual` 并持久化结果，不要求用户处理 JSON、命令行或 VCD。
+- Stop 直接取消 `VerilatorSimulationRunner`。取消和失败均保留上一份有效结果；运行期间
+  禁止继续编辑，避免产生未定义的并发场景状态。
+- 自动测试覆盖会话 Schema、环境不持久化、状态转换、实时 stage 顺序、修改后重跑、取消、
+  失败恢复、结果刷新和持久化。WaveWorkbench 核心测试 `60/60`，全量 CTest `88/88`。
+
+本轮切片：S7 图形激励直接运行。
+完成内容：可编辑 Stimulus/Actual 双画布、Run/Stop/Rerun、六态状态机、可恢复会话契约、
+实时运行阶段和结果原位刷新。
+明确未做：build fingerprint、Verilator 模型复用、命名场景持久化、ZeroSlack 正式入口，
+以及 interface、unpacked array 和大于 64 bit 端口支持。
+用户可见行为：仅通过 S6 隐藏实验入口打开结果工作区后可见；ZeroSlack 默认正式界面不变。
+自动测试：WaveWorkbench 核心测试 `60/60`；全量 CTest `88/88`。
+人工验证：检查 `simulation-result-window-smoke.png`，双画布、运行操作和状态提示均无重叠。
+Schema/接口版本：新增 Simulation Session `v1`；Module Manifest、Stimulus Scenario 和
+Simulation Run Report 继续为 `v1`。
+修改仓库与提交：WaveWorkbench `f60febb`；ZeroSlack 为本计划文档提交。
+已知限制：当前开发机未安装 Verilator，完整运行闭环由确定性独立进程 fixture 验证，未将
+fixture 结果冒充真实 Verilator 编译结果；S7 每次运行仍重新构建模型。
+下一最小切片：S8 构建缓存。
+恢复开发所需上下文：从 `SimulationSessionStateMachine`、
+`VerilatorSimulationRunner::StageChanged` 和结果工作区的进程内 Run/Rerun 继续；S8 只增加
+可验证的构建指纹、模型复用、generation/取消隔离，不提前实现 S9 场景持久化。
 
 ### S8：构建缓存
 
