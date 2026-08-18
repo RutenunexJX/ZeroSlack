@@ -3,6 +3,10 @@ build-*/
 cmake-build-*/
 artifacts/
 
+# Explicit local overrides for experimental wave simulation artifacts.
+wave-simulation-cache/
+.wave-simulation-cache/
+
 *.exe
 *.dll
 *.so

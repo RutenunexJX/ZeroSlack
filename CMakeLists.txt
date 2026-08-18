@@ -338,6 +338,9 @@ set(ZEROSLACK_CORE_SOURCES
     structuredwhitespaceformatter.cpp
     ghostannotationservice.cpp
     graphexportservice.cpp
+    wavesimulationconfiguration.cpp
+    wavesimulationmodulemanifest.cpp
+    wavesimulationmanifestservice.cpp
     wavepreviewpanelcoordinator.cpp
     wavepreviewservice.cpp
     workspaceconfigurationdialog.cpp
@@ -953,6 +956,21 @@ if(BUILD_TESTING)
     target_link_libraries(settings_center_panel_test
         PRIVATE zeroslack_core Qt6::Test)
 
+    add_executable(wave_simulation_configuration_test
+        test_sv/wave_simulation_configuration_test.cpp
+        wavesimulationconfiguration.cpp)
+    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        target_compile_options(wave_simulation_configuration_test PRIVATE
+            "$<$<COMPILE_LANGUAGE:CXX>:-iquote${CMAKE_CURRENT_SOURCE_DIR}>")
+    endif()
+    target_link_libraries(wave_simulation_configuration_test
+        PRIVATE Qt6::Core)
+
+    add_executable(wave_simulation_manifest_test
+        test_sv/wave_simulation_manifest_test.cpp)
+    target_link_libraries(wave_simulation_manifest_test
+        PRIVATE zeroslack_core Qt6::Core)
+
     add_executable(unified_peek_container_test
         test_sv/unified_peek_container_test.cpp)
     target_link_libraries(unified_peek_container_test
@@ -1414,6 +1432,17 @@ if(BUILD_TESTING)
             "QT_QPA_PLATFORM=offscreen"
             "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
             $<TARGET_FILE:settings_center_panel_test>
+    )
+    add_test(NAME wave_simulation_configuration_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}"
+            $<TARGET_FILE:wave_simulation_configuration_test>
+    )
+    add_test(NAME wave_simulation_manifest_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}"
+            "ZEROSLACK_SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}"
+            $<TARGET_FILE:wave_simulation_manifest_test>
     )
     add_test(NAME unified_peek_container_test
         COMMAND ${CMAKE_COMMAND} -E env
