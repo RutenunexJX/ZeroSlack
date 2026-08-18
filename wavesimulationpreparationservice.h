@@ -54,6 +54,8 @@ struct WaveSimulationPreparationResult {
     QString manifestPath;
     QString stimulusProjectPath;
     QString stimulusPath;
+    QString scenarioDirectory;
+    QString defaultScenarioPath;
     QString resultRoot;
     QString resultProjectPath;
 

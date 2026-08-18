@@ -6,6 +6,7 @@
 #include "wavesimulationmanifestservice.h"
 
 #include <QDateTime>
+#include <QCryptographicHash>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -196,6 +197,30 @@ QString makeRunId()
         + QLatin1Char('-')
         + QUuid::createUuid().toString(QUuid::WithoutBraces);
 }
+
+QString simulationScenarioKey(const WaveSimulationTargetContext& target)
+{
+    QString readable = target.instancePath.trimmed().isEmpty()
+        ? target.moduleName.trimmed()
+        : target.instancePath.trimmed();
+    for (qsizetype index = 0; index < readable.size(); ++index) {
+        const QChar character = readable.at(index);
+        if (!character.isLetterOrNumber()
+            && character != QLatin1Char('-')
+            && character != QLatin1Char('_')
+            && character != QLatin1Char('.')) {
+            readable[index] = QLatin1Char('_');
+        }
+    }
+    readable = readable.left(48);
+    if (readable.isEmpty()) readable = QStringLiteral("module");
+    const QByteArray identity = target.moduleName.toUtf8()
+        + QByteArrayLiteral("\n") + target.instancePath.toUtf8();
+    const QString digest = QString::fromLatin1(
+        QCryptographicHash::hash(identity, QCryptographicHash::Sha256)
+            .toHex().left(16));
+    return readable + QLatin1Char('-') + digest;
+}
 }
 
 WaveSimulationPreparationResult
@@ -365,6 +390,12 @@ WaveSimulationPreparationService::prepare(
         .absoluteFilePath(QStringLiteral("stimulus.wave.json"));
     result.stimulusPath = QDir(result.resultRoot)
         .absoluteFilePath(QStringLiteral("stimulus.json"));
+    result.scenarioDirectory = QDir(request.project.workspaceRoot)
+        .absoluteFilePath(
+            QStringLiteral(".zs/simulation/")
+            + simulationScenarioKey(request.target));
+    result.defaultScenarioPath = QDir(result.scenarioDirectory)
+        .absoluteFilePath(QStringLiteral("default.json"));
     result.resultProjectPath = QDir(result.resultRoot)
         .absoluteFilePath(QStringLiteral("result.wave.json"));
 

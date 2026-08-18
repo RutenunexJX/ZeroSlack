@@ -588,14 +588,14 @@ Schema/接口版本：新增 Simulation Build Cache `v1`；Simulation Run Report
 Module Manifest 和 Stimulus Scenario 继续为 `v1`，仅向后兼容增加字段。
 修改仓库与提交：WaveWorkbench `3145885`；ZeroSlack 本提交。
 已知限制：每次运行仍会执行轻量工具链版本探测；缓存不跨不一致 PATH/编译环境复用。
-下一最小切片：S9 场景持久化。
-恢复开发所需上下文：从 `SimulationBuildFingerprint`、`waveSimulation.session` 和
-`SimulationSessionStateMachine` 继续；S9 只处理默认/命名场景、视图状态恢复和端口契约迁移，
-不提前开放正式入口。
+下一最小切片：S10 正式接入 ZeroSlack。
+恢复开发所需上下文：从 `.zs/simulation/<target>/default.json`、命名场景目录、
+`waveSimulation.session` 和 `SimulationSessionStateMachine` 继续；S10 处理日常入口、
+观察范围和源码错误导航，不提前执行 S11 的共享控件嵌入。
 
 ### S9：场景持久化
 
-状态：`pending`
+状态：`completed`（2026-08-19）
 
 范围：
 
@@ -605,6 +605,25 @@ Module Manifest 和 Stimulus Scenario 继续为 `v1`，仅向后兼容增加字�
 - 结果缓存与场景配置分离。
 
 验收：修改代码并重新打开工程后，场景仍可继续使用。
+
+S9 实际结果：
+
+- Stimulus Scenario 升级为向后兼容的 v2；v1 文件仍可读取。v2 保存 Marker、当前端口、
+  游标 tick 和可见时间跨度，信号顺序、分组、radix、可见性与激励继续使用显式契约。
+- 新增原子场景目录：默认场景固定为 `default.json`，命名场景使用稳定 scenario ID
+  的 SHA-256 文件名；结果 VCD、result project 和编译模型仍只进入缓存。
+- 端口迁移先做精确名称匹配；名称缺失时仅接受唯一结构匹配，必要时以 source order
+  消歧。位宽变化保留显示设置并重置不安全激励，删除、新增、重命名和位宽变化均有
+  独立计数与诊断。
+- WaveWorkbench 结果窗口在打开时恢复默认和命名场景，并提供新建、重命名、删除命名
+  场景操作；默认场景不可删除，场景视图不再依赖绝对工程路径的 QSettings 键。
+- ZeroSlack 为 module/instance 生成稳定的
+  `.zs/simulation/<readable-target>-<digest>/` 目录；存在 `default.json` 时先执行
+  `import-stimulus`，否则执行 `import-module`。runner session 显式携带场景目录。
+- WaveWorkbench 核心测试 61/61、全量测试 88/88、固定仿真 CLI 与结果窗口控制冒烟
+  通过；ZeroSlack runtime 测试 17/17、全量测试 89/89 通过，覆盖首次默认生成、
+  已保存默认场景恢复、工作区场景路径和缓存隔离。测试使用确定性工具 fixture，
+  本机未安装真实 Verilator。
 
 ### S10：正式接入 ZeroSlack
 

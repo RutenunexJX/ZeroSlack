@@ -52,8 +52,25 @@ int runFakeTool(const QString& toolName,
     if (toolName == QStringLiteral("wave-bridge")) {
         if (arguments.size() < 4)
             return 2;
-        if (arguments.at(1) == QStringLiteral("import-module"))
-            return writeFile(arguments.at(3), QByteArrayLiteral("{}")) ? 0 : 3;
+        if (arguments.at(1) == QStringLiteral("import-module")) {
+            const QString output = arguments.at(3);
+            return writeFile(output, QByteArrayLiteral("{}"))
+                    && writeFile(
+                        QDir(QFileInfo(output).absolutePath())
+                            .absoluteFilePath(QStringLiteral("bridge-command.txt")),
+                        QByteArrayLiteral("import-module"))
+                ? 0 : 3;
+        }
+        if (arguments.at(1) == QStringLiteral("import-stimulus")
+            && arguments.size() >= 5) {
+            const QString output = arguments.at(4);
+            return writeFile(output, QByteArrayLiteral("{}"))
+                    && writeFile(
+                        QDir(QFileInfo(output).absolutePath())
+                            .absoluteFilePath(QStringLiteral("bridge-command.txt")),
+                        QByteArrayLiteral("import-stimulus"))
+                ? 0 : 3;
+        }
         if (arguments.at(1) == QStringLiteral("export-stimulus"))
             return writeFile(arguments.at(3), QByteArrayLiteral("{}")) ? 0 : 3;
         return 2;
@@ -68,11 +85,25 @@ int runFakeTool(const QString& toolName,
             arguments, QStringLiteral("--result-project="));
         const QString buildCache = optionValue(
             arguments, QStringLiteral("--build-cache="));
+        const QString scenarioDirectory = optionValue(
+            arguments, QStringLiteral("--scenario-directory="));
+        const QString portableScenarioPath = QDir::fromNativeSeparators(
+            QFileInfo(scenarioDirectory).absoluteFilePath());
         return !output.isEmpty() && !buildCache.isEmpty()
+                && !scenarioDirectory.isEmpty()
+                && portableScenarioPath.contains(
+                    QStringLiteral("/.zs/simulation/"))
+                && !portableScenarioPath.startsWith(
+                    QDir::fromNativeSeparators(
+                        QFileInfo(buildCache).absoluteFilePath()))
                 && writeFile(
                     QDir(buildCache).absoluteFilePath(
                         QStringLiteral("runner-cache.marker")),
                     QByteArrayLiteral("shared-cache"))
+                && writeFile(
+                    QDir(scenarioDirectory).absoluteFilePath(
+                        QStringLiteral("runner-scenario.marker")),
+                    QByteArrayLiteral("portable-scenario"))
                 && writeFile(output, QByteArrayLiteral("{}"))
             ? 0
             : 3;
@@ -249,6 +280,15 @@ int main(int argc, char** argv)
               QDir(preparation.cachePaths.buildCache).absoluteFilePath(
                   QStringLiteral("runner-cache.marker"))),
           "runner did not receive the shared build-cache directory");
+    const QDir scenarioRoot(QDir(workspace).absoluteFilePath(
+        QStringLiteral(".zs/simulation")));
+    const auto scenarioTargets = scenarioRoot.entryInfoList(
+        QDir::Dirs | QDir::NoDotAndDotDot);
+    check(scenarioTargets.size() == 1
+              && QFileInfo::exists(
+                  QDir(scenarioTargets.constFirst().absoluteFilePath())
+                      .absoluteFilePath(QStringLiteral("runner-scenario.marker"))),
+          "runner did not receive a portable workspace scenario directory");
 
     const QString runId = QFileInfo(resultProject).dir().dirName();
     QFile manifest(QDir(QFileInfo(resultProject).absolutePath())
@@ -261,6 +301,11 @@ int main(int argc, char** argv)
               && manifestText.contains("\"module\": \"top\"")
               && manifestText.contains("\"name\": \"W\""),
           "manifest is derived from the unsaved Slang snapshot");
+    QFile bridgeCommand(QDir(QFileInfo(resultProject).absolutePath())
+                            .absoluteFilePath(QStringLiteral("bridge-command.txt")));
+    check(bridgeCommand.open(QIODevice::ReadOnly)
+              && bridgeCommand.readAll() == QByteArrayLiteral("import-module"),
+          "first run did not create a default stimulus from the module manifest");
     QFile mirrored(QDir(preparation.cachePaths.sourceMirrors)
                        .absoluteFilePath(
                            runId + QStringLiteral("/workspace/rtl/top.sv")));
@@ -283,6 +328,49 @@ int main(int argc, char** argv)
     }
     check(QFileInfo::exists(marker),
           "the completed result opens in an independent WaveWorkbench process");
+
+    const QString scenarioDirectory = scenarioTargets.isEmpty()
+        ? QString()
+        : scenarioTargets.constFirst().absoluteFilePath();
+    check(!scenarioDirectory.isEmpty()
+              && writeFile(
+                  QDir(scenarioDirectory).absoluteFilePath(
+                      QStringLiteral("default.json")),
+                  QByteArrayLiteral("{}")),
+          "portable default scenario fixture can be written");
+    WaveSimulationCoordinator restoringCoordinator;
+    QEventLoop restoringLoop;
+    bool restoringCompleted = false;
+    bool restoringSucceeded = false;
+    QString restoredResultProject;
+    QObject::connect(
+        &restoringCoordinator,
+        &WaveSimulationCoordinator::finished,
+        &restoringLoop,
+        [&](bool success, const QString& projectPath, const QString&) {
+            restoringCompleted = true;
+            restoringSucceeded = success;
+            restoredResultProject = projectPath;
+            restoringLoop.quit();
+        });
+    QTimer restoringWatchdog;
+    restoringWatchdog.setSingleShot(true);
+    QObject::connect(
+        &restoringWatchdog, &QTimer::timeout,
+        &restoringLoop, &QEventLoop::quit);
+    QString restoringStartFailure;
+    check(restoringCoordinator.start(run, &restoringStartFailure),
+          "saved-scenario rerun starts asynchronously");
+    restoringWatchdog.start(60'000);
+    restoringLoop.exec();
+    QFile restoredBridgeCommand(
+        QDir(QFileInfo(restoredResultProject).absolutePath())
+            .absoluteFilePath(QStringLiteral("bridge-command.txt")));
+    check(restoringCompleted && restoringSucceeded
+              && restoredBridgeCommand.open(QIODevice::ReadOnly)
+              && restoredBridgeCommand.readAll()
+                    == QByteArrayLiteral("import-stimulus"),
+          "saved default scenario was not restored before rerun");
 
     const QString sourceRoot = qEnvironmentVariable(
         "ZEROSLACK_SOURCE_DIR");

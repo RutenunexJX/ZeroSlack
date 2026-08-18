@@ -216,12 +216,22 @@ void WaveSimulationCoordinator::startNextStage()
 {
     switch (currentStage) {
     case WaveSimulationStage::Preparing:
-        startProcess(
-            WaveSimulationStage::ImportingTarget,
-            currentRequest.tools.bridge,
-            {QStringLiteral("import-module"),
-             prepared.manifestPath,
-             prepared.stimulusProjectPath});
+        if (QFileInfo::exists(prepared.defaultScenarioPath)) {
+            startProcess(
+                WaveSimulationStage::ImportingTarget,
+                currentRequest.tools.bridge,
+                {QStringLiteral("import-stimulus"),
+                 prepared.manifestPath,
+                 prepared.defaultScenarioPath,
+                 prepared.stimulusProjectPath});
+        } else {
+            startProcess(
+                WaveSimulationStage::ImportingTarget,
+                currentRequest.tools.bridge,
+                {QStringLiteral("import-module"),
+                 prepared.manifestPath,
+                 prepared.stimulusProjectPath});
+        }
         return;
     case WaveSimulationStage::ImportingTarget:
         startProcess(
@@ -242,6 +252,8 @@ void WaveSimulationCoordinator::startNextStage()
              QStringLiteral("--artifacts=") + prepared.resultRoot,
              QStringLiteral("--build-cache=")
                  + currentRequest.preparation.cachePaths.buildCache,
+             QStringLiteral("--scenario-directory=")
+                 + prepared.scenarioDirectory,
              QStringLiteral("--result-project=") + prepared.resultProjectPath});
         return;
     case WaveSimulationStage::Running:
