@@ -240,6 +240,8 @@ void WaveSimulationCoordinator::startNextStage()
              QStringLiteral("--stimulus=") + prepared.stimulusPath,
              QStringLiteral("--workspace=") + prepared.mirrorWorkspaceRoot,
              QStringLiteral("--artifacts=") + prepared.resultRoot,
+             QStringLiteral("--build-cache=")
+                 + currentRequest.preparation.cachePaths.buildCache,
              QStringLiteral("--result-project=") + prepared.resultProjectPath});
         return;
     case WaveSimulationStage::Running:

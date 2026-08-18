@@ -66,7 +66,13 @@ int runFakeTool(const QString& toolName,
         }
         const QString output = optionValue(
             arguments, QStringLiteral("--result-project="));
-        return !output.isEmpty()
+        const QString buildCache = optionValue(
+            arguments, QStringLiteral("--build-cache="));
+        return !output.isEmpty() && !buildCache.isEmpty()
+                && writeFile(
+                    QDir(buildCache).absoluteFilePath(
+                        QStringLiteral("runner-cache.marker")),
+                    QByteArrayLiteral("shared-cache"))
                 && writeFile(output, QByteArrayLiteral("{}"))
             ? 0
             : 3;
@@ -239,6 +245,10 @@ int main(int argc, char** argv)
     check(completed && succeeded
               && QFileInfo::exists(resultProject),
           "process chain produces a result project without blocking the event loop");
+    check(QFileInfo::exists(
+              QDir(preparation.cachePaths.buildCache).absoluteFilePath(
+                  QStringLiteral("runner-cache.marker"))),
+          "runner did not receive the shared build-cache directory");
 
     const QString runId = QFileInfo(resultProject).dir().dirName();
     QFile manifest(QDir(QFileInfo(resultProject).absolutePath())

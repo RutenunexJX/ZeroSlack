@@ -545,7 +545,7 @@ fixture 结果冒充真实 Verilator 编译结果；S7 每次运行仍重新构�
 
 ### S8：构建缓存
 
-状态：`pending`
+状态：`completed (2026-08-19)`
 
 范围：
 
@@ -555,6 +555,43 @@ fixture 结果冒充真实 Verilator 编译结果；S7 每次运行仍重新构�
 - 加入 generation、取消和旧结果隔离。
 
 验收：只修改激励不会重新编译；旧异步结果不能覆盖新场景。
+
+实际结果：
+
+- WaveWorkbench 新增纯数据构建指纹与严格的
+  `wave-workbench.simulation-build-cache/v1` 记录。指纹覆盖 Manifest、全部 design/header
+  源码、稳定 runtime harness、工具路径/版本/参数和编译环境；Stimulus 不进入指纹。
+- harness 改为运行时读取每次运行私有生成的 stimulus plan。仅修改激励时直接复用已验证
+  Verilator 模型；端口、parameter、define、RTL、header 依赖、harness 或工具链变化均失效。
+- 缓存条目先在唯一 staging 目录构建，写入 evidence 与可执行文件 SHA-256 后再发布；命中时
+  重新校验二者，损坏缓存自动重建，取消构建会清理 staging，不发布半成品。
+- `SimulationRunReport` 增加 generation 与 build-cache 证据，stage 增加
+  `ResolveBuildCache`。GUI 只消费当前 generation 的阶段/完成回调。
+- 结果工程旁以 `QLockFile` 和 generation 声明隔离并发运行。较旧任务无论晚完成还是晚启动，
+  都以 `superseded` 终止，不能覆盖较新结果；自动 generation 使用跨进程时间基编号。
+- ZeroSlack 运行协调器将既有 workspace 级 `cachePaths.buildCache` 显式传给 runner，不再为每次
+  结果创建互不复用的模型缓存。
+- 自动测试覆盖 fingerprint 确定性、端口/parameter/define/RTL/header/toolchain 失效、仅激励
+  复用、损坏缓存修复、构建中取消、CLI 二次命中、旧 generation 晚完成及晚启动隔离。
+
+本轮切片：S8 构建缓存。
+完成内容：稳定 runtime harness、内容寻址模型缓存、严格缓存校验、generation/取消隔离和
+ZeroSlack 共享缓存接线。
+明确未做：命名场景持久化、端口变化迁移、正式 ZeroSlack 入口、共享控件嵌入及更复杂端口类型。
+用户可见行为：隐藏实验结果工作区内，仅修改激励后 Run/Rerun 跳过编译；状态栏明确显示
+`cached model` 或 `model built`。
+自动测试：WaveWorkbench 核心测试 `61/61`；全量 CTest `88/88`；ZeroSlack
+`wave_simulation_runtime_test` 及全量 CTest `89/89` 通过。
+人工验证：当前开发机未安装真实 Verilator，本切片使用独立确定性进程 fixture 验证构建次数、
+缓存损坏、取消和并发结果；未将 fixture 结果冒充真实 Verilator 编译结果。
+Schema/接口版本：新增 Simulation Build Cache `v1`；Simulation Run Report、Simulation Session、
+Module Manifest 和 Stimulus Scenario 继续为 `v1`，仅向后兼容增加字段。
+修改仓库与提交：WaveWorkbench `3145885`；ZeroSlack 本提交。
+已知限制：每次运行仍会执行轻量工具链版本探测；缓存不跨不一致 PATH/编译环境复用。
+下一最小切片：S9 场景持久化。
+恢复开发所需上下文：从 `SimulationBuildFingerprint`、`waveSimulation.session` 和
+`SimulationSessionStateMachine` 继续；S9 只处理默认/命名场景、视图状态恢复和端口契约迁移，
+不提前开放正式入口。
 
 ### S9：场景持久化
 
