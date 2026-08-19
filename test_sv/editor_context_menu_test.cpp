@@ -89,6 +89,8 @@ int main(int argc, char* argv[])
             ActionIds::WaveSimulationRunCurrentContext)),
         capability(QString::fromLatin1(
             ActionIds::WaveSimulationObserveSignal)),
+        capability(QString::fromLatin1(
+            ActionIds::WaveSimulationRevealSignalInResult)),
         capability(QStringLiteral("source.goToDefinition")),
         capability(QStringLiteral("source.findReferences")),
         capability(QStringLiteral("source.showRelationships")),
@@ -167,9 +169,15 @@ int main(int argc, char* argv[])
         model,
         QString::fromLatin1(
             ActionIds::WaveSimulationObserveSignal));
+    const EditorContextMenuItem* revealWave = findItem(
+        model,
+        QString::fromLatin1(
+            ActionIds::WaveSimulationRevealSignalInResult));
     check(runWave && runWave->enabled && runWave->executable
               && observeWave && observeWave->enabled
-              && observeWave->executable,
+              && observeWave->executable
+              && revealWave && revealWave->enabled
+              && revealWave->executable,
           "current semantic symbol context exposes formal Wave Simulation Actions");
 
     const QStringList requiredContextActions = {
@@ -187,6 +195,8 @@ int main(int argc, char* argv[])
             ActionIds::WaveSimulationRunCurrentContext),
         QString::fromLatin1(
             ActionIds::WaveSimulationObserveSignal),
+        QString::fromLatin1(
+            ActionIds::WaveSimulationRevealSignalInResult),
         QString::fromLatin1(
             ActionIds::EditToggleSelectionCase),
         QStringLiteral("format.profile.structured"),

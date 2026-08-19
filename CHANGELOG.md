@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.15.0] - 2026-08-19
+
+### Simulation result/source navigation
+
+- Added Module Manifest v5 portable declaration and Slang driver links for
+  ports and internal observations while retaining v1-v4 import compatibility.
+- Added Declaration and Drivers navigation from mapped Actual signals, plus a
+  source Action that reveals the corresponding signal in an open result.
+- Added stable semantic matching, source-location fallback, ambiguity rejection,
+  workspace isolation, path containment checks, and the optional
+  `result-source-navigation/v1` shared-workspace capability.
+- Added strict contract, resolver, ABI, editor Action, embedded-workspace, and
+  real GUI round-trip regression coverage without changing the v1 C ABI.
+
 ## [0.14.0] - 2026-08-19
 
 ### Multi-scenario simulation batches

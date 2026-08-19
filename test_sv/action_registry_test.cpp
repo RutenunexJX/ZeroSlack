@@ -254,6 +254,9 @@ int main()
     const ActionDescriptor* observeWave = findActionById(
         QString::fromLatin1(
             ActionIds::WaveSimulationObserveSignal));
+    const ActionDescriptor* revealWave = findActionById(
+        QString::fromLatin1(
+            ActionIds::WaveSimulationRevealSignalInResult));
     const ActionDescriptor* runWaveInstance = findActionById(
         QString::fromLatin1(
             ActionIds::WaveSimulationRunDesignInstance));
@@ -268,6 +271,9 @@ int main()
                && observeWave
                && observeWave->scope == ActionScope::Symbol
                && observeWave->hasSurface(ActionSurface::ContextMenu)
+               && revealWave
+               && revealWave->scope == ActionScope::Symbol
+               && revealWave->hasSurface(ActionSurface::ContextMenu)
                && runWaveInstance
                && runWaveInstance->scope == ActionScope::Hierarchy
                && runWaveInstance->hasSurface(ActionSurface::ContextMenu));

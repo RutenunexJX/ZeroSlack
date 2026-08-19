@@ -10,6 +10,7 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QMultiHash>
 #include <QQueue>
 #include <QSet>
 
@@ -19,6 +20,8 @@
 namespace {
 using CollectorKind = SymbolTaxonomy::CollectorKind;
 using DeclarationKind = SymbolTaxonomy::DeclarationKind;
+using DriverRelationshipIndex =
+    QMultiHash<QString, const SemanticRelationship*>;
 
 QString normalizedAbsolutePath(const QString& workspaceRoot,
                                const QString& path)
@@ -520,7 +523,7 @@ QString workspaceIdentity(const WaveSimulationModuleManifest& manifest,
     return QStringLiteral("sha256:") + QString::fromLatin1(digest);
 }
 
-QString portableSemanticIdentity(
+QString portableSemanticIdentityForRecord(
     const SemanticSymbolRecord& record,
     const QString& relativeSourceFile)
 {
@@ -537,6 +540,67 @@ QString portableSemanticIdentity(
         QJsonDocument(object).toJson(QJsonDocument::Compact),
         QCryptographicHash::Sha256).toHex();
     return QStringLiteral("sha256:") + QString::fromLatin1(digest);
+}
+
+QList<WaveSimulationManifestSourceLink> sourceLinksForRecord(
+    const SemanticSymbolRecord& record,
+    const QString& relativeSourceFile,
+    const DriverRelationshipIndex& driverRelationships,
+    const QString& workspaceRoot,
+    QStringList* warnings)
+{
+    QList<WaveSimulationManifestSourceLink> links;
+    WaveSimulationManifestSourceLink declaration;
+    declaration.kind = QStringLiteral("declaration");
+    declaration.sourceFile = relativeSourceFile;
+    declaration.sourceLine = record.location.startLine;
+    declaration.sourceColumn = std::max(1, record.location.startColumn);
+    declaration.label = QStringLiteral("Declaration");
+    links.append(declaration);
+
+    QSet<QString> seenLocations;
+    seenLocations.insert(QStringLiteral("%1:%2:%3")
+                             .arg(declaration.sourceFile)
+                             .arg(declaration.sourceLine)
+                             .arg(declaration.sourceColumn));
+    const QString stableKey = record.stableKey.toString();
+    for (const SemanticRelationship* relationshipPointer :
+         driverRelationships.values(stableKey)) {
+        const SemanticRelationship& relationship =
+            *relationshipPointer;
+        const std::optional<QString> sourceFile = relativeProjectPath(
+            workspaceRoot, relationship.evidenceRange.fileName);
+        if (!sourceFile) {
+            if (warnings) {
+                warnings->append(
+                    QStringLiteral(
+                        "A driver for %1 is outside the workspace and was not exported: %2")
+                        .arg(record.name,
+                             relationship.evidenceRange.fileName));
+            }
+            continue;
+        }
+        const int sourceColumn = std::max(
+            1, relationship.evidenceRange.column);
+        const QString identity = QStringLiteral("%1:%2:%3")
+                                     .arg(*sourceFile)
+                                     .arg(relationship.evidenceRange.line)
+                                     .arg(sourceColumn);
+        if (seenLocations.contains(identity))
+            continue;
+        seenLocations.insert(identity);
+
+        WaveSimulationManifestSourceLink driver;
+        driver.kind = QStringLiteral("driver");
+        driver.sourceFile = *sourceFile;
+        driver.sourceLine = relationship.evidenceRange.line;
+        driver.sourceColumn = sourceColumn;
+        driver.label = relationship.evidenceText.trimmed().isEmpty()
+            ? QStringLiteral("Assignment")
+            : relationship.evidenceText.trimmed();
+        links.append(std::move(driver));
+    }
+    return links;
 }
 
 enum class AssociationStyle {
@@ -868,6 +932,18 @@ WaveSimulationManifestBuildResult WaveSimulationManifestService::build(
         return result;
     }
 
+    DriverRelationshipIndex driverRelationships;
+    for (const SemanticRelationship& relationship :
+         request.semanticSnapshot->relationshipsView()) {
+        if (relationship.type == SymbolRelationshipEngine::ASSIGNS_TO
+            && relationship.toStableKey.isValid()
+            && relationship.evidenceRange.isValid()) {
+            driverRelationships.insert(
+                relationship.toStableKey.toString(),
+                &relationship);
+        }
+    }
+
     QList<SemanticSymbolRecord> members;
     for (const SemanticSymbolRecord& record :
          request.semanticSnapshot->symbolRecordsView()) {
@@ -951,10 +1027,19 @@ WaveSimulationManifestBuildResult WaveSimulationManifestService::build(
         } else if (isPort(member)) {
             WaveSimulationManifestPort port;
             port.name = member.name;
+            port.semanticId = portableSemanticIdentityForRecord(
+                member, *sourceFile);
             port.direction = portDirection(member.collectorKind);
             port.declarationText = member.presentation.declarationText;
             port.sourceFile = *sourceFile;
             port.sourceLine = member.location.startLine;
+            port.sourceColumn = std::max(1, member.location.startColumn);
+            port.sourceLinks = sourceLinksForRecord(
+                member,
+                *sourceFile,
+                driverRelationships,
+                request.project.workspaceRoot,
+                &result.warnings);
             port.type = manifestType(
                 member,
                 request.instancePath,
@@ -1038,13 +1123,21 @@ WaveSimulationManifestBuildResult WaveSimulationManifestService::build(
         WaveSimulationManifestObservation observation;
         observation.name = record->name;
         observation.accessPath = accessPath;
-        observation.semanticId = portableSemanticIdentity(
+        observation.semanticId = portableSemanticIdentityForRecord(
             *record, *sourceFile);
         observation.declarationText =
             record->presentation.declarationText;
         observation.type = type;
         observation.sourceFile = *sourceFile;
         observation.sourceLine = record->location.startLine;
+        observation.sourceColumn = std::max(
+            1, record->location.startColumn);
+        observation.sourceLinks = sourceLinksForRecord(
+            *record,
+            *sourceFile,
+            driverRelationships,
+            request.project.workspaceRoot,
+            &result.warnings);
         observation.port = isPort(*record);
         manifest.observations.append(std::move(observation));
         seenObservationPaths.insert(accessPath);
@@ -1123,4 +1216,15 @@ QString WaveSimulationManifestService::statusCode(
         return QStringLiteral("project-path-outside-workspace");
     }
     return QStringLiteral("unknown");
+}
+
+QString WaveSimulationManifestService::portableSemanticIdentity(
+    const SemanticSymbolRecord& record,
+    const QString& workspaceRoot)
+{
+    const std::optional<QString> sourceFile = relativeProjectPath(
+        workspaceRoot, record.location.fileName);
+    return sourceFile
+        ? portableSemanticIdentityForRecord(record, *sourceFile)
+        : QString();
 }

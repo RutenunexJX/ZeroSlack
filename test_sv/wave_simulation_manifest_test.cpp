@@ -95,6 +95,17 @@ const WaveSimulationManifestObservation* observation(
     return nullptr;
 }
 
+const WaveSimulationManifestSourceLink* sourceLink(
+    const QList<WaveSimulationManifestSourceLink>& links,
+    const QString& kind)
+{
+    for (const WaveSimulationManifestSourceLink& link : links) {
+        if (link.kind == kind)
+            return &link;
+    }
+    return nullptr;
+}
+
 const WaveSimulationManifestUnresolvedDependency* unresolvedDependency(
     const WaveSimulationModuleManifest& manifest,
     const QString& name)
@@ -131,7 +142,7 @@ int main(int argc, char** argv)
     const QString unresolvedFile = QDir(fixtureRoot).absoluteFilePath(
         QStringLiteral("manifest_unresolved.sv"));
     const QString schemaFile = QDir(sourceRoot).absoluteFilePath(
-        QStringLiteral("schemas/wave-simulation-module-manifest-v4.schema.json"));
+        QStringLiteral("schemas/wave-simulation-module-manifest-v5.schema.json"));
 
     check(QFileInfo(fixtureRoot).isDir(), "real manifest fixture exists");
     const QHash<QString, QString> contents{
@@ -152,7 +163,7 @@ int main(int argc, char** argv)
     const QStringList orderedFiles{
         childFile, topFile, headerFile, unresolvedFile};
     SlangManager slang;
-    const QList<SemanticSymbolRecord> records =
+    QList<SemanticSymbolRecord> records =
         slang.extractOverlayWorkspaceSymbolRecords(
             contents,
             {fixtureRoot},
@@ -160,6 +171,8 @@ int main(int argc, char** argv)
             nullptr,
             nullptr,
             orderedFiles);
+    for (int index = 0; index < records.size(); ++index)
+        records[index].localHandle = index;
     check(!records.isEmpty(), "Slang elaborates the real manifest fixture");
 
     const SemanticSymbolRecord module = findRecord(
@@ -176,11 +189,22 @@ int main(int argc, char** argv)
         QStringLiteral("data_i"),
         SymbolTaxonomy::CollectorKind::PortInput,
         QStringLiteral("manifest_child"));
+    const SemanticSymbolRecord dataOutputRecord = findRecord(
+        records,
+        QStringLiteral("data_o"),
+        SymbolTaxonomy::CollectorKind::PortOutput,
+        QStringLiteral("manifest_child"));
+    const SemanticSymbolRecord nextDataRecord = findRecord(
+        records,
+        QStringLiteral("next_data"),
+        SymbolTaxonomy::CollectorKind::Logic,
+        QStringLiteral("manifest_child"));
     const SemanticSymbolRecord unresolvedModule = findRecord(
         records,
         QStringLiteral("manifest_unresolved_top"),
         SymbolTaxonomy::CollectorKind::Module);
     check(module.isValid() && widthRecord.isValid() && dataPortRecord.isValid()
+              && dataOutputRecord.isValid() && nextDataRecord.isValid()
               && unresolvedModule.isValid(),
           "fixture exposes regular and unresolved-dependency module records");
 
@@ -203,8 +227,18 @@ int main(int argc, char** argv)
                                SymbolTaxonomy::SourceRole::DesignSource);
     project.topModule = QStringLiteral("manifest_top");
 
+    SemanticRelationship dataOutputDriver;
+    dataOutputDriver.fromStableKey = nextDataRecord.stableKey;
+    dataOutputDriver.toStableKey = dataOutputRecord.stableKey;
+    dataOutputDriver.type = SymbolRelationshipEngine::ASSIGNS_TO;
+    dataOutputDriver.provenance = RelationshipProvenance::SlangExtracted;
+    dataOutputDriver.confidence = 100;
+    dataOutputDriver.evidenceText = QStringLiteral("data_o = next_data");
+    dataOutputDriver.evidenceRange = {
+        childFile, 23, 9, 23, 27, -1, 0};
     const auto snapshot = std::make_shared<const SemanticIndexSnapshot>(
-        SemanticIndexSnapshot::fromSymbolRecords(records, {}, {}, contents));
+        SemanticIndexSnapshot::fromSymbolRecords(
+            records, {dataOutputDriver}, {}, contents));
     WaveSimulationManifestService service;
     WaveSimulationManifestBuildRequest definitionRequest;
     definitionRequest.semanticSnapshot = snapshot;
@@ -227,7 +261,7 @@ int main(int argc, char** argv)
     check(definition.manifest.target.mode == QStringLiteral("module-definition")
               && definition.manifest.target.instancePath.isEmpty(),
           "definition and instance target modes are distinct");
-    check(definition.manifest.schemaVersion == 4
+    check(definition.manifest.schemaVersion == 5
               && definition.manifest.observationScope.mode
                      == QStringLiteral("always")
               && definition.manifest.observationScope.sourceFile
@@ -235,6 +269,31 @@ int main(int argc, char** argv)
               && definition.manifest.observationScope.startLine == 18
               && definition.manifest.observationScope.endLine == 24,
           "selected always scope is preserved as portable manifest metadata");
+    const WaveSimulationManifestPort* dataOutput = port(
+        definition.manifest, QStringLiteral("data_o"));
+    const WaveSimulationManifestSourceLink* dataOutputDeclaration =
+        dataOutput ? sourceLink(
+                         dataOutput->sourceLinks,
+                         QStringLiteral("declaration"))
+                   : nullptr;
+    const WaveSimulationManifestSourceLink* dataOutputAssignment =
+        dataOutput ? sourceLink(
+                         dataOutput->sourceLinks,
+                         QStringLiteral("driver"))
+                   : nullptr;
+    check(dataOutput && dataOutput->semanticId.startsWith(
+                            QStringLiteral("sha256:"))
+              && dataOutputDeclaration
+              && dataOutputDeclaration->sourceFile
+                     == QStringLiteral("manifest_child.sv")
+              && dataOutputDeclaration->sourceLine == 14
+              && dataOutputDeclaration->sourceColumn > 0
+              && dataOutputAssignment
+              && dataOutputAssignment->sourceFile
+                     == QStringLiteral("manifest_child.sv")
+              && dataOutputAssignment->sourceLine == 23
+              && dataOutputAssignment->sourceColumn == 9,
+          "manifest v5 exports portable declaration and Slang driver links");
     const WaveSimulationManifestObservation* nextData = observation(
         definition.manifest, QStringLiteral("next_data"));
     check(nextData

@@ -1325,6 +1325,11 @@ void EditorCoordinator::handleSourceSymbolContextMenuRequested(
            symbolAvailable,
            QStringLiteral("Select a signal to observe."));
     append(QString::fromLatin1(
+               ActionIds::WaveSimulationRevealSignalInResult),
+           symbolAvailable,
+           symbolAvailable,
+           QStringLiteral("Select a signal to reveal in an open Wave result."));
+    append(QString::fromLatin1(
                ActionIds::EditToggleSelectionCase),
            hasSelection,
            editable && hasSelection,
@@ -1442,8 +1447,11 @@ void EditorCoordinator::handleSourceSymbolContextMenuRequested(
                         QStringLiteral("column"),
                         context.column + 1);
                     if (actionId
-                        == QString::fromLatin1(
-                            ActionIds::WaveSimulationObserveSignal)) {
+                            == QString::fromLatin1(
+                                ActionIds::WaveSimulationObserveSignal)
+                        || actionId
+                            == QString::fromLatin1(
+                                ActionIds::WaveSimulationRevealSignalInResult)) {
                         parameters.insert(
                             QStringLiteral("symbolName"),
                             sourceContext.symbolName);

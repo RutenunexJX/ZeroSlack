@@ -1,8 +1,19 @@
 # ZeroSlack Current Plan
 
-Product version: `v0.14.0`
+Product version: `v0.15.0`
 
 ## Current status
+
+- Module Manifest v5 adds portable declaration/driver links, source columns,
+  and stable semantic identities for ports and internal observations while
+  preserving WaveWorkbench v1-v4 readers.
+- The embedded result exposes Declaration and Drivers navigation for mapped
+  Actual signals. The editor Action can reveal a semantic signal in an open
+  result from the same workspace; ambiguous, unmapped, and cross-workspace
+  requests fail explicitly.
+- ZeroSlack validates `result-source-navigation/v1` and the required Qt
+  meta-object methods/signal without changing the `wavewidgets` v1 C ABI or
+  workspace contract.
 
 - Module Manifest v4 exports unresolved module instances only from the
   selected target's dependency closure, including portable source positions
@@ -87,12 +98,13 @@ Product version: `v0.14.0`
   changing the build-cache fingerprint.
 - ZeroSlack validates the optional `multi-clock-async-events/v1` capability and
   the corresponding shared-widget controls before accepting the real workspace.
-- WaveWorkbench passes all `95/95` configured tests against the integration and
-  portable-install contracts. ZeroSlack passes `90/90`, including Manifest v4,
+- WaveWorkbench passes all `96/96` configured tests against the integration and
+  portable-install contracts. ZeroSlack passes `90/90`, including Manifest v5,
   the embedded workspace contract, and the existing visible-Wave latency gate.
 - A cross-repository test dynamically loads the real WaveWorkbench shared
-  library and validates explicit stubs plus multi-scenario batch controls
-  without changing the v1 C ABI or workspace contract.
+  library and validates explicit stubs, multi-scenario batch controls, and the
+  result/source navigation contract without changing the v1 C ABI or workspace
+  contract.
 
 Superseded plans and completed milestone logs are available in the
 [archive index](docs/archive/README.md).

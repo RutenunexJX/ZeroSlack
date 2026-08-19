@@ -690,7 +690,7 @@ S11 实际结果：
 
 ### S12：独立增强项
 
-状态：`in_progress`（S12.1-S12.8 已完成，2026-08-19）
+状态：`completed`（S12.1-S12.9 已完成，2026-08-19）
 
 以下项目必须继续拆成独立切片，不得合并为一个“大完善阶段”：
 
@@ -702,7 +702,7 @@ S11 实际结果：
 - FST/Wellen 按需读取。`completed`
 - unresolved module 的显式 stub。`completed`
 - 模块全部场景批量运行。`completed`
-- 结果与 driver/source 的双向导航。
+- 结果与 driver/source 的双向导航。`completed`
 
 S12.1 实际结果：
 
@@ -1024,3 +1024,26 @@ Stimulus Scenario v5、simulation session v2 均未升级；新增能力
 下一最小切片：S12.9 结果与 driver/source 的双向导航，需由用户再次明确启动。
 恢复开发所需上下文：从 Module Manifest v4 的便携 source link、Actual trace 的稳定 signal ID、
 ZeroSlack 通用源码跳转与现有诊断导航继续；不得把批量运行状态持久化或引入第二套语义事实源。
+
+本轮切片：S12.9 结果与 driver/source 的双向导航
+完成内容：Module Manifest v5 的稳定语义身份、声明与 Slang driver 链接；WaveWorkbench
+trace-to-lane-to-source 纯数据 resolver；Actual Declaration/Drivers 操作；ZeroSlack 源码信号
+定位已打开结果；同工作区与便携路径门禁；双仓能力和 Qt meta-object 契约。
+明确未做：未映射内部 trace 的源码猜测、歧义结构化根的任意择一、跨工作区跳转、第二套
+driver 分析或仿真结果持久化。
+用户可见行为：选择 Actual 波形或层级树信号后可打开声明或任一 driver；编辑器右键
+`Reveal Signal in Wave Result` 可定位到当前工作区已打开结果中的对应 Actual 行。
+自动测试：WaveWorkbench 新增 resolver 严格契约与真实 GUI 往返冒烟并通过 CTest
+`96/96`；ZeroSlack 新增 Manifest v5、Action、上下文菜单、嵌入式 workspace 与协调器
+边界覆盖并通过 CTest `90/90`。
+人工验证：`artifacts/ui/wave/s12-result-source-navigation.png` 已检查活动 Actual 行、
+`Source` 和 `Drivers (1)` 同屏可见。
+Schema/接口版本：Module Manifest v5；`wavewidgets` C ABI 与 workspace contract 保持 v1，
+新增可选能力声明 `result-source-navigation/v1`。
+修改仓库与提交：WaveWorkbench `76fbc9f`；ZeroSlack 归入当前 `v0.15.0` 切片提交。
+已知限制：本机未安装真实 Verilator；外部编译/运行由确定性 fixture 验证。只有已有
+lane-to-trace mapping 的信号参与反向定位，歧义匹配明确拒绝。
+下一最小切片：无。`WAVE_SIMULATION_PLAN.md` 当前登记的 S1-S12.9 已全部完成；后续需求
+应作为新的独立切片重新登记。
+恢复开发所需上下文：从 Module Manifest v5、`simulation_source_navigation`、共享工作区
+`result-source-navigation/v1` 和 ZeroSlack Action Registry 继续；不得恢复名称猜测或跨工作区回退。

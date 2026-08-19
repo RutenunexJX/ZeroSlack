@@ -65,6 +65,7 @@
 #include "wavepreviewpanelcoordinator.h"
 #include "wavesimulationconfiguration.h"
 #include "wavesimulationcoordinator.h"
+#include "wavesimulationresultnavigationcoordinator.h"
 #include "waveembeddedworkspaceloader.h"
 #include "workspaceconfigurationdialog.h"
 #include "workspaceeditdocumentmanager.h"
@@ -3448,6 +3449,22 @@ void MainWindow::setupWaveSimulation()
         std::make_unique<WaveEmbeddedWorkspaceLoader>();
     waveSimulationCoordinator =
         std::make_unique<WaveSimulationCoordinator>(this);
+    waveSimulationResultNavigationCoordinator =
+        std::make_unique<
+            WaveSimulationResultNavigationCoordinator>(
+                tabManager.get(),
+                workspaceManager.get(),
+                navigationCommandCoordinator.get(),
+                this);
+    connect(
+        waveSimulationResultNavigationCoordinator.get(),
+        &WaveSimulationResultNavigationCoordinator::
+            statusMessageRequested,
+        this,
+        [this](const QString& message, const int timeoutMs) {
+            if (statusBar())
+                statusBar()->showMessage(message, timeoutMs);
+        });
     connect(waveSimulationCoordinator.get(),
             &WaveSimulationCoordinator::stageChanged,
             this,
@@ -3547,6 +3564,15 @@ void MainWindow::openWaveSimulationResultTab(
         workspace->setSizePolicy(
             QSizePolicy::Expanding,
             QSizePolicy::Expanding);
+        if (waveSimulationResultNavigationCoordinator) {
+            waveSimulationResultNavigationCoordinator
+                ->registerWorkspace(
+                    workspace,
+                    stableId,
+                    workspaceManager
+                        ? workspaceManager->getWorkspacePath()
+                        : QString());
+        }
         tabManager->openToolPage(workspace, stableId, title);
         if (statusBar()) {
             statusBar()->showMessage(
@@ -3851,8 +3877,24 @@ ActionExecutionResult MainWindow::executeActionRoute(
                 descriptor, invocation);
     }
     if (route
-            == QStringLiteral(
-                "waveSimulation.runCurrentContext")
+        == QStringLiteral(
+            "waveSimulation.revealSignalInResult")) {
+        QString failureReason;
+        if (!waveSimulationResultNavigationCoordinator) {
+            return fail(QStringLiteral(
+                "Wave result navigation is unavailable."));
+        }
+        if (!waveSimulationResultNavigationCoordinator
+                 ->revealSignalInResult(
+                     invocation, &failureReason))
+            return fail(failureReason);
+        result.message = QStringLiteral(
+            "Signal revealed in Wave Simulation result.");
+        return succeeded();
+    }
+    if (route
+        == QStringLiteral(
+            "waveSimulation.runCurrentContext")
         || route
                == QStringLiteral(
                    "waveSimulation.observeSignal")) {

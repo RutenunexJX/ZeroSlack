@@ -59,6 +59,16 @@ int main(int argc, char** argv)
     }
     const QStringList capabilities = workspace->property(
         "wavewidgets.capabilities").toStringList();
+    if (!capabilities.contains(QStringLiteral("result-source-navigation/v1"))
+        || workspace->metaObject()->indexOfMethod(
+               "canRevealSourceObject(QString,QString,int,int,QString,QString)") < 0
+        || workspace->metaObject()->indexOfMethod(
+               "revealSourceObject(QString,QString,int,int,QString,QString)") < 0
+        || workspace->metaObject()->indexOfSignal(
+               "sourceNavigationRequested(QString,int,int,QString,QString)") < 0) {
+        std::cerr << "source navigation workspace contract is missing\n";
+        return 1;
+    }
     auto* asyncTiming = workspace->findChild<QAction*>(
         QStringLiteral("AsyncTimingAction"));
     auto* clockDomains = workspace->findChild<QToolButton*>(
@@ -89,6 +99,8 @@ int main(int argc, char** argv)
             || !capabilities.contains(QStringLiteral(
                 "lightweight-trace-checks/v1"))
             || !capabilities.contains(QStringLiteral(
+                "result-source-navigation/v1"))
+            || !capabilities.contains(QStringLiteral(
                 "explicit-unresolved-module-stubs/v1"))
             || !capabilities.contains(QStringLiteral(
                 "multi-scenario-batch-run/v1"))
@@ -100,6 +112,10 @@ int main(int argc, char** argv)
                 QStringLiteral("CompareResultTable"))
             || !workspace->findChild<QTableWidget*>(
                 QStringLiteral("SimulationCheckResultTable"))
+            || !workspace->findChild<QAction*>(
+                QStringLiteral("SimulationSourceNavigationAction"))
+            || !workspace->findChild<QToolButton*>(
+                QStringLiteral("SimulationDriverNavigationButton"))
             || !asyncTiming || !clockDomains || !clockDomains->menu()
             || !stubDependencies || !stubDependencies->menu()
             || !compare || !runChecks || !runAllScenarios

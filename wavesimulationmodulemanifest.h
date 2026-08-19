@@ -14,6 +14,14 @@ struct WaveSimulationManifestSource {
     QString role;
 };
 
+struct WaveSimulationManifestSourceLink {
+    QString kind;
+    QString sourceFile;
+    int sourceLine = 0;
+    int sourceColumn = 0;
+    QString label;
+};
+
 struct WaveSimulationManifestAssociation {
     QString name;
     int position = 0;
@@ -112,6 +120,7 @@ struct WaveSimulationManifestParameter {
 
 struct WaveSimulationManifestPort {
     QString name;
+    QString semanticId;
     QString direction;
     QString declarationText;
     WaveSimulationManifestType type;
@@ -120,6 +129,8 @@ struct WaveSimulationManifestPort {
     QString structuredFailureReason;
     QString sourceFile;
     int sourceLine = 0;
+    int sourceColumn = 0;
+    QList<WaveSimulationManifestSourceLink> sourceLinks;
 };
 
 struct WaveSimulationManifestTarget {
@@ -146,11 +157,13 @@ struct WaveSimulationManifestObservation {
     WaveSimulationManifestType type;
     QString sourceFile;
     int sourceLine = 0;
+    int sourceColumn = 0;
+    QList<WaveSimulationManifestSourceLink> sourceLinks;
     bool port = false;
 };
 
 struct WaveSimulationModuleManifest {
-    static constexpr int kSchemaVersion = 4;
+    static constexpr int kSchemaVersion = 5;
 
     int schemaVersion = kSchemaVersion;
     QString workspaceId;

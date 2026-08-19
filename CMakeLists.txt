@@ -340,6 +340,7 @@ set(ZEROSLACK_CORE_SOURCES
     graphexportservice.cpp
     wavesimulationconfiguration.cpp
     wavesimulationcoordinator.cpp
+    wavesimulationresultnavigationcoordinator.cpp
     waveembeddedworkspaceloader.cpp
     wavesimulationmodulemanifest.cpp
     wavesimulationmanifestservice.cpp

@@ -69,6 +69,9 @@ public:
         const WaveSimulationManifestBuildRequest& request) const;
 
     static QString statusCode(WaveSimulationManifestBuildStatus status);
+    static QString portableSemanticIdentity(
+        const SemanticSymbolRecord& record,
+        const QString& workspaceRoot);
 };
 
 #endif // WAVESIMULATIONMANIFESTSERVICE_H

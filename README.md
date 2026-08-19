@@ -1,6 +1,6 @@
 # ZeroSlack
 
-Current version: `v0.14.0`
+Current version: `v0.15.0`
 
 ZeroSlack is a Qt 6 desktop environment for navigating, understanding, and
 editing SystemVerilog workspaces. It combines an incremental editor syntax
@@ -51,7 +51,7 @@ and preview-first RTL editing workflows.
   available immediately, while transitions are decoded only for mapped or
   checked signals. The shared workspace advertises this optional capability
   only when its helper deployment is complete; VCD/CSV remain independent.
-  Module Manifest v4 also records unresolved module instances in the selected
+  Module Manifest v5 also records unresolved module instances in the selected
   dependency closure. Simulation refuses them by default; the shared `Stubs`
   menu can explicitly enable supported input-only passive stubs without
   representing dependency behavior. `Run all (N)` executes every stored
@@ -59,6 +59,11 @@ and preview-first RTL editing workflows.
   compiled-model cache, and presents per-scenario status, diagnostics, cache
   provenance, duration, and selectable Actual waveforms in the Batch review
   page. Stop cancels the current item and the remaining queue.
+  Mapped Actual signals now retain portable declaration and Slang driver links:
+  the result toolbar returns to either source location, while an editor signal
+  can reveal its corresponding row in an already open result. Stable semantic
+  identities are preferred over source-location fallback; ambiguous, unmapped,
+  cross-workspace, and non-portable paths are rejected rather than guessed.
 - Preview and apply guarded RTL changes through the existing rename,
   connection, expose-to-top, scoped replace, instance-pair connection, and
   multi-signal propagation workflows. Module-port changes can be synchronized

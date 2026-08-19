@@ -1428,6 +1428,19 @@ void appendWaveSimulationActions(QList<ActionDescriptor>* out)
              | ActionRequirements::SemanticCurrent
              | ActionRequirements::Symbol,
          false},
+        {ActionIds::WaveSimulationRevealSignalInResult,
+         "Reveal Signal in Wave Result",
+         "Locate the selected semantic signal in an open Wave Simulation result.",
+         "waveSimulation.revealSignalInResult",
+         "Reveal Signal in Wave Result",
+         "revealSignalInWaveSimulationResultAction",
+         "",
+         ActionScope::Symbol,
+         ActionRequirements::Workspace
+             | ActionRequirements::Editor
+             | ActionRequirements::SemanticCurrent
+             | ActionRequirements::Symbol,
+         false},
         {ActionIds::WaveSimulationRunDesignInstance,
          "Run Instance in Wave Simulation",
          "Compile and simulate the module represented by the selected design-hierarchy instance.",

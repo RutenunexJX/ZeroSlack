@@ -49,6 +49,7 @@ class TemporaryEditorSearchProvider;
 class ScopedReplaceWorkflow;
 class WorkspaceEditDocumentManager;
 class WaveSimulationCoordinator;
+class WaveSimulationResultNavigationCoordinator;
 class WaveEmbeddedWorkspaceLoader;
 class QAction;
 class QDialog;
@@ -155,6 +156,8 @@ private:
         scopedReplaceDocuments;
     std::unique_ptr<WaveSimulationCoordinator>
         waveSimulationCoordinator;
+    std::unique_ptr<WaveSimulationResultNavigationCoordinator>
+        waveSimulationResultNavigationCoordinator;
     std::unique_ptr<WaveEmbeddedWorkspaceLoader>
         waveEmbeddedWorkspaceLoader;
     std::unique_ptr<ScopedReplaceWorkflow>

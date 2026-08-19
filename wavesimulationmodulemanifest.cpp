@@ -27,6 +27,54 @@ QJsonArray associationArray(
     return result;
 }
 
+QJsonArray sourceLinkArray(
+    const QList<WaveSimulationManifestSourceLink>& links)
+{
+    QJsonArray result;
+    for (const WaveSimulationManifestSourceLink& link : links) {
+        result.append(QJsonObject{
+            {QStringLiteral("kind"), link.kind},
+            {QStringLiteral("sourceFile"), link.sourceFile},
+            {QStringLiteral("sourceLine"), link.sourceLine},
+            {QStringLiteral("sourceColumn"), link.sourceColumn},
+            {QStringLiteral("label"), link.label},
+        });
+    }
+    return result;
+}
+
+bool sourceLinksValid(
+    const QString& semanticId,
+    const QString& sourceFile,
+    int sourceLine,
+    int sourceColumn,
+    const QList<WaveSimulationManifestSourceLink>& links)
+{
+    if (!semanticId.startsWith(QStringLiteral("sha256:"))
+        || sourceFile.isEmpty() || sourceLine <= 0 || sourceColumn <= 0
+        || links.isEmpty()) {
+        return false;
+    }
+    int declarations = 0;
+    for (const WaveSimulationManifestSourceLink& link : links) {
+        if ((link.kind != QStringLiteral("declaration")
+             && link.kind != QStringLiteral("driver"))
+            || link.sourceFile.isEmpty() || link.sourceLine <= 0
+            || link.sourceColumn <= 0) {
+            return false;
+        }
+        if (link.kind == QStringLiteral("declaration")) {
+            ++declarations;
+            if (link.sourceFile != sourceFile
+                || link.sourceLine != sourceLine
+                || link.sourceColumn != sourceColumn) {
+                return false;
+            }
+        }
+    }
+    return declarations == 1;
+}
+
 QJsonObject unresolvedInstanceObject(
     const WaveSimulationManifestUnresolvedInstance& instance)
 {
@@ -158,6 +206,26 @@ bool WaveSimulationModuleManifest::isValid() const
                         && instance.sourceColumn > 0;
                 });
         });
+    const bool portsValid = std::all_of(
+        ports.cbegin(), ports.cend(),
+        [](const WaveSimulationManifestPort& port) {
+            return sourceLinksValid(
+                port.semanticId,
+                port.sourceFile,
+                port.sourceLine,
+                port.sourceColumn,
+                port.sourceLinks);
+        });
+    const bool observationsValid = std::all_of(
+        observations.cbegin(), observations.cend(),
+        [](const WaveSimulationManifestObservation& observation) {
+            return sourceLinksValid(
+                observation.semanticId,
+                observation.sourceFile,
+                observation.sourceLine,
+                observation.sourceColumn,
+                observation.sourceLinks);
+        });
     return schemaVersion == kSchemaVersion
         && workspaceId.startsWith(QStringLiteral("sha256:"))
         && !target.module.isEmpty()
@@ -171,7 +239,9 @@ bool WaveSimulationModuleManifest::isValid() const
                 && observationScope.startLine > 0
                 && observationScope.endLine
                        >= observationScope.startLine))
-        && unresolvedValid;
+        && unresolvedValid
+        && portsValid
+        && observationsValid;
 }
 
 QJsonObject WaveSimulationModuleManifest::toJson() const
@@ -211,6 +281,9 @@ QJsonObject WaveSimulationModuleManifest::toJson() const
         entry.insert(QStringLiteral("type"), typeObject(observation.type));
         entry.insert(QStringLiteral("sourceFile"), observation.sourceFile);
         entry.insert(QStringLiteral("sourceLine"), observation.sourceLine);
+        entry.insert(QStringLiteral("sourceColumn"), observation.sourceColumn);
+        entry.insert(QStringLiteral("sourceLinks"),
+                     sourceLinkArray(observation.sourceLinks));
         entry.insert(QStringLiteral("port"), observation.port);
         observationArray.append(entry);
     }
@@ -272,6 +345,7 @@ QJsonObject WaveSimulationModuleManifest::toJson() const
     for (const WaveSimulationManifestPort& port : ports) {
         QJsonObject entry;
         entry.insert(QStringLiteral("name"), port.name);
+        entry.insert(QStringLiteral("semanticId"), port.semanticId);
         entry.insert(QStringLiteral("direction"), port.direction);
         entry.insert(QStringLiteral("declarationText"), port.declarationText);
         entry.insert(QStringLiteral("type"), typeObject(port.type));
@@ -287,6 +361,9 @@ QJsonObject WaveSimulationModuleManifest::toJson() const
                      port.structuredFailureReason);
         entry.insert(QStringLiteral("sourceFile"), port.sourceFile);
         entry.insert(QStringLiteral("sourceLine"), port.sourceLine);
+        entry.insert(QStringLiteral("sourceColumn"), port.sourceColumn);
+        entry.insert(QStringLiteral("sourceLinks"),
+                     sourceLinkArray(port.sourceLinks));
         portArray.append(entry);
     }
     root.insert(QStringLiteral("ports"), portArray);

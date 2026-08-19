@@ -119,6 +119,16 @@ int main(int argc, char* argv[])
             root,
             QStringLiteral(
                 "rtlactioncoordinator.cpp"));
+    const QString waveResultNavigationHeader =
+        readSource(
+            root,
+            QStringLiteral(
+                "wavesimulationresultnavigationcoordinator.h"));
+    const QString waveResultNavigationSource =
+        readSource(
+            root,
+            QStringLiteral(
+                "wavesimulationresultnavigationcoordinator.cpp"));
     const QString editorSplitSource =
         readSource(
             root,
@@ -637,6 +647,26 @@ int main(int argc, char* argv[])
     check(sourceLineCount(mainWindowSource) <= 7000,
           QStringLiteral(
               "mainwindow.cpp remains below the post-extraction ownership ceiling"));
+    check(!waveResultNavigationHeader.isEmpty()
+              && !waveResultNavigationSource.isEmpty()
+              && cmake.contains(QStringLiteral(
+                  "wavesimulationresultnavigationcoordinator.cpp")),
+          QStringLiteral(
+              "Wave result navigation is an explicit build boundary"));
+    check(containsAll(
+              waveResultNavigationSource,
+              {QStringLiteral("canRevealSourceObject"),
+               QStringLiteral("revealSourceObject"),
+               QStringLiteral("sourceNavigationRequested"),
+               QStringLiteral("navigateToFileAndLineAndFlash")})
+              && containsNone(
+                  mainWindowSource,
+                  {QStringLiteral("canRevealSourceObject"),
+                   QStringLiteral("revealSourceObject"),
+                   QStringLiteral(
+                       "handleWaveSourceNavigationRequest")}),
+          QStringLiteral(
+              "Wave result navigation owns both navigation directions"));
 
     const QStringList insightModules = {
         QStringLiteral("rtlinsightspanelviewstate"),
