@@ -1,6 +1,6 @@
 # ZeroSlack Current Plan
 
-Product version: `v0.13.0`
+Product version: `v0.14.0`
 
 ## Current status
 
@@ -12,6 +12,14 @@ Product version: `v0.13.0`
   declarations that enter the build fingerprint and run report.
 - ZeroSlack validates `explicit-unresolved-module-stubs/v1` and the shared
   selector without changing the wavewidgets v1 C ABI.
+- The shared `Run all (N)` action executes stored scenarios sequentially through
+  one runner, continues after individual failures, cancels the active and
+  pending queue through Stop, and reuses the compiled-model cache.
+- Review/Batch exposes per-scenario state, diagnostics, cache provenance,
+  duration, and successful Actual waveforms. Batch state is runtime-derived and
+  does not change the Stimulus Scenario or simulation session schemas.
+- ZeroSlack validates `multi-scenario-batch-run/v1`, the run-all action, and the
+  batch result table from the real shared library while retaining the v1 C ABI.
 
 - Stimulus Scenario v5 persists output expectations in watch-only
   `expectedSegments`; the runtime plan continues to contain DUT stimulus only.
@@ -79,12 +87,12 @@ Product version: `v0.13.0`
   changing the build-cache fingerprint.
 - ZeroSlack validates the optional `multi-clock-async-events/v1` capability and
   the corresponding shared-widget controls before accepting the real workspace.
-- WaveWorkbench passes all `94/94` configured tests against the integration and
+- WaveWorkbench passes all `95/95` configured tests against the integration and
   portable-install contracts. ZeroSlack passes `90/90`, including Manifest v4,
   the embedded workspace contract, and the existing visible-Wave latency gate.
 - A cross-repository test dynamically loads the real WaveWorkbench shared
-  library and validates `explicit-unresolved-module-stubs/v1` without changing
-  the v1 C ABI or workspace contract.
+  library and validates explicit stubs plus multi-scenario batch controls
+  without changing the v1 C ABI or workspace contract.
 
 Superseded plans and completed milestone logs are available in the
 [archive index](docs/archive/README.md).

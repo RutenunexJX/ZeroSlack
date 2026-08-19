@@ -69,6 +69,10 @@ int main(int argc, char** argv)
         QStringLiteral("RunSimulationCompareAction"));
     auto* runChecks = workspace->findChild<QAction*>(
         QStringLiteral("RunSimulationChecksAction"));
+    auto* runAllScenarios = workspace->findChild<QAction*>(
+        QStringLiteral("RunAllSimulationScenariosAction"));
+    auto* batchResults = workspace->findChild<QTableWidget*>(
+        QStringLiteral("SimulationBatchResultTable"));
     if (realWorkspace
         && (!workspace->findChild<QWidget*>(
                 QStringLiteral("StimulusCanvas"))
@@ -87,6 +91,8 @@ int main(int argc, char** argv)
             || !capabilities.contains(QStringLiteral(
                 "explicit-unresolved-module-stubs/v1"))
             || !capabilities.contains(QStringLiteral(
+                "multi-scenario-batch-run/v1"))
+            || !capabilities.contains(QStringLiteral(
                 "on-demand-fst-trace/v1"))
             || !workspace->findChild<QWidget*>(
                 QStringLiteral("SimulationComparisonPanel"))
@@ -96,7 +102,8 @@ int main(int argc, char** argv)
                 QStringLiteral("SimulationCheckResultTable"))
             || !asyncTiming || !clockDomains || !clockDomains->menu()
             || !stubDependencies || !stubDependencies->menu()
-            || !compare || !runChecks)) {
+            || !compare || !runChecks || !runAllScenarios
+            || !batchResults)) {
         std::cerr << "real shared wave workspace capabilities are missing\n";
         return 1;
     }

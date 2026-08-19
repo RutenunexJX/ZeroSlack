@@ -690,7 +690,7 @@ S11 实际结果：
 
 ### S12：独立增强项
 
-状态：`in_progress`（S12.1-S12.7 已完成，2026-08-19）
+状态：`in_progress`（S12.1-S12.8 已完成，2026-08-19）
 
 以下项目必须继续拆成独立切片，不得合并为一个“大完善阶段”：
 
@@ -701,7 +701,7 @@ S11 实际结果：
 - 时刻值、稳定性、边沿响应等轻量检查。`completed`
 - FST/Wellen 按需读取。`completed`
 - unresolved module 的显式 stub。`completed`
-- 模块全部场景批量运行。
+- 模块全部场景批量运行。`completed`
 - 结果与 driver/source 的双向导航。
 
 S12.1 实际结果：
@@ -1002,3 +1002,25 @@ contract 保持 v1，新增 `explicit-unresolved-module-stubs/v1`。
 下一最小切片：S12.8 多场景批量运行，需由用户再次明确启动。
 恢复开发所需上下文：从 simulation session 的场景存储与现有单次 runner 编排继续；不得把
 源码导航或依赖行为模型并入批量切片。
+
+本轮切片：S12.8 多场景批量运行
+完成内容：纯数据批量状态机、单 runner 串行编排、单项失败后继续、当前与剩余任务取消、
+独立 result project、共享 build cache、Review/Batch 状态与结果切换、双仓能力门禁。
+明确未做：并行编译/运行、跨会话持久化批量结果、结果与 driver/source 的双向导航。
+用户可见行为：Simulation Result 工具栏显示 `Run all (N)`；Batch 页逐项显示等待、运行、
+通过、失败或取消，以及诊断、Built/Cached 来源和耗时。点击成功项切换到对应 Actual 波形，
+Stop 取消当前项并终止剩余队列。
+自动测试：WaveWorkbench CTest `95/95`；ZeroSlack CTest `90/90`，真实共享库跨仓加载通过。
+新增纯状态测试覆盖失败继续、取消、重启与缓存证据，GUI 冒烟覆盖两场景顺序运行和第二项
+缓存命中。
+人工验证：`artifacts/ui/wave/s12-multi-scenario-batch.png` 已检查 Stimulus、Actual 和 Batch
+同屏，确认两项通过、首项 Built、次项 Cached。
+Schema/接口版本：`wavewidgets` C ABI 与 workspace contract 保持 v1，Module Manifest v4、
+Stimulus Scenario v5、simulation session v2 均未升级；新增能力
+`multi-scenario-batch-run/v1`。批量状态和报告仅存在于当前运行期。
+修改仓库与提交：WaveWorkbench `06d19f7`；ZeroSlack 归入当前 `v0.14.0` 切片提交。
+已知限制：场景串行运行，不并发编译；成功报告仅在当前窗口内供切换，编辑场景或单项重跑后
+立即失效。本机无真实 Verilator，外部流程由确定性 fixture 验证。
+下一最小切片：S12.9 结果与 driver/source 的双向导航，需由用户再次明确启动。
+恢复开发所需上下文：从 Module Manifest v4 的便携 source link、Actual trace 的稳定 signal ID、
+ZeroSlack 通用源码跳转与现有诊断导航继续；不得把批量运行状态持久化或引入第二套语义事实源。

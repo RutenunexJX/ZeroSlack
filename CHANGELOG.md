@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.14.0] - 2026-08-19
+
+### Multi-scenario simulation batches
+
+- Added `Run all (N)` for deterministic sequential execution of every stored
+  simulation scenario through the existing runner and shared build cache.
+- Added failure continuation, active/pending cancellation, generation guards,
+  independent result projects, and main-session path reanchoring.
+- Added Review/Batch status, diagnostics, cache provenance, duration, and
+  selectable successful Actual waveforms without persisting derived batch state.
+- Required `multi-scenario-batch-run/v1`, the shared action, and the result table
+  in ZeroSlack's real shared-library contract while retaining the v1 C ABI.
+
 ## [0.13.0] - 2026-08-19
 
 ### Explicit unresolved-module simulation stubs

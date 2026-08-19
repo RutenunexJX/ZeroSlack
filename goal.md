@@ -1,15 +1,15 @@
 # ZeroSlack Current Goal
 
-Product version: `v0.13.0`
+Product version: `v0.14.0`
 
 ## Objective
 
-Complete S12.7 by adding explicit, conservative unresolved-module stubs while
+Complete S12.8 by adding deterministic multi-scenario simulation batches while
 retaining the S11 shared-widget architecture and all prior S12 behavior.
 
 ## Completion criteria
 
-- `VERSION`, generated GUI metadata, and current documents agree on 0.13.0.
+- `VERSION`, generated GUI metadata, and current documents agree on 0.14.0.
 - `wavewidgets` provides a versioned runtime factory for the complete simulation
   workspace; ZeroSlack validates its ABI and workspace contract before hosting.
 - The embedded and standalone forms consume the same project, stimulus canvas,
@@ -55,15 +55,25 @@ retaining the S11 shared-widget architecture and all prior S12 behavior.
   build inputs, cache identity, and run evidence.
 - The shared workspace advertises `explicit-unresolved-module-stubs/v1` and
   exposes the `Stubs` selector without changing its v1 C ABI.
+- Every stored scenario can run sequentially through the existing runner;
+  individual failures continue, cancellation stops the active item and marks
+  the remaining queue cancelled, and all items share the compiled-model cache.
+- The shared Batch review exposes per-scenario state, diagnostics, cache
+  provenance, duration, and successful waveform selection without persisting
+  derived batch state or changing the scenario/session schemas.
+- ZeroSlack requires `multi-scenario-batch-run/v1`, the `Run all` action, and
+  the batch result table from the real shared workspace without changing the
+  v1 C ABI.
 - Both repositories pass their complete configured suites without relaxed
   assertions.
 
 ## Current status
 
-S12.7 is complete. Manifest v4, default refusal, passive stub generation,
-session persistence, cache evidence, and the shared selector are integrated.
-WaveWorkbench passes `94/94` configured tests, ZeroSlack passes `90/90`, and a
-cross-repository test dynamically loads the real shared workspace. This machine
-does not have a real Verilator installation, so external compile/run behavior
-is verified with deterministic process fixtures rather than represented as a
-real RTL compile.
+S12.8 is complete. The shared workspace now runs all stored scenarios in a
+deterministic serial queue, preserves failures without stopping later items,
+supports cancellation, reuses one compiled-model cache, and exposes selectable
+per-scenario results in Review/Batch. WaveWorkbench passes `95/95` configured
+tests and ZeroSlack passes `90/90`, including a cross-repository test that
+dynamically loads the real shared workspace. This machine does not have a real
+Verilator installation, so external compile/run behavior is verified with
+deterministic process fixtures rather than represented as a real RTL compile.
