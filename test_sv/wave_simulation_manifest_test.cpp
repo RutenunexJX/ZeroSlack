@@ -1,4 +1,5 @@
 #include "semanticindexsnapshot.h"
+#include "semanticdependencygraph.h"
 #include "slangmanager.h"
 #include "wavesimulationmanifestservice.h"
 
@@ -94,6 +95,18 @@ const WaveSimulationManifestObservation* observation(
     return nullptr;
 }
 
+const WaveSimulationManifestUnresolvedDependency* unresolvedDependency(
+    const WaveSimulationModuleManifest& manifest,
+    const QString& name)
+{
+    for (const WaveSimulationManifestUnresolvedDependency& dependency :
+         manifest.unresolvedDependencies) {
+        if (dependency.moduleName == name)
+            return &dependency;
+    }
+    return nullptr;
+}
+
 bool isRelativeProjectPath(const QString& path)
 {
     return !path.isEmpty()
@@ -115,24 +128,29 @@ int main(int argc, char** argv)
         QStringLiteral("manifest_child.sv"));
     const QString topFile = QDir(fixtureRoot).absoluteFilePath(
         QStringLiteral("manifest_top.sv"));
+    const QString unresolvedFile = QDir(fixtureRoot).absoluteFilePath(
+        QStringLiteral("manifest_unresolved.sv"));
     const QString schemaFile = QDir(sourceRoot).absoluteFilePath(
-        QStringLiteral("schemas/wave-simulation-module-manifest-v3.schema.json"));
+        QStringLiteral("schemas/wave-simulation-module-manifest-v4.schema.json"));
 
     check(QFileInfo(fixtureRoot).isDir(), "real manifest fixture exists");
     const QHash<QString, QString> contents{
         {childFile, readText(childFile)},
         {topFile, readText(topFile)},
         {headerFile, readText(headerFile)},
+        {unresolvedFile, readText(unresolvedFile)},
     };
     check(!contents.value(childFile).isEmpty()
               && !contents.value(topFile).isEmpty()
-              && !contents.value(headerFile).isEmpty(),
+              && !contents.value(headerFile).isEmpty()
+              && !contents.value(unresolvedFile).isEmpty(),
           "all fixture sources are readable");
 
     const QHash<QString, QString> defines{
         {QStringLiteral("MANIFEST_DEFAULT_WIDTH"), QStringLiteral("5")},
     };
-    const QStringList orderedFiles{childFile, topFile, headerFile};
+    const QStringList orderedFiles{
+        childFile, topFile, headerFile, unresolvedFile};
     SlangManager slang;
     const QList<SemanticSymbolRecord> records =
         slang.extractOverlayWorkspaceSymbolRecords(
@@ -158,8 +176,13 @@ int main(int argc, char** argv)
         QStringLiteral("data_i"),
         SymbolTaxonomy::CollectorKind::PortInput,
         QStringLiteral("manifest_child"));
-    check(module.isValid() && widthRecord.isValid() && dataPortRecord.isValid(),
-          "fixture exposes module, parameter, and port semantic records");
+    const SemanticSymbolRecord unresolvedModule = findRecord(
+        records,
+        QStringLiteral("manifest_unresolved_top"),
+        SymbolTaxonomy::CollectorKind::Module);
+    check(module.isValid() && widthRecord.isValid() && dataPortRecord.isValid()
+              && unresolvedModule.isValid(),
+          "fixture exposes regular and unresolved-dependency module records");
 
     ProjectSnapshot project;
     project.revision = 7;
@@ -176,6 +199,8 @@ int main(int argc, char** argv)
                                SymbolTaxonomy::SourceRole::DesignSource);
     project.sourceRoles.insert(headerFile,
                                SymbolTaxonomy::SourceRole::Header);
+    project.sourceRoles.insert(unresolvedFile,
+                               SymbolTaxonomy::SourceRole::DesignSource);
     project.topModule = QStringLiteral("manifest_top");
 
     const auto snapshot = std::make_shared<const SemanticIndexSnapshot>(
@@ -192,6 +217,9 @@ int main(int argc, char** argv)
     definitionRequest.observationScope.endLine = 24;
     definitionRequest.observationScope.label =
         QStringLiteral("always_comb at manifest_child.sv:16");
+    definitionRequest.dependencyGraph =
+        std::make_shared<const SemanticDependencyGraph>(
+            SemanticDependencyGraph::build(project, contents));
     const WaveSimulationManifestBuildResult definition =
         service.build(definitionRequest);
     check(definition.succeeded() && definition.manifest.isValid(),
@@ -199,7 +227,7 @@ int main(int argc, char** argv)
     check(definition.manifest.target.mode == QStringLiteral("module-definition")
               && definition.manifest.target.instancePath.isEmpty(),
           "definition and instance target modes are distinct");
-    check(definition.manifest.schemaVersion == 3
+    check(definition.manifest.schemaVersion == 4
               && definition.manifest.observationScope.mode
                      == QStringLiteral("always")
               && definition.manifest.observationScope.sourceFile
@@ -220,7 +248,7 @@ int main(int argc, char** argv)
               && observation(definition.manifest,
                              QStringLiteral("data_o")),
           "selected always scope resolves internal and port observations from Slang relationships");
-    check(definition.manifest.sources.size() == 3
+    check(definition.manifest.sources.size() == 4
               && definition.manifest.sources.at(0).path
                   == QStringLiteral("manifest_child.sv")
               && definition.manifest.sources.at(2).role
@@ -231,6 +259,46 @@ int main(int argc, char** argv)
                      QStringLiteral("MANIFEST_DEFAULT_WIDTH"))
                   == QStringLiteral("5"),
           "dependencies, include directories, and defines preserve project configuration");
+    check(definition.manifest.unresolvedDependencies.isEmpty(),
+          "unresolved dependencies outside the selected module closure are excluded");
+
+    WaveSimulationManifestBuildRequest unresolvedRequest = definitionRequest;
+    unresolvedRequest.moduleStableKey = unresolvedModule.stableKey;
+    unresolvedRequest.observationScope = {};
+    const WaveSimulationManifestBuildResult unresolvedResult =
+        service.build(unresolvedRequest);
+    const WaveSimulationManifestUnresolvedDependency* missingVendor =
+        unresolvedDependency(
+            unresolvedResult.manifest,
+            QStringLiteral("missing_vendor_core"));
+    check(unresolvedResult.succeeded()
+              && unresolvedResult.manifest.isValid()
+              && unresolvedResult.manifest.unresolvedDependencies.size() == 1
+              && missingVendor
+              && missingVendor->stubSupported
+              && missingVendor->stubUnsupportedReason.isEmpty(),
+          "selected module closure exports one explicitly stub-capable unresolved dependency");
+    check(missingVendor && missingVendor->instances.size() == 2
+              && missingVendor->instances.at(0).instanceName
+                     == QStringLiteral("u_core")
+              && missingVendor->instances.at(0).constructKind
+                     == QStringLiteral("module")
+              && missingVendor->instances.at(0).sourceFile
+                     == QStringLiteral("manifest_unresolved.sv")
+              && missingVendor->instances.at(0).sourceLine > 0
+              && missingVendor->instances.at(0).sourceColumn > 0
+              && missingVendor->instances.at(0).syntaxComplete,
+          "unresolved instances preserve portable source and syntax facts");
+    check(missingVendor
+              && missingVendor->instances.at(0).parameterAssociations.size() == 2
+              && missingVendor->instances.at(0).parameterAssociations.at(0).name
+                     == QStringLiteral("WIDTH")
+              && missingVendor->instances.at(0).portAssociations.size() == 3
+              && missingVendor->instances.at(0).portAssociations.at(1).name
+                     == QStringLiteral("data_i")
+              && missingVendor->instances.at(1).portAssociations.at(1).name
+                     == QStringLiteral("enable"),
+          "unresolved instance parameter and port associations remain structured and ordered");
 
     const WaveSimulationManifestParameter* defaultWidth = parameter(
         definition.manifest, QStringLiteral("WIDTH"));

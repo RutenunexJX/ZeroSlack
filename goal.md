@@ -1,16 +1,15 @@
 # ZeroSlack Current Goal
 
-Product version: `v0.12.0`
+Product version: `v0.13.0`
 
 ## Objective
 
-Complete S12.6 by adding Wellen-backed FST metadata indexing and on-demand
-transition loading, while retaining VCD/CSV behavior, the S11 shared-widget
-architecture, and prior S12 behavior.
+Complete S12.7 by adding explicit, conservative unresolved-module stubs while
+retaining the S11 shared-widget architecture and all prior S12 behavior.
 
 ## Completion criteria
 
-- `VERSION`, generated GUI metadata, and current documents agree on 0.12.0.
+- `VERSION`, generated GUI metadata, and current documents agree on 0.13.0.
 - `wavewidgets` provides a versioned runtime factory for the complete simulation
   workspace; ZeroSlack validates its ABI and workspace contract before hosting.
 - The embedded and standalone forms consume the same project, stimulus canvas,
@@ -47,19 +46,24 @@ architecture, and prior S12 behavior.
 - The real shared workspace advertises `on-demand-fst-trace/v1` only when the
   adjacent Wellen reader exists, and its portable package contains the helper
   plus attribution and operating limits.
+- Module Manifest v4 records unresolved instances and ordered associations only
+  inside the selected target dependency closure while retaining v1-v3 readers.
+- Unresolved modules fail before toolchain execution unless the user explicitly
+  selects a supported passive input-only stub; unsupported constructs remain
+  disabled with a reason.
+- Stub selection persists in simulation session v2 and contributes to generated
+  build inputs, cache identity, and run evidence.
+- The shared workspace advertises `explicit-unresolved-module-stubs/v1` and
+  exposes the `Stubs` selector without changing its v1 C ABI.
 - Both repositories pass their complete configured suites without relaxed
   assertions.
 
 ## Current status
 
-S12.6 implementation and feature-specific dual-repository verification are complete. Wellen
-indexes FST metadata without transition decoding; mapped and checked signals
-load on demand with cancellation and stale-generation protection. The shared
-library capability is conditional on the adjacent helper deployment, and the
-portable installation includes the complete closure. This machine does not
-have a real Verilator installation, so the external compile/run path remains
-verified with deterministic process fixtures rather than represented as a real
-RTL compile. WaveWorkbench passes `93/93` offscreen tests. The latest complete
-ZeroSlack Debug run passes `89/90`; only the existing visible-Wave latency gate
-in `editor_incremental_test` remains open (repeated p95 `6.36-8.74 ms` against
-`6 ms`), while all correctness, incremental, and zero-full-copy assertions pass.
+S12.7 is complete. Manifest v4, default refusal, passive stub generation,
+session persistence, cache evidence, and the shared selector are integrated.
+WaveWorkbench passes `94/94` configured tests, ZeroSlack passes `90/90`, and a
+cross-repository test dynamically loads the real shared workspace. This machine
+does not have a real Verilator installation, so external compile/run behavior
+is verified with deterministic process fixtures rather than represented as a
+real RTL compile.

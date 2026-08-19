@@ -690,7 +690,7 @@ S11 实际结果：
 
 ### S12：独立增强项
 
-状态：`in_progress`（S12.1-S12.6 已完成，2026-08-19）
+状态：`in_progress`（S12.1-S12.7 已完成，2026-08-19）
 
 以下项目必须继续拆成独立切片，不得合并为一个“大完善阶段”：
 
@@ -700,7 +700,7 @@ S11 实际结果：
 - Expected/Actual 比较。`completed`
 - 时刻值、稳定性、边沿响应等轻量检查。`completed`
 - FST/Wellen 按需读取。`completed`
-- unresolved module 的显式 stub。
+- unresolved module 的显式 stub。`completed`
 - 模块全部场景批量运行。
 - 结果与 driver/source 的双向导航。
 
@@ -983,3 +983,22 @@ Schema/接口版本：
 - 本文档明确指出下一步唯一的最小工作项。
 
 因此 Wave Simulation 可以在任意切片边界暂停，不阻碍 ZeroSlack 的 formatter、编辑器交互、导航或其他日常小功能继续迭代。
+
+本轮切片：S12.7 unresolved module 显式 stub
+完成内容：Module Manifest v4 unresolved 依赖与实例事实、默认拒绝、显式 input-only 被动
+stub、simulation session v2、构建指纹和运行报告证据、共享 `Stubs` 菜单及双仓能力门禁。
+明确未做：依赖行为模型、interface/program stub、批量场景和结果到源码导航。
+用户可见行为：存在 unresolved module 时，运行默认被拒绝；用户可在结果工具栏明确选择受支持
+依赖。菜单持续说明 stub 不模拟依赖行为，不支持项禁用并显示原因。
+自动测试：Manifest v4 真实 fixture、v1-v3 兼容、runner 默认拒绝与显式生成、session 往返、
+build 参数/指纹/报告、共享 UI 和真实动态库能力验证；WaveWorkbench CTest `94/94`、
+ZeroSlack CTest `90/90`，真实共享库跨仓加载通过。
+人工验证：`artifacts/ui/wave/s12-unresolved-stubs.png` 检查 `Stubs (1/2)` 与完整结果工作区同屏。
+Schema/接口版本：Module Manifest v4、simulation session v2；`wavewidgets` C ABI 与 workspace
+contract 保持 v1，新增 `explicit-unresolved-module-stubs/v1`。
+修改仓库与提交：WaveWorkbench `5c534f1`；ZeroSlack 归入当前 `v0.13.0` 切片提交。
+已知限制：所有生成端口均为 input，因此只用于允许未完成工程继续编译，不产生被依赖模块的
+输出或行为；本机无真实 Verilator，外部流程由确定性 fixture 验证。
+下一最小切片：S12.8 多场景批量运行，需由用户再次明确启动。
+恢复开发所需上下文：从 simulation session 的场景存储与现有单次 runner 编排继续；不得把
+源码导航或依赖行为模型并入批量切片。

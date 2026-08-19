@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.13.0] - 2026-08-19
+
+### Explicit unresolved-module simulation stubs
+
+- Added Module Manifest v4 unresolved dependency and instance facts, sourced
+  structurally from the current overlay dependency graph and limited to the
+  selected target closure.
+- Made unresolved modules fail before toolchain execution unless the user
+  explicitly selects a supported passive input-only stub.
+- Added persisted stub selection, build-fingerprint and run-report evidence,
+  a shared `Stubs` toolbar menu, unsupported-reason display, and dual-repository
+  contract tests.
+- Preserved Module Manifest v1-v3 compatibility and the wavewidgets v1 C ABI.
+
 ## [0.12.0] - 2026-08-19
 
 ### On-demand FST simulation traces

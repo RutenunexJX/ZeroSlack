@@ -3,6 +3,8 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 
+#include <algorithm>
+
 namespace {
 QJsonArray stringArray(const QStringList& values)
 {
@@ -10,6 +12,37 @@ QJsonArray stringArray(const QStringList& values)
     for (const QString& value : values)
         result.append(value);
     return result;
+}
+
+QJsonArray associationArray(
+    const QList<WaveSimulationManifestAssociation>& associations)
+{
+    QJsonArray result;
+    for (const WaveSimulationManifestAssociation& association : associations) {
+        result.append(QJsonObject{
+            {QStringLiteral("name"), association.name},
+            {QStringLiteral("position"), association.position},
+        });
+    }
+    return result;
+}
+
+QJsonObject unresolvedInstanceObject(
+    const WaveSimulationManifestUnresolvedInstance& instance)
+{
+    return {
+        {QStringLiteral("instanceName"), instance.instanceName},
+        {QStringLiteral("constructKind"), instance.constructKind},
+        {QStringLiteral("sourceFile"), instance.sourceFile},
+        {QStringLiteral("sourceLine"), instance.sourceLine},
+        {QStringLiteral("sourceColumn"), instance.sourceColumn},
+        {QStringLiteral("parameterAssociations"),
+         associationArray(instance.parameterAssociations)},
+        {QStringLiteral("portAssociations"),
+         associationArray(instance.portAssociations)},
+        {QStringLiteral("syntaxComplete"), instance.syntaxComplete},
+        {QStringLiteral("failureReason"), instance.failureReason},
+    };
 }
 
 QJsonObject typeShapeObject(const WaveSimulationManifestTypeShape& shape)
@@ -105,6 +138,26 @@ QJsonObject editableLeafObject(
 
 bool WaveSimulationModuleManifest::isValid() const
 {
+    const bool unresolvedValid = std::all_of(
+        unresolvedDependencies.cbegin(),
+        unresolvedDependencies.cend(),
+        [](const WaveSimulationManifestUnresolvedDependency& dependency) {
+            if (dependency.moduleName.isEmpty()
+                || dependency.instances.isEmpty()
+                || dependency.stubSupported
+                       == !dependency.stubUnsupportedReason.isEmpty()) {
+                return false;
+            }
+            return std::all_of(
+                dependency.instances.cbegin(),
+                dependency.instances.cend(),
+                [](const WaveSimulationManifestUnresolvedInstance& instance) {
+                    return !instance.constructKind.isEmpty()
+                        && !instance.sourceFile.isEmpty()
+                        && instance.sourceLine > 0
+                        && instance.sourceColumn > 0;
+                });
+        });
     return schemaVersion == kSchemaVersion
         && workspaceId.startsWith(QStringLiteral("sha256:"))
         && !target.module.isEmpty()
@@ -117,7 +170,8 @@ bool WaveSimulationModuleManifest::isValid() const
                 && !observationScope.sourceFile.isEmpty()
                 && observationScope.startLine > 0
                 && observationScope.endLine
-                       >= observationScope.startLine));
+                       >= observationScope.startLine))
+        && unresolvedValid;
 }
 
 QJsonObject WaveSimulationModuleManifest::toJson() const
@@ -170,6 +224,24 @@ QJsonObject WaveSimulationModuleManifest::toJson() const
         sourceArray.append(entry);
     }
     root.insert(QStringLiteral("sources"), sourceArray);
+
+    QJsonArray unresolvedArray;
+    for (const WaveSimulationManifestUnresolvedDependency& dependency :
+         unresolvedDependencies) {
+        QJsonArray instances;
+        for (const WaveSimulationManifestUnresolvedInstance& instance :
+             dependency.instances) {
+            instances.append(unresolvedInstanceObject(instance));
+        }
+        unresolvedArray.append(QJsonObject{
+            {QStringLiteral("moduleName"), dependency.moduleName},
+            {QStringLiteral("instances"), instances},
+            {QStringLiteral("stubSupported"), dependency.stubSupported},
+            {QStringLiteral("stubUnsupportedReason"),
+             dependency.stubUnsupportedReason},
+        });
+    }
+    root.insert(QStringLiteral("unresolvedDependencies"), unresolvedArray);
     root.insert(QStringLiteral("includeDirs"), stringArray(includeDirs));
 
     QJsonObject defineObject;

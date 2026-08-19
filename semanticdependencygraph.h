@@ -5,6 +5,7 @@
 
 #include <QFlags>
 #include <QHash>
+#include <QList>
 #include <QSet>
 #include <QString>
 #include <QStringList>
@@ -22,6 +23,24 @@ enum class SemanticDependencyKind : unsigned int {
 Q_DECLARE_FLAGS(SemanticDependencyKinds, SemanticDependencyKind)
 Q_DECLARE_OPERATORS_FOR_FLAGS(SemanticDependencyKinds)
 
+struct SemanticModuleAssociationFact {
+    QString name;
+    int position = 0;
+};
+
+struct SemanticModuleInstantiationFact {
+    QString ownerName;
+    QString targetName;
+    QString instanceName;
+    QString constructKind;
+    QList<SemanticModuleAssociationFact> parameterAssociations;
+    QList<SemanticModuleAssociationFact> portAssociations;
+    int sourceLine = 0;
+    int sourceColumn = 0;
+    bool syntaxComplete = false;
+    QString failureReason;
+};
+
 struct SemanticFileDependencyFacts {
     QString fileName;
     QStringList includeNames;
@@ -30,6 +49,7 @@ struct SemanticFileDependencyFacts {
     QSet<QString> macroDefinitions;
     QSet<QString> apiDeclarations;
     QSet<QString> instantiatedModules;
+    QList<SemanticModuleInstantiationFact> moduleInstantiations;
     QSet<QString> importedPackages;
     QSet<QString> macroUses;
     QSet<QString> symbolReferences;

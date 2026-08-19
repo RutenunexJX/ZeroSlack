@@ -71,6 +71,224 @@ QString identifierField(const QString& text,
                                   : firstIdentifier(text, field);
 }
 
+QList<TSNode> directNamedChildrenOf(TSNode node)
+{
+    QList<TSNode> result;
+    if (ts_node_is_null(node))
+        return result;
+    const uint32_t count = ts_node_named_child_count(node);
+    result.reserve(static_cast<qsizetype>(count));
+    for (uint32_t i = 0; i < count; ++i)
+        result.append(ts_node_named_child(node, i));
+    return result;
+}
+
+TSNode firstDirectNamedChildOfType(TSNode node, const char* expected)
+{
+    for (const TSNode child : directNamedChildrenOf(node)) {
+        const char* type = ts_node_type(child);
+        if (type && std::strcmp(type, expected) == 0)
+            return child;
+    }
+    return {};
+}
+
+TSNode firstDirectIdentifier(TSNode node)
+{
+    for (const TSNode child : directNamedChildrenOf(node)) {
+        if (identifierType(typeOf(child)))
+            return child;
+    }
+    return {};
+}
+
+bool containsNodeType(TSNode node, const char* expected)
+{
+    if (ts_node_is_null(node))
+        return false;
+    const char* type = ts_node_type(node);
+    if (type && std::strcmp(type, expected) == 0)
+        return true;
+    const uint32_t count = ts_node_child_count(node);
+    for (uint32_t i = 0; i < count; ++i) {
+        if (containsNodeType(ts_node_child(node, i), expected))
+            return true;
+    }
+    return false;
+}
+
+bool collectAssociations(
+    const QString& text,
+    TSNode container,
+    const char* namedType,
+    const char* orderedType,
+    const char* nameField,
+    QList<SemanticModuleAssociationFact>* output,
+    QString* failureReason)
+{
+    if (ts_node_is_null(container))
+        return true;
+    if (!output || ts_node_has_error(container)) {
+        if (failureReason)
+            *failureReason = QStringLiteral("association syntax is incomplete");
+        return false;
+    }
+    if (containsNodeType(container, ".*")) {
+        if (failureReason)
+            *failureReason = QStringLiteral("wildcard associations cannot define a safe stub contract");
+        return false;
+    }
+
+    bool sawNamed = false;
+    bool sawOrdered = false;
+    int position = 0;
+    for (const TSNode child : directNamedChildrenOf(container)) {
+        const QString childType = typeOf(child);
+        const bool named = childType == QLatin1String(namedType);
+        const bool ordered = childType == QLatin1String(orderedType);
+        if (!named && !ordered) {
+            if (failureReason)
+                *failureReason = QStringLiteral("association list contains an unsupported syntax node");
+            return false;
+        }
+        sawNamed = sawNamed || named;
+        sawOrdered = sawOrdered || ordered;
+        if (sawNamed && sawOrdered) {
+            if (failureReason)
+                *failureReason = QStringLiteral("named and positional associations are mixed");
+            return false;
+        }
+        if (ts_node_has_error(child)) {
+            if (failureReason)
+                *failureReason = QStringLiteral("association syntax is incomplete");
+            return false;
+        }
+
+        SemanticModuleAssociationFact fact;
+        fact.position = position++;
+        if (named) {
+            TSNode formal{};
+            if (nameField) {
+                formal = ts_node_child_by_field_name(
+                    child,
+                    nameField,
+                    static_cast<uint32_t>(std::strlen(nameField)));
+            }
+            if (ts_node_is_null(formal))
+                formal = firstDirectIdentifier(child);
+            fact.name = textOf(text, formal).trimmed();
+            if (fact.name.isEmpty()) {
+                if (failureReason)
+                    *failureReason = QStringLiteral("a named association has no formal name");
+                return false;
+            }
+        }
+        output->append(std::move(fact));
+    }
+    return true;
+}
+
+void appendFailure(QString* destination, const QString& failure)
+{
+    if (!destination || failure.isEmpty())
+        return;
+    if (!destination->isEmpty())
+        destination->append(QStringLiteral("; "));
+    destination->append(failure);
+}
+
+void collectInstantiationFacts(
+    const QString& text,
+    TSNode node,
+    const QString& ownerName,
+    SemanticFileDependencyFacts* facts)
+{
+    if (!facts)
+        return;
+    const QString nodeType = typeOf(node);
+    const QString targetName = identifierField(text, node, "instance_type");
+    if (!targetName.isEmpty())
+        facts->instantiatedModules.insert(targetName);
+
+    QString constructKind;
+    if (nodeType == QLatin1String("module_instantiation"))
+        constructKind = QStringLiteral("module");
+    else if (nodeType == QLatin1String("interface_instantiation"))
+        constructKind = QStringLiteral("interface");
+    else
+        constructKind = QStringLiteral("program");
+
+    QList<SemanticModuleAssociationFact> parameterAssociations;
+    QString parameterFailure;
+    const TSNode parameterValue = firstDirectNamedChildOfType(
+        node, "parameter_value_assignment");
+    const TSNode parameterList = firstDirectNamedChildOfType(
+        parameterValue, "list_of_parameter_value_assignments");
+    const bool parameterComplete = collectAssociations(
+        text,
+        parameterList,
+        "named_parameter_assignment",
+        "ordered_parameter_assignment",
+        nullptr,
+        &parameterAssociations,
+        &parameterFailure);
+
+    QList<TSNode> hierarchies;
+    for (const TSNode child : directNamedChildrenOf(node)) {
+        if (typeOf(child) == QLatin1String("hierarchical_instance"))
+            hierarchies.append(child);
+    }
+    if (hierarchies.isEmpty())
+        hierarchies.append(node);
+
+    for (const TSNode hierarchy : std::as_const(hierarchies)) {
+        SemanticModuleInstantiationFact fact;
+        fact.ownerName = ownerName;
+        fact.targetName = targetName;
+        fact.constructKind = constructKind;
+        const TSPoint point = ts_node_start_point(hierarchy);
+        fact.sourceLine = static_cast<int>(point.row) + 1;
+        fact.sourceColumn = static_cast<int>(point.column / 2u) + 1;
+        fact.parameterAssociations = parameterAssociations;
+
+        const TSNode nameContainer = firstDirectNamedChildOfType(
+            hierarchy, "name_of_instance");
+        const TSNode nameNode = firstDirectIdentifier(nameContainer);
+        fact.instanceName = textOf(text, nameNode).trimmed();
+
+        QString portFailure;
+        const TSNode ports = firstDirectNamedChildOfType(
+            hierarchy, "list_of_port_connections");
+        const bool portsComplete = collectAssociations(
+            text,
+            ports,
+            "named_port_connection",
+            "ordered_port_connection",
+            "port_name",
+            &fact.portAssociations,
+            &portFailure);
+
+        fact.syntaxComplete = !ts_node_has_error(node)
+            && !ts_node_has_error(hierarchy)
+            && !ownerName.isEmpty()
+            && !targetName.isEmpty()
+            && !fact.instanceName.isEmpty()
+            && parameterComplete
+            && portsComplete;
+        if (ownerName.isEmpty())
+            appendFailure(&fact.failureReason, QStringLiteral("instantiation has no enclosing design declaration"));
+        if (targetName.isEmpty())
+            appendFailure(&fact.failureReason, QStringLiteral("instantiation type is missing"));
+        if (fact.instanceName.isEmpty())
+            appendFailure(&fact.failureReason, QStringLiteral("instance name is missing"));
+        if (ts_node_has_error(node) || ts_node_has_error(hierarchy))
+            appendFailure(&fact.failureReason, QStringLiteral("instantiation syntax is incomplete"));
+        appendFailure(&fact.failureReason, parameterFailure);
+        appendFailure(&fact.failureReason, portFailure);
+        facts->moduleInstantiations.append(std::move(fact));
+    }
+}
+
 bool hasScopeResolutionToken(TSNode node)
 {
     const uint32_t count = ts_node_child_count(node);
@@ -91,6 +309,7 @@ QString semanticDeclarationIdentifier(const QString& text,
 {
     if (type == QLatin1String("module_declaration")
         || type == QLatin1String("interface_declaration")
+        || type == QLatin1String("program_declaration")
         || type == QLatin1String("package_declaration")
         || type == QLatin1String("function_declaration")
         || type == QLatin1String("function_body_declaration")
@@ -176,7 +395,8 @@ bool apiDeclarationType(const QString& type)
 
 void collectFacts(const QString& text,
                   TSNode node,
-                  SemanticFileDependencyFacts* facts)
+                  SemanticFileDependencyFacts* facts,
+                  const QString& ownerName = QString())
 {
     if (!facts || ts_node_is_null(node))
         return;
@@ -184,10 +404,13 @@ void collectFacts(const QString& text,
     const QString identifier =
         semanticDeclarationIdentifier(text, node, type);
 
+    QString nestedOwner = ownerName;
     if (type == QLatin1String("module_declaration")
-        || type == QLatin1String("interface_declaration")) {
+        || type == QLatin1String("interface_declaration")
+        || type == QLatin1String("program_declaration")) {
         if (!identifier.isEmpty())
             facts->moduleDeclarations.insert(identifier);
+        nestedOwner = identifier;
     } else if (type == QLatin1String("package_declaration")) {
         if (!identifier.isEmpty())
             facts->packageDeclarations.insert(identifier);
@@ -197,8 +420,7 @@ void collectFacts(const QString& text,
     } else if (type == QLatin1String("module_instantiation")
                || type == QLatin1String("interface_instantiation")
                || type == QLatin1String("program_instantiation")) {
-        if (!identifier.isEmpty())
-            facts->instantiatedModules.insert(identifier);
+        collectInstantiationFacts(text, node, ownerName, facts);
     } else if (type == QLatin1String("package_import_item")
                || type == QLatin1String("package_scope")) {
         if (!identifier.isEmpty())
@@ -241,7 +463,7 @@ void collectFacts(const QString& text,
 
     const uint32_t count = ts_node_named_child_count(node);
     for (uint32_t i = 0; i < count; ++i)
-        collectFacts(text, ts_node_named_child(node, i), facts);
+        collectFacts(text, ts_node_named_child(node, i), facts, nestedOwner);
 }
 
 template <typename T>

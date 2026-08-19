@@ -9,6 +9,7 @@
 #include <memory>
 
 class SemanticIndexSnapshot;
+class SemanticDependencyGraph;
 
 enum class WaveSimulationManifestBuildStatus {
     Success,
@@ -45,6 +46,7 @@ struct WaveSimulationManifestBuildRequest {
     QString instancePath;
     WaveSimulationObservationScopeRequest observationScope;
     QList<WaveSimulationObservationRequest> explicitObservations;
+    std::shared_ptr<const SemanticDependencyGraph> dependencyGraph;
 };
 
 struct WaveSimulationManifestBuildResult {

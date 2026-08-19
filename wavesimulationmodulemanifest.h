@@ -14,6 +14,30 @@ struct WaveSimulationManifestSource {
     QString role;
 };
 
+struct WaveSimulationManifestAssociation {
+    QString name;
+    int position = 0;
+};
+
+struct WaveSimulationManifestUnresolvedInstance {
+    QString instanceName;
+    QString constructKind;
+    QString sourceFile;
+    int sourceLine = 0;
+    int sourceColumn = 0;
+    QList<WaveSimulationManifestAssociation> parameterAssociations;
+    QList<WaveSimulationManifestAssociation> portAssociations;
+    bool syntaxComplete = false;
+    QString failureReason;
+};
+
+struct WaveSimulationManifestUnresolvedDependency {
+    QString moduleName;
+    QList<WaveSimulationManifestUnresolvedInstance> instances;
+    bool stubSupported = false;
+    QString stubUnsupportedReason;
+};
+
 struct WaveSimulationManifestTypeShape {
     bool semanticAvailable = false;
     QString rawTypeText;
@@ -126,7 +150,7 @@ struct WaveSimulationManifestObservation {
 };
 
 struct WaveSimulationModuleManifest {
-    static constexpr int kSchemaVersion = 3;
+    static constexpr int kSchemaVersion = 4;
 
     int schemaVersion = kSchemaVersion;
     QString workspaceId;
@@ -134,6 +158,7 @@ struct WaveSimulationModuleManifest {
     WaveSimulationManifestObservationScope observationScope;
     QList<WaveSimulationManifestObservation> observations;
     QList<WaveSimulationManifestSource> sources;
+    QList<WaveSimulationManifestUnresolvedDependency> unresolvedDependencies;
     QStringList includeDirs;
     QMap<QString, QString> defines;
     QList<WaveSimulationManifestParameter> parameters;

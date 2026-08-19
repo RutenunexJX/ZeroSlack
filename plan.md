@@ -1,8 +1,17 @@
 # ZeroSlack Current Plan
 
-Product version: `v0.12.0`
+Product version: `v0.13.0`
 
 ## Current status
+
+- Module Manifest v4 exports unresolved module instances only from the
+  selected target's dependency closure, including portable source positions
+  and ordered parameter/port associations.
+- WaveWorkbench refuses unresolved modules by default. Its shared `Stubs`
+  menu persists explicit supported selections and generates passive input-only
+  declarations that enter the build fingerprint and run report.
+- ZeroSlack validates `explicit-unresolved-module-stubs/v1` and the shared
+  selector without changing the wavewidgets v1 C ABI.
 
 - Stimulus Scenario v5 persists output expectations in watch-only
   `expectedSegments`; the runtime plan continues to contain DUT stimulus only.
@@ -70,10 +79,12 @@ Product version: `v0.12.0`
   changing the build-cache fingerprint.
 - ZeroSlack validates the optional `multi-clock-async-events/v1` capability and
   the corresponding shared-widget controls before accepting the real workspace.
-- WaveWorkbench passes all 93 tests against the integration and portable-install
-  contracts. ZeroSlack's S12.6 contracts and real shared-library load pass; the
-  latest complete Debug run is 89/90 because the existing visible-Wave latency
-  gate exceeds its 6 ms p95 budget, without correctness or full-copy regressions.
+- WaveWorkbench passes all `94/94` configured tests against the integration and
+  portable-install contracts. ZeroSlack passes `90/90`, including Manifest v4,
+  the embedded workspace contract, and the existing visible-Wave latency gate.
+- A cross-repository test dynamically loads the real WaveWorkbench shared
+  library and validates `explicit-unresolved-module-stubs/v1` without changing
+  the v1 C ABI or workspace contract.
 
 Superseded plans and completed milestone logs are available in the
 [archive index](docs/archive/README.md).

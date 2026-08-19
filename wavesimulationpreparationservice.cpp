@@ -1,6 +1,7 @@
 #include "wavesimulationpreparationservice.h"
 
 #include "semanticindexsnapshot.h"
+#include "semanticdependencygraph.h"
 #include "slangmanager.h"
 #include "smartrelationshipbuilder.h"
 #include "wavesimulationmanifestservice.h"
@@ -364,6 +365,9 @@ WaveSimulationPreparationService::prepare(
     manifestRequest.instancePath = request.target.instancePath;
     manifestRequest.observationScope = request.observationScope;
     manifestRequest.explicitObservations = request.explicitObservations;
+    manifestRequest.dependencyGraph =
+        std::make_shared<const SemanticDependencyGraph>(
+            SemanticDependencyGraph::build(request.project, contents));
     const WaveSimulationManifestBuildResult manifestResult =
         WaveSimulationManifestService().build(manifestRequest);
     if (!manifestResult.succeeded()) {

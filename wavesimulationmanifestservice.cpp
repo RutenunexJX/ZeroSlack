@@ -1,5 +1,6 @@
 #include "wavesimulationmanifestservice.h"
 
+#include "semanticdependencygraph.h"
 #include "semanticindexsnapshot.h"
 #include "tsdocument.h"
 
@@ -9,6 +10,7 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QQueue>
 #include <QSet>
 
 #include <algorithm>
@@ -537,6 +539,190 @@ QString portableSemanticIdentity(
     return QStringLiteral("sha256:") + QString::fromLatin1(digest);
 }
 
+enum class AssociationStyle {
+    None,
+    Named,
+    Positional,
+    Mixed
+};
+
+AssociationStyle associationStyle(
+    const QList<WaveSimulationManifestAssociation>& associations)
+{
+    if (associations.isEmpty())
+        return AssociationStyle::None;
+    bool named = false;
+    bool positional = false;
+    for (const WaveSimulationManifestAssociation& association : associations) {
+        named = named || !association.name.isEmpty();
+        positional = positional || association.name.isEmpty();
+    }
+    if (named && positional)
+        return AssociationStyle::Mixed;
+    return named ? AssociationStyle::Named : AssociationStyle::Positional;
+}
+
+bool mergeStyle(AssociationStyle candidate,
+                AssociationStyle* merged)
+{
+    if (!merged || candidate == AssociationStyle::Mixed)
+        return false;
+    if (candidate == AssociationStyle::None)
+        return true;
+    if (*merged == AssociationStyle::None) {
+        *merged = candidate;
+        return true;
+    }
+    return *merged == candidate;
+}
+
+QList<WaveSimulationManifestAssociation> manifestAssociations(
+    const QList<SemanticModuleAssociationFact>& facts)
+{
+    QList<WaveSimulationManifestAssociation> result;
+    result.reserve(facts.size());
+    for (const SemanticModuleAssociationFact& fact : facts) {
+        WaveSimulationManifestAssociation association;
+        association.name = fact.name;
+        association.position = fact.position;
+        result.append(std::move(association));
+    }
+    return result;
+}
+
+struct LocatedInstantiationFact {
+    QString fileName;
+    SemanticModuleInstantiationFact fact;
+};
+
+bool appendUnresolvedDependencies(
+    const WaveSimulationManifestBuildRequest& request,
+    WaveSimulationModuleManifest* manifest,
+    QString* error)
+{
+    if (!manifest)
+        return false;
+
+    QSet<QString> declarations;
+    QHash<QString, QList<LocatedInstantiationFact>> instantiationsByOwner;
+    if (!request.dependencyGraph)
+        return true;
+    const QHash<QString, SemanticFileDependencyFacts> dependencyFacts =
+        request.dependencyGraph->fileFacts();
+    for (auto file = dependencyFacts.cbegin();
+         file != dependencyFacts.cend(); ++file) {
+        declarations.unite(file->moduleDeclarations);
+        for (const SemanticModuleInstantiationFact& fact :
+             file->moduleInstantiations) {
+            if (fact.ownerName.isEmpty())
+                continue;
+            instantiationsByOwner[fact.ownerName].append(
+                LocatedInstantiationFact{file->fileName, fact});
+        }
+    }
+
+    QMap<QString, WaveSimulationManifestUnresolvedDependency> unresolved;
+    QQueue<QString> pending;
+    QSet<QString> visited;
+    pending.enqueue(manifest->target.module);
+    while (!pending.isEmpty()) {
+        const QString owner = pending.dequeue();
+        if (visited.contains(owner))
+            continue;
+        visited.insert(owner);
+        for (const LocatedInstantiationFact& located :
+             std::as_const(instantiationsByOwner[owner])) {
+            const QString target = located.fact.targetName.trimmed();
+            if (target.isEmpty())
+                continue;
+            if (declarations.contains(target)) {
+                if (!visited.contains(target))
+                    pending.enqueue(target);
+                continue;
+            }
+
+            const std::optional<QString> sourceFile = relativeProjectPath(
+                request.project.workspaceRoot, located.fileName);
+            if (!sourceFile) {
+                if (error) {
+                    *error = QStringLiteral(
+                        "An unresolved dependency location is outside the workspace root: %1")
+                                 .arg(located.fileName);
+                }
+                return false;
+            }
+            WaveSimulationManifestUnresolvedDependency& dependency =
+                unresolved[target];
+            dependency.moduleName = target;
+            WaveSimulationManifestUnresolvedInstance instance;
+            instance.instanceName = located.fact.instanceName;
+            instance.constructKind = located.fact.constructKind;
+            instance.sourceFile = *sourceFile;
+            instance.sourceLine = located.fact.sourceLine;
+            instance.sourceColumn = located.fact.sourceColumn;
+            instance.parameterAssociations = manifestAssociations(
+                located.fact.parameterAssociations);
+            instance.portAssociations = manifestAssociations(
+                located.fact.portAssociations);
+            instance.syntaxComplete = located.fact.syntaxComplete;
+            instance.failureReason = located.fact.failureReason;
+            dependency.instances.append(std::move(instance));
+        }
+    }
+
+    for (auto dependency = unresolved.begin();
+         dependency != unresolved.end(); ++dependency) {
+        AssociationStyle parameterStyle = AssociationStyle::None;
+        AssociationStyle portStyle = AssociationStyle::None;
+        for (const WaveSimulationManifestUnresolvedInstance& instance :
+             std::as_const(dependency->instances)) {
+            if (instance.constructKind != QStringLiteral("module")) {
+                dependency->stubUnsupportedReason = QStringLiteral(
+                    "Only unresolved module instances can be represented by passive stubs.");
+                break;
+            }
+            if (!instance.syntaxComplete) {
+                dependency->stubUnsupportedReason = instance.failureReason.isEmpty()
+                    ? QStringLiteral("At least one instance has incomplete syntax.")
+                    : instance.failureReason;
+                break;
+            }
+            if (!mergeStyle(associationStyle(instance.parameterAssociations),
+                            &parameterStyle)) {
+                dependency->stubUnsupportedReason = QStringLiteral(
+                    "Instances use incompatible parameter association styles.");
+                break;
+            }
+            if (!mergeStyle(associationStyle(instance.portAssociations),
+                            &portStyle)) {
+                dependency->stubUnsupportedReason = QStringLiteral(
+                    "Instances use incompatible port association styles.");
+                break;
+            }
+        }
+        dependency->stubSupported =
+            dependency->stubUnsupportedReason.isEmpty();
+        if (dependency->stubSupported)
+            dependency->stubUnsupportedReason.clear();
+
+        std::sort(
+            dependency->instances.begin(),
+            dependency->instances.end(),
+            [](const WaveSimulationManifestUnresolvedInstance& left,
+               const WaveSimulationManifestUnresolvedInstance& right) {
+                if (left.sourceFile != right.sourceFile)
+                    return left.sourceFile < right.sourceFile;
+                if (left.sourceLine != right.sourceLine)
+                    return left.sourceLine < right.sourceLine;
+                if (left.sourceColumn != right.sourceColumn)
+                    return left.sourceColumn < right.sourceColumn;
+                return left.instanceName < right.instanceName;
+            });
+        manifest->unresolvedDependencies.append(*dependency);
+    }
+    return true;
+}
+
 }
 
 WaveSimulationManifestBuildResult WaveSimulationManifestService::build(
@@ -672,6 +858,14 @@ WaveSimulationManifestBuildResult WaveSimulationManifestService::build(
          it != request.project.defines.cend();
          ++it) {
         manifest.defines.insert(it.key(), it.value());
+    }
+    QString unresolvedError;
+    if (!appendUnresolvedDependencies(
+            request, &manifest, &unresolvedError)) {
+        result.status =
+            WaveSimulationManifestBuildStatus::ProjectPathOutsideWorkspace;
+        result.message = unresolvedError;
+        return result;
     }
 
     QList<SemanticSymbolRecord> members;

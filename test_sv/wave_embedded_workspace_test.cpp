@@ -63,6 +63,8 @@ int main(int argc, char** argv)
         QStringLiteral("AsyncTimingAction"));
     auto* clockDomains = workspace->findChild<QToolButton*>(
         QStringLiteral("SimulationClockDomainsButton"));
+    auto* stubDependencies = workspace->findChild<QToolButton*>(
+        QStringLiteral("SimulationStubDependenciesButton"));
     auto* compare = workspace->findChild<QAction*>(
         QStringLiteral("RunSimulationCompareAction"));
     auto* runChecks = workspace->findChild<QAction*>(
@@ -83,6 +85,8 @@ int main(int argc, char** argv)
             || !capabilities.contains(QStringLiteral(
                 "lightweight-trace-checks/v1"))
             || !capabilities.contains(QStringLiteral(
+                "explicit-unresolved-module-stubs/v1"))
+            || !capabilities.contains(QStringLiteral(
                 "on-demand-fst-trace/v1"))
             || !workspace->findChild<QWidget*>(
                 QStringLiteral("SimulationComparisonPanel"))
@@ -91,6 +95,7 @@ int main(int argc, char** argv)
             || !workspace->findChild<QTableWidget*>(
                 QStringLiteral("SimulationCheckResultTable"))
             || !asyncTiming || !clockDomains || !clockDomains->menu()
+            || !stubDependencies || !stubDependencies->menu()
             || !compare || !runChecks)) {
         std::cerr << "real shared wave workspace capabilities are missing\n";
         return 1;
