@@ -1,8 +1,16 @@
 # ZeroSlack Current Plan
 
-Product version: `v0.9.0`
+Product version: `v0.10.0`
 
 ## Current status
+
+- Stimulus Scenario v4 persists output expectations in watch-only
+  `expectedSegments`; the runtime plan continues to contain DUT stimulus only.
+- Embedded Simulation Result provides X handling, edge tolerance, a comparison
+  summary, mismatch table, synchronized expected/actual highlights, and
+  difference navigation.
+- ZeroSlack validates `expected-actual-compare/v1` and the comparison controls
+  when loading the real shared WaveWorkbench workspace; the C ABI remains v1.
 
 - Module Manifest v3 exports Slang-authored selectors for packed struct,
   fixed unpacked array, and explicit-modport interface inputs. Type and symbol
@@ -50,7 +58,7 @@ Product version: `v0.9.0`
 - ZeroSlack validates the optional `multi-clock-async-events/v1` capability and
   the corresponding shared-widget controls before accepting the real workspace.
 - The complete configured Debug suite passes all 90 tests. WaveWorkbench passes
-  all 91 tests against the same integration and portable-install contracts.
+  all 92 tests against the same integration and portable-install contracts.
 
 Superseded plans and completed milestone logs are available in the
 [archive index](docs/archive/README.md).

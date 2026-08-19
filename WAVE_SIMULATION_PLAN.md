@@ -797,6 +797,32 @@ contract 保持 v1。
 恢复开发所需上下文：从 v3 structured binding、stable trace name 与现有 compare 模块继续；
 不得重新引入源码字符串扫描，也不得将检查器或 FST 并入比较切片。
 
+S12.4 实际结果：
+
+- Stimulus Scenario 升级为 v4，为 watch lane 增加独立 `expectedSegments`。期望区间允许部分
+  覆盖，并与输入 `segments` 分离；运行计划仍只消费输入激励，不会把期望值驱动进 DUT。
+- Simulation Result 新增 Compare 动作、X 处理策略、边沿容差、摘要和差异表。比较范围严格
+  限于具有期望区间的 watch lane，其他未配置输出不会造成无关映射失败。
+- 比较结果同步标注期望 WaveCanvas 和实际 TraceCanvas。选择差异行会定位期望 lane、实际
+  trace signal 与对应 tick；场景或结果变化后旧比较结果立即标为 stale。
+- `wavewidgets` C ABI 与 workspace contract 保持 v1，新增
+  `expected-actual-compare/v1` 能力声明；ZeroSlack 的真实共享库门禁验证能力、动作和结果表。
+- Stimulus v1/v2/v3 继续兼容读取；v4 schema 与 portable component 安装闭包均有测试覆盖。
+
+本轮切片：S12.4 Expected/Actual 比较
+完成内容：watch-lane 期望契约、嵌入式比较控制、差异双画布标注/导航、能力声明和双仓门禁。
+明确未做：轻量检查、FST、unresolved stub、批量场景和结果到源码导航。
+用户可见行为：用户可在输出 lane 绘制期望区间，运行后点击 Compare 查看并定位差异。
+自动测试：ZeroSlack CTest `90/90`；WaveWorkbench CTest `92/92`；真实共享库跨仓加载通过。
+人工验证：`artifacts/ui/wave/s12-expected-actual-compare.png` 已检查期望、实际和差异表同屏。
+Schema/接口版本：Stimulus Scenario v4；`wavewidgets` ABI 与 workspace contract 保持 v1；
+新增能力声明 `expected-actual-compare/v1`。
+已知限制：本机未安装真实 Verilator；端到端运行由确定性 simulator fixture 验证，不表述为
+真实 RTL 仿真。当前只比较用户明确绘制了期望区间的 watch lane。
+下一最小切片：S12.5 时刻值、稳定性与边沿响应轻量检查。
+恢复开发所需上下文：复用 v4 `expectedSegments`、当前 Actual TraceIndex 和比较差异导航，
+检查结果必须保持派生数据，不得成为新的场景事实源，也不得把 FST 并入本切片。
+
 ## 6. 正式开放门槛
 
 以下条件全部满足前，入口保持实验状态：

@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.10.0] - 2026-08-19
+
+### Expected/Actual simulation comparison
+
+- Added Stimulus Scenario v4 watch-lane expected ranges without feeding
+  expected values into the DUT runtime plan.
+- Added embedded comparison controls, mismatch summaries, synchronized
+  expected/actual highlights, and difference navigation.
+- Required the optional `expected-actual-compare/v1` capability before hosting
+  a compatible shared WaveWorkbench workspace.
+- Extended cross-repository ABI and real shared-library integration coverage.
+
 ## [0.9.0] - 2026-08-19
 
 ### Structured simulation inputs

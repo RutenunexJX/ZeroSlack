@@ -10,6 +10,7 @@
 #include <QStringList>
 #include <QTemporaryDir>
 #include <QTabWidget>
+#include <QTableWidget>
 #include <QTimer>
 #include <QToolButton>
 #include <QWidget>
@@ -62,6 +63,8 @@ int main(int argc, char** argv)
         QStringLiteral("AsyncTimingAction"));
     auto* clockDomains = workspace->findChild<QToolButton*>(
         QStringLiteral("SimulationClockDomainsButton"));
+    auto* compare = workspace->findChild<QAction*>(
+        QStringLiteral("RunSimulationCompareAction"));
     if (realWorkspace
         && (!workspace->findChild<QWidget*>(
                 QStringLiteral("StimulusCanvas"))
@@ -73,7 +76,14 @@ int main(int argc, char** argv)
                 "internal-signal-hierarchy/v1"))
             || !capabilities.contains(QStringLiteral(
                 "multi-clock-async-events/v1"))
-            || !asyncTiming || !clockDomains || !clockDomains->menu())) {
+            || !capabilities.contains(QStringLiteral(
+                "expected-actual-compare/v1"))
+            || !workspace->findChild<QWidget*>(
+                QStringLiteral("SimulationComparisonPanel"))
+            || !workspace->findChild<QTableWidget*>(
+                QStringLiteral("CompareResultTable"))
+            || !asyncTiming || !clockDomains || !clockDomains->menu()
+            || !compare)) {
         std::cerr << "real shared wave workspace capabilities are missing\n";
         return 1;
     }
