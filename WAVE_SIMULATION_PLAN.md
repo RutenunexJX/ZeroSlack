@@ -690,11 +690,11 @@ S11 实际结果：
 
 ### S12：独立增强项
 
-状态：`pending`
+状态：`in_progress`（内部信号层级浏览已完成，2026-08-19）
 
 以下项目必须继续拆成独立切片，不得合并为一个“大完善阶段”：
 
-- 内部信号层级浏览。
+- 内部信号层级浏览。`completed`
 - 多时钟和异步事件。
 - struct、array 和 interface 输入编辑。
 - Expected/Actual 比较。
@@ -703,6 +703,41 @@ S11 实际结果：
 - unresolved module 的显式 stub。
 - 模块全部场景批量运行。
 - 结果与 driver/source 的双向导航。
+
+S12.1 实际结果：
+
+- `wavetrace` 新增纯数据层级模型，并在 VCD 解析时保留原始 scope 组件；UI 不再通过
+  对 fullName 做字符串拆分来推断实例层级。
+- Simulation Result 的 Actual 区域新增搜索框、实例/scope 树、位宽列和复选状态。
+  scope 复选控制整棵子树，叶节点复选立即更新 Actual 波形，点击叶节点揭示对应行。
+- 初始可见信号优先采用现有场景 trace mapping；其他内部信号保持可发现。用户自定义
+  集合在同一会话重跑时按稳定 trace signal ID 保留。
+- Verilator harness 的层级深度由 8 提升到 99，构建参数改用 `--trace-vcd`，并启用
+  `--trace-structs` 与 `--trace-underscore`。harness 变化继续进入模型缓存指纹。
+- `wavewidgets` C ABI 和 simulation workspace contract 继续为 v1，并新增
+  `internal-signal-hierarchy/v1` 能力声明。Module Manifest v2、instancePath、observation
+  accessPath 和 Stimulus Scenario 契约均未改变。
+- WaveWorkbench 与 ZeroSlack 全量 offscreen CTest 均为 `90/90`；真实跨仓测试动态加载
+  `wavewidgets`、校验层级能力并完成工具 Tab 关闭生命周期。原生结果窗口截图确认层级树
+  和 Actual 波形同时可用。本机未安装真实 Verilator，外部编译/运行继续由确定性 fixture
+  验证，不将 fixture 结果表述为真实 RTL 仿真。
+
+本轮切片：S12.1 内部信号层级浏览
+完成内容：精确 scope 数据模型、层级搜索/复选 UI、Actual 可见集合联动、深层追踪参数、
+能力声明和双仓集成验收。
+明确未做：多时钟/异步事件、structured input、Expected/Actual 比较、轻量检查、FST、
+unresolved stub、批量场景和结果到源码导航。
+用户可见行为：嵌入式 Wave Tab 的 Actual 左侧可按实例层级查找并显示内部信号。
+自动测试：WaveWorkbench CTest `90/90`；ZeroSlack CTest `90/90`；真实共享库跨仓加载通过。
+人工验证：原生结果窗口截图已检查层级、搜索、位宽、复选和波形占比。
+Schema/接口版本：`wavewidgets` ABI v1、workspace contract v1、Module Manifest v2、
+Stimulus Scenario v1，均未升级；新增可选能力声明 `internal-signal-hierarchy/v1`。
+修改仓库与提交：WaveWorkbench 本提交；ZeroSlack 本提交。
+已知限制：真实 Verilator 未安装；当前浏览对象限于 VCD 已追踪信号，源码双向导航属于后续独立切片。
+下一最小切片：S12.2 多时钟和异步事件。
+恢复开发所需上下文：从 `TraceSignal.scopePath`、`buildTraceHierarchy()`、
+`TraceSignalBrowser` 和 Simulation Result 的 `traceVisibleSignalIds_` 继续；不得把后续
+structured input 或源码导航并入本切片。
 
 ## 6. 正式开放门槛
 

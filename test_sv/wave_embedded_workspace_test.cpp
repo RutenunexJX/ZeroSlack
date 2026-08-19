@@ -6,6 +6,7 @@
 #include <QEventLoop>
 #include <QFile>
 #include <QFileInfo>
+#include <QStringList>
 #include <QTemporaryDir>
 #include <QTabWidget>
 #include <QTimer>
@@ -57,8 +58,14 @@ int main(int argc, char** argv)
         && (!workspace->findChild<QWidget*>(
                 QStringLiteral("StimulusCanvas"))
             || !workspace->findChild<QWidget*>(
-                QStringLiteral("ActualTraceCanvas")))) {
-        std::cerr << "real shared canvases are missing\n";
+                QStringLiteral("ActualTraceCanvas"))
+            || !workspace->findChild<QWidget*>(
+                QStringLiteral("TraceSignalBrowser"))
+            || !workspace->property("wavewidgets.capabilities")
+                    .toStringList()
+                    .contains(QStringLiteral(
+                        "internal-signal-hierarchy/v1")))) {
+        std::cerr << "real shared wave workspace capabilities are missing\n";
         return 1;
     }
 

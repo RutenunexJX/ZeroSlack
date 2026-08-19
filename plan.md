@@ -1,6 +1,6 @@
 # ZeroSlack Current Plan
 
-Product version: `v0.6.0`
+Product version: `v0.7.0`
 
 ## Current status
 
@@ -23,6 +23,13 @@ Product version: `v0.6.0`
 - Generic tool tabs participate in split activation and close lifecycle without
   being treated as source editors. The standalone application is optional for
   normal embedded operation and remains available as an explicit fallback.
+- Actual results expose the VCD instance hierarchy in a searchable checkbox
+  tree. The initial visible set follows the scenario trace mapping; internal
+  signals remain discoverable and can be added or removed without changing the
+  stimulus model.
+- WaveWorkbench preserves exact VCD scope components, traces deep hierarchy,
+  structs, and underscore-prefixed signals, and advertises the compatible
+  `internal-signal-hierarchy/v1` capability without changing the v1 C ABI.
 - The complete configured Debug suite passes all 90 tests. WaveWorkbench passes
   all 90 tests against the same integration and portable-install contracts.
 

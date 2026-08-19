@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.7.0] - 2026-08-19
+
+### Internal simulation signal hierarchy
+
+- Added a searchable scope/signal tree beside the embedded Actual waveform so
+  traced internal signals can be shown or hidden without changing stimulus.
+- Preserved exact VCD scope components, signal identity, width, and hierarchy,
+  including identifiers containing dots.
+- Initialized result visibility from existing scenario mappings and retained a
+  customized selection across reruns when stable trace IDs remain available.
+- Extended Verilator tracing to deep hierarchy, structs, and underscore-prefixed
+  signals while keeping the `wavewidgets` v1 C ABI and workspace contract.
+
 ## [0.6.0] - 2026-08-19
 
 ### Embedded Wave Simulation workspace
