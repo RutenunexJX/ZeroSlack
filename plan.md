@@ -1,16 +1,22 @@
 # ZeroSlack Current Plan
 
-Product version: `v0.10.0`
+Product version: `v0.11.0`
 
 ## Current status
 
-- Stimulus Scenario v4 persists output expectations in watch-only
+- Stimulus Scenario v5 persists output expectations in watch-only
   `expectedSegments`; the runtime plan continues to contain DUT stimulus only.
 - Embedded Simulation Result provides X handling, edge tolerance, a comparison
   summary, mismatch table, synchronized expected/actual highlights, and
   difference navigation.
 - ZeroSlack validates `expected-actual-compare/v1` and the comparison controls
   when loading the real shared WaveWorkbench workspace; the C ABI remains v1.
+- Stimulus Scenario v5 additionally persists definitions for value-at-time,
+  stable-range, and edge-response checks. Results remain derived from the
+  current Actual trace and are never stored.
+- The shared Review/Checks page creates, edits, removes, runs, and navigates
+  lightweight checks. ZeroSlack requires `lightweight-trace-checks/v1`, the
+  run action, and the result table from the real shared library.
 
 - Module Manifest v3 exports Slang-authored selectors for packed struct,
   fixed unpacked array, and explicit-modport interface inputs. Type and symbol

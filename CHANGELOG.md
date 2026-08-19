@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.11.0] - 2026-08-19
+
+### Lightweight simulation trace checks
+
+- Added persisted value-at-time, stable-range, and edge-response check
+  definitions through Stimulus Scenario v5.
+- Kept check outcomes derived from the current Actual trace, with explicit
+  passed, failed, unavailable, and disabled states plus first-failure location.
+- Added Review/Checks controls, result navigation, stale invalidation, and
+  real shared-library capability validation.
+
 ## [0.10.0] - 2026-08-19
 
 ### Expected/Actual simulation comparison

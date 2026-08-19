@@ -1,17 +1,16 @@
 # ZeroSlack Current Goal
 
-Product version: `v0.10.0`
+Product version: `v0.11.0`
 
 ## Objective
 
-Complete S12.4 by making expected output waveforms a persisted, non-driving
-part of the embedded WaveWorkbench scenario and comparing them with the current
-simulation trace, while retaining the S11 shared-widget architecture and prior
-S12 behavior.
+Complete S12.5 by adding persisted lightweight check definitions and deriving
+value-at-time, stable-range, and edge-response results from the current Actual
+trace, while retaining the S11 shared-widget architecture and prior S12 behavior.
 
 ## Completion criteria
 
-- `VERSION`, generated GUI metadata, and current documents agree on 0.10.0.
+- `VERSION`, generated GUI metadata, and current documents agree on 0.11.0.
 - `wavewidgets` provides a versioned runtime factory for the complete simulation
   workspace; ZeroSlack validates its ABI and workspace contract before hosting.
 - The embedded and standalone forms consume the same project, stimulus canvas,
@@ -38,15 +37,19 @@ S12 behavior.
   waveforms, lists differences, and navigates expected and actual locations.
 - ZeroSlack requires `expected-actual-compare/v1` from the real shared workspace
   without changing the v1 C ABI.
+- Stimulus Scenario v5 stores lightweight check definitions, while results are
+  derived only from the current trace and invalidated with scenario or trace changes.
+- The embedded workspace exposes `lightweight-trace-checks/v1`, a run action,
+  result table, failure localization, and signal/tick navigation.
 - Both repositories pass their complete configured suites without relaxed
   assertions.
 
 ## Current status
 
-S12.4 implementation and dual-repository verification are complete. Watch-lane
-expectations round-trip through Stimulus Scenario v4, remain outside the DUT
-runtime plan, and are compared in the shared Simulation Result workspace with
-visible mismatch and navigation evidence. This machine does not have a real
+S12.5 implementation and dual-repository verification are complete. Check
+definitions round-trip through Stimulus Scenario v5 and migrate with stable
+lane bindings; current trace results remain derived and expose visible status,
+failure localization, and navigation evidence. This machine does not have a real
 Verilator installation, so the external compile/run path is verified with
 deterministic process fixtures rather than represented as a real RTL compile.
 ZeroSlack passes `90/90` configured Debug tests and WaveWorkbench passes `92/92`

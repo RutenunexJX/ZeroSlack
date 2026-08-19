@@ -65,6 +65,8 @@ int main(int argc, char** argv)
         QStringLiteral("SimulationClockDomainsButton"));
     auto* compare = workspace->findChild<QAction*>(
         QStringLiteral("RunSimulationCompareAction"));
+    auto* runChecks = workspace->findChild<QAction*>(
+        QStringLiteral("RunSimulationChecksAction"));
     if (realWorkspace
         && (!workspace->findChild<QWidget*>(
                 QStringLiteral("StimulusCanvas"))
@@ -78,12 +80,16 @@ int main(int argc, char** argv)
                 "multi-clock-async-events/v1"))
             || !capabilities.contains(QStringLiteral(
                 "expected-actual-compare/v1"))
+            || !capabilities.contains(QStringLiteral(
+                "lightweight-trace-checks/v1"))
             || !workspace->findChild<QWidget*>(
                 QStringLiteral("SimulationComparisonPanel"))
             || !workspace->findChild<QTableWidget*>(
                 QStringLiteral("CompareResultTable"))
+            || !workspace->findChild<QTableWidget*>(
+                QStringLiteral("SimulationCheckResultTable"))
             || !asyncTiming || !clockDomains || !clockDomains->menu()
-            || !compare)) {
+            || !compare || !runChecks)) {
         std::cerr << "real shared wave workspace capabilities are missing\n";
         return 1;
     }

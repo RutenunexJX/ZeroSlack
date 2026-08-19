@@ -690,15 +690,15 @@ S11 实际结果：
 
 ### S12：独立增强项
 
-状态：`in_progress`（内部信号层级浏览、多时钟和异步事件已完成，2026-08-19）
+状态：`in_progress`（S12.1-S12.5 已完成，2026-08-19）
 
 以下项目必须继续拆成独立切片，不得合并为一个“大完善阶段”：
 
 - 内部信号层级浏览。`completed`
 - 多时钟和异步事件。`completed`
-- struct、array 和 interface 输入编辑。
-- Expected/Actual 比较。
-- 时刻值、稳定性、边沿响应等轻量检查。
+- struct、array 和 interface 输入编辑。`completed`
+- Expected/Actual 比较。`completed`
+- 时刻值、稳定性、边沿响应等轻量检查。`completed`
 - FST/Wellen 按需读取。
 - unresolved module 的显式 stub。
 - 模块全部场景批量运行。
@@ -822,6 +822,35 @@ Schema/接口版本：Stimulus Scenario v4；`wavewidgets` ABI 与 workspace con
 下一最小切片：S12.5 时刻值、稳定性与边沿响应轻量检查。
 恢复开发所需上下文：复用 v4 `expectedSegments`、当前 Actual TraceIndex 和比较差异导航，
 检查结果必须保持派生数据，不得成为新的场景事实源，也不得把 FST 并入本切片。
+
+S12.5 实际结果：
+
+- Stimulus Scenario 升级为 v5，持久化指定时刻取值、半开区间稳定性、源边沿到目标边沿
+  响应窗口三类检查定义；v1-v4 继续兼容读取。
+- 检查结果由当前 Actual TraceIndex 和既有 lane-to-trace mapping 纯函数计算，不保存到
+  `.wave.json` 或 stimulus 契约。禁用、未映射、无值和未激励分别保持明确状态。
+- Simulation Result 的 Review 区新增 Checks 页，支持创建、编辑、删除、运行和结果导航；
+  场景或 trace 改变会立即使结果 stale。
+- `wavewidgets` ABI 与 workspace contract 保持 v1，新增
+  `lightweight-trace-checks/v1` 能力声明；ZeroSlack 真实动态加载验证能力、动作和结果表。
+
+本轮切片：S12.5 时刻值、稳定性与边沿响应轻量检查
+完成内容：Stimulus Scenario v5 检查定义、纯数据评估器、Review/Checks 界面、失败定位、
+迁移、ABI 能力声明和双仓门禁。
+明确未做：FST/Wellen、unresolved module stub、批量场景和结果到源码导航。
+用户可见行为：用户可维护三类轻量检查，运行后查看通过、失败、不可用或禁用状态，并定位
+首个失败信号和 tick。
+自动测试：WaveWorkbench CTest `92/92`；ZeroSlack 共享库 fixture 门禁及真实共享库加载通过。
+人工验证：`artifacts/ui/wave/s12-lightweight-trace-checks.png` 已检查双画布、Checks 控制、
+失败摘要和结果表同屏。
+Schema/接口版本：Stimulus Scenario v5；`wavewidgets` ABI 与 workspace contract 保持 v1；
+新增能力声明 `lightweight-trace-checks/v1`。
+修改仓库与提交：WaveWorkbench `8efb28f`；ZeroSlack 本提交。
+已知限制：本机未安装真实 Verilator；端到端运行使用确定性 simulator fixture，不表述为真实
+RTL 仿真。边沿检查当前只支持 rising、falling 和 any-change，不提供断言语言。
+下一最小切片：S12.6 FST/Wellen 按需读取。
+恢复开发所需上下文：保留 VCD 为默认短仿真路径；先建立 trace reader 能力与规模门禁，再决定
+是否引入 Wellen。不得自行实现 FST 解析器，也不得把 unresolved stub 或批量运行并入该切片。
 
 ## 6. 正式开放门槛
 
