@@ -1,6 +1,6 @@
 # ZeroSlack
 
-Current version: `v0.7.0`
+Current version: `v0.8.0`
 
 ZeroSlack is a Qt 6 desktop environment for navigating, understanding, and
 editing SystemVerilog workspaces. It combines an incremental editor syntax
@@ -34,7 +34,9 @@ and preview-first RTL editing workflows.
   explicit recovery path when the shared widget cannot be loaded. The Actual
   result area includes a searchable instance/signal hierarchy with scope and
   leaf checkboxes, so internal signals can be added without predeclaring every
-  observation.
+  observation. Multiple semantic clock candidates become independent clock
+  domains; the result toolbar edits each domain and switches between its clock
+  grid and exact 1-tick asynchronous input events.
 - Preview and apply guarded RTL changes through the existing rename,
   connection, expose-to-top, scoped replace, instance-pair connection, and
   multi-signal propagation workflows. Module-port changes can be synchronized

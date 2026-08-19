@@ -1,6 +1,7 @@
 #include "waveembeddedworkspaceloader.h"
 #include "tabmanager.h"
 
+#include <QAction>
 #include <QApplication>
 #include <QEvent>
 #include <QEventLoop>
@@ -10,6 +11,7 @@
 #include <QTemporaryDir>
 #include <QTabWidget>
 #include <QTimer>
+#include <QToolButton>
 #include <QWidget>
 
 #include <iostream>
@@ -54,6 +56,12 @@ int main(int argc, char** argv)
         std::cerr << failure.toStdString() << '\n';
         return 1;
     }
+    const QStringList capabilities = workspace->property(
+        "wavewidgets.capabilities").toStringList();
+    auto* asyncTiming = workspace->findChild<QAction*>(
+        QStringLiteral("AsyncTimingAction"));
+    auto* clockDomains = workspace->findChild<QToolButton*>(
+        QStringLiteral("SimulationClockDomainsButton"));
     if (realWorkspace
         && (!workspace->findChild<QWidget*>(
                 QStringLiteral("StimulusCanvas"))
@@ -61,10 +69,11 @@ int main(int argc, char** argv)
                 QStringLiteral("ActualTraceCanvas"))
             || !workspace->findChild<QWidget*>(
                 QStringLiteral("TraceSignalBrowser"))
-            || !workspace->property("wavewidgets.capabilities")
-                    .toStringList()
-                    .contains(QStringLiteral(
-                        "internal-signal-hierarchy/v1")))) {
+            || !capabilities.contains(QStringLiteral(
+                "internal-signal-hierarchy/v1"))
+            || !capabilities.contains(QStringLiteral(
+                "multi-clock-async-events/v1"))
+            || !asyncTiming || !clockDomains || !clockDomains->menu())) {
         std::cerr << "real shared wave workspace capabilities are missing\n";
         return 1;
     }

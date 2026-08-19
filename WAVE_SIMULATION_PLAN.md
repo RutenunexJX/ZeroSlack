@@ -690,12 +690,12 @@ S11 实际结果：
 
 ### S12：独立增强项
 
-状态：`in_progress`（内部信号层级浏览已完成，2026-08-19）
+状态：`in_progress`（内部信号层级浏览、多时钟和异步事件已完成，2026-08-19）
 
 以下项目必须继续拆成独立切片，不得合并为一个“大完善阶段”：
 
 - 内部信号层级浏览。`completed`
-- 多时钟和异步事件。
+- 多时钟和异步事件。`completed`
 - struct、array 和 interface 输入编辑。
 - Expected/Actual 比较。
 - 时刻值、稳定性、边沿响应等轻量检查。
@@ -738,6 +738,36 @@ Stimulus Scenario v1，均未升级；新增可选能力声明 `internal-signal-
 恢复开发所需上下文：从 `TraceSignal.scopePath`、`buildTraceHierarchy()`、
 `TraceSignalBrowser` 和 Simulation Result 的 `traceVisibleSignalIds_` 继续；不得把后续
 structured input 或源码导航并入本切片。
+
+S12.2 实际结果：
+
+- Module Manifest 的全部有效语义时钟候选分别导入为独立 ClockDomain；多候选仍保留明确
+  诊断，但不再把所有时钟丢弃。唯一候选的既有建议元数据保持兼容。
+- Simulation Result 工具栏新增 `Clocks (N)`，可逐个编辑周期、相位、占空比和有效边沿；
+  结果页同时公开既有 `Timing` 动作，可在关联时钟网格与精确 1 tick 异步编辑间切换。
+- 运行计划继续逐端口驱动输入。测试覆盖 10 ns 与 17 ns 两个独立时钟、不同相位和占空比，
+  以及 1234 tick 的非网格普通输入事件，确认时钟不会合并、事件不会吸附。
+- 构建缓存身份不包含运行时刺激；修改时钟或异步事件复用同一编译模型，测试确认 fingerprint
+  不变且未再次执行 build process。
+- `wavewidgets` C ABI、workspace contract、Module Manifest 和 Stimulus Scenario 版本均未
+  升级；新增可选能力声明 `multi-clock-async-events/v1`。
+
+本轮切片：S12.2 多时钟和异步事件
+完成内容：多候选时钟独立导入、结果页逐时钟编辑、精确异步事件入口、运行计划与缓存回归测试、
+双仓能力门禁。
+明确未做：structured input、Expected/Actual 比较、轻量检查、FST、unresolved stub、批量场景和
+结果到源码导航。
+用户可见行为：嵌入式 Wave Tab 顶部可编辑每个独立时钟，并将刺激编辑切换为精确 1 tick 模式。
+自动测试：WaveWorkbench CTest `90/90`；ZeroSlack CTest `90/90`；真实共享库跨仓加载通过。
+人工验证：`artifacts/ui/wave/s12-multi-clock-async-events.png` 已检查 Clocks、Timing、Stimulus
+和 Actual 的同屏布局。
+Schema/接口版本：`wavewidgets` ABI v1、workspace contract v1、Module Manifest v2、
+Stimulus Scenario v1，均未升级；新增能力声明 `multi-clock-async-events/v1`。
+修改仓库与提交：WaveWorkbench `cda5ef9`；ZeroSlack 本提交。
+已知限制：本机未安装真实 Verilator；外部编译/运行由确定性 fixture 验证，不表述为真实 RTL 仿真。
+下一最小切片：S12.3 struct、array 和 interface 输入编辑。
+恢复开发所需上下文：从 Module Manifest v2 的 port type/shape 元数据、Stimulus Scenario v1
+端口表示和 StimulusCanvas 的 lane editor 继续；不得把 Expected/Actual 或检查器并入本切片。
 
 ## 6. 正式开放门槛
 

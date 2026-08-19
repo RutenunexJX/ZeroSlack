@@ -1,6 +1,6 @@
 # ZeroSlack Current Plan
 
-Product version: `v0.7.0`
+Product version: `v0.8.0`
 
 ## Current status
 
@@ -30,6 +30,14 @@ Product version: `v0.7.0`
 - WaveWorkbench preserves exact VCD scope components, traces deep hierarchy,
   structs, and underscore-prefixed signals, and advertises the compatible
   `internal-signal-hierarchy/v1` capability without changing the v1 C ABI.
+- Multiple semantic clock candidates are imported as independent domains.
+  The shared result toolbar exposes per-clock period, phase, duty-cycle, and
+  edge editing together with exact 1-tick asynchronous stimulus placement.
+- Stimulus-only clock or event changes reuse the compiled model. Runtime tests
+  cover unequal clock periods/phases and a non-grid input transition without
+  changing the build-cache fingerprint.
+- ZeroSlack validates the optional `multi-clock-async-events/v1` capability and
+  the corresponding shared-widget controls before accepting the real workspace.
 - The complete configured Debug suite passes all 90 tests. WaveWorkbench passes
   all 90 tests against the same integration and portable-install contracts.
 

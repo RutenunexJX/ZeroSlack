@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.8.0] - 2026-08-19
+
+### Multi-clock and asynchronous simulation stimulus
+
+- Imported every valid semantic clock candidate as an independent clock domain
+  instead of discarding all candidates when more than one is present.
+- Added a result-toolbar clock-domain menu for period, phase, duty-cycle, and
+  active-edge editing, and exposed exact 1-tick asynchronous stimulus timing.
+- Preserved non-grid input events and independent clock schedules in the runtime
+  plan while reusing the compiled model for stimulus-only changes.
+- Added runtime capability checks and cross-repository coverage for the shared
+  WaveWorkbench workspace.
+
 ## [0.7.0] - 2026-08-19
 
 ### Internal simulation signal hierarchy
