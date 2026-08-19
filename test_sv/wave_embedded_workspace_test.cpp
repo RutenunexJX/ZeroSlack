@@ -82,6 +82,8 @@ int main(int argc, char** argv)
                 "expected-actual-compare/v1"))
             || !capabilities.contains(QStringLiteral(
                 "lightweight-trace-checks/v1"))
+            || !capabilities.contains(QStringLiteral(
+                "on-demand-fst-trace/v1"))
             || !workspace->findChild<QWidget*>(
                 QStringLiteral("SimulationComparisonPanel"))
             || !workspace->findChild<QTableWidget*>(

@@ -89,6 +89,8 @@ WaveSimulationToolPaths toolsInDirectory(const QString& directory)
         executableName(QStringLiteral("wave-workbench")));
     paths.widgetLibrary = root.absoluteFilePath(
         libraryName(QStringLiteral("wavewidgets")));
+    paths.fstReader = root.absoluteFilePath(
+        executableName(QStringLiteral("wave-wellen-reader")));
     return paths;
 }
 
@@ -217,6 +219,8 @@ WaveSimulationConfiguration::toolPaths() const
         executableName(QStringLiteral("wave-workbench")));
     pathTools.widgetLibrary = libraryOnPath(
         libraryName(QStringLiteral("wavewidgets")));
+    pathTools.fstReader = QStandardPaths::findExecutable(
+        executableName(QStringLiteral("wave-wellen-reader")));
     return pathTools;
 }
 

@@ -1,16 +1,16 @@
 # ZeroSlack Current Goal
 
-Product version: `v0.11.0`
+Product version: `v0.12.0`
 
 ## Objective
 
-Complete S12.5 by adding persisted lightweight check definitions and deriving
-value-at-time, stable-range, and edge-response results from the current Actual
-trace, while retaining the S11 shared-widget architecture and prior S12 behavior.
+Complete S12.6 by adding Wellen-backed FST metadata indexing and on-demand
+transition loading, while retaining VCD/CSV behavior, the S11 shared-widget
+architecture, and prior S12 behavior.
 
 ## Completion criteria
 
-- `VERSION`, generated GUI metadata, and current documents agree on 0.11.0.
+- `VERSION`, generated GUI metadata, and current documents agree on 0.12.0.
 - `wavewidgets` provides a versioned runtime factory for the complete simulation
   workspace; ZeroSlack validates its ABI and workspace contract before hosting.
 - The embedded and standalone forms consume the same project, stimulus canvas,
@@ -41,16 +41,25 @@ trace, while retaining the S11 shared-widget architecture and prior S12 behavior
   derived only from the current trace and invalidated with scenario or trace changes.
 - The embedded workspace exposes `lightweight-trace-checks/v1`, a run action,
   result table, failure localization, and signal/tick navigation.
+- FST metadata loading does not decode transitions; mapped or selected signals
+  are loaded in bounded batches and merged only when file identity and
+  generation still match.
+- The real shared workspace advertises `on-demand-fst-trace/v1` only when the
+  adjacent Wellen reader exists, and its portable package contains the helper
+  plus attribution and operating limits.
 - Both repositories pass their complete configured suites without relaxed
   assertions.
 
 ## Current status
 
-S12.5 implementation and dual-repository verification are complete. Check
-definitions round-trip through Stimulus Scenario v5 and migrate with stable
-lane bindings; current trace results remain derived and expose visible status,
-failure localization, and navigation evidence. This machine does not have a real
-Verilator installation, so the external compile/run path is verified with
-deterministic process fixtures rather than represented as a real RTL compile.
-ZeroSlack passes `90/90` configured Debug tests and WaveWorkbench passes `92/92`
-offscreen tests.
+S12.6 implementation and feature-specific dual-repository verification are complete. Wellen
+indexes FST metadata without transition decoding; mapped and checked signals
+load on demand with cancellation and stale-generation protection. The shared
+library capability is conditional on the adjacent helper deployment, and the
+portable installation includes the complete closure. This machine does not
+have a real Verilator installation, so the external compile/run path remains
+verified with deterministic process fixtures rather than represented as a real
+RTL compile. WaveWorkbench passes `93/93` offscreen tests. The latest complete
+ZeroSlack Debug run passes `89/90`; only the existing visible-Wave latency gate
+in `editor_incremental_test` remains open (repeated p95 `6.36-8.74 ms` against
+`6 ms`), while all correctness, incremental, and zero-full-copy assertions pass.

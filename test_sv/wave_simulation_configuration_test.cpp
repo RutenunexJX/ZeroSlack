@@ -81,7 +81,8 @@ int main(int argc, char** argv)
     for (const QString& name : {
              QStringLiteral("wave-bridge"),
              QStringLiteral("wave-sim-runner"),
-             QStringLiteral("wave-workbench")}) {
+             QStringLiteral("wave-workbench"),
+             QStringLiteral("wave-wellen-reader")}) {
         QFile tool(QDir(toolDirectory).absoluteFilePath(
             name + executableSuffix));
         check(tool.open(QIODevice::WriteOnly),
@@ -107,7 +108,8 @@ int main(int argc, char** argv)
             toolDirectory)
             .toolPaths();
     check(toolPaths.isValid()
-              && toolPaths.missingTools().isEmpty(),
+              && toolPaths.missingTools().isEmpty()
+              && QFileInfo(toolPaths.fstReader).isFile(),
           "an explicit WaveWorkbench tool directory resolves all executables");
     check(QFile::remove(toolPaths.application)
               && toolPaths.isValid()

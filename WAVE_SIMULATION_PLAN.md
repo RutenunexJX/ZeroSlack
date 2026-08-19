@@ -690,7 +690,7 @@ S11 实际结果：
 
 ### S12：独立增强项
 
-状态：`in_progress`（S12.1-S12.5 已完成，2026-08-19）
+状态：`in_progress`（S12.1-S12.6 已完成，2026-08-19）
 
 以下项目必须继续拆成独立切片，不得合并为一个“大完善阶段”：
 
@@ -699,7 +699,7 @@ S11 实际结果：
 - struct、array 和 interface 输入编辑。`completed`
 - Expected/Actual 比较。`completed`
 - 时刻值、稳定性、边沿响应等轻量检查。`completed`
-- FST/Wellen 按需读取。
+- FST/Wellen 按需读取。`completed`
 - unresolved module 的显式 stub。
 - 模块全部场景批量运行。
 - 结果与 driver/source 的双向导航。
@@ -851,6 +851,46 @@ RTL 仿真。边沿检查当前只支持 rising、falling 和 any-change，不�
 下一最小切片：S12.6 FST/Wellen 按需读取。
 恢复开发所需上下文：保留 VCD 为默认短仿真路径；先建立 trace reader 能力与规模门禁，再决定
 是否引入 Wellen。不得自行实现 FST 解析器，也不得把 unresolved stub 或批量运行并入该切片。
+
+S12.6 实际结果：
+
+- WaveWorkbench 新增独立 `wave-wellen-reader` 辅助程序，固定使用 Wellen 0.25.6。元数据请求
+  只返回 scope、稳定 signal ID、位宽和时间范围，不调用 transition 解码；load 请求只接受
+  指定 signal ID，每批最多 64 个。
+- `wavefst` 通过进程边界消费版本化 JSON 契约，执行精确整数时间换算、响应规模门禁、超时、
+  取消和文件身份校验。合并时再次校验 identity 与 signal 元数据，旧 generation 或文件变化
+  不能覆盖当前 TraceIndex。
+- Actual 层级树先展示全部 FST 元数据。初始优先加载现有 mapping 所需信号，无 mapping 时
+  最多加载首 32 个信号；用户复选其他叶节点后按需加载对应 transition。Compare 与 Checks
+  在全部所需信号加载前延后执行。
+- `wavewidgets` ABI 与 workspace contract 保持 v1，新增可选能力
+  `on-demand-fst-trace/v1`。只有辅助程序与共享库相邻时才声明该能力；ZeroSlack 对 FST reader
+  只做可选工具发现，不把它加入 VCD 仿真必需工具集合。
+- portable install 包含应用、共享库、reader、运行限制和 BSD-3-Clause 归属说明；配置
+  `WAVEWORKBENCH_ENABLE_WELLEN=OFF` 时 VCD/CSV 应用、CLI 和共享库仍可独立构建。
+
+本轮切片：S12.6 FST/Wellen 按需读取
+完成内容：Wellen helper、FST 元数据索引、按信号批量加载、取消/generation 防护、层级 UI、
+Compare/Checks 门禁、条件能力声明和安装闭包。
+明确未做：unresolved module stub、模块全部场景批量运行、结果到源码双向导航、analog/string
+FST value 与 WDB。
+用户可见行为：打开 FST 后立即浏览完整层级，只为映射或勾选信号加载波形；加载进度、暂停、
+失败和完成状态均可见。
+自动测试：WaveWorkbench CTest `93/93`；ZeroSlack 的 S12.6 契约测试与真实共享库跨仓加载通过；
+关闭 Wellen 的独立构建通过。ZeroSlack 最新完整 Debug CTest 为 `89/90`，唯一失败是既有
+`editor_incremental_test` 的可见 Wave 延迟门禁（多次 p95 `6.36-8.74 ms`，预算 `6 ms`）；
+正确性、增量路径和零全文拷贝断言均通过，未放宽阈值。
+人工验证：`artifacts/ui/wave/s12-fst-on-demand.png` 已检查 8 个元数据 signal 中先加载映射
+signal，再勾选并仅新增第 2 个 signal。
+Schema/接口版本：`wavewidgets` ABI v1、workspace contract v1、Stimulus Scenario v5，均未
+升级；新增 reader request/response schema v1 和可选能力 `on-demand-fst-trace/v1`。
+规模证据：官方 `picorv32.vcd.fst` 元数据 495 signal、0 transition、31 ms；单信号请求返回
+1 个 signal、1 个 transition、9 ms。
+已知限制：FST 仅消费数字 bit-vector；reader 必须与应用/共享库相邻；本机无真实 Verilator；
+ZeroSlack 可见 Wave 的既有 6 ms p95 性能门禁仍需独立优化。
+下一最小切片：S12.7 unresolved module 的显式 stub。
+恢复开发所需上下文：从 runner 的 unresolved module 诊断、Module Manifest 依赖事实和现有
+wrapper 生成继续；不得把批量场景或源码导航并入该切片。
 
 ## 6. 正式开放门槛
 

@@ -1,6 +1,6 @@
 # ZeroSlack Current Plan
 
-Product version: `v0.11.0`
+Product version: `v0.12.0`
 
 ## Current status
 
@@ -17,6 +17,13 @@ Product version: `v0.11.0`
 - The shared Review/Checks page creates, edits, removes, runs, and navigates
   lightweight checks. ZeroSlack requires `lightweight-trace-checks/v1`, the
   run action, and the result table from the real shared library.
+- WaveWorkbench indexes FST hierarchy and signal metadata through Wellen, then
+  decodes transitions only for mapped or user-selected stable signal IDs.
+  Cancellation, file identity, generation, batch, and response-size guards
+  prevent stale or oversized loads from replacing the current trace.
+- The optional `on-demand-fst-trace/v1` capability is accepted only when the
+  Wellen reader is deployed beside the real shared library. VCD/CSV behavior
+  remains available when the optional helper is absent.
 
 - Module Manifest v3 exports Slang-authored selectors for packed struct,
   fixed unpacked array, and explicit-modport interface inputs. Type and symbol
@@ -63,8 +70,10 @@ Product version: `v0.11.0`
   changing the build-cache fingerprint.
 - ZeroSlack validates the optional `multi-clock-async-events/v1` capability and
   the corresponding shared-widget controls before accepting the real workspace.
-- The complete configured Debug suite passes all 90 tests. WaveWorkbench passes
-  all 92 tests against the same integration and portable-install contracts.
+- WaveWorkbench passes all 93 tests against the integration and portable-install
+  contracts. ZeroSlack's S12.6 contracts and real shared-library load pass; the
+  latest complete Debug run is 89/90 because the existing visible-Wave latency
+  gate exceeds its 6 ms p95 budget, without correctness or full-copy regressions.
 
 Superseded plans and completed milestone logs are available in the
 [archive index](docs/archive/README.md).

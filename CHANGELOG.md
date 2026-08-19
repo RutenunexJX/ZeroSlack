@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.12.0] - 2026-08-19
+
+### On-demand FST simulation traces
+
+- Added an optional Wellen-backed FST reader that indexes hierarchy and signal
+  metadata before decoding transitions only for mapped or selected signals.
+- Added exact time conversion, batch and response limits, cancellation, file
+  identity, and generation guards so stale background loads cannot replace the
+  current trace.
+- Required the optional `on-demand-fst-trace/v1` capability only when the
+  adjacent reader executable is present, preserving VCD/CSV operation without it.
+- Extended portable-install, ABI, GUI, real shared-library, and cross-repository
+  tests for the complete helper deployment closure.
+
 ## [0.11.0] - 2026-08-19
 
 ### Lightweight simulation trace checks
