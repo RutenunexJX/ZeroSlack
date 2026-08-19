@@ -89,6 +89,45 @@ enum class SemanticDriverPresenceState : std::uint8_t {
     Present
 };
 
+enum class SemanticStructuredSelectorKind : std::uint8_t {
+    StructMember,
+    PackedIndex,
+    UnpackedIndex,
+    InterfaceMember
+};
+
+struct SemanticStructuredSelectorFact {
+    SemanticStructuredSelectorKind kind =
+        SemanticStructuredSelectorKind::StructMember;
+    QString name;
+    int sourceIndex = 0;
+    int storageIndex = 0;
+};
+
+struct SemanticStructuredEnumValueFact {
+    QString name;
+    QString valueText;
+    QString displayValueText;
+    bool available = false;
+};
+
+struct SemanticStructuredLeafFact {
+    QString relativePath;
+    QList<SemanticStructuredSelectorFact> selectors;
+    // Empty for ordinary data ports, which inherit the root port direction.
+    // Interface leaves carry the selected modport direction explicitly.
+    QString direction;
+    QString canonicalTypeId;
+    QString resolvedTypeText;
+    bool fixedSize = false;
+    bool integral = false;
+    bool signedIntegral = false;
+    std::uint64_t bitWidth = 0;
+    bool packedBitOffsetValid = false;
+    std::uint64_t packedBitOffset = 0;
+    QList<SemanticStructuredEnumValueFact> enumValues;
+};
+
 struct SemanticElaboratedSymbolInfo {
     bool available = false;
     // Machine-readable Slang type facts. Action planners consume these
@@ -129,6 +168,9 @@ struct SemanticElaboratedSymbolInfo {
     QString signednessText;
     QString interfaceName;
     QString modportName;
+    bool structuredLeavesAvailable = false;
+    QList<SemanticStructuredLeafFact> structuredLeaves;
+    QString structuredFailureReason;
     QString failureReason;
 };
 

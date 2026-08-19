@@ -10,6 +10,7 @@
 #include <slang/ast/expressions/OperatorExpressions.h>
 #include <slang/ast/symbols/CompilationUnitSymbols.h>
 #include <slang/ast/symbols/InstanceSymbols.h>
+#include <slang/ast/symbols/MemberSymbols.h>
 #include <slang/ast/symbols/ParameterSymbols.h>
 #include <slang/ast/symbols/PortSymbols.h>
 #include <slang/ast/symbols/VariableSymbols.h>
@@ -1572,6 +1573,280 @@ SemanticElaboratedSymbolInfo enumConstantInfo(
     return result;
 }
 
+constexpr qsizetype kMaximumStructuredLeafCount = 256;
+
+QString structuredDirection(ArgumentDirection direction)
+{
+    switch (direction) {
+    case ArgumentDirection::In:
+        return QStringLiteral("input");
+    case ArgumentDirection::Out:
+        return QStringLiteral("output");
+    case ArgumentDirection::InOut:
+        return QStringLiteral("inout");
+    case ArgumentDirection::Ref:
+        return QStringLiteral("ref");
+    }
+    return QString();
+}
+
+QString selectorPath(const SemanticStructuredSelectorFact& selector)
+{
+    switch (selector.kind) {
+    case SemanticStructuredSelectorKind::StructMember:
+    case SemanticStructuredSelectorKind::InterfaceMember:
+        return QStringLiteral(".%1").arg(selector.name);
+    case SemanticStructuredSelectorKind::PackedIndex:
+    case SemanticStructuredSelectorKind::UnpackedIndex:
+        return QStringLiteral("[%1]").arg(selector.sourceIndex);
+    }
+    return QString();
+}
+
+QString structuredPath(
+    const QList<SemanticStructuredSelectorFact>& selectors)
+{
+    QString result;
+    for (const SemanticStructuredSelectorFact& selector : selectors)
+        result += selectorPath(selector);
+    return result;
+}
+
+void appendStructuredEnumValues(
+    const Type& type,
+    SemanticStructuredLeafFact* leaf)
+{
+    if (!leaf)
+        return;
+    const Type& canonical = type.getCanonicalType();
+    if (canonical.kind != SymbolKind::EnumType)
+        return;
+    for (const EnumValueSymbol& value : canonical.as<EnumType>().values()) {
+        const SemanticElaboratedSymbolInfo info = enumConstantInfo(
+            value.getValue(), value.getType());
+        SemanticStructuredEnumValueFact enumValue;
+        enumValue.name = QString::fromStdString(std::string(value.name));
+        enumValue.valueText = info.valueText;
+        enumValue.displayValueText = info.displayValueText;
+        enumValue.available = info.available;
+        leaf->enumValues.append(std::move(enumValue));
+    }
+}
+
+bool appendStructuredTypeLeaves(
+    const Type& type,
+    const slang::SourceManager* sourceManager,
+    QList<SemanticStructuredSelectorFact> selectors,
+    const QString& direction,
+    std::uint64_t packedBitOffset,
+    bool packedBitOffsetValid,
+    QList<SemanticStructuredLeafFact>* leaves,
+    QString* failureReason)
+{
+    if (!leaves || !failureReason)
+        return false;
+    if (leaves->size() >= kMaximumStructuredLeafCount) {
+        *failureReason = QStringLiteral(
+            "The structured port expands beyond 256 editable leaves.");
+        return false;
+    }
+
+    const Type& canonical = type.getCanonicalType();
+    if (canonical.kind == SymbolKind::FixedSizeUnpackedArrayType) {
+        const auto& array = canonical.as<FixedSizeUnpackedArrayType>();
+        const int step = array.range.left <= array.range.right ? 1 : -1;
+        for (int index = array.range.left;; index += step) {
+            SemanticStructuredSelectorFact selector;
+            selector.kind = SemanticStructuredSelectorKind::UnpackedIndex;
+            selector.sourceIndex = index;
+            selector.storageIndex = array.range.translateIndex(index);
+            auto nested = selectors;
+            nested.append(std::move(selector));
+            if (!appendStructuredTypeLeaves(
+                    array.elementType,
+                    sourceManager,
+                    std::move(nested),
+                    direction,
+                    0,
+                    false,
+                    leaves,
+                    failureReason)) {
+                return false;
+            }
+            if (index == array.range.right)
+                break;
+        }
+        return true;
+    }
+
+    if (canonical.kind == SymbolKind::PackedStructType) {
+        bool sawField = false;
+        for (const Symbol& symbol : canonical.as<PackedStructType>().members()) {
+            const auto* field = symbol.as_if<FieldSymbol>();
+            if (!field)
+                continue;
+            sawField = true;
+            SemanticStructuredSelectorFact selector;
+            selector.kind = SemanticStructuredSelectorKind::StructMember;
+            selector.name = QString::fromStdString(std::string(field->name));
+            auto nested = selectors;
+            nested.append(std::move(selector));
+            if (!appendStructuredTypeLeaves(
+                    field->getType(),
+                    sourceManager,
+                    std::move(nested),
+                    direction,
+                    packedBitOffset + field->bitOffset,
+                    true,
+                    leaves,
+                    failureReason)) {
+                return false;
+            }
+        }
+        if (!sawField) {
+            *failureReason = QStringLiteral(
+                "Slang exposed a packed struct without editable fields.");
+            return false;
+        }
+        return true;
+    }
+
+    if (canonical.kind == SymbolKind::UnpackedStructType
+        || canonical.kind == SymbolKind::PackedUnionType
+        || canonical.kind == SymbolKind::UnpackedUnionType) {
+        *failureReason = QStringLiteral(
+            "Unpacked structs and unions do not yet have a stable simulator storage mapping.");
+        return false;
+    }
+
+    if (!canonical.isFixedSize() || !canonical.isIntegral()) {
+        *failureReason = QStringLiteral(
+            "A structured leaf has no fixed integral representation.");
+        return false;
+    }
+
+    SemanticStructuredLeafFact leaf;
+    leaf.relativePath = structuredPath(selectors);
+    leaf.selectors = std::move(selectors);
+    leaf.direction = direction;
+    leaf.fixedSize = true;
+    leaf.integral = true;
+    leaf.signedIntegral = canonical.isSigned();
+    leaf.bitWidth = canonical.getBitWidth();
+    leaf.packedBitOffsetValid = packedBitOffsetValid;
+    leaf.packedBitOffset = packedBitOffset;
+    leaf.resolvedTypeText = QString::fromStdString(type.toString());
+    leaf.canonicalTypeId = semanticTypeIdentity(
+        canonical,
+        sourceManager,
+        true,
+        leaf.signedIntegral);
+    appendStructuredEnumValues(canonical, &leaf);
+    if (leaf.relativePath.isEmpty() || leaf.bitWidth == 0
+        || leaf.canonicalTypeId.isEmpty()) {
+        *failureReason = QStringLiteral(
+            "Slang could not produce a stable structured leaf identity.");
+        return false;
+    }
+    leaves->append(std::move(leaf));
+    return true;
+}
+
+void fillStructuredTypeLeaves(
+    const Type& type,
+    const slang::SourceManager* sourceManager,
+    SemanticElaboratedSymbolInfo* info)
+{
+    if (!info)
+        return;
+    const Type& canonical = type.getCanonicalType();
+    const bool structured =
+        canonical.kind == SymbolKind::PackedStructType
+        || canonical.kind == SymbolKind::UnpackedStructType
+        || canonical.kind == SymbolKind::FixedSizeUnpackedArrayType
+        || canonical.kind == SymbolKind::PackedUnionType
+        || canonical.kind == SymbolKind::UnpackedUnionType;
+    if (!structured)
+        return;
+
+    QList<SemanticStructuredLeafFact> leaves;
+    QString failureReason;
+    const bool complete = appendStructuredTypeLeaves(
+        type,
+        sourceManager,
+        {},
+        {},
+        0,
+        canonical.isIntegral(),
+        &leaves,
+        &failureReason);
+    info->structuredLeavesAvailable = complete && !leaves.isEmpty();
+    info->structuredLeaves = complete
+        ? std::move(leaves)
+        : QList<SemanticStructuredLeafFact>{};
+    info->structuredFailureReason = complete
+        ? QString()
+        : failureReason;
+}
+
+void fillInterfaceStructuredLeaves(
+    const InterfacePortSymbol& port,
+    const slang::SourceManager* sourceManager,
+    SemanticElaboratedSymbolInfo* info)
+{
+    if (!info)
+        return;
+    if (port.modport.empty()) {
+        info->structuredFailureReason = QStringLiteral(
+            "Interface stimulus requires an explicit modport direction contract.");
+        return;
+    }
+    if (const auto ranges = port.getDeclaredRange();
+        ranges && !ranges->empty()) {
+        info->structuredFailureReason = QStringLiteral(
+            "Arrays of interfaces are not supported by the structured-input runner.");
+        return;
+    }
+
+    const auto [connected, modport] = port.getConnection();
+    static_cast<void>(connected);
+    if (!modport) {
+        info->structuredFailureReason = QStringLiteral(
+            "Slang did not resolve the selected interface modport instance.");
+        return;
+    }
+
+    QList<SemanticStructuredLeafFact> leaves;
+    QString failureReason;
+    for (const Symbol& symbol : modport->members()) {
+        const auto* member = symbol.as_if<ModportPortSymbol>();
+        if (!member)
+            continue;
+        SemanticStructuredSelectorFact selector;
+        selector.kind = SemanticStructuredSelectorKind::InterfaceMember;
+        selector.name = QString::fromStdString(std::string(member->name));
+        if (!appendStructuredTypeLeaves(
+                member->getType(),
+                sourceManager,
+                {selector},
+                structuredDirection(member->direction),
+                0,
+                member->getType().getCanonicalType().isIntegral(),
+                &leaves,
+                &failureReason)) {
+            info->structuredFailureReason = failureReason;
+            return;
+        }
+    }
+    if (leaves.isEmpty()) {
+        info->structuredFailureReason = QStringLiteral(
+            "The selected modport exposes no editable data members.");
+        return;
+    }
+    info->structuredLeavesAvailable = true;
+    info->structuredLeaves = std::move(leaves);
+}
+
 bool isDirectValueLiteralKind(ExpressionKind kind)
 {
     switch (kind) {
@@ -2256,7 +2531,8 @@ void gatherScopePresentations(
         [&](auto& nestedVisitor, const PortSymbol& port) {
             if (cancelled())
                 return;
-            const SemanticElaboratedSymbolInfo info = typeInfo(port.getType());
+            SemanticElaboratedSymbolInfo info = typeInfo(port.getType());
+            fillStructuredTypeLeaves(port.getType(), sourceManager, &info);
             const ValueSymbol* internal =
                 port.internalSymbol
                     && port.internalSymbol->isValue()
@@ -2307,6 +2583,7 @@ void gatherScopePresentations(
             info.signednessText = QStringLiteral("not applicable");
             info.bitWidthText = QStringLiteral("not applicable");
             fillInterfaceDimensions(port, &info);
+            fillInterfaceStructuredLeaves(port, sourceManager, &info);
             if (!info.available) {
                 info.failureReason = QStringLiteral(
                     "slang could not resolve the interface port type.");

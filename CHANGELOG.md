@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.9.0] - 2026-08-19
+
+### Structured simulation inputs
+
+- Added Module Manifest v3 semantic leaves for packed structs, fixed unpacked
+  arrays, and explicit-modport interfaces without reparsing source text.
+- Made exported symbol and type identities portable across workspace moves and
+  removed absolute workspace paths from the interchange contract.
+- Added producer-backed coverage for source/storage array indices, packed field
+  offsets, interface member directions, and explicit unsupported-shape errors.
+- Integrated WaveWorkbench Stimulus Scenario v3, structured wrapper generation,
+  stable trace mapping, migration, and grouped WaveCanvas editing.
+
 ## [0.8.0] - 2026-08-19
 
 ### Multi-clock and asynchronous simulation stimulus

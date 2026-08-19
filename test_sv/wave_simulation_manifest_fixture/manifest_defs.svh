@@ -11,4 +11,16 @@ typedef struct packed {
     logic [`MANIFEST_DEFAULT_WIDTH-1:0] payload;
 } manifest_payload_t;
 
+interface manifest_control_if;
+    logic       request;
+    logic [2:0] command;
+    logic       ready;
+
+    modport dut (
+        input  request,
+        input  command,
+        output ready
+    );
+endinterface
+
 `endif

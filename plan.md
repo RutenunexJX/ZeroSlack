@@ -1,8 +1,19 @@
 # ZeroSlack Current Plan
 
-Product version: `v0.8.0`
+Product version: `v0.9.0`
 
 ## Current status
+
+- Module Manifest v3 exports Slang-authored selectors for packed struct,
+  fixed unpacked array, and explicit-modport interface inputs. Type and symbol
+  identities are portable workspace-relative digests and do not expose an
+  absolute workspace path.
+- WaveWorkbench imports each structured root as a grouped set of editable
+  leaves, Stimulus Scenario v3 persists those bindings, and the generated
+  runner wrapper reconstructs the original SystemVerilog port shape.
+- Unsafe or unsupported structured shapes fail explicitly instead of falling
+  back to total-width flattening. The current interface subset requires an
+  explicit modport and no interface constructor ports.
 
 - Wave Simulation is a formal Action Registry workflow and opens its complete
   WaveWorkbench result workspace as a first-class editor-area tool tab.
@@ -39,7 +50,7 @@ Product version: `v0.8.0`
 - ZeroSlack validates the optional `multi-clock-async-events/v1` capability and
   the corresponding shared-widget controls before accepting the real workspace.
 - The complete configured Debug suite passes all 90 tests. WaveWorkbench passes
-  all 90 tests against the same integration and portable-install contracts.
+  all 91 tests against the same integration and portable-install contracts.
 
 Superseded plans and completed milestone logs are available in the
 [archive index](docs/archive/README.md).

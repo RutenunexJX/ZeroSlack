@@ -66,6 +66,41 @@ QJsonObject typeObject(const WaveSimulationManifestType& type)
     object.insert(QStringLiteral("structMembers"), structMembers);
     return object;
 }
+
+QJsonObject editableLeafObject(
+    const WaveSimulationManifestEditableLeaf& leaf)
+{
+    QJsonArray selectors;
+    for (const WaveSimulationManifestStructuredSelector& selector :
+         leaf.selectors) {
+        selectors.append(QJsonObject{
+            {QStringLiteral("kind"), selector.kind},
+            {QStringLiteral("name"), selector.name},
+            {QStringLiteral("sourceIndex"), selector.sourceIndex},
+            {QStringLiteral("storageIndex"), selector.storageIndex},
+        });
+    }
+    QJsonArray enumValues;
+    for (const WaveSimulationManifestEnumValue& value : leaf.enumValues) {
+        enumValues.append(QJsonObject{
+            {QStringLiteral("name"), value.name},
+            {QStringLiteral("declarationText"), value.declarationText},
+            {QStringLiteral("valueText"), value.valueText},
+            {QStringLiteral("displayValueText"), value.displayValueText},
+            {QStringLiteral("semanticAvailable"), value.semanticAvailable},
+        });
+    }
+    return {
+        {QStringLiteral("relativePath"), leaf.relativePath},
+        {QStringLiteral("direction"), leaf.direction},
+        {QStringLiteral("selectors"), selectors},
+        {QStringLiteral("type"), typeShapeObject(leaf.type)},
+        {QStringLiteral("enumValues"), enumValues},
+        {QStringLiteral("packedBitOffsetValid"), leaf.packedBitOffsetValid},
+        {QStringLiteral("packedBitOffset"),
+         static_cast<qint64>(leaf.packedBitOffset)},
+    };
+}
 }
 
 bool WaveSimulationModuleManifest::isValid() const
@@ -168,6 +203,16 @@ QJsonObject WaveSimulationModuleManifest::toJson() const
         entry.insert(QStringLiteral("direction"), port.direction);
         entry.insert(QStringLiteral("declarationText"), port.declarationText);
         entry.insert(QStringLiteral("type"), typeObject(port.type));
+        entry.insert(QStringLiteral("structuredLeavesAvailable"),
+                     port.structuredLeavesAvailable);
+        QJsonArray leaves;
+        for (const WaveSimulationManifestEditableLeaf& leaf :
+             port.editableLeaves) {
+            leaves.append(editableLeafObject(leaf));
+        }
+        entry.insert(QStringLiteral("editableLeaves"), leaves);
+        entry.insert(QStringLiteral("structuredFailureReason"),
+                     port.structuredFailureReason);
         entry.insert(QStringLiteral("sourceFile"), port.sourceFile);
         entry.insert(QStringLiteral("sourceLine"), port.sourceLine);
         portArray.append(entry);

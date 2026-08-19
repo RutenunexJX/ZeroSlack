@@ -268,10 +268,39 @@ WaveSimulationManifestTypeShape typeShape(
     return shape;
 }
 
+QString portableSemanticFactId(const QString& semanticId,
+                               const QString& workspaceRoot)
+{
+    if (semanticId.isEmpty())
+        return QString();
+
+    QString normalized = QDir::fromNativeSeparators(semanticId);
+    const QString root = normalizedAbsolutePath(QString(), workspaceRoot);
+    if (!root.isEmpty()) {
+        normalized.replace(
+            QDir::fromNativeSeparators(root),
+            QStringLiteral("${workspace}"),
+            Qt::CaseInsensitive);
+    }
+    const QByteArray digest = QCryptographicHash::hash(
+        normalized.toUtf8(), QCryptographicHash::Sha256).toHex();
+    return QStringLiteral("sha256:") + QString::fromLatin1(digest);
+}
+
+void makeTypePortable(WaveSimulationManifestTypeShape& shape,
+                      const QString& workspaceRoot)
+{
+    shape.canonicalTypeId = portableSemanticFactId(
+        shape.canonicalTypeId, workspaceRoot);
+    shape.declarationShapeId = portableSemanticFactId(
+        shape.declarationShapeId, workspaceRoot);
+}
+
 WaveSimulationManifestType manifestType(
     const SemanticSymbolRecord& record,
     const QString& instancePath,
-    const QList<SemanticSymbolRecord>& records)
+    const QList<SemanticSymbolRecord>& records,
+    const QString& workspaceRoot)
 {
     const SemanticElaboratedSymbolInfo* info = elaboratedInfo(record,
                                                               instancePath);
@@ -332,6 +361,72 @@ WaveSimulationManifestType manifestType(
         result.shape.semanticKind = QStringLiteral("interface");
     if (result.shape.resolvedTypeName.isEmpty() && !candidates.isEmpty())
         result.shape.resolvedTypeName = candidates.first();
+    makeTypePortable(result.shape, workspaceRoot);
+    for (WaveSimulationManifestStructMember& member : result.structMembers)
+        makeTypePortable(member.type, workspaceRoot);
+    return result;
+}
+
+QString structuredSelectorKindName(
+    SemanticStructuredSelectorKind kind)
+{
+    switch (kind) {
+    case SemanticStructuredSelectorKind::StructMember:
+        return QStringLiteral("struct-member");
+    case SemanticStructuredSelectorKind::PackedIndex:
+        return QStringLiteral("packed-index");
+    case SemanticStructuredSelectorKind::UnpackedIndex:
+        return QStringLiteral("unpacked-index");
+    case SemanticStructuredSelectorKind::InterfaceMember:
+        return QStringLiteral("interface-member");
+    }
+    return QStringLiteral("unknown");
+}
+
+QList<WaveSimulationManifestEditableLeaf> editableLeaves(
+    const SemanticElaboratedSymbolInfo* info,
+    const QString& workspaceRoot)
+{
+    QList<WaveSimulationManifestEditableLeaf> result;
+    if (!info || !info->structuredLeavesAvailable)
+        return result;
+    result.reserve(info->structuredLeaves.size());
+    for (const SemanticStructuredLeafFact& fact :
+         info->structuredLeaves) {
+        WaveSimulationManifestEditableLeaf leaf;
+        leaf.relativePath = fact.relativePath;
+        leaf.direction = fact.direction;
+        leaf.type.semanticAvailable = true;
+        leaf.type.resolvedTypeText = fact.resolvedTypeText;
+        leaf.type.canonicalTypeId = fact.canonicalTypeId;
+        leaf.type.declarationShapeId = fact.canonicalTypeId;
+        leaf.type.fixedSize = fact.fixedSize;
+        leaf.type.integral = fact.integral;
+        leaf.type.signedIntegral = fact.signedIntegral;
+        leaf.type.bitWidth = fact.bitWidth;
+        leaf.packedBitOffsetValid = fact.packedBitOffsetValid;
+        leaf.packedBitOffset = fact.packedBitOffset;
+        makeTypePortable(leaf.type, workspaceRoot);
+        for (const SemanticStructuredSelectorFact& selector :
+             fact.selectors) {
+            WaveSimulationManifestStructuredSelector manifestSelector;
+            manifestSelector.kind = structuredSelectorKindName(selector.kind);
+            manifestSelector.name = selector.name;
+            manifestSelector.sourceIndex = selector.sourceIndex;
+            manifestSelector.storageIndex = selector.storageIndex;
+            leaf.selectors.append(std::move(manifestSelector));
+        }
+        for (const SemanticStructuredEnumValueFact& value :
+             fact.enumValues) {
+            WaveSimulationManifestEnumValue manifestValue;
+            manifestValue.name = value.name;
+            manifestValue.valueText = value.valueText;
+            manifestValue.displayValueText = value.displayValueText;
+            manifestValue.semanticAvailable = value.available;
+            leaf.enumValues.append(std::move(manifestValue));
+        }
+        result.append(std::move(leaf));
+    }
     return result;
 }
 
@@ -417,6 +512,25 @@ QString workspaceIdentity(const WaveSimulationModuleManifest& manifest,
         extensions.append(extension);
     object.insert(QStringLiteral("fileExtensions"), extensions);
     object.insert(QStringLiteral("topModule"), project.topModule);
+    const QByteArray digest = QCryptographicHash::hash(
+        QJsonDocument(object).toJson(QJsonDocument::Compact),
+        QCryptographicHash::Sha256).toHex();
+    return QStringLiteral("sha256:") + QString::fromLatin1(digest);
+}
+
+QString portableSemanticIdentity(
+    const SemanticSymbolRecord& record,
+    const QString& relativeSourceFile)
+{
+    QJsonObject object;
+    object.insert(QStringLiteral("sourceFile"), relativeSourceFile);
+    object.insert(
+        QStringLiteral("declarationKind"),
+        static_cast<int>(record.declarationKind));
+    object.insert(QStringLiteral("owner"), record.owner.name);
+    object.insert(QStringLiteral("name"), record.name);
+    object.insert(QStringLiteral("line"), record.location.startLine);
+    object.insert(QStringLiteral("column"), record.location.startColumn);
     const QByteArray digest = QCryptographicHash::hash(
         QJsonDocument(object).toJson(QJsonDocument::Compact),
         QCryptographicHash::Sha256).toHex();
@@ -637,7 +751,8 @@ WaveSimulationManifestBuildResult WaveSimulationManifestService::build(
             parameter.type = manifestType(
                 member,
                 request.instancePath,
-                request.semanticSnapshot->symbolRecordsView());
+                request.semanticSnapshot->symbolRecordsView(),
+                request.project.workspaceRoot);
             manifest.parameters.append(parameter);
         } else if (isPort(member)) {
             WaveSimulationManifestPort port;
@@ -649,7 +764,15 @@ WaveSimulationManifestBuildResult WaveSimulationManifestService::build(
             port.type = manifestType(
                 member,
                 request.instancePath,
-                request.semanticSnapshot->symbolRecordsView());
+                request.semanticSnapshot->symbolRecordsView(),
+                request.project.workspaceRoot);
+            port.structuredLeavesAvailable =
+                info && info->structuredLeavesAvailable;
+            port.editableLeaves = editableLeaves(
+                info, request.project.workspaceRoot);
+            if (info)
+                port.structuredFailureReason =
+                    info->structuredFailureReason;
             manifest.ports.append(port);
         }
     }
@@ -700,7 +823,8 @@ WaveSimulationManifestBuildResult WaveSimulationManifestService::build(
         const WaveSimulationManifestType type = manifestType(
             *record,
             request.instancePath,
-            request.semanticSnapshot->symbolRecordsView());
+            request.semanticSnapshot->symbolRecordsView(),
+            request.project.workspaceRoot);
         if (!supportedObservationType(type)) {
             result.warnings.append(
                 QStringLiteral("Observation %1 has no supported fixed integral representation.")
@@ -720,7 +844,8 @@ WaveSimulationManifestBuildResult WaveSimulationManifestService::build(
         WaveSimulationManifestObservation observation;
         observation.name = record->name;
         observation.accessPath = accessPath;
-        observation.semanticId = record->stableKey.toString();
+        observation.semanticId = portableSemanticIdentity(
+            *record, *sourceFile);
         observation.declarationText =
             record->presentation.declarationText;
         observation.type = type;

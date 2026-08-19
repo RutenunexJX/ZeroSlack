@@ -769,6 +769,34 @@ Stimulus Scenario v1，均未升级；新增能力声明 `multi-clock-async-even
 恢复开发所需上下文：从 Module Manifest v2 的 port type/shape 元数据、Stimulus Scenario v1
 端口表示和 StimulusCanvas 的 lane editor 继续；不得把 Expected/Actual 或检查器并入本切片。
 
+S12.3 实际结果：
+
+- ZeroSlack 将 Module Manifest 升级为 v3，由 Slang elaboration 直接提供 packed struct member、
+  固定 unpacked array element 与显式 modport interface member 的 selector、方向、位宽、enum
+  和 source/storage index；WaveWorkbench 不重新扫描 SystemVerilog 源码。
+- 类型与符号身份在导出边界归一化为不含绝对路径的稳定摘要，工作区移动后仍可恢复。
+- WaveWorkbench 将结构化根导入为 group 与 flat leaf lane；Stimulus Scenario v3 持久化结构化
+  binding，并支持根端口安全重命名后的 leaf 与自动 group 迁移。
+- runner 生成 wrapper 重建 packed struct、固定 unpacked array 和无构造端口的显式 modport
+  interface；VCD stable trace name 映射回原 leaf。缺失安全语义事实时明确拒绝，不按总位宽猜测。
+- 生产者测试可直接生成消费者 fixture；WaveWorkbench 的 UI 冒烟编辑三类 leaf 并渲染真实
+  WaveCanvas，截图为 `artifacts/ui/wave/s12-structured-input-editor.png`。
+
+本轮切片：S12.3 struct、array 和 interface 输入编辑
+完成内容：Module Manifest v3、Stimulus Scenario v3、结构化 lane/group、wrapper 重建、trace
+映射、迁移与双仓契约测试。
+明确未做：Expected/Actual 比较、轻量检查、FST、unresolved stub、批量场景和结果到源码导航。
+用户可见行为：结构化输入以可展开 group 显示，成员可直接使用既有 bit/bus/enum 波形编辑器。
+自动测试：ZeroSlack CTest `90/90`；WaveWorkbench CTest `91/91`。
+人工验证：结构化输入 WaveCanvas 截图已检查三类 group、leaf 名称和值段。
+Schema/接口版本：Module Manifest v3、Stimulus Scenario v3；`wavewidgets` ABI 与 workspace
+contract 保持 v1。
+已知限制：interface 必须无构造端口且显式指定 modport；`inout/ref`、动态数组和超过 64 bit
+的 leaf 明确拒绝。本机无真实 Verilator，wrapper/运行链使用确定性 fixture 验证。
+下一最小切片：S12.4 Expected/Actual 比较。
+恢复开发所需上下文：从 v3 structured binding、stable trace name 与现有 compare 模块继续；
+不得重新引入源码字符串扫描，也不得将检查器或 FST 并入比较切片。
+
 ## 6. 正式开放门槛
 
 以下条件全部满足前，入口保持实验状态：

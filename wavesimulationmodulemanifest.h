@@ -51,6 +51,23 @@ struct WaveSimulationManifestStructMember {
     WaveSimulationManifestTypeShape type;
 };
 
+struct WaveSimulationManifestStructuredSelector {
+    QString kind;
+    QString name;
+    int sourceIndex = 0;
+    int storageIndex = 0;
+};
+
+struct WaveSimulationManifestEditableLeaf {
+    QString relativePath;
+    QString direction;
+    QList<WaveSimulationManifestStructuredSelector> selectors;
+    WaveSimulationManifestTypeShape type;
+    QList<WaveSimulationManifestEnumValue> enumValues;
+    bool packedBitOffsetValid = false;
+    std::uint64_t packedBitOffset = 0;
+};
+
 struct WaveSimulationManifestType {
     WaveSimulationManifestTypeShape shape;
     QList<WaveSimulationManifestEnumValue> enumValues;
@@ -74,6 +91,9 @@ struct WaveSimulationManifestPort {
     QString direction;
     QString declarationText;
     WaveSimulationManifestType type;
+    bool structuredLeavesAvailable = false;
+    QList<WaveSimulationManifestEditableLeaf> editableLeaves;
+    QString structuredFailureReason;
     QString sourceFile;
     int sourceLine = 0;
 };
@@ -106,7 +126,7 @@ struct WaveSimulationManifestObservation {
 };
 
 struct WaveSimulationModuleManifest {
-    static constexpr int kSchemaVersion = 2;
+    static constexpr int kSchemaVersion = 3;
 
     int schemaVersion = kSchemaVersion;
     QString workspaceId;

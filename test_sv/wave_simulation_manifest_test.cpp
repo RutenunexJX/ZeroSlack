@@ -68,6 +68,20 @@ const WaveSimulationManifestPort* port(
     return nullptr;
 }
 
+const WaveSimulationManifestEditableLeaf* leaf(
+    const WaveSimulationManifestPort* value,
+    const QString& relativePath)
+{
+    if (!value)
+        return nullptr;
+    for (const WaveSimulationManifestEditableLeaf& candidate :
+         value->editableLeaves) {
+        if (candidate.relativePath == relativePath)
+            return &candidate;
+    }
+    return nullptr;
+}
+
 const WaveSimulationManifestObservation* observation(
     const WaveSimulationModuleManifest& manifest,
     const QString& name)
@@ -102,7 +116,7 @@ int main(int argc, char** argv)
     const QString topFile = QDir(fixtureRoot).absoluteFilePath(
         QStringLiteral("manifest_top.sv"));
     const QString schemaFile = QDir(sourceRoot).absoluteFilePath(
-        QStringLiteral("schemas/wave-simulation-module-manifest-v2.schema.json"));
+        QStringLiteral("schemas/wave-simulation-module-manifest-v3.schema.json"));
 
     check(QFileInfo(fixtureRoot).isDir(), "real manifest fixture exists");
     const QHash<QString, QString> contents{
@@ -174,8 +188,8 @@ int main(int argc, char** argv)
     definitionRequest.observationScope.mode =
         QStringLiteral("always");
     definitionRequest.observationScope.fileName = childFile;
-    definitionRequest.observationScope.startLine = 16;
-    definitionRequest.observationScope.endLine = 19;
+    definitionRequest.observationScope.startLine = 18;
+    definitionRequest.observationScope.endLine = 24;
     definitionRequest.observationScope.label =
         QStringLiteral("always_comb at manifest_child.sv:16");
     const WaveSimulationManifestBuildResult definition =
@@ -185,13 +199,13 @@ int main(int argc, char** argv)
     check(definition.manifest.target.mode == QStringLiteral("module-definition")
               && definition.manifest.target.instancePath.isEmpty(),
           "definition and instance target modes are distinct");
-    check(definition.manifest.schemaVersion == 2
+    check(definition.manifest.schemaVersion == 3
               && definition.manifest.observationScope.mode
                      == QStringLiteral("always")
               && definition.manifest.observationScope.sourceFile
                      == QStringLiteral("manifest_child.sv")
-              && definition.manifest.observationScope.startLine == 16
-              && definition.manifest.observationScope.endLine == 19,
+              && definition.manifest.observationScope.startLine == 18
+              && definition.manifest.observationScope.endLine == 24,
           "selected always scope is preserved as portable manifest metadata");
     const WaveSimulationManifestObservation* nextData = observation(
         definition.manifest, QStringLiteral("next_data"));
@@ -262,6 +276,10 @@ int main(int argc, char** argv)
         instance.manifest, QStringLiteral("mode_i"));
     const WaveSimulationManifestPort* payloadPort = port(
         instance.manifest, QStringLiteral("payload_i"));
+    const WaveSimulationManifestPort* samplesPort = port(
+        instance.manifest, QStringLiteral("samples_i"));
+    const WaveSimulationManifestPort* controlPort = port(
+        instance.manifest, QStringLiteral("control"));
     check(modePort && modePort->type.shape.semanticKind == QStringLiteral("enum")
               && modePort->type.enumValues.size() == 2
               && modePort->type.enumValues.at(0).name
@@ -278,6 +296,37 @@ int main(int argc, char** argv)
               && payloadPort->type.structMembers.at(1).name
                   == QStringLiteral("payload"),
           "packed struct port metadata preserves semantic source order");
+    check(payloadPort && payloadPort->structuredLeavesAvailable
+              && payloadPort->editableLeaves.size() == 2
+              && leaf(payloadPort, QStringLiteral(".valid"))
+              && leaf(payloadPort, QStringLiteral(".valid"))
+                     ->packedBitOffset == 5
+              && leaf(payloadPort, QStringLiteral(".payload"))
+              && leaf(payloadPort, QStringLiteral(".payload"))
+                     ->packedBitOffset == 0,
+          "packed struct leaves preserve Slang field offsets");
+    check(samplesPort && samplesPort->structuredLeavesAvailable
+              && samplesPort->editableLeaves.size() == 2
+              && leaf(samplesPort, QStringLiteral("[1]"))
+              && leaf(samplesPort, QStringLiteral("[1]"))
+                     ->selectors.constFirst().storageIndex == 1
+              && !leaf(samplesPort, QStringLiteral("[1]"))
+                      ->packedBitOffsetValid
+              && leaf(samplesPort, QStringLiteral("[0]"))
+              && leaf(samplesPort, QStringLiteral("[0]"))
+                     ->selectors.constFirst().storageIndex == 0
+              && !leaf(samplesPort, QStringLiteral("[0]"))
+                      ->packedBitOffsetValid,
+          "fixed unpacked array leaves preserve source and storage indices");
+    check(controlPort && controlPort->structuredLeavesAvailable
+              && controlPort->editableLeaves.size() == 3
+              && leaf(controlPort, QStringLiteral(".request"))
+              && leaf(controlPort, QStringLiteral(".request"))->direction
+                     == QStringLiteral("input")
+              && leaf(controlPort, QStringLiteral(".ready"))
+              && leaf(controlPort, QStringLiteral(".ready"))->direction
+                     == QStringLiteral("output"),
+          "interface modport leaves preserve member directions from Slang");
 
     WaveSimulationManifestBuildRequest explicitRequest = definitionRequest;
     explicitRequest.observationScope = {};
@@ -312,8 +361,11 @@ int main(int argc, char** argv)
         check(isRelativeProjectPath(includeDir), "include paths are workspace-relative");
     check(isRelativeProjectPath(instance.manifest.target.sourceFile),
           "target source path is workspace-relative");
-    check(!instance.manifest.toJsonBytes().contains(
-              fixtureRoot.toUtf8()),
+    const QByteArray portableDocument =
+        instance.manifest.toJsonBytes().toLower().replace('\\', '/');
+    const QByteArray normalizedFixtureRoot =
+        QDir::fromNativeSeparators(fixtureRoot).toUtf8().toLower();
+    check(!portableDocument.contains(normalizedFixtureRoot),
           "serialized manifest does not leak the absolute workspace path");
 
     QFile schema(schemaFile);
@@ -335,6 +387,16 @@ int main(int argc, char** argv)
               && serialized.object().value(QStringLiteral("schemaVersion")).toInt()
                   == WaveSimulationModuleManifest::kSchemaVersion,
           "manifest serialization is valid versioned JSON");
+    if (application.arguments().size() == 2) {
+        const QString outputPath = application.arguments().at(1);
+        check(QDir().mkpath(QFileInfo(outputPath).absolutePath()),
+              "manifest fixture output directory is writable");
+        QFile output(outputPath);
+        const QByteArray document = instance.manifest.toJsonBytes();
+        check(output.open(QIODevice::WriteOnly)
+                  && output.write(document) == document.size(),
+              "generated manifest fixture can be exported for consumer tests");
+    }
 
     WaveSimulationManifestBuildRequest missingInstance = definitionRequest;
     missingInstance.instancePath = QStringLiteral("manifest_top.missing");

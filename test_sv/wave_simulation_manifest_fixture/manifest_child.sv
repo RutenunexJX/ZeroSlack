@@ -9,12 +9,17 @@ module manifest_child #(
     input  logic [WIDTH-1:0]      data_i,
     input  manifest_mode_t        mode_i,
     input  manifest_payload_t     payload_i,
+    input  logic [3:0]            samples_i [1:0],
+    manifest_control_if.dut       control,
     output logic [WIDTH:0]        data_o
 );
     logic [WIDTH:0] next_data;
 
     always_comb begin
-        next_data = payload_i.valid ? {1'b0, data_i} : '0;
+        next_data = payload_i.valid && control.request
+            ? {1'b0, data_i ^ samples_i[0]}
+            : '0;
+        control.ready = |control.command;
         data_o = next_data;
     end
 endmodule
