@@ -889,6 +889,34 @@ int main() {
     }
 
     {
+        const QString src =
+            QStringLiteral("module macro_preamble_demo;\n")
+            + QStringLiteral("`define VALUE_EXPR (early + 1'b1)\n")
+            + QStringLiteral("  localparam int W = 4;\n")
+            + QStringLiteral("  logic early;\n")
+            + QStringLiteral("  assign y = `VALUE_EXPR;\n")
+            + QStringLiteral("  logic [W-1:0] late;\n")
+            + QStringLiteral("endmodule\n");
+        const QString expected =
+            QStringLiteral("module macro_preamble_demo;\n")
+            + QStringLiteral("`define VALUE_EXPR (early + 1'b1)\n")
+            + QStringLiteral("  localparam int W = 4;\n")
+            + QStringLiteral("  logic early;\n")
+            + QStringLiteral("  logic [W-1:0] late;\n")
+            + QStringLiteral("  assign y = `VALUE_EXPR;\n")
+            + QStringLiteral("endmodule\n");
+        TSDocument d;
+        d.setText(src);
+        const TSSignalDeclarationOrganizationPlan plan =
+            d.signalDeclarationOrganizationPlan(
+                src.indexOf(QStringLiteral("late")));
+        check("organize signals: module macro definitions remain in the declaration preamble",
+              plan.ok()
+                  && plan.declarationCount == 2
+                  && applySignalOrganizationEdit(src, plan) == expected);
+    }
+
+    {
         const QString conditional =
             QStringLiteral("module conditional_demo;\n")
             + QStringLiteral("  logic early;\n")

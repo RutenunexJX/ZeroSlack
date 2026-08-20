@@ -1,6 +1,6 @@
 # ZeroSlack Current Goal
 
-Product version: `v0.17.1`
+Product version: `v0.17.2`
 
 ## Objective
 
@@ -10,15 +10,15 @@ fact source.
 
 ## Completion criteria
 
-- `VERSION`, generated GUI metadata, and current documents agree on 0.17.1.
+- `VERSION`, generated GUI metadata, and current documents agree on 0.17.2.
 - Cached workspace activation remains immediate while a background directory
   reconciliation discovers files changed outside ZeroSlack.
 - Ordinary multiline and rectangular column selections can be replaced with
   equal-width whitespace while retaining their line structure and one-step undo.
 - Signal organization is derived from the current Tree-sitter module, moves only
   complete top-level net and variable declarations, preserves dependencies and
-  attached comments, excludes procedural locals, and fails closed at unsafe
-  syntax or preprocessing boundaries.
+  attached comments and module-level macro definitions, excludes procedural
+  locals, and fails closed at unsafe syntax or preprocessing boundaries.
 - Users can select Verilator and C++ compiler executables in global Settings,
   while empty fields retain deterministic automatic discovery.
 - Portable adjacent tools are preferred over ambient `PATH`, resolved paths are

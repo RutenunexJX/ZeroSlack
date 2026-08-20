@@ -1,6 +1,6 @@
 # ZeroSlack
 
-Current version: `v0.17.1`
+Current version: `v0.17.2`
 
 ZeroSlack is a Qt 6 desktop environment for navigating, understanding, and
 editing SystemVerilog workspaces. It combines an incremental editor syntax
@@ -102,7 +102,8 @@ and preview-first RTL editing workflows.
   amount of whitespace while preserving line structure and one-step undo.
   Organize complete top-level signal declarations in the current module through
   a Tree-sitter-backed context action that preserves dependency declarations,
-  comments, declaration order, and procedural locals, and refuses unsafe moves.
+  module-level macro definitions, comments, declaration order, and procedural
+  locals, and refuses unsafe moves.
 - Hold `Alt+Up` or `Alt+Down` to move logical lines continuously while the
   caret follows the moved text; once column selection is active,
   `Shift+Left` / `Shift+Right` extends or contracts its column span.

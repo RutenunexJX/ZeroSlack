@@ -1,4 +1,4 @@
-ZeroSlack v0.17.1
+ZeroSlack v0.17.2
 
 Build date: 2026-08-20
 Build profile: Shared Release

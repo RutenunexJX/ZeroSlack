@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.17.2] - 2026-08-20
+
+### Signal declaration organization
+
+- Fixed module-level `` `define`` directives being mistaken for executable
+  module body content, which incorrectly disabled declaration organization
+  when later `localparam` declarations were present.
+- Kept macro definitions in the declaration preamble while retaining the
+  existing refusal to move declarations across unsafe preprocessing regions.
+
 ## [0.17.1] - 2026-08-20
 
 ### Workspace file reconciliation

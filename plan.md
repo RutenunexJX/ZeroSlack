@@ -1,6 +1,6 @@
 # ZeroSlack Current Plan
 
-Product version: `v0.17.1`
+Product version: `v0.17.2`
 
 ## Current status
 
@@ -13,7 +13,8 @@ Product version: `v0.17.1`
 - A Tree-sitter-authored organization plan moves complete top-level net and
   variable declarations to the current module's safe declaration section. It
   preserves dependency preambles, declaration order, attached comments, and
-  procedural locals, and rejects unsafe syntax or preprocessor boundaries.
+  procedural locals, treats module-level macro definitions as preamble items,
+  and rejects unsafe syntax or preprocessor boundaries.
 
 - The Windows package includes a pinned `WaveWorkbench/toolchain` containing
   Verilator 5.050, MinGW 13.1, GNU Make, runtime DLLs, licenses, and a manifest.
